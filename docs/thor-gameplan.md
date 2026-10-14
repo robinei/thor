@@ -4,27 +4,38 @@ The device: AYN Thor Max (16 GB / 1 TB, Snapdragon 8 Gen 2 / SM8550, 6" top + 3.
 The goal: our own minimal Arch Linux ARM with sway and the system program, booted from SD card first,
 Android kept. Written 2026-10-14, before having the device; everything here is unverified on it.
 
-## How the boot works (checked against ROCKNIX's SM8550 release 20261001)
+## How the boot works
 
-- **The stock bootloader may already boot Linux.** ROCKNIX's Thor page: the ABL steps "are only required
-  if your device doesn't have a fastboot menu to switch the Boot Mode", so newer stock firmware has a
-  Linux boot mode of its own (someone on Discord: at least some Thors ship with U-Boot, hopefully all by
-  now). Check this before flashing anything (day one, step 2). Unverified: what the stock Linux mode boots
-  (presumably the same FAT `ROCKNIX` partition and `/KERNEL`, since ROCKNIX's images work either way), and
-  whether there is really a U-Boot behind it (if so, it may read `extlinux.conf` and want an `Image` and
-  device tree as files rather than an Android boot image: then the image needs a second layout).
-- ROCKNIX's own image doesn't use U-Boot: its SM8550 options say `BOOTLOADER="qcom-abl"`. Qualcomm's
-  loaders, then ROCKNIX's ABL (their build of the Android bootloader,
-  `3rdparty/bootloader/rocknix_abl/abl_signed-SM8550.elf` in the release, with backup, flash and restore
-  scripts), which finds a FAT partition labelled `ROCKNIX` on internal storage, SD or USB and boots its
-  `/KERNEL`. Holding volume up at power-on picks the target, Android included.
-- `/KERNEL` is an Android boot image, header version 0, page size 2048: a gzip'd arm64 `Image` with 14
-  device trees appended (AYN Thor, Odin 2 / Mini / Portal, gamepad nodes; the ABL picks the matching one),
-  the initramfs built into the kernel (the image's ramdisk is 5 bytes), and the command line
+- **Stock: U-Boot with UEFI.** Kettle Linux's Thor notes: the Thor ships with U-Boot offering UEFI; they
+  boot GRUB as an EFI program, which loads the device tree `qcs8550-ayn-thor.dtb`; SD card boot works
+  through U-Boot's EFI. (ROCKNIX's Thor page agrees there is a stock way: its ABL steps "are only required
+  if your device doesn't have a fastboot menu to switch the Boot Mode".) Verify on the device that ours
+  has it (day one, step 2) before flashing anything.
+- **Else ROCKNIX's ABL** (`3rdparty/bootloader/rocknix_abl/abl_signed-SM8550.elf` in their release, with
+  backup, flash and restore scripts): finds a FAT partition labelled `ROCKNIX` on internal storage, SD or
+  USB and boots its `/KERNEL`; volume up at power-on picks the target, Android included. ROCKNIX's own
+  SM8550 build uses this (`BOOTLOADER="qcom-abl"`).
+- `/KERNEL` (ROCKNIX 20261001) is an Android boot image, header version 0, page size 2048: a gzip'd arm64
+  `Image` with 14 device trees appended (AYN Thor, Odin 2 / Mini / Portal, gamepad nodes; the ABL picks
+  the matching one), the initramfs built into the kernel (the ramdisk is 5 bytes), and the command line
   `boot=LABEL=ROCKNIX disk=LABEL=STORAGE quiet rootwait console=tty0 allow_mismatched_32bit_el0
   fw_devlink.strict=1 pcie_ports=compat irqaffinity=0-2 cgroup.memory=nokmem,nosocket nosoftlockup
-  usbcore.interrupt_interval_override=045e:028e:2`.
-- ROCKNIX's sway has DSI-2 as the top screen and DSI-1 as the bottom one (our default too).
+  usbcore.interrupt_interval_override=045e:028e:2`. The kernel is built with the EFI stub (it starts
+  with `MZ` and a PE header), so the same kernel boots through UEFI too; its Thor device tree is
+  `ayn,thor` / `qcom,qcs8550` / `qcom,sm8550`.
+
+## The hardware, as Kettle Linux found it
+
+- Screens: top DSI-2, bottom DSI-1, **both natively portrait (1080x1920)**: sway needs a transform on each.
+- Touch: the device tree swaps and inverts axes; Kettle fixes it with `LIBINPUT_CALIBRATION_MATRIX` in a
+  udev rule (`61-kettle-thor-touch.rules`), and maps each touchscreen to its screen.
+- Audio: card `AYN-Thor` (`ayn-AYNOdin2` under EFI: U-Boot reports the Odin 2's SMBIOS); UCM profiles
+  (their `kettle-ucm-ayn`) and firmware `ayn/thor/*` incl. `AYN-Thor-tplg.bin`; internal mic on DMIC3.
+- Gamepad: InputPlumber (their `40-kettle-thor.yaml`); the AYN key as quick access.
+- Power: 4-18 W; at 5 W the three CPU clusters cap at 1344/1785/1977 MHz. Fan curve in the device tree.
+- Lid switch: sleep on close (`wakeup-event-action`); suspend (s2idle) verified.
+- Backlights: the top one first (`ae96000.dsi.0`), the bottom labelled `bottom-panel`.
+- The bottom screen draws about 0.7 W at idle. Wi-Fi and Bluetooth work.
 
 ## Our image (`tools/vm.py --arch aarch64 thor-image`, built in the ARM virtual machine)
 
@@ -32,7 +43,8 @@ What goes in, and from where:
 
 | Part | Source |
 |---|---|
-| Bootloader | not in the image: the stock one if it has a Linux boot mode, else ROCKNIX's ABL, flashed once (see below) |
+| Bootloader | not in the image: stock U-Boot (UEFI), else ROCKNIX's ABL flashed once (see below) |
+| UEFI boot, on the same FAT partition (an EFI system partition) | systemd-boot as `EFI/BOOT/BOOTAA64.EFI`, ROCKNIX's kernel as `/Image` (decompressed), the Thor's device tree as `/dtbs/qcs8550-ayn-thor.dtb`, our initramfs, a loader entry with our command line; split out by `tools/bootimg.py split` |
 | `/KERNEL` on FAT `ROCKNIX` (GPT name `system`, legacy-boot attribute, at 16 MiB) | ROCKNIX's kernel and device trees, unchanged; our initramfs (mkinitcpio: base udev modconf block filesystems fsck, no autodetect) and command line (`root=LABEL=THOR_ROOT rw` + ROCKNIX's SM8550 parameters), repacked by `tools/bootimg.py` |
 | Kernel modules, firmware | ROCKNIX's `SYSTEM` (same release), incl. Qualcomm firmware: for this device only, not for sharing |
 | Root: ext4 `THOR_ROOT` | `pacstrap` from Arch Linux ARM's mirrors (unpinned): base, sudo, mkinitcpio, NetworkManager, OpenSSH, sway, foot, Xwayland, Mesa + `vulkan-freedreno`, PipeWire, Noto, SQLite, Python, vim |
@@ -43,9 +55,12 @@ Known issues and risks, to check first:
 1. Our ramdisk is meant to be unpacked over the kernel's built-in initramfs, so our `/init` wins. If not,
    ROCKNIX's init runs, looks for its own `SYSTEM`, and the boot fails.
 2. Early storage: if the SD controller's driver (sdhci-msm) is a module, our initramfs must carry it.
-3. Audio: Qualcomm audio also needs ALSA UCM profiles and topology firmware from ROCKNIX; not copied yet.
-4. Display rotation: if the top panel is natively portrait, sway needs a transform; only right if
-   ROCKNIX's sway config has it in a form the build finds.
+3. Audio: Qualcomm audio also needs ALSA UCM profiles and topology firmware (`ayn/thor/*`); the firmware
+   comes with ROCKNIX's, the UCM profiles don't yet. Under UEFI the card is named `ayn-AYNOdin2`.
+9. UEFI path: whether U-Boot passes our device tree through systemd-boot (its devicetree fixup) or
+   insists on its own; Kettle uses GRUB, which would be the fallback.
+4. Display rotation: both panels are natively portrait, so sway needs a transform on each; only right if
+   ROCKNIX's sway config has it in a form the build finds. Touch needs Kettle's calibration matrix.
 5. Gamepad: the kernel driver comes with ROCKNIX's modules; its userspace mapping (Thorch uses
    InputPlumber maps) doesn't. Check what evdev reports before relying on it.
 6. Device trees: Thorch insists on exactly one Thor device tree in `/KERNEL`; we keep ROCKNIX's 14 (as
@@ -109,5 +124,7 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
   `KERNEL_TARGET="Image"`), ABL: <https://github.com/ROCKNIX/abl>
 - Thorch (Arch Linux ARM on ROCKNIX's Thor work, the closest model): <https://github.com/thorch-os/thorch>
 - Pocknix (Arch Linux ARM for SM8250/SM8550 handhelds): <https://github.com/shuuri-labs/pocknix-os>
+- Kettle Linux's Thor notes (stock U-Boot/UEFI, screens, touch, audio, power, gamepad):
+  <https://github.com/kettlelinux/kettlelinux/blob/main/docs/THOR.md>
 - Our tools: `tools/vm.py` (virtual Thor, x86-64 and aarch64; `thor-image`), `tools/thor-image.sh`,
   `tools/bootimg.py`, `sysprog/tests/nested-sway.sh`

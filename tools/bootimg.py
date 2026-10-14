@@ -5,6 +5,9 @@ of ROCKNIX's is a gzip'd arm64 Image with the device trees appended (the ABL pic
 
   bootimg.py info IMAGE
   bootimg.py repack IMAGE --ramdisk FILE --cmdline "..." -o OUT     (same kernel, addresses and page size)
+  bootimg.py split IMAGE --kernel OUT --dtb OUT --model "AYN Thor"
+      the kernel, decompressed (an EFI program, if built with the EFI stub), and the device tree whose
+      model is this, as files: for booting the same kernel through UEFI (systemd-boot, GRUB)
 
 Standard library only.
 """
@@ -13,6 +16,7 @@ import argparse
 import hashlib
 import struct
 import sys
+import zlib
 
 MAGIC = b"ANDROID!"
 # magic, kernel size/addr, ramdisk size/addr, second size/addr, tags addr, page size, header version,
@@ -70,11 +74,36 @@ def write(image, path):
                 out.write(padded(image[part]))
 
 
+DTB_MAGIC = b"\xd0\x0d\xfe\xed"
+
+
+def split(kernel_blob, model):
+    """The gzip'd kernel's Image, and the appended device tree whose model string is `model`."""
+    if kernel_blob[:2] != b"\x1f\x8b":
+        sys.exit("the kernel isn't gzip'd with device trees appended")
+    stream = zlib.decompressobj(16 + zlib.MAX_WBITS)
+    image = stream.decompress(kernel_blob)
+    rest = stream.unused_data
+    at = 0
+    while (at := rest.find(DTB_MAGIC, at)) >= 0:
+        size = struct.unpack(">I", rest[at + 4:at + 8])[0]
+        blob = rest[at:at + size]
+        if model.encode() + b"\0" in blob:
+            return image, blob
+        at += size
+    sys.exit(f"no device tree for {model!r}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="action", required=True)
     p = sub.add_parser("info")
     p.add_argument("image")
+    p = sub.add_parser("split")
+    p.add_argument("image")
+    p.add_argument("--kernel", required=True)
+    p.add_argument("--dtb", required=True)
+    p.add_argument("--model", required=True)
     p = sub.add_parser("repack")
     p.add_argument("image")
     p.add_argument("--ramdisk", required=True)
@@ -82,6 +111,13 @@ def main():
     p.add_argument("-o", "--output", required=True)
     args = parser.parse_args()
     image = read(args.image)
+    if args.action == "split":
+        kernel, dtb = split(image["kernel"], args.model)
+        open(args.kernel, "wb").write(kernel)
+        open(args.dtb, "wb").write(dtb)
+        stub = "an EFI program" if kernel[:2] == b"MZ" else "no EFI stub: not bootable through UEFI"
+        print(f"kernel: {len(kernel)} bytes ({stub}); device tree: {len(dtb)} bytes")
+        return
     if args.action == "info":
         for key in ("kernel", "ramdisk", "second"):
             print(f"{key}: {len(image[key])} bytes")

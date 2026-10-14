@@ -9,8 +9,12 @@
 # DEVICE: the SD image (a virtual disk). ROCKNIX_TARGET: the release's target/ (KERNEL, SYSTEM).
 # PROGRAM: the system program built for aarch64. SSH_KEY: a public key to log in with.
 #
-# Layout (as ROCKNIX's, which its ABL looks for): GPT; 1: FAT "ROCKNIX" (GPT name "system", legacy-boot
-# attribute) at 16 MiB with /KERNEL, an Android boot image; 2: ext4 THOR_ROOT, the system.
+# Two ways to boot, one FAT partition: the stock bootloader (U-Boot with UEFI, as Kettle Linux's Thor notes
+# have it) starts systemd-boot (EFI/BOOT/BOOTAA64.EFI), which loads the kernel (an EFI program: ROCKNIX's
+# is built with the EFI stub), our initramfs and the Thor's device tree as files; ROCKNIX's ABL boots
+# /KERNEL, an Android boot image of the same kernel. Layout: GPT; 1: FAT "ROCKNIX" at 16 MiB, an EFI
+# system partition with ROCKNIX's GPT name "system" and legacy-boot attribute (their ABL looks for the
+# label); 2: ext4 THOR_ROOT, the system.
 set -euo pipefail
 DEVICE=$1 ROCKNIX=$2 PROGRAM=$3 SSH_KEY=$4
 USER_NAME=thor
@@ -37,7 +41,7 @@ say "  kernel $KVER"
 
 say "partitions"
 sgdisk -Z "$DEVICE" > /dev/null
-sgdisk -n 1:16M:+256M -t 1:0700 -c 1:system -A 1:set:2 -n 2:0:0 -t 2:8300 -c 2:THOR_ROOT "$DEVICE" > /dev/null
+sgdisk -n 1:16M:+256M -t 1:ef00 -c 1:system -A 1:set:2 -n 2:0:0 -t 2:8300 -c 2:THOR_ROOT "$DEVICE" > /dev/null
 partprobe "$DEVICE"; udevadm settle
 mkfs.vfat -F 32 -n ROCKNIX "${DEVICE}1" > /dev/null
 mkfs.ext4 -q -F -L THOR_ROOT "${DEVICE}2"
@@ -110,6 +114,21 @@ mkdir -p "$WORK/boot"; mount "${DEVICE}1" "$WORK/boot"
 python3 "$(dirname "$0")/bootimg.py" repack "$ROCKNIX/KERNEL" --ramdisk "$ROOT/boot/initramfs-thor.img" \
     --cmdline "$CMDLINE" -o "$WORK/boot/KERNEL"
 python3 "$(dirname "$0")/bootimg.py" info "$WORK/boot/KERNEL"
+
+say "UEFI boot (stock U-Boot): systemd-boot, the kernel, our initramfs, the Thor's device tree"
+mkdir -p "$WORK/boot/EFI/BOOT" "$WORK/boot/loader/entries" "$WORK/boot/dtbs"
+cp "$ROOT/usr/lib/systemd/boot/efi/systemd-bootaa64.efi" "$WORK/boot/EFI/BOOT/BOOTAA64.EFI"
+python3 "$(dirname "$0")/bootimg.py" split "$ROCKNIX/KERNEL" --model "AYN Thor" \
+    --kernel "$WORK/boot/Image" --dtb "$WORK/boot/dtbs/qcs8550-ayn-thor.dtb"
+cp "$ROOT/boot/initramfs-thor.img" "$WORK/boot/"
+printf 'default thor.conf\ntimeout 3\n' > "$WORK/boot/loader/loader.conf"
+cat > "$WORK/boot/loader/entries/thor.conf" <<ENTRY
+title   Arch Linux ARM (Thor)
+linux   /Image
+initrd  /initramfs-thor.img
+devicetree /dtbs/qcs8550-ayn-thor.dtb
+options $CMDLINE
+ENTRY
 umount "$WORK/boot"
 
 say "done: $(du -sh "$ROOT" --exclude=proc 2> /dev/null | cut -f1) on the root partition"
