@@ -3,7 +3,8 @@
 
 use std::process::ExitCode;
 
-use sysprog_core::{Event, Id, Key, Mode, State};
+use sysprog_core::keyboard::{self, Key, KeyPos, Modifier};
+use sysprog_core::{Event, Id, Mode, State};
 use sysprog_ui::{Config, Screen};
 
 fn main() -> ExitCode {
@@ -45,21 +46,33 @@ fn main() -> ExitCode {
 }
 
 /// Events to apply first, the screen, its size, the file name.
-type Shot = (&'static [Event], Screen, (u32, u32), &'static str);
+type Shot = (Vec<Event>, Screen, (u32, u32), &'static str);
 
 fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
     state.apply(Event::Tick { unix_secs: now.as_secs() });
-    // Each shot after the events that lead to it: shelf, then the keyboard's two layers.
-    let shots: [Shot; 4] = [
-        (&[], Screen::Top, (1920, 1080), "top.png"),
-        (&[], Screen::Bottom, (1240, 1080), "bottom.png"),
-        (&[Event::Activate(Id::Mode(Mode::Keyboard))], Screen::Bottom, (1240, 1080), "keyboard.png"),
-        (&[Event::Activate(Id::Key(Key::Layer))], Screen::Bottom, (1240, 1080), "symbols.png"),
+    // Each shot after the events that lead to it: shelf, then the keyboard plain, with Fn, and with
+    // Shift (once) and Ctrl (locked).
+    let key = |k: Key, long: bool| {
+        let id = Id::Key(keyboard::find(k).unwrap_or(KeyPos { row: 0, col: 0 }));
+        if long { Event::LongPress(id) } else { Event::Activate(id) }
+    };
+    let bottom = (1240, 1080);
+    let shots: Vec<Shot> = vec![
+        (vec![], Screen::Top, (1920, 1080), "top.png"),
+        (vec![], Screen::Bottom, bottom, "bottom.png"),
+        (vec![Event::Activate(Id::Mode(Mode::Keyboard))], Screen::Bottom, bottom, "keyboard.png"),
+        (vec![key(Key::Mod(Modifier::Fn), false)], Screen::Bottom, bottom, "keyboard-fn.png"),
+        (
+            vec![key(Key::Mod(Modifier::Fn), false), key(Key::Mod(Modifier::Shift), false), key(Key::Mod(Modifier::Ctrl), true)],
+            Screen::Bottom,
+            bottom,
+            "keyboard-mods.png",
+        ),
     ];
     for (events, screen, size, name) in shots {
         for event in events {
-            state.apply(event.clone());
+            state.apply(event);
         }
         let path = dir.join(name);
         if let Err(e) = sysprog_ui::snapshot(state, screen, size, 1, &path) {

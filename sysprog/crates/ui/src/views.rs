@@ -4,7 +4,8 @@
 //! OLED-friendly: black background, grey text and lines (no full white on static elements), colour only
 //! where it means something (focus, the active mode, the game's own colour, Launch).
 
-use sysprog_core::{Id, Key, KeyLayer, Mode, Power, State};
+use sysprog_core::keyboard::{self, Key, KeyPos, Keyboard, LAYOUT, Latch, Modifier, Named, Slot};
+use sysprog_core::{Id, Mode, Power, State};
 
 use crate::draw::{Canvas, Rect, rgb};
 use crate::icons::{self, Icon};
@@ -151,42 +152,12 @@ fn game_settings(c: &mut Canvas, s: &State, body: Rect, targets: &mut Vec<Target
     targets.push(Target { rect: launch, id: Id::Launch });
 }
 
-/// A key and its width in key units.
-type KeySpec = (Key, f32);
-
-const fn ch(c: char) -> KeySpec {
-    (Key::Char(c), 1.0)
-}
-
-const DIGITS: &[KeySpec] = &[ch('1'), ch('2'), ch('3'), ch('4'), ch('5'), ch('6'), ch('7'), ch('8'), ch('9'), ch('0')];
-
-/// The digit row is on both layers, in the same place.
-const LETTERS: &[&[KeySpec]] = &[
-    DIGITS,
-    &[ch('q'), ch('w'), ch('e'), ch('r'), ch('t'), ch('y'), ch('u'), ch('i'), ch('o'), ch('p')],
-    &[ch('a'), ch('s'), ch('d'), ch('f'), ch('g'), ch('h'), ch('j'), ch('k'), ch('l')],
-    &[(Key::Shift, 1.5), ch('z'), ch('x'), ch('c'), ch('v'), ch('b'), ch('n'), ch('m'), (Key::Backspace, 1.5)],
-    &[(Key::Layer, 1.5), ch(','), (Key::Char(' '), 5.0), ch('.'), (Key::Enter, 1.5)],
-];
-
-/// Digits and all 32 ASCII symbols, with Esc and Tab for terminals.
-const SYMBOLS: &[&[KeySpec]] = &[
-    DIGITS,
-    &[ch('!'), ch('@'), ch('#'), ch('$'), ch('%'), ch('^'), ch('&'), ch('*'), ch('('), ch(')')],
-    &[ch('-'), ch('_'), ch('='), ch('+'), ch('['), ch(']'), ch('{'), ch('}'), ch('\\'), ch('|')],
-    &[(Key::Esc, 1.5), ch(';'), ch(':'), ch('\''), ch('"'), ch('`'), ch('~'), ch('<'), ch('>'), (Key::Backspace, 1.5)],
-    &[(Key::Layer, 1.5), (Key::Tab, 1.5), ch(','), ch('/'), (Key::Char(' '), 2.5), ch('?'), ch('.'), (Key::Enter, 1.5)],
-];
-
-/// Keyboard mode: what was typed lately, then the keys of the current layer.
+/// Keyboard mode: what was typed lately, then the keys. Each key shows its Fn function small in the
+/// corner; while Fn is on, the two swap.
 fn keyboard(c: &mut Canvas, s: &State, body: Rect, targets: &mut Vec<Target>) {
     let kb = &s.keyboard;
-    let rows = match kb.layer {
-        KeyLayer::Letters => LETTERS,
-        KeyLayer::Symbols => SYMBOLS,
-    };
     let gap = body.h * 0.012;
-    let echo_h = body.h * 0.1;
+    let echo_h = body.h * 0.09;
     let echo_size = echo_h * 0.45;
     let echo = format!("{}_", kb.echo);
     let ew = c.text_width(echo_size, &echo);
@@ -195,48 +166,118 @@ fn keyboard(c: &mut Canvas, s: &State, body: Rect, targets: &mut Vec<Target>) {
     c.text(ex, body.y + (echo_h - echo_size * 1.2) / 2.0, echo_size, rgb(DIM), &echo);
 
     let area = Rect::new(gap, body.y + echo_h, body.w - 2.0 * gap, body.h - echo_h - gap);
-    let row_h = area.h / rows.len() as f32;
-    for (i, row) in rows.iter().enumerate() {
+    let row_h = area.h / LAYOUT.len() as f32;
+    for (row, slots) in LAYOUT.iter().enumerate() {
         // Every row fills the width: its keys share it by their widths.
-        let row_units: f32 = row.iter().map(|(_, w)| w).sum();
-        let unit = area.w / row_units.max(1.0);
+        let units: f32 = slots.iter().map(|k| k.width).sum();
+        let unit = area.w / units.max(1.0);
         let mut x = area.x;
-        let y = area.y + i as f32 * row_h;
-        for &(key, width) in row.iter() {
-            let r = Rect::new(x + gap / 2.0, y + gap / 2.0, width * unit - gap, row_h - gap);
-            draw_key(c, s, key, r);
-            let id = Id::Key(key);
+        let y = area.y + row as f32 * row_h;
+        for (col, slot) in slots.iter().enumerate() {
+            let r = Rect::new(x + gap / 2.0, y + gap / 2.0, slot.width * unit - gap, row_h - gap);
+            draw_key(c, kb, slot, r);
+            let id = Id::Key(KeyPos { row: row as u8, col: col as u8 });
             focus_ring(c, s, &id, r);
             targets.push(Target { rect: r, id });
-            x += width * unit;
+            x += slot.width * unit;
         }
     }
 }
 
-fn draw_key(c: &mut Canvas, s: &State, key: Key, r: Rect) {
-    let kb = &s.keyboard;
+fn draw_key(c: &mut Canvas, kb: &Keyboard, slot: &Slot, r: Rect) {
     c.rounded(r, 6.0, rgb(SURFACE));
-    let size = r.h * 0.3;
-    let small = r.h * 0.22;
-    let icon = Rect::new(r.x, r.y + r.h * 0.28, r.w, r.h * 0.44);
+    let (main, corner) = match (kb.fn_layer.on(), slot.fn_key) {
+        (true, Some(fn_key)) => (fn_key, Some(slot.base)),
+        (false, Some(fn_key)) => (slot.base, Some(fn_key)),
+        (_, None) => (slot.base, None),
+    };
+    let mut color = if matches!(main, Key::Char(_)) { TEXT } else { DIM };
+    if let Key::Mod(m) = slot.base {
+        match kb.latch(m) {
+            Latch::Off => {}
+            Latch::Once => color = ACCENT,
+            Latch::Locked => {
+                color = ACCENT;
+                c.outline(r, 6.0, 1.5, rgb(ACCENT));
+            }
+        }
+    }
+    key_label(c, kb, main, r, r.h * 0.3, color, false);
+    if let Some(key) = corner {
+        key_label(c, kb, key, r, r.h * 0.17, DIM, true);
+    }
+}
+
+/// A key's label: centred, or small in the top-right corner.
+fn key_label(c: &mut Canvas, kb: &Keyboard, key: Key, r: Rect, size: f32, color: u32, corner: bool) {
+    let pad = r.h * 0.08;
+    let icon_box = |h: f32| {
+        if corner {
+            Rect::new(r.x + r.w - h - pad, r.y + pad, h, h)
+        } else {
+            Rect::new(r.x, r.y + (r.h - h) / 2.0, r.w, h)
+        }
+    };
+    let text = |c: &mut Canvas, size: f32, t: &str| {
+        // Shrink labels that don't fit the key (PgUp, Home on narrow keys).
+        let room = r.w - 2.0 * pad;
+        let width = c.text_width(size, t);
+        let size = if width > room { size * room / width } else { size };
+        if corner {
+            let w = c.text_width(size, t);
+            c.text(r.x + r.w - w - pad, r.y + pad * 0.5, size, rgb(color), t);
+        } else {
+            label(c, r, size, color, t);
+        }
+    };
+    let icon = |c: &mut Canvas, i: Icon| icons::draw(c, i, icon_box(size * 1.4), rgb(color));
     match key {
-        Key::Char(' ') => c.fill(Rect::new(r.x + r.w * 0.3, r.y + r.h * 0.62, r.w * 0.4, 2.0), rgb(DIM)),
+        Key::Char(' ') if !corner => c.fill(Rect::new(r.x + r.w * 0.3, r.y + r.h * 0.62, r.w * 0.4, 2.0), rgb(DIM)),
         Key::Char(ch) => {
-            let shown = if kb.shift { ch.to_ascii_uppercase() } else { ch };
-            label(c, r, size, TEXT, shown.encode_utf8(&mut [0; 4]));
+            let shown = if kb.shift.on() { keyboard::shifted(ch) } else { ch };
+            text(c, size, shown.encode_utf8(&mut [0; 4]));
         }
-        Key::Shift => icons::draw(c, Icon::Shift, icon, rgb(if kb.shift { ACCENT } else { DIM })),
-        Key::Backspace => icons::draw(c, Icon::Backspace, icon, rgb(DIM)),
-        Key::Enter => icons::draw(c, Icon::Enter, icon, rgb(DIM)),
-        Key::Layer => {
-            let text = match kb.layer {
-                KeyLayer::Letters => "#+=",
-                KeyLayer::Symbols => "ABC",
+        Key::Named(Named::Backspace) => icon(c, Icon::Backspace),
+        Key::Named(Named::Enter) => icon(c, Icon::Enter),
+        Key::Named(Named::Up) => icon(c, Icon::ArrowUp),
+        Key::Named(Named::Down) => icon(c, Icon::ArrowDown),
+        Key::Named(Named::Left) => icon(c, Icon::ArrowLeft),
+        Key::Named(Named::Right) => icon(c, Icon::ArrowRight),
+        Key::Mod(Modifier::Shift) => icon(c, Icon::Shift),
+        Key::Named(named) => {
+            let small = if corner { size } else { size * 0.7 };
+            text(c, small, &named_label(named));
+        }
+        Key::Mod(m) => {
+            let small = if corner { size } else { size * 0.7 };
+            let t = match m {
+                Modifier::Shift => "Shift",
+                Modifier::Ctrl => "Ctrl",
+                Modifier::Alt => "Alt",
+                Modifier::Fn => "Fn",
             };
-            label(c, r, small, DIM, text);
+            text(c, small, t);
         }
-        Key::Tab => label(c, r, small, DIM, "Tab"),
-        Key::Esc => label(c, r, small, DIM, "Esc"),
+    }
+}
+
+fn named_label(n: Named) -> String {
+    match n {
+        Named::F(i) => format!("F{i}"),
+        Named::Backspace => "Bksp".into(),
+        Named::Tab => "Tab".into(),
+        Named::Enter => "Enter".into(),
+        Named::Esc => "Esc".into(),
+        Named::Delete => "Del".into(),
+        Named::Insert => "Ins".into(),
+        Named::Home => "Home".into(),
+        Named::End => "End".into(),
+        Named::PageUp => "PgUp".into(),
+        Named::PageDown => "PgDn".into(),
+        Named::Left => "Left".into(),
+        Named::Right => "Right".into(),
+        Named::Up => "Up".into(),
+        Named::Down => "Down".into(),
     }
 }
 

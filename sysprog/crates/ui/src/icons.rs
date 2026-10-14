@@ -14,6 +14,10 @@ pub enum Icon {
     Shift,
     Backspace,
     Enter,
+    ArrowUp,
+    ArrowDown,
+    ArrowLeft,
+    ArrowRight,
 }
 
 /// Draws `icon` centred in `r`, as large as fits.
@@ -65,6 +69,22 @@ pub fn draw(c: &mut Canvas, icon: Icon, r: Rect, color: Color) {
             c.polyline(&[p(8.0, 6.0), p(21.0, 6.0), p(21.0, 18.0), p(8.0, 18.0), p(3.0, 12.0)], line, color, true);
             c.polyline(&[p(12.0, 9.5), p(17.0, 14.5)], line, color, false);
             c.polyline(&[p(17.0, 9.5), p(12.0, 14.5)], line, color, false);
+        }
+        Icon::ArrowUp => {
+            c.polyline(&[p(12.0, 19.0), p(12.0, 5.0)], line, color, false);
+            c.polyline(&[p(6.0, 11.0), p(12.0, 5.0), p(18.0, 11.0)], line, color, false);
+        }
+        Icon::ArrowDown => {
+            c.polyline(&[p(12.0, 5.0), p(12.0, 19.0)], line, color, false);
+            c.polyline(&[p(6.0, 13.0), p(12.0, 19.0), p(18.0, 13.0)], line, color, false);
+        }
+        Icon::ArrowLeft => {
+            c.polyline(&[p(19.0, 12.0), p(5.0, 12.0)], line, color, false);
+            c.polyline(&[p(11.0, 6.0), p(5.0, 12.0), p(11.0, 18.0)], line, color, false);
+        }
+        Icon::ArrowRight => {
+            c.polyline(&[p(5.0, 12.0), p(19.0, 12.0)], line, color, false);
+            c.polyline(&[p(13.0, 6.0), p(19.0, 12.0), p(13.0, 18.0)], line, color, false);
         }
         Icon::Enter => {
             c.polyline(&[p(19.0, 5.0), p(19.0, 14.0), p(5.0, 14.0)], line, color, false);

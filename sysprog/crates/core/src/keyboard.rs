@@ -1,0 +1,398 @@
+//! The on-screen keyboard: a PC-style layout (US) with an Fn layer, and one-shot or locked modifiers.
+//! Keys are identified by their position, so the same key keeps its id on both layers.
+
+/// What a key does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Key {
+    /// A printable ASCII character, unshifted (`a`, `1`, `[`); Shift picks the US shifted one.
+    Char(char),
+    Named(Named),
+    Mod(Modifier),
+}
+
+/// Keys that type no character.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Named {
+    Backspace,
+    Tab,
+    Enter,
+    Esc,
+    Delete,
+    Insert,
+    Home,
+    End,
+    PageUp,
+    PageDown,
+    Left,
+    Right,
+    Up,
+    Down,
+    /// F1-F12.
+    F(u8),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Modifier {
+    Shift,
+    Ctrl,
+    Alt,
+    Fn,
+}
+
+impl Modifier {
+    pub const ALL: [Modifier; 4] = [Modifier::Shift, Modifier::Ctrl, Modifier::Alt, Modifier::Fn];
+}
+
+/// A modifier's state: a tap arms it for the next key, a long press locks it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Latch {
+    #[default]
+    Off,
+    Once,
+    Locked,
+}
+
+impl Latch {
+    pub fn on(self) -> bool {
+        self != Latch::Off
+    }
+}
+
+/// One key on the layout: what it does normally and with Fn, and its width in key units.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Slot {
+    pub base: Key,
+    pub fn_key: Option<Key>,
+    pub width: f32,
+}
+
+const fn c(ch: char) -> Slot {
+    Slot { base: Key::Char(ch), fn_key: None, width: 1.0 }
+}
+
+const fn cf(ch: char, f: Key) -> Slot {
+    Slot { base: Key::Char(ch), fn_key: Some(f), width: 1.0 }
+}
+
+const fn named(n: Named, width: f32) -> Slot {
+    Slot { base: Key::Named(n), fn_key: None, width }
+}
+
+const fn modifier(m: Modifier, width: f32) -> Slot {
+    Slot { base: Key::Mod(m), fn_key: None, width }
+}
+
+const fn f(n: u8) -> Key {
+    Key::Named(Named::F(n))
+}
+
+const fn n(k: Named) -> Key {
+    Key::Named(k)
+}
+
+/// The layout, 13 units per row. Fn: F1-F12 on the digit row, Delete on Backspace, and a navigation
+/// cluster under the right hand (arrows on i/j/k/l, Home/End beside Up, PgUp/PgDn on y/h, Insert on p).
+pub const LAYOUT: &[&[Slot]] = &[
+    &[
+        cf('1', f(1)),
+        cf('2', f(2)),
+        cf('3', f(3)),
+        cf('4', f(4)),
+        cf('5', f(5)),
+        cf('6', f(6)),
+        cf('7', f(7)),
+        cf('8', f(8)),
+        cf('9', f(9)),
+        cf('0', f(10)),
+        cf('-', f(11)),
+        cf('=', f(12)),
+        Slot { base: n(Named::Backspace), fn_key: Some(n(Named::Delete)), width: 1.0 },
+    ],
+    &[
+        named(Named::Tab, 1.0),
+        c('q'),
+        c('w'),
+        c('e'),
+        c('r'),
+        c('t'),
+        cf('y', n(Named::PageUp)),
+        cf('u', n(Named::Home)),
+        cf('i', n(Named::Up)),
+        cf('o', n(Named::End)),
+        cf('p', n(Named::Insert)),
+        c('['),
+        c(']'),
+    ],
+    &[
+        named(Named::Esc, 1.0),
+        c('a'),
+        c('s'),
+        c('d'),
+        c('f'),
+        c('g'),
+        cf('h', n(Named::PageDown)),
+        cf('j', n(Named::Left)),
+        cf('k', n(Named::Down)),
+        cf('l', n(Named::Right)),
+        c(';'),
+        c('\''),
+        named(Named::Enter, 1.0),
+    ],
+    &[
+        modifier(Modifier::Shift, 1.5),
+        c('z'),
+        c('x'),
+        c('c'),
+        c('v'),
+        c('b'),
+        c('n'),
+        c('m'),
+        c(','),
+        c('.'),
+        c('/'),
+        modifier(Modifier::Shift, 1.5),
+    ],
+    &[
+        modifier(Modifier::Fn, 1.5),
+        modifier(Modifier::Ctrl, 1.5),
+        modifier(Modifier::Alt, 1.5),
+        c('`'),
+        Slot { base: Key::Char(' '), fn_key: None, width: 6.5 },
+        c('\\'),
+    ],
+];
+
+/// A key's place on the layout: its stable id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct KeyPos {
+    pub row: u8,
+    pub col: u8,
+}
+
+pub fn slot(pos: KeyPos) -> Option<&'static Slot> {
+    LAYOUT.get(usize::from(pos.row))?.get(usize::from(pos.col))
+}
+
+/// The first position of `key` on the base layer (for tests and the pad's default focus).
+pub fn find(key: Key) -> Option<KeyPos> {
+    LAYOUT.iter().enumerate().find_map(|(row, keys)| {
+        let col = keys.iter().position(|s| s.base == key)?;
+        Some(KeyPos { row: u8::try_from(row).ok()?, col: u8::try_from(col).ok()? })
+    })
+}
+
+/// The US-layout character Shift gives for `c`.
+pub fn shifted(c: char) -> char {
+    match c {
+        'a'..='z' => c.to_ascii_uppercase(),
+        '1' => '!',
+        '2' => '@',
+        '3' => '#',
+        '4' => '$',
+        '5' => '%',
+        '6' => '^',
+        '7' => '&',
+        '8' => '*',
+        '9' => '(',
+        '0' => ')',
+        '-' => '_',
+        '=' => '+',
+        '[' => '{',
+        ']' => '}',
+        '\\' => '|',
+        ';' => ':',
+        '\'' => '"',
+        ',' => '<',
+        '.' => '>',
+        '/' => '?',
+        '`' => '~',
+        other => other,
+    }
+}
+
+/// A key press to send to the focused app, with the modifiers held for it. `Char` stays unshifted; the
+/// receiver sends Shift as a modifier, as a real keyboard does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Stroke {
+    pub key: Key,
+    pub shift: bool,
+    pub ctrl: bool,
+    pub alt: bool,
+}
+
+#[derive(Debug, Default)]
+pub struct Keyboard {
+    pub shift: Latch,
+    pub ctrl: Latch,
+    pub alt: Latch,
+    pub fn_layer: Latch,
+    /// What was typed lately, shown above the keys.
+    pub echo: String,
+}
+
+impl Keyboard {
+    pub fn latch(&self, m: Modifier) -> Latch {
+        match m {
+            Modifier::Shift => self.shift,
+            Modifier::Ctrl => self.ctrl,
+            Modifier::Alt => self.alt,
+            Modifier::Fn => self.fn_layer,
+        }
+    }
+
+    fn latch_mut(&mut self, m: Modifier) -> &mut Latch {
+        match m {
+            Modifier::Shift => &mut self.shift,
+            Modifier::Ctrl => &mut self.ctrl,
+            Modifier::Alt => &mut self.alt,
+            Modifier::Fn => &mut self.fn_layer,
+        }
+    }
+
+    /// What the key at `pos` does now (its Fn function while Fn is on).
+    pub fn effective(&self, pos: KeyPos) -> Option<Key> {
+        let slot = slot(pos)?;
+        Some(match (self.fn_layer.on(), slot.fn_key) {
+            (true, Some(fn_key)) => fn_key,
+            _ => slot.base,
+        })
+    }
+
+    /// A tap (`long` = false) or long press on the key at `pos`; returns the stroke to send, if any.
+    pub fn press(&mut self, pos: KeyPos, long: bool) -> Option<Stroke> {
+        match self.effective(pos)? {
+            Key::Mod(m) => {
+                let latch = self.latch_mut(m);
+                *latch = match (*latch, long) {
+                    (Latch::Locked, _) => Latch::Off,
+                    (_, true) => Latch::Locked,
+                    (Latch::Off, false) => Latch::Once,
+                    (Latch::Once, false) => Latch::Off,
+                };
+                None
+            }
+            key => {
+                let stroke = Stroke { key, shift: self.shift.on(), ctrl: self.ctrl.on(), alt: self.alt.on() };
+                self.echo_stroke(stroke);
+                for m in Modifier::ALL {
+                    let latch = self.latch_mut(m);
+                    if *latch == Latch::Once {
+                        *latch = Latch::Off;
+                    }
+                }
+                Some(stroke)
+            }
+        }
+    }
+
+    fn echo_stroke(&mut self, s: Stroke) {
+        const ECHO_MAX: usize = 80;
+        match s.key {
+            Key::Char(c) => {
+                let c = if s.shift { shifted(c) } else { c };
+                match (s.ctrl, s.alt) {
+                    (false, false) => self.echo.push(c),
+                    (ctrl, alt) => {
+                        let prefix = format!("{}{}", if ctrl { "C-" } else { "" }, if alt { "M-" } else { "" });
+                        self.echo.push_str(&format!("<{prefix}{c}>"));
+                    }
+                }
+            }
+            Key::Named(Named::Backspace) => {
+                if let Some(last) = self.echo.pop()
+                    && last == '>'
+                {
+                    // Remove a whole <C-x> chord, not just its bracket.
+                    if let Some(start) = self.echo.rfind('<') {
+                        self.echo.truncate(start);
+                    }
+                }
+            }
+            Key::Named(Named::Enter) => self.echo.clear(),
+            Key::Named(_) | Key::Mod(_) => {}
+        }
+        while self.echo.len() > ECHO_MAX {
+            self.echo.remove(0);
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
+mod tests {
+    use super::*;
+
+    fn pos(key: Key) -> KeyPos {
+        find(key).unwrap()
+    }
+
+    fn tap(kb: &mut Keyboard, key: Key) -> Option<Stroke> {
+        kb.press(pos(key), false)
+    }
+
+    #[test]
+    fn every_row_is_thirteen_units() {
+        for row in LAYOUT {
+            assert_eq!(row.iter().map(|s| s.width).sum::<f32>(), 13.0);
+        }
+    }
+
+    #[test]
+    fn all_printable_ascii_is_reachable() {
+        let mut typed = std::collections::HashSet::new();
+        for row in LAYOUT {
+            for slot in *row {
+                if let Key::Char(c) = slot.base {
+                    typed.insert(c);
+                    typed.insert(shifted(c));
+                }
+            }
+        }
+        for c in ' '..='~' {
+            assert!(typed.contains(&c), "{c:?} missing");
+        }
+    }
+
+    #[test]
+    fn shift_once_then_off_and_locked_stays() {
+        let mut kb = Keyboard::default();
+        tap(&mut kb, Key::Mod(Modifier::Shift));
+        assert!(tap(&mut kb, Key::Char('1')).unwrap().shift);
+        assert!(!tap(&mut kb, Key::Char('1')).unwrap().shift);
+        kb.press(pos(Key::Mod(Modifier::Shift)), true);
+        tap(&mut kb, Key::Char('a'));
+        assert_eq!(kb.shift, Latch::Locked);
+        assert_eq!(kb.echo, "!1A");
+    }
+
+    #[test]
+    fn fn_turns_ijkl_into_arrows_and_backspace_into_delete() {
+        let mut kb = Keyboard::default();
+        tap(&mut kb, Key::Mod(Modifier::Fn));
+        assert_eq!(tap(&mut kb, Key::Char('i')).unwrap().key, Key::Named(Named::Up));
+        assert_eq!(tap(&mut kb, Key::Char('i')).unwrap().key, Key::Char('i'));
+        kb.press(pos(Key::Mod(Modifier::Fn)), true);
+        assert_eq!(tap(&mut kb, Key::Named(Named::Backspace)).unwrap().key, Key::Named(Named::Delete));
+        assert_eq!(tap(&mut kb, Key::Char('1')).unwrap().key, Key::Named(Named::F(1)));
+    }
+
+    #[test]
+    fn modifiers_combine_for_one_stroke() {
+        let mut kb = Keyboard::default();
+        tap(&mut kb, Key::Mod(Modifier::Ctrl));
+        tap(&mut kb, Key::Mod(Modifier::Alt));
+        let s = tap(&mut kb, Key::Char('t')).unwrap();
+        assert!(s.ctrl && s.alt && !s.shift);
+        assert_eq!(kb.echo, "<C-M-t>");
+        tap(&mut kb, Key::Named(Named::Backspace));
+        assert_eq!(kb.echo, "");
+    }
+
+    #[test]
+    fn a_locked_modifier_is_released_by_a_tap() {
+        let mut kb = Keyboard::default();
+        kb.press(pos(Key::Mod(Modifier::Ctrl)), true);
+        tap(&mut kb, Key::Mod(Modifier::Ctrl));
+        assert_eq!(kb.ctrl, Latch::Off);
+    }
+}

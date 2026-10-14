@@ -12,6 +12,7 @@ pub mod nav;
 mod views;
 
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState, FrameCallbackData},
@@ -55,6 +56,9 @@ use nav::{Dir, NavTarget};
 use views::Target;
 
 pub type Error = Box<dyn std::error::Error>;
+
+/// A press held at least this long is a long press (locks a keyboard modifier).
+const LONG_PRESS: Duration = Duration::from_millis(450);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
@@ -113,6 +117,7 @@ pub fn run(
         pointer: None,
         touch: None,
         touches: HashMap::new(),
+        mouse_press: None,
         on_effect: Box::new(on_effect),
         exit: false,
     };
@@ -294,6 +299,12 @@ impl View {
     }
 }
 
+struct Press {
+    surface: WlSurface,
+    position: (f64, f64),
+    at: Instant,
+}
+
 struct App {
     registry_state: RegistryState,
     seat_state: SeatState,
@@ -308,8 +319,9 @@ struct App {
     keyboard: Option<wl_keyboard::WlKeyboard>,
     pointer: Option<wl_pointer::WlPointer>,
     touch: Option<wl_touch::WlTouch>,
-    /// Touch points that are down: where each started.
-    touches: HashMap<i32, (WlSurface, (f64, f64))>,
+    /// Touch points that are down, and the mouse button: where and when each started.
+    touches: HashMap<i32, Press>,
+    mouse_press: Option<Press>,
     on_effect: Box<dyn FnMut(&Effect)>,
     exit: bool,
 }
@@ -355,13 +367,16 @@ impl App {
         }
     }
 
-    /// A tap or click: activate what the last frame drew there.
-    fn tap(&mut self, surface: &WlSurface, (x, y): (f64, f64)) {
-        let id = self.view_mut(surface).and_then(|v| {
+    /// A tap or click, on release: activate what the last frame drew where it started; a long one is a
+    /// long press.
+    fn release(&mut self, press: Press) {
+        let (x, y) = press.position;
+        let id = self.view_mut(&press.surface).and_then(|v| {
             v.targets.iter().find(|t| t.rect.contains(x as f32, y as f32)).map(|t| t.id.clone())
         });
         if let Some(id) = id {
-            self.handle(Event::Activate(id));
+            let long = press.at.elapsed() >= LONG_PRESS;
+            self.handle(if long { Event::LongPress(id) } else { Event::Activate(id) });
         }
     }
 
@@ -564,8 +579,17 @@ impl KeyboardHandler for App {
 impl PointerHandler for App {
     fn pointer_frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_pointer::WlPointer, events: &[PointerEvent]) {
         for event in events {
-            if let PointerEventKind::Press { .. } = event.kind {
-                self.tap(&event.surface, event.position);
+            match event.kind {
+                PointerEventKind::Press { .. } => {
+                    self.mouse_press =
+                        Some(Press { surface: event.surface.clone(), position: event.position, at: Instant::now() });
+                }
+                PointerEventKind::Release { .. } => {
+                    if let Some(press) = self.mouse_press.take() {
+                        self.release(press);
+                    }
+                }
+                _ => {}
             }
         }
     }
@@ -583,12 +607,12 @@ impl TouchHandler for App {
         id: i32,
         position: (f64, f64),
     ) {
-        self.touches.insert(id, (surface, position));
+        self.touches.insert(id, Press { surface, position, at: Instant::now() });
     }
 
     fn up(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, _: u32, _: u32, id: i32) {
-        if let Some((surface, position)) = self.touches.remove(&id) {
-            self.tap(&surface, position);
+        if let Some(press) = self.touches.remove(&id) {
+            self.release(press);
         }
     }
 

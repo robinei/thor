@@ -29,7 +29,10 @@ No panics by construction: `unwrap`, `expect`, `panic!` and slice indexing are d
     cargo clippy --workspace --all-targets
 
 Keys stand in for the pad: arrows move focus (across both screens, as if the bottom one were below the
-top one), Enter or Space is A, Escape quits. Clicks and touches tap. On the Thor (sway), the bottom view
+top one), Enter or Space is A, Escape quits. Clicks and touches act on release; held 450 ms or more
+they are a long press. The keyboard mode is a PC layout (US) with an Fn layer shown as small corner labels
+(F1-F12, Del, arrows on i/j/k/l, Home/End, PgUp/PgDn, Ins): Shift, Ctrl, Alt and Fn apply to the next
+key on a tap and lock on a long press. On the Thor (sway), the bottom view
 is a layer-shell surface on output `DSI-1` (`SYSPROG_BOTTOM_OUTPUT` to change it).
 
 Licence: MIT.

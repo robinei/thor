@@ -2,7 +2,11 @@
 //! world must do comes back as [`Effect`]s. The UI and the policy threads only read the state and send
 //! events, so all of this is unit-testable.
 
+pub mod keyboard;
+
 use std::collections::HashMap;
+
+use keyboard::{KeyPos, Keyboard, Stroke};
 
 pub use sysprog_library::Game;
 
@@ -52,45 +56,6 @@ impl Power {
     }
 }
 
-/// On-screen keyboard keys (ASCII only). `Char` holds the unshifted character; the layer and shift state
-/// decide what it types.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Key {
-    Char(char),
-    Shift,
-    /// Switches between letters and symbols.
-    Layer,
-    Backspace,
-    Enter,
-    Tab,
-    Esc,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum KeyLayer {
-    #[default]
-    Letters,
-    Symbols,
-}
-
-/// Keys that type no character.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Special {
-    Backspace,
-    Enter,
-    Tab,
-    Esc,
-}
-
-#[derive(Debug, Default)]
-pub struct Keyboard {
-    pub layer: KeyLayer,
-    /// One-shot shift: the next letter is upper case.
-    pub shift: bool,
-    /// What was typed lately, shown above the keys (the last line only).
-    pub echo: String,
-}
-
 /// Stable ids of everything that can be focused or tapped, on either screen. Focus is kept by id, so it
 /// survives redraws and layout changes.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -99,7 +64,8 @@ pub enum Id {
     Mode(Mode),
     Power(Power),
     Launch,
-    Key(Key),
+    /// An on-screen keyboard key, by position.
+    Key(KeyPos),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -108,6 +74,8 @@ pub enum Event {
     Tick { unix_secs: u64 },
     /// Tap, click, or the pad's A on a focused item.
     Activate(Id),
+    /// A press held longer than a tap (locks a keyboard modifier; otherwise as `Activate`).
+    LongPress(Id),
     /// The pad moved focus (the UI finds the target, since only it knows the layout).
     Focus(Id),
     Quit,
@@ -117,9 +85,8 @@ pub enum Event {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Effect {
     Launch { game: String, power: Power },
-    /// Type one character into the focused app (virtual keyboard).
-    Type(char),
-    Press(Special),
+    /// A key press for the focused app (virtual keyboard).
+    Key(Stroke),
     Quit,
 }
 
@@ -180,13 +147,17 @@ impl State {
             }
             Event::Activate(id) => {
                 self.focus = Some(id.clone());
-                self.activate(id)
+                self.activate(id, false)
+            }
+            Event::LongPress(id) => {
+                self.focus = Some(id.clone());
+                self.activate(id, true)
             }
             Event::Quit => (Dirty::NONE, vec![Effect::Quit]),
         }
     }
 
-    fn activate(&mut self, id: Id) -> (Dirty, Vec<Effect>) {
+    fn activate(&mut self, id: Id, long: bool) -> (Dirty, Vec<Effect>) {
         match id {
             Id::Game(game) => {
                 // Activating the selected game again launches it, as A on a list entry does in shelf.
@@ -211,47 +182,11 @@ impl State {
                 Some(game) => (Dirty::BOTH, vec![self.launch_effect(game)]),
                 None => (Dirty::BOTH, vec![]),
             },
-            Id::Key(key) => (Dirty::BOTTOM, self.press(key)),
+            Id::Key(pos) => {
+                let effects = self.keyboard.press(pos, long).map(Effect::Key).into_iter().collect();
+                (Dirty::BOTTOM, effects)
+            }
         }
-    }
-
-    fn press(&mut self, key: Key) -> Vec<Effect> {
-        const ECHO_MAX: usize = 80;
-        let kb = &mut self.keyboard;
-        let effect = match key {
-            Key::Char(c) => {
-                let c = if kb.shift { c.to_ascii_uppercase() } else { c };
-                kb.shift = false;
-                kb.echo.push(c);
-                if kb.echo.len() > ECHO_MAX {
-                    kb.echo.remove(0);
-                }
-                Effect::Type(c)
-            }
-            Key::Shift => {
-                kb.shift = !kb.shift;
-                return vec![];
-            }
-            Key::Layer => {
-                kb.layer = match kb.layer {
-                    KeyLayer::Letters => KeyLayer::Symbols,
-                    KeyLayer::Symbols => KeyLayer::Letters,
-                };
-                kb.shift = false;
-                return vec![];
-            }
-            Key::Backspace => {
-                kb.echo.pop();
-                Effect::Press(Special::Backspace)
-            }
-            Key::Enter => {
-                kb.echo.clear();
-                Effect::Press(Special::Enter)
-            }
-            Key::Tab => Effect::Press(Special::Tab),
-            Key::Esc => Effect::Press(Special::Esc),
-        };
-        vec![effect]
     }
 
     fn launch_effect(&self, game: String) -> Effect {
@@ -303,40 +238,6 @@ mod tests {
         assert_eq!(s.mode, Mode::Keyboard);
         s.apply(Event::Activate(Id::Mode(Mode::Keyboard)));
         assert_eq!(s.mode, Mode::Follow);
-    }
-
-    #[test]
-    fn shift_is_one_shot() {
-        let mut s = state();
-        s.apply(Event::Activate(Id::Key(Key::Shift)));
-        let (_, fx) = s.apply(Event::Activate(Id::Key(Key::Char('h'))));
-        assert_eq!(fx, vec![Effect::Type('H')]);
-        let (_, fx) = s.apply(Event::Activate(Id::Key(Key::Char('i'))));
-        assert_eq!(fx, vec![Effect::Type('i')]);
-        assert_eq!(s.keyboard.echo, "Hi");
-    }
-
-    #[test]
-    fn layer_toggles_and_clears_shift() {
-        let mut s = state();
-        s.apply(Event::Activate(Id::Key(Key::Shift)));
-        s.apply(Event::Activate(Id::Key(Key::Layer)));
-        assert_eq!(s.keyboard.layer, KeyLayer::Symbols);
-        assert!(!s.keyboard.shift);
-        s.apply(Event::Activate(Id::Key(Key::Layer)));
-        assert_eq!(s.keyboard.layer, KeyLayer::Letters);
-    }
-
-    #[test]
-    fn backspace_and_enter_edit_the_echo() {
-        let mut s = state();
-        s.apply(Event::Activate(Id::Key(Key::Char('a'))));
-        s.apply(Event::Activate(Id::Key(Key::Char('b'))));
-        let (dirty, fx) = s.apply(Event::Activate(Id::Key(Key::Backspace)));
-        assert_eq!((dirty, fx), (Dirty::BOTTOM, vec![Effect::Press(Special::Backspace)]));
-        assert_eq!(s.keyboard.echo, "a");
-        s.apply(Event::Activate(Id::Key(Key::Enter)));
-        assert_eq!(s.keyboard.echo, "");
     }
 
     #[test]
