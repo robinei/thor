@@ -98,7 +98,7 @@ impl Frame<'_, '_> {
             }
         }
         content(self.c);
-        if self.s.focus.as_ref() == Some(&id) {
+        if self.s.show_focus && self.s.focus.as_ref() == Some(&id) {
             self.c.outline(rect.inset(look.ring_inset), look.radius.max(6.0), 2.0, rgb(ACCENT));
         }
         self.targets.push(Target { rect, id });

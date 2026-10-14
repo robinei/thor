@@ -492,6 +492,9 @@ impl App {
         if self.presses.contains_key(&source) {
             return;
         }
+        if matches!(source, Source::Touch(_) | Source::Mouse) {
+            self.handle(Event::HideFocus);
+        }
         self.presses.insert(source, Press { id: id.clone(), held: false });
         self.handle(Event::Down(id));
         self.cancel_hold_timer();

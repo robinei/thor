@@ -91,8 +91,10 @@ pub enum Event {
     /// A finger, button or the pad's A went down on / up from a target: shown as pressed meanwhile.
     Down(Id),
     Up(Id),
-    /// The pad moved focus (the UI finds the target, since only it knows the layout).
+    /// The pad moved focus (the UI finds the target, since only it knows the layout). Shows the focus.
     Focus(Id),
+    /// Touch or mouse input began: the focus ring is hidden until the pad moves focus again.
+    HideFocus,
     Quit,
 }
 
@@ -132,6 +134,8 @@ pub struct State {
     pub power: HashMap<Arc<str>, Power>,
     pub mode: Mode,
     pub focus: Option<Id>,
+    /// The focus ring is shown only while navigating with the pad.
+    pub show_focus: bool,
     pub unix_secs: u64,
     pub keyboard: Keyboard,
     /// The target being pressed (drawn lit), if any.
@@ -190,7 +194,12 @@ impl State {
             }
             Event::Focus(id) => {
                 self.focus = Some(id);
+                self.show_focus = true;
                 (Dirty::BOTH, vec![])
+            }
+            Event::HideFocus => {
+                let was = std::mem::replace(&mut self.show_focus, false);
+                (if was { Dirty::BOTH } else { Dirty::NONE }, vec![])
             }
             Event::Activate(id) => {
                 self.focus = Some(id.clone());
@@ -366,6 +375,17 @@ mod tests {
         assert_eq!(s.mode, Mode::Keyboard);
         let (_, fx) = s.apply(Event::Activate(Id::PadMouse));
         assert_eq!(fx, vec![Effect::PadMouse(false)]);
+    }
+
+    #[test]
+    fn the_focus_ring_shows_for_the_pad_only() {
+        let mut s = state();
+        assert!(!s.show_focus);
+        s.apply(Event::Focus(Id::Launch));
+        assert!(s.show_focus);
+        assert_eq!(s.apply(Event::HideFocus).0, Dirty::BOTH);
+        assert!(!s.show_focus);
+        assert_eq!(s.apply(Event::HideFocus).0, Dirty::NONE);
     }
 
     #[test]

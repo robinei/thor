@@ -293,7 +293,7 @@ fn run(config: &Config, layout: &Mutex<TouchLayout>, commands: &Receiver<Command
                 Out::Forward { kind, code, value } => batch.push(InputEvent::new(kind, code, value)),
                 Out::Tap { id, down: true } => {
                     log::debug!("touchpad mode: tap on {id:?}");
-                    if !sink.send(Event::Down(id)) {
+                    if !(sink.send(Event::HideFocus) && sink.send(Event::Down(id))) {
                         return Ok(());
                     }
                 }
