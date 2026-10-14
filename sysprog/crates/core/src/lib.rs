@@ -87,6 +87,8 @@ pub enum Event {
     Status(Status),
     /// CPU, GPU, memory, temperatures, power (policy thread, once a second).
     Metrics(metrics::Metrics),
+    /// A running game's frame rate and frame time in ms (MangoHud), or none.
+    Frames(Option<(f32, f32)>),
     /// Tap, click, or the pad's A on a focused item.
     Activate(Id),
     /// A press held longer than a tap (locks a keyboard modifier; otherwise as `Activate`).
@@ -197,10 +199,18 @@ impl State {
                 self.status = status;
                 (if changed { Dirty::BOTTOM } else { Dirty::NONE }, vec![])
             }
-            Event::Metrics(m) => {
+            Event::Metrics(mut m) => {
+                // The frame rate comes separately (Frames); keep it.
+                m.fps = self.metrics.fps;
+                m.frame_ms = self.metrics.frame_ms;
                 self.metrics = m;
                 self.history.push(&m);
                 // Only the sysinfo mode shows them.
+                (if self.mode == Mode::Sysinfo { Dirty::BOTTOM } else { Dirty::NONE }, vec![])
+            }
+            Event::Frames(frames) => {
+                self.metrics.fps = frames.map(|f| f.0);
+                self.metrics.frame_ms = frames.map(|f| f.1);
                 (if self.mode == Mode::Sysinfo { Dirty::BOTTOM } else { Dirty::NONE }, vec![])
             }
             Event::Focus(id) => {

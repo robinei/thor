@@ -2,6 +2,7 @@
 //! input loop, at raised priority), logind inhibitor locks, sway IPC, sysfs (power, backlight, charger).
 //! Nothing here waits for the UI.
 
+pub mod frames;
 pub mod keyboard;
 pub mod metrics;
 pub mod pad;

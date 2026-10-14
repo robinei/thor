@@ -64,6 +64,13 @@ fn main() -> ExitCode {
         }
     }
     let gamepad = std::env::var("SYSPROG_GAMEPAD").ok();
+    // `--mangohud-env`: print the environment that makes a game report its frame rate here.
+    if std::env::args().nth(1).as_deref() == Some("--mangohud-env") {
+        for (k, v) in sysprog_policy::frames::mangohud_env(&sysprog_policy::frames::default_dir()) {
+            println!("{k}={v}");
+        }
+        return ExitCode::SUCCESS;
+    }
     // The on-screen keyboard types through a virtual keyboard (US positions).
     let mut keyboard = virtual_keyboard::VirtualKeyboard::new().map_err(|e| log::error!("virtual keyboard: {e}")).ok();
 
@@ -82,6 +89,11 @@ fn main() -> ExitCode {
             let metrics = sender.clone();
             if let Err(e) = sysprog_policy::metrics::spawn(move |event| metrics.send(event)) {
                 log::error!("metrics thread: {e}");
+            }
+            let frames = sender.clone();
+            let dir = sysprog_policy::frames::default_dir();
+            if let Err(e) = sysprog_policy::frames::spawn(dir, move |event| frames.send(event)) {
+                log::error!("frames thread: {e}");
             }
             if let Err(e) = touchpad::spawn(touchpad, layout, touchpad_rx, move |event| sender.send(event)) {
                 log::error!("touchpad thread: {e}");

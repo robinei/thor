@@ -50,6 +50,11 @@ desktop with another layout, letters, digits and named keys come out right but p
 layout. To type into other apps on a desktop, run with `SYSPROG_BOTTOM_PANEL=1`: the bottom view is then a
 panel in the bottom right corner that never takes the keyboard focus (as on the device), not a window.
 
+**Sysinfo mode** shows CPU, GPU, memory, temperatures, power, per-core load, and a running game's FPS and
+frame time from MangoHud: games started with `sysprog --mangohud-env` in their environment log (overlay
+invisible) to a folder in RAM that the system program follows. For a Steam game, as launch options:
+`env $(sysprog --mangohud-env) %command%`; by hand: `env $(sysprog --mangohud-env) vkcube`.
+
 **The controller** (any Xbox-style pad; `SYSPROG_GAMEPAD`: path or part of its name) is grabbed for good;
 games see a virtual Xbox 360 pad that is always there. The **pad mouse** toggle (mouse icon in the bar)
 routes the controller to a virtual mouse instead (left stick pointer, right stick scroll, A/RT left
