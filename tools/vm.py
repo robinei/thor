@@ -161,7 +161,7 @@ BASH_PROFILE = """\
 def service():
     return f"""\
 [Unit]
-Description=Clamshell, the system program
+Description=ClamShell, the system program
 After=graphical-session.target
 
 [Service]

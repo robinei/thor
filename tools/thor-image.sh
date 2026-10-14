@@ -112,7 +112,7 @@ exec systemctl --user import-environment WAYLAND_DISPLAY SWAYSOCK XDG_CURRENT_DE
 CONFIG
 cat > "$H/.config/systemd/user/clamshell.service" <<EOF
 [Unit]
-Description=Clamshell, the system program
+Description=ClamShell, the system program
 After=graphical-session.target
 
 [Service]

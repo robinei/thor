@@ -1,10 +1,10 @@
 # thor (working name)
 
-Linux on the AYN Thor: clamshell, a system program for its two screens, its pad and its power, plus the setup around
+Linux on the AYN Thor: ClamShell, a system program for its two screens, its pad and its power, plus the setup around
 it (Arch Linux ARM, packages built on the device). Planning lives in the GPD repo's `docs/plans.md` for now
 (`~/Code/gpdwin`); it moves here once the first parts run.
 
-## clamshell
+## ClamShell
 
 `clamshell/` is the system program (named for the device's shape, and for being its shell): one process with one in-memory state for shelf (the game list on the top
 screen), the second screen (bar, modes, the selected or running game's settings), and later the input
