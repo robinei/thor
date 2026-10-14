@@ -73,8 +73,8 @@ Known issues and risks, to check first:
 1. Our ramdisk is meant to be unpacked over the kernel's built-in initramfs, so our `/init` wins. If not,
    ROCKNIX's init runs, looks for its own `SYSTEM`, and the boot fails (ABL path only; the UEFI path
    passes our initramfs as the only one... unless the built-in one still unpacks first: same question).
-2. Early storage: if the SD controller's driver (sdhci-msm) is a module, our initramfs must carry it
-   (it has all block drivers; unchecked that this is among them).
+2. Early storage: settled. sdhci-msm is built into ROCKNIX's kernel (its messages are in the Image), as
+   are ext4 and f2fs.
 3. Audio: ROCKNIX's UCM profiles are copied over `alsa-ucm-conf`'s, so an update of that package undoes
    them; under UEFI the card is named `ayn-AYNOdin2` (ROCKNIX has a profile for that name too).
 4. Rotation: the bottom panel gets fbcon's angle as well; unverified that it wants the same. Touch may
@@ -91,7 +91,7 @@ Known issues and risks, to check first:
 ## Before the device arrives
 
 - [x] Build the image and check it (done 2026-10-14; see above).
-- [ ] Settle 2: is sdhci-msm built into ROCKNIX's kernel (its config, or `modules.builtin`)?
+- [x] Settle 2: sdhci-msm is built in (checked 2026-10-14, strings in the Image; f2fs too).
 - [ ] Rebuild nearer the time: a newer ROCKNIX release, current packages.
 - [ ] Find out what the stock Linux boot mode is (U-Boot? AYN's own ABL?), what it reads (`/KERNEL`, or
       `extlinux.conf` and files), and from which firmware version it ships; ask on the Discord.
