@@ -26,6 +26,15 @@ headless sway with the program inside, a test library and test apps, drives it t
 and systemd's units, and cleans up after itself; about a minute, nothing shows on the desktop.
 `SYSPROG_STEAM=off` leaves Steam's games out.
 
+**A virtual Thor** (`tools/vm.py`, Python, standard library only): a QEMU/KVM machine with the device's
+session: two screens at the Thor's sizes (sway on real DRM outputs, the second forced on through the
+kernel's `video=` option), the host mouse as an absolute pointer per screen window, a multitouch screen on
+the bottom one, a fake battery (`test_power`) and Wi-Fi radios (`mac80211_hwsim`), uinput for our virtual
+devices, and the system program as a user service started by sway, run from this repository (shared
+read-only: build on the host, `tools/vm.py restart`). `tools/vm.py image` (downloads Arch's cloud image),
+`run [--headless] [--pad VENDOR:PRODUCT]` (the first start provisions it with cloud-init, a few minutes),
+`ssh [command]`, `sync` (session files), `restart`, `reset`. No Thor GPU, cpufreq/devfreq or fan in it.
+
 **Run on a desktop** (any Wayland compositor with xdg-shell):
 
     cd sysprog
