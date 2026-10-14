@@ -2,6 +2,8 @@
 //! input loop, at raised priority), logind inhibitor locks, sway IPC, sysfs (power, backlight, charger).
 //! Nothing here waits for the UI.
 
+pub mod touchpad;
+
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 

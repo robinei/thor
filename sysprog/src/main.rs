@@ -2,9 +2,12 @@
 //! state (docs/plans.md in the GPD repo, "One system program").
 
 use std::process::ExitCode;
+use std::sync::{Arc, Mutex, mpsc};
 
 use sysprog_core::keyboard::{self, Key, KeyPos, Modifier};
-use sysprog_core::{Event, Id, Mode, State, Status};
+use sysprog_core::touch::TouchLayout;
+use sysprog_core::{Effect, Event, Id, Mode, State, Status};
+use sysprog_policy::touchpad;
 use sysprog_ui::{Config, Screen};
 
 fn main() -> ExitCode {
@@ -15,6 +18,12 @@ fn main() -> ExitCode {
         // The Thor's panels at half size: top 1920x1080 (landscape), bottom 1240x1080.
         top_size: (960, 540),
         bottom_size: (620, 540),
+        touch_layout: Arc::new(Mutex::new(TouchLayout::default())),
+    };
+    let touchpad = touchpad::Config {
+        device: std::env::var("SYSPROG_TOUCHSCREEN").ok(),
+        // The Thor's bottom panel: 1240 pixels across about 75 mm.
+        px_per_mm: 16.5,
     };
     let mut state = State::new(sysprog_library::demo_games());
 
@@ -26,6 +35,24 @@ fn main() -> ExitCode {
         return snapshot(&mut state, std::path::Path::new(dir));
     }
 
+    // Development: start in a mode (SYSPROG_START_MODE=touchpad|keyboard|launcher|sysinfo).
+    let (touchpad_tx, touchpad_rx) = mpsc::channel();
+    let start_mode = match std::env::var("SYSPROG_START_MODE").as_deref() {
+        Ok("touchpad") => Some(Mode::Touchpad),
+        Ok("keyboard") => Some(Mode::Keyboard),
+        Ok("launcher") => Some(Mode::Launcher),
+        Ok("sysinfo") => Some(Mode::Sysinfo),
+        _ => None,
+    };
+    if let Some(mode) = start_mode {
+        for effect in state.apply(Event::Activate(Id::Mode(mode))).1 {
+            if effect == Effect::Touchpad(true) {
+                let _ = touchpad_tx.send(touchpad::Command::On);
+            }
+        }
+    }
+    let layout = config.touch_layout.clone();
+
     let result = sysprog_ui::run(
         state,
         config,
@@ -34,11 +61,24 @@ fn main() -> ExitCode {
             if let Err(e) = sysprog_policy::spawn_clock(move |event| clock.send(event)) {
                 log::error!("clock thread: {e}");
             }
-            if let Err(e) = sysprog_policy::spawn_status(move |event| sender.send(event)) {
+            let status = sender.clone();
+            if let Err(e) = sysprog_policy::spawn_status(move |event| status.send(event)) {
                 log::error!("status thread: {e}");
             }
+            if let Err(e) = touchpad::spawn(touchpad, layout, touchpad_rx, move |event| sender.send(event)) {
+                log::error!("touchpad thread: {e}");
+            }
         },
-        |effect| log::info!("effect: {effect:?}"),
+        move |effect| match effect {
+            Effect::Touchpad(on) => {
+                log::info!("effect: {effect:?}");
+                let command = if *on { touchpad::Command::On } else { touchpad::Command::Off };
+                if touchpad_tx.send(command).is_err() {
+                    log::warn!("touchpad thread is gone");
+                }
+            }
+            other => log::info!("effect: {other:?}"),
+        },
     );
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -88,6 +128,8 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
             "keyboard-mods.png",
         ),
         (vec![key(Key::Mod(Modifier::Shift), true)], Screen::Bottom, bottom, "keyboard-caps.png"),
+        (vec![Event::Activate(Id::Mode(Mode::Touchpad))], Screen::Bottom, bottom, "touchpad.png"),
+        (vec![Event::Activate(Id::Mode(Mode::Keyboard))], Screen::Bottom, bottom, "keyboard-back.png"),
         (
             vec![
                 key(Key::Mod(Modifier::Shift), false),

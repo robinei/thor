@@ -3,6 +3,7 @@
 //! events, so all of this is unit-testable.
 
 pub mod keyboard;
+pub mod touch;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -99,6 +100,8 @@ pub enum Effect {
     Launch { game: Arc<str>, power: Power },
     /// A key press for the focused app (virtual keyboard).
     Key(Stroke),
+    /// Touchpad mode started (true) or ended: the input side grabs or releases the touchscreen.
+    Touchpad(bool),
     Quit,
 }
 
@@ -228,8 +231,15 @@ impl State {
             }
             Id::Mode(mode) => {
                 // Tapping the current mode's icon returns to follow (docs/plans.md, "Switching modes").
+                let before = self.mode;
                 self.mode = if self.mode == mode { Mode::Follow } else { mode };
-                (Dirty::BOTH, vec![])
+                let touchpad = |m: Mode| m == Mode::Touchpad;
+                let effects = if touchpad(before) != touchpad(self.mode) {
+                    vec![Effect::Touchpad(touchpad(self.mode))]
+                } else {
+                    vec![]
+                };
+                (Dirty::BOTH, effects)
             }
             Id::Power(power) => {
                 if let Some(game) = self.selected.clone() {
@@ -323,6 +333,17 @@ mod tests {
         let status = Status { battery: Some(50), ..Status::default() };
         assert_eq!(s.apply(Event::Status(status)).0, Dirty::BOTTOM);
         assert_eq!(s.apply(Event::Status(status)).0, Dirty::NONE);
+    }
+
+    #[test]
+    fn touchpad_mode_switches_the_touchscreen() {
+        let mut s = state();
+        let (_, fx) = s.apply(Event::Activate(Id::Mode(Mode::Touchpad)));
+        assert_eq!(fx, vec![Effect::Touchpad(true)]);
+        let (_, fx) = s.apply(Event::Activate(Id::Mode(Mode::Keyboard)));
+        assert_eq!(fx, vec![Effect::Touchpad(false)]);
+        let (_, fx) = s.apply(Event::Activate(Id::Mode(Mode::Keyboard)));
+        assert!(fx.is_empty());
     }
 
     #[test]

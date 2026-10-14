@@ -5,6 +5,8 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+evdev.workspace = true
+rustix.workspace = true
 sysprog-core.workspace = true
 log.workspace = true
 

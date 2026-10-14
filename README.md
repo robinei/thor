@@ -35,4 +35,12 @@ they are a long press. The keyboard mode is a PC layout (US) with an Fn layer sh
 key on a tap and lock on a long press. On the Thor (sway), the bottom view
 is a layer-shell surface on output `DSI-1` (`SYSPROG_BOTTOM_OUTPUT` to change it).
 
+**Touchpad mode** grabs the second screen's touchscreen (`SYSPROG_TOUCHSCREEN`: a /dev/input path or
+part of its name; default: the first direct-touch device) and forwards fingers to a virtual touchpad
+that sway's libinput handles like a laptop's; fingers that start on the bar stay taps on it. To try it
+on a desktop with a fake touchscreen (your pointer will move):
+
+    cargo run --release -p sysprog-policy --example fake_touchscreen &
+    SYSPROG_TOUCHSCREEN="sysprog fake touchscreen" SYSPROG_START_MODE=touchpad cargo run --release
+
 Licence: MIT.

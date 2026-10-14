@@ -12,6 +12,7 @@ pub mod nav;
 mod views;
 
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use smithay_client_toolkit::{
@@ -54,6 +55,7 @@ use smithay_client_toolkit::{
         slot::{Buffer, SlotPool},
     },
 };
+use sysprog_core::touch::{Region, TouchLayout};
 use sysprog_core::{Dirty, Effect, Event, Hold, Id, State};
 use tiny_skia::Pixmap;
 
@@ -80,6 +82,9 @@ pub struct Config {
     /// Logical sizes when shown as windows (on a desktop).
     pub top_size: (u32, u32),
     pub bottom_size: (u32, u32),
+    /// Where the touchpad area and the bar's targets are, for the touchpad mode's input side; updated
+    /// with every frame of the second screen.
+    pub touch_layout: Arc<Mutex<TouchLayout>>,
 }
 
 /// Sends events into the UI's event loop from other threads.
@@ -125,6 +130,7 @@ pub fn run(
         keyboard: None,
         pointer: None,
         touch: None,
+        touch_layout: config.touch_layout.clone(),
         presses: HashMap::new(),
         hold_timer: None,
         loop_handle: event_loop.handle(),
@@ -205,7 +211,9 @@ pub fn snapshot(state: &State, screen: Screen, size: (u32, u32), scale: u32, pat
     let mut targets = Vec::new();
     match screen {
         Screen::Top => views::top(&mut canvas, state, w, h, &mut targets),
-        Screen::Bottom => views::bottom(&mut canvas, state, w, h, &mut Scratch::default(), &mut targets),
+        Screen::Bottom => {
+            views::bottom(&mut canvas, state, w, h, &mut Scratch::default(), &mut targets);
+        }
     }
     pixmap.save_png(path)?;
     Ok(())
@@ -303,6 +311,7 @@ impl View {
         pool: &mut SlotPool,
         fonts: &mut DrawCache,
         state: &State,
+        touch: &Mutex<TouchLayout>,
         qh: &QueueHandle<App>,
     ) -> Result<(), Error> {
         let scale = self.scale.max(1);
@@ -316,13 +325,14 @@ impl View {
             return Err(format!("can't allocate a {w}x{h} pixmap").into());
         };
         let ((cw, ch), offset) = inset((w, h), scale_u, orbit(state.unix_secs));
+        let mut body = None;
         {
             let mut canvas = draw::Canvas::new(pixmap, scale as f32, fonts).with_offset(offset);
             let (w, h) = (cw, ch);
             match self.screen {
                 Screen::Top => views::top(&mut canvas, state, w, h, &mut self.targets),
                 Screen::Bottom => {
-                    views::bottom(&mut canvas, state, w, h, &mut self.scratch, &mut self.targets);
+                    body = Some(views::bottom(&mut canvas, state, w, h, &mut self.scratch, &mut self.targets));
                 }
             }
         }
@@ -331,6 +341,9 @@ impl View {
         for target in &mut self.targets {
             target.rect.x += sx;
             target.rect.y += sy;
+        }
+        if let Some(body) = body {
+            publish(touch, &self.targets, body, (sx, sy), scale as f32, (w as f32, h as f32));
         }
 
         let (wi, hi) = (i32::try_from(w)?, i32::try_from(h)?);
@@ -388,6 +401,21 @@ struct Press {
     held: bool,
 }
 
+/// Tells the touchpad mode's input side where things are, in screen pixels: the area below the bar is
+/// the touchpad; the bar's targets stay taps. No allocation once the region list has grown.
+fn publish(touch: &Mutex<TouchLayout>, targets: &[Target], body: Rect, (sx, sy): (f32, f32), scale: f32, screen: (f32, f32)) {
+    let Ok(mut layout) = touch.lock() else {
+        return;
+    };
+    layout.screen = screen;
+    layout.pad = ((body.x + sx) * scale, (body.y + sy) * scale, (body.x + sx + body.w) * scale, (body.y + sy + body.h) * scale);
+    layout.regions.clear();
+    for t in targets.iter().filter(|t| matches!(t.id, Id::Mode(_))) {
+        let r = t.rect;
+        layout.regions.push(Region { x0: r.x * scale, y0: r.y * scale, x1: (r.x + r.w) * scale, y1: (r.y + r.h) * scale, id: t.id.clone() });
+    }
+}
+
 struct App {
     registry_state: RegistryState,
     seat_state: SeatState,
@@ -402,6 +430,7 @@ struct App {
     keyboard: Option<wl_keyboard::WlKeyboard>,
     pointer: Option<wl_pointer::WlPointer>,
     touch: Option<wl_touch::WlTouch>,
+    touch_layout: Arc<Mutex<TouchLayout>>,
     presses: HashMap<Source, Press>,
     /// Fires when the latest press becomes a hold, then at the repeat rate for repeating keys.
     hold_timer: Option<(Source, RegistrationToken)>,
@@ -444,7 +473,7 @@ impl App {
             if !(view.configured && view.dirty && !view.frame_pending) {
                 continue;
             }
-            if let Err(e) = view.draw(&mut self.pool, &mut self.fonts, &self.state, &self.qh) {
+            if let Err(e) = view.draw(&mut self.pool, &mut self.fonts, &self.state, &self.touch_layout, &self.qh) {
                 log::warn!("drawing {:?}: {e}", view.screen);
                 view.dirty = false;
             }

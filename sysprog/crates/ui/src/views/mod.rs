@@ -12,6 +12,7 @@ mod bar;
 mod keyboard;
 mod settings;
 mod shelf;
+mod touchpad;
 
 use std::fmt::Write;
 
@@ -117,8 +118,8 @@ pub fn top(c: &mut Canvas, s: &State, w: f32, h: f32, targets: &mut Vec<Target>)
     shelf::draw(&mut Frame { c, s, targets }, w, h);
 }
 
-/// The second screen: the bar, then the current mode below it.
-pub fn bottom(c: &mut Canvas, s: &State, w: f32, h: f32, scratch: &mut Scratch, targets: &mut Vec<Target>) {
+/// The second screen: the bar, then the current mode below it. Returns the area below the bar.
+pub fn bottom(c: &mut Canvas, s: &State, w: f32, h: f32, scratch: &mut Scratch, targets: &mut Vec<Target>) -> Rect {
     c.fill(Rect::new(0.0, 0.0, w, h), rgb(BG));
     targets.clear();
     let f = &mut Frame { c, s, targets };
@@ -128,7 +129,8 @@ pub fn bottom(c: &mut Canvas, s: &State, w: f32, h: f32, scratch: &mut Scratch, 
         Mode::Follow => settings::draw(f, body),
         Mode::Keyboard => keyboard::draw(f, body),
         Mode::Launcher => label(f.c, body, body.h * 0.05, DIM, "Launcher: not built yet"),
-        Mode::Touchpad => label(f.c, body, body.h * 0.05, DIM, "Touchpad: not built yet"),
+        Mode::Touchpad => touchpad::draw(f, body),
         Mode::Sysinfo => label(f.c, body, body.h * 0.05, DIM, "Sysinfo: not built yet"),
     }
+    body
 }
