@@ -1,0 +1,18 @@
+[package]
+name = "clamshell-policy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+serde.workspace = true
+zbus.workspace = true
+evdev.workspace = true
+rustix.workspace = true
+clamshell-core.workspace = true
+clamshell-library.workspace = true
+log.workspace = true
+
+[lints]
+workspace = true

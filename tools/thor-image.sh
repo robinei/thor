@@ -85,7 +85,7 @@ arch-chroot "$ROOT" systemctl enable NetworkManager sshd > /dev/null
 say "the session (sway, the system program)"
 H=$ROOT/home/$USER_NAME
 mkdir -p "$H/.config/sway" "$H/.config/systemd/user" "$H/.local/bin"
-install -m 755 "$PROGRAM" "$H/.local/bin/sysprog"
+install -m 755 "$PROGRAM" "$H/.local/bin/clamshell"
 # The outputs are written at each session start, as ROCKNIX does (its autostart/common/111-sway-init): the
 # panels are natively portrait, and the kernel says how to turn them (fbcon's rotate, from the panel's
 # orientation in the device tree). Unverified: that the bottom panel wants the same angle as the top.
@@ -108,18 +108,18 @@ cat > "$H/.config/sway/config" <<'CONFIG'
 # The Thor: DSI-2 the main (top) screen, DSI-1 the second (bottom) screen (as ROCKNIX and Kettle have them).
 include ~/.config/sway/outputs
 default_border none
-exec systemctl --user import-environment WAYLAND_DISPLAY SWAYSOCK XDG_CURRENT_DESKTOP && systemctl --user restart sysprog.service
+exec systemctl --user import-environment WAYLAND_DISPLAY SWAYSOCK XDG_CURRENT_DESKTOP && systemctl --user restart clamshell.service
 CONFIG
-cat > "$H/.config/systemd/user/sysprog.service" <<EOF
+cat > "$H/.config/systemd/user/clamshell.service" <<EOF
 [Unit]
-Description=The system program
+Description=Clamshell, the system program
 After=graphical-session.target
 
 [Service]
-ExecStart=/home/$USER_NAME/.local/bin/sysprog
-Environment=SYSPROG_BOTTOM_OUTPUT=DSI-1
+ExecStart=/home/$USER_NAME/.local/bin/clamshell
+Environment=CLAMSHELL_BOTTOM_OUTPUT=DSI-1
 # Touchpad mode takes the bottom screen's touchscreen (the Thor has two).
-Environment=SYSPROG_TOUCHSCREEN=bottom_touchscreen
+Environment=CLAMSHELL_TOUCHSCREEN=bottom_touchscreen
 Restart=on-failure
 RestartSec=2
 EOF

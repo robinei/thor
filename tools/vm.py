@@ -69,13 +69,13 @@ class Arch:
             self.disk = self.state / "disk.img"
             self.ssh_port = 2223
             # Built in the machine, natively (the repository is read-only there).
-            self.program = f"/home/{USER}/target/release/sysprog"
+            self.program = f"/home/{USER}/target/release/clamshell"
         else:
             self.url = "https://geo.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-cloudimg.qcow2"
             self.base = self.state / "arch-cloudimg.qcow2"
             self.disk = self.state / "disk.qcow2"
             self.ssh_port = 2222
-            self.program = "/mnt/thor/sysprog/target/release/sysprog"
+            self.program = "/mnt/thor/clamshell/target/release/clamshell"
 
 
 A = Arch("x86_64")
@@ -149,7 +149,7 @@ input "1575:1:QEMU_QEMU_USB_Tablet" map_to_output Virtual-2
 input "1575:3:QEMU_Virtio_MultiTouch" map_to_output Virtual-2
 input type:touch map_to_output Virtual-2
 # The environment first, then the program (two execs would run at once).
-exec systemctl --user import-environment WAYLAND_DISPLAY SWAYSOCK XDG_CURRENT_DESKTOP && systemctl --user restart sysprog.service
+exec systemctl --user import-environment WAYLAND_DISPLAY SWAYSOCK XDG_CURRENT_DESKTOP && systemctl --user restart clamshell.service
 """
 
 BASH_PROFILE = """\
@@ -161,12 +161,12 @@ BASH_PROFILE = """\
 def service():
     return f"""\
 [Unit]
-Description=The system program
+Description=Clamshell, the system program
 After=graphical-session.target
 
 [Service]
 ExecStart={A.program}
-Environment=SYSPROG_BOTTOM_OUTPUT=Virtual-2
+Environment=CLAMSHELL_BOTTOM_OUTPUT=Virtual-2
 Restart=on-failure
 RestartSec=2
 """
@@ -176,7 +176,7 @@ def session_files():
     return [
         (f"/home/{USER}/.bash_profile", BASH_PROFILE),
         (f"/home/{USER}/.config/sway/config", SWAY_CONFIG),
-        (f"/home/{USER}/.config/systemd/user/sysprog.service", service()),
+        (f"/home/{USER}/.config/systemd/user/clamshell.service", service()),
     ]
 
 
@@ -435,7 +435,7 @@ def arm_firstboot_done():
 def mark_provisioned(qemu):
     """Once the machine answers ssh with its session running, the first start is done."""
     while qemu.poll() is None:
-        result = subprocess.run(ssh_args(["systemctl", "--user", "is-active", "graphical-session.target", "sysprog.service"], quiet=True),
+        result = subprocess.run(ssh_args(["systemctl", "--user", "is-active", "graphical-session.target", "clamshell.service"], quiet=True),
                                 capture_output=True, text=True)
         if result.returncode == 0 or "activating" in result.stdout or (A.arm and ssh_ok()):
             A.provisioned.touch()
@@ -464,10 +464,10 @@ def ssh(args):
 
 def build(_args):
     if not A.arm:
-        run(["cargo", "build", "--release"], cwd=REPO / "sysprog")
+        run(["cargo", "build", "--release"], cwd=REPO / "clamshell")
         return
     # Natively in the machine, out of the read-only repository into the user's own target dir.
-    run(ssh_args([f"cd /mnt/thor/sysprog && CARGO_TARGET_DIR=$HOME/target cargo build --release --locked"]))
+    run(ssh_args([f"cd /mnt/thor/clamshell && CARGO_TARGET_DIR=$HOME/target cargo build --release --locked"]))
 
 
 # --- an SD card image for the real Thor
@@ -514,8 +514,8 @@ def thor_image(args):
     inside = f"""set -e
 sudo mkdir -p /mnt/cache
 mountpoint -q /mnt/cache || sudo mount -t 9p -o trans=virtio,version=9p2000.L,ro cache /mnt/cache
-cd /mnt/thor/sysprog && CARGO_TARGET_DIR=$HOME/target cargo build --release --locked
-sudo bash /mnt/thor/tools/thor-image.sh /dev/vdb /mnt/cache/{target.relative_to(CACHE)} $HOME/target/release/sysprog '{ssh_key()}'
+cd /mnt/thor/clamshell && CARGO_TARGET_DIR=$HOME/target cargo build --release --locked
+sudo bash /mnt/thor/tools/thor-image.sh /dev/vdb /mnt/cache/{target.relative_to(CACHE)} $HOME/target/release/clamshell '{ssh_key()}'
 sudo poweroff"""
     result = subprocess.run(ssh_args([inside]))
     machine.join(timeout=120)
@@ -533,7 +533,7 @@ def sync(_args):
 
 
 def restart(_args):
-    run(ssh_args(["systemctl", "--user", "restart", "sysprog.service"]))
+    run(ssh_args(["systemctl", "--user", "restart", "clamshell.service"]))
 
 
 def reset(_args):

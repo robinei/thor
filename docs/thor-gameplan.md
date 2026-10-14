@@ -66,7 +66,7 @@ What ROCKNIX's system showed (used by the build):
   transform from `/sys/class/graphics/fbcon/rotate` (1/2/3: 90/180/270), and for the Thor the
   touchscreens `0:0:top_touchscreen` on DSI-2 and `0:0:bottom_touchscreen` on DSI-1 (bottom one's events
   off unless something shows there). Our image does the same (`~/.local/bin/thor-outputs`, rotating both
-  panels by fbcon's angle) and sets `SYSPROG_TOUCHSCREEN=bottom_touchscreen` for touchpad mode.
+  panels by fbcon's angle) and sets `CLAMSHELL_TOUCHSCREEN=bottom_touchscreen` for touchpad mode.
 
 Known issues and risks, to check first:
 
@@ -145,4 +145,4 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
 - Kettle Linux's Thor notes (stock U-Boot/UEFI, screens, touch, audio, power, gamepad):
   <https://github.com/kettlelinux/kettlelinux/blob/main/docs/THOR.md>
 - Our tools: `tools/vm.py` (virtual Thor, x86-64 and aarch64; `thor-image`), `tools/thor-image.sh`,
-  `tools/bootimg.py`, `sysprog/tests/nested-sway.sh`
+  `tools/bootimg.py`, `clamshell/tests/nested-sway.sh`

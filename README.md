@@ -1,12 +1,12 @@
 # thor (working name)
 
-Linux on the AYN Thor: a system program for its two screens, its pad and its power, plus the setup around
+Linux on the AYN Thor: clamshell, a system program for its two screens, its pad and its power, plus the setup around
 it (Arch Linux ARM, packages built on the device). Planning lives in the GPD repo's `docs/plans.md` for now
 (`~/Code/gpdwin`); it moves here once the first parts run.
 
-## sysprog (working name)
+## clamshell
 
-`sysprog/` is the system program: one process with one in-memory state for shelf (the game list on the top
+`clamshell/` is the system program (named for the device's shape, and for being its shell): one process with one in-memory state for shelf (the game list on the top
 screen), the second screen (bar, modes, the selected or running game's settings), and later the input
 path (virtual pad, mouse emulation, touchpad) and power policy. Rust, a Cargo workspace:
 
@@ -20,11 +20,11 @@ path (virtual pad, mouse emulation, touchpad) and power policy. Rust, a Cargo wo
 
 No panics by construction: `unwrap`, `expect`, `panic!` and slice indexing are denied outside tests.
 
-**Test the launcher under sway**: `sysprog/tests/nested-sway.sh` (after `cargo build --release`) runs a
+**Test the launcher under sway**: `clamshell/tests/nested-sway.sh` (after `cargo build --release`) runs a
 headless sway with the program inside, a test library and test apps, drives it through its control pipe
-(`SYSPROG_CONTROL`: lines like `tap app 1`, `long game`, `tap plus 1`, `tap launch`), checks sway's tree
+(`CLAMSHELL_CONTROL`: lines like `tap app 1`, `long game`, `tap plus 1`, `tap launch`), checks sway's tree
 and systemd's units, and cleans up after itself; about a minute, nothing shows on the desktop.
-`SYSPROG_STEAM=off` leaves Steam's games out.
+`CLAMSHELL_STEAM=off` leaves Steam's games out.
 
 **A virtual Thor** (`tools/vm.py`, Python, standard library only): a QEMU/KVM machine with the device's
 session: two screens at the Thor's sizes (sway on real DRM outputs, the second forced on through the
@@ -37,7 +37,7 @@ read-only: build on the host, `tools/vm.py restart`). `tools/vm.py image` (downl
 
 **Run on a desktop** (any Wayland compositor with xdg-shell):
 
-    cd sysprog
+    cd clamshell
     cargo run                         # two windows at half the Thor's size: top and bottom
     cargo run -- --snapshot /tmp      # top.png and bottom.png at the Thor's size, no Wayland
     cargo test --workspace
@@ -48,25 +48,25 @@ top one), Enter or Space is A, Escape quits. Clicks and touches act on release; 
 they are a long press. The keyboard mode is a PC layout (US) with an Fn layer shown as small corner labels
 (F1-F12, Del, arrows on i/j/k/l, Home/End, PgUp/PgDn, Ins): Shift, Ctrl, Alt and Fn apply to the next
 key on a tap and lock on a long press. On the Thor (sway), the bottom view
-is a layer-shell surface on output `DSI-1` (`SYSPROG_BOTTOM_OUTPUT` to change it).
+is a layer-shell surface on output `DSI-1` (`CLAMSHELL_BOTTOM_OUTPUT` to change it).
 
-**Touchpad mode** grabs the second screen's touchscreen (`SYSPROG_TOUCHSCREEN`: a /dev/input path or
+**Touchpad mode** grabs the second screen's touchscreen (`CLAMSHELL_TOUCHSCREEN`: a /dev/input path or
 part of its name; default: the first direct-touch device) and forwards fingers to a virtual touchpad
 that sway's libinput handles like a laptop's; fingers that start on the bar stay taps on it. To try it
 on a desktop with a fake touchscreen (your pointer will move):
 
-    cargo run --release -p sysprog-policy --example fake_touchscreen &
-    SYSPROG_TOUCHSCREEN="sysprog fake touchscreen" SYSPROG_START_MODE=touchpad cargo run --release
+    cargo run --release -p clamshell-policy --example fake_touchscreen &
+    CLAMSHELL_TOUCHSCREEN="clamshell fake touchscreen" CLAMSHELL_START_MODE=touchpad cargo run --release
 
-**The keyboard mode types through a virtual keyboard** (`sysprog keyboard`, uinput) in US key
+**The keyboard mode types through a virtual keyboard** (`clamshell keyboard`, uinput) in US key
 positions. The compositor must use the US layout for it; in sway:
-`input "0:0:sysprog_keyboard" xkb_layout us` (check the identifier with `swaymsg -t get_inputs`). On a
+`input "0:0:clamshell_keyboard" xkb_layout us` (check the identifier with `swaymsg -t get_inputs`). On a
 desktop with another layout, letters, digits and named keys come out right but punctuation follows that
-layout. To type into other apps on a desktop, run with `SYSPROG_BOTTOM_PANEL=1`: the bottom view is then a
+layout. To type into other apps on a desktop, run with `CLAMSHELL_BOTTOM_PANEL=1`: the bottom view is then a
 panel in the bottom right corner that never takes the keyboard focus (as on the device), not a window.
 
 **Launcher** (the grid icon): the running game first (a "No game" placeholder otherwise, so tiles never
-move), then the apps. Each start of an app is an instance: a systemd scope (`sysprog-app-<key>-<secs>-<n>`)
+move), then the apps. Each start of an app is an instance: a systemd scope (`clamshell-app-<key>-<secs>-<n>`)
 and a sway workspace of the same name, on the main screen. A tap starts an app, shows its most recent
 instance when it runs, or its next instance when one of its own is in front; "1/3" shows which. A long
 press closes the instance it is on (its windows, politely, as their close buttons would); on the game tile
@@ -76,17 +76,17 @@ icons green), idle ones grey.
 
 How it stays right: systemd says what runs (the scopes, followed over D-Bus: an instance lives as long as
 any of its processes, and survives a restart of the program). sway places windows: launches go through its
-`exec` aimed at the instance's workspace (by a job file and `sysprog --run`, so no argument passes through
+`exec` aimed at the instance's workspace (by a job file and `clamshell --run`, so no argument passes through
 sway's command parser), which places the launch's first window there before it is shown; a new instance or
 game is shown when that window appears (its empty workspace never is; a newer start takes over). sway only
 places a launch's first window, so later ones (a second window, a program started from its terminal) are
 moved to their instance's workspace by their process's scope, the kernel's record of where they come from.
-sway rules set at start: shelf's window to `sysprog-shelf`, Steam's games (`steam_app_…`) to
-`sysprog-game`, both kept on the main screen, and windows opening on the second screen (behind the
+sway rules set at start: shelf's window to `clamshell-shelf`, Steam's games (`steam_app_…`) to
+`clamshell-game`, both kept on the main screen, and windows opening on the second screen (behind the
 launcher) to the main screen. An emptied workspace of ours in front shows shelf.
 
-Apps come from `~/.config/sysprog/launcher.json` (read at start); without it Shelf, Steam (Big Picture) and
-a terminal (foot); `sysprog --launcher-example` prints a file to start from. An app is a `desktop` file
+Apps come from `~/.config/clamshell/launcher.json` (read at start); without it Shelf, Steam (Big Picture) and
+a terminal (foot); `clamshell --launcher-example` prints a file to start from. An app is a `desktop` file
 (giving name, command and icon) and/or a `name` with a `command` (program and arguments, no shell) or a
 `builtin` (`shelf`); `icon` picks a drawn icon (`shelf`, `gamepad`, `terminal`, `browser`, `files`,
 `music`, `video`, `settings`) over the desktop file's, and with neither the initial shows. Without sway
@@ -120,15 +120,15 @@ device; on the desktop they're skipped, with one warning). The bottom screen kee
 (sysinfo at first), also across restarts.
 
 **Sysinfo mode** shows CPU, GPU, memory, temperatures, power, per-core load, and a running game's FPS and
-frame time from MangoHud: games started with `sysprog --mangohud-env` in their environment log (overlay
+frame time from MangoHud: games started with `clamshell --mangohud-env` in their environment log (overlay
 invisible) to a folder in RAM that the system program follows. For a Steam game, as launch options:
-`env $(sysprog --mangohud-env) %command%`; by hand: `env $(sysprog --mangohud-env) vkcube`.
+`env $(clamshell --mangohud-env) %command%`; by hand: `env $(clamshell --mangohud-env) vkcube`.
 
-**The controller** (any Xbox-style pad; `SYSPROG_GAMEPAD`: path or part of its name) is grabbed for good;
+**The controller** (any Xbox-style pad; `CLAMSHELL_GAMEPAD`: path or part of its name) is grabbed for good;
 games see a virtual Xbox 360 pad that is always there. The **pad mouse** toggle (mouse icon in the bar)
 routes the controller to a virtual mouse instead (left stick pointer, right stick scroll, A/RT left
 click, B right, X middle, D-pad arrows) while the virtual pad shows a neutral controller. Test with a fake
-pad: `cargo run --release -p sysprog-policy --example fake_pad &` then
-`SYSPROG_GAMEPAD="sysprog fake pad" SYSPROG_PAD_MOUSE=1 cargo run --release`.
+pad: `cargo run --release -p clamshell-policy --example fake_pad &` then
+`CLAMSHELL_GAMEPAD="clamshell fake pad" CLAMSHELL_PAD_MOUSE=1 cargo run --release`.
 
 Licence: MIT.
