@@ -96,8 +96,9 @@ const fn n(k: Named) -> Key {
 /// The layout: US letters and digits in their usual places, every row 10 units so keys use the full
 /// width. The most typed punctuation sits after the space bar, nearest the thumbs (; , . / and with Shift
 /// : < > ?); the rest has its own row on top with Esc and Tab, - and = at its right as on a PC. Fn: F1-F10
-/// on the digits, F11 and F12 at the top right (on - and =), Delete on Backspace, and a navigation
-/// cluster under the right hand (arrows on i/j/k/l, Home/End beside Up, PgUp/PgDn on y/h, Insert on p).
+/// on the digits, F11 and F12 at the top right (on - and =), Delete on Backspace, arrows on w/a/s/d under
+/// the left hand, and a PC's six-key block under the right (Insert, Home, PgUp on u/i/o over Delete, End,
+/// PgDn on j/k/l).
 pub const LAYOUT: &[&[Slot]] = &[
     &[
         named(Named::Esc, 1.5),
@@ -124,26 +125,26 @@ pub const LAYOUT: &[&[Slot]] = &[
     ],
     &[
         c('q'),
-        c('w'),
+        cf('w', n(Named::Up)),
         c('e'),
         c('r'),
         c('t'),
-        cf('y', n(Named::PageUp)),
-        cf('u', n(Named::Home)),
-        cf('i', n(Named::Up)),
-        cf('o', n(Named::End)),
-        cf('p', n(Named::Insert)),
+        c('y'),
+        cf('u', n(Named::Insert)),
+        cf('i', n(Named::Home)),
+        cf('o', n(Named::PageUp)),
+        c('p'),
     ],
     &[
-        c('a'),
-        c('s'),
-        c('d'),
+        cf('a', n(Named::Left)),
+        cf('s', n(Named::Down)),
+        cf('d', n(Named::Right)),
         c('f'),
         c('g'),
-        cf('h', n(Named::PageDown)),
-        cf('j', n(Named::Left)),
-        cf('k', n(Named::Down)),
-        cf('l', n(Named::Right)),
+        c('h'),
+        cf('j', n(Named::Delete)),
+        cf('k', n(Named::End)),
+        cf('l', n(Named::PageDown)),
         Slot { base: n(Named::Backspace), fn_key: Some(n(Named::Delete)), width: 1.0 },
     ],
     &[
@@ -367,11 +368,16 @@ mod tests {
     }
 
     #[test]
-    fn fn_turns_ijkl_into_arrows_and_backspace_into_delete() {
+    fn fn_turns_wasd_into_arrows_and_uiojkl_into_the_six_key_block() {
         let mut kb = Keyboard::default();
         tap(&mut kb, Key::Mod(Modifier::Fn));
-        assert_eq!(tap(&mut kb, Key::Char('i')).unwrap().key, Key::Named(Named::Up));
-        assert_eq!(tap(&mut kb, Key::Char('i')).unwrap().key, Key::Char('i'));
+        assert_eq!(tap(&mut kb, Key::Char('w')).unwrap().key, Key::Named(Named::Up));
+        assert_eq!(tap(&mut kb, Key::Char('w')).unwrap().key, Key::Char('w'), "Fn once: one key");
+        kb.press(pos(Key::Mod(Modifier::Fn)), true);
+        let block: Vec<Key> = ['a', 's', 'd', 'u', 'i', 'o', 'j', 'k', 'l'].map(|c| tap(&mut kb, Key::Char(c)).unwrap().key).to_vec();
+        let named = [Named::Left, Named::Down, Named::Right, Named::Insert, Named::Home, Named::PageUp, Named::Delete, Named::End, Named::PageDown];
+        assert_eq!(block, named.map(Key::Named).to_vec());
+        kb.press(pos(Key::Mod(Modifier::Fn)), false);
         kb.press(pos(Key::Mod(Modifier::Fn)), true);
         assert_eq!(tap(&mut kb, Key::Named(Named::Backspace)).unwrap().key, Key::Named(Named::Delete));
         assert_eq!(tap(&mut kb, Key::Char('1')).unwrap().key, Key::Named(Named::F(1)));
