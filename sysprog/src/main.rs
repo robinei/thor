@@ -69,6 +69,7 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
             bottom,
             "keyboard-mods.png",
         ),
+        (vec![key(Key::Mod(Modifier::Shift), true)], Screen::Bottom, bottom, "keyboard-caps.png"),
     ];
     for (events, screen, size, name) in shots {
         for event in events {

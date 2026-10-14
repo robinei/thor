@@ -43,7 +43,8 @@ impl Modifier {
     pub const ALL: [Modifier; 4] = [Modifier::Shift, Modifier::Ctrl, Modifier::Alt, Modifier::Fn];
 }
 
-/// A modifier's state: a tap arms it for the next key, a long press locks it.
+/// A modifier's state: a tap arms it for the next key, a long press locks it. A locked Shift is Caps Lock:
+/// it shifts letters only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Latch {
     #[default]
@@ -249,6 +250,15 @@ impl Keyboard {
         }
     }
 
+    /// Whether `key` is typed shifted now: Shift once shifts anything, Caps Lock only letters.
+    pub fn shifts(&self, key: Key) -> bool {
+        match (self.shift, key) {
+            (Latch::Once, _) => true,
+            (Latch::Locked, Key::Char(c)) => c.is_ascii_alphabetic(),
+            _ => false,
+        }
+    }
+
     /// What the key at `pos` does now (its Fn function while Fn is on).
     pub fn effective(&self, pos: KeyPos) -> Option<Key> {
         let slot = slot(pos)?;
@@ -272,7 +282,7 @@ impl Keyboard {
                 None
             }
             key => {
-                let stroke = Stroke { key, shift: self.shift.on(), ctrl: self.ctrl.on(), alt: self.alt.on() };
+                let stroke = Stroke { key, shift: self.shifts(key), ctrl: self.ctrl.on(), alt: self.alt.on() };
                 self.echo_stroke(stroke);
                 for m in Modifier::ALL {
                     let latch = self.latch_mut(m);
@@ -363,6 +373,15 @@ mod tests {
         tap(&mut kb, Key::Char('a'));
         assert_eq!(kb.shift, Latch::Locked);
         assert_eq!(kb.echo, "!1A");
+    }
+
+    #[test]
+    fn locked_shift_is_caps_lock() {
+        let mut kb = Keyboard::default();
+        kb.press(pos(Key::Mod(Modifier::Shift)), true);
+        assert!(tap(&mut kb, Key::Char('a')).unwrap().shift);
+        assert!(!tap(&mut kb, Key::Char('1')).unwrap().shift);
+        assert_eq!(kb.echo, "A1");
     }
 
     #[test]

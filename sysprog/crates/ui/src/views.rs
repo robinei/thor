@@ -26,6 +26,8 @@ const TEXT_HI: u32 = 0xc8c8d0;
 const DIM: u32 = 0x5a5a64;
 const ACCENT: u32 = 0xe0a040;
 const GO: u32 = 0x45a866;
+/// Fn-layer labels: a muted blue, to tell them from the Shift layer's grey.
+const FN: u32 = 0x5f82b8;
 
 fn focus_ring(c: &mut Canvas, s: &State, id: &Id, r: Rect) {
     if s.focus.as_ref() == Some(id) {
@@ -184,14 +186,42 @@ fn keyboard(c: &mut Canvas, s: &State, body: Rect, targets: &mut Vec<Target>) {
     }
 }
 
+/// Where a key label goes: big in the middle, or small in a corner (Shift layer top right, Fn bottom right).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Place {
+    Center,
+    TopRight,
+    BottomRight,
+}
+
 fn draw_key(c: &mut Canvas, kb: &Keyboard, slot: &Slot, r: Rect) {
     c.rounded(r, 6.0, rgb(SURFACE));
-    let (main, corner) = match (kb.fn_layer.on(), slot.fn_key) {
-        (true, Some(fn_key)) => (fn_key, Some(slot.base)),
-        (false, Some(fn_key)) => (slot.base, Some(fn_key)),
-        (_, None) => (slot.base, None),
+    // What each place shows: the active layer's function in the middle, the others in the corners.
+    // Letters have no Shift label: they change case.
+    let shift_char = match slot.base {
+        Key::Char(ch) if !ch.is_ascii_alphabetic() && keyboard::shifted(ch) != ch => Some(ch),
+        _ => None,
     };
-    let mut color = if matches!(main, Key::Char(_)) { TEXT } else { DIM };
+    let fn_on = kb.fn_layer.on();
+    let shift_on = kb.shift == Latch::Once;
+    let mut main = (slot.base, kb.shifts(slot.base));
+    let mut top = shift_char.map(|ch| (Key::Char(ch), true));
+    let mut bottom = slot.fn_key.map(|k| (k, false));
+    if let (true, Some(fn_key)) = (fn_on, slot.fn_key) {
+        main = (fn_key, false);
+        bottom = Some((slot.base, false));
+        top = None;
+    } else if let (true, Some(ch)) = (shift_on, shift_char) {
+        main = (Key::Char(ch), true);
+        top = Some((Key::Char(ch), false));
+    }
+
+    let mut color = match main.0 {
+        Key::Char(_) => TEXT,
+        _ if fn_on && slot.fn_key.is_some() => FN,
+        Key::Mod(Modifier::Fn) => FN,
+        _ => DIM,
+    };
     if let Key::Mod(m) = slot.base {
         match kb.latch(m) {
             Latch::Off => {}
@@ -202,39 +232,53 @@ fn draw_key(c: &mut Canvas, kb: &Keyboard, slot: &Slot, r: Rect) {
             }
         }
     }
-    key_label(c, kb, main, r, r.h * 0.3, color, false);
-    if let Some(key) = corner {
-        key_label(c, kb, key, r, r.h * 0.17, DIM, true);
+    let caps = slot.base == Key::Mod(Modifier::Shift) && kb.shift == Latch::Locked;
+    if caps {
+        icons::draw(c, Icon::CapsLock, Rect::new(r.x, r.y + r.h * 0.29, r.w, r.h * 0.42), rgb(color));
+    } else {
+        key_label(c, main, r, r.h * 0.3, color, Place::Center);
+    }
+    if let Some(top) = top {
+        key_label(c, top, r, r.h * 0.17, DIM, Place::TopRight);
+    }
+    if let Some(bottom) = bottom {
+        let color = if fn_on { DIM } else { FN };
+        key_label(c, bottom, r, r.h * 0.17, color, Place::BottomRight);
     }
 }
 
-/// A key's label: centred, or small in the top-right corner.
-fn key_label(c: &mut Canvas, kb: &Keyboard, key: Key, r: Rect, size: f32, color: u32, corner: bool) {
+/// A key's label at `place`; `(key, shifted)`.
+fn key_label(c: &mut Canvas, (key, shifted): (Key, bool), r: Rect, size: f32, color: u32, place: Place) {
     let pad = r.h * 0.08;
-    let icon_box = |h: f32| {
-        if corner {
-            Rect::new(r.x + r.w - h - pad, r.y + pad, h, h)
-        } else {
-            Rect::new(r.x, r.y + (r.h - h) / 2.0, r.w, h)
-        }
+    let icon_box = |h: f32| match place {
+        Place::Center => Rect::new(r.x, r.y + (r.h - h) / 2.0, r.w, h),
+        Place::TopRight => Rect::new(r.x + r.w - h - pad, r.y + pad, h, h),
+        Place::BottomRight => Rect::new(r.x + r.w - h - pad, r.y + r.h - h - pad, h, h),
     };
     let text = |c: &mut Canvas, size: f32, t: &str| {
         // Shrink labels that don't fit the key (PgUp, Home on narrow keys).
         let room = r.w - 2.0 * pad;
         let width = c.text_width(size, t);
         let size = if width > room { size * room / width } else { size };
-        if corner {
-            let w = c.text_width(size, t);
-            c.text(r.x + r.w - w - pad, r.y + pad * 0.5, size, rgb(color), t);
-        } else {
-            label(c, r, size, color, t);
+        let w = c.text_width(size, t);
+        match place {
+            Place::Center => label(c, r, size, color, t),
+            Place::TopRight => {
+                c.text(r.x + r.w - w - pad, r.y + pad * 0.5, size, rgb(color), t);
+            }
+            Place::BottomRight => {
+                c.text(r.x + r.w - w - pad, r.y + r.h - size * 1.3 - pad * 0.5, size, rgb(color), t);
+            }
         }
     };
     let icon = |c: &mut Canvas, i: Icon| icons::draw(c, i, icon_box(size * 1.4), rgb(color));
+    let small = if place == Place::Center { size * 0.7 } else { size };
     match key {
-        Key::Char(' ') if !corner => c.fill(Rect::new(r.x + r.w * 0.3, r.y + r.h * 0.62, r.w * 0.4, 2.0), rgb(DIM)),
+        Key::Char(' ') if place == Place::Center => {
+            c.fill(Rect::new(r.x + r.w * 0.3, r.y + r.h * 0.62, r.w * 0.4, 2.0), rgb(DIM));
+        }
         Key::Char(ch) => {
-            let shown = if kb.shift.on() { keyboard::shifted(ch) } else { ch };
+            let shown = if shifted { keyboard::shifted(ch) } else { ch };
             text(c, size, shown.encode_utf8(&mut [0; 4]));
         }
         Key::Named(Named::Backspace) => icon(c, Icon::Backspace),
@@ -244,12 +288,8 @@ fn key_label(c: &mut Canvas, kb: &Keyboard, key: Key, r: Rect, size: f32, color:
         Key::Named(Named::Left) => icon(c, Icon::ArrowLeft),
         Key::Named(Named::Right) => icon(c, Icon::ArrowRight),
         Key::Mod(Modifier::Shift) => icon(c, Icon::Shift),
-        Key::Named(named) => {
-            let small = if corner { size } else { size * 0.7 };
-            text(c, small, &named_label(named));
-        }
+        Key::Named(named) => text(c, small, &named_label(named)),
         Key::Mod(m) => {
-            let small = if corner { size } else { size * 0.7 };
             let t = match m {
                 Modifier::Shift => "Shift",
                 Modifier::Ctrl => "Ctrl",
