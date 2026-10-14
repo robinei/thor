@@ -218,7 +218,12 @@ fn keyboard(c: &mut Canvas, s: &State, body: Rect, targets: &mut Vec<Target>) {
             let id = Id::Key(KeyPos { row: row as u8, col: col as u8 });
             draw_key(c, kb, slot, r, is_pressed(s, &id));
             focus_ring(c, s, &id, r);
-            targets.push(Target { rect: r, id });
+            // The tappable area is the whole cell, gaps included, reaching the screen's edges: a touch
+            // between keys goes to the nearest one rather than nowhere.
+            let left = if col == 0 { body.x } else { x };
+            let right = if col + 1 == slots.len() { body.x + body.w } else { x + slot.width * unit };
+            let bottom = if row + 1 == LAYOUT.len() { body.y + body.h } else { y + row_h };
+            targets.push(Target { rect: Rect::new(left, y, right - left, bottom - y), id });
             x += slot.width * unit;
         }
     }
