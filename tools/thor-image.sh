@@ -7,7 +7,7 @@
 #   thor-image.sh DEVICE ROCKNIX_TARGET PROGRAM SSH_KEY
 #
 # DEVICE: the SD image (a virtual disk). ROCKNIX_TARGET: the release's target/ (KERNEL, SYSTEM).
-# PROGRAM: the system program built for aarch64. SSH_KEY: a public key to log in with.
+# PROGRAM: ClamShell built for aarch64. SSH_KEY: a public key to log in with.
 #
 # Two ways to boot, one FAT partition: the stock bootloader (U-Boot with UEFI, as Kettle Linux's Thor notes
 # have it) starts systemd-boot (EFI/BOOT/BOOTAA64.EFI), which loads the kernel (an EFI program: ROCKNIX's
@@ -82,7 +82,7 @@ echo uinput > "$ROOT/etc/modules-load.d/thor.conf"
 echo 'KERNEL=="uinput", GROUP="input", MODE="0660"' > "$ROOT/etc/udev/rules.d/70-thor.rules"
 arch-chroot "$ROOT" systemctl enable NetworkManager sshd > /dev/null
 
-say "the session (sway, the system program)"
+say "the session (sway, ClamShell)"
 H=$ROOT/home/$USER_NAME
 mkdir -p "$H/.config/sway" "$H/.config/systemd/user" "$H/.local/bin"
 install -m 755 "$PROGRAM" "$H/.local/bin/clamshell"
@@ -112,7 +112,7 @@ exec systemctl --user import-environment WAYLAND_DISPLAY SWAYSOCK XDG_CURRENT_DE
 CONFIG
 cat > "$H/.config/systemd/user/clamshell.service" <<EOF
 [Unit]
-Description=ClamShell, the system program
+Description=ClamShell
 After=graphical-session.target
 
 [Service]

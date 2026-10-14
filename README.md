@@ -1,12 +1,12 @@
 # thor (working name)
 
-Linux on the AYN Thor: ClamShell, a system program for its two screens, its pad and its power, plus the setup around
+Linux on the AYN Thor: ClamShell, the shell for its two screens, its pad and its power, plus the setup around
 it (Arch Linux ARM, packages built on the device). Planning lives in the GPD repo's `docs/plans.md` for now
 (`~/Code/gpdwin`); it moves here once the first parts run.
 
 ## ClamShell
 
-`clamshell/` is the system program (named for the device's shape, and for being its shell): one process with one in-memory state for shelf (the game list on the top
+`clamshell/` is ClamShell (named for the device's shape, and for being its shell): one process with one in-memory state for shelf (the game list on the top
 screen), the second screen (bar, modes, the selected or running game's settings), and later the input
 path (virtual pad, mouse emulation, touchpad) and power policy. Rust, a Cargo workspace:
 
@@ -30,7 +30,7 @@ and systemd's units, and cleans up after itself; about a minute, nothing shows o
 session: two screens at the Thor's sizes (sway on real DRM outputs, the second forced on through the
 kernel's `video=` option), the host mouse as an absolute pointer per screen window, a multitouch screen on
 the bottom one, a fake battery (`test_power`) and Wi-Fi radios (`mac80211_hwsim`), uinput for our virtual
-devices, and the system program as a user service started by sway, run from this repository (shared
+devices, and ClamShell as a user service started by sway, run from this repository (shared
 read-only: build on the host, `tools/vm.py restart`). `tools/vm.py image` (downloads Arch's cloud image),
 `run [--headless] [--pad VENDOR:PRODUCT]` (the first start provisions it with cloud-init, a few minutes),
 `ssh [command]`, `sync` (session files), `restart`, `reset`. No Thor GPU, cpufreq/devfreq or fan in it.
@@ -121,7 +121,7 @@ device; on the desktop they're skipped, with one warning). The bottom screen kee
 
 **Sysinfo mode** shows CPU, GPU, memory, temperatures, power, per-core load, and a running game's FPS and
 frame time from MangoHud: games started with `clamshell --mangohud-env` in their environment log (overlay
-invisible) to a folder in RAM that the system program follows. For a Steam game, as launch options:
+invisible) to a folder in RAM that ClamShell follows. For a Steam game, as launch options:
 `env $(clamshell --mangohud-env) %command%`; by hand: `env $(clamshell --mangohud-env) vkcube`.
 
 **The controller** (any Xbox-style pad; `CLAMSHELL_GAMEPAD`: path or part of its name) is grabbed for good;

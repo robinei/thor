@@ -1,5 +1,5 @@
 //! Development: a fake Xbox-style controller for testing the controller path on a desktop. Creates the
-//! pad, waits for the system program to grab it, pushes the left stick fully right for 0.5 s and down for
+//! pad, waits for ClamShell to grab it, pushes the left stick fully right for 0.5 s and down for
 //! 0.25 s (no buttons: they would click whatever is under the pointer), and reports what came out: the
 //! virtual mouse's motion and the virtual pad's stick.
 //!
@@ -40,16 +40,16 @@ fn main() -> io::Result<()> {
         .with_absolute_axis(&hat(AbsoluteAxisCode::ABS_HAT0X))?
         .with_absolute_axis(&hat(AbsoluteAxisCode::ABS_HAT0Y))?
         .build()?;
-    eprintln!("fake pad ready; start the system program with the pad mouse on now (6 s)");
+    eprintln!("fake pad ready; start ClamShell with the pad mouse on now (6 s)");
     sleep(Duration::from_secs(6));
 
-    // Read what the system program makes of it: the virtual mouse's motion, and the largest stick value
+    // Read what ClamShell makes of it: the virtual mouse's motion, and the largest stick value
     // the virtual pad passes on.
     let open = |name: &str| -> io::Result<RawDevice> {
         let d = evdev::raw_stream::enumerate()
             .map(|(_, d)| d)
             .find(|d| d.name() == Some(name))
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, format!("no '{name}': is the system program running?")))?;
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, format!("no '{name}': is ClamShell running?")))?;
         let flags = rustix::fs::fcntl_getfl(&d)?;
         rustix::fs::fcntl_setfl(&d, flags | rustix::fs::OFlags::NONBLOCK)?;
         Ok(d)

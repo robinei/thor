@@ -1,5 +1,5 @@
 //! Development: a fake touchscreen for testing touchpad mode on a desktop. Creates a direct-touch
-//! multitouch device the size of the second screen's buffer (1240x1080), waits for the system program
+//! multitouch device the size of the second screen's buffer (1240x1080), waits for ClamShell
 //! to grab it, then plays: a one-finger swipe on the pad, a two-finger scroll, and a tap on the bar's
 //! touchpad icon (which ends touchpad mode).
 //!
@@ -71,7 +71,7 @@ fn main() -> io::Result<()> {
         .with_absolute_axis(&axis(AbsoluteAxisCode::ABS_MT_POSITION_X, W - 1))?
         .with_absolute_axis(&axis(AbsoluteAxisCode::ABS_MT_POSITION_Y, H - 1))?
         .build()?;
-    eprintln!("fake touchscreen ready; start the system program in touchpad mode now (8 s)");
+    eprintln!("fake touchscreen ready; start ClamShell in touchpad mode now (8 s)");
     sleep(Duration::from_secs(8));
     let step = Duration::from_millis(12);
 

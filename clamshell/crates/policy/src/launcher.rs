@@ -1,7 +1,7 @@
 //! Starting games and knowing when they end. One game at a time, from a queue.
 //!
 //! - A Pegasus launch command is resolved as Pegasus does (library::launch) and run in its own systemd
-//!   scope where there is a user session (`systemd-run --user --scope`), so restarting the system program
+//!   scope where there is a user session (`systemd-run --user --scope`), so restarting ClamShell
 //!   doesn't end the game; the thread waits for it.
 //! - A Steam game is started with `steam -applaunch <id>`; it counts as running while Steam's launcher
 //!   process for that app id (`reaper SteamLaunch AppId=<id>`) exists.

@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""A virtual Thor: a QEMU machine with the device's session around the system program, for testing what
+"""A virtual Thor: a QEMU machine with the device's session around ClamShell, for testing what
 doesn't need the real hardware. Two displays at the Thor's sizes (sway on real DRM outputs), a touchscreen
 and a mouse-driven absolute pointer on the bottom one, a fake battery and Wi-Fi, uinput for our virtual
-devices, the system program as a user service started by sway, and this repository shared read-only.
+devices, ClamShell as a user service started by sway, and this repository shared read-only.
 
   tools/vm.py image          make a fresh machine (downloads its system first)
   tools/vm.py run            start the machine (the first start provisions it)
   tools/vm.py run --headless without windows (the screens drawn offscreen; ssh and grim still work)
   tools/vm.py run --pad 045e:028e   also pass a USB gamepad through (vendor:product)
   tools/vm.py ssh [command]  a shell, or a command, in the machine
-  tools/vm.py build          build the system program in the machine (aarch64: there is no host build)
-  tools/vm.py restart        restart the system program in the machine (after a build)
+  tools/vm.py build          build ClamShell in the machine (aarch64: there is no host build)
+  tools/vm.py restart        restart ClamShell in the machine (after a build)
   tools/vm.py sync           write this script's session files (sway config, service) into the machine
   tools/vm.py reset          throw the machine away (the download stays)
   tools/vm.py --arch aarch64 thor-image   build an SD card image for the real Thor (best effort): Arch
@@ -161,7 +161,7 @@ BASH_PROFILE = """\
 def service():
     return f"""\
 [Unit]
-Description=ClamShell, the system program
+Description=ClamShell
 After=graphical-session.target
 
 [Service]

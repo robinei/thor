@@ -1,6 +1,6 @@
 #!/bin/sh
 # The launcher under sway, end to end: runs a headless sway (two outputs, the Thor's screens at half
-# size; nothing shows on the desktop, and it needs no display or input devices), the system program
+# size; nothing shows on the desktop, and it needs no display or input devices), ClamShell
 # inside it with a test library and test apps, drives it through its control pipe (CLAMSHELL_CONTROL: the
 # taps and long presses a user would make), and checks sway's window tree and systemd's units. Leaves
 # nothing behind: its instances are stopped and sway is closed at the end. Needs sway, foot, sqlite3 and

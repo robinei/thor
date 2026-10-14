@@ -215,7 +215,7 @@ impl Router {
     }
 }
 
-/// Starting and stopping touchpad mode (from the system program's mode changes).
+/// Starting and stopping touchpad mode (from ClamShell's mode changes).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command {
     On,

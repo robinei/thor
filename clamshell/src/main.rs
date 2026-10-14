@@ -1,4 +1,4 @@
-//! ClamShell, the system program: shelf, the second screen, the bar, input and power policy in one process with one
+//! ClamShell: shelf, the second screen, the bar, input and power policy in one process with one
 //! state (docs/plans.md in the GPD repo, "One system program").
 
 use std::process::ExitCode;

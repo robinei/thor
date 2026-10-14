@@ -1,7 +1,7 @@
 //! Our instances as systemd sees them: the user manager's scopes named `clamshell-app-*` and
 //! `clamshell-game-*` (D-Bus, org.freedesktop.systemd1), listed at start and again whenever it signals a
 //! unit coming or going. This is the truth for what runs: a scope lives as long as any of its processes,
-//! whatever its windows do, and survives a restart of the system program.
+//! whatever its windows do, and survives a restart of ClamShell.
 
 use std::io;
 use std::thread;

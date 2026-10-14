@@ -1,7 +1,7 @@
 # Game plan: when the AYN Thor arrives
 
 The device: AYN Thor Max (16 GB / 1 TB, Snapdragon 8 Gen 2 / SM8550, 6" top + 3.92" bottom OLED).
-The goal: our own minimal Arch Linux ARM with sway and the system program, booted from SD card first,
+The goal: our own minimal Arch Linux ARM with sway and ClamShell, booted from SD card first,
 Android kept. Written 2026-10-14, before having the device; everything here is unverified on it.
 
 ## How the boot works
@@ -48,7 +48,7 @@ What goes in, and from where:
 | `/KERNEL` on FAT `ROCKNIX` (GPT name `system`, legacy-boot attribute, at 16 MiB) | ROCKNIX's kernel and device trees, unchanged; our initramfs (mkinitcpio: base udev modconf block filesystems fsck, no autodetect) and command line (`root=LABEL=THOR_ROOT rw` + ROCKNIX's SM8550 parameters), repacked by `tools/bootimg.py` |
 | Kernel modules, firmware | ROCKNIX's `SYSTEM` (same release), incl. Qualcomm firmware: for this device only, not for sharing |
 | Root: ext4 `THOR_ROOT` | `pacstrap` from Arch Linux ARM's mirrors (unpinned): base, sudo, mkinitcpio, NetworkManager, OpenSSH, sway, foot, Xwayland, Mesa + `vulkan-freedreno`, PipeWire, Noto, SQLite, Python, vim |
-| Session | user `thor` (passwordless sudo, my ssh key), tty1 autologin into sway, sway config (DSI-2 top, DSI-1 bottom, ROCKNIX's output lines if found), the system program built natively for aarch64 as a user service, uinput rule, NetworkManager and sshd on |
+| Session | user `thor` (passwordless sudo, my ssh key), tty1 autologin into sway, sway config (DSI-2 top, DSI-1 bottom, ROCKNIX's output lines if found), ClamShell built natively for aarch64 as a user service, uinput rule, NetworkManager and sshd on |
 
 Built once (2026-10-14, ROCKNIX 20261001, kernel 7.2.0): `~/.cache/thor-vm/aarch64/thor-sd.img`, 12 GB
 (2.5 GB used). Checked from the host and in the build machine: GPT with partition 1 an EFI system
