@@ -1,4 +1,5 @@
-//! The on-screen keyboard: a PC-style layout (US) with an Fn layer, and one-shot or locked modifiers.
+//! The on-screen keyboard: a PC-style layout (US) with an Fn layer, modifiers that a tap arms for the
+//! next key or that act while held (as on a real keyboard, with another finger typing), and Caps Lock.
 //! Keys are identified by their position, so the same key keeps its id on both layers.
 
 /// What a key does.
@@ -8,6 +9,8 @@ pub enum Key {
     Char(char),
     Named(Named),
     Mod(Modifier),
+    /// Caps Lock: on until tapped again; shifts letters only. Kept here (it isn't sent).
+    Caps,
 }
 
 /// Keys that type no character.
@@ -45,19 +48,19 @@ impl Modifier {
     pub const ALL: [Modifier; 5] = [Modifier::Shift, Modifier::Ctrl, Modifier::Alt, Modifier::Super, Modifier::Fn];
 }
 
-/// A modifier's state: a tap arms it for the next key, a long press locks it. A locked Shift is Caps Lock:
-/// it shifts letters only.
+/// A modifier's state: armed by a tap for the next key, and held while a finger is on it. Holding it
+/// while typing makes it act for those keys and end with the finger; a tap without typing arms it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Latch {
-    #[default]
-    Off,
-    Once,
-    Locked,
+pub struct Latch {
+    pub armed: bool,
+    pub held: bool,
+    /// A key was typed while held (so lifting ends it, rather than arming it).
+    used: bool,
 }
 
 impl Latch {
     pub fn on(self) -> bool {
-        self != Latch::Off
+        self.armed || self.held
     }
 }
 
@@ -95,14 +98,16 @@ const fn n(k: Named) -> Key {
 
 /// The layout: US letters and digits in their usual places, every row 10 units so keys use the full
 /// width. The most typed punctuation sits after the space bar, nearest the thumbs (; , . / and with Shift
-/// : < > ?); the rest has its own row on top with Esc and Tab, - and = at its right as on a PC. Fn: F1-F10
+/// : < > ?); the rest has its own row on top with Esc, Tab and Caps Lock, - and = at its right as on a PC.
+/// Fn: F1-F10
 /// on the digits, F11 and F12 at the top right (on - and =), arrows on w/a/s/d under the left hand, and
 /// under the right a PC's six-key block with its outer columns swapped: PgUp, Home, Insert on i/o/p over
 /// PgDn, End, Delete on k/l/Backspace.
 pub const LAYOUT: &[&[Slot]] = &[
     &[
-        named(Named::Esc, 1.5),
-        named(Named::Tab, 1.5),
+        named(Named::Esc, 1.0),
+        named(Named::Tab, 1.0),
+        Slot { base: Key::Caps, fn_key: None, width: 1.0 },
         c('`'),
         c('\''),
         c('['),
@@ -148,7 +153,7 @@ pub const LAYOUT: &[&[Slot]] = &[
         Slot { base: n(Named::Backspace), fn_key: Some(n(Named::Delete)), width: 1.0 },
     ],
     &[
-        // One Shift is enough: it is sticky (tap for one key, hold for Caps Lock).
+        // One Shift is enough: a tap arms it for one key, or hold it while typing.
         modifier(Modifier::Shift, 1.5),
         c('z'),
         c('x'),
@@ -238,6 +243,7 @@ pub struct Keyboard {
     pub alt: Latch,
     pub logo: Latch,
     pub fn_layer: Latch,
+    pub caps: bool,
 }
 
 impl Keyboard {
@@ -261,12 +267,34 @@ impl Keyboard {
         }
     }
 
-    /// Whether `key` is typed shifted now: Shift once shifts anything, Caps Lock only letters.
+    /// Whether `key` is typed shifted now: Shift shifts anything; Caps Lock letters, which Shift then
+    /// turns back to lower case.
     pub fn shifts(&self, key: Key) -> bool {
-        match (self.shift, key) {
-            (Latch::Once, _) => true,
-            (Latch::Locked, Key::Char(c)) => c.is_ascii_alphabetic(),
-            _ => false,
+        match key {
+            Key::Char(c) if c.is_ascii_alphabetic() => self.shift.on() != self.caps,
+            _ => self.shift.on(),
+        }
+    }
+
+    /// A finger came down on the key at `pos`: a modifier is held.
+    pub fn down(&mut self, pos: KeyPos) {
+        if let Some(Key::Mod(m)) = self.effective(pos) {
+            let latch = self.latch_mut(m);
+            latch.held = true;
+            latch.used = false;
+        }
+    }
+
+    /// The finger lifted from the key at `pos` (after its tap, if it was one): a modifier that was used
+    /// while held is done.
+    pub fn up(&mut self, pos: KeyPos) {
+        if let Some(Key::Mod(m)) = slot(pos).map(|s| s.base) {
+            let latch = self.latch_mut(m);
+            if latch.used {
+                latch.armed = false;
+            }
+            latch.held = false;
+            latch.used = false;
         }
     }
 
@@ -279,17 +307,19 @@ impl Keyboard {
         })
     }
 
-    /// A tap (`long` = false) or long press on the key at `pos`; returns the stroke to send, if any.
+    /// A tap (`long` = false) or long press on the key at `pos`; returns the stroke to send, if any. A tap
+    /// on a modifier arms or disarms it (a long press on one does nothing: holding is `down` and `up`).
     pub fn press(&mut self, pos: KeyPos, long: bool) -> Option<Stroke> {
         match self.effective(pos)? {
             Key::Mod(m) => {
-                let latch = self.latch_mut(m);
-                *latch = match (*latch, long) {
-                    (Latch::Locked, _) => Latch::Off,
-                    (_, true) => Latch::Locked,
-                    (Latch::Off, false) => Latch::Once,
-                    (Latch::Once, false) => Latch::Off,
-                };
+                if !long {
+                    let latch = self.latch_mut(m);
+                    latch.armed = !latch.armed;
+                }
+                None
+            }
+            Key::Caps => {
+                self.caps = !self.caps;
                 None
             }
             key => {
@@ -300,10 +330,13 @@ impl Keyboard {
                     alt: self.alt.on(),
                     logo: self.logo.on(),
                 };
+                // Armed modifiers are used up; held ones stay until lifted.
                 for m in Modifier::ALL {
                     let latch = self.latch_mut(m);
-                    if *latch == Latch::Once {
-                        *latch = Latch::Off;
+                    if latch.held {
+                        latch.used = true;
+                    } else {
+                        latch.armed = false;
                     }
                 }
                 Some(stroke)
@@ -348,23 +381,57 @@ mod tests {
         }
     }
 
-    #[test]
-    fn shift_once_then_off_and_locked_stays() {
-        let mut kb = Keyboard::default();
-        tap(&mut kb, Key::Mod(Modifier::Shift));
-        assert!(tap(&mut kb, Key::Char('1')).unwrap().shift);
-        assert!(!tap(&mut kb, Key::Char('1')).unwrap().shift);
-        kb.press(pos(Key::Mod(Modifier::Shift)), true);
-        assert!(tap(&mut kb, Key::Char('a')).unwrap().shift);
-        assert_eq!(kb.shift, Latch::Locked);
+    /// A finger on a key and off again, as the input side reports it: down, the tap, up.
+    fn touch(kb: &mut Keyboard, key: Key) -> Option<Stroke> {
+        let p = pos(key);
+        kb.down(p);
+        let stroke = kb.press(p, false);
+        kb.up(p);
+        stroke
     }
 
     #[test]
-    fn locked_shift_is_caps_lock() {
+    fn a_tapped_shift_arms_one_key() {
         let mut kb = Keyboard::default();
-        kb.press(pos(Key::Mod(Modifier::Shift)), true);
-        assert!(tap(&mut kb, Key::Char('a')).unwrap().shift);
-        assert!(!tap(&mut kb, Key::Char('1')).unwrap().shift);
+        touch(&mut kb, Key::Mod(Modifier::Shift));
+        assert!(touch(&mut kb, Key::Char('1')).unwrap().shift);
+        assert!(!touch(&mut kb, Key::Char('1')).unwrap().shift);
+        touch(&mut kb, Key::Mod(Modifier::Shift));
+        touch(&mut kb, Key::Mod(Modifier::Shift));
+        assert!(!touch(&mut kb, Key::Char('1')).unwrap().shift, "a second tap disarms");
+    }
+
+    #[test]
+    fn a_held_shift_acts_while_held() {
+        let mut kb = Keyboard::default();
+        let shift = pos(Key::Mod(Modifier::Shift));
+        kb.down(shift);
+        assert!(touch(&mut kb, Key::Char('h')).unwrap().shift);
+        assert!(touch(&mut kb, Key::Char('e')).unwrap().shift, "still held");
+        // Held past a long press: the long press does nothing, lifting ends it.
+        kb.press(shift, true);
+        kb.up(shift);
+        assert!(!touch(&mut kb, Key::Char('l')).unwrap().shift);
+        // Lifted quickly after typing: the tap comes before the lift, and still nothing stays armed.
+        kb.down(shift);
+        touch(&mut kb, Key::Char('o'));
+        kb.press(shift, false);
+        kb.up(shift);
+        assert!(!kb.shift.on());
+    }
+
+    #[test]
+    fn caps_lock_shifts_letters_until_tapped_again() {
+        let mut kb = Keyboard::default();
+        touch(&mut kb, Key::Caps);
+        assert!(kb.caps);
+        assert!(touch(&mut kb, Key::Char('a')).unwrap().shift);
+        assert!(!touch(&mut kb, Key::Char('1')).unwrap().shift, "letters only");
+        touch(&mut kb, Key::Mod(Modifier::Shift));
+        assert!(!touch(&mut kb, Key::Char('a')).unwrap().shift, "Shift with Caps Lock: lower case");
+        assert!(touch(&mut kb, Key::Char('b')).unwrap().shift);
+        touch(&mut kb, Key::Caps);
+        assert!(!touch(&mut kb, Key::Char('a')).unwrap().shift);
     }
 
     #[test]
@@ -373,14 +440,14 @@ mod tests {
         tap(&mut kb, Key::Mod(Modifier::Fn));
         assert_eq!(tap(&mut kb, Key::Char('w')).unwrap().key, Key::Named(Named::Up));
         assert_eq!(tap(&mut kb, Key::Char('w')).unwrap().key, Key::Char('w'), "Fn once: one key");
-        kb.press(pos(Key::Mod(Modifier::Fn)), true);
+        kb.down(pos(Key::Mod(Modifier::Fn)));
         let block: Vec<Key> = ['a', 's', 'd', 'i', 'o', 'p', 'k', 'l'].map(|c| tap(&mut kb, Key::Char(c)).unwrap().key).to_vec();
         let named = [Named::Left, Named::Down, Named::Right, Named::PageUp, Named::Home, Named::Insert, Named::PageDown, Named::End];
         assert_eq!(block, named.map(Key::Named).to_vec());
-        kb.press(pos(Key::Mod(Modifier::Fn)), false);
-        kb.press(pos(Key::Mod(Modifier::Fn)), true);
         assert_eq!(tap(&mut kb, Key::Named(Named::Backspace)).unwrap().key, Key::Named(Named::Delete));
         assert_eq!(tap(&mut kb, Key::Char('1')).unwrap().key, Key::Named(Named::F(1)));
+        kb.up(pos(Key::Mod(Modifier::Fn)));
+        assert_eq!(tap(&mut kb, Key::Char('w')).unwrap().key, Key::Char('w'), "lifted");
     }
 
     #[test]
@@ -402,10 +469,13 @@ mod tests {
     }
 
     #[test]
-    fn a_locked_modifier_is_released_by_a_tap() {
+    fn a_long_press_alone_neither_arms_nor_locks() {
         let mut kb = Keyboard::default();
-        kb.press(pos(Key::Mod(Modifier::Ctrl)), true);
-        tap(&mut kb, Key::Mod(Modifier::Ctrl));
-        assert_eq!(kb.ctrl, Latch::Off);
+        let ctrl = pos(Key::Mod(Modifier::Ctrl));
+        kb.down(ctrl);
+        assert!(kb.ctrl.on(), "on while held (and shown so)");
+        kb.press(ctrl, true);
+        kb.up(ctrl);
+        assert!(!kb.ctrl.on());
     }
 }

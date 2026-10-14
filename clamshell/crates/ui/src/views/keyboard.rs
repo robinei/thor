@@ -1,12 +1,13 @@
 //! Keyboard mode: the PC-style layout from `core`, as black cells without gaps. Each key shows its main
 //! function, with its Shift character small above and its Fn function small below (in blue); the active
-//! layer's function takes the middle.
+//! layer's function takes the middle, also while a modifier is only held. Modifiers that are on (armed or
+//! held) are amber; Caps Lock has a light in its corner.
 
 use clamshell_core::Id;
-use clamshell_core::keyboard::{self, Key, KeyPos, Keyboard, LAYOUT, Latch, Modifier, Named, Slot};
+use clamshell_core::keyboard::{self, Key, KeyPos, Keyboard, LAYOUT, Modifier, Named, Slot};
 
 use super::{ACCENT, DIM, FN, Frame, Look, TEXT, label};
-use crate::draw::{Canvas, Rect, rgb};
+use crate::draw::{Canvas, Rect, rgb, rgba};
 use crate::icons::Icon;
 
 /// Lines between keys, if drawn at all (the labels alone are enough on black).
@@ -21,9 +22,13 @@ const NAMED_TEXT: f32 = 0.7;
 /// clear of descenders like y, p and j).
 const ABOVE: f32 = 0.26;
 const BELOW: f32 = 0.31;
-/// Icons, of their label's size; Caps Lock's height, of the key's.
+/// Icons, of their label's size.
 const ICON: f32 = 1.4;
-const CAPS: f32 = 0.42;
+/// Caps Lock's light: its radius and the glow's around it, of the key's height; where it sits, from the
+/// key's top right corner.
+const LED: f32 = 0.06;
+const GLOW: f32 = 0.13;
+const LED_AT: f32 = 0.2;
 /// Side padding inside a key, of its height (labels shrink to fit).
 const PAD: f32 = 0.08;
 /// A key as tapped or focused: square cells; the focus ring and a lock's outline just inside the cell.
@@ -84,7 +89,7 @@ fn labels(kb: &Keyboard, slot: &Slot) -> Labels {
         Key::Char(ch) if !ch.is_ascii_alphabetic() && keyboard::shifted(ch) != ch => Some(ch),
         _ => None,
     };
-    match (kb.fn_layer.on(), slot.fn_key, kb.shift == Latch::Once, shift_char) {
+    match (kb.fn_layer.on(), slot.fn_key, kb.shift.on(), shift_char) {
         (true, Some(fn_key), _, _) => ((fn_key, false), None, Some((slot.base, false))),
         (_, _, true, Some(ch)) => ((Key::Char(ch), true), Some((Key::Char(ch), false)), slot.fn_key.map(|k| (k, false))),
         _ => (
@@ -104,23 +109,23 @@ fn draw_key(c: &mut Canvas, kb: &Keyboard, slot: &Slot, r: Rect) {
         Key::Mod(Modifier::Fn) => FN,
         _ => DIM,
     };
-    if let Key::Mod(m) = slot.base {
-        match kb.latch(m) {
-            Latch::Off => {}
-            Latch::Once => color = ACCENT,
-            Latch::Locked => {
-                color = ACCENT;
-                c.outline(r.inset(KEY.ring_inset), 6.0, 1.5, rgb(ACCENT));
-            }
+    if let Key::Mod(m) = slot.base
+        && kb.latch(m).on()
+    {
+        color = ACCENT;
+    }
+    if slot.base == Key::Caps {
+        // The light: a dim ring when off; lit, with a soft glow, when on.
+        let (lx, ly) = (r.x + r.w - r.h * LED_AT, r.y + r.h * LED_AT);
+        if kb.caps {
+            c.circle(lx, ly, r.h * GLOW, rgba(ACCENT, 0.18));
+            c.circle(lx, ly, r.h * LED, rgb(ACCENT));
+        } else {
+            let d = r.h * LED * 2.0;
+            c.outline(Rect::new(lx - d / 2.0, ly - d / 2.0, d, d), d / 2.0, 1.2, rgb(DIM));
         }
     }
-    let caps = slot.base == Key::Mod(Modifier::Shift) && kb.shift == Latch::Locked;
-    if caps {
-        let h = r.h * CAPS;
-        c.icon(Icon::CapsLock, Rect::new(r.x, r.y + (r.h - h) / 2.0, r.w, h), rgb(color));
-    } else {
-        key_label(c, main, r, r.h * MAIN_TEXT, color, Place::Center);
-    }
+    key_label(c, main, r, r.h * MAIN_TEXT, color, Place::Center);
     if let Some(top) = top {
         key_label(c, top, r, r.h * SMALL_TEXT, DIM, Place::Top);
     }
@@ -174,6 +179,7 @@ fn key_label(c: &mut Canvas, (key, shifted): (Key, bool), r: Rect, size: f32, co
         Key::Named(Named::Right) => icon(c, Icon::ArrowRight),
         Key::Mod(Modifier::Shift) => icon(c, Icon::Shift),
         Key::Named(n) => text(c, named, named_label(n)),
+        Key::Caps => text(c, named, "Caps"),
         Key::Mod(m) => text(c, named, modifier_label(m)),
     }
 }

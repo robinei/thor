@@ -40,8 +40,6 @@ pub enum Icon {
     Touchpad,
     Sysinfo,
     Shift,
-    /// Shift with a bar under it.
-    CapsLock,
     Backspace,
     Enter,
     ArrowUp,
@@ -240,11 +238,6 @@ pub fn draw(c: &mut Canvas, icon: Icon, r: Rect, color: Color) {
         Icon::Shift => {
             let arrow = [p(12.0, 3.0), p(20.0, 11.5), p(15.5, 11.5), p(15.5, 18.5), p(8.5, 18.5), p(8.5, 11.5), p(4.0, 11.5)];
             c.polyline(&arrow, line, color, true);
-        }
-        Icon::CapsLock => {
-            let arrow = [p(12.0, 2.0), p(20.0, 10.0), p(15.5, 10.0), p(15.5, 16.0), p(8.5, 16.0), p(8.5, 10.0), p(4.0, 10.0)];
-            c.polyline(&arrow, line, color, true);
-            c.polyline(&[p(8.5, 20.5), p(15.5, 20.5)], line, color, false);
         }
         Icon::Backspace => {
             c.polyline(&[p(8.0, 6.0), p(21.0, 6.0), p(21.0, 18.0), p(8.0, 18.0), p(3.0, 12.0)], line, color, true);

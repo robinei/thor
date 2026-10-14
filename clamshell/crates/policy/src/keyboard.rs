@@ -104,7 +104,7 @@ fn key_of(stroke: &Stroke) -> Option<KeyCode> {
     match stroke.key {
         Key::Char(c) => char_key(c),
         Key::Named(n) => Some(named_key(n)).filter(|k| *k != KeyCode::KEY_UNKNOWN),
-        Key::Mod(_) => None,
+        Key::Mod(_) | Key::Caps => None,
     }
 }
 

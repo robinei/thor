@@ -519,6 +519,9 @@ impl State {
             }
             Event::Down(id) => {
                 let dirty = screen_of(&id);
+                if let Id::Key(pos) = id {
+                    self.keyboard.down(pos);
+                }
                 self.pressed = Some(id);
                 (dirty, vec![])
             }
@@ -528,6 +531,9 @@ impl State {
                 }
                 if matches!(id, Id::Control(_)) {
                     self.slide_end();
+                }
+                if let Id::Key(pos) = id {
+                    self.keyboard.up(pos);
                 }
                 (screen_of(&id), vec![])
             }
@@ -558,7 +564,7 @@ impl State {
     pub fn hold(&self, id: &Id) -> Hold {
         match id {
             Id::Key(pos) => match self.keyboard.effective(*pos) {
-                Some(Key::Mod(_)) | None => Hold::Long,
+                Some(Key::Mod(_) | Key::Caps) | None => Hold::Long,
                 Some(_) => Hold::Repeat,
             },
             _ => Hold::Long,

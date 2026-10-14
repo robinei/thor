@@ -708,12 +708,25 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
         ),
         (vec![key(Key::Mod(Modifier::Fn), false)], Screen::Bottom, bottom, "keyboard-fn.png"),
         (
-            vec![key(Key::Mod(Modifier::Fn), false), key(Key::Mod(Modifier::Shift), false), key(Key::Mod(Modifier::Ctrl), true)],
+            vec![
+                key(Key::Mod(Modifier::Fn), false),
+                key(Key::Mod(Modifier::Shift), false),
+                Event::Down(Id::Key(keyboard::find(Key::Mod(Modifier::Ctrl)).unwrap_or(KeyPos { row: 0, col: 0 }))),
+            ],
             Screen::Bottom,
             bottom,
             "keyboard-mods.png",
         ),
-        (vec![key(Key::Mod(Modifier::Shift), true)], Screen::Bottom, bottom, "keyboard-caps.png"),
+        (
+            vec![
+                Event::Up(Id::Key(keyboard::find(Key::Mod(Modifier::Ctrl)).unwrap_or(KeyPos { row: 0, col: 0 }))),
+                key(Key::Mod(Modifier::Shift), false),
+                key(Key::Caps, false),
+            ],
+            Screen::Bottom,
+            bottom,
+            "keyboard-caps.png",
+        ),
         (vec![Event::Activate(Id::Mode(Mode::Touchpad)), Event::Activate(Id::PadMouse)], Screen::Bottom, bottom, "touchpad.png"),
         (demo_metrics(), Screen::Bottom, bottom, "sysinfo.png"),
         (vec![Event::Activate(Id::Mode(Mode::Keyboard))], Screen::Bottom, bottom, "keyboard-back.png"),
