@@ -1,7 +1,8 @@
 //! sway's windows, through its IPC socket (`SWAYSOCK`; the i3 protocol: "i3-ipc", length, type, JSON):
-//! the window list after every window event, with the systemd unit of each window's process (so we know
-//! which are a game's or an app's we started), and focusing or closing a window. Without sway there is
-//! no window list (other compositors offer no common way).
+//! the window list after every window event, with each window's workspace and the systemd unit of its
+//! process; windows of our scopes are moved to their workspace (an instance's, or the game's: see
+//! sysprog_core::windows). Commands show a workspace, or close windows. Without sway there is no window
+//! list (other compositors offer no common way).
 
 use std::io::{self, Read, Write};
 use std::os::unix::net::UnixStream;
@@ -23,6 +24,8 @@ const GET_TREE: u32 = 4;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
+    /// Show (and create, if new) a workspace.
+    Workspace(String),
     Focus(i64),
     Close(i64),
 }
@@ -68,11 +71,15 @@ fn ask(stream: &mut UnixStream, kind: u32, payload: &str) -> io::Result<Vec<u8>>
 /// systemd unit.
 pub fn windows(tree: &Value, unit: &impl Fn(u32) -> Option<String>) -> Vec<Window> {
     let mut out = Vec::new();
-    collect(tree, unit, &mut out);
+    collect(tree, "", unit, &mut out);
     out
 }
 
-fn collect(node: &Value, unit: &impl Fn(u32) -> Option<String>, out: &mut Vec<Window>) {
+fn collect(node: &Value, workspace: &str, unit: &impl Fn(u32) -> Option<String>, out: &mut Vec<Window>) {
+    let workspace = match node.get("type").and_then(Value::as_str) {
+        Some("workspace") => node.get("name").and_then(Value::as_str).unwrap_or(""),
+        _ => workspace,
+    };
     let pid = node.get("pid").and_then(Value::as_u64).and_then(|p| u32::try_from(p).ok());
     let kind = node.get("type").and_then(Value::as_str);
     if let (Some(pid), Some("con" | "floating_con")) = (pid, kind) {
@@ -88,11 +95,12 @@ fn collect(node: &Value, unit: &impl Fn(u32) -> Option<String>, out: &mut Vec<Wi
             title: node.get("name").and_then(Value::as_str).unwrap_or("").to_owned(),
             focused: node.get("focused").and_then(Value::as_bool).unwrap_or(false),
             unit: unit(pid),
+            workspace: workspace.to_owned(),
         });
     }
     for key in ["nodes", "floating_nodes"] {
         for child in node.get(key).and_then(Value::as_array).into_iter().flatten() {
-            collect(child, unit, out);
+            collect(child, workspace, unit, out);
         }
     }
 }
@@ -120,6 +128,7 @@ pub fn spawn(sink: impl Sink, commands: Receiver<Command>) -> io::Result<()> {
     thread::Builder::new().name("sway commands".into()).spawn(move || {
         for command in commands {
             let text = match command {
+                Command::Workspace(name) => format!("workspace \"{name}\""),
                 Command::Focus(id) => format!("[con_id={id}] focus"),
                 Command::Close(id) => format!("[con_id={id}] kill"),
             };
@@ -146,9 +155,20 @@ fn follow(path: &Path, sink: &impl Sink) -> io::Result<()> {
     let mut events = UnixStream::connect(path)?;
     let mut queries = UnixStream::connect(path)?;
     ask(&mut events, SUBSCRIBE, r#"["window"]"#)?;
+    // Moves asked for, so a window sway won't move isn't asked again (and again, by its events).
+    let mut tried: std::collections::HashSet<(i64, String)> = std::collections::HashSet::new();
     loop {
         let tree: Value = serde_json::from_slice(&ask(&mut queries, GET_TREE, "")?).map_err(io::Error::other)?;
-        if !sink.send(Event::Windows(windows(&tree, &unit_of))) {
+        let list = windows(&tree, &unit_of);
+        // Windows of our scopes go to their workspace; the move brings another event and a fresh list.
+        let mut moved = false;
+        for w in &list {
+            if let Some(home) = w.home().filter(|h| *h != w.workspace && tried.insert((w.id, (*h).to_owned()))) {
+                let command = format!("[con_id={}] move container to workspace \"{home}\"", w.id);
+                moved |= ask(&mut queries, RUN_COMMAND, &command).is_ok();
+            }
+        }
+        if !moved && !sink.send(Event::Windows(list)) {
             return Ok(());
         }
         // Wait for the next window event (and any that came with it).
@@ -167,7 +187,7 @@ mod tests {
     #[test]
     fn the_tree_gives_windows_with_their_units() {
         let tree: Value = serde_json::from_str(
-            r#"{"type": "root", "nodes": [{"type": "output", "nodes": [{"type": "workspace",
+            r#"{"type": "root", "nodes": [{"type": "output", "nodes": [{"type": "workspace", "name": "3",
                 "nodes": [{"type": "con", "id": 7, "pid": 100, "app_id": "foot", "name": "~", "focused": true, "nodes": []}],
                 "floating_nodes": [{"type": "floating_con", "id": 9, "pid": 200, "app_id": null,
                     "window_properties": {"class": "steam_app_620"}, "name": "Portal 2", "focused": false}]}]}]}"#,
@@ -176,6 +196,7 @@ mod tests {
         let unit = |pid| (pid == 100).then(|| "sysprog-app-terminal-1-0.scope".to_owned());
         let w = windows(&tree, &unit);
         assert_eq!(w.len(), 2);
+        assert_eq!((w[0].workspace.as_str(), w[1].workspace.as_str()), ("3", "3"));
         assert_eq!((w[0].id, w[0].app_id.as_str(), w[0].focused, w[0].unit.as_deref()), (7, "foot", true, Some("sysprog-app-terminal-1-0.scope")));
         assert_eq!((w[1].app_id.as_str(), w[1].title.as_str(), w[1].unit.as_deref()), ("steam_app_620", "Portal 2", None));
     }

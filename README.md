@@ -51,20 +51,22 @@ layout. To type into other apps on a desktop, run with `SYSPROG_BOTTOM_PANEL=1`:
 panel in the bottom right corner that never takes the keyboard focus (as on the device), not a window.
 
 **Launcher** (the grid icon): the running game first (a "No game" placeholder otherwise, so tiles never
-move), then the apps. A tap starts an app, or goes to its most recent window when it runs, or to its next
-window when it already is in front; "1/3" shows which of its windows you are on. A long press closes the
-window the tile is on, politely (as its close button would); on the game tile it quits the game (its
-windows closed, its scope killed if it hasn't gone 5 s later). A "+" in the corner of a running app marked
-`multiple` starts another instance. Running apps show their icon in full colour (drawn icons green), idle ones
-grey. Apps come from `~/.config/sysprog/launcher.json` (read at start); without it Shelf, Steam (Big
-Picture) and a terminal (foot); `sysprog --launcher-example` prints a file to start from. An app is a
-`desktop` file (giving name, command, icon and window class) and/or a `name` with a `command` (program and
-arguments, no shell) or a `builtin` (`shelf`: brings shelf's window to the front); `icon` picks a drawn
+move), then the apps. Each start of an app is an instance: its own systemd scope
+(`sysprog-app-<key>-<pid>-<n>`) and a sway workspace of the same name, where all its windows go (a second
+window, or a program started from its terminal; sway arranges them). A tap starts an app, shows its most
+recent instance when it runs, or its next instance when one of its own is in front; "1/3" shows which. A
+long press closes the instance it is on (its windows, politely, as their close buttons would); on the
+game tile it quits the game (its windows closed, its scope killed if it hasn't gone 5 s later). A green
+"+" on a running app marked `multiple` starts another instance. The game has one workspace, for our game
+scopes' windows and Steam's (`steam_app_…`). Running apps show their icon in full colour (drawn icons
+green), idle ones grey. Apps come from `~/.config/sysprog/launcher.json` (read at start); without it
+Shelf, Steam (Big Picture) and a terminal (foot); `sysprog --launcher-example` prints a file to start
+from. An app is a `desktop` file (giving name, command and icon) and/or a `name` with a `command`
+(program and arguments, no shell) or a `builtin` (`shelf`: shows shelf's window); `icon` picks a drawn
 icon (`shelf`, `gamepad`, `terminal`, `browser`, `files`, `music`, `video`, `settings`) over the desktop
-file's, and with neither the initial shows; `app_id` names its windows if nothing else does. Apps start
-from the home directory in their own systemd scope (`sysprog-app-<key>-…`, so their windows are known),
-and outlive a restart of the system program. Windows come from sway's IPC (`SWAYSOCK`); other compositors
-have no window list, so there taps only start apps. A broken file shows its error under the tiles.
+file's, and with neither the initial shows. Instances outlive a restart of the system program. Windows
+come from sway's IPC (`SWAYSOCK`); other compositors have no window list, so there taps only start apps.
+A broken file shows its error under the tiles.
 
 **Settings** (the sliders icon, first in the bar): a 4×4 grid of tiles, each an icon over its value. A
 tap steps to the next value, a long press goes back to the default. Tiles sit on black; an icon's colour says

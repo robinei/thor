@@ -42,7 +42,8 @@ fn allocs() -> usize {
 }
 
 fn window(id: i64, app_id: &str, unit: Option<&str>, focused: bool) -> sysprog_core::windows::Window {
-    sysprog_core::windows::Window { id, app_id: app_id.into(), title: String::new(), focused, unit: unit.map(Into::into) }
+    let workspace = unit.map_or("1", |u| u.trim_end_matches(".scope")).to_owned();
+    sysprog_core::windows::Window { id, app_id: app_id.into(), title: String::new(), focused, unit: unit.map(Into::into), workspace }
 }
 
 fn key(k: Key) -> Event {

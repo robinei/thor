@@ -1,5 +1,4 @@
-//! Desktop files: a launcher app named by its desktop id gets its name, command, icon and window class
-//! from `<data dir>/applications/<id>.desktop` (the XDG data dirs), its icon from the icon themes.
+//! Desktop files: a launcher app named by its desktop id gets its name, command and icon from `<data dir>/applications/<id>.desktop` (the XDG data dirs), its icon from the icon themes.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -20,7 +19,6 @@ struct Entry {
     name: String,
     exec: String,
     icon: String,
-    wm_class: String,
 }
 
 fn parse(text: &str) -> Entry {
@@ -40,7 +38,6 @@ fn parse(text: &str) -> Entry {
             "Name" => entry.name = value,
             "Exec" => entry.exec = value,
             "Icon" => entry.icon = value,
-            "StartupWMClass" => entry.wm_class = value,
             _ => {}
         }
     }
@@ -87,8 +84,7 @@ pub fn exec_args(exec: &str) -> Vec<String> {
     args
 }
 
-/// Fills in from its desktop file what the app's JSON didn't give: name, command, icon image; adds the
-/// desktop id, window class and program name to the app ids its windows are known by.
+/// Fills in from its desktop file what the app's JSON didn't give: name, command, icon image.
 pub fn resolve(app: &mut App, dirs: &[PathBuf]) -> Result<(), String> {
     let Some(id) = app.desktop.clone() else {
         return Ok(());
@@ -107,13 +103,6 @@ pub fn resolve(app: &mut App, dirs: &[PathBuf]) -> Result<(), String> {
         if app.command.is_empty() {
             return Err(format!("{id}.desktop: no Exec"));
         }
-    }
-    app.app_ids.push(id);
-    if !entry.wm_class.is_empty() {
-        app.app_ids.push(entry.wm_class);
-    }
-    if let Some(program) = app.command.first().and_then(|p| Path::new(p).file_name()).and_then(|p| p.to_str()) {
-        app.app_ids.push(program.to_owned());
     }
     if app.icon.is_empty() && !entry.icon.is_empty() {
         app.icon_file = find_icon(&entry.icon, dirs).map(|p| p.to_string_lossy().into());
@@ -180,7 +169,6 @@ mod tests {
         assert_eq!(app.name, "Example", "the unlocalized name, not an action's");
         assert_eq!(app.command, ["example", "--new"]);
         assert_eq!(app.icon_file.as_deref(), dir.join("icons/hicolor/128x128/apps/example.png").to_str());
-        assert!(app.owns("org.example.App") && app.owns("examplewin") && app.owns("example"));
         // What the JSON says wins.
         let mut named = App { desktop: Some("org.example.App".into()), name: "Mine".into(), icon: "files".into(), ..App::default() };
         resolve(&mut named, std::slice::from_ref(&dir)).unwrap();

@@ -11,8 +11,7 @@
 //! An app is a desktop file (`desktop`: its id, giving the name, command, icon and window class), or
 //! named here with a command (program and arguments, no shell) or a built-in action; fields given here
 //! override the desktop file's. `icon` picks one of the drawn icons ([`ICONS`]) instead of the desktop
-//! file's; with neither, the name's initial shows. `multiple`: a long press starts another instance.
-//! `app_id`: the window app id to recognise its windows by, if the desktop file doesn't say. Without
+//! file's; with neither, the name's initial shows. `multiple`: a "+" starts another instance. Without
 //! the file, Shelf, Steam and a terminal.
 
 use serde::Deserialize;
@@ -43,19 +42,12 @@ pub struct App {
     pub desktop: Option<String>,
     #[serde(default)]
     pub multiple: bool,
-    /// Window app ids that are this app's (from `app_id`, and the desktop file's id and window class).
-    #[serde(default, rename = "app_id", deserialize_with = "one_or_none")]
-    pub app_ids: Vec<String>,
     /// The icon image from the desktop file (filled in when resolving it); also its image cache key.
     #[serde(skip)]
     pub icon_file: Option<std::sync::Arc<str>>,
     /// See [`App::key`]; set when read.
     #[serde(skip)]
     pub key: String,
-}
-
-fn one_or_none<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
-    Ok(Option::<String>::deserialize(d)?.into_iter().collect())
 }
 
 impl App {
@@ -71,10 +63,6 @@ impl App {
         self
     }
 
-    /// Whether a window with this app id is this app's.
-    pub fn owns(&self, app_id: &str) -> bool {
-        !app_id.is_empty() && self.app_ids.iter().any(|a| a.eq_ignore_ascii_case(app_id))
-    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -85,18 +73,17 @@ struct File {
 
 /// The apps when there is no file.
 pub fn defaults() -> Vec<App> {
-    let app = |name: &str, icon: &str, command: &[&str], builtin, app_id: &str| App {
+    let app = |name: &str, icon: &str, command: &[&str], builtin| App {
         name: name.into(),
         icon: icon.into(),
         command: command.iter().map(|&s| s.into()).collect(),
         builtin,
-        app_ids: vec![app_id.into()],
         ..App::default()
     };
     vec![
-        app("Shelf", "shelf", &[], Some(Builtin::Shelf), SHELF_APP_ID),
-        app("Steam", "gamepad", &["steam", "-gamepadui"], None, "steam"),
-        App { multiple: true, ..app("Terminal", "terminal", &["foot"], None, "foot") },
+        app("Shelf", "shelf", &[], Some(Builtin::Shelf)),
+        app("Steam", "gamepad", &["steam", "-gamepadui"], None),
+        App { multiple: true, ..app("Terminal", "terminal", &["foot"], None) },
     ]
     .into_iter()
     .map(App::with_key)
@@ -108,8 +95,8 @@ pub const SHELF_APP_ID: &str = "sysprog.top";
 
 /// The apps in `json`, or what is wrong with it. Desktop files are read afterwards (that is I/O).
 pub fn parse(json: &str) -> Result<Vec<App>, String> {
-    let mut file: File = serde_json::from_str(json).map_err(|e| e.to_string())?;
-    for app in &mut file.apps {
+    let file: File = serde_json::from_str(json).map_err(|e| e.to_string())?;
+    for app in &file.apps {
         let label = app.desktop.clone().unwrap_or_else(|| app.name.clone());
         if app.name.is_empty() && app.desktop.is_none() {
             return Err("an app needs a name or a desktop file".into());
@@ -118,9 +105,6 @@ pub fn parse(json: &str) -> Result<Vec<App>, String> {
             (true, false) => return Err(format!("{label}: needs a command, a desktop file or a builtin")),
             (false, true) => return Err(format!("{label}: a builtin takes no command or desktop file")),
             _ => {}
-        }
-        if app.builtin == Some(Builtin::Shelf) {
-            app.app_ids.push(SHELF_APP_ID.into());
         }
     }
     Ok(file.apps.into_iter().map(App::with_key).collect())
@@ -137,9 +121,9 @@ mod tests {
         assert_eq!(apps.as_ref().ok().and_then(|a| a.get(1)).map(|a| a.icon.as_str()), Some(""), "no icon: the initial");
         assert!(parse(r#"{"apps": [{"name": "X"}]}"#).is_err_and(|e| e.contains("needs a command")));
         assert!(parse(r#"{"apps": [{"icon": "files"}]}"#).is_err_and(|e| e.contains("name or a desktop")));
-        let foot = parse(r#"{"apps": [{"desktop": "foot", "multiple": true, "app_id": "footclient"}]}"#);
+        let foot = parse(r#"{"apps": [{"desktop": "org.codeberg.dnkl.foot", "multiple": true}]}"#);
         let foot = foot.as_ref().ok().and_then(|a| a.first());
-        assert!(foot.is_some_and(|f| f.multiple && f.owns("FootClient") && f.key() == "foot"));
+        assert!(foot.is_some_and(|f| f.multiple && f.key() == "org_codeberg_dnkl_foot"));
         assert!(parse(r#"{"apps": [{"name": "X", "command": ["x"], "builtin": "shelf"}]}"#).is_err());
         assert!(parse(r#"{"apps": [{"name": "X", "comand": ["x"]}]}"#).is_err_and(|e| e.contains("comand")), "typos are reported");
         assert!(parse("{").is_err());

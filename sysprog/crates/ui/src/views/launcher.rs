@@ -3,7 +3,7 @@
 //! starts an app or goes to it (again: its next window); a long press closes the window it is on (quits
 //! the game); a "+" in the corner of a running app that allows several starts another. Running shows as
 //! colour: app icons in full colour (drawn
-//! icons green), idle ones grey and dim; "1/3" when it has several windows, the one shown first. What is
+//! icons green), idle ones grey and dim; "1/3" when it has several instances, the one shown first. What is
 //! wrong with the file, if anything, shows at the bottom.
 
 use std::fmt::Write;
@@ -100,9 +100,7 @@ fn icon_square(r: Rect) -> Rect {
 }
 
 fn game_tile(f: &mut Frame, r: Rect, game: Option<&Game>, images: &mut Images, buf: &mut String) {
-    let s: &State = f.s;
-    position(buf, s.window_position(|w| s.game_owns(w)));
-    let position: &str = buf;
+    buf.clear();
     let scale = f.c.scale();
     f.button(Id::GameTile, r, LOOK, |c| {
         let Some(game) = game else {
@@ -121,13 +119,13 @@ fn game_tile(f: &mut Frame, r: Rect, game: Option<&Game>, images: &mut Images, b
             }
             None => c.rounded(art, 4.0, rgb(game.color)),
         }
-        caption(c, r, &game.title, TEXT, position);
+        caption(c, r, &game.title, TEXT, "");
     });
 }
 
 fn app_tile(f: &mut Frame, r: Rect, i: usize, app: &App, images: &mut Images, buf: &mut String) {
     let s: &State = f.s;
-    let (at, count) = s.window_position(|w| s.app_owns(i, w));
+    let (at, count) = s.instance_position(i);
     let running = count > 0 || s.apps_running.get(i).is_some_and(|n| *n > 0);
     position(buf, (at, count));
     let position: &str = buf;

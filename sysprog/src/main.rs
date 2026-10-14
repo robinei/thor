@@ -220,6 +220,8 @@ fn main() -> ExitCode {
                     // MangoHud's first, so a game's own variables can still override it.
                     env.splice(0..0, tuning::mangohud_env(&config));
                 }
+                // The game's workspace first, so it opens in front.
+                let _ = sway_tx.send(sway::Command::Workspace(sysprog_core::windows::GAME_WORKSPACE.into()));
                 let request = sysprog_policy::launcher::Request { game: game.clone(), launch: launch.clone(), file: file.clone(), env };
                 if launch_tx.send(request).is_err() {
                     log::warn!("launcher thread is gone");
@@ -251,21 +253,26 @@ fn main() -> ExitCode {
                 }
             }
             Effect::RunApp { app, key, command } => {
-                log::info!("running {command:?}");
+                // A new instance: its own scope, and its workspace shown first, so it opens in front.
+                let name = sysprog_policy::launcher::instance_name(key);
+                log::info!("running {command:?} as {name}");
+                let _ = sway_tx.send(sway::Command::Workspace(name.clone()));
                 let events = app_events.get().cloned();
                 let app = *app;
-                sysprog_policy::launcher::run_app(key, command, scope, move || {
+                sysprog_policy::launcher::run_app(&name, command, scope, move || {
                     if let Some(events) = events {
                         events.send(Event::AppEnded(app));
                     }
                 });
             }
             Effect::ShowShelf => show_shelf(),
-            Effect::FocusWindow(id) => {
-                let _ = sway_tx.send(sway::Command::Focus(*id));
+            Effect::FocusWorkspace(name) => {
+                let _ = sway_tx.send(sway::Command::Workspace(name.clone()));
             }
-            Effect::CloseWindow(id) => {
-                let _ = sway_tx.send(sway::Command::Close(*id));
+            Effect::CloseWindows(ids) => {
+                for id in ids {
+                    let _ = sway_tx.send(sway::Command::Close(*id));
+                }
             }
             Effect::QuitGame { windows, units } => {
                 log::info!("quitting the game");
@@ -294,11 +301,11 @@ const LAUNCHER_EXAMPLE: &str = r#"{
   "apps": [
     { "name": "Shelf", "icon": "shelf", "builtin": "shelf" },
     { "desktop": "steam", "command": ["steam", "-gamepadui"] },
-    { "name": "Terminal", "icon": "terminal", "command": ["foot"], "app_id": "foot", "multiple": true },
+    { "name": "Terminal", "icon": "terminal", "command": ["foot"], "multiple": true },
     { "desktop": "firefox" },
-    { "name": "Files", "icon": "files", "command": ["thunar"], "app_id": "thunar", "multiple": true },
-    { "name": "Music", "icon": "music", "command": ["foot", "--app-id=music", "ncmpcpp"], "app_id": "music" },
-    { "name": "Kodi", "command": ["kodi"], "app_id": "kodi" }
+    { "name": "Files", "icon": "files", "command": ["thunar"], "multiple": true },
+    { "name": "Music", "icon": "music", "command": ["foot", "ncmpcpp"] },
+    { "name": "Kodi", "command": ["kodi"] }
   ]
 }
 "#;
@@ -422,6 +429,7 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
         title: String::new(),
         focused,
         unit: unit.map(Into::into),
+        workspace: unit.map_or("1", |u| u.trim_end_matches(".scope")).replace("sysprog-game-1-0", sysprog_core::windows::GAME_WORKSPACE),
     };
     let taps = |setting: Setting, n: usize| (0..n).map(move |_| Event::Activate(Id::Tile(setting)));
     let shots: Vec<Shot> = vec![
@@ -502,8 +510,8 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
                 Event::Windows(vec![
                     window(5, "retroarch", Some("sysprog-game-1-0.scope"), false),
                     window(7, "foot", Some("sysprog-app-terminal-1-0.scope"), false),
-                    window(8, "foot", None, true),
-                    window(9, "firefox", None, false),
+                    window(8, "foot", Some("sysprog-app-terminal-1-1.scope"), true),
+                    window(9, "firefox", Some("sysprog-app-firefox-1-2.scope"), false),
                 ]),
             ],
             Screen::Bottom,

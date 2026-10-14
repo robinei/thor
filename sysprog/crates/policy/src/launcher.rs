@@ -165,19 +165,23 @@ fn steam_running(marker: &str) -> bool {
     })
 }
 
-/// Starts a launcher app (program and arguments, no shell) from the home directory, in its own scope
-/// where there is a user session (so it outlives a restart of the system program), named after its key
-/// (`sysprog-app-<key>-<pid>-<n>`, so its windows are known to be its). Doesn't wait: calls `ended`
-/// once it exits, or at once if it couldn't start.
-pub fn run_app(key: &str, command: &[String], scope: bool, ended: impl FnOnce() + Send + 'static) {
+/// A new launcher instance's name, for its scope and its workspace: `sysprog-app-<key>-<pid>-<n>`.
+pub fn instance_name(key: &str) -> String {
     static COUNT: AtomicU32 = AtomicU32::new(0);
+    format!("sysprog-app-{key}-{}-{}", std::process::id(), COUNT.fetch_add(1, Ordering::Relaxed))
+}
+
+/// Starts a launcher app (program and arguments, no shell) from the home directory, in a scope of this
+/// name where there is a user session (so it outlives a restart of the system program, and its windows
+/// are known to be the instance's). Doesn't wait: calls `ended` once it exits, or at once if it couldn't
+/// start.
+pub fn run_app(name: &str, command: &[String], scope: bool, ended: impl FnOnce() + Send + 'static) {
     let Some((program, args)) = command.split_first() else {
         return ended();
     };
     let mut cmd = if scope {
         let mut cmd = Command::new("systemd-run");
-        let n = COUNT.fetch_add(1, Ordering::Relaxed);
-        let unit = format!("--unit=sysprog-app-{key}-{}-{n}", std::process::id());
+        let unit = format!("--unit={name}");
         cmd.args(["--user", "--scope", "--quiet", "--collect", &unit, "--"]).arg(program).args(args);
         cmd
     } else {
@@ -248,8 +252,8 @@ mod tests {
     fn apps_report_their_end() {
         let (tx, rx) = std::sync::mpsc::channel();
         let done = tx.clone();
-        run_app("sleep", &["sh".into(), "-c".into(), "sleep 0.2".into()], false, move || done.send("sleep").unwrap());
-        run_app("missing", &["/nonexistent/app".into()], false, move || tx.send("missing").unwrap());
+        run_app(&instance_name("sleep"), &["sh".into(), "-c".into(), "sleep 0.2".into()], false, move || done.send("sleep").unwrap());
+        run_app(&instance_name("missing"), &["/nonexistent/app".into()], false, move || tx.send("missing").unwrap());
         assert_eq!(rx.recv_timeout(Duration::from_secs(5)).unwrap(), "missing", "at once");
         assert_eq!(rx.recv_timeout(Duration::from_secs(5)).unwrap(), "sleep", "when it exits");
     }

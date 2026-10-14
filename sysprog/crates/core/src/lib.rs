@@ -209,10 +209,10 @@ pub enum Effect {
     /// Start a launcher app's command (by position, to report its end) in a scope named after its key
     /// (`sysprog-app-<key>-…`), so its windows are known to be its.
     RunApp { app: u16, key: String, command: Vec<String> },
-    /// Bring this window to the front.
-    FocusWindow(i64),
-    /// Ask this window to close (as its own close button would).
-    CloseWindow(i64),
+    /// Show this workspace (a launcher instance's, or the game's).
+    FocusWorkspace(String),
+    /// Ask these windows to close (as their own close buttons would): an instance's.
+    CloseWindows(Vec<i64>),
     /// Quit the game: close its windows, then end its scopes (ours only) if it doesn't go.
     QuitGame { windows: Vec<i64>, units: Vec<String> },
     /// Bring shelf's window to the front.
@@ -261,9 +261,10 @@ pub struct State {
     pub apps: Vec<apps::App>,
     pub apps_error: Option<String>,
     pub apps_running: Vec<u16>,
-    /// The compositor's windows, and their ids by when they were last in front (most recent first).
+    /// The compositor's windows, and launcher instances (workspace names) by when they were last in
+    /// front, most recent first.
     pub windows: Vec<windows::Window>,
-    recent: Vec<i64>,
+    recent: Vec<String>,
     /// The pad mouse was turned on by a launch (Setting::PadMouse), to turn off when the game ends.
     pad_mouse_by_launch: bool,
     /// What the settings panel edits (global whenever there is no game in context).
