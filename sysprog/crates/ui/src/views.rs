@@ -32,7 +32,8 @@ const ACCENT: u32 = 0xe0a040;
 const GO: u32 = 0x45a866;
 /// Fn-layer labels: a muted blue, to tell them from the Shift layer's grey.
 const FN: u32 = 0x5f82b8;
-/// Lines between keys.
+/// Lines between keys, if drawn at all (the labels alone may be enough on black).
+const SEPARATORS: bool = false;
 const SEPARATOR: u32 = 0x24242c;
 
 fn is_pressed(s: &State, id: &Id) -> bool {
@@ -223,16 +224,18 @@ fn keyboard(c: &mut Canvas, s: &State, body: Rect, targets: &mut Vec<Target>) {
             x += cell.w;
         }
     }
-    // Separators: two buffer pixels on every boundary between keys, and above the first row.
-    for (row, slots) in LAYOUT.iter().enumerate() {
-        let units: f32 = slots.iter().map(|k| k.width).sum();
-        let unit = body.w / units.max(1.0);
-        let y = body.y + row as f32 * row_h;
-        c.hline(body.x, body.x + body.w, y, 2, rgb(SEPARATOR));
-        let mut x = body.x;
-        for slot in slots.iter().take(slots.len().saturating_sub(1)) {
-            x += slot.width * unit;
-            c.vline(x, y, y + row_h, 2, rgb(SEPARATOR));
+    if SEPARATORS {
+        // Two buffer pixels on every boundary between keys, and above the first row.
+        for (row, slots) in LAYOUT.iter().enumerate() {
+            let units: f32 = slots.iter().map(|k| k.width).sum();
+            let unit = body.w / units.max(1.0);
+            let y = body.y + row as f32 * row_h;
+            c.hline(body.x, body.x + body.w, y, 2, rgb(SEPARATOR));
+            let mut x = body.x;
+            for slot in slots.iter().take(slots.len().saturating_sub(1)) {
+                x += slot.width * unit;
+                c.vline(x, y, y + row_h, 2, rgb(SEPARATOR));
+            }
         }
     }
     for target in targets.iter().filter(|t| matches!(t.id, Id::Key(_))) {
@@ -242,19 +245,20 @@ fn keyboard(c: &mut Canvas, s: &State, body: Rect, targets: &mut Vec<Target>) {
     }
 }
 
-/// Where a key label goes: big in the middle, or small in a corner (Shift layer top right, Fn bottom right).
+/// Where a key label goes: big in the middle, or small above it (the Shift layer) or below it (Fn), all
+/// centred, so each key reads as one column even without lines between keys.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Place {
     Center,
-    TopRight,
-    BottomRight,
+    Top,
+    Bottom,
 }
 
 fn draw_key(c: &mut Canvas, kb: &Keyboard, slot: &Slot, r: Rect, pressed: bool) {
     if pressed {
         c.fill(r, rgb(PRESSED));
     }
-    // What each place shows: the active layer's function in the middle, the others in the corners.
+    // What each place shows: the active layer's function in the middle, the others above and below.
     // Letters have no Shift label: they change case.
     let shift_char = match slot.base {
         Key::Char(ch) if !ch.is_ascii_alphabetic() && keyboard::shifted(ch) != ch => Some(ch),
@@ -297,11 +301,11 @@ fn draw_key(c: &mut Canvas, kb: &Keyboard, slot: &Slot, r: Rect, pressed: bool) 
         key_label(c, main, r, r.h * 0.3, color, Place::Center);
     }
     if let Some(top) = top {
-        key_label(c, top, r, r.h * 0.17, DIM, Place::TopRight);
+        key_label(c, top, r, r.h * 0.17, DIM, Place::Top);
     }
     if let Some(bottom) = bottom {
         let color = if fn_on { DIM } else { FN };
-        key_label(c, bottom, r, r.h * 0.17, color, Place::BottomRight);
+        key_label(c, bottom, r, r.h * 0.17, color, Place::Bottom);
     }
 }
 
@@ -310,8 +314,8 @@ fn key_label(c: &mut Canvas, (key, shifted): (Key, bool), r: Rect, size: f32, co
     let pad = r.h * 0.08;
     let icon_box = |h: f32| match place {
         Place::Center => Rect::new(r.x, r.y + (r.h - h) / 2.0, r.w, h),
-        Place::TopRight => Rect::new(r.x + r.w - h - pad, r.y + pad, h, h),
-        Place::BottomRight => Rect::new(r.x + r.w - h - pad, r.y + r.h - h - pad, h, h),
+        Place::Top => Rect::new(r.x + (r.w - h) / 2.0, r.y + pad, h, h),
+        Place::Bottom => Rect::new(r.x + (r.w - h) / 2.0, r.y + r.h - h - pad, h, h),
     };
     let text = |c: &mut Canvas, size: f32, t: &str| {
         // Shrink labels that don't fit the key (PgUp, Home on narrow keys).
@@ -321,11 +325,11 @@ fn key_label(c: &mut Canvas, (key, shifted): (Key, bool), r: Rect, size: f32, co
         let w = c.text_width(size, t);
         match place {
             Place::Center => label(c, r, size, color, t),
-            Place::TopRight => {
-                c.text(r.x + r.w - w - pad, r.y + pad * 0.5, size, rgb(color), t);
+            Place::Top => {
+                c.text(r.x + (r.w - w) / 2.0, r.y + pad * 0.5, size, rgb(color), t);
             }
-            Place::BottomRight => {
-                c.text(r.x + r.w - w - pad, r.y + r.h - size * 1.3 - pad * 0.5, size, rgb(color), t);
+            Place::Bottom => {
+                c.text(r.x + (r.w - w) / 2.0, r.y + r.h - size * 1.3 - pad * 0.5, size, rgb(color), t);
             }
         }
     };
