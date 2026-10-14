@@ -1,7 +1,8 @@
 //! The launcher: the running game's tile first (a placeholder when none runs, so the tiles never move),
 //! then the apps from launcher.json, as a grid of tiles on black, each an icon over its name. A tap
-//! starts an app or goes to it (again: its next window); a long press quits the game, or starts another
-//! instance of an app that allows several. Running shows as colour: app icons in full colour (drawn
+//! starts an app or goes to it (again: its next window); a long press closes the window it is on (quits
+//! the game); a "+" in the corner of a running app that allows several starts another. Running shows as
+//! colour: app icons in full colour (drawn
 //! icons green), idle ones grey and dim; "1/3" when it has several windows, the one shown first. What is
 //! wrong with the file, if anything, shows at the bottom.
 
@@ -30,6 +31,9 @@ const NAME: f32 = 0.15;
 const NAME_Y: f32 = 0.62;
 /// The window position ("1/3") size, of a tile's height.
 const COUNT: f32 = 0.11;
+/// The "+" button's tap area (about 6 mm on the Thor) and the drawn "+", of a tile's height.
+const PLUS: f32 = 0.45;
+const PLUS_ARM: f32 = 0.06;
 /// An idle app's icon image: grey at this brightness.
 const IDLE: f32 = 0.55;
 /// The placeholder's icon: barely there.
@@ -160,4 +164,16 @@ fn app_tile(f: &mut Frame, r: Rect, i: usize, app: &App, images: &mut Images, bu
         }
         caption(c, r, &app.name, TEXT, position);
     });
+    // "+": another instance, a button of its own in the top left corner (drawn after the tile, so a tap
+    // there is its).
+    if s.offers_new(i) {
+        let side = r.h * PLUS;
+        let plus = Rect::new(r.x, r.y, side, side * 0.8);
+        f.button(Id::NewInstance(i as u16), plus, Look { radius: 8.0, ..LOOK }, |c| {
+            let (cx, cy) = plus.center();
+            let arm = r.h * PLUS_ARM;
+            c.fill(Rect::new(cx - arm, cy - 1.0, arm * 2.0, 2.0), rgb(TEXT));
+            c.fill(Rect::new(cx - 1.0, cy - arm, 2.0, arm * 2.0), rgb(TEXT));
+        });
+    }
 }

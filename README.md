@@ -52,9 +52,10 @@ panel in the bottom right corner that never takes the keyboard focus (as on the 
 
 **Launcher** (the grid icon): the running game first (a "No game" placeholder otherwise, so tiles never
 move), then the apps. A tap starts an app, or goes to its most recent window when it runs, or to its next
-window when it already is in front; "1/3" shows which of its windows you are on. A long press quits the
-game (its windows are closed, its scope killed if it hasn't gone 5 s later), or starts another instance
-of an app marked `multiple`. Running apps show their icon in full colour (drawn icons green), idle ones
+window when it already is in front; "1/3" shows which of its windows you are on. A long press closes the
+window the tile is on, politely (as its close button would); on the game tile it quits the game (its
+windows closed, its scope killed if it hasn't gone 5 s later). A "+" in the corner of a running app marked
+`multiple` starts another instance. Running apps show their icon in full colour (drawn icons green), idle ones
 grey. Apps come from `~/.config/sysprog/launcher.json` (read at start); without it Shelf, Steam (Big
 Picture) and a terminal (foot); `sysprog --launcher-example` prints a file to start from. An app is a
 `desktop` file (giving name, command, icon and window class) and/or a `name` with a `command` (program and

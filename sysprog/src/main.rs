@@ -264,6 +264,9 @@ fn main() -> ExitCode {
             Effect::FocusWindow(id) => {
                 let _ = sway_tx.send(sway::Command::Focus(*id));
             }
+            Effect::CloseWindow(id) => {
+                let _ = sway_tx.send(sway::Command::Close(*id));
+            }
             Effect::QuitGame { windows, units } => {
                 log::info!("quitting the game");
                 for id in windows {

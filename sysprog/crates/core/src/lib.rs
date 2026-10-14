@@ -112,6 +112,8 @@ pub enum Id {
     App(u16),
     /// The launcher's first tile: the running game (or a placeholder when none runs).
     GameTile,
+    /// The "+" on a running app that allows several instances: another one.
+    NewInstance(u16),
     /// The settings panel's scope tabs.
     Scope(Scope),
     /// Drops the game in context's overrides.
@@ -209,6 +211,8 @@ pub enum Effect {
     RunApp { app: u16, key: String, command: Vec<String> },
     /// Bring this window to the front.
     FocusWindow(i64),
+    /// Ask this window to close (as its own close button would).
+    CloseWindow(i64),
     /// Quit the game: close its windows, then end its scopes (ours only) if it doesn't go.
     QuitGame { windows: Vec<i64>, units: Vec<String> },
     /// Bring shelf's window to the front.
@@ -296,7 +300,7 @@ pub enum Hold {
 fn screen_of(id: &Id) -> Dirty {
     match id {
         Id::Game(_) | Id::Tab(_) => Dirty::BOTH,
-        Id::Mode(_) | Id::Tile(_) | Id::Env | Id::EnvSave | Id::EnvCancel | Id::Wake | Id::App(_) | Id::GameTile | Id::Scope(_) | Id::Reset | Id::Launch | Id::Key(_) | Id::PadMouse => Dirty::BOTTOM,
+        Id::Mode(_) | Id::Tile(_) | Id::Env | Id::EnvSave | Id::EnvCancel | Id::Wake | Id::App(_) | Id::GameTile | Id::NewInstance(_) | Id::Scope(_) | Id::Reset | Id::Launch | Id::Key(_) | Id::PadMouse => Dirty::BOTTOM,
     }
 }
 
@@ -528,6 +532,7 @@ impl State {
             },
             Id::App(i) => (Dirty::BOTTOM, self.tap_app(usize::from(i), long)),
             Id::GameTile => (Dirty::BOTTOM, self.tap_game(long)),
+            Id::NewInstance(i) => (Dirty::BOTTOM, self.new_instance(usize::from(i))),
             Id::PadMouse => {
                 self.pad_mouse = !self.pad_mouse;
                 (Dirty::BOTTOM, vec![Effect::PadMouse(self.pad_mouse)])

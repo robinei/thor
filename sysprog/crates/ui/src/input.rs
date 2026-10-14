@@ -35,10 +35,11 @@ pub(crate) struct Press {
 }
 
 impl App {
-    /// What the last frame drew at `position` on `surface`.
+    /// What the last frame drew at `position` on `surface`: the topmost (last drawn) target there, so a
+    /// button on a tile (the launcher's "+") wins over the tile.
     pub(crate) fn target_at(&mut self, surface: &WlSurface, (x, y): (f64, f64)) -> Option<Id> {
         let view = self.view_mut(surface)?;
-        view.targets.iter().find(|t| t.rect.contains(x as f32, y as f32)).map(|t| t.id.clone())
+        view.targets.iter().rev().find(|t| t.rect.contains(x as f32, y as f32)).map(|t| t.id.clone())
     }
 
     /// A press starts: light the target, and arm the hold timer. A tap acts on release; a hold acts

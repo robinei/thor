@@ -1,7 +1,8 @@
 //! The launcher as a task switcher. A tap on an app starts it when it isn't running, brings its most
 //! recent window to the front when it is, and goes on to its next window when it already is in front. A
-//! long press starts another instance of apps that allow several, and quits the game on the game tile.
-//! Windows are an app's when its scope says we started them, or by app id.
+//! long press closes the window it is on (politely, as its own close button would); on the game tile it
+//! quits the game. A "+" on running apps that allow several starts another instance. Windows are an
+//! app's when its scope says we started them, or by app id.
 
 use crate::apps::Builtin;
 use crate::windows::Window;
@@ -45,6 +46,13 @@ impl State {
         (position, count)
     }
 
+    /// The owner's window a tile is on: the one in front, else the most recent.
+    fn current_window(&self, owns: impl Fn(&Window) -> bool) -> Option<i64> {
+        self.windows.iter().find(|w| w.focused && owns(w)).map(|w| w.id).or_else(|| {
+            self.recent.iter().copied().find(|id| self.windows.iter().any(|w| w.id == *id && owns(w)))
+        })
+    }
+
     /// The window to go to among an owner's: the next after the one in front (wrapping), else the most
     /// recent, else any.
     fn next_window(&self, owns: impl Fn(&Window) -> bool) -> Option<i64> {
@@ -61,19 +69,33 @@ impl State {
         let Some(app) = self.apps.get(i) else {
             return vec![];
         };
-        let start = Effect::RunApp { app: i as u16, key: app.key().to_owned(), command: app.command.clone() };
-        if long && app.multiple && !app.command.is_empty() {
-            return self.started(i, start);
+        if long {
+            return self.current_window(|w| self.app_owns(i, w)).map(Effect::CloseWindow).into_iter().collect();
         }
         if let Some(id) = self.next_window(|w| self.app_owns(i, w)) {
             return vec![Effect::FocusWindow(id)];
         }
+        let start = Effect::RunApp { app: i as u16, key: app.key().to_owned(), command: app.command.clone() };
         match app.builtin {
             Some(Builtin::Shelf) => vec![Effect::ShowShelf],
             // Started and no window yet: wait for it.
             None if self.apps_running.get(i).is_some_and(|n| *n > 0) => vec![],
             None => self.started(i, start),
         }
+    }
+
+    /// Whether an app shows a "+": it allows several instances and runs.
+    pub fn offers_new(&self, i: usize) -> bool {
+        self.apps.get(i).is_some_and(|a| a.multiple && !a.command.is_empty())
+            && (self.apps_running.get(i).is_some_and(|n| *n > 0) || self.windows.iter().any(|w| self.app_owns(i, w)))
+    }
+
+    pub(crate) fn new_instance(&mut self, i: usize) -> Vec<Effect> {
+        let Some(app) = self.apps.get(i).filter(|_| self.offers_new(i)) else {
+            return vec![];
+        };
+        let start = Effect::RunApp { app: i as u16, key: app.key().to_owned(), command: app.command.clone() };
+        self.started(i, start)
     }
 
     fn started(&mut self, i: usize, start: Effect) -> Vec<Effect> {
@@ -128,8 +150,11 @@ mod tests {
         s.apply(Event::Windows(vec![win(10, "foot", "", false), win(12, "foot", "", false), win(20, "firefox", "", true)]));
         assert_eq!(s.apply(Event::Activate(Id::App(foot))).1, vec![Effect::FocusWindow(12)]);
         assert_eq!(s.window_position(|w| s.app_owns(2, w)), (2, 2));
-        // A long press starts another (the terminal allows several).
-        assert!(matches!(s.apply(Event::LongPress(Id::App(foot))).1.as_slice(), [Effect::RunApp { .. }]));
+        // A long press closes the one it is on; "+" starts another (the terminal allows several).
+        assert_eq!(s.apply(Event::LongPress(Id::App(foot))).1, vec![Effect::CloseWindow(12)]);
+        assert!(s.offers_new(2) && !s.offers_new(1), "Steam allows one");
+        assert!(matches!(s.apply(Event::Activate(Id::NewInstance(foot))).1.as_slice(), [Effect::RunApp { .. }]));
+        assert_eq!(s.apply(Event::Activate(Id::NewInstance(1))).1, vec![]);
         // Shelf: its window, by app id.
         s.apply(Event::Windows(vec![win(1, apps::SHELF_APP_ID, "", false)]));
         assert_eq!(s.apply(Event::Activate(Id::App(0))).1, vec![Effect::FocusWindow(1)]);
