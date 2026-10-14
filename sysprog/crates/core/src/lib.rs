@@ -69,10 +69,25 @@ pub enum Id {
     Key(KeyPos),
 }
 
+/// The system's status as the bar shows it (policy threads read it from the system).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Status {
+    /// Battery charge 0-100, if there is a battery.
+    pub battery: Option<u8>,
+    pub charging: bool,
+    /// Wi-Fi link quality 0-100 while connected; `None` when not.
+    pub wifi: Option<u8>,
+    /// Output volume 0-100, if known, and whether it is muted.
+    pub volume: Option<u8>,
+    pub muted: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
     /// Wall clock, once a second (policy thread).
     Tick { unix_secs: u64 },
+    /// Battery, Wi-Fi, volume (policy thread, when they change).
+    Status(Status),
     /// Tap, click, or the pad's A on a focused item.
     Activate(Id),
     /// A press held longer than a tap (locks a keyboard modifier; otherwise as `Activate`).
@@ -120,6 +135,7 @@ pub struct State {
     pub keyboard: Keyboard,
     /// The target being pressed (drawn lit), if any.
     pub pressed: Option<Id>,
+    pub status: Status,
 }
 
 /// What holding a target does once the press lasts beyond a tap.
@@ -163,6 +179,11 @@ impl State {
                 let minute_changed = unix_secs / 60 != self.unix_secs / 60;
                 self.unix_secs = unix_secs;
                 (if minute_changed { Dirty::BOTH } else { Dirty::NONE }, vec![])
+            }
+            Event::Status(status) => {
+                let changed = status != self.status;
+                self.status = status;
+                (if changed { Dirty::BOTTOM } else { Dirty::NONE }, vec![])
             }
             Event::Focus(id) => {
                 self.focus = Some(id);
@@ -301,6 +322,14 @@ mod tests {
         assert_eq!(s.pressed, Some(Id::Launch));
         s.apply(Event::Up(Id::Launch));
         assert_eq!(s.pressed, None);
+    }
+
+    #[test]
+    fn status_redraws_the_bottom_only_when_it_changes() {
+        let mut s = state();
+        let status = Status { battery: Some(50), ..Status::default() };
+        assert_eq!(s.apply(Event::Status(status)).0, Dirty::BOTTOM);
+        assert_eq!(s.apply(Event::Status(status)).0, Dirty::NONE);
     }
 
     #[test]

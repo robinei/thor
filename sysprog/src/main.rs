@@ -4,7 +4,7 @@
 use std::process::ExitCode;
 
 use sysprog_core::keyboard::{self, Key, KeyPos, Modifier};
-use sysprog_core::{Event, Id, Mode, State};
+use sysprog_core::{Event, Id, Mode, State, Status};
 use sysprog_ui::{Config, Screen};
 
 fn main() -> ExitCode {
@@ -30,8 +30,12 @@ fn main() -> ExitCode {
         state,
         config,
         |sender| {
-            if let Err(e) = sysprog_policy::spawn_clock(move |event| sender.send(event)) {
+            let clock = sender.clone();
+            if let Err(e) = sysprog_policy::spawn_clock(move |event| clock.send(event)) {
                 log::error!("clock thread: {e}");
+            }
+            if let Err(e) = sysprog_policy::spawn_status(move |event| sender.send(event)) {
+                log::error!("status thread: {e}");
             }
         },
         |effect| log::info!("effect: {effect:?}"),
@@ -55,6 +59,9 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
         None => 1_760_000_000,
     };
     state.apply(Event::Tick { unix_secs: now });
+    // Demo status, so every bar icon shows.
+    let status = Status { battery: Some(72), charging: true, wifi: Some(80), volume: Some(60), muted: false };
+    state.apply(Event::Status(status));
     // Each shot after the events that lead to it: shelf, then the keyboard plain, with Fn, and with
     // Shift (once) and Ctrl (locked).
     let key = |k: Key, long: bool| {
@@ -65,6 +72,13 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
     let shots: Vec<Shot> = vec![
         (vec![], Screen::Top, (1920, 1080), "top.png"),
         (vec![], Screen::Bottom, bottom, "bottom.png"),
+        (
+            vec![Event::Status(Status { battery: Some(9), charging: false, wifi: None, volume: Some(40), muted: true })],
+            Screen::Bottom,
+            bottom,
+            "status-low.png",
+        ),
+        (vec![Event::Status(status)], Screen::Bottom, bottom, "bottom.png"),
         (vec![Event::Activate(Id::Mode(Mode::Keyboard))], Screen::Bottom, bottom, "keyboard.png"),
         (vec![key(Key::Mod(Modifier::Fn), false)], Screen::Bottom, bottom, "keyboard-fn.png"),
         (

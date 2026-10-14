@@ -20,6 +20,12 @@ pub enum Icon {
     ArrowDown,
     ArrowLeft,
     ArrowRight,
+    /// Charge in tenths (0-10) and whether it is charging.
+    Battery { tenths: u8, charging: bool },
+    /// Lit arcs (0-3); `None`: not connected.
+    Wifi { bars: Option<u8> },
+    /// Sound waves (0-3) and mute.
+    Volume { waves: u8, muted: bool },
 }
 
 /// Draws `icon` centred in `r`, as large as fits.
@@ -31,6 +37,16 @@ pub fn draw(c: &mut Canvas, icon: Icon, r: Rect, color: Color) {
     let p = |x: f32, y: f32| (x0 + x * u, y0 + y * u);
     let rr = |x: f32, y: f32, w: f32, h: f32| Rect::new(x0 + x * u, y0 + y * u, w * u, h * u);
     let line = 1.8 * u;
+    // Levels show as thick lit strokes; the rest of the scale stays visible, thin.
+    let thin = 0.8 * u;
+    let arc = |cx: f32, cy: f32, r: f32, from: f32, to: f32| -> [(f32, f32); 7] {
+        let mut points = [(0.0, 0.0); 7];
+        for (i, point) in points.iter_mut().enumerate() {
+            let a = (from + (to - from) * i as f32 / 6.0).to_radians();
+            *point = p(cx + r * a.cos(), cy - r * a.sin());
+        }
+        points
+    };
     match icon {
         Icon::Gamepad => {
             c.outline(rr(2.0, 7.0, 20.0, 11.0), 5.0 * u, line, color);
@@ -92,6 +108,41 @@ pub fn draw(c: &mut Canvas, icon: Icon, r: Rect, color: Color) {
         Icon::ArrowRight => {
             c.polyline(&[p(5.0, 12.0), p(19.0, 12.0)], line, color, false);
             c.polyline(&[p(13.0, 6.0), p(19.0, 12.0), p(13.0, 18.0)], line, color, false);
+        }
+        Icon::Battery { tenths, charging } => {
+            c.outline(rr(1.0, 7.5, 15.5, 9.0), 2.0 * u, 1.5 * u, color);
+            c.rounded(rr(17.0, 10.0, 1.6, 4.0), 0.6 * u, color);
+            let level = f32::from(tenths.min(10)) / 10.0;
+            if level > 0.0 {
+                c.rounded(rr(3.0, 9.5, 11.5 * level, 5.0), 0.8 * u, color);
+            }
+            if charging {
+                c.polyline(&[p(22.5, 5.0), p(19.8, 12.6), p(22.8, 12.6), p(20.2, 19.5)], 1.6 * u, color, false);
+            }
+        }
+        Icon::Wifi { bars } => {
+            c.circle(x0 + 12.0 * u, y0 + 19.0 * u, 1.6 * u, color);
+            let lit = bars.unwrap_or(0);
+            for (i, r) in [5.5, 10.0, 14.5].into_iter().enumerate() {
+                let width = if (i as u8) < lit { 2.2 * u } else { thin };
+                c.polyline(&arc(12.0, 19.0, r, 45.0, 135.0), width, color, false);
+            }
+            if bars.is_none() {
+                c.polyline(&[p(4.0, 4.0), p(20.0, 20.0)], line, color, false);
+            }
+        }
+        Icon::Volume { waves, muted } => {
+            let speaker = [p(2.5, 9.0), p(6.5, 9.0), p(11.5, 4.5), p(11.5, 19.5), p(6.5, 15.0), p(2.5, 15.0)];
+            c.polyline(&speaker, 1.6 * u, color, true);
+            if muted {
+                c.polyline(&[p(15.5, 9.0), p(21.5, 15.0)], line, color, false);
+                c.polyline(&[p(21.5, 9.0), p(15.5, 15.0)], line, color, false);
+            } else {
+                for (i, r) in [4.0, 7.0, 10.0].into_iter().enumerate() {
+                    let width = if (i as u8) < waves { 2.0 * u } else { thin };
+                    c.polyline(&arc(11.5, 12.0, r, -50.0, 50.0), width, color, false);
+                }
+            }
         }
         Icon::Enter => {
             c.polyline(&[p(19.0, 5.0), p(19.0, 14.0), p(5.0, 14.0)], line, color, false);
