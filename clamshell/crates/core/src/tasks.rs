@@ -8,7 +8,7 @@
 //! shown when its first window appears, not before (its empty workspace never is), also if the user has
 //! gone elsewhere meanwhile; a newer start takes its place.
 
-use crate::windows::{GAME_WORKSPACE, Window, order};
+use crate::windows::{Window, order};
 use crate::{Effect, State};
 
 impl State {
@@ -139,24 +139,17 @@ impl State {
         vec![Effect::RunApp { name, command }]
     }
 
-    /// Whether `w` is the running game's: on the game's workspace.
-    pub fn game_owns(&self, w: &Window) -> bool {
-        self.running.is_some() && w.workspace == GAME_WORKSPACE
-    }
-
-    pub(crate) fn tap_game(&mut self, long: bool) -> Vec<Effect> {
-        if self.running.is_none() {
+    /// A running game's tile: a tap shows it, a long press quits it.
+    pub(crate) fn tap_game(&mut self, i: usize, long: bool) -> Vec<Effect> {
+        let Some(g) = self.games.get(i) else {
             return vec![];
-        }
+        };
         if long {
-            let windows = self.windows.iter().filter(|w| self.game_owns(w)).map(|w| w.id).collect();
-            let units = self.units.iter().filter(|u| u.starts_with("clamshell-game-")).map(|u| format!("{u}.scope")).collect();
-            return vec![Effect::QuitGame { windows, units }];
+            let id = g.id.clone();
+            return self.quit_game(&id);
         }
-        if self.windows.iter().any(|w| self.game_owns(w)) {
-            return self.show(GAME_WORKSPACE);
-        }
-        vec![]
+        let workspace = g.workspace.clone();
+        self.show(&workspace)
     }
 }
 
@@ -164,7 +157,7 @@ impl State {
 mod tests {
     use crate::tests::state;
     use crate::apps::SHELF_APP_ID;
-    use crate::windows::{GAME_WORKSPACE, SHELF_WORKSPACE, Window};
+    use crate::windows::{SHELF_WORKSPACE, Window};
     use crate::*;
 
     fn win(id: i64, app_id: &str, workspace: &str, focused: bool) -> Window {
@@ -215,21 +208,21 @@ mod tests {
     }
 
     #[test]
-    fn the_game_tile_goes_to_the_game_and_quits_it() {
+    fn a_game_tile_goes_to_its_game_and_quits_it() {
         let mut s = state();
-        assert_eq!(s.apply(Event::Activate(Id::GameTile)).1, vec![], "no game: a placeholder");
+        assert_eq!(s.apply(Event::Activate(Id::GameTile(0))).1, vec![], "no game");
+        s.apply(Event::Tick { unix_secs: 77 });
         s.apply(Event::Activate(Id::Launch));
         s.apply(Event::Started("zelda-lttp".into()));
-        s.apply(Event::Units(vec!["clamshell-game-77-0".into()]));
+        let ws = s.games.first().map(|g| g.workspace.clone()).unwrap_or_default();
+        assert_eq!(ws, "clamshell-game-77-0");
+        s.apply(Event::Units(vec![ws.clone()]));
         assert_eq!(
-            s.apply(Event::Windows(vec![win(5, "retroarch", GAME_WORKSPACE, false)])).1,
-            vec![Effect::FocusWorkspace(GAME_WORKSPACE.into())],
+            s.apply(Event::Windows(vec![win(5, "retroarch", &ws, false)])).1,
+            vec![Effect::FocusWorkspace(ws.clone())],
             "shown when its window appears"
         );
-        assert_eq!(s.apply(Event::Activate(Id::GameTile)).1, vec![Effect::FocusWorkspace(GAME_WORKSPACE.into())]);
-        assert_eq!(
-            s.apply(Event::LongPress(Id::GameTile)).1,
-            vec![Effect::QuitGame { windows: vec![5], units: vec!["clamshell-game-77-0.scope".into()] }]
-        );
+        assert_eq!(s.apply(Event::Activate(Id::GameTile(0))).1, vec![Effect::FocusWorkspace(ws.clone())]);
+        assert_eq!(s.apply(Event::LongPress(Id::GameTile(0))).1, vec![Effect::QuitGame { windows: vec![5], units: vec![format!("{ws}.scope")] }]);
     }
 }

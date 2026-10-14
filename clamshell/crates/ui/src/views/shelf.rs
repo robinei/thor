@@ -30,6 +30,8 @@ const ART_H: f32 = 0.78;
 const TITLE: f32 = 0.05;
 const DETAIL: f32 = 0.03;
 const DESCRIPTION: f32 = 0.028;
+/// The choice's buttons' height, of the screen's height.
+const BUTTON: f32 = 0.075;
 
 /// Draws shelf; returns how many list rows fit (the state keeps the selection within them).
 pub(super) fn draw(f: &mut Frame, images: &mut Images, buf: &mut String, w: f32, h: f32) -> usize {
@@ -80,6 +82,7 @@ pub(super) fn draw(f: &mut Frame, images: &mut Images, buf: &mut String, w: f32,
     }
 
     // The selected game: large art, then title and details beside it.
+    let mut choices = None;
     if let Some(game) = s.selected_game() {
         let c = &mut *f.c;
         let x0 = w * LIST_W + pad;
@@ -90,22 +93,18 @@ pub(super) fn draw(f: &mut Frame, images: &mut Images, buf: &mut String, w: f32,
         let room = w - pad - tx;
         let mut y = list.y;
         y += wrap(c, (tx, y, room), h * TITLE, TEXT_HI, &game.title, 3) + pad * 0.4;
-        // What playing it does now: resume it, or (another game running) quit that one first; then
-        // whether it is a favourite.
-        let running = s.running.as_ref().and_then(|id| s.library.games.iter().find(|g| &g.id == id));
+        // What playing it does now: show it (it runs), or with another game running, the choice: keep
+        // that one running, or close it; then whether it is a favourite.
+        let the_game = s.running.as_ref().and_then(|id| s.library.games.iter().find(|g| &g.id == id));
         let mut mx = tx;
-        match running {
-            Some(r) if r.id == game.id => {
-                mx += c.text(mx, y, h * DETAIL, rgb(GO), "Running · A to resume") + pad;
-            }
-            Some(r) => {
-                buf.clear();
-                let asked = s.switch_to.as_ref() == Some(&game.id);
-                let _ = if asked { write!(buf, "A again: quit {} and start this", r.title) } else { write!(buf, "{} is running", r.title) };
-                let color = if asked { ACCENT } else { DIM };
-                y += wrap(c, (tx, y, room), h * DETAIL, color, buf, 2) + pad * 0.2;
-            }
-            None => {}
+        if s.running_game(&game.id).is_some() {
+            mx += c.text(mx, y, h * DETAIL, rgb(GO), "Running · A to show it") + pad;
+        } else if let Some(other) = the_game {
+            buf.clear();
+            let _ = write!(buf, "{} is running. Start this and", other.title);
+            y += wrap(c, (tx, y, room), h * DETAIL, TEXT, buf, 2) + pad * 0.4;
+            choices = Some((Rect::new(tx, y, room, h * BUTTON), other.title.as_str()));
+            y += h * BUTTON + pad * 0.6;
         }
         if mx > tx {
             y += h * DETAIL * 1.3 + pad * 0.2;
@@ -126,6 +125,15 @@ pub(super) fn draw(f: &mut Frame, images: &mut Images, buf: &mut String, w: f32,
         if !text.is_empty() {
             wrap(c, (tx, y + pad * 0.6, room), h * DESCRIPTION, TEXT, text, 12);
         }
+    }
+    // The choice's buttons (targets, drawn after the text): keep the running game, or close it.
+    if let Some((row, _)) = choices {
+        let look = Look { radius: 8.0, fill: Some(SURFACE_HI), inset: 0.0, ring_inset: -2.0 };
+        let size = h * DETAIL;
+        let keep = row.cell(2, 1, pad * 0.5, 0);
+        f.button(Id::StartKeep, keep, look, |c| super::label(c, keep, size, TEXT_HI, "keep it running"));
+        let close = row.cell(2, 1, pad * 0.5, 1);
+        f.button(Id::StartClose, close, look, |c| super::label(c, close, size, TEXT_HI, "close it"));
     }
     rows
 }

@@ -37,8 +37,12 @@ launch: sh -c "foot --app-id=testgame sleep 300 & sleep 300"
 
 game: Test Game
 file: test.game
+
+game: Zeta Game
+file: zeta.game
+launch: sh -c "foot --app-id=zetagame sleep 300 & sleep 300"
 EOF
-touch "$T/games/test.game"
+touch "$T/games/test.game" "$T/games/zeta.game"
 cat > "$T/sway.conf" <<'EOF'
 default_border none
 default_floating_border none
@@ -119,15 +123,25 @@ check "a Steam game's window goes to the game's workspace" '[ "$(ws_of steam_app
 msg '[app_id="^steam_app_42$"] kill'; sleep 0.5
 
 msg 'workspace clamshell-shelf'; sleep 0.5; ctl tap launch
-until_ '[ "$(front)" = clamshell-game ]' 8
-check "a game from shelf: on the game's workspace, in front" '[ "$(ws_of testgame)" = clamshell-game ] && [ "$(front)" = clamshell-game ] && [ -n "$(units game)" ]'
-ctl long game
+until_ '[ -n "$(units game)" ] && [ -n "$(ws_of testgame)" ] && [ "$(front)" = "$(units game | head -1)" ]' 8
+G1=$(units game | head -1)
+check "a game from shelf: on its own workspace, in front" '[ -n "$G1" ] && [ "$(ws_of testgame)" = "$G1" ] && [ "$(front)" = "$G1" ]'
+# A second game while it runs: shelf offers to keep the first running.
+msg 'workspace clamshell-shelf'; sleep 0.5; ctl list 1; ctl tap launch; sleep 0.3; ctl tap keep
+until_ '[ "$(units game | wc -l)" = 2 ] && [ -n "$(ws_of zetagame)" ] && [ "$(front)" = "$(ws_of zetagame)" ]' 8
+check "a second game kept beside the first: both run, each on its workspace, the new one in front" \
+    '[ "$(units game | wc -l)" = 2 ] && [ "$(ws_of zetagame)" != "$G1" ] && [ "$(ws_of testgame)" = "$G1" ] && [ "$(front)" = "$(ws_of zetagame)" ]'
+ctl tap game 0; sleep 0.5
+check "the dock's first game tile shows the first game" '[ "$(front)" = "$G1" ]'
+ctl long game 1
+until_ '[ "$(units game | wc -l)" = 1 ]' 10
+ctl long game 0
 until_ '[ -z "$(units game)" ]' 10
-check "long press on the game: closed, its scope killed after 5 s" '[ -z "$(units game)" ]'
+check "long press on each game: closed, their scopes killed after 5 s" '[ -z "$(units game)" ]'
 check "  and back to shelf" '[ "$(front)" = clamshell-shelf ]'
 plays() { [ -f "$T/pegasus/stats.db" ] && sqlite3 "$T/pegasus/stats.db" "select count(*) from plays" 2> /dev/null || echo 0; }
-until_ '[ "$(plays)" -ge 1 ]' 5
-check "  and the play recorded" '[ "$(plays)" -ge 1 ]'
+until_ '[ "$(plays)" -ge 2 ]' 5
+check "  and both plays recorded" '[ "$(plays)" -ge 2 ]'
 
 ctl tap app $TERMINAL; sleep 0.5; FRONT=$(front)
 ctl long app $TERMINAL

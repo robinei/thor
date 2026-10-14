@@ -259,16 +259,21 @@ fn main() -> ExitCode {
                 }
                 None => log::info!("effect: {effect:?} (no virtual keyboard)"),
             },
-            Effect::Launch { game, launch, file, settings, env } => {
+            Effect::Launch { game, workspace, launch, file, settings, env } => {
                 log::info!("launching {game}");
                 let mut env = env.clone();
                 if let Some(config) = apply_settings(settings, Some(game), &mangohud_dir, &padmouse_tx) {
                     // MangoHud's first, so a game's own variables can still override it.
                     env.splice(0..0, tuning::mangohud_env(&config));
                 }
-                // The game's workspace first, so it opens in front.
-                let _ = sway_tx.send(sway::Command::Workspace(clamshell_core::windows::GAME_WORKSPACE.into()));
-                let request = clamshell_policy::launcher::Request { game: game.clone(), launch: launch.clone(), file: file.clone(), env };
+                // Its own workspace, shown when its first window appears (the state asks for that).
+                let request = clamshell_policy::launcher::Request {
+                    game: game.clone(),
+                    workspace: workspace.clone(),
+                    launch: launch.clone(),
+                    file: file.clone(),
+                    env,
+                };
                 if launch_tx.send(request).is_err() {
                     log::warn!("launcher thread is gone");
                 }
@@ -332,6 +337,9 @@ fn main() -> ExitCode {
             Effect::FocusWorkspace(name) => {
                 let _ = sway_tx.send(sway::Command::Workspace(name.clone()));
             }
+            Effect::MoveWindows { windows, workspace } => {
+                let _ = sway_tx.send(sway::Command::Move { windows: windows.clone(), workspace: workspace.clone() });
+            }
             Effect::CloseWindows(ids) => {
                 for id in ids {
                     let _ = sway_tx.send(sway::Command::Close(*id));
@@ -381,7 +389,8 @@ fn main() -> ExitCode {
 type Shot = (Vec<Event>, Screen, (u32, u32), &'static str);
 
 /// A test's command as events: `tap app 1`, `long game`, `tap plus 1`, `tap launch`, `tap network 2`,
-/// `long network 0`, `tap wifi-power`, `mode launcher`, `home`, `type text` (on the on-screen keyboard),
+/// `long network 0`, `tap wifi-power`, `tap keep`, `tap close`, `tap game N`, `list N` (shelf's selection),
+/// `mode dock`, `home`, `type text` (on the on-screen keyboard),
 /// `slide volume|brightness FROM TO [hold]` (a finger down at FROM on a 620-wide layout, moved to TO,
 /// lifted unless held), `lift volume|brightness`, `pad up|down|left|right|a|b|y|lb|rb|switch` (the pad
 /// while shelf is in front; `a` presses and releases).
@@ -416,6 +425,7 @@ fn control_events(line: &str) -> Option<Vec<Event>> {
     }
     let id = match words.as_slice() {
         ["home"] => return Some(vec![Event::Home]),
+        ["list", step] => return Some(vec![Event::ListStep(step.parse().ok()?)]),
         ["pad", button] => {
             use clamshell_core::PadInput as P;
             return Some(match *button {
@@ -438,7 +448,11 @@ fn control_events(line: &str) -> Option<Vec<Event>> {
         [_, "network", n] => Id::Network(index(n)?),
         [_, "wifi-power"] => Id::WifiPower,
         [_, "save"] => Id::EditorSave,
-        [_, "game"] => Id::GameTile,
+        [_, "game"] => Id::GameTile(0),
+        [_, "game", n] => Id::GameTile(index(n)?),
+        [_, "keep"] => Id::StartKeep,
+        [_, "close"] => Id::StartClose,
+        [_, "start-game"] => Id::StartGame,
         [_, "launch"] => Id::Launch,
         _ => return None,
     };

@@ -94,16 +94,19 @@ machine now, the busiest first, as many as fit: CPU time per process and GPU tim
 else as System. The battery only reports its total drain, so these are shares of the work, not watts.
 
 **The model.** Shelf is home: where games are chosen, and where Home goes. The second screen controls
-what is in front. The dock holds the apps at hand and shows what runs. There is at most one game, and it
-is *the game* however it was started: from shelf, or from Steam's own client (a `steam_app_<id>` window
-of a game in the library is taken as the game, with its settings applied, until its last window
-closes; that play is recorded too). What is in front (shelf, the game, another app) decides where the
-pad goes, what Home does, and what the settings page edits: the game's settings, shelf's selected game's,
-or with another app in front, all games'. In shelf, activating the running game resumes it; with another
-running, the first activation says so, the second quits that one and starts this one when it has ended.
+what is in front. The dock holds the apps at hand and shows what runs. Games run side by side, each on a
+workspace of its own (one shelf started is named like its scope, `clamshell-game-<secs>-<n>`; one Steam's
+client started, a `steam_app_<id>` window of a library game, gets `clamshell-game-steam-<id>` and its
+windows are moved there). *The game* is the running game last in front: its settings are in force. A game
+Steam starts becomes the game, and any other keeps running; its play ends, and is recorded, when its last
+window closes. In shelf, activating a running game shows it; with another running, shelf offers "keep it
+running" or "close it" (then starts this one once that one has ended). What is in front (shelf, a game,
+another app) decides where the pad goes, what Home does, and what the settings page edits: the game's
+settings, shelf's selected game's, or with another app in front, all games'.
 
-**Dock** (the grid icon): the running game first (a "No game" placeholder otherwise, so tiles never
-move), then the apps. Each start of an app is an instance: a systemd scope (`clamshell-app-<key>-<secs>-<n>`)
+**Dock** (the grid icon): the running games first (the game marked with a dot when several run; a tap
+shows one, a long press quits it), or while none runs a "Start game" tile that goes to shelf, so the apps
+keep their places unless several games run; then the apps. Each start of an app is an instance: a systemd scope (`clamshell-app-<key>-<secs>-<n>`)
 and a sway workspace of the same name, on the main screen. A tap starts an app, shows its most recent
 instance when it runs, or its next instance when one of its own is in front; "1/3" shows which. A long
 press closes the instance it is on (its windows, politely, as their close buttons would); on the game tile

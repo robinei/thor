@@ -1,7 +1,8 @@
-//! The dock: the running game's tile first (a placeholder when none runs, so the tiles never move),
-//! then the apps from launcher.json, as a grid of tiles on black, each an icon over its name. A tap
-//! starts an app or goes to it (again: its next window); a long press closes the window it is on (quits
-//! the game); a "+" in the corner of a running app that allows several starts another. Running shows as
+//! The dock: the running games first (the game, the one last in front, marked), or while none runs a
+//! "Start game" tile that goes to shelf (so the apps keep their places unless several games run); then
+//! the apps from launcher.json, as a grid of tiles on black, each an icon over its name. A tap starts an
+//! app or goes to it (again: its next window), or shows a game; a long press closes the window it is on,
+//! or quits the game; a "+" in the corner of a running app that allows several starts another. Running shows as
 //! colour: app icons in full colour (drawn
 //! icons green), idle ones grey and dim; "1/3" when it has several instances, the one shown first. What is
 //! wrong with the file, if anything, shows at the bottom.
@@ -36,8 +37,6 @@ const PLUS: f32 = 0.45;
 const PLUS_ICON: f32 = 0.17;
 /// An idle app's icon image: grey at this brightness.
 const IDLE: f32 = 0.55;
-/// The placeholder's icon: barely there.
-const EMPTY: u32 = 0x34343c;
 
 const LOOK: Look = Look { radius: 10.0, fill: None, inset: 0.0, ring_inset: -2.0 };
 
@@ -64,12 +63,19 @@ pub(super) fn draw(f: &mut Frame, body: Rect, images: &mut Images, buf: &mut Str
         area.h -= size * 1.6;
         f.c.text_fit((area.x, area.y + area.h + size * 0.4, area.w), size, rgb(DIM), error, Keep::Start);
     }
-    let rows = (s.apps.len() + 1).div_ceil(COLUMNS).max(MIN_ROWS);
+    let games = s.games.len().max(1);
+    let rows = (s.apps.len() + games).div_ceil(COLUMNS).max(MIN_ROWS);
     let gap = body.h * GAP;
-    let game = s.running.as_ref().and_then(|id| s.library.games.iter().find(|g| &g.id == id));
-    game_tile(f, area.cell(COLUMNS, rows, gap, 0), game, images, buf);
+    if s.games.is_empty() {
+        start_tile(f, area.cell(COLUMNS, rows, gap, 0));
+    }
+    for (i, running) in s.games.iter().enumerate() {
+        let game = s.library.games.iter().find(|g| g.id == running.id);
+        let the_game = s.running.as_ref() == Some(&running.id);
+        game_tile(f, area.cell(COLUMNS, rows, gap, i), i, game, the_game && s.games.len() > 1, images);
+    }
     for (i, app) in s.apps.iter().enumerate() {
-        app_tile(f, area.cell(COLUMNS, rows, gap, i + 1), i, app, images, buf);
+        app_tile(f, area.cell(COLUMNS, rows, gap, i + games), i, app, images, buf);
     }
 }
 
@@ -99,13 +105,25 @@ fn icon_square(r: Rect) -> Rect {
     Rect::new(r.x + (r.w - size) / 2.0, r.y + r.h * ICON_Y, size, size)
 }
 
-fn game_tile(f: &mut Frame, r: Rect, game: Option<&Game>, images: &mut Images, buf: &mut String) {
-    buf.clear();
+/// While no game runs: to shelf, to start one.
+fn start_tile(f: &mut Frame, r: Rect) {
+    f.button(Id::StartGame, r, LOOK, |c| {
+        c.icon(Icon::Shelf, icon_square(r), rgb(DIM));
+        caption(c, r, "Start game", TEXT, "");
+    });
+}
+
+/// A running game: its box art in colour; the game (the one last in front) marked with a dot when
+/// several run.
+fn game_tile(f: &mut Frame, r: Rect, i: usize, game: Option<&Game>, the_game: bool, images: &mut Images) {
     let scale = f.c.scale();
-    f.button(Id::GameTile, r, LOOK, |c| {
+    f.button(Id::GameTile(i as u16), r, LOOK, |c| {
+        if the_game {
+            c.circle(r.x + r.w - r.h * 0.1, r.y + r.h * 0.1, r.h * 0.03, rgb(GO));
+        }
         let Some(game) = game else {
-            c.icon(Icon::Gamepad, icon_square(r), rgb(EMPTY));
-            caption(c, r, "No game", DIM, "");
+            c.icon(Icon::Gamepad, icon_square(r), rgb(GO));
+            caption(c, r, "Game", TEXT, "");
             return;
         };
         // Its box art, as tall as the icon area allows, in colour: it runs.

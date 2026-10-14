@@ -1,4 +1,5 @@
-//! Starting games and knowing when they end. One game at a time, from a queue.
+//! Starting games and knowing when they end. Each request runs on a thread of its own, so games run side
+//! by side.
 //!
 //! - A Pegasus launch command is resolved as Pegasus does (library::launch) and run in its own systemd
 //!   scope where there is a user session (`systemd-run --user --scope`), so restarting ClamShell
@@ -22,7 +23,6 @@ use clamshell_library::{launch, stats};
 
 use crate::{Sink, job, sway, units};
 use std::sync::mpsc::Sender;
-use clamshell_core::windows::GAME_WORKSPACE;
 
 /// How long sway may take to start a game (its scope to appear).
 const GAME_START: Duration = Duration::from_secs(30);
@@ -32,6 +32,8 @@ const STEAM_START: Duration = Duration::from_secs(120);
 
 pub struct Request {
     pub game: Arc<str>,
+    /// The name for its scope and workspace (`clamshell-game-<secs>-<n>`), from the state.
+    pub workspace: String,
     pub launch: Launch,
     pub file: Option<PathBuf>,
     /// This game's own environment (its MangoHud config), on top of the config's.
@@ -62,42 +64,53 @@ fn now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
-pub fn spawn(config: Config, requests: Receiver<Request>, sink: impl Sink) -> io::Result<JoinHandle<()>> {
+pub fn spawn(config: Config, requests: Receiver<Request>, sink: impl Sink + Clone) -> io::Result<JoinHandle<()>> {
     thread::Builder::new().name("launcher".into()).spawn(move || {
-        let mut count = 0u32;
+        let mut games = Vec::new();
         for request in requests {
-            count += 1;
-            let game = request.game.clone();
-            let mut env = config.clone();
-            env.env.extend(request.env.iter().cloned());
-            let played = match &request.launch {
-                Launch::Command { command, workdir, basedir } => match request.file.as_deref() {
-                    Some(file) => run_command(&env, command, workdir, basedir, file, count, &game, &sink),
-                    None => Err(io::Error::other("no file to launch")),
-                },
-                Launch::Steam { appid } => run_steam(&env, *appid, &game, &sink),
-                Launch::None => Err(io::Error::other("no launch command")),
-            };
-            let event = match played {
-                Ok((start, duration)) => {
-                    log::info!("launcher: {game} ran {duration} s");
-                    if let Some(db) = &config.stats_db
-                        && let Err(e) = stats::record(db, &game, start, duration)
-                    {
-                        log::warn!("launcher: recording the play: {e}");
-                    }
-                    Event::Played { game, start, duration }
-                }
-                Err(e) => {
-                    log::warn!("launcher: {game}: {e}");
-                    Event::LaunchFailed(game)
-                }
-            };
-            if !sink.send(event) {
-                return;
+            let (config, sink) = (config.clone(), sink.clone());
+            match thread::Builder::new().name("game".into()).spawn(move || run(&config, &request, &sink)) {
+                Ok(handle) => games.push(handle),
+                Err(e) => log::warn!("launcher: {e}"),
             }
+            games.retain(|g| !g.is_finished());
+        }
+        // No more requests: the games still running end on their own; their reports still go out.
+        for game in games {
+            let _ = game.join();
         }
     })
+}
+
+/// Runs one game until it ends; reports and records its play.
+fn run(config: &Config, request: &Request, sink: &impl Sink) {
+    let game = request.game.clone();
+    let mut env = config.clone();
+    env.env.extend(request.env.iter().cloned());
+    let played = match &request.launch {
+        Launch::Command { command, workdir, basedir } => match request.file.as_deref() {
+            Some(file) => run_command(&env, command, workdir, basedir, file, &request.workspace, &game, sink),
+            None => Err(io::Error::other("no file to launch")),
+        },
+        Launch::Steam { appid } => run_steam(&env, *appid, &game, sink),
+        Launch::None => Err(io::Error::other("no launch command")),
+    };
+    let event = match played {
+        Ok((start, duration)) => {
+            log::info!("launcher: {game} ran {duration} s");
+            if let Some(db) = &config.stats_db
+                && let Err(e) = stats::record(db, &game, start, duration)
+            {
+                log::warn!("launcher: recording the play: {e}");
+            }
+            Event::Played { game, start, duration }
+        }
+        Err(e) => {
+            log::warn!("launcher: {game}: {e}");
+            Event::LaunchFailed(game)
+        }
+    };
+    sink.send(event);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -107,12 +120,12 @@ fn run_command(
     workdir: &str,
     basedir: &Path,
     file: &Path,
-    count: u32,
+    workspace: &str,
     game: &Arc<str>,
     sink: &impl Sink,
 ) -> io::Result<(u64, u64)> {
     let c = launch::resolve(command, workdir, basedir, file).ok_or_else(|| io::Error::other("empty launch command"))?;
-    let unit = format!("clamshell-game-{}-{count}", std::process::id());
+    let unit = workspace.to_owned();
     // Under sway (and systemd): sway starts it for the game's workspace; it has ended when its scope has.
     if let (Some(sway), true) = (&config.sway, config.scope) {
         let job = job::Job {
@@ -123,7 +136,7 @@ fn run_command(
             scope: true,
         };
         let path = job::write(&job)?;
-        sway.send(sway::Command::Launch { workspace: GAME_WORKSPACE.into(), job: path })
+        sway.send(sway::Command::Launch { workspace: unit.clone(), job: path })
             .map_err(|_| io::Error::other("the sway thread is gone"))?;
         let start = now();
         let started = Instant::now();
@@ -214,7 +227,7 @@ mod tests {
         let handle = spawn(config, rx, move |e| seen.lock().map(|mut v| v.push(e)).is_ok()).unwrap();
         let id: Arc<str> = script.to_string_lossy().into();
         let launch = Launch::Command { command: "\"{file.path}\"".into(), workdir: String::new(), basedir: dir.clone() };
-        tx.send(Request { game: id.clone(), launch, file: Some(script.clone()), env: vec![] }).unwrap();
+        tx.send(Request { game: id.clone(), workspace: "clamshell-game-test-0".into(), launch, file: Some(script.clone()), env: vec![] }).unwrap();
         drop(tx);
         handle.join().unwrap();
 
@@ -233,7 +246,7 @@ mod tests {
         let (tx, rx) = std::sync::mpsc::channel();
         let handle = spawn(Config::default(), rx, move |e| seen.lock().map(|mut v| v.push(e)).is_ok()).unwrap();
         let launch = Launch::Command { command: "/nonexistent/game".into(), workdir: String::new(), basedir: "/".into() };
-        tx.send(Request { game: "x".into(), launch, file: Some("/tmp".into()), env: vec![] }).unwrap();
+        tx.send(Request { game: "x".into(), workspace: "clamshell-game-test-1".into(), launch, file: Some("/tmp".into()), env: vec![] }).unwrap();
         drop(tx);
         handle.join().unwrap();
         assert_eq!(*events.lock().unwrap(), vec![Event::LaunchFailed("x".into())]);

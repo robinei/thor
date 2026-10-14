@@ -25,7 +25,7 @@ use keyboard::{Key, KeyPos, Keyboard, Stroke};
 use settings::{Setting, Settings, Values};
 
 pub use editor::{Editor, count_env, parse_env};
-pub use game::Front;
+pub use game::{Front, RunningGame};
 
 pub use clamshell_library::{Collection, Game, Launch, Library};
 
@@ -155,10 +155,15 @@ pub enum Id {
     EditorCancel,
     /// The dark second screen (while a game runs): a tap anywhere lights it.
     Wake,
-    /// A launcher app, by position.
+    /// A dock app, by position.
     App(u16),
-    /// The launcher's first tile: the running game (or a placeholder when none runs).
-    GameTile,
+    /// A running game's tile in the dock, by position among the running games.
+    GameTile(u16),
+    /// The dock's first tile while no game runs: to shelf, to start one.
+    StartGame,
+    /// Shelf's choice when starting a game while another runs: keep that one running, or close it.
+    StartKeep,
+    StartClose,
     /// The "+" on a running app that allows several instances: another one.
     NewInstance(u16),
     /// The settings panel's scope tabs.
@@ -253,6 +258,8 @@ pub enum Effect {
     /// environment.
     Launch {
         game: Arc<str>,
+        /// Its scope's and workspace's name (`clamshell-game-<secs>-<n>`).
+        workspace: String,
         settings: Values,
         env: Vec<(String, String)>,
         launch: Launch,
@@ -283,6 +290,8 @@ pub enum Effect {
     FocusWorkspace(String),
     /// Ask these windows to close (as their own close buttons would): an instance's.
     CloseWindows(Vec<i64>),
+    /// Move these windows to this workspace (a Steam game's, from where they landed).
+    MoveWindows { windows: Vec<i64>, workspace: String },
     /// Quit the game: close its windows, then end its scopes (ours only) if it doesn't go.
     QuitGame { windows: Vec<i64>, units: Vec<String> },
     /// Bring shelf's window to the front.
@@ -356,11 +365,12 @@ pub struct State {
     pad_mouse_by_launch: bool,
     /// Where the pad goes (see [`Effect::PadRoute`]).
     pub pad_route: PadRoute,
-    /// Shelf asked once whether to quit the running game for this one; started once that one ends.
-    pub switch_to: Option<Arc<str>>,
+    /// The games that run, in the order they started (`running` is the one most recently in front),
+    /// and the launches asked for that haven't started.
+    pub games: Vec<RunningGame>,
+    launching: Vec<game::Launching>,
+    /// The game to start once the one closed for it has ended.
     queued: Option<Arc<str>>,
-    /// The game, if Steam started it (followed by its windows).
-    adopted: Option<game::Adopted>,
     /// What the settings panel edits (global whenever there is no game in context).
     pub scope: Scope,
     pub mode: Mode,
@@ -403,7 +413,7 @@ pub enum Hold {
 /// Which screen a target is drawn on.
 fn screen_of(id: &Id) -> Dirty {
     match id {
-        Id::Game(_) | Id::Tab(_) => Dirty::BOTH,
+        Id::Game(_) | Id::Tab(_) | Id::StartKeep | Id::StartClose => Dirty::BOTH,
         Id::Mode(_)
         | Id::Tile(_)
         | Id::Env
@@ -411,7 +421,8 @@ fn screen_of(id: &Id) -> Dirty {
         | Id::EditorCancel
         | Id::Wake
         | Id::App(_)
-        | Id::GameTile
+        | Id::GameTile(_)
+        | Id::StartGame
         | Id::NewInstance(_)
         | Id::Scope(_)
         | Id::Reset
@@ -443,12 +454,7 @@ impl State {
 
     /// Applies one event; returns which screens changed and what must happen outside.
     pub fn apply(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
-        let selected = self.selected.clone();
         let (dirty, mut effects) = self.apply_event(event);
-        // A question about switching games is about the game it was asked on.
-        if self.selected != selected {
-            self.switch_to = None;
-        }
         let route = self.wanted_pad_route();
         if route != self.pad_route {
             self.pad_route = route;
@@ -558,6 +564,7 @@ impl State {
                 (Dirty::BOTH, vec![Effect::SaveFavourites(ids)])
             }
             Event::Started(game) => {
+                self.game_started(&game);
                 self.running = Some(game);
                 self.woken = false;
                 // The pad mouse, if the game wants it at launch.
@@ -569,14 +576,13 @@ impl State {
                 (Dirty::BOTH, vec![])
             }
             Event::Played { game, start, duration } => {
-                self.running = None;
                 self.relayout(|lib| {
                     if let Some(g) = lib.games.iter_mut().find(|g| g.id == game) {
                         g.plays.add(start, duration);
                     }
                     lib.rebuild_derived();
                 });
-                (Dirty::BOTH, self.game_ended())
+                (Dirty::BOTH, self.game_gone(&game))
             }
             Event::Units(units) => {
                 self.units = units;
@@ -586,15 +592,16 @@ impl State {
             }
             Event::Windows(windows) => {
                 self.set_windows(windows);
-                let mut effects = self.show_pending();
-                effects.extend(self.follow_steam_game());
+                let mut effects = self.follow_games();
+                effects.extend(self.show_pending());
                 (Dirty::BOTH, effects)
             }
             Event::LaunchFailed(game) => {
-                if self.running.as_ref() == Some(&game) {
-                    self.running = None;
+                self.launching.retain(|l| l.0 != game);
+                if self.running_game(&game).is_some() {
+                    return (Dirty::BOTH, self.game_gone(&game));
                 }
-                (Dirty::BOTH, self.game_ended())
+                (Dirty::BOTH, self.queued_launch())
             }
             Event::Down(id) => {
                 let dirty = screen_of(&id);
@@ -699,7 +706,10 @@ impl State {
                 None => (Dirty::BOTH, vec![]),
             },
             Id::App(i) => (Dirty::BOTTOM, self.tap_app(usize::from(i), long)),
-            Id::GameTile => (Dirty::BOTTOM, self.tap_game(long)),
+            Id::GameTile(i) => (Dirty::BOTTOM, self.tap_game(usize::from(i), long)),
+            Id::StartGame => (Dirty::NONE, vec![Effect::ShowShelf]),
+            Id::StartKeep => (Dirty::BOTH, self.start_beside(false)),
+            Id::StartClose => (Dirty::BOTH, self.start_beside(true)),
             Id::NewInstance(i) => (Dirty::BOTTOM, self.new_instance(usize::from(i))),
             Id::PadMouse => {
                 self.pad_mouse = !self.pad_mouse;
@@ -761,10 +771,10 @@ impl State {
             return vec![Effect::ShowShelf];
         }
         let before = self.recent.iter().find(|ws| ws.as_str() != windows::SHELF_WORKSPACE).cloned();
-        match (before, &self.running) {
-            (Some(workspace), _) => vec![Effect::FocusWorkspace(workspace)],
-            (None, Some(_)) => vec![Effect::FocusWorkspace(windows::GAME_WORKSPACE.into())],
-            (None, None) => vec![],
+        let game = self.running.as_deref().and_then(|id| self.running_game(id)).map(|g| g.workspace.clone());
+        match before.or(game) {
+            Some(workspace) => vec![Effect::FocusWorkspace(workspace)],
+            None => vec![],
         }
     }
 
@@ -783,22 +793,27 @@ impl State {
         effects
     }
 
-    /// Launching `game`, unless one is already running.
+    /// Launching `game` on a workspace of its own (unless it runs already, or is starting).
     pub(crate) fn launch_effects(&mut self, game: Arc<str>) -> Vec<Effect> {
-        if self.running.is_some() {
+        if self.running_game(&game).is_some() || self.launching.iter().any(|l| l.0 == game) {
             return vec![];
         }
         let Some(g) = self.library.games.iter().find(|g| g.id == game) else {
             return vec![];
         };
+        let (launch, file) = (g.launch.clone(), g.file.clone());
+        let appid = match launch {
+            Launch::Steam { appid } => Some(appid),
+            _ => None,
+        };
+        let workspace = format!("clamshell-game-{}-{}", self.unix_secs, self.started);
+        self.started += 1;
         let settings = self.settings.of(&game);
         let env = self.settings.env_of(&game);
+        self.launching.push((game.clone(), workspace.clone(), appid));
         // Shown once its first window appears.
-        self.pending_show = Some(windows::GAME_WORKSPACE.into());
-        vec![
-            Effect::SaveResume(self.resume_text()),
-            Effect::Launch { game, settings, env, launch: g.launch.clone(), file: g.file.clone() },
-        ]
+        self.pending_show = Some(workspace.clone());
+        vec![Effect::SaveResume(self.resume_text()), Effect::Launch { game, workspace, settings, env, launch, file }]
     }
 }
 
@@ -824,9 +839,9 @@ mod tests {
         let (_, fx) = s.apply(Event::Activate(Id::Game("ff6".into())));
         assert!(fx.is_empty());
         let (_, fx) = s.apply(Event::Activate(Id::Game("ff6".into())));
-        assert_eq!(
-            fx.last(),
-            Some(&Effect::Launch { game: "ff6".into(), settings: Values::default(), env: vec![], launch: Launch::None, file: None })
+        assert!(
+            matches!(fx.last(), Some(Effect::Launch { game, settings, env, launch: Launch::None, file: None, .. }) if &**game == "ff6" && *settings == Values::default() && env.is_empty()),
+            "{fx:?}"
         );
     }
 

@@ -1,10 +1,12 @@
 //! The compositor's windows, as the launcher needs them. A launcher instance is a systemd scope we
 //! started (`clamshell-app-<key>-<pid>-<n>.scope`) and has a workspace of the same name: every window of
 //! its processes (a second window, a program started from its terminal) belongs there, and sway arranges
-//! them within it. The game has one workspace, for windows of our game scopes and Steam's games.
+//! them within it. Games are the same: each running game has a scope (`clamshell-game-<secs>-<n>`) and a
+//! workspace of that name; a game Steam starts gets a workspace of its own too (its windows are moved
+//! there from where they land).
 
-/// The game's workspace, and shelf's (its window's; shown again when an app's or the game's workspace
-/// empties).
+/// Where Steam's game windows land (a sway rule) before they are moved to their game's workspace; and
+/// shelf's workspace (its window's; shown again when an app's or a game's workspace empties).
 pub const GAME_WORKSPACE: &str = "clamshell-game";
 pub const SHELF_WORKSPACE: &str = "clamshell-shelf";
 
@@ -39,10 +41,21 @@ impl Window {
         self.unit.as_deref().is_some_and(|u| u.starts_with("clamshell-game-")) || self.app_id.starts_with("steam_app_")
     }
 
-    /// The workspace it belongs on: its instance's, the game's, shelf's, or none (left where it is).
+    /// The game it belongs to, if we started it: its scope's name without `.scope` (its workspace's).
+    pub fn game_scope(&self) -> Option<&str> {
+        self.unit.as_deref().and_then(|u| u.strip_suffix(".scope")).filter(|u| u.starts_with("clamshell-game-"))
+    }
+
+    /// Steam's id of the game it is a window of (`steam_app_<id>`).
+    pub fn steam_id(&self) -> Option<u32> {
+        self.app_id.strip_prefix("steam_app_").and_then(|n| n.parse().ok())
+    }
+
+    /// The workspace it belongs on: its instance's, its game's (one we started), shelf's, or none (left
+    /// where it is; Steam's games are placed by the program, which knows which game they are).
     pub fn home(&self) -> Option<&str> {
         self.instance()
-            .or_else(|| self.of_game().then_some(GAME_WORKSPACE))
+            .or_else(|| self.game_scope())
             .or_else(|| (self.app_id == crate::apps::SHELF_APP_ID).then_some(SHELF_WORKSPACE))
     }
 }
@@ -68,8 +81,9 @@ mod tests {
         assert_eq!(foot.home(), Some("clamshell-app-terminal-1234-7"));
         // Firefox started from that terminal: the terminal's.
         assert_eq!(w(Some("clamshell-app-terminal-1234-7.scope"), "firefox").home(), Some("clamshell-app-terminal-1234-7"));
-        assert_eq!(w(Some("clamshell-game-99-1.scope"), "retroarch").home(), Some(GAME_WORKSPACE));
-        assert_eq!(w(Some("app-steam.scope"), "steam_app_620").home(), Some(GAME_WORKSPACE));
+        assert_eq!(w(Some("clamshell-game-99-1.scope"), "retroarch").home(), Some("clamshell-game-99-1"));
+        assert_eq!(w(Some("app-steam.scope"), "steam_app_620").home(), None, "Steam's: placed by the program");
+        assert_eq!(w(Some("app-steam.scope"), "steam_app_620").steam_id(), Some(620));
         assert_eq!(w(Some("app-steam.scope"), "steam").home(), None, "not ours: left alone");
         assert_eq!(w(Some("clamshell.service"), crate::apps::SHELF_APP_ID).home(), Some(SHELF_WORKSPACE));
         assert!(order("clamshell-app-x-5-10") > order("clamshell-app-x-5-9"));
