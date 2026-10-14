@@ -12,6 +12,7 @@ mod bar;
 mod keyboard;
 mod settings;
 mod shelf;
+mod sysinfo;
 mod touchpad;
 
 use std::fmt::Write;
@@ -46,6 +47,7 @@ const FN: u32 = 0x5f82b8;
 pub struct Scratch {
     minute: Option<u64>,
     clock: String,
+    lines: sysinfo::Lines,
 }
 
 impl Scratch {
@@ -130,7 +132,7 @@ pub fn bottom(c: &mut Canvas, s: &State, w: f32, h: f32, scratch: &mut Scratch, 
         Mode::Keyboard => keyboard::draw(f, body),
         Mode::Launcher => label(f.c, body, body.h * 0.05, DIM, "Launcher: not built yet"),
         Mode::Touchpad => touchpad::draw(f, body),
-        Mode::Sysinfo => label(f.c, body, body.h * 0.05, DIM, "Sysinfo: not built yet"),
+        Mode::Sysinfo => sysinfo::draw(f, body, &mut scratch.lines),
     }
     body
 }

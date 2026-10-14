@@ -3,6 +3,7 @@
 //! events, so all of this is unit-testable.
 
 pub mod keyboard;
+pub mod metrics;
 pub mod touch;
 
 use std::collections::HashMap;
@@ -78,12 +79,14 @@ pub struct Status {
     pub muted: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Event {
     /// Wall clock, once a second (policy thread).
     Tick { unix_secs: u64 },
     /// Battery, Wi-Fi, volume (policy thread, when they change).
     Status(Status),
+    /// CPU, GPU, memory, temperatures, power (policy thread, once a second).
+    Metrics(metrics::Metrics),
     /// Tap, click, or the pad's A on a focused item.
     Activate(Id),
     /// A press held longer than a tap (locks a keyboard modifier; otherwise as `Activate`).
@@ -143,6 +146,8 @@ pub struct State {
     pub status: Status,
     /// The controller drives the pointer (independent of the second screen's mode).
     pub pad_mouse: bool,
+    pub metrics: metrics::Metrics,
+    pub history: metrics::History,
 }
 
 /// What holding a target does once the press lasts beyond a tap.
@@ -191,6 +196,12 @@ impl State {
                 let changed = status != self.status;
                 self.status = status;
                 (if changed { Dirty::BOTTOM } else { Dirty::NONE }, vec![])
+            }
+            Event::Metrics(m) => {
+                self.metrics = m;
+                self.history.push(&m);
+                // Only the sysinfo mode shows them.
+                (if self.mode == Mode::Sysinfo { Dirty::BOTTOM } else { Dirty::NONE }, vec![])
             }
             Event::Focus(id) => {
                 self.focus = Some(id);

@@ -3,6 +3,7 @@
 //! Nothing here waits for the UI.
 
 pub mod keyboard;
+pub mod metrics;
 pub mod pad;
 pub mod touchpad;
 

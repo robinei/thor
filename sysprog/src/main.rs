@@ -79,6 +79,10 @@ fn main() -> ExitCode {
             if let Err(e) = sysprog_policy::spawn_status(move |event| status.send(event)) {
                 log::error!("status thread: {e}");
             }
+            let metrics = sender.clone();
+            if let Err(e) = sysprog_policy::metrics::spawn(move |event| metrics.send(event)) {
+                log::error!("metrics thread: {e}");
+            }
             if let Err(e) = touchpad::spawn(touchpad, layout, touchpad_rx, move |event| sender.send(event)) {
                 log::error!("touchpad thread: {e}");
             }
@@ -161,6 +165,7 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
         ),
         (vec![key(Key::Mod(Modifier::Shift), true)], Screen::Bottom, bottom, "keyboard-caps.png"),
         (vec![Event::Activate(Id::Mode(Mode::Touchpad)), Event::Activate(Id::PadMouse)], Screen::Bottom, bottom, "touchpad.png"),
+        (demo_metrics(), Screen::Bottom, bottom, "sysinfo.png"),
         (vec![Event::Activate(Id::Mode(Mode::Keyboard))], Screen::Bottom, bottom, "keyboard-back.png"),
         (
             vec![
@@ -184,4 +189,38 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
         log::info!("wrote {}", path.display());
     }
     ExitCode::SUCCESS
+}
+
+/// A minute of made-up readings, then sysinfo mode, for the snapshot.
+fn demo_metrics() -> Vec<Event> {
+    use sysprog_core::metrics::Metrics;
+    let mut events: Vec<Event> = (0..60u32)
+        .map(|i| {
+            let t = i as f32 / 60.0;
+            let wave = |phase: f32| (0.5 + 0.4 * ((t * 9.0 + phase).sin())).clamp(0.0, 1.0);
+            let mut cores = [0.0; 16];
+            for (k, c) in cores.iter_mut().take(8).enumerate() {
+                *c = wave(k as f32);
+            }
+            Event::Metrics(Metrics {
+                cpu: Some(wave(0.0) * 0.6),
+                cores,
+                core_count: 8,
+                cpu_mhz: Some(2900),
+                gpu: Some(wave(1.5)),
+                gpu_mhz: Some(680),
+                cpu_temp: Some(58.0),
+                gpu_temp: Some(52.0),
+                mem_used: 6_400_000_000,
+                mem_total: 16_000_000_000,
+                swap_used: 0,
+                power_w: Some(6.0 + 3.0 * wave(3.0)),
+                minutes_left: Some(190),
+                fps: Some(55.0 + 5.0 * wave(2.0)),
+                frame_ms: Some(16.9),
+            })
+        })
+        .collect();
+    events.push(Event::Activate(Id::Mode(Mode::Sysinfo)));
+    events
 }
