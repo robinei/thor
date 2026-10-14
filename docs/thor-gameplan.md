@@ -50,31 +50,49 @@ What goes in, and from where:
 | Root: ext4 `THOR_ROOT` | `pacstrap` from Arch Linux ARM's mirrors (unpinned): base, sudo, mkinitcpio, NetworkManager, OpenSSH, sway, foot, Xwayland, Mesa + `vulkan-freedreno`, PipeWire, Noto, SQLite, Python, vim |
 | Session | user `thor` (passwordless sudo, my ssh key), tty1 autologin into sway, sway config (DSI-2 top, DSI-1 bottom, ROCKNIX's output lines if found), the system program built natively for aarch64 as a user service, uinput rule, NetworkManager and sshd on |
 
+Built once (2026-10-14, ROCKNIX 20261001, kernel 7.2.0): `~/.cache/thor-vm/aarch64/thor-sd.img`, 12 GB
+(2.5 GB used). Checked from the host and in the build machine: GPT with partition 1 an EFI system
+partition (GPT name `system`, legacy-boot attribute, FAT label `ROCKNIX`) holding `KERNEL`,
+`EFI/BOOT/BOOTAA64.EFI`, `Image`, `dtbs/qcs8550-ayn-thor.dtb`, `initramfs-thor.img`, `loader/`; partition
+2 `THOR_ROOT` with ROCKNIX's modules (7.2.0), its firmware (161 MB: `qcom/sm8550/a740_zap.mbn` for the
+GPU, `AYN-Thor-tplg.bin` for audio, `ayn/`), its UCM profiles (`AYN/Thor`), no Arch kernel package, the
+session and the program. Not booted anywhere: the first boot is on the device.
+
+What ROCKNIX's system showed (used by the build):
+
+- Modules and part of the firmware are in a kernel overlay (`usr/lib/kernel-overlays/base/lib/...`);
+  `usr/lib/firmware` is a link to `/run/kernel-overlays/firmware`, set up at run time.
+- Its sway outputs are written at session start by `usr/lib/autostart/common/111-sway-init`: the
+  transform from `/sys/class/graphics/fbcon/rotate` (1/2/3: 90/180/270), and for the Thor the
+  touchscreens `0:0:top_touchscreen` on DSI-2 and `0:0:bottom_touchscreen` on DSI-1 (bottom one's events
+  off unless something shows there). Our image does the same (`~/.local/bin/thor-outputs`, rotating both
+  panels by fbcon's angle) and sets `SYSPROG_TOUCHSCREEN=bottom_touchscreen` for touchpad mode.
+
 Known issues and risks, to check first:
 
 1. Our ramdisk is meant to be unpacked over the kernel's built-in initramfs, so our `/init` wins. If not,
-   ROCKNIX's init runs, looks for its own `SYSTEM`, and the boot fails.
-2. Early storage: if the SD controller's driver (sdhci-msm) is a module, our initramfs must carry it.
-3. Audio: Qualcomm audio also needs ALSA UCM profiles and topology firmware (`ayn/thor/*`); the firmware
-   comes with ROCKNIX's, the UCM profiles don't yet. Under UEFI the card is named `ayn-AYNOdin2`.
-9. UEFI path: whether U-Boot passes our device tree through systemd-boot (its devicetree fixup) or
-   insists on its own; Kettle uses GRUB, which would be the fallback.
-4. Display rotation: both panels are natively portrait, so sway needs a transform on each; only right if
-   ROCKNIX's sway config has it in a form the build finds. Touch needs Kettle's calibration matrix.
-5. Gamepad: the kernel driver comes with ROCKNIX's modules; its userspace mapping (Thorch uses
+   ROCKNIX's init runs, looks for its own `SYSTEM`, and the boot fails (ABL path only; the UEFI path
+   passes our initramfs as the only one... unless the built-in one still unpacks first: same question).
+2. Early storage: if the SD controller's driver (sdhci-msm) is a module, our initramfs must carry it
+   (it has all block drivers; unchecked that this is among them).
+3. Audio: ROCKNIX's UCM profiles are copied over `alsa-ucm-conf`'s, so an update of that package undoes
+   them; under UEFI the card is named `ayn-AYNOdin2` (ROCKNIX has a profile for that name too).
+4. Rotation: the bottom panel gets fbcon's angle as well; unverified that it wants the same. Touch may
+   still need Kettle's calibration matrix.
+5. Gamepad: the kernel driver comes with ROCKNIX's modules; its userspace mapping (Thorch, Kettle:
    InputPlumber maps) doesn't. Check what evdev reports before relying on it.
 6. Device trees: Thorch insists on exactly one Thor device tree in `/KERNEL`; we keep ROCKNIX's 14 (as
-   ROCKNIX does). If the wrong one gets picked, strip to the Thor's.
-7. Not done: suspend/hibernate setup, power and fan control, growing the root partition (the image is
-   12 GB).
-8. Test image only: passwordless sudo, sshd with a key, autologin without a password.
+   ROCKNIX does). The UEFI path loads only the Thor's.
+7. UEFI path: whether U-Boot passes our device tree through systemd-boot (its devicetree fixup) or
+   insists on its own; Kettle uses GRUB, the fallback.
+8. Not done: suspend/hibernate setup, power and fan control, growing the root partition to the card.
+9. Test image only: passwordless sudo, sshd with a key, autologin without a password.
 
 ## Before the device arrives
 
-- [ ] Build the image (`tools/vm.py --arch aarch64 thor-image`); check it from the host: partition table,
-      `/KERNEL` header (`tools/bootimg.py info`), the root's contents.
-- [ ] Settle 2 and 4 against ROCKNIX's `SYSTEM` (is sdhci-msm built in? where does ROCKNIX rotate?), and
-      add the audio files for 3.
+- [x] Build the image and check it (done 2026-10-14; see above).
+- [ ] Settle 2: is sdhci-msm built into ROCKNIX's kernel (its config, or `modules.builtin`)?
+- [ ] Rebuild nearer the time: a newer ROCKNIX release, current packages.
 - [ ] Find out what the stock Linux boot mode is (U-Boot? AYN's own ABL?), what it reads (`/KERNEL`, or
       `extlinux.conf` and files), and from which firmware version it ships; ask on the Discord.
 - [ ] Read ROCKNIX's ABL scripts and README (flash, backup, restore) and the Thorch and Pocknix install

@@ -22,7 +22,7 @@ WORK=/var/tmp/thor-image
 ROOT=$WORK/root
 # The device's packages: the base system, network, the session, the GPU (Freedreno/Turnip), sound.
 PACKAGES=(base sudo mkinitcpio networkmanager openssh sway swaybg foot xorg-xwayland mesa vulkan-freedreno
-          pipewire pipewire-pulse wireplumber noto-fonts sqlite python less vim)
+          pipewire pipewire-pulse wireplumber alsa-ucm-conf noto-fonts sqlite python less vim)
 # The kernel command line: ROCKNIX's tuning for SM8550, our root.
 CMDLINE="root=LABEL=THOR_ROOT rw rootwait console=tty0 allow_mismatched_32bit_el0 fw_devlink.strict=1 pcie_ports=compat irqaffinity=0-2 cgroup.memory=nokmem,nosocket nosoftlockup usbcore.interrupt_interval_override=045e:028e:2"
 
@@ -31,10 +31,15 @@ say() { echo "== $*"; }
 say "tools"
 pacman -S --noconfirm --needed arch-install-scripts squashfs-tools dosfstools gptfdisk > /dev/null
 
-say "ROCKNIX's system (modules, firmware, its sway outputs)"
+say "ROCKNIX's system (modules, firmware, audio profiles)"
+# A failed run may have left its mounts.
+umount -R -l "$ROOT" 2> /dev/null || true; umount -l "$WORK/boot" 2> /dev/null || true
 rm -rf "$WORK"; mkdir -p "$WORK"
-unsquashfs -q -d "$WORK/system" "$ROCKNIX/SYSTEM" 'usr/lib/modules' 'usr/lib/firmware' 'usr/lib/kernel-overlays' 'usr/config' 'etc/sway' > /dev/null || true
-MODULES=$(find "$WORK/system" -maxdepth 6 -type d -path '*/lib/modules/*' -name '[0-9]*' | head -1)
+# ROCKNIX keeps the kernel's modules and part of the firmware in a kernel overlay
+# (usr/lib/kernel-overlays/base/lib/{modules,firmware}), the rest of the firmware in usr/lib/firmware, and
+# its ALSA UCM profiles (AYN/Thor, conf.d/sm8550) in usr/share/alsa/ucm2.
+unsquashfs -q -d "$WORK/system" "$ROCKNIX/SYSTEM" usr/lib/kernel-overlays usr/lib/firmware usr/share/alsa/ucm2 > /dev/null
+MODULES=$(find "$WORK/system/usr/lib/kernel-overlays" -maxdepth 4 -type d -path '*/lib/modules/*' -name '[0-9]*' | head -1)
 [ -n "$MODULES" ] || { echo "no kernel modules in ROCKNIX's SYSTEM"; exit 1; }
 KVER=$(basename "$MODULES")
 say "  kernel $KVER"
@@ -42,21 +47,27 @@ say "  kernel $KVER"
 say "partitions"
 sgdisk -Z "$DEVICE" > /dev/null
 sgdisk -n 1:16M:+256M -t 1:ef00 -c 1:system -A 1:set:2 -n 2:0:0 -t 2:8300 -c 2:THOR_ROOT "$DEVICE" > /dev/null
-partprobe "$DEVICE"; udevadm settle
+blockdev --rereadpt "$DEVICE"; udevadm settle
 mkfs.vfat -F 32 -n ROCKNIX "${DEVICE}1" > /dev/null
 mkfs.ext4 -q -F -L THOR_ROOT "${DEVICE}2"
 mkdir -p "$ROOT"; mount "${DEVICE}2" "$ROOT"
-trap 'umount -R "$ROOT" 2> /dev/null || true' EXIT
+trap 'umount -l "$WORK/boot" 2> /dev/null || true; umount -R -l "$ROOT" 2> /dev/null || true' EXIT
 
 say "Arch Linux ARM (pacstrap)"
 pacstrap -K "$ROOT" "${PACKAGES[@]}" > "$WORK/pacstrap.log"
+# pacstrap's keyring setup leaves a gpg-agent running in the new root, which keeps it mounted.
+gpgconf --homedir "$ROOT/etc/pacman.d/gnupg" --kill all 2> /dev/null || true
 
 say "ROCKNIX's modules and firmware"
 mkdir -p "$ROOT/usr/lib/modules" "$ROOT/usr/lib/firmware"
 cp -a "$MODULES" "$ROOT/usr/lib/modules/"
-FIRMWARE=$(find "$WORK/system" -maxdepth 4 -type d -path '*/lib/firmware' | head -1)
-[ -n "$FIRMWARE" ] && cp -a "$FIRMWARE/." "$ROOT/usr/lib/firmware/"
+# (usr/lib/firmware may be a link into the overlay: then the overlay's is all of it.)
+[ -d "$WORK/system/usr/lib/firmware" ] && [ ! -L "$WORK/system/usr/lib/firmware" ] && cp -a "$WORK/system/usr/lib/firmware/." "$ROOT/usr/lib/firmware/"
+cp -a "$WORK/system/usr/lib/kernel-overlays/base/lib/firmware/." "$ROOT/usr/lib/firmware/"
 arch-chroot "$ROOT" depmod "$KVER"
+
+say "ROCKNIX's audio profiles (over alsa-ucm-conf's: an update of that package undoes them)"
+cp -a "$WORK/system/usr/share/alsa/ucm2/." "$ROOT/usr/share/alsa/ucm2/"
 
 say "system setup"
 echo thor > "$ROOT/etc/hostname"
@@ -75,15 +86,30 @@ say "the session (sway, the system program)"
 H=$ROOT/home/$USER_NAME
 mkdir -p "$H/.config/sway" "$H/.config/systemd/user" "$H/.local/bin"
 install -m 755 "$PROGRAM" "$H/.local/bin/sysprog"
-echo '[ "$(tty)" = /dev/tty1 ] && exec sway > "$HOME/sway.log" 2>&1' > "$H/.bash_profile"
-{
-    echo "# The Thor: DSI-2 the main (top) screen, DSI-1 the second (bottom) screen, as ROCKNIX has them."
-    # ROCKNIX's own output lines (rotation, scale), if its sway config has them.
-    grep -rhE '^\s*output\s+DSI-[12]' "$WORK/system" 2> /dev/null | sort -u || true
-    echo "default_border none"
-    echo "input type:touch map_to_output DSI-1"
-    echo "exec systemctl --user import-environment WAYLAND_DISPLAY SWAYSOCK XDG_CURRENT_DESKTOP && systemctl --user restart sysprog.service"
-} > "$H/.config/sway/config"
+# The outputs are written at each session start, as ROCKNIX does (its autostart/common/111-sway-init): the
+# panels are natively portrait, and the kernel says how to turn them (fbcon's rotate, from the panel's
+# orientation in the device tree). Unverified: that the bottom panel wants the same angle as the top.
+cat > "$H/.local/bin/thor-outputs" <<'SCRIPT'
+#!/bin/sh
+case "$(cat /sys/class/graphics/fbcon/rotate 2> /dev/null)" in
+    1) angle=90 ;; 2) angle=180 ;; 3) angle=270 ;; *) angle=0 ;;
+esac
+cat > "$HOME/.config/sway/outputs" <<EOF
+# Written by thor-outputs at session start (fbcon rotate: $angle).
+output DSI-2 transform $angle position 0 0
+output DSI-1 transform $angle
+input "0:0:top_touchscreen" map_to_output DSI-2
+input "0:0:bottom_touchscreen" map_to_output DSI-1
+EOF
+SCRIPT
+chmod 755 "$H/.local/bin/thor-outputs"
+echo '[ "$(tty)" = /dev/tty1 ] && "$HOME/.local/bin/thor-outputs" && exec sway > "$HOME/sway.log" 2>&1' > "$H/.bash_profile"
+cat > "$H/.config/sway/config" <<'CONFIG'
+# The Thor: DSI-2 the main (top) screen, DSI-1 the second (bottom) screen (as ROCKNIX and Kettle have them).
+include ~/.config/sway/outputs
+default_border none
+exec systemctl --user import-environment WAYLAND_DISPLAY SWAYSOCK XDG_CURRENT_DESKTOP && systemctl --user restart sysprog.service
+CONFIG
 cat > "$H/.config/systemd/user/sysprog.service" <<EOF
 [Unit]
 Description=The system program
@@ -92,6 +118,8 @@ After=graphical-session.target
 [Service]
 ExecStart=/home/$USER_NAME/.local/bin/sysprog
 Environment=SYSPROG_BOTTOM_OUTPUT=DSI-1
+# Touchpad mode takes the bottom screen's touchscreen (the Thor has two).
+Environment=SYSPROG_TOUCHSCREEN=bottom_touchscreen
 Restart=on-failure
 RestartSec=2
 EOF
