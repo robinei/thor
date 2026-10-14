@@ -91,8 +91,9 @@ const fn n(k: Named) -> Key {
     Key::Named(k)
 }
 
-/// The layout. Each row fills the width; the letter rows are 12 units (wider keys than the 13-unit digit
-/// row), with Tab and Esc in the bottom row. Fn: F1-F12 on the digit row, Delete on Backspace, and a navigation
+/// The layout: US letters and digits in their usual places, every row 10 units so keys use the full
+/// width; the punctuation that a PC keyboard puts beside the letters has its own row, and comma and
+/// period flank the space bar. Fn: F1-F12 (digits, then - and =), Delete on Backspace, and a navigation
 /// cluster under the right hand (arrows on i/j/k/l, Home/End beside Up, PgUp/PgDn on y/h, Insert on p).
 pub const LAYOUT: &[&[Slot]] = &[
     &[
@@ -106,9 +107,6 @@ pub const LAYOUT: &[&[Slot]] = &[
         cf('8', f(8)),
         cf('9', f(9)),
         cf('0', f(10)),
-        cf('-', f(11)),
-        cf('=', f(12)),
-        Slot { base: n(Named::Backspace), fn_key: Some(n(Named::Delete)), width: 1.0 },
     ],
     &[
         c('q'),
@@ -121,8 +119,6 @@ pub const LAYOUT: &[&[Slot]] = &[
         cf('i', n(Named::Up)),
         cf('o', n(Named::End)),
         cf('p', n(Named::Insert)),
-        c('['),
-        c(']'),
     ],
     &[
         c('a'),
@@ -134,13 +130,11 @@ pub const LAYOUT: &[&[Slot]] = &[
         cf('j', n(Named::Left)),
         cf('k', n(Named::Down)),
         cf('l', n(Named::Right)),
-        c(';'),
-        c('\''),
         named(Named::Enter, 1.0),
     ],
     &[
         // One Shift is enough: it is sticky (tap for one key, hold for Caps Lock).
-        modifier(Modifier::Shift, 2.0),
+        modifier(Modifier::Shift, 1.5),
         c('z'),
         c('x'),
         c('c'),
@@ -148,19 +142,28 @@ pub const LAYOUT: &[&[Slot]] = &[
         c('b'),
         c('n'),
         c('m'),
-        c(','),
-        c('.'),
+        Slot { base: n(Named::Backspace), fn_key: Some(n(Named::Delete)), width: 1.5 },
+    ],
+    &[
+        named(Named::Esc, 1.0),
+        c('`'),
+        cf('-', f(11)),
+        cf('=', f(12)),
+        c('['),
+        c(']'),
+        c('\\'),
+        c(';'),
+        c('\''),
         c('/'),
     ],
     &[
-        modifier(Modifier::Fn, 1.5),
-        named(Named::Esc, 1.0),
+        modifier(Modifier::Fn, 1.25),
         named(Named::Tab, 1.0),
-        modifier(Modifier::Ctrl, 1.5),
-        modifier(Modifier::Alt, 1.5),
-        Slot { base: Key::Char(' '), fn_key: None, width: 4.5 },
-        c('`'),
-        c('\\'),
+        modifier(Modifier::Ctrl, 1.25),
+        modifier(Modifier::Alt, 1.25),
+        c(','),
+        Slot { base: Key::Char(' '), fn_key: None, width: 3.25 },
+        c('.'),
     ],
 ];
 
@@ -308,9 +311,10 @@ mod tests {
     }
 
     #[test]
-    fn letter_rows_are_twelve_units_and_the_others_thirteen() {
-        let units: Vec<f32> = LAYOUT.iter().map(|row| row.iter().map(|s| s.width).sum()).collect();
-        assert_eq!(units, vec![13.0, 12.0, 12.0, 12.0, 13.0]);
+    fn every_row_is_ten_units() {
+        for row in LAYOUT {
+            assert_eq!(row.iter().map(|s| s.width).sum::<f32>(), 10.0);
+        }
     }
 
     #[test]
