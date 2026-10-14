@@ -6,9 +6,12 @@ use crate::draw::{Rect, rgb};
 
 /// The cross: barely above black.
 const CROSS: u32 = 0x18181c;
+/// How far the cross stops short of the area's edges (and of the bar above), of its height.
+const CLEAR: f32 = 0.05;
 
 pub(super) fn draw(f: &mut Frame, body: Rect) {
     let (cx, cy) = body.center();
-    f.c.hline(body.x, body.x + body.w, cy, 2, rgb(CROSS));
-    f.c.vline(cx, body.y, body.y + body.h, 2, rgb(CROSS));
+    let m = body.h * CLEAR;
+    f.c.hline(body.x + m, body.x + body.w - m, cy, 2, rgb(CROSS));
+    f.c.vline(cx, body.y + m, body.y + body.h - m, 2, rgb(CROSS));
 }
