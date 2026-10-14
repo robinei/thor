@@ -7,6 +7,8 @@ use crate::draw::{Canvas, Rect};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Icon {
     Apps,
+    /// The pad mouse toggle: a mouse.
+    Mouse,
     Keyboard,
     Touchpad,
     Sysinfo,
@@ -47,6 +49,10 @@ pub fn draw(c: &mut Canvas, icon: Icon, r: Rect, color: Color) {
         points
     };
     match icon {
+        Icon::Mouse => {
+            c.outline(rr(6.0, 3.0, 12.0, 18.0), 6.0 * u, line, color);
+            c.polyline(&[p(12.0, 3.5), p(12.0, 9.5)], line, color, false);
+        }
         Icon::Apps => {
             for (x, y) in [(4.0, 4.0), (13.0, 4.0), (4.0, 13.0), (13.0, 13.0)] {
                 c.outline(rr(x, y, 7.0, 7.0), 1.5 * u, line, color);

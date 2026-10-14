@@ -43,4 +43,11 @@ on a desktop with a fake touchscreen (your pointer will move):
     cargo run --release -p sysprog-policy --example fake_touchscreen &
     SYSPROG_TOUCHSCREEN="sysprog fake touchscreen" SYSPROG_START_MODE=touchpad cargo run --release
 
+**The controller** (any Xbox-style pad; `SYSPROG_GAMEPAD`: path or part of its name) is grabbed for good;
+games see a virtual Xbox 360 pad that is always there. The **pad mouse** toggle (mouse icon in the bar)
+routes the controller to a virtual mouse instead (left stick pointer, right stick scroll, A/RT left
+click, B right, X middle, D-pad arrows) while the virtual pad shows a neutral controller. Test with a fake
+pad: `cargo run --release -p sysprog-policy --example fake_pad &` then
+`SYSPROG_GAMEPAD="sysprog fake pad" SYSPROG_PAD_MOUSE=1 cargo run --release`.
+
 Licence: MIT.

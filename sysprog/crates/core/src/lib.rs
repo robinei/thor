@@ -61,6 +61,8 @@ pub enum Id {
     Launch,
     /// An on-screen keyboard key, by position.
     Key(KeyPos),
+    /// The pad mouse toggle.
+    PadMouse,
 }
 
 /// The system's status as the bar shows it (policy threads read it from the system).
@@ -102,6 +104,9 @@ pub enum Effect {
     Key(Stroke),
     /// Touchpad mode started (true) or ended: the input side grabs or releases the touchscreen.
     Touchpad(bool),
+    /// The pad mouse turned on or off: the input side grabs the controller and drives a virtual mouse
+    /// with it, or releases it to games.
+    PadMouse(bool),
     Quit,
 }
 
@@ -132,6 +137,8 @@ pub struct State {
     /// The target being pressed (drawn lit), if any.
     pub pressed: Option<Id>,
     pub status: Status,
+    /// The controller drives the pointer (independent of the second screen's mode).
+    pub pad_mouse: bool,
 }
 
 /// What holding a target does once the press lasts beyond a tap.
@@ -147,7 +154,7 @@ pub enum Hold {
 fn screen_of(id: &Id) -> Dirty {
     match id {
         Id::Game(_) => Dirty::BOTH,
-        Id::Mode(_) | Id::Power(_) | Id::Launch | Id::Key(_) => Dirty::BOTTOM,
+        Id::Mode(_) | Id::Power(_) | Id::Launch | Id::Key(_) | Id::PadMouse => Dirty::BOTTOM,
     }
 }
 
@@ -251,6 +258,10 @@ impl State {
                 Some(game) => (Dirty::BOTH, vec![self.launch_effect(game)]),
                 None => (Dirty::BOTH, vec![]),
             },
+            Id::PadMouse => {
+                self.pad_mouse = !self.pad_mouse;
+                (Dirty::BOTTOM, vec![Effect::PadMouse(self.pad_mouse)])
+            }
             Id::Key(pos) => {
                 let effects = self.keyboard.press(pos, long).map(Effect::Key).into_iter().collect();
                 (Dirty::BOTTOM, effects)
@@ -344,6 +355,17 @@ mod tests {
         assert_eq!(fx, vec![Effect::Touchpad(false)]);
         let (_, fx) = s.apply(Event::Activate(Id::Mode(Mode::Keyboard)));
         assert!(fx.is_empty());
+    }
+
+    #[test]
+    fn pad_mouse_toggles_independently_of_the_mode() {
+        let mut s = state();
+        s.apply(Event::Activate(Id::Mode(Mode::Keyboard)));
+        let (_, fx) = s.apply(Event::Activate(Id::PadMouse));
+        assert_eq!(fx, vec![Effect::PadMouse(true)]);
+        assert_eq!(s.mode, Mode::Keyboard);
+        let (_, fx) = s.apply(Event::Activate(Id::PadMouse));
+        assert_eq!(fx, vec![Effect::PadMouse(false)]);
     }
 
     #[test]

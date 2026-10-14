@@ -1,5 +1,5 @@
 //! The bar along the top of the second screen: the override modes' icons on the left (the active one lit;
-//! none lit is follow mode, which has no icon), the
+//! none lit is follow mode, which has no icon), then the pad mouse toggle, the
 //! status on the right (Wi-Fi, volume, battery as icons that carry their level, then the clock). The
 //! middle stays free for notices.
 
@@ -76,6 +76,14 @@ pub(super) fn draw(f: &mut Frame, w: f32, h: f32, scratch: &mut Scratch) -> f32 
             c.icon(icon, Rect::new(cx - side / 2.0, cy - side / 2.0, side, side), rgb(color));
         });
     }
+
+    // The pad mouse toggle, a little apart from the modes: it combines with any of them.
+    let r = Rect::new((Mode::OVERRIDES.len() as f32 + 0.5) * slot, 0.0, slot, bar_h);
+    let color = if f.s.pad_mouse { ACCENT } else { DIM };
+    f.button(Id::PadMouse, r, look, |c| {
+        let (cx, cy) = r.center();
+        c.icon(Icon::Mouse, Rect::new(cx - side / 2.0, cy - side / 2.0, side, side), rgb(color));
+    });
 
     let clock = scratch.clock(f.s.unix_secs);
     let size = bar_h * CLOCK_TEXT;

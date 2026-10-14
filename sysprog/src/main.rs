@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use sysprog_core::keyboard::{self, Key, KeyPos, Modifier};
 use sysprog_core::touch::TouchLayout;
 use sysprog_core::{Effect, Event, Id, Mode, State, Status};
-use sysprog_policy::touchpad;
+use sysprog_policy::{pad, touchpad};
 use sysprog_ui::{Config, Screen};
 
 fn main() -> ExitCode {
@@ -52,6 +52,17 @@ fn main() -> ExitCode {
         }
     }
     let layout = config.touch_layout.clone();
+    // The controller (SYSPROG_GAMEPAD: path or part of its name; default the first gamepad), grabbed for
+    // good with a virtual Xbox pad for games; SYSPROG_PAD_MOUSE=1 starts with the pad mouse on.
+    let (padmouse_tx, padmouse_rx) = mpsc::channel();
+    if std::env::var("SYSPROG_PAD_MOUSE").as_deref() == Ok("1") {
+        for effect in state.apply(Event::Activate(Id::PadMouse)).1 {
+            if effect == Effect::PadMouse(true) {
+                let _ = padmouse_tx.send(pad::Command::MouseOn);
+            }
+        }
+    }
+    let gamepad = std::env::var("SYSPROG_GAMEPAD").ok();
 
     let result = sysprog_ui::run(
         state,
@@ -68,6 +79,9 @@ fn main() -> ExitCode {
             if let Err(e) = touchpad::spawn(touchpad, layout, touchpad_rx, move |event| sender.send(event)) {
                 log::error!("touchpad thread: {e}");
             }
+            if let Err(e) = pad::spawn(gamepad, padmouse_rx) {
+                log::error!("pad thread: {e}");
+            }
         },
         move |effect| match effect {
             Effect::Touchpad(on) => {
@@ -75,6 +89,13 @@ fn main() -> ExitCode {
                 let command = if *on { touchpad::Command::On } else { touchpad::Command::Off };
                 if touchpad_tx.send(command).is_err() {
                     log::warn!("touchpad thread is gone");
+                }
+            }
+            Effect::PadMouse(on) => {
+                log::info!("effect: {effect:?}");
+                let command = if *on { pad::Command::MouseOn } else { pad::Command::MouseOff };
+                if padmouse_tx.send(command).is_err() {
+                    log::warn!("pad thread is gone");
                 }
             }
             other => log::info!("effect: {other:?}"),
@@ -128,7 +149,7 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
             "keyboard-mods.png",
         ),
         (vec![key(Key::Mod(Modifier::Shift), true)], Screen::Bottom, bottom, "keyboard-caps.png"),
-        (vec![Event::Activate(Id::Mode(Mode::Touchpad))], Screen::Bottom, bottom, "touchpad.png"),
+        (vec![Event::Activate(Id::Mode(Mode::Touchpad)), Event::Activate(Id::PadMouse)], Screen::Bottom, bottom, "touchpad.png"),
         (vec![Event::Activate(Id::Mode(Mode::Keyboard))], Screen::Bottom, bottom, "keyboard-back.png"),
         (
             vec![
