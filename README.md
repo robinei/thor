@@ -163,8 +163,8 @@ back to where it was there); with the on-screen keyboard open over an app it **t
 Enter, B Backspace); with a game in front, the game has it. The virtual pad shows a neutral controller
 whenever the game doesn't. On the desktop, Tab stands in for View, Backspace for B, Q and E for the
 shoulders. The **home
-button** (BTN_MODE) is ClamShell's, never the games': from shelf it goes to the running game, from anything
-else to shelf. (So Steam's overlay doesn't get it.) Test with a fake
+button** (BTN_MODE) is ClamShell's, never the games': from anything it goes to shelf, and from shelf back to
+what was in front before (the game, an app). (So Steam's overlay doesn't get it.) Test with a fake
 pad: `cargo run --release -p clamshell-policy --example fake_pad &` then
 `CLAMSHELL_GAMEPAD="clamshell fake pad" CLAMSHELL_PAD_MOUSE=1 cargo run --release`.
 

@@ -736,16 +736,19 @@ impl State {
         effects
     }
 
-    /// The home button: from shelf to the running game, from anything else to shelf.
+    /// The home button: from anything to shelf; from shelf back to what was in front before it (the
+    /// game, an app's instance), or without that history (no compositor's word) to the running game.
     fn home(&mut self) -> Vec<Effect> {
         let front = self.windows.iter().find(|w| w.focused);
         let shelf_in_front = front.is_none_or(|w| w.app_id == apps::SHELF_APP_ID);
         if !shelf_in_front {
             return vec![Effect::ShowShelf];
         }
-        match self.running {
-            Some(_) => vec![Effect::FocusWorkspace(windows::GAME_WORKSPACE.into())],
-            None => vec![],
+        let before = self.recent.iter().find(|ws| ws.as_str() != windows::SHELF_WORKSPACE).cloned();
+        match (before, &self.running) {
+            (Some(workspace), _) => vec![Effect::FocusWorkspace(workspace)],
+            (None, Some(_)) => vec![Effect::FocusWorkspace(windows::GAME_WORKSPACE.into())],
+            (None, None) => vec![],
         }
     }
 
@@ -910,22 +913,30 @@ mod tests {
     }
 
     #[test]
-    fn home_goes_between_shelf_and_the_game() {
+    fn home_goes_to_shelf_and_back_to_what_was_in_front() {
         let mut s = state();
-        let window = |app_id: &str, focused: bool| windows::Window {
-            id: 1,
+        let window = |id: i64, app_id: &str, workspace: &str, focused: bool| windows::Window {
+            id,
             app_id: app_id.into(),
             title: String::new(),
             focused,
             unit: None,
-            workspace: String::new(),
+            workspace: workspace.into(),
         };
-        assert_eq!(s.apply(Event::Home).1, vec![], "nothing runs: shelf stays");
+        let shelf = |focused| window(1, apps::SHELF_APP_ID, windows::SHELF_WORKSPACE, focused);
+        assert_eq!(s.apply(Event::Home).1, vec![], "nothing before shelf: it stays");
         s.apply(Event::Started("zelda-lttp".into()));
-        s.apply(Event::Windows(vec![window(apps::SHELF_APP_ID, true)]));
-        assert_eq!(s.apply(Event::Home).1, vec![Effect::FocusWorkspace(windows::GAME_WORKSPACE.into())]);
-        s.apply(Event::Windows(vec![window(apps::SHELF_APP_ID, false), window("retroarch", true)]));
+        assert_eq!(s.apply(Event::Home).1, vec![Effect::FocusWorkspace(windows::GAME_WORKSPACE.into())], "no history: the game");
+        // A terminal in front, then shelf: home goes back to the terminal.
+        let terminal = "clamshell-app-terminal-1-0";
+        s.apply(Event::Windows(vec![shelf(false), window(2, "foot", terminal, true)]));
         assert_eq!(s.apply(Event::Home).1, vec![Effect::ShowShelf]);
+        s.apply(Event::Windows(vec![shelf(true), window(2, "foot", terminal, false)]));
+        assert_eq!(s.apply(Event::Home).1, vec![Effect::FocusWorkspace(terminal.into())]);
+        // The terminal closed: back to the game, which was in front before.
+        s.apply(Event::Windows(vec![shelf(false), window(3, "retroarch", windows::GAME_WORKSPACE, true)]));
+        s.apply(Event::Windows(vec![shelf(true), window(3, "retroarch", windows::GAME_WORKSPACE, false)]));
+        assert_eq!(s.apply(Event::Home).1, vec![Effect::FocusWorkspace(windows::GAME_WORKSPACE.into())]);
     }
 
     #[test]
