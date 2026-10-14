@@ -49,8 +49,12 @@ fn main() -> ExitCode {
 type Shot = (Vec<Event>, Screen, (u32, u32), &'static str);
 
 fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
-    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
-    state.apply(Event::Tick { unix_secs: now.as_secs() });
+    // A fixed time unless SYSPROG_SNAPSHOT_NOW is set, so snapshots compare byte for byte across runs.
+    let now = match std::env::var_os("SYSPROG_SNAPSHOT_NOW") {
+        Some(_) => std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
+        None => 1_760_000_000,
+    };
+    state.apply(Event::Tick { unix_secs: now });
     // Each shot after the events that lead to it: shelf, then the keyboard plain, with Fn, and with
     // Shift (once) and Ctrl (locked).
     let key = |k: Key, long: bool| {
