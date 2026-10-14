@@ -15,12 +15,12 @@ path (virtual pad, mouse emulation, touchpad) and power policy. Rust, a Cargo wo
 | `crates/core` | the state and its rules: events in, dirty screens and effects out; no I/O, unit-tested |
 | `crates/policy` | threads that watch the system and send events (today: the clock) |
 | `crates/library` | the game library (today: demo games) |
-| `crates/ui` | Wayland (smithay-client-toolkit), CPU drawing (tiny-skia, fontdue), the views, pad navigation |
+| `crates/ui` | Wayland (smithay-client-toolkit), CPU drawing (tiny-skia, fontdue), the views, pad navigation; the font built in (Noto Sans Regular, SIL Open Font License 1.1: `crates/ui/fonts/OFL.txt`), with fontconfig for characters it lacks |
 | `src/main.rs` | wires them together |
 
 No panics by construction: `unwrap`, `expect`, `panic!` and slice indexing are denied outside tests.
 
-**Run on a desktop** (any Wayland compositor with xdg-shell; needs `fontconfig` and a font):
+**Run on a desktop** (any Wayland compositor with xdg-shell):
 
     cd sysprog
     cargo run                         # two windows at half the Thor's size: top and bottom

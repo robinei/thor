@@ -71,10 +71,18 @@ pub fn rgb(c: u32) -> Color {
 
 type Glyph = (fontdue::Metrics, Vec<u8>);
 
-/// What drawing keeps between frames: the font, its rasterized glyphs (by character and pixel size), and
-/// a path builder whose memory is reused for every shape.
+/// The UI's font, built in so text looks the same everywhere: Noto Sans Regular, unmodified (SIL Open
+/// Font License 1.1, fonts/OFL.txt).
+const NOTO_SANS: &[u8] = include_bytes!("../fonts/NotoSans-Regular.ttf");
+
+/// What drawing keeps between frames: the font, fonts found for characters it lacks, the rasterized
+/// glyphs (by character and pixel size), and a path builder whose memory is reused for every shape.
 pub struct DrawCache {
     font: Option<fontdue::Font>,
+    /// Fonts for characters the built-in one lacks (a Japanese title, say), found through fontconfig
+    /// when first needed; and for each such character, which of them has it (none: no font does).
+    fallbacks: Vec<(String, fontdue::Font)>,
+    fallback_for: HashMap<char, Option<usize>>,
     glyphs: HashMap<(char, u32), Glyph>,
     /// Icon coverage masks, by icon and side in pixels.
     icons: HashMap<(Icon, u32), Vec<u8>>,
@@ -82,29 +90,61 @@ pub struct DrawCache {
 }
 
 impl DrawCache {
-    /// The system's default sans-serif font (fontconfig). Without one, text is skipped, nothing else.
     pub fn load() -> DrawCache {
-        let path = Command::new("fc-match")
-            .args(["--format=%{file}", "sans-serif"])
-            .output()
-            .ok()
-            .filter(|out| out.status.success())
-            .and_then(|out| String::from_utf8(out.stdout).ok());
-        let font = path.and_then(|path| {
-            let bytes = std::fs::read(&path).map_err(|e| log::warn!("font {path}: {e}")).ok()?;
-            fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default())
-                .map_err(|e| log::warn!("font {path}: {e}"))
-                .ok()
-        });
-        if font.is_none() {
-            log::warn!("no font found (fc-match sans-serif); drawing without text");
-        }
-        DrawCache { font, glyphs: HashMap::new(), icons: HashMap::new(), path: None }
+        let font = fontdue::Font::from_bytes(NOTO_SANS, fontdue::FontSettings::default())
+            .map_err(|e| log::error!("the built-in font: {e}"))
+            .ok();
+        DrawCache { font, fallbacks: Vec::new(), fallback_for: HashMap::new(), glyphs: HashMap::new(), icons: HashMap::new(), path: None }
     }
 
     fn glyph(&mut self, ch: char, px: f32) -> Option<&Glyph> {
-        let font = self.font.as_ref()?;
-        Some(self.glyphs.entry((ch, px.to_bits())).or_insert_with(|| font.rasterize(ch, px)))
+        let key = (ch, px.to_bits());
+        if !self.glyphs.contains_key(&key) {
+            let font = match self.fallback(ch) {
+                Some(i) => self.fallbacks.get(i).map(|(_, f)| f),
+                None => self.font.as_ref(),
+            }?;
+            let glyph = font.rasterize(ch, px);
+            self.glyphs.insert(key, glyph);
+        }
+        self.glyphs.get(&key)
+    }
+
+    /// The fallback font to draw `ch` with, if the built-in font lacks it and another has it.
+    fn fallback(&mut self, ch: char) -> Option<usize> {
+        if ch.is_control() || self.font.as_ref().is_none_or(|f| f.lookup_glyph_index(ch) != 0) {
+            return None;
+        }
+        if let Some(&known) = self.fallback_for.get(&ch) {
+            return known;
+        }
+        let found = self.find_fallback(ch);
+        if found.is_none() {
+            log::debug!("no font has {ch:?}");
+        }
+        self.fallback_for.insert(ch, found);
+        found
+    }
+
+    /// Asks fontconfig for a sans-serif font with `ch`, loading it once.
+    fn find_fallback(&mut self, ch: char) -> Option<usize> {
+        if let Some(i) = self.fallbacks.iter().position(|(_, f)| f.lookup_glyph_index(ch) != 0) {
+            return Some(i);
+        }
+        let pattern = format!("sans-serif:charset={:x}", u32::from(ch));
+        let out = Command::new("fc-match").args(["--format=%{file}", &pattern]).output().ok()?;
+        let path = String::from_utf8(out.stdout).ok().filter(|p| out.status.success() && !p.is_empty())?;
+        if self.fallbacks.iter().any(|(p, _)| *p == path) {
+            return None;
+        }
+        let bytes = std::fs::read(&path).map_err(|e| log::warn!("font {path}: {e}")).ok()?;
+        let font = fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default())
+            .map_err(|e| log::warn!("font {path}: {e}"))
+            .ok()
+            .filter(|f| f.lookup_glyph_index(ch) != 0)?;
+        log::info!("fallback font for {ch:?}: {path}");
+        self.fallbacks.push((path, font));
+        Some(self.fallbacks.len() - 1)
     }
 
     fn ascent(&self, px: f32) -> f32 {
@@ -473,6 +513,22 @@ mod tests {
         assert_eq!(r.cell(3, 2, 5.0, 5), Rect::new(220.0, 72.5, 100.0, 47.5));
         let (top, rest) = r.split_top(30.0);
         assert_eq!((top.h, rest.y, rest.h), (30.0, 50.0, 70.0));
+    }
+
+    #[test]
+    fn the_built_in_font_covers_the_ui_and_others_fill_in() {
+        let mut cache = DrawCache::load();
+        for ch in "Aa0…·°–€éøÅßΩЖ".chars() {
+            assert_eq!(cache.fallback(ch), None, "{ch:?} is in the built-in font");
+            assert!(cache.glyph(ch, 20.0).is_some_and(|(m, _)| m.width > 0), "{ch:?} draws");
+        }
+        // A kana: from a system font, when fontconfig knows one (not every machine has one).
+        let offered = Command::new("fc-match").args(["--format=%{file}", "sans-serif:charset=3042"]).output();
+        if offered.is_ok_and(|o| o.status.success() && !o.stdout.is_empty()) {
+            let i = cache.fallback('あ');
+            assert!(i.is_some(), "fontconfig offers a font with あ, so it is used");
+            assert!(cache.glyph('あ', 20.0).is_some_and(|(m, _)| m.width > 0));
+        }
     }
 
     #[test]
