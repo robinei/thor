@@ -30,17 +30,28 @@ fn main() -> ExitCode {
     // games if it is empty. Snapshots use the demo games unless SYSPROG_SNAPSHOT_LIBRARY=real.
     let snapshotting = std::env::args().nth(1).as_deref() == Some("--snapshot");
     let real_snapshot = std::env::var("SYSPROG_SNAPSHOT_LIBRARY").as_deref() == Ok("real");
+    let mut sources = sysprog_library::Sources::default_for_user();
+    if let Some(dir) = std::env::var_os("SYSPROG_PEGASUS_CONFIG") {
+        let dir = std::path::PathBuf::from(dir);
+        sources.state_dir = sysprog_library::Sources::state_dir_for(Some(&dir));
+        sources.pegasus_config = Some(dir);
+    }
+    let state_dir = sources.state_dir.clone();
     let library = if snapshotting && !real_snapshot {
         sysprog_library::demo_library()
     } else {
-        let mut sources = sysprog_library::Sources::default_for_user();
-        if let Some(dir) = std::env::var_os("SYSPROG_PEGASUS_CONFIG") {
-            sources.pegasus_config = Some(dir.into());
-        }
         let library = sysprog_library::Library::load(&sources);
         if library.collections.is_empty() { sysprog_library::demo_library() } else { library }
     };
     let mut state = State::new(library);
+    // Where shelf was last time (~/.local/state/sysprog/last).
+    let resume_file = std::env::var_os("XDG_STATE_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/state")))
+        .map(|d| d.join("sysprog/last"));
+    if !snapshotting && let Some(text) = resume_file.as_ref().and_then(|f| std::fs::read_to_string(f).ok()) {
+        state.restore(&text);
+    }
 
     // `--snapshot DIR`: draw both screens at the Thor's size into PNG files, no Wayland needed.
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -78,6 +89,22 @@ fn main() -> ExitCode {
         }
     }
     let gamepad = std::env::var("SYSPROG_GAMEPAD").ok();
+    // Games start from the launcher thread, one at a time, with MangoHud's environment; plays go to
+    // stats.db in the state dir.
+    let (launch_tx, launch_rx) = mpsc::channel();
+    let launcher = sysprog_policy::launcher::Config {
+        stats_db: state_dir.as_ref().map(|d| d.join("stats.db")),
+        env: sysprog_policy::frames::mangohud_env(&sysprog_policy::frames::default_dir())
+            .into_iter()
+            .map(|(k, v)| (k.to_owned(), v))
+            .collect(),
+        scope: sysprog_policy::launcher::Config::has_user_systemd(),
+    };
+    if let Some(dir) = &state_dir
+        && let Err(e) = std::fs::create_dir_all(dir)
+    {
+        log::warn!("state dir {}: {e}", dir.display());
+    }
     // `--library`: print the collections and games found (Pegasus game dirs and Steam).
     if std::env::args().nth(1).as_deref() == Some("--library") {
         for c in &state.library.collections {
@@ -120,8 +147,12 @@ fn main() -> ExitCode {
             if let Err(e) = sysprog_policy::frames::spawn(dir, move |event| frames.send(event)) {
                 log::error!("frames thread: {e}");
             }
-            if let Err(e) = touchpad::spawn(touchpad, layout, touchpad_rx, move |event| sender.send(event)) {
+            let touched = sender.clone();
+            if let Err(e) = touchpad::spawn(touchpad, layout, touchpad_rx, move |event| touched.send(event)) {
                 log::error!("touchpad thread: {e}");
+            }
+            if let Err(e) = sysprog_policy::launcher::spawn(launcher, launch_rx, move |event| sender.send(event)) {
+                log::error!("launcher thread: {e}");
             }
             if let Err(e) = pad::spawn(gamepad, padmouse_rx) {
                 log::error!("pad thread: {e}");
@@ -150,6 +181,28 @@ fn main() -> ExitCode {
                 }
                 None => log::info!("effect: {effect:?} (no virtual keyboard)"),
             },
+            Effect::Launch { game, launch, file, power } => {
+                log::info!("launching {game} (power {power:?})");
+                let request = sysprog_policy::launcher::Request { game: game.clone(), launch: launch.clone(), file: file.clone() };
+                if launch_tx.send(request).is_err() {
+                    log::warn!("launcher thread is gone");
+                }
+            }
+            Effect::SaveResume(text) => {
+                if let Some(file) = &resume_file {
+                    let written = file.parent().map_or(Ok(()), std::fs::create_dir_all).and_then(|()| std::fs::write(file, text));
+                    if let Err(e) = written {
+                        log::warn!("{}: {e}", file.display());
+                    }
+                }
+            }
+            Effect::SaveFavourites(ids) => {
+                if let Some(dir) = &state_dir
+                    && let Err(e) = sysprog_library::favorites::write(dir, ids.iter().map(String::as_str))
+                {
+                    log::warn!("favourites: {e}");
+                }
+            }
             other => log::info!("effect: {other:?}"),
         },
     );
@@ -187,6 +240,16 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
         (vec![Event::TabStep(1)], Screen::Top, (1920, 1080), "top-tab2.png"),
         (vec![Event::ListStep(5)], Screen::Top, (1920, 1080), "top-tab2-down.png"),
         (vec![Event::TabStep(-1)], Screen::Top, (1920, 1080), "top-back.png"),
+        (
+            vec![
+                Event::Played { game: "zelda-lttp".into(), start: 1_759_900_000, duration: 4 * 3600 + 1260 },
+                Event::ToggleFavourite,
+                Event::Started("zelda-lttp".into()),
+            ],
+            Screen::Top,
+            (1920, 1080),
+            "top-played.png",
+        ),
         (vec![], Screen::Bottom, bottom, "bottom.png"),
         (
             vec![Event::Status(Status { battery: Some(9), charging: false, wifi: None, volume: Some(40), muted: true })],

@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use keyboard::{Key, KeyPos, Keyboard, Stroke};
 
-pub use sysprog_library::{Collection, Game, Library};
+pub use sysprog_library::{Collection, Game, Launch, Library};
 
 /// Second-screen modes (docs/plans.md, "Second screen"). Follow is the default: the second screen shows
 /// what belongs to the main screen (the selected or running game's settings). The others override it
@@ -108,13 +108,25 @@ pub enum Event {
     TabStep(i32),
     /// How many list rows shelf shows (from the layout), so the selection stays on screen.
     Rows(usize),
+    /// The pad's Y (desktop: F): the selected game in or out of the favourites.
+    ToggleFavourite,
+    /// The launcher started a game, or it ended (start in epoch seconds, duration in seconds), or it
+    /// couldn't be started.
+    Started(Arc<str>),
+    Played { game: Arc<str>, start: u64, duration: u64 },
+    LaunchFailed(Arc<str>),
     Quit,
 }
 
 /// What the state asks the outside world to do.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Effect {
-    Launch { game: Arc<str>, power: Power },
+    /// Start this game (its launch command or Steam id, and its file).
+    Launch { game: Arc<str>, power: Power, launch: Launch, file: Option<std::path::PathBuf> },
+    /// The favourites changed: write them (favorites.txt).
+    SaveFavourites(Vec<String>),
+    /// Where shelf is (see [`State::resume_text`]): write it, to start there next time.
+    SaveResume(String),
     /// A key press for the focused app (virtual keyboard).
     Key(Stroke),
     /// Touchpad mode started (true) or ended: the input side grabs or releases the touchscreen.
@@ -170,6 +182,10 @@ pub struct State {
     pub pad_mouse: bool,
     pub metrics: metrics::Metrics,
     pub history: metrics::History,
+    /// The game being played, if any (one at a time).
+    pub running: Option<Arc<str>>,
+    /// When the tab or a selection last changed and isn't saved yet (epoch seconds).
+    resume_dirty: Option<u64>,
 }
 
 /// What holding a target does once the press lasts beyond a tap.
@@ -180,6 +196,9 @@ pub enum Hold {
     /// One long press, then nothing on release (locks a modifier).
     Long,
 }
+
+/// Seconds after the last move before the place is saved.
+const RESUME_AFTER: u64 = 2;
 
 /// Which screen a target is drawn on.
 fn screen_of(id: &Id) -> Dirty {
@@ -216,8 +235,52 @@ impl State {
         self.game_at(self.cursor().index)
     }
 
+    /// Where shelf is, to come back to: the current tab's name, then each tab's name and selected
+    /// game's id, tab-separated.
+    pub fn resume_text(&self) -> String {
+        let mut text = self.collection().map(|c| c.name.clone()).unwrap_or_default();
+        text.push('\n');
+        for (i, c) in self.library.collections.iter().enumerate() {
+            let cursor = self.cursors.get(i).copied().unwrap_or_default();
+            if let Some(g) = c.games.get(cursor.index).and_then(|&g| self.library.games.get(g)) {
+                text.push_str(&c.name);
+                text.push('\t');
+                text.push_str(&g.id);
+                text.push('\n');
+            }
+        }
+        text
+    }
+
+    /// Goes back to the place `resume_text` saved (tabs and games that are gone are skipped).
+    pub fn restore(&mut self, text: &str) {
+        let mut lines = text.lines();
+        let current = lines.next().unwrap_or("");
+        for line in lines {
+            let Some((name, id)) = line.split_once('\t') else {
+                continue;
+            };
+            let Some(tab) = self.library.collections.iter().position(|c| c.name == name) else {
+                continue;
+            };
+            let position = self.library.collections.get(tab).and_then(|c| {
+                c.games.iter().position(|&g| self.library.games.get(g).is_some_and(|g| &*g.id == id))
+            });
+            if let (Some(p), Some(cursor)) = (position, self.cursors.get_mut(tab)) {
+                cursor.index = p;
+            }
+        }
+        if let Some(tab) = self.library.collections.iter().position(|c| c.name == current) {
+            self.tab = tab;
+        }
+        self.sync();
+        self.focus = self.selected.clone().map(Id::Game);
+        self.resume_dirty = None;
+    }
+
     /// Keeps the cursor in range and on screen, and `selected` in step with it.
     fn sync(&mut self) {
+        let before = self.selected.clone();
         let len = self.collection().map_or(0, |c| c.games.len());
         let rows = self.rows.max(1);
         if let Some(c) = self.cursors.get_mut(self.tab) {
@@ -230,6 +293,9 @@ impl State {
             c.top = c.top.min(len.saturating_sub(rows));
         }
         self.selected = self.selected_game().map(|g| g.id.clone());
+        if self.selected != before {
+            self.resume_dirty = Some(self.unix_secs);
+        }
     }
 
     /// Moves the cursor by `step` games (clamped at the ends), selecting and focusing that game.
@@ -243,9 +309,36 @@ impl State {
         self.focus = self.selected.clone().map(Id::Game);
     }
 
+    /// Changes the library (favourites, plays) keeping the current tab, each tab's place and the
+    /// selected game, all by name, since derived tabs may come or go.
+    fn relayout(&mut self, change: impl FnOnce(&mut Library)) {
+        let names: Vec<String> = self.library.collections.iter().map(|c| c.name.clone()).collect();
+        let tab_name = names.get(self.tab).cloned();
+        let selected = self.selected.clone();
+        change(&mut self.library);
+        let old = std::mem::take(&mut self.cursors);
+        self.cursors = self
+            .library
+            .collections
+            .iter()
+            .map(|c| names.iter().position(|n| *n == c.name).and_then(|i| old.get(i).copied()).unwrap_or_default())
+            .collect();
+        self.tab = tab_name.and_then(|n| self.library.collections.iter().position(|c| c.name == n)).unwrap_or(0);
+        if let Some(id) = selected {
+            let position = self.collection().and_then(|c| {
+                c.games.iter().position(|&i| self.library.games.get(i).is_some_and(|g| g.id == id))
+            });
+            if let (Some(p), Some(c)) = (position, self.cursors.get_mut(self.tab)) {
+                c.index = p;
+            }
+        }
+        self.sync();
+    }
+
     fn set_tab(&mut self, tab: usize) {
         if tab < self.library.collections.len() {
             self.tab = tab;
+            self.resume_dirty = Some(self.unix_secs);
             self.sync();
             if matches!(self.focus, Some(Id::Game(_)) | Some(Id::Tab(_))) {
                 self.focus = self.selected.clone().map(Id::Game);
@@ -264,7 +357,15 @@ impl State {
                 // Once a minute: the bar's clock, and both screens' burn-in orbit step.
                 let minute_changed = unix_secs / 60 != self.unix_secs / 60;
                 self.unix_secs = unix_secs;
-                (if minute_changed { Dirty::BOTH } else { Dirty::NONE }, vec![])
+                // The place, once moving has stopped for a moment.
+                let effects = match self.resume_dirty {
+                    Some(since) if unix_secs >= since + RESUME_AFTER => {
+                        self.resume_dirty = None;
+                        vec![Effect::SaveResume(self.resume_text())]
+                    }
+                    _ => vec![],
+                };
+                (if minute_changed { Dirty::BOTH } else { Dirty::NONE }, effects)
             }
             Event::Status(status) => {
                 let changed = status != self.status;
@@ -324,6 +425,39 @@ impl State {
                 self.sync();
                 (if self.cursor() != before { Dirty::BOTH } else { Dirty::NONE }, vec![])
             }
+            Event::ToggleFavourite => {
+                let Some(id) = self.selected.clone() else {
+                    return (Dirty::NONE, vec![]);
+                };
+                self.relayout(|lib| {
+                    if let Some(g) = lib.games.iter_mut().find(|g| g.id == id) {
+                        g.favourite = !g.favourite;
+                    }
+                    lib.rebuild_derived();
+                });
+                let ids = self.library.favourite_ids().map(str::to_owned).collect();
+                (Dirty::BOTH, vec![Effect::SaveFavourites(ids)])
+            }
+            Event::Started(game) => {
+                self.running = Some(game);
+                (Dirty::BOTH, vec![])
+            }
+            Event::Played { game, start, duration } => {
+                self.running = None;
+                self.relayout(|lib| {
+                    if let Some(g) = lib.games.iter_mut().find(|g| g.id == game) {
+                        g.plays.add(start, duration);
+                    }
+                    lib.rebuild_derived();
+                });
+                (Dirty::BOTH, vec![])
+            }
+            Event::LaunchFailed(game) => {
+                if self.running.as_ref() == Some(&game) {
+                    self.running = None;
+                }
+                (Dirty::BOTH, vec![])
+            }
             Event::Down(id) => {
                 let dirty = screen_of(&id);
                 self.pressed = Some(id);
@@ -335,7 +469,7 @@ impl State {
                 }
                 (screen_of(&id), vec![])
             }
-            Event::Quit => (Dirty::NONE, vec![Effect::Quit]),
+            Event::Quit => (Dirty::NONE, vec![Effect::SaveResume(self.resume_text()), Effect::Quit]),
         }
     }
 
@@ -355,7 +489,7 @@ impl State {
             Id::Game(game) => {
                 // Activating the selected game again launches it, as A on a list entry does in shelf.
                 if self.selected.as_ref() == Some(&game) {
-                    return (Dirty::BOTH, vec![self.launch_effect(game)]);
+                    return (Dirty::BOTH, self.launch_effects(game));
                 }
                 let position = self.collection().and_then(|c| {
                     c.games.iter().position(|&i| self.library.games.get(i).is_some_and(|g| g.id == game))
@@ -389,7 +523,7 @@ impl State {
                 (Dirty::BOTH, vec![])
             }
             Id::Launch => match self.selected.clone() {
-                Some(game) => (Dirty::BOTH, vec![self.launch_effect(game)]),
+                Some(game) => (Dirty::BOTH, self.launch_effects(game)),
                 None => (Dirty::BOTH, vec![]),
             },
             Id::PadMouse => {
@@ -403,9 +537,19 @@ impl State {
         }
     }
 
-    fn launch_effect(&self, game: Arc<str>) -> Effect {
+    /// Launching `game`, unless one is already running.
+    fn launch_effects(&self, game: Arc<str>) -> Vec<Effect> {
+        if self.running.is_some() {
+            return vec![];
+        }
+        let Some(g) = self.library.games.iter().find(|g| g.id == game) else {
+            return vec![];
+        };
         let power = self.power_of(&game);
-        Effect::Launch { game, power }
+        vec![
+            Effect::SaveResume(self.resume_text()),
+            Effect::Launch { game, power, launch: g.launch.clone(), file: g.file.clone() },
+        ]
     }
 }
 
@@ -431,7 +575,7 @@ mod tests {
         let (_, fx) = s.apply(Event::Activate(Id::Game("ff6".into())));
         assert!(fx.is_empty());
         let (_, fx) = s.apply(Event::Activate(Id::Game("ff6".into())));
-        assert_eq!(fx, vec![Effect::Launch { game: "ff6".into(), power: Power::Balanced }]);
+        assert_eq!(fx.last(), Some(&Effect::Launch { game: "ff6".into(), power: Power::Balanced, launch: Launch::None, file: None }));
     }
 
     #[test]
@@ -442,7 +586,7 @@ mod tests {
         assert_eq!(s.power_of("zelda-lttp"), Power::High);
         assert_eq!(s.power_of("ff6"), Power::Balanced);
         let (_, fx) = s.apply(Event::Activate(Id::Launch));
-        assert_eq!(fx, vec![Effect::Launch { game: "ff6".into(), power: Power::Balanced }]);
+        assert_eq!(fx.last(), Some(&Effect::Launch { game: "ff6".into(), power: Power::Balanced, launch: Launch::None, file: None }));
     }
 
     #[test]
@@ -537,6 +681,52 @@ mod tests {
         s.apply(Event::TabStep(1));
         assert_eq!(s.tab, 0, "wraps around");
         assert_eq!(s.cursor().index, 2);
+    }
+
+    #[test]
+    fn a_favourite_shows_in_its_tab_and_is_saved() {
+        let mut s = state();
+        s.apply(Event::ListStep(2));
+        let tab_name = s.collection().map(|c| c.name.clone());
+        let (_, fx) = s.apply(Event::ToggleFavourite);
+        assert_eq!(fx, vec![Effect::SaveFavourites(vec!["mk-ds".into()])]);
+        assert!(s.library.collections.iter().any(|c| c.name == "Favourites" && c.games == vec![2]));
+        assert_eq!(s.collection().map(|c| c.name.clone()), tab_name, "the tab stays");
+        assert_eq!(s.selected.as_deref(), Some("mk-ds"), "so does the selection");
+    }
+
+    #[test]
+    fn one_game_at_a_time_and_its_play_counts() {
+        let mut s = state();
+        let first = s.selected.clone().unwrap();
+        s.apply(Event::Started(first.clone()));
+        let (_, fx) = s.apply(Event::Activate(Id::Launch));
+        assert!(fx.is_empty(), "no second launch while one runs");
+        s.apply(Event::Played { game: first.clone(), start: 1000, duration: 600 });
+        assert_eq!(s.running, None);
+        let g = s.library.games.iter().find(|g| g.id == first).unwrap();
+        assert_eq!((g.plays.count, g.plays.seconds), (1, 600));
+        assert!(s.library.collections.iter().any(|c| c.name == "Recent"));
+    }
+
+    #[test]
+    fn the_place_is_saved_after_a_pause_and_restored() {
+        let mut s = state();
+        s.apply(Event::Tick { unix_secs: 100 });
+        s.apply(Event::ListStep(3));
+        s.apply(Event::TabStep(1));
+        assert!(s.apply(Event::Tick { unix_secs: 101 }).1.is_empty(), "not while moving");
+        let (_, fx) = s.apply(Event::Tick { unix_secs: 103 });
+        let text = match fx.first() {
+            Some(Effect::SaveResume(text)) => text.clone(),
+            other => format!("{other:?}"),
+        };
+        assert_eq!(text, "More\nGames\tff6\nMore\tff6\n");
+        let mut fresh = state();
+        fresh.restore(&text);
+        assert_eq!(fresh.collection().map(|c| c.name.as_str()), Some("More"));
+        fresh.apply(Event::TabStep(-1));
+        assert_eq!(fresh.selected.as_deref(), Some("ff6"));
     }
 
     #[test]

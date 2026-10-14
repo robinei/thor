@@ -1,9 +1,12 @@
 //! The game library: Pegasus Frontend's collections and metadata (the format shelf used on the GPD,
 //! docs/pegasus-format.md in the GPD repo) and installed Steam games. Pure reading: no UI, no launching.
 
+pub mod favorites;
+pub mod launch;
 pub mod metafile;
 pub mod pegasus;
 pub mod sort;
+pub mod stats;
 pub mod steam;
 
 use std::path::PathBuf;
@@ -45,6 +48,9 @@ pub struct Game {
     pub description: String,
     /// A tool (Utilities), not a game.
     pub tool: bool,
+    /// Play history (stats.db) and favourite (favorites.txt).
+    pub plays: stats::Plays,
+    pub favourite: bool,
 }
 
 impl Game {
@@ -65,6 +71,8 @@ impl Game {
             summary: String::new(),
             description: String::new(),
             tool: false,
+            plays: stats::Plays::default(),
+            favourite: false,
         }
     }
 }
@@ -86,6 +94,8 @@ pub struct Collection {
     pub summary: String,
     /// Utilities: tools, not games.
     pub tools: bool,
+    /// Recent or Favourites: made from the others, rebuilt when plays or favourites change.
+    pub derived: bool,
     /// Its games, as indices into [`Library::games`], in title order.
     pub games: Vec<usize>,
 }
@@ -103,6 +113,8 @@ pub struct Sources {
     pub pegasus_config: Option<PathBuf>,
     /// Steam's data dir.
     pub steam: Option<PathBuf>,
+    /// Where play time (stats.db) and favourites (favorites.txt) are kept.
+    pub state_dir: Option<PathBuf>,
 }
 
 impl Sources {
@@ -111,7 +123,20 @@ impl Sources {
         let config = std::env::var_os("XDG_CONFIG_HOME")
             .map(PathBuf::from)
             .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")));
-        Sources { pegasus_config: config.map(|c| c.join("pegasus-frontend")), steam: steam::default_root() }
+        let pegasus = config.map(|c| c.join("pegasus-frontend"));
+        let state_dir = Sources::state_dir_for(pegasus.as_deref());
+        Sources { pegasus_config: pegasus, steam: steam::default_root(), state_dir }
+    }
+
+    /// Pegasus' config dir if there is one (shared with Pegasus), else `~/.local/share/sysprog`.
+    pub fn state_dir_for(pegasus: Option<&std::path::Path>) -> Option<PathBuf> {
+        match pegasus {
+            Some(p) if p.is_dir() => Some(p.to_path_buf()),
+            _ => std::env::var_os("XDG_DATA_HOME")
+                .map(PathBuf::from)
+                .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
+                .map(|d| d.join("sysprog")),
+        }
     }
 }
 
@@ -131,6 +156,7 @@ impl Library {
                     sort_key: sort::key("Steam"),
                     summary: "Installed Steam games".into(),
                     tools: false,
+                    derived: false,
                     games: (first..first + steam.len()).collect(),
                 });
                 games.extend(steam);
@@ -143,9 +169,62 @@ impl Library {
             });
         }
         collections.sort_by(|a, b| a.sort_key.cmp(&b.sort_key).then(a.name.cmp(&b.name)));
-        Library { collections, games }
+        if let Some(dir) = sources.state_dir.as_deref() {
+            let plays = stats::read(&dir.join("stats.db"));
+            let favourites = favorites::read(dir);
+            for g in &mut games {
+                if let Some(p) = plays.get(&*g.id) {
+                    g.plays = *p;
+                }
+                g.favourite = favourites.contains(&*g.id);
+            }
+        }
+        let mut library = Library { collections, games };
+        library.rebuild_derived();
+        library
+    }
+
+    /// Rebuilds Recent (the last games played, tools left out) and Favourites in front of the other
+    /// collections; either is left out while empty.
+    pub fn rebuild_derived(&mut self) {
+        self.collections.retain(|c| !c.derived);
+        let mut recent: Vec<usize> = (0..self.games.len())
+            .filter(|&i| self.games.get(i).is_some_and(|g| g.plays.count > 0 && !g.tool))
+            .collect();
+        recent.sort_by_key(|&i| std::cmp::Reverse(self.games.get(i).map_or(0, |g| g.plays.last)));
+        recent.truncate(RECENT);
+        let mut favourites: Vec<usize> = (0..self.games.len()).filter(|&i| self.games.get(i).is_some_and(|g| g.favourite)).collect();
+        favourites.sort_by(|&a, &b| {
+            let key = |i: usize| self.games.get(i).map(|g| (&g.sort_key, &g.title));
+            key(a).cmp(&key(b))
+        });
+        let derived = |name: &str, games: Vec<usize>| Collection {
+            name: name.into(),
+            short_name: name.to_lowercase(),
+            sort_key: sort::key(name),
+            summary: String::new(),
+            tools: false,
+            derived: true,
+            games,
+        };
+        let mut front = Vec::new();
+        if !recent.is_empty() {
+            front.push(derived("Recent", recent));
+        }
+        if !favourites.is_empty() {
+            front.push(derived("Favourites", favourites));
+        }
+        self.collections.splice(0..0, front);
+    }
+
+    /// The ids of the favourite games (for favorites.txt).
+    pub fn favourite_ids(&self) -> impl Iterator<Item = &str> {
+        self.games.iter().filter(|g| g.favourite).map(|g| &*g.id)
     }
 }
+
+/// Games in the Recent tab.
+const RECENT: usize = 20;
 
 /// Placeholder games for development and snapshots.
 pub fn demo_games() -> Vec<Game> {
@@ -173,14 +252,33 @@ pub fn demo_library() -> Library {
         sort_key: sort::key(name),
         summary: String::new(),
         tools: false,
+        derived: false,
         games,
     };
-    Library { collections: vec![collection("Favourites", (0..n).collect()), collection("Recent", vec![3, 1])], games }
+    Library { collections: vec![collection("Games", (0..n).collect()), collection("More", vec![3, 1])], games }
 }
 
 #[cfg(test)]
+#[allow(clippy::indexing_slicing)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recent_and_favourites_come_first() {
+        let mut lib = demo_library();
+        lib.collections.retain(|c| c.name == "Games");
+        lib.games[2].plays.add(100, 10);
+        lib.games[4].plays.add(500, 10);
+        lib.games[1].favourite = true;
+        lib.rebuild_derived();
+        let names: Vec<&str> = lib.collections.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, vec!["Recent", "Favourites", "Games"]);
+        assert_eq!(lib.collections[0].games, vec![4, 2], "most recent first");
+        assert_eq!(lib.collections[1].games, vec![1]);
+        lib.games[1].favourite = false;
+        lib.rebuild_derived();
+        assert_eq!(lib.collections.len(), 2, "an empty Favourites goes");
+    }
 
     #[test]
     fn colours_are_stable_and_muted() {

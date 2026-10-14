@@ -457,6 +457,7 @@ pub fn scan(dirs: &[PathBuf], first_game: usize) -> (Vec<Collection>, Vec<Game>)
                 name: c.name,
                 summary: c.summary,
                 tools: c.tools,
+                derived: false,
                 games: members,
             }
         })

@@ -4,6 +4,7 @@
 
 pub mod frames;
 pub mod keyboard;
+pub mod launcher;
 pub mod metrics;
 pub mod pad;
 pub mod touchpad;

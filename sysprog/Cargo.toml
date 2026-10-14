@@ -16,6 +16,7 @@ smithay-client-toolkit = "0.21"
 fontdue = "0.9"
 jiff = "0.2"
 evdev = "0.13"
+rusqlite = "0.40"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 rustix = { version = "1", features = ["event", "fs"] }
 tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd", "png-format"] }

@@ -7,7 +7,7 @@ use std::fmt::Write;
 
 use sysprog_core::{Game, Id};
 
-use super::{ACCENT, DIM, Frame, Look, SURFACE, SURFACE_HI, TEXT, TEXT_HI, wrap};
+use super::{ACCENT, DIM, Frame, GO, Look, SURFACE, SURFACE_HI, TEXT, TEXT_HI, wrap};
 use crate::draw::{Canvas, Rect, rgb};
 use crate::images::Images;
 
@@ -106,8 +106,19 @@ pub(super) fn draw(f: &mut Frame, images: &mut Images, buf: &mut String, w: f32,
         let tx = box_rect.x + box_rect.w + pad * 1.2;
         let room = w - pad - tx;
         let mut y = list.y;
-        y += wrap(c, (tx, y, room), h * TITLE, TEXT_HI, &game.title, 3) + pad * 0.6;
-        for line in details(game, buf) {
+        y += wrap(c, (tx, y, room), h * TITLE, TEXT_HI, &game.title, 3) + pad * 0.4;
+        // Marks: running now, favourite.
+        let mut mx = tx;
+        if s.running.as_ref() == Some(&game.id) {
+            mx += c.text(mx, y, h * DETAIL, rgb(GO), "Running") + pad;
+        }
+        if game.favourite {
+            c.text(mx, y, h * DETAIL, rgb(ACCENT), "Favourite");
+        }
+        if mx > tx || game.favourite {
+            y += h * DETAIL * 1.3 + pad * 0.4;
+        }
+        for line in details(game, s.unix_secs, buf) {
             if !line.is_empty() {
                 y += wrap(c, (tx, y, room), h * DETAIL, DIM, line, 2) + pad * 0.2;
             }
@@ -120,9 +131,9 @@ pub(super) fn draw(f: &mut Frame, images: &mut Images, buf: &mut String, w: f32,
     rows
 }
 
-/// The detail lines under the title: who made it and when, the genre, the players. Formatted into
-/// `buf` (reused), split by newlines.
-fn details<'b>(game: &Game, buf: &'b mut String) -> std::str::Split<'b, char> {
+/// The detail lines under the title: who made it and when, the genre, the players, the play time.
+/// Formatted into `buf` (reused), split by newlines.
+fn details<'b>(game: &Game, now: u64, buf: &'b mut String) -> std::str::Split<'b, char> {
     buf.clear();
     let maker = game.developers.first().or(game.publishers.first());
     match (maker, game.release) {
@@ -145,6 +156,26 @@ fn details<'b>(game: &Game, buf: &'b mut String) -> std::str::Split<'b, char> {
     buf.push('\n');
     if game.players > 1 {
         let _ = write!(buf, "Up to {} players", game.players);
+    }
+    buf.push('\n');
+    let plays = game.plays;
+    if plays.count > 0 {
+        let (h, m) = (plays.seconds / 3600, plays.seconds % 3600 / 60);
+        match (h, m) {
+            (0, 0) => buf.push_str("Played briefly"),
+            (0, m) => {
+                let _ = write!(buf, "Played {m} min");
+            }
+            (h, m) => {
+                let _ = write!(buf, "Played {h} h {m} min");
+            }
+        }
+        let days = now.saturating_sub(plays.last) / 86_400;
+        let _ = match days {
+            0 => write!(buf, " · today"),
+            1 => write!(buf, " · yesterday"),
+            d => write!(buf, " · {d} days ago"),
+        };
     }
     buf.split('\n')
 }

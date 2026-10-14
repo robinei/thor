@@ -8,6 +8,7 @@ license.workspace = true
 evdev.workspace = true
 rustix.workspace = true
 sysprog-core.workspace = true
+sysprog-library.workspace = true
 log.workspace = true
 
 [lints]

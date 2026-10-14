@@ -660,6 +660,8 @@ impl App {
             }
             (Keysym::Return | Keysym::KP_Enter | Keysym::space, false) => self.up(Source::PadA, true),
             (Keysym::Escape, true) => self.handle(Event::Quit),
+            // The pad's Y: the selected game in or out of the favourites.
+            (Keysym::f, true) => self.handle(Event::ToggleFavourite),
             _ => {}
         }
     }
