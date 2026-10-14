@@ -3,13 +3,14 @@
 //! what a machine lacks stays `None`. Sources: /proc/stat, /proc/meminfo, cpufreq, hwmon and thermal
 //! zones, amdgpu (desktop) or devfreq (Adreno on the Thor), the battery's power supply.
 //!
-//! Not yet: GPU load on the Thor (Adreno via msm/freedreno has no standard busy file; check on the
-//! device), and FPS (from MangoHud; see docs/plans.md).
+//! GPU load: amdgpu's busy file where there is one; otherwise (Adreno on the Thor) the kernel's per-client
+//! GPU time in /proc/<pid>/fdinfo, summed over every DRM client, as MangoHud does for one process.
 
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use sysprog_core::Event;
 use sysprog_core::metrics::{MAX_CORES, Metrics};
@@ -21,10 +22,24 @@ const EVERY: Duration = Duration::from_secs(1);
 pub fn spawn(sink: impl Sink) -> std::io::Result<JoinHandle<()>> {
     thread::Builder::new().name("metrics".into()).spawn(move || {
         let mut previous = read_cpu_times();
+        let mut gpu_previous = gpu_time_ns().map(|t| (t, Instant::now()));
         loop {
             thread::sleep(EVERY);
             let now = read_cpu_times();
-            if !sink.send(Event::Metrics(read(&previous, &now))) {
+            let mut m = read(&previous, &now);
+            // No busy file: GPU time used by all clients over the time elapsed.
+            let gpu_now = gpu_time_ns().map(|t| (t, Instant::now()));
+            if m.gpu.is_none()
+                && let (Some((t0, i0)), Some((t1, i1))) = (gpu_previous, gpu_now)
+            {
+                let wall = i1.duration_since(i0).as_nanos() as f64;
+                // Clients that exited take their time with them: no reading then.
+                if t1 >= t0 && wall > 0.0 {
+                    m.gpu = Some(((t1 - t0) as f64 / wall).clamp(0.0, 1.0) as f32);
+                }
+            }
+            gpu_previous = gpu_now;
+            if !sink.send(Event::Metrics(m)) {
                 return;
             }
             previous = now;
@@ -82,6 +97,53 @@ fn parse_dpm_clock(text: &str) -> Option<u32> {
     let line = text.lines().find(|l| l.trim_end().ends_with('*'))?;
     let clock = line.split_whitespace().find(|w| w.to_ascii_lowercase().ends_with("mhz"))?;
     clock.get(..clock.len() - 3)?.parse().ok()
+}
+
+/// One DRM client's id and GPU engine time (ns) from its fdinfo: `drm-engine-gpu` (msm) or
+/// `drm-engine-gfx` (amdgpu).
+fn parse_fdinfo(text: &str) -> Option<(u64, u64)> {
+    let mut id = None;
+    let mut ns = None;
+    for line in text.lines() {
+        let Some((key, value)) = line.split_once(':') else {
+            continue;
+        };
+        let value = value.trim();
+        match key {
+            "drm-client-id" => id = value.parse().ok(),
+            "drm-engine-gpu" | "drm-engine-gfx" => ns = value.trim_end_matches(" ns").parse().ok(),
+            _ => {}
+        }
+    }
+    Some((id?, ns?))
+}
+
+/// Total GPU time of all DRM clients this user can see, each counted once (a client may be open
+/// through several file descriptors).
+fn gpu_time_ns() -> Option<u64> {
+    let mut seen = HashSet::new();
+    let mut total = 0u64;
+    let mut any = false;
+    for proc_entry in fs::read_dir("/proc").ok()?.flatten() {
+        let pid = proc_entry.path();
+        let Ok(fds) = fs::read_dir(pid.join("fd")) else {
+            continue;
+        };
+        for fd in fds.flatten() {
+            let is_gpu = fs::read_link(fd.path()).is_ok_and(|t| t.starts_with("/dev/dri"));
+            if !is_gpu {
+                continue;
+            }
+            let info = pid.join("fdinfo").join(fd.file_name());
+            if let Some((id, ns)) = read_file(info).as_deref().and_then(parse_fdinfo)
+                && seen.insert(id)
+            {
+                total = total.saturating_add(ns);
+                any = true;
+            }
+        }
+    }
+    any.then_some(total)
 }
 
 fn read(previous: &CpuTimes, now: &CpuTimes) -> Metrics {
@@ -206,6 +268,28 @@ mod tests {
         assert_eq!(parse_dpm_clock("0: 500Mhz\n1: 1800Mhz *\n2: 2400Mhz\n"), Some(1800));
         assert_eq!(parse_dpm_clock("S: 19Mhz *\n"), Some(19));
         assert_eq!(parse_dpm_clock("0: 500Mhz\n"), None);
+    }
+
+    #[test]
+    fn fdinfo_engine_time() {
+        let msm = "pos:\t0\ndrm-driver:\tmsm\ndrm-client-id:\t7\ndrm-engine-gpu:\t123456 ns\ndrm-cycles-gpu:\t99\n";
+        assert_eq!(parse_fdinfo(msm), Some((7, 123_456)));
+        let amd = "drm-driver:\tamdgpu\ndrm-client-id:\t16\ndrm-engine-gfx:\t1300507034074 ns\n";
+        assert_eq!(parse_fdinfo(amd), Some((16, 1_300_507_034_074)));
+        assert_eq!(parse_fdinfo("drm-driver:\tamdgpu\ndrm-client-id:\t15\n"), None);
+    }
+
+    /// Compares the fdinfo load with amdgpu's own busy figure (where there is one).
+    #[test]
+    fn fdinfo_load_on_this_machine() {
+        let (Some(t0), i0) = (gpu_time_ns(), Instant::now()) else {
+            return;
+        };
+        std::thread::sleep(Duration::from_millis(1000));
+        let (t1, i1) = (gpu_time_ns().unwrap(), Instant::now());
+        let load = (t1.saturating_sub(t0)) as f64 / i1.duration_since(i0).as_nanos() as f64;
+        let busy = fs::read_dir("/sys/class/drm").into_iter().flatten().flatten().find_map(|c| read_number(c.path().join("device/gpu_busy_percent")));
+        eprintln!("fdinfo load {:.1}%, busy file {busy:?}%", load * 100.0);
     }
 
     #[test]
