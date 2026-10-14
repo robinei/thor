@@ -362,6 +362,7 @@ fn key_label(c: &mut Canvas, (key, shifted): (Key, bool), r: Rect, size: f32, co
                 Modifier::Shift => "Shift",
                 Modifier::Ctrl => "Ctrl",
                 Modifier::Alt => "Alt",
+                Modifier::Super => "Super",
                 Modifier::Fn => "Fn",
             };
             text(c, small, t);

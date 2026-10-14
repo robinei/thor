@@ -36,11 +36,13 @@ pub enum Modifier {
     Shift,
     Ctrl,
     Alt,
+    /// The logo key; sent to the app or compositor like any other modifier.
+    Super,
     Fn,
 }
 
 impl Modifier {
-    pub const ALL: [Modifier; 4] = [Modifier::Shift, Modifier::Ctrl, Modifier::Alt, Modifier::Fn];
+    pub const ALL: [Modifier; 5] = [Modifier::Shift, Modifier::Ctrl, Modifier::Alt, Modifier::Super, Modifier::Fn];
 }
 
 /// A modifier's state: a tap arms it for the next key, a long press locks it. A locked Shift is Caps Lock:
@@ -157,12 +159,13 @@ pub const LAYOUT: &[&[Slot]] = &[
         c('/'),
     ],
     &[
-        modifier(Modifier::Fn, 1.25),
+        modifier(Modifier::Fn, 1.0),
         named(Named::Tab, 1.0),
-        modifier(Modifier::Ctrl, 1.25),
-        modifier(Modifier::Alt, 1.25),
+        modifier(Modifier::Ctrl, 1.0),
+        modifier(Modifier::Super, 1.0),
+        modifier(Modifier::Alt, 1.0),
         c(','),
-        Slot { base: Key::Char(' '), fn_key: None, width: 3.25 },
+        Slot { base: Key::Char(' '), fn_key: None, width: 3.0 },
         c('.'),
     ],
 ];
@@ -223,6 +226,7 @@ pub struct Stroke {
     pub shift: bool,
     pub ctrl: bool,
     pub alt: bool,
+    pub logo: bool,
 }
 
 #[derive(Debug, Default)]
@@ -230,6 +234,7 @@ pub struct Keyboard {
     pub shift: Latch,
     pub ctrl: Latch,
     pub alt: Latch,
+    pub logo: Latch,
     pub fn_layer: Latch,
 }
 
@@ -239,6 +244,7 @@ impl Keyboard {
             Modifier::Shift => self.shift,
             Modifier::Ctrl => self.ctrl,
             Modifier::Alt => self.alt,
+            Modifier::Super => self.logo,
             Modifier::Fn => self.fn_layer,
         }
     }
@@ -248,6 +254,7 @@ impl Keyboard {
             Modifier::Shift => &mut self.shift,
             Modifier::Ctrl => &mut self.ctrl,
             Modifier::Alt => &mut self.alt,
+            Modifier::Super => &mut self.logo,
             Modifier::Fn => &mut self.fn_layer,
         }
     }
@@ -284,7 +291,13 @@ impl Keyboard {
                 None
             }
             key => {
-                let stroke = Stroke { key, shift: self.shifts(key), ctrl: self.ctrl.on(), alt: self.alt.on() };
+                let stroke = Stroke {
+                    key,
+                    shift: self.shifts(key),
+                    ctrl: self.ctrl.on(),
+                    alt: self.alt.on(),
+                    logo: self.logo.on(),
+                };
                 for m in Modifier::ALL {
                     let latch = self.latch_mut(m);
                     if *latch == Latch::Once {
@@ -371,6 +384,14 @@ mod tests {
         let s = tap(&mut kb, Key::Char('t')).unwrap();
         assert!(s.ctrl && s.alt && !s.shift);
         assert!(!tap(&mut kb, Key::Char('t')).unwrap().ctrl, "one-shot modifiers are used up");
+    }
+
+    #[test]
+    fn super_applies_to_the_next_key() {
+        let mut kb = Keyboard::default();
+        tap(&mut kb, Key::Mod(Modifier::Super));
+        assert!(tap(&mut kb, Key::Char('d')).unwrap().logo);
+        assert!(!tap(&mut kb, Key::Char('d')).unwrap().logo);
     }
 
     #[test]
