@@ -49,14 +49,17 @@ use smithay_client_toolkit::{
             window::{Window, WindowConfigure, WindowDecorations, WindowHandler},
         },
     },
-    shm::{Shm, ShmHandler, slot::SlotPool},
+    shm::{
+        Shm, ShmHandler,
+        slot::{Buffer, SlotPool},
+    },
 };
 use sysprog_core::{Dirty, Effect, Event, Hold, Id, State};
 use tiny_skia::Pixmap;
 
-use draw::{Fonts, Rect};
+use draw::{DrawCache, Rect};
 use nav::{Dir, NavTarget};
-use views::Target;
+use views::{Scratch, Target};
 
 pub type Error = Box<dyn std::error::Error>;
 
@@ -121,7 +124,7 @@ pub fn run(
         top: None,
         bottom: None,
         state,
-        fonts: Fonts::load(),
+        fonts: DrawCache::load(),
         keyboard: None,
         pointer: None,
         touch: None,
@@ -177,13 +180,14 @@ pub fn run(
 /// For checking layouts and for automated tests.
 pub fn snapshot(state: &State, screen: Screen, size: (u32, u32), scale: u32, path: &std::path::Path) -> Result<(), Error> {
     let mut pixmap = Pixmap::new(size.0 * scale, size.1 * scale).ok_or("can't allocate the pixmap")?;
-    let mut fonts = Fonts::load();
+    let mut fonts = DrawCache::load();
     let mut canvas = draw::Canvas::new(&mut pixmap, scale as f32, &mut fonts);
     let (w, h) = (size.0 as f32, size.1 as f32);
+    let mut targets = Vec::new();
     match screen {
-        Screen::Top => views::top(&mut canvas, state, w, h),
-        Screen::Bottom => views::bottom(&mut canvas, state, w, h, true),
-    };
+        Screen::Top => views::top(&mut canvas, state, w, h, &mut targets),
+        Screen::Bottom => views::bottom(&mut canvas, state, w, h, true, &mut Scratch::default(), &mut targets),
+    }
     pixmap.save_png(path)?;
     Ok(())
 }
@@ -216,6 +220,9 @@ struct View {
     /// What the last frame drew that can be tapped or focused.
     targets: Vec<Target>,
     pixmap: Option<Pixmap>,
+    /// shm buffers, reused once the compositor releases them (two in turn, a third if it holds both).
+    buffers: Vec<Buffer>,
+    scratch: Scratch,
 }
 
 impl View {
@@ -231,6 +238,8 @@ impl View {
             frame_pending: false,
             targets: Vec::new(),
             pixmap: None,
+            buffers: Vec::new(),
+            scratch: Scratch::default(),
         }
     }
 
@@ -273,7 +282,7 @@ impl View {
     fn draw(
         &mut self,
         pool: &mut SlotPool,
-        fonts: &mut Fonts,
+        fonts: &mut DrawCache,
         state: &State,
         echo: bool,
         qh: &QueueHandle<App>,
@@ -290,14 +299,35 @@ impl View {
         };
         {
             let mut canvas = draw::Canvas::new(pixmap, scale as f32, fonts);
-            self.targets = match self.screen {
-                Screen::Top => views::top(&mut canvas, state, lw as f32, lh as f32),
-                Screen::Bottom => views::bottom(&mut canvas, state, lw as f32, lh as f32, echo),
-            };
+            let (w, h) = (lw as f32, lh as f32);
+            match self.screen {
+                Screen::Top => views::top(&mut canvas, state, w, h, &mut self.targets),
+                Screen::Bottom => {
+                    views::bottom(&mut canvas, state, w, h, echo, &mut self.scratch, &mut self.targets);
+                }
+            }
         }
 
         let (wi, hi) = (i32::try_from(w)?, i32::try_from(h)?);
-        let (buffer, bytes) = pool.create_buffer(wi, hi, wi * 4, wl_shm::Format::Argb8888)?;
+        // A buffer of this size the compositor isn't reading; a new one only if all are in use.
+        self.buffers.retain(|b| b.height() == hi && b.stride() == wi * 4);
+        let free = self.buffers.iter().position(|b| b.canvas(pool).is_some());
+        let index = match free {
+            Some(i) => i,
+            None if self.buffers.len() < 3 => {
+                let (buffer, _) = pool.create_buffer(wi, hi, wi * 4, wl_shm::Format::Argb8888)?;
+                self.buffers.push(buffer);
+                self.buffers.len() - 1
+            }
+            // All busy: keep the view dirty; a buffer release wakes the loop and it draws then.
+            None => return Ok(()),
+        };
+        let Some(buffer) = self.buffers.get(index) else {
+            return Err("buffer index".into());
+        };
+        let Some(bytes) = buffer.canvas(pool) else {
+            return Err("buffer busy".into());
+        };
         // tiny-skia is RGBA in memory, ARGB8888 is BGRA (little-endian); both premultiplied. sway also
         // takes ABGR8888 (RGBA in memory), which would save this copy; KWin doesn't.
         for (dst, src) in bytes.chunks_exact_mut(4).zip(pixmap.data().chunks_exact(4)) {
@@ -343,7 +373,7 @@ struct App {
     top: Option<View>,
     bottom: Option<View>,
     state: State,
-    fonts: Fonts,
+    fonts: DrawCache,
     keyboard: Option<wl_keyboard::WlKeyboard>,
     pointer: Option<wl_pointer::WlPointer>,
     touch: Option<wl_touch::WlTouch>,
@@ -733,3 +763,94 @@ impl ProvidesRegistryState for App {
 
 delegate_registry!(App);
 smithay_client_toolkit::delegate_dispatch2!(App);
+
+/// Drawing a frame must not touch the heap once caches are warm (glyphs rasterized, buffers sized):
+/// counted with an allocator that tallies this thread's allocations.
+#[cfg(test)]
+#[allow(unsafe_code, clippy::unwrap_used, clippy::expect_used)]
+mod no_alloc {
+    use std::alloc::{GlobalAlloc, Layout, System};
+    use std::cell::Cell;
+
+    use sysprog_core::keyboard::{self, Key, Modifier};
+    use sysprog_core::{Event, Id, Mode, State};
+    use tiny_skia::Pixmap;
+
+    use crate::draw::{Canvas, DrawCache};
+    use crate::views::{self, Scratch};
+
+    thread_local! {
+        static ALLOCS: Cell<usize> = const { Cell::new(0) };
+    }
+
+    struct Counting;
+
+    // SAFETY: forwards to the system allocator unchanged; only counts calls.
+    unsafe impl GlobalAlloc for Counting {
+        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+            let _ = ALLOCS.try_with(|n| n.set(n.get() + 1));
+            unsafe { System.alloc(layout) }
+        }
+
+        unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+            unsafe { System.dealloc(ptr, layout) }
+        }
+
+        unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+            let _ = ALLOCS.try_with(|n| n.set(n.get() + 1));
+            unsafe { System.realloc(ptr, layout, new_size) }
+        }
+    }
+
+    #[global_allocator]
+    static COUNTING: Counting = Counting;
+
+    fn allocs() -> usize {
+        ALLOCS.with(Cell::get)
+    }
+
+    fn key(k: Key) -> Event {
+        Event::Activate(Id::Key(keyboard::find(k).expect("key on the layout")))
+    }
+
+    #[test]
+    fn warm_frames_do_not_allocate() {
+        let mut state = State::new(sysprog_library::demo_games());
+        state.apply(Event::Tick { unix_secs: 1_700_000_000 });
+        let mut cache = DrawCache::load();
+        let mut scratch = Scratch::default();
+        let mut targets = Vec::new();
+        let mut top = Pixmap::new(1920, 1080).expect("pixmap");
+        let mut bottom = Pixmap::new(1240, 1080).expect("pixmap");
+
+        let cases: Vec<(&str, Vec<Event>)> = vec![
+            ("game settings", vec![]),
+            ("keyboard", vec![Event::Activate(Id::Mode(Mode::Keyboard))]),
+            ("keyboard, Fn", vec![key(Key::Mod(Modifier::Fn))]),
+            ("keyboard, Shift and a pressed key", vec![key(Key::Mod(Modifier::Shift)), key(Key::Char('h'))]),
+        ];
+        for (name, events) in cases {
+            for event in events {
+                state.apply(event);
+            }
+            for round in 0..3 {
+                let before = allocs();
+                views::top(&mut Canvas::new(&mut top, 1.0, &mut cache), &state, 1920.0, 1080.0, &mut targets);
+                views::bottom(
+                    &mut Canvas::new(&mut bottom, 1.0, &mut cache),
+                    &state,
+                    1240.0,
+                    1080.0,
+                    true,
+                    &mut scratch,
+                    &mut targets,
+                );
+                let n = allocs() - before;
+                // The first rounds fill the glyph cache and size the vectors.
+                if round == 2 {
+                    assert_eq!(n, 0, "{name}: {n} allocations in a warm frame");
+                }
+            }
+        }
+    }
+}

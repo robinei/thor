@@ -5,6 +5,7 @@
 pub mod keyboard;
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use keyboard::{Key, KeyPos, Keyboard, Stroke};
 
@@ -60,7 +61,7 @@ impl Power {
 /// survives redraws and layout changes.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Id {
-    Game(String),
+    Game(Arc<str>),
     Mode(Mode),
     Power(Power),
     Launch,
@@ -87,7 +88,7 @@ pub enum Event {
 /// What the state asks the outside world to do.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Effect {
-    Launch { game: String, power: Power },
+    Launch { game: Arc<str>, power: Power },
     /// A key press for the focused app (virtual keyboard).
     Key(Stroke),
     Quit,
@@ -110,9 +111,9 @@ impl Dirty {
 pub struct State {
     pub games: Vec<Game>,
     /// Id of the selected game (shelf's list on top, its settings below).
-    pub selected: Option<String>,
+    pub selected: Option<Arc<str>>,
     /// Per-game power setting, by game id; absent = default.
-    pub power: HashMap<String, Power>,
+    pub power: HashMap<Arc<str>, Power>,
     pub mode: Mode,
     pub focus: Option<Id>,
     pub unix_secs: u64,
@@ -233,7 +234,7 @@ impl State {
         }
     }
 
-    fn launch_effect(&self, game: String) -> Effect {
+    fn launch_effect(&self, game: Arc<str>) -> Effect {
         let power = self.power_of(&game);
         Effect::Launch { game, power }
     }

@@ -718,6 +718,7 @@ dependencies = [
  "log",
  "smithay-client-toolkit",
  "sysprog-core",
+ "sysprog-library",
  "tiny-skia",
 ]
 

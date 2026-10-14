@@ -1,11 +1,14 @@
 //! The game library: today a fixed demo list. Later the Pegasus metadata format, `stats.db` and Steam's
 //! manifests (docs/plans.md in the GPD repo, "Rust and a project structure").
 
+use std::sync::Arc;
+
 /// One game as the rest of the program sees it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Game {
-    /// Stable id (focus, settings and play time are keyed by it).
-    pub id: String,
+    /// Stable id (focus, settings and play time are keyed by it). Shared, so the UI can put it in a
+    /// frame's targets without allocating.
+    pub id: Arc<str>,
     pub title: String,
     /// Stand-in for box art until images load: 0xRRGGBB.
     pub color: u32,

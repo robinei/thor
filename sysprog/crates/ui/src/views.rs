@@ -1,14 +1,16 @@
-//! The screens. Each is a function of the state and its size that draws everything and returns what can
-//! be tapped or focused (immediate mode; docs/plans.md, "UI code").
+//! The screens. Each is a function of the state and its size that draws everything and lists what can
+//! be tapped or focused (into a vector kept between frames) (immediate mode; docs/plans.md, "UI code").
 //!
 //! OLED-friendly: black background, grey text and lines (no full white on static elements), colour only
 //! where it means something (focus, the active mode, the game's own colour, Launch).
+
+use std::fmt::Write;
 
 use sysprog_core::keyboard::{self, Key, KeyPos, Keyboard, LAYOUT, Latch, Modifier, Named, Slot};
 use sysprog_core::{Id, Mode, Power, State};
 
 use crate::draw::{Canvas, Rect, rgb};
-use crate::icons::{self, Icon};
+use crate::icons::Icon;
 
 /// Something drawn that can be tapped or focused, in the view's logical pixels.
 #[derive(Debug, Clone)]
@@ -48,9 +50,9 @@ fn label(c: &mut Canvas, r: Rect, size: f32, color: u32, text: &str) {
 }
 
 /// shelf on the main screen: the game list and the selected game's art.
-pub fn top(c: &mut Canvas, s: &State, w: f32, h: f32) -> Vec<Target> {
+pub fn top(c: &mut Canvas, s: &State, w: f32, h: f32, targets: &mut Vec<Target>) {
     c.fill(Rect::new(0.0, 0.0, w, h), rgb(BG));
-    let mut targets = Vec::new();
+    targets.clear();
     let pad = (h * 0.03).max(4.0);
     let list_w = w * 0.4;
     let row_h = (h - pad) / 8.0;
@@ -82,9 +84,9 @@ pub fn top(c: &mut Canvas, s: &State, w: f32, h: f32) -> Vec<Target> {
         c.text(art.x, y, h * 0.055, rgb(TEXT_HI), &game.title);
         y += h * 0.085;
         let power = s.power_of(&game.id).label();
-        c.text(art.x, y, h * 0.032, rgb(DIM), &format!("Power: {power}"));
+        let x = art.x + c.text(art.x, y, h * 0.032, rgb(DIM), "Power: ");
+        c.text(x, y, h * 0.032, rgb(DIM), power);
     }
-    targets
 }
 
 fn mode_icon(mode: Mode) -> Icon {
@@ -98,15 +100,45 @@ fn mode_icon(mode: Mode) -> Icon {
 }
 
 /// The second screen: a thin bar of mode icons and the clock, then the current mode.
+/// Text kept between frames so drawing doesn't allocate: the clock, formatted once a minute.
+#[derive(Debug, Default)]
+pub struct Scratch {
+    minute: Option<u64>,
+    clock: String,
+}
+
+impl Scratch {
+    fn clock(&mut self, unix_secs: u64) -> &str {
+        let minute = unix_secs / 60;
+        if self.minute != Some(minute) {
+            self.minute = Some(minute);
+            self.clock.clear();
+            if let Some(t) = i64::try_from(unix_secs).ok().and_then(|secs| jiff::Timestamp::from_second(secs).ok()) {
+                let local = t.to_zoned(jiff::tz::TimeZone::system());
+                let _ = write!(self.clock, "{}", local.strftime("%H:%M"));
+            }
+        }
+        &self.clock
+    }
+}
+
 /// `echo`: show what is typed above the keyboard.
-pub fn bottom(c: &mut Canvas, s: &State, w: f32, h: f32, echo: bool) -> Vec<Target> {
+pub fn bottom(
+    c: &mut Canvas,
+    s: &State,
+    w: f32,
+    h: f32,
+    echo: bool,
+    scratch: &mut Scratch,
+    targets: &mut Vec<Target>,
+) {
     c.fill(Rect::new(0.0, 0.0, w, h), rgb(BG));
-    let mut targets = Vec::new();
+    targets.clear();
     let bar_h = (h * 0.075).max(20.0);
     let icon = bar_h * 0.62;
-    let clock = clock(s.unix_secs);
+    let clock = scratch.clock(s.unix_secs);
     let size = bar_h * 0.42;
-    let clock_w = c.text_width(size, &clock) + bar_h * 0.8;
+    let clock_w = c.text_width(size, clock) + bar_h * 0.8;
     // The mode icons share the width left of the clock.
     let slot = (w - clock_w) / Mode::ALL.len() as f32;
     for (i, mode) in Mode::ALL.into_iter().enumerate() {
@@ -118,19 +150,20 @@ pub fn bottom(c: &mut Canvas, s: &State, w: f32, h: f32, echo: bool) -> Vec<Targ
             c.rounded(r.inset(2.0), 8.0, rgb(PRESSED));
         }
         let (cx, cy) = r.center();
-        icons::draw(c, mode_icon(mode), Rect::new(cx - icon / 2.0, cy - icon / 2.0, icon, icon), rgb(color));
+        c.icon(mode_icon(mode), Rect::new(cx - icon / 2.0, cy - icon / 2.0, icon, icon), rgb(color));
         focus_ring(c, s, &id, r.inset(2.0));
         targets.push(Target { rect: r, id });
     }
-    label(c, Rect::new(w - clock_w, 0.0, clock_w, bar_h), size, TEXT, &clock);
+    label(c, Rect::new(w - clock_w, 0.0, clock_w, bar_h), size, TEXT, clock);
 
     let body = Rect::new(0.0, bar_h, w, h - bar_h);
     match s.mode {
-        Mode::Follow => game_settings(c, s, body, &mut targets),
-        Mode::Keyboard => keyboard(c, s, body, echo, &mut targets),
-        other => label(c, body, body.h * 0.05, DIM, &format!("{other:?}: not built yet")),
+        Mode::Follow => game_settings(c, s, body, targets),
+        Mode::Keyboard => keyboard(c, s, body, echo, targets),
+        Mode::Launcher => label(c, body, body.h * 0.05, DIM, "Launcher: not built yet"),
+        Mode::Touchpad => label(c, body, body.h * 0.05, DIM, "Touchpad: not built yet"),
+        Mode::Sysinfo => label(c, body, body.h * 0.05, DIM, "Sysinfo: not built yet"),
     }
-    targets
 }
 
 /// Follow mode under shelf: the selected game's settings and the launch button.
@@ -177,11 +210,12 @@ fn keyboard(c: &mut Canvas, s: &State, body: Rect, echo: bool, targets: &mut Vec
     let echo_h = body.h * 0.09;
     let echo_size = echo_h * 0.45;
     if echo {
-        let line = format!("{}_", kb.echo);
-        let ew = c.text_width(echo_size, &line);
+        let ew = c.text_width(echo_size, &kb.echo) + c.text_width(echo_size, "_");
         // Keep the end of the line visible: draw from the right edge back when it is too long.
         let ex = if ew > body.w - 4.0 * gap { body.w - 2.0 * gap - ew } else { 2.0 * gap };
-        c.text(ex, body.y + (echo_h - echo_size * 1.2) / 2.0, echo_size, rgb(DIM), &line);
+        let ey = body.y + (echo_h - echo_size * 1.2) / 2.0;
+        let cursor = ex + c.text(ex, ey, echo_size, rgb(DIM), &kb.echo);
+        c.text(cursor, ey, echo_size, rgb(DIM), "_");
     }
 
     let area = Rect::new(gap, body.y + echo_h, body.w - 2.0 * gap, body.h - echo_h - gap);
@@ -251,7 +285,7 @@ fn draw_key(c: &mut Canvas, kb: &Keyboard, slot: &Slot, r: Rect, pressed: bool) 
     }
     let caps = slot.base == Key::Mod(Modifier::Shift) && kb.shift == Latch::Locked;
     if caps {
-        icons::draw(c, Icon::CapsLock, Rect::new(r.x, r.y + r.h * 0.29, r.w, r.h * 0.42), rgb(color));
+        c.icon(Icon::CapsLock, Rect::new(r.x, r.y + r.h * 0.29, r.w, r.h * 0.42), rgb(color));
     } else {
         key_label(c, main, r, r.h * 0.3, color, Place::Center);
     }
@@ -288,7 +322,7 @@ fn key_label(c: &mut Canvas, (key, shifted): (Key, bool), r: Rect, size: f32, co
             }
         }
     };
-    let icon = |c: &mut Canvas, i: Icon| icons::draw(c, i, icon_box(size * 1.4), rgb(color));
+    let icon = |c: &mut Canvas, i: Icon| c.icon(i, icon_box(size * 1.4), rgb(color));
     let small = if place == Place::Center { size * 0.7 } else { size };
     match key {
         Key::Char(' ') if place == Place::Center => {
@@ -305,7 +339,7 @@ fn key_label(c: &mut Canvas, (key, shifted): (Key, bool), r: Rect, size: f32, co
         Key::Named(Named::Left) => icon(c, Icon::ArrowLeft),
         Key::Named(Named::Right) => icon(c, Icon::ArrowRight),
         Key::Mod(Modifier::Shift) => icon(c, Icon::Shift),
-        Key::Named(named) => text(c, small, &named_label(named)),
+        Key::Named(named) => text(c, small, named_label(named)),
         Key::Mod(m) => {
             let t = match m {
                 Modifier::Shift => "Shift",
@@ -318,30 +352,23 @@ fn key_label(c: &mut Canvas, (key, shifted): (Key, bool), r: Rect, size: f32, co
     }
 }
 
-fn named_label(n: Named) -> String {
+fn named_label(n: Named) -> &'static str {
+    const F: [&str; 12] = ["F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12"];
     match n {
-        Named::F(i) => format!("F{i}"),
-        Named::Backspace => "Bksp".into(),
-        Named::Tab => "Tab".into(),
-        Named::Enter => "Enter".into(),
-        Named::Esc => "Esc".into(),
-        Named::Delete => "Del".into(),
-        Named::Insert => "Ins".into(),
-        Named::Home => "Home".into(),
-        Named::End => "End".into(),
-        Named::PageUp => "PgUp".into(),
-        Named::PageDown => "PgDn".into(),
-        Named::Left => "Left".into(),
-        Named::Right => "Right".into(),
-        Named::Up => "Up".into(),
-        Named::Down => "Down".into(),
+        Named::F(i) => F.get(usize::from(i).wrapping_sub(1)).copied().unwrap_or("F?"),
+        Named::Backspace => "Bksp",
+        Named::Tab => "Tab",
+        Named::Enter => "Enter",
+        Named::Esc => "Esc",
+        Named::Delete => "Del",
+        Named::Insert => "Ins",
+        Named::Home => "Home",
+        Named::End => "End",
+        Named::PageUp => "PgUp",
+        Named::PageDown => "PgDn",
+        Named::Left => "Left",
+        Named::Right => "Right",
+        Named::Up => "Up",
+        Named::Down => "Down",
     }
-}
-
-fn clock(unix_secs: u64) -> String {
-    i64::try_from(unix_secs)
-        .ok()
-        .and_then(|secs| jiff::Timestamp::from_second(secs).ok())
-        .map(|t| t.to_zoned(jiff::tz::TimeZone::system()).strftime("%H:%M").to_string())
-        .unwrap_or_default()
 }

@@ -4,7 +4,7 @@ use tiny_skia::Color;
 
 use crate::draw::{Canvas, Rect};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Icon {
     Gamepad,
     Apps,
