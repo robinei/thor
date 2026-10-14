@@ -170,6 +170,20 @@ pub fn run(
     Ok(())
 }
 
+/// OLED burn-in protection: every frame is drawn moved by a few buffer pixels that drift slowly (about
+/// one pixel a minute, along an irregular path within ±ORBIT), so static elements like the bar's icons and
+/// the clock don't sit on the same pixels for hours. Layouts keep visible things at least ORBIT pixels
+/// from the edges; tap areas move with the picture.
+const ORBIT: f32 = 3.0;
+
+fn orbit(unix_secs: u64) -> (i32, i32) {
+    let minutes = (unix_secs / 60) as f32;
+    let tau = std::f32::consts::TAU;
+    let dx = (ORBIT * (minutes * tau / 17.0).sin()).round() as i32;
+    let dy = (ORBIT * (minutes * tau / 23.0).sin()).round() as i32;
+    (dx, dy)
+}
+
 /// Renders one screen without Wayland, at `size` logical pixels and integer `scale`, to a PNG file.
 /// For checking layouts and for automated tests.
 pub fn snapshot(state: &State, screen: Screen, size: (u32, u32), scale: u32, path: &std::path::Path) -> Result<(), Error> {
@@ -290,8 +304,9 @@ impl View {
         let Some(pixmap) = self.pixmap.as_mut() else {
             return Err(format!("can't allocate a {w}x{h} pixmap").into());
         };
+        let offset = orbit(state.unix_secs);
         {
-            let mut canvas = draw::Canvas::new(pixmap, scale as f32, fonts);
+            let mut canvas = draw::Canvas::new(pixmap, scale as f32, fonts).with_offset(offset);
             let (w, h) = (lw as f32, lh as f32);
             match self.screen {
                 Screen::Top => views::top(&mut canvas, state, w, h, &mut self.targets),
@@ -299,6 +314,12 @@ impl View {
                     views::bottom(&mut canvas, state, w, h, &mut self.scratch, &mut self.targets);
                 }
             }
+        }
+
+        let (sx, sy) = (offset.0 as f32 / scale as f32, offset.1 as f32 / scale as f32);
+        for target in &mut self.targets {
+            target.rect.x += sx;
+            target.rect.y += sy;
         }
 
         let (wi, hi) = (i32::try_from(w)?, i32::try_from(h)?);
@@ -803,6 +824,17 @@ mod no_alloc {
 
     fn key(k: Key) -> Event {
         Event::Activate(Id::Key(keyboard::find(k).expect("key on the layout")))
+    }
+
+    #[test]
+    fn orbit_stays_small_and_moves_slowly() {
+        let mut last = super::orbit(0);
+        for minute in 1..2000u64 {
+            let (dx, dy) = super::orbit(minute * 60);
+            assert!(dx.abs() <= 3 && dy.abs() <= 3);
+            assert!((dx - last.0).abs() <= 2 && (dy - last.1).abs() <= 2);
+            last = (dx, dy);
+        }
     }
 
     #[test]

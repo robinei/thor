@@ -99,16 +99,33 @@ impl DrawCache {
 pub struct Canvas<'a> {
     pixmap: &'a mut Pixmap,
     scale: f32,
+    /// Whole buffer pixels everything is moved by (burn-in orbit).
+    offset: (f32, f32),
     cache: &'a mut DrawCache,
 }
 
 impl<'a> Canvas<'a> {
     pub fn new(pixmap: &'a mut Pixmap, scale: f32, cache: &'a mut DrawCache) -> Self {
-        Canvas { pixmap, scale, cache }
+        Canvas { pixmap, scale, offset: (0.0, 0.0), cache }
+    }
+
+    /// Moves everything drawn by whole buffer pixels.
+    pub fn with_offset(mut self, (dx, dy): (i32, i32)) -> Self {
+        self.offset = (dx as f32, dy as f32);
+        self
+    }
+
+    /// Logical x and y to buffer pixels.
+    fn px(&self, x: f32) -> f32 {
+        x * self.scale + self.offset.0
+    }
+
+    fn py(&self, y: f32) -> f32 {
+        y * self.scale + self.offset.1
     }
 
     fn transform(&self) -> Transform {
-        Transform::from_scale(self.scale, self.scale)
+        Transform::from_row(self.scale, 0.0, 0.0, self.scale, self.offset.0, self.offset.1)
     }
 
     fn paint(color: Color) -> Paint<'static> {
@@ -120,18 +137,18 @@ impl<'a> Canvas<'a> {
 
     /// A vertical line `px` buffer pixels wide, centred on `x` and snapped to whole pixels (sharp).
     pub fn vline(&mut self, x: f32, y0: f32, y1: f32, px: u32, color: Color) {
-        let s = self.scale;
-        let left = (x * s - px as f32 / 2.0).round();
-        if let Some(rect) = tiny_skia::Rect::from_ltrb(left, (y0 * s).round(), left + px as f32, (y1 * s).round()) {
+        let left = (self.px(x) - px as f32 / 2.0).round();
+        let (top, bottom) = (self.py(y0).round(), self.py(y1).round());
+        if let Some(rect) = tiny_skia::Rect::from_ltrb(left, top, left + px as f32, bottom) {
             self.pixmap.fill_rect(rect, &Self::paint(color), Transform::identity(), None);
         }
     }
 
     /// A horizontal line `px` buffer pixels high, centred on `y` and snapped to whole pixels.
     pub fn hline(&mut self, x0: f32, x1: f32, y: f32, px: u32, color: Color) {
-        let s = self.scale;
-        let top = (y * s - px as f32 / 2.0).round();
-        if let Some(rect) = tiny_skia::Rect::from_ltrb((x0 * s).round(), top, (x1 * s).round(), top + px as f32) {
+        let top = (self.py(y) - px as f32 / 2.0).round();
+        let (left, right) = (self.px(x0).round(), self.px(x1).round());
+        if let Some(rect) = tiny_skia::Rect::from_ltrb(left, top, right, top + px as f32) {
             self.pixmap.fill_rect(rect, &Self::paint(color), Transform::identity(), None);
         }
     }
@@ -149,22 +166,19 @@ impl<'a> Canvas<'a> {
 
     /// A rounded rectangle, filled.
     pub fn rounded(&mut self, r: Rect, radius: f32, color: Color) {
-        let s = self.scale;
-        let shape = RoundedRect::new(r, radius, s);
+        let shape = RoundedRect::new(r, radius, self.scale, self.offset);
         self.shade(shape.bounds(1.0), color, |x, y| (0.5 - shape.distance(x, y)).clamp(0.0, 1.0));
     }
 
     /// A rounded rectangle's outline, `width` wide, centred on its edge.
     pub fn outline(&mut self, r: Rect, radius: f32, width: f32, color: Color) {
-        let s = self.scale;
-        let shape = RoundedRect::new(r, radius, s);
-        let half = width * s / 2.0;
+        let shape = RoundedRect::new(r, radius, self.scale, self.offset);
+        let half = width * self.scale / 2.0;
         self.shade(shape.bounds(half + 1.0), color, |x, y| (half + 0.5 - shape.distance(x, y).abs()).clamp(0.0, 1.0));
     }
 
     pub fn circle(&mut self, cx: f32, cy: f32, r: f32, color: Color) {
-        let s = self.scale;
-        let (cx, cy, r) = (cx * s, cy * s, r * s);
+        let (cx, cy, r) = (self.px(cx), self.py(cy), r * self.scale);
         let bounds = (cx - r - 1.0, cy - r - 1.0, cx + r + 1.0, cy + r + 1.0);
         self.shade(bounds, color, |x, y| (0.5 - ((x - cx).hypot(y - cy) - r)).clamp(0.0, 1.0));
     }
@@ -200,15 +214,15 @@ impl<'a> Canvas<'a> {
             };
             {
                 let logical = side as f32 / self.scale;
-                let mut c = Canvas { pixmap: &mut mask, scale: self.scale, cache: &mut *self.cache };
+                let mut c = Canvas { pixmap: &mut mask, scale: self.scale, offset: (0.0, 0.0), cache: &mut *self.cache };
                 icons::draw(&mut c, icon, Rect::new(0.0, 0.0, logical, logical), Color::WHITE);
             }
             let coverage = mask.data().chunks_exact(4).filter_map(|px| px.get(3).copied()).collect();
             self.cache.icons.insert(key, coverage);
         }
         let (cx, cy) = r.center();
-        let x = (cx * self.scale - side as f32 / 2.0).round() as i32;
-        let y = (cy * self.scale - side as f32 / 2.0).round() as i32;
+        let x = (self.px(cx) - side as f32 / 2.0).round() as i32;
+        let y = (self.py(cy) - side as f32 / 2.0).round() as i32;
         if let Some(coverage) = self.cache.icons.get(&key) {
             blend_mask(self.pixmap, x, y, side as usize, coverage, color.premultiply().to_color_u8());
         }
@@ -217,22 +231,21 @@ impl<'a> Canvas<'a> {
     /// Connected lines through `points`, round caps and joins; `close` joins the last to the first. Uses
     /// tiny-skia (allocates): for drawing icons into their cache only.
     pub fn polyline(&mut self, points: &[(f32, f32)], width: f32, color: Color, close: bool) {
-        let s = self.scale;
         let mut iter = points.iter();
         let Some(&(x, y)) = iter.next() else {
             return;
         };
         let mut pb = self.cache.builder();
-        pb.move_to(x * s, y * s);
+        pb.move_to(self.px(x), self.py(y));
         for &(x, y) in iter {
-            pb.line_to(x * s, y * s);
+            pb.line_to(self.px(x), self.py(y));
         }
         if close {
             pb.close();
         }
         if let Some(path) = pb.finish() {
             let stroke =
-                Stroke { width: width * s, line_cap: LineCap::Round, line_join: LineJoin::Round, ..Stroke::default() };
+                Stroke { width: width * self.scale, line_cap: LineCap::Round, line_join: LineJoin::Round, ..Stroke::default() };
             self.stroke_path(path, &stroke, color);
         }
     }
@@ -240,8 +253,8 @@ impl<'a> Canvas<'a> {
     /// Draws one line of text with its top at `y`; returns its width.
     pub fn text(&mut self, x: f32, y: f32, size: f32, color: Color, text: &str) -> f32 {
         let px = size * self.scale;
-        let baseline = (y * self.scale + self.cache.ascent(px)).round();
-        let start = x * self.scale;
+        let baseline = (self.py(y) + self.cache.ascent(px)).round();
+        let start = self.px(x);
         let mut pen = start;
         let color = color.premultiply().to_color_u8();
         for ch in text.chars() {
@@ -306,10 +319,10 @@ struct RoundedRect {
 }
 
 impl RoundedRect {
-    fn new(r: Rect, radius: f32, scale: f32) -> Self {
+    fn new(r: Rect, radius: f32, scale: f32, (dx, dy): (f32, f32)) -> Self {
         let (w, h) = (r.w * scale, r.h * scale);
         let radius = (radius * scale).min(w / 2.0).min(h / 2.0).max(0.0);
-        let (cx, cy) = (r.x * scale + w / 2.0, r.y * scale + h / 2.0);
+        let (cx, cy) = (r.x * scale + dx + w / 2.0, r.y * scale + dy + h / 2.0);
         RoundedRect { cx, cy, hx: w / 2.0 - radius, hy: h / 2.0 - radius, radius }
     }
 

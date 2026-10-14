@@ -159,10 +159,10 @@ impl State {
     pub fn apply(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
         match event {
             Event::Tick { unix_secs } => {
-                // The bar shows minutes: redraw only when the minute changes.
+                // Once a minute: the bar's clock, and both screens' burn-in orbit step.
                 let minute_changed = unix_secs / 60 != self.unix_secs / 60;
                 self.unix_secs = unix_secs;
-                (if minute_changed { Dirty::BOTTOM } else { Dirty::NONE }, vec![])
+                (if minute_changed { Dirty::BOTH } else { Dirty::NONE }, vec![])
             }
             Event::Focus(id) => {
                 self.focus = Some(id);
@@ -304,10 +304,10 @@ mod tests {
     }
 
     #[test]
-    fn tick_redraws_only_the_bottom_and_only_each_minute() {
+    fn tick_redraws_once_a_minute() {
         let mut s = state();
         let (dirty, _) = s.apply(Event::Tick { unix_secs: 60 });
-        assert_eq!(dirty, Dirty::BOTTOM);
+        assert_eq!(dirty, Dirty::BOTH);
         let (dirty, _) = s.apply(Event::Tick { unix_secs: 119 });
         assert_eq!(dirty, Dirty::NONE);
     }
