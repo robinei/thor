@@ -96,9 +96,9 @@ const fn n(k: Named) -> Key {
 /// The layout: US letters and digits in their usual places, every row 10 units so keys use the full
 /// width. The most typed punctuation sits after the space bar, nearest the thumbs (; , . / and with Shift
 /// : < > ?); the rest has its own row on top with Esc and Tab, - and = at its right as on a PC. Fn: F1-F10
-/// on the digits, F11 and F12 at the top right (on - and =), Delete on Backspace, arrows on w/a/s/d under
-/// the left hand, and a PC's six-key block under the right (Insert, Home, PgUp on u/i/o over Delete, End,
-/// PgDn on j/k/l).
+/// on the digits, F11 and F12 at the top right (on - and =), Delete on Backspace, Insert on p, arrows on
+/// w/a/s/d under the left hand, and the same shape under the right for paging (PgUp, Home, PgDn, End on
+/// i/j/k/l).
 pub const LAYOUT: &[&[Slot]] = &[
     &[
         named(Named::Esc, 1.5),
@@ -130,10 +130,10 @@ pub const LAYOUT: &[&[Slot]] = &[
         c('r'),
         c('t'),
         c('y'),
-        cf('u', n(Named::Insert)),
-        cf('i', n(Named::Home)),
-        cf('o', n(Named::PageUp)),
-        c('p'),
+        c('u'),
+        cf('i', n(Named::PageUp)),
+        c('o'),
+        cf('p', n(Named::Insert)),
     ],
     &[
         cf('a', n(Named::Left)),
@@ -142,9 +142,9 @@ pub const LAYOUT: &[&[Slot]] = &[
         c('f'),
         c('g'),
         c('h'),
-        cf('j', n(Named::Delete)),
-        cf('k', n(Named::End)),
-        cf('l', n(Named::PageDown)),
+        cf('j', n(Named::Home)),
+        cf('k', n(Named::PageDown)),
+        cf('l', n(Named::End)),
         Slot { base: n(Named::Backspace), fn_key: Some(n(Named::Delete)), width: 1.0 },
     ],
     &[
@@ -368,14 +368,14 @@ mod tests {
     }
 
     #[test]
-    fn fn_turns_wasd_into_arrows_and_uiojkl_into_the_six_key_block() {
+    fn fn_turns_wasd_into_arrows_and_ijkl_into_paging() {
         let mut kb = Keyboard::default();
         tap(&mut kb, Key::Mod(Modifier::Fn));
         assert_eq!(tap(&mut kb, Key::Char('w')).unwrap().key, Key::Named(Named::Up));
         assert_eq!(tap(&mut kb, Key::Char('w')).unwrap().key, Key::Char('w'), "Fn once: one key");
         kb.press(pos(Key::Mod(Modifier::Fn)), true);
-        let block: Vec<Key> = ['a', 's', 'd', 'u', 'i', 'o', 'j', 'k', 'l'].map(|c| tap(&mut kb, Key::Char(c)).unwrap().key).to_vec();
-        let named = [Named::Left, Named::Down, Named::Right, Named::Insert, Named::Home, Named::PageUp, Named::Delete, Named::End, Named::PageDown];
+        let block: Vec<Key> = ['a', 's', 'd', 'i', 'j', 'k', 'l', 'p'].map(|c| tap(&mut kb, Key::Char(c)).unwrap().key).to_vec();
+        let named = [Named::Left, Named::Down, Named::Right, Named::PageUp, Named::Home, Named::PageDown, Named::End, Named::Insert];
         assert_eq!(block, named.map(Key::Named).to_vec());
         kb.press(pos(Key::Mod(Modifier::Fn)), false);
         kb.press(pos(Key::Mod(Modifier::Fn)), true);
