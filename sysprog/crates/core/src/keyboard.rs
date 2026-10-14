@@ -140,7 +140,8 @@ pub const LAYOUT: &[&[Slot]] = &[
         named(Named::Enter, 1.0),
     ],
     &[
-        modifier(Modifier::Shift, 1.5),
+        // One Shift is enough: it is sticky (tap for one key, hold for Caps Lock).
+        modifier(Modifier::Shift, 3.0),
         c('z'),
         c('x'),
         c('c'),
@@ -151,7 +152,6 @@ pub const LAYOUT: &[&[Slot]] = &[
         c(','),
         c('.'),
         c('/'),
-        modifier(Modifier::Shift, 1.5),
     ],
     &[
         modifier(Modifier::Fn, 1.5),
