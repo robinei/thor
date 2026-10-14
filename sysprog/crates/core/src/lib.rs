@@ -171,10 +171,10 @@ pub enum Event {
     Started(Arc<str>),
     Played { game: Arc<str>, start: u64, duration: u64 },
     LaunchFailed(Arc<str>),
-    /// A launcher app (by position) exited, or couldn't be started.
-    AppEnded(u16),
     /// The compositor's windows, after any change.
     Windows(Vec<windows::Window>),
+    /// Our running scopes (instances and games), by name without `.scope`, after any change.
+    Units(Vec<String>),
     Quit,
 }
 
@@ -206,9 +206,9 @@ pub enum Effect {
     /// The pad mouse turned on or off: the input side grabs the controller and drives a virtual mouse
     /// with it, or releases it to games.
     PadMouse(bool),
-    /// Start a launcher app's command (by position, to report its end) in a scope named after its key
-    /// (`sysprog-app-<key>-…`), so its windows are known to be its.
-    RunApp { app: u16, key: String, command: Vec<String> },
+    /// Start a launcher app's command as a new instance: a scope and a workspace of this name
+    /// (`sysprog-app-<key>-<secs>-<n>`).
+    RunApp { name: String, command: Vec<String> },
     /// Show this workspace (a launcher instance's, or the game's).
     FocusWorkspace(String),
     /// Ask these windows to close (as their own close buttons would): an instance's.
@@ -260,10 +260,18 @@ pub struct State {
     /// of each run.
     pub apps: Vec<apps::App>,
     pub apps_error: Option<String>,
-    pub apps_running: Vec<u16>,
+    /// Instances started and not yet listed by systemd (name, epoch seconds), so a second tap doesn't
+    /// start another; dropped once listed, or after a while if the start failed.
+    starting: Vec<(String, u64)>,
+    /// Numbers new instances' names (with the time, unique across restarts).
+    started: u64,
+    /// The workspace to show when its first window appears: the instance or game just started.
+    pending_show: Option<String>,
     /// The compositor's windows, and launcher instances (workspace names) by when they were last in
     /// front, most recent first.
     pub windows: Vec<windows::Window>,
+    /// Our running scopes (systemd's list).
+    pub units: Vec<String>,
     recent: Vec<String>,
     /// The pad mouse was turned on by a launch (Setting::PadMouse), to turn off when the game ends.
     pad_mouse_by_launch: bool,
@@ -287,6 +295,9 @@ pub struct State {
     /// When the tab or a selection last changed and isn't saved yet (epoch seconds).
     resume_dirty: Option<u64>,
 }
+
+/// Seconds an instance may take to show up in systemd's list before its start counts as failed.
+const STARTING_FOR: u64 = 15;
 
 /// What holding a target does once the press lasts beyond a tap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -317,7 +328,6 @@ impl State {
 
     /// The launcher's apps (from their file), and what is wrong with it if anything.
     pub fn set_apps(&mut self, apps: Vec<apps::App>, error: Option<String>) {
-        self.apps_running = vec![0; apps.len()];
         self.apps = apps;
         self.apps_error = error;
     }
@@ -328,6 +338,8 @@ impl State {
             Event::Tick { unix_secs } => {
                 // Once a minute: the bar's clock, and both screens' burn-in orbit step.
                 let minute_changed = unix_secs / 60 != self.unix_secs / 60;
+                // Starts systemd never listed failed: forget them.
+                self.starting.retain(|(_, at)| unix_secs < at + STARTING_FOR);
                 self.unix_secs = unix_secs;
                 // The place, once moving has stopped for a moment.
                 let effects = match self.resume_dirty {
@@ -431,15 +443,15 @@ impl State {
                 });
                 (Dirty::BOTH, self.game_ended())
             }
-            Event::Windows(windows) => {
-                self.set_windows(windows);
+            Event::Units(units) => {
+                self.units = units;
+                let units = &self.units;
+                self.starting.retain(|(name, _)| !units.contains(name));
                 (Dirty::BOTTOM, vec![])
             }
-            Event::AppEnded(app) => {
-                if let Some(n) = self.apps_running.get_mut(usize::from(app)) {
-                    *n = n.saturating_sub(1);
-                }
-                (Dirty::BOTTOM, vec![])
+            Event::Windows(windows) => {
+                self.set_windows(windows);
+                (Dirty::BOTTOM, self.show_pending())
             }
             Event::LaunchFailed(game) => {
                 if self.running.as_ref() == Some(&game) {
@@ -565,7 +577,7 @@ impl State {
     }
 
     /// Launching `game`, unless one is already running.
-    fn launch_effects(&self, game: Arc<str>) -> Vec<Effect> {
+    fn launch_effects(&mut self, game: Arc<str>) -> Vec<Effect> {
         if self.running.is_some() {
             return vec![];
         }
@@ -574,6 +586,8 @@ impl State {
         };
         let settings = self.settings.of(&game);
         let env = self.settings.env_of(&game);
+        // Shown once its first window appears.
+        self.pending_show = Some(windows::GAME_WORKSPACE.into());
         vec![
             Effect::SaveResume(self.resume_text()),
             Effect::Launch { game, settings, env, launch: g.launch.clone(), file: g.file.clone() },

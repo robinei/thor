@@ -126,7 +126,7 @@ fn game_tile(f: &mut Frame, r: Rect, game: Option<&Game>, images: &mut Images, b
 fn app_tile(f: &mut Frame, r: Rect, i: usize, app: &App, images: &mut Images, buf: &mut String) {
     let s: &State = f.s;
     let (at, count) = s.instance_position(i);
-    let running = count > 0 || s.apps_running.get(i).is_some_and(|n| *n > 0);
+    let running = s.app_running(i);
     position(buf, (at, count));
     let position: &str = buf;
     let scale = f.c.scale();

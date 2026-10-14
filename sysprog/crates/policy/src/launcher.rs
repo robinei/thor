@@ -13,7 +13,6 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::Receiver;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -21,7 +20,12 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use sysprog_core::{Event, Launch};
 use sysprog_library::{launch, stats};
 
-use crate::Sink;
+use crate::{Sink, job, sway, units};
+use std::sync::mpsc::Sender;
+use sysprog_core::windows::GAME_WORKSPACE;
+
+/// How long sway may take to start a game (its scope to appear).
+const GAME_START: Duration = Duration::from_secs(30);
 
 /// How long Steam may take to start a game (it may need to start or update first).
 const STEAM_START: Duration = Duration::from_secs(120);
@@ -42,6 +46,9 @@ pub struct Config {
     pub env: Vec<(String, String)>,
     /// Run games in their own systemd scope.
     pub scope: bool,
+    /// Under sway: launches go through it (see [`crate::sway`]), so the game's window opens on the
+    /// game's workspace.
+    pub sway: Option<Sender<sway::Command>>,
 }
 
 impl Config {
@@ -105,10 +112,30 @@ fn run_command(
     sink: &impl Sink,
 ) -> io::Result<(u64, u64)> {
     let c = launch::resolve(command, workdir, basedir, file).ok_or_else(|| io::Error::other("empty launch command"))?;
+    let unit = format!("sysprog-game-{}-{count}", std::process::id());
+    // Under sway (and systemd): sway starts it for the game's workspace; it has ended when its scope has.
+    if let (Some(sway), true) = (&config.sway, config.scope) {
+        let job = job::Job {
+            unit: unit.clone(),
+            argv: std::iter::once(c.program.to_string_lossy().into_owned()).chain(c.args.iter().cloned()).collect(),
+            env: config.env.clone(),
+            workdir: Some(c.workdir.clone()),
+            scope: true,
+        };
+        let path = job::write(&job)?;
+        sway.send(sway::Command::Launch { workspace: GAME_WORKSPACE.into(), job: path })
+            .map_err(|_| io::Error::other("the sway thread is gone"))?;
+        let start = now();
+        let started = Instant::now();
+        if !sink.send(Event::Started(game.clone())) {
+            return Err(io::Error::other("shutting down"));
+        }
+        units::wait(&format!("{unit}.scope"), GAME_START)?;
+        return Ok((start, started.elapsed().as_secs()));
+    }
     let mut cmd = if config.scope {
         let mut cmd = Command::new("systemd-run");
-        let unit = format!("--unit=sysprog-game-{}-{count}", std::process::id());
-        cmd.args(["--user", "--scope", "--quiet", "--collect", &unit, "--"]).arg(&c.program).args(&c.args);
+        cmd.args(["--user", "--scope", "--quiet", "--collect", &format!("--unit={unit}"), "--"]).arg(&c.program).args(&c.args);
         cmd
     } else {
         let mut cmd = Command::new(&c.program);
@@ -165,55 +192,6 @@ fn steam_running(marker: &str) -> bool {
     })
 }
 
-/// A new launcher instance's name, for its scope and its workspace: `sysprog-app-<key>-<pid>-<n>`.
-pub fn instance_name(key: &str) -> String {
-    static COUNT: AtomicU32 = AtomicU32::new(0);
-    format!("sysprog-app-{key}-{}-{}", std::process::id(), COUNT.fetch_add(1, Ordering::Relaxed))
-}
-
-/// Starts a launcher app (program and arguments, no shell) from the home directory, in a scope of this
-/// name where there is a user session (so it outlives a restart of the system program, and its windows
-/// are known to be the instance's). Doesn't wait: calls `ended` once it exits, or at once if it couldn't
-/// start.
-pub fn run_app(name: &str, command: &[String], scope: bool, ended: impl FnOnce() + Send + 'static) {
-    let Some((program, args)) = command.split_first() else {
-        return ended();
-    };
-    let mut cmd = if scope {
-        let mut cmd = Command::new("systemd-run");
-        let unit = format!("--unit={name}");
-        cmd.args(["--user", "--scope", "--quiet", "--collect", &unit, "--"]).arg(program).args(args);
-        cmd
-    } else {
-        let mut cmd = Command::new(program);
-        cmd.args(args);
-        cmd
-    };
-    if let Some(home) = std::env::var_os("HOME") {
-        cmd.current_dir(home);
-    }
-    cmd.stdin(Stdio::null()).process_group(0);
-    let mut child = match cmd.spawn() {
-        Ok(child) => child,
-        Err(e) => {
-            log::warn!("{program}: {e}");
-            return ended();
-        }
-    };
-    let name = program.clone();
-    let waiter = thread::Builder::new().name("app".into()).spawn(move || {
-        match child.wait() {
-            Ok(status) if !status.success() => log::info!("{name} exited: {status}"),
-            Ok(_) => {}
-            Err(e) => log::warn!("{name}: {e}"),
-        }
-        ended();
-    });
-    if let Err(e) = waiter {
-        log::warn!("{program}: no thread to wait for it: {e}");
-    }
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
@@ -232,7 +210,7 @@ mod tests {
         let events = Arc::new(Mutex::new(Vec::new()));
         let seen = events.clone();
         let (tx, rx) = std::sync::mpsc::channel();
-        let config = Config { stats_db: Some(db.clone()), env: vec![], scope: false };
+        let config = Config { stats_db: Some(db.clone()), env: vec![], scope: false, sway: None };
         let handle = spawn(config, rx, move |e| seen.lock().map(|mut v| v.push(e)).is_ok()).unwrap();
         let id: Arc<str> = script.to_string_lossy().into();
         let launch = Launch::Command { command: "\"{file.path}\"".into(), workdir: String::new(), basedir: dir.clone() };
@@ -246,16 +224,6 @@ mod tests {
         assert_eq!(std::fs::read_to_string(dir.join("ran-in")).unwrap().trim(), dir.to_string_lossy(), "in its own dir");
         assert_eq!(stats::read(&db).get(&*id).map(|p| p.count), Some(1));
         let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn apps_report_their_end() {
-        let (tx, rx) = std::sync::mpsc::channel();
-        let done = tx.clone();
-        run_app(&instance_name("sleep"), &["sh".into(), "-c".into(), "sleep 0.2".into()], false, move || done.send("sleep").unwrap());
-        run_app(&instance_name("missing"), &["/nonexistent/app".into()], false, move || tx.send("missing").unwrap());
-        assert_eq!(rx.recv_timeout(Duration::from_secs(5)).unwrap(), "missing", "at once");
-        assert_eq!(rx.recv_timeout(Duration::from_secs(5)).unwrap(), "sleep", "when it exits");
     }
 
     #[test]

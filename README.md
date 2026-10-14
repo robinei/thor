@@ -20,10 +20,11 @@ path (virtual pad, mouse emulation, touchpad) and power policy. Rust, a Cargo wo
 
 No panics by construction: `unwrap`, `expect`, `panic!` and slice indexing are denied outside tests.
 
-**Test the launcher under sway on a desktop**: run sway nested (`WLR_BACKENDS=wayland WLR_WL_OUTPUTS=2
-sway`, outputs WL-1 960x540 and WL-2 620x540), and inside it the program with `SYSPROG_BOTTOM_OUTPUT=WL-2`;
-`SYSPROG_STEAM=off` leaves Steam's games out (so a stray click can't start one), `SYSPROG_PEGASUS_CONFIG`
-and `XDG_CONFIG_HOME` point at a test library and launcher.json; sway's `seat seat0 cursor` commands click.
+**Test the launcher under sway**: `sysprog/tests/nested-sway.sh` (after `cargo build --release`) runs a
+headless sway with the program inside, a test library and test apps, drives it through its control pipe
+(`SYSPROG_CONTROL`: lines like `tap app 1`, `long game`, `tap plus 1`, `tap launch`), checks sway's tree
+and systemd's units, and cleans up after itself; about a minute, nothing shows on the desktop.
+`SYSPROG_STEAM=off` leaves Steam's games out.
 
 **Run on a desktop** (any Wayland compositor with xdg-shell):
 
@@ -56,25 +57,31 @@ layout. To type into other apps on a desktop, run with `SYSPROG_BOTTOM_PANEL=1`:
 panel in the bottom right corner that never takes the keyboard focus (as on the device), not a window.
 
 **Launcher** (the grid icon): the running game first (a "No game" placeholder otherwise, so tiles never
-move), then the apps. Each start of an app is an instance: its own systemd scope
-(`sysprog-app-<key>-<pid>-<n>`) and a sway workspace of the same name, where all its windows go (a second
-window, or a program started from its terminal; sway arranges them). A tap starts an app, shows its most
-recent instance when it runs, or its next instance when one of its own is in front; "1/3" shows which. A
-long press closes the instance it is on (its windows, politely, as their close buttons would); on the
-game tile it quits the game (its windows closed, its scope killed if it hasn't gone 5 s later). A green
-"+" on a running app marked `multiple` starts another instance. The game has one workspace, for our game
-scopes' windows and Steam's (`steam_app_…`). Running apps show their icon in full colour (drawn icons
-green), idle ones grey. Apps come from `~/.config/sysprog/launcher.json` (read at start); without it
-Shelf, Steam (Big Picture) and a terminal (foot); `sysprog --launcher-example` prints a file to start
-from. An app is a `desktop` file (giving name, command and icon) and/or a `name` with a `command`
-(program and arguments, no shell) or a `builtin` (`shelf`: shows shelf's window); `icon` picks a drawn
-icon (`shelf`, `gamepad`, `terminal`, `browser`, `files`, `music`, `video`, `settings`) over the desktop
-file's, and with neither the initial shows. Instances outlive a restart of the system program. Windows
-come from sway's IPC (`SWAYSOCK`); other compositors have no window list, so there taps only start apps.
-Shelf's window has its own workspace (`sysprog-shelf`), shown at start and whenever an app's or the game's
-workspace empties in front; all these workspaces are kept on the main screen's output (the one that isn't
-`SYSPROG_BOTTOM_OUTPUT`).
-A broken file shows its error under the tiles.
+move), then the apps. Each start of an app is an instance: a systemd scope (`sysprog-app-<key>-<secs>-<n>`)
+and a sway workspace of the same name, on the main screen. A tap starts an app, shows its most recent
+instance when it runs, or its next instance when one of its own is in front; "1/3" shows which. A long
+press closes the instance it is on (its windows, politely, as their close buttons would); on the game tile
+it quits the game (its windows closed, its scope killed if it hasn't gone 5 s later). A green "+" on a
+running app marked `multiple` starts another instance. Running apps show their icon in full colour (drawn
+icons green), idle ones grey.
+
+How it stays right: systemd says what runs (the scopes, followed over D-Bus: an instance lives as long as
+any of its processes, and survives a restart of the program). sway places windows: launches go through its
+`exec` aimed at the instance's workspace (by a job file and `sysprog --run`, so no argument passes through
+sway's command parser), which places the launch's first window there before it is shown; a new instance or
+game is shown when that window appears (its empty workspace never is; a newer start takes over). sway only
+places a launch's first window, so later ones (a second window, a program started from its terminal) are
+moved to their instance's workspace by their process's scope, the kernel's record of where they come from.
+sway rules set at start: shelf's window to `sysprog-shelf`, Steam's games (`steam_app_…`) to
+`sysprog-game`, both kept on the main screen, and windows opening on the second screen (behind the
+launcher) to the main screen. An emptied workspace of ours in front shows shelf.
+
+Apps come from `~/.config/sysprog/launcher.json` (read at start); without it Shelf, Steam (Big Picture) and
+a terminal (foot); `sysprog --launcher-example` prints a file to start from. An app is a `desktop` file
+(giving name, command and icon) and/or a `name` with a `command` (program and arguments, no shell) or a
+`builtin` (`shelf`); `icon` picks a drawn icon (`shelf`, `gamepad`, `terminal`, `browser`, `files`,
+`music`, `video`, `settings`) over the desktop file's, and with neither the initial shows. Without sway
+there is no window list: taps only start apps. A broken file shows its error under the tiles.
 
 **Settings** (the sliders icon, first in the bar): a 4×4 grid of tiles, each an icon over its value. A
 tap steps to the next value, a long press goes back to the default. Tiles sit on black; an icon's colour says

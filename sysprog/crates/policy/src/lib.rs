@@ -4,6 +4,7 @@
 
 pub mod desktop;
 pub mod frames;
+pub mod job;
 pub mod keyboard;
 pub mod launcher;
 pub mod metrics;
@@ -11,6 +12,7 @@ pub mod pad;
 pub mod sway;
 pub mod touchpad;
 pub mod tuning;
+pub mod units;
 
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};

@@ -8,11 +8,19 @@ use sysprog_core::keyboard::{self, Key, KeyPos, Modifier};
 use sysprog_core::touch::TouchLayout;
 use sysprog_core::settings::{Setting, Settings, Values};
 use sysprog_core::{Effect, Event, Id, Mode, Scope, State, Status};
-use sysprog_policy::{keyboard as virtual_keyboard, pad, sway, touchpad, tuning};
+use sysprog_policy::{job, keyboard as virtual_keyboard, pad, sway, touchpad, tuning};
 use sysprog_ui::{Config, Screen};
 
 fn main() -> ExitCode {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
+    // `--run FILE`: become a launched job's program (sway's exec starts us this way; see job.rs).
+    if let [flag, file] = std::env::args().skip(1).collect::<Vec<_>>().as_slice()
+        && flag == "--run"
+    {
+        log::error!("{file}: {}", job::run(std::path::Path::new(file)));
+        return ExitCode::FAILURE;
+    }
 
     // Commands that only print: before anything starts or touches the hardware.
     // `--launcher-example`: an example launcher.json, to start one from.
@@ -139,10 +147,12 @@ fn main() -> ExitCode {
     let (launch_tx, launch_rx) = mpsc::channel();
     // sway's windows, for the launcher (focus, close).
     let (sway_tx, sway_rx) = mpsc::channel();
+    let on_sway = std::env::var_os("SWAYSOCK").is_some();
     let launcher = sysprog_policy::launcher::Config {
         stats_db: state_dir.as_ref().map(|d| d.join("stats.db")),
         env: vec![],
         scope: sysprog_policy::launcher::Config::has_user_systemd(),
+        sway: on_sway.then(|| sway_tx.clone()),
     };
     let mangohud_dir = sysprog_policy::frames::default_dir();
     if let Some(dir) = &state_dir
@@ -153,8 +163,6 @@ fn main() -> ExitCode {
     // The on-screen keyboard types through a virtual keyboard (US positions).
     let mut keyboard = virtual_keyboard::VirtualKeyboard::new().map_err(|e| log::error!("virtual keyboard: {e}")).ok();
 
-    let app_events: Arc<std::sync::OnceLock<sysprog_ui::EventSender>> = Arc::default();
-    let app_events_slot = app_events.clone();
     let scope = sysprog_policy::launcher::Config::has_user_systemd();
     let bottom_output = config.bottom_output.clone();
     let result = sysprog_ui::run(
@@ -182,12 +190,19 @@ fn main() -> ExitCode {
             if let Err(e) = touchpad::spawn(touchpad, layout, touchpad_rx, move |event| touched.send(event)) {
                 log::error!("touchpad thread: {e}");
             }
+            // Tests drive the program through a pipe (SYSPROG_CONTROL), not input devices.
+            if let Some(path) = std::env::var_os("SYSPROG_CONTROL") {
+                let control = sender.clone();
+                spawn_control(std::path::PathBuf::from(path), move |event| control.send(event));
+            }
             let windows = sender.clone();
             if let Err(e) = sway::spawn(move |event| windows.send(event), sway_rx, bottom_output.clone()) {
                 log::error!("sway thread: {e}");
             }
-            // Launcher apps report their end through this.
-            let _ = app_events_slot.set(sender.clone());
+            let units = sender.clone();
+            if let Err(e) = sysprog_policy::units::spawn(move |event| units.send(event)) {
+                log::error!("units thread: {e}");
+            }
             if let Err(e) = sysprog_policy::launcher::spawn(launcher, launch_rx, move |event| sender.send(event)) {
                 log::error!("launcher thread: {e}");
             }
@@ -257,18 +272,26 @@ fn main() -> ExitCode {
                     log::warn!("favourites: {e}");
                 }
             }
-            Effect::RunApp { app, key, command } => {
-                // A new instance: its own scope, and its workspace shown first, so it opens in front.
-                let name = sysprog_policy::launcher::instance_name(key);
+            Effect::RunApp { name, command } => {
+                // A new instance: its scope; under sway started for its workspace (shown once its window
+                // is there), elsewhere just started.
                 log::info!("running {command:?} as {name}");
-                let _ = sway_tx.send(sway::Command::Workspace(name.clone()));
-                let events = app_events.get().cloned();
-                let app = *app;
-                sysprog_policy::launcher::run_app(&name, command, scope, move || {
-                    if let Some(events) = events {
-                        events.send(Event::AppEnded(app));
+                let job = job::Job { unit: name.clone(), argv: command.clone(), env: vec![], workdir: None, scope };
+                if on_sway {
+                    match job::write(&job) {
+                        Ok(path) => {
+                            let _ = sway_tx.send(sway::Command::Launch { workspace: name.clone(), job: path });
+                        }
+                        Err(e) => log::warn!("{name}: {e}"),
                     }
-                });
+                } else if let Some(mut cmd) = job::command(&job) {
+                    use std::os::unix::process::CommandExt;
+                    match cmd.stdin(std::process::Stdio::null()).process_group(0).spawn() {
+                        // Reaped whenever it ends; systemd's list says whether it runs.
+                        Ok(mut child) => drop(std::thread::spawn(move || child.wait())),
+                        Err(e) => log::warn!("{name}: {e}"),
+                    }
+                }
             }
             Effect::ShowShelf => {
                 let _ = sway_tx.send(sway::Command::Workspace(sysprog_core::windows::SHELF_WORKSPACE.into()));
@@ -302,6 +325,48 @@ fn main() -> ExitCode {
 
 /// Events to apply first, the screen, its size, the file name.
 type Shot = (Vec<Event>, Screen, (u32, u32), &'static str);
+
+/// A test's command (`tap app 1`, `long game`, `tap plus 1`, `tap launch`, `mode launcher`) as an event.
+fn control_event(line: &str) -> Option<Event> {
+    let words: Vec<&str> = line.split_whitespace().collect();
+    let index = |w: &str| w.parse::<u16>().ok();
+    let id = match words.as_slice() {
+        [_, "app", n] => Id::App(index(n)?),
+        [_, "plus", n] => Id::NewInstance(index(n)?),
+        [_, "game"] => Id::GameTile,
+        [_, "launch"] => Id::Launch,
+        ["mode", name] => return Some(Event::Activate(Id::Mode(Mode::from_name(name)?))),
+        _ => return None,
+    };
+    match words.first() {
+        Some(&"tap") => Some(Event::Activate(id)),
+        Some(&"long") => Some(Event::LongPress(id)),
+        _ => None,
+    }
+}
+
+/// Reads test commands from a pipe, one per line, for as long as the program runs.
+fn spawn_control(path: std::path::PathBuf, send: impl Fn(Event) -> bool + Send + 'static) {
+    let spawned = std::thread::Builder::new().name("control".into()).spawn(move || {
+        use std::io::BufRead;
+        // Each writer closes the pipe after its line: open it again for the next.
+        while let Ok(file) = std::fs::File::open(&path) {
+            for line in std::io::BufReader::new(file).lines().map_while(Result::ok) {
+                match control_event(&line) {
+                    Some(event) => {
+                        if !send(event) {
+                            return;
+                        }
+                    }
+                    None => log::warn!("control: {line:?}?"),
+                }
+            }
+        }
+    });
+    if let Err(e) = spawned {
+        log::warn!("control: {e}");
+    }
+}
 
 /// An example launcher.json: the defaults and a few more (an app without an icon shows its initial).
 const LAUNCHER_EXAMPLE: &str = r#"{
@@ -500,6 +565,11 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
         (
             vec![
                 Event::Started("zelda-lttp".into()),
+                Event::Units(
+                    ["sysprog-game-1-0", "sysprog-app-terminal-1-0", "sysprog-app-terminal-1-1", "sysprog-app-firefox-1-2"]
+                        .map(String::from)
+                        .to_vec(),
+                ),
                 Event::Windows(vec![
                     window(5, "retroarch", Some("sysprog-game-1-0.scope"), false),
                     window(7, "foot", Some("sysprog-app-terminal-1-0.scope"), false),

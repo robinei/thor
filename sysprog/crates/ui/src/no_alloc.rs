@@ -73,6 +73,7 @@ fn warm_frames_do_not_allocate() {
             "launcher, a game and windows",
             vec![
                 Event::Started("zelda-lttp".into()),
+                Event::Units(vec!["sysprog-game-1-0".into(), "sysprog-app-terminal-1-0".into()]),
                 Event::Windows(vec![
                     window(5, "retroarch", Some("sysprog-game-1-0.scope"), false),
                     window(7, "foot", Some("sysprog-app-terminal-1-0.scope"), true),
