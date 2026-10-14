@@ -92,14 +92,14 @@ pub(super) fn draw(f: &mut Frame, w: f32, h: f32, scratch: &mut Scratch) -> f32 
         icon_button(f, Id::Mode(mode), Rect::new(i as f32 * slot, 0.0, slot, bar_h), mode_icon(mode), color);
     }
 
-    // Volume left of the middle, brightness right of it (each only if there is one).
-    if let Some(level) = f.s.level(Control::Volume) {
-        let icon = volume_icon(level, f.s.status.muted);
-        icon_button(f, Id::Control(Control::Volume), Rect::new(w / 2.0 - slot, 0.0, slot, bar_h), icon, TEXT);
-    }
-    if f.s.level(Control::Brightness).is_some() {
-        icon_button(f, Id::Control(Control::Brightness), Rect::new(w / 2.0, 0.0, slot, bar_h), Icon::Brightness, TEXT);
-    }
+    // Volume left of the middle, brightness right of it; dim without a reading (always shown, so a
+    // desktop shows everything the device does).
+    let volume = f.s.level(Control::Volume);
+    let icon = volume_icon(volume.unwrap_or(0), f.s.status.muted);
+    let color = if volume.is_some() { TEXT } else { DIM };
+    icon_button(f, Id::Control(Control::Volume), Rect::new(w / 2.0 - slot, 0.0, slot, bar_h), icon, color);
+    let color = if f.s.level(Control::Brightness).is_some() { TEXT } else { DIM };
+    icon_button(f, Id::Control(Control::Brightness), Rect::new(w / 2.0, 0.0, slot, bar_h), Icon::Brightness, color);
 
     // From the right: the clock, the battery, Wi-Fi, the pad mouse.
     let clock = scratch.clock(f.s.unix_secs);
@@ -107,12 +107,11 @@ pub(super) fn draw(f: &mut Frame, w: f32, h: f32, scratch: &mut Scratch) -> f32 
     let clock_w = f.c.text_width(size, clock) + bar_h * CLOCK_PAD;
     label(f.c, Rect::new(w - clock_w, 0.0, clock_w, bar_h), size, TEXT, clock);
     let mut x = w - clock_w;
-    if let Some((icon, color)) = battery(&f.s.status) {
-        // Opens the battery mode (lit while open).
-        let color = if f.s.mode == Mode::Battery { ACCENT } else { color };
-        x -= slot;
-        icon_button(f, Id::Mode(Mode::Battery), Rect::new(x, 0.0, slot, bar_h), icon, color);
-    }
+    // Opens the battery mode (lit while open); an empty, dim battery when there is none.
+    let (icon, color) = battery(&f.s.status).unwrap_or((Icon::Battery { tenths: 0, charging: false }, DIM));
+    let color = if f.s.mode == Mode::Battery { ACCENT } else { color };
+    x -= slot;
+    icon_button(f, Id::Mode(Mode::Battery), Rect::new(x, 0.0, slot, bar_h), icon, color);
     x -= slot;
     let bars = wifi_bars(f.s.status.wifi);
     let color = match (f.s.mode == Mode::Wifi, bars) {

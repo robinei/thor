@@ -75,7 +75,8 @@ current level is under the finger: moving sets the level as it goes, lifting lea
 sit mid-screen so the track fits on both sides; it is about 31 mm long on the Thor). A tap on volume
 mutes or unmutes; sliding it unmutes. Volume goes through `wpctl` (PipeWire's default sink), brightness to
 every backlight through logind (`CLAMSHELL_BACKLIGHTS`: another folder laid out like
-`/sys/class/backlight`, for a desktop without one). Each icon shows only when there is something to set.
+`/sys/class/backlight`, for a desktop without one). Every icon always shows, dim without a reading (a
+slider then starts in the middle), so a desktop shows everything the device does.
 
 **Wi-Fi** (tap the Wi-Fi icon; lit while open, a second tap goes back): through NetworkManager on the
 system bus. The networks in range (rescanned every 10 s while open), the connected and saved ones first,

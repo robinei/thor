@@ -28,6 +28,9 @@ pub struct Slider {
     pub moved: bool,
 }
 
+/// Where a slider starts when the level isn't known.
+const UNKNOWN_START: u8 = 50;
+
 /// Space kept free at each end of the track, of the screen's width.
 const EDGE: f32 = 0.03;
 
@@ -62,9 +65,8 @@ impl State {
     }
 
     pub(crate) fn slide_start(&mut self, control: Control, x: f32, width: f32) {
-        let Some(start) = self.level(control) else {
-            return;
-        };
+        // Without a reading (a desktop without a backlight), from the middle: the slider still shows.
+        let start = self.level(control).unwrap_or(UNKNOWN_START);
         let length = Slider::length_at(x, width);
         self.slider = Some(Slider { control, start, value: start, x, length, moved: false });
     }
@@ -156,10 +158,9 @@ mod tests {
     }
 
     #[test]
-    fn without_a_level_there_is_no_slider() {
+    fn without_a_level_the_slider_starts_in_the_middle() {
         let mut s = state();
         s.apply(Event::SlideStart { control: Control::Brightness, x: 300.0, width: 620.0 });
-        assert_eq!(s.slider, None);
-        assert_eq!(s.apply(Event::SlideTo { x: 400.0 }).1, vec![]);
+        assert_eq!(s.slider.map(|s| s.start), Some(50));
     }
 }
