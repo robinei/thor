@@ -167,9 +167,9 @@ pub const LAYOUT: &[&[Slot]] = &[
     &[
         modifier(Modifier::Fn, 1.0),
         modifier(Modifier::Ctrl, 1.0),
-        modifier(Modifier::Super, 1.0),
-        modifier(Modifier::Alt, 1.0),
-        Slot { base: Key::Char(' '), fn_key: None, width: 2.0 },
+        // Super (sway's shortcuts; rarely needed here) is Fn+Alt, for a wider space bar.
+        Slot { base: Key::Mod(Modifier::Alt), fn_key: Some(Key::Mod(Modifier::Super)), width: 1.0 },
+        Slot { base: Key::Char(' '), fn_key: None, width: 3.0 },
         c(';'),
         c(','),
         c('.'),
@@ -286,15 +286,23 @@ impl Keyboard {
     }
 
     /// The finger lifted from the key at `pos` (after its tap, if it was one): a modifier that was used
-    /// while held is done.
+    /// while held is done. (Either of the key's modifiers: Fn may have changed since it came down.)
     pub fn up(&mut self, pos: KeyPos) {
-        if let Some(Key::Mod(m)) = slot(pos).map(|s| s.base) {
-            let latch = self.latch_mut(m);
-            if latch.used {
-                latch.armed = false;
+        let Some(slot) = slot(pos) else {
+            return;
+        };
+        for key in [Some(slot.base), slot.fn_key].into_iter().flatten() {
+            if let Key::Mod(m) = key {
+                let latch = self.latch_mut(m);
+                if !latch.held {
+                    continue;
+                }
+                if latch.used {
+                    latch.armed = false;
+                }
+                latch.held = false;
+                latch.used = false;
             }
-            latch.held = false;
-            latch.used = false;
         }
     }
 
@@ -315,6 +323,10 @@ impl Keyboard {
                 if !long {
                     let latch = self.latch_mut(m);
                     latch.armed = !latch.armed;
+                    // A modifier reached through Fn (Super on Alt) uses Fn up, so the next key is plain.
+                    if slot(pos).is_some_and(|s| s.base != Key::Mod(m)) && !self.fn_layer.held {
+                        self.fn_layer.armed = false;
+                    }
                 }
                 None
             }
@@ -461,11 +473,21 @@ mod tests {
     }
 
     #[test]
-    fn super_applies_to_the_next_key() {
+    fn super_is_fn_alt() {
         let mut kb = Keyboard::default();
-        tap(&mut kb, Key::Mod(Modifier::Super));
-        assert!(tap(&mut kb, Key::Char('d')).unwrap().logo);
-        assert!(!tap(&mut kb, Key::Char('d')).unwrap().logo);
+        touch(&mut kb, Key::Mod(Modifier::Fn));
+        touch(&mut kb, Key::Mod(Modifier::Alt));
+        assert!(kb.logo.armed && !kb.alt.armed && !kb.fn_layer.on());
+        let s = touch(&mut kb, Key::Char('d')).unwrap();
+        assert!(s.logo && s.key == Key::Char('d'), "plain d with Super, not Fn's arrow");
+        // Held Fn, then held Alt: Super while held.
+        let (fn_key, alt) = (pos(Key::Mod(Modifier::Fn)), pos(Key::Mod(Modifier::Alt)));
+        kb.down(fn_key);
+        kb.down(alt);
+        kb.up(fn_key);
+        assert!(touch(&mut kb, Key::Char('1')).unwrap().logo);
+        kb.up(alt);
+        assert!(!kb.logo.on());
     }
 
     #[test]

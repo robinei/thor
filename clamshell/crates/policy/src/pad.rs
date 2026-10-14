@@ -3,7 +3,9 @@
 //! copied straight through. With the pad mouse on (a toggle, independent of the second screen's mode),
 //! the same events drive a virtual mouse instead: left stick moves the pointer, right stick scrolls, A
 //! or the right trigger clicks left, B right, X middle, the D-pad sends arrow keys; the virtual pad
-//! meanwhile shows a neutral controller, so games never see it disappear. The home button (BTN_MODE) is
+//! meanwhile shows a neutral controller, so games never see it disappear. While the on-screen keyboard
+//! is open and no game is in front, the pad types instead (D-pad arrows, A Enter, B Backspace; the
+//! virtual pad again neutral). The pad mouse wins over typing. The home button (BTN_MODE) is
 //! ours: games never see it, it goes to the program as [`Event::Home`]. Button layers (remaps) go in
 //! this same path later.
 //!
@@ -222,24 +224,71 @@ impl PadMouse {
 pub enum Command {
     MouseOn,
     MouseOff,
+    KeysOn,
+    KeysOff,
     Shape(Shaping),
+}
+
+/// The keys the pad types with (on the pad mouse's device).
+const TYPING: [KeyCode; 6] = [KeyCode::KEY_UP, KeyCode::KEY_DOWN, KeyCode::KEY_LEFT, KeyCode::KEY_RIGHT, KeyCode::KEY_ENTER, KeyCode::KEY_BACKSPACE];
+
+/// One pad event while the pad types: the D-pad as arrows, A as Enter, B as Backspace.
+pub fn typing(kind: u16, code: u16, value: i32, out: &mut Vec<Out>) {
+    match (kind, code) {
+        (EV_ABS, c) if c == AbsoluteAxisCode::ABS_HAT0X.0 || c == AbsoluteAxisCode::ABS_HAT0Y.0 => {
+            let (minus, plus) = if c == AbsoluteAxisCode::ABS_HAT0X.0 { (KeyCode::KEY_LEFT, KeyCode::KEY_RIGHT) } else { (KeyCode::KEY_UP, KeyCode::KEY_DOWN) };
+            out.push((EV_KEY, minus.0, i32::from(value < 0)));
+            out.push((EV_KEY, plus.0, i32::from(value > 0)));
+            out.push((EV_SYN, 0, 0));
+        }
+        (EV_KEY, c) if c == KeyCode::BTN_SOUTH.0 || c == KeyCode::BTN_EAST.0 => {
+            let key = if c == KeyCode::BTN_SOUTH.0 { KeyCode::KEY_ENTER } else { KeyCode::KEY_BACKSPACE };
+            // 2 is the kernel's autorepeat: passed on, so a held B keeps deleting.
+            out.push((EV_KEY, key.0, value.clamp(0, 2)));
+            out.push((EV_SYN, 0, 0));
+        }
+        _ => {}
+    }
+}
+
+/// Where the pad's events go.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+struct Routes {
+    mouse: bool,
+    keys: bool,
+}
+
+impl Routes {
+    /// Away from games: the virtual pad shows a neutral controller.
+    fn away(self) -> bool {
+        self.mouse || self.keys
+    }
+
+    fn apply(&mut self, command: Command) {
+        match command {
+            Command::MouseOn => self.mouse = true,
+            Command::MouseOff => self.mouse = false,
+            Command::KeysOn => self.keys = true,
+            Command::KeysOff => self.keys = false,
+            Command::Shape(_) => {}
+        }
+    }
 }
 
 /// Owns the controller whenever one is connected (`wanted`: its /dev/input path or part of its name;
 /// `None`: the first device that looks like a gamepad), looking again every second when there is none.
 pub fn spawn(wanted: Option<String>, commands: Receiver<Command>, sink: impl Sink) -> io::Result<JoinHandle<()>> {
     thread::Builder::new().name("pad".into()).spawn(move || {
-        let mut mouse_on = false;
+        let mut routes = Routes::default();
         let mut shaping = Shaping::default();
         loop {
-            match run(wanted.as_deref(), &commands, &sink, &mut mouse_on, &mut shaping) {
+            match run(wanted.as_deref(), &commands, &sink, &mut routes, &mut shaping) {
                 Ok(()) => return,
                 Err(e) => log::debug!("pad: {e}"),
             }
             match commands.recv_timeout(Duration::from_secs(1)) {
-                Ok(Command::MouseOn) => mouse_on = true,
-                Ok(Command::MouseOff) => mouse_on = false,
                 Ok(Command::Shape(s)) => shaping = s,
+                Ok(command) => routes.apply(command),
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
             }
@@ -282,7 +331,7 @@ impl Held {
 
 /// Runs while the controller is connected: Ok when the program is going away, Err when the controller
 /// is gone (or none was found).
-fn run(wanted: Option<&str>, commands: &Receiver<Command>, sink: &impl Sink, mouse_on: &mut bool, shaping: &mut Shaping) -> io::Result<()> {
+fn run(wanted: Option<&str>, commands: &Receiver<Command>, sink: &impl Sink, routes: &mut Routes, shaping: &mut Shaping) -> io::Result<()> {
     let mut real = find(wanted)?;
     let abs = real.get_abs_state()?;
     // Each supported axis with its current value and range.
@@ -322,31 +371,36 @@ fn run(wanted: Option<&str>, commands: &Receiver<Command>, sink: &impl Sink, mou
     let mut to_pad = Vec::new();
     let mut to_mouse = Vec::new();
     let mut last = Instant::now();
-    if *mouse_on {
+    if routes.away() {
         held.events(false, &mut to_pad);
     }
     loop {
         loop {
             match commands.try_recv() {
-                Ok(Command::MouseOn) if !*mouse_on => {
-                    *mouse_on = true;
-                    held.events(false, &mut to_pad);
-                    log::info!("pad mouse on");
-                }
-                Ok(Command::MouseOff) if *mouse_on => {
-                    *mouse_on = false;
-                    mapping.reset(&mut out);
-                    held.events(true, &mut to_pad);
-                    log::info!("pad mouse off");
-                }
                 Ok(Command::Shape(s)) => *shaping = s,
-                Ok(_) => {}
+                Ok(command) => {
+                    let before = *routes;
+                    routes.apply(command);
+                    if before.mouse && !routes.mouse {
+                        mapping.reset(&mut out);
+                    }
+                    if before.keys && !routes.keys {
+                        out.extend(TYPING.iter().map(|k| (EV_KEY, k.0, 0)));
+                        out.push((EV_SYN, 0, 0));
+                    }
+                    if before.away() != routes.away() {
+                        held.events(!routes.away(), &mut to_pad);
+                    }
+                    if before != *routes {
+                        log::info!("pad: mouse {}, typing {}", routes.mouse, routes.keys);
+                    }
+                }
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => return Ok(()),
             }
         }
         // Wake at the motion rate while a stick is deflected; otherwise for events (or to check commands).
-        let wait = if *mouse_on && mapping.moving() { MOTION_EVERY } else { Duration::from_millis(100) };
+        let wait = if routes.mouse && mapping.moving() { MOTION_EVERY } else { Duration::from_millis(100) };
         let timeout = rustix::event::Timespec { tv_sec: 0, tv_nsec: i64::from(wait.subsec_nanos()) };
         let mut fds = [rustix::event::PollFd::new(&real, rustix::event::PollFlags::IN)];
         rustix::event::poll(&mut fds, Some(&timeout))?;
@@ -361,8 +415,10 @@ fn run(wanted: Option<&str>, commands: &Receiver<Command>, sink: &impl Sink, mou
                         continue;
                     }
                     held.update(kind, code, value);
-                    if *mouse_on {
+                    if routes.mouse {
                         mapping.event(kind, code, value, &mut out);
+                    } else if routes.keys {
+                        typing(kind, code, value, &mut out);
                     } else {
                         to_pad.push(e);
                     }
@@ -372,7 +428,7 @@ fn run(wanted: Option<&str>, commands: &Receiver<Command>, sink: &impl Sink, mou
             Err(e) => return Err(e),
         }
         let now = Instant::now();
-        if *mouse_on && now.duration_since(last) >= MOTION_EVERY {
+        if routes.mouse && now.duration_since(last) >= MOTION_EVERY {
             mapping.tick(now.duration_since(last), &mut out);
         }
         if now.duration_since(last) >= MOTION_EVERY {
@@ -439,6 +495,8 @@ fn virtual_mouse() -> io::Result<VirtualDevice> {
         KeyCode::KEY_DOWN,
         KeyCode::KEY_LEFT,
         KeyCode::KEY_RIGHT,
+        KeyCode::KEY_ENTER,
+        KeyCode::KEY_BACKSPACE,
     ]
     .into_iter()
     .collect();
@@ -533,6 +591,25 @@ mod tests {
         out.clear();
         m.event(EV_ABS, AbsoluteAxisCode::ABS_HAT0Y.0, 0, &mut out);
         assert!(out.contains(&(EV_KEY, KeyCode::KEY_UP.0, 0)));
+    }
+
+    #[test]
+    fn typing_maps_the_dpad_a_and_b() {
+        let mut out = Vec::new();
+        typing(EV_ABS, AbsoluteAxisCode::ABS_HAT0Y.0, -1, &mut out);
+        assert_eq!(out, vec![(EV_KEY, KeyCode::KEY_UP.0, 1), (EV_KEY, KeyCode::KEY_DOWN.0, 0), (EV_SYN, 0, 0)]);
+        out.clear();
+        typing(EV_KEY, KeyCode::BTN_SOUTH.0, 1, &mut out);
+        typing(EV_KEY, KeyCode::BTN_EAST.0, 2, &mut out);
+        typing(EV_KEY, KeyCode::BTN_NORTH.0, 1, &mut out);
+        assert_eq!(out, vec![(EV_KEY, KeyCode::KEY_ENTER.0, 1), (EV_SYN, 0, 0), (EV_KEY, KeyCode::KEY_BACKSPACE.0, 2), (EV_SYN, 0, 0)]);
+        let mut routes = Routes::default();
+        routes.apply(Command::KeysOn);
+        routes.apply(Command::MouseOn);
+        assert!(routes.away() && routes.mouse && routes.keys);
+        routes.apply(Command::MouseOff);
+        routes.apply(Command::KeysOff);
+        assert!(!routes.away());
     }
 
     #[test]

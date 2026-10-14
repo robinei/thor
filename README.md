@@ -50,8 +50,8 @@ in it, and no audio device. Suspend and resume work once at most: after a resume
 Keys stand in for the pad: arrows move focus (across both screens, as if the bottom one were below the
 top one), Enter or Space is A, Escape quits. Clicks and touches act on release; held 450 ms or more
 they are a long press. The keyboard mode is a PC layout (US) with an Fn layer shown as small corner labels
-(F1-F12, arrows on w/a/s/d, and PgUp Home Ins / PgDn End Del on i o p / k l Backspace: a PC's six-key block with its outer columns swapped): Shift, Ctrl, Alt, Super and Fn apply to the
-next key on a tap, or to every key typed while one is held (two thumbs, as on a real keyboard), and the
+(F1-F12, arrows on w/a/s/d, and PgUp Home Ins / PgDn End Del on i o p / k l Backspace: a PC's six-key block with its outer columns swapped): Shift, Ctrl, Alt, Super (Fn+Alt, which leaves room
+for a wider space bar) and Fn apply to the next key on a tap, or to every key typed while one is held (two thumbs, as on a real keyboard), and the
 keys show their effect meanwhile. Caps Lock is its own key, next to Tab, with a light. On the Thor (sway), the bottom view
 is a layer-shell surface on output `DSI-1` (`CLAMSHELL_BOTTOM_OUTPUT` to change it).
 
@@ -155,7 +155,9 @@ invisible) to a folder in RAM that ClamShell follows. For a Steam game, as launc
 **The controller** (any Xbox-style pad; `CLAMSHELL_GAMEPAD`: path or part of its name) is grabbed for good;
 games see a virtual Xbox 360 pad that is always there. The **pad mouse** toggle (mouse icon in the bar)
 routes the controller to a virtual mouse instead (left stick pointer, right stick scroll, A/RT left
-click, B right, X middle, D-pad arrows) while the virtual pad shows a neutral controller. The **home
+click, B right, X middle, D-pad arrows) while the virtual pad shows a neutral controller. While the
+on-screen keyboard is open and no game is in front, the pad **types** (D-pad arrows, A Enter, B
+Backspace, also through that device), again with the virtual pad neutral. The **home
 button** (BTN_MODE) is ClamShell's, never the games': from shelf it goes to the running game, from anything
 else to shelf. (So Steam's overlay doesn't get it.) Test with a fake
 pad: `cargo run --release -p clamshell-policy --example fake_pad &` then

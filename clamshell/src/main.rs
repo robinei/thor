@@ -243,6 +243,13 @@ fn main() -> ExitCode {
                     log::warn!("pad thread is gone");
                 }
             }
+            Effect::PadKeys(on) => {
+                log::info!("effect: {effect:?}");
+                let command = if *on { pad::Command::KeysOn } else { pad::Command::KeysOff };
+                if padmouse_tx.send(command).is_err() {
+                    log::warn!("pad thread is gone");
+                }
+            }
             Effect::Key(stroke) => match keyboard.as_mut() {
                 Some(kb) => {
                     if let Err(e) = kb.stroke(stroke) {

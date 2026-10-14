@@ -235,6 +235,9 @@ pub enum Effect {
     /// The pad mouse turned on or off: the input side grabs the controller and drives a virtual mouse
     /// with it, or releases it to games.
     PadMouse(bool),
+    /// The pad types (D-pad arrows, A Enter, B Backspace) while the keyboard is open and no game is in
+    /// front, or goes back to games.
+    PadKeys(bool),
     /// Start a launcher app's command as a new instance: a scope and a workspace of this name
     /// (`clamshell-app-<key>-<secs>-<n>`).
     RunApp { name: String, command: Vec<String> },
@@ -311,6 +314,8 @@ pub struct State {
     recent: Vec<String>,
     /// The pad mouse was turned on by a launch (Setting::PadMouse), to turn off when the game ends.
     pad_mouse_by_launch: bool,
+    /// The pad types into the focused app (see [`Effect::PadKeys`]).
+    pad_keys: bool,
     /// What the settings panel edits (global whenever there is no game in context).
     pub scope: Scope,
     pub mode: Mode,
@@ -392,6 +397,23 @@ impl State {
 
     /// Applies one event; returns which screens changed and what must happen outside.
     pub fn apply(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
+        let (dirty, mut effects) = self.apply_event(event);
+        let keys = self.wants_pad_keys();
+        if keys != self.pad_keys {
+            self.pad_keys = keys;
+            effects.push(Effect::PadKeys(keys));
+        }
+        (dirty, effects)
+    }
+
+    /// Whether the pad should type now: the keyboard is open and no game is in front (a running game
+    /// counts as in front unless the compositor says something else is).
+    fn wants_pad_keys(&self) -> bool {
+        let game_in_front = self.running.is_some() && self.windows.iter().find(|w| w.focused).is_none_or(windows::Window::of_game);
+        self.mode == Mode::Keyboard && !game_in_front
+    }
+
+    fn apply_event(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
         match event {
             Event::Tick { unix_secs } => {
                 // Once a minute: the bar's clock, and both screens' burn-in orbit step.
@@ -779,7 +801,7 @@ mod tests {
         assert_eq!(s.apply(Event::Activate(Id::Mode(Mode::Wifi))).1.last(), Some(&Effect::Touchpad(false)));
         assert_eq!(s.apply(Event::Activate(Id::Mode(Mode::Wifi))).1.last(), Some(&Effect::Touchpad(true)), "back");
         let (_, fx) = s.apply(Event::Activate(Id::Mode(Mode::Keyboard)));
-        assert_eq!(fx, vec![Effect::Touchpad(false)]);
+        assert_eq!(fx, vec![Effect::Touchpad(false), Effect::PadKeys(true)]);
         let (_, fx) = s.apply(Event::Activate(Id::Mode(Mode::Keyboard)));
         assert!(fx.is_empty());
     }
@@ -818,6 +840,28 @@ mod tests {
         let g = s.library.games.iter().find(|g| g.id == first).unwrap();
         assert_eq!((g.plays.count, g.plays.seconds), (1, 600));
         assert!(s.library.collections.iter().any(|c| c.name == "Recent"));
+    }
+
+    #[test]
+    fn the_pad_types_while_the_keyboard_is_open_and_no_game_is_in_front() {
+        let mut s = state();
+        let window = |app_id: &str, unit: Option<&str>, focused: bool| windows::Window {
+            id: 1,
+            app_id: app_id.into(),
+            title: String::new(),
+            focused,
+            unit: unit.map(Into::into),
+            workspace: String::new(),
+        };
+        assert_eq!(s.apply(Event::Activate(Id::Mode(Mode::Keyboard))).1, vec![Effect::PadKeys(true)]);
+        s.apply(Event::Started("zelda-lttp".into()));
+        assert!(!s.pad_keys, "a game runs and nothing says what is in front: it is");
+        let (_, fx) = s.apply(Event::Windows(vec![window(apps::SHELF_APP_ID, None, true)]));
+        assert_eq!(fx, vec![Effect::PadKeys(true)], "shelf in front");
+        let (_, fx) = s.apply(Event::Windows(vec![window("retroarch", Some("clamshell-game-1-0.scope"), true)]));
+        assert_eq!(fx, vec![Effect::PadKeys(false)], "the game in front");
+        s.apply(Event::Windows(vec![window(apps::SHELF_APP_ID, None, true)]));
+        assert_eq!(s.apply(Event::Activate(Id::Mode(Mode::Sysinfo))).1, vec![Effect::PadKeys(false)]);
     }
 
     #[test]
