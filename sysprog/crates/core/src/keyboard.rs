@@ -96,7 +96,7 @@ const fn n(k: Named) -> Key {
 /// The layout: US letters and digits in their usual places, every row 10 units so keys use the full
 /// width. The most typed punctuation sits by the space bar, nearest the thumbs (- , . / and with Shift
 /// _ < > ?); the rest has its own row on top with Esc and Tab. Fn: F1-F10 on the digits, F11 and F12 at
-/// the top right (on ' and =), Delete on Backspace, and a navigation
+/// the top right (on ; and =), Delete on Backspace, and a navigation
 /// cluster under the right hand (arrows on i/j/k/l, Home/End beside Up, PgUp/PgDn on y/h, Insert on p).
 pub const LAYOUT: &[&[Slot]] = &[
     &[
@@ -105,9 +105,9 @@ pub const LAYOUT: &[&[Slot]] = &[
         c('['),
         c(']'),
         c('\\'),
-        c(';'),
         c('`'),
-        cf('\'', f(11)),
+        c('\''),
+        cf(';', f(11)),
         cf('=', f(12)),
     ],
     &[
