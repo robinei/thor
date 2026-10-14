@@ -58,6 +58,43 @@ impl Range {
     }
 }
 
+/// What games get from the pad: the face buttons in Nintendo layout (A/B and X/Y swapped), a stick
+/// deadzone (percent; the rest of the range stretched to full).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Shaping {
+    pub nintendo: bool,
+    pub deadzone: u16,
+}
+
+impl Shaping {
+    /// The code and value a game gets for this event.
+    pub fn event(self, stick: Range, kind: u16, code: u16, value: i32) -> (u16, i32) {
+        if kind == EV_KEY && self.nintendo {
+            let swapped = match KeyCode(code) {
+                KeyCode::BTN_SOUTH => KeyCode::BTN_EAST,
+                KeyCode::BTN_EAST => KeyCode::BTN_SOUTH,
+                KeyCode::BTN_NORTH => KeyCode::BTN_WEST,
+                KeyCode::BTN_WEST => KeyCode::BTN_NORTH,
+                other => other,
+            };
+            return (swapped.0, value);
+        }
+        let is_stick = [AbsoluteAxisCode::ABS_X, AbsoluteAxisCode::ABS_Y, AbsoluteAxisCode::ABS_RX, AbsoluteAxisCode::ABS_RY]
+            .iter()
+            .any(|a| a.0 == code);
+        if kind != EV_ABS || !is_stick || self.deadzone == 0 {
+            return (code, value);
+        }
+        let dz = f32::from(self.deadzone.min(90)) / 100.0;
+        let c = stick.centered(value);
+        let shaped = if c.abs() < dz { 0.0 } else { c.signum() * (c.abs() - dz) / (1.0 - dz) };
+        // The resting value: 0 for -32768..32767, 128 for 0..255.
+        let mid = (stick.min + stick.max + 1) / 2;
+        let half = if shaped < 0.0 { mid - stick.min } else { stick.max - mid };
+        (code, mid + (shaped * half as f32).round() as i32)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Ranges {
     pub stick: Range,
@@ -181,6 +218,7 @@ impl PadMouse {
 pub enum Command {
     MouseOn,
     MouseOff,
+    Shape(Shaping),
 }
 
 /// Owns the controller whenever one is connected (`wanted`: its /dev/input path or part of its name;
@@ -188,13 +226,16 @@ pub enum Command {
 pub fn spawn(wanted: Option<String>, commands: Receiver<Command>) -> io::Result<JoinHandle<()>> {
     thread::Builder::new().name("pad".into()).spawn(move || {
         let mut mouse_on = false;
+        let mut shaping = Shaping::default();
         loop {
-            match run(wanted.as_deref(), &commands, &mut mouse_on) {
+            match run(wanted.as_deref(), &commands, &mut mouse_on, &mut shaping) {
                 Ok(()) => return,
                 Err(e) => log::debug!("pad: {e}"),
             }
             match commands.recv_timeout(Duration::from_secs(1)) {
-                Ok(command) => mouse_on = command == Command::MouseOn,
+                Ok(Command::MouseOn) => mouse_on = true,
+                Ok(Command::MouseOff) => mouse_on = false,
+                Ok(Command::Shape(s)) => shaping = s,
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
             }
@@ -237,7 +278,7 @@ impl Held {
 
 /// Runs while the controller is connected: Ok when the program is going away, Err when the controller
 /// is gone (or none was found).
-fn run(wanted: Option<&str>, commands: &Receiver<Command>, mouse_on: &mut bool) -> io::Result<()> {
+fn run(wanted: Option<&str>, commands: &Receiver<Command>, mouse_on: &mut bool, shaping: &mut Shaping) -> io::Result<()> {
     let mut real = find(wanted)?;
     let abs = real.get_abs_state()?;
     // Each supported axis with its current value and range.
@@ -294,6 +335,7 @@ fn run(wanted: Option<&str>, commands: &Receiver<Command>, mouse_on: &mut bool) 
                     held.events(true, &mut to_pad);
                     log::info!("pad mouse off");
                 }
+                Ok(Command::Shape(s)) => *shaping = s,
                 Ok(_) => {}
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => return Ok(()),
@@ -328,6 +370,12 @@ fn run(wanted: Option<&str>, commands: &Receiver<Command>, mouse_on: &mut bool) 
         }
         to_mouse.extend(out.drain(..).map(|(k, c, v)| InputEvent::new(k, c, v)));
         if !to_pad.is_empty() {
+            for e in &mut to_pad {
+                let (code, value) = shaping.event(ranges.stick, e.event_type().0, e.code(), e.value());
+                if (code, value) != (e.code(), e.value()) {
+                    *e = InputEvent::new(e.event_type().0, code, value);
+                }
+            }
             virtual_pad.emit(&to_pad)?;
             to_pad.clear();
         }
@@ -475,5 +523,22 @@ mod tests {
         out.clear();
         m.event(EV_ABS, AbsoluteAxisCode::ABS_HAT0Y.0, 0, &mut out);
         assert!(out.contains(&(EV_KEY, KeyCode::KEY_UP.0, 0)));
+    }
+
+    #[test]
+    fn shaping_swaps_face_buttons_and_applies_the_deadzone() {
+        let stick = Range { min: -32768, max: 32767 };
+        let off = Shaping::default();
+        assert_eq!(off.event(stick, EV_KEY, KeyCode::BTN_SOUTH.0, 1), (KeyCode::BTN_SOUTH.0, 1));
+        let n = Shaping { nintendo: true, deadzone: 10 };
+        assert_eq!(n.event(stick, EV_KEY, KeyCode::BTN_SOUTH.0, 1), (KeyCode::BTN_EAST.0, 1));
+        assert_eq!(n.event(stick, EV_KEY, KeyCode::BTN_WEST.0, 0), (KeyCode::BTN_NORTH.0, 0));
+        assert_eq!(n.event(stick, EV_KEY, KeyCode::BTN_START.0, 1), (KeyCode::BTN_START.0, 1));
+        let x = AbsoluteAxisCode::ABS_X.0;
+        assert_eq!(n.event(stick, EV_ABS, x, 3000).1, 0, "inside the deadzone: centred");
+        assert_eq!(n.event(stick, EV_ABS, x, 32767).1, 32767, "full stays full");
+        let half = n.event(stick, EV_ABS, x, 18000).1;
+        assert!(half > 0 && half < 18000, "{half}: stretched from the deadzone's edge");
+        assert_eq!(n.event(stick, EV_ABS, AbsoluteAxisCode::ABS_Z.0, 100), (AbsoluteAxisCode::ABS_Z.0, 100), "triggers as they are");
     }
 }

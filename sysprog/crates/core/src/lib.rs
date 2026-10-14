@@ -4,12 +4,14 @@
 
 pub mod keyboard;
 pub mod metrics;
+pub mod settings;
 pub mod touch;
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use keyboard::{Key, KeyPos, Keyboard, Stroke};
+use keyboard::{Key, KeyPos, Keyboard, Named, Stroke};
+use settings::{Overrides, Setting, Values};
 
 pub use sysprog_library::{Collection, Game, Launch, Library};
 
@@ -63,37 +65,13 @@ impl Power {
         }
     }
 
-    fn from_label(label: &str) -> Option<Power> {
-        Power::ALL.into_iter().find(|p| p.label() == label)
-    }
-}
-
-/// Frame rate caps offered; 0 is no cap.
-pub const FPS_CAPS: [u16; 6] = [0, 30, 40, 60, 90, 120];
-
-/// The settings a game runs with: the global ones, with the game's overrides on top. Applied at launch
-/// and live while it runs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct GameSettings {
-    pub power: Power,
-    /// Frames per second at most (MangoHud's limiter); 0: no cap.
-    pub fps_cap: u16,
-}
-
-/// A game's own choices, each overriding the global one where set.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Overrides {
-    pub power: Option<Power>,
-    pub fps_cap: Option<u16>,
-}
-
-impl Overrides {
-    pub fn over(self, global: GameSettings) -> GameSettings {
-        GameSettings { power: self.power.unwrap_or(global.power), fps_cap: self.fps_cap.unwrap_or(global.fps_cap) }
-    }
-
-    pub fn is_empty(self) -> bool {
-        self == Overrides::default()
+    /// The power profile a [`Setting::Power`] value stands for.
+    pub fn from_value(v: u16) -> Power {
+        match v {
+            0 => Power::Battery,
+            1 => Power::Balanced,
+            _ => Power::Performance,
+        }
     }
 }
 
@@ -113,10 +91,15 @@ pub enum Id {
     /// A collection's tab in shelf, by position.
     Tab(u16),
     Mode(Mode),
-    Power(Power),
     Launch,
-    /// A frame rate cap choice (0: none).
-    FpsCap(u16),
+    /// A settings tile: a tap steps to the next value, a long press goes back to the default.
+    Tile(Setting),
+    /// The environment variables tile, and the editor's buttons.
+    Env,
+    EnvSave,
+    EnvCancel,
+    /// The dark second screen (while a game runs): a tap anywhere lights it.
+    Wake,
     /// The settings panel's scope tabs.
     Scope(Scope),
     /// Drops the game in context's overrides.
@@ -180,12 +163,18 @@ pub enum Event {
 /// What the state asks the outside world to do.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Effect {
-    /// Start this game (its launch command or Steam id, and its file) with these settings.
-    Launch { game: Arc<str>, settings: GameSettings, launch: Launch, file: Option<std::path::PathBuf> },
-    /// The running game's settings changed: apply them now.
-    Apply { game: Arc<str>, settings: GameSettings },
-    /// The game ended: back to normal (power).
-    GameEnded,
+    /// Start this game (its launch command or Steam id, and its file) with these settings and extra
+    /// environment.
+    Launch {
+        game: Arc<str>,
+        settings: Values,
+        env: Vec<(String, String)>,
+        launch: Launch,
+        file: Option<std::path::PathBuf>,
+    },
+    /// The settings in force changed: the running game's (`game`), or the global ones while none runs
+    /// (also when a game ends). Apply them now.
+    Apply { game: Option<Arc<str>>, settings: Values },
     /// The games' settings changed: write them (see [`State::settings_text`]).
     SaveSettings(String),
     /// The favourites changed: write them (favorites.txt).
@@ -233,9 +222,18 @@ pub struct State {
     /// Id of the selected game (shelf's list on top, its settings below): the current tab's cursor.
     pub selected: Option<Arc<str>>,
     /// The settings every game runs with unless it overrides them.
-    pub global: GameSettings,
+    pub global: Values,
     /// Per-game overrides, by game id.
     pub overrides: HashMap<Arc<str>, Overrides>,
+    /// Extra environment for every game, and per game (on top), as `KEY=value` words.
+    pub global_env: String,
+    pub env: HashMap<Arc<str>, String>,
+    /// The environment being edited (for the game, or all games), if the editor is open.
+    pub editor: Option<Editor>,
+    /// The dark second screen was tapped awake (until the next game).
+    pub woken: bool,
+    /// The pad mouse was turned on by a launch (Setting::PadMouse), to turn off when the game ends.
+    pad_mouse_by_launch: bool,
     /// What the settings panel edits (global whenever there is no game in context).
     pub scope: Scope,
     pub mode: Mode,
@@ -257,6 +255,22 @@ pub struct State {
     resume_dirty: Option<u64>,
 }
 
+/// The environment editor: what it edits (a game, or all games) and the text so far.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Editor {
+    pub game: Option<Arc<str>>,
+    pub text: String,
+}
+
+/// `KEY=value` words (quotes as in launch commands) as variables.
+pub fn parse_env(text: &str) -> Vec<(String, String)> {
+    sysprog_library::launch::tokenize(text)
+        .into_iter()
+        .filter_map(|word| word.split_once('=').map(|(k, v)| (k.to_owned(), v.to_owned())))
+        .filter(|(k, _)| !k.is_empty())
+        .collect()
+}
+
 /// What holding a target does once the press lasts beyond a tap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Hold {
@@ -273,7 +287,7 @@ const RESUME_AFTER: u64 = 2;
 fn screen_of(id: &Id) -> Dirty {
     match id {
         Id::Game(_) | Id::Tab(_) => Dirty::BOTH,
-        Id::Mode(_) | Id::Power(_) | Id::FpsCap(_) | Id::Scope(_) | Id::Reset | Id::Launch | Id::Key(_) | Id::PadMouse => Dirty::BOTTOM,
+        Id::Mode(_) | Id::Tile(_) | Id::Env | Id::EnvSave | Id::EnvCancel | Id::Wake | Id::Scope(_) | Id::Reset | Id::Launch | Id::Key(_) | Id::PadMouse => Dirty::BOTTOM,
     }
 }
 
@@ -427,12 +441,17 @@ impl State {
     }
 
     /// The settings `game` runs with: the global ones and its overrides.
-    pub fn settings_of(&self, game: &str) -> GameSettings {
-        self.overrides_of(game).over(self.global)
+    pub fn settings_of(&self, game: &str) -> Values {
+        self.overrides_of(game).over(&self.global)
     }
 
     pub fn overrides_of(&self, game: &str) -> Overrides {
         self.overrides.get(game).copied().unwrap_or_default()
+    }
+
+    /// The settings in force: the running game's, else the global ones.
+    pub fn current(&self) -> Values {
+        self.running.as_ref().map_or(self.global, |id| self.settings_of(id))
     }
 
     /// The game the settings panel is about: the running one, else shelf's selection.
@@ -447,52 +466,69 @@ impl State {
         self.context().filter(|_| self.scope == Scope::Game)
     }
 
-    /// Changes what the panel edits: the game's overrides or the global settings. Saved, and applied
-    /// at once to a running game whose settings that changed.
-    fn change_settings(&mut self, change: impl FnOnce(&mut Overrides)) -> Vec<Effect> {
-        let before = self.running.as_ref().map(|id| self.settings_of(id));
+    /// The environment a game gets: the global variables, then its own.
+    pub fn env_of(&self, game: &str) -> Vec<(String, String)> {
+        let mut vars = parse_env(&self.global_env);
+        vars.extend(self.env.get(game).map(|e| parse_env(e)).unwrap_or_default());
+        vars
+    }
+
+    /// The second screen is dark: a game runs that wants it so, and it hasn't been tapped since.
+    pub fn bottom_dark(&self) -> bool {
+        self.running.is_some() && self.current().get(Setting::BottomScreen) == 1 && !self.woken
+    }
+
+    /// Changes `setting` where the panel edits (the game's overrides, or the global settings): to
+    /// `value`, or back to the default (none). Saved, and applied at once if the settings in force
+    /// changed.
+    fn change(&mut self, setting: Setting, value: Option<u16>) -> Vec<Effect> {
+        let before = self.current();
         match self.editing().map(|g| g.id.clone()) {
-            Some(id) => {
+            Some(id) if !setting.global_only() => {
                 let mut o = self.overrides_of(&id);
-                change(&mut o);
+                o.set(setting, value);
                 if o.is_empty() {
                     self.overrides.remove(&id);
                 } else {
                     self.overrides.insert(id, o);
                 }
             }
-            None => {
-                let mut o = Overrides::default();
-                change(&mut o);
-                self.global = o.over(self.global);
-            }
+            _ => self.global.set(setting, value.unwrap_or_else(|| setting.default_value())),
         }
+        self.saved_and_applied(before)
+    }
+
+    fn saved_and_applied(&self, before: Values) -> Vec<Effect> {
         let mut effects = vec![Effect::SaveSettings(self.settings_text())];
-        if let Some(id) = self.running.clone() {
-            let settings = self.settings_of(&id);
-            if before != Some(settings) {
-                effects.push(Effect::Apply { game: id, settings });
-            }
+        let now = self.current();
+        if now != before {
+            effects.push(Effect::Apply { game: self.running.clone(), settings: now });
         }
         effects
     }
 
-    /// The settings as text: a `*` line with the global power and fps cap, then one line per game with
-    /// overrides (empty fields: not overridden), tab-separated.
+    /// The value a tile shows and steps from: the game's effective one, or the global one.
+    pub fn tile_value(&self, setting: Setting) -> u16 {
+        match self.editing() {
+            Some(g) if !setting.global_only() => self.settings_of(&g.id).get(setting),
+            _ => self.global.get(setting),
+        }
+    }
+
+    /// The settings as text: a `*` line with the global values, then a line per game with its
+    /// overrides, as tab-separated `key=value` fields; environment as `env=` fields (last on the line).
     pub fn settings_text(&self) -> String {
-        let field = |v: Option<String>| v.unwrap_or_default();
-        let mut lines: Vec<String> = self
-            .overrides
-            .iter()
-            .filter(|(_, o)| !o.is_empty())
-            .map(|(id, o)| {
-                format!("{id}\t{}\t{}", field(o.power.map(|p| p.label().to_owned())), field(o.fps_cap.map(|c| c.to_string())))
-            })
-            .collect();
-        lines.sort();
-        let mut text = format!("*\t{}\t{}\n", self.global.power.label(), self.global.fps_cap);
-        for l in lines {
-            text.push_str(&l);
+        let mut text = String::from("*");
+        settings::fields(&self.global.all(), &mut text);
+        push_env(&mut text, &self.global_env);
+        text.push('\n');
+        let mut ids: Vec<&Arc<str>> = self.overrides.keys().chain(self.env.keys()).collect();
+        ids.sort();
+        ids.dedup();
+        for id in ids {
+            text.push_str(id);
+            settings::fields(&self.overrides_of(id), &mut text);
+            push_env(&mut text, self.env.get(id).map_or("", |e| e.as_str()));
             text.push('\n');
         }
         text
@@ -500,17 +536,63 @@ impl State {
 
     pub fn load_settings(&mut self, text: &str) {
         for line in text.lines() {
+            let (line, env) = match line.split_once("\tenv=") {
+                Some((l, e)) => (l, e),
+                None => (line, ""),
+            };
             let mut fields = line.split('\t');
-            let (Some(id), Some(power), Some(fps)) = (fields.next(), fields.next(), fields.next()) else {
+            let Some(id) = fields.next() else {
                 continue;
             };
-            let o = Overrides { power: Power::from_label(power), fps_cap: fps.parse().ok() };
+            let o = settings::parse(fields);
             if id == "*" {
-                self.global = o.over(GameSettings::default());
-            } else if !o.is_empty() {
-                self.overrides.insert(id.into(), o);
+                self.global = o.over(&Values::default());
+                self.global_env = env.to_owned();
+            } else {
+                if !o.is_empty() {
+                    self.overrides.insert(id.into(), o);
+                }
+                if !env.trim().is_empty() {
+                    self.env.insert(id.into(), env.to_owned());
+                }
             }
         }
+    }
+
+    /// A key from the on-screen keyboard while the environment editor is open.
+    fn edit(&mut self, stroke: Stroke) -> Vec<Effect> {
+        let Some(editor) = self.editor.as_mut() else {
+            return vec![];
+        };
+        match stroke.key {
+            Key::Char(c) if !stroke.ctrl && !stroke.alt && !stroke.logo => {
+                editor.text.push(if stroke.shift { keyboard::shifted(c) } else { c });
+            }
+            Key::Named(Named::Backspace) => {
+                editor.text.pop();
+            }
+            Key::Named(Named::Enter) => return self.save_env(),
+            Key::Named(Named::Esc) => self.editor = None,
+            _ => {}
+        }
+        vec![]
+    }
+
+    fn save_env(&mut self) -> Vec<Effect> {
+        let Some(editor) = self.editor.take() else {
+            return vec![];
+        };
+        let text = editor.text.trim().to_owned();
+        match editor.game {
+            Some(id) if text.is_empty() => {
+                self.env.remove(&id);
+            }
+            Some(id) => {
+                self.env.insert(id, text);
+            }
+            None => self.global_env = text,
+        }
+        vec![Effect::SaveSettings(self.settings_text())]
     }
 
     /// Applies one event; returns which screens changed and what must happen outside.
@@ -603,6 +685,13 @@ impl State {
             }
             Event::Started(game) => {
                 self.running = Some(game);
+                self.woken = false;
+                // The pad mouse, if the game wants it at launch.
+                if self.current().get(Setting::PadMouse) == 1 && !self.pad_mouse {
+                    self.pad_mouse = true;
+                    self.pad_mouse_by_launch = true;
+                    return (Dirty::BOTH, vec![Effect::PadMouse(true)]);
+                }
                 (Dirty::BOTH, vec![])
             }
             Event::Played { game, start, duration } => {
@@ -613,13 +702,13 @@ impl State {
                     }
                     lib.rebuild_derived();
                 });
-                (Dirty::BOTH, vec![Effect::GameEnded])
+                (Dirty::BOTH, self.game_ended())
             }
             Event::LaunchFailed(game) => {
                 if self.running.as_ref() == Some(&game) {
                     self.running = None;
                 }
-                (Dirty::BOTH, vec![Effect::GameEnded])
+                (Dirty::BOTH, self.game_ended())
             }
             Event::Down(id) => {
                 let dirty = screen_of(&id);
@@ -679,13 +768,40 @@ impl State {
                 };
                 (Dirty::BOTH, effects)
             }
-            Id::Power(power) => (Dirty::BOTH, self.change_settings(|o| o.power = Some(power))),
-            Id::FpsCap(cap) => (Dirty::BOTH, self.change_settings(|o| o.fps_cap = Some(cap))),
+            Id::Tile(setting) => {
+                let value = if long { None } else { Some(setting.next(self.tile_value(setting))) };
+                (Dirty::BOTH, self.change(setting, value))
+            }
+            Id::Env => {
+                let game = self.editing().map(|g| g.id.clone());
+                let text = match &game {
+                    Some(id) => self.env.get(id).cloned().unwrap_or_default(),
+                    None => self.global_env.clone(),
+                };
+                self.editor = Some(Editor { game, text });
+                (Dirty::BOTTOM, vec![])
+            }
+            Id::EnvSave => (Dirty::BOTTOM, self.save_env()),
+            Id::EnvCancel => {
+                self.editor = None;
+                (Dirty::BOTTOM, vec![])
+            }
+            Id::Wake => {
+                self.woken = true;
+                (Dirty::BOTTOM, vec![])
+            }
             Id::Scope(scope) => {
                 self.scope = scope;
                 (Dirty::BOTTOM, vec![])
             }
-            Id::Reset => (Dirty::BOTH, self.change_settings(|o| *o = Overrides::default())),
+            Id::Reset => {
+                let before = self.current();
+                if let Some(id) = self.editing().map(|g| g.id.clone()) {
+                    self.overrides.remove(&id);
+                    self.env.remove(&id);
+                }
+                (Dirty::BOTH, self.saved_and_applied(before))
+            }
             Id::Launch => match self.selected.clone() {
                 Some(game) => (Dirty::BOTH, self.launch_effects(game)),
                 None => (Dirty::BOTH, vec![]),
@@ -695,10 +811,29 @@ impl State {
                 (Dirty::BOTTOM, vec![Effect::PadMouse(self.pad_mouse)])
             }
             Id::Key(pos) => {
-                let effects = self.keyboard.press(pos, long).map(Effect::Key).into_iter().collect();
+                let stroke = self.keyboard.press(pos, long);
+                // Into the environment editor while it is open, else to the focused app.
+                let effects = match stroke {
+                    Some(stroke) if self.editor.is_some() => self.edit(stroke),
+                    Some(stroke) => vec![Effect::Key(stroke)],
+                    None => vec![],
+                };
                 (Dirty::BOTTOM, effects)
             }
         }
+    }
+
+    /// Back to the global settings, and the pad mouse off if the launch turned it on.
+    fn game_ended(&mut self) -> Vec<Effect> {
+        let mut effects = vec![Effect::Apply { game: None, settings: self.global }];
+        if self.pad_mouse_by_launch {
+            self.pad_mouse_by_launch = false;
+            if self.pad_mouse {
+                self.pad_mouse = false;
+                effects.push(Effect::PadMouse(false));
+            }
+        }
+        effects
     }
 
     /// Launching `game`, unless one is already running.
@@ -710,10 +845,19 @@ impl State {
             return vec![];
         };
         let settings = self.settings_of(&game);
+        let env = self.env_of(&game);
         vec![
             Effect::SaveResume(self.resume_text()),
-            Effect::Launch { game, settings, launch: g.launch.clone(), file: g.file.clone() },
+            Effect::Launch { game, settings, env, launch: g.launch.clone(), file: g.file.clone() },
         ]
+    }
+}
+
+/// Appends `env` as the line's last field (`env=...`), if any.
+fn push_env(text: &mut String, env: &str) {
+    if !env.trim().is_empty() {
+        text.push_str("\tenv=");
+        text.push_str(env.trim());
     }
 }
 
@@ -739,36 +883,66 @@ mod tests {
         let (_, fx) = s.apply(Event::Activate(Id::Game("ff6".into())));
         assert!(fx.is_empty());
         let (_, fx) = s.apply(Event::Activate(Id::Game("ff6".into())));
-        assert_eq!(fx.last(), Some(&Effect::Launch { game: "ff6".into(), settings: GameSettings::default(), launch: Launch::None, file: None }));
+        assert_eq!(
+            fx.last(),
+            Some(&Effect::Launch { game: "ff6".into(), settings: Values::default(), env: vec![], launch: Launch::None, file: None })
+        );
+    }
+
+    /// Taps a tile `n` times.
+    fn tap(s: &mut State, setting: Setting, n: usize) -> Vec<Effect> {
+        let mut fx = vec![];
+        for _ in 0..n {
+            fx = s.apply(Event::Activate(Id::Tile(setting))).1;
+        }
+        fx
     }
 
     #[test]
     fn games_override_the_global_settings() {
         let mut s = state();
         s.apply(Event::Activate(Id::Scope(Scope::Global)));
-        s.apply(Event::Activate(Id::FpsCap(60)));
+        tap(&mut s, Setting::FpsCap, 4); // 30, 40, 45, 60
         s.apply(Event::Activate(Id::Scope(Scope::Game)));
-        let (_, fx) = s.apply(Event::Activate(Id::Power(Power::Performance)));
-        let text = "*\tBalanced\t60\nzelda-lttp\tPerformance\t\n";
-        assert!(matches!(fx.first(), Some(Effect::SaveSettings(t)) if t == text), "{fx:?}");
-        assert_eq!(s.settings_of("zelda-lttp"), GameSettings { power: Power::Performance, fps_cap: 60 });
-        assert_eq!(s.settings_of("ff6"), GameSettings { power: Power::Balanced, fps_cap: 60 });
+        let fx = tap(&mut s, Setting::Power, 1); // Balanced -> Performance
+        let saved = match fx.first() {
+            Some(Effect::SaveSettings(t)) => t.clone(),
+            other => format!("{other:?}"),
+        };
+        assert!(saved.starts_with("*\tpower=1\tfps=60\t"), "{saved}");
+        assert!(saved.ends_with("\nzelda-lttp\tpower=2\n"), "{saved}");
+        let zelda = s.settings_of("zelda-lttp");
+        assert_eq!((zelda.get(Setting::Power), zelda.get(Setting::FpsCap)), (2, 60));
+        assert_eq!(s.settings_of("ff6").get(Setting::Power), 1);
         let mut fresh = state();
-        fresh.load_settings(text);
-        assert_eq!(fresh.settings_of("zelda-lttp"), s.settings_of("zelda-lttp"));
+        fresh.load_settings(&saved);
+        assert_eq!(fresh.settings_of("zelda-lttp"), zelda);
         assert_eq!(fresh.global, s.global);
-        // Reset drops the game's overrides: back to the global settings.
+        // A long press drops one override; Reset all of them.
+        tap(&mut s, Setting::Buttons, 1);
+        s.apply(Event::LongPress(Id::Tile(Setting::Power)));
+        assert_eq!(s.overrides_of("zelda-lttp").get(Setting::Power), None);
+        assert_eq!(s.overrides_of("zelda-lttp").get(Setting::Buttons), Some(1));
         s.apply(Event::Activate(Id::Reset));
         assert!(s.overrides.is_empty());
-        assert_eq!(s.settings_of("zelda-lttp"), s.global);
+        // Global-only settings change the global value even on a game's tab.
+        tap(&mut s, Setting::ChargeLimit, 1);
+        assert_eq!(s.global.get(Setting::ChargeLimit), 90);
     }
 
     #[test]
-    fn the_launch_carries_the_games_settings() {
+    fn the_launch_carries_the_games_settings_and_environment() {
         let mut s = state();
-        s.apply(Event::Activate(Id::FpsCap(40)));
+        tap(&mut s, Setting::FpsCap, 2);
+        s.global_env = "A=1 B=2".into();
+        s.env.insert("zelda-lttp".into(), "B=3 'C=x y'".into());
         let (_, fx) = s.apply(Event::Activate(Id::Launch));
-        assert!(matches!(fx.last(), Some(Effect::Launch { settings, .. }) if settings.fps_cap == 40));
+        let Some(Effect::Launch { settings, env, .. }) = fx.last() else {
+            unreachable!("{fx:?}")
+        };
+        assert_eq!(settings.get(Setting::FpsCap), 40);
+        let pairs: Vec<(&str, &str)> = env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        assert_eq!(pairs, [("A", "1"), ("B", "2"), ("B", "3"), ("C", "x y")], "the game's last, so they win");
     }
 
     #[test]
@@ -777,16 +951,51 @@ mod tests {
         s.apply(Event::Started("zelda-lttp".into()));
         s.apply(Event::Activate(Id::Game("ff6".into())));
         // The running game is the context, not the selection.
-        let (_, fx) = s.apply(Event::Activate(Id::FpsCap(30)));
-        assert_eq!(fx.last(), Some(&Effect::Apply { game: "zelda-lttp".into(), settings: GameSettings { fps_cap: 30, ..GameSettings::default() } }));
+        let fx = tap(&mut s, Setting::FpsCap, 1);
+        assert!(matches!(fx.last(), Some(Effect::Apply { game: Some(g), settings }) if &**g == "zelda-lttp" && settings.get(Setting::FpsCap) == 30));
         // A global change reaches it only where it doesn't override.
         s.apply(Event::Activate(Id::Scope(Scope::Global)));
-        let (_, fx) = s.apply(Event::Activate(Id::FpsCap(90)));
-        assert_eq!(fx.len(), 1, "its own cap stays: nothing to apply");
-        let (_, fx) = s.apply(Event::Activate(Id::Power(Power::Battery)));
-        assert!(matches!(fx.last(), Some(Effect::Apply { settings, .. }) if settings.power == Power::Battery && settings.fps_cap == 30));
+        assert_eq!(tap(&mut s, Setting::FpsCap, 1).len(), 1, "its own cap stays: nothing to apply");
+        let fx = tap(&mut s, Setting::Power, 1);
+        assert!(matches!(fx.last(), Some(Effect::Apply { settings, .. }) if settings.get(Setting::Power) == 2));
         let (_, fx) = s.apply(Event::Played { game: "zelda-lttp".into(), start: 0, duration: 1 });
-        assert_eq!(fx, vec![Effect::GameEnded]);
+        assert_eq!(fx, vec![Effect::Apply { game: None, settings: s.global }]);
+    }
+
+    #[test]
+    fn a_game_can_start_the_pad_mouse_and_darken_the_second_screen() {
+        let mut s = state();
+        tap(&mut s, Setting::PadMouse, 1);
+        tap(&mut s, Setting::BottomScreen, 1);
+        let (_, fx) = s.apply(Event::Started("zelda-lttp".into()));
+        assert_eq!(fx, vec![Effect::PadMouse(true)]);
+        assert!(s.bottom_dark());
+        s.apply(Event::Activate(Id::Wake));
+        assert!(!s.bottom_dark());
+        let (_, fx) = s.apply(Event::Played { game: "zelda-lttp".into(), start: 0, duration: 1 });
+        assert_eq!(fx.last(), Some(&Effect::PadMouse(false)));
+        assert!(!s.pad_mouse);
+    }
+
+    #[test]
+    fn the_environment_editor_takes_the_keyboard() {
+        use keyboard::find;
+        let mut s = state();
+        s.apply(Event::Activate(Id::Env));
+        let key = |k| Event::Activate(Id::Key(find(k).unwrap()));
+        for c in ['d', 'x', 'v', 'k'] {
+            assert_eq!(s.apply(key(Key::Char(c))).1, vec![], "typed into the editor, not sent");
+        }
+        s.apply(key(Key::Named(Named::Backspace)));
+        s.apply(key(Key::Char('=')));
+        s.apply(key(Key::Char('1')));
+        let (_, fx) = s.apply(key(Key::Named(Named::Enter)));
+        assert!(matches!(fx.first(), Some(Effect::SaveSettings(t)) if t.ends_with("zelda-lttp\tenv=dxv=1\n")), "{fx:?}");
+        assert_eq!(s.editor, None);
+        assert_eq!(s.env_of("zelda-lttp"), vec![("dxv".to_owned(), "1".to_owned())]);
+        let mut fresh = state();
+        fresh.load_settings(&s.settings_text());
+        assert_eq!(fresh.env_of("zelda-lttp"), s.env_of("zelda-lttp"));
     }
 
     #[test]
@@ -794,8 +1003,8 @@ mod tests {
         let mut empty = State::new(Library::default());
         empty.apply(Event::Activate(Id::Mode(Mode::Settings)));
         assert_eq!(empty.mode, Mode::Settings, "always available");
-        empty.apply(Event::Activate(Id::FpsCap(40)));
-        assert_eq!(empty.global.fps_cap, 40);
+        tap(&mut empty, Setting::FpsCap, 2);
+        assert_eq!(empty.global.get(Setting::FpsCap), 40);
     }
 
     #[test]

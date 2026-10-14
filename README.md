@@ -50,15 +50,30 @@ desktop with another layout, letters, digits and named keys come out right but p
 layout. To type into other apps on a desktop, run with `SYSPROG_BOTTOM_PANEL=1`: the bottom view is then a
 panel in the bottom right corner that never takes the keyboard focus (as on the device), not a window.
 
-**Settings** (the sliders icon, first in the bar): the power profile (Battery, Balanced, Performance:
-CPU cluster and GPU frequency caps, since the Thor has no TDP setting) and an FPS cap (MangoHud's
-limiter). Two tabs: *All games*, the defaults, and the game in context (the running one, else shelf's
-selection), whose choices override the defaults one by one; values it takes from the defaults are marked,
-and Reset drops its overrides. Saved in `game-settings.txt` next to `stats.db`, applied at a game's
-launch, and at once to a running game whose settings change: the cap through the game's own MangoHud
-config file, which MangoHud reloads when it changes. Frequency caps need write access to cpufreq's
-`scaling_max_freq` and devfreq's `max_freq` (a udev rule on the device; on the desktop they're skipped,
-with one warning). The bottom screen keeps the last mode chosen (sysinfo at first), also across restarts.
+**Settings** (the sliders icon, first in the bar): a 4×4 grid of tiles, each an icon over its value. A
+tap steps to the next value, a long press goes back to the default. Two tabs: *All games*, the defaults,
+and the game in context (the running one, else shelf's selection), whose own choices override the
+defaults one by one (a dot on the tile; values taken from the defaults are dimmed); its last tile is
+Reset, where *All games* has the charge limit instead.
+
+| Tile | Does |
+|---|---|
+| Power | Battery / Balanced / Performance: CPU and GPU frequency caps (the Thor has no TDP setting) |
+| FPS cap, HUD | MangoHud's limiter and overlay (off, FPS only, full), through the game's own MangoHud config file, reloaded live |
+| Screen | the second screen dark while the game runs, until tapped |
+| Cores | the little cluster only (the others offline) |
+| Mouse | the pad mouse turned on at launch, off at the end |
+| Buttons, Deadzone | Nintendo layout (A/B, X/Y swapped) and a stick deadzone, in the virtual pad |
+| CPU, GPU | a frequency cap in percent, instead of the profile's |
+| Env | extra environment variables (`KEY=value`, typed on the on-screen keyboard); a game's come after the defaults' |
+| Charge | charging stops at 90 or 80 % (*All games* only) |
+| Refresh, Upscale, Fan, Rumble | saved, marked "later": not applied yet |
+
+Saved in `game-settings.txt` next to `stats.db`, applied at a game's launch and at once while it runs.
+Frequency caps, cores and the charge limit need write access to cpufreq's `scaling_max_freq`, CPUs'
+`online`, devfreq's `max_freq` and the battery's `charge_control_end_threshold` (a udev rule on the
+device; on the desktop they're skipped, with one warning). The bottom screen keeps the last mode chosen
+(sysinfo at first), also across restarts.
 
 **Sysinfo mode** shows CPU, GPU, memory, temperatures, power, per-core load, and a running game's FPS and
 frame time from MangoHud: games started with `sysprog --mangohud-env` in their environment log (overlay

@@ -163,10 +163,16 @@ pub fn bottom(c: &mut Canvas, s: &State, w: f32, h: f32, scratch: &mut Scratch, 
     c.fill(Rect::new(0.0, 0.0, w, h), rgb(BG));
     targets.clear();
     let f = &mut Frame { c, s, targets };
+    // Dark while a game runs that wants it so: nothing drawn, a tap anywhere lights it again.
+    if s.bottom_dark() {
+        let all = Rect::new(0.0, 0.0, w, h);
+        f.button(Id::Wake, all, Look { radius: 0.0, fill: None, inset: 0.0, ring_inset: 0.0 }, |_| {});
+        return all;
+    }
     let bar_h = bar::draw(f, w, h, scratch);
     let body = Rect::new(0.0, bar_h, w, h - bar_h);
     match s.mode {
-        Mode::Settings => settings::draw(f, body),
+        Mode::Settings => settings::draw(f, body, &mut scratch.text),
         Mode::Keyboard => keyboard::draw(f, body),
         Mode::Launcher => label(f.c, body, body.h * 0.05, DIM, "Launcher: not built yet"),
         Mode::Touchpad => touchpad::draw(f, body),

@@ -6,7 +6,8 @@ use std::sync::{Arc, Mutex, mpsc};
 
 use sysprog_core::keyboard::{self, Key, KeyPos, Modifier};
 use sysprog_core::touch::TouchLayout;
-use sysprog_core::{Effect, Event, Id, Mode, Power, Scope, State, Status};
+use sysprog_core::settings::{Setting, Values};
+use sysprog_core::{Effect, Event, Id, Mode, Scope, State, Status};
 use sysprog_policy::{keyboard as virtual_keyboard, pad, touchpad, tuning};
 use sysprog_ui::{Config, Screen};
 
@@ -87,6 +88,8 @@ fn main() -> ExitCode {
         }
     }
     let gamepad = std::env::var("SYSPROG_GAMEPAD").ok();
+    // The global settings, until a game brings its own.
+    apply_settings(&state.global, None, &sysprog_policy::frames::default_dir(), &padmouse_tx);
     // Games start from the launcher thread, one at a time, with MangoHud's environment; plays go to
     // stats.db in the state dir.
     let (launch_tx, launch_rx) = mpsc::channel();
@@ -116,7 +119,7 @@ fn main() -> ExitCode {
     // here.
     if std::env::args().nth(1).as_deref() == Some("--mangohud-env") {
         let dir = sysprog_policy::frames::default_dir();
-        return match tuning::mangohud_config(&dir, "default", 0) {
+        return match tuning::mangohud_config(&dir, "default", 0, 0) {
             Ok(config) => {
                 for (k, v) in tuning::mangohud_env(&config) {
                     println!("{k}={v}");
@@ -187,29 +190,21 @@ fn main() -> ExitCode {
                 }
                 None => log::info!("effect: {effect:?} (no virtual keyboard)"),
             },
-            Effect::Launch { game, launch, file, settings } => {
-                log::info!("launching {game} ({settings:?})");
-                tuning::apply_power(settings.power);
-                let env = match tuning::mangohud_config(&mangohud_dir, game, settings.fps_cap) {
-                    Ok(config) => tuning::mangohud_env(&config),
-                    Err(e) => {
-                        log::warn!("MangoHud config: {e}");
-                        vec![]
-                    }
-                };
+            Effect::Launch { game, launch, file, settings, env } => {
+                log::info!("launching {game}");
+                let mut env = env.clone();
+                if let Some(config) = apply_settings(settings, Some(game), &mangohud_dir, &padmouse_tx) {
+                    // MangoHud's first, so a game's own variables can still override it.
+                    env.splice(0..0, tuning::mangohud_env(&config));
+                }
                 let request = sysprog_policy::launcher::Request { game: game.clone(), launch: launch.clone(), file: file.clone(), env };
                 if launch_tx.send(request).is_err() {
                     log::warn!("launcher thread is gone");
                 }
             }
-            // The running game's settings changed: its MangoHud config (reloaded live) and the power.
             Effect::Apply { game, settings } => {
-                tuning::apply_power(settings.power);
-                if let Err(e) = tuning::mangohud_config(&mangohud_dir, game, settings.fps_cap) {
-                    log::warn!("MangoHud config: {e}");
-                }
+                apply_settings(settings, game.as_deref(), &mangohud_dir, &padmouse_tx);
             }
-            Effect::GameEnded => tuning::apply_power(sysprog_core::Power::Performance),
             Effect::SaveSettings(text) => {
                 if let Some(dir) = &state_dir
                     && let Err(e) = std::fs::write(dir.join("game-settings.txt"), text)
@@ -247,6 +242,27 @@ fn main() -> ExitCode {
 /// Events to apply first, the screen, its size, the file name.
 type Shot = (Vec<Event>, Screen, (u32, u32), &'static str);
 
+/// Applies the settings in force: hardware (power, cores, charge limit), the pad's shaping, and for a
+/// game its MangoHud config (written, and reloaded live if it runs). Returns that config's path.
+fn apply_settings(
+    v: &Values,
+    game: Option<&str>,
+    mangohud_dir: &std::path::Path,
+    pad_tx: &mpsc::Sender<pad::Command>,
+) -> Option<std::path::PathBuf> {
+    tuning::apply_hardware(v);
+    let shaping = pad::Shaping { nintendo: v.get(Setting::Buttons) == 1, deadzone: v.get(Setting::Deadzone) };
+    let _ = pad_tx.send(pad::Command::Shape(shaping));
+    let game = game?;
+    match tuning::mangohud_config(mangohud_dir, game, v.get(Setting::FpsCap), v.get(Setting::Hud)) {
+        Ok(config) => Some(config),
+        Err(e) => {
+            log::warn!("MangoHud config: {e}");
+            None
+        }
+    }
+}
+
 fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
     // A fixed time unless SYSPROG_SNAPSHOT_NOW is set, so snapshots compare byte for byte across runs.
     let now = match std::env::var_os("SYSPROG_SNAPSHOT_NOW") {
@@ -264,6 +280,7 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
         if long { Event::LongPress(id) } else { Event::Activate(id) }
     };
     let bottom = (1240, 1080);
+    let taps = |setting: Setting, n: usize| (0..n).map(move |_| Event::Activate(Id::Tile(setting)));
     let shots: Vec<Shot> = vec![
         (vec![], Screen::Top, (1920, 1080), "top.png"),
         (vec![Event::TabStep(1)], Screen::Top, (1920, 1080), "top-tab2.png"),
@@ -281,13 +298,23 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
         ),
         (vec![], Screen::Bottom, bottom, "bottom.png"),
         (
-            vec![Event::Activate(Id::Mode(Mode::Settings)), Event::Activate(Id::FpsCap(60))],
+            [Event::Activate(Id::Mode(Mode::Settings))]
+                .into_iter()
+                .chain(taps(Setting::FpsCap, 4))
+                .chain(taps(Setting::Buttons, 1))
+                .chain(taps(Setting::Hud, 1))
+                .collect(),
             Screen::Bottom,
             bottom,
             "settings-running.png",
         ),
         (
-            vec![Event::Activate(Id::Scope(Scope::Global)), Event::Activate(Id::Power(Power::Battery))],
+            [Event::Activate(Id::Scope(Scope::Global))]
+                .into_iter()
+                .chain(taps(Setting::Power, 1))
+                .chain(taps(Setting::Deadzone, 2))
+                .chain(taps(Setting::ChargeLimit, 2))
+                .collect(),
             Screen::Bottom,
             bottom,
             "settings-global.png",
@@ -299,7 +326,22 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
             "settings.png",
         ),
         (
-            vec![Event::Status(Status { battery: Some(9), charging: false, wifi: None, volume: Some(40), muted: true })],
+            [Event::Activate(Id::Env)]
+                .into_iter()
+                .chain("dxvk_hud=fps mesa_vk_wsi_present_mode=fifo".chars().flat_map(|c| {
+                    // Characters that need Shift: Shift (once), then their key.
+                    match (' '..='~').find(|&b| b != c && keyboard::shifted(b) == c) {
+                        Some(b) => vec![key(Key::Mod(Modifier::Shift), false), key(Key::Char(b), false)],
+                        None => vec![key(Key::Char(c), false)],
+                    }
+                }))
+                .collect(),
+            Screen::Bottom,
+            bottom,
+            "settings-env.png",
+        ),
+        (
+            vec![Event::Activate(Id::EnvSave), Event::Status(Status { battery: Some(9), charging: false, wifi: None, volume: Some(40), muted: true })],
             Screen::Bottom,
             bottom,
             "status-low.png",

@@ -55,7 +55,8 @@ pub fn step(targets: &[NavTarget], current: Option<&Id>, dir: Dir) -> Option<Id>
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
-    use sysprog_core::{Mode, Power};
+    use sysprog_core::Mode;
+    use sysprog_core::settings::Setting;
 
     fn t(screen: Screen, x: f32, y: f32, id: Id) -> NavTarget {
         NavTarget { screen, rect: Rect::new(x, y, 0.1, 0.1), id }
@@ -67,7 +68,7 @@ mod tests {
             t(Screen::Top, 0.0, 0.2, Id::Game("b".into())),
             t(Screen::Bottom, 0.0, 1.0, Id::Mode(Mode::Settings)),
             t(Screen::Bottom, 0.5, 1.0, Id::Mode(Mode::Keyboard)),
-            t(Screen::Bottom, 0.0, 1.5, Id::Power(Power::Battery)),
+            t(Screen::Bottom, 0.0, 1.5, Id::Tile(Setting::Power)),
         ]
     }
 
@@ -78,7 +79,7 @@ mod tests {
         assert_eq!(b, Some(Id::Game("b".into())));
         let bar = step(&l, b.as_ref(), Dir::Down);
         assert_eq!(bar, Some(Id::Mode(Mode::Settings)));
-        assert_eq!(step(&l, bar.as_ref(), Dir::Down), Some(Id::Power(Power::Battery)));
+        assert_eq!(step(&l, bar.as_ref(), Dir::Down), Some(Id::Tile(Setting::Power)));
         assert_eq!(step(&l, bar.as_ref(), Dir::Up), Some(Id::Game("b".into())));
     }
 

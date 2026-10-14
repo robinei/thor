@@ -11,6 +11,22 @@ pub enum Icon {
     Mouse,
     /// Game settings: three sliders.
     Sliders,
+    // Settings tiles.
+    Bolt,
+    Gauge,
+    Refresh,
+    Hud,
+    Upscale,
+    ScreenOff,
+    Cores,
+    Fan,
+    Buttons,
+    Deadzone,
+    Rumble,
+    Cpu,
+    Gpu,
+    Env,
+    Reset,
     Keyboard,
     Touchpad,
     Sysinfo,
@@ -56,6 +72,92 @@ pub fn draw(c: &mut Canvas, icon: Icon, r: Rect, color: Color) {
                 c.polyline(&[p(3.0, y), p(21.0, y)], line, color, false);
                 c.circle(x0 + knob * u, y0 + y * u, 2.6 * u, color);
             }
+        }
+        Icon::Bolt => {
+            c.polyline(&[p(13.5, 2.0), p(4.5, 14.0), p(11.0, 14.0), p(10.0, 22.0), p(19.5, 10.0), p(13.0, 10.0)], line, color, true);
+        }
+        Icon::Gauge => {
+            c.polyline(&arc(12.0, 14.0, 9.0, 90.0, 210.0), line, color, false);
+            c.polyline(&arc(12.0, 14.0, 9.0, -30.0, 90.0), line, color, false);
+            c.polyline(&[p(12.0, 14.0), p(16.5, 8.5)], line, color, false);
+            c.circle(x0 + 12.0 * u, y0 + 14.0 * u, 1.8 * u, color);
+        }
+        Icon::Refresh => {
+            c.outline(rr(2.0, 4.0, 20.0, 13.0), 2.0 * u, line, color);
+            c.polyline(&[p(8.0, 20.5), p(16.0, 20.5)], line, color, false);
+            let wave = [p(5.5, 11.0), p(7.5, 8.5), p(9.5, 11.0), p(11.5, 13.5), p(13.5, 11.0), p(15.5, 8.5), p(17.5, 11.0)];
+            c.polyline(&wave, 1.5 * u, color, false);
+        }
+        Icon::Hud => {
+            c.outline(rr(2.0, 4.0, 20.0, 16.0), 2.0 * u, line, color);
+            c.rounded(rr(4.5, 6.5, 7.0, 4.5), 1.0 * u, color);
+        }
+        Icon::Upscale => {
+            c.outline(rr(3.0, 13.0, 8.0, 8.0), 1.5 * u, line, color);
+            c.polyline(&[p(9.0, 15.0), p(20.0, 4.0)], line, color, false);
+            c.polyline(&[p(13.5, 4.0), p(20.0, 4.0), p(20.0, 10.5)], line, color, false);
+        }
+        Icon::ScreenOff => {
+            c.outline(rr(2.5, 5.0, 19.0, 14.0), 2.0 * u, line, color);
+            c.polyline(&[p(3.0, 3.0), p(21.0, 21.0)], line, color, false);
+        }
+        Icon::Cores => {
+            c.outline(rr(3.0, 3.0, 11.0, 11.0), 1.5 * u, line, color);
+            for (x, y) in [(17.0, 3.0), (17.0, 9.0), (3.0, 17.0), (9.0, 17.0), (17.0, 17.0)] {
+                c.outline(rr(x, y, 4.5, 4.5), 1.0 * u, 1.5 * u, color);
+            }
+        }
+        Icon::Fan => {
+            c.circle(x0 + 12.0 * u, y0 + 12.0 * u, 2.0 * u, color);
+            for k in 0..3 {
+                let a = (k as f32 * 120.0).to_radians();
+                let b = (k as f32 * 120.0 + 55.0).to_radians();
+                let blade = [p(12.0, 12.0), p(12.0 + 8.5 * a.cos(), 12.0 - 8.5 * a.sin()), p(12.0 + 7.0 * b.cos(), 12.0 - 7.0 * b.sin())];
+                c.polyline(&blade, 1.6 * u, color, true);
+            }
+        }
+        Icon::Buttons => {
+            for (x, y) in [(12.0, 5.0), (19.0, 12.0), (12.0, 19.0), (5.0, 12.0)] {
+                c.outline(rr(x - 3.0, y - 3.0, 6.0, 6.0), 3.0 * u, 1.6 * u, color);
+            }
+        }
+        Icon::Deadzone => {
+            c.outline(rr(2.5, 2.5, 19.0, 19.0), 9.5 * u, line, color);
+            c.outline(rr(8.0, 8.0, 8.0, 8.0), 4.0 * u, thin, color);
+            c.circle(x0 + 12.0 * u, y0 + 12.0 * u, 1.6 * u, color);
+        }
+        Icon::Rumble => {
+            c.outline(rr(8.0, 3.5, 8.0, 17.0), 2.0 * u, line, color);
+            c.polyline(&[p(4.5, 7.0), p(2.5, 9.5), p(4.5, 12.0), p(2.5, 14.5), p(4.5, 17.0)], 1.5 * u, color, false);
+            c.polyline(&[p(19.5, 7.0), p(21.5, 9.5), p(19.5, 12.0), p(21.5, 14.5), p(19.5, 17.0)], 1.5 * u, color, false);
+        }
+        Icon::Cpu => {
+            c.outline(rr(6.0, 6.0, 12.0, 12.0), 1.5 * u, line, color);
+            c.rounded(rr(9.5, 9.5, 5.0, 5.0), 0.8 * u, color);
+            for t in [9.0, 12.0, 15.0] {
+                c.polyline(&[p(t, 2.5), p(t, 6.0)], 1.4 * u, color, false);
+                c.polyline(&[p(t, 18.0), p(t, 21.5)], 1.4 * u, color, false);
+                c.polyline(&[p(2.5, t), p(6.0, t)], 1.4 * u, color, false);
+                c.polyline(&[p(18.0, t), p(21.5, t)], 1.4 * u, color, false);
+            }
+        }
+        Icon::Gpu => {
+            c.outline(rr(2.0, 6.0, 20.0, 12.0), 1.5 * u, line, color);
+            c.outline(rr(5.5, 8.5, 7.0, 7.0), 3.5 * u, 1.5 * u, color);
+            c.polyline(&[p(15.5, 9.5), p(15.5, 14.5)], 1.5 * u, color, false);
+            c.polyline(&[p(18.5, 9.5), p(18.5, 14.5)], 1.5 * u, color, false);
+            c.polyline(&[p(6.0, 18.0), p(6.0, 21.0), p(13.0, 21.0), p(13.0, 18.0)], 1.4 * u, color, false);
+        }
+        Icon::Env => {
+            c.outline(rr(2.0, 4.0, 20.0, 16.0), 2.0 * u, line, color);
+            c.polyline(&[p(6.0, 9.0), p(9.5, 12.0), p(6.0, 15.0)], line, color, false);
+            c.polyline(&[p(11.5, 15.5), p(17.5, 15.5)], line, color, false);
+        }
+        Icon::Reset => {
+            c.polyline(&arc(12.0, 13.0, 8.0, 60.0, 195.0), line, color, false);
+            c.polyline(&arc(12.0, 13.0, 8.0, 195.0, 330.0), line, color, false);
+            c.polyline(&arc(12.0, 13.0, 8.0, -30.0, 15.0), line, color, false);
+            c.polyline(&[p(11.5, 3.5), p(16.0, 6.1), p(13.0, 10.0)], line, color, false);
         }
         Icon::Mouse => {
             c.outline(rr(6.0, 3.0, 12.0, 18.0), 6.0 * u, line, color);
