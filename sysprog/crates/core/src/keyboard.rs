@@ -94,21 +94,20 @@ const fn n(k: Named) -> Key {
 }
 
 /// The layout: US letters and digits in their usual places, every row 10 units so keys use the full
-/// width; the punctuation that a PC keyboard puts beside the letters has its own row on top (Esc at its
-/// left, - and = at its right above 9 and 0), and comma and period flank the space bar. Fn: F1-F12
-/// (digits, then - and =), Delete on Backspace, and a navigation
+/// width. The most typed punctuation sits by the space bar, nearest the thumbs (- , . / and with Shift
+/// _ < > ?); the rest has its own row on top with Esc and Tab. Fn: F1-F10 on the digits, F11 and F12 at
+/// the top right (on ' and =), Delete on Backspace, and a navigation
 /// cluster under the right hand (arrows on i/j/k/l, Home/End beside Up, PgUp/PgDn on y/h, Insert on p).
 pub const LAYOUT: &[&[Slot]] = &[
     &[
-        named(Named::Esc, 1.0),
+        named(Named::Esc, 1.5),
+        named(Named::Tab, 1.5),
         c('`'),
         c('['),
         c(']'),
         c('\\'),
         c(';'),
-        c('\''),
-        c('/'),
-        cf('-', f(11)),
+        cf('\'', f(11)),
         cf('=', f(12)),
     ],
     &[
@@ -161,13 +160,14 @@ pub const LAYOUT: &[&[Slot]] = &[
     ],
     &[
         modifier(Modifier::Fn, 1.0),
-        named(Named::Tab, 1.0),
         modifier(Modifier::Ctrl, 1.0),
         modifier(Modifier::Super, 1.0),
         modifier(Modifier::Alt, 1.0),
+        c('-'),
         c(','),
-        Slot { base: Key::Char(' '), fn_key: None, width: 3.0 },
+        Slot { base: Key::Char(' '), fn_key: None, width: 2.0 },
         c('.'),
+        c('/'),
     ],
 ];
 
