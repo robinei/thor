@@ -93,6 +93,38 @@ impl Power {
     }
 }
 
+/// Where the controller's input goes (unless the pad mouse has it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PadRoute {
+    /// The game's virtual pad.
+    #[default]
+    Game,
+    /// ClamShell's own screens, as [`Event::Pad`]: shelf is in front.
+    Ui,
+    /// Typing into the app in front (D-pad arrows, A Enter, B Backspace): the keyboard is open.
+    Keys,
+}
+
+/// The controller driving ClamShell's screens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PadInput {
+    /// The D-pad or left stick (repeated while held).
+    Up,
+    Down,
+    Left,
+    Right,
+    /// A pressed or released: activates the focused target (holds act as for touch).
+    A(bool),
+    /// B: back (cancels the editor, closes Wi-Fi or Battery).
+    B,
+    /// Y: the selected game in or out of the favourites.
+    Y,
+    /// The shoulder buttons: the previous or next tab (shelf) or mode (the second screen).
+    Shoulder(i32),
+    /// View/Select: focus to the other screen.
+    Switch,
+}
+
 /// What the settings panel edits: the global settings, or the game in context's overrides.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Scope {
@@ -202,6 +234,8 @@ pub enum Event {
     Power(power::Power),
     /// The pad's home button.
     Home,
+    /// The pad, while it drives ClamShell (the UI handles these; the state ignores them).
+    Pad(PadInput),
     /// The system woke from sleep.
     Resumed,
     Quit,
@@ -235,9 +269,8 @@ pub enum Effect {
     /// The pad mouse turned on or off: the input side grabs the controller and drives a virtual mouse
     /// with it, or releases it to games.
     PadMouse(bool),
-    /// The pad types (D-pad arrows, A Enter, B Backspace) while the keyboard is open and no game is in
-    /// front, or goes back to games.
-    PadKeys(bool),
+    /// Where the controller's input goes now.
+    PadRoute(PadRoute),
     /// Start a launcher app's command as a new instance: a scope and a workspace of this name
     /// (`clamshell-app-<key>-<secs>-<n>`).
     RunApp { name: String, command: Vec<String> },
@@ -314,8 +347,8 @@ pub struct State {
     recent: Vec<String>,
     /// The pad mouse was turned on by a launch (Setting::PadMouse), to turn off when the game ends.
     pad_mouse_by_launch: bool,
-    /// The pad types into the focused app (see [`Effect::PadKeys`]).
-    pad_keys: bool,
+    /// Where the pad goes (see [`Effect::PadRoute`]).
+    pub pad_route: PadRoute,
     /// What the settings panel edits (global whenever there is no game in context).
     pub scope: Scope,
     pub mode: Mode,
@@ -386,6 +419,7 @@ impl State {
         s.set_apps(apps::defaults(), None);
         s.sync();
         s.focus = s.selected.clone().map(Id::Game);
+        s.pad_route = s.wanted_pad_route();
         s
     }
 
@@ -398,19 +432,26 @@ impl State {
     /// Applies one event; returns which screens changed and what must happen outside.
     pub fn apply(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
         let (dirty, mut effects) = self.apply_event(event);
-        let keys = self.wants_pad_keys();
-        if keys != self.pad_keys {
-            self.pad_keys = keys;
-            effects.push(Effect::PadKeys(keys));
+        let route = self.wanted_pad_route();
+        if route != self.pad_route {
+            self.pad_route = route;
+            effects.push(Effect::PadRoute(route));
         }
         (dirty, effects)
     }
 
-    /// Whether the pad should type now: the keyboard is open and no game is in front (a running game
-    /// counts as in front unless the compositor says something else is).
-    fn wants_pad_keys(&self) -> bool {
-        let game_in_front = self.running.is_some() && self.windows.iter().find(|w| w.focused).is_none_or(windows::Window::of_game);
-        self.mode == Mode::Keyboard && !game_in_front
+    /// Where the pad goes, from what is in front: shelf (or nothing known, with no game running) gets
+    /// ClamShell's navigation; a game gets the virtual pad; another app gets typing while the keyboard
+    /// is open.
+    fn wanted_pad_route(&self) -> PadRoute {
+        let front = self.windows.iter().find(|w| w.focused);
+        let shelf = front.map_or(self.running.is_none(), |w| w.app_id == apps::SHELF_APP_ID);
+        let game = front.map_or(self.running.is_some(), windows::Window::of_game);
+        match (shelf, game, self.mode) {
+            (true, _, _) => PadRoute::Ui,
+            (false, false, Mode::Keyboard) => PadRoute::Keys,
+            _ => PadRoute::Game,
+        }
     }
 
     fn apply_event(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
@@ -576,6 +617,7 @@ impl State {
                 (if self.mode == Mode::Battery { Dirty::BOTTOM } else { Dirty::NONE }, vec![])
             }
             Event::Home => (Dirty::NONE, self.home()),
+            Event::Pad(_) => (Dirty::NONE, vec![]),
             // Sleep may have reset what the settings set (frequency caps, cores): again.
             Event::Resumed => (Dirty::NONE, vec![Effect::Apply { game: self.running.clone(), settings: self.current() }]),
             Event::Quit => (Dirty::NONE, vec![Effect::SaveResume(self.resume_text()), Effect::Quit]),
@@ -801,7 +843,7 @@ mod tests {
         assert_eq!(s.apply(Event::Activate(Id::Mode(Mode::Wifi))).1.last(), Some(&Effect::Touchpad(false)));
         assert_eq!(s.apply(Event::Activate(Id::Mode(Mode::Wifi))).1.last(), Some(&Effect::Touchpad(true)), "back");
         let (_, fx) = s.apply(Event::Activate(Id::Mode(Mode::Keyboard)));
-        assert_eq!(fx, vec![Effect::Touchpad(false), Effect::PadKeys(true)]);
+        assert_eq!(fx, vec![Effect::Touchpad(false)]);
         let (_, fx) = s.apply(Event::Activate(Id::Mode(Mode::Keyboard)));
         assert!(fx.is_empty());
     }
@@ -843,25 +885,28 @@ mod tests {
     }
 
     #[test]
-    fn the_pad_types_while_the_keyboard_is_open_and_no_game_is_in_front() {
+    fn the_pad_goes_to_shelf_the_game_or_typing_by_what_is_in_front() {
         let mut s = state();
-        let window = |app_id: &str, unit: Option<&str>, focused: bool| windows::Window {
+        let window = |app_id: &str, unit: Option<&str>| windows::Window {
             id: 1,
             app_id: app_id.into(),
             title: String::new(),
-            focused,
+            focused: true,
             unit: unit.map(Into::into),
             workspace: String::new(),
         };
-        assert_eq!(s.apply(Event::Activate(Id::Mode(Mode::Keyboard))).1, vec![Effect::PadKeys(true)]);
-        s.apply(Event::Started("zelda-lttp".into()));
-        assert!(!s.pad_keys, "a game runs and nothing says what is in front: it is");
-        let (_, fx) = s.apply(Event::Windows(vec![window(apps::SHELF_APP_ID, None, true)]));
-        assert_eq!(fx, vec![Effect::PadKeys(true)], "shelf in front");
-        let (_, fx) = s.apply(Event::Windows(vec![window("retroarch", Some("clamshell-game-1-0.scope"), true)]));
-        assert_eq!(fx, vec![Effect::PadKeys(false)], "the game in front");
-        s.apply(Event::Windows(vec![window(apps::SHELF_APP_ID, None, true)]));
-        assert_eq!(s.apply(Event::Activate(Id::Mode(Mode::Sysinfo))).1, vec![Effect::PadKeys(false)]);
+        let route = |s: &mut State, event: Event| {
+            s.apply(event);
+            s.pad_route
+        };
+        assert_eq!(route(&mut s, Event::Tick { unix_secs: 1 }), PadRoute::Ui, "nothing known, no game: shelf");
+        assert_eq!(route(&mut s, Event::Started("zelda-lttp".into())), PadRoute::Game, "a game runs: in front");
+        assert_eq!(route(&mut s, Event::Windows(vec![window(apps::SHELF_APP_ID, None)])), PadRoute::Ui, "shelf in front");
+        assert_eq!(route(&mut s, Event::Windows(vec![window("foot", Some("clamshell-app-terminal-1-0.scope"))])), PadRoute::Game);
+        assert_eq!(route(&mut s, Event::Activate(Id::Mode(Mode::Keyboard))), PadRoute::Keys, "an app and the keyboard: typing");
+        assert_eq!(route(&mut s, Event::Windows(vec![window("retroarch", Some("clamshell-game-1-0.scope"))])), PadRoute::Game);
+        let (_, fx) = s.apply(Event::Windows(vec![window(apps::SHELF_APP_ID, None)]));
+        assert_eq!(fx, vec![Effect::PadRoute(PadRoute::Ui)]);
     }
 
     #[test]

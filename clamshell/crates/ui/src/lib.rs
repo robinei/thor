@@ -130,6 +130,7 @@ pub fn run(
         images: images::Images::new(image_requests),
         presses: HashMap::new(),
         slider_source: None,
+        last_focus: [None, None],
         hold_timer: None,
         loop_handle: event_loop.handle(),
         on_effect: Box::new(on_effect),
@@ -219,6 +220,8 @@ struct App {
     presses: HashMap<Source, Press>,
     /// The press that is moving a slider, if any.
     slider_source: Option<Source>,
+    /// Where the pad's focus was on each screen, for View/Select switching back to it.
+    last_focus: [Option<clamshell_core::Id>; 2],
     /// Fires when the latest press becomes a hold, then at the repeat rate for repeating keys.
     hold_timer: Option<(Source, RegistrationToken)>,
     loop_handle: LoopHandle<'static, App>,
@@ -236,6 +239,10 @@ impl App {
     }
 
     fn handle(&mut self, event: Event) {
+        // The pad driving the screens is input, handled here like keys and touches.
+        if let Event::Pad(input) = event {
+            return self.pad(input);
+        }
         let (dirty, effects) = self.state.apply(event);
         self.mark(dirty);
         for effect in &effects {

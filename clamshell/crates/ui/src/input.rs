@@ -8,7 +8,7 @@ use smithay_client_toolkit::reexports::{
 };
 use smithay_client_toolkit::seat::keyboard::Keysym;
 use std::time::Duration;
-use clamshell_core::{Event, Hold, Id};
+use clamshell_core::{Event, Hold, Id, Mode, PadInput};
 
 use crate::draw::Rect;
 use crate::nav::{self, Dir, NavTarget};
@@ -181,6 +181,82 @@ impl App {
         }
     }
 
+    /// The pad, while shelf is in front: directions move focus (crossing screens at the edges), A acts on
+    /// the focused target, B goes back, Y toggles the favourite, the shoulders step tabs (top screen) or
+    /// modes (second screen), View/Select moves focus to the other screen.
+    pub(crate) fn pad(&mut self, input: PadInput) {
+        match input {
+            PadInput::Up => self.navigate(Dir::Up),
+            PadInput::Down => self.navigate(Dir::Down),
+            PadInput::Left => self.navigate(Dir::Left),
+            PadInput::Right => self.navigate(Dir::Right),
+            PadInput::A(true) => {
+                if let Some(id) = self.state.focus.clone() {
+                    self.down(Source::PadA, id);
+                }
+            }
+            PadInput::A(false) => self.up(Source::PadA, true),
+            PadInput::B => {
+                let back = if self.state.editor.is_some() {
+                    Some(Id::EditorCancel)
+                } else if !Mode::BAR.contains(&self.state.mode) {
+                    // Wi-Fi or Battery: their icon again goes back.
+                    Some(Id::Mode(self.state.mode))
+                } else {
+                    None
+                };
+                if let Some(id) = back {
+                    self.handle(Event::Activate(id));
+                }
+            }
+            PadInput::Y => self.handle(Event::ToggleFavourite),
+            PadInput::Shoulder(step) => {
+                if self.focus_screen() == Screen::Top {
+                    self.handle(Event::TabStep(step));
+                } else {
+                    let modes = Mode::BAR;
+                    let at = modes.iter().position(|m| *m == self.state.mode).unwrap_or(0) as i32;
+                    let next = (at + step).rem_euclid(modes.len() as i32) as usize;
+                    if let Some(&mode) = modes.get(next) {
+                        self.handle(Event::Activate(Id::Mode(mode)));
+                        self.handle(Event::Focus(Id::Mode(mode)));
+                    }
+                }
+            }
+            PadInput::Switch => self.switch_screen(),
+        }
+    }
+
+    /// The screen the focus is on (the top one when it isn't on anything drawn).
+    fn focus_screen(&self) -> Screen {
+        let focus = self.state.focus.as_ref();
+        self.views().find(|v| v.targets.iter().any(|t| Some(&t.id) == focus)).map_or(Screen::Top, |v| v.screen)
+    }
+
+    /// Focus to the other screen: where it last was there if that is still drawn, else shelf's selected
+    /// game (top) or the current mode's icon (second screen).
+    fn switch_screen(&mut self) {
+        let from = self.focus_screen();
+        let (to, slot_from, slot_to) = match from {
+            Screen::Top => (Screen::Bottom, 0, 1),
+            Screen::Bottom => (Screen::Top, 1, 0),
+        };
+        if let Some(slot) = self.last_focus.get_mut(slot_from) {
+            *slot = self.state.focus.clone();
+        }
+        let drawn = |app: &App, id: &Id| app.views().any(|v| v.screen == to && v.targets.iter().any(|t| &t.id == id));
+        let remembered = self.last_focus.get(slot_to).cloned().flatten().filter(|id| drawn(self, id));
+        let default = match to {
+            Screen::Top => self.state.selected.clone().map(Id::Game),
+            Screen::Bottom => Some(Id::Mode(self.state.mode)),
+        };
+        let first = self.views().find(|v| v.screen == to).and_then(|v| v.targets.first()).map(|t| t.id.clone());
+        let target = remembered.or_else(|| default.filter(|id| drawn(self, id))).or(first);
+        if let Some(id) = target {
+            self.handle(Event::Focus(id));
+        }
+    }
+
     /// The keyboard stands in for the pad on the desktop: arrows move focus, Enter/Space is A (press,
     /// hold), Escape quits.
     pub(crate) fn key(&mut self, sym: Keysym, down: bool) {
@@ -198,6 +274,11 @@ impl App {
             (Keysym::Escape, true) => self.handle(Event::Quit),
             // The pad's Y: the selected game in or out of the favourites.
             (Keysym::f, true) => self.handle(Event::ToggleFavourite),
+            // The pad's View (focus to the other screen), B, and shoulders.
+            (Keysym::Tab, true) => self.pad(PadInput::Switch),
+            (Keysym::BackSpace, true) => self.pad(PadInput::B),
+            (Keysym::q, true) => self.pad(PadInput::Shoulder(-1)),
+            (Keysym::e, true) => self.pad(PadInput::Shoulder(1)),
             _ => {}
         }
     }

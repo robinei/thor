@@ -178,7 +178,7 @@ mod tests {
         let fx = tap(&mut s, Setting::Power, 1);
         assert!(matches!(fx.last(), Some(Effect::Apply { settings, .. }) if settings.get(Setting::Power) == 2));
         let (_, fx) = s.apply(Event::Played { game: "zelda-lttp".into(), start: 0, duration: 1 });
-        assert_eq!(fx, vec![Effect::Apply { game: None, settings: s.settings.global }]);
+        assert_eq!(fx, vec![Effect::Apply { game: None, settings: s.settings.global }, Effect::PadRoute(crate::PadRoute::Ui)], "and the pad back to shelf");
     }
 
     #[test]
@@ -187,12 +187,12 @@ mod tests {
         tap(&mut s, Setting::PadMouse, 1);
         tap(&mut s, Setting::BottomScreen, 1);
         let (_, fx) = s.apply(Event::Started("zelda-lttp".into()));
-        assert_eq!(fx, vec![Effect::PadMouse(true)]);
+        assert_eq!(fx, vec![Effect::PadMouse(true), Effect::PadRoute(crate::PadRoute::Game)]);
         assert!(s.bottom_dark());
         s.apply(Event::Activate(Id::Wake));
         assert!(!s.bottom_dark());
         let (_, fx) = s.apply(Event::Played { game: "zelda-lttp".into(), start: 0, duration: 1 });
-        assert_eq!(fx.last(), Some(&Effect::PadMouse(false)));
+        assert!(fx.contains(&Effect::PadMouse(false)));
         assert!(!s.pad_mouse);
     }
 

@@ -141,6 +141,8 @@ fn main() -> ExitCode {
         }
     }
     let gamepad = std::env::var("CLAMSHELL_GAMEPAD").ok();
+    // Where the pad goes to start with (shelf in front: ClamShell's).
+    let _ = padmouse_tx.send(pad::Command::Route(state.pad_route));
     // The global settings, until a game brings its own.
     apply_settings(&state.settings.global, None, &clamshell_policy::frames::default_dir(), &padmouse_tx);
     // Games start from the launcher thread, one at a time, with MangoHud's environment; plays go to
@@ -243,10 +245,9 @@ fn main() -> ExitCode {
                     log::warn!("pad thread is gone");
                 }
             }
-            Effect::PadKeys(on) => {
+            Effect::PadRoute(route) => {
                 log::info!("effect: {effect:?}");
-                let command = if *on { pad::Command::KeysOn } else { pad::Command::KeysOff };
-                if padmouse_tx.send(command).is_err() {
+                if padmouse_tx.send(pad::Command::Route(*route)).is_err() {
                     log::warn!("pad thread is gone");
                 }
             }
@@ -375,7 +376,8 @@ type Shot = (Vec<Event>, Screen, (u32, u32), &'static str);
 /// A test's command as events: `tap app 1`, `long game`, `tap plus 1`, `tap launch`, `tap network 2`,
 /// `long network 0`, `tap wifi-power`, `mode launcher`, `home`, `type text` (on the on-screen keyboard),
 /// `slide volume|brightness FROM TO [hold]` (a finger down at FROM on a 620-wide layout, moved to TO,
-/// lifted unless held), `lift volume|brightness`.
+/// lifted unless held), `lift volume|brightness`, `pad up|down|left|right|a|b|y|lb|rb|switch` (the pad
+/// while shelf is in front; `a` presses and releases).
 fn control_events(line: &str) -> Option<Vec<Event>> {
     let words: Vec<&str> = line.split_whitespace().collect();
     let index = |w: &str| w.parse::<u16>().ok();
@@ -407,6 +409,22 @@ fn control_events(line: &str) -> Option<Vec<Event>> {
     }
     let id = match words.as_slice() {
         ["home"] => return Some(vec![Event::Home]),
+        ["pad", button] => {
+            use clamshell_core::PadInput as P;
+            return Some(match *button {
+                "up" => vec![Event::Pad(P::Up)],
+                "down" => vec![Event::Pad(P::Down)],
+                "left" => vec![Event::Pad(P::Left)],
+                "right" => vec![Event::Pad(P::Right)],
+                "a" => vec![Event::Pad(P::A(true)), Event::Pad(P::A(false))],
+                "b" => vec![Event::Pad(P::B)],
+                "y" => vec![Event::Pad(P::Y)],
+                "lb" => vec![Event::Pad(P::Shoulder(-1))],
+                "rb" => vec![Event::Pad(P::Shoulder(1))],
+                "switch" => vec![Event::Pad(P::Switch)],
+                _ => return None,
+            });
+        }
         ["mode", name] => return Some(vec![Event::Activate(Id::Mode(Mode::from_name(name)?))]),
         [_, "app", n] => Id::App(index(n)?),
         [_, "plus", n] => Id::NewInstance(index(n)?),

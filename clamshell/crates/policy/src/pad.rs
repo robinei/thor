@@ -3,9 +3,11 @@
 //! copied straight through. With the pad mouse on (a toggle, independent of the second screen's mode),
 //! the same events drive a virtual mouse instead: left stick moves the pointer, right stick scrolls, A
 //! or the right trigger clicks left, B right, X middle, the D-pad sends arrow keys; the virtual pad
-//! meanwhile shows a neutral controller, so games never see it disappear. While the on-screen keyboard
-//! is open and no game is in front, the pad types instead (D-pad arrows, A Enter, B Backspace; the
-//! virtual pad again neutral). The pad mouse wins over typing. The home button (BTN_MODE) is
+//! meanwhile shows a neutral controller, so games never see it disappear. Where the rest goes follows
+//! what is in front ([`PadRoute`]): with shelf in front the pad drives ClamShell ([`Event::Pad`]: D-pad
+//! or left stick move focus, repeated while held; A, B, Y, the shoulders, View); with the keyboard open
+//! over an app it types (D-pad arrows, A Enter, B Backspace); otherwise the game's virtual pad. Away from
+//! the game the virtual pad shows a neutral controller. The pad mouse wins over both. The home button (BTN_MODE) is
 //! ours: games never see it, it goes to the program as [`Event::Home`]. Button layers (remaps) go in
 //! this same path later.
 //!
@@ -18,7 +20,7 @@ use std::time::{Duration, Instant};
 
 use evdev::raw_stream::RawDevice;
 use evdev::uinput::VirtualDevice;
-use clamshell_core::Event;
+use clamshell_core::{Event, PadInput, PadRoute};
 use evdev::{AbsInfo, AbsoluteAxisCode, AttributeSet, BusType, EventType, InputEvent, InputId, KeyCode, RelativeAxisCode, UinputAbsSetup};
 
 use crate::Sink;
@@ -224,9 +226,87 @@ impl PadMouse {
 pub enum Command {
     MouseOn,
     MouseOff,
-    KeysOn,
-    KeysOff,
+    Route(PadRoute),
     Shape(Shaping),
+}
+
+/// A direction held this long starts repeating, this often.
+const REPEAT_AFTER: Duration = Duration::from_millis(350);
+const REPEAT_EVERY: Duration = Duration::from_millis(90);
+/// The left stick counts as a direction past this (of full).
+const STICK_DIRECTION: f32 = 0.6;
+
+/// The pad driving ClamShell: buttons as they come, the D-pad and left stick as directions that repeat
+/// while held.
+#[derive(Debug)]
+pub struct Navigator {
+    stick_range: Range,
+    hat: (i32, i32),
+    stick: (f32, f32),
+    held: Option<PadInput>,
+    next: Option<Instant>,
+}
+
+impl Navigator {
+    pub fn new(stick_range: Range) -> Self {
+        Navigator { stick_range, hat: (0, 0), stick: (0.0, 0.0), held: None, next: None }
+    }
+
+    /// The direction held now: the D-pad's, else the stick's (its larger axis).
+    fn direction(&self) -> Option<PadInput> {
+        let from = |(x, y): (f32, f32), threshold: f32| match (x.abs() >= y.abs(), x, y) {
+            (true, x, _) if x <= -threshold => Some(PadInput::Left),
+            (true, x, _) if x >= threshold => Some(PadInput::Right),
+            (false, _, y) if y <= -threshold => Some(PadInput::Up),
+            (false, _, y) if y >= threshold => Some(PadInput::Down),
+            _ => None,
+        };
+        from((self.hat.0 as f32, self.hat.1 as f32), 0.5).or_else(|| from(self.stick, STICK_DIRECTION))
+    }
+
+    /// One pad event at `now`; what it means goes to `out`.
+    pub fn event(&mut self, kind: u16, code: u16, value: i32, now: Instant, out: &mut Vec<PadInput>) {
+        match (kind, code) {
+            (EV_ABS, c) if c == AbsoluteAxisCode::ABS_HAT0X.0 => self.hat.0 = value.signum(),
+            (EV_ABS, c) if c == AbsoluteAxisCode::ABS_HAT0Y.0 => self.hat.1 = value.signum(),
+            (EV_ABS, c) if c == AbsoluteAxisCode::ABS_X.0 => self.stick.0 = self.stick_range.centered(value),
+            (EV_ABS, c) if c == AbsoluteAxisCode::ABS_Y.0 => self.stick.1 = self.stick_range.centered(value),
+            (EV_KEY, c) if c == KeyCode::BTN_SOUTH.0 && value != 2 => out.push(PadInput::A(value == 1)),
+            // The other buttons act when pressed (not on release or autorepeat).
+            (EV_KEY, _) if value != 1 => {}
+            (EV_KEY, c) if c == KeyCode::BTN_EAST.0 => out.push(PadInput::B),
+            (EV_KEY, c) if c == KeyCode::BTN_NORTH.0 => out.push(PadInput::Y),
+            (EV_KEY, c) if c == KeyCode::BTN_TL.0 => out.push(PadInput::Shoulder(-1)),
+            (EV_KEY, c) if c == KeyCode::BTN_TR.0 => out.push(PadInput::Shoulder(1)),
+            (EV_KEY, c) if c == KeyCode::BTN_SELECT.0 => out.push(PadInput::Switch),
+            _ => {}
+        }
+        let direction = self.direction();
+        if direction != self.held {
+            self.held = direction;
+            self.next = direction.map(|d| {
+                out.push(d);
+                now + REPEAT_AFTER
+            });
+        }
+    }
+
+    /// Repeats a held direction when due; returns when to call again, if one is held.
+    pub fn tick(&mut self, now: Instant, out: &mut Vec<PadInput>) -> Option<Instant> {
+        let (Some(direction), Some(next)) = (self.held, self.next) else {
+            return None;
+        };
+        if now >= next {
+            out.push(direction);
+            self.next = Some(now + REPEAT_EVERY);
+        }
+        self.next
+    }
+
+    /// Lets go of everything (the pad goes elsewhere).
+    pub fn reset(&mut self) {
+        *self = Navigator::new(self.stick_range);
+    }
 }
 
 /// The keys the pad types with (on the pad mouse's device).
@@ -251,25 +331,32 @@ pub fn typing(kind: u16, code: u16, value: i32, out: &mut Vec<Out>) {
     }
 }
 
-/// Where the pad's events go.
+/// Where the pad's events go: the pad mouse when on, else the route.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 struct Routes {
     mouse: bool,
-    keys: bool,
+    route: PadRoute,
 }
 
 impl Routes {
     /// Away from games: the virtual pad shows a neutral controller.
     fn away(self) -> bool {
-        self.mouse || self.keys
+        self.mouse || self.route != PadRoute::Game
+    }
+
+    fn typing(self) -> bool {
+        !self.mouse && self.route == PadRoute::Keys
+    }
+
+    fn navigating(self) -> bool {
+        !self.mouse && self.route == PadRoute::Ui
     }
 
     fn apply(&mut self, command: Command) {
         match command {
             Command::MouseOn => self.mouse = true,
             Command::MouseOff => self.mouse = false,
-            Command::KeysOn => self.keys = true,
-            Command::KeysOff => self.keys = false,
+            Command::Route(route) => self.route = route,
             Command::Shape(_) => {}
         }
     }
@@ -367,6 +454,8 @@ fn run(wanted: Option<&str>, commands: &Receiver<Command>, sink: &impl Sink, rou
     log::info!("pad: {} grabbed; games see the virtual pad", real.name().unwrap_or("controller"));
 
     let mut mapping = PadMouse::new(ranges);
+    let mut navigator = Navigator::new(ranges.stick);
+    let mut inputs = Vec::new();
     let mut out = Vec::new();
     let mut to_pad = Vec::new();
     let mut to_mouse = Vec::new();
@@ -384,15 +473,18 @@ fn run(wanted: Option<&str>, commands: &Receiver<Command>, sink: &impl Sink, rou
                     if before.mouse && !routes.mouse {
                         mapping.reset(&mut out);
                     }
-                    if before.keys && !routes.keys {
+                    if before.typing() && !routes.typing() {
                         out.extend(TYPING.iter().map(|k| (EV_KEY, k.0, 0)));
                         out.push((EV_SYN, 0, 0));
+                    }
+                    if before.navigating() && !routes.navigating() {
+                        navigator.reset();
                     }
                     if before.away() != routes.away() {
                         held.events(!routes.away(), &mut to_pad);
                     }
                     if before != *routes {
-                        log::info!("pad: mouse {}, typing {}", routes.mouse, routes.keys);
+                        log::info!("pad: mouse {}, route {:?}", routes.mouse, routes.route);
                     }
                 }
                 Err(TryRecvError::Empty) => break,
@@ -400,7 +492,8 @@ fn run(wanted: Option<&str>, commands: &Receiver<Command>, sink: &impl Sink, rou
             }
         }
         // Wake at the motion rate while a stick is deflected; otherwise for events (or to check commands).
-        let wait = if routes.mouse && mapping.moving() { MOTION_EVERY } else { Duration::from_millis(100) };
+        let repeat_in = navigator.next.map(|t| t.saturating_duration_since(Instant::now()));
+        let wait = if routes.mouse && mapping.moving() { MOTION_EVERY } else { repeat_in.unwrap_or(Duration::from_millis(100)).min(Duration::from_millis(100)) };
         let timeout = rustix::event::Timespec { tv_sec: 0, tv_nsec: i64::from(wait.subsec_nanos()) };
         let mut fds = [rustix::event::PollFd::new(&real, rustix::event::PollFlags::IN)];
         rustix::event::poll(&mut fds, Some(&timeout))?;
@@ -417,8 +510,10 @@ fn run(wanted: Option<&str>, commands: &Receiver<Command>, sink: &impl Sink, rou
                     held.update(kind, code, value);
                     if routes.mouse {
                         mapping.event(kind, code, value, &mut out);
-                    } else if routes.keys {
+                    } else if routes.typing() {
                         typing(kind, code, value, &mut out);
+                    } else if routes.navigating() {
+                        navigator.event(kind, code, value, Instant::now(), &mut inputs);
                     } else {
                         to_pad.push(e);
                     }
@@ -428,6 +523,14 @@ fn run(wanted: Option<&str>, commands: &Receiver<Command>, sink: &impl Sink, rou
             Err(e) => return Err(e),
         }
         let now = Instant::now();
+        if routes.navigating() {
+            navigator.tick(now, &mut inputs);
+        }
+        for input in inputs.drain(..) {
+            if !sink.send(Event::Pad(input)) {
+                return Ok(());
+            }
+        }
         if routes.mouse && now.duration_since(last) >= MOTION_EVERY {
             mapping.tick(now.duration_since(last), &mut out);
         }
@@ -604,12 +707,38 @@ mod tests {
         typing(EV_KEY, KeyCode::BTN_NORTH.0, 1, &mut out);
         assert_eq!(out, vec![(EV_KEY, KeyCode::KEY_ENTER.0, 1), (EV_SYN, 0, 0), (EV_KEY, KeyCode::KEY_BACKSPACE.0, 2), (EV_SYN, 0, 0)]);
         let mut routes = Routes::default();
-        routes.apply(Command::KeysOn);
+        routes.apply(Command::Route(PadRoute::Keys));
         routes.apply(Command::MouseOn);
-        assert!(routes.away() && routes.mouse && routes.keys);
+        assert!(routes.away() && !routes.typing(), "the pad mouse wins");
         routes.apply(Command::MouseOff);
-        routes.apply(Command::KeysOff);
+        assert!(routes.typing());
+        routes.apply(Command::Route(PadRoute::Game));
         assert!(!routes.away());
+    }
+
+    #[test]
+    fn navigating_repeats_held_directions_and_passes_buttons() {
+        let mut nav = Navigator::new(Range { min: -32768, max: 32767 });
+        let t0 = Instant::now();
+        let mut out = Vec::new();
+        nav.event(EV_ABS, AbsoluteAxisCode::ABS_HAT0Y.0, 1, t0, &mut out);
+        assert_eq!(out, vec![PadInput::Down]);
+        out.clear();
+        assert!(nav.tick(t0 + Duration::from_millis(100), &mut out).is_some());
+        assert!(out.is_empty(), "not yet");
+        nav.tick(t0 + REPEAT_AFTER, &mut out);
+        nav.tick(t0 + REPEAT_AFTER + REPEAT_EVERY, &mut out);
+        assert_eq!(out, vec![PadInput::Down, PadInput::Down]);
+        out.clear();
+        nav.event(EV_ABS, AbsoluteAxisCode::ABS_HAT0Y.0, 0, t0, &mut out);
+        assert_eq!(nav.tick(t0 + Duration::from_secs(5), &mut out), None);
+        // The stick past its threshold, sideways.
+        nav.event(EV_ABS, AbsoluteAxisCode::ABS_X.0, 30000, t0, &mut out);
+        nav.event(EV_ABS, AbsoluteAxisCode::ABS_X.0, 0, t0, &mut out);
+        for (code, value) in [(KeyCode::BTN_SOUTH, 1), (KeyCode::BTN_SOUTH, 0), (KeyCode::BTN_EAST, 1), (KeyCode::BTN_EAST, 0), (KeyCode::BTN_SELECT, 1), (KeyCode::BTN_TR, 1)] {
+            nav.event(EV_KEY, code.0, value, t0, &mut out);
+        }
+        assert_eq!(out, vec![PadInput::Right, PadInput::A(true), PadInput::A(false), PadInput::B, PadInput::Switch, PadInput::Shoulder(1)]);
     }
 
     #[test]

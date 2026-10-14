@@ -155,9 +155,14 @@ invisible) to a folder in RAM that ClamShell follows. For a Steam game, as launc
 **The controller** (any Xbox-style pad; `CLAMSHELL_GAMEPAD`: path or part of its name) is grabbed for good;
 games see a virtual Xbox 360 pad that is always there. The **pad mouse** toggle (mouse icon in the bar)
 routes the controller to a virtual mouse instead (left stick pointer, right stick scroll, A/RT left
-click, B right, X middle, D-pad arrows) while the virtual pad shows a neutral controller. While the
-on-screen keyboard is open and no game is in front, the pad **types** (D-pad arrows, A Enter, B
-Backspace, also through that device), again with the virtual pad neutral. The **home
+click, B right, X middle, D-pad arrows) while the virtual pad shows a neutral controller. Otherwise the
+pad goes where what is in front says: with **shelf in front, ClamShell owns it** (D-pad or left stick move
+focus, repeating while held, across both screens; A acts; B goes back: the editor, Wi-Fi, Battery; Y
+favourite; LB/RB the previous or next tab on top, mode below; View/Select moves focus to the other screen,
+back to where it was there); with the on-screen keyboard open over an app it **types** (D-pad arrows, A
+Enter, B Backspace); with a game in front, the game has it. The virtual pad shows a neutral controller
+whenever the game doesn't. On the desktop, Tab stands in for View, Backspace for B, Q and E for the
+shoulders. The **home
 button** (BTN_MODE) is ClamShell's, never the games': from shelf it goes to the running game, from anything
 else to shelf. (So Steam's overlay doesn't get it.) Test with a fake
 pad: `cargo run --release -p clamshell-policy --example fake_pad &` then

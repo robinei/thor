@@ -155,9 +155,9 @@ mod tests {
         let mut s = state();
         s.apply(Event::Activate(Id::Mode(Mode::Keyboard)));
         let (_, fx) = s.apply(Event::Activate(Id::Mode(Mode::Wifi)));
-        assert_eq!((s.mode, fx), (Mode::Wifi, vec![Effect::Wifi(Command::Watch(true)), Effect::PadKeys(false)]));
+        assert_eq!((s.mode, fx), (Mode::Wifi, vec![Effect::Wifi(Command::Watch(true))]));
         let (_, fx) = s.apply(Event::Activate(Id::Mode(Mode::Wifi)));
-        assert_eq!((s.mode, fx), (Mode::Keyboard, vec![Effect::Wifi(Command::Watch(false)), Effect::PadKeys(true)]), "a second tap goes back");
+        assert_eq!((s.mode, fx), (Mode::Keyboard, vec![Effect::Wifi(Command::Watch(false))]), "a second tap goes back");
         s.apply(Event::Activate(Id::Mode(Mode::Wifi)));
         let (_, fx) = s.apply(Event::Activate(Id::Mode(Mode::Touchpad)));
         assert_eq!(fx, vec![Effect::Wifi(Command::Watch(false)), Effect::Touchpad(true)]);
