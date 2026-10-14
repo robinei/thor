@@ -10,6 +10,7 @@
 
 mod bar;
 mod keyboard;
+mod launcher;
 mod settings;
 mod shelf;
 mod sysinfo;
@@ -198,7 +199,7 @@ pub fn bottom(c: &mut Canvas, s: &State, w: f32, h: f32, scratch: &mut Scratch, 
     match s.mode {
         Mode::Settings => settings::draw(f, body, &mut scratch.text),
         Mode::Keyboard => keyboard::draw(f, body),
-        Mode::Launcher => label(f.c, body, body.h * 0.05, DIM, "Launcher: not built yet"),
+        Mode::Launcher => launcher::draw(f, body, &mut scratch.text),
         Mode::Touchpad => touchpad::draw(f, body),
         Mode::Sysinfo => sysinfo::draw(f, body, &mut scratch.lines),
     }

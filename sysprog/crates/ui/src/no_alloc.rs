@@ -63,6 +63,7 @@ fn warm_frames_do_not_allocate() {
         ("settings, all games", vec![Event::Activate(Id::Scope(sysprog_core::Scope::Global))]),
         ("environment editor", vec![Event::Activate(Id::Env), key(Key::Char('a'))]),
         ("environment saved", vec![key(Key::Char('=')), key(Key::Char('1')), Event::Activate(Id::EnvSave)]),
+        ("launcher, an app running", vec![Event::Activate(Id::Mode(Mode::Launcher)), Event::Activate(Id::App(2))]),
         ("keyboard", vec![Event::Activate(Id::Mode(Mode::Keyboard))]),
         ("keyboard, Fn", vec![key(Key::Mod(Modifier::Fn))]),
         ("keyboard, Shift and a pressed key", vec![key(Key::Mod(Modifier::Shift)), key(Key::Char('h'))]),

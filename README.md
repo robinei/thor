@@ -50,6 +50,15 @@ desktop with another layout, letters, digits and named keys come out right but p
 layout. To type into other apps on a desktop, run with `SYSPROG_BOTTOM_PANEL=1`: the bottom view is then a
 panel in the bottom right corner that never takes the keyboard focus (as on the device), not a window.
 
+**Launcher** (the grid icon): apps as tiles; a tap starts one, its icon green while it runs (with a count
+when more than one does). They come from `~/.config/sysprog/launcher.json` (read at start), without it
+Shelf, Steam (Big Picture) and a terminal (foot); `sysprog --launcher-example` prints a file to start
+from. Each app has a `name`, an `icon` (`shelf`, `gamepad`, `terminal`, `browser`, `files`, `music`,
+`video`, `settings`; otherwise its initial) and a `command` (program and arguments, no shell) or a
+`builtin` (`shelf`: brings shelf's window to the front, on sway). Apps start from the home directory in
+their own systemd scope, so they outlive a restart of the system program. A broken file shows its error
+under the tiles, and the defaults are used.
+
 **Settings** (the sliders icon, first in the bar): a 4×4 grid of tiles, each an icon over its value. A
 tap steps to the next value, a long press goes back to the default. Tiles sit on black; an icon's colour says
 what its value does: grey stock, green saves power, amber costs power, blue changes how the game looks or

@@ -6,6 +6,8 @@ license.workspace = true
 
 [dependencies]
 sysprog-library.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

@@ -14,6 +14,30 @@ use sysprog_ui::{Config, Screen};
 fn main() -> ExitCode {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
+    // Commands that only print: before anything starts or touches the hardware.
+    // `--launcher-example`: an example launcher.json, to start one from.
+    if std::env::args().nth(1).as_deref() == Some("--launcher-example") {
+        print!("{LAUNCHER_EXAMPLE}");
+        return ExitCode::SUCCESS;
+    }
+    // `--mangohud-env`: print the environment that makes a game (started by hand) report its frame rate
+    // here.
+    if std::env::args().nth(1).as_deref() == Some("--mangohud-env") {
+        let dir = sysprog_policy::frames::default_dir();
+        return match tuning::mangohud_config(&dir, "default", 0, 0) {
+            Ok(config) => {
+                for (k, v) in tuning::mangohud_env(&config) {
+                    println!("{k}={v}");
+                }
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                log::error!("{e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+
     let config = Config {
         bottom_output: std::env::var("SYSPROG_BOTTOM_OUTPUT").unwrap_or_else(|_| "DSI-1".into()),
         // The Thor's panels at half size: top 1920x1080 (landscape), bottom 1240x1080.
@@ -52,6 +76,11 @@ fn main() -> ExitCode {
         .map(|d| d.join("sysprog/last"));
     if !snapshotting && let Some(text) = resume_file.as_ref().and_then(|f| std::fs::read_to_string(f).ok()) {
         state.restore(&text);
+    }
+    // The launcher's apps (~/.config/sysprog/launcher.json; without it, shelf, Steam and a terminal).
+    if !snapshotting {
+        let (apps, error) = load_apps();
+        state.set_apps(apps, error);
     }
     // Each game's settings (power profile, FPS cap).
     if !snapshotting && let Some(text) = state_dir.as_ref().and_then(|d| std::fs::read_to_string(d.join("game-settings.txt")).ok()) {
@@ -115,26 +144,12 @@ fn main() -> ExitCode {
         }
         return ExitCode::SUCCESS;
     }
-    // `--mangohud-env`: print the environment that makes a game (started by hand) report its frame rate
-    // here.
-    if std::env::args().nth(1).as_deref() == Some("--mangohud-env") {
-        let dir = sysprog_policy::frames::default_dir();
-        return match tuning::mangohud_config(&dir, "default", 0, 0) {
-            Ok(config) => {
-                for (k, v) in tuning::mangohud_env(&config) {
-                    println!("{k}={v}");
-                }
-                ExitCode::SUCCESS
-            }
-            Err(e) => {
-                log::error!("{e}");
-                ExitCode::FAILURE
-            }
-        };
-    }
     // The on-screen keyboard types through a virtual keyboard (US positions).
     let mut keyboard = virtual_keyboard::VirtualKeyboard::new().map_err(|e| log::error!("virtual keyboard: {e}")).ok();
 
+    let app_events: Arc<std::sync::OnceLock<sysprog_ui::EventSender>> = Arc::default();
+    let app_events_slot = app_events.clone();
+    let scope = sysprog_policy::launcher::Config::has_user_systemd();
     let result = sysprog_ui::run(
         state,
         config,
@@ -160,6 +175,8 @@ fn main() -> ExitCode {
             if let Err(e) = touchpad::spawn(touchpad, layout, touchpad_rx, move |event| touched.send(event)) {
                 log::error!("touchpad thread: {e}");
             }
+            // Launcher apps report their end through this.
+            let _ = app_events_slot.set(sender.clone());
             if let Err(e) = sysprog_policy::launcher::spawn(launcher, launch_rx, move |event| sender.send(event)) {
                 log::error!("launcher thread: {e}");
             }
@@ -227,6 +244,17 @@ fn main() -> ExitCode {
                     log::warn!("favourites: {e}");
                 }
             }
+            Effect::RunApp { app, command } => {
+                log::info!("running {command:?}");
+                let events = app_events.get().cloned();
+                let app = *app;
+                sysprog_policy::launcher::run_app(command, scope, move || {
+                    if let Some(events) = events {
+                        events.send(Event::AppEnded(app));
+                    }
+                });
+            }
+            Effect::ShowShelf => show_shelf(),
             other => log::info!("effect: {other:?}"),
         },
     );
@@ -241,6 +269,53 @@ fn main() -> ExitCode {
 
 /// Events to apply first, the screen, its size, the file name.
 type Shot = (Vec<Event>, Screen, (u32, u32), &'static str);
+
+/// An example launcher.json: the defaults and a few more (an app without an icon shows its initial).
+const LAUNCHER_EXAMPLE: &str = r#"{
+  "apps": [
+    { "name": "Shelf", "icon": "shelf", "builtin": "shelf" },
+    { "name": "Steam", "icon": "gamepad", "command": ["steam", "-gamepadui"] },
+    { "name": "Terminal", "icon": "terminal", "command": ["foot"] },
+    { "name": "Firefox", "icon": "browser", "command": ["firefox"] },
+    { "name": "Files", "icon": "files", "command": ["thunar"] },
+    { "name": "Music", "icon": "music", "command": ["foot", "ncmpcpp"] },
+    { "name": "Videos", "icon": "video", "command": ["mpv", "--player-operation-mode=pseudo-gui"] },
+    { "name": "Kodi", "command": ["kodi"] }
+  ]
+}
+"#;
+
+/// The launcher's apps from their file, or the defaults (with what is wrong with the file, if it is).
+fn load_apps() -> (Vec<sysprog_core::apps::App>, Option<String>) {
+    let file = std::env::var_os("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config")))
+        .map(|d| d.join("sysprog/launcher.json"));
+    let Some(text) = file.as_ref().and_then(|f| std::fs::read_to_string(f).ok()) else {
+        return (sysprog_core::apps::defaults(), None);
+    };
+    match sysprog_core::apps::parse(&text) {
+        Ok(apps) => (apps, None),
+        Err(e) => {
+            log::warn!("launcher.json: {e}");
+            (sysprog_core::apps::defaults(), Some(format!("launcher.json: {e}")))
+        }
+    }
+}
+
+/// Brings shelf's window (app id `sysprog.top`) to the front: on sway through swaymsg; other
+/// compositors have no common way, so there it only logs.
+fn show_shelf() {
+    if std::env::var_os("SWAYSOCK").is_none() {
+        log::info!("showing shelf: only on sway");
+        return;
+    }
+    match std::process::Command::new("swaymsg").arg("[app_id=\"sysprog.top\"] focus").output() {
+        Ok(out) if !out.status.success() => log::warn!("swaymsg: {}", String::from_utf8_lossy(&out.stdout).trim()),
+        Ok(_) => {}
+        Err(e) => log::warn!("swaymsg: {e}"),
+    }
+}
 
 /// Applies the settings in force: hardware (power, cores, charge limit), the pad's shaping, and for a
 /// game its MangoHud config (written, and reloaded live if it runs). Returns that config's path.
@@ -280,6 +355,9 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
         if long { Event::LongPress(id) } else { Event::Activate(id) }
     };
     let bottom = (1240, 1080);
+    if let Ok(apps) = sysprog_core::apps::parse(LAUNCHER_EXAMPLE) {
+        state.set_apps(apps, None);
+    }
     let taps = |setting: Setting, n: usize| (0..n).map(move |_| Event::Activate(Id::Tile(setting)));
     let shots: Vec<Shot> = vec![
         (vec![], Screen::Top, (1920, 1080), "top.png"),
@@ -347,6 +425,18 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
             "status-low.png",
         ),
         (vec![Event::Status(status)], Screen::Bottom, bottom, "bottom.png"),
+        (
+            vec![
+                Event::Activate(Id::Mode(Mode::Launcher)),
+                Event::Activate(Id::App(2)),
+                Event::Activate(Id::App(2)),
+                Event::Activate(Id::App(3)),
+                Event::HideFocus,
+            ],
+            Screen::Bottom,
+            bottom,
+            "launcher.png",
+        ),
         (vec![Event::Activate(Id::Mode(Mode::Keyboard))], Screen::Bottom, bottom, "keyboard.png"),
         (vec![key(Key::Mod(Modifier::Fn), false)], Screen::Bottom, bottom, "keyboard-fn.png"),
         (

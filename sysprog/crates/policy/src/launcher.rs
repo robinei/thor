@@ -13,6 +13,7 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::Receiver;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -164,6 +165,50 @@ fn steam_running(marker: &str) -> bool {
     })
 }
 
+/// Starts a launcher app (program and arguments, no shell) from the home directory, in its own scope
+/// where there is a user session (so it outlives a restart of the system program). Doesn't wait: calls
+/// `ended` once it exits, or at once if it couldn't start.
+pub fn run_app(command: &[String], scope: bool, ended: impl FnOnce() + Send + 'static) {
+    static COUNT: AtomicU32 = AtomicU32::new(0);
+    let Some((program, args)) = command.split_first() else {
+        return ended();
+    };
+    let mut cmd = if scope {
+        let mut cmd = Command::new("systemd-run");
+        let n = COUNT.fetch_add(1, Ordering::Relaxed);
+        let unit = format!("--unit=sysprog-app-{}-{n}", std::process::id());
+        cmd.args(["--user", "--scope", "--quiet", "--collect", &unit, "--"]).arg(program).args(args);
+        cmd
+    } else {
+        let mut cmd = Command::new(program);
+        cmd.args(args);
+        cmd
+    };
+    if let Some(home) = std::env::var_os("HOME") {
+        cmd.current_dir(home);
+    }
+    cmd.stdin(Stdio::null()).process_group(0);
+    let mut child = match cmd.spawn() {
+        Ok(child) => child,
+        Err(e) => {
+            log::warn!("{program}: {e}");
+            return ended();
+        }
+    };
+    let name = program.clone();
+    let waiter = thread::Builder::new().name("app".into()).spawn(move || {
+        match child.wait() {
+            Ok(status) if !status.success() => log::info!("{name} exited: {status}"),
+            Ok(_) => {}
+            Err(e) => log::warn!("{name}: {e}"),
+        }
+        ended();
+    });
+    if let Err(e) = waiter {
+        log::warn!("{program}: no thread to wait for it: {e}");
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
@@ -196,6 +241,16 @@ mod tests {
         assert_eq!(std::fs::read_to_string(dir.join("ran-in")).unwrap().trim(), dir.to_string_lossy(), "in its own dir");
         assert_eq!(stats::read(&db).get(&*id).map(|p| p.count), Some(1));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn apps_report_their_end() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let done = tx.clone();
+        run_app(&["sh".into(), "-c".into(), "sleep 0.2".into()], false, move || done.send("sleep").unwrap());
+        run_app(&["/nonexistent/app".into()], false, move || tx.send("missing").unwrap());
+        assert_eq!(rx.recv_timeout(Duration::from_secs(5)).unwrap(), "missing", "at once");
+        assert_eq!(rx.recv_timeout(Duration::from_secs(5)).unwrap(), "sleep", "when it exits");
     }
 
     #[test]

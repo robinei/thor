@@ -27,6 +27,13 @@ pub enum Icon {
     Gpu,
     Env,
     Reset,
+    // Launcher apps.
+    Shelf,
+    Gamepad,
+    Browser,
+    Files,
+    Music,
+    Video,
     Keyboard,
     Touchpad,
     Sysinfo,
@@ -158,6 +165,39 @@ pub fn draw(c: &mut Canvas, icon: Icon, r: Rect, color: Color) {
             c.polyline(&arc(12.0, 13.0, 8.0, 195.0, 330.0), line, color, false);
             c.polyline(&arc(12.0, 13.0, 8.0, -30.0, 15.0), line, color, false);
             c.polyline(&[p(11.5, 3.5), p(16.0, 6.1), p(13.0, 10.0)], line, color, false);
+        }
+        Icon::Shelf => {
+            for (x, top) in [(4.0, 5.0), (8.5, 7.0), (13.0, 4.0)] {
+                c.outline(rr(x, top, 3.5, 17.0 - top), 0.8 * u, 1.5 * u, color);
+            }
+            c.polyline(&[p(17.5, 7.5), p(21.0, 16.5)], 3.2 * u, color, false);
+            c.polyline(&[p(2.0, 21.0), p(22.0, 21.0)], line, color, false);
+        }
+        Icon::Gamepad => {
+            let body = [p(6.5, 7.0), p(17.5, 7.0), p(21.0, 15.0), p(19.5, 18.5), p(16.0, 17.0), p(14.0, 14.5), p(10.0, 14.5), p(8.0, 17.0), p(4.5, 18.5), p(3.0, 15.0)];
+            c.polyline(&body, line, color, true);
+            c.polyline(&[p(6.0, 10.8), p(10.0, 10.8)], 1.5 * u, color, false);
+            c.polyline(&[p(8.0, 8.8), p(8.0, 12.8)], 1.5 * u, color, false);
+            c.circle(x0 + 15.5 * u, y0 + 10.0 * u, 1.1 * u, color);
+            c.circle(x0 + 17.5 * u, y0 + 12.0 * u, 1.1 * u, color);
+        }
+        Icon::Browser => {
+            c.outline(rr(2.5, 2.5, 19.0, 19.0), 9.5 * u, line, color);
+            c.outline(rr(8.0, 2.5, 8.0, 19.0), 4.0 * u, 1.4 * u, color);
+            c.polyline(&[p(3.0, 9.0), p(21.0, 9.0)], 1.4 * u, color, false);
+            c.polyline(&[p(3.0, 15.0), p(21.0, 15.0)], 1.4 * u, color, false);
+        }
+        Icon::Files => {
+            c.polyline(&[p(2.5, 6.0), p(2.5, 19.5), p(21.5, 19.5), p(21.5, 8.0), p(11.5, 8.0), p(9.5, 5.0), p(3.5, 5.0)], line, color, true);
+        }
+        Icon::Music => {
+            c.polyline(&[p(9.0, 17.5), p(9.0, 4.0), p(20.0, 2.5), p(20.0, 15.5)], line, color, false);
+            c.circle(x0 + 6.5 * u, y0 + 17.5 * u, 2.8 * u, color);
+            c.circle(x0 + 17.5 * u, y0 + 15.5 * u, 2.8 * u, color);
+        }
+        Icon::Video => {
+            c.outline(rr(2.5, 4.5, 19.0, 15.0), 2.5 * u, line, color);
+            c.polyline(&[p(10.0, 8.5), p(16.0, 12.0), p(10.0, 15.5)], line, color, true);
         }
         Icon::Mouse => {
             c.outline(rr(6.0, 3.0, 12.0, 18.0), 6.0 * u, line, color);

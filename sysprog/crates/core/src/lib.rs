@@ -3,6 +3,7 @@
 //! events, so all of this is unit-testable.
 
 pub mod keyboard;
+pub mod apps;
 pub mod editor;
 pub mod metrics;
 mod panel;
@@ -105,6 +106,8 @@ pub enum Id {
     EnvCancel,
     /// The dark second screen (while a game runs): a tap anywhere lights it.
     Wake,
+    /// A launcher app, by position.
+    App(u16),
     /// The settings panel's scope tabs.
     Scope(Scope),
     /// Drops the game in context's overrides.
@@ -162,6 +165,8 @@ pub enum Event {
     Started(Arc<str>),
     Played { game: Arc<str>, start: u64, duration: u64 },
     LaunchFailed(Arc<str>),
+    /// A launcher app (by position) exited, or couldn't be started.
+    AppEnded(u16),
     Quit,
 }
 
@@ -193,6 +198,10 @@ pub enum Effect {
     /// The pad mouse turned on or off: the input side grabs the controller and drives a virtual mouse
     /// with it, or releases it to games.
     PadMouse(bool),
+    /// Start a launcher app's command (by position, to report its end).
+    RunApp { app: u16, command: Vec<String> },
+    /// Bring shelf's window to the front.
+    ShowShelf,
     Quit,
 }
 
@@ -232,6 +241,11 @@ pub struct State {
     pub editor: Option<Editor>,
     /// The dark second screen was tapped awake (until the next game).
     pub woken: bool,
+    /// The launcher's apps, what is wrong with their file (the defaults are used then), and how many
+    /// of each run.
+    pub apps: Vec<apps::App>,
+    pub apps_error: Option<String>,
+    pub apps_running: Vec<u16>,
     /// The pad mouse was turned on by a launch (Setting::PadMouse), to turn off when the game ends.
     pad_mouse_by_launch: bool,
     /// What the settings panel edits (global whenever there is no game in context).
@@ -268,7 +282,7 @@ pub enum Hold {
 fn screen_of(id: &Id) -> Dirty {
     match id {
         Id::Game(_) | Id::Tab(_) => Dirty::BOTH,
-        Id::Mode(_) | Id::Tile(_) | Id::Env | Id::EnvSave | Id::EnvCancel | Id::Wake | Id::Scope(_) | Id::Reset | Id::Launch | Id::Key(_) | Id::PadMouse => Dirty::BOTTOM,
+        Id::Mode(_) | Id::Tile(_) | Id::Env | Id::EnvSave | Id::EnvCancel | Id::Wake | Id::App(_) | Id::Scope(_) | Id::Reset | Id::Launch | Id::Key(_) | Id::PadMouse => Dirty::BOTTOM,
     }
 }
 
@@ -276,9 +290,17 @@ impl State {
     pub fn new(library: Library) -> Self {
         let cursors = vec![Cursor::default(); library.collections.len()];
         let mut s = State { library, cursors, rows: 1, ..State::default() };
+        s.set_apps(apps::defaults(), None);
         s.sync();
         s.focus = s.selected.clone().map(Id::Game);
         s
+    }
+
+    /// The launcher's apps (from their file), and what is wrong with it if anything.
+    pub fn set_apps(&mut self, apps: Vec<apps::App>, error: Option<String>) {
+        self.apps_running = vec![0; apps.len()];
+        self.apps = apps;
+        self.apps_error = error;
     }
 
     /// Applies one event; returns which screens changed and what must happen outside.
@@ -390,6 +412,12 @@ impl State {
                 });
                 (Dirty::BOTH, self.game_ended())
             }
+            Event::AppEnded(app) => {
+                if let Some(n) = self.apps_running.get_mut(usize::from(app)) {
+                    *n = n.saturating_sub(1);
+                }
+                (Dirty::BOTTOM, vec![])
+            }
             Event::LaunchFailed(game) => {
                 if self.running.as_ref() == Some(&game) {
                     self.running = None;
@@ -480,6 +508,21 @@ impl State {
                 Some(game) => (Dirty::BOTH, self.launch_effects(game)),
                 None => (Dirty::BOTH, vec![]),
             },
+            Id::App(i) => {
+                let Some(app) = self.apps.get(usize::from(i)) else {
+                    return (Dirty::NONE, vec![]);
+                };
+                let effect = match app.builtin {
+                    Some(apps::Builtin::Shelf) => Effect::ShowShelf,
+                    None => {
+                        if let Some(n) = self.apps_running.get_mut(usize::from(i)) {
+                            *n += 1;
+                        }
+                        Effect::RunApp { app: i, command: app.command.clone() }
+                    }
+                };
+                (Dirty::BOTTOM, vec![effect])
+            }
             Id::PadMouse => {
                 self.pad_mouse = !self.pad_mouse;
                 (Dirty::BOTTOM, vec![Effect::PadMouse(self.pad_mouse)])
@@ -626,6 +669,20 @@ mod tests {
         let g = s.library.games.iter().find(|g| g.id == first).unwrap();
         assert_eq!((g.plays.count, g.plays.seconds), (1, 600));
         assert!(s.library.collections.iter().any(|c| c.name == "Recent"));
+    }
+
+    #[test]
+    fn launcher_apps_run_and_end() {
+        let mut s = state();
+        let (_, fx) = s.apply(Event::Activate(Id::App(0)));
+        assert_eq!(fx, vec![Effect::ShowShelf], "shelf is built in");
+        let (_, fx) = s.apply(Event::Activate(Id::App(2)));
+        assert_eq!(fx, vec![Effect::RunApp { app: 2, command: vec!["foot".into()] }]);
+        s.apply(Event::Activate(Id::App(2)));
+        assert_eq!(s.apps_running, vec![0, 0, 2], "two terminals");
+        s.apply(Event::AppEnded(2));
+        assert_eq!(s.apps_running, vec![0, 0, 1]);
+        assert_eq!(s.apply(Event::Activate(Id::App(9))).1, vec![], "no such app");
     }
 
     #[test]
