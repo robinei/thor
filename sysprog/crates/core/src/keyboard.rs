@@ -94,10 +94,23 @@ const fn n(k: Named) -> Key {
 }
 
 /// The layout: US letters and digits in their usual places, every row 10 units so keys use the full
-/// width; the punctuation that a PC keyboard puts beside the letters has its own row, and comma and
-/// period flank the space bar. Fn: F1-F12 (digits, then - and =), Delete on Backspace, and a navigation
+/// width; the punctuation that a PC keyboard puts beside the letters has its own row on top (Esc at its
+/// left, - and = at its right above 9 and 0), and comma and period flank the space bar. Fn: F1-F12
+/// (digits, then - and =), Delete on Backspace, and a navigation
 /// cluster under the right hand (arrows on i/j/k/l, Home/End beside Up, PgUp/PgDn on y/h, Insert on p).
 pub const LAYOUT: &[&[Slot]] = &[
+    &[
+        named(Named::Esc, 1.0),
+        c('`'),
+        c('['),
+        c(']'),
+        c('\\'),
+        c(';'),
+        c('\''),
+        c('/'),
+        cf('-', f(11)),
+        cf('=', f(12)),
+    ],
     &[
         cf('1', f(1)),
         cf('2', f(2)),
@@ -145,18 +158,6 @@ pub const LAYOUT: &[&[Slot]] = &[
         c('n'),
         c('m'),
         named(Named::Enter, 1.5),
-    ],
-    &[
-        named(Named::Esc, 1.0),
-        c('`'),
-        cf('-', f(11)),
-        cf('=', f(12)),
-        c('['),
-        c(']'),
-        c('\\'),
-        c(';'),
-        c('\''),
-        c('/'),
     ],
     &[
         modifier(Modifier::Fn, 1.0),
