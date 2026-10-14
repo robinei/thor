@@ -94,7 +94,7 @@ const fn n(k: Named) -> Key {
 }
 
 /// The layout: US letters and digits in their usual places, every row 10 units so keys use the full
-/// width. The most typed punctuation sits by the space bar, nearest the thumbs (; , . / and with Shift
+/// width. The most typed punctuation sits after the space bar, nearest the thumbs (; , . / and with Shift
 /// : < > ?); the rest has its own row on top with Esc and Tab, - and = at its right as on a PC. Fn: F1-F10
 /// on the digits, F11 and F12 at the top right (on - and =), Delete on Backspace, and a navigation
 /// cluster under the right hand (arrows on i/j/k/l, Home/End beside Up, PgUp/PgDn on y/h, Insert on p).
@@ -163,9 +163,9 @@ pub const LAYOUT: &[&[Slot]] = &[
         modifier(Modifier::Ctrl, 1.0),
         modifier(Modifier::Super, 1.0),
         modifier(Modifier::Alt, 1.0),
+        Slot { base: Key::Char(' '), fn_key: None, width: 2.0 },
         c(';'),
         c(','),
-        Slot { base: Key::Char(' '), fn_key: None, width: 2.0 },
         c('.'),
         c('/'),
     ],
