@@ -12,14 +12,17 @@ pub mod nav;
 mod views;
 
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState, FrameCallbackData},
     delegate_registry,
     output::{OutputHandler, OutputState},
     reexports::{
-        calloop::{EventLoop, channel},
+        calloop::{
+            EventLoop, LoopHandle, RegistrationToken, channel,
+            timer::{TimeoutAction, Timer},
+        },
         calloop_wayland_source::WaylandSource,
         client::{
             Connection, QueueHandle,
@@ -48,7 +51,7 @@ use smithay_client_toolkit::{
     },
     shm::{Shm, ShmHandler, slot::SlotPool},
 };
-use sysprog_core::{Dirty, Effect, Event, State};
+use sysprog_core::{Dirty, Effect, Event, Hold, Id, State};
 use tiny_skia::Pixmap;
 
 use draw::{Fonts, Rect};
@@ -57,8 +60,10 @@ use views::Target;
 
 pub type Error = Box<dyn std::error::Error>;
 
-/// A press held at least this long is a long press (locks a keyboard modifier).
+/// A press held this long is a hold: keys start repeating, modifiers lock.
 const LONG_PRESS: Duration = Duration::from_millis(450);
+/// Key repeat interval while held (25 per second).
+const REPEAT: Duration = Duration::from_millis(40);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
@@ -72,6 +77,9 @@ pub struct Config {
     /// Logical sizes when shown as windows (on a desktop).
     pub top_size: (u32, u32),
     pub bottom_size: (u32, u32),
+    /// Show what is typed above the keyboard. Default: only when the bottom view is a window (desktop
+    /// development); on the device it would show passwords.
+    pub echo: Option<bool>,
 }
 
 /// Sends events into the UI's event loop from other threads.
@@ -101,6 +109,7 @@ pub fn run(
     let layer_shell = LayerShell::bind(&globals, &qh).ok();
     let shm = Shm::bind(&globals, &qh)?;
     let pool = SlotPool::new(4 << 20, &shm)?;
+    let mut event_loop: EventLoop<App> = EventLoop::try_new()?;
 
     let mut app = App {
         registry_state: RegistryState::new(&globals),
@@ -116,8 +125,10 @@ pub fn run(
         keyboard: None,
         pointer: None,
         touch: None,
-        touches: HashMap::new(),
-        mouse_press: None,
+        presses: HashMap::new(),
+        hold_timer: None,
+        loop_handle: event_loop.handle(),
+        echo: false,
         on_effect: Box::new(on_effect),
         exit: false,
     };
@@ -130,18 +141,19 @@ pub fn run(
     let bottom_output = app.output_state.outputs().find(|o| {
         app.output_state.info(o).and_then(|i| i.name).as_deref() == Some(config.bottom_output.as_str())
     });
-    app.bottom = Some(match (bottom_output, &layer_shell) {
+    let (bottom, is_window) = match (bottom_output, &layer_shell) {
         (Some(output), Some(layer_shell)) => {
             log::info!("bottom view: layer surface on {}", config.bottom_output);
-            View::layer(&compositor, layer_shell, &qh, &output)
+            (View::layer(&compositor, layer_shell, &qh, &output), false)
         }
         _ => {
             log::info!("bottom view: a window (no output {})", config.bottom_output);
-            View::window(&compositor, &xdg, &qh, Screen::Bottom, config.bottom_size)
+            (View::window(&compositor, &xdg, &qh, Screen::Bottom, config.bottom_size), true)
         }
-    });
+    };
+    app.bottom = Some(bottom);
+    app.echo = config.echo.unwrap_or(is_window);
 
-    let mut event_loop: EventLoop<App> = EventLoop::try_new()?;
     WaylandSource::new(conn.clone(), queue).insert(event_loop.handle()).map_err(|e| e.error)?;
     let (sender, receiver) = channel::channel();
     event_loop
@@ -170,7 +182,7 @@ pub fn snapshot(state: &State, screen: Screen, size: (u32, u32), scale: u32, pat
     let (w, h) = (size.0 as f32, size.1 as f32);
     match screen {
         Screen::Top => views::top(&mut canvas, state, w, h),
-        Screen::Bottom => views::bottom(&mut canvas, state, w, h),
+        Screen::Bottom => views::bottom(&mut canvas, state, w, h, true),
     };
     pixmap.save_png(path)?;
     Ok(())
@@ -258,7 +270,14 @@ impl View {
         View::new(Screen::Bottom, Shell::Layer(layer), (1, 1))
     }
 
-    fn draw(&mut self, pool: &mut SlotPool, fonts: &mut Fonts, state: &State, qh: &QueueHandle<App>) -> Result<(), Error> {
+    fn draw(
+        &mut self,
+        pool: &mut SlotPool,
+        fonts: &mut Fonts,
+        state: &State,
+        echo: bool,
+        qh: &QueueHandle<App>,
+    ) -> Result<(), Error> {
         let scale = self.scale.max(1);
         let (lw, lh) = self.size;
         let scale_u = scale.unsigned_abs();
@@ -273,7 +292,7 @@ impl View {
             let mut canvas = draw::Canvas::new(pixmap, scale as f32, fonts);
             self.targets = match self.screen {
                 Screen::Top => views::top(&mut canvas, state, lw as f32, lh as f32),
-                Screen::Bottom => views::bottom(&mut canvas, state, lw as f32, lh as f32),
+                Screen::Bottom => views::bottom(&mut canvas, state, lw as f32, lh as f32, echo),
             };
         }
 
@@ -299,10 +318,19 @@ impl View {
     }
 }
 
+/// Where a press comes from: each touch point, the mouse, or the pad's A (Enter on the desktop).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum Source {
+    Touch(i32),
+    Mouse,
+    PadA,
+}
+
+/// A press in progress, on the target it started on.
 struct Press {
-    surface: WlSurface,
-    position: (f64, f64),
-    at: Instant,
+    id: Id,
+    /// The hold timer already acted (repeated or long-pressed): the release adds nothing.
+    held: bool,
 }
 
 struct App {
@@ -319,9 +347,11 @@ struct App {
     keyboard: Option<wl_keyboard::WlKeyboard>,
     pointer: Option<wl_pointer::WlPointer>,
     touch: Option<wl_touch::WlTouch>,
-    /// Touch points that are down, and the mouse button: where and when each started.
-    touches: HashMap<i32, Press>,
-    mouse_press: Option<Press>,
+    presses: HashMap<Source, Press>,
+    /// Fires when the latest press becomes a hold, then at the repeat rate for repeating keys.
+    hold_timer: Option<(Source, RegistrationToken)>,
+    loop_handle: LoopHandle<'static, App>,
+    echo: bool,
     on_effect: Box<dyn FnMut(&Effect)>,
     exit: bool,
 }
@@ -360,23 +390,83 @@ impl App {
             if !(view.configured && view.dirty && !view.frame_pending) {
                 continue;
             }
-            if let Err(e) = view.draw(&mut self.pool, &mut self.fonts, &self.state, &self.qh) {
+            if let Err(e) = view.draw(&mut self.pool, &mut self.fonts, &self.state, self.echo, &self.qh) {
                 log::warn!("drawing {:?}: {e}", view.screen);
                 view.dirty = false;
             }
         }
     }
 
-    /// A tap or click, on release: activate what the last frame drew where it started; a long one is a
-    /// long press.
-    fn release(&mut self, press: Press) {
-        let (x, y) = press.position;
-        let id = self.view_mut(&press.surface).and_then(|v| {
-            v.targets.iter().find(|t| t.rect.contains(x as f32, y as f32)).map(|t| t.id.clone())
-        });
-        if let Some(id) = id {
-            let long = press.at.elapsed() >= LONG_PRESS;
-            self.handle(if long { Event::LongPress(id) } else { Event::Activate(id) });
+    /// What the last frame drew at `position` on `surface`.
+    fn target_at(&mut self, surface: &WlSurface, (x, y): (f64, f64)) -> Option<Id> {
+        let view = self.view_mut(surface)?;
+        view.targets.iter().find(|t| t.rect.contains(x as f32, y as f32)).map(|t| t.id.clone())
+    }
+
+    /// A press starts: light the target, and arm the hold timer. A tap acts on release; a hold acts
+    /// from the timer (repeat, or one long press).
+    fn down(&mut self, source: Source, id: Id) {
+        if self.presses.contains_key(&source) {
+            return;
+        }
+        self.presses.insert(source, Press { id: id.clone(), held: false });
+        self.handle(Event::Down(id));
+        self.cancel_hold_timer();
+        let timer = Timer::from_duration(LONG_PRESS);
+        match self.loop_handle.insert_source(timer, move |_, _, app: &mut App| app.on_hold(source)) {
+            Ok(token) => self.hold_timer = Some((source, token)),
+            Err(e) => log::warn!("hold timer: {}", e.error),
+        }
+    }
+
+    fn on_hold(&mut self, source: Source) -> TimeoutAction {
+        let Some(press) = self.presses.get_mut(&source) else {
+            self.hold_timer = None;
+            return TimeoutAction::Drop;
+        };
+        press.held = true;
+        let id = press.id.clone();
+        match self.state.hold(&id) {
+            Hold::Repeat => {
+                self.handle(Event::Activate(id));
+                TimeoutAction::ToDuration(REPEAT)
+            }
+            Hold::Long => {
+                self.hold_timer = None;
+                self.handle(Event::LongPress(id));
+                TimeoutAction::Drop
+            }
+        }
+    }
+
+    /// A press ends: a tap activates; a hold already acted.
+    fn up(&mut self, source: Source, activate: bool) {
+        if let Some((timer_source, token)) = self.hold_timer
+            && timer_source == source
+        {
+            self.loop_handle.remove(token);
+            self.hold_timer = None;
+        }
+        let Some(press) = self.presses.remove(&source) else {
+            return;
+        };
+        if activate && !press.held {
+            self.handle(Event::Activate(press.id.clone()));
+        }
+        self.handle(Event::Up(press.id));
+    }
+
+    fn cancel_hold_timer(&mut self) {
+        if let Some((_, token)) = self.hold_timer.take() {
+            self.loop_handle.remove(token);
+        }
+    }
+
+    /// All touch points gone without a tap (cancelled, or the touch device went away).
+    fn cancel_touches(&mut self) {
+        let touches: Vec<Source> = self.presses.keys().copied().filter(|s| matches!(s, Source::Touch(_))).collect();
+        for source in touches {
+            self.up(source, false);
         }
     }
 
@@ -400,19 +490,21 @@ impl App {
         }
     }
 
-    /// The keyboard stands in for the pad on the desktop: arrows move focus, Enter/Space is A.
-    fn key(&mut self, sym: Keysym) {
-        match sym {
-            Keysym::Left => self.navigate(Dir::Left),
-            Keysym::Right => self.navigate(Dir::Right),
-            Keysym::Up => self.navigate(Dir::Up),
-            Keysym::Down => self.navigate(Dir::Down),
-            Keysym::Return | Keysym::KP_Enter | Keysym::space => {
+    /// The keyboard stands in for the pad on the desktop: arrows move focus, Enter/Space is A (press,
+    /// hold), Escape quits.
+    fn key(&mut self, sym: Keysym, down: bool) {
+        match (sym, down) {
+            (Keysym::Left, true) => self.navigate(Dir::Left),
+            (Keysym::Right, true) => self.navigate(Dir::Right),
+            (Keysym::Up, true) => self.navigate(Dir::Up),
+            (Keysym::Down, true) => self.navigate(Dir::Down),
+            (Keysym::Return | Keysym::KP_Enter | Keysym::space, true) => {
                 if let Some(id) = self.state.focus.clone() {
-                    self.handle(Event::Activate(id));
+                    self.down(Source::PadA, id);
                 }
             }
-            Keysym::Escape => self.handle(Event::Quit),
+            (Keysym::Return | Keysym::KP_Enter | Keysym::space, false) => self.up(Source::PadA, true),
+            (Keysym::Escape, true) => self.handle(Event::Quit),
             _ => {}
         }
     }
@@ -527,7 +619,7 @@ impl SeatHandler for App {
                 if let Some(t) = self.touch.take() {
                     t.release();
                 }
-                self.touches.clear();
+                self.cancel_touches();
             }
             _ => {}
         }
@@ -552,16 +644,18 @@ impl KeyboardHandler for App {
     fn leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: &WlSurface, _: u32) {}
 
     fn press_key(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, event: KeyEvent) {
-        self.key(event.keysym);
+        self.key(event.keysym, true);
     }
 
     fn repeat_key(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, event: KeyEvent) {
         if matches!(event.keysym, Keysym::Left | Keysym::Right | Keysym::Up | Keysym::Down) {
-            self.key(event.keysym);
+            self.key(event.keysym, true);
         }
     }
 
-    fn release_key(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, _: KeyEvent) {}
+    fn release_key(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, event: KeyEvent) {
+        self.key(event.keysym, false);
+    }
 
     fn update_modifiers(
         &mut self,
@@ -581,14 +675,11 @@ impl PointerHandler for App {
         for event in events {
             match event.kind {
                 PointerEventKind::Press { .. } => {
-                    self.mouse_press =
-                        Some(Press { surface: event.surface.clone(), position: event.position, at: Instant::now() });
-                }
-                PointerEventKind::Release { .. } => {
-                    if let Some(press) = self.mouse_press.take() {
-                        self.release(press);
+                    if let Some(id) = self.target_at(&event.surface, event.position) {
+                        self.down(Source::Mouse, id);
                     }
                 }
+                PointerEventKind::Release { .. } => self.up(Source::Mouse, true),
                 _ => {}
             }
         }
@@ -607,13 +698,13 @@ impl TouchHandler for App {
         id: i32,
         position: (f64, f64),
     ) {
-        self.touches.insert(id, Press { surface, position, at: Instant::now() });
+        if let Some(target) = self.target_at(&surface, position) {
+            self.down(Source::Touch(id), target);
+        }
     }
 
     fn up(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, _: u32, _: u32, id: i32) {
-        if let Some(press) = self.touches.remove(&id) {
-            self.release(press);
-        }
+        self.up(Source::Touch(id), true);
     }
 
     fn motion(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, _: u32, _: i32, _: (f64, f64)) {}
@@ -623,7 +714,7 @@ impl TouchHandler for App {
     fn orientation(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, _: i32, _: f64) {}
 
     fn cancel(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch) {
-        self.touches.clear();
+        self.cancel_touches();
     }
 }
 

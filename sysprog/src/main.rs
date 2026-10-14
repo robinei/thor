@@ -15,6 +15,7 @@ fn main() -> ExitCode {
         // The Thor's panels at half size: top 1920x1080 (landscape), bottom 1240x1080.
         top_size: (960, 540),
         bottom_size: (620, 540),
+        echo: std::env::var("SYSPROG_ECHO").ok().map(|v| v == "1"),
     };
     let mut state = State::new(sysprog_library::demo_games());
 
@@ -70,6 +71,15 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
             "keyboard-mods.png",
         ),
         (vec![key(Key::Mod(Modifier::Shift), true)], Screen::Bottom, bottom, "keyboard-caps.png"),
+        (
+            vec![
+                key(Key::Mod(Modifier::Shift), false),
+                Event::Down(Id::Key(keyboard::find(Key::Char('g')).unwrap_or(KeyPos { row: 0, col: 0 }))),
+            ],
+            Screen::Bottom,
+            bottom,
+            "keyboard-pressed.png",
+        ),
     ];
     for (events, screen, size, name) in shots {
         for event in events {

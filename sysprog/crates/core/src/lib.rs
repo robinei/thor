@@ -6,7 +6,7 @@ pub mod keyboard;
 
 use std::collections::HashMap;
 
-use keyboard::{KeyPos, Keyboard, Stroke};
+use keyboard::{Key, KeyPos, Keyboard, Stroke};
 
 pub use sysprog_library::Game;
 
@@ -76,6 +76,9 @@ pub enum Event {
     Activate(Id),
     /// A press held longer than a tap (locks a keyboard modifier; otherwise as `Activate`).
     LongPress(Id),
+    /// A finger, button or the pad's A went down on / up from a target: shown as pressed meanwhile.
+    Down(Id),
+    Up(Id),
     /// The pad moved focus (the UI finds the target, since only it knows the layout).
     Focus(Id),
     Quit,
@@ -114,6 +117,25 @@ pub struct State {
     pub focus: Option<Id>,
     pub unix_secs: u64,
     pub keyboard: Keyboard,
+    /// The target being pressed (drawn lit), if any.
+    pub pressed: Option<Id>,
+}
+
+/// What holding a target does once the press lasts beyond a tap.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Hold {
+    /// Activate now and again at the repeat rate until released (keyboard keys).
+    Repeat,
+    /// One long press, then nothing on release (locks a modifier).
+    Long,
+}
+
+/// Which screen a target is drawn on.
+fn screen_of(id: &Id) -> Dirty {
+    match id {
+        Id::Game(_) => Dirty::BOTH,
+        Id::Mode(_) | Id::Power(_) | Id::Launch | Id::Key(_) => Dirty::BOTTOM,
+    }
 }
 
 impl State {
@@ -153,7 +175,29 @@ impl State {
                 self.focus = Some(id.clone());
                 self.activate(id, true)
             }
+            Event::Down(id) => {
+                let dirty = screen_of(&id);
+                self.pressed = Some(id);
+                (dirty, vec![])
+            }
+            Event::Up(id) => {
+                if self.pressed.as_ref() == Some(&id) {
+                    self.pressed = None;
+                }
+                (screen_of(&id), vec![])
+            }
             Event::Quit => (Dirty::NONE, vec![Effect::Quit]),
+        }
+    }
+
+    /// What holding `id` does: keyboard keys repeat, modifiers and everything else get one long press.
+    pub fn hold(&self, id: &Id) -> Hold {
+        match id {
+            Id::Key(pos) => match self.keyboard.effective(*pos) {
+                Some(Key::Mod(_)) | None => Hold::Long,
+                Some(_) => Hold::Repeat,
+            },
+            _ => Hold::Long,
         }
     }
 
@@ -238,6 +282,24 @@ mod tests {
         assert_eq!(s.mode, Mode::Keyboard);
         s.apply(Event::Activate(Id::Mode(Mode::Keyboard)));
         assert_eq!(s.mode, Mode::Follow);
+    }
+
+    #[test]
+    fn keys_repeat_and_modifiers_lock_when_held() {
+        use keyboard::{Modifier, find};
+        let s = state();
+        assert_eq!(s.hold(&Id::Key(find(Key::Char('a')).unwrap())), Hold::Repeat);
+        assert_eq!(s.hold(&Id::Key(find(Key::Mod(Modifier::Shift)).unwrap())), Hold::Long);
+        assert_eq!(s.hold(&Id::Launch), Hold::Long);
+    }
+
+    #[test]
+    fn down_and_up_light_a_target() {
+        let mut s = state();
+        s.apply(Event::Down(Id::Launch));
+        assert_eq!(s.pressed, Some(Id::Launch));
+        s.apply(Event::Up(Id::Launch));
+        assert_eq!(s.pressed, None);
     }
 
     #[test]

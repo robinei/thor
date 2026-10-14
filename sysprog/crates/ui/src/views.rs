@@ -21,6 +21,8 @@ const BG: u32 = 0x000000;
 /// Fills of keys, buttons and the selected row: barely above black.
 const SURFACE: u32 = 0x131316;
 const SURFACE_HI: u32 = 0x1f1f24;
+/// A target under the finger.
+const PRESSED: u32 = 0x3a3a44;
 const TEXT: u32 = 0xa4a4ae;
 const TEXT_HI: u32 = 0xc8c8d0;
 const DIM: u32 = 0x5a5a64;
@@ -28,6 +30,10 @@ const ACCENT: u32 = 0xe0a040;
 const GO: u32 = 0x45a866;
 /// Fn-layer labels: a muted blue, to tell them from the Shift layer's grey.
 const FN: u32 = 0x5f82b8;
+
+fn is_pressed(s: &State, id: &Id) -> bool {
+    s.pressed.as_ref() == Some(id)
+}
 
 fn focus_ring(c: &mut Canvas, s: &State, id: &Id, r: Rect) {
     if s.focus.as_ref() == Some(id) {
@@ -55,7 +61,10 @@ pub fn top(c: &mut Canvas, s: &State, w: f32, h: f32) -> Vec<Target> {
             break;
         }
         let selected = s.selected.as_ref() == Some(&game.id);
-        if selected {
+        let id = Id::Game(game.id.clone());
+        if is_pressed(s, &id) {
+            c.rounded(r, 8.0, rgb(PRESSED));
+        } else if selected {
             c.rounded(r, 8.0, rgb(SURFACE_HI));
         }
         let swatch = Rect::new(r.x + pad * 0.5, r.y + r.h * 0.3, r.h * 0.4, r.h * 0.4);
@@ -63,7 +72,6 @@ pub fn top(c: &mut Canvas, s: &State, w: f32, h: f32) -> Vec<Target> {
         let text_x = swatch.x + swatch.w + pad * 0.7;
         let color = if selected { TEXT_HI } else { TEXT };
         c.text(text_x, r.y + (r.h - size * 1.2) / 2.0, size, rgb(color), &game.title);
-        let id = Id::Game(game.id.clone());
         focus_ring(c, s, &id, r);
         targets.push(Target { rect: r, id });
     }
@@ -90,7 +98,8 @@ fn mode_icon(mode: Mode) -> Icon {
 }
 
 /// The second screen: a thin bar of mode icons and the clock, then the current mode.
-pub fn bottom(c: &mut Canvas, s: &State, w: f32, h: f32) -> Vec<Target> {
+/// `echo`: show what is typed above the keyboard.
+pub fn bottom(c: &mut Canvas, s: &State, w: f32, h: f32, echo: bool) -> Vec<Target> {
     c.fill(Rect::new(0.0, 0.0, w, h), rgb(BG));
     let mut targets = Vec::new();
     let bar_h = (h * 0.075).max(20.0);
@@ -104,9 +113,12 @@ pub fn bottom(c: &mut Canvas, s: &State, w: f32, h: f32) -> Vec<Target> {
         let r = Rect::new(i as f32 * slot, 0.0, slot, bar_h);
         let active = s.mode == mode;
         let color = if active { ACCENT } else { DIM };
+        let id = Id::Mode(mode);
+        if is_pressed(s, &id) {
+            c.rounded(r.inset(2.0), 8.0, rgb(PRESSED));
+        }
         let (cx, cy) = r.center();
         icons::draw(c, mode_icon(mode), Rect::new(cx - icon / 2.0, cy - icon / 2.0, icon, icon), rgb(color));
-        let id = Id::Mode(mode);
         focus_ring(c, s, &id, r.inset(2.0));
         targets.push(Target { rect: r, id });
     }
@@ -115,7 +127,7 @@ pub fn bottom(c: &mut Canvas, s: &State, w: f32, h: f32) -> Vec<Target> {
     let body = Rect::new(0.0, bar_h, w, h - bar_h);
     match s.mode {
         Mode::Follow => game_settings(c, s, body, &mut targets),
-        Mode::Keyboard => keyboard(c, s, body, &mut targets),
+        Mode::Keyboard => keyboard(c, s, body, echo, &mut targets),
         other => label(c, body, body.h * 0.05, DIM, &format!("{other:?}: not built yet")),
     }
     targets
@@ -137,17 +149,20 @@ fn game_settings(c: &mut Canvas, s: &State, body: Rect, targets: &mut Vec<Target
     for (i, power) in Power::ALL.into_iter().enumerate() {
         let r = Rect::new(row.x + i as f32 * (button_w + pad), row.y, button_w, row.h);
         let chosen = power == current;
-        c.rounded(r, 8.0, rgb(SURFACE));
+        let id = Id::Power(power);
+        c.rounded(r, 8.0, rgb(if is_pressed(s, &id) { PRESSED } else { SURFACE }));
         if chosen {
             c.outline(r, 8.0, 2.0, rgb(game.color));
         }
         label(c, r, row.h * 0.3, if chosen { TEXT_HI } else { TEXT }, power.label());
-        let id = Id::Power(power);
         focus_ring(c, s, &id, r);
         targets.push(Target { rect: r, id });
     }
 
     let launch = Rect::new(pad, body.y + body.h * 0.62, body.w - 2.0 * pad, body.h * 0.2);
+    if is_pressed(s, &Id::Launch) {
+        c.rounded(launch, 10.0, rgb(PRESSED));
+    }
     c.outline(launch, 10.0, 2.0, rgb(GO));
     label(c, launch, launch.h * 0.3, GO, "Launch");
     focus_ring(c, s, &Id::Launch, launch);
@@ -156,16 +171,18 @@ fn game_settings(c: &mut Canvas, s: &State, body: Rect, targets: &mut Vec<Target
 
 /// Keyboard mode: what was typed lately, then the keys. Each key shows its Fn function small in the
 /// corner; while Fn is on, the two swap.
-fn keyboard(c: &mut Canvas, s: &State, body: Rect, targets: &mut Vec<Target>) {
+fn keyboard(c: &mut Canvas, s: &State, body: Rect, echo: bool, targets: &mut Vec<Target>) {
     let kb = &s.keyboard;
     let gap = body.h * 0.012;
     let echo_h = body.h * 0.09;
     let echo_size = echo_h * 0.45;
-    let echo = format!("{}_", kb.echo);
-    let ew = c.text_width(echo_size, &echo);
-    // Keep the end of the line visible: draw from the right edge back when it is too long.
-    let ex = if ew > body.w - 4.0 * gap { body.w - 2.0 * gap - ew } else { 2.0 * gap };
-    c.text(ex, body.y + (echo_h - echo_size * 1.2) / 2.0, echo_size, rgb(DIM), &echo);
+    if echo {
+        let line = format!("{}_", kb.echo);
+        let ew = c.text_width(echo_size, &line);
+        // Keep the end of the line visible: draw from the right edge back when it is too long.
+        let ex = if ew > body.w - 4.0 * gap { body.w - 2.0 * gap - ew } else { 2.0 * gap };
+        c.text(ex, body.y + (echo_h - echo_size * 1.2) / 2.0, echo_size, rgb(DIM), &line);
+    }
 
     let area = Rect::new(gap, body.y + echo_h, body.w - 2.0 * gap, body.h - echo_h - gap);
     let row_h = area.h / LAYOUT.len() as f32;
@@ -177,8 +194,8 @@ fn keyboard(c: &mut Canvas, s: &State, body: Rect, targets: &mut Vec<Target>) {
         let y = area.y + row as f32 * row_h;
         for (col, slot) in slots.iter().enumerate() {
             let r = Rect::new(x + gap / 2.0, y + gap / 2.0, slot.width * unit - gap, row_h - gap);
-            draw_key(c, kb, slot, r);
             let id = Id::Key(KeyPos { row: row as u8, col: col as u8 });
+            draw_key(c, kb, slot, r, is_pressed(s, &id));
             focus_ring(c, s, &id, r);
             targets.push(Target { rect: r, id });
             x += slot.width * unit;
@@ -194,8 +211,8 @@ enum Place {
     BottomRight,
 }
 
-fn draw_key(c: &mut Canvas, kb: &Keyboard, slot: &Slot, r: Rect) {
-    c.rounded(r, 6.0, rgb(SURFACE));
+fn draw_key(c: &mut Canvas, kb: &Keyboard, slot: &Slot, r: Rect, pressed: bool) {
+    c.rounded(r, 6.0, rgb(if pressed { PRESSED } else { SURFACE }));
     // What each place shows: the active layer's function in the middle, the others in the corners.
     // Letters have no Shift label: they change case.
     let shift_char = match slot.base {
