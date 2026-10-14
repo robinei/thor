@@ -118,6 +118,24 @@ impl<'a> Canvas<'a> {
         paint
     }
 
+    /// A vertical line `px` buffer pixels wide, centred on `x` and snapped to whole pixels (sharp).
+    pub fn vline(&mut self, x: f32, y0: f32, y1: f32, px: u32, color: Color) {
+        let s = self.scale;
+        let left = (x * s - px as f32 / 2.0).round();
+        if let Some(rect) = tiny_skia::Rect::from_ltrb(left, (y0 * s).round(), left + px as f32, (y1 * s).round()) {
+            self.pixmap.fill_rect(rect, &Self::paint(color), Transform::identity(), None);
+        }
+    }
+
+    /// A horizontal line `px` buffer pixels high, centred on `y` and snapped to whole pixels.
+    pub fn hline(&mut self, x0: f32, x1: f32, y: f32, px: u32, color: Color) {
+        let s = self.scale;
+        let top = (y * s - px as f32 / 2.0).round();
+        if let Some(rect) = tiny_skia::Rect::from_ltrb((x0 * s).round(), top, (x1 * s).round(), top + px as f32) {
+            self.pixmap.fill_rect(rect, &Self::paint(color), Transform::identity(), None);
+        }
+    }
+
     pub fn fill(&mut self, r: Rect, color: Color) {
         if let Some(rect) = tiny_skia::Rect::from_xywh(r.x, r.y, r.w, r.h) {
             self.pixmap.fill_rect(rect, &Self::paint(color), self.transform(), None);

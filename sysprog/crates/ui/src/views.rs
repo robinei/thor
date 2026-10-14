@@ -32,6 +32,8 @@ const ACCENT: u32 = 0xe0a040;
 const GO: u32 = 0x45a866;
 /// Fn-layer labels: a muted blue, to tell them from the Shift layer's grey.
 const FN: u32 = 0x5f82b8;
+/// Lines between keys.
+const SEPARATOR: u32 = 0x24242c;
 
 fn is_pressed(s: &State, id: &Id) -> bool {
     s.pressed.as_ref() == Some(id)
@@ -204,27 +206,38 @@ fn game_settings(c: &mut Canvas, s: &State, body: Rect, targets: &mut Vec<Target
 /// corner; while Fn is on, the two swap.
 fn keyboard(c: &mut Canvas, s: &State, body: Rect, targets: &mut Vec<Target>) {
     let kb = &s.keyboard;
-    let gap = body.h * 0.012;
-    let area = Rect::new(gap, body.y + gap, body.w - 2.0 * gap, body.h - 2.0 * gap);
-    let row_h = area.h / LAYOUT.len() as f32;
+    let row_h = body.h / LAYOUT.len() as f32;
     for (row, slots) in LAYOUT.iter().enumerate() {
         // Every row fills the width: its keys share it by their widths.
         let units: f32 = slots.iter().map(|k| k.width).sum();
-        let unit = area.w / units.max(1.0);
-        let mut x = area.x;
-        let y = area.y + row as f32 * row_h;
+        let unit = body.w / units.max(1.0);
+        let y = body.y + row as f32 * row_h;
+        let mut x = body.x;
         for (col, slot) in slots.iter().enumerate() {
-            let r = Rect::new(x + gap / 2.0, y + gap / 2.0, slot.width * unit - gap, row_h - gap);
+            // Keys are black cells with no gaps; the cell is also the tap area, so a touch on a separator
+            // goes to the nearer key.
+            let cell = Rect::new(x, y, slot.width * unit, row_h);
             let id = Id::Key(KeyPos { row: row as u8, col: col as u8 });
-            draw_key(c, kb, slot, r, is_pressed(s, &id));
-            focus_ring(c, s, &id, r);
-            // The tappable area is the whole cell, gaps included, reaching the screen's edges: a touch
-            // between keys goes to the nearest one rather than nowhere.
-            let left = if col == 0 { body.x } else { x };
-            let right = if col + 1 == slots.len() { body.x + body.w } else { x + slot.width * unit };
-            let bottom = if row + 1 == LAYOUT.len() { body.y + body.h } else { y + row_h };
-            targets.push(Target { rect: Rect::new(left, y, right - left, bottom - y), id });
+            draw_key(c, kb, slot, cell, is_pressed(s, &id));
+            targets.push(Target { rect: cell, id });
+            x += cell.w;
+        }
+    }
+    // Separators: two buffer pixels on every boundary between keys, and above the first row.
+    for (row, slots) in LAYOUT.iter().enumerate() {
+        let units: f32 = slots.iter().map(|k| k.width).sum();
+        let unit = body.w / units.max(1.0);
+        let y = body.y + row as f32 * row_h;
+        c.hline(body.x, body.x + body.w, y, 2, rgb(SEPARATOR));
+        let mut x = body.x;
+        for slot in slots.iter().take(slots.len().saturating_sub(1)) {
             x += slot.width * unit;
+            c.vline(x, y, y + row_h, 2, rgb(SEPARATOR));
+        }
+    }
+    for target in targets.iter().filter(|t| matches!(t.id, Id::Key(_))) {
+        if s.focus.as_ref() == Some(&target.id) {
+            c.outline(target.rect.inset(3.0), 6.0, 2.0, rgb(ACCENT));
         }
     }
 }
@@ -238,7 +251,9 @@ enum Place {
 }
 
 fn draw_key(c: &mut Canvas, kb: &Keyboard, slot: &Slot, r: Rect, pressed: bool) {
-    c.rounded(r, 6.0, rgb(if pressed { PRESSED } else { SURFACE }));
+    if pressed {
+        c.fill(r, rgb(PRESSED));
+    }
     // What each place shows: the active layer's function in the middle, the others in the corners.
     // Letters have no Shift label: they change case.
     let shift_char = match slot.base {
@@ -271,7 +286,7 @@ fn draw_key(c: &mut Canvas, kb: &Keyboard, slot: &Slot, r: Rect, pressed: bool) 
             Latch::Once => color = ACCENT,
             Latch::Locked => {
                 color = ACCENT;
-                c.outline(r, 6.0, 1.5, rgb(ACCENT));
+                c.outline(r.inset(3.0), 6.0, 1.5, rgb(ACCENT));
             }
         }
     }
