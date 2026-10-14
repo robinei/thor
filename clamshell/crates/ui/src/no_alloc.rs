@@ -108,7 +108,25 @@ fn warm_frames_do_not_allocate() {
                 Event::SlideTo { x: 320.0 },
             ],
         ),
-        ("keyboard", vec![Event::Up(Id::Control(clamshell_core::controls::Control::Volume)), Event::Activate(Id::Mode(Mode::Keyboard))]),
+        (
+            "battery",
+            vec![
+                Event::Up(Id::Control(clamshell_core::controls::Control::Volume)),
+                Event::Status(clamshell_core::Status { battery: Some(41), ..Default::default() }),
+                Event::Activate(Id::Mode(Mode::Battery)),
+                Event::Power(clamshell_core::power::Power {
+                    history: (0..50u64)
+                        .map(|i| clamshell_core::power::Charge { at: 1_699_950_000 + i * 900, level: (90 - i) as u8, charging: i > 40 })
+                        .collect(),
+                    spenders: vec![
+                        clamshell_core::power::Spender { group: clamshell_core::power::Group::Process("firefox".into()), cpu: 0.2, gpu: 0.1 },
+                        clamshell_core::power::Spender { group: clamshell_core::power::Group::System, cpu: 0.05, gpu: 0.0 },
+                    ],
+                    has_history: true,
+                }),
+            ],
+        ),
+        ("keyboard", vec![Event::Activate(Id::Mode(Mode::Keyboard))]),
         ("keyboard, Fn", vec![key(Key::Mod(Modifier::Fn))]),
         ("keyboard, Shift and a pressed key", vec![key(Key::Mod(Modifier::Shift)), key(Key::Char('h'))]),
     ];

@@ -1,6 +1,6 @@
 //! The bar along the top of the second screen: the modes' icons on the left (the active one lit);
 //! volume and brightness in the middle, where a slider has room on both sides of the finger; on the
-//! right the pad mouse toggle, Wi-Fi (opens the Wi-Fi mode, lit while it is open), the battery and the
+//! right the pad mouse toggle, Wi-Fi and the battery (each opens its mode, lit while open) and the
 //! clock. Status icons carry their level.
 //!
 //! While a finger is on volume or brightness, a slider is drawn over the bar (the bar stays visible
@@ -24,8 +24,6 @@ const CLOCK_TEXT: f32 = 0.42;
 const CLOCK_PAD: f32 = 0.8;
 /// A button's tap slot (modes, controls, toggles), of the bar's height.
 const SLOT: f32 = 1.25;
-/// The battery's width, of the icon size.
-const STATUS_SLOT: f32 = 1.35;
 /// Battery at or below this (and not charging) shows in the accent colour.
 const LOW_BATTERY: u8 = 15;
 /// The slider: track and thumb, of the bar's height; the level's text size, of the bar's height, and
@@ -46,6 +44,7 @@ fn mode_icon(mode: Mode) -> Icon {
         Mode::Touchpad => Icon::Touchpad,
         Mode::Sysinfo => Icon::Sysinfo,
         Mode::Wifi => Icon::Wifi { bars: Some(3) },
+        Mode::Battery => Icon::Battery { tenths: 10, charging: false },
     }
 }
 
@@ -109,8 +108,10 @@ pub(super) fn draw(f: &mut Frame, w: f32, h: f32, scratch: &mut Scratch) -> f32 
     label(f.c, Rect::new(w - clock_w, 0.0, clock_w, bar_h), size, TEXT, clock);
     let mut x = w - clock_w;
     if let Some((icon, color)) = battery(&f.s.status) {
-        x -= side * STATUS_SLOT;
-        f.c.icon(icon, Rect::new(x, (bar_h - side) / 2.0, side * STATUS_SLOT, side), rgb(color));
+        // Opens the battery mode (lit while open).
+        let color = if f.s.mode == Mode::Battery { ACCENT } else { color };
+        x -= slot;
+        icon_button(f, Id::Mode(Mode::Battery), Rect::new(x, 0.0, slot, bar_h), icon, color);
     }
     x -= slot;
     let bars = wifi_bars(f.s.status.wifi);

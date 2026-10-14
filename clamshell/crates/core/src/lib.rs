@@ -8,6 +8,7 @@ pub mod controls;
 pub mod editor;
 pub mod metrics;
 mod panel;
+pub mod power;
 mod resume;
 pub mod settings;
 mod shelf;
@@ -27,7 +28,8 @@ pub use editor::{Editor, count_env, parse_env};
 pub use clamshell_library::{Collection, Game, Launch, Library};
 
 /// Second-screen modes (docs/plans.md, "Second screen"), chosen from the bar; the last one chosen stays.
-/// Wi-Fi opens from the bar's Wi-Fi icon, and a second tap there goes back to the mode before.
+/// Wi-Fi and Battery open from their status icons in the bar, and a second tap there goes back to the
+/// mode before.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Mode {
     Settings,
@@ -37,6 +39,7 @@ pub enum Mode {
     #[default]
     Sysinfo,
     Wifi,
+    Battery,
 }
 
 impl Mode {
@@ -51,11 +54,12 @@ impl Mode {
             Mode::Touchpad => "touchpad",
             Mode::Sysinfo => "sysinfo",
             Mode::Wifi => "wifi",
+            Mode::Battery => "battery",
         }
     }
 
     pub fn from_name(name: &str) -> Option<Mode> {
-        Mode::BAR.into_iter().chain([Mode::Wifi]).find(|m| m.name() == name)
+        Mode::BAR.into_iter().chain([Mode::Wifi, Mode::Battery]).find(|m| m.name() == name)
     }
 }
 
@@ -194,6 +198,8 @@ pub enum Event {
     SlideTo { x: f32 },
     /// Wi-Fi as NetworkManager has it, after any change (while the Wi-Fi mode is open).
     Wifi(wifi::Wifi),
+    /// The charge history and what is using the machine (every few seconds while the battery mode is open).
+    Power(power::Power),
     /// The pad's home button.
     Home,
     /// The system woke from sleep.
@@ -245,6 +251,8 @@ pub enum Effect {
     SetMute(bool),
     SetBrightness(u8),
     Wifi(wifi::Command),
+    /// The battery mode opened (read the charge history and the spenders) or closed.
+    WatchPower(bool),
     Quit,
 }
 
@@ -311,6 +319,7 @@ pub struct State {
     /// Volume or brightness being slid, if any.
     pub slider: Option<Slider>,
     pub wifi: wifi::Wifi,
+    pub power: power::Power,
     pub focus: Option<Id>,
     /// The focus ring is shown only while navigating with the pad.
     pub show_focus: bool,
@@ -411,8 +420,8 @@ impl State {
                 m.frame_ms = self.metrics.frame_ms;
                 self.metrics = m;
                 self.history.push(&m);
-                // Only the sysinfo mode shows them.
-                (if self.mode == Mode::Sysinfo { Dirty::BOTTOM } else { Dirty::NONE }, vec![])
+                // Only the sysinfo and battery modes show them.
+                (if matches!(self.mode, Mode::Sysinfo | Mode::Battery) { Dirty::BOTTOM } else { Dirty::NONE }, vec![])
             }
             Event::Frames(frames) => {
                 self.metrics.fps = frames.map(|f| f.0);
@@ -534,6 +543,10 @@ impl State {
                 self.set_wifi(wifi);
                 (Dirty::BOTTOM, vec![])
             }
+            Event::Power(power) => {
+                self.power = power;
+                (if self.mode == Mode::Battery { Dirty::BOTTOM } else { Dirty::NONE }, vec![])
+            }
             Event::Home => (Dirty::NONE, self.home()),
             // Sleep may have reset what the settings set (frequency caps, cores): again.
             Event::Resumed => (Dirty::NONE, vec![Effect::Apply { game: self.running.clone(), settings: self.current() }]),
@@ -627,11 +640,10 @@ impl State {
     /// touchpad and the Wi-Fi watch start and stop with their modes; an open editor closes.
     fn set_mode(&mut self, mode: Mode) -> Vec<Effect> {
         let before = self.mode;
-        self.mode = match mode {
-            Mode::Wifi if before == Mode::Wifi => self.bar_mode,
-            m => m,
-        };
-        if self.mode != Mode::Wifi {
+        // The status modes (opened from status icons) toggle; the bar's modes are remembered.
+        let status_mode = |m: Mode| !Mode::BAR.contains(&m);
+        self.mode = if status_mode(mode) && before == mode { self.bar_mode } else { mode };
+        if !status_mode(self.mode) {
             self.bar_mode = self.mode;
         }
         if self.mode != before {
@@ -639,6 +651,10 @@ impl State {
         }
         self.resume_dirty = Some(self.unix_secs);
         let mut effects = vec![];
+        let battery = |m: Mode| m == Mode::Battery;
+        if battery(before) != battery(self.mode) {
+            effects.push(Effect::WatchPower(battery(self.mode)));
+        }
         let wifi = |m: Mode| m == Mode::Wifi;
         if wifi(before) != wifi(self.mode) {
             effects.push(Effect::Wifi(wifi::Command::Watch(wifi(self.mode))));

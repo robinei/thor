@@ -84,6 +84,13 @@ straight away, a new one with a password typed on the on-screen keyboard (WPA2/W
 press forgets a saved network. A new connection that fails to join is deleted again, and the reason shows
 ("wrong password?", no address). Enterprise networks (a login) aren't supported.
 
+**Battery** (tap the battery icon; lit while open, a second tap goes back): the level, charging or
+discharging with the drain and the time left, and the charge limit as a button (full, 90, 80 %, the same
+setting as its tile); the charge over the last day from UPower (charging in green); then what is using the
+machine now, the busiest first, as many as fit: CPU time per process and GPU time per DRM client
+(`fdinfo`), grouped by our scopes (an app instance, the game), else by program for the user's processes,
+else as System. The battery only reports its total drain, so these are shares of the work, not watts.
+
 **Launcher** (the grid icon): the running game first (a "No game" placeholder otherwise, so tiles never
 move), then the apps. Each start of an app is an instance: a systemd scope (`clamshell-app-<key>-<secs>-<n>`)
 and a sway workspace of the same name, on the main screen. A tap starts an app, shows its most recent

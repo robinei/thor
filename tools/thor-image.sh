@@ -21,7 +21,7 @@ USER_NAME=thor
 WORK=/var/tmp/thor-image
 ROOT=$WORK/root
 # The device's packages: the base system, network, the session, the GPU (Freedreno/Turnip), sound.
-PACKAGES=(base sudo mkinitcpio networkmanager polkit openssh sway swaybg foot xorg-xwayland mesa vulkan-freedreno
+PACKAGES=(base sudo mkinitcpio networkmanager polkit upower openssh sway swaybg foot xorg-xwayland mesa vulkan-freedreno
           pipewire pipewire-pulse wireplumber alsa-ucm-conf noto-fonts sqlite python less vim)
 # The kernel command line: ROCKNIX's tuning for SM8550, our root.
 CMDLINE="root=LABEL=THOR_ROOT rw rootwait console=tty0 allow_mismatched_32bit_el0 fw_devlink.strict=1 pcie_ports=compat irqaffinity=0-2 cgroup.memory=nokmem,nosocket nosoftlockup usbcore.interrupt_interval_override=045e:028e:2"
@@ -86,6 +86,10 @@ arch-chroot "$ROOT" systemctl enable NetworkManager sshd > /dev/null
 mkdir -p "$ROOT/etc/systemd/logind.conf.d"
 printf '[Login]\nHandlePowerKey=suspend\nHandlePowerKeyLongPress=poweroff\nHandleLidSwitch=suspend\nHandleLidSwitchExternalPower=suspend\n' \
     > "$ROOT/etc/systemd/logind.conf.d/thor.conf"
+# UPower: the battery's history (ClamShell's battery mode shows the last day) and, nearly empty, power off
+# (hibernate once that is set up) rather than dying mid-write.
+sed -i -e 's/^CriticalPowerAction=.*/CriticalPowerAction=PowerOff/' -e 's/^PercentageAction=.*/PercentageAction=3/' \
+    "$ROOT/etc/UPower/UPower.conf"
 
 say "the session (sway, ClamShell)"
 H=$ROOT/home/$USER_NAME

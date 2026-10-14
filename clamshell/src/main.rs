@@ -154,6 +154,7 @@ fn main() -> ExitCode {
         log::error!("controls thread: {e}");
     }
     let (wifi_tx, wifi_rx) = mpsc::channel();
+    let (power_tx, power_rx) = mpsc::channel();
     let on_sway = std::env::var_os("SWAYSOCK").is_some();
     let launcher = clamshell_policy::launcher::Config {
         stats_db: state_dir.as_ref().map(|d| d.join("stats.db")),
@@ -217,6 +218,10 @@ fn main() -> ExitCode {
             let home = sender.clone();
             if let Err(e) = pad::spawn(gamepad, padmouse_rx, move |event| home.send(event)) {
                 log::error!("pad thread: {e}");
+            }
+            let power = sender.clone();
+            if let Err(e) = clamshell_policy::power::spawn(move |event| power.send(event), power_rx) {
+                log::error!("power thread: {e}");
             }
             let wifi = sender.clone();
             if let Err(e) = clamshell_policy::wifi::spawn(move |event| wifi.send(event), wifi_rx) {
@@ -334,6 +339,9 @@ fn main() -> ExitCode {
                 if wifi_tx.send(command.clone()).is_err() {
                     log::warn!("wifi thread is gone");
                 }
+            }
+            Effect::WatchPower(on) => {
+                let _ = power_tx.send(*on);
             }
             Effect::QuitGame { windows, units } => {
                 log::info!("quitting the game");
@@ -680,6 +688,7 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
             bottom,
             "wifi.png",
         ),
+        (battery_demo(now), Screen::Bottom, bottom, "battery.png"),
         (
             vec![
                 Event::Activate(Id::Mode(Mode::Launcher)),
@@ -736,6 +745,34 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
         log::info!("wrote {}", path.display());
     }
     ExitCode::SUCCESS
+}
+
+/// A made-up day of charge (down while playing, charging overnight) and a busy moment, then battery mode,
+/// for the snapshot.
+fn battery_demo(now: u64) -> Vec<Event> {
+    use clamshell_core::power::{Charge, Group, Power, Spender};
+    let mut level = 64.0f32;
+    let history = (0..96u64)
+        .map(|i| {
+            let charging = (40..58).contains(&i);
+            level = if charging { (level + 3.2).min(100.0) } else { (level - if (70..84).contains(&i) { 2.4 } else { 0.5 }).max(5.0) };
+            Charge { at: now - 24 * 3600 + i * 900, level: level as u8, charging }
+        })
+        .collect();
+    let spender = |group: Group, cpu: f32, gpu: f32| Spender { group, cpu, gpu };
+    let spenders = vec![
+        spender(Group::Unit("clamshell-game-1760000000-0".into()), 0.31, 0.62),
+        spender(Group::Process("firefox".into()), 0.08, 0.03),
+        spender(Group::Unit("clamshell-app-terminal-1760000000-1".into()), 0.02, 0.0),
+        spender(Group::System, 0.03, 0.0),
+        spender(Group::Process("clamshell".into()), 0.01, 0.0),
+    ];
+    vec![
+        Event::Started("zelda-lttp".into()),
+        Event::Activate(Id::Mode(Mode::Battery)),
+        Event::Power(Power { history, spenders, has_history: true }),
+        Event::Status(Status { battery: Some(41), charging: false, wifi: Some(80), volume: Some(60), muted: false, brightness: Some(70) }),
+    ]
 }
 
 /// A minute of made-up readings, then sysinfo mode, for the snapshot.

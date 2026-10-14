@@ -10,6 +10,7 @@ pub mod keyboard;
 pub mod launcher;
 pub mod metrics;
 pub mod pad;
+pub mod power;
 pub mod sleep;
 pub mod sway;
 pub mod touchpad;
@@ -89,12 +90,13 @@ fn read_status() -> Status {
     Status { battery, charging, wifi, volume, muted, brightness: controls::brightness() }
 }
 
-/// The first power supply of type Battery: its capacity and whether it is charging (or full on power).
+/// The first power supply of type Battery that powers the system: its capacity and whether it is charging (or full on power).
 fn read_battery() -> Option<(Option<u8>, bool)> {
     for entry in std::fs::read_dir("/sys/class/power_supply").ok()?.flatten() {
         let dir = entry.path();
         let read = |name: &str| std::fs::read_to_string(dir.join(name)).map(|s| s.trim().to_owned()).ok();
-        if read("type").as_deref() != Some("Battery") {
+        // The system's battery, not a mouse's or a headset's (those have the scope Device).
+        if read("type").as_deref() != Some("Battery") || read("scope").as_deref() == Some("Device") {
             continue;
         }
         let capacity = read("capacity").and_then(|c| c.parse::<u8>().ok()).map(|c| c.min(100));

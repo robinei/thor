@@ -9,6 +9,7 @@
 //! Sizes are fractions of the screen or of the element they sit in, named per module.
 
 mod bar;
+mod battery;
 mod editor;
 mod keyboard;
 mod launcher;
@@ -205,6 +206,7 @@ pub fn bottom(c: &mut Canvas, s: &State, w: f32, h: f32, images: &mut Images, sc
         Mode::Touchpad => touchpad::draw(f, body),
         Mode::Sysinfo => sysinfo::draw(f, body, &mut scratch.lines),
         Mode::Wifi => wifi::draw(f, body, &mut scratch.text),
+        Mode::Battery => battery::draw(f, body, &mut scratch.text),
     }
     body
 }

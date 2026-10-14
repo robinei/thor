@@ -135,7 +135,9 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       separate gpio-keys device?). ClamShell takes BTN_MODE from the grabbed pad only; Steam's overlay
       then never sees it.
 - [ ] Lid: does the Thor report a lid switch (`SW_LID`), and does closing it suspend?
-- [ ] Battery: capacity, charging, power draw in sysinfo; the charge limit setting (sysfs path?).
+- [ ] Battery: capacity, charging, power draw in sysinfo; the charge limit setting (sysfs path?); UPower
+      sees it (the battery mode's graph) and powers off at 3 %; GPU time per program in the battery mode
+      (msm's `drm-engine-gpu` in fdinfo).
 - [ ] Power profiles: cpufreq policies (3 clusters?), GPU devfreq, little-cores-only; the udev rule giving
       our user write access.
 - [ ] Fan: is there a sysfs control?
