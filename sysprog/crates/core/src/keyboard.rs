@@ -130,7 +130,7 @@ pub const LAYOUT: &[&[Slot]] = &[
         cf('j', n(Named::Left)),
         cf('k', n(Named::Down)),
         cf('l', n(Named::Right)),
-        named(Named::Enter, 1.0),
+        Slot { base: n(Named::Backspace), fn_key: Some(n(Named::Delete)), width: 1.0 },
     ],
     &[
         // One Shift is enough: it is sticky (tap for one key, hold for Caps Lock).
@@ -142,7 +142,7 @@ pub const LAYOUT: &[&[Slot]] = &[
         c('b'),
         c('n'),
         c('m'),
-        Slot { base: n(Named::Backspace), fn_key: Some(n(Named::Delete)), width: 1.5 },
+        named(Named::Enter, 1.5),
     ],
     &[
         named(Named::Esc, 1.0),
