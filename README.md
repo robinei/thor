@@ -20,6 +20,11 @@ path (virtual pad, mouse emulation, touchpad) and power policy. Rust, a Cargo wo
 
 No panics by construction: `unwrap`, `expect`, `panic!` and slice indexing are denied outside tests.
 
+**Test the launcher under sway on a desktop**: run sway nested (`WLR_BACKENDS=wayland WLR_WL_OUTPUTS=2
+sway`, outputs WL-1 960x540 and WL-2 620x540), and inside it the program with `SYSPROG_BOTTOM_OUTPUT=WL-2`;
+`SYSPROG_STEAM=off` leaves Steam's games out (so a stray click can't start one), `SYSPROG_PEGASUS_CONFIG`
+and `XDG_CONFIG_HOME` point at a test library and launcher.json; sway's `seat seat0 cursor` commands click.
+
 **Run on a desktop** (any Wayland compositor with xdg-shell):
 
     cd sysprog
@@ -66,6 +71,9 @@ from. An app is a `desktop` file (giving name, command and icon) and/or a `name`
 icon (`shelf`, `gamepad`, `terminal`, `browser`, `files`, `music`, `video`, `settings`) over the desktop
 file's, and with neither the initial shows. Instances outlive a restart of the system program. Windows
 come from sway's IPC (`SWAYSOCK`); other compositors have no window list, so there taps only start apps.
+Shelf's window has its own workspace (`sysprog-shelf`), shown at start and whenever an app's or the game's
+workspace empties in front; all these workspaces are kept on the main screen's output (the one that isn't
+`SYSPROG_BOTTOM_OUTPUT`).
 A broken file shows its error under the tiles.
 
 **Settings** (the sliders icon, first in the bar): a 4×4 grid of tiles, each an icon over its value. A

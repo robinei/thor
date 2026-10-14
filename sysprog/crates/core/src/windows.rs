@@ -3,8 +3,10 @@
 //! its processes (a second window, a program started from its terminal) belongs there, and sway arranges
 //! them within it. The game has one workspace, for windows of our game scopes and Steam's games.
 
-/// The game's workspace.
+/// The game's workspace, and shelf's (its window's; shown again when an app's or the game's workspace
+/// empties).
 pub const GAME_WORKSPACE: &str = "sysprog-game";
+pub const SHELF_WORKSPACE: &str = "sysprog-shelf";
 
 /// An open window (from sway's tree).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -37,9 +39,11 @@ impl Window {
         self.unit.as_deref().is_some_and(|u| u.starts_with("sysprog-game-")) || self.app_id.starts_with("steam_app_")
     }
 
-    /// The workspace it belongs on: its instance's, the game's, or none (left where it is).
+    /// The workspace it belongs on: its instance's, the game's, shelf's, or none (left where it is).
     pub fn home(&self) -> Option<&str> {
-        self.instance().or_else(|| self.of_game().then_some(GAME_WORKSPACE))
+        self.instance()
+            .or_else(|| self.of_game().then_some(GAME_WORKSPACE))
+            .or_else(|| (self.app_id == crate::apps::SHELF_APP_ID).then_some(SHELF_WORKSPACE))
     }
 }
 
@@ -67,6 +71,7 @@ mod tests {
         assert_eq!(w(Some("sysprog-game-99-1.scope"), "retroarch").home(), Some(GAME_WORKSPACE));
         assert_eq!(w(Some("app-steam.scope"), "steam_app_620").home(), Some(GAME_WORKSPACE));
         assert_eq!(w(Some("app-steam.scope"), "steam").home(), None, "not ours: left alone");
+        assert_eq!(w(Some("sysprog.service"), crate::apps::SHELF_APP_ID).home(), Some(SHELF_WORKSPACE));
         assert!(order("sysprog-app-x-5-10") > order("sysprog-app-x-5-9"));
     }
 }

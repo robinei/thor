@@ -56,6 +56,10 @@ fn main() -> ExitCode {
     let snapshotting = std::env::args().nth(1).as_deref() == Some("--snapshot");
     let real_snapshot = std::env::var("SYSPROG_SNAPSHOT_LIBRARY").as_deref() == Ok("real");
     let mut sources = sysprog_library::Sources::default_for_user();
+    // SYSPROG_STEAM=off: without Steam's games (tests).
+    if std::env::var("SYSPROG_STEAM").as_deref() == Ok("off") {
+        sources.steam = None;
+    }
     if let Some(dir) = std::env::var_os("SYSPROG_PEGASUS_CONFIG") {
         let dir = std::path::PathBuf::from(dir);
         sources.state_dir = sysprog_library::Sources::state_dir_for(Some(&dir));
@@ -87,6 +91,17 @@ fn main() -> ExitCode {
         state.settings = Settings::load(&text);
     }
 
+    // `--library`: print the collections and games found (Pegasus game dirs and Steam).
+    if std::env::args().nth(1).as_deref() == Some("--library") {
+        for c in &state.library.collections {
+            println!("{} ({}, {} games){}", c.name, c.short_name, c.games.len(), if c.tools { " tools" } else { "" });
+            for g in c.games.iter().filter_map(|&i| state.library.games.get(i)) {
+                let art = if g.box_front.is_some() { "art" } else { "no art" };
+                println!("  {}  [{art}] {:?}", g.title, g.launch);
+            }
+        }
+        return ExitCode::SUCCESS;
+    }
     // `--snapshot DIR`: draw both screens at the Thor's size into PNG files, no Wayland needed.
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let [flag, dir] = args.as_slice()
@@ -135,23 +150,13 @@ fn main() -> ExitCode {
     {
         log::warn!("state dir {}: {e}", dir.display());
     }
-    // `--library`: print the collections and games found (Pegasus game dirs and Steam).
-    if std::env::args().nth(1).as_deref() == Some("--library") {
-        for c in &state.library.collections {
-            println!("{} ({}, {} games){}", c.name, c.short_name, c.games.len(), if c.tools { " tools" } else { "" });
-            for g in c.games.iter().filter_map(|&i| state.library.games.get(i)) {
-                let art = if g.box_front.is_some() { "art" } else { "no art" };
-                println!("  {}  [{art}] {:?}", g.title, g.launch);
-            }
-        }
-        return ExitCode::SUCCESS;
-    }
     // The on-screen keyboard types through a virtual keyboard (US positions).
     let mut keyboard = virtual_keyboard::VirtualKeyboard::new().map_err(|e| log::error!("virtual keyboard: {e}")).ok();
 
     let app_events: Arc<std::sync::OnceLock<sysprog_ui::EventSender>> = Arc::default();
     let app_events_slot = app_events.clone();
     let scope = sysprog_policy::launcher::Config::has_user_systemd();
+    let bottom_output = config.bottom_output.clone();
     let result = sysprog_ui::run(
         state,
         config,
@@ -178,7 +183,7 @@ fn main() -> ExitCode {
                 log::error!("touchpad thread: {e}");
             }
             let windows = sender.clone();
-            if let Err(e) = sway::spawn(move |event| windows.send(event), sway_rx) {
+            if let Err(e) = sway::spawn(move |event| windows.send(event), sway_rx, bottom_output.clone()) {
                 log::error!("sway thread: {e}");
             }
             // Launcher apps report their end through this.
@@ -265,7 +270,9 @@ fn main() -> ExitCode {
                     }
                 });
             }
-            Effect::ShowShelf => show_shelf(),
+            Effect::ShowShelf => {
+                let _ = sway_tx.send(sway::Command::Workspace(sysprog_core::windows::SHELF_WORKSPACE.into()));
+            }
             Effect::FocusWorkspace(name) => {
                 let _ = sway_tx.send(sway::Command::Workspace(name.clone()));
             }
@@ -364,20 +371,6 @@ fn end_units_later(units: Vec<String>) {
     });
     if let Err(e) = ended {
         log::warn!("quit: {e}");
-    }
-}
-
-/// Brings shelf's window (app id `sysprog.top`) to the front: on sway through swaymsg; other
-/// compositors have no common way, so there it only logs.
-fn show_shelf() {
-    if std::env::var_os("SWAYSOCK").is_none() {
-        log::info!("showing shelf: only on sway");
-        return;
-    }
-    match std::process::Command::new("swaymsg").arg("[app_id=\"sysprog.top\"] focus").output() {
-        Ok(out) if !out.status.success() => log::warn!("swaymsg: {}", String::from_utf8_lossy(&out.stdout).trim()),
-        Ok(_) => {}
-        Err(e) => log::warn!("swaymsg: {e}"),
     }
 }
 

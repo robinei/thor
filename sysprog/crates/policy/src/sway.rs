@@ -13,13 +13,14 @@ use std::time::Duration;
 
 use serde_json::Value;
 use sysprog_core::Event;
-use sysprog_core::windows::Window;
+use sysprog_core::windows::{SHELF_WORKSPACE, Window};
 
 use crate::Sink;
 
 const MAGIC: &[u8; 6] = b"i3-ipc";
 const RUN_COMMAND: u32 = 0;
 const SUBSCRIBE: u32 = 2;
+const GET_OUTPUTS: u32 = 3;
 const GET_TREE: u32 = 4;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -105,6 +106,25 @@ fn collect(node: &Value, workspace: &str, unit: &impl Fn(u32) -> Option<String>,
     }
 }
 
+/// The workspace in front if it is one of ours (an instance's, the game's) and empty: what was on it has
+/// closed.
+pub fn emptied(tree: &Value) -> Option<String> {
+    fn find(node: &Value) -> Option<&Value> {
+        if node.get("type").and_then(Value::as_str) == Some("workspace") {
+            return Some(node).filter(|ws| has_focus(ws));
+        }
+        ["nodes", "floating_nodes"].iter().flat_map(|k| node.get(*k).and_then(Value::as_array).into_iter().flatten()).find_map(find)
+    }
+    fn has_focus(node: &Value) -> bool {
+        node.get("focused").and_then(Value::as_bool) == Some(true)
+            || ["nodes", "floating_nodes"].iter().flat_map(|k| node.get(*k).and_then(Value::as_array).into_iter().flatten()).any(has_focus)
+    }
+    let ws = find(tree)?;
+    let empty = ["nodes", "floating_nodes"].iter().all(|k| ws.get(*k).and_then(Value::as_array).is_none_or(Vec::is_empty));
+    let name = ws.get("name").and_then(Value::as_str)?;
+    (empty && name.starts_with("sysprog-") && name != SHELF_WORKSPACE).then(|| name.to_owned())
+}
+
 /// The systemd unit a process runs in: the last part of its cgroup path (`….scope`, `….service`).
 pub fn unit_of(pid: u32) -> Option<String> {
     let cgroup = std::fs::read_to_string(format!("/proc/{pid}/cgroup")).ok()?;
@@ -117,30 +137,54 @@ fn socket() -> Option<PathBuf> {
     std::env::var_os("SWAYSOCK").map(PathBuf::from)
 }
 
+/// The main screen's output: the first active one that isn't the second screen's.
+fn top_output(stream: &mut UnixStream, bottom: &str) -> Option<String> {
+    let outputs: Value = serde_json::from_slice(&ask(stream, GET_OUTPUTS, "").ok()?).ok()?;
+    outputs.as_array()?.iter().filter(|o| o.get("active").and_then(Value::as_bool) == Some(true)).find_map(|o| {
+        o.get("name").and_then(Value::as_str).filter(|n| *n != bottom).map(str::to_owned)
+    })
+}
+
+/// Our workspaces live on the main screen: assigned there before they are created (else a tap on the
+/// second screen, which focuses its output, would put them behind the launcher).
+fn pin(name: &str, top: Option<&str>) -> String {
+    top.map_or_else(String::new, |top| format!("workspace \"{name}\" output \"{top}\"; "))
+}
+
+/// Shows a workspace (creating it if new), on the main screen.
+fn show(name: &str, top: Option<&str>) -> String {
+    let focus = top.map_or_else(String::new, |top| format!("focus output \"{top}\"; "));
+    format!("{}{focus}workspace \"{name}\"", pin(name, top))
+}
+
 /// Follows sway's windows (sending [`Event::Windows`] after each change) and carries out commands;
-/// reconnects if sway goes away. Does nothing without sway.
-pub fn spawn(sink: impl Sink, commands: Receiver<Command>) -> io::Result<()> {
+/// reconnects if sway goes away. Does nothing without sway. `bottom`: the second screen's output.
+pub fn spawn(sink: impl Sink, commands: Receiver<Command>, bottom: String) -> io::Result<()> {
     let Some(path) = socket() else {
         log::info!("windows: not on sway, no window list");
         return Ok(());
     };
     let commands_path = path.clone();
+    let bottom_output = bottom.clone();
     thread::Builder::new().name("sway commands".into()).spawn(move || {
         for command in commands {
-            let text = match command {
-                Command::Workspace(name) => format!("workspace \"{name}\""),
-                Command::Focus(id) => format!("[con_id={id}] focus"),
-                Command::Close(id) => format!("[con_id={id}] kill"),
-            };
-            let result = UnixStream::connect(&commands_path).and_then(|mut s| ask(&mut s, RUN_COMMAND, &text));
+            let result = UnixStream::connect(&commands_path).and_then(|mut s| {
+                let top = top_output(&mut s, &bottom_output);
+                let text = match &command {
+                    Command::Workspace(name) => show(name, top.as_deref()),
+                    Command::Focus(id) => format!("[con_id={id}] focus"),
+                    Command::Close(id) => format!("[con_id={id}] kill"),
+                };
+                ask(&mut s, RUN_COMMAND, &text).map(|_| ())
+            });
             if let Err(e) = result {
-                log::warn!("sway: {text}: {e}");
+                log::warn!("sway: {command:?}: {e}");
             }
         }
     })?;
     thread::Builder::new().name("sway windows".into()).spawn(move || {
         loop {
-            match follow(&path, &sink) {
+            match follow(&path, &sink, &bottom) {
                 Ok(()) => return,
                 Err(e) => log::warn!("sway: {e}; trying again"),
             }
@@ -151,7 +195,7 @@ pub fn spawn(sink: impl Sink, commands: Receiver<Command>) -> io::Result<()> {
 }
 
 /// Subscribes to window events and sends the window list after each; Ok when the UI is gone.
-fn follow(path: &Path, sink: &impl Sink) -> io::Result<()> {
+fn follow(path: &Path, sink: &impl Sink, bottom: &str) -> io::Result<()> {
     let mut events = UnixStream::connect(path)?;
     let mut queries = UnixStream::connect(path)?;
     ask(&mut events, SUBSCRIBE, r#"["window"]"#)?;
@@ -160,13 +204,24 @@ fn follow(path: &Path, sink: &impl Sink) -> io::Result<()> {
     loop {
         let tree: Value = serde_json::from_slice(&ask(&mut queries, GET_TREE, "")?).map_err(io::Error::other)?;
         let list = windows(&tree, &unit_of);
+        let top = top_output(&mut queries, bottom);
         // Windows of our scopes go to their workspace; the move brings another event and a fresh list.
         let mut moved = false;
         for w in &list {
             if let Some(home) = w.home().filter(|h| *h != w.workspace && tried.insert((w.id, (*h).to_owned()))) {
-                let command = format!("[con_id={}] move container to workspace \"{home}\"", w.id);
+                let mut command = format!("{}[con_id={}] move container to workspace \"{home}\"", pin(home, top.as_deref()), w.id);
+                // Shelf's window, moved home when the program starts: show it.
+                if home == SHELF_WORKSPACE {
+                    command.push_str("; ");
+                    command.push_str(&show(SHELF_WORKSPACE, top.as_deref()));
+                }
                 moved |= ask(&mut queries, RUN_COMMAND, &command).is_ok();
             }
+        }
+        // An app or the game closed and left its empty workspace in front: back to shelf.
+        if let Some(name) = emptied(&tree) {
+            log::debug!("sway: {name} emptied: showing shelf");
+            moved |= ask(&mut queries, RUN_COMMAND, &show(SHELF_WORKSPACE, top.as_deref())).is_ok();
         }
         if !moved && !sink.send(Event::Windows(list)) {
             return Ok(());
@@ -199,6 +254,26 @@ mod tests {
         assert_eq!((w[0].workspace.as_str(), w[1].workspace.as_str()), ("3", "3"));
         assert_eq!((w[0].id, w[0].app_id.as_str(), w[0].focused, w[0].unit.as_deref()), (7, "foot", true, Some("sysprog-app-terminal-1-0.scope")));
         assert_eq!((w[1].app_id.as_str(), w[1].title.as_str(), w[1].unit.as_deref()), ("steam_app_620", "Portal 2", None));
+    }
+
+    #[test]
+    fn an_emptied_workspace_of_ours_in_front_is_noticed() {
+        let tree = |name: &str, focused_ws: bool, windows: &str| -> Value {
+            serde_json::from_str(&format!(
+                r#"{{"type": "root", "nodes": [{{"type": "output", "nodes": [{{"type": "workspace", "name": "{name}", "focused": {focused_ws}, "nodes": [{windows}]}}]}}]}}"#
+            ))
+            .unwrap()
+        };
+        assert_eq!(emptied(&tree("sysprog-game", true, "")), Some("sysprog-game".into()));
+        assert_eq!(emptied(&tree("sysprog-game", false, r#"{"type": "con", "focused": true}"#)), None, "not empty");
+        assert_eq!(emptied(&tree("3", true, "")), None, "not ours");
+        assert_eq!(emptied(&tree(SHELF_WORKSPACE, true, "")), None);
+    }
+
+    #[test]
+    fn our_workspaces_are_shown_on_the_main_screen() {
+        assert_eq!(show("w", Some("DSI-2")), r#"workspace "w" output "DSI-2"; focus output "DSI-2"; workspace "w""#);
+        assert_eq!(show("w", None), r#"workspace "w""#);
     }
 
     #[test]

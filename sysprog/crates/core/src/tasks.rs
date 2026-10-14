@@ -88,7 +88,8 @@ impl State {
                     let at = instances.iter().position(|n| *n == front).unwrap_or(0);
                     instances.get((at + 1) % instances.len()).copied()
                 }
-                None => self.current_instance(i),
+                // Else its most recent; with no history yet (just restarted), its first.
+                None => self.current_instance(i).or(instances.first().copied()),
             };
             return target.map(|t| Effect::FocusWorkspace(t.to_owned())).into_iter().collect();
         }
@@ -201,8 +202,8 @@ mod tests {
         assert!(matches!(s.apply(Event::Activate(Id::NewInstance(term))).1.as_slice(), [Effect::RunApp { .. }]));
         assert_eq!(s.apply(Event::Activate(Id::NewInstance(1))).1, vec![]);
         // Shelf: its window's workspace.
-        s.apply(Event::Windows(vec![win(1, apps::SHELF_APP_ID, "sysprog.service", "1", false)]));
-        assert_eq!(s.apply(Event::Activate(Id::App(0))).1, vec![Effect::FocusWorkspace("1".into())]);
+        s.apply(Event::Windows(vec![win(1, apps::SHELF_APP_ID, "sysprog.service", windows::SHELF_WORKSPACE, false)]));
+        assert_eq!(s.apply(Event::Activate(Id::App(0))).1, vec![Effect::FocusWorkspace(windows::SHELF_WORKSPACE.into())]);
     }
 
     #[test]
