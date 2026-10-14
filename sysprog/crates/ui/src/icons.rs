@@ -9,6 +9,8 @@ pub enum Icon {
     Apps,
     /// The pad mouse toggle: a mouse.
     Mouse,
+    /// Game settings: three sliders.
+    Sliders,
     Keyboard,
     Touchpad,
     Sysinfo,
@@ -49,6 +51,12 @@ pub fn draw(c: &mut Canvas, icon: Icon, r: Rect, color: Color) {
         points
     };
     match icon {
+        Icon::Sliders => {
+            for (y, knob) in [(6.0, 15.0), (12.0, 8.0), (18.0, 13.0)] {
+                c.polyline(&[p(3.0, y), p(21.0, y)], line, color, false);
+                c.circle(x0 + knob * u, y0 + y * u, 2.6 * u, color);
+            }
+        }
         Icon::Mouse => {
             c.outline(rr(6.0, 3.0, 12.0, 18.0), 6.0 * u, line, color);
             c.polyline(&[p(12.0, 3.5), p(12.0, 9.5)], line, color, false);

@@ -29,6 +29,8 @@ pub struct Request {
     pub game: Arc<str>,
     pub launch: Launch,
     pub file: Option<PathBuf>,
+    /// This game's own environment (its MangoHud config), on top of the config's.
+    pub env: Vec<(String, String)>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -58,12 +60,14 @@ pub fn spawn(config: Config, requests: Receiver<Request>, sink: impl Sink) -> io
         for request in requests {
             count += 1;
             let game = request.game.clone();
+            let mut env = config.clone();
+            env.env.extend(request.env.iter().cloned());
             let played = match &request.launch {
                 Launch::Command { command, workdir, basedir } => match request.file.as_deref() {
-                    Some(file) => run_command(&config, command, workdir, basedir, file, count, &game, &sink),
+                    Some(file) => run_command(&env, command, workdir, basedir, file, count, &game, &sink),
                     None => Err(io::Error::other("no file to launch")),
                 },
-                Launch::Steam { appid } => run_steam(&config, *appid, &game, &sink),
+                Launch::Steam { appid } => run_steam(&env, *appid, &game, &sink),
                 Launch::None => Err(io::Error::other("no launch command")),
             };
             let event = match played {
@@ -182,7 +186,7 @@ mod tests {
         let handle = spawn(config, rx, move |e| seen.lock().map(|mut v| v.push(e)).is_ok()).unwrap();
         let id: Arc<str> = script.to_string_lossy().into();
         let launch = Launch::Command { command: "\"{file.path}\"".into(), workdir: String::new(), basedir: dir.clone() };
-        tx.send(Request { game: id.clone(), launch, file: Some(script.clone()) }).unwrap();
+        tx.send(Request { game: id.clone(), launch, file: Some(script.clone()), env: vec![] }).unwrap();
         drop(tx);
         handle.join().unwrap();
 
@@ -201,7 +205,7 @@ mod tests {
         let (tx, rx) = std::sync::mpsc::channel();
         let handle = spawn(Config::default(), rx, move |e| seen.lock().map(|mut v| v.push(e)).is_ok()).unwrap();
         let launch = Launch::Command { command: "/nonexistent/game".into(), workdir: String::new(), basedir: "/".into() };
-        tx.send(Request { game: "x".into(), launch, file: Some("/tmp".into()) }).unwrap();
+        tx.send(Request { game: "x".into(), launch, file: Some("/tmp".into()), env: vec![] }).unwrap();
         drop(tx);
         handle.join().unwrap();
         assert_eq!(*events.lock().unwrap(), vec![Event::LaunchFailed("x".into())]);

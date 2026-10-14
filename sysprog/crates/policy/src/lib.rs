@@ -8,6 +8,7 @@ pub mod launcher;
 pub mod metrics;
 pub mod pad;
 pub mod touchpad;
+pub mod tuning;
 
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};

@@ -1,9 +1,10 @@
 //! A running game's frame rate and frame time, from MangoHud.
 //!
-//! MangoHud measures inside the game (Vulkan layer, or OpenGL through its wrapper). Games started with
-//! [`mangohud_env`] get it with its overlay fully transparent, logging a CSV row every LOG_INTERVAL_MS
-//! to a folder in RAM; this thread follows the newest log and reports its latest frame rate and frame
-//! time. (MangoHud's `no_display` would hide the overlay too, but stops the measuring with it.)
+//! MangoHud measures inside the game (Vulkan layer, or OpenGL through its wrapper). Games are started
+//! with a MangoHud config file (tuning::mangohud_config) that makes its overlay fully transparent and
+//! logs a CSV row every 500 ms to a folder in RAM; this thread follows the newest log and reports its
+//! latest frame rate and frame time. (MangoHud's `no_display` would hide the overlay too, but stops the
+//! measuring with it.) A new log starts whenever MangoHud reloads its config (an FPS cap change).
 //!
 //! Under gamescope there is also mangoapp's message queue, which gamescope itself feeds; our sway
 //! setup doesn't run games inside gamescope, so this reads MangoHud's own log instead.
@@ -18,26 +19,12 @@ use sysprog_core::Event;
 
 use crate::Sink;
 
-/// How often MangoHud logs, and how often we look.
+/// How often we look (MangoHud logs every 500 ms, tuning::mangohud_config).
 const LOG_INTERVAL_MS: u64 = 500;
 /// A log not written for this long belongs to a game that has ended.
 const STALE: Duration = Duration::from_secs(3);
 /// Ended games' logs are removed after this.
 const KEEP: Duration = Duration::from_secs(600);
-
-/// The environment for a game to be measured: MangoHud on, invisible, logging into `dir`.
-pub fn mangohud_env(dir: &Path) -> [(&'static str, String); 2] {
-    [
-        ("MANGOHUD", "1".into()),
-        (
-            "MANGOHUD_CONFIG",
-            format!(
-                "alpha=0,background_alpha=0,autostart_log=1,log_interval={LOG_INTERVAL_MS},output_folder={}",
-                dir.display()
-            ),
-        ),
-    ]
-}
 
 /// The folder for the logs: in the runtime directory, so in RAM.
 pub fn default_dir() -> PathBuf {
@@ -107,7 +94,9 @@ fn newest_fresh_log(dir: &Path) -> Option<PathBuf> {
     let mut newest: Option<(SystemTime, PathBuf)> = None;
     for entry in fs::read_dir(dir).ok()?.flatten() {
         let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("csv") {
+        // MangoHud also writes a `<game>_summary.csv` when a log ends.
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if !name.ends_with(".csv") || name.ends_with("_summary.csv") {
             continue;
         }
         let Some(modified) = entry.metadata().ok().and_then(|m| m.modified().ok()) else {
@@ -161,11 +150,4 @@ mod tests {
         assert_eq!(t.feed("1,2,3\n"), None);
     }
 
-    #[test]
-    fn the_environment_hides_the_overlay_and_logs_to_the_folder() {
-        let [(k1, v1), (k2, v2)] = mangohud_env(Path::new("/run/user/1000/sysprog/mangohud"));
-        assert_eq!((k1, v1.as_str()), ("MANGOHUD", "1"));
-        assert_eq!(k2, "MANGOHUD_CONFIG");
-        assert!(v2.contains("alpha=0") && v2.contains("output_folder=/run/user/1000/sysprog/mangohud"));
-    }
 }

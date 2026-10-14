@@ -13,43 +13,72 @@ use keyboard::{Key, KeyPos, Keyboard, Stroke};
 
 pub use sysprog_library::{Collection, Game, Launch, Library};
 
-/// Second-screen modes (docs/plans.md, "Second screen"). Follow is the default: the second screen shows
-/// what belongs to the main screen (the selected or running game's settings). The others override it
-/// until dismissed; tapping the active override's icon returns to follow.
+/// Second-screen modes (docs/plans.md, "Second screen"), chosen from the bar; the last one chosen stays.
+/// Settings (the game's settings) is only available while there is a game in context, and gives way to
+/// the previous mode when that goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Mode {
-    #[default]
-    Follow,
+    Settings,
     Launcher,
     Keyboard,
     Touchpad,
+    #[default]
     Sysinfo,
 }
 
 impl Mode {
-    /// The modes the bar offers; follow has no icon (it is what's left when none is on).
-    pub const OVERRIDES: [Mode; 4] = [Mode::Launcher, Mode::Keyboard, Mode::Touchpad, Mode::Sysinfo];
+    /// The modes in the bar, in order.
+    pub const BAR: [Mode; 5] = [Mode::Settings, Mode::Launcher, Mode::Keyboard, Mode::Touchpad, Mode::Sysinfo];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Mode::Settings => "settings",
+            Mode::Launcher => "launcher",
+            Mode::Keyboard => "keyboard",
+            Mode::Touchpad => "touchpad",
+            Mode::Sysinfo => "sysinfo",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Mode> {
+        Mode::BAR.into_iter().find(|m| m.name() == name)
+    }
 }
 
-/// Power profile per game; a stand-in for the real per-game settings.
+/// A game's power profile: how fast CPU and GPU may run (frequency caps; the Thor has no TDP setting).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Power {
-    Low,
+    Battery,
     #[default]
     Balanced,
-    High,
+    Performance,
 }
 
 impl Power {
-    pub const ALL: [Power; 3] = [Power::Low, Power::Balanced, Power::High];
+    pub const ALL: [Power; 3] = [Power::Battery, Power::Balanced, Power::Performance];
 
     pub fn label(self) -> &'static str {
         match self {
-            Power::Low => "Low",
+            Power::Battery => "Battery",
             Power::Balanced => "Balanced",
-            Power::High => "High",
+            Power::Performance => "Performance",
         }
     }
+
+    fn from_label(label: &str) -> Option<Power> {
+        Power::ALL.into_iter().find(|p| p.label() == label)
+    }
+}
+
+/// Frame rate caps offered; 0 is no cap.
+pub const FPS_CAPS: [u16; 6] = [0, 30, 40, 60, 90, 120];
+
+/// A game's settings, kept per game, applied at launch and live while it runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct GameSettings {
+    pub power: Power,
+    /// Frames per second at most (MangoHud's limiter); 0: no cap.
+    pub fps_cap: u16,
 }
 
 /// Stable ids of everything that can be focused or tapped, on either screen. Focus is kept by id, so it
@@ -62,6 +91,8 @@ pub enum Id {
     Mode(Mode),
     Power(Power),
     Launch,
+    /// A frame rate cap choice (0: none).
+    FpsCap(u16),
     /// An on-screen keyboard key, by position.
     Key(KeyPos),
     /// The pad mouse toggle.
@@ -121,8 +152,14 @@ pub enum Event {
 /// What the state asks the outside world to do.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Effect {
-    /// Start this game (its launch command or Steam id, and its file).
-    Launch { game: Arc<str>, power: Power, launch: Launch, file: Option<std::path::PathBuf> },
+    /// Start this game (its launch command or Steam id, and its file) with these settings.
+    Launch { game: Arc<str>, settings: GameSettings, launch: Launch, file: Option<std::path::PathBuf> },
+    /// The running game's settings changed: apply them now.
+    Apply { game: Arc<str>, settings: GameSettings },
+    /// The game ended: back to normal (power).
+    GameEnded,
+    /// The games' settings changed: write them (see [`State::settings_text`]).
+    SaveSettings(String),
     /// The favourites changed: write them (favorites.txt).
     SaveFavourites(Vec<String>),
     /// Where shelf is (see [`State::resume_text`]): write it, to start there next time.
@@ -167,9 +204,11 @@ pub struct State {
     pub rows: usize,
     /// Id of the selected game (shelf's list on top, its settings below): the current tab's cursor.
     pub selected: Option<Arc<str>>,
-    /// Per-game power setting, by game id; absent = default.
-    pub power: HashMap<Arc<str>, Power>,
+    /// Per-game settings, by game id; absent = default.
+    pub settings: HashMap<Arc<str>, GameSettings>,
     pub mode: Mode,
+    /// The mode before Settings, to go back to.
+    pub previous: Mode,
     pub focus: Option<Id>,
     /// The focus ring is shown only while navigating with the pad.
     pub show_focus: bool,
@@ -204,7 +243,7 @@ const RESUME_AFTER: u64 = 2;
 fn screen_of(id: &Id) -> Dirty {
     match id {
         Id::Game(_) | Id::Tab(_) => Dirty::BOTH,
-        Id::Mode(_) | Id::Power(_) | Id::Launch | Id::Key(_) | Id::PadMouse => Dirty::BOTTOM,
+        Id::Mode(_) | Id::Power(_) | Id::FpsCap(_) | Id::Launch | Id::Key(_) | Id::PadMouse => Dirty::BOTTOM,
     }
 }
 
@@ -240,6 +279,11 @@ impl State {
     pub fn resume_text(&self) -> String {
         let mut text = self.collection().map(|c| c.name.clone()).unwrap_or_default();
         text.push('\n');
+        // The second screen's mode (Settings comes back as the mode under it).
+        let mode = if self.mode == Mode::Settings { self.previous } else { self.mode };
+        text.push_str("@mode\t");
+        text.push_str(mode.name());
+        text.push('\n');
         for (i, c) in self.library.collections.iter().enumerate() {
             let cursor = self.cursors.get(i).copied().unwrap_or_default();
             if let Some(g) = c.games.get(cursor.index).and_then(|&g| self.library.games.get(g)) {
@@ -260,6 +304,14 @@ impl State {
             let Some((name, id)) = line.split_once('\t') else {
                 continue;
             };
+            if name == "@mode" {
+                // Not into settings (no game yet) or touchpad (grabs the touchscreen; only on request).
+                if let Some(mode) = Mode::from_name(id).filter(|m| !matches!(m, Mode::Settings | Mode::Touchpad)) {
+                    self.mode = mode;
+                    self.previous = mode;
+                }
+                continue;
+            }
             let Some(tab) = self.library.collections.iter().position(|c| c.name == name) else {
                 continue;
             };
@@ -346,8 +398,63 @@ impl State {
         }
     }
 
-    pub fn power_of(&self, game: &str) -> Power {
-        self.power.get(game).copied().unwrap_or_default()
+    pub fn settings_of(&self, game: &str) -> GameSettings {
+        self.settings.get(game).copied().unwrap_or_default()
+    }
+
+    /// The game the Settings mode is about: the running one, else shelf's selection.
+    pub fn context(&self) -> Option<&Game> {
+        let id = self.running.as_ref().or(self.selected.as_ref())?;
+        self.library.games.iter().find(|g| &g.id == id)
+    }
+
+    /// Settings gives way to the previous mode when there is no game in context.
+    fn check_context(&mut self) {
+        if self.mode == Mode::Settings && self.context().is_none() {
+            self.mode = self.previous;
+        }
+    }
+
+    /// Changes the context game's settings; applied now if it is running.
+    fn change_settings(&mut self, change: impl FnOnce(&mut GameSettings)) -> Vec<Effect> {
+        let Some(id) = self.context().map(|g| g.id.clone()) else {
+            return vec![];
+        };
+        let mut settings = self.settings_of(&id);
+        change(&mut settings);
+        self.settings.insert(id.clone(), settings);
+        let mut effects = vec![Effect::SaveSettings(self.settings_text())];
+        if self.running.as_ref() == Some(&id) {
+            effects.push(Effect::Apply { game: id, settings });
+        }
+        effects
+    }
+
+    /// The games' settings as text: one game per line, id, power and fps cap, tab-separated (only games
+    /// with settings other than the defaults).
+    pub fn settings_text(&self) -> String {
+        let mut lines: Vec<String> = self
+            .settings
+            .iter()
+            .filter(|(_, s)| **s != GameSettings::default())
+            .map(|(id, s)| format!("{id}\t{}\t{}", s.power.label(), s.fps_cap))
+            .collect();
+        lines.sort();
+        lines.iter().map(|l| format!("{l}\n")).collect()
+    }
+
+    pub fn load_settings(&mut self, text: &str) {
+        for line in text.lines() {
+            let mut fields = line.split('\t');
+            let (Some(id), Some(power), Some(fps)) = (fields.next(), fields.next(), fields.next()) else {
+                continue;
+            };
+            let settings = GameSettings {
+                power: Power::from_label(power).unwrap_or_default(),
+                fps_cap: fps.parse().unwrap_or(0),
+            };
+            self.settings.insert(id.into(), settings);
+        }
     }
 
     /// Applies one event; returns which screens changed and what must happen outside.
@@ -450,13 +557,15 @@ impl State {
                     }
                     lib.rebuild_derived();
                 });
-                (Dirty::BOTH, vec![])
+                self.check_context();
+                (Dirty::BOTH, vec![Effect::GameEnded])
             }
             Event::LaunchFailed(game) => {
                 if self.running.as_ref() == Some(&game) {
                     self.running = None;
                 }
-                (Dirty::BOTH, vec![])
+                self.check_context();
+                (Dirty::BOTH, vec![Effect::GameEnded])
             }
             Event::Down(id) => {
                 let dirty = screen_of(&id);
@@ -505,9 +614,22 @@ impl State {
                 (Dirty::BOTH, vec![])
             }
             Id::Mode(mode) => {
-                // Tapping the current mode's icon returns to follow (docs/plans.md, "Switching modes").
+                // Settings needs a game; tapping it again goes back to the mode before it.
                 let before = self.mode;
-                self.mode = if self.mode == mode { Mode::Follow } else { mode };
+                if mode == Mode::Settings && self.context().is_none() {
+                    return (Dirty::NONE, vec![]);
+                }
+                if mode == self.mode {
+                    if mode == Mode::Settings {
+                        self.mode = self.previous;
+                    }
+                } else {
+                    if self.mode != Mode::Settings {
+                        self.previous = self.mode;
+                    }
+                    self.mode = mode;
+                }
+                self.resume_dirty = Some(self.unix_secs);
                 let touchpad = |m: Mode| m == Mode::Touchpad;
                 let effects = if touchpad(before) != touchpad(self.mode) {
                     vec![Effect::Touchpad(touchpad(self.mode))]
@@ -516,12 +638,8 @@ impl State {
                 };
                 (Dirty::BOTH, effects)
             }
-            Id::Power(power) => {
-                if let Some(game) = self.selected.clone() {
-                    self.power.insert(game, power);
-                }
-                (Dirty::BOTH, vec![])
-            }
+            Id::Power(power) => (Dirty::BOTH, self.change_settings(|s| s.power = power)),
+            Id::FpsCap(cap) => (Dirty::BOTH, self.change_settings(|s| s.fps_cap = cap)),
             Id::Launch => match self.selected.clone() {
                 Some(game) => (Dirty::BOTH, self.launch_effects(game)),
                 None => (Dirty::BOTH, vec![]),
@@ -545,10 +663,10 @@ impl State {
         let Some(g) = self.library.games.iter().find(|g| g.id == game) else {
             return vec![];
         };
-        let power = self.power_of(&game);
+        let settings = self.settings_of(&game);
         vec![
             Effect::SaveResume(self.resume_text()),
-            Effect::Launch { game, power, launch: g.launch.clone(), file: g.file.clone() },
+            Effect::Launch { game, settings, launch: g.launch.clone(), file: g.file.clone() },
         ]
     }
 }
@@ -575,27 +693,49 @@ mod tests {
         let (_, fx) = s.apply(Event::Activate(Id::Game("ff6".into())));
         assert!(fx.is_empty());
         let (_, fx) = s.apply(Event::Activate(Id::Game("ff6".into())));
-        assert_eq!(fx.last(), Some(&Effect::Launch { game: "ff6".into(), power: Power::Balanced, launch: Launch::None, file: None }));
+        assert_eq!(fx.last(), Some(&Effect::Launch { game: "ff6".into(), settings: GameSettings::default(), launch: Launch::None, file: None }));
     }
 
     #[test]
-    fn power_is_per_game_and_used_at_launch() {
+    fn settings_are_per_game_and_go_with_the_launch() {
         let mut s = state();
-        s.apply(Event::Activate(Id::Power(Power::High)));
+        let (_, fx) = s.apply(Event::Activate(Id::Power(Power::Performance)));
+        assert!(matches!(fx.first(), Some(Effect::SaveSettings(text)) if text == "zelda-lttp\tPerformance\t0\n"));
+        s.apply(Event::Activate(Id::FpsCap(40)));
         s.apply(Event::Activate(Id::Game("ff6".into())));
-        assert_eq!(s.power_of("zelda-lttp"), Power::High);
-        assert_eq!(s.power_of("ff6"), Power::Balanced);
-        let (_, fx) = s.apply(Event::Activate(Id::Launch));
-        assert_eq!(fx.last(), Some(&Effect::Launch { game: "ff6".into(), power: Power::Balanced, launch: Launch::None, file: None }));
+        assert_eq!(s.settings_of("zelda-lttp"), GameSettings { power: Power::Performance, fps_cap: 40 });
+        assert_eq!(s.settings_of("ff6"), GameSettings::default());
+        let mut fresh = state();
+        fresh.load_settings(&s.settings_text());
+        assert_eq!(fresh.settings_of("zelda-lttp").fps_cap, 40);
     }
 
     #[test]
-    fn current_mode_toggles_back_to_follow() {
+    fn a_running_game_takes_its_changes_at_once() {
         let mut s = state();
+        s.apply(Event::Started("zelda-lttp".into()));
+        s.apply(Event::Activate(Id::Game("ff6".into())));
+        // The running game is the context, not the selection.
+        let (_, fx) = s.apply(Event::Activate(Id::FpsCap(30)));
+        assert_eq!(fx.last(), Some(&Effect::Apply { game: "zelda-lttp".into(), settings: GameSettings { fps_cap: 30, ..GameSettings::default() } }));
+        let (_, fx) = s.apply(Event::Played { game: "zelda-lttp".into(), start: 0, duration: 1 });
+        assert_eq!(fx, vec![Effect::GameEnded]);
+    }
+
+    #[test]
+    fn settings_toggles_back_and_needs_a_game() {
+        let mut s = state();
+        assert_eq!(s.mode, Mode::Sysinfo, "the default");
         s.apply(Event::Activate(Id::Mode(Mode::Keyboard)));
-        assert_eq!(s.mode, Mode::Keyboard);
+        s.apply(Event::Activate(Id::Mode(Mode::Settings)));
+        assert_eq!(s.mode, Mode::Settings);
+        s.apply(Event::Activate(Id::Mode(Mode::Settings)));
+        assert_eq!(s.mode, Mode::Keyboard, "back to the mode before");
         s.apply(Event::Activate(Id::Mode(Mode::Keyboard)));
-        assert_eq!(s.mode, Mode::Follow);
+        assert_eq!(s.mode, Mode::Keyboard, "other modes stay when tapped again");
+        let mut empty = State::new(Library::default());
+        empty.apply(Event::Activate(Id::Mode(Mode::Settings)));
+        assert_eq!(empty.mode, Mode::Sysinfo, "no game, no settings");
     }
 
     #[test]
@@ -721,7 +861,7 @@ mod tests {
             Some(Effect::SaveResume(text)) => text.clone(),
             other => format!("{other:?}"),
         };
-        assert_eq!(text, "More\nGames\tff6\nMore\tff6\n");
+        assert_eq!(text, "More\n@mode\tsysinfo\nGames\tff6\nMore\tff6\n");
         let mut fresh = state();
         fresh.restore(&text);
         assert_eq!(fresh.collection().map(|c| c.name.as_str()), Some("More"));

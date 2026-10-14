@@ -6,8 +6,8 @@ use std::sync::{Arc, Mutex, mpsc};
 
 use sysprog_core::keyboard::{self, Key, KeyPos, Modifier};
 use sysprog_core::touch::TouchLayout;
-use sysprog_core::{Effect, Event, Id, Mode, State, Status};
-use sysprog_policy::{keyboard as virtual_keyboard, pad, touchpad};
+use sysprog_core::{Effect, Event, Id, Mode, Power, State, Status};
+use sysprog_policy::{keyboard as virtual_keyboard, pad, touchpad, tuning};
 use sysprog_ui::{Config, Screen};
 
 fn main() -> ExitCode {
@@ -52,6 +52,10 @@ fn main() -> ExitCode {
     if !snapshotting && let Some(text) = resume_file.as_ref().and_then(|f| std::fs::read_to_string(f).ok()) {
         state.restore(&text);
     }
+    // Each game's settings (power profile, FPS cap).
+    if !snapshotting && let Some(text) = state_dir.as_ref().and_then(|d| std::fs::read_to_string(d.join("game-settings.txt")).ok()) {
+        state.load_settings(&text);
+    }
 
     // `--snapshot DIR`: draw both screens at the Thor's size into PNG files, no Wayland needed.
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -63,13 +67,7 @@ fn main() -> ExitCode {
 
     // Development: start in a mode (SYSPROG_START_MODE=touchpad|keyboard|launcher|sysinfo).
     let (touchpad_tx, touchpad_rx) = mpsc::channel();
-    let start_mode = match std::env::var("SYSPROG_START_MODE").as_deref() {
-        Ok("touchpad") => Some(Mode::Touchpad),
-        Ok("keyboard") => Some(Mode::Keyboard),
-        Ok("launcher") => Some(Mode::Launcher),
-        Ok("sysinfo") => Some(Mode::Sysinfo),
-        _ => None,
-    };
+    let start_mode = std::env::var("SYSPROG_START_MODE").ok().and_then(|m| Mode::from_name(&m));
     if let Some(mode) = start_mode {
         for effect in state.apply(Event::Activate(Id::Mode(mode))).1 {
             if effect == Effect::Touchpad(true) {
@@ -94,12 +92,10 @@ fn main() -> ExitCode {
     let (launch_tx, launch_rx) = mpsc::channel();
     let launcher = sysprog_policy::launcher::Config {
         stats_db: state_dir.as_ref().map(|d| d.join("stats.db")),
-        env: sysprog_policy::frames::mangohud_env(&sysprog_policy::frames::default_dir())
-            .into_iter()
-            .map(|(k, v)| (k.to_owned(), v))
-            .collect(),
+        env: vec![],
         scope: sysprog_policy::launcher::Config::has_user_systemd(),
     };
+    let mangohud_dir = sysprog_policy::frames::default_dir();
     if let Some(dir) = &state_dir
         && let Err(e) = std::fs::create_dir_all(dir)
     {
@@ -116,12 +112,22 @@ fn main() -> ExitCode {
         }
         return ExitCode::SUCCESS;
     }
-    // `--mangohud-env`: print the environment that makes a game report its frame rate here.
+    // `--mangohud-env`: print the environment that makes a game (started by hand) report its frame rate
+    // here.
     if std::env::args().nth(1).as_deref() == Some("--mangohud-env") {
-        for (k, v) in sysprog_policy::frames::mangohud_env(&sysprog_policy::frames::default_dir()) {
-            println!("{k}={v}");
-        }
-        return ExitCode::SUCCESS;
+        let dir = sysprog_policy::frames::default_dir();
+        return match tuning::mangohud_config(&dir, "default", 0) {
+            Ok(config) => {
+                for (k, v) in tuning::mangohud_env(&config) {
+                    println!("{k}={v}");
+                }
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                log::error!("{e}");
+                ExitCode::FAILURE
+            }
+        };
     }
     // The on-screen keyboard types through a virtual keyboard (US positions).
     let mut keyboard = virtual_keyboard::VirtualKeyboard::new().map_err(|e| log::error!("virtual keyboard: {e}")).ok();
@@ -181,11 +187,34 @@ fn main() -> ExitCode {
                 }
                 None => log::info!("effect: {effect:?} (no virtual keyboard)"),
             },
-            Effect::Launch { game, launch, file, power } => {
-                log::info!("launching {game} (power {power:?})");
-                let request = sysprog_policy::launcher::Request { game: game.clone(), launch: launch.clone(), file: file.clone() };
+            Effect::Launch { game, launch, file, settings } => {
+                log::info!("launching {game} ({settings:?})");
+                tuning::apply_power(settings.power);
+                let env = match tuning::mangohud_config(&mangohud_dir, game, settings.fps_cap) {
+                    Ok(config) => tuning::mangohud_env(&config),
+                    Err(e) => {
+                        log::warn!("MangoHud config: {e}");
+                        vec![]
+                    }
+                };
+                let request = sysprog_policy::launcher::Request { game: game.clone(), launch: launch.clone(), file: file.clone(), env };
                 if launch_tx.send(request).is_err() {
                     log::warn!("launcher thread is gone");
+                }
+            }
+            // The running game's settings changed: its MangoHud config (reloaded live) and the power.
+            Effect::Apply { game, settings } => {
+                tuning::apply_power(settings.power);
+                if let Err(e) = tuning::mangohud_config(&mangohud_dir, game, settings.fps_cap) {
+                    log::warn!("MangoHud config: {e}");
+                }
+            }
+            Effect::GameEnded => tuning::apply_power(sysprog_core::Power::Performance),
+            Effect::SaveSettings(text) => {
+                if let Some(dir) = &state_dir
+                    && let Err(e) = std::fs::write(dir.join("game-settings.txt"), text)
+                {
+                    log::warn!("game settings: {e}");
                 }
             }
             Effect::SaveResume(text) => {
@@ -251,6 +280,18 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
             "top-played.png",
         ),
         (vec![], Screen::Bottom, bottom, "bottom.png"),
+        (
+            vec![Event::Activate(Id::Mode(Mode::Settings)), Event::Activate(Id::FpsCap(60))],
+            Screen::Bottom,
+            bottom,
+            "settings-running.png",
+        ),
+        (
+            vec![Event::Played { game: "zelda-lttp".into(), start: now, duration: 60 }, Event::Activate(Id::Power(Power::Battery))],
+            Screen::Bottom,
+            bottom,
+            "settings.png",
+        ),
         (
             vec![Event::Status(Status { battery: Some(9), charging: false, wifi: None, volume: Some(40), muted: true })],
             Screen::Bottom,
