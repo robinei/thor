@@ -171,7 +171,7 @@ fn face(s: &State, tile: Tile, buf: &mut String) -> Face {
                 Some(g) => s.env.get(g).map_or("", |e| e.as_str()),
                 None => s.global_env.as_str(),
             };
-            let count = sysprog_core::parse_env(text).len();
+            let count = sysprog_core::count_env(text);
             buf.clear();
             match count {
                 0 => buf.push_str("No variables"),

@@ -971,7 +971,12 @@ mod no_alloc {
         let mut bottom = Pixmap::new(1240, 1080).expect("pixmap");
 
         let cases: Vec<(&str, Vec<Event>)> = vec![
-            ("game settings", vec![]),
+            ("sysinfo", vec![]),
+            ("settings", vec![Event::Activate(Id::Mode(Mode::Settings))]),
+            ("settings, a changed tile", vec![Event::Activate(Id::Tile(sysprog_core::settings::Setting::FpsCap))]),
+            ("settings, all games", vec![Event::Activate(Id::Scope(sysprog_core::Scope::Global))]),
+            ("environment editor", vec![Event::Activate(Id::Env), key(Key::Char('a'))]),
+            ("environment saved", vec![key(Key::Char('=')), key(Key::Char('1')), Event::Activate(Id::EnvSave)]),
             ("keyboard", vec![Event::Activate(Id::Mode(Mode::Keyboard))]),
             ("keyboard, Fn", vec![key(Key::Mod(Modifier::Fn))]),
             ("keyboard, Shift and a pressed key", vec![key(Key::Mod(Modifier::Shift)), key(Key::Char('h'))]),

@@ -271,6 +271,42 @@ pub fn parse_env(text: &str) -> Vec<(String, String)> {
         .collect()
 }
 
+/// How many variables `parse_env` finds in `text`, without allocating (for drawing).
+pub fn count_env(text: &str) -> usize {
+    let mut count = 0;
+    let mut chars = text.chars().peekable();
+    while let Some(&c) = chars.peek() {
+        if c.is_whitespace() {
+            chars.next();
+            continue;
+        }
+        // One word: to the closing quote if it starts with one (the quotes don't count), else to whitespace.
+        let quote = (c == '\'' || c == '"').then_some(c);
+        if quote.is_some() {
+            chars.next();
+        }
+        let (mut len, mut eq) = (0, None);
+        while let Some(&d) = chars.peek() {
+            if quote.map_or(d.is_whitespace(), |q| d == q) {
+                break;
+            }
+            if d == '=' && eq.is_none() {
+                eq = Some(len);
+            }
+            len += 1;
+            chars.next();
+        }
+        if quote.is_some() {
+            chars.next();
+        }
+        // Like parse_env: a key before the '=' (trimmed tokens: a quoted word's leading spaces don't count).
+        if eq.is_some_and(|i| i > 0) {
+            count += 1;
+        }
+    }
+    count
+}
+
 /// What holding a target does once the press lasts beyond a tap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Hold {
@@ -996,6 +1032,13 @@ mod tests {
         let mut fresh = state();
         fresh.load_settings(&s.settings_text());
         assert_eq!(fresh.env_of("zelda-lttp"), s.env_of("zelda-lttp"));
+    }
+
+    #[test]
+    fn counting_variables_agrees_with_parsing_them() {
+        for text in ["", "A=1", "A=1 B=2", "  A=1   'B=x y' C", "=1 D=", "\"E=a b\" F=c", "'unclosed=x y", "x 'y' z=1=2"] {
+            assert_eq!(count_env(text), parse_env(text).len(), "{text:?}");
+        }
     }
 
     #[test]
