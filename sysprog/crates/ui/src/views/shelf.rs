@@ -8,7 +8,7 @@ use std::fmt::Write;
 use sysprog_core::{Game, Id};
 
 use super::{ACCENT, DIM, Frame, GO, Look, SURFACE, SURFACE_HI, TEXT, TEXT_HI, wrap};
-use crate::draw::{Canvas, Rect, rgb};
+use crate::draw::{Canvas, Keep, Rect, rgb};
 use crate::images::Images;
 
 /// Outer padding, of the screen's height (at least 4 pixels).
@@ -37,27 +37,10 @@ pub(super) fn draw(f: &mut Frame, images: &mut Images, buf: &mut String, w: f32,
     let pad = (h * PAD).max(4.0);
     let scale = f.c.scale();
 
-    // Tabs: the collections' names; the current one bright with an accent line under it.
+    // Tabs: the collections' names.
     let tabs_h = h * TABS_H;
-    let size = h * TAB_TEXT;
-    let mut x = pad;
-    for (i, coll) in s.library.collections.iter().enumerate() {
-        let width = f.c.text_width(size, &coll.name) + pad * 1.6;
-        if x + width > w {
-            break;
-        }
-        let r = Rect::new(x, 0.0, width, tabs_h);
-        let current = i == s.tab;
-        let look = Look { radius: 6.0, fill: None, inset: 4.0, ring_inset: 2.0 };
-        f.button(Id::Tab(i as u16), r, look, |c| {
-            let color = if current { TEXT_HI } else { DIM };
-            c.text(r.x + pad * 0.8, r.y + (r.h - size * 1.2) / 2.0, size, rgb(color), &coll.name);
-            if current {
-                c.fill(Rect::new(r.x + pad * 0.8, r.y + r.h - 4.0, r.w - pad * 1.6, 2.0), rgb(ACCENT));
-            }
-        });
-        x += width;
-    }
+    let items = s.library.collections.iter().enumerate().map(|(i, coll)| (Id::Tab(i as u16), coll.name.as_str(), i == s.tab));
+    super::tabs(f, Rect::new(pad, 0.0, w - pad, tabs_h), h * TAB_TEXT, pad * 0.8, f32::INFINITY, items);
 
     // The list, filling the height below the tabs exactly with whole rows.
     let list = Rect::new(pad, tabs_h + pad * 0.5, w * LIST_W - pad, h - tabs_h - pad * 1.5);
@@ -83,7 +66,7 @@ pub(super) fn draw(f: &mut Frame, images: &mut Images, buf: &mut String, w: f32,
             let color = if selected { TEXT_HI } else { TEXT };
             let tx = thumb.x + thumb.w + pad * 0.6;
             let room = r.x + r.w - tx - pad * 0.3;
-            wrap(c, (tx, r.y + (r.h - size * 1.2) / 2.0, room), size, color, &game.title, 1);
+            c.text_fit((tx, r.y + (r.h - size * 1.2) / 2.0, room), size, rgb(color), &game.title, Keep::Start);
         });
     }
     // Where in the list: a thin bar along its right edge, when it doesn't all fit.

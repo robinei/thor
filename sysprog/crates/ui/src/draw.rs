@@ -36,7 +36,33 @@ impl Rect {
     pub fn inset(&self, d: f32) -> Rect {
         Rect::new(self.x + d, self.y + d, self.w - 2.0 * d, self.h - 2.0 * d)
     }
+
+    /// The top `h` of this, and the rest below it.
+    pub fn split_top(&self, h: f32) -> (Rect, Rect) {
+        (Rect::new(self.x, self.y, self.w, h), Rect::new(self.x, self.y + h, self.w, self.h - h))
+    }
+
+    /// Cell `i` (row by row) of a grid of `cols` by `rows` equal cells filling this, `gap` between them.
+    /// A row of buttons is a grid with one row.
+    pub fn cell(&self, cols: usize, rows: usize, gap: f32, i: usize) -> Rect {
+        let (cols, rows) = (cols.max(1), rows.max(1));
+        let w = (self.w - (cols - 1) as f32 * gap) / cols as f32;
+        let h = (self.h - (rows - 1) as f32 * gap) / rows as f32;
+        let (col, row) = ((i % cols) as f32, (i / cols) as f32);
+        Rect::new(self.x + col * (w + gap), self.y + row * (h + gap), w, h)
+    }
 }
+
+/// Which part of a text [`Canvas::text_fit`] keeps when it is too wide.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Keep {
+    /// The start, with "…" where it is cut.
+    Start,
+    /// The end (the latest typed).
+    End,
+}
+
+const ELLIPSIS: &str = "…";
 
 /// 0xRRGGBB to an opaque colour.
 pub fn rgb(c: u32) -> Color {
@@ -302,6 +328,56 @@ impl<'a> Canvas<'a> {
         (pen - start) / self.scale
     }
 
+    /// Draws one line of text within `width`: cut to fit as `keep` says if it is wider. Returns the width
+    /// drawn.
+    pub fn text_fit(&mut self, (x, y, width): (f32, f32, f32), size: f32, color: Color, text: &str, keep: Keep) -> f32 {
+        if self.text_width(size, text) <= width {
+            return self.text(x, y, size, color, text);
+        }
+        let (start, end) = self.fit(size, text, width, keep);
+        let part = text.get(start..end).unwrap_or("");
+        let drawn = self.text(x, y, size, color, part);
+        match keep {
+            Keep::Start => drawn + self.text(x + drawn, y, size, color, ELLIPSIS),
+            Keep::End => drawn,
+        }
+    }
+
+    /// The byte range of `text` that `text_fit` draws when it is too wide.
+    fn fit(&mut self, size: f32, text: &str, width: f32, keep: Keep) -> (usize, usize) {
+        let mut used = 0.0;
+        match keep {
+            Keep::Start => {
+                let room = width - self.text_width(size, ELLIPSIS);
+                let mut end = 0;
+                for (i, ch) in text.char_indices() {
+                    used += self.char_width(size, ch);
+                    if used > room {
+                        break;
+                    }
+                    end = i + ch.len_utf8();
+                }
+                (0, text.get(..end).unwrap_or("").trim_end().len())
+            }
+            Keep::End => {
+                let mut start = text.len();
+                for (i, ch) in text.char_indices().rev() {
+                    used += self.char_width(size, ch);
+                    if used > width {
+                        break;
+                    }
+                    start = i;
+                }
+                (start, text.len())
+            }
+        }
+    }
+
+    fn char_width(&mut self, size: f32, ch: char) -> f32 {
+        let px = size * self.scale;
+        self.cache.glyph(ch, px).map_or(0.0, |(m, _)| m.advance_width) / self.scale
+    }
+
     pub fn text_width(&mut self, size: f32, text: &str) -> f32 {
         let px = size * self.scale;
         let mut width = 0.0;
@@ -382,5 +458,38 @@ fn blend(px: &mut [u8], src: [u32; 4], k: u32) {
     let inverse = 255 - src[3] * k / 255;
     for (d, s) in px.iter_mut().zip(src) {
         *d = (s * k / 255 + u32::from(*d) * inverse / 255) as u8;
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cells_fill_the_rect_with_gaps_between() {
+        let r = Rect::new(10.0, 20.0, 310.0, 100.0);
+        assert_eq!(r.cell(3, 2, 5.0, 0), Rect::new(10.0, 20.0, 100.0, 47.5));
+        assert_eq!(r.cell(3, 2, 5.0, 5), Rect::new(220.0, 72.5, 100.0, 47.5));
+        let (top, rest) = r.split_top(30.0);
+        assert_eq!((top.h, rest.y, rest.h), (30.0, 50.0, 70.0));
+    }
+
+    #[test]
+    fn text_is_cut_to_fit() {
+        let mut cache = DrawCache::load();
+        let mut pixmap = Pixmap::new(400, 50).unwrap();
+        let mut c = Canvas::new(&mut pixmap, 1.0, &mut cache);
+        let text = "A Link to the Past";
+        let full = c.text_width(20.0, text);
+        let width = full * 0.6;
+        let (start, end) = c.fit(20.0, text, width, Keep::Start);
+        assert_eq!(start, 0);
+        let head = text.get(..end).unwrap();
+        assert!(c.text_width(20.0, head) + c.text_width(20.0, ELLIPSIS) <= width && !head.ends_with(' '), "{head:?}");
+        let (start, _) = c.fit(20.0, text, width, Keep::End);
+        let tail = text.get(start..).unwrap();
+        assert!(c.text_width(20.0, tail) <= width && tail.ends_with("Past"), "{tail:?}");
+        assert!(c.text_fit((0.0, 0.0, width), 20.0, rgb(0xffffff), text, Keep::Start) <= width + 0.5);
     }
 }

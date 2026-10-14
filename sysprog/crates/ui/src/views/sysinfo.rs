@@ -122,25 +122,20 @@ pub(super) fn draw(f: &mut Frame, body: Rect, lines: &mut Lines) {
     let (m, h) = (&s.metrics, &s.history);
     let c = &mut *f.c;
     let pad = body.h * PAD;
-    let (cols, rows) = (2.0, 3.0);
-    let tile_w = (body.w - pad * (cols + 1.0)) / cols;
-    let tile_h = (body.h - pad * (rows + 1.0)) / rows;
-    let tile = |label, col: f32, row: f32| Tile {
-        label,
-        rect: Rect::new(body.x + pad + col * (tile_w + pad), body.y + pad + row * (tile_h + pad), tile_w, tile_h),
-    };
+    let grid = body.inset(pad);
+    let tile = |label, i| Tile { label, rect: grid.cell(2, 3, pad, i) };
 
-    let t = tile("CPU", 0.0, 0.0);
+    let t = tile("CPU", 0);
     lines.set(format_args!("{}", Percent(m.cpu)), format_args!("{}{}", Clock(m.cpu_mhz), Temp(m.cpu_temp)));
     t.text(c, lines);
     t.graph(c, &h.cpu, 1.0, CPU);
 
-    let t = tile("GPU", 1.0, 0.0);
+    let t = tile("GPU", 1);
     lines.set(format_args!("{}", Percent(m.gpu)), format_args!("{}{}", Clock(m.gpu_mhz), Temp(m.gpu_temp)));
     t.text(c, lines);
     t.graph(c, &h.gpu, 1.0, GPU);
 
-    let t = tile("FPS", 0.0, 1.0);
+    let t = tile("FPS", 2);
     match (m.fps, m.frame_ms) {
         (Some(fps), Some(ms)) => lines.set(format_args!("{fps:.0}"), format_args!("{ms:.1} ms a frame")),
         (Some(fps), None) => lines.set(format_args!("{fps:.0}"), format_args!("")),
@@ -149,7 +144,7 @@ pub(super) fn draw(f: &mut Frame, body: Rect, lines: &mut Lines) {
     t.text(c, lines);
     t.graph(c, &h.fps, h.fps.max().max(FPS_SCALE), FPS);
 
-    let t = tile("Power", 1.0, 1.0);
+    let t = tile("Power", 3);
     let battery = s.status.battery;
     match (m.power_w, m.minutes_left, battery) {
         (Some(w), Some(min), Some(b)) if w > 0.0 => {
@@ -162,7 +157,7 @@ pub(super) fn draw(f: &mut Frame, body: Rect, lines: &mut Lines) {
     t.text(c, lines);
     t.graph(c, &h.power, h.power.max().max(POWER_SCALE_W), POWER);
 
-    let t = tile("Memory", 0.0, 2.0);
+    let t = tile("Memory", 4);
     let (used, total, swap) = (m.mem_used as f32 / GIB, m.mem_total as f32 / GIB, m.swap_used as f32 / GIB);
     if m.mem_total > 0 {
         lines.set(format_args!("{used:.1} GB"), format_args!("of {total:.0} GB · swap {swap:.1} GB"));
@@ -173,7 +168,7 @@ pub(super) fn draw(f: &mut Frame, body: Rect, lines: &mut Lines) {
     t.graph(c, &h.mem, 1.0, MEMORY);
 
     // Cores: one bar per core, its current load, over a dim track.
-    let t = tile("Cores", 1.0, 2.0);
+    let t = tile("Cores", 5);
     c.text(t.rect.x, t.rect.y, t.rect.h * LABEL, rgb(DIM), t.label);
     let n = usize::from(m.core_count);
     if n > 0 {

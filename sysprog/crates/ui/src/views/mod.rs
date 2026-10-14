@@ -19,7 +19,7 @@ use std::fmt::Write;
 
 use sysprog_core::{Id, Mode, State};
 
-use crate::draw::{Canvas, Rect, rgb};
+use crate::draw::{Canvas, Keep, Rect, rgb};
 use crate::images::Images;
 
 /// Something drawn that can be tapped or focused, in the view's logical pixels.
@@ -108,6 +108,30 @@ impl Frame<'_, '_> {
         }
         self.targets.push(Target { rect, id });
     }
+}
+
+/// A row of tabs from `area.x`, `area.h` high: each its label (cut to `max` wide) with `inner` space on
+/// both sides; the current one bright with an amber line under it. Tabs that would pass the area's right
+/// edge are left out. Returns where a next one would start.
+fn tabs<'a>(f: &mut Frame, area: Rect, size: f32, inner: f32, max: f32, items: impl IntoIterator<Item = (Id, &'a str, bool)>) -> f32 {
+    let mut x = area.x;
+    for (id, name, current) in items {
+        let text_w = f.c.text_width(size, name).min(max);
+        let r = Rect::new(x, area.y, text_w + 2.0 * inner, area.h);
+        if r.x + r.w > area.x + area.w {
+            break;
+        }
+        let look = Look { radius: 6.0, fill: None, inset: 4.0, ring_inset: 2.0 };
+        f.button(id, r, look, |c| {
+            let color = rgb(if current { TEXT_HI } else { DIM });
+            c.text_fit((r.x + inner, r.y + (r.h - size * 1.2) / 2.0, text_w + 0.5), size, color, name, Keep::Start);
+            if current {
+                c.fill(Rect::new(r.x + inner, r.y + r.h - 4.0, text_w, 2.0), rgb(ACCENT));
+            }
+        });
+        x += r.w;
+    }
+    x
 }
 
 /// Text centred in `r`.

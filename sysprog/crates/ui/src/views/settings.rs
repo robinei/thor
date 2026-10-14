@@ -12,7 +12,7 @@ use sysprog_core::settings::{Impact, Setting};
 use sysprog_core::{Id, Scope, State};
 
 use super::{ACCENT, DIM, FN, Frame, GO, Look, PRESSED, SURFACE, SURFACE_HI, TEXT, TEXT_HI, keyboard, label};
-use crate::draw::{Rect, rgb};
+use crate::draw::{Keep, Rect, rgb};
 use crate::icons::Icon;
 
 /// Padding, of the area's height.
@@ -88,52 +88,32 @@ pub(super) fn draw(f: &mut Frame, body: Rect, buf: &mut String) {
     let context = s.context();
     let game = s.editing();
     let pad = body.h * PAD;
-    let x = body.x + pad;
-    let w = body.w - 2.0 * pad;
+    let area = Rect::new(body.x + pad, body.y, body.w - 2.0 * pad, body.h - pad);
+    let (bar, grid) = area.split_top(body.h * TABS_H);
 
-    // Tabs: All games, then the game in context.
-    let size = body.h * TAB_TEXT;
-    let tabs_h = body.h * TABS_H;
-    let mut tx = x - pad * 0.6;
+    // Tabs: All games, then the game in context; a note on the right.
+    let inner = pad * 0.8;
     let tabs = [(Scope::Global, Some("All games")), (Scope::Game, context.map(|g| g.title.as_str()))];
-    for (scope, name) in tabs {
-        let Some(name) = name else {
-            continue;
-        };
-        let current = (scope == Scope::Global) == game.is_none();
-        let text_w = f.c.text_width(size, name).min(w * TAB_MAX);
-        let r = Rect::new(tx, body.y, text_w + pad * 1.2, tabs_h);
-        let look = Look { radius: 6.0, fill: None, inset: 4.0, ring_inset: 2.0 };
-        f.button(Id::Scope(scope), r, look, |c| {
-            let color = if current { TEXT_HI } else { DIM };
-            let ty = r.y + (r.h - size * 1.2) / 2.0;
-            super::wrap(c, (r.x + pad * 0.6, ty, text_w + 1.0), size, color, name, 1);
-            if current {
-                c.fill(Rect::new(r.x + pad * 0.6, r.y + r.h - 4.0, text_w, 2.0), rgb(ACCENT));
-            }
-        });
-        tx += r.w + pad * 0.4;
-    }
+    let items = tabs.into_iter().filter_map(|(scope, name)| Some((Id::Scope(scope), name?, (scope == Scope::Global) == game.is_none())));
+    let tabs_area = Rect::new(bar.x - inner, bar.y, bar.w + inner, bar.h);
+    let tabs_end = super::tabs(f, tabs_area, body.h * TAB_TEXT, inner, bar.w * TAB_MAX, items);
     let running = context.is_some_and(|g| s.running.as_ref() == Some(&g.id));
     let note = match (game, running) {
         (Some(_), true) => "applies now",
         (Some(_), false) => "applies at launch",
         (None, _) => "defaults",
     };
-    let note_w = f.c.text_width(body.h * NOTE, note);
-    if tx + pad + note_w < x + w {
-        f.c.text(x + w - note_w, body.y + (tabs_h - body.h * NOTE * 1.2) / 2.0, body.h * NOTE, rgb(DIM), note);
+    let size = body.h * NOTE;
+    let note_w = f.c.text_width(size, note);
+    if tabs_end + pad + note_w < bar.x + bar.w {
+        f.c.text(bar.x + bar.w - note_w, bar.y + (bar.h - size * 1.2) / 2.0, size, rgb(DIM), note);
     }
 
     // The grid below.
-    let gap = body.h * GAP;
-    let top = body.y + tabs_h + pad * 0.6;
-    let tw = (w - (COLUMNS - 1) as f32 * gap) / COLUMNS as f32;
-    let th = (body.y + body.h - pad - top - (ROWS - 1) as f32 * gap) / ROWS as f32;
+    let grid = Rect::new(grid.x, grid.y + pad * 0.6, grid.w, grid.h - pad * 0.6);
     let last = if game.is_some() { Tile::Reset } else { Tile::Setting(Setting::ChargeLimit) };
     for (i, tile) in GRID.into_iter().chain([last]).enumerate() {
-        let r = Rect::new(x + (i % COLUMNS) as f32 * (tw + gap), top + (i / COLUMNS) as f32 * (th + gap), tw, th);
-        draw_tile(f, r, tile, buf);
+        draw_tile(f, grid.cell(COLUMNS, ROWS, body.h * GAP, i), tile, buf);
     }
 }
 
@@ -236,32 +216,26 @@ fn editor(f: &mut Frame, body: Rect, buf: &mut String) {
     };
     buf.clear();
     let _ = write!(buf, "Environment for {title}: KEY=value, space-separated");
-    f.c.text(x, body.y + pad * 0.5, size, rgb(DIM), buf);
+    f.c.text_fit((x, body.y + pad * 0.5, w), size, rgb(DIM), buf, Keep::Start);
 
-    // The field, with a caret after the text; its end shows when it is too long.
-    let field = Rect::new(x, body.y + pad * 0.5 + size * 1.6, w * 0.7, body.h * 0.1);
+    // The field, with a caret after the text (its end, when it is too long); Cancel and Save beside it.
+    let row = Rect::new(x, body.y + pad * 0.5 + size * 1.6, w, body.h * 0.1);
+    let field = Rect::new(row.x, row.y, row.w * 0.7, row.h);
     f.c.rounded(field, 8.0, rgb(SURFACE_HI));
     let text_size = field.h * 0.42;
-    let room = field.w - pad * 1.5;
-    let text = editor.text.as_str();
-    let mut start = 0;
-    while start < text.len() && f.c.text_width(text_size, text.get(start..).unwrap_or("")) > room {
-        start = text.char_indices().map(|(i, _)| i).find(|&i| i > start).unwrap_or(text.len());
-    }
-    let shown = text.get(start..).unwrap_or("");
     let ty = field.y + (field.h - text_size * 1.2) / 2.0;
-    let tw = f.c.text(field.x + pad * 0.6, ty, text_size, rgb(TEXT_HI), shown);
-    f.c.fill(Rect::new(field.x + pad * 0.6 + tw + 2.0, ty, 2.0, text_size * 1.2), rgb(ACCENT));
+    let tx = field.x + pad * 0.6;
+    let tw = f.c.text_fit((tx, ty, field.w - pad * 1.5), text_size, rgb(TEXT_HI), &editor.text, Keep::End);
+    f.c.fill(Rect::new(tx + tw + 2.0, ty, 2.0, text_size * 1.2), rgb(ACCENT));
 
-    // Cancel and Save beside it.
-    let bw = (w * 0.3 - pad * 1.5) / 2.0;
+    let buttons = Rect::new(field.x + field.w + pad * 0.5, row.y, row.w - field.w - pad * 0.5, row.h);
     let look = Look { radius: 8.0, fill: Some(SURFACE), inset: 0.0, ring_inset: -2.0 };
-    let cancel = Rect::new(field.x + field.w + pad * 0.5, field.y, bw, field.h);
+    let cancel = buttons.cell(2, 1, pad * 0.5, 0);
     f.button(Id::EnvCancel, cancel, look, |c| label(c, cancel, cancel.h * 0.36, TEXT, "Cancel"));
-    let save = Rect::new(cancel.x + bw + pad * 0.5, field.y, bw, field.h);
+    let save = buttons.cell(2, 1, pad * 0.5, 1);
     let look = Look { fill: Some(PRESSED), ..look };
     f.button(Id::EnvSave, save, look, |c| label(c, save, save.h * 0.36, TEXT_HI, "Save"));
 
-    let keys_y = field.y + field.h + pad;
+    let keys_y = row.y + row.h + pad;
     keyboard::draw(f, Rect::new(body.x, keys_y, body.w, body.y + body.h - keys_y));
 }
