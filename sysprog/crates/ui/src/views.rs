@@ -92,9 +92,13 @@ pub fn bottom(c: &mut Canvas, s: &State, w: f32, h: f32) -> Vec<Target> {
     let mut targets = Vec::new();
     let bar_h = (h * 0.075).max(20.0);
     let icon = bar_h * 0.62;
-    let slot = bar_h * 1.5;
+    let clock = clock(s.unix_secs);
+    let size = bar_h * 0.42;
+    let clock_w = c.text_width(size, &clock) + bar_h * 0.8;
+    // The mode icons share the width left of the clock.
+    let slot = (w - clock_w) / Mode::ALL.len() as f32;
     for (i, mode) in Mode::ALL.into_iter().enumerate() {
-        let r = Rect::new(bar_h * 0.3 + i as f32 * slot, 0.0, slot, bar_h);
+        let r = Rect::new(i as f32 * slot, 0.0, slot, bar_h);
         let active = s.mode == mode;
         let color = if active { ACCENT } else { DIM };
         let (cx, cy) = r.center();
@@ -103,10 +107,7 @@ pub fn bottom(c: &mut Canvas, s: &State, w: f32, h: f32) -> Vec<Target> {
         focus_ring(c, s, &id, r.inset(2.0));
         targets.push(Target { rect: r, id });
     }
-    let clock = clock(s.unix_secs);
-    let size = bar_h * 0.42;
-    let cw = c.text_width(size, &clock);
-    c.text(w - cw - bar_h * 0.4, (bar_h - size * 1.2) / 2.0, size, rgb(TEXT), &clock);
+    label(c, Rect::new(w - clock_w, 0.0, clock_w, bar_h), size, TEXT, &clock);
 
     let body = Rect::new(0.0, bar_h, w, h - bar_h);
     match s.mode {
@@ -190,12 +191,12 @@ fn keyboard(c: &mut Canvas, s: &State, body: Rect, targets: &mut Vec<Target>) {
     c.text(ex, body.y + (echo_h - echo_size * 1.2) / 2.0, echo_size, rgb(DIM), &echo);
 
     let area = Rect::new(gap, body.y + echo_h, body.w - 2.0 * gap, body.h - echo_h - gap);
-    let units = rows.iter().map(|row| row.iter().map(|(_, w)| w).sum::<f32>()).fold(1.0, f32::max);
-    let unit = area.w / units;
     let row_h = area.h / rows.len() as f32;
     for (i, row) in rows.iter().enumerate() {
+        // Every row fills the width: its keys share it by their widths.
         let row_units: f32 = row.iter().map(|(_, w)| w).sum();
-        let mut x = area.x + (area.w - row_units * unit) / 2.0;
+        let unit = area.w / row_units.max(1.0);
+        let mut x = area.x;
         let y = area.y + i as f32 * row_h;
         for &(key, width) in row.iter() {
             let r = Rect::new(x + gap / 2.0, y + gap / 2.0, width * unit - gap, row_h - gap);
