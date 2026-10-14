@@ -102,11 +102,11 @@ pub const LAYOUT: &[&[Slot]] = &[
     &[
         named(Named::Esc, 1.5),
         named(Named::Tab, 1.5),
-        c('`'),
         c('['),
         c(']'),
         c('\\'),
         c(';'),
+        c('`'),
         cf('\'', f(11)),
         cf('=', f(12)),
     ],
