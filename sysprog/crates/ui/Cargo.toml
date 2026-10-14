@@ -10,6 +10,7 @@ smithay-client-toolkit.workspace = true
 jiff.workspace = true
 tiny-skia.workspace = true
 fontdue.workspace = true
+image.workspace = true
 log.workspace = true
 
 [dev-dependencies]

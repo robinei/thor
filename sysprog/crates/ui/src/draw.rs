@@ -109,6 +109,11 @@ impl<'a> Canvas<'a> {
         Canvas { pixmap, scale, offset: (0.0, 0.0), cache }
     }
 
+    /// Buffer pixels per logical pixel.
+    pub fn scale(&self) -> f32 {
+        self.scale
+    }
+
     /// Moves everything drawn by whole buffer pixels.
     pub fn with_offset(mut self, (dx, dy): (i32, i32)) -> Self {
         self.offset = (dx as f32, dy as f32);
@@ -247,6 +252,34 @@ impl<'a> Canvas<'a> {
             let stroke =
                 Stroke { width: width * self.scale, line_cap: LineCap::Round, line_join: LineJoin::Round, ..Stroke::default() };
             self.stroke_path(path, &stroke, color);
+        }
+    }
+
+    /// Draws `image` (already at its pixel size) with its top left at (x, y), blending its alpha.
+    pub fn image(&mut self, image: &Pixmap, x: f32, y: f32) {
+        let (x0, y0) = (self.px(x).round() as i32, self.py(y).round() as i32);
+        let (pw, ph) = (self.pixmap.width() as i32, self.pixmap.height() as i32);
+        let iw = image.width() as usize;
+        let data = self.pixmap.data_mut();
+        for (row, src_row) in image.data().chunks_exact(iw * 4).enumerate() {
+            let y = y0 + row as i32;
+            if y < 0 || y >= ph {
+                continue;
+            }
+            for (col, src) in src_row.chunks_exact(4).enumerate() {
+                let x = x0 + col as i32;
+                if x < 0 || x >= pw {
+                    continue;
+                }
+                let i = ((y * pw + x) * 4) as usize;
+                if let (Some(dst), [r, g, b, a]) = (data.get_mut(i..i + 4), src) {
+                    if *a == 255 {
+                        dst.copy_from_slice(src);
+                    } else if *a > 0 {
+                        blend(dst, [*r, *g, *b, *a].map(u32::from), 255);
+                    }
+                }
+            }
         }
     }
 

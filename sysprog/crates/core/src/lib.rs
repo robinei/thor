@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use keyboard::{Key, KeyPos, Keyboard, Stroke};
 
-pub use sysprog_library::Game;
+pub use sysprog_library::{Collection, Game, Library};
 
 /// Second-screen modes (docs/plans.md, "Second screen"). Follow is the default: the second screen shows
 /// what belongs to the main screen (the selected or running game's settings). The others override it
@@ -57,6 +57,8 @@ impl Power {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Id {
     Game(Arc<str>),
+    /// A collection's tab in shelf, by position.
+    Tab(u16),
     Mode(Mode),
     Power(Power),
     Launch,
@@ -100,6 +102,12 @@ pub enum Event {
     Focus(Id),
     /// Touch or mouse input began: the focus ring is hidden until the pad moves focus again.
     HideFocus,
+    /// The pad moved through shelf's list: by this many games (a page is the rows on screen).
+    ListStep(i32),
+    /// The pad switched shelf's tab: by this many collections.
+    TabStep(i32),
+    /// How many list rows shelf shows (from the layout), so the selection stays on screen.
+    Rows(usize),
     Quit,
 }
 
@@ -130,10 +138,22 @@ impl Dirty {
     pub const NONE: Dirty = Dirty { top: false, bottom: false };
 }
 
+/// A tab's place in its list: the selected game's position, and the first row on screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Cursor {
+    pub index: usize,
+    pub top: usize,
+}
+
 #[derive(Debug, Default)]
 pub struct State {
-    pub games: Vec<Game>,
-    /// Id of the selected game (shelf's list on top, its settings below).
+    pub library: Library,
+    /// The selected collection (shelf's tab), and each collection's cursor.
+    pub tab: usize,
+    pub cursors: Vec<Cursor>,
+    /// List rows on screen (reported by the UI).
+    pub rows: usize,
+    /// Id of the selected game (shelf's list on top, its settings below): the current tab's cursor.
     pub selected: Option<Arc<str>>,
     /// Per-game power setting, by game id; absent = default.
     pub power: HashMap<Arc<str>, Power>,
@@ -164,21 +184,73 @@ pub enum Hold {
 /// Which screen a target is drawn on.
 fn screen_of(id: &Id) -> Dirty {
     match id {
-        Id::Game(_) => Dirty::BOTH,
+        Id::Game(_) | Id::Tab(_) => Dirty::BOTH,
         Id::Mode(_) | Id::Power(_) | Id::Launch | Id::Key(_) | Id::PadMouse => Dirty::BOTTOM,
     }
 }
 
 impl State {
-    pub fn new(games: Vec<Game>) -> Self {
-        let selected = games.first().map(|g| g.id.clone());
-        let focus = selected.clone().map(Id::Game);
-        State { games, selected, focus, ..State::default() }
+    pub fn new(library: Library) -> Self {
+        let cursors = vec![Cursor::default(); library.collections.len()];
+        let mut s = State { library, cursors, rows: 1, ..State::default() };
+        s.sync();
+        s.focus = s.selected.clone().map(Id::Game);
+        s
+    }
+
+    pub fn collection(&self) -> Option<&Collection> {
+        self.library.collections.get(self.tab)
+    }
+
+    pub fn cursor(&self) -> Cursor {
+        self.cursors.get(self.tab).copied().unwrap_or_default()
+    }
+
+    /// The game at `position` in the current tab.
+    pub fn game_at(&self, position: usize) -> Option<&Game> {
+        let index = *self.collection()?.games.get(position)?;
+        self.library.games.get(index)
     }
 
     pub fn selected_game(&self) -> Option<&Game> {
-        let id = self.selected.as_ref()?;
-        self.games.iter().find(|g| &g.id == id)
+        self.game_at(self.cursor().index)
+    }
+
+    /// Keeps the cursor in range and on screen, and `selected` in step with it.
+    fn sync(&mut self) {
+        let len = self.collection().map_or(0, |c| c.games.len());
+        let rows = self.rows.max(1);
+        if let Some(c) = self.cursors.get_mut(self.tab) {
+            c.index = c.index.min(len.saturating_sub(1));
+            if c.index < c.top {
+                c.top = c.index;
+            } else if c.index >= c.top + rows {
+                c.top = c.index + 1 - rows;
+            }
+            c.top = c.top.min(len.saturating_sub(rows));
+        }
+        self.selected = self.selected_game().map(|g| g.id.clone());
+    }
+
+    /// Moves the cursor by `step` games (clamped at the ends), selecting and focusing that game.
+    fn step_list(&mut self, step: i32) {
+        let len = self.collection().map_or(0, |c| c.games.len());
+        if let Some(c) = self.cursors.get_mut(self.tab) {
+            let target = c.index as i64 + i64::from(step);
+            c.index = target.clamp(0, len.saturating_sub(1) as i64) as usize;
+        }
+        self.sync();
+        self.focus = self.selected.clone().map(Id::Game);
+    }
+
+    fn set_tab(&mut self, tab: usize) {
+        if tab < self.library.collections.len() {
+            self.tab = tab;
+            self.sync();
+            if matches!(self.focus, Some(Id::Game(_)) | Some(Id::Tab(_))) {
+                self.focus = self.selected.clone().map(Id::Game);
+            }
+        }
     }
 
     pub fn power_of(&self, game: &str) -> Power {
@@ -230,6 +302,28 @@ impl State {
                 self.focus = Some(id.clone());
                 self.activate(id, true)
             }
+            Event::ListStep(step) => {
+                self.step_list(step);
+                self.show_focus = true;
+                (Dirty::BOTH, vec![])
+            }
+            Event::TabStep(step) => {
+                let n = self.library.collections.len() as i64;
+                if n > 0 {
+                    self.set_tab((self.tab as i64 + i64::from(step)).rem_euclid(n) as usize);
+                }
+                self.show_focus = true;
+                (Dirty::BOTH, vec![])
+            }
+            Event::Rows(rows) => {
+                if rows == self.rows {
+                    return (Dirty::NONE, vec![]);
+                }
+                let before = self.cursor();
+                self.rows = rows.max(1);
+                self.sync();
+                (if self.cursor() != before { Dirty::BOTH } else { Dirty::NONE }, vec![])
+            }
             Event::Down(id) => {
                 let dirty = screen_of(&id);
                 self.pressed = Some(id);
@@ -263,7 +357,17 @@ impl State {
                 if self.selected.as_ref() == Some(&game) {
                     return (Dirty::BOTH, vec![self.launch_effect(game)]);
                 }
-                self.selected = Some(game);
+                let position = self.collection().and_then(|c| {
+                    c.games.iter().position(|&i| self.library.games.get(i).is_some_and(|g| g.id == game))
+                });
+                if let (Some(p), Some(c)) = (position, self.cursors.get_mut(self.tab)) {
+                    c.index = p;
+                }
+                self.sync();
+                (Dirty::BOTH, vec![])
+            }
+            Id::Tab(tab) => {
+                self.set_tab(usize::from(tab));
                 (Dirty::BOTH, vec![])
             }
             Id::Mode(mode) => {
@@ -311,7 +415,7 @@ mod tests {
     use super::*;
 
     fn state() -> State {
-        State::new(sysprog_library::demo_games())
+        State::new(sysprog_library::demo_library())
     }
 
     #[test]
@@ -407,6 +511,32 @@ mod tests {
         assert_eq!(s.apply(Event::HideFocus).0, Dirty::BOTH);
         assert!(!s.show_focus);
         assert_eq!(s.apply(Event::HideFocus).0, Dirty::NONE);
+    }
+
+    #[test]
+    fn the_list_scrolls_to_keep_the_selection_on_screen() {
+        let mut s = state();
+        s.apply(Event::Rows(3));
+        s.apply(Event::ListStep(4));
+        assert_eq!(s.cursor(), Cursor { index: 4, top: 2 });
+        assert_eq!(s.selected.as_deref(), Some("dark-souls"));
+        assert_eq!(s.focus, Some(Id::Game("dark-souls".into())));
+        s.apply(Event::ListStep(-100));
+        assert_eq!(s.cursor(), Cursor { index: 0, top: 0 });
+        s.apply(Event::ListStep(100));
+        assert_eq!(s.cursor().index, 6);
+    }
+
+    #[test]
+    fn tabs_keep_their_own_place() {
+        let mut s = state();
+        s.apply(Event::ListStep(2));
+        s.apply(Event::TabStep(1));
+        assert_eq!(s.tab, 1);
+        assert_eq!(s.cursor().index, 0);
+        s.apply(Event::TabStep(1));
+        assert_eq!(s.tab, 0, "wraps around");
+        assert_eq!(s.cursor().index, 2);
     }
 
     #[test]

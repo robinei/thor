@@ -8,6 +8,7 @@
 
 mod draw;
 mod icons;
+pub mod images;
 pub mod nav;
 mod views;
 
@@ -118,6 +119,19 @@ pub fn run(
     let shm = Shm::bind(&globals, &qh)?;
     let pool = SlotPool::new(4 << 20, &shm)?;
     let mut event_loop: EventLoop<App> = EventLoop::try_new()?;
+    // Images: requests to a decoding thread, results back through the event loop.
+    let (image_requests, image_worker) = std::sync::mpsc::channel();
+    let (image_done, image_results) = channel::channel();
+    images::spawn_worker(image_worker, move |key, pixmap| image_done.send((key, pixmap)).is_ok())?;
+    event_loop
+        .handle()
+        .insert_source(image_results, |event, _, app: &mut App| {
+            if let channel::Event::Msg((key, pixmap)) = event {
+                app.images.arrived(key, pixmap);
+                app.mark(Dirty { top: true, bottom: false });
+            }
+        })
+        .map_err(|e| e.error)?;
 
     let mut app = App {
         registry_state: RegistryState::new(&globals),
@@ -134,6 +148,7 @@ pub fn run(
         pointer: None,
         touch: None,
         touch_layout: config.touch_layout.clone(),
+        images: images::Images::new(image_requests),
         presses: HashMap::new(),
         hold_timer: None,
         loop_handle: event_loop.handle(),
@@ -209,21 +224,25 @@ fn inset(size_px: (u32, u32), scale: u32, (dx, dy): (i32, i32)) -> ((f32, f32), 
 }
 
 /// Renders one screen without Wayland, at `size` logical pixels and integer `scale`, to a PNG file.
-/// For checking layouts and for automated tests.
-pub fn snapshot(state: &State, screen: Screen, size: (u32, u32), scale: u32, path: &std::path::Path) -> Result<(), Error> {
+/// For checking layouts and for automated tests. Returns the top screen's list rows, as a live frame
+/// reports them.
+pub fn snapshot(state: &State, screen: Screen, size: (u32, u32), scale: u32, path: &std::path::Path) -> Result<Option<usize>, Error> {
     let mut pixmap = Pixmap::new(size.0 * scale, size.1 * scale).ok_or("can't allocate the pixmap")?;
     let mut fonts = DrawCache::load();
     let ((w, h), offset) = inset((size.0 * scale, size.1 * scale), scale, (0, 0));
     let mut canvas = draw::Canvas::new(&mut pixmap, scale as f32, &mut fonts).with_offset(offset);
     let mut targets = Vec::new();
+    let mut rows = None;
     match screen {
-        Screen::Top => views::top(&mut canvas, state, w, h, &mut targets),
+        Screen::Top => {
+            rows = Some(views::top(&mut canvas, state, w, h, &mut images::Images::synchronous(), &mut Scratch::default(), &mut targets));
+        }
         Screen::Bottom => {
             views::bottom(&mut canvas, state, w, h, &mut Scratch::default(), &mut targets);
         }
     }
     pixmap.save_png(path)?;
-    Ok(())
+    Ok(rows)
 }
 
 enum Shell {
@@ -330,8 +349,9 @@ impl View {
         fonts: &mut DrawCache,
         state: &State,
         touch: &Mutex<TouchLayout>,
+        images: &mut images::Images,
         qh: &QueueHandle<App>,
-    ) -> Result<(), Error> {
+    ) -> Result<Option<usize>, Error> {
         let scale = self.scale.max(1);
         let (lw, lh) = self.size;
         let scale_u = scale.unsigned_abs();
@@ -344,11 +364,15 @@ impl View {
         };
         let ((cw, ch), offset) = inset((w, h), scale_u, orbit(state.unix_secs));
         let mut body = None;
+        let mut rows = None;
         {
             let mut canvas = draw::Canvas::new(pixmap, scale as f32, fonts).with_offset(offset);
             let (w, h) = (cw, ch);
             match self.screen {
-                Screen::Top => views::top(&mut canvas, state, w, h, &mut self.targets),
+                Screen::Top => {
+                    rows = Some(views::top(&mut canvas, state, w, h, images, &mut self.scratch, &mut self.targets));
+                    images.end_frame();
+                }
                 Screen::Bottom => {
                     body = Some(views::bottom(&mut canvas, state, w, h, &mut self.scratch, &mut self.targets));
                 }
@@ -376,7 +400,7 @@ impl View {
                 self.buffers.len() - 1
             }
             // All busy: keep the view dirty; a buffer release wakes the loop and it draws then.
-            None => return Ok(()),
+            None => return Ok(rows),
         };
         let Some(buffer) = self.buffers.get(index) else {
             return Err("buffer index".into());
@@ -400,7 +424,7 @@ impl View {
         surface.commit();
         self.dirty = false;
         self.frame_pending = true;
-        Ok(())
+        Ok(rows)
     }
 }
 
@@ -449,6 +473,7 @@ struct App {
     pointer: Option<wl_pointer::WlPointer>,
     touch: Option<wl_touch::WlTouch>,
     touch_layout: Arc<Mutex<TouchLayout>>,
+    images: images::Images,
     presses: HashMap<Source, Press>,
     /// Fires when the latest press becomes a hold, then at the repeat rate for repeating keys.
     hold_timer: Option<(Source, RegistrationToken)>,
@@ -487,14 +512,23 @@ impl App {
     }
 
     fn redraw_dirty(&mut self) {
+        let mut rows_changed = None;
         for view in [self.top.as_mut(), self.bottom.as_mut()].into_iter().flatten() {
             if !(view.configured && view.dirty && !view.frame_pending) {
                 continue;
             }
-            if let Err(e) = view.draw(&mut self.pool, &mut self.fonts, &self.state, &self.touch_layout, &self.qh) {
-                log::warn!("drawing {:?}: {e}", view.screen);
-                view.dirty = false;
+            match view.draw(&mut self.pool, &mut self.fonts, &self.state, &self.touch_layout, &mut self.images, &self.qh) {
+                Ok(Some(rows)) if rows != self.state.rows => rows_changed = Some(rows),
+                Ok(_) => {}
+                Err(e) => {
+                    log::warn!("drawing {:?}: {e}", view.screen);
+                    view.dirty = false;
+                }
             }
+        }
+        // The list's row count follows the layout; the state keeps the selection within it.
+        if let Some(rows) = rows_changed {
+            self.handle(Event::Rows(rows));
         }
     }
 
@@ -576,6 +610,23 @@ impl App {
 
     /// Pad-style focus movement over both screens' targets.
     fn navigate(&mut self, dir: Dir) {
+        // In shelf's list: up and down move through the games (scrolling), left and right switch tabs;
+        // down past the last game goes on to the second screen.
+        if matches!(self.state.focus, Some(Id::Game(_)) | Some(Id::Tab(_))) {
+            let len = self.state.collection().map_or(0, |c| c.games.len());
+            let at_end = self.state.cursor().index + 1 >= len;
+            let event = match dir {
+                Dir::Up => Some(Event::ListStep(-1)),
+                Dir::Down if !at_end => Some(Event::ListStep(1)),
+                Dir::Left => Some(Event::TabStep(-1)),
+                Dir::Right => Some(Event::TabStep(1)),
+                Dir::Down => None,
+            };
+            if let Some(event) = event {
+                self.handle(event);
+                return;
+            }
+        }
         let mut all = Vec::new();
         for view in self.views() {
             let (w, h) = (view.size.0.max(1) as f32, view.size.1.max(1) as f32);
@@ -784,6 +835,14 @@ impl PointerHandler for App {
                     }
                 }
                 PointerEventKind::Release { .. } => self.up(Source::Mouse, true),
+                // The wheel over the main screen scrolls shelf's list, a game per notch.
+                PointerEventKind::Axis { vertical, .. } => {
+                    let over_top = self.top.as_ref().is_some_and(|v| v.shell.surface() == &event.surface);
+                    let notches = if vertical.discrete != 0 { vertical.discrete } else { (vertical.absolute / 10.0) as i32 };
+                    if over_top && notches != 0 {
+                        self.handle(Event::ListStep(notches));
+                    }
+                }
                 _ => {}
             }
         }
@@ -900,10 +959,11 @@ mod no_alloc {
 
     #[test]
     fn warm_frames_do_not_allocate() {
-        let mut state = State::new(sysprog_library::demo_games());
+        let mut state = State::new(sysprog_library::demo_library());
         state.apply(Event::Tick { unix_secs: 1_700_000_000 });
         let mut cache = DrawCache::load();
         let mut scratch = Scratch::default();
+        let mut images = crate::images::Images::synchronous();
         let mut targets = Vec::new();
         let mut top = Pixmap::new(1920, 1080).expect("pixmap");
         let mut bottom = Pixmap::new(1240, 1080).expect("pixmap");
@@ -920,7 +980,15 @@ mod no_alloc {
             }
             for round in 0..3 {
                 let before = allocs();
-                views::top(&mut Canvas::new(&mut top, 1.0, &mut cache), &state, 1920.0, 1080.0, &mut targets);
+                views::top(
+                    &mut Canvas::new(&mut top, 1.0, &mut cache),
+                    &state,
+                    1920.0,
+                    1080.0,
+                    &mut images,
+                    &mut scratch,
+                    &mut targets,
+                );
                 views::bottom(
                     &mut Canvas::new(&mut bottom, 1.0, &mut cache),
                     &state,

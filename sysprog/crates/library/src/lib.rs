@@ -163,6 +163,21 @@ pub fn demo_games() -> Vec<Game> {
     .collect()
 }
 
+/// Two demo collections of the demo games, for development and snapshots.
+pub fn demo_library() -> Library {
+    let games = demo_games();
+    let n = games.len();
+    let collection = |name: &str, games: Vec<usize>| Collection {
+        name: name.into(),
+        short_name: name.to_lowercase(),
+        sort_key: sort::key(name),
+        summary: String::new(),
+        tools: false,
+        games,
+    };
+    Library { collections: vec![collection("Favourites", (0..n).collect()), collection("Recent", vec![3, 1])], games }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

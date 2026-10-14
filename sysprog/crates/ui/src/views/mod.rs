@@ -20,6 +20,7 @@ use std::fmt::Write;
 use sysprog_core::{Id, Mode, State};
 
 use crate::draw::{Canvas, Rect, rgb};
+use crate::images::Images;
 
 /// Something drawn that can be tapped or focused, in the view's logical pixels.
 #[derive(Debug, Clone)]
@@ -48,6 +49,8 @@ pub struct Scratch {
     minute: Option<u64>,
     clock: String,
     lines: sysinfo::Lines,
+    /// shelf's detail lines.
+    text: String,
 }
 
 impl Scratch {
@@ -113,11 +116,46 @@ fn label(c: &mut Canvas, r: Rect, size: f32, color: u32, text: &str) {
     c.text(r.x + (r.w - w) / 2.0, r.y + (r.h - size * 1.2) / 2.0, size, rgb(color), text);
 }
 
-/// The main screen: shelf.
-pub fn top(c: &mut Canvas, s: &State, w: f32, h: f32, targets: &mut Vec<Target>) {
+/// The main screen: shelf. Returns how many list rows fit.
+pub fn top(
+    c: &mut Canvas,
+    s: &State,
+    w: f32,
+    h: f32,
+    images: &mut Images,
+    scratch: &mut Scratch,
+    targets: &mut Vec<Target>,
+) -> usize {
     c.fill(Rect::new(0.0, 0.0, w, h), rgb(BG));
     targets.clear();
-    shelf::draw(&mut Frame { c, s, targets }, w, h);
+    shelf::draw(&mut Frame { c, s, targets }, images, &mut scratch.text, w, h)
+}
+
+/// Draws `text` word by word from (x, y), wrapping within `width` (the first argument), at most `max_lines` lines (the last
+/// one cut at a word). Returns the height used. Newlines in the text start a new line.
+fn wrap(c: &mut Canvas, (x, y, width): (f32, f32, f32), size: f32, color: u32, text: &str, max_lines: usize) -> f32 {
+    let line_h = size * 1.3;
+    let space = c.text_width(size, " ");
+    let (mut cx, mut line) = (x, 0usize);
+    for (p, paragraph) in text.split('\n').enumerate() {
+        if p > 0 {
+            line += 1;
+            cx = x;
+        }
+        for word in paragraph.split_whitespace() {
+            let ww = c.text_width(size, word);
+            if cx > x && cx + ww > x + width {
+                line += 1;
+                cx = x;
+            }
+            if line >= max_lines {
+                return line_h * max_lines as f32;
+            }
+            c.text(cx, y + line as f32 * line_h, size, rgb(color), word);
+            cx += ww + space;
+        }
+    }
+    line_h * (line + 1) as f32
 }
 
 /// The second screen: the bar, then the current mode below it. Returns the area below the bar.

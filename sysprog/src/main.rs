@@ -26,7 +26,21 @@ fn main() -> ExitCode {
         // The Thor's bottom panel: 1240 pixels across about 75 mm.
         px_per_mm: 16.5,
     };
-    let mut state = State::new(sysprog_library::demo_games());
+    // The library: Pegasus game dirs (SYSPROG_PEGASUS_CONFIG: another config dir) and Steam; the demo
+    // games if it is empty. Snapshots use the demo games unless SYSPROG_SNAPSHOT_LIBRARY=real.
+    let snapshotting = std::env::args().nth(1).as_deref() == Some("--snapshot");
+    let real_snapshot = std::env::var("SYSPROG_SNAPSHOT_LIBRARY").as_deref() == Ok("real");
+    let library = if snapshotting && !real_snapshot {
+        sysprog_library::demo_library()
+    } else {
+        let mut sources = sysprog_library::Sources::default_for_user();
+        if let Some(dir) = std::env::var_os("SYSPROG_PEGASUS_CONFIG") {
+            sources.pegasus_config = Some(dir.into());
+        }
+        let library = sysprog_library::Library::load(&sources);
+        if library.collections.is_empty() { sysprog_library::demo_library() } else { library }
+    };
+    let mut state = State::new(library);
 
     // `--snapshot DIR`: draw both screens at the Thor's size into PNG files, no Wayland needed.
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -66,10 +80,9 @@ fn main() -> ExitCode {
     let gamepad = std::env::var("SYSPROG_GAMEPAD").ok();
     // `--library`: print the collections and games found (Pegasus game dirs and Steam).
     if std::env::args().nth(1).as_deref() == Some("--library") {
-        let library = sysprog_library::Library::load(&sysprog_library::Sources::default_for_user());
-        for c in &library.collections {
+        for c in &state.library.collections {
             println!("{} ({}, {} games){}", c.name, c.short_name, c.games.len(), if c.tools { " tools" } else { "" });
-            for g in c.games.iter().filter_map(|&i| library.games.get(i)) {
+            for g in c.games.iter().filter_map(|&i| state.library.games.get(i)) {
                 let art = if g.box_front.is_some() { "art" } else { "no art" };
                 println!("  {}  [{art}] {:?}", g.title, g.launch);
             }
@@ -171,6 +184,9 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
     let bottom = (1240, 1080);
     let shots: Vec<Shot> = vec![
         (vec![], Screen::Top, (1920, 1080), "top.png"),
+        (vec![Event::TabStep(1)], Screen::Top, (1920, 1080), "top-tab2.png"),
+        (vec![Event::ListStep(5)], Screen::Top, (1920, 1080), "top-tab2-down.png"),
+        (vec![Event::TabStep(-1)], Screen::Top, (1920, 1080), "top-back.png"),
         (vec![], Screen::Bottom, bottom, "bottom.png"),
         (
             vec![Event::Status(Status { battery: Some(9), charging: false, wifi: None, volume: Some(40), muted: true })],
@@ -206,9 +222,15 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
             state.apply(event);
         }
         let path = dir.join(name);
-        if let Err(e) = sysprog_ui::snapshot(state, screen, size, 1, &path) {
-            log::error!("{}: {e}", path.display());
-            return ExitCode::FAILURE;
+        match sysprog_ui::snapshot(state, screen, size, 1, &path) {
+            Ok(Some(rows)) => {
+                state.apply(Event::Rows(rows));
+            }
+            Ok(None) => {}
+            Err(e) => {
+                log::error!("{}: {e}", path.display());
+                return ExitCode::FAILURE;
+            }
         }
         log::info!("wrote {}", path.display());
     }
