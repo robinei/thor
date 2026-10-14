@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use sysprog_core::keyboard::{self, Key, KeyPos, Modifier};
 use sysprog_core::touch::TouchLayout;
 use sysprog_core::{Effect, Event, Id, Mode, State, Status};
-use sysprog_policy::{pad, touchpad};
+use sysprog_policy::{keyboard as virtual_keyboard, pad, touchpad};
 use sysprog_ui::{Config, Screen};
 
 fn main() -> ExitCode {
@@ -63,6 +63,8 @@ fn main() -> ExitCode {
         }
     }
     let gamepad = std::env::var("SYSPROG_GAMEPAD").ok();
+    // The on-screen keyboard types through a virtual keyboard (US positions).
+    let mut keyboard = virtual_keyboard::VirtualKeyboard::new().map_err(|e| log::error!("virtual keyboard: {e}")).ok();
 
     let result = sysprog_ui::run(
         state,
@@ -98,6 +100,14 @@ fn main() -> ExitCode {
                     log::warn!("pad thread is gone");
                 }
             }
+            Effect::Key(stroke) => match keyboard.as_mut() {
+                Some(kb) => {
+                    if let Err(e) = kb.stroke(stroke) {
+                        log::warn!("virtual keyboard: {e}");
+                    }
+                }
+                None => log::info!("effect: {effect:?} (no virtual keyboard)"),
+            },
             other => log::info!("effect: {other:?}"),
         },
     );

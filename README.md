@@ -43,6 +43,12 @@ on a desktop with a fake touchscreen (your pointer will move):
     cargo run --release -p sysprog-policy --example fake_touchscreen &
     SYSPROG_TOUCHSCREEN="sysprog fake touchscreen" SYSPROG_START_MODE=touchpad cargo run --release
 
+**The keyboard mode types through a virtual keyboard** (`sysprog keyboard`, uinput) in US key
+positions. The compositor must use the US layout for it; in sway:
+`input "0:0:sysprog_keyboard" xkb_layout us` (check the identifier with `swaymsg -t get_inputs`). On a
+desktop with another layout, letters, digits and named keys come out right but punctuation follows that
+layout.
+
 **The controller** (any Xbox-style pad; `SYSPROG_GAMEPAD`: path or part of its name) is grabbed for good;
 games see a virtual Xbox 360 pad that is always there. The **pad mouse** toggle (mouse icon in the bar)
 routes the controller to a virtual mouse instead (left stick pointer, right stick scroll, A/RT left
