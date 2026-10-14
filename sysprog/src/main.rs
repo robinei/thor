@@ -64,6 +64,18 @@ fn main() -> ExitCode {
         }
     }
     let gamepad = std::env::var("SYSPROG_GAMEPAD").ok();
+    // `--library`: print the collections and games found (Pegasus game dirs and Steam).
+    if std::env::args().nth(1).as_deref() == Some("--library") {
+        let library = sysprog_library::Library::load(&sysprog_library::Sources::default_for_user());
+        for c in &library.collections {
+            println!("{} ({}, {} games){}", c.name, c.short_name, c.games.len(), if c.tools { " tools" } else { "" });
+            for g in c.games.iter().filter_map(|&i| library.games.get(i)) {
+                let art = if g.box_front.is_some() { "art" } else { "no art" };
+                println!("  {}  [{art}] {:?}", g.title, g.launch);
+            }
+        }
+        return ExitCode::SUCCESS;
+    }
     // `--mangohud-env`: print the environment that makes a game report its frame rate here.
     if std::env::args().nth(1).as_deref() == Some("--mangohud-env") {
         for (k, v) in sysprog_policy::frames::mangohud_env(&sysprog_policy::frames::default_dir()) {
