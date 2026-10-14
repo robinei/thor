@@ -50,7 +50,7 @@ in it, and no audio device. Suspend and resume work once at most: after a resume
 Keys stand in for the pad: arrows move focus (across both screens, as if the bottom one were below the
 top one), Enter or Space is A, Escape quits. Clicks and touches act on release; held 450 ms or more
 they are a long press. The keyboard mode is a PC layout (US) with an Fn layer shown as small corner labels
-(F1-F12, arrows on w/a/s/d, PgUp/Home/PgDn/End on i/j/k/l in the same shape, Ins on p, Del on Backspace): Shift, Ctrl, Alt and Fn apply to the next
+(F1-F12, arrows on w/a/s/d, and PgUp Home Ins / PgDn End Del on i o p / k l Backspace: a PC's six-key block with its outer columns swapped): Shift, Ctrl, Alt and Fn apply to the next
 key on a tap and lock on a long press. On the Thor (sway), the bottom view
 is a layer-shell surface on output `DSI-1` (`CLAMSHELL_BOTTOM_OUTPUT` to change it).
 
