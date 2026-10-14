@@ -33,7 +33,7 @@ const NAME_Y: f32 = 0.62;
 const COUNT: f32 = 0.11;
 /// The "+" button's tap area (about 6 mm on the Thor) and the drawn "+", of a tile's height.
 const PLUS: f32 = 0.45;
-const PLUS_ARM: f32 = 0.06;
+const PLUS_ICON: f32 = 0.17;
 /// An idle app's icon image: grey at this brightness.
 const IDLE: f32 = 0.55;
 /// The placeholder's icon: barely there.
@@ -171,9 +171,9 @@ fn app_tile(f: &mut Frame, r: Rect, i: usize, app: &App, images: &mut Images, bu
         let plus = Rect::new(r.x, r.y, side, side * 0.8);
         f.button(Id::NewInstance(i as u16), plus, Look { radius: 8.0, ..LOOK }, |c| {
             let (cx, cy) = plus.center();
-            let arm = r.h * PLUS_ARM;
-            c.fill(Rect::new(cx - arm, cy - 1.0, arm * 2.0, 2.0), rgb(TEXT));
-            c.fill(Rect::new(cx - 1.0, cy - arm, 2.0, arm * 2.0), rgb(TEXT));
+            let size = r.h * PLUS_ICON;
+            // Green: it starts something.
+            c.icon(Icon::Plus, Rect::new(cx - size / 2.0, cy - size / 2.0, size, size), rgb(GO));
         });
     }
 }

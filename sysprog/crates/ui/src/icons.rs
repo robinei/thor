@@ -27,6 +27,8 @@ pub enum Icon {
     Gpu,
     Env,
     Reset,
+    /// Another instance.
+    Plus,
     // Launcher apps.
     Shelf,
     Gamepad,
@@ -165,6 +167,10 @@ pub fn draw(c: &mut Canvas, icon: Icon, r: Rect, color: Color) {
             c.polyline(&arc(12.0, 13.0, 8.0, 195.0, 330.0), line, color, false);
             c.polyline(&arc(12.0, 13.0, 8.0, -30.0, 15.0), line, color, false);
             c.polyline(&[p(11.5, 3.5), p(16.0, 6.1), p(13.0, 10.0)], line, color, false);
+        }
+        Icon::Plus => {
+            c.polyline(&[p(12.0, 4.0), p(12.0, 20.0)], 3.2 * u, color, false);
+            c.polyline(&[p(4.0, 12.0), p(20.0, 12.0)], 3.2 * u, color, false);
         }
         Icon::Shelf => {
             for (x, top) in [(4.0, 5.0), (8.5, 7.0), (13.0, 4.0)] {
