@@ -136,7 +136,7 @@ fn face(s: &State, tile: Tile, buf: &mut String) -> Face {
             let value = s.tile_value(setting);
             setting.describe(value, buf);
             let per_game = game.filter(|_| !setting.global_only());
-            let own = per_game.is_some_and(|g| s.overrides_of(g).get(setting).is_some());
+            let own = per_game.is_some_and(|g| s.settings.overrides_of(g).get(setting).is_some());
             Face {
                 id: Id::Tile(setting),
                 icon: icon(setting),
@@ -147,10 +147,7 @@ fn face(s: &State, tile: Tile, buf: &mut String) -> Face {
             }
         }
         Tile::Env => {
-            let text = match game {
-                Some(g) => s.env.get(g).map_or("", |e| e.as_str()),
-                None => s.global_env.as_str(),
-            };
+            let text = s.settings.env_text(game.map(|g| &**g));
             let count = sysprog_core::count_env(text);
             buf.clear();
             match count {
@@ -164,7 +161,7 @@ fn face(s: &State, tile: Tile, buf: &mut String) -> Face {
             Face { id: Id::Env, icon: Icon::Env, impact, own: game.is_some() && count > 0, inherited: false, active: true }
         }
         Tile::Reset => {
-            let any = game.is_some_and(|g| !s.overrides_of(g).is_empty() || s.env.contains_key(g));
+            let any = game.is_some_and(|g| s.settings.has_own(g));
             buf.clear();
             buf.push_str(if any { "Reset" } else { "Nothing to reset" });
             Face { id: Id::Reset, icon: Icon::Reset, impact: Impact::Stock, own: false, inherited: false, active: any }

@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex, mpsc};
 
 use sysprog_core::keyboard::{self, Key, KeyPos, Modifier};
 use sysprog_core::touch::TouchLayout;
-use sysprog_core::settings::{Setting, Values};
+use sysprog_core::settings::{Setting, Settings, Values};
 use sysprog_core::{Effect, Event, Id, Mode, Scope, State, Status};
 use sysprog_policy::{keyboard as virtual_keyboard, pad, touchpad, tuning};
 use sysprog_ui::{Config, Screen};
@@ -55,7 +55,7 @@ fn main() -> ExitCode {
     }
     // Each game's settings (power profile, FPS cap).
     if !snapshotting && let Some(text) = state_dir.as_ref().and_then(|d| std::fs::read_to_string(d.join("game-settings.txt")).ok()) {
-        state.load_settings(&text);
+        state.settings = Settings::load(&text);
     }
 
     // `--snapshot DIR`: draw both screens at the Thor's size into PNG files, no Wayland needed.
@@ -89,7 +89,7 @@ fn main() -> ExitCode {
     }
     let gamepad = std::env::var("SYSPROG_GAMEPAD").ok();
     // The global settings, until a game brings its own.
-    apply_settings(&state.global, None, &sysprog_policy::frames::default_dir(), &padmouse_tx);
+    apply_settings(&state.settings.global, None, &sysprog_policy::frames::default_dir(), &padmouse_tx);
     // Games start from the launcher thread, one at a time, with MangoHud's environment; plays go to
     // stats.db in the state dir.
     let (launch_tx, launch_rx) = mpsc::channel();

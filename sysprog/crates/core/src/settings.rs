@@ -1,8 +1,13 @@
 //! The tweakable settings: a fixed table of settings, each with a short list of values (tapping a tile
 //! steps through them). [`Values`] holds one value per setting (the global ones, or a game's effective
-//! ones); [`Overrides`] a game's own choices, each replacing the global one where set.
+//! ones); [`Overrides`] a game's own choices, each replacing the global one where set; [`Settings`] all
+//! of them, with the environment variables, and their file format.
 
+use std::collections::HashMap;
 use std::fmt::Write;
+use std::sync::Arc;
+
+use crate::editor::parse_env;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Setting {
@@ -286,6 +291,134 @@ pub fn parse<'a>(fields: impl Iterator<Item = &'a str>) -> Overrides {
     o
 }
 
+/// Every game's settings: the global values and environment, and each game's overrides and
+/// environment. Saved as text ([`Settings::text`]).
+#[derive(Debug, Clone, Default)]
+pub struct Settings {
+    pub global: Values,
+    pub overrides: HashMap<Arc<str>, Overrides>,
+    /// Extra environment for every game, and per game (on top), as `KEY=value` words.
+    pub global_env: String,
+    pub env: HashMap<Arc<str>, String>,
+}
+
+impl Settings {
+    /// The settings `game` runs with: the global ones and its overrides.
+    pub fn of(&self, game: &str) -> Values {
+        self.overrides_of(game).over(&self.global)
+    }
+
+    pub fn overrides_of(&self, game: &str) -> Overrides {
+        self.overrides.get(game).copied().unwrap_or_default()
+    }
+
+    /// Sets `setting` for `game` (none: for all games, as are global-only settings) to `value`, or
+    /// back to the default (none: the global value for a game, the stock value for all games).
+    pub fn set(&mut self, game: Option<&Arc<str>>, setting: Setting, value: Option<u16>) {
+        match game {
+            Some(id) if !setting.global_only() => {
+                let mut o = self.overrides_of(id);
+                o.set(setting, value);
+                if o.is_empty() {
+                    self.overrides.remove(id);
+                } else {
+                    self.overrides.insert(id.clone(), o);
+                }
+            }
+            _ => self.global.set(setting, value.unwrap_or_else(|| setting.default_value())),
+        }
+    }
+
+    /// A game's own environment text, or all games' (none).
+    pub fn env_text(&self, game: Option<&str>) -> &str {
+        match game {
+            Some(id) => self.env.get(id).map_or("", |e| e.as_str()),
+            None => &self.global_env,
+        }
+    }
+
+    pub fn set_env(&mut self, game: Option<Arc<str>>, text: &str) {
+        let text = text.trim().to_owned();
+        match game {
+            Some(id) if text.is_empty() => {
+                self.env.remove(&id);
+            }
+            Some(id) => {
+                self.env.insert(id, text);
+            }
+            None => self.global_env = text,
+        }
+    }
+
+    /// The environment a game gets: the global variables, then its own.
+    pub fn env_of(&self, game: &str) -> Vec<(String, String)> {
+        let mut vars = parse_env(&self.global_env);
+        vars.extend(parse_env(self.env_text(Some(game))));
+        vars
+    }
+
+    /// Drops a game's overrides and environment.
+    pub fn reset(&mut self, game: &str) {
+        self.overrides.remove(game);
+        self.env.remove(game);
+    }
+
+    /// Whether a game has anything of its own.
+    pub fn has_own(&self, game: &str) -> bool {
+        self.overrides.contains_key(game) || self.env.contains_key(game)
+    }
+
+    /// As text: a `*` line with the global values, then a line per game with its overrides, as
+    /// tab-separated `key=value` fields; environment as an `env=` field (last on the line).
+    pub fn text(&self) -> String {
+        let mut text = String::from("*");
+        fields(&self.global.all(), &mut text);
+        push_env(&mut text, &self.global_env);
+        text.push('\n');
+        let mut ids: Vec<&Arc<str>> = self.overrides.keys().chain(self.env.keys()).collect();
+        ids.sort();
+        ids.dedup();
+        for id in ids {
+            text.push_str(id);
+            fields(&self.overrides_of(id), &mut text);
+            push_env(&mut text, self.env_text(Some(id)));
+            text.push('\n');
+        }
+        text
+    }
+
+    /// Reads [`Settings::text`] back (unknown fields are skipped).
+    pub fn load(text: &str) -> Settings {
+        let mut s = Settings::default();
+        for line in text.lines() {
+            let (line, env) = line.split_once("\tenv=").unwrap_or((line, ""));
+            let mut fields = line.split('\t');
+            let Some(id) = fields.next() else {
+                continue;
+            };
+            let o = parse(fields);
+            if id == "*" {
+                s.global = o.over(&Values::default());
+                s.global_env = env.to_owned();
+            } else {
+                if !o.is_empty() {
+                    s.overrides.insert(id.into(), o);
+                }
+                s.set_env(Some(id.into()), env);
+            }
+        }
+        s
+    }
+}
+
+/// Appends `env` as the line's last field (`env=...`), if any.
+fn push_env(text: &mut String, env: &str) {
+    if !env.trim().is_empty() {
+        text.push_str("\tenv=");
+        text.push_str(env.trim());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -317,6 +450,25 @@ mod tests {
         assert_eq!(Setting::Buttons.impact(1), Impact::Changes);
         assert_eq!(Setting::Fan.impact(1), Impact::Changes);
         assert_eq!(Setting::ChargeLimit.impact(80), Impact::Saves);
+    }
+
+    #[test]
+    fn settings_round_trip_as_text() {
+        let mut s = Settings::default();
+        let zelda: Arc<str> = "zelda".into();
+        s.set(None, Setting::FpsCap, Some(60));
+        s.set(Some(&zelda), Setting::Power, Some(2));
+        s.set(Some(&zelda), Setting::ChargeLimit, Some(80));
+        s.set_env(Some("ff6".into()), " A=1 ");
+        let text = s.text();
+        assert!(text.ends_with("\tcharge=80\nff6\tenv=A=1\nzelda\tpower=2\n"), "{text}");
+        let back = Settings::load(&text);
+        assert_eq!(back.of("zelda"), s.of("zelda"));
+        assert_eq!(back.global, s.global, "global-only settings go global");
+        assert_eq!(back.env_of("ff6"), vec![("A".to_owned(), "1".to_owned())]);
+        s.reset("zelda");
+        assert!(!s.has_own("zelda"));
+        assert_eq!(s.of("zelda"), s.global);
     }
 
     #[test]
