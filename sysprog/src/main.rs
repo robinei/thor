@@ -15,7 +15,6 @@ fn main() -> ExitCode {
         // The Thor's panels at half size: top 1920x1080 (landscape), bottom 1240x1080.
         top_size: (960, 540),
         bottom_size: (620, 540),
-        echo: std::env::var("SYSPROG_ECHO").ok().map(|v| v == "1"),
     };
     let mut state = State::new(sysprog_library::demo_games());
 

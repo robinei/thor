@@ -80,9 +80,6 @@ pub struct Config {
     /// Logical sizes when shown as windows (on a desktop).
     pub top_size: (u32, u32),
     pub bottom_size: (u32, u32),
-    /// Show what is typed above the keyboard. Default: only when the bottom view is a window (desktop
-    /// development); on the device it would show passwords.
-    pub echo: Option<bool>,
 }
 
 /// Sends events into the UI's event loop from other threads.
@@ -131,7 +128,6 @@ pub fn run(
         presses: HashMap::new(),
         hold_timer: None,
         loop_handle: event_loop.handle(),
-        echo: false,
         on_effect: Box::new(on_effect),
         exit: false,
     };
@@ -144,18 +140,16 @@ pub fn run(
     let bottom_output = app.output_state.outputs().find(|o| {
         app.output_state.info(o).and_then(|i| i.name).as_deref() == Some(config.bottom_output.as_str())
     });
-    let (bottom, is_window) = match (bottom_output, &layer_shell) {
+    app.bottom = Some(match (bottom_output, &layer_shell) {
         (Some(output), Some(layer_shell)) => {
             log::info!("bottom view: layer surface on {}", config.bottom_output);
-            (View::layer(&compositor, layer_shell, &qh, &output), false)
+            View::layer(&compositor, layer_shell, &qh, &output)
         }
         _ => {
             log::info!("bottom view: a window (no output {})", config.bottom_output);
-            (View::window(&compositor, &xdg, &qh, Screen::Bottom, config.bottom_size), true)
+            View::window(&compositor, &xdg, &qh, Screen::Bottom, config.bottom_size)
         }
-    };
-    app.bottom = Some(bottom);
-    app.echo = config.echo.unwrap_or(is_window);
+    });
 
     WaylandSource::new(conn.clone(), queue).insert(event_loop.handle()).map_err(|e| e.error)?;
     let (sender, receiver) = channel::channel();
@@ -186,7 +180,7 @@ pub fn snapshot(state: &State, screen: Screen, size: (u32, u32), scale: u32, pat
     let mut targets = Vec::new();
     match screen {
         Screen::Top => views::top(&mut canvas, state, w, h, &mut targets),
-        Screen::Bottom => views::bottom(&mut canvas, state, w, h, true, &mut Scratch::default(), &mut targets),
+        Screen::Bottom => views::bottom(&mut canvas, state, w, h, &mut Scratch::default(), &mut targets),
     }
     pixmap.save_png(path)?;
     Ok(())
@@ -284,7 +278,6 @@ impl View {
         pool: &mut SlotPool,
         fonts: &mut DrawCache,
         state: &State,
-        echo: bool,
         qh: &QueueHandle<App>,
     ) -> Result<(), Error> {
         let scale = self.scale.max(1);
@@ -303,7 +296,7 @@ impl View {
             match self.screen {
                 Screen::Top => views::top(&mut canvas, state, w, h, &mut self.targets),
                 Screen::Bottom => {
-                    views::bottom(&mut canvas, state, w, h, echo, &mut self.scratch, &mut self.targets);
+                    views::bottom(&mut canvas, state, w, h, &mut self.scratch, &mut self.targets);
                 }
             }
         }
@@ -381,7 +374,6 @@ struct App {
     /// Fires when the latest press becomes a hold, then at the repeat rate for repeating keys.
     hold_timer: Option<(Source, RegistrationToken)>,
     loop_handle: LoopHandle<'static, App>,
-    echo: bool,
     on_effect: Box<dyn FnMut(&Effect)>,
     exit: bool,
 }
@@ -420,7 +412,7 @@ impl App {
             if !(view.configured && view.dirty && !view.frame_pending) {
                 continue;
             }
-            if let Err(e) = view.draw(&mut self.pool, &mut self.fonts, &self.state, self.echo, &self.qh) {
+            if let Err(e) = view.draw(&mut self.pool, &mut self.fonts, &self.state, &self.qh) {
                 log::warn!("drawing {:?}: {e}", view.screen);
                 view.dirty = false;
             }
@@ -841,7 +833,6 @@ mod no_alloc {
                     &state,
                     1240.0,
                     1080.0,
-                    true,
                     &mut scratch,
                     &mut targets,
                 );

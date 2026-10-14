@@ -228,8 +228,6 @@ pub struct Keyboard {
     pub ctrl: Latch,
     pub alt: Latch,
     pub fn_layer: Latch,
-    /// What was typed lately, shown above the keys.
-    pub echo: String,
 }
 
 impl Keyboard {
@@ -284,7 +282,6 @@ impl Keyboard {
             }
             key => {
                 let stroke = Stroke { key, shift: self.shifts(key), ctrl: self.ctrl.on(), alt: self.alt.on() };
-                self.echo_stroke(stroke);
                 for m in Modifier::ALL {
                     let latch = self.latch_mut(m);
                     if *latch == Latch::Once {
@@ -293,37 +290,6 @@ impl Keyboard {
                 }
                 Some(stroke)
             }
-        }
-    }
-
-    fn echo_stroke(&mut self, s: Stroke) {
-        const ECHO_MAX: usize = 80;
-        match s.key {
-            Key::Char(c) => {
-                let c = if s.shift { shifted(c) } else { c };
-                match (s.ctrl, s.alt) {
-                    (false, false) => self.echo.push(c),
-                    (ctrl, alt) => {
-                        let prefix = format!("{}{}", if ctrl { "C-" } else { "" }, if alt { "M-" } else { "" });
-                        self.echo.push_str(&format!("<{prefix}{c}>"));
-                    }
-                }
-            }
-            Key::Named(Named::Backspace) => {
-                if let Some(last) = self.echo.pop()
-                    && last == '>'
-                {
-                    // Remove a whole <C-x> chord, not just its bracket.
-                    if let Some(start) = self.echo.rfind('<') {
-                        self.echo.truncate(start);
-                    }
-                }
-            }
-            Key::Named(Named::Enter) => self.echo.clear(),
-            Key::Named(_) | Key::Mod(_) => {}
-        }
-        while self.echo.len() > ECHO_MAX {
-            self.echo.remove(0);
         }
     }
 }
@@ -370,9 +336,8 @@ mod tests {
         assert!(tap(&mut kb, Key::Char('1')).unwrap().shift);
         assert!(!tap(&mut kb, Key::Char('1')).unwrap().shift);
         kb.press(pos(Key::Mod(Modifier::Shift)), true);
-        tap(&mut kb, Key::Char('a'));
+        assert!(tap(&mut kb, Key::Char('a')).unwrap().shift);
         assert_eq!(kb.shift, Latch::Locked);
-        assert_eq!(kb.echo, "!1A");
     }
 
     #[test]
@@ -381,7 +346,6 @@ mod tests {
         kb.press(pos(Key::Mod(Modifier::Shift)), true);
         assert!(tap(&mut kb, Key::Char('a')).unwrap().shift);
         assert!(!tap(&mut kb, Key::Char('1')).unwrap().shift);
-        assert_eq!(kb.echo, "A1");
     }
 
     #[test]
@@ -402,9 +366,7 @@ mod tests {
         tap(&mut kb, Key::Mod(Modifier::Alt));
         let s = tap(&mut kb, Key::Char('t')).unwrap();
         assert!(s.ctrl && s.alt && !s.shift);
-        assert_eq!(kb.echo, "<C-M-t>");
-        tap(&mut kb, Key::Named(Named::Backspace));
-        assert_eq!(kb.echo, "");
+        assert!(!tap(&mut kb, Key::Char('t')).unwrap().ctrl, "one-shot modifiers are used up");
     }
 
     #[test]

@@ -122,13 +122,11 @@ impl Scratch {
     }
 }
 
-/// `echo`: show what is typed above the keyboard.
 pub fn bottom(
     c: &mut Canvas,
     s: &State,
     w: f32,
     h: f32,
-    echo: bool,
     scratch: &mut Scratch,
     targets: &mut Vec<Target>,
 ) {
@@ -159,7 +157,7 @@ pub fn bottom(
     let body = Rect::new(0.0, bar_h, w, h - bar_h);
     match s.mode {
         Mode::Follow => game_settings(c, s, body, targets),
-        Mode::Keyboard => keyboard(c, s, body, echo, targets),
+        Mode::Keyboard => keyboard(c, s, body, targets),
         Mode::Launcher => label(c, body, body.h * 0.05, DIM, "Launcher: not built yet"),
         Mode::Touchpad => label(c, body, body.h * 0.05, DIM, "Touchpad: not built yet"),
         Mode::Sysinfo => label(c, body, body.h * 0.05, DIM, "Sysinfo: not built yet"),
@@ -204,21 +202,10 @@ fn game_settings(c: &mut Canvas, s: &State, body: Rect, targets: &mut Vec<Target
 
 /// Keyboard mode: what was typed lately, then the keys. Each key shows its Fn function small in the
 /// corner; while Fn is on, the two swap.
-fn keyboard(c: &mut Canvas, s: &State, body: Rect, echo: bool, targets: &mut Vec<Target>) {
+fn keyboard(c: &mut Canvas, s: &State, body: Rect, targets: &mut Vec<Target>) {
     let kb = &s.keyboard;
     let gap = body.h * 0.012;
-    let echo_h = body.h * 0.09;
-    let echo_size = echo_h * 0.45;
-    if echo {
-        let ew = c.text_width(echo_size, &kb.echo) + c.text_width(echo_size, "_");
-        // Keep the end of the line visible: draw from the right edge back when it is too long.
-        let ex = if ew > body.w - 4.0 * gap { body.w - 2.0 * gap - ew } else { 2.0 * gap };
-        let ey = body.y + (echo_h - echo_size * 1.2) / 2.0;
-        let cursor = ex + c.text(ex, ey, echo_size, rgb(DIM), &kb.echo);
-        c.text(cursor, ey, echo_size, rgb(DIM), "_");
-    }
-
-    let area = Rect::new(gap, body.y + echo_h, body.w - 2.0 * gap, body.h - echo_h - gap);
+    let area = Rect::new(gap, body.y + gap, body.w - 2.0 * gap, body.h - 2.0 * gap);
     let row_h = area.h / LAYOUT.len() as f32;
     for (row, slots) in LAYOUT.iter().enumerate() {
         // Every row fills the width: its keys share it by their widths.
