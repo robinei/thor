@@ -1,4 +1,4 @@
-//! The launcher: the running game's tile first (a placeholder when none runs, so the tiles never move),
+//! The dock: the running game's tile first (a placeholder when none runs, so the tiles never move),
 //! then the apps from launcher.json, as a grid of tiles on black, each an icon over its name. A tap
 //! starts an app or goes to it (again: its next window); a long press closes the window it is on (quits
 //! the game); a "+" in the corner of a running app that allows several starts another. Running shows as

@@ -68,9 +68,9 @@ fn warm_frames_do_not_allocate() {
         ("settings, all games", vec![Event::Activate(Id::Scope(clamshell_core::Scope::Global))]),
         ("environment editor", vec![Event::Activate(Id::Env), key(Key::Char('a'))]),
         ("environment saved", vec![key(Key::Char('=')), key(Key::Char('1')), Event::Activate(Id::EditorSave)]),
-        ("launcher, an app running", vec![Event::Activate(Id::Mode(Mode::Launcher)), Event::Activate(Id::App(2))]),
+        ("dock, an app running", vec![Event::Activate(Id::Mode(Mode::Dock)), Event::Activate(Id::App(1))]),
         (
-            "launcher, a game and windows",
+            "dock, a game and windows",
             vec![
                 Event::Started("zelda-lttp".into()),
                 Event::Units(vec!["clamshell-game-1-0".into(), "clamshell-app-terminal-1-0".into()]),

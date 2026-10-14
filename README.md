@@ -93,7 +93,16 @@ machine now, the busiest first, as many as fit: CPU time per process and GPU tim
 (`fdinfo`), grouped by our scopes (an app instance, the game), else by program for the user's processes,
 else as System. The battery only reports its total drain, so these are shares of the work, not watts.
 
-**Launcher** (the grid icon): the running game first (a "No game" placeholder otherwise, so tiles never
+**The model.** Shelf is home: where games are chosen, and where Home goes. The second screen controls
+what is in front. The dock holds the apps at hand and shows what runs. There is at most one game, and it
+is *the game* however it was started: from shelf, or from Steam's own client (a `steam_app_<id>` window
+of a game in the library is taken as the game, with its settings applied, until its last window
+closes; that play is recorded too). What is in front (shelf, the game, another app) decides where the
+pad goes, what Home does, and what the settings page edits: the game's settings, shelf's selected game's,
+or with another app in front, all games'. In shelf, activating the running game resumes it; with another
+running, the first activation says so, the second quits that one and starts this one when it has ended.
+
+**Dock** (the grid icon): the running game first (a "No game" placeholder otherwise, so tiles never
 move), then the apps. Each start of an app is an instance: a systemd scope (`clamshell-app-<key>-<secs>-<n>`)
 and a sway workspace of the same name, on the main screen. A tap starts an app, shows its most recent
 instance when it runs, or its next instance when one of its own is in front; "1/3" shows which. A long
@@ -113,10 +122,9 @@ sway rules set at start: shelf's window to `clamshell-shelf`, Steam's games (`st
 `clamshell-game`, both kept on the main screen, and windows opening on the second screen (behind the
 launcher) to the main screen. An emptied workspace of ours in front shows shelf.
 
-Apps come from `~/.config/clamshell/launcher.json` (read at start); without it Shelf, Steam (Big Picture) and
-a terminal (foot); `clamshell --launcher-example` prints a file to start from. An app is a `desktop` file
-(giving name, command and icon) and/or a `name` with a `command` (program and arguments, no shell) or a
-`builtin` (`shelf`); `icon` picks a drawn icon (`shelf`, `gamepad`, `terminal`, `browser`, `files`,
+Apps come from `~/.config/clamshell/launcher.json` (read at start); without it Steam (its normal client:
+store, downloads, friends; Big Picture would be a second home screen) and a terminal (foot); `clamshell --launcher-example` prints a file to start from. An app is a `desktop` file
+(giving name, command and icon) and/or a `name` with a `command` (program and arguments, no shell); `icon` picks a drawn icon (`shelf`, `gamepad`, `terminal`, `browser`, `files`,
 `music`, `video`, `settings`) over the desktop file's, and with neither the initial shows. Without sway
 there is no window list: taps only start apps. A broken file shows its error under the tiles.
 

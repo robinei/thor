@@ -12,7 +12,7 @@ mod bar;
 mod battery;
 mod editor;
 mod keyboard;
-mod launcher;
+mod dock;
 mod settings;
 mod shelf;
 mod sysinfo;
@@ -202,7 +202,7 @@ pub fn bottom(c: &mut Canvas, s: &State, w: f32, h: f32, images: &mut Images, sc
     match s.mode {
         Mode::Settings => settings::draw(f, body, &mut scratch.text),
         Mode::Keyboard => keyboard::draw(f, body),
-        Mode::Launcher => launcher::draw(f, body, images, &mut scratch.text),
+        Mode::Dock => dock::draw(f, body, images, &mut scratch.text),
         Mode::Touchpad => touchpad::draw(f, body),
         Mode::Sysinfo => sysinfo::draw(f, body, &mut scratch.lines),
         Mode::Wifi => wifi::draw(f, body, &mut scratch.text),

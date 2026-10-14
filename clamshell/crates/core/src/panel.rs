@@ -1,4 +1,4 @@
-//! The settings panel's rules: which game it is about (the running one, else shelf's selection) and
+//! The settings panel's rules: which game it is about (by what is in front) and
 //! which tab it edits, changes applied at once when they change the settings in force, the environment
 //! editor typing on the keyboard, and the dark second screen.
 
@@ -13,9 +13,14 @@ impl State {
         self.running.as_ref().map_or(self.settings.global, |id| self.settings.of(id))
     }
 
-    /// The game the settings panel is about: the running one, else shelf's selection.
+    /// The game the settings panel is about, by what is in front: the game, shelf's selection, or none
+    /// (another app: the panel edits all games).
     pub fn context(&self) -> Option<&Game> {
-        let id = self.running.as_ref().or(self.selected.as_ref())?;
+        let id = match self.front() {
+            crate::Front::Game => self.running.as_ref(),
+            crate::Front::Shelf => self.selected.as_ref(),
+            crate::Front::App => None,
+        }?;
         self.library.games.iter().find(|g| &g.id == id)
     }
 

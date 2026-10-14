@@ -291,6 +291,13 @@ fn main() -> ExitCode {
                     }
                 }
             }
+            Effect::RecordPlay { game, start, duration } => {
+                if let Some(dir) = &state_dir
+                    && let Err(e) = clamshell_library::stats::record(&dir.join("stats.db"), game, *start, *duration)
+                {
+                    log::warn!("recording the play of {game}: {e}");
+                }
+            }
             Effect::SaveFavourites(ids) => {
                 if let Some(dir) = &state_dir
                     && let Err(e) = clamshell_library::favorites::write(dir, ids.iter().map(String::as_str))
@@ -479,8 +486,7 @@ fn spawn_control(path: std::path::PathBuf, send: impl Fn(Event) -> bool + Send +
 /// An example launcher.json: the defaults and a few more (an app without an icon shows its initial).
 const LAUNCHER_EXAMPLE: &str = r#"{
   "apps": [
-    { "name": "Shelf", "icon": "shelf", "builtin": "shelf" },
-    { "desktop": "steam", "command": ["steam", "-gamepadui"] },
+    { "desktop": "steam" },
     { "name": "Terminal", "icon": "terminal", "command": ["foot"], "multiple": true },
     { "desktop": "firefox" },
     { "name": "Files", "icon": "files", "command": ["thunar"], "multiple": true },
@@ -613,6 +619,12 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
             (1920, 1080),
             "top-played.png",
         ),
+        (
+            vec![Event::Activate(Id::Game("ff6".into())), Event::Activate(Id::Game("ff6".into()))],
+            Screen::Top,
+            (1920, 1080),
+            "top-switch.png",
+        ),
         (vec![], Screen::Bottom, bottom, "bottom.png"),
         (
             [Event::Activate(Id::Mode(Mode::Settings))]
@@ -665,7 +677,7 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
         ),
         (vec![Event::Status(status)], Screen::Bottom, bottom, "bottom.png"),
         (
-            vec![Event::Activate(Id::Mode(Mode::Launcher)), Event::HideFocus],
+            vec![Event::Activate(Id::Mode(Mode::Dock)), Event::HideFocus],
             Screen::Bottom,
             bottom,
             "launcher.png",
@@ -716,7 +728,7 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
         (battery_demo(now), Screen::Bottom, bottom, "battery.png"),
         (
             vec![
-                Event::Activate(Id::Mode(Mode::Launcher)),
+                Event::Activate(Id::Mode(Mode::Dock)),
                 Event::Down(Id::Control(clamshell_core::controls::Control::Volume)),
                 Event::SlideStart { control: clamshell_core::controls::Control::Volume, x: 560.0, width: 1232.0 },
                 Event::SlideTo { x: 700.0 },

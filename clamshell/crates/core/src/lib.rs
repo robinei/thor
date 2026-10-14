@@ -6,6 +6,7 @@ pub mod keyboard;
 pub mod apps;
 pub mod controls;
 pub mod editor;
+mod game;
 pub mod metrics;
 mod panel;
 pub mod power;
@@ -24,6 +25,7 @@ use keyboard::{Key, KeyPos, Keyboard, Stroke};
 use settings::{Setting, Settings, Values};
 
 pub use editor::{Editor, count_env, parse_env};
+pub use game::Front;
 
 pub use clamshell_library::{Collection, Game, Launch, Library};
 
@@ -33,7 +35,8 @@ pub use clamshell_library::{Collection, Game, Launch, Library};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Mode {
     Settings,
-    Launcher,
+    /// The apps at hand and what runs (the game first).
+    Dock,
     Keyboard,
     Touchpad,
     #[default]
@@ -44,12 +47,12 @@ pub enum Mode {
 
 impl Mode {
     /// The modes with their own icon on the left of the bar, in order.
-    pub const BAR: [Mode; 5] = [Mode::Settings, Mode::Launcher, Mode::Keyboard, Mode::Touchpad, Mode::Sysinfo];
+    pub const BAR: [Mode; 5] = [Mode::Settings, Mode::Dock, Mode::Keyboard, Mode::Touchpad, Mode::Sysinfo];
 
     pub fn name(self) -> &'static str {
         match self {
             Mode::Settings => "settings",
-            Mode::Launcher => "launcher",
+            Mode::Dock => "dock",
             Mode::Keyboard => "keyboard",
             Mode::Touchpad => "touchpad",
             Mode::Sysinfo => "sysinfo",
@@ -59,6 +62,8 @@ impl Mode {
     }
 
     pub fn from_name(name: &str) -> Option<Mode> {
+        // ("launcher": the dock's old name, in saved places and scripts.)
+        let name = if name == "launcher" { "dock" } else { name };
         Mode::BAR.into_iter().chain([Mode::Wifi, Mode::Battery]).find(|m| m.name() == name)
     }
 }
@@ -282,6 +287,8 @@ pub enum Effect {
     QuitGame { windows: Vec<i64>, units: Vec<String> },
     /// Bring shelf's window to the front.
     ShowShelf,
+    /// Record a play that ClamShell didn't start (a game Steam started): in stats.db.
+    RecordPlay { game: Arc<str>, start: u64, duration: u64 },
     /// Output volume (0-100), mute, the screens' brightness (0-100).
     SetVolume(u8),
     SetMute(bool),
@@ -349,6 +356,11 @@ pub struct State {
     pad_mouse_by_launch: bool,
     /// Where the pad goes (see [`Effect::PadRoute`]).
     pub pad_route: PadRoute,
+    /// Shelf asked once whether to quit the running game for this one; started once that one ends.
+    pub switch_to: Option<Arc<str>>,
+    queued: Option<Arc<str>>,
+    /// The game, if Steam started it (followed by its windows).
+    adopted: Option<game::Adopted>,
     /// What the settings panel edits (global whenever there is no game in context).
     pub scope: Scope,
     pub mode: Mode,
@@ -431,7 +443,12 @@ impl State {
 
     /// Applies one event; returns which screens changed and what must happen outside.
     pub fn apply(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
+        let selected = self.selected.clone();
         let (dirty, mut effects) = self.apply_event(event);
+        // A question about switching games is about the game it was asked on.
+        if self.selected != selected {
+            self.switch_to = None;
+        }
         let route = self.wanted_pad_route();
         if route != self.pad_route {
             self.pad_route = route;
@@ -444,12 +461,9 @@ impl State {
     /// ClamShell's navigation; a game gets the virtual pad; another app gets typing while the keyboard
     /// is open.
     fn wanted_pad_route(&self) -> PadRoute {
-        let front = self.windows.iter().find(|w| w.focused);
-        let shelf = front.map_or(self.running.is_none(), |w| w.app_id == apps::SHELF_APP_ID);
-        let game = front.map_or(self.running.is_some(), windows::Window::of_game);
-        match (shelf, game, self.mode) {
-            (true, _, _) => PadRoute::Ui,
-            (false, false, Mode::Keyboard) => PadRoute::Keys,
+        match (self.front(), self.mode) {
+            (Front::Shelf, _) => PadRoute::Ui,
+            (Front::App, Mode::Keyboard) => PadRoute::Keys,
             _ => PadRoute::Game,
         }
     }
@@ -572,7 +586,9 @@ impl State {
             }
             Event::Windows(windows) => {
                 self.set_windows(windows);
-                (Dirty::BOTTOM, self.show_pending())
+                let mut effects = self.show_pending();
+                effects.extend(self.follow_steam_game());
+                (Dirty::BOTH, effects)
             }
             Event::LaunchFailed(game) => {
                 if self.running.as_ref() == Some(&game) {
@@ -638,9 +654,9 @@ impl State {
     fn activate(&mut self, id: Id, long: bool) -> (Dirty, Vec<Effect>) {
         match id {
             Id::Game(game) => {
-                // Activating the selected game again launches it, as A on a list entry does in shelf.
+                // Activating the selected game again plays it (starts, resumes, or switches to it).
                 if self.selected.as_ref() == Some(&game) {
-                    return (Dirty::BOTH, self.launch_effects(game));
+                    return (Dirty::BOTH, self.play(game));
                 }
                 let position = self.collection().and_then(|c| {
                     c.games.iter().position(|&i| self.library.games.get(i).is_some_and(|g| g.id == game))
@@ -679,7 +695,7 @@ impl State {
             }
             Id::Reset => (Dirty::BOTH, self.reset()),
             Id::Launch => match self.selected.clone() {
-                Some(game) => (Dirty::BOTH, self.launch_effects(game)),
+                Some(game) => (Dirty::BOTH, self.play(game)),
                 None => (Dirty::BOTH, vec![]),
             },
             Id::App(i) => (Dirty::BOTTOM, self.tap_app(usize::from(i), long)),
@@ -752,7 +768,8 @@ impl State {
         }
     }
 
-    /// Back to the global settings, and the pad mouse off if the launch turned it on.
+    /// Back to the global settings, the pad mouse off if the launch turned it on, and the game shelf
+    /// was asked to switch to started.
     fn game_ended(&mut self) -> Vec<Effect> {
         let mut effects = vec![Effect::Apply { game: None, settings: self.settings.global }];
         if self.pad_mouse_by_launch {
@@ -762,11 +779,12 @@ impl State {
                 effects.push(Effect::PadMouse(false));
             }
         }
+        effects.extend(self.queued_launch());
         effects
     }
 
     /// Launching `game`, unless one is already running.
-    fn launch_effects(&mut self, game: Arc<str>) -> Vec<Effect> {
+    pub(crate) fn launch_effects(&mut self, game: Arc<str>) -> Vec<Effect> {
         if self.running.is_some() {
             return vec![];
         }
@@ -879,7 +897,7 @@ mod tests {
         let first = s.selected.clone().unwrap();
         s.apply(Event::Started(first.clone()));
         let (_, fx) = s.apply(Event::Activate(Id::Launch));
-        assert!(fx.is_empty(), "no second launch while one runs");
+        assert!(!fx.iter().any(|e| matches!(e, Effect::Launch { .. })), "no second launch while one runs: {fx:?}");
         s.apply(Event::Played { game: first.clone(), start: 1000, duration: 600 });
         assert_eq!(s.running, None);
         let g = s.library.games.iter().find(|g| g.id == first).unwrap();

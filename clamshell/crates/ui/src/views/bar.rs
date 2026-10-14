@@ -39,7 +39,7 @@ const SHADE_ALPHA: f32 = 0.85;
 fn mode_icon(mode: Mode) -> Icon {
     match mode {
         Mode::Settings => Icon::Sliders,
-        Mode::Launcher => Icon::Apps,
+        Mode::Dock => Icon::Apps,
         Mode::Keyboard => Icon::Keyboard,
         Mode::Touchpad => Icon::Touchpad,
         Mode::Sysinfo => Icon::Sysinfo,

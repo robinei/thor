@@ -90,15 +90,31 @@ pub(super) fn draw(f: &mut Frame, images: &mut Images, buf: &mut String, w: f32,
         let room = w - pad - tx;
         let mut y = list.y;
         y += wrap(c, (tx, y, room), h * TITLE, TEXT_HI, &game.title, 3) + pad * 0.4;
-        // Marks: running now, favourite.
+        // What playing it does now: resume it, or (another game running) quit that one first; then
+        // whether it is a favourite.
+        let running = s.running.as_ref().and_then(|id| s.library.games.iter().find(|g| &g.id == id));
         let mut mx = tx;
-        if s.running.as_ref() == Some(&game.id) {
-            mx += c.text(mx, y, h * DETAIL, rgb(GO), "Running") + pad;
+        match running {
+            Some(r) if r.id == game.id => {
+                mx += c.text(mx, y, h * DETAIL, rgb(GO), "Running · A to resume") + pad;
+            }
+            Some(r) => {
+                buf.clear();
+                let asked = s.switch_to.as_ref() == Some(&game.id);
+                let _ = if asked { write!(buf, "A again: quit {} and start this", r.title) } else { write!(buf, "{} is running", r.title) };
+                let color = if asked { ACCENT } else { DIM };
+                y += wrap(c, (tx, y, room), h * DETAIL, color, buf, 2) + pad * 0.2;
+            }
+            None => {}
+        }
+        if mx > tx {
+            y += h * DETAIL * 1.3 + pad * 0.2;
+            mx = tx;
         }
         if game.favourite {
-            c.text(mx, y, h * DETAIL, rgb(ACCENT), "Favourite");
+            mx += c.text(mx, y, h * DETAIL, rgb(ACCENT), "Favourite");
         }
-        if mx > tx || game.favourite {
+        if mx > tx {
             y += h * DETAIL * 1.3 + pad * 0.4;
         }
         for line in details(game, s.unix_secs, buf) {

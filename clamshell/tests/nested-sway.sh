@@ -23,7 +23,6 @@ until_() { n=0; while ! eval "$1"; do n=$((n + 1)); [ $n -ge $(( $2 * 10 )) ] &&
 mkdir -p "$T/config/clamshell" "$T/pegasus" "$T/games" "$T/state"
 cat > "$T/config/clamshell/launcher.json" <<'EOF'
 { "apps": [
-  { "name": "Shelf", "icon": "shelf", "builtin": "shelf" },
   { "name": "Terminal", "icon": "terminal", "command": ["foot", "sleep", "300"], "multiple": true },
   { "name": "Slow", "command": ["sh", "-c", "sleep 3; exec foot --app-id=slow sleep 300"] },
   { "name": "Spawner", "command": ["sh", "-c", "foot --app-id=first sleep 300 & sleep 2; foot --app-id=late sleep 300 & wait"] },
@@ -74,7 +73,7 @@ start_program() {
 }
 program_pid() { for p in $(pgrep -x clamshell); do tr '\0' '\n' < "/proc/$p/environ" 2>/dev/null | grep -qx "CLAMSHELL_TEST=$T" && echo "$p"; done; }
 # The launcher's apps, by position in launcher.json.
-SHELF=0; TERMINAL=1; SLOW=2; SPAWNER=3; DETACHED=4
+TERMINAL=0; SLOW=1; SPAWNER=2; DETACHED=3
 
 echo "nested sway: $SOCK"
 start_program
@@ -95,7 +94,7 @@ ctl tap app $TERMINAL; sleep 0.5
 check "tap Terminal while one is in front: the next" '[ "$(front)" = "$T1" ]'
 check "our workspaces are on the main screen" '[ "$(output_of "$T1")" = HEADLESS-1 ] && [ "$(output_of "$T2")" = HEADLESS-1 ]'
 
-ctl tap app $SLOW; sleep 0.5; ctl tap app $SHELF; sleep 1
+ctl tap app $SLOW; sleep 0.5; msg 'workspace clamshell-shelf'; sleep 1
 check "a slow app: its empty workspace isn't shown meanwhile" '[ "$(front)" = clamshell-shelf ]'
 until_ '[ -n "$(ws_of slow)" ]' 8
 sleep 0.5
@@ -119,7 +118,7 @@ until_ '[ -n "$(ws_of steam_app_42)" ]' 5
 check "a Steam game's window goes to the game's workspace" '[ "$(ws_of steam_app_42)" = clamshell-game ]'
 msg '[app_id="^steam_app_42$"] kill'; sleep 0.5
 
-ctl tap app $SHELF; sleep 0.5; ctl tap launch
+msg 'workspace clamshell-shelf'; sleep 0.5; ctl tap launch
 until_ '[ "$(front)" = clamshell-game ]' 8
 check "a game from shelf: on the game's workspace, in front" '[ "$(ws_of testgame)" = clamshell-game ] && [ "$(front)" = clamshell-game ] && [ -n "$(units game)" ]'
 ctl long game

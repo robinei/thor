@@ -1,31 +1,22 @@
-//! The launcher's apps, from a JSON file (`~/.config/clamshell/launcher.json`):
+//! The dock's apps, from a JSON file (`~/.config/clamshell/launcher.json`):
 //!
 //! ```json
 //! { "apps": [
-//!     { "name": "Shelf", "icon": "shelf", "builtin": "shelf" },
-//!     { "desktop": "steam", "command": ["steam", "-gamepadui"] },
+//!     { "desktop": "steam" },
 //!     { "desktop": "foot", "multiple": true }
 //! ] }
 //! ```
 //!
 //! An app is a desktop file (`desktop`: its id, giving the name, command, icon and window class), or
-//! named here with a command (program and arguments, no shell) or a built-in action; fields given here
+//! named here with a command (program and arguments, no shell); fields given here
 //! override the desktop file's. `icon` picks one of the drawn icons ([`ICONS`]) instead of the desktop
 //! file's; with neither, the name's initial shows. `multiple`: a "+" starts another instance. Without
-//! the file, Shelf, Steam and a terminal.
+//! the file, Steam and a terminal. (Shelf has no tile: Home goes there.)
 
 use serde::Deserialize;
 
 /// The icon names the launcher draws; any other shows the app's initial.
 pub const ICONS: [&str; 8] = ["shelf", "gamepad", "terminal", "browser", "files", "music", "video", "settings"];
-
-/// What the program does itself.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Builtin {
-    /// Brings shelf's window to the front.
-    Shelf,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -36,8 +27,6 @@ pub struct App {
     pub icon: String,
     #[serde(default)]
     pub command: Vec<String>,
-    #[serde(default)]
-    pub builtin: Option<Builtin>,
     #[serde(default)]
     pub desktop: Option<String>,
     #[serde(default)]
@@ -73,18 +62,14 @@ struct File {
 
 /// The apps when there is no file.
 pub fn defaults() -> Vec<App> {
-    let app = |name: &str, icon: &str, command: &[&str], builtin| App {
+    // Steam's own client (store, downloads, friends): games it starts become the game all the same.
+    let app = |name: &str, icon: &str, command: &[&str]| App {
         name: name.into(),
         icon: icon.into(),
         command: command.iter().map(|&s| s.into()).collect(),
-        builtin,
         ..App::default()
     };
-    vec![
-        app("Shelf", "shelf", &[], Some(Builtin::Shelf)),
-        app("Steam", "gamepad", &["steam", "-gamepadui"], None),
-        App { multiple: true, ..app("Terminal", "terminal", &["foot"], None) },
-    ]
+    vec![app("Steam", "gamepad", &["steam"]), App { multiple: true, ..app("Terminal", "terminal", &["foot"]) }]
     .into_iter()
     .map(App::with_key)
     .collect()
@@ -101,10 +86,8 @@ pub fn parse(json: &str) -> Result<Vec<App>, String> {
         if app.name.is_empty() && app.desktop.is_none() {
             return Err("an app needs a name or a desktop file".into());
         }
-        match (app.command.is_empty() && app.desktop.is_none(), app.builtin.is_some()) {
-            (true, false) => return Err(format!("{label}: needs a command, a desktop file or a builtin")),
-            (false, true) => return Err(format!("{label}: a builtin takes no command or desktop file")),
-            _ => {}
+        if app.command.is_empty() && app.desktop.is_none() {
+            return Err(format!("{label}: needs a command or a desktop file"));
         }
     }
     Ok(file.apps.into_iter().map(App::with_key).collect())
@@ -116,7 +99,7 @@ mod tests {
 
     #[test]
     fn reads_apps_and_says_what_is_wrong() {
-        let apps = parse(r#"{"apps": [{"name": "Shelf", "icon": "shelf", "builtin": "shelf"}, {"name": "Files", "command": ["thunar", "~"]}]}"#);
+        let apps = parse(r#"{"apps": [{"name": "Steam", "icon": "gamepad", "command": ["steam"]}, {"name": "Files", "command": ["thunar", "~"]}]}"#);
         assert_eq!(apps.as_ref().map(Vec::len), Ok(2));
         assert_eq!(apps.as_ref().ok().and_then(|a| a.get(1)).map(|a| a.icon.as_str()), Some(""), "no icon: the initial");
         assert!(parse(r#"{"apps": [{"name": "X"}]}"#).is_err_and(|e| e.contains("needs a command")));
@@ -124,9 +107,9 @@ mod tests {
         let foot = parse(r#"{"apps": [{"desktop": "org.codeberg.dnkl.foot", "multiple": true}]}"#);
         let foot = foot.as_ref().ok().and_then(|a| a.first());
         assert!(foot.is_some_and(|f| f.multiple && f.key() == "org_codeberg_dnkl_foot"));
-        assert!(parse(r#"{"apps": [{"name": "X", "command": ["x"], "builtin": "shelf"}]}"#).is_err());
+        assert!(parse(r#"{"apps": [{"name": "X", "command": ["x"], "builtin": "shelf"}]}"#).is_err(), "no built-ins: Home is shelf");
         assert!(parse(r#"{"apps": [{"name": "X", "comand": ["x"]}]}"#).is_err_and(|e| e.contains("comand")), "typos are reported");
         assert!(parse("{").is_err());
-        assert_eq!(defaults().len(), 3);
+        assert_eq!(defaults().len(), 2);
     }
 }

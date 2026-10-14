@@ -1,4 +1,4 @@
-//! The launcher as a task switcher. An app's instances are the systemd scopes we started it in
+//! The dock as a task switcher. An app's instances are the systemd scopes we started it in
 //! (`clamshell-app-<key>-<secs>-<n>`, as systemd lists them), each with a sway workspace of the same name
 //! where its windows are (sway places a launch's first window there, the sway side moves later ones by
 //! their scope). A tap on an app starts it when it isn't running, shows its most recent instance when it
@@ -8,8 +8,7 @@
 //! shown when its first window appears, not before (its empty workspace never is), also if the user has
 //! gone elsewhere meanwhile; a newer start takes its place.
 
-use crate::apps::{Builtin, SHELF_APP_ID};
-use crate::windows::{GAME_WORKSPACE, SHELF_WORKSPACE, Window, order};
+use crate::windows::{GAME_WORKSPACE, Window, order};
 use crate::{Effect, State};
 
 impl State {
@@ -41,10 +40,9 @@ impl State {
         vec![Effect::FocusWorkspace(workspace.to_owned())]
     }
 
-    /// The name prefix of launcher app `i`'s instances.
+    /// The name prefix of dock app `i`'s instances.
     fn prefix(&self, i: usize) -> Option<(&'static str, &str)> {
-        let app = self.apps.get(i)?;
-        (app.builtin.is_none()).then_some(("clamshell-app-", app.key()))
+        Some(("clamshell-app-", self.apps.get(i)?.key()))
     }
 
     /// Whether `name` is one of launcher app `i`'s instances (`clamshell-app-<key>-…`).
@@ -54,22 +52,14 @@ impl State {
         })
     }
 
-    /// The instance (workspace) of launcher app `i` that window `w` is in; for shelf, its own window's.
+    /// The instance (workspace) of dock app `i` that window `w` is in.
     pub fn instance_of<'w>(&self, i: usize, w: &'w Window) -> Option<&'w str> {
-        match self.apps.get(i)?.builtin {
-            Some(Builtin::Shelf) => (w.app_id == SHELF_APP_ID).then_some(w.workspace.as_str()),
-            None => Some(w.workspace.as_str()).filter(|ws| self.is_instance(i, ws)),
-        }
+        Some(w.workspace.as_str()).filter(|ws| self.is_instance(i, ws))
     }
 
-    /// Whether launcher app `i` runs (or is starting).
+    /// Whether dock app `i` runs (or is starting).
     pub fn app_running(&self, i: usize) -> bool {
-        match self.apps.get(i).and_then(|a| a.builtin) {
-            Some(Builtin::Shelf) => self.windows.iter().any(|w| w.app_id == SHELF_APP_ID),
-            None => {
-                self.units.iter().any(|u| self.is_instance(i, u)) || self.starting.iter().any(|(n, _)| self.is_instance(i, n))
-            }
-        }
+        self.units.iter().any(|u| self.is_instance(i, u)) || self.starting.iter().any(|(n, _)| self.is_instance(i, n))
     }
 
     /// The instance a tile is on: the one in front, else the most recent, else (no history yet) the first.
@@ -90,11 +80,8 @@ impl State {
     }
 
     pub(crate) fn tap_app(&mut self, i: usize, long: bool) -> Vec<Effect> {
-        let Some(app) = self.apps.get(i) else {
+        if self.apps.get(i).is_none() {
             return vec![];
-        };
-        if app.builtin == Some(Builtin::Shelf) {
-            return if long { vec![] } else { self.show(SHELF_WORKSPACE) };
         }
         if long {
             let Some(current) = self.current_instance(i) else {
@@ -191,10 +178,10 @@ mod tests {
     fn a_tap_starts_then_goes_to_then_cycles_instances() {
         let mut s = state();
         s.apply(Event::Tick { unix_secs: 100 });
-        let term: u16 = 2;
+        let term: u16 = 1;
         let (_, fx) = s.apply(Event::Activate(Id::App(term)));
         assert_eq!(fx, vec![Effect::RunApp { name: T1.into(), command: vec!["foot".into()] }]);
-        assert!(s.app_running(2), "starting counts as running");
+        assert!(s.app_running(1), "starting counts as running");
         assert_eq!(s.apply(Event::Activate(Id::App(term))).1, vec![], "starting: no second one");
         // systemd lists it; its window appears on its workspace: shown then, not before.
         s.apply(Event::Units(vec![T1.into()]));
@@ -204,29 +191,27 @@ mod tests {
             vec![Effect::FocusWorkspace(T1.into())]
         );
         // "+": a second; with two, a tap in front goes to the next.
-        assert!(s.offers_new(2) && !s.offers_new(1), "Steam allows one");
+        assert!(s.offers_new(1) && !s.offers_new(0), "Steam allows one");
         assert_eq!(s.apply(Event::Activate(Id::NewInstance(term))).1, vec![Effect::RunApp { name: T2.into(), command: vec!["foot".into()] }]);
         s.apply(Event::Units(vec![T1.into(), T2.into()]));
         s.apply(Event::Windows(vec![win(10, "foot", T1, false), win(12, "foot", T2, false), win(13, "mpv", T2, true)]));
-        assert_eq!(s.instance_position(2), (2, 2), "on instance 2 of 2: windows don't count, instances do");
+        assert_eq!(s.instance_position(1), (2, 2), "on instance 2 of 2: windows don't count, instances do");
         assert_eq!(s.apply(Event::Activate(Id::App(term))).1, vec![Effect::FocusWorkspace(T1.into())], "the next, wrapping");
         // Something else in front: back to the instance last in front.
         s.apply(Event::Windows(vec![win(10, "foot", T1, false), win(12, "foot", T2, false), win(13, "mpv", T2, false), win(20, "firefox", "1", true)]));
         assert_eq!(s.apply(Event::Activate(Id::App(term))).1, vec![Effect::FocusWorkspace(T2.into())]);
         // A long press closes that instance's windows.
         assert_eq!(s.apply(Event::LongPress(Id::App(term))).1, vec![Effect::CloseWindows(vec![12, 13])]);
-        // Shelf: its workspace.
-        assert_eq!(s.apply(Event::Activate(Id::App(0))).1, vec![Effect::FocusWorkspace(SHELF_WORKSPACE.into())]);
     }
 
     #[test]
     fn a_failed_start_is_forgotten() {
         let mut s = state();
         s.apply(Event::Tick { unix_secs: 100 });
-        s.apply(Event::Activate(Id::App(2)));
+        s.apply(Event::Activate(Id::App(1)));
         s.apply(Event::Tick { unix_secs: 120 });
-        assert!(!s.app_running(2));
-        assert!(matches!(s.apply(Event::Activate(Id::App(2))).1.as_slice(), [Effect::RunApp { .. }]), "tapping starts it again");
+        assert!(!s.app_running(1));
+        assert!(matches!(s.apply(Event::Activate(Id::App(1))).1.as_slice(), [Effect::RunApp { .. }]), "tapping starts it again");
     }
 
     #[test]
