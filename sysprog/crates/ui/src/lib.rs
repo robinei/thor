@@ -7,6 +7,7 @@
 //! else a second ordinary window, so it runs on any desktop.
 
 mod draw;
+mod icons;
 pub mod nav;
 mod views;
 

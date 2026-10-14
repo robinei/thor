@@ -52,6 +52,45 @@ impl Power {
     }
 }
 
+/// On-screen keyboard keys (ASCII only). `Char` holds the unshifted character; the layer and shift state
+/// decide what it types.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Key {
+    Char(char),
+    Shift,
+    /// Switches between letters and symbols.
+    Layer,
+    Backspace,
+    Enter,
+    Tab,
+    Esc,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum KeyLayer {
+    #[default]
+    Letters,
+    Symbols,
+}
+
+/// Keys that type no character.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Special {
+    Backspace,
+    Enter,
+    Tab,
+    Esc,
+}
+
+#[derive(Debug, Default)]
+pub struct Keyboard {
+    pub layer: KeyLayer,
+    /// One-shot shift: the next letter is upper case.
+    pub shift: bool,
+    /// What was typed lately, shown above the keys (the last line only).
+    pub echo: String,
+}
+
 /// Stable ids of everything that can be focused or tapped, on either screen. Focus is kept by id, so it
 /// survives redraws and layout changes.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -60,6 +99,7 @@ pub enum Id {
     Mode(Mode),
     Power(Power),
     Launch,
+    Key(Key),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -77,6 +117,9 @@ pub enum Event {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Effect {
     Launch { game: String, power: Power },
+    /// Type one character into the focused app (virtual keyboard).
+    Type(char),
+    Press(Special),
     Quit,
 }
 
@@ -103,6 +146,7 @@ pub struct State {
     pub mode: Mode,
     pub focus: Option<Id>,
     pub unix_secs: u64,
+    pub keyboard: Keyboard,
 }
 
 impl State {
@@ -125,8 +169,10 @@ impl State {
     pub fn apply(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
         match event {
             Event::Tick { unix_secs } => {
+                // The bar shows minutes: redraw only when the minute changes.
+                let minute_changed = unix_secs / 60 != self.unix_secs / 60;
                 self.unix_secs = unix_secs;
-                (Dirty::BOTTOM, vec![])
+                (if minute_changed { Dirty::BOTTOM } else { Dirty::NONE }, vec![])
             }
             Event::Focus(id) => {
                 self.focus = Some(id);
@@ -165,7 +211,47 @@ impl State {
                 Some(game) => (Dirty::BOTH, vec![self.launch_effect(game)]),
                 None => (Dirty::BOTH, vec![]),
             },
+            Id::Key(key) => (Dirty::BOTTOM, self.press(key)),
         }
+    }
+
+    fn press(&mut self, key: Key) -> Vec<Effect> {
+        const ECHO_MAX: usize = 80;
+        let kb = &mut self.keyboard;
+        let effect = match key {
+            Key::Char(c) => {
+                let c = if kb.shift { c.to_ascii_uppercase() } else { c };
+                kb.shift = false;
+                kb.echo.push(c);
+                if kb.echo.len() > ECHO_MAX {
+                    kb.echo.remove(0);
+                }
+                Effect::Type(c)
+            }
+            Key::Shift => {
+                kb.shift = !kb.shift;
+                return vec![];
+            }
+            Key::Layer => {
+                kb.layer = match kb.layer {
+                    KeyLayer::Letters => KeyLayer::Symbols,
+                    KeyLayer::Symbols => KeyLayer::Letters,
+                };
+                kb.shift = false;
+                return vec![];
+            }
+            Key::Backspace => {
+                kb.echo.pop();
+                Effect::Press(Special::Backspace)
+            }
+            Key::Enter => {
+                kb.echo.clear();
+                Effect::Press(Special::Enter)
+            }
+            Key::Tab => Effect::Press(Special::Tab),
+            Key::Esc => Effect::Press(Special::Esc),
+        };
+        vec![effect]
     }
 
     fn launch_effect(&self, game: String) -> Effect {
@@ -220,9 +306,45 @@ mod tests {
     }
 
     #[test]
-    fn tick_redraws_only_the_bottom() {
+    fn shift_is_one_shot() {
+        let mut s = state();
+        s.apply(Event::Activate(Id::Key(Key::Shift)));
+        let (_, fx) = s.apply(Event::Activate(Id::Key(Key::Char('h'))));
+        assert_eq!(fx, vec![Effect::Type('H')]);
+        let (_, fx) = s.apply(Event::Activate(Id::Key(Key::Char('i'))));
+        assert_eq!(fx, vec![Effect::Type('i')]);
+        assert_eq!(s.keyboard.echo, "Hi");
+    }
+
+    #[test]
+    fn layer_toggles_and_clears_shift() {
+        let mut s = state();
+        s.apply(Event::Activate(Id::Key(Key::Shift)));
+        s.apply(Event::Activate(Id::Key(Key::Layer)));
+        assert_eq!(s.keyboard.layer, KeyLayer::Symbols);
+        assert!(!s.keyboard.shift);
+        s.apply(Event::Activate(Id::Key(Key::Layer)));
+        assert_eq!(s.keyboard.layer, KeyLayer::Letters);
+    }
+
+    #[test]
+    fn backspace_and_enter_edit_the_echo() {
+        let mut s = state();
+        s.apply(Event::Activate(Id::Key(Key::Char('a'))));
+        s.apply(Event::Activate(Id::Key(Key::Char('b'))));
+        let (dirty, fx) = s.apply(Event::Activate(Id::Key(Key::Backspace)));
+        assert_eq!((dirty, fx), (Dirty::BOTTOM, vec![Effect::Press(Special::Backspace)]));
+        assert_eq!(s.keyboard.echo, "a");
+        s.apply(Event::Activate(Id::Key(Key::Enter)));
+        assert_eq!(s.keyboard.echo, "");
+    }
+
+    #[test]
+    fn tick_redraws_only_the_bottom_and_only_each_minute() {
         let mut s = state();
         let (dirty, _) = s.apply(Event::Tick { unix_secs: 60 });
         assert_eq!(dirty, Dirty::BOTTOM);
+        let (dirty, _) = s.apply(Event::Tick { unix_secs: 119 });
+        assert_eq!(dirty, Dirty::NONE);
     }
 }

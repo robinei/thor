@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use std::process::Command;
 
-use tiny_skia::{Color, FillRule, Paint, Path, PathBuilder, Pixmap, PixmapPaint, Stroke, Transform};
+use tiny_skia::{Color, FillRule, LineCap, LineJoin, Paint, Path, PathBuilder, Pixmap, PixmapPaint, Stroke, Transform};
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Rect {
@@ -114,6 +114,32 @@ impl<'a> Canvas<'a> {
         if let Some(path) = rounded_path(r, radius) {
             let stroke = Stroke { width, ..Stroke::default() };
             self.pixmap.stroke_path(&path, &Self::paint(color), &stroke, self.transform(), None);
+        }
+    }
+
+    /// Connected lines through `points`, round caps and joins; `close` joins the last to the first.
+    pub fn polyline(&mut self, points: &[(f32, f32)], width: f32, color: Color, close: bool) {
+        let mut pb = PathBuilder::new();
+        let mut iter = points.iter();
+        let Some(&(x, y)) = iter.next() else {
+            return;
+        };
+        pb.move_to(x, y);
+        for &(x, y) in iter {
+            pb.line_to(x, y);
+        }
+        if close {
+            pb.close();
+        }
+        if let Some(path) = pb.finish() {
+            let stroke = Stroke { width, line_cap: LineCap::Round, line_join: LineJoin::Round, ..Stroke::default() };
+            self.pixmap.stroke_path(&path, &Self::paint(color), &stroke, self.transform(), None);
+        }
+    }
+
+    pub fn circle(&mut self, cx: f32, cy: f32, r: f32, color: Color) {
+        if let Some(path) = PathBuilder::from_circle(cx, cy, r) {
+            self.pixmap.fill_path(&path, &Self::paint(color), FillRule::Winding, self.transform(), None);
         }
     }
 

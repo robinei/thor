@@ -3,7 +3,7 @@
 
 use std::process::ExitCode;
 
-use sysprog_core::{Event, State};
+use sysprog_core::{Event, Id, Key, Mode, State};
 use sysprog_ui::{Config, Screen};
 
 fn main() -> ExitCode {
@@ -44,11 +44,23 @@ fn main() -> ExitCode {
     }
 }
 
+/// Events to apply first, the screen, its size, the file name.
+type Shot = (&'static [Event], Screen, (u32, u32), &'static str);
+
 fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
     state.apply(Event::Tick { unix_secs: now.as_secs() });
-    let shots = [(Screen::Top, (1920, 1080), "top.png"), (Screen::Bottom, (1240, 1080), "bottom.png")];
-    for (screen, size, name) in shots {
+    // Each shot after the events that lead to it: shelf, then the keyboard's two layers.
+    let shots: [Shot; 4] = [
+        (&[], Screen::Top, (1920, 1080), "top.png"),
+        (&[], Screen::Bottom, (1240, 1080), "bottom.png"),
+        (&[Event::Activate(Id::Mode(Mode::Keyboard))], Screen::Bottom, (1240, 1080), "keyboard.png"),
+        (&[Event::Activate(Id::Key(Key::Layer))], Screen::Bottom, (1240, 1080), "symbols.png"),
+    ];
+    for (events, screen, size, name) in shots {
+        for event in events {
+            state.apply(event.clone());
+        }
         let path = dir.join(name);
         if let Err(e) = sysprog_ui::snapshot(state, screen, size, 1, &path) {
             log::error!("{}: {e}", path.display());
