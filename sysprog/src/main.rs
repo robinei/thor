@@ -12,7 +12,8 @@ use sysprog_policy::{job, keyboard as virtual_keyboard, pad, sway, touchpad, tun
 use sysprog_ui::{Config, Screen};
 
 fn main() -> ExitCode {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    // zbus logs its handshake as info: only its warnings.
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info,zbus=warn,tracing=warn")).init();
 
     // `--run FILE`: become a launched job's program (sway's exec starts us this way; see job.rs).
     if let [flag, file] = std::env::args().skip(1).collect::<Vec<_>>().as_slice()
