@@ -1,7 +1,6 @@
-//! The bar along the top of the second screen: the modes' icons on the left (the active one lit; game
-//! settings dimmed while there is no game), then the pad mouse toggle, the
-//! status on the right (Wi-Fi, volume, battery as icons that carry their level, then the clock). The
-//! middle stays free for notices.
+//! The bar along the top of the second screen: the modes' icons on the left (the active one lit), then
+//! the pad mouse toggle, the status on the right (Wi-Fi, volume, battery as icons that carry their
+//! level, then the clock). The middle stays free for notices.
 
 use sysprog_core::{Id, Mode, Status};
 
@@ -32,9 +31,6 @@ fn mode_icon(mode: Mode) -> Icon {
         Mode::Sysinfo => Icon::Sysinfo,
     }
 }
-
-/// An icon that can't be used now (Settings without a game): barely there.
-const DISABLED: u32 = 0x26262c;
 
 /// The status icons, right to left from the clock, with their colours.
 fn status_icons(status: &Status) -> impl Iterator<Item = (Icon, u32)> {
@@ -68,15 +64,10 @@ pub(super) fn draw(f: &mut Frame, w: f32, h: f32, scratch: &mut Scratch) -> f32 
     let side = bar_h * ICON;
     let slot = bar_h * MODE_SLOT;
     let look = Look { radius: 8.0, fill: None, inset: 2.0, ring_inset: 0.0 };
-    let has_game = f.s.context().is_some();
     for (i, mode) in Mode::BAR.into_iter().enumerate() {
         let icon = mode_icon(mode);
         let r = Rect::new(i as f32 * slot, 0.0, slot, bar_h);
-        let color = match (f.s.mode == mode, mode == Mode::Settings && !has_game) {
-            (true, _) => ACCENT,
-            (false, true) => DISABLED,
-            (false, false) => DIM,
-        };
+        let color = if f.s.mode == mode { ACCENT } else { DIM };
         f.button(Id::Mode(mode), r, look, |c| {
             let (cx, cy) = r.center();
             c.icon(icon, Rect::new(cx - side / 2.0, cy - side / 2.0, side, side), rgb(color));

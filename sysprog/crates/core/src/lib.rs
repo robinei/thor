@@ -14,8 +14,6 @@ use keyboard::{Key, KeyPos, Keyboard, Stroke};
 pub use sysprog_library::{Collection, Game, Launch, Library};
 
 /// Second-screen modes (docs/plans.md, "Second screen"), chosen from the bar; the last one chosen stays.
-/// Settings (the game's settings) is only available while there is a game in context, and gives way to
-/// the previous mode when that goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Mode {
     Settings,
@@ -73,12 +71,38 @@ impl Power {
 /// Frame rate caps offered; 0 is no cap.
 pub const FPS_CAPS: [u16; 6] = [0, 30, 40, 60, 90, 120];
 
-/// A game's settings, kept per game, applied at launch and live while it runs.
+/// The settings a game runs with: the global ones, with the game's overrides on top. Applied at launch
+/// and live while it runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct GameSettings {
     pub power: Power,
     /// Frames per second at most (MangoHud's limiter); 0: no cap.
     pub fps_cap: u16,
+}
+
+/// A game's own choices, each overriding the global one where set.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Overrides {
+    pub power: Option<Power>,
+    pub fps_cap: Option<u16>,
+}
+
+impl Overrides {
+    pub fn over(self, global: GameSettings) -> GameSettings {
+        GameSettings { power: self.power.unwrap_or(global.power), fps_cap: self.fps_cap.unwrap_or(global.fps_cap) }
+    }
+
+    pub fn is_empty(self) -> bool {
+        self == Overrides::default()
+    }
+}
+
+/// What the settings panel edits: the global settings, or the game in context's overrides.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum Scope {
+    #[default]
+    Game,
+    Global,
 }
 
 /// Stable ids of everything that can be focused or tapped, on either screen. Focus is kept by id, so it
@@ -93,6 +117,10 @@ pub enum Id {
     Launch,
     /// A frame rate cap choice (0: none).
     FpsCap(u16),
+    /// The settings panel's scope tabs.
+    Scope(Scope),
+    /// Drops the game in context's overrides.
+    Reset,
     /// An on-screen keyboard key, by position.
     Key(KeyPos),
     /// The pad mouse toggle.
@@ -204,11 +232,13 @@ pub struct State {
     pub rows: usize,
     /// Id of the selected game (shelf's list on top, its settings below): the current tab's cursor.
     pub selected: Option<Arc<str>>,
-    /// Per-game settings, by game id; absent = default.
-    pub settings: HashMap<Arc<str>, GameSettings>,
+    /// The settings every game runs with unless it overrides them.
+    pub global: GameSettings,
+    /// Per-game overrides, by game id.
+    pub overrides: HashMap<Arc<str>, Overrides>,
+    /// What the settings panel edits (global whenever there is no game in context).
+    pub scope: Scope,
     pub mode: Mode,
-    /// The mode before Settings, to go back to.
-    pub previous: Mode,
     pub focus: Option<Id>,
     /// The focus ring is shown only while navigating with the pad.
     pub show_focus: bool,
@@ -243,7 +273,7 @@ const RESUME_AFTER: u64 = 2;
 fn screen_of(id: &Id) -> Dirty {
     match id {
         Id::Game(_) | Id::Tab(_) => Dirty::BOTH,
-        Id::Mode(_) | Id::Power(_) | Id::FpsCap(_) | Id::Launch | Id::Key(_) | Id::PadMouse => Dirty::BOTTOM,
+        Id::Mode(_) | Id::Power(_) | Id::FpsCap(_) | Id::Scope(_) | Id::Reset | Id::Launch | Id::Key(_) | Id::PadMouse => Dirty::BOTTOM,
     }
 }
 
@@ -279,10 +309,9 @@ impl State {
     pub fn resume_text(&self) -> String {
         let mut text = self.collection().map(|c| c.name.clone()).unwrap_or_default();
         text.push('\n');
-        // The second screen's mode (Settings comes back as the mode under it).
-        let mode = if self.mode == Mode::Settings { self.previous } else { self.mode };
+        // The second screen's mode.
         text.push_str("@mode\t");
-        text.push_str(mode.name());
+        text.push_str(self.mode.name());
         text.push('\n');
         for (i, c) in self.library.collections.iter().enumerate() {
             let cursor = self.cursors.get(i).copied().unwrap_or_default();
@@ -305,10 +334,9 @@ impl State {
                 continue;
             };
             if name == "@mode" {
-                // Not into settings (no game yet) or touchpad (grabs the touchscreen; only on request).
-                if let Some(mode) = Mode::from_name(id).filter(|m| !matches!(m, Mode::Settings | Mode::Touchpad)) {
+                // Not into touchpad (grabs the touchscreen; only on request).
+                if let Some(mode) = Mode::from_name(id).filter(|m| *m != Mode::Touchpad) {
                     self.mode = mode;
-                    self.previous = mode;
                 }
                 continue;
             }
@@ -398,49 +426,76 @@ impl State {
         }
     }
 
+    /// The settings `game` runs with: the global ones and its overrides.
     pub fn settings_of(&self, game: &str) -> GameSettings {
-        self.settings.get(game).copied().unwrap_or_default()
+        self.overrides_of(game).over(self.global)
     }
 
-    /// The game the Settings mode is about: the running one, else shelf's selection.
+    pub fn overrides_of(&self, game: &str) -> Overrides {
+        self.overrides.get(game).copied().unwrap_or_default()
+    }
+
+    /// The game the settings panel is about: the running one, else shelf's selection.
     pub fn context(&self) -> Option<&Game> {
         let id = self.running.as_ref().or(self.selected.as_ref())?;
         self.library.games.iter().find(|g| &g.id == id)
     }
 
-    /// Settings gives way to the previous mode when there is no game in context.
-    fn check_context(&mut self) {
-        if self.mode == Mode::Settings && self.context().is_none() {
-            self.mode = self.previous;
-        }
+    /// What the settings panel edits now: the game in context (if the scope is the game's), or none
+    /// for the global settings.
+    pub fn editing(&self) -> Option<&Game> {
+        self.context().filter(|_| self.scope == Scope::Game)
     }
 
-    /// Changes the context game's settings; applied now if it is running.
-    fn change_settings(&mut self, change: impl FnOnce(&mut GameSettings)) -> Vec<Effect> {
-        let Some(id) = self.context().map(|g| g.id.clone()) else {
-            return vec![];
-        };
-        let mut settings = self.settings_of(&id);
-        change(&mut settings);
-        self.settings.insert(id.clone(), settings);
+    /// Changes what the panel edits: the game's overrides or the global settings. Saved, and applied
+    /// at once to a running game whose settings that changed.
+    fn change_settings(&mut self, change: impl FnOnce(&mut Overrides)) -> Vec<Effect> {
+        let before = self.running.as_ref().map(|id| self.settings_of(id));
+        match self.editing().map(|g| g.id.clone()) {
+            Some(id) => {
+                let mut o = self.overrides_of(&id);
+                change(&mut o);
+                if o.is_empty() {
+                    self.overrides.remove(&id);
+                } else {
+                    self.overrides.insert(id, o);
+                }
+            }
+            None => {
+                let mut o = Overrides::default();
+                change(&mut o);
+                self.global = o.over(self.global);
+            }
+        }
         let mut effects = vec![Effect::SaveSettings(self.settings_text())];
-        if self.running.as_ref() == Some(&id) {
-            effects.push(Effect::Apply { game: id, settings });
+        if let Some(id) = self.running.clone() {
+            let settings = self.settings_of(&id);
+            if before != Some(settings) {
+                effects.push(Effect::Apply { game: id, settings });
+            }
         }
         effects
     }
 
-    /// The games' settings as text: one game per line, id, power and fps cap, tab-separated (only games
-    /// with settings other than the defaults).
+    /// The settings as text: a `*` line with the global power and fps cap, then one line per game with
+    /// overrides (empty fields: not overridden), tab-separated.
     pub fn settings_text(&self) -> String {
+        let field = |v: Option<String>| v.unwrap_or_default();
         let mut lines: Vec<String> = self
-            .settings
+            .overrides
             .iter()
-            .filter(|(_, s)| **s != GameSettings::default())
-            .map(|(id, s)| format!("{id}\t{}\t{}", s.power.label(), s.fps_cap))
+            .filter(|(_, o)| !o.is_empty())
+            .map(|(id, o)| {
+                format!("{id}\t{}\t{}", field(o.power.map(|p| p.label().to_owned())), field(o.fps_cap.map(|c| c.to_string())))
+            })
             .collect();
         lines.sort();
-        lines.iter().map(|l| format!("{l}\n")).collect()
+        let mut text = format!("*\t{}\t{}\n", self.global.power.label(), self.global.fps_cap);
+        for l in lines {
+            text.push_str(&l);
+            text.push('\n');
+        }
+        text
     }
 
     pub fn load_settings(&mut self, text: &str) {
@@ -449,11 +504,12 @@ impl State {
             let (Some(id), Some(power), Some(fps)) = (fields.next(), fields.next(), fields.next()) else {
                 continue;
             };
-            let settings = GameSettings {
-                power: Power::from_label(power).unwrap_or_default(),
-                fps_cap: fps.parse().unwrap_or(0),
-            };
-            self.settings.insert(id.into(), settings);
+            let o = Overrides { power: Power::from_label(power), fps_cap: fps.parse().ok() };
+            if id == "*" {
+                self.global = o.over(GameSettings::default());
+            } else if !o.is_empty() {
+                self.overrides.insert(id.into(), o);
+            }
         }
     }
 
@@ -557,14 +613,12 @@ impl State {
                     }
                     lib.rebuild_derived();
                 });
-                self.check_context();
                 (Dirty::BOTH, vec![Effect::GameEnded])
             }
             Event::LaunchFailed(game) => {
                 if self.running.as_ref() == Some(&game) {
                     self.running = None;
                 }
-                self.check_context();
                 (Dirty::BOTH, vec![Effect::GameEnded])
             }
             Event::Down(id) => {
@@ -614,21 +668,8 @@ impl State {
                 (Dirty::BOTH, vec![])
             }
             Id::Mode(mode) => {
-                // Settings needs a game; tapping it again goes back to the mode before it.
                 let before = self.mode;
-                if mode == Mode::Settings && self.context().is_none() {
-                    return (Dirty::NONE, vec![]);
-                }
-                if mode == self.mode {
-                    if mode == Mode::Settings {
-                        self.mode = self.previous;
-                    }
-                } else {
-                    if self.mode != Mode::Settings {
-                        self.previous = self.mode;
-                    }
-                    self.mode = mode;
-                }
+                self.mode = mode;
                 self.resume_dirty = Some(self.unix_secs);
                 let touchpad = |m: Mode| m == Mode::Touchpad;
                 let effects = if touchpad(before) != touchpad(self.mode) {
@@ -638,8 +679,13 @@ impl State {
                 };
                 (Dirty::BOTH, effects)
             }
-            Id::Power(power) => (Dirty::BOTH, self.change_settings(|s| s.power = power)),
-            Id::FpsCap(cap) => (Dirty::BOTH, self.change_settings(|s| s.fps_cap = cap)),
+            Id::Power(power) => (Dirty::BOTH, self.change_settings(|o| o.power = Some(power))),
+            Id::FpsCap(cap) => (Dirty::BOTH, self.change_settings(|o| o.fps_cap = Some(cap))),
+            Id::Scope(scope) => {
+                self.scope = scope;
+                (Dirty::BOTTOM, vec![])
+            }
+            Id::Reset => (Dirty::BOTH, self.change_settings(|o| *o = Overrides::default())),
             Id::Launch => match self.selected.clone() {
                 Some(game) => (Dirty::BOTH, self.launch_effects(game)),
                 None => (Dirty::BOTH, vec![]),
@@ -697,45 +743,59 @@ mod tests {
     }
 
     #[test]
-    fn settings_are_per_game_and_go_with_the_launch() {
+    fn games_override_the_global_settings() {
         let mut s = state();
+        s.apply(Event::Activate(Id::Scope(Scope::Global)));
+        s.apply(Event::Activate(Id::FpsCap(60)));
+        s.apply(Event::Activate(Id::Scope(Scope::Game)));
         let (_, fx) = s.apply(Event::Activate(Id::Power(Power::Performance)));
-        assert!(matches!(fx.first(), Some(Effect::SaveSettings(text)) if text == "zelda-lttp\tPerformance\t0\n"));
-        s.apply(Event::Activate(Id::FpsCap(40)));
-        s.apply(Event::Activate(Id::Game("ff6".into())));
-        assert_eq!(s.settings_of("zelda-lttp"), GameSettings { power: Power::Performance, fps_cap: 40 });
-        assert_eq!(s.settings_of("ff6"), GameSettings::default());
+        let text = "*\tBalanced\t60\nzelda-lttp\tPerformance\t\n";
+        assert!(matches!(fx.first(), Some(Effect::SaveSettings(t)) if t == text), "{fx:?}");
+        assert_eq!(s.settings_of("zelda-lttp"), GameSettings { power: Power::Performance, fps_cap: 60 });
+        assert_eq!(s.settings_of("ff6"), GameSettings { power: Power::Balanced, fps_cap: 60 });
         let mut fresh = state();
-        fresh.load_settings(&s.settings_text());
-        assert_eq!(fresh.settings_of("zelda-lttp").fps_cap, 40);
+        fresh.load_settings(text);
+        assert_eq!(fresh.settings_of("zelda-lttp"), s.settings_of("zelda-lttp"));
+        assert_eq!(fresh.global, s.global);
+        // Reset drops the game's overrides: back to the global settings.
+        s.apply(Event::Activate(Id::Reset));
+        assert!(s.overrides.is_empty());
+        assert_eq!(s.settings_of("zelda-lttp"), s.global);
     }
 
     #[test]
-    fn a_running_game_takes_its_changes_at_once() {
+    fn the_launch_carries_the_games_settings() {
+        let mut s = state();
+        s.apply(Event::Activate(Id::FpsCap(40)));
+        let (_, fx) = s.apply(Event::Activate(Id::Launch));
+        assert!(matches!(fx.last(), Some(Effect::Launch { settings, .. }) if settings.fps_cap == 40));
+    }
+
+    #[test]
+    fn a_running_game_takes_changes_at_once() {
         let mut s = state();
         s.apply(Event::Started("zelda-lttp".into()));
         s.apply(Event::Activate(Id::Game("ff6".into())));
         // The running game is the context, not the selection.
         let (_, fx) = s.apply(Event::Activate(Id::FpsCap(30)));
         assert_eq!(fx.last(), Some(&Effect::Apply { game: "zelda-lttp".into(), settings: GameSettings { fps_cap: 30, ..GameSettings::default() } }));
+        // A global change reaches it only where it doesn't override.
+        s.apply(Event::Activate(Id::Scope(Scope::Global)));
+        let (_, fx) = s.apply(Event::Activate(Id::FpsCap(90)));
+        assert_eq!(fx.len(), 1, "its own cap stays: nothing to apply");
+        let (_, fx) = s.apply(Event::Activate(Id::Power(Power::Battery)));
+        assert!(matches!(fx.last(), Some(Effect::Apply { settings, .. }) if settings.power == Power::Battery && settings.fps_cap == 30));
         let (_, fx) = s.apply(Event::Played { game: "zelda-lttp".into(), start: 0, duration: 1 });
         assert_eq!(fx, vec![Effect::GameEnded]);
     }
 
     #[test]
-    fn settings_toggles_back_and_needs_a_game() {
-        let mut s = state();
-        assert_eq!(s.mode, Mode::Sysinfo, "the default");
-        s.apply(Event::Activate(Id::Mode(Mode::Keyboard)));
-        s.apply(Event::Activate(Id::Mode(Mode::Settings)));
-        assert_eq!(s.mode, Mode::Settings);
-        s.apply(Event::Activate(Id::Mode(Mode::Settings)));
-        assert_eq!(s.mode, Mode::Keyboard, "back to the mode before");
-        s.apply(Event::Activate(Id::Mode(Mode::Keyboard)));
-        assert_eq!(s.mode, Mode::Keyboard, "other modes stay when tapped again");
+    fn without_a_game_the_panel_edits_the_global_settings() {
         let mut empty = State::new(Library::default());
         empty.apply(Event::Activate(Id::Mode(Mode::Settings)));
-        assert_eq!(empty.mode, Mode::Sysinfo, "no game, no settings");
+        assert_eq!(empty.mode, Mode::Settings, "always available");
+        empty.apply(Event::Activate(Id::FpsCap(40)));
+        assert_eq!(empty.global.fps_cap, 40);
     }
 
     #[test]

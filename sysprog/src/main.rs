@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex, mpsc};
 
 use sysprog_core::keyboard::{self, Key, KeyPos, Modifier};
 use sysprog_core::touch::TouchLayout;
-use sysprog_core::{Effect, Event, Id, Mode, Power, State, Status};
+use sysprog_core::{Effect, Event, Id, Mode, Power, Scope, State, Status};
 use sysprog_policy::{keyboard as virtual_keyboard, pad, touchpad, tuning};
 use sysprog_ui::{Config, Screen};
 
@@ -287,7 +287,13 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
             "settings-running.png",
         ),
         (
-            vec![Event::Played { game: "zelda-lttp".into(), start: now, duration: 60 }, Event::Activate(Id::Power(Power::Battery))],
+            vec![Event::Activate(Id::Scope(Scope::Global)), Event::Activate(Id::Power(Power::Battery))],
+            Screen::Bottom,
+            bottom,
+            "settings-global.png",
+        ),
+        (
+            vec![Event::Played { game: "zelda-lttp".into(), start: now, duration: 60 }, Event::Activate(Id::Scope(Scope::Game))],
             Screen::Bottom,
             bottom,
             "settings.png",
