@@ -245,6 +245,11 @@ fn keyboard(c: &mut Canvas, s: &State, body: Rect, targets: &mut Vec<Target>) {
     }
 }
 
+/// How far the small labels sit above and below the key's centre, as a share of the key's height (a
+/// little more below, clear of descenders like y, p and j).
+const ABOVE: f32 = 0.26;
+const BELOW: f32 = 0.31;
+
 /// Where a key label goes: big in the middle, or small above it (the Shift layer) or below it (Fn), all
 /// centred, so each key reads as one column even without lines between keys.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -312,10 +317,11 @@ fn draw_key(c: &mut Canvas, kb: &Keyboard, slot: &Slot, r: Rect, pressed: bool) 
 /// A key's label at `place`; `(key, shifted)`.
 fn key_label(c: &mut Canvas, (key, shifted): (Key, bool), r: Rect, size: f32, color: u32, place: Place) {
     let pad = r.h * 0.08;
+    let cy = r.y + r.h / 2.0;
     let icon_box = |h: f32| match place {
         Place::Center => Rect::new(r.x, r.y + (r.h - h) / 2.0, r.w, h),
-        Place::Top => Rect::new(r.x + (r.w - h) / 2.0, r.y + pad, h, h),
-        Place::Bottom => Rect::new(r.x + (r.w - h) / 2.0, r.y + r.h - h - pad, h, h),
+        Place::Top => Rect::new(r.x + (r.w - h) / 2.0, cy - ABOVE * r.h - h / 2.0, h, h),
+        Place::Bottom => Rect::new(r.x + (r.w - h) / 2.0, cy + BELOW * r.h - h / 2.0, h, h),
     };
     let text = |c: &mut Canvas, size: f32, t: &str| {
         // Shrink labels that don't fit the key (PgUp, Home on narrow keys).
@@ -326,10 +332,10 @@ fn key_label(c: &mut Canvas, (key, shifted): (Key, bool), r: Rect, size: f32, co
         match place {
             Place::Center => label(c, r, size, color, t),
             Place::Top => {
-                c.text(r.x + (r.w - w) / 2.0, r.y + pad * 0.5, size, rgb(color), t);
+                c.text(r.x + (r.w - w) / 2.0, cy - ABOVE * r.h - size * 0.6, size, rgb(color), t);
             }
             Place::Bottom => {
-                c.text(r.x + (r.w - w) / 2.0, r.y + r.h - size * 1.3 - pad * 0.5, size, rgb(color), t);
+                c.text(r.x + (r.w - w) / 2.0, cy + BELOW * r.h - size * 0.6, size, rgb(color), t);
             }
         }
     };
