@@ -1,0 +1,11 @@
+[package]
+name = "sysprog-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+sysprog-library.workspace = true
+
+[lints]
+workspace = true

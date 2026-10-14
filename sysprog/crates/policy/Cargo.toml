@@ -1,0 +1,12 @@
+[package]
+name = "sysprog-policy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+sysprog-core.workspace = true
+log.workspace = true
+
+[lints]
+workspace = true
