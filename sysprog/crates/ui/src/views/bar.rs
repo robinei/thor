@@ -1,4 +1,5 @@
-//! The bar along the top of the second screen: compact mode icons on the left (the active one lit), the
+//! The bar along the top of the second screen: the override modes' icons on the left (the active one lit;
+//! none lit is follow mode, which has no icon), the
 //! status on the right (Wi-Fi, volume, battery as icons that carry their level, then the clock). The
 //! middle stays free for notices.
 
@@ -22,13 +23,13 @@ const STATUS_SLOT: f32 = 1.35;
 /// Battery at or below this (and not charging) shows in the accent colour.
 const LOW_BATTERY: u8 = 15;
 
-fn mode_icon(mode: Mode) -> Icon {
+fn mode_icon(mode: Mode) -> Option<Icon> {
     match mode {
-        Mode::Follow => Icon::Gamepad,
-        Mode::Launcher => Icon::Apps,
-        Mode::Keyboard => Icon::Keyboard,
-        Mode::Touchpad => Icon::Touchpad,
-        Mode::Sysinfo => Icon::Sysinfo,
+        Mode::Follow => None,
+        Mode::Launcher => Some(Icon::Apps),
+        Mode::Keyboard => Some(Icon::Keyboard),
+        Mode::Touchpad => Some(Icon::Touchpad),
+        Mode::Sysinfo => Some(Icon::Sysinfo),
     }
 }
 
@@ -64,12 +65,15 @@ pub(super) fn draw(f: &mut Frame, w: f32, h: f32, scratch: &mut Scratch) -> f32 
     let side = bar_h * ICON;
     let slot = bar_h * MODE_SLOT;
     let look = Look { radius: 8.0, fill: None, inset: 2.0, ring_inset: 0.0 };
-    for (i, mode) in Mode::ALL.into_iter().enumerate() {
+    for (i, mode) in Mode::OVERRIDES.into_iter().enumerate() {
+        let Some(icon) = mode_icon(mode) else {
+            continue;
+        };
         let r = Rect::new(i as f32 * slot, 0.0, slot, bar_h);
         let color = if f.s.mode == mode { ACCENT } else { DIM };
         f.button(Id::Mode(mode), r, look, |c| {
             let (cx, cy) = r.center();
-            c.icon(mode_icon(mode), Rect::new(cx - side / 2.0, cy - side / 2.0, side, side), rgb(color));
+            c.icon(icon, Rect::new(cx - side / 2.0, cy - side / 2.0, side, side), rgb(color));
         });
     }
 

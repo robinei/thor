@@ -6,7 +6,6 @@ use crate::draw::{Canvas, Rect};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Icon {
-    Gamepad,
     Apps,
     Keyboard,
     Touchpad,
@@ -48,13 +47,6 @@ pub fn draw(c: &mut Canvas, icon: Icon, r: Rect, color: Color) {
         points
     };
     match icon {
-        Icon::Gamepad => {
-            c.outline(rr(2.0, 7.0, 20.0, 11.0), 5.0 * u, line, color);
-            c.polyline(&[p(5.5, 12.5), p(10.5, 12.5)], line, color, false);
-            c.polyline(&[p(8.0, 10.0), p(8.0, 15.0)], line, color, false);
-            c.circle(x0 + 15.5 * u, y0 + 11.5 * u, 1.2 * u, color);
-            c.circle(x0 + 18.0 * u, y0 + 14.0 * u, 1.2 * u, color);
-        }
         Icon::Apps => {
             for (x, y) in [(4.0, 4.0), (13.0, 4.0), (4.0, 13.0), (13.0, 13.0)] {
                 c.outline(rr(x, y, 7.0, 7.0), 1.5 * u, line, color);

@@ -11,7 +11,9 @@ use keyboard::{Key, KeyPos, Keyboard, Stroke};
 
 pub use sysprog_library::Game;
 
-/// Second-screen modes (docs/plans.md, "Second screen"). Follow shows the current game's settings.
+/// Second-screen modes (docs/plans.md, "Second screen"). Follow is the default: the second screen shows
+/// what belongs to the main screen (the selected or running game's settings). The others override it
+/// until dismissed; tapping the active override's icon returns to follow.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Mode {
     #[default]
@@ -23,17 +25,8 @@ pub enum Mode {
 }
 
 impl Mode {
-    pub const ALL: [Mode; 5] = [Mode::Follow, Mode::Launcher, Mode::Keyboard, Mode::Touchpad, Mode::Sysinfo];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Mode::Follow => "Game",
-            Mode::Launcher => "Apps",
-            Mode::Keyboard => "Keys",
-            Mode::Touchpad => "Pad",
-            Mode::Sysinfo => "Info",
-        }
-    }
+    /// The modes the bar offers; follow has no icon (it is what's left when none is on).
+    pub const OVERRIDES: [Mode; 4] = [Mode::Launcher, Mode::Keyboard, Mode::Touchpad, Mode::Sysinfo];
 }
 
 /// Power profile per game; a stand-in for the real per-game settings.
