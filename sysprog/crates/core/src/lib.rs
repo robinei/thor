@@ -10,6 +10,8 @@ mod panel;
 mod resume;
 pub mod settings;
 mod shelf;
+mod tasks;
+pub mod windows;
 pub mod touch;
 
 use std::sync::Arc;
@@ -108,6 +110,8 @@ pub enum Id {
     Wake,
     /// A launcher app, by position.
     App(u16),
+    /// The launcher's first tile: the running game (or a placeholder when none runs).
+    GameTile,
     /// The settings panel's scope tabs.
     Scope(Scope),
     /// Drops the game in context's overrides.
@@ -167,6 +171,8 @@ pub enum Event {
     LaunchFailed(Arc<str>),
     /// A launcher app (by position) exited, or couldn't be started.
     AppEnded(u16),
+    /// The compositor's windows, after any change.
+    Windows(Vec<windows::Window>),
     Quit,
 }
 
@@ -198,8 +204,13 @@ pub enum Effect {
     /// The pad mouse turned on or off: the input side grabs the controller and drives a virtual mouse
     /// with it, or releases it to games.
     PadMouse(bool),
-    /// Start a launcher app's command (by position, to report its end).
-    RunApp { app: u16, command: Vec<String> },
+    /// Start a launcher app's command (by position, to report its end) in a scope named after its key
+    /// (`sysprog-app-<key>-…`), so its windows are known to be its.
+    RunApp { app: u16, key: String, command: Vec<String> },
+    /// Bring this window to the front.
+    FocusWindow(i64),
+    /// Quit the game: close its windows, then end its scopes (ours only) if it doesn't go.
+    QuitGame { windows: Vec<i64>, units: Vec<String> },
     /// Bring shelf's window to the front.
     ShowShelf,
     Quit,
@@ -246,6 +257,9 @@ pub struct State {
     pub apps: Vec<apps::App>,
     pub apps_error: Option<String>,
     pub apps_running: Vec<u16>,
+    /// The compositor's windows, and their ids by when they were last in front (most recent first).
+    pub windows: Vec<windows::Window>,
+    recent: Vec<i64>,
     /// The pad mouse was turned on by a launch (Setting::PadMouse), to turn off when the game ends.
     pad_mouse_by_launch: bool,
     /// What the settings panel edits (global whenever there is no game in context).
@@ -282,7 +296,7 @@ pub enum Hold {
 fn screen_of(id: &Id) -> Dirty {
     match id {
         Id::Game(_) | Id::Tab(_) => Dirty::BOTH,
-        Id::Mode(_) | Id::Tile(_) | Id::Env | Id::EnvSave | Id::EnvCancel | Id::Wake | Id::App(_) | Id::Scope(_) | Id::Reset | Id::Launch | Id::Key(_) | Id::PadMouse => Dirty::BOTTOM,
+        Id::Mode(_) | Id::Tile(_) | Id::Env | Id::EnvSave | Id::EnvCancel | Id::Wake | Id::App(_) | Id::GameTile | Id::Scope(_) | Id::Reset | Id::Launch | Id::Key(_) | Id::PadMouse => Dirty::BOTTOM,
     }
 }
 
@@ -412,6 +426,10 @@ impl State {
                 });
                 (Dirty::BOTH, self.game_ended())
             }
+            Event::Windows(windows) => {
+                self.set_windows(windows);
+                (Dirty::BOTTOM, vec![])
+            }
             Event::AppEnded(app) => {
                 if let Some(n) = self.apps_running.get_mut(usize::from(app)) {
                     *n = n.saturating_sub(1);
@@ -508,21 +526,8 @@ impl State {
                 Some(game) => (Dirty::BOTH, self.launch_effects(game)),
                 None => (Dirty::BOTH, vec![]),
             },
-            Id::App(i) => {
-                let Some(app) = self.apps.get(usize::from(i)) else {
-                    return (Dirty::NONE, vec![]);
-                };
-                let effect = match app.builtin {
-                    Some(apps::Builtin::Shelf) => Effect::ShowShelf,
-                    None => {
-                        if let Some(n) = self.apps_running.get_mut(usize::from(i)) {
-                            *n += 1;
-                        }
-                        Effect::RunApp { app: i, command: app.command.clone() }
-                    }
-                };
-                (Dirty::BOTTOM, vec![effect])
-            }
+            Id::App(i) => (Dirty::BOTTOM, self.tap_app(usize::from(i), long)),
+            Id::GameTile => (Dirty::BOTTOM, self.tap_game(long)),
             Id::PadMouse => {
                 self.pad_mouse = !self.pad_mouse;
                 (Dirty::BOTTOM, vec![Effect::PadMouse(self.pad_mouse)])
@@ -669,20 +674,6 @@ mod tests {
         let g = s.library.games.iter().find(|g| g.id == first).unwrap();
         assert_eq!((g.plays.count, g.plays.seconds), (1, 600));
         assert!(s.library.collections.iter().any(|c| c.name == "Recent"));
-    }
-
-    #[test]
-    fn launcher_apps_run_and_end() {
-        let mut s = state();
-        let (_, fx) = s.apply(Event::Activate(Id::App(0)));
-        assert_eq!(fx, vec![Effect::ShowShelf], "shelf is built in");
-        let (_, fx) = s.apply(Event::Activate(Id::App(2)));
-        assert_eq!(fx, vec![Effect::RunApp { app: 2, command: vec!["foot".into()] }]);
-        s.apply(Event::Activate(Id::App(2)));
-        assert_eq!(s.apps_running, vec![0, 0, 2], "two terminals");
-        s.apply(Event::AppEnded(2));
-        assert_eq!(s.apps_running, vec![0, 0, 1]);
-        assert_eq!(s.apply(Event::Activate(Id::App(9))).1, vec![], "no such app");
     }
 
     #[test]

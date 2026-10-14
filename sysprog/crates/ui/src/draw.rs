@@ -323,6 +323,17 @@ impl<'a> Canvas<'a> {
 
     /// Draws `image` (already at its pixel size) with its top left at (x, y), blending its alpha.
     pub fn image(&mut self, image: &Pixmap, x: f32, y: f32) {
+        self.blit(image, x, y, None);
+    }
+
+    /// Draws `image` in grey at `level` (0..1) of its brightness: an idle app's icon.
+    pub fn image_grey(&mut self, image: &Pixmap, x: f32, y: f32, level: f32) {
+        self.blit(image, x, y, Some((level.clamp(0.0, 1.0) * 256.0) as u32));
+    }
+
+    /// Blends `image` (premultiplied) with its top left at (x, y); `grey`: as luminance scaled by this
+    /// (of 256).
+    fn blit(&mut self, image: &Pixmap, x: f32, y: f32, grey: Option<u32>) {
         let (x0, y0) = (self.px(x).round() as i32, self.py(y).round() as i32);
         let (pw, ph) = (self.pixmap.width() as i32, self.pixmap.height() as i32);
         let iw = image.width() as usize;
@@ -339,10 +350,15 @@ impl<'a> Canvas<'a> {
                 }
                 let i = ((y * pw + x) * 4) as usize;
                 if let (Some(dst), [r, g, b, a]) = (data.get_mut(i..i + 4), src) {
-                    if *a == 255 {
+                    let mut px = [*r, *g, *b, *a].map(u32::from);
+                    if let Some(level) = grey {
+                        let luma = (px[0] * 54 + px[1] * 183 + px[2] * 19) / 256 * level / 256;
+                        px = [luma, luma, luma, px[3]];
+                    }
+                    if *a == 255 && grey.is_none() {
                         dst.copy_from_slice(src);
                     } else if *a > 0 {
-                        blend(dst, [*r, *g, *b, *a].map(u32::from), 255);
+                        blend(dst, px, 255);
                     }
                 }
             }

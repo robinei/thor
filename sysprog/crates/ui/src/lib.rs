@@ -107,7 +107,7 @@ pub fn run(
         .insert_source(image_results, |event, _, app: &mut App| {
             if let channel::Event::Msg((key, pixmap)) = event {
                 app.images.arrived(key, pixmap);
-                app.mark(Dirty { top: true, bottom: false });
+                app.mark(Dirty::BOTH);
             }
         })
         .map_err(|e| e.error)?;
@@ -192,7 +192,7 @@ pub fn snapshot(state: &State, screen: Screen, size: (u32, u32), scale: u32, pat
             rows = Some(views::top(&mut canvas, state, w, h, &mut images::Images::synchronous(), &mut Scratch::default(), &mut targets));
         }
         Screen::Bottom => {
-            views::bottom(&mut canvas, state, w, h, &mut Scratch::default(), &mut targets);
+            views::bottom(&mut canvas, state, w, h, &mut images::Images::synchronous(), &mut Scratch::default(), &mut targets);
         }
     }
     pixmap.save_png(path)?;

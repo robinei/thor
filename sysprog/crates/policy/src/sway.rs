@@ -1,0 +1,197 @@
+//! sway's windows, through its IPC socket (`SWAYSOCK`; the i3 protocol: "i3-ipc", length, type, JSON):
+//! the window list after every window event, with the systemd unit of each window's process (so we know
+//! which are a game's or an app's we started), and focusing or closing a window. Without sway there is
+//! no window list (other compositors offer no common way).
+
+use std::io::{self, Read, Write};
+use std::os::unix::net::UnixStream;
+use std::path::{Path, PathBuf};
+use std::sync::mpsc::Receiver;
+use std::thread;
+use std::time::Duration;
+
+use serde_json::Value;
+use sysprog_core::Event;
+use sysprog_core::windows::Window;
+
+use crate::Sink;
+
+const MAGIC: &[u8; 6] = b"i3-ipc";
+const RUN_COMMAND: u32 = 0;
+const SUBSCRIBE: u32 = 2;
+const GET_TREE: u32 = 4;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Command {
+    Focus(i64),
+    Close(i64),
+}
+
+fn send(stream: &mut UnixStream, kind: u32, payload: &str) -> io::Result<()> {
+    let len = u32::try_from(payload.len()).map_err(io::Error::other)?;
+    let mut message = Vec::with_capacity(14 + payload.len());
+    message.extend_from_slice(MAGIC);
+    message.extend_from_slice(&len.to_le_bytes());
+    message.extend_from_slice(&kind.to_le_bytes());
+    message.extend_from_slice(payload.as_bytes());
+    stream.write_all(&message)
+}
+
+/// One message: its type (events have the high bit set) and payload.
+fn receive(stream: &mut UnixStream) -> io::Result<(u32, Vec<u8>)> {
+    let mut header = [0u8; 14];
+    stream.read_exact(&mut header)?;
+    let field = |at: usize| header.get(at..at + 4).and_then(|b| b.try_into().ok()).map(u32::from_le_bytes);
+    let (Some(len), Some(kind)) = (field(6), field(10)) else {
+        return Err(io::Error::other("short header"));
+    };
+    if header.get(..6) != Some(MAGIC.as_slice()) {
+        return Err(io::Error::other("not an i3-ipc message"));
+    }
+    let mut payload = vec![0; len as usize];
+    stream.read_exact(&mut payload)?;
+    Ok((kind, payload))
+}
+
+/// A request and its reply.
+fn ask(stream: &mut UnixStream, kind: u32, payload: &str) -> io::Result<Vec<u8>> {
+    send(stream, kind, payload)?;
+    loop {
+        let (reply, body) = receive(stream)?;
+        if reply == kind {
+            return Ok(body);
+        }
+    }
+}
+
+/// The windows in a tree (`get_tree`'s JSON): leaf containers with a process. `unit` reads a pid's
+/// systemd unit.
+pub fn windows(tree: &Value, unit: &impl Fn(u32) -> Option<String>) -> Vec<Window> {
+    let mut out = Vec::new();
+    collect(tree, unit, &mut out);
+    out
+}
+
+fn collect(node: &Value, unit: &impl Fn(u32) -> Option<String>, out: &mut Vec<Window>) {
+    let pid = node.get("pid").and_then(Value::as_u64).and_then(|p| u32::try_from(p).ok());
+    let kind = node.get("type").and_then(Value::as_str);
+    if let (Some(pid), Some("con" | "floating_con")) = (pid, kind) {
+        // Wayland windows have an app id; X11 ones a class.
+        let app_id = node
+            .get("app_id")
+            .and_then(Value::as_str)
+            .or_else(|| node.pointer("/window_properties/class").and_then(Value::as_str))
+            .unwrap_or("");
+        out.push(Window {
+            id: node.get("id").and_then(Value::as_i64).unwrap_or(0),
+            app_id: app_id.to_owned(),
+            title: node.get("name").and_then(Value::as_str).unwrap_or("").to_owned(),
+            focused: node.get("focused").and_then(Value::as_bool).unwrap_or(false),
+            unit: unit(pid),
+        });
+    }
+    for key in ["nodes", "floating_nodes"] {
+        for child in node.get(key).and_then(Value::as_array).into_iter().flatten() {
+            collect(child, unit, out);
+        }
+    }
+}
+
+/// The systemd unit a process runs in: the last part of its cgroup path (`….scope`, `….service`).
+pub fn unit_of(pid: u32) -> Option<String> {
+    let cgroup = std::fs::read_to_string(format!("/proc/{pid}/cgroup")).ok()?;
+    let path = cgroup.lines().find_map(|l| l.strip_prefix("0::"))?;
+    let last = path.rsplit('/').next()?;
+    (last.ends_with(".scope") || last.ends_with(".service")).then(|| last.to_owned())
+}
+
+fn socket() -> Option<PathBuf> {
+    std::env::var_os("SWAYSOCK").map(PathBuf::from)
+}
+
+/// Follows sway's windows (sending [`Event::Windows`] after each change) and carries out commands;
+/// reconnects if sway goes away. Does nothing without sway.
+pub fn spawn(sink: impl Sink, commands: Receiver<Command>) -> io::Result<()> {
+    let Some(path) = socket() else {
+        log::info!("windows: not on sway, no window list");
+        return Ok(());
+    };
+    let commands_path = path.clone();
+    thread::Builder::new().name("sway commands".into()).spawn(move || {
+        for command in commands {
+            let text = match command {
+                Command::Focus(id) => format!("[con_id={id}] focus"),
+                Command::Close(id) => format!("[con_id={id}] kill"),
+            };
+            let result = UnixStream::connect(&commands_path).and_then(|mut s| ask(&mut s, RUN_COMMAND, &text));
+            if let Err(e) = result {
+                log::warn!("sway: {text}: {e}");
+            }
+        }
+    })?;
+    thread::Builder::new().name("sway windows".into()).spawn(move || {
+        loop {
+            match follow(&path, &sink) {
+                Ok(()) => return,
+                Err(e) => log::warn!("sway: {e}; trying again"),
+            }
+            thread::sleep(Duration::from_secs(2));
+        }
+    })?;
+    Ok(())
+}
+
+/// Subscribes to window events and sends the window list after each; Ok when the UI is gone.
+fn follow(path: &Path, sink: &impl Sink) -> io::Result<()> {
+    let mut events = UnixStream::connect(path)?;
+    let mut queries = UnixStream::connect(path)?;
+    ask(&mut events, SUBSCRIBE, r#"["window"]"#)?;
+    loop {
+        let tree: Value = serde_json::from_slice(&ask(&mut queries, GET_TREE, "")?).map_err(io::Error::other)?;
+        if !sink.send(Event::Windows(windows(&tree, &unit_of))) {
+            return Ok(());
+        }
+        // Wait for the next window event (and any that came with it).
+        let (kind, _) = receive(&mut events)?;
+        if kind & 0x8000_0000 == 0 {
+            log::debug!("sway: unexpected message {kind}");
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_tree_gives_windows_with_their_units() {
+        let tree: Value = serde_json::from_str(
+            r#"{"type": "root", "nodes": [{"type": "output", "nodes": [{"type": "workspace",
+                "nodes": [{"type": "con", "id": 7, "pid": 100, "app_id": "foot", "name": "~", "focused": true, "nodes": []}],
+                "floating_nodes": [{"type": "floating_con", "id": 9, "pid": 200, "app_id": null,
+                    "window_properties": {"class": "steam_app_620"}, "name": "Portal 2", "focused": false}]}]}]}"#,
+        )
+        .unwrap();
+        let unit = |pid| (pid == 100).then(|| "sysprog-app-terminal-1-0.scope".to_owned());
+        let w = windows(&tree, &unit);
+        assert_eq!(w.len(), 2);
+        assert_eq!((w[0].id, w[0].app_id.as_str(), w[0].focused, w[0].unit.as_deref()), (7, "foot", true, Some("sysprog-app-terminal-1-0.scope")));
+        assert_eq!((w[1].app_id.as_str(), w[1].title.as_str(), w[1].unit.as_deref()), ("steam_app_620", "Portal 2", None));
+    }
+
+    #[test]
+    fn messages_round_trip() {
+        let (mut a, mut b) = UnixStream::pair().unwrap();
+        send(&mut a, GET_TREE, "{}").unwrap();
+        assert_eq!(receive(&mut b).unwrap(), (GET_TREE, b"{}".to_vec()));
+    }
+
+    #[test]
+    fn this_process_has_a_unit() {
+        // Under a desktop session every process is in some scope or service.
+        if std::path::Path::new("/proc/self/cgroup").exists() {
+            assert!(unit_of(std::process::id()).is_some_and(|u| u.ends_with(".scope") || u.ends_with(".service")));
+        }
+    }
+}

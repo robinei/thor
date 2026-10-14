@@ -184,7 +184,7 @@ fn wrap(c: &mut Canvas, (x, y, width): (f32, f32, f32), size: f32, color: u32, t
 }
 
 /// The second screen: the bar, then the current mode below it. Returns the area below the bar.
-pub fn bottom(c: &mut Canvas, s: &State, w: f32, h: f32, scratch: &mut Scratch, targets: &mut Vec<Target>) -> Rect {
+pub fn bottom(c: &mut Canvas, s: &State, w: f32, h: f32, images: &mut Images, scratch: &mut Scratch, targets: &mut Vec<Target>) -> Rect {
     c.fill(Rect::new(0.0, 0.0, w, h), rgb(BG));
     targets.clear();
     let f = &mut Frame { c, s, targets };
@@ -199,7 +199,7 @@ pub fn bottom(c: &mut Canvas, s: &State, w: f32, h: f32, scratch: &mut Scratch, 
     match s.mode {
         Mode::Settings => settings::draw(f, body, &mut scratch.text),
         Mode::Keyboard => keyboard::draw(f, body),
-        Mode::Launcher => launcher::draw(f, body, &mut scratch.text),
+        Mode::Launcher => launcher::draw(f, body, images, &mut scratch.text),
         Mode::Touchpad => touchpad::draw(f, body),
         Mode::Sysinfo => sysinfo::draw(f, body, &mut scratch.lines),
     }

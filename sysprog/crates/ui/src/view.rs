@@ -182,7 +182,7 @@ impl View {
                     images.end_frame();
                 }
                 Screen::Bottom => {
-                    body = Some(views::bottom(&mut canvas, state, w, h, &mut self.scratch, &mut self.targets));
+                    body = Some(views::bottom(&mut canvas, state, w, h, images, &mut self.scratch, &mut self.targets));
                 }
             }
         }

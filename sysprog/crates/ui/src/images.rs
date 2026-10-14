@@ -90,8 +90,12 @@ impl Images {
     }
 }
 
-/// Decodes `path` and scales it to fit within `w`x`h` (keeping its shape), premultiplied RGBA.
+/// Decodes `path` and scales it to fit within `w`x`h` (keeping its shape), premultiplied RGBA. SVG
+/// (app icons) is rendered at that size.
 pub fn load(path: &Path, w: u32, h: u32) -> Option<Pixmap> {
+    if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("svg")) {
+        return load_svg(path, w, h);
+    }
     let image = image::ImageReader::open(path).ok()?.with_guessed_format().ok()?.decode().ok()?;
     let (iw, ih) = (image.width().max(1), image.height().max(1));
     let scale = (w as f32 / iw as f32).min(h as f32 / ih as f32);
@@ -107,6 +111,17 @@ pub fn load(path: &Path, w: u32, h: u32) -> Option<Pixmap> {
         }
     }
     Pixmap::from_vec(data, IntSize::from_wh(tw, th)?)
+}
+
+fn load_svg(path: &Path, w: u32, h: u32) -> Option<Pixmap> {
+    let data = std::fs::read(path).ok()?;
+    let tree = resvg::usvg::Tree::from_data(&data, &resvg::usvg::Options::default()).ok()?;
+    let size = tree.size();
+    let scale = (w as f32 / size.width()).min(h as f32 / size.height());
+    let (tw, th) = (((size.width() * scale).round() as u32).max(1), ((size.height() * scale).round() as u32).max(1));
+    let mut pixmap = Pixmap::new(tw, th)?;
+    resvg::render(&tree, tiny_skia::Transform::from_scale(scale, scale), &mut pixmap.as_mut());
+    Some(pixmap)
 }
 
 /// The decoding thread: requests in, decoded images out through `done`.
@@ -142,6 +157,11 @@ mod tests {
         let px = p.pixel(0, 0).unwrap();
         assert_eq!((px.red(), px.alpha()), (128, 128));
         assert!(load(&dir.join("missing.png"), 10, 10).is_none());
+        let svg = dir.join("icon.svg");
+        std::fs::write(&svg, r##"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="8"><rect width="16" height="8" fill="#00f"/></svg>"##).unwrap();
+        let p = load(&svg, 64, 64).expect("rendered");
+        assert_eq!((p.width(), p.height()), (64, 32));
+        assert_eq!(p.pixel(10, 10).map(|px| (px.blue(), px.alpha())), Some((255, 255)));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

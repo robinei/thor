@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+resvg.workspace = true
 sysprog-core.workspace = true
 smithay-client-toolkit.workspace = true
 jiff.workspace = true

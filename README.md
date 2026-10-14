@@ -50,14 +50,20 @@ desktop with another layout, letters, digits and named keys come out right but p
 layout. To type into other apps on a desktop, run with `SYSPROG_BOTTOM_PANEL=1`: the bottom view is then a
 panel in the bottom right corner that never takes the keyboard focus (as on the device), not a window.
 
-**Launcher** (the grid icon): apps as tiles; a tap starts one, its icon green while it runs (with a count
-when more than one does). They come from `~/.config/sysprog/launcher.json` (read at start), without it
-Shelf, Steam (Big Picture) and a terminal (foot); `sysprog --launcher-example` prints a file to start
-from. Each app has a `name`, an `icon` (`shelf`, `gamepad`, `terminal`, `browser`, `files`, `music`,
-`video`, `settings`; otherwise its initial) and a `command` (program and arguments, no shell) or a
-`builtin` (`shelf`: brings shelf's window to the front, on sway). Apps start from the home directory in
-their own systemd scope, so they outlive a restart of the system program. A broken file shows its error
-under the tiles, and the defaults are used.
+**Launcher** (the grid icon): the running game first (a "No game" placeholder otherwise, so tiles never
+move), then the apps. A tap starts an app, or goes to its most recent window when it runs, or to its next
+window when it already is in front; "1/3" shows which of its windows you are on. A long press quits the
+game (its windows are closed, its scope killed if it hasn't gone 5 s later), or starts another instance
+of an app marked `multiple`. Running apps show their icon in full colour (drawn icons green), idle ones
+grey. Apps come from `~/.config/sysprog/launcher.json` (read at start); without it Shelf, Steam (Big
+Picture) and a terminal (foot); `sysprog --launcher-example` prints a file to start from. An app is a
+`desktop` file (giving name, command, icon and window class) and/or a `name` with a `command` (program and
+arguments, no shell) or a `builtin` (`shelf`: brings shelf's window to the front); `icon` picks a drawn
+icon (`shelf`, `gamepad`, `terminal`, `browser`, `files`, `music`, `video`, `settings`) over the desktop
+file's, and with neither the initial shows; `app_id` names its windows if nothing else does. Apps start
+from the home directory in their own systemd scope (`sysprog-app-<key>-…`, so their windows are known),
+and outlive a restart of the system program. Windows come from sway's IPC (`SWAYSOCK`); other compositors
+have no window list, so there taps only start apps. A broken file shows its error under the tiles.
 
 **Settings** (the sliders icon, first in the bar): a 4×4 grid of tiles, each an icon over its value. A
 tap steps to the next value, a long press goes back to the default. Tiles sit on black; an icon's colour says

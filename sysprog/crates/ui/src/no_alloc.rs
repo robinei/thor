@@ -41,6 +41,10 @@ fn allocs() -> usize {
     ALLOCS.with(Cell::get)
 }
 
+fn window(id: i64, app_id: &str, unit: Option<&str>, focused: bool) -> sysprog_core::windows::Window {
+    sysprog_core::windows::Window { id, app_id: app_id.into(), title: String::new(), focused, unit: unit.map(Into::into) }
+}
+
 fn key(k: Key) -> Event {
     Event::Activate(Id::Key(keyboard::find(k).expect("key on the layout")))
 }
@@ -64,6 +68,17 @@ fn warm_frames_do_not_allocate() {
         ("environment editor", vec![Event::Activate(Id::Env), key(Key::Char('a'))]),
         ("environment saved", vec![key(Key::Char('=')), key(Key::Char('1')), Event::Activate(Id::EnvSave)]),
         ("launcher, an app running", vec![Event::Activate(Id::Mode(Mode::Launcher)), Event::Activate(Id::App(2))]),
+        (
+            "launcher, a game and windows",
+            vec![
+                Event::Started("zelda-lttp".into()),
+                Event::Windows(vec![
+                    window(5, "retroarch", Some("sysprog-game-1-0.scope"), false),
+                    window(7, "foot", Some("sysprog-app-terminal-1-0.scope"), true),
+                    window(8, "foot", None, false),
+                ]),
+            ],
+        ),
         ("keyboard", vec![Event::Activate(Id::Mode(Mode::Keyboard))]),
         ("keyboard, Fn", vec![key(Key::Mod(Modifier::Fn))]),
         ("keyboard, Shift and a pressed key", vec![key(Key::Mod(Modifier::Shift)), key(Key::Char('h'))]),
@@ -88,6 +103,7 @@ fn warm_frames_do_not_allocate() {
                 &state,
                 1240.0,
                 1080.0,
+                &mut images,
                 &mut scratch,
                 &mut targets,
             );

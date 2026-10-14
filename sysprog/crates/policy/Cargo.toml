@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+serde_json.workspace = true
 evdev.workspace = true
 rustix.workspace = true
 sysprog-core.workspace = true

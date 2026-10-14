@@ -8,7 +8,7 @@ use sysprog_core::keyboard::{self, Key, KeyPos, Modifier};
 use sysprog_core::touch::TouchLayout;
 use sysprog_core::settings::{Setting, Settings, Values};
 use sysprog_core::{Effect, Event, Id, Mode, Scope, State, Status};
-use sysprog_policy::{keyboard as virtual_keyboard, pad, touchpad, tuning};
+use sysprog_policy::{keyboard as virtual_keyboard, pad, sway, touchpad, tuning};
 use sysprog_ui::{Config, Screen};
 
 fn main() -> ExitCode {
@@ -122,6 +122,8 @@ fn main() -> ExitCode {
     // Games start from the launcher thread, one at a time, with MangoHud's environment; plays go to
     // stats.db in the state dir.
     let (launch_tx, launch_rx) = mpsc::channel();
+    // sway's windows, for the launcher (focus, close).
+    let (sway_tx, sway_rx) = mpsc::channel();
     let launcher = sysprog_policy::launcher::Config {
         stats_db: state_dir.as_ref().map(|d| d.join("stats.db")),
         env: vec![],
@@ -174,6 +176,10 @@ fn main() -> ExitCode {
             let touched = sender.clone();
             if let Err(e) = touchpad::spawn(touchpad, layout, touchpad_rx, move |event| touched.send(event)) {
                 log::error!("touchpad thread: {e}");
+            }
+            let windows = sender.clone();
+            if let Err(e) = sway::spawn(move |event| windows.send(event), sway_rx) {
+                log::error!("sway thread: {e}");
             }
             // Launcher apps report their end through this.
             let _ = app_events_slot.set(sender.clone());
@@ -244,17 +250,27 @@ fn main() -> ExitCode {
                     log::warn!("favourites: {e}");
                 }
             }
-            Effect::RunApp { app, command } => {
+            Effect::RunApp { app, key, command } => {
                 log::info!("running {command:?}");
                 let events = app_events.get().cloned();
                 let app = *app;
-                sysprog_policy::launcher::run_app(command, scope, move || {
+                sysprog_policy::launcher::run_app(key, command, scope, move || {
                     if let Some(events) = events {
                         events.send(Event::AppEnded(app));
                     }
                 });
             }
             Effect::ShowShelf => show_shelf(),
+            Effect::FocusWindow(id) => {
+                let _ = sway_tx.send(sway::Command::Focus(*id));
+            }
+            Effect::QuitGame { windows, units } => {
+                log::info!("quitting the game");
+                for id in windows {
+                    let _ = sway_tx.send(sway::Command::Close(*id));
+                }
+                end_units_later(units.clone());
+            }
             other => log::info!("effect: {other:?}"),
         },
     );
@@ -274,18 +290,18 @@ type Shot = (Vec<Event>, Screen, (u32, u32), &'static str);
 const LAUNCHER_EXAMPLE: &str = r#"{
   "apps": [
     { "name": "Shelf", "icon": "shelf", "builtin": "shelf" },
-    { "name": "Steam", "icon": "gamepad", "command": ["steam", "-gamepadui"] },
-    { "name": "Terminal", "icon": "terminal", "command": ["foot"] },
-    { "name": "Firefox", "icon": "browser", "command": ["firefox"] },
-    { "name": "Files", "icon": "files", "command": ["thunar"] },
-    { "name": "Music", "icon": "music", "command": ["foot", "ncmpcpp"] },
-    { "name": "Videos", "icon": "video", "command": ["mpv", "--player-operation-mode=pseudo-gui"] },
-    { "name": "Kodi", "command": ["kodi"] }
+    { "desktop": "steam", "command": ["steam", "-gamepadui"] },
+    { "name": "Terminal", "icon": "terminal", "command": ["foot"], "app_id": "foot", "multiple": true },
+    { "desktop": "firefox" },
+    { "name": "Files", "icon": "files", "command": ["thunar"], "app_id": "thunar", "multiple": true },
+    { "name": "Music", "icon": "music", "command": ["foot", "--app-id=music", "ncmpcpp"], "app_id": "music" },
+    { "name": "Kodi", "command": ["kodi"], "app_id": "kodi" }
   ]
 }
 "#;
 
-/// The launcher's apps from their file, or the defaults (with what is wrong with the file, if it is).
+/// The launcher's apps from their file (desktop files read for those that name one), or the defaults;
+/// with what is wrong, if anything (apps whose desktop file is missing are left out).
 fn load_apps() -> (Vec<sysprog_core::apps::App>, Option<String>) {
     let file = std::env::var_os("XDG_CONFIG_HOME")
         .map(std::path::PathBuf::from)
@@ -295,11 +311,49 @@ fn load_apps() -> (Vec<sysprog_core::apps::App>, Option<String>) {
         return (sysprog_core::apps::defaults(), None);
     };
     match sysprog_core::apps::parse(&text) {
-        Ok(apps) => (apps, None),
+        Ok(apps) => resolve_apps(apps),
         Err(e) => {
             log::warn!("launcher.json: {e}");
             (sysprog_core::apps::defaults(), Some(format!("launcher.json: {e}")))
         }
+    }
+}
+
+fn resolve_apps(apps: Vec<sysprog_core::apps::App>) -> (Vec<sysprog_core::apps::App>, Option<String>) {
+    let dirs = sysprog_policy::desktop::data_dirs();
+    let mut error = None;
+    let apps = apps
+        .into_iter()
+        .filter_map(|mut app| match sysprog_policy::desktop::resolve(&mut app, &dirs) {
+            Ok(()) => Some(app),
+            Err(e) => {
+                log::warn!("launcher.json: {e}");
+                error.get_or_insert(format!("launcher.json: {e}"));
+                None
+            }
+        })
+        .collect();
+    (apps, error)
+}
+
+/// After a polite close: kills what is left of these scopes (the game's) if they are still there in a
+/// few seconds.
+fn end_units_later(units: Vec<String>) {
+    if units.is_empty() {
+        return;
+    }
+    let ended = std::thread::Builder::new().name("quit".into()).spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(5));
+        for unit in units {
+            let active = std::process::Command::new("systemctl").args(["--user", "is-active", "--quiet", &unit]).status();
+            if active.is_ok_and(|s| s.success()) {
+                log::info!("{unit} still runs: killing it");
+                let _ = std::process::Command::new("systemctl").args(["--user", "kill", "--signal=SIGKILL", &unit]).status();
+            }
+        }
+    });
+    if let Err(e) = ended {
+        log::warn!("quit: {e}");
     }
 }
 
@@ -356,8 +410,16 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
     };
     let bottom = (1240, 1080);
     if let Ok(apps) = sysprog_core::apps::parse(LAUNCHER_EXAMPLE) {
-        state.set_apps(apps, None);
+        let (apps, error) = resolve_apps(apps);
+        state.set_apps(apps, error);
     }
+    let window = |id: i64, app_id: &str, unit: Option<&str>, focused: bool| sysprog_core::windows::Window {
+        id,
+        app_id: app_id.into(),
+        title: String::new(),
+        focused,
+        unit: unit.map(Into::into),
+    };
     let taps = |setting: Setting, n: usize| (0..n).map(move |_| Event::Activate(Id::Tile(setting)));
     let shots: Vec<Shot> = vec![
         (vec![], Screen::Top, (1920, 1080), "top.png"),
@@ -426,16 +488,24 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
         ),
         (vec![Event::Status(status)], Screen::Bottom, bottom, "bottom.png"),
         (
-            vec![
-                Event::Activate(Id::Mode(Mode::Launcher)),
-                Event::Activate(Id::App(2)),
-                Event::Activate(Id::App(2)),
-                Event::Activate(Id::App(3)),
-                Event::HideFocus,
-            ],
+            vec![Event::Activate(Id::Mode(Mode::Launcher)), Event::HideFocus],
             Screen::Bottom,
             bottom,
             "launcher.png",
+        ),
+        (
+            vec![
+                Event::Started("zelda-lttp".into()),
+                Event::Windows(vec![
+                    window(5, "retroarch", Some("sysprog-game-1-0.scope"), false),
+                    window(7, "foot", Some("sysprog-app-terminal-1-0.scope"), false),
+                    window(8, "foot", None, true),
+                    window(9, "firefox", None, false),
+                ]),
+            ],
+            Screen::Bottom,
+            bottom,
+            "launcher-running.png",
         ),
         (vec![Event::Activate(Id::Mode(Mode::Keyboard))], Screen::Bottom, bottom, "keyboard.png"),
         (vec![key(Key::Mod(Modifier::Fn), false)], Screen::Bottom, bottom, "keyboard-fn.png"),
