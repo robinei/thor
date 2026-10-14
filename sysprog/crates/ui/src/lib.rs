@@ -170,18 +170,29 @@ pub fn run(
     Ok(())
 }
 
-/// OLED burn-in protection: every frame is drawn moved by a few buffer pixels that drift slowly (about
-/// one pixel a minute, along an irregular path within ±ORBIT), so static elements like the bar's icons and
-/// the clock don't sit on the same pixels for hours. Layouts keep visible things at least ORBIT pixels
-/// from the edges; tap areas move with the picture.
-const ORBIT: f32 = 3.0;
+/// OLED burn-in protection: every screen is laid out inside a black margin of MARGIN buffer pixels on
+/// each side, and drawn moved within it by an offset that drifts slowly (about a pixel a minute, along an
+/// irregular path within ±MARGIN), so static elements like the bar's icons and the clock don't sit on the
+/// same pixels for hours, and nothing ever reaches the edge or is cut off. Tap areas move with the
+/// picture.
+const MARGIN: u32 = 4;
 
 fn orbit(unix_secs: u64) -> (i32, i32) {
     let minutes = (unix_secs / 60) as f32;
     let tau = std::f32::consts::TAU;
-    let dx = (ORBIT * (minutes * tau / 17.0).sin()).round() as i32;
-    let dy = (ORBIT * (minutes * tau / 23.0).sin()).round() as i32;
+    let reach = MARGIN as f32;
+    let dx = (reach * (minutes * tau / 17.0).sin()).round() as i32;
+    let dy = (reach * (minutes * tau / 23.0).sin()).round() as i32;
     (dx, dy)
+}
+
+/// The logical size to lay a screen out in (inside the margin), and the buffer-pixel offset to draw it
+/// at for `orbit`.
+fn inset(size_px: (u32, u32), scale: u32, (dx, dy): (i32, i32)) -> ((f32, f32), (i32, i32)) {
+    let scale = scale.max(1) as f32;
+    let w = size_px.0.saturating_sub(2 * MARGIN) as f32 / scale;
+    let h = size_px.1.saturating_sub(2 * MARGIN) as f32 / scale;
+    ((w, h), (MARGIN as i32 + dx, MARGIN as i32 + dy))
 }
 
 /// Renders one screen without Wayland, at `size` logical pixels and integer `scale`, to a PNG file.
@@ -189,8 +200,8 @@ fn orbit(unix_secs: u64) -> (i32, i32) {
 pub fn snapshot(state: &State, screen: Screen, size: (u32, u32), scale: u32, path: &std::path::Path) -> Result<(), Error> {
     let mut pixmap = Pixmap::new(size.0 * scale, size.1 * scale).ok_or("can't allocate the pixmap")?;
     let mut fonts = DrawCache::load();
-    let mut canvas = draw::Canvas::new(&mut pixmap, scale as f32, &mut fonts);
-    let (w, h) = (size.0 as f32, size.1 as f32);
+    let ((w, h), offset) = inset((size.0 * scale, size.1 * scale), scale, (0, 0));
+    let mut canvas = draw::Canvas::new(&mut pixmap, scale as f32, &mut fonts).with_offset(offset);
     let mut targets = Vec::new();
     match screen {
         Screen::Top => views::top(&mut canvas, state, w, h, &mut targets),
@@ -304,10 +315,10 @@ impl View {
         let Some(pixmap) = self.pixmap.as_mut() else {
             return Err(format!("can't allocate a {w}x{h} pixmap").into());
         };
-        let offset = orbit(state.unix_secs);
+        let ((cw, ch), offset) = inset((w, h), scale_u, orbit(state.unix_secs));
         {
             let mut canvas = draw::Canvas::new(pixmap, scale as f32, fonts).with_offset(offset);
-            let (w, h) = (lw as f32, lh as f32);
+            let (w, h) = (cw, ch);
             match self.screen {
                 Screen::Top => views::top(&mut canvas, state, w, h, &mut self.targets),
                 Screen::Bottom => {
@@ -827,11 +838,11 @@ mod no_alloc {
     }
 
     #[test]
-    fn orbit_stays_small_and_moves_slowly() {
+    fn orbit_stays_in_the_margin_and_moves_slowly() {
         let mut last = super::orbit(0);
         for minute in 1..2000u64 {
             let (dx, dy) = super::orbit(minute * 60);
-            assert!(dx.abs() <= 3 && dy.abs() <= 3);
+            assert!(dx.unsigned_abs() <= super::MARGIN && dy.unsigned_abs() <= super::MARGIN);
             assert!((dx - last.0).abs() <= 2 && (dy - last.1).abs() <= 2);
             last = (dx, dy);
         }
