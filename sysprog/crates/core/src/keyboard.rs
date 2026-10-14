@@ -91,7 +91,8 @@ const fn n(k: Named) -> Key {
     Key::Named(k)
 }
 
-/// The layout, 13 units per row. Fn: F1-F12 on the digit row, Delete on Backspace, and a navigation
+/// The layout. Each row fills the width; the letter rows are 12 units (wider keys than the 13-unit digit
+/// row), with Tab and Esc in the bottom row. Fn: F1-F12 on the digit row, Delete on Backspace, and a navigation
 /// cluster under the right hand (arrows on i/j/k/l, Home/End beside Up, PgUp/PgDn on y/h, Insert on p).
 pub const LAYOUT: &[&[Slot]] = &[
     &[
@@ -110,7 +111,6 @@ pub const LAYOUT: &[&[Slot]] = &[
         Slot { base: n(Named::Backspace), fn_key: Some(n(Named::Delete)), width: 1.0 },
     ],
     &[
-        named(Named::Tab, 1.0),
         c('q'),
         c('w'),
         c('e'),
@@ -125,7 +125,6 @@ pub const LAYOUT: &[&[Slot]] = &[
         c(']'),
     ],
     &[
-        named(Named::Esc, 1.0),
         c('a'),
         c('s'),
         c('d'),
@@ -141,7 +140,7 @@ pub const LAYOUT: &[&[Slot]] = &[
     ],
     &[
         // One Shift is enough: it is sticky (tap for one key, hold for Caps Lock).
-        modifier(Modifier::Shift, 3.0),
+        modifier(Modifier::Shift, 2.0),
         c('z'),
         c('x'),
         c('c'),
@@ -155,10 +154,12 @@ pub const LAYOUT: &[&[Slot]] = &[
     ],
     &[
         modifier(Modifier::Fn, 1.5),
+        named(Named::Esc, 1.0),
+        named(Named::Tab, 1.0),
         modifier(Modifier::Ctrl, 1.5),
         modifier(Modifier::Alt, 1.5),
+        Slot { base: Key::Char(' '), fn_key: None, width: 4.5 },
         c('`'),
-        Slot { base: Key::Char(' '), fn_key: None, width: 6.5 },
         c('\\'),
     ],
 ];
@@ -341,10 +342,9 @@ mod tests {
     }
 
     #[test]
-    fn every_row_is_thirteen_units() {
-        for row in LAYOUT {
-            assert_eq!(row.iter().map(|s| s.width).sum::<f32>(), 13.0);
-        }
+    fn letter_rows_are_twelve_units_and_the_others_thirteen() {
+        let units: Vec<f32> = LAYOUT.iter().map(|row| row.iter().map(|s| s.width).sum()).collect();
+        assert_eq!(units, vec![13.0, 12.0, 12.0, 12.0, 13.0]);
     }
 
     #[test]
