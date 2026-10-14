@@ -18,6 +18,7 @@ fn main() -> ExitCode {
         // The Thor's panels at half size: top 1920x1080 (landscape), bottom 1240x1080.
         top_size: (960, 540),
         bottom_size: (620, 540),
+        bottom_panel: std::env::var("SYSPROG_BOTTOM_PANEL").as_deref() == Ok("1"),
         touch_layout: Arc::new(Mutex::new(TouchLayout::default())),
     };
     let touchpad = touchpad::Config {

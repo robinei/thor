@@ -82,6 +82,9 @@ pub struct Config {
     /// Logical sizes when shown as windows (on a desktop).
     pub top_size: (u32, u32),
     pub bottom_size: (u32, u32),
+    /// Without the second screen's output (a desktop): show the bottom view as a panel in a corner
+    /// instead of a window, so tapping its keyboard leaves the keyboard focus on the app being typed into.
+    pub bottom_panel: bool,
     /// Where the touchpad area and the bar's targets are, for the touchpad mode's input side; updated
     /// with every frame of the second screen.
     pub touch_layout: Arc<Mutex<TouchLayout>>,
@@ -149,7 +152,11 @@ pub fn run(
     app.bottom = Some(match (bottom_output, &layer_shell) {
         (Some(output), Some(layer_shell)) => {
             log::info!("bottom view: layer surface on {}", config.bottom_output);
-            View::layer(&compositor, layer_shell, &qh, &output)
+            View::layer(&compositor, layer_shell, &qh, Some(&output), None)
+        }
+        (None, Some(layer_shell)) if config.bottom_panel => {
+            log::info!("bottom view: a panel in the corner (it never takes keyboard focus)");
+            View::layer(&compositor, layer_shell, &qh, None, Some(config.bottom_size))
         }
         _ => {
             log::info!("bottom view: a window (no output {})", config.bottom_output);
@@ -294,12 +301,23 @@ impl View {
         compositor: &CompositorState,
         layer_shell: &LayerShell,
         qh: &QueueHandle<App>,
-        output: &wl_output::WlOutput,
+        output: Option<&wl_output::WlOutput>,
+        corner: Option<(u32, u32)>,
     ) -> Self {
         let surface = compositor.create_surface(qh);
-        let layer = layer_shell.create_layer_surface(qh, surface, Layer::Top, Some("sysprog-bottom"), Some(output));
-        layer.set_anchor(Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT);
-        layer.set_size(0, 0);
+        let layer = layer_shell.create_layer_surface(qh, surface, Layer::Top, Some("sysprog-bottom"), output);
+        match corner {
+            // The whole output (the device's second screen).
+            None => {
+                layer.set_anchor(Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT);
+                layer.set_size(0, 0);
+            }
+            // A panel of this size in the bottom right corner (testing on a desktop).
+            Some((w, h)) => {
+                layer.set_anchor(Anchor::BOTTOM | Anchor::RIGHT);
+                layer.set_size(w, h);
+            }
+        }
         layer.set_exclusive_zone(-1);
         layer.set_keyboard_interactivity(KeyboardInteractivity::None);
         layer.commit();

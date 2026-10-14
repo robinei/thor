@@ -47,7 +47,8 @@ on a desktop with a fake touchscreen (your pointer will move):
 positions. The compositor must use the US layout for it; in sway:
 `input "0:0:sysprog_keyboard" xkb_layout us` (check the identifier with `swaymsg -t get_inputs`). On a
 desktop with another layout, letters, digits and named keys come out right but punctuation follows that
-layout.
+layout. To type into other apps on a desktop, run with `SYSPROG_BOTTOM_PANEL=1`: the bottom view is then a
+panel in the bottom right corner that never takes the keyboard focus (as on the device), not a window.
 
 **The controller** (any Xbox-style pad; `SYSPROG_GAMEPAD`: path or part of its name) is grabbed for good;
 games see a virtual Xbox 360 pad that is always there. The **pad mouse** toggle (mouse icon in the bar)
