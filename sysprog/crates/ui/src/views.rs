@@ -158,7 +158,11 @@ const fn ch(c: char) -> KeySpec {
     (Key::Char(c), 1.0)
 }
 
+const DIGITS: &[KeySpec] = &[ch('1'), ch('2'), ch('3'), ch('4'), ch('5'), ch('6'), ch('7'), ch('8'), ch('9'), ch('0')];
+
+/// The digit row is on both layers, in the same place.
 const LETTERS: &[&[KeySpec]] = &[
+    DIGITS,
     &[ch('q'), ch('w'), ch('e'), ch('r'), ch('t'), ch('y'), ch('u'), ch('i'), ch('o'), ch('p')],
     &[ch('a'), ch('s'), ch('d'), ch('f'), ch('g'), ch('h'), ch('j'), ch('k'), ch('l')],
     &[(Key::Shift, 1.5), ch('z'), ch('x'), ch('c'), ch('v'), ch('b'), ch('n'), ch('m'), (Key::Backspace, 1.5)],
@@ -167,7 +171,7 @@ const LETTERS: &[&[KeySpec]] = &[
 
 /// Digits and all 32 ASCII symbols, with Esc and Tab for terminals.
 const SYMBOLS: &[&[KeySpec]] = &[
-    &[ch('1'), ch('2'), ch('3'), ch('4'), ch('5'), ch('6'), ch('7'), ch('8'), ch('9'), ch('0')],
+    DIGITS,
     &[ch('!'), ch('@'), ch('#'), ch('$'), ch('%'), ch('^'), ch('&'), ch('*'), ch('('), ch(')')],
     &[ch('-'), ch('_'), ch('='), ch('+'), ch('['), ch(']'), ch('{'), ch('}'), ch('\\'), ch('|')],
     &[(Key::Esc, 1.5), ch(';'), ch(':'), ch('\''), ch('"'), ch('`'), ch('~'), ch('<'), ch('>'), (Key::Backspace, 1.5)],
@@ -226,7 +230,7 @@ fn draw_key(c: &mut Canvas, s: &State, key: Key, r: Rect) {
         Key::Enter => icons::draw(c, Icon::Enter, icon, rgb(DIM)),
         Key::Layer => {
             let text = match kb.layer {
-                KeyLayer::Letters => "?123",
+                KeyLayer::Letters => "#+=",
                 KeyLayer::Symbols => "ABC",
             };
             label(c, r, small, DIM, text);
