@@ -51,7 +51,9 @@ layout. To type into other apps on a desktop, run with `SYSPROG_BOTTOM_PANEL=1`:
 panel in the bottom right corner that never takes the keyboard focus (as on the device), not a window.
 
 **Settings** (the sliders icon, first in the bar): a 4×4 grid of tiles, each an icon over its value. A
-tap steps to the next value, a long press goes back to the default. Two tabs: *All games*, the defaults,
+tap steps to the next value, a long press goes back to the default. Tiles sit on black; an icon's colour says
+what its value does: grey stock, green saves power, amber costs power, blue changes how the game looks or
+plays. Two tabs: *All games*, the defaults,
 and the game in context (the running one, else shelf's selection), whose own choices override the
 defaults one by one (a dot on the tile; values taken from the defaults are dimmed); its last tile is
 Reset, where *All games* has the charge limit instead.

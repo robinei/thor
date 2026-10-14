@@ -1,15 +1,17 @@
-//! Settings: a grid of tiles, one per setting, each an icon over its value. A tap steps to the next
-//! value, a long press goes back to the default. Two tabs: All games (the defaults) and the game in
-//! context (the running one, else shelf's selection), whose own choices override the defaults one by
-//! one: those tiles carry a dot, the rest show the default's value dimmed. Changes reach a running game
-//! at once. The environment tile opens an editor over the on-screen keyboard.
+//! Settings: a grid of tiles on black, one per setting, each an icon over its value. A tap steps to the
+//! next value, a long press goes back to the default. The icon's colour says what the value does: grey
+//! the stock value, green saves power, amber costs power, blue changes how the game looks or plays. Two
+//! tabs: All games (the defaults) and the game in context (the running one, else shelf's selection),
+//! whose own choices override the defaults one by one: those tiles carry a dot, the rest show the
+//! default's value dimmed. Changes reach a running game at once. The environment tile opens an editor
+//! over the on-screen keyboard.
 
 use std::fmt::Write;
 
-use sysprog_core::settings::Setting;
+use sysprog_core::settings::{Impact, Setting};
 use sysprog_core::{Id, Scope, State};
 
-use super::{ACCENT, DIM, Frame, Look, PRESSED, SURFACE, SURFACE_HI, TEXT, TEXT_HI, keyboard, label};
+use super::{ACCENT, DIM, FN, Frame, GO, Look, PRESSED, SURFACE, SURFACE_HI, TEXT, TEXT_HI, keyboard, label};
 use crate::draw::{Rect, rgb};
 use crate::icons::Icon;
 
@@ -135,12 +137,13 @@ pub(super) fn draw(f: &mut Frame, body: Rect, buf: &mut String) {
     }
 }
 
-/// How a tile looks: its icon, its value (into `buf`), lit (not at the stock value), its own choice (a
-/// dot, on a game's tab), following the default (dimmed value), and whether it does anything yet.
+/// How a tile looks: its icon, its value (into `buf`), what the value does (the icon's colour), its own
+/// choice (a dot, on a game's tab), following the default (dimmed value), and whether it does anything
+/// yet.
 struct Face {
     id: Id,
     icon: Icon,
-    lit: bool,
+    impact: Impact,
     own: bool,
     inherited: bool,
     active: bool,
@@ -157,7 +160,7 @@ fn face(s: &State, tile: Tile, buf: &mut String) -> Face {
             Face {
                 id: Id::Tile(setting),
                 icon: icon(setting),
-                lit: value != setting.default_value(),
+                impact: setting.impact(value),
                 own,
                 inherited: per_game.is_some() && !own,
                 active: setting.active(),
@@ -177,35 +180,38 @@ fn face(s: &State, tile: Tile, buf: &mut String) -> Face {
                     let _ = write!(buf, "{n} variables");
                 }
             }
-            Face { id: Id::Env, icon: Icon::Env, lit: count > 0, own: game.is_some() && count > 0, inherited: false, active: true }
+            let impact = if count > 0 { Impact::Changes } else { Impact::Stock };
+            Face { id: Id::Env, icon: Icon::Env, impact, own: game.is_some() && count > 0, inherited: false, active: true }
         }
         Tile::Reset => {
             let any = game.is_some_and(|g| !s.overrides_of(g).is_empty() || s.env.contains_key(g));
             buf.clear();
             buf.push_str(if any { "Reset" } else { "Nothing to reset" });
-            Face { id: Id::Reset, icon: Icon::Reset, lit: false, own: false, inherited: false, active: any }
+            Face { id: Id::Reset, icon: Icon::Reset, impact: Impact::Stock, own: false, inherited: false, active: any }
         }
     }
 }
 
 fn draw_tile(f: &mut Frame, r: Rect, tile: Tile, buf: &mut String) {
     let face = face(f.s, tile, buf);
-    let fill = if face.lit { SURFACE_HI } else { SURFACE };
-    let look = Look { radius: 10.0, fill: Some(fill), inset: 0.0, ring_inset: -2.0 };
+    // No background: the grid's alignment is the structure; pressed still lights it.
+    let look = Look { radius: 10.0, fill: None, inset: 0.0, ring_inset: -2.0 };
     let text: &str = buf;
     let later = !face.active && !matches!(tile, Tile::Reset);
     f.button(face.id, r, look, |c| {
-        let icon_color = match (face.active, face.lit) {
+        let icon_color = match (face.active, face.impact) {
             (false, _) => LATER,
-            (true, true) => TEXT_HI,
-            (true, false) => DIM,
+            (true, Impact::Stock) => DIM,
+            (true, Impact::Saves) => GO,
+            (true, Impact::Costs) => ACCENT,
+            (true, Impact::Changes) => FN,
         };
         let size = r.h * ICON;
         c.icon(face.icon, Rect::new(r.x + (r.w - size) / 2.0, r.y + r.h * 0.17, size, size), rgb(icon_color));
         let text_color = if face.active && !face.inherited { TEXT } else { DIM };
         label(c, Rect::new(r.x, r.y + r.h * 0.62, r.w, r.h * VALUE * 1.6), r.h * VALUE, text_color, text);
         if face.own {
-            c.circle(r.x + r.w - r.h * 0.1, r.y + r.h * 0.1, r.h * 0.03, rgb(ACCENT));
+            c.circle(r.x + r.w - r.h * 0.1, r.y + r.h * 0.1, r.h * 0.03, rgb(TEXT));
         }
         if later {
             c.text(r.x + r.h * 0.07, r.y + r.h * 0.05, r.h * 0.09, rgb(DIM), "later");

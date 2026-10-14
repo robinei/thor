@@ -41,6 +41,16 @@ pub enum Setting {
 
 pub const COUNT: usize = 15;
 
+/// What a value does, for the tile's colour: nothing (the stock value), saves power or eases the load,
+/// costs power, or changes how the game looks or plays.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Impact {
+    Stock,
+    Saves,
+    Costs,
+    Changes,
+}
+
 impl Setting {
     pub const ALL: [Setting; COUNT] = [
         Setting::Power,
@@ -116,6 +126,20 @@ impl Setting {
     /// Only for all games (not per game).
     pub fn global_only(self) -> bool {
         self == Setting::ChargeLimit
+    }
+
+    /// What `value` does.
+    pub fn impact(self, value: u16) -> Impact {
+        if value == self.default_value() {
+            return Impact::Stock;
+        }
+        match (self, value) {
+            (Setting::Power, 2) | (Setting::Refresh, 120) | (Setting::Fan, 2) => Impact::Costs,
+            (Setting::CpuMax | Setting::GpuMax, 100) => Impact::Costs,
+            (Setting::Upscale, 3) | (Setting::Fan, _) => Impact::Changes,
+            (Setting::Hud | Setting::PadMouse | Setting::Buttons | Setting::Deadzone | Setting::Rumble, _) => Impact::Changes,
+            _ => Impact::Saves,
+        }
     }
 
     /// The value after `value` (wrapping).
@@ -279,6 +303,20 @@ mod tests {
                 assert!(!buf.is_empty());
             }
         }
+    }
+
+    #[test]
+    fn values_say_what_they_do() {
+        assert_eq!(Setting::Power.impact(1), Impact::Stock);
+        assert_eq!(Setting::Power.impact(0), Impact::Saves);
+        assert_eq!(Setting::Power.impact(2), Impact::Costs);
+        assert_eq!(Setting::FpsCap.impact(40), Impact::Saves);
+        assert_eq!(Setting::BigCores.impact(0), Impact::Saves);
+        assert_eq!(Setting::CpuMax.impact(60), Impact::Saves);
+        assert_eq!(Setting::CpuMax.impact(100), Impact::Costs);
+        assert_eq!(Setting::Buttons.impact(1), Impact::Changes);
+        assert_eq!(Setting::Fan.impact(1), Impact::Changes);
+        assert_eq!(Setting::ChargeLimit.impact(80), Impact::Saves);
     }
 
     #[test]
