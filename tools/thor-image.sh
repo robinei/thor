@@ -21,7 +21,7 @@ USER_NAME=thor
 WORK=/var/tmp/thor-image
 ROOT=$WORK/root
 # The device's packages: the base system, network, the session, the GPU (Freedreno/Turnip), sound.
-PACKAGES=(base sudo mkinitcpio networkmanager polkit upower openssh sway swaybg foot xorg-xwayland mesa vulkan-freedreno
+PACKAGES=(base sudo mkinitcpio networkmanager polkit upower bluez openssh sway swaybg foot xorg-xwayland mesa vulkan-freedreno
           pipewire pipewire-pulse wireplumber alsa-ucm-conf noto-fonts sqlite python less vim)
 # The kernel command line: ROCKNIX's tuning for SM8550, our root.
 CMDLINE="root=LABEL=THOR_ROOT rw rootwait console=tty0 allow_mismatched_32bit_el0 fw_devlink.strict=1 pcie_ports=compat irqaffinity=0-2 cgroup.memory=nokmem,nosocket nosoftlockup usbcore.interrupt_interval_override=045e:028e:2"
@@ -80,7 +80,7 @@ printf '[Service]\nExecStart=\nExecStart=-/sbin/agetty --autologin %s --noclear 
     > "$ROOT/etc/systemd/system/getty@tty1.service.d/autologin.conf"
 echo uinput > "$ROOT/etc/modules-load.d/thor.conf"
 echo 'KERNEL=="uinput", GROUP="input", MODE="0660"' > "$ROOT/etc/udev/rules.d/70-thor.rules"
-arch-chroot "$ROOT" systemctl enable NetworkManager sshd > /dev/null
+arch-chroot "$ROOT" systemctl enable NetworkManager bluetooth sshd > /dev/null
 # The power button and the lid suspend (ClamShell notices waking and applies its settings again); a long
 # press of the power button powers off.
 mkdir -p "$ROOT/etc/systemd/logind.conf.d"

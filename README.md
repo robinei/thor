@@ -86,6 +86,13 @@ straight away, a new one with a password typed on the on-screen keyboard (WPA2/W
 press forgets a saved network. A new connection that fails to join is deleted again, and the reason shows
 ("wrong password?", no address). Enterprise networks (a login) aren't supported.
 
+**Bluetooth** (tap the Bluetooth icon; lit while open, a second tap goes back): through BlueZ on the
+system bus. The devices, the connected and paired ones first, each with its kind's icon (headphones,
+controller, keyboard, mouse, phone), and the radio's switch on top; while open it looks for new devices.
+A tap connects a paired device, pairs a new one (pair, trust, connect: headphones and controllers need no
+code; a pairing agent is registered only for that) or disconnects a connected one; a long press forgets a
+paired one. PipeWire moves the sound to headphones on its own.
+
 **Battery** (tap the battery icon; lit while open, a second tap goes back): the level, charging or
 discharging with the drain and the time left, and the charge limit as a button (full, 90, 80 %, the same
 setting as its tile); the charge over the last day from UPower (charging in green); then what is using the

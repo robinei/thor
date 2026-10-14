@@ -56,6 +56,10 @@ pub enum Icon {
     Brightness,
     /// A network that needs a password.
     Lock,
+    /// Bluetooth's rune; `on`: with the dots beside it (a device connected).
+    Bluetooth { connected: bool },
+    Headphones,
+    Phone,
 }
 
 /// Draws `icon` centred in `r`, as large as fits.
@@ -308,6 +312,22 @@ pub fn draw(c: &mut Canvas, icon: Icon, r: Rect, color: Color) {
             c.polyline(&arc(12.0, 10.0, 4.5, 0.0, 180.0), line, color, false);
             c.polyline(&[p(7.5, 10.0), p(7.5, 11.5)], line, color, false);
             c.polyline(&[p(16.5, 10.0), p(16.5, 11.5)], line, color, false);
+        }
+        Icon::Bluetooth { connected } => {
+            c.polyline(&[p(7.0, 7.5), p(17.0, 16.5), p(12.0, 21.0), p(12.0, 3.0), p(17.0, 7.5), p(7.0, 16.5)], line, color, false);
+            if connected {
+                c.circle(x0 + 3.5 * u, y0 + 12.0 * u, 1.3 * u, color);
+                c.circle(x0 + 20.5 * u, y0 + 12.0 * u, 1.3 * u, color);
+            }
+        }
+        Icon::Headphones => {
+            c.polyline(&arc(12.0, 13.0, 8.5, 0.0, 180.0), line, color, false);
+            c.rounded(rr(2.5, 13.0, 4.5, 8.0), 1.5 * u, color);
+            c.rounded(rr(17.0, 13.0, 4.5, 8.0), 1.5 * u, color);
+        }
+        Icon::Phone => {
+            c.outline(rr(6.5, 2.0, 11.0, 20.0), 2.0 * u, line, color);
+            c.polyline(&[p(10.5, 18.5), p(13.5, 18.5)], line, color, false);
         }
         Icon::Enter => {
             c.polyline(&[p(19.0, 5.0), p(19.0, 14.0), p(5.0, 14.0)], line, color, false);

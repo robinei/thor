@@ -128,7 +128,9 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
 - [ ] GPU: Freedreno (sway) and Turnip (`vkcube`, a game); MangoHud frame rate in sysinfo.
 - [ ] Wi-Fi from the Wi-Fi mode (NetworkManager): scan, join with a password, forget; polkit lets the
       session's user do it (tested in the VM as an autologin session user, not on the device).
-- [ ] Bluetooth; sound through speakers and headphones; volume keys; the volume slider (`wpctl`).
+- [ ] Bluetooth: does the chip work with ROCKNIX's kernel and firmware? Then the Bluetooth mode: pair
+      headphones (sound moves to them) and a controller (no code needed), forget one.
+- [ ] Sound through speakers and headphones; volume keys; the volume slider (`wpctl`).
 - [ ] Brightness: one backlight per panel in `/sys/class/backlight`? Names, ranges, whether logind's
       SetBrightness works on them, and whether the lowest level (raw 1) is still visible.
 - [ ] Home button: which device and key code it sends (BTN_MODE on the gamepad, or KEY_HOMEPAGE on a

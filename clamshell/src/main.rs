@@ -157,6 +157,7 @@ fn main() -> ExitCode {
     }
     let (wifi_tx, wifi_rx) = mpsc::channel();
     let (power_tx, power_rx) = mpsc::channel();
+    let (bluetooth_tx, bluetooth_rx) = mpsc::channel();
     let on_sway = std::env::var_os("SWAYSOCK").is_some();
     let launcher = clamshell_policy::launcher::Config {
         stats_db: state_dir.as_ref().map(|d| d.join("stats.db")),
@@ -224,6 +225,10 @@ fn main() -> ExitCode {
             let power = sender.clone();
             if let Err(e) = clamshell_policy::power::spawn(move |event| power.send(event), power_rx) {
                 log::error!("power thread: {e}");
+            }
+            let bluetooth = sender.clone();
+            if let Err(e) = clamshell_policy::bluetooth::spawn(move |event| bluetooth.send(event), bluetooth_rx) {
+                log::error!("bluetooth thread: {e}");
             }
             let wifi = sender.clone();
             if let Err(e) = clamshell_policy::wifi::spawn(move |event| wifi.send(event), wifi_rx) {
@@ -363,6 +368,12 @@ fn main() -> ExitCode {
                     log::warn!("wifi thread is gone");
                 }
             }
+            Effect::Bluetooth(command) => {
+                log::info!("effect: {effect:?}");
+                if bluetooth_tx.send(command.clone()).is_err() {
+                    log::warn!("bluetooth thread is gone");
+                }
+            }
             Effect::WatchPower(on) => {
                 let _ = power_tx.send(*on);
             }
@@ -390,7 +401,7 @@ type Shot = (Vec<Event>, Screen, (u32, u32), &'static str);
 
 /// A test's command as events: `tap app 1`, `long game`, `tap plus 1`, `tap launch`, `tap network 2`,
 /// `long network 0`, `tap wifi-power`, `tap keep`, `tap close`, `tap game N`, `list N` (shelf's selection),
-/// `mode dock`, `home`, `type text` (on the on-screen keyboard),
+/// `tap device N`, `long device N`, `tap bluetooth-power`, `mode dock`, `home`, `type text` (on the on-screen keyboard),
 /// `slide volume|brightness FROM TO [hold]` (a finger down at FROM on a 620-wide layout, moved to TO,
 /// lifted unless held), `lift volume|brightness`, `pad up|down|left|right|a|b|y|lb|rb|switch` (the pad
 /// while shelf is in front; `a` presses and releases).
@@ -447,6 +458,8 @@ fn control_events(line: &str) -> Option<Vec<Event>> {
         [_, "plus", n] => Id::NewInstance(index(n)?),
         [_, "network", n] => Id::Network(index(n)?),
         [_, "wifi-power"] => Id::WifiPower,
+        [_, "device", n] => Id::Device(index(n)?),
+        [_, "bluetooth-power"] => Id::BluetoothPower,
         [_, "save"] => Id::EditorSave,
         [_, "game"] => Id::GameTile(0),
         [_, "game", n] => Id::GameTile(index(n)?),
@@ -740,6 +753,34 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
             "wifi.png",
         ),
         (battery_demo(now), Screen::Bottom, bottom, "battery.png"),
+        (
+            vec![
+                Event::Activate(Id::Mode(Mode::Bluetooth)),
+                Event::Bluetooth(clamshell_core::bluetooth::Bluetooth {
+                    adapter: true,
+                    powered: true,
+                    devices: [
+                        ("WH-1000XM4", clamshell_core::bluetooth::Kind::Audio, true, true),
+                        ("Xbox Wireless Controller", clamshell_core::bluetooth::Kind::Gamepad, true, false),
+                        ("MX Keys", clamshell_core::bluetooth::Kind::Keyboard, false, false),
+                        ("Pixel 8", clamshell_core::bluetooth::Kind::Phone, false, false),
+                    ]
+                    .map(|(name, kind, paired, connected)| clamshell_core::bluetooth::Device {
+                        address: format!("00:11:22:33:44:{:02X}", name.len()),
+                        name: name.into(),
+                        kind,
+                        paired,
+                        connected,
+                    })
+                    .to_vec(),
+                    busy: None,
+                    error: None,
+                }),
+            ],
+            Screen::Bottom,
+            bottom,
+            "bluetooth.png",
+        ),
         (
             vec![
                 Event::Activate(Id::Mode(Mode::Dock)),

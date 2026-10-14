@@ -4,6 +4,7 @@
 
 pub mod keyboard;
 pub mod apps;
+pub mod bluetooth;
 pub mod controls;
 pub mod editor;
 mod game;
@@ -42,6 +43,7 @@ pub enum Mode {
     #[default]
     Sysinfo,
     Wifi,
+    Bluetooth,
     Battery,
 }
 
@@ -58,13 +60,14 @@ impl Mode {
             Mode::Sysinfo => "sysinfo",
             Mode::Wifi => "wifi",
             Mode::Battery => "battery",
+            Mode::Bluetooth => "bluetooth",
         }
     }
 
     pub fn from_name(name: &str) -> Option<Mode> {
         // ("launcher": the dock's old name, in saved places and scripts.)
         let name = if name == "launcher" { "dock" } else { name };
-        Mode::BAR.into_iter().chain([Mode::Wifi, Mode::Battery]).find(|m| m.name() == name)
+        Mode::BAR.into_iter().chain([Mode::Wifi, Mode::Bluetooth, Mode::Battery]).find(|m| m.name() == name)
     }
 }
 
@@ -179,6 +182,9 @@ pub enum Id {
     /// The Wi-Fi mode's radio switch, and a network by position.
     WifiPower,
     Network(u16),
+    /// The Bluetooth mode's radio switch, and a device by position.
+    BluetoothPower,
+    Device(u16),
 }
 
 /// The system's status as the bar shows it (policy threads read it from the system).
@@ -240,6 +246,8 @@ pub enum Event {
     SlideTo { x: f32 },
     /// Wi-Fi as NetworkManager has it, after any change (while the Wi-Fi mode is open).
     Wifi(wifi::Wifi),
+    /// Bluetooth as BlueZ has it, after any change.
+    Bluetooth(bluetooth::Bluetooth),
     /// The charge history and what is using the machine (every few seconds while the battery mode is open).
     Power(power::Power),
     /// The pad's home button.
@@ -303,6 +311,7 @@ pub enum Effect {
     SetMute(bool),
     SetBrightness(u8),
     Wifi(wifi::Command),
+    Bluetooth(bluetooth::Command),
     /// The battery mode opened (read the charge history and the spenders) or closed.
     WatchPower(bool),
     Quit,
@@ -379,6 +388,7 @@ pub struct State {
     /// Volume or brightness being slid, if any.
     pub slider: Option<Slider>,
     pub wifi: wifi::Wifi,
+    pub bluetooth: bluetooth::Bluetooth,
     pub power: power::Power,
     pub focus: Option<Id>,
     /// The focus ring is shown only while navigating with the pad.
@@ -431,7 +441,9 @@ fn screen_of(id: &Id) -> Dirty {
         | Id::PadMouse
         | Id::Control(_)
         | Id::WifiPower
-        | Id::Network(_) => Dirty::BOTTOM,
+        | Id::Network(_)
+        | Id::BluetoothPower
+        | Id::Device(_) => Dirty::BOTTOM,
     }
 }
 
@@ -635,6 +647,11 @@ impl State {
                 self.set_wifi(wifi);
                 (Dirty::BOTTOM, vec![])
             }
+            Event::Bluetooth(bluetooth) => {
+                let changed = bluetooth != self.bluetooth;
+                self.bluetooth = bluetooth;
+                (if changed { Dirty::BOTTOM } else { Dirty::NONE }, vec![])
+            }
             Event::Power(power) => {
                 self.power = power;
                 (if self.mode == Mode::Battery { Dirty::BOTTOM } else { Dirty::NONE }, vec![])
@@ -719,6 +736,8 @@ impl State {
             Id::Control(_) => (Dirty::NONE, vec![]),
             Id::WifiPower => (Dirty::BOTTOM, vec![Effect::Wifi(wifi::Command::Enable(!self.wifi.enabled))]),
             Id::Network(i) => (Dirty::BOTTOM, self.tap_network(usize::from(i), long)),
+            Id::BluetoothPower => (Dirty::BOTTOM, vec![Effect::Bluetooth(bluetooth::Command::Power(!self.bluetooth.powered))]),
+            Id::Device(i) => (Dirty::BOTTOM, self.tap_device(usize::from(i), long)),
             Id::Key(pos) => {
                 let stroke = self.keyboard.press(pos, long);
                 // Into the environment editor while it is open, else to the focused app.
@@ -750,6 +769,10 @@ impl State {
         let battery = |m: Mode| m == Mode::Battery;
         if battery(before) != battery(self.mode) {
             effects.push(Effect::WatchPower(battery(self.mode)));
+        }
+        let bt = |m: Mode| m == Mode::Bluetooth;
+        if bt(before) != bt(self.mode) {
+            effects.push(Effect::Bluetooth(bluetooth::Command::Watch(bt(self.mode))));
         }
         let wifi = |m: Mode| m == Mode::Wifi;
         if wifi(before) != wifi(self.mode) {

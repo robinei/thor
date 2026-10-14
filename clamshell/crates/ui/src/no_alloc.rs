@@ -126,6 +126,25 @@ fn warm_frames_do_not_allocate() {
                 }),
             ],
         ),
+        (
+            "bluetooth",
+            vec![
+                Event::Activate(Id::Mode(Mode::Bluetooth)),
+                Event::Bluetooth(clamshell_core::bluetooth::Bluetooth {
+                    adapter: true,
+                    powered: true,
+                    devices: vec![clamshell_core::bluetooth::Device {
+                        address: "00:11".into(),
+                        name: "buds".into(),
+                        kind: clamshell_core::bluetooth::Kind::Audio,
+                        paired: true,
+                        connected: true,
+                    }],
+                    busy: Some("00:11".into()),
+                    error: None,
+                }),
+            ],
+        ),
         ("keyboard", vec![Event::Activate(Id::Mode(Mode::Keyboard))]),
         ("keyboard, Fn", vec![key(Key::Mod(Modifier::Fn))]),
         ("keyboard, Shift and a pressed key", vec![key(Key::Mod(Modifier::Shift)), key(Key::Char('h'))]),

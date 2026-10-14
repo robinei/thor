@@ -10,6 +10,7 @@
 
 mod bar;
 mod battery;
+mod bluetooth;
 mod editor;
 mod keyboard;
 mod dock;
@@ -207,6 +208,39 @@ pub fn bottom(c: &mut Canvas, s: &State, w: f32, h: f32, images: &mut Images, sc
         Mode::Sysinfo => sysinfo::draw(f, body, &mut scratch.lines),
         Mode::Wifi => wifi::draw(f, body, &mut scratch.text),
         Mode::Battery => battery::draw(f, body, &mut scratch.text),
+        Mode::Bluetooth => bluetooth::draw(f, body, &mut scratch.text),
     }
     body
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+    use crate::draw::DrawCache;
+    use clamshell_core::{Event, Status};
+    use tiny_skia::Pixmap;
+
+    /// The bar's buttons don't overlap, on the desktop's panel and at the Thor's size.
+    #[test]
+    fn the_bar_fits() {
+        let mut state = State::new(clamshell_library::demo_library());
+        state.apply(Event::Status(Status { battery: Some(50), volume: Some(50), brightness: Some(50), wifi: Some(50), ..Status::default() }));
+        let mut cache = DrawCache::load();
+        for (w, h) in [(620u32, 540u32), (1240, 1080)] {
+            let mut pixmap = Pixmap::new(w, h).expect("pixmap");
+            let mut targets = Vec::new();
+            let mut canvas = Canvas::new(&mut pixmap, 1.0, &mut cache);
+            let body = bottom(&mut canvas, &state, w as f32, h as f32, &mut Images::synchronous(), &mut Scratch::default(), &mut targets);
+            let bar: Vec<&Target> = targets.iter().filter(|t| t.rect.y + t.rect.h <= body.y + 0.5).collect();
+            assert!(bar.len() >= 11, "{w}x{h}: {} bar targets", bar.len());
+            for (i, a) in bar.iter().enumerate() {
+                for b in bar.iter().skip(i + 1) {
+                    let apart = a.rect.x + a.rect.w <= b.rect.x + 0.5 || b.rect.x + b.rect.w <= a.rect.x + 0.5;
+                    assert!(apart, "{w}x{h}: {:?} and {:?} overlap", a.id, b.id);
+                }
+                assert!(a.rect.x >= 0.0 && a.rect.x + a.rect.w <= w as f32, "{w}x{h}: {:?} off the screen", a.id);
+            }
+        }
+    }
 }

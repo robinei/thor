@@ -1,7 +1,7 @@
 //! The bar along the top of the second screen: the modes' icons on the left (the active one lit);
 //! volume and brightness in the middle, where a slider has room on both sides of the finger; on the
-//! right the pad mouse toggle, Wi-Fi and the battery (each opens its mode, lit while open) and the
-//! clock. Status icons carry their level.
+//! right the pad mouse toggle, Bluetooth, Wi-Fi and the battery (each opens its mode, lit while open)
+//! and the clock. Status icons carry their level.
 //!
 //! While a finger is on volume or brightness, a slider is drawn over the bar (the bar stays visible
 //! under it): a track whose current level sits under the finger, and the level as a number beside it.
@@ -19,11 +19,11 @@ use crate::icons::Icon;
 const BAR_H: f32 = 0.075;
 /// Icon and clock text sizes, of the bar's height.
 const ICON: f32 = 0.62;
-const CLOCK_TEXT: f32 = 0.42;
+const CLOCK_TEXT: f32 = 0.34;
 /// Room around the clock text, of the bar's height.
-const CLOCK_PAD: f32 = 0.8;
+const CLOCK_PAD: f32 = 0.5;
 /// A button's tap slot (modes, controls, toggles), of the bar's height.
-const SLOT: f32 = 1.25;
+const SLOT: f32 = 1.15;
 /// Battery at or below this (and not charging) shows in the accent colour.
 const LOW_BATTERY: u8 = 15;
 /// The slider: track and thumb, of the bar's height; the level's text size, of the bar's height, and
@@ -45,6 +45,7 @@ fn mode_icon(mode: Mode) -> Icon {
         Mode::Sysinfo => Icon::Sysinfo,
         Mode::Wifi => Icon::Wifi { bars: Some(3) },
         Mode::Battery => Icon::Battery { tenths: 10, charging: false },
+        Mode::Bluetooth => Icon::Bluetooth { connected: false },
     }
 }
 
@@ -120,6 +121,15 @@ pub(super) fn draw(f: &mut Frame, w: f32, h: f32, scratch: &mut Scratch) -> f32 
         (false, None) => DIM,
     };
     icon_button(f, Id::Mode(Mode::Wifi), Rect::new(x, 0.0, slot, bar_h), Icon::Wifi { bars }, color);
+    x -= slot;
+    let bt = &f.s.bluetooth;
+    let connected = bt.connected() > 0;
+    let color = match (f.s.mode == Mode::Bluetooth, bt.powered, connected) {
+        (true, _, _) => ACCENT,
+        (false, true, true) => TEXT,
+        _ => DIM,
+    };
+    icon_button(f, Id::Mode(Mode::Bluetooth), Rect::new(x, 0.0, slot, bar_h), Icon::Bluetooth { connected }, color);
     x -= slot;
     let color = if f.s.pad_mouse { ACCENT } else { DIM };
     icon_button(f, Id::PadMouse, Rect::new(x, 0.0, slot, bar_h), Icon::Mouse, color);
