@@ -8,11 +8,12 @@
 
 use std::fmt::Write;
 
+use clamshell_core::editor::{Editor, Purpose};
 use clamshell_core::settings::{Impact, Setting};
 use clamshell_core::{Id, Scope, State};
 
-use super::{ACCENT, DIM, FN, Frame, GO, Look, PRESSED, SURFACE, SURFACE_HI, TEXT, TEXT_HI, keyboard, label};
-use crate::draw::{Keep, Rect, rgb};
+use super::{ACCENT, DIM, FN, Frame, GO, Look, TEXT, label};
+use crate::draw::{Rect, rgb};
 use crate::icons::Icon;
 
 /// Padding, of the area's height.
@@ -196,43 +197,17 @@ fn draw_tile(f: &mut Frame, r: Rect, tile: Tile, buf: &mut String) {
     });
 }
 
-/// The environment editor: what it edits, the text so far (its end, if long), Cancel and Save, and the
-/// keyboard below (its keys type here, Enter saves, Esc cancels).
+/// The environment editor: what it edits, then the shared editor (field, Cancel and Save, keyboard).
 fn editor(f: &mut Frame, body: Rect, buf: &mut String) {
     let s = f.s;
-    let Some(editor) = &s.editor else {
+    let Some(Editor { purpose: Purpose::Env { game }, .. }) = &s.editor else {
         return;
     };
-    let pad = body.h * PAD;
-    let x = body.x + pad;
-    let w = body.w - 2.0 * pad;
-    let size = body.h * NOTE;
-    let title = match &editor.game {
+    let title = match game {
         Some(id) => s.library.games.iter().find(|g| &g.id == id).map_or("this game", |g| g.title.as_str()),
         None => "all games",
     };
     buf.clear();
     let _ = write!(buf, "Environment for {title}: KEY=value, space-separated");
-    f.c.text_fit((x, body.y + pad * 0.5, w), size, rgb(DIM), buf, Keep::Start);
-
-    // The field, with a caret after the text (its end, when it is too long); Cancel and Save beside it.
-    let row = Rect::new(x, body.y + pad * 0.5 + size * 1.6, w, body.h * 0.1);
-    let field = Rect::new(row.x, row.y, row.w * 0.7, row.h);
-    f.c.rounded(field, 8.0, rgb(SURFACE_HI));
-    let text_size = field.h * 0.42;
-    let ty = field.y + (field.h - text_size * 1.2) / 2.0;
-    let tx = field.x + pad * 0.6;
-    let tw = f.c.text_fit((tx, ty, field.w - pad * 1.5), text_size, rgb(TEXT_HI), &editor.text, Keep::End);
-    f.c.fill(Rect::new(tx + tw + 2.0, ty, 2.0, text_size * 1.2), rgb(ACCENT));
-
-    let buttons = Rect::new(field.x + field.w + pad * 0.5, row.y, row.w - field.w - pad * 0.5, row.h);
-    let look = Look { radius: 8.0, fill: Some(SURFACE), inset: 0.0, ring_inset: -2.0 };
-    let cancel = buttons.cell(2, 1, pad * 0.5, 0);
-    f.button(Id::EnvCancel, cancel, look, |c| label(c, cancel, cancel.h * 0.36, TEXT, "Cancel"));
-    let save = buttons.cell(2, 1, pad * 0.5, 1);
-    let look = Look { fill: Some(PRESSED), ..look };
-    f.button(Id::EnvSave, save, look, |c| label(c, save, save.h * 0.36, TEXT_HI, "Save"));
-
-    let keys_y = row.y + row.h + pad;
-    keyboard::draw(f, Rect::new(body.x, keys_y, body.w, body.y + body.h - keys_y));
+    super::editor::draw(f, body, buf, "Save");
 }

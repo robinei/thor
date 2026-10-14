@@ -1,7 +1,8 @@
 //! Touchpad mode: the second screen as a laptop touchpad (docs/plans.md, "Second screen").
 //!
 //! While on, the touchscreen is grabbed (sway sees none of its touches). Each finger is decided at
-//! touch-down: one that starts on a region the UI keeps (the bar) is a tap on that target; any other is
+//! touch-down: one that starts on a region the UI keeps (the bar) is a tap on that target (moving, on the
+//! volume or brightness slider); any other is
 //! copied, multitouch events as they come, to a virtual touchpad. sway's libinput then does what it does
 //! for a laptop touchpad: pointer motion with acceleration, tap to click, two-finger scroll, gestures,
 //! palm detection, all configurable with `input` lines. Our part is only this forwarding.
@@ -40,8 +41,10 @@ const SLOTS: usize = 10;
 pub enum Out {
     /// An event for the virtual touchpad (positions already in touchpad coordinates).
     Forward { kind: u16, code: u16, value: i32 },
-    /// A finger went down on (or lifted from) a UI target.
-    Tap { id: Id, down: bool },
+    /// A finger went down on (or lifted from) a UI target, at this horizontal screen position.
+    Tap { id: Id, down: bool, x: f32 },
+    /// A finger on a UI target moved to this horizontal screen position.
+    Move { x: f32 },
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -59,6 +62,7 @@ struct Touch {
     y: i32,
     began: bool,
     ended: bool,
+    moved: bool,
 }
 
 /// The touchscreen's raw coordinate ranges, (min, max) per axis.
@@ -126,7 +130,10 @@ impl Router {
             match code {
                 MT_TRACKING_ID if value >= 0 => *t = Touch { began: true, x: t.x, y: t.y, ..Touch::default() },
                 MT_TRACKING_ID => t.ended = true,
-                MT_X => t.x = value,
+                MT_X => {
+                    t.x = value;
+                    t.moved = true;
+                }
                 MT_Y => t.y = value,
                 _ => {}
             }
@@ -143,7 +150,7 @@ impl Router {
             let (sx, sy) = self.to_screen(t.x, t.y, layout);
             let owner = match layout.region_at(sx, sy) {
                 Some(id) => {
-                    out.push(Out::Tap { id: id.clone(), down: true });
+                    out.push(Out::Tap { id: id.clone(), down: true, x: sx });
                     Owner::Ui(id.clone())
                 }
                 None => Owner::Pad,
@@ -151,6 +158,14 @@ impl Router {
             if let Some(t) = self.touches.get_mut(i) {
                 t.owner = owner;
                 t.began = false;
+                t.moved = false;
+            }
+        }
+        // UI fingers that moved.
+        for t in &mut self.touches {
+            if std::mem::take(&mut t.moved) && matches!(t.owner, Owner::Ui(_)) && !t.ended {
+                let span = |(lo, hi): (i32, i32), v: i32| (v - lo) as f32 / (hi - lo).max(1) as f32;
+                out.push(Out::Move { x: span(self.axes.x, t.x) * layout.screen.0 });
             }
         }
         // Forward the touchpad fingers' events, in touchpad coordinates.
@@ -181,7 +196,7 @@ impl Router {
         for t in &mut self.touches {
             if t.ended {
                 if let Owner::Ui(id) = &t.owner {
-                    out.push(Out::Tap { id: id.clone(), down: false });
+                    out.push(Out::Tap { id: id.clone(), down: false, x: 0.0 });
                 }
                 *t = Touch::default();
             }
@@ -288,16 +303,32 @@ fn run(config: &Config, layout: &Mutex<TouchLayout>, commands: &Receiver<Command
                 Err(e) => return Err(e),
             }
         }
+        // Where the layout is, for positions on the sliders.
+        let geometry = layout.lock().map(|l| TouchLayout { scale: l.scale, origin_x: l.origin_x, width: l.width, ..TouchLayout::default() }).ok();
+        let width = geometry.as_ref().map_or(0.0, |g| g.width);
+        let layout_x = geometry.as_ref().map(|g| |x: f32| g.layout_x(x));
         for o in out.drain(..) {
             match o {
                 Out::Forward { kind, code, value } => batch.push(InputEvent::new(kind, code, value)),
-                Out::Tap { id, down: true } => {
+                Out::Tap { id, down: true, x } => {
                     log::debug!("touchpad mode: tap on {id:?}");
-                    if !(sink.send(Event::HideFocus) && sink.send(Event::Down(id))) {
+                    if !(sink.send(Event::HideFocus) && sink.send(Event::Down(id.clone()))) {
+                        return Ok(());
+                    }
+                    if let (Id::Control(control), Some(at)) = (id, layout_x)
+                        && !sink.send(Event::SlideStart { control, x: at(x), width })
+                    {
                         return Ok(());
                     }
                 }
-                Out::Tap { id, down: false } => {
+                Out::Move { x } => {
+                    if let Some(at) = layout_x
+                        && !sink.send(Event::SlideTo { x: at(x) })
+                    {
+                        return Ok(());
+                    }
+                }
+                Out::Tap { id, down: false, .. } => {
                     if !(sink.send(Event::Activate(id.clone())) && sink.send(Event::Up(id))) {
                         return Ok(());
                     }
@@ -372,6 +403,7 @@ mod tests {
             screen: (1000.0, 800.0),
             pad: (0.0, 100.0, 1000.0, 800.0),
             regions: vec![Region { x0: 0.0, y0: 0.0, x1: 100.0, y1: 100.0, id: Id::Mode(Mode::Touchpad) }],
+            ..TouchLayout::default()
         };
         (Router::new(Axes { x: (0, 1000), y: (0, 1000) }), layout)
     }
@@ -394,11 +426,11 @@ mod tests {
         let (mut r, l) = setup();
         // Raw (50, 50) is screen (50, 40): inside the bar region.
         let down = frame(&mut r, &l, &[(EV_ABS, MT_SLOT, 0), (EV_ABS, MT_TRACKING_ID, 7), (EV_ABS, MT_X, 50), (EV_ABS, MT_Y, 50), (EV_KEY, BTN_TOUCH, 1)]);
-        assert_eq!(down, vec![Out::Tap { id: Id::Mode(Mode::Touchpad), down: true }]);
+        assert_eq!(down, vec![Out::Tap { id: Id::Mode(Mode::Touchpad), down: true, x: 50.0 }]);
         let moved = frame(&mut r, &l, &[(EV_ABS, MT_X, 400)]);
-        assert!(moved.is_empty(), "a finger that started on the bar stays the bar's");
+        assert_eq!(moved, vec![Out::Move { x: 400.0 }], "a finger that started on the bar stays the bar's (a slider's)");
         let up = frame(&mut r, &l, &[(EV_ABS, MT_TRACKING_ID, -1), (EV_KEY, BTN_TOUCH, 0)]);
-        assert_eq!(up, vec![Out::Tap { id: Id::Mode(Mode::Touchpad), down: false }]);
+        assert_eq!(up, vec![Out::Tap { id: Id::Mode(Mode::Touchpad), down: false, x: 0.0 }]);
     }
 
     #[test]
@@ -440,6 +472,6 @@ mod tests {
         let second = frame(&mut r, &l, &[(EV_ABS, MT_SLOT, 1), (EV_ABS, MT_TRACKING_ID, 2), (EV_ABS, MT_X, 600), (EV_ABS, MT_Y, 600)]);
         assert!(second.contains(&fwd(EV_KEY, TOOLS[0], 0)) && second.contains(&fwd(EV_KEY, TOOLS[1], 1)));
         let bar = frame(&mut r, &l, &[(EV_ABS, MT_SLOT, 2), (EV_ABS, MT_TRACKING_ID, 3), (EV_ABS, MT_X, 10), (EV_ABS, MT_Y, 10)]);
-        assert_eq!(bar, vec![Out::Tap { id: Id::Mode(Mode::Touchpad), down: true }]);
+        assert!(matches!(bar.as_slice(), [Out::Tap { id: Id::Mode(Mode::Touchpad), down: true, .. }]), "{bar:?}");
     }
 }

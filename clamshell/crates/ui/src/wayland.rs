@@ -193,11 +193,8 @@ impl PointerHandler for App {
     fn pointer_frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_pointer::WlPointer, events: &[PointerEvent]) {
         for event in events {
             match event.kind {
-                PointerEventKind::Press { .. } => {
-                    if let Some(id) = self.target_at(&event.surface, event.position) {
-                        self.down(Source::Mouse, id);
-                    }
-                }
+                PointerEventKind::Press { .. } => self.press_at(Source::Mouse, &event.surface, event.position),
+                PointerEventKind::Motion { .. } => self.moved(Source::Mouse, event.position),
                 PointerEventKind::Release { .. } => self.up(Source::Mouse, true),
                 // The wheel over the main screen scrolls shelf's list, a game per notch.
                 PointerEventKind::Axis { vertical, .. } => {
@@ -225,16 +222,16 @@ impl TouchHandler for App {
         id: i32,
         position: (f64, f64),
     ) {
-        if let Some(target) = self.target_at(&surface, position) {
-            self.down(Source::Touch(id), target);
-        }
+        self.press_at(Source::Touch(id), &surface, position);
     }
 
     fn up(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, _: u32, _: u32, id: i32) {
         self.up(Source::Touch(id), true);
     }
 
-    fn motion(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, _: u32, _: i32, _: (f64, f64)) {}
+    fn motion(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, _: u32, id: i32, position: (f64, f64)) {
+        self.moved(Source::Touch(id), position);
+    }
 
     fn shape(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, _: i32, _: f64, _: f64) {}
 

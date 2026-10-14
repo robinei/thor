@@ -4,6 +4,7 @@
 
 pub mod keyboard;
 pub mod apps;
+pub mod controls;
 pub mod editor;
 pub mod metrics;
 mod panel;
@@ -13,9 +14,11 @@ mod shelf;
 mod tasks;
 pub mod windows;
 pub mod touch;
+pub mod wifi;
 
 use std::sync::Arc;
 
+use controls::{Control, Slider};
 use keyboard::{Key, KeyPos, Keyboard, Stroke};
 use settings::{Setting, Settings, Values};
 
@@ -24,6 +27,7 @@ pub use editor::{Editor, count_env, parse_env};
 pub use clamshell_library::{Collection, Game, Launch, Library};
 
 /// Second-screen modes (docs/plans.md, "Second screen"), chosen from the bar; the last one chosen stays.
+/// Wi-Fi opens from the bar's Wi-Fi icon, and a second tap there goes back to the mode before.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Mode {
     Settings,
@@ -32,10 +36,11 @@ pub enum Mode {
     Touchpad,
     #[default]
     Sysinfo,
+    Wifi,
 }
 
 impl Mode {
-    /// The modes in the bar, in order.
+    /// The modes with their own icon on the left of the bar, in order.
     pub const BAR: [Mode; 5] = [Mode::Settings, Mode::Launcher, Mode::Keyboard, Mode::Touchpad, Mode::Sysinfo];
 
     pub fn name(self) -> &'static str {
@@ -45,11 +50,12 @@ impl Mode {
             Mode::Keyboard => "keyboard",
             Mode::Touchpad => "touchpad",
             Mode::Sysinfo => "sysinfo",
+            Mode::Wifi => "wifi",
         }
     }
 
     pub fn from_name(name: &str) -> Option<Mode> {
-        Mode::BAR.into_iter().find(|m| m.name() == name)
+        Mode::BAR.into_iter().chain([Mode::Wifi]).find(|m| m.name() == name)
     }
 }
 
@@ -104,8 +110,8 @@ pub enum Id {
     Tile(Setting),
     /// The environment variables tile, and the editor's buttons.
     Env,
-    EnvSave,
-    EnvCancel,
+    EditorSave,
+    EditorCancel,
     /// The dark second screen (while a game runs): a tap anywhere lights it.
     Wake,
     /// A launcher app, by position.
@@ -122,6 +128,11 @@ pub enum Id {
     Key(KeyPos),
     /// The pad mouse toggle.
     PadMouse,
+    /// Volume or brightness in the bar: a touch brings up its slider.
+    Control(Control),
+    /// The Wi-Fi mode's radio switch, and a network by position.
+    WifiPower,
+    Network(u16),
 }
 
 /// The system's status as the bar shows it (policy threads read it from the system).
@@ -135,6 +146,8 @@ pub struct Status {
     /// Output volume 0-100, if known, and whether it is muted.
     pub volume: Option<u8>,
     pub muted: bool,
+    /// The screens' brightness 0-100, if there is a backlight.
+    pub brightness: Option<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -175,6 +188,16 @@ pub enum Event {
     Windows(Vec<windows::Window>),
     /// Our running scopes (instances and games), by name without `.scope`, after any change.
     Units(Vec<String>),
+    /// A finger came down on a control (`x` in the second screen's layout units, which is `width`
+    /// wide), moved, and (with `Up`) lifted.
+    SlideStart { control: Control, x: f32, width: f32 },
+    SlideTo { x: f32 },
+    /// Wi-Fi as NetworkManager has it, after any change (while the Wi-Fi mode is open).
+    Wifi(wifi::Wifi),
+    /// The pad's home button.
+    Home,
+    /// The system woke from sleep.
+    Resumed,
     Quit,
 }
 
@@ -217,6 +240,11 @@ pub enum Effect {
     QuitGame { windows: Vec<i64>, units: Vec<String> },
     /// Bring shelf's window to the front.
     ShowShelf,
+    /// Output volume (0-100), mute, the screens' brightness (0-100).
+    SetVolume(u8),
+    SetMute(bool),
+    SetBrightness(u8),
+    Wifi(wifi::Command),
     Quit,
 }
 
@@ -278,6 +306,11 @@ pub struct State {
     /// What the settings panel edits (global whenever there is no game in context).
     pub scope: Scope,
     pub mode: Mode,
+    /// The last mode chosen from the bar's left (where a second tap on Wi-Fi goes back to).
+    bar_mode: Mode,
+    /// Volume or brightness being slid, if any.
+    pub slider: Option<Slider>,
+    pub wifi: wifi::Wifi,
     pub focus: Option<Id>,
     /// The focus ring is shown only while navigating with the pad.
     pub show_focus: bool,
@@ -312,7 +345,23 @@ pub enum Hold {
 fn screen_of(id: &Id) -> Dirty {
     match id {
         Id::Game(_) | Id::Tab(_) => Dirty::BOTH,
-        Id::Mode(_) | Id::Tile(_) | Id::Env | Id::EnvSave | Id::EnvCancel | Id::Wake | Id::App(_) | Id::GameTile | Id::NewInstance(_) | Id::Scope(_) | Id::Reset | Id::Launch | Id::Key(_) | Id::PadMouse => Dirty::BOTTOM,
+        Id::Mode(_)
+        | Id::Tile(_)
+        | Id::Env
+        | Id::EditorSave
+        | Id::EditorCancel
+        | Id::Wake
+        | Id::App(_)
+        | Id::GameTile
+        | Id::NewInstance(_)
+        | Id::Scope(_)
+        | Id::Reset
+        | Id::Launch
+        | Id::Key(_)
+        | Id::PadMouse
+        | Id::Control(_)
+        | Id::WifiPower
+        | Id::Network(_) => Dirty::BOTTOM,
     }
 }
 
@@ -468,8 +517,26 @@ impl State {
                 if self.pressed.as_ref() == Some(&id) {
                     self.pressed = None;
                 }
+                if matches!(id, Id::Control(_)) {
+                    self.slide_end();
+                }
                 (screen_of(&id), vec![])
             }
+            Event::SlideStart { control, x, width } => {
+                self.slide_start(control, x, width);
+                (Dirty::BOTTOM, vec![])
+            }
+            Event::SlideTo { x } => {
+                let effects = self.slide_to(x);
+                (if effects.is_empty() { Dirty::NONE } else { Dirty::BOTTOM }, effects)
+            }
+            Event::Wifi(wifi) => {
+                self.set_wifi(wifi);
+                (Dirty::BOTTOM, vec![])
+            }
+            Event::Home => (Dirty::NONE, self.home()),
+            // Sleep may have reset what the settings set (frequency caps, cores): again.
+            Event::Resumed => (Dirty::NONE, vec![Effect::Apply { game: self.running.clone(), settings: self.current() }]),
             Event::Quit => (Dirty::NONE, vec![Effect::SaveResume(self.resume_text()), Effect::Quit]),
         }
     }
@@ -505,18 +572,7 @@ impl State {
                 self.set_tab(usize::from(tab));
                 (Dirty::BOTH, vec![])
             }
-            Id::Mode(mode) => {
-                let before = self.mode;
-                self.mode = mode;
-                self.resume_dirty = Some(self.unix_secs);
-                let touchpad = |m: Mode| m == Mode::Touchpad;
-                let effects = if touchpad(before) != touchpad(self.mode) {
-                    vec![Effect::Touchpad(touchpad(self.mode))]
-                } else {
-                    vec![]
-                };
-                (Dirty::BOTH, effects)
-            }
+            Id::Mode(mode) => (Dirty::BOTH, self.set_mode(mode)),
             Id::Tile(setting) => {
                 let value = if long { None } else { Some(setting.next(self.tile_value(setting))) };
                 (Dirty::BOTH, self.change(setting, value))
@@ -525,8 +581,8 @@ impl State {
                 self.open_editor();
                 (Dirty::BOTTOM, vec![])
             }
-            Id::EnvSave => (Dirty::BOTTOM, self.save_env()),
-            Id::EnvCancel => {
+            Id::EditorSave => (Dirty::BOTTOM, self.save_editor()),
+            Id::EditorCancel => {
                 self.editor = None;
                 (Dirty::BOTTOM, vec![])
             }
@@ -550,6 +606,10 @@ impl State {
                 self.pad_mouse = !self.pad_mouse;
                 (Dirty::BOTTOM, vec![Effect::PadMouse(self.pad_mouse)])
             }
+            Id::Control(control) if !long => (Dirty::BOTTOM, self.tap_control(control)),
+            Id::Control(_) => (Dirty::NONE, vec![]),
+            Id::WifiPower => (Dirty::BOTTOM, vec![Effect::Wifi(wifi::Command::Enable(!self.wifi.enabled))]),
+            Id::Network(i) => (Dirty::BOTTOM, self.tap_network(usize::from(i), long)),
             Id::Key(pos) => {
                 let stroke = self.keyboard.press(pos, long);
                 // Into the environment editor while it is open, else to the focused app.
@@ -560,6 +620,46 @@ impl State {
                 };
                 (Dirty::BOTTOM, effects)
             }
+        }
+    }
+
+    /// Changes the second screen's mode: Wi-Fi a second time goes back to the mode before it. The
+    /// touchpad and the Wi-Fi watch start and stop with their modes; an open editor closes.
+    fn set_mode(&mut self, mode: Mode) -> Vec<Effect> {
+        let before = self.mode;
+        self.mode = match mode {
+            Mode::Wifi if before == Mode::Wifi => self.bar_mode,
+            m => m,
+        };
+        if self.mode != Mode::Wifi {
+            self.bar_mode = self.mode;
+        }
+        if self.mode != before {
+            self.editor = None;
+        }
+        self.resume_dirty = Some(self.unix_secs);
+        let mut effects = vec![];
+        let wifi = |m: Mode| m == Mode::Wifi;
+        if wifi(before) != wifi(self.mode) {
+            effects.push(Effect::Wifi(wifi::Command::Watch(wifi(self.mode))));
+        }
+        let touchpad = |m: Mode| m == Mode::Touchpad;
+        if touchpad(before) != touchpad(self.mode) {
+            effects.push(Effect::Touchpad(touchpad(self.mode)));
+        }
+        effects
+    }
+
+    /// The home button: from shelf to the running game, from anything else to shelf.
+    fn home(&mut self) -> Vec<Effect> {
+        let front = self.windows.iter().find(|w| w.focused);
+        let shelf_in_front = front.is_none_or(|w| w.app_id == apps::SHELF_APP_ID);
+        if !shelf_in_front {
+            return vec![Effect::ShowShelf];
+        }
+        match self.running {
+            Some(_) => vec![Effect::FocusWorkspace(windows::GAME_WORKSPACE.into())],
+            None => vec![],
         }
     }
 
@@ -654,6 +754,8 @@ mod tests {
         let mut s = state();
         let (_, fx) = s.apply(Event::Activate(Id::Mode(Mode::Touchpad)));
         assert_eq!(fx, vec![Effect::Touchpad(true)]);
+        assert_eq!(s.apply(Event::Activate(Id::Mode(Mode::Wifi))).1.last(), Some(&Effect::Touchpad(false)));
+        assert_eq!(s.apply(Event::Activate(Id::Mode(Mode::Wifi))).1.last(), Some(&Effect::Touchpad(true)), "back");
         let (_, fx) = s.apply(Event::Activate(Id::Mode(Mode::Keyboard)));
         assert_eq!(fx, vec![Effect::Touchpad(false)]);
         let (_, fx) = s.apply(Event::Activate(Id::Mode(Mode::Keyboard)));
@@ -694,6 +796,25 @@ mod tests {
         let g = s.library.games.iter().find(|g| g.id == first).unwrap();
         assert_eq!((g.plays.count, g.plays.seconds), (1, 600));
         assert!(s.library.collections.iter().any(|c| c.name == "Recent"));
+    }
+
+    #[test]
+    fn home_goes_between_shelf_and_the_game() {
+        let mut s = state();
+        let window = |app_id: &str, focused: bool| windows::Window {
+            id: 1,
+            app_id: app_id.into(),
+            title: String::new(),
+            focused,
+            unit: None,
+            workspace: String::new(),
+        };
+        assert_eq!(s.apply(Event::Home).1, vec![], "nothing runs: shelf stays");
+        s.apply(Event::Started("zelda-lttp".into()));
+        s.apply(Event::Windows(vec![window(apps::SHELF_APP_ID, true)]));
+        assert_eq!(s.apply(Event::Home).1, vec![Effect::FocusWorkspace(windows::GAME_WORKSPACE.into())]);
+        s.apply(Event::Windows(vec![window(apps::SHELF_APP_ID, false), window("retroarch", true)]));
+        assert_eq!(s.apply(Event::Home).1, vec![Effect::ShowShelf]);
     }
 
     #[test]

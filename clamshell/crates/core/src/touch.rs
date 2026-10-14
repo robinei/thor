@@ -24,6 +24,11 @@ impl Region {
 pub struct TouchLayout {
     /// The second screen's size in pixels (the touchscreen covers it).
     pub screen: (f32, f32),
+    /// Pixels per layout unit, where the layout starts on screen (in layout units), and its width: so
+    /// a position on the bar's sliders can be given in the layout's units.
+    pub scale: f32,
+    pub origin_x: f32,
+    pub width: f32,
     /// The touchpad area: x0, y0, x1, y1 in screen pixels.
     pub pad: (f32, f32, f32, f32),
     /// Targets that stay the UI's in touchpad mode.
@@ -33,5 +38,10 @@ pub struct TouchLayout {
 impl TouchLayout {
     pub fn region_at(&self, x: f32, y: f32) -> Option<&Id> {
         self.regions.iter().find(|r| r.contains(x, y)).map(|r| &r.id)
+    }
+
+    /// A horizontal screen position (pixels) in layout units.
+    pub fn layout_x(&self, x: f32) -> f32 {
+        x / self.scale.max(1.0) - self.origin_x
     }
 }

@@ -69,6 +69,11 @@ pub fn rgb(c: u32) -> Color {
     Color::from_rgba8((c >> 16) as u8, (c >> 8) as u8, c as u8, 255)
 }
 
+/// 0xRRGGBB at `alpha` (0-1): what is under it shows through.
+pub fn rgba(c: u32, alpha: f32) -> Color {
+    Color::from_rgba8((c >> 16) as u8, (c >> 8) as u8, c as u8, (alpha.clamp(0.0, 1.0) * 255.0) as u8)
+}
+
 type Glyph = (fontdue::Metrics, Vec<u8>);
 
 /// The UI's font, built in so text looks the same everywhere: Noto Sans Regular, unmodified (SIL Open

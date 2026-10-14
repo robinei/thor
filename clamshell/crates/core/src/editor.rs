@@ -1,15 +1,23 @@
-//! The environment editor: a line of text typed on the on-screen keyboard (Enter saves, Esc cancels);
-//! and environment variables as text, `KEY=value` words.
+//! The editor: a line of text typed on the on-screen keyboard (Enter saves, Esc cancels), for a game's
+//! environment or a Wi-Fi password; and environment variables as text, `KEY=value` words.
 
 use std::sync::Arc;
 
 use crate::keyboard::{self, Key, Named, Stroke};
 
-/// What the editor edits (a game's variables, or all games'), and the text so far.
+/// What the editor edits, and the text so far.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Editor {
-    pub game: Option<Arc<str>>,
+    pub purpose: Purpose,
     pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Purpose {
+    /// A game's environment variables, or all games' (`None`).
+    Env { game: Option<Arc<str>> },
+    /// The password for joining this Wi-Fi network.
+    Password { ssid: String },
 }
 
 /// How a key ended the editing.
@@ -92,7 +100,7 @@ mod tests {
 
     #[test]
     fn typing_editing_and_finishing() {
-        let mut e = Editor { game: None, text: String::new() };
+        let mut e = Editor { purpose: Purpose::Env { game: None }, text: String::new() };
         for c in ['a', '-', 'b'] {
             assert_eq!(e.key(stroke(Key::Char(c), c == '-')), None);
         }

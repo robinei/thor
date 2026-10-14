@@ -3,8 +3,9 @@
 //! copied straight through. With the pad mouse on (a toggle, independent of the second screen's mode),
 //! the same events drive a virtual mouse instead: left stick moves the pointer, right stick scrolls, A
 //! or the right trigger clicks left, B right, X middle, the D-pad sends arrow keys; the virtual pad
-//! meanwhile shows a neutral controller, so games never see it disappear. Button layers (the system
-//! layer, remaps) go in this same path later.
+//! meanwhile shows a neutral controller, so games never see it disappear. The home button (BTN_MODE) is
+//! ours: games never see it, it goes to the program as [`Event::Home`]. Button layers (remaps) go in
+//! this same path later.
 //!
 //! Not yet: forwarding rumble from the virtual pad to the real one (uinput force-feedback uploads).
 
@@ -15,7 +16,10 @@ use std::time::{Duration, Instant};
 
 use evdev::raw_stream::RawDevice;
 use evdev::uinput::VirtualDevice;
+use clamshell_core::Event;
 use evdev::{AbsInfo, AbsoluteAxisCode, AttributeSet, BusType, EventType, InputEvent, InputId, KeyCode, RelativeAxisCode, UinputAbsSetup};
+
+use crate::Sink;
 
 /// Stick deflection below this (of full) is ignored: sticks don't rest exactly at zero.
 const DEADZONE: f32 = 0.15;
@@ -223,12 +227,12 @@ pub enum Command {
 
 /// Owns the controller whenever one is connected (`wanted`: its /dev/input path or part of its name;
 /// `None`: the first device that looks like a gamepad), looking again every second when there is none.
-pub fn spawn(wanted: Option<String>, commands: Receiver<Command>) -> io::Result<JoinHandle<()>> {
+pub fn spawn(wanted: Option<String>, commands: Receiver<Command>, sink: impl Sink) -> io::Result<JoinHandle<()>> {
     thread::Builder::new().name("pad".into()).spawn(move || {
         let mut mouse_on = false;
         let mut shaping = Shaping::default();
         loop {
-            match run(wanted.as_deref(), &commands, &mut mouse_on, &mut shaping) {
+            match run(wanted.as_deref(), &commands, &sink, &mut mouse_on, &mut shaping) {
                 Ok(()) => return,
                 Err(e) => log::debug!("pad: {e}"),
             }
@@ -278,7 +282,7 @@ impl Held {
 
 /// Runs while the controller is connected: Ok when the program is going away, Err when the controller
 /// is gone (or none was found).
-fn run(wanted: Option<&str>, commands: &Receiver<Command>, mouse_on: &mut bool, shaping: &mut Shaping) -> io::Result<()> {
+fn run(wanted: Option<&str>, commands: &Receiver<Command>, sink: &impl Sink, mouse_on: &mut bool, shaping: &mut Shaping) -> io::Result<()> {
     let mut real = find(wanted)?;
     let abs = real.get_abs_state()?;
     // Each supported axis with its current value and range.
@@ -350,6 +354,12 @@ fn run(wanted: Option<&str>, commands: &Receiver<Command>, mouse_on: &mut bool, 
             Ok(events) => {
                 for e in events {
                     let (kind, code, value) = (e.event_type().0, e.code(), e.value());
+                    if kind == EV_KEY && code == KeyCode::BTN_MODE.0 {
+                        if value == 1 && !sink.send(Event::Home) {
+                            return Ok(());
+                        }
+                        continue;
+                    }
                     held.update(kind, code, value);
                     if *mouse_on {
                         mapping.event(kind, code, value, &mut out);

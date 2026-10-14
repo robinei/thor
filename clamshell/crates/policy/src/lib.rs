@@ -2,6 +2,7 @@
 //! input loop, at raised priority), logind inhibitor locks, sway IPC, sysfs (power, backlight, charger).
 //! Nothing here waits for the UI.
 
+pub mod controls;
 pub mod desktop;
 pub mod frames;
 pub mod job;
@@ -9,10 +10,12 @@ pub mod keyboard;
 pub mod launcher;
 pub mod metrics;
 pub mod pad;
+pub mod sleep;
 pub mod sway;
 pub mod touchpad;
 pub mod tuning;
 pub mod units;
+pub mod wifi;
 
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -30,11 +33,18 @@ impl<F: Fn(Event) -> bool + Send + 'static> Sink for F {
     }
 }
 
-/// Sends a `Tick` at the start of every second.
+/// Sends a `Tick` at the start of every second, and `Resumed` after the system slept.
 pub fn spawn_clock(sink: impl Sink) -> std::io::Result<JoinHandle<()>> {
     thread::Builder::new().name("clock".into()).spawn(move || {
+        let mut asleep = sleep::Watch::new(sleep::slept());
         loop {
             let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+            if asleep.woke(sleep::slept()) {
+                log::info!("woke from sleep");
+                if !sink.send(Event::Resumed) {
+                    return;
+                }
+            }
             if !sink.send(Event::Tick { unix_secs: now.as_secs() }) {
                 return;
             }
@@ -76,7 +86,7 @@ fn read_status() -> Status {
         .as_deref()
         .and_then(parse_wpctl)
         .map_or((None, false), |(v, m)| (Some(v), m));
-    Status { battery, charging, wifi, volume, muted }
+    Status { battery, charging, wifi, volume, muted, brightness: controls::brightness() }
 }
 
 /// The first power supply of type Battery: its capacity and whether it is charging (or full on power).

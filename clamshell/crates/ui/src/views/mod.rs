@@ -9,12 +9,14 @@
 //! Sizes are fractions of the screen or of the element they sit in, named per module.
 
 mod bar;
+mod editor;
 mod keyboard;
 mod launcher;
 mod settings;
 mod shelf;
 mod sysinfo;
 mod touchpad;
+mod wifi;
 
 use std::fmt::Write;
 
@@ -202,6 +204,7 @@ pub fn bottom(c: &mut Canvas, s: &State, w: f32, h: f32, images: &mut Images, sc
         Mode::Launcher => launcher::draw(f, body, images, &mut scratch.text),
         Mode::Touchpad => touchpad::draw(f, body),
         Mode::Sysinfo => sysinfo::draw(f, body, &mut scratch.lines),
+        Mode::Wifi => wifi::draw(f, body, &mut scratch.text),
     }
     body
 }

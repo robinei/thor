@@ -11,6 +11,7 @@ devices, ClamShell as a user service started by sway, and this repository shared
   tools/vm.py ssh [command]  a shell, or a command, in the machine
   tools/vm.py build          build ClamShell in the machine (aarch64: there is no host build)
   tools/vm.py restart        restart ClamShell in the machine (after a build)
+  tools/vm.py wake           wake the machine from sleep
   tools/vm.py sync           write this script's session files (sway config, service) into the machine
   tools/vm.py reset          throw the machine away (the download stays)
   tools/vm.py --arch aarch64 thor-image   build an SD card image for the real Thor (best effort): Arch
@@ -31,6 +32,7 @@ import http.server
 import json
 import os
 import shutil
+import socket
 import socketserver
 import subprocess
 import sys
@@ -54,7 +56,11 @@ KERNEL_VIDEO = f"video=Virtual-1:{TOP[0]}x{TOP[1]}@60 video=Virtual-2:{BOTTOM[0]
 PACKAGES = [
     "sway", "swaybg", "foot", "xorg-xwayland", "mesa", "pipewire", "pipewire-pulse", "wireplumber",
     "sqlite", "grim", "python", "libinput-tools", "evtest", "iw", "noto-fonts",
+    # Wi-Fi as on the device (NetworkManager), and test networks to join (hostapd on simulated radios).
+    "networkmanager", "polkit", "hostapd", "dnsmasq",
 ]
+# The simulated radios: wlan0 the device's, wlan1 and wlan2 access points (see TEST_AP).
+TEST_NETWORKS = "ThorTest (WPA2, password thortest123) and ThorOpen (open)"
 
 
 class Arch:
@@ -165,8 +171,11 @@ Description=ClamShell
 After=graphical-session.target
 
 [Service]
+# Tests drive it through this pipe (tools/vm.py ssh -- 'echo mode wifi > $XDG_RUNTIME_DIR/clamshell-control').
+ExecStartPre=-/usr/bin/mkfifo %t/clamshell-control
 ExecStart={A.program}
 Environment=CLAMSHELL_BOTTOM_OUTPUT=Virtual-2
+Environment=CLAMSHELL_CONTROL=%t/clamshell-control
 Restart=on-failure
 RestartSec=2
 """
@@ -186,8 +195,50 @@ def system_files():
         ("/etc/systemd/system/getty@tty1.service.d/autologin.conf",
          f"[Service]\nExecStart=\nExecStart=-/sbin/agetty --autologin {USER} --noclear %I $TERM\n"),
         ("/etc/modules-load.d/thor-vm.conf", "uinput\ntest_power\nmac80211_hwsim\n"),
+        ("/etc/modprobe.d/thor-vm.conf", "options mac80211_hwsim radios=3\n"),
         ("/etc/udev/rules.d/70-thor-vm.rules", 'KERNEL=="uinput", GROUP="input", MODE="0660"\n'),
+        # NetworkManager has the device's radio only: the wired link (ssh) stays as it is, the access
+        # points' radios are hostapd's.
+        ("/etc/NetworkManager/conf.d/thor-vm.conf",
+         "[keyfile]\nunmanaged-devices=interface-name:eth0;interface-name:wlan1;interface-name:wlan2\n"),
+        ("/etc/hostapd/thor-test.conf",
+         "interface=wlan1\ndriver=nl80211\nssid=ThorTest\nhw_mode=g\nchannel=6\n"
+         "wpa=2\nwpa_key_mgmt=WPA-PSK\nrsn_pairwise=CCMP\nwpa_passphrase=thortest123\n"),
+        ("/etc/hostapd/thor-open.conf", "interface=wlan2\ndriver=nl80211\nssid=ThorOpen\nhw_mode=g\nchannel=11\n"),
+        ("/etc/systemd/system/thor-test-ap.service", TEST_AP),
+        ("/etc/systemd/system/thor-test-dhcp.service", TEST_DHCP),
     ]
+
+
+TEST_AP = """\
+[Unit]
+Description=Test Wi-Fi networks on the simulated radios
+After=sys-subsystem-net-devices-wlan2.device
+Wants=sys-subsystem-net-devices-wlan2.device
+
+[Service]
+ExecStart=/usr/bin/hostapd /etc/hostapd/thor-test.conf /etc/hostapd/thor-open.conf
+
+[Install]
+WantedBy=multi-user.target
+"""
+
+# Addresses for whoever joins the test networks.
+TEST_DHCP = """\
+[Unit]
+Description=DHCP on the test Wi-Fi networks
+After=thor-test-ap.service
+BindsTo=thor-test-ap.service
+
+[Service]
+ExecStartPre=/usr/bin/ip addr replace 10.41.1.1/24 dev wlan1
+ExecStartPre=/usr/bin/ip addr replace 10.41.2.1/24 dev wlan2
+ExecStart=/usr/bin/dnsmasq --keep-in-foreground --conf-file=/dev/null --port=0 --bind-interfaces \\
+    --interface=wlan1 --interface=wlan2 --dhcp-range=10.41.1.10,10.41.1.50,1h --dhcp-range=10.41.2.10,10.41.2.50,1h
+
+[Install]
+WantedBy=thor-test-ap.service
+"""
 
 
 FSTAB_9P = "thor /mnt/thor 9p trans=virtio,version=9p2000.L,ro,nofail 0 0"
@@ -223,6 +274,7 @@ def user_data():
             ["mkdir", "-p", "/mnt/thor"],
             ["chown", "-R", f"{USER}:{USER}", f"/home/{USER}"],
             ["loginctl", "enable-linger", USER],
+            ["systemctl", "enable", "NetworkManager", "thor-test-ap", "thor-test-dhcp"],
             ["sh", "-c", SET_KERNEL_VIDEO],
         ],
         # Once installed: boot again into the session.
@@ -271,6 +323,7 @@ echo '{ssh_key()}' > /home/{USER}/.ssh/authorized_keys
 chown -R {USER}:{USER} /home/{USER}
 chmod 600 /home/{USER}/.ssh/authorized_keys
 loginctl enable-linger {USER}
+systemctl enable NetworkManager thor-test-ap thor-test-dhcp
 mkdir -p /mnt/thor
 grep -q /mnt/thor /etc/fstab || echo '{FSTAB_9P}' >> /etc/fstab
 touch /var/lib/thor-firstboot
@@ -371,6 +424,8 @@ def qemu_command(args, seed_port):
         "-device", "usb-tablet,display=video0,head=1",
         "-device", "virtio-multitouch-pci,display=video0,head=1",
         "-serial", f"file:{A.state / 'serial.log'}",
+        # QEMU's monitor, for commands from here (`wake`).
+        "-monitor", f"unix:{A.state / 'monitor.sock'},server,nowait",
         # Each screen is an SDL window (offscreen when headless).
         "-display", "sdl",
     ]
@@ -532,6 +587,15 @@ def sync(_args):
     subprocess.run(ssh_args([reload]), check=False)
 
 
+def wake(_args):
+    """Wakes the machine from sleep (as the power button would)."""
+    with socket.socket(socket.AF_UNIX) as sock:
+        sock.connect(str(A.state / "monitor.sock"))
+        sock.sendall(b"system_wakeup\n")
+        time.sleep(0.5)
+    print("woken")
+
+
 def restart(_args):
     run(ssh_args(["systemctl", "--user", "restart", "clamshell.service"]))
 
@@ -557,6 +621,7 @@ def main():
     p.set_defaults(func=ssh)
     sub.add_parser("build").set_defaults(func=build)
     sub.add_parser("restart").set_defaults(func=restart)
+    sub.add_parser("wake").set_defaults(func=wake)
     sub.add_parser("sync").set_defaults(func=sync)
     sub.add_parser("reset").set_defaults(func=reset)
     p = sub.add_parser("thor-image")

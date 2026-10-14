@@ -37,9 +37,11 @@ impl State {
                 continue;
             };
             if name == "@mode" {
-                // Not into touchpad (grabs the touchscreen; only on request).
-                if let Some(mode) = Mode::from_name(id).filter(|m| *m != Mode::Touchpad) {
+                // Not into touchpad (grabs the touchscreen; only on request) or Wi-Fi (watches only
+                // when opened).
+                if let Some(mode) = Mode::from_name(id).filter(|m| !matches!(m, Mode::Touchpad | Mode::Wifi)) {
                     self.mode = mode;
+                    self.bar_mode = mode;
                 }
                 continue;
             }

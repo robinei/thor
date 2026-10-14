@@ -54,6 +54,10 @@ pub enum Icon {
     Wifi { bars: Option<u8> },
     /// Sound waves (0-3) and mute.
     Volume { waves: u8, muted: bool },
+    /// The screens' brightness: a sun.
+    Brightness,
+    /// A network that needs a password.
+    Lock,
 }
 
 /// Draws `icon` centred in `r`, as large as fits.
@@ -297,6 +301,20 @@ pub fn draw(c: &mut Canvas, icon: Icon, r: Rect, color: Color) {
                     c.polyline(&arc(11.5, 12.0, r, -50.0, 50.0), width, color, false);
                 }
             }
+        }
+        Icon::Brightness => {
+            c.outline(rr(7.5, 7.5, 9.0, 9.0), 4.5 * u, line, color);
+            for k in 0..8 {
+                let a = (k as f32 * 45.0).to_radians();
+                let (dx, dy) = (a.cos(), a.sin());
+                c.polyline(&[p(12.0 + 7.0 * dx, 12.0 - 7.0 * dy), p(12.0 + 10.0 * dx, 12.0 - 10.0 * dy)], line, color, false);
+            }
+        }
+        Icon::Lock => {
+            c.rounded(rr(5.0, 11.0, 14.0, 10.0), 1.5 * u, color);
+            c.polyline(&arc(12.0, 10.0, 4.5, 0.0, 180.0), line, color, false);
+            c.polyline(&[p(7.5, 10.0), p(7.5, 11.5)], line, color, false);
+            c.polyline(&[p(16.5, 10.0), p(16.5, 11.5)], line, color, false);
         }
         Icon::Enter => {
             c.polyline(&[p(19.0, 5.0), p(19.0, 14.0), p(5.0, 14.0)], line, color, false);

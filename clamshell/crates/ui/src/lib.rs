@@ -129,6 +129,7 @@ pub fn run(
         touch_layout: config.touch_layout.clone(),
         images: images::Images::new(image_requests),
         presses: HashMap::new(),
+        slider_source: None,
         hold_timer: None,
         loop_handle: event_loop.handle(),
         on_effect: Box::new(on_effect),
@@ -216,6 +217,8 @@ struct App {
     touch_layout: Arc<Mutex<TouchLayout>>,
     images: images::Images,
     presses: HashMap<Source, Press>,
+    /// The press that is moving a slider, if any.
+    slider_source: Option<Source>,
     /// Fires when the latest press becomes a hold, then at the repeat rate for repeating keys.
     hold_timer: Option<(Source, RegistrationToken)>,
     loop_handle: LoopHandle<'static, App>,

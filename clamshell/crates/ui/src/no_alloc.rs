@@ -67,7 +67,7 @@ fn warm_frames_do_not_allocate() {
         ("settings, a changed tile", vec![Event::Activate(Id::Tile(clamshell_core::settings::Setting::FpsCap))]),
         ("settings, all games", vec![Event::Activate(Id::Scope(clamshell_core::Scope::Global))]),
         ("environment editor", vec![Event::Activate(Id::Env), key(Key::Char('a'))]),
-        ("environment saved", vec![key(Key::Char('=')), key(Key::Char('1')), Event::Activate(Id::EnvSave)]),
+        ("environment saved", vec![key(Key::Char('=')), key(Key::Char('1')), Event::Activate(Id::EditorSave)]),
         ("launcher, an app running", vec![Event::Activate(Id::Mode(Mode::Launcher)), Event::Activate(Id::App(2))]),
         (
             "launcher, a game and windows",
@@ -81,7 +81,34 @@ fn warm_frames_do_not_allocate() {
                 ]),
             ],
         ),
-        ("keyboard", vec![Event::Activate(Id::Mode(Mode::Keyboard))]),
+        (
+            "wifi",
+            vec![
+                Event::Status(clamshell_core::Status { volume: Some(40), brightness: Some(70), wifi: Some(60), ..Default::default() }),
+                Event::Activate(Id::Mode(Mode::Wifi)),
+                Event::Wifi(clamshell_core::wifi::Wifi {
+                    device: true,
+                    enabled: true,
+                    networks: vec![
+                        clamshell_core::wifi::Network { ssid: "home".into(), strength: 80, secure: true, known: true, active: true, enterprise: false },
+                        clamshell_core::wifi::Network { ssid: "cafe".into(), strength: 40, secure: true, ..Default::default() },
+                    ],
+                    connecting: Some("cafe".into()),
+                    error: None,
+                }),
+            ],
+        ),
+        ("wifi password", vec![Event::Activate(Id::Network(1)), Event::Activate(Id::Network(0))]),
+        (
+            "sliding",
+            vec![
+                Event::Activate(Id::EditorCancel),
+                Event::Down(Id::Control(clamshell_core::controls::Control::Volume)),
+                Event::SlideStart { control: clamshell_core::controls::Control::Volume, x: 285.0, width: 620.0 },
+                Event::SlideTo { x: 320.0 },
+            ],
+        ),
+        ("keyboard", vec![Event::Up(Id::Control(clamshell_core::controls::Control::Volume)), Event::Activate(Id::Mode(Mode::Keyboard))]),
         ("keyboard, Fn", vec![key(Key::Mod(Modifier::Fn))]),
         ("keyboard, Shift and a pressed key", vec![key(Key::Mod(Modifier::Shift)), key(Key::Char('h'))]),
     ];

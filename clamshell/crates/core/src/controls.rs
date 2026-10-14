@@ -1,0 +1,165 @@
+//! Volume and brightness: a finger on either icon brings up a slider whose current value is under the
+//! finger; moving sets the level as it goes, lifting leaves it there. A tap on the volume icon (no
+//! movement) mutes or unmutes.
+//!
+//! The slider runs along the screen's width. Its length is what fits on both sides of where the finger
+//! came down, so the value can go from 0 to 100 without the track leaving the screen (the icons sit near
+//! the middle of the bar for this).
+
+use crate::{Effect, State};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Control {
+    Volume,
+    Brightness,
+}
+
+/// A slide in progress, in the second screen's layout units.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Slider {
+    pub control: Control,
+    /// The level when the finger came down, and now (0-100).
+    pub start: u8,
+    pub value: u8,
+    /// Where the finger came down, and the track's length (the whole 0-100 range).
+    pub x: f32,
+    pub length: f32,
+    /// The level changed during this touch (so lifting isn't a tap).
+    pub moved: bool,
+}
+
+/// Space kept free at each end of the track, of the screen's width.
+const EDGE: f32 = 0.03;
+
+impl Slider {
+    /// The longest track with `x` anywhere on it that stays on a screen `width` wide.
+    pub fn length_at(x: f32, width: f32) -> f32 {
+        (x.min(width - x) - width * EDGE).max(width * 0.1)
+    }
+
+    /// Where the track starts: so that the starting level sits under the finger.
+    pub fn track_start(&self) -> f32 {
+        self.x - f32::from(self.start) / 100.0 * self.length
+    }
+
+    /// The level with the finger at `x`.
+    fn value_at(&self, x: f32) -> u8 {
+        let v = f32::from(self.start) + (x - self.x) / self.length.max(1.0) * 100.0;
+        v.round().clamp(0.0, 100.0) as u8
+    }
+}
+
+impl State {
+    /// The level a control shows now: the slider's while sliding, else the system's.
+    pub fn level(&self, control: Control) -> Option<u8> {
+        match self.slider {
+            Some(s) if s.control == control => Some(s.value),
+            _ => match control {
+                Control::Volume => self.status.volume,
+                Control::Brightness => self.status.brightness,
+            },
+        }
+    }
+
+    pub(crate) fn slide_start(&mut self, control: Control, x: f32, width: f32) {
+        let Some(start) = self.level(control) else {
+            return;
+        };
+        let length = Slider::length_at(x, width);
+        self.slider = Some(Slider { control, start, value: start, x, length, moved: false });
+    }
+
+    pub(crate) fn slide_to(&mut self, x: f32) -> Vec<Effect> {
+        let Some(slider) = self.slider.as_mut() else {
+            return vec![];
+        };
+        let value = slider.value_at(x);
+        if value == slider.value {
+            return vec![];
+        }
+        slider.value = value;
+        slider.moved = true;
+        match slider.control {
+            Control::Brightness => vec![Effect::SetBrightness(value)],
+            // Turning it up or down unmutes.
+            Control::Volume if self.status.muted => {
+                self.status.muted = false;
+                vec![Effect::SetMute(false), Effect::SetVolume(value)]
+            }
+            Control::Volume => vec![Effect::SetVolume(value)],
+        }
+    }
+
+    /// A tap on a control: the volume's mutes or unmutes.
+    pub(crate) fn tap_control(&mut self, control: Control) -> Vec<Effect> {
+        let tapped = self.slider.is_some_and(|s| s.control == control && !s.moved);
+        if control != Control::Volume || !tapped || self.status.volume.is_none() {
+            return vec![];
+        }
+        self.status.muted = !self.status.muted;
+        vec![Effect::SetMute(self.status.muted)]
+    }
+
+    /// The finger lifted: the level stays (the bar shows it until the system's next reading).
+    pub(crate) fn slide_end(&mut self) {
+        let Some(slider) = self.slider.take() else {
+            return;
+        };
+        match slider.control {
+            Control::Volume => self.status.volume = Some(slider.value),
+            Control::Brightness => self.status.brightness = Some(slider.value),
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::tests::state;
+    use crate::{Event, Id, Status};
+
+    fn with_levels() -> State {
+        let mut s = state();
+        s.apply(Event::Status(Status { volume: Some(40), brightness: Some(80), muted: true, ..Status::default() }));
+        s
+    }
+
+    #[test]
+    fn the_level_starts_under_the_finger_and_follows_it() {
+        let mut s = with_levels();
+        // A finger at 300 on a 620-wide screen: the track is 300 - 18.6 long, 0 at 300 - 40% of that.
+        s.apply(Event::SlideStart { control: Control::Brightness, x: 300.0, width: 620.0 });
+        let slider = s.slider.unwrap();
+        assert!((slider.length - 281.4).abs() < 0.01);
+        assert!((slider.track_start() + 0.8 * slider.length - 300.0).abs() < 0.01, "80% under the finger");
+        assert!(slider.track_start() >= 0.0 && slider.track_start() + slider.length <= 620.0, "on screen");
+        assert_eq!(s.apply(Event::SlideTo { x: 300.0 + 0.1 * slider.length }).1, vec![Effect::SetBrightness(90)]);
+        assert_eq!(s.apply(Event::SlideTo { x: 2000.0 }).1, vec![Effect::SetBrightness(100)], "clamped");
+        assert_eq!(s.apply(Event::SlideTo { x: 2100.0 }).1, vec![], "no change, nothing sent");
+        s.apply(Event::Activate(Id::Control(Control::Brightness)));
+        s.apply(Event::Up(Id::Control(Control::Brightness)));
+        assert_eq!((s.slider, s.status.brightness), (None, Some(100)));
+    }
+
+    #[test]
+    fn sliding_the_volume_unmutes_and_a_tap_toggles_mute() {
+        let mut s = with_levels();
+        s.apply(Event::SlideStart { control: Control::Volume, x: 280.0, width: 620.0 });
+        assert_eq!(s.apply(Event::SlideTo { x: 250.0 }).1, vec![Effect::SetMute(false), Effect::SetVolume(29)]);
+        assert_eq!(s.apply(Event::Activate(Id::Control(Control::Volume))).1, vec![], "moved: not a tap");
+        s.apply(Event::Up(Id::Control(Control::Volume)));
+        s.apply(Event::SlideStart { control: Control::Volume, x: 280.0, width: 620.0 });
+        assert_eq!(s.apply(Event::Activate(Id::Control(Control::Volume))).1, vec![Effect::SetMute(true)]);
+        s.apply(Event::Up(Id::Control(Control::Volume)));
+        assert!(s.status.muted);
+    }
+
+    #[test]
+    fn without_a_level_there_is_no_slider() {
+        let mut s = state();
+        s.apply(Event::SlideStart { control: Control::Brightness, x: 300.0, width: 620.0 });
+        assert_eq!(s.slider, None);
+        assert_eq!(s.apply(Event::SlideTo { x: 400.0 }).1, vec![]);
+    }
+}

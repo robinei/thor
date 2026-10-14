@@ -8,7 +8,7 @@ use clamshell_core::keyboard::{self, Key, KeyPos, Modifier};
 use clamshell_core::touch::TouchLayout;
 use clamshell_core::settings::{Setting, Settings, Values};
 use clamshell_core::{Effect, Event, Id, Mode, Scope, State, Status};
-use clamshell_policy::{job, keyboard as virtual_keyboard, pad, sway, touchpad, tuning};
+use clamshell_policy::{controls, job, keyboard as virtual_keyboard, pad, sway, touchpad, tuning};
 use clamshell_ui::{Config, Screen};
 
 fn main() -> ExitCode {
@@ -148,6 +148,12 @@ fn main() -> ExitCode {
     let (launch_tx, launch_rx) = mpsc::channel();
     // sway's windows, for the launcher (focus, close).
     let (sway_tx, sway_rx) = mpsc::channel();
+    // Volume and brightness from the bar's sliders; Wi-Fi from its mode.
+    let (controls_tx, controls_rx) = mpsc::channel();
+    if let Err(e) = controls::spawn(controls_rx) {
+        log::error!("controls thread: {e}");
+    }
+    let (wifi_tx, wifi_rx) = mpsc::channel();
     let on_sway = std::env::var_os("SWAYSOCK").is_some();
     let launcher = clamshell_policy::launcher::Config {
         stats_db: state_dir.as_ref().map(|d| d.join("stats.db")),
@@ -204,11 +210,17 @@ fn main() -> ExitCode {
             if let Err(e) = clamshell_policy::units::spawn(move |event| units.send(event)) {
                 log::error!("units thread: {e}");
             }
-            if let Err(e) = clamshell_policy::launcher::spawn(launcher, launch_rx, move |event| sender.send(event)) {
+            let launched = sender.clone();
+            if let Err(e) = clamshell_policy::launcher::spawn(launcher, launch_rx, move |event| launched.send(event)) {
                 log::error!("launcher thread: {e}");
             }
-            if let Err(e) = pad::spawn(gamepad, padmouse_rx) {
+            let home = sender.clone();
+            if let Err(e) = pad::spawn(gamepad, padmouse_rx, move |event| home.send(event)) {
                 log::error!("pad thread: {e}");
+            }
+            let wifi = sender.clone();
+            if let Err(e) = clamshell_policy::wifi::spawn(move |event| wifi.send(event), wifi_rx) {
+                log::error!("wifi thread: {e}");
             }
         },
         move |effect| match effect {
@@ -305,6 +317,24 @@ fn main() -> ExitCode {
                     let _ = sway_tx.send(sway::Command::Close(*id));
                 }
             }
+            Effect::SetVolume(v) => {
+                let _ = controls_tx.send(controls::Command::Volume(*v));
+            }
+            Effect::SetMute(m) => {
+                let _ = controls_tx.send(controls::Command::Mute(*m));
+            }
+            Effect::SetBrightness(b) => {
+                let _ = controls_tx.send(controls::Command::Brightness(*b));
+            }
+            Effect::Wifi(command) => {
+                // (The password stays out of the log.)
+                if let clamshell_core::wifi::Command::Connect { ssid, .. } = command {
+                    log::info!("wifi: join {ssid}");
+                }
+                if wifi_tx.send(command.clone()).is_err() {
+                    log::warn!("wifi thread is gone");
+                }
+            }
             Effect::QuitGame { windows, units } => {
                 log::info!("quitting the game");
                 for id in windows {
@@ -327,22 +357,64 @@ fn main() -> ExitCode {
 /// Events to apply first, the screen, its size, the file name.
 type Shot = (Vec<Event>, Screen, (u32, u32), &'static str);
 
-/// A test's command (`tap app 1`, `long game`, `tap plus 1`, `tap launch`, `mode launcher`) as an event.
-fn control_event(line: &str) -> Option<Event> {
+/// A test's command as events: `tap app 1`, `long game`, `tap plus 1`, `tap launch`, `tap network 2`,
+/// `long network 0`, `tap wifi-power`, `mode launcher`, `home`, `type text` (on the on-screen keyboard),
+/// `slide volume|brightness FROM TO [hold]` (a finger down at FROM on a 620-wide layout, moved to TO,
+/// lifted unless held), `lift volume|brightness`.
+fn control_events(line: &str) -> Option<Vec<Event>> {
     let words: Vec<&str> = line.split_whitespace().collect();
     let index = |w: &str| w.parse::<u16>().ok();
+    let control = |name: &str| match name {
+        "volume" => Some(clamshell_core::controls::Control::Volume),
+        "brightness" => Some(clamshell_core::controls::Control::Brightness),
+        _ => None,
+    };
+    if let ["lift", name] = words.as_slice() {
+        let id = Id::Control(control(name)?);
+        return Some(vec![Event::Activate(id.clone()), Event::Up(id)]);
+    }
+    if let ["slide", name, from, to, rest @ ..] = words.as_slice() {
+        let control = control(name)?;
+        let hold = rest == ["hold"];
+        let (from, to): (f32, f32) = (from.parse().ok()?, to.parse().ok()?);
+        let id = Id::Control(control);
+        let steps = (1..=10).map(|i| Event::SlideTo { x: from + (to - from) * i as f32 / 10.0 });
+        return Some(
+            [Event::Down(id.clone()), Event::SlideStart { control, x: from, width: 620.0 }]
+                .into_iter()
+                .chain(steps)
+                .chain(if hold { vec![] } else { vec![Event::Activate(id.clone()), Event::Up(id)] })
+                .collect(),
+        );
+    }
+    if let Some(text) = line.strip_prefix("type ") {
+        return Some(text.chars().filter_map(type_char).flatten().collect());
+    }
     let id = match words.as_slice() {
+        ["home"] => return Some(vec![Event::Home]),
+        ["mode", name] => return Some(vec![Event::Activate(Id::Mode(Mode::from_name(name)?))]),
         [_, "app", n] => Id::App(index(n)?),
         [_, "plus", n] => Id::NewInstance(index(n)?),
+        [_, "network", n] => Id::Network(index(n)?),
+        [_, "wifi-power"] => Id::WifiPower,
+        [_, "save"] => Id::EditorSave,
         [_, "game"] => Id::GameTile,
         [_, "launch"] => Id::Launch,
-        ["mode", name] => return Some(Event::Activate(Id::Mode(Mode::from_name(name)?))),
         _ => return None,
     };
     match words.first() {
-        Some(&"tap") => Some(Event::Activate(id)),
-        Some(&"long") => Some(Event::LongPress(id)),
+        Some(&"tap") => Some(vec![Event::Activate(id)]),
+        Some(&"long") => Some(vec![Event::LongPress(id)]),
         _ => None,
+    }
+}
+
+/// A character typed on the on-screen keyboard: its key, after Shift (once) if it needs it.
+fn type_char(c: char) -> Option<Vec<Event>> {
+    let key = |k: Key| keyboard::find(k).map(|pos| Event::Activate(Id::Key(pos)));
+    match (' '..='~').find(|&b| b != c && keyboard::shifted(b) == c) {
+        Some(base) => Some(vec![key(Key::Mod(Modifier::Shift))?, key(Key::Char(base))?]),
+        None => Some(vec![key(Key::Char(c))?]),
     }
 }
 
@@ -353,10 +425,12 @@ fn spawn_control(path: std::path::PathBuf, send: impl Fn(Event) -> bool + Send +
         // Each writer closes the pipe after its line: open it again for the next.
         while let Ok(file) = std::fs::File::open(&path) {
             for line in std::io::BufReader::new(file).lines().map_while(Result::ok) {
-                match control_event(&line) {
-                    Some(event) => {
-                        if !send(event) {
-                            return;
+                match control_events(&line) {
+                    Some(events) => {
+                        for event in events {
+                            if !send(event) {
+                                return;
+                            }
                         }
                     }
                     None => log::warn!("control: {line:?}?"),
@@ -469,7 +543,7 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
     };
     state.apply(Event::Tick { unix_secs: now });
     // Demo status, so every bar icon shows.
-    let status = Status { battery: Some(72), charging: true, wifi: Some(80), volume: Some(60), muted: false };
+    let status = Status { battery: Some(72), charging: true, wifi: Some(80), volume: Some(60), muted: false, brightness: Some(70) };
     state.apply(Event::Status(status));
     // Each shot after the events that lead to it: shelf, then the keyboard plain, with Fn, and with
     // Shift (once) and Ctrl (locked).
@@ -551,7 +625,7 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
             "settings-env.png",
         ),
         (
-            vec![Event::Activate(Id::EnvSave), Event::Status(Status { battery: Some(9), charging: false, wifi: None, volume: Some(40), muted: true })],
+            vec![Event::Activate(Id::EditorSave), Event::Status(Status { battery: Some(9), charging: false, wifi: None, volume: Some(40), muted: true, brightness: None })],
             Screen::Bottom,
             bottom,
             "status-low.png",
@@ -582,7 +656,47 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
             bottom,
             "launcher-running.png",
         ),
-        (vec![Event::Activate(Id::Mode(Mode::Keyboard))], Screen::Bottom, bottom, "keyboard.png"),
+        (
+            vec![
+                Event::Activate(Id::Mode(Mode::Wifi)),
+                Event::Wifi(clamshell_core::wifi::Wifi {
+                    device: true,
+                    enabled: true,
+                    networks: [("home", 82, true, true, true), ("cafe-guest", 64, false, false, false), ("neighbours", 41, true, false, false), ("office", 30, true, true, false)]
+                        .map(|(ssid, strength, secure, known, active)| clamshell_core::wifi::Network {
+                            ssid: ssid.into(),
+                            strength,
+                            secure,
+                            known,
+                            active,
+                            enterprise: false,
+                        })
+                        .to_vec(),
+                    connecting: None,
+                    error: None,
+                }),
+            ],
+            Screen::Bottom,
+            bottom,
+            "wifi.png",
+        ),
+        (
+            vec![
+                Event::Activate(Id::Mode(Mode::Launcher)),
+                Event::Down(Id::Control(clamshell_core::controls::Control::Volume)),
+                Event::SlideStart { control: clamshell_core::controls::Control::Volume, x: 560.0, width: 1232.0 },
+                Event::SlideTo { x: 700.0 },
+            ],
+            Screen::Bottom,
+            bottom,
+            "slider.png",
+        ),
+        (
+            vec![Event::Up(Id::Control(clamshell_core::controls::Control::Volume)), Event::Activate(Id::Mode(Mode::Keyboard))],
+            Screen::Bottom,
+            bottom,
+            "keyboard.png",
+        ),
         (vec![key(Key::Mod(Modifier::Fn), false)], Screen::Bottom, bottom, "keyboard-fn.png"),
         (
             vec![key(Key::Mod(Modifier::Fn), false), key(Key::Mod(Modifier::Shift), false), key(Key::Mod(Modifier::Ctrl), true)],

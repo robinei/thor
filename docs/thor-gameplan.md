@@ -85,7 +85,8 @@ Known issues and risks, to check first:
    ROCKNIX does). The UEFI path loads only the Thor's.
 7. UEFI path: whether U-Boot passes our device tree through systemd-boot (its devicetree fixup) or
    insists on its own; Kettle uses GRUB, the fallback.
-8. Not done: suspend/hibernate setup, power and fan control, growing the root partition to the card.
+8. Not done: hibernate setup, fan control, growing the root partition to the card. Suspend is logind's
+   (power button and lid, `logind.conf.d/thor.conf`); ClamShell applies its settings again on waking.
 9. Test image only: passwordless sudo, sshd with a key, autologin without a password.
 
 ## Before the device arrives
@@ -125,13 +126,22 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
 - [ ] Touch: the bottom screen's touch on DSI-1 (sway's `map_to_output`); touchpad mode grabs it.
 - [ ] Gamepad: evdev events; our virtual pad and pad mouse; per-game buttons and deadzone.
 - [ ] GPU: Freedreno (sway) and Turnip (`vkcube`, a game); MangoHud frame rate in sysinfo.
-- [ ] Wi-Fi and Bluetooth; sound through speakers and headphones; volume keys.
+- [ ] Wi-Fi from the Wi-Fi mode (NetworkManager): scan, join with a password, forget; polkit lets the
+      session's user do it (tested in the VM as an autologin session user, not on the device).
+- [ ] Bluetooth; sound through speakers and headphones; volume keys; the volume slider (`wpctl`).
+- [ ] Brightness: one backlight per panel in `/sys/class/backlight`? Names, ranges, whether logind's
+      SetBrightness works on them, and whether the lowest level (raw 1) is still visible.
+- [ ] Home button: which device and key code it sends (BTN_MODE on the gamepad, or KEY_HOMEPAGE on a
+      separate gpio-keys device?). ClamShell takes BTN_MODE from the grabbed pad only; Steam's overlay
+      then never sees it.
+- [ ] Lid: does the Thor report a lid switch (`SW_LID`), and does closing it suspend?
 - [ ] Battery: capacity, charging, power draw in sysinfo; the charge limit setting (sysfs path?).
 - [ ] Power profiles: cpufreq policies (3 clusters?), GPU devfreq, little-cores-only; the udev rule giving
       our user write access.
 - [ ] Fan: is there a sysfs control?
 - [ ] Suspend (ROCKNIX's deep suspend, ~3 s resume) and hibernate (swap, resume from it, every subsystem
-      after resume).
+      after resume). After a resume: ClamShell logs "woke from sleep" and "settings applied", and both
+      screens redraw (in the VM the whole machine stopped soon after a resume, so this is untested).
 - [ ] The launcher under real use: tools/vm.py's checks again, on the device.
 - [ ] FEX for x86 games (32-bit Windows games are the open question).
 

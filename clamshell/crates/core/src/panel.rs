@@ -2,7 +2,7 @@
 //! which tab it edits, changes applied at once when they change the settings in force, the environment
 //! editor typing on the keyboard, and the dark second screen.
 
-use crate::editor::{Done, Editor};
+use crate::editor::{Done, Editor, Purpose};
 use crate::keyboard::Stroke;
 use crate::settings::{Setting, Values};
 use crate::{Effect, Game, Scope, State};
@@ -61,13 +61,13 @@ impl State {
     pub(crate) fn open_editor(&mut self) {
         let game = self.editing().map(|g| g.id.clone());
         let text = self.settings.env_text(game.as_deref()).to_owned();
-        self.editor = Some(Editor { game, text });
+        self.editor = Some(Editor { purpose: Purpose::Env { game }, text });
     }
 
     /// A key from the on-screen keyboard while the editor is open.
     pub(crate) fn edit(&mut self, stroke: Stroke) -> Vec<Effect> {
         match self.editor.as_mut().and_then(|e| e.key(stroke)) {
-            Some(Done::Save) => self.save_env(),
+            Some(Done::Save) => self.save_editor(),
             Some(Done::Cancel) => {
                 self.editor = None;
                 vec![]
@@ -76,12 +76,18 @@ impl State {
         }
     }
 
-    pub(crate) fn save_env(&mut self) -> Vec<Effect> {
+    /// The editor's Save: the environment saved, or the network joined with the password.
+    pub(crate) fn save_editor(&mut self) -> Vec<Effect> {
         let Some(editor) = self.editor.take() else {
             return vec![];
         };
-        self.settings.set_env(editor.game, &editor.text);
-        vec![Effect::SaveSettings(self.settings.text())]
+        match editor.purpose {
+            Purpose::Env { game } => {
+                self.settings.set_env(game, &editor.text);
+                vec![Effect::SaveSettings(self.settings.text())]
+            }
+            Purpose::Password { ssid } => self.join(ssid, Some(editor.text)),
+        }
     }
 
     /// Drops the edited game's overrides and environment.

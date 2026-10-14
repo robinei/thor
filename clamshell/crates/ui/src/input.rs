@@ -42,6 +42,35 @@ impl App {
         view.targets.iter().rev().find(|t| t.rect.contains(x as f32, y as f32)).map(|t| t.id.clone())
     }
 
+    /// A finger or button comes down at `position` on `surface`: a press on what is there, and on volume
+    /// or brightness the start of a slide.
+    pub(crate) fn press_at(&mut self, source: Source, surface: &WlSurface, position: (f64, f64)) {
+        let Some(id) = self.target_at(surface, position) else {
+            return;
+        };
+        let control = match id {
+            Id::Control(control) => Some(control),
+            _ => None,
+        };
+        self.down(source, id);
+        if let Some(control) = control
+            && let Some(view) = self.view_mut(surface)
+        {
+            let (x, width) = (position.0 as f32 - view.origin.0, view.layout_w);
+            self.slider_source = Some(source);
+            self.handle(Event::SlideStart { control, x, width });
+        }
+    }
+
+    /// A finger or the mouse moved: the slider follows the press that started it.
+    pub(crate) fn moved(&mut self, source: Source, position: (f64, f64)) {
+        if self.slider_source != Some(source) {
+            return;
+        }
+        let origin = self.bottom.as_ref().map_or(0.0, |v| v.origin.0);
+        self.handle(Event::SlideTo { x: position.0 as f32 - origin });
+    }
+
     /// A press starts: light the target, and arm the hold timer. A tap acts on release; a hold acts
     /// from the timer (repeat, or one long press).
     pub(crate) fn down(&mut self, source: Source, id: Id) {
@@ -88,6 +117,9 @@ impl App {
         {
             self.loop_handle.remove(token);
             self.hold_timer = None;
+        }
+        if self.slider_source == Some(source) {
+            self.slider_source = None;
         }
         let Some(press) = self.presses.remove(&source) else {
             return;

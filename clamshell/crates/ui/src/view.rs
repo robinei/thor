@@ -84,6 +84,10 @@ pub(crate) struct View {
     /// shm buffers, reused once the compositor releases them (two in turn, a third if it holds both).
     pub(crate) buffers: Vec<Buffer>,
     pub(crate) scratch: Scratch,
+    /// Where the last frame's layout starts in the surface (the burn-in offset), and its width: for
+    /// positions on the bar's sliders.
+    pub(crate) origin: (f32, f32),
+    pub(crate) layout_w: f32,
 }
 
 impl View {
@@ -101,6 +105,8 @@ impl View {
             pixmap: None,
             buffers: Vec::new(),
             scratch: Scratch::default(),
+            origin: (0.0, 0.0),
+            layout_w: 0.0,
         }
     }
 
@@ -188,6 +194,8 @@ impl View {
         }
 
         let (sx, sy) = (offset.0 as f32 / scale as f32, offset.1 as f32 / scale as f32);
+        self.origin = (sx, sy);
+        self.layout_w = cw;
         for target in &mut self.targets {
             target.rect.x += sx;
             target.rect.y += sy;
@@ -243,9 +251,12 @@ fn publish(touch: &Mutex<TouchLayout>, targets: &[Target], body: Rect, (sx, sy):
         return;
     };
     layout.screen = screen;
+    layout.scale = scale;
+    layout.origin_x = sx;
+    layout.width = body.w;
     layout.pad = ((body.x + sx) * scale, (body.y + sy) * scale, (body.x + sx + body.w) * scale, (body.y + sy + body.h) * scale);
     layout.regions.clear();
-    for t in targets.iter().filter(|t| matches!(t.id, Id::Mode(_) | Id::PadMouse)) {
+    for t in targets.iter().filter(|t| matches!(t.id, Id::Mode(_) | Id::PadMouse | Id::Control(_))) {
         let r = t.rect;
         layout.regions.push(Region { x0: r.x * scale, y0: r.y * scale, x1: (r.x + r.w) * scale, y1: (r.y + r.h) * scale, id: t.id.clone() });
     }

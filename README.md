@@ -13,7 +13,7 @@ pad, mouse emulation, touchpad) and power policy. Rust, a Cargo workspace:
 | Crate | What |
 |---|---|
 | `crates/core` | the state and its rules: events in, dirty screens and effects out; no I/O, unit-tested |
-| `crates/policy` | threads that watch the system and send events (today: the clock) |
+| `crates/policy` | threads that watch the system and send events, and carry out effects (sway, systemd, NetworkManager, evdev/uinput, sysfs) |
 | `crates/library` | the game library (today: demo games) |
 | `crates/ui` | Wayland (smithay-client-toolkit), CPU drawing (tiny-skia, fontdue), the views, pad navigation; the font built in (Noto Sans Regular, SIL Open Font License 1.1: `crates/ui/fonts/OFL.txt`), with fontconfig for characters it lacks |
 | `src/main.rs` | wires them together |
@@ -22,18 +22,22 @@ No panics by construction: `unwrap`, `expect`, `panic!` and slice indexing are d
 
 **Test the launcher under sway**: `clamshell/tests/nested-sway.sh` (after `cargo build --release`) runs a
 headless sway with the program inside, a test library and test apps, drives it through its control pipe
-(`CLAMSHELL_CONTROL`: lines like `tap app 1`, `long game`, `tap plus 1`, `tap launch`), checks sway's tree
+(`CLAMSHELL_CONTROL`: lines like `tap app 1`, `long game`, `tap plus 1`, `tap launch`; also `mode wifi`,
+`tap network 1`, `type text`, `tap save`, `slide volume 280 330 [hold]`, `home`), checks sway's tree
 and systemd's units, and cleans up after itself; about a minute, nothing shows on the desktop.
 `CLAMSHELL_STEAM=off` leaves Steam's games out.
 
 **A virtual Thor** (`tools/vm.py`, Python, standard library only): a QEMU/KVM machine with the device's
 session: two screens at the Thor's sizes (sway on real DRM outputs, the second forced on through the
 kernel's `video=` option), the host mouse as an absolute pointer per screen window, a multitouch screen on
-the bottom one, a fake battery (`test_power`) and Wi-Fi radios (`mac80211_hwsim`), uinput for our virtual
-devices, and ClamShell as a user service started by sway, run from this repository (shared
-read-only: build on the host, `tools/vm.py restart`). `tools/vm.py image` (downloads Arch's cloud image),
-`run [--headless] [--pad VENDOR:PRODUCT]` (the first start provisions it with cloud-init, a few minutes),
-`ssh [command]`, `sync` (session files), `restart`, `reset`. No Thor GPU, cpufreq/devfreq or fan in it.
+the bottom one, a fake battery (`test_power`), Wi-Fi through NetworkManager with two test networks on
+simulated radios (`mac80211_hwsim`, hostapd, dnsmasq: ThorTest, WPA2, password `thortest123`, and ThorOpen),
+uinput for our virtual devices, and ClamShell as a user service started by sway with a control pipe
+(`$XDG_RUNTIME_DIR/clamshell-control`), run from this repository (shared read-only: build on the host,
+`tools/vm.py restart`). `tools/vm.py image` (downloads Arch's cloud image), `run [--headless] [--pad
+VENDOR:PRODUCT]` (the first start provisions it with cloud-init, a few minutes), `ssh [command]`, `sync`
+(session files), `restart`, `wake` (from `systemctl suspend`), `reset`. No Thor GPU, cpufreq/devfreq or fan
+in it, and no audio device. Suspend and resume work once at most: after a resume the machine soon stops.
 
 **Run on a desktop** (any Wayland compositor with xdg-shell):
 
@@ -64,6 +68,21 @@ positions. The compositor must use the US layout for it; in sway:
 desktop with another layout, letters, digits and named keys come out right but punctuation follows that
 layout. To type into other apps on a desktop, run with `CLAMSHELL_BOTTOM_PANEL=1`: the bottom view is then a
 panel in the bottom right corner that never takes the keyboard focus (as on the device), not a window.
+
+**The bar**: the modes on the left; volume and brightness in the middle; the pad mouse, Wi-Fi, the battery
+and the clock on the right. A finger on volume or brightness turns the bar's row into a slider whose
+current level is under the finger: moving sets the level as it goes, lifting leaves it there (the icons
+sit mid-screen so the track fits on both sides; it is about 31 mm long on the Thor). A tap on volume
+mutes or unmutes; sliding it unmutes. Volume goes through `wpctl` (PipeWire's default sink), brightness to
+every backlight through logind (`CLAMSHELL_BACKLIGHTS`: another folder laid out like
+`/sys/class/backlight`, for a desktop without one). Each icon shows only when there is something to set.
+
+**Wi-Fi** (tap the Wi-Fi icon; lit while open, a second tap goes back): through NetworkManager on the
+system bus. The networks in range (rescanned every 10 s while open), the connected and saved ones first,
+with a lock on those that need a password and the radio's switch on top. A tap joins: a saved network
+straight away, a new one with a password typed on the on-screen keyboard (WPA2/WPA3 personal, WEP); a long
+press forgets a saved network. A new connection that fails to join is deleted again, and the reason shows
+("wrong password?", no address). Enterprise networks (a login) aren't supported.
 
 **Launcher** (the grid icon): the running game first (a "No game" placeholder otherwise, so tiles never
 move), then the apps. Each start of an app is an instance: a systemd scope (`clamshell-app-<key>-<secs>-<n>`)
@@ -127,8 +146,14 @@ invisible) to a folder in RAM that ClamShell follows. For a Steam game, as launc
 **The controller** (any Xbox-style pad; `CLAMSHELL_GAMEPAD`: path or part of its name) is grabbed for good;
 games see a virtual Xbox 360 pad that is always there. The **pad mouse** toggle (mouse icon in the bar)
 routes the controller to a virtual mouse instead (left stick pointer, right stick scroll, A/RT left
-click, B right, X middle, D-pad arrows) while the virtual pad shows a neutral controller. Test with a fake
+click, B right, X middle, D-pad arrows) while the virtual pad shows a neutral controller. The **home
+button** (BTN_MODE) is ClamShell's, never the games': from shelf it goes to the running game, from anything
+else to shelf. (So Steam's overlay doesn't get it.) Test with a fake
 pad: `cargo run --release -p clamshell-policy --example fake_pad &` then
 `CLAMSHELL_GAMEPAD="clamshell fake pad" CLAMSHELL_PAD_MOUSE=1 cargo run --release`.
+
+**Sleep**: the power button and the lid suspend through logind (the image's `logind.conf.d/thor.conf`).
+ClamShell notices waking from the clocks (CLOCK_BOOTTIME runs during sleep, CLOCK_MONOTONIC doesn't) and
+applies the settings in force again.
 
 Licence: MIT.
