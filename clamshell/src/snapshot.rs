@@ -209,6 +209,7 @@ pub fn shots(now: u64) -> Result<Vec<Shot>, ParseError> {
         shot("keymap-edit-clear.png", Bottom, vec![km(KeymapId::Clear)]),
         shot("keymap-mouse.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Layer(Layer::Main)), km(KeymapId::Input(Input::Button(Button::A))), km(KeymapId::Target(Target::MouseParts))]),
         shot("keymap-edit-gyro.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Input(Input::Gyro))]),
+        shot("keymap-edit-gyro-accel.png", Bottom, [slide(Param::Accel, 0.25, true), vec![km(KeymapId::Toggle(Param::Twist))]].concat()),
         shot("keymap-holds.png", Bottom, vec![km(KeymapId::Holds)]),
         shot("keymap-edit-rstick.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Input(Input::Stick(Side::Right)))]),
         shot("keymap-capture.png", Bottom, vec![km(KeymapId::Input(Input::Button(Button::Y))), km(KeymapId::Target(Target::Key)), key(Key::Mod(Modifier::Alt))?]),

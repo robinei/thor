@@ -113,6 +113,8 @@ pub enum KeymapId {
     Toggle(crate::keymap::Param),
     /// The panel's "Active" row of the gyro: the choice of what holds it on opens.
     Holds,
+    /// The gyro calibrated from its next second (the device held still).
+    Calibrate,
     /// What holds the gyro on (none: always on).
     Hold(Option<crate::keymap::Input>),
     /// The modifiers alone as the chord (Shift as a key).

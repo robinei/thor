@@ -65,6 +65,7 @@ impl Handles {
                 self.tuning.apply(settings, game.as_deref());
             }
             Effect::Keymap(keymap) => self.tuning.keymap(keymap),
+            Effect::CalibrateGyro => self.tuning.calibrate_gyro(),
             Effect::Save(save) => self.save(save),
             Effect::RecordPlay { game, start, duration } => {
                 if let Some(db) = self.paths.stats_db()

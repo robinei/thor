@@ -38,8 +38,9 @@ const STICK_POINTER: [f32; 5] = [500.0, 900.0, 1400.0, 2100.0, 3000.0];
 const GYRO_POINTER: [f32; 5] = [6.0, 10.0, 15.0, 22.0, 32.0];
 /// The gyro to a stick: degrees per second for full deflection, at the same speeds.
 const GYRO_STICK: [f32; 5] = [240.0, 160.0, 100.0, 60.0, 35.0];
-/// Turning slower than this (degrees per second) is drift, not aim.
-const GYRO_DEADZONE: f32 = 1.0;
+/// Which way tilting the device like a steering wheel (roll) turns, against rotating it (yaw), when a
+/// binding turns by tilting: the Thor's sign is a device test (docs/thor-gameplan.md).
+const ROLL_TURNS: f32 = 1.0;
 /// How often a stick on the pointer moves it.
 pub const POINTER_EVERY: Duration = Duration::from_millis(8);
 /// High-resolution wheel units per notch (the kernel's convention).
@@ -428,11 +429,11 @@ impl Remap {
             && b.output == Output::Pointer
         {
             let px = step(&GYRO_POINTER, b.speed);
-            let dead = |v: f32| if v.abs() < GYRO_DEADZONE { 0.0 } else { v };
-            let (sx, sy) = gyro_signs(&b);
+            let (x, y) = gyro_turn(&b, rate);
+            let gain = gyro_gain(&b, (x, y));
             // Turning left (yaw) moves the pointer left; tilting the top back (pitch) moves it up.
-            self.carry.0 -= sx * dead(rate.yaw) * dt * px;
-            self.carry.1 -= sy * dead(rate.pitch) * dt * px;
+            self.carry.0 -= x * gain * dt * px;
+            self.carry.1 -= y * gain * dt * px;
             self.flush_pointer(out);
         }
         self.update(snap, Instant::now(), out);
@@ -513,11 +514,12 @@ impl Remap {
         self.keymap.lookup(input, Self::back(snap))
     }
 
-    /// The gyro's binding, if it acts now (its hold held, or none).
+    /// The gyro's binding, if it acts now: always without a hold; with one, while it is held (or, a
+    /// ratchet, while it isn't).
     fn gyro_binding(&self, snap: &PadSnapshot) -> Option<Binding> {
         let b = *self.get(Input::Gyro, snap)?;
-        let held = b.hold.is_none_or(|h| self.digital(h, snap));
-        held.then_some(b)
+        let on = b.hold.is_none_or(|h| self.digital(h, snap) != b.ratchet);
+        on.then_some(b)
     }
 
     fn binding(&self, input: Input, snap: &PadSnapshot) -> Option<Binding> {
@@ -709,9 +711,10 @@ impl Remap {
         {
             let full = step(&GYRO_STICK, b.speed);
             let half = self.stick_middle().1;
-            let dead = |v: f32| if v.abs() < GYRO_DEADZONE { 0.0 } else { v };
-            let (sx, sy) = gyro_signs(&b);
-            *t = (t.0 - sx * dead(self.gyro.yaw) / full * half, t.1 - sy * dead(self.gyro.pitch) / full * half);
+            let (x, y) = gyro_turn(&b, self.gyro);
+            let gain = gyro_gain(&b, (x, y));
+            let (vx, vy) = stick_from(-x * gain / full, -y * gain / full, b.stick_min);
+            *t = (t.0 + vx * half, t.1 + vy * half);
         }
         // The pad's axes from the outputs: sticks, triggers, the D-pad.
         let stick = self.ranges.stick;
@@ -825,6 +828,37 @@ fn chord_down(keys: &mut Vec<KeyCode>, chord: &Chord) {
 /// The gyro's motion turned round across and up/down, as its binding says.
 fn gyro_signs(b: &Binding) -> (f32, f32) {
     (if b.invert_x { -1.0 } else { 1.0 }, if b.invert_y { -1.0 } else { 1.0 })
+}
+
+/// The gyro's turning (degrees per second; across: yaw, plus roll when the binding turns by tilting; up
+/// and down: pitch), inverted as the binding says, and tightened: slower than its tightening, scaled down
+/// in proportion (half the tightening turns at a quarter), so a hand's tremor fades without a hard edge.
+fn gyro_turn(b: &Binding, r: Rate) -> (f32, f32) {
+    let (sx, sy) = gyro_signs(b);
+    let across = if b.twist { r.yaw + ROLL_TURNS * r.roll } else { r.yaw };
+    let (x, y) = (sx * across, sy * r.pitch);
+    let tight = f32::from(b.tighten) / 10.0;
+    let speed = x.hypot(y);
+    let k = if tight > 0.0 && speed < tight { speed / tight } else { 1.0 };
+    (x * k, y * k)
+}
+
+/// The gyro's acceleration: 1 for slow turns, up to 3 (at 100 %) for turns as fast as its "fastest at".
+fn gyro_gain(b: &Binding, (x, y): (f32, f32)) -> f32 {
+    let at = f32::from(b.accel_at.max(1));
+    1.0 + 2.0 * f32::from(b.accel) / 100.0 * (x.hypot(y) / at).min(1.0)
+}
+
+/// A stick's deflection (each axis -1 to 1) kept within the circle, and starting at `min` percent: a
+/// game's own stick deadzone doesn't swallow small motion.
+fn stick_from(x: f32, y: f32, min: u8) -> (f32, f32) {
+    let m = x.hypot(y);
+    if m <= 0.0 {
+        return (0.0, 0.0);
+    }
+    let min = f32::from(min) / 100.0;
+    let to = min + (1.0 - min) * m.min(1.0);
+    (x / m * to, y / m * to)
 }
 
 #[cfg(test)]
@@ -1055,12 +1089,70 @@ mod tests {
         // A second at -20 °/s (turning right) at 15 px per degree: 300 px right.
         let moved = sum(&out.mouse, RelativeAxisCode::REL_X);
         assert!((moved - 300).abs() <= 2, "{moved}");
-        // Drift below the deadzone moves nothing (and sub-pixel remainders are kept, not lost).
+        // A sensor's offset at rest (0.5 °/s): tightened to a crawl, then learnt and taken off.
         let before = sum(&out.mouse, RelativeAxisCode::REL_X);
-        for i in 351..=600 {
+        for i in 351..=850 {
             gyro(&mut r, i * 4, 0.5, &mut out);
         }
-        assert_eq!(sum(&out.mouse, RelativeAxisCode::REL_X), before);
+        let learning = sum(&out.mouse, RelativeAxisCode::REL_X) - before;
+        assert!(learning.abs() <= 5, "a few pixels while it learns: {learning}");
+        let learnt = sum(&out.mouse, RelativeAxisCode::REL_X);
+        for i in 851..=1100 {
+            gyro(&mut r, i * 4, 0.5, &mut out);
+        }
+        assert_eq!(sum(&out.mouse, RelativeAxisCode::REL_X), learnt, "then nothing");
+    }
+
+    fn turning(r: &mut PadRouter, from: u64, ms: u64, yaw: f32, roll: f32, out: &mut Out) -> i32 {
+        let before = sum(&out.mouse, RelativeAxisCode::REL_X);
+        for i in from..=from + ms / 4 {
+            r.motion(Sample { rate: super::super::motion::Rate { pitch: 0.0, yaw, roll }, at: Duration::from_millis(i * 4) }, out);
+        }
+        sum(&out.mouse, RelativeAxisCode::REL_X) - before
+    }
+
+    #[test]
+    fn gyro_acceleration_tightening_and_tilting() {
+        let pointer = |b: Binding| keymap(&[(Input::Gyro, Binding { ..b })]);
+        // No acceleration: a second at 20 °/s and at 100 °/s go 15 px per degree.
+        let (mut r, mut out) = router(pointer(to(Output::Pointer)), PadRoute::Game);
+        assert!((turning(&mut r, 0, 1000, -20.0, 0.0, &mut out) - 300).abs() <= 3);
+        assert!((turning(&mut r, 251, 1000, -100.0, 0.0, &mut out) - 1500).abs() <= 15);
+        // Full acceleration, fastest at 60 °/s: slow turns as before, 100 °/s three times as far.
+        let (mut r, mut out) = router(pointer(Binding { accel: 100, accel_at: 60, ..to(Output::Pointer) }), PadRoute::Game);
+        let slow = turning(&mut r, 0, 1000, -6.0, 0.0, &mut out);
+        assert!((slow - 108).abs() <= 3, "6 °/s: a tenth of the way to 60, so x1.2: {slow}");
+        let fast = turning(&mut r, 251, 1000, -100.0, 0.0, &mut out);
+        assert!((fast - 4500).abs() <= 45, "{fast}");
+        // Tightening 2 °/s: 1 °/s goes at half (a quarter of the way), 4 °/s in full.
+        let (mut r, mut out) = router(pointer(Binding { tighten: 20, ..to(Output::Pointer) }), PadRoute::Game);
+        let tight = turning(&mut r, 0, 1000, -1.0, 0.0, &mut out);
+        assert!((tight - 7).abs() <= 1, "{tight}");
+        // Tilting turns too, with the binding's switch; not without.
+        let (mut r, mut out) = router(pointer(to(Output::Pointer)), PadRoute::Game);
+        assert_eq!(turning(&mut r, 0, 500, 0.0, -20.0, &mut out), 0);
+        let (mut r, mut out) = router(pointer(Binding { twist: true, ..to(Output::Pointer) }), PadRoute::Game);
+        assert!((turning(&mut r, 0, 1000, 0.0, -20.0, &mut out) - 300).abs() <= 3);
+    }
+
+    #[test]
+    fn the_gyro_off_while_held_and_a_stick_from_its_minimum() {
+        // A ratchet: on, but off while LB is held.
+        let k = keymap(&[(Input::Gyro, Binding { hold: Some(Input::Button(Button::LB)), ratchet: true, ..to(Output::Pointer) })]);
+        let (mut r, mut out) = router(k, PadRoute::Game);
+        assert!(turning(&mut r, 0, 500, -20.0, 0.0, &mut out) > 140);
+        press(&mut r, KeyCode::BTN_TL, true, &mut out);
+        assert_eq!(turning(&mut r, 126, 500, -20.0, 0.0, &mut out), 0, "held: off");
+        press(&mut r, KeyCode::BTN_TL, false, &mut out);
+        assert!(turning(&mut r, 252, 500, -20.0, 0.0, &mut out) > 140);
+        // A stick from 30 %: a slow turn starts there, full stays full.
+        let k = keymap(&[(Input::Gyro, Binding { stick_min: 30, ..to(Output::Stick(Side::Right)) })]);
+        let (mut r, mut out) = router(k, PadRoute::Game);
+        gyro(&mut r, 0, -5.0, &mut out);
+        let v = last(&out.pad, AbsoluteAxisCode::ABS_RX).unwrap();
+        assert!((v - STICK_MAX * 335 / 1000).abs() < 400, "30 % + 70 % of 5 % of full: {v}");
+        gyro(&mut r, 4, -500.0, &mut out);
+        assert_eq!(last(&out.pad, AbsoluteAxisCode::ABS_RX), Some(STICK_MAX));
     }
 
     #[test]

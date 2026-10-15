@@ -183,8 +183,9 @@ pub struct PadRouter {
     remap: Remap,
     /// Events passed through to the game's pad since the last report.
     passed: bool,
-    /// The gyro's last sample's time.
+    /// The gyro's last sample's time, and its offset at rest.
     gyro_at: Option<std::time::Duration>,
+    calibration: super::motion::Calibration,
     snapshot: PadSnapshot,
 }
 
@@ -206,6 +207,7 @@ impl PadRouter {
             remap,
             passed: false,
             gyro_at: None,
+            calibration: super::motion::Calibration::default(),
             snapshot,
         };
         if away(route) {
@@ -245,9 +247,20 @@ impl PadRouter {
     pub fn motion(&mut self, sample: Sample, out: &mut Out) {
         let dt = interval(self.gyro_at, sample.at);
         self.gyro_at = Some(sample.at);
-        if self.route == PadRoute::Game {
-            self.remap.motion(sample.rate, dt, &self.snapshot, out);
+        // (Calibrated on every route: it learns at rest whatever the pad does.)
+        let (rate, calibrated) = self.calibration.correct(sample.rate, dt);
+        if let Some(ok) = calibrated {
+            out.events.push(Event::GyroCalibrated(ok));
         }
+        if self.route == PadRoute::Game {
+            self.remap.motion(rate, dt, &self.snapshot, out);
+        }
+    }
+
+    /// Calibrates the gyro from its next samples (the device held still); [`Event::GyroCalibrated`]
+    /// says how it went.
+    pub fn calibrate(&mut self) {
+        self.calibration.ask();
     }
 
     /// The controller is gone: whatever the route holds down outside the game's pad is let go.

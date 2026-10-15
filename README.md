@@ -286,9 +286,15 @@ while the button is, repeated by the compositor), the pointer; so leaving the ga
 a keymap change or Back let go mid-press leaves nothing held, and chords press their modifiers first and
 let them go last. **The gyro** is read from a motion sensor next to the controller (an evdev device with
 INPUT_PROP_ACCELEROMETER and the gyro on ABS_RX/RY/RZ, as the kernel's controller drivers make: the one
-paired with the controller by name or port, or the only one); to the pointer it is integrated (yaw to x,
-pitch to y; below 1 °/s it is drift) with sub-pixel remainders kept, to a stick scaled and clamped. The
-Thor's own sensor is still unknown: it plugs in at the same place (`pad/motion.rs`).
+paired with the controller by name or port, or the only one). Its offset at rest is learnt whenever the
+device lies still for 1.5 s and taken off every sample, and on request ("Calibrate gyro" on the edit
+screen: held still for a second; a notice says whether it took). To the pointer it is integrated (yaw to x,
+pitch to y) with sub-pixel remainders kept, to a stick scaled and clamped. A binding's parameters:
+acceleration (faster turns go further, up to three times at its "fastest at"), tightening (turns slower
+than it are scaled down toward nothing, against tremor, without a hard edge), turning by tilting (roll
+turns as well as yaw), where a stick starts (past a game's own stick deadzone), and "off while held"
+(its hold turns it off instead of on, to lift and re-centre). The Thor's own sensor is still unknown: it
+plugs in at the same place (`pad/motion.rs`).
 
 Saved in `game-settings.txt` next to `stats.db`, applied at a game's launch and at once while it runs.
 Frequency caps, cores and the charge limit need write access to cpufreq's `scaling_max_freq`, CPUs'

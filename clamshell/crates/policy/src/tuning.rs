@@ -102,6 +102,11 @@ impl Tuning {
         self.pad.send(pad::Command::Keymap(keymap.clone()));
     }
 
+    /// The gyro calibrated from its next second.
+    pub fn calibrate_gyro(&self) {
+        self.pad.send(pad::Command::CalibrateGyro);
+    }
+
     /// Applies the settings in force (`game`'s, or the global ones without a game): the hardware, and
     /// for a game its MangoHud config (written, and reloaded live if it runs), whose
     /// path is returned for its launch.

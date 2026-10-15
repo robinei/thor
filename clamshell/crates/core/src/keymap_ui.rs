@@ -334,6 +334,10 @@ impl State {
                 }
                 None => vec![],
             },
+            (KeymapId::Calibrate, Screen::Edit(_)) => {
+                self.notify(crate::hardware::NoticeKind::Gyro(None));
+                vec![Effect::CalibrateGyro]
+            }
             (KeymapId::Holds, Screen::Edit(k)) => {
                 let input = self.bottom.keymap_edit.selected.filter(|i| *i == Input::Gyro);
                 if let Some(input) = input.filter(|i| self.param_base(k, *i).is_some_and(|b| b.output != Output::Nothing)) {

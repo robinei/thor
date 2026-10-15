@@ -60,6 +60,9 @@ pub enum Effect {
     Sleep,
     /// Both screens to a file; the result comes back as [`crate::Event::Screenshot`].
     Screenshot,
+    /// Calibrate the gyro from its next second (the device held still); the result comes back as
+    /// [`crate::Event::GyroCalibrated`].
+    CalibrateGyro,
     Quit,
 }
 

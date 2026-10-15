@@ -156,9 +156,12 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
 - [ ] Gyro: what the Thor's IMU is (an IIO device, or evdev from the gamepad driver?), its axes, signs and
       units. ClamShell reads an evdev motion sensor (INPUT_PROP_ACCELEROMETER, ABS_RX/RY/RZ, resolution in
       units per °/s) paired with the controller; an IIO sensor needs a source of its own behind the same
-      seam (`pad/motion.rs`, `MotionSource`). Then the feel: gyro to the pointer at each speed (pixels per
-      degree, the 1 °/s drift deadzone), which way turning and tilting move it, gyro to a stick, holding
-      a trigger to aim.
+      seam (`pad/motion.rs`, `MotionSource`). Its offset at rest (°/s, and how it drifts warm): whether
+      the still detection (under 5 °/s, within 0.5 °/s, for 1.5 s) catches it and doesn't eat slow aim,
+      and "Calibrate gyro". Then the feel: gyro to the pointer at each speed (pixels per degree),
+      acceleration and tightening's defaults, which way turning and tilting move it (`ROLL_TURNS` in
+      `pad/remap.rs` for tilting), gyro to a stick with its minimum, holding a trigger to aim, and the
+      ratchet.
 - [ ] GPU: Freedreno (sway) and Turnip (`vkcube`, a game); MangoHud frame rate in sysinfo.
 - [ ] Wi-Fi from the Wi-Fi mode (NetworkManager): scan, join with a password, forget; polkit lets the
       session's user do it (tested in the VM as an autologin session user, not on the device).

@@ -64,6 +64,8 @@ pub enum Event {
     Device(DeviceKey),
     /// The screenshot asked for is taken (its file), or failed (why).
     Screenshot(Result<String, String>),
+    /// A calibration of the gyro asked for ended: whether it took (the device was held still enough).
+    GyroCalibrated(bool),
     Quit,
 }
 

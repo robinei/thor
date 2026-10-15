@@ -342,6 +342,10 @@ impl State {
                 self.on_screenshot(result);
                 (Dirty::BOTTOM, vec![])
             }
+            Event::GyroCalibrated(ok) => {
+                self.notify(crate::hardware::NoticeKind::Gyro(Some(ok)));
+                (Dirty::BOTTOM, vec![])
+            }
             Event::Quit => (Dirty::NONE, vec![Effect::Save(Save::Resume(self.resume_text())), Effect::Quit]),
         }
     }

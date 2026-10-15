@@ -34,6 +34,8 @@ pub enum NoticeKind {
     Level(Control),
     /// A screenshot was saved (its file), or wasn't (why).
     Screenshot(Result<String, String>),
+    /// The gyro calibrating (none: hold still), or done (whether it took).
+    Gyro(Option<bool>),
 }
 
 impl State {

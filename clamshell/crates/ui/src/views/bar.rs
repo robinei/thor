@@ -148,6 +148,9 @@ fn draw_notice(f: &mut Frame, what: &NoticeKind, w: f32, bar_h: f32) {
         }
         NoticeKind::Screenshot(Ok(_)) => (None, Fmt::of(format_args!("Screenshot saved"))),
         NoticeKind::Screenshot(Err(_)) => (None, Fmt::of(format_args!("Screenshot failed"))),
+        NoticeKind::Gyro(None) => (None, Fmt::of(format_args!("Hold still: calibrating the gyro"))),
+        NoticeKind::Gyro(Some(true)) => (None, Fmt::of(format_args!("Gyro calibrated"))),
+        NoticeKind::Gyro(Some(false)) => (None, Fmt::of(format_args!("Moved: gyro not calibrated"))),
     };
     let text_w = f.c.text_width(size, &text);
     let icon_w = if icon.is_some() { side * 1.3 } else { 0.0 };

@@ -14,17 +14,19 @@
 //!   `a`, `lb`, `up`, `lstick`, `rstick-up`, `lt`, `gyro`: selects it, again reopens the way it is
 //!   mapped; while a control is picked, the one picked; a long press sets it back),
 //!   `keymap-act press|hold|double` (the panel's tab), `keymap-layer main|back`, `keymap-clear`,
-//!   `keymap-clear-confirm`, `toggle` (the binding's toggle), `keymap-active` (the gyro's hold), `invert x|y`, `map-to TARGET` (the panel's ways: `pick`, `key`, `keys`, `mouse`, `pointer`,
-//!   `default`, `nothing`; or an output: `pad-INPUT`, `mouse-left|right|middle|back|forward`,
-//!   `wheel-up|down|left|right`, `stick-left|right`, `dpad`, `trigger-left|right`),
-//!   `gyro-hold INPUT|always`, `key-done`; `key NAME` (an on-screen keyboard key: a
+//!   `keymap-clear-confirm`, `toggle` (the binding's toggle), `twist`, `ratchet` and `calibrate` (the
+//!   gyro's), `keymap-active` (the gyro's hold), `invert x|y`, `map-to TARGET` (the panel's ways: `pick`,
+//!   `key`, `keys`, `mouse`, `pointer`, `default`, `nothing`; or an output: `pad-INPUT`,
+//!   `mouse-left|right|middle|back|forward`, `wheel-up|down|left|right`, `stick-left|right`, `dpad`,
+//!   `trigger-left|right`), `gyro-hold INPUT|always`, `key-done`; `key NAME` (an on-screen keyboard key: a
 //!   character, `space`, `ctrl`, `alt`, `shift`, `fn`, `enter`, `esc`, `backspace`, `tab`)
 //! - `tab NAME`: open a tab (dock, wifi, keyboard, ...)
 //! - `home`; `list N`: move shelf's selection by N
 //! - `type TEXT`: type on the on-screen keyboard
 //! - `slide volume|brightness FROM TO [hold]`: a finger down at FROM on a 620-wide layout, moved to TO,
 //!   lifted unless held; `lift volume|brightness` lifts it; the same for the selected input's parameter
-//!   on the keymap edit screen: `slide speed|threshold|deadzone|full|curve|turbo|holdtime FROM TO [hold]`
+//!   on the keymap edit screen: `slide speed|threshold|deadzone|full|curve|turbo|holdtime|accel|accelat|
+//!   tighten|stickmin FROM TO [hold]`
 //! - `level volume|brightness V`, `level backlight|stream N V`: a level row in the volume or brightness
 //!   tab set to V
 //! - `pad up|down|left|right|a|b|y|lb|rb|switch|back`: the pad on ClamShell's screens (`a` presses and
@@ -91,6 +93,10 @@ fn control(name: &str) -> Result<Control, ParseError> {
         "curve" => Ok(Control::Param(Param::Curve)),
         "turbo" => Ok(Control::Param(Param::Turbo)),
         "holdtime" => Ok(Control::Param(Param::HoldTime)),
+        "accel" => Ok(Control::Param(Param::Accel)),
+        "accelat" => Ok(Control::Param(Param::AccelAt)),
+        "tighten" => Ok(Control::Param(Param::Tighten)),
+        "stickmin" => Ok(Control::Param(Param::StickMin)),
         other => Err(ParseError::Name(other.to_owned())),
     }
 }
@@ -213,6 +219,9 @@ fn target_id(words: &[&str]) -> Result<Id, ParseError> {
         ["invert", "x"] => Id::Keymap(KeymapId::Toggle(Param::InvertX)),
         ["invert", "y"] => Id::Keymap(KeymapId::Toggle(Param::InvertY)),
         ["toggle"] => Id::Keymap(KeymapId::Toggle(Param::Toggle)),
+        ["twist"] => Id::Keymap(KeymapId::Toggle(Param::Twist)),
+        ["ratchet"] => Id::Keymap(KeymapId::Toggle(Param::Ratchet)),
+        ["calibrate"] => Id::Keymap(KeymapId::Calibrate),
         ["gyro-hold", "always"] => Id::Keymap(KeymapId::Hold(None)),
         ["gyro-hold", input] => Id::Keymap(KeymapId::Hold(Some(input_named(input)?))),
         ["key-done"] => Id::Keymap(KeymapId::Done),

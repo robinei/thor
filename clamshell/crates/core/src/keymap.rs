@@ -560,6 +560,11 @@ pub const DEFAULT_SPEED: u8 = 50;
 pub const DEFAULT_THRESHOLD: u8 = 50;
 /// A press held this long is a hold (hundredths of a second, 20 to 100).
 pub const DEFAULT_HOLD_TIME: u8 = 40;
+/// The gyro: turning faster than this (degrees per second) gets the whole of its acceleration.
+pub const DEFAULT_ACCEL_AT: u8 = 60;
+/// The gyro: turning slower than this (tenths of a degree per second) is scaled down toward nothing
+/// (tightening, against a hand's tremor).
+pub const DEFAULT_TIGHTEN: u8 = 10;
 
 /// A stick on the pointer: its deadzone and curve unless set otherwise (as the pointer moved before the
 /// parameters were there: nothing within 15 % of the middle, then the distance from there squared).
@@ -593,6 +598,18 @@ pub struct Binding {
     pub toggle: bool,
     /// A hold's binding: how long a press must last (hundredths of a second).
     pub hold_time: u8,
+    /// The gyro: how much faster turns go further (0: as slow ones; 100: three times at full).
+    pub accel: u8,
+    /// The gyro: the turning speed (degrees per second) that gets all of the acceleration.
+    pub accel_at: u8,
+    /// The gyro: tightening, tenths of a degree per second (see [`DEFAULT_TIGHTEN`]).
+    pub tighten: u8,
+    /// The gyro to a stick: where its output starts (percent; past a game's own stick deadzone).
+    pub stick_min: u8,
+    /// The gyro: tilting the device like a steering wheel (roll) turns as well as rotating it (yaw).
+    pub twist: bool,
+    /// The gyro: off while its hold is held, instead of on (to lift and re-centre, a ratchet).
+    pub ratchet: bool,
 }
 
 impl Binding {
@@ -612,6 +629,12 @@ impl Binding {
             turbo: 0,
             toggle: false,
             hold_time: DEFAULT_HOLD_TIME,
+            accel: 0,
+            accel_at: DEFAULT_ACCEL_AT,
+            tighten: DEFAULT_TIGHTEN,
+            stick_min: 0,
+            twist: false,
+            ratchet: false,
         }
     }
 
@@ -665,11 +688,22 @@ pub enum Param {
     /// Presses a second while on (0: off).
     Turbo,
     Toggle,
+    /// The gyro's.
+    Accel,
+    AccelAt,
+    Tighten,
+    StickMin,
+    Twist,
+    Ratchet,
 }
 
 impl Param {
-    pub const ALL: [Param; 10] = [
+    pub const ALL: [Param; 16] = [
         Param::Speed,
+        Param::Accel,
+        Param::AccelAt,
+        Param::Tighten,
+        Param::StickMin,
         Param::Deadzone,
         Param::Full,
         Param::Curve,
@@ -677,8 +711,10 @@ impl Param {
         Param::HoldTime,
         Param::Turbo,
         Param::Toggle,
+        Param::Twist,
         Param::InvertX,
         Param::InvertY,
+        Param::Ratchet,
     ];
 
     pub fn label(self) -> &'static str {
@@ -693,12 +729,18 @@ impl Param {
             Param::HoldTime => "Hold for",
             Param::Turbo => "Turbo",
             Param::Toggle => "Toggle",
+            Param::Accel => "Acceleration",
+            Param::AccelAt => "Fastest at",
+            Param::Tighten => "Tightening",
+            Param::StickMin => "Stick from",
+            Param::Twist => "Turn by tilting",
+            Param::Ratchet => "Off while held",
         }
     }
 
     /// On or off (a tap switches it), rather than a value on a slider.
     pub fn switch(self) -> bool {
-        matches!(self, Param::InvertX | Param::InvertY | Param::Toggle)
+        matches!(self, Param::InvertX | Param::InvertY | Param::Toggle | Param::Twist | Param::Ratchet)
     }
 
     /// A value of it as shown: `40 %`, `Off` or `12/s` (turbo), `400 ms` (a hold's time).
@@ -707,6 +749,9 @@ impl Param {
             Param::Turbo if v == 0 => out.write_str("Off"),
             Param::Turbo => write!(out, "{v}/s"),
             Param::HoldTime => write!(out, "{} ms", u16::from(v) * 10),
+            Param::Accel if v == 0 => out.write_str("Off"),
+            Param::AccelAt => write!(out, "{v} °/s"),
+            Param::Tighten => write!(out, "{}.{} °/s", v / 10, v % 10),
             _ => write!(out, "{v} %"),
         }
     }
@@ -721,7 +766,8 @@ impl Param {
             (Kind::Stick, Param::Speed) => output == Output::Pointer,
             (Kind::Trigger, Param::Deadzone | Param::Full) => true,
             (Kind::Trigger, Param::Threshold) => output.digital(),
-            (Kind::Gyro, Param::Speed | Param::InvertX | Param::InvertY) => motion,
+            (Kind::Gyro, Param::Speed | Param::InvertX | Param::InvertY | Param::Accel | Param::AccelAt | Param::Tighten | Param::Twist | Param::Ratchet) => motion,
+            (Kind::Gyro, Param::StickMin) => matches!(output, Output::Stick(_)),
             (Kind::Digital | Kind::Trigger, Param::Turbo | Param::Toggle) => output.digital(),
             _ => false,
         }
@@ -745,6 +791,11 @@ impl Param {
             Param::InvertX | Param::InvertY | Param::Toggle => 0..=1,
             Param::HoldTime => 20..=100,
             Param::Turbo => 0..=30,
+            Param::Accel => 0..=100,
+            Param::AccelAt => 10..=200,
+            Param::Tighten => 0..=50,
+            Param::StickMin => 0..=50,
+            Param::Twist | Param::Ratchet => 0..=1,
         }
     }
 
@@ -759,7 +810,10 @@ impl Param {
             Param::Deadzone if pointer => POINTER_DEADZONE,
             Param::Curve if pointer => POINTER_CURVE,
             Param::Deadzone | Param::Curve | Param::InvertX | Param::InvertY | Param::Turbo | Param::Toggle => 0,
+            Param::Accel | Param::StickMin | Param::Twist | Param::Ratchet => 0,
             Param::HoldTime => DEFAULT_HOLD_TIME,
+            Param::AccelAt => DEFAULT_ACCEL_AT,
+            Param::Tighten => DEFAULT_TIGHTEN,
         }
     }
 
@@ -775,6 +829,12 @@ impl Param {
             Param::HoldTime => b.hold_time,
             Param::Turbo => b.turbo,
             Param::Toggle => u8::from(b.toggle),
+            Param::Accel => b.accel,
+            Param::AccelAt => b.accel_at,
+            Param::Tighten => b.tighten,
+            Param::StickMin => b.stick_min,
+            Param::Twist => u8::from(b.twist),
+            Param::Ratchet => u8::from(b.ratchet),
         }
     }
 
@@ -792,6 +852,12 @@ impl Param {
             Param::HoldTime => b.hold_time = value,
             Param::Turbo => b.turbo = value,
             Param::Toggle => b.toggle = value > 0,
+            Param::Accel => b.accel = value,
+            Param::AccelAt => b.accel_at = value,
+            Param::Tighten => b.tighten = value,
+            Param::StickMin => b.stick_min = value,
+            Param::Twist => b.twist = value > 0,
+            Param::Ratchet => b.ratchet = value > 0,
         }
     }
 
@@ -807,6 +873,12 @@ impl Param {
             Param::HoldTime => "holdtime",
             Param::Turbo => "turbo",
             Param::Toggle => "toggle",
+            Param::Accel => "accel",
+            Param::AccelAt => "accelat",
+            Param::Tighten => "tighten",
+            Param::StickMin => "stickmin",
+            Param::Twist => "twist",
+            Param::Ratchet => "ratchet",
         }
     }
 }
@@ -1224,8 +1296,11 @@ fn write_bindings(bindings: &Bindings, text: &mut String) {
                 text.push_str(" hold=");
                 let _ = hold.name(text);
             }
-            if b.toggle {
-                text.push_str(" toggle");
+            for (on, word) in [(b.toggle, "toggle"), (b.twist, "twist"), (b.ratchet, "ratchet")] {
+                if on {
+                    text.push(' ');
+                    text.push_str(word);
+                }
             }
             text.push('\n');
         }
@@ -1309,7 +1384,7 @@ fn parse_binding(line: &str) -> Option<(Input, Actuation, Binding)> {
         match word.split_once('=') {
             Some(("speed", v)) => binding.speed = speed(v).unwrap_or(DEFAULT_SPEED),
             Some(("threshold", v)) => binding.threshold = v.parse().ok().filter(|v| Param::Threshold.range().contains(v)).unwrap_or(DEFAULT_THRESHOLD),
-            Some((name @ ("deadzone" | "full" | "curve" | "turbo" | "holdtime"), v)) => {
+            Some((name @ ("deadzone" | "full" | "curve" | "turbo" | "holdtime" | "accel" | "accelat" | "tighten" | "stickmin"), v)) => {
                 if let Some(p) = Param::ALL.into_iter().find(|p| p.name() == name)
                     && let Some(v) = v.parse().ok().filter(|v| p.range().contains(v))
                 {
@@ -1322,6 +1397,8 @@ fn parse_binding(line: &str) -> Option<(Input, Actuation, Binding)> {
             }
             Some(("hold", v)) => binding.hold = Input::parse(v).filter(|h| gyro_holds().any(|g| g == *h)),
             None if word == "toggle" => binding.toggle = true,
+            None if word == "twist" => binding.twist = true,
+            None if word == "ratchet" => binding.ratchet = true,
             // (Options of later features.)
             _ => {}
         }
@@ -1432,7 +1509,23 @@ mod tests {
         let stick = vec![Param::Deadzone, Param::Full, Param::Curve, Param::InvertX, Param::InvertY];
         assert_eq!(ps(Input::Stick(Side::Left), Output::Pointer), [vec![Param::Speed], stick.clone()].concat());
         assert_eq!(ps(Input::Stick(Side::Left), Output::Stick(Side::Left)), stick, "as on the pad: tuned all the same");
-        assert_eq!(ps(Input::Gyro, Output::Stick(Side::Right)), vec![Param::Speed, Param::InvertX, Param::InvertY]);
+        let gyro = |stick: bool| {
+            let mut v = vec![Param::Speed, Param::Accel, Param::AccelAt, Param::Tighten];
+            if stick {
+                v.push(Param::StickMin);
+            }
+            v.extend([Param::Twist, Param::InvertX, Param::InvertY, Param::Ratchet]);
+            v
+        };
+        assert_eq!(ps(Input::Gyro, Output::Stick(Side::Right)), gyro(true));
+        assert_eq!(ps(Input::Gyro, Output::Pointer), gyro(false));
+        // Written and read back.
+        let b = Binding { accel: 40, accel_at: 90, tighten: 25, stick_min: 15, twist: true, ratchet: true, hold: Some(Input::Button(Button::LB)), ..Binding::to(Output::Stick(Side::Right)) };
+        let mut k = Keymap::new(1, "g");
+        k.set(Input::Gyro, Some(b));
+        let maps = Keymaps { list: vec![k] };
+        assert!(maps.text().contains("gyro = stick right accel=40 accelat=90 tighten=25 stickmin=15 hold=lb twist ratchet\n"), "{}", maps.text());
+        assert_eq!(Keymaps::load(&maps.text()), maps);
         assert_eq!(ps(Input::Gyro, Output::Nothing), vec![], "off");
         assert_eq!(ps(Input::Trigger(Side::Left), Output::Key(chord("x"))), vec![Param::Deadzone, Param::Full, Param::Threshold, Param::Turbo, Param::Toggle]);
         assert_eq!(ps(Input::Trigger(Side::Left), Output::Trigger(Side::Right)), vec![Param::Deadzone, Param::Full]);

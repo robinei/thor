@@ -48,6 +48,8 @@ pub enum Command {
     Route(PadRoute),
     /// The keymap in force (Default: no bindings).
     Keymap(Keymap),
+    /// Calibrate the gyro from its next samples.
+    CalibrateGyro,
 }
 
 lost_on!(io::Error);
@@ -94,6 +96,11 @@ impl<S: Sink> PadThread<S> {
                     router.set_route(route, out);
                 }
             }
+            Command::CalibrateGyro => match router {
+                Some((router, _)) => router.calibrate(),
+                // (No controller: no gyro to calibrate.)
+                None => log::info!("pad: no controller to calibrate the gyro of"),
+            },
         }
     }
 

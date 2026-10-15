@@ -787,13 +787,22 @@ fn panel(f: &mut Frame, body: Rect, r: Rect, id: u16, keymap: Option<&Keymap>, v
         return;
     };
     let rh = body.h * PANEL_ROW_H;
-    for p in params_of(input, base.output, act) {
+    // (Acceleration's speed only with acceleration; the ratchet after the gyro's hold, with one.)
+    let shown_params = params_of(input, base.output, act).filter(|p| match p {
+        Param::AccelAt => base.accel > 0,
+        // (Y shares X's row.)
+        Param::Ratchet | Param::InvertY => false,
+        _ => true,
+    });
+    for p in shown_params {
         let Some(row) = col.take(rh) else {
             return;
         };
         let v = p.get(&base);
         let changed = v != p.default_for(input, base.output);
-        if p.switch() {
+        if p == Param::InvertX {
+            invert_row(f, row, small, &base);
+        } else if p.switch() {
             f.button(Id::Keymap(KeymapId::Toggle(p)), row, Look::ROW, |f| {
                 let inner = row.inset(small * 0.4);
                 let sw = Rect::new(inner.right() - row.h * 0.9, row.y, row.h * 0.9, row.h);
@@ -820,11 +829,48 @@ fn panel(f: &mut Frame, body: Rect, r: Rect, id: u16, keymap: Option<&Keymap>, v
             None => Fmt::of(format_args!("Always")),
         };
         f.button(Id::Keymap(KeymapId::Holds), row, Look::ROW, |f| param_row(f, row, small, "Active", &value, base.hold.is_some()));
+        if base.hold.is_some()
+            && let Some(row) = col.take(rh)
+        {
+            let on = base.ratchet;
+            f.button(Id::Keymap(KeymapId::Toggle(Param::Ratchet)), row, Look::ROW, |f| {
+                let inner = row.inset(small * 0.4);
+                let sw = Rect::new(inner.right() - row.h * 0.9, row.y, row.h * 0.9, row.h);
+                f.c.text_fit(Rect::new(inner.x, row.y, sw.x - inner.x, row.h), small, Tone::Dim, Param::Ratchet.label(), Keep::Start);
+                widgets::switch_shape(f.c, sw, on);
+            });
+        }
     }
+
     if params_of(input, base.output, act).any(|p| !p.switch())
         && let Some(row) = col.take(small * LINE * 1.5)
     {
         centred(f, row.shifted(0.0, small * 0.3), small * 0.85, Tone::Dim, "Slide a value to set it");
+    }
+}
+
+/// The inversions' row: "Invert", then a switch each for X and Y, each its own target.
+fn invert_row(f: &mut Frame, row: Rect, size: f32, b: &Binding) {
+    let inner = row.inset(size * 0.4);
+    let (mut sw_w, mut letter) = (row.h * 0.9, size * 1.2);
+    // (Narrow: no word, the two switches scaled into the row.)
+    let label = inner.w >= 2.0 * (sw_w + letter + size * 0.6) + size * 3.0;
+    if !label {
+        let k = (inner.w / (2.0 * (sw_w + letter + size * 0.6))).min(1.0);
+        (sw_w, letter) = (sw_w * k, letter * k);
+    }
+    let mut x = inner.right();
+    for (p, name, on) in [(Param::InvertY, "Y", b.invert_y), (Param::InvertX, "X", b.invert_x)] {
+        let sw = Rect::new(x - sw_w, row.y, sw_w, row.h);
+        let target = Rect::new(sw.x - letter, row.y, sw_w + letter, row.h);
+        f.button(Id::Keymap(KeymapId::Toggle(p)), target, Look::ROW, |f| {
+            f.c.text_in(Rect::new(target.x, row.y, letter * 0.8, row.h), size, Tone::Dim, name, Align::Start);
+            widgets::switch_shape(f.c, sw, on);
+        });
+        x = target.x - size * 0.6 * if label { 1.0 } else { sw_w / (row.h * 0.9) };
+    }
+    if label {
+        f.c.text_fit(Rect::new(inner.x, row.y, (x - inner.x).max(0.0), row.h), size, Tone::Dim, "Invert", Keep::Start);
     }
 }
 
@@ -935,6 +981,10 @@ fn foot_actions(f: &mut Frame, body: Rect, row: Rect, keymap: Option<&Keymap>, v
         f.c.text_fit(Rect::new(row.x, row.y, (x - row.x).max(0.0), row.h), small, Tone::Normal, &q, Keep::Start);
     } else {
         x = chip(f, KeymapId::Clear, x, "No changes", if empty { Tone::Dim } else { Tone::Fn });
+        // The gyro selected: its calibration (the device held still for a second).
+        if view.selected == Some(Input::Gyro) {
+            x = chip(f, KeymapId::Calibrate, x, "Calibrate gyro", Tone::Fn);
+        }
         let hint = "Press an input to select it · Back: the other layer · Home: leave";
         f.c.text_fit(Rect::new(row.x, row.y, (x - row.x - pad).max(0.0), row.h), small * 0.9, Tone::Dim, hint, Keep::Start);
     }
