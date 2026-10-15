@@ -14,16 +14,28 @@
 # is built with the EFI stub), our initramfs and the Thor's device tree as files; ROCKNIX's ABL boots
 # /KERNEL, an Android boot image of the same kernel. Layout: GPT; 1: FAT "ROCKNIX" at 16 MiB, an EFI
 # system partition with ROCKNIX's GPT name "system" and legacy-boot attribute (their ABL looks for the
-# label); 2: ext4 THOR_ROOT, the system.
+# label); 2: ext4 THOR_ROOT, the system. The image is small to write; the card's first boot grows the root to
+# the card and makes the swap file for hibernating (thor-firstboot, below).
+#
+# Environment: THOR_TIMEZONE (default: this machine's /etc/localtime, else UTC), THOR_LOCALE (default
+# en_US.UTF-8). Through sudo: sudo THOR_TIMEZONE=Europe/Oslo bash thor-image.sh ...
 set -euo pipefail
 DEVICE=$1 ROCKNIX=$2 PROGRAM=$3 SSH_KEY=$4
 USER_NAME=thor
 WORK=/var/tmp/thor-image
 ROOT=$WORK/root
-# The device's packages: the base system, network, the session, the GPU (Freedreno/Turnip), sound.
+ZONE=${THOR_TIMEZONE:-$(readlink /etc/localtime 2> /dev/null | sed 's|.*/zoneinfo/||')}
+ZONE=${ZONE:-UTC}
+LOCALE=${THOR_LOCALE:-en_US.UTF-8}
+# The swap file for hibernating, in GiB: as much as the RAM (16 GB), so a hibernate with everything in use
+# fits. Made on the card's first boot, not here (it would make the image 16 GB bigger to write).
+SWAP_GIB=16
+# The device's packages: the base system, network, the session, the GPU (Freedreno/Turnip), sound,
+# screenshots (grim), growing the root on first boot (growpart, which uses sgdisk for GPT).
 PACKAGES=(base sudo mkinitcpio networkmanager polkit upower bluez openssh sway swaybg foot xorg-xwayland mesa vulkan-freedreno
-          pipewire pipewire-pulse wireplumber alsa-ucm-conf noto-fonts sqlite python less vim)
-# The kernel command line: ROCKNIX's tuning for SM8550, our root.
+          pipewire pipewire-pulse wireplumber alsa-ucm-conf noto-fonts sqlite python less vim grim cloud-guest-utils gptfdisk)
+# The kernel command line: ROCKNIX's tuning for SM8550, our root. The first boot adds resume= and
+# resume_offset= (the swap file's place) to both copies of it: /KERNEL's and the loader entry's.
 CMDLINE="root=LABEL=THOR_ROOT rw rootwait console=tty0 allow_mismatched_32bit_el0 fw_devlink.strict=1 pcie_ports=compat irqaffinity=0-2 cgroup.memory=nokmem,nosocket nosoftlockup usbcore.interrupt_interval_override=045e:028e:2"
 
 say() { echo "== $*"; }
@@ -71,6 +83,13 @@ cp -a "$WORK/system/usr/share/alsa/ucm2/." "$ROOT/usr/share/alsa/ucm2/"
 
 say "system setup"
 echo thor > "$ROOT/etc/hostname"
+[ -e "$ROOT/usr/share/zoneinfo/$ZONE" ] || { echo "no time zone $ZONE"; exit 1; }
+ln -sf "/usr/share/zoneinfo/$ZONE" "$ROOT/etc/localtime"
+grep -qx "$LOCALE ${LOCALE#*.}" "$ROOT/etc/locale.gen" || echo "$LOCALE ${LOCALE#*.}" >> "$ROOT/etc/locale.gen"
+arch-chroot "$ROOT" locale-gen > /dev/null
+echo "LANG=$LOCALE" > "$ROOT/etc/locale.conf"
+say "  time zone $ZONE, locale $LOCALE"
+# input: /dev/input/event* (udev gives them to the group), which ClamShell reads for keys and idle.
 arch-chroot "$ROOT" useradd -m -G wheel,video,input,audio -s /bin/bash "$USER_NAME"
 echo "$USER_NAME ALL=(ALL) NOPASSWD: ALL" > "$ROOT/etc/sudoers.d/$USER_NAME"
 install -d -m 700 "$ROOT/home/$USER_NAME/.ssh"
@@ -80,16 +99,88 @@ printf '[Service]\nExecStart=\nExecStart=-/sbin/agetty --autologin %s --noclear 
     > "$ROOT/etc/systemd/system/getty@tty1.service.d/autologin.conf"
 echo uinput > "$ROOT/etc/modules-load.d/thor.conf"
 echo 'KERNEL=="uinput", GROUP="input", MODE="0660"' > "$ROOT/etc/udev/rules.d/70-thor.rules"
-arch-chroot "$ROOT" systemctl enable NetworkManager bluetooth sshd > /dev/null
-# The power button and the lid suspend (ClamShell notices waking and applies its settings again); a long
-# press of the power button powers off.
-mkdir -p "$ROOT/etc/systemd/logind.conf.d"
-printf '[Login]\nHandlePowerKey=suspend\nHandlePowerKeyLongPress=poweroff\nHandleLidSwitch=suspend\nHandleLidSwitchExternalPower=suspend\n' \
+arch-chroot "$ROOT" systemctl enable NetworkManager bluetooth sshd systemd-timesyncd > /dev/null
+# The power button and the lid put the machine to sleep with logind's "sleep" action: the first that works
+# of suspend-then-hibernate and suspend (so suspend still works while hibernate doesn't, e.g. before the
+# swap file exists or on a card too small for it). ClamShell notices waking and applies its settings again.
+# A long press of the power button powers off.
+mkdir -p "$ROOT/etc/systemd/logind.conf.d" "$ROOT/etc/systemd/sleep.conf.d"
+printf '[Login]\nSleepOperation=suspend-then-hibernate suspend\nHandlePowerKey=sleep\nHandlePowerKeyLongPress=poweroff\nHandleLidSwitch=sleep\nHandleLidSwitchExternalPower=sleep\n' \
     > "$ROOT/etc/systemd/logind.conf.d/thor.conf"
-# UPower: the battery's history (ClamShell's battery mode shows the last day) and, nearly empty, power off
-# (hibernate once that is set up) rather than dying mid-write.
-sed -i -e 's/^CriticalPowerAction=.*/CriticalPowerAction=PowerOff/' -e 's/^PercentageAction=.*/PercentageAction=3/' \
+# Suspend-then-hibernate: hibernate after 30 minutes asleep (systemd wakes the machine with the RTC alarm
+# to do it), or earlier when the battery runs low.
+printf '[Sleep]\nHibernateDelaySec=30min\n' > "$ROOT/etc/systemd/sleep.conf.d/thor.conf"
+# UPower: the battery's history (ClamShell's battery mode shows the last day) and, nearly empty, hibernate
+# rather than dying mid-write (UPower powers off instead when hibernate isn't possible).
+sed -i -e 's/^CriticalPowerAction=.*/CriticalPowerAction=Hibernate/' -e 's/^PercentageAction=.*/PercentageAction=3/' \
     "$ROOT/etc/UPower/UPower.conf"
+
+# The card's first boot (thor-firstboot.service, once): grow the root partition (the last one) and its
+# filesystem to the card; make the swap file /swapfile ($SWAP_GIB GiB, if the card leaves 8 GiB free beside
+# it; else no hibernate, suspend only); then add resume=LABEL=THOR_ROOT and resume_offset= (the file's first
+# block, known only once it exists) to both kernel command lines on the FAT partition: the loader entry's
+# options line, and /KERNEL's, repacked with bootimg.py (copied into the image for this). The resume
+# settings take effect from the next boot; hibernating works in the first session already (systemd-sleep
+# tells the kernel where the swap file is before hibernating).
+install -D -m 644 "$(dirname "$0")/bootimg.py" "$ROOT/usr/local/lib/thor/bootimg.py"
+{ printf '#!/bin/bash\n# Written by thor-image.sh.\nBASE_CMDLINE=%q\nSWAP_GIB=%s\n' "$CMDLINE" "$SWAP_GIB"; cat <<'SCRIPT'
+# The card's first boot (thor-firstboot.service): grow the root to the card, make the swap file for
+# hibernating, put its place on both kernel command lines.
+set -euo pipefail
+part=$(findmnt -nvo SOURCE /)
+disk=/dev/$(lsblk -ndo PKNAME "$part")
+num=$(cat "/sys/class/block/${part#/dev/}/partition")
+echo "growing $part (partition $num of $disk) to the card"
+growpart "$disk" "$num" || echo "growpart: no change"
+resize2fs "$part"
+
+if [ ! -e /swapfile ]; then
+    free=$(df --output=avail -B1G / | tail -1)
+    if (( free >= SWAP_GIB + 8 )); then
+        echo "making /swapfile, $SWAP_GIB GiB"
+        fallocate -l "${SWAP_GIB}G" /swapfile
+        chmod 600 /swapfile
+        mkswap /swapfile
+        echo '/swapfile none swap defaults 0 0' >> /etc/fstab
+        swapon /swapfile
+    else
+        echo "$free GiB free: no swap file, so no hibernate (suspend only)"
+    fi
+fi
+
+if [ -e /swapfile ]; then
+    # The file's first block (ext4 blocks and pages are both 4 KiB here, so it is the offset in pages).
+    offset=$(filefrag -v /swapfile | awk '$1 == "0:" { sub(/\.\.$/, "", $4); print $4 }')
+    cmdline="$BASE_CMDLINE resume=LABEL=THOR_ROOT resume_offset=$offset"
+    case $disk in *[0-9]) esp=${disk}p1 ;; *) esp=${disk}1 ;; esac
+    mkdir -p /run/thor-esp
+    mount "$esp" /run/thor-esp
+    sed -i "s|^options .*|options $cmdline|" /run/thor-esp/loader/entries/thor.conf
+    python3 /usr/local/lib/thor/bootimg.py repack /run/thor-esp/KERNEL --ramdisk /run/thor-esp/initramfs-thor.img \
+        --cmdline "$cmdline" -o /run/thor-esp/KERNEL.new
+    mv /run/thor-esp/KERNEL.new /run/thor-esp/KERNEL
+    umount /run/thor-esp
+    echo "command lines (loader entry, /KERNEL): $cmdline"
+fi
+touch /var/lib/thor-firstboot
+SCRIPT
+} > "$ROOT/usr/local/bin/thor-firstboot"
+chmod 755 "$ROOT/usr/local/bin/thor-firstboot"
+cat > "$ROOT/etc/systemd/system/thor-firstboot.service" <<'EOF'
+[Unit]
+Description=The card's first boot: grow the root, make the swap file, resume on the command lines
+ConditionPathExists=!/var/lib/thor-firstboot
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/thor-firstboot
+StandardOutput=journal+console
+
+[Install]
+WantedBy=multi-user.target
+EOF
+arch-chroot "$ROOT" systemctl enable thor-firstboot > /dev/null
 
 say "the session (sway, ClamShell)"
 H=$ROOT/home/$USER_NAME
@@ -113,10 +204,14 @@ EOF
 SCRIPT
 chmod 755 "$H/.local/bin/thor-outputs"
 echo '[ "$(tty)" = /dev/tty1 ] && "$HOME/.local/bin/thor-outputs" && exec sway > "$HOME/sway.log" 2>&1' > "$H/.bash_profile"
-cat > "$H/.config/sway/config" <<'CONFIG'
+C=/home/$USER_NAME/.local/bin/clamshell
+cat > "$H/.config/sway/config" <<CONFIG
 # The Thor: DSI-2 the main (top) screen, DSI-1 the second (bottom) screen (as ROCKNIX and Kettle have them).
 include ~/.config/sway/outputs
 default_border none
+# A keyboard's Print key: a screenshot through ClamShell (clamshell ctl writes to its control pipe). The
+# Thor's volume and brightness keys ClamShell reads itself from evdev (CLAMSHELL_SESSION=device).
+bindsym --locked Print exec $C ctl screenshot
 exec systemctl --user import-environment WAYLAND_DISPLAY SWAYSOCK XDG_CURRENT_DESKTOP && systemctl --user restart clamshell.service
 CONFIG
 cat > "$H/.config/systemd/user/clamshell.service" <<EOF
@@ -125,7 +220,13 @@ Description=ClamShell
 After=graphical-session.target
 
 [Service]
-ExecStart=/home/$USER_NAME/.local/bin/clamshell
+# The control pipe: sway's key bindings (clamshell ctl) write to it.
+ExecStartPre=-/usr/bin/mkfifo %t/clamshell-control
+ExecStart=$C
+Environment=CLAMSHELL_CONTROL=%t/clamshell-control
+# ClamShell is the device's session: it puts the device to sleep when idle (dim, screens off, then sleep
+# through logind) and takes the hardware keys (volume, brightness). Desktop runs leave this unset.
+Environment=CLAMSHELL_SESSION=device
 Environment=CLAMSHELL_BOTTOM_OUTPUT=DSI-1
 # Touchpad mode takes the bottom screen's touchscreen (the Thor has two).
 Environment=CLAMSHELL_TOUCHSCREEN=bottom_touchscreen
@@ -135,12 +236,36 @@ EOF
 arch-chroot "$ROOT" chown -R "$USER_NAME:$USER_NAME" "/home/$USER_NAME"
 chmod 600 "$H/.ssh/authorized_keys"
 
-say "initramfs (ours: the root by label; all storage drivers, no autodetect)"
+say "initramfs (ours: the root by label; all storage drivers, no autodetect; resume from hibernate)"
+# resume: after block, before filesystems; it resumes from resume= / resume_offset= on the command line
+# (with systemd 255 or later through systemd-hibernate-resume, which doesn't wait for the device). The SD
+# card appears asynchronously, so thor-root-wait first waits up to 10 s for THOR_ROOT (the root's own
+# rootwait comes only later, in filesystems).
+mkdir -p "$ROOT/etc/initcpio/hooks" "$ROOT/etc/initcpio/install"
+cat > "$ROOT/etc/initcpio/hooks/thor-root-wait" <<'EOF'
+#!/usr/bin/ash
+run_hook() {
+    local i=0
+    while [ ! -b /dev/disk/by-label/THOR_ROOT ] && [ "$i" -lt 10 ]; do
+        sleep 1
+        i=$((i + 1))
+    done
+}
+EOF
+cat > "$ROOT/etc/initcpio/install/thor-root-wait" <<'EOF'
+#!/bin/bash
+build() {
+    add_runscript
+}
+help() {
+    echo "Waits up to 10 s for the THOR_ROOT filesystem, for resume."
+}
+EOF
 cat > "$ROOT/etc/mkinitcpio-thor.conf" <<'EOF'
 MODULES=()
 BINARIES=()
 FILES=()
-HOOKS=(base udev modconf block filesystems fsck)
+HOOKS=(base udev modconf block thor-root-wait resume filesystems fsck)
 COMPRESSION=zstd
 EOF
 arch-chroot "$ROOT" mkinitcpio -k "$KVER" -c /etc/mkinitcpio-thor.conf -g /boot/initramfs-thor.img > "$WORK/mkinitcpio.log" 2>&1 \
