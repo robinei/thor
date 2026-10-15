@@ -286,8 +286,9 @@ mod tests {
                 let case = format!("{name} at {w}x{h}");
                 assert!(targets.iter().any(|t| matches!(t.id, Id::Keymap(_) | Id::Row { .. } | Id::Editor(_))), "{case}: its buttons");
                 if *name == "edit" {
-                    // Every input can be touched; on the Thor's screen, with room for a finger.
-                    for input in Input::all() {
+                    // Every input the Thor has can be touched; on its screen, with room for a finger.
+                    // (The Thor has no back buttons.)
+                    for input in Input::all().filter(|i| !matches!(i, Input::Button(b) if b.is_back())) {
                         let id = Id::Keymap(KeymapId::Input(input));
                         let biggest = targets.iter().filter(|t| t.id == id).map(|t| t.rect.w.min(t.rect.h)).fold(0.0, f32::max);
                         assert!(biggest > 0.0, "{case}: {input:?} has no target");

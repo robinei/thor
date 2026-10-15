@@ -1,7 +1,9 @@
-//! Where the pad's controls are drawn on the keymap edit screen. The Thor's controls sit on either side
-//! of its bottom screen, so they are drawn as two clusters at the screen's edges, each a column of groups
-//! (trigger, bumper, a stick, the D-pad or the face buttons, the back buttons) in the order of
-//! [`LEFT`] and [`RIGHT`]; View, Menu and the gyro sit in the middle.
+//! Where the AYN Thor's controls are drawn on the keymap edit screen. They sit on either side of its
+//! bottom screen, so they are drawn as two clusters at the screen's edges, each a column of groups in
+//! the order of [`LEFT`] and [`RIGHT`]: the shoulders (on the back's top edge), a small round button
+//! above the screen's corner (Select, Start), a stick and the D-pad or the face buttons, and a small
+//! round button at the screen's bottom corner (Home, Back: drawn, not remappable). The gyro sits in the
+//! middle, at the bottom, where the AYN button is under the screen.
 //!
 //! A remapped control has a line in to its label (between the clusters): it leaves the control's inner
 //! side straight across, or, for the controls a line across would pass through others (the outer one of
@@ -14,18 +16,22 @@ use crate::draw::Rect;
 /// A group of controls in a cluster.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Group {
+    /// L2, R2.
     Trigger,
+    /// L1, R1.
     Bumper,
+    /// The small round button above the screen's corner: Select, Start.
+    Top,
     Stick,
     Dpad,
     Face,
-    Back,
+    /// The small round button at the screen's bottom corner: Home, Back.
+    Foot,
 }
 
-/// Each side's groups from top to bottom, and the share of the cluster's height each takes: the usual
-/// order, until the Thor's own is known.
-pub const LEFT: [(Group, f32); 5] = [(Group::Trigger, 0.12), (Group::Bumper, 0.08), (Group::Stick, 0.31), (Group::Dpad, 0.31), (Group::Back, 0.18)];
-pub const RIGHT: [(Group, f32); 5] = [(Group::Trigger, 0.12), (Group::Bumper, 0.08), (Group::Face, 0.31), (Group::Stick, 0.31), (Group::Back, 0.18)];
+/// Each side's groups from top to bottom, and the share of the cluster's height each takes.
+pub const LEFT: [(Group, f32); 6] = [(Group::Trigger, 0.11), (Group::Bumper, 0.08), (Group::Top, 0.1), (Group::Stick, 0.31), (Group::Dpad, 0.31), (Group::Foot, 0.09)];
+pub const RIGHT: [(Group, f32); 6] = [(Group::Trigger, 0.11), (Group::Bumper, 0.08), (Group::Top, 0.1), (Group::Face, 0.31), (Group::Stick, 0.31), (Group::Foot, 0.09)];
 
 /// Sizes in a group, of the smaller of its width and height. A stick: the well's radius, the cap's and
 /// the click's (dimple); the click's target's half height (its width is the cap's).
@@ -42,10 +48,13 @@ const FACE_OFF: f32 = 0.33;
 const FACE_R: f32 = 0.12;
 /// Where the lane above a group runs, below its top.
 const LANE: f32 = 0.035;
-/// The trigger, bumper and back buttons, of the group's width and height.
+/// The trigger and bumper, of the group's width and height.
 const TRIGGER: (f32, f32) = (0.5, 0.82);
 const BUMPER: (f32, f32) = (0.76, 0.5);
-const PADDLE: (f32, f32) = (0.5, 0.42);
+/// The small round buttons' radius, of their group's height, and their centre's distance from the
+/// cluster's inner edge, of their radius.
+const ROUND: f32 = 0.2;
+const ROUND_IN: f32 = 2.2;
 
 /// A control as drawn: its shape, its target, and where its line in leaves.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -103,7 +112,20 @@ impl Pad {
         Some(square(g.center(), WELL * s))
     }
 
-    /// Where `input` is, if it is in a cluster (View, Menu and the gyro are in the middle).
+    /// A small round button in group `g` on `side`, near the cluster's inner edge.
+    fn round(&self, side: Side, g: Rect) -> Rect {
+        let r = (g.h * ROUND).min(g.w * 0.07);
+        let x = if side == Side::Left { g.right() - ROUND_IN * r } else { g.x + ROUND_IN * r };
+        square((x, g.center().1), r)
+    }
+
+    /// Home's or Back's small round button, at the screen's bottom corner (drawn, not remappable).
+    pub fn foot(&self, side: Side) -> Option<Rect> {
+        let g = self.group(side, Group::Foot)?;
+        Some(self.round(side, g))
+    }
+
+    /// Where `input` is, if it is in a cluster (the gyro is in the middle; the Thor has no back buttons).
     pub fn part(&self, input: Input) -> Option<Part> {
         let (side, group) = match input {
             Input::Trigger(s) => (s, Group::Trigger),
@@ -114,10 +136,11 @@ impl Pad {
                 Button::RB => (Side::Right, Group::Bumper),
                 Button::LS => (Side::Left, Group::Stick),
                 Button::RS => (Side::Right, Group::Stick),
-                Button::L4 | Button::L5 => (Side::Left, Group::Back),
-                Button::R4 | Button::R5 => (Side::Right, Group::Back),
+                Button::View => (Side::Left, Group::Top),
+                Button::Menu => (Side::Right, Group::Top),
                 Button::A | Button::B | Button::X | Button::Y => (side_of(Group::Face), Group::Face),
-                Button::View | Button::Menu => return None,
+                // The Thor has no back buttons.
+                Button::L4 | Button::L5 | Button::R4 | Button::R5 => return None,
             },
             Input::Gyro => return None,
         };
@@ -137,11 +160,9 @@ impl Pad {
                 let shown = g.centered(g.w * BUMPER.0, (g.h * BUMPER.1).min(g.w * 0.16));
                 flat(shown, shown.h / 2.0)
             }
-            Input::Button(b @ (Button::L4 | Button::L5 | Button::R4 | Button::R5)) => {
-                let upper = matches!(b, Button::L4 | Button::R4);
-                let half = Rect::new(g.x, if upper { g.y } else { g.y + g.h / 2.0 }, g.w, g.h / 2.0);
-                let shown = half.centered(g.w * PADDLE.0, (half.h * PADDLE.1).min(g.w * 0.13));
-                Part { shown, radius: shown.h / 2.0, target: half, corners: None, anchor: (inner(shown, k), half.center().1), lane: None, side }
+            Input::Button(Button::View | Button::Menu) => {
+                let shown = self.round(side, g);
+                Part { shown, radius: shown.w / 2.0, target: g, corners: None, anchor: (inner(shown, k), cy), lane: None, side }
             }
             Input::Stick(_) => {
                 // From the cap's edge above the middle, clear of the direction marks.

@@ -187,6 +187,8 @@ const GAP: f32 = 0.045;
 const LABEL_COLUMN_W: f32 = 0.16;
 /// The controls' outlines, and the lines in to the labels (blue, dimmed).
 const PART_LINE: Rgb = Rgb(0x4a4a54);
+/// The buttons drawn that can't be remapped (Home, Back, the AYN button and its neighbours).
+const FIXED: Rgb = Rgb(0x2a2a30);
 const LEADER_ALPHA: f32 = 0.45;
 /// Line widths in logical pixels: the controls', the lines in.
 const PART_W: f32 = 1.5;
@@ -194,9 +196,13 @@ const LEADER_W: f32 = 1.0;
 /// The most controls in a cluster.
 const CONTROLS: usize = 16;
 
-/// What a binding maps to, in words.
+/// What a binding maps to, in words; the game pad's buttons and triggers as the Xbox pad's that games
+/// see.
 fn mapping(b: Binding) -> Fmt<48> {
-    Fmt::of(format_args!("{}", OutputLabel(b.output)))
+    match b.output {
+        Output::Pad(PadOut::Button(_) | PadOut::Trigger(_)) | Output::Trigger(_) => Fmt::of(format_args!("Xbox {}", OutputLabel(b.output))),
+        out => Fmt::of(format_args!("{}", OutputLabel(out))),
+    }
 }
 
 /// A remapped control's label beside its cluster: the control, what it maps to, and the label's top
@@ -262,8 +268,9 @@ impl Column {
 }
 
 /// The edit screen: the controls in two clusters at the sides (see [`super::pad`]), each a target; a
-/// remapped one has a line in to a label of what it maps to. View, Menu and the gyro in the middle,
-/// their names and mappings under them.
+/// remapped one has a line in to a label of what it maps to. Home and Back at the bottom corners and the
+/// AYN button in the middle are drawn dim, not remappable (their codes are a device test, see
+/// docs/thor-gameplan.md); the gyro sits above the AYN button, its name and mapping under it.
 fn edit(f: &mut Frame, body: Rect, id: u16) {
     let s = f.s;
     let keymap = s.keymaps().get(id);
@@ -334,68 +341,67 @@ fn edit(f: &mut Frame, body: Rect, id: u16) {
         }
     }
 
-    // View, Menu and the gyro, in the middle.
+    // Home and Back, at the screen's bottom corners.
+    for (side, name) in [(Side::Left, "Home"), (Side::Right, "Back")] {
+        if let Some(r) = pad.foot(side) {
+            f.c.outline(r, r.w, PART_W, FIXED);
+            let w = f.c.text_width(size, name);
+            let x = if side == Side::Left { r.x - r.w * 0.6 - w } else { r.right() + r.w * 0.6 };
+            f.c.text_in(Rect::new(x, r.y, w, r.h), size, FIXED, name, Align::Start);
+        }
+    }
+
+    // The gyro and the AYN button, in the middle at the bottom.
     let strip = Rect::new(area.x + cw + gap + lw, area.y, area.w - 2.0 * (cw + gap + lw), area.h);
-    middle(f, strip, keymap, size);
+    let foot = pad.foot(Side::Left).map_or(area.bottom() - line, |r| r.center().1);
+    middle(f, strip, foot, keymap, size);
 }
 
-/// View, Menu and the gyro, one under another in the middle of `strip`, each with its label under it;
-/// the whole of each is its target.
-fn middle(f: &mut Frame, strip: Rect, keymap: Option<&Keymap>, size: f32) {
+/// The middle, at the bottom: the AYN button and the small round buttons beside it (drawn, not
+/// remappable), level with Home and Back at `y`; above them the gyro, its name and what it maps to under
+/// it, the whole cell its target.
+fn middle(f: &mut Frame, strip: Rect, y: f32, keymap: Option<&Keymap>, size: f32) {
     let line = size * LINE;
-    let pill_w = (strip.w * 0.4).min(size * 2.6);
-    let pill_h = pill_w * 0.45;
-    let cell_h = pill_h * 1.6 + line * 3.0 + size * 0.3;
-    let gap = size;
-    let total = cell_h * 3.0 + gap * 2.0;
-    let mut y = strip.y + (strip.h - total) / 2.0;
-    for input in [Input::Button(Button::View), Input::Button(Button::Menu), Input::Gyro] {
-        let cell = Rect::new(strip.x, y, strip.w, cell_h);
-        y += cell_h + gap;
-        let b = binding(keymap, input);
-        let mapped = b.map(|b| Fmt::<48>::of(format_args!("{}", OutputLabel(b.output))));
-        let hold = b.and_then(|b| b.hold).map(|h| Fmt::<24>::of(format_args!("while {}", Label(h))));
-        let tone = if mapped.is_some() { Tone::Fn } else { Tone::Dim };
-        let (cx, cy) = (cell.center().0, cell.y + pill_h * 0.8);
-        let shown = if input == Input::Gyro {
-            Rect::new(cx - pill_h * 0.8, cy - pill_h * 0.8, pill_h * 1.6, pill_h * 1.6)
-        } else {
-            Rect::new(cx - pill_w / 2.0, cy - pill_h / 2.0, pill_w, pill_h)
-        };
-        let look = Look { radius: shown.h / 2.0, fill: None, inset: 0.0, ring: -3.0 };
-        let name = Fmt::<24>::of(format_args!("{}", Label(input)));
-        f.button_in(Id::Keymap(KeymapId::Input(input)), cell, shown, look, |f| {
-            f.c.outline(shown, shown.h / 2.0, PART_W, PART_LINE);
-            let u = pill_h * 0.28;
-            match input {
-                Input::Button(Button::View) => {
-                    f.c.outline(Rect::new(cx - u * 1.1, cy - u * 0.9, u * 1.4, u * 1.1), 1.0, 1.0, tone);
-                    f.c.outline(Rect::new(cx - u * 0.3, cy - u * 0.2, u * 1.4, u * 1.1), 1.0, 1.0, tone);
-                }
-                Input::Button(_) => {
-                    for k in [-1.0, 0.0, 1.0] {
-                        f.c.line((cx - u, cy + k * u * 0.7), (cx + u, cy + k * u * 0.7), 1.0, tone);
-                    }
-                }
-                _ => {
-                    // The gyro: a ring round a dot.
-                    f.c.outline(shown.centered(shown.w * 0.5, shown.h * 0.5), shown.w, 1.0, tone);
-                    f.c.circle(cx, cy, shown.w * 0.08, tone);
-                }
-            }
-            let text_y = cell.y + pill_h * 1.6;
-            let w = f.c.text_width(size, &name).min(cell.w);
-            f.c.text_fit(Rect::new(cx - w / 2.0, text_y, w + 1.0, line), size, if mapped.is_some() { Tone::Normal } else { Tone::Dim }, &name, Keep::Start);
-            if let Some(m) = mapped {
-                let w = f.c.text_width(size, &m).min(cell.w);
-                f.c.text_fit(Rect::new(cx - w / 2.0, text_y + line, w + 1.0, line), size, Tone::Fn, &m, Keep::Start);
-            }
-            if let Some(h) = hold {
-                let w = f.c.text_width(size, &h).min(cell.w);
-                f.c.text_fit(Rect::new(cx - w / 2.0, text_y + line * 2.0, w + 1.0, line), size, Tone::Fn, &h, Keep::Start);
-            }
-        });
+    // The AYN button's row.
+    let pill_w = (strip.w * 0.36).min(size * 2.4);
+    let pill_h = pill_w * 0.38;
+    let cx = strip.center().0;
+    let ayn = Rect::new(cx - pill_w / 2.0, y - pill_h / 2.0, pill_w, pill_h);
+    f.c.outline(ayn, pill_h / 2.0, PART_W, FIXED);
+    for k in [-1.0, 1.0] {
+        let r = pill_h * 0.4;
+        let x = cx + k * (pill_w / 2.0 + r * 2.4);
+        f.c.outline(Rect::new(x - r, y - r, 2.0 * r, 2.0 * r), r, PART_W, FIXED);
     }
+    // The gyro, above it.
+    let input = Input::Gyro;
+    let icon = (size * 1.6).min(strip.w * 0.3);
+    let cell_h = icon * 1.3 + line * 3.0;
+    let cell = Rect::new(strip.x, ayn.y - size * 1.2 - cell_h, strip.w, cell_h);
+    let b = binding(keymap, input);
+    let mapped = b.map(|b| Fmt::<48>::of(format_args!("{}", OutputLabel(b.output))));
+    let hold = b.and_then(|b| b.hold).map(|h| Fmt::<24>::of(format_args!("while {}", Label(h))));
+    let tone = if mapped.is_some() { Tone::Fn } else { Tone::Dim };
+    let cy = cell.y + icon / 2.0;
+    let shown = Rect::new(cx - icon / 2.0, cell.y, icon, icon);
+    let look = Look { radius: icon / 2.0, fill: None, inset: 0.0, ring: -3.0 };
+    f.button_in(Id::Keymap(KeymapId::Input(input)), cell, shown, look, |f| {
+        // A ring round a dot.
+        f.c.outline(shown, icon, PART_W, PART_LINE);
+        f.c.outline(shown.centered(icon * 0.5, icon * 0.5), icon, 1.0, tone);
+        f.c.circle(cx, cy, icon * 0.08, tone);
+        let row = |f: &mut Frame, i: f32, text: &str, tone: Tone| {
+            let w = f.c.text_width(size, text).min(cell.w);
+            f.c.text_fit(Rect::new(cx - w / 2.0, cell.y + icon * 1.3 + line * i, w + 1.0, line), size, tone, text, Keep::Start);
+        };
+        row(f, 0.0, "Gyro", if mapped.is_some() { Tone::Normal } else { Tone::Dim });
+        if let Some(m) = mapped {
+            row(f, 1.0, &m, Tone::Fn);
+        }
+        if let Some(h) = hold {
+            row(f, 2.0, &h, Tone::Fn);
+        }
+    });
 }
 
 /// A control in a cluster: its outline and its own mark, in blue if it is mapped; a target.
@@ -421,19 +427,26 @@ fn control(f: &mut Frame, input: Input, p: Part, mapped: bool, size: f32) {
                 f.c.clip(None);
                 f.c.line((shown.x, shown.bottom()), (shown.right(), shown.bottom()), PART_W, PART_LINE);
                 let r = Rect::new(shown.x, shown.bottom() - shown.h * 0.55, shown.w, shown.h * 0.4);
-                name(f, if s == Side::Left { "LT" } else { "RT" }, r, size.min(r.h * 0.7));
+                name(f, if s == Side::Left { "L2" } else { "R2" }, r, size.min(r.h * 0.7));
             }
-            Input::Button(b @ (Button::LB | Button::RB | Button::L4 | Button::L5 | Button::R4 | Button::R5)) => {
+            Input::Button(b @ (Button::LB | Button::RB)) => {
                 f.c.outline(shown, shown.h / 2.0, PART_W, PART_LINE);
-                name(f, b.label(), shown, size.min(shown.h * 0.6));
+                name(f, thor(b), shown, size.min(shown.h * 0.6));
             }
             Input::Button(b @ (Button::A | Button::B | Button::X | Button::Y)) => {
                 f.c.outline(shown, shown.w, PART_W, PART_LINE);
-                name(f, b.label(), shown, shown.h * 0.48);
+                name(f, thor(b), shown, shown.h * 0.48);
             }
             Input::Button(b @ (Button::LS | Button::RS)) => {
                 f.c.outline(shown, shown.w, PART_W, PART_LINE);
-                name(f, b.label(), shown.inset(-shown.w), shown.h * 0.4);
+                name(f, thor(b), shown.inset(-shown.w), shown.h * 0.4);
+            }
+            Input::Button(b @ (Button::View | Button::Menu)) => {
+                f.c.outline(shown, shown.w, PART_W, PART_LINE);
+                // Its name on the outer side.
+                let w = f.c.text_width(size, thor(b));
+                let x = if p.side == Side::Left { shown.x - shown.w * 0.6 - w } else { shown.right() + shown.w * 0.6 };
+                f.c.text_in(Rect::new(x, shown.y, w, shown.h), size, tone, thor(b), Align::Start);
             }
             Input::Stick(_) => f.c.outline(shown, shown.w, PART_W, PART_LINE),
             Input::Dpad(d) | Input::StickDir(_, d) => {
@@ -454,13 +467,32 @@ fn control(f: &mut Frame, input: Input, p: Part, mapped: bool, size: f32) {
     });
 }
 
-/// An input's name on screen.
+/// A button's name as printed on the Thor. Its face buttons are lettered Nintendo-style by position: the
+/// bottom one (Xbox A, BTN_SOUTH) is B, the right one A, the top one X, the left one Y.
+fn thor(b: Button) -> &'static str {
+    match b {
+        Button::A => "B",
+        Button::B => "A",
+        Button::X => "Y",
+        Button::Y => "X",
+        Button::LB => "L1",
+        Button::RB => "R1",
+        Button::LS => "L3",
+        Button::RS => "R3",
+        Button::View => "Select",
+        Button::Menu => "Start",
+        b => b.label(),
+    }
+}
+
+/// An input's name on screen: the Thor's.
 struct Label(Input);
 
 impl std::fmt::Display for Label {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self.0 {
-            Input::Dpad(d) => f.write_str(d.label()),
+            Input::Button(b) => f.write_str(thor(b)),
+            Input::Trigger(s) => f.write_str(if s == Side::Left { "L2" } else { "R2" }),
             input => input.label(f),
         }
     }
@@ -568,7 +600,8 @@ fn map_to(f: &mut Frame, body: Rect, id: u16, input: Input) {
                 flow.section(f, "Active");
                 let hold = b.and_then(|b| b.hold);
                 flow.chip(f, Id::Keymap(KeymapId::Hold(None)), "Always", hold.is_none());
-                for h in gyro_holds() {
+                // (The Thor has no back buttons.)
+                for h in gyro_holds().filter(|h| !matches!(h, Input::Button(b) if b.is_back())) {
                     let label = Fmt::<16>::of(format_args!("{}", Label(h)));
                     flow.chip(f, Id::Keymap(KeymapId::Hold(Some(h))), &label, hold == Some(h));
                 }
@@ -609,7 +642,7 @@ fn speeds(f: &mut Frame, flow: &mut Flow, b: Option<Binding>) {
 /// What a button may map to: the pad's buttons (or one pressed on the pad), a key chord, the mouse's
 /// buttons, the wheel.
 fn digital_targets(f: &mut Frame, flow: &mut Flow, out: Option<Output>) {
-    flow.section(f, "Pad");
+    flow.section(f, "Xbox pad");
     for p in PadOut::all() {
         let label = Fmt::<16>::of(format_args!("{}", OutputLabel(Output::Pad(p))));
         flow.chip(f, target(Target::Pad(p)), &label, out == Some(Output::Pad(p)));

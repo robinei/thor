@@ -140,6 +140,12 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       BTN_GRIPL/R/L2/R2 as L4, R4, L5, R5); unplugging
       the controller mid-game (the game's pad stays, at rest, and picks up again); A held on an
       on-screen key while View moves the pad away (the key must not keep repeating).
+- [ ] Gamepad buttons the keymap edit screen draws but can't remap yet: which codes the small round
+      button at the screen's bottom-right corner (Back), the AYN button under the screen and the two
+      small buttons beside it send (`evtest`), and from which device; the bottom-left one should be
+      Home (BTN_MODE). Also confirm the face buttons' codes by their printed letters (B: BTN_SOUTH, A:
+      BTN_EAST, X: BTN_NORTH, Y: BTN_WEST) and that there are no back buttons. Then they can become
+      inputs of their own in the keymap (`core::keymap::Button`) and the edit screen (`views/pad.rs`).
 - [ ] Gyro: what the Thor's IMU is (an IIO device, or evdev from the gamepad driver?), its axes, signs and
       units. ClamShell reads an evdev motion sensor (INPUT_PROP_ACCELEROMETER, ABS_RX/RY/RZ, resolution in
       units per °/s) paired with the controller; an IIO sensor needs a source of its own behind the same
