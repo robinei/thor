@@ -1,15 +1,13 @@
 //! The controller path (docs/plans.md, "Owning the input path"): the real Xbox-style controller is
-//! grabbed for good, and games get a virtual Xbox 360 pad that is always there. Normally every event is
-//! copied straight through. With the pad mouse on (a toggle, independent of the second screen's mode),
-//! the same events drive a virtual mouse instead: left stick moves the pointer, right stick scrolls, A
-//! or the right trigger clicks left, B right, X middle, the D-pad sends arrow keys; the virtual pad
-//! meanwhile shows a neutral controller, so games never see it disappear. Where the rest goes follows
-//! what is in front ([`PadRoute`]): with shelf in front the pad drives ClamShell ([`Event::Pad`]: D-pad
-//! or left stick move focus, repeated while held; A, B, Y, the shoulders, View); with the keyboard open
-//! over an app it types (D-pad arrows, A Enter, B Backspace); otherwise the game's virtual pad. Away from
-//! the game the virtual pad shows a neutral controller. The pad mouse wins over both. The home button (BTN_MODE) is
-//! ours: games never see it, it goes to the program as [`Event::Home`]. Button layers (remaps) go in
-//! this same path later.
+//! grabbed for good, and games get a virtual Xbox 360 pad that is always there. Where its events go is
+//! the state's choice ([`PadRoute`]): the game's virtual pad (copied straight through); the pad mouse (a
+//! virtual mouse: left stick moves the pointer, right stick scrolls, A or the right trigger clicks left,
+//! B right, X middle, the D-pad sends arrow keys); ClamShell's screens ([`Event::Pad`]: D-pad or left
+//! stick move focus, repeated while held; A, B, Y, the shoulders, View); or typing into an app (D-pad
+//! arrows, A Enter, B Backspace). With the pad mouse or typing, View goes to ClamShell, to move the pad
+//! to the second screen. Away from the game the virtual pad shows a neutral controller, so games never
+//! see it disappear. The home button (BTN_MODE) is ours: games never see it, it goes to the program as
+//! [`Event::Home`]. Button layers (remaps) go in this same path later.
 //!
 //! Not yet: forwarding rumble from the virtual pad to the real one (uinput force-feedback uploads).
 
@@ -224,8 +222,6 @@ impl PadMouse {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command {
-    MouseOn,
-    MouseOff,
     Route(PadRoute),
     Shape(Shaping),
 }
@@ -331,33 +327,33 @@ pub fn typing(kind: u16, code: u16, value: i32, out: &mut Vec<Out>) {
     }
 }
 
-/// Where the pad's events go: the pad mouse when on, else the route.
+/// Where the pad's events go.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 struct Routes {
-    mouse: bool,
     route: PadRoute,
 }
 
 impl Routes {
     /// Away from games: the virtual pad shows a neutral controller.
     fn away(self) -> bool {
-        self.mouse || self.route != PadRoute::Game
+        self.route != PadRoute::Game
+    }
+
+    fn mouse(self) -> bool {
+        self.route == PadRoute::Mouse
     }
 
     fn typing(self) -> bool {
-        !self.mouse && self.route == PadRoute::Keys
+        self.route == PadRoute::Keys
     }
 
     fn navigating(self) -> bool {
-        !self.mouse && self.route == PadRoute::Ui
+        self.route == PadRoute::Ui
     }
 
     fn apply(&mut self, command: Command) {
-        match command {
-            Command::MouseOn => self.mouse = true,
-            Command::MouseOff => self.mouse = false,
-            Command::Route(route) => self.route = route,
-            Command::Shape(_) => {}
+        if let Command::Route(route) = command {
+            self.route = route;
         }
     }
 }
@@ -470,7 +466,7 @@ fn run(wanted: Option<&str>, commands: &Receiver<Command>, sink: &impl Sink, rou
                 Ok(command) => {
                     let before = *routes;
                     routes.apply(command);
-                    if before.mouse && !routes.mouse {
+                    if before.mouse() && !routes.mouse() {
                         mapping.reset(&mut out);
                     }
                     if before.typing() && !routes.typing() {
@@ -484,7 +480,7 @@ fn run(wanted: Option<&str>, commands: &Receiver<Command>, sink: &impl Sink, rou
                         held.events(!routes.away(), &mut to_pad);
                     }
                     if before != *routes {
-                        log::info!("pad: mouse {}, route {:?}", routes.mouse, routes.route);
+                        log::info!("pad: {:?}", routes.route);
                     }
                 }
                 Err(TryRecvError::Empty) => break,
@@ -493,7 +489,7 @@ fn run(wanted: Option<&str>, commands: &Receiver<Command>, sink: &impl Sink, rou
         }
         // Wake at the motion rate while a stick is deflected; otherwise for events (or to check commands).
         let repeat_in = navigator.next.map(|t| t.saturating_duration_since(Instant::now()));
-        let wait = if routes.mouse && mapping.moving() { MOTION_EVERY } else { repeat_in.unwrap_or(Duration::from_millis(100)).min(Duration::from_millis(100)) };
+        let wait = if routes.mouse() && mapping.moving() { MOTION_EVERY } else { repeat_in.unwrap_or(Duration::from_millis(100)).min(Duration::from_millis(100)) };
         let timeout = rustix::event::Timespec { tv_sec: 0, tv_nsec: i64::from(wait.subsec_nanos()) };
         let mut fds = [rustix::event::PollFd::new(&real, rustix::event::PollFlags::IN)];
         rustix::event::poll(&mut fds, Some(&timeout))?;
@@ -508,7 +504,14 @@ fn run(wanted: Option<&str>, commands: &Receiver<Command>, sink: &impl Sink, rou
                         continue;
                     }
                     held.update(kind, code, value);
-                    if routes.mouse {
+                    // View, with the pad mouse or typing: to ClamShell (the pad to the second screen).
+                    if kind == EV_KEY && code == KeyCode::BTN_SELECT.0 && (routes.mouse() || routes.typing()) {
+                        if value == 1 && !sink.send(Event::Pad(PadInput::Switch)) {
+                            return Ok(());
+                        }
+                        continue;
+                    }
+                    if routes.mouse() {
                         mapping.event(kind, code, value, &mut out);
                     } else if routes.typing() {
                         typing(kind, code, value, &mut out);
@@ -531,7 +534,7 @@ fn run(wanted: Option<&str>, commands: &Receiver<Command>, sink: &impl Sink, rou
                 return Ok(());
             }
         }
-        if routes.mouse && now.duration_since(last) >= MOTION_EVERY {
+        if routes.mouse() && now.duration_since(last) >= MOTION_EVERY {
             mapping.tick(now.duration_since(last), &mut out);
         }
         if now.duration_since(last) >= MOTION_EVERY {
@@ -708,10 +711,9 @@ mod tests {
         assert_eq!(out, vec![(EV_KEY, KeyCode::KEY_ENTER.0, 1), (EV_SYN, 0, 0), (EV_KEY, KeyCode::KEY_BACKSPACE.0, 2), (EV_SYN, 0, 0)]);
         let mut routes = Routes::default();
         routes.apply(Command::Route(PadRoute::Keys));
-        routes.apply(Command::MouseOn);
-        assert!(routes.away() && !routes.typing(), "the pad mouse wins");
-        routes.apply(Command::MouseOff);
-        assert!(routes.typing());
+        assert!(routes.away() && routes.typing());
+        routes.apply(Command::Route(PadRoute::Mouse));
+        assert!(routes.away() && routes.mouse() && !routes.typing());
         routes.apply(Command::Route(PadRoute::Game));
         assert!(!routes.away());
     }

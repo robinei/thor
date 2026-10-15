@@ -1,7 +1,7 @@
 //! The bar along the top of the second screen: the tabs (the modes) on the left, the open one lit;
 //! volume and brightness in the middle, where a slider has room on both sides of the finger; on the
-//! right Bluetooth, Wi-Fi and the battery (tabs too, that carry their status) and the clock; then, past
-//! a faint line, the pad mouse toggle, which is a switch rather than a tab.
+//! right Bluetooth, Wi-Fi and the battery (tabs too, that carry their status); then, past a faint line,
+//! the clock and the pad mouse toggle, which is a switch rather than a tab.
 //!
 //! While a finger is on volume or brightness, a slider is drawn over the bar (the bar stays visible
 //! under it): a track whose current level sits under the finger, and the level as a number beside it.
@@ -24,7 +24,7 @@ const CLOCK_TEXT: f32 = 0.34;
 const CLOCK_PAD: f32 = 0.5;
 /// A button's tap slot (modes, controls, toggles), of the bar's height.
 const SLOT: f32 = 1.15;
-/// The line before the pad mouse toggle: its height, of the bar's, and how strongly it shows.
+/// The line before the clock and the pad mouse toggle: its height, of the bar's, and how strongly it shows.
 const DIVIDER: f32 = 0.4;
 const DIVIDER_ALPHA: f32 = 0.35;
 /// Battery at or below this (and not charging) shows in the accent colour.
@@ -105,17 +105,17 @@ pub(super) fn draw(f: &mut Frame, w: f32, h: f32, scratch: &mut Scratch) -> f32 
     let color = if f.s.level(Control::Brightness).is_some() { TEXT } else { DIM };
     icon_button(f, Id::Control(Control::Brightness), Rect::new(w / 2.0, 0.0, slot, bar_h), Icon::Brightness, color);
 
-    // From the right: the pad mouse, the line, the clock, the battery, Wi-Fi, Bluetooth.
+    // From the right: the pad mouse, the clock, the line, the battery, Wi-Fi, Bluetooth.
     let mut x = w - slot;
     let color = if f.s.pad_mouse { ACCENT } else { DIM };
     icon_button(f, Id::PadMouse, Rect::new(x, 0.0, slot, bar_h), Icon::Mouse, color);
-    let line = bar_h * DIVIDER;
-    f.c.fill(Rect::new(x - 0.5, (bar_h - line) / 2.0, 1.0, line), rgba(DIM, DIVIDER_ALPHA));
     let clock = scratch.clock(f.s.unix_secs);
     let size = bar_h * CLOCK_TEXT;
     let clock_w = f.c.text_width(size, clock) + bar_h * CLOCK_PAD;
     x -= clock_w;
     label(f.c, Rect::new(x, 0.0, clock_w, bar_h), size, TEXT, clock);
+    let line = bar_h * DIVIDER;
+    f.c.fill(Rect::new(x - 0.5, (bar_h - line) / 2.0, 1.0, line), rgba(DIM, DIVIDER_ALPHA));
     // Opens the battery mode (lit while open); an empty, dim battery when there is none.
     let (icon, color) = battery(&f.s.status).unwrap_or((Icon::Battery { tenths: 0, charging: false }, DIM));
     let color = if f.s.mode == Mode::Battery { ACCENT } else { color };

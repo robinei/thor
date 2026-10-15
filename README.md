@@ -78,8 +78,8 @@ SDL asks for text input whether or not the game needs it. With another input met
 the compositor gives the seat to that one and this does nothing.
 
 **The bar**: tabs for the modes on the left; volume and brightness in the middle; Bluetooth, Wi-Fi and the
-battery (tabs as well, that also show their status) and the clock on the right; past a faint line at the
-right end, the pad mouse switch. A finger on volume or brightness turns the bar's row into a slider whose
+battery (tabs as well, that also show their status) on the right; past a faint line, the clock and the
+pad mouse switch. A finger on volume or brightness turns the bar's row into a slider whose
 current level is under the finger: moving sets the level as it goes, lifting leaves it there (the icons
 sit mid-screen so the track fits on both sides; it is about 31 mm long on the Thor). A tap on volume
 mutes or unmutes; sliding it unmutes. Volume goes through `wpctl` (PipeWire's default sink), brightness to
@@ -183,11 +183,15 @@ games see a virtual Xbox 360 pad that is always there. The **pad mouse** toggle 
 routes the controller to a virtual mouse instead (left stick pointer, right stick scroll, A/RT left
 click, B right, X middle, D-pad arrows) while the virtual pad shows a neutral controller. Otherwise the
 pad goes where what is in front says: with **shelf in front, ClamShell owns it** (D-pad or left stick move
-focus, repeating while held, across both screens; A acts; B goes back: the editor, Wi-Fi, Battery; Y
-favourite; LB/RB the previous or next tab on top, mode below; View/Select moves focus to the other screen,
-back to where it was there); with the on-screen keyboard open over an app it **types** (D-pad arrows, A
-Enter, B Backspace); with a game in front, the game has it. The virtual pad shows a neutral controller
-whenever the game doesn't. On the desktop, Tab stands in for View, Backspace for B, Q and E for the
+focus, repeating while held, across both screens; A acts; B cancels the editor; Y favourite; LB/RB the
+previous or next tab on top, the bar's tabs below; View/Select moves focus to the other screen, back to
+where it was there); with the on-screen keyboard open over an app it **types** (D-pad arrows, A Enter, B
+Backspace); over any other app it drives the second screen; with a game in front, the game has it.
+Outside a game, **View moves the pad between the second screen and what else wants it**: the pad mouse
+when on, typing when the keyboard is open (on the second screen the D-pad then picks keys and A presses
+them). With nothing else wanting it, View does nothing and the pad stays on the second screen; if it is in
+use there when the keyboard comes up, it stays there too. In a game View is the game's (unless the pad
+mouse is on). The virtual pad shows a neutral controller whenever the game doesn't have the pad. On the desktop, Tab stands in for View, Backspace for B, Q and E for the
 shoulders. The **home
 button** (BTN_MODE) is ClamShell's, never the games': from anything it goes to shelf, and from shelf back to
 what was in front before (the game, an app). (So Steam's overlay doesn't get it.) Test with a fake

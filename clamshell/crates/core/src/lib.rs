@@ -100,16 +100,19 @@ impl Power {
     }
 }
 
-/// Where the controller's input goes (unless the pad mouse has it).
+/// Where the controller's input goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PadRoute {
     /// The game's virtual pad.
     #[default]
     Game,
-    /// ClamShell's own screens, as [`Event::Pad`]: shelf is in front.
+    /// ClamShell's own screens, as [`Event::Pad`]: shelf's and the second screen, or the second screen
+    /// alone.
     Ui,
     /// Typing into the app in front (D-pad arrows, A Enter, B Backspace): the keyboard is open.
     Keys,
+    /// The pad mouse.
+    Mouse,
 }
 
 /// The controller driving ClamShell's screens.
@@ -251,6 +254,9 @@ pub enum Event {
     Power(power::Power),
     /// The pad's home button.
     Home,
+    /// View, away from shelf: the pad between the second screen and what else wants it (the pad mouse,
+    /// typing).
+    PadSwitch,
     /// A text field of the app in front wants typing (true), or no longer does (the Wayland side).
     TextInput(bool),
     /// The pad, while it drives ClamShell (the UI handles these; the state ignores them).
@@ -375,6 +381,10 @@ pub struct State {
     pad_mouse_by_launch: bool,
     /// Where the pad goes (see [`Effect::PadRoute`]).
     pub pad_route: PadRoute,
+    /// View moved the pad to the second screen, away from what else wants it (the pad mouse, typing).
+    pad_on_bottom: bool,
+    /// What else wanted the pad when last looked (see `pad_wanted_by`).
+    pad_contender: Option<PadRoute>,
     /// The games that run, in the order they started (`running` is the one most recently in front),
     /// and the launches asked for that haven't started.
     pub games: Vec<RunningGame>,
@@ -456,6 +466,7 @@ impl State {
         s.set_apps(apps::defaults(), None);
         s.sync();
         s.focus = s.selected.clone().map(Id::Game);
+        s.pad_contender = s.pad_wanted_by();
         s.pad_route = s.wanted_pad_route();
         s
     }
@@ -469,23 +480,58 @@ impl State {
     /// Applies one event; returns which screens changed and what must happen outside.
     pub fn apply(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
         let (dirty, mut effects) = self.apply_event(event);
+        // Something else wants the pad now: it gets it. The pad mouse always takes it; otherwise a pad
+        // being used on the second screen (its focus ring showing) with nothing else around stays there
+        // (the keyboard coming up under it is typed on with the pad).
+        let contender = self.pad_wanted_by();
+        if contender != self.pad_contender {
+            let in_use = self.pad_route == PadRoute::Ui && self.show_focus;
+            let stays = self.pad_contender.is_none() && in_use && contender != Some(PadRoute::Mouse);
+            self.pad_on_bottom = stays;
+            self.pad_contender = contender;
+        }
         let route = self.wanted_pad_route();
         if route != self.pad_route {
             self.pad_route = route;
             effects.push(Effect::PadRoute(route));
+            // The focus ring shows where the pad is.
+            if route != PadRoute::Ui && self.show_focus {
+                self.show_focus = false;
+                return (Dirty::BOTH, effects);
+            }
         }
         (dirty, effects)
     }
 
-    /// Where the pad goes, from what is in front: shelf (or nothing known, with no game running) gets
-    /// ClamShell's navigation; a game gets the virtual pad; another app gets typing while the keyboard
-    /// is open.
-    fn wanted_pad_route(&self) -> PadRoute {
-        match (self.front(), self.mode) {
-            (Front::Shelf, _) => PadRoute::Ui,
-            (Front::App, Mode::Keyboard) => PadRoute::Keys,
-            _ => PadRoute::Game,
+    /// What wants the pad besides the second screen: the pad mouse while on; else shelf (`Ui`), the game
+    /// in front, or typing into an app while the keyboard is open; nothing for an app otherwise.
+    fn pad_wanted_by(&self) -> Option<PadRoute> {
+        if self.pad_mouse {
+            return Some(PadRoute::Mouse);
         }
+        match (self.front(), self.mode) {
+            (Front::Shelf, _) => Some(PadRoute::Ui),
+            (Front::Game, _) => Some(PadRoute::Game),
+            (Front::App, Mode::Keyboard) => Some(PadRoute::Keys),
+            (Front::App, _) => None,
+        }
+    }
+
+    /// Where the pad goes: to what wants it, unless View moved it to the second screen; to the second
+    /// screen when nothing else wants it. A game keeps it (View is the game's button there).
+    fn wanted_pad_route(&self) -> PadRoute {
+        match self.pad_wanted_by() {
+            None => PadRoute::Ui,
+            Some(r @ (PadRoute::Game | PadRoute::Ui)) => r,
+            Some(_) if self.pad_on_bottom => PadRoute::Ui,
+            Some(r) => r,
+        }
+    }
+
+    /// Whether the pad, on ClamShell's screens, may go to shelf's (shelf is in front and nothing else
+    /// has the pad), or only to the second screen.
+    pub fn pad_on_top(&self) -> bool {
+        self.pad_wanted_by() == Some(PadRoute::Ui)
     }
 
     fn apply_event(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
@@ -659,6 +705,12 @@ impl State {
                 (if self.mode == Mode::Battery { Dirty::BOTTOM } else { Dirty::NONE }, vec![])
             }
             Event::Home => (Dirty::NONE, self.home()),
+            Event::PadSwitch => {
+                if matches!(self.pad_wanted_by(), Some(PadRoute::Mouse | PadRoute::Keys)) {
+                    self.pad_on_bottom = !self.pad_on_bottom;
+                }
+                (Dirty::NONE, vec![])
+            }
             Event::TextInput(active) => {
                 let before = self.mode;
                 let effects = self.text_input(active);
@@ -936,7 +988,7 @@ mod tests {
         s.apply(Event::Windows(vec![windows::Window { id: 1, app_id: "foot".into(), title: String::new(), focused: true, unit: None, workspace: "1".into() }]));
         let (dirty, fx) = s.apply(Event::TextInput(true));
         assert_eq!((s.mode, dirty, fx), (Mode::Keyboard, Dirty::BOTH, vec![Effect::Touchpad(false), Effect::PadRoute(PadRoute::Keys)]));
-        assert_eq!(s.apply(Event::TextInput(false)).1, vec![Effect::Touchpad(true), Effect::PadRoute(PadRoute::Game)]);
+        assert_eq!(s.apply(Event::TextInput(false)).1, vec![Effect::Touchpad(true), Effect::PadRoute(PadRoute::Ui)]);
         assert_eq!(s.mode, Mode::Touchpad, "back where it came from");
         // The user chooses a tab meanwhile (even the keyboard's own): it stays.
         s.apply(Event::TextInput(true));
@@ -956,10 +1008,10 @@ mod tests {
         let mut s = state();
         s.apply(Event::Activate(Id::Mode(Mode::Keyboard)));
         let (_, fx) = s.apply(Event::Activate(Id::PadMouse));
-        assert_eq!(fx, vec![Effect::PadMouse(true)]);
+        assert_eq!(fx, vec![Effect::PadMouse(true), Effect::PadRoute(PadRoute::Mouse)]);
         assert_eq!(s.mode, Mode::Keyboard);
         let (_, fx) = s.apply(Event::Activate(Id::PadMouse));
-        assert_eq!(fx, vec![Effect::PadMouse(false)]);
+        assert_eq!(fx, vec![Effect::PadMouse(false), Effect::PadRoute(PadRoute::Ui)]);
     }
 
     #[test]
@@ -1005,11 +1057,36 @@ mod tests {
         assert_eq!(route(&mut s, Event::Tick { unix_secs: 1 }), PadRoute::Ui, "nothing known, no game: shelf");
         assert_eq!(route(&mut s, Event::Started("zelda-lttp".into())), PadRoute::Game, "a game runs: in front");
         assert_eq!(route(&mut s, Event::Windows(vec![window(apps::SHELF_APP_ID, None)])), PadRoute::Ui, "shelf in front");
-        assert_eq!(route(&mut s, Event::Windows(vec![window("foot", Some("clamshell-app-terminal-1-0.scope"))])), PadRoute::Game);
+        assert_eq!(route(&mut s, Event::Windows(vec![window("foot", Some("clamshell-app-terminal-1-0.scope"))])), PadRoute::Ui, "an app: the second screen");
         assert_eq!(route(&mut s, Event::Activate(Id::Mode(Mode::Keyboard))), PadRoute::Keys, "an app and the keyboard: typing");
         assert_eq!(route(&mut s, Event::Windows(vec![window("retroarch", Some("clamshell-game-1-0.scope"))])), PadRoute::Game);
         let (_, fx) = s.apply(Event::Windows(vec![window(apps::SHELF_APP_ID, None)]));
         assert_eq!(fx, vec![Effect::PadRoute(PadRoute::Ui)]);
+    }
+
+    #[test]
+    fn view_moves_the_pad_between_the_second_screen_and_what_wants_it() {
+        let mut s = state();
+        let foot = windows::Window { id: 1, app_id: "foot".into(), title: String::new(), focused: true, unit: None, workspace: "1".into() };
+        s.apply(Event::Windows(vec![foot]));
+        s.apply(Event::Activate(Id::Mode(Mode::Keyboard)));
+        assert_eq!(s.pad_route, PadRoute::Keys);
+        assert_eq!(s.apply(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Ui)], "to the keys on screen");
+        assert!(!s.pad_on_top());
+        assert_eq!(s.apply(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Keys)], "and back to typing");
+        // The pad mouse takes it; View moves it to the second screen and back.
+        assert_eq!(s.apply(Event::Activate(Id::PadMouse)).1, vec![Effect::PadMouse(true), Effect::PadRoute(PadRoute::Mouse)]);
+        assert_eq!(s.apply(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Ui)]);
+        assert_eq!(s.apply(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Mouse)]);
+        // Nothing else wants it: View does nothing, the pad stays on the second screen.
+        s.apply(Event::Activate(Id::PadMouse));
+        s.apply(Event::Activate(Id::Mode(Mode::Dock)));
+        assert_eq!(s.pad_route, PadRoute::Ui);
+        assert_eq!(s.apply(Event::PadSwitch).1, vec![]);
+        // Used there, it stays when the keyboard comes up under it.
+        s.apply(Event::Focus(Id::Mode(Mode::Dock)));
+        s.apply(Event::Activate(Id::Mode(Mode::Keyboard)));
+        assert_eq!(s.pad_route, PadRoute::Ui);
     }
 
     #[test]

@@ -8,7 +8,7 @@ use smithay_client_toolkit::reexports::{
 };
 use smithay_client_toolkit::seat::keyboard::Keysym;
 use std::time::Duration;
-use clamshell_core::{Event, Hold, Id, Mode, PadInput};
+use clamshell_core::{Event, Hold, Id, Mode, PadInput, PadRoute};
 
 use crate::draw::Rect;
 use crate::nav::{self, Dir, NavTarget};
@@ -163,8 +163,14 @@ impl App {
                 return;
             }
         }
+        // Away from shelf, only the second screen: to it first if the focus is elsewhere.
+        let top = self.state.pad_on_top();
+        if !top && self.focus_screen() != Screen::Bottom {
+            self.focus_bottom();
+            return;
+        }
         let mut all = Vec::new();
-        for view in self.views() {
+        for view in self.views().filter(|v| top || v.screen == Screen::Bottom) {
             let (w, h) = (view.size.0.max(1) as f32, view.size.1.max(1) as f32);
             let y0 = match view.screen {
                 Screen::Top => 0.0,
@@ -181,9 +187,11 @@ impl App {
         }
     }
 
-    /// The pad, while shelf is in front: directions move focus (crossing screens at the edges), A acts on
-    /// the focused target, B goes back, Y toggles the favourite, the shoulders step tabs (top screen) or
-    /// modes (second screen), View/Select moves focus to the other screen.
+    /// The pad on ClamShell's screens: directions move focus (crossing screens at the edges while shelf
+    /// is in front), A acts on the focused target, B cancels the editor, Y toggles the favourite, the
+    /// shoulders step shelf's tabs (top screen) or the bar's tabs (second screen). View moves focus to
+    /// the other screen with shelf in front; else it moves the pad between the second screen and what
+    /// else wants it (the pad mouse, typing; the pad thread sends View from there too).
     pub(crate) fn pad(&mut self, input: PadInput) {
         match input {
             PadInput::Up => self.navigate(Dir::Up),
@@ -197,24 +205,17 @@ impl App {
             }
             PadInput::A(false) => self.up(Source::PadA, true),
             PadInput::B => {
-                let back = if self.state.editor.is_some() {
-                    Some(Id::EditorCancel)
-                } else if !Mode::BAR.contains(&self.state.mode) {
-                    // Wi-Fi or Battery: their icon again goes back.
-                    Some(Id::Mode(self.state.mode))
-                } else {
-                    None
-                };
-                if let Some(id) = back {
-                    self.handle(Event::Activate(id));
+                if self.state.editor.is_some() {
+                    self.handle(Event::Activate(Id::EditorCancel));
                 }
             }
             PadInput::Y => self.handle(Event::ToggleFavourite),
             PadInput::Shoulder(step) => {
-                if self.focus_screen() == Screen::Top {
+                if self.state.pad_on_top() && self.focus_screen() == Screen::Top {
                     self.handle(Event::TabStep(step));
                 } else {
-                    let modes = Mode::BAR;
+                    // The bar's tabs, left to right.
+                    let modes = [Mode::Settings, Mode::Dock, Mode::Keyboard, Mode::Touchpad, Mode::Sysinfo, Mode::Bluetooth, Mode::Wifi, Mode::Battery];
                     let at = modes.iter().position(|m| *m == self.state.mode).unwrap_or(0) as i32;
                     let next = (at + step).rem_euclid(modes.len() as i32) as usize;
                     if let Some(&mode) = modes.get(next) {
@@ -223,8 +224,28 @@ impl App {
                     }
                 }
             }
-            PadInput::Switch => self.switch_screen(),
+            PadInput::Switch if self.state.pad_on_top() => self.switch_screen(),
+            PadInput::Switch => {
+                if self.state.pad_route == PadRoute::Ui
+                    && let Some(slot) = self.last_focus.get_mut(1)
+                {
+                    *slot = self.state.focus.clone();
+                }
+                self.handle(Event::PadSwitch);
+                if self.state.pad_route == PadRoute::Ui {
+                    self.focus_bottom();
+                }
+            }
         }
+    }
+
+    /// Focus onto the second screen: where it last was there if still drawn, else the open tab.
+    fn focus_bottom(&mut self) {
+        let drawn = |app: &App, id: &Id| app.views().any(|v| v.screen == Screen::Bottom && v.targets.iter().any(|t| &t.id == id));
+        let remembered = self.last_focus.get(1).cloned().flatten().filter(|id| drawn(self, id));
+        let current = self.state.focus.clone().filter(|id| drawn(self, id));
+        let target = current.or(remembered).unwrap_or(Id::Mode(self.state.mode));
+        self.handle(Event::Focus(target));
     }
 
     /// The screen the focus is on (the top one when it isn't on anything drawn).

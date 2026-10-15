@@ -134,11 +134,8 @@ fn main() -> ExitCode {
     // good with a virtual Xbox pad for games; CLAMSHELL_PAD_MOUSE=1 starts with the pad mouse on.
     let (padmouse_tx, padmouse_rx) = mpsc::channel();
     if std::env::var("CLAMSHELL_PAD_MOUSE").as_deref() == Ok("1") {
-        for effect in state.apply(Event::Activate(Id::PadMouse)).1 {
-            if effect == Effect::PadMouse(true) {
-                let _ = padmouse_tx.send(pad::Command::MouseOn);
-            }
-        }
+        // (The pad follows from the route sent below.)
+        state.apply(Event::Activate(Id::PadMouse));
     }
     let gamepad = std::env::var("CLAMSHELL_GAMEPAD").ok();
     // Where the pad goes to start with (shelf in front: ClamShell's).
@@ -243,13 +240,8 @@ fn main() -> ExitCode {
                     log::warn!("touchpad thread is gone");
                 }
             }
-            Effect::PadMouse(on) => {
-                log::info!("effect: {effect:?}");
-                let command = if *on { pad::Command::MouseOn } else { pad::Command::MouseOff };
-                if padmouse_tx.send(command).is_err() {
-                    log::warn!("pad thread is gone");
-                }
-            }
+            // The pad follows the route that comes with it.
+            Effect::PadMouse(_) => log::info!("effect: {effect:?}"),
             Effect::PadRoute(route) => {
                 log::info!("effect: {effect:?}");
                 if padmouse_tx.send(pad::Command::Route(*route)).is_err() {
@@ -458,6 +450,7 @@ fn control_events(line: &str) -> Option<Vec<Event>> {
         [_, "plus", n] => Id::NewInstance(index(n)?),
         [_, "network", n] => Id::Network(index(n)?),
         [_, "wifi-power"] => Id::WifiPower,
+        [_, "pad-mouse"] => Id::PadMouse,
         [_, "device", n] => Id::Device(index(n)?),
         [_, "bluetooth-power"] => Id::BluetoothPower,
         [_, "save"] => Id::EditorSave,
