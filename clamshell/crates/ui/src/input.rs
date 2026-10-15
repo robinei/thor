@@ -1,6 +1,6 @@
-//! Input: presses from touch, the mouse and the pad's A (Enter on the desktop), with holds (key repeat,
-//! long presses) on a timer; pad-style focus movement over both screens; the desktop keys that stand in
-//! for the pad.
+//! Input: presses from touch, the mouse and the pad's A (Enter on the desktop), each with its own hold
+//! timer (key repeat, long presses); volume and brightness slides and level rows that follow a finger;
+//! pad-style focus movement over the screens; on a desktop, keys that stand in for the pad.
 
 use smithay_client_toolkit::reexports::{
     calloop::RegistrationToken,
@@ -23,13 +23,13 @@ const LONG_PRESS: Duration = Duration::from_millis(450);
 /// Key repeat interval while held (25 per second).
 const REPEAT: Duration = Duration::from_millis(40);
 
-
-/// Where a press comes from: each touch point, the mouse, or the pad's A (Enter on the desktop).
+/// Where a press comes from: each touch point, the mouse, the pad's A, or Enter (on a desktop).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum Source {
     Touch(i32),
     Mouse,
     PadA,
+    Enter,
 }
 
 /// A finger on volume or brightness that may become a slide: where it came down, where it is now (in
@@ -78,7 +78,8 @@ impl App {
             return;
         }
         match id {
-            Id::Control(control) => {
+            // (One slide at a time: another finger on a control meanwhile is a tap.)
+            Id::Control(control) if self.pending_slide.is_none() && self.slider_source.is_none() => {
                 let Some((origin, width)) = origin_w else {
                     return;
                 };
@@ -96,7 +97,6 @@ impl App {
                     })
                     .map_err(|e| log::warn!("slide timer: {}", e.error))
                     .ok();
-                self.cancel_pending_slide();
                 self.pending_slide = Some(PendingSlide { source, control, down_x: x, x, width, timer: token });
             }
             Id::Level(level) => {
@@ -110,7 +110,10 @@ impl App {
     /// The slide a finger on volume or brightness was waiting for: the slider comes up under it, and
     /// the press won't be a tap.
     fn start_slide(&mut self, source: Source) {
-        let Some(pending) = self.pending_slide.take().filter(|p| p.source == source) else {
+        if self.pending_slide.as_ref().is_none_or(|p| p.source != source) {
+            return;
+        }
+        let Some(pending) = self.pending_slide.take() else {
             return;
         };
         if let Some(token) = pending.timer {
@@ -162,17 +165,20 @@ impl App {
         }
         self.presses.insert(source, Press { id: id.clone(), held: false });
         self.handle(Event::Down(id));
-        self.cancel_hold_timer();
+        // Each press its own hold timer: another finger doesn't cut this one's long press short.
+        self.cancel_hold_timer(source);
         let timer = Timer::from_duration(LONG_PRESS);
         match self.loop_handle.insert_source(timer, move |_, _, app: &mut App| app.on_hold(source)) {
-            Ok(token) => self.hold_timer = Some((source, token)),
+            Ok(token) => {
+                self.hold_timers.insert(source, token);
+            }
             Err(e) => log::warn!("hold timer: {}", e.error),
         }
     }
 
     fn on_hold(&mut self, source: Source) -> TimeoutAction {
         let Some(press) = self.presses.get_mut(&source) else {
-            self.hold_timer = None;
+            self.hold_timers.remove(&source);
             return TimeoutAction::Drop;
         };
         press.held = true;
@@ -183,7 +189,7 @@ impl App {
                 TimeoutAction::ToDuration(REPEAT)
             }
             Hold::Long => {
-                self.hold_timer = None;
+                self.hold_timers.remove(&source);
                 self.handle(Event::LongPress(id));
                 TimeoutAction::Drop
             }
@@ -192,14 +198,11 @@ impl App {
 
     /// A press ends: a tap activates; a hold already acted.
     pub(crate) fn up(&mut self, source: Source, activate: bool) {
-        if let Some((timer_source, token)) = self.hold_timer
-            && timer_source == source
-        {
-            self.loop_handle.remove(token);
-            self.hold_timer = None;
-        }
+        self.cancel_hold_timer(source);
+        // Only the finger that slides ends the slide.
         if self.slider_source == Some(source) {
             self.slider_source = None;
+            self.handle(Event::SlideEnd);
         }
         if self.pending_slide.as_ref().is_some_and(|p| p.source == source) {
             self.cancel_pending_slide();
@@ -216,8 +219,8 @@ impl App {
         self.handle(Event::Up(press.id));
     }
 
-    fn cancel_hold_timer(&mut self) {
-        if let Some((_, token)) = self.hold_timer.take() {
+    fn cancel_hold_timer(&mut self, source: Source) {
+        if let Some(token) = self.hold_timers.remove(&source) {
             self.loop_handle.remove(token);
         }
     }
@@ -232,9 +235,9 @@ impl App {
 
     /// Pad-style focus movement over both screens' targets.
     fn navigate(&mut self, dir: Dir) {
-        // In shelf's list: up and down move through the games (scrolling), left and right switch tabs;
-        // down past the last game goes on to the second screen.
-        if matches!(self.state.focus, Some(Id::Game(_)) | Some(Id::Tab(_))) {
+        // In shelf's list (while shelf is in front): up and down move through the games (scrolling),
+        // left and right switch tabs; down past the last game goes on to the second screen.
+        if self.state.pad_on_top() && matches!(self.state.focus, Some(Id::Game(_)) | Some(Id::Tab(_))) {
             let len = self.state.collection().map_or(0, |c| c.games.len());
             let at_end = self.state.cursor().index + 1 >= len;
             let event = match dir {
@@ -255,8 +258,10 @@ impl App {
             self.focus_bottom();
             return;
         }
-        // On a level row, left and right step it.
-        if let (Some(Id::Level(level)), Dir::Left | Dir::Right) = (&self.state.focus, dir) {
+        // On a level row (drawn), left and right step it.
+        if let (Some(Id::Level(level)), Dir::Left | Dir::Right) = (&self.state.focus, dir)
+            && self.drawn_on(None, &Id::Level(*level))
+        {
             let step = if dir == Dir::Left { -1 } else { 1 };
             self.handle(Event::LevelStep(*level, step));
             return;
@@ -290,11 +295,7 @@ impl App {
             PadInput::Down => self.navigate(Dir::Down),
             PadInput::Left => self.navigate(Dir::Left),
             PadInput::Right => self.navigate(Dir::Right),
-            PadInput::A(true) => {
-                if let Some(id) = self.state.focus.clone() {
-                    self.down(Source::PadA, id);
-                }
-            }
+            PadInput::A(true) => self.press_focus(Source::PadA),
             PadInput::A(false) => self.up(Source::PadA, true),
             PadInput::B => {
                 if self.state.editor.is_some() {
@@ -331,11 +332,31 @@ impl App {
         }
     }
 
+    /// A (or Enter) presses what has the focus, if it is drawn where the pad may go; else the focus
+    /// comes back there first (a target a closed tab drew isn't pressed unseen).
+    fn press_focus(&mut self, source: Source) {
+        let screen = (!self.state.pad_on_top()).then_some(Screen::Bottom);
+        match self.state.focus.clone() {
+            Some(id) if self.drawn_on(screen, &id) => self.down(source, id),
+            _ if self.state.pad_on_top() => {
+                if let Some(game) = self.state.selected.clone() {
+                    self.handle(Event::Focus(Id::Game(game)));
+                }
+            }
+            _ => self.focus_bottom(),
+        }
+    }
+
+    /// Whether the last frame drew `id` (on `screen`, or on either).
+    fn drawn_on(&self, screen: Option<Screen>, id: &Id) -> bool {
+        self.views().any(|v| screen.is_none_or(|s| v.screen == s) && v.targets.iter().any(|t| &t.id == id))
+    }
+
     /// Focus onto the second screen: where it last was there if still drawn, else the open tab.
     fn focus_bottom(&mut self) {
-        let drawn = |app: &App, id: &Id| app.views().any(|v| v.screen == Screen::Bottom && v.targets.iter().any(|t| &t.id == id));
-        let remembered = self.last_focus.get(1).cloned().flatten().filter(|id| drawn(self, id));
-        let current = self.state.focus.clone().filter(|id| drawn(self, id));
+        let bottom = Some(Screen::Bottom);
+        let remembered = self.last_focus.get(1).cloned().flatten().filter(|id| self.drawn_on(bottom, id));
+        let current = self.state.focus.clone().filter(|id| self.drawn_on(bottom, id));
         let target = current.or(remembered).unwrap_or(Id::Mode(self.state.mode));
         self.handle(Event::Focus(target));
     }
@@ -343,7 +364,7 @@ impl App {
     /// The screen the focus is on (the top one when it isn't on anything drawn).
     fn focus_screen(&self) -> Screen {
         let focus = self.state.focus.as_ref();
-        self.views().find(|v| v.targets.iter().any(|t| Some(&t.id) == focus)).map_or(Screen::Top, |v| v.screen)
+        self.views().find(|v| focus.is_some_and(|f| v.targets.iter().any(|t| &t.id == f))).map_or(Screen::Top, |v| v.screen)
     }
 
     /// Focus to the other screen: where it last was there if that is still drawn, else shelf's selected
@@ -357,34 +378,32 @@ impl App {
         if let Some(slot) = self.last_focus.get_mut(slot_from) {
             *slot = self.state.focus.clone();
         }
-        let drawn = |app: &App, id: &Id| app.views().any(|v| v.screen == to && v.targets.iter().any(|t| &t.id == id));
-        let remembered = self.last_focus.get(slot_to).cloned().flatten().filter(|id| drawn(self, id));
+        let remembered = self.last_focus.get(slot_to).cloned().flatten().filter(|id| self.drawn_on(Some(to), id));
         let default = match to {
             Screen::Top => self.state.selected.clone().map(Id::Game),
             Screen::Bottom => Some(Id::Mode(self.state.mode)),
         };
         let first = self.views().find(|v| v.screen == to).and_then(|v| v.targets.first()).map(|t| t.id.clone());
-        let target = remembered.or_else(|| default.filter(|id| drawn(self, id))).or(first);
+        let target = remembered.or_else(|| default.filter(|id| self.drawn_on(Some(to), id))).or(first);
         if let Some(id) = target {
             self.handle(Event::Focus(id));
         }
     }
 
-    /// The keyboard stands in for the pad on the desktop: arrows move focus, Enter/Space is A (press,
-    /// hold), Escape quits.
+    /// On a desktop, the keyboard stands in for the pad: arrows move focus, Enter/Space is A (press,
+    /// hold), Tab View, Backspace B, Q and E the shoulders, F Y. Not on the device: there what reaches
+    /// shelf's window is typing (the on-screen keyboard's keys, a Bluetooth keyboard's).
     pub(crate) fn key(&mut self, sym: Keysym, down: bool) {
+        if !self.desktop_keys {
+            return;
+        }
         match (sym, down) {
             (Keysym::Left, true) => self.navigate(Dir::Left),
             (Keysym::Right, true) => self.navigate(Dir::Right),
             (Keysym::Up, true) => self.navigate(Dir::Up),
             (Keysym::Down, true) => self.navigate(Dir::Down),
-            (Keysym::Return | Keysym::KP_Enter | Keysym::space, true) => {
-                if let Some(id) = self.state.focus.clone() {
-                    self.down(Source::PadA, id);
-                }
-            }
-            (Keysym::Return | Keysym::KP_Enter | Keysym::space, false) => self.up(Source::PadA, true),
-            (Keysym::Escape, true) => self.handle(Event::Quit),
+            (Keysym::Return | Keysym::KP_Enter | Keysym::space, true) => self.press_focus(Source::Enter),
+            (Keysym::Return | Keysym::KP_Enter | Keysym::space, false) => self.up(Source::Enter, true),
             // The pad's Y: the selected game in or out of the favourites.
             (Keysym::f, true) => self.handle(Event::ToggleFavourite),
             // The pad's View (focus to the other screen), B, and shoulders.

@@ -15,6 +15,7 @@ mod editor;
 mod keyboard;
 mod dock;
 pub(crate) mod levels;
+mod radio;
 mod settings;
 mod shelf;
 mod sysinfo;
@@ -55,7 +56,7 @@ pub struct Scratch {
     minute: Option<u64>,
     clock: String,
     lines: sysinfo::Lines,
-    /// shelf's detail lines.
+    /// Any view's formatted text (shelf's details, a status line, a level), reused.
     text: String,
 }
 
@@ -161,7 +162,7 @@ pub fn top(
     shelf::draw(&mut Frame { c, s, targets }, images, &mut scratch.text, w, h)
 }
 
-/// Draws `text` word by word from (x, y), wrapping within `width` (the first argument), at most `max_lines` lines (the last
+/// Draws `text` word by word from (x, y), wrapping within `width`, at most `max_lines` lines (the last
 /// one cut at a word). Returns the height used. Newlines in the text start a new line.
 fn wrap(c: &mut Canvas, (x, y, width): (f32, f32, f32), size: f32, color: u32, text: &str, max_lines: usize) -> f32 {
     let line_h = size * 1.3;
@@ -231,7 +232,8 @@ mod tests {
         let mut state = State::new(clamshell_library::demo_library());
         state.apply(Event::Status(Status { battery: Some(50), volume: Some(50), brightness: Some(50), wifi: Some(50), ..Status::default() }));
         let mut cache = DrawCache::load();
-        for (w, h) in [(620u32, 540u32), (1240, 1080)] {
+        // The desktop window, the Thor, and a window dragged narrow.
+        for (w, h) in [(620u32, 540u32), (1240, 1080), (300, 540)] {
             let mut pixmap = Pixmap::new(w, h).expect("pixmap");
             let mut targets = Vec::new();
             let mut canvas = Canvas::new(&mut pixmap, 1.0, &mut cache);

@@ -52,7 +52,9 @@ impl State {
     pub fn spender_name<'a>(&'a self, spender: &'a Spender) -> &'a str {
         match &spender.group {
             Group::Unit(unit) if unit.starts_with("clamshell-game-") => {
-                self.running.as_ref().and_then(|id| self.library.games.iter().find(|g| &g.id == id)).map_or("Game", |g| g.title.as_str())
+                // The game whose scope it is (named like its workspace).
+                let game = self.games.iter().find(|g| g.workspace == *unit);
+                game.and_then(|r| self.library.games.iter().find(|g| g.id == r.id)).map_or("Game", |g| g.title.as_str())
             }
             Group::Unit(unit) => {
                 let key = unit.strip_prefix("clamshell-app-").and_then(|rest| rest.rsplitn(3, '-').nth(2));
@@ -77,11 +79,21 @@ mod tests {
     #[test]
     fn spenders_are_named_after_their_app_or_game() {
         let mut s = state();
-        s.apply(Event::Started("zelda-lttp".into()));
+        s.apply(Event::Tick { unix_secs: 1792010377 });
+        s.apply(Event::Activate(Id::Launch));
+        let first = s.selected.clone().unwrap_or_default();
+        s.apply(Event::Started(first.clone()));
+        // A second game in front: each scope keeps its own game's name.
+        s.apply(Event::Activate(Id::Game("ff6".into())));
+        s.apply(Event::Activate(Id::StartKeep));
+        s.apply(Event::Started("ff6".into()));
+        assert_eq!(s.running.as_deref(), Some("ff6"));
         let terminal = s.apps.iter().find(|a| a.multiple).map(|a| a.key().to_owned()).unwrap_or_default();
         let unit = format!("clamshell-app-{terminal}-1792010377-0");
         assert_eq!(s.spender_name(&spender(Group::Unit(unit))), "Terminal");
-        assert_eq!(s.spender_name(&spender(Group::Unit("clamshell-game-1792010377-0".into()))), "A Link to the Past");
+        let title = |id: &str| s.library.games.iter().find(|g| &*g.id == id).map(|g| g.title.clone()).unwrap_or_default();
+        assert_eq!(s.spender_name(&spender(Group::Unit("clamshell-game-1792010377-0".into()))), title(&first));
+        assert_eq!(s.spender_name(&spender(Group::Unit("clamshell-game-1792010377-1".into()))), title("ff6"));
         assert_eq!(s.spender_name(&spender(Group::Process("firefox".into()))), "firefox");
         assert_eq!(s.spender_name(&spender(Group::System)), "System");
     }

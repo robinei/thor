@@ -10,7 +10,7 @@
 use std::fmt::Write;
 
 use clamshell_core::controls::{Control, Slider};
-use clamshell_core::{Id, Mode, Status};
+use clamshell_core::{Id, Mode, State, Status};
 
 use super::{ACCENT, DIM, Frame, Look, Scratch, TEXT, TEXT_HI, label};
 use crate::draw::{Rect, rgb, rgba};
@@ -23,10 +23,8 @@ const ICON: f32 = 0.62;
 const CLOCK_TEXT: f32 = 0.34;
 /// Room around the clock text, of the bar's height.
 const CLOCK_PAD: f32 = 0.5;
-/// A button's tap slot (the least; the icons before the clock share its room), of the bar's height.
+/// The pad mouse switch's tap slot, of the bar's height (the tabs share the room before the clock).
 const SLOT: f32 = 1.15;
-/// The icons spread before the clock: the five tabs, volume, brightness, and the three status tabs.
-const ICONS: usize = 10;
 /// The line before the clock and the pad mouse toggle: its height, of the bar's, and how strongly it shows.
 const DIVIDER: f32 = 0.4;
 const DIVIDER_ALPHA: f32 = 0.35;
@@ -84,13 +82,43 @@ fn wifi_bars(quality: Option<u8>) -> Option<u8> {
     })
 }
 
+/// A tab's button in the bar: its id (volume and brightness are controls, which open their tab on a
+/// tap), its icon (with its level or status), and its colour: lit while open, dim without a reading.
+fn tab_button(s: &State, mode: Mode) -> (Id, Icon, u32) {
+    let lit = |reading: bool| if s.mode == mode { ACCENT } else if reading { TEXT } else { DIM };
+    match mode {
+        Mode::Volume => {
+            let volume = s.level(Control::Volume);
+            (Id::Control(Control::Volume), volume_icon(volume.unwrap_or(0), s.status.muted), lit(volume.is_some()))
+        }
+        Mode::Brightness => (Id::Control(Control::Brightness), Icon::Brightness, lit(s.level(Control::Brightness).is_some())),
+        Mode::Bluetooth => {
+            let connected = s.bluetooth.connected() > 0;
+            (Id::Mode(mode), Icon::Bluetooth { connected }, lit(s.bluetooth.powered && connected))
+        }
+        Mode::Wifi => {
+            let bars = wifi_bars(s.status.wifi);
+            (Id::Mode(mode), Icon::Wifi { bars }, lit(bars.is_some()))
+        }
+        // An empty, dim battery when there is none; low in the accent colour.
+        Mode::Battery => {
+            let (icon, color) = battery(&s.status).unwrap_or((Icon::Battery { tenths: 0, charging: false }, DIM));
+            (Id::Mode(mode), icon, if s.mode == mode { ACCENT } else { color })
+        }
+        Mode::Settings | Mode::Dock | Mode::Keyboard | Mode::Touchpad | Mode::Sysinfo => {
+            (Id::Mode(mode), mode_icon(mode), if s.mode == mode { ACCENT } else { DIM })
+        }
+    }
+}
+
 /// Draws the bar; returns its height.
 pub(super) fn draw(f: &mut Frame, w: f32, h: f32, scratch: &mut Scratch) -> f32 {
     let bar_h = (h * BAR_H).max(20.0);
-    let side = bar_h * ICON;
     let slot = bar_h * SLOT;
     let look = Look { radius: 8.0, fill: None, inset: 2.0, ring_inset: 0.0 };
     let icon_button = |f: &mut Frame, id: Id, r: Rect, icon: Icon, color: u32| {
+        // (Smaller in a narrow window, so neighbours don't touch.)
+        let side = (bar_h * ICON).min(r.w * 0.8);
         f.button(id, r, look, |c| {
             let (cx, cy) = r.center();
             c.icon(icon, Rect::new(cx - side / 2.0, cy - side / 2.0, side, side), rgb(color));
@@ -108,54 +136,14 @@ pub(super) fn draw(f: &mut Frame, w: f32, h: f32, scratch: &mut Scratch) -> f32 
     let line = bar_h * DIVIDER;
     f.c.fill(Rect::new(line_x - 0.5, (bar_h - line) / 2.0, 1.0, line), rgba(DIM, DIVIDER_ALPHA));
 
-    // Before the line, evenly spread: the tabs, volume and brightness (near the middle; the slider
-    // makes do with the room on either side), and the status tabs. Each opens its tab (lit while open);
-    // volume and brightness, held or slid, bring up the slider.
-    let cell = (line_x / ICONS as f32).max(slot);
-    let at = |i: usize| Rect::new(i as f32 * cell, 0.0, cell, bar_h);
-    for (i, mode) in Mode::BAR.into_iter().enumerate() {
-        let color = if f.s.mode == mode { ACCENT } else { DIM };
-        icon_button(f, Id::Mode(mode), at(i), mode_icon(mode), color);
+    // Before the line, every tab, evenly spread (volume and brightness land near the middle; their
+    // slider makes do with the room on either side). Each opens its tab; volume and brightness, held or
+    // slid, bring up the slider.
+    let cell = line_x.max(0.0) / Mode::TABS.len() as f32;
+    for (i, mode) in Mode::TABS.into_iter().enumerate() {
+        let (id, icon, color) = tab_button(f.s, mode);
+        icon_button(f, id, Rect::new(i as f32 * cell, 0.0, cell, bar_h), icon, color);
     }
-    let mut i = Mode::BAR.len();
-    // Dim without a reading (always shown, so a desktop shows everything the device does).
-    let volume = f.s.level(Control::Volume);
-    let icon = volume_icon(volume.unwrap_or(0), f.s.status.muted);
-    let color = match (f.s.mode == Mode::Volume, volume) {
-        (true, _) => ACCENT,
-        (false, Some(_)) => TEXT,
-        (false, None) => DIM,
-    };
-    icon_button(f, Id::Control(Control::Volume), at(i), icon, color);
-    i += 1;
-    let color = match (f.s.mode == Mode::Brightness, f.s.level(Control::Brightness)) {
-        (true, _) => ACCENT,
-        (false, Some(_)) => TEXT,
-        (false, None) => DIM,
-    };
-    icon_button(f, Id::Control(Control::Brightness), at(i), Icon::Brightness, color);
-    i += 1;
-    let bt = &f.s.bluetooth;
-    let connected = bt.connected() > 0;
-    let color = match (f.s.mode == Mode::Bluetooth, bt.powered, connected) {
-        (true, _, _) => ACCENT,
-        (false, true, true) => TEXT,
-        _ => DIM,
-    };
-    icon_button(f, Id::Mode(Mode::Bluetooth), at(i), Icon::Bluetooth { connected }, color);
-    i += 1;
-    let bars = wifi_bars(f.s.status.wifi);
-    let color = match (f.s.mode == Mode::Wifi, bars) {
-        (true, _) => ACCENT,
-        (false, Some(_)) => TEXT,
-        (false, None) => DIM,
-    };
-    icon_button(f, Id::Mode(Mode::Wifi), at(i), Icon::Wifi { bars }, color);
-    i += 1;
-    // An empty, dim battery when there is none.
-    let (icon, color) = battery(&f.s.status).unwrap_or((Icon::Battery { tenths: 0, charging: false }, DIM));
-    let color = if f.s.mode == Mode::Battery { ACCENT } else { color };
-    icon_button(f, Id::Mode(Mode::Battery), at(i), icon, color);
     bar_h
 }
 

@@ -10,9 +10,6 @@ use super::{ACCENT, DIM, FN, Frame, Look, TEXT, label};
 use crate::draw::{Canvas, Rect, rgb, rgba};
 use crate::icons::Icon;
 
-/// Lines between keys, if drawn at all (the labels alone are enough on black).
-const SEPARATORS: bool = false;
-const SEPARATOR: u32 = 0x24242c;
 /// Label sizes, of a key's height: the main one and the small ones above and below.
 const MAIN_TEXT: f32 = 0.3;
 const SMALL_TEXT: f32 = 0.17;
@@ -58,16 +55,6 @@ pub(super) fn draw(f: &mut Frame, body: Rect) {
     // The cell is also the tap area: a touch between labels goes to the nearer key.
     for (pos, slot, cell) in cells(body) {
         f.button(Id::Key(pos), cell, KEY, |c| draw_key(c, kb, slot, cell));
-    }
-    if SEPARATORS {
-        // Two buffer pixels on every boundary between keys, and above each row.
-        for (pos, _, cell) in cells(body) {
-            if pos.col == 0 {
-                f.c.hline(body.x, body.x + body.w, cell.y, 2, rgb(SEPARATOR));
-            } else {
-                f.c.vline(cell.x, cell.y, cell.y + cell.h, 2, rgb(SEPARATOR));
-            }
-        }
     }
 }
 

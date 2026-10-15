@@ -1,5 +1,5 @@
-//! Coming back to the same place after a restart: the current tab, each tab's selected game, the
-//! second screen's mode, and the screens' brightness (the level and each screen's factor), saved as text.
+//! Coming back to the same place after a restart: shelf's current tab and each tab's selected game, and
+//! the second screen's tab, saved as text.
 
 use crate::{Id, Mode, State};
 
@@ -7,22 +7,15 @@ use crate::{Id, Mode, State};
 pub(crate) const RESUME_AFTER: u64 = 2;
 
 impl State {
-    /// Where shelf is, to come back to: the current tab's name, then each tab's name and selected
-    /// game's id, tab-separated.
+    /// Where shelf and the second screen are, to come back to: shelf's current tab's name, the second
+    /// screen's tab (`@mode`), then each of shelf's tabs' name and selected game's id, tab-separated.
     pub fn resume_text(&self) -> String {
         let mut text = self.collection().map(|c| c.name.clone()).unwrap_or_default();
         text.push('\n');
-        // The second screen's mode.
+        // The second screen's tab: the one chosen (not the keyboard a text field brought up).
         text.push_str("@mode\t");
-        text.push_str(self.mode.name());
+        text.push_str(self.raised_from.unwrap_or(self.mode).name());
         text.push('\n');
-        // The screens' brightness and each one's factor.
-        if let Some(level) = self.brightness.level {
-            text.push_str(&format!("@brightness\t{level}\n"));
-        }
-        for (name, factor) in &self.brightness.factors {
-            text.push_str(&format!("@factor\t{name}\t{factor}\n"));
-        }
         for (i, c) in self.library.collections.iter().enumerate() {
             let cursor = self.cursors.get(i).copied().unwrap_or_default();
             if let Some(g) = c.games.get(cursor.index).and_then(|&g| self.library.games.get(g)) {
@@ -43,22 +36,10 @@ impl State {
             let Some((name, id)) = line.split_once('\t') else {
                 continue;
             };
-            if name == "@brightness" {
-                self.brightness.level = id.parse::<u8>().ok().map(|l| l.min(100));
-                continue;
-            }
-            if name == "@factor" {
-                if let Some((backlight, factor)) = id.split_once('\t')
-                    && let Ok(factor) = factor.parse::<u8>()
-                {
-                    self.brightness.factors.push((backlight.to_owned(), factor.min(100)));
-                }
-                continue;
-            }
             if name == "@mode" {
-                // Only into the bar's modes, and not touchpad (grabs the touchscreen; only on
-                // request): Wi-Fi, Bluetooth and Battery watch the system only while open.
-                if let Some(mode) = Mode::from_name(id).filter(|m| Mode::BAR.contains(m) && *m != Mode::Touchpad) {
+                // Any tab but the touchpad (it grabs the touchscreen: only on request). What a tab
+                // watches starts with Event::Start.
+                if let Some(mode) = Mode::from_name(id).filter(|m| *m != Mode::Touchpad) {
                     self.mode = mode;
                 }
                 continue;

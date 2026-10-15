@@ -1,5 +1,5 @@
 //! The compositor's windows, as the launcher needs them. A launcher instance is a systemd scope we
-//! started (`clamshell-app-<key>-<pid>-<n>.scope`) and has a workspace of the same name: every window of
+//! started (`clamshell-app-<key>-<secs>-<n>.scope`) and has a workspace of the same name: every window of
 //! its processes (a second window, a program started from its terminal) belongs there, and sway arranges
 //! them within it. Games are the same: each running game has a scope (`clamshell-game-<secs>-<n>`) and a
 //! workspace of that name; a game Steam starts gets a workspace of its own too (its windows are moved
@@ -31,11 +31,6 @@ impl Window {
         self.unit.as_deref().and_then(|u| u.strip_suffix(".scope")).filter(|u| u.starts_with("clamshell-app-"))
     }
 
-    /// Started as the launcher app with this key (`clamshell-app-<key>-…`; keys have no '-').
-    pub fn from_app(&self, key: &str) -> bool {
-        self.instance().and_then(|i| i.strip_prefix("clamshell-app-")).and_then(|rest| rest.split('-').next()) == Some(key)
-    }
-
     /// The game's: started by our launcher, or a Steam game's (`steam_app_<id>`).
     pub fn of_game(&self) -> bool {
         self.unit.as_deref().is_some_and(|u| u.starts_with("clamshell-game-")) || self.app_id.starts_with("steam_app_")
@@ -60,7 +55,7 @@ impl Window {
     }
 }
 
-/// An instance's place among its app's: the `<pid>-<n>` at the end of its name, as numbers.
+/// An instance's place among its app's: the `<secs>-<n>` at the end of its name, as numbers.
 pub fn order(instance: &str) -> (u64, u64) {
     let mut parts = instance.rsplit('-');
     let n = parts.next().and_then(|n| n.parse().ok()).unwrap_or(0);
@@ -77,7 +72,6 @@ mod tests {
         let w = |unit: Option<&str>, app_id: &str| Window { unit: unit.map(Into::into), app_id: app_id.into(), ..Window::default() };
         let foot = w(Some("clamshell-app-terminal-1234-7.scope"), "foot");
         assert_eq!(foot.instance(), Some("clamshell-app-terminal-1234-7"));
-        assert!(foot.from_app("terminal") && !foot.from_app("term"));
         assert_eq!(foot.home(), Some("clamshell-app-terminal-1234-7"));
         // Firefox started from that terminal: the terminal's.
         assert_eq!(w(Some("clamshell-app-terminal-1234-7.scope"), "firefox").home(), Some("clamshell-app-terminal-1234-7"));

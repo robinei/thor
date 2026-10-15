@@ -1,11 +1,11 @@
 //! The dock: the running games first (the game, the one last in front, marked), or while none runs a
 //! "Start game" tile that goes to shelf (so the apps keep their places unless several games run); then
 //! the apps from launcher.json, as a grid of tiles on black, each an icon over its name. A tap starts an
-//! app or goes to it (again: its next window), or shows a game; a long press closes the window it is on,
-//! or quits the game; a "+" in the corner of a running app that allows several starts another. Running shows as
-//! colour: app icons in full colour (drawn
-//! icons green), idle ones grey and dim; "1/3" when it has several instances, the one shown first. What is
-//! wrong with the file, if anything, shows at the bottom.
+//! app or goes to it (again: its next instance), or shows a game; a long press closes the instance it is
+//! on, or quits the game; a "+" in the corner of a running app that allows several starts another.
+//! Running shows as colour: app icons in full colour (drawn icons green), idle ones grey and dim; "1/3"
+//! when it has several instances, the one shown first. What is wrong with the file, if anything, shows at
+//! the bottom.
 
 use std::fmt::Write;
 

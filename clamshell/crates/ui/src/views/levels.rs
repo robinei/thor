@@ -1,7 +1,7 @@
 //! The volume and brightness tabs. Volume: the output volume with its mute button, which output plays
 //! (a tap chooses one), then each app playing with its own level and mute button. Brightness: the level
-//! (the bar's), then each screen's backlight with its share of it (the two multiply). A level row is set by where the finger is on its track (and
-//! follows it); the pad's left and right step it.
+//! (the bar's), then each screen's backlight with its share of it (the two multiply). A level row is set
+//! by where the finger is on its track (and follows it); the pad's left and right step it.
 
 use std::fmt::Write;
 
@@ -58,12 +58,12 @@ pub(crate) fn value_at(r: Rect, x: f32) -> u8 {
     v.round().clamp(0.0, 100.0) as u8
 }
 
-/// The level as a number in `r`, right-aligned.
-fn number(f: &mut Frame, r: Rect, value: Option<u8>, size: f32, buf: &mut String) {
+/// The level as a number in `r`, right-aligned (`suffix` after it); "-" when unknown.
+fn number(f: &mut Frame, r: Rect, value: Option<u8>, suffix: &str, size: f32, buf: &mut String) {
     buf.clear();
     match value {
         Some(v) => {
-            let _ = write!(buf, "{v}");
+            let _ = write!(buf, "{v}{suffix}");
         }
         None => buf.push('-'),
     }
@@ -98,7 +98,7 @@ pub(super) fn draw_volume(f: &mut Frame, body: Rect, buf: &mut String) {
         c.text(mute.x + pad * 0.5 + side * 1.4, ty, size, rgb(color), if muted { "Muted" } else { "Volume" });
     });
     track(f, Level::Volume, Rect::new(row.x + name_w, row.y, row.w - name_w - number_w, row.h), muted);
-    number(f, Rect::new(row.x + row.w - number_w, row.y, number_w, row.h), s.status.volume, size, buf);
+    number(f, Rect::new(row.x + row.w - number_w, row.y, number_w, row.h), s.status.volume, "", size, buf);
     let mut y = row.y + row.h + pad * 0.5;
     let bottom = area.y + area.h;
 
@@ -109,8 +109,10 @@ pub(super) fn draw_volume(f: &mut Frame, body: Rect, buf: &mut String) {
         f.c.text(area.x, y, size, rgb(DIM), "No outputs");
         y += row_h * 0.6;
     }
+    // (Room kept below for the apps' heading and a row.)
+    let apps_room = hsize * 1.8 + row_h + pad;
     for (i, o) in s.audio.outputs.iter().enumerate() {
-        if y + row_h * 0.8 > bottom {
+        if y + row_h * 0.8 > bottom - apps_room {
             break;
         }
         let r = Rect::new(area.x - pad * 0.5, y, area.w + pad, row_h * 0.8);
@@ -128,6 +130,9 @@ pub(super) fn draw_volume(f: &mut Frame, body: Rect, buf: &mut String) {
 
     // Each app playing.
     y += pad * 0.5;
+    if y + hsize * 1.8 > bottom {
+        return;
+    }
     y += heading(f, area.x, y, hsize, "Apps");
     if s.audio.streams.is_empty() {
         f.c.text(area.x, y, size, rgb(DIM), "Nothing is playing");
@@ -167,7 +172,7 @@ pub(super) fn draw_brightness(f: &mut Frame, body: Rect, buf: &mut String) {
     f.c.icon(Icon::Brightness, Rect::new(row.x, row.y + (row.h - side) / 2.0, side, side), rgb(TEXT));
     f.c.text(row.x + side * 1.4, ty, size, rgb(TEXT), "Brightness");
     track(f, Level::Brightness, Rect::new(row.x + name_w, row.y, row.w - name_w - number_w, row.h), false);
-    number(f, Rect::new(row.x + row.w - number_w, row.y, number_w, row.h), s.level_of(Level::Brightness), size, buf);
+    number(f, Rect::new(row.x + row.w - number_w, row.y, number_w, row.h), s.level_of(Level::Brightness), "", size, buf);
     let mut y = row.y + row.h + pad * 0.5;
 
     // Each screen's share of it.
@@ -186,10 +191,7 @@ pub(super) fn draw_brightness(f: &mut Frame, body: Rect, buf: &mut String) {
         let level = Level::Backlight(i as u16);
         let percent_w = area.w * PERCENT_W;
         track(f, level, Rect::new(row.x + name_w, row.y, row.w - name_w - percent_w, row.h), false);
-        buf.clear();
-        let _ = write!(buf, "{} %", s.level_of(level).unwrap_or(100));
-        let w = f.c.text_width(size, buf);
-        f.c.text(row.x + row.w - w, ty, size, rgb(TEXT), buf);
+        number(f, Rect::new(row.x + row.w - percent_w, row.y, percent_w, row.h), s.level_of(level), " %", size, buf);
         y += row_h;
     }
 }

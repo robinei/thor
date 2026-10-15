@@ -42,7 +42,7 @@ pub(super) fn draw(f: &mut Frame, images: &mut Images, buf: &mut String, w: f32,
     // Tabs: the collections' names.
     let tabs_h = h * TABS_H;
     let items = s.library.collections.iter().enumerate().map(|(i, coll)| (Id::Tab(i as u16), coll.name.as_str(), i == s.tab));
-    super::tabs(f, Rect::new(pad, 0.0, w - pad, tabs_h), h * TAB_TEXT, pad * 0.8, f32::INFINITY, items);
+    super::tabs(f, Rect::new(pad, 0.0, w - 2.0 * pad, tabs_h), h * TAB_TEXT, pad * 0.8, f32::INFINITY, items);
 
     // The list, filling the height below the tabs exactly with whole rows.
     let list = Rect::new(pad, tabs_h + pad * 0.5, w * LIST_W - pad, h - tabs_h - pad * 1.5);
@@ -122,8 +122,11 @@ pub(super) fn draw(f: &mut Frame, images: &mut Images, buf: &mut String, w: f32,
             }
         }
         let text = if game.description.is_empty() { &game.summary } else { &game.description };
-        if !text.is_empty() {
-            wrap(c, (tx, y + pad * 0.6, room), h * DESCRIPTION, TEXT, text, 12);
+        // As many lines as fit above the list's bottom.
+        let (top, line_h) = (y + pad * 0.6, h * DESCRIPTION * 1.3);
+        let lines = ((list.y + list.h - top) / line_h).floor().max(0.0) as usize;
+        if !text.is_empty() && lines > 0 {
+            wrap(c, (tx, top, room), h * DESCRIPTION, TEXT, text, lines.min(12));
         }
     }
     // The choice's buttons (targets, drawn after the text): keep the running game, or close it.

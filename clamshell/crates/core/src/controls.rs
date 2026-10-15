@@ -7,6 +7,7 @@
 //! so the value can go from 0 to 100 without the track leaving the screen (the icons sit near the middle
 //! of the bar for this, not exactly in it).
 
+use crate::mixer::Level;
 use crate::{Effect, State};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -30,7 +31,8 @@ pub struct Slider {
 }
 
 /// A finger held this long on volume or brightness brings up the slider (a shorter touch is a tap, which
-/// opens the tab); moving sideways this far (layout units) brings it up at once. For every input path.
+/// opens the tab); moving sideways this far (layout units) brings it up at once. For touch and the mouse,
+/// in the UI and in touchpad mode alike.
 pub const SLIDE_AFTER: std::time::Duration = std::time::Duration::from_millis(200);
 pub const SLIDE_MOVE: f32 = 8.0;
 
@@ -72,10 +74,7 @@ impl State {
     pub fn level(&self, control: Control) -> Option<u8> {
         match self.slider {
             Some(s) if s.control == control => Some(s.value),
-            _ => match control {
-                Control::Volume => self.status.volume,
-                Control::Brightness => self.level_of(crate::mixer::Level::Brightness),
-            },
+            _ => self.level_of(Level::from(control)),
         }
     }
 
@@ -96,27 +95,15 @@ impl State {
         }
         slider.value = value;
         slider.moved = true;
-        let control = slider.control;
-        match control {
-            Control::Brightness => self.set_brightness(value),
-            // Turning it up or down unmutes.
-            Control::Volume if self.status.muted => {
-                self.status.muted = false;
-                vec![Effect::SetMute(false), Effect::SetVolume(value)]
-            }
-            Control::Volume => vec![Effect::SetVolume(value)],
-        }
+        // The same level as the tab's row (turning the volume up or down unmutes).
+        let level = Level::from(slider.control);
+        self.set_level(level, value)
     }
 
-    /// The finger lifted: the level stays (the bar shows it until the system's next reading).
+    /// The finger lifted: the level stays where it was set (readings count again).
     pub(crate) fn slide_end(&mut self) {
-        let Some(slider) = self.slider.take() else {
-            return;
-        };
-        match slider.control {
-            Control::Volume => self.status.volume = Some(slider.value),
-            // (Set as it moved.)
-            Control::Brightness => {}
+        if self.slider.take().is_some() {
+            self.dragging = None;
         }
     }
 }
@@ -148,7 +135,7 @@ mod tests {
         assert_eq!(s.apply(Event::SlideTo { x: 2000.0 }).1, vec![Effect::Brightness { level: 100, factors: vec![] }], "clamped");
         assert_eq!(s.apply(Event::SlideTo { x: 2100.0 }).1, vec![], "no change, nothing sent");
         s.apply(Event::Activate(Id::Control(Control::Brightness)));
-        s.apply(Event::Up(Id::Control(Control::Brightness)));
+        s.apply(Event::SlideEnd);
         assert_eq!((s.slider, s.level(Control::Brightness)), (None, Some(100)));
     }
 
@@ -157,7 +144,7 @@ mod tests {
         let mut s = with_levels();
         s.apply(Event::SlideStart { control: Control::Volume, x: 280.0, width: 620.0 });
         assert_eq!(s.apply(Event::SlideTo { x: 250.0 }).1, vec![Effect::SetMute(false), Effect::SetVolume(30)]);
-        s.apply(Event::Up(Id::Control(Control::Volume)));
+        s.apply(Event::SlideEnd);
         assert_eq!(s.status.volume, Some(30));
         s.apply(Event::Activate(Id::Control(Control::Brightness)));
         assert_eq!(s.mode, crate::Mode::Brightness);

@@ -4,7 +4,9 @@
 //!
 //! Brightness is two levels multiplied: the global one (the bar's) and each screen's factor, so the bar
 //! dims and brightens the screens together and keeps them as they are relative to each other. Both are
-//! ours (the kernel only knows each panel's result): kept with the place, applied at start.
+//! ours (the kernel only knows each panel's result): saved, and applied at start.
+//!
+//! The bar's sliders set the same levels as the tabs' rows (`Level::Volume`, `Level::Brightness`).
 
 use crate::{Effect, State, Status};
 
@@ -57,7 +59,46 @@ pub struct Brightness {
     pub factors: Vec<(String, u8)>,
 }
 
+impl From<crate::controls::Control> for Level {
+    fn from(control: crate::controls::Control) -> Level {
+        match control {
+            crate::controls::Control::Volume => Level::Volume,
+            crate::controls::Control::Brightness => Level::Brightness,
+        }
+    }
+}
+
 impl Brightness {
+    /// As saved: `level <n>` and `factor <backlight> <n>` lines, tab-separated.
+    pub fn text(&self) -> String {
+        let mut text = String::new();
+        if let Some(level) = self.level {
+            text.push_str(&format!("level\t{level}\n"));
+        }
+        for (name, factor) in &self.factors {
+            text.push_str(&format!("factor\t{name}\t{factor}\n"));
+        }
+        text
+    }
+
+    /// From what [`Brightness::text`] wrote (lines it doesn't know are skipped).
+    pub fn from_text(text: &str) -> Brightness {
+        let mut b = Brightness::default();
+        for line in text.lines() {
+            let fields: Vec<&str> = line.split('\t').collect();
+            match fields.as_slice() {
+                ["level", n] => b.level = n.parse::<u8>().ok().map(|l| l.min(100)),
+                ["factor", name, n] => {
+                    if let Ok(f) = n.parse::<u8>() {
+                        b.set_factor(name, f.min(100));
+                    }
+                }
+                _ => {}
+            }
+        }
+        b
+    }
+
     pub fn factor(&self, name: &str) -> u8 {
         self.factors.iter().find(|(n, _)| n == name).map_or(100, |(_, f)| *f)
     }
@@ -130,7 +171,7 @@ impl State {
                     if self.brightness.level.is_none() {
                         self.brightness.level = self.status.brightness;
                     }
-                    self.resume_dirty = Some(self.unix_secs);
+                    self.brightness_dirty = Some(self.unix_secs);
                     self.brightness_effect().into_iter().collect()
                 }
                 None => vec![],
@@ -141,7 +182,7 @@ impl State {
     /// The global brightness to `value` (the bar's slider, the tab's first row).
     pub(crate) fn set_brightness(&mut self, value: u8) -> Vec<Effect> {
         self.brightness.level = Some(value.min(100));
-        self.resume_dirty = Some(self.unix_secs);
+        self.brightness_dirty = Some(self.unix_secs);
         self.brightness_effect().into_iter().collect()
     }
 
@@ -272,14 +313,15 @@ mod tests {
         s.apply(Event::SlideStart { control: crate::controls::Control::Brightness, x: 300.0, width: 620.0 });
         let fx = s.apply(Event::SlideTo { x: 360.0 }).1;
         assert!(matches!(fx.as_slice(), [Effect::Brightness { level, factors }] if *level > 60 && factors == &[("bottom".to_owned(), 70)]), "{fx:?}");
-        s.apply(Event::Up(Id::Control(crate::controls::Control::Brightness)));
+        s.apply(Event::SlideEnd);
         assert_eq!(s.apply(Event::LevelStep(Level::Brightness, -1)).1.len(), 1);
-        // Kept with the place, back after a restart.
-        let text = s.resume_text();
-        let mut again = state();
-        again.restore(&text);
-        assert_eq!(again.brightness, s.brightness);
-        assert_eq!(again.brightness_effect(), s.brightness_effect());
+        // Saved a moment later; back after a restart.
+        let saved = s.apply(Event::Tick { unix_secs: 10 }).1;
+        let text = saved.iter().find_map(|e| match e {
+            Effect::SaveBrightness(text) => Some(text.clone()),
+            _ => None,
+        });
+        assert_eq!(text.map(|t| Brightness::from_text(&t)), Some(s.brightness.clone()));
     }
 
     #[test]

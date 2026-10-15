@@ -89,9 +89,11 @@ impl State {
         if !close || self.running.is_none() {
             return self.launch_effects(game);
         }
-        self.queued = Some(game);
-        let current = self.running.clone();
-        current.map_or_else(Vec::new, |id| self.quit_game(&id))
+        let Some(current) = self.running.clone() else {
+            return vec![];
+        };
+        self.queued = Some((current.clone(), game));
+        self.quit_game(&current)
     }
 
     /// Closing a game: its windows asked to close, its scope (ours) ended if it doesn't go.
@@ -104,11 +106,14 @@ impl State {
         vec![Effect::QuitGame { windows, units }]
     }
 
-    /// The game to start once the one closed for it has ended, if any.
-    pub(crate) fn queued_launch(&mut self) -> Vec<Effect> {
+    /// `ended` has ended: the game queued to start once it had, if any.
+    pub(crate) fn queued_launch(&mut self, ended: &str) -> Vec<Effect> {
         match self.queued.take() {
-            Some(game) => self.launch_effects(game),
-            None => vec![],
+            Some((closed, game)) if &*closed == ended => self.launch_effects(game),
+            other => {
+                self.queued = other;
+                vec![]
+            }
         }
     }
 
@@ -123,7 +128,7 @@ impl State {
                 let (_, workspace, appid) = self.launching.remove(i);
                 (workspace, appid)
             }
-            // Not asked for here (a test, or a restart): the landing workspace.
+            // Not asked for here (only in tests: Started follows our own launches): the landing workspace.
             None => (crate::windows::GAME_WORKSPACE.into(), None),
         };
         self.games.push(RunningGame { id: game.clone(), workspace, appid, start: self.unix_secs, adopted: false });
@@ -134,7 +139,7 @@ impl State {
     pub(crate) fn game_gone(&mut self, game: &str) -> Vec<Effect> {
         self.games.retain(|g| &*g.id != game);
         if self.running.as_deref() != Some(game) {
-            return self.queued_launch();
+            return self.queued_launch(game);
         }
         let next = self
             .recent
@@ -146,12 +151,14 @@ impl State {
             Some(id) => {
                 self.running = Some(id.clone());
                 let mut effects = vec![Effect::Apply { game: Some(id.clone()), settings: self.settings.of(&id) }];
-                effects.extend(self.queued_launch());
+                effects.extend(self.queued_launch(game));
                 effects
             }
             None => {
                 self.running = None;
-                self.game_ended()
+                let mut effects = self.game_ended();
+                effects.extend(self.queued_launch(game));
+                effects
             }
         }
     }
@@ -256,6 +263,23 @@ mod tests {
         assert!(matches!(fx.as_slice(), [Effect::QuitGame { .. }]), "{fx:?}");
         let (_, fx) = s.apply(Event::Played { game: "zelda-lttp".into(), start: 100, duration: 20 });
         assert!(fx.iter().any(|e| matches!(e, Effect::Launch { game, .. } if &**game == "ff6")), "{fx:?}");
+    }
+
+    #[test]
+    fn a_queued_start_waits_for_the_game_closed_for_it() {
+        let mut s = state();
+        launch(&mut s, "zelda-lttp");
+        s.apply(Event::Activate(Id::Game("ff6".into())));
+        s.apply(Event::Activate(Id::StartKeep));
+        s.apply(Event::Started("ff6".into()));
+        // ff6 is the game; close it for a third.
+        let third = s.library.games.iter().map(|g| g.id.clone()).find(|id| &**id != "ff6" && &**id != "zelda-lttp").unwrap();
+        s.apply(Event::Activate(Id::Game(third.clone())));
+        s.apply(Event::Activate(Id::StartClose));
+        let starts = |fx: &[Effect]| fx.iter().any(|e| matches!(e, Effect::Launch { game, .. } if *game == third));
+        assert!(!starts(&s.apply(Event::Played { game: "zelda-lttp".into(), start: 0, duration: 1 }).1), "another game ending");
+        assert!(!starts(&s.apply(Event::LaunchFailed("zelda-lttp".into())).1), "another game failing");
+        assert!(starts(&s.apply(Event::Played { game: "ff6".into(), start: 0, duration: 1 }).1), "the one closed for it");
     }
 
     #[test]

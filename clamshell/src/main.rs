@@ -90,6 +90,11 @@ fn main() -> ExitCode {
     if !snapshotting && let Some(text) = resume_file.as_ref().and_then(|f| std::fs::read_to_string(f).ok()) {
         state.restore(&text);
     }
+    // The screens' brightness as it was left (the level and each screen's factor), next to it.
+    let brightness_file = resume_file.as_ref().and_then(|f| f.parent()).map(|d| d.join("brightness"));
+    if !snapshotting && let Some(text) = brightness_file.as_ref().and_then(|f| std::fs::read_to_string(f).ok()) {
+        state.brightness = clamshell_core::mixer::Brightness::from_text(&text);
+    }
     // The launcher's apps (~/.config/clamshell/launcher.json; without it, shelf, Steam and a terminal).
     if !snapshotting {
         let (apps, error) = load_apps();
@@ -119,27 +124,21 @@ fn main() -> ExitCode {
         return snapshot(&mut state, std::path::Path::new(dir));
     }
 
-    // Development: start in a mode (CLAMSHELL_START_MODE=touchpad|keyboard|launcher|sysinfo).
+    // Development: start in a tab (CLAMSHELL_START_MODE=touchpad|keyboard|dock|...); what it watches
+    // starts with the others' at Event::Start.
     let (touchpad_tx, touchpad_rx) = mpsc::channel();
-    let start_mode = std::env::var("CLAMSHELL_START_MODE").ok().and_then(|m| Mode::from_name(&m));
-    if let Some(mode) = start_mode {
-        for effect in state.apply(Event::Activate(Id::Mode(mode))).1 {
-            if effect == Effect::Touchpad(true) {
-                let _ = touchpad_tx.send(touchpad::Command::On);
-            }
-        }
+    if let Some(mode) = std::env::var("CLAMSHELL_START_MODE").ok().and_then(|m| Mode::from_name(&m)) {
+        state.start_in(mode);
     }
     let layout = config.touch_layout.clone();
     // The controller (CLAMSHELL_GAMEPAD: path or part of its name; default the first gamepad), grabbed for
     // good with a virtual Xbox pad for games; CLAMSHELL_PAD_MOUSE=1 starts with the pad mouse on.
     let (padmouse_tx, padmouse_rx) = mpsc::channel();
     if std::env::var("CLAMSHELL_PAD_MOUSE").as_deref() == Ok("1") {
-        // (The pad follows from the route sent below.)
+        // (Where the pad goes is sent at Event::Start.)
         state.apply(Event::Activate(Id::PadMouse));
     }
     let gamepad = std::env::var("CLAMSHELL_GAMEPAD").ok();
-    // Where the pad goes to start with (shelf in front: ClamShell's).
-    let _ = padmouse_tx.send(pad::Command::Route(state.pad_route));
     // The global settings, until a game brings its own.
     apply_settings(&state.settings.global, None, &clamshell_policy::frames::default_dir(), &padmouse_tx);
     // Games start from the launcher thread, one at a time, with MangoHud's environment; plays go to
@@ -151,10 +150,6 @@ fn main() -> ExitCode {
     let (controls_tx, controls_rx) = mpsc::channel();
     if let Err(e) = controls::spawn(controls_rx) {
         log::error!("controls thread: {e}");
-    }
-    // The screens' brightness as it was left (the level and each screen's factor).
-    if let Some(Effect::Brightness { level, factors }) = state.brightness_effect() {
-        let _ = controls_tx.send(controls::Command::Brightness { level, factors });
     }
     let (wifi_tx, wifi_rx) = mpsc::channel();
     let (power_tx, power_rx) = mpsc::channel();
@@ -249,8 +244,6 @@ fn main() -> ExitCode {
                     log::warn!("touchpad thread is gone");
                 }
             }
-            // The pad follows the route that comes with it.
-            Effect::PadMouse(_) => log::info!("effect: {effect:?}"),
             Effect::PadRoute(route) => {
                 log::info!("effect: {effect:?}");
                 if padmouse_tx.send(pad::Command::Route(*route)).is_err() {
@@ -294,14 +287,8 @@ fn main() -> ExitCode {
                     log::warn!("game settings: {e}");
                 }
             }
-            Effect::SaveResume(text) => {
-                if let Some(file) = &resume_file {
-                    let written = file.parent().map_or(Ok(()), std::fs::create_dir_all).and_then(|()| std::fs::write(file, text));
-                    if let Err(e) = written {
-                        log::warn!("{}: {e}", file.display());
-                    }
-                }
-            }
+            Effect::SaveResume(text) => save(resume_file.as_deref(), text),
+            Effect::SaveBrightness(text) => save(brightness_file.as_deref(), text),
             Effect::RecordPlay { game, start, duration } => {
                 if let Some(dir) = &state_dir
                     && let Err(e) = clamshell_library::stats::record(&dir.join("stats.db"), game, *start, *duration)
@@ -397,7 +384,8 @@ fn main() -> ExitCode {
                 }
                 end_units_later(units.clone());
             }
-            other => log::info!("effect: {other:?}"),
+            // (The UI handles quitting.)
+            Effect::Quit => {}
         },
     );
     match result {
@@ -406,6 +394,17 @@ fn main() -> ExitCode {
             log::error!("{e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+/// Writes one of ClamShell's state files (its folder made if needed).
+fn save(file: Option<&std::path::Path>, text: &str) {
+    let Some(file) = file else {
+        return;
+    };
+    let written = file.parent().map_or(Ok(()), std::fs::create_dir_all).and_then(|()| std::fs::write(file, text));
+    if let Err(e) = written {
+        log::warn!("{}: {e}", file.display());
     }
 }
 
@@ -429,7 +428,7 @@ fn control_events(line: &str) -> Option<Vec<Event>> {
     };
     // (A slide never ends in a tap: that would open the tab.)
     if let ["lift", name] = words.as_slice() {
-        return Some(vec![Event::Up(Id::Control(control(name)?))]);
+        return Some(vec![Event::SlideEnd, Event::Up(Id::Control(control(name)?))]);
     }
     if let ["level", rest @ ..] = words.as_slice() {
         use clamshell_core::mixer::Level;
@@ -452,7 +451,7 @@ fn control_events(line: &str) -> Option<Vec<Event>> {
             [Event::Down(id.clone()), Event::SlideStart { control, x: from, width: 620.0 }]
                 .into_iter()
                 .chain(steps)
-                .chain(if hold { vec![] } else { vec![Event::Up(id)] })
+                .chain(if hold { vec![] } else { vec![Event::SlideEnd, Event::Up(id)] })
                 .collect(),
         );
     }

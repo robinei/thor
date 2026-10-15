@@ -8,6 +8,7 @@ pub mod bluetooth;
 pub mod controls;
 pub mod editor;
 mod game;
+mod items;
 pub mod metrics;
 pub mod mixer;
 mod panel;
@@ -23,6 +24,7 @@ pub mod wifi;
 use std::sync::Arc;
 
 use controls::{Control, Slider};
+use items::ItemKey;
 use keyboard::{Key, KeyPos, Keyboard, Stroke};
 use settings::{Setting, Settings, Values};
 
@@ -31,8 +33,9 @@ pub use game::{Front, RunningGame};
 
 pub use clamshell_library::{Collection, Game, Launch, Library};
 
-/// Second-screen modes (docs/plans.md, "Second screen"): the bar's tabs; the last one chosen stays.
-/// Bluetooth, Wi-Fi and Battery open from their status icons in the bar.
+/// The second screen's tabs (the code says mode), chosen from the bar; the last one chosen stays, also
+/// across restarts. Volume and brightness open from their controls, Bluetooth, Wi-Fi and Battery from
+/// their status icons; all are tabs alike.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Mode {
     Settings,
@@ -50,7 +53,8 @@ pub enum Mode {
 }
 
 impl Mode {
-    /// The modes with their own icon on the left of the bar, in order (the others open from status icons).
+    /// The tabs with a plain icon, at the bar's start, in order (the others' icons show a level or a
+    /// status).
     pub const BAR: [Mode; 5] = [Mode::Settings, Mode::Dock, Mode::Keyboard, Mode::Touchpad, Mode::Sysinfo];
     /// Every tab, in the bar's order.
     pub const TABS: [Mode; 10] = [
@@ -78,6 +82,20 @@ impl Mode {
             Mode::Wifi => "wifi",
             Mode::Battery => "battery",
             Mode::Bluetooth => "bluetooth",
+        }
+    }
+
+    /// What the tab watches while open (the system read for it), turned on or off; the touchpad grabs the
+    /// touchscreen.
+    pub fn watch(self, on: bool) -> Option<Effect> {
+        match self {
+            Mode::Touchpad => Some(Effect::Touchpad(on)),
+            Mode::Volume => Some(Effect::Audio(mixer::Command::Watch(on))),
+            Mode::Brightness => Some(Effect::WatchBacklights(on)),
+            Mode::Wifi => Some(Effect::Wifi(wifi::Command::Watch(on))),
+            Mode::Bluetooth => Some(Effect::Bluetooth(bluetooth::Command::Watch(on))),
+            Mode::Battery => Some(Effect::WatchPower(on)),
+            Mode::Settings | Mode::Dock | Mode::Keyboard | Mode::Sysinfo => None,
         }
     }
 
@@ -143,7 +161,7 @@ pub enum PadInput {
     Right,
     /// A pressed or released: activates the focused target (holds act as for touch).
     A(bool),
-    /// B: back (cancels the editor, closes Wi-Fi or Battery).
+    /// B: cancels the editor.
     B,
     /// Y: the selected game in or out of the favourites.
     Y,
@@ -224,7 +242,8 @@ pub struct Status {
     /// Output volume 0-100, if known, and whether it is muted.
     pub volume: Option<u8>,
     pub muted: bool,
-    /// The screens' brightness 0-100, if there is a backlight.
+    /// The first backlight's level 0-100 as read, if there is one: the brightness until ClamShell sets
+    /// one (see [`mixer::Brightness`]).
     pub brightness: Option<u8>,
 }
 
@@ -269,6 +288,8 @@ pub enum Event {
     /// A finger came down on a control (`x` in the second screen's layout units, which is `width`
     /// wide), moved, and (with `Up`) lifted.
     SlideStart { control: Control, x: f32, width: f32 },
+    /// The finger that slides lifted.
+    SlideEnd,
     SlideTo { x: f32 },
     /// Wi-Fi as NetworkManager has it, after any change (while the Wi-Fi mode is open).
     Wifi(wifi::Wifi),
@@ -284,6 +305,9 @@ pub enum Event {
     /// A level row set by the finger, or stepped by the pad (-1 or 1).
     SetLevel(mixer::Level, u8),
     LevelStep(mixer::Level, i16),
+    /// The UI is up: what the state in force needs at start (the tab's watch, the screens' brightness,
+    /// where the pad goes).
+    Start,
     /// The pad's home button.
     Home,
     /// View, away from shelf: the pad between the second screen and what else wants it (the pad mouse,
@@ -319,15 +343,15 @@ pub enum Effect {
     SaveSettings(String),
     /// The favourites changed: write them (favorites.txt).
     SaveFavourites(Vec<String>),
-    /// Where shelf is (see [`State::resume_text`]): write it, to start there next time.
+    /// Where shelf and the second screen are (see [`State::resume_text`]): write it, to start there
+    /// next time.
     SaveResume(String),
+    /// The screens' brightness (see [`mixer::Brightness::text`]): write it, to apply at the next start.
+    SaveBrightness(String),
     /// A key press for the focused app (virtual keyboard).
     Key(Stroke),
     /// Touchpad mode started (true) or ended: the input side grabs or releases the touchscreen.
     Touchpad(bool),
-    /// The pad mouse turned on or off: the input side grabs the controller and drives a virtual mouse
-    /// with it, or releases it to games.
-    PadMouse(bool),
     /// Where the controller's input goes now.
     PadRoute(PadRoute),
     /// Start a launcher app's command as a new instance: a scope and a workspace of this name
@@ -414,8 +438,9 @@ pub struct State {
     /// Our running scopes (systemd's list).
     pub units: Vec<String>,
     recent: Vec<String>,
-    /// The pad mouse was turned on by a launch (Setting::PadMouse), to turn off when the game ends.
-    pad_mouse_by_launch: bool,
+    /// The pad mouse was turned on for the game in front (its Setting::PadMouse), to turn off when
+    /// another (or none) is; turning it off or on by hand makes it the user's.
+    pad_mouse_by_game: bool,
     /// Where the pad goes (see [`Effect::PadRoute`]).
     pub pad_route: PadRoute,
     /// View moved the pad to the second screen, away from what else wants it (the pad mouse, typing).
@@ -426,8 +451,8 @@ pub struct State {
     /// and the launches asked for that haven't started.
     pub games: Vec<RunningGame>,
     launching: Vec<game::Launching>,
-    /// The game to start once the one closed for it has ended.
-    queued: Option<Arc<str>>,
+    /// The game to start once the one closed for it has ended: (the one closed, the one to start).
+    queued: Option<(Arc<str>, Arc<str>)>,
     /// What the settings panel edits (global whenever there is no game in context).
     pub scope: Scope,
     pub mode: Mode,
@@ -457,10 +482,15 @@ pub struct State {
     pub pad_mouse: bool,
     pub metrics: metrics::Metrics,
     pub history: metrics::History,
-    /// The game being played, if any (one at a time).
+    /// The game: of the games running, the one most recently in front (its settings are in force).
     pub running: Option<Arc<str>>,
     /// When the tab or a selection last changed and isn't saved yet (epoch seconds).
     resume_dirty: Option<u64>,
+    /// When the brightness last changed and isn't saved yet.
+    brightness_dirty: Option<u64>,
+    /// The list item a press is on, by what it is (not where), so a list that changes under the
+    /// finger doesn't redirect it.
+    press_key: Option<(Id, ItemKey)>,
 }
 
 /// Seconds an instance may take to show up in systemd's list before its start counts as failed.
@@ -526,7 +556,11 @@ impl State {
 
     /// Applies one event; returns which screens changed and what must happen outside.
     pub fn apply(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
-        let (dirty, mut effects) = self.apply_event(event);
+        let running = self.running.clone();
+        let (mut dirty, mut effects) = self.apply_event(event);
+        if self.running != running && self.follow_pad_mouse() {
+            dirty = Dirty::BOTH;
+        }
         // Something else wants the pad now: it gets it. The pad mouse always takes it; otherwise a pad
         // being used on the second screen (its focus ring showing) with nothing else around stays there
         // (the keyboard coming up under it is typed on with the pad).
@@ -548,6 +582,23 @@ impl State {
             }
         }
         (dirty, effects)
+    }
+
+    /// The game in front changed: the pad mouse on if it wants it (Setting::PadMouse), off again when
+    /// another game (or none) is in front, unless the user switched it meanwhile. Whether it changed.
+    fn follow_pad_mouse(&mut self) -> bool {
+        let wanted = self.running.is_some() && self.current().get(Setting::PadMouse) == 1;
+        if wanted && !self.pad_mouse {
+            self.pad_mouse = true;
+            self.pad_mouse_by_game = true;
+            return true;
+        }
+        if !wanted && self.pad_mouse && self.pad_mouse_by_game {
+            self.pad_mouse = false;
+            self.pad_mouse_by_game = false;
+            return true;
+        }
+        false
     }
 
     /// What wants the pad besides the second screen: the pad mouse while on; else shelf (`Ui`), the game
@@ -590,13 +641,15 @@ impl State {
                 self.starting.retain(|(_, at)| unix_secs < at + STARTING_FOR);
                 self.unix_secs = unix_secs;
                 // The place, once moving has stopped for a moment.
-                let effects = match self.resume_dirty {
-                    Some(since) if unix_secs >= since + resume::RESUME_AFTER => {
-                        self.resume_dirty = None;
-                        vec![Effect::SaveResume(self.resume_text())]
-                    }
-                    _ => vec![],
-                };
+                let mut effects = vec![];
+                if self.resume_dirty.is_some_and(|since| unix_secs >= since + resume::RESUME_AFTER) {
+                    self.resume_dirty = None;
+                    effects.push(Effect::SaveResume(self.resume_text()));
+                }
+                if self.brightness_dirty.is_some_and(|since| unix_secs >= since + resume::RESUME_AFTER) {
+                    self.brightness_dirty = None;
+                    effects.push(Effect::SaveBrightness(self.brightness.text()));
+                }
                 (if minute_changed { Dirty::BOTH } else { Dirty::NONE }, effects)
             }
             Event::Status(status) => {
@@ -628,11 +681,15 @@ impl State {
                 let was = std::mem::replace(&mut self.show_focus, false);
                 (if was { Dirty::BOTH } else { Dirty::NONE }, vec![])
             }
+            // The list item the press came down on is gone.
+            Event::Activate(id) | Event::LongPress(id) if self.resolve(&id).is_none() => (Dirty::BOTTOM, vec![]),
             Event::Activate(id) => {
+                let id = self.resolve(&id).unwrap_or(id);
                 self.focus = Some(id.clone());
                 self.activate(id, false)
             }
             Event::LongPress(id) => {
+                let id = self.resolve(&id).unwrap_or(id);
                 self.focus = Some(id.clone());
                 self.activate(id, true)
             }
@@ -675,12 +732,6 @@ impl State {
                 self.game_started(&game);
                 self.running = Some(game);
                 self.woken = false;
-                // The pad mouse, if the game wants it at launch.
-                if self.current().get(Setting::PadMouse) == 1 && !self.pad_mouse {
-                    self.pad_mouse = true;
-                    self.pad_mouse_by_launch = true;
-                    return (Dirty::BOTH, vec![Effect::PadMouse(true)]);
-                }
                 (Dirty::BOTH, vec![])
             }
             Event::Played { game, start, duration } => {
@@ -709,13 +760,14 @@ impl State {
                 if self.running_game(&game).is_some() {
                     return (Dirty::BOTH, self.game_gone(&game));
                 }
-                (Dirty::BOTH, self.queued_launch())
+                (Dirty::BOTH, vec![])
             }
             Event::Down(id) => {
                 let dirty = screen_of(&id);
                 if let Id::Key(pos) = id {
                     self.keyboard.down(pos);
                 }
+                self.press_key = self.item_key(&id).map(|key| (id.clone(), key));
                 self.pressed = Some(id);
                 (dirty, vec![])
             }
@@ -723,16 +775,20 @@ impl State {
                 if self.pressed.as_ref() == Some(&id) {
                     self.pressed = None;
                 }
-                if matches!(id, Id::Control(_)) {
-                    self.slide_end();
-                }
                 if matches!(id, Id::Level(_)) {
                     self.dragging = None;
+                }
+                if self.press_key.as_ref().is_some_and(|(p, _)| *p == id) {
+                    self.press_key = None;
                 }
                 if let Id::Key(pos) = id {
                     self.keyboard.up(pos);
                 }
                 (screen_of(&id), vec![])
+            }
+            Event::SlideEnd => {
+                self.slide_end();
+                (Dirty::BOTTOM, vec![])
             }
             Event::SlideStart { control, x, width } => {
                 self.slide_start(control, x, width);
@@ -764,11 +820,21 @@ impl State {
                 (if changed { Dirty::BOTTOM } else { Dirty::NONE }, vec![])
             }
             Event::SetLevel(level, value) => {
+                let Some(level) = self.resolve_level(level) else {
+                    return (Dirty::NONE, vec![]);
+                };
+                let before = self.level_of(level);
                 let effects = self.set_level(level, value);
-                (if effects.is_empty() { Dirty::NONE } else { Dirty::BOTTOM }, effects)
+                (if self.level_of(level) == before { Dirty::NONE } else { Dirty::BOTTOM }, effects)
             }
             Event::LevelStep(level, direction) => (Dirty::BOTTOM, self.step_level(level, direction)),
             Event::Home => (Dirty::NONE, self.home()),
+            Event::Start => {
+                let mut effects: Vec<Effect> = self.mode.watch(true).into_iter().collect();
+                effects.extend(self.brightness_effect());
+                effects.push(Effect::PadRoute(self.pad_route));
+                (Dirty::BOTH, effects)
+            }
             Event::PadSwitch => {
                 if matches!(self.pad_wanted_by(), Some(PadRoute::Mouse | PadRoute::Keys)) {
                     self.pad_on_bottom = !self.pad_on_bottom;
@@ -856,7 +922,8 @@ impl State {
             Id::NewInstance(i) => (Dirty::BOTTOM, self.new_instance(usize::from(i))),
             Id::PadMouse => {
                 self.pad_mouse = !self.pad_mouse;
-                (Dirty::BOTTOM, vec![Effect::PadMouse(self.pad_mouse)])
+                self.pad_mouse_by_game = false;
+                (Dirty::BOTTOM, vec![])
             }
             // A tap opens the tab (a slide is the UI's: it doesn't end in a tap).
             Id::Control(control) if !long => {
@@ -892,37 +959,21 @@ impl State {
     /// and stop with their modes; an open editor closes.
     fn set_mode(&mut self, mode: Mode) -> Vec<Effect> {
         let before = self.mode;
-        self.mode = mode;
-        if self.mode != before {
-            self.editor = None;
-        }
         self.resume_dirty = Some(self.unix_secs);
-        let mut effects = vec![];
-        let battery = |m: Mode| m == Mode::Battery;
-        if battery(before) != battery(self.mode) {
-            effects.push(Effect::WatchPower(battery(self.mode)));
+        if mode == before {
+            return vec![];
         }
-        let bt = |m: Mode| m == Mode::Bluetooth;
-        if bt(before) != bt(self.mode) {
-            effects.push(Effect::Bluetooth(bluetooth::Command::Watch(bt(self.mode))));
-        }
-        let volume = |m: Mode| m == Mode::Volume;
-        if volume(before) != volume(self.mode) {
-            effects.push(Effect::Audio(mixer::Command::Watch(volume(self.mode))));
-        }
-        let brightness = |m: Mode| m == Mode::Brightness;
-        if brightness(before) != brightness(self.mode) {
-            effects.push(Effect::WatchBacklights(brightness(self.mode)));
-        }
-        let wifi = |m: Mode| m == Mode::Wifi;
-        if wifi(before) != wifi(self.mode) {
-            effects.push(Effect::Wifi(wifi::Command::Watch(wifi(self.mode))));
-        }
-        let touchpad = |m: Mode| m == Mode::Touchpad;
-        if touchpad(before) != touchpad(self.mode) {
-            effects.push(Effect::Touchpad(touchpad(self.mode)));
-        }
-        effects
+        self.mode = mode;
+        // What belonged to the tab left: an open editor, a level being set.
+        self.editor = None;
+        self.dragging = None;
+        self.slider = None;
+        before.watch(false).into_iter().chain(mode.watch(true)).collect()
+    }
+
+    /// The tab ClamShell starts in (a development option): set before [`Event::Start`].
+    pub fn start_in(&mut self, mode: Mode) {
+        self.mode = mode;
     }
 
     /// An app's text field wants typing (or is done): the keyboard comes up, and goes back to the mode it
@@ -930,7 +981,8 @@ impl State {
     /// asks for text input whether or not it needs it); the keyboard is a tap away there.
     fn text_input(&mut self, active: bool) -> Vec<Effect> {
         if active {
-            if self.mode == Mode::Keyboard || self.front() == game::Front::Game {
+            // (Not over an open editor: what is typed there would be lost.)
+            if self.mode == Mode::Keyboard || self.front() == game::Front::Game || self.editor.is_some() {
                 return vec![];
             }
             self.raised_from = Some(self.mode);
@@ -961,16 +1013,7 @@ impl State {
     /// Back to the global settings, the pad mouse off if the launch turned it on, and the game shelf
     /// was asked to switch to started.
     fn game_ended(&mut self) -> Vec<Effect> {
-        let mut effects = vec![Effect::Apply { game: None, settings: self.settings.global }];
-        if self.pad_mouse_by_launch {
-            self.pad_mouse_by_launch = false;
-            if self.pad_mouse {
-                self.pad_mouse = false;
-                effects.push(Effect::PadMouse(false));
-            }
-        }
-        effects.extend(self.queued_launch());
-        effects
+        vec![Effect::Apply { game: None, settings: self.settings.global }]
     }
 
     /// Launching `game` on a workspace of its own (unless it runs already, or is starting).
@@ -1056,8 +1099,9 @@ mod tests {
         let mut s = state();
         let (_, fx) = s.apply(Event::Activate(Id::Mode(Mode::Touchpad)));
         assert_eq!(fx, vec![Effect::Touchpad(true)]);
-        assert_eq!(s.apply(Event::Activate(Id::Mode(Mode::Wifi))).1.last(), Some(&Effect::Touchpad(false)));
-        assert_eq!(s.apply(Event::Activate(Id::Mode(Mode::Touchpad))).1.last(), Some(&Effect::Touchpad(true)));
+        let wifi_watch = |on| Effect::Wifi(wifi::Command::Watch(on));
+        assert_eq!(s.apply(Event::Activate(Id::Mode(Mode::Wifi))).1, vec![Effect::Touchpad(false), wifi_watch(true)], "the old tab's off first");
+        assert_eq!(s.apply(Event::Activate(Id::Mode(Mode::Touchpad))).1, vec![wifi_watch(false), Effect::Touchpad(true)]);
         let (_, fx) = s.apply(Event::Activate(Id::Mode(Mode::Keyboard)));
         assert_eq!(fx, vec![Effect::Touchpad(false)]);
         let (_, fx) = s.apply(Event::Activate(Id::Mode(Mode::Keyboard)));
@@ -1087,14 +1131,68 @@ mod tests {
     }
 
     #[test]
+    fn review_fixes_hold() {
+        let foot = || windows::Window { id: 1, app_id: "foot".into(), title: String::new(), focused: true, unit: None, workspace: "1".into() };
+        // A text field doesn't take the screen from an open editor (its typing would be lost).
+        let mut s = state();
+        s.apply(Event::Windows(vec![foot()]));
+        s.apply(Event::Activate(Id::Mode(Mode::Settings)));
+        s.apply(Event::Activate(Id::Env));
+        assert!(s.editor.is_some());
+        s.apply(Event::TextInput(true));
+        assert!(s.editor.is_some() && s.mode == Mode::Settings);
+        // A keyboard a text field brought up isn't saved as the tab.
+        let mut s = state();
+        s.apply(Event::Windows(vec![foot()]));
+        s.apply(Event::Activate(Id::Mode(Mode::Dock)));
+        s.apply(Event::TextInput(true));
+        assert_eq!(s.mode, Mode::Keyboard);
+        assert!(s.resume_text().contains("@mode\tdock"));
+        // Any tab but the touchpad comes back, its watch started with Start.
+        s.apply(Event::Activate(Id::Mode(Mode::Wifi)));
+        let mut again = state();
+        again.restore(&s.resume_text());
+        assert_eq!(again.mode, Mode::Wifi);
+        assert!(again.apply(Event::Start).1.contains(&Effect::Wifi(wifi::Command::Watch(true))));
+        // Holding the volume icon without moving makes up no volume.
+        let mut s = state();
+        s.apply(Event::SlideStart { control: Control::Volume, x: 300.0, width: 620.0 });
+        s.apply(Event::SlideEnd);
+        assert_eq!(s.status.volume, None);
+        // Leaving a tab mid-drag lets readings in again.
+        let mut s = state();
+        s.apply(Event::Status(Status { volume: Some(40), ..Status::default() }));
+        s.apply(Event::Activate(Id::Mode(Mode::Volume)));
+        s.apply(Event::SetLevel(mixer::Level::Volume, 60));
+        s.apply(Event::Activate(Id::Mode(Mode::Dock)));
+        s.apply(Event::Status(Status { volume: Some(45), ..Status::default() }));
+        assert_eq!(s.status.volume, Some(45));
+    }
+
+    #[test]
+    fn the_pad_mouse_follows_the_game_in_front_unless_switched_by_hand() {
+        let mut s = state();
+        s.apply(Event::Activate(Id::Game("zelda-lttp".into())));
+        s.apply(Event::Activate(Id::Scope(Scope::Game)));
+        s.apply(Event::Activate(Id::Tile(Setting::PadMouse)));
+        s.apply(Event::Started("zelda-lttp".into()));
+        assert!(s.pad_mouse, "the game wants it");
+        // Off and on again by hand: the user's now, it stays when the game ends.
+        s.apply(Event::Activate(Id::PadMouse));
+        s.apply(Event::Activate(Id::PadMouse));
+        s.apply(Event::Played { game: "zelda-lttp".into(), start: 0, duration: 1 });
+        assert!(s.pad_mouse);
+    }
+
+    #[test]
     fn pad_mouse_toggles_independently_of_the_mode() {
         let mut s = state();
         s.apply(Event::Activate(Id::Mode(Mode::Keyboard)));
         let (_, fx) = s.apply(Event::Activate(Id::PadMouse));
-        assert_eq!(fx, vec![Effect::PadMouse(true), Effect::PadRoute(PadRoute::Mouse)]);
+        assert_eq!(fx, vec![Effect::PadRoute(PadRoute::Mouse)]);
         assert_eq!(s.mode, Mode::Keyboard);
         let (_, fx) = s.apply(Event::Activate(Id::PadMouse));
-        assert_eq!(fx, vec![Effect::PadMouse(false), Effect::PadRoute(PadRoute::Ui)]);
+        assert_eq!(fx, vec![Effect::PadRoute(PadRoute::Ui)]);
     }
 
     #[test]
@@ -1109,7 +1207,7 @@ mod tests {
     }
 
     #[test]
-    fn one_game_at_a_time_and_its_play_counts() {
+    fn a_game_runs_and_its_play_counts() {
         let mut s = state();
         let first = s.selected.clone().unwrap();
         s.apply(Event::Started(first.clone()));
@@ -1158,7 +1256,7 @@ mod tests {
         assert!(!s.pad_on_top());
         assert_eq!(s.apply(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Keys)], "and back to typing");
         // The pad mouse takes it; View moves it to the second screen and back.
-        assert_eq!(s.apply(Event::Activate(Id::PadMouse)).1, vec![Effect::PadMouse(true), Effect::PadRoute(PadRoute::Mouse)]);
+        assert_eq!(s.apply(Event::Activate(Id::PadMouse)).1, vec![Effect::PadRoute(PadRoute::Mouse)]);
         assert_eq!(s.apply(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Ui)]);
         assert_eq!(s.apply(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Mouse)]);
         // Nothing else wants it: View does nothing, the pad stays on the second screen.

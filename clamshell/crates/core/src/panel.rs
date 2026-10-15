@@ -192,12 +192,12 @@ mod tests {
         tap(&mut s, Setting::PadMouse, 1);
         tap(&mut s, Setting::BottomScreen, 1);
         let (_, fx) = s.apply(Event::Started("zelda-lttp".into()));
-        assert_eq!(fx, vec![Effect::PadMouse(true), Effect::PadRoute(crate::PadRoute::Mouse)]);
+        assert_eq!(fx, vec![Effect::PadRoute(crate::PadRoute::Mouse)]);
         assert!(s.bottom_dark());
         s.apply(Event::Activate(Id::Wake));
         assert!(!s.bottom_dark());
         let (_, fx) = s.apply(Event::Played { game: "zelda-lttp".into(), start: 0, duration: 1 });
-        assert!(fx.contains(&Effect::PadMouse(false)));
+        assert!(fx.contains(&Effect::PadRoute(crate::PadRoute::Ui)), "{fx:?}");
         assert!(!s.pad_mouse);
     }
 

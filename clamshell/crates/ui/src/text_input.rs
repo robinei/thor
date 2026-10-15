@@ -69,10 +69,18 @@ impl Dispatch2<ZwpInputMethodV2, App> for Data {
                 }
             }
             // Another input method has the seat (fcitx, ibus on a desktop): do without.
+            // (A field it had is let go of: the keyboard goes back.)
             zwp_input_method_v2::Event::Unavailable => {
                 log::info!("another input method is running: the keyboard won't come up for text fields");
                 method.destroy();
                 t.method = None;
+                t.pending = None;
+                if let Some(token) = t.settle.take() {
+                    app.loop_handle.remove(token);
+                }
+                if std::mem::take(&mut app.text_input.active) {
+                    app.handle(Event::TextInput(false));
+                }
             }
             _ => {}
         }

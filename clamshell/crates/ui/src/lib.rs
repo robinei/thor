@@ -134,7 +134,8 @@ pub fn run(
         pending_slide: None,
         level_drag: None,
         last_focus: [None, None],
-        hold_timer: None,
+        hold_timers: HashMap::new(),
+        desktop_keys: true,
         text_input: text_input::TextInput::bind(&globals, &qh),
         loop_handle: event_loop.handle(),
         on_effect: Box::new(on_effect),
@@ -155,6 +156,7 @@ pub fn run(
     app.bottom = Some(match (bottom_output, &layer_shell) {
         (Some(output), Some(layer_shell)) => {
             log::info!("bottom view: layer surface on {}", config.bottom_output);
+            app.desktop_keys = false;
             View::layer(&compositor, layer_shell, &qh, Some(&output), None)
         }
         (None, Some(layer_shell)) if config.bottom_panel => {
@@ -178,6 +180,8 @@ pub fn run(
         })
         .map_err(|e| e.error)?;
     start(EventSender(sender));
+    // What the state in force needs now that everything runs (the tab's watch, brightness, the pad).
+    app.handle(Event::Start);
 
     while !app.exit {
         event_loop.dispatch(None, &mut app)?;
@@ -234,7 +238,9 @@ struct App {
     /// Where the pad's focus was on each screen, for View/Select switching back to it.
     last_focus: [Option<clamshell_core::Id>; 2],
     /// Fires when the latest press becomes a hold, then at the repeat rate for repeating keys.
-    hold_timer: Option<(Source, RegistrationToken)>,
+    hold_timers: HashMap<Source, RegistrationToken>,
+    /// Keys stand in for the pad (a desktop; not on the device, where keys reaching shelf are typing).
+    desktop_keys: bool,
     text_input: text_input::TextInput,
     loop_handle: LoopHandle<'static, App>,
     on_effect: Box<dyn FnMut(&Effect)>,
@@ -257,6 +263,11 @@ impl App {
         }
         let (dirty, effects) = self.state.apply(event);
         self.mark(dirty);
+        // The pad went elsewhere while A was held on a target: its release won't come here, so end it
+        // (else the target stays pressed, a key repeating).
+        if self.state.pad_route != clamshell_core::PadRoute::Ui && self.presses.contains_key(&Source::PadA) {
+            self.up(Source::PadA, false);
+        }
         for effect in &effects {
             match effect {
                 Effect::Quit => self.exit = true,

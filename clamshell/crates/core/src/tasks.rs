@@ -34,12 +34,6 @@ impl State {
         }
     }
 
-    /// Shows a workspace on the user's request. An instance being started still comes to the front when
-    /// its window appears (as sway also brings a launched window forward): only a newer start replaces it.
-    fn show(&mut self, workspace: &str) -> Vec<Effect> {
-        vec![Effect::FocusWorkspace(workspace.to_owned())]
-    }
-
     /// The name prefix of dock app `i`'s instances.
     fn prefix(&self, i: usize) -> Option<(&'static str, &str)> {
         Some(("clamshell-app-", self.apps.get(i)?.key()))
@@ -109,7 +103,7 @@ impl State {
             None => self.current_instance(i),
         };
         match target.map(str::to_owned) {
-            Some(t) => self.show(&t),
+            Some(t) => vec![Effect::FocusWorkspace(t)],
             None => vec![],
         }
     }
@@ -149,7 +143,7 @@ impl State {
             return self.quit_game(&id);
         }
         let workspace = g.workspace.clone();
-        self.show(&workspace)
+        vec![Effect::FocusWorkspace(workspace)]
     }
 }
 
