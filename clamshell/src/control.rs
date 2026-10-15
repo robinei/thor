@@ -6,7 +6,8 @@
 //! - `tap TARGET`, `long TARGET` (a tap, a long press) on: `app N` (the dock's apps, by position in
 //!   launcher.json), `plus N` (another instance of app N), `game` / `game N` (the dock's game tiles),
 //!   `start-game`, `launch`, `keep`, `close` (shelf), `network N`, `wifi-power`, `device N`,
-//!   `bluetooth-power`, `pad-mouse`, `save` (the editor)
+//!   `bluetooth-power`, `pad-mouse`, `save` (the editor), `setting KEY` (a settings tile, by its key in
+//!   game-settings.txt: `pad`, `fps`, ...), `scope game|all` (the settings' game or all games)
 //! - `tab NAME`: open a tab (dock, wifi, keyboard, ...)
 //! - `home`; `list N`: move shelf's selection by N
 //! - `type TEXT`: type on the on-screen keyboard
@@ -26,8 +27,11 @@ use clamshell_core::keyboard::{self, Key, Modifier};
 use clamshell_core::levels::Level;
 use clamshell_core::slider::Control;
 use clamshell_core::{
-    BtId, DockId, EditorId, Event, Id, LevelEvent, PadInput, PointerEvent, ShelfEvent, ShelfId, Slide, Tab, WifiId,
+    BtId, DockId, EditorId, Event, Id, LevelEvent, PadInput, PointerEvent, SettingsId, ShelfEvent, ShelfId, Slide, Tab,
+    WifiId,
 };
+use clamshell_core::Scope;
+use clamshell_core::settings::Setting;
 use clamshell_policy::{Sink, worker};
 
 /// The layout width a slide's positions are on (the second screen at half size).
@@ -155,6 +159,11 @@ fn target_id(words: &[&str]) -> Result<Id, ParseError> {
         ["device", n] => Id::Bluetooth(BtId::Device(number(n)?)),
         ["bluetooth-power"] => Id::Bluetooth(BtId::Power),
         ["pad-mouse"] => Id::PadMouse,
+        ["scope", "game"] => Id::Settings(SettingsId::Scope(Scope::Game)),
+        ["scope", "all"] => Id::Settings(SettingsId::Scope(Scope::Global)),
+        ["setting", key] => Id::Settings(SettingsId::Tile(
+            Setting::ALL.into_iter().find(|s| s.key() == *key).ok_or_else(|| ParseError::Name((*key).to_owned()))?,
+        )),
         ["save"] => Id::Editor(EditorId::Save),
         ["keep"] => Id::Shelf(ShelfId::StartKeep),
         ["close"] => Id::Shelf(ShelfId::StartClose),
