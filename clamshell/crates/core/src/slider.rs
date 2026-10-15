@@ -118,6 +118,15 @@ mod tests {
     }
 
     #[test]
+    fn a_slide_goes_on_while_another_finger_opens_a_tab() {
+        let mut s = with_levels();
+        s.apply(Slide::Start { control: Control::Brightness, x: 300.0, width: 620.0 }.into());
+        s.apply(PointerEvent::Activate(Id::Tab(crate::Tab::Wifi)).into());
+        let fx = s.apply(Slide::To { x: 200.0 }.into()).1;
+        assert!(matches!(fx.as_slice(), [Effect::Brightness { .. }]), "still sliding: {fx:?}");
+    }
+
+    #[test]
     fn the_level_starts_under_the_finger_and_follows_it() {
         let mut s = with_levels();
         // A finger at 300 on a 620-wide screen, at 80 %: 281.4 fits left of it (for 80 % of the track),

@@ -169,7 +169,7 @@ pub fn shots(now: u64) -> Result<Vec<Shot>, ParseError> {
                 Slide::To { x: 700.0 }.into(),
             ],
         ),
-        shot("keyboard.png", Bottom, vec![PointerEvent::Up(volume).into(), tab(Tab::Keyboard)]),
+        shot("keyboard.png", Bottom, vec![Slide::End.into(), PointerEvent::Up(volume).into(), tab(Tab::Keyboard)]),
         shot("keyboard-fn.png", Bottom, vec![key(Key::Mod(Modifier::Fn))?]),
         shot(
             "keyboard-mods.png",

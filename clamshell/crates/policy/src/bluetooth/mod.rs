@@ -148,7 +148,14 @@ impl Session {
 
 /// The adapter's object path.
 fn adapter_path(objects: &ObjectsProxy) -> Result<OwnedObjectPath, Error> {
-    objects.get_managed_objects()?.into_iter().find(|(_, i)| i.contains_key(ADAPTER)).map(|(p, _)| p).ok_or(Error::NoAdapter)
+    let all = objects.get_managed_objects()?;
+    first_adapter(&all).map(|(path, _)| path.clone()).ok_or(Error::NoAdapter)
+}
+
+/// The adapter used: with several (a USB dongle besides the built-in one), always the same, the one
+/// with the lowest path (hci0 before hci1); BlueZ lists them in no order.
+fn first_adapter(objects: &ManagedObjects) -> Option<(&OwnedObjectPath, Props<'_>)> {
+    objects.iter().filter_map(|(path, ifaces)| ifaces.get(ADAPTER).map(|props| (path, Props(props)))).min_by(|a, b| a.0.as_str().cmp(b.0.as_str()))
 }
 
 /// Connects (pairing and trusting a new device first) the devices it is sent, one at a time, showing
@@ -192,7 +199,7 @@ fn pair(conn: &Connection, device: &DeviceProxy) -> zbus::Result<()> {
 
 /// The first adapter and its devices; devices without a name are left out unless paired.
 fn read(objects: &ManagedObjects, state: &BtState) -> Bluetooth {
-    let adapter = objects.iter().find_map(|(path, ifaces)| ifaces.get(ADAPTER).map(|props| (path, Props(props))));
+    let adapter = first_adapter(objects);
     let Some((adapter_path, adapter)) = adapter else {
         return Bluetooth { error: state.error.clone(), ..Bluetooth::default() };
     };

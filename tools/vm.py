@@ -576,11 +576,13 @@ def thor_image(args):
     machine.start()
     while subprocess.run(ssh_args(["true"], quiet=True), capture_output=True).returncode != 0:
         time.sleep(5)
+    # The image gets this computer's time zone (the build machine's own would be UTC).
+    zone = os.path.realpath("/etc/localtime").split("/zoneinfo/")[-1] if os.path.exists("/etc/localtime") else "UTC"
     inside = f"""set -e
 sudo mkdir -p /mnt/cache
 mountpoint -q /mnt/cache || sudo mount -t 9p -o trans=virtio,version=9p2000.L,ro cache /mnt/cache
 cd /mnt/thor/clamshell && CARGO_TARGET_DIR=$HOME/target cargo build --release --locked
-sudo bash /mnt/thor/tools/thor-image.sh /dev/vdb /mnt/cache/{target.relative_to(CACHE)} $HOME/target/release/clamshell '{ssh_key()}'
+sudo THOR_TIMEZONE={zone} bash /mnt/thor/tools/thor-image.sh /dev/vdb /mnt/cache/{target.relative_to(CACHE)} $HOME/target/release/clamshell '{ssh_key()}'
 sudo poweroff"""
     result = subprocess.run(ssh_args([inside]))
     machine.join(timeout=120)
