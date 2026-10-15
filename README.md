@@ -44,6 +44,31 @@ host, `tools/vm.py restart`). `tools/vm.py image` (downloads Arch's cloud image)
 cpufreq/devfreq or fan in it, and no audio device. Suspend and resume work once at most: after a resume
 the machine soon stops.
 
+**Input and devices from the host** (the x86_64 machine): `tools/vm.py touch tap X Y`, `hold X Y
+SECONDS`, `down X Y`, `move X Y`, `up`, `slide X1 Y X2 [STEPS] [--seconds S] [--hold]` drive the bottom
+screen's touchscreen through QEMU's QMP socket (`input-send-event`, multitouch), in that screen's pixels
+(1240x1080, the bar's icons at y 45), each with `--slot N` for another finger; `pointer X Y [--head 0|1]
+[--click left]` and `key a shift+b ret` (QEMU's key names) do the pointers and the keyboard. `tools/vm.py
+pad plug` runs the `fake_pad` example (the host's build: `cargo build --release -p clamshell-policy
+--examples`) in the machine as a user service reading commands from a pipe, which ClamShell grabs as the
+controller; `pad do 'tap a, dpad down, sleep 100, stick left 1 0, press a, release a'` drives it (buttons
+a b x y lb rb view menu home ls rs, `trigger left|right V`), `pad unplug` stops it. `tools/vm.py
+bluetooth` (again after each boot) builds BlueZ's `btvirt` emulator in the machine once (Arch doesn't
+ship it) and starts two virtual controllers: bluetoothd keeps the first (`MaxControllers=1`), the second
+is a test device, ThorTestDevice (`tools/vm-bt-device.py`: discoverable, accepts "just works" pairing,
+answers with an SDP record and the HID channels), which can be found, paired, connected and forgotten.
+
+**Checks in the machine**: `tools/vm-checks.py [CHECK ...]` (`--list`), with the machine running, does
+what a user would with these inputs and checks what came of it in ClamShell's journal and saved files,
+sway's workspaces, the input devices (evtest, libinput), NetworkManager, BlueZ, PipeWire and screenshots:
+taps, holds and slides on the bar (volume through a PipeWire null sink, brightness through a fake
+backlight), a slide while a second finger taps a tab, forgetting a Wi-Fi network by a long press, the
+touchpad tab, the pad on shelf (D-pad, A, Home), View, the pad mouse, typing with the pad, a held A on an
+on-screen key when View moves the pad away, unplugging the controller during a game, and Bluetooth. For
+them ClamShell runs with a test library, the fake backlight and its own state directory (a runtime
+drop-in for its service, removed afterwards; `--keep` leaves it). It prints ok/FAIL lines and a count;
+the exit status is the number of failures. About three minutes.
+
 **Run on a desktop** (any Wayland compositor with xdg-shell):
 
     cd clamshell

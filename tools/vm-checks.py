@@ -1,0 +1,599 @@
+#!/usr/bin/env python3
+"""Checks of ClamShell in the virtual Thor through its real inputs: touches on the bottom screen's
+touchscreen (QEMU's virtio-multitouch, driven over QMP), a fake controller (the fake_pad example), and
+two virtual Bluetooth controllers (btvirt) with a test device. Each check acts as a user would and looks
+at what came of it: ClamShell's journal, its saved files, sway's workspaces, the devices it makes, the
+system (NetworkManager, BlueZ, PipeWire, a fake backlight), screenshots.
+
+    tools/vm.py run --headless &          (the machine running; ClamShell built on the host)
+    tools/vm-checks.py [CHECK ...]        (all of them by default; --list names them)
+
+For the checks ClamShell runs with a test library (a game that opens foot), a fake backlight and its own
+state directory (a runtime drop-in for its service, removed at the end), PipeWire gets a null sink (the
+machine has no audio device), and Bluetooth is set up (tools/vm.py bluetooth). The exit status is the
+number of failed checks. Standard library only.
+"""
+
+import argparse
+import json
+import shlex
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import importlib  # noqa: E402
+
+vm = importlib.import_module("vm")
+
+HOME = f"/home/{vm.USER}"
+CHECKS_DIR = f"{HOME}/.cache/thor-checks"
+STATE = f"{CHECKS_DIR}/state/clamshell"
+BACKLIGHT = f"{CHECKS_DIR}/backlight/panel"
+DROP_IN = "$XDG_RUNTIME_DIR/systemd/user/clamshell.service.d/thor-checks.conf"
+# The bar's icons, in the bottom screen's pixels (their centres; the burn-in orbit moves them a few
+# pixels).
+BAR_Y = 45
+ICONS = {"settings": 55, "dock": 157, "keyboard": 260, "touchpad": 363, "sysinfo": 466, "volume": 568,
+         "brightness": 671, "bluetooth": 774, "wifi": 877, "battery": 975, "pad-mouse": 1188}
+# A list's first row (Wi-Fi's networks, Bluetooth's devices).
+FIRST_ROW_Y = 240
+# Below the bar: the touchpad's area in touchpad mode.
+PAD_Y = 600
+
+PRELUDE = ("export SWAYSOCK=$(ls /run/user/$(id -u)/sway-ipc.*.sock 2>/dev/null | head -1) WAYLAND_DISPLAY=wayland-1; "
+           "dev() { for d in /sys/class/input/event*; do [ \"$(cat $d/device/name)\" = \"$1\" ] && echo /dev/input/${d##*/}; done; }; ")
+
+
+def sh(command, input=None, binary=False, check=False):
+    """A command in the machine (bash, as the user); its output."""
+    result = subprocess.run(vm.ssh_args([PRELUDE + command], quiet=True), input=input, capture_output=True,
+                            text=not binary)
+    if check and result.returncode != 0:
+        raise RuntimeError(f"{command}: {result.stderr.strip()}")
+    return result.stdout
+
+
+def until(condition, seconds=5.0, every=0.2):
+    """Waits for a condition; whether it came."""
+    end = time.monotonic() + seconds
+    while True:
+        if condition():
+            return True
+        if time.monotonic() > end:
+            return False
+        time.sleep(every)
+
+
+# --- what ClamShell does
+
+def now():
+    """The machine's clock, to read the journal from."""
+    return sh("date +%s.%N").strip()
+
+
+def journal(since):
+    return sh(f"journalctl --user -u clamshell --since @{since} -o cat --no-pager")
+
+
+def logged(since, text, seconds=5.0):
+    return until(lambda: text in journal(since), seconds)
+
+
+def control(line):
+    sh(f"echo {shlex.quote(line)} > $XDG_RUNTIME_DIR/clamshell-control")
+    time.sleep(0.3)
+
+
+def saved():
+    """ClamShell's resume file: the tab ("@mode") and shelf's selections, by name."""
+    lines = sh(f"cat {STATE}/last 2>/dev/null").splitlines()
+    return dict(line.split("\t", 1) for line in lines[1:] if "\t" in line)
+
+
+def selection():
+    """shelf's selected game in the collection shown."""
+    lines = sh(f"cat {STATE}/last 2>/dev/null").splitlines()
+    return saved().get(lines[0]) if lines else None
+
+
+def tab():
+    return saved().get("@mode")
+
+
+def front():
+    return sh("swaymsg -t get_workspaces | python3 -c "
+              "'import json,sys; print(next((w[\"name\"] for w in json.load(sys.stdin) if w[\"focused\"]), \"\"))'").strip()
+
+
+def units(prefix):
+    return sh(f"systemctl --user list-units 'clamshell-{prefix}*' --plain --no-legend | awk '{{print $1}}'").split()
+
+
+def screenshot(output="Virtual-2"):
+    """A screen as (width, height, RGB bytes)."""
+    data = sh(f"grim -t ppm -o {output} -", binary=True)
+    parts = data.split(maxsplit=4)
+    if len(parts) < 5 or parts[0] != b"P6":
+        raise RuntimeError("grim: no picture")
+    return int(parts[1]), int(parts[2]), parts[4]
+
+
+def light_pixels(shot, y, x0, x1, level=150):
+    """How many pixels of a row stretch are light (the slider's track and knob, against the black bar)."""
+    w, _, rgb = shot
+    return sum(1 for x in range(x0, x1) if min(rgb[(y * w + x) * 3:(y * w + x) * 3 + 3]) >= level)
+
+
+def device(name):
+    return sh(f"dev {shlex.quote(name)}").strip()
+
+
+def capture(command, seconds, action):
+    """Runs a reading command in the machine (evtest, libinput) for `seconds` while `action` is done;
+    what it printed."""
+    out = "/tmp/thor-checks-capture"
+    sh(f"rm -f {out}; setsid -f sh -c {shlex.quote(f'timeout {seconds} {command} > {out} 2>&1')} < /dev/null > /dev/null 2>&1")
+    time.sleep(0.5)
+    action()
+    time.sleep(max(0.0, seconds - 0.5))
+    until(lambda: not sh("pgrep -f 'timeout .*thor-checks-capture' || true").strip(), 3)
+    return sh(f"cat {out}")
+
+
+def grabbed(path):
+    """Whether someone holds an input device to itself (EVIOCGRAB)."""
+    probe = ("import fcntl,os,sys\nfd=os.open(sys.argv[1],os.O_RDONLY)\ntry:\n fcntl.ioctl(fd,0x40044590,1);"
+             "fcntl.ioctl(fd,0x40044590,0);print('free')\nexcept OSError as e:\n print('grabbed' if e.errno==16 else e)")
+    return sh(f"python3 -c {shlex.quote(probe)} {path}").strip() == "grabbed"
+
+
+# --- inputs
+
+class Inputs:
+    def __init__(self):
+        self.qmp = vm.Qmp()
+        self.touch = vm.Touch(self.qmp)
+
+    def tap(self, x, y, slot=0):
+        self.touch.down(slot, x, y)
+        time.sleep(0.05)
+        self.touch.up(slot)
+        time.sleep(0.3)
+
+    def hold(self, x, y, seconds, slot=0):
+        self.touch.down(slot, x, y)
+        time.sleep(seconds)
+        self.touch.up(slot)
+        time.sleep(0.3)
+
+    def lift_all(self):
+        for slot in list(self.touch.ids):
+            self.touch.up(slot)
+
+
+def pad(*commands):
+    """Commands for the fake pad (tools/vm.py pad do)."""
+    sh(f"timeout 5 sh -c 'cat > $XDG_RUNTIME_DIR/fake-pad'", input="\n".join(commands) + "\n")
+
+
+def press(button, ms=80):
+    pad(f"tap {button} {ms}")
+    time.sleep(ms / 1000 + 0.3)
+
+
+def dpad(direction):
+    pad(f"dpad {direction}", "sleep 80", "dpad none")
+    time.sleep(0.4)
+
+
+def focus_shelf():
+    """The pad's focus into shelf's list (after a touch the focus is where the finger was: on the
+    second screen, which is below the main one), on its first game."""
+    for _ in range(4):
+        dpad("up")
+
+
+def plug_pad():
+    since = now()
+    subprocess.run([sys.executable, str(Path(vm.__file__)), "pad", "plug"], check=True)
+    return logged(since, "fake pad grabbed", 5)
+
+
+# --- the test environment
+
+LIBRARY = """collection: Test
+extension: game
+launch: sh -c "foot --app-id=testgame sleep 300 & sleep 300"
+
+game: Test Game
+file: test.game
+
+game: Zeta Game
+file: zeta.game
+"""
+
+
+def setup(bluetooth):
+    print("setting up: test library, fake backlight, null sink, ClamShell's test environment")
+    since = now()
+    script = f"""set -e
+mkdir -p {CHECKS_DIR}/pegasus {CHECKS_DIR}/games {BACKLIGHT} {STATE}
+echo {CHECKS_DIR}/games > {CHECKS_DIR}/pegasus/game_dirs.txt
+cat > {CHECKS_DIR}/games/metadata.pegasus.txt <<'EOF'
+{LIBRARY}EOF
+touch {CHECKS_DIR}/games/test.game {CHECKS_DIR}/games/zeta.game
+echo 100 > {BACKLIGHT}/max_brightness; echo 50 > {BACKLIGHT}/brightness
+rm -f {STATE}/last {STATE}/brightness {CHECKS_DIR}/pegasus/stats.db* {CHECKS_DIR}/pegasus/favorites.txt
+mkdir -p $(dirname {DROP_IN})
+printf '%s\\n' '[Service]' 'Environment=CLAMSHELL_PEGASUS_CONFIG={CHECKS_DIR}/pegasus' \\
+    'Environment=CLAMSHELL_BACKLIGHTS={CHECKS_DIR}/backlight' 'Environment=XDG_STATE_HOME={CHECKS_DIR}/state' > {DROP_IN}
+wpctl status | grep -q thor-checks-sink || wpctl status | grep -q 'Test sink' || pw-cli create-node adapter \\
+    '{{ factory.name=support.null-audio-sink node.name=thor-checks-sink node.description="Test sink" media.class=Audio/Sink object.linger=true audio.position=[FL FR] }}' > /dev/null 2>&1
+sleep 0.5
+wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.5 2>/dev/null
+systemctl --user stop 'clamshell-game*' 'clamshell-app*' 2>/dev/null || true
+systemctl --user daemon-reload
+systemctl --user restart clamshell
+"""
+    sh("bash -s", input=script, check=True)
+    if bluetooth:
+        result = subprocess.run([sys.executable, str(Path(vm.__file__)), "bluetooth"], capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"  (Bluetooth not set up: {result.stderr.strip() or result.stdout.strip()})")
+    if not until(lambda: sh("systemctl --user is-active clamshell").strip() == "active" and front() == "clamshell-shelf", 15):
+        sys.exit("ClamShell didn't start")
+    time.sleep(1)
+    return since
+
+
+def teardown():
+    subprocess.run([sys.executable, str(Path(vm.__file__)), "pad", "unplug"], capture_output=True)
+    sh(f"rm -f {DROP_IN}; systemctl --user stop 'clamshell-game*' 'clamshell-app*' 2>/dev/null; "
+       "systemctl --user daemon-reload; systemctl --user restart clamshell")
+
+
+# --- the checks
+
+class Checks:
+    def __init__(self, inputs, started):
+        self.i = inputs
+        self.started = started
+        self.failed = 0
+        self.passed = 0
+
+    def check(self, what, ok, evidence=""):
+        if ok:
+            self.passed += 1
+            print(f"  ok    {what}")
+        else:
+            self.failed += 1
+            print(f"  FAIL  {what}" + (f"\n        {evidence}" if evidence else ""))
+        return ok
+
+    def icon(self, name, how="tap", seconds=0.0):
+        if how == "tap":
+            self.i.tap(ICONS[name], BAR_Y)
+        else:
+            self.i.hold(ICONS[name], BAR_Y, seconds)
+
+    def open_tab(self, name):
+        """A tab open, by a tap on its icon (and the dock first if it is open already: a tap on the open
+        tab's icon may do something else)."""
+        if tab() == name:
+            return True
+        self.icon(name)
+        return until(lambda: tab() == name, 5)
+
+    def route(self):
+        """Where the pad goes now (the last route ClamShell logged since the checks started it)."""
+        routes = [line for line in journal(self.started).splitlines() if "effect: PadRoute(" in line]
+        return routes[-1].split("PadRoute(")[1].rstrip(")") if routes else None
+
+    def reset(self):
+        """A known start: no fingers down, no game or app, shelf in front, the dock tab, the pad mouse
+        off."""
+        self.i.lift_all()
+        sh("systemctl --user stop 'clamshell-game*' 'clamshell-app*' 2>/dev/null || true")
+        until(lambda: front() == "clamshell-shelf", 5)
+        if self.route() == "Mouse":
+            self.icon("pad-mouse")
+        self.icon("dock")
+        until(lambda: tab() in (None, "dock"), 5)
+
+    # bar
+
+    def bar_tap(self):
+        since = now()
+        self.icon("wifi")
+        self.check("bar: a tap on Wi-Fi opens its tab", until(lambda: tab() == "wifi") and logged(since, "Watch(Wifi, true)", 1),
+                   f"tab {tab()!r}")
+        self.icon("dock")
+        self.check("bar: a tap on the dock opens it", until(lambda: tab() == "dock"), f"tab {tab()!r}")
+
+    def volume_hold(self):
+        before = light_pixels(screenshot(), BAR_Y, 20, 600)
+        since = now()
+        self.i.touch.down(0, ICONS["volume"], BAR_Y)
+        time.sleep(0.5)
+        during = light_pixels(screenshot(), BAR_Y, 20, 600)
+        self.i.touch.up(0)
+        time.sleep(3)
+        self.check("bar: a hold on volume shows the slider", during > before + 150, f"light pixels on the bar {before} -> {during}")
+        self.check("  and doesn't open the volume tab", tab() == "dock" and "Watch(Audio, true)" not in journal(since),
+                   f"tab {tab()!r}")
+
+    def volume_slide(self):
+        def volume():
+            out = sh("wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null").split()
+            return round(float(out[1]) * 100) if len(out) > 1 else None
+        sh("wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.5")
+        time.sleep(1.5)
+        start = volume()
+        x = ICONS["volume"]
+        self.i.touch.slide(0, x, BAR_Y, x - 200, BAR_Y, 10, 0.6)
+        self.i.touch.up(0)
+        lowered = until(lambda: (volume() or 100) < (start or 0) - 10, 3)
+        low = volume()
+        self.i.touch.slide(0, x, BAR_Y, x + 150, BAR_Y, 10, 0.6)
+        self.i.touch.up(0)
+        raised = until(lambda: (volume() or 0) > (low or 100) + 10, 3)
+        self.check("bar: a slide on volume sets the volume (PipeWire's null sink)", lowered and raised,
+                   f"{start} -> {low} -> {volume()}")
+        time.sleep(2.5)
+        self.check("  and doesn't open the volume tab", tab() == "dock", f"tab {tab()!r}")
+
+    def brightness_slide(self):
+        def level():
+            return int(sh(f"cat {BACKLIGHT}/brightness").strip() or 0)
+        start = level()
+        x = ICONS["brightness"]
+        self.i.touch.slide(0, x, BAR_Y, x + 150, BAR_Y, 10, 0.6)
+        self.i.touch.up(0)
+        raised = until(lambda: level() > start + 10, 3)
+        self.check("bar: a slide on brightness sets the backlight (a fake one)", raised, f"{start} -> {level()}")
+        self.check("  and is saved", until(lambda: sh(f"cat {STATE}/brightness 2>/dev/null").strip() != "", 5),
+                   sh(f"ls {STATE}"))
+        time.sleep(1)
+        self.check("  and doesn't open the brightness tab", tab() == "dock", f"tab {tab()!r}")
+
+    def two_fingers(self):
+        def level():
+            return int(sh(f"cat {BACKLIGHT}/brightness").strip() or 0)
+        start = level()
+        x = ICONS["brightness"]
+        self.i.touch.slide(0, x, BAR_Y, x - 150, BAR_Y, 6, 0.5)  # finger 0 sliding down, still on the screen
+        time.sleep(0.5)
+        middle = level()
+        self.i.tap(ICONS["wifi"], BAR_Y, slot=1)  # finger 1 taps another tab meanwhile
+        for step in range(1, 11):  # finger 0 goes on, up
+            time.sleep(0.05)
+            self.i.touch.move(0, x - 150 + step * 20, BAR_Y)
+        time.sleep(0.5)
+        end = level()
+        self.i.touch.up(0)
+        self.check("bar, two fingers: a slide goes on while another finger taps a tab",
+                   middle < start - 10 and end > middle + 10, f"backlight {start} -> {middle} (the tap) -> {end}")
+        self.check("  and the tap opens its tab", until(lambda: tab() == "wifi"), f"tab {tab()!r}")
+
+    # lists
+
+    def wifi_forget(self):
+        sh("sudo nmcli connection delete ThorTest > /dev/null 2>&1; "
+           "sudo nmcli dev wifi connect ThorTest password thortest123 ifname wlan0 > /dev/null 2>&1")
+        saved_before = "ThorTest" in sh("nmcli -t -f NAME connection show")
+        self.open_tab("wifi")
+        time.sleep(3)  # the list read (the connected network first)
+        since = now()
+        self.i.hold(300, FIRST_ROW_Y, 0.8)
+        forgot = logged(since, "wifi: forgot ThorTest")
+        gone = until(lambda: "ThorTest" not in sh("nmcli -t -f NAME connection show"))
+        self.check("Wi-Fi: a long press on the saved network forgets it", saved_before and forgot and gone,
+                   f"saved before {saved_before}, logged {forgot}, gone from NetworkManager {gone}")
+
+    # the touchpad tab
+
+    def touchpad(self):
+        since = now()
+        self.icon("touchpad")
+        on = logged(since, "touchpad mode on")
+        touchscreen = device("QEMU Virtio MultiTouch")
+        self.check("touchpad tab: touchpad mode on, the touchscreen grabbed", on and grabbed(touchscreen),
+                   f"logged {on}, {touchscreen} grabbed {grabbed(touchscreen)}")
+        virtual = device("clamshell touchpad")
+        if not self.check("  a virtual touchpad", bool(virtual)):
+            return
+        out = capture(f"sudo libinput debug-events --device {virtual}", 3,
+                      lambda: self.i.touch.slide(0, 300, PAD_Y, 900, PAD_Y, 20, 1.0) or self.i.touch.up(0))
+        motion = out.count("POINTER_MOTION")
+        self.check("  a finger below the bar moves the pointer (libinput: pointer motion)", motion > 3,
+                   f"{motion} motion events; {out.strip()[-300:]!r}")
+        since = now()
+        self.icon("dock")
+        self.check("  a finger on the bar still taps the bar (the dock opens, touchpad mode off)",
+                   until(lambda: tab() == "dock") and logged(since, "touchpad mode off"), f"tab {tab()!r}")
+        self.check("  the touchscreen let go", not grabbed(touchscreen))
+
+    # the pad
+
+    def pad_shelf(self):
+        if not self.check("pad: the fake pad grabbed", plug_pad()):
+            return
+        focus_shelf()
+        until(lambda: (selection() or "").endswith("test.game"), 4)
+        before = selection()
+        moved = False
+        # (The focus may be on the collection's name above the list: then the first press enters it.)
+        for _ in range(2):
+            dpad("down")
+            moved = until(lambda: selection() not in (None, before), 3)
+            if moved:
+                break
+        self.check("pad, shelf in front: the D-pad moves the selection", moved, f"selection {before!r} -> {selection()!r}")
+        dpad("up")
+        until(lambda: selection() == before, 3)
+        press("a")
+        launched = until(lambda: bool(units("game")) and front() not in ("", "clamshell-shelf"), 10)
+        game = front()
+        self.check("  A launches the selected game, in front", launched, f"units {units('game')}, front {game!r}")
+        if not launched:
+            return
+        press("home")
+        self.check("  Home goes to shelf", until(lambda: front() == "clamshell-shelf"), f"front {front()!r}")
+        press("home")
+        self.check("  and Home again back to the game", until(lambda: front() == game), f"front {front()!r}")
+
+    def pad_view(self):
+        if not plug_pad():
+            return self.check("pad: the fake pad grabbed", False)
+        focus_shelf()
+        start = tab()
+        press("view")  # focus to the second screen
+        press("rb")  # the next tab
+        changed = until(lambda: tab() not in (None, start), 5)
+        self.check("pad: View moves focus to the second screen (a shoulder then steps its tabs)", changed,
+                   f"tab {start!r} -> {tab()!r}")
+        press("lb")
+        press("view")
+
+    def pad_mouse(self):
+        if not plug_pad():
+            return self.check("pad: the fake pad grabbed", False)
+        since = now()
+        self.icon("pad-mouse")
+        on = logged(since, "PadRoute(Mouse)")
+        mouse = device("clamshell pad mouse")
+        out = capture(f"evtest {mouse}", 2, lambda: pad("stick left 1 0", "sleep 500", "stick left 0 0"))
+        moves = out.count("(REL_X)")
+        self.check("pad mouse: on from the bar, the stick moves the pointer", on and moves > 10,
+                   f"route logged {on}, {moves} REL_X events")
+        self.icon("pad-mouse")
+        self.check("  off again", until(lambda: self.route() not in ("Mouse", None)), f"route {self.route()}")
+
+    def _terminal_with_keyboard(self):
+        since = now()
+        control("tap app 1")  # Terminal (foot), the default dock's second app
+        if not until(lambda: front().startswith("clamshell-app-terminal"), 8):
+            return self.check("an app in front (Terminal)", False, f"front {front()!r}")
+        self.icon("keyboard")
+        return self.check("pad with an app in front and the keyboard tab: typing",
+                          until(lambda: tab() == "keyboard") and logged(since, "PadRoute(Keys)"), f"tab {tab()!r}")
+
+    def pad_typing(self):
+        if not plug_pad():
+            return self.check("pad: the fake pad grabbed", False)
+        if not self._terminal_with_keyboard():
+            return
+        mouse = device("clamshell pad mouse")
+        out = capture(f"evtest {mouse}", 2, lambda: dpad("up") or dpad("left"))
+        self.check("  the D-pad types arrows", "(KEY_UP), value 1" in out and "(KEY_LEFT), value 1" in out,
+                   out.strip()[-300:])
+
+    def pad_held_key(self):
+        if not plug_pad():
+            return self.check("pad: the fake pad grabbed", False)
+        if not self._terminal_with_keyboard():
+            return
+        since = now()
+        press("view")
+        if not self.check("  View moves the pad to the on-screen keyboard", logged(since, "PadRoute(Ui)")):
+            return
+        for _ in range(3):  # from the tab's icon (where the tap left the focus) down to a letter
+            dpad("down")
+        keyboard = device("clamshell keyboard")
+
+        def held_then_view():
+            pad("press a")
+            time.sleep(1.2)
+            pad("tap view")
+        out = capture(f"evtest {keyboard}", 4, held_then_view)
+        pad("release a")
+        events = [line for line in out.splitlines() if "type 1 (EV_KEY)" in line and "value 1" in line]
+        times = [float(line.split()[2].rstrip(",")) for line in events]
+        repeats = len(times)
+        # After View (1.2 s after A went down, give or take): no more presses.
+        late = [t for t in times if times and t > times[0] + 1.6]
+        self.check("  A held on a key repeats it", repeats > 5, f"{repeats} presses")
+        self.check("  and View, moving the pad away, stops the repeat", repeats > 0 and not late,
+                   f"{len(late)} presses after View")
+        press("view")
+
+    def pad_unplug(self):
+        if not plug_pad():
+            return self.check("pad: the fake pad grabbed", False)
+        since = now()
+        control("tap launch")
+        launched = until(lambda: bool(units("game")) and front() not in ("", "clamshell-shelf"), 10)
+        game_route = logged(since, "PadRoute(Game)")
+        if not self.check("pad: a game in front, the pad goes to it", launched and game_route, f"front {front()!r}"):
+            return
+        subprocess.run([sys.executable, str(Path(vm.__file__)), "pad", "unplug"], check=True)
+        time.sleep(1.5)
+        self.check("  unplugging the controller mid-game leaves the virtual pad",
+                   bool(device("clamshell pad (Xbox 360)")) and not device("clamshell fake pad"))
+        self.check("  plugged in again: grabbed again", plug_pad() and bool(device("clamshell pad (Xbox 360)")))
+
+    # Bluetooth
+
+    def bluetooth(self):
+        if "ready" not in sh("cat /run/thor-bt-device 2>/dev/null"):
+            return self.check("Bluetooth: the test device (tools/vm.py bluetooth)", False, "not set up")
+        address = vm.BT_DEVICE
+        self.open_tab("bluetooth")
+        shown = until(lambda: "ThorTestDevice" in sh("bluetoothctl devices"), 20)
+        time.sleep(1.5)
+        self.check("Bluetooth: the test device is found", shown)
+        if not shown:
+            return
+        since = now()
+        self.i.tap(300, FIRST_ROW_Y)
+        connected = logged(since, f"bluetooth: connected {address}", 15)
+        info = sh(f"bluetoothctl info {address}")
+        self.check("  a tap pairs and connects it", connected and "Paired: yes" in info and "Connected: yes" in info,
+                   " ".join(line.strip() for line in info.splitlines() if "Paired" in line or "Connected" in line)
+                   + f"; {journal(since).strip()[-300:]!r}")
+        since = now()
+        self.i.hold(300, FIRST_ROW_Y, 0.8)
+        forgot = logged(since, f"bluetooth: forgot {address}", 5)
+        self.check("  a long press forgets it", forgot and "Paired: yes" not in sh(f"bluetoothctl info {address}"))
+
+
+CHECKS = ["bar_tap", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "touchpad",
+          "pad_shelf", "pad_view", "pad_mouse", "pad_typing", "pad_held_key", "pad_unplug", "bluetooth"]
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("checks", nargs="*", metavar="CHECK")
+    parser.add_argument("--list", action="store_true", help="the checks' names")
+    parser.add_argument("--keep", action="store_true", help="leave ClamShell in its test environment afterwards")
+    args = parser.parse_args()
+    if args.list:
+        print("\n".join(CHECKS))
+        return 0
+    chosen = args.checks or CHECKS
+    unknown = [c for c in chosen if c not in CHECKS]
+    if unknown:
+        parser.error(f"no check {', '.join(unknown)} (--list)")
+    inputs = Inputs()
+    started = setup(bluetooth="bluetooth" in chosen)
+    checks = Checks(inputs, started)
+    try:
+        for name in chosen:
+            print(name)
+            checks.reset()
+            try:
+                getattr(checks, name)()
+            except Exception as e:  # a check that broke counts as failed; the others still run
+                checks.check(f"{name}: ran", False, repr(e))
+    finally:
+        inputs.lift_all()
+        if not args.keep:
+            teardown()
+    print(f"{checks.passed} ok, {checks.failed} failed")
+    return checks.failed
+
+
+if __name__ == "__main__":
+    sys.exit(main())
