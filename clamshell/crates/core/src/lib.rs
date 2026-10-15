@@ -30,9 +30,8 @@ pub use game::{Front, RunningGame};
 
 pub use clamshell_library::{Collection, Game, Launch, Library};
 
-/// Second-screen modes (docs/plans.md, "Second screen"), chosen from the bar; the last one chosen stays.
-/// Wi-Fi and Battery open from their status icons in the bar, and a second tap there goes back to the
-/// mode before.
+/// Second-screen modes (docs/plans.md, "Second screen"): the bar's tabs; the last one chosen stays.
+/// Bluetooth, Wi-Fi and Battery open from their status icons in the bar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Mode {
     Settings,
@@ -48,7 +47,7 @@ pub enum Mode {
 }
 
 impl Mode {
-    /// The modes with their own icon on the left of the bar, in order.
+    /// The modes with their own icon on the left of the bar, in order (the others open from status icons).
     pub const BAR: [Mode; 5] = [Mode::Settings, Mode::Dock, Mode::Keyboard, Mode::Touchpad, Mode::Sysinfo];
 
     pub fn name(self) -> &'static str {
@@ -252,6 +251,8 @@ pub enum Event {
     Power(power::Power),
     /// The pad's home button.
     Home,
+    /// A text field of the app in front wants typing (true), or no longer does (the Wayland side).
+    TextInput(bool),
     /// The pad, while it drives ClamShell (the UI handles these; the state ignores them).
     Pad(PadInput),
     /// The system woke from sleep.
@@ -383,8 +384,9 @@ pub struct State {
     /// What the settings panel edits (global whenever there is no game in context).
     pub scope: Scope,
     pub mode: Mode,
-    /// The last mode chosen from the bar's left (where a second tap on Wi-Fi goes back to).
-    bar_mode: Mode,
+    /// The mode the keyboard was brought up from by an app's text field: back there when the field is
+    /// done, unless the user chose a mode meanwhile.
+    raised_from: Option<Mode>,
     /// Volume or brightness being slid, if any.
     pub slider: Option<Slider>,
     pub wifi: wifi::Wifi,
@@ -657,6 +659,11 @@ impl State {
                 (if self.mode == Mode::Battery { Dirty::BOTTOM } else { Dirty::NONE }, vec![])
             }
             Event::Home => (Dirty::NONE, self.home()),
+            Event::TextInput(active) => {
+                let before = self.mode;
+                let effects = self.text_input(active);
+                (if self.mode == before { Dirty::NONE } else { Dirty::BOTH }, effects)
+            }
             Event::Pad(_) => (Dirty::NONE, vec![]),
             // Sleep may have reset what the settings set (frequency caps, cores): again.
             Event::Resumed => (Dirty::NONE, vec![Effect::Apply { game: self.running.clone(), settings: self.current() }]),
@@ -695,7 +702,10 @@ impl State {
                 self.set_tab(usize::from(tab));
                 (Dirty::BOTH, vec![])
             }
-            Id::Mode(mode) => (Dirty::BOTH, self.set_mode(mode)),
+            Id::Mode(mode) => {
+                self.raised_from = None;
+                (Dirty::BOTH, self.set_mode(mode))
+            }
             Id::Tile(setting) => {
                 let value = if long { None } else { Some(setting.next(self.tile_value(setting))) };
                 (Dirty::BOTH, self.change(setting, value))
@@ -751,16 +761,11 @@ impl State {
         }
     }
 
-    /// Changes the second screen's mode: Wi-Fi a second time goes back to the mode before it. The
-    /// touchpad and the Wi-Fi watch start and stop with their modes; an open editor closes.
+    /// Changes the second screen's mode. The touchpad and the watches (Wi-Fi, Bluetooth, power) start
+    /// and stop with their modes; an open editor closes.
     fn set_mode(&mut self, mode: Mode) -> Vec<Effect> {
         let before = self.mode;
-        // The status modes (opened from status icons) toggle; the bar's modes are remembered.
-        let status_mode = |m: Mode| !Mode::BAR.contains(&m);
-        self.mode = if status_mode(mode) && before == mode { self.bar_mode } else { mode };
-        if !status_mode(self.mode) {
-            self.bar_mode = self.mode;
-        }
+        self.mode = mode;
         if self.mode != before {
             self.editor = None;
         }
@@ -783,6 +788,23 @@ impl State {
             effects.push(Effect::Touchpad(touchpad(self.mode)));
         }
         effects
+    }
+
+    /// An app's text field wants typing (or is done): the keyboard comes up, and goes back to the mode it
+    /// came up from when the field is done, unless the user chose a mode meanwhile. Not for a game (SDL
+    /// asks for text input whether or not it needs it); the keyboard is a tap away there.
+    fn text_input(&mut self, active: bool) -> Vec<Effect> {
+        if active {
+            if self.mode == Mode::Keyboard || self.front() == game::Front::Game {
+                return vec![];
+            }
+            self.raised_from = Some(self.mode);
+            return self.set_mode(Mode::Keyboard);
+        }
+        match self.raised_from.take() {
+            Some(mode) if self.mode == Mode::Keyboard => self.set_mode(mode),
+            _ => vec![],
+        }
     }
 
     /// The home button: from anything to shelf; from shelf back to what was in front before it (the
@@ -900,11 +922,33 @@ mod tests {
         let (_, fx) = s.apply(Event::Activate(Id::Mode(Mode::Touchpad)));
         assert_eq!(fx, vec![Effect::Touchpad(true)]);
         assert_eq!(s.apply(Event::Activate(Id::Mode(Mode::Wifi))).1.last(), Some(&Effect::Touchpad(false)));
-        assert_eq!(s.apply(Event::Activate(Id::Mode(Mode::Wifi))).1.last(), Some(&Effect::Touchpad(true)), "back");
+        assert_eq!(s.apply(Event::Activate(Id::Mode(Mode::Touchpad))).1.last(), Some(&Effect::Touchpad(true)));
         let (_, fx) = s.apply(Event::Activate(Id::Mode(Mode::Keyboard)));
         assert_eq!(fx, vec![Effect::Touchpad(false)]);
         let (_, fx) = s.apply(Event::Activate(Id::Mode(Mode::Keyboard)));
         assert!(fx.is_empty());
+    }
+
+    #[test]
+    fn a_text_field_brings_up_the_keyboard_and_back() {
+        let mut s = state();
+        s.apply(Event::Activate(Id::Mode(Mode::Touchpad)));
+        s.apply(Event::Windows(vec![windows::Window { id: 1, app_id: "foot".into(), title: String::new(), focused: true, unit: None, workspace: "1".into() }]));
+        let (dirty, fx) = s.apply(Event::TextInput(true));
+        assert_eq!((s.mode, dirty, fx), (Mode::Keyboard, Dirty::BOTH, vec![Effect::Touchpad(false), Effect::PadRoute(PadRoute::Keys)]));
+        assert_eq!(s.apply(Event::TextInput(false)).1, vec![Effect::Touchpad(true), Effect::PadRoute(PadRoute::Game)]);
+        assert_eq!(s.mode, Mode::Touchpad, "back where it came from");
+        // The user chooses a tab meanwhile (even the keyboard's own): it stays.
+        s.apply(Event::TextInput(true));
+        s.apply(Event::Activate(Id::Mode(Mode::Keyboard)));
+        s.apply(Event::TextInput(false));
+        assert_eq!(s.mode, Mode::Keyboard);
+        // Already on the keyboard: nothing to go back to.
+        s.apply(Event::Activate(Id::Mode(Mode::Dock)));
+        s.apply(Event::Activate(Id::Mode(Mode::Keyboard)));
+        s.apply(Event::TextInput(true));
+        s.apply(Event::TextInput(false));
+        assert_eq!(s.mode, Mode::Keyboard);
     }
 
     #[test]

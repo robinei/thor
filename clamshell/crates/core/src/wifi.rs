@@ -151,14 +151,13 @@ mod tests {
     }
 
     #[test]
-    fn the_wifi_mode_comes_and_goes_from_the_bar_icon() {
+    fn the_wifi_mode_watches_while_open() {
         let mut s = state();
         s.apply(Event::Activate(Id::Mode(Mode::Keyboard)));
         let (_, fx) = s.apply(Event::Activate(Id::Mode(Mode::Wifi)));
         assert_eq!((s.mode, fx), (Mode::Wifi, vec![Effect::Wifi(Command::Watch(true))]));
         let (_, fx) = s.apply(Event::Activate(Id::Mode(Mode::Wifi)));
-        assert_eq!((s.mode, fx), (Mode::Keyboard, vec![Effect::Wifi(Command::Watch(false))]), "a second tap goes back");
-        s.apply(Event::Activate(Id::Mode(Mode::Wifi)));
+        assert_eq!((s.mode, fx), (Mode::Wifi, vec![]), "a tab: a second tap stays");
         let (_, fx) = s.apply(Event::Activate(Id::Mode(Mode::Touchpad)));
         assert_eq!(fx, vec![Effect::Wifi(Command::Watch(false)), Effect::Touchpad(true)]);
     }

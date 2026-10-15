@@ -70,8 +70,16 @@ desktop with another layout, letters, digits and named keys come out right but p
 layout. To type into other apps on a desktop, run with `CLAMSHELL_BOTTOM_PANEL=1`: the bottom view is then a
 panel in the bottom right corner that never takes the keyboard focus (as on the device), not a window.
 
-**The bar**: the modes on the left; volume and brightness in the middle; the pad mouse, Wi-Fi, the battery
-and the clock on the right. A finger on volume or brightness turns the bar's row into a slider whose
+**A text field brings up the keyboard**: ClamShell is the compositor's input method (input-method-v2;
+sway relays the text-input-v3 that GTK, Qt, Firefox and foot use), so when an app's text field wants
+typing the keyboard tab opens, and when the field is done (after 0.4 s, so moving between fields doesn't
+bounce it) the tab before it comes back, unless a tab was chosen meanwhile. Not while a game is in front:
+SDL asks for text input whether or not the game needs it. With another input method running (fcitx, ibus)
+the compositor gives the seat to that one and this does nothing.
+
+**The bar**: tabs for the modes on the left; volume and brightness in the middle; Bluetooth, Wi-Fi and the
+battery (tabs as well, that also show their status) and the clock on the right; past a faint line at the
+right end, the pad mouse switch. A finger on volume or brightness turns the bar's row into a slider whose
 current level is under the finger: moving sets the level as it goes, lifting leaves it there (the icons
 sit mid-screen so the track fits on both sides; it is about 31 mm long on the Thor). A tap on volume
 mutes or unmutes; sliding it unmutes. Volume goes through `wpctl` (PipeWire's default sink), brightness to
@@ -79,21 +87,21 @@ every backlight through logind (`CLAMSHELL_BACKLIGHTS`: another folder laid out 
 `/sys/class/backlight`, for a desktop without one). Every icon always shows, dim without a reading (a
 slider then starts in the middle), so a desktop shows everything the device does.
 
-**Wi-Fi** (tap the Wi-Fi icon; lit while open, a second tap goes back): through NetworkManager on the
+**Wi-Fi** (tap the Wi-Fi icon; lit while open): through NetworkManager on the
 system bus. The networks in range (rescanned every 10 s while open), the connected and saved ones first,
 with a lock on those that need a password and the radio's switch on top. A tap joins: a saved network
 straight away, a new one with a password typed on the on-screen keyboard (WPA2/WPA3 personal, WEP); a long
 press forgets a saved network. A new connection that fails to join is deleted again, and the reason shows
 ("wrong password?", no address). Enterprise networks (a login) aren't supported.
 
-**Bluetooth** (tap the Bluetooth icon; lit while open, a second tap goes back): through BlueZ on the
+**Bluetooth** (tap the Bluetooth icon; lit while open): through BlueZ on the
 system bus. The devices, the connected and paired ones first, each with its kind's icon (headphones,
 controller, keyboard, mouse, phone), and the radio's switch on top; while open it looks for new devices.
 A tap connects a paired device, pairs a new one (pair, trust, connect: headphones and controllers need no
 code; a pairing agent is registered only for that) or disconnects a connected one; a long press forgets a
 paired one. PipeWire moves the sound to headphones on its own.
 
-**Battery** (tap the battery icon; lit while open, a second tap goes back): the level, charging or
+**Battery** (tap the battery icon; lit while open): the level, charging or
 discharging with the drain and the time left, and the charge limit as a button (full, 90, 80 %, the same
 setting as its tile); the charge over the last day from UPower (charging in green); then what is using the
 machine now, the busiest first, as many as fit: CPU time per process and GPU time per DRM client

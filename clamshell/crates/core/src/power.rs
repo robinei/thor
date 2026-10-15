@@ -93,7 +93,5 @@ mod tests {
         assert_eq!(fx, vec![crate::Effect::WatchPower(true)]);
         let (_, fx) = s.apply(Event::Activate(Id::Mode(Mode::Wifi)));
         assert_eq!(fx, vec![crate::Effect::WatchPower(false), crate::Effect::Wifi(crate::wifi::Command::Watch(true))]);
-        let (_, fx) = s.apply(Event::Activate(Id::Mode(Mode::Wifi)));
-        assert_eq!((s.mode, fx), (Mode::Sysinfo, vec![crate::Effect::Wifi(crate::wifi::Command::Watch(false))]), "back to the bar's mode");
     }
 }

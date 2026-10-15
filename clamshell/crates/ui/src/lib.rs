@@ -15,6 +15,7 @@ pub mod nav;
 #[cfg(test)]
 #[allow(unsafe_code, clippy::unwrap_used, clippy::expect_used)]
 mod no_alloc;
+mod text_input;
 mod view;
 mod views;
 mod wayland;
@@ -132,6 +133,7 @@ pub fn run(
         slider_source: None,
         last_focus: [None, None],
         hold_timer: None,
+        text_input: text_input::TextInput::bind(&globals, &qh),
         loop_handle: event_loop.handle(),
         on_effect: Box::new(on_effect),
         exit: false,
@@ -140,6 +142,9 @@ pub fn run(
     // Learn the outputs and their names before placing the bottom view.
     queue.roundtrip(&mut app)?;
     queue.roundtrip(&mut app)?;
+    if let Some(seat) = app.seat_state.seats().next() {
+        app.text_input.seat(&seat, &qh);
+    }
 
     app.top = Some(View::window(&compositor, &xdg, &qh, Screen::Top, config.top_size));
     let bottom_output = app.output_state.outputs().find(|o| {
@@ -224,6 +229,7 @@ struct App {
     last_focus: [Option<clamshell_core::Id>; 2],
     /// Fires when the latest press becomes a hold, then at the repeat rate for repeating keys.
     hold_timer: Option<(Source, RegistrationToken)>,
+    text_input: text_input::TextInput,
     loop_handle: LoopHandle<'static, App>,
     on_effect: Box<dyn FnMut(&Effect)>,
     exit: bool,
