@@ -182,28 +182,30 @@ fn binding(k: Option<&Keymap>, input: Input) -> Option<Binding> {
 /// The edit screen: the labels' text, of the small text size; of the area's width, a cluster's width,
 /// the room between it and its labels (where the lines turn), and the labels' column's width.
 const LABEL: f32 = 0.66;
-const CLUSTER_W: f32 = 0.18;
+const CLUSTER_W: f32 = 0.24;
 const GAP: f32 = 0.045;
-const LABEL_COLUMN_W: f32 = 0.17;
-/// The controls' outlines, and the lines in to the labels (grey, and blue for a mapping).
+const LABEL_COLUMN_W: f32 = 0.16;
+/// The controls' outlines, and the lines in to the labels (blue, dimmed).
 const PART_LINE: Rgb = Rgb(0x4a4a54);
-const LEADER: Rgb = Rgb(0x2c2c34);
-const LEADER_MAPPED: f32 = 0.45;
+const LEADER_ALPHA: f32 = 0.45;
 /// Line widths in logical pixels: the controls', the lines in.
 const PART_W: f32 = 1.5;
 const LEADER_W: f32 = 1.0;
 /// The most controls in a cluster.
 const CONTROLS: usize = 16;
 
-/// A control's label beside its cluster: the control, what it maps to (if not as on the pad), and its
-/// block's top and height once placed.
+/// What a binding maps to, in words.
+fn mapping(b: Binding) -> Fmt<48> {
+    Fmt::of(format_args!("{}", OutputLabel(b.output)))
+}
+
+/// A remapped control's label beside its cluster: the control, what it maps to, and the label's top
+/// once placed.
 #[derive(Clone, Copy)]
 struct Callout {
-    input: Input,
     part: Part,
-    mapped: Option<Fmt<48>>,
+    mapped: Fmt<48>,
     top: f32,
-    h: f32,
 }
 
 impl Callout {
@@ -242,27 +244,26 @@ impl Column {
         self.len += 1;
     }
 
-    /// Places the blocks as near level with their lines as they can be (the first line of each, `line`
-    /// high, at its line's height), within `y0`..`y1`, `gap` apart or less if they don't fit.
-    fn place(&mut self, y0: f32, y1: f32, gap: f32, line: f32) {
-        let total: f32 = self.iter().map(|c| c.h).sum();
-        let gap = gap.min((y1 - y0 - total) / self.len.saturating_sub(1).max(1) as f32).max(0.0);
+    /// Places the labels (`h` high) level with their lines where they can be, within `y0`..`y1`, at
+    /// least `h + gap` apart (less if they don't fit).
+    fn place(&mut self, y0: f32, y1: f32, h: f32, gap: f32) {
+        let step = (h + gap).min((y1 - y0 - h) / self.len.saturating_sub(1).max(1) as f32).max(0.0);
         let mut next = y0;
         for c in self.items.iter_mut().take(self.len).flatten() {
-            c.top = (c.exit() - line / 2.0).min(y1 - c.h).max(next);
-            next = c.top + c.h + gap;
+            c.top = (c.exit() - h / 2.0).min(y1 - h).max(next);
+            next = c.top + step;
         }
-        let mut last = y1 + gap;
+        let mut last = y1 - h + step;
         for c in self.items.iter_mut().take(self.len).rev().flatten() {
-            c.top = c.top.min(last - gap - c.h);
+            c.top = c.top.min(last - step);
             last = c.top;
         }
     }
 }
 
-/// The edit screen: the controls in two clusters at the sides (see [`super::pad`]), each a target, with
-/// a line in to its label (its name, and what it maps to); View, Menu and the gyro in the middle, their
-/// labels under them.
+/// The edit screen: the controls in two clusters at the sides (see [`super::pad`]), each a target; a
+/// remapped one has a line in to a label of what it maps to. View, Menu and the gyro in the middle,
+/// their names and mappings under them.
 fn edit(f: &mut Frame, body: Rect, id: u16) {
     let s = f.s;
     let keymap = s.keymaps().get(id);
@@ -277,19 +278,18 @@ fn edit(f: &mut Frame, body: Rect, id: u16) {
 
     let (mut left, mut right) = (Column::new(), Column::new());
     for input in Input::all() {
-        let Some(part) = pad.part(input) else {
+        let (Some(part), Some(b)) = (pad.part(input), binding(keymap, input)) else {
             continue;
         };
-        let mapped = binding(keymap, input).map(|b| Fmt::<48>::of(format_args!("{}", OutputLabel(b.output))));
-        let h = line * if mapped.is_some() { 2.0 } else { 1.0 };
-        let c = Callout { input, part, mapped, top: 0.0, h };
+        let c = Callout { part, mapped: mapping(b), top: 0.0 };
         if part.side == Side::Left { left.push(c) } else { right.push(c) }
     }
     for column in [&mut left, &mut right] {
-        column.place(area.y, area.bottom(), size * 0.55, line);
+        column.place(area.y, area.bottom(), line, size * 0.4);
     }
 
-    // Lines in, from each control to its label.
+    // Lines in, from each remapped control to its label.
+    let color = Tone::Fn.rgb().alpha(LEADER_ALPHA);
     for (side, column) in [(Side::Left, &left), (Side::Right, &right)] {
         let cluster = pad.cluster(side);
         let (bus, end) = match side {
@@ -297,7 +297,17 @@ fn edit(f: &mut Frame, body: Rect, id: u16) {
             Side::Right => (cluster.x - gap * 0.3, cluster.x - gap + size * 0.3),
         };
         for c in column.iter() {
-            leader(f, c, bus, end, line);
+            let (ax, ay) = c.part.anchor;
+            let (across, y) = (c.exit(), c.top + line / 2.0);
+            if c.part.lane.is_some() {
+                f.c.line((ax, ay), (ax, across), LEADER_W, color);
+            }
+            if (y - across).abs() < 0.5 {
+                f.c.line((ax, across), (end, y), LEADER_W, color);
+            } else {
+                f.c.line((ax, across), (bus, across), LEADER_W, color);
+                f.c.line((bus, across), (end, y), LEADER_W, color);
+            }
         }
     }
 
@@ -307,18 +317,20 @@ fn edit(f: &mut Frame, body: Rect, id: u16) {
             f.c.outline(well, well.w, PART_W, PART_LINE);
         }
     }
-    let clicks = |c: &&Callout| matches!(c.input, Input::Button(Button::LS | Button::RS));
-    let all = || left.iter().chain(right.iter());
-    for c in all().filter(|c| !clicks(c)).chain(all().filter(clicks)) {
-        control(f, c, size);
+    let click = |i: &Input| matches!(i, Input::Button(Button::LS | Button::RS));
+    for input in Input::all().filter(|i| !click(i)).chain(Input::all().filter(click)) {
+        if let Some(part) = pad.part(input) {
+            control(f, input, part, binding(keymap, input).is_some(), size);
+        }
     }
 
     // The labels.
     for (side, column) in [(Side::Left, &left), (Side::Right, &right)] {
         let cluster = pad.cluster(side);
-        let x = if side == Side::Left { cluster.right() + gap } else { cluster.x - gap - lw };
         for c in column.iter() {
-            label(f, c.input, c.mapped, Rect::new(x, c.top, lw, c.h), if side == Side::Left { Align::Start } else { Align::End }, size);
+            let w = f.c.text_width(size, &c.mapped).min(lw);
+            let x = if side == Side::Left { cluster.right() + gap } else { cluster.x - gap - w };
+            f.c.text_fit(Rect::new(x, c.top, w + 1.0, line), size, Tone::Fn, &c.mapped, Keep::Start);
         }
     }
 
@@ -327,60 +339,22 @@ fn edit(f: &mut Frame, body: Rect, id: u16) {
     middle(f, strip, keymap, size);
 }
 
-/// A line from a control in to its label: across (or up to its lane, then across) to `bus`, then on to
-/// `end`, level with the label's first line.
-fn leader(f: &mut Frame, c: &Callout, bus: f32, end: f32, line: f32) {
-    let (ax, ay) = c.part.anchor;
-    let y = c.top + line / 2.0;
-    let color = if c.mapped.is_some() { Tone::Fn.rgb().alpha(LEADER_MAPPED) } else { LEADER.into() };
-    let across = c.exit();
-    if let Some(lane) = c.part.lane {
-        f.c.line((ax, ay), (ax, lane), LEADER_W, color);
-    }
-    f.c.line((ax, across), (bus, across), LEADER_W, color);
-    f.c.line((bus, across), (end, y), LEADER_W, color);
-}
-
-/// A control's label: its name (dim if as on the pad), and under it what it maps to; a target for it.
-fn label(f: &mut Frame, input: Input, mapped: Option<Fmt<48>>, r: Rect, align: Align, size: f32) {
-    let name = Fmt::<24>::of(format_args!("{}", Short(input)));
-    let line = size * LINE;
-    let look = Look { radius: style::RADIUS_S, fill: None, inset: 0.0, ring: -size * 0.3 };
-    let at = |w: f32| match align {
-        Align::Start => r.x,
-        Align::Center => r.x + (r.w - w) / 2.0,
-        Align::End => r.right() - w,
-    };
-    // The highlight and focus ring go round the text.
-    let wide = f.c.text_width(size, &name).max(mapped.map_or(0.0, |m| f.c.text_width(size, &m))).min(r.w);
-    let shown = Rect::new(at(wide), r.y, wide, r.h);
-    f.button_in(Id::Keymap(KeymapId::Input(input)), r, shown, look, |f| {
-        let mut row = |text: &str, y: f32, tone: Tone| {
-            let w = f.c.text_width(size, text).min(r.w);
-            let x = at(w);
-            f.c.text_fit(Rect::new(x, y, w + 1.0, line), size, tone, text, Keep::Start);
-        };
-        row(&name, r.y, if mapped.is_some() { Tone::Normal } else { Tone::Dim });
-        if let Some(m) = mapped {
-            row(&m, r.y + line, Tone::Fn);
-        }
-    });
-}
-
 /// View, Menu and the gyro, one under another in the middle of `strip`, each with its label under it;
 /// the whole of each is its target.
 fn middle(f: &mut Frame, strip: Rect, keymap: Option<&Keymap>, size: f32) {
     let line = size * LINE;
     let pill_w = (strip.w * 0.4).min(size * 2.6);
     let pill_h = pill_w * 0.45;
-    let cell_h = pill_h * 1.6 + line * 2.0 + size * 0.6;
+    let cell_h = pill_h * 1.6 + line * 3.0 + size * 0.3;
     let gap = size;
     let total = cell_h * 3.0 + gap * 2.0;
     let mut y = strip.y + (strip.h - total) / 2.0;
     for input in [Input::Button(Button::View), Input::Button(Button::Menu), Input::Gyro] {
         let cell = Rect::new(strip.x, y, strip.w, cell_h);
         y += cell_h + gap;
-        let mapped = binding(keymap, input).map(|b| Fmt::<48>::of(format_args!("{}", OutputLabel(b.output))));
+        let b = binding(keymap, input);
+        let mapped = b.map(|b| Fmt::<48>::of(format_args!("{}", OutputLabel(b.output))));
+        let hold = b.and_then(|b| b.hold).map(|h| Fmt::<24>::of(format_args!("while {}", Label(h))));
         let tone = if mapped.is_some() { Tone::Fn } else { Tone::Dim };
         let (cx, cy) = (cell.center().0, cell.y + pill_h * 0.8);
         let shown = if input == Input::Gyro {
@@ -389,7 +363,7 @@ fn middle(f: &mut Frame, strip: Rect, keymap: Option<&Keymap>, size: f32) {
             Rect::new(cx - pill_w / 2.0, cy - pill_h / 2.0, pill_w, pill_h)
         };
         let look = Look { radius: shown.h / 2.0, fill: None, inset: 0.0, ring: -3.0 };
-        let name = Fmt::<24>::of(format_args!("{}", Short(input)));
+        let name = Fmt::<24>::of(format_args!("{}", Label(input)));
         f.button_in(Id::Keymap(KeymapId::Input(input)), cell, shown, look, |f| {
             f.c.outline(shown, shown.h / 2.0, PART_W, PART_LINE);
             let u = pill_h * 0.28;
@@ -416,22 +390,30 @@ fn middle(f: &mut Frame, strip: Rect, keymap: Option<&Keymap>, size: f32) {
                 let w = f.c.text_width(size, &m).min(cell.w);
                 f.c.text_fit(Rect::new(cx - w / 2.0, text_y + line, w + 1.0, line), size, Tone::Fn, &m, Keep::Start);
             }
+            if let Some(h) = hold {
+                let w = f.c.text_width(size, &h).min(cell.w);
+                f.c.text_fit(Rect::new(cx - w / 2.0, text_y + line * 2.0, w + 1.0, line), size, Tone::Fn, &h, Keep::Start);
+            }
         });
     }
 }
 
 /// A control in a cluster: its outline and its own mark, in blue if it is mapped; a target.
-fn control(f: &mut Frame, c: &Callout, size: f32) {
-    let p = c.part;
-    let tone = if c.mapped.is_some() { Tone::Fn } else { Tone::Dim };
+fn control(f: &mut Frame, input: Input, p: Part, mapped: bool, size: f32) {
+    let tone = if mapped { Tone::Fn } else { Tone::Dim };
     let look = Look { radius: p.radius, fill: None, inset: 0.0, ring: -3.0 };
     let shown = p.shown;
-    f.button_in(Id::Keymap(KeymapId::Input(c.input)), p.target, shown, look, |f| {
+    let id = Id::Keymap(KeymapId::Input(input));
+    // A stick takes its group's corners as well (drawn first, so the cap's outline stays on top).
+    for corner in p.corners.into_iter().flatten() {
+        f.button_in(id.clone(), corner, shown, look, |_| {});
+    }
+    f.button_in(id, p.target, shown, look, |f| {
         let (cx, cy) = shown.center();
         let name = |f: &mut Frame, t: &str, r: Rect, size: f32| {
             f.c.text_in(r, size, tone, t, Align::Center);
         };
-        match c.input {
+        match input {
             Input::Trigger(s) => {
                 // Round on top, flat at the bottom.
                 f.c.clip(Some(Rect::new(shown.x - PART_W, shown.y - PART_W, shown.w + 2.0 * PART_W, shown.h + PART_W / 2.0)));
@@ -455,7 +437,7 @@ fn control(f: &mut Frame, c: &Callout, size: f32) {
             }
             Input::Stick(_) => f.c.outline(shown, shown.w, PART_W, PART_LINE),
             Input::Dpad(d) | Input::StickDir(_, d) => {
-                if matches!(c.input, Input::Dpad(_)) {
+                if matches!(input, Input::Dpad(_)) {
                     f.c.outline(shown, p.radius, PART_W, PART_LINE);
                 }
                 let icon = match d {
@@ -464,7 +446,7 @@ fn control(f: &mut Frame, c: &Callout, size: f32) {
                     Dir::Left => Icon::ArrowLeft,
                     Dir::Right => Icon::ArrowRight,
                 };
-                let side = if matches!(c.input, Input::Dpad(_)) { shown.w.min(shown.h) * 0.55 } else { shown.w * 0.8 };
+                let side = if matches!(input, Input::Dpad(_)) { shown.w.min(shown.h) * 0.55 } else { shown.w * 0.8 };
                 f.c.icon(icon, Rect::new(cx, cy, 0.0, 0.0).inset(-side / 2.0), tone);
             }
             _ => {}
@@ -479,20 +461,6 @@ impl std::fmt::Display for Label {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self.0 {
             Input::Dpad(d) => f.write_str(d.label()),
-            input => input.label(f),
-        }
-    }
-}
-
-/// An input's name in a label beside its cluster, where the side goes without saying.
-struct Short(Input);
-
-impl std::fmt::Display for Short {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self.0 {
-            Input::Stick(_) => f.write_str("Stick"),
-            Input::StickDir(_, d) => write!(f, "Stick {}", d.name()),
-            Input::Button(Button::LS | Button::RS) => f.write_str("Stick click"),
             input => input.label(f),
         }
     }

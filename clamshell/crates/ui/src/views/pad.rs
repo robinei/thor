@@ -3,9 +3,9 @@
 //! (trigger, bumper, a stick, the D-pad or the face buttons, the back buttons) in the order of
 //! [`LEFT`] and [`RIGHT`]; View, Menu and the gyro sit in the middle.
 //!
-//! Each control has a line in to its label (between the clusters): it leaves the control's inner side
-//! straight across, or, for the controls a line across would pass through others (the outer one of the
-//! D-pad, of a stick's directions, of the face buttons), first up to a lane above its group.
+//! A remapped control has a line in to its label (between the clusters): it leaves the control's inner
+//! side straight across, or, for the controls a line across would pass through others (the outer one of
+//! the D-pad, of a stick's directions, of the face buttons), first straight up above its group.
 
 use clamshell_core::keymap::{Button, Dir, Input, Side};
 
@@ -24,22 +24,22 @@ pub enum Group {
 
 /// Each side's groups from top to bottom, and the share of the cluster's height each takes: the usual
 /// order, until the Thor's own is known.
-pub const LEFT: [(Group, f32); 5] = [(Group::Trigger, 0.13), (Group::Bumper, 0.09), (Group::Stick, 0.29), (Group::Dpad, 0.29), (Group::Back, 0.2)];
-pub const RIGHT: [(Group, f32); 5] = [(Group::Trigger, 0.13), (Group::Bumper, 0.09), (Group::Face, 0.29), (Group::Stick, 0.29), (Group::Back, 0.2)];
+pub const LEFT: [(Group, f32); 5] = [(Group::Trigger, 0.12), (Group::Bumper, 0.08), (Group::Stick, 0.31), (Group::Dpad, 0.31), (Group::Back, 0.18)];
+pub const RIGHT: [(Group, f32); 5] = [(Group::Trigger, 0.12), (Group::Bumper, 0.08), (Group::Face, 0.31), (Group::Stick, 0.31), (Group::Back, 0.18)];
 
 /// Sizes in a group, of the smaller of its width and height. A stick: the well's radius, the cap's and
-/// the click's (dimple); the click's target's half side.
+/// the click's (dimple); the click's target's half height (its width is the cap's).
 const WELL: f32 = 0.38;
-const CAP: f32 = 0.26;
+const CAP: f32 = 0.27;
 const DIMPLE: f32 = 0.11;
-const CLICK: f32 = 0.13;
+const CLICK: f32 = 0.145;
 /// The D-pad: an arm's reach from the centre, its half width, where it starts from the centre.
 const ARM_L: f32 = 0.38;
 const ARM_HALF: f32 = 0.105;
 const ARM_FROM: f32 = 0.13;
 /// The face buttons: their distance from the centre and radius.
-const FACE_OFF: f32 = 0.27;
-const FACE_R: f32 = 0.115;
+const FACE_OFF: f32 = 0.33;
+const FACE_R: f32 = 0.12;
 /// Where the lane above a group runs, below its top.
 const LANE: f32 = 0.035;
 /// The trigger, bumper and back buttons, of the group's width and height.
@@ -53,8 +53,9 @@ pub struct Part {
     /// What is drawn (its highlight and focus ring follow it), and the corner radius of that.
     pub shown: Rect,
     pub radius: f32,
-    /// What a finger hits.
+    /// What a finger hits; a stick also takes its group's corners.
     pub target: Rect,
+    pub corners: Option<[Rect; 4]>,
     /// Where its line starts, and the height of the lane it goes up to first, if it does.
     pub anchor: (f32, f32),
     pub lane: Option<f32>,
@@ -126,7 +127,7 @@ impl Pad {
         let (cx, cy) = g.center();
         let s = g.w.min(g.h);
         let lane = g.y + LANE * s;
-        let flat = |shown: Rect, radius: f32| Part { shown, radius, target: g, anchor: (inner(shown, k), cy), lane: None, side };
+        let flat = |shown: Rect, radius: f32| Part { shown, radius, target: g, corners: None, anchor: (inner(shown, k), cy), lane: None, side };
         let part = match input {
             Input::Trigger(_) => {
                 let shown = g.centered(g.w * TRIGGER.0, g.h * TRIGGER.1);
@@ -140,16 +141,24 @@ impl Pad {
                 let upper = matches!(b, Button::L4 | Button::R4);
                 let half = Rect::new(g.x, if upper { g.y } else { g.y + g.h / 2.0 }, g.w, g.h / 2.0);
                 let shown = half.centered(g.w * PADDLE.0, (half.h * PADDLE.1).min(g.w * 0.13));
-                Part { shown, radius: shown.h / 2.0, target: half, anchor: (inner(shown, k), half.center().1), lane: None, side }
+                Part { shown, radius: shown.h / 2.0, target: half, corners: None, anchor: (inner(shown, k), half.center().1), lane: None, side }
             }
             Input::Stick(_) => {
                 // From the cap's edge above the middle, clear of the direction marks.
                 let r = CAP * s;
-                Part { shown: square((cx, cy), r), radius: r, target: square((cx, cy), r), anchor: (cx + k * 0.8 * r, cy - 0.6 * r), lane: None, side }
+                let (x0, x1, y0, y1) = (cx - r, cx + r, cy - r, cy + r);
+                let corners = [
+                    Rect::new(g.x, g.y, x0 - g.x, y0 - g.y),
+                    Rect::new(x1, g.y, g.right() - x1, y0 - g.y),
+                    Rect::new(g.x, y1, x0 - g.x, g.bottom() - y1),
+                    Rect::new(x1, y1, g.right() - x1, g.bottom() - y1),
+                ];
+                Part { shown: square((cx, cy), r), radius: r, target: square((cx, cy), r), corners: Some(corners), anchor: (cx + k * 0.8 * r, cy - 0.6 * r), lane: None, side }
             }
             Input::Button(Button::LS | Button::RS) => {
-                let r = DIMPLE * s;
-                Part { shown: square((cx, cy), r), radius: r, target: square((cx, cy), CLICK * s), anchor: (cx + k * 0.7 * r, cy + 0.7 * r), lane: None, side }
+                let (r, cap) = (DIMPLE * s, CAP * s);
+                let target = Rect::new(cx - cap, cy - CLICK * s, 2.0 * cap, 2.0 * CLICK * s);
+                Part { shown: square((cx, cy), r), radius: r, target, corners: None, anchor: (cx + k * 0.7 * r, cy + 0.7 * r), lane: None, side }
             }
             Input::StickDir(_, d) => {
                 let (dx, dy) = dir(d);
@@ -166,15 +175,14 @@ impl Pad {
                 };
                 let toward = dx * k;
                 let (anchor, lane) = if toward > 0.0 {
-                    // From the well's edge.
-                    ((cx + k * well, cy), None)
+                    ((at.0 + k * half, at.1), None)
                 } else if toward < 0.0 {
                     // Away from the labels: up from the mark, through the well, to the lane.
                     ((at.0, at.1 - half), Some(lane))
                 } else {
                     ((at.0 + k * half, at.1), None)
                 };
-                Part { shown, radius: half, target, anchor, lane, side }
+                Part { shown, radius: half, target, corners: None, anchor, lane, side }
             }
             Input::Dpad(d) => {
                 let (dx, dy) = dir(d);
@@ -194,7 +202,7 @@ impl Pad {
                     Dir::Right => Rect::new(cx, cy - band, g.right() - cx, 2.0 * band),
                 };
                 let (anchor, lane) = if dx * k < 0.0 { ((shown.center().0, shown.y), Some(lane)) } else { ((inner(shown, k), shown.center().1), None) };
-                Part { shown, radius: 0.02 * s, target, anchor, lane, side }
+                Part { shown, radius: 0.02 * s, target, corners: None, anchor, lane, side }
             }
             Input::Button(b) => {
                 let (dx, dy) = match b {
@@ -206,7 +214,8 @@ impl Pad {
                 let (o, r) = (FACE_OFF * s, FACE_R * s);
                 let at = (cx + dx * o, cy + dy * o);
                 let shown = square(at, r);
-                let band = (o - r) * 0.95;
+                // X and B take the middle band, down to where Y and A start.
+                let band = o - r;
                 let target = if dy < 0.0 {
                     Rect::new(g.x, g.y, g.w, cy - band - g.y)
                 } else if dy > 0.0 {
@@ -217,7 +226,7 @@ impl Pad {
                     Rect::new(cx, cy - band, g.right() - cx, 2.0 * band)
                 };
                 let (anchor, lane) = if dx * k < 0.0 { ((at.0, at.1 - r), Some(lane)) } else { ((at.0 + k * r, at.1), None) };
-                Part { shown, radius: r, target, anchor, lane, side }
+                Part { shown, radius: r, target, corners: None, anchor, lane, side }
             }
             Input::Gyro => return None,
         };

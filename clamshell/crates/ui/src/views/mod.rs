@@ -291,7 +291,7 @@ mod tests {
                         let id = Id::Keymap(KeymapId::Input(input));
                         let biggest = targets.iter().filter(|t| t.id == id).map(|t| t.rect.w.min(t.rect.h)).fold(0.0, f32::max);
                         assert!(biggest > 0.0, "{case}: {input:?} has no target");
-                        assert!(w != 1240 || biggest >= 48.0, "{case}: {input:?}'s target is {biggest} across");
+                        assert!(w != 1240 || biggest >= 60.0, "{case}: {input:?}'s target is {biggest} across");
                     }
                 }
                 for (i, a) in targets.iter().enumerate() {
