@@ -35,7 +35,8 @@ pub enum Screen {
     /// The edit screen while the control `input` maps to is picked on the drawing, tapped or pressed on
     /// the pad (the pad listens).
     Pick { id: u16, input: Input },
-    /// What holds the gyro on (`input`: the gyro).
+    /// The edit screen while what holds the gyro on is picked on the drawing (tapped or pressed on the
+    /// pad, which listens), or Always (`input`: the gyro).
     Holds { id: u16, input: Input },
     /// A part of the mouse for `input`, on its drawing.
     Mouse { id: u16, input: Input },
@@ -46,7 +47,7 @@ pub enum Screen {
 impl Screen {
     /// Whether the pad listens: its presses choose inputs instead of moving the focus.
     pub fn listens(self) -> bool {
-        matches!(self, Screen::Edit(_) | Screen::Pick { .. })
+        matches!(self, Screen::Edit(_) | Screen::Pick { .. } | Screen::Holds { .. })
     }
 
     /// The keymap it is about, if one.
@@ -81,6 +82,11 @@ pub fn way_of(output: Option<Output>) -> Target {
         Some(Output::Mouse(_) | Output::Wheel(_)) => Target::MouseParts,
         Some(Output::Pointer) => Target::Pointer,
     }
+}
+
+/// Whether `input` can hold the gyro on (a button or a trigger the Thor has).
+pub fn holds(input: Input) -> bool {
+    crate::keymap::gyro_holds().any(|h| h == input) && !matches!(input, Input::Button(b) if b.is_back())
 }
 
 /// What picking `tapped` on the pad's drawing (or pressing it) maps `source` to, if that fits it: a
@@ -327,14 +333,8 @@ impl State {
                 }
                 vec![]
             }
-            (KeymapId::Hold(hold), Screen::Holds { id: k, input }) => {
-                self.bottom.keymaps = Some(Screen::Edit(k));
-                let Some(mut b) = self.param_base(k, input) else {
-                    return vec![];
-                };
-                b.hold = hold;
-                if self.set_tuned(k, input, b) { vec![self.save_keymaps()] } else { vec![] }
-            }
+            (KeymapId::Hold(hold), Screen::Holds { id: k, input }) => self.set_hold(k, input, hold),
+            (KeymapId::Input(tapped), Screen::Holds { id: k, input }) if holds(tapped) => self.set_hold(k, input, Some(tapped)),
             (KeymapId::Done, Screen::Capture { .. }) => {
                 let chord = self.keyboard.take_modifiers();
                 self.captured(chord)
@@ -395,8 +395,19 @@ impl State {
                 Some(out) => self.choose(id, to, out),
                 None => vec![],
             },
+            Some(Screen::Holds { id, input: gyro }) if holds(input) => self.set_hold(id, gyro, Some(input)),
             _ => vec![],
         }
+    }
+
+    /// What holds the gyro on, chosen (none: always on): back to the edit screen.
+    fn set_hold(&mut self, id: u16, gyro: Input, hold: Option<Input>) -> Vec<Effect> {
+        self.bottom.keymaps = Some(Screen::Edit(id));
+        let Some(mut b) = self.param_base(id, gyro) else {
+            return vec![];
+        };
+        b.hold = hold;
+        if self.set_tuned(id, gyro, b) { vec![self.save_keymaps()] } else { vec![] }
     }
 
     /// Opens the editor for a keymap's name.
@@ -731,9 +742,21 @@ mod tests {
         keymap(&mut s, KeymapId::Target(Target::Pointer));
         keymap(&mut s, KeymapId::Holds);
         assert_eq!(s.keymap_screen(), Some(Screen::Holds { id: 2, input: Input::Gyro }));
-        keymap(&mut s, KeymapId::Hold(Some(Input::Trigger(Side::Left))));
+        assert_eq!(s.pad().route(), PadRoute::Listen, "picked on the drawing: the pad listens");
+        keymap(&mut s, KeymapId::Input(Input::Stick(Side::Right)));
+        assert!(matches!(s.keymap_screen(), Some(Screen::Holds { .. })), "a stick can't hold it: still picking");
+        keymap(&mut s, KeymapId::Input(Input::Trigger(Side::Left)));
         assert_eq!(s.keymaps().get(2).unwrap().get(Input::Gyro).and_then(|b| b.hold), Some(Input::Trigger(Side::Left)));
         assert_eq!(s.keymap_screen(), Some(Screen::Edit(2)));
+        // Pressed on the pad instead; then always on.
+        keymap(&mut s, KeymapId::Holds);
+        s.apply(Event::Listened(Input::Button(Button::RB)));
+        assert_eq!(s.keymaps().get(2).unwrap().get(Input::Gyro).and_then(|b| b.hold), Some(Input::Button(Button::RB)));
+        keymap(&mut s, KeymapId::Holds);
+        keymap(&mut s, KeymapId::Hold(None));
+        assert_eq!(s.keymaps().get(2).unwrap().get(Input::Gyro).and_then(|b| b.hold), None);
+        keymap(&mut s, KeymapId::Holds);
+        keymap(&mut s, KeymapId::Hold(Some(Input::Trigger(Side::Left))));
         open(&mut s, Input::Button(Button::LB));
         keymap(&mut s, KeymapId::Target(Target::Key));
         key(&mut s, Key::Mod(Modifier::Shift));

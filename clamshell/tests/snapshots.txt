@@ -20,7 +20,7 @@ keymap-edit-rstick.png 5b6a1a5b92cce557
 keymap-edit-slider.png d52dcb946094df9e
 keymap-edit-stick.png 277d5cea040d7e70
 keymap-edit.png 906ffc4158c1e829
-keymap-holds.png 0b29192ddbba9b40
+keymap-holds.png 4a348b9ab8c33e4c
 keymap-menu.png 26be46ff7cd997ca
 keymap-mouse.png f905fefddc9a41da
 keymap-name.png b90a5f7f7ed3da5d

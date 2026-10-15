@@ -11,8 +11,8 @@
 
 use std::fmt::Write;
 
-use clamshell_core::keymap::{Binding, Button, Change, Chord, Dir, Input, Keymap, Kind, Layer, MouseButton, Output, PadOut, Side, change, gyro_holds, params};
-use clamshell_core::keymap_ui::{EditView, Screen, picked, way_of, ways};
+use clamshell_core::keymap::{Binding, Button, Change, Chord, Dir, Input, Keymap, Kind, Layer, MouseButton, Output, PadOut, Side, change, params};
+use clamshell_core::keymap_ui::{EditView, Screen, holds, picked, way_of, ways};
 use clamshell_core::slider::{Control, Slider};
 use clamshell_core::{Id, KeymapId, ListId, RowPart, Scope, Target};
 
@@ -33,9 +33,6 @@ const MENU_W: f32 = 0.45;
 /// A row's Edit button and who uses it, of the row's width.
 const EDIT_W: f32 = 0.14;
 const USERS_W: f32 = 0.3;
-/// A chip's text, of its height; the section labels' column, of the area's width.
-const CHIP_TEXT: f32 = 0.42;
-const LABELS_W: f32 = 0.16;
 
 pub(super) fn draw(f: &mut Frame, body: Rect, screen: Screen) {
     match screen {
@@ -43,8 +40,8 @@ pub(super) fn draw(f: &mut Frame, body: Rect, screen: Screen) {
         Screen::Menu(id) => menu(f, body, id),
         Screen::Delete(id) => delete(f, body, id),
         Screen::Edit(id) => edit(f, body, id, None),
-        Screen::Pick { id, input } => edit(f, body, id, Some(input)),
-        Screen::Holds { id, input } => holds(f, body, id, input),
+        Screen::Pick { id, input } => edit(f, body, id, Some(Picking::Target(input))),
+        Screen::Holds { id, input } => edit(f, body, id, Some(Picking::Hold(input))),
         Screen::Mouse { id, input } => mouse(f, body, id, input),
         Screen::Capture { input, keys, .. } => capture(f, body, input, keys),
     }
@@ -77,6 +74,23 @@ fn header(f: &mut Frame, body: Rect, title: &str, right: Option<(Id, &str)>, not
     area.y += pad * 0.4;
     area.h -= pad * 0.4;
     area
+}
+
+/// What is picked on the edit screen's drawing: what an input maps to, or what holds the gyro on.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Picking {
+    Target(Input),
+    Hold(Input),
+}
+
+impl Picking {
+    /// Whether `input` can be picked.
+    fn takes(self, input: Input) -> bool {
+        match self {
+            Picking::Target(from) => from == input || picked(from, input).is_some(),
+            Picking::Hold(_) => holds(input),
+        }
+    }
 }
 
 /// A choice's header (what an input is remapped to, what holds the gyro on): the title centred and
@@ -365,9 +379,9 @@ fn edit_header(f: &mut Frame, body: Rect, title: &str, layer: Layer) {
 /// the Back layer. Between the label columns, the panel: the selected input, what it does in the layer,
 /// the ways to remap it, and its parameters (a value slid for the slider, a switch tapped). The gyro's
 /// button sits at the bottom, over the AYN button. Below, a hint and "No changes". While a control is
-/// picked for `picking` (the selected input), the controls it can't map to are dimmed, and the panel and
-/// the hint say what to do.
-fn edit(f: &mut Frame, body: Rect, id: u16, picking: Option<Input>) {
+/// picked (what the selected input maps to, or what holds the gyro on), the controls that can't be are
+/// dimmed, and the panel and the hint say what to do.
+fn edit(f: &mut Frame, body: Rect, id: u16, picking: Option<Picking>) {
     let s = f.s;
     let keymap = s.keymaps().get(id);
     let view = s.keymap_edit();
@@ -428,8 +442,13 @@ fn edit(f: &mut Frame, body: Rect, id: u16, picking: Option<Input>) {
     for input in Input::all().filter(|i| !click(i)).chain(Input::all().filter(click)) {
         if let Some(part) = pad.part(input) {
             let tone = binding(keymap, layer, input).map_or(Tone::Dim, |b| described(input, &b).1);
-            let muted = picking.is_some_and(|from| from != input && picked(from, input).is_none());
-            control(f, input, part, tone, view.selected == Some(input), muted, size);
+            let muted = picking.is_some_and(|p| !p.takes(input));
+            // (Picking the gyro's hold, the one holding it now is lit.)
+            let hold = match picking {
+                Some(Picking::Hold(gyro)) => s.param_base(id, gyro).and_then(|b| b.hold) == Some(input),
+                _ => false,
+            };
+            control(f, input, part, tone, view.selected == Some(input) || hold, muted, size);
         }
     }
 
@@ -478,33 +497,51 @@ fn edit(f: &mut Frame, body: Rect, id: u16, picking: Option<Input>) {
     let margin = (strip.w * 0.04).min(size);
     let panel_r = Rect::new(strip.x + margin, area.y, (strip.w - 2.0 * margin).max(1.0), (gyro_top - area.y - size).max(1.0));
     match picking {
-        Some(input) => picking_panel(f, body, panel_r, input),
+        Some(p) => picking_panel(f, body, panel_r, id, p),
         None => panel(f, body, panel_r, id, keymap, view),
     }
-    foot_actions(f, body, foot_row, keymap, view, picking.is_some());
+    foot_actions(f, body, foot_row, keymap, view, picking);
 
 }
 
-/// The panel while a control is picked for `input`: its name, what to do, and Cancel.
-fn picking_panel(f: &mut Frame, body: Rect, r: Rect, input: Input) {
+/// The panel while a control is picked: what for, what to do, and Cancel (for the gyro's hold, Always
+/// beside it).
+fn picking_panel(f: &mut Frame, body: Rect, r: Rect, id: u16, picking: Picking) {
     let small = Text::Small.size(body.h) * PANEL_TEXT;
     let heading = Text::Heading.size(body.h) * 0.9;
     let mut col = Column1::new(r);
-    if let Some(row) = col.take(heading * LINE) {
-        centred(f, row, heading, Tone::High, &remap_title(input));
-    }
-    let what = match input.kind() {
-        Kind::Stick => "Tap or move a stick, or tap the D-pad",
-        Kind::Gyro => "Tap or move a stick",
-        Kind::Trigger => "Tap or press a trigger or a button",
-        Kind::Digital => "Tap or press a button",
+    let (title, what) = match picking {
+        Picking::Target(input) => (
+            remap_title(input),
+            match input.kind() {
+                Kind::Stick => "Tap or move a stick, or tap the D-pad",
+                Kind::Gyro => "Tap or move a stick",
+                Kind::Trigger => "Tap or press a trigger or a button",
+                Kind::Digital => "Tap or press a button",
+            },
+        ),
+        Picking::Hold(_) => (Fmt::of(format_args!("Gyro active while…")), "Tap or press a button or a trigger"),
     };
+    // (On two lines if it doesn't fit on one.)
+    let lines = if f.c.text_width(heading, &title) > r.w { 2.0 } else { 1.0 };
+    if let Some(row) = col.take(heading * LINE * lines) {
+        centred_lines(f, row, heading, Tone::High, &title);
+    }
     if let Some(row) = col.take(small * LINE * 2.2) {
         centred_lines(f, row, small, Tone::Normal, what);
     }
     col.skip(style::pad(body.h) * 0.3);
-    if let Some(row) = col.take(body.h * BUTTON_H * 0.65) {
-        f.text_button(Id::Keymap(KeymapId::Back), row, small, Tone::Fn, "Cancel", Align::Center);
+    let Some(row) = col.take(body.h * BUTTON_H * 0.65) else {
+        return;
+    };
+    match picking {
+        Picking::Hold(gyro) => {
+            let always = f.s.param_base(id, gyro).is_some_and(|b| b.hold.is_none());
+            let (a, c) = (Rect::new(row.x, row.y, row.w / 2.0, row.h), Rect::new(row.x + row.w / 2.0, row.y, row.w / 2.0, row.h));
+            f.text_button(Id::Keymap(KeymapId::Hold(None)), a, small, if always { Tone::High } else { Tone::Fn }, "Always", Align::Center);
+            f.text_button(Id::Keymap(KeymapId::Back), c, small, Tone::Fn, "Cancel", Align::Center);
+        }
+        Picking::Target(_) => f.text_button(Id::Keymap(KeymapId::Back), row, small, Tone::Fn, "Cancel", Align::Center),
     }
 }
 
@@ -701,7 +738,7 @@ impl Column1 {
 
 /// The bottom row: what the pad does here, and "No changes" (the layer shown cleared, once confirmed);
 /// while a control is picked, only what the pad does.
-fn foot_actions(f: &mut Frame, body: Rect, row: Rect, keymap: Option<&Keymap>, view: EditView, picking: bool) {
+fn foot_actions(f: &mut Frame, body: Rect, row: Rect, keymap: Option<&Keymap>, view: EditView, picking: Option<Picking>) {
     let pad = style::pad(body.h);
     let small = Text::Small.size(body.h) * PANEL_TEXT;
     let h = row.h * 0.7;
@@ -714,8 +751,12 @@ fn foot_actions(f: &mut Frame, body: Rect, row: Rect, keymap: Option<&Keymap>, v
         r.x - pad * 0.4
     };
     let mut x = row.right();
-    if picking {
-        f.c.text_fit(row, small * 0.9, Tone::Dim, "Tap or press the control it should be · Back: cancel", Keep::Start);
+    if let Some(p) = picking {
+        let hint = match p {
+            Picking::Target(_) => "Tap or press the control it should be · Back: cancel",
+            Picking::Hold(_) => "Tap or press what turns the gyro on while held · Back: cancel",
+        };
+        f.c.text_fit(row, small * 0.9, Tone::Dim, hint, Keep::Start);
     } else if view.clearing {
         x = chip(f, KeymapId::ConfirmClear, x, "Clear", Tone::Accent);
         x = chip(f, KeymapId::Back, x, "Keep", Tone::Fn);
@@ -875,72 +916,6 @@ impl std::fmt::Display for OutputLabel {
             Output::Pad(PadOut::Trigger(s)) | Output::Trigger(s) => f.write_str(if s == Side::Left { "L2" } else { "R2" }),
             out => out.label(f),
         }
-    }
-}
-
-/// Chips flowing in lines: a section's label on the left, its chips to the right, wrapping.
-struct Flow {
-    area: Rect,
-    labels_w: f32,
-    line_h: f32,
-    gap: f32,
-    x: f32,
-    y: f32,
-}
-
-impl Flow {
-    fn new(area: Rect, body: Rect) -> Flow {
-        let line_h = body.h * BUTTON_H * 0.8;
-        let gap = style::pad(body.h) * 0.35;
-        Flow { area, labels_w: area.w * LABELS_W, line_h, gap, x: area.x, y: area.y - line_h - gap }
-    }
-
-    /// A new section, its label at the start of a new line.
-    fn section(&mut self, f: &mut Frame, label: &str) {
-        self.y += self.line_h + self.gap;
-        self.x = self.area.x + self.labels_w;
-        if self.fits() {
-            let size = self.line_h * CHIP_TEXT * 0.8;
-            f.c.text_fit(Rect::new(self.area.x, self.y, self.labels_w - self.gap, self.line_h), size, Tone::Dim, label, Keep::Start);
-        }
-    }
-
-    fn fits(&self) -> bool {
-        self.y + self.line_h <= self.area.bottom()
-    }
-
-    /// A chip: lit if `on`; left out if there is no room.
-    fn chip(&mut self, f: &mut Frame, id: Id, label: &str, on: bool) {
-        let size = self.line_h * CHIP_TEXT;
-        let w = f.c.text_width(size, label) + self.line_h * 0.6;
-        if self.x + w > self.area.right() && self.x > self.area.x + self.labels_w {
-            self.y += self.line_h + self.gap;
-            self.x = self.area.x + self.labels_w;
-        }
-        if !self.fits() {
-            return;
-        }
-        let r = Rect::new(self.x, self.y, w.min(self.area.right() - self.x), self.line_h);
-        self.x += w + self.gap;
-        // The chosen one in white, the others blue (actions).
-        let tone = if on { Tone::High } else { Tone::Fn };
-        f.text_button(id, r, size, tone, label, Align::Start);
-    }
-}
-
-/// What holds the gyro on: always, or while a button or trigger is held.
-fn holds(f: &mut Frame, body: Rect, id: u16, input: Input) {
-    let s = f.s;
-    let b = s.param_base(id, input);
-    let area = choice_header(f, body, "Gyro active…");
-    let mut flow = Flow::new(area, body);
-    flow.section(f, "Active");
-    let hold = b.and_then(|b| b.hold);
-    flow.chip(f, Id::Keymap(KeymapId::Hold(None)), "Always", hold.is_none());
-    // (The Thor has no back buttons.)
-    for h in gyro_holds().filter(|h| !matches!(h, Input::Button(b) if b.is_back())) {
-        let label = Fmt::<16>::of(format_args!("while {}", Label(h)));
-        flow.chip(f, Id::Keymap(KeymapId::Hold(Some(h))), &label, hold == Some(h));
     }
 }
 
