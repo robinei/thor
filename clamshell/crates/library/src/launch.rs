@@ -7,6 +7,36 @@ use std::path::{Path, PathBuf};
 
 use crate::pegasus::clean;
 
+/// A Pegasus launch command as the metadata gives it, still raw (tokenised and filled in at launch): the
+/// command, its working dir, and the dir relative paths in them are against (the metadata file's).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct LaunchSpec {
+    pub command: String,
+    pub workdir: String,
+    pub basedir: PathBuf,
+}
+
+impl LaunchSpec {
+    /// Fills in what this one leaves empty from `from` (a game takes its collection's).
+    pub fn inherit(&mut self, from: &LaunchSpec) {
+        if self.command.is_empty() {
+            self.command.clone_from(&from.command);
+        }
+        if self.workdir.is_empty() {
+            self.workdir.clone_from(&from.workdir);
+        }
+        if self.basedir.as_os_str().is_empty() {
+            self.basedir.clone_from(&from.basedir);
+        }
+    }
+
+    /// The program, arguments and working dir for launching `file`; `None` if the command is empty.
+    pub fn resolve(&self, file: &Path) -> Option<Command> {
+        resolve(&self.command, &self.workdir, &self.basedir, file)
+    }
+}
+
+/// A launch command resolved for one file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Command {
     pub program: PathBuf,
@@ -69,7 +99,7 @@ fn substitute(token: &str, file: &Path) -> String {
 
 /// The program, arguments and working dir for launching `file` with `command` (from a game whose
 /// metadata is in `basedir`); `None` if the command is empty.
-pub fn resolve(command: &str, workdir: &str, basedir: &Path, file: &Path) -> Option<Command> {
+fn resolve(command: &str, workdir: &str, basedir: &Path, file: &Path) -> Option<Command> {
     let mut tokens = tokenize(command).into_iter().map(|t| substitute(&t, file));
     let first = tokens.next().filter(|t| !t.is_empty())?;
     let args: Vec<String> = tokens.collect();
@@ -121,5 +151,12 @@ mod tests {
         assert_eq!(c.args, vec!["a.b"]);
         assert_eq!(c.workdir, PathBuf::from("/g/x/work"));
         assert!(resolve("  ", "", Path::new("/"), Path::new("/f")).is_none());
+    }
+
+    #[test]
+    fn a_game_inherits_what_it_leaves_empty() {
+        let mut game = LaunchSpec { command: String::new(), workdir: "w".into(), basedir: PathBuf::new() };
+        game.inherit(&LaunchSpec { command: "run".into(), workdir: "cw".into(), basedir: "/c".into() });
+        assert_eq!(game, LaunchSpec { command: "run".into(), workdir: "w".into(), basedir: "/c".into() });
     }
 }

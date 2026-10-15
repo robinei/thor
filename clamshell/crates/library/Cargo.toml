@@ -4,9 +4,8 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+# No dependencies: the state (clamshell-core) builds on this model.
 [dependencies]
-rusqlite.workspace = true
-log.workspace = true
 
 [lints]
 workspace = true

@@ -1,25 +1,28 @@
-//! The game library: Pegasus Frontend's collections and metadata (the format shelf used on the GPD,
-//! docs/pegasus-format.md in the GPD repo) and installed Steam games. Pure reading: no UI, no launching.
+//! The game library's model: games, collections and how they sort, and the parts of Pegasus
+//! Frontend's format (the one shelf used on the GPD, docs/pegasus-format.md in the GPD repo) and Steam's
+//! files that need no disk. No I/O and no dependencies: scanning the game dirs and Steam's folders,
+//! play time (stats.db) and favourites (favorites.txt) are clamshell-policy's (`library`).
 
-pub mod favorites;
 pub mod launch;
 pub mod metafile;
 pub mod pegasus;
+pub mod plays;
 pub mod sort;
-pub mod stats;
 pub mod steam;
 
 use std::path::PathBuf;
 use std::sync::Arc;
+
+pub use launch::LaunchSpec;
+pub use plays::Plays;
 
 /// How a game starts.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum Launch {
     #[default]
     None,
-    /// A Pegasus launch command, still raw (tokenised and filled in at launch): its workdir, and the dir
-    /// relative paths in it are against.
-    Command { command: String, workdir: String, basedir: PathBuf },
+    /// A Pegasus launch command.
+    Command(LaunchSpec),
     /// Through Steam.
     Steam { appid: u32 },
 }
@@ -49,7 +52,7 @@ pub struct Game {
     /// A tool (Utilities), not a game.
     pub tool: bool,
     /// Play history (stats.db) and favourite (favorites.txt).
-    pub plays: stats::Plays,
+    pub plays: Plays,
     pub favourite: bool,
 }
 
@@ -71,7 +74,7 @@ impl Game {
             summary: String::new(),
             description: String::new(),
             tool: false,
-            plays: stats::Plays::default(),
+            plays: Plays::default(),
             favourite: false,
         }
     }
@@ -100,90 +103,28 @@ pub struct Collection {
     pub games: Vec<usize>,
 }
 
+impl Collection {
+    /// A collection of these games named `name` (its short name the name lowercased), without a summary.
+    pub fn new(name: &str, games: Vec<usize>) -> Collection {
+        Collection {
+            name: name.into(),
+            short_name: name.to_lowercase(),
+            sort_key: sort::key(name),
+            summary: String::new(),
+            tools: false,
+            derived: false,
+            games,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Library {
     pub collections: Vec<Collection>,
     pub games: Vec<Game>,
 }
 
-/// Where to read from; `None` skips a source.
-#[derive(Debug, Clone, Default)]
-pub struct Sources {
-    /// Pegasus' config dir (`~/.config/pegasus-frontend`), for `game_dirs.txt`.
-    pub pegasus_config: Option<PathBuf>,
-    /// Steam's data dir.
-    pub steam: Option<PathBuf>,
-    /// Where play time (stats.db) and favourites (favorites.txt) are kept.
-    pub state_dir: Option<PathBuf>,
-}
-
-impl Sources {
-    /// The usual places for this user.
-    pub fn default_for_user() -> Self {
-        let config = std::env::var_os("XDG_CONFIG_HOME")
-            .map(PathBuf::from)
-            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")));
-        let pegasus = config.map(|c| c.join("pegasus-frontend"));
-        let state_dir = Sources::state_dir_for(pegasus.as_deref());
-        Sources { pegasus_config: pegasus, steam: steam::default_root(), state_dir }
-    }
-
-    /// Pegasus' config dir if there is one (shared with Pegasus), else `~/.local/share/clamshell`.
-    pub fn state_dir_for(pegasus: Option<&std::path::Path>) -> Option<PathBuf> {
-        match pegasus {
-            Some(p) if p.is_dir() => Some(p.to_path_buf()),
-            _ => std::env::var_os("XDG_DATA_HOME")
-                .map(PathBuf::from)
-                .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
-                .map(|d| d.join("clamshell")),
-        }
-    }
-}
-
 impl Library {
-    /// Reads every source: Pegasus collections, then one "Steam" collection; collections sorted by
-    /// name, games in each by title.
-    pub fn load(sources: &Sources) -> Library {
-        let dirs = sources.pegasus_config.as_deref().map(pegasus::read_game_dirs).unwrap_or_default();
-        let (mut collections, mut games) = pegasus::scan(&dirs, 0);
-        if let Some(root) = sources.steam.as_deref() {
-            let steam = steam::games(root);
-            if !steam.is_empty() {
-                let first = games.len();
-                collections.push(Collection {
-                    name: "Steam".into(),
-                    short_name: "steam".into(),
-                    sort_key: sort::key("Steam"),
-                    summary: "Installed Steam games".into(),
-                    tools: false,
-                    derived: false,
-                    games: (first..first + steam.len()).collect(),
-                });
-                games.extend(steam);
-            }
-        }
-        for c in &mut collections {
-            c.games.sort_by(|&a, &b| {
-                let key = |i: usize| games.get(i).map(|g| (&g.sort_key, &g.title));
-                key(a).cmp(&key(b))
-            });
-        }
-        collections.sort_by(|a, b| a.sort_key.cmp(&b.sort_key).then(a.name.cmp(&b.name)));
-        if let Some(dir) = sources.state_dir.as_deref() {
-            let plays = stats::read(&dir.join("stats.db"));
-            let favourites = favorites::read(dir);
-            for g in &mut games {
-                if let Some(p) = plays.get(&*g.id) {
-                    g.plays = *p;
-                }
-                g.favourite = favourites.contains(&*g.id);
-            }
-        }
-        let mut library = Library { collections, games };
-        library.rebuild_derived();
-        library
-    }
-
     /// Rebuilds Recent (the last games played, tools left out) and Favourites in front of the other
     /// collections; either is left out while empty.
     pub fn rebuild_derived(&mut self) {
@@ -198,15 +139,7 @@ impl Library {
             let key = |i: usize| self.games.get(i).map(|g| (&g.sort_key, &g.title));
             key(a).cmp(&key(b))
         });
-        let derived = |name: &str, games: Vec<usize>| Collection {
-            name: name.into(),
-            short_name: name.to_lowercase(),
-            sort_key: sort::key(name),
-            summary: String::new(),
-            tools: false,
-            derived: true,
-            games,
-        };
+        let derived = |name: &str, games: Vec<usize>| Collection { derived: true, ..Collection::new(name, games) };
         let mut front = Vec::new();
         if !recent.is_empty() {
             front.push(derived("Recent", recent));
@@ -246,16 +179,7 @@ pub fn demo_games() -> Vec<Game> {
 pub fn demo_library() -> Library {
     let games = demo_games();
     let n = games.len();
-    let collection = |name: &str, games: Vec<usize>| Collection {
-        name: name.into(),
-        short_name: name.to_lowercase(),
-        sort_key: sort::key(name),
-        summary: String::new(),
-        tools: false,
-        derived: false,
-        games,
-    };
-    Library { collections: vec![collection("Games", (0..n).collect()), collection("More", vec![3, 1])], games }
+    Library { collections: vec![Collection::new("Games", (0..n).collect()), Collection::new("More", vec![3, 1])], games }
 }
 
 #[cfg(test)]

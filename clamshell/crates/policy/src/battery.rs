@@ -1,0 +1,301 @@
+//! The battery tab's readings, while it is open: the charge over the last day from UPower (system bus;
+//! it records the battery's level as it changes), and what is using the machine now: CPU time per process
+//! (`/proc/<pid>/stat`) and GPU time per DRM client (see [`crate::drm`]; only our user's processes are
+//! readable), grouped by our scopes (an app instance, the game), else by program name for our user's
+//! processes, else as the system. Sampled every two seconds, sent as [`Reading::Battery`].
+
+use std::collections::HashMap;
+use std::fmt;
+use std::io;
+use std::os::unix::fs::MetadataExt;
+use std::sync::mpsc::Receiver;
+use std::thread;
+use std::time::{Duration, Instant};
+
+use clamshell_core::battery::{Battery, Charge, Group, Spender};
+use clamshell_core::{Event, Instance, Reading};
+use zbus::zvariant::OwnedObjectPath;
+
+use crate::dbus::{self, Kept};
+use crate::worker::{self, Next, Worker};
+use crate::{Closed, Sink, cgroup, drm, sys};
+
+const SAMPLE_EVERY: Duration = Duration::from_secs(2);
+const HISTORY_EVERY: Duration = Duration::from_secs(60);
+/// The history's span and how many points to ask for.
+const HISTORY_SPAN: u32 = 24 * 3600;
+const HISTORY_POINTS: u32 = 240;
+/// Spenders sent at most, and the least share of the machine that still counts.
+const MOST: usize = 12;
+const LEAST: f32 = 0.002;
+
+/// UPower's device type for a battery (UpDeviceKind).
+const UPOWER_BATTERY: u32 = 2;
+
+/// A history point's state (UpDeviceState): unknown states are gaps (with a level of 0).
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChargeState {
+    Unknown = 0,
+    Charging = 1,
+}
+
+#[zbus::proxy(interface = "org.freedesktop.UPower", default_service = "org.freedesktop.UPower", default_path = "/org/freedesktop/UPower", gen_async = false)]
+trait UPower {
+    fn enumerate_devices(&self) -> zbus::Result<Vec<OwnedObjectPath>>;
+}
+
+#[zbus::proxy(interface = "org.freedesktop.UPower.Device", default_service = "org.freedesktop.UPower", gen_async = false)]
+trait Device {
+    #[zbus(property, name = "Type")]
+    fn kind(&self) -> zbus::Result<u32>;
+    #[zbus(property)]
+    fn power_supply(&self) -> zbus::Result<bool>;
+    /// (time, value, state) points, newest first.
+    fn get_history(&self, kind: &str, timespan: u32, resolution: u32) -> zbus::Result<Vec<(u32, f64, u32)>>;
+}
+
+/// Sampling starts when the battery tab opens and stops when it closes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Command {
+    Start,
+    Stop,
+}
+
+#[derive(Debug)]
+enum Error {
+    Bus(zbus::Error),
+    NoBattery,
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::Bus(e) => write!(f, "{e}"),
+            Error::NoBattery => write!(f, "UPower has no battery"),
+        }
+    }
+}
+
+impl From<zbus::Error> for Error {
+    fn from(e: zbus::Error) -> Self {
+        Error::Bus(e)
+    }
+}
+
+pub fn spawn(sink: impl Sink) -> io::Result<Worker<Command>> {
+    Worker::spawn("battery", move |commands| {
+        let _ = sample(&commands, &sink);
+    })
+}
+
+/// Samples every two seconds while started (the history once a minute), until the commands or the UI
+/// go.
+fn sample(commands: &Receiver<Command>, sink: &impl Sink) -> Result<(), Closed> {
+    let mut sampling = false;
+    let mut sampler = Sampler::default();
+    let mut battery = Battery::default();
+    let mut last_history: Option<Instant> = None;
+    let mut upower = Kept::default();
+    loop {
+        match worker::next(commands, sampling.then_some(SAMPLE_EVERY)) {
+            Next::Command(command) => {
+                sampling = command == Command::Start;
+                sampler = Sampler::default();
+                last_history = None;
+                battery.spenders.clear();
+            }
+            Next::Elapsed => {}
+            Next::Disconnected => return Ok(()),
+        }
+        if !sampling {
+            continue;
+        }
+        if last_history.is_none_or(|t| t.elapsed() >= HISTORY_EVERY) {
+            last_history = Some(Instant::now());
+            match history(&mut upower) {
+                Ok(h) => {
+                    battery.history = h;
+                    battery.has_history = true;
+                }
+                Err(e) => {
+                    log::debug!("battery: no charge history: {e}");
+                    battery.has_history = false;
+                }
+            }
+        }
+        battery.spenders = sampler.sample();
+        sink.send(Event::Reading(Reading::Battery(battery.clone())))?;
+    }
+}
+
+/// The battery's charge over the last day, oldest first, from UPower (its connection kept between
+/// calls).
+fn history(upower: &mut Kept) -> Result<Vec<Charge>, Error> {
+    let charges = read_history(upower.get()?);
+    if let Err(Error::Bus(e)) = &charges {
+        upower.failed(e);
+    }
+    charges
+}
+
+fn read_history(conn: &zbus::blocking::Connection) -> Result<Vec<Charge>, Error> {
+    for path in dbus::default_proxy::<UPowerProxy>(conn)?.enumerate_devices()? {
+        let device: DeviceProxy = dbus::proxy(conn, path.as_str())?;
+        if device.kind()? != UPOWER_BATTERY || !device.power_supply()? {
+            continue;
+        }
+        return Ok(charges(device.get_history("charge", HISTORY_SPAN, HISTORY_POINTS)?));
+    }
+    Err(Error::NoBattery)
+}
+
+/// UPower's history points (newest first; unknown states are gaps with a level of 0) as charges.
+fn charges(points: Vec<(u32, f64, u32)>) -> Vec<Charge> {
+    let mut out: Vec<Charge> = points
+        .into_iter()
+        .filter(|&(_, _, state)| state != ChargeState::Unknown as u32)
+        .map(|(at, level, state)| Charge { at: u64::from(at), level: level.round().clamp(0.0, 100.0) as u8, charging: state == ChargeState::Charging as u32 })
+        .collect();
+    out.sort_by_key(|c| c.at);
+    out
+}
+
+/// One process's counters at a sample.
+struct Counters {
+    group: Group,
+    /// CPU time in clock ticks.
+    cpu: u64,
+    /// GPU time in ns per DRM client id.
+    gpu: HashMap<u64, u64>,
+}
+
+/// Turns two readings of every process into each group's share of the machine.
+#[derive(Default)]
+struct Sampler {
+    last: HashMap<u32, Counters>,
+    at: Option<Instant>,
+}
+
+impl Sampler {
+    fn sample(&mut self) -> Vec<Spender> {
+        let now = Instant::now();
+        let current = read_processes();
+        let mut spenders: Vec<Spender> = Vec::new();
+        if let Some(at) = self.at {
+            let seconds = now.duration_since(at).as_secs_f32().max(0.1);
+            let ticks = rustix::param::clock_ticks_per_second() as f32;
+            let cores = thread::available_parallelism().map_or(1, |n| n.get()) as f32;
+            for (pid, now) in &current {
+                // Processes that started since the last reading count from the next one.
+                let Some(before) = self.last.get(pid) else {
+                    continue;
+                };
+                let cpu = now.cpu.saturating_sub(before.cpu) as f32 / ticks / seconds / cores;
+                let gpu_ns: u64 = now.gpu.iter().map(|(client, ns)| ns.saturating_sub(before.gpu.get(client).copied().unwrap_or(*ns))).sum();
+                let gpu = gpu_ns as f32 / 1e9 / seconds;
+                if cpu <= 0.0 && gpu <= 0.0 {
+                    continue;
+                }
+                match spenders.iter_mut().find(|s| s.group == now.group) {
+                    Some(s) => {
+                        s.cpu += cpu;
+                        s.gpu += gpu;
+                    }
+                    None => spenders.push(Spender { group: now.group.clone(), cpu, gpu }),
+                }
+            }
+        }
+        for s in &mut spenders {
+            s.cpu = s.cpu.min(1.0);
+            s.gpu = s.gpu.min(1.0);
+        }
+        spenders.retain(|s| s.load() >= LEAST);
+        spenders.sort_by(|a, b| b.load().total_cmp(&a.load()));
+        spenders.truncate(MOST);
+        self.last = current;
+        self.at = Some(now);
+        spenders
+    }
+}
+
+fn read_processes() -> HashMap<u32, Counters> {
+    let me = rustix::process::getuid().as_raw();
+    let mut out = HashMap::new();
+    for (pid, dir) in sys::processes() {
+        let Some((comm, cpu)) = sys::text(dir.join("stat")).as_deref().and_then(parse_stat) else {
+            continue;
+        };
+        let mine = std::fs::metadata(&dir).is_ok_and(|m| m.uid() == me);
+        let scope = cgroup::unit_of(pid).and_then(|unit| Instance::from_unit(&unit));
+        let group = match (scope, mine) {
+            (Some(instance), _) => Group::Instance(instance),
+            (None, true) => Group::Process(comm),
+            (None, false) => Group::System,
+        };
+        let gpu = if mine { drm::clients(&dir) } else { HashMap::new() };
+        out.insert(pid, Counters { group, cpu, gpu });
+    }
+    out
+}
+
+/// `/proc/<pid>/stat`: the process name and its user and system CPU time (clock ticks).
+fn parse_stat(text: &str) -> Option<(String, u64)> {
+    let open = text.find('(')?;
+    let close = text.rfind(')')?;
+    let comm = text.get(open + 1..close)?.to_owned();
+    // After the name: state, ppid, ... utime is the 14th field of the line, the 12th after the name.
+    let mut fields = text.get(close + 2..)?.split_whitespace();
+    let utime: u64 = fields.nth(11)?.parse().ok()?;
+    let stime: u64 = fields.next()?.parse().ok()?;
+    Some((comm, utime + stime))
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn process_counters() {
+        let stat = "1234 (Web Content) S 1 2 3 4 5 6 7 8 9 10 250 50 0 0 20 0 1 0";
+        assert_eq!(parse_stat(stat), Some(("Web Content".into(), 300)));
+    }
+
+    #[test]
+    fn upower_history_without_its_gaps_oldest_first() {
+        let points = vec![(300, 51.0, 2), (200, 52.0, 1), (200, 0.0, 0), (100, 53.4, 2)];
+        let levels: Vec<(u64, u8, bool)> = charges(points).iter().map(|c| (c.at, c.level, c.charging)).collect();
+        assert_eq!(levels, [(100, 53, false), (200, 52, true), (300, 51, false)]);
+    }
+
+    /// On any Linux: two samples a moment apart find someone busy (this test, at least).
+    #[test]
+    fn sampling_finds_the_busy() {
+        let mut sampler = Sampler::default();
+        assert!(sampler.sample().is_empty(), "the first reading only primes");
+        let end = Instant::now() + Duration::from_millis(300);
+        let mut x = 0u64;
+        while Instant::now() < end {
+            x = x.wrapping_add(1);
+        }
+        assert!(x > 0);
+        assert!(!sampler.sample().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod live {
+    use super::*;
+
+    /// With UPower running (a desktop): reads the charge history, or says why there is none; nothing is
+    /// changed (run by hand: `--ignored --nocapture`).
+    #[test]
+    #[ignore]
+    fn reads_upower() {
+        match history(&mut Kept::default()) {
+            Ok(charges) => println!("{} points, the last {:?}", charges.len(), charges.last()),
+            Err(e) => println!("no history: {e}"),
+        }
+    }
+}

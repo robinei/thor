@@ -1,0 +1,55 @@
+//! The command line: what the program is asked to do, read once.
+
+use std::path::PathBuf;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Command {
+    /// No arguments: run the session (the UI and every policy thread).
+    Run,
+    /// `--run FILE`: become a launched job's program (sway's exec starts us this way; see
+    /// clamshell_policy::job).
+    RunJob(PathBuf),
+    /// `--launcher-example`: print an example launcher.json, to start one from.
+    LauncherExample,
+    /// `--mangohud-env`: print the environment that makes a game (started by hand) report its frame rate
+    /// here.
+    MangohudEnv,
+    /// `--library`: print the collections and games found (Pegasus game dirs and Steam).
+    Library,
+    /// `--snapshot DIR`: draw both screens at the Thor's size into PNG files, no Wayland needed.
+    Snapshot(PathBuf),
+}
+
+pub const USAGE: &str = "usage: clamshell [--snapshot DIR | --library | --launcher-example | --mangohud-env | --run FILE]";
+
+/// The command the arguments (without the program's name) ask for.
+pub fn parse(args: &[String]) -> Option<Command> {
+    Some(match args {
+        [] => Command::Run,
+        [flag, file] if flag == "--run" => Command::RunJob(file.into()),
+        [flag, dir] if flag == "--snapshot" => Command::Snapshot(dir.into()),
+        [flag] if flag == "--launcher-example" => Command::LauncherExample,
+        [flag] if flag == "--mangohud-env" => Command::MangohudEnv,
+        [flag] if flag == "--library" => Command::Library,
+        _ => return None,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(line: &str) -> Vec<String> {
+        line.split_whitespace().map(Into::into).collect()
+    }
+
+    #[test]
+    fn commands() {
+        assert_eq!(parse(&args("")), Some(Command::Run));
+        assert_eq!(parse(&args("--snapshot /tmp/s")), Some(Command::Snapshot("/tmp/s".into())));
+        assert_eq!(parse(&args("--run /run/j.json")), Some(Command::RunJob("/run/j.json".into())));
+        assert_eq!(parse(&args("--library")), Some(Command::Library));
+        assert_eq!(parse(&args("--snapshot")), None, "without its dir");
+        assert_eq!(parse(&args("--frobnicate")), None);
+    }
+}

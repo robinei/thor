@@ -1,18 +1,26 @@
-//! A launch handed to sway's `exec` without its arguments going through sway's command parser (which
+//! Starting a program as an instance of ours (an app or a game), in its systemd scope: under sway,
+//! through sway's `exec`, aimed at the instance's workspace, so its first window opens there; elsewhere
+//! as a child process.
+//!
+//! A launch is handed to sway's `exec` without its arguments going through sway's command parser (which
 //! splits at ';' and ','): the job is written to a file, sway runs `clamshell --run <file>`, and that reads
 //! it, deletes it and becomes the program (exec: the same process, so sway's launch tracking and its
 //! startup token carry over), inside the job's systemd scope.
 
+use std::fmt;
 use std::io;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, Command, Stdio};
 
 use serde::{Deserialize, Serialize};
 
+use crate::sway;
+use crate::worker::{self, Worker};
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Job {
-    /// The scope's name (without `.scope`), also the instance's workspace for apps.
+    /// The scope's name (without `.scope`), also the instance's workspace.
     pub unit: String,
     /// Program and arguments.
     pub argv: Vec<String>,
@@ -23,22 +31,48 @@ pub struct Job {
     pub scope: bool,
 }
 
-fn dir() -> PathBuf {
-    std::env::var_os("XDG_RUNTIME_DIR").map_or_else(std::env::temp_dir, PathBuf::from).join("clamshell/jobs")
+#[derive(Debug)]
+pub enum Error {
+    Io(io::Error),
+    Json(serde_json::Error),
+    EmptyCommand,
+    SwayGone,
 }
 
-/// Writes the job where `--run` will read it; returns its path.
-pub fn write(job: &Job) -> io::Result<PathBuf> {
-    let dir = dir();
-    std::fs::create_dir_all(&dir)?;
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::Io(e) => write!(f, "{e}"),
+            Error::Json(e) => write!(f, "{e}"),
+            Error::EmptyCommand => write!(f, "empty command"),
+            Error::SwayGone => write!(f, "the sway thread is gone"),
+        }
+    }
+}
+
+impl From<io::Error> for Error {
+    fn from(e: io::Error) -> Self {
+        Error::Io(e)
+    }
+}
+
+impl From<serde_json::Error> for Error {
+    fn from(e: serde_json::Error) -> Self {
+        Error::Json(e)
+    }
+}
+
+/// Writes the job into `dir`, where `--run` will read it; returns its path.
+pub fn write(dir: &Path, job: &Job) -> Result<PathBuf, Error> {
+    std::fs::create_dir_all(dir)?;
     let path = dir.join(format!("{}.json", job.unit));
-    std::fs::write(&path, serde_json::to_vec(job).map_err(io::Error::other)?)?;
+    std::fs::write(&path, serde_json::to_vec(job)?)?;
     Ok(path)
 }
 
 /// `program` with `args`, in a systemd scope named `unit` (`--user`, collected when it ends) when
 /// `scope`, else as it is.
-pub fn scoped(scope: bool, unit: &str, program: impl AsRef<std::ffi::OsStr>, args: &[impl AsRef<std::ffi::OsStr>]) -> Command {
+fn scoped(scope: bool, unit: &str, program: impl AsRef<std::ffi::OsStr>, args: &[impl AsRef<std::ffi::OsStr>]) -> Command {
     let mut cmd = if scope {
         let mut cmd = Command::new("systemd-run");
         cmd.args(["--user", "--scope", "--quiet", "--collect", &format!("--unit={unit}"), "--"]).arg(program);
@@ -50,7 +84,7 @@ pub fn scoped(scope: bool, unit: &str, program: impl AsRef<std::ffi::OsStr>, arg
     cmd
 }
 
-/// The command a job runs as.
+/// The command a job runs as: in its workdir, else in HOME.
 pub fn command(job: &Job) -> Option<Command> {
     let (program, args) = job.argv.split_first()?;
     let mut cmd = scoped(job.scope, &job.unit, program, args);
@@ -63,15 +97,56 @@ pub fn command(job: &Job) -> Option<Command> {
 }
 
 /// `--run <file>`: becomes the job's program. Returns only if that fails.
-pub fn run(path: &Path) -> io::Error {
-    let job: Job = match std::fs::read(path).map_err(io::Error::other).and_then(|b| serde_json::from_slice(&b).map_err(io::Error::other)) {
+pub fn run(path: &Path) -> Error {
+    let job: Job = match std::fs::read(path).map_err(Error::from).and_then(|b| Ok(serde_json::from_slice(&b)?)) {
         Ok(job) => job,
         Err(e) => return e,
     };
     let _ = std::fs::remove_file(path);
     match command(&job) {
-        Some(mut cmd) => cmd.exec(),
-        None => io::Error::other("empty command"),
+        Some(mut cmd) => cmd.exec().into(),
+        None => Error::EmptyCommand,
+    }
+}
+
+/// Waits for a child on a thread of its own, so it is reaped whenever it ends (whether it runs is
+/// systemd's list's to say, or the caller's).
+pub fn reap(mut child: Child) {
+    if let Err(e) = worker::detached("reaper", move || drop(child.wait())) {
+        log::warn!("reaper: {e}");
+    }
+}
+
+/// How a job was started.
+#[derive(Debug)]
+pub enum Started {
+    /// By sway: it runs once its scope is there.
+    Sway,
+    Child(Child),
+}
+
+/// Starts jobs: through sway where there is sway (written to `jobs`), else as child processes.
+#[derive(Clone)]
+pub struct Runner {
+    pub jobs: PathBuf,
+    pub sway: Option<Worker<sway::Command>>,
+}
+
+impl Runner {
+    pub fn start(&self, job: &Job) -> Result<Started, Error> {
+        if let Some(sway) = &self.sway {
+            let path = write(&self.jobs, job)?;
+            sway.try_send(sway::Command::Launch { workspace: job.unit.clone(), job: path }).map_err(|_| Error::SwayGone)?;
+            return Ok(Started::Sway);
+        }
+        let mut cmd = command(job).ok_or(Error::EmptyCommand)?;
+        // Its own process group: our signals (a Ctrl-C in a terminal) don't reach it.
+        Ok(Started::Child(cmd.stdin(Stdio::null()).process_group(0).spawn()?))
+    }
+
+    /// The same, without sway: jobs start as child processes.
+    pub fn without_sway(&self) -> Runner {
+        Runner { jobs: self.jobs.clone(), sway: None }
     }
 }
 
@@ -82,6 +157,7 @@ mod tests {
 
     #[test]
     fn a_job_round_trips_and_runs_in_its_scope() {
+        let dir = std::env::temp_dir().join(format!("clamshell-jobs-{}", std::process::id()));
         let job = Job {
             unit: format!("clamshell-app-jobtest-{}-0", std::process::id()),
             argv: vec!["prog".into(), "a b,c;d".into()],
@@ -89,14 +165,27 @@ mod tests {
             workdir: Some("/tmp".into()),
             scope: true,
         };
-        let path = write(&job).unwrap();
+        let path = write(&dir, &job).unwrap();
         let back: Job = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(back, job);
-        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir_all(&dir);
         let cmd = command(&job).unwrap();
         let args: Vec<&str> = cmd.get_args().filter_map(|a| a.to_str()).collect();
         assert_eq!(cmd.get_program(), "systemd-run");
         assert_eq!(args.last(), Some(&"a b,c;d"), "arguments untouched");
         assert!(args.contains(&format!("--unit={}", job.unit).as_str()));
+    }
+
+    #[test]
+    fn without_sway_a_job_is_a_child() {
+        let runner = Runner { jobs: std::env::temp_dir(), sway: None };
+        let job = Job { unit: "u".into(), argv: vec!["true".into()], env: vec![], workdir: None, scope: false };
+        let started = runner.start(&job).unwrap();
+        assert!(matches!(started, Started::Child(_)));
+        if let Started::Child(mut child) = started {
+            assert!(child.wait().unwrap().success());
+        }
+        let empty = Job { argv: vec![], ..job };
+        assert!(matches!(runner.start(&empty), Err(Error::EmptyCommand)));
     }
 }

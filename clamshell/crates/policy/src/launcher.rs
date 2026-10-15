@@ -1,7 +1,7 @@
-//! Starting games and knowing when they end. Each request runs on a thread of its own, so games run side
-//! by side.
+//! Starting games and knowing when they end, and starting the dock's apps. Each game runs on a thread
+//! of its own, so games run side by side.
 //!
-//! - A Pegasus launch command is resolved as Pegasus does (library::launch) and run in its own systemd
+//! - A Pegasus launch command is resolved as Pegasus does (library's `launch`) and run in its own systemd
 //!   scope where there is a user session (`systemd-run --user --scope`), so restarting ClamShell
 //!   doesn't end the game; the thread waits for it.
 //! - A Steam game is started with `steam -applaunch <id>`; it counts as running while Steam's launcher
@@ -9,26 +9,29 @@
 //!
 //! Every play is added to stats.db (Pegasus' format) and reported, with its start and duration.
 
+use std::fmt;
 use std::io;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
-use std::sync::mpsc::Receiver;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use clamshell_core::{GameEvent, Instance, Launch};
-use clamshell_library::{launch, stats};
+use clamshell_core::{Event, GameEvent, Instance, Launch};
+use clamshell_library::LaunchSpec;
 
-use crate::{Sink, job, sway, units};
-use std::sync::mpsc::Sender;
+use crate::job::{self, Job, Runner, Started};
+use crate::library::stats;
+use crate::worker::{self, Worker};
+use crate::{Closed, Sink, command, sys, units};
 
 /// How long sway may take to start a game (its scope to appear).
 const GAME_START: Duration = Duration::from_secs(30);
-
 /// How long Steam may take to start a game (it may need to start or update first).
 const STEAM_START: Duration = Duration::from_secs(120);
+/// How long a game asked to quit has before what is left of it is killed.
+const QUIT_GRACE: Duration = Duration::from_secs(5);
 
 pub struct Request {
     pub game: Arc<str>,
@@ -36,27 +39,64 @@ pub struct Request {
     pub instance: Instance,
     pub launch: Launch,
     pub file: Option<PathBuf>,
-    /// This game's own environment (its MangoHud config), on top of the config's.
+    /// The game's environment (its MangoHud config, its own variables).
     pub env: Vec<(String, String)>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Clone)]
 pub struct Config {
     /// Where plays are recorded; `None`: not recorded.
     pub stats_db: Option<PathBuf>,
-    /// Added to every game's environment (MangoHud).
-    pub env: Vec<(String, String)>,
     /// Run games in their own systemd scope.
     pub scope: bool,
-    /// Under sway: launches go through it (see [`crate::sway`]), so the game's window opens on the
+    /// How jobs start: under sway, through it (see [`crate::sway`]), so the game's window opens on the
     /// game's workspace.
-    pub sway: Option<Sender<sway::Command>>,
+    pub jobs: Runner,
 }
 
-impl Config {
-    /// Whether there is a systemd user session to put games in scopes of.
-    pub fn has_user_systemd() -> bool {
-        std::env::var_os("XDG_RUNTIME_DIR").is_some_and(|d| Path::new(&d).join("systemd/private").exists())
+#[derive(Debug)]
+pub enum Error {
+    Io(io::Error),
+    Job(job::Error),
+    Units(units::Error),
+    NoFile,
+    NoCommand,
+    /// The instance has no scope to follow the game by (only apps' and games' instances have one).
+    NoScope,
+    EmptyCommand,
+    SteamDidNotStart,
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::Io(e) => write!(f, "{e}"),
+            Error::Job(e) => write!(f, "{e}"),
+            Error::Units(e) => write!(f, "{e}"),
+            Error::NoFile => write!(f, "no file to launch"),
+            Error::NoCommand => write!(f, "no launch command"),
+            Error::NoScope => write!(f, "the instance has no scope"),
+            Error::EmptyCommand => write!(f, "empty launch command"),
+            Error::SteamDidNotStart => write!(f, "Steam didn't start it"),
+        }
+    }
+}
+
+impl From<io::Error> for Error {
+    fn from(e: io::Error) -> Self {
+        Error::Io(e)
+    }
+}
+
+impl From<job::Error> for Error {
+    fn from(e: job::Error) -> Self {
+        Error::Job(e)
+    }
+}
+
+impl From<units::Error> for Error {
+    fn from(e: units::Error) -> Self {
+        Error::Units(e)
     }
 }
 
@@ -64,12 +104,14 @@ fn now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
-pub fn spawn(config: Config, requests: Receiver<Request>, sink: impl Sink + Clone) -> io::Result<JoinHandle<()>> {
-    thread::Builder::new().name("launcher".into()).spawn(move || {
-        let mut games = Vec::new();
+pub fn spawn(config: Config, sink: impl Sink + Clone) -> io::Result<Worker<Request>> {
+    Worker::spawn("launcher", move |requests| {
+        let mut games: Vec<JoinHandle<()>> = Vec::new();
         for request in requests {
             let (config, sink) = (config.clone(), sink.clone());
-            match thread::Builder::new().name("game".into()).spawn(move || run(&config, &request, &sink)) {
+            match thread::Builder::new().name("game".into()).spawn(move || {
+                let _ = play(&config, &request, &sink);
+            }) {
                 Ok(handle) => games.push(handle),
                 Err(e) => log::warn!("launcher: {e}"),
             }
@@ -82,128 +124,157 @@ pub fn spawn(config: Config, requests: Receiver<Request>, sink: impl Sink + Clon
     })
 }
 
-/// Runs one game until it ends; reports and records its play.
-fn run(config: &Config, request: &Request, sink: &impl Sink) {
-    let game = request.game.clone();
-    let mut env = config.clone();
-    env.env.extend(request.env.iter().cloned());
-    let played = match &request.launch {
-        Launch::Command { command, workdir, basedir } => match request.file.as_deref() {
-            Some(file) => run_command(&env, command, workdir, basedir, file, &request.instance, &game, sink),
-            None => Err(io::Error::other("no file to launch")),
-        },
-        Launch::Steam { appid } => run_steam(&env, *appid, &game, sink),
-        Launch::None => Err(io::Error::other("no launch command")),
-    };
-    let event = match played {
-        Ok((start, duration)) => {
-            log::info!("launcher: {game} ran {duration} s");
-            if let Some(db) = &config.stats_db
-                && let Err(e) = stats::record(db, &game, start, duration)
-            {
-                log::warn!("launcher: recording the play: {e}");
+/// A game that has started.
+enum Running {
+    /// Started by sway: it runs while its scope does.
+    Scope(String),
+    Child(Child),
+    /// Steam's launcher for it runs (this marker in its command line).
+    Steam(String),
+}
+
+impl Running {
+    /// Waits for the game to end.
+    fn wait(self) -> Result<(), Error> {
+        match self {
+            Running::Scope(unit) => Ok(units::wait(&unit, GAME_START)?),
+            Running::Child(mut child) => child.wait().map(drop).map_err(Error::from),
+            Running::Steam(marker) => {
+                while steam_running(&marker) {
+                    thread::sleep(Duration::from_secs(2));
+                }
+                Ok(())
             }
-            GameEvent::Played { game, start, duration }
         }
-        Err(e) => {
-            log::warn!("launcher: {game}: {e}");
-            GameEvent::LaunchFailed(game)
+    }
+}
+
+/// Starts one game, waits until it ends, and reports and records its play (or that it couldn't start);
+/// ends early if the UI is gone.
+fn play(config: &Config, request: &Request, sink: &impl Sink) -> Result<(), Closed> {
+    let game = &request.game;
+    let failed = |e: Error| {
+        log::warn!("launcher: {game}: {e}");
+        GameEvent::LaunchFailed(game.clone())
+    };
+    let event = match start(config, request) {
+        Err(e) => failed(e),
+        Ok(running) => {
+            let (start, started) = (now(), Instant::now());
+            sink.send(GameEvent::Started(game.clone()).into())?;
+            match running.wait() {
+                Err(e) => failed(e),
+                Ok(()) => {
+                    let duration = started.elapsed().as_secs();
+                    log::info!("launcher: {game} ran {duration} s");
+                    if let Some(db) = &config.stats_db
+                        && let Err(e) = stats::record(db, game, start, duration)
+                    {
+                        log::warn!("launcher: recording the play: {e}");
+                    }
+                    GameEvent::Played { game: game.clone(), start, duration }
+                }
+            }
         }
     };
-    sink.send(event.into());
+    sink.send(Event::Game(event))
 }
 
-#[allow(clippy::too_many_arguments)]
-fn run_command(
-    config: &Config,
-    command: &str,
-    workdir: &str,
-    basedir: &Path,
-    file: &Path,
-    instance: &Instance,
-    game: &Arc<str>,
-    sink: &impl Sink,
-) -> io::Result<(u64, u64)> {
-    let c = launch::resolve(command, workdir, basedir, file).ok_or_else(|| io::Error::other("empty launch command"))?;
-    let unit = instance.name();
-    // Under sway (and systemd): sway starts it for the game's workspace; it has ended when its scope has.
-    if let (Some(sway), true) = (&config.sway, config.scope) {
-        let job = job::Job {
-            unit: unit.clone(),
-            argv: std::iter::once(c.program.to_string_lossy().into_owned()).chain(c.args.iter().cloned()).collect(),
-            env: config.env.clone(),
-            workdir: Some(c.workdir.clone()),
-            scope: true,
-        };
-        let path = job::write(&job)?;
-        sway.send(sway::Command::Launch { workspace: unit, job: path })
-            .map_err(|_| io::Error::other("the sway thread is gone"))?;
-        let start = now();
-        let started = Instant::now();
-        if !sink.send(GameEvent::Started(game.clone()).into()) {
-            return Err(io::Error::other("shutting down"));
-        }
-        let scope = instance.unit().ok_or_else(|| io::Error::other("a game's instance has a scope"))?;
-        units::wait(&scope, GAME_START)?;
-        return Ok((start, started.elapsed().as_secs()));
+/// Starts the game a request is for.
+fn start(config: &Config, request: &Request) -> Result<Running, Error> {
+    match &request.launch {
+        Launch::Command(spec) => start_command(config, request, spec, request.file.as_deref().ok_or(Error::NoFile)?),
+        Launch::Steam { appid } => start_steam(&request.env, *appid),
+        Launch::None => Err(Error::NoCommand),
     }
-    let mut cmd = crate::job::scoped(config.scope, &unit, &c.program, &c.args);
-    // Its own process group: our signals (a Ctrl-C in a terminal) don't reach it.
-    cmd.current_dir(&c.workdir).envs(config.env.iter().map(|(k, v)| (k, v))).stdin(Stdio::null()).process_group(0);
-    let mut child = cmd.spawn()?;
-    let start = now();
-    let started = Instant::now();
-    if !sink.send(GameEvent::Started(game.clone()).into()) {
-        return Err(io::Error::other("shutting down"));
-    }
-    child.wait()?;
-    Ok((start, started.elapsed().as_secs()))
 }
 
-fn run_steam(config: &Config, appid: u32, game: &Arc<str>, sink: &impl Sink) -> io::Result<(u64, u64)> {
+fn start_command(config: &Config, request: &Request, spec: &LaunchSpec, file: &Path) -> Result<Running, Error> {
+    let c = spec.resolve(file).ok_or(Error::EmptyCommand)?;
+    let job = Job {
+        unit: request.instance.name(),
+        argv: std::iter::once(c.program.to_string_lossy().into_owned()).chain(c.args.iter().cloned()).collect(),
+        env: request.env.clone(),
+        workdir: Some(c.workdir.clone()),
+        scope: config.scope,
+    };
+    // Through sway only in a scope: the scope is how the game is followed then.
+    let jobs = if config.scope { config.jobs.clone() } else { config.jobs.without_sway() };
+    Ok(match jobs.start(&job)? {
+        Started::Sway => Running::Scope(request.instance.unit().ok_or(Error::NoScope)?),
+        Started::Child(child) => Running::Child(child),
+    })
+}
+
+fn start_steam(env: &[(String, String)], appid: u32) -> Result<Running, Error> {
     let mut steam = Command::new("steam");
-    steam.args(["-applaunch", &appid.to_string()]).envs(config.env.iter().map(|(k, v)| (k, v))).stdin(Stdio::null()).process_group(0);
-    let mut child = steam.spawn()?;
-    // If Steam wasn't running, this process becomes Steam itself: reap it whenever it ends.
-    thread::spawn(move || child.wait());
+    steam.args(["-applaunch", &appid.to_string()]).envs(env.iter().map(|(k, v)| (k, v))).stdin(Stdio::null()).process_group(0);
+    // If Steam wasn't running, this process becomes Steam itself: reaped whenever it ends.
+    job::reap(steam.spawn()?);
     let marker = format!("AppId={appid}");
     let asked = Instant::now();
     while !steam_running(&marker) {
         if asked.elapsed() > STEAM_START {
-            return Err(io::Error::other("Steam didn't start it"));
+            return Err(Error::SteamDidNotStart);
         }
         thread::sleep(Duration::from_secs(1));
     }
-    let start = now();
-    let started = Instant::now();
-    if !sink.send(GameEvent::Started(game.clone()).into()) {
-        return Err(io::Error::other("shutting down"));
-    }
-    while steam_running(&marker) {
-        thread::sleep(Duration::from_secs(2));
-    }
-    Ok((start, started.elapsed().as_secs()))
+    Ok(Running::Steam(marker))
 }
 
 /// Whether Steam's launcher for an app (`... SteamLaunch AppId=<id> ...`) is running.
 fn steam_running(marker: &str) -> bool {
-    let Ok(procs) = std::fs::read_dir("/proc") else {
-        return false;
-    };
-    procs.flatten().any(|p| {
-        std::fs::read(p.path().join("cmdline")).is_ok_and(|c| {
+    sys::processes().any(|(_, dir)| {
+        std::fs::read(dir.join("cmdline")).is_ok_and(|c| {
             let mut args = c.split(|&b| b == 0);
             args.any(|a| a == b"SteamLaunch") && c.split(|&b| b == 0).any(|a| a == marker.as_bytes())
         })
     })
 }
 
+/// Starts a dock app's command as a new instance (its scope and workspace): under sway, shown once its
+/// window is there; elsewhere just started (and reaped whenever it ends: systemd's list says whether it
+/// runs).
+pub fn run_app(jobs: &Runner, instance: &Instance, command: &[String], scope: bool) {
+    let name = instance.name();
+    log::info!("running {command:?} as {name}");
+    let job = Job { unit: name.clone(), argv: command.to_vec(), env: vec![], workdir: None, scope };
+    match jobs.start(&job) {
+        Ok(Started::Sway) => {}
+        Ok(Started::Child(child)) => job::reap(child),
+        Err(e) => log::warn!("{name}: {e}"),
+    }
+}
+
+/// After a polite close: kills what is left of these scopes (the game's) if they are still there in a
+/// few seconds.
+pub fn end_later(units: Vec<String>) {
+    if units.is_empty() {
+        return;
+    }
+    let ended = worker::detached("quit", move || {
+        thread::sleep(QUIT_GRACE);
+        for unit in units {
+            if command::succeeds("systemctl", &["--user", "is-active", "--quiet", &unit]) {
+                log::info!("{unit} still runs: killing it");
+                command::run("systemctl", &["--user", "kill", "--signal=SIGKILL", &unit]);
+            }
+        }
+    });
+    if let Err(e) = ended {
+        log::warn!("quit: {e}");
+    }
+}
+
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use clamshell_core::Event;
-    use std::sync::Mutex;
+    use std::sync::mpsc;
+
+    fn config(stats_db: Option<PathBuf>) -> Config {
+        Config { stats_db, scope: false, jobs: Runner { jobs: std::env::temp_dir(), sway: None } }
+    }
 
     #[test]
     fn runs_a_game_and_records_its_play() {
@@ -214,18 +285,15 @@ mod tests {
         std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
         let db = dir.join("stats.db");
 
-        let events = Arc::new(Mutex::new(Vec::new()));
-        let seen = events.clone();
-        let (tx, rx) = std::sync::mpsc::channel();
-        let config = Config { stats_db: Some(db.clone()), env: vec![], scope: false, sway: None };
-        let handle = spawn(config, rx, move |e| seen.lock().map(|mut v| v.push(e)).is_ok()).unwrap();
+        let (tx, events) = mpsc::channel();
+        let launcher = spawn(config(Some(db.clone())), tx).unwrap();
         let id: Arc<str> = script.to_string_lossy().into();
-        let launch = Launch::Command { command: "\"{file.path}\"".into(), workdir: String::new(), basedir: dir.clone() };
-        tx.send(Request { game: id.clone(), instance: Instance::Game { secs: u64::from(std::process::id()), n: 0 }, launch, file: Some(script.clone()), env: vec![] }).unwrap();
-        drop(tx);
-        handle.join().unwrap();
+        let launch = Launch::Command(LaunchSpec { command: "\"{file.path}\"".into(), workdir: String::new(), basedir: dir.clone() });
+        let instance = Instance::Game { secs: u64::from(std::process::id()), n: 0 };
+        launcher.send(Request { game: id.clone(), instance, launch, file: Some(script.clone()), env: vec![] });
+        drop(launcher);
 
-        let events = events.lock().unwrap();
+        let events: Vec<Event> = events.iter().collect();
         assert_eq!(events.first(), Some(&Event::Game(GameEvent::Started(id.clone()))));
         assert!(matches!(events.get(1), Some(Event::Game(GameEvent::Played { game, duration, .. })) if *game == id && *duration >= 1));
         assert_eq!(std::fs::read_to_string(dir.join("ran-in")).unwrap().trim(), dir.to_string_lossy(), "in its own dir");
@@ -235,14 +303,12 @@ mod tests {
 
     #[test]
     fn a_missing_program_fails_cleanly() {
-        let events = Arc::new(Mutex::new(Vec::new()));
-        let seen = events.clone();
-        let (tx, rx) = std::sync::mpsc::channel();
-        let handle = spawn(Config::default(), rx, move |e| seen.lock().map(|mut v| v.push(e)).is_ok()).unwrap();
-        let launch = Launch::Command { command: "/nonexistent/game".into(), workdir: String::new(), basedir: "/".into() };
-        tx.send(Request { game: "x".into(), instance: Instance::Game { secs: u64::from(std::process::id()), n: 1 }, launch, file: Some("/tmp".into()), env: vec![] }).unwrap();
-        drop(tx);
-        handle.join().unwrap();
-        assert_eq!(*events.lock().unwrap(), vec![Event::Game(GameEvent::LaunchFailed("x".into()))]);
+        let (tx, events) = mpsc::channel();
+        let launcher = spawn(config(None), tx).unwrap();
+        let launch = Launch::Command(LaunchSpec { command: "/nonexistent/game".into(), workdir: String::new(), basedir: "/".into() });
+        let instance = Instance::Game { secs: u64::from(std::process::id()), n: 1 };
+        launcher.send(Request { game: "x".into(), instance, launch, file: Some("/tmp".into()), env: vec![] });
+        drop(launcher);
+        assert_eq!(events.iter().collect::<Vec<_>>(), vec![Event::Game(GameEvent::LaunchFailed("x".into()))]);
     }
 }

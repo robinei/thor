@@ -1,36 +1,33 @@
-//! Installed Steam games, from Steam's own files: the library folders (`libraryfolders.vdf`), each
-//! game's manifest (`appmanifest_<id>.acf`), and its portrait art in Steam's cache. Steam's tools
-//! (Proton, the Linux runtimes, the redistributables) are left out. Installing and browsing stay in
-//! Steam.
+//! Steam's own files, the parts that need no disk: Valve's KeyValues text (VDF), the library folders
+//! listed in `libraryfolders.vdf`, and what a game's manifest (`appmanifest_<id>.acf`) says. Steam's
+//! tools (Proton, the Linux runtimes, the redistributables) are left out. Finding the files and the art
+//! is clamshell-policy's (`library::steam`).
 
-use std::fs;
-use std::path::{Path, PathBuf};
-
-use crate::Game;
+use std::path::PathBuf;
 
 /// A VDF value: a string, or a block of key-value pairs.
 #[derive(Debug, Clone, PartialEq)]
-enum Value {
+pub enum Value {
     Str(String),
     Block(Vec<(String, Value)>),
 }
 
 impl Value {
-    fn get(&self, key: &str) -> Option<&Value> {
+    pub fn get(&self, key: &str) -> Option<&Value> {
         match self {
             Value::Block(items) => items.iter().find(|(k, _)| k.eq_ignore_ascii_case(key)).map(|(_, v)| v),
             Value::Str(_) => None,
         }
     }
 
-    fn str(&self, key: &str) -> Option<&str> {
+    pub fn str(&self, key: &str) -> Option<&str> {
         match self.get(key)? {
             Value::Str(s) => Some(s),
             Value::Block(_) => None,
         }
     }
 
-    fn blocks(&self) -> impl Iterator<Item = &Value> {
+    pub fn blocks(&self) -> impl Iterator<Item = &Value> {
         let items: &[(String, Value)] = match self {
             Value::Block(items) => items,
             Value::Str(_) => &[],
@@ -41,7 +38,7 @@ impl Value {
 
 /// Parses Valve's KeyValues text ("key" "value", "key" { ... }, `//` comments); the whole file as one
 /// block.
-fn parse_vdf(text: &str) -> Value {
+pub fn parse_vdf(text: &str) -> Value {
     parse_block(&mut tokenize(text).into_iter().peekable())
 }
 
@@ -104,10 +101,9 @@ fn parse_block(tokens: &mut std::iter::Peekable<std::vec::IntoIter<Token>>) -> V
     Value::Block(items)
 }
 
-/// Steam's data folder, if Steam is installed.
-pub fn default_root() -> Option<PathBuf> {
-    let home = PathBuf::from(std::env::var_os("HOME")?);
-    [home.join(".local/share/Steam"), home.join(".steam/steam")].into_iter().find(|p| p.join("steamapps").is_dir())
+/// The library folders `libraryfolders.vdf` lists, in its order.
+pub fn library_folders(vdf: &Value) -> Vec<PathBuf> {
+    vdf.get("libraryfolders").map(|f| f.blocks().filter_map(|b| b.str("path")).map(PathBuf::from).collect()).unwrap_or_default()
 }
 
 /// Steam's own tools, which aren't games.
@@ -115,77 +111,18 @@ fn is_tool(name: &str) -> bool {
     name.starts_with("Proton ") || name.starts_with("Steam Linux Runtime") || name.starts_with("Steamworks Common")
 }
 
-/// The installed games of every Steam library folder.
-pub fn games(root: &Path) -> Vec<Game> {
-    let mut libraries = vec![root.to_path_buf()];
-    if let Ok(text) = fs::read_to_string(root.join("steamapps/libraryfolders.vdf")) {
-        let vdf = parse_vdf(&text);
-        if let Some(folders) = vdf.get("libraryfolders") {
-            for folder in folders.blocks() {
-                if let Some(path) = folder.str("path").map(PathBuf::from)
-                    && !libraries.contains(&path)
-                {
-                    libraries.push(path);
-                }
-            }
-        }
-    }
-    let mut games = Vec::new();
-    for lib in libraries {
-        let Ok(entries) = fs::read_dir(lib.join("steamapps")) else {
-            continue;
-        };
-        let mut manifests: Vec<PathBuf> = entries
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("appmanifest_") && n.ends_with(".acf")))
-            .collect();
-        manifests.sort();
-        for m in manifests {
-            let Ok(text) = fs::read_to_string(&m) else {
-                continue;
-            };
-            if let Some(game) = from_manifest(&parse_vdf(&text), root) {
-                games.push(game);
-            }
-        }
-    }
-    games
-}
-
-fn from_manifest(vdf: &Value, root: &Path) -> Option<Game> {
+/// An installed game a manifest describes: its app id and name; `None` for a tool, a game not fully
+/// installed, or a manifest that doesn't say.
+pub fn manifest(vdf: &Value) -> Option<(u32, &str)> {
     let app = vdf.get("AppState")?;
     let appid: u32 = app.str("appid")?.parse().ok()?;
     let name = app.str("name")?;
     // StateFlags bit 4: fully installed.
     let installed = app.str("StateFlags").and_then(|f| f.parse::<u32>().ok()).is_some_and(|f| f & 4 != 0);
-    if !installed || is_tool(name) {
-        return None;
-    }
-    let mut game = Game::new(&format!("steam:{appid}"), name);
-    game.launch = crate::Launch::Steam { appid };
-    game.box_front = art(&root.join("appcache/librarycache"), appid);
-    Some(game)
-}
-
-/// The game's portrait art in Steam's cache: `<appid>/library_600x900.jpg` (older), or
-/// `<appid>/<hash>/library_capsule.jpg` (newer); the landscape header if there is no portrait.
-fn art(cache: &Path, appid: u32) -> Option<PathBuf> {
-    let dir = cache.join(appid.to_string());
-    let flat = [dir.join("library_600x900.jpg"), cache.join(format!("{appid}_library_600x900.jpg"))];
-    if let Some(p) = flat.into_iter().find(|p| p.is_file()) {
-        return Some(p);
-    }
-    let mut subdirs: Vec<PathBuf> = fs::read_dir(&dir).ok()?.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
-    subdirs.sort();
-    ["library_capsule.jpg", "library_600x900.jpg", "library_header.jpg", "header.jpg"]
-        .iter()
-        .find_map(|name| subdirs.iter().map(|d| d.join(name)).find(|p| p.is_file()))
-        .or_else(|| Some(dir.join("header.jpg")).filter(|p| p.is_file()))
+    (installed && !is_tool(name)).then_some((appid, name))
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
 
@@ -193,23 +130,20 @@ mod tests {
 
     #[test]
     fn reads_a_manifest() {
-        let g = from_manifest(&parse_vdf(MANIFEST), Path::new("/nonexistent")).unwrap();
-        assert_eq!((&*g.id, g.title.as_str()), ("steam:1245620", "ELDEN RING"));
-        assert_eq!(g.launch, crate::Launch::Steam { appid: 1_245_620 });
+        assert_eq!(manifest(&parse_vdf(MANIFEST)), Some((1_245_620, "ELDEN RING")));
     }
 
     #[test]
     fn tools_and_uninstalled_apps_are_left_out() {
         let tool = MANIFEST.replace("ELDEN RING", "Proton Experimental");
-        assert!(from_manifest(&parse_vdf(&tool), Path::new("/")).is_none());
+        assert_eq!(manifest(&parse_vdf(&tool)), None);
         let partial = MANIFEST.replace("\"StateFlags\"\t\t\"4\"", "\"StateFlags\"\t\t\"1026\"");
-        assert!(from_manifest(&parse_vdf(&partial), Path::new("/")).is_none());
+        assert_eq!(manifest(&parse_vdf(&partial)), None);
     }
 
     #[test]
-    fn library_folders() {
+    fn library_folders_in_order() {
         let vdf = parse_vdf("\"libraryfolders\" { \"0\" { \"path\" \"/a\" } \"1\" { \"path\" \"/b\" } } // end");
-        let paths: Vec<&str> = vdf.get("libraryfolders").unwrap().blocks().filter_map(|b| b.str("path")).collect();
-        assert_eq!(paths, vec!["/a", "/b"]);
+        assert_eq!(library_folders(&vdf), vec![PathBuf::from("/a"), PathBuf::from("/b")]);
     }
 }

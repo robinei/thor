@@ -6,23 +6,8 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use clamshell_library::Plays;
 use rusqlite::{Connection, OptionalExtension};
-
-/// A game's plays: how many, how long in all (seconds), and when the last one ended (epoch seconds).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Plays {
-    pub count: u32,
-    pub seconds: u64,
-    pub last: u64,
-}
-
-impl Plays {
-    pub fn add(&mut self, start: u64, duration: u64) {
-        self.count += 1;
-        self.seconds += duration;
-        self.last = self.last.max(start + duration);
-    }
-}
 
 /// Every path's plays; empty if there is no database yet.
 pub fn read(db: &Path) -> HashMap<String, Plays> {
