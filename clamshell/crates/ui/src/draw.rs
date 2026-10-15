@@ -12,6 +12,7 @@ use tiny_skia::{Color, LineCap, LineJoin, Paint, Path, PathBuilder, Pixmap, Prem
 
 use crate::icons::{self, Icon};
 
+/// A rectangle in logical pixels: its top left corner and size.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Rect {
     pub x: f32,
@@ -25,6 +26,14 @@ impl Rect {
         Rect { x, y, w, h }
     }
 
+    pub fn right(&self) -> f32 {
+        self.x + self.w
+    }
+
+    pub fn bottom(&self) -> f32 {
+        self.y + self.h
+    }
+
     pub fn contains(&self, x: f32, y: f32) -> bool {
         x >= self.x && x < self.x + self.w && y >= self.y && y < self.y + self.h
     }
@@ -33,13 +42,57 @@ impl Rect {
         (self.x + self.w / 2.0, self.y + self.h / 2.0)
     }
 
+    /// Smaller by `d` on every side (negative: larger).
     pub fn inset(&self, d: f32) -> Rect {
         Rect::new(self.x + d, self.y + d, self.w - 2.0 * d, self.h - 2.0 * d)
     }
 
-    /// The top `h` of this, and the rest below it.
-    pub fn split_top(&self, h: f32) -> (Rect, Rect) {
-        (Rect::new(self.x, self.y, self.w, h), Rect::new(self.x, self.y + h, self.w, self.h - h))
+    /// Moved by `dx`, `dy`.
+    pub fn shifted(&self, dx: f32, dy: f32) -> Rect {
+        Rect::new(self.x + dx, self.y + dy, self.w, self.h)
+    }
+
+    /// A `w` by `h` rectangle centred in this one.
+    pub fn centered(&self, w: f32, h: f32) -> Rect {
+        Rect::new(self.x + (self.w - w) / 2.0, self.y + (self.h - h) / 2.0, w, h)
+    }
+
+    /// A square of `side` centred in this one (an icon's place).
+    pub fn square_center(&self, side: f32) -> Rect {
+        self.centered(side, side)
+    }
+
+    /// The first line of text of `size` in this: its top, its width, one [`LINE`] high.
+    pub fn top_line(&self, size: f32) -> Rect {
+        Rect::new(self.x, self.y, self.w, size * LINE)
+    }
+
+    /// Cuts the top `h` off this; returns it.
+    pub fn take_top(&mut self, h: f32) -> Rect {
+        let top = Rect::new(self.x, self.y, self.w, h);
+        self.y += h;
+        self.h -= h;
+        top
+    }
+
+    /// Cuts the bottom `h` off this; returns it.
+    pub fn take_bottom(&mut self, h: f32) -> Rect {
+        self.h -= h;
+        Rect::new(self.x, self.y + self.h, self.w, h)
+    }
+
+    /// Cuts the left `w` off this; returns it.
+    pub fn take_left(&mut self, w: f32) -> Rect {
+        let left = Rect::new(self.x, self.y, w, self.h);
+        self.x += w;
+        self.w -= w;
+        left
+    }
+
+    /// Cuts the right `w` off this; returns it.
+    pub fn take_right(&mut self, w: f32) -> Rect {
+        self.w -= w;
+        Rect::new(self.x + self.w, self.y, w, self.h)
     }
 
     /// Cell `i` (row by row) of a grid of `cols` by `rows` equal cells filling this, `gap` between them.
@@ -50,6 +103,95 @@ impl Rect {
         let h = (self.h - (rows - 1) as f32 * gap) / rows as f32;
         let (col, row) = ((i % cols) as f32, (i / cols) as f32);
         Rect::new(self.x + col * (w + gap), self.y + row * (h + gap), w, h)
+    }
+}
+
+/// Lines stacked down an area: each [`Column::next`] takes the next `h` below the last, while there is
+/// room for it.
+#[derive(Debug, Clone, Copy)]
+pub struct Column {
+    area: Rect,
+    y: f32,
+}
+
+impl Column {
+    pub fn new(area: Rect) -> Self {
+        Column { area, y: area.y }
+    }
+
+    /// Where the next line would start.
+    pub fn y(&self) -> f32 {
+        self.y
+    }
+
+    /// The bottom of the area.
+    pub fn end(&self) -> f32 {
+        self.area.y + self.area.h
+    }
+
+    /// Whether `h` more fits.
+    pub fn fits(&self, h: f32) -> bool {
+        self.y + h <= self.end()
+    }
+
+    /// The next `h` of the area, full width; `None` (nothing taken) when it doesn't fit.
+    pub fn next(&mut self, h: f32) -> Option<Rect> {
+        self.fits(h).then(|| self.take(h))
+    }
+
+    /// The next `h`, whether it fits or not.
+    pub fn take(&mut self, h: f32) -> Rect {
+        let r = Rect::new(self.area.x, self.y, self.area.w, h);
+        self.y += h;
+        r
+    }
+
+    /// Leaves `h` empty.
+    pub fn skip(&mut self, h: f32) {
+        self.y += h;
+    }
+
+    /// What is left below the lines taken.
+    pub fn rest(&self) -> Rect {
+        Rect::new(self.area.x, self.y, self.area.w, self.end() - self.y)
+    }
+}
+
+/// Where a line of text starts and how much room it has to the right (for text that runs on over
+/// several lines).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Span {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+}
+
+/// Where text or a picture sits in the room it has, along one axis.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Align {
+    Start,
+    Center,
+    End,
+}
+
+/// A line of text's height, of its size (Noto Sans' ascent and descent, rounded up).
+pub const LINE: f32 = 1.2;
+
+/// A colour as 0xRRGGBB, opaque.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Rgb(pub u32);
+
+impl Rgb {
+    /// At `alpha` (0-1): what is under it shows through.
+    pub fn alpha(self, alpha: f32) -> Color {
+        let c = self.0;
+        Color::from_rgba8((c >> 16) as u8, (c >> 8) as u8, c as u8, (alpha.clamp(0.0, 1.0) * 255.0) as u8)
+    }
+}
+
+impl From<Rgb> for Color {
+    fn from(c: Rgb) -> Color {
+        rgb(c.0)
     }
 }
 
@@ -64,14 +206,12 @@ pub enum Keep {
 
 const ELLIPSIS: &str = "…";
 
+/// The distance between wrapped lines, of the text's size (a little more than [`LINE`], for reading).
+pub const WRAP_LINE: f32 = 1.3;
+
 /// 0xRRGGBB to an opaque colour.
 pub fn rgb(c: u32) -> Color {
     Color::from_rgba8((c >> 16) as u8, (c >> 8) as u8, c as u8, 255)
-}
-
-/// 0xRRGGBB at `alpha` (0-1): what is under it shows through.
-pub fn rgba(c: u32, alpha: f32) -> Color {
-    Color::from_rgba8((c >> 16) as u8, (c >> 8) as u8, c as u8, (alpha.clamp(0.0, 1.0) * 255.0) as u8)
 }
 
 type Glyph = (fontdue::Metrics, Vec<u8>);
@@ -200,10 +340,6 @@ impl<'a> Canvas<'a> {
         y * self.scale + self.offset.1
     }
 
-    fn transform(&self) -> Transform {
-        Transform::from_row(self.scale, 0.0, 0.0, self.scale, self.offset.0, self.offset.1)
-    }
-
     fn paint(color: Color) -> Paint<'static> {
         let mut paint = Paint::default();
         paint.set_color(color);
@@ -212,26 +348,29 @@ impl<'a> Canvas<'a> {
     }
 
     /// A vertical line `px` buffer pixels wide, centred on `x` and snapped to whole pixels (sharp).
-    pub fn vline(&mut self, x: f32, y0: f32, y1: f32, px: u32, color: Color) {
+    pub fn vline(&mut self, x: f32, y0: f32, y1: f32, px: u32, color: impl Into<Color>) {
         let left = (self.px(x) - px as f32 / 2.0).round();
         let (top, bottom) = (self.py(y0).round(), self.py(y1).round());
         if let Some(rect) = tiny_skia::Rect::from_ltrb(left, top, left + px as f32, bottom) {
-            self.pixmap.fill_rect(rect, &Self::paint(color), Transform::identity(), None);
+            self.pixmap.fill_rect(rect, &Self::paint(color.into()), Transform::identity(), None);
         }
     }
 
     /// A horizontal line `px` buffer pixels high, centred on `y` and snapped to whole pixels.
-    pub fn hline(&mut self, x0: f32, x1: f32, y: f32, px: u32, color: Color) {
+    pub fn hline(&mut self, x0: f32, x1: f32, y: f32, px: u32, color: impl Into<Color>) {
         let top = (self.py(y) - px as f32 / 2.0).round();
         let (left, right) = (self.px(x0).round(), self.px(x1).round());
         if let Some(rect) = tiny_skia::Rect::from_ltrb(left, top, right, top + px as f32) {
-            self.pixmap.fill_rect(rect, &Self::paint(color), Transform::identity(), None);
+            self.pixmap.fill_rect(rect, &Self::paint(color.into()), Transform::identity(), None);
         }
     }
 
-    pub fn fill(&mut self, r: Rect, color: Color) {
-        if let Some(rect) = tiny_skia::Rect::from_xywh(r.x, r.y, r.w, r.h) {
-            self.pixmap.fill_rect(rect, &Self::paint(color), self.transform(), None);
+    pub fn fill(&mut self, r: Rect, color: impl Into<Color>) {
+        // In buffer pixels, filled without a transform: tiny-skia fills a transformed rect as a path,
+        // which allocates.
+        let rect = tiny_skia::Rect::from_xywh(self.px(r.x), self.py(r.y), r.w * self.scale, r.h * self.scale);
+        if let Some(rect) = rect {
+            self.pixmap.fill_rect(rect, &Self::paint(color.into()), Transform::identity(), None);
         }
     }
 
@@ -241,22 +380,22 @@ impl<'a> Canvas<'a> {
     }
 
     /// A rounded rectangle, filled.
-    pub fn rounded(&mut self, r: Rect, radius: f32, color: Color) {
+    pub fn rounded(&mut self, r: Rect, radius: f32, color: impl Into<Color>) {
         let shape = RoundedRect::new(r, radius, self.scale, self.offset);
-        self.shade(shape.bounds(1.0), color, |x, y| (0.5 - shape.distance(x, y)).clamp(0.0, 1.0));
+        self.shade(shape.bounds(1.0), color.into(), |x, y| (0.5 - shape.distance(x, y)).clamp(0.0, 1.0));
     }
 
     /// A rounded rectangle's outline, `width` wide, centred on its edge.
-    pub fn outline(&mut self, r: Rect, radius: f32, width: f32, color: Color) {
+    pub fn outline(&mut self, r: Rect, radius: f32, width: f32, color: impl Into<Color>) {
         let shape = RoundedRect::new(r, radius, self.scale, self.offset);
         let half = width * self.scale / 2.0;
-        self.shade(shape.bounds(half + 1.0), color, |x, y| (half + 0.5 - shape.distance(x, y).abs()).clamp(0.0, 1.0));
+        self.shade(shape.bounds(half + 1.0), color.into(), |x, y| (half + 0.5 - shape.distance(x, y).abs()).clamp(0.0, 1.0));
     }
 
-    pub fn circle(&mut self, cx: f32, cy: f32, r: f32, color: Color) {
+    pub fn circle(&mut self, cx: f32, cy: f32, r: f32, color: impl Into<Color>) {
         let (cx, cy, r) = (self.px(cx), self.py(cy), r * self.scale);
         let bounds = (cx - r - 1.0, cy - r - 1.0, cx + r + 1.0, cy + r + 1.0);
-        self.shade(bounds, color, |x, y| (0.5 - ((x - cx).hypot(y - cy) - r)).clamp(0.0, 1.0));
+        self.shade(bounds, color.into(), |x, y| (0.5 - ((x - cx).hypot(y - cy) - r)).clamp(0.0, 1.0));
     }
 
     /// Blends `color` over the pixels in `bounds` (x0, y0, x1, y1 in buffer pixels) with the coverage
@@ -281,7 +420,7 @@ impl<'a> Canvas<'a> {
     }
 
     /// Draws `icon` centred in `r`, as large as fits. Rendered once per size, then blended as a mask.
-    pub fn icon(&mut self, icon: Icon, r: Rect, color: Color) {
+    pub fn icon(&mut self, icon: Icon, r: Rect, color: impl Into<Color>) {
         let side = (r.w.min(r.h) * self.scale).round().max(1.0) as u32;
         let key = (icon, side);
         if !self.cache.icons.contains_key(&key) {
@@ -300,13 +439,22 @@ impl<'a> Canvas<'a> {
         let x = (self.px(cx) - side as f32 / 2.0).round() as i32;
         let y = (self.py(cy) - side as f32 / 2.0).round() as i32;
         if let Some(coverage) = self.cache.icons.get(&key) {
-            blend_mask(self.pixmap, x, y, side as usize, coverage, color.premultiply().to_color_u8());
+            blend_mask(self.pixmap, x, y, side as usize, coverage, color.into().premultiply().to_color_u8());
         }
     }
 
-    /// Connected lines through `points`, round caps and joins; `close` joins the last to the first. Uses
-    /// tiny-skia (allocates): for drawing icons into their cache only.
-    pub fn polyline(&mut self, points: &[(f32, f32)], width: f32, color: Color, close: bool) {
+    /// Connected lines through `points`, round caps and joins. Uses tiny-skia (allocates): for drawing
+    /// icons into their cache only.
+    pub fn polyline(&mut self, points: &[(f32, f32)], width: f32, color: Color) {
+        self.stroke_points(points, width, color, false);
+    }
+
+    /// [`Canvas::polyline`] with the last point joined back to the first.
+    pub fn polygon(&mut self, points: &[(f32, f32)], width: f32, color: Color) {
+        self.stroke_points(points, width, color, true);
+    }
+
+    fn stroke_points(&mut self, points: &[(f32, f32)], width: f32, color: Color, close: bool) {
         let mut iter = points.iter();
         let Some(&(x, y)) = iter.next() else {
             return;
@@ -371,12 +519,12 @@ impl<'a> Canvas<'a> {
     }
 
     /// Draws one line of text with its top at `y`; returns its width.
-    pub fn text(&mut self, x: f32, y: f32, size: f32, color: Color, text: &str) -> f32 {
+    pub fn text(&mut self, x: f32, y: f32, size: f32, color: impl Into<Color>, text: &str) -> f32 {
         let px = size * self.scale;
         let baseline = (self.py(y) + self.cache.ascent(px)).round();
         let start = self.px(x);
         let mut pen = start;
-        let color = color.premultiply().to_color_u8();
+        let color = color.into().premultiply().to_color_u8();
         for ch in text.chars() {
             let Some((metrics, coverage)) = self.cache.glyph(ch, px) else {
                 return 0.0;
@@ -389,19 +537,61 @@ impl<'a> Canvas<'a> {
         (pen - start) / self.scale
     }
 
-    /// Draws one line of text within `width`: cut to fit as `keep` says if it is wider. Returns the width
-    /// drawn.
-    pub fn text_fit(&mut self, (x, y, width): (f32, f32, f32), size: f32, color: Color, text: &str, keep: Keep) -> f32 {
-        if self.text_width(size, text) <= width {
-            return self.text(x, y, size, color, text);
+    /// Draws one line of text centred across `r`'s height, placed along its width as `align` says
+    /// (not cut: see [`Canvas::text_fit`]). Returns its width.
+    pub fn text_in(&mut self, r: Rect, size: f32, color: impl Into<Color>, text: &str, align: Align) -> f32 {
+        let y = r.y + (r.h - size * LINE) / 2.0;
+        let x = match align {
+            Align::Start => r.x,
+            Align::Center => r.x + (r.w - self.text_width(size, text)) / 2.0,
+            Align::End => r.x + r.w - self.text_width(size, text),
+        };
+        self.text(x, y, size, color, text)
+    }
+
+    /// Draws one line of text from `r`'s left, centred across its height, cut to its width as `keep`
+    /// says if it is wider. Returns the width drawn.
+    pub fn text_fit(&mut self, r: Rect, size: f32, color: impl Into<Color>, text: &str, keep: Keep) -> f32 {
+        let color = color.into();
+        let y = r.y + (r.h - size * LINE) / 2.0;
+        if self.text_width(size, text) <= r.w {
+            return self.text(r.x, y, size, color, text);
         }
-        let (start, end) = self.fit(size, text, width, keep);
+        let (start, end) = self.fit(size, text, r.w, keep);
         let part = text.get(start..end).unwrap_or("");
-        let drawn = self.text(x, y, size, color, part);
+        let drawn = self.text(r.x, y, size, color, part);
         match keep {
-            Keep::Start => drawn + self.text(x + drawn, y, size, color, ELLIPSIS),
+            Keep::Start => drawn + self.text(r.x + drawn, y, size, color, ELLIPSIS),
             Keep::End => drawn,
         }
+    }
+
+    /// Draws `text` word by word from `at`, wrapping within its width, at most `max_lines` lines (the
+    /// last one cut at a word). Newlines in the text start a new line. Returns the height used.
+    pub fn wrap(&mut self, at: Span, size: f32, color: impl Into<Color>, text: &str, max_lines: usize) -> f32 {
+        let color = color.into();
+        let line_h = size * WRAP_LINE;
+        let space = self.text_width(size, " ");
+        let (mut cx, mut line) = (at.x, 0usize);
+        for (p, paragraph) in text.split('\n').enumerate() {
+            if p > 0 {
+                line += 1;
+                cx = at.x;
+            }
+            for word in paragraph.split_whitespace() {
+                let ww = self.text_width(size, word);
+                if cx > at.x && cx + ww > at.x + at.w {
+                    line += 1;
+                    cx = at.x;
+                }
+                if line >= max_lines {
+                    return line_h * max_lines as f32;
+                }
+                self.text(cx, at.y + line as f32 * line_h, size, color, word);
+                cx += ww + space;
+            }
+        }
+        line_h * (line + 1) as f32
     }
 
     /// The byte range of `text` that `text_fit` draws when it is too wide.
@@ -532,8 +722,11 @@ mod tests {
         let r = Rect::new(10.0, 20.0, 310.0, 100.0);
         assert_eq!(r.cell(3, 2, 5.0, 0), Rect::new(10.0, 20.0, 100.0, 47.5));
         assert_eq!(r.cell(3, 2, 5.0, 5), Rect::new(220.0, 72.5, 100.0, 47.5));
-        let (top, rest) = r.split_top(30.0);
+        let mut rest = r;
+        let top = rest.take_top(30.0);
         assert_eq!((top.h, rest.y, rest.h), (30.0, 50.0, 70.0));
+        let right = rest.take_right(10.0);
+        assert_eq!((right.x, rest.w), (310.0, 300.0));
     }
 
     #[test]
@@ -567,6 +760,6 @@ mod tests {
         let (start, _) = c.fit(20.0, text, width, Keep::End);
         let tail = text.get(start..).unwrap();
         assert!(c.text_width(20.0, tail) <= width && tail.ends_with("Past"), "{tail:?}");
-        assert!(c.text_fit((0.0, 0.0, width), 20.0, rgb(0xffffff), text, Keep::Start) <= width + 0.5);
+        assert!(c.text_fit(Rect::new(0.0, 0.0, width, 30.0), 20.0, rgb(0xffffff), text, Keep::Start) <= width + 0.5);
     }
 }

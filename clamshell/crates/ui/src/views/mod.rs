@@ -1,251 +1,258 @@
 //! The screens. Each is a function of the state and its size that draws everything and lists what can be
-//! tapped or focused (immediate mode). One module per screen; what they share is here: the palette, text
-//! helpers, and [`Frame::button`], which gives every tappable thing the same pressed highlight, focus
-//! ring and target.
+//! tapped or focused (immediate mode): shelf on the main screen; the bar and the open tab below it on the
+//! second screen (or nothing, while it is dark). One module per tab; what they share is in [`style`]
+//! (palette, sizes, looks), [`widgets`] (tracks, switches, rows, tiles, box art) and [`format`] (text
+//! without allocation), and [`Frame::button`] gives every tappable thing the same pressed highlight,
+//! focus ring and target.
 //!
-//! OLED-friendly: black background, grey text and lines (no full white on static elements), colour only
-//! where it means something (focus, the active mode, the game's own colour, Fn labels, Launch).
-//!
-//! Sizes are fractions of the screen or of the element they sit in, named per module.
+//! Everything here is in layout units: logical pixels from the top left of the area inside the burn-in
+//! margin (see `render`). Sizes are fractions of the screen or of the element they sit in, named per
+//! module unless they are shared (then in `style`).
 
 mod bar;
 mod battery;
 mod bluetooth;
-mod editor;
-mod keyboard;
+mod dark;
 mod dock;
-pub(crate) mod levels;
+mod editor;
+pub(crate) mod format;
+mod keyboard;
+mod levels;
 mod radio;
 mod settings;
 mod shelf;
+pub(crate) mod style;
 mod sysinfo;
 mod touchpad;
+mod widgets;
 mod wifi;
 
 use std::fmt::Write;
 
+use clamshell_core::settings::Setting;
 use clamshell_core::{Id, State, Tab};
 
-use crate::draw::{Canvas, Keep, Rect, rgb};
+use crate::draw::{Canvas, Rect};
 use crate::images::Images;
+use format::Fmt;
+use style::{BG, Look, PRESSED, RADIUS_S, Tone};
 
-/// Something drawn that can be tapped or focused, in the view's logical pixels.
-#[derive(Debug, Clone)]
+/// Something drawn that can be tapped or focused. While drawing, in layout units; once the frame is done,
+/// in the surface's logical pixels (moved by the burn-in offset).
+#[derive(Debug, Clone, PartialEq)]
 pub struct Target {
     pub rect: Rect,
     pub id: Id,
+    /// Where a finger on it sets a value, if it does.
+    pub track: Option<Track>,
 }
 
-const BG: u32 = 0x000000;
-/// Fills of buttons and the selected row: barely above black.
-const SURFACE: u32 = 0x131316;
-const SURFACE_HI: u32 = 0x1f1f24;
-/// A target under the finger.
-const PRESSED: u32 = 0x3a3a44;
-const TEXT: u32 = 0xa4a4ae;
-const TEXT_HI: u32 = 0xc8c8d0;
-const DIM: u32 = 0x5a5a64;
-const ACCENT: u32 = 0xe0a040;
-const GO: u32 = 0x45a866;
-/// Fn-layer labels: a muted blue, to tell them from the Shift layer's grey.
-const FN: u32 = 0x5f82b8;
-
-/// Text kept between frames so drawing doesn't allocate: the clock, formatted once a minute.
-#[derive(Debug, Default)]
-pub struct Scratch {
-    minute: Option<u64>,
-    clock: String,
-    lines: sysinfo::Lines,
-    /// Any view's formatted text (shelf's details, a status line, a level), reused.
-    text: String,
+/// The span along x that a finger on a target sets a value over: a level row's track (0 at `x0`, 100 at
+/// `x0 + w`), or for the bar's volume and brightness, the whole screen width that their slider runs
+/// along. In the same units as the target's rect.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Track {
+    pub x0: f32,
+    pub w: f32,
 }
 
-impl Scratch {
-    fn clock(&mut self, unix_secs: u64) -> &str {
-        let minute = unix_secs / 60;
-        if self.minute != Some(minute) {
-            self.minute = Some(minute);
-            self.clock.clear();
-            if let Some(t) = i64::try_from(unix_secs).ok().and_then(|secs| jiff::Timestamp::from_second(secs).ok()) {
-                let local = t.to_zoned(jiff::tz::TimeZone::system());
-                let _ = write!(self.clock, "{}", local.strftime("%H:%M"));
-            }
-        }
-        &self.clock
+impl Track {
+    /// The value (0-100) a finger at `x` sets.
+    pub fn value_at(&self, x: f32) -> u8 {
+        let v = (x - self.x0) / self.w.max(1.0) * 100.0;
+        v.round().clamp(0.0, 100.0) as u8
+    }
+
+    /// `x` relative to where the track starts.
+    pub fn along(&self, x: f32) -> f32 {
+        x - self.x0
     }
 }
 
-/// One screen's drawing pass: the canvas, the state it shows, and the targets it registers.
-struct Frame<'f, 'c> {
-    c: &'f mut Canvas<'c>,
-    s: &'f State,
+/// What a frame tells the rest of the program besides its picture and targets.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct FrameOut {
+    /// How many rows shelf's list shows (the main screen): the state keeps the selection within them.
+    pub list_rows: Option<usize>,
+    /// The area below the bar (the second screen), which is the touchpad in the touchpad tab.
+    pub touchpad_area: Option<Rect>,
+}
+
+/// Text kept between frames: the clock (formatted once a minute), and the buffer `core`'s setting
+/// descriptions are written into.
+#[derive(Debug, Default)]
+pub struct Scratch {
+    clock: Option<(u64, Fmt<8>)>,
+    describe: String,
+}
+
+impl Scratch {
+    /// The local time, "14:05".
+    fn clock(&mut self, unix_secs: u64) -> Fmt<8> {
+        let minute = unix_secs / 60;
+        match self.clock {
+            Some((m, text)) if m == minute => text,
+            _ => {
+                let mut text = Fmt::new();
+                if let Some(t) = i64::try_from(unix_secs).ok().and_then(|secs| jiff::Timestamp::from_second(secs).ok()) {
+                    let local = t.to_zoned(jiff::tz::TimeZone::system());
+                    let _ = write!(text, "{}", local.strftime("%H:%M"));
+                }
+                self.clock = Some((minute, text));
+                text
+            }
+        }
+    }
+
+    /// How `value` of `setting` reads on its tile.
+    fn describe(&mut self, setting: Setting, value: u16) -> Fmt<32> {
+        setting.describe(value, &mut self.describe);
+        Fmt::of(format_args!("{}", self.describe))
+    }
+}
+
+/// One screen's drawing pass: the canvas, the state it shows, images and kept text, the targets it
+/// registers and what it reports.
+pub struct Frame<'f, 'c> {
+    pub c: &'f mut Canvas<'c>,
+    pub s: &'f State,
+    pub images: &'f mut Images,
+    scratch: &'f mut Scratch,
     targets: &'f mut Vec<Target>,
+    out: FrameOut,
 }
 
-/// How a button shows its states; the caller draws its content.
-#[derive(Debug, Clone, Copy)]
-struct Look {
-    /// Corner radius of the background and the focus ring (0: square, as keyboard cells).
-    radius: f32,
-    /// Background when not pressed, if any.
-    fill: Option<u32>,
-    /// How far inside the button its background starts (negative: outside).
-    inset: f32,
-    /// How far inside the button the focus ring is drawn (negative: outside).
-    ring_inset: f32,
-}
+impl<'f, 'c> Frame<'f, 'c> {
+    pub fn new(c: &'f mut Canvas<'c>, s: &'f State, images: &'f mut Images, scratch: &'f mut Scratch, targets: &'f mut Vec<Target>) -> Self {
+        targets.clear();
+        Frame { c, s, images, scratch, targets, out: FrameOut::default() }
+    }
 
-impl Frame<'_, '_> {
     /// A tappable, focusable area: its background (lit while pressed), `content`, then the focus ring if
     /// focused; `rect` becomes its target.
-    fn button(&mut self, id: Id, rect: Rect, look: Look, content: impl FnOnce(&mut Canvas)) {
+    fn button(&mut self, id: Id, rect: Rect, look: Look, content: impl FnOnce(&mut Self)) {
         let pressed = self.s.pointer().pressed() == Some(&id);
         let background = if pressed { Some(PRESSED) } else { look.fill };
         if let Some(color) = background {
             let r = rect.inset(look.inset);
             if look.radius > 0.0 {
-                self.c.rounded(r, look.radius, rgb(color));
+                self.c.rounded(r, look.radius, color);
             } else {
-                self.c.fill(r, rgb(color));
+                self.c.fill(r, color);
             }
         }
-        content(self.c);
+        content(self);
         if self.s.pointer().focused(&id) {
-            self.c.outline(rect.inset(look.ring_inset), look.radius.max(6.0), 2.0, rgb(ACCENT));
+            self.c.outline(rect.inset(look.ring), look.radius.max(RADIUS_S), 2.0, Tone::Accent);
         }
-        self.targets.push(Target { rect, id });
+        self.targets.push(Target { rect, id, track: None });
+    }
+
+    /// Gives the last target a track (whatever drew the track knows where it is).
+    fn track(&mut self, track: Track) {
+        if let Some(t) = self.targets.last_mut() {
+            t.track = Some(track);
+        }
+    }
+
+    pub fn finish(self) -> FrameOut {
+        self.out
     }
 }
 
-/// A row of tabs from `area.x`, `area.h` high: each its label (cut to `max` wide) with `inner` space on
-/// both sides; the current one bright with an amber line under it. Tabs that would pass the area's right
-/// edge are left out. Returns where a next one would start.
-fn tabs<'a>(f: &mut Frame, area: Rect, size: f32, inner: f32, max: f32, items: impl IntoIterator<Item = (Id, &'a str, bool)>) -> f32 {
-    let mut x = area.x;
-    for (id, name, current) in items {
-        let text_w = f.c.text_width(size, name).min(max);
-        let r = Rect::new(x, area.y, text_w + 2.0 * inner, area.h);
-        if r.x + r.w > area.x + area.w {
-            break;
-        }
-        let look = Look { radius: 6.0, fill: None, inset: 4.0, ring_inset: 2.0 };
-        f.button(id, r, look, |c| {
-            let color = rgb(if current { TEXT_HI } else { DIM });
-            c.text_fit((r.x + inner, r.y + (r.h - size * 1.2) / 2.0, text_w + 0.5), size, color, name, Keep::Start);
-            if current {
-                c.fill(Rect::new(r.x + inner, r.y + r.h - 4.0, text_w, 2.0), rgb(ACCENT));
-            }
-        });
-        x += r.w;
+/// The main screen: shelf, over all of `screen`.
+pub fn top(f: &mut Frame, screen: Rect) {
+    f.c.fill(screen, BG);
+    f.out.list_rows = Some(shelf::draw(f, screen));
+}
+
+/// The second screen: the bar, the open tab below it, and the slider over both while one moves; or,
+/// while a game wants it dark, nothing.
+pub fn bottom(f: &mut Frame, screen: Rect) {
+    f.c.fill(screen, BG);
+    if f.s.bottom_dark() {
+        dark::draw(f, screen);
+        f.out.touchpad_area = Some(screen);
+        return;
     }
-    x
-}
-
-/// Text centred in `r`.
-fn label(c: &mut Canvas, r: Rect, size: f32, color: u32, text: &str) {
-    let w = c.text_width(size, text);
-    c.text(r.x + (r.w - w) / 2.0, r.y + (r.h - size * 1.2) / 2.0, size, rgb(color), text);
-}
-
-/// The main screen: shelf. Returns how many list rows fit.
-pub fn top(
-    c: &mut Canvas,
-    s: &State,
-    w: f32,
-    h: f32,
-    images: &mut Images,
-    scratch: &mut Scratch,
-    targets: &mut Vec<Target>,
-) -> usize {
-    c.fill(Rect::new(0.0, 0.0, w, h), rgb(BG));
-    targets.clear();
-    shelf::draw(&mut Frame { c, s, targets }, images, &mut scratch.text, w, h)
-}
-
-/// Draws `text` word by word from (x, y), wrapping within `width`, at most `max_lines` lines (the last
-/// one cut at a word). Returns the height used. Newlines in the text start a new line.
-fn wrap(c: &mut Canvas, (x, y, width): (f32, f32, f32), size: f32, color: u32, text: &str, max_lines: usize) -> f32 {
-    let line_h = size * 1.3;
-    let space = c.text_width(size, " ");
-    let (mut cx, mut line) = (x, 0usize);
-    for (p, paragraph) in text.split('\n').enumerate() {
-        if p > 0 {
-            line += 1;
-            cx = x;
-        }
-        for word in paragraph.split_whitespace() {
-            let ww = c.text_width(size, word);
-            if cx > x && cx + ww > x + width {
-                line += 1;
-                cx = x;
-            }
-            if line >= max_lines {
-                return line_h * max_lines as f32;
-            }
-            c.text(cx, y + line as f32 * line_h, size, rgb(color), word);
-            cx += ww + space;
-        }
-    }
-    line_h * (line + 1) as f32
-}
-
-/// The second screen: the bar, then the current mode below it. Returns the area below the bar.
-pub fn bottom(c: &mut Canvas, s: &State, w: f32, h: f32, images: &mut Images, scratch: &mut Scratch, targets: &mut Vec<Target>) -> Rect {
-    c.fill(Rect::new(0.0, 0.0, w, h), rgb(BG));
-    targets.clear();
-    let f = &mut Frame { c, s, targets };
-    // Dark while a game runs that wants it so: nothing drawn, a tap anywhere lights it again.
-    if s.bottom_dark() {
-        let all = Rect::new(0.0, 0.0, w, h);
-        f.button(Id::Wake, all, Look { radius: 0.0, fill: None, inset: 0.0, ring_inset: 0.0 }, |_| {});
-        return all;
-    }
-    let bar_h = bar::draw(f, w, h, scratch);
-    let body = Rect::new(0.0, bar_h, w, h - bar_h);
-    match s.bottom().tab() {
-        Tab::Settings => settings::draw(f, body, &mut scratch.text),
+    let body = bar::draw(f, screen);
+    match f.s.bottom().tab() {
+        Tab::Settings => settings::draw(f, body),
         Tab::Keyboard => keyboard::draw(f, body),
-        Tab::Dock => dock::draw(f, body, images, &mut scratch.text),
-        Tab::Touchpad => touchpad::draw(f, body, &mut scratch.text),
-        Tab::Sysinfo => sysinfo::draw(f, body, &mut scratch.lines),
-        Tab::Wifi => wifi::draw(f, body, &mut scratch.text),
-        Tab::Battery => battery::draw(f, body, &mut scratch.text),
-        Tab::Bluetooth => bluetooth::draw(f, body, &mut scratch.text),
-        Tab::Volume => levels::draw_volume(f, body, &mut scratch.text),
-        Tab::Brightness => levels::draw_brightness(f, body, &mut scratch.text),
+        Tab::Dock => dock::draw(f, body),
+        Tab::Touchpad => touchpad::draw(f, body),
+        Tab::Sysinfo => sysinfo::draw(f, body),
+        Tab::Wifi => wifi::draw(f, body),
+        Tab::Battery => battery::draw(f, body),
+        Tab::Bluetooth => bluetooth::draw(f, body),
+        Tab::Volume => levels::draw_volume(f, body),
+        Tab::Brightness => levels::draw_brightness(f, body),
     }
-    bar::draw_slider_over(f, w, bar_h, scratch);
-    body
+    bar::draw_slider_over(f, screen, body.y);
+    f.out.touchpad_area = Some(body);
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use crate::draw::DrawCache;
     use clamshell_core::{Event, Init, Reading, Status};
     use tiny_skia::Pixmap;
 
-    /// The bar's buttons don't overlap, on the desktop's panel and at the Thor's size.
-    #[test]
-    fn the_bar_fits() {
+    fn demo() -> State {
         let mut state = State::new(Init { library: clamshell_library::demo_library(), ..Init::default() });
+        state.apply(Event::Tick { unix_secs: 1_700_000_000 });
         state.apply(Event::Reading(Reading::Status(Status { battery: Some(50), volume: Some(50), brightness: Some(50), wifi: Some(50), ..Status::default() })));
+        state
+    }
+
+    /// Two targets may overlap only when one is drawn over the other on purpose: the dock's "+" over its
+    /// app's tile.
+    fn stacked(a: &Id, b: &Id) -> bool {
+        use clamshell_core::DockId;
+        matches!((a, b), (Id::Dock(DockId::App(i)), Id::Dock(DockId::NewInstance(j))) | (Id::Dock(DockId::NewInstance(j)), Id::Dock(DockId::App(i))) if i == j)
+    }
+
+    fn overlap(a: Rect, b: Rect) -> bool {
+        let apart = a.x + a.w <= b.x + 0.5 || b.x + b.w <= a.x + 0.5 || a.y + a.h <= b.y + 0.5 || b.y + b.h <= a.y + 0.5;
+        !apart
+    }
+
+    /// Every tab at the desktop's window, the Thor's screen and a window dragged narrow, empty and with
+    /// readings: targets have a size, stay on the screen (the tab's within its area below the bar), and
+    /// don't overlap unless stacked on purpose; the bar shows all its buttons.
+    #[test]
+    fn every_tab_lays_out() {
         let mut cache = DrawCache::load();
-        // The desktop window, the Thor, and a window dragged narrow.
-        for (w, h) in [(620u32, 540u32), (1240, 1080), (300, 540)] {
-            let mut pixmap = Pixmap::new(w, h).expect("pixmap");
-            let mut targets = Vec::new();
-            let mut canvas = Canvas::new(&mut pixmap, 1.0, &mut cache);
-            let body = bottom(&mut canvas, &state, w as f32, h as f32, &mut Images::synchronous(), &mut Scratch::default(), &mut targets);
-            let bar: Vec<&Target> = targets.iter().filter(|t| t.rect.y + t.rect.h <= body.y + 0.5).collect();
-            assert!(bar.len() >= 11, "{w}x{h}: {} bar targets", bar.len());
-            for (i, a) in bar.iter().enumerate() {
-                for b in bar.iter().skip(i + 1) {
-                    let apart = a.rect.x + a.rect.w <= b.rect.x + 0.5 || b.rect.x + b.rect.w <= a.rect.x + 0.5;
-                    assert!(apart, "{w}x{h}: {:?} and {:?} overlap", a.id, b.id);
+        for with_data in [false, true] {
+            for tab in Tab::ALL {
+                for (w, h) in [(620u32, 540u32), (1240, 1080), (300, 540)] {
+                    let mut state = if with_data { demo() } else { State::new(Init::default()) };
+                    state.apply(Event::Pointer(clamshell_core::PointerEvent::Activate(Id::Tab(tab))));
+                    let mut pixmap = Pixmap::new(w, h).expect("pixmap");
+                    let mut targets = Vec::new();
+                    let mut canvas = Canvas::new(&mut pixmap, 1.0, &mut cache);
+                    let (mut images, mut scratch) = (Images::synchronous(), Scratch::default());
+                    let mut f = Frame::new(&mut canvas, &state, &mut images, &mut scratch, &mut targets);
+                    let screen = Rect::new(0.0, 0.0, w as f32, h as f32);
+                    bottom(&mut f, screen);
+                    let body = f.finish().touchpad_area.expect("the area below the bar");
+                    let case = format!("{tab:?} at {w}x{h}{}", if with_data { ", with data" } else { "" });
+                    let bar = targets.iter().filter(|t| t.rect.y + t.rect.h <= body.y + 0.5).count();
+                    assert!(bar >= 11, "{case}: {bar} bar targets");
+                    for (i, a) in targets.iter().enumerate() {
+                        assert!(a.rect.w > 0.0 && a.rect.h > 0.0, "{case}: {:?} has no size", a.id);
+                        let inside = |r: Rect, area: Rect| {
+                            r.x >= area.x - 0.5 && r.y >= area.y - 0.5 && r.right() <= area.right() + 0.5 && r.bottom() <= area.bottom() + 0.5
+                        };
+                        let in_bar = a.rect.y + a.rect.h <= body.y + 0.5;
+                        assert!(inside(a.rect, if in_bar { screen } else { body }), "{case}: {:?} at {:?} is outside", a.id, a.rect);
+                        for b in targets.iter().skip(i + 1) {
+                            assert!(!overlap(a.rect, b.rect) || stacked(&a.id, &b.id), "{case}: {:?} and {:?} overlap", a.id, b.id);
+                        }
+                    }
                 }
-                assert!(a.rect.x >= 0.0 && a.rect.x + a.rect.w <= w as f32, "{w}x{h}: {:?} off the screen", a.id);
             }
         }
     }

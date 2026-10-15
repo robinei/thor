@@ -24,6 +24,15 @@ use crate::App;
 /// How long a field must stay let go before the keyboard goes back.
 const SETTLE: Duration = Duration::from_millis(400);
 
+/// What the input method said, once a batch of its events is done.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Field {
+    /// A field wants typing (true) or was let go (false).
+    Active(bool),
+    /// Another input method has the seat: any field is let go at once.
+    Gone,
+}
+
 /// The input method and what it last said.
 #[derive(Default)]
 pub(crate) struct TextInput {
@@ -48,6 +57,30 @@ impl TextInput {
             self.method = Some(manager.get_input_method(seat, qh, Data));
         }
     }
+
+    /// The input method's `event`; what it means once it is complete.
+    fn event(&mut self, method: &ZwpInputMethodV2, event: zwp_input_method_v2::Event) -> Option<Field> {
+        match event {
+            zwp_input_method_v2::Event::Activate => self.pending = Some(true),
+            zwp_input_method_v2::Event::Deactivate => self.pending = Some(false),
+            zwp_input_method_v2::Event::Done => return self.pending.take().map(Field::Active),
+            // Another input method has the seat (fcitx, ibus on a desktop): do without.
+            zwp_input_method_v2::Event::Unavailable => {
+                log::info!("another input method is running: the keyboard won't come up for text fields");
+                method.destroy();
+                self.method = None;
+                self.pending = None;
+                return Some(Field::Gone);
+            }
+            _ => {}
+        }
+        None
+    }
+
+    /// Records what the state is told; whether that is news.
+    fn tell(&mut self, active: bool) -> bool {
+        std::mem::replace(&mut self.active, active) != active
+    }
 }
 
 /// The objects' user data (they carry nothing).
@@ -59,57 +92,41 @@ impl Dispatch2<ZwpInputMethodManagerV2, App> for Data {
 
 impl Dispatch2<ZwpInputMethodV2, App> for Data {
     fn event(&self, app: &mut App, method: &ZwpInputMethodV2, event: zwp_input_method_v2::Event, _: &Connection, _: &QueueHandle<App>) {
-        let t = &mut app.text_input;
-        match event {
-            zwp_input_method_v2::Event::Activate => t.pending = Some(true),
-            zwp_input_method_v2::Event::Deactivate => t.pending = Some(false),
-            zwp_input_method_v2::Event::Done => {
-                if let Some(active) = t.pending.take() {
-                    app.text_field(active);
-                }
-            }
-            // Another input method has the seat (fcitx, ibus on a desktop): do without.
-            // (A field it had is let go of: the keyboard goes back.)
-            zwp_input_method_v2::Event::Unavailable => {
-                log::info!("another input method is running: the keyboard won't come up for text fields");
-                method.destroy();
-                t.method = None;
-                t.pending = None;
-                if let Some(token) = t.settle.take() {
-                    app.loop_handle.remove(token);
-                }
-                if std::mem::take(&mut app.text_input.active) {
-                    app.handle(Event::TextInput(false));
-                }
-            }
-            _ => {}
+        if let Some(field) = app.text_input.event(method, event) {
+            app.text_field(field);
         }
     }
 }
 
 impl App {
-    fn text_field(&mut self, active: bool) {
+    /// Tells the state about a text field: at once when one wants typing (or the input method is gone),
+    /// after `SETTLE` when it was let go.
+    fn text_field(&mut self, field: Field) {
         if let Some(token) = self.text_input.settle.take() {
             self.loop_handle.remove(token);
         }
-        if active == self.text_input.active {
-            return;
-        }
-        if active {
-            self.text_input.active = true;
-            self.handle(Event::TextInput(true));
-            return;
-        }
-        let timer = Timer::from_duration(SETTLE);
-        let settled = self.loop_handle.insert_source(timer, |_, _, app: &mut App| {
-            app.text_input.settle = None;
-            app.text_input.active = false;
-            app.handle(Event::TextInput(false));
-            TimeoutAction::Drop
-        });
-        match settled {
-            Ok(token) => self.text_input.settle = Some(token),
-            Err(e) => log::warn!("text input timer: {e}"),
+        match field {
+            Field::Active(true) | Field::Gone => {
+                let active = field == Field::Active(true);
+                if self.text_input.tell(active) {
+                    self.handle(Event::TextInput(active));
+                }
+            }
+            Field::Active(false) if self.text_input.active => {
+                let timer = Timer::from_duration(SETTLE);
+                let settled = self.loop_handle.insert_source(timer, |_, _, app: &mut App| {
+                    app.text_input.settle = None;
+                    if app.text_input.tell(false) {
+                        app.handle(Event::TextInput(false));
+                    }
+                    TimeoutAction::Drop
+                });
+                match settled {
+                    Ok(token) => self.text_input.settle = Some(token),
+                    Err(e) => log::warn!("text input timer: {e}"),
+                }
+            }
+            Field::Active(false) => {}
         }
     }
 }

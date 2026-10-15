@@ -1,4 +1,4 @@
-//! Keyboard mode: the PC-style layout from `core`, as black cells without gaps. Each key shows its main
+//! The keyboard tab: the PC-style layout from `core`, as black cells without gaps. Each key shows its main
 //! function, with its Shift character small above and its Fn function small below (in blue); the active
 //! layer's function takes the middle, also while a modifier is only held. Modifiers that are on (armed or
 //! held) are amber; Caps Lock has a light in its corner.
@@ -6,8 +6,9 @@
 use clamshell_core::Id;
 use clamshell_core::keyboard::{self, Key, KeyPos, Keyboard, LAYOUT, Modifier, Named, Slot};
 
-use super::{ACCENT, DIM, FN, Frame, Look, TEXT, label};
-use crate::draw::{Canvas, Rect, rgb, rgba};
+use super::Frame;
+use super::style::{Look, Tone};
+use crate::draw::{Align, Canvas, Rect};
 use crate::icons::Icon;
 
 /// Label sizes, of a key's height: the main one and the small ones above and below.
@@ -26,10 +27,10 @@ const ICON: f32 = 1.4;
 const LED: f32 = 0.06;
 const GLOW: f32 = 0.13;
 const LED_AT: f32 = 0.2;
-/// Side padding inside a key, of its height (labels shrink to fit).
-const PAD: f32 = 0.08;
-/// A key as tapped or focused: square cells; the focus ring and a lock's outline just inside the cell.
-const KEY: Look = Look { radius: 0.0, fill: None, inset: 0.0, ring_inset: 3.0 };
+/// Room at a key's sides, of its height (labels shrink to fit).
+const SIDE: f32 = 0.08;
+/// How strongly Caps Lock's glow shows.
+const GLOW_ALPHA: f32 = 0.18;
 
 /// Each key's position, slot and cell: rows split `body` evenly; each row fills the width, its keys
 /// sharing it by their widths.
@@ -54,7 +55,7 @@ pub(super) fn draw(f: &mut Frame, body: Rect) {
     let kb = &f.s.keyboard();
     // The cell is also the tap area: a touch between labels goes to the nearer key.
     for (pos, slot, cell) in cells(body) {
-        f.button(Id::Key(pos), cell, KEY, |c| draw_key(c, kb, slot, cell));
+        f.button(Id::Key(pos), cell, Look::KEY, |f| draw_key(f.c, kb, slot, cell));
     }
 }
 
@@ -67,64 +68,85 @@ enum Place {
     Bottom,
 }
 
-/// What a key shows where, for the keyboard's state: `(key, shifted)` for the middle, above and below.
-type Labels = ((Key, bool), Option<(Key, bool)>, Option<(Key, bool)>);
+/// A key's label: the key, and whether it shows its Shift character.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Label {
+    key: Key,
+    shifted: bool,
+}
 
-fn labels(kb: &Keyboard, slot: &Slot) -> Labels {
+impl Label {
+    fn plain(key: Key) -> Label {
+        Label { key, shifted: false }
+    }
+}
+
+/// What a key shows, for the keyboard's state: in the middle, small above (the Shift layer) and small
+/// below (Fn).
+struct KeyFace {
+    main: Label,
+    above: Option<Label>,
+    below: Option<Label>,
+}
+
+fn face(kb: &Keyboard, slot: &Slot) -> KeyFace {
     // Letters have no Shift label: they change case.
     let shift_char = match slot.base {
         Key::Char(ch) if !ch.is_ascii_alphabetic() && keyboard::shifted(ch) != ch => Some(ch),
         _ => None,
     };
+    let fn_label = slot.fn_key.map(Label::plain);
     match (kb.fn_layer.on(), slot.fn_key, kb.shift.on(), shift_char) {
-        (true, Some(fn_key), _, _) => ((fn_key, false), None, Some((slot.base, false))),
-        (_, _, true, Some(ch)) => ((Key::Char(ch), true), Some((Key::Char(ch), false)), slot.fn_key.map(|k| (k, false))),
-        _ => (
-            (slot.base, kb.shifts(slot.base)),
-            shift_char.map(|ch| (Key::Char(ch), true)),
-            slot.fn_key.map(|k| (k, false)),
-        ),
+        (true, Some(fn_key), _, _) => KeyFace { main: Label::plain(fn_key), above: None, below: Some(Label::plain(slot.base)) },
+        (_, _, true, Some(ch)) => {
+            KeyFace { main: Label { key: Key::Char(ch), shifted: true }, above: Some(Label::plain(Key::Char(ch))), below: fn_label }
+        }
+        _ => KeyFace {
+            main: Label { key: slot.base, shifted: kb.shifts(slot.base) },
+            above: shift_char.map(|ch| Label { key: Key::Char(ch), shifted: true }),
+            below: fn_label,
+        },
     }
 }
 
 fn draw_key(c: &mut Canvas, kb: &Keyboard, slot: &Slot, r: Rect) {
     let fn_on = kb.fn_layer.on();
-    let (main, top, bottom) = labels(kb, slot);
-    let mut color = match main.0 {
-        Key::Char(_) => TEXT,
-        _ if fn_on && slot.fn_key.is_some() => FN,
-        Key::Mod(Modifier::Fn) => FN,
-        _ => DIM,
+    let face = face(kb, slot);
+    let mut tone = match face.main.key {
+        Key::Char(_) => Tone::Normal,
+        _ if fn_on && slot.fn_key.is_some() => Tone::Fn,
+        Key::Mod(Modifier::Fn) => Tone::Fn,
+        _ => Tone::Dim,
     };
     if let Key::Mod(m) = slot.base
         && kb.latch(m).on()
     {
-        color = ACCENT;
+        tone = Tone::Accent;
     }
     if slot.base == Key::Caps {
         // The light: a dim ring when off; lit, with a soft glow, when on.
         let (lx, ly) = (r.x + r.w - r.h * LED_AT, r.y + r.h * LED_AT);
         if kb.caps {
-            c.circle(lx, ly, r.h * GLOW, rgba(ACCENT, 0.18));
-            c.circle(lx, ly, r.h * LED, rgb(ACCENT));
+            c.circle(lx, ly, r.h * GLOW, Tone::Accent.rgb().alpha(GLOW_ALPHA));
+            c.circle(lx, ly, r.h * LED, Tone::Accent);
         } else {
             let d = r.h * LED * 2.0;
-            c.outline(Rect::new(lx - d / 2.0, ly - d / 2.0, d, d), d / 2.0, 1.2, rgb(DIM));
+            c.outline(Rect::new(lx - d / 2.0, ly - d / 2.0, d, d), d / 2.0, 1.2, Tone::Dim);
         }
     }
-    key_label(c, main, r, r.h * MAIN_TEXT, color, Place::Center);
-    if let Some(top) = top {
-        key_label(c, top, r, r.h * SMALL_TEXT, DIM, Place::Top);
+    key_label(c, face.main, r, r.h * MAIN_TEXT, tone, Place::Center);
+    if let Some(above) = face.above {
+        key_label(c, above, r, r.h * SMALL_TEXT, Tone::Dim, Place::Top);
     }
-    if let Some(bottom) = bottom {
-        let color = if fn_on { DIM } else { FN };
-        key_label(c, bottom, r, r.h * SMALL_TEXT, color, Place::Bottom);
+    if let Some(below) = face.below {
+        let tone = if fn_on { Tone::Dim } else { Tone::Fn };
+        key_label(c, below, r, r.h * SMALL_TEXT, tone, Place::Bottom);
     }
 }
 
-/// A key's label at `place`; `(key, shifted)`.
-fn key_label(c: &mut Canvas, (key, shifted): (Key, bool), r: Rect, size: f32, color: u32, place: Place) {
-    let pad = r.h * PAD;
+/// A key's label at `place`.
+fn key_label(c: &mut Canvas, Label { key, shifted }: Label, r: Rect, size: f32, tone: Tone, place: Place) {
+    let side = r.h * SIDE;
     let cy = r.y + r.h / 2.0;
     let icon_box = |h: f32| match place {
         Place::Center => Rect::new(r.x, r.y + (r.h - h) / 2.0, r.w, h),
@@ -133,26 +155,29 @@ fn key_label(c: &mut Canvas, (key, shifted): (Key, bool), r: Rect, size: f32, co
     };
     let text = |c: &mut Canvas, size: f32, t: &str| {
         // Shrink labels that don't fit the key (PgUp, Home on narrow keys).
-        let room = r.w - 2.0 * pad;
+        let room = r.w - 2.0 * side;
         let width = c.text_width(size, t);
         let size = if width > room { size * room / width } else { size };
         let w = c.text_width(size, t);
         let x = r.x + (r.w - w) / 2.0;
         match place {
-            Place::Center => label(c, r, size, color, t),
+            Place::Center => {
+                c.text_in(r, size, tone, t, Align::Center);
+            }
+            // Centred on their line above or below the middle.
             Place::Top => {
-                c.text(x, cy - ABOVE * r.h - size * 0.6, size, rgb(color), t);
+                c.text(x, cy - ABOVE * r.h - size * 0.6, size, tone, t);
             }
             Place::Bottom => {
-                c.text(x, cy + BELOW * r.h - size * 0.6, size, rgb(color), t);
+                c.text(x, cy + BELOW * r.h - size * 0.6, size, tone, t);
             }
         }
     };
-    let icon = |c: &mut Canvas, i: Icon| c.icon(i, icon_box(size * ICON), rgb(color));
+    let icon = |c: &mut Canvas, i: Icon| c.icon(i, icon_box(size * ICON), tone);
     let named = if place == Place::Center { size * NAMED_TEXT } else { size };
     match key {
         Key::Char(' ') if place == Place::Center => {
-            c.fill(Rect::new(r.x + r.w * 0.3, r.y + r.h * 0.62, r.w * 0.4, 2.0), rgb(DIM));
+            c.fill(Rect::new(r.x + r.w * 0.3, r.y + r.h * 0.62, r.w * 0.4, 2.0), Tone::Dim);
         }
         Key::Char(ch) => {
             let shown = if shifted { keyboard::shifted(ch) } else { ch };

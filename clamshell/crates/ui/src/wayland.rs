@@ -24,11 +24,10 @@ use smithay_client_toolkit::{
     },
     shm::{Shm, ShmHandler},
 };
-use clamshell_core::Event;
-use clamshell_core::{ShelfEvent};
+use clamshell_core::{Event, ShelfEvent};
 
 use crate::App;
-use crate::input::Source;
+use crate::input::{End, Source};
 
 impl CompositorHandler for App {
     fn scale_factor_changed(&mut self, _: &Connection, _: &QueueHandle<Self>, surface: &WlSurface, factor: i32) {
@@ -198,10 +197,10 @@ impl PointerHandler for App {
             match event.kind {
                 PointerEventKind::Press { .. } => self.press_at(Source::Mouse, &event.surface, event.position),
                 PointerEventKind::Motion { .. } => self.moved(Source::Mouse, event.position),
-                PointerEventKind::Release { .. } => self.up(Source::Mouse, true),
+                PointerEventKind::Release { .. } => self.up(Source::Mouse, End::Release),
                 // The wheel over the main screen scrolls shelf's list, a game per notch.
                 PointerEventKind::Axis { vertical, .. } => {
-                    let over_top = self.top.as_ref().is_some_and(|v| v.shell.surface() == &event.surface);
+                    let over_top = self.views.top.as_ref().is_some_and(|v| v.shell.surface() == &event.surface);
                     let notches = if vertical.discrete != 0 { vertical.discrete } else { (vertical.absolute / 10.0) as i32 };
                     if over_top && notches != 0 {
                         self.handle(Event::Shelf(ShelfEvent::ListStep(notches)));
@@ -229,7 +228,7 @@ impl TouchHandler for App {
     }
 
     fn up(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, _: u32, _: u32, id: i32) {
-        self.up(Source::Touch(id), true);
+        self.up(Source::Touch(id), End::Release);
     }
 
     fn motion(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, _: u32, id: i32, position: (f64, f64)) {

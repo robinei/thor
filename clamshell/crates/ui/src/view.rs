@@ -1,6 +1,5 @@
 //! A view: one screen's surface (an xdg window or a layer surface), its shm buffers, and drawing a
-//! frame of it, moved within the burn-in margin; the second screen's frames also tell the touchpad mode
-//! where things are.
+//! frame of it (see `render`) and handing it to the compositor.
 
 use std::sync::Mutex;
 
@@ -22,36 +21,14 @@ use smithay_client_toolkit::{
 };
 use clamshell_core::touch::{Region, TouchLayout};
 use clamshell_core::{Id, State};
-use tiny_skia::Pixmap;
 
-use crate::draw::{self, DrawCache, Rect};
-use crate::views::{self, Scratch, Target};
-use crate::{App, Error, Screen, images};
-
-/// OLED burn-in protection: every screen is laid out inside a black margin of MARGIN buffer pixels on
-/// each side, and drawn moved within it by an offset that drifts slowly (about a pixel a minute, along an
-/// irregular path within ±MARGIN), so static elements like the bar's icons and the clock don't sit on the
-/// same pixels for hours, and nothing ever reaches the edge or is cut off. Tap areas move with the
-/// picture.
-pub(crate) const MARGIN: u32 = 4;
-
-pub(crate) fn orbit(unix_secs: u64) -> (i32, i32) {
-    let minutes = (unix_secs / 60) as f32;
-    let tau = std::f32::consts::TAU;
-    let reach = MARGIN as f32;
-    let dx = (reach * (minutes * tau / 17.0).sin()).round() as i32;
-    let dy = (reach * (minutes * tau / 23.0).sin()).round() as i32;
-    (dx, dy)
-}
-
-/// The logical size to lay a screen out in (inside the margin), and the buffer-pixel offset to draw it
-/// at for `orbit`.
-pub(crate) fn inset(size_px: (u32, u32), scale: u32, (dx, dy): (i32, i32)) -> ((f32, f32), (i32, i32)) {
-    let scale = scale.max(1) as f32;
-    let w = size_px.0.saturating_sub(2 * MARGIN) as f32 / scale;
-    let h = size_px.1.saturating_sub(2 * MARGIN) as f32 / scale;
-    ((w, h), (MARGIN as i32 + dx, MARGIN as i32 + dy))
-}
+use crate::draw::{DrawCache, Rect};
+use crate::focus::Drawn;
+use crate::images::Images;
+use crate::render::{self, Picture, Placement, Rendered};
+use crate::screens::{Screen, Screens};
+use crate::views::Target;
+use crate::{App, Error};
 
 pub(crate) enum Shell {
     Window(Window),
@@ -78,16 +55,10 @@ pub(crate) struct View {
     pub(crate) dirty: bool,
     /// A frame was committed and its callback hasn't come yet: wait, then draw the latest state once.
     pub(crate) frame_pending: bool,
-    /// What the last frame drew that can be tapped or focused.
-    pub(crate) targets: Vec<Target>,
-    pub(crate) pixmap: Option<Pixmap>,
+    /// The last frame: its picture and what can be tapped or focused in it.
+    pub(crate) picture: Picture,
     /// shm buffers, reused once the compositor releases them (two in turn, a third if it holds both).
-    pub(crate) buffers: Vec<Buffer>,
-    pub(crate) scratch: Scratch,
-    /// Where the last frame's layout starts in the surface (the burn-in offset), and its width: for
-    /// positions on the bar's sliders.
-    pub(crate) origin: (f32, f32),
-    pub(crate) layout_w: f32,
+    buffers: Vec<Buffer>,
 }
 
 impl View {
@@ -101,22 +72,12 @@ impl View {
             configured: false,
             dirty: true,
             frame_pending: false,
-            targets: Vec::new(),
-            pixmap: None,
+            picture: Picture::default(),
             buffers: Vec::new(),
-            scratch: Scratch::default(),
-            origin: (0.0, 0.0),
-            layout_w: 0.0,
         }
     }
 
-    pub(crate) fn window(
-        compositor: &CompositorState,
-        xdg: &XdgShell,
-        qh: &QueueHandle<App>,
-        screen: Screen,
-        size: (u32, u32),
-    ) -> Self {
+    pub(crate) fn window(compositor: &CompositorState, xdg: &XdgShell, qh: &QueueHandle<App>, screen: Screen, size: (u32, u32)) -> Self {
         let surface = compositor.create_surface(qh);
         let window = xdg.create_window(surface, WindowDecorations::RequestServer, qh);
         let (title, app_id) = match screen {
@@ -130,6 +91,8 @@ impl View {
         View::new(screen, Shell::Window(window), size)
     }
 
+    /// The second screen as a layer surface: over the whole `output`, or a panel of `corner` size in the
+    /// bottom right corner.
     pub(crate) fn layer(
         compositor: &CompositorState,
         layer_shell: &LayerShell,
@@ -157,66 +120,45 @@ impl View {
         View::new(Screen::Bottom, Shell::Layer(layer), (1, 1))
     }
 
+    /// Whether a frame is due: configured, changed, and the last frame shown.
+    pub(crate) fn due(&self) -> bool {
+        self.configured && self.dirty && !self.frame_pending
+    }
+
+    /// The buffer's size, its scale, and the burn-in drift now.
+    fn placement(&self, unix_secs: u64) -> Placement {
+        let scale = self.scale.max(1).unsigned_abs();
+        Placement { size_px: (self.size.0 * scale, self.size.1 * scale), scale, drift: render::orbit(unix_secs) }
+    }
+
+    /// Draws a frame of `state` and hands it to the compositor (unless every buffer is busy: then the
+    /// view stays dirty, and a buffer's release wakes the loop to draw again).
     pub(crate) fn draw(
         &mut self,
         pool: &mut SlotPool,
         fonts: &mut DrawCache,
         state: &State,
-        touch: &Mutex<TouchLayout>,
-        images: &mut images::Images,
+        images: &mut Images,
         qh: &QueueHandle<App>,
-    ) -> Result<Option<usize>, Error> {
-        let scale = self.scale.max(1);
-        let (lw, lh) = self.size;
-        let scale_u = scale.unsigned_abs();
-        let (w, h) = (lw * scale_u, lh * scale_u);
-        if self.pixmap.as_ref().map(|p| (p.width(), p.height())) != Some((w, h)) {
-            self.pixmap = Pixmap::new(w, h);
+    ) -> Result<Rendered, Error> {
+        let at = self.placement(state.unix_secs());
+        let rendered = render::render(&mut self.picture, at, self.screen, state, fonts, images)?;
+        if self.present(pool, qh)? {
+            self.dirty = false;
+            self.frame_pending = true;
         }
-        let Some(pixmap) = self.pixmap.as_mut() else {
-            return Err(format!("can't allocate a {w}x{h} pixmap").into());
+        Ok(rendered)
+    }
+
+    /// Copies the picture into a free buffer and commits it, asking for a frame callback. False when no
+    /// buffer is free.
+    fn present(&mut self, pool: &mut SlotPool, qh: &QueueHandle<App>) -> Result<bool, Error> {
+        let Some(pixmap) = self.picture.pixmap.as_ref() else {
+            return Ok(false);
         };
-        let ((cw, ch), offset) = inset((w, h), scale_u, orbit(state.unix_secs()));
-        let mut body = None;
-        let mut rows = None;
-        {
-            let mut canvas = draw::Canvas::new(pixmap, scale as f32, fonts).with_offset(offset);
-            let (w, h) = (cw, ch);
-            match self.screen {
-                Screen::Top => {
-                    rows = Some(views::top(&mut canvas, state, w, h, images, &mut self.scratch, &mut self.targets));
-                    images.end_frame();
-                }
-                Screen::Bottom => {
-                    body = Some(views::bottom(&mut canvas, state, w, h, images, &mut self.scratch, &mut self.targets));
-                }
-            }
-        }
-
-        let (sx, sy) = (offset.0 as f32 / scale as f32, offset.1 as f32 / scale as f32);
-        self.origin = (sx, sy);
-        self.layout_w = cw;
-        for target in &mut self.targets {
-            target.rect.x += sx;
-            target.rect.y += sy;
-        }
-        if let Some(body) = body {
-            publish(touch, &self.targets, body, (sx, sy), scale as f32, (w as f32, h as f32));
-        }
-
-        let (wi, hi) = (i32::try_from(w)?, i32::try_from(h)?);
-        // A buffer of this size the compositor isn't reading; a new one only if all are in use.
-        self.buffers.retain(|b| b.height() == hi && b.stride() == wi * 4);
-        let free = self.buffers.iter().position(|b| b.canvas(pool).is_some());
-        let index = match free {
-            Some(i) => i,
-            None if self.buffers.len() < 3 => {
-                let (buffer, _) = pool.create_buffer(wi, hi, wi * 4, wl_shm::Format::Argb8888)?;
-                self.buffers.push(buffer);
-                self.buffers.len() - 1
-            }
-            // All busy: keep the view dirty; a buffer release wakes the loop and it draws then.
-            None => return Ok(rows),
+        let (w, h) = (i32::try_from(pixmap.width())?, i32::try_from(pixmap.height())?);
+        let Some(index) = free_buffer(&mut self.buffers, pool, w, h)? else {
+            return Ok(false);
         };
         let Some(buffer) = self.buffers.get(index) else {
             return Err("buffer index".into());
@@ -231,49 +173,56 @@ impl View {
                 (*b, *g, *r, *a) = (*sb, *sg, *sr, *sa);
             }
         }
-
         let surface = self.shell.surface();
-        surface.set_buffer_scale(scale);
-        surface.damage_buffer(0, 0, wi, hi);
+        surface.set_buffer_scale(self.scale.max(1));
+        surface.damage_buffer(0, 0, w, h);
         surface.frame(qh, FrameCallbackData(surface.clone()));
         buffer.attach_to(surface)?;
         surface.commit();
-        self.dirty = false;
-        self.frame_pending = true;
-        Ok(rows)
+        Ok(true)
+    }
+
+}
+
+/// A `w` x `h` buffer the compositor isn't reading: one kept, or a new one if fewer than three are kept;
+/// `None` when all three are busy.
+fn free_buffer(buffers: &mut Vec<Buffer>, pool: &mut SlotPool, w: i32, h: i32) -> Result<Option<usize>, Error> {
+    buffers.retain(|b| b.height() == h && b.stride() == w * 4);
+    if let Some(i) = buffers.iter().position(|b| b.canvas(pool).is_some()) {
+        return Ok(Some(i));
+    }
+    if buffers.len() >= 3 {
+        return Ok(None);
+    }
+    let (buffer, _) = pool.create_buffer(w, h, w * 4, wl_shm::Format::Argb8888)?;
+    buffers.push(buffer);
+    Ok(Some(buffers.len() - 1))
+}
+
+impl Drawn for Screens<Option<View>> {
+    fn targets(&self, screen: Screen) -> &[Target] {
+        self[screen].as_ref().map_or(&[], |v| &v.picture.targets)
+    }
+
+    fn size(&self, screen: Screen) -> (f32, f32) {
+        self[screen].as_ref().map_or((1.0, 1.0), |v| (v.size.0 as f32, v.size.1 as f32))
     }
 }
 
-/// Tells the touchpad mode's input side where things are, in screen pixels: the area below the bar is
+/// Tells the touchpad tab's input side where things are, in screen pixels: the area below the bar is
 /// the touchpad; the bar's targets stay taps. No allocation once the region list has grown.
-fn publish(touch: &Mutex<TouchLayout>, targets: &[Target], body: Rect, (sx, sy): (f32, f32), scale: f32, screen: (f32, f32)) {
+pub(crate) fn publish(touch: &Mutex<TouchLayout>, targets: &[Target], area: Rect, origin_x: f32, scale: f32, screen: (f32, f32)) {
     let Ok(mut layout) = touch.lock() else {
         return;
     };
     layout.screen = screen;
     layout.scale = scale;
-    layout.origin_x = sx;
-    layout.width = body.w;
-    layout.pad = ((body.x + sx) * scale, (body.y + sy) * scale, (body.x + sx + body.w) * scale, (body.y + sy + body.h) * scale);
+    layout.origin_x = origin_x;
+    layout.width = area.w;
+    layout.pad = (area.x * scale, area.y * scale, (area.x + area.w) * scale, (area.y + area.h) * scale);
     layout.regions.clear();
     for t in targets.iter().filter(|t| matches!(t.id, Id::Tab(_) | Id::PadMouse | Id::Control(_))) {
         let r = t.rect;
         layout.regions.push(Region { x0: r.x * scale, y0: r.y * scale, x1: (r.x + r.w) * scale, y1: (r.y + r.h) * scale, id: t.id.clone() });
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn orbit_stays_in_the_margin_and_moves_slowly() {
-        let mut last = orbit(0);
-        for minute in 1..2000u64 {
-            let (dx, dy) = orbit(minute * 60);
-            assert!(dx.unsigned_abs() <= MARGIN && dy.unsigned_abs() <= MARGIN);
-            assert!((dx - last.0).abs() <= 2 && (dy - last.1).abs() <= 2);
-            last = (dx, dy);
-        }
     }
 }

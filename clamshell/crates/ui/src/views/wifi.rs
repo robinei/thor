@@ -3,27 +3,27 @@
 //! is connected, being joined or saved. A tap joins (asking for the password first when needed), a long
 //! press forgets a saved network. The password is typed in the shared editor.
 
-use std::fmt::Write;
+use std::fmt::{self, Display, Formatter};
 
 use clamshell_core::editor::{Editor, Purpose};
-use clamshell_core::wifi::{NetState, Problem, Wifi, signal_bars};
+use clamshell_core::wifi::{NetState, Problem, Wifi};
 use clamshell_core::{Id, RadioStatus, WifiId};
 
-use super::radio::{self, ICON, STATE_W};
-use super::{ACCENT, DIM, Frame, GO, Look, TEXT, TEXT_HI};
-use crate::draw::{Keep, Rect, rgb};
+use super::format::Fmt;
+use super::style::Tone;
+use super::widgets::{self, RowFace};
+use super::{Frame, radio};
+use crate::draw::Rect;
 use crate::icons::Icon;
 
-pub(super) fn draw(f: &mut Frame, body: Rect, buf: &mut String) {
+pub(super) fn draw(f: &mut Frame, body: Rect) {
     if let Some(Editor { purpose: Purpose::Password { ssid }, .. }) = f.s.bottom().editor() {
-        buf.clear();
-        let _ = write!(buf, "Password for {ssid}");
-        return super::editor::draw(f, body, buf, "Join");
+        let title = Fmt::<128>::of(format_args!("Password for {ssid}"));
+        return super::editor::draw(f, body, &title, "Join");
     }
     let wifi = &f.s.radios().wifi;
-    let status = status_line(wifi, buf);
-    let list = radio::header(f, body, Id::Wifi(WifiId::Power), wifi.enabled, status);
-    let (pad, size) = (list.pad, list.size);
+    let status = Fmt::<256>::of(format_args!("{}", Status(wifi)));
+    let list = radio::header(f, body, Id::Wifi(WifiId::Power), wifi.enabled, (status_tone(wifi), &status));
     // The networks, as many as fit above the hint.
     if wifi.networks.iter().any(|n| n.known) {
         list.hint(f, "Long press a saved network to forget it");
@@ -32,74 +32,56 @@ pub(super) fn draw(f: &mut Frame, body: Rect, buf: &mut String) {
         list.empty(f, "Looking for networks");
     }
     for (i, n) in wifi.networks.iter().enumerate().take(list.rows) {
-        let r = list.row(i);
-        let look = Look { radius: 8.0, fill: None, inset: 1.0, ring_inset: 0.0 };
-        let net_state = wifi.net_state(n);
-        f.button(Id::Wifi(WifiId::Network(i as u16)), r, look, |c| {
-            let icon = r.h * ICON;
-            let iy = r.y + (r.h - icon) / 2.0;
-            let bars = Some(signal_bars(n.strength));
-            c.icon(Icon::Wifi { bars }, Rect::new(r.x + pad * 0.5, iy, icon, icon), rgb(if n.active { TEXT_HI } else { TEXT }));
-            let name_x = r.x + pad * 0.5 + icon * 1.6;
-            let state_x = r.x + r.w - r.w * STATE_W;
-            let ty = r.y + (r.h - size * 1.2) / 2.0;
-            c.text_fit((name_x, ty, state_x - name_x - pad), size, rgb(if n.active { TEXT_HI } else { TEXT }), &n.ssid, Keep::Start);
-            if n.secure {
-                c.icon(Icon::Lock, Rect::new(state_x, r.y + (r.h - icon * 0.7) / 2.0, icon * 0.7, icon * 0.7), rgb(DIM));
-            }
-            let (state, color) = match net_state {
-                NetState::Connected => ("Connected", GO),
-                NetState::Joining => ("Joining", ACCENT),
-                NetState::Saved => ("Saved", DIM),
-                NetState::Login => ("Login", DIM),
-                NetState::Other => ("", DIM),
-            };
-            c.text(state_x + icon, ty, size * 0.85, rgb(color), state);
-        });
+        let (state, state_tone) = match wifi.net_state(n) {
+            NetState::Connected => ("Connected", Tone::Go),
+            NetState::Joining => ("Joining", Tone::Accent),
+            NetState::Saved => ("Saved", Tone::Dim),
+            NetState::Login => ("Login", Tone::Dim),
+            NetState::Other => ("", Tone::Dim),
+        };
+        let face = RowFace { icon: Icon::wifi(Some(n.strength)), name: &n.ssid, tone: Tone::high_if(n.active), lock: n.secure, state, state_tone };
+        widgets::status_row(f, Id::Wifi(WifiId::Network(i as u16)), list.row(i), list.pad, list.size, face);
+    }
+}
+
+/// The header's tone: an error stands out; off, missing or idle is dim.
+fn status_tone(wifi: &Wifi) -> Tone {
+    match wifi.status() {
+        RadioStatus::Error(_) => Tone::Accent,
+        RadioStatus::Busy(_) | RadioStatus::Connected(_) => Tone::Normal,
+        RadioStatus::NoDevice | RadioStatus::Off | RadioStatus::Many(_) | RadioStatus::Idle => Tone::Dim,
     }
 }
 
 /// The header's text: an error first, then no device, off, joining, connected, or not.
-fn status_line<'a>(wifi: &Wifi, buf: &'a mut String) -> (u32, &'a str) {
-    buf.clear();
-    let color = match wifi.status() {
-        RadioStatus::Error(problem) => {
-            problem_text(problem, buf);
-            ACCENT
+struct Status<'a>(&'a Wifi);
+
+impl Display for Status<'_> {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self.0.status() {
+            RadioStatus::Error(problem) => write!(f, "{}", ProblemText(problem)),
+            RadioStatus::NoDevice => f.write_str("No Wi-Fi device"),
+            RadioStatus::Off => f.write_str("Wi-Fi is off"),
+            RadioStatus::Busy(ssid) => write!(f, "Joining {ssid}"),
+            RadioStatus::Connected(ssid) => write!(f, "Connected to {ssid}"),
+            RadioStatus::Many(_) | RadioStatus::Idle => f.write_str("Not connected"),
         }
-        RadioStatus::NoDevice => {
-            buf.push_str("No Wi-Fi device");
-            DIM
-        }
-        RadioStatus::Off => {
-            buf.push_str("Wi-Fi is off");
-            DIM
-        }
-        RadioStatus::Busy(ssid) => {
-            let _ = write!(buf, "Joining {ssid}");
-            TEXT
-        }
-        RadioStatus::Connected(ssid) => {
-            let _ = write!(buf, "Connected to {ssid}");
-            TEXT
-        }
-        RadioStatus::Many(_) | RadioStatus::Idle => {
-            buf.push_str("Not connected");
-            DIM
-        }
-    };
-    (color, buf)
+    }
 }
 
 /// What went wrong, in words.
-fn problem_text(problem: &Problem, buf: &mut String) {
-    let _ = match problem {
-        Problem::WrongPassword { ssid } => write!(buf, "Couldn't join {ssid}: wrong password?"),
-        Problem::NoAddress { ssid } => write!(buf, "Joined {ssid}, but it gave no address"),
-        Problem::NoAnswer { ssid } => write!(buf, "Couldn't join {ssid}: no answer"),
-        Problem::Refused { ssid, reason } => write!(buf, "Couldn't join {ssid} (NetworkManager reason {reason})"),
-        Problem::NeedsLogin { ssid } => write!(buf, "{ssid} needs a login, which isn't supported here"),
-        Problem::Unavailable => write!(buf, "NetworkManager isn't available"),
-        Problem::Bus(e) => write!(buf, "NetworkManager: {e}"),
-    };
+struct ProblemText<'a>(&'a Problem);
+
+impl Display for ProblemText<'_> {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self.0 {
+            Problem::WrongPassword { ssid } => write!(f, "Couldn't join {ssid}: wrong password?"),
+            Problem::NoAddress { ssid } => write!(f, "Joined {ssid}, but it gave no address"),
+            Problem::NoAnswer { ssid } => write!(f, "Couldn't join {ssid}: no answer"),
+            Problem::Refused { ssid, reason } => write!(f, "Couldn't join {ssid} (NetworkManager reason {reason})"),
+            Problem::NeedsLogin { ssid } => write!(f, "{ssid} needs a login, which isn't supported here"),
+            Problem::Unavailable => f.write_str("NetworkManager isn't available"),
+            Problem::Bus(e) => write!(f, "NetworkManager: {e}"),
+        }
+    }
 }

@@ -3,16 +3,15 @@
 //! box art and details on the right. Images come from the image cache (placeholders in the game's
 //! colour until they arrive).
 
-use std::fmt::Write;
+use std::fmt::{self, Display, Formatter};
 
 use clamshell_core::{Game, Id, ShelfId};
 
-use super::{ACCENT, DIM, Frame, GO, Look, SURFACE, SURFACE_HI, TEXT, TEXT_HI, wrap};
-use crate::draw::{Canvas, Keep, Rect, rgb};
-use crate::images::Images;
+use super::format::{DaysAgo, Fmt, PlayTime};
+use super::style::{self, Look, RADIUS_L, SURFACE, SURFACE_HI, Tone};
+use super::{Frame, widgets};
+use crate::draw::{Align, Column, Keep, Rect, Span, WRAP_LINE};
 
-/// Outer padding, of the screen's height (at least 4 pixels).
-const PAD: f32 = 0.03;
 /// The tab bar's height and text size, of the screen's height.
 const TABS_H: f32 = 0.08;
 const TAB_TEXT: f32 = 0.034;
@@ -24,6 +23,8 @@ const ROW_H: f32 = 0.085;
 const ROW_TEXT: f32 = 0.36;
 const THUMB: f32 = 0.82;
 const BOX_ASPECT: f32 = 2.0 / 3.0;
+/// A thumbnail placeholder's corner radius.
+const THUMB_RADIUS: f32 = 3.0;
 /// The large art's height, of the list's height.
 const ART_H: f32 = 0.78;
 /// Details text sizes, of the screen's height.
@@ -33,25 +34,47 @@ const DESCRIPTION: f32 = 0.028;
 /// The choice's buttons' height, of the screen's height.
 const BUTTON: f32 = 0.075;
 
-/// Draws shelf; returns how many list rows fit (the state keeps the selection within them).
-pub(super) fn draw(f: &mut Frame, images: &mut Images, buf: &mut String, w: f32, h: f32) -> usize {
+/// Draws shelf over `screen`; returns how many list rows fit (the state keeps the selection within
+/// them).
+pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
     let s = f.s;
-    let pad = (h * PAD).max(4.0);
-    let scale = f.c.scale();
+    let (w, h) = (screen.w, screen.h);
+    // (The second screen's padding rule, of this screen's height; at least 4 pixels.)
+    let pad = style::pad(h).max(4.0);
 
     // Tabs: the collections' names.
     let tabs_h = h * TABS_H;
-    let items = s.shelf().library().collections.iter().enumerate().map(|(i, coll)| (Id::Shelf(ShelfId::Collection(i as u16)), coll.name.as_str(), i == s.shelf().current()));
-    super::tabs(f, Rect::new(pad, 0.0, w - 2.0 * pad, tabs_h), h * TAB_TEXT, pad * 0.8, f32::INFINITY, items);
+    let collections = s.shelf().library().collections.iter().enumerate();
+    let items = collections.map(|(i, coll)| (Id::Shelf(ShelfId::Collection(i as u16)), coll.name.as_str(), i == s.shelf().current()));
+    widgets::tabs(f, Rect::new(pad, 0.0, w - 2.0 * pad, tabs_h), h * TAB_TEXT, pad * 0.8, f32::INFINITY, items);
 
     // The list, filling the height below the tabs exactly with whole rows.
     let list = Rect::new(pad, tabs_h + pad * 0.5, w * LIST_W - pad, h - tabs_h - pad * 1.5);
     let rows = ((list.h / (h * ROW_H)).floor() as usize).max(1);
-    let row_h = list.h / rows as f32;
-    let cursor = s.shelf().cursor();
     let Some(coll) = s.shelf().collection() else {
         return rows;
     };
+    list_rows(f, list, rows, pad);
+    // Where in the list: a thin bar along its right edge, when it doesn't all fit.
+    let (len, top) = (coll.games.len(), s.shelf().cursor().top);
+    if len > rows {
+        let track = Rect::new(list.x + list.w - 3.0, list.y, 2.0, list.h);
+        f.c.fill(track, SURFACE);
+        let thumb_h = (track.h * rows as f32 / len as f32).max(8.0);
+        let y = track.y + (track.h - thumb_h) * top as f32 / (len - rows) as f32;
+        f.c.fill(Rect::new(track.x, y, track.w, thumb_h), Tone::Dim);
+    }
+    if let Some(game) = s.shelf().selected_game() {
+        selected(f, game, screen, list, pad);
+    }
+    rows
+}
+
+/// The list's `rows` rows from the cursor's top, the selection on a background.
+fn list_rows(f: &mut Frame, list: Rect, rows: usize, pad: f32) {
+    let s = f.s;
+    let row_h = list.h / rows as f32;
+    let cursor = s.shelf().cursor();
     for row in 0..rows {
         let position = cursor.top + row;
         let Some(game) = s.shelf().game_at(position) else {
@@ -59,148 +82,121 @@ pub(super) fn draw(f: &mut Frame, images: &mut Images, buf: &mut String, w: f32,
         };
         let r = Rect::new(list.x, list.y + row as f32 * row_h, list.w - pad * 0.6, row_h - 2.0);
         let selected = position == cursor.index;
-        let look = Look { radius: 8.0, fill: selected.then_some(SURFACE_HI), inset: 0.0, ring_inset: -2.0 };
+        let look = Look { fill: selected.then_some(SURFACE_HI), ..Look::CARD };
         let thumb_h = r.h * THUMB;
         let thumb = Rect::new(r.x + pad * 0.4, r.y + (r.h - thumb_h) / 2.0, thumb_h * BOX_ASPECT, thumb_h);
-        let size = row_h * ROW_TEXT;
-        f.button(Id::Shelf(ShelfId::Game(game.id.clone())), r, look, |c| {
-            art(c, images, game, thumb, scale, 3.0, false);
-            let color = if selected { TEXT_HI } else { TEXT };
+        f.button(Id::Shelf(ShelfId::Game(game.id.clone())), r, look, |f| {
+            widgets::art(f.c, f.images, game, thumb, THUMB_RADIUS, Align::Center);
             let tx = thumb.x + thumb.w + pad * 0.6;
-            let room = r.x + r.w - tx - pad * 0.3;
-            c.text_fit((tx, r.y + (r.h - size * 1.2) / 2.0, room), size, rgb(color), &game.title, Keep::Start);
+            let title = Rect::new(tx, r.y, r.x + r.w - tx - pad * 0.3, r.h);
+            f.c.text_fit(title, row_h * ROW_TEXT, Tone::high_if(selected), &game.title, Keep::Start);
         });
     }
-    // Where in the list: a thin bar along its right edge, when it doesn't all fit.
-    let len = coll.games.len();
-    if len > rows {
-        let track = Rect::new(list.x + list.w - 3.0, list.y, 2.0, list.h);
-        f.c.fill(track, rgb(SURFACE));
-        let thumb_h = (track.h * rows as f32 / len as f32).max(8.0);
-        let y = track.y + (track.h - thumb_h) * cursor.top as f32 / (len - rows) as f32;
-        f.c.fill(Rect::new(track.x, y, track.w, thumb_h), rgb(DIM));
-    }
+}
 
-    // The selected game: large art, then title and details beside it.
+/// The selected game right of the `list`, as high as it: large art, then beside it the title, what
+/// playing it does now, whether it is a favourite, the details and as much of the description as fits.
+fn selected(f: &mut Frame, game: &Game, screen: Rect, list: Rect, pad: f32) {
+    let s = f.s;
+    let h = screen.h;
+    let art_h = list.h * ART_H;
+    let box_rect = Rect::new(screen.w * LIST_W + pad, list.y, art_h * BOX_ASPECT, art_h);
+    widgets::art(f.c, f.images, game, box_rect, RADIUS_L, Align::Start);
+    let tx = box_rect.x + box_rect.w + pad * 1.2;
+    let text_w = screen.w - pad - tx;
+    let mut col = Column::new(Rect::new(tx, list.y, text_w, list.h));
+    let span = |col: &Column| Span { x: tx, y: col.y(), w: text_w };
+    let detail = h * DETAIL;
+    col.skip(f.c.wrap(span(&col), h * TITLE, Tone::High, &game.title, 3) + pad * 0.4);
+
+    // What playing it does now: show it (it runs), or with another game running, the choice: keep that
+    // one running, or close it; then whether it is a favourite. Each of these on a line of its own.
     let mut choices = None;
-    if let Some(game) = s.shelf().selected_game() {
-        let c = &mut *f.c;
-        let x0 = w * LIST_W + pad;
-        let art_h = list.h * ART_H;
-        let box_rect = Rect::new(x0, list.y, art_h * BOX_ASPECT, art_h);
-        art(c, images, game, box_rect, scale, 10.0, true);
-        let tx = box_rect.x + box_rect.w + pad * 1.2;
-        let room = w - pad - tx;
-        let mut y = list.y;
-        y += wrap(c, (tx, y, room), h * TITLE, TEXT_HI, &game.title, 3) + pad * 0.4;
-        // What playing it does now: show it (it runs), or with another game running, the choice: keep
-        // that one running, or close it; then whether it is a favourite.
-        let the_game = s.current_game().and_then(|id| s.game(id));
-        let mut mx = tx;
-        if s.session().running_game(&game.id).is_some() {
-            mx += c.text(mx, y, h * DETAIL, rgb(GO), "Running · A to show it") + pad;
-        } else if let Some(other) = the_game {
-            buf.clear();
-            let _ = write!(buf, "{} is running. Start this and", other.title);
-            y += wrap(c, (tx, y, room), h * DETAIL, TEXT, buf, 2) + pad * 0.4;
-            choices = Some((Rect::new(tx, y, room, h * BUTTON), other.title.as_str()));
-            y += h * BUTTON + pad * 0.6;
-        }
-        if mx > tx {
-            y += h * DETAIL * 1.3 + pad * 0.2;
-            mx = tx;
-        }
-        if game.favourite {
-            mx += c.text(mx, y, h * DETAIL, rgb(ACCENT), "Favourite");
-        }
-        if mx > tx {
-            y += h * DETAIL * 1.3 + pad * 0.4;
-        }
-        for line in details(game, s.unix_secs(), buf) {
-            if !line.is_empty() {
-                y += wrap(c, (tx, y, room), h * DETAIL, DIM, line, 2) + pad * 0.2;
-            }
-        }
-        let text = if game.description.is_empty() { &game.summary } else { &game.description };
-        // As many lines as fit above the list's bottom.
-        let (top, line_h) = (y + pad * 0.6, h * DESCRIPTION * 1.3);
-        let lines = ((list.y + list.h - top) / line_h).floor().max(0.0) as usize;
-        if !text.is_empty() && lines > 0 {
-            wrap(c, (tx, top, room), h * DESCRIPTION, TEXT, text, lines.min(12));
-        }
+    let mut mx = tx;
+    if s.session().running_game(&game.id).is_some() {
+        mx += f.c.text(mx, col.y(), detail, Tone::Go, "Running · A to show it") + pad;
+    } else if let Some(other) = s.current_game().and_then(|id| s.game(id)) {
+        let text = Fmt::<160>::of(format_args!("{} is running. Start this and", other.title));
+        col.skip(f.c.wrap(span(&col), detail, Tone::Normal, &text, 2) + pad * 0.4);
+        choices = Some(Rect::new(tx, col.y(), text_w, h * BUTTON));
+        col.skip(h * BUTTON + pad * 0.6);
     }
-    // The choice's buttons (targets, drawn after the text): keep the running game, or close it.
-    if let Some((row, _)) = choices {
-        let look = Look { radius: 8.0, fill: Some(SURFACE_HI), inset: 0.0, ring_inset: -2.0 };
-        let size = h * DETAIL;
-        let keep = row.cell(2, 1, pad * 0.5, 0);
-        f.button(Id::Shelf(ShelfId::StartKeep), keep, look, |c| super::label(c, keep, size, TEXT_HI, "keep it running"));
-        let close = row.cell(2, 1, pad * 0.5, 1);
-        f.button(Id::Shelf(ShelfId::StartClose), close, look, |c| super::label(c, close, size, TEXT_HI, "close it"));
+    if mx > tx {
+        col.skip(detail * WRAP_LINE + pad * 0.2);
+        mx = tx;
     }
-    rows
-}
+    if game.favourite {
+        mx += f.c.text(mx, col.y(), detail, Tone::Accent, "Favourite");
+    }
+    if mx > tx {
+        col.skip(detail * WRAP_LINE + pad * 0.4);
+    }
 
-/// The detail lines under the title: who made it and when, the genre, the players, the play time.
-/// Formatted into `buf` (reused), split by newlines.
-fn details<'b>(game: &Game, now: u64, buf: &'b mut String) -> std::str::Split<'b, char> {
-    buf.clear();
-    let maker = game.developers.first().or(game.publishers.first());
-    match (maker, game.release) {
-        (Some(m), Some((y, _, _))) => {
-            let _ = write!(buf, "{m} · {y}");
-        }
-        (Some(m), None) => buf.push_str(m),
-        (None, Some((y, _, _))) => {
-            let _ = write!(buf, "{y}");
-        }
-        (None, None) => {}
-    }
-    buf.push('\n');
-    for (i, genre) in game.genres.iter().enumerate() {
-        if i > 0 {
-            buf.push_str(", ");
-        }
-        buf.push_str(genre);
-    }
-    buf.push('\n');
-    if game.players > 1 {
-        let _ = write!(buf, "Up to {} players", game.players);
-    }
-    buf.push('\n');
+    // The details: who made it and when, the genres, the players, the play time.
+    let maker = Fmt::<128>::of(format_args!("{}", Maker(game)));
+    let genres = Fmt::<128>::of(format_args!("{}", Genres(&game.genres)));
+    let players = if game.players > 1 { Fmt::<32>::of(format_args!("Up to {} players", game.players)) } else { Fmt::new() };
     let plays = game.plays;
-    if plays.count > 0 {
-        let (h, m) = (plays.seconds / 3600, plays.seconds % 3600 / 60);
-        match (h, m) {
-            (0, 0) => buf.push_str("Played briefly"),
-            (0, m) => {
-                let _ = write!(buf, "Played {m} min");
-            }
-            (h, m) => {
-                let _ = write!(buf, "Played {h} h {m} min");
-            }
+    let played = if plays.count > 0 {
+        let days = s.unix_secs().saturating_sub(plays.last) / 86_400;
+        Fmt::<64>::of(format_args!("{}{}", PlayTime(plays.seconds), DaysAgo(days)))
+    } else {
+        Fmt::new()
+    };
+    for line in [&*maker, &*genres, &*players, &*played] {
+        if !line.is_empty() {
+            col.skip(f.c.wrap(span(&col), detail, Tone::Dim, line, 2) + pad * 0.2);
         }
-        let days = now.saturating_sub(plays.last) / 86_400;
-        let _ = match days {
-            0 => write!(buf, " · today"),
-            1 => write!(buf, " · yesterday"),
-            d => write!(buf, " · {d} days ago"),
-        };
     }
-    buf.split('\n')
+
+    // As many lines of the description as fit above the list's bottom.
+    let text = if game.description.is_empty() { &game.summary } else { &game.description };
+    let (top, size) = (col.y() + pad * 0.6, h * DESCRIPTION);
+    let lines = ((list.y + list.h - top) / (size * WRAP_LINE)).floor().max(0.0) as usize;
+    if !text.is_empty() && lines > 0 {
+        f.c.wrap(Span { x: tx, y: top, w: text_w }, size, Tone::Normal, text, lines.min(12));
+    }
+
+    // The choice's buttons (targets, drawn after the text): keep the running game, or close it.
+    if let Some(row) = choices {
+        let look = Look::CARD;
+        let keep = row.cell(2, 1, pad * 0.5, 0);
+        f.button(Id::Shelf(ShelfId::StartKeep), keep, look, |f| {
+            f.c.text_in(keep, detail, Tone::High, "keep it running", Align::Center);
+        });
+        let close = row.cell(2, 1, pad * 0.5, 1);
+        f.button(Id::Shelf(ShelfId::StartClose), close, look, |f| {
+            f.c.text_in(close, detail, Tone::High, "close it", Align::Center);
+        });
+    }
 }
 
-/// The game's box art fitted into `r` (centred; at the top if `top`), or a placeholder in its colour
-/// while there is none.
-fn art(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect, scale: f32, radius: f32, top: bool) {
-    let (pw, ph) = ((r.w * scale).round() as u32, (r.h * scale).round() as u32);
-    let image = game.box_front.as_deref().and_then(|path| images.get(&game.id, path, pw, ph));
-    match image {
-        Some(img) => {
-            let (iw, ih) = (img.width() as f32 / scale, img.height() as f32 / scale);
-            let y = if top { r.y } else { r.y + (r.h - ih) / 2.0 };
-            c.image(img, r.x + (r.w - iw) / 2.0, y);
+/// Who made a game and when: "Nintendo · 1991", either alone, or nothing.
+struct Maker<'a>(&'a Game);
+
+impl Display for Maker<'_> {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let game = self.0;
+        match (game.developers.first().or(game.publishers.first()), game.release) {
+            (Some(m), Some((y, _, _))) => write!(f, "{m} · {y}"),
+            (Some(m), None) => f.write_str(m),
+            (None, Some((y, _, _))) => write!(f, "{y}"),
+            (None, None) => Ok(()),
         }
-        None => c.rounded(r, radius, rgb(game.color)),
+    }
+}
+
+/// The genres, separated by commas.
+struct Genres<'a>(&'a [String]);
+
+impl Display for Genres<'_> {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        for (i, genre) in self.0.iter().enumerate() {
+            if i > 0 {
+                f.write_str(", ")?;
+            }
+            f.write_str(genre)?;
+        }
+        Ok(())
     }
 }

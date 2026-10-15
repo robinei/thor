@@ -1,5 +1,10 @@
-//! Line icons, drawn as paths on a 24x24 grid scaled into a square. No icon font or image files.
+//! Line icons, drawn as paths on a 24x24 grid scaled into a square. No icon font or image files. Which
+//! icon stands for what (a tab, a level, a signal, an app) is decided here too, by the constructors.
 
+use clamshell_core::Tab;
+use clamshell_core::bluetooth::Kind;
+use clamshell_core::settings::Setting;
+use clamshell_core::wifi::signal_bars;
 use tiny_skia::Color;
 
 use crate::draw::{Canvas, Rect};
@@ -29,7 +34,7 @@ pub enum Icon {
     Reset,
     /// Another instance.
     Plus,
-    // Launcher apps.
+    // Dock apps.
     Shelf,
     Gamepad,
     Browser,
@@ -39,6 +44,7 @@ pub enum Icon {
     Keyboard,
     Touchpad,
     Sysinfo,
+    // Keyboard keys.
     Shift,
     Backspace,
     Enter,
@@ -56,282 +62,585 @@ pub enum Icon {
     Brightness,
     /// A network that needs a password.
     Lock,
-    /// Bluetooth's rune; `on`: with the dots beside it (a device connected).
+    /// Bluetooth's rune; `connected`: with the dots beside it.
     Bluetooth { connected: bool },
     Headphones,
     Phone,
+}
+
+impl Icon {
+    /// A tab's icon in the bar, as it looks without a reading.
+    pub fn for_tab(tab: Tab) -> Icon {
+        match tab {
+            Tab::Settings => Icon::Sliders,
+            Tab::Dock => Icon::Apps,
+            Tab::Keyboard => Icon::Keyboard,
+            Tab::Touchpad => Icon::Touchpad,
+            Tab::Sysinfo => Icon::Sysinfo,
+            Tab::Volume => Icon::Volume { waves: 3, muted: false },
+            Tab::Brightness => Icon::Brightness,
+            Tab::Wifi => Icon::Wifi { bars: Some(3) },
+            Tab::Battery => Icon::Battery { tenths: 10, charging: false },
+            Tab::Bluetooth => Icon::Bluetooth { connected: false },
+        }
+    }
+
+    /// A volume (0-100): a wave per third.
+    pub fn volume(level: u8, muted: bool) -> Icon {
+        let waves = match level {
+            0 => 0,
+            1..=33 => 1,
+            34..=66 => 2,
+            _ => 3,
+        };
+        Icon::Volume { waves, muted }
+    }
+
+    /// A Wi-Fi signal's quality (0-100); `None`: not connected.
+    pub fn wifi(quality: Option<u8>) -> Icon {
+        Icon::Wifi { bars: quality.map(signal_bars) }
+    }
+
+    /// A battery's charge (0-100), to the nearest tenth.
+    pub fn battery(level: u8, charging: bool) -> Icon {
+        Icon::Battery { tenths: ((u16::from(level) + 5) / 10) as u8, charging }
+    }
+
+    /// A settings tile's icon.
+    pub fn for_setting(s: Setting) -> Icon {
+        match s {
+            Setting::Power => Icon::Bolt,
+            Setting::FpsCap => Icon::Gauge,
+            Setting::Refresh => Icon::Refresh,
+            Setting::Hud => Icon::Hud,
+            Setting::Upscale => Icon::Upscale,
+            Setting::BottomScreen => Icon::ScreenOff,
+            Setting::BigCores => Icon::Cores,
+            Setting::Fan => Icon::Fan,
+            Setting::PadMouse => Icon::Mouse,
+            Setting::Buttons => Icon::Buttons,
+            Setting::Deadzone => Icon::Deadzone,
+            Setting::Rumble => Icon::Rumble,
+            Setting::CpuMax => Icon::Cpu,
+            Setting::GpuMax => Icon::Gpu,
+            Setting::ChargeLimit => Icon::Battery { tenths: 8, charging: true },
+        }
+    }
+
+    /// A Bluetooth device's icon, by its kind.
+    pub fn for_device(kind: Kind) -> Icon {
+        match kind {
+            Kind::Audio => Icon::Headphones,
+            Kind::Gamepad => Icon::Gamepad,
+            Kind::Keyboard => Icon::Keyboard,
+            Kind::Mouse => Icon::Mouse,
+            Kind::Phone => Icon::Phone,
+            Kind::Computer | Kind::Other => Icon::Bluetooth { connected: false },
+        }
+    }
+
+    /// A dock app's drawn icon, by the name launcher.json gives (`None`: the app has none drawn).
+    pub fn for_app(name: &str) -> Option<Icon> {
+        match name {
+            "shelf" => Some(Icon::Shelf),
+            "gamepad" => Some(Icon::Gamepad),
+            "terminal" => Some(Icon::Env),
+            "browser" => Some(Icon::Browser),
+            "files" => Some(Icon::Files),
+            "music" => Some(Icon::Music),
+            "video" => Some(Icon::Video),
+            "settings" => Some(Icon::Sliders),
+            _ => None,
+        }
+    }
+}
+
+/// The usual stroke width, and the thin one of a scale's unlit steps (levels show as thick lit strokes;
+/// the rest of the scale stays visible, thin), in grid units.
+const LINE: f32 = 1.8;
+const THIN: f32 = 0.8;
+
+/// Draws on the 24x24 grid, scaled into a square of the canvas.
+struct Pen<'a, 'c> {
+    c: &'a mut Canvas<'c>,
+    x0: f32,
+    y0: f32,
+    /// Logical pixels per grid unit.
+    u: f32,
+    color: Color,
+}
+
+impl Pen<'_, '_> {
+    fn p(&self, (x, y): (f32, f32)) -> (f32, f32) {
+        (self.x0 + x * self.u, self.y0 + y * self.u)
+    }
+
+    fn rect(&self, (x, y, w, h): (f32, f32, f32, f32)) -> Rect {
+        let u = self.u;
+        Rect::new(self.x0 + x * u, self.y0 + y * u, w * u, h * u)
+    }
+
+    /// The points on the canvas (at most 12; an icon's paths are short).
+    fn points(&self, points: &[(f32, f32)]) -> ([(f32, f32); 12], usize) {
+        let mut out = [(0.0, 0.0); 12];
+        let n = points.len().min(out.len());
+        for (o, &p) in out.iter_mut().zip(points) {
+            *o = self.p(p);
+        }
+        (out, n)
+    }
+
+    /// Lines through `points`, `width` wide.
+    fn line(&mut self, points: &[(f32, f32)], width: f32) {
+        let (points, n) = self.points(points);
+        self.c.polyline(points.get(..n).unwrap_or(&[]), width * self.u, self.color);
+    }
+
+    /// A closed shape through `points`.
+    fn shape(&mut self, points: &[(f32, f32)], width: f32) {
+        let (points, n) = self.points(points);
+        self.c.polygon(points.get(..n).unwrap_or(&[]), width * self.u, self.color);
+    }
+
+    /// A rounded rectangle's outline: x, y, w, h.
+    fn frame(&mut self, r: (f32, f32, f32, f32), radius: f32, width: f32) {
+        let r = self.rect(r);
+        self.c.outline(r, radius * self.u, width * self.u, self.color);
+    }
+
+    /// A filled rounded rectangle: x, y, w, h.
+    fn block(&mut self, r: (f32, f32, f32, f32), radius: f32) {
+        let r = self.rect(r);
+        self.c.rounded(r, radius * self.u, self.color);
+    }
+
+    fn dot(&mut self, x: f32, y: f32, radius: f32) {
+        self.c.circle(self.x0 + x * self.u, self.y0 + y * self.u, radius * self.u, self.color);
+    }
+
+    /// An arc around `center` from `from` to `to` degrees (counterclockwise from the right).
+    fn arc(&mut self, (cx, cy): (f32, f32), r: f32, (from, to): (f32, f32), width: f32) {
+        let mut points = [(0.0, 0.0); 7];
+        for (i, point) in points.iter_mut().enumerate() {
+            let a = (from + (to - from) * i as f32 / 6.0).to_radians();
+            *point = self.p((cx + r * a.cos(), cy - r * a.sin()));
+        }
+        self.c.polyline(&points, width * self.u, self.color);
+    }
 }
 
 /// Draws `icon` centred in `r`, as large as fits.
 pub fn draw(c: &mut Canvas, icon: Icon, r: Rect, color: Color) {
     let size = r.w.min(r.h);
     let (cx, cy) = r.center();
-    let u = size / 24.0;
-    let (x0, y0) = (cx - size / 2.0, cy - size / 2.0);
-    let p = |x: f32, y: f32| (x0 + x * u, y0 + y * u);
-    let rr = |x: f32, y: f32, w: f32, h: f32| Rect::new(x0 + x * u, y0 + y * u, w * u, h * u);
-    let line = 1.8 * u;
-    // Levels show as thick lit strokes; the rest of the scale stays visible, thin.
-    let thin = 0.8 * u;
-    let arc = |cx: f32, cy: f32, r: f32, from: f32, to: f32| -> [(f32, f32); 7] {
-        let mut points = [(0.0, 0.0); 7];
-        for (i, point) in points.iter_mut().enumerate() {
-            let a = (from + (to - from) * i as f32 / 6.0).to_radians();
-            *point = p(cx + r * a.cos(), cy - r * a.sin());
-        }
-        points
-    };
+    let mut pen = Pen { c, x0: cx - size / 2.0, y0: cy - size / 2.0, u: size / 24.0, color };
+    let p = &mut pen;
     match icon {
-        Icon::Sliders => {
-            for (y, knob) in [(6.0, 15.0), (12.0, 8.0), (18.0, 13.0)] {
-                c.polyline(&[p(3.0, y), p(21.0, y)], line, color, false);
-                c.circle(x0 + knob * u, y0 + y * u, 2.6 * u, color);
-            }
-        }
-        Icon::Bolt => {
-            c.polyline(&[p(13.5, 2.0), p(4.5, 14.0), p(11.0, 14.0), p(10.0, 22.0), p(19.5, 10.0), p(13.0, 10.0)], line, color, true);
-        }
-        Icon::Gauge => {
-            c.polyline(&arc(12.0, 14.0, 9.0, 90.0, 210.0), line, color, false);
-            c.polyline(&arc(12.0, 14.0, 9.0, -30.0, 90.0), line, color, false);
-            c.polyline(&[p(12.0, 14.0), p(16.5, 8.5)], line, color, false);
-            c.circle(x0 + 12.0 * u, y0 + 14.0 * u, 1.8 * u, color);
-        }
-        Icon::Refresh => {
-            c.outline(rr(2.0, 4.0, 20.0, 13.0), 2.0 * u, line, color);
-            c.polyline(&[p(8.0, 20.5), p(16.0, 20.5)], line, color, false);
-            let wave = [p(5.5, 11.0), p(7.5, 8.5), p(9.5, 11.0), p(11.5, 13.5), p(13.5, 11.0), p(15.5, 8.5), p(17.5, 11.0)];
-            c.polyline(&wave, 1.5 * u, color, false);
-        }
+        Icon::Sliders => sliders(p),
+        Icon::Bolt => p.shape(&[(13.5, 2.0), (4.5, 14.0), (11.0, 14.0), (10.0, 22.0), (19.5, 10.0), (13.0, 10.0)], LINE),
+        Icon::Gauge => gauge(p),
+        Icon::Refresh => refresh(p),
         Icon::Hud => {
-            c.outline(rr(2.0, 4.0, 20.0, 16.0), 2.0 * u, line, color);
-            c.rounded(rr(4.5, 6.5, 7.0, 4.5), 1.0 * u, color);
+            p.frame((2.0, 4.0, 20.0, 16.0), 2.0, LINE);
+            p.block((4.5, 6.5, 7.0, 4.5), 1.0);
         }
         Icon::Upscale => {
-            c.outline(rr(3.0, 13.0, 8.0, 8.0), 1.5 * u, line, color);
-            c.polyline(&[p(9.0, 15.0), p(20.0, 4.0)], line, color, false);
-            c.polyline(&[p(13.5, 4.0), p(20.0, 4.0), p(20.0, 10.5)], line, color, false);
+            p.frame((3.0, 13.0, 8.0, 8.0), 1.5, LINE);
+            p.line(&[(9.0, 15.0), (20.0, 4.0)], LINE);
+            p.line(&[(13.5, 4.0), (20.0, 4.0), (20.0, 10.5)], LINE);
         }
         Icon::ScreenOff => {
-            c.outline(rr(2.5, 5.0, 19.0, 14.0), 2.0 * u, line, color);
-            c.polyline(&[p(3.0, 3.0), p(21.0, 21.0)], line, color, false);
+            p.frame((2.5, 5.0, 19.0, 14.0), 2.0, LINE);
+            p.line(&[(3.0, 3.0), (21.0, 21.0)], LINE);
         }
-        Icon::Cores => {
-            c.outline(rr(3.0, 3.0, 11.0, 11.0), 1.5 * u, line, color);
-            for (x, y) in [(17.0, 3.0), (17.0, 9.0), (3.0, 17.0), (9.0, 17.0), (17.0, 17.0)] {
-                c.outline(rr(x, y, 4.5, 4.5), 1.0 * u, 1.5 * u, color);
-            }
-        }
-        Icon::Fan => {
-            c.circle(x0 + 12.0 * u, y0 + 12.0 * u, 2.0 * u, color);
-            for k in 0..3 {
-                let a = (k as f32 * 120.0).to_radians();
-                let b = (k as f32 * 120.0 + 55.0).to_radians();
-                let blade = [p(12.0, 12.0), p(12.0 + 8.5 * a.cos(), 12.0 - 8.5 * a.sin()), p(12.0 + 7.0 * b.cos(), 12.0 - 7.0 * b.sin())];
-                c.polyline(&blade, 1.6 * u, color, true);
-            }
-        }
+        Icon::Cores => cores(p),
+        Icon::Fan => fan(p),
         Icon::Buttons => {
             for (x, y) in [(12.0, 5.0), (19.0, 12.0), (12.0, 19.0), (5.0, 12.0)] {
-                c.outline(rr(x - 3.0, y - 3.0, 6.0, 6.0), 3.0 * u, 1.6 * u, color);
+                p.frame((x - 3.0, y - 3.0, 6.0, 6.0), 3.0, 1.6);
             }
         }
         Icon::Deadzone => {
-            c.outline(rr(2.5, 2.5, 19.0, 19.0), 9.5 * u, line, color);
-            c.outline(rr(8.0, 8.0, 8.0, 8.0), 4.0 * u, thin, color);
-            c.circle(x0 + 12.0 * u, y0 + 12.0 * u, 1.6 * u, color);
+            p.frame((2.5, 2.5, 19.0, 19.0), 9.5, LINE);
+            p.frame((8.0, 8.0, 8.0, 8.0), 4.0, THIN);
+            p.dot(12.0, 12.0, 1.6);
         }
-        Icon::Rumble => {
-            c.outline(rr(8.0, 3.5, 8.0, 17.0), 2.0 * u, line, color);
-            c.polyline(&[p(4.5, 7.0), p(2.5, 9.5), p(4.5, 12.0), p(2.5, 14.5), p(4.5, 17.0)], 1.5 * u, color, false);
-            c.polyline(&[p(19.5, 7.0), p(21.5, 9.5), p(19.5, 12.0), p(21.5, 14.5), p(19.5, 17.0)], 1.5 * u, color, false);
-        }
-        Icon::Cpu => {
-            c.outline(rr(6.0, 6.0, 12.0, 12.0), 1.5 * u, line, color);
-            c.rounded(rr(9.5, 9.5, 5.0, 5.0), 0.8 * u, color);
-            for t in [9.0, 12.0, 15.0] {
-                c.polyline(&[p(t, 2.5), p(t, 6.0)], 1.4 * u, color, false);
-                c.polyline(&[p(t, 18.0), p(t, 21.5)], 1.4 * u, color, false);
-                c.polyline(&[p(2.5, t), p(6.0, t)], 1.4 * u, color, false);
-                c.polyline(&[p(18.0, t), p(21.5, t)], 1.4 * u, color, false);
-            }
-        }
-        Icon::Gpu => {
-            c.outline(rr(2.0, 6.0, 20.0, 12.0), 1.5 * u, line, color);
-            c.outline(rr(5.5, 8.5, 7.0, 7.0), 3.5 * u, 1.5 * u, color);
-            c.polyline(&[p(15.5, 9.5), p(15.5, 14.5)], 1.5 * u, color, false);
-            c.polyline(&[p(18.5, 9.5), p(18.5, 14.5)], 1.5 * u, color, false);
-            c.polyline(&[p(6.0, 18.0), p(6.0, 21.0), p(13.0, 21.0), p(13.0, 18.0)], 1.4 * u, color, false);
-        }
+        Icon::Rumble => rumble(p),
+        Icon::Cpu => cpu(p),
+        Icon::Gpu => gpu(p),
         Icon::Env => {
-            c.outline(rr(2.0, 4.0, 20.0, 16.0), 2.0 * u, line, color);
-            c.polyline(&[p(6.0, 9.0), p(9.5, 12.0), p(6.0, 15.0)], line, color, false);
-            c.polyline(&[p(11.5, 15.5), p(17.5, 15.5)], line, color, false);
+            p.frame((2.0, 4.0, 20.0, 16.0), 2.0, LINE);
+            p.line(&[(6.0, 9.0), (9.5, 12.0), (6.0, 15.0)], LINE);
+            p.line(&[(11.5, 15.5), (17.5, 15.5)], LINE);
         }
-        Icon::Reset => {
-            c.polyline(&arc(12.0, 13.0, 8.0, 60.0, 195.0), line, color, false);
-            c.polyline(&arc(12.0, 13.0, 8.0, 195.0, 330.0), line, color, false);
-            c.polyline(&arc(12.0, 13.0, 8.0, -30.0, 15.0), line, color, false);
-            c.polyline(&[p(11.5, 3.5), p(16.0, 6.1), p(13.0, 10.0)], line, color, false);
-        }
+        Icon::Reset => reset(p),
         Icon::Plus => {
-            c.polyline(&[p(12.0, 4.0), p(12.0, 20.0)], 3.2 * u, color, false);
-            c.polyline(&[p(4.0, 12.0), p(20.0, 12.0)], 3.2 * u, color, false);
+            p.line(&[(12.0, 4.0), (12.0, 20.0)], 3.2);
+            p.line(&[(4.0, 12.0), (20.0, 12.0)], 3.2);
         }
-        Icon::Shelf => {
-            for (x, top) in [(4.0, 5.0), (8.5, 7.0), (13.0, 4.0)] {
-                c.outline(rr(x, top, 3.5, 17.0 - top), 0.8 * u, 1.5 * u, color);
-            }
-            c.polyline(&[p(17.5, 7.5), p(21.0, 16.5)], 3.2 * u, color, false);
-            c.polyline(&[p(2.0, 21.0), p(22.0, 21.0)], line, color, false);
-        }
-        Icon::Gamepad => {
-            let body = [p(6.5, 7.0), p(17.5, 7.0), p(21.0, 15.0), p(19.5, 18.5), p(16.0, 17.0), p(14.0, 14.5), p(10.0, 14.5), p(8.0, 17.0), p(4.5, 18.5), p(3.0, 15.0)];
-            c.polyline(&body, line, color, true);
-            c.polyline(&[p(6.0, 10.8), p(10.0, 10.8)], 1.5 * u, color, false);
-            c.polyline(&[p(8.0, 8.8), p(8.0, 12.8)], 1.5 * u, color, false);
-            c.circle(x0 + 15.5 * u, y0 + 10.0 * u, 1.1 * u, color);
-            c.circle(x0 + 17.5 * u, y0 + 12.0 * u, 1.1 * u, color);
-        }
+        Icon::Shelf => shelf(p),
+        Icon::Gamepad => gamepad(p),
         Icon::Browser => {
-            c.outline(rr(2.5, 2.5, 19.0, 19.0), 9.5 * u, line, color);
-            c.outline(rr(8.0, 2.5, 8.0, 19.0), 4.0 * u, 1.4 * u, color);
-            c.polyline(&[p(3.0, 9.0), p(21.0, 9.0)], 1.4 * u, color, false);
-            c.polyline(&[p(3.0, 15.0), p(21.0, 15.0)], 1.4 * u, color, false);
+            p.frame((2.5, 2.5, 19.0, 19.0), 9.5, LINE);
+            p.frame((8.0, 2.5, 8.0, 19.0), 4.0, 1.4);
+            p.line(&[(3.0, 9.0), (21.0, 9.0)], 1.4);
+            p.line(&[(3.0, 15.0), (21.0, 15.0)], 1.4);
         }
-        Icon::Files => {
-            c.polyline(&[p(2.5, 6.0), p(2.5, 19.5), p(21.5, 19.5), p(21.5, 8.0), p(11.5, 8.0), p(9.5, 5.0), p(3.5, 5.0)], line, color, true);
-        }
+        Icon::Files => p.shape(&[(2.5, 6.0), (2.5, 19.5), (21.5, 19.5), (21.5, 8.0), (11.5, 8.0), (9.5, 5.0), (3.5, 5.0)], LINE),
         Icon::Music => {
-            c.polyline(&[p(9.0, 17.5), p(9.0, 4.0), p(20.0, 2.5), p(20.0, 15.5)], line, color, false);
-            c.circle(x0 + 6.5 * u, y0 + 17.5 * u, 2.8 * u, color);
-            c.circle(x0 + 17.5 * u, y0 + 15.5 * u, 2.8 * u, color);
+            p.line(&[(9.0, 17.5), (9.0, 4.0), (20.0, 2.5), (20.0, 15.5)], LINE);
+            p.dot(6.5, 17.5, 2.8);
+            p.dot(17.5, 15.5, 2.8);
         }
         Icon::Video => {
-            c.outline(rr(2.5, 4.5, 19.0, 15.0), 2.5 * u, line, color);
-            c.polyline(&[p(10.0, 8.5), p(16.0, 12.0), p(10.0, 15.5)], line, color, true);
+            p.frame((2.5, 4.5, 19.0, 15.0), 2.5, LINE);
+            p.shape(&[(10.0, 8.5), (16.0, 12.0), (10.0, 15.5)], LINE);
         }
         Icon::Mouse => {
-            c.outline(rr(6.0, 3.0, 12.0, 18.0), 6.0 * u, line, color);
-            c.polyline(&[p(12.0, 3.5), p(12.0, 9.5)], line, color, false);
+            p.frame((6.0, 3.0, 12.0, 18.0), 6.0, LINE);
+            p.line(&[(12.0, 3.5), (12.0, 9.5)], LINE);
         }
         Icon::Apps => {
             for (x, y) in [(4.0, 4.0), (13.0, 4.0), (4.0, 13.0), (13.0, 13.0)] {
-                c.outline(rr(x, y, 7.0, 7.0), 1.5 * u, line, color);
+                p.frame((x, y, 7.0, 7.0), 1.5, LINE);
             }
         }
-        Icon::Keyboard => {
-            c.outline(rr(2.0, 6.0, 20.0, 12.0), 2.0 * u, line, color);
-            for y in [9.5, 12.5] {
-                for x in [6.0, 9.0, 12.0, 15.0, 18.0] {
-                    c.circle(x0 + x * u, y0 + y * u, 0.9 * u, color);
-                }
-            }
-            c.polyline(&[p(8.5, 15.3), p(15.5, 15.3)], line, color, false);
-        }
+        Icon::Keyboard => keyboard(p),
         Icon::Touchpad => {
-            c.outline(rr(3.0, 4.0, 18.0, 16.0), 3.0 * u, line, color);
-            c.polyline(&[p(3.0, 15.0), p(21.0, 15.0)], line, color, false);
-            c.polyline(&[p(12.0, 15.0), p(12.0, 20.0)], line, color, false);
+            p.frame((3.0, 4.0, 18.0, 16.0), 3.0, LINE);
+            p.line(&[(3.0, 15.0), (21.0, 15.0)], LINE);
+            p.line(&[(12.0, 15.0), (12.0, 20.0)], LINE);
         }
         Icon::Sysinfo => {
-            c.polyline(&[p(6.0, 20.0), p(6.0, 13.0)], 2.4 * u, color, false);
-            c.polyline(&[p(12.0, 20.0), p(12.0, 5.0)], 2.4 * u, color, false);
-            c.polyline(&[p(18.0, 20.0), p(18.0, 10.0)], 2.4 * u, color, false);
+            p.line(&[(6.0, 20.0), (6.0, 13.0)], 2.4);
+            p.line(&[(12.0, 20.0), (12.0, 5.0)], 2.4);
+            p.line(&[(18.0, 20.0), (18.0, 10.0)], 2.4);
         }
-        Icon::Shift => {
-            let arrow = [p(12.0, 3.0), p(20.0, 11.5), p(15.5, 11.5), p(15.5, 18.5), p(8.5, 18.5), p(8.5, 11.5), p(4.0, 11.5)];
-            c.polyline(&arrow, line, color, true);
-        }
+        Icon::Shift => p.shape(&[(12.0, 3.0), (20.0, 11.5), (15.5, 11.5), (15.5, 18.5), (8.5, 18.5), (8.5, 11.5), (4.0, 11.5)], LINE),
         Icon::Backspace => {
-            c.polyline(&[p(8.0, 6.0), p(21.0, 6.0), p(21.0, 18.0), p(8.0, 18.0), p(3.0, 12.0)], line, color, true);
-            c.polyline(&[p(12.0, 9.5), p(17.0, 14.5)], line, color, false);
-            c.polyline(&[p(17.0, 9.5), p(12.0, 14.5)], line, color, false);
+            p.shape(&[(8.0, 6.0), (21.0, 6.0), (21.0, 18.0), (8.0, 18.0), (3.0, 12.0)], LINE);
+            p.line(&[(12.0, 9.5), (17.0, 14.5)], LINE);
+            p.line(&[(17.0, 9.5), (12.0, 14.5)], LINE);
         }
-        Icon::ArrowUp => {
-            c.polyline(&[p(12.0, 19.0), p(12.0, 5.0)], line, color, false);
-            c.polyline(&[p(6.0, 11.0), p(12.0, 5.0), p(18.0, 11.0)], line, color, false);
+        Icon::Enter => {
+            p.line(&[(19.0, 5.0), (19.0, 14.0), (5.0, 14.0)], LINE);
+            p.line(&[(9.0, 10.0), (5.0, 14.0), (9.0, 18.0)], LINE);
         }
-        Icon::ArrowDown => {
-            c.polyline(&[p(12.0, 5.0), p(12.0, 19.0)], line, color, false);
-            c.polyline(&[p(6.0, 13.0), p(12.0, 19.0), p(18.0, 13.0)], line, color, false);
-        }
-        Icon::ArrowLeft => {
-            c.polyline(&[p(19.0, 12.0), p(5.0, 12.0)], line, color, false);
-            c.polyline(&[p(11.0, 6.0), p(5.0, 12.0), p(11.0, 18.0)], line, color, false);
-        }
-        Icon::ArrowRight => {
-            c.polyline(&[p(5.0, 12.0), p(19.0, 12.0)], line, color, false);
-            c.polyline(&[p(13.0, 6.0), p(19.0, 12.0), p(13.0, 18.0)], line, color, false);
-        }
-        Icon::Battery { tenths, charging } => {
-            c.outline(rr(1.0, 7.5, 15.5, 9.0), 2.0 * u, 1.5 * u, color);
-            c.rounded(rr(17.0, 10.0, 1.6, 4.0), 0.6 * u, color);
-            let level = f32::from(tenths.min(10)) / 10.0;
-            if level > 0.0 {
-                c.rounded(rr(3.0, 9.5, 11.5 * level, 5.0), 0.8 * u, color);
-            }
-            if charging {
-                c.polyline(&[p(22.5, 5.0), p(19.8, 12.6), p(22.8, 12.6), p(20.2, 19.5)], 1.6 * u, color, false);
-            }
-        }
-        Icon::Wifi { bars } => {
-            c.circle(x0 + 12.0 * u, y0 + 19.0 * u, 1.6 * u, color);
-            let lit = bars.unwrap_or(0);
-            for (i, r) in [5.5, 10.0, 14.5].into_iter().enumerate() {
-                let width = if (i as u8) < lit { 2.2 * u } else { thin };
-                c.polyline(&arc(12.0, 19.0, r, 45.0, 135.0), width, color, false);
-            }
-            if bars.is_none() {
-                c.polyline(&[p(4.0, 4.0), p(20.0, 20.0)], line, color, false);
-            }
-        }
-        Icon::Volume { waves, muted } => {
-            let speaker = [p(2.5, 9.0), p(6.5, 9.0), p(11.5, 4.5), p(11.5, 19.5), p(6.5, 15.0), p(2.5, 15.0)];
-            c.polyline(&speaker, 1.6 * u, color, true);
-            if muted {
-                c.polyline(&[p(15.5, 9.0), p(21.5, 15.0)], line, color, false);
-                c.polyline(&[p(21.5, 9.0), p(15.5, 15.0)], line, color, false);
-            } else {
-                for (i, r) in [4.0, 7.0, 10.0].into_iter().enumerate() {
-                    let width = if (i as u8) < waves { 2.0 * u } else { thin };
-                    c.polyline(&arc(11.5, 12.0, r, -50.0, 50.0), width, color, false);
-                }
-            }
-        }
-        Icon::Brightness => {
-            c.outline(rr(7.5, 7.5, 9.0, 9.0), 4.5 * u, line, color);
-            for k in 0..8 {
-                let a = (k as f32 * 45.0).to_radians();
-                let (dx, dy) = (a.cos(), a.sin());
-                c.polyline(&[p(12.0 + 7.0 * dx, 12.0 - 7.0 * dy), p(12.0 + 10.0 * dx, 12.0 - 10.0 * dy)], line, color, false);
-            }
-        }
+        Icon::ArrowUp => arrow(p, [(12.0, 19.0), (12.0, 5.0)], [(6.0, 11.0), (12.0, 5.0), (18.0, 11.0)]),
+        Icon::ArrowDown => arrow(p, [(12.0, 5.0), (12.0, 19.0)], [(6.0, 13.0), (12.0, 19.0), (18.0, 13.0)]),
+        Icon::ArrowLeft => arrow(p, [(19.0, 12.0), (5.0, 12.0)], [(11.0, 6.0), (5.0, 12.0), (11.0, 18.0)]),
+        Icon::ArrowRight => arrow(p, [(5.0, 12.0), (19.0, 12.0)], [(13.0, 6.0), (19.0, 12.0), (13.0, 18.0)]),
+        Icon::Battery { tenths, charging } => battery(p, tenths, charging),
+        Icon::Wifi { bars } => wifi(p, bars),
+        Icon::Volume { waves, muted } => volume(p, waves, muted),
+        Icon::Brightness => sun(p),
         Icon::Lock => {
-            c.rounded(rr(5.0, 11.0, 14.0, 10.0), 1.5 * u, color);
-            c.polyline(&arc(12.0, 10.0, 4.5, 0.0, 180.0), line, color, false);
-            c.polyline(&[p(7.5, 10.0), p(7.5, 11.5)], line, color, false);
-            c.polyline(&[p(16.5, 10.0), p(16.5, 11.5)], line, color, false);
+            p.block((5.0, 11.0, 14.0, 10.0), 1.5);
+            p.arc((12.0, 10.0), 4.5, (0.0, 180.0), LINE);
+            p.line(&[(7.5, 10.0), (7.5, 11.5)], LINE);
+            p.line(&[(16.5, 10.0), (16.5, 11.5)], LINE);
         }
         Icon::Bluetooth { connected } => {
-            c.polyline(&[p(7.0, 7.5), p(17.0, 16.5), p(12.0, 21.0), p(12.0, 3.0), p(17.0, 7.5), p(7.0, 16.5)], line, color, false);
+            p.line(&[(7.0, 7.5), (17.0, 16.5), (12.0, 21.0), (12.0, 3.0), (17.0, 7.5), (7.0, 16.5)], LINE);
             if connected {
-                c.circle(x0 + 3.5 * u, y0 + 12.0 * u, 1.3 * u, color);
-                c.circle(x0 + 20.5 * u, y0 + 12.0 * u, 1.3 * u, color);
+                p.dot(3.5, 12.0, 1.3);
+                p.dot(20.5, 12.0, 1.3);
             }
         }
         Icon::Headphones => {
-            c.polyline(&arc(12.0, 13.0, 8.5, 0.0, 180.0), line, color, false);
-            c.rounded(rr(2.5, 13.0, 4.5, 8.0), 1.5 * u, color);
-            c.rounded(rr(17.0, 13.0, 4.5, 8.0), 1.5 * u, color);
+            p.arc((12.0, 13.0), 8.5, (0.0, 180.0), LINE);
+            p.block((2.5, 13.0, 4.5, 8.0), 1.5);
+            p.block((17.0, 13.0, 4.5, 8.0), 1.5);
         }
         Icon::Phone => {
-            c.outline(rr(6.5, 2.0, 11.0, 20.0), 2.0 * u, line, color);
-            c.polyline(&[p(10.5, 18.5), p(13.5, 18.5)], line, color, false);
+            p.frame((6.5, 2.0, 11.0, 20.0), 2.0, LINE);
+            p.line(&[(10.5, 18.5), (13.5, 18.5)], LINE);
         }
-        Icon::Enter => {
-            c.polyline(&[p(19.0, 5.0), p(19.0, 14.0), p(5.0, 14.0)], line, color, false);
-            c.polyline(&[p(9.0, 10.0), p(5.0, 14.0), p(9.0, 18.0)], line, color, false);
+    }
+}
+
+fn sliders(p: &mut Pen) {
+    for (y, knob) in [(6.0, 15.0), (12.0, 8.0), (18.0, 13.0)] {
+        p.line(&[(3.0, y), (21.0, y)], LINE);
+        p.dot(knob, y, 2.6);
+    }
+}
+
+fn gauge(p: &mut Pen) {
+    p.arc((12.0, 14.0), 9.0, (90.0, 210.0), LINE);
+    p.arc((12.0, 14.0), 9.0, (-30.0, 90.0), LINE);
+    p.line(&[(12.0, 14.0), (16.5, 8.5)], LINE);
+    p.dot(12.0, 14.0, 1.8);
+}
+
+fn refresh(p: &mut Pen) {
+    p.frame((2.0, 4.0, 20.0, 13.0), 2.0, LINE);
+    p.line(&[(8.0, 20.5), (16.0, 20.5)], LINE);
+    p.line(&[(5.5, 11.0), (7.5, 8.5), (9.5, 11.0), (11.5, 13.5), (13.5, 11.0), (15.5, 8.5), (17.5, 11.0)], 1.5);
+}
+
+fn cores(p: &mut Pen) {
+    p.frame((3.0, 3.0, 11.0, 11.0), 1.5, LINE);
+    for (x, y) in [(17.0, 3.0), (17.0, 9.0), (3.0, 17.0), (9.0, 17.0), (17.0, 17.0)] {
+        p.frame((x, y, 4.5, 4.5), 1.0, 1.5);
+    }
+}
+
+fn fan(p: &mut Pen) {
+    p.dot(12.0, 12.0, 2.0);
+    for k in 0..3 {
+        let a = (k as f32 * 120.0).to_radians();
+        let b = (k as f32 * 120.0 + 55.0).to_radians();
+        p.shape(&[(12.0, 12.0), (12.0 + 8.5 * a.cos(), 12.0 - 8.5 * a.sin()), (12.0 + 7.0 * b.cos(), 12.0 - 7.0 * b.sin())], 1.6);
+    }
+}
+
+fn rumble(p: &mut Pen) {
+    p.frame((8.0, 3.5, 8.0, 17.0), 2.0, LINE);
+    p.line(&[(4.5, 7.0), (2.5, 9.5), (4.5, 12.0), (2.5, 14.5), (4.5, 17.0)], 1.5);
+    p.line(&[(19.5, 7.0), (21.5, 9.5), (19.5, 12.0), (21.5, 14.5), (19.5, 17.0)], 1.5);
+}
+
+fn cpu(p: &mut Pen) {
+    p.frame((6.0, 6.0, 12.0, 12.0), 1.5, LINE);
+    p.block((9.5, 9.5, 5.0, 5.0), 0.8);
+    for t in [9.0, 12.0, 15.0] {
+        p.line(&[(t, 2.5), (t, 6.0)], 1.4);
+        p.line(&[(t, 18.0), (t, 21.5)], 1.4);
+        p.line(&[(2.5, t), (6.0, t)], 1.4);
+        p.line(&[(18.0, t), (21.5, t)], 1.4);
+    }
+}
+
+fn gpu(p: &mut Pen) {
+    p.frame((2.0, 6.0, 20.0, 12.0), 1.5, LINE);
+    p.frame((5.5, 8.5, 7.0, 7.0), 3.5, 1.5);
+    p.line(&[(15.5, 9.5), (15.5, 14.5)], 1.5);
+    p.line(&[(18.5, 9.5), (18.5, 14.5)], 1.5);
+    p.line(&[(6.0, 18.0), (6.0, 21.0), (13.0, 21.0), (13.0, 18.0)], 1.4);
+}
+
+fn reset(p: &mut Pen) {
+    p.arc((12.0, 13.0), 8.0, (60.0, 195.0), LINE);
+    p.arc((12.0, 13.0), 8.0, (195.0, 330.0), LINE);
+    p.arc((12.0, 13.0), 8.0, (-30.0, 15.0), LINE);
+    p.line(&[(11.5, 3.5), (16.0, 6.1), (13.0, 10.0)], LINE);
+}
+
+fn shelf(p: &mut Pen) {
+    for (x, top) in [(4.0, 5.0), (8.5, 7.0), (13.0, 4.0)] {
+        p.frame((x, top, 3.5, 17.0 - top), 0.8, 1.5);
+    }
+    p.line(&[(17.5, 7.5), (21.0, 16.5)], 3.2);
+    p.line(&[(2.0, 21.0), (22.0, 21.0)], LINE);
+}
+
+fn gamepad(p: &mut Pen) {
+    let body = [(6.5, 7.0), (17.5, 7.0), (21.0, 15.0), (19.5, 18.5), (16.0, 17.0), (14.0, 14.5), (10.0, 14.5), (8.0, 17.0), (4.5, 18.5), (3.0, 15.0)];
+    p.shape(&body, LINE);
+    p.line(&[(6.0, 10.8), (10.0, 10.8)], 1.5);
+    p.line(&[(8.0, 8.8), (8.0, 12.8)], 1.5);
+    p.dot(15.5, 10.0, 1.1);
+    p.dot(17.5, 12.0, 1.1);
+}
+
+fn keyboard(p: &mut Pen) {
+    p.frame((2.0, 6.0, 20.0, 12.0), 2.0, LINE);
+    for y in [9.5, 12.5] {
+        for x in [6.0, 9.0, 12.0, 15.0, 18.0] {
+            p.dot(x, y, 0.9);
         }
+    }
+    p.line(&[(8.5, 15.3), (15.5, 15.3)], LINE);
+}
+
+/// A shaft and its head.
+fn arrow(p: &mut Pen, shaft: [(f32, f32); 2], head: [(f32, f32); 3]) {
+    p.line(&shaft, LINE);
+    p.line(&head, LINE);
+}
+
+fn battery(p: &mut Pen, tenths: u8, charging: bool) {
+    p.frame((1.0, 7.5, 15.5, 9.0), 2.0, 1.5);
+    p.block((17.0, 10.0, 1.6, 4.0), 0.6);
+    let level = f32::from(tenths.min(10)) / 10.0;
+    if level > 0.0 {
+        p.block((3.0, 9.5, 11.5 * level, 5.0), 0.8);
+    }
+    if charging {
+        p.line(&[(22.5, 5.0), (19.8, 12.6), (22.8, 12.6), (20.2, 19.5)], 1.6);
+    }
+}
+
+fn wifi(p: &mut Pen, bars: Option<u8>) {
+    p.dot(12.0, 19.0, 1.6);
+    let lit = bars.unwrap_or(0);
+    for (i, r) in [5.5, 10.0, 14.5].into_iter().enumerate() {
+        let width = if (i as u8) < lit { 2.2 } else { THIN };
+        p.arc((12.0, 19.0), r, (45.0, 135.0), width);
+    }
+    if bars.is_none() {
+        p.line(&[(4.0, 4.0), (20.0, 20.0)], LINE);
+    }
+}
+
+fn volume(p: &mut Pen, waves: u8, muted: bool) {
+    p.shape(&[(2.5, 9.0), (6.5, 9.0), (11.5, 4.5), (11.5, 19.5), (6.5, 15.0), (2.5, 15.0)], 1.6);
+    if muted {
+        p.line(&[(15.5, 9.0), (21.5, 15.0)], LINE);
+        p.line(&[(21.5, 9.0), (15.5, 15.0)], LINE);
+    } else {
+        for (i, r) in [4.0, 7.0, 10.0].into_iter().enumerate() {
+            let width = if (i as u8) < waves { 2.0 } else { THIN };
+            p.arc((11.5, 12.0), r, (-50.0, 50.0), width);
+        }
+    }
+}
+
+fn sun(p: &mut Pen) {
+    p.frame((7.5, 7.5, 9.0, 9.0), 4.5, LINE);
+    for k in 0..8 {
+        let a = (k as f32 * 45.0).to_radians();
+        let (dx, dy) = (a.cos(), a.sin());
+        p.line(&[(12.0 + 7.0 * dx, 12.0 - 7.0 * dy), (12.0 + 10.0 * dx, 12.0 - 10.0 * dy)], LINE);
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use super::*;
+    use crate::draw::DrawCache;
+    use tiny_skia::Pixmap;
+
+    /// Every icon, each variant at least once; `variant` fails to compile when one is added.
+    fn every() -> Vec<Icon> {
+        let all = vec![
+            Icon::Apps,
+            Icon::Mouse,
+            Icon::Sliders,
+            Icon::Bolt,
+            Icon::Gauge,
+            Icon::Refresh,
+            Icon::Hud,
+            Icon::Upscale,
+            Icon::ScreenOff,
+            Icon::Cores,
+            Icon::Fan,
+            Icon::Buttons,
+            Icon::Deadzone,
+            Icon::Rumble,
+            Icon::Cpu,
+            Icon::Gpu,
+            Icon::Env,
+            Icon::Reset,
+            Icon::Plus,
+            Icon::Shelf,
+            Icon::Gamepad,
+            Icon::Browser,
+            Icon::Files,
+            Icon::Music,
+            Icon::Video,
+            Icon::Keyboard,
+            Icon::Touchpad,
+            Icon::Sysinfo,
+            Icon::Shift,
+            Icon::Backspace,
+            Icon::Enter,
+            Icon::ArrowUp,
+            Icon::ArrowDown,
+            Icon::ArrowLeft,
+            Icon::ArrowRight,
+            Icon::Battery { tenths: 0, charging: false },
+            Icon::Battery { tenths: 7, charging: true },
+            Icon::Wifi { bars: None },
+            Icon::Wifi { bars: Some(2) },
+            Icon::Volume { waves: 0, muted: true },
+            Icon::Volume { waves: 3, muted: false },
+            Icon::Brightness,
+            Icon::Lock,
+            Icon::Bluetooth { connected: false },
+            Icon::Bluetooth { connected: true },
+            Icon::Headphones,
+            Icon::Phone,
+        ];
+        let mut seen = std::collections::HashSet::new();
+        for icon in &all {
+            seen.insert(variant(*icon));
+        }
+        assert_eq!(seen.len(), 43, "a variant is missing from the list");
+        all
+    }
+
+    /// The variant's number, without its data.
+    fn variant(icon: Icon) -> u8 {
+        match icon {
+            Icon::Apps => 0,
+            Icon::Mouse => 1,
+            Icon::Sliders => 2,
+            Icon::Bolt => 3,
+            Icon::Gauge => 4,
+            Icon::Refresh => 5,
+            Icon::Hud => 6,
+            Icon::Upscale => 7,
+            Icon::ScreenOff => 8,
+            Icon::Cores => 9,
+            Icon::Fan => 10,
+            Icon::Buttons => 11,
+            Icon::Deadzone => 12,
+            Icon::Rumble => 13,
+            Icon::Cpu => 14,
+            Icon::Gpu => 15,
+            Icon::Env => 16,
+            Icon::Reset => 17,
+            Icon::Plus => 18,
+            Icon::Shelf => 19,
+            Icon::Gamepad => 20,
+            Icon::Browser => 21,
+            Icon::Files => 22,
+            Icon::Music => 23,
+            Icon::Video => 24,
+            Icon::Keyboard => 25,
+            Icon::Touchpad => 26,
+            Icon::Sysinfo => 27,
+            Icon::Shift => 28,
+            Icon::Backspace => 29,
+            Icon::Enter => 30,
+            Icon::ArrowUp => 31,
+            Icon::ArrowDown => 32,
+            Icon::ArrowLeft => 33,
+            Icon::ArrowRight => 34,
+            Icon::Battery { .. } => 35,
+            Icon::Wifi { .. } => 36,
+            Icon::Volume { .. } => 37,
+            Icon::Brightness => 38,
+            Icon::Lock => 39,
+            Icon::Bluetooth { .. } => 40,
+            Icon::Headphones => 41,
+            Icon::Phone => 42,
+        }
+    }
+
+    #[test]
+    fn every_icon_draws_something() {
+        let mut cache = DrawCache::load();
+        for icon in every() {
+            let mut pixmap = Pixmap::new(48, 48).expect("pixmap");
+            Canvas::new(&mut pixmap, 1.0, &mut cache).icon(icon, Rect::new(0.0, 0.0, 48.0, 48.0), Color::WHITE);
+            let covered = pixmap.data().chunks_exact(4).filter(|px| px.get(3).is_some_and(|&a| a > 0)).count();
+            assert!(covered > 20, "{icon:?}: {covered} pixels");
+        }
+    }
+
+    #[test]
+    fn levels_pick_their_icons() {
+        assert_eq!(Icon::volume(0, false), Icon::Volume { waves: 0, muted: false });
+        assert_eq!(Icon::volume(50, true), Icon::Volume { waves: 2, muted: true });
+        assert_eq!(Icon::wifi(Some(80)), Icon::Wifi { bars: Some(3) });
+        assert_eq!(Icon::wifi(None), Icon::Wifi { bars: None });
+        assert_eq!(Icon::battery(44, false), Icon::Battery { tenths: 4, charging: false });
+        assert_eq!(Icon::battery(100, true), Icon::Battery { tenths: 10, charging: true });
+        assert_eq!(Icon::for_app("terminal"), Some(Icon::Env));
+        assert_eq!(Icon::for_app("unknown"), None);
     }
 }

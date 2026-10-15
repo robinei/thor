@@ -1,38 +1,35 @@
 //! Settings: a grid of tiles on black, one per setting, each an icon over its value. A tap steps to the
 //! next value, a long press goes back to the default. The icon's colour says what the value does: grey
 //! the stock value, green saves power, amber costs power, blue changes how the game looks or plays. Two
-//! tabs: All games (the defaults) and the game in context (the running one, else shelf's selection),
-//! whose own choices override the defaults one by one: those tiles carry a dot, the rest show the
-//! default's value dimmed. Changes reach a running game at once. The environment tile opens an editor
+//! scopes, as tabs along the top: All games (the defaults) and the game in context (the running one,
+//! else shelf's selection), whose own choices override the defaults one by one: those tiles carry a dot,
+//! the rest show the default's value dimmed. Changes reach a running game at once. The environment tile opens an editor
 //! over the on-screen keyboard.
-
-use std::fmt::Write;
 
 use clamshell_core::editor::{Editor, Purpose};
 use clamshell_core::settings::{Impact, Setting};
 use clamshell_core::{Id, Scope, SettingsId, State, TileOrigin};
 
-use super::{ACCENT, DIM, FN, Frame, GO, Look, TEXT, label};
-use crate::draw::{Rect, rgb};
+use super::Frame;
+use super::format::{Fmt, Variables};
+use super::style::{self, Text, Tone};
+use super::widgets::{self, TileFace, TileShape};
+use crate::draw::{Align, Rect, Rgb};
 use crate::icons::Icon;
 
-/// Padding, of the area's height.
-const PAD: f32 = 0.03;
-/// The tabs' height and text size, of the area's height.
+/// The scope tabs' row, of the area's height.
 const TABS_H: f32 = 0.1;
-const TAB_TEXT: f32 = 0.045;
-const NOTE: f32 = 0.032;
 /// The tab label's width at most, of the area's width (long titles are cut).
 const TAB_MAX: f32 = 0.5;
 const COLUMNS: usize = 4;
 const ROWS: usize = 4;
 /// Gap between tiles, of the area's height.
 const GAP: f32 = 0.014;
-/// Icon size and value text size, of a tile's height.
-const ICON: f32 = 0.36;
-const VALUE: f32 = 0.15;
+/// The icon's size and top, of a tile's height.
+/// (Values are short; in a narrow window, a long one runs over the tile's edges.)
+const TILE: TileShape = TileShape { icon: 0.36, icon_y: 0.17, cut: None };
 /// Tiles whose setting does nothing yet: barely there.
-const LATER: u32 = 0x34343c;
+const LATER: Rgb = Rgb(0x34343c);
 
 /// What a tile is: a setting, the environment, or Reset.
 #[derive(Clone, Copy)]
@@ -61,141 +58,108 @@ const GRID: [Tile; 15] = [
     Tile::Env,
 ];
 
-fn icon(s: Setting) -> Icon {
-    match s {
-        Setting::Power => Icon::Bolt,
-        Setting::FpsCap => Icon::Gauge,
-        Setting::Refresh => Icon::Refresh,
-        Setting::Hud => Icon::Hud,
-        Setting::Upscale => Icon::Upscale,
-        Setting::BottomScreen => Icon::ScreenOff,
-        Setting::BigCores => Icon::Cores,
-        Setting::Fan => Icon::Fan,
-        Setting::PadMouse => Icon::Mouse,
-        Setting::Buttons => Icon::Buttons,
-        Setting::Deadzone => Icon::Deadzone,
-        Setting::Rumble => Icon::Rumble,
-        Setting::CpuMax => Icon::Cpu,
-        Setting::GpuMax => Icon::Gpu,
-        Setting::ChargeLimit => Icon::Battery { tenths: 8, charging: true },
-    }
-}
-
-pub(super) fn draw(f: &mut Frame, body: Rect, buf: &mut String) {
+pub(super) fn draw(f: &mut Frame, body: Rect) {
     if f.s.bottom().editor().is_some() {
-        return editor(f, body, buf);
+        return editor(f, body);
     }
     let s = f.s;
     let context = s.context();
     let game = s.editing();
-    let pad = body.h * PAD;
-    let area = Rect::new(body.x + pad, body.y, body.w - 2.0 * pad, body.h - pad);
-    let (bar, grid) = area.split_top(body.h * TABS_H);
+    let pad = style::pad(body.h);
+    let mut grid = style::content(body);
+    let bar = grid.take_top(body.h * TABS_H);
 
     // Tabs: All games, then the game in context; a note on the right.
     let inner = pad * 0.8;
     let tabs = [(Scope::Global, Some("All games")), (Scope::Game, context.map(|g| g.title.as_str()))];
     let items = tabs.into_iter().filter_map(|(scope, name)| Some((Id::Settings(SettingsId::Scope(scope)), name?, (scope == Scope::Global) == game.is_none())));
     let tabs_area = Rect::new(bar.x - inner, bar.y, bar.w + inner, bar.h);
-    let tabs_end = super::tabs(f, tabs_area, body.h * TAB_TEXT, inner, bar.w * TAB_MAX, items);
+    let tabs_end = widgets::tabs(f, tabs_area, Text::Heading.size(body.h), inner, bar.w * TAB_MAX, items);
     let running = context.is_some_and(|g| s.current_game() == Some(&g.id));
     let note = match (game, running) {
         (Some(_), true) => "applies now",
         (Some(_), false) => "applies at launch",
         (None, _) => "defaults",
     };
-    let size = body.h * NOTE;
+    let size = Text::Small.size(body.h);
     let note_w = f.c.text_width(size, note);
     if tabs_end + pad + note_w < bar.x + bar.w {
-        f.c.text(bar.x + bar.w - note_w, bar.y + (bar.h - size * 1.2) / 2.0, size, rgb(DIM), note);
+        f.c.text_in(bar, size, Tone::Dim, note, Align::End);
     }
 
     // The grid below.
     let grid = Rect::new(grid.x, grid.y + pad * 0.6, grid.w, grid.h - pad * 0.6);
     let last = if game.is_some() { Tile::Reset } else { Tile::Setting(Setting::ChargeLimit) };
     for (i, tile) in GRID.into_iter().chain([last]).enumerate() {
-        draw_tile(f, grid.cell(COLUMNS, ROWS, body.h * GAP, i), tile, buf);
+        draw_tile(f, grid.cell(COLUMNS, ROWS, body.h * GAP, i), tile);
     }
 }
 
-/// How a tile looks: its icon, its value (into `buf`), what the value does (the icon's colour), where it
-/// comes from (the game's own choice: a dot; following the default on a game's tab: dimmed value), and
-/// whether it does anything yet.
+/// How a tile looks: its icon, its value, what the value does (the icon's colour), where it comes from
+/// (the game's own choice: a dot; following the default on a game's tab: dimmed value), and whether it
+/// does anything yet.
 struct Face {
     id: Id,
     icon: Icon,
+    value: Fmt<32>,
     impact: Impact,
     origin: TileOrigin,
     active: bool,
 }
 
-fn face(s: &State, tile: Tile, buf: &mut String) -> Face {
+fn face(s: &State, scratch: &mut super::Scratch, tile: Tile) -> Face {
     let game = s.editing().map(|g| &g.id);
     match tile {
         Tile::Setting(setting) => {
             let value = s.tile_value(setting);
-            setting.describe(value, buf);
             Face {
                 id: Id::Settings(SettingsId::Tile(setting)),
-                icon: icon(setting),
+                icon: Icon::for_setting(setting),
+                value: scratch.describe(setting, value),
                 impact: setting.impact(value),
                 origin: s.tile_origin(setting),
                 active: setting.active(),
             }
         }
         Tile::Env => {
-            let text = s.settings().env_text(game.map(|g| &**g));
-            let count = clamshell_core::count_env(text);
-            buf.clear();
-            match count {
-                0 => buf.push_str("No variables"),
-                1 => buf.push_str("1 variable"),
-                n => {
-                    let _ = write!(buf, "{n} variables");
-                }
-            }
+            let count = clamshell_core::count_env(s.settings().env_text(game.map(|g| &**g)));
             let impact = if count > 0 { Impact::Changes } else { Impact::Stock };
             let origin = if game.is_some() && count > 0 { TileOrigin::Own } else { TileOrigin::Global };
-            Face { id: Id::Settings(SettingsId::Env), icon: Icon::Env, impact, origin, active: true }
+            Face { id: Id::Settings(SettingsId::Env), icon: Icon::Env, value: Fmt::of(format_args!("{}", Variables(count))), impact, origin, active: true }
         }
         Tile::Reset => {
             let any = game.is_some_and(|g| s.settings().has_own(g));
-            buf.clear();
-            buf.push_str(if any { "Reset" } else { "Nothing to reset" });
-            Face { id: Id::Settings(SettingsId::Reset), icon: Icon::Reset, impact: Impact::Stock, origin: TileOrigin::Global, active: any }
+            let value = Fmt::of(format_args!("{}", if any { "Reset" } else { "Nothing to reset" }));
+            Face { id: Id::Settings(SettingsId::Reset), icon: Icon::Reset, value, impact: Impact::Stock, origin: TileOrigin::Global, active: any }
         }
     }
 }
 
-fn draw_tile(f: &mut Frame, r: Rect, tile: Tile, buf: &mut String) {
-    let face = face(f.s, tile, buf);
-    // No background: the grid's alignment is the structure; pressed still lights it.
-    let look = Look { radius: 10.0, fill: None, inset: 0.0, ring_inset: -2.0 };
-    let text: &str = buf;
+fn draw_tile(f: &mut Frame, r: Rect, tile: Tile) {
+    let face = face(f.s, f.scratch, tile);
     let later = !face.active && !matches!(tile, Tile::Reset);
-    f.button(face.id, r, look, |c| {
-        let icon_color = match (face.active, face.impact) {
+    let tile_face = TileFace {
+        caption: &face.value,
+        caption_tone: if face.active && face.origin != TileOrigin::Inherited { Tone::Normal } else { Tone::Dim },
+        dot: (face.origin == TileOrigin::Own).then_some(Tone::Normal),
+        note: if later { "later" } else { "" },
+        count: "",
+    };
+    // No background: the grid's alignment is the structure; pressed still lights it.
+    widgets::tile(f, face.id.clone(), r, &TILE, tile_face, |f, r| {
+        let color = match (face.active, face.impact) {
             (false, _) => LATER,
-            (true, Impact::Stock) => DIM,
-            (true, Impact::Saves) => GO,
-            (true, Impact::Costs) => ACCENT,
-            (true, Impact::Changes) => FN,
+            (true, Impact::Stock) => Tone::Dim.rgb(),
+            (true, Impact::Saves) => Tone::Go.rgb(),
+            (true, Impact::Costs) => Tone::Accent.rgb(),
+            (true, Impact::Changes) => Tone::Fn.rgb(),
         };
-        let size = r.h * ICON;
-        c.icon(face.icon, Rect::new(r.x + (r.w - size) / 2.0, r.y + r.h * 0.17, size, size), rgb(icon_color));
-        let text_color = if face.active && face.origin != TileOrigin::Inherited { TEXT } else { DIM };
-        label(c, Rect::new(r.x, r.y + r.h * 0.62, r.w, r.h * VALUE * 1.6), r.h * VALUE, text_color, text);
-        if face.origin == TileOrigin::Own {
-            c.circle(r.x + r.w - r.h * 0.1, r.y + r.h * 0.1, r.h * 0.03, rgb(TEXT));
-        }
-        if later {
-            c.text(r.x + r.h * 0.07, r.y + r.h * 0.05, r.h * 0.09, rgb(DIM), "later");
-        }
+        f.c.icon(face.icon, TILE.square(r), color);
     });
 }
 
 /// The environment editor: what it edits, then the shared editor (field, Cancel and Save, keyboard).
-fn editor(f: &mut Frame, body: Rect, buf: &mut String) {
+fn editor(f: &mut Frame, body: Rect) {
     let s = f.s;
     let Some(Editor { purpose: Purpose::Env { game }, .. }) = s.bottom().editor() else {
         return;
@@ -204,7 +168,6 @@ fn editor(f: &mut Frame, body: Rect, buf: &mut String) {
         Some(id) => s.game(id).map_or("this game", |g| g.title.as_str()),
         None => "all games",
     };
-    buf.clear();
-    let _ = write!(buf, "Environment for {title}: KEY=value, space-separated");
-    super::editor::draw(f, body, buf, "Save");
+    let title = Fmt::<160>::of(format_args!("Environment for {title}: KEY=value, space-separated"));
+    super::editor::draw(f, body, &title, "Save");
 }

@@ -1,27 +1,25 @@
-//! Input: presses from touch, the mouse and the pad's A (Enter on the desktop), each with its own hold
-//! timer (key repeat, long presses); volume and brightness slides and level rows that follow a finger;
-//! pad-style focus movement over the screens; on a desktop, keys that stand in for the pad.
+//! Presses: from touch, the mouse, the pad's A and Enter (on a desktop), each from its own source. A
+//! pure state machine: it is told what happens (down, moved, up, a timer fired) and answers with what to
+//! do: events for the state, and timers to arm or disarm (the caller runs them on its event loop).
+//!
+//! A press is a tap (it acts on release) until its hold timer fires: then it is held (keys repeat, the
+//! rest get one long press) and the release only lifts it. A finger on volume or brightness may become
+//! a slide (held there briefly, or moved sideways): the slider comes up under it and follows it. A finger
+//! on a level row sets it where it is, and follows it. Positions are in the surface's logical pixels;
+//! the target's track says what they mean.
 
-use smithay_client_toolkit::reexports::{
-    calloop::RegistrationToken,
-    calloop::timer::{TimeoutAction, Timer},
-    client::protocol::wl_surface::WlSurface,
-};
-use smithay_client_toolkit::seat::keyboard::Keysym;
 use std::time::Duration;
-use clamshell_core::slider::{Control, SLIDE_AFTER, SLIDE_MOVE};
-use clamshell_core::levels::Level;
-use clamshell_core::{EditorId, Event, Hold, Id, LevelEvent, PadInput, PadRoute, PointerEvent, ShelfEvent, ShelfId, Slide, Tab};
 
-use crate::draw::Rect;
-use crate::views::levels;
-use crate::nav::{self, Dir, NavTarget};
-use crate::{App, Screen};
+use clamshell_core::levels::Level;
+use clamshell_core::slider::{Control, SLIDE_AFTER, SLIDE_MOVE};
+use clamshell_core::{Event, Hold, Id, LevelEvent, PadRoute, PointerEvent, Slide, State};
+
+use crate::views::{Target, Track};
 
 /// A press held this long is a hold: keys start repeating, modifiers lock.
-const LONG_PRESS: Duration = Duration::from_millis(450);
+pub(crate) const LONG_PRESS: Duration = Duration::from_millis(450);
 /// Key repeat interval while held (25 per second).
-const REPEAT: Duration = Duration::from_millis(40);
+pub(crate) const REPEAT: Duration = Duration::from_millis(40);
 
 /// Where a press comes from: each touch point, the mouse, the pad's A, or Enter (on a desktop).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -32,386 +30,341 @@ pub(crate) enum Source {
     Enter,
 }
 
-/// A finger on volume or brightness that may become a slide: where it came down, where it is now (in
-/// the second screen's layout units), and the timer that starts the slide.
-pub(crate) struct PendingSlide {
-    source: Source,
-    control: Control,
-    down_x: f32,
-    x: f32,
-    width: f32,
-    timer: Option<RegistrationToken>,
+/// A press's timers: the hold (long press, key repeat), and the wait before a slide.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum Timer {
+    Hold,
+    Slide,
 }
 
-/// A finger setting a level row: the row's track, in the view's logical pixels.
-pub(crate) struct LevelDrag {
-    source: Source,
-    level: Level,
-    track: Rect,
+/// What the caller does.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum Action {
+    /// Applies the event to the state.
+    Emit(Event),
+    /// Starts (or restarts) the source's timer, to call [`Input::timer`] after the duration.
+    Arm(Source, Timer, Duration),
+    /// Stops the source's timer, if it runs.
+    Disarm(Source, Timer),
+}
+
+/// How a press ends: let go (a tap acts), or cancelled (the touch was taken away, the pad left).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum End {
+    Release,
+    Cancel,
+}
+
+/// What a press is doing.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Gesture {
+    /// Acts on release.
+    Tap,
+    /// The hold timer acted (a long press, or repeating): the release only lifts.
+    Held,
+    /// On volume or brightness: becomes a slide when held or moved sideways, else a tap. `down_x` and
+    /// `x` are where it came down and is now, along the track.
+    PendingSlide { control: Control, down_x: f32, x: f32, track: Track },
+    /// Moving the slider: the release ends the slide.
+    Sliding { track: Track },
+    /// Setting a level row: holding it still doesn't long-press, the release focuses it as a tap does.
+    LevelDrag { level: Level, track: Track },
 }
 
 /// A press in progress, on the target it started on.
-pub(crate) struct Press {
+#[derive(Debug, Clone, PartialEq)]
+struct Press {
     id: Id,
-    /// The hold timer already acted (repeated or long-pressed): the release adds nothing.
-    held: bool,
+    gesture: Gesture,
 }
 
-impl App {
-    /// What the last frame drew at `position` on `surface`: the topmost (last drawn) target there, so a
-    /// button on a tile (the launcher's "+") wins over the tile.
-    pub(crate) fn target_at(&mut self, surface: &WlSurface, (x, y): (f64, f64)) -> Option<(Id, Rect)> {
-        let view = self.view_mut(surface)?;
-        view.targets.iter().rev().find(|t| t.rect.contains(x as f32, y as f32)).map(|t| (t.id.clone(), t.rect))
+/// The presses in progress, one per source.
+#[derive(Debug, Default)]
+pub(crate) struct Input {
+    presses: Vec<(Source, Press)>,
+}
+
+impl Input {
+    fn get(&mut self, source: Source) -> Option<&mut Press> {
+        self.presses.iter_mut().find(|(s, _)| *s == source).map(|(_, p)| p)
     }
 
-    /// A finger or button comes down at `position` on `surface`: a press on what is there. On volume or
-    /// brightness a slide may follow (held, or moved sideways); on a level row the finger sets it.
-    pub(crate) fn press_at(&mut self, source: Source, surface: &WlSurface, position: (f64, f64)) {
-        let Some((id, rect)) = self.target_at(surface, position) else {
-            return;
+    pub fn pressed(&self, source: Source) -> bool {
+        self.presses.iter().any(|(s, _)| *s == source)
+    }
+
+    /// A slide is pending or moving (there is one slider: another finger on a control meanwhile taps).
+    fn sliding(&self) -> bool {
+        self.presses.iter().any(|(_, p)| matches!(p.gesture, Gesture::PendingSlide { .. } | Gesture::Sliding { .. }))
+    }
+
+    /// The pad's A or Enter on the focused target: a plain press.
+    pub fn press(&mut self, source: Source, id: Id) -> Vec<Action> {
+        if self.pressed(source) {
+            return vec![];
+        }
+        self.presses.push((source, Press { id: id.clone(), gesture: Gesture::Tap }));
+        vec![Action::Emit(PointerEvent::Down(id).into()), Action::Arm(source, Timer::Hold, LONG_PRESS)]
+    }
+
+    /// A finger or the mouse comes down on `target` at `x`. Touch hides the pad's focus ring.
+    pub fn touch(&mut self, source: Source, target: &Target, x: f32) -> Vec<Action> {
+        if self.pressed(source) {
+            return vec![];
+        }
+        let gesture = match (&target.id, target.track) {
+            (Id::Control(control), Some(track)) if !self.sliding() => {
+                let at = track.along(x);
+                Gesture::PendingSlide { control: *control, down_x: at, x: at, track }
+            }
+            (Id::Level(level), Some(track)) => Gesture::LevelDrag { level: *level, track },
+            _ => Gesture::Tap,
         };
-        let origin_w = self.view_mut(surface).map(|v| (v.origin.0, v.layout_w));
-        let busy = self.presses.contains_key(&source);
-        self.down(source, id.clone());
-        if busy {
-            return;
-        }
-        match id {
-            // (One slide at a time: another finger on a control meanwhile is a tap.)
-            Id::Control(control) if self.pending_slide.is_none() && self.slider_source.is_none() => {
-                let Some((origin, width)) = origin_w else {
-                    return;
-                };
-                let x = position.0 as f32 - origin;
-                let timer = Timer::from_duration(SLIDE_AFTER);
-                let token = self
-                    .loop_handle
-                    .insert_source(timer, move |_, _, app: &mut App| {
-                        // This timer is done (dropped below), not to be removed from inside itself.
-                        if let Some(p) = app.pending_slide.as_mut() {
-                            p.timer = None;
-                        }
-                        app.start_slide(source);
-                        TimeoutAction::Drop
-                    })
-                    .map_err(|e| log::warn!("slide timer: {}", e.error))
-                    .ok();
-                self.pending_slide = Some(PendingSlide { source, control, down_x: x, x, width, timer: token });
+        let id = target.id.clone();
+        self.presses.push((source, Press { id: id.clone(), gesture }));
+        let mut actions = vec![Action::Emit(PointerEvent::HideFocus.into()), Action::Emit(PointerEvent::Down(id).into())];
+        match gesture {
+            Gesture::PendingSlide { .. } => {
+                actions.push(Action::Arm(source, Timer::Hold, LONG_PRESS));
+                actions.push(Action::Arm(source, Timer::Slide, SLIDE_AFTER));
             }
-            Id::Level(level) => {
-                self.level_drag = Some(LevelDrag { source, level, track: rect });
-                self.handle(Event::Level(LevelEvent::Set(level, levels::value_at(rect, position.0 as f32))));
-            }
-            _ => {}
+            Gesture::LevelDrag { level, track } => actions.push(Action::Emit(LevelEvent::Set(level, track.value_at(x)).into())),
+            _ => actions.push(Action::Arm(source, Timer::Hold, LONG_PRESS)),
         }
+        actions
     }
 
-    /// The slide a finger on volume or brightness was waiting for: the slider comes up under it, and
-    /// the press won't be a tap.
-    fn start_slide(&mut self, source: Source) {
-        if self.pending_slide.as_ref().is_none_or(|p| p.source != source) {
-            return;
-        }
-        let Some(pending) = self.pending_slide.take() else {
-            return;
+    /// A pending slide begins: the slider comes up under the finger.
+    fn start_slide(press: &mut Press) -> Vec<Action> {
+        let Gesture::PendingSlide { control, x, track, .. } = press.gesture else {
+            return vec![];
         };
-        if let Some(token) = pending.timer {
-            self.loop_handle.remove(token);
-        }
-        if let Some(press) = self.presses.get_mut(&source) {
-            press.held = true;
-        }
-        self.slider_source = Some(source);
-        self.handle(Event::Slide(Slide::Start { control: pending.control, x: pending.x, width: pending.width }));
+        press.gesture = Gesture::Sliding { track };
+        vec![Action::Emit(Slide::Start { control, x, width: track.w }.into())]
     }
 
-    fn cancel_pending_slide(&mut self) {
-        if let Some(token) = self.pending_slide.take().and_then(|p| p.timer) {
-            self.loop_handle.remove(token);
-        }
-    }
-
-    /// A finger or the mouse moved: a slide may start, the slider or a level row follows the press on it.
-    pub(crate) fn moved(&mut self, source: Source, position: (f64, f64)) {
-        let origin = self.bottom.as_ref().map_or(0.0, |v| v.origin.0);
-        let x = position.0 as f32 - origin;
-        if let Some(pending) = self.pending_slide.as_mut().filter(|p| p.source == source) {
-            pending.x = x;
-            if (x - pending.down_x).abs() >= SLIDE_MOVE {
-                self.start_slide(source);
-            }
-            return;
-        }
-        if let Some(drag) = self.level_drag.as_ref().filter(|d| d.source == source) {
-            let event = Event::Level(LevelEvent::Set(drag.level, levels::value_at(drag.track, position.0 as f32)));
-            self.handle(event);
-            return;
-        }
-        if self.slider_source != Some(source) {
-            return;
-        }
-        self.handle(Event::Slide(Slide::To { x }));
-    }
-
-    /// A press starts: light the target, and arm the hold timer. A tap acts on release; a hold acts
-    /// from the timer (repeat, or one long press).
-    pub(crate) fn down(&mut self, source: Source, id: Id) {
-        if self.presses.contains_key(&source) {
-            return;
-        }
-        if matches!(source, Source::Touch(_) | Source::Mouse) {
-            self.handle(Event::Pointer(PointerEvent::HideFocus));
-        }
-        self.presses.insert(source, Press { id: id.clone(), held: false });
-        self.handle(Event::Pointer(PointerEvent::Down(id)));
-        // Each press its own hold timer: another finger doesn't cut this one's long press short.
-        self.cancel_hold_timer(source);
-        let timer = Timer::from_duration(LONG_PRESS);
-        match self.loop_handle.insert_source(timer, move |_, _, app: &mut App| app.on_hold(source)) {
-            Ok(token) => {
-                self.hold_timers.insert(source, token);
-            }
-            Err(e) => log::warn!("hold timer: {}", e.error),
-        }
-    }
-
-    fn on_hold(&mut self, source: Source) -> TimeoutAction {
-        let Some(press) = self.presses.get_mut(&source) else {
-            self.hold_timers.remove(&source);
-            return TimeoutAction::Drop;
+    /// A finger or the mouse moved to `x`: a pending slide may start; the slider or a level row follows.
+    pub fn moved(&mut self, source: Source, x: f32) -> Vec<Action> {
+        let Some(press) = self.get(source) else {
+            return vec![];
         };
-        press.held = true;
-        let id = press.id.clone();
-        match self.state.hold(&id) {
+        match &mut press.gesture {
+            Gesture::PendingSlide { down_x, x: at, track, .. } => {
+                *at = track.along(x);
+                if (*at - *down_x).abs() < SLIDE_MOVE {
+                    return vec![];
+                }
+                let mut actions = vec![Action::Disarm(source, Timer::Slide)];
+                actions.extend(Self::start_slide(press));
+                actions
+            }
+            Gesture::Sliding { track } => vec![Action::Emit(Slide::To { x: track.along(x) }.into())],
+            Gesture::LevelDrag { level, track } => vec![Action::Emit(LevelEvent::Set(*level, track.value_at(x)).into())],
+            Gesture::Tap | Gesture::Held => vec![],
+        }
+    }
+
+    /// The source's `timer` fired. A hold repeats keys (`state` says which repeat) and long-presses the
+    /// rest; the slide timer starts the slide.
+    pub fn timer(&mut self, source: Source, timer: Timer, state: &State) -> Vec<Action> {
+        let Some(press) = self.get(source) else {
+            return vec![];
+        };
+        let mut actions = vec![];
+        match timer {
+            Timer::Slide => return Self::start_slide(press),
+            // (The slide's timer is the shorter: this comes first only if that one couldn't run.)
+            Timer::Hold if matches!(press.gesture, Gesture::PendingSlide { .. }) => {
+                actions.push(Action::Disarm(source, Timer::Slide));
+                actions.extend(Self::start_slide(press));
+            }
+            Timer::Hold if matches!(press.gesture, Gesture::LevelDrag { .. }) => return actions,
+            Timer::Hold => {}
+        }
+        if press.gesture == Gesture::Tap {
+            press.gesture = Gesture::Held;
+        }
+        match state.hold(&press.id) {
             Hold::Repeat => {
-                self.handle(Event::Pointer(PointerEvent::Activate(id)));
-                TimeoutAction::ToDuration(REPEAT)
+                actions.push(Action::Emit(PointerEvent::Activate(press.id.clone()).into()));
+                actions.push(Action::Arm(source, Timer::Hold, REPEAT));
             }
-            Hold::Long => {
-                self.hold_timers.remove(&source);
-                self.handle(Event::Pointer(PointerEvent::LongPress(id)));
-                TimeoutAction::Drop
-            }
+            Hold::Long => actions.push(Action::Emit(PointerEvent::LongPress(press.id.clone()).into())),
         }
+        actions
     }
 
-    /// A press ends: a tap activates; a hold already acted.
-    pub(crate) fn up(&mut self, source: Source, activate: bool) {
-        self.cancel_hold_timer(source);
-        // Only the finger that slides ends the slide.
-        if self.slider_source == Some(source) {
-            self.slider_source = None;
-            self.handle(Event::Slide(Slide::End));
-        }
-        if self.pending_slide.as_ref().is_some_and(|p| p.source == source) {
-            self.cancel_pending_slide();
-        }
-        if self.level_drag.as_ref().is_some_and(|d| d.source == source) {
-            self.level_drag = None;
-        }
-        let Some(press) = self.presses.remove(&source) else {
-            return;
+    /// A press ends: a tap activates (unless cancelled); a hold already acted; a slide ends.
+    pub fn up(&mut self, source: Source, end: End) -> Vec<Action> {
+        let Some(at) = self.presses.iter().position(|(s, _)| *s == source) else {
+            return vec![];
         };
-        if activate && !press.held {
-            self.handle(Event::Pointer(PointerEvent::Activate(press.id.clone())));
+        let (_, press) = self.presses.remove(at);
+        let mut actions = vec![Action::Disarm(source, Timer::Hold)];
+        let activates = match press.gesture {
+            Gesture::Sliding { .. } => {
+                actions.push(Action::Emit(Slide::End.into()));
+                false
+            }
+            Gesture::PendingSlide { .. } => {
+                actions.push(Action::Disarm(source, Timer::Slide));
+                true
+            }
+            Gesture::Tap | Gesture::LevelDrag { .. } => true,
+            Gesture::Held => false,
+        };
+        if activates && end == End::Release {
+            actions.push(Action::Emit(PointerEvent::Activate(press.id.clone()).into()));
         }
-        self.handle(Event::Pointer(PointerEvent::Up(press.id)));
-    }
-
-    fn cancel_hold_timer(&mut self, source: Source) {
-        if let Some(token) = self.hold_timers.remove(&source) {
-            self.loop_handle.remove(token);
-        }
+        actions.push(Action::Emit(PointerEvent::Up(press.id).into()));
+        actions
     }
 
     /// All touch points gone without a tap (cancelled, or the touch device went away).
-    pub(crate) fn cancel_touches(&mut self) {
-        let touches: Vec<Source> = self.presses.keys().copied().filter(|s| matches!(s, Source::Touch(_))).collect();
-        for source in touches {
-            self.up(source, false);
-        }
+    pub fn cancel_touches(&mut self) -> Vec<Action> {
+        let touches: Vec<Source> = self.presses.iter().map(|(s, _)| *s).filter(|s| matches!(s, Source::Touch(_))).collect();
+        touches.into_iter().flat_map(|source| self.up(source, End::Cancel)).collect()
     }
 
-    /// Pad-style focus movement over both screens' targets.
-    fn navigate(&mut self, dir: Dir) {
-        // In shelf's list (while shelf is in front): up and down move through the games (scrolling),
-        // left and right switch tabs; down past the last game goes on to the second screen.
-        if self.state.pad_on_top() && matches!(self.state.pointer().focus(), Some(Id::Shelf(ShelfId::Game(_))) | Some(Id::Shelf(ShelfId::Collection(_)))) {
-            let len = self.state.shelf().collection().map_or(0, |c| c.games.len());
-            let at_end = self.state.shelf().cursor().index + 1 >= len;
-            let event = match dir {
-                Dir::Up => Some(Event::Shelf(ShelfEvent::ListStep(-1))),
-                Dir::Down if !at_end => Some(Event::Shelf(ShelfEvent::ListStep(1))),
-                Dir::Left => Some(Event::Shelf(ShelfEvent::CollectionStep(-1))),
-                Dir::Right => Some(Event::Shelf(ShelfEvent::CollectionStep(1))),
-                Dir::Down => None,
-            };
-            if let Some(event) = event {
-                self.handle(event);
-                return;
-            }
-        }
-        // Away from shelf, only the second screen: to it first if the focus is elsewhere.
-        let top = self.state.pad_on_top();
-        if !top && self.focus_screen() != Screen::Bottom {
-            self.focus_bottom();
-            return;
-        }
-        // On a level row (drawn), left and right step it.
-        if let (Some(Id::Level(level)), Dir::Left | Dir::Right) = (self.state.pointer().focus(), dir)
-            && self.drawn_on(None, &Id::Level(*level))
-        {
-            let step = if dir == Dir::Left { -1 } else { 1 };
-            self.handle(Event::Level(LevelEvent::Step(*level, step)));
-            return;
-        }
-        let mut all = Vec::new();
-        for view in self.views().filter(|v| top || v.screen == Screen::Bottom) {
-            let (w, h) = (view.size.0.max(1) as f32, view.size.1.max(1) as f32);
-            let y0 = match view.screen {
-                Screen::Top => 0.0,
-                Screen::Bottom => 1.0,
-            };
-            all.extend(view.targets.iter().map(|t| NavTarget {
-                screen: view.screen,
-                rect: Rect::new(t.rect.x / w, y0 + t.rect.y / h, t.rect.w / w, t.rect.h / h),
-                id: t.id.clone(),
-            }));
-        }
-        if let Some(id) = nav::step(&all, self.state.pointer().focus(), dir) {
-            self.handle(Event::Pointer(PointerEvent::Focus(id)));
-        }
+    /// The pad went `route`: if that is away from ClamShell's screens while A is held on a target, its
+    /// release won't come here, so the press ends now (else the target stays pressed, a key repeating).
+    pub fn pad_route(&mut self, route: PadRoute) -> Vec<Action> {
+        if route != PadRoute::Ui && self.pressed(Source::PadA) { self.up(Source::PadA, End::Cancel) } else { vec![] }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::indexing_slicing)]
+mod tests {
+    use super::*;
+    use crate::draw::Rect;
+    use clamshell_core::keyboard::{self, Key, KeyPos};
+    use clamshell_core::{Init, Tab};
+
+    fn target(id: Id, track: Option<Track>) -> Target {
+        Target { rect: Rect::new(0.0, 0.0, 100.0, 50.0), id, track }
     }
 
-    /// The pad on ClamShell's screens: directions move focus (crossing screens at the edges while shelf
-    /// is in front), A acts on the focused target, B cancels the editor, Y toggles the favourite, the
-    /// shoulders step shelf's tabs (top screen) or the bar's tabs (second screen). View moves focus to
-    /// the other screen with shelf in front; else it moves the pad between the second screen and what
-    /// else wants it (the pad mouse, typing; the pad thread sends View from there too).
-    pub(crate) fn pad(&mut self, input: PadInput) {
-        match input {
-            PadInput::Up => self.navigate(Dir::Up),
-            PadInput::Down => self.navigate(Dir::Down),
-            PadInput::Left => self.navigate(Dir::Left),
-            PadInput::Right => self.navigate(Dir::Right),
-            PadInput::A(true) => self.press_focus(Source::PadA),
-            PadInput::A(false) => self.up(Source::PadA, true),
-            PadInput::B => {
-                if self.state.bottom().editor().is_some() {
-                    self.handle(Event::Pointer(PointerEvent::Activate(Id::Editor(EditorId::Cancel))));
-                }
-            }
-            PadInput::Y => self.handle(Event::Shelf(ShelfEvent::ToggleFavourite)),
-            PadInput::Shoulder(step) => {
-                if self.state.pad_on_top() && self.focus_screen() == Screen::Top {
-                    self.handle(Event::Shelf(ShelfEvent::CollectionStep(step)));
-                } else {
-                    // The bar's tabs, left to right.
-                    let modes = Tab::ALL;
-                    let at = modes.iter().position(|m| *m == self.state.bottom().tab()).unwrap_or(0) as i32;
-                    let next = (at + step).rem_euclid(modes.len() as i32) as usize;
-                    if let Some(&mode) = modes.get(next) {
-                        self.handle(Event::Pointer(PointerEvent::Activate(Id::Tab(mode))));
-                        self.handle(Event::Pointer(PointerEvent::Focus(Id::Tab(mode))));
-                    }
-                }
-            }
-            PadInput::Switch if self.state.pad_on_top() => self.switch_screen(),
-            PadInput::Switch => {
-                if self.state.pad().route() == PadRoute::Ui
-                    && let Some(slot) = self.last_focus.get_mut(1)
-                {
-                    *slot = self.state.pointer().focus().cloned();
-                }
-                self.handle(Event::PadSwitch);
-                if self.state.pad().route() == PadRoute::Ui {
-                    self.focus_bottom();
-                }
-            }
-        }
+    fn tab() -> Target {
+        target(Id::Tab(Tab::Wifi), None)
     }
 
-    /// A (or Enter) presses what has the focus, if it is drawn where the pad may go; else the focus
-    /// comes back there first (a target a closed tab drew isn't pressed unseen).
-    fn press_focus(&mut self, source: Source) {
-        let screen = (!self.state.pad_on_top()).then_some(Screen::Bottom);
-        match self.state.pointer().focus().cloned() {
-            Some(id) if self.drawn_on(screen, &id) => self.down(source, id),
-            _ if self.state.pad_on_top() => {
-                if let Some(game) = self.state.shelf().selected().cloned() {
-                    self.handle(Event::Pointer(PointerEvent::Focus(Id::Shelf(ShelfId::Game(game)))));
-                }
-            }
-            _ => self.focus_bottom(),
-        }
+    fn volume() -> Target {
+        target(Id::Control(Control::Volume), Some(Track { x0: 10.0, w: 600.0 }))
     }
 
-    /// Whether the last frame drew `id` (on `screen`, or on either).
-    fn drawn_on(&self, screen: Option<Screen>, id: &Id) -> bool {
-        self.views().any(|v| screen.is_none_or(|s| v.screen == s) && v.targets.iter().any(|t| &t.id == id))
+    fn level() -> Target {
+        target(Id::Level(Level::Volume), Some(Track { x0: 100.0, w: 200.0 }))
     }
 
-    /// Focus onto the second screen: where it last was there if still drawn, else the open tab.
-    fn focus_bottom(&mut self) {
-        let bottom = Some(Screen::Bottom);
-        let remembered = self.last_focus.get(1).cloned().flatten().filter(|id| self.drawn_on(bottom, id));
-        let current = self.state.pointer().focus().cloned().filter(|id| self.drawn_on(bottom, id));
-        let target = current.or(remembered).unwrap_or(Id::Tab(self.state.bottom().tab()));
-        self.handle(Event::Pointer(PointerEvent::Focus(target)));
+    fn events(actions: &[Action]) -> Vec<Event> {
+        actions.iter().filter_map(|a| if let Action::Emit(e) = a { Some(e.clone()) } else { None }).collect()
     }
 
-    /// The screen the focus is on (the top one when it isn't on anything drawn).
-    fn focus_screen(&self) -> Screen {
-        let focus = self.state.pointer().focus();
-        self.views().find(|v| focus.is_some_and(|f| v.targets.iter().any(|t| &t.id == f))).map_or(Screen::Top, |v| v.screen)
+    fn key() -> Id {
+        Id::Key(keyboard::find(Key::Char('a')).unwrap_or(KeyPos { row: 0, col: 0 }))
     }
 
-    /// Focus to the other screen: where it last was there if that is still drawn, else shelf's selected
-    /// game (top) or the current mode's icon (second screen).
-    fn switch_screen(&mut self) {
-        let from = self.focus_screen();
-        let (to, slot_from, slot_to) = match from {
-            Screen::Top => (Screen::Bottom, 0, 1),
-            Screen::Bottom => (Screen::Top, 1, 0),
-        };
-        if let Some(slot) = self.last_focus.get_mut(slot_from) {
-            *slot = self.state.pointer().focus().cloned();
-        }
-        let remembered = self.last_focus.get(slot_to).cloned().flatten().filter(|id| self.drawn_on(Some(to), id));
-        let default = match to {
-            Screen::Top => self.state.shelf().selected().cloned().map(|g| Id::Shelf(ShelfId::Game(g))),
-            Screen::Bottom => Some(Id::Tab(self.state.bottom().tab())),
-        };
-        let first = self.views().find(|v| v.screen == to).and_then(|v| v.targets.first()).map(|t| t.id.clone());
-        let target = remembered.or_else(|| default.filter(|id| self.drawn_on(Some(to), id))).or(first);
-        if let Some(id) = target {
-            self.handle(Event::Pointer(PointerEvent::Focus(id)));
-        }
+    #[test]
+    fn a_tap_activates_on_release_and_a_hold_does_not() {
+        let state = State::new(Init::default());
+        let mut input = Input::default();
+        let down = input.touch(Source::Touch(1), &tab(), 5.0);
+        assert_eq!(events(&down), vec![PointerEvent::HideFocus.into(), PointerEvent::Down(Id::Tab(Tab::Wifi)).into()]);
+        assert!(down.contains(&Action::Arm(Source::Touch(1), Timer::Hold, LONG_PRESS)));
+        let up = input.up(Source::Touch(1), End::Release);
+        assert_eq!(up[0], Action::Disarm(Source::Touch(1), Timer::Hold));
+        assert_eq!(events(&up), vec![PointerEvent::Activate(Id::Tab(Tab::Wifi)).into(), PointerEvent::Up(Id::Tab(Tab::Wifi)).into()]);
+
+        input.touch(Source::Touch(1), &tab(), 5.0);
+        let held = input.timer(Source::Touch(1), Timer::Hold, &state);
+        assert_eq!(events(&held), vec![PointerEvent::LongPress(Id::Tab(Tab::Wifi)).into()]);
+        assert_eq!(events(&input.up(Source::Touch(1), End::Release)), vec![PointerEvent::Up(Id::Tab(Tab::Wifi)).into()]);
+        // Cancelled: no tap.
+        input.touch(Source::Touch(1), &tab(), 5.0);
+        assert_eq!(events(&input.up(Source::Touch(1), End::Cancel)), vec![PointerEvent::Up(Id::Tab(Tab::Wifi)).into()]);
     }
 
-    /// On a desktop, the keyboard stands in for the pad: arrows move focus, Enter/Space is A (press,
-    /// hold), Tab View, Backspace B, Q and E the shoulders, F Y. Not on the device: there what reaches
-    /// shelf's window is typing (the on-screen keyboard's keys, a Bluetooth keyboard's).
-    pub(crate) fn key(&mut self, sym: Keysym, down: bool) {
-        if !self.desktop_keys {
-            return;
-        }
-        match (sym, down) {
-            (Keysym::Left, true) => self.navigate(Dir::Left),
-            (Keysym::Right, true) => self.navigate(Dir::Right),
-            (Keysym::Up, true) => self.navigate(Dir::Up),
-            (Keysym::Down, true) => self.navigate(Dir::Down),
-            (Keysym::Return | Keysym::KP_Enter | Keysym::space, true) => self.press_focus(Source::Enter),
-            (Keysym::Return | Keysym::KP_Enter | Keysym::space, false) => self.up(Source::Enter, true),
-            // The pad's Y: the selected game in or out of the favourites.
-            (Keysym::f, true) => self.handle(Event::Shelf(ShelfEvent::ToggleFavourite)),
-            // The pad's View (focus to the other screen), B, and shoulders.
-            (Keysym::Tab, true) => self.pad(PadInput::Switch),
-            (Keysym::BackSpace, true) => self.pad(PadInput::B),
-            (Keysym::q, true) => self.pad(PadInput::Shoulder(-1)),
-            (Keysym::e, true) => self.pad(PadInput::Shoulder(1)),
-            _ => {}
-        }
+    #[test]
+    fn a_held_key_repeats() {
+        let state = State::new(Init::default());
+        let mut input = Input::default();
+        input.press(Source::PadA, key());
+        let held = input.timer(Source::PadA, Timer::Hold, &state);
+        assert_eq!(held, vec![Action::Emit(PointerEvent::Activate(key()).into()), Action::Arm(Source::PadA, Timer::Hold, REPEAT)]);
+        assert_eq!(events(&input.up(Source::PadA, End::Release)), vec![PointerEvent::Up(key()).into()]);
+    }
+
+    #[test]
+    fn a_slide_starts_when_moved_far_enough_or_held() {
+        let state = State::new(Init::default());
+        let mut input = Input::default();
+        let down = input.touch(Source::Touch(1), &volume(), 300.0);
+        assert!(down.contains(&Action::Arm(Source::Touch(1), Timer::Slide, SLIDE_AFTER)));
+        // Not far enough yet: nothing.
+        assert!(input.moved(Source::Touch(1), 300.0 + SLIDE_MOVE - 1.0).is_empty());
+        let moved = input.moved(Source::Touch(1), 300.0 + SLIDE_MOVE);
+        assert_eq!(moved[0], Action::Disarm(Source::Touch(1), Timer::Slide));
+        assert_eq!(events(&moved), vec![Slide::Start { control: Control::Volume, x: 290.0 + SLIDE_MOVE, width: 600.0 }.into()]);
+        assert_eq!(events(&input.moved(Source::Touch(1), 400.0)), vec![Slide::To { x: 390.0 }.into()]);
+        let up = input.up(Source::Touch(1), End::Release);
+        assert_eq!(events(&up), vec![Slide::End.into(), PointerEvent::Up(Id::Control(Control::Volume)).into()]);
+
+        // Held still: the timer starts it.
+        input.touch(Source::Mouse, &volume(), 300.0);
+        assert_eq!(events(&input.timer(Source::Mouse, Timer::Slide, &state)), vec![Slide::Start { control: Control::Volume, x: 290.0, width: 600.0 }.into()]);
+        // Lifted before either: a tap (it opens the tab).
+        input.up(Source::Mouse, End::Release);
+        input.touch(Source::Mouse, &volume(), 300.0);
+        let up = input.up(Source::Mouse, End::Release);
+        assert!(up.contains(&Action::Disarm(Source::Mouse, Timer::Slide)));
+        assert!(events(&up).contains(&PointerEvent::Activate(Id::Control(Control::Volume)).into()));
+    }
+
+    #[test]
+    fn a_second_finger_on_a_control_meanwhile_is_a_tap() {
+        let mut input = Input::default();
+        input.touch(Source::Touch(1), &volume(), 300.0);
+        let second = input.touch(Source::Touch(2), &volume(), 100.0);
+        assert!(!second.iter().any(|a| matches!(a, Action::Arm(_, Timer::Slide, _))));
+        assert!(input.moved(Source::Touch(2), 200.0).is_empty());
+        // The same source again is ignored until it lifts.
+        assert!(input.touch(Source::Touch(1), &tab(), 0.0).is_empty());
+    }
+
+    #[test]
+    fn a_level_row_follows_the_finger_and_the_release_focuses_it() {
+        let state = State::new(Init::default());
+        let mut input = Input::default();
+        let down = input.touch(Source::Touch(1), &level(), 200.0);
+        assert!(events(&down).contains(&LevelEvent::Set(Level::Volume, 50).into()));
+        assert!(!down.iter().any(|a| matches!(a, Action::Arm(..))));
+        assert_eq!(events(&input.moved(Source::Touch(1), 350.0)), vec![LevelEvent::Set(Level::Volume, 100).into()]);
+        assert!(input.timer(Source::Touch(1), Timer::Hold, &state).is_empty());
+        let up = input.up(Source::Touch(1), End::Release);
+        assert_eq!(events(&up), vec![PointerEvent::Activate(Id::Level(Level::Volume)).into(), PointerEvent::Up(Id::Level(Level::Volume)).into()]);
+        assert!(input.moved(Source::Touch(1), 100.0).is_empty());
+    }
+
+    #[test]
+    fn pad_a_is_released_when_the_pad_leaves_the_screens() {
+        let mut input = Input::default();
+        input.press(Source::PadA, Id::Tab(Tab::Wifi));
+        assert!(input.pad_route(PadRoute::Ui).is_empty());
+        let released = input.pad_route(PadRoute::Game);
+        assert_eq!(events(&released), vec![PointerEvent::Up(Id::Tab(Tab::Wifi)).into()]);
+        assert!(!input.pressed(Source::PadA));
+        assert!(input.pad_route(PadRoute::Game).is_empty());
+    }
+
+    #[test]
+    fn cancelled_touches_end_without_a_tap() {
+        let mut input = Input::default();
+        input.touch(Source::Touch(1), &tab(), 0.0);
+        input.touch(Source::Touch(2), &volume(), 300.0);
+        input.touch(Source::Mouse, &tab(), 0.0);
+        let cancelled = input.cancel_touches();
+        assert!(!events(&cancelled).iter().any(|e| matches!(e, Event::Pointer(PointerEvent::Activate(_)))));
+        assert!(input.pressed(Source::Mouse) && !input.pressed(Source::Touch(1)) && !input.pressed(Source::Touch(2)));
     }
 }

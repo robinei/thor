@@ -6,10 +6,10 @@ use std::cell::Cell;
 
 use clamshell_core::keyboard::{self, Key, Modifier};
 use clamshell_core::{DockId, EditorId, Event, GameEvent, Id, Instance, PointerEvent, Reading, SettingsId, Slide, Init, State, Tab, WifiId};
-use tiny_skia::Pixmap;
 
-use crate::draw::{Canvas, DrawCache};
-use crate::views::{self, Scratch};
+use crate::Screen;
+use crate::draw::DrawCache;
+use crate::render::{Picture, Placement, render};
 
 thread_local! {
     static ALLOCS: Cell<usize> = const { Cell::new(0) };
@@ -50,28 +50,55 @@ fn key(k: Key) -> Event {
     Event::Pointer(PointerEvent::Activate(Id::Key(keyboard::find(k).expect("key on the layout"))))
 }
 
+fn tap(id: Id) -> Event {
+    Event::Pointer(PointerEvent::Activate(id))
+}
+
+fn wifi_reading() -> Event {
+    Event::Reading(Reading::Wifi(clamshell_core::wifi::Wifi {
+        device: true,
+        enabled: true,
+        networks: vec![
+            clamshell_core::wifi::Network { ssid: "home".into(), strength: 80, secure: true, known: true, active: true, enterprise: false },
+            clamshell_core::wifi::Network { ssid: "cafe".into(), strength: 40, secure: true, ..Default::default() },
+        ],
+        connecting: Some("cafe".into()),
+        error: None,
+    }))
+}
+
+/// Each case from the same base state (the demo library, a fixed time), so they don't depend on each
+/// other.
 #[test]
 fn warm_frames_do_not_allocate() {
-    let mut state = State::new(Init { library: clamshell_library::demo_library(), ..Init::default() });
-    state.apply(Event::Tick { unix_secs: 1_700_000_000 });
     let mut cache = DrawCache::load();
-    let mut scratch = Scratch::default();
     let mut images = crate::images::Images::synchronous();
-    let mut targets = Vec::new();
-    let mut top = Pixmap::new(1920, 1080).expect("pixmap");
-    let mut bottom = Pixmap::new(1240, 1080).expect("pixmap");
+    let (mut top, mut bottom) = (Picture::default(), Picture::default());
+    let top_at = Placement { size_px: (1920, 1080), scale: 1, drift: (1, -2) };
+    let bottom_at = Placement { size_px: (1240, 1080), scale: 1, drift: (-3, 0) };
 
     let cases: Vec<(&str, Vec<Event>)> = vec![
         ("sysinfo", vec![]),
         ("settings", vec![Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Settings)))]),
-        ("settings, a changed tile", vec![Event::Pointer(PointerEvent::Activate(Id::Settings(SettingsId::Tile(clamshell_core::settings::Setting::FpsCap))))]),
-        ("settings, all games", vec![Event::Pointer(PointerEvent::Activate(Id::Settings(SettingsId::Scope(clamshell_core::Scope::Global))))]),
-        ("environment editor", vec![Event::Pointer(PointerEvent::Activate(Id::Settings(SettingsId::Env))), key(Key::Char('a'))]),
-        ("environment saved", vec![key(Key::Char('=')), key(Key::Char('1')), Event::Pointer(PointerEvent::Activate(Id::Editor(EditorId::Save)))]),
+        ("settings, a changed tile", vec![tap(Id::Tab(Tab::Settings)), tap(Id::Settings(SettingsId::Tile(clamshell_core::settings::Setting::FpsCap)))]),
+        ("settings, all games", vec![tap(Id::Tab(Tab::Settings)), tap(Id::Settings(SettingsId::Scope(clamshell_core::Scope::Global)))]),
+        ("environment editor", vec![tap(Id::Tab(Tab::Settings)), tap(Id::Settings(SettingsId::Env)), key(Key::Char('a'))]),
+        (
+            "environment saved",
+            vec![
+                tap(Id::Tab(Tab::Settings)),
+                tap(Id::Settings(SettingsId::Env)),
+                key(Key::Char('a')),
+                key(Key::Char('=')),
+                key(Key::Char('1')),
+                tap(Id::Editor(EditorId::Save)),
+            ],
+        ),
         ("dock, an app running", vec![Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Dock))), Event::Pointer(PointerEvent::Activate(Id::Dock(DockId::App(1))))]),
         (
             "dock, a game and windows",
             vec![
+                tap(Id::Tab(Tab::Dock)),
                 Event::Game(GameEvent::Started("zelda-lttp".into())),
                 Event::Units(["clamshell-game-1-0", "clamshell-app-terminal-1-0"].into_iter().filter_map(Instance::parse).collect()),
                 Event::Windows(vec![
@@ -85,24 +112,15 @@ fn warm_frames_do_not_allocate() {
             "wifi",
             vec![
                 Event::Reading(Reading::Status(clamshell_core::Status { volume: Some(40), brightness: Some(70), wifi: Some(60), ..Default::default() })),
-                Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Wifi))),
-                Event::Reading(Reading::Wifi(clamshell_core::wifi::Wifi {
-                    device: true,
-                    enabled: true,
-                    networks: vec![
-                        clamshell_core::wifi::Network { ssid: "home".into(), strength: 80, secure: true, known: true, active: true, enterprise: false },
-                        clamshell_core::wifi::Network { ssid: "cafe".into(), strength: 40, secure: true, ..Default::default() },
-                    ],
-                    connecting: Some("cafe".into()),
-                    error: None,
-                })),
+                tap(Id::Tab(Tab::Wifi)),
+                wifi_reading(),
             ],
         ),
-        ("wifi password", vec![Event::Pointer(PointerEvent::Activate(Id::Wifi(WifiId::Network(1)))), Event::Pointer(PointerEvent::Activate(Id::Wifi(WifiId::Network(0))))]),
+        ("wifi password", vec![tap(Id::Tab(Tab::Wifi)), wifi_reading(), tap(Id::Wifi(WifiId::Network(1))), tap(Id::Wifi(WifiId::Network(0)))]),
         (
             "sliding",
             vec![
-                Event::Pointer(PointerEvent::Activate(Id::Editor(EditorId::Cancel))),
+                Event::Reading(Reading::Status(clamshell_core::Status { volume: Some(40), ..Default::default() })),
                 Event::Pointer(PointerEvent::Down(Id::Control(clamshell_core::slider::Control::Volume))),
                 Event::Slide(Slide::Start { control: clamshell_core::slider::Control::Volume, x: 285.0, width: 620.0 }),
                 Event::Slide(Slide::To { x: 320.0 }),
@@ -111,7 +129,6 @@ fn warm_frames_do_not_allocate() {
         (
             "battery",
             vec![
-                Event::Pointer(PointerEvent::Up(Id::Control(clamshell_core::slider::Control::Volume))),
                 Event::Reading(Reading::Status(clamshell_core::Status { battery: Some(41), ..Default::default() })),
                 Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Battery))),
                 Event::Reading(Reading::Battery(clamshell_core::battery::Battery {
@@ -163,34 +180,27 @@ fn warm_frames_do_not_allocate() {
                 Event::Reading(Reading::Backlights(vec!["panel".into()])),
             ],
         ),
+        (
+            "dark while a game runs",
+            vec![Event::Game(GameEvent::Started("zelda-lttp".into())), tap(Id::Settings(SettingsId::Tile(clamshell_core::settings::Setting::BottomScreen)))],
+        ),
         ("keyboard", vec![Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Keyboard)))]),
-        ("keyboard, Fn", vec![key(Key::Mod(Modifier::Fn))]),
-        ("keyboard, Shift and a pressed key", vec![key(Key::Mod(Modifier::Shift)), key(Key::Char('h'))]),
+        ("keyboard, Fn", vec![tap(Id::Tab(Tab::Keyboard)), key(Key::Mod(Modifier::Fn))]),
+        (
+            "keyboard, Shift and a pressed key",
+            vec![tap(Id::Tab(Tab::Keyboard)), key(Key::Mod(Modifier::Shift)), Event::Pointer(PointerEvent::Down(Id::Key(keyboard::find(Key::Char('h')).expect("h"))))],
+        ),
     ];
     for (name, events) in cases {
+        let mut state = State::new(Init { library: clamshell_library::demo_library(), ..Init::default() });
+        state.apply(Event::Tick { unix_secs: 1_700_000_000 });
         for event in events {
             state.apply(event);
         }
         for round in 0..3 {
             let before = allocs();
-            views::top(
-                &mut Canvas::new(&mut top, 1.0, &mut cache),
-                &state,
-                1920.0,
-                1080.0,
-                &mut images,
-                &mut scratch,
-                &mut targets,
-            );
-            views::bottom(
-                &mut Canvas::new(&mut bottom, 1.0, &mut cache),
-                &state,
-                1240.0,
-                1080.0,
-                &mut images,
-                &mut scratch,
-                &mut targets,
-            );
+            render(&mut top, top_at, Screen::Top, &state, &mut cache, &mut images).expect("top");
+            render(&mut bottom, bottom_at, Screen::Bottom, &state, &mut cache, &mut images).expect("bottom");
             let n = allocs() - before;
             // The first rounds fill the glyph cache and size the vectors.
             if round == 2 {
@@ -199,3 +209,4 @@ fn warm_frames_do_not_allocate() {
         }
     }
 }
+
