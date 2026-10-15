@@ -45,10 +45,13 @@ What goes in, and from where:
 |---|---|
 | Bootloader | not in the image: stock U-Boot (UEFI), else ROCKNIX's ABL flashed once (see below) |
 | UEFI boot, on the same FAT partition (an EFI system partition) | systemd-boot as `EFI/BOOT/BOOTAA64.EFI`, ROCKNIX's kernel as `/Image` (decompressed), the Thor's device tree as `/dtbs/qcs8550-ayn-thor.dtb`, our initramfs, a loader entry with our command line; split out by `tools/bootimg.py split` |
-| `/KERNEL` on FAT `ROCKNIX` (GPT name `system`, legacy-boot attribute, at 16 MiB) | ROCKNIX's kernel and device trees, unchanged; our initramfs (mkinitcpio: base udev modconf block filesystems fsck, no autodetect) and command line (`root=LABEL=THOR_ROOT rw` + ROCKNIX's SM8550 parameters), repacked by `tools/bootimg.py` |
+| `/KERNEL` on FAT `ROCKNIX` (GPT name `system`, legacy-boot attribute, at 16 MiB) | ROCKNIX's kernel and device trees, unchanged; our initramfs (mkinitcpio: base udev modconf block thor-root-wait resume filesystems fsck, no autodetect) and command line (`root=LABEL=THOR_ROOT rw` + ROCKNIX's SM8550 parameters; the first boot adds `resume=`, `resume_offset=`), repacked by `tools/bootimg.py` |
 | Kernel modules, firmware | ROCKNIX's `SYSTEM` (same release), incl. Qualcomm firmware: for this device only, not for sharing |
-| Root: ext4 `THOR_ROOT` | `pacstrap` from Arch Linux ARM's mirrors (unpinned): base, sudo, mkinitcpio, NetworkManager, OpenSSH, sway, foot, Xwayland, Mesa + `vulkan-freedreno`, PipeWire, Noto, SQLite, Python, vim |
-| Session | user `thor` (passwordless sudo, my ssh key), tty1 autologin into sway, sway config (DSI-2 top, DSI-1 bottom, ROCKNIX's output lines if found), ClamShell built natively for aarch64 as a user service, uinput rule, NetworkManager and sshd on |
+| Root: ext4 `THOR_ROOT` | `pacstrap` from Arch Linux ARM's mirrors (unpinned): base, sudo, mkinitcpio, NetworkManager, OpenSSH, sway, foot, Xwayland, Mesa + `vulkan-freedreno`, PipeWire, Noto, SQLite, Python, vim, grim, growpart (`cloud-guest-utils`), gptfdisk |
+| System | time zone (`THOR_TIMEZONE`, else the build machine's `/etc/localtime`, else UTC), locale (`THOR_LOCALE`, default `en_US.UTF-8`), systemd-timesyncd, NetworkManager, sshd, Bluetooth |
+| Session | user `thor` (groups wheel, video, input, audio; passwordless sudo, my ssh key), tty1 autologin into sway, sway config (DSI-2 top, DSI-1 bottom, ROCKNIX's output lines if found; Print: `clamshell ctl screenshot`), ClamShell built natively for aarch64 as a user service (control pipe `$XDG_RUNTIME_DIR/clamshell-control`, `CLAMSHELL_SESSION=device`: it puts the device to sleep when idle and reads the volume and brightness keys itself), uinput rule |
+| Sleep | logind: power button and lid do `sleep` = suspend-then-hibernate, else suspend (`SleepOperation=`); long press powers off. `HibernateDelaySec=30min`. UPower: hibernate at 3 % (power off if it can't) |
+| First boot (`thor-firstboot.service`, once) | grows partition 2 and its ext4 to the card (growpart, resize2fs); makes `/swapfile`, 16 GiB (the RAM; only if 8 GiB stay free beside it), in fstab; then writes `resume=LABEL=THOR_ROOT resume_offset=<first block>` onto both command lines: the loader entry's options and `/KERNEL` (repacked on the device with `/usr/local/lib/thor/bootimg.py`). Resume works from the second boot on |
 
 Built once (2026-10-14, ROCKNIX 20261001, kernel 7.2.0): `~/.cache/thor-vm/aarch64/thor-sd.img`, 12 GB
 (2.5 GB used). Checked from the host and in the build machine: GPT with partition 1 an EFI system
@@ -85,9 +88,16 @@ Known issues and risks, to check first:
    ROCKNIX does). The UEFI path loads only the Thor's.
 7. UEFI path: whether U-Boot passes our device tree through systemd-boot (its devicetree fixup) or
    insists on its own; Kettle uses GRUB, the fallback.
-8. Not done: hibernate setup, fan control, growing the root partition to the card. Suspend is logind's
-   (power button and lid, `logind.conf.d/thor.conf`); ClamShell applies its settings again on waking.
-9. Test image only: passwordless sudo, sshd with a key, autologin without a password.
+8. Hibernate, unverified: ROCKNIX's kernel has it (`CONFIG_HIBERNATION=y`, LZO compression; checked
+   2026-10-15 in its embedded config). Not known: whether the Thor's firmware and drivers come back
+   after a resume (the remote processors for audio, sensors, Wi-Fi; the GPU's zap shader; the panels);
+   whether the ABL or U-Boot path matters; whether the RTC alarm wakes the Thor from suspend (without
+   it suspend-then-hibernate never gets to hibernate); whether the first boot's growpart, swap file and
+   command line rewrite work (never run: the image hasn't been booted). If the card is not up when
+   the initramfs's resume runs (thor-root-wait gives it 10 s) the hibernated state is lost and the
+   machine boots fresh.
+9. Not done: fan control. ClamShell applies its settings again on waking.
+10. Test image only: passwordless sudo, sshd with a key, autologin without a password.
 
 ## Before the device arrives
 
@@ -134,7 +144,8 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
 - [ ] Bluetooth: does the chip work with ROCKNIX's kernel and firmware? Then the Bluetooth mode: pair
       headphones (sound moves to them) and a controller (no code needed), forget one.
 - [ ] Text fields bring up the keyboard tab (input-method-v2 in the device's sway; Steam's own fields?).
-- [ ] Sound through speakers and headphones; volume keys; the volume slider (`wpctl`); the volume tab:
+- [ ] Sound through speakers and headphones; volume keys (ClamShell reads them from evdev: which
+      device sends them?); the volume slider (`wpctl`); the volume tab:
       apps listed while playing (Steam, Proton games), their levels and mutes, switching outputs.
 - [ ] Brightness: one backlight per panel in `/sys/class/backlight`? Which name is which screen (for
       the brightness tab's labels)? Ranges, whether logind's
@@ -149,8 +160,14 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
 - [ ] Power profiles: cpufreq policies (3 clusters?), GPU devfreq, little-cores-only; the udev rule giving
       our user write access.
 - [ ] Fan: is there a sysfs control?
-- [ ] Suspend (ROCKNIX's deep suspend, ~3 s resume) and hibernate (swap, resume from it, every subsystem
-      after resume). After a resume: ClamShell logs "woke from sleep" and "settings applied", and both
+- [ ] First boot: the root fills the card (`df -h /`), `/swapfile` is on (`swapon`), both command lines
+      have `resume=` and `resume_offset=` (`cat /proc/cmdline` on the second boot, under each boot path),
+      `journalctl -u thor-firstboot`. Time (timesyncd, `timedatectl`) and locale (`locale`).
+- [ ] Screenshot: Print on a USB keyboard (`clamshell ctl screenshot`, grim).
+- [ ] Suspend (ROCKNIX's deep suspend, ~3 s resume) and hibernate: `systemctl hibernate`, then resume
+      (from the ABL path and the UEFI path); every subsystem after resume (sound, Wi-Fi, Bluetooth, GPU,
+      both screens and touch, gamepad); lid closed for over 30 minutes ends in hibernate; UPower's
+      hibernate at 3 %. After a resume: ClamShell logs "woke from sleep" and "settings applied", and both
       screens redraw (in the VM the whole machine stopped soon after a resume, so this is untested).
 - [ ] The launcher under real use: tools/vm.py's checks again, on the device.
 - [ ] FEX for x86 games (32-bit Windows games are the open question).

@@ -244,7 +244,10 @@ image binds to a keyboard's Print) is both screens in one PNG in `~/Pictures/Scr
 "Screenshot saved" shows under the bar. Home on its own acts when it is let go, so it can start a
 combination.
 
-**Sleep**: the power button and the lid suspend through logind (the image's `logind.conf.d/thor.conf`).
+**Sleep**: the power button and the lid put the device to sleep through logind (the image's
+`logind.conf.d/thor.conf`): suspend, then hibernate after 30 minutes (`sleep.conf.d/thor.conf`), or
+suspend only when hibernate isn't possible. The swap file for hibernate (16 GiB) and the resume
+parameters are made on the card's first boot.
 ClamShell notices waking from the clocks (CLOCK_BOOTTIME runs during sleep, CLOCK_MONOTONIC doesn't) and
 applies the settings in force again.
 
