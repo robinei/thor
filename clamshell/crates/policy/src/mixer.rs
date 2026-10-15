@@ -1,5 +1,5 @@
 //! What the volume and brightness tabs show, read every second while one is open: PipeWire's outputs
-//! and the apps playing (`pw-dump`), and each backlight's level. Setting them is the controls thread's.
+//! and the apps playing (`pw-dump`), and the backlights' names. Setting them is the controls thread's.
 
 use std::io;
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
@@ -37,7 +37,7 @@ pub fn spawn(sink: impl Sink, commands: Receiver<Command>) -> io::Result<()> {
                 }
             }
             if backlights {
-                let read = controls::backlight_levels();
+                let read = controls::backlight_names();
                 if last_backlights.as_ref() != Some(&read) {
                     if !sink.send(Event::Backlights(read.clone())) {
                         return;

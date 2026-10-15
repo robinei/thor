@@ -160,7 +160,7 @@ fn warm_frames_do_not_allocate() {
             "brightness",
             vec![
                 Event::Activate(Id::Mode(Mode::Brightness)),
-                Event::Backlights(vec![clamshell_core::mixer::Backlight { name: "panel".into(), level: 60 }]),
+                Event::Backlights(vec!["panel".into()]),
             ],
         ),
         ("keyboard", vec![Event::Activate(Id::Mode(Mode::Keyboard))]),

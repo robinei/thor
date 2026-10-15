@@ -1,6 +1,10 @@
 //! The volume and brightness tabs: the output volume and mute, which output plays, each app's volume
-//! and mute (PipeWire's streams), and each screen's backlight. A level row is set by where the finger is
-//! on it (and follows the finger), or stepped with the pad's left and right.
+//! and mute (PipeWire's streams); the screens' brightness and each screen's share of it. A level row is
+//! set by where the finger is on it (and follows the finger), or stepped with the pad's left and right.
+//!
+//! Brightness is two levels multiplied: the global one (the bar's) and each screen's factor, so the bar
+//! dims and brightens the screens together and keeps them as they are relative to each other. Both are
+//! ours (the kernel only knows each panel's result): kept with the place, applied at start.
 
 use crate::{Effect, State, Status};
 
@@ -9,6 +13,8 @@ use crate::{Effect, State, Status};
 pub enum Level {
     /// The output volume (the bar's).
     Volume,
+    /// The screens' brightness (the bar's).
+    Brightness,
     /// An app's stream, by position.
     Stream(u16),
     /// A backlight, by position.
@@ -43,12 +49,25 @@ pub struct Audio {
     pub streams: Vec<Stream>,
 }
 
-/// A screen's backlight.
+/// The screens' brightness: the global level (0-100; unknown until read or set), and each backlight's
+/// factor (0-100, by its name in /sys/class/backlight; 100 when not set).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct Backlight {
-    /// Its name in /sys/class/backlight.
-    pub name: String,
-    pub level: u8,
+pub struct Brightness {
+    pub level: Option<u8>,
+    pub factors: Vec<(String, u8)>,
+}
+
+impl Brightness {
+    pub fn factor(&self, name: &str) -> u8 {
+        self.factors.iter().find(|(n, _)| n == name).map_or(100, |(_, f)| *f)
+    }
+
+    fn set_factor(&mut self, name: &str, factor: u8) {
+        match self.factors.iter_mut().find(|(n, _)| n == name) {
+            Some(f) => f.1 = factor,
+            None => self.factors.push((name.to_owned(), factor)),
+        }
+    }
 }
 
 /// What the audio side is asked to do.
@@ -70,8 +89,9 @@ impl State {
     pub fn level_of(&self, level: Level) -> Option<u8> {
         match level {
             Level::Volume => self.status.volume,
+            Level::Brightness => self.brightness.level.or(self.status.brightness),
             Level::Stream(i) => self.audio.streams.get(usize::from(i)).map(|s| s.volume),
-            Level::Backlight(i) => self.backlights.get(usize::from(i)).map(|b| b.level),
+            Level::Backlight(i) => self.backlights.get(usize::from(i)).map(|name| self.brightness.factor(name)),
         }
     }
 
@@ -102,18 +122,33 @@ impl State {
                 }
                 None => vec![],
             },
-            Level::Backlight(i) => match self.backlights.get_mut(usize::from(i)) {
-                Some(b) => {
-                    b.level = value;
-                    // The bar shows the first.
-                    if i == 0 {
-                        self.status.brightness = Some(value);
+            Level::Brightness => self.set_brightness(value),
+            Level::Backlight(i) => match self.backlights.get(usize::from(i)).cloned() {
+                Some(name) => {
+                    self.brightness.set_factor(&name, value);
+                    // The level as read, until ClamShell sets one (all factors were 100 then).
+                    if self.brightness.level.is_none() {
+                        self.brightness.level = self.status.brightness;
                     }
-                    vec![Effect::SetBacklight { name: b.name.clone(), level: value }]
+                    self.resume_dirty = Some(self.unix_secs);
+                    self.brightness_effect().into_iter().collect()
                 }
                 None => vec![],
             },
         }
+    }
+
+    /// The global brightness to `value` (the bar's slider, the tab's first row).
+    pub(crate) fn set_brightness(&mut self, value: u8) -> Vec<Effect> {
+        self.brightness.level = Some(value.min(100));
+        self.resume_dirty = Some(self.unix_secs);
+        self.brightness_effect().into_iter().collect()
+    }
+
+    /// The screens' brightness as it should be, once the level is known (to apply at start too).
+    pub fn brightness_effect(&self) -> Option<Effect> {
+        let level = self.brightness.level?;
+        Some(Effect::Brightness { level, factors: self.brightness.factors.clone() })
     }
 
     /// The pad's left or right on a level row.
@@ -170,12 +205,7 @@ impl State {
         changed
     }
 
-    pub(crate) fn set_backlights(&mut self, mut backlights: Vec<Backlight>) -> bool {
-        if let Some(Level::Backlight(i)) = self.dragging
-            && let (Some(mine), Some(read)) = (self.backlights.get(usize::from(i)), backlights.get_mut(usize::from(i)))
-        {
-            read.level = mine.level;
-        }
+    pub(crate) fn set_backlights(&mut self, backlights: Vec<String>) -> bool {
         let changed = backlights != self.backlights;
         self.backlights = backlights;
         changed
@@ -186,9 +216,6 @@ impl State {
         if self.dragging == Some(Level::Volume) {
             status.volume = self.status.volume;
             status.muted = self.status.muted;
-        }
-        if self.dragging == Some(Level::Backlight(0)) {
-            status.brightness = self.status.brightness;
         }
         status
     }
@@ -231,13 +258,35 @@ mod tests {
     }
 
     #[test]
-    fn backlights_are_set_one_by_one_and_the_pad_steps_levels() {
+    fn brightness_is_the_level_times_each_screens_factor() {
         let mut s = state();
-        s.apply(Event::Backlights(vec![Backlight { name: "top".into(), level: 50 }, Backlight { name: "bottom".into(), level: 30 }]));
-        assert_eq!(s.apply(Event::SetLevel(Level::Backlight(1), 80)).1, vec![Effect::SetBacklight { name: "bottom".into(), level: 80 }]);
-        assert_eq!(s.apply(Event::LevelStep(Level::Backlight(0), -1)).1, vec![Effect::SetBacklight { name: "top".into(), level: 45 }]);
-        assert_eq!(s.status.brightness, Some(45), "the bar shows the first");
+        // The level read from the first panel until ClamShell sets one; factors 100 until set.
+        s.apply(Event::Status(Status { brightness: Some(60), ..Status::default() }));
+        assert_eq!(s.level_of(Level::Brightness), Some(60));
+        assert_eq!(s.brightness_effect(), None, "nothing to apply before a level is set");
+        s.apply(Event::Backlights(vec!["top".into(), "bottom".into()]));
+        assert_eq!(s.level_of(Level::Backlight(1)), Some(100));
+        let set = |level, factors: &[(&str, u8)]| vec![Effect::Brightness { level, factors: factors.iter().map(|(n, f)| ((*n).to_owned(), *f)).collect() }];
+        assert_eq!(s.apply(Event::SetLevel(Level::Backlight(1), 70)).1, set(60, &[("bottom", 70)]));
+        // The bar keeps the screens as they are to each other.
+        s.apply(Event::SlideStart { control: crate::controls::Control::Brightness, x: 300.0, width: 620.0 });
+        let fx = s.apply(Event::SlideTo { x: 360.0 }).1;
+        assert!(matches!(fx.as_slice(), [Effect::Brightness { level, factors }] if *level > 60 && factors == &[("bottom".to_owned(), 70)]), "{fx:?}");
+        s.apply(Event::Up(Id::Control(crate::controls::Control::Brightness)));
+        assert_eq!(s.apply(Event::LevelStep(Level::Brightness, -1)).1.len(), 1);
+        // Kept with the place, back after a restart.
+        let text = s.resume_text();
+        let mut again = state();
+        again.restore(&text);
+        assert_eq!(again.brightness, s.brightness);
+        assert_eq!(again.brightness_effect(), s.brightness_effect());
+    }
+
+    #[test]
+    fn the_pad_steps_levels() {
+        let mut s = state();
         s.apply(Event::Status(Status { volume: Some(98), ..Status::default() }));
         assert_eq!(s.apply(Event::LevelStep(Level::Volume, 1)).1, vec![Effect::SetVolume(100)], "up to 100");
+        assert_eq!(s.apply(Event::LevelStep(Level::Volume, 1)).1, vec![], "and no further");
     }
 }

@@ -11,10 +11,12 @@ use std::io;
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
+use std::time::Instant;
 
 use evdev::raw_stream::RawDevice;
 use evdev::uinput::VirtualDevice;
 use evdev::{AbsInfo, AbsoluteAxisCode, AttributeSet, EventType, InputEvent, KeyCode, PropType, UinputAbsSetup};
+use clamshell_core::controls::{Control, SLIDE_AFTER, SLIDE_MOVE};
 use clamshell_core::touch::TouchLayout;
 use clamshell_core::{Event, Id};
 
@@ -282,6 +284,8 @@ fn run(config: &Config, layout: &Mutex<TouchLayout>, commands: &Receiver<Command
 
     let mut out = Vec::new();
     let mut batch = Vec::new();
+    let mut bar_press: Option<BarPress> = None;
+    let mut events = Vec::new();
     let tick = rustix::event::Timespec { tv_sec: 0, tv_nsec: 100_000_000 };
     loop {
         match commands.try_recv() {
@@ -307,6 +311,11 @@ fn run(config: &Config, layout: &Mutex<TouchLayout>, commands: &Receiver<Command
         let geometry = layout.lock().map(|l| TouchLayout { scale: l.scale, origin_x: l.origin_x, width: l.width, ..TouchLayout::default() }).ok();
         let width = geometry.as_ref().map_or(0.0, |g| g.width);
         let layout_x = geometry.as_ref().map(|g| |x: f32| g.layout_x(x));
+        let now = Instant::now();
+        // A finger held still on volume or brightness: the slider comes up.
+        if let Some(press) = bar_press.as_mut() {
+            press.start(now, false, width, &mut events);
+        }
         for o in out.drain(..) {
             match o {
                 Out::Forward { kind, code, value } => batch.push(InputEvent::new(kind, code, value)),
@@ -315,30 +324,73 @@ fn run(config: &Config, layout: &Mutex<TouchLayout>, commands: &Receiver<Command
                     if !(sink.send(Event::HideFocus) && sink.send(Event::Down(id.clone()))) {
                         return Ok(());
                     }
-                    if let (Id::Control(control), Some(at)) = (id, layout_x)
-                        && !sink.send(Event::SlideStart { control, x: at(x), width })
-                    {
-                        return Ok(());
+                    if let (Id::Control(control), Some(at)) = (id, layout_x) {
+                        bar_press = Some(BarPress::new(control, at(x), now));
                     }
                 }
                 Out::Move { x } => {
-                    if let Some(at) = layout_x
-                        && !sink.send(Event::SlideTo { x: at(x) })
-                    {
-                        return Ok(());
+                    if let (Some(press), Some(at)) = (bar_press.as_mut(), layout_x) {
+                        press.moved(at(x), now, width, &mut events);
                     }
                 }
                 Out::Tap { id, down: false, .. } => {
-                    if !(sink.send(Event::Activate(id.clone())) && sink.send(Event::Up(id))) {
-                        return Ok(());
+                    let tap = bar_press.take().is_none_or(|p| p.tap(now));
+                    if tap {
+                        events.push(Event::Activate(id.clone()));
                     }
+                    events.push(Event::Up(id));
                 }
+            }
+        }
+        for event in events.drain(..) {
+            if !sink.send(event) {
+                return Ok(());
             }
         }
         if !batch.is_empty() {
             touchpad.emit(&batch)?;
             batch.clear();
         }
+    }
+}
+
+/// A finger on volume or brightness in the bar, as the UI treats one: a tap opens the tab; held
+/// ([`SLIDE_AFTER`]) or moved sideways ([`SLIDE_MOVE`]) it becomes a slide, which doesn't end in a tap.
+/// Positions are in layout units.
+#[derive(Debug)]
+struct BarPress {
+    control: Control,
+    down_x: f32,
+    x: f32,
+    at: Instant,
+    sliding: bool,
+}
+
+impl BarPress {
+    fn new(control: Control, x: f32, now: Instant) -> Self {
+        BarPress { control, down_x: x, x, at: now, sliding: false }
+    }
+
+    /// The slide starting, if it is due (held long enough, or `force`d by a move).
+    fn start(&mut self, now: Instant, force: bool, width: f32, out: &mut Vec<Event>) {
+        if !self.sliding && (force || now.duration_since(self.at) >= SLIDE_AFTER) {
+            self.sliding = true;
+            out.push(Event::SlideStart { control: self.control, x: self.x, width });
+        }
+    }
+
+    fn moved(&mut self, x: f32, now: Instant, width: f32, out: &mut Vec<Event>) {
+        self.x = x;
+        let was = self.sliding;
+        self.start(now, (x - self.down_x).abs() >= SLIDE_MOVE, width, out);
+        if was {
+            out.push(Event::SlideTo { x });
+        }
+    }
+
+    /// Lifted: whether it was a tap.
+    fn tap(&self, now: Instant) -> bool {
+        !self.sliding && now.duration_since(self.at) < SLIDE_AFTER
     }
 }
 
@@ -394,6 +446,32 @@ fn virtual_touchpad((x0, y0, x1, y1): (f32, f32, f32, f32), px_per_mm: f32) -> i
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn on_volume_a_tap_opens_the_tab_and_a_hold_or_slide_does_not() {
+        let t0 = Instant::now();
+        let ms = |n| t0 + std::time::Duration::from_millis(n);
+        let mut out = Vec::new();
+        // A quick tap.
+        let press = BarPress::new(Control::Volume, 280.0, t0);
+        assert!(press.tap(ms(120)));
+        // Held still: the slider comes up, lifting isn't a tap.
+        let mut press = BarPress::new(Control::Volume, 280.0, t0);
+        press.start(ms(100), false, 620.0, &mut out);
+        assert!(out.is_empty(), "not yet");
+        press.start(ms(200), false, 620.0, &mut out);
+        assert_eq!(out, vec![Event::SlideStart { control: Control::Volume, x: 280.0, width: 620.0 }]);
+        assert!(!press.tap(ms(250)));
+        // Slid sideways at once: the slider comes up where the finger is, and follows it.
+        out.clear();
+        let mut press = BarPress::new(Control::Brightness, 330.0, t0);
+        press.moved(333.0, ms(20), 620.0, &mut out);
+        assert!(out.is_empty(), "a small wobble is still a tap");
+        press.moved(345.0, ms(40), 620.0, &mut out);
+        press.moved(360.0, ms(60), 620.0, &mut out);
+        assert_eq!(out, vec![Event::SlideStart { control: Control::Brightness, x: 345.0, width: 620.0 }, Event::SlideTo { x: 360.0 }]);
+        assert!(!press.tap(ms(80)), "a quick slide isn't a tap either");
+    }
     use clamshell_core::Mode;
     use clamshell_core::touch::Region;
 

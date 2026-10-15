@@ -29,6 +29,11 @@ pub struct Slider {
     pub moved: bool,
 }
 
+/// A finger held this long on volume or brightness brings up the slider (a shorter touch is a tap, which
+/// opens the tab); moving sideways this far (layout units) brings it up at once. For every input path.
+pub const SLIDE_AFTER: std::time::Duration = std::time::Duration::from_millis(200);
+pub const SLIDE_MOVE: f32 = 8.0;
+
 /// Where a slider starts when the level isn't known.
 const UNKNOWN_START: u8 = 50;
 
@@ -69,7 +74,7 @@ impl State {
             Some(s) if s.control == control => Some(s.value),
             _ => match control {
                 Control::Volume => self.status.volume,
-                Control::Brightness => self.status.brightness,
+                Control::Brightness => self.level_of(crate::mixer::Level::Brightness),
             },
         }
     }
@@ -91,8 +96,9 @@ impl State {
         }
         slider.value = value;
         slider.moved = true;
-        match slider.control {
-            Control::Brightness => vec![Effect::SetBrightness(value)],
+        let control = slider.control;
+        match control {
+            Control::Brightness => self.set_brightness(value),
             // Turning it up or down unmutes.
             Control::Volume if self.status.muted => {
                 self.status.muted = false;
@@ -109,7 +115,8 @@ impl State {
         };
         match slider.control {
             Control::Volume => self.status.volume = Some(slider.value),
-            Control::Brightness => self.status.brightness = Some(slider.value),
+            // (Set as it moved.)
+            Control::Brightness => {}
         }
     }
 }
@@ -137,12 +144,12 @@ mod tests {
         assert!((slider.length - 310.0).abs() < 0.01);
         assert!((slider.track_start() + 0.8 * slider.length - 300.0).abs() < 0.01, "80% under the finger");
         assert!(slider.track_start() >= 0.0 && slider.track_start() + slider.length <= 620.0, "on screen");
-        assert_eq!(s.apply(Event::SlideTo { x: 300.0 + 0.1 * slider.length }).1, vec![Effect::SetBrightness(90)]);
-        assert_eq!(s.apply(Event::SlideTo { x: 2000.0 }).1, vec![Effect::SetBrightness(100)], "clamped");
+        assert_eq!(s.apply(Event::SlideTo { x: 300.0 + 0.1 * slider.length }).1, vec![Effect::Brightness { level: 90, factors: vec![] }]);
+        assert_eq!(s.apply(Event::SlideTo { x: 2000.0 }).1, vec![Effect::Brightness { level: 100, factors: vec![] }], "clamped");
         assert_eq!(s.apply(Event::SlideTo { x: 2100.0 }).1, vec![], "no change, nothing sent");
         s.apply(Event::Activate(Id::Control(Control::Brightness)));
         s.apply(Event::Up(Id::Control(Control::Brightness)));
-        assert_eq!((s.slider, s.status.brightness), (None, Some(100)));
+        assert_eq!((s.slider, s.level(Control::Brightness)), (None, Some(100)));
     }
 
     #[test]

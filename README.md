@@ -80,7 +80,7 @@ the compositor gives the seat to that one and this does nothing.
 **The bar**: tabs for the modes, volume and brightness near the middle (tabs too), Bluetooth, Wi-Fi and
 the battery (tabs as well, that also show their status), spread evenly; past a faint line, the clock and
 the pad mouse switch. A tap on volume or brightness opens its tab; a finger held there for 0.2 s, or
-moved sideways off it, turns the bar's row into a slider whose current level is under the finger: moving
+moved sideways off it, doesn't (also in touchpad mode, where the touchpad thread decides the same way): it turns the bar's row into a slider whose current level is under the finger: moving
 sets the level as it goes, lifting leaves it there (the icons sit near the middle; the track's length is
 what fits on both sides for the level under the finger, at most half the screen, about 33 mm on the
 Thor). Sliding the volume unmutes. Volume goes through `wpctl` (PipeWire's default sink), brightness to
@@ -90,8 +90,10 @@ slider then starts in the middle), so a desktop shows everything the device does
 
 **Volume** (tab): the output volume with its mute button; the outputs, where a tap sends the sound
 (`wpctl set-default`); then each app playing (PipeWire's output streams, read with `pw-dump` every second
-while open) with its own level and mute button. **Brightness** (tab): each backlight with its own level
-(the bar's slider sets them all). A level row is set where the finger is on it and follows the finger; with
+while open) with its own level and mute button. **Brightness** (tab): the level (the bar's), then
+each backlight's share of it: a screen is at the level times its share, so the bar dims and brightens the
+screens together and keeps them as they are to each other. Both are ClamShell's (the kernel only knows each
+panel's result), kept with the place and applied at start. A level row is set where the finger is on it and follows the finger; with
 the pad, left and right step it by 5.
 
 **Wi-Fi** (tap the Wi-Fi icon; lit while open): through NetworkManager on the

@@ -9,7 +9,7 @@ use smithay_client_toolkit::reexports::{
 };
 use smithay_client_toolkit::seat::keyboard::Keysym;
 use std::time::Duration;
-use clamshell_core::controls::Control;
+use clamshell_core::controls::{Control, SLIDE_AFTER, SLIDE_MOVE};
 use clamshell_core::mixer::Level;
 use clamshell_core::{Event, Hold, Id, Mode, PadInput, PadRoute};
 
@@ -22,10 +22,7 @@ use crate::{App, Screen};
 const LONG_PRESS: Duration = Duration::from_millis(450);
 /// Key repeat interval while held (25 per second).
 const REPEAT: Duration = Duration::from_millis(40);
-/// A finger held this long on volume or brightness brings up the slider (a shorter touch is a tap,
-/// which opens the tab); moving sideways this far (logical pixels) brings it up at once.
-const SLIDE_AFTER: Duration = Duration::from_millis(200);
-const SLIDE_MOVE: f32 = 8.0;
+
 
 /// Where a press comes from: each touch point, the mouse, or the pad's A (Enter on the desktop).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -90,6 +87,10 @@ impl App {
                 let token = self
                     .loop_handle
                     .insert_source(timer, move |_, _, app: &mut App| {
+                        // This timer is done (dropped below), not to be removed from inside itself.
+                        if let Some(p) = app.pending_slide.as_mut() {
+                            p.timer = None;
+                        }
                         app.start_slide(source);
                         TimeoutAction::Drop
                     })

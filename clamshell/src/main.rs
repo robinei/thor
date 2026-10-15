@@ -152,6 +152,10 @@ fn main() -> ExitCode {
     if let Err(e) = controls::spawn(controls_rx) {
         log::error!("controls thread: {e}");
     }
+    // The screens' brightness as it was left (the level and each screen's factor).
+    if let Some(Effect::Brightness { level, factors }) = state.brightness_effect() {
+        let _ = controls_tx.send(controls::Command::Brightness { level, factors });
+    }
     let (wifi_tx, wifi_rx) = mpsc::channel();
     let (power_tx, power_rx) = mpsc::channel();
     let (mixer_tx, mixer_rx) = mpsc::channel();
@@ -353,8 +357,8 @@ fn main() -> ExitCode {
             Effect::SetMute(m) => {
                 let _ = controls_tx.send(controls::Command::Mute(*m));
             }
-            Effect::SetBrightness(b) => {
-                let _ = controls_tx.send(controls::Command::Brightness(*b));
+            Effect::Brightness { level, factors } => {
+                let _ = controls_tx.send(controls::Command::Brightness { level: *level, factors: factors.clone() });
             }
             Effect::Wifi(command) => {
                 // (The password stays out of the log.)
@@ -376,9 +380,6 @@ fn main() -> ExitCode {
             }
             Effect::WatchBacklights(on) => {
                 let _ = mixer_tx.send(clamshell_policy::mixer::Command::Backlights(*on));
-            }
-            Effect::SetBacklight { name, level } => {
-                let _ = controls_tx.send(controls::Command::Backlight(name.clone(), *level));
             }
             Effect::Audio(command) => {
                 use clamshell_core::mixer::Command as Audio;
@@ -415,7 +416,8 @@ type Shot = (Vec<Event>, Screen, (u32, u32), &'static str);
 /// `long network 0`, `tap wifi-power`, `tap keep`, `tap close`, `tap game N`, `list N` (shelf's selection),
 /// `tap device N`, `long device N`, `tap bluetooth-power`, `mode dock`, `home`, `type text` (on the on-screen keyboard),
 /// `slide volume|brightness FROM TO [hold]` (a finger down at FROM on a 620-wide layout, moved to TO,
-/// lifted unless held), `lift volume|brightness`, `pad up|down|left|right|a|b|y|lb|rb|switch` (the pad
+/// lifted unless held), `lift volume|brightness`, `level volume|brightness V`, `level backlight|stream N V`
+/// (a level row in the volume or brightness tab), `pad up|down|left|right|a|b|y|lb|rb|switch` (the pad
 /// while shelf is in front; `a` presses and releases).
 fn control_events(line: &str) -> Option<Vec<Event>> {
     let words: Vec<&str> = line.split_whitespace().collect();
@@ -425,9 +427,20 @@ fn control_events(line: &str) -> Option<Vec<Event>> {
         "brightness" => Some(clamshell_core::controls::Control::Brightness),
         _ => None,
     };
+    // (A slide never ends in a tap: that would open the tab.)
     if let ["lift", name] = words.as_slice() {
-        let id = Id::Control(control(name)?);
-        return Some(vec![Event::Activate(id.clone()), Event::Up(id)]);
+        return Some(vec![Event::Up(Id::Control(control(name)?))]);
+    }
+    if let ["level", rest @ ..] = words.as_slice() {
+        use clamshell_core::mixer::Level;
+        let (level, value) = match rest {
+            ["volume", v] => (Level::Volume, v),
+            ["brightness", v] => (Level::Brightness, v),
+            ["backlight", n, v] => (Level::Backlight(index(n)?), v),
+            ["stream", n, v] => (Level::Stream(index(n)?), v),
+            _ => return None,
+        };
+        return Some(vec![Event::SetLevel(level, value.parse().ok()?), Event::Up(Id::Level(level))]);
     }
     if let ["slide", name, from, to, rest @ ..] = words.as_slice() {
         let control = control(name)?;
@@ -439,7 +452,7 @@ fn control_events(line: &str) -> Option<Vec<Event>> {
             [Event::Down(id.clone()), Event::SlideStart { control, x: from, width: 620.0 }]
                 .into_iter()
                 .chain(steps)
-                .chain(if hold { vec![] } else { vec![Event::Activate(id.clone()), Event::Up(id)] })
+                .chain(if hold { vec![] } else { vec![Event::Up(id)] })
                 .collect(),
         );
     }
@@ -815,10 +828,9 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
         (
             vec![
                 Event::Activate(Id::Mode(Mode::Brightness)),
-                Event::Backlights(vec![
-                    clamshell_core::mixer::Backlight { name: "dsi0-backlight".into(), level: 70 },
-                    clamshell_core::mixer::Backlight { name: "dsi1-backlight".into(), level: 45 },
-                ]),
+                Event::Backlights(vec!["dsi0-backlight".into(), "dsi1-backlight".into()]),
+                Event::SetLevel(clamshell_core::mixer::Level::Backlight(1), 65),
+                Event::Up(Id::Level(clamshell_core::mixer::Level::Backlight(1))),
             ],
             Screen::Bottom,
             bottom,

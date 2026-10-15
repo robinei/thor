@@ -279,7 +279,8 @@ pub enum Event {
     /// The outputs and the apps playing (while the volume tab is open), the backlights (while the
     /// brightness tab is open).
     Audio(mixer::Audio),
-    Backlights(Vec<mixer::Backlight>),
+    /// The backlights' names.
+    Backlights(Vec<String>),
     /// A level row set by the finger, or stepped by the pad (-1 or 1).
     SetLevel(mixer::Level, u8),
     LevelStep(mixer::Level, i16),
@@ -344,10 +345,12 @@ pub enum Effect {
     ShowShelf,
     /// Record a play that ClamShell didn't start (a game Steam started): in stats.db.
     RecordPlay { game: Arc<str>, start: u64, duration: u64 },
-    /// Output volume (0-100), mute, the screens' brightness (0-100).
+    /// Output volume (0-100), mute.
     SetVolume(u8),
     SetMute(bool),
-    SetBrightness(u8),
+    /// The screens' brightness: each backlight to `level` times its factor (both 0-100; a backlight
+    /// without one: 100).
+    Brightness { level: u8, factors: Vec<(String, u8)> },
     Wifi(wifi::Command),
     Bluetooth(bluetooth::Command),
     /// The battery mode opened (read the charge history and the spenders) or closed.
@@ -355,8 +358,6 @@ pub enum Effect {
     Audio(mixer::Command),
     /// The brightness tab opened (read the backlights) or closed.
     WatchBacklights(bool),
-    /// One backlight to a level (0-100).
-    SetBacklight { name: String, level: u8 },
     Quit,
 }
 
@@ -438,7 +439,9 @@ pub struct State {
     pub wifi: wifi::Wifi,
     pub bluetooth: bluetooth::Bluetooth,
     pub audio: mixer::Audio,
-    pub backlights: Vec<mixer::Backlight>,
+    /// The backlights' names (read while the brightness tab is open).
+    pub backlights: Vec<String>,
+    pub brightness: mixer::Brightness,
     /// The level row a finger is on.
     dragging: Option<mixer::Level>,
     pub power: power::Power,

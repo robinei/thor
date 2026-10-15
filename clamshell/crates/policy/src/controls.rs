@@ -1,6 +1,7 @@
 //! Volume and brightness, set from the bar's sliders and the volume and brightness tabs: the output
 //! volume, an app's volume and mute, and which output plays through PipeWire (`wpctl`); the screens'
-//! brightness, all of them or one, through logind, which lets the session's user set it without root.
+//! brightness (each backlight to the level times its factor) through logind, which lets the session's
+//! user set it without root.
 //! While a finger slides, requests come faster than they can be carried out; only the latest of each is.
 
 use std::io;
@@ -15,9 +16,8 @@ use zbus::blocking::{Connection, Proxy};
 pub enum Command {
     Volume(u8),
     Mute(bool),
-    Brightness(u8),
-    /// One backlight, by name.
-    Backlight(String, u8),
+    /// Each backlight to `level` times its factor (by name; 100 when not listed), both 0-100.
+    Brightness { level: u8, factors: Vec<(String, u8)> },
     /// A PipeWire node (an app's stream): its volume, its mute.
     StreamVolume(u32, u8),
     StreamMute(u32, bool),
@@ -31,8 +31,7 @@ impl Command {
         match self {
             Command::Volume(_) => (0, None, 0),
             Command::Mute(_) => (1, None, 0),
-            Command::Brightness(_) => (2, None, 0),
-            Command::Backlight(name, _) => (3, Some(name), 0),
+            Command::Brightness { .. } => (2, None, 0),
             Command::StreamVolume(id, _) => (4, None, *id),
             Command::StreamMute(id, _) => (5, None, *id),
             Command::Output(_) => (6, None, 0),
@@ -79,17 +78,15 @@ pub fn brightness() -> Option<u8> {
     level(&backlights().into_iter().next()?)
 }
 
-/// Every backlight's level, by name.
-pub fn backlight_levels() -> Vec<clamshell_core::mixer::Backlight> {
-    backlights()
-        .iter()
-        .filter_map(|dir| Some(clamshell_core::mixer::Backlight { name: dir.file_name()?.to_str()?.to_owned(), level: level(dir)? }))
-        .collect()
+/// The backlights' names.
+pub fn backlight_names() -> Vec<String> {
+    backlights().iter().filter_map(|dir| Some(dir.file_name()?.to_str()?.to_owned())).collect()
 }
 
-/// A level 0-100 as a backlight's raw value: never 0, which turns some panels off.
-fn raw(percent: u8, max: u32) -> u32 {
-    ((f64::from(max) * f64::from(percent.min(100)) / 100.0).round() as u32).clamp(1, max.max(1))
+/// A level times a factor (both 0-100) as a backlight's raw value: never 0, which turns some panels off.
+fn raw(level: u8, factor: u8, max: u32) -> u32 {
+    let share = f64::from(level.min(100)) / 100.0 * f64::from(factor.min(100)) / 100.0;
+    ((f64::from(max) * share).round() as u32).clamp(1, max.max(1))
 }
 
 /// Carries out the commands as they come, the latest of each kind when several are waiting.
@@ -105,12 +102,13 @@ pub fn spawn(commands: Receiver<Command>) -> io::Result<()> {
                     Command::StreamMute(id, m) => wpctl(&["set-mute", &id.to_string(), flag(m)]),
                     Command::StreamVolume(id, v) => wpctl(&["set-volume", &id.to_string(), &format!("{v}%")]),
                     Command::Output(id) => wpctl(&["set-default", &id.to_string()]),
-                    Command::Brightness(b) => {
+                    Command::Brightness { level, factors } => {
                         for dir in backlights() {
-                            set_backlight(&dir, b, &mut logind);
+                            let name = dir.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+                            let factor = factors.iter().find(|(n, _)| n == name).map_or(100, |(_, f)| *f);
+                            set_backlight(&dir, level, factor, &mut logind);
                         }
                     }
-                    Command::Backlight(name, b) => set_backlight(&backlights_dir().join(name), b, &mut logind),
                 }
             }
         }
@@ -126,13 +124,13 @@ fn wpctl(args: &[&str]) {
     }
 }
 
-/// A backlight to `percent`: through logind's session (kept connected), else straight to sysfs (which
-/// needs write access).
-fn set_backlight(dir: &Path, percent: u8, logind: &mut Option<Connection>) {
+/// A backlight to `level` times `factor`: through logind's session (kept connected), else straight to
+/// sysfs (which needs write access).
+fn set_backlight(dir: &Path, level: u8, factor: u8, logind: &mut Option<Connection>) {
     let (Some(name), Some(max)) = (dir.file_name().and_then(|n| n.to_str()), read_number(&dir.join("max_brightness"))) else {
         return;
     };
-    let value = raw(percent, max);
+    let value = raw(level, factor, max);
     if logind.is_none() {
         *logind = Connection::system().map_err(|e| log::warn!("brightness: system bus: {e}")).ok();
     }
@@ -166,8 +164,8 @@ mod tests {
             Command::Volume(20),
             Command::StreamVolume(81, 7),
             Command::StreamVolume(80, 6),
-            Command::Backlight("a".into(), 1),
-            Command::Backlight("b".into(), 2),
+            Command::Brightness { level: 10, factors: vec![] },
+            Command::Brightness { level: 20, factors: vec![("a".into(), 50)] },
         ];
         assert_eq!(
             latest(commands),
@@ -176,17 +174,18 @@ mod tests {
                 Command::Volume(20),
                 Command::StreamVolume(80, 6),
                 Command::StreamVolume(81, 7),
-                Command::Backlight("a".into(), 1),
-                Command::Backlight("b".into(), 2)
+                Command::Brightness { level: 20, factors: vec![("a".into(), 50)] }
             ]
         );
     }
 
     #[test]
     fn levels_as_raw_values_never_turn_the_panel_off() {
-        assert_eq!(raw(100, 4095), 4095);
-        assert_eq!(raw(50, 255), 128);
-        assert_eq!(raw(0, 255), 1);
-        assert_eq!(raw(200, 10), 10);
+        assert_eq!(raw(100, 100, 4095), 4095);
+        assert_eq!(raw(50, 100, 255), 128);
+        assert_eq!(raw(50, 50, 400), 100, "the level times the factor");
+        assert_eq!(raw(0, 100, 255), 1);
+        assert_eq!(raw(5, 5, 255), 1, "never off");
+        assert_eq!(raw(200, 200, 10), 10);
     }
 }

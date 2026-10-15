@@ -1,6 +1,6 @@
 //! The volume and brightness tabs. Volume: the output volume with its mute button, which output plays
-//! (a tap chooses one), then each app playing with its own level and mute button. Brightness: each
-//! screen's backlight with its level. A level row is set by where the finger is on its track (and
+//! (a tap chooses one), then each app playing with its own level and mute button. Brightness: the level
+//! (the bar's), then each screen's backlight with its share of it (the two multiply). A level row is set by where the finger is on its track (and
 //! follows it); the pad's left and right step it.
 
 use std::fmt::Write;
@@ -21,9 +21,11 @@ const HEADING: f32 = 0.032;
 /// A level row: the name's column and the number's, of the area's width; the track's thickness and
 /// thumb, of the row's height; icons, of the row's height.
 const NAME_W: f32 = 0.28;
-/// The brightness tab's name column (backlight names are long; nothing else is on the row).
+/// The brightness tab's name column (backlight names are long).
 const BACKLIGHT_NAME_W: f32 = 0.4;
 const NUMBER_W: f32 = 0.09;
+/// A screen's share ("100 %"), of the area's width.
+const PERCENT_W: f32 = 0.13;
 const TRACK: f32 = 0.06;
 const THUMB: f32 = 0.16;
 const ICON: f32 = 0.5;
@@ -158,26 +160,36 @@ pub(super) fn draw_brightness(f: &mut Frame, body: Rect, buf: &mut String) {
     let side = row_h * ICON;
     let name_w = area.w * BACKLIGHT_NAME_W;
     let number_w = area.w * NUMBER_W;
+
+    // The level (the bar's): every screen follows it.
+    let row = Rect::new(area.x, area.y, area.w, row_h);
+    let ty = row.y + (row.h - size * 1.2) / 2.0;
+    f.c.icon(Icon::Brightness, Rect::new(row.x, row.y + (row.h - side) / 2.0, side, side), rgb(TEXT));
+    f.c.text(row.x + side * 1.4, ty, size, rgb(TEXT), "Brightness");
+    track(f, Level::Brightness, Rect::new(row.x + name_w, row.y, row.w - name_w - number_w, row.h), false);
+    number(f, Rect::new(row.x + row.w - number_w, row.y, number_w, row.h), s.level_of(Level::Brightness), size, buf);
+    let mut y = row.y + row.h + pad * 0.5;
+
+    // Each screen's share of it.
+    y += heading(f, area.x, y, body.h * HEADING, "Each screen, of the brightness above");
     if s.backlights.is_empty() {
-        let row = Rect::new(area.x, area.y, area.w, row_h);
-        f.c.icon(Icon::Brightness, Rect::new(row.x, row.y + (row.h - side) / 2.0, side, side), rgb(DIM));
-        f.c.text(row.x + side * 1.4, row.y + (row.h - size * 1.2) / 2.0, size, rgb(DIM), "No backlight");
+        f.c.text(area.x, y, size, rgb(DIM), "No backlight");
         return;
     }
-    let mut y = area.y;
-    for (i, b) in s.backlights.iter().enumerate() {
+    for (i, name) in s.backlights.iter().enumerate() {
         if y + row_h > area.y + area.h {
             break;
         }
         let row = Rect::new(area.x, y, area.w, row_h);
-        f.c.icon(Icon::Brightness, Rect::new(row.x, row.y + (row.h - side) / 2.0, side, side), rgb(TEXT));
-        let x = row.x + side * 1.4;
-        f.c.text_fit((x, row.y + (row.h - size * 1.2) / 2.0, row.x + name_w - x - pad), size, rgb(TEXT), &b.name, Keep::Start);
-        track(f, Level::Backlight(i as u16), Rect::new(row.x + name_w, row.y, row.w - name_w - number_w, row.h), false);
-        number(f, Rect::new(row.x + row.w - number_w, row.y, number_w, row.h), Some(b.level), size, buf);
+        let ty = row.y + (row.h - size * 1.2) / 2.0;
+        f.c.text_fit((row.x, ty, name_w - pad), size, rgb(TEXT), name, Keep::Start);
+        let level = Level::Backlight(i as u16);
+        let percent_w = area.w * PERCENT_W;
+        track(f, level, Rect::new(row.x + name_w, row.y, row.w - name_w - percent_w, row.h), false);
+        buf.clear();
+        let _ = write!(buf, "{} %", s.level_of(level).unwrap_or(100));
+        let w = f.c.text_width(size, buf);
+        f.c.text(row.x + row.w - w, ty, size, rgb(TEXT), buf);
         y += row_h;
-    }
-    if s.backlights.len() > 1 {
-        f.c.text(area.x, y + pad, size * 0.8, rgb(DIM), "The bar's brightness sets all of them");
     }
 }
