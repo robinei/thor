@@ -111,7 +111,7 @@ pub fn shots(now: u64) -> Result<Vec<Shot>, ParseError> {
         shot(
             "settings-running.png",
             Bottom,
-            [tab(Tab::Settings)].into_iter().chain(taps(Setting::FpsCap, 4)).chain(taps(Setting::Buttons, 1)).chain(taps(Setting::Hud, 1)).collect(),
+            [tab(Tab::Settings)].into_iter().chain(taps(Setting::FpsCap, 4)).chain(taps(Setting::Pad, 2)).chain(taps(Setting::Hud, 1)).collect(),
         ),
         shot(
             "settings-global.png",

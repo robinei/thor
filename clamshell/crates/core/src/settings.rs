@@ -30,8 +30,9 @@ pub enum Setting {
     Fan,
     /// The pad mouse at launch: 0 off, 1 on.
     PadMouse,
-    /// The pad's face buttons: 0 Xbox layout, 1 Nintendo layout (A/B and X/Y swapped).
-    Buttons,
+    /// The virtual pad games see: 0 Xbox 360, 1 PlayStation (a DualSense), 2 Nintendo (a Switch Pro
+    /// Controller); the last two with motion sensors and rumble.
+    Pad,
     /// The sticks' deadzone, in percent.
     Deadzone,
     /// Rumble: 0 off up to 3 full.
@@ -71,7 +72,7 @@ impl Setting {
         Setting::BigCores,
         Setting::Fan,
         Setting::PadMouse,
-        Setting::Buttons,
+        Setting::Pad,
         Setting::Deadzone,
         Setting::Rumble,
         Setting::CpuMax,
@@ -97,7 +98,7 @@ impl Setting {
             Setting::BigCores => "bigcores",
             Setting::Fan => "fan",
             Setting::PadMouse => "padmouse",
-            Setting::Buttons => "buttons",
+            Setting::Pad => "pad",
             Setting::Deadzone => "deadzone",
             Setting::Rumble => "rumble",
             Setting::CpuMax => "cpumax",
@@ -111,11 +112,11 @@ impl Setting {
     /// The values a tap steps through, in order.
     pub fn choices(self) -> &'static [u16] {
         match self {
-            Setting::Power | Setting::Hud | Setting::Fan => &[0, 1, 2],
+            Setting::Power | Setting::Hud | Setting::Fan | Setting::Pad => &[0, 1, 2],
             Setting::FpsCap => &[0, 30, 40, 45, 60, 90, 120],
             Setting::Refresh => &[0, 60, 90, 120],
             Setting::Upscale | Setting::Rumble => &[0, 1, 2, 3],
-            Setting::BottomScreen | Setting::BigCores | Setting::PadMouse | Setting::Buttons => &[0, 1],
+            Setting::BottomScreen | Setting::BigCores | Setting::PadMouse => &[0, 1],
             Setting::Deadzone => &[0, 4, 8, 12, 16, 20],
             Setting::CpuMax | Setting::GpuMax => &[0, 40, 50, 60, 70, 80, 90, 100],
             Setting::ChargeLimit => &[100, 90, 80],
@@ -132,6 +133,16 @@ impl Setting {
             Setting::ScreenOff => 5,
             Setting::Sleep => 15,
             _ => 0,
+        }
+    }
+
+    /// A value saved under an earlier key, as a value of this setting: `buttons` was the face
+    /// buttons' layout, 0 Xbox and 1 Nintendo (now the Nintendo pad).
+    fn from_old_key(key: &str, value: u16) -> Option<(Setting, u16)> {
+        match (key, value) {
+            ("buttons", 0) => Some((Setting::Pad, 0)),
+            ("buttons", 1) => Some((Setting::Pad, 2)),
+            _ => None,
         }
     }
 
@@ -156,7 +167,7 @@ impl Setting {
             // Never, or later than by default, costs power; sooner saves it.
             (Setting::ScreenOff | Setting::Sleep, v) if v == 0 || v > self.default_value() => Impact::Costs,
             (Setting::Upscale, 3) | (Setting::Fan, _) => Impact::Changes,
-            (Setting::Hud | Setting::PadMouse | Setting::Buttons | Setting::Deadzone | Setting::Rumble, _) => Impact::Changes,
+            (Setting::Hud | Setting::PadMouse | Setting::Pad | Setting::Deadzone | Setting::Rumble, _) => Impact::Changes,
             _ => Impact::Saves,
         }
     }
@@ -193,8 +204,9 @@ impl Setting {
             (Setting::Fan, _) => "Fan max",
             (Setting::PadMouse, 0) => "Mouse off",
             (Setting::PadMouse, _) => "Mouse on",
-            (Setting::Buttons, 0) => "Xbox",
-            (Setting::Buttons, _) => "Nintendo",
+            (Setting::Pad, 0) => "Xbox",
+            (Setting::Pad, 1) => "PlayStation",
+            (Setting::Pad, _) => "Nintendo",
             (Setting::Deadzone, 0) => "No deadzone",
             (Setting::Rumble, 0) => "Rumble off",
             (Setting::Rumble, 1) => "Rumble low",
@@ -297,10 +309,11 @@ pub fn parse<'a>(fields: impl Iterator<Item = &'a str>) -> Overrides {
         let Some((key, value)) = field.split_once('=') else {
             continue;
         };
-        let Some(s) = Setting::ALL.into_iter().find(|s| s.key() == key) else {
+        let Ok(v) = value.parse::<u16>() else {
             continue;
         };
-        if let Ok(v) = value.parse::<u16>()
+        let setting = Setting::ALL.into_iter().find(|s| s.key() == key).map(|s| (s, v)).or_else(|| Setting::from_old_key(key, v));
+        if let Some((s, v)) = setting
             && s.choices().contains(&v)
         {
             o.set(s, Some(v));
@@ -465,7 +478,8 @@ mod tests {
         assert_eq!(Setting::BigCores.impact(0), Impact::Saves);
         assert_eq!(Setting::CpuMax.impact(60), Impact::Saves);
         assert_eq!(Setting::CpuMax.impact(100), Impact::Costs);
-        assert_eq!(Setting::Buttons.impact(1), Impact::Changes);
+        assert_eq!(Setting::Pad.impact(1), Impact::Changes);
+        assert_eq!(Setting::Pad.impact(2), Impact::Changes);
         assert_eq!(Setting::Fan.impact(1), Impact::Changes);
         assert_eq!(Setting::ChargeLimit.impact(80), Impact::Saves);
     }
@@ -493,12 +507,29 @@ mod tests {
     fn overrides_round_trip_as_fields() {
         let mut o = Overrides::default();
         o.set(Setting::FpsCap, Some(40));
-        o.set(Setting::Buttons, Some(1));
+        o.set(Setting::Pad, Some(2));
         let mut text = String::new();
         fields(&o, &mut text);
-        assert_eq!(text, "\tfps=40\tbuttons=1");
+        assert_eq!(text, "\tfps=40\tpad=2");
         assert_eq!(parse(text.split('\t')), o);
         assert_eq!(o.over(&Values::default()).get(Setting::FpsCap), 40);
         assert_eq!(o.over(&Values::default()).get(Setting::Power), 1);
+    }
+
+    #[test]
+    fn the_old_buttons_key_reads_as_the_pad_type() {
+        let o = parse("\tbuttons=1".split('\t'));
+        assert_eq!(o.get(Setting::Pad), Some(2), "Nintendo layout: the Nintendo pad");
+        assert_eq!(parse("\tbuttons=0".split('\t')).get(Setting::Pad), Some(0), "Xbox");
+        assert_eq!(parse("\tbuttons=2".split('\t')).get(Setting::Pad), None);
+        let s = Settings::load("*\tbuttons=1\nzelda\tbuttons=0\n");
+        assert_eq!((s.global.get(Setting::Pad), s.of("zelda").get(Setting::Pad)), (2, 0));
+        assert!(s.text().contains("\tpad=2"), "written under the new key");
+        let mut buf = String::new();
+        let names: Vec<String> = Setting::Pad.choices().iter().map(|&v| {
+            Setting::Pad.describe(v, &mut buf);
+            buf.clone()
+        }).collect();
+        assert_eq!(names, ["Xbox", "PlayStation", "Nintendo"]);
     }
 }
