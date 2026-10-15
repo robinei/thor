@@ -9,11 +9,14 @@
 //! Each keymap has two layers ([`Layer`]): the main one, and one in force while the pad's Back button is
 //! held. An input without a binding in the Back layer does what the main layer says.
 //!
+//! A button (or a D-pad or stick direction) may also act differently held long or pressed twice
+//! ([`Actuation`]): each is a binding of its own. A binding to something on or off may also repeat while
+//! on (turbo) or stay on from one actuation to the next (toggle).
+//!
 //! Saved in `keymaps.txt` (next to `game-settings.txt`): a `keymap ID NAME` line starts a keymap, then a
-//! line per binding, `INPUT = OUTPUT [option=value ...]`; a `layer back` line starts the Back layer's
-//! bindings (`layer main` the main layer's again). Lines it doesn't understand are skipped, and so are the
-//! bindings of a layer it doesn't know, so later features (turbo, toggles, more layers) can add their
-//! own.
+//! line per binding, `INPUT [hold|double] = OUTPUT [option=value ...] [toggle]`; a `layer back` line
+//! starts the Back layer's bindings (`layer main` the main layer's again). Lines it doesn't understand are
+//! skipped, and so are the bindings of a layer it doesn't know, so later features can add their own.
 
 use std::fmt::{self, Write};
 
@@ -555,6 +558,8 @@ impl Output {
 pub const DEFAULT_SPEED: u8 = 50;
 /// A trigger mapped to a button acts past this (percent of its travel, 1 to 100).
 pub const DEFAULT_THRESHOLD: u8 = 50;
+/// A press held this long is a hold (hundredths of a second, 20 to 100).
+pub const DEFAULT_HOLD_TIME: u8 = 40;
 
 /// A stick on the pointer: its deadzone and curve unless set otherwise (as the pointer moved before the
 /// parameters were there: nothing within 15 % of the middle, then the distance from there squared).
@@ -582,13 +587,32 @@ pub struct Binding {
     pub invert_y: bool,
     /// The gyro acts only while this is held (a button, or a trigger past half); always without one.
     pub hold: Option<Input>,
+    /// Something on or off: pressed again and again while on, this many times a second (0: not).
+    pub turbo: u8,
+    /// Something on or off: one actuation turns it on, the next off.
+    pub toggle: bool,
+    /// A hold's binding: how long a press must last (hundredths of a second).
+    pub hold_time: u8,
 }
 
 impl Binding {
     /// A binding to `output` with the parameters' general defaults (no deadzone, linear); see
     /// [`Binding::of`] for an input's.
     pub fn to(output: Output) -> Binding {
-        Binding { output, speed: DEFAULT_SPEED, threshold: DEFAULT_THRESHOLD, deadzone: 0, full: 100, curve: 0, invert_x: false, invert_y: false, hold: None }
+        Binding {
+            output,
+            speed: DEFAULT_SPEED,
+            threshold: DEFAULT_THRESHOLD,
+            deadzone: 0,
+            full: 100,
+            curve: 0,
+            invert_x: false,
+            invert_y: false,
+            hold: None,
+            turbo: 0,
+            toggle: false,
+            hold_time: DEFAULT_HOLD_TIME,
+        }
     }
 
     /// `input`'s binding to `output` with the defaults for that pair ([`Param::default_for`]: a stick on
@@ -636,10 +660,26 @@ pub enum Param {
     Curve,
     InvertX,
     InvertY,
+    /// A hold's: how long the press must last.
+    HoldTime,
+    /// Presses a second while on (0: off).
+    Turbo,
+    Toggle,
 }
 
 impl Param {
-    pub const ALL: [Param; 7] = [Param::Speed, Param::Deadzone, Param::Full, Param::Curve, Param::Threshold, Param::InvertX, Param::InvertY];
+    pub const ALL: [Param; 10] = [
+        Param::Speed,
+        Param::Deadzone,
+        Param::Full,
+        Param::Curve,
+        Param::Threshold,
+        Param::HoldTime,
+        Param::Turbo,
+        Param::Toggle,
+        Param::InvertX,
+        Param::InvertY,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -650,12 +690,25 @@ impl Param {
             Param::Curve => "Curve",
             Param::InvertX => "Invert X",
             Param::InvertY => "Invert Y",
+            Param::HoldTime => "Hold for",
+            Param::Turbo => "Turbo",
+            Param::Toggle => "Toggle",
         }
     }
 
     /// On or off (a tap switches it), rather than a value on a slider.
     pub fn switch(self) -> bool {
-        matches!(self, Param::InvertX | Param::InvertY)
+        matches!(self, Param::InvertX | Param::InvertY | Param::Toggle)
+    }
+
+    /// A value of it as shown: `40 %`, `Off` or `12/s` (turbo), `400 ms` (a hold's time).
+    pub fn show(self, v: u8, out: &mut impl Write) -> fmt::Result {
+        match self {
+            Param::Turbo if v == 0 => out.write_str("Off"),
+            Param::Turbo => write!(out, "{v}/s"),
+            Param::HoldTime => write!(out, "{} ms", u16::from(v) * 10),
+            _ => write!(out, "{v} %"),
+        }
     }
 
     /// Whether `input` mapped to `output` has it: a stick its deadzone, full point, curve and inversion
@@ -669,7 +722,16 @@ impl Param {
             (Kind::Trigger, Param::Deadzone | Param::Full) => true,
             (Kind::Trigger, Param::Threshold) => output.digital(),
             (Kind::Gyro, Param::Speed | Param::InvertX | Param::InvertY) => motion,
+            (Kind::Digital | Kind::Trigger, Param::Turbo | Param::Toggle) => output.digital(),
             _ => false,
+        }
+    }
+
+    /// [`Param::applies`] for `input`'s binding of `act`: a hold's also has its time.
+    pub fn applies_to(self, input: Input, output: Output, act: Actuation) -> bool {
+        match self {
+            Param::HoldTime => act == Actuation::Hold,
+            p => p.applies(input, output),
         }
     }
 
@@ -680,7 +742,9 @@ impl Param {
             Param::Threshold => 1..=100,
             Param::Deadzone => 0..=50,
             Param::Full => 50..=100,
-            Param::InvertX | Param::InvertY => 0..=1,
+            Param::InvertX | Param::InvertY | Param::Toggle => 0..=1,
+            Param::HoldTime => 20..=100,
+            Param::Turbo => 0..=30,
         }
     }
 
@@ -694,7 +758,8 @@ impl Param {
             Param::Full => 100,
             Param::Deadzone if pointer => POINTER_DEADZONE,
             Param::Curve if pointer => POINTER_CURVE,
-            Param::Deadzone | Param::Curve | Param::InvertX | Param::InvertY => 0,
+            Param::Deadzone | Param::Curve | Param::InvertX | Param::InvertY | Param::Turbo | Param::Toggle => 0,
+            Param::HoldTime => DEFAULT_HOLD_TIME,
         }
     }
 
@@ -707,6 +772,9 @@ impl Param {
             Param::Curve => b.curve,
             Param::InvertX => u8::from(b.invert_x),
             Param::InvertY => u8::from(b.invert_y),
+            Param::HoldTime => b.hold_time,
+            Param::Turbo => b.turbo,
+            Param::Toggle => u8::from(b.toggle),
         }
     }
 
@@ -721,6 +789,9 @@ impl Param {
             Param::Curve => b.curve = value,
             Param::InvertX => b.invert_x = value > 0,
             Param::InvertY => b.invert_y = value > 0,
+            Param::HoldTime => b.hold_time = value,
+            Param::Turbo => b.turbo = value,
+            Param::Toggle => b.toggle = value > 0,
         }
     }
 
@@ -733,6 +804,9 @@ impl Param {
             Param::Full => "full",
             Param::Curve => "curve",
             Param::InvertX | Param::InvertY => "invert",
+            Param::HoldTime => "holdtime",
+            Param::Turbo => "turbo",
+            Param::Toggle => "toggle",
         }
     }
 }
@@ -740,6 +814,50 @@ impl Param {
 /// The parameters `input` mapped to `output` has, in the order shown.
 pub fn params(input: Input, output: Output) -> impl Iterator<Item = Param> {
     Param::ALL.into_iter().filter(move |p| p.applies(input, output))
+}
+
+/// The parameters of `input`'s binding of `act` mapped to `output` (a hold's has its time too).
+pub fn params_of(input: Input, output: Output, act: Actuation) -> impl Iterator<Item = Param> {
+    Param::ALL.into_iter().filter(move |p| p.applies_to(input, output, act))
+}
+
+/// How a button (a D-pad or stick direction too) is used: pressed (as usual), held long, or pressed
+/// twice quickly. Each may have a binding of its own; with a hold's or a double's, a short press acts
+/// only once it is known not to be one of those (on letting go, or after the window for a second
+/// press).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum Actuation {
+    #[default]
+    Press,
+    Hold,
+    Double,
+}
+
+impl Actuation {
+    pub const ALL: [Actuation; 3] = [Actuation::Press, Actuation::Hold, Actuation::Double];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Actuation::Press => "Press",
+            Actuation::Hold => "Hold",
+            Actuation::Double => "Double",
+        }
+    }
+
+    /// Its word after the input in the keymap file (a press has none).
+    fn name(self) -> &'static str {
+        match self {
+            Actuation::Press => "",
+            Actuation::Hold => "hold",
+            Actuation::Double => "double",
+        }
+    }
+
+    /// Whether an input of `kind` has it: every input is pressed; only buttons and directions are held
+    /// or pressed twice.
+    pub fn fits(self, kind: Kind) -> bool {
+        self == Actuation::Press || kind == Kind::Digital
+    }
 }
 
 /// How the panel and the labels tell an input's binding: none, its own output only tuned, or mapped to
@@ -802,40 +920,85 @@ impl Layer {
     }
 }
 
+/// One layer's bindings, an actuation's each in [`Input::all`]'s order, one per input at most.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+struct Bindings {
+    press: Vec<(Input, Binding)>,
+    hold: Vec<(Input, Binding)>,
+    double: Vec<(Input, Binding)>,
+}
+
+impl Bindings {
+    fn of(&self, act: Actuation) -> &Vec<(Input, Binding)> {
+        match act {
+            Actuation::Press => &self.press,
+            Actuation::Hold => &self.hold,
+            Actuation::Double => &self.double,
+        }
+    }
+
+    fn of_mut(&mut self, act: Actuation) -> &mut Vec<(Input, Binding)> {
+        match act {
+            Actuation::Press => &mut self.press,
+            Actuation::Hold => &mut self.hold,
+            Actuation::Double => &mut self.double,
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        Actuation::ALL.into_iter().all(|a| self.of(a).is_empty())
+    }
+}
+
 /// A named set of bindings in two layers (the inputs without one in the main layer do what they do on
-/// the pad; without one in the Back layer, what the main layer says).
+/// the pad; without one in the Back layer, what the main layer says), a press's, a hold's and a
+/// double's.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Keymap {
     /// Its number, kept across renames (0 is Default, which no keymap has).
     pub id: u16,
     pub name: String,
-    /// Each layer's, in [`Input::all`]'s order, one per input at most.
-    bindings: Vec<(Input, Binding)>,
-    back: Vec<(Input, Binding)>,
+    main: Bindings,
+    back: Bindings,
 }
 
 impl Keymap {
     pub fn new(id: u16, name: &str) -> Keymap {
-        Keymap { id, name: name.to_owned(), bindings: Vec::new(), back: Vec::new() }
+        Keymap { id, name: name.to_owned(), main: Bindings::default(), back: Bindings::default() }
     }
 
-    /// The main layer's bindings.
+    /// The main layer's bindings (a press's).
     pub fn bindings(&self) -> &[(Input, Binding)] {
-        &self.bindings
+        &self.main.press
     }
 
+    /// A layer's bindings (a press's).
     pub fn layer(&self, layer: Layer) -> &[(Input, Binding)] {
+        self.layer_of(layer, Actuation::Press)
+    }
+
+    /// A layer's bindings of `act`.
+    pub fn layer_of(&self, layer: Layer, act: Actuation) -> &[(Input, Binding)] {
+        self.bindings_in(layer).of(act)
+    }
+
+    fn bindings_in(&self, layer: Layer) -> &Bindings {
         match layer {
-            Layer::Main => &self.bindings,
+            Layer::Main => &self.main,
             Layer::Back => &self.back,
         }
     }
 
-    fn layer_mut(&mut self, layer: Layer) -> &mut Vec<(Input, Binding)> {
+    fn bindings_in_mut(&mut self, layer: Layer) -> &mut Bindings {
         match layer {
-            Layer::Main => &mut self.bindings,
+            Layer::Main => &mut self.main,
             Layer::Back => &mut self.back,
         }
+    }
+
+    /// Whether `layer` has no bindings at all.
+    pub fn is_empty(&self, layer: Layer) -> bool {
+        self.bindings_in(layer).is_empty()
     }
 
     /// `input`'s binding in the main layer.
@@ -845,13 +1008,23 @@ impl Keymap {
 
     /// `input`'s binding in `layer` itself (none in the Back layer: the main layer's applies).
     pub fn get_in(&self, layer: Layer, input: Input) -> Option<&Binding> {
-        self.layer(layer).iter().find(|(i, _)| *i == input).map(|(_, b)| b)
+        self.get_of(layer, input, Actuation::Press)
+    }
+
+    /// `input`'s binding of `act` in `layer` itself.
+    pub fn get_of(&self, layer: Layer, input: Input, act: Actuation) -> Option<&Binding> {
+        self.layer_of(layer, act).iter().find(|(i, _)| *i == input).map(|(_, b)| b)
     }
 
     /// The binding in force for `input`, with Back held (`back`) or not: the Back layer's, else the main
     /// layer's.
     pub fn lookup(&self, input: Input, back: bool) -> Option<&Binding> {
-        back.then(|| self.get_in(Layer::Back, input)).flatten().or_else(|| self.get(input))
+        self.lookup_of(input, Actuation::Press, back)
+    }
+
+    /// [`Keymap::lookup`] for `act`.
+    pub fn lookup_of(&self, input: Input, act: Actuation, back: bool) -> Option<&Binding> {
+        back.then(|| self.get_of(Layer::Back, input, act)).flatten().or_else(|| self.get_of(Layer::Main, input, act))
     }
 
     /// Binds `input` in the main layer (none: back to what it does on the pad); see [`Keymap::set_in`].
@@ -862,10 +1035,17 @@ impl Keymap {
     /// Binds `input` in `layer` (none: as on the pad in the main layer, as the main layer in the Back
     /// layer). A binding that doesn't fit the input's kind is refused; whether it changed.
     pub fn set_in(&mut self, layer: Layer, input: Input, binding: Option<Binding>) -> bool {
-        if binding.is_some_and(|b| !b.output.fits(input.kind())) {
+        self.set_of(layer, input, Actuation::Press, binding)
+    }
+
+    /// Binds `input`'s `act` in `layer` (none: no hold or double; for a press, as [`Keymap::set_in`]).
+    /// Refused where it doesn't fit (a binding to the input's kind, a hold or double to a stick); whether
+    /// it changed.
+    pub fn set_of(&mut self, layer: Layer, input: Input, act: Actuation, binding: Option<Binding>) -> bool {
+        if binding.is_some_and(|b| !b.output.fits(input.kind())) || (binding.is_some() && !act.fits(input.kind())) {
             return false;
         }
-        let list = self.layer_mut(layer);
+        let list = self.bindings_in_mut(layer).of_mut(act);
         let before = list.clone();
         list.retain(|(i, _)| *i != input);
         if let Some(b) = binding {
@@ -877,9 +1057,8 @@ impl Keymap {
 
     /// Drops every binding of `layer`; whether it had any.
     pub fn clear(&mut self, layer: Layer) -> bool {
-        let list = self.layer_mut(layer);
-        let had = !list.is_empty();
-        list.clear();
+        let had = !self.is_empty(layer);
+        *self.bindings_in_mut(layer) = Bindings::default();
         had
     }
 }
@@ -951,10 +1130,10 @@ impl Keymaps {
 
     /// A copy of keymap `id` named `name` (made unique); the copy's id.
     pub fn duplicate(&mut self, id: u16, name: &str) -> Option<u16> {
-        let (bindings, back) = self.get(id).map(|k| (k.bindings.clone(), k.back.clone()))?;
+        let (main, back) = self.get(id).map(|k| (k.main.clone(), k.back.clone()))?;
         let copy = self.add(name);
         if let Some(k) = self.get_mut(copy) {
-            k.bindings = bindings;
+            k.main = main;
             k.back = back;
         }
         Some(copy)
@@ -980,7 +1159,7 @@ impl Keymaps {
         let mut text = String::new();
         for k in &self.list {
             let _ = writeln!(text, "keymap {} {}", k.id, k.name);
-            write_bindings(&k.bindings, &mut text);
+            write_bindings(&k.main, &mut text);
             if !k.back.is_empty() {
                 let _ = writeln!(text, "layer {}", Layer::Back.name());
                 write_bindings(&k.back, &mut text);
@@ -1011,36 +1190,45 @@ impl Keymaps {
                 layer = Layer::ALL.into_iter().find(|l| l.name() == name.trim());
                 continue;
             }
-            let (Some(keymap), Some(layer), Some((input, binding))) = (keymaps.list.last_mut(), layer, parse_binding(line)) else {
+            let (Some(keymap), Some(layer), Some((input, act, binding))) = (keymaps.list.last_mut(), layer, parse_binding(line)) else {
                 continue;
             };
-            keymap.set_in(layer, input, Some(binding));
+            keymap.set_of(layer, input, act, Some(binding));
         }
         keymaps
     }
 }
 
-/// A layer's bindings, a line each (see the module's doc).
-fn write_bindings(bindings: &[(Input, Binding)], text: &mut String) {
-    for (input, b) in bindings {
-        let _ = input.name(text);
-        text.push_str(" = ");
-        let _ = write_output(&b.output, text);
-        for p in params(*input, b.output).filter(|p| !p.switch()) {
-            let v = p.get(b);
-            if v != p.default_for(*input, b.output) {
-                // (Speed with a percent sign: files from before have a step there.)
-                let _ = write!(text, " {}={v}{}", p.name(), if p == Param::Speed { "%" } else { "" });
+/// A layer's bindings, a line each, a press's, then a hold's and a double's (see the module's doc).
+fn write_bindings(bindings: &Bindings, text: &mut String) {
+    for act in Actuation::ALL {
+        for (input, b) in bindings.of(act) {
+            let _ = input.name(text);
+            if act != Actuation::Press {
+                text.push(' ');
+                text.push_str(act.name());
             }
+            text.push_str(" = ");
+            let _ = write_output(&b.output, text);
+            for p in params_of(*input, b.output, act).filter(|p| !p.switch()) {
+                let v = p.get(b);
+                if v != p.default_for(*input, b.output) {
+                    // (Speed with a percent sign: files from before have a step there.)
+                    let _ = write!(text, " {}={v}{}", p.name(), if p == Param::Speed { "%" } else { "" });
+                }
+            }
+            if b.invert_x || b.invert_y {
+                let _ = write!(text, " invert={}{}", if b.invert_x { "x" } else { "" }, if b.invert_y { "y" } else { "" });
+            }
+            if let Some(hold) = b.hold {
+                text.push_str(" hold=");
+                let _ = hold.name(text);
+            }
+            if b.toggle {
+                text.push_str(" toggle");
+            }
+            text.push('\n');
         }
-        if b.invert_x || b.invert_y {
-            let _ = write!(text, " invert={}{}", if b.invert_x { "x" } else { "" }, if b.invert_y { "y" } else { "" });
-        }
-        if let Some(hold) = b.hold {
-            text.push_str(" hold=");
-            let _ = hold.name(text);
-        }
-        text.push('\n');
     }
 }
 
@@ -1085,9 +1273,14 @@ fn speed(v: &str) -> Option<u8> {
 }
 
 /// `INPUT = OUTPUT [option=value ...]`.
-fn parse_binding(line: &str) -> Option<(Input, Binding)> {
+fn parse_binding(line: &str) -> Option<(Input, Actuation, Binding)> {
     let (input, rest) = line.split_once('=')?;
-    let input = Input::parse(input.trim())?;
+    let mut left = input.split_whitespace();
+    let input = Input::parse(left.next()?)?;
+    let act = match left.next() {
+        None => Actuation::Press,
+        Some(w) => Actuation::ALL.into_iter().find(|a| a.name() == w && *a != Actuation::Press)?,
+    };
     let mut words = rest.split_whitespace().peekable();
     let output = match (words.next()?, words.peek().copied()) {
         ("nothing", _) => Output::Nothing,
@@ -1116,7 +1309,7 @@ fn parse_binding(line: &str) -> Option<(Input, Binding)> {
         match word.split_once('=') {
             Some(("speed", v)) => binding.speed = speed(v).unwrap_or(DEFAULT_SPEED),
             Some(("threshold", v)) => binding.threshold = v.parse().ok().filter(|v| Param::Threshold.range().contains(v)).unwrap_or(DEFAULT_THRESHOLD),
-            Some((name @ ("deadzone" | "full" | "curve"), v)) => {
+            Some((name @ ("deadzone" | "full" | "curve" | "turbo" | "holdtime"), v)) => {
                 if let Some(p) = Param::ALL.into_iter().find(|p| p.name() == name)
                     && let Some(v) = v.parse().ok().filter(|v| p.range().contains(v))
                 {
@@ -1128,11 +1321,12 @@ fn parse_binding(line: &str) -> Option<(Input, Binding)> {
                 binding.invert_y = v.contains('y');
             }
             Some(("hold", v)) => binding.hold = Input::parse(v).filter(|h| gyro_holds().any(|g| g == *h)),
+            None if word == "toggle" => binding.toggle = true,
             // (Options of later features.)
             _ => {}
         }
     }
-    (input.kind() == Kind::Gyro || binding.hold.is_none()).then_some((input, binding))
+    (input.kind() == Kind::Gyro || binding.hold.is_none()).then_some((input, act, binding))
 }
 
 #[cfg(test)]
@@ -1240,9 +1434,37 @@ mod tests {
         assert_eq!(ps(Input::Stick(Side::Left), Output::Stick(Side::Left)), stick, "as on the pad: tuned all the same");
         assert_eq!(ps(Input::Gyro, Output::Stick(Side::Right)), vec![Param::Speed, Param::InvertX, Param::InvertY]);
         assert_eq!(ps(Input::Gyro, Output::Nothing), vec![], "off");
-        assert_eq!(ps(Input::Trigger(Side::Left), Output::Key(chord("x"))), vec![Param::Deadzone, Param::Full, Param::Threshold]);
+        assert_eq!(ps(Input::Trigger(Side::Left), Output::Key(chord("x"))), vec![Param::Deadzone, Param::Full, Param::Threshold, Param::Turbo, Param::Toggle]);
         assert_eq!(ps(Input::Trigger(Side::Left), Output::Trigger(Side::Right)), vec![Param::Deadzone, Param::Full]);
-        assert_eq!(ps(Input::Button(Button::A), Output::Key(chord("x"))), vec![]);
+        assert_eq!(ps(Input::Button(Button::A), Output::Key(chord("x"))), vec![Param::Turbo, Param::Toggle]);
+        assert_eq!(ps(Input::Button(Button::A), Output::Nothing), vec![], "nothing has no turbo");
+        let a = Input::Button(Button::A);
+        assert_eq!(params_of(a, Output::Key(chord("x")), Actuation::Hold).collect::<Vec<_>>(), vec![Param::HoldTime, Param::Turbo, Param::Toggle]);
+    }
+
+    #[test]
+    fn holds_doubles_turbo_and_toggle_are_kept_and_written() {
+        let a = Input::Button(Button::A);
+        let mut k = Keymap::new(4, "Combo");
+        assert!(k.set(a, Some(Binding { turbo: 12, ..Binding::to(Output::Key(chord("x"))) })));
+        assert!(k.set_of(Layer::Main, a, Actuation::Hold, Some(Binding { hold_time: 60, ..Binding::to(Output::Key(chord("esc"))) })));
+        assert!(k.set_of(Layer::Main, a, Actuation::Double, Some(Binding { toggle: true, ..Binding::to(Output::Mouse(MouseButton::Left)) })));
+        assert!(!k.set_of(Layer::Main, Input::Stick(Side::Left), Actuation::Hold, Some(Binding::to(Output::Pointer))), "a stick has no hold");
+        assert!(k.set_of(Layer::Back, a, Actuation::Hold, Some(Binding::to(Output::Key(chord("tab"))))));
+        assert_eq!(k.lookup_of(a, Actuation::Hold, true).map(|b| b.output), Some(Output::Key(chord("tab"))));
+        assert_eq!(k.lookup_of(a, Actuation::Double, true).map(|b| b.toggle), Some(true), "falls through");
+        let maps = Keymaps { list: vec![k] };
+        let text = maps.text();
+        assert_eq!(text, "keymap 4 Combo\na = key x turbo=12\na hold = key esc holdtime=60\na double = mouse left toggle\nlayer back\na hold = key tab\n");
+        assert_eq!(Keymaps::load(&text), maps);
+        assert!(!maps.list.first().unwrap().is_empty(Layer::Back));
+        // Shown: turbo off or a rate, a hold's time.
+        let show = |p: Param, v| {
+            let mut s = String::new();
+            p.show(v, &mut s).unwrap();
+            s
+        };
+        assert_eq!((show(Param::Turbo, 0), show(Param::Turbo, 12), show(Param::HoldTime, 40), show(Param::Curve, 30)), ("Off".into(), "12/s".into(), "400 ms".into(), "30 %".into()));
     }
 
     #[test]

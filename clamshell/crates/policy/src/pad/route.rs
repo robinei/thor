@@ -231,7 +231,7 @@ impl PadRouter {
     /// know as it is.
     fn enter_game(&mut self, out: &mut Out) {
         self.snapshot.events_where(true, |r| !remap::known(r), &mut out.pad);
-        self.remap.update(&self.snapshot, out);
+        self.remap.update(&self.snapshot, Instant::now(), out);
     }
 
     /// A new keymap in force: applied at once while the game has the pad (what the old one held is
@@ -354,7 +354,7 @@ impl PadRouter {
         }
         match self.mapping(self.route) {
             Some(mapping) => mapping.event(raw, now, out),
-            None if remap::known(raw) => self.remap.update(&self.snapshot, out),
+            None if remap::known(raw) => self.remap.update(&self.snapshot, now, out),
             // What the keymap doesn't know passes through, with its report.
             None if raw.is_report() => {
                 if std::mem::take(&mut self.passed) {
@@ -372,7 +372,7 @@ impl PadRouter {
     pub fn tick(&mut self, now: Instant, out: &mut Out) -> Option<Instant> {
         match self.mapping(self.route) {
             Some(m) => m.tick(now, out),
-            None => self.remap.tick(now, out),
+            None => self.remap.tick(now, &self.snapshot, out),
         }
     }
 

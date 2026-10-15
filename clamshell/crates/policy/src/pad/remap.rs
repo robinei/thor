@@ -11,10 +11,17 @@
 //! [`LAYER_KEYS`]) is held the keymap's Back layer applies, falling through to the main one; the key
 //! itself never reaches the game. A stick's and a trigger's tuning (deadzone, full point, curve,
 //! inversion) applies to its values before they are mapped, to the input as on the pad as well.
+//!
+//! A button (or a D-pad or stick direction) with a hold's or a double's binding goes through a little
+//! state machine ([`Phase`]): held past the hold's time it is a hold; let go sooner and pressed again
+//! within [`DOUBLE_WINDOW`] a double; otherwise a press, sent as a short tap ([`TAP`]) once that is known.
+//! Without either it is a press at once, held as long as the button. On top of the actuation, a binding
+//! that toggles turns on at one actuation and off at the next, and one with turbo goes on and off at its
+//! rate while on. Time moves these on as well as events: [`Remap::tick`] says when.
 
 use std::time::{Duration, Instant};
 
-use clamshell_core::keymap::{Binding, Button, Chord, Dir, Input, Keymap, MouseButton, Output, PadOut, Side};
+use clamshell_core::keymap::{Actuation, Binding, Button, Chord, Dir, Input, Keymap, Kind, MouseButton, Output, PadOut, Side};
 use evdev::{AbsoluteAxisCode, KeyCode, RelativeAxisCode};
 
 use super::motion::Rate;
@@ -37,6 +44,139 @@ const GYRO_DEADZONE: f32 = 1.0;
 pub const POINTER_EVERY: Duration = Duration::from_millis(8);
 /// High-resolution wheel units per notch (the kernel's convention).
 const NOTCH: i32 = 120;
+/// A second press within this of letting go makes a double.
+pub const DOUBLE_WINDOW: Duration = Duration::from_millis(300);
+/// A press decided only after letting go (the input has a hold or a double) is sent as a tap this long.
+pub const TAP: Duration = Duration::from_millis(60);
+
+/// Where a digital input's press is.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Phase {
+    Up,
+    /// Down since then: not yet known to be a press, a hold or a double.
+    Deciding(Instant),
+    /// Let go then after a short press: a second press soon makes a double.
+    Waiting(Instant),
+    /// An actuation on: while held, or (a tap) until then.
+    On { act: Actuation, until: Option<Instant> },
+}
+
+/// A binding's on and off: its actuation on now, its toggle's state, and since when it has been on (turbo's
+/// beat counts from there).
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+struct Beat {
+    raw: bool,
+    latched: bool,
+    since: Option<Instant>,
+}
+
+impl Beat {
+    /// Follows the actuation (`raw`, now): a toggle flips at each start of one.
+    fn follow(&mut self, raw: bool, toggle: bool, now: Instant) {
+        let rising = raw && !self.raw;
+        self.raw = raw;
+        if toggle {
+            if rising {
+                self.latched = !self.latched;
+                self.since = self.latched.then_some(now);
+            }
+        } else {
+            self.latched = false;
+            if rising {
+                self.since = Some(now);
+            }
+        }
+    }
+
+    /// Whether the output is on: the actuation's (or the toggle's) state, beating at `turbo` a second.
+    fn on(&self, b: &Binding, now: Instant) -> bool {
+        let on = if b.toggle { self.latched } else { self.raw };
+        match (on, b.turbo, self.since) {
+            (false, ..) => false,
+            (true, 0, _) | (true, _, None) => true,
+            (true, rate, Some(since)) => (now.saturating_duration_since(since).as_nanos() / half_beat(rate)).is_multiple_of(2),
+        }
+    }
+
+    /// When its turbo next turns on or off (none: no turbo, or off).
+    fn next_beat(&self, b: &Binding, now: Instant) -> Option<Instant> {
+        let on = if b.toggle { self.latched } else { self.raw };
+        let since = self.since.filter(|_| on && b.turbo > 0)?;
+        let half = half_beat(b.turbo);
+        let n = now.saturating_duration_since(since).as_nanos() / half + 1;
+        Some(since + Duration::from_nanos(u64::try_from(n * half).unwrap_or(u64::MAX)))
+    }
+}
+
+/// Half a turbo beat at `rate` a second, in nanoseconds (on for one half, off for the other).
+fn half_beat(rate: u8) -> u128 {
+    500_000_000 / u128::from(rate.max(1))
+}
+
+/// A digital input's actuations: its press's phase, and each actuation's beat.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Actuator {
+    input: Input,
+    phase: Phase,
+    beats: [Beat; 3],
+    /// When the phase moves on by itself (a hold's time, a double's window, a tap's end).
+    due: Option<Instant>,
+}
+
+impl Actuator {
+    fn new(input: Input) -> Actuator {
+        Actuator { input, phase: Phase::Up, beats: [Beat::default(); 3], due: None }
+    }
+
+    /// The input on or off at `now`, with a hold's binding (its time) and a double's or not: the phase
+    /// moves on.
+    fn step(&mut self, on: bool, hold: Option<Duration>, double: bool, now: Instant) {
+        // (A press during a tap starts a new one: twice round at most.)
+        for _ in 0..2 {
+            let next = match self.phase {
+                Phase::Up if on && hold.is_none() && !double => Phase::On { act: Actuation::Press, until: None },
+                Phase::Up if on => Phase::Deciding(now),
+                Phase::Up => Phase::Up,
+                Phase::Deciding(at) if on => match hold {
+                    Some(t) if now >= at + t => Phase::On { act: Actuation::Hold, until: None },
+                    Some(_) => Phase::Deciding(at),
+                    None if double && now < at + DOUBLE_WINDOW => Phase::Deciding(at),
+                    // (Held past the window with no hold: a press after all.)
+                    None => Phase::On { act: Actuation::Press, until: None },
+                },
+                Phase::Deciding(_) if double => Phase::Waiting(now),
+                Phase::Deciding(_) => Phase::On { act: Actuation::Press, until: Some(now + TAP) },
+                Phase::Waiting(_) if on => Phase::On { act: Actuation::Double, until: None },
+                Phase::Waiting(at) if now >= at + DOUBLE_WINDOW => Phase::On { act: Actuation::Press, until: Some(now + TAP) },
+                Phase::Waiting(at) => Phase::Waiting(at),
+                Phase::On { until: None, .. } if !on => Phase::Up,
+                Phase::On { until: Some(_), .. } if on => {
+                    self.phase = Phase::Up;
+                    continue;
+                }
+                Phase::On { until: Some(t), .. } if now >= t => Phase::Up,
+                p @ Phase::On { .. } => p,
+            };
+            self.phase = next;
+            break;
+        }
+        self.due = match self.phase {
+            Phase::Deciding(at) => Some(hold.map_or(at + DOUBLE_WINDOW, |t| at + t)),
+            Phase::Waiting(at) => Some(at + DOUBLE_WINDOW),
+            Phase::On { until, .. } => until,
+            Phase::Up => None,
+        };
+    }
+
+    /// Whether `act` is on now (as the phase says).
+    fn actuated(&self, act: Actuation) -> bool {
+        matches!(self.phase, Phase::On { act: a, .. } if a == act)
+    }
+
+    fn beat(&self, act: Actuation) -> Beat {
+        self.beats.get(act as usize).copied().unwrap_or_default()
+    }
+}
 
 /// The layer key's codes: the Thor's Back button, under the screen. (KEY_BACK is assumed until the
 /// device test, docs/thor-gameplan.md.)
@@ -181,11 +321,13 @@ pub struct Remap {
     carry: (f32, f32),
     /// When a stick last moved the pointer.
     last_pointer: Option<Instant>,
+    /// The digital inputs' actuations (those that have been pressed).
+    actuators: Vec<Actuator>,
 }
 
 impl Remap {
     pub fn new(ranges: Ranges) -> Remap {
-        Remap { keymap: Keymap::default(), ranges, sent: Wanted::default(), gyro: Rate::default(), carry: (0.0, 0.0), last_pointer: None }
+        Remap { keymap: Keymap::default(), ranges, sent: Wanted::default(), gyro: Rate::default(), carry: (0.0, 0.0), last_pointer: None, actuators: Vec::new() }
     }
 
     /// The pad's state as it was when nothing had been sent (a fresh pad, or after letting go).
@@ -197,7 +339,7 @@ impl Remap {
     pub fn set_keymap(&mut self, keymap: Keymap, snap: &PadSnapshot, live: bool, out: &mut Out) {
         self.keymap = keymap;
         if live {
-            self.update(snap, out);
+            self.update(snap, Instant::now(), out);
         }
     }
 
@@ -210,6 +352,7 @@ impl Remap {
         self.gyro = Rate::default();
         self.carry = (0.0, 0.0);
         self.last_pointer = None;
+        self.actuators.clear();
     }
 
     fn axis_rest(&self, axis: AbsoluteAxisCode) -> i32 {
@@ -218,13 +361,64 @@ impl Remap {
 
     /// Takes the outputs to be what the keymap makes of `snap` already (without sending anything).
     pub fn prime(&mut self, snap: &PadSnapshot) {
-        self.sent = self.wanted(snap);
+        let now = Instant::now();
+        self.actuate(snap, now);
+        self.sent = self.wanted(snap, now);
     }
 
-    /// The controller's state changed (`snap` is it now): the outputs follow.
-    pub fn update(&mut self, snap: &PadSnapshot, out: &mut Out) {
-        let wanted = self.wanted(snap);
+    /// The controller's state changed (`snap` is it now, at `now`): the outputs follow.
+    pub fn update(&mut self, snap: &PadSnapshot, now: Instant, out: &mut Out) {
+        self.actuate(snap, now);
+        let wanted = self.wanted(snap, now);
         self.send(wanted, out);
+    }
+
+    /// The digital inputs' actuations follow the controller at `now`.
+    fn actuate(&mut self, snap: &PadSnapshot, now: Instant) {
+        let inputs = Input::all().filter(|i| i.kind() == Kind::Digital || (i.kind() == Kind::Trigger && self.binding(*i, snap).is_some_and(|b| b.output.digital())));
+        for input in inputs.collect::<Vec<_>>() {
+            let on = self.pressed(input, snap);
+            let back = Self::back(snap);
+            let hold = self.keymap.lookup_of(input, Actuation::Hold, back).map(|b| Duration::from_millis(u64::from(b.hold_time) * 10));
+            let double = self.keymap.lookup_of(input, Actuation::Double, back).is_some();
+            let binding = |act| match act {
+                Actuation::Press => self.binding(input, snap),
+                act => self.keymap.lookup_of(input, act, back).copied(),
+            };
+            let toggles = Actuation::ALL.map(|a| binding(a).is_some_and(|b| b.toggle));
+            let found = self.actuators.iter().position(|a| a.input == input);
+            if found.is_none() && !on {
+                continue;
+            }
+            let i = found.unwrap_or_else(|| {
+                self.actuators.push(Actuator::new(input));
+                self.actuators.len() - 1
+            });
+            let Some(a) = self.actuators.get_mut(i) else {
+                continue;
+            };
+            a.step(on, hold, double, now);
+            for (act, toggle) in Actuation::ALL.into_iter().zip(toggles) {
+                let raw = a.actuated(act);
+                if let Some(beat) = a.beats.get_mut(act as usize) {
+                    beat.follow(raw, toggle, now);
+                }
+            }
+        }
+        // (Those at rest and holding nothing on are dropped.)
+        self.actuators.retain(|a| a.phase != Phase::Up || a.beats.iter().any(|b| b.raw || b.latched));
+    }
+
+    /// Whether a digital input is down: a trigger past its press binding's threshold, the rest as
+    /// [`Remap::digital`].
+    fn pressed(&self, input: Input, snap: &PadSnapshot) -> bool {
+        match (input, self.binding(input, snap)) {
+            (Input::Trigger(s), Some(b)) => {
+                let v = self.trigger(s, snap);
+                v * 100.0 >= f32::from(b.threshold) && v > 0.0
+            }
+            _ => self.digital(input, snap),
+        }
     }
 
     /// The gyro's rate now, at `dt` since its last sample: the pointer moves by it, a stick follows it.
@@ -241,11 +435,40 @@ impl Remap {
             self.carry.1 -= sy * dead(rate.pitch) * dt * px;
             self.flush_pointer(out);
         }
-        self.update(snap, out);
+        self.update(snap, Instant::now(), out);
     }
 
-    /// Time passed: sticks on the pointer move it; when to tick next, while one is deflected.
-    pub fn tick(&mut self, now: Instant, out: &mut Out) -> Option<Instant> {
+    /// Time passed: actuations move on (a hold's time, a double's window, a tap's end, turbo's beat), and
+    /// sticks on the pointer move it; when to tick next, if anything waits for time.
+    pub fn tick(&mut self, now: Instant, snap: &PadSnapshot, out: &mut Out) -> Option<Instant> {
+        if !self.actuators.is_empty() {
+            self.update(snap, now, out);
+        }
+        let timed = self.next_due(snap, now);
+        let pointer = self.tick_pointer(now, out);
+        [timed, pointer].into_iter().flatten().min()
+    }
+
+    /// When an actuation next moves on by itself, or a turbo beats.
+    fn next_due(&self, snap: &PadSnapshot, now: Instant) -> Option<Instant> {
+        let back = Self::back(snap);
+        let mut next = None;
+        for a in &self.actuators {
+            let mut times = vec![a.due];
+            for act in Actuation::ALL {
+                let b = match act {
+                    Actuation::Press => self.binding(a.input, snap),
+                    act => self.keymap.lookup_of(a.input, act, back).copied(),
+                };
+                times.push(b.and_then(|b| a.beat(act).next_beat(&b, now)));
+            }
+            next = times.into_iter().flatten().chain(next).min();
+        }
+        next
+    }
+
+    /// Sticks on the pointer move it; when to tick next for that, while one is deflected.
+    fn tick_pointer(&mut self, now: Instant, out: &mut Out) -> Option<Instant> {
         if self.sent.pointer.is_empty() {
             self.last_pointer = None;
             return None;
@@ -385,8 +608,13 @@ impl Remap {
         }
     }
 
-    /// What every output should be for the controller in `snap`.
-    fn wanted(&self, snap: &PadSnapshot) -> Wanted {
+    /// Whether `input`'s binding of `act` is on at `now` (as its actuation, toggle and turbo make it).
+    fn on(&self, input: Input, act: Actuation, b: &Binding, now: Instant) -> bool {
+        self.actuators.iter().find(|a| a.input == input).is_some_and(|a| a.beat(act).on(b, now))
+    }
+
+    /// What every output should be for the controller in `snap` at `now`.
+    fn wanted(&self, snap: &PadSnapshot, now: Instant) -> Wanted {
         let mut w = Wanted::default();
         let mut sticks = [(0.0f32, 0.0f32); 2];
         let mut triggers = [0.0f32; 2];
@@ -424,8 +652,15 @@ impl Remap {
             };
             match input {
                 Input::Button(_) | Input::Dpad(_) | Input::StickDir(..) => {
-                    let on = self.digital(input, snap);
+                    let on = self.on(input, Actuation::Press, &b, now);
                     digital(&mut w, input, on, &b.output, &mut triggers, &mut dpad);
+                    // Its hold and double, if it has them.
+                    for act in [Actuation::Hold, Actuation::Double] {
+                        if let Some(other) = self.keymap.lookup_of(input, act, Self::back(snap)) {
+                            let on = self.on(input, act, other, now);
+                            digital(&mut w, input, on, &other.output, &mut triggers, &mut dpad);
+                        }
+                    }
                 }
                 Input::Trigger(s) => {
                     let v = self.trigger(s, snap);
@@ -435,7 +670,7 @@ impl Remap {
                                 *t = t.max(v);
                             }
                         }
-                        ref o => digital(&mut w, input, v * 100.0 >= f32::from(b.threshold) && v > 0.0, o, &mut triggers, &mut dpad),
+                        ref o => digital(&mut w, input, self.on(input, Actuation::Press, &b, now), o, &mut triggers, &mut dpad),
                     }
                 }
                 Input::Stick(s) => {
@@ -1022,6 +1257,115 @@ mod tests {
     }
 
     const DEFAULT_SPEED_FOR_TEST: u8 = clamshell_core::keymap::DEFAULT_SPEED;
+
+    /// A button down or up at `t`.
+    fn press_at(r: &mut PadRouter, code: KeyCode, down: bool, t: Instant, out: &mut Out) {
+        r.event(key(code, if down { Press::Down } else { Press::Up }), t, out);
+        r.event(Raw::REPORT, t, out);
+    }
+
+    fn ms(n: u64) -> Duration {
+        Duration::from_millis(n)
+    }
+
+    /// A on X when pressed, plus `act`'s binding.
+    fn with(act: Actuation, b: Binding) -> Keymap {
+        let mut k = keymap(&[(Input::Button(Button::A), to(Output::Key(chord("x"))))]);
+        assert!(k.set_of(clamshell_core::keymap::Layer::Main, Input::Button(Button::A), act, Some(b)));
+        k
+    }
+
+    #[test]
+    fn a_plain_press_acts_at_once_with_no_timers() {
+        let (mut r, mut out) = router(keymap(&[(Input::Button(Button::A), to(Output::Key(chord("x"))))]), PadRoute::Game);
+        let t0 = Instant::now();
+        press_at(&mut r, KeyCode::BTN_SOUTH, true, t0, &mut out);
+        assert_eq!(held(&out.mouse), vec![KeyCode::KEY_X], "on the press itself");
+        assert_eq!(r.tick(t0, &mut out), None, "nothing waits for time");
+    }
+
+    #[test]
+    fn a_hold_acts_at_its_time_and_a_short_press_taps_on_letting_go() {
+        let k = with(Actuation::Hold, Binding { hold_time: 40, ..to(Output::Key(chord("esc"))) });
+        let (mut r, mut out) = router(k, PadRoute::Game);
+        let t0 = Instant::now();
+        press_at(&mut r, KeyCode::BTN_SOUTH, true, t0, &mut out);
+        assert!(held(&out.mouse).is_empty(), "undecided");
+        assert_eq!(r.tick(t0, &mut out), Some(t0 + ms(400)), "wakes at the hold's time");
+        r.tick(t0 + ms(399), &mut out);
+        assert!(held(&out.mouse).is_empty());
+        r.tick(t0 + ms(400), &mut out);
+        assert_eq!(held(&out.mouse), vec![KeyCode::KEY_ESC], "a hold");
+        press_at(&mut r, KeyCode::BTN_SOUTH, false, t0 + ms(700), &mut out);
+        assert!(held(&out.mouse).is_empty() && !out.mouse.iter().any(|e| e.as_key().is_some_and(|(k, _)| k == KeyCode::KEY_X)), "never X");
+        // Short: X tapped on letting go, for a moment.
+        let t1 = t0 + ms(2000);
+        press_at(&mut r, KeyCode::BTN_SOUTH, true, t1, &mut out);
+        press_at(&mut r, KeyCode::BTN_SOUTH, false, t1 + ms(100), &mut out);
+        assert_eq!(held(&out.mouse), vec![KeyCode::KEY_X], "the press, on letting go");
+        assert_eq!(r.tick(t1 + ms(100), &mut out), Some(t1 + ms(100) + TAP));
+        r.tick(t1 + ms(100) + TAP, &mut out);
+        assert!(held(&out.mouse).is_empty(), "a tap");
+        assert_eq!(r.tick(t1 + ms(200), &mut out), None);
+    }
+
+    #[test]
+    fn a_double_and_a_single_press_with_a_double() {
+        let k = with(Actuation::Double, to(Output::Key(chord("tab"))));
+        let (mut r, mut out) = router(k, PadRoute::Game);
+        let t0 = Instant::now();
+        press_at(&mut r, KeyCode::BTN_SOUTH, true, t0, &mut out);
+        press_at(&mut r, KeyCode::BTN_SOUTH, false, t0 + ms(50), &mut out);
+        assert!(held(&out.mouse).is_empty(), "waiting for a second press");
+        press_at(&mut r, KeyCode::BTN_SOUTH, true, t0 + ms(200), &mut out);
+        assert_eq!(held(&out.mouse), vec![KeyCode::KEY_TAB], "a double, held while held");
+        press_at(&mut r, KeyCode::BTN_SOUTH, false, t0 + ms(400), &mut out);
+        assert!(held(&out.mouse).is_empty());
+        // Once: X after the window, as a tap.
+        let t1 = t0 + ms(2000);
+        press_at(&mut r, KeyCode::BTN_SOUTH, true, t1, &mut out);
+        press_at(&mut r, KeyCode::BTN_SOUTH, false, t1 + ms(50), &mut out);
+        r.tick(t1 + ms(50) + DOUBLE_WINDOW, &mut out);
+        assert_eq!(held(&out.mouse), vec![KeyCode::KEY_X]);
+        r.tick(t1 + ms(50) + DOUBLE_WINDOW + TAP, &mut out);
+        assert!(held(&out.mouse).is_empty());
+        // Held past the window (no hold binding): a press, held.
+        let t2 = t1 + ms(2000);
+        press_at(&mut r, KeyCode::BTN_SOUTH, true, t2, &mut out);
+        r.tick(t2 + DOUBLE_WINDOW, &mut out);
+        assert_eq!(held(&out.mouse), vec![KeyCode::KEY_X]);
+        press_at(&mut r, KeyCode::BTN_SOUTH, false, t2 + ms(900), &mut out);
+        assert!(held(&out.mouse).is_empty());
+    }
+
+    #[test]
+    fn toggle_and_turbo() {
+        let k = keymap(&[
+            (Input::Button(Button::A), Binding { toggle: true, ..to(Output::Key(chord("x"))) }),
+            (Input::Button(Button::B), Binding { turbo: 10, ..to(Output::Key(chord("z"))) }),
+        ]);
+        let (mut r, mut out) = router(k, PadRoute::Game);
+        let t0 = Instant::now();
+        press_at(&mut r, KeyCode::BTN_SOUTH, true, t0, &mut out);
+        press_at(&mut r, KeyCode::BTN_SOUTH, false, t0 + ms(50), &mut out);
+        assert_eq!(held(&out.mouse), vec![KeyCode::KEY_X], "on after one press");
+        press_at(&mut r, KeyCode::BTN_SOUTH, true, t0 + ms(500), &mut out);
+        assert!(held(&out.mouse).is_empty(), "off at the next press");
+        press_at(&mut r, KeyCode::BTN_SOUTH, false, t0 + ms(550), &mut out);
+        assert!(held(&out.mouse).is_empty(), "and stays off");
+        // Turbo at 10 a second: on 50 ms, off 50 ms, while held.
+        let t1 = t0 + ms(1000);
+        press_at(&mut r, KeyCode::BTN_EAST, true, t1, &mut out);
+        assert_eq!(held(&out.mouse), vec![KeyCode::KEY_Z]);
+        assert_eq!(r.tick(t1, &mut out), Some(t1 + ms(50)));
+        r.tick(t1 + ms(50), &mut out);
+        assert!(held(&out.mouse).is_empty());
+        r.tick(t1 + ms(100), &mut out);
+        assert_eq!(held(&out.mouse), vec![KeyCode::KEY_Z]);
+        press_at(&mut r, KeyCode::BTN_EAST, false, t1 + ms(120), &mut out);
+        assert!(held(&out.mouse).is_empty());
+        assert_eq!(r.tick(t1 + ms(130), &mut out), None, "let go: no more beats");
+    }
 
     #[test]
     fn a_parameter_slid_applies_at_once() {
