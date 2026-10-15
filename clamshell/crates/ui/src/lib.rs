@@ -270,6 +270,7 @@ impl App {
     /// The top view as a window; the bottom one as `BottomKind::choose` says.
     fn place_views(&mut self, shells: &Shells, qh: &QueueHandle<App>, config: &Config) {
         self.views.top = Some(View::window(&shells.compositor, &shells.xdg, qh, Screen::Top, config.top_size));
+        self.display.all_on(self.output_state.outputs(), qh);
         let output = self.output_state.outputs().find(|o| self.output_state.info(o).and_then(|i| i.name).as_deref() == Some(config.bottom_output.as_str()));
         let kind = BottomKind::choose(output.is_some(), shells.layer.is_some(), config.bottom_panel);
         self.desktop_keys = kind.desktop_keys();

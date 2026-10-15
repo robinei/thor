@@ -117,6 +117,19 @@ impl Display {
         }
     }
 
+    /// Every screen on, at start: a ClamShell before this one may have left them off (idle), and nothing
+    /// else turns them on again.
+    pub(crate) fn all_on(&self, outputs: impl Iterator<Item = WlOutput>, qh: &QueueHandle<App>) {
+        let Some(manager) = &self.power else {
+            return;
+        };
+        for output in outputs {
+            let power = manager.get_output_power(&output, qh, Data);
+            power.set_mode(zwlr_output_power_v1::Mode::On);
+            power.destroy();
+        }
+    }
+
     /// The main screen's refresh rate to `hz` (0: as it was at start), the nearest its mode list has.
     pub(crate) fn refresh(&mut self, hz: u16, qh: &QueueHandle<App>) {
         self.wanted_refresh = Some(hz);
