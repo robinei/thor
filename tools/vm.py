@@ -198,14 +198,14 @@ def session_files():
 
 
 def system_files():
-    """The same system setup on both: autologin, modules, uinput and uhid for the input group."""
+    """The same system setup on both: autologin, modules, uinput for the input group."""
     return [
         ("/etc/systemd/system/getty@tty1.service.d/autologin.conf",
          f"[Service]\nExecStart=\nExecStart=-/sbin/agetty --autologin {USER} --noclear %I $TERM\n"),
-        ("/etc/modules-load.d/thor-vm.conf", "uinput\nuhid\ntest_power\nmac80211_hwsim\n"),
+        ("/etc/modules-load.d/thor-vm.conf", "uinput\ntest_power\nmac80211_hwsim\n"),
         ("/etc/modprobe.d/thor-vm.conf", "options mac80211_hwsim radios=3\n"),
         ("/etc/udev/rules.d/70-thor-vm.rules",
-         'KERNEL=="uinput", GROUP="input", MODE="0660"\nKERNEL=="uhid", GROUP="input", MODE="0660"\n'),
+         'KERNEL=="uinput", GROUP="input", MODE="0660"\n'),
         # NetworkManager has the device's radio only: the wired link (ssh) stays as it is, the access
         # points' radios are hostapd's.
         ("/etc/NetworkManager/conf.d/thor-vm.conf",

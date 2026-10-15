@@ -153,6 +153,11 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
 - [ ] Home button: which device and key code it sends (BTN_MODE on the gamepad, or KEY_HOMEPAGE on a
       separate gpio-keys device?). ClamShell takes BTN_MODE from the grabbed pad only; Steam's overlay
       then never sees it.
+- [ ] Steam with the virtual Xbox 360 pad: the real controller's USB ids, for a udev rule that clears its
+      joystick tags (SDL and Steam skip it; ClamShell finds it by its capabilities) and closes its hidraw
+      node (Steam reads some controllers through hidraw, past ClamShell's grab: every press twice). Steam
+      then lists one controller. Steam's desktop layout set to none (else it acts beside ClamShell's pad
+      navigation outside games).
 - [ ] Lid: does the Thor report a lid switch (`SW_LID`), and does closing it suspend?
 - [ ] Battery: capacity, charging, power draw in sysinfo; the charge limit setting (sysfs path?); UPower
       sees it (the battery mode's graph) and powers off at 3 %; GPU time per program in the battery mode
@@ -168,7 +173,8 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       (from the ABL path and the UEFI path); every subsystem after resume (sound, Wi-Fi, Bluetooth, GPU,
       both screens and touch, gamepad); lid closed for over 30 minutes ends in hibernate; UPower's
       hibernate at 3 %. After a resume: ClamShell logs "woke from sleep" and "settings applied", and both
-      screens redraw (in the VM the whole machine stopped soon after a resume, so this is untested).
+      screens redraw. In the x86 VM the image is written and found, but the resumed machine
+      sometimes resets at once, or QEMU's ACPI S4 wakes the hibernating kernel; one resume went through.
 - [ ] The launcher under real use: tools/vm.py's checks again, on the device.
 - [ ] FEX for x86 games (32-bit Windows games are the open question).
 
