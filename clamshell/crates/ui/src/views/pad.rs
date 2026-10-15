@@ -2,8 +2,8 @@
 //! bottom screen, so they are drawn as two clusters at the screen's edges, each a column of groups in
 //! the order of [`LEFT`] and [`RIGHT`]: the shoulders (on the back's top edge), a small round button
 //! above the screen's corner (Select, Start), a stick and the D-pad or the face buttons, and a small
-//! round button at the screen's bottom corner (Home: drawn, not remappable; Back: the keymap's layer
-//! key). The gyro sits in the middle, at the bottom, where the AYN button is under the screen.
+//! round button at the screen's bottom corner (Home: drawn, not remappable; Back: an input like the
+//! others). The gyro sits on the left, below the D-pad.
 //!
 //! A remapped control has a line in to its label (between the clusters): it leaves the control's inner
 //! side straight across, or, for the controls a line across would pass through others (the outer one of
@@ -25,12 +25,15 @@ pub enum Group {
     Stick,
     Dpad,
     Face,
+    /// The gyro (a pill), below the D-pad.
+    Gyro,
     /// The small round button at the screen's bottom corner: Home, Back.
     Foot,
 }
 
 /// Each side's groups from top to bottom, and the share of the cluster's height each takes.
-pub const LEFT: [(Group, f32); 6] = [(Group::Trigger, 0.1), (Group::Bumper, 0.085), (Group::Top, 0.09), (Group::Stick, 0.33), (Group::Dpad, 0.32), (Group::Foot, 0.075)];
+pub const LEFT: [(Group, f32); 7] =
+    [(Group::Trigger, 0.1), (Group::Bumper, 0.085), (Group::Top, 0.09), (Group::Stick, 0.3), (Group::Dpad, 0.285), (Group::Gyro, 0.07), (Group::Foot, 0.07)];
 pub const RIGHT: [(Group, f32); 6] = [(Group::Trigger, 0.1), (Group::Bumper, 0.085), (Group::Top, 0.09), (Group::Face, 0.32), (Group::Stick, 0.33), (Group::Foot, 0.075)];
 
 /// Sizes in a group, of the smaller of its width and height. A stick: the well's radius, the cap's and
@@ -92,10 +95,10 @@ impl Pad {
     /// Where `group` is on `side`, if it is there.
     pub fn group(&self, side: Side, group: Group) -> Option<Rect> {
         let c = self.cluster(side);
-        let table = if side == Side::Left { LEFT } else { RIGHT };
+        let table: &[(Group, f32)] = if side == Side::Left { &LEFT } else { &RIGHT };
         let total: f32 = table.iter().map(|(_, share)| share).sum();
         let mut y = c.y;
-        for (g, share) in table {
+        for &(g, share) in table {
             let h = c.h * share / total.max(1e-3);
             if g == group {
                 return Some(Rect::new(c.x, y, c.w, h));
@@ -144,7 +147,7 @@ impl Pad {
                 // The Thor has no back buttons.
                 Button::L4 | Button::L5 | Button::R4 | Button::R5 => return None,
             },
-            Input::Gyro => return None,
+            Input::Gyro => (Side::Left, Group::Gyro),
         };
         // Toward the labels.
         let k = if side == Side::Left { 1.0 } else { -1.0 };
@@ -160,6 +163,10 @@ impl Pad {
             }
             Input::Button(Button::LB | Button::RB) => {
                 let shown = g.centered(g.w * BUMPER.0, (g.h * BUMPER.1).min(g.w * 0.16));
+                flat(shown, shown.h / 2.0)
+            }
+            Input::Gyro => {
+                let shown = g.centered(g.w * 0.5, (g.h * 0.7).min(g.w * 0.16));
                 flat(shown, shown.h / 2.0)
             }
             Input::Button(Button::View | Button::Menu | Button::Back) => {
@@ -253,7 +260,6 @@ impl Pad {
                 let (anchor, lane) = if dx * k < 0.0 { ((at.0, at.1 - r), Some(lane)) } else { ((at.0 + k * r, at.1), None) };
                 Part { shown, radius: r, target, corners: None, anchor, lane, side }
             }
-            Input::Gyro => return None,
         };
         Some(part)
     }

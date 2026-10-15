@@ -253,13 +253,14 @@ start makes a
 "Nintendo layout" keymap (A and B, X and Y swapped), an ordinary one. The Keymap tile opens the picker
 over the settings: Default, then the keymaps with how many games use each; a tap chooses one for the scope
 being edited, Edit (or a long press: rename, duplicate, delete; deleting one in use asks first and puts its
-games back on Default) opens it, New names one (the editor) and opens it. The edit screen shows one layer
-(the tabs at the top right: Base, the layers, and + to add one, named; a long press on a layer: rename or
-delete it, the bindings to it too): the Thor's controls in two clusters at the screen's edges, each input the layer changes with a
-label, blue where it maps to something else, grey where it is the input as on the pad, only tuned. An
+games back on Default) opens it, New names one (the editor) and opens it. The edit screen shows one layer,
+named at its top right: a button to the list of the keymap's layers (one tapped is shown; New layer… adds
+one, named; a long press on one: rename, clear once confirmed, delete with the bindings to it; Base:
+clear), with Close at the top left. Below them, the Thor's controls in two clusters at the screen's edges
+(the gyro below the D-pad), each input the layer changes with a label, blue where it maps to something else, grey where it is the input as on the pad, only tuned. An
 input is selected by touch or by pressing (or pushing past half) it on the pad, which listens there
-instead of moving the focus (Home leaves; Home is never mapped); the panel between the label columns
-then shows, for a button or a direction, Press, Hold and Double tabs (each actuation's binding of its own;
+instead of moving the focus (Home leaves; Home is never mapped); the panel between the label columns, the
+screen's whole height, then shows, for a button or a direction, Press, Hold and Double tabs (each actuation's binding of its own;
 a dot under one set), what it does in the layer, the ways to remap it as icons (only those that fit it):
 a control picked on the drawing (tapped, or pressed on the pad; the rest fade), keys typed on the
 keyboard, the mouse's parts on a drawing of one (for motion, the pointer), a layer (the keymap's, or a new
@@ -279,8 +280,7 @@ the pointer moved before); the panel shows the values that apply, and a new targ
 for the values not set. A stick's deadzone is the keymap's only one (a game that needs another uses a
 keymap of its own; the old per-game Deadzone setting is gone, its `deadzone=` key ignored). A value is held (or slid) for the bar's slider, which sets
 it as the finger moves (the game gets it at once); the panel's parameters are touch only, since the pad
-listens on that screen. A long press on an input sets it back; "No changes" clears the layer shown, once
-confirmed. What an input may map to fits its kind: a button, D-pad direction or stick direction to a pad
+listens on that screen. A long press on an input sets it back. What an input may map to fits its kind: a button, D-pad direction or stick direction to a pad
 button (one of the list, or the next pressed on the pad), a key chord (typed on the keyboard: modifiers
 latch, the next key completes it; Done takes the modifiers alone), a mouse button or a wheel step; a stick
 to a stick, the pointer, four keys typed in turn (WASD) or the D-pad; a trigger to a trigger, or past its

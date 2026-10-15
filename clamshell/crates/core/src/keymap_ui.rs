@@ -42,7 +42,9 @@ pub enum Screen {
     Mouse { id: u16, input: Input },
     /// A layer for `input`, from the keymap's.
     Layers { id: u16, input: Input },
-    /// A layer's menu: rename, delete.
+    /// The keymap's layers, to show one on the edit screen (or add one; a long press: its menu).
+    LayerPicker(u16),
+    /// A layer's menu: rename, clear, delete (Base: clear).
     LayerMenu { id: u16, layer: Layer },
     /// A key chord typed on the keyboard for `input`; for a stick's four keys, which one and those so far.
     Capture { id: u16, input: Input, keys: Option<(usize, [Chord; 4])> },
@@ -60,7 +62,7 @@ impl Screen {
             Screen::List => None,
             Screen::Menu(id) | Screen::Delete(id) | Screen::Edit(id) => Some(id),
             Screen::Pick { id, .. } | Screen::Holds { id, .. } | Screen::Mouse { id, .. } | Screen::Capture { id, .. } => Some(id),
-            Screen::Layers { id, .. } | Screen::LayerMenu { id, .. } => Some(id),
+            Screen::Layers { id, .. } | Screen::LayerMenu { id, .. } | Screen::LayerPicker(id) => Some(id),
         }
     }
 }
@@ -319,8 +321,22 @@ impl State {
                 }
                 vec![]
             }
-            (KeymapId::Layer(layer), Screen::Edit(k)) if long && layer != Layer::BASE => {
+            (KeymapId::LayerPicker, Screen::Edit(k)) => {
+                self.bottom.keymaps = Some(Screen::LayerPicker(k));
+                vec![]
+            }
+            (KeymapId::Layer(layer), Screen::LayerPicker(k)) if long => {
+                self.bottom.keymap_edit.clearing = false;
                 self.bottom.keymaps = Some(Screen::LayerMenu { id: k, layer });
+                vec![]
+            }
+            (KeymapId::Layer(layer), Screen::LayerPicker(k)) => {
+                self.bottom.keymap_edit.layer = layer;
+                self.bottom.keymaps = Some(Screen::Edit(k));
+                vec![]
+            }
+            (KeymapId::NewLayer, Screen::LayerPicker(k)) => {
+                self.name_keymap(KeymapName::NewLayer(k, None), String::new());
                 vec![]
             }
             (KeymapId::Layer(layer), Screen::Edit(_)) => {
@@ -328,17 +344,13 @@ impl State {
                 self.bottom.keymap_edit.clearing = false;
                 vec![]
             }
-            (KeymapId::AddLayer, Screen::Edit(k)) => {
-                self.name_keymap(KeymapName::NewLayer(k, None), String::new());
-                vec![]
-            }
             (KeymapId::RenameLayer, Screen::LayerMenu { id: k, layer }) => {
                 let name = self.keymaps.get(k).and_then(|km| km.layer_name(layer)).unwrap_or("").to_owned();
                 self.name_keymap(KeymapName::RenameLayer(k, layer), name);
                 vec![]
             }
-            (KeymapId::DeleteLayer, Screen::LayerMenu { id: k, layer }) => {
-                self.bottom.keymaps = Some(Screen::Edit(k));
+            (KeymapId::DeleteLayer, Screen::LayerMenu { id: k, layer }) if layer != Layer::BASE => {
+                self.bottom.keymaps = Some(Screen::LayerPicker(k));
                 if self.bottom.keymap_edit.layer == layer {
                     self.bottom.keymap_edit.layer = Layer::BASE;
                 }
@@ -351,13 +363,13 @@ impl State {
                 self.name_keymap(KeymapName::NewLayer(k, Some((input, act))), String::new());
                 vec![]
             }
-            (KeymapId::Clear, Screen::Edit(_)) => {
+            (KeymapId::Clear, Screen::LayerMenu { .. }) => {
                 self.bottom.keymap_edit.clearing = true;
                 vec![]
             }
-            (KeymapId::ConfirmClear, Screen::Edit(k)) => {
+            (KeymapId::ConfirmClear, Screen::LayerMenu { id: k, layer }) => {
                 self.bottom.keymap_edit.clearing = false;
-                let layer = self.bottom.keymap_edit.layer;
+                self.bottom.keymaps = Some(Screen::LayerPicker(k));
                 let changed = self.keymaps.get_mut(k).is_some_and(|k| k.clear(layer));
                 if changed { vec![self.save_keymaps()] } else { vec![] }
             }
@@ -399,8 +411,8 @@ impl State {
     /// Back one screen: from a keymap's screens to the picker, from an input's to its keymap's, from
     /// the picker to the settings.
     pub(crate) fn keymap_back(&mut self) {
-        // "No changes" waiting for its confirmation: not after all.
-        if matches!(self.bottom.keymaps, Some(Screen::Edit(_))) && self.bottom.keymap_edit.clearing {
+        // Clearing a layer waiting for its confirmation: not after all.
+        if matches!(self.bottom.keymaps, Some(Screen::LayerMenu { .. })) && self.bottom.keymap_edit.clearing {
             self.bottom.keymap_edit.clearing = false;
             return;
         }
@@ -408,7 +420,8 @@ impl State {
             None | Some(Screen::List) => None,
             Some(Screen::Menu(_) | Screen::Delete(_) | Screen::Edit(_)) => Some(Screen::List),
             Some(Screen::Pick { id, .. } | Screen::Holds { id, .. } | Screen::Mouse { id, .. }) => Some(Screen::Edit(id)),
-            Some(Screen::Layers { id, .. } | Screen::LayerMenu { id, .. }) => Some(Screen::Edit(id)),
+            Some(Screen::Layers { id, .. } | Screen::LayerPicker(id)) => Some(Screen::Edit(id)),
+            Some(Screen::LayerMenu { id, .. }) => Some(Screen::LayerPicker(id)),
             Some(Screen::Capture { id, .. }) => {
                 self.keyboard.take_modifiers();
                 Some(Screen::Edit(id))
@@ -520,7 +533,7 @@ impl State {
             }
             KeymapName::RenameLayer(id, layer) => {
                 self.keymaps.get_mut(id).map(|k| k.rename_layer(layer, name));
-                self.bottom.keymaps = Some(Screen::Edit(id));
+                self.bottom.keymaps = Some(Screen::LayerPicker(id));
             }
         }
         vec![self.save_keymaps()]
@@ -1076,20 +1089,19 @@ mod tests {
         let k = s.keymaps().get(1).unwrap();
         assert_eq!(k.get_of(Layer::BASE, Input::Button(Button::LB), Actuation::Hold).map(|b| b.output), Some(Output::Layer(Layer(2))));
         assert_eq!(k.layer_name(Layer(2)), Some("menu"));
-        // A long press on a layer: its menu; renamed, then deleted (with what maps to it).
+        // A long press on a layer in the list: its menu; renamed, then deleted (with what maps to it).
+        keymap(&mut s, KeymapId::LayerPicker);
         long(&mut s, Id::Keymap(KeymapId::Layer(Layer(2))));
         assert_eq!(s.keymap_screen(), Some(Screen::LayerMenu { id: 1, layer: Layer(2) }));
         keymap(&mut s, KeymapId::RenameLayer);
         key(&mut s, Key::Char('s'));
         tap(&mut s, Id::Editor(EditorId::Save));
         assert_eq!(s.keymaps().get(1).unwrap().layer_name(Layer(2)), Some("menus"));
+        assert_eq!(s.keymap_screen(), Some(Screen::LayerPicker(1)), "renamed: the list");
         long(&mut s, Id::Keymap(KeymapId::Layer(Layer(2))));
         keymap(&mut s, KeymapId::DeleteLayer);
         let k = s.keymaps().get(1).unwrap();
         assert_eq!((k.layer_name(Layer(2)), k.get_of(Layer::BASE, Input::Button(Button::LB), Actuation::Hold)), (None, None));
-        // Base has no menu.
-        long(&mut s, Id::Keymap(KeymapId::Layer(Layer::BASE)));
-        assert_eq!(s.keymap_screen(), Some(Screen::Edit(1)));
         // Picking a control, the pad's Back gives up.
         let mut s = edit_screen();
         open(&mut s, a);
@@ -1099,37 +1111,45 @@ mod tests {
 
     /// A layer added with the edit screen's +, named `name`; it is shown.
     fn add_layer(s: &mut State, name: &str) -> Layer {
-        keymap(s, KeymapId::AddLayer);
+        keymap(s, KeymapId::LayerPicker);
+        keymap(s, KeymapId::NewLayer);
         type_text(s, name);
         tap(s, Id::Editor(EditorId::Save));
         s.keymap_edit().layer
     }
 
     #[test]
-    fn no_changes_clears_the_layer_shown_once_confirmed() {
+    fn a_layer_is_cleared_from_its_menu_once_confirmed() {
         let mut s = edit_screen();
         let aim = add_layer(&mut s, "aim");
         open(&mut s, Input::Button(Button::LB));
         keymap(&mut s, KeymapId::Target(Target::Nothing));
+        // The layer button: the list; a long press on a layer: its menu.
+        keymap(&mut s, KeymapId::LayerPicker);
+        assert_eq!(s.keymap_screen(), Some(Screen::LayerPicker(1)));
+        long(&mut s, Id::Keymap(KeymapId::Layer(aim)));
+        assert_eq!(s.keymap_screen(), Some(Screen::LayerMenu { id: 1, layer: aim }));
         keymap(&mut s, KeymapId::Clear);
         assert!(s.keymap_edit().clearing, "asked first");
-        // Back (or Home) instead: not cleared, still on the edit screen.
+        // Back instead: not cleared, still its menu.
         keymap(&mut s, KeymapId::Back);
-        assert_eq!((s.keymap_screen(), s.keymap_edit().clearing), (Some(Screen::Edit(1)), false));
+        assert_eq!((s.keymap_screen(), s.keymap_edit().clearing), (Some(Screen::LayerMenu { id: 1, layer: aim }), false));
         keymap(&mut s, KeymapId::Clear);
         let fx = keymap(&mut s, KeymapId::ConfirmClear);
         assert!(matches!(fx.as_slice(), [Effect::Save(Save::Keymaps(_))]), "{fx:?}");
+        assert_eq!(s.keymap_screen(), Some(Screen::LayerPicker(1)), "back to the list");
         let k = s.keymaps().get(1).unwrap();
         assert!(k.layer(aim).is_empty());
-        assert_eq!(k.bindings().len(), 4, "the main layer kept");
-        assert!(!s.keymap_edit().clearing);
-        // The main layer cleared too: Default's behaviour, the keymap kept.
-        keymap(&mut s, KeymapId::Layer(Layer::BASE));
+        assert_eq!(k.bindings().len(), 4, "Base kept");
+        // Base cleared too (its menu has no delete): Default's behaviour, the keymap kept.
+        long(&mut s, Id::Keymap(KeymapId::Layer(Layer::BASE)));
+        assert_eq!(keymap(&mut s, KeymapId::DeleteLayer), vec![], "Base stays");
         keymap(&mut s, KeymapId::Clear);
         keymap(&mut s, KeymapId::ConfirmClear);
         assert!(s.keymaps().get(1).unwrap().bindings().is_empty());
-        // A fresh edit screen starts on Base.
-        keymap(&mut s, KeymapId::Layer(aim));
+        // A layer tapped in the list: shown. A fresh edit screen starts on Base.
+        tap(&mut s, Id::Keymap(KeymapId::Layer(aim)));
+        assert_eq!((s.keymap_screen(), s.keymap_edit().layer), (Some(Screen::Edit(1)), aim));
         keymap(&mut s, KeymapId::Back);
         tap(&mut s, Id::Row { list: ListId::Keymaps, i: 1, part: RowPart::Edit });
         assert_eq!(s.keymap_edit(), EditView::default());

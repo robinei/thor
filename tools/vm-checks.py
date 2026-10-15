@@ -741,8 +741,8 @@ class Checks:
         keymaps_file = f"{CHECKS_DIR}/pegasus/keymaps.txt"
         for line in ["tab settings", "scope game", "tap setting keymap", "tap keymap-new", "type Layers", "tap save",
                      "tap map-from a", "tap map-to key", "tap key ctrl", "tap key x",
-                     "tap keymap-add-layer", "type held", "tap save", "tap map-from a", "tap map-to key", "tap key ctrl",
-                     "tap key y", "tap keymap-layer base", "tap map-from back", "tap map-to layers", "tap to-layer 1",
+                     "tap keymap-layers", "tap new-layer", "type held", "tap save", "tap map-from a", "tap map-to key", "tap key ctrl",
+                     "tap key y", "tap keymap-layers", "tap keymap-layer base", "tap map-from back", "tap map-to layers", "tap to-layer 1",
                      "tap keymap-back"]:
             control(line)
         text = sh(f"cat {keymaps_file}")

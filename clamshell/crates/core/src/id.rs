@@ -102,8 +102,9 @@ pub enum KeymapId {
     Input(crate::keymap::Input),
     /// The edit screen shows and edits this layer (a long press: its menu).
     Layer(crate::keymap::Layer),
-    /// The edit screen's +: a new layer, named.
-    AddLayer,
+    /// The edit screen's layer button: the list of the keymap's layers (to show one, add one, or a
+    /// long press: its menu).
+    LayerPicker,
     /// A layer's menu: rename it, delete it.
     RenameLayer,
     DeleteLayer,

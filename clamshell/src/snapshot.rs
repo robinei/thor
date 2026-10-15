@@ -220,7 +220,7 @@ pub fn shots(now: u64) -> Result<Vec<Shot>, ParseError> {
             Bottom,
             [
                 // A layer added with the +, named, shown; A in it to Y; L1 selected (falls through to Base).
-                vec![Slide::End.into(), km(KeymapId::AddLayer)],
+                vec![Slide::End.into(), km(KeymapId::LayerPicker), km(KeymapId::NewLayer)],
                 control::type_text("aim")?,
                 vec![tap(Id::Editor(EditorId::Save))],
                 select(Input::Button(Button::A)),
@@ -228,8 +228,19 @@ pub fn shots(now: u64) -> Result<Vec<Shot>, ParseError> {
             ]
             .concat(),
         ),
-        shot("keymap-edit-clear.png", Bottom, vec![km(KeymapId::Clear)]),
-        shot("keymap-layers.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Layer(Layer::BASE)), km(KeymapId::Input(Input::Button(Button::Back))), km(KeymapId::Target(Target::Layers))]),
+        shot("keymap-layer-picker.png", Bottom, vec![km(KeymapId::LayerPicker)]),
+        shot("keymap-layer-clear.png", Bottom, vec![PointerEvent::LongPress(Id::Keymap(KeymapId::Layer(Layer(1)))).into(), km(KeymapId::Clear)]),
+        shot(
+            "keymap-layers.png",
+            Bottom,
+            vec![
+                km(KeymapId::Back),
+                km(KeymapId::Back),
+                km(KeymapId::Layer(Layer::BASE)),
+                km(KeymapId::Input(Input::Button(Button::Back))),
+                km(KeymapId::Target(Target::Layers)),
+            ],
+        ),
         shot("keymap-edit-layer-key.png", Bottom, vec![km(KeymapId::ToLayer(Layer(1)))]),
         shot("keymap-mouse.png", Bottom, vec![km(KeymapId::Input(Input::Button(Button::A))), km(KeymapId::Target(Target::MouseParts))]),
         shot("keymap-edit-gyro.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Input(Input::Gyro))]),
