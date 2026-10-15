@@ -7,7 +7,9 @@ use crate::State;
 use crate::editor::{Editor, Purpose};
 use crate::effect::Effect;
 use crate::id::WifiId;
+use crate::items::ItemKey;
 use crate::radios::RadioStatus;
+use crate::scroll::Rows;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Network {
@@ -143,17 +145,31 @@ pub fn sort(networks: Vec<Network>) -> Vec<Network> {
     out
 }
 
+/// The networks as a list's rows (found again by their SSID).
+impl Rows for Wifi {
+    fn len(&self) -> usize {
+        self.networks.len()
+    }
+
+    fn key(&self, i: usize) -> Option<ItemKey> {
+        self.networks.get(i).map(|n| ItemKey::Name(n.ssid.clone()))
+    }
+
+    fn find(&self, key: &ItemKey) -> Option<usize> {
+        self.networks.iter().position(|n| matches!(key, ItemKey::Name(k) if *k == n.ssid))
+    }
+}
+
 impl State {
-    /// A tap or long press in the Wi-Fi tab.
-    pub(crate) fn on_wifi(&mut self, id: WifiId, long: bool) -> Vec<Effect> {
+    /// A tap on the Wi-Fi tab's switch.
+    pub(crate) fn on_wifi(&mut self, id: WifiId) -> Vec<Effect> {
         match id {
             WifiId::Power => vec![Effect::Wifi(Command::Enable(!self.radios.wifi.enabled))],
-            WifiId::Network(i) => self.tap_network(usize::from(i), long),
         }
     }
 
     /// A tap on the network at `index`, or a long press.
-    fn tap_network(&mut self, index: usize, long: bool) -> Vec<Effect> {
+    pub(crate) fn tap_network(&mut self, index: usize, long: bool) -> Vec<Effect> {
         let Some(n) = self.radios.wifi.networks.get(index) else {
             return vec![];
         };
@@ -213,7 +229,7 @@ mod tests {
         let networks = vec![net("home", 70, true, true, false), net("cafe", 90, false, false, false), net("new", 60, true, false, false)];
         read(&mut s, Reading::Wifi(Wifi { device: true, enabled: true, networks, ..Wifi::default() }));
         let connect = |ssid: &str, password: Option<&str>| vec![Effect::Wifi(Command::Connect { ssid: ssid.into(), password: password.map(Into::into) })];
-        let network = |i| Id::Wifi(WifiId::Network(i));
+        let network = |i| ListId::Wifi.row(i);
         assert_eq!(tap(&mut s, network(0)), connect("home", None), "saved");
         assert_eq!(s.radios().wifi.connecting.as_deref(), Some("home"));
         assert_eq!(s.radios().wifi.status(), RadioStatus::Busy("home"));
@@ -235,7 +251,7 @@ mod tests {
         let login = Network { enterprise: true, ..net("work", 60, true, false, false) };
         read(&mut s, Reading::Wifi(Wifi { device: true, enabled: true, networks: vec![login.clone()], ..Wifi::default() }));
         assert_eq!(s.radios().wifi.net_state(&login), NetState::Login);
-        assert_eq!(tap(&mut s, Id::Wifi(WifiId::Network(0))), vec![]);
+        assert_eq!(tap(&mut s, ListId::Wifi.row(0)), vec![]);
         assert_eq!(s.radios().wifi.status(), RadioStatus::Error(&Problem::NeedsLogin { ssid: "work".into() }));
     }
 

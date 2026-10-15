@@ -4,7 +4,7 @@
 //! by where the finger is on its track (and follows it); the pad's left and right step it.
 
 use clamshell_core::levels::Level;
-use clamshell_core::{AudioId, Id, ListId};
+use clamshell_core::{AudioId, Id, ListId, RowPart};
 
 use super::format::{self, Fmt};
 use super::scroll::Scrolled;
@@ -60,7 +60,7 @@ fn level(f: &mut Frame, level: Level, r: Rect, muted: bool) {
     let thumb = r.h * THUMB;
     let along = Track { x0: r.x + thumb, w: r.w - 2.0 * thumb };
     let lit = if muted { Tone::Dim } else { Tone::High };
-    f.button(Id::Level(level), r, Look::ROW, |f| widgets::track(f.c, along, r.y + r.h / 2.0, r.h * TRACK, thumb, value, lit));
+    f.button(level.id(), r, Look::ROW, |f| widgets::track(f.c, along, r.y + r.h / 2.0, r.h * TRACK, thumb, value, lit));
     f.track(along);
 }
 
@@ -160,7 +160,7 @@ pub(super) fn draw_volume(f: &mut Frame, body: Rect) {
         f.c.text_fit(Rect::new(name.x, name.y, name_w - z.pad, name.h), z.text, tone, &stream.app, Keep::Start);
         let i = i as u16;
         level(f, Level::Stream(i), row, stream.muted);
-        f.button(Id::Audio(AudioId::StreamMute(i)), mute, Look::ROW, |f| {
+        f.button(Id::Row { list: ListId::Streams, i, part: RowPart::Mute }, mute, Look::ROW, |f| {
             f.c.icon(Icon::volume(stream.volume, stream.muted), mute.square_center(z.icon), mute_tone(stream.muted));
         });
     }

@@ -36,6 +36,8 @@ pub enum Id {
     Control(Control),
     /// The pad mouse toggle.
     PadMouse,
+    /// A row of a scrolled list, by position: the row, or one of its controls.
+    Row { list: crate::scroll::ListId, i: u16, part: crate::scroll::RowPart },
     /// A scrolled list's area, under its rows: a finger on it (between rows) drags the list; a tap does
     /// nothing.
     List(crate::scroll::ListId),
@@ -88,24 +90,18 @@ pub enum EditorId {
 pub enum WifiId {
     /// The radio's switch.
     Power,
-    /// A network, by position.
-    Network(u16),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BtId {
     /// The radio's switch.
     Power,
-    /// A device, by position.
-    Device(u16),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AudioId {
     /// The output volume's mute button.
     MuteOutput,
-    /// An app's mute button, by position.
-    StreamMute(u16),
     /// An output, by position.
     Output(u16),
 }

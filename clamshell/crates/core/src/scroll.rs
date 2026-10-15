@@ -1,15 +1,18 @@
-//! Scrolled lists on the second screen: Wi-Fi's networks, Bluetooth's devices, the apps playing, the
-//! backlights, the keymaps. Each keeps how far it is scrolled, in rows (so touch and the pad agree
-//! whatever the layout), and how many rows the UI last showed of it. The pad's focus on a row scrolls
-//! just enough to show it; a list that changes under the view keeps the row at its top where it is (a
-//! network vanishing above doesn't move the rows under the finger), unless the view is at the very top,
-//! where new rows show. Shelf keeps its own place per collection (see [`crate::Shelf`]): only touch
-//! scrolls it through here.
+//! Scrolled lists: shelf's games on the main screen; on the second screen Wi-Fi's networks, Bluetooth's
+//! devices, the apps playing, the backlights. Each keeps how far it is scrolled, in rows (so touch and the
+//! pad agree whatever the layout), and how many rows the UI last showed of it ([`Scroll`]; shelf keeps one
+//! per collection). The pad's focus on a row scrolls just enough to show it; a list that changes under
+//! the view keeps the row at its top where it is (a network vanishing above doesn't move the rows under
+//! the finger), unless the view is at the very top, where new rows show.
+//!
+//! A list's rows are targets of one kind ([`Id::Row`]); what a row is, how many there are and what a tap
+//! on one does is its feature's ([`Rows`], [`State::on_row`]): this module only says which feature a
+//! list is.
 
 use crate::State;
-use crate::id::{AudioId, BtId, Id, WifiId};
+use crate::effect::Effect;
+use crate::id::Id;
 use crate::items::ItemKey;
-use crate::levels::Level;
 
 /// A scrolled list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -23,6 +26,16 @@ pub enum ListId {
     Backlights,
 }
 
+/// Which part of a row a target is: the row itself, or one of its controls.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RowPart {
+    Main,
+    /// Its level's track (the apps playing, the backlights).
+    Level,
+    /// Its mute button (the apps playing).
+    Mute,
+}
+
 impl ListId {
     pub const COUNT: usize = 5;
     pub const ALL: [ListId; ListId::COUNT] = [ListId::Shelf, ListId::Wifi, ListId::Bluetooth, ListId::Streams, ListId::Backlights];
@@ -31,27 +44,25 @@ impl ListId {
         self as usize
     }
 
-    /// Row `i`'s main target (shelf's rows are named by their game).
-    pub fn row(self, i: u16) -> Option<Id> {
-        Some(match self {
-            ListId::Shelf => return None,
-            ListId::Wifi => Id::Wifi(WifiId::Network(i)),
-            ListId::Bluetooth => Id::Bluetooth(BtId::Device(i)),
-            ListId::Streams => Id::Level(Level::Stream(i)),
-            ListId::Backlights => Id::Level(Level::Backlight(i)),
-        })
+    /// Row `i`'s main target.
+    pub fn row(self, i: u16) -> Id {
+        Id::Row { list: self, i, part: RowPart::Main }
     }
 
-    /// `id` (a row's target, see [`ListId::of`]) for row `i` instead: the same target a row up or down.
+    /// The list and row a target is in, if it is a row's.
+    pub fn of(id: &Id) -> Option<(ListId, usize)> {
+        match id {
+            Id::Row { list, i, .. } => Some((*list, usize::from(*i))),
+            _ => None,
+        }
+    }
+
+    /// `id` (a row's target) for row `i` instead: the same part a row up or down.
     pub fn sibling(id: &Id, i: u16) -> Option<Id> {
-        Some(match id {
-            Id::Wifi(WifiId::Network(_)) => Id::Wifi(WifiId::Network(i)),
-            Id::Bluetooth(BtId::Device(_)) => Id::Bluetooth(BtId::Device(i)),
-            Id::Level(Level::Stream(_)) => Id::Level(Level::Stream(i)),
-            Id::Audio(AudioId::StreamMute(_)) => Id::Audio(AudioId::StreamMute(i)),
-            Id::Level(Level::Backlight(_)) => Id::Level(Level::Backlight(i)),
-            _ => return None,
-        })
+        match id {
+            Id::Row { list, part, .. } => Some(Id::Row { list: *list, i, part: *part }),
+            _ => None,
+        }
     }
 
     /// Whether it rests on whole rows (shelf: a drag or fling ends settling on one).
@@ -59,16 +70,23 @@ impl ListId {
         self == ListId::Shelf
     }
 
-    /// The list and row a target is in, if it is in one.
-    pub fn of(id: &Id) -> Option<(ListId, usize)> {
-        let (list, i) = match id {
-            Id::Wifi(WifiId::Network(i)) => (ListId::Wifi, i),
-            Id::Bluetooth(BtId::Device(i)) => (ListId::Bluetooth, i),
-            Id::Level(Level::Stream(i)) | Id::Audio(AudioId::StreamMute(i)) => (ListId::Streams, i),
-            Id::Level(Level::Backlight(i)) => (ListId::Backlights, i),
-            _ => return None,
-        };
-        Some((list, usize::from(*i)))
+    /// Which screens show it.
+    pub fn screens(self) -> crate::Dirty {
+        if self == ListId::Shelf { crate::Dirty::BOTH } else { crate::Dirty::BOTTOM }
+    }
+}
+
+/// A list's rows as its feature has them: how many, and what each is (to find it again after the list
+/// changed; none: its place isn't kept by item).
+pub(crate) trait Rows {
+    fn len(&self) -> usize;
+
+    fn key(&self, _i: usize) -> Option<ItemKey> {
+        None
+    }
+
+    fn find(&self, _key: &ItemKey) -> Option<usize> {
+        None
     }
 }
 
@@ -167,7 +185,15 @@ impl Lists {
     }
 }
 
-static EMPTY: Scroll = Scroll { offset: 0.0, visible: None, anchor: None };
+pub(crate) static EMPTY: Scroll = Scroll { offset: 0.0, visible: None, anchor: None };
+
+impl ListEvent {
+    pub fn list(self) -> ListId {
+        match self {
+            ListEvent::Scroll(list, _) | ListEvent::Visible(list, _) => list,
+        }
+    }
+}
 
 /// What the UI says about a list.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -183,46 +209,68 @@ impl State {
         &self.lists
     }
 
+    /// Each list's rows: its feature's.
+    pub(crate) fn rows(&self, list: ListId) -> &dyn Rows {
+        match list {
+            ListId::Shelf => &self.shelf,
+            ListId::Wifi => &self.radios.wifi,
+            ListId::Bluetooth => &self.radios.bluetooth,
+            ListId::Streams => self.levels.audio(),
+            ListId::Backlights => self.levels.backlight_rows(),
+        }
+    }
+
+    /// A tap or long press on a row: its feature's.
+    pub(crate) fn on_row(&mut self, list: ListId, i: usize, part: RowPart, long: bool) -> Vec<Effect> {
+        match list {
+            ListId::Wifi => self.tap_network(i, long),
+            ListId::Bluetooth => self.tap_device(i, long),
+            ListId::Streams => self.on_stream(i, part),
+            // (A shelf game's row is its game's target; a backlight's row is only its level.)
+            ListId::Shelf | ListId::Backlights => vec![],
+        }
+    }
+
+    /// Where `list` is scrolled (shelf: the current collection's place).
+    pub fn scroll(&self, list: ListId) -> &Scroll {
+        match list {
+            ListId::Shelf => self.shelf.scroll(),
+            _ => self.lists.get(list),
+        }
+    }
+
+    fn scroll_mut(&mut self, list: ListId) -> Option<&mut Scroll> {
+        match list {
+            ListId::Shelf => self.shelf.scroll_mut(),
+            _ => self.lists.get_mut(list),
+        }
+    }
+
     /// How many rows `list` has now.
     pub fn list_len(&self, list: ListId) -> usize {
-        match list {
-            ListId::Shelf => self.shelf.collection().map_or(0, |c| c.games.len()),
-            ListId::Wifi => self.radios.wifi.networks.len(),
-            ListId::Bluetooth => self.radios.bluetooth.devices.len(),
-            ListId::Streams => self.levels.audio().streams.len(),
-            ListId::Backlights => self.levels.backlights().len(),
-        }
+        self.rows(list).len()
     }
 
     /// How far `list` is scrolled, in rows.
     pub fn list_offset(&self, list: ListId) -> f32 {
-        match list {
-            ListId::Shelf => self.shelf.cursor().top,
-            _ => self.lists.get(list).offset(),
-        }
+        self.scroll(list).offset()
     }
 
     /// Whether scrolling `list` by `rows` would move it.
     pub fn list_can_scroll(&self, list: ListId, rows: f32) -> bool {
-        match list {
-            ListId::Shelf => self.shelf.can_scroll(rows),
-            _ => self.lists.get(list).can_scroll(rows, self.list_len(list)),
-        }
+        self.scroll(list).can_scroll(rows, self.list_len(list))
     }
 
     /// A list scrolled or laid out; whether it moved.
     pub(crate) fn on_list(&mut self, event: ListEvent) -> bool {
         let (list, moved) = match event {
-            // (Shelf's rows come as ShelfEvent::Rows.)
-            ListEvent::Scroll(ListId::Shelf, rows) => return self.shelf.scroll(rows),
-            ListEvent::Visible(ListId::Shelf, _) => return false,
             ListEvent::Scroll(list, rows) => {
                 let len = self.list_len(list);
-                (list, self.lists.get_mut(list).is_some_and(|s| s.scroll_by(rows, len)))
+                (list, self.scroll_mut(list).is_some_and(|s| s.scroll_by(rows, len)))
             }
             ListEvent::Visible(list, rows) => {
                 let len = self.list_len(list);
-                (list, self.lists.get_mut(list).is_some_and(|s| s.set_visible(rows, len)))
+                (list, self.scroll_mut(list).is_some_and(|s| s.set_visible(rows, len)))
             }
         };
         if moved {
@@ -237,17 +285,17 @@ impl State {
             return;
         };
         let len = self.list_len(list);
-        if self.lists.get_mut(list).is_some_and(|s| s.show(i, len)) {
+        if self.scroll_mut(list).is_some_and(|s| s.show(i, len)) {
             self.anchor(list);
         }
     }
 
     /// Remembers which item is at the top of `list`'s view.
     fn anchor(&mut self, list: ListId) {
-        let offset = self.lists.get(list).offset;
+        let offset = self.scroll(list).offset;
         let top = offset.floor();
-        let key = u16::try_from(top as usize).ok().and_then(|i| list.row(i)).and_then(|id| self.item_key(&id));
-        if let Some(s) = self.lists.get_mut(list) {
+        let key = self.rows(list).key(top as usize);
+        if let Some(s) = self.scroll_mut(list) {
             s.anchor = key.map(|k| (k, offset - top));
         }
     }
@@ -258,17 +306,13 @@ impl State {
         let mut moved = false;
         for list in ListId::ALL {
             let len = self.list_len(list);
-            let scroll = self.lists.get(list);
+            let scroll = self.scroll(list);
             let found = match &scroll.anchor {
                 // At the very top it stays there: new rows show.
-                Some((key, fraction)) if scroll.offset > 0.0 => list
-                    .row(0)
-                    .and_then(|first| self.find_item(&first, key))
-                    .and_then(|id| ListId::of(&id))
-                    .map(|(_, i)| i as f32 + fraction),
+                Some((key, fraction)) if scroll.offset > 0.0 => self.rows(list).find(key).map(|i| i as f32 + fraction),
                 _ => None,
             };
-            if let Some(s) = self.lists.get_mut(list) {
+            if let Some(s) = self.scroll_mut(list) {
                 let before = s.offset;
                 if let Some(offset) = found {
                     s.offset = offset;
@@ -358,9 +402,9 @@ mod tests {
         let mut s = state();
         networks(&mut s, &["a", "b", "c", "d", "e", "f"]);
         s.apply(ListEvent::Visible(ListId::Wifi, 2.0).into());
-        let (dirty, _) = s.apply(PointerEvent::Focus(Id::Wifi(WifiId::Network(4))).into());
+        let (dirty, _) = s.apply(PointerEvent::Focus(ListId::Wifi.row(4)).into());
         assert_eq!((dirty, s.lists().get(ListId::Wifi).offset()), (Dirty::BOTH, 3.0));
-        s.apply(PointerEvent::Focus(Id::Wifi(WifiId::Network(0))).into());
+        s.apply(PointerEvent::Focus(ListId::Wifi.row(0)).into());
         assert_eq!(s.lists().get(ListId::Wifi).offset(), 0.0);
     }
 }

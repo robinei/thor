@@ -46,8 +46,8 @@ impl Scrolled {
         if let Some(slot) = f.out.lists.get_mut(list.index()) {
             *slot = Some(visible);
         }
-        let max = (len as f32 - visible).max(0.0);
-        let offset = f.s.list_offset(list).clamp(0.0, max);
+        // (The state keeps it within the list's ends.)
+        let offset = f.s.list_offset(list);
         let first_target = f.targets.len();
         if area.h > 0.0 && area.w > 0.0 {
             f.targets.push(super::Target { rect: area, id: Id::List(list), track: None, list: None });

@@ -11,6 +11,7 @@
 
 mod display;
 mod draw;
+mod fling;
 mod focus;
 mod icons;
 pub mod images;
@@ -198,11 +199,12 @@ pub fn snapshot(state: &State, screen: Screen, size: (u32, u32), scale: u32, pat
 }
 
 /// What a frame says about the lists it drew that the state doesn't know yet: how many rows each
-/// shows (shelf's come as its rows).
+/// shows (as the state has it, give or take rounding).
 fn list_changes(state: &State, out: &views::FrameOut) -> impl Iterator<Item = Event> {
-    ListId::ALL.into_iter().filter(|l| *l != ListId::Shelf).filter_map(move |list| {
+    ListId::ALL.into_iter().filter_map(move |list| {
         let rows = out.lists.get(list.index()).copied().flatten()?;
-        (state.lists().get(list).visible() != Some(rows)).then(|| ListEvent::Visible(list, rows).into())
+        let known = state.scroll(list).visible().is_some_and(|v| (v - rows).abs() < 1e-3);
+        (!known).then(|| ListEvent::Visible(list, rows).into())
     })
 }
 

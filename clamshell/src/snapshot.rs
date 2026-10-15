@@ -158,7 +158,7 @@ pub fn shots(now: u64) -> Result<Vec<Shot>, ParseError> {
                 tab(Tab::Brightness),
                 Reading::Backlights(vec!["dsi0-backlight".into(), "dsi1-backlight".into()]).into(),
                 LevelEvent::Set(Level::Backlight(1), 65).into(),
-                PointerEvent::Up(Id::Level(Level::Backlight(1))).into(),
+                PointerEvent::Up(Level::Backlight(1).id()).into(),
             ],
         ),
         shot(

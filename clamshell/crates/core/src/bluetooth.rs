@@ -6,7 +6,9 @@
 use crate::State;
 use crate::effect::Effect;
 use crate::id::BtId;
+use crate::items::ItemKey;
 use crate::radios::RadioStatus;
+use crate::scroll::Rows;
 
 /// What kind of device it is (from BlueZ's icon name), for its icon.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -173,18 +175,32 @@ pub fn sort(mut devices: Vec<Device>) -> Vec<Device> {
     devices
 }
 
+/// The devices as a list's rows (found again by their address).
+impl Rows for Bluetooth {
+    fn len(&self) -> usize {
+        self.devices.len()
+    }
+
+    fn key(&self, i: usize) -> Option<ItemKey> {
+        self.devices.get(i).map(|d| ItemKey::Name(d.address.clone()))
+    }
+
+    fn find(&self, key: &ItemKey) -> Option<usize> {
+        self.devices.iter().position(|d| matches!(key, ItemKey::Name(k) if *k == d.address))
+    }
+}
+
 impl State {
-    /// A tap or long press in the Bluetooth tab.
-    pub(crate) fn on_bluetooth(&mut self, id: BtId, long: bool) -> Vec<Effect> {
+    /// A tap on the Bluetooth tab's switch.
+    pub(crate) fn on_bluetooth(&mut self, id: BtId) -> Vec<Effect> {
         match id {
             BtId::Power => vec![Effect::Bluetooth(Command::Power(!self.radios.bluetooth.powered))],
-            BtId::Device(i) => self.tap_device(usize::from(i), long),
         }
     }
 
     /// A tap on the device at `index` (connect, or disconnect a connected one), or a long press (forget
     /// a paired one).
-    fn tap_device(&mut self, index: usize, long: bool) -> Vec<Effect> {
+    pub(crate) fn tap_device(&mut self, index: usize, long: bool) -> Vec<Effect> {
         let bt = &mut self.radios.bluetooth;
         let Some(d) = bt.devices.get(index) else {
             return vec![];
@@ -233,7 +249,7 @@ mod tests {
         read(&mut s, Reading::Bluetooth(Bluetooth { adapter: true, powered: true, devices, ..Bluetooth::default() }));
         assert_eq!(s.radios().bluetooth.status(), RadioStatus::Connected("buds"));
         let bt = |c: Command| vec![Effect::Bluetooth(c)];
-        let device = |i| Id::Bluetooth(BtId::Device(i));
+        let device = |i| ListId::Bluetooth.row(i);
         assert_eq!(tap(&mut s, device(0)), bt(Command::Disconnect("00:buds".into())));
         assert_eq!(tap(&mut s, device(1)), bt(Command::Connect("00:pad".into())));
         assert_eq!(s.radios().bluetooth.busy.as_deref(), Some("00:pad"));

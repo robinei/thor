@@ -14,26 +14,14 @@ use std::time::{Duration, Instant};
 
 use clamshell_core::levels::Level;
 use clamshell_core::slider::{Control, SLIDE_AFTER, SLIDE_MOVE};
-use clamshell_core::{Event, Hold, Id, LevelEvent, ListEvent, ListId, PadRoute, PointerEvent, Slide, State};
+use clamshell_core::{Event, Hold, Id, LevelEvent, ListEvent, PadRoute, PointerEvent, Slide, State};
 
+use crate::fling::{FLING_EVERY, Fling, Trail};
 use crate::views::scroll::InList;
 use crate::views::{Target, Track};
 
 /// A finger on a list moved this far up or down (logical pixels) drags the list.
 pub(crate) const DRAG_START: f32 = 12.0;
-/// A fling's step: about a frame.
-pub(crate) const FLING_EVERY: Duration = Duration::from_millis(16);
-/// A fling slows down by this much each second (its speed times e^(-t/τ), τ = 1 / this).
-const FLING_FRICTION: f32 = 3.0;
-/// Let go faster than this (rows per second), a drag flings on; a fling slower than the stop speed ends.
-const FLING_START: f32 = 2.0;
-const FLING_STOP: f32 = 1.0;
-/// How far back the speed at the release is measured.
-const FLING_WINDOW: Duration = Duration::from_millis(100);
-/// A list that rests on whole rows (shelf) settles on the nearest one after a drag or fling: this much
-/// of the way each second (an ease-out), done once within [`SETTLED`] of it.
-const SETTLE_RATE: f32 = 14.0;
-const SETTLED: f32 = 0.01;
 
 /// A press held this long is a hold: keys start repeating, modifiers lock.
 pub(crate) const LONG_PRESS: Duration = Duration::from_millis(450);
@@ -95,58 +83,28 @@ enum Gesture {
 }
 
 /// A press in progress, on the target it started on: where it came down, and the list the target is
-/// in; the last positions (for a fling's speed).
+/// in; the finger's last positions (for a fling's speed).
 #[derive(Debug, Clone, PartialEq)]
 struct Press {
     id: Id,
     gesture: Gesture,
     down_y: f32,
     list: Option<InList>,
-    trail: [Option<(Instant, f32)>; 4],
+    trail: Trail,
 }
 
 impl Press {
     fn new(id: Id, gesture: Gesture, y: f32, list: Option<InList>, now: Instant) -> Press {
-        Press { id, gesture, down_y: y, list, trail: [Some((now, y)), None, None, None] }
+        Press { id, gesture, down_y: y, list, trail: Trail::new(now, y) }
     }
-
-    fn follow(&mut self, now: Instant, y: f32) {
-        self.trail.rotate_right(1);
-        self.trail[0] = Some((now, y));
-    }
-
-    /// The finger's speed along y (pixels per second) over the last moments before `now`.
-    fn speed(&self, now: Instant) -> f32 {
-        let mut recent = self.trail.iter().flatten().filter(|(t, _)| now.duration_since(*t) <= FLING_WINDOW);
-        let (Some(newest), Some(oldest)) = (recent.clone().next(), recent.next_back()) else {
-            return 0.0;
-        };
-        let dt = newest.0.duration_since(oldest.0).as_secs_f32();
-        if dt <= 0.0 { 0.0 } else { (newest.1 - oldest.1) / dt }
-    }
-}
-
-/// A list moving on after the finger let go (the timer is the source's that dragged it): flinging on at
-/// a speed in rows per second, or settling on a whole row; and when it last stepped.
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct Fling {
-    source: Source,
-    list: ListId,
-    motion: Motion,
-    at: Instant,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum Motion {
-    Speed(f32),
-    SettleOn(f32),
 }
 
 /// The presses in progress, one per source, and a fling.
 #[derive(Debug, Default)]
 pub(crate) struct Input {
     presses: Vec<(Source, Press)>,
-    fling: Option<Fling>,
+    /// A list moving on after a drag, on the timer of the source that dragged it.
+    fling: Option<(Source, Fling)>,
 }
 
 impl Input {
@@ -179,12 +137,12 @@ impl Input {
             return vec![];
         }
         let mut actions = self.stop_fling();
-        let gesture = match (&target.id, target.track) {
-            (Id::Control(control), Some(track)) if !self.sliding() => {
+        let gesture = match (&target.id, Level::of(&target.id), target.track) {
+            (Id::Control(control), _, Some(track)) if !self.sliding() => {
                 let at = track.along(x);
                 Gesture::PendingSlide { control: *control, down_x: at, x: at, track }
             }
-            (Id::Level(level), Some(track)) => Gesture::LevelDrag { level: *level, track },
+            (_, Some(level), Some(track)) => Gesture::LevelDrag { level, track },
             _ => Gesture::Tap,
         };
         let id = target.id.clone();
@@ -212,7 +170,7 @@ impl Input {
 
     /// Ends a fling, if one is on.
     fn stop_fling(&mut self) -> Vec<Action> {
-        self.fling.take().map(|f| Action::Disarm(f.source, Timer::Fling)).into_iter().collect()
+        self.fling.take().map(|(source, _)| Action::Disarm(source, Timer::Fling)).into_iter().collect()
     }
 
     /// A finger or the mouse moved to (`x`, `y`): a pending slide may start; the slider or a level row
@@ -221,7 +179,7 @@ impl Input {
         let Some(press) = self.get(source) else {
             return vec![];
         };
-        press.follow(now, y);
+        press.trail.follow(now, y);
         if let (Gesture::Tap, Some(list)) = (press.gesture, press.list)
             && (y - press.down_y).abs() >= DRAG_START
         {
@@ -288,39 +246,17 @@ impl Input {
         actions
     }
 
-    /// A fling's step: the list moves on by its speed for the time since the last step, the speed
-    /// drops; it ends once slow or at an end of the list (a list on whole rows then settles on one). A
-    /// settling list moves part of the way to its row, the rest once close.
+    /// A fling's step (see [`Fling::step`]).
     fn fling_step(&mut self, state: &State, now: Instant) -> Vec<Action> {
-        let Some(fling) = self.fling.as_mut() else {
+        let Some((source, fling)) = self.fling.as_mut() else {
             return vec![];
         };
-        let dt = now.duration_since(fling.at).as_secs_f32();
-        fling.at = now;
-        let (list, source) = (fling.list, fling.source);
-        let offset = state.list_offset(list);
-        let (rows, done) = match &mut fling.motion {
-            Motion::Speed(speed) => {
-                let rows = *speed * dt;
-                *speed *= (-FLING_FRICTION * dt).exp();
-                (rows, speed.abs() < FLING_STOP || !state.list_can_scroll(list, rows))
-            }
-            Motion::SettleOn(to) => {
-                let left = *to - offset;
-                // (At an end it can't reach the row: done.)
-                if left.abs() <= SETTLED || !state.list_can_scroll(list, left) { (left, true) } else { (left * (SETTLE_RATE * dt).min(1.0), false) }
-            }
-        };
-        let mut actions = vec![Action::Emit(ListEvent::Scroll(list, rows).into())];
-        match (done, fling.motion) {
-            (false, _) => actions.push(Action::Arm(source, Timer::Fling, FLING_EVERY)),
-            // A fling on a list on whole rows: to the row it comes nearest to.
-            (true, Motion::Speed(_)) if list.whole_rows() => {
-                let to = (offset + rows).round();
-                fling.motion = Motion::SettleOn(to);
-                actions.push(Action::Arm(source, Timer::Fling, FLING_EVERY));
-            }
-            (true, _) => self.fling = None,
+        let (rows, goes_on) = fling.step(state, now);
+        let mut actions = vec![Action::Emit(ListEvent::Scroll(fling.list, rows).into())];
+        if goes_on {
+            actions.push(Action::Arm(*source, Timer::Fling, FLING_EVERY));
+        } else {
+            self.fling = None;
         }
         actions
     }
@@ -335,14 +271,8 @@ impl Input {
         let mut actions = vec![Action::Disarm(source, Timer::Hold)];
         if let Gesture::Dragging { list, .. } = press.gesture {
             // (The row was let go when the drag began.)
-            let speed = -press.speed(now) / list.row_h;
-            let motion = if end == End::Release && speed.abs() >= FLING_START {
-                Some(Motion::Speed(speed))
-            } else {
-                list.list.whole_rows().then(|| Motion::SettleOn(state.list_offset(list.list).round()))
-            };
-            if let Some(motion) = motion {
-                self.fling = Some(Fling { source, list: list.list, motion, at: now });
+            if let Some(fling) = Fling::after_drag(list, &press.trail, end == End::Release, state, now) {
+                self.fling = Some((source, fling));
                 actions.push(Action::Arm(source, Timer::Fling, FLING_EVERY));
             }
             return actions;
@@ -386,8 +316,7 @@ mod tests {
     use super::*;
     use crate::draw::Rect;
     use clamshell_core::keyboard::{self, Key, KeyPos};
-    use clamshell_core::{Init, Tab};
-    use crate::views::scroll::InList;
+    use clamshell_core::{Init, ListId, Tab};
 
     fn t0() -> Instant {
         *START.get_or_init(Instant::now)
@@ -454,7 +383,7 @@ mod tests {
     }
 
     fn row(list: ListId, i: u16) -> Target {
-        let id = list.row(i).unwrap_or(Id::List(list));
+        let id = list.row(i);
         Target { rect: Rect::new(0.0, 0.0, 100.0, 50.0), id, track: None, list: Some(InList { list, row_h: 50.0 }) }
     }
 

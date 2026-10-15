@@ -58,7 +58,7 @@ pub use pad::{Claimant, Pad, PadInput, PadMouse, PadRoute};
 pub use panel::{Scope, TileOrigin};
 pub use pointer::Pointer;
 pub use radios::{RadioStatus, Radios};
-pub use scroll::{ListEvent, ListId, Lists};
+pub use scroll::{ListEvent, ListId, Lists, RowPart, Scroll};
 pub use session::{Pending, Session};
 pub use shelf::{Cursor, Shelf};
 pub use sys::{Status, Sys, TouchpadProblem};
@@ -276,10 +276,7 @@ impl State {
                 let dirty = self.on_reading(reading);
                 (if self.follow_lists() { Dirty::BOTTOM } else { dirty }, vec![])
             }
-            Event::List(e) => {
-                let screen = if matches!(e, ListEvent::Scroll(ListId::Shelf, _)) { Dirty::BOTH } else { Dirty::BOTTOM };
-                (if self.on_list(e) { screen } else { Dirty::NONE }, vec![])
-            }
+            Event::List(e) => (if self.on_list(e) { e.list().screens() } else { Dirty::NONE }, vec![]),
             Event::Pointer(e) => self.on_pointer(e),
             Event::Slide(slide) => self.on_slide(slide),
             Event::Level(e) => self.on_level(e),
@@ -415,7 +412,7 @@ impl State {
                 if self.pointer.pressed.as_ref() == Some(&id) {
                     self.pointer.pressed = None;
                 }
-                if matches!(id, Id::Level(_)) {
+                if Level::of(&id).is_some() {
                     self.levels.release();
                 }
                 if self.pointer.press.as_ref().is_some_and(|p| p.id == id) {
@@ -444,9 +441,10 @@ impl State {
             Id::Settings(id @ (SettingsId::Tile(_) | SettingsId::Reset)) => (Dirty::BOTH, self.on_settings(id, long)),
             Id::Settings(id) => (Dirty::BOTTOM, self.on_settings(id, long)),
             Id::Editor(id) => (Dirty::BOTTOM, self.on_editor(id)),
-            Id::Wifi(id) => (Dirty::BOTTOM, self.on_wifi(id, long)),
-            Id::Bluetooth(id) => (Dirty::BOTTOM, self.on_bluetooth(id, long)),
+            Id::Wifi(id) => (Dirty::BOTTOM, self.on_wifi(id)),
+            Id::Bluetooth(id) => (Dirty::BOTTOM, self.on_bluetooth(id)),
             Id::Audio(id) => (Dirty::BOTTOM, self.on_audio(id)),
+            Id::Row { list, i, part } => (list.screens(), self.on_row(list, usize::from(i), part, long)),
             Id::Tab(tab) => (Dirty::BOTH, self.choose_tab(tab)),
             // A tap opens the tab (a slide is the UI's: it doesn't end in a tap).
             Id::Control(control) if !long => {
@@ -577,7 +575,6 @@ impl State {
     fn on_audio(&mut self, id: AudioId) -> Vec<Effect> {
         match id {
             AudioId::MuteOutput => self.levels.toggle_mute(),
-            AudioId::StreamMute(i) => self.levels.toggle_stream_mute(usize::from(i)),
             AudioId::Output(i) => self.levels.choose_output(usize::from(i)),
         }
     }

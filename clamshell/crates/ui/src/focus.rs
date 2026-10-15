@@ -5,6 +5,7 @@
 //! Where the pad may go ([`PadScope`]): with shelf in front, both screens, and in shelf's list up and
 //! down step through the games; with anything else in front, only the second screen.
 
+use clamshell_core::levels::Level;
 use clamshell_core::{EditorId, Event, Id, LevelEvent, ListId, PadInput, PointerEvent, ShelfEvent, ShelfId, State, Tab};
 use smithay_client_toolkit::seat::keyboard::Keysym;
 
@@ -110,11 +111,12 @@ pub(crate) fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, 
         return Some(focus_bottom(s, d, memory));
     }
     // On a level row (drawn), left and right step it.
-    if let (Some(Id::Level(level)), Dir::Left | Dir::Right) = (s.pointer().focus(), dir)
-        && drawn_on(d, None, &Id::Level(*level))
+    if let (Some(focus), Dir::Left | Dir::Right) = (s.pointer().focus(), dir)
+        && let Some(level) = Level::of(focus)
+        && drawn_on(d, None, focus)
     {
         let step = if dir == Dir::Left { -1 } else { 1 };
-        return Some(LevelEvent::Step(*level, step).into());
+        return Some(LevelEvent::Step(level, step).into());
     }
     // In a scrolled list, up and down go to the row above or below, shown or not (the list scrolls to
     // it); past either end, on by direction.
@@ -331,12 +333,12 @@ mod tests {
     #[test]
     fn up_and_down_in_a_list_go_to_the_next_row_shown_or_not() {
         use clamshell_core::wifi::{Network, Wifi};
-        use clamshell_core::{Reading, WifiId};
+        use clamshell_core::Reading;
         let mut s = state();
         let networks = (0..10).map(|i| Network { ssid: format!("n{i}"), ..Network::default() }).collect();
         s.apply(Reading::Wifi(Wifi { device: true, enabled: true, networks, ..Wifi::default() }).into());
         s.apply(PointerEvent::Activate(Id::Tab(Tab::Wifi)).into());
-        let row = |i| Id::Wifi(WifiId::Network(i));
+        let row = |i| ListId::Wifi.row(i);
         // Rows 3 and 4 drawn, the list's area under them.
         let d = Fake(Screens { top: vec![], bottom: vec![t(0.0, 0.0, Id::List(ListId::Wifi)), t(0.0, 30.0, row(3)), t(0.0, 40.0, row(4))] });
         let memory = Screens::default();

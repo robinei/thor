@@ -5,7 +5,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
 use clamshell_core::keyboard::{self, Key, Modifier};
-use clamshell_core::{DockId, EditorId, Event, GameEvent, Id, Instance, PointerEvent, Reading, SettingsId, Slide, Init, State, Tab, WifiId};
+use clamshell_core::{DockId, EditorId, Event, GameEvent, Id, Instance, PointerEvent, Reading, SettingsId, Slide, Init, State, Tab};
 
 use crate::Screen;
 use crate::draw::DrawCache;
@@ -131,7 +131,7 @@ fn warm_frames_do_not_allocate() {
             ],
         ),
         ("shelf, dragged part way", vec![Event::Shelf(clamshell_core::ShelfEvent::Rows(3)), Event::List(clamshell_core::ListEvent::Scroll(clamshell_core::ListId::Shelf, 1.6))]),
-        ("wifi password", vec![tap(Id::Tab(Tab::Wifi)), wifi_reading(), tap(Id::Wifi(WifiId::Network(1))), tap(Id::Wifi(WifiId::Network(0)))]),
+        ("wifi password", vec![tap(Id::Tab(Tab::Wifi)), wifi_reading(), tap(clamshell_core::ListId::Wifi.row(1)), tap(clamshell_core::ListId::Wifi.row(0))]),
         (
             "sliding",
             vec![
@@ -185,7 +185,7 @@ fn warm_frames_do_not_allocate() {
                     outputs: vec![clamshell_core::levels::Output { id: 1, name: "Speakers".into(), default: true }],
                     streams: vec![clamshell_core::levels::Stream { id: 2, app: "Firefox".into(), title: String::new(), volume: 40, muted: false }],
                 })),
-                Event::Pointer(PointerEvent::Down(Id::Level(clamshell_core::levels::Level::Stream(0)))),
+                Event::Pointer(PointerEvent::Down(clamshell_core::levels::Level::Stream(0).id())),
             ],
         ),
         (

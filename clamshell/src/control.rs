@@ -27,7 +27,7 @@ use clamshell_core::keyboard::{self, Key, Modifier};
 use clamshell_core::levels::Level;
 use clamshell_core::slider::Control;
 use clamshell_core::{
-    BtId, DockId, EditorId, Event, Id, LevelEvent, PadInput, PointerEvent, SettingsId, ShelfEvent, ShelfId, Slide, Tab,
+    BtId, DockId, ListId, EditorId, Event, Id, LevelEvent, PadInput, PointerEvent, SettingsId, ShelfEvent, ShelfId, Slide, Tab,
     WifiId,
 };
 use clamshell_core::Scope;
@@ -110,7 +110,7 @@ pub fn parse(line: &str) -> Result<Vec<Event>, ParseError> {
                 ["stream", n, v] => (Level::Stream(number(n)?), v),
                 _ => return Err(ParseError::Unknown),
             };
-            vec![LevelEvent::Set(level, number(value)?).into(), PointerEvent::Up(Id::Level(level)).into()]
+            vec![LevelEvent::Set(level, number(value)?).into(), PointerEvent::Up(level.id()).into()]
         }
         ["tap", target @ ..] => vec![PointerEvent::Activate(target_id(target)?).into()],
         ["long", target @ ..] => vec![PointerEvent::LongPress(target_id(target)?).into()],
@@ -154,9 +154,9 @@ fn target_id(words: &[&str]) -> Result<Id, ParseError> {
         ["game"] => Id::Dock(DockId::GameTile(0)),
         ["game", n] => Id::Dock(DockId::GameTile(number(n)?)),
         ["start-game"] => Id::Dock(DockId::StartGame),
-        ["network", n] => Id::Wifi(WifiId::Network(number(n)?)),
+        ["network", n] => ListId::Wifi.row(number(n)?),
         ["wifi-power"] => Id::Wifi(WifiId::Power),
-        ["device", n] => Id::Bluetooth(BtId::Device(number(n)?)),
+        ["device", n] => ListId::Bluetooth.row(number(n)?),
         ["bluetooth-power"] => Id::Bluetooth(BtId::Power),
         ["pad-mouse"] => Id::PadMouse,
         ["scope", "game"] => Id::Settings(SettingsId::Scope(Scope::Game)),
@@ -255,10 +255,10 @@ mod tests {
         assert_eq!(parse("tap launch"), Ok(activate(Id::Shelf(ShelfId::Launch))));
         assert_eq!(parse("tap keep"), Ok(activate(Id::Shelf(ShelfId::StartKeep))));
         assert_eq!(parse("tap close"), Ok(activate(Id::Shelf(ShelfId::StartClose))));
-        assert_eq!(parse("tap network 2"), Ok(activate(Id::Wifi(WifiId::Network(2)))));
-        assert_eq!(parse("long network 0"), Ok(vec![PointerEvent::LongPress(Id::Wifi(WifiId::Network(0))).into()]));
+        assert_eq!(parse("tap network 2"), Ok(activate(ListId::Wifi.row(2))));
+        assert_eq!(parse("long network 0"), Ok(vec![PointerEvent::LongPress(ListId::Wifi.row(0)).into()]));
         assert_eq!(parse("tap wifi-power"), Ok(activate(Id::Wifi(WifiId::Power))));
-        assert_eq!(parse("tap device 3"), Ok(activate(Id::Bluetooth(BtId::Device(3)))));
+        assert_eq!(parse("tap device 3"), Ok(activate(ListId::Bluetooth.row(3))));
         assert_eq!(parse("tap bluetooth-power"), Ok(activate(Id::Bluetooth(BtId::Power))));
         assert_eq!(parse("tap pad-mouse"), Ok(activate(Id::PadMouse)));
         assert_eq!(parse("tap save"), Ok(activate(Id::Editor(EditorId::Save))));
@@ -300,7 +300,7 @@ mod tests {
     #[test]
     fn levels() {
         assert_eq!(parse("level volume 40"), Ok(vec![LevelEvent::Set(Level::Volume, 40).into(), PointerEvent::Up(Id::Level(Level::Volume)).into()]));
-        assert_eq!(parse("level backlight 1 65"), Ok(vec![LevelEvent::Set(Level::Backlight(1), 65).into(), PointerEvent::Up(Id::Level(Level::Backlight(1))).into()]));
+        assert_eq!(parse("level backlight 1 65"), Ok(vec![LevelEvent::Set(Level::Backlight(1), 65).into(), PointerEvent::Up(Level::Backlight(1).id()).into()]));
         assert_eq!(parse("level stream 0 5").map(|e| e.len()), Ok(2));
         assert_eq!(parse("level volume loud"), Err(ParseError::Number("loud".into())));
         assert_eq!(parse("level treble 3"), Err(ParseError::Unknown));

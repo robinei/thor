@@ -44,7 +44,7 @@ pub(super) fn draw(f: &mut Frame, body: Rect) {
             NetState::Other => ("", Tone::Dim),
         };
         let face = RowFace { icon: Icon::wifi(Some(n.strength)), name: &n.ssid, tone: Tone::high_if(n.active), lock: n.secure, state, state_tone };
-        widgets::status_row(f, Id::Wifi(WifiId::Network(i as u16)), rows.row(i), list.pad, list.size, face);
+        widgets::status_row(f, ListId::Wifi.row(i as u16), rows.row(i), list.pad, list.size, face);
     }
     rows.end(f, list.bar_x());
 }
