@@ -24,7 +24,7 @@ mod wifi;
 
 use std::fmt::Write;
 
-use clamshell_core::{Id, Mode, State};
+use clamshell_core::{Id, Tab, State};
 
 use crate::draw::{Canvas, Keep, Rect, rgb};
 use crate::images::Images;
@@ -202,17 +202,17 @@ pub fn bottom(c: &mut Canvas, s: &State, w: f32, h: f32, images: &mut Images, sc
     }
     let bar_h = bar::draw(f, w, h, scratch);
     let body = Rect::new(0.0, bar_h, w, h - bar_h);
-    match s.mode {
-        Mode::Settings => settings::draw(f, body, &mut scratch.text),
-        Mode::Keyboard => keyboard::draw(f, body),
-        Mode::Dock => dock::draw(f, body, images, &mut scratch.text),
-        Mode::Touchpad => touchpad::draw(f, body),
-        Mode::Sysinfo => sysinfo::draw(f, body, &mut scratch.lines),
-        Mode::Wifi => wifi::draw(f, body, &mut scratch.text),
-        Mode::Battery => battery::draw(f, body, &mut scratch.text),
-        Mode::Bluetooth => bluetooth::draw(f, body, &mut scratch.text),
-        Mode::Volume => levels::draw_volume(f, body, &mut scratch.text),
-        Mode::Brightness => levels::draw_brightness(f, body, &mut scratch.text),
+    match s.tab {
+        Tab::Settings => settings::draw(f, body, &mut scratch.text),
+        Tab::Keyboard => keyboard::draw(f, body),
+        Tab::Dock => dock::draw(f, body, images, &mut scratch.text),
+        Tab::Touchpad => touchpad::draw(f, body),
+        Tab::Sysinfo => sysinfo::draw(f, body, &mut scratch.lines),
+        Tab::Wifi => wifi::draw(f, body, &mut scratch.text),
+        Tab::Battery => battery::draw(f, body, &mut scratch.text),
+        Tab::Bluetooth => bluetooth::draw(f, body, &mut scratch.text),
+        Tab::Volume => levels::draw_volume(f, body, &mut scratch.text),
+        Tab::Brightness => levels::draw_brightness(f, body, &mut scratch.text),
     }
     bar::draw_slider_over(f, w, bar_h, scratch);
     body

@@ -1,4 +1,4 @@
-//! The compositor's windows, as the launcher needs them. A launcher instance is a systemd scope we
+//! The compositor's windows, as the dock needs them. A dock app instance is a systemd scope we
 //! started (`clamshell-app-<key>-<secs>-<n>.scope`) and has a workspace of the same name: every window of
 //! its processes (a second window, a program started from its terminal) belongs there, and sway arranges
 //! them within it. Games are the same: each running game has a scope (`clamshell-game-<secs>-<n>`) and a
@@ -26,7 +26,7 @@ pub struct Window {
 }
 
 impl Window {
-    /// The launcher instance it belongs to: its scope's name without `.scope`, if we started it as an app.
+    /// The dock app instance it belongs to: its scope's name without `.scope`, if we started it as an app.
     pub fn instance(&self) -> Option<&str> {
         self.unit.as_deref().and_then(|u| u.strip_suffix(".scope")).filter(|u| u.starts_with("clamshell-app-"))
     }

@@ -1,4 +1,4 @@
-//! Wi-Fi as the Wi-Fi mode shows it (NetworkManager's view, read by the policy side), and its rules: a
+//! Wi-Fi as the Wi-Fi tab shows it (NetworkManager's view, read by the policy side), and its rules: a
 //! tap joins a network (asking for its password first if it has one and isn't saved), a long press
 //! forgets a saved one.
 
@@ -37,7 +37,7 @@ pub struct Wifi {
 /// What the Wi-Fi side is asked to do.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
-    /// The Wi-Fi mode opened (scan now and keep the list fresh) or closed.
+    /// The Wi-Fi tab opened (scan now and keep the list fresh) or closed.
     Watch(bool),
     /// The radio on or off.
     Enable(bool),
@@ -108,7 +108,7 @@ impl State {
 mod tests {
     use super::*;
     use crate::tests::state;
-    use crate::{Event, Id, Mode};
+    use crate::{Event, Id, Tab};
 
     fn net(ssid: &str, strength: u8, secure: bool, known: bool, active: bool) -> Network {
         Network { ssid: ssid.into(), strength, secure, enterprise: false, known, active }
@@ -130,7 +130,7 @@ mod tests {
     #[test]
     fn joining_asks_for_a_password_only_when_needed() {
         let mut s = state();
-        s.apply(Event::Activate(Id::Mode(Mode::Wifi)));
+        s.apply(Event::Activate(Id::Tab(Tab::Wifi)));
         let networks = vec![net("home", 70, true, true, false), net("cafe", 90, false, false, false), net("new", 60, true, false, false)];
         s.apply(Event::Wifi(Wifi { device: true, enabled: true, networks, ..Wifi::default() }));
         let connect = |ssid: &str, password: Option<&str>| {
@@ -153,12 +153,12 @@ mod tests {
     #[test]
     fn the_wifi_mode_watches_while_open() {
         let mut s = state();
-        s.apply(Event::Activate(Id::Mode(Mode::Keyboard)));
-        let (_, fx) = s.apply(Event::Activate(Id::Mode(Mode::Wifi)));
-        assert_eq!((s.mode, fx), (Mode::Wifi, vec![Effect::Wifi(Command::Watch(true))]));
-        let (_, fx) = s.apply(Event::Activate(Id::Mode(Mode::Wifi)));
-        assert_eq!((s.mode, fx), (Mode::Wifi, vec![]), "a tab: a second tap stays");
-        let (_, fx) = s.apply(Event::Activate(Id::Mode(Mode::Touchpad)));
+        s.apply(Event::Activate(Id::Tab(Tab::Keyboard)));
+        let (_, fx) = s.apply(Event::Activate(Id::Tab(Tab::Wifi)));
+        assert_eq!((s.tab, fx), (Tab::Wifi, vec![Effect::Wifi(Command::Watch(true))]));
+        let (_, fx) = s.apply(Event::Activate(Id::Tab(Tab::Wifi)));
+        assert_eq!((s.tab, fx), (Tab::Wifi, vec![]), "a tab: a second tap stays");
+        let (_, fx) = s.apply(Event::Activate(Id::Tab(Tab::Touchpad)));
         assert_eq!(fx, vec![Effect::Wifi(Command::Watch(false)), Effect::Touchpad(true)]);
     }
 }

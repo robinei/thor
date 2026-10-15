@@ -9,9 +9,9 @@ use smithay_client_toolkit::reexports::{
 };
 use smithay_client_toolkit::seat::keyboard::Keysym;
 use std::time::Duration;
-use clamshell_core::controls::{Control, SLIDE_AFTER, SLIDE_MOVE};
-use clamshell_core::mixer::Level;
-use clamshell_core::{Event, Hold, Id, Mode, PadInput, PadRoute};
+use clamshell_core::slider::{Control, SLIDE_AFTER, SLIDE_MOVE};
+use clamshell_core::levels::Level;
+use clamshell_core::{Event, Hold, Id, Tab, PadInput, PadRoute};
 
 use crate::draw::Rect;
 use crate::views::levels;
@@ -237,14 +237,14 @@ impl App {
     fn navigate(&mut self, dir: Dir) {
         // In shelf's list (while shelf is in front): up and down move through the games (scrolling),
         // left and right switch tabs; down past the last game goes on to the second screen.
-        if self.state.pad_on_top() && matches!(self.state.focus, Some(Id::Game(_)) | Some(Id::Tab(_))) {
+        if self.state.pad_on_top() && matches!(self.state.focus, Some(Id::Game(_)) | Some(Id::Collection(_))) {
             let len = self.state.collection().map_or(0, |c| c.games.len());
             let at_end = self.state.cursor().index + 1 >= len;
             let event = match dir {
                 Dir::Up => Some(Event::ListStep(-1)),
                 Dir::Down if !at_end => Some(Event::ListStep(1)),
-                Dir::Left => Some(Event::TabStep(-1)),
-                Dir::Right => Some(Event::TabStep(1)),
+                Dir::Left => Some(Event::CollectionStep(-1)),
+                Dir::Right => Some(Event::CollectionStep(1)),
                 Dir::Down => None,
             };
             if let Some(event) = event {
@@ -305,15 +305,15 @@ impl App {
             PadInput::Y => self.handle(Event::ToggleFavourite),
             PadInput::Shoulder(step) => {
                 if self.state.pad_on_top() && self.focus_screen() == Screen::Top {
-                    self.handle(Event::TabStep(step));
+                    self.handle(Event::CollectionStep(step));
                 } else {
                     // The bar's tabs, left to right.
-                    let modes = Mode::TABS;
-                    let at = modes.iter().position(|m| *m == self.state.mode).unwrap_or(0) as i32;
+                    let modes = Tab::ALL;
+                    let at = modes.iter().position(|m| *m == self.state.tab).unwrap_or(0) as i32;
                     let next = (at + step).rem_euclid(modes.len() as i32) as usize;
                     if let Some(&mode) = modes.get(next) {
-                        self.handle(Event::Activate(Id::Mode(mode)));
-                        self.handle(Event::Focus(Id::Mode(mode)));
+                        self.handle(Event::Activate(Id::Tab(mode)));
+                        self.handle(Event::Focus(Id::Tab(mode)));
                     }
                 }
             }
@@ -357,7 +357,7 @@ impl App {
         let bottom = Some(Screen::Bottom);
         let remembered = self.last_focus.get(1).cloned().flatten().filter(|id| self.drawn_on(bottom, id));
         let current = self.state.focus.clone().filter(|id| self.drawn_on(bottom, id));
-        let target = current.or(remembered).unwrap_or(Id::Mode(self.state.mode));
+        let target = current.or(remembered).unwrap_or(Id::Tab(self.state.tab));
         self.handle(Event::Focus(target));
     }
 
@@ -381,7 +381,7 @@ impl App {
         let remembered = self.last_focus.get(slot_to).cloned().flatten().filter(|id| self.drawn_on(Some(to), id));
         let default = match to {
             Screen::Top => self.state.selected.clone().map(Id::Game),
-            Screen::Bottom => Some(Id::Mode(self.state.mode)),
+            Screen::Bottom => Some(Id::Tab(self.state.tab)),
         };
         let first = self.views().find(|v| v.screen == to).and_then(|v| v.targets.first()).map(|t| t.id.clone());
         let target = remembered.or_else(|| default.filter(|id| self.drawn_on(Some(to), id))).or(first);

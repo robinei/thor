@@ -55,7 +55,7 @@ pub fn step(targets: &[NavTarget], current: Option<&Id>, dir: Dir) -> Option<Id>
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
-    use clamshell_core::Mode;
+    use clamshell_core::Tab;
     use clamshell_core::settings::Setting;
 
     fn t(screen: Screen, x: f32, y: f32, id: Id) -> NavTarget {
@@ -66,8 +66,8 @@ mod tests {
         vec![
             t(Screen::Top, 0.0, 0.0, Id::Game("a".into())),
             t(Screen::Top, 0.0, 0.2, Id::Game("b".into())),
-            t(Screen::Bottom, 0.0, 1.0, Id::Mode(Mode::Settings)),
-            t(Screen::Bottom, 0.5, 1.0, Id::Mode(Mode::Keyboard)),
+            t(Screen::Bottom, 0.0, 1.0, Id::Tab(Tab::Settings)),
+            t(Screen::Bottom, 0.5, 1.0, Id::Tab(Tab::Keyboard)),
             t(Screen::Bottom, 0.0, 1.5, Id::Tile(Setting::Power)),
         ]
     }
@@ -78,7 +78,7 @@ mod tests {
         let b = step(&l, Some(&Id::Game("a".into())), Dir::Down);
         assert_eq!(b, Some(Id::Game("b".into())));
         let bar = step(&l, b.as_ref(), Dir::Down);
-        assert_eq!(bar, Some(Id::Mode(Mode::Settings)));
+        assert_eq!(bar, Some(Id::Tab(Tab::Settings)));
         assert_eq!(step(&l, bar.as_ref(), Dir::Down), Some(Id::Tile(Setting::Power)));
         assert_eq!(step(&l, bar.as_ref(), Dir::Up), Some(Id::Game("b".into())));
     }
@@ -87,7 +87,7 @@ mod tests {
     fn sideways_stays_on_the_screen() {
         let l = layout();
         assert_eq!(step(&l, Some(&Id::Game("a".into())), Dir::Right), Some(Id::Game("a".into())));
-        assert_eq!(step(&l, Some(&Id::Mode(Mode::Settings)), Dir::Right), Some(Id::Mode(Mode::Keyboard)));
+        assert_eq!(step(&l, Some(&Id::Tab(Tab::Settings)), Dir::Right), Some(Id::Tab(Tab::Keyboard)));
     }
 
     #[test]

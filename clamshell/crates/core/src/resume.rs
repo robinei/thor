@@ -1,7 +1,7 @@
 //! Coming back to the same place after a restart: shelf's current tab and each tab's selected game, and
 //! the second screen's tab, saved as text.
 
-use crate::{Id, Mode, State};
+use crate::{Id, Tab, State};
 
 /// Seconds after the last move before the place is saved.
 pub(crate) const RESUME_AFTER: u64 = 2;
@@ -14,7 +14,7 @@ impl State {
         text.push('\n');
         // The second screen's tab: the one chosen (not the keyboard a text field brought up).
         text.push_str("@mode\t");
-        text.push_str(self.raised_from.unwrap_or(self.mode).name());
+        text.push_str(self.raised_from.unwrap_or(self.tab).name());
         text.push('\n');
         for (i, c) in self.library.collections.iter().enumerate() {
             let cursor = self.cursors.get(i).copied().unwrap_or_default();
@@ -39,8 +39,8 @@ impl State {
             if name == "@mode" {
                 // Any tab but the touchpad (it grabs the touchscreen: only on request). What a tab
                 // watches starts with Event::Start.
-                if let Some(mode) = Mode::from_name(id).filter(|m| *m != Mode::Touchpad) {
-                    self.mode = mode;
+                if let Some(tab) = Tab::from_name(id).filter(|m| *m != Tab::Touchpad) {
+                    self.tab = tab;
                 }
                 continue;
             }
@@ -55,7 +55,7 @@ impl State {
             }
         }
         if let Some(tab) = self.library.collections.iter().position(|c| c.name == current) {
-            self.tab = tab;
+            self.current = tab;
         }
         self.sync();
         self.focus = self.selected.clone().map(Id::Game);
@@ -74,7 +74,7 @@ mod tests {
         let mut s = state();
         s.apply(Event::Tick { unix_secs: 100 });
         s.apply(Event::ListStep(3));
-        s.apply(Event::TabStep(1));
+        s.apply(Event::CollectionStep(1));
         assert!(s.apply(Event::Tick { unix_secs: 101 }).1.is_empty(), "not while moving");
         let (_, fx) = s.apply(Event::Tick { unix_secs: 103 });
         let text = match fx.first() {
@@ -85,7 +85,7 @@ mod tests {
         let mut fresh = state();
         fresh.restore(&text);
         assert_eq!(fresh.collection().map(|c| c.name.as_str()), Some("More"));
-        fresh.apply(Event::TabStep(-1));
+        fresh.apply(Event::CollectionStep(-1));
         assert_eq!(fresh.selected.as_deref(), Some("ff6"));
     }
 }

@@ -1,4 +1,4 @@
-//! Bluetooth as the Bluetooth mode shows it (BlueZ's view, read by the policy side), and its rules: a tap
+//! Bluetooth as the Bluetooth tab shows it (BlueZ's view, read by the policy side), and its rules: a tap
 //! connects a paired device or pairs a new one (pair, trust, connect), a long press forgets a paired one.
 
 use crate::{Effect, State};
@@ -64,7 +64,7 @@ impl Bluetooth {
 /// What the Bluetooth side is asked to do.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
-    /// The mode opened (look for devices) or closed.
+    /// The tab opened (look for devices) or closed.
     Watch(bool),
     Power(bool),
     /// Connect a paired device, or pair, trust and connect a new one.
@@ -112,7 +112,7 @@ impl State {
 mod tests {
     use super::*;
     use crate::tests::state;
-    use crate::{Event, Id, Mode};
+    use crate::{Event, Id, Tab};
 
     fn dev(name: &str, paired: bool, connected: bool) -> Device {
         Device { address: format!("00:{name}"), name: name.into(), kind: Kind::Other, paired, connected }
@@ -132,7 +132,7 @@ mod tests {
     #[test]
     fn taps_connect_or_disconnect_and_a_long_press_forgets() {
         let mut s = state();
-        s.apply(Event::Activate(Id::Mode(Mode::Bluetooth)));
+        s.apply(Event::Activate(Id::Tab(Tab::Bluetooth)));
         let devices = vec![dev("buds", true, true), dev("pad", true, false), dev("new", false, false)];
         s.apply(Event::Bluetooth(Bluetooth { adapter: true, powered: true, devices, ..Bluetooth::default() }));
         let bt = |c: Command| vec![Effect::Bluetooth(c)];

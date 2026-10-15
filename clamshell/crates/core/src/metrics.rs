@@ -1,4 +1,4 @@
-//! System metrics for the sysinfo mode, and a minute of history for its graphs. Fixed-size, so keeping
+//! System metrics for the sysinfo tab, and a minute of history for its graphs. Fixed-size, so keeping
 //! and drawing them never allocates.
 
 /// Most cores shown individually.

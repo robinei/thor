@@ -5,7 +5,7 @@
 
 use std::fmt::Write;
 
-use clamshell_core::mixer::Level;
+use clamshell_core::levels::Level;
 use clamshell_core::{Id, State};
 
 use super::bar::volume_icon;

@@ -7,7 +7,7 @@ use std::thread;
 use std::time::Duration;
 
 use clamshell_core::Event;
-use clamshell_core::mixer::{Audio, Output, Stream};
+use clamshell_core::levels::{Audio, Output, Stream};
 use serde_json::Value;
 
 use crate::Sink;

@@ -1,5 +1,5 @@
 #!/bin/sh
-# The launcher under sway, end to end: runs a headless sway (two outputs, the Thor's screens at half
+# The dock under sway, end to end: runs a headless sway (two outputs, the Thor's screens at half
 # size; nothing shows on the desktop, and it needs no display or input devices), ClamShell
 # inside it with a test library and test apps, drives it through its control pipe (CLAMSHELL_CONTROL: the
 # taps and long presses a user would make), and checks sway's window tree and systemd's units. Leaves
@@ -73,7 +73,7 @@ units() { systemctl --user list-units "clamshell-$1*" --plain --no-legend | awk 
 # A tap or long press, as the program's control pipe takes them.
 ctl() { echo "$*" > "$T/control"; sleep 0.3; }
 start_program() {
-    msg exec "env CLAMSHELL_TEST=$T CLAMSHELL_CONTROL=$T/control CLAMSHELL_STEAM=off CLAMSHELL_PEGASUS_CONFIG=$T/pegasus XDG_CONFIG_HOME=$T/config XDG_STATE_HOME=$T/state CLAMSHELL_BOTTOM_OUTPUT=HEADLESS-2 CLAMSHELL_START_MODE=launcher $BIN >> $T/program.log 2>&1"
+    msg exec "env CLAMSHELL_TEST=$T CLAMSHELL_CONTROL=$T/control CLAMSHELL_STEAM=off CLAMSHELL_PEGASUS_CONFIG=$T/pegasus XDG_CONFIG_HOME=$T/config XDG_STATE_HOME=$T/state CLAMSHELL_BOTTOM_OUTPUT=HEADLESS-2 CLAMSHELL_START_MODE=dock $BIN >> $T/program.log 2>&1"
 }
 program_pid() { for p in $(pgrep -x clamshell); do tr '\0' '\n' < "/proc/$p/environ" 2>/dev/null | grep -qx "CLAMSHELL_TEST=$T" && echo "$p"; done; }
 # The launcher's apps, by position in launcher.json.

@@ -98,7 +98,7 @@ pub(super) fn draw(f: &mut Frame, body: Rect, buf: &mut String) {
     let items = tabs.into_iter().filter_map(|(scope, name)| Some((Id::Scope(scope), name?, (scope == Scope::Global) == game.is_none())));
     let tabs_area = Rect::new(bar.x - inner, bar.y, bar.w + inner, bar.h);
     let tabs_end = super::tabs(f, tabs_area, body.h * TAB_TEXT, inner, bar.w * TAB_MAX, items);
-    let running = context.is_some_and(|g| s.running.as_ref() == Some(&g.id));
+    let running = context.is_some_and(|g| s.current_game.as_ref() == Some(&g.id));
     let note = match (game, running) {
         (Some(_), true) => "applies now",
         (Some(_), false) => "applies at launch",

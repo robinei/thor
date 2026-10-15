@@ -11,15 +11,15 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use clamshell_core::Power;
+use clamshell_core::PowerProfile;
 use clamshell_core::settings::{Setting, Values};
 
 /// A profile's share of each frequency range.
-fn fraction(power: Power) -> f64 {
+fn fraction(power: PowerProfile) -> f64 {
     match power {
-        Power::Battery => 0.55,
-        Power::Balanced => 0.8,
-        Power::Performance => 1.0,
+        PowerProfile::Battery => 0.55,
+        PowerProfile::Balanced => 0.8,
+        PowerProfile::Performance => 1.0,
     }
 }
 
@@ -54,7 +54,7 @@ fn write(path: &Path, value: u64) {
 }
 
 /// The fraction of each range a cap in percent stands for (0: the profile's).
-fn share(power: Power, percent: u16) -> f64 {
+fn share(power: PowerProfile, percent: u16) -> f64 {
     if percent == 0 { fraction(power) } else { f64::from(percent.min(100)) / 100.0 }
 }
 
@@ -101,7 +101,7 @@ pub fn spawn() -> std::io::Result<std::sync::mpsc::Sender<Values>> {
 /// Applies the settings in force to the hardware: frequency caps for the profile (or the CPU and GPU
 /// caps where set), the big cores, the charge limit.
 pub fn apply_hardware(v: &Values) {
-    let power = Power::from_value(v.get(Setting::Power));
+    let power = PowerProfile::from_value(v.get(Setting::Power));
     let policies = policies();
     // Cores first, so the caps reach the policies that stay online.
     let clusters: Vec<(u64, Vec<u32>)> = policies.iter().map(|(_, _, max, cpus)| (*max, cpus.clone())).collect();

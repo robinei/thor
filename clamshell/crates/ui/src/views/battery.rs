@@ -45,13 +45,13 @@ pub(super) fn draw(f: &mut Frame, body: Rect, buf: &mut String) {
     let list = Rect::new(rest.x, title_y + size * 1.6, rest.w, rest.y + rest.h - title_y - size * 1.6);
     let row_h = body.h * ROW_H;
     let rows = (list.h / row_h).floor().max(0.0) as usize;
-    if s.power.spenders.is_empty() {
+    if s.battery.spenders.is_empty() {
         f.c.text(list.x, list.y, size, rgb(DIM), "Measuring");
     }
-    let total: f32 = s.power.spenders.iter().map(|p| p.load()).sum::<f32>().max(f32::EPSILON);
+    let total: f32 = s.battery.spenders.iter().map(|p| p.load()).sum::<f32>().max(f32::EPSILON);
     // The figures' column, as wide as the widest they can be, so the bars line up.
     let figures_x = list.x + list.w - f.c.text_width(size * 0.85, "CPU 100% · GPU 100%");
-    for (i, p) in s.power.spenders.iter().enumerate().take(rows) {
+    for (i, p) in s.battery.spenders.iter().enumerate().take(rows) {
         let r = Rect::new(list.x, list.y + i as f32 * row_h, list.w, row_h);
         let ty = r.y + (r.h - size * 1.2) / 2.0;
         let name_w = r.w * NAME_W;
@@ -149,7 +149,7 @@ fn history(f: &mut Frame, g: Rect, size: f32) {
     f.c.text(plot.x + (plot.w - w) / 2.0, ly, small, rgb(DIM), "12 h");
     let w = f.c.text_width(small, "now");
     f.c.text(plot.x + plot.w - w, ly, small, rgb(DIM), "now");
-    if !s.power.has_history {
+    if !s.battery.has_history {
         label(f.c, plot, size, DIM, "No charge history from UPower");
         return;
     }
@@ -164,7 +164,7 @@ fn history(f: &mut Frame, g: Rect, size: f32) {
         f.c.fill(Rect::new(x0, y0 - LINE / 2.0, (x1 - x0).max(LINE), LINE), color);
         f.c.fill(Rect::new(x1 - LINE / 2.0, y0.min(y1) - LINE / 2.0, LINE, (y1 - y0).abs() + LINE), color);
     };
-    let history = &s.power.history;
+    let history = &s.battery.history;
     for pair in history.windows(2) {
         if let [a, b] = pair {
             step(f, (a.at, a.level), (b.at, b.level), a.charging);

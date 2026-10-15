@@ -10,14 +10,14 @@ use crate::{Effect, Game, Scope, State};
 impl State {
     /// The settings in force: the running game's, else the global ones.
     pub fn current(&self) -> Values {
-        self.running.as_ref().map_or(self.settings.global, |id| self.settings.of(id))
+        self.current_game.as_ref().map_or(self.settings.global, |id| self.settings.of(id))
     }
 
     /// The game the settings panel is about, by what is in front: the game, shelf's selection, or none
     /// (another app: the panel edits all games).
     pub fn context(&self) -> Option<&Game> {
         let id = match self.front() {
-            crate::Front::Game => self.running.as_ref(),
+            crate::Front::Game => self.current_game.as_ref(),
             crate::Front::Shelf => self.selected.as_ref(),
             crate::Front::App => None,
         }?;
@@ -32,7 +32,7 @@ impl State {
 
     /// The second screen is dark: a game runs that wants it so, and it hasn't been tapped since.
     pub fn bottom_dark(&self) -> bool {
-        self.running.is_some() && self.current().get(Setting::BottomScreen) == 1 && !self.woken
+        self.current_game.is_some() && self.current().get(Setting::BottomScreen) == 1 && !self.woken
     }
 
     /// Changes `setting` where the panel edits (the game's overrides, or the global settings): to
@@ -49,7 +49,7 @@ impl State {
         let mut effects = vec![Effect::SaveSettings(self.settings.text())];
         let now = self.current();
         if now != before {
-            effects.push(Effect::Apply { game: self.running.clone(), settings: now });
+            effects.push(Effect::Apply { game: self.current_game.clone(), settings: now });
         }
         effects
     }
@@ -204,8 +204,8 @@ mod tests {
     #[test]
     fn without_a_game_the_panel_edits_the_global_settings() {
         let mut empty = State::new(Library::default());
-        empty.apply(Event::Activate(Id::Mode(Mode::Settings)));
-        assert_eq!(empty.mode, Mode::Settings, "always available");
+        empty.apply(Event::Activate(Id::Tab(Tab::Settings)));
+        assert_eq!(empty.tab, Tab::Settings, "always available");
         tap(&mut empty, Setting::FpsCap, 2);
         assert_eq!(empty.settings.global.get(Setting::FpsCap), 40);
     }

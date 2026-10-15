@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use clamshell_core::keyboard::{self, Key, KeyPos, Modifier};
 use clamshell_core::touch::TouchLayout;
 use clamshell_core::settings::{Setting, Settings, Values};
-use clamshell_core::{Effect, Event, Id, Mode, Scope, State, Status};
+use clamshell_core::{Effect, Event, Id, Tab, Scope, State, Status};
 use clamshell_policy::{controls, job, keyboard as virtual_keyboard, pad, sway, touchpad, tuning};
 use clamshell_ui::{Config, Screen};
 
@@ -92,7 +92,7 @@ fn main() -> ExitCode {
     // The screens' brightness as it was left (the level and each screen's factor), next to it.
     let brightness_file = resume_file.as_ref().and_then(|f| f.parent()).map(|d| d.join("brightness"));
     if !snapshotting && let Some(text) = brightness_file.as_ref().and_then(|f| std::fs::read_to_string(f).ok()) {
-        state.brightness = clamshell_core::mixer::Brightness::from_text(&text);
+        state.brightness = clamshell_core::levels::Brightness::from_text(&text);
     }
     // The launcher's apps (~/.config/clamshell/launcher.json; without it, shelf, Steam and a terminal).
     if !snapshotting {
@@ -126,7 +126,7 @@ fn main() -> ExitCode {
     // Development: start in a tab (CLAMSHELL_START_MODE=touchpad|keyboard|dock|...); what it watches
     // starts with the others' at Event::Start.
     let (touchpad_tx, touchpad_rx) = mpsc::channel();
-    if let Some(mode) = std::env::var("CLAMSHELL_START_MODE").ok().and_then(|m| Mode::from_name(&m)) {
+    if let Some(mode) = std::env::var("CLAMSHELL_START_MODE").ok().and_then(|m| Tab::from_name(&m)) {
         state.start_in(mode);
     }
     let layout = config.touch_layout.clone();
@@ -372,7 +372,7 @@ fn main() -> ExitCode {
                 let _ = mixer_tx.send(clamshell_policy::mixer::Command::Backlights(*on));
             }
             Effect::Audio(command) => {
-                use clamshell_core::mixer::Command as Audio;
+                use clamshell_core::levels::Command as Audio;
                 let _ = match command {
                     Audio::Watch(on) => mixer_tx.send(clamshell_policy::mixer::Command::Audio(*on)).is_ok(),
                     Audio::Output(id) => controls_tx.send(controls::Command::Output(*id)).is_ok(),
@@ -416,7 +416,7 @@ type Shot = (Vec<Event>, Screen, (u32, u32), &'static str);
 
 /// A test's command as events: `tap app 1`, `long game`, `tap plus 1`, `tap launch`, `tap network 2`,
 /// `long network 0`, `tap wifi-power`, `tap keep`, `tap close`, `tap game N`, `list N` (shelf's selection),
-/// `tap device N`, `long device N`, `tap bluetooth-power`, `mode dock`, `home`, `type text` (on the on-screen keyboard),
+/// `tap device N`, `long device N`, `tap bluetooth-power`, `tab dock`, `home`, `type text` (on the on-screen keyboard),
 /// `slide volume|brightness FROM TO [hold]` (a finger down at FROM on a 620-wide layout, moved to TO,
 /// lifted unless held), `lift volume|brightness`, `level volume|brightness V`, `level backlight|stream N V`
 /// (a level row in the volume or brightness tab), `pad up|down|left|right|a|b|y|lb|rb|switch` (the pad
@@ -425,8 +425,8 @@ fn control_events(line: &str) -> Option<Vec<Event>> {
     let words: Vec<&str> = line.split_whitespace().collect();
     let index = |w: &str| w.parse::<u16>().ok();
     let control = |name: &str| match name {
-        "volume" => Some(clamshell_core::controls::Control::Volume),
-        "brightness" => Some(clamshell_core::controls::Control::Brightness),
+        "volume" => Some(clamshell_core::slider::Control::Volume),
+        "brightness" => Some(clamshell_core::slider::Control::Brightness),
         _ => None,
     };
     // (A slide never ends in a tap: that would open the tab.)
@@ -434,7 +434,7 @@ fn control_events(line: &str) -> Option<Vec<Event>> {
         return Some(vec![Event::SlideEnd, Event::Up(Id::Control(control(name)?))]);
     }
     if let ["level", rest @ ..] = words.as_slice() {
-        use clamshell_core::mixer::Level;
+        use clamshell_core::levels::Level;
         let (level, value) = match rest {
             ["volume", v] => (Level::Volume, v),
             ["brightness", v] => (Level::Brightness, v),
@@ -480,7 +480,7 @@ fn control_events(line: &str) -> Option<Vec<Event>> {
                 _ => return None,
             });
         }
-        ["mode", name] => return Some(vec![Event::Activate(Id::Mode(Mode::from_name(name)?))]),
+        ["tab", name] => return Some(vec![Event::Activate(Id::Tab(Tab::from_name(name)?))]),
         [_, "app", n] => Id::App(index(n)?),
         [_, "plus", n] => Id::NewInstance(index(n)?),
         [_, "network", n] => Id::Network(index(n)?),
@@ -665,9 +665,9 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
     let taps = |setting: Setting, n: usize| (0..n).map(move |_| Event::Activate(Id::Tile(setting)));
     let shots: Vec<Shot> = vec![
         (vec![], Screen::Top, (1920, 1080), "top.png"),
-        (vec![Event::TabStep(1)], Screen::Top, (1920, 1080), "top-tab2.png"),
+        (vec![Event::CollectionStep(1)], Screen::Top, (1920, 1080), "top-tab2.png"),
         (vec![Event::ListStep(5)], Screen::Top, (1920, 1080), "top-tab2-down.png"),
-        (vec![Event::TabStep(-1)], Screen::Top, (1920, 1080), "top-back.png"),
+        (vec![Event::CollectionStep(-1)], Screen::Top, (1920, 1080), "top-back.png"),
         (
             vec![
                 Event::Played { game: "zelda-lttp".into(), start: 1_759_900_000, duration: 4 * 3600 + 1260 },
@@ -686,7 +686,7 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
         ),
         (vec![], Screen::Bottom, bottom, "bottom.png"),
         (
-            [Event::Activate(Id::Mode(Mode::Settings))]
+            [Event::Activate(Id::Tab(Tab::Settings))]
                 .into_iter()
                 .chain(taps(Setting::FpsCap, 4))
                 .chain(taps(Setting::Buttons, 1))
@@ -736,7 +736,7 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
         ),
         (vec![Event::Status(status)], Screen::Bottom, bottom, "bottom.png"),
         (
-            vec![Event::Activate(Id::Mode(Mode::Dock)), Event::HideFocus],
+            vec![Event::Activate(Id::Tab(Tab::Dock)), Event::HideFocus],
             Screen::Bottom,
             bottom,
             "launcher.png",
@@ -762,7 +762,7 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
         ),
         (
             vec![
-                Event::Activate(Id::Mode(Mode::Wifi)),
+                Event::Activate(Id::Tab(Tab::Wifi)),
                 Event::Wifi(clamshell_core::wifi::Wifi {
                     device: true,
                     enabled: true,
@@ -787,7 +787,7 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
         (battery_demo(now), Screen::Bottom, bottom, "battery.png"),
         (
             vec![
-                Event::Activate(Id::Mode(Mode::Bluetooth)),
+                Event::Activate(Id::Tab(Tab::Bluetooth)),
                 Event::Bluetooth(clamshell_core::bluetooth::Bluetooth {
                     adapter: true,
                     powered: true,
@@ -815,15 +815,15 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
         ),
         (
             vec![
-                Event::Activate(Id::Mode(Mode::Volume)),
+                Event::Activate(Id::Tab(Tab::Volume)),
                 Event::Status(clamshell_core::Status { volume: Some(64), brightness: Some(70), battery: Some(76), wifi: Some(80), ..clamshell_core::Status::default() }),
-                Event::Audio(clamshell_core::mixer::Audio {
+                Event::Audio(clamshell_core::levels::Audio {
                     outputs: vec![
-                        clamshell_core::mixer::Output { id: 50, name: "Speakers".into(), default: true },
-                        clamshell_core::mixer::Output { id: 51, name: "WH-1000XM4".into(), default: false },
+                        clamshell_core::levels::Output { id: 50, name: "Speakers".into(), default: true },
+                        clamshell_core::levels::Output { id: 51, name: "WH-1000XM4".into(), default: false },
                     ],
                     streams: [("Firefox", 80, false), ("Steam", 100, false), ("Spotify", 35, true)]
-                        .map(|(app, volume, muted)| clamshell_core::mixer::Stream { id: 90, app: app.into(), title: String::new(), volume, muted })
+                        .map(|(app, volume, muted)| clamshell_core::levels::Stream { id: 90, app: app.into(), title: String::new(), volume, muted })
                         .to_vec(),
                 }),
             ],
@@ -833,10 +833,10 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
         ),
         (
             vec![
-                Event::Activate(Id::Mode(Mode::Brightness)),
+                Event::Activate(Id::Tab(Tab::Brightness)),
                 Event::Backlights(vec!["dsi0-backlight".into(), "dsi1-backlight".into()]),
-                Event::SetLevel(clamshell_core::mixer::Level::Backlight(1), 65),
-                Event::Up(Id::Level(clamshell_core::mixer::Level::Backlight(1))),
+                Event::SetLevel(clamshell_core::levels::Level::Backlight(1), 65),
+                Event::Up(Id::Level(clamshell_core::levels::Level::Backlight(1))),
             ],
             Screen::Bottom,
             bottom,
@@ -844,9 +844,9 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
         ),
         (
             vec![
-                Event::Activate(Id::Mode(Mode::Dock)),
-                Event::Down(Id::Control(clamshell_core::controls::Control::Volume)),
-                Event::SlideStart { control: clamshell_core::controls::Control::Volume, x: 560.0, width: 1232.0 },
+                Event::Activate(Id::Tab(Tab::Dock)),
+                Event::Down(Id::Control(clamshell_core::slider::Control::Volume)),
+                Event::SlideStart { control: clamshell_core::slider::Control::Volume, x: 560.0, width: 1232.0 },
                 Event::SlideTo { x: 700.0 },
             ],
             Screen::Bottom,
@@ -854,7 +854,7 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
             "slider.png",
         ),
         (
-            vec![Event::Up(Id::Control(clamshell_core::controls::Control::Volume)), Event::Activate(Id::Mode(Mode::Keyboard))],
+            vec![Event::Up(Id::Control(clamshell_core::slider::Control::Volume)), Event::Activate(Id::Tab(Tab::Keyboard))],
             Screen::Bottom,
             bottom,
             "keyboard.png",
@@ -880,9 +880,9 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
             bottom,
             "keyboard-caps.png",
         ),
-        (vec![Event::Activate(Id::Mode(Mode::Touchpad)), Event::Activate(Id::PadMouse)], Screen::Bottom, bottom, "touchpad.png"),
+        (vec![Event::Activate(Id::Tab(Tab::Touchpad)), Event::Activate(Id::PadMouse)], Screen::Bottom, bottom, "touchpad.png"),
         (demo_metrics(), Screen::Bottom, bottom, "sysinfo.png"),
-        (vec![Event::Activate(Id::Mode(Mode::Keyboard))], Screen::Bottom, bottom, "keyboard-back.png"),
+        (vec![Event::Activate(Id::Tab(Tab::Keyboard))], Screen::Bottom, bottom, "keyboard-back.png"),
         (
             vec![
                 key(Key::Mod(Modifier::Shift), false),
@@ -916,7 +916,7 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
 /// A made-up day of charge (down while playing, charging overnight) and a busy moment, then battery mode,
 /// for the snapshot.
 fn battery_demo(now: u64) -> Vec<Event> {
-    use clamshell_core::power::{Charge, Group, Power, Spender};
+    use clamshell_core::battery::{Charge, Group, Battery, Spender};
     let mut level = 64.0f32;
     let history = (0..96u64)
         .map(|i| {
@@ -935,8 +935,8 @@ fn battery_demo(now: u64) -> Vec<Event> {
     ];
     vec![
         Event::Started("zelda-lttp".into()),
-        Event::Activate(Id::Mode(Mode::Battery)),
-        Event::Power(Power { history, spenders, has_history: true }),
+        Event::Activate(Id::Tab(Tab::Battery)),
+        Event::Battery(Battery { history, spenders, has_history: true }),
         Event::Status(Status { battery: Some(41), charging: false, wifi: Some(80), volume: Some(60), muted: false, brightness: Some(70) }),
     ]
 }
@@ -971,6 +971,6 @@ fn demo_metrics() -> Vec<Event> {
             })
         })
         .collect();
-    events.push(Event::Activate(Id::Mode(Mode::Sysinfo)));
+    events.push(Event::Activate(Id::Tab(Tab::Sysinfo)));
     events
 }

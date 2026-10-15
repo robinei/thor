@@ -71,7 +71,7 @@ pub(super) fn draw(f: &mut Frame, body: Rect, images: &mut Images, buf: &mut Str
     }
     for (i, running) in s.games.iter().enumerate() {
         let game = s.library.games.iter().find(|g| g.id == running.id);
-        let the_game = s.running.as_ref() == Some(&running.id);
+        let the_game = s.current_game.as_ref() == Some(&running.id);
         game_tile(f, area.cell(COLUMNS, rows, gap, i), i, game, the_game && s.games.len() > 1, images);
     }
     for (i, app) in s.apps.iter().enumerate() {

@@ -16,7 +16,7 @@ use std::time::Instant;
 use evdev::raw_stream::RawDevice;
 use evdev::uinput::VirtualDevice;
 use evdev::{AbsInfo, AbsoluteAxisCode, AttributeSet, EventType, InputEvent, KeyCode, PropType, UinputAbsSetup};
-use clamshell_core::controls::{Control, SLIDE_AFTER, SLIDE_MOVE};
+use clamshell_core::slider::{Control, SLIDE_AFTER, SLIDE_MOVE};
 use clamshell_core::touch::TouchLayout;
 use clamshell_core::{Event, Id};
 
@@ -536,7 +536,7 @@ mod tests {
         assert_eq!(out, vec![Event::SlideStart { control: Control::Brightness, x: 345.0, width: 620.0 }, Event::SlideTo { x: 360.0 }]);
         assert!(!press.tap(ms(80)), "a quick slide isn't a tap either");
     }
-    use clamshell_core::Mode;
+    use clamshell_core::Tab;
     use clamshell_core::touch::Region;
 
     /// A 1000x1000 touchscreen on a 1000x800 screen: a bar region along the top, the pad below it.
@@ -544,7 +544,7 @@ mod tests {
         let layout = TouchLayout {
             screen: (1000.0, 800.0),
             pad: (0.0, 100.0, 1000.0, 800.0),
-            regions: vec![Region { x0: 0.0, y0: 0.0, x1: 100.0, y1: 100.0, id: Id::Mode(Mode::Touchpad) }],
+            regions: vec![Region { x0: 0.0, y0: 0.0, x1: 100.0, y1: 100.0, id: Id::Tab(Tab::Touchpad) }],
             ..TouchLayout::default()
         };
         (Router::new(Axes { x: (0, 1000), y: (0, 1000) }), layout)
@@ -568,11 +568,11 @@ mod tests {
         let (mut r, l) = setup();
         // Raw (50, 50) is screen (50, 40): inside the bar region.
         let down = frame(&mut r, &l, &[(EV_ABS, MT_SLOT, 0), (EV_ABS, MT_TRACKING_ID, 7), (EV_ABS, MT_X, 50), (EV_ABS, MT_Y, 50), (EV_KEY, BTN_TOUCH, 1)]);
-        assert_eq!(down, vec![Out::Tap { id: Id::Mode(Mode::Touchpad), down: true, x: 50.0 }]);
+        assert_eq!(down, vec![Out::Tap { id: Id::Tab(Tab::Touchpad), down: true, x: 50.0 }]);
         let moved = frame(&mut r, &l, &[(EV_ABS, MT_X, 400)]);
         assert_eq!(moved, vec![Out::Move { x: 400.0 }], "a finger that started on the bar stays the bar's (a slider's)");
         let up = frame(&mut r, &l, &[(EV_ABS, MT_TRACKING_ID, -1), (EV_KEY, BTN_TOUCH, 0)]);
-        assert_eq!(up, vec![Out::Tap { id: Id::Mode(Mode::Touchpad), down: false, x: 0.0 }]);
+        assert_eq!(up, vec![Out::Tap { id: Id::Tab(Tab::Touchpad), down: false, x: 0.0 }]);
     }
 
     #[test]
@@ -614,6 +614,6 @@ mod tests {
         let second = frame(&mut r, &l, &[(EV_ABS, MT_SLOT, 1), (EV_ABS, MT_TRACKING_ID, 2), (EV_ABS, MT_X, 600), (EV_ABS, MT_Y, 600)]);
         assert!(second.contains(&fwd(EV_KEY, TOOLS[0], 0)) && second.contains(&fwd(EV_KEY, TOOLS[1], 1)));
         let bar = frame(&mut r, &l, &[(EV_ABS, MT_SLOT, 2), (EV_ABS, MT_TRACKING_ID, 3), (EV_ABS, MT_X, 10), (EV_ABS, MT_Y, 10)]);
-        assert!(matches!(bar.as_slice(), [Out::Tap { id: Id::Mode(Mode::Touchpad), down: true, .. }]), "{bar:?}");
+        assert!(matches!(bar.as_slice(), [Out::Tap { id: Id::Tab(Tab::Touchpad), down: true, .. }]), "{bar:?}");
     }
 }

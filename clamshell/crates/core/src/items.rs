@@ -4,7 +4,7 @@
 //! its item is when it comes down ([`ItemKey`]), and acts on that item wherever it is by then, or not at
 //! all once it is gone.
 
-use crate::mixer::Level;
+use crate::levels::Level;
 use crate::{Id, State};
 
 /// What a list item is: a network's SSID, a device's address, a game's workspace, a collection's name,
@@ -24,7 +24,7 @@ impl State {
             Id::Network(i) => self.wifi.networks.get(at(i)).and_then(|n| name(&n.ssid)),
             Id::Device(i) => self.bluetooth.devices.get(at(i)).and_then(|d| name(&d.address)),
             Id::GameTile(i) => self.games.get(at(i)).and_then(|g| name(&g.workspace)),
-            Id::Tab(i) => self.library.collections.get(at(i)).and_then(|c| name(&c.name)),
+            Id::Collection(i) => self.library.collections.get(at(i)).and_then(|c| name(&c.name)),
             Id::StreamMute(i) | Id::Level(Level::Stream(i)) => self.audio.streams.get(at(i)).map(|s| ItemKey::Number(s.id)),
             Id::Output(i) => self.audio.outputs.get(at(i)).map(|o| ItemKey::Number(o.id)),
             Id::Level(Level::Backlight(i)) => self.backlights.get(at(i)).and_then(|b| name(b)),
@@ -39,7 +39,7 @@ impl State {
             (Id::Network(_), ItemKey::Name(n)) => index(self.wifi.networks.iter().position(|x| x.ssid == *n)).map(Id::Network),
             (Id::Device(_), ItemKey::Name(n)) => index(self.bluetooth.devices.iter().position(|x| x.address == *n)).map(Id::Device),
             (Id::GameTile(_), ItemKey::Name(n)) => index(self.games.iter().position(|x| x.workspace == *n)).map(Id::GameTile),
-            (Id::Tab(_), ItemKey::Name(n)) => index(self.library.collections.iter().position(|x| x.name == *n)).map(Id::Tab),
+            (Id::Collection(_), ItemKey::Name(n)) => index(self.library.collections.iter().position(|x| x.name == *n)).map(Id::Collection),
             (Id::Level(Level::Backlight(_)), ItemKey::Name(n)) => {
                 index(self.backlights.iter().position(|x| x == n)).map(|i| Id::Level(Level::Backlight(i)))
             }
@@ -73,7 +73,7 @@ impl State {
 #[cfg(test)]
 mod tests {
     use crate::bluetooth::{Bluetooth, Command, Device, Kind};
-    use crate::mixer::{Audio, Level, Stream};
+    use crate::levels::{Audio, Level, Stream};
     use crate::tests::state;
     use crate::{Effect, Event, Id};
 
@@ -107,6 +107,6 @@ mod tests {
         // A new app sorts first.
         s.apply(Event::Audio(Audio { outputs: vec![], streams: vec![stream(0, "new"), stream(1, "a"), stream(2, "b")] }));
         let fx = s.apply(Event::SetLevel(Level::Stream(0), 70)).1;
-        assert_eq!(fx, vec![Effect::Audio(crate::mixer::Command::StreamVolume(1, 70))]);
+        assert_eq!(fx, vec![Effect::Audio(crate::levels::Command::StreamVolume(1, 70))]);
     }
 }

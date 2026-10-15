@@ -5,7 +5,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
 use clamshell_core::keyboard::{self, Key, Modifier};
-use clamshell_core::{Event, Id, Mode, State};
+use clamshell_core::{Event, Id, Tab, State};
 use tiny_skia::Pixmap;
 
 use crate::draw::{Canvas, DrawCache};
@@ -63,12 +63,12 @@ fn warm_frames_do_not_allocate() {
 
     let cases: Vec<(&str, Vec<Event>)> = vec![
         ("sysinfo", vec![]),
-        ("settings", vec![Event::Activate(Id::Mode(Mode::Settings))]),
+        ("settings", vec![Event::Activate(Id::Tab(Tab::Settings))]),
         ("settings, a changed tile", vec![Event::Activate(Id::Tile(clamshell_core::settings::Setting::FpsCap))]),
         ("settings, all games", vec![Event::Activate(Id::Scope(clamshell_core::Scope::Global))]),
         ("environment editor", vec![Event::Activate(Id::Env), key(Key::Char('a'))]),
         ("environment saved", vec![key(Key::Char('=')), key(Key::Char('1')), Event::Activate(Id::EditorSave)]),
-        ("dock, an app running", vec![Event::Activate(Id::Mode(Mode::Dock)), Event::Activate(Id::App(1))]),
+        ("dock, an app running", vec![Event::Activate(Id::Tab(Tab::Dock)), Event::Activate(Id::App(1))]),
         (
             "dock, a game and windows",
             vec![
@@ -85,7 +85,7 @@ fn warm_frames_do_not_allocate() {
             "wifi",
             vec![
                 Event::Status(clamshell_core::Status { volume: Some(40), brightness: Some(70), wifi: Some(60), ..Default::default() }),
-                Event::Activate(Id::Mode(Mode::Wifi)),
+                Event::Activate(Id::Tab(Tab::Wifi)),
                 Event::Wifi(clamshell_core::wifi::Wifi {
                     device: true,
                     enabled: true,
@@ -103,24 +103,24 @@ fn warm_frames_do_not_allocate() {
             "sliding",
             vec![
                 Event::Activate(Id::EditorCancel),
-                Event::Down(Id::Control(clamshell_core::controls::Control::Volume)),
-                Event::SlideStart { control: clamshell_core::controls::Control::Volume, x: 285.0, width: 620.0 },
+                Event::Down(Id::Control(clamshell_core::slider::Control::Volume)),
+                Event::SlideStart { control: clamshell_core::slider::Control::Volume, x: 285.0, width: 620.0 },
                 Event::SlideTo { x: 320.0 },
             ],
         ),
         (
             "battery",
             vec![
-                Event::Up(Id::Control(clamshell_core::controls::Control::Volume)),
+                Event::Up(Id::Control(clamshell_core::slider::Control::Volume)),
                 Event::Status(clamshell_core::Status { battery: Some(41), ..Default::default() }),
-                Event::Activate(Id::Mode(Mode::Battery)),
-                Event::Power(clamshell_core::power::Power {
+                Event::Activate(Id::Tab(Tab::Battery)),
+                Event::Battery(clamshell_core::battery::Battery {
                     history: (0..50u64)
-                        .map(|i| clamshell_core::power::Charge { at: 1_699_950_000 + i * 900, level: (90 - i) as u8, charging: i > 40 })
+                        .map(|i| clamshell_core::battery::Charge { at: 1_699_950_000 + i * 900, level: (90 - i) as u8, charging: i > 40 })
                         .collect(),
                     spenders: vec![
-                        clamshell_core::power::Spender { group: clamshell_core::power::Group::Process("firefox".into()), cpu: 0.2, gpu: 0.1 },
-                        clamshell_core::power::Spender { group: clamshell_core::power::Group::System, cpu: 0.05, gpu: 0.0 },
+                        clamshell_core::battery::Spender { group: clamshell_core::battery::Group::Process("firefox".into()), cpu: 0.2, gpu: 0.1 },
+                        clamshell_core::battery::Spender { group: clamshell_core::battery::Group::System, cpu: 0.05, gpu: 0.0 },
                     ],
                     has_history: true,
                 }),
@@ -129,7 +129,7 @@ fn warm_frames_do_not_allocate() {
         (
             "bluetooth",
             vec![
-                Event::Activate(Id::Mode(Mode::Bluetooth)),
+                Event::Activate(Id::Tab(Tab::Bluetooth)),
                 Event::Bluetooth(clamshell_core::bluetooth::Bluetooth {
                     adapter: true,
                     powered: true,
@@ -148,22 +148,22 @@ fn warm_frames_do_not_allocate() {
         (
             "volume",
             vec![
-                Event::Activate(Id::Mode(Mode::Volume)),
-                Event::Audio(clamshell_core::mixer::Audio {
-                    outputs: vec![clamshell_core::mixer::Output { id: 1, name: "Speakers".into(), default: true }],
-                    streams: vec![clamshell_core::mixer::Stream { id: 2, app: "Firefox".into(), title: String::new(), volume: 40, muted: false }],
+                Event::Activate(Id::Tab(Tab::Volume)),
+                Event::Audio(clamshell_core::levels::Audio {
+                    outputs: vec![clamshell_core::levels::Output { id: 1, name: "Speakers".into(), default: true }],
+                    streams: vec![clamshell_core::levels::Stream { id: 2, app: "Firefox".into(), title: String::new(), volume: 40, muted: false }],
                 }),
-                Event::Down(Id::Level(clamshell_core::mixer::Level::Stream(0))),
+                Event::Down(Id::Level(clamshell_core::levels::Level::Stream(0))),
             ],
         ),
         (
             "brightness",
             vec![
-                Event::Activate(Id::Mode(Mode::Brightness)),
+                Event::Activate(Id::Tab(Tab::Brightness)),
                 Event::Backlights(vec!["panel".into()]),
             ],
         ),
-        ("keyboard", vec![Event::Activate(Id::Mode(Mode::Keyboard))]),
+        ("keyboard", vec![Event::Activate(Id::Tab(Tab::Keyboard))]),
         ("keyboard, Fn", vec![key(Key::Mod(Modifier::Fn))]),
         ("keyboard, Shift and a pressed key", vec![key(Key::Mod(Modifier::Shift)), key(Key::Char('h'))]),
     ];

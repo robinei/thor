@@ -1,9 +1,9 @@
-//! The battery mode's readings, while it is open: the charge over the last day from UPower (system bus;
+//! The battery tab's readings, while it is open: the charge over the last day from UPower (system bus;
 //! it records the battery's level as it changes), and what is using the machine now: CPU time per process
 //! (`/proc/<pid>/stat`) and GPU time per DRM client (`/proc/<pid>/fdinfo`, `drm-engine-*`; only our
 //! user's processes are readable), grouped by our scopes (an app instance, the game), else by program
 //! name for our user's processes, else as the system. Sampled every two seconds, sent as
-//! [`Event::Power`].
+//! [`Event::Battery`].
 
 use std::collections::HashMap;
 use std::io;
@@ -13,7 +13,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use clamshell_core::Event;
-use clamshell_core::power::{Charge, Group, Power, Spender};
+use clamshell_core::battery::{Charge, Group, Battery, Spender};
 use zbus::blocking::{Connection, Proxy};
 use zbus::zvariant::OwnedObjectPath;
 
@@ -37,7 +37,7 @@ pub fn spawn(sink: impl Sink, commands: Receiver<bool>) -> io::Result<()> {
     thread::Builder::new().name("power".into()).spawn(move || {
         let mut watching = false;
         let mut sampler = Sampler::default();
-        let mut power = Power::default();
+        let mut power = Battery::default();
         let mut last_history: Option<Instant> = None;
         loop {
             let command = if watching { commands.recv_timeout(SAMPLE_EVERY) } else { commands.recv().map_err(|_| RecvTimeoutError::Disconnected) };
@@ -68,7 +68,7 @@ pub fn spawn(sink: impl Sink, commands: Receiver<bool>) -> io::Result<()> {
                 }
             }
             power.spenders = sampler.sample();
-            if !sink.send(Event::Power(power.clone())) {
+            if !sink.send(Event::Battery(power.clone())) {
                 return;
             }
         }

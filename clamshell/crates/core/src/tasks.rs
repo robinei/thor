@@ -39,7 +39,7 @@ impl State {
         Some(("clamshell-app-", self.apps.get(i)?.key()))
     }
 
-    /// Whether `name` is one of launcher app `i`'s instances (`clamshell-app-<key>-…`).
+    /// Whether `name` is one of dock app `i`'s instances (`clamshell-app-<key>-…`).
     fn is_instance(&self, i: usize, name: &str) -> bool {
         self.prefix(i).is_some_and(|(p, key)| {
             name.strip_prefix(p).and_then(|rest| rest.strip_prefix(key)).is_some_and(|rest| rest.starts_with('-'))
@@ -125,9 +125,9 @@ impl State {
         let Some(app) = self.apps.get(i) else {
             return vec![];
         };
-        let name = format!("clamshell-app-{}-{}-{}", app.key(), self.unix_secs, self.started);
+        let name = format!("clamshell-app-{}-{}-{}", app.key(), self.unix_secs, self.next_instance);
         let command = app.command.clone();
-        self.started += 1;
+        self.next_instance += 1;
         self.starting.push((name.clone(), self.unix_secs));
         self.pending_show = Some(name.clone());
         vec![Effect::RunApp { name, command }]

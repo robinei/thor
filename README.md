@@ -20,9 +20,9 @@ touchpad, the on-screen keyboard), and the games' power settings. Rust, a Cargo 
 
 No panics by construction: `unwrap`, `expect`, `panic!` and slice indexing are denied outside tests.
 
-**Test the launcher under sway**: `clamshell/tests/nested-sway.sh` (after `cargo build --release`) runs a
+**Test the dock under sway**: `clamshell/tests/nested-sway.sh` (after `cargo build --release`) runs a
 headless sway with the program inside, a test library and test apps, drives it through its control pipe
-(`CLAMSHELL_CONTROL`: lines like `tap app 1`, `long game`, `tap plus 1`, `tap launch`; also `mode wifi`,
+(`CLAMSHELL_CONTROL`: lines like `tap app 1`, `long game`, `tap plus 1`, `tap launch`; also `tab wifi`,
 `tap network 1`, `type text`, `tap save`, `slide volume 280 330 [hold]`, `home`), checks sway's tree and
 systemd's units, and cleans up after itself; about a minute, nothing shows on the desktop.
 `CLAMSHELL_STEAM=off` leaves Steam's games out.
@@ -158,7 +158,7 @@ over). sway only places a launch's first window, so later ones (a second window,
 its terminal) are moved to their instance's workspace by their process's scope, the kernel's record of
 where they come from. sway rules set at start: shelf's window to `clamshell-shelf`, Steam's games
 (`steam_app_…`) to `clamshell-game`, both kept on the main screen, and windows opening on the second
-screen (behind the launcher) to the main screen. An emptied workspace of ours in front shows shelf.
+screen (behind the dock) to the main screen. An emptied workspace of ours in front shows shelf.
 
 Apps come from `~/.config/clamshell/launcher.json` (read at start); without it Steam (its normal client:
 store, downloads, friends; Big Picture would be a second home screen) and a terminal (foot); `clamshell

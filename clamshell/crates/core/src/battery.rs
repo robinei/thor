@@ -1,4 +1,4 @@
-//! What the battery mode shows beyond the bar's status: the charge over the last day (UPower's history)
+//! What the battery tab shows beyond the bar's status: the charge over the last day (UPower's history)
 //! and what is using the machine now (CPU and GPU time per program, read by the policy side). The battery
 //! reports only its total drain; per program there is no power reading, so programs are ranked by their
 //! share of the work instead.
@@ -38,7 +38,7 @@ pub struct Charge {
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct Power {
+pub struct Battery {
     /// The charge over the last day, oldest first; empty without UPower.
     pub history: Vec<Charge>,
     /// The busiest first.
@@ -70,7 +70,7 @@ impl State {
 mod tests {
     use super::*;
     use crate::tests::state;
-    use crate::{Event, Id, Mode};
+    use crate::{Event, Id, Tab};
 
     fn spender(group: Group) -> Spender {
         Spender { group, cpu: 0.1, gpu: 0.0 }
@@ -87,7 +87,7 @@ mod tests {
         s.apply(Event::Activate(Id::Game("ff6".into())));
         s.apply(Event::Activate(Id::StartKeep));
         s.apply(Event::Started("ff6".into()));
-        assert_eq!(s.running.as_deref(), Some("ff6"));
+        assert_eq!(s.current_game.as_deref(), Some("ff6"));
         let terminal = s.apps.iter().find(|a| a.multiple).map(|a| a.key().to_owned()).unwrap_or_default();
         let unit = format!("clamshell-app-{terminal}-1792010377-0");
         assert_eq!(s.spender_name(&spender(Group::Unit(unit))), "Terminal");
@@ -101,9 +101,9 @@ mod tests {
     #[test]
     fn the_battery_mode_watches_while_open() {
         let mut s = state();
-        let (_, fx) = s.apply(Event::Activate(Id::Mode(Mode::Battery)));
+        let (_, fx) = s.apply(Event::Activate(Id::Tab(Tab::Battery)));
         assert_eq!(fx, vec![crate::Effect::WatchPower(true)]);
-        let (_, fx) = s.apply(Event::Activate(Id::Mode(Mode::Wifi)));
+        let (_, fx) = s.apply(Event::Activate(Id::Tab(Tab::Wifi)));
         assert_eq!(fx, vec![crate::Effect::WatchPower(false), crate::Effect::Wifi(crate::wifi::Command::Watch(true))]);
     }
 }

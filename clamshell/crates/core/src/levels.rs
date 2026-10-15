@@ -59,11 +59,11 @@ pub struct Brightness {
     pub factors: Vec<(String, u8)>,
 }
 
-impl From<crate::controls::Control> for Level {
-    fn from(control: crate::controls::Control) -> Level {
+impl From<crate::slider::Control> for Level {
+    fn from(control: crate::slider::Control) -> Level {
         match control {
-            crate::controls::Control::Volume => Level::Volume,
-            crate::controls::Control::Brightness => Level::Brightness,
+            crate::slider::Control::Volume => Level::Volume,
+            crate::slider::Control::Brightness => Level::Brightness,
         }
     }
 }
@@ -266,7 +266,7 @@ impl State {
 mod tests {
     use super::*;
     use crate::tests::state;
-    use crate::{Event, Id, Mode};
+    use crate::{Event, Id, Tab};
 
     fn audio() -> Audio {
         Audio {
@@ -278,7 +278,7 @@ mod tests {
     #[test]
     fn the_volume_tab_watches_and_sets_levels() {
         let mut s = state();
-        assert_eq!(s.apply(Event::Activate(Id::Mode(Mode::Volume))).1, vec![Effect::Audio(Command::Watch(true))]);
+        assert_eq!(s.apply(Event::Activate(Id::Tab(Tab::Volume))).1, vec![Effect::Audio(Command::Watch(true))]);
         s.apply(Event::Audio(audio()));
         s.apply(Event::Status(Status { volume: Some(40), muted: true, ..Status::default() }));
         assert_eq!(s.apply(Event::SetLevel(Level::Volume, 70)).1, vec![Effect::SetMute(false), Effect::SetVolume(70)]);
@@ -295,7 +295,7 @@ mod tests {
         assert_eq!(s.apply(Event::Activate(Id::StreamMute(0))).1, vec![Effect::Audio(Command::StreamMute(80, true))]);
         assert_eq!(s.apply(Event::Activate(Id::Output(1))).1, vec![Effect::Audio(Command::Output(51))]);
         assert_eq!(s.apply(Event::Activate(Id::Output(1))).1, vec![], "already there");
-        assert_eq!(s.apply(Event::Activate(Id::Mode(Mode::Brightness))).1, vec![Effect::Audio(Command::Watch(false)), Effect::WatchBacklights(true)]);
+        assert_eq!(s.apply(Event::Activate(Id::Tab(Tab::Brightness))).1, vec![Effect::Audio(Command::Watch(false)), Effect::WatchBacklights(true)]);
     }
 
     #[test]
@@ -310,7 +310,7 @@ mod tests {
         let set = |level, factors: &[(&str, u8)]| vec![Effect::Brightness { level, factors: factors.iter().map(|(n, f)| ((*n).to_owned(), *f)).collect() }];
         assert_eq!(s.apply(Event::SetLevel(Level::Backlight(1), 70)).1, set(60, &[("bottom", 70)]));
         // The bar keeps the screens as they are to each other.
-        s.apply(Event::SlideStart { control: crate::controls::Control::Brightness, x: 300.0, width: 620.0 });
+        s.apply(Event::SlideStart { control: crate::slider::Control::Brightness, x: 300.0, width: 620.0 });
         let fx = s.apply(Event::SlideTo { x: 360.0 }).1;
         assert!(matches!(fx.as_slice(), [Effect::Brightness { level, factors }] if *level > 60 && factors == &[("bottom".to_owned(), 70)]), "{fx:?}");
         s.apply(Event::SlideEnd);

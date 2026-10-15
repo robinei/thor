@@ -5,11 +5,11 @@ use crate::{Collection, Cursor, Game, Id, Library, State};
 
 impl State {
     pub fn collection(&self) -> Option<&Collection> {
-        self.library.collections.get(self.tab)
+        self.library.collections.get(self.current)
     }
 
     pub fn cursor(&self) -> Cursor {
-        self.cursors.get(self.tab).copied().unwrap_or_default()
+        self.cursors.get(self.current).copied().unwrap_or_default()
     }
 
     /// The game at `position` in the current tab.
@@ -27,7 +27,7 @@ impl State {
         let before = self.selected.clone();
         let len = self.collection().map_or(0, |c| c.games.len());
         let rows = self.rows.max(1);
-        if let Some(c) = self.cursors.get_mut(self.tab) {
+        if let Some(c) = self.cursors.get_mut(self.current) {
             c.index = c.index.min(len.saturating_sub(1));
             if c.index < c.top {
                 c.top = c.index;
@@ -45,7 +45,7 @@ impl State {
     /// Moves the cursor by `step` games (clamped at the ends), selecting and focusing that game.
     pub(crate) fn step_list(&mut self, step: i32) {
         let len = self.collection().map_or(0, |c| c.games.len());
-        if let Some(c) = self.cursors.get_mut(self.tab) {
+        if let Some(c) = self.cursors.get_mut(self.current) {
             let target = c.index as i64 + i64::from(step);
             c.index = target.clamp(0, len.saturating_sub(1) as i64) as usize;
         }
@@ -57,7 +57,7 @@ impl State {
     /// selected game, all by name, since derived tabs may come or go.
     pub(crate) fn relayout(&mut self, change: impl FnOnce(&mut Library)) {
         let names: Vec<String> = self.library.collections.iter().map(|c| c.name.clone()).collect();
-        let tab_name = names.get(self.tab).cloned();
+        let tab_name = names.get(self.current).cloned();
         let selected = self.selected.clone();
         change(&mut self.library);
         let old = std::mem::take(&mut self.cursors);
@@ -67,24 +67,24 @@ impl State {
             .iter()
             .map(|c| names.iter().position(|n| *n == c.name).and_then(|i| old.get(i).copied()).unwrap_or_default())
             .collect();
-        self.tab = tab_name.and_then(|n| self.library.collections.iter().position(|c| c.name == n)).unwrap_or(0);
+        self.current = tab_name.and_then(|n| self.library.collections.iter().position(|c| c.name == n)).unwrap_or(0);
         if let Some(id) = selected {
             let position = self.collection().and_then(|c| {
                 c.games.iter().position(|&i| self.library.games.get(i).is_some_and(|g| g.id == id))
             });
-            if let (Some(p), Some(c)) = (position, self.cursors.get_mut(self.tab)) {
+            if let (Some(p), Some(c)) = (position, self.cursors.get_mut(self.current)) {
                 c.index = p;
             }
         }
         self.sync();
     }
 
-    pub(crate) fn set_tab(&mut self, tab: usize) {
+    pub(crate) fn set_collection(&mut self, tab: usize) {
         if tab < self.library.collections.len() {
-            self.tab = tab;
+            self.current = tab;
             self.resume_dirty = Some(self.unix_secs);
             self.sync();
-            if matches!(self.focus, Some(Id::Game(_)) | Some(Id::Tab(_))) {
+            if matches!(self.focus, Some(Id::Game(_)) | Some(Id::Collection(_))) {
                 self.focus = self.selected.clone().map(Id::Game);
             }
         }
@@ -115,11 +115,11 @@ mod tests {
     fn tabs_keep_their_own_place() {
         let mut s = state();
         s.apply(Event::ListStep(2));
-        s.apply(Event::TabStep(1));
-        assert_eq!(s.tab, 1);
+        s.apply(Event::CollectionStep(1));
+        assert_eq!(s.current, 1);
         assert_eq!(s.cursor().index, 0);
-        s.apply(Event::TabStep(1));
-        assert_eq!(s.tab, 0, "wraps around");
+        s.apply(Event::CollectionStep(1));
+        assert_eq!(s.current, 0, "wraps around");
         assert_eq!(s.cursor().index, 2);
     }
 

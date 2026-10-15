@@ -7,7 +7,7 @@
 //! so the value can go from 0 to 100 without the track leaving the screen (the icons sit near the middle
 //! of the bar for this, not exactly in it).
 
-use crate::mixer::Level;
+use crate::levels::Level;
 use crate::{Effect, State};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -147,7 +147,7 @@ mod tests {
         s.apply(Event::SlideEnd);
         assert_eq!(s.status.volume, Some(30));
         s.apply(Event::Activate(Id::Control(Control::Brightness)));
-        assert_eq!(s.mode, crate::Mode::Brightness);
+        assert_eq!(s.tab, crate::Tab::Brightness);
     }
 
     #[test]

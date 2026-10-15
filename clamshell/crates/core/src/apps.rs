@@ -15,7 +15,7 @@
 
 use serde::Deserialize;
 
-/// The icon names the launcher draws; any other shows the app's initial.
+/// The icon names the dock draws; any other shows the app's initial.
 pub const ICONS: [&str; 8] = ["shelf", "gamepad", "terminal", "browser", "files", "music", "video", "settings"];
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]

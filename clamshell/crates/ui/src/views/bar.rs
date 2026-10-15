@@ -9,8 +9,8 @@
 
 use std::fmt::Write;
 
-use clamshell_core::controls::{Control, Slider};
-use clamshell_core::{Id, Mode, State, Status};
+use clamshell_core::slider::{Control, Slider};
+use clamshell_core::{Id, Tab, State, Status};
 
 use super::{ACCENT, DIM, Frame, Look, Scratch, TEXT, TEXT_HI, label};
 use crate::draw::{Rect, rgb, rgba};
@@ -40,18 +40,18 @@ const LEVEL_AWAY: f32 = 0.12;
 const SHADE: u32 = 0x1f1f24;
 const SHADE_ALPHA: f32 = 0.85;
 
-fn mode_icon(mode: Mode) -> Icon {
+fn tab_icon(mode: Tab) -> Icon {
     match mode {
-        Mode::Settings => Icon::Sliders,
-        Mode::Dock => Icon::Apps,
-        Mode::Keyboard => Icon::Keyboard,
-        Mode::Touchpad => Icon::Touchpad,
-        Mode::Sysinfo => Icon::Sysinfo,
-        Mode::Volume => Icon::Volume { waves: 3, muted: false },
-        Mode::Brightness => Icon::Brightness,
-        Mode::Wifi => Icon::Wifi { bars: Some(3) },
-        Mode::Battery => Icon::Battery { tenths: 10, charging: false },
-        Mode::Bluetooth => Icon::Bluetooth { connected: false },
+        Tab::Settings => Icon::Sliders,
+        Tab::Dock => Icon::Apps,
+        Tab::Keyboard => Icon::Keyboard,
+        Tab::Touchpad => Icon::Touchpad,
+        Tab::Sysinfo => Icon::Sysinfo,
+        Tab::Volume => Icon::Volume { waves: 3, muted: false },
+        Tab::Brightness => Icon::Brightness,
+        Tab::Wifi => Icon::Wifi { bars: Some(3) },
+        Tab::Battery => Icon::Battery { tenths: 10, charging: false },
+        Tab::Bluetooth => Icon::Bluetooth { connected: false },
     }
 }
 
@@ -84,29 +84,29 @@ fn wifi_bars(quality: Option<u8>) -> Option<u8> {
 
 /// A tab's button in the bar: its id (volume and brightness are controls, which open their tab on a
 /// tap), its icon (with its level or status), and its colour: lit while open, dim without a reading.
-fn tab_button(s: &State, mode: Mode) -> (Id, Icon, u32) {
-    let lit = |reading: bool| if s.mode == mode { ACCENT } else if reading { TEXT } else { DIM };
+fn tab_button(s: &State, mode: Tab) -> (Id, Icon, u32) {
+    let lit = |reading: bool| if s.tab == mode { ACCENT } else if reading { TEXT } else { DIM };
     match mode {
-        Mode::Volume => {
+        Tab::Volume => {
             let volume = s.level(Control::Volume);
             (Id::Control(Control::Volume), volume_icon(volume.unwrap_or(0), s.status.muted), lit(volume.is_some()))
         }
-        Mode::Brightness => (Id::Control(Control::Brightness), Icon::Brightness, lit(s.level(Control::Brightness).is_some())),
-        Mode::Bluetooth => {
+        Tab::Brightness => (Id::Control(Control::Brightness), Icon::Brightness, lit(s.level(Control::Brightness).is_some())),
+        Tab::Bluetooth => {
             let connected = s.bluetooth.connected() > 0;
-            (Id::Mode(mode), Icon::Bluetooth { connected }, lit(s.bluetooth.powered && connected))
+            (Id::Tab(mode), Icon::Bluetooth { connected }, lit(s.bluetooth.powered && connected))
         }
-        Mode::Wifi => {
+        Tab::Wifi => {
             let bars = wifi_bars(s.status.wifi);
-            (Id::Mode(mode), Icon::Wifi { bars }, lit(bars.is_some()))
+            (Id::Tab(mode), Icon::Wifi { bars }, lit(bars.is_some()))
         }
         // An empty, dim battery when there is none; low in the accent colour.
-        Mode::Battery => {
+        Tab::Battery => {
             let (icon, color) = battery(&s.status).unwrap_or((Icon::Battery { tenths: 0, charging: false }, DIM));
-            (Id::Mode(mode), icon, if s.mode == mode { ACCENT } else { color })
+            (Id::Tab(mode), icon, if s.tab == mode { ACCENT } else { color })
         }
-        Mode::Settings | Mode::Dock | Mode::Keyboard | Mode::Touchpad | Mode::Sysinfo => {
-            (Id::Mode(mode), mode_icon(mode), if s.mode == mode { ACCENT } else { DIM })
+        Tab::Settings | Tab::Dock | Tab::Keyboard | Tab::Touchpad | Tab::Sysinfo => {
+            (Id::Tab(mode), tab_icon(mode), if s.tab == mode { ACCENT } else { DIM })
         }
     }
 }
@@ -139,8 +139,8 @@ pub(super) fn draw(f: &mut Frame, w: f32, h: f32, scratch: &mut Scratch) -> f32 
     // Before the line, every tab, evenly spread (volume and brightness land near the middle; their
     // slider makes do with the room on either side). Each opens its tab; volume and brightness, held or
     // slid, bring up the slider.
-    let cell = line_x.max(0.0) / Mode::TABS.len() as f32;
-    for (i, mode) in Mode::TABS.into_iter().enumerate() {
+    let cell = line_x.max(0.0) / Tab::ALL.len() as f32;
+    for (i, mode) in Tab::ALL.into_iter().enumerate() {
         let (id, icon, color) = tab_button(f.s, mode);
         icon_button(f, id, Rect::new(i as f32 * cell, 0.0, cell, bar_h), icon, color);
     }

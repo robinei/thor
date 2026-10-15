@@ -51,7 +51,7 @@ impl State {
             Some(w) if w.app_id == SHELF_APP_ID => Front::Shelf,
             Some(w) if w.of_game() || self.game_of(w).is_some() => Front::Game,
             Some(_) => Front::App,
-            None if self.running.is_some() => Front::Game,
+            None if self.current_game.is_some() => Front::Game,
             None => Front::Shelf,
         }
     }
@@ -72,7 +72,7 @@ impl State {
         if let Some(g) = self.running_game(&game) {
             return vec![Effect::FocusWorkspace(g.workspace.clone())];
         }
-        if self.running.is_some() {
+        if self.current_game.is_some() {
             self.focus = Some(crate::Id::StartKeep);
             self.show_focus = true;
             return vec![];
@@ -86,10 +86,10 @@ impl State {
         let Some(game) = self.selected.clone() else {
             return vec![];
         };
-        if !close || self.running.is_none() {
+        if !close || self.current_game.is_none() {
             return self.launch_effects(game);
         }
-        let Some(current) = self.running.clone() else {
+        let Some(current) = self.current_game.clone() else {
             return vec![];
         };
         self.queued = Some((current.clone(), game));
@@ -138,7 +138,7 @@ impl State {
     /// now (its settings applied), or none is.
     pub(crate) fn game_gone(&mut self, game: &str) -> Vec<Effect> {
         self.games.retain(|g| &*g.id != game);
-        if self.running.as_deref() != Some(game) {
+        if self.current_game.as_deref() != Some(game) {
             return self.queued_launch(game);
         }
         let next = self
@@ -149,13 +149,13 @@ impl State {
             .map(|g| g.id.clone());
         match next {
             Some(id) => {
-                self.running = Some(id.clone());
+                self.current_game = Some(id.clone());
                 let mut effects = vec![Effect::Apply { game: Some(id.clone()), settings: self.settings.of(&id) }];
                 effects.extend(self.queued_launch(game));
                 effects
             }
             None => {
-                self.running = None;
+                self.current_game = None;
                 let mut effects = self.game_ended();
                 effects.extend(self.queued_launch(game));
                 effects
@@ -204,9 +204,9 @@ impl State {
         // The game shown is the game.
         let shown = self.windows.iter().find(|w| w.focused).and_then(|w| self.game_of(w)).map(|g| g.id.clone());
         if let Some(id) = shown
-            && self.running.as_ref() != Some(&id)
+            && self.current_game.as_ref() != Some(&id)
         {
-            self.running = Some(id.clone());
+            self.current_game = Some(id.clone());
             effects.push(Effect::Apply { game: Some(id.clone()), settings: self.settings.of(&id) });
         }
         effects
@@ -252,10 +252,10 @@ mod tests {
         let (_, fx) = s.apply(Event::Activate(Id::StartKeep));
         assert!(fx.iter().any(|e| matches!(e, Effect::Launch { game, .. } if &**game == "ff6")));
         s.apply(Event::Started("ff6".into()));
-        assert_eq!((s.games.len(), s.running.as_deref()), (2, Some("ff6")));
+        assert_eq!((s.games.len(), s.current_game.as_deref()), (2, Some("ff6")));
         // ff6 ends: zelda is the game again, its settings applied.
         let (_, fx) = s.apply(Event::Played { game: "ff6".into(), start: 100, duration: 10 });
-        assert_eq!(s.running.as_deref(), Some("zelda-lttp"));
+        assert_eq!(s.current_game.as_deref(), Some("zelda-lttp"));
         assert!(matches!(fx.first(), Some(Effect::Apply { game: Some(g), .. }) if &**g == "zelda-lttp"));
         // Close it: zelda quits, then ff6 starts.
         s.apply(Event::Activate(Id::Game("ff6".into())));
@@ -291,7 +291,7 @@ mod tests {
         s.apply(Event::Started("ff6".into()));
         let ff6 = s.running_game("ff6").unwrap().workspace.clone();
         let (_, fx) = s.apply(Event::Windows(vec![win(1, "zelda3", &zelda, true), win(2, "ff6", &ff6, false)]));
-        assert_eq!(s.running.as_deref(), Some("zelda-lttp"));
+        assert_eq!(s.current_game.as_deref(), Some("zelda-lttp"));
         assert!(fx.iter().any(|e| matches!(e, Effect::Apply { game: Some(g), .. } if &**g == "zelda-lttp")), "{fx:?}");
         assert_eq!(s.front(), Front::Game);
     }
@@ -306,13 +306,13 @@ mod tests {
         s.apply(Event::Tick { unix_secs: 1000 });
         let zelda = launch(&mut s, "zelda-lttp");
         let (_, fx) = s.apply(Event::Windows(vec![win(1, "zelda3", &zelda, false), win(7, "steam_app_620", GAME_WORKSPACE, true)]));
-        assert_eq!(s.running.as_deref(), Some("ff6"), "the newest is the game");
+        assert_eq!(s.current_game.as_deref(), Some("ff6"), "the newest is the game");
         assert_eq!(s.games.len(), 2, "the other keeps running");
         assert!(fx.contains(&Effect::MoveWindows { windows: vec![7], workspace: "clamshell-game-steam-620".into() }), "{fx:?}");
         s.apply(Event::Tick { unix_secs: 1600 });
         let (_, fx) = s.apply(Event::Windows(vec![win(1, "zelda3", &zelda, true)]));
         assert_eq!(fx.first(), Some(&Effect::RecordPlay { game: "ff6".into(), start: 1000, duration: 600 }));
-        assert_eq!(s.running.as_deref(), Some("zelda-lttp"));
+        assert_eq!(s.current_game.as_deref(), Some("zelda-lttp"));
         // A Steam game the library doesn't have isn't one.
         s.apply(Event::Windows(vec![win(1, "zelda3", &zelda, false), win(9, "steam_app_1", GAME_WORKSPACE, true)]));
         assert_eq!(s.games.len(), 1);

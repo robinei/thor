@@ -41,7 +41,7 @@ pub(super) fn draw(f: &mut Frame, images: &mut Images, buf: &mut String, w: f32,
 
     // Tabs: the collections' names.
     let tabs_h = h * TABS_H;
-    let items = s.library.collections.iter().enumerate().map(|(i, coll)| (Id::Tab(i as u16), coll.name.as_str(), i == s.tab));
+    let items = s.library.collections.iter().enumerate().map(|(i, coll)| (Id::Collection(i as u16), coll.name.as_str(), i == s.current));
     super::tabs(f, Rect::new(pad, 0.0, w - 2.0 * pad, tabs_h), h * TAB_TEXT, pad * 0.8, f32::INFINITY, items);
 
     // The list, filling the height below the tabs exactly with whole rows.
@@ -95,7 +95,7 @@ pub(super) fn draw(f: &mut Frame, images: &mut Images, buf: &mut String, w: f32,
         y += wrap(c, (tx, y, room), h * TITLE, TEXT_HI, &game.title, 3) + pad * 0.4;
         // What playing it does now: show it (it runs), or with another game running, the choice: keep
         // that one running, or close it; then whether it is a favourite.
-        let the_game = s.running.as_ref().and_then(|id| s.library.games.iter().find(|g| &g.id == id));
+        let the_game = s.current_game.as_ref().and_then(|id| s.library.games.iter().find(|g| &g.id == id));
         let mut mx = tx;
         if s.running_game(&game.id).is_some() {
             mx += c.text(mx, y, h * DETAIL, rgb(GO), "Running · A to show it") + pad;

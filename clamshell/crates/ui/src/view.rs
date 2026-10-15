@@ -256,7 +256,7 @@ fn publish(touch: &Mutex<TouchLayout>, targets: &[Target], body: Rect, (sx, sy):
     layout.width = body.w;
     layout.pad = ((body.x + sx) * scale, (body.y + sy) * scale, (body.x + sx + body.w) * scale, (body.y + sy + body.h) * scale);
     layout.regions.clear();
-    for t in targets.iter().filter(|t| matches!(t.id, Id::Mode(_) | Id::PadMouse | Id::Control(_))) {
+    for t in targets.iter().filter(|t| matches!(t.id, Id::Tab(_) | Id::PadMouse | Id::Control(_))) {
         let r = t.rect;
         layout.regions.push(Region { x0: r.x * scale, y0: r.y * scale, x1: (r.x + r.w) * scale, y1: (r.y + r.h) * scale, id: t.id.clone() });
     }
