@@ -7,7 +7,8 @@
 //! next to the controller ([`motion`]). Away from the game the virtual pad shows a neutral controller,
 //! so games never see it disappear. The home button (BTN_MODE) is ours: it goes to the program as
 //! [`Event::Home`]; held, then the Back button with a game in front, it is the game's Guide (see
-//! [`route`]). The Back button (the layer key, [`remap::LAYER_KEYS`]) is ours too. The virtual
+//! [`route`]). The Back button ([`remap::BACK_KEY`]) is a keymap's input in the game, back on
+//! ClamShell's screens. The virtual
 //! devices outlive the controller: unplugged (or failing), the pad stays, at rest, until one is back.
 //! Games' rumble on the virtual pad reaches the real controller's motors while the game has the pad
 //! ([`rumble`]), scaled by the Rumble setting.

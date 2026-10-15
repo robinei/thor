@@ -100,8 +100,16 @@ pub enum KeymapId {
     /// it is mapped now; a long press sets it back (in the layer shown). While a control is being picked,
     /// the one picked.
     Input(crate::keymap::Input),
-    /// The edit screen shows and edits this layer.
+    /// The edit screen shows and edits this layer (a long press: its menu).
     Layer(crate::keymap::Layer),
+    /// The edit screen's +: a new layer, named.
+    AddLayer,
+    /// A layer's menu: rename it, delete it.
+    RenameLayer,
+    DeleteLayer,
+    /// The layers' list (a layer as a target): this layer, or a new one.
+    ToLayer(crate::keymap::Layer),
+    NewLayer,
     /// The panel shows and edits the selected input's binding of this actuation (press, hold, double).
     Actuation(crate::keymap::Actuation),
     /// "No changes": the layer shown is cleared, once confirmed.
@@ -137,6 +145,8 @@ pub enum Target {
     Keys,
     /// A part of the mouse picked on its drawing: a button, the wheel.
     MouseParts,
+    /// A layer of the keymap, from the list of them (on while the binding is).
+    Layers,
     Pointer,
     Pad(crate::keymap::PadOut),
     Mouse(crate::keymap::MouseButton),

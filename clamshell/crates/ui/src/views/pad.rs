@@ -120,15 +120,10 @@ impl Pad {
     }
 
     /// Home's or Back's small round button, at the screen's bottom corner (Home drawn, not remappable;
-    /// Back the keymap's layer key).
+    /// Back an input like the others).
     pub fn foot(&self, side: Side) -> Option<Rect> {
         let g = self.group(side, Group::Foot)?;
         Some(self.round(side, g))
-    }
-
-    /// The row the foot's button is in, on `side` (what a finger may hit for it).
-    pub fn foot_row(&self, side: Side) -> Option<Rect> {
-        self.group(side, Group::Foot)
     }
 
     /// Where `input` is, if it is in a cluster (the gyro is in the middle; the Thor has no back buttons).
@@ -144,6 +139,7 @@ impl Pad {
                 Button::RS => (Side::Right, Group::Stick),
                 Button::View => (Side::Left, Group::Top),
                 Button::Menu => (Side::Right, Group::Top),
+                Button::Back => (Side::Right, Group::Foot),
                 Button::A | Button::B | Button::X | Button::Y => (side_of(Group::Face), Group::Face),
                 // The Thor has no back buttons.
                 Button::L4 | Button::L5 | Button::R4 | Button::R5 => return None,
@@ -166,9 +162,11 @@ impl Pad {
                 let shown = g.centered(g.w * BUMPER.0, (g.h * BUMPER.1).min(g.w * 0.16));
                 flat(shown, shown.h / 2.0)
             }
-            Input::Button(Button::View | Button::Menu) => {
+            Input::Button(Button::View | Button::Menu | Button::Back) => {
                 let shown = self.round(side, g);
-                Part { shown, radius: shown.w / 2.0, target: g, corners: None, anchor: (inner(shown, k), cy), lane: None, side }
+                // (Back's row is shallow, at the bottom: a little more room below for a finger.)
+                let target = if input == Input::Button(Button::Back) { Rect::new(g.x, g.y, g.w, g.h + 4.0) } else { g };
+                Part { shown, radius: shown.w / 2.0, target, corners: None, anchor: (inner(shown, k), cy), lane: None, side }
             }
             Input::Stick(_) => {
                 // From the cap's edge above the middle, clear of the direction marks.

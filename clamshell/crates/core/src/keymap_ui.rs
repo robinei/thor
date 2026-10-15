@@ -40,6 +40,10 @@ pub enum Screen {
     Holds { id: u16, input: Input },
     /// A part of the mouse for `input`, on its drawing.
     Mouse { id: u16, input: Input },
+    /// A layer for `input`, from the keymap's.
+    Layers { id: u16, input: Input },
+    /// A layer's menu: rename, delete.
+    LayerMenu { id: u16, layer: Layer },
     /// A key chord typed on the keyboard for `input`; for a stick's four keys, which one and those so far.
     Capture { id: u16, input: Input, keys: Option<(usize, [Chord; 4])> },
 }
@@ -56,6 +60,7 @@ impl Screen {
             Screen::List => None,
             Screen::Menu(id) | Screen::Delete(id) | Screen::Edit(id) => Some(id),
             Screen::Pick { id, .. } | Screen::Holds { id, .. } | Screen::Mouse { id, .. } | Screen::Capture { id, .. } => Some(id),
+            Screen::Layers { id, .. } | Screen::LayerMenu { id, .. } => Some(id),
         }
     }
 }
@@ -65,7 +70,7 @@ impl Screen {
 /// gyro's "as before" is off.
 pub fn ways(kind: Kind) -> &'static [Target] {
     match kind {
-        Kind::Digital | Kind::Trigger => &[Target::Pick, Target::Key, Target::MouseParts, Target::Default, Target::Nothing],
+        Kind::Digital | Kind::Trigger => &[Target::Pick, Target::Key, Target::MouseParts, Target::Layers, Target::Default, Target::Nothing],
         Kind::Stick => &[Target::Pick, Target::Keys, Target::Pointer, Target::Default, Target::Nothing],
         Kind::Gyro => &[Target::Pick, Target::Pointer, Target::Default],
     }
@@ -81,6 +86,7 @@ pub fn way_of(output: Option<Output>) -> Target {
         Some(Output::Keys(_)) => Target::Keys,
         Some(Output::Mouse(_) | Output::Wheel(_)) => Target::MouseParts,
         Some(Output::Pointer) => Target::Pointer,
+        Some(Output::Layer(_)) => Target::Layers,
     }
 }
 
@@ -135,6 +141,18 @@ impl Rows for Keymaps {
     }
 }
 
+/// The layers on for the layer the edit screen shows (see [`State::layers_shown`]).
+struct LayersShown {
+    layer: Layer,
+    base: bool,
+}
+
+impl LayersShown {
+    fn as_slice(&self) -> &[Layer] {
+        if self.base { &[] } else { std::slice::from_ref(&self.layer) }
+    }
+}
+
 /// Who uses a keymap: all games (it is their default), and how many games of their own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Users {
@@ -163,18 +181,14 @@ impl State {
         self.bottom.keymap_edit
     }
 
-    /// What the pad's Back button does on ClamShell's screens, as the target it activates: on the edit
-    /// screen while the pad listens, the other layer; in the editor, Cancel; on the keymaps' other
-    /// screens, back one. (Elsewhere nothing has a back of its own.)
+    /// What the pad's Back button does on ClamShell's screens, as the target it activates: in the editor,
+    /// Cancel; on the keymaps' screens, back one (picking a control: give up). (Elsewhere nothing has a
+    /// back of its own. On the edit screen while the pad listens, Back comes as an input to remap.)
     pub fn pad_back(&self) -> Option<crate::Id> {
         if self.bottom.editor.is_some() {
             return Some(crate::Id::Editor(crate::EditorId::Cancel));
         }
-        match self.bottom.keymaps? {
-            Screen::Edit(_) if self.listening() => Some(crate::Id::Keymap(KeymapId::Layer(self.bottom.keymap_edit.layer.other()))),
-            // (Picking a control: Back gives up, like the other ways' screens.)
-            _ => Some(crate::Id::Keymap(KeymapId::Back)),
-        }
+        self.bottom.keymaps.map(|_| crate::Id::Keymap(KeymapId::Back))
     }
 
     /// Whether the pad listens for inputs (the edit screen, or waiting for a pad button, in view).
@@ -305,9 +319,36 @@ impl State {
                 }
                 vec![]
             }
+            (KeymapId::Layer(layer), Screen::Edit(k)) if long && layer != Layer::BASE => {
+                self.bottom.keymaps = Some(Screen::LayerMenu { id: k, layer });
+                vec![]
+            }
             (KeymapId::Layer(layer), Screen::Edit(_)) => {
                 self.bottom.keymap_edit.layer = layer;
                 self.bottom.keymap_edit.clearing = false;
+                vec![]
+            }
+            (KeymapId::AddLayer, Screen::Edit(k)) => {
+                self.name_keymap(KeymapName::NewLayer(k, None), String::new());
+                vec![]
+            }
+            (KeymapId::RenameLayer, Screen::LayerMenu { id: k, layer }) => {
+                let name = self.keymaps.get(k).and_then(|km| km.layer_name(layer)).unwrap_or("").to_owned();
+                self.name_keymap(KeymapName::RenameLayer(k, layer), name);
+                vec![]
+            }
+            (KeymapId::DeleteLayer, Screen::LayerMenu { id: k, layer }) => {
+                self.bottom.keymaps = Some(Screen::Edit(k));
+                if self.bottom.keymap_edit.layer == layer {
+                    self.bottom.keymap_edit.layer = Layer::BASE;
+                }
+                let changed = self.keymaps.get_mut(k).is_some_and(|km| km.remove_layer(layer));
+                if changed { vec![self.save_keymaps()] } else { vec![] }
+            }
+            (KeymapId::ToLayer(layer), Screen::Layers { id: k, input }) => self.choose(k, input, Output::Layer(layer)),
+            (KeymapId::NewLayer, Screen::Layers { id: k, input }) => {
+                let act = self.bottom.keymap_edit.act;
+                self.name_keymap(KeymapName::NewLayer(k, Some((input, act))), String::new());
                 vec![]
             }
             (KeymapId::Clear, Screen::Edit(_)) => {
@@ -367,6 +408,7 @@ impl State {
             None | Some(Screen::List) => None,
             Some(Screen::Menu(_) | Screen::Delete(_) | Screen::Edit(_)) => Some(Screen::List),
             Some(Screen::Pick { id, .. } | Screen::Holds { id, .. } | Screen::Mouse { id, .. }) => Some(Screen::Edit(id)),
+            Some(Screen::Layers { id, .. } | Screen::LayerMenu { id, .. }) => Some(Screen::Edit(id)),
             Some(Screen::Capture { id, .. }) => {
                 self.keyboard.take_modifiers();
                 Some(Screen::Edit(id))
@@ -377,11 +419,18 @@ impl State {
     /// Whether the selected input has a hold's or a double's binding in force in the layer shown (its press
     /// then acts only once it is known not to be one).
     pub fn press_waits(&self, id: u16, input: Input) -> bool {
-        let back = self.bottom.keymap_edit.layer == Layer::Back;
-        self.keymaps.get(id).is_some_and(|k| [Actuation::Hold, Actuation::Double].into_iter().any(|a| k.lookup_of(input, a, back).is_some()))
+        let on = self.layers_shown();
+        self.keymaps.get(id).is_some_and(|k| [Actuation::Hold, Actuation::Double].into_iter().any(|a| k.lookup_of(input, a, on.as_slice()).is_some()))
     }
 
-    /// The edit screen of keymap `id`, as first opened: the main layer, nothing selected.
+    /// The layers on for the layer shown: none for Base (Base is beneath everything), else that one. (No
+    /// allocation: the screens ask while drawing.)
+    fn layers_shown(&self) -> LayersShown {
+        let layer = self.bottom.keymap_edit.layer;
+        LayersShown { layer, base: layer == Layer::BASE }
+    }
+
+    /// The edit screen of keymap `id`, as first opened: Base, nothing selected.
     fn open_edit(&mut self, id: u16) {
         self.bottom.keymaps = Some(Screen::Edit(id));
         self.bottom.keymap_edit = EditView::default();
@@ -453,6 +502,26 @@ impl State {
                 self.keymaps.duplicate(id, name);
                 self.bottom.keymaps = Some(Screen::List);
             }
+            KeymapName::NewLayer(id, for_input) => {
+                let layer = self.keymaps.get_mut(id).and_then(|k| k.add_layer(name));
+                self.bottom.keymaps = Some(Screen::Edit(id));
+                match (layer, for_input) {
+                    // Made from the layers' list: the input maps to it (in the layer shown).
+                    (Some(l), Some((input, act))) => {
+                        self.bottom.keymap_edit.act = act;
+                        let mut effects = self.choose(id, input, Output::Layer(l));
+                        effects.push(self.save_keymaps());
+                        return effects;
+                    }
+                    // From the +: shown.
+                    (Some(l), None) => self.bottom.keymap_edit.layer = l,
+                    (None, _) => {}
+                }
+            }
+            KeymapName::RenameLayer(id, layer) => {
+                self.keymaps.get_mut(id).map(|k| k.rename_layer(layer, name));
+                self.bottom.keymaps = Some(Screen::Edit(id));
+            }
         }
         vec![self.save_keymaps()]
     }
@@ -498,6 +567,7 @@ impl State {
             Target::Key => Screen::Capture { id, input, keys: None },
             Target::Keys => Screen::Capture { id, input, keys: Some((0, [Chord::default(); 4])) },
             Target::MouseParts => Screen::Mouse { id, input },
+            Target::Layers => Screen::Layers { id, input },
             Target::Default => {
                 self.bottom.keymaps = Some(Screen::Edit(id));
                 return self.bind(id, input, None);
@@ -514,7 +584,7 @@ impl State {
     /// An output chosen for `input`, by the way it was asked for.
     fn chosen(&mut self, id: u16, input: Input, target: Target) -> Vec<Effect> {
         let output = match target {
-            Target::Default | Target::Pick | Target::Key | Target::Keys | Target::MouseParts => return vec![],
+            Target::Default | Target::Pick | Target::Key | Target::Keys | Target::MouseParts | Target::Layers => return vec![],
             Target::Nothing => Output::Nothing,
             Target::Pad(p) => Output::Pad(p),
             Target::Mouse(m) => Output::Mouse(m),
@@ -560,8 +630,9 @@ impl State {
     /// (a hold or double without a binding has none).
     pub fn param_base(&self, id: u16, input: Input) -> Option<Binding> {
         let k = self.keymaps.get(id);
-        let EditView { layer, act, .. } = self.bottom.keymap_edit;
-        let found = k.and_then(|k| k.lookup_of(input, act, layer == Layer::Back)).copied();
+        let act = self.bottom.keymap_edit.act;
+        let shown = self.layers_shown();
+        let found = k.and_then(|k| k.lookup_of(input, act, shown.as_slice())).copied();
         match act {
             Actuation::Press => found.or_else(|| as_on_the_pad(input).map(|o| Binding::of(input, o))),
             _ => found,
@@ -583,7 +654,7 @@ impl State {
     /// on the pad again (then it has no binding). Whether it changed.
     fn set_tuned(&mut self, id: u16, input: Input, b: Binding) -> bool {
         let EditView { layer, act, .. } = self.bottom.keymap_edit;
-        let plain = layer == Layer::Main && act == Actuation::Press && as_on_the_pad(input).map(|o| Binding::of(input, o)) == Some(b);
+        let plain = layer == Layer::BASE && act == Actuation::Press && as_on_the_pad(input).map(|o| Binding::of(input, o)) == Some(b);
         self.keymaps.get_mut(id).is_some_and(|k| k.set_of(layer, input, act, (!plain).then_some(b)))
     }
 
@@ -965,42 +1036,60 @@ mod tests {
     }
 
     #[test]
-    fn the_back_layer_is_shown_edited_and_falls_through() {
+    fn layers_are_added_shown_edited_and_fall_through() {
         let mut s = edit_screen();
         let a = Input::Button(Button::A);
-        // The pad's Back button flips the layer while the pad listens (the UI activates this).
-        assert_eq!(s.pad_back(), Some(Id::Keymap(KeymapId::Layer(Layer::Back))));
-        keymap(&mut s, KeymapId::Layer(Layer::Back));
-        assert_eq!(s.keymap_edit().layer, Layer::Back);
-        assert_eq!(s.pad_back(), Some(Id::Keymap(KeymapId::Layer(Layer::Main))));
-        // A in the Back layer: a key; main keeps the Nintendo layout's B.
+        // The +: named, then shown.
+        let aim = add_layer(&mut s, "aim");
+        assert_eq!((aim, s.keymap_edit().layer), (Layer(1), Layer(1)));
+        // A in it: a key; Base keeps the Nintendo layout's B.
         open(&mut s, a);
         keymap(&mut s, KeymapId::Target(Target::Key));
         key(&mut s, Key::Char('y'));
         let k = s.keymaps().get(1).unwrap();
-        assert_eq!(k.get_in(Layer::Back, a).map(|b| b.output), Some(Output::Key(Chord::of(Key::Char('y')))));
+        assert_eq!(k.get_in(aim, a).map(|b| b.output), Some(Output::Key(Chord::of(Key::Char('y')))));
         assert_eq!(k.get(a).map(|b| b.output), Some(Output::Pad(PadOut::Button(Button::B))));
-        assert!(s.keymaps().text().contains("layer back\na = key y\n"), "{}", s.keymaps().text());
-        // X as on the pad (picked: itself), over main's Y; the gyro off in it.
+        assert!(s.keymaps().text().contains("layer 1 aim\na = key y\n"), "{}", s.keymaps().text());
+        // X as on the pad (picked: itself), over Base's Y; reset: as Base again.
         let x = Input::Button(Button::X);
         open(&mut s, x);
         keymap(&mut s, KeymapId::Target(Target::Pick));
         keymap(&mut s, KeymapId::Input(x));
-        open(&mut s, Input::Gyro);
-        keymap(&mut s, KeymapId::Target(Target::Nothing));
-        let k = s.keymaps().get(1).unwrap();
-        assert_eq!(k.get_in(Layer::Back, x).map(|b| b.output), Some(Output::Pad(PadOut::Button(Button::X))));
-        assert_eq!(k.get_in(Layer::Back, Input::Gyro).map(|b| b.output), Some(Output::Nothing));
-        // Reset in the Back layer: as the main layer again.
-        keymap(&mut s, KeymapId::Input(x));
+        assert_eq!(s.keymaps().get(1).unwrap().get_in(aim, x).map(|b| b.output), Some(Output::Pad(PadOut::Button(Button::X))));
         keymap(&mut s, KeymapId::Target(Target::Default));
-        assert_eq!(s.keymaps().get(1).unwrap().get_in(Layer::Back, x), None);
-        assert_eq!(s.keymaps().get(1).unwrap().get(x).map(|b| b.output), Some(Output::Pad(PadOut::Button(Button::Y))));
-        // The keymap sent to the pad has both layers.
-        keymap(&mut s, KeymapId::Back);
-        tap(&mut s, row(1));
-        let fx = s.apply(GameEvent::Started("zelda-lttp".into()).into()).1;
-        assert_eq!(sent(&fx).map(|k| (k.bindings().len(), k.layer(Layer::Back).len())), Some((4, 2)), "{fx:?}");
+        assert_eq!(s.keymaps().get(1).unwrap().get_in(aim, x), None);
+        // Back (an input like any other) on Base to the layer, from the layers' list.
+        keymap(&mut s, KeymapId::Layer(Layer::BASE));
+        open(&mut s, Input::Button(Button::Back));
+        keymap(&mut s, KeymapId::Target(Target::Layers));
+        assert_eq!(s.keymap_screen(), Some(Screen::Layers { id: 1, input: Input::Button(Button::Back) }));
+        keymap(&mut s, KeymapId::ToLayer(aim));
+        assert_eq!(s.keymap_screen(), Some(Screen::Edit(1)), "chosen: closed");
+        assert_eq!(s.keymaps().get(1).unwrap().get(Input::Button(Button::Back)).map(|b| b.output), Some(Output::Layer(aim)));
+        // A new layer from the list: named, and the input maps to it at once (held long here).
+        open(&mut s, Input::Button(Button::LB));
+        keymap(&mut s, KeymapId::Actuation(Actuation::Hold));
+        keymap(&mut s, KeymapId::Target(Target::Layers));
+        keymap(&mut s, KeymapId::NewLayer);
+        type_text(&mut s, "menu");
+        tap(&mut s, Id::Editor(EditorId::Save));
+        let k = s.keymaps().get(1).unwrap();
+        assert_eq!(k.get_of(Layer::BASE, Input::Button(Button::LB), Actuation::Hold).map(|b| b.output), Some(Output::Layer(Layer(2))));
+        assert_eq!(k.layer_name(Layer(2)), Some("menu"));
+        // A long press on a layer: its menu; renamed, then deleted (with what maps to it).
+        long(&mut s, Id::Keymap(KeymapId::Layer(Layer(2))));
+        assert_eq!(s.keymap_screen(), Some(Screen::LayerMenu { id: 1, layer: Layer(2) }));
+        keymap(&mut s, KeymapId::RenameLayer);
+        key(&mut s, Key::Char('s'));
+        tap(&mut s, Id::Editor(EditorId::Save));
+        assert_eq!(s.keymaps().get(1).unwrap().layer_name(Layer(2)), Some("menus"));
+        long(&mut s, Id::Keymap(KeymapId::Layer(Layer(2))));
+        keymap(&mut s, KeymapId::DeleteLayer);
+        let k = s.keymaps().get(1).unwrap();
+        assert_eq!((k.layer_name(Layer(2)), k.get_of(Layer::BASE, Input::Button(Button::LB), Actuation::Hold)), (None, None));
+        // Base has no menu.
+        long(&mut s, Id::Keymap(KeymapId::Layer(Layer::BASE)));
+        assert_eq!(s.keymap_screen(), Some(Screen::Edit(1)));
         // Picking a control, the pad's Back gives up.
         let mut s = edit_screen();
         open(&mut s, a);
@@ -1008,10 +1097,18 @@ mod tests {
         assert_eq!(s.pad_back(), Some(Id::Keymap(KeymapId::Back)), "picking: back");
     }
 
+    /// A layer added with the edit screen's +, named `name`; it is shown.
+    fn add_layer(s: &mut State, name: &str) -> Layer {
+        keymap(s, KeymapId::AddLayer);
+        type_text(s, name);
+        tap(s, Id::Editor(EditorId::Save));
+        s.keymap_edit().layer
+    }
+
     #[test]
     fn no_changes_clears_the_layer_shown_once_confirmed() {
         let mut s = edit_screen();
-        keymap(&mut s, KeymapId::Layer(Layer::Back));
+        let aim = add_layer(&mut s, "aim");
         open(&mut s, Input::Button(Button::LB));
         keymap(&mut s, KeymapId::Target(Target::Nothing));
         keymap(&mut s, KeymapId::Clear);
@@ -1023,16 +1120,16 @@ mod tests {
         let fx = keymap(&mut s, KeymapId::ConfirmClear);
         assert!(matches!(fx.as_slice(), [Effect::Save(Save::Keymaps(_))]), "{fx:?}");
         let k = s.keymaps().get(1).unwrap();
-        assert!(k.layer(Layer::Back).is_empty());
+        assert!(k.layer(aim).is_empty());
         assert_eq!(k.bindings().len(), 4, "the main layer kept");
         assert!(!s.keymap_edit().clearing);
         // The main layer cleared too: Default's behaviour, the keymap kept.
-        keymap(&mut s, KeymapId::Layer(Layer::Main));
+        keymap(&mut s, KeymapId::Layer(Layer::BASE));
         keymap(&mut s, KeymapId::Clear);
         keymap(&mut s, KeymapId::ConfirmClear);
         assert!(s.keymaps().get(1).unwrap().bindings().is_empty());
-        // A fresh edit screen starts on the main layer.
-        keymap(&mut s, KeymapId::Layer(Layer::Back));
+        // A fresh edit screen starts on Base.
+        keymap(&mut s, KeymapId::Layer(aim));
         keymap(&mut s, KeymapId::Back);
         tap(&mut s, Id::Row { list: ListId::Keymaps, i: 1, part: RowPart::Edit });
         assert_eq!(s.keymap_edit(), EditView::default());
@@ -1066,10 +1163,10 @@ mod tests {
         assert_eq!(s.keymaps().get(1).unwrap().get(ls), None);
         // In the Back layer it starts from the main layer's and is the Back layer's own.
         slide(&mut s, Param::Full, 80);
-        keymap(&mut s, KeymapId::Layer(Layer::Back));
+        let aim = add_layer(&mut s, "aim");
         slide(&mut s, Param::Curve, 30);
         let k = s.keymaps().get(1).unwrap();
-        assert_eq!(k.get_in(Layer::Back, ls).map(|b| (b.full, b.curve)), Some((80, 30)));
+        assert_eq!(k.get_in(aim, ls).map(|b| (b.full, b.curve)), Some((80, 30)));
         assert_eq!(k.get(ls).map(|b| (b.full, b.curve)), Some((80, 0)));
         // A parameter the input hasn't: no slider. Buttons have none.
         assert_eq!(slide_start(&mut s, Param::Threshold), None);
@@ -1093,12 +1190,12 @@ mod tests {
         keymap(&mut s, KeymapId::Target(Target::MouseParts));
         keymap(&mut s, KeymapId::Target(Target::Mouse(MouseButton::Left)));
         let k = s.keymaps().get(1).unwrap();
-        assert_eq!(k.get_of(Layer::Main, rt, Actuation::FullPull).map(|b| (b.output, b.threshold)), Some((Output::Mouse(MouseButton::Left), 95)));
+        assert_eq!(k.get_of(Layer::BASE, rt, Actuation::FullPull).map(|b| (b.output, b.threshold)), Some((Output::Mouse(MouseButton::Left), 95)));
         assert_eq!(k.get(rt), None, "the pull as on the pad (analog)");
         // Picking the other trigger: it, pulled all the way.
         keymap(&mut s, KeymapId::Target(Target::Pick));
         keymap(&mut s, KeymapId::Input(Input::Trigger(Side::Left)));
-        let full = s.keymaps().get(1).unwrap().get_of(Layer::Main, rt, Actuation::FullPull).map(|b| b.output);
+        let full = s.keymaps().get(1).unwrap().get_of(Layer::BASE, rt, Actuation::FullPull).map(|b| b.output);
         assert_eq!(full, Some(Output::Pad(PadOut::Trigger(Side::Left))));
     }
 
@@ -1113,18 +1210,18 @@ mod tests {
         keymap(&mut s, KeymapId::Target(Target::Key));
         key(&mut s, Key::Char('e'));
         let k = s.keymaps().get(1).unwrap();
-        assert_eq!(k.get_of(Layer::Main, a, Actuation::Hold).map(|b| b.output), Some(Output::Key(Chord::of(Key::Char('e')))));
+        assert_eq!(k.get_of(Layer::BASE, a, Actuation::Hold).map(|b| b.output), Some(Output::Key(Chord::of(Key::Char('e')))));
         assert_eq!(k.get(a).map(|b| b.output), Some(Output::Pad(PadOut::Button(Button::B))), "the press as it was");
         assert!(s.press_waits(1, a));
         // Its time, and turbo, by slider; toggle by switch.
         slide(&mut s, Param::HoldTime, 60);
         slide(&mut s, Param::Turbo, 12);
         keymap(&mut s, KeymapId::Toggle(Param::Toggle));
-        let b = s.keymaps().get(1).unwrap().get_of(Layer::Main, a, Actuation::Hold).copied().unwrap();
+        let b = s.keymaps().get(1).unwrap().get_of(Layer::BASE, a, Actuation::Hold).copied().unwrap();
         assert_eq!((b.hold_time, b.turbo, b.toggle), (60, 12, true));
         // Reset on the Hold tab: no hold again; the press untouched.
         keymap(&mut s, KeymapId::Target(Target::Default));
-        assert_eq!(s.keymaps().get(1).unwrap().get_of(Layer::Main, a, Actuation::Hold), None);
+        assert_eq!(s.keymaps().get(1).unwrap().get_of(Layer::BASE, a, Actuation::Hold), None);
         assert!(!s.press_waits(1, a));
         // A stick has no tabs; another input selected starts on Press.
         keymap(&mut s, KeymapId::Actuation(Actuation::Double));

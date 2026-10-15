@@ -7,7 +7,7 @@ use evdev::raw_stream::RawDevice;
 use evdev::uinput::VirtualDevice;
 use evdev::{AbsInfo, AbsoluteAxisCode, AttributeSet, BusType, FFEffectCode, InputEvent, InputId, KeyCode, RelativeAxisCode, UinputAbsSetup};
 
-use super::remap::is_layer_key;
+use super::remap::is_back_key;
 use super::route::{Axis, PadSnapshot, Ranges, mouse_device_keys};
 use crate::input::device::{self, DeviceSpec};
 use crate::input::{Press, Range, Raw, keyset};
@@ -96,7 +96,7 @@ pub fn emit(device: &mut VirtualDevice, events: &[Raw]) -> io::Result<()> {
 
 /// The real pad's keys the virtual one has: all but the layer key (ClamShell's, never the game's).
 fn pad_keys(caps: &Capabilities) -> impl Iterator<Item = KeyCode> + '_ {
-    caps.keys.iter().copied().filter(|&k| !is_layer_key(k))
+    caps.keys.iter().copied().filter(|&k| !is_back_key(k))
 }
 
 /// A pad with the real one's buttons and axes, identified as a wired Xbox 360 controller so SDL, Wine

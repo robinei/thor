@@ -16,7 +16,7 @@ use super::listen::Listener;
 use super::motion::{Sample, interval};
 use super::mouse::PadMouse;
 use super::navigator::Navigator;
-use super::remap::{self, Remap, is_layer_key, mouse_codes};
+use super::remap::{self, Remap, is_back_key, mouse_codes};
 use super::typing::Typing;
 use crate::input::{Press, Range, Raw};
 
@@ -159,17 +159,17 @@ enum Home {
     Up,
     /// Held; whether a combination used it (then letting go isn't Home).
     Held { combined: bool },
-    /// Held, then the layer key with a game in front: the virtual pad's Guide is down until either is
+    /// Held, then the Back button with a game in front: the virtual pad's Guide is down until either is
     /// let go.
     Guide,
 }
 
 /// Routes the pad's events. The home button is ClamShell's: on its own it is [`Event::Home`] (on
 /// release, so it can start a combination); held with a button of [`SYSTEM`], that shortcut; held, then
-/// the layer key (the Thor's Back button) with a game in front, the game's Guide button (Steam's overlay;
+/// the Thor's Back button with a game in front, the game's Guide button (Steam's overlay;
 /// buttons pressed meanwhile go to the game, for Steam's chords) while both are held. Held with any other
-/// button, that button goes where it would, and letting Home go isn't Home. The layer key on its own:
-/// the keymap's Back layer in the game ([`remap`]), back ([`PadInput::Back`]) on ClamShell's screens.
+/// button, that button goes where it would, and letting Home go isn't Home. Back on its own:
+/// an input of the keymap in the game ([`remap`]), back ([`PadInput::Back`]) on ClamShell's screens.
 /// With the pad mouse or typing, View is ClamShell's too (to move the pad to the second screen).
 pub struct PadRouter {
     route: PadRoute,
@@ -317,16 +317,16 @@ impl PadRouter {
             Some((code, press)) if self.taken.contains(&code) => {
                 if press == Press::Up {
                     self.taken.retain(|&k| k != code);
-                    if is_layer_key(code) && self.home == Home::Guide {
+                    if is_back_key(code) && self.home == Home::Guide {
                         self.guide(false, out);
                         self.home = Home::Held { combined: true };
                     }
                 }
                 return;
             }
-            // Home, then the layer key: Guide while both are held (a game in front); the layer key
-            // isn't the layer then.
-            Some((code, Press::Down)) if held && is_layer_key(code) => {
+            // Home, then Back: Guide while both are held (a game in front); Back isn't the keymap's
+            // then.
+            Some((code, Press::Down)) if held && is_back_key(code) => {
                 self.taken.push(code);
                 if self.route == PadRoute::Game {
                     self.home = Home::Guide;
@@ -346,13 +346,13 @@ impl PadRouter {
             _ => {}
         }
         self.snapshot.update(raw);
-        // The layer key away from the game: back on ClamShell's screens (the edit screen's layer while it
-        // listens), nothing with the pad mouse or typing.
+        // The Back button away from the game: back on ClamShell's screens, nothing with the pad mouse or
+        // typing; while a keymap's edit screen listens, an input like the others (to remap it).
         if let Some((code, press)) = key
-            && is_layer_key(code)
-            && self.route != PadRoute::Game
+            && is_back_key(code)
+            && matches!(self.route, PadRoute::Ui | PadRoute::Mouse | PadRoute::Keys)
         {
-            if press == Press::Down && matches!(self.route, PadRoute::Ui | PadRoute::Listen) {
+            if press == Press::Down && self.route == PadRoute::Ui {
                 out.events.push(Event::Pad(PadInput::Back));
             }
             return;
@@ -558,14 +558,18 @@ mod tests {
 
     #[test]
     fn back_on_clamshells_screens_is_back_and_nothing_with_the_mouse() {
-        for route in [PadRoute::Ui, PadRoute::Listen] {
-            let (mut r, mut out) = router(route);
-            out.pad.clear();
-            r.event(key(BACK, Press::Down), Instant::now(), &mut out);
-            r.event(key(BACK, Press::Up), Instant::now(), &mut out);
-            assert_eq!(out.events, vec![Event::Pad(PadInput::Back)], "{route:?}");
-            assert!(out.pad.is_empty());
-        }
+        let (mut r, mut out) = router(PadRoute::Ui);
+        out.pad.clear();
+        r.event(key(BACK, Press::Down), Instant::now(), &mut out);
+        r.event(key(BACK, Press::Up), Instant::now(), &mut out);
+        assert_eq!(out.events, vec![Event::Pad(PadInput::Back)]);
+        assert!(out.pad.is_empty());
+        // A keymap's edit screen listening: Back is an input to remap.
+        let (mut r, mut out) = router(PadRoute::Listen);
+        out.pad.clear();
+        r.event(key(BACK, Press::Down), Instant::now(), &mut out);
+        r.event(Raw::REPORT, Instant::now(), &mut out);
+        assert_eq!(out.events, vec![Event::Listened(clamshell_core::keymap::Input::Button(clamshell_core::keymap::Button::Back))]);
         let (mut r, mut out) = router(PadRoute::Mouse);
         out = Out { pad: vec![], ..out };
         r.event(key(BACK, Press::Down), Instant::now(), &mut out);

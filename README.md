@@ -70,8 +70,8 @@ touchpad tab, the pad on shelf (D-pad, A, Home), View, the pad mouse, typing wit
 on-screen key when View moves the pad away, unplugging the controller during a game, Home then Back as the game's Guide, a keymap made
 through its screens and the pad (A to Ctrl+X, the right stick and the gyro while LB is held to the
 pointer) read back from the virtual devices in a game, the gyro's speed slid up on the edit screen while
-the game runs, then Default passing everything through, a keymap with a Back layer (A to Ctrl+X, Ctrl+Y
-while Back is held, Back let go while A is held), a keymap with a hold, a double and a toggle (A tapped and
+the game runs, then Default passing everything through, a keymap with a layer (A to Ctrl+X, Ctrl+Y in a
+layer Back turns on while held, made with the + and the layers' list; Back let go while A is held), a keymap with a hold, a double and a toggle (A tapped and
 held, B once and twice, Y on and off), and Bluetooth. For
 them ClamShell runs with a test library, the fake backlight and its own state directory (a runtime
 drop-in for its service, removed afterwards; `--keep` leaves it). It prints ok/FAIL lines and a count;
@@ -241,24 +241,29 @@ off and the device sleeps) are on the Battery tab, not here: they aren't a game'
 **Keymaps** remap the controller for games: named, shared between games, saved in `keymaps.txt` next to
 `game-settings.txt` (a `keymap ID NAME` line, then a line per binding, `INPUT = OUTPUT [option=value]`, e.g.
 `a = key ctrl+x turbo=12`, `a hold = key esc holdtime=60`, `b double = mouse left toggle`,
-`rstick = pointer speed=75% deadzone=10`, `gyro = pointer hold=lt`; a `layer back` line
-starts the Back layer's bindings; lines not understood are skipped, and a layer not known). Each keymap has
-two layers: the main one, and one in force while the Thor's Back button is held (its inputs without a
-binding there do what the main layer says; Back itself never reaches the game). The first start makes a
+`rstick = pointer speed=75% deadzone=10`, `gyro = pointer hold=lt`, `back = layer 1`; a `layer N NAME`
+line starts a layer's bindings, Base's coming first; lines not understood are skipped, and a layer not
+known; a file's old `layer back` becomes a layer "Back held" with Back mapped to it). Each keymap has
+**layers**: Base, and the ones added (named), each on while a binding to it is: held (a press or a hold
+to it), toggled (a toggle), or pressed twice (a double), any button or trigger turning one on. Layers on
+stack, the newest first: an input without a binding in it does what the layers beneath say, Base last;
+the binding that turned a layer on stays as it was until it goes off, whatever the layer makes of that
+input. The Thor's Back button is an input like the others (in a game, nothing as on the pad). The first
+start makes a
 "Nintendo layout" keymap (A and B, X and Y swapped), an ordinary one. The Keymap tile opens the picker
 over the settings: Default, then the keymaps with how many games use each; a tap chooses one for the scope
 being edited, Edit (or a long press: rename, duplicate, delete; deleting one in use asks first and puts its
 games back on Default) opens it, New names one (the editor) and opens it. The edit screen shows one layer
-(Main or Back held, switched at the top right, by the Back button drawn on the pad, or by pressing Back on
-the pad): the Thor's controls in two clusters at the screen's edges, each input the layer changes with a
+(the tabs at the top right: Base, the layers, and + to add one, named; a long press on a layer: rename or
+delete it, the bindings to it too): the Thor's controls in two clusters at the screen's edges, each input the layer changes with a
 label, blue where it maps to something else, grey where it is the input as on the pad, only tuned. An
 input is selected by touch or by pressing (or pushing past half) it on the pad, which listens there
 instead of moving the focus (Home leaves; Home is never mapped); the panel between the label columns
 then shows, for a button or a direction, Press, Hold and Double tabs (each actuation's binding of its own;
 a dot under one set), what it does in the layer, the ways to remap it as icons (only those that fit it):
 a control picked on the drawing (tapped, or pressed on the pad; the rest fade), keys typed on the
-keyboard, the mouse's parts on a drawing of one (for motion, the pointer), as before (the main layer: as
-on the pad; the Back layer: as in Main; a hold or double: none), nothing. Each closes as soon as something
+keyboard, the mouse's parts on a drawing of one (for motion, the pointer), a layer (the keymap's, or a new
+one, named), as before (Base: as on the pad; a layer: as in Base; a hold or double: none), nothing. Each closes as soon as something
 is chosen; Cancel gives up; selecting the input again reopens the way it is mapped. Then its parameters: a stick's deadzone, full point, curve and X/Y
 inversion (and speed on the pointer), a trigger's deadzone and full point (and threshold on a button), the
 gyro's speed, inversion and what holds it on (picked on the drawing too), a hold's time, and on anything
@@ -350,9 +355,9 @@ image binds to a keyboard's Print) is both screens in one PNG in `~/Pictures/Scr
 combination: held with RB, a screenshot (a table of such system shortcuts, `pad/route.rs`); held, then
 Back with a game in front, the game's Guide button while both are held (Steam's overlay; buttons pressed
 meanwhile go to the game, for Steam's Guide chords); held with any other button, that button goes where it
-would and letting Home go isn't Home. Back on its own is the keymap's Back layer in a game and back on
-ClamShell's screens (closes the editor, goes back one keymap screen; on the edit screen it shows the other
-layer). Back's key code is assumed to be KEY_BACK on the controller until the device test.
+would and letting Home go isn't Home. Back on its own is an input of the keymap in a game (and on the
+edit screen, which listens) and back on ClamShell's screens (closes the editor, goes back one keymap
+screen). Back's key code is assumed to be KEY_BACK on the controller until the device test.
 
 **Sleep**: the power button and the lid put the device to sleep through logind (the image's
 `logind.conf.d/thor.conf`): suspend, then hibernate after 30 minutes (`sleep.conf.d/thor.conf`), or

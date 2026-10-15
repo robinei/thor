@@ -13,7 +13,9 @@
 //!   edit|rename|duplicate|delete`, `keymap-delete` (confirmed), `map-from INPUT` (as in keymaps.txt:
 //!   `a`, `lb`, `up`, `lstick`, `rstick-up`, `lt`, `gyro`: selects it, again reopens the way it is
 //!   mapped; while a control is picked, the one picked; a long press sets it back),
-//!   `keymap-act press|hold|double|full` (the panel's tab), `keymap-layer main|back`, `keymap-clear`,
+//!   `keymap-act press|hold|double|full` (the panel's tab), `keymap-layer base|N` (a long press: its
+//!   menu, `layer-rename`, `layer-delete`), `keymap-add-layer` (the +), `to-layer N` and `new-layer`
+//!   (the layers' list), `keymap-clear`,
 //!   `keymap-clear-confirm`, `toggle` (the binding's toggle), `twist`, `ratchet` and `calibrate` (the
 //!   gyro's), `keymap-active` (the gyro's hold), `invert x|y`, `map-to TARGET` (the panel's ways: `pick`,
 //!   `key`, `keys`, `mouse`, `pointer`, `default`, `nothing`; or an output: `pad-INPUT`,
@@ -214,8 +216,13 @@ fn target_id(words: &[&str]) -> Result<Id, ParseError> {
                 .find(|a| a.label().eq_ignore_ascii_case(act) || (*act == "full" && *a == Actuation::FullPull))
                 .ok_or_else(|| ParseError::Name((*act).to_owned()))?,
         )),
-        ["keymap-layer", "main"] => Id::Keymap(KeymapId::Layer(Layer::Main)),
-        ["keymap-layer", "back"] => Id::Keymap(KeymapId::Layer(Layer::Back)),
+        ["keymap-layer", "base"] => Id::Keymap(KeymapId::Layer(Layer::BASE)),
+        ["keymap-layer", n] => Id::Keymap(KeymapId::Layer(Layer(number(n)?))),
+        ["keymap-add-layer"] => Id::Keymap(KeymapId::AddLayer),
+        ["layer-rename"] => Id::Keymap(KeymapId::RenameLayer),
+        ["layer-delete"] => Id::Keymap(KeymapId::DeleteLayer),
+        ["to-layer", n] => Id::Keymap(KeymapId::ToLayer(Layer(number(n)?))),
+        ["new-layer"] => Id::Keymap(KeymapId::NewLayer),
         ["keymap-clear"] => Id::Keymap(KeymapId::Clear),
         ["keymap-clear-confirm"] => Id::Keymap(KeymapId::ConfirmClear),
         ["keymap-active"] => Id::Keymap(KeymapId::Holds),
@@ -254,6 +261,7 @@ fn target_named(word: &str) -> Result<Target, ParseError> {
             "nothing" => Target::Nothing,
             "pick" => Target::Pick,
             "mouse" => Target::MouseParts,
+            "layers" => Target::Layers,
             "key" => Target::Key,
             "keys" => Target::Keys,
             "pointer" => Target::Pointer,
@@ -402,7 +410,8 @@ mod tests {
         assert_eq!(parse("tap map-to stick-left"), Ok(km(KeymapId::Target(Target::Stick(Side::Left)))));
         assert_eq!(parse("tap gyro-hold lt"), Ok(km(KeymapId::Hold(Some(Input::Trigger(Side::Left))))));
         assert_eq!(parse("tap gyro-hold always"), Ok(km(KeymapId::Hold(None))));
-        assert_eq!(parse("tap keymap-layer back"), Ok(km(KeymapId::Layer(Layer::Back))));
+        assert_eq!(parse("tap keymap-layer 1"), Ok(km(KeymapId::Layer(Layer(1)))));
+        assert_eq!(parse("tap keymap-layer base"), Ok(km(KeymapId::Layer(Layer::BASE))));
         assert_eq!(parse("tap invert y"), Ok(km(KeymapId::Toggle(Param::InvertY))));
         assert_eq!(parse("tap map-to pick"), Ok(km(KeymapId::Target(Target::Pick))));
         assert_eq!(parse("tap keymap-act hold"), Ok(km(KeymapId::Actuation(Actuation::Hold))));

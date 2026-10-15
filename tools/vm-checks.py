@@ -733,19 +733,21 @@ class Checks:
                    f"{out.strip()[-200:]!r}; mouse {mouse_keys}")
 
     def keymap_layers(self):
-        """A keymap with A to Ctrl+X, and to Ctrl+Y in the Back layer, made through the screens; in a game:
-        A, Back with A, and Back let go while A is held, read from the virtual keyboard."""
+        """A keymap with A to Ctrl+X, and to Ctrl+Y in a layer Back turns on while held, made through the
+        screens (the +, a name, Back to the layer from the layers' list); in a game: A, Back with A, and
+        Back let go while A is held, read from the virtual keyboard."""
         if not self.check("keymap layers: the fake pad grabbed", plug_pad()):
             return
         keymaps_file = f"{CHECKS_DIR}/pegasus/keymaps.txt"
         for line in ["tab settings", "scope game", "tap setting keymap", "tap keymap-new", "type Layers", "tap save",
                      "tap map-from a", "tap map-to key", "tap key ctrl", "tap key x",
-                     "tap keymap-layer back", "tap map-to key", "tap key ctrl", "tap key y",
+                     "tap keymap-add-layer", "type held", "tap save", "tap map-from a", "tap map-to key", "tap key ctrl",
+                     "tap key y", "tap keymap-layer base", "tap map-from back", "tap map-to layers", "tap to-layer 1",
                      "tap keymap-back"]:
             control(line)
         text = sh(f"cat {keymaps_file}")
         rows = text.count("keymap ")
-        layers = "keymap " in text and "a = key ctrl+x\nlayer back\na = key ctrl+y\n" in text
+        layers = "a = key ctrl+x\nback = layer 1\nlayer 1 held\na = key ctrl+y\n" in text
         if not self.check("  A to Ctrl+X, and to Ctrl+Y while Back is held, saved", layers, text):
             return
         since = now()

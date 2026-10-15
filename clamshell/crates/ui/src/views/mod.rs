@@ -298,13 +298,16 @@ mod tests {
             ("the gyro's hold", vec![km(KeymapId::Holds)]),
             ("edit, a stick's panel", [vec![km(KeymapId::Back)], pick(Input::Stick(Side::Right)), vec![km(KeymapId::Target(Target::Pointer))]].concat()),
             ("edit, a slider up", slide(Param::Speed, false)),
-            ("edit, the Back layer", [slide(Param::Speed, true), vec![km(KeymapId::Layer(Layer::Back)), km(KeymapId::Input(Input::Trigger(Side::Right)))]].concat()),
+            ("edit, the Back layer", [slide(Param::Speed, true), vec![km(KeymapId::Layer(Layer(1))), km(KeymapId::Input(Input::Trigger(Side::Right)))]].concat()),
             ("edit, clearing", vec![km(KeymapId::Clear)]),
-            ("edit, picking a control", [vec![km(KeymapId::Back), km(KeymapId::Layer(Layer::Main))], pick(Input::Button(Button::B)), vec![km(KeymapId::Target(Target::Pick))]].concat()),
+            ("edit, picking a control", [vec![km(KeymapId::Back), km(KeymapId::Layer(Layer::BASE))], pick(Input::Button(Button::B)), vec![km(KeymapId::Target(Target::Pick))]].concat()),
         ];
         let mut cache = DrawCache::load();
         for (w, h) in [(620u32, 540u32), (1240, 1080), (300, 540)] {
-            let mut state = State::new(Init { library: clamshell_library::demo_library(), keymaps: Keymaps::initial(), ..Init::default() });
+            // (The Nintendo layout with a layer added.)
+            let mut keymaps = Keymaps::initial();
+            keymaps.get_mut(1).and_then(|k| k.add_layer("aim"));
+            let mut state = State::new(Init { library: clamshell_library::demo_library(), keymaps, ..Init::default() });
             for (name, events) in &screens {
                 for e in events {
                     state.apply(e.clone());

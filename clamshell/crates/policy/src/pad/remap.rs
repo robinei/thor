@@ -7,9 +7,11 @@
 //! Chords press their modifiers before their key and let them go after it.
 //!
 //! Without a binding an input does what it does on the pad; the controller's events this doesn't know
-//! (other buttons and axes) pass through as they are. While the layer key (the Thor's Back button,
-//! [`LAYER_KEYS`]) is held the keymap's Back layer applies, falling through to the main one; the key
-//! itself never reaches the game. A stick's and a trigger's tuning (deadzone, full point, curve,
+//! (other buttons and axes) pass through as they are. A binding to a layer of the keymap turns it on
+//! while it is on (held, or toggled): the bindings come from the layers on, the newest first, then Base;
+//! the binding that turned a layer on stays as it was until it goes off, whatever the layer makes of its
+//! input ([`Activation`]). The Thor's Back button ([`BACK_KEY`]) is an input like the others (nothing
+//! in the game as on the pad). A stick's and a trigger's tuning (deadzone, full point, curve,
 //! inversion) applies to its values before they are mapped, to the input as on the pad as well.
 //!
 //! A button (or a D-pad or stick direction) with a hold's or a double's binding goes through a little
@@ -21,7 +23,7 @@
 
 use std::time::{Duration, Instant};
 
-use clamshell_core::keymap::{Actuation, Binding, Button, Chord, Dir, Input, Keymap, Kind, MouseButton, Output, PadOut, Side};
+use clamshell_core::keymap::{Actuation, Binding, Button, Chord, Dir, Input, Keymap, Kind, Layer, MouseButton, Output, PadOut, Side};
 use evdev::{AbsoluteAxisCode, KeyCode, RelativeAxisCode};
 
 use super::motion::Rate;
@@ -179,13 +181,22 @@ impl Actuator {
     }
 }
 
-/// The layer key's codes: the Thor's Back button, under the screen. (KEY_BACK is assumed until the
-/// device test, docs/thor-gameplan.md.)
-pub const LAYER_KEYS: [KeyCode; 1] = [KeyCode::KEY_BACK];
+/// The Thor's Back button, under the screen (KEY_BACK is assumed until the device test,
+/// docs/thor-gameplan.md): an input of keymaps, never on the game's pad itself.
+pub const BACK_KEY: KeyCode = KeyCode::KEY_BACK;
 
-/// Whether a code is the layer key's.
-pub fn is_layer_key(code: KeyCode) -> bool {
-    LAYER_KEYS.contains(&code)
+/// Whether a code is the Back button's.
+pub fn is_back_key(code: KeyCode) -> bool {
+    code == BACK_KEY
+}
+
+/// A binding to a layer that is on: whose (an input's actuation), and the binding as it was when it came
+/// on (kept while on, whatever the layers since make of that input).
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Activation {
+    input: Input,
+    act: Actuation,
+    binding: Binding,
 }
 
 /// The controller's codes for a button (the back buttons go by several names).
@@ -201,6 +212,7 @@ pub fn button_codes(b: Button) -> &'static [KeyCode] {
         Button::Menu => &[KeyCode::BTN_START],
         Button::LS => &[KeyCode::BTN_THUMBL],
         Button::RS => &[KeyCode::BTN_THUMBR],
+        Button::Back => &[BACK_KEY],
         // BTN_TRIGGER_HAPPY1-4 (xpad's paddles), BTN_GRIPL/R/L2/R2 (newer kernels' back buttons).
         Button::L4 => &[KeyCode::BTN_TRIGGER_HAPPY1, KeyCode(0x224)],
         Button::R4 => &[KeyCode::BTN_TRIGGER_HAPPY2, KeyCode(0x225)],
@@ -258,7 +270,7 @@ pub fn mouse_codes() -> [KeyCode; 5] {
 /// Whether the remapping handles this event (else it passes through).
 pub fn known(raw: Raw) -> bool {
     if let Some((code, _)) = raw.as_key() {
-        return button_of(code).is_some() || is_layer_key(code) || Dir::ALL.into_iter().any(|d| dpad_code(d) == code);
+        return button_of(code).is_some() || Dir::ALL.into_iter().any(|d| dpad_code(d) == code);
     }
     raw.as_abs().is_some_and(|(axis, _)| {
         HAT.contains(&axis) || Side::ALL.into_iter().any(|s| trigger_axis(s) == axis || stick_axes(s).0 == axis || stick_axes(s).1 == axis)
@@ -322,13 +334,15 @@ pub struct Remap {
     carry: (f32, f32),
     /// When a stick last moved the pointer.
     last_pointer: Option<Instant>,
+    /// The layers on, in the order they came on.
+    activations: Vec<Activation>,
     /// The digital inputs' actuations (those that have been pressed).
     actuators: Vec<Actuator>,
 }
 
 impl Remap {
     pub fn new(ranges: Ranges) -> Remap {
-        Remap { keymap: Keymap::default(), ranges, sent: Wanted::default(), gyro: Rate::default(), carry: (0.0, 0.0), last_pointer: None, actuators: Vec::new() }
+        Remap { keymap: Keymap::default(), ranges, sent: Wanted::default(), gyro: Rate::default(), carry: (0.0, 0.0), last_pointer: None, activations: Vec::new(), actuators: Vec::new() }
     }
 
     /// The pad's state as it was when nothing had been sent (a fresh pad, or after letting go).
@@ -354,6 +368,7 @@ impl Remap {
         self.carry = (0.0, 0.0);
         self.last_pointer = None;
         self.actuators.clear();
+        self.activations.clear();
     }
 
     fn axis_rest(&self, axis: AbsoluteAxisCode) -> i32 {
@@ -377,11 +392,10 @@ impl Remap {
     /// The digital inputs' actuations follow the controller at `now`.
     fn actuate(&mut self, snap: &PadSnapshot, now: Instant) {
         // What each input is doing now (read first; the actuators follow below).
-        let back = Self::back(snap);
         let mut states = Vec::new();
         for input in Input::all() {
             let digital_trigger = self.binding(input, snap).is_some_and(|b| b.output.digital());
-            let full_pull = self.keymap.lookup_of(input, Actuation::FullPull, back).copied();
+            let full_pull = self.find(input, Actuation::FullPull).copied();
             let watched = match input.kind() {
                 Kind::Digital => true,
                 Kind::Trigger => digital_trigger || full_pull.is_some(),
@@ -396,12 +410,9 @@ impl Remap {
                 _ => false,
             };
             let on = (input.kind() == Kind::Digital || digital_trigger) && self.pressed(input, snap);
-            let hold = self.keymap.lookup_of(input, Actuation::Hold, back).map(|b| Duration::from_millis(u64::from(b.hold_time) * 10));
-            let double = self.keymap.lookup_of(input, Actuation::Double, back).is_some();
-            let binding = |act| match act {
-                Actuation::Press => self.binding(input, snap),
-                act => self.keymap.lookup_of(input, act, back).copied(),
-            };
+            let hold = self.find(input, Actuation::Hold).map(|b| Duration::from_millis(u64::from(b.hold_time) * 10));
+            let double = self.find(input, Actuation::Double).is_some();
+            let binding = |act| self.binding_of(input, act, snap);
             let toggles = Actuation::ALL.map(|a| binding(a).is_some_and(|b| b.toggle));
             states.push((input, on, full, hold, double, toggles));
         }
@@ -427,6 +438,50 @@ impl Remap {
         }
         // (Those at rest and holding nothing on are dropped.)
         self.actuators.retain(|a| a.phase != Phase::Up || a.beats.iter().any(|b| b.raw || b.latched));
+        // Layers on and off: a binding to one is on while its actuation (or its toggle) is.
+        let mut changes = Vec::new();
+        for a in &self.actuators {
+            for act in Actuation::ALL {
+                let Some(b) = self.binding_of(a.input, act, snap).filter(|b| matches!(b.output, Output::Layer(_))) else {
+                    continue;
+                };
+                let on = a.beat(act).on(&b, now);
+                let was = self.activations.iter().any(|x| x.input == a.input && x.act == act);
+                if on != was {
+                    changes.push((Activation { input: a.input, act, binding: b }, on));
+                }
+            }
+        }
+        for (activation, on) in changes {
+            self.activations.retain(|x| (x.input, x.act) != (activation.input, activation.act));
+            if on {
+                self.activations.push(activation);
+            }
+        }
+        let actuators = &self.actuators;
+        self.activations.retain(|x| actuators.iter().any(|a| a.input == x.input));
+    }
+
+    /// The layers on, in the order they came on.
+    fn layers_on(&self) -> Vec<Layer> {
+        self.activations.iter().filter_map(|a| if let Output::Layer(l) = a.binding.output { Some(l) } else { None }).collect()
+    }
+
+    /// `input`'s binding of `act` in force: the one turning a layer on if it is, else the newest layer's
+    /// on that has one, else Base's.
+    fn find(&self, input: Input, act: Actuation) -> Option<&Binding> {
+        if let Some(a) = self.activations.iter().find(|a| a.input == input && a.act == act) {
+            return Some(&a.binding);
+        }
+        self.keymap.lookup_of(input, act, &self.layers_on())
+    }
+
+    /// [`Remap::find`], a press's as on the pad without one.
+    fn binding_of(&self, input: Input, act: Actuation, snap: &PadSnapshot) -> Option<Binding> {
+        match act {
+            Actuation::Press => self.binding(input, snap),
+            act => self.find(input, act).copied(),
+        }
     }
 
     /// Whether a digital input is down: a trigger past its press binding's threshold, the rest as
@@ -471,15 +526,11 @@ impl Remap {
 
     /// When an actuation next moves on by itself, or a turbo beats.
     fn next_due(&self, snap: &PadSnapshot, now: Instant) -> Option<Instant> {
-        let back = Self::back(snap);
         let mut next = None;
         for a in &self.actuators {
             let mut times = vec![a.due];
             for act in Actuation::ALL {
-                let b = match act {
-                    Actuation::Press => self.binding(a.input, snap),
-                    act => self.keymap.lookup_of(a.input, act, back).copied(),
-                };
+                let b = self.binding_of(a.input, act, snap);
                 times.push(b.and_then(|b| a.beat(act).next_beat(&b, now)));
             }
             next = times.into_iter().flatten().chain(next).min();
@@ -523,14 +574,9 @@ impl Remap {
         }
     }
 
-    /// Whether the layer key is held (the Back layer applies).
-    fn back(snap: &PadSnapshot) -> bool {
-        LAYER_KEYS.iter().any(|&k| snap.held(k))
-    }
-
     /// `input`'s binding in the layer in force, if it has one.
-    fn get(&self, input: Input, snap: &PadSnapshot) -> Option<&Binding> {
-        self.keymap.lookup(input, Self::back(snap))
+    fn get(&self, input: Input, _: &PadSnapshot) -> Option<&Binding> {
+        self.find(input, Actuation::Press)
     }
 
     /// The gyro's binding, if it acts now: always without a hold; with one, while it is held (or, a
@@ -677,7 +723,7 @@ impl Remap {
                     digital(&mut w, input, on, &b.output, &mut triggers, &mut dpad);
                     // Its hold and double, if it has them.
                     for act in [Actuation::Hold, Actuation::Double] {
-                        if let Some(other) = self.keymap.lookup_of(input, act, Self::back(snap)) {
+                        if let Some(other) = self.find(input, act) {
                             let on = self.on(input, act, other, now);
                             digital(&mut w, input, on, &other.output, &mut triggers, &mut dpad);
                         }
@@ -694,7 +740,7 @@ impl Remap {
                         ref o => digital(&mut w, input, self.on(input, Actuation::Press, &b, now), o, &mut triggers, &mut dpad),
                     }
                     // Its full pull, a second stage beside the pull.
-                    if let Some(full) = self.keymap.lookup_of(input, Actuation::FullPull, Self::back(snap)) {
+                    if let Some(full) = self.find(input, Actuation::FullPull) {
                         let on = self.on(input, Actuation::FullPull, full, now);
                         digital(&mut w, input, on, &full.output, &mut triggers, &mut dpad);
                     }
@@ -1243,8 +1289,12 @@ mod tests {
         assert!(out.mouse.is_empty());
     }
 
+    /// `input` bound in a layer on while Back is held (made the first time), as old Back layers load.
     fn back_layer(k: &mut Keymap, input: Input, b: Binding) {
-        assert!(k.set_in(clamshell_core::keymap::Layer::Back, input, Some(b)));
+        let held = k.layers().find(|(_, n)| *n == "Back held").map(|(l, _)| l);
+        let layer = held.or_else(|| k.add_layer("Back held")).unwrap();
+        k.set(Input::Button(Button::Back), Some(to(Output::Layer(layer))));
+        assert!(k.set_in(layer, input, Some(b)));
     }
 
     #[test]
@@ -1272,6 +1322,39 @@ mod tests {
         press(&mut r, KeyCode::BTN_SOUTH, true, &mut out);
         r.set_route(PadRoute::Ui, &mut out);
         assert!(held(&out.mouse).is_empty() && held(&out.pad).is_empty());
+    }
+
+    #[test]
+    fn a_toggled_layer_and_a_layer_key_the_layer_remaps() {
+        let mut k = keymap(&[]);
+        let aim = k.add_layer("aim").unwrap();
+        let menu = k.add_layer("menu").unwrap();
+        // LB toggles aim; in aim, A is Ctrl+Y and LB itself is a key (it still turns aim off).
+        k.set(Input::Button(Button::LB), Some(Binding { toggle: true, ..to(Output::Layer(aim)) }));
+        k.set_in(aim, Input::Button(Button::A), Some(to(Output::Key(chord("ctrl+y")))));
+        k.set_in(aim, Input::Button(Button::LB), Some(to(Output::Key(chord("z")))));
+        // RB held: menu, on top of aim; in it B is Q.
+        k.set(Input::Button(Button::RB), Some(to(Output::Layer(menu))));
+        k.set_in(menu, Input::Button(Button::B), Some(to(Output::Key(chord("q")))));
+        let (mut r, mut out) = router(k, PadRoute::Game);
+        press(&mut r, KeyCode::BTN_TL, true, &mut out);
+        press(&mut r, KeyCode::BTN_TL, false, &mut out);
+        assert!(held(&out.mouse).is_empty() && out.pad.iter().all(|e| e.as_key().is_none_or(|(k, _)| k != KeyCode::BTN_TL)), "LB is the layer key: nothing else");
+        press(&mut r, KeyCode::BTN_SOUTH, true, &mut out);
+        assert_eq!(held(&out.mouse), vec![KeyCode::KEY_Y, KeyCode::KEY_LEFTCTRL], "aim, toggled on");
+        press(&mut r, KeyCode::BTN_SOUTH, false, &mut out);
+        // RB held: menu over aim; B is Q there, A still aim's.
+        press(&mut r, KeyCode::BTN_TR, true, &mut out);
+        press(&mut r, KeyCode::BTN_EAST, true, &mut out);
+        assert_eq!(held(&out.mouse), vec![KeyCode::KEY_Q]);
+        press(&mut r, KeyCode::BTN_EAST, false, &mut out);
+        press(&mut r, KeyCode::BTN_TR, false, &mut out);
+        // LB again: aim off (its own binding there, Z, isn't what LB does: it turned aim on).
+        press(&mut r, KeyCode::BTN_TL, true, &mut out);
+        press(&mut r, KeyCode::BTN_TL, false, &mut out);
+        assert!(!held(&out.mouse).contains(&KeyCode::KEY_Z));
+        press(&mut r, KeyCode::BTN_SOUTH, true, &mut out);
+        assert!(held(&out.mouse).is_empty() && held(&out.pad).contains(&KeyCode::BTN_SOUTH), "Base again: A as on the pad");
     }
 
     #[test]
@@ -1387,7 +1470,7 @@ mod tests {
     /// A on X when pressed, plus `act`'s binding.
     fn with(act: Actuation, b: Binding) -> Keymap {
         let mut k = keymap(&[(Input::Button(Button::A), to(Output::Key(chord("x"))))]);
-        assert!(k.set_of(clamshell_core::keymap::Layer::Main, Input::Button(Button::A), act, Some(b)));
+        assert!(k.set_of(clamshell_core::keymap::Layer::BASE, Input::Button(Button::A), act, Some(b)));
         k
     }
 
@@ -1458,7 +1541,7 @@ mod tests {
     fn a_trigger_pulls_and_clicks_at_full_pull() {
         let mut k = keymap(&[]);
         let full = Binding { threshold: 95, ..to(Output::Mouse(MouseButton::Left)) };
-        assert!(k.set_of(clamshell_core::keymap::Layer::Main, Input::Trigger(Side::Right), Actuation::FullPull, Some(full)));
+        assert!(k.set_of(clamshell_core::keymap::Layer::BASE, Input::Trigger(Side::Right), Actuation::FullPull, Some(full)));
         let (mut r, mut out) = router(k, PadRoute::Game);
         axis(&mut r, AbsoluteAxisCode::ABS_RZ, 500, &mut out);
         assert_eq!(last(&out.pad, AbsoluteAxisCode::ABS_RZ), Some(500), "the pull as it is");

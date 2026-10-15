@@ -161,12 +161,12 @@ fn warm_frames_do_not_allocate() {
             ],
         ),
         (
-            "keymap panel, a slider up, the Back layer",
+            "keymap panel, a slider up, another layer",
             vec![
                 tap(Id::Tab(Tab::Settings)),
                 tap(Id::Settings(SettingsId::Tile(clamshell_core::settings::Setting::Keymap))),
                 tap(Id::Row { list: clamshell_core::ListId::Keymaps, i: 1, part: clamshell_core::RowPart::Edit }),
-                tap(Id::Keymap(clamshell_core::KeymapId::Layer(clamshell_core::keymap::Layer::Back))),
+                tap(Id::Keymap(clamshell_core::KeymapId::Layer(clamshell_core::keymap::Layer(1)))),
                 tap(Id::Keymap(clamshell_core::KeymapId::Input(clamshell_core::keymap::Input::Stick(clamshell_core::keymap::Side::Left)))),
                 Event::Slide(Slide::Start { control: clamshell_core::slider::Control::Param(clamshell_core::keymap::Param::Deadzone), x: 285.0, width: 620.0 }),
                 Event::Slide(Slide::To { x: 320.0 }),
@@ -260,7 +260,10 @@ fn warm_frames_do_not_allocate() {
         ),
     ];
     for (name, events) in cases {
-        let mut state = State::new(Init { library: clamshell_library::demo_library(), keymaps: clamshell_core::keymap::Keymaps::initial(), ..Init::default() });
+        // (The Nintendo layout with a layer added.)
+        let mut keymaps = clamshell_core::keymap::Keymaps::initial();
+        keymaps.get_mut(1).and_then(|k| k.add_layer("aim"));
+        let mut state = State::new(Init { library: clamshell_library::demo_library(), keymaps, ..Init::default() });
         state.apply(Event::Tick { unix_secs: 1_700_000_000 });
         for event in events {
             state.apply(event);

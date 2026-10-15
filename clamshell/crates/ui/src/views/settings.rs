@@ -187,6 +187,11 @@ fn editor(f: &mut Frame, body: Rect) {
             KeymapName::New => Fmt::of(format_args!("Name of the new keymap")),
             KeymapName::Rename(id) => Fmt::of(format_args!("New name for {}", s.keymap_name(*id))),
             KeymapName::Duplicate(id) => Fmt::of(format_args!("Name of the copy of {}", s.keymap_name(*id))),
+            KeymapName::NewLayer(..) => Fmt::of(format_args!("Name of the new layer")),
+            KeymapName::RenameLayer(id, layer) => {
+                let name = s.keymaps().get(*id).and_then(|k| k.layer_name(*layer)).unwrap_or("the layer");
+                Fmt::of(format_args!("New name for {name}"))
+            }
         },
         _ => return,
     };

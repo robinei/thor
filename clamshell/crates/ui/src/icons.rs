@@ -69,6 +69,8 @@ pub enum Icon {
     Moon,
     /// Nothing: a circle struck through.
     Off,
+    /// Layers: three sheets stacked.
+    Layers,
 }
 
 impl Icon {
@@ -333,6 +335,11 @@ pub fn draw(c: &mut Canvas, icon: Icon, r: Rect, color: Color) {
         Icon::Wifi { bars } => wifi(p, bars),
         Icon::Volume { waves, muted } => volume(p, waves, muted),
         Icon::Brightness => sun(p),
+        Icon::Layers => {
+            p.shape(&[(12.0, 3.5), (21.0, 8.0), (12.0, 12.5), (3.0, 8.0)], LINE);
+            p.line(&[(3.0, 12.0), (12.0, 16.5), (21.0, 12.0)], LINE);
+            p.line(&[(3.0, 16.0), (12.0, 20.5), (21.0, 16.0)], LINE);
+        }
         Icon::Off => {
             p.frame((3.5, 3.5, 17.0, 17.0), 8.5, LINE);
             p.line(&[(6.5, 17.5), (17.5, 6.5)], LINE);
@@ -572,12 +579,13 @@ mod tests {
             Icon::Moon,
             Icon::Phone,
             Icon::Off,
+            Icon::Layers,
         ];
         let mut seen = std::collections::HashSet::new();
         for icon in &all {
             seen.insert(variant(*icon));
         }
-        assert_eq!(seen.len(), 44, "a variant is missing from the list");
+        assert_eq!(seen.len(), 45, "a variant is missing from the list");
         all
     }
 
@@ -628,6 +636,7 @@ mod tests {
             Icon::Phone => 42,
             Icon::Moon => 43,
             Icon::Off => 44,
+            Icon::Layers => 45,
         }
     }
 

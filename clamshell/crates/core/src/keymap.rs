@@ -35,6 +35,8 @@ pub enum Button {
     Menu,
     LS,
     RS,
+    /// The Thor's Back button, under the screen: not on the Xbox pad games see.
+    Back,
     /// The back buttons (paddles), where a controller has them.
     L4,
     R4,
@@ -43,7 +45,7 @@ pub enum Button {
 }
 
 impl Button {
-    pub const ALL: [Button; 14] = [
+    pub const ALL: [Button; 15] = [
         Button::A,
         Button::B,
         Button::X,
@@ -54,15 +56,21 @@ impl Button {
         Button::Menu,
         Button::LS,
         Button::RS,
+        Button::Back,
         Button::L4,
         Button::R4,
         Button::L5,
         Button::R5,
     ];
 
-    /// Whether it is a back button (not on the Xbox pad games see: it can't be a pad output).
+    /// Whether it is a back button (a paddle; not on the Xbox pad games see).
     pub fn is_back(self) -> bool {
         matches!(self, Button::L4 | Button::R4 | Button::L5 | Button::R5)
+    }
+
+    /// Whether the Xbox pad games see has it (a pad output can be it): not the paddles, not Back.
+    pub fn on_pad(self) -> bool {
+        !self.is_back() && self != Button::Back
     }
 
     pub fn name(self) -> &'static str {
@@ -77,6 +85,7 @@ impl Button {
             Button::Menu => "menu",
             Button::LS => "ls",
             Button::RS => "rs",
+            Button::Back => "back",
             Button::L4 => "l4",
             Button::R4 => "r4",
             Button::L5 => "l5",
@@ -97,6 +106,7 @@ impl Button {
             Button::Menu => "Menu",
             Button::LS => "LS",
             Button::RS => "RS",
+            Button::Back => "Back",
             Button::L4 => "L4",
             Button::R4 => "R4",
             Button::L5 => "L5",
@@ -246,7 +256,7 @@ pub enum PadOut {
 impl PadOut {
     /// What the pad games see has, in the order offered.
     pub fn all() -> impl Iterator<Item = PadOut> {
-        let buttons = Button::ALL.into_iter().filter(|b| !b.is_back()).map(PadOut::Button);
+        let buttons = Button::ALL.into_iter().filter(|b| b.on_pad()).map(PadOut::Button);
         buttons.chain(Side::ALL.into_iter().map(PadOut::Trigger)).chain(Dir::ALL.into_iter().map(PadOut::Dpad))
     }
 
@@ -262,7 +272,7 @@ impl PadOut {
     /// The pad output a pressed input stands for, if there is one (a back button or a stick isn't one).
     pub fn of(input: Input) -> Option<PadOut> {
         match input {
-            Input::Button(b) if !b.is_back() => Some(PadOut::Button(b)),
+            Input::Button(b) if b.on_pad() => Some(PadOut::Button(b)),
             Input::Dpad(d) => Some(PadOut::Dpad(d)),
             Input::Trigger(s) => Some(PadOut::Trigger(s)),
             _ => None,
@@ -506,6 +516,8 @@ pub enum Output {
     Dpad,
     /// A trigger (a trigger).
     Trigger(Side),
+    /// A layer of the keymap on (while the binding is on: held, or toggled).
+    Layer(Layer),
 }
 
 impl Output {
@@ -513,7 +525,7 @@ impl Output {
     pub fn fits(&self, kind: Kind) -> bool {
         match self {
             Output::Nothing => true,
-            Output::Pad(_) | Output::Key(_) | Output::Mouse(_) | Output::Wheel(_) => matches!(kind, Kind::Digital | Kind::Trigger),
+            Output::Pad(_) | Output::Key(_) | Output::Mouse(_) | Output::Wheel(_) | Output::Layer(_) => matches!(kind, Kind::Digital | Kind::Trigger),
             Output::Stick(_) | Output::Pointer => matches!(kind, Kind::Stick | Kind::Gyro),
             Output::Keys(_) | Output::Dpad => kind == Kind::Stick,
             Output::Trigger(_) => kind == Kind::Trigger,
@@ -544,12 +556,14 @@ impl Output {
             }
             Output::Dpad => out.write_str("D-pad"),
             Output::Trigger(s) => out.write_str(if *s == Side::Left { "LT" } else { "RT" }),
+            // (By its number here; the screens give it its keymap's name.)
+            Output::Layer(l) => write!(out, "Layer {}", l.0),
         }
     }
 
     /// Whether it is on or off (a trigger mapped to it goes by its threshold).
     pub fn digital(&self) -> bool {
-        matches!(self, Output::Pad(_) | Output::Key(_) | Output::Mouse(_) | Output::Wheel(_))
+        matches!(self, Output::Pad(_) | Output::Key(_) | Output::Mouse(_) | Output::Wheel(_) | Output::Layer(_))
     }
 }
 
@@ -560,6 +574,8 @@ pub const DEFAULT_SPEED: u8 = 50;
 pub const DEFAULT_THRESHOLD: u8 = 50;
 /// A trigger's full pull acts past this (percent of its travel) unless set otherwise.
 pub const FULL_PULL: u8 = 95;
+/// The name the Back layer of files from before named layers gets.
+const BACK_HELD: &str = "Back held";
 /// A press held this long is a hold (hundredths of a second, 20 to 100).
 pub const DEFAULT_HOLD_TIME: u8 = 40;
 /// The gyro: turning faster than this (degrees per second) gets the whole of its acceleration.
@@ -770,7 +786,9 @@ impl Param {
             (Kind::Trigger, Param::Threshold) => output.digital(),
             (Kind::Gyro, Param::Speed | Param::InvertX | Param::InvertY | Param::Accel | Param::AccelAt | Param::Tighten | Param::Twist | Param::Ratchet) => motion,
             (Kind::Gyro, Param::StickMin) => matches!(output, Output::Stick(_)),
-            (Kind::Digital | Kind::Trigger, Param::Turbo | Param::Toggle) => output.digital(),
+            (Kind::Digital | Kind::Trigger, Param::Toggle) => output.digital(),
+            // (A layer doesn't beat.)
+            (Kind::Digital | Kind::Trigger, Param::Turbo) => output.digital() && !matches!(output, Output::Layer(_)),
             _ => false,
         }
     }
@@ -981,40 +999,15 @@ pub fn gyro_holds() -> impl Iterator<Item = Input> {
     Button::ALL.into_iter().map(Input::Button).chain(Side::ALL.into_iter().map(Input::Trigger))
 }
 
-/// A keymap's layers: the main one, and the one in force while the pad's Back button is held (its
-/// inputs without a binding do what the main layer says).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum Layer {
-    #[default]
-    Main,
-    Back,
-}
+/// A keymap's layer, by its number in the keymap: Base (0), whose inputs without a binding do what
+/// they do on the pad, and the layers added to it, each on while a binding to it is
+/// ([`Output::Layer`]), its inputs without a binding doing what the layers on before it say (Base
+/// last).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, PartialOrd, Ord)]
+pub struct Layer(pub u8);
 
 impl Layer {
-    pub const ALL: [Layer; 2] = [Layer::Main, Layer::Back];
-
-    /// Its name in the keymap file (`layer back`).
-    pub fn name(self) -> &'static str {
-        match self {
-            Layer::Main => "main",
-            Layer::Back => "back",
-        }
-    }
-
-    /// How it reads on screen.
-    pub fn label(self) -> &'static str {
-        match self {
-            Layer::Main => "Main",
-            Layer::Back => "Back held",
-        }
-    }
-
-    pub fn other(self) -> Layer {
-        match self {
-            Layer::Main => Layer::Back,
-            Layer::Back => Layer::Main,
-        }
-    }
+    pub const BASE: Layer = Layer(0);
 }
 
 /// One layer's bindings, an actuation's each in [`Input::all`]'s order, one per input at most.
@@ -1050,26 +1043,101 @@ impl Bindings {
     }
 }
 
-/// A named set of bindings in two layers (the inputs without one in the main layer do what they do on
-/// the pad; without one in the Back layer, what the main layer says), a press's, a hold's and a
-/// double's.
+/// A layer of a keymap: its number, its name, and its bindings.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
+struct LayerOf {
+    id: Layer,
+    name: String,
+    bindings: Bindings,
+}
+
+/// A named set of bindings in layers ([`Layer`]: Base, and those added), each actuation's ([`Actuation`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Keymap {
     /// Its number, kept across renames (0 is Default, which no keymap has).
     pub id: u16,
     pub name: String,
-    main: Bindings,
-    back: Bindings,
+    /// Base first, then the others in the order added.
+    layers: Vec<LayerOf>,
 }
+
+impl Default for Keymap {
+    fn default() -> Keymap {
+        Keymap::new(0, "")
+    }
+}
+
+/// An empty set of bindings, for a layer that isn't there.
+static NO_BINDINGS: Bindings = Bindings { press: Vec::new(), hold: Vec::new(), double: Vec::new(), full: Vec::new() };
 
 impl Keymap {
     pub fn new(id: u16, name: &str) -> Keymap {
-        Keymap { id, name: name.to_owned(), main: Bindings::default(), back: Bindings::default() }
+        Keymap { id, name: name.to_owned(), layers: vec![LayerOf { id: Layer::BASE, name: "Base".into(), bindings: Bindings::default() }] }
     }
 
-    /// The main layer's bindings (a press's).
+    /// Base's bindings (a press's).
     pub fn bindings(&self) -> &[(Input, Binding)] {
-        &self.main.press
+        self.layer(Layer::BASE)
+    }
+
+    /// The layers, Base first: their numbers and names.
+    pub fn layers(&self) -> impl DoubleEndedIterator<Item = (Layer, &str)> {
+        self.layers.iter().map(|l| (l.id, l.name.as_str()))
+    }
+
+    /// A layer's name (none: not there).
+    pub fn layer_name(&self, layer: Layer) -> Option<&str> {
+        self.layers.iter().find(|l| l.id == layer).map(|l| l.name.as_str())
+    }
+
+    /// A new layer named `name`; its number (none: no more room, 255 layers).
+    pub fn add_layer(&mut self, name: &str) -> Option<Layer> {
+        let id = Layer(self.layers.iter().map(|l| l.id.0).max().unwrap_or(0).checked_add(1)?);
+        self.layers.push(LayerOf { id, name: name.trim().to_owned(), bindings: Bindings::default() });
+        Some(id)
+    }
+
+    /// The layer numbered `id`, made (named `name`, or after its number) if it isn't there yet; named
+    /// `name` if given. (Loading: a binding may name a layer before its own line does.)
+    fn ensure_layer(&mut self, id: Layer, name: Option<&str>) {
+        match self.layers.iter_mut().find(|l| l.id == id) {
+            Some(l) if l.id != Layer::BASE => {
+                if let Some(name) = name {
+                    l.name = name.trim().to_owned();
+                }
+            }
+            Some(_) => {}
+            None => {
+                let name = name.map_or_else(|| format!("Layer {}", id.0), |n| n.trim().to_owned());
+                self.layers.push(LayerOf { id, name, bindings: Bindings::default() });
+            }
+        }
+    }
+
+    /// Renames a layer (Base keeps its name); whether it is there.
+    pub fn rename_layer(&mut self, layer: Layer, name: &str) -> bool {
+        match self.layers.iter_mut().find(|l| l.id == layer && l.id != Layer::BASE) {
+            Some(l) => {
+                l.name = name.trim().to_owned();
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Removes a layer (not Base) and the bindings to it; whether it was there.
+    pub fn remove_layer(&mut self, layer: Layer) -> bool {
+        let before = self.layers.len();
+        self.layers.retain(|l| l.id != layer || l.id == Layer::BASE);
+        if self.layers.len() == before {
+            return false;
+        }
+        for l in &mut self.layers {
+            for act in Actuation::ALL {
+                l.bindings.of_mut(act).retain(|(_, b)| b.output != Output::Layer(layer));
+            }
+        }
+        true
     }
 
     /// A layer's bindings (a press's).
@@ -1083,17 +1151,11 @@ impl Keymap {
     }
 
     fn bindings_in(&self, layer: Layer) -> &Bindings {
-        match layer {
-            Layer::Main => &self.main,
-            Layer::Back => &self.back,
-        }
+        self.layers.iter().find(|l| l.id == layer).map_or(&NO_BINDINGS, |l| &l.bindings)
     }
 
-    fn bindings_in_mut(&mut self, layer: Layer) -> &mut Bindings {
-        match layer {
-            Layer::Main => &mut self.main,
-            Layer::Back => &mut self.back,
-        }
+    fn bindings_in_mut(&mut self, layer: Layer) -> Option<&mut Bindings> {
+        self.layers.iter_mut().find(|l| l.id == layer).map(|l| &mut l.bindings)
     }
 
     /// Whether `layer` has no bindings at all.
@@ -1101,12 +1163,12 @@ impl Keymap {
         self.bindings_in(layer).is_empty()
     }
 
-    /// `input`'s binding in the main layer.
+    /// `input`'s binding in Base.
     pub fn get(&self, input: Input) -> Option<&Binding> {
-        self.get_in(Layer::Main, input)
+        self.get_in(Layer::BASE, input)
     }
 
-    /// `input`'s binding in `layer` itself (none in the Back layer: the main layer's applies).
+    /// `input`'s binding in `layer` itself (none in another layer than Base: those on before it apply).
     pub fn get_in(&self, layer: Layer, input: Input) -> Option<&Binding> {
         self.get_of(layer, input, Actuation::Press)
     }
@@ -1116,24 +1178,24 @@ impl Keymap {
         self.layer_of(layer, act).iter().find(|(i, _)| *i == input).map(|(_, b)| b)
     }
 
-    /// The binding in force for `input`, with Back held (`back`) or not: the Back layer's, else the main
-    /// layer's.
-    pub fn lookup(&self, input: Input, back: bool) -> Option<&Binding> {
-        self.lookup_of(input, Actuation::Press, back)
+    /// The binding in force for `input` with the layers `on` (in the order they came on; Base
+    /// beneath them all): the newest's that has one.
+    pub fn lookup(&self, input: Input, on: &[Layer]) -> Option<&Binding> {
+        self.lookup_of(input, Actuation::Press, on)
     }
 
     /// [`Keymap::lookup`] for `act`.
-    pub fn lookup_of(&self, input: Input, act: Actuation, back: bool) -> Option<&Binding> {
-        back.then(|| self.get_of(Layer::Back, input, act)).flatten().or_else(|| self.get_of(Layer::Main, input, act))
+    pub fn lookup_of(&self, input: Input, act: Actuation, on: &[Layer]) -> Option<&Binding> {
+        on.iter().rev().find_map(|l| self.get_of(*l, input, act)).or_else(|| self.get_of(Layer::BASE, input, act))
     }
 
-    /// Binds `input` in the main layer (none: back to what it does on the pad); see [`Keymap::set_in`].
+    /// Binds `input` in Base (none: back to what it does on the pad); see [`Keymap::set_in`].
     pub fn set(&mut self, input: Input, binding: Option<Binding>) -> bool {
-        self.set_in(Layer::Main, input, binding)
+        self.set_in(Layer::BASE, input, binding)
     }
 
-    /// Binds `input` in `layer` (none: as on the pad in the main layer, as the main layer in the Back
-    /// layer). A binding that doesn't fit the input's kind is refused; whether it changed.
+    /// Binds `input` in `layer` (none: as on the pad in Base, as the layers beneath in another). A
+    /// binding that doesn't fit the input's kind is refused; whether it changed.
     pub fn set_in(&mut self, layer: Layer, input: Input, binding: Option<Binding>) -> bool {
         self.set_of(layer, input, Actuation::Press, binding)
     }
@@ -1149,7 +1211,16 @@ impl Keymap {
         if act == Actuation::FullPull && binding.is_some_and(|b| !b.output.digital() && b.output != Output::Nothing) {
             return false;
         }
-        let list = self.bindings_in_mut(layer).of_mut(act);
+        // (A layer to a layer not there is refused.)
+        if let Some(Output::Layer(to)) = binding.map(|b| b.output)
+            && self.layer_name(to).is_none()
+        {
+            return false;
+        }
+        let Some(bindings) = self.bindings_in_mut(layer) else {
+            return false;
+        };
+        let list = bindings.of_mut(act);
         let before = list.clone();
         list.retain(|(i, _)| *i != input);
         if let Some(b) = binding {
@@ -1162,7 +1233,9 @@ impl Keymap {
     /// Drops every binding of `layer`; whether it had any.
     pub fn clear(&mut self, layer: Layer) -> bool {
         let had = !self.is_empty(layer);
-        *self.bindings_in_mut(layer) = Bindings::default();
+        if let Some(b) = self.bindings_in_mut(layer) {
+            *b = Bindings::default();
+        }
         had
     }
 }
@@ -1172,6 +1245,8 @@ impl Keymap {
 /// direction has none (it is part of its stick).
 pub fn as_on_the_pad(input: Input) -> Option<Output> {
     match input {
+        // (Back isn't on the pad games see: it does nothing there.)
+        Input::Button(Button::Back) => Some(Output::Nothing),
         Input::Button(b) => Some(Output::Pad(PadOut::Button(b))),
         Input::Dpad(d) => Some(Output::Pad(PadOut::Dpad(d))),
         Input::Stick(s) => Some(Output::Stick(s)),
@@ -1234,11 +1309,10 @@ impl Keymaps {
 
     /// A copy of keymap `id` named `name` (made unique); the copy's id.
     pub fn duplicate(&mut self, id: u16, name: &str) -> Option<u16> {
-        let (main, back) = self.get(id).map(|k| (k.main.clone(), k.back.clone()))?;
+        let layers = self.get(id).map(|k| k.layers.clone())?;
         let copy = self.add(name);
         if let Some(k) = self.get_mut(copy) {
-            k.main = main;
-            k.back = back;
+            k.layers = layers;
         }
         Some(copy)
     }
@@ -1263,10 +1337,11 @@ impl Keymaps {
         let mut text = String::new();
         for k in &self.list {
             let _ = writeln!(text, "keymap {} {}", k.id, k.name);
-            write_bindings(&k.main, &mut text);
-            if !k.back.is_empty() {
-                let _ = writeln!(text, "layer {}", Layer::Back.name());
-                write_bindings(&k.back, &mut text);
+            for l in &k.layers {
+                if l.id != Layer::BASE {
+                    let _ = writeln!(text, "layer {} {}", l.id.0, l.name);
+                }
+                write_bindings(&l.bindings, &mut text);
             }
         }
         text
@@ -1276,8 +1351,8 @@ impl Keymaps {
     /// layer it doesn't know.
     pub fn load(text: &str) -> Keymaps {
         let mut keymaps = Keymaps::default();
-        // The layer the lines are in (none: one not known).
-        let mut layer = Some(Layer::Main);
+        // The layer the lines are in (none: one not understood).
+        let mut layer = Some(Layer::BASE);
         for line in text.lines().map(str::trim) {
             if let Some(rest) = line.strip_prefix("keymap ") {
                 let (id, name) = rest.split_once(' ').unwrap_or((rest, ""));
@@ -1287,16 +1362,41 @@ impl Keymaps {
                 {
                     keymaps.list.push(Keymap::new(id, name.trim()));
                 }
-                layer = Some(Layer::Main);
+                layer = Some(Layer::BASE);
                 continue;
             }
-            if let Some(name) = line.strip_prefix("layer ") {
-                layer = Layer::ALL.into_iter().find(|l| l.name() == name.trim());
+            if let Some(rest) = line.strip_prefix("layer ") {
+                let Some(keymap) = keymaps.list.last_mut() else {
+                    continue;
+                };
+                let (id, name) = rest.trim().split_once(' ').unwrap_or((rest.trim(), ""));
+                layer = match (id, id.parse::<u8>()) {
+                    ("main", _) | (_, Ok(0)) => Some(Layer::BASE),
+                    // Files from before named layers: the Back layer is a layer on while Back is held.
+                    ("back", _) => {
+                        let found = keymap.layers.iter().find(|l| l.name == BACK_HELD).map(|l| l.id);
+                        let back = found.or_else(|| keymap.add_layer(BACK_HELD));
+                        if let Some(l) = back
+                            && keymap.get(Input::Button(Button::Back)).is_none()
+                        {
+                            keymap.set(Input::Button(Button::Back), Some(Binding::to(Output::Layer(l))));
+                        }
+                        back
+                    }
+                    (_, Ok(n)) => {
+                        keymap.ensure_layer(Layer(n), (!name.trim().is_empty()).then_some(name));
+                        Some(Layer(n))
+                    }
+                    _ => None,
+                };
                 continue;
             }
             let (Some(keymap), Some(layer), Some((input, act, binding))) = (keymaps.list.last_mut(), layer, parse_binding(line)) else {
                 continue;
             };
+            if let Output::Layer(to) = binding.output {
+                keymap.ensure_layer(to, None);
+            }
             keymap.set_of(layer, input, act, Some(binding));
         }
         keymaps
@@ -1364,6 +1464,7 @@ fn write_output(o: &Output, out: &mut String) -> fmt::Result {
         }
         Output::Dpad => out.write_str("dpad"),
         Output::Trigger(s) => write!(out, "trigger {}", s.name()),
+        Output::Layer(l) => write!(out, "layer {}", l.0),
     }
 }
 
@@ -1399,6 +1500,7 @@ fn parse_binding(line: &str) -> Option<(Input, Actuation, Binding)> {
         ("wheel", Some(w)) => Output::Wheel(Dir::ALL.into_iter().find(|d| d.name() == w)?),
         ("stick", Some(w)) => Output::Stick(side(w)?),
         ("trigger", Some(w)) => Output::Trigger(side(w)?),
+        ("layer", Some(w)) => Output::Layer(Layer(w.parse().ok().filter(|n| *n > 0)?)),
         ("keys", Some(_)) => {
             let mut keys = [Chord::default(); 4];
             for k in &mut keys {
@@ -1505,7 +1607,7 @@ mod tests {
 
     #[test]
     fn lines_not_understood_are_skipped() {
-        let text = "# a comment\nkeymap 3 Turbo\na = key x turbo=10\nb = warp 9\nzz = pad a\nlstick = key x\ngyro = pointer hold=up\nx = pad x hold=a\nlayer 2\ny = pad a\nlayer main\nlt = trigger right\nkeymap 0 bad\nkeymap x bad\nkeymap 3 again\n";
+        let text = "# a comment\nkeymap 3 Turbo\na = key x turbo=10\nb = warp 9\nzz = pad a\nlstick = key x\ngyro = pointer hold=up\nx = pad x hold=a\nlayer x\ny = pad a\nlayer main\nlt = trigger right\nkeymap 0 bad\nkeymap x bad\nkeymap 3 again\n";
         let maps = Keymaps::load(text);
         assert_eq!(maps.list().len(), 1);
         let k = maps.get(3).unwrap();
@@ -1515,7 +1617,38 @@ mod tests {
         assert_eq!(k.get(Input::Button(Button::Y)), None, "a layer not known is skipped");
         assert_eq!(k.get(Input::Trigger(Side::Left)).map(|b| b.output), Some(Output::Trigger(Side::Right)), "main again");
         assert_eq!(k.bindings().len(), 3, "{k:?}");
-        assert!(k.layer(Layer::Back).is_empty());
+        assert_eq!(k.layers().count(), 1, "Base only");
+    }
+
+    #[test]
+    fn layers_are_named_targets_and_old_back_layers_carry_over() {
+        let a = Input::Button(Button::A);
+        let back = Input::Button(Button::Back);
+        let mut k = Keymap::new(5, "Layers");
+        let aim = k.add_layer("Aim").unwrap();
+        assert_eq!(aim, Layer(1));
+        assert!(k.set(Input::Button(Button::LB), Some(Binding::to(Output::Layer(aim)))));
+        assert!(!k.set(Input::Button(Button::RB), Some(Binding::to(Output::Layer(Layer(9))))), "not there");
+        assert!(k.set_in(aim, a, Some(Binding::to(Output::Key(chord("y"))))));
+        assert_eq!(k.lookup(a, &[aim]).map(|b| b.output), Some(Output::Key(chord("y"))));
+        assert_eq!(k.lookup(a, &[]), None, "Base: as on the pad");
+        let maps = Keymaps { list: vec![k.clone()] };
+        let text = maps.text();
+        assert_eq!(text, "keymap 5 Layers\nlb = layer 1\nlayer 1 Aim\na = key y\n");
+        assert_eq!(Keymaps::load(&text), maps);
+        // Removed: its bindings, and those to it, go.
+        assert!(k.remove_layer(aim));
+        assert_eq!((k.layers().count(), k.get(Input::Button(Button::LB))), (1, None));
+        // A file from before named layers: its Back layer is a layer on while Back is held.
+        let old = Keymaps::load("keymap 1 Old\na = key x\nlayer back\na = key ctrl+y\n");
+        let k = old.get(1).unwrap();
+        let held: Vec<_> = k.layers().collect();
+        assert_eq!(held, vec![(Layer::BASE, "Base"), (Layer(1), "Back held")]);
+        assert_eq!(k.get(back).map(|b| b.output), Some(Output::Layer(Layer(1))));
+        assert_eq!(k.get_in(Layer(1), a).map(|b| b.output), Some(Output::Key(chord("ctrl+y"))));
+        // Back on the pad games see: nothing as on the pad; not a pad output.
+        assert_eq!(as_on_the_pad(back), Some(Output::Nothing));
+        assert_eq!(PadOut::of(back), None);
     }
 
     #[test]
@@ -1572,17 +1705,18 @@ mod tests {
         let a = Input::Button(Button::A);
         let mut k = Keymap::new(4, "Combo");
         assert!(k.set(a, Some(Binding { turbo: 12, ..Binding::to(Output::Key(chord("x"))) })));
-        assert!(k.set_of(Layer::Main, a, Actuation::Hold, Some(Binding { hold_time: 60, ..Binding::to(Output::Key(chord("esc"))) })));
-        assert!(k.set_of(Layer::Main, a, Actuation::Double, Some(Binding { toggle: true, ..Binding::to(Output::Mouse(MouseButton::Left)) })));
-        assert!(!k.set_of(Layer::Main, Input::Stick(Side::Left), Actuation::Hold, Some(Binding::to(Output::Pointer))), "a stick has no hold");
-        assert!(k.set_of(Layer::Back, a, Actuation::Hold, Some(Binding::to(Output::Key(chord("tab"))))));
-        assert_eq!(k.lookup_of(a, Actuation::Hold, true).map(|b| b.output), Some(Output::Key(chord("tab"))));
-        assert_eq!(k.lookup_of(a, Actuation::Double, true).map(|b| b.toggle), Some(true), "falls through");
+        assert!(k.set_of(Layer::BASE, a, Actuation::Hold, Some(Binding { hold_time: 60, ..Binding::to(Output::Key(chord("esc"))) })));
+        assert!(k.set_of(Layer::BASE, a, Actuation::Double, Some(Binding { toggle: true, ..Binding::to(Output::Mouse(MouseButton::Left)) })));
+        assert!(!k.set_of(Layer::BASE, Input::Stick(Side::Left), Actuation::Hold, Some(Binding::to(Output::Pointer))), "a stick has no hold");
+        let aim = k.add_layer("Aim").unwrap();
+        assert!(k.set_of(aim, a, Actuation::Hold, Some(Binding::to(Output::Key(chord("tab"))))));
+        assert_eq!(k.lookup_of(a, Actuation::Hold, &[aim]).map(|b| b.output), Some(Output::Key(chord("tab"))));
+        assert_eq!(k.lookup_of(a, Actuation::Double, &[aim]).map(|b| b.toggle), Some(true), "falls through");
         let maps = Keymaps { list: vec![k] };
         let text = maps.text();
-        assert_eq!(text, "keymap 4 Combo\na = key x turbo=12\na hold = key esc holdtime=60\na double = mouse left toggle\nlayer back\na hold = key tab\n");
+        assert_eq!(text, "keymap 4 Combo\na = key x turbo=12\na hold = key esc holdtime=60\na double = mouse left toggle\nlayer 1 Aim\na hold = key tab\n");
         assert_eq!(Keymaps::load(&text), maps);
-        assert!(!maps.list.first().unwrap().is_empty(Layer::Back));
+        assert!(!maps.list.first().unwrap().is_empty(aim));
         // Shown: turbo off or a rate, a hold's time.
         let show = |p: Param, v| {
             let mut s = String::new();
@@ -1627,40 +1761,44 @@ mod tests {
     }
 
     #[test]
-    fn the_back_layer_round_trips_and_old_files_load_unchanged() {
+    fn layers_round_trip_and_old_files_load_unchanged() {
         let old = "keymap 1 Nintendo layout\na = pad b\nb = pad a\nx = pad y\ny = pad x\n";
         let maps = Keymaps::load(old);
         assert_eq!(maps, Keymaps::initial(), "a file from before layers");
         assert_eq!(maps.text(), old, "and written the same");
         let mut maps = Keymaps::initial();
         let k = maps.get_mut(1).unwrap();
-        assert!(k.set_in(Layer::Back, Input::Button(Button::A), Some(Binding::to(Output::Key(chord("ctrl+y"))))));
-        assert!(k.set_in(Layer::Back, Input::Gyro, Some(Binding { hold: Some(Input::Button(Button::RB)), ..Binding::to(Output::Pointer) })));
-        assert!(k.set_in(Layer::Back, Input::Button(Button::B), as_on_the_pad(Input::Button(Button::B)).map(Binding::to)));
+        let aim = k.add_layer("Aim").unwrap();
+        assert!(k.set_in(aim, Input::Button(Button::A), Some(Binding::to(Output::Key(chord("ctrl+y"))))));
+        assert!(k.set_in(aim, Input::Gyro, Some(Binding { hold: Some(Input::Button(Button::RB)), ..Binding::to(Output::Pointer) })));
+        assert!(k.set_in(aim, Input::Button(Button::B), as_on_the_pad(Input::Button(Button::B)).map(Binding::to)));
         let text = maps.text();
-        assert_eq!(text, format!("{old}layer back\na = key ctrl+y\nb = pad b\ngyro = pointer hold=rb\n"));
+        assert_eq!(text, format!("{old}layer 1 Aim\na = key ctrl+y\nb = pad b\ngyro = pointer hold=rb\n"));
         assert_eq!(Keymaps::load(&text), maps);
-        // A copy has both layers; clearing one leaves the other.
+        // A copy has its layers; clearing one leaves the others.
         let copy = maps.duplicate(1, "Copy").unwrap();
         let k = maps.get_mut(copy).unwrap();
-        assert_eq!(k.layer(Layer::Back).len(), 3);
-        assert!(k.clear(Layer::Back) && !k.clear(Layer::Back));
+        assert_eq!(k.layer(aim).len(), 3);
+        assert!(k.clear(aim) && !k.clear(aim));
         assert_eq!(k.bindings().len(), 4);
     }
 
     #[test]
-    fn the_back_layer_falls_through_to_the_main_one() {
+    fn layers_fall_through_to_those_beneath() {
         let mut k = nintendo(1);
         let a = Input::Button(Button::A);
         let x = Input::Button(Button::X);
-        k.set_in(Layer::Back, a, Some(Binding::to(Output::Mouse(MouseButton::Left))));
-        k.set_in(Layer::Back, x, as_on_the_pad(x).map(Binding::to));
-        let out = |input, back| k.lookup(input, back).map(|b| b.output);
-        assert_eq!(out(a, false), Some(Output::Pad(PadOut::Button(Button::B))), "main");
-        assert_eq!(out(a, true), Some(Output::Mouse(MouseButton::Left)), "the Back layer's own");
-        assert_eq!(out(Input::Button(Button::B), true), Some(Output::Pad(PadOut::Button(Button::A))), "not in it: main's");
-        assert_eq!(out(x, true), Some(Output::Pad(PadOut::Button(Button::X))), "as on the pad, over main's Y");
-        assert_eq!(out(Input::Button(Button::LB), true), None, "in neither: as on the pad");
+        let (one, two) = (k.add_layer("One").unwrap(), k.add_layer("Two").unwrap());
+        k.set_in(one, a, Some(Binding::to(Output::Mouse(MouseButton::Left))));
+        k.set_in(one, x, as_on_the_pad(x).map(Binding::to));
+        k.set_in(two, a, Some(Binding::to(Output::Mouse(MouseButton::Right))));
+        let out = |input, on: &[Layer]| k.lookup(input, on).map(|b| b.output);
+        assert_eq!(out(a, &[]), Some(Output::Pad(PadOut::Button(Button::B))), "Base");
+        assert_eq!(out(a, &[one]), Some(Output::Mouse(MouseButton::Left)), "the layer's own");
+        assert_eq!(out(a, &[one, two]), Some(Output::Mouse(MouseButton::Right)), "the newest's");
+        assert_eq!(out(x, &[one, two]), Some(Output::Pad(PadOut::Button(Button::X))), "not in the newest: the one beneath");
+        assert_eq!(out(Input::Button(Button::B), &[one]), Some(Output::Pad(PadOut::Button(Button::A))), "in neither: Base's");
+        assert_eq!(out(Input::Button(Button::LB), &[one]), None, "nowhere: as on the pad");
         assert_eq!(as_on_the_pad(Input::StickDir(Side::Left, Dir::Up)), None);
         assert!(Input::all().filter_map(|i| as_on_the_pad(i).map(|o| (i, o))).all(|(i, o)| o.fits(i.kind())));
     }
@@ -1689,7 +1827,7 @@ mod tests {
             input.name(&mut name).unwrap();
             assert_eq!(Input::parse(&name), Some(input), "{name}");
         }
-        assert_eq!(Input::all().count(), 14 + 4 + 10 + 2 + 1);
+        assert_eq!(Input::all().count(), 15 + 4 + 10 + 2 + 1);
         assert_eq!(PadOut::all().count(), 16);
     }
 }

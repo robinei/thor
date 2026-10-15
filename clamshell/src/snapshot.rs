@@ -215,9 +215,23 @@ pub fn shots(now: u64) -> Result<Vec<Shot>, ParseError> {
         ),
         shot("keymap-edit-stick.png", Bottom, vec![km(KeymapId::Input(Input::Stick(Side::Left)))]),
         shot("keymap-edit-slider.png", Bottom, slide(Param::Curve, 0.3, false)),
-        shot("keymap-edit-back.png", Bottom, [vec![Slide::End.into(), km(KeymapId::Layer(Layer::Back))], select(Input::Button(Button::A)), vec![km(KeymapId::Target(Target::Key)), key(Key::Char('y'))?, km(KeymapId::Input(Input::Button(Button::LB)))]].concat()),
+        shot(
+            "keymap-edit-back.png",
+            Bottom,
+            [
+                // A layer added with the +, named, shown; A in it to Y; L1 selected (falls through to Base).
+                vec![Slide::End.into(), km(KeymapId::AddLayer)],
+                control::type_text("aim")?,
+                vec![tap(Id::Editor(EditorId::Save))],
+                select(Input::Button(Button::A)),
+                vec![km(KeymapId::Target(Target::Key)), key(Key::Char('y'))?, km(KeymapId::Input(Input::Button(Button::LB)))],
+            ]
+            .concat(),
+        ),
         shot("keymap-edit-clear.png", Bottom, vec![km(KeymapId::Clear)]),
-        shot("keymap-mouse.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Layer(Layer::Main)), km(KeymapId::Input(Input::Button(Button::A))), km(KeymapId::Target(Target::MouseParts))]),
+        shot("keymap-layers.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Layer(Layer::BASE)), km(KeymapId::Input(Input::Button(Button::Back))), km(KeymapId::Target(Target::Layers))]),
+        shot("keymap-edit-layer-key.png", Bottom, vec![km(KeymapId::ToLayer(Layer(1)))]),
+        shot("keymap-mouse.png", Bottom, vec![km(KeymapId::Input(Input::Button(Button::A))), km(KeymapId::Target(Target::MouseParts))]),
         shot("keymap-edit-gyro.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Input(Input::Gyro))]),
         shot("keymap-edit-gyro-accel.png", Bottom, [slide(Param::Accel, 0.25, true), vec![km(KeymapId::Toggle(Param::Twist))]].concat()),
         shot("keymap-holds.png", Bottom, vec![km(KeymapId::Holds)]),
