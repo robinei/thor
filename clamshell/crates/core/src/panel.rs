@@ -215,10 +215,10 @@ mod tests {
         assert_eq!(fresh.settings().of("zelda-lttp"), zelda);
         assert_eq!(fresh.settings().global, s.settings().global);
         // A long press drops one override; Reset all of them.
-        taps(&mut s, Setting::Buttons, 1);
+        taps(&mut s, Setting::Pad, 1);
         long(&mut s, Id::Settings(SettingsId::Tile(Setting::Power)));
         assert_eq!(s.settings().overrides_of("zelda-lttp").get(Setting::Power), None);
-        assert_eq!(s.settings().overrides_of("zelda-lttp").get(Setting::Buttons), Some(1));
+        assert_eq!(s.settings().overrides_of("zelda-lttp").get(Setting::Pad), Some(1));
         tap(&mut s, Id::Settings(SettingsId::Reset));
         assert!(s.settings().overrides.is_empty());
         // Global-only settings change the global value even on a game's tab.

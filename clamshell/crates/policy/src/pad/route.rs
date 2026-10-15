@@ -164,6 +164,11 @@ impl PadRouter {
         log::info!("pad: {to:?}");
     }
 
+    /// The virtual pad was made again: it shows the controller as it is (in the game) or at rest.
+    pub fn show(&self, out: &mut Out) {
+        self.snapshot.events(!away(self.route), &mut out.pad);
+    }
+
     /// One controller event at `now`.
     pub fn event(&mut self, raw: Raw, now: Instant, out: &mut Out) {
         let key = raw.as_key();
@@ -304,6 +309,10 @@ mod tests {
         assert!(out.pad.is_empty(), "still away");
         r.set_route(PadRoute::Game, &mut out);
         assert_eq!(out.pad, vec![key(KeyCode::BTN_TL, Press::Down), axis(1000), rz, Raw::REPORT], "as it is");
+        // A new virtual pad (another kind) is shown the same.
+        out.pad.clear();
+        r.show(&mut out);
+        assert_eq!(out.pad, vec![key(KeyCode::BTN_TL, Press::Down), axis(1000), rz, Raw::REPORT]);
     }
 
     #[test]

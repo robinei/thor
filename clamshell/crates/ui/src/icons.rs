@@ -25,7 +25,6 @@ pub enum Icon {
     ScreenOff,
     Cores,
     Fan,
-    Buttons,
     Deadzone,
     Rumble,
     Cpu,
@@ -120,7 +119,7 @@ impl Icon {
             Setting::BigCores => Icon::Cores,
             Setting::Fan => Icon::Fan,
             Setting::PadMouse => Icon::Mouse,
-            Setting::Buttons => Icon::Buttons,
+            Setting::Pad => Icon::Gamepad,
             Setting::Deadzone => Icon::Deadzone,
             Setting::Rumble => Icon::Rumble,
             Setting::CpuMax => Icon::Cpu,
@@ -259,11 +258,6 @@ pub fn draw(c: &mut Canvas, icon: Icon, r: Rect, color: Color) {
         }
         Icon::Cores => cores(p),
         Icon::Fan => fan(p),
-        Icon::Buttons => {
-            for (x, y) in [(12.0, 5.0), (19.0, 12.0), (12.0, 19.0), (5.0, 12.0)] {
-                p.frame((x - 3.0, y - 3.0, 6.0, 6.0), 3.0, 1.6);
-            }
-        }
         Icon::Deadzone => {
             p.frame((2.5, 2.5, 19.0, 19.0), 9.5, LINE);
             p.frame((8.0, 8.0, 8.0, 8.0), 4.0, THIN);
@@ -536,7 +530,6 @@ mod tests {
             Icon::ScreenOff,
             Icon::Cores,
             Icon::Fan,
-            Icon::Buttons,
             Icon::Deadzone,
             Icon::Rumble,
             Icon::Cpu,
@@ -578,7 +571,7 @@ mod tests {
         for icon in &all {
             seen.insert(variant(*icon));
         }
-        assert_eq!(seen.len(), 44, "a variant is missing from the list");
+        assert_eq!(seen.len(), 43, "a variant is missing from the list");
         all
     }
 
@@ -596,7 +589,6 @@ mod tests {
             Icon::ScreenOff => 8,
             Icon::Cores => 9,
             Icon::Fan => 10,
-            Icon::Buttons => 11,
             Icon::Deadzone => 12,
             Icon::Rumble => 13,
             Icon::Cpu => 14,

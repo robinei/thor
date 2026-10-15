@@ -97,8 +97,14 @@ echo "$SSH_KEY" > "$ROOT/home/$USER_NAME/.ssh/authorized_keys"
 mkdir -p "$ROOT/etc/systemd/system/getty@tty1.service.d"
 printf '[Service]\nExecStart=\nExecStart=-/sbin/agetty --autologin %s --noclear %%I $TERM\n' "$USER_NAME" \
     > "$ROOT/etc/systemd/system/getty@tty1.service.d/autologin.conf"
-echo uinput > "$ROOT/etc/modules-load.d/thor.conf"
-echo 'KERNEL=="uinput", GROUP="input", MODE="0660"' > "$ROOT/etc/udev/rules.d/70-thor.rules"
+# The virtual pads: uinput for the Xbox one and the pad mouse, uhid for the DualSense (stock udev leaves
+# /dev/uhid to root); the DualSense's hidraw node for Steam Input and SDL, which read it directly.
+printf 'uinput\nuhid\n' > "$ROOT/etc/modules-load.d/thor.conf"
+cat > "$ROOT/etc/udev/rules.d/70-thor.rules" <<'RULES'
+KERNEL=="uinput", GROUP="input", MODE="0660"
+KERNEL=="uhid", GROUP="input", MODE="0660"
+KERNEL=="hidraw*", KERNELS=="*054C:0CE6*", GROUP="input", MODE="0660"
+RULES
 arch-chroot "$ROOT" systemctl enable NetworkManager bluetooth sshd systemd-timesyncd > /dev/null
 # The power button and the lid put the machine to sleep with logind's "sleep" action: the first that works
 # of suspend-then-hibernate and suspend (so suspend still works while hibernate doesn't, e.g. before the

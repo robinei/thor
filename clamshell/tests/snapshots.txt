@@ -2,7 +2,7 @@
 # what is drawn: CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots
 battery.png e6b6e102b510ff42
 bluetooth.png 736938c296cb2fa8
-bottom.png edfcb8f97eee8d3c
+bottom.png ca361c7963b1b40f
 brightness.png 0e82dc44d6027da8
 keyboard-back.png 732462ca1a23d193
 keyboard-caps.png 371ce684dba1e6b2
@@ -13,11 +13,11 @@ keyboard.png f195925c14f450a7
 launcher-running.png 382b49e3cbca6c0e
 launcher.png 2470ba428dff9659
 settings-env.png d8dd30b9be6aa490
-settings-global.png d80adda76e8dc937
-settings-running.png 618e94557f91adc2
-settings.png 5a54e3805d7c054b
+settings-global.png 6b3d37ee29f1bebd
+settings-running.png d51c9bc1598a45a6
+settings.png 3628c796fef25a82
 slider.png ea6a9be4cae75eca
-status-low.png 2556d54eb70eb679
+status-low.png f51dbad4a5e686c6
 sysinfo.png deecdc74683251e0
 top-back.png a32a2fab862c039e
 top-played.png 3ac367c25bed5050
