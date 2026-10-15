@@ -5,7 +5,7 @@
 
 use clamshell_core::{EditorId, Id};
 
-use super::style::{self, Look, PRESSED, SURFACE, SURFACE_HI, Text, Tone, RADIUS};
+use super::style::{self, SURFACE_HI, Text, Tone, RADIUS};
 use super::{Frame, keyboard};
 use crate::draw::{Align, Keep, LINE, Rect};
 
@@ -44,14 +44,10 @@ pub(super) fn field(f: &mut Frame, body: Rect, title: &str, text: &str, cancel: 
     let buttons = Rect::new(row.x + pad * 0.5, row.y, row.w - pad * 0.5, row.h);
     let (cancel_id, cancel_label) = cancel;
     let cancel = buttons.cell(2, 1, pad * 0.5, 0);
-    f.button(cancel_id, cancel, Look { fill: Some(SURFACE), ..Look::CARD }, |f| {
-        f.c.text_in(cancel, cancel.h * BUTTON_TEXT, Tone::Normal, cancel_label, Align::Center);
-    });
+    f.text_button(cancel_id, cancel, cancel.h * BUTTON_TEXT, Tone::Fn, cancel_label, Align::Center);
     let (save_id, save_label) = save;
     let ok = buttons.cell(2, 1, pad * 0.5, 1);
-    f.button(save_id, ok, Look { fill: Some(PRESSED), ..Look::CARD }, |f| {
-        f.c.text_in(ok, ok.h * BUTTON_TEXT, Tone::High, save_label, Align::Center);
-    });
+    f.text_button(save_id, ok, ok.h * BUTTON_TEXT, Tone::Fn, save_label, Align::Center);
 
     let keys_y = field.y + field.h + pad;
     keyboard::draw(f, Rect::new(body.x, keys_y, body.w, body.y + body.h - keys_y));

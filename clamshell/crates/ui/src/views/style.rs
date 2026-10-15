@@ -28,7 +28,9 @@ pub enum Tone {
     Accent,
     /// Running, on, saving power; and what starts something.
     Go,
-    /// The keyboard's Fn layer; settings that change how a game looks or plays.
+    /// The keyboard's Fn layer; settings that change how a game looks or plays; what a keymap remaps; and
+    /// actions: text that does something when tapped (no fill, no border; white while pressed, and for
+    /// the current option of a choice).
     Fn,
 }
 
@@ -115,21 +117,27 @@ pub struct Look {
     /// How far inside the button's edge the focus ring runs; negative: outside it (around a tile or card
     /// whose content reaches its edge).
     pub ring: f32,
+    /// A press shows as a fill ([`PRESSED`]); without, the content shows it (a text action's label
+    /// brightens).
+    pub press_fill: bool,
 }
 
 impl Look {
     /// A list row (a level, a network, a device).
-    pub const ROW: Look = Look { radius: RADIUS, fill: None, inset: 1.0, ring: 0.0 };
+    pub const ROW: Look = Look { radius: RADIUS, fill: None, inset: 1.0, ring: 0.0, press_fill: true };
     /// An icon button: the bar's, a radio's switch.
-    pub const ICON: Look = Look { radius: RADIUS, fill: None, inset: 2.0, ring: 0.0 };
+    pub const ICON: Look = Look { radius: RADIUS, fill: None, inset: 2.0, ring: 0.0, press_fill: true };
     /// A tile of a grid (settings, the dock): no background, the ring around it.
-    pub const TILE: Look = Look { radius: RADIUS_L, fill: None, inset: 0.0, ring: -2.0 };
+    pub const TILE: Look = Look { radius: RADIUS_L, fill: None, inset: 0.0, ring: -2.0, press_fill: true };
+    /// A text action on the black: no background or border, the label blue ([`Tone::Fn`]), white while
+    /// pressed (or when it is the chosen one of a choice); the target is as large as the room it is given.
+    pub const TEXT: Look = Look { radius: RADIUS, fill: None, inset: 0.0, ring: -2.0, press_fill: false };
     /// A button on a background of its own.
-    pub const CARD: Look = Look { radius: RADIUS, fill: Some(SURFACE_HI), inset: 0.0, ring: -2.0 };
+    pub const CARD: Look = Look { radius: RADIUS, fill: Some(SURFACE_HI), inset: 0.0, ring: -2.0, press_fill: true };
     /// A tab's label (shelf's collections, the settings' scopes).
-    pub const TAB: Look = Look { radius: RADIUS_S, fill: None, inset: 4.0, ring: 2.0 };
+    pub const TAB: Look = Look { radius: RADIUS_S, fill: None, inset: 4.0, ring: 2.0, press_fill: true };
     /// A keyboard key: a square cell, the ring just inside it.
-    pub const KEY: Look = Look { radius: 0.0, fill: None, inset: 0.0, ring: 3.0 };
+    pub const KEY: Look = Look { radius: 0.0, fill: None, inset: 0.0, ring: 3.0, press_fill: true };
     /// Nothing shown (the dark screen).
-    pub const PLAIN: Look = Look { radius: 0.0, fill: None, inset: 0.0, ring: 0.0 };
+    pub const PLAIN: Look = Look { radius: 0.0, fill: None, inset: 0.0, ring: 0.0, press_fill: true };
 }

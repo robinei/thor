@@ -146,7 +146,7 @@ impl<'f, 'c> Frame<'f, 'c> {
     /// follow `shown`, the target is `rect`.
     fn button_in(&mut self, id: Id, rect: Rect, shown: Rect, look: Look, content: impl FnOnce(&mut Self)) {
         let pressed = self.s.pointer().pressed() == Some(&id);
-        let background = if pressed { Some(PRESSED) } else { look.fill };
+        let background = if pressed && look.press_fill { Some(PRESSED) } else { look.fill };
         if let Some(color) = background {
             let r = shown.inset(look.inset);
             if look.radius > 0.0 {
@@ -160,6 +160,23 @@ impl<'f, 'c> Frame<'f, 'c> {
             self.c.outline(shown.inset(look.ring), look.radius.max(RADIUS_S), 2.0, Tone::Accent);
         }
         self.targets.push(Target { rect, id, track: None, list: None });
+    }
+
+    /// Whether `id` is under a finger (or the pad's A) now.
+    fn pressed(&self, id: &Id) -> bool {
+        self.s.pointer().pressed() == Some(id)
+    }
+
+    /// A text action (see [`Look::TEXT`]): `label` in `r` at `size` (centred, or from the left with
+    /// [`crate::draw::Align::Start`]), in `tone` (blue for an action, see [`Tone::Fn`]), white while
+    /// pressed. The whole of `r` is its target.
+    fn text_button(&mut self, id: Id, r: Rect, size: f32, tone: Tone, label: &str, align: crate::draw::Align) {
+        let tone = if self.pressed(&id) { Tone::High } else { tone };
+        self.button(id, r, Look::TEXT, |f| {
+            let w = f.c.text_width(size, label).min(r.w);
+            let x = if align == crate::draw::Align::Start { r.x } else { r.x + (r.w - w) / 2.0 };
+            f.c.text_fit(Rect::new(x, r.y, w + 1.0, r.h), size, tone, label, crate::draw::Keep::Start);
+        });
     }
 
     /// Gives the last target a track (whatever drew the track knows where it is).
