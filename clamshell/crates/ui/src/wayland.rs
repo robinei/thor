@@ -25,6 +25,7 @@ use smithay_client_toolkit::{
     shm::{Shm, ShmHandler},
 };
 use clamshell_core::Event;
+use clamshell_core::{ShelfEvent};
 
 use crate::App;
 use crate::input::Source;
@@ -203,7 +204,7 @@ impl PointerHandler for App {
                     let over_top = self.top.as_ref().is_some_and(|v| v.shell.surface() == &event.surface);
                     let notches = if vertical.discrete != 0 { vertical.discrete } else { (vertical.absolute / 10.0) as i32 };
                     if over_top && notches != 0 {
-                        self.handle(Event::ListStep(notches));
+                        self.handle(Event::Shelf(ShelfEvent::ListStep(notches)));
                     }
                 }
                 _ => {}

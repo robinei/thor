@@ -13,8 +13,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use clamshell_core::Event;
-use clamshell_core::bluetooth::{self, Bluetooth, Command, Device, Kind};
+use clamshell_core::bluetooth::{self, Action, Bluetooth, Command, Device, Kind, Problem, Reason};
+use clamshell_core::{Event, Reading};
 use zbus::blocking::{Connection, Proxy};
 use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 
@@ -32,12 +32,33 @@ const CALL_LIMIT: Duration = Duration::from_secs(45);
 
 type Objects = HashMap<OwnedObjectPath, HashMap<String, HashMap<String, OwnedValue>>>;
 
+/// What this thread is asked: to watch while the Bluetooth tab is open (look for devices), and the
+/// state's commands.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Request {
+    Watch(bool),
+    Do(Command),
+}
+
+impl Request {
+    fn action(&self) -> Action {
+        match self {
+            Request::Watch(_) => Action::Watch,
+            Request::Do(command) => command.action(),
+        }
+    }
+}
+
 /// What this side keeps between reads (shared with the connecting worker).
 #[derive(Default)]
 struct Side {
     watching: bool,
     busy: Option<String>,
-    error: Option<String>,
+    error: Option<Problem>,
+}
+
+fn send(sink: &impl Sink, bt: Bluetooth) -> bool {
+    sink.send(Event::Reading(Reading::Bluetooth(bt)))
 }
 
 type Shared = Arc<Mutex<Side>>;
@@ -46,7 +67,7 @@ fn side(shared: &Shared) -> std::sync::MutexGuard<'_, Side> {
     shared.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-pub fn spawn(sink: impl Sink, commands: Receiver<Command>) -> io::Result<()> {
+pub fn spawn(sink: impl Sink, commands: Receiver<Request>) -> io::Result<()> {
     thread::Builder::new().name("bluetooth".into()).spawn(move || {
         let shared = Shared::default();
         loop {
@@ -55,18 +76,18 @@ pub fn spawn(sink: impl Sink, commands: Receiver<Command>) -> io::Result<()> {
                 Err(e) => {
                     log::debug!("bluetooth: {e}");
                     let error = side(&shared).error.clone();
-                    if !sink.send(Event::Bluetooth(Bluetooth { error, ..Bluetooth::default() })) {
+                    if !send(&sink, Bluetooth { error, ..Bluetooth::default() }) {
                         return;
                     }
                 }
             }
             // BlueZ isn't there (or went away): try again in a while; what is asked meanwhile can't be done.
             match commands.recv_timeout(Duration::from_secs(10)) {
-                Ok(Command::Watch(on)) => side(&shared).watching = on,
-                Ok(command) => {
-                    let error = format!("{}: Bluetooth isn't available", what_failed(&command));
+                Ok(Request::Watch(on)) => side(&shared).watching = on,
+                Ok(request) => {
+                    let error = Problem { action: request.action(), reason: Reason::Unavailable };
                     side(&shared).error = Some(error.clone());
-                    if !sink.send(Event::Bluetooth(Bluetooth { error: Some(error), ..Bluetooth::default() })) {
+                    if !send(&sink, Bluetooth { error: Some(error), ..Bluetooth::default() }) {
                         return;
                     }
                 }
@@ -82,7 +103,7 @@ fn connect_bus() -> zbus::Result<Connection> {
     zbus::blocking::connection::Builder::system()?.method_timeout(CALL_LIMIT).build()
 }
 
-fn run(sink: &impl Sink, commands: &Receiver<Command>, shared: &Shared) -> zbus::Result<()> {
+fn run(sink: &impl Sink, commands: &Receiver<Request>, shared: &Shared) -> zbus::Result<()> {
     let conn = connect_bus()?;
     let manager = Proxy::new(&conn, BLUEZ, "/", "org.freedesktop.DBus.ObjectManager")?;
     let connecting = connecting_worker(conn.clone(), shared.clone())?;
@@ -95,25 +116,25 @@ fn run(sink: &impl Sink, commands: &Receiver<Command>, shared: &Shared) -> zbus:
         let objects: Objects = manager.call("GetManagedObjects", &())?;
         let bt = read(&objects, &side(shared));
         if last.as_ref() != Some(&bt) {
-            if !sink.send(Event::Bluetooth(bt.clone())) {
+            if !send(sink, bt.clone()) {
                 return Ok(());
             }
             last = Some(bt);
         }
         let wait = if side(shared).watching { READ_WATCHING } else { READ_IDLE };
         match commands.recv_timeout(wait) {
-            Ok(command) => {
+            Ok(request) => {
                 // A new attempt: what went wrong before is old news.
                 side(shared).error = None;
-                if let Command::Connect(address) = command {
+                if let Request::Do(Command::Connect(address)) = request {
                     if connecting.send(address).is_err() {
                         return Err(zbus::Error::Failure("the connecting worker is gone".into()));
                     }
                     continue;
                 }
-                if let Err(e) = carry_out(&conn, &manager, &command, shared) {
-                    log::warn!("bluetooth: {command:?}: {e}");
-                    side(shared).error = Some(failure(&command, &e));
+                if let Err(e) = carry_out(&conn, &manager, &request, shared) {
+                    log::warn!("bluetooth: {request:?}: {e}");
+                    side(shared).error = Some(failure(request.action(), &e));
                 }
             }
             Err(RecvTimeoutError::Timeout) => {}
@@ -133,7 +154,7 @@ fn connecting_worker(conn: Connection, shared: Shared) -> zbus::Result<Sender<St
                 side(&shared).busy = Some(address.clone());
                 if let Err(e) = connect(&conn, &address) {
                     log::warn!("bluetooth: connecting {address}: {e}");
-                    side(&shared).error = Some(failure(&Command::Connect(address.clone()), &e));
+                    side(&shared).error = Some(failure(Action::Connect, &e));
                 }
                 side(&shared).busy = None;
             }
@@ -155,25 +176,14 @@ fn connect(conn: &Connection, address: &str) -> zbus::Result<()> {
     Ok(())
 }
 
-fn what_failed(command: &Command) -> &'static str {
-    match command {
-        Command::Connect(_) => "Couldn't connect",
-        Command::Disconnect(_) => "Couldn't disconnect",
-        Command::Forget(_) => "Couldn't forget it",
-        Command::Power(_) => "Couldn't switch Bluetooth",
-        Command::Watch(_) => "Couldn't look for devices",
-    }
-}
-
-/// What went wrong, for the screen.
-fn failure(command: &Command, e: &zbus::Error) -> String {
-    let what = what_failed(command);
+/// What went wrong doing `action`, for the screen.
+fn failure(action: Action, e: &zbus::Error) -> Problem {
     // BlueZ's errors: "org.bluez.Error.AuthenticationFailed: ..." and the like.
     let reason = match e {
         zbus::Error::MethodError(name, detail, _) => detail.clone().unwrap_or_else(|| name.as_str().trim_start_matches("org.bluez.Error.").to_owned()),
         other => other.to_string(),
     };
-    format!("{what}: {reason}")
+    Problem { action, reason: Reason::Bus(reason) }
 }
 
 fn string(props: &HashMap<String, OwnedValue>, key: &str) -> Option<String> {
@@ -240,15 +250,19 @@ fn discover(conn: &Connection, manager: &Proxy, on: bool) {
     let _ = proxy.call::<_, _, ()>(if on { "StartDiscovery" } else { "StopDiscovery" }, &());
 }
 
-fn carry_out(conn: &Connection, manager: &Proxy, command: &Command, shared: &Shared) -> zbus::Result<()> {
+fn carry_out(conn: &Connection, manager: &Proxy, request: &Request, shared: &Shared) -> zbus::Result<()> {
     let adapter = adapter_path(manager)?;
     let adapter_proxy = Proxy::new(conn, BLUEZ, adapter.as_str().to_owned(), ADAPTER)?;
     let device = |address: &str| Proxy::new(conn, BLUEZ, device_path(&adapter, address), DEVICE);
-    match command {
-        Command::Watch(on) => {
+    let command = match request {
+        Request::Watch(on) => {
             side(shared).watching = *on;
             discover(conn, manager, *on);
+            return Ok(());
         }
+        Request::Do(command) => command,
+    };
+    match command {
         Command::Power(on) => adapter_proxy.set_property("Powered", *on).map_err(zbus::Error::from)?,
         // (The connecting worker's.)
         Command::Connect(_) => {}

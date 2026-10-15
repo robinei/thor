@@ -41,7 +41,7 @@ use smithay_client_toolkit::{
     shm::{Shm, slot::SlotPool},
 };
 use clamshell_core::touch::TouchLayout;
-use clamshell_core::{Dirty, Effect, Event, State};
+use clamshell_core::{Dirty, Effect, Event, ShelfEvent, State};
 use tiny_skia::Pixmap;
 
 use draw::DrawCache;
@@ -265,7 +265,7 @@ impl App {
         self.mark(dirty);
         // The pad went elsewhere while A was held on a target: its release won't come here, so end it
         // (else the target stays pressed, a key repeating).
-        if self.state.pad_route != clamshell_core::PadRoute::Ui && self.presses.contains_key(&Source::PadA) {
+        if self.state.pad().route() != clamshell_core::PadRoute::Ui && self.presses.contains_key(&Source::PadA) {
             self.up(Source::PadA, false);
         }
         for effect in &effects {
@@ -292,7 +292,7 @@ impl App {
                 continue;
             }
             match view.draw(&mut self.pool, &mut self.fonts, &self.state, &self.touch_layout, &mut self.images, &self.qh) {
-                Ok(Some(rows)) if rows != self.state.rows => rows_changed = Some(rows),
+                Ok(Some(rows)) if rows != self.state.shelf().rows() => rows_changed = Some(rows),
                 Ok(_) => {}
                 Err(e) => {
                     log::warn!("drawing {:?}: {e}", view.screen);
@@ -302,7 +302,7 @@ impl App {
         }
         // The list's row count follows the layout; the state keeps the selection within it.
         if let Some(rows) = rows_changed {
-            self.handle(Event::Rows(rows));
+            self.handle(Event::Shelf(ShelfEvent::Rows(rows)));
         }
     }
 }

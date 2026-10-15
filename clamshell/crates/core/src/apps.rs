@@ -40,8 +40,8 @@ pub struct App {
 }
 
 impl App {
-    /// A short stable name for it, for its processes' scope (`clamshell-app-<key>-…`): the desktop id or
-    /// the name, letters and digits only (no '-').
+    /// A short stable name for it, for its instances' names ([`crate::Instance::App`]): the desktop id
+    /// or the name, letters and digits only (no '-').
     pub fn key(&self) -> &str {
         &self.key
     }
@@ -51,7 +51,19 @@ impl App {
         self.key = source.chars().map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '_' }).collect();
         self
     }
+}
 
+/// The dock's apps (from their file, or the defaults), and what is wrong with the file if anything.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Apps {
+    pub list: Vec<App>,
+    pub error: Option<String>,
+}
+
+impl Default for Apps {
+    fn default() -> Apps {
+        Apps { list: defaults(), error: None }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -70,9 +82,9 @@ pub fn defaults() -> Vec<App> {
         ..App::default()
     };
     vec![app("Steam", "gamepad", &["steam"]), App { multiple: true, ..app("Terminal", "terminal", &["foot"]) }]
-    .into_iter()
-    .map(App::with_key)
-    .collect()
+        .into_iter()
+        .map(App::with_key)
+        .collect()
 }
 
 /// shelf's own window.

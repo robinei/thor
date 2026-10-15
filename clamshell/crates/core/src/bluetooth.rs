@@ -1,7 +1,12 @@
 //! Bluetooth as the Bluetooth tab shows it (BlueZ's view, read by the policy side), and its rules: a tap
 //! connects a paired device or pairs a new one (pair, trust, connect), a long press forgets a paired one.
+//! What a device's row and the tab's header say is decided here ([`Bluetooth::device_state`],
+//! [`Bluetooth::status`]); the UI words it.
 
-use crate::{Effect, State};
+use crate::State;
+use crate::effect::Effect;
+use crate::id::BtId;
+use crate::radios::RadioStatus;
 
 /// What kind of device it is (from BlueZ's icon name), for its icon.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -41,6 +46,34 @@ pub struct Device {
     pub connected: bool,
 }
 
+/// What was being done when something went wrong.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Action {
+    Connect,
+    Disconnect,
+    Forget,
+    /// Switching the radio.
+    Power,
+    /// Looking for devices.
+    Watch,
+}
+
+/// Why it went wrong.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Reason {
+    /// BlueZ isn't there.
+    Unavailable,
+    /// BlueZ's answer (its error's message or name).
+    Bus(String),
+}
+
+/// What went wrong, until the next attempt.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Problem {
+    pub action: Action,
+    pub reason: Reason,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Bluetooth {
     /// There is an adapter (and BlueZ runs).
@@ -51,7 +84,16 @@ pub struct Bluetooth {
     /// The device being connected or paired, by address.
     pub busy: Option<String>,
     /// Why the last attempt failed, until the next one.
-    pub error: Option<String>,
+    pub error: Option<Problem>,
+}
+
+/// What a device's row says about it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeviceState {
+    Connected,
+    Connecting,
+    Paired,
+    Other,
 }
 
 impl Bluetooth {
@@ -59,19 +101,64 @@ impl Bluetooth {
     pub fn connected(&self) -> usize {
         self.devices.iter().filter(|d| d.connected).count()
     }
+
+    pub fn device_state(&self, d: &Device) -> DeviceState {
+        if d.connected {
+            DeviceState::Connected
+        } else if self.busy.as_deref() == Some(d.address.as_str()) {
+            DeviceState::Connecting
+        } else if d.paired {
+            DeviceState::Paired
+        } else {
+            DeviceState::Other
+        }
+    }
+
+    /// What Bluetooth is doing, for the tab's header: an error first, then no adapter, off, connecting
+    /// (the device's name, or its address), connected (to one, or how many), or nothing.
+    pub fn status(&self) -> RadioStatus<'_, Problem> {
+        if let Some(e) = &self.error {
+            return RadioStatus::Error(e);
+        }
+        if !self.adapter {
+            return RadioStatus::NoDevice;
+        }
+        if !self.powered {
+            return RadioStatus::Off;
+        }
+        if let Some(address) = &self.busy {
+            let name = self.devices.iter().find(|d| d.address == *address).map_or(address.as_str(), |d| d.name.as_str());
+            return RadioStatus::Busy(name);
+        }
+        match self.connected() {
+            0 => RadioStatus::Idle,
+            1 => RadioStatus::Connected(self.devices.iter().find(|d| d.connected).map_or("", |d| d.name.as_str())),
+            n => RadioStatus::Many(n),
+        }
+    }
 }
 
 /// What the Bluetooth side is asked to do.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
-    /// The tab opened (look for devices) or closed.
-    Watch(bool),
     Power(bool),
     /// Connect a paired device, or pair, trust and connect a new one.
     Connect(String),
     Disconnect(String),
     /// Unpair (BlueZ removes the device).
     Forget(String),
+}
+
+impl Command {
+    /// What it does, for saying what failed.
+    pub fn action(&self) -> Action {
+        match self {
+            Command::Power(_) => Action::Power,
+            Command::Connect(_) => Action::Connect,
+            Command::Disconnect(_) => Action::Disconnect,
+            Command::Forget(_) => Action::Forget,
+        }
+    }
 }
 
 /// Connected first, then paired, then by name (unnamed ones last).
@@ -87,10 +174,19 @@ pub fn sort(mut devices: Vec<Device>) -> Vec<Device> {
 }
 
 impl State {
+    /// A tap or long press in the Bluetooth tab.
+    pub(crate) fn on_bluetooth(&mut self, id: BtId, long: bool) -> Vec<Effect> {
+        match id {
+            BtId::Power => vec![Effect::Bluetooth(Command::Power(!self.radios.bluetooth.powered))],
+            BtId::Device(i) => self.tap_device(usize::from(i), long),
+        }
+    }
+
     /// A tap on the device at `index` (connect, or disconnect a connected one), or a long press (forget
     /// a paired one).
-    pub(crate) fn tap_device(&mut self, index: usize, long: bool) -> Vec<Effect> {
-        let Some(d) = self.bluetooth.devices.get(index) else {
+    fn tap_device(&mut self, index: usize, long: bool) -> Vec<Effect> {
+        let bt = &mut self.radios.bluetooth;
+        let Some(d) = bt.devices.get(index) else {
             return vec![];
         };
         let address = d.address.clone();
@@ -99,8 +195,8 @@ impl State {
             (true, false, _) => return vec![],
             (false, _, true) => Command::Disconnect(address),
             (false, _, false) => {
-                self.bluetooth.busy = Some(address.clone());
-                self.bluetooth.error = None;
+                bt.busy = Some(address.clone());
+                bt.error = None;
                 Command::Connect(address)
             }
         };
@@ -111,8 +207,8 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::state;
-    use crate::{Event, Id, Tab};
+    use crate::testkit::*;
+    use crate::*;
 
     fn dev(name: &str, paired: bool, connected: bool) -> Device {
         Device { address: format!("00:{name}"), name: name.into(), kind: Kind::Other, paired, connected }
@@ -132,16 +228,19 @@ mod tests {
     #[test]
     fn taps_connect_or_disconnect_and_a_long_press_forgets() {
         let mut s = state();
-        s.apply(Event::Activate(Id::Tab(Tab::Bluetooth)));
+        tap(&mut s, Id::Tab(Tab::Bluetooth));
         let devices = vec![dev("buds", true, true), dev("pad", true, false), dev("new", false, false)];
-        s.apply(Event::Bluetooth(Bluetooth { adapter: true, powered: true, devices, ..Bluetooth::default() }));
+        read(&mut s, Reading::Bluetooth(Bluetooth { adapter: true, powered: true, devices, ..Bluetooth::default() }));
+        assert_eq!(s.radios().bluetooth.status(), RadioStatus::Connected("buds"));
         let bt = |c: Command| vec![Effect::Bluetooth(c)];
-        assert_eq!(s.apply(Event::Activate(Id::Device(0))).1, bt(Command::Disconnect("00:buds".into())));
-        assert_eq!(s.apply(Event::Activate(Id::Device(1))).1, bt(Command::Connect("00:pad".into())));
-        assert_eq!(s.bluetooth.busy.as_deref(), Some("00:pad"));
-        assert_eq!(s.apply(Event::Activate(Id::Device(2))).1, bt(Command::Connect("00:new".into())), "pairs it");
-        assert_eq!(s.apply(Event::LongPress(Id::Device(1))).1, bt(Command::Forget("00:pad".into())));
-        assert_eq!(s.apply(Event::LongPress(Id::Device(2))).1, vec![], "nothing to forget");
-        assert_eq!(s.apply(Event::Activate(Id::BluetoothPower)).1, bt(Command::Power(false)));
+        let device = |i| Id::Bluetooth(BtId::Device(i));
+        assert_eq!(tap(&mut s, device(0)), bt(Command::Disconnect("00:buds".into())));
+        assert_eq!(tap(&mut s, device(1)), bt(Command::Connect("00:pad".into())));
+        assert_eq!(s.radios().bluetooth.busy.as_deref(), Some("00:pad"));
+        assert_eq!(s.radios().bluetooth.status(), RadioStatus::Busy("pad"));
+        assert_eq!(tap(&mut s, device(2)), bt(Command::Connect("00:new".into())), "pairs it");
+        assert_eq!(long(&mut s, device(1)), bt(Command::Forget("00:pad".into())));
+        assert_eq!(long(&mut s, device(2)), vec![], "nothing to forget");
+        assert_eq!(tap(&mut s, Id::Bluetooth(BtId::Power)), bt(Command::Power(false)));
     }
 }

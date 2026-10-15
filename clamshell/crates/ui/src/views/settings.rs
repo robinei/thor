@@ -10,7 +10,7 @@ use std::fmt::Write;
 
 use clamshell_core::editor::{Editor, Purpose};
 use clamshell_core::settings::{Impact, Setting};
-use clamshell_core::{Id, Scope, State};
+use clamshell_core::{Id, Scope, SettingsId, State, TileOrigin};
 
 use super::{ACCENT, DIM, FN, Frame, GO, Look, TEXT, label};
 use crate::draw::{Rect, rgb};
@@ -82,7 +82,7 @@ fn icon(s: Setting) -> Icon {
 }
 
 pub(super) fn draw(f: &mut Frame, body: Rect, buf: &mut String) {
-    if f.s.editor.is_some() {
+    if f.s.bottom().editor().is_some() {
         return editor(f, body, buf);
     }
     let s = f.s;
@@ -95,10 +95,10 @@ pub(super) fn draw(f: &mut Frame, body: Rect, buf: &mut String) {
     // Tabs: All games, then the game in context; a note on the right.
     let inner = pad * 0.8;
     let tabs = [(Scope::Global, Some("All games")), (Scope::Game, context.map(|g| g.title.as_str()))];
-    let items = tabs.into_iter().filter_map(|(scope, name)| Some((Id::Scope(scope), name?, (scope == Scope::Global) == game.is_none())));
+    let items = tabs.into_iter().filter_map(|(scope, name)| Some((Id::Settings(SettingsId::Scope(scope)), name?, (scope == Scope::Global) == game.is_none())));
     let tabs_area = Rect::new(bar.x - inner, bar.y, bar.w + inner, bar.h);
     let tabs_end = super::tabs(f, tabs_area, body.h * TAB_TEXT, inner, bar.w * TAB_MAX, items);
-    let running = context.is_some_and(|g| s.current_game.as_ref() == Some(&g.id));
+    let running = context.is_some_and(|g| s.current_game() == Some(&g.id));
     let note = match (game, running) {
         (Some(_), true) => "applies now",
         (Some(_), false) => "applies at launch",
@@ -118,15 +118,14 @@ pub(super) fn draw(f: &mut Frame, body: Rect, buf: &mut String) {
     }
 }
 
-/// How a tile looks: its icon, its value (into `buf`), what the value does (the icon's colour), its own
-/// choice (a dot, on a game's tab), following the default (dimmed value), and whether it does anything
-/// yet.
+/// How a tile looks: its icon, its value (into `buf`), what the value does (the icon's colour), where it
+/// comes from (the game's own choice: a dot; following the default on a game's tab: dimmed value), and
+/// whether it does anything yet.
 struct Face {
     id: Id,
     icon: Icon,
     impact: Impact,
-    own: bool,
-    inherited: bool,
+    origin: TileOrigin,
     active: bool,
 }
 
@@ -136,19 +135,16 @@ fn face(s: &State, tile: Tile, buf: &mut String) -> Face {
         Tile::Setting(setting) => {
             let value = s.tile_value(setting);
             setting.describe(value, buf);
-            let per_game = game.filter(|_| !setting.global_only());
-            let own = per_game.is_some_and(|g| s.settings.overrides_of(g).get(setting).is_some());
             Face {
-                id: Id::Tile(setting),
+                id: Id::Settings(SettingsId::Tile(setting)),
                 icon: icon(setting),
                 impact: setting.impact(value),
-                own,
-                inherited: per_game.is_some() && !own,
+                origin: s.tile_origin(setting),
                 active: setting.active(),
             }
         }
         Tile::Env => {
-            let text = s.settings.env_text(game.map(|g| &**g));
+            let text = s.settings().env_text(game.map(|g| &**g));
             let count = clamshell_core::count_env(text);
             buf.clear();
             match count {
@@ -159,13 +155,14 @@ fn face(s: &State, tile: Tile, buf: &mut String) -> Face {
                 }
             }
             let impact = if count > 0 { Impact::Changes } else { Impact::Stock };
-            Face { id: Id::Env, icon: Icon::Env, impact, own: game.is_some() && count > 0, inherited: false, active: true }
+            let origin = if game.is_some() && count > 0 { TileOrigin::Own } else { TileOrigin::Global };
+            Face { id: Id::Settings(SettingsId::Env), icon: Icon::Env, impact, origin, active: true }
         }
         Tile::Reset => {
-            let any = game.is_some_and(|g| s.settings.has_own(g));
+            let any = game.is_some_and(|g| s.settings().has_own(g));
             buf.clear();
             buf.push_str(if any { "Reset" } else { "Nothing to reset" });
-            Face { id: Id::Reset, icon: Icon::Reset, impact: Impact::Stock, own: false, inherited: false, active: any }
+            Face { id: Id::Settings(SettingsId::Reset), icon: Icon::Reset, impact: Impact::Stock, origin: TileOrigin::Global, active: any }
         }
     }
 }
@@ -186,9 +183,9 @@ fn draw_tile(f: &mut Frame, r: Rect, tile: Tile, buf: &mut String) {
         };
         let size = r.h * ICON;
         c.icon(face.icon, Rect::new(r.x + (r.w - size) / 2.0, r.y + r.h * 0.17, size, size), rgb(icon_color));
-        let text_color = if face.active && !face.inherited { TEXT } else { DIM };
+        let text_color = if face.active && face.origin != TileOrigin::Inherited { TEXT } else { DIM };
         label(c, Rect::new(r.x, r.y + r.h * 0.62, r.w, r.h * VALUE * 1.6), r.h * VALUE, text_color, text);
-        if face.own {
+        if face.origin == TileOrigin::Own {
             c.circle(r.x + r.w - r.h * 0.1, r.y + r.h * 0.1, r.h * 0.03, rgb(TEXT));
         }
         if later {
@@ -200,11 +197,11 @@ fn draw_tile(f: &mut Frame, r: Rect, tile: Tile, buf: &mut String) {
 /// The environment editor: what it edits, then the shared editor (field, Cancel and Save, keyboard).
 fn editor(f: &mut Frame, body: Rect, buf: &mut String) {
     let s = f.s;
-    let Some(Editor { purpose: Purpose::Env { game }, .. }) = &s.editor else {
+    let Some(Editor { purpose: Purpose::Env { game }, .. }) = s.bottom().editor() else {
         return;
     };
     let title = match game {
-        Some(id) => s.library.games.iter().find(|g| &g.id == id).map_or("this game", |g| g.title.as_str()),
+        Some(id) => s.game(id).map_or("this game", |g| g.title.as_str()),
         None => "all games",
     };
     buf.clear();

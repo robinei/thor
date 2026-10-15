@@ -4,12 +4,13 @@
 //! share of the work instead.
 
 use crate::State;
+use crate::instance::Instance;
 
-/// Who a spender is: one of our instances or the game (a systemd scope, by unit name without
-/// `.scope`), another program of the user's (by process name), or everything the system runs.
+/// Who a spender is: one of our instances or a game shelf started (by its scope), another program of
+/// the user's (by process name), or everything the system runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Group {
-    Unit(String),
+    Instance(Instance),
     Process(String),
     System,
 }
@@ -51,14 +52,11 @@ impl State {
     /// A spender's name: the app or game its scope belongs to, the program's name, or "System".
     pub fn spender_name<'a>(&'a self, spender: &'a Spender) -> &'a str {
         match &spender.group {
-            Group::Unit(unit) if unit.starts_with("clamshell-game-") => {
-                // The game whose scope it is (named like its workspace).
-                let game = self.games.iter().find(|g| g.workspace == *unit);
-                game.and_then(|r| self.library.games.iter().find(|g| g.id == r.id)).map_or("Game", |g| g.title.as_str())
-            }
-            Group::Unit(unit) => {
-                let key = unit.strip_prefix("clamshell-app-").and_then(|rest| rest.rsplitn(3, '-').nth(2));
-                key.and_then(|key| self.apps.iter().find(|a| a.key() == key)).map_or(unit.as_str(), |a| a.name.as_str())
+            Group::Instance(Instance::App { key, .. }) => self.apps.list.iter().find(|a| a.key() == key).map_or(key.as_str(), |a| a.name.as_str()),
+            // The game whose scope it is.
+            Group::Instance(instance) => {
+                let game = self.session.games().iter().find(|g| g.instance == *instance);
+                game.and_then(|r| self.game(&r.id)).map_or("Game", |g| g.title.as_str())
             }
             Group::Process(name) => name,
             Group::System => "System",
@@ -69,8 +67,8 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::state;
-    use crate::{Event, Id, Tab};
+    use crate::testkit::*;
+    use crate::*;
 
     fn spender(group: Group) -> Spender {
         Spender { group, cpu: 0.1, gpu: 0.0 }
@@ -80,30 +78,27 @@ mod tests {
     fn spenders_are_named_after_their_app_or_game() {
         let mut s = state();
         s.apply(Event::Tick { unix_secs: 1792010377 });
-        s.apply(Event::Activate(Id::Launch));
-        let first = s.selected.clone().unwrap_or_default();
-        s.apply(Event::Started(first.clone()));
+        let first = s.shelf().selected().cloned().unwrap_or_default();
+        let zelda = launch(&mut s, &first);
         // A second game in front: each scope keeps its own game's name.
-        s.apply(Event::Activate(Id::Game("ff6".into())));
-        s.apply(Event::Activate(Id::StartKeep));
-        s.apply(Event::Started("ff6".into()));
-        assert_eq!(s.current_game.as_deref(), Some("ff6"));
-        let terminal = s.apps.iter().find(|a| a.multiple).map(|a| a.key().to_owned()).unwrap_or_default();
-        let unit = format!("clamshell-app-{terminal}-1792010377-0");
-        assert_eq!(s.spender_name(&spender(Group::Unit(unit))), "Terminal");
-        let title = |id: &str| s.library.games.iter().find(|g| &*g.id == id).map(|g| g.title.clone()).unwrap_or_default();
-        assert_eq!(s.spender_name(&spender(Group::Unit("clamshell-game-1792010377-0".into()))), title(&first));
-        assert_eq!(s.spender_name(&spender(Group::Unit("clamshell-game-1792010377-1".into()))), title("ff6"));
+        tap(&mut s, game("ff6"));
+        tap(&mut s, Id::Shelf(ShelfId::StartKeep));
+        s.apply(GameEvent::Started("ff6".into()).into());
+        assert_eq!(s.current_game().map(|g| &**g), Some("ff6"));
+        let terminal = s.apps().list.iter().find(|a| a.multiple).map(|a| a.key().to_owned()).unwrap_or_default();
+        let app = Instance::App { key: terminal, secs: 1792010377, n: 0 };
+        assert_eq!(s.spender_name(&spender(Group::Instance(app))), "Terminal");
+        let title = |id: &str| s.game(id).map(|g| g.title.clone()).unwrap_or_default();
+        assert_eq!(s.spender_name(&spender(Group::Instance(zelda))), title(&first));
+        assert_eq!(s.spender_name(&spender(Group::Instance(Instance::Game { secs: 1792010377, n: 1 }))), title("ff6"));
         assert_eq!(s.spender_name(&spender(Group::Process("firefox".into()))), "firefox");
         assert_eq!(s.spender_name(&spender(Group::System)), "System");
     }
 
     #[test]
-    fn the_battery_mode_watches_while_open() {
+    fn the_battery_tab_watches_while_open() {
         let mut s = state();
-        let (_, fx) = s.apply(Event::Activate(Id::Tab(Tab::Battery)));
-        assert_eq!(fx, vec![crate::Effect::WatchPower(true)]);
-        let (_, fx) = s.apply(Event::Activate(Id::Tab(Tab::Wifi)));
-        assert_eq!(fx, vec![crate::Effect::WatchPower(false), crate::Effect::Wifi(crate::wifi::Command::Watch(true))]);
+        assert_eq!(tap(&mut s, Id::Tab(Tab::Battery)), vec![Effect::Watch(Watch::Battery, true)]);
+        assert_eq!(tap(&mut s, Id::Tab(Tab::Wifi)), vec![Effect::Watch(Watch::Battery, false), Effect::Watch(Watch::Wifi, true)]);
     }
 }

@@ -176,7 +176,7 @@ impl View {
         let Some(pixmap) = self.pixmap.as_mut() else {
             return Err(format!("can't allocate a {w}x{h} pixmap").into());
         };
-        let ((cw, ch), offset) = inset((w, h), scale_u, orbit(state.unix_secs));
+        let ((cw, ch), offset) = inset((w, h), scale_u, orbit(state.unix_secs()));
         let mut body = None;
         let mut rows = None;
         {

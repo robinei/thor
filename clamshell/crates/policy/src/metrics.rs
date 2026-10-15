@@ -12,7 +12,7 @@ use std::path::Path;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use clamshell_core::Event;
+use clamshell_core::{Event, Reading};
 use clamshell_core::metrics::{MAX_CORES, Metrics};
 
 use crate::Sink;
@@ -39,7 +39,7 @@ pub fn spawn(sink: impl Sink) -> std::io::Result<JoinHandle<()>> {
                 }
             }
             gpu_previous = gpu_now;
-            if !sink.send(Event::Metrics(m)) {
+            if !sink.send(Event::Reading(Reading::Metrics(m))) {
                 return;
             }
             previous = now;

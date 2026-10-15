@@ -6,7 +6,7 @@
 use std::fmt::Write;
 
 use clamshell_core::levels::Level;
-use clamshell_core::{Id, State};
+use clamshell_core::{AudioId, Id, State};
 
 use super::bar::volume_icon;
 use super::{ACCENT, DIM, Frame, GO, Look, TEXT, TEXT_HI};
@@ -35,7 +35,7 @@ const ROW: Look = Look { radius: 8.0, fill: None, inset: 1.0, ring_inset: 0.0 };
 /// A level's track over `r` (the whole width is 0 to 100): lit up to the level, the thumb at it; dim
 /// without a level or while muted.
 fn track(f: &mut Frame, level: Level, r: Rect, muted: bool) {
-    let value = f.s.level_of(level);
+    let value = f.s.levels().level(level);
     f.button(Id::Level(level), r, ROW, |c| {
         let (h, cy) = (r.h * TRACK, r.y + r.h / 2.0);
         let thumb = r.h * THUMB;
@@ -89,34 +89,34 @@ pub(super) fn draw_volume(f: &mut Frame, body: Rect, buf: &mut String) {
     // The output volume: mute, track, number.
     let row = Rect::new(area.x, area.y, area.w, row_h);
     let mute = Rect::new(row.x, row.y, name_w, row.h);
-    let muted = s.status.muted;
-    f.button(Id::MuteOutput, mute, ROW, |c| {
-        let icon = volume_icon(s.status.volume.unwrap_or(0), muted);
+    let muted = s.levels().muted();
+    f.button(Id::Audio(AudioId::MuteOutput), mute, ROW, |c| {
+        let icon = volume_icon(s.levels().volume().unwrap_or(0), muted);
         let color = if muted { ACCENT } else { TEXT };
         c.icon(icon, Rect::new(mute.x + pad * 0.5, mute.y + (mute.h - side) / 2.0, side, side), rgb(color));
         let ty = mute.y + (mute.h - size * 1.2) / 2.0;
         c.text(mute.x + pad * 0.5 + side * 1.4, ty, size, rgb(color), if muted { "Muted" } else { "Volume" });
     });
     track(f, Level::Volume, Rect::new(row.x + name_w, row.y, row.w - name_w - number_w, row.h), muted);
-    number(f, Rect::new(row.x + row.w - number_w, row.y, number_w, row.h), s.status.volume, "", size, buf);
+    number(f, Rect::new(row.x + row.w - number_w, row.y, number_w, row.h), s.levels().volume(), "", size, buf);
     let mut y = row.y + row.h + pad * 0.5;
     let bottom = area.y + area.h;
 
     // Where the sound goes.
     let hsize = body.h * HEADING;
     y += heading(f, area.x, y, hsize, "Output");
-    if s.audio.outputs.is_empty() {
+    if s.levels().audio().outputs.is_empty() {
         f.c.text(area.x, y, size, rgb(DIM), "No outputs");
         y += row_h * 0.6;
     }
     // (Room kept below for the apps' heading and a row.)
     let apps_room = hsize * 1.8 + row_h + pad;
-    for (i, o) in s.audio.outputs.iter().enumerate() {
+    for (i, o) in s.levels().audio().outputs.iter().enumerate() {
         if y + row_h * 0.8 > bottom - apps_room {
             break;
         }
         let r = Rect::new(area.x - pad * 0.5, y, area.w + pad, row_h * 0.8);
-        f.button(Id::Output(i as u16), r, ROW, |c| {
+        f.button(Id::Audio(AudioId::Output(i as u16)), r, ROW, |c| {
             let dot = r.h * 0.09;
             let color = if o.default { TEXT_HI } else { TEXT };
             if o.default {
@@ -134,10 +134,10 @@ pub(super) fn draw_volume(f: &mut Frame, body: Rect, buf: &mut String) {
         return;
     }
     y += heading(f, area.x, y, hsize, "Apps");
-    if s.audio.streams.is_empty() {
+    if s.levels().audio().streams.is_empty() {
         f.c.text(area.x, y, size, rgb(DIM), "Nothing is playing");
     }
-    for (i, stream) in s.audio.streams.iter().enumerate() {
+    for (i, stream) in s.levels().audio().streams.iter().enumerate() {
         if y + row_h > bottom {
             break;
         }
@@ -148,7 +148,7 @@ pub(super) fn draw_volume(f: &mut Frame, body: Rect, buf: &mut String) {
         let i = i as u16;
         track(f, Level::Stream(i), Rect::new(row.x + name_w, row.y, row.w - name_w - number_w, row.h), stream.muted);
         let m = Rect::new(row.x + row.w - number_w, row.y, number_w, row.h);
-        f.button(Id::StreamMute(i), m, ROW, |c| {
+        f.button(Id::Audio(AudioId::StreamMute(i)), m, ROW, |c| {
             let icon = volume_icon(stream.volume, stream.muted);
             let color = if stream.muted { ACCENT } else { TEXT };
             c.icon(icon, Rect::new(m.x + (m.w - side) / 2.0, m.y + (m.h - side) / 2.0, side, side), rgb(color));
@@ -172,16 +172,16 @@ pub(super) fn draw_brightness(f: &mut Frame, body: Rect, buf: &mut String) {
     f.c.icon(Icon::Brightness, Rect::new(row.x, row.y + (row.h - side) / 2.0, side, side), rgb(TEXT));
     f.c.text(row.x + side * 1.4, ty, size, rgb(TEXT), "Brightness");
     track(f, Level::Brightness, Rect::new(row.x + name_w, row.y, row.w - name_w - number_w, row.h), false);
-    number(f, Rect::new(row.x + row.w - number_w, row.y, number_w, row.h), s.level_of(Level::Brightness), "", size, buf);
+    number(f, Rect::new(row.x + row.w - number_w, row.y, number_w, row.h), s.levels().level(Level::Brightness), "", size, buf);
     let mut y = row.y + row.h + pad * 0.5;
 
     // Each screen's share of it.
     y += heading(f, area.x, y, body.h * HEADING, "Each screen, of the brightness above");
-    if s.backlights.is_empty() {
+    if s.levels().backlights().is_empty() {
         f.c.text(area.x, y, size, rgb(DIM), "No backlight");
         return;
     }
-    for (i, name) in s.backlights.iter().enumerate() {
+    for (i, name) in s.levels().backlights().iter().enumerate() {
         if y + row_h > area.y + area.h {
             break;
         }
@@ -191,7 +191,7 @@ pub(super) fn draw_brightness(f: &mut Frame, body: Rect, buf: &mut String) {
         let level = Level::Backlight(i as u16);
         let percent_w = area.w * PERCENT_W;
         track(f, level, Rect::new(row.x + name_w, row.y, row.w - name_w - percent_w, row.h), false);
-        number(f, Rect::new(row.x + row.w - percent_w, row.y, percent_w, row.h), s.level_of(level), " %", size, buf);
+        number(f, Rect::new(row.x + row.w - percent_w, row.y, percent_w, row.h), s.levels().level(level), " %", size, buf);
         y += row_h;
     }
 }

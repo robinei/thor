@@ -1,21 +1,36 @@
 //! The program's state and its rules. No I/O: every change comes in as an [`Event`], and what the outside
 //! world must do comes back as [`Effect`]s. The UI and the policy threads only read the state and send
 //! events, so all of this is unit-testable.
+//!
+//! The state is grouped by what it is about: shelf ([`Shelf`]), the second screen ([`Bottom`]), what runs
+//! and is in front ([`Session`]), the dock's apps ([`Apps`]), volume and brightness ([`Levels`]), the
+//! radios ([`Radios`]), the controller ([`Pad`]), focus and presses ([`Pointer`]), and the system's
+//! readings ([`Sys`]). Each owns its own rules; what involves two of them is [`State`]'s.
 
 pub mod apps;
 pub mod battery;
 pub mod bluetooth;
 pub mod editor;
+mod effect;
+mod event;
 mod game;
+mod id;
+pub mod instance;
 mod items;
 pub mod keyboard;
 pub mod levels;
 pub mod metrics;
+mod pad;
 mod panel;
+mod pointer;
+mod radios;
 mod resume;
+mod session;
 pub mod settings;
 mod shelf;
 pub mod slider;
+mod sys;
+mod tab;
 mod tasks;
 pub mod touch;
 pub mod wifi;
@@ -23,83 +38,29 @@ pub mod windows;
 
 use std::sync::Arc;
 
-use slider::{Control, Slider};
-use items::ItemKey;
-use keyboard::{Key, KeyPos, Keyboard, Stroke};
-use settings::{Setting, Settings, Values};
+use keyboard::{Key, Keyboard};
+use resume::{SAVE_AFTER, Saves};
+use settings::{Setting, Settings};
+use slider::Control;
 
+pub use apps::Apps;
 pub use editor::{Editor, count_env, parse_env};
-pub use game::{Front, RunningGame};
+pub use effect::{Dirty, Effect, Save, Watch, WindowCommand};
+pub use event::{Event, GameEvent, LevelEvent, PointerEvent, Reading, ShelfEvent, Slide};
+pub use game::{Front, Launching, Origin, Queued, RunningGame};
+pub use id::{AudioId, BtId, DockId, EditorId, Hold, Id, SettingsId, ShelfId, WifiId};
+pub use instance::Instance;
+pub use levels::{Brightness, Level, Levels, Sound};
+pub use pad::{Claimant, Pad, PadInput, PadMouse, PadRoute};
+pub use panel::{Scope, TileOrigin};
+pub use pointer::Pointer;
+pub use radios::{RadioStatus, Radios};
+pub use session::{Pending, Session};
+pub use shelf::{Cursor, Shelf};
+pub use sys::{Status, Sys, TouchpadProblem};
+pub use tab::{Bottom, Tab};
 
 pub use clamshell_library::{Collection, Game, Launch, Library};
-
-/// The second screen's tabs, chosen from the bar; the last one chosen stays, also
-/// across restarts. Volume and brightness open from their controls, Bluetooth, Wi-Fi and Battery from
-/// their status icons; all are tabs alike.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum Tab {
-    Settings,
-    /// The apps at hand and what runs (the game first).
-    Dock,
-    Keyboard,
-    Touchpad,
-    #[default]
-    Sysinfo,
-    Volume,
-    Brightness,
-    Wifi,
-    Bluetooth,
-    Battery,
-}
-
-impl Tab {
-    /// Every tab, in the bar's order.
-    pub const ALL: [Tab; 10] = [
-        Tab::Settings,
-        Tab::Dock,
-        Tab::Keyboard,
-        Tab::Touchpad,
-        Tab::Sysinfo,
-        Tab::Volume,
-        Tab::Brightness,
-        Tab::Bluetooth,
-        Tab::Wifi,
-        Tab::Battery,
-    ];
-
-    pub fn name(self) -> &'static str {
-        match self {
-            Tab::Settings => "settings",
-            Tab::Dock => "dock",
-            Tab::Keyboard => "keyboard",
-            Tab::Touchpad => "touchpad",
-            Tab::Sysinfo => "sysinfo",
-            Tab::Volume => "volume",
-            Tab::Brightness => "brightness",
-            Tab::Wifi => "wifi",
-            Tab::Battery => "battery",
-            Tab::Bluetooth => "bluetooth",
-        }
-    }
-
-    /// What the tab watches while open (the system read for it), turned on or off; the touchpad grabs the
-    /// touchscreen.
-    pub fn watch(self, on: bool) -> Option<Effect> {
-        match self {
-            Tab::Touchpad => Some(Effect::Touchpad(on)),
-            Tab::Volume => Some(Effect::Audio(levels::Command::Watch(on))),
-            Tab::Brightness => Some(Effect::WatchBacklights(on)),
-            Tab::Wifi => Some(Effect::Wifi(wifi::Command::Watch(on))),
-            Tab::Bluetooth => Some(Effect::Bluetooth(bluetooth::Command::Watch(on))),
-            Tab::Battery => Some(Effect::WatchPower(on)),
-            Tab::Settings | Tab::Dock | Tab::Keyboard | Tab::Sysinfo => None,
-        }
-    }
-
-    pub fn from_name(name: &str) -> Option<Tab> {
-        Tab::ALL.into_iter().find(|m| m.name() == name)
-    }
-}
 
 /// A game's power profile: how fast CPU and GPU may run (frequency caps; the Thor has no TDP setting).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -131,729 +92,342 @@ impl PowerProfile {
     }
 }
 
-/// Where the controller's input goes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum PadRoute {
-    /// The game's virtual pad.
-    #[default]
-    Game,
-    /// ClamShell's own screens, as [`Event::Pad`]: shelf's and the second screen, or the second screen
-    /// alone.
-    Ui,
-    /// Typing into the app in front (D-pad arrows, A Enter, B Backspace): the keyboard is open.
-    Keys,
-    /// The pad mouse.
-    Mouse,
-}
-
-/// The controller driving ClamShell's screens.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PadInput {
-    /// The D-pad or left stick (repeated while held).
-    Up,
-    Down,
-    Left,
-    Right,
-    /// A pressed or released: activates the focused target (holds act as for touch).
-    A(bool),
-    /// B: cancels the editor.
-    B,
-    /// Y: the selected game in or out of the favourites.
-    Y,
-    /// The shoulder buttons: the previous or next collection (shelf) or tab (the second screen).
-    Shoulder(i32),
-    /// View/Select: focus to the other screen.
-    Switch,
-}
-
-/// What the settings panel edits: the global settings, or the game in context's overrides.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum Scope {
-    #[default]
-    Game,
-    Global,
-}
-
-/// Stable ids of everything that can be focused or tapped, on either screen. Focus is kept by id, so it
-/// survives redraws and layout changes.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Id {
-    Game(Arc<str>),
-    /// A collection in shelf, by position.
-    Collection(u16),
-    Tab(Tab),
-    Launch,
-    /// A settings tile: a tap steps to the next value, a long press goes back to the default.
-    Tile(Setting),
-    /// The environment variables tile, and the editor's buttons.
-    Env,
-    EditorSave,
-    EditorCancel,
-    /// The dark second screen (while a game runs): a tap anywhere lights it.
-    Wake,
-    /// A dock app, by position.
-    App(u16),
-    /// A running game's tile in the dock, by position among the running games.
-    GameTile(u16),
-    /// The dock's first tile while no game runs: to shelf, to start one.
-    StartGame,
-    /// Shelf's choice when starting a game while another runs: keep that one running, or close it.
-    StartKeep,
-    StartClose,
-    /// The "+" on a running app that allows several instances: another one.
-    NewInstance(u16),
-    /// The settings panel's scope tabs.
-    Scope(Scope),
-    /// Drops the game in context's overrides.
-    Reset,
-    /// An on-screen keyboard key, by position.
-    Key(KeyPos),
-    /// The pad mouse toggle.
-    PadMouse,
-    /// Volume or brightness in the bar: a tap opens its tab, a hold or a slide brings up its slider.
-    Control(Control),
-    /// A level row in the volume or brightness tab: the finger sets it.
-    Level(levels::Level),
-    /// The volume tab's mute button, an app's mute button, and an output, by position.
-    MuteOutput,
-    StreamMute(u16),
-    Output(u16),
-    /// The Wi-Fi tab's radio switch, and a network by position.
-    WifiPower,
-    Network(u16),
-    /// The Bluetooth tab's radio switch, and a device by position.
-    BluetoothPower,
-    Device(u16),
-}
-
-/// The system's status as the bar shows it (policy threads read it from the system).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Status {
-    /// Battery charge 0-100, if there is a battery.
-    pub battery: Option<u8>,
-    pub charging: bool,
-    /// Wi-Fi link quality 0-100 while connected; `None` when not.
-    pub wifi: Option<u8>,
-    /// Output volume 0-100, if known, and whether it is muted.
-    pub volume: Option<u8>,
-    pub muted: bool,
-    /// The first backlight's level 0-100 as read, if there is one: the brightness until ClamShell sets
-    /// one (see [`levels::Brightness`]).
-    pub brightness: Option<u8>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Event {
-    /// Wall clock, once a second (policy thread).
-    Tick { unix_secs: u64 },
-    /// Battery, Wi-Fi, volume (policy thread, when they change).
-    Status(Status),
-    /// CPU, GPU, memory, temperatures, power (policy thread, once a second).
-    Metrics(metrics::Metrics),
-    /// A running game's frame rate and frame time in ms (MangoHud), or none.
-    Frames(Option<(f32, f32)>),
-    /// Tap, click, or the pad's A on a focused item.
-    Activate(Id),
-    /// A press held longer than a tap (locks a keyboard modifier; otherwise as `Activate`).
-    LongPress(Id),
-    /// A finger, button or the pad's A went down on / up from a target: shown as pressed meanwhile.
-    Down(Id),
-    Up(Id),
-    /// The pad moved focus (the UI finds the target, since only it knows the layout). Shows the focus.
-    Focus(Id),
-    /// Touch or mouse input began: the focus ring is hidden until the pad moves focus again.
-    HideFocus,
-    /// The pad moved through shelf's list: by this many games (a page is the rows on screen).
-    ListStep(i32),
-    /// The pad switched shelf's tab: by this many collections.
-    CollectionStep(i32),
-    /// How many list rows shelf shows (from the layout), so the selection stays on screen.
-    Rows(usize),
-    /// The pad's Y (desktop: F): the selected game in or out of the favourites.
-    ToggleFavourite,
-    /// The launcher started a game, or it ended (start in epoch seconds, duration in seconds), or it
-    /// couldn't be started.
-    Started(Arc<str>),
-    Played { game: Arc<str>, start: u64, duration: u64 },
-    LaunchFailed(Arc<str>),
-    /// The compositor's windows, after any change.
-    Windows(Vec<windows::Window>),
-    /// Our running scopes (instances and games), by name without `.scope`, after any change.
-    Units(Vec<String>),
-    /// A finger came down on a control (`x` in the second screen's layout units, which is `width`
-    /// wide), moved, and (with `Up`) lifted.
-    SlideStart { control: Control, x: f32, width: f32 },
-    /// The finger that slides lifted.
-    SlideEnd,
-    SlideTo { x: f32 },
-    /// Wi-Fi as NetworkManager has it, after any change (while the Wi-Fi tab is open).
-    Wifi(wifi::Wifi),
-    /// Bluetooth as BlueZ has it, after any change.
-    Bluetooth(bluetooth::Bluetooth),
-    /// The charge history and what is using the machine (every few seconds while the battery tab is open).
-    Battery(battery::Battery),
-    /// The outputs and the apps playing (while the volume tab is open), the backlights (while the
-    /// brightness tab is open).
-    Audio(levels::Audio),
-    /// The backlights' names.
-    Backlights(Vec<String>),
-    /// A level row set by the finger, or stepped by the pad (-1 or 1).
-    SetLevel(levels::Level, u8),
-    LevelStep(levels::Level, i16),
-    /// The UI is up: what the state in force needs at start (the tab's watch, the screens' brightness,
-    /// where the pad goes).
-    Start,
-    /// Touchpad tab works, or why it doesn't (no touchscreen, the grab refused).
-    TouchpadProblem(Option<String>),
-    /// The pad's home button.
-    Home,
-    /// View, away from shelf: the pad between the second screen and what else wants it (the pad mouse,
-    /// typing).
-    PadSwitch,
-    /// A text field of the app in front wants typing (true), or no longer does (the Wayland side).
-    TextInput(bool),
-    /// The pad, while it drives ClamShell (the UI handles these; the state ignores them).
-    Pad(PadInput),
-    /// The system woke from sleep.
-    Resumed,
-    Quit,
-}
-
-/// What the state asks the outside world to do.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Effect {
-    /// Start this game (its launch command or Steam id, and its file) with these settings and extra
-    /// environment.
-    Launch {
-        game: Arc<str>,
-        /// Its scope's and workspace's name (`clamshell-game-<secs>-<n>`).
-        workspace: String,
-        settings: Values,
-        env: Vec<(String, String)>,
-        launch: Launch,
-        file: Option<std::path::PathBuf>,
-    },
-    /// The settings in force changed: the running game's (`game`), or the global ones while none runs
-    /// (also when a game ends). Apply them now.
-    Apply { game: Option<Arc<str>>, settings: Values },
-    /// The games' settings changed: write them (see [`Settings::text`]).
-    SaveSettings(String),
-    /// The favourites changed: write them (favorites.txt).
-    SaveFavourites(Vec<String>),
-    /// Where shelf and the second screen are (see [`State::resume_text`]): write it, to start there
-    /// next time.
-    SaveResume(String),
-    /// The screens' brightness (see [`levels::Brightness::text`]): write it, to apply at the next start.
-    SaveBrightness(String),
-    /// A key press for the focused app (virtual keyboard).
-    Key(Stroke),
-    /// Touchpad tab started (true) or ended: the input side grabs or releases the touchscreen.
-    Touchpad(bool),
-    /// Where the controller's input goes now.
-    PadRoute(PadRoute),
-    /// Start a dock app's command as a new instance: a scope and a workspace of this name
-    /// (`clamshell-app-<key>-<secs>-<n>`).
-    RunApp { name: String, command: Vec<String> },
-    /// Show this workspace (a dock app instance's, or the game's).
-    FocusWorkspace(String),
-    /// Ask these windows to close (as their own close buttons would): an instance's.
-    CloseWindows(Vec<i64>),
-    /// Move these windows to this workspace (a Steam game's, from where they landed).
-    MoveWindows { windows: Vec<i64>, workspace: String },
-    /// Quit the game: close its windows, then end its scopes (ours only) if it doesn't go.
-    QuitGame { windows: Vec<i64>, units: Vec<String> },
-    /// Bring shelf's window to the front.
-    ShowShelf,
-    /// Record a play that ClamShell didn't start (a game Steam started): in stats.db.
-    RecordPlay { game: Arc<str>, start: u64, duration: u64 },
-    /// Output volume (0-100), mute.
-    SetVolume(u8),
-    SetMute(bool),
-    /// The screens' brightness: each backlight to `level` times its factor (both 0-100; a backlight
-    /// without one: 100).
-    Brightness { level: u8, factors: Vec<(String, u8)> },
-    Wifi(wifi::Command),
-    Bluetooth(bluetooth::Command),
-    /// The battery tab opened (read the charge history and the spenders) or closed.
-    WatchPower(bool),
-    Audio(levels::Command),
-    /// The brightness tab opened (read the backlights) or closed.
-    WatchBacklights(bool),
-    Quit,
-}
-
-/// Which screens need a new frame after an event.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Dirty {
-    pub top: bool,
-    pub bottom: bool,
-}
-
-impl Dirty {
-    pub const BOTH: Dirty = Dirty { top: true, bottom: true };
-    pub const BOTTOM: Dirty = Dirty { top: false, bottom: true };
-    pub const NONE: Dirty = Dirty { top: false, bottom: false };
-}
-
-/// A tab's place in its list: the selected game's position, and the first row on screen.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Cursor {
-    pub index: usize,
-    pub top: usize,
+/// What the state starts from: what was read from disk and the environment.
+#[derive(Debug, Default)]
+pub struct Init {
+    pub library: Library,
+    /// Every game's settings and environment.
+    pub settings: Settings,
+    /// The screens' brightness as it was left.
+    pub brightness: Brightness,
+    pub apps: Apps,
+    /// Where shelf and the second screen were (see [`State::resume_text`]).
+    pub resume: Option<String>,
+    /// The tab to start in instead (a development option).
+    pub start_tab: Option<Tab>,
+    /// Start with the pad mouse on.
+    pub pad_mouse: bool,
 }
 
 #[derive(Debug, Default)]
 pub struct State {
-    pub library: Library,
-    /// The selected collection (shelf's current one), and each collection's cursor.
-    pub current: usize,
-    pub cursors: Vec<Cursor>,
-    /// List rows on screen (reported by the UI).
-    pub rows: usize,
-    /// Id of the selected game (shelf's list on top, its settings below): the current tab's cursor.
-    pub selected: Option<Arc<str>>,
-    /// Every game's settings and environment.
-    pub settings: Settings,
-    /// The environment being edited (for the game, or all games), if the editor is open.
-    pub editor: Option<Editor>,
-    /// The dark second screen was tapped awake (until the next game).
-    pub woken: bool,
-    /// The dock's apps, what is wrong with their file (the defaults are used then), and how many
-    /// of each run.
-    pub apps: Vec<apps::App>,
-    pub apps_error: Option<String>,
-    /// Instances started and not yet listed by systemd (name, epoch seconds), so a second tap doesn't
-    /// start another; dropped once listed, or after a while if the start failed.
-    starting: Vec<(String, u64)>,
-    /// Numbers new instances' names (with the time, unique across restarts).
-    next_instance: u64,
-    /// The workspace to show when its first window appears: the instance or game just started.
-    pending_show: Option<String>,
-    /// The compositor's windows, and dock app instances (workspace names) by when they were last in
-    /// front, most recent first.
-    pub windows: Vec<windows::Window>,
-    /// Our running scopes (systemd's list).
-    pub units: Vec<String>,
-    recent: Vec<String>,
-    /// The pad mouse was turned on for the game in front (its Setting::PadMouse), to turn off when
-    /// another (or none) is; turning it off or on by hand makes it the user's.
-    pad_mouse_by_game: bool,
-    /// Where the pad goes (see [`Effect::PadRoute`]).
-    pub pad_route: PadRoute,
-    /// View moved the pad to the second screen, away from what else wants it (the pad mouse, typing).
-    pad_on_bottom: bool,
-    /// What else wanted the pad when last looked (see `pad_wanted_by`).
-    pad_contender: Option<PadRoute>,
-    /// The games that run, in the order they started (`running` is the one most recently in front),
-    /// and the launches asked for that haven't started.
-    pub games: Vec<RunningGame>,
-    launching: Vec<game::Launching>,
-    /// The game to start once the one closed for it has ended: (the one closed, the one to start).
-    queued: Option<(Arc<str>, Arc<str>)>,
-    /// What the settings panel edits (global whenever there is no game in context).
-    pub scope: Scope,
-    pub tab: Tab,
-    /// The tab the keyboard was brought up from by an app's text field: back there when the field is
-    /// done, unless the user chose a tab meanwhile.
-    raised_from: Option<Tab>,
-    /// Volume or brightness being slid, if any.
-    pub slider: Option<Slider>,
-    pub wifi: wifi::Wifi,
-    pub bluetooth: bluetooth::Bluetooth,
-    pub audio: levels::Audio,
-    /// The backlights' names (read while the brightness tab is open).
-    pub backlights: Vec<String>,
-    pub brightness: levels::Brightness,
-    /// The level row a finger is on.
-    dragging: Option<levels::Level>,
-    pub battery: battery::Battery,
-    /// Why touchpad tab doesn't work, if it doesn't.
-    pub touchpad_problem: Option<String>,
-    pub focus: Option<Id>,
-    /// The focus ring is shown only while navigating with the pad.
-    pub show_focus: bool,
-    pub unix_secs: u64,
-    pub keyboard: Keyboard,
-    /// The target being pressed (drawn lit), if any.
-    pub pressed: Option<Id>,
-    pub status: Status,
-    /// The controller drives the pointer (independent of the second screen's tab).
-    pub pad_mouse: bool,
-    pub metrics: metrics::Metrics,
-    pub history: metrics::History,
-    /// The game: of the games running, the one most recently in front (its settings are in force).
-    pub current_game: Option<Arc<str>>,
-    /// When the tab or a selection last changed and isn't saved yet (epoch seconds).
-    resume_dirty: Option<u64>,
-    /// When the brightness last changed and isn't saved yet.
-    brightness_dirty: Option<u64>,
-    /// The list item a press is on, by what it is (not where), so a list that changes under the
-    /// finger doesn't redirect it.
-    press_key: Option<(Id, ItemKey)>,
+    shelf: Shelf,
+    bottom: Bottom,
+    session: Session,
+    apps: Apps,
+    levels: Levels,
+    radios: Radios,
+    pad: Pad,
+    pointer: Pointer,
+    sys: Sys,
+    settings: Settings,
+    keyboard: Keyboard,
+    unix_secs: u64,
+    saves: Saves,
 }
 
-/// Seconds an instance may take to show up in systemd's list before its start counts as failed.
-const STARTING_FOR: u64 = 15;
-
-/// What holding a target does once the press lasts beyond a tap.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Hold {
-    /// Activate now and again at the repeat rate until released (keyboard keys).
-    Repeat,
-    /// One long press, then nothing on release (locks a modifier).
-    Long,
-}
-
-/// Which screen a target is drawn on.
-fn screen_of(id: &Id) -> Dirty {
-    match id {
-        Id::Game(_) | Id::Collection(_) | Id::StartKeep | Id::StartClose => Dirty::BOTH,
-        Id::Tab(_)
-        | Id::Tile(_)
-        | Id::Env
-        | Id::EditorSave
-        | Id::EditorCancel
-        | Id::Wake
-        | Id::App(_)
-        | Id::GameTile(_)
-        | Id::StartGame
-        | Id::NewInstance(_)
-        | Id::Scope(_)
-        | Id::Reset
-        | Id::Launch
-        | Id::Key(_)
-        | Id::PadMouse
-        | Id::Control(_)
-        | Id::Level(_)
-        | Id::MuteOutput
-        | Id::StreamMute(_)
-        | Id::Output(_)
-        | Id::WifiPower
-        | Id::Network(_)
-        | Id::BluetoothPower
-        | Id::Device(_) => Dirty::BOTTOM,
-    }
+/// Replaces `slot` with `value`; whether that changed it.
+pub(crate) fn replace<T: PartialEq>(slot: &mut T, value: T) -> bool {
+    let changed = *slot != value;
+    *slot = value;
+    changed
 }
 
 impl State {
-    pub fn new(library: Library) -> Self {
-        let cursors = vec![Cursor::default(); library.collections.len()];
-        let mut s = State { library, cursors, rows: 1, ..State::default() };
-        s.set_apps(apps::defaults(), None);
-        s.sync();
-        s.focus = s.selected.clone().map(Id::Game);
-        s.pad_contender = s.pad_wanted_by();
-        s.pad_route = s.wanted_pad_route();
+    pub fn new(init: Init) -> State {
+        let mut s = State {
+            shelf: Shelf::new(init.library),
+            settings: init.settings,
+            levels: Levels::new(init.brightness),
+            apps: init.apps,
+            ..State::default()
+        };
+        if let Some(text) = &init.resume {
+            s.restore(text);
+        }
+        s.pointer.focus = s.shelf.selected().cloned().map(|g| Id::Shelf(ShelfId::Game(g)));
+        if let Some(tab) = init.start_tab {
+            s.bottom.tab = tab;
+        }
+        s.reconcile_pad();
+        if init.pad_mouse {
+            s.pad.toggle_mouse();
+            s.reconcile_pad();
+        }
         s
     }
 
-    /// The dock's apps (from their file), and what is wrong with it if anything.
-    pub fn set_apps(&mut self, apps: Vec<apps::App>, error: Option<String>) {
-        self.apps = apps;
-        self.apps_error = error;
+    pub fn shelf(&self) -> &Shelf {
+        &self.shelf
     }
 
-    /// Applies one event; returns which screens changed and what must happen outside.
-    pub fn apply(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
-        let running = self.current_game.clone();
-        let (mut dirty, mut effects) = self.apply_event(event);
-        if self.current_game != running && self.follow_pad_mouse() {
-            dirty = Dirty::BOTH;
-        }
-        // Something else wants the pad now: it gets it. The pad mouse always takes it; otherwise a pad
-        // being used on the second screen (its focus ring showing) with nothing else around stays there
-        // (the keyboard coming up under it is typed on with the pad).
-        let contender = self.pad_wanted_by();
-        if contender != self.pad_contender {
-            let in_use = self.pad_route == PadRoute::Ui && self.show_focus;
-            let stays = self.pad_contender.is_none() && in_use && contender != Some(PadRoute::Mouse);
-            self.pad_on_bottom = stays;
-            self.pad_contender = contender;
-        }
-        let route = self.wanted_pad_route();
-        if route != self.pad_route {
-            self.pad_route = route;
-            effects.push(Effect::PadRoute(route));
-            // The focus ring shows where the pad is.
-            if route != PadRoute::Ui && self.show_focus {
-                self.show_focus = false;
-                return (Dirty::BOTH, effects);
-            }
-        }
-        (dirty, effects)
+    pub fn bottom(&self) -> &Bottom {
+        &self.bottom
     }
 
-    /// The game in front changed: the pad mouse on if it wants it (Setting::PadMouse), off again when
-    /// another game (or none) is in front, unless the user switched it meanwhile. Whether it changed.
-    fn follow_pad_mouse(&mut self) -> bool {
-        let wanted = self.current_game.is_some() && self.current().get(Setting::PadMouse) == 1;
-        if wanted && !self.pad_mouse {
-            self.pad_mouse = true;
-            self.pad_mouse_by_game = true;
-            return true;
-        }
-        if !wanted && self.pad_mouse && self.pad_mouse_by_game {
-            self.pad_mouse = false;
-            self.pad_mouse_by_game = false;
-            return true;
-        }
-        false
+    pub fn session(&self) -> &Session {
+        &self.session
     }
 
-    /// What wants the pad besides the second screen: the pad mouse while on; else shelf (`Ui`), the game
-    /// in front, or typing into an app while the keyboard is open; nothing for an app otherwise.
-    fn pad_wanted_by(&self) -> Option<PadRoute> {
-        if self.pad_mouse {
-            return Some(PadRoute::Mouse);
-        }
-        match (self.front(), self.tab) {
-            (Front::Shelf, _) => Some(PadRoute::Ui),
-            (Front::Game, _) => Some(PadRoute::Game),
-            (Front::App, Tab::Keyboard) => Some(PadRoute::Keys),
-            (Front::App, _) => None,
-        }
+    pub fn apps(&self) -> &Apps {
+        &self.apps
     }
 
-    /// Where the pad goes: to what wants it, unless View moved it to the second screen; to the second
-    /// screen when nothing else wants it. A game keeps it (View is the game's button there).
-    fn wanted_pad_route(&self) -> PadRoute {
-        match self.pad_wanted_by() {
-            None => PadRoute::Ui,
-            Some(r @ (PadRoute::Game | PadRoute::Ui)) => r,
-            Some(_) if self.pad_on_bottom => PadRoute::Ui,
-            Some(r) => r,
-        }
+    pub fn levels(&self) -> &Levels {
+        &self.levels
+    }
+
+    pub fn radios(&self) -> &Radios {
+        &self.radios
+    }
+
+    pub fn pad(&self) -> &Pad {
+        &self.pad
+    }
+
+    pub fn pointer(&self) -> &Pointer {
+        &self.pointer
+    }
+
+    pub fn sys(&self) -> &Sys {
+        &self.sys
+    }
+
+    pub fn settings(&self) -> &Settings {
+        &self.settings
+    }
+
+    pub fn keyboard(&self) -> &Keyboard {
+        &self.keyboard
+    }
+
+    /// Wall clock (epoch seconds), as last ticked.
+    pub fn unix_secs(&self) -> u64 {
+        self.unix_secs
+    }
+
+    /// A game of the library, by its id.
+    pub fn game(&self, id: &str) -> Option<&Game> {
+        self.shelf.game(id)
+    }
+
+    /// The game: of the games running, the one most recently in front.
+    pub fn current_game(&self) -> Option<&Arc<str>> {
+        self.session.current_game()
     }
 
     /// Whether the pad, on ClamShell's screens, may go to shelf's (shelf is in front and nothing else
     /// has the pad), or only to the second screen.
     pub fn pad_on_top(&self) -> bool {
-        self.pad_wanted_by() == Some(PadRoute::Ui)
+        self.pad.on_top()
+    }
+
+    /// Applies one event; returns which screens changed and what must happen outside. After the event
+    /// itself, what follows from it everywhere: the pad mouse follows the game in front, and the pad goes
+    /// where it is wanted.
+    pub fn apply(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
+        let game = self.session.current.clone();
+        let (mut dirty, mut effects) = self.apply_event(event);
+        if self.session.current != game && self.follow_pad_mouse() {
+            dirty = Dirty::BOTH;
+        }
+        if let Some(route) = self.reconcile_pad() {
+            effects.push(Effect::PadRoute(route));
+            // The focus ring shows where the pad is.
+            if route != PadRoute::Ui && self.pointer.hide_focus() {
+                dirty = Dirty::BOTH;
+            }
+        }
+        (dirty, effects)
+    }
+
+    /// The game in front changed: the pad mouse on if it wants it (Setting::PadMouse), off again if it
+    /// was the game's. Whether it changed.
+    fn follow_pad_mouse(&mut self) -> bool {
+        let wanted = self.session.current.is_some() && self.in_force().get(Setting::PadMouse) == 1;
+        self.pad.follow_game(wanted)
+    }
+
+    /// Where the pad goes, as things are now; the new route, if it changed.
+    fn reconcile_pad(&mut self) -> Option<PadRoute> {
+        self.pad.reconcile(self.session.front(), self.bottom.tab, self.pointer.show_focus)
     }
 
     fn apply_event(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
         match event {
-            Event::Tick { unix_secs } => {
-                // Once a minute: the bar's clock, and both screens' burn-in orbit step.
-                let minute_changed = unix_secs / 60 != self.unix_secs / 60;
-                // Starts systemd never listed failed: forget them.
-                self.starting.retain(|(_, at)| unix_secs < at + STARTING_FOR);
-                self.unix_secs = unix_secs;
-                // The place, once moving has stopped for a moment.
-                let mut effects = vec![];
-                if self.resume_dirty.is_some_and(|since| unix_secs >= since + resume::RESUME_AFTER) {
-                    self.resume_dirty = None;
-                    effects.push(Effect::SaveResume(self.resume_text()));
-                }
-                if self.brightness_dirty.is_some_and(|since| unix_secs >= since + resume::RESUME_AFTER) {
-                    self.brightness_dirty = None;
-                    effects.push(Effect::SaveBrightness(self.brightness.text()));
-                }
-                (if minute_changed { Dirty::BOTH } else { Dirty::NONE }, effects)
-            }
-            Event::Status(status) => {
-                let status = self.keep_dragged(status);
-                let changed = status != self.status;
-                self.status = status;
-                (if changed { Dirty::BOTTOM } else { Dirty::NONE }, vec![])
-            }
-            Event::Metrics(mut m) => {
-                // The frame rate comes separately (Frames); keep it.
-                m.fps = self.metrics.fps;
-                m.frame_ms = self.metrics.frame_ms;
-                self.metrics = m;
-                self.history.push(&m);
-                // Only the sysinfo and battery tabs show them.
-                (if matches!(self.tab, Tab::Sysinfo | Tab::Battery) { Dirty::BOTTOM } else { Dirty::NONE }, vec![])
-            }
-            Event::Frames(frames) => {
-                self.metrics.fps = frames.map(|f| f.0);
-                self.metrics.frame_ms = frames.map(|f| f.1);
-                (if self.tab == Tab::Sysinfo { Dirty::BOTTOM } else { Dirty::NONE }, vec![])
-            }
-            Event::Focus(id) => {
-                self.focus = Some(id);
-                self.show_focus = true;
-                (Dirty::BOTH, vec![])
-            }
-            Event::HideFocus => {
-                let was = std::mem::replace(&mut self.show_focus, false);
-                (if was { Dirty::BOTH } else { Dirty::NONE }, vec![])
-            }
-            // The list item the press came down on is gone.
-            Event::Activate(id) | Event::LongPress(id) if self.resolve(&id).is_none() => (Dirty::BOTTOM, vec![]),
-            Event::Activate(id) => {
-                let id = self.resolve(&id).unwrap_or(id);
-                self.focus = Some(id.clone());
-                self.activate(id, false)
-            }
-            Event::LongPress(id) => {
-                let id = self.resolve(&id).unwrap_or(id);
-                self.focus = Some(id.clone());
-                self.activate(id, true)
-            }
-            Event::ListStep(step) => {
-                self.step_list(step);
-                self.show_focus = true;
-                (Dirty::BOTH, vec![])
-            }
-            Event::CollectionStep(step) => {
-                let n = self.library.collections.len() as i64;
-                if n > 0 {
-                    self.set_collection((self.current as i64 + i64::from(step)).rem_euclid(n) as usize);
-                }
-                self.show_focus = true;
-                (Dirty::BOTH, vec![])
-            }
-            Event::Rows(rows) => {
-                if rows == self.rows {
-                    return (Dirty::NONE, vec![]);
-                }
-                let before = self.cursor();
-                self.rows = rows.max(1);
-                self.sync();
-                (if self.cursor() != before { Dirty::BOTH } else { Dirty::NONE }, vec![])
-            }
-            Event::ToggleFavourite => {
-                let Some(id) = self.selected.clone() else {
-                    return (Dirty::NONE, vec![]);
-                };
-                self.relayout(|lib| {
-                    if let Some(g) = lib.games.iter_mut().find(|g| g.id == id) {
-                        g.favourite = !g.favourite;
-                    }
-                    lib.rebuild_derived();
-                });
-                let ids = self.library.favourite_ids().map(str::to_owned).collect();
-                (Dirty::BOTH, vec![Effect::SaveFavourites(ids)])
-            }
-            Event::Started(game) => {
-                self.game_started(&game);
-                self.current_game = Some(game);
-                self.woken = false;
-                (Dirty::BOTH, vec![])
-            }
-            Event::Played { game, start, duration } => {
-                self.relayout(|lib| {
-                    if let Some(g) = lib.games.iter_mut().find(|g| g.id == game) {
-                        g.plays.add(start, duration);
-                    }
-                    lib.rebuild_derived();
-                });
-                (Dirty::BOTH, self.game_gone(&game))
-            }
-            Event::Units(units) => {
-                self.units = units;
-                let units = &self.units;
-                self.starting.retain(|(name, _)| !units.contains(name));
-                (Dirty::BOTTOM, vec![])
-            }
+            Event::Tick { unix_secs } => self.tick(unix_secs),
+            Event::Reading(reading) => (self.on_reading(reading), vec![]),
+            Event::Pointer(e) => self.on_pointer(e),
+            Event::Slide(slide) => self.on_slide(slide),
+            Event::Level(e) => self.on_level(e),
+            Event::Shelf(e) => self.on_shelf_event(e),
+            Event::Game(e) => self.on_game(e),
             Event::Windows(windows) => {
-                self.set_windows(windows);
+                self.session.set_windows(windows);
                 let mut effects = self.follow_games();
-                effects.extend(self.show_pending());
+                effects.extend(self.session.show_pending());
                 (Dirty::BOTH, effects)
             }
-            Event::LaunchFailed(game) => {
-                self.launching.retain(|l| l.0 != game);
-                if self.running_game(&game).is_some() {
-                    return (Dirty::BOTH, self.game_gone(&game));
-                }
+            Event::Units(units) => {
+                self.session.set_units(units);
+                (Dirty::BOTTOM, vec![])
+            }
+            Event::Start => {
+                let mut effects: Vec<Effect> = self.bottom.tab.watch().map(|w| Effect::Watch(w, true)).into_iter().collect();
+                effects.extend(self.levels.brightness_effect());
+                effects.push(Effect::PadRoute(self.pad.route()));
+                (Dirty::BOTH, effects)
+            }
+            Event::Home => (Dirty::NONE, self.home()),
+            Event::PadSwitch => {
+                self.pad.switch();
+                (Dirty::NONE, vec![])
+            }
+            Event::Pad(_) => (Dirty::NONE, vec![]),
+            Event::TextInput(active) => {
+                let before = self.bottom.tab;
+                let effects = self.text_input(active);
+                (if self.bottom.tab == before { Dirty::NONE } else { Dirty::BOTH }, effects)
+            }
+            // Sleep may have reset what the settings set (frequency caps, cores): again.
+            Event::Resumed => (Dirty::NONE, vec![Effect::Apply { game: self.session.current.clone(), settings: self.in_force() }]),
+            Event::Quit => (Dirty::NONE, vec![Effect::Save(Save::Resume(self.resume_text())), Effect::Quit]),
+        }
+    }
+
+    /// The clock: once a minute the bar's clock and both screens' burn-in orbit step; starts systemd
+    /// never listed are forgotten; what changed is saved once changes have stopped for a moment.
+    fn tick(&mut self, unix_secs: u64) -> (Dirty, Vec<Effect>) {
+        let minute_changed = unix_secs / 60 != self.unix_secs / 60;
+        self.session.forget_failed_starts(unix_secs);
+        self.unix_secs = unix_secs;
+        let mut effects = vec![];
+        if self.saves.resume.due(unix_secs, SAVE_AFTER) {
+            effects.push(Effect::Save(Save::Resume(self.resume_text())));
+        }
+        if self.saves.brightness.due(unix_secs, SAVE_AFTER) {
+            effects.push(Effect::Save(Save::Brightness(self.levels.brightness().text())));
+        }
+        (if minute_changed { Dirty::BOTH } else { Dirty::NONE }, effects)
+    }
+
+    /// A reading of the system: kept, and redrawn if it changed what the second screen shows.
+    fn on_reading(&mut self, reading: Reading) -> Dirty {
+        let shown = self.bottom.tab.shows(&reading);
+        let changed = match reading {
+            Reading::Status(status) => self.read_status(status),
+            // (The graphs move on with every reading.)
+            Reading::Metrics(metrics) => {
+                self.sys.read_metrics(metrics);
+                true
+            }
+            Reading::Frames { fps, frame_ms } => {
+                self.sys.frames(fps, frame_ms);
+                true
+            }
+            Reading::Wifi(wifi) => replace(&mut self.radios.wifi, wifi),
+            Reading::Bluetooth(bluetooth) => replace(&mut self.radios.bluetooth, bluetooth),
+            Reading::Battery(battery) => replace(&mut self.sys.battery, battery),
+            Reading::Audio(audio) => self.levels.read_audio(audio),
+            Reading::Backlights(backlights) => self.levels.read_backlights(backlights),
+            Reading::TouchpadProblem(problem) => replace(&mut self.sys.touchpad_problem, problem),
+        };
+        if changed && shown { Dirty::BOTTOM } else { Dirty::NONE }
+    }
+
+    /// A status reading: the volume, mute and brightness go to the levels (where the finger's value
+    /// wins while it is on one). Whether what the bar shows changed.
+    fn read_status(&mut self, status: Status) -> bool {
+        let shown = |s: &State| Status { volume: s.levels.volume(), muted: s.levels.muted(), ..s.sys.status };
+        let before = shown(self);
+        self.sys.status = status;
+        self.levels.read(status.volume, status.muted, status.brightness);
+        shown(self) != before
+    }
+
+    fn on_pointer(&mut self, event: PointerEvent) -> (Dirty, Vec<Effect>) {
+        match event {
+            PointerEvent::Focus(id) => {
+                self.pointer.focus = Some(id);
+                self.pointer.show_focus = true;
                 (Dirty::BOTH, vec![])
             }
-            Event::Down(id) => {
-                let dirty = screen_of(&id);
+            PointerEvent::HideFocus => (if self.pointer.hide_focus() { Dirty::BOTH } else { Dirty::NONE }, vec![]),
+            PointerEvent::Activate(id) => self.activate(&id, false),
+            PointerEvent::LongPress(id) => self.activate(&id, true),
+            PointerEvent::Down(id) => {
+                let dirty = id.screen();
                 if let Id::Key(pos) = id {
                     self.keyboard.down(pos);
                 }
-                self.press_key = self.item_key(&id).map(|key| (id.clone(), key));
-                self.pressed = Some(id);
+                self.pointer.press = self.item_key(&id).map(|item| pointer::Press { id: id.clone(), item });
+                self.pointer.pressed = Some(id);
                 (dirty, vec![])
             }
-            Event::Up(id) => {
-                if self.pressed.as_ref() == Some(&id) {
-                    self.pressed = None;
+            PointerEvent::Up(id) => {
+                if self.pointer.pressed.as_ref() == Some(&id) {
+                    self.pointer.pressed = None;
                 }
                 if matches!(id, Id::Level(_)) {
-                    self.dragging = None;
+                    self.levels.release();
                 }
-                if self.press_key.as_ref().is_some_and(|(p, _)| *p == id) {
-                    self.press_key = None;
+                if self.pointer.press.as_ref().is_some_and(|p| p.id == id) {
+                    self.pointer.press = None;
                 }
                 if let Id::Key(pos) = id {
                     self.keyboard.up(pos);
                 }
-                (screen_of(&id), vec![])
+                (id.screen(), vec![])
             }
-            Event::SlideEnd => {
-                self.slide_end();
-                (Dirty::BOTTOM, vec![])
-            }
-            Event::SlideStart { control, x, width } => {
-                self.slide_start(control, x, width);
-                (Dirty::BOTTOM, vec![])
-            }
-            Event::SlideTo { x } => {
-                let effects = self.slide_to(x);
-                (if effects.is_empty() { Dirty::NONE } else { Dirty::BOTTOM }, effects)
-            }
-            Event::Wifi(wifi) => {
-                self.set_wifi(wifi);
-                (Dirty::BOTTOM, vec![])
-            }
-            Event::Bluetooth(bluetooth) => {
-                let changed = bluetooth != self.bluetooth;
-                self.bluetooth = bluetooth;
-                (if changed { Dirty::BOTTOM } else { Dirty::NONE }, vec![])
-            }
-            Event::Battery(battery) => {
-                self.battery = battery;
-                (if self.tab == Tab::Battery { Dirty::BOTTOM } else { Dirty::NONE }, vec![])
-            }
-            Event::Audio(audio) => {
-                let changed = self.set_audio(audio);
-                (if changed { Dirty::BOTTOM } else { Dirty::NONE }, vec![])
-            }
-            Event::Backlights(backlights) => {
-                let changed = self.set_backlights(backlights);
-                (if changed { Dirty::BOTTOM } else { Dirty::NONE }, vec![])
-            }
-            Event::SetLevel(level, value) => {
-                let Some(level) = self.resolve_level(level) else {
-                    return (Dirty::NONE, vec![]);
+        }
+    }
+
+    /// A tap (or long press) on `id`, as the press that came down on it meant it: it gets the focus,
+    /// and its subsystem acts on it.
+    fn activate(&mut self, id: &Id, long: bool) -> (Dirty, Vec<Effect>) {
+        // The list item the press came down on is gone.
+        let Some(id) = self.resolve(id) else {
+            return (Dirty::BOTTOM, vec![]);
+        };
+        self.pointer.focus = Some(id.clone());
+        match id {
+            Id::Shelf(id) => (Dirty::BOTH, self.on_shelf(id)),
+            Id::Dock(DockId::StartGame) => (Dirty::NONE, self.on_dock(DockId::StartGame, long)),
+            Id::Dock(id) => (Dirty::BOTTOM, self.on_dock(id, long)),
+            Id::Settings(id @ (SettingsId::Tile(_) | SettingsId::Reset)) => (Dirty::BOTH, self.on_settings(id, long)),
+            Id::Settings(id) => (Dirty::BOTTOM, self.on_settings(id, long)),
+            Id::Editor(id) => (Dirty::BOTTOM, self.on_editor(id)),
+            Id::Wifi(id) => (Dirty::BOTTOM, self.on_wifi(id, long)),
+            Id::Bluetooth(id) => (Dirty::BOTTOM, self.on_bluetooth(id, long)),
+            Id::Audio(id) => (Dirty::BOTTOM, self.on_audio(id)),
+            Id::Tab(tab) => (Dirty::BOTH, self.choose_tab(tab)),
+            // A tap opens the tab (a slide is the UI's: it doesn't end in a tap).
+            Id::Control(control) if !long => {
+                let tab = match control {
+                    Control::Volume => Tab::Volume,
+                    Control::Brightness => Tab::Brightness,
                 };
-                let before = self.level_of(level);
-                let effects = self.set_level(level, value);
-                (if self.level_of(level) == before { Dirty::NONE } else { Dirty::BOTTOM }, effects)
+                (Dirty::BOTH, self.choose_tab(tab))
             }
-            Event::LevelStep(level, direction) => (Dirty::BOTTOM, self.step_level(level, direction)),
-            Event::Home => (Dirty::NONE, self.home()),
-            Event::TouchpadProblem(problem) => {
-                let changed = problem != self.touchpad_problem;
-                self.touchpad_problem = problem;
-                (if changed { Dirty::BOTTOM } else { Dirty::NONE }, vec![])
+            Id::Control(_) | Id::Level(_) => (Dirty::NONE, vec![]),
+            Id::Key(pos) => {
+                let stroke = self.keyboard.press(pos, long);
+                // Into the editor while it is open, else to the focused app.
+                let effects = match stroke {
+                    Some(stroke) if self.bottom.editor.is_some() => self.edit(stroke),
+                    Some(stroke) => vec![Effect::Key(stroke)],
+                    None => vec![],
+                };
+                (Dirty::BOTTOM, effects)
             }
-            Event::Start => {
-                let mut effects: Vec<Effect> = self.tab.watch(true).into_iter().collect();
-                effects.extend(self.brightness_effect());
-                effects.push(Effect::PadRoute(self.pad_route));
-                (Dirty::BOTH, effects)
+            Id::PadMouse => {
+                self.pad.toggle_mouse();
+                (Dirty::BOTTOM, vec![])
             }
-            Event::PadSwitch => {
-                if matches!(self.pad_wanted_by(), Some(PadRoute::Mouse | PadRoute::Keys)) {
-                    self.pad_on_bottom = !self.pad_on_bottom;
-                }
-                (Dirty::NONE, vec![])
+            Id::Wake => {
+                self.bottom.woken = true;
+                (Dirty::BOTTOM, vec![])
             }
-            Event::TextInput(active) => {
-                let before = self.tab;
-                let effects = self.text_input(active);
-                (if self.tab == before { Dirty::NONE } else { Dirty::BOTH }, effects)
-            }
-            Event::Pad(_) => (Dirty::NONE, vec![]),
-            // Sleep may have reset what the settings set (frequency caps, cores): again.
-            Event::Resumed => (Dirty::NONE, vec![Effect::Apply { game: self.current_game.clone(), settings: self.current() }]),
-            Event::Quit => (Dirty::NONE, vec![Effect::SaveResume(self.resume_text()), Effect::Quit]),
         }
     }
 
@@ -868,116 +442,163 @@ impl State {
         }
     }
 
-    fn activate(&mut self, id: Id, long: bool) -> (Dirty, Vec<Effect>) {
+    /// Shelf's targets.
+    fn on_shelf(&mut self, id: ShelfId) -> Vec<Effect> {
         match id {
-            Id::Game(game) => {
+            ShelfId::Game(game) => {
                 // Activating the selected game again plays it (starts, resumes, or switches to it).
-                if self.selected.as_ref() == Some(&game) {
-                    return (Dirty::BOTH, self.play(game));
+                if self.shelf.selected() == Some(&game) {
+                    return self.play(game);
                 }
-                let position = self.collection().and_then(|c| {
-                    c.games.iter().position(|&i| self.library.games.get(i).is_some_and(|g| g.id == game))
-                });
-                if let (Some(p), Some(c)) = (position, self.cursors.get_mut(self.current)) {
-                    c.index = p;
+                if self.shelf.select(&game) {
+                    self.saves.resume.touch(self.unix_secs);
                 }
-                self.sync();
-                (Dirty::BOTH, vec![])
+                vec![]
             }
-            Id::Collection(tab) => {
-                self.set_collection(usize::from(tab));
-                (Dirty::BOTH, vec![])
+            ShelfId::Collection(i) => {
+                if self.shelf.set_collection(usize::from(i)) {
+                    self.moved_collection();
+                }
+                vec![]
             }
-            Id::Tab(tab) => {
-                self.raised_from = None;
-                (Dirty::BOTH, self.set_tab(tab))
-            }
-            Id::Tile(setting) => {
-                let value = if long { None } else { Some(setting.next(self.tile_value(setting))) };
-                (Dirty::BOTH, self.change(setting, value))
-            }
-            Id::Env => {
-                self.open_editor();
-                (Dirty::BOTTOM, vec![])
-            }
-            Id::EditorSave => (Dirty::BOTTOM, self.save_editor()),
-            Id::EditorCancel => {
-                self.editor = None;
-                (Dirty::BOTTOM, vec![])
-            }
-            Id::Wake => {
-                self.woken = true;
-                (Dirty::BOTTOM, vec![])
-            }
-            Id::Scope(scope) => {
-                self.scope = scope;
-                (Dirty::BOTTOM, vec![])
-            }
-            Id::Reset => (Dirty::BOTH, self.reset()),
-            Id::Launch => match self.selected.clone() {
-                Some(game) => (Dirty::BOTH, self.play(game)),
-                None => (Dirty::BOTH, vec![]),
+            ShelfId::Launch => match self.shelf.selected().cloned() {
+                Some(game) => self.play(game),
+                None => vec![],
             },
-            Id::App(i) => (Dirty::BOTTOM, self.tap_app(usize::from(i), long)),
-            Id::GameTile(i) => (Dirty::BOTTOM, self.tap_game(usize::from(i), long)),
-            Id::StartGame => (Dirty::NONE, vec![Effect::ShowShelf]),
-            Id::StartKeep => (Dirty::BOTH, self.start_beside(false)),
-            Id::StartClose => (Dirty::BOTH, self.start_beside(true)),
-            Id::NewInstance(i) => (Dirty::BOTTOM, self.new_instance(usize::from(i))),
-            Id::PadMouse => {
-                self.pad_mouse = !self.pad_mouse;
-                self.pad_mouse_by_game = false;
-                (Dirty::BOTTOM, vec![])
+            ShelfId::StartKeep => self.start_beside(false),
+            ShelfId::StartClose => self.start_beside(true),
+        }
+    }
+
+    /// Shelf went to another collection: the place is saved, and a focus in shelf's list follows.
+    fn moved_collection(&mut self) {
+        self.saves.resume.touch(self.unix_secs);
+        if matches!(self.pointer.focus, Some(Id::Shelf(ShelfId::Game(_) | ShelfId::Collection(_)))) {
+            self.pointer.focus = self.shelf.selected().cloned().map(|g| Id::Shelf(ShelfId::Game(g)));
+        }
+    }
+
+    fn on_shelf_event(&mut self, event: ShelfEvent) -> (Dirty, Vec<Effect>) {
+        match event {
+            ShelfEvent::ListStep(step) => {
+                if self.shelf.step(step) {
+                    self.saves.resume.touch(self.unix_secs);
+                }
+                self.pointer.focus = self.shelf.selected().cloned().map(|g| Id::Shelf(ShelfId::Game(g)));
+                self.pointer.show_focus = true;
+                (Dirty::BOTH, vec![])
             }
-            // A tap opens the tab (a slide is the UI's: it doesn't end in a tap).
-            Id::Control(control) if !long => {
-                self.raised_from = None;
-                let tab = match control {
-                    Control::Volume => Tab::Volume,
-                    Control::Brightness => Tab::Brightness,
-                };
-                (Dirty::BOTH, self.set_tab(tab))
+            ShelfEvent::CollectionStep(step) => {
+                if self.shelf.collection_step(step) {
+                    self.moved_collection();
+                }
+                self.pointer.show_focus = true;
+                (Dirty::BOTH, vec![])
             }
-            Id::Control(_) | Id::Level(_) => (Dirty::NONE, vec![]),
-            Id::MuteOutput => (Dirty::BOTTOM, self.toggle_mute()),
-            Id::StreamMute(i) => (Dirty::BOTTOM, self.toggle_stream_mute(usize::from(i))),
-            Id::Output(i) => (Dirty::BOTTOM, self.choose_output(usize::from(i))),
-            Id::WifiPower => (Dirty::BOTTOM, vec![Effect::Wifi(wifi::Command::Enable(!self.wifi.enabled))]),
-            Id::Network(i) => (Dirty::BOTTOM, self.tap_network(usize::from(i), long)),
-            Id::BluetoothPower => (Dirty::BOTTOM, vec![Effect::Bluetooth(bluetooth::Command::Power(!self.bluetooth.powered))]),
-            Id::Device(i) => (Dirty::BOTTOM, self.tap_device(usize::from(i), long)),
-            Id::Key(pos) => {
-                let stroke = self.keyboard.press(pos, long);
-                // Into the environment editor while it is open, else to the focused app.
-                let effects = match stroke {
-                    Some(stroke) if self.editor.is_some() => self.edit(stroke),
-                    Some(stroke) => vec![Effect::Key(stroke)],
-                    None => vec![],
-                };
-                (Dirty::BOTTOM, effects)
+            ShelfEvent::Rows(rows) => (if self.shelf.set_rows(rows) { Dirty::BOTH } else { Dirty::NONE }, vec![]),
+            ShelfEvent::ToggleFavourite => match self.shelf.toggle_favourite() {
+                Some(moved) => {
+                    if moved {
+                        self.saves.resume.touch(self.unix_secs);
+                    }
+                    let ids = self.shelf.library().favourite_ids().map(str::to_owned).collect();
+                    (Dirty::BOTH, vec![Effect::Save(Save::Favourites(ids))])
+                }
+                None => (Dirty::NONE, vec![]),
+            },
+        }
+    }
+
+    fn on_game(&mut self, event: GameEvent) -> (Dirty, Vec<Effect>) {
+        match event {
+            GameEvent::Started(game) => {
+                self.game_started(game);
+                (Dirty::BOTH, vec![])
+            }
+            GameEvent::Played { game, start, duration } => (Dirty::BOTH, self.game_played(&game, start, duration)),
+            GameEvent::LaunchFailed(game) => {
+                self.session.launching.retain(|l| l.game != game);
+                if self.session.running_game(&game).is_some() {
+                    return (Dirty::BOTH, self.game_gone(&game));
+                }
+                (Dirty::BOTH, vec![])
             }
         }
     }
 
-    /// Changes the second screen's tab. The touchpad and the watches (Wi-Fi, Bluetooth, power) start
-    /// and stop with their tabs; an open editor closes.
+    /// The volume tab's buttons.
+    fn on_audio(&mut self, id: AudioId) -> Vec<Effect> {
+        match id {
+            AudioId::MuteOutput => self.levels.toggle_mute(),
+            AudioId::StreamMute(i) => self.levels.toggle_stream_mute(usize::from(i)),
+            AudioId::Output(i) => self.levels.choose_output(usize::from(i)),
+        }
+    }
+
+    /// Changes the levels with `change`; a brightness changed is saved a moment later.
+    fn change_levels(&mut self, change: impl FnOnce(&mut Levels) -> Vec<Effect>) -> Vec<Effect> {
+        let before = self.levels.brightness().clone();
+        let effects = change(&mut self.levels);
+        if *self.levels.brightness() != before {
+            self.saves.brightness.touch(self.unix_secs);
+        }
+        effects
+    }
+
+    fn on_slide(&mut self, slide: Slide) -> (Dirty, Vec<Effect>) {
+        match slide {
+            Slide::Start { control, x, width } => {
+                self.levels.slide_start(control, x, width);
+                (Dirty::BOTTOM, vec![])
+            }
+            Slide::To { x } => {
+                let effects = self.change_levels(|l| l.slide_to(x));
+                (if effects.is_empty() { Dirty::NONE } else { Dirty::BOTTOM }, effects)
+            }
+            Slide::End => {
+                self.levels.slide_end();
+                (Dirty::BOTTOM, vec![])
+            }
+        }
+    }
+
+    fn on_level(&mut self, event: LevelEvent) -> (Dirty, Vec<Effect>) {
+        match event {
+            LevelEvent::Set(level, value) => {
+                let Some(level) = self.resolve_level(level) else {
+                    return (Dirty::NONE, vec![]);
+                };
+                let before = self.levels.level(level);
+                let effects = self.change_levels(|l| l.set(level, value));
+                (if self.levels.level(level) == before { Dirty::NONE } else { Dirty::BOTTOM }, effects)
+            }
+            LevelEvent::Step(level, direction) => (Dirty::BOTTOM, self.change_levels(|l| l.step(level, direction))),
+        }
+    }
+
+    /// The user chose a tab (its icon, a control's tap, the shoulder buttons): it stays, also over a
+    /// keyboard a text field brought up.
+    fn choose_tab(&mut self, tab: Tab) -> Vec<Effect> {
+        if self.bottom.raised_from.take().is_some() {
+            self.saves.resume.touch(self.unix_secs);
+        }
+        self.set_tab(tab)
+    }
+
+    /// Changes the second screen's tab. The touchpad and the watches (Wi-Fi, Bluetooth, battery,
+    /// audio, backlights) start and stop with their tabs; what belonged to the tab left (an open editor,
+    /// a level being set) ends.
     fn set_tab(&mut self, tab: Tab) -> Vec<Effect> {
-        let before = self.tab;
-        self.resume_dirty = Some(self.unix_secs);
+        let before = self.bottom.tab;
         if tab == before {
             return vec![];
         }
-        self.tab = tab;
-        // What belonged to the tab left: an open editor, a level being set.
-        self.editor = None;
-        self.dragging = None;
-        self.slider = None;
-        before.watch(false).into_iter().chain(tab.watch(true)).collect()
-    }
-
-    /// The tab ClamShell starts in (a development option): set before [`Event::Start`].
-    pub fn start_in(&mut self, tab: Tab) {
-        self.tab = tab;
+        self.saves.resume.touch(self.unix_secs);
+        self.bottom.tab = tab;
+        self.bottom.editor = None;
+        self.levels.leave();
+        let watch = |tab: Tab, on| tab.watch().map(|w| Effect::Watch(w, on));
+        watch(before, false).into_iter().chain(watch(tab, true)).collect()
     }
 
     /// An app's text field wants typing (or is done): the keyboard comes up, and goes back to the tab it
@@ -986,14 +607,14 @@ impl State {
     fn text_input(&mut self, active: bool) -> Vec<Effect> {
         if active {
             // (Not over an open editor: what is typed there would be lost.)
-            if self.tab == Tab::Keyboard || self.front() == game::Front::Game || self.editor.is_some() {
+            if self.bottom.tab == Tab::Keyboard || self.session.front() == Front::Game || self.bottom.editor.is_some() {
                 return vec![];
             }
-            self.raised_from = Some(self.tab);
+            self.bottom.raised_from = Some(self.bottom.tab);
             return self.set_tab(Tab::Keyboard);
         }
-        match self.raised_from.take() {
-            Some(tab) if self.tab == Tab::Keyboard => self.set_tab(tab),
+        match self.bottom.raised_from.take() {
+            Some(tab) if self.bottom.tab == Tab::Keyboard => self.set_tab(tab),
             _ => vec![],
         }
     }
@@ -1001,312 +622,143 @@ impl State {
     /// The home button: from anything to shelf; from shelf back to what was in front before it (the
     /// game, an app's instance), or without that history (no compositor's word) to the running game.
     fn home(&mut self) -> Vec<Effect> {
-        let front = self.windows.iter().find(|w| w.focused);
+        let session = &self.session;
+        let front = session.windows.iter().find(|w| w.focused);
         let shelf_in_front = front.is_none_or(|w| w.app_id == apps::SHELF_APP_ID);
         if !shelf_in_front {
-            return vec![Effect::ShowShelf];
+            return vec![Effect::Window(WindowCommand::ShowShelf)];
         }
-        let before = self.recent.iter().find(|ws| ws.as_str() != windows::SHELF_WORKSPACE).cloned();
-        let game = self.current_game.as_deref().and_then(|id| self.running_game(id)).map(|g| g.workspace.clone());
+        let before = session.recent.iter().find(|ws| !Instance::Shelf.is(ws)).cloned();
+        let game = session.current.as_deref().and_then(|id| session.running_game(id)).map(|g| g.instance.name());
         match before.or(game) {
-            Some(workspace) => vec![Effect::FocusWorkspace(workspace)],
+            Some(workspace) => vec![Effect::Window(WindowCommand::Focus(workspace))],
             None => vec![],
         }
-    }
-
-    /// Back to the global settings, the pad mouse off if the launch turned it on, and the game shelf
-    /// was asked to switch to started.
-    fn game_ended(&mut self) -> Vec<Effect> {
-        vec![Effect::Apply { game: None, settings: self.settings.global }]
-    }
-
-    /// Launching `game` on a workspace of its own (unless it runs already, or is starting).
-    pub(crate) fn launch_effects(&mut self, game: Arc<str>) -> Vec<Effect> {
-        if self.running_game(&game).is_some() || self.launching.iter().any(|l| l.0 == game) {
-            return vec![];
-        }
-        let Some(g) = self.library.games.iter().find(|g| g.id == game) else {
-            return vec![];
-        };
-        let (launch, file) = (g.launch.clone(), g.file.clone());
-        let appid = match launch {
-            Launch::Steam { appid } => Some(appid),
-            _ => None,
-        };
-        let workspace = format!("clamshell-game-{}-{}", self.unix_secs, self.next_instance);
-        self.next_instance += 1;
-        let settings = self.settings.of(&game);
-        let env = self.settings.env_of(&game);
-        self.launching.push((game.clone(), workspace.clone(), appid));
-        // Shown once its first window appears.
-        self.pending_show = Some(workspace.clone());
-        vec![Effect::SaveResume(self.resume_text()), Effect::Launch { game, workspace, settings, env, launch, file }]
     }
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
-mod tests {
-    use super::*;
+#[allow(clippy::unwrap_used)]
+pub(crate) mod testkit {
+    //! Shorthands for the tests.
 
-    pub(crate) fn state() -> State {
-        State::new(clamshell_library::demo_library())
+    pub use crate::settings::Values;
+    pub use crate::windows::Window;
+
+    use crate::*;
+
+    /// What a test state starts from: the demo library, nothing else.
+    pub fn init() -> Init {
+        Init { library: clamshell_library::demo_library(), ..Init::default() }
     }
+
+    pub fn state() -> State {
+        State::new(init())
+    }
+
+    pub fn win(id: i64, app_id: &str, workspace: &str, focused: bool) -> Window {
+        Window { id, app_id: app_id.into(), title: String::new(), focused, unit: None, workspace: workspace.into() }
+    }
+
+    /// A terminal of the user's in front (not one of ours).
+    pub fn foot() -> Window {
+        win(1, "foot", "1", true)
+    }
+
+    /// A game in shelf's list.
+    pub fn game(id: &str) -> Id {
+        Id::Shelf(ShelfId::Game(id.into()))
+    }
+
+    /// A tap on `id`: what it asks for.
+    pub fn tap(s: &mut State, id: Id) -> Vec<Effect> {
+        s.apply(PointerEvent::Activate(id).into()).1
+    }
+
+    pub fn long(s: &mut State, id: Id) -> Vec<Effect> {
+        s.apply(PointerEvent::LongPress(id).into()).1
+    }
+
+    pub fn read(s: &mut State, reading: Reading) -> Dirty {
+        s.apply(reading.into()).0
+    }
+
+    /// `game` ended (a short play).
+    pub fn played(s: &mut State, game: &str) -> Vec<Effect> {
+        s.apply(GameEvent::Played { game: game.into(), start: 0, duration: 1 }.into()).1
+    }
+
+    /// Showing `instance`'s workspace.
+    pub fn focus(instance: &Instance) -> Effect {
+        Effect::Window(WindowCommand::Focus(instance.name()))
+    }
+
+    /// Launches `game` from shelf and has it start; returns its instance.
+    pub fn launch(s: &mut State, id: &str) -> Instance {
+        // Select it (if it isn't), then play it: the launch is in one of the two.
+        let mut fx = tap(s, game(id));
+        fx.extend(tap(s, game(id)));
+        let instance = fx.iter().find_map(|e| match e {
+            Effect::Launch { instance, .. } => Some(instance.clone()),
+            _ => None,
+        });
+        s.apply(GameEvent::Started(id.into()).into());
+        instance.unwrap()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::testkit::*;
+    use crate::*;
 
     #[test]
     fn starts_with_first_game_selected_and_focused() {
         let s = state();
-        assert_eq!(s.selected.as_deref(), Some("zelda-lttp"));
-        assert_eq!(s.focus, Some(Id::Game("zelda-lttp".into())));
+        assert_eq!(s.shelf().selected().map(|g| &**g), Some("zelda-lttp"));
+        assert_eq!(s.pointer().focus(), Some(&game("zelda-lttp")));
     }
 
     #[test]
-    fn selecting_then_activating_again_launches() {
-        let mut s = state();
-        let (_, fx) = s.apply(Event::Activate(Id::Game("ff6".into())));
-        assert!(fx.is_empty());
-        let (_, fx) = s.apply(Event::Activate(Id::Game("ff6".into())));
-        assert!(
-            matches!(fx.last(), Some(Effect::Launch { game, settings, env, launch: Launch::None, file: None, .. }) if &**game == "ff6" && *settings == Values::default() && env.is_empty()),
-            "{fx:?}"
-        );
-    }
-
-    #[test]
-    fn keys_repeat_and_modifiers_lock_when_held() {
-        use keyboard::{Modifier, find};
-        let s = state();
-        assert_eq!(s.hold(&Id::Key(find(Key::Char('a')).unwrap())), Hold::Repeat);
-        assert_eq!(s.hold(&Id::Key(find(Key::Mod(Modifier::Shift)).unwrap())), Hold::Long);
-        assert_eq!(s.hold(&Id::Launch), Hold::Long);
-    }
-
-    #[test]
-    fn down_and_up_light_a_target() {
-        let mut s = state();
-        s.apply(Event::Down(Id::Launch));
-        assert_eq!(s.pressed, Some(Id::Launch));
-        s.apply(Event::Up(Id::Launch));
-        assert_eq!(s.pressed, None);
-    }
-
-    #[test]
-    fn status_redraws_the_bottom_only_when_it_changes() {
-        let mut s = state();
-        let status = Status { battery: Some(50), ..Status::default() };
-        assert_eq!(s.apply(Event::Status(status)).0, Dirty::BOTTOM);
-        assert_eq!(s.apply(Event::Status(status)).0, Dirty::NONE);
-    }
-
-    #[test]
-    fn touchpad_mode_switches_the_touchscreen() {
-        let mut s = state();
-        let (_, fx) = s.apply(Event::Activate(Id::Tab(Tab::Touchpad)));
-        assert_eq!(fx, vec![Effect::Touchpad(true)]);
-        let wifi_watch = |on| Effect::Wifi(wifi::Command::Watch(on));
-        assert_eq!(s.apply(Event::Activate(Id::Tab(Tab::Wifi))).1, vec![Effect::Touchpad(false), wifi_watch(true)], "the old tab's off first");
-        assert_eq!(s.apply(Event::Activate(Id::Tab(Tab::Touchpad))).1, vec![wifi_watch(false), Effect::Touchpad(true)]);
-        let (_, fx) = s.apply(Event::Activate(Id::Tab(Tab::Keyboard)));
-        assert_eq!(fx, vec![Effect::Touchpad(false)]);
-        let (_, fx) = s.apply(Event::Activate(Id::Tab(Tab::Keyboard)));
-        assert!(fx.is_empty());
-    }
-
-    #[test]
-    fn a_text_field_brings_up_the_keyboard_and_back() {
-        let mut s = state();
-        s.apply(Event::Activate(Id::Tab(Tab::Touchpad)));
-        s.apply(Event::Windows(vec![windows::Window { id: 1, app_id: "foot".into(), title: String::new(), focused: true, unit: None, workspace: "1".into() }]));
-        let (dirty, fx) = s.apply(Event::TextInput(true));
-        assert_eq!((s.tab, dirty, fx), (Tab::Keyboard, Dirty::BOTH, vec![Effect::Touchpad(false), Effect::PadRoute(PadRoute::Keys)]));
-        assert_eq!(s.apply(Event::TextInput(false)).1, vec![Effect::Touchpad(true), Effect::PadRoute(PadRoute::Ui)]);
-        assert_eq!(s.tab, Tab::Touchpad, "back where it came from");
-        // The user chooses a tab meanwhile (even the keyboard's own): it stays.
-        s.apply(Event::TextInput(true));
-        s.apply(Event::Activate(Id::Tab(Tab::Keyboard)));
-        s.apply(Event::TextInput(false));
-        assert_eq!(s.tab, Tab::Keyboard);
-        // Already on the keyboard: nothing to go back to.
-        s.apply(Event::Activate(Id::Tab(Tab::Dock)));
-        s.apply(Event::Activate(Id::Tab(Tab::Keyboard)));
-        s.apply(Event::TextInput(true));
-        s.apply(Event::TextInput(false));
-        assert_eq!(s.tab, Tab::Keyboard);
-    }
-
-    #[test]
-    fn review_fixes_hold() {
-        let foot = || windows::Window { id: 1, app_id: "foot".into(), title: String::new(), focused: true, unit: None, workspace: "1".into() };
-        // A text field doesn't take the screen from an open editor (its typing would be lost).
-        let mut s = state();
-        s.apply(Event::Windows(vec![foot()]));
-        s.apply(Event::Activate(Id::Tab(Tab::Settings)));
-        s.apply(Event::Activate(Id::Env));
-        assert!(s.editor.is_some());
-        s.apply(Event::TextInput(true));
-        assert!(s.editor.is_some() && s.tab == Tab::Settings);
-        // A keyboard a text field brought up isn't saved as the tab.
-        let mut s = state();
-        s.apply(Event::Windows(vec![foot()]));
-        s.apply(Event::Activate(Id::Tab(Tab::Dock)));
-        s.apply(Event::TextInput(true));
-        assert_eq!(s.tab, Tab::Keyboard);
-        assert!(s.resume_text().contains("@mode\tdock"));
-        // Any tab but the touchpad comes back, its watch started with Start.
-        s.apply(Event::Activate(Id::Tab(Tab::Wifi)));
-        let mut again = state();
-        again.restore(&s.resume_text());
-        assert_eq!(again.tab, Tab::Wifi);
-        assert!(again.apply(Event::Start).1.contains(&Effect::Wifi(wifi::Command::Watch(true))));
-        // Holding the volume icon without moving makes up no volume.
-        let mut s = state();
-        s.apply(Event::SlideStart { control: Control::Volume, x: 300.0, width: 620.0 });
-        s.apply(Event::SlideEnd);
-        assert_eq!(s.status.volume, None);
-        // Leaving a tab mid-drag lets readings in again.
-        let mut s = state();
-        s.apply(Event::Status(Status { volume: Some(40), ..Status::default() }));
-        s.apply(Event::Activate(Id::Tab(Tab::Volume)));
-        s.apply(Event::SetLevel(levels::Level::Volume, 60));
-        s.apply(Event::Activate(Id::Tab(Tab::Dock)));
-        s.apply(Event::Status(Status { volume: Some(45), ..Status::default() }));
-        assert_eq!(s.status.volume, Some(45));
-    }
-
-    #[test]
-    fn the_pad_mouse_follows_the_game_in_front_unless_switched_by_hand() {
-        let mut s = state();
-        s.apply(Event::Activate(Id::Game("zelda-lttp".into())));
-        s.apply(Event::Activate(Id::Scope(Scope::Game)));
-        s.apply(Event::Activate(Id::Tile(Setting::PadMouse)));
-        s.apply(Event::Started("zelda-lttp".into()));
-        assert!(s.pad_mouse, "the game wants it");
-        // Off and on again by hand: the user's now, it stays when the game ends.
-        s.apply(Event::Activate(Id::PadMouse));
-        s.apply(Event::Activate(Id::PadMouse));
-        s.apply(Event::Played { game: "zelda-lttp".into(), start: 0, duration: 1 });
-        assert!(s.pad_mouse);
-    }
-
-    #[test]
-    fn pad_mouse_toggles_independently_of_the_mode() {
-        let mut s = state();
-        s.apply(Event::Activate(Id::Tab(Tab::Keyboard)));
-        let (_, fx) = s.apply(Event::Activate(Id::PadMouse));
-        assert_eq!(fx, vec![Effect::PadRoute(PadRoute::Mouse)]);
-        assert_eq!(s.tab, Tab::Keyboard);
-        let (_, fx) = s.apply(Event::Activate(Id::PadMouse));
-        assert_eq!(fx, vec![Effect::PadRoute(PadRoute::Ui)]);
-    }
-
-    #[test]
-    fn the_focus_ring_shows_for_the_pad_only() {
-        let mut s = state();
-        assert!(!s.show_focus);
-        s.apply(Event::Focus(Id::Launch));
-        assert!(s.show_focus);
-        assert_eq!(s.apply(Event::HideFocus).0, Dirty::BOTH);
-        assert!(!s.show_focus);
-        assert_eq!(s.apply(Event::HideFocus).0, Dirty::NONE);
-    }
-
-    #[test]
-    fn a_game_runs_and_its_play_counts() {
-        let mut s = state();
-        let first = s.selected.clone().unwrap();
-        s.apply(Event::Started(first.clone()));
-        let (_, fx) = s.apply(Event::Activate(Id::Launch));
-        assert!(!fx.iter().any(|e| matches!(e, Effect::Launch { .. })), "no second launch while one runs: {fx:?}");
-        s.apply(Event::Played { game: first.clone(), start: 1000, duration: 600 });
-        assert_eq!(s.current_game, None);
-        let g = s.library.games.iter().find(|g| g.id == first).unwrap();
-        assert_eq!((g.plays.count, g.plays.seconds), (1, 600));
-        assert!(s.library.collections.iter().any(|c| c.name == "Recent"));
-    }
-
-    #[test]
-    fn the_pad_goes_to_shelf_the_game_or_typing_by_what_is_in_front() {
-        let mut s = state();
-        let window = |app_id: &str, unit: Option<&str>| windows::Window {
-            id: 1,
-            app_id: app_id.into(),
-            title: String::new(),
-            focused: true,
-            unit: unit.map(Into::into),
-            workspace: String::new(),
-        };
-        let route = |s: &mut State, event: Event| {
-            s.apply(event);
-            s.pad_route
-        };
-        assert_eq!(route(&mut s, Event::Tick { unix_secs: 1 }), PadRoute::Ui, "nothing known, no game: shelf");
-        assert_eq!(route(&mut s, Event::Started("zelda-lttp".into())), PadRoute::Game, "a game runs: in front");
-        assert_eq!(route(&mut s, Event::Windows(vec![window(apps::SHELF_APP_ID, None)])), PadRoute::Ui, "shelf in front");
-        assert_eq!(route(&mut s, Event::Windows(vec![window("foot", Some("clamshell-app-terminal-1-0.scope"))])), PadRoute::Ui, "an app: the second screen");
-        assert_eq!(route(&mut s, Event::Activate(Id::Tab(Tab::Keyboard))), PadRoute::Keys, "an app and the keyboard: typing");
-        assert_eq!(route(&mut s, Event::Windows(vec![window("retroarch", Some("clamshell-game-1-0.scope"))])), PadRoute::Game);
-        let (_, fx) = s.apply(Event::Windows(vec![window(apps::SHELF_APP_ID, None)]));
-        assert_eq!(fx, vec![Effect::PadRoute(PadRoute::Ui)]);
-    }
-
-    #[test]
-    fn view_moves_the_pad_between_the_second_screen_and_what_wants_it() {
-        let mut s = state();
-        let foot = windows::Window { id: 1, app_id: "foot".into(), title: String::new(), focused: true, unit: None, workspace: "1".into() };
-        s.apply(Event::Windows(vec![foot]));
-        s.apply(Event::Activate(Id::Tab(Tab::Keyboard)));
-        assert_eq!(s.pad_route, PadRoute::Keys);
-        assert_eq!(s.apply(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Ui)], "to the keys on screen");
-        assert!(!s.pad_on_top());
-        assert_eq!(s.apply(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Keys)], "and back to typing");
-        // The pad mouse takes it; View moves it to the second screen and back.
-        assert_eq!(s.apply(Event::Activate(Id::PadMouse)).1, vec![Effect::PadRoute(PadRoute::Mouse)]);
-        assert_eq!(s.apply(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Ui)]);
-        assert_eq!(s.apply(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Mouse)]);
-        // Nothing else wants it: View does nothing, the pad stays on the second screen.
-        s.apply(Event::Activate(Id::PadMouse));
-        s.apply(Event::Activate(Id::Tab(Tab::Dock)));
-        assert_eq!(s.pad_route, PadRoute::Ui);
-        assert_eq!(s.apply(Event::PadSwitch).1, vec![]);
-        // Used there, it stays when the keyboard comes up under it.
-        s.apply(Event::Focus(Id::Tab(Tab::Dock)));
-        s.apply(Event::Activate(Id::Tab(Tab::Keyboard)));
-        assert_eq!(s.pad_route, PadRoute::Ui);
+    fn starts_where_it_was_told() {
+        let s = State::new(Init { start_tab: Some(Tab::Dock), pad_mouse: true, ..init() });
+        assert_eq!((s.bottom().tab(), s.pad().mouse(), s.pad().route()), (Tab::Dock, PadMouse::ByUser, PadRoute::Mouse));
     }
 
     #[test]
     fn home_goes_to_shelf_and_back_to_what_was_in_front() {
         let mut s = state();
-        let window = |id: i64, app_id: &str, workspace: &str, focused: bool| windows::Window {
-            id,
-            app_id: app_id.into(),
-            title: String::new(),
-            focused,
-            unit: None,
-            workspace: workspace.into(),
-        };
-        let shelf = |focused| window(1, apps::SHELF_APP_ID, windows::SHELF_WORKSPACE, focused);
-        assert_eq!(s.apply(Event::Home).1, vec![], "nothing before shelf: it stays");
-        s.apply(Event::Started("zelda-lttp".into()));
-        assert_eq!(s.apply(Event::Home).1, vec![Effect::FocusWorkspace(windows::GAME_WORKSPACE.into())], "no history: the game");
+        let shelf = |focused| win(1, apps::SHELF_APP_ID, &Instance::Shelf.name(), focused);
+        let landing = Instance::Landing.name();
+        let home = |s: &mut State| s.apply(Event::Home).1;
+        assert_eq!(home(&mut s), vec![], "nothing before shelf: it stays");
+        s.apply(GameEvent::Started("zelda-lttp".into()).into());
+        assert_eq!(home(&mut s), vec![focus(&Instance::Landing)], "no history: the game");
         // A terminal in front, then shelf: home goes back to the terminal.
         let terminal = "clamshell-app-terminal-1-0";
-        s.apply(Event::Windows(vec![shelf(false), window(2, "foot", terminal, true)]));
-        assert_eq!(s.apply(Event::Home).1, vec![Effect::ShowShelf]);
-        s.apply(Event::Windows(vec![shelf(true), window(2, "foot", terminal, false)]));
-        assert_eq!(s.apply(Event::Home).1, vec![Effect::FocusWorkspace(terminal.into())]);
+        s.apply(Event::Windows(vec![shelf(false), win(2, "foot", terminal, true)]));
+        assert_eq!(home(&mut s), vec![Effect::Window(WindowCommand::ShowShelf)]);
+        s.apply(Event::Windows(vec![shelf(true), win(2, "foot", terminal, false)]));
+        assert_eq!(home(&mut s), vec![Effect::Window(WindowCommand::Focus(terminal.into()))]);
         // The terminal closed: back to the game, which was in front before.
-        s.apply(Event::Windows(vec![shelf(false), window(3, "retroarch", windows::GAME_WORKSPACE, true)]));
-        s.apply(Event::Windows(vec![shelf(true), window(3, "retroarch", windows::GAME_WORKSPACE, false)]));
-        assert_eq!(s.apply(Event::Home).1, vec![Effect::FocusWorkspace(windows::GAME_WORKSPACE.into())]);
+        s.apply(Event::Windows(vec![shelf(false), win(3, "retroarch", &landing, true)]));
+        s.apply(Event::Windows(vec![shelf(true), win(3, "retroarch", &landing, false)]));
+        assert_eq!(home(&mut s), vec![focus(&Instance::Landing)]);
+    }
+
+    #[test]
+    fn home_goes_back_to_a_workspace_that_isnt_ours() {
+        let mut s = state();
+        let shelf = |focused| win(1, apps::SHELF_APP_ID, &Instance::Shelf.name(), focused);
+        s.apply(Event::Windows(vec![shelf(false), foot()]));
+        s.apply(Event::Windows(vec![shelf(true), Window { focused: false, ..foot() }]));
+        assert_eq!(s.apply(Event::Home).1, vec![Effect::Window(WindowCommand::Focus("1".into()))]);
     }
 
     #[test]
     fn tick_redraws_once_a_minute() {
         let mut s = state();
-        let (dirty, _) = s.apply(Event::Tick { unix_secs: 60 });
-        assert_eq!(dirty, Dirty::BOTH);
-        let (dirty, _) = s.apply(Event::Tick { unix_secs: 119 });
-        assert_eq!(dirty, Dirty::NONE);
+        assert_eq!(s.apply(Event::Tick { unix_secs: 60 }).0, Dirty::BOTH);
+        assert_eq!(s.apply(Event::Tick { unix_secs: 119 }).0, Dirty::NONE);
     }
 }

@@ -119,7 +119,7 @@ impl std::fmt::Display for Clock {
 
 pub(super) fn draw(f: &mut Frame, body: Rect, lines: &mut Lines) {
     let s = f.s;
-    let (m, h) = (&s.metrics, &s.history);
+    let (m, h) = (&s.sys().metrics, &s.sys().history);
     let c = &mut *f.c;
     let pad = body.h * PAD;
     let grid = body.inset(pad);
@@ -145,7 +145,7 @@ pub(super) fn draw(f: &mut Frame, body: Rect, lines: &mut Lines) {
     t.graph(c, &h.fps, h.fps.max().max(FPS_SCALE), FPS);
 
     let t = tile("Power", 3);
-    let battery = s.status.battery;
+    let battery = s.sys().status.battery;
     match (m.power_w, m.minutes_left, battery) {
         (Some(w), Some(min), Some(b)) if w > 0.0 => {
             lines.set(format_args!("{w:.1} W"), format_args!("{b}% · {}:{:02} left", min / 60, min % 60));

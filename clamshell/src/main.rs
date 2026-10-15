@@ -6,7 +6,11 @@ use std::sync::{Arc, Mutex, mpsc};
 use clamshell_core::keyboard::{self, Key, KeyPos, Modifier};
 use clamshell_core::touch::TouchLayout;
 use clamshell_core::settings::{Setting, Settings, Values};
-use clamshell_core::{Effect, Event, Id, Tab, Scope, State, Status};
+use clamshell_core::levels::Brightness;
+use clamshell_core::{
+    Apps, BtId, DockId, EditorId, Effect, Event, GameEvent, Id, Init, Instance, LevelEvent, PointerEvent, Reading, Save, Scope, SettingsId,
+    ShelfEvent, ShelfId, Slide, Sound, State, Status, Tab, Watch, WifiId, WindowCommand,
+};
 use clamshell_policy::{controls, job, keyboard as virtual_keyboard, pad, sway, touchpad, tuning};
 use clamshell_ui::{Config, Screen};
 
@@ -80,35 +84,37 @@ fn main() -> ExitCode {
         let library = clamshell_library::Library::load(&sources);
         if library.collections.is_empty() { clamshell_library::demo_library() } else { library }
     };
-    let mut state = State::new(library);
-    // Where shelf was last time (~/.local/state/clamshell/last).
+    // Where shelf was last time (~/.local/state/clamshell/last), and the screens' brightness as it was
+    // left (the level and each screen's share) next to it. Snapshots start fresh, with example apps.
     let resume_file = std::env::var_os("XDG_STATE_HOME")
         .map(std::path::PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/state")))
         .map(|d| d.join("clamshell/last"));
-    if !snapshotting && let Some(text) = resume_file.as_ref().and_then(|f| std::fs::read_to_string(f).ok()) {
-        state.restore(&text);
-    }
-    // The screens' brightness as it was left (the level and each screen's factor), next to it.
     let brightness_file = resume_file.as_ref().and_then(|f| f.parent()).map(|d| d.join("brightness"));
-    if !snapshotting && let Some(text) = brightness_file.as_ref().and_then(|f| std::fs::read_to_string(f).ok()) {
-        state.brightness = clamshell_core::levels::Brightness::from_text(&text);
-    }
-    // The launcher's apps (~/.config/clamshell/launcher.json; without it, shelf, Steam and a terminal).
-    if !snapshotting {
-        let (apps, error) = load_apps();
-        state.set_apps(apps, error);
-    }
-    // Each game's settings (power profile, FPS cap).
-    if !snapshotting && let Some(text) = state_dir.as_ref().and_then(|d| std::fs::read_to_string(d.join("game-settings.txt")).ok()) {
-        state.settings = Settings::load(&text);
-    }
+    let read = |file: Option<&std::path::Path>| file.filter(|_| !snapshotting).and_then(|f| std::fs::read_to_string(f).ok());
+    let init = Init {
+        library,
+        // Each game's settings (power profile, FPS cap).
+        settings: read(state_dir.as_ref().map(|d| d.join("game-settings.txt")).as_deref()).map_or_else(Settings::default, |t| Settings::load(&t)),
+        brightness: read(brightness_file.as_deref()).map_or_else(Brightness::default, |t| Brightness::from_text(&t)),
+        // The dock's apps (~/.config/clamshell/launcher.json; without it, Steam and a terminal).
+        apps: if snapshotting { example_apps() } else { load_apps() },
+        resume: read(resume_file.as_deref()),
+        // Development: start in a tab (CLAMSHELL_START_MODE=touchpad|keyboard|dock|...); what it watches
+        // starts with the others' at Event::Start.
+        start_tab: std::env::var("CLAMSHELL_START_MODE").ok().and_then(|t| Tab::from_name(&t)).filter(|_| !snapshotting),
+        // CLAMSHELL_PAD_MOUSE=1 starts with the pad mouse on (where the pad goes is sent at
+        // Event::Start).
+        pad_mouse: std::env::var("CLAMSHELL_PAD_MOUSE").as_deref() == Ok("1") && !snapshotting,
+    };
+    let mut state = State::new(init);
 
     // `--library`: print the collections and games found (Pegasus game dirs and Steam).
     if std::env::args().nth(1).as_deref() == Some("--library") {
-        for c in &state.library.collections {
+        let library = state.shelf().library();
+        for c in &library.collections {
             println!("{} ({}, {} games){}", c.name, c.short_name, c.games.len(), if c.tools { " tools" } else { "" });
-            for g in c.games.iter().filter_map(|&i| state.library.games.get(i)) {
+            for g in c.games.iter().filter_map(|&i| library.games.get(i)) {
                 let art = if g.box_front.is_some() { "art" } else { "no art" };
                 println!("  {}  [{art}] {:?}", g.title, g.launch);
             }
@@ -123,27 +129,18 @@ fn main() -> ExitCode {
         return snapshot(&mut state, std::path::Path::new(dir));
     }
 
-    // Development: start in a tab (CLAMSHELL_START_MODE=touchpad|keyboard|dock|...); what it watches
-    // starts with the others' at Event::Start.
     let (touchpad_tx, touchpad_rx) = mpsc::channel();
-    if let Some(mode) = std::env::var("CLAMSHELL_START_MODE").ok().and_then(|m| Tab::from_name(&m)) {
-        state.start_in(mode);
-    }
     let layout = config.touch_layout.clone();
-    // The controller (CLAMSHELL_GAMEPAD: path or part of its name; default the first gamepad), grabbed for
-    // good with a virtual Xbox pad for games; CLAMSHELL_PAD_MOUSE=1 starts with the pad mouse on.
+    // The controller (CLAMSHELL_GAMEPAD: path or part of its name; default the first gamepad), grabbed
+    // for good with a virtual Xbox pad for games.
     let (padmouse_tx, padmouse_rx) = mpsc::channel();
-    if std::env::var("CLAMSHELL_PAD_MOUSE").as_deref() == Ok("1") {
-        // (Where the pad goes is sent at Event::Start.)
-        state.apply(Event::Activate(Id::PadMouse));
-    }
     let gamepad = std::env::var("CLAMSHELL_GAMEPAD").ok();
     // The global settings, until a game brings its own.
     let tuning_tx = tuning::spawn().unwrap_or_else(|e| {
         log::error!("tuning thread: {e}");
         mpsc::channel().0
     });
-    apply_settings(&state.settings.global, None, &clamshell_policy::frames::default_dir(), &padmouse_tx, &tuning_tx);
+    apply_settings(&state.settings().global, None, &clamshell_policy::frames::default_dir(), &padmouse_tx, &tuning_tx);
     // Games start from the launcher (each on a thread of its own, so several run side by side), with
     // MangoHud's environment; plays go to stats.db in the state dir.
     let (launch_tx, launch_rx) = mpsc::channel();
@@ -240,11 +237,18 @@ fn main() -> ExitCode {
             }
         },
         move |effect| match effect {
-            Effect::Touchpad(on) => {
+            Effect::Watch(watch, on) => {
                 log::info!("effect: {effect:?}");
-                let command = if *on { touchpad::Command::On } else { touchpad::Command::Off };
-                if touchpad_tx.send(command).is_err() {
-                    log::warn!("touchpad thread is gone");
+                let sent = match watch {
+                    Watch::Touchpad => touchpad_tx.send(if *on { touchpad::Command::On } else { touchpad::Command::Off }).is_ok(),
+                    Watch::Audio => mixer_tx.send(clamshell_policy::mixer::Command::Audio(*on)).is_ok(),
+                    Watch::Backlights => mixer_tx.send(clamshell_policy::mixer::Command::Backlights(*on)).is_ok(),
+                    Watch::Wifi => wifi_tx.send(clamshell_policy::wifi::Request::Watch(*on)).is_ok(),
+                    Watch::Bluetooth => bluetooth_tx.send(clamshell_policy::bluetooth::Request::Watch(*on)).is_ok(),
+                    Watch::Battery => power_tx.send(*on).is_ok(),
+                };
+                if !sent {
+                    log::warn!("the thread for {watch:?} is gone");
                 }
             }
             Effect::PadRoute(route) => {
@@ -261,7 +265,7 @@ fn main() -> ExitCode {
                 }
                 None => log::info!("effect: {effect:?} (no virtual keyboard)"),
             },
-            Effect::Launch { game, workspace, launch, file, settings, env } => {
+            Effect::Launch { game, instance, launch, file, settings, env } => {
                 log::info!("launching {game}");
                 let mut env = env.clone();
                 if let Some(config) = apply_settings(settings, Some(game), &mangohud_dir, &padmouse_tx, &tuning_tx) {
@@ -271,7 +275,7 @@ fn main() -> ExitCode {
                 // Its own workspace, shown when its first window appears (the state asks for that).
                 let request = clamshell_policy::launcher::Request {
                     game: game.clone(),
-                    workspace: workspace.clone(),
+                    instance: instance.clone(),
                     launch: launch.clone(),
                     file: file.clone(),
                     env,
@@ -283,15 +287,22 @@ fn main() -> ExitCode {
             Effect::Apply { game, settings } => {
                 apply_settings(settings, game.as_deref(), &mangohud_dir, &padmouse_tx, &tuning_tx);
             }
-            Effect::SaveSettings(text) => {
+            Effect::Save(Save::Settings(text)) => {
                 if let Some(dir) = &state_dir
                     && let Err(e) = std::fs::write(dir.join("game-settings.txt"), text)
                 {
                     log::warn!("game settings: {e}");
                 }
             }
-            Effect::SaveResume(text) => save(resume_file.as_deref(), text),
-            Effect::SaveBrightness(text) => save(brightness_file.as_deref(), text),
+            Effect::Save(Save::Resume(text)) => save(resume_file.as_deref(), text),
+            Effect::Save(Save::Brightness(text)) => save(brightness_file.as_deref(), text),
+            Effect::Save(Save::Favourites(ids)) => {
+                if let Some(dir) = &state_dir
+                    && let Err(e) = clamshell_library::favorites::write(dir, ids.iter().map(String::as_str))
+                {
+                    log::warn!("favourites: {e}");
+                }
+            }
             Effect::RecordPlay { game, start, duration } => {
                 if let Some(dir) = &state_dir
                     && let Err(e) = clamshell_library::stats::record(&dir.join("stats.db"), game, *start, *duration)
@@ -299,22 +310,16 @@ fn main() -> ExitCode {
                     log::warn!("recording the play of {game}: {e}");
                 }
             }
-            Effect::SaveFavourites(ids) => {
-                if let Some(dir) = &state_dir
-                    && let Err(e) = clamshell_library::favorites::write(dir, ids.iter().map(String::as_str))
-                {
-                    log::warn!("favourites: {e}");
-                }
-            }
-            Effect::RunApp { name, command } => {
+            Effect::RunApp { instance, command } => {
                 // A new instance: its scope; under sway started for its workspace (shown once its window
                 // is there), elsewhere just started.
+                let name = instance.name();
                 log::info!("running {command:?} as {name}");
                 let job = job::Job { unit: name.clone(), argv: command.clone(), env: vec![], workdir: None, scope };
                 if on_sway {
                     match job::write(&job) {
                         Ok(path) => {
-                            let _ = sway_tx.send(sway::Command::Launch { workspace: name.clone(), job: path });
+                            let _ = sway_tx.send(sway::Command::Launch { workspace: name, job: path });
                         }
                         Err(e) => log::warn!("{name}: {e}"),
                     }
@@ -327,65 +332,49 @@ fn main() -> ExitCode {
                     }
                 }
             }
-            Effect::ShowShelf => {
-                let _ = sway_tx.send(sway::Command::Workspace(clamshell_core::windows::SHELF_WORKSPACE.into()));
+            Effect::Window(command) => {
+                let _ = match command {
+                    WindowCommand::ShowShelf => sway_tx.send(sway::Command::Workspace(Instance::Shelf.name())),
+                    WindowCommand::Focus(name) => sway_tx.send(sway::Command::Workspace(name.clone())),
+                    WindowCommand::Move { windows, to } => sway_tx.send(sway::Command::Move { windows: windows.clone(), workspace: to.name() }),
+                    WindowCommand::Close(ids) => ids.iter().try_for_each(|id| sway_tx.send(sway::Command::Close(*id))),
+                };
             }
-            Effect::FocusWorkspace(name) => {
-                let _ = sway_tx.send(sway::Command::Workspace(name.clone()));
+            Effect::Sound(sound) => {
+                let command = match sound {
+                    Sound::Volume(v) => controls::Command::Volume(*v),
+                    Sound::Mute(m) => controls::Command::Mute(*m),
+                    Sound::StreamVolume(id, v) => controls::Command::StreamVolume(*id, *v),
+                    Sound::StreamMute(id, m) => controls::Command::StreamMute(*id, *m),
+                    Sound::Output(id) => controls::Command::Output(*id),
+                };
+                let _ = controls_tx.send(command);
             }
-            Effect::MoveWindows { windows, workspace } => {
-                let _ = sway_tx.send(sway::Command::Move { windows: windows.clone(), workspace: workspace.clone() });
-            }
-            Effect::CloseWindows(ids) => {
-                for id in ids {
-                    let _ = sway_tx.send(sway::Command::Close(*id));
-                }
-            }
-            Effect::SetVolume(v) => {
-                let _ = controls_tx.send(controls::Command::Volume(*v));
-            }
-            Effect::SetMute(m) => {
-                let _ = controls_tx.send(controls::Command::Mute(*m));
-            }
-            Effect::Brightness { level, factors } => {
-                let _ = controls_tx.send(controls::Command::Brightness { level: *level, factors: factors.clone() });
+            Effect::Brightness { level, shares } => {
+                let factors = shares.iter().map(|s| (s.backlight.clone(), s.share)).collect();
+                let _ = controls_tx.send(controls::Command::Brightness { level: *level, factors });
             }
             Effect::Wifi(command) => {
                 // (The password stays out of the log.)
                 if let clamshell_core::wifi::Command::Connect { ssid, .. } = command {
                     log::info!("wifi: join {ssid}");
                 }
-                if wifi_tx.send(command.clone()).is_err() {
+                if wifi_tx.send(clamshell_policy::wifi::Request::Do(command.clone())).is_err() {
                     log::warn!("wifi thread is gone");
                 }
             }
             Effect::Bluetooth(command) => {
                 log::info!("effect: {effect:?}");
-                if bluetooth_tx.send(command.clone()).is_err() {
+                if bluetooth_tx.send(clamshell_policy::bluetooth::Request::Do(command.clone())).is_err() {
                     log::warn!("bluetooth thread is gone");
                 }
-            }
-            Effect::WatchPower(on) => {
-                let _ = power_tx.send(*on);
-            }
-            Effect::WatchBacklights(on) => {
-                let _ = mixer_tx.send(clamshell_policy::mixer::Command::Backlights(*on));
-            }
-            Effect::Audio(command) => {
-                use clamshell_core::levels::Command as Audio;
-                let _ = match command {
-                    Audio::Watch(on) => mixer_tx.send(clamshell_policy::mixer::Command::Audio(*on)).is_ok(),
-                    Audio::Output(id) => controls_tx.send(controls::Command::Output(*id)).is_ok(),
-                    Audio::StreamVolume(id, v) => controls_tx.send(controls::Command::StreamVolume(*id, *v)).is_ok(),
-                    Audio::StreamMute(id, m) => controls_tx.send(controls::Command::StreamMute(*id, *m)).is_ok(),
-                };
             }
             Effect::QuitGame { windows, units } => {
                 log::info!("quitting the game");
                 for id in windows {
                     let _ = sway_tx.send(sway::Command::Close(*id));
                 }
-                end_units_later(units.clone());
+                end_units_later(units.iter().filter_map(Instance::unit).collect());
             }
             // (The UI handles quitting.)
             Effect::Quit => {}
@@ -431,7 +420,7 @@ fn control_events(line: &str) -> Option<Vec<Event>> {
     };
     // (A slide never ends in a tap: that would open the tab.)
     if let ["lift", name] = words.as_slice() {
-        return Some(vec![Event::SlideEnd, Event::Up(Id::Control(control(name)?))]);
+        return Some(vec![Event::Slide(Slide::End), Event::Pointer(PointerEvent::Up(Id::Control(control(name)?)))]);
     }
     if let ["level", rest @ ..] = words.as_slice() {
         use clamshell_core::levels::Level;
@@ -442,19 +431,19 @@ fn control_events(line: &str) -> Option<Vec<Event>> {
             ["stream", n, v] => (Level::Stream(index(n)?), v),
             _ => return None,
         };
-        return Some(vec![Event::SetLevel(level, value.parse().ok()?), Event::Up(Id::Level(level))]);
+        return Some(vec![Event::Level(LevelEvent::Set(level, value.parse().ok()?)), Event::Pointer(PointerEvent::Up(Id::Level(level)))]);
     }
     if let ["slide", name, from, to, rest @ ..] = words.as_slice() {
         let control = control(name)?;
         let hold = rest == ["hold"];
         let (from, to): (f32, f32) = (from.parse().ok()?, to.parse().ok()?);
         let id = Id::Control(control);
-        let steps = (1..=10).map(|i| Event::SlideTo { x: from + (to - from) * i as f32 / 10.0 });
+        let steps = (1..=10).map(|i| Event::Slide(Slide::To { x: from + (to - from) * i as f32 / 10.0 }));
         return Some(
-            [Event::Down(id.clone()), Event::SlideStart { control, x: from, width: 620.0 }]
+            [Event::Pointer(PointerEvent::Down(id.clone())), Event::Slide(Slide::Start { control, x: from, width: 620.0 })]
                 .into_iter()
                 .chain(steps)
-                .chain(if hold { vec![] } else { vec![Event::SlideEnd, Event::Up(id)] })
+                .chain(if hold { vec![] } else { vec![Event::Slide(Slide::End), Event::Pointer(PointerEvent::Up(id))] })
                 .collect(),
         );
     }
@@ -463,7 +452,7 @@ fn control_events(line: &str) -> Option<Vec<Event>> {
     }
     let id = match words.as_slice() {
         ["home"] => return Some(vec![Event::Home]),
-        ["list", step] => return Some(vec![Event::ListStep(step.parse().ok()?)]),
+        ["list", step] => return Some(vec![Event::Shelf(ShelfEvent::ListStep(step.parse().ok()?))]),
         ["pad", button] => {
             use clamshell_core::PadInput as P;
             return Some(match *button {
@@ -480,33 +469,33 @@ fn control_events(line: &str) -> Option<Vec<Event>> {
                 _ => return None,
             });
         }
-        ["tab", name] => return Some(vec![Event::Activate(Id::Tab(Tab::from_name(name)?))]),
-        [_, "app", n] => Id::App(index(n)?),
-        [_, "plus", n] => Id::NewInstance(index(n)?),
-        [_, "network", n] => Id::Network(index(n)?),
-        [_, "wifi-power"] => Id::WifiPower,
+        ["tab", name] => return Some(vec![Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::from_name(name)?)))]),
+        [_, "app", n] => Id::Dock(DockId::App(index(n)?)),
+        [_, "plus", n] => Id::Dock(DockId::NewInstance(index(n)?)),
+        [_, "network", n] => Id::Wifi(WifiId::Network(index(n)?)),
+        [_, "wifi-power"] => Id::Wifi(WifiId::Power),
         [_, "pad-mouse"] => Id::PadMouse,
-        [_, "device", n] => Id::Device(index(n)?),
-        [_, "bluetooth-power"] => Id::BluetoothPower,
-        [_, "save"] => Id::EditorSave,
-        [_, "game"] => Id::GameTile(0),
-        [_, "game", n] => Id::GameTile(index(n)?),
-        [_, "keep"] => Id::StartKeep,
-        [_, "close"] => Id::StartClose,
-        [_, "start-game"] => Id::StartGame,
-        [_, "launch"] => Id::Launch,
+        [_, "device", n] => Id::Bluetooth(BtId::Device(index(n)?)),
+        [_, "bluetooth-power"] => Id::Bluetooth(BtId::Power),
+        [_, "save"] => Id::Editor(EditorId::Save),
+        [_, "game"] => Id::Dock(DockId::GameTile(0)),
+        [_, "game", n] => Id::Dock(DockId::GameTile(index(n)?)),
+        [_, "keep"] => Id::Shelf(ShelfId::StartKeep),
+        [_, "close"] => Id::Shelf(ShelfId::StartClose),
+        [_, "start-game"] => Id::Dock(DockId::StartGame),
+        [_, "launch"] => Id::Shelf(ShelfId::Launch),
         _ => return None,
     };
     match words.first() {
-        Some(&"tap") => Some(vec![Event::Activate(id)]),
-        Some(&"long") => Some(vec![Event::LongPress(id)]),
+        Some(&"tap") => Some(vec![Event::Pointer(PointerEvent::Activate(id))]),
+        Some(&"long") => Some(vec![Event::Pointer(PointerEvent::LongPress(id))]),
         _ => None,
     }
 }
 
 /// A character typed on the on-screen keyboard: its key, after Shift (once) if it needs it.
 fn type_char(c: char) -> Option<Vec<Event>> {
-    let key = |k: Key| keyboard::find(k).map(|pos| Event::Activate(Id::Key(pos)));
+    let key = |k: Key| keyboard::find(k).map(|pos| Event::Pointer(PointerEvent::Activate(Id::Key(pos))));
     match (' '..='~').find(|&b| b != c && keyboard::shifted(b) == c) {
         Some(base) => Some(vec![key(Key::Mod(Modifier::Shift))?, key(Key::Char(base))?]),
         None => Some(vec![key(Key::Char(c))?]),
@@ -551,29 +540,34 @@ const LAUNCHER_EXAMPLE: &str = r#"{
 }
 "#;
 
-/// The launcher's apps from their file (desktop files read for those that name one), or the defaults;
-/// with what is wrong, if anything (apps whose desktop file is missing are left out).
-fn load_apps() -> (Vec<clamshell_core::apps::App>, Option<String>) {
+/// The dock's apps from their file (desktop files read for those that name one), or the defaults; with
+/// what is wrong, if anything (apps whose desktop file is missing are left out).
+fn load_apps() -> Apps {
     let file = std::env::var_os("XDG_CONFIG_HOME")
         .map(std::path::PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config")))
         .map(|d| d.join("clamshell/launcher.json"));
     let Some(text) = file.as_ref().and_then(|f| std::fs::read_to_string(f).ok()) else {
-        return (clamshell_core::apps::defaults(), None);
+        return Apps::default();
     };
     match clamshell_core::apps::parse(&text) {
         Ok(apps) => resolve_apps(apps),
         Err(e) => {
             log::warn!("launcher.json: {e}");
-            (clamshell_core::apps::defaults(), Some(format!("launcher.json: {e}")))
+            Apps { list: clamshell_core::apps::defaults(), error: Some(format!("launcher.json: {e}")) }
         }
     }
 }
 
-fn resolve_apps(apps: Vec<clamshell_core::apps::App>) -> (Vec<clamshell_core::apps::App>, Option<String>) {
+/// The example file's apps, for snapshots.
+fn example_apps() -> Apps {
+    clamshell_core::apps::parse(LAUNCHER_EXAMPLE).map_or_else(|_| Apps::default(), resolve_apps)
+}
+
+fn resolve_apps(apps: Vec<clamshell_core::apps::App>) -> Apps {
     let dirs = clamshell_policy::desktop::data_dirs();
     let mut error = None;
-    let apps = apps
+    let list = apps
         .into_iter()
         .filter_map(|mut app| match clamshell_policy::desktop::resolve(&mut app, &dirs) {
             Ok(()) => Some(app),
@@ -584,7 +578,7 @@ fn resolve_apps(apps: Vec<clamshell_core::apps::App>) -> (Vec<clamshell_core::ap
             }
         })
         .collect();
-    (apps, error)
+    Apps { list, error }
 }
 
 /// After a polite close: kills what is left of these scopes (the game's) if they are still there in a
@@ -642,51 +636,47 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
     state.apply(Event::Tick { unix_secs: now });
     // Demo status, so every bar icon shows.
     let status = Status { battery: Some(72), charging: true, wifi: Some(80), volume: Some(60), muted: false, brightness: Some(70) };
-    state.apply(Event::Status(status));
+    state.apply(Event::Reading(Reading::Status(status)));
     // Each shot after the events that lead to it: shelf, then the keyboard plain, with Fn, and with
     // Shift (once) and Ctrl (locked).
     let key = |k: Key, long: bool| {
         let id = Id::Key(keyboard::find(k).unwrap_or(KeyPos { row: 0, col: 0 }));
-        if long { Event::LongPress(id) } else { Event::Activate(id) }
+        if long { Event::Pointer(PointerEvent::LongPress(id)) } else { Event::Pointer(PointerEvent::Activate(id)) }
     };
     let bottom = (1240, 1080);
-    if let Ok(apps) = clamshell_core::apps::parse(LAUNCHER_EXAMPLE) {
-        let (apps, error) = resolve_apps(apps);
-        state.set_apps(apps, error);
-    }
     let window = |id: i64, app_id: &str, unit: Option<&str>, focused: bool| clamshell_core::windows::Window {
         id,
         app_id: app_id.into(),
         title: String::new(),
         focused,
         unit: unit.map(Into::into),
-        workspace: unit.map_or("1", |u| u.trim_end_matches(".scope")).replace("clamshell-game-1-0", clamshell_core::windows::GAME_WORKSPACE),
+        workspace: unit.map_or("1", |u| u.trim_end_matches(".scope")).replace("clamshell-game-1-0", &Instance::Landing.name()),
     };
-    let taps = |setting: Setting, n: usize| (0..n).map(move |_| Event::Activate(Id::Tile(setting)));
+    let taps = |setting: Setting, n: usize| (0..n).map(move |_| Event::Pointer(PointerEvent::Activate(Id::Settings(SettingsId::Tile(setting)))));
     let shots: Vec<Shot> = vec![
         (vec![], Screen::Top, (1920, 1080), "top.png"),
-        (vec![Event::CollectionStep(1)], Screen::Top, (1920, 1080), "top-tab2.png"),
-        (vec![Event::ListStep(5)], Screen::Top, (1920, 1080), "top-tab2-down.png"),
-        (vec![Event::CollectionStep(-1)], Screen::Top, (1920, 1080), "top-back.png"),
+        (vec![Event::Shelf(ShelfEvent::CollectionStep(1))], Screen::Top, (1920, 1080), "top-tab2.png"),
+        (vec![Event::Shelf(ShelfEvent::ListStep(5))], Screen::Top, (1920, 1080), "top-tab2-down.png"),
+        (vec![Event::Shelf(ShelfEvent::CollectionStep(-1))], Screen::Top, (1920, 1080), "top-back.png"),
         (
             vec![
-                Event::Played { game: "zelda-lttp".into(), start: 1_759_900_000, duration: 4 * 3600 + 1260 },
-                Event::ToggleFavourite,
-                Event::Started("zelda-lttp".into()),
+                Event::Game(GameEvent::Played { game: "zelda-lttp".into(), start: 1_759_900_000, duration: 4 * 3600 + 1260 }),
+                Event::Shelf(ShelfEvent::ToggleFavourite),
+                Event::Game(GameEvent::Started("zelda-lttp".into())),
             ],
             Screen::Top,
             (1920, 1080),
             "top-played.png",
         ),
         (
-            vec![Event::Activate(Id::Game("ff6".into())), Event::Activate(Id::Game("ff6".into()))],
+            vec![Event::Pointer(PointerEvent::Activate(Id::Shelf(ShelfId::Game("ff6".into())))), Event::Pointer(PointerEvent::Activate(Id::Shelf(ShelfId::Game("ff6".into()))))],
             Screen::Top,
             (1920, 1080),
             "top-switch.png",
         ),
         (vec![], Screen::Bottom, bottom, "bottom.png"),
         (
-            [Event::Activate(Id::Tab(Tab::Settings))]
+            [Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Settings)))]
                 .into_iter()
                 .chain(taps(Setting::FpsCap, 4))
                 .chain(taps(Setting::Buttons, 1))
@@ -697,7 +687,7 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
             "settings-running.png",
         ),
         (
-            [Event::Activate(Id::Scope(Scope::Global))]
+            [Event::Pointer(PointerEvent::Activate(Id::Settings(SettingsId::Scope(Scope::Global))))]
                 .into_iter()
                 .chain(taps(Setting::Power, 1))
                 .chain(taps(Setting::Deadzone, 2))
@@ -708,13 +698,13 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
             "settings-global.png",
         ),
         (
-            vec![Event::Played { game: "zelda-lttp".into(), start: now, duration: 60 }, Event::Activate(Id::Scope(Scope::Game))],
+            vec![Event::Game(GameEvent::Played { game: "zelda-lttp".into(), start: now, duration: 60 }), Event::Pointer(PointerEvent::Activate(Id::Settings(SettingsId::Scope(Scope::Game))))],
             Screen::Bottom,
             bottom,
             "settings.png",
         ),
         (
-            [Event::Activate(Id::Env)]
+            [Event::Pointer(PointerEvent::Activate(Id::Settings(SettingsId::Env)))]
                 .into_iter()
                 .chain("dxvk_hud=fps mesa_vk_wsi_present_mode=fifo".chars().flat_map(|c| {
                     // Characters that need Shift: Shift (once), then their key.
@@ -729,25 +719,26 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
             "settings-env.png",
         ),
         (
-            vec![Event::Activate(Id::EditorSave), Event::Status(Status { battery: Some(9), charging: false, wifi: None, volume: Some(40), muted: true, brightness: None })],
+            vec![Event::Pointer(PointerEvent::Activate(Id::Editor(EditorId::Save))), Event::Reading(Reading::Status(Status { battery: Some(9), charging: false, wifi: None, volume: Some(40), muted: true, brightness: None }))],
             Screen::Bottom,
             bottom,
             "status-low.png",
         ),
-        (vec![Event::Status(status)], Screen::Bottom, bottom, "bottom.png"),
+        (vec![Event::Reading(Reading::Status(status))], Screen::Bottom, bottom, "bottom.png"),
         (
-            vec![Event::Activate(Id::Tab(Tab::Dock)), Event::HideFocus],
+            vec![Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Dock))), Event::Pointer(PointerEvent::HideFocus)],
             Screen::Bottom,
             bottom,
             "launcher.png",
         ),
         (
             vec![
-                Event::Started("zelda-lttp".into()),
+                Event::Game(GameEvent::Started("zelda-lttp".into())),
                 Event::Units(
                     ["clamshell-game-1-0", "clamshell-app-terminal-1-0", "clamshell-app-terminal-1-1", "clamshell-app-firefox-1-2"]
-                        .map(String::from)
-                        .to_vec(),
+                        .into_iter()
+                        .filter_map(Instance::parse)
+                        .collect(),
                 ),
                 Event::Windows(vec![
                     window(5, "retroarch", Some("clamshell-game-1-0.scope"), false),
@@ -762,8 +753,8 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
         ),
         (
             vec![
-                Event::Activate(Id::Tab(Tab::Wifi)),
-                Event::Wifi(clamshell_core::wifi::Wifi {
+                Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Wifi))),
+                Event::Reading(Reading::Wifi(clamshell_core::wifi::Wifi {
                     device: true,
                     enabled: true,
                     networks: [("home", 82, true, true, true), ("cafe-guest", 64, false, false, false), ("neighbours", 41, true, false, false), ("office", 30, true, true, false)]
@@ -778,7 +769,7 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
                         .to_vec(),
                     connecting: None,
                     error: None,
-                }),
+                })),
             ],
             Screen::Bottom,
             bottom,
@@ -787,8 +778,8 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
         (battery_demo(now), Screen::Bottom, bottom, "battery.png"),
         (
             vec![
-                Event::Activate(Id::Tab(Tab::Bluetooth)),
-                Event::Bluetooth(clamshell_core::bluetooth::Bluetooth {
+                Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Bluetooth))),
+                Event::Reading(Reading::Bluetooth(clamshell_core::bluetooth::Bluetooth {
                     adapter: true,
                     powered: true,
                     devices: [
@@ -807,7 +798,7 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
                     .to_vec(),
                     busy: None,
                     error: None,
-                }),
+                })),
             ],
             Screen::Bottom,
             bottom,
@@ -815,9 +806,9 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
         ),
         (
             vec![
-                Event::Activate(Id::Tab(Tab::Volume)),
-                Event::Status(clamshell_core::Status { volume: Some(64), brightness: Some(70), battery: Some(76), wifi: Some(80), ..clamshell_core::Status::default() }),
-                Event::Audio(clamshell_core::levels::Audio {
+                Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Volume))),
+                Event::Reading(Reading::Status(clamshell_core::Status { volume: Some(64), brightness: Some(70), battery: Some(76), wifi: Some(80), ..clamshell_core::Status::default() })),
+                Event::Reading(Reading::Audio(clamshell_core::levels::Audio {
                     outputs: vec![
                         clamshell_core::levels::Output { id: 50, name: "Speakers".into(), default: true },
                         clamshell_core::levels::Output { id: 51, name: "WH-1000XM4".into(), default: false },
@@ -825,7 +816,7 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
                     streams: [("Firefox", 80, false), ("Steam", 100, false), ("Spotify", 35, true)]
                         .map(|(app, volume, muted)| clamshell_core::levels::Stream { id: 90, app: app.into(), title: String::new(), volume, muted })
                         .to_vec(),
-                }),
+                })),
             ],
             Screen::Bottom,
             bottom,
@@ -833,10 +824,10 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
         ),
         (
             vec![
-                Event::Activate(Id::Tab(Tab::Brightness)),
-                Event::Backlights(vec!["dsi0-backlight".into(), "dsi1-backlight".into()]),
-                Event::SetLevel(clamshell_core::levels::Level::Backlight(1), 65),
-                Event::Up(Id::Level(clamshell_core::levels::Level::Backlight(1))),
+                Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Brightness))),
+                Event::Reading(Reading::Backlights(vec!["dsi0-backlight".into(), "dsi1-backlight".into()])),
+                Event::Level(LevelEvent::Set(clamshell_core::levels::Level::Backlight(1), 65)),
+                Event::Pointer(PointerEvent::Up(Id::Level(clamshell_core::levels::Level::Backlight(1)))),
             ],
             Screen::Bottom,
             bottom,
@@ -844,17 +835,17 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
         ),
         (
             vec![
-                Event::Activate(Id::Tab(Tab::Dock)),
-                Event::Down(Id::Control(clamshell_core::slider::Control::Volume)),
-                Event::SlideStart { control: clamshell_core::slider::Control::Volume, x: 560.0, width: 1232.0 },
-                Event::SlideTo { x: 700.0 },
+                Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Dock))),
+                Event::Pointer(PointerEvent::Down(Id::Control(clamshell_core::slider::Control::Volume))),
+                Event::Slide(Slide::Start { control: clamshell_core::slider::Control::Volume, x: 560.0, width: 1232.0 }),
+                Event::Slide(Slide::To { x: 700.0 }),
             ],
             Screen::Bottom,
             bottom,
             "slider.png",
         ),
         (
-            vec![Event::Up(Id::Control(clamshell_core::slider::Control::Volume)), Event::Activate(Id::Tab(Tab::Keyboard))],
+            vec![Event::Pointer(PointerEvent::Up(Id::Control(clamshell_core::slider::Control::Volume))), Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Keyboard)))],
             Screen::Bottom,
             bottom,
             "keyboard.png",
@@ -864,7 +855,7 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
             vec![
                 key(Key::Mod(Modifier::Fn), false),
                 key(Key::Mod(Modifier::Shift), false),
-                Event::Down(Id::Key(keyboard::find(Key::Mod(Modifier::Ctrl)).unwrap_or(KeyPos { row: 0, col: 0 }))),
+                Event::Pointer(PointerEvent::Down(Id::Key(keyboard::find(Key::Mod(Modifier::Ctrl)).unwrap_or(KeyPos { row: 0, col: 0 })))),
             ],
             Screen::Bottom,
             bottom,
@@ -872,7 +863,7 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
         ),
         (
             vec![
-                Event::Up(Id::Key(keyboard::find(Key::Mod(Modifier::Ctrl)).unwrap_or(KeyPos { row: 0, col: 0 }))),
+                Event::Pointer(PointerEvent::Up(Id::Key(keyboard::find(Key::Mod(Modifier::Ctrl)).unwrap_or(KeyPos { row: 0, col: 0 })))),
                 key(Key::Mod(Modifier::Shift), false),
                 key(Key::Caps, false),
             ],
@@ -880,13 +871,13 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
             bottom,
             "keyboard-caps.png",
         ),
-        (vec![Event::Activate(Id::Tab(Tab::Touchpad)), Event::Activate(Id::PadMouse)], Screen::Bottom, bottom, "touchpad.png"),
+        (vec![Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Touchpad))), Event::Pointer(PointerEvent::Activate(Id::PadMouse))], Screen::Bottom, bottom, "touchpad.png"),
         (demo_metrics(), Screen::Bottom, bottom, "sysinfo.png"),
-        (vec![Event::Activate(Id::Tab(Tab::Keyboard))], Screen::Bottom, bottom, "keyboard-back.png"),
+        (vec![Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Keyboard)))], Screen::Bottom, bottom, "keyboard-back.png"),
         (
             vec![
                 key(Key::Mod(Modifier::Shift), false),
-                Event::Down(Id::Key(keyboard::find(Key::Char('g')).unwrap_or(KeyPos { row: 0, col: 0 }))),
+                Event::Pointer(PointerEvent::Down(Id::Key(keyboard::find(Key::Char('g')).unwrap_or(KeyPos { row: 0, col: 0 })))),
             ],
             Screen::Bottom,
             bottom,
@@ -900,7 +891,7 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
         let path = dir.join(name);
         match clamshell_ui::snapshot(state, screen, size, 1, &path) {
             Ok(Some(rows)) => {
-                state.apply(Event::Rows(rows));
+                state.apply(Event::Shelf(ShelfEvent::Rows(rows)));
             }
             Ok(None) => {}
             Err(e) => {
@@ -927,17 +918,17 @@ fn battery_demo(now: u64) -> Vec<Event> {
         .collect();
     let spender = |group: Group, cpu: f32, gpu: f32| Spender { group, cpu, gpu };
     let spenders = vec![
-        spender(Group::Unit("clamshell-game-1760000000-0".into()), 0.31, 0.62),
+        spender(Group::Instance(Instance::Game { secs: 1_760_000_000, n: 0 }), 0.31, 0.62),
         spender(Group::Process("firefox".into()), 0.08, 0.03),
-        spender(Group::Unit("clamshell-app-terminal-1760000000-1".into()), 0.02, 0.0),
+        spender(Group::Instance(Instance::App { key: "terminal".into(), secs: 1_760_000_000, n: 1 }), 0.02, 0.0),
         spender(Group::System, 0.03, 0.0),
         spender(Group::Process("clamshell".into()), 0.01, 0.0),
     ];
     vec![
-        Event::Started("zelda-lttp".into()),
-        Event::Activate(Id::Tab(Tab::Battery)),
-        Event::Battery(Battery { history, spenders, has_history: true }),
-        Event::Status(Status { battery: Some(41), charging: false, wifi: Some(80), volume: Some(60), muted: false, brightness: Some(70) }),
+        Event::Game(GameEvent::Started("zelda-lttp".into())),
+        Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Battery))),
+        Event::Reading(Reading::Battery(Battery { history, spenders, has_history: true })),
+        Event::Reading(Reading::Status(Status { battery: Some(41), charging: false, wifi: Some(80), volume: Some(60), muted: false, brightness: Some(70) })),
     ]
 }
 
@@ -952,7 +943,7 @@ fn demo_metrics() -> Vec<Event> {
             for (k, c) in cores.iter_mut().take(8).enumerate() {
                 *c = wave(k as f32);
             }
-            Event::Metrics(Metrics {
+            Event::Reading(Reading::Metrics(Metrics {
                 cpu: Some(wave(0.0) * 0.6),
                 cores,
                 core_count: 8,
@@ -968,9 +959,9 @@ fn demo_metrics() -> Vec<Event> {
                 minutes_left: Some(190),
                 fps: Some(55.0 + 5.0 * wave(2.0)),
                 frame_ms: Some(16.9),
-            })
+            }))
         })
         .collect();
-    events.push(Event::Activate(Id::Tab(Tab::Sysinfo)));
+    events.push(Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Sysinfo))));
     events
 }

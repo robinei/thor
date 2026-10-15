@@ -18,7 +18,7 @@ use evdev::uinput::VirtualDevice;
 use evdev::{AbsInfo, AbsoluteAxisCode, AttributeSet, EventType, InputEvent, KeyCode, PropType, UinputAbsSetup};
 use clamshell_core::slider::{Control, SLIDE_AFTER, SLIDE_MOVE};
 use clamshell_core::touch::TouchLayout;
-use clamshell_core::{Event, Id};
+use clamshell_core::{Event, Id, PointerEvent, Reading, Slide, TouchpadProblem};
 
 use crate::Sink;
 
@@ -279,21 +279,27 @@ pub fn spawn(
             let mut session = Session::default();
             let result = run(&config, &layout, &commands, &sink, &mut session);
             // What the UI had under fingers ends (no tap): the targets let go, a slide ended.
-            let mut events: Vec<Event> = session.router.iter().flat_map(Router::ui_touches).map(|id| Event::Up(id.clone())).collect();
+            let mut events: Vec<Event> = session.router.iter().flat_map(Router::ui_touches).map(|id| PointerEvent::Up(id.clone()).into()).collect();
             if session.bar_press.is_some_and(|p| p.sliding) {
-                events.push(Event::SlideEnd);
+                events.push(Slide::End.into());
             }
             // Whether it worked, for the touchpad tab to say.
-            events.push(Event::TouchpadProblem(result.as_ref().err().map(|e| {
-                log::warn!("touchpad mode: {e}");
-                format!("No touchpad: {e}")
-            })));
+            events.push(Reading::TouchpadProblem(result.as_ref().err().map(problem)).into());
             if !events.into_iter().all(|e| sink.send(e)) {
                 return;
             }
             log::info!("touchpad mode off");
         }
     })
+}
+
+/// Why touchpad mode didn't work, for the touchpad tab to say.
+fn problem(e: &io::Error) -> TouchpadProblem {
+    log::warn!("touchpad mode: {e}");
+    match e.kind() {
+        io::ErrorKind::NotFound => TouchpadProblem::NoTouchscreen,
+        _ => TouchpadProblem::Failed(e.to_string()),
+    }
 }
 
 /// What a run of touchpad mode leaves to clean up after it.
@@ -330,7 +336,7 @@ fn run(config: &Config, layout: &Mutex<TouchLayout>, commands: &Receiver<Command
     device.grab()?;
     let flags = rustix::fs::fcntl_getfl(&device)?;
     rustix::fs::fcntl_setfl(&device, flags | rustix::fs::OFlags::NONBLOCK)?;
-    if !sink.send(Event::TouchpadProblem(None)) {
+    if !sink.send(Reading::TouchpadProblem(None).into()) {
         return Ok(());
     }
     let router = session.router.insert(Router::new(Axes { x: range(AbsoluteAxisCode::ABS_MT_POSITION_X), y: range(AbsoluteAxisCode::ABS_MT_POSITION_Y) }));
@@ -385,7 +391,7 @@ fn run(config: &Config, layout: &Mutex<TouchLayout>, commands: &Receiver<Command
                 Out::Forward { kind, code, value } => batch.push(InputEvent::new(kind, code, value)),
                 Out::Tap { id, down: true, x } => {
                     log::debug!("touchpad mode: tap on {id:?}");
-                    if !(sink.send(Event::HideFocus) && sink.send(Event::Down(id.clone()))) {
+                    if !(sink.send(PointerEvent::HideFocus.into()) && sink.send(PointerEvent::Down(id.clone()).into())) {
                         return Ok(());
                     }
                     if let (Id::Control(control), Some(at)) = (id, layout_x) {
@@ -400,9 +406,9 @@ fn run(config: &Config, layout: &Mutex<TouchLayout>, commands: &Receiver<Command
                 Out::Tap { id, down: false, .. } => {
                     let tap = bar_press.take().is_none_or(|p| p.tap(now));
                     if tap {
-                        events.push(Event::Activate(id.clone()));
+                        events.push(PointerEvent::Activate(id.clone()).into());
                     }
-                    events.push(Event::Up(id));
+                    events.push(PointerEvent::Up(id).into());
                 }
             }
         }
@@ -439,7 +445,7 @@ impl BarPress {
     fn start(&mut self, now: Instant, force: bool, width: f32, out: &mut Vec<Event>) {
         if !self.sliding && (force || now.duration_since(self.at) >= SLIDE_AFTER) {
             self.sliding = true;
-            out.push(Event::SlideStart { control: self.control, x: self.x, width });
+            out.push(Slide::Start { control: self.control, x: self.x, width }.into());
         }
     }
 
@@ -448,7 +454,7 @@ impl BarPress {
         let was = self.sliding;
         self.start(now, (x - self.down_x).abs() >= SLIDE_MOVE, width, out);
         if was {
-            out.push(Event::SlideTo { x });
+            out.push(Slide::To { x }.into());
         }
     }
 
@@ -524,7 +530,7 @@ mod tests {
         press.start(ms(100), false, 620.0, &mut out);
         assert!(out.is_empty(), "not yet");
         press.start(ms(200), false, 620.0, &mut out);
-        assert_eq!(out, vec![Event::SlideStart { control: Control::Volume, x: 280.0, width: 620.0 }]);
+        assert_eq!(out, vec![Slide::Start { control: Control::Volume, x: 280.0, width: 620.0 }.into()]);
         assert!(!press.tap(ms(250)));
         // Slid sideways at once: the slider comes up where the finger is, and follows it.
         out.clear();
@@ -533,7 +539,7 @@ mod tests {
         assert!(out.is_empty(), "a small wobble is still a tap");
         press.moved(345.0, ms(40), 620.0, &mut out);
         press.moved(360.0, ms(60), 620.0, &mut out);
-        assert_eq!(out, vec![Event::SlideStart { control: Control::Brightness, x: 345.0, width: 620.0 }, Event::SlideTo { x: 360.0 }]);
+        assert_eq!(out, vec![Event::Slide(Slide::Start { control: Control::Brightness, x: 345.0, width: 620.0 }), Event::Slide(Slide::To { x: 360.0 })]);
         assert!(!press.tap(ms(80)), "a quick slide isn't a tap either");
     }
     use clamshell_core::Tab;

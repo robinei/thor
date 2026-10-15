@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime};
 
-use clamshell_core::Event;
+use clamshell_core::{Event, Reading};
 
 use crate::Sink;
 
@@ -79,7 +79,7 @@ pub fn spawn(dir: PathBuf, sink: impl Sink) -> std::io::Result<JoinHandle<()>> {
             };
             if reading != sent {
                 log::debug!("frames: {reading:?}");
-                if !sink.send(Event::Frames(reading)) {
+                if !sink.send(Event::Reading(Reading::Frames { fps: reading.map(|r| r.0), frame_ms: reading.map(|r| r.1) })) {
                     return;
                 }
                 sent = reading;

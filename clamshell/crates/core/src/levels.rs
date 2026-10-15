@@ -2,13 +2,20 @@
 //! and mute (PipeWire's streams); the screens' brightness and each screen's share of it. A level row is
 //! set by where the finger is on it (and follows the finger), or stepped with the pad's left and right.
 //!
-//! Brightness is two levels multiplied: the global one (the bar's) and each screen's factor, so the bar
+//! Brightness is two levels multiplied: the global one (the bar's) and each screen's share, so the bar
 //! dims and brightens the screens together and keeps them as they are relative to each other. Both are
-//! ours (the kernel only knows each panel's result): saved, and applied at start.
+//! ours (the kernel only knows each panel's result): saved, and applied at start. Until ClamShell sets a
+//! level, the first backlight's reading stands for it.
+//!
+//! The volume and mute are the system's: readings come in, and the finger's value wins over them while
+//! it is on the level (a reading may predate it), see [`Held`].
 //!
 //! The bar's sliders set the same levels as the tabs' rows (`Level::Volume`, `Level::Brightness`).
 
-use crate::{Effect, State, Status};
+use std::fmt::Write;
+
+use crate::effect::Effect;
+use crate::slider::{Control, Slider};
 
 /// A level row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -21,6 +28,15 @@ pub enum Level {
     Stream(u16),
     /// A backlight, by position.
     Backlight(u16),
+}
+
+impl From<Control> for Level {
+    fn from(control: Control) -> Level {
+        match control {
+            Control::Volume => Level::Volume,
+            Control::Brightness => Level::Brightness,
+        }
+    }
 }
 
 /// An output (a PipeWire sink).
@@ -51,21 +67,19 @@ pub struct Audio {
     pub streams: Vec<Stream>,
 }
 
+/// A backlight's share of the brightness (0-100), by its name in /sys/class/backlight.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Share {
+    pub backlight: String,
+    pub share: u8,
+}
+
 /// The screens' brightness: the global level (0-100; unknown until read or set), and each backlight's
-/// factor (0-100, by its name in /sys/class/backlight; 100 when not set).
+/// share (100 when not set).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Brightness {
     pub level: Option<u8>,
-    pub factors: Vec<(String, u8)>,
-}
-
-impl From<crate::slider::Control> for Level {
-    fn from(control: crate::slider::Control) -> Level {
-        match control {
-            crate::slider::Control::Volume => Level::Volume,
-            crate::slider::Control::Brightness => Level::Brightness,
-        }
-    }
+    pub shares: Vec<Share>,
 }
 
 impl Brightness {
@@ -73,10 +87,10 @@ impl Brightness {
     pub fn text(&self) -> String {
         let mut text = String::new();
         if let Some(level) = self.level {
-            text.push_str(&format!("level\t{level}\n"));
+            let _ = writeln!(text, "level\t{level}");
         }
-        for (name, factor) in &self.factors {
-            text.push_str(&format!("factor\t{name}\t{factor}\n"));
+        for s in &self.shares {
+            let _ = writeln!(text, "factor\t{}\t{}", s.backlight, s.share);
         }
         text
     }
@@ -90,7 +104,7 @@ impl Brightness {
                 ["level", n] => b.level = n.parse::<u8>().ok().map(|l| l.min(100)),
                 ["factor", name, n] => {
                     if let Ok(f) = n.parse::<u8>() {
-                        b.set_factor(name, f.min(100));
+                        b.set_share(name, f.min(100));
                     }
                 }
                 _ => {}
@@ -99,79 +113,221 @@ impl Brightness {
         b
     }
 
-    pub fn factor(&self, name: &str) -> u8 {
-        self.factors.iter().find(|(n, _)| n == name).map_or(100, |(_, f)| *f)
+    pub fn share(&self, backlight: &str) -> u8 {
+        self.shares.iter().find(|s| s.backlight == backlight).map_or(100, |s| s.share)
     }
 
-    fn set_factor(&mut self, name: &str, factor: u8) {
-        match self.factors.iter_mut().find(|(n, _)| n == name) {
-            Some(f) => f.1 = factor,
-            None => self.factors.push((name.to_owned(), factor)),
+    fn set_share(&mut self, backlight: &str, share: u8) {
+        match self.shares.iter_mut().find(|s| s.backlight == backlight) {
+            Some(s) => s.share = share,
+            None => self.shares.push(Share { backlight: backlight.to_owned(), share }),
         }
     }
 }
 
-/// What the audio side is asked to do.
+/// What the sound side is asked to do.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Command {
-    /// The volume tab opened (read the outputs and streams) or closed.
-    Watch(bool),
-    /// Sound to this output.
-    Output(u32),
+pub enum Sound {
+    /// The output volume (0-100), and its mute.
+    Volume(u8),
+    Mute(bool),
+    /// An app's stream (by PipeWire's id): its volume, its mute.
     StreamVolume(u32, u8),
     StreamMute(u32, bool),
+    /// Sound to this output.
+    Output(u32),
+}
+
+/// A level the system reports and the finger sets: the latest reading, and while the finger is on the
+/// level, the finger's value, which is shown instead (a reading may predate it). When the finger lifts,
+/// its value stands until the next reading.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Held<T> {
+    read: T,
+    set: Option<T>,
+}
+
+impl<T: Copy> Held<T> {
+    /// The value shown.
+    pub fn value(&self) -> T {
+        self.set.unwrap_or(self.read)
+    }
+
+    fn reading(&mut self, value: T) {
+        self.read = value;
+    }
+
+    /// The finger's value, kept over readings until released.
+    fn hold(&mut self, value: T) {
+        self.set = Some(value);
+    }
+
+    /// A value ClamShell set: held if the finger is on it, else standing until the next reading.
+    fn put(&mut self, value: T) {
+        match &mut self.set {
+            Some(set) => *set = value,
+            None => self.read = value,
+        }
+    }
+
+    fn release(&mut self) {
+        if let Some(value) = self.set.take() {
+            self.read = value;
+        }
+    }
 }
 
 /// How far the pad's left and right step a level.
 const STEP: i16 = 5;
 
-impl State {
+#[derive(Debug, Clone, Default)]
+pub struct Levels {
+    volume: Held<Option<u8>>,
+    muted: Held<bool>,
+    audio: Audio,
+    /// The backlights' names (read while the brightness tab is open).
+    backlights: Vec<String>,
+    brightness: Brightness,
+    /// The first backlight's level as last read: the brightness until ClamShell sets one.
+    read_brightness: Option<u8>,
+    /// Volume or brightness being slid in the bar, if any.
+    pub(crate) slider: Option<Slider>,
+    /// The level row a finger is on.
+    holding: Option<Level>,
+}
+
+impl Levels {
+    pub(crate) fn new(brightness: Brightness) -> Levels {
+        Levels { brightness, ..Levels::default() }
+    }
+
+    /// The output volume, if known.
+    pub fn volume(&self) -> Option<u8> {
+        self.volume.value()
+    }
+
+    pub fn muted(&self) -> bool {
+        self.muted.value()
+    }
+
+    pub fn audio(&self) -> &Audio {
+        &self.audio
+    }
+
+    pub fn backlights(&self) -> &[String] {
+        &self.backlights
+    }
+
+    pub fn brightness(&self) -> &Brightness {
+        &self.brightness
+    }
+
+    pub fn slider(&self) -> Option<&Slider> {
+        self.slider.as_ref()
+    }
+
     /// A level row's value now.
-    pub fn level_of(&self, level: Level) -> Option<u8> {
+    pub fn level(&self, level: Level) -> Option<u8> {
         match level {
-            Level::Volume => self.status.volume,
-            Level::Brightness => self.brightness.level.or(self.status.brightness),
+            Level::Volume => self.volume(),
+            Level::Brightness => self.brightness.level.or(self.read_brightness),
             Level::Stream(i) => self.audio.streams.get(usize::from(i)).map(|s| s.volume),
-            Level::Backlight(i) => self.backlights.get(usize::from(i)).map(|name| self.brightness.factor(name)),
+            Level::Backlight(i) => self.backlights.get(usize::from(i)).map(|name| self.brightness.share(name)),
         }
     }
 
-    /// A level row set to `value` (the finger on it, or a step).
-    pub(crate) fn set_level(&mut self, level: Level, value: u8) -> Vec<Effect> {
+    /// The level a bar control shows now: the slider's while sliding, else the level's.
+    pub fn control(&self, control: Control) -> Option<u8> {
+        match self.slider {
+            Some(s) if s.control == control => Some(s.value),
+            _ => self.level(Level::from(control)),
+        }
+    }
+
+    /// The screens' brightness as it should be, once the level is known (to apply at start too).
+    pub fn brightness_effect(&self) -> Option<Effect> {
+        let level = self.brightness.level?;
+        Some(Effect::Brightness { level, shares: self.brightness.shares.clone() })
+    }
+
+    /// A status reading of the volume, mute and brightness.
+    pub(crate) fn read(&mut self, volume: Option<u8>, muted: bool, brightness: Option<u8>) {
+        self.volume.reading(volume);
+        self.muted.reading(muted);
+        self.read_brightness = brightness;
+    }
+
+    /// New readings of the outputs and streams: a stream the finger is on keeps the finger's value.
+    /// Whether anything shown changed.
+    pub(crate) fn read_audio(&mut self, mut audio: Audio) -> bool {
+        if let Some(Level::Stream(i)) = self.holding
+            && let (Some(mine), Some(read)) = (self.audio.streams.get(usize::from(i)), audio.streams.get_mut(usize::from(i)))
+            && mine.id == read.id
+        {
+            read.volume = mine.volume;
+            read.muted = mine.muted;
+        }
+        crate::replace(&mut self.audio, audio)
+    }
+
+    pub(crate) fn read_backlights(&mut self, backlights: Vec<String>) -> bool {
+        crate::replace(&mut self.backlights, backlights)
+    }
+
+    /// The finger is on `level`: what it sets is held over readings until it lifts.
+    fn hold(&mut self, level: Level) {
+        if self.holding != Some(level) {
+            self.release();
+        }
+        self.holding = Some(level);
+    }
+
+    /// The finger lifted: what it set stands until the next reading.
+    pub(crate) fn release(&mut self) {
+        self.holding = None;
+        self.volume.release();
+        self.muted.release();
+    }
+
+    /// A level row set to `value` by the finger on it.
+    pub(crate) fn set(&mut self, level: Level, value: u8) -> Vec<Effect> {
         let value = value.min(100);
-        if self.level_of(level) == Some(value) {
+        if self.level(level) == Some(value) {
             return vec![];
         }
-        self.dragging = Some(level);
+        self.hold(level);
         match level {
             Level::Volume => {
-                self.status.volume = Some(value);
-                let mut effects = vec![];
+                self.volume.hold(Some(value));
                 // Turning it up or down unmutes.
-                if self.status.muted {
-                    self.status.muted = false;
-                    effects.push(Effect::SetMute(false));
+                let was_muted = self.muted();
+                self.muted.hold(false);
+                let mut effects = vec![];
+                if was_muted {
+                    effects.push(Effect::Sound(Sound::Mute(false)));
                 }
-                effects.push(Effect::SetVolume(value));
+                effects.push(Effect::Sound(Sound::Volume(value)));
                 effects
             }
             Level::Stream(i) => match self.audio.streams.get_mut(usize::from(i)) {
                 Some(s) => {
                     s.volume = value;
                     s.muted = false;
-                    vec![Effect::Audio(Command::StreamVolume(s.id, value))]
+                    vec![Effect::Sound(Sound::StreamVolume(s.id, value))]
                 }
                 None => vec![],
             },
-            Level::Brightness => self.set_brightness(value),
+            Level::Brightness => {
+                self.brightness.level = Some(value);
+                self.brightness_effect().into_iter().collect()
+            }
             Level::Backlight(i) => match self.backlights.get(usize::from(i)).cloned() {
                 Some(name) => {
-                    self.brightness.set_factor(&name, value);
-                    // The level as read, until ClamShell sets one (all factors were 100 then).
+                    self.brightness.set_share(&name, value);
+                    // The level as read, until ClamShell sets one (all shares were 100 then).
                     if self.brightness.level.is_none() {
-                        self.brightness.level = self.status.brightness;
+                        self.brightness.level = self.read_brightness;
                     }
-                    self.brightness_dirty = Some(self.unix_secs);
                     self.brightness_effect().into_iter().collect()
                 }
                 None => vec![],
@@ -179,43 +335,31 @@ impl State {
         }
     }
 
-    /// The global brightness to `value` (the bar's slider, the tab's first row).
-    pub(crate) fn set_brightness(&mut self, value: u8) -> Vec<Effect> {
-        self.brightness.level = Some(value.min(100));
-        self.brightness_dirty = Some(self.unix_secs);
-        self.brightness_effect().into_iter().collect()
-    }
-
-    /// The screens' brightness as it should be, once the level is known (to apply at start too).
-    pub fn brightness_effect(&self) -> Option<Effect> {
-        let level = self.brightness.level?;
-        Some(Effect::Brightness { level, factors: self.brightness.factors.clone() })
-    }
-
-    /// The pad's left or right on a level row.
-    pub(crate) fn step_level(&mut self, level: Level, direction: i16) -> Vec<Effect> {
-        let Some(now) = self.level_of(level) else {
+    /// The pad's left or right on a level row: a step, as if the finger set it and lifted.
+    pub(crate) fn step(&mut self, level: Level, direction: i16) -> Vec<Effect> {
+        let Some(now) = self.level(level) else {
             return vec![];
         };
         let value = (i16::from(now) + direction.signum() * STEP).clamp(0, 100) as u8;
-        let effects = self.set_level(level, value);
-        self.dragging = None;
+        let effects = self.set(level, value);
+        self.release();
         effects
     }
 
     pub(crate) fn toggle_mute(&mut self) -> Vec<Effect> {
-        if self.status.volume.is_none() {
+        if self.volume().is_none() {
             return vec![];
         }
-        self.status.muted = !self.status.muted;
-        vec![Effect::SetMute(self.status.muted)]
+        let muted = !self.muted();
+        self.muted.put(muted);
+        vec![Effect::Sound(Sound::Mute(muted))]
     }
 
     pub(crate) fn toggle_stream_mute(&mut self, i: usize) -> Vec<Effect> {
         match self.audio.streams.get_mut(i) {
             Some(s) => {
                 s.muted = !s.muted;
-                vec![Effect::Audio(Command::StreamMute(s.id, s.muted))]
+                vec![Effect::Sound(Sound::StreamMute(s.id, s.muted))]
             }
             None => vec![],
         }
@@ -228,45 +372,21 @@ impl State {
         for o in &mut self.audio.outputs {
             o.default = o.id == id;
         }
-        vec![Effect::Audio(Command::Output(id))]
+        vec![Effect::Sound(Sound::Output(id))]
     }
 
-    /// New readings: what the finger is setting keeps the finger's value until it lifts (a reading may
-    /// predate it).
-    pub(crate) fn set_audio(&mut self, mut audio: Audio) -> bool {
-        if let Some(Level::Stream(i)) = self.dragging
-            && let (Some(mine), Some(read)) = (self.audio.streams.get(usize::from(i)), audio.streams.get_mut(usize::from(i)))
-            && mine.id == read.id
-        {
-            read.volume = mine.volume;
-            read.muted = mine.muted;
-        }
-        let changed = audio != self.audio;
-        self.audio = audio;
-        changed
-    }
-
-    pub(crate) fn set_backlights(&mut self, backlights: Vec<String>) -> bool {
-        let changed = backlights != self.backlights;
-        self.backlights = backlights;
-        changed
-    }
-
-    /// A status reading, with the output volume kept while the finger sets it.
-    pub(crate) fn keep_dragged(&self, mut status: Status) -> Status {
-        if self.dragging == Some(Level::Volume) {
-            status.volume = self.status.volume;
-            status.muted = self.status.muted;
-        }
-        status
+    /// The tab they belong to closed: no level is being set, no slider is up.
+    pub(crate) fn leave(&mut self) {
+        self.release();
+        self.slider = None;
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::state;
-    use crate::{Event, Id, Tab};
+    use crate::testkit::*;
+    use crate::*;
 
     fn audio() -> Audio {
         Audio {
@@ -275,60 +395,75 @@ mod tests {
         }
     }
 
-    #[test]
-    fn the_volume_tab_watches_and_sets_levels() {
-        let mut s = state();
-        assert_eq!(s.apply(Event::Activate(Id::Tab(Tab::Volume))).1, vec![Effect::Audio(Command::Watch(true))]);
-        s.apply(Event::Audio(audio()));
-        s.apply(Event::Status(Status { volume: Some(40), muted: true, ..Status::default() }));
-        assert_eq!(s.apply(Event::SetLevel(Level::Volume, 70)).1, vec![Effect::SetMute(false), Effect::SetVolume(70)]);
-        assert_eq!(s.apply(Event::SetLevel(Level::Volume, 70)).1, vec![], "no change, nothing sent");
-        // A reading from before the finger moved doesn't jump the level back.
-        s.apply(Event::Status(Status { volume: Some(40), ..Status::default() }));
-        assert_eq!(s.status.volume, Some(70));
-        s.apply(Event::Up(Id::Level(Level::Volume)));
-        s.apply(Event::Status(Status { volume: Some(71), ..Status::default() }));
-        assert_eq!(s.status.volume, Some(71), "after the finger lifts, the system's");
-        assert_eq!(s.apply(Event::SetLevel(Level::Stream(0), 20)).1, vec![Effect::Audio(Command::StreamVolume(80, 20))]);
-        s.apply(Event::Audio(audio()));
-        assert_eq!(s.level_of(Level::Stream(0)), Some(20), "kept while dragged");
-        assert_eq!(s.apply(Event::Activate(Id::StreamMute(0))).1, vec![Effect::Audio(Command::StreamMute(80, true))]);
-        assert_eq!(s.apply(Event::Activate(Id::Output(1))).1, vec![Effect::Audio(Command::Output(51))]);
-        assert_eq!(s.apply(Event::Activate(Id::Output(1))).1, vec![], "already there");
-        assert_eq!(s.apply(Event::Activate(Id::Tab(Tab::Brightness))).1, vec![Effect::Audio(Command::Watch(false)), Effect::WatchBacklights(true)]);
+    fn set(s: &mut State, level: Level, value: u8) -> Vec<Effect> {
+        s.apply(LevelEvent::Set(level, value).into()).1
     }
 
     #[test]
-    fn brightness_is_the_level_times_each_screens_factor() {
+    fn the_volume_tab_watches_and_sets_levels() {
         let mut s = state();
-        // The level read from the first panel until ClamShell sets one; factors 100 until set.
-        s.apply(Event::Status(Status { brightness: Some(60), ..Status::default() }));
-        assert_eq!(s.level_of(Level::Brightness), Some(60));
-        assert_eq!(s.brightness_effect(), None, "nothing to apply before a level is set");
-        s.apply(Event::Backlights(vec!["top".into(), "bottom".into()]));
-        assert_eq!(s.level_of(Level::Backlight(1)), Some(100));
-        let set = |level, factors: &[(&str, u8)]| vec![Effect::Brightness { level, factors: factors.iter().map(|(n, f)| ((*n).to_owned(), *f)).collect() }];
-        assert_eq!(s.apply(Event::SetLevel(Level::Backlight(1), 70)).1, set(60, &[("bottom", 70)]));
+        assert_eq!(tap(&mut s, Id::Tab(Tab::Volume)), vec![Effect::Watch(Watch::Audio, true)]);
+        read(&mut s, Reading::Audio(audio()));
+        read(&mut s, Reading::Status(Status { volume: Some(40), muted: true, ..Status::default() }));
+        assert_eq!(set(&mut s, Level::Volume, 70), vec![Effect::Sound(Sound::Mute(false)), Effect::Sound(Sound::Volume(70))]);
+        assert_eq!(set(&mut s, Level::Volume, 70), vec![], "no change, nothing sent");
+        // A reading from before the finger moved doesn't jump the level back.
+        read(&mut s, Reading::Status(Status { volume: Some(40), ..Status::default() }));
+        assert_eq!(s.levels().volume(), Some(70));
+        s.apply(PointerEvent::Up(Id::Level(Level::Volume)).into());
+        read(&mut s, Reading::Status(Status { volume: Some(71), ..Status::default() }));
+        assert_eq!(s.levels().volume(), Some(71), "after the finger lifts, the system's");
+        assert_eq!(set(&mut s, Level::Stream(0), 20), vec![Effect::Sound(Sound::StreamVolume(80, 20))]);
+        read(&mut s, Reading::Audio(audio()));
+        assert_eq!(s.levels().level(Level::Stream(0)), Some(20), "kept while held");
+        assert_eq!(tap(&mut s, Id::Audio(AudioId::StreamMute(0))), vec![Effect::Sound(Sound::StreamMute(80, true))]);
+        assert_eq!(tap(&mut s, Id::Audio(AudioId::Output(1))), vec![Effect::Sound(Sound::Output(51))]);
+        assert_eq!(tap(&mut s, Id::Audio(AudioId::Output(1))), vec![], "already there");
+        assert_eq!(tap(&mut s, Id::Tab(Tab::Brightness)), vec![Effect::Watch(Watch::Audio, false), Effect::Watch(Watch::Backlights, true)]);
+    }
+
+    #[test]
+    fn leaving_the_tab_mid_drag_lets_readings_in_again() {
+        let mut s = state();
+        read(&mut s, Reading::Status(Status { volume: Some(40), ..Status::default() }));
+        tap(&mut s, Id::Tab(Tab::Volume));
+        set(&mut s, Level::Volume, 60);
+        tap(&mut s, Id::Tab(Tab::Dock));
+        read(&mut s, Reading::Status(Status { volume: Some(45), ..Status::default() }));
+        assert_eq!(s.levels().volume(), Some(45));
+    }
+
+    #[test]
+    fn brightness_is_the_level_times_each_screens_share() {
+        let mut s = state();
+        // The level read from the first panel until ClamShell sets one; shares 100 until set.
+        read(&mut s, Reading::Status(Status { brightness: Some(60), ..Status::default() }));
+        assert_eq!(s.levels().level(Level::Brightness), Some(60));
+        assert_eq!(s.levels().brightness_effect(), None, "nothing to apply before a level is set");
+        read(&mut s, Reading::Backlights(vec!["top".into(), "bottom".into()]));
+        assert_eq!(s.levels().level(Level::Backlight(1)), Some(100));
+        let share = |backlight: &str, share| Share { backlight: backlight.into(), share };
+        assert_eq!(set(&mut s, Level::Backlight(1), 70), vec![Effect::Brightness { level: 60, shares: vec![share("bottom", 70)] }]);
         // The bar keeps the screens as they are to each other.
-        s.apply(Event::SlideStart { control: crate::slider::Control::Brightness, x: 300.0, width: 620.0 });
-        let fx = s.apply(Event::SlideTo { x: 360.0 }).1;
-        assert!(matches!(fx.as_slice(), [Effect::Brightness { level, factors }] if *level > 60 && factors == &[("bottom".to_owned(), 70)]), "{fx:?}");
-        s.apply(Event::SlideEnd);
-        assert_eq!(s.apply(Event::LevelStep(Level::Brightness, -1)).1.len(), 1);
+        s.apply(Slide::Start { control: Control::Brightness, x: 300.0, width: 620.0 }.into());
+        let fx = s.apply(Slide::To { x: 360.0 }.into()).1;
+        assert!(matches!(fx.as_slice(), [Effect::Brightness { level, shares }] if *level > 60 && *shares == [share("bottom", 70)]), "{fx:?}");
+        s.apply(Slide::End.into());
+        assert_eq!(s.apply(LevelEvent::Step(Level::Brightness, -1).into()).1.len(), 1);
         // Saved a moment later; back after a restart.
         let saved = s.apply(Event::Tick { unix_secs: 10 }).1;
         let text = saved.iter().find_map(|e| match e {
-            Effect::SaveBrightness(text) => Some(text.clone()),
+            Effect::Save(Save::Brightness(text)) => Some(text.clone()),
             _ => None,
         });
-        assert_eq!(text.map(|t| Brightness::from_text(&t)), Some(s.brightness.clone()));
+        assert_eq!(text.map(|t| Brightness::from_text(&t)).as_ref(), Some(s.levels().brightness()));
     }
 
     #[test]
     fn the_pad_steps_levels() {
         let mut s = state();
-        s.apply(Event::Status(Status { volume: Some(98), ..Status::default() }));
-        assert_eq!(s.apply(Event::LevelStep(Level::Volume, 1)).1, vec![Effect::SetVolume(100)], "up to 100");
-        assert_eq!(s.apply(Event::LevelStep(Level::Volume, 1)).1, vec![], "and no further");
+        read(&mut s, Reading::Status(Status { volume: Some(98), ..Status::default() }));
+        assert_eq!(s.apply(LevelEvent::Step(Level::Volume, 1).into()).1, vec![Effect::Sound(Sound::Volume(100))], "up to 100");
+        assert_eq!(s.apply(LevelEvent::Step(Level::Volume, 1).into()).1, vec![], "and no further");
     }
 }

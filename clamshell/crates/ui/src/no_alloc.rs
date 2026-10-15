@@ -5,7 +5,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
 use clamshell_core::keyboard::{self, Key, Modifier};
-use clamshell_core::{Event, Id, Tab, State};
+use clamshell_core::{DockId, EditorId, Event, GameEvent, Id, Instance, PointerEvent, Reading, SettingsId, Slide, Init, State, Tab, WifiId};
 use tiny_skia::Pixmap;
 
 use crate::draw::{Canvas, DrawCache};
@@ -47,12 +47,12 @@ fn window(id: i64, app_id: &str, unit: Option<&str>, focused: bool) -> clamshell
 }
 
 fn key(k: Key) -> Event {
-    Event::Activate(Id::Key(keyboard::find(k).expect("key on the layout")))
+    Event::Pointer(PointerEvent::Activate(Id::Key(keyboard::find(k).expect("key on the layout"))))
 }
 
 #[test]
 fn warm_frames_do_not_allocate() {
-    let mut state = State::new(clamshell_library::demo_library());
+    let mut state = State::new(Init { library: clamshell_library::demo_library(), ..Init::default() });
     state.apply(Event::Tick { unix_secs: 1_700_000_000 });
     let mut cache = DrawCache::load();
     let mut scratch = Scratch::default();
@@ -63,17 +63,17 @@ fn warm_frames_do_not_allocate() {
 
     let cases: Vec<(&str, Vec<Event>)> = vec![
         ("sysinfo", vec![]),
-        ("settings", vec![Event::Activate(Id::Tab(Tab::Settings))]),
-        ("settings, a changed tile", vec![Event::Activate(Id::Tile(clamshell_core::settings::Setting::FpsCap))]),
-        ("settings, all games", vec![Event::Activate(Id::Scope(clamshell_core::Scope::Global))]),
-        ("environment editor", vec![Event::Activate(Id::Env), key(Key::Char('a'))]),
-        ("environment saved", vec![key(Key::Char('=')), key(Key::Char('1')), Event::Activate(Id::EditorSave)]),
-        ("dock, an app running", vec![Event::Activate(Id::Tab(Tab::Dock)), Event::Activate(Id::App(1))]),
+        ("settings", vec![Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Settings)))]),
+        ("settings, a changed tile", vec![Event::Pointer(PointerEvent::Activate(Id::Settings(SettingsId::Tile(clamshell_core::settings::Setting::FpsCap))))]),
+        ("settings, all games", vec![Event::Pointer(PointerEvent::Activate(Id::Settings(SettingsId::Scope(clamshell_core::Scope::Global))))]),
+        ("environment editor", vec![Event::Pointer(PointerEvent::Activate(Id::Settings(SettingsId::Env))), key(Key::Char('a'))]),
+        ("environment saved", vec![key(Key::Char('=')), key(Key::Char('1')), Event::Pointer(PointerEvent::Activate(Id::Editor(EditorId::Save)))]),
+        ("dock, an app running", vec![Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Dock))), Event::Pointer(PointerEvent::Activate(Id::Dock(DockId::App(1))))]),
         (
             "dock, a game and windows",
             vec![
-                Event::Started("zelda-lttp".into()),
-                Event::Units(vec!["clamshell-game-1-0".into(), "clamshell-app-terminal-1-0".into()]),
+                Event::Game(GameEvent::Started("zelda-lttp".into())),
+                Event::Units(["clamshell-game-1-0", "clamshell-app-terminal-1-0"].into_iter().filter_map(Instance::parse).collect()),
                 Event::Windows(vec![
                     window(5, "retroarch", Some("clamshell-game-1-0.scope"), false),
                     window(7, "foot", Some("clamshell-app-terminal-1-0.scope"), true),
@@ -84,9 +84,9 @@ fn warm_frames_do_not_allocate() {
         (
             "wifi",
             vec![
-                Event::Status(clamshell_core::Status { volume: Some(40), brightness: Some(70), wifi: Some(60), ..Default::default() }),
-                Event::Activate(Id::Tab(Tab::Wifi)),
-                Event::Wifi(clamshell_core::wifi::Wifi {
+                Event::Reading(Reading::Status(clamshell_core::Status { volume: Some(40), brightness: Some(70), wifi: Some(60), ..Default::default() })),
+                Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Wifi))),
+                Event::Reading(Reading::Wifi(clamshell_core::wifi::Wifi {
                     device: true,
                     enabled: true,
                     networks: vec![
@@ -95,26 +95,26 @@ fn warm_frames_do_not_allocate() {
                     ],
                     connecting: Some("cafe".into()),
                     error: None,
-                }),
+                })),
             ],
         ),
-        ("wifi password", vec![Event::Activate(Id::Network(1)), Event::Activate(Id::Network(0))]),
+        ("wifi password", vec![Event::Pointer(PointerEvent::Activate(Id::Wifi(WifiId::Network(1)))), Event::Pointer(PointerEvent::Activate(Id::Wifi(WifiId::Network(0))))]),
         (
             "sliding",
             vec![
-                Event::Activate(Id::EditorCancel),
-                Event::Down(Id::Control(clamshell_core::slider::Control::Volume)),
-                Event::SlideStart { control: clamshell_core::slider::Control::Volume, x: 285.0, width: 620.0 },
-                Event::SlideTo { x: 320.0 },
+                Event::Pointer(PointerEvent::Activate(Id::Editor(EditorId::Cancel))),
+                Event::Pointer(PointerEvent::Down(Id::Control(clamshell_core::slider::Control::Volume))),
+                Event::Slide(Slide::Start { control: clamshell_core::slider::Control::Volume, x: 285.0, width: 620.0 }),
+                Event::Slide(Slide::To { x: 320.0 }),
             ],
         ),
         (
             "battery",
             vec![
-                Event::Up(Id::Control(clamshell_core::slider::Control::Volume)),
-                Event::Status(clamshell_core::Status { battery: Some(41), ..Default::default() }),
-                Event::Activate(Id::Tab(Tab::Battery)),
-                Event::Battery(clamshell_core::battery::Battery {
+                Event::Pointer(PointerEvent::Up(Id::Control(clamshell_core::slider::Control::Volume))),
+                Event::Reading(Reading::Status(clamshell_core::Status { battery: Some(41), ..Default::default() })),
+                Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Battery))),
+                Event::Reading(Reading::Battery(clamshell_core::battery::Battery {
                     history: (0..50u64)
                         .map(|i| clamshell_core::battery::Charge { at: 1_699_950_000 + i * 900, level: (90 - i) as u8, charging: i > 40 })
                         .collect(),
@@ -123,14 +123,14 @@ fn warm_frames_do_not_allocate() {
                         clamshell_core::battery::Spender { group: clamshell_core::battery::Group::System, cpu: 0.05, gpu: 0.0 },
                     ],
                     has_history: true,
-                }),
+                })),
             ],
         ),
         (
             "bluetooth",
             vec![
-                Event::Activate(Id::Tab(Tab::Bluetooth)),
-                Event::Bluetooth(clamshell_core::bluetooth::Bluetooth {
+                Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Bluetooth))),
+                Event::Reading(Reading::Bluetooth(clamshell_core::bluetooth::Bluetooth {
                     adapter: true,
                     powered: true,
                     devices: vec![clamshell_core::bluetooth::Device {
@@ -142,28 +142,28 @@ fn warm_frames_do_not_allocate() {
                     }],
                     busy: Some("00:11".into()),
                     error: None,
-                }),
+                })),
             ],
         ),
         (
             "volume",
             vec![
-                Event::Activate(Id::Tab(Tab::Volume)),
-                Event::Audio(clamshell_core::levels::Audio {
+                Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Volume))),
+                Event::Reading(Reading::Audio(clamshell_core::levels::Audio {
                     outputs: vec![clamshell_core::levels::Output { id: 1, name: "Speakers".into(), default: true }],
                     streams: vec![clamshell_core::levels::Stream { id: 2, app: "Firefox".into(), title: String::new(), volume: 40, muted: false }],
-                }),
-                Event::Down(Id::Level(clamshell_core::levels::Level::Stream(0))),
+                })),
+                Event::Pointer(PointerEvent::Down(Id::Level(clamshell_core::levels::Level::Stream(0)))),
             ],
         ),
         (
             "brightness",
             vec![
-                Event::Activate(Id::Tab(Tab::Brightness)),
-                Event::Backlights(vec!["panel".into()]),
+                Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Brightness))),
+                Event::Reading(Reading::Backlights(vec!["panel".into()])),
             ],
         ),
-        ("keyboard", vec![Event::Activate(Id::Tab(Tab::Keyboard))]),
+        ("keyboard", vec![Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Keyboard)))]),
         ("keyboard, Fn", vec![key(Key::Mod(Modifier::Fn))]),
         ("keyboard, Shift and a pressed key", vec![key(Key::Mod(Modifier::Shift)), key(Key::Char('h'))]),
     ];

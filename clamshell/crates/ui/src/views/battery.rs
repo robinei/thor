@@ -6,7 +6,7 @@
 use std::fmt::Write;
 
 use clamshell_core::settings::Setting;
-use clamshell_core::{Id, State};
+use clamshell_core::{Id, SettingsId, State};
 
 use super::{DIM, Frame, GO, Look, SURFACE, SURFACE_HI, TEXT, TEXT_HI, label};
 use crate::draw::{Keep, Rect, rgb};
@@ -45,13 +45,13 @@ pub(super) fn draw(f: &mut Frame, body: Rect, buf: &mut String) {
     let list = Rect::new(rest.x, title_y + size * 1.6, rest.w, rest.y + rest.h - title_y - size * 1.6);
     let row_h = body.h * ROW_H;
     let rows = (list.h / row_h).floor().max(0.0) as usize;
-    if s.battery.spenders.is_empty() {
+    if s.sys().battery.spenders.is_empty() {
         f.c.text(list.x, list.y, size, rgb(DIM), "Measuring");
     }
-    let total: f32 = s.battery.spenders.iter().map(|p| p.load()).sum::<f32>().max(f32::EPSILON);
+    let total: f32 = s.sys().battery.spenders.iter().map(|p| p.load()).sum::<f32>().max(f32::EPSILON);
     // The figures' column, as wide as the widest they can be, so the bars line up.
     let figures_x = list.x + list.w - f.c.text_width(size * 0.85, "CPU 100% · GPU 100%");
-    for (i, p) in s.battery.spenders.iter().enumerate().take(rows) {
+    for (i, p) in s.sys().battery.spenders.iter().enumerate().take(rows) {
         let r = Rect::new(list.x, list.y + i as f32 * row_h, list.w, row_h);
         let ty = r.y + (r.h - size * 1.2) / 2.0;
         let name_w = r.w * NAME_W;
@@ -86,7 +86,7 @@ fn top_line(f: &mut Frame, top: Rect, body_h: f32, buf: &mut String) {
     let size = body_h * TEXT_SIZE;
 
     // The charge limit: a tap steps it (full, 90, 80), as the settings tile does.
-    let limit = s.settings.global.get(Setting::ChargeLimit);
+    let limit = s.settings().global.get(Setting::ChargeLimit);
     Setting::ChargeLimit.describe(limit, buf);
     let text_w = f.c.text_width(size, buf);
     let icon = size * 1.4;
@@ -95,12 +95,12 @@ fn top_line(f: &mut Frame, top: Rect, body_h: f32, buf: &mut String) {
     let look = Look { radius: 8.0, fill: Some(SURFACE_HI), inset: 0.0, ring_inset: -2.0 };
     let color = if limit < 100 { GO } else { DIM };
     let text: &str = buf;
-    f.button(Id::Tile(Setting::ChargeLimit), b, look, |c| {
+    f.button(Id::Settings(SettingsId::Tile(Setting::ChargeLimit)), b, look, |c| {
         c.icon(Icon::Battery { tenths: (limit / 10) as u8, charging: true }, Rect::new(b.x + size * 0.6, b.y + (b.h - icon) / 2.0, icon, icon), rgb(color));
         label(c, Rect::new(b.x + icon + size * 0.8, b.y, text_w + size * 0.6, b.h), size, TEXT, text);
     });
 
-    let Some(level) = s.status.battery else {
+    let Some(level) = s.sys().status.battery else {
         f.c.text(top.x, top.y + (top.h - size * 1.2) / 2.0, size, rgb(DIM), "No battery");
         return;
     };
@@ -117,15 +117,15 @@ fn top_line(f: &mut Frame, top: Rect, body_h: f32, buf: &mut String) {
 /// "Discharging · 6.2 W · 3 h 10 min left", "Charging · 12.0 W", "Full".
 fn status_text(s: &State, buf: &mut String) {
     buf.clear();
-    let watts = s.metrics.power_w;
-    match (s.status.charging, watts) {
+    let watts = s.sys().metrics.power_w;
+    match (s.sys().status.charging, watts) {
         (true, Some(w)) if w.abs() > 0.05 => {
             let _ = write!(buf, "Charging · {:.1} W", w.abs());
         }
         (true, _) => buf.push_str("Charging or full"),
         (false, Some(w)) => {
             let _ = write!(buf, "Discharging · {w:.1} W");
-            if let Some(m) = s.metrics.minutes_left {
+            if let Some(m) = s.sys().metrics.minutes_left {
                 let _ = write!(buf, " · {} h {} min left", m / 60, m % 60);
             }
         }
@@ -149,11 +149,11 @@ fn history(f: &mut Frame, g: Rect, size: f32) {
     f.c.text(plot.x + (plot.w - w) / 2.0, ly, small, rgb(DIM), "12 h");
     let w = f.c.text_width(small, "now");
     f.c.text(plot.x + plot.w - w, ly, small, rgb(DIM), "now");
-    if !s.battery.has_history {
+    if !s.sys().battery.has_history {
         label(f.c, plot, size, DIM, "No charge history from UPower");
         return;
     }
-    let now = s.unix_secs as f32;
+    let now = s.unix_secs() as f32;
     let x_at = |at: u64| plot.x + ((at as f32 - (now - SPAN)) / SPAN).clamp(0.0, 1.0) * plot.w;
     let y_at = |level: u8| plot.y + plot.h * (1.0 - f32::from(level) / 100.0);
     // A step line of rectangles (no paths: drawing doesn't allocate): along at each level, then up or
@@ -164,15 +164,15 @@ fn history(f: &mut Frame, g: Rect, size: f32) {
         f.c.fill(Rect::new(x0, y0 - LINE / 2.0, (x1 - x0).max(LINE), LINE), color);
         f.c.fill(Rect::new(x1 - LINE / 2.0, y0.min(y1) - LINE / 2.0, LINE, (y1 - y0).abs() + LINE), color);
     };
-    let history = &s.battery.history;
+    let history = &s.sys().battery.history;
     for pair in history.windows(2) {
         if let [a, b] = pair {
             step(f, (a.at, a.level), (b.at, b.level), a.charging);
         }
     }
     // From the last point to now, at today's level.
-    if let (Some(last), Some(level)) = (history.last(), s.status.battery) {
-        step(f, (last.at, last.level), (s.unix_secs, level), s.status.charging);
+    if let (Some(last), Some(level)) = (history.last(), s.sys().status.battery) {
+        step(f, (last.at, last.level), (s.unix_secs(), level), s.sys().status.charging);
     }
     if history.is_empty() {
         label(f.c, plot, size, DIM, "No changes recorded yet");

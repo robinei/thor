@@ -12,7 +12,7 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use clamshell_core::Event;
+use clamshell_core::{Event, Instance, Reading};
 use clamshell_core::battery::{Charge, Group, Battery, Spender};
 use zbus::blocking::{Connection, Proxy};
 use zbus::zvariant::OwnedObjectPath;
@@ -68,7 +68,7 @@ pub fn spawn(sink: impl Sink, commands: Receiver<bool>) -> io::Result<()> {
                 }
             }
             power.spenders = sampler.sample();
-            if !sink.send(Event::Battery(power.clone())) {
+            if !sink.send(Event::Reading(Reading::Battery(power.clone()))) {
                 return;
             }
         }
@@ -178,7 +178,7 @@ fn read_processes() -> HashMap<u32, Counters> {
         let mine = entry.metadata().is_ok_and(|m| m.uid() == me);
         let scope = std::fs::read_to_string(path.join("cgroup")).ok().as_deref().and_then(our_scope);
         let group = match (scope, mine) {
-            (Some(unit), _) => Group::Unit(unit),
+            (Some(instance), _) => Group::Instance(instance),
             (None, true) => Group::Process(comm),
             (None, false) => Group::System,
         };
@@ -200,13 +200,9 @@ fn parse_stat(text: &str) -> Option<(String, u64)> {
     Some((comm, utime + stime))
 }
 
-/// One of our scopes the process runs in (`clamshell-app-…` or `clamshell-game-…`), without `.scope`.
-fn our_scope(cgroup: &str) -> Option<String> {
-    cgroup
-        .lines()
-        .flat_map(|line| line.rsplit('/'))
-        .find_map(|part| part.strip_suffix(".scope").filter(|u| u.starts_with("clamshell-app-") || u.starts_with("clamshell-game-")))
-        .map(str::to_owned)
+/// The scope of ours the process runs in (a dock app instance's or a game's), if any.
+fn our_scope(cgroup: &str) -> Option<Instance> {
+    cgroup.lines().flat_map(|line| line.rsplit('/')).find_map(Instance::from_unit)
 }
 
 /// GPU time per DRM client of a process: the sum of its `drm-engine-*` times (ns), per `drm-client-id`
@@ -256,7 +252,7 @@ mod tests {
         let stat = "1234 (Web Content) S 1 2 3 4 5 6 7 8 9 10 250 50 0 0 20 0 1 0";
         assert_eq!(parse_stat(stat), Some(("Web Content".into(), 300)));
         let cgroup = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/clamshell-app-terminal-17-0.scope\n";
-        assert_eq!(our_scope(cgroup).as_deref(), Some("clamshell-app-terminal-17-0"));
+        assert_eq!(our_scope(cgroup), Some(Instance::App { key: "terminal".into(), secs: 17, n: 0 }));
         assert_eq!(our_scope("0::/user.slice/user-1000.slice/session-2.scope\n"), None);
         let fdinfo = "pos:\t0\nflags:\t02100002\ndrm-driver:\tmsm\ndrm-client-id:\t14\ndrm-engine-gpu:\t3751190288 ns\ndrm-engine-capacity-gpu:\t1\n";
         assert_eq!(parse_fdinfo(fdinfo), Some((14, 3_751_190_288)));

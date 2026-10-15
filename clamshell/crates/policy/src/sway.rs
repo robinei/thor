@@ -20,7 +20,8 @@ use std::time::Duration;
 
 use serde_json::Value;
 use clamshell_core::Event;
-use clamshell_core::windows::{GAME_WORKSPACE, SHELF_WORKSPACE, Window};
+use clamshell_core::instance::{Instance, STEAM_APP_PREFIX};
+use clamshell_core::windows::Window;
 
 use crate::Sink;
 
@@ -133,7 +134,7 @@ pub fn emptied(tree: &Value) -> Option<String> {
     let ws = find(tree)?;
     let empty = ["nodes", "floating_nodes"].iter().all(|k| ws.get(*k).and_then(Value::as_array).is_none_or(Vec::is_empty));
     let name = ws.get("name").and_then(Value::as_str)?;
-    (empty && name.starts_with("clamshell-") && name != SHELF_WORKSPACE).then(|| name.to_owned())
+    (empty && Instance::is_ours(name) && !Instance::Shelf.is(name)).then(|| name.to_owned())
 }
 
 /// The systemd unit a process runs in: the last part of its cgroup path (`….scope`, `….service`).
@@ -168,9 +169,6 @@ fn show(name: &str, top: Option<&str>) -> String {
     format!("{}{focus}workspace \"{name}\"", pin(name, top))
 }
 
-/// The second screen's workspace: windows opening there go to the main screen.
-const BOTTOM_WORKSPACE: &str = "clamshell-bottom";
-
 /// Starts a job for a workspace (on the main screen) without showing it: shown for the `exec`, and
 /// back at once, in one command (nothing is drawn in between); sway keeps the target by name.
 fn launch(workspace: &str, job: &Path, exe: &Path, top: Option<&str>) -> io::Result<String> {
@@ -184,20 +182,23 @@ fn launch(workspace: &str, job: &Path, exe: &Path, top: Option<&str>) -> io::Res
 /// sway's rules for our windows, given once when we connect (and again on reconnecting; sway keeps
 /// them until it restarts). Then shelf's window, if already open, is put in its place and shown.
 fn rules(top: Option<&str>, bottom: &str) -> Vec<String> {
+    let (shelf, landing) = (Instance::Shelf.name(), Instance::Landing.name());
+    // The second screen's workspace: windows opening there go to the main screen.
+    let second = Instance::Bottom.name();
     let mut rules = vec![
-        format!("for_window [app_id=\"^{}$\"] move container to workspace \"{SHELF_WORKSPACE}\"", clamshell_core::apps::SHELF_APP_ID),
-        format!("for_window [app_id=\"^steam_app_\"] move container to workspace \"{GAME_WORKSPACE}\""),
-        format!("for_window [class=\"^steam_app_\"] move container to workspace \"{GAME_WORKSPACE}\""),
+        format!("for_window [app_id=\"^{}$\"] move container to workspace \"{shelf}\"", clamshell_core::apps::SHELF_APP_ID),
+        format!("for_window [app_id=\"^{STEAM_APP_PREFIX}\"] move container to workspace \"{landing}\""),
+        format!("for_window [class=\"^{STEAM_APP_PREFIX}\"] move container to workspace \"{landing}\""),
     ];
     if let Some(top) = top {
-        rules.push(format!("{}{}", pin(SHELF_WORKSPACE, Some(top)), pin(GAME_WORKSPACE, Some(top)).trim_end_matches("; ")));
-        rules.push(format!("workspace \"{BOTTOM_WORKSPACE}\" output \"{bottom}\"; focus output \"{bottom}\"; workspace \"{BOTTOM_WORKSPACE}\""));
-        rules.push(format!("for_window [workspace=\"^{BOTTOM_WORKSPACE}$\"] move container to output \"{top}\", focus"));
+        rules.push(format!("{}{}", pin(&shelf, Some(top)), pin(&landing, Some(top)).trim_end_matches("; ")));
+        rules.push(format!("workspace \"{second}\" output \"{bottom}\"; focus output \"{bottom}\"; workspace \"{second}\""));
+        rules.push(format!("for_window [workspace=\"^{second}$\"] move container to output \"{top}\", focus"));
     }
     rules.push(format!(
-        "[app_id=\"^{}$\"] move container to workspace \"{SHELF_WORKSPACE}\"; {}",
+        "[app_id=\"^{}$\"] move container to workspace \"{shelf}\"; {}",
         clamshell_core::apps::SHELF_APP_ID,
-        show(SHELF_WORKSPACE, top)
+        show(&shelf, top)
     ));
     rules
 }
@@ -271,12 +272,13 @@ fn follow(path: &Path, sink: &impl Sink, bottom: &str) -> io::Result<()> {
         // Windows of our scopes go to their workspace; the move brings another event and a fresh list.
         let mut moved = false;
         for w in &list {
-            if let Some(home) = w.home().filter(|h| *h != w.workspace && tried.insert((w.id, (*h).to_owned()))) {
-                let mut command = format!("{}[con_id={}] move container to workspace \"{home}\"", pin(home, top.as_deref()), w.id);
+            let home = w.home().filter(|h| !h.is(&w.workspace)).map(|h| (h.name(), h == Instance::Shelf));
+            if let Some((home, shelf)) = home.filter(|(h, _)| tried.insert((w.id, h.clone()))) {
+                let mut command = format!("{}[con_id={}] move container to workspace \"{home}\"", pin(&home, top.as_deref()), w.id);
                 // Shelf's window, moved home when the program starts: show it.
-                if home == SHELF_WORKSPACE {
+                if shelf {
                     command.push_str("; ");
-                    command.push_str(&show(SHELF_WORKSPACE, top.as_deref()));
+                    command.push_str(&show(&home, top.as_deref()));
                 }
                 moved |= ask(&mut queries, RUN_COMMAND, &command).is_ok();
             }
@@ -284,7 +286,7 @@ fn follow(path: &Path, sink: &impl Sink, bottom: &str) -> io::Result<()> {
         // An app or the game closed and left its empty workspace in front: back to shelf.
         if let Some(name) = emptied(&tree) {
             log::debug!("sway: {name} emptied: showing shelf");
-            moved |= ask(&mut queries, RUN_COMMAND, &show(SHELF_WORKSPACE, top.as_deref())).is_ok();
+            moved |= ask(&mut queries, RUN_COMMAND, &show(&Instance::Shelf.name(), top.as_deref())).is_ok();
         }
         if !moved && !sink.send(Event::Windows(list)) {
             return Ok(());
@@ -330,7 +332,7 @@ mod tests {
         assert_eq!(emptied(&tree("clamshell-game", true, "")), Some("clamshell-game".into()));
         assert_eq!(emptied(&tree("clamshell-game", false, r#"{"type": "con", "focused": true}"#)), None, "not empty");
         assert_eq!(emptied(&tree("3", true, "")), None, "not ours");
-        assert_eq!(emptied(&tree(SHELF_WORKSPACE, true, "")), None);
+        assert_eq!(emptied(&tree(&Instance::Shelf.name(), true, "")), None);
     }
 
     #[test]

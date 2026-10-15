@@ -24,7 +24,7 @@ pub mod wifi;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use clamshell_core::{Event, Status};
+use clamshell_core::{Event, Reading, Status};
 
 /// Where policy threads deliver events. Returns false once the receiver is gone, and the thread stops.
 pub trait Sink: Send + 'static {
@@ -69,7 +69,7 @@ pub fn spawn_status(sink: impl Sink) -> std::io::Result<JoinHandle<()>> {
         loop {
             let status = read_status();
             if last != Some(status) {
-                if !sink.send(Event::Status(status)) {
+                if !sink.send(Event::Reading(Reading::Status(status))) {
                     return;
                 }
                 last = Some(status);

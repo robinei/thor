@@ -1,4 +1,4 @@
-//! Wi-Fi through NetworkManager (D-Bus, system bus): while the Wi-Fi mode is open, the networks in
+//! Wi-Fi through NetworkManager (D-Bus, system bus): while the Wi-Fi tab is open, the networks in
 //! range (scanned every few seconds), which are saved and which is connected, sent as [`Event::Wifi`]
 //! when they change; joining (a saved connection, or a new one with a password), forgetting, the radio
 //! on and off. A new connection that fails to join is deleted again, so a mistyped password isn't kept.
@@ -12,8 +12,8 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use clamshell_core::Event;
-use clamshell_core::wifi::{self, Command, Network, Wifi};
+use clamshell_core::wifi::{self, Command, Network, Problem, Wifi};
+use clamshell_core::{Event, Reading};
 use zbus::blocking::{Connection, Proxy};
 use zbus::zvariant::{ObjectPath, OwnedObjectPath, OwnedValue, Value};
 
@@ -73,16 +73,28 @@ struct Attempt {
     device_changes: Receiver<(u32, u32)>,
 }
 
+/// What this thread is asked: to watch while the Wi-Fi tab is open (scan now and keep the list fresh),
+/// and the state's commands.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Request {
+    Watch(bool),
+    Do(Command),
+}
+
 /// What this thread keeps between reads.
 #[derive(Default)]
 struct Side {
     watching: bool,
     attempt: Option<Attempt>,
-    error: Option<String>,
+    error: Option<Problem>,
     last_scan: Option<Instant>,
 }
 
-pub fn spawn(sink: impl Sink, commands: Receiver<Command>) -> io::Result<()> {
+fn send(sink: &impl Sink, wifi: Wifi) -> bool {
+    sink.send(Event::Reading(Reading::Wifi(wifi)))
+}
+
+pub fn spawn(sink: impl Sink, commands: Receiver<Request>) -> io::Result<()> {
     thread::Builder::new().name("wifi".into()).spawn(move || {
         let mut side = Side::default();
         loop {
@@ -90,17 +102,16 @@ pub fn spawn(sink: impl Sink, commands: Receiver<Command>) -> io::Result<()> {
                 Ok(()) => return,
                 Err(e) => {
                     log::warn!("wifi: {e}");
-                    if !sink.send(Event::Wifi(Wifi { error: Some(format!("NetworkManager: {e}")), ..Wifi::default() })) {
+                    if !send(&sink, Wifi { error: Some(Problem::Bus(e.to_string())), ..Wifi::default() }) {
                         return;
                     }
                 }
             }
             // Try again in a while; what is asked meanwhile can't be done, and says so.
             match commands.recv_timeout(Duration::from_secs(10)) {
-                Ok(Command::Watch(on)) => side.watching = on,
-                Ok(_) => {
-                    let error = "NetworkManager isn't available".to_owned();
-                    if !sink.send(Event::Wifi(Wifi { error: Some(error), ..Wifi::default() })) {
+                Ok(Request::Watch(on)) => side.watching = on,
+                Ok(Request::Do(_)) => {
+                    if !send(&sink, Wifi { error: Some(Problem::Unavailable), ..Wifi::default() }) {
                         return;
                     }
                 }
@@ -121,7 +132,7 @@ fn proxy(conn: &Connection, path: &str, interface: &'static str) -> zbus::Result
         .build()
 }
 
-fn run(sink: &impl Sink, commands: &Receiver<Command>, side: &mut Side) -> zbus::Result<()> {
+fn run(sink: &impl Sink, commands: &Receiver<Request>, side: &mut Side) -> zbus::Result<()> {
     let conn = Connection::system()?;
     let nm = proxy(&conn, NM_PATH, NM)?;
     let mut last = None;
@@ -132,7 +143,7 @@ fn run(sink: &impl Sink, commands: &Receiver<Command>, side: &mut Side) -> zbus:
             Ok(command) => {
                 if let Err(e) = carry_out(&conn, &nm, command, side) {
                     log::warn!("wifi: {e}");
-                    side.error = Some(e.to_string());
+                    side.error = Some(Problem::Bus(e.to_string()));
                     side.attempt = None;
                 }
             }
@@ -155,7 +166,7 @@ fn run(sink: &impl Sink, commands: &Receiver<Command>, side: &mut Side) -> zbus:
         }
         let wifi = read(&conn, &nm, device.as_ref(), side)?;
         if last.as_ref() != Some(&wifi) {
-            if !sink.send(Event::Wifi(wifi.clone())) {
+            if !send(sink, wifi.clone()) {
                 return Ok(());
             }
             last = Some(wifi);
@@ -289,32 +300,42 @@ fn follow_attempt(conn: &Connection, active: Option<&str>, side: &mut Side) -> z
     }
     let reason = ended.unwrap_or(0);
     let device_reason = attempt.device_changes.try_iter().filter(|(state, _)| *state == STATE_FAILED).map(|(_, reason)| reason).last();
-    let message = if reason == REASON_NO_SECRETS || device_reason == Some(DEVICE_NO_SECRETS) {
-        format!("Couldn't join {}: wrong password?", attempt.ssid)
-    } else if reason == REASON_NO_ADDRESS || device_reason == Some(DEVICE_NO_ADDRESS) {
-        format!("Joined {}, but it gave no address", attempt.ssid)
-    } else if timed_out {
-        format!("Couldn't join {}: no answer", attempt.ssid)
-    } else {
-        format!("Couldn't join {} (NetworkManager reason {reason})", attempt.ssid)
-    };
-    log::warn!("wifi: {message}");
+    let problem = classify(reason, device_reason, timed_out, attempt.ssid.clone());
+    log::warn!("wifi: {problem:?}");
     if let Some(path) = &attempt.added {
         let _ = proxy(conn, path.as_str(), CONNECTION)?.call::<_, _, ()>("Delete", &());
     }
-    side.error = Some(message);
+    side.error = Some(problem);
     side.attempt = None;
     Ok(())
 }
 
-fn carry_out(conn: &Connection, nm: &Proxy, command: Command, side: &mut Side) -> zbus::Result<()> {
-    match command {
-        Command::Watch(on) => {
+/// Why a join failed: from the active connection's reason for ending (0: none given), the device's
+/// reason for failing (if it did), and whether the attempt ran out of time.
+fn classify(reason: u32, device_reason: Option<u32>, timed_out: bool, ssid: String) -> Problem {
+    if reason == REASON_NO_SECRETS || device_reason == Some(DEVICE_NO_SECRETS) {
+        Problem::WrongPassword { ssid }
+    } else if reason == REASON_NO_ADDRESS || device_reason == Some(DEVICE_NO_ADDRESS) {
+        Problem::NoAddress { ssid }
+    } else if timed_out {
+        Problem::NoAnswer { ssid }
+    } else {
+        Problem::Refused { ssid, reason }
+    }
+}
+
+fn carry_out(conn: &Connection, nm: &Proxy, request: Request, side: &mut Side) -> zbus::Result<()> {
+    let command = match request {
+        Request::Watch(on) => {
             side.watching = on;
             if on {
                 side.last_scan = None;
             }
+            return Ok(());
         }
+        Request::Do(command) => command,
+    };
+    match command {
         Command::Enable(on) => nm.set_property("WirelessEnabled", on).map_err(zbus::Error::from)?,
         Command::Forget(ssid) => {
             for (path, _) in saved(conn)?.into_iter().filter(|(_, s)| *s == ssid) {
@@ -427,6 +448,17 @@ mod tests {
 
     fn ap(flags: u32, security: u32) -> Ap {
         Ap { path: OwnedObjectPath::try_from("/ap/1").unwrap(), ssid: "x".into(), strength: 50, flags, security }
+    }
+
+    #[test]
+    fn a_failed_join_says_why() {
+        let ssid = || "home".to_owned();
+        assert_eq!(classify(REASON_NO_SECRETS, None, false, ssid()), Problem::WrongPassword { ssid: ssid() });
+        assert_eq!(classify(0, Some(DEVICE_NO_SECRETS), false, ssid()), Problem::WrongPassword { ssid: ssid() }, "the device's word");
+        assert_eq!(classify(REASON_NO_ADDRESS, None, true, ssid()), Problem::NoAddress { ssid: ssid() });
+        assert_eq!(classify(0, Some(DEVICE_NO_ADDRESS), false, ssid()), Problem::NoAddress { ssid: ssid() });
+        assert_eq!(classify(0, None, true, ssid()), Problem::NoAnswer { ssid: ssid() });
+        assert_eq!(classify(3, Some(1), false, ssid()), Problem::Refused { ssid: ssid(), reason: 3 });
     }
 
     #[test]

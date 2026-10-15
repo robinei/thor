@@ -24,7 +24,7 @@ mod wifi;
 
 use std::fmt::Write;
 
-use clamshell_core::{Id, Tab, State};
+use clamshell_core::{Id, State, Tab};
 
 use crate::draw::{Canvas, Keep, Rect, rgb};
 use crate::images::Images;
@@ -99,7 +99,7 @@ impl Frame<'_, '_> {
     /// A tappable, focusable area: its background (lit while pressed), `content`, then the focus ring if
     /// focused; `rect` becomes its target.
     fn button(&mut self, id: Id, rect: Rect, look: Look, content: impl FnOnce(&mut Canvas)) {
-        let pressed = self.s.pressed.as_ref() == Some(&id);
+        let pressed = self.s.pointer().pressed() == Some(&id);
         let background = if pressed { Some(PRESSED) } else { look.fill };
         if let Some(color) = background {
             let r = rect.inset(look.inset);
@@ -110,7 +110,7 @@ impl Frame<'_, '_> {
             }
         }
         content(self.c);
-        if self.s.show_focus && self.s.focus.as_ref() == Some(&id) {
+        if self.s.pointer().focused(&id) {
             self.c.outline(rect.inset(look.ring_inset), look.radius.max(6.0), 2.0, rgb(ACCENT));
         }
         self.targets.push(Target { rect, id });
@@ -202,11 +202,11 @@ pub fn bottom(c: &mut Canvas, s: &State, w: f32, h: f32, images: &mut Images, sc
     }
     let bar_h = bar::draw(f, w, h, scratch);
     let body = Rect::new(0.0, bar_h, w, h - bar_h);
-    match s.tab {
+    match s.bottom().tab() {
         Tab::Settings => settings::draw(f, body, &mut scratch.text),
         Tab::Keyboard => keyboard::draw(f, body),
         Tab::Dock => dock::draw(f, body, images, &mut scratch.text),
-        Tab::Touchpad => touchpad::draw(f, body),
+        Tab::Touchpad => touchpad::draw(f, body, &mut scratch.text),
         Tab::Sysinfo => sysinfo::draw(f, body, &mut scratch.lines),
         Tab::Wifi => wifi::draw(f, body, &mut scratch.text),
         Tab::Battery => battery::draw(f, body, &mut scratch.text),
@@ -223,14 +223,14 @@ pub fn bottom(c: &mut Canvas, s: &State, w: f32, h: f32, images: &mut Images, sc
 mod tests {
     use super::*;
     use crate::draw::DrawCache;
-    use clamshell_core::{Event, Status};
+    use clamshell_core::{Event, Init, Reading, Status};
     use tiny_skia::Pixmap;
 
     /// The bar's buttons don't overlap, on the desktop's panel and at the Thor's size.
     #[test]
     fn the_bar_fits() {
-        let mut state = State::new(clamshell_library::demo_library());
-        state.apply(Event::Status(Status { battery: Some(50), volume: Some(50), brightness: Some(50), wifi: Some(50), ..Status::default() }));
+        let mut state = State::new(Init { library: clamshell_library::demo_library(), ..Init::default() });
+        state.apply(Event::Reading(Reading::Status(Status { battery: Some(50), volume: Some(50), brightness: Some(50), wifi: Some(50), ..Status::default() })));
         let mut cache = DrawCache::load();
         // The desktop window, the Thor, and a window dragged narrow.
         for (w, h) in [(620u32, 540u32), (1240, 1080), (300, 540)] {

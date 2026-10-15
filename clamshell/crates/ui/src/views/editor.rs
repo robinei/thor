@@ -3,6 +3,7 @@
 //! keys type here, Enter saves, Esc cancels).
 
 use clamshell_core::Id;
+use clamshell_core::{EditorId};
 
 use super::{ACCENT, DIM, Frame, Look, PRESSED, SURFACE, SURFACE_HI, TEXT, TEXT_HI, keyboard, label};
 use crate::draw::{Keep, Rect, rgb};
@@ -12,7 +13,7 @@ const PAD: f32 = 0.03;
 const TITLE: f32 = 0.032;
 
 pub(super) fn draw(f: &mut Frame, body: Rect, title: &str, save: &str) {
-    let Some(editor) = &f.s.editor else {
+    let Some(editor) = f.s.bottom().editor() else {
         return;
     };
     let pad = body.h * PAD;
@@ -34,10 +35,10 @@ pub(super) fn draw(f: &mut Frame, body: Rect, title: &str, save: &str) {
     let buttons = Rect::new(field.x + field.w + pad * 0.5, row.y, row.w - field.w - pad * 0.5, row.h);
     let look = Look { radius: 8.0, fill: Some(SURFACE), inset: 0.0, ring_inset: -2.0 };
     let cancel = buttons.cell(2, 1, pad * 0.5, 0);
-    f.button(Id::EditorCancel, cancel, look, |c| label(c, cancel, cancel.h * 0.36, TEXT, "Cancel"));
+    f.button(Id::Editor(EditorId::Cancel), cancel, look, |c| label(c, cancel, cancel.h * 0.36, TEXT, "Cancel"));
     let ok = buttons.cell(2, 1, pad * 0.5, 1);
     let look = Look { fill: Some(PRESSED), ..look };
-    f.button(Id::EditorSave, ok, look, |c| label(c, ok, ok.h * 0.36, TEXT_HI, save));
+    f.button(Id::Editor(EditorId::Save), ok, look, |c| label(c, ok, ok.h * 0.36, TEXT_HI, save));
 
     let keys_y = row.y + row.h + pad;
     keyboard::draw(f, Rect::new(body.x, keys_y, body.w, body.y + body.h - keys_y));

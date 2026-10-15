@@ -85,28 +85,28 @@ fn wifi_bars(quality: Option<u8>) -> Option<u8> {
 /// A tab's button in the bar: its id (volume and brightness are controls, which open their tab on a
 /// tap), its icon (with its level or status), and its colour: lit while open, dim without a reading.
 fn tab_button(s: &State, mode: Tab) -> (Id, Icon, u32) {
-    let lit = |reading: bool| if s.tab == mode { ACCENT } else if reading { TEXT } else { DIM };
+    let lit = |reading: bool| if s.bottom().tab() == mode { ACCENT } else if reading { TEXT } else { DIM };
     match mode {
         Tab::Volume => {
-            let volume = s.level(Control::Volume);
-            (Id::Control(Control::Volume), volume_icon(volume.unwrap_or(0), s.status.muted), lit(volume.is_some()))
+            let volume = s.levels().control(Control::Volume);
+            (Id::Control(Control::Volume), volume_icon(volume.unwrap_or(0), s.levels().muted()), lit(volume.is_some()))
         }
-        Tab::Brightness => (Id::Control(Control::Brightness), Icon::Brightness, lit(s.level(Control::Brightness).is_some())),
+        Tab::Brightness => (Id::Control(Control::Brightness), Icon::Brightness, lit(s.levels().control(Control::Brightness).is_some())),
         Tab::Bluetooth => {
-            let connected = s.bluetooth.connected() > 0;
-            (Id::Tab(mode), Icon::Bluetooth { connected }, lit(s.bluetooth.powered && connected))
+            let connected = s.radios().bluetooth.connected() > 0;
+            (Id::Tab(mode), Icon::Bluetooth { connected }, lit(s.radios().bluetooth.powered && connected))
         }
         Tab::Wifi => {
-            let bars = wifi_bars(s.status.wifi);
+            let bars = wifi_bars(s.sys().status.wifi);
             (Id::Tab(mode), Icon::Wifi { bars }, lit(bars.is_some()))
         }
         // An empty, dim battery when there is none; low in the accent colour.
         Tab::Battery => {
-            let (icon, color) = battery(&s.status).unwrap_or((Icon::Battery { tenths: 0, charging: false }, DIM));
-            (Id::Tab(mode), icon, if s.tab == mode { ACCENT } else { color })
+            let (icon, color) = battery(&s.sys().status).unwrap_or((Icon::Battery { tenths: 0, charging: false }, DIM));
+            (Id::Tab(mode), icon, if s.bottom().tab() == mode { ACCENT } else { color })
         }
         Tab::Settings | Tab::Dock | Tab::Keyboard | Tab::Touchpad | Tab::Sysinfo => {
-            (Id::Tab(mode), tab_icon(mode), if s.tab == mode { ACCENT } else { DIM })
+            (Id::Tab(mode), tab_icon(mode), if s.bottom().tab() == mode { ACCENT } else { DIM })
         }
     }
 }
@@ -126,9 +126,9 @@ pub(super) fn draw(f: &mut Frame, w: f32, h: f32, scratch: &mut Scratch) -> f32 
     };
     // On the right: the pad mouse, the clock, and the line before them.
     let mouse_x = w - slot;
-    let color = if f.s.pad_mouse { ACCENT } else { DIM };
+    let color = if f.s.pad().mouse_on() { ACCENT } else { DIM };
     icon_button(f, Id::PadMouse, Rect::new(mouse_x, 0.0, slot, bar_h), Icon::Mouse, color);
-    let clock = scratch.clock(f.s.unix_secs);
+    let clock = scratch.clock(f.s.unix_secs());
     let size = bar_h * CLOCK_TEXT;
     let clock_w = f.c.text_width(size, clock) + bar_h * CLOCK_PAD;
     let line_x = mouse_x - clock_w;
@@ -149,8 +149,8 @@ pub(super) fn draw(f: &mut Frame, w: f32, h: f32, scratch: &mut Scratch) -> f32 
 
 /// The slider, while one moves: drawn last, over the bar and the mode below it.
 pub(super) fn draw_slider_over(f: &mut Frame, w: f32, bar_h: f32, scratch: &mut Scratch) {
-    if let Some(slider) = f.s.slider {
-        draw_slider(f, slider, w, bar_h, scratch);
+    if let Some(slider) = f.s.levels().slider() {
+        draw_slider(f, *slider, w, bar_h, scratch);
     }
 }
 
@@ -170,7 +170,7 @@ fn draw_slider(f: &mut Frame, slider: Slider, w: f32, bar_h: f32, scratch: &mut 
 
     let side = bar_h * ICON;
     let icon = match slider.control {
-        Control::Volume => volume_icon(slider.value, f.s.status.muted),
+        Control::Volume => volume_icon(slider.value, f.s.levels().muted()),
         Control::Brightness => Icon::Brightness,
     };
     scratch.text.clear();

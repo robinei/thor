@@ -5,7 +5,7 @@
 
 use std::fmt::Write;
 
-use clamshell_core::{Game, Id};
+use clamshell_core::{Game, Id, ShelfId};
 
 use super::{ACCENT, DIM, Frame, GO, Look, SURFACE, SURFACE_HI, TEXT, TEXT_HI, wrap};
 use crate::draw::{Canvas, Keep, Rect, rgb};
@@ -41,20 +41,20 @@ pub(super) fn draw(f: &mut Frame, images: &mut Images, buf: &mut String, w: f32,
 
     // Tabs: the collections' names.
     let tabs_h = h * TABS_H;
-    let items = s.library.collections.iter().enumerate().map(|(i, coll)| (Id::Collection(i as u16), coll.name.as_str(), i == s.current));
+    let items = s.shelf().library().collections.iter().enumerate().map(|(i, coll)| (Id::Shelf(ShelfId::Collection(i as u16)), coll.name.as_str(), i == s.shelf().current()));
     super::tabs(f, Rect::new(pad, 0.0, w - 2.0 * pad, tabs_h), h * TAB_TEXT, pad * 0.8, f32::INFINITY, items);
 
     // The list, filling the height below the tabs exactly with whole rows.
     let list = Rect::new(pad, tabs_h + pad * 0.5, w * LIST_W - pad, h - tabs_h - pad * 1.5);
     let rows = ((list.h / (h * ROW_H)).floor() as usize).max(1);
     let row_h = list.h / rows as f32;
-    let cursor = s.cursor();
-    let Some(coll) = s.collection() else {
+    let cursor = s.shelf().cursor();
+    let Some(coll) = s.shelf().collection() else {
         return rows;
     };
     for row in 0..rows {
         let position = cursor.top + row;
-        let Some(game) = s.game_at(position) else {
+        let Some(game) = s.shelf().game_at(position) else {
             break;
         };
         let r = Rect::new(list.x, list.y + row as f32 * row_h, list.w - pad * 0.6, row_h - 2.0);
@@ -63,7 +63,7 @@ pub(super) fn draw(f: &mut Frame, images: &mut Images, buf: &mut String, w: f32,
         let thumb_h = r.h * THUMB;
         let thumb = Rect::new(r.x + pad * 0.4, r.y + (r.h - thumb_h) / 2.0, thumb_h * BOX_ASPECT, thumb_h);
         let size = row_h * ROW_TEXT;
-        f.button(Id::Game(game.id.clone()), r, look, |c| {
+        f.button(Id::Shelf(ShelfId::Game(game.id.clone())), r, look, |c| {
             art(c, images, game, thumb, scale, 3.0, false);
             let color = if selected { TEXT_HI } else { TEXT };
             let tx = thumb.x + thumb.w + pad * 0.6;
@@ -83,7 +83,7 @@ pub(super) fn draw(f: &mut Frame, images: &mut Images, buf: &mut String, w: f32,
 
     // The selected game: large art, then title and details beside it.
     let mut choices = None;
-    if let Some(game) = s.selected_game() {
+    if let Some(game) = s.shelf().selected_game() {
         let c = &mut *f.c;
         let x0 = w * LIST_W + pad;
         let art_h = list.h * ART_H;
@@ -95,9 +95,9 @@ pub(super) fn draw(f: &mut Frame, images: &mut Images, buf: &mut String, w: f32,
         y += wrap(c, (tx, y, room), h * TITLE, TEXT_HI, &game.title, 3) + pad * 0.4;
         // What playing it does now: show it (it runs), or with another game running, the choice: keep
         // that one running, or close it; then whether it is a favourite.
-        let the_game = s.current_game.as_ref().and_then(|id| s.library.games.iter().find(|g| &g.id == id));
+        let the_game = s.current_game().and_then(|id| s.game(id));
         let mut mx = tx;
-        if s.running_game(&game.id).is_some() {
+        if s.session().running_game(&game.id).is_some() {
             mx += c.text(mx, y, h * DETAIL, rgb(GO), "Running · A to show it") + pad;
         } else if let Some(other) = the_game {
             buf.clear();
@@ -116,7 +116,7 @@ pub(super) fn draw(f: &mut Frame, images: &mut Images, buf: &mut String, w: f32,
         if mx > tx {
             y += h * DETAIL * 1.3 + pad * 0.4;
         }
-        for line in details(game, s.unix_secs, buf) {
+        for line in details(game, s.unix_secs(), buf) {
             if !line.is_empty() {
                 y += wrap(c, (tx, y, room), h * DETAIL, DIM, line, 2) + pad * 0.2;
             }
@@ -134,9 +134,9 @@ pub(super) fn draw(f: &mut Frame, images: &mut Images, buf: &mut String, w: f32,
         let look = Look { radius: 8.0, fill: Some(SURFACE_HI), inset: 0.0, ring_inset: -2.0 };
         let size = h * DETAIL;
         let keep = row.cell(2, 1, pad * 0.5, 0);
-        f.button(Id::StartKeep, keep, look, |c| super::label(c, keep, size, TEXT_HI, "keep it running"));
+        f.button(Id::Shelf(ShelfId::StartKeep), keep, look, |c| super::label(c, keep, size, TEXT_HI, "keep it running"));
         let close = row.cell(2, 1, pad * 0.5, 1);
-        f.button(Id::StartClose, close, look, |c| super::label(c, close, size, TEXT_HI, "close it"));
+        f.button(Id::Shelf(ShelfId::StartClose), close, look, |c| super::label(c, close, size, TEXT_HI, "close it"));
     }
     rows
 }

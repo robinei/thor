@@ -10,7 +10,7 @@
 use std::fmt::Write;
 
 use clamshell_core::apps::App;
-use clamshell_core::{Game, Id, State};
+use clamshell_core::{DockId, Game, Id, State};
 
 use super::{DIM, Frame, GO, Look, TEXT, label};
 use crate::draw::{Canvas, Keep, Rect, rgb};
@@ -58,23 +58,23 @@ pub(super) fn draw(f: &mut Frame, body: Rect, images: &mut Images, buf: &mut Str
     let s = f.s;
     let pad = body.h * PAD;
     let mut area = body.inset(pad);
-    if let Some(error) = &s.apps_error {
+    if let Some(error) = &s.apps().error {
         let size = body.h * ERROR;
         area.h -= size * 1.6;
         f.c.text_fit((area.x, area.y + area.h + size * 0.4, area.w), size, rgb(DIM), error, Keep::Start);
     }
-    let games = s.games.len().max(1);
-    let rows = (s.apps.len() + games).div_ceil(COLUMNS).max(MIN_ROWS);
+    let games = s.session().games().len().max(1);
+    let rows = (s.apps().list.len() + games).div_ceil(COLUMNS).max(MIN_ROWS);
     let gap = body.h * GAP;
-    if s.games.is_empty() {
+    if s.session().games().is_empty() {
         start_tile(f, area.cell(COLUMNS, rows, gap, 0));
     }
-    for (i, running) in s.games.iter().enumerate() {
-        let game = s.library.games.iter().find(|g| g.id == running.id);
-        let the_game = s.current_game.as_ref() == Some(&running.id);
-        game_tile(f, area.cell(COLUMNS, rows, gap, i), i, game, the_game && s.games.len() > 1, images);
+    for (i, running) in s.session().games().iter().enumerate() {
+        let game = s.game(&running.id);
+        let the_game = s.current_game() == Some(&running.id);
+        game_tile(f, area.cell(COLUMNS, rows, gap, i), i, game, the_game && s.session().games().len() > 1, images);
     }
-    for (i, app) in s.apps.iter().enumerate() {
+    for (i, app) in s.apps().list.iter().enumerate() {
         app_tile(f, area.cell(COLUMNS, rows, gap, i + games), i, app, images, buf);
     }
 }
@@ -107,7 +107,7 @@ fn icon_square(r: Rect) -> Rect {
 
 /// While no game runs: to shelf, to start one.
 fn start_tile(f: &mut Frame, r: Rect) {
-    f.button(Id::StartGame, r, LOOK, |c| {
+    f.button(Id::Dock(DockId::StartGame), r, LOOK, |c| {
         c.icon(Icon::Shelf, icon_square(r), rgb(DIM));
         caption(c, r, "Start game", TEXT, "");
     });
@@ -117,7 +117,7 @@ fn start_tile(f: &mut Frame, r: Rect) {
 /// several run.
 fn game_tile(f: &mut Frame, r: Rect, i: usize, game: Option<&Game>, the_game: bool, images: &mut Images) {
     let scale = f.c.scale();
-    f.button(Id::GameTile(i as u16), r, LOOK, |c| {
+    f.button(Id::Dock(DockId::GameTile(i as u16)), r, LOOK, |c| {
         if the_game {
             c.circle(r.x + r.w - r.h * 0.1, r.y + r.h * 0.1, r.h * 0.03, rgb(GO));
         }
@@ -148,7 +148,7 @@ fn app_tile(f: &mut Frame, r: Rect, i: usize, app: &App, images: &mut Images, bu
     position(buf, (at, count));
     let position: &str = buf;
     let scale = f.c.scale();
-    f.button(Id::App(i as u16), r, LOOK, |c| {
+    f.button(Id::Dock(DockId::App(i as u16)), r, LOOK, |c| {
         let square = icon_square(r);
         let drawn = icon(&app.icon);
         let image = match (drawn, &app.icon_file) {
@@ -185,7 +185,7 @@ fn app_tile(f: &mut Frame, r: Rect, i: usize, app: &App, images: &mut Images, bu
     if s.offers_new(i) {
         let side = r.h * PLUS;
         let plus = Rect::new(r.x, r.y, side, side * 0.8);
-        f.button(Id::NewInstance(i as u16), plus, Look { radius: 8.0, ..LOOK }, |c| {
+        f.button(Id::Dock(DockId::NewInstance(i as u16)), plus, Look { radius: 8.0, ..LOOK }, |c| {
             let (cx, cy) = plus.center();
             let size = r.h * PLUS_ICON;
             // Green: it starts something.

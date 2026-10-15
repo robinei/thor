@@ -6,7 +6,7 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::thread;
 use std::time::Duration;
 
-use clamshell_core::Event;
+use clamshell_core::{Event, Reading};
 use clamshell_core::levels::{Audio, Output, Stream};
 use serde_json::Value;
 
@@ -30,7 +30,7 @@ pub fn spawn(sink: impl Sink, commands: Receiver<Command>) -> io::Result<()> {
             if audio {
                 let read = read_audio();
                 if last_audio.as_ref() != Some(&read) {
-                    if !sink.send(Event::Audio(read.clone())) {
+                    if !sink.send(Event::Reading(Reading::Audio(read.clone()))) {
                         return;
                     }
                     last_audio = Some(read);
@@ -39,7 +39,7 @@ pub fn spawn(sink: impl Sink, commands: Receiver<Command>) -> io::Result<()> {
             if backlights {
                 let read = controls::backlight_names();
                 if last_backlights.as_ref() != Some(&read) {
-                    if !sink.send(Event::Backlights(read.clone())) {
+                    if !sink.send(Event::Reading(Reading::Backlights(read.clone()))) {
                         return;
                     }
                     last_backlights = Some(read);

@@ -7,7 +7,7 @@ use std::io;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use clamshell_core::Event;
+use clamshell_core::{Event, Instance};
 use zbus::blocking::{Connection, Proxy};
 use zbus::zvariant::OwnedObjectPath;
 
@@ -23,16 +23,12 @@ fn manager(conn: &Connection) -> zbus::Result<Proxy<'static>> {
     Proxy::new(conn, "org.freedesktop.systemd1", "/org/freedesktop/systemd1", "org.freedesktop.systemd1.Manager")
 }
 
-/// Our scopes that run, by name without `.scope`, sorted.
-fn list(manager: &Proxy) -> zbus::Result<Vec<String>> {
+/// Our scopes that run (dock app instances and games), in the order of their names.
+fn list(manager: &Proxy) -> zbus::Result<Vec<Instance>> {
     let rows: Vec<UnitRow> = manager.call("ListUnitsByPatterns", &(Vec::<&str>::new(), PATTERNS.to_vec()))?;
-    let mut names: Vec<String> = rows
-        .into_iter()
-        .filter(|row| !matches!(row.3.as_str(), "inactive" | "failed"))
-        .filter_map(|row| row.0.strip_suffix(".scope").map(str::to_owned))
-        .collect();
+    let mut names: Vec<String> = rows.into_iter().filter(|row| !matches!(row.3.as_str(), "inactive" | "failed")).map(|row| row.0).collect();
     names.sort();
-    Ok(names)
+    Ok(names.iter().filter_map(|n| Instance::from_unit(n)).collect())
 }
 
 /// Sends [`Event::Units`] at start and after every change of our scopes; reconnects if the bus goes.
@@ -68,7 +64,7 @@ fn follow(sink: &impl Sink) -> zbus::Result<()> {
         let Ok((name, _)) = message.body().deserialize::<(String, OwnedObjectPath)>() else {
             continue;
         };
-        if !name.starts_with("clamshell-") {
+        if !Instance::is_ours(&name) {
             continue;
         }
         let now = list(&manager)?;
@@ -118,19 +114,20 @@ mod tests {
             return;
         };
         let manager = manager(&conn).unwrap();
-        let name = format!("clamshell-app-unittest-{}-0", std::process::id());
+        let instance = Instance::App { key: "unittest".into(), secs: u64::from(std::process::id()), n: 0 };
+        let name = instance.name();
         let mut child = Command::new("systemd-run")
             .args(["--user", "--scope", "--quiet", "--collect", &format!("--unit={name}"), "--", "sleep", "1"])
             .spawn()
             .unwrap();
         let start = Instant::now();
-        while !list(&manager).unwrap().contains(&name) {
+        while !list(&manager).unwrap().contains(&instance) {
             assert!(start.elapsed() < Duration::from_secs(5), "listed");
             thread::sleep(Duration::from_millis(50));
         }
-        wait(&format!("{name}.scope"), Duration::from_secs(1)).unwrap();
+        wait(&instance.unit().unwrap(), Duration::from_secs(1)).unwrap();
         child.wait().unwrap();
-        assert!(!list(&manager).unwrap().contains(&name));
+        assert!(!list(&manager).unwrap().contains(&instance));
         assert!(wait("clamshell-app-never-0-0.scope", Duration::from_millis(300)).is_err());
     }
 }

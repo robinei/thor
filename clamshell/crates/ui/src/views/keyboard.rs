@@ -51,7 +51,7 @@ fn cells(body: Rect) -> impl Iterator<Item = (KeyPos, &'static Slot, Rect)> {
 }
 
 pub(super) fn draw(f: &mut Frame, body: Rect) {
-    let kb = &f.s.keyboard;
+    let kb = &f.s.keyboard();
     // The cell is also the tap area: a touch between labels goes to the nearer key.
     for (pos, slot, cell) in cells(body) {
         f.button(Id::Key(pos), cell, KEY, |c| draw_key(c, kb, slot, cell));
