@@ -14,7 +14,7 @@ launcher-running.png 382b49e3cbca6c0e
 launcher.png 2470ba428dff9659
 settings-env.png d8dd30b9be6aa490
 settings-global.png 6b3d37ee29f1bebd
-settings-running.png d51c9bc1598a45a6
+settings-running.png e571378d106c7f3f
 settings.png 3628c796fef25a82
 slider.png ea6a9be4cae75eca
 status-low.png f51dbad4a5e686c6

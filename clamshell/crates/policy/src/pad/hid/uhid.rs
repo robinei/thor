@@ -3,12 +3,15 @@
 //! kernel's (start, open, output reports, report requests). Each event is a 32-bit type and a packed
 //! payload; short writes are padded with zeros by the kernel. Encoding and decoding only, no I/O.
 
+use super::Bus;
+
 pub const VERSION: u32 = 0x0100;
 /// `struct uhid_event`: the type and the largest payload (UHID_CREATE2's).
 pub const EVENT_SIZE: usize = 4 + 4372;
 /// The most a report carries.
 const DATA_MAX: usize = 4096;
 const BUS_USB: u16 = 0x03;
+const BUS_BLUETOOTH: u16 = 0x05;
 
 const DESTROY: u32 = 1;
 const START: u32 = 2;
@@ -55,15 +58,19 @@ fn text(e: &mut Vec<u8>, s: &str, size: usize) {
     e.resize(e.len() + size - n, 0);
 }
 
-/// UHID_CREATE2: a USB device named `name` with this report descriptor.
-pub fn create2(name: &str, uniq: &str, vendor: u32, product: u32, descriptor: &[u8]) -> Vec<u8> {
+/// UHID_CREATE2: a device named `name` on `bus` with this report descriptor.
+pub fn create2(name: &str, uniq: &str, bus: Bus, vendor: u32, product: u32, descriptor: &[u8]) -> Vec<u8> {
     let mut e = header(CREATE2, EVENT_SIZE);
     text(&mut e, name, 128);
     text(&mut e, "clamshell", 64); // phys
     text(&mut e, uniq, 64);
     let len = descriptor.len().min(DATA_MAX);
     e.extend_from_slice(&(len as u16).to_le_bytes());
-    e.extend_from_slice(&BUS_USB.to_le_bytes());
+    let bus = match bus {
+        Bus::Usb => BUS_USB,
+        Bus::Bluetooth => BUS_BLUETOOTH,
+    };
+    e.extend_from_slice(&bus.to_le_bytes());
     for v in [vendor, product, VERSION, 0] {
         e.extend_from_slice(&v.to_le_bytes());
     }
@@ -141,7 +148,7 @@ mod tests {
 
     #[test]
     fn create2_lays_out_the_request() {
-        let e = create2("pad", "aa:bb", 0x054c, 0x0ce6, &[1, 2, 3]);
+        let e = create2("pad", "aa:bb", Bus::Usb, 0x054c, 0x0ce6, &[1, 2, 3]);
         assert_eq!(u32_at(&e, 0), Some(CREATE2));
         assert_eq!(&e[4..8], b"pad\0");
         assert_eq!(&e[132..142], b"clamshell\0");
@@ -149,7 +156,8 @@ mod tests {
         assert_eq!((u16_at(&e, 260), u16_at(&e, 262)), (Some(3), Some(BUS_USB)));
         assert_eq!((u32_at(&e, 264), u32_at(&e, 268), u32_at(&e, 272)), (Some(0x054c), Some(0x0ce6), Some(VERSION)));
         assert_eq!(&e[280..], &[1, 2, 3]);
-        let long = create2(&"x".repeat(300), "", 0, 0, &[]);
+        let long = create2(&"x".repeat(300), "", Bus::Bluetooth, 0, 0, &[]);
+        assert_eq!(u16_at(&long, 262), Some(BUS_BLUETOOTH));
         assert_eq!((long[130], long[131]), (b'x', 0), "cut, still terminated");
     }
 

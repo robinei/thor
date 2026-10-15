@@ -49,7 +49,7 @@ What goes in, and from where:
 | Kernel modules, firmware | ROCKNIX's `SYSTEM` (same release), incl. Qualcomm firmware: for this device only, not for sharing |
 | Root: ext4 `THOR_ROOT` | `pacstrap` from Arch Linux ARM's mirrors (unpinned): base, sudo, mkinitcpio, NetworkManager, OpenSSH, sway, foot, Xwayland, Mesa + `vulkan-freedreno`, PipeWire, Noto, SQLite, Python, vim, grim, growpart (`cloud-guest-utils`), gptfdisk |
 | System | time zone (`THOR_TIMEZONE`, else the build machine's `/etc/localtime`, else UTC), locale (`THOR_LOCALE`, default `en_US.UTF-8`), systemd-timesyncd, NetworkManager, sshd, Bluetooth |
-| Session | user `thor` (groups wheel, video, input, audio; passwordless sudo, my ssh key), tty1 autologin into sway, sway config (DSI-2 top, DSI-1 bottom, ROCKNIX's output lines if found; Print: `clamshell ctl screenshot`), ClamShell built natively for aarch64 as a user service (control pipe `$XDG_RUNTIME_DIR/clamshell-control`, `CLAMSHELL_SESSION=device`: it puts the device to sleep when idle and reads the volume and brightness keys itself), udev rules for the virtual pads: uinput, uhid (stock udev leaves it to root) and the virtual DualSense's hidraw node, all group `input`; `uinput` and `uhid` loaded at boot |
+| Session | user `thor` (groups wheel, video, input, audio; passwordless sudo, my ssh key), tty1 autologin into sway, sway config (DSI-2 top, DSI-1 bottom, ROCKNIX's output lines if found; Print: `clamshell ctl screenshot`), ClamShell built natively for aarch64 as a user service (control pipe `$XDG_RUNTIME_DIR/clamshell-control`, `CLAMSHELL_SESSION=device`: it puts the device to sleep when idle and reads the volume and brightness keys itself), udev rules for the virtual pads: uinput, uhid (stock udev leaves it to root) and the virtual DualSense's and Pro Controller's hidraw nodes, all group `input`; `uinput` and `uhid` loaded at boot |
 | Sleep | logind: power button and lid do `sleep` = suspend-then-hibernate, else suspend (`SleepOperation=`); long press powers off. `HibernateDelaySec=30min`. UPower: hibernate at 3 % (power off if it can't) |
 | First boot (`thor-firstboot.service`, once) | grows partition 2 and its ext4 to the card (growpart, resize2fs); makes `/swapfile`, 16 GiB (the RAM; only if 8 GiB stay free beside it), in fstab; then writes `resume=LABEL=THOR_ROOT resume_offset=<first block>` onto both command lines: the loader entry's options and `/KERNEL` (repacked on the device with `/usr/local/lib/thor/bootimg.py`). Resume works from the second boot on |
 
@@ -135,20 +135,22 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
 - [ ] Screens: both on, right size, orientation and position; layer surface on DSI-1.
 - [ ] Touch: the bottom screen's touch on DSI-1 (sway's `map_to_output`); the Touchpad tab grabs it;
       two fingers on the bar at once (one sliding, one tapping).
-- [ ] Gamepad: evdev events; our virtual pad and pad mouse; per-game pad type (Xbox, Nintendo layout,
-      DualSense) and deadzone; unplugging the controller mid-game (the game's pad stays, at rest, and
+- [ ] Gamepad: evdev events; our virtual pad and pad mouse; per-game pad type (Xbox, PlayStation,
+      Nintendo) and deadzone; unplugging the controller mid-game (the game's pad stays, at rest, and
       picks up again); A held on an on-screen key while View moves the pad away (the key must not keep
       repeating).
 - [ ] Motion sensor: does the Thor have an IMU, and how does Linux expose it (an IIO device under
       `/sys/bus/iio/devices`, an evdev node with INPUT_PROP_ACCELEROMETER, nothing in ROCKNIX's device
       tree)? Its axes against the DualSense's (x right, y up out of the face, z towards the player);
       then a `MotionSource` for it (crates/policy/src/pad/dualsense/motion.rs) in place of the level one.
-- [ ] DualSense pad type: the kernel has hid-playstation and uhid (`/dev/uhid` group input, the driver
-      binds: `clamshell pad (DualSense)` plus its Motion Sensors and Touchpad nodes; on a desktop
-      `cargo run -p clamshell-policy --example dualsense_check`); Steam Input sees a DualSense over
-      hidraw and offers gyro (with the level source: none moving yet); an SDL game sees it.
+- [ ] PlayStation and Nintendo pad types: the kernel has uhid, hid-playstation and hid-nintendo
+      (`/dev/uhid` group input; the drivers bind: `clamshell pad (DualSense)` with its Motion Sensors
+      and Touchpad nodes, `clamshell pad (Pro Controller)` with its (IMU) node; on a desktop `cargo run
+      -p clamshell-policy --example hid_pad_check`); Steam Input sees a DualSense and a Pro Controller
+      over hidraw and offers gyro (with the level source: none moving yet); an SDL game sees them. The
+      Pro Controller's 12 ms report stream: its CPU and battery cost.
 - [ ] Rumble: does the Thor's controller driver have FF_RUMBLE (`evtest` lists it)? A game's rumble
-      through the DualSense pad type reaches it; it stops when the game stops it or the pad type
+      through either HID pad type reaches it; it stops when the game stops it or the pad type
       changes. (The Xbox pad type has no rumble yet.)
 - [ ] GPU: Freedreno (sway) and Turnip (`vkcube`, a game); MangoHud frame rate in sysinfo.
 - [ ] Wi-Fi from the Wi-Fi mode (NetworkManager): scan, join with a password, forget; polkit lets the

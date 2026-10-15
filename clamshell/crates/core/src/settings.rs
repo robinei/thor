@@ -30,8 +30,8 @@ pub enum Setting {
     Fan,
     /// The pad mouse at launch: 0 off, 1 on.
     PadMouse,
-    /// The virtual pad games see: 0 Xbox 360, 1 Xbox 360 in Nintendo layout (A/B and X/Y swapped),
-    /// 2 DualSense (with motion sensors).
+    /// The virtual pad games see: 0 Xbox 360, 1 PlayStation (a DualSense), 2 Nintendo (a Switch Pro
+    /// Controller); the last two with motion sensors and rumble.
     Pad,
     /// The sticks' deadzone, in percent.
     Deadzone,
@@ -136,12 +136,13 @@ impl Setting {
         }
     }
 
-    /// Earlier names of its key, still read (the pad type was the face buttons' layout, whose values 0
-    /// and 1 kept their meaning).
-    fn old_keys(self) -> &'static [&'static str] {
-        match self {
-            Setting::Pad => &["buttons"],
-            _ => &[],
+    /// A value saved under an earlier key, as a value of this setting: `buttons` was the face
+    /// buttons' layout, 0 Xbox and 1 Nintendo (now the Nintendo pad).
+    fn from_old_key(key: &str, value: u16) -> Option<(Setting, u16)> {
+        match (key, value) {
+            ("buttons", 0) => Some((Setting::Pad, 0)),
+            ("buttons", 1) => Some((Setting::Pad, 2)),
+            _ => None,
         }
     }
 
@@ -204,8 +205,8 @@ impl Setting {
             (Setting::PadMouse, 0) => "Mouse off",
             (Setting::PadMouse, _) => "Mouse on",
             (Setting::Pad, 0) => "Xbox",
-            (Setting::Pad, 1) => "Nintendo",
-            (Setting::Pad, _) => "DualSense",
+            (Setting::Pad, 1) => "PlayStation",
+            (Setting::Pad, _) => "Nintendo",
             (Setting::Deadzone, 0) => "No deadzone",
             (Setting::Rumble, 0) => "Rumble off",
             (Setting::Rumble, 1) => "Rumble low",
@@ -308,10 +309,11 @@ pub fn parse<'a>(fields: impl Iterator<Item = &'a str>) -> Overrides {
         let Some((key, value)) = field.split_once('=') else {
             continue;
         };
-        let Some(s) = Setting::ALL.into_iter().find(|s| s.key() == key || s.old_keys().contains(&key)) else {
+        let Ok(v) = value.parse::<u16>() else {
             continue;
         };
-        if let Ok(v) = value.parse::<u16>()
+        let setting = Setting::ALL.into_iter().find(|s| s.key() == key).map(|s| (s, v)).or_else(|| Setting::from_old_key(key, v));
+        if let Some((s, v)) = setting
             && s.choices().contains(&v)
         {
             o.set(s, Some(v));
@@ -517,13 +519,17 @@ mod tests {
     #[test]
     fn the_old_buttons_key_reads_as_the_pad_type() {
         let o = parse("\tbuttons=1".split('\t'));
-        assert_eq!(o.get(Setting::Pad), Some(1), "Nintendo layout, as before");
-        assert_eq!(parse("\tbuttons=0".split('\t')).get(Setting::Pad), Some(0));
+        assert_eq!(o.get(Setting::Pad), Some(2), "Nintendo layout: the Nintendo pad");
+        assert_eq!(parse("\tbuttons=0".split('\t')).get(Setting::Pad), Some(0), "Xbox");
+        assert_eq!(parse("\tbuttons=2".split('\t')).get(Setting::Pad), None);
         let s = Settings::load("*\tbuttons=1\nzelda\tbuttons=0\n");
-        assert_eq!((s.global.get(Setting::Pad), s.of("zelda").get(Setting::Pad)), (1, 0));
-        assert!(s.text().contains("\tpad=1"), "written under the new key");
+        assert_eq!((s.global.get(Setting::Pad), s.of("zelda").get(Setting::Pad)), (2, 0));
+        assert!(s.text().contains("\tpad=2"), "written under the new key");
         let mut buf = String::new();
-        Setting::Pad.describe(2, &mut buf);
-        assert_eq!(buf, "DualSense");
+        let names: Vec<String> = Setting::Pad.choices().iter().map(|&v| {
+            Setting::Pad.describe(v, &mut buf);
+            buf.clone()
+        }).collect();
+        assert_eq!(names, ["Xbox", "PlayStation", "Nintendo"]);
     }
 }

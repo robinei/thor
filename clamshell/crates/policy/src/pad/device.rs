@@ -1,5 +1,6 @@
 //! The real controller and our virtual devices: the pad games see ([`GamePad`]: an Xbox 360 controller
-//! through uinput, or a DualSense through uhid) and a mouse with a few keys (the pad mouse, typing).
+//! through uinput, or a DualSense or Switch Pro Controller through uhid) and a mouse with a few keys
+//! (the pad mouse, typing).
 
 use std::io;
 
@@ -7,7 +8,7 @@ use evdev::raw_stream::RawDevice;
 use evdev::uinput::VirtualDevice;
 use evdev::{AbsInfo, AbsoluteAxisCode, AttributeSet, BusType, InputEvent, InputId, KeyCode, RelativeAxisCode, UinputAbsSetup};
 
-use super::dualsense::{self, VirtualDualSense, motion};
+use super::hid::{VirtualHid, dualsense, motion, procon};
 use super::route::{Axis, MOUSE_DEVICE_KEYS, PadSnapshot, Ranges};
 use super::rumble::RumbleSlot;
 use super::shaping::PadKind;
@@ -22,7 +23,8 @@ pub fn find(spec: &DeviceSpec) -> io::Result<RawDevice> {
     let gamepad = |d: &RawDevice| {
         d.supported_keys().is_some_and(|k| k.contains(KeyCode::BTN_SOUTH)) && d.supported_absolute_axes().is_some_and(|a| a.contains(AbsoluteAxisCode::ABS_RX))
     };
-    device::open(spec, "controller", gamepad, &[VIRTUAL_PAD, dualsense::NAME, dualsense::MOTION_NAME, dualsense::TOUCHPAD_NAME])
+    let ours = [VIRTUAL_PAD, dualsense::NAME, dualsense::MOTION_NAME, dualsense::TOUCHPAD_NAME, procon::NAME, procon::IMU_NAME];
+    device::open(spec, "controller", gamepad, &ours)
 }
 
 /// A controller's buttons and axes (each with its range and current value).
@@ -70,28 +72,29 @@ fn rest(axis: &AbsInfo) -> i32 {
 /// know which it feeds.
 pub enum GamePad {
     Xbox(VirtualDevice),
-    DualSense(VirtualDualSense),
+    Hid(PadKind, VirtualHid),
 }
 
 impl GamePad {
     fn new(kind: PadKind, caps: &Capabilities, rumble: &RumbleSlot) -> io::Result<GamePad> {
         Ok(match kind {
             PadKind::Xbox => GamePad::Xbox(virtual_pad(caps)?),
-            PadKind::DualSense => GamePad::DualSense(VirtualDualSense::new(caps.ranges(), motion::default_source(), rumble.clone())?),
+            PadKind::PlayStation => GamePad::Hid(kind, VirtualHid::new(Box::new(dualsense::DualSense::default()), caps.ranges(), motion::default_source(), rumble.clone())?),
+            PadKind::Nintendo => GamePad::Hid(kind, VirtualHid::new(Box::new(procon::ProController::default()), caps.ranges(), motion::default_source(), rumble.clone())?),
         })
     }
 
     pub fn kind(&self) -> PadKind {
         match self {
             GamePad::Xbox(_) => PadKind::Xbox,
-            GamePad::DualSense(_) => PadKind::DualSense,
+            GamePad::Hid(kind, _) => *kind,
         }
     }
 
     pub fn emit(&mut self, events: &[Raw]) -> io::Result<()> {
         match self {
             GamePad::Xbox(device) => emit(device, events),
-            GamePad::DualSense(device) => device.emit(events),
+            GamePad::Hid(_, device) => device.emit(events),
         }
     }
 }

@@ -5,11 +5,16 @@
 //! Written from the layout in drivers/hid/hid-playstation.c (Linux 7.2) and the public descriptions of
 //! the controller. Pure: no I/O here.
 
-use evdev::{AbsoluteAxisCode, KeyCode};
+use std::time::Duration;
 
 use super::motion::Motion;
-use crate::input::{Range, Raw};
-use crate::pad::route::Ranges;
+use super::state::{Button, PadState};
+use super::{Answer, Bus, Identity, Motors, Protocol, put};
+
+/// The gamepad's name (hid-playstation adds " Motion Sensors" and " Touchpad" for the other two).
+pub const NAME: &str = "clamshell pad (DualSense)";
+pub const MOTION_NAME: &str = "clamshell pad (DualSense) Motion Sensors";
+pub const TOUCHPAD_NAME: &str = "clamshell pad (DualSense) Touchpad";
 
 pub const VENDOR: u32 = 0x054c;
 pub const PRODUCT: u32 = 0x0ce6;
@@ -119,139 +124,58 @@ const STATUS_FULL: u8 = 0x20;
 pub const GYRO_PER_DEG_S: f32 = 16.0;
 pub const ACCEL_PER_G: f32 = 8192.0;
 
-/// Where each button is: (byte of the four button bytes, bit). Byte 0's low nibble is the hat.
-fn button_bit(key: KeyCode) -> Option<(usize, u8)> {
-    // The incoming pad is Xbox-style, read as xpad reports it: BTN_X (= BTN_NORTH's code) is the
-    // left face button, BTN_Y (= BTN_WEST's) the top one.
-    let bit = match key {
-        KeyCode::BTN_NORTH => (0, 4), // X: Square
-        KeyCode::BTN_SOUTH => (0, 5), // A: Cross
-        KeyCode::BTN_EAST => (0, 6),  // B: Circle
-        KeyCode::BTN_WEST => (0, 7),  // Y: Triangle
-        KeyCode::BTN_TL => (1, 0),
-        KeyCode::BTN_TR => (1, 1),
-        KeyCode::BTN_TL2 => (1, 2),
-        KeyCode::BTN_TR2 => (1, 3),
-        KeyCode::BTN_SELECT => (1, 4), // View: Create
-        KeyCode::BTN_START => (1, 5),  // Menu: Options
-        KeyCode::BTN_THUMBL => (1, 6),
-        KeyCode::BTN_THUMBR => (1, 7),
-        // Not BTN_MODE: the home button is ClamShell's, and the PS button is never pressed.
-        _ => return None,
-    };
-    Some(bit)
+/// Each button's (byte of the four button bytes, bit). Byte 0's low nibble is the hat. The PS button
+/// (byte 2, bit 0) is never pressed: the home button is ClamShell's.
+const BUTTONS_AT: [(Button, usize, u8); 12] = [
+    (Button::West, 0, 4),  // Square
+    (Button::South, 0, 5), // Cross
+    (Button::East, 0, 6),  // Circle
+    (Button::North, 0, 7), // Triangle
+    (Button::L1, 1, 0),
+    (Button::R1, 1, 1),
+    (Button::L2, 1, 2),
+    (Button::R2, 1, 3),
+    (Button::Select, 1, 4), // Create
+    (Button::Start, 1, 5),  // Options
+    (Button::L3, 1, 6),
+    (Button::R3, 1, 7),
+];
+
+/// A stick (-1 to 1) or trigger (0 to 1) as 0-255.
+fn byte(v: f32, stick: bool) -> u8 {
+    let unit = if stick { (v + 1.0) / 2.0 } else { v };
+    (unit.clamp(0.0, 1.0) * 255.0).round() as u8
 }
 
-/// The pad as a DualSense shows it, kept from the controller's events.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PadState {
-    /// The button bytes, without the hat.
-    buttons: [u8; 3],
-    /// The hat axes (-1, 0, 1).
-    hat: (i32, i32),
-    /// D-pad buttons, for controllers that have them instead of a hat: up, down, left, right.
-    dpad: [bool; 4],
-    /// Left x, left y, right x, right y: 0-255, 128 centred.
-    sticks: [u8; 4],
-    /// L2, R2: 0-255.
-    triggers: [u8; 2],
-}
-
-impl Default for PadState {
-    fn default() -> Self {
-        PadState { buttons: [0; 3], hat: (0, 0), dpad: [false; 4], sticks: [128; 4], triggers: [0; 2] }
+/// The D-pad as the hat's value.
+fn hat(pad: &PadState) -> u8 {
+    match pad.dpad() {
+        (0, -1) => 0,
+        (1, -1) => 1,
+        (1, 0) => 2,
+        (1, 1) => 3,
+        (0, 1) => 4,
+        (-1, 1) => 5,
+        (-1, 0) => 6,
+        (-1, -1) => 7,
+        _ => HAT_CENTRED,
     }
 }
 
-/// A value of `range` as 0-255.
-fn byte(range: Range, v: i32) -> u8 {
-    (range.unit(v) * 255.0).round() as u8
-}
-
-impl PadState {
-    /// One controller event (a key or an axis; the rest change nothing).
-    pub fn apply(&mut self, raw: Raw, ranges: Ranges) {
-        if let Some((key, press)) = raw.as_key() {
-            let down = press.held();
-            let dpad = match key {
-                KeyCode::BTN_DPAD_UP => Some(0),
-                KeyCode::BTN_DPAD_DOWN => Some(1),
-                KeyCode::BTN_DPAD_LEFT => Some(2),
-                KeyCode::BTN_DPAD_RIGHT => Some(3),
-                _ => None,
-            };
-            if let Some(slot) = dpad.and_then(|i| self.dpad.get_mut(i)) {
-                *slot = down;
-            } else if let Some((i, bit)) = button_bit(key)
-                && let Some(b) = self.buttons.get_mut(i)
-            {
-                if down { *b |= 1 << bit } else { *b &= !(1 << bit) }
-            }
-            return;
-        }
-        let Some((axis, v)) = raw.as_abs() else {
-            return;
-        };
-        let slot = match axis {
-            AbsoluteAxisCode::ABS_X => self.sticks.get_mut(0),
-            AbsoluteAxisCode::ABS_Y => self.sticks.get_mut(1),
-            AbsoluteAxisCode::ABS_RX => self.sticks.get_mut(2),
-            AbsoluteAxisCode::ABS_RY => self.sticks.get_mut(3),
-            AbsoluteAxisCode::ABS_Z => self.triggers.get_mut(0),
-            AbsoluteAxisCode::ABS_RZ => self.triggers.get_mut(1),
-            AbsoluteAxisCode::ABS_HAT0X => {
-                self.hat.0 = v.signum();
-                return;
-            }
-            AbsoluteAxisCode::ABS_HAT0Y => {
-                self.hat.1 = v.signum();
-                return;
-            }
-            _ => return,
-        };
-        let range = if matches!(axis, AbsoluteAxisCode::ABS_Z | AbsoluteAxisCode::ABS_RZ) { ranges.trigger } else { ranges.stick };
-        if let Some(slot) = slot {
-            *slot = byte(range, v);
+/// The button bytes: the hat in byte 0's low nibble, L2 and R2 also pressed as buttons as soon as
+/// their trigger moves (as the real pad does).
+fn button_bytes(pad: &PadState) -> [u8; 4] {
+    let mut b = [hat(pad), 0, 0, 0];
+    let [l2, r2] = pad.triggers.map(|t| byte(t, false) > 0);
+    let pressed = |button| pad.pressed(button) || (button == Button::L2 && l2) || (button == Button::R2 && r2);
+    for (button, i, bit) in BUTTONS_AT {
+        if let Some(byte) = b.get_mut(i)
+            && pressed(button)
+        {
+            *byte |= 1 << bit;
         }
     }
-
-    /// The D-pad as the hat's value.
-    fn hat(&self) -> u8 {
-        let [up, down, left, right] = self.dpad;
-        let x = if self.hat.0 != 0 { self.hat.0 } else { i32::from(right) - i32::from(left) };
-        let y = if self.hat.1 != 0 { self.hat.1 } else { i32::from(down) - i32::from(up) };
-        match (x, y) {
-            (0, -1) => 0,
-            (1, -1) => 1,
-            (1, 0) => 2,
-            (1, 1) => 3,
-            (0, 1) => 4,
-            (-1, 1) => 5,
-            (-1, 0) => 6,
-            (-1, -1) => 7,
-            _ => HAT_CENTRED,
-        }
-    }
-
-    /// The button bytes: the hat in byte 0's low nibble, L2 and R2 also pressed as buttons as soon as
-    /// their trigger moves (as the real pad does).
-    fn button_bytes(&self) -> [u8; 4] {
-        let [b0, mut b1, b2] = self.buttons;
-        let [l2, r2] = self.triggers;
-        if l2 > 0 {
-            b1 |= 1 << 2;
-        }
-        if r2 > 0 {
-            b1 |= 1 << 3;
-        }
-        [b0 | self.hat(), b1, b2, 0]
-    }
-}
-
-fn put(report: &mut [u8], at: usize, bytes: &[u8]) {
-    if let Some(slot) = report.get_mut(at..at + bytes.len()) {
-        slot.copy_from_slice(bytes);
-    }
+    b
 }
 
 fn raw_i16(v: f32, per_unit: f32) -> [u8; 2] {
@@ -263,10 +187,10 @@ fn raw_i16(v: f32, per_unit: f32) -> [u8; 2] {
 pub fn input_report(pad: &PadState, motion: &Motion, sequence: u8, ticks: u32) -> [u8; INPUT_SIZE] {
     let mut r = [0u8; INPUT_SIZE];
     put(&mut r, 0, &[INPUT_REPORT]);
-    put(&mut r, STICKS, &pad.sticks);
-    put(&mut r, TRIGGERS, &pad.triggers);
+    put(&mut r, STICKS, &pad.sticks.map(|s| byte(s, true)));
+    put(&mut r, TRIGGERS, &pad.triggers.map(|t| byte(t, false)));
     put(&mut r, SEQUENCE, &[sequence]);
-    put(&mut r, BUTTONS, &pad.button_bytes());
+    put(&mut r, BUTTONS, &button_bytes(pad));
     for (i, (g, a)) in motion.gyro.iter().zip(motion.accel).enumerate() {
         put(&mut r, GYRO + 2 * i, &raw_i16(*g, GYRO_PER_DEG_S));
         put(&mut r, ACCEL + 2 * i, &raw_i16(a, ACCEL_PER_G));
@@ -277,15 +201,6 @@ pub fn input_report(pad: &PadState, motion: &Motion, sequence: u8, ticks: u32) -
     put(&mut r, TOUCH + 4, &[NO_TOUCH]);
     put(&mut r, STATUS, &[STATUS_FULL]);
     r
-}
-
-/// The motors' strengths (0-255) an output report asks for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Motors {
-    /// The left, heavy motor.
-    pub strong: u8,
-    /// The right, light motor.
-    pub weak: u8,
 }
 
 /// The rumble in an output report (0x02), if it sets one: games and hid-playstation flag the motor
@@ -357,55 +272,57 @@ pub fn feature_report(id: u8) -> Option<Vec<u8>> {
     }
 }
 
+/// The DualSense's side of the device: counts its reports.
+#[derive(Debug, Default)]
+pub struct DualSense {
+    sequence: u8,
+}
+
+impl Protocol for DualSense {
+    fn identity(&self) -> Identity {
+        Identity { name: NAME, bus: Bus::Usb, vendor: VENDOR, product: PRODUCT, descriptor: DESCRIPTOR }
+    }
+
+    fn input(&mut self, pad: &PadState, motion: &Motion, at: Duration) -> Vec<u8> {
+        // The sensor clock counts thirds of a microsecond and wraps.
+        let ticks = at.as_micros().wrapping_mul(3) as u32;
+        let report = input_report(pad, motion, self.sequence, ticks);
+        self.sequence = self.sequence.wrapping_add(1);
+        report.to_vec()
+    }
+
+    fn feature(&mut self, id: u8) -> Option<Vec<u8>> {
+        feature_report(id)
+    }
+
+    fn output(&mut self, report: &[u8], _: &PadState, _: Duration) -> Answer {
+        Answer { motors: rumble(report), reports: Vec::new() }
+    }
+
+    fn every(&self) -> Option<Duration> {
+        None
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
-    use crate::input::Press;
-
-    /// Walks the descriptor's short items, adding up the bits of each report, by (kind, report ID):
-    /// kind 0x80 input, 0x90 output, 0xb0 feature.
-    fn report_bits(d: &[u8]) -> Vec<((u8, u8), u32)> {
-        let (mut i, mut id, mut size, mut count) = (0, 0u8, 0u32, 0u32);
-        let mut out: Vec<((u8, u8), u32)> = Vec::new();
-        let mut depth = 0i32;
-        while i < d.len() {
-            let prefix = d[i];
-            let len = match prefix & 0b11 {
-                3 => 4,
-                n => usize::from(n),
-            };
-            let data = d[i + 1..i + 1 + len].iter().rev().fold(0u32, |v, &b| (v << 8) | u32::from(b));
-            match prefix & 0xfc {
-                0x84 => id = data as u8,
-                0x74 => size = data,
-                0x94 => count = data,
-                0xa0 => depth += 1,
-                0xc0 => depth -= 1,
-                kind @ (0x80 | 0x90 | 0xb0) => match out.iter_mut().find(|(k, _)| *k == (kind, id)) {
-                    Some((_, bits)) => *bits += size * count,
-                    None => out.push(((kind, id), size * count)),
-                },
-                _ => {}
-            }
-            i += 1 + len;
-        }
-        assert_eq!((i, depth), (d.len(), 0), "whole items, collections closed");
-        out
-    }
+    use crate::input::{Press, Range, Raw};
+    use crate::pad::route::Ranges;
+    use evdev::{AbsoluteAxisCode, KeyCode};
 
     #[test]
     fn the_descriptor_declares_the_reports_hid_playstation_uses() {
         assert!(DESCRIPTOR.len() < 4096, "fits UHID_CREATE2");
-        let bits = report_bits(DESCRIPTOR);
-        let bytes = |kind: u8, id: u8| bits.iter().find(|(k, _)| *k == (kind, id)).map(|(_, b)| *b / 8);
+        let bits = crate::pad::hid::descriptor::report_bytes(DESCRIPTOR);
+        let bytes = |kind: u8, id: u8| bits.iter().find(|(k, _)| *k == (kind, id)).map(|(_, b)| *b);
         assert_eq!(bytes(0x80, INPUT_REPORT), Some(INPUT_SIZE as u32 - 1));
         assert_eq!(bytes(0x90, OUTPUT_REPORT), Some(47));
         assert_eq!(bytes(0xb0, CALIBRATION), Some(CALIBRATION_SIZE as u32 - 1));
         assert_eq!(bytes(0xb0, PAIRING_INFO), Some(PAIRING_INFO_SIZE as u32 - 1));
         assert_eq!(bytes(0xb0, FIRMWARE_INFO), Some(FIRMWARE_INFO_SIZE as u32 - 1));
         assert_eq!(bits.len(), 5);
-        assert!(bits.iter().all(|(_, b)| b % 8 == 0), "whole bytes");
     }
 
     fn ranges() -> Ranges {

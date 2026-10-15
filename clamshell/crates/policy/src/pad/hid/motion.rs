@@ -1,4 +1,4 @@
-//! Where the virtual DualSense's gyro and accelerometer readings come from: a [`MotionSource`]. For
+//! Where the virtual HID pads' gyro and accelerometer readings come from: a [`MotionSource`]. For
 //! now only [`Level`], a device lying level at rest, until the Thor's own sensor is known (an IIO
 //! device under /sys/bus/iio, or an evdev node with INPUT_PROP_ACCELEROMETER): a source reading it goes
 //! here, implementing the same trait, and is picked in [`default_source`].
@@ -43,7 +43,7 @@ impl MotionSource for Level {
     }
 }
 
-/// The source the virtual DualSense uses.
+/// The source the virtual HID pads use.
 pub fn default_source() -> Box<dyn MotionSource> {
     Box::new(Level)
 }

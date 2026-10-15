@@ -1,18 +1,19 @@
 //! The controller path: the real Xbox-style controller is grabbed for good, and games get a virtual pad
-//! that is always there: an Xbox 360 controller (uinput), or a DualSense (uhid, [`dualsense`]) with
-//! motion sensors and rumble, as the settings in force say ([`PadKind`]). Where its events go is the
-//! state's choice ([`PadRoute`], see [`route`]): the game's virtual pad (copied straight through,
-//! [`Shaping`] applied); the pad mouse ([`mouse`]); ClamShell's screens ([`navigator`]); or typing into
-//! an app ([`typing`]). Away from the game the virtual pad shows a neutral controller, so games never
-//! see it disappear. The home button (BTN_MODE) is ours: games never see it, it goes to the program as
-//! [`Event::Home`]. The virtual devices outlive the controller: unplugged (or failing), the pad stays,
-//! at rest, until one is back. Button layers (remaps) go in this same path later.
+//! that is always there: an Xbox 360 controller (uinput), a DualSense or a Switch Pro Controller
+//! (uhid, [`hid`]) with motion sensors and rumble, as the settings in force say ([`PadKind`]). Where
+//! its events go is the state's choice ([`PadRoute`], see [`route`]): the game's virtual pad (copied
+//! straight through, [`Shaping`] applied); the pad mouse ([`mouse`]); ClamShell's screens
+//! ([`navigator`]); or typing into an app ([`typing`]). Away from the game the virtual pad shows a
+//! neutral controller, so games never see it disappear. The home button (BTN_MODE) is ours: games
+//! never see it, it goes to the program as [`Event::Home`]. The virtual devices outlive the
+//! controller: unplugged (or failing), the pad stays, at rest, until one is back. Button layers
+//! (remaps) go in this same path later.
 //!
-//! Rumble reaches the real controller from the DualSense's output reports ([`rumble`]); the Xbox pad
+//! Rumble reaches the real controller from the HID pads' output reports ([`rumble`]); the Xbox pad
 //! has no force feedback yet (that needs uinput's force-feedback uploads).
 
 mod device;
-pub mod dualsense;
+pub mod hid;
 mod mouse;
 mod navigator;
 mod route;
@@ -68,7 +69,7 @@ struct PadThread<S> {
     route: PadRoute,
     shaping: Shaping,
     devices: Option<VirtualDevices>,
-    /// The real controller's rumble, for the DualSense's thread.
+    /// The real controller's rumble, for the HID pads' threads.
     rumble: RumbleSlot,
 }
 
