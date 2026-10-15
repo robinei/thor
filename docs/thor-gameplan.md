@@ -156,8 +156,9 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
 - [ ] Steam with the virtual Xbox 360 pad: the real controller's USB ids, for a udev rule that clears its
       joystick tags (SDL and Steam skip it; ClamShell finds it by its capabilities) and closes its hidraw
       node (Steam reads some controllers through hidraw, past ClamShell's grab: every press twice). Steam
-      then lists one controller. Steam's desktop layout set to none (else it acts beside ClamShell's pad
-      navigation outside games).
+      then lists one controller. Steam's Xbox configuration support stays off (its default), so games read
+      the virtual pad directly and ClamShell's keymaps are the only remapping; check that Steam's desktop
+      layout doesn't act on the pad outside games (it would beside ClamShell's pad navigation).
 - [ ] Lid: does the Thor report a lid switch (`SW_LID`), and does closing it suspend?
 - [ ] Battery: capacity, charging, power draw in sysinfo; the charge limit setting (sysfs path?); UPower
       sees it (the battery mode's graph) and powers off at 3 %; GPU time per program in the battery mode
