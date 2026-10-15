@@ -107,7 +107,7 @@ impl Idle {
         self.last_input = now;
     }
 
-    /// Back from sleep at `now`: as if there had just been input.
+    /// Back from sleep (or the clock first known) at `now`: as if there had just been input.
     pub(crate) fn resumed(&mut self, now: u64) {
         self.last_input = now;
         if let Compositor::QuietSince(_) = self.compositor {
@@ -264,6 +264,18 @@ mod tests {
         s.apply(Event::Tick { unix_secs: 1000 });
         s.apply(Event::Idle(IdleEvent::Watching(true)));
         assert!(s.apply(Event::Tick { unix_secs: 1900 }).1.contains(&Effect::Sleep));
+    }
+
+    #[test]
+    fn what_is_heard_before_the_clock_is_known_counts_from_its_first_tick() {
+        use crate::Event;
+        let mut s = crate::testkit::state();
+        // At start the compositor reports quiet before the clock thread's first tick.
+        s.apply(Event::Idle(IdleEvent::Watching(true)));
+        s.apply(Event::Idle(IdleEvent::CompositorQuiet));
+        let fx = s.apply(Event::Tick { unix_secs: 1_792_060_000 }).1;
+        assert!(!fx.contains(&Effect::Screens(false)), "not off at once: {fx:?}");
+        assert_eq!(s.idle().stage(), Stage::Awake);
     }
 
     #[test]

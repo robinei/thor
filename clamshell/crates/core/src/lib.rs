@@ -325,6 +325,10 @@ impl State {
     /// never listed are forgotten; what changed is saved once changes have stopped for a moment.
     fn tick(&mut self, unix_secs: u64) -> (Dirty, Vec<Effect>) {
         let minute_changed = unix_secs / 60 != self.unix_secs / 60;
+        // The clock's first word: what idle heard before it was dated 0, as if decades ago. Count from now.
+        if self.unix_secs == 0 {
+            self.idle.resumed(unix_secs);
+        }
         self.session.forget_failed_starts(unix_secs);
         self.unix_secs = unix_secs;
         let mut effects = vec![];
