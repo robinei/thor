@@ -101,6 +101,8 @@ pub struct Bottom {
     pub(crate) scope: Scope,
     /// The dark second screen was tapped awake (until the next game).
     pub(crate) woken: bool,
+    /// What a key just did (a level, a screenshot), shown under the bar for a moment.
+    pub(crate) notice: Option<crate::hardware::Notice>,
 }
 
 impl Bottom {
@@ -110,6 +112,10 @@ impl Bottom {
 
     pub fn editor(&self) -> Option<&Editor> {
         self.editor.as_ref()
+    }
+
+    pub fn notice(&self) -> Option<&crate::hardware::Notice> {
+        self.notice.as_ref()
     }
 
     pub fn scope(&self) -> Scope {

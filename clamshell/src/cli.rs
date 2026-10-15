@@ -18,9 +18,13 @@ pub enum Command {
     Library,
     /// `--snapshot DIR`: draw both screens at the Thor's size into PNG files, no Wayland needed.
     Snapshot(PathBuf),
+    /// `ctl COMMAND...`: send a command to the running ClamShell (`volume up`, `screenshot`, ...; see
+    /// [`crate::control`]).
+    Ctl(Vec<String>),
 }
 
-pub const USAGE: &str = "usage: clamshell [--snapshot DIR | --library | --launcher-example | --mangohud-env | --run FILE]";
+pub const USAGE: &str =
+    "usage: clamshell [ctl COMMAND... | --snapshot DIR | --library | --launcher-example | --mangohud-env | --run FILE]";
 
 /// The command the arguments (without the program's name) ask for.
 pub fn parse(args: &[String]) -> Option<Command> {
@@ -31,6 +35,7 @@ pub fn parse(args: &[String]) -> Option<Command> {
         [flag] if flag == "--launcher-example" => Command::LauncherExample,
         [flag] if flag == "--mangohud-env" => Command::MangohudEnv,
         [flag] if flag == "--library" => Command::Library,
+        [ctl, rest @ ..] if ctl == "ctl" && !rest.is_empty() => Command::Ctl(rest.to_vec()),
         _ => return None,
     })
 }
@@ -51,5 +56,7 @@ mod tests {
         assert_eq!(parse(&args("--library")), Some(Command::Library));
         assert_eq!(parse(&args("--snapshot")), None, "without its dir");
         assert_eq!(parse(&args("--frobnicate")), None);
+        assert_eq!(parse(&args("ctl volume up")), Some(Command::Ctl(vec!["volume".into(), "up".into()])));
+        assert_eq!(parse(&args("ctl")), None, "without a command");
     }
 }

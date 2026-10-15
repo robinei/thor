@@ -60,10 +60,12 @@ pub fn start(env: &Env, paths: &Paths, layout: Arc<Mutex<TouchLayout>>, global: 
     detached("metrics", metrics::spawn(sink.clone()));
     detached("frames", frames::spawn(paths.mangohud.clone(), sink.clone()));
     let touchpad = started("touchpad", touchpad::spawn(touchpad::Config { device: env.touchscreen.clone(), px_per_mm: BOTTOM_PX_PER_MM }, layout, sink.clone()));
-    // Tests drive the program through a pipe, not input devices.
-    if let Some(path) = &env.control {
+    // Commands (`clamshell ctl`, tests) come through a pipe.
+    if let Some(path) = env.control.as_ref().or(paths.control.as_ref()) {
         control::spawn(path.clone(), sink.clone());
     }
+    // Input on every device, for idle; the hardware keys in the device's own session.
+    detached("input watch", clamshell_policy::input::watch::spawn(env.device_session, sink.clone()));
     let sway = sway::spawn(env.sway.clone(), env.bottom_output.clone(), sink.clone()).unwrap_or_else(|e| {
         log::error!("sway thread: {e}");
         env.sway.as_ref().map(|_| Worker::gone("sway commands"))
@@ -78,6 +80,7 @@ pub fn start(env: &Env, paths: &Paths, layout: Arc<Mutex<TouchLayout>>, global: 
     let battery = started("battery", battery::spawn(sink.clone()));
     let mixer = started("mixer", mixer::spawn(backlights.clone(), sink.clone()));
     let bluetooth = started("bluetooth", bluetooth::spawn(sink.clone()));
+    let system = started("system", clamshell_policy::system::spawn(paths.screenshots.clone(), sink.clone()));
     let wifi = started("wifi", wifi::spawn(sink));
     let tuning = Tuning { hardware: started("tuning", tuning::spawn()), pad: pad.clone(), mangohud: paths.mangohud.clone() };
     tuning.apply(global, None);
@@ -94,6 +97,7 @@ pub fn start(env: &Env, paths: &Paths, layout: Arc<Mutex<TouchLayout>>, global: 
         sway,
         jobs,
         sound: started("sound", sound::spawn()),
+        system,
         brightness: started("brightness", brightness::spawn(backlights)),
         tuning,
         // The on-screen keyboard types through a virtual keyboard (US positions).

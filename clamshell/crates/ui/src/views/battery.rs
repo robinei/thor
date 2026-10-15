@@ -1,26 +1,29 @@
-//! The battery tab: the level, what it is doing (drain, time left) and the charge limit's button on top;
-//! the charge over the last day (UPower's history; charging in green) below; then what is using the
+//! The battery tab: the level and what it is doing (drain, time left) on top, beside the tiles of the
+//! battery's settings (the charge limit, when the screens go off and the device sleeps without input),
+//! drawn and stepped as in the settings grid; the charge over the last day (UPower's history; charging in
+//! green); then what is using the
 //! machine now, the busiest first, as many as fit: each a bar of its share of the work and its CPU and GPU.
 //! The battery reports only its total drain, so programs are ranked by work, not watts.
 
-use std::fmt::{self, Display, Formatter};
 
 use clamshell_core::settings::Setting;
-use clamshell_core::{Id, SettingsId, State};
+use clamshell_core::State;
 
 use super::format::{Duration, Fmt, Share};
-use super::style::{self, Look, SURFACE, SURFACE_HI, Tone};
+use super::style::{self, SURFACE, SURFACE_HI, Tone};
 use super::Frame;
 use crate::draw::{Align, Keep, LINE, Rect};
-use crate::icons::Icon;
 
-/// The top line's height, the level's and the other text's sizes, of the area's height. (The text is
+/// The top row's height, the level's and the other text's sizes, of the area's height. (The text is
 /// a little smaller than other tabs' body text, for the figures to fit.)
-const TOP_H: f32 = 0.12;
+const TOP_H: f32 = 0.22;
+/// The settings tiles beside the level, and a tile's width, of the row's (near the settings grid's).
+const TILES: [Setting; 3] = [Setting::ChargeLimit, Setting::ScreenOff, Setting::Sleep];
+const TILE_W: f32 = 0.22;
 const LEVEL: f32 = 0.075;
 const TEXT_SIZE: f32 = 0.036;
 /// The graph's height, of the area's height; the line's width.
-const GRAPH_H: f32 = 0.34;
+const GRAPH_H: f32 = 0.28;
 const STROKE: f32 = 2.0;
 /// A spender's row height, of the area's height; its name column, of the width.
 const ROW_H: f32 = 0.072;
@@ -73,58 +76,46 @@ pub(super) fn draw(f: &mut Frame, body: Rect) {
     }
 }
 
-/// The level, the state with drain and time left, and the charge limit's button on the right.
+/// The level with the state (and drain) and the time left under it, and the settings tiles on the
+/// right.
 fn top_line(f: &mut Frame, top: Rect, body_h: f32) {
     let s = f.s;
     let level_size = body_h * LEVEL;
     let size = body_h * TEXT_SIZE;
-
-    // The charge limit: a tap steps it (full, 90, 80), as the settings tile does.
-    let limit = s.settings().global.get(Setting::ChargeLimit);
-    let text = f.scratch.describe(Setting::ChargeLimit, limit);
-    let text_w = f.c.text_width(size, &text);
-    let icon = size * 1.4;
-    let button_w = text_w + icon + size * 2.0;
-    let b = Rect::new(top.x + top.w - button_w, top.y + top.h * 0.15, button_w, top.h * 0.7);
-    let tone = if limit < 100 { Tone::Go } else { Tone::Dim };
-    f.button(Id::Settings(SettingsId::Tile(Setting::ChargeLimit)), b, Look::CARD, |f| {
-        let battery = Icon::Battery { tenths: (limit / 10) as u8, charging: true };
-        f.c.icon(battery, Rect::new(b.x + size * 0.6, b.y + (b.h - icon) / 2.0, icon, icon), tone);
-        f.c.text_in(Rect::new(b.x + icon + size * 0.8, b.y, text_w + size * 0.6, b.h), size, Tone::Normal, &text, Align::Center);
-    });
-
+    let mut row = top;
+    let tile_w = top.w * TILE_W;
+    for setting in TILES.into_iter().rev() {
+        let tile = row.take_right(tile_w);
+        super::settings::setting_tile(f, tile, setting);
+    }
+    // The level and two lines under it, in the middle of the row.
+    let mut lines = Rect::new(row.x, row.y + (row.h - level_size * LINE - 2.0 * size * LINE) / 2.0, row.w - size, row.h);
     let Some(level) = s.sys().status.battery else {
-        f.c.text_in(top, size, Tone::Dim, "No battery", Align::Start);
+        f.c.text_in(lines.take_top(level_size * LINE), size, Tone::Dim, "No battery", Align::Start);
         return;
     };
     let level = Fmt::<8>::of(format_args!("{level}%"));
-    f.c.text_in(top, level_size, Tone::High, &level, Align::Start);
-    let level_w = f.c.text_width(level_size, &level);
-    let dx = top.x + level_w + size;
-    let status = Fmt::<128>::of(format_args!("{}", Drain(s)));
-    f.c.text_fit(Rect::new(dx, top.y, b.x - dx - size, top.h), size, Tone::Normal, &status, Keep::Start);
+    f.c.text_in(lines.take_top(level_size * LINE), level_size, Tone::High, &level, Align::Start);
+    let (state, left) = drain(s);
+    f.c.text_fit(lines.take_top(size * LINE), size, Tone::Normal, &state, Keep::Start);
+    f.c.text_fit(lines.take_top(size * LINE), size, Tone::Dim, &left, Keep::Start);
 }
 
-/// What the battery is doing: "Discharging · 6.2 W · 3 h 10 min left", "Charging · 12.0 W", "Charging
-/// or full".
-struct Drain<'a>(&'a State);
-
-impl Display for Drain<'_> {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let sys = self.0.sys();
-        match (sys.status.charging, sys.metrics.power_w) {
-            (true, Some(w)) if w.abs() > 0.05 => write!(f, "Charging · {:.1} W", w.abs()),
-            (true, _) => f.write_str("Charging or full"),
-            (false, Some(w)) => {
-                write!(f, "Discharging · {w:.1} W")?;
-                match sys.metrics.minutes_left {
-                    Some(m) => write!(f, " · {} left", Duration(m)),
-                    None => Ok(()),
-                }
-            }
-            (false, None) => f.write_str("Discharging"),
-        }
-    }
+/// What the battery is doing ("Discharging · 6.2 W", "Charging · 12.0 W", "Charging or full"), and
+/// the time left ("3 h 10 min left") when discharging.
+fn drain(s: &State) -> (Fmt<64>, Fmt<64>) {
+    let sys = s.sys();
+    let state = match (sys.status.charging, sys.metrics.power_w) {
+        (true, Some(w)) if w.abs() > 0.05 => Fmt::of(format_args!("Charging · {:.1} W", w.abs())),
+        (true, _) => Fmt::of(format_args!("Charging or full")),
+        (false, Some(w)) => Fmt::of(format_args!("Discharging · {w:.1} W")),
+        (false, None) => Fmt::of(format_args!("Discharging")),
+    };
+    let left = match (sys.status.charging, sys.metrics.minutes_left) {
+        (false, Some(m)) => Fmt::of(format_args!("{} left", Duration(m))),
+        _ => Fmt::of(format_args!("")),
+    };
+    (state, left)
 }
 
 /// The last day's charge: 0, 50 and 100% as faint lines, the level as a line (green while charging),

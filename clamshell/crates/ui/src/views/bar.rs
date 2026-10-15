@@ -7,6 +7,7 @@
 //! the bar (the bar stays visible under it): a track whose current level sits under the finger, and the
 //! level as a number beside it.
 
+use clamshell_core::hardware::NoticeKind;
 use clamshell_core::slider::{Control, Slider};
 use clamshell_core::{Id, State, Tab};
 
@@ -116,11 +117,48 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> Rect {
     body
 }
 
-/// The slider, while one moves: drawn last, over the bar and the tab below it.
+/// The slider, while one moves, else a notice (what a key just did): drawn last, over the bar and the
+/// tab below it.
 pub(super) fn draw_slider_over(f: &mut Frame, screen: Rect, bar_h: f32) {
     if let Some(slider) = f.s.levels().slider() {
         draw_slider(f, *slider, screen.w, bar_h);
+    } else if let Some(notice) = f.s.bottom().notice() {
+        draw_notice(f, &notice.what, screen.w, bar_h);
     }
+}
+
+/// A notice on a card below the bar, in the middle: a level a key changed (its icon and number), or
+/// the screenshot's outcome.
+fn draw_notice(f: &mut Frame, what: &NoticeKind, w: f32, bar_h: f32) {
+    let side = bar_h * ICON;
+    let size = bar_h * LEVEL_TEXT;
+    let (icon, text): (Option<Icon>, Fmt<32>) = match what {
+        NoticeKind::Level(control) => {
+            let level = f.s.levels().control(*control);
+            let icon = match control {
+                Control::Volume => Icon::volume(level.unwrap_or(0), f.s.levels().muted()),
+                Control::Brightness => Icon::Brightness,
+            };
+            let text = match (control, level) {
+                (Control::Volume, _) if f.s.levels().muted() => Fmt::of(format_args!("Muted")),
+                (_, Some(v)) => Fmt::of(format_args!("{v}")),
+                (_, None) => Fmt::of(format_args!("-")),
+            };
+            (Some(icon), text)
+        }
+        NoticeKind::Screenshot(Ok(_)) => (None, Fmt::of(format_args!("Screenshot saved"))),
+        NoticeKind::Screenshot(Err(_)) => (None, Fmt::of(format_args!("Screenshot failed"))),
+    };
+    let text_w = f.c.text_width(size, &text);
+    let icon_w = if icon.is_some() { side * 1.3 } else { 0.0 };
+    let group_w = icon_w + text_w;
+    let (gx, gy) = ((w - group_w) / 2.0, bar_h * 1.3);
+    let card = Rect::new(gx - side * 0.4, gy - side * 0.3, group_w + side * 0.8, side * 1.6);
+    f.c.rounded(card, side * 0.3, SHADE.alpha(SHADE_ALPHA));
+    if let Some(icon) = icon {
+        f.c.icon(icon, Rect::new(gx, gy, side, side), Tone::Normal);
+    }
+    f.c.text_in(Rect::new(gx + icon_w, gy, text_w, side), size, Tone::High, &text, Align::Start);
 }
 
 /// The slider over the bar's row: the track (the level lit), the thumb under the finger, and the level

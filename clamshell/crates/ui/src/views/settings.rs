@@ -135,6 +135,11 @@ fn face(s: &State, scratch: &mut super::Scratch, tile: Tile) -> Face {
     }
 }
 
+/// A global setting's tile outside the grid (the battery tab's), drawn as in it.
+pub(super) fn setting_tile(f: &mut Frame, r: Rect, setting: Setting) {
+    draw_tile(f, r, Tile::Setting(setting));
+}
+
 fn draw_tile(f: &mut Frame, r: Rect, tile: Tile) {
     let face = face(f.s, f.scratch, tile);
     let later = !face.active && !matches!(tile, Tile::Reset);

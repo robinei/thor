@@ -28,9 +28,12 @@ pub struct Env {
     pub start_tab: Option<Tab>,
     /// CLAMSHELL_PAD_MOUSE=1: start with the pad mouse on (where the pad goes is sent at the start).
     pub pad_mouse: bool,
-    /// CLAMSHELL_CONTROL: a pipe tests drive the program through, instead of input devices (see
-    /// [`crate::control`]).
+    /// CLAMSHELL_CONTROL: the control pipe, where `clamshell ctl` and tests send commands (see
+    /// [`crate::control`]); default $XDG_RUNTIME_DIR/clamshell-control.
     pub control: Option<PathBuf>,
+    /// CLAMSHELL_SESSION=device: ClamShell is the device's own session. It may put the device to sleep
+    /// when idle, and it takes the hardware keys (volume, brightness). A desktop run leaves it unset.
+    pub device_session: bool,
     /// CLAMSHELL_BACKLIGHTS: another folder laid out as /sys/class/backlight (tests, desktops without
     /// one).
     pub backlights: PathBuf,
@@ -60,6 +63,7 @@ impl Env {
             start_tab: var("CLAMSHELL_START_MODE").and_then(|t| Tab::from_name(&t)),
             pad_mouse: flag("CLAMSHELL_PAD_MOUSE", "1"),
             control: path("CLAMSHELL_CONTROL"),
+            device_session: flag("CLAMSHELL_SESSION", "device"),
             backlights: path("CLAMSHELL_BACKLIGHTS").unwrap_or_else(|| PathBuf::from("/sys/class/backlight")),
             snapshot_real_library: flag("CLAMSHELL_SNAPSHOT_LIBRARY", "real"),
             snapshot_now: std::env::var_os("CLAMSHELL_SNAPSHOT_NOW").is_some(),

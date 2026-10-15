@@ -51,6 +51,12 @@ pub enum Effect {
     Bluetooth(bluetooth::Command),
     /// Start (true) or stop reading something for a tab while it is open.
     Watch(Watch, bool),
+    /// The screens on or off (idle; the UI asks the compositor).
+    Screens(bool),
+    /// Sleep (idle, in the device's session): suspend, then hibernate where the system can.
+    Sleep,
+    /// Both screens to a file; the result comes back as [`crate::Event::Screenshot`].
+    Screenshot,
     Quit,
 }
 

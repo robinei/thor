@@ -107,6 +107,7 @@ impl SeatHandler for App {
 
     fn new_seat(&mut self, _: &Connection, qh: &QueueHandle<Self>, seat: wl_seat::WlSeat) {
         self.text_input.seat(&seat, qh);
+        self.display.seat(&seat, qh);
     }
 
     fn new_capability(&mut self, _: &Connection, qh: &QueueHandle<Self>, seat: wl_seat::WlSeat, capability: Capability) {

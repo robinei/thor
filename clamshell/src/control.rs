@@ -1,6 +1,8 @@
-//! The control pipe (CLAMSHELL_CONTROL): tests drive the program through it, one command per line, as
-//! the events a user's taps and presses would make. The grammar:
+//! The control pipe ($XDG_RUNTIME_DIR/clamshell-control, or CLAMSHELL_CONTROL): `clamshell ctl` and
+//! tests send commands through it, one per line, as the events the device's keys or a user's taps and
+//! presses would make. The grammar:
 //!
+//! - `volume up|down|mute`, `brightness up|down`, `screenshot`: as the hardware keys
 //! - `tap TARGET`, `long TARGET` (a tap, a long press) on: `app N` (the dock's apps, by position in
 //!   launcher.json), `plus N` (another instance of app N), `game` / `game N` (the dock's game tiles),
 //!   `start-game`, `launch`, `keep`, `close` (shelf), `network N`, `wifi-power`, `device N`,
@@ -19,6 +21,7 @@ use std::fmt;
 use std::io::BufRead;
 use std::path::PathBuf;
 
+use clamshell_core::hardware::DeviceKey;
 use clamshell_core::keyboard::{self, Key, Modifier};
 use clamshell_core::levels::Level;
 use clamshell_core::slider::Control;
@@ -75,6 +78,12 @@ pub fn parse(line: &str) -> Result<Vec<Event>, ParseError> {
     }
     let words: Vec<&str> = line.split_whitespace().collect();
     Ok(match words.as_slice() {
+        ["volume", "up"] => vec![Event::Device(DeviceKey::VolumeUp)],
+        ["volume", "down"] => vec![Event::Device(DeviceKey::VolumeDown)],
+        ["volume", "mute"] => vec![Event::Device(DeviceKey::Mute)],
+        ["brightness", "up"] => vec![Event::Device(DeviceKey::BrightnessUp)],
+        ["brightness", "down"] => vec![Event::Device(DeviceKey::BrightnessDown)],
+        ["screenshot"] => vec![Event::Device(DeviceKey::Screenshot)],
         ["home"] => vec![Event::Home],
         ["list", step] => vec![ShelfEvent::ListStep(number(step)?).into()],
         ["tab", name] => vec![PointerEvent::Activate(Id::Tab(Tab::from_name(name).ok_or_else(|| ParseError::Name((*name).to_owned()))?)).into()],
@@ -175,7 +184,28 @@ pub fn type_text(text: &str) -> Result<Vec<Event>, ParseError> {
 }
 
 /// Reads commands from the pipe, one per line, for as long as the program runs.
+/// Sends `line` to the running ClamShell's control pipe (`clamshell ctl`). Without ClamShell reading it,
+/// an error rather than waiting.
+pub fn send(path: Option<&PathBuf>, line: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let path = path.ok_or_else(|| std::io::Error::other("no control pipe (no XDG_RUNTIME_DIR)"))?;
+    // Non-blocking: opening a pipe nobody reads fails at once (ENXIO) instead of waiting for a reader.
+    let mut pipe = std::fs::OpenOptions::new()
+        .write(true)
+        .custom_flags(rustix::fs::OFlags::NONBLOCK.bits() as i32)
+        .open(path)
+        .map_err(|e| std::io::Error::new(e.kind(), format!("{}: {e} (is ClamShell running?)", path.display())))?;
+    writeln!(pipe, "{line}")
+}
+
+/// Reads commands from the pipe at `path` (made if it isn't there) and sends their events.
 pub fn spawn(path: PathBuf, sink: impl Sink) {
+    if !path.exists()
+        && let Err(e) = rustix::fs::mknodat(rustix::fs::CWD, &path, rustix::fs::FileType::Fifo, rustix::fs::Mode::from_raw_mode(0o600), 0)
+    {
+        log::warn!("control: {}: {e}", path.display());
+    }
     let spawned = worker::detached("control", move || {
         // Each writer closes the pipe after its line: open it again for the next.
         while let Ok(file) = std::fs::File::open(&path) {

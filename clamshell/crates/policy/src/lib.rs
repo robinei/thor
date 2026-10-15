@@ -28,6 +28,7 @@ pub mod sound;
 pub mod status;
 pub mod sway;
 pub mod sys;
+pub mod system;
 pub mod touchpad;
 pub mod tuning;
 pub mod units;

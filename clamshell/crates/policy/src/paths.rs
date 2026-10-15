@@ -22,6 +22,10 @@ pub struct Paths {
     pub mangohud: PathBuf,
     /// $XDG_RUNTIME_DIR, where systemd's user manager has its socket.
     pub runtime: Option<PathBuf>,
+    /// The control pipe `clamshell ctl` writes to ($XDG_RUNTIME_DIR/clamshell-control).
+    pub control: Option<PathBuf>,
+    /// Where screenshots go (~/Pictures/Screenshots).
+    pub screenshots: Option<PathBuf>,
 }
 
 /// The environment the paths come from.
@@ -66,6 +70,8 @@ impl Paths {
             jobs: base.runtime.clone().unwrap_or_else(std::env::temp_dir).join("clamshell/jobs"),
             mangohud: base.runtime.clone().unwrap_or_else(|| PathBuf::from("/tmp")).join("clamshell/mangohud"),
             runtime: base.runtime.clone(),
+            control: base.runtime.as_ref().map(|r| r.join("clamshell-control")),
+            screenshots: base.home.as_ref().map(|h| h.join("Pictures/Screenshots")),
             pegasus_config,
             state_dir,
         }

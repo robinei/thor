@@ -126,8 +126,9 @@ Connecting and pairing run on a worker of their own, so the list and the radio's
 them. PipeWire moves the sound to headphones on its own.
 
 **Battery** (tap the battery icon; lit while open): the level, charging or discharging with the drain and
-the time left, and the charge limit as a button (full, 90, 80 %, the same setting as its tile); the
-charge over the last day from UPower (charging in green); then what is using the machine now, the busiest
+the time left, beside three settings tiles (as in the settings grid; a tap steps one): the charge limit
+(full, 90, 80 %), when the screens go off without input (1, 2, 5, 10 min, always on) and when the device
+sleeps (5, 15, 30, 60 min, never); the charge over the last day from UPower (charging in green); then what is using the machine now, the busiest
 first, as many as fit: CPU time per process and GPU time per DRM client (`fdinfo`, the render engine's, as the sysinfo tab
 counts it), grouped by our scopes
 (an app instance, the game), else by program for the user's processes, else as System. The battery only
@@ -191,7 +192,8 @@ from the defaults are dimmed); its last tile is Reset, where *All games* has the
 | CPU, GPU | a frequency cap in percent, instead of the profile's |
 | Env | extra environment variables (`KEY=value`, typed on the on-screen keyboard); a game's come after the defaults' |
 | Charge | charging stops at 90 or 80 % (*All games* only) |
-| Refresh, Upscale, Fan, Rumble | saved, marked "later": not applied yet |
+| Refresh | the main screen's refresh rate: the nearest its modes have (through the compositor's output management protocol) |
+| Upscale, Fan, Rumble | saved, marked "later": not applied yet |
 
 Saved in `game-settings.txt` next to `stats.db`, applied at a game's launch and at once while it runs.
 Frequency caps, cores and the charge limit need write access to cpufreq's `scaling_max_freq`, CPUs'
@@ -222,6 +224,25 @@ stays when the controller is unplugged. The **home button** (BTN_MODE) is ClamSh
 from anything it goes to shelf, and from shelf back to what was in front before (the game, an app). (So
 Steam's overlay doesn't get it.) Test with a fake pad: `cargo run --release -p clamshell-policy --example
 fake_pad &` then `CLAMSHELL_GAMEPAD="clamshell fake pad" CLAMSHELL_PAD_MOUSE=1 cargo run --release`.
+
+**Idle**: without input the screens dim (30 s before they go off), go off, and after longer the device
+sleeps (times in the Battery tab). Input is read from the input devices themselves (all of them, without
+grabbing any; the session user needs the `input` group), so the controller counts as much as touch; the
+compositor's idle report (ext-idle-notify) is an extra where it has one, through which a video player that
+asks to keep the screen on holds idle off. Any input brings the screens back; the tap or button that does
+only wakes them. The screens go off through the compositor's output power protocol. Sleep happens only in
+the device's own session (`CLAMSHELL_SESSION=device`, which the image's service sets: a desktop run never
+suspends its host) and never while a game is in front; it goes through logind, suspend-then-hibernate
+where the system can.
+
+**The device's keys and `clamshell ctl`**: in the device's session, ClamShell takes the volume and
+brightness keys of the device's small button devices (gpio-keys; never a full keyboard's, which are the
+desktop's) and shows the new level under the bar for a moment. `clamshell ctl volume up|down|mute`,
+`brightness up|down` and `screenshot` do the same from a script or a key binding (through the control pipe,
+`$XDG_RUNTIME_DIR/clamshell-control`). A screenshot (the pad's Home with RB, or `ctl screenshot`, which the
+image binds to a keyboard's Print) is both screens in one PNG in `~/Pictures/Screenshots`, taken by grim;
+"Screenshot saved" shows under the bar. Home on its own acts when it is let go, so it can start a
+combination.
 
 **Sleep**: the power button and the lid suspend through logind (the image's `logind.conf.d/thor.conf`).
 ClamShell notices waking from the clocks (CLOCK_BOOTTIME runs during sleep, CLOCK_MONOTONIC doesn't) and

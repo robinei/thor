@@ -5,6 +5,8 @@
 use std::sync::Arc;
 
 use crate::battery::Battery;
+use crate::hardware::DeviceKey;
+use crate::idle::IdleEvent;
 use crate::bluetooth::Bluetooth;
 use crate::id::Id;
 use crate::instance::Instance;
@@ -50,6 +52,13 @@ pub enum Event {
     TextInput(bool),
     /// The system woke from sleep.
     Resumed,
+    /// What the input sources say about input (for idle).
+    Idle(IdleEvent),
+    /// A hardware key (the device's buttons, the pad's Home with RB), or the same asked for by
+    /// `clamshell ctl`.
+    Device(DeviceKey),
+    /// The screenshot asked for is taken (its file), or failed (why).
+    Screenshot(Result<String, String>),
     Quit,
 }
 

@@ -3,6 +3,7 @@
 //! keys ([`hat_keys`]); and the devices themselves ([`device`]).
 
 pub mod device;
+pub mod watch;
 
 use evdev::{AbsoluteAxisCode, AttributeSet, EventType, InputEvent, KeyCode, RelativeAxisCode};
 

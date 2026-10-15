@@ -9,6 +9,7 @@
 //! Input is turned into events by pure parts (`input` for presses, `focus` for the pad); `App` only
 //! connects them to Wayland and the event loop.
 
+mod display;
 mod draw;
 mod focus;
 mod icons;
@@ -103,6 +104,7 @@ pub fn run(state: State, config: Config, start: impl FnOnce(EventSender), on_eff
     queue.roundtrip(&mut app)?;
     if let Some(seat) = app.seat_state.seats().next() {
         app.text_input.seat(&seat, &qh);
+        app.display.seat(&seat, &qh);
     }
     app.place_views(&shells, &qh, &config);
 
@@ -219,6 +221,8 @@ struct App {
     /// Keys stand in for the pad (a desktop; not on the device, where keys reaching shelf are typing).
     desktop_keys: bool,
     text_input: text_input::TextInput,
+    /// The compositor's idle report, the screens' power and the main screen's refresh rate.
+    display: display::Display,
     loop_handle: LoopHandle<'static, App>,
     on_effect: Box<dyn FnMut(&Effect)>,
     exit: bool,
@@ -256,6 +260,7 @@ impl App {
             focus_memory: Screens::default(),
             desktop_keys: true,
             text_input: text_input::TextInput::bind(globals, qh),
+            display: display::Display::bind(globals, qh, &config.bottom_output),
             loop_handle,
             on_effect,
             exit: false,
@@ -300,7 +305,18 @@ impl App {
         for effect in &effects {
             match effect {
                 Effect::Quit => self.exit = true,
-                other => (self.on_effect)(other),
+                // The screens' power is the compositor's, asked through Wayland.
+                Effect::Screens(on) => {
+                    let outputs: Vec<_> = self.output_state.outputs().collect();
+                    self.display.power(*on, outputs.into_iter(), &self.qh);
+                }
+                other => {
+                    // The main screen's refresh rate follows the settings in force (Wayland too).
+                    if let Effect::Apply { settings, .. } | Effect::Launch { settings, .. } = other {
+                        self.display.refresh(settings.get(clamshell_core::settings::Setting::Refresh), &self.qh);
+                    }
+                    (self.on_effect)(other)
+                }
             }
         }
     }

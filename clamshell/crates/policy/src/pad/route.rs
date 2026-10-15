@@ -2,6 +2,7 @@
 //! carries it out. Pure: controller events in, events for the virtual devices and the state out, so
 //! switching routes is tested here (whatever a mapping holds down is let go when the pad leaves it).
 
+use clamshell_core::hardware::DeviceKey;
 use std::time::Instant;
 
 use clamshell_core::{Event, PadInput, PadRoute};
@@ -112,10 +113,15 @@ fn away(route: PadRoute) -> bool {
     route != PadRoute::Game
 }
 
-/// Routes the pad's events. The home button is always ClamShell's ([`Event::Home`]); with the pad mouse
-/// or typing, View is too (to move the pad to the second screen).
+/// Routes the pad's events. The home button is always ClamShell's: on its own it is [`Event::Home`]
+/// (on release, so it can start a combination), with RB a screenshot. With the pad mouse or typing, View
+/// is ClamShell's too (to move the pad to the second screen).
 pub struct PadRouter {
     route: PadRoute,
+    /// Home is held; whether a combination used it (then letting go isn't Home).
+    home: Option<bool>,
+    /// RB went into a combination: its release stays ClamShell's too.
+    rb_taken: bool,
     mouse: PadMouse,
     navigator: Navigator,
     typing: Typing,
@@ -129,7 +135,7 @@ impl PadRouter {
         if away(route) {
             snapshot.events(false, &mut out.pad);
         }
-        PadRouter { route, mouse: PadMouse::new(ranges), navigator: Navigator::new(ranges.stick), typing: Typing, snapshot }
+        PadRouter { route, home: None, rb_taken: false, mouse: PadMouse::new(ranges), navigator: Navigator::new(ranges.stick), typing: Typing, snapshot }
     }
 
     fn mapping(&mut self, route: PadRoute) -> Option<&mut dyn Mapping> {
@@ -161,11 +167,32 @@ impl PadRouter {
     /// One controller event at `now`.
     pub fn event(&mut self, raw: Raw, now: Instant, out: &mut Out) {
         let key = raw.as_key();
-        if let Some((KeyCode::BTN_MODE, press)) = key {
-            if press == Press::Down {
-                out.events.push(Event::Home);
+        match key {
+            Some((KeyCode::BTN_MODE, Press::Down)) => {
+                self.home = Some(false);
+                return;
             }
-            return;
+            Some((KeyCode::BTN_MODE, Press::Up)) => {
+                if self.home.take() == Some(false) {
+                    out.events.push(Event::Home);
+                }
+                return;
+            }
+            Some((KeyCode::BTN_MODE, Press::Repeat)) => return,
+            // Home with RB: a screenshot (the game never sees this RB).
+            Some((KeyCode::BTN_TR, Press::Down)) if self.home.is_some() => {
+                self.home = Some(true);
+                self.rb_taken = true;
+                out.events.push(Event::Device(DeviceKey::Screenshot));
+                return;
+            }
+            Some((KeyCode::BTN_TR, press)) if self.rb_taken => {
+                if press == Press::Up {
+                    self.rb_taken = false;
+                }
+                return;
+            }
+            _ => {}
         }
         self.snapshot.update(raw);
         if let Some((KeyCode::BTN_SELECT, press)) = key
@@ -280,10 +307,26 @@ mod tests {
     }
 
     #[test]
+    fn home_with_rb_is_a_screenshot_and_the_game_sees_neither() {
+        let (mut r, mut out) = router(PadRoute::Game);
+        let now = Instant::now();
+        r.event(key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
+        r.event(key(KeyCode::BTN_TR, Press::Down), now, &mut out);
+        r.event(key(KeyCode::BTN_MODE, Press::Up), now, &mut out);
+        r.event(key(KeyCode::BTN_TR, Press::Up), now, &mut out);
+        assert_eq!(out.events, vec![Event::Device(DeviceKey::Screenshot)], "not Home as well");
+        assert!(out.pad.is_empty(), "RB stays ClamShell's: {:?}", out.pad);
+        // RB on its own is the game's again.
+        r.event(key(KeyCode::BTN_TR, Press::Down), now, &mut out);
+        assert_eq!(out.pad, vec![key(KeyCode::BTN_TR, Press::Down)]);
+    }
+
+    #[test]
     fn home_is_always_clamshells_and_view_with_the_mouse_or_typing() {
         let (mut r, mut out) = router(PadRoute::Game);
         let now = Instant::now();
         r.event(key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
+        assert!(out.events.is_empty(), "Home acts on release");
         r.event(key(KeyCode::BTN_MODE, Press::Up), now, &mut out);
         r.event(key(KeyCode::BTN_SELECT, Press::Down), now, &mut out);
         assert_eq!(out.events, vec![Event::Home]);

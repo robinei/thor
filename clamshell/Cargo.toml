@@ -50,6 +50,7 @@ clamshell-library.workspace = true
 clamshell-ui.workspace = true
 log.workspace = true
 env_logger.workspace = true
+rustix.workspace = true
 
 [lints]
 workspace = true

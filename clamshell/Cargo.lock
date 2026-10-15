@@ -353,6 +353,7 @@ dependencies = [
  "clamshell-ui",
  "env_logger",
  "log",
+ "rustix",
 ]
 
 [[package]]

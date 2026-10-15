@@ -52,6 +52,13 @@ fn main() -> ExitCode {
     let paths = Paths::new(&env.base, env.pegasus_config.clone());
     let sources = Sources::new(&paths, env.base.home.as_deref(), env.steam);
     match command {
+        Command::Ctl(words) => match control::send(env.control.as_ref().or(paths.control.as_ref()), &words.join(" ")) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("clamshell ctl: {e}");
+                ExitCode::FAILURE
+            }
+        },
         Command::RunJob(file) => {
             log::error!("{}: {}", file.display(), job::run(&file));
             ExitCode::FAILURE
@@ -123,6 +130,7 @@ fn run(env: &Env, paths: Paths, sources: &Sources) -> ExitCode {
         resume: read(paths.resume.as_deref()),
         start_tab: env.start_tab,
         pad_mouse: env.pad_mouse,
+        device_session: env.device_session,
     });
     if let Some(dir) = &paths.state_dir
         && let Err(e) = std::fs::create_dir_all(dir)

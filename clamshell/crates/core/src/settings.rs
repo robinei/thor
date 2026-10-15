@@ -42,9 +42,13 @@ pub enum Setting {
     GpuMax,
     /// Charging stops at this percentage (global only: battery care).
     ChargeLimit,
+    /// The screens go off after this many minutes without input; 0: never (global only).
+    ScreenOff,
+    /// The device sleeps after this many minutes without input; 0: never (global only).
+    Sleep,
 }
 
-pub const COUNT: usize = 15;
+pub const COUNT: usize = 17;
 
 /// What a value does, for the tile's colour: nothing (the stock value), saves power or eases the load,
 /// costs power, or changes how the game looks or plays.
@@ -73,6 +77,8 @@ impl Setting {
         Setting::CpuMax,
         Setting::GpuMax,
         Setting::ChargeLimit,
+        Setting::ScreenOff,
+        Setting::Sleep,
     ];
 
     fn index(self) -> usize {
@@ -97,6 +103,8 @@ impl Setting {
             Setting::CpuMax => "cpumax",
             Setting::GpuMax => "gpumax",
             Setting::ChargeLimit => "charge",
+            Setting::ScreenOff => "screenoff",
+            Setting::Sleep => "sleep",
         }
     }
 
@@ -111,6 +119,8 @@ impl Setting {
             Setting::Deadzone => &[0, 4, 8, 12, 16, 20],
             Setting::CpuMax | Setting::GpuMax => &[0, 40, 50, 60, 70, 80, 90, 100],
             Setting::ChargeLimit => &[100, 90, 80],
+            Setting::ScreenOff => &[1, 2, 5, 10, 0],
+            Setting::Sleep => &[5, 15, 30, 60, 0],
         }
     }
 
@@ -119,18 +129,20 @@ impl Setting {
             Setting::Power | Setting::BigCores => 1,
             Setting::Rumble => 3,
             Setting::ChargeLimit => 100,
+            Setting::ScreenOff => 5,
+            Setting::Sleep => 15,
             _ => 0,
         }
     }
 
     /// Whether changing it does something yet (the rest are kept, and work once implemented).
     pub fn active(self) -> bool {
-        !matches!(self, Setting::Refresh | Setting::Upscale | Setting::Fan | Setting::Rumble)
+        !matches!(self, Setting::Upscale | Setting::Fan | Setting::Rumble)
     }
 
     /// Only for all games (not per game).
     pub fn global_only(self) -> bool {
-        self == Setting::ChargeLimit
+        matches!(self, Setting::ChargeLimit | Setting::ScreenOff | Setting::Sleep)
     }
 
     /// What `value` does.
@@ -141,6 +153,8 @@ impl Setting {
         match (self, value) {
             (Setting::Power, 2) | (Setting::Refresh, 120) | (Setting::Fan, 2) => Impact::Costs,
             (Setting::CpuMax | Setting::GpuMax, 100) => Impact::Costs,
+            // Never, or later than by default, costs power; sooner saves it.
+            (Setting::ScreenOff | Setting::Sleep, v) if v == 0 || v > self.default_value() => Impact::Costs,
             (Setting::Upscale, 3) | (Setting::Fan, _) => Impact::Changes,
             (Setting::Hud | Setting::PadMouse | Setting::Buttons | Setting::Deadzone | Setting::Rumble, _) => Impact::Changes,
             _ => Impact::Saves,
@@ -189,6 +203,8 @@ impl Setting {
             (Setting::CpuMax, 0) => "CPU auto",
             (Setting::GpuMax, 0) => "GPU auto",
             (Setting::ChargeLimit, 100) => "Charge full",
+            (Setting::ScreenOff, 0) => "Always on",
+            (Setting::Sleep, 0) => "No sleep",
             // Numbers: the value with its unit.
             (Setting::FpsCap, v) => return number(buf, "", v, " fps"),
             (Setting::Refresh, v) => return number(buf, "", v, " Hz"),
@@ -196,6 +212,8 @@ impl Setting {
             (Setting::CpuMax, v) => return number(buf, "CPU ", v, " %"),
             (Setting::GpuMax, v) => return number(buf, "GPU ", v, " %"),
             (Setting::ChargeLimit, v) => return number(buf, "Charge to ", v, " %"),
+            (Setting::ScreenOff, v) => return number(buf, "Off after ", v, " min"),
+            (Setting::Sleep, v) => return number(buf, "Sleep ", v, " min"),
         };
         buf.push_str(text);
     }
@@ -461,7 +479,7 @@ mod tests {
         s.set(Some(&zelda), Setting::ChargeLimit, Some(80));
         s.set_env(Some("ff6".into()), " A=1 ");
         let text = s.text();
-        assert!(text.ends_with("\tcharge=80\nff6\tenv=A=1\nzelda\tpower=2\n"), "{text}");
+        assert!(text.ends_with("\tcharge=80\tscreenoff=5\tsleep=15\nff6\tenv=A=1\nzelda\tpower=2\n"), "{text}");
         let back = Settings::load(&text);
         assert_eq!(back.of("zelda"), s.of("zelda"));
         assert_eq!(back.global, s.global, "global-only settings go global");

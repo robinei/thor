@@ -250,6 +250,18 @@ impl Levels {
         Some(Effect::Brightness { level, shares: self.brightness.shares.clone() })
     }
 
+    /// The screens dimmed (idle): a third of their brightness, not saved.
+    pub fn dimmed_effect(&self) -> Option<Effect> {
+        let level = self.brightness.level.or(self.read_brightness)?;
+        Some(Effect::Brightness { level: (level / 3).max(1), shares: self.brightness.shares.clone() })
+    }
+
+    /// The screens back from dimmed: their brightness, ClamShell's or as it was read.
+    pub fn undimmed_effect(&self) -> Option<Effect> {
+        let level = self.brightness.level.or(self.read_brightness)?;
+        Some(Effect::Brightness { level, shares: self.brightness.shares.clone() })
+    }
+
     /// A status reading of the volume, mute and brightness.
     pub(crate) fn read(&mut self, volume: Option<u8>, muted: bool, brightness: Option<u8>) {
         self.volume.reading(volume);

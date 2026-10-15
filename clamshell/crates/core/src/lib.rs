@@ -14,7 +14,9 @@ pub mod editor;
 mod effect;
 mod event;
 mod game;
+pub mod hardware;
 mod id;
+pub mod idle;
 pub mod instance;
 mod items;
 pub mod keyboard;
@@ -107,6 +109,8 @@ pub struct Init {
     pub start_tab: Option<Tab>,
     /// Start with the pad mouse on.
     pub pad_mouse: bool,
+    /// ClamShell is the device's own session: it may put the device to sleep when idle.
+    pub device_session: bool,
 }
 
 #[derive(Debug, Default)]
@@ -124,6 +128,9 @@ pub struct State {
     keyboard: Keyboard,
     unix_secs: u64,
     saves: Saves,
+    idle: idle::Idle,
+    /// ClamShell is the device's own session (see [`Init::device_session`]).
+    device_session: bool,
 }
 
 /// Replaces `slot` with `value`; whether that changed it.
@@ -140,6 +147,7 @@ impl State {
             settings: init.settings,
             levels: Levels::new(init.brightness),
             apps: init.apps,
+            device_session: init.device_session,
             ..State::default()
         };
         if let Some(text) = &init.resume {
@@ -201,6 +209,10 @@ impl State {
         &self.keyboard
     }
 
+    pub fn idle(&self) -> &idle::Idle {
+        &self.idle
+    }
+
     /// Wall clock (epoch seconds), as last ticked.
     pub fn unix_secs(&self) -> u64 {
         self.unix_secs
@@ -223,11 +235,12 @@ impl State {
     }
 
     /// Applies one event; returns which screens changed and what must happen outside. After the event
-    /// itself, what follows from it everywhere: the pad mouse follows the game in front, and the pad goes
-    /// where it is wanted.
+    /// itself, what follows from it everywhere: the pad mouse follows the game in front, the pad goes
+    /// where it is wanted, and idle moves on (or back).
     pub fn apply(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
         let game = self.session.current.clone();
         let (mut dirty, mut effects) = self.apply_event(event);
+        effects.extend(self.follow_idle());
         if self.session.current != game && self.follow_pad_mouse() {
             dirty = Dirty::BOTH;
         }
@@ -290,7 +303,20 @@ impl State {
                 (if self.bottom.tab == before { Dirty::NONE } else { Dirty::BOTH }, effects)
             }
             // Sleep may have reset what the settings set (frequency caps, cores): again.
-            Event::Resumed => (Dirty::NONE, vec![Effect::Apply { game: self.session.current.clone(), settings: self.in_force() }]),
+            // Sleep may have reset what the settings set (frequency caps, cores): again.
+            Event::Resumed => {
+                self.idle.resumed(self.unix_secs);
+                (Dirty::NONE, vec![Effect::Apply { game: self.session.current.clone(), settings: self.in_force() }])
+            }
+            Event::Idle(event) => {
+                self.idle.heard(event, self.unix_secs);
+                (Dirty::NONE, vec![])
+            }
+            Event::Device(key) => (Dirty::BOTTOM, self.on_device_key(key)),
+            Event::Screenshot(result) => {
+                self.on_screenshot(result);
+                (Dirty::BOTTOM, vec![])
+            }
             Event::Quit => (Dirty::NONE, vec![Effect::Save(Save::Resume(self.resume_text())), Effect::Quit]),
         }
     }
@@ -308,7 +334,9 @@ impl State {
         if self.saves.brightness.due(unix_secs, SAVE_AFTER) {
             effects.push(Effect::Save(Save::Brightness(self.levels.brightness().text())));
         }
-        (if minute_changed { Dirty::BOTH } else { Dirty::NONE }, effects)
+        let notice_gone = self.expire_notice(unix_secs);
+        let dirty = if minute_changed { Dirty::BOTH } else if notice_gone { Dirty::BOTTOM } else { Dirty::NONE };
+        (dirty, effects)
     }
 
     /// A reading of the system: kept, and redrawn if it changed what the second screen shows.
@@ -346,6 +374,8 @@ impl State {
     }
 
     fn on_pointer(&mut self, event: PointerEvent) -> (Dirty, Vec<Effect>) {
+        // Input that reached ClamShell itself (the compositor may not see it: touchpad mode's bar).
+        self.idle.own_input(self.unix_secs);
         match event {
             PointerEvent::Focus(id) => {
                 self.pointer.focus = Some(id);
@@ -353,6 +383,8 @@ impl State {
                 (Dirty::BOTH, vec![])
             }
             PointerEvent::HideFocus => (if self.pointer.hide_focus() { Dirty::BOTH } else { Dirty::NONE }, vec![]),
+            // (A press that woke the screens only woke them.)
+            PointerEvent::Activate(_) | PointerEvent::LongPress(_) if self.idle.swallows_press(self.unix_secs) => (Dirty::NONE, vec![]),
             PointerEvent::Activate(id) => self.activate(&id, false),
             PointerEvent::LongPress(id) => self.activate(&id, true),
             PointerEvent::Down(id) => {

@@ -66,6 +66,8 @@ pub enum Icon {
     Bluetooth { connected: bool },
     Headphones,
     Phone,
+    /// Sleep: a crescent moon.
+    Moon,
 }
 
 impl Icon {
@@ -124,6 +126,8 @@ impl Icon {
             Setting::CpuMax => Icon::Cpu,
             Setting::GpuMax => Icon::Gpu,
             Setting::ChargeLimit => Icon::Battery { tenths: 8, charging: true },
+            Setting::ScreenOff => Icon::ScreenOff,
+            Setting::Sleep => Icon::Moon,
         }
     }
 
@@ -334,6 +338,11 @@ pub fn draw(c: &mut Canvas, icon: Icon, r: Rect, color: Color) {
         Icon::Wifi { bars } => wifi(p, bars),
         Icon::Volume { waves, muted } => volume(p, waves, muted),
         Icon::Brightness => sun(p),
+        Icon::Moon => {
+            // The lit edge (the long way round the left), and the shadow's edge joining its ends.
+            p.arc((12.0, 12.0), 8.0, (60.0, 300.0), LINE);
+            p.arc((19.0, 12.0), 7.55, (113.0, 247.0), LINE);
+        }
         Icon::Lock => {
             p.block((5.0, 11.0, 14.0, 10.0), 1.5);
             p.arc((12.0, 10.0), 4.5, (0.0, 180.0), LINE);
@@ -562,13 +571,14 @@ mod tests {
             Icon::Bluetooth { connected: false },
             Icon::Bluetooth { connected: true },
             Icon::Headphones,
+            Icon::Moon,
             Icon::Phone,
         ];
         let mut seen = std::collections::HashSet::new();
         for icon in &all {
             seen.insert(variant(*icon));
         }
-        assert_eq!(seen.len(), 43, "a variant is missing from the list");
+        assert_eq!(seen.len(), 44, "a variant is missing from the list");
         all
     }
 
@@ -618,6 +628,7 @@ mod tests {
             Icon::Bluetooth { .. } => 40,
             Icon::Headphones => 41,
             Icon::Phone => 42,
+            Icon::Moon => 43,
         }
     }
 
