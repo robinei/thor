@@ -13,6 +13,11 @@ devices, ClamShell as a user service started by sway, and this repository shared
   tools/vm.py restart        restart ClamShell in the machine (after a build)
   tools/vm.py wake           wake the machine from sleep
   tools/vm.py sync           write this script's session files (sway config, service) into the machine
+  tools/vm.py touch tap|hold|down|move|up|slide ...   the bottom screen's touchscreen, in its pixels
+  tools/vm.py pointer X Y [--head 0|1] [--click left]  the absolute pointer on a screen
+  tools/vm.py key a shift+b ret                        keys (QEMU's names)
+  tools/vm.py pad plug|unplug|do 'tap a, dpad down'    a fake controller in the machine (x86_64)
+  tools/vm.py bluetooth      two virtual Bluetooth controllers and a test device in the machine (x86_64)
   tools/vm.py reset          throw the machine away (the download stays)
   tools/vm.py --arch aarch64 thor-image   build an SD card image for the real Thor (best effort): Arch
                              Linux ARM with ROCKNIX's SM8550 kernel, modules and firmware, our initramfs and
@@ -31,6 +36,7 @@ import hashlib
 import http.server
 import json
 import os
+import random
 import shutil
 import socket
 import socketserver
@@ -428,6 +434,8 @@ def qemu_command(args, seed_port):
         "-serial", f"file:{A.state / 'serial.log'}",
         # QEMU's monitor, for commands from here (`wake`).
         "-monitor", f"unix:{A.state / 'monitor.sock'},server,nowait",
+        # QMP, for input from here (touch, pointer, keys: input-send-event).
+        "-qmp", f"unix:{A.state / 'qmp.sock'},server,nowait",
         # Each screen is an SDL window (offscreen when headless).
         "-display", "sdl",
     ]
@@ -598,6 +606,226 @@ def wake(_args):
     print("woken")
 
 
+# --- input from here, through QMP (input-send-event)
+
+class Qmp:
+    """QEMU's QMP socket: one connection, commands in, their answers out (events skipped)."""
+
+    def __init__(self):
+        self.sock = socket.socket(socket.AF_UNIX)
+        try:
+            self.sock.connect(str(A.state / "qmp.sock"))
+        except OSError as e:
+            sys.exit(f"no QMP socket ({e}): is the machine running (tools/vm.py run)?")
+        self.file = self.sock.makefile("rw")
+        json.loads(self.file.readline())  # the greeting
+        self.command("qmp_capabilities")
+
+    def command(self, name, **arguments):
+        self.file.write(json.dumps({"execute": name, "arguments": arguments}) + "\n")
+        self.file.flush()
+        while True:
+            reply = json.loads(self.file.readline())
+            if "return" in reply:
+                return reply["return"]
+            if "error" in reply:
+                raise RuntimeError(f"{name}: {reply['error'].get('desc')}")
+
+    def close(self):
+        self.sock.close()
+
+
+# QEMU's absolute axes run 0 to this (INPUT_EVENT_ABS_MAX).
+ABS_MAX = 0x7FFF
+# The touchscreen and the second pointer are on the second screen (head 1), the first pointer on head 0.
+SCREENS = {0: TOP, 1: BOTTOM}
+
+
+def scaled(value, size):
+    return round(min(max(value, 0), size - 1) * ABS_MAX / (size - 1))
+
+
+class Touch:
+    """The bottom screen's touchscreen (virtio-multitouch), in that screen's pixels (1240x1080). Fingers
+    are slots; each touch gets a tracking id of its own, kept in a file between invocations (so `touch
+    down` and a later `touch move` belong together)."""
+
+    def __init__(self, qmp):
+        self.qmp = qmp
+        self.ids_file = A.state / "touch-ids.json"
+        try:
+            self.ids = {int(k): v for k, v in json.loads(self.ids_file.read_text()).items()}
+        except (OSError, ValueError):
+            self.ids = {}
+
+    def _save(self):
+        self.ids_file.write_text(json.dumps(self.ids))
+
+    def _send(self, events):
+        self.qmp.command("input-send-event", device="video0", head=1, events=events)
+
+    @staticmethod
+    def _mtt(kind, slot, tracking_id, axis="x", value=0):
+        return {"type": "mtt", "data": {"type": kind, "slot": slot, "tracking-id": tracking_id, "axis": axis, "value": value}}
+
+    def _at(self, slot, x, y):
+        # A fraction of a pixel off, as a finger would be: the kernel passes on only values that
+        # changed, and a reader that missed the last ones (while another had the device grabbed) would
+        # keep its old position for an axis whose value came again.
+        x, y = x + random.uniform(-0.4, 0.4), y + random.uniform(-0.4, 0.4)
+        return [self._mtt("data", slot, self.ids[slot], "x", scaled(x, BOTTOM[0])),
+                self._mtt("data", slot, self.ids[slot], "y", scaled(y, BOTTOM[1]))]
+
+    def down(self, slot, x, y):
+        if slot in self.ids:
+            self.up(slot)
+        self.ids[slot] = (max(self.ids.values(), default=int(time.time()) % 30000) + 1) % 65535
+        events = [self._mtt("begin", slot, self.ids[slot])] + self._at(slot, x, y)
+        if len(self.ids) == 1:
+            events.append({"type": "btn", "data": {"button": "touch", "down": True}})
+        self._send(events)
+        self._save()
+
+    def move(self, slot, x, y):
+        if slot not in self.ids:
+            sys.exit(f"no finger down in slot {slot}")
+        self._send([self._mtt("update", slot, self.ids[slot])] + self._at(slot, x, y))
+
+    def up(self, slot):
+        if slot not in self.ids:
+            return
+        del self.ids[slot]
+        events = [self._mtt("end", slot, -1)]
+        if not self.ids:
+            events.append({"type": "btn", "data": {"button": "touch", "down": False}})
+        self._send(events)
+        self._save()
+
+    def slide(self, slot, x1, y1, x2, y2, steps, seconds):
+        self.down(slot, x1, y1)
+        for i in range(1, steps + 1):
+            time.sleep(seconds / steps)
+            self.move(slot, x1 + (x2 - x1) * i / steps, y1 + (y2 - y1) * i / steps)
+
+
+def touch(args):
+    qmp = Qmp()
+    t = Touch(qmp)
+    a = args.touch_action
+    if a == "down":
+        t.down(args.slot, args.x, args.y)
+    elif a == "move":
+        t.move(args.slot, args.x, args.y)
+    elif a == "up":
+        t.up(args.slot)
+    elif a == "tap":
+        t.down(args.slot, args.x, args.y)
+        time.sleep(0.05)
+        t.up(args.slot)
+    elif a == "hold":
+        t.down(args.slot, args.x, args.y)
+        time.sleep(args.seconds)
+        t.up(args.slot)
+    elif a == "slide":
+        y2 = args.y if args.y2 is None else args.y2
+        t.slide(args.slot, args.x1, args.y, args.x2, y2, args.steps, args.seconds)
+        if not args.hold:
+            t.up(args.slot)
+    qmp.close()
+
+
+def pointer(args):
+    """The absolute pointer on a screen (head 0: virtio-tablet, head 1: usb-tablet), and its buttons."""
+    qmp = Qmp()
+    size = SCREENS[args.head]
+    events = [{"type": "abs", "data": {"axis": "x", "value": scaled(args.x, size[0])}},
+              {"type": "abs", "data": {"axis": "y", "value": scaled(args.y, size[1])}}]
+    qmp.command("input-send-event", device="video0", head=args.head, events=events)
+    if args.click:
+        for down in (True, False):
+            qmp.command("input-send-event", device="video0", head=args.head,
+                        events=[{"type": "btn", "data": {"button": args.click, "down": down}}])
+            time.sleep(0.05)
+    qmp.close()
+
+
+def key(args):
+    """Keys on the virtio keyboard, by QEMU's key names (qcodes: a, ret, up, ctrl, ...): each one pressed
+    and released in turn; a+b+c pressed together."""
+    qmp = Qmp()
+    for combo in args.keys:
+        keys = [{"type": "qcode", "data": k} for k in combo.split("+")]
+        qmp.command("send-key", keys=keys, **({"hold-time": args.hold} if args.hold else {}))
+        time.sleep(0.05)
+    qmp.close()
+
+
+FAKE_PAD_UNIT = "thor-fake-pad"
+
+
+def pad(args):
+    """The fake controller (the fake_pad example, built on the host) in the machine: plugged in (a user
+    service reading commands from a pipe), driven, unplugged."""
+    if A.arm:
+        sys.exit("the fake pad is the host's build: x86_64 only")
+    fifo = "$XDG_RUNTIME_DIR/fake-pad"
+    if args.pad_action == "plug":
+        binary = "/mnt/thor/clamshell/target/release/examples/fake_pad"
+        script = (f"test -x {binary} || {{ echo 'no {binary}: cargo build --release -p clamshell-policy --examples' >&2; exit 1; }}; "
+                  f"systemctl --user stop {FAKE_PAD_UNIT} 2>/dev/null; rm -f {fifo}; mkfifo {fifo}; "
+                  f"systemd-run --user --quiet --collect --unit={FAKE_PAD_UNIT} {binary} --control {fifo}")
+    elif args.pad_action == "unplug":
+        script = f"systemctl --user stop {FAKE_PAD_UNIT}"
+    else:
+        lines = " ".join(args.command).replace(",", "\n")
+        script = (f"systemctl --user -q is-active {FAKE_PAD_UNIT} || {{ echo 'no fake pad: tools/vm.py pad plug' >&2; exit 1; }}; "
+                  f"timeout 5 sh -c 'cat > {fifo}'")
+        return subprocess.run(ssh_args([script]), input=lines + "\n", text=True).returncode
+    return subprocess.run(ssh_args([script])).returncode
+
+
+# The second virtual controller's address (btvirt numbers them), the test device's.
+BT_DEVICE = "00:AA:01:01:00:01"
+
+BLUETOOTH_SETUP = f"""set -e
+# bluez for bluetoothd and btmgmt; what btvirt's build needs (Arch ships no btvirt: it is BlueZ's
+# emulator, built from BlueZ's source of the installed version).
+pacman -Q bluez bluez-utils base-devel glib2 >/dev/null 2>&1 || pacman -S --noconfirm --needed bluez bluez-utils base-devel glib2
+if [ ! -x /usr/local/bin/btvirt ]; then
+    v=$(pacman -Q bluez | sed -E 's/bluez ([0-9.]+)-.*/\\1/')
+    cd /var/tmp && curl -sSfLO https://www.kernel.org/pub/linux/bluetooth/bluez-$v.tar.xz && tar xf bluez-$v.tar.xz && cd bluez-$v
+    ./configure --enable-testing --disable-systemd --disable-udev --disable-cups --disable-obex --disable-manpages \\
+        --disable-a2dp --disable-avrcp --disable-network --disable-hid --disable-hog --disable-mesh --disable-midi > configure.log
+    make -j4 emulator/btvirt > make.log
+    install -m 755 emulator/btvirt /usr/local/bin/btvirt
+fi
+# bluetoothd keeps the first controller only (the second is the test device's).
+grep -q '^MaxControllers=1' /etc/bluetooth/main.conf || sed -i 's/^#\\?MaxControllers *=.*/MaxControllers=1/' /etc/bluetooth/main.conf
+modprobe hci_vhci
+for unit in bluetooth thor-bt-device thor-btvirt; do systemctl stop $unit 2>/dev/null || true; done
+# Nothing left of earlier runs: the device unknown again.
+rm -rf /var/lib/bluetooth/*/{BT_DEVICE} /var/lib/bluetooth/*/cache/{BT_DEVICE}
+systemd-run --quiet --collect --unit=thor-btvirt /usr/local/bin/btvirt -l2
+for i in $(seq 50); do btmgmt --index 1 info >/dev/null 2>&1 && break; sleep 0.1; done
+rm -f /run/thor-bt-device
+systemd-run --quiet --collect --unit=thor-bt-device python3 /mnt/thor/tools/vm-bt-device.py
+for i in $(seq 50); do grep -q waiting /run/thor-bt-device 2>/dev/null && break; sleep 0.1; done
+systemctl start bluetooth
+for i in $(seq 100); do grep -q ready /run/thor-bt-device 2>/dev/null && break; sleep 0.1; done
+journalctl -u thor-bt-device -b -o cat | tail -1
+if bluetoothctl list | grep -q {BT_DEVICE}; then echo "bluetoothd has the test device's controller too" >&2; exit 1; fi
+"""
+
+
+def bluetooth(_args):
+    """Two virtual Bluetooth controllers in the machine (btvirt): bluetoothd has the first, the second is
+    a test device (tools/vm-bt-device.py) that can be found, paired, connected and forgotten. Again
+    after each boot; it also starts afresh (the device unpaired)."""
+    if A.arm:
+        sys.exit("x86_64 only")
+    return subprocess.run(ssh_args(["sudo bash -s"]), input=BLUETOOTH_SETUP, text=True).returncode
+
+
 def restart(_args):
     run(ssh_args(["systemctl", "--user", "restart", "clamshell.service"]))
 
@@ -626,6 +854,47 @@ def main():
     sub.add_parser("wake").set_defaults(func=wake)
     sub.add_parser("sync").set_defaults(func=sync)
     sub.add_parser("reset").set_defaults(func=reset)
+    p = sub.add_parser("touch", help="the bottom screen's touchscreen, in its pixels (1240x1080)")
+    t = p.add_subparsers(dest="touch_action", required=True)
+    for name in ("down", "move", "tap"):
+        q = t.add_parser(name)
+        q.add_argument("x", type=float)
+        q.add_argument("y", type=float)
+    q = t.add_parser("hold")
+    q.add_argument("x", type=float)
+    q.add_argument("y", type=float)
+    q.add_argument("seconds", type=float)
+    t.add_parser("up")
+    q = t.add_parser("slide", help="down at X1 Y, moved to X2 (Y2) in STEPS over SECONDS, lifted unless --hold")
+    q.add_argument("x1", type=float)
+    q.add_argument("y", type=float)
+    q.add_argument("x2", type=float)
+    q.add_argument("steps", type=int, nargs="?", default=10)
+    q.add_argument("--y2", type=float)
+    q.add_argument("--seconds", type=float, default=0.5)
+    q.add_argument("--hold", action="store_true", help="leave the finger down (touch up lifts it)")
+    for q in t.choices.values():
+        q.add_argument("--slot", type=int, default=0, help="the finger (0-9)")
+    p.set_defaults(func=touch)
+    p = sub.add_parser("pointer", help="the absolute pointer on a screen (head 0 top, 1 bottom), in its pixels")
+    p.add_argument("x", type=float)
+    p.add_argument("y", type=float)
+    p.add_argument("--head", type=int, choices=[0, 1], default=0)
+    p.add_argument("--click", choices=["left", "right", "middle"])
+    p.set_defaults(func=pointer)
+    p = sub.add_parser("key", help="keys by QEMU's names (a, ret, up, esc, ctrl+c ...), one after another")
+    p.add_argument("keys", nargs="+")
+    p.add_argument("--hold", type=int, help="milliseconds each is held")
+    p.set_defaults(func=key)
+    p = sub.add_parser("pad", help="a fake controller in the machine: plug, unplug, or a command for it")
+    t = p.add_subparsers(dest="pad_action", required=True)
+    t.add_parser("plug")
+    t.add_parser("unplug")
+    q = t.add_parser("do", help="commands, comma-separated: tap a, press a, release a, dpad down, "
+                                "stick left 0.5 0, trigger right 1, sleep 100")
+    q.add_argument("command", nargs="+")
+    p.set_defaults(func=pad)
+    sub.add_parser("bluetooth", help="virtual Bluetooth controllers and a test device in the machine").set_defaults(func=bluetooth)
     p = sub.add_parser("thor-image")
     p.add_argument("--size", type=int, default=12, help="the image's size in GB (default 12)")
     p.set_defaults(func=thor_image)

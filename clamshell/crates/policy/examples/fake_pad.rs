@@ -1,12 +1,28 @@
-//! Development: a fake Xbox-style controller for testing the controller path on a desktop. Creates the
-//! pad, waits for ClamShell to grab it, pushes the left stick fully right for 0.5 s and down for
-//! 0.25 s (no buttons: they would click whatever is under the pointer), and reports what came out: the
-//! virtual mouse's motion and the virtual pad's stick.
+//! Development: a fake Xbox-style controller for testing the controller path without one.
+//!
+//! Without arguments it creates the pad, waits for ClamShell to grab it, pushes the left stick fully
+//! right for 0.5 s and down for 0.25 s (no buttons: they would click whatever is under the pointer), and
+//! reports what came out: the virtual mouse's motion and the virtual pad's stick.
 //!
 //!     cargo run -p clamshell-policy --example fake_pad &
 //!     CLAMSHELL_GAMEPAD="clamshell fake pad" [CLAMSHELL_PAD_MOUSE=1] cargo run
+//!
+//! With `--control PATH` it creates the pad and then does what lines read from PATH (a named pipe, made
+//! if missing; `-` for standard input) say, until `quit` or until it is killed (which unplugs the pad):
+//!
+//! - `press BUTTON`, `release BUTTON`, `tap BUTTON [MS]` (pressed for MS, default 80): a, b, x, y, lb,
+//!   rb, view, menu, home, ls, rs
+//! - `dpad up|down|left|right|none`: the D-pad (a hat), held until the next `dpad`
+//! - `stick left|right X Y`: a stick at X, Y (-1.0 to 1.0, y down), held until changed
+//! - `trigger left|right V`: a trigger at V (0.0 to 1.0)
+//! - `sleep MS`
+//! - `quit`
+//!
+//! Each line is answered on standard error. `tools/vm.py pad` runs it in the virtual Thor.
 
-use std::io;
+use std::fs::File;
+use std::io::{self, BufRead, BufReader};
+use std::path::Path;
 use std::thread::{sleep, spawn};
 use std::time::Duration;
 
@@ -14,21 +30,46 @@ use evdev::raw_stream::RawDevice;
 use evdev::uinput::VirtualDevice;
 use evdev::{AbsInfo, AbsoluteAxisCode, AttributeSet, EventType, InputEvent, KeyCode, RelativeAxisCode, UinputAbsSetup};
 
-fn stick(dev: &mut VirtualDevice, x: i32, y: i32) -> io::Result<()> {
-    dev.emit(&[
-        InputEvent::new(EventType::ABSOLUTE.0, AbsoluteAxisCode::ABS_X.0, x),
-        InputEvent::new(EventType::ABSOLUTE.0, AbsoluteAxisCode::ABS_Y.0, y),
-        InputEvent::new(EventType::SYNCHRONIZATION.0, 0, 0),
-    ])
+const STICK_MAX: i32 = 32767;
+const TRIGGER_MAX: i32 = 1023;
+
+/// The buttons by name, as an Xbox controller's (Linux's xpad codes).
+const BUTTONS: [(&str, KeyCode); 11] = [
+    ("a", KeyCode::BTN_SOUTH),
+    ("b", KeyCode::BTN_EAST),
+    ("x", KeyCode::BTN_WEST),
+    ("y", KeyCode::BTN_NORTH),
+    ("lb", KeyCode::BTN_TL),
+    ("rb", KeyCode::BTN_TR),
+    ("view", KeyCode::BTN_SELECT),
+    ("menu", KeyCode::BTN_START),
+    ("home", KeyCode::BTN_MODE),
+    ("ls", KeyCode::BTN_THUMBL),
+    ("rs", KeyCode::BTN_THUMBR),
+];
+
+fn syn() -> InputEvent {
+    InputEvent::new(EventType::SYNCHRONIZATION.0, 0, 0)
 }
 
-fn main() -> io::Result<()> {
-    let stick_axis = |code| UinputAbsSetup::new(code, AbsInfo::new(0, -32768, 32767, 16, 128, 0));
-    let trigger = |code| UinputAbsSetup::new(code, AbsInfo::new(0, 0, 1023, 0, 0, 0));
+fn abs(code: AbsoluteAxisCode, value: i32) -> InputEvent {
+    InputEvent::new(EventType::ABSOLUTE.0, code.0, value)
+}
+
+fn key(code: KeyCode, down: bool) -> InputEvent {
+    InputEvent::new(EventType::KEY.0, code.0, i32::from(down))
+}
+
+fn stick(dev: &mut VirtualDevice, x: i32, y: i32) -> io::Result<()> {
+    dev.emit(&[abs(AbsoluteAxisCode::ABS_X, x), abs(AbsoluteAxisCode::ABS_Y, y), syn()])
+}
+
+fn make_pad() -> io::Result<VirtualDevice> {
+    let stick_axis = |code| UinputAbsSetup::new(code, AbsInfo::new(0, -STICK_MAX - 1, STICK_MAX, 16, 128, 0));
+    let trigger = |code| UinputAbsSetup::new(code, AbsInfo::new(0, 0, TRIGGER_MAX, 0, 0, 0));
     let hat = |code| UinputAbsSetup::new(code, AbsInfo::new(0, -1, 1, 0, 0, 0));
-    let keys: AttributeSet<KeyCode> =
-        [KeyCode::BTN_SOUTH, KeyCode::BTN_EAST, KeyCode::BTN_NORTH, KeyCode::BTN_WEST, KeyCode::BTN_START].into_iter().collect();
-    let mut pad = VirtualDevice::builder()?
+    let keys: AttributeSet<KeyCode> = BUTTONS.iter().map(|&(_, code)| code).collect();
+    VirtualDevice::builder()?
         .name("clamshell fake pad")
         .with_keys(&keys)?
         .with_absolute_axis(&stick_axis(AbsoluteAxisCode::ABS_X))?
@@ -39,7 +80,132 @@ fn main() -> io::Result<()> {
         .with_absolute_axis(&trigger(AbsoluteAxisCode::ABS_RZ))?
         .with_absolute_axis(&hat(AbsoluteAxisCode::ABS_HAT0X))?
         .with_absolute_axis(&hat(AbsoluteAxisCode::ABS_HAT0Y))?
-        .build()?;
+        .build()
+}
+
+fn main() -> io::Result<()> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
+        [] => demo(),
+        ["--control", path] => controlled(path),
+        _ => Err(io::Error::other("usage: fake_pad [--control PATH|-]")),
+    }
+}
+
+/// Reads commands from `path` (made as a named pipe if missing; reopened after each writer) or stdin.
+fn controlled(path: &str) -> io::Result<()> {
+    let mut pad = make_pad()?;
+    eprintln!("fake pad ready; commands from {path}");
+    if path == "-" {
+        for line in io::stdin().lock().lines() {
+            if !run_line(&mut pad, &line?) {
+                break;
+            }
+        }
+        return Ok(());
+    }
+    if !Path::new(path).exists() {
+        rustix::fs::mkfifoat(rustix::fs::CWD, path, rustix::fs::Mode::from_raw_mode(0o600))?;
+    }
+    loop {
+        for line in BufReader::new(File::open(path)?).lines() {
+            if !run_line(&mut pad, &line?) {
+                return Ok(());
+            }
+        }
+    }
+}
+
+/// Carries out one command line; false for `quit`.
+fn run_line(pad: &mut VirtualDevice, line: &str) -> bool {
+    let words: Vec<&str> = line.split_whitespace().collect();
+    if words.is_empty() {
+        return true;
+    }
+    if words == ["quit"] {
+        eprintln!("quit");
+        return false;
+    }
+    match command(pad, &words) {
+        Ok(()) => eprintln!("ok: {line}"),
+        Err(e) => eprintln!("error: {line}: {e}"),
+    }
+    true
+}
+
+fn invalid(what: &str) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidInput, what.to_owned())
+}
+
+fn button(name: &str) -> io::Result<KeyCode> {
+    BUTTONS.iter().find(|(n, _)| *n == name).map(|&(_, code)| code).ok_or_else(|| invalid("no such button"))
+}
+
+fn number(word: &str) -> io::Result<f32> {
+    word.parse().map_err(|_| invalid("not a number"))
+}
+
+fn millis(word: &str) -> io::Result<Duration> {
+    Ok(Duration::from_millis(number(word)?.max(0.0) as u64))
+}
+
+/// A value from -1.0 to 1.0 on an axis running to `max`.
+fn scaled(value: f32, max: i32) -> i32 {
+    (value.clamp(-1.0, 1.0) * max as f32).round() as i32
+}
+
+fn command(pad: &mut VirtualDevice, words: &[&str]) -> io::Result<()> {
+    match words {
+        ["press", name] => pad.emit(&[key(button(name)?, true), syn()]),
+        ["release", name] => pad.emit(&[key(button(name)?, false), syn()]),
+        ["tap", name, rest @ ..] => {
+            let code = button(name)?;
+            let held = match rest {
+                [] => Duration::from_millis(80),
+                [ms] => millis(ms)?,
+                _ => return Err(invalid("tap BUTTON [MS]")),
+            };
+            pad.emit(&[key(code, true), syn()])?;
+            sleep(held);
+            pad.emit(&[key(code, false), syn()])
+        }
+        ["dpad", direction] => {
+            let (x, y) = match *direction {
+                "up" => (0, -1),
+                "down" => (0, 1),
+                "left" => (-1, 0),
+                "right" => (1, 0),
+                "none" => (0, 0),
+                _ => return Err(invalid("dpad up|down|left|right|none")),
+            };
+            pad.emit(&[abs(AbsoluteAxisCode::ABS_HAT0X, x), abs(AbsoluteAxisCode::ABS_HAT0Y, y), syn()])
+        }
+        ["stick", side, x, y] => {
+            let (cx, cy) = match *side {
+                "left" => (AbsoluteAxisCode::ABS_X, AbsoluteAxisCode::ABS_Y),
+                "right" => (AbsoluteAxisCode::ABS_RX, AbsoluteAxisCode::ABS_RY),
+                _ => return Err(invalid("stick left|right X Y")),
+            };
+            pad.emit(&[abs(cx, scaled(number(x)?, STICK_MAX)), abs(cy, scaled(number(y)?, STICK_MAX)), syn()])
+        }
+        ["trigger", side, v] => {
+            let code = match *side {
+                "left" => AbsoluteAxisCode::ABS_Z,
+                "right" => AbsoluteAxisCode::ABS_RZ,
+                _ => return Err(invalid("trigger left|right V")),
+            };
+            pad.emit(&[abs(code, scaled(number(v)?.max(0.0), TRIGGER_MAX)), syn()])
+        }
+        ["sleep", ms] => {
+            sleep(millis(ms)?);
+            Ok(())
+        }
+        _ => Err(invalid("not a command")),
+    }
+}
+
+fn demo() -> io::Result<()> {
+    let mut pad = make_pad()?;
     eprintln!("fake pad ready; start ClamShell with the pad mouse on now (6 s)");
     sleep(Duration::from_secs(6));
 
@@ -80,9 +246,9 @@ fn main() -> io::Result<()> {
 
     sleep(Duration::from_millis(100));
     eprintln!("left stick right 0.5 s, then down 0.25 s");
-    stick(&mut pad, 32767, 0)?;
+    stick(&mut pad, STICK_MAX, 0)?;
     sleep(Duration::from_millis(500));
-    stick(&mut pad, 0, 32767)?;
+    stick(&mut pad, 0, STICK_MAX)?;
     sleep(Duration::from_millis(250));
     stick(&mut pad, 0, 0)?;
     let (x, y, stick) = reader.join().map_err(|_| io::Error::other("reader panicked"))?;
