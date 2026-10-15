@@ -71,8 +71,8 @@ on-screen key when View moves the pad away, unplugging the controller during a g
 through its screens and the pad (A to Ctrl+X, the right stick and the gyro while LB is held to the
 pointer) read back from the virtual devices in a game, the gyro's speed slid up on the edit screen while
 the game runs, then Default passing everything through, a keymap with a Back layer (A to Ctrl+X, Ctrl+Y
-while Back is held, Back let go while A is held), and
-Bluetooth. For
+while Back is held, Back let go while A is held), a keymap with a hold, a double and a toggle (A tapped and
+held, B once and twice, Y on and off), and Bluetooth. For
 them ClamShell runs with a test library, the fake backlight and its own state directory (a runtime
 drop-in for its service, removed afterwards; `--keep` leaves it). It prints ok/FAIL lines and a count;
 the exit status is the number of failures. About three minutes.
@@ -239,7 +239,8 @@ off and the device sleeps) are on the Battery tab, not here: they aren't a game'
 
 **Keymaps** remap the controller for games: named, shared between games, saved in `keymaps.txt` next to
 `game-settings.txt` (a `keymap ID NAME` line, then a line per binding, `INPUT = OUTPUT [option=value]`, e.g.
-`a = key ctrl+x`, `rstick = pointer speed=75% deadzone=10`, `gyro = pointer hold=lt`; a `layer back` line
+`a = key ctrl+x turbo=12`, `a hold = key esc holdtime=60`, `b double = mouse left toggle`,
+`rstick = pointer speed=75% deadzone=10`, `gyro = pointer hold=lt`; a `layer back` line
 starts the Back layer's bindings; lines not understood are skipped, and a layer not known). Each keymap has
 two layers: the main one, and one in force while the Thor's Back button is held (its inputs without a
 binding there do what the main layer says; Back itself never reaches the game). The first start makes a
@@ -252,10 +253,19 @@ the pad): the Thor's controls in two clusters at the screen's edges, each input 
 label, blue where it maps to something else, grey where it is the input as on the pad, only tuned. An
 input is selected by touch or by pressing (or pushing past half) it on the pad, which listens there
 instead of moving the focus (Home leaves; Home is never mapped); the panel between the label columns
-then shows what it does in the layer, Change (or select it again) and Reset (the main layer: as on the
-pad; the Back layer: as in Main), and its parameters: a stick's deadzone, full point, curve and X/Y
+then shows, for a button or a direction, Press, Hold and Double tabs (each actuation's binding of its own;
+a dot under one set), what it does in the layer, the ways to remap it as icons (only those that fit it):
+a control picked on the drawing (tapped, or pressed on the pad; the rest fade), keys typed on the
+keyboard, the mouse's parts on a drawing of one (for motion, the pointer), as before (the main layer: as
+on the pad; the Back layer: as in Main; a hold or double: none), nothing. Each closes as soon as something
+is chosen; Cancel gives up; selecting the input again reopens the way it is mapped. Then its parameters: a stick's deadzone, full point, curve and X/Y
 inversion (and speed on the pointer), a trigger's deadzone and full point (and threshold on a button), the
-gyro's speed, inversion and what holds it on. The defaults are the same for every input and target but a
+gyro's speed, inversion and what holds it on (picked on the drawing too), a hold's time, and on anything
+on or off turbo (a slider from Off to 30 a second) and toggle (a switch). Only an input with a hold or a
+double waits to decide: held past the hold's time it is a hold, pressed again within 300 ms a double,
+else a press, sent as a 60 ms tap once that is known (the Press tab says so); one without acts at once.
+Turbo beats while its actuation is on (a hold's from the hold's time, a double's from the second press);
+a toggle flips when its actuation starts. The defaults are the same for every input and target but a
 stick on the pointer, which has a deadzone of 15 % and a curve of 50 % (the distance past it squared, as
 the pointer moved before); the panel shows the values that apply, and a new target takes its own defaults
 for the values not set. A stick's deadzone is the keymap's only one (a game that needs another uses a
@@ -267,8 +277,7 @@ button (one of the list, or the next pressed on the pad), a key chord (typed on 
 latch, the next key completes it; Done takes the modifiers alone), a mouse button or a wheel step; a stick
 to a stick, the pointer, four keys typed in turn (WASD) or the D-pad; a trigger to a trigger, or past its
 threshold to anything a button maps to; the gyro to the pointer or a stick, always or while a chosen button
-or trigger is held (which keeps its own mapping), off by default. In the Back layer, "As in Main" and "As
-on the pad" are both choices. Speeds go from 0 to 100 (files with the old steps 1-5 load as 0, 25, 50, 75,
+or trigger is held (which keeps its own mapping), off by default. Speeds go from 0 to 100 (files with the old steps 1-5 load as 0, 25, 50, 75,
 100). An input without a binding does what it does on the pad. Only on the game's route: ClamShell's
 screens, typing and the pad mouse see the plain pad. The pad thread applies a stick's or trigger's tuning
 to its values, then maps the controller's state to what every output should be and sends what changed:

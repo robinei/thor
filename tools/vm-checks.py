@@ -674,19 +674,23 @@ class Checks:
                      "tap keymap-active", "tap gyro-hold lb", "tap map-from x", "tap map-to pick"]:
             control(line)
         press("y")  # picks the pad's Y for X
-        for line in ["tap keymap-back", "tap keymap 2"]:
-            control(line)
+        control("tap keymap-back")
         text = sh(f"cat {keymaps_file}")
-        saved = ("keymap 2 Check" in text and "a = key ctrl+x" in text and "rstick = pointer" in text
+        # (Its id and its row in the picker: other checks may have made keymaps before.)
+        ids = [line.split()[1] for line in text.splitlines() if line.startswith("keymap ")]
+        ident = next((line.split()[1] for line in text.splitlines() if line.startswith("keymap ") and line.endswith(" Check")), "?")
+        row = ids.index(ident) + 1 if ident in ids else 0
+        control(f"tap keymap {row}")
+        saved = (f"keymap {ident} Check" in text and "a = key ctrl+x" in text and "rstick = pointer" in text
                  and "gyro = pointer hold=lb" in text and "x = pad y" in text)
         self.check("  A to Ctrl+X, the right stick and the gyro (while LB) to the pointer, X to Y picked by pressing it, saved",
                    saved, text)
-        chosen = until(lambda: "keymap=2" in sh(f"cat {CHECKS_DIR}/pegasus/game-settings.txt 2>/dev/null"), 3)
+        chosen = until(lambda: f"keymap={ident}" in sh(f"cat {CHECKS_DIR}/pegasus/game-settings.txt 2>/dev/null"), 3)
         self.check("  chosen for the selected game", chosen, sh(f"cat {CHECKS_DIR}/pegasus/game-settings.txt 2>/dev/null"))
         since = now()
         control("tap launch")
         launched = until(lambda: bool(units("game")) and front() not in ("", "clamshell-shelf"), 10)
-        if not self.check("  the game runs with it", launched and logged(since, "pad: keymap 2 (Check)", 5),
+        if not self.check("  the game runs with it", launched and logged(since, f"pad: keymap {ident} (Check)", 5),
                           f"front {front()!r}; {journal(since)[-300:]!r}"):
             return
         mouse, virtual = device("clamshell pad mouse"), device("clamshell pad (Xbox 360)")
@@ -708,9 +712,9 @@ class Checks:
         self.check("  the gyro with LB held moves the pointer", moved > 100, f"pointer moved {moved} px")
         # The gyro's speed slid up on the edit screen's panel, the game still running: further.
         since = now()
-        for line in ["tab settings", "tap setting keymap", "tap keymap-edit 2", "tap map-from gyro", "slide speed 300 450"]:
+        for line in ["tab settings", "tap setting keymap", f"tap keymap-edit {row}", "tap map-from gyro", "slide speed 300 450"]:
             control(line)
-        sent = logged(since, "pad: keymap 2 (Check)", 3)
+        sent = logged(since, f"pad: keymap {ident} (Check)", 3)
         out = capture(f"evtest {mouse}", 2.5, lambda: pad("press lb", "gyro 0 -60 0", "sleep 600", "gyro 0 0 0", "release lb"))
         faster = sum(int(line.rsplit(" ", 1)[1]) for line in out.splitlines() if "(REL_X)" in line and "value" in line)
         text = sh(f"cat {keymaps_file}")
@@ -775,6 +779,50 @@ class Checks:
         press("home")
         self.check("  a Home tap: shelf", until(lambda: front() == "clamshell-shelf", 3), f"front {front()!r}")
 
+    def keymap_actuations(self):
+        """A keymap with A to X pressed and to E held, B to Z pressed twice, Y to T with turbo and toggled,
+        made through the screens; in a game, read from the virtual keyboard."""
+        if not self.check("keymap actuations: the fake pad grabbed", plug_pad()):
+            return
+        keymaps_file = f"{CHECKS_DIR}/pegasus/keymaps.txt"
+        for line in ["tab settings", "scope game", "tap setting keymap", "tap keymap-new", "type Acts", "tap save",
+                     "tap map-from a", "tap map-to key", "tap key x", "tap keymap-act hold", "tap map-to key", "tap key e",
+                     "tap map-from b", "tap keymap-act double", "tap map-to key", "tap key z",
+                     "tap map-from y", "tap map-to key", "tap key t", "tap toggle", "tap keymap-back"]:
+            control(line)
+        text = sh(f"cat {keymaps_file}")
+        rows = text.count("keymap ")
+        saved = "a = key x\n" in text and "y = key t toggle\n" in text and "a hold = key e\n" in text and "b double = key z\n" in text
+        if not self.check("  A: X, held E; B twice: Z; Y: T toggled; saved", saved, text):
+            return
+        since = now()
+        control(f"tap keymap {rows}")
+        control("tap launch")
+        launched = until(lambda: bool(units("game")) and front() not in ("", "clamshell-shelf"), 10)
+        if not self.check("  the game runs with it", launched and logged(since, "(Acts)", 5), f"front {front()!r}"):
+            return
+        mouse = device("clamshell pad mouse")
+        virtual = device("clamshell pad (Xbox 360)")
+
+        def keys(*commands, seconds=2.5, dev=mouse):
+            out = capture(f"evtest {dev}", seconds, lambda: pad(*commands))
+            return [line.split("(")[2].split(")")[0] + line.rsplit(" ", 1)[1] for line in out.splitlines()
+                    if "(EV_KEY)" in line and "value" in line]
+
+        got = keys("press a", "sleep 100", "release a")
+        self.check("  A tapped: X, on letting go", got == ["KEY_X1", "KEY_X0"], f"{got}")
+        got = keys("press a", "sleep 700", "release a")
+        self.check("  A held: E only, until let go", got == ["KEY_E1", "KEY_E0"], f"{got}")
+        got = keys("press b", "sleep 80", "release b", "sleep 100", "press b", "sleep 150", "release b")
+        self.check("  B twice: Z, held while the second press is", got == ["KEY_Z1", "KEY_Z0"], f"{got}")
+        got = keys("press b", "sleep 80", "release b", seconds=2.0, dev=virtual)
+        self.check("  B once: the game's B, after the double's window", got == ["BTN_EAST1", "BTN_EAST0"], f"{got}")
+        got = keys("press y", "sleep 80", "release y", "sleep 300")
+        self.check("  Y: T on at the press, staying on", got == ["KEY_T1"], f"{got}")
+        got = keys("press y", "sleep 80", "release y")
+        self.check("  Y again: T off", got == ["KEY_T0"], f"{got}")
+        press("home")
+
     # Bluetooth
 
     def bluetooth(self):
@@ -801,7 +849,8 @@ class Checks:
 
 
 CHECKS = ["shelf_scroll", "bar_tap", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad",
-          "pad_shelf", "pad_view", "pad_mouse", "pad_typing", "pad_held_key", "pad_unplug", "pad_guide", "keymaps", "keymap_layers", "bluetooth"]
+          "pad_shelf", "pad_view", "pad_mouse", "pad_typing", "pad_held_key", "pad_unplug", "pad_guide", "keymaps", "keymap_layers",
+          "keymap_actuations", "bluetooth"]
 
 
 def main():
