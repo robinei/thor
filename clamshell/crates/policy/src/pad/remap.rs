@@ -24,13 +24,14 @@ use crate::keyboard::{MODIFIERS, chord_keys};
 
 /// A stick or trigger counts as pushed (a direction, a button) past this.
 pub const HALF: f32 = 0.5;
-/// Pointer speed of a stick at full deflection, pixels per second, by speed step (1-5); quadratic below.
+/// Pointer speed of a stick at full deflection, pixels per second, at speeds 0, 25, 50, 75 and 100
+/// (between, in proportion); quadratic below.
 const STICK_POINTER: [f32; 5] = [500.0, 900.0, 1400.0, 2100.0, 3000.0];
 /// Stick deflection below this (of full) doesn't move the pointer.
 const STICK_DEADZONE: f32 = 0.15;
-/// The gyro to the pointer: pixels per degree turned, by speed step.
+/// The gyro to the pointer: pixels per degree turned, at the same speeds.
 const GYRO_POINTER: [f32; 5] = [6.0, 10.0, 15.0, 22.0, 32.0];
-/// The gyro to a stick: degrees per second for full deflection, by speed step.
+/// The gyro to a stick: degrees per second for full deflection, at the same speeds.
 const GYRO_STICK: [f32; 5] = [240.0, 160.0, 100.0, 60.0, 35.0];
 /// Turning slower than this (degrees per second) is drift, not aim.
 const GYRO_DEADZONE: f32 = 1.0;

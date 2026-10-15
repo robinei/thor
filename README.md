@@ -52,7 +52,7 @@ screen's touchscreen through QEMU's QMP socket (`input-send-event`, multitouch),
 pad plug` runs the `fake_pad` example (the host's build: `cargo build --release -p clamshell-policy
 --examples`) in the machine as a user service reading commands from a pipe, which ClamShell grabs as the
 controller; `pad do 'tap a, dpad down, sleep 100, stick left 1 0, press a, release a'` drives it (buttons
-a b x y lb rb view menu home ls rs, `trigger left|right V`, `gyro X Y Z` in degrees per second: the fake
+a b x y lb rb view menu home ls rs back, `trigger left|right V`, `gyro X Y Z` in degrees per second: the fake
 pad has a motion sensor beside it), `pad unplug` stops it. `tools/vm.py
 bluetooth` (again after each boot) builds BlueZ's `btvirt` emulator in the machine once (Arch doesn't
 ship it) and starts two virtual controllers: bluetoothd keeps the first (`MaxControllers=1`), the second
@@ -67,9 +67,11 @@ backlight), a slide while a second finger taps a tab, forgetting a Wi-Fi network
 scrolling shelf's list (the test library has more games than fit) and the Wi-Fi list (the simulated
 radios loaded again with eight more test networks for it) and tapping a row after, the
 touchpad tab, the pad on shelf (D-pad, A, Home), View, the pad mouse, typing with the pad, a held A on an
-on-screen key when View moves the pad away, unplugging the controller during a game, Home held as the game's Guide, a keymap made
+on-screen key when View moves the pad away, unplugging the controller during a game, Home then Back as the game's Guide, a keymap made
 through its screens and the pad (A to Ctrl+X, the right stick and the gyro while LB is held to the
-pointer) read back from the virtual devices in a game, then Default passing everything through, and
+pointer) read back from the virtual devices in a game, the gyro's speed slid up on the edit screen while
+the game runs, then Default passing everything through, a keymap with a Back layer (A to Ctrl+X, Ctrl+Y
+while Back is held, Back let go while A is held), and
 Bluetooth. For
 them ClamShell runs with a test library, the fake backlight and its own state directory (a runtime
 drop-in for its service, removed afterwards; `--keep` leaves it). It prints ok/FAIL lines and a count;
@@ -230,7 +232,7 @@ off and the device sleeps) are on the Battery tab, not here: they aren't a game'
 | Cores | the little cluster only (the others offline) |
 | Mouse | the pad mouse turned on at launch, off at the end |
 | Keymap | the keymap the game's controller goes through (its name; Default: as on the pad); a tap opens the keymaps (below) |
-| Deadzone | a stick deadzone, in the virtual pad |
+| Deadzone | a stick deadzone, in the virtual pad, after the keymap (a keymap also has a deadzone per stick: both apply) |
 | CPU, GPU | a frequency cap in percent, instead of the profile's |
 | Env | extra environment variables (`KEY=value`, typed on the on-screen keyboard); a game's come after the defaults' |
 | Refresh | the main screen's refresh rate: the nearest its modes have (through the compositor's output management protocol) |
@@ -238,26 +240,38 @@ off and the device sleeps) are on the Battery tab, not here: they aren't a game'
 
 **Keymaps** remap the controller for games: named, shared between games, saved in `keymaps.txt` next to
 `game-settings.txt` (a `keymap ID NAME` line, then a line per binding, `INPUT = OUTPUT [option=value]`, e.g.
-`a = key ctrl+x`, `rstick = pointer speed=4`, `gyro = pointer hold=lt`; lines not understood are skipped).
-The first start makes a "Nintendo layout" keymap (A and B, X and Y swapped), an ordinary one. The Keymap
-tile opens the picker over the settings: Default, then the keymaps with how many games use each; a tap
-chooses one for the scope being edited, Edit (or a long press: rename, duplicate, delete; deleting one in
-use asks first and puts its games back on Default) opens it, New names one (the editor) and opens it. The
-edit screen draws the pad (shoulders and triggers, sticks with a marker per direction, D-pad, face
-buttons, View and Menu, stick clicks, back buttons, the gyro), each input with what it maps to in blue;
-an input is chosen by touch or by pressing (or pushing past half) it on the pad, which listens there
-instead of moving the focus (Home leaves; Home is never mapped); a long press sets one back. What it may
-map to fits its kind: a button, D-pad direction or stick direction to a pad button (one of the list, or
-the next pressed on the pad), a key chord (typed on the keyboard: modifiers latch, the next key completes
-it; Done takes the modifiers alone), a mouse button or a wheel step; a stick to a stick, the pointer (a
-speed, 1-5), four keys typed in turn (WASD) or the D-pad; a trigger to a trigger, or past 25, 50 or 75 %
-to anything a button maps to; the gyro to the pointer or a stick (a speed), always or while a chosen
-button or trigger is held (which keeps its own mapping), off by default. An input without a binding does
-what it does on the pad. Only on the game's route: ClamShell's screens, typing and the pad mouse see the
-plain pad. The pad thread maps the controller's state to what every output should be and sends what
-changed: the game's virtual pad, keys and mouse buttons on the pad's virtual mouse (it has a keyboard's
-keys; held while the button is, repeated by the compositor), the pointer; so leaving the game, losing the
-controller or a keymap change mid-press leaves nothing held, and chords press their modifiers first and
+`a = key ctrl+x`, `rstick = pointer speed=75% deadzone=10`, `gyro = pointer hold=lt`; a `layer back` line
+starts the Back layer's bindings; lines not understood are skipped, and a layer not known). Each keymap has
+two layers: the main one, and one in force while the Thor's Back button is held (its inputs without a
+binding there do what the main layer says; Back itself never reaches the game). The first start makes a
+"Nintendo layout" keymap (A and B, X and Y swapped), an ordinary one. The Keymap tile opens the picker
+over the settings: Default, then the keymaps with how many games use each; a tap chooses one for the scope
+being edited, Edit (or a long press: rename, duplicate, delete; deleting one in use asks first and puts its
+games back on Default) opens it, New names one (the editor) and opens it. The edit screen shows one layer
+(Main or Back held, switched at the top right, by the Back button drawn on the pad, or by pressing Back on
+the pad): the Thor's controls in two clusters at the screen's edges, each input the layer changes with a
+label, blue where it maps to something else, grey where it is the input as on the pad, only tuned. An
+input is selected by touch or by pressing (or pushing past half) it on the pad, which listens there
+instead of moving the focus (Home leaves; Home is never mapped); the panel between the label columns
+then shows what it does in the layer, Change (or select it again) and Reset (the main layer: as on the
+pad; the Back layer: as in Main), and its parameters: a stick's deadzone, full point, curve and X/Y
+inversion (and speed on the pointer), a trigger's deadzone and full point (and threshold on a button), the
+gyro's speed, inversion and what holds it on. A value is held (or slid) for the bar's slider, which sets
+it as the finger moves (the game gets it at once); the panel's parameters are touch only, since the pad
+listens on that screen. A long press on an input sets it back; "No changes" clears the layer shown, once
+confirmed. What an input may map to fits its kind: a button, D-pad direction or stick direction to a pad
+button (one of the list, or the next pressed on the pad), a key chord (typed on the keyboard: modifiers
+latch, the next key completes it; Done takes the modifiers alone), a mouse button or a wheel step; a stick
+to a stick, the pointer, four keys typed in turn (WASD) or the D-pad; a trigger to a trigger, or past its
+threshold to anything a button maps to; the gyro to the pointer or a stick, always or while a chosen button
+or trigger is held (which keeps its own mapping), off by default. In the Back layer, "As in Main" and "As
+on the pad" are both choices. Speeds go from 0 to 100 (files with the old steps 1-5 load as 0, 25, 50, 75,
+100). An input without a binding does what it does on the pad. Only on the game's route: ClamShell's
+screens, typing and the pad mouse see the plain pad. The pad thread applies a stick's or trigger's tuning
+to its values, then maps the controller's state to what every output should be and sends what changed:
+the game's virtual pad, keys and mouse buttons on the pad's virtual mouse (it has a keyboard's keys; held
+while the button is, repeated by the compositor), the pointer; so leaving the game, losing the controller,
+a keymap change or Back let go mid-press leaves nothing held, and chords press their modifiers first and
 let them go last. **The gyro** is read from a motion sensor next to the controller (an evdev device with
 INPUT_PROP_ACCELEROMETER and the gyro on ABS_RX/RY/RZ, as the kernel's controller drivers make: the one
 paired with the controller by name or port, or the only one); to the pointer it is integrated (yaw to x,
@@ -312,8 +326,12 @@ desktop's) and shows the new level under the bar for a moment. `clamshell ctl vo
 `$XDG_RUNTIME_DIR/clamshell-control`). A screenshot (the pad's Home with RB, or `ctl screenshot`, which the
 image binds to a keyboard's Print) is both screens in one PNG in `~/Pictures/Screenshots`, taken by grim;
 "Screenshot saved" shows under the bar. Home on its own acts when it is let go, so it can start a
-combination. Held for half a second with a game in front, Home is the game's Guide button instead (Steam's
-overlay and its Guide chords), until it is let go.
+combination: held with RB, a screenshot (a table of such system shortcuts, `pad/route.rs`); held, then
+Back with a game in front, the game's Guide button while both are held (Steam's overlay; buttons pressed
+meanwhile go to the game, for Steam's Guide chords); held with any other button, that button goes where it
+would and letting Home go isn't Home. Back on its own is the keymap's Back layer in a game and back on
+ClamShell's screens (closes the editor, goes back one keymap screen; on the edit screen it shows the other
+layer). Back's key code is assumed to be KEY_BACK on the controller until the device test.
 
 **Sleep**: the power button and the lid put the device to sleep through logind (the image's
 `logind.conf.d/thor.conf`): suspend, then hibernate after 30 minutes (`sleep.conf.d/thor.conf`), or

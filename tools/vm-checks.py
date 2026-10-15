@@ -635,11 +635,18 @@ class Checks:
             return
         game = front()
         virtual = device("clamshell pad (Xbox 360)")
-        out = capture(f"evtest {virtual}", 3, lambda: pad("tap home 900"))
+        out = capture(f"evtest {virtual}", 3, lambda: pad("press home", "sleep 100", "press back", "sleep 400", "release back",
+                                                         "sleep 100", "release home"))
         mode = [line for line in out.splitlines() if "BTN_MODE" in line and "value" in line]
-        self.check("  Home held: the game's Guide, down then up", len(mode) == 2 and "value 1" in mode[0]
+        self.check("  Home then Back: the game's Guide, down then up", len(mode) == 2 and "value 1" in mode[0]
                    and "value 0" in mode[1], f"{mode}")
-        self.check("  and not ClamShell's Home (the game stays in front)", front() == game, f"front {front()!r}")
+        self.check("  and not ClamShell's Home (the game stays in front), Back not the game's",
+                   front() == game and "KEY_BACK" not in out.split("Testing ...")[-1], f"front {front()!r}")
+        out = capture(f"evtest {virtual}", 3, lambda: pad("tap home 900"))
+        self.check("  Home held long alone: not Guide (Home on release: shelf in front)",
+                   "BTN_MODE" not in out.split("Testing ...")[-1] and until(lambda: front() == "clamshell-shelf", 3),
+                   f"front {front()!r}")
+        press("home")
         out = capture(f"evtest {virtual}", 2, lambda: press("home"))
         self.check("  Home pressed: ClamShell's (shelf in front), the game sees nothing",
                    until(lambda: front() == "clamshell-shelf", 3) and "BTN_MODE" not in out.split("Testing ...")[-1],
@@ -661,10 +668,11 @@ class Checks:
             control(line)
         listening = logged(since, "PadRoute(Listen)", 3)
         self.check("  named; the edit screen listens to the pad", listening, journal(since)[-300:])
-        press("a")  # chooses A on the edit screen
-        for line in ["tap map-to key", "tap key ctrl", "tap key x", "tap map-from rstick", "tap map-to pointer",
-                     "tap keymap-back", "tap map-from gyro", "tap map-to pointer", "tap gyro-hold lb", "tap keymap-back",
-                     "tap keymap-back", "tap keymap 2"]:
+        press("a")  # selects A on the edit screen
+        press("a")  # and again: what it maps to
+        for line in ["tap map-to key", "tap key ctrl", "tap key x", "tap map-from rstick", "tap map-from rstick",
+                     "tap map-to pointer", "tap map-from gyro", "tap map-from gyro", "tap map-to pointer",
+                     "tap keymap-active", "tap gyro-hold lb", "tap keymap-back", "tap keymap 2"]:
             control(line)
         text = sh(f"cat {keymaps_file}")
         saved = "keymap 2 Check" in text and "a = key ctrl+x" in text and "rstick = pointer" in text and "gyro = pointer hold=lb" in text
@@ -694,6 +702,18 @@ class Checks:
         out = capture(f"evtest {mouse}", 2.5, lambda: pad("press lb", "gyro 0 -60 0", "sleep 600", "gyro 0 0 0", "release lb"))
         moved = sum(int(line.rsplit(" ", 1)[1]) for line in out.splitlines() if "(REL_X)" in line and "value" in line)
         self.check("  the gyro with LB held moves the pointer", moved > 100, f"pointer moved {moved} px")
+        # The gyro's speed slid up on the edit screen's panel, the game still running: further.
+        since = now()
+        for line in ["tab settings", "tap setting keymap", "tap keymap-edit 2", "tap map-from gyro", "slide speed 300 450"]:
+            control(line)
+        sent = logged(since, "pad: keymap 2 (Check)", 3)
+        out = capture(f"evtest {mouse}", 2.5, lambda: pad("press lb", "gyro 0 -60 0", "sleep 600", "gyro 0 0 0", "release lb"))
+        faster = sum(int(line.rsplit(" ", 1)[1]) for line in out.splitlines() if "(REL_X)" in line and "value" in line)
+        text = sh(f"cat {keymaps_file}")
+        self.check("  the gyro's speed slid up: sent to the pad at once, saved, the pointer goes further",
+                   sent and "gyro = pointer speed=9" in text and faster > moved * 1.5, f"{moved} px, then {faster} px; {text}")
+        for line in ["tap keymap-back", "tap keymap-back"]:
+            control(line)
         # Default for the game again: everything as on the pad.
         since = now()
         for line in ["tab settings", "tap setting keymap", "tap keymap 0"]:
@@ -703,6 +723,53 @@ class Checks:
         mouse_keys = [line for line in sh("cat /tmp/thor-checks-mouse").splitlines() if "(EV_KEY)" in line and "value" in line]
         self.check("  Default: A is the game's A, nothing on the keyboard", "(BTN_SOUTH), value 1" in out and not mouse_keys,
                    f"{out.strip()[-200:]!r}; mouse {mouse_keys}")
+
+    def keymap_layers(self):
+        """A keymap with A to Ctrl+X, and to Ctrl+Y in the Back layer, made through the screens; in a game:
+        A, Back with A, and Back let go while A is held, read from the virtual keyboard."""
+        if not self.check("keymap layers: the fake pad grabbed", plug_pad()):
+            return
+        keymaps_file = f"{CHECKS_DIR}/pegasus/keymaps.txt"
+        for line in ["tab settings", "scope game", "tap setting keymap", "tap keymap-new", "type Layers", "tap save",
+                     "tap map-from a", "tap keymap-change", "tap map-to key", "tap key ctrl", "tap key x",
+                     "tap keymap-layer back", "tap keymap-change", "tap map-to key", "tap key ctrl", "tap key y",
+                     "tap keymap-back"]:
+            control(line)
+        text = sh(f"cat {keymaps_file}")
+        rows = text.count("keymap ")
+        layers = "keymap " in text and "a = key ctrl+x\nlayer back\na = key ctrl+y\n" in text
+        if not self.check("  A to Ctrl+X, and to Ctrl+Y while Back is held, saved", layers, text):
+            return
+        since = now()
+        control(f"tap keymap {rows}")
+        control("tap launch")
+        launched = until(lambda: bool(units("game")) and front() not in ("", "clamshell-shelf"), 10)
+        if not self.check("  the game runs with it", launched and logged(since, "(Layers)", 5), f"front {front()!r}"):
+            return
+        game = front()
+        mouse = device("clamshell pad mouse")
+
+        def keys(*commands, seconds=2.5):
+            out = capture(f"evtest {mouse}", seconds, lambda: pad(*commands))
+            return [line.split("(")[2].split(")")[0] + line.rsplit(" ", 1)[1] for line in out.splitlines()
+                    if "(EV_KEY)" in line and "value" in line]
+
+        def held(events):
+            down = set()
+            for e in events:
+                (down.add if e.endswith("1") else down.discard)(e[:-1])
+            return down
+
+        got = keys("press a", "sleep 150", "release a")
+        self.check("  A: Ctrl+X", got == ["KEY_LEFTCTRL1", "KEY_X1", "KEY_X0", "KEY_LEFTCTRL0"], f"{got}")
+        got = keys("press back", "sleep 100", "press a", "sleep 150", "release a", "sleep 100", "release back")
+        self.check("  Back held, A: Ctrl+Y (Back itself nothing)", got == ["KEY_LEFTCTRL1", "KEY_Y1", "KEY_Y0", "KEY_LEFTCTRL0"], f"{got}")
+        got = keys("press back", "sleep 100", "press a", "sleep 150", "release back", "sleep 150", "release a")
+        self.check("  Back let go while A is held: Ctrl+Y up, then A's Ctrl+X, nothing left down",
+                   "KEY_Y0" in got and "KEY_X1" in got and not held(got), f"{got}")
+        self.check("  the game stays in front", front() == game, f"front {front()!r}")
+        press("home")
+        self.check("  a Home tap: shelf", until(lambda: front() == "clamshell-shelf", 3), f"front {front()!r}")
 
     # Bluetooth
 
@@ -730,7 +797,7 @@ class Checks:
 
 
 CHECKS = ["shelf_scroll", "bar_tap", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad",
-          "pad_shelf", "pad_view", "pad_mouse", "pad_typing", "pad_held_key", "pad_unplug", "pad_guide", "keymaps", "bluetooth"]
+          "pad_shelf", "pad_view", "pad_mouse", "pad_typing", "pad_held_key", "pad_unplug", "pad_guide", "keymaps", "keymap_layers", "bluetooth"]
 
 
 def main():

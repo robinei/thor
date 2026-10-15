@@ -140,10 +140,17 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       BTN_GRIPL/R/L2/R2 as L4, R4, L5, R5); unplugging
       the controller mid-game (the game's pad stays, at rest, and picks up again); A held on an
       on-screen key while View moves the pad away (the key must not keep repeating).
-- [ ] Gamepad buttons the keymap edit screen draws but can't remap yet: which codes the small round
-      button at the screen's bottom-right corner (Back), the AYN button under the screen and the two
-      small buttons beside it send (`evtest`), and from which device; the bottom-left one should be
-      Home (BTN_MODE). Also confirm the face buttons' codes by their printed letters (B: BTN_SOUTH, A:
+- [ ] Back button (the small round one at the bottom screen's bottom-right corner): which device and
+      key code it sends (`evtest`). ClamShell assumes KEY_BACK on the controller (`pad/remap.rs`,
+      `LAYER_KEYS`, and the fake pad's `back`); if it comes from a separate button device, the pad thread
+      has to read (and grab) that one too. Then: Back held in a game applies the keymap's Back layer, Back
+      on ClamShell's screens goes back, on the keymap edit screen it shows the other layer.
+- [ ] Home then Back with Steam: the virtual pad's Guide (BTN_MODE) while both are held opens Steam's
+      overlay, and Guide chords (Guide with a button pressed meanwhile) work; Home alone still goes to
+      shelf, Home with R1 takes a screenshot.
+- [ ] Gamepad buttons the keymap edit screen draws but can't remap yet: which codes the AYN button under
+      the screen and the two small buttons beside it send (`evtest`), and from which device; the
+      bottom-left round one should be Home (BTN_MODE). Also confirm the face buttons' codes by their printed letters (B: BTN_SOUTH, A:
       BTN_EAST, X: BTN_NORTH, Y: BTN_WEST) and that there are no back buttons. Then they can become
       inputs of their own in the keymap (`core::keymap::Button`) and the edit screen (`views/pad.rs`).
 - [ ] Gyro: what the Thor's IMU is (an IIO device, or evdev from the gamepad driver?), its axes, signs and
