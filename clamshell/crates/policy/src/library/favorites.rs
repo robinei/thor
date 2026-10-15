@@ -4,7 +4,7 @@
 use std::collections::HashSet;
 use std::path::Path;
 
-use crate::pegasus::clean;
+use clamshell_library::pegasus::clean;
 
 /// The favourite paths (relative lines are against the config dir).
 pub fn read(config_dir: &Path) -> HashSet<String> {

@@ -367,10 +367,6 @@ dependencies = [
 [[package]]
 name = "clamshell-library"
 version = "0.1.0"
-dependencies = [
- "log",
- "rusqlite",
-]
 
 [[package]]
 name = "clamshell-policy"
@@ -380,6 +376,7 @@ dependencies = [
  "clamshell-library",
  "evdev",
  "log",
+ "rusqlite",
  "rustix",
  "serde",
  "serde_json",

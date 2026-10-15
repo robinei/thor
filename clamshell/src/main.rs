@@ -67,21 +67,15 @@ fn main() -> ExitCode {
     // games if it is empty. Snapshots use the demo games unless CLAMSHELL_SNAPSHOT_LIBRARY=real.
     let snapshotting = std::env::args().nth(1).as_deref() == Some("--snapshot");
     let real_snapshot = std::env::var("CLAMSHELL_SNAPSHOT_LIBRARY").as_deref() == Ok("real");
-    let mut sources = clamshell_library::Sources::default_for_user();
+    let base = clamshell_policy::paths::Base::from_env();
+    let paths = clamshell_policy::paths::Paths::new(&base, std::env::var_os("CLAMSHELL_PEGASUS_CONFIG").map(std::path::PathBuf::from));
     // CLAMSHELL_STEAM=off: without Steam's games (tests).
-    if std::env::var("CLAMSHELL_STEAM").as_deref() == Ok("off") {
-        sources.steam = None;
-    }
-    if let Some(dir) = std::env::var_os("CLAMSHELL_PEGASUS_CONFIG") {
-        let dir = std::path::PathBuf::from(dir);
-        sources.state_dir = clamshell_library::Sources::state_dir_for(Some(&dir));
-        sources.pegasus_config = Some(dir);
-    }
+    let sources = clamshell_policy::library::Sources::new(&paths, base.home.as_deref(), std::env::var("CLAMSHELL_STEAM").as_deref() != Ok("off"));
     let state_dir = sources.state_dir.clone();
     let library = if snapshotting && !real_snapshot {
         clamshell_library::demo_library()
     } else {
-        let library = clamshell_library::Library::load(&sources);
+        let library = clamshell_policy::library::load(&sources);
         if library.collections.is_empty() { clamshell_library::demo_library() } else { library }
     };
     // Where shelf was last time (~/.local/state/clamshell/last), and the screens' brightness as it was
@@ -298,14 +292,14 @@ fn main() -> ExitCode {
             Effect::Save(Save::Brightness(text)) => save(brightness_file.as_deref(), text),
             Effect::Save(Save::Favourites(ids)) => {
                 if let Some(dir) = &state_dir
-                    && let Err(e) = clamshell_library::favorites::write(dir, ids.iter().map(String::as_str))
+                    && let Err(e) = clamshell_policy::library::favorites::write(dir, ids.iter().map(String::as_str))
                 {
                     log::warn!("favourites: {e}");
                 }
             }
             Effect::RecordPlay { game, start, duration } => {
                 if let Some(dir) = &state_dir
-                    && let Err(e) = clamshell_library::stats::record(&dir.join("stats.db"), game, *start, *duration)
+                    && let Err(e) = clamshell_policy::library::stats::record(&dir.join("stats.db"), game, *start, *duration)
                 {
                     log::warn!("recording the play of {game}: {e}");
                 }

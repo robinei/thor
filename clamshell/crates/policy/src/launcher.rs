@@ -19,7 +19,9 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use clamshell_core::{GameEvent, Instance, Launch};
-use clamshell_library::{launch, stats};
+use clamshell_library::LaunchSpec;
+
+use crate::library::stats;
 
 use crate::{Sink, job, sway, units};
 use std::sync::mpsc::Sender;
@@ -88,8 +90,8 @@ fn run(config: &Config, request: &Request, sink: &impl Sink) {
     let mut env = config.clone();
     env.env.extend(request.env.iter().cloned());
     let played = match &request.launch {
-        Launch::Command { command, workdir, basedir } => match request.file.as_deref() {
-            Some(file) => run_command(&env, command, workdir, basedir, file, &request.instance, &game, sink),
+        Launch::Command(spec) => match request.file.as_deref() {
+            Some(file) => run_command(&env, spec, file, &request.instance, &game, sink),
             None => Err(io::Error::other("no file to launch")),
         },
         Launch::Steam { appid } => run_steam(&env, *appid, &game, sink),
@@ -116,15 +118,13 @@ fn run(config: &Config, request: &Request, sink: &impl Sink) {
 #[allow(clippy::too_many_arguments)]
 fn run_command(
     config: &Config,
-    command: &str,
-    workdir: &str,
-    basedir: &Path,
+    spec: &LaunchSpec,
     file: &Path,
     instance: &Instance,
     game: &Arc<str>,
     sink: &impl Sink,
 ) -> io::Result<(u64, u64)> {
-    let c = launch::resolve(command, workdir, basedir, file).ok_or_else(|| io::Error::other("empty launch command"))?;
+    let c = spec.resolve(file).ok_or_else(|| io::Error::other("empty launch command"))?;
     let unit = instance.name();
     // Under sway (and systemd): sway starts it for the game's workspace; it has ended when its scope has.
     if let (Some(sway), true) = (&config.sway, config.scope) {
@@ -220,7 +220,7 @@ mod tests {
         let config = Config { stats_db: Some(db.clone()), env: vec![], scope: false, sway: None };
         let handle = spawn(config, rx, move |e| seen.lock().map(|mut v| v.push(e)).is_ok()).unwrap();
         let id: Arc<str> = script.to_string_lossy().into();
-        let launch = Launch::Command { command: "\"{file.path}\"".into(), workdir: String::new(), basedir: dir.clone() };
+        let launch = Launch::Command(LaunchSpec { command: "\"{file.path}\"".into(), workdir: String::new(), basedir: dir.clone() });
         tx.send(Request { game: id.clone(), instance: Instance::Game { secs: u64::from(std::process::id()), n: 0 }, launch, file: Some(script.clone()), env: vec![] }).unwrap();
         drop(tx);
         handle.join().unwrap();
@@ -239,7 +239,7 @@ mod tests {
         let seen = events.clone();
         let (tx, rx) = std::sync::mpsc::channel();
         let handle = spawn(Config::default(), rx, move |e| seen.lock().map(|mut v| v.push(e)).is_ok()).unwrap();
-        let launch = Launch::Command { command: "/nonexistent/game".into(), workdir: String::new(), basedir: "/".into() };
+        let launch = Launch::Command(LaunchSpec { command: "/nonexistent/game".into(), workdir: String::new(), basedir: "/".into() });
         tx.send(Request { game: "x".into(), instance: Instance::Game { secs: u64::from(std::process::id()), n: 1 }, launch, file: Some("/tmp".into()), env: vec![] }).unwrap();
         drop(tx);
         handle.join().unwrap();

@@ -13,6 +13,7 @@ rustix.workspace = true
 clamshell-core.workspace = true
 clamshell-library.workspace = true
 log.workspace = true
+rusqlite.workspace = true
 
 [lints]
 workspace = true

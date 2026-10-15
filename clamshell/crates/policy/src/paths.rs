@@ -1,0 +1,120 @@
+//! Where ClamShell's files are: worked out once at start from the XDG base directories and HOME, then
+//! passed to whatever reads or writes one.
+
+use std::path::{Path, PathBuf};
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Paths {
+    /// Pegasus' config dir, with `game_dirs.txt`: ~/.config/pegasus-frontend unless given.
+    pub pegasus_config: Option<PathBuf>,
+    /// Play time (stats.db), favourites (favorites.txt) and the games' settings (game-settings.txt):
+    /// Pegasus' config dir if it exists (shared with Pegasus), else ~/.local/share/clamshell.
+    pub state_dir: Option<PathBuf>,
+    /// Where shelf and the second screen were (~/.local/state/clamshell/last).
+    pub resume: Option<PathBuf>,
+    /// The screens' brightness as it was left (the level and each screen's share), next to `resume`.
+    pub brightness: Option<PathBuf>,
+    /// The dock's apps (~/.config/clamshell/launcher.json).
+    pub launcher: Option<PathBuf>,
+    /// Launches handed to sway's exec ($XDG_RUNTIME_DIR/clamshell/jobs, see [`crate::job`]).
+    pub jobs: PathBuf,
+    /// MangoHud's config files and frame logs, in RAM ($XDG_RUNTIME_DIR/clamshell/mangohud).
+    pub mangohud: PathBuf,
+    /// $XDG_RUNTIME_DIR, where systemd's user manager has its socket.
+    pub runtime: Option<PathBuf>,
+}
+
+/// The environment the paths come from.
+#[derive(Debug, Clone, Default)]
+pub struct Base {
+    pub home: Option<PathBuf>,
+    pub config_home: Option<PathBuf>,
+    pub data_home: Option<PathBuf>,
+    pub state_home: Option<PathBuf>,
+    pub runtime: Option<PathBuf>,
+}
+
+impl Base {
+    /// HOME and the XDG base directories from the environment.
+    pub fn from_env() -> Base {
+        let var = |name: &str| std::env::var_os(name).map(PathBuf::from);
+        Base { home: var("HOME"), config_home: var("XDG_CONFIG_HOME"), data_home: var("XDG_DATA_HOME"), state_home: var("XDG_STATE_HOME"), runtime: var("XDG_RUNTIME_DIR") }
+    }
+
+    /// An XDG directory, else its default under HOME.
+    fn xdg(&self, set: Option<&PathBuf>, under_home: &str) -> Option<PathBuf> {
+        set.cloned().or_else(|| self.home.as_ref().map(|h| h.join(under_home)))
+    }
+}
+
+impl Paths {
+    /// The paths for `base`; `pegasus_config` instead of Pegasus' usual config dir (tests).
+    pub fn new(base: &Base, pegasus_config: Option<PathBuf>) -> Paths {
+        let config = base.xdg(base.config_home.as_ref(), ".config");
+        let data = base.xdg(base.data_home.as_ref(), ".local/share");
+        let state = base.xdg(base.state_home.as_ref(), ".local/state");
+        let pegasus_config = pegasus_config.or_else(|| config.as_ref().map(|c| c.join("pegasus-frontend")));
+        let state_dir = match &pegasus_config {
+            Some(p) if p.is_dir() => Some(p.clone()),
+            _ => data.map(|d| d.join("clamshell")),
+        };
+        let resume = state.map(|d| d.join("clamshell/last"));
+        Paths {
+            brightness: resume.as_ref().and_then(|f| f.parent()).map(|d| d.join("brightness")),
+            resume,
+            launcher: config.map(|c| c.join("clamshell/launcher.json")),
+            jobs: base.runtime.clone().unwrap_or_else(std::env::temp_dir).join("clamshell/jobs"),
+            mangohud: base.runtime.clone().unwrap_or_else(|| PathBuf::from("/tmp")).join("clamshell/mangohud"),
+            runtime: base.runtime.clone(),
+            pegasus_config,
+            state_dir,
+        }
+    }
+
+    pub fn stats_db(&self) -> Option<PathBuf> {
+        self.state_dir.as_ref().map(|d| d.join("stats.db"))
+    }
+
+    pub fn game_settings(&self) -> Option<PathBuf> {
+        self.state_dir.as_ref().map(|d| d.join("game-settings.txt"))
+    }
+
+    /// Whether there is a systemd user session to put apps and games in scopes of.
+    pub fn has_user_systemd(&self) -> bool {
+        self.runtime.as_deref().is_some_and(|d| d.join("systemd/private").exists())
+    }
+}
+
+/// Writes one of ClamShell's files, its folder made if needed.
+pub fn write(file: &Path, text: &str) -> std::io::Result<()> {
+    if let Some(dir) = file.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(file, text)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn xdg_dirs_or_their_defaults_under_home() {
+        let base = Base { home: Some("/h".into()), state_home: Some("/s".into()), runtime: Some("/run/u".into()), ..Base::default() };
+        let paths = Paths::new(&base, None);
+        assert_eq!(paths.pegasus_config.as_deref(), Some(Path::new("/h/.config/pegasus-frontend")));
+        assert_eq!(paths.state_dir.as_deref(), Some(Path::new("/h/.local/share/clamshell")), "no Pegasus config dir");
+        assert_eq!(paths.resume.as_deref(), Some(Path::new("/s/clamshell/last")));
+        assert_eq!(paths.brightness.as_deref(), Some(Path::new("/s/clamshell/brightness")));
+        assert_eq!(paths.launcher.as_deref(), Some(Path::new("/h/.config/clamshell/launcher.json")));
+        assert_eq!((paths.jobs.as_path(), paths.mangohud.as_path()), (Path::new("/run/u/clamshell/jobs"), Path::new("/run/u/clamshell/mangohud")));
+        assert_eq!(paths.stats_db().as_deref(), Some(Path::new("/h/.local/share/clamshell/stats.db")));
+    }
+
+    #[test]
+    fn an_existing_pegasus_config_dir_holds_the_state() {
+        let dir = std::env::temp_dir();
+        let paths = Paths::new(&Base::default(), Some(dir.clone()));
+        assert_eq!(paths.state_dir, Some(dir));
+        assert_eq!(Paths::new(&Base::default(), None).state_dir, None, "no HOME, no XDG dirs");
+    }
+}
