@@ -37,8 +37,11 @@ DROP_IN = "$XDG_RUNTIME_DIR/systemd/user/clamshell.service.d/thor-checks.conf"
 BAR_Y = 45
 ICONS = {"settings": 55, "dock": 157, "keyboard": 260, "touchpad": 363, "sysinfo": 466, "volume": 568,
          "brightness": 671, "bluetooth": 774, "wifi": 877, "battery": 975, "pad-mouse": 1188}
-# A list's first row (Wi-Fi's networks, Bluetooth's devices).
+# A list's first row (Wi-Fi's networks, Bluetooth's devices), and a row's height.
 FIRST_ROW_Y = 240
+ROW_H = 103
+# shelf's list on the main screen: where its first row's middle is, and a row's height (1920x1080).
+SHELF_X, SHELF_FIRST_Y, SHELF_ROW_H = 300, 150, 94.6
 # Below the bar: the touchpad's area in touchpad mode.
 PAD_Y = 600
 
@@ -156,6 +159,16 @@ class Inputs:
         self.qmp = vm.Qmp()
         self.touch = vm.Touch(self.qmp)
 
+    def pointer(self, x, y, button=None, head=0):
+        """The absolute pointer on a screen (head 0: the main one) to (x, y); a button down or up there
+        ("down", "up")."""
+        size = vm.SCREENS[head]
+        events = [{"type": "abs", "data": {"axis": "x", "value": vm.scaled(x, size[0])}},
+                  {"type": "abs", "data": {"axis": "y", "value": vm.scaled(y, size[1])}}]
+        if button:
+            events.append({"type": "btn", "data": {"button": "left", "down": button == "down"}})
+        self.qmp.command("input-send-event", device="video0", head=head, events=events)
+
     def tap(self, x, y, slot=0):
         self.touch.down(slot, x, y)
         time.sleep(0.05)
@@ -212,7 +225,7 @@ file: test.game
 
 game: Zeta Game
 file: zeta.game
-"""
+""" + "".join(f"\ngame: Zulu {i:02}\nfile: zulu{i:02}.game\n" for i in range(1, 15))
 
 
 def setup(bluetooth):
@@ -223,7 +236,7 @@ mkdir -p {CHECKS_DIR}/pegasus {CHECKS_DIR}/games {BACKLIGHT} {STATE}
 echo {CHECKS_DIR}/games > {CHECKS_DIR}/pegasus/game_dirs.txt
 cat > {CHECKS_DIR}/games/metadata.pegasus.txt <<'EOF'
 {LIBRARY}EOF
-touch {CHECKS_DIR}/games/test.game {CHECKS_DIR}/games/zeta.game
+touch {CHECKS_DIR}/games/test.game {CHECKS_DIR}/games/zeta.game {" ".join(f"{CHECKS_DIR}/games/zulu{i:02}.game" for i in range(1, 15))}
 echo 100 > {BACKLIGHT}/max_brightness; echo 50 > {BACKLIGHT}/brightness
 rm -f {STATE}/last {STATE}/brightness {CHECKS_DIR}/pegasus/stats.db* {CHECKS_DIR}/pegasus/favorites.txt
 mkdir -p $(dirname {DROP_IN})
@@ -391,6 +404,84 @@ class Checks:
         gone = until(lambda: "ThorTest" not in sh("nmcli -t -f NAME connection show"))
         self.check("Wi-Fi: a long press on the saved network forgets it", saved_before and forgot and gone,
                    f"saved before {saved_before}, logged {forgot}, gone from NetworkManager {gone}")
+
+    def wifi_scroll(self):
+        """More networks than fit: the simulated radios loaded again with eight more, each an open test
+        network (ThorExtra3..10, hostapd), the machine's own radio managed as before. A drag scrolls the
+        list, and a tap afterwards joins the network under the finger."""
+        extras = [f"ThorExtra{i}" for i in range(3, 11)]
+        confs = "; ".join(f"printf 'interface=wlan{i}\\ndriver=nl80211\\nssid=ThorExtra{i}\\nhw_mode=g\\nchannel=1\\n' "
+                          f"| sudo tee /run/thor-extra/wlan{i}.conf > /dev/null" for i in range(3, 11))
+        sh("sudo systemctl stop thor-test-ap; sudo nmcli dev disconnect wlan0 > /dev/null 2>&1; "
+           f"for c in {' '.join(extras)} ThorOpen; do sudo nmcli connection delete $c > /dev/null 2>&1; done; "
+           "sudo modprobe -r mac80211_hwsim && sudo modprobe mac80211_hwsim radios=11; sleep 2; "
+           "for i in $(seq 3 10); do sudo nmcli device set wlan$i managed no; done; "
+           f"sudo rm -rf /run/thor-extra; sudo mkdir -p /run/thor-extra; {confs}; "
+           "sudo systemd-run --quiet --unit=thor-extra-ap hostapd /etc/hostapd/thor-test.conf /etc/hostapd/thor-open.conf "
+           "/run/thor-extra/wlan3.conf /run/thor-extra/wlan4.conf /run/thor-extra/wlan5.conf /run/thor-extra/wlan6.conf "
+           "/run/thor-extra/wlan7.conf /run/thor-extra/wlan8.conf /run/thor-extra/wlan9.conf /run/thor-extra/wlan10.conf")
+        try:
+            seen = until(lambda: all(e in sh("nmcli -t -f SSID dev wifi list --rescan yes") for e in extras), 30, 2)
+            if not self.check("Wi-Fi: extra test networks on the air", seen, sh("nmcli -t -f SSID dev wifi list")):
+                return
+            self.open_tab("wifi")
+            time.sleep(4)  # ClamShell's own scan and list
+            # ClamShell's order: connected, saved, stronger, then by name.
+            known = set(sh("nmcli -t -f NAME connection show").split())
+            rows = [line.rsplit(":", 1) for line in sh("nmcli -t -f SSID,SIGNAL dev wifi list").splitlines() if ":" in line]
+            best = {}
+            for ssid, signal in rows:
+                if ssid:
+                    best[ssid] = max(best.get(ssid, 0), int(signal or 0))
+            order = sorted(best, key=lambda n: (n not in known, -best[n], n))
+            since = now()
+            # Up by two rows and a bit, slowly (no fling): the list follows the finger.
+            self.i.touch.slide(0, 300, FIRST_ROW_Y + 3 * ROW_H, 300, FIRST_ROW_Y + 0.8 * ROW_H, 20, 1.5)
+            time.sleep(0.5)
+            self.i.touch.up(0)
+            time.sleep(1)
+            # The row now under the first row's place (the list is 2.2 rows down: row 2's lower part).
+            self.i.tap(300, FIRST_ROW_Y + 0.2 * ROW_H)
+            joined = until(lambda: "wifi: join" in journal(since), 5)
+            line = next((l for l in journal(since).splitlines() if "wifi: join" in l), "")
+            expected = order[2] if len(order) > 2 else None
+            self.check("  a drag scrolls the list and a tap after it acts on the row under it", joined and expected and
+                       line.endswith(f"join {expected}"), f"joined {line!r}, expected {expected!r} of {order}")
+            self.check("  the drag itself joined nothing", journal(since).count("wifi: join ") == 1, journal(since)[-300:])
+        finally:
+            sh("sudo systemctl stop thor-extra-ap; sudo systemctl reset-failed thor-extra-ap 2>/dev/null; "
+               f"for c in {' '.join(extras)}; do sudo nmcli connection delete $c > /dev/null 2>&1; done; "
+               "sudo modprobe -r mac80211_hwsim && sudo modprobe mac80211_hwsim; sleep 2; "
+               "sudo systemctl start thor-test-ap thor-test-dhcp")
+            # The test networks in sight again before the next check joins one.
+            until(lambda: "ThorTest" in sh("nmcli -t -f SSID dev wifi list --rescan yes"), 30, 2)
+
+    # shelf
+
+    def shelf_scroll(self):
+        """More games than fit in shelf's list: a drag with the pointer scrolls it, settling on a whole row,
+        and a click then selects the game under it."""
+        sh("swaymsg workspace clamshell-shelf > /dev/null")
+        lines = sh(f"cat {STATE}/last 2>/dev/null").splitlines()
+        if lines and lines[0] != "Test":
+            return self.check("shelf: the Test collection in front", False, f"collection {lines[0]!r}")
+        # Down by three rows and a bit, slowly; it settles on three.
+        x, y0 = SHELF_X, SHELF_FIRST_Y + 6 * SHELF_ROW_H
+        self.i.pointer(x, y0, "down")
+        for step in range(1, 21):
+            time.sleep(0.07)
+            self.i.pointer(x, y0 - 3.3 * SHELF_ROW_H * step / 20)
+        time.sleep(0.5)
+        self.i.pointer(x, y0 - 3.3 * SHELF_ROW_H, "up")
+        time.sleep(1)
+        before = selection()
+        self.check("shelf: a drag selects nothing", before is None or before.endswith("test.game"), f"selection {before!r}")
+        self.i.pointer(x, SHELF_FIRST_Y, "down")
+        time.sleep(0.05)
+        self.i.pointer(x, SHELF_FIRST_Y, "up")
+        # Rows: Test Game, Zeta Game, Zulu 01, Zulu 02 ...: three down, the first row is Zulu 02.
+        self.check("  a drag scrolls the list (whole rows) and a click selects the game under it",
+                   until(lambda: (selection() or "").endswith("zulu02.game"), 5), f"selection {selection()!r}")
 
     # the touchpad tab
 
@@ -578,7 +669,7 @@ class Checks:
         self.check("  a long press forgets it", forgot and "Paired: yes" not in sh(f"bluetoothctl info {address}"))
 
 
-CHECKS = ["bar_tap", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "touchpad",
+CHECKS = ["shelf_scroll", "bar_tap", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad",
           "pad_shelf", "pad_view", "pad_mouse", "pad_typing", "pad_held_key", "pad_unplug", "pad_guide", "bluetooth"]
 
 

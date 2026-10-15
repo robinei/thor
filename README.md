@@ -62,7 +62,9 @@ answers with an SDP record and the HID channels), which can be found, paired, co
 what a user would with these inputs and checks what came of it in ClamShell's journal and saved files,
 sway's workspaces, the input devices (evtest, libinput), NetworkManager, BlueZ, PipeWire and screenshots:
 taps, holds and slides on the bar (volume through a PipeWire null sink, brightness through a fake
-backlight), a slide while a second finger taps a tab, forgetting a Wi-Fi network by a long press, the
+backlight), a slide while a second finger taps a tab, forgetting a Wi-Fi network by a long press,
+scrolling shelf's list (the test library has more games than fit) and the Wi-Fi list (the simulated
+radios loaded again with eight more test networks for it) and tapping a row after, the
 touchpad tab, the pad on shelf (D-pad, A, Home), View, the pad mouse, typing with the pad, a held A on an
 on-screen key when View moves the pad away, unplugging the controller during a game, Home held as the game's Guide, and Bluetooth. For
 them ClamShell runs with a test library, the fake backlight and its own state directory (a runtime
