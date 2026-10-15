@@ -669,14 +669,18 @@ class Checks:
         listening = logged(since, "PadRoute(Listen)", 3)
         self.check("  named; the edit screen listens to the pad", listening, journal(since)[-300:])
         press("a")  # selects A on the edit screen
-        press("a")  # and again: what it maps to
-        for line in ["tap map-to key", "tap key ctrl", "tap key x", "tap map-from rstick", "tap map-from rstick",
-                     "tap map-to pointer", "tap map-from gyro", "tap map-from gyro", "tap map-to pointer",
-                     "tap keymap-active", "tap gyro-hold lb", "tap keymap-back", "tap keymap 2"]:
+        for line in ["tap map-to key", "tap key ctrl", "tap key x", "tap map-from rstick",
+                     "tap map-to pointer", "tap map-from gyro", "tap map-to pointer",
+                     "tap keymap-active", "tap gyro-hold lb", "tap map-from x", "tap map-to pick"]:
+            control(line)
+        press("y")  # picks the pad's Y for X
+        for line in ["tap keymap-back", "tap keymap 2"]:
             control(line)
         text = sh(f"cat {keymaps_file}")
-        saved = "keymap 2 Check" in text and "a = key ctrl+x" in text and "rstick = pointer" in text and "gyro = pointer hold=lb" in text
-        self.check("  A to Ctrl+X, the right stick and the gyro (while LB) to the pointer, saved", saved, text)
+        saved = ("keymap 2 Check" in text and "a = key ctrl+x" in text and "rstick = pointer" in text
+                 and "gyro = pointer hold=lb" in text and "x = pad y" in text)
+        self.check("  A to Ctrl+X, the right stick and the gyro (while LB) to the pointer, X to Y picked by pressing it, saved",
+                   saved, text)
         chosen = until(lambda: "keymap=2" in sh(f"cat {CHECKS_DIR}/pegasus/game-settings.txt 2>/dev/null"), 3)
         self.check("  chosen for the selected game", chosen, sh(f"cat {CHECKS_DIR}/pegasus/game-settings.txt 2>/dev/null"))
         since = now()
@@ -731,8 +735,8 @@ class Checks:
             return
         keymaps_file = f"{CHECKS_DIR}/pegasus/keymaps.txt"
         for line in ["tab settings", "scope game", "tap setting keymap", "tap keymap-new", "type Layers", "tap save",
-                     "tap map-from a", "tap keymap-change", "tap map-to key", "tap key ctrl", "tap key x",
-                     "tap keymap-layer back", "tap keymap-change", "tap map-to key", "tap key ctrl", "tap key y",
+                     "tap map-from a", "tap map-to key", "tap key ctrl", "tap key x",
+                     "tap keymap-layer back", "tap map-to key", "tap key ctrl", "tap key y",
                      "tap keymap-back"]:
             control(line)
         text = sh(f"cat {keymaps_file}")

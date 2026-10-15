@@ -96,19 +96,16 @@ pub enum KeymapId {
     Delete,
     /// Deleting a keymap games use, after all.
     ConfirmDelete,
-    /// An input on the edit screen: a tap selects it (its panel), a tap on the selected one opens what it
-    /// maps to; a long press sets it back (in the layer shown).
+    /// An input on the edit screen: a tap selects it (its panel), a tap on the selected one opens the way
+    /// it is mapped now; a long press sets it back (in the layer shown). While a control is being picked,
+    /// the one picked.
     Input(crate::keymap::Input),
-    /// The edit screen's panel: what the selected input maps to opens; it is set back (as on the pad in
-    /// the main layer, as the main layer in the Back layer).
-    Change,
-    Reset,
     /// The edit screen shows and edits this layer.
     Layer(crate::keymap::Layer),
     /// "No changes": the layer shown is cleared, once confirmed.
     Clear,
     ConfirmClear,
-    /// What an input maps to.
+    /// A way to remap the selected input (the panel's icons), or what it maps to.
     Target(Target),
     /// A switch among the selected input's parameters (an inversion), flipped.
     Toggle(crate::keymap::Param),
@@ -120,25 +117,27 @@ pub enum KeymapId {
     Done,
 }
 
-/// A target on the "map to" screen: an output, or a way to choose one.
+/// What the selected input is remapped to: a way to choose it (the panel's icons: one closes as soon as
+/// something is chosen, Back gives up), or the output itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Target {
-    /// No binding: as on the pad in the main layer, as the main layer in the Back layer.
+    /// No binding: as on the pad in the main layer (the gyro: off), as the main layer in the Back layer.
     Default,
-    /// As on the pad, said in the Back layer (over what the main layer maps it to).
-    Own,
     Nothing,
-    Pad(crate::keymap::PadOut),
-    /// The next button pressed on the pad.
-    PressPad,
-    /// A key chord, typed on the keyboard.
+    /// A control picked on the pad's drawing, tapped or pressed on the pad: a button, a trigger, a stick,
+    /// the D-pad.
+    Pick,
+    /// A key chord typed on the keyboard.
     Key,
+    /// Four keys typed in turn (a stick).
+    Keys,
+    /// A part of the mouse picked on its drawing: a button, the wheel.
+    MouseParts,
+    Pointer,
+    Pad(crate::keymap::PadOut),
     Mouse(crate::keymap::MouseButton),
     Wheel(crate::keymap::Dir),
     Stick(crate::keymap::Side),
-    Pointer,
-    /// Four keys, typed in turn.
-    Keys,
     Dpad,
     Trigger(crate::keymap::Side),
 }

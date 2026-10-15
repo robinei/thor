@@ -252,7 +252,12 @@ mod tests {
         let click = |a: &Id, b: &Id| {
             matches!((a, b), (Id::Keymap(K(Input::Stick(Side::Left))), Id::Keymap(K(Input::Button(Button::LS)))) | (Id::Keymap(K(Input::Stick(Side::Right))), Id::Keymap(K(Input::Button(Button::RS)))))
         };
-        click(a, b)
+        // The mouse's wheel and its turns sit on its buttons.
+        use clamshell_core::Target;
+        use clamshell_core::keymap::MouseButton;
+        let button = |id: &Id| matches!(id, Id::Keymap(clamshell_core::KeymapId::Target(Target::Mouse(MouseButton::Left | MouseButton::Right))));
+        let wheel = |id: &Id| matches!(id, Id::Keymap(clamshell_core::KeymapId::Target(Target::Mouse(MouseButton::Middle) | Target::Wheel(_))));
+        click(a, b) || (button(a) && wheel(b)) || (wheel(a) && button(b))
             || click(b, a)
             || matches!((a, b), (Id::Dock(DockId::App(i)), Id::Dock(DockId::NewInstance(j))) | (Id::Dock(DockId::NewInstance(j)), Id::Dock(DockId::App(i))) if i == j)
     }
@@ -271,7 +276,7 @@ mod tests {
         use clamshell_core::settings::Setting;
         let tap = |id| Event::Pointer(PointerEvent::Activate(id));
         let km = |id| tap(Id::Keymap(id));
-        let pick = |input| vec![km(KeymapId::Input(input)), km(KeymapId::Input(input))];
+        let pick = |input| vec![km(KeymapId::Input(input))];
         let slide = |param, lift: bool| {
             let control = clamshell_core::slider::Control::Param(param);
             let mut v = vec![Event::Slide(clamshell_core::Slide::Start { control, x: 100.0, width: 300.0 }), Event::Slide(clamshell_core::Slide::To { x: 160.0 })];
@@ -287,18 +292,15 @@ mod tests {
             ("delete", vec![tap(Id::Editor(clamshell_core::EditorId::Cancel)), km(KeymapId::Back), tap(ListId::Keymaps.row(1)), tap(Id::Settings(SettingsId::Tile(Setting::Keymap))), Event::Pointer(PointerEvent::LongPress(ListId::Keymaps.row(1))), km(KeymapId::Delete)]),
             ("edit", vec![km(KeymapId::Back), tap(Id::Row { list: ListId::Keymaps, i: 1, part: clamshell_core::RowPart::Edit })]),
             ("edit, a button selected", vec![km(KeymapId::Input(Input::Button(Button::A)))]),
-            ("map to, a button", vec![km(KeymapId::Change)]),
-            ("map to, a trigger", [vec![km(KeymapId::Back)], pick(Input::Trigger(Side::Left)), vec![km(KeymapId::Target(Target::Key))]].concat()),
-            ("capture", vec![]),
-            ("map to, the gyro", [vec![km(KeymapId::Back), km(KeymapId::Back)], pick(Input::Gyro), vec![km(KeymapId::Target(Target::Pointer)), km(KeymapId::Input(Input::Gyro))]].concat()),
-            ("edit, the gyro's panel", vec![km(KeymapId::Back)]),
+            ("the mouse", vec![km(KeymapId::Target(Target::MouseParts))]),
+            ("capture", [vec![km(KeymapId::Back)], pick(Input::Trigger(Side::Left)), vec![km(KeymapId::Target(Target::Key))]].concat()),
+            ("edit, the gyro's panel", [vec![km(KeymapId::Back)], pick(Input::Gyro), vec![km(KeymapId::Target(Target::Pointer))]].concat()),
             ("the gyro's hold", vec![km(KeymapId::Holds)]),
-            ("map to, a stick", [vec![km(KeymapId::Back)], pick(Input::Stick(Side::Right)), vec![km(KeymapId::Target(Target::Pointer))]].concat()),
-            ("edit, a stick's panel", vec![]),
+            ("edit, a stick's panel", [vec![km(KeymapId::Back)], pick(Input::Stick(Side::Right)), vec![km(KeymapId::Target(Target::Pointer))]].concat()),
             ("edit, a slider up", slide(Param::Speed, false)),
             ("edit, the Back layer", [slide(Param::Speed, true), vec![km(KeymapId::Layer(Layer::Back)), km(KeymapId::Input(Input::Trigger(Side::Right)))]].concat()),
             ("edit, clearing", vec![km(KeymapId::Clear)]),
-            ("press", [vec![km(KeymapId::Back), km(KeymapId::Layer(Layer::Main))], pick(Input::Button(Button::B)), vec![km(KeymapId::Target(Target::PressPad))]].concat()),
+            ("edit, picking a control", [vec![km(KeymapId::Back), km(KeymapId::Layer(Layer::Main))], pick(Input::Button(Button::B)), vec![km(KeymapId::Target(Target::Pick))]].concat()),
         ];
         let mut cache = DrawCache::load();
         for (w, h) in [(620u32, 540u32), (1240, 1080), (300, 540)] {
@@ -322,7 +324,7 @@ mod tests {
                     // The panel, its buttons and rows, between the label columns; the label columns
                     // clear of the clusters.
                     let l = keymaps::edit_layout(body);
-                    for t in targets.iter().filter(|t| matches!(t.id, Id::Control(clamshell_core::slider::Control::Param(_)) | Id::Keymap(KeymapId::Change | KeymapId::Reset | KeymapId::Toggle(_) | KeymapId::Holds))) {
+                    for t in targets.iter().filter(|t| matches!(t.id, Id::Control(clamshell_core::slider::Control::Param(_)) | Id::Keymap(KeymapId::Target(_) | KeymapId::Toggle(_) | KeymapId::Holds))) {
                         assert!(t.rect.x >= l.strip.x - 0.5 && t.rect.right() <= l.strip.right() + 0.5, "{case}: {:?} at {:?} is outside the panel's strip {:?}", t.id, t.rect, l.strip);
                     }
                     assert!(l.strip.w > 0.0, "{case}: no room for the panel");

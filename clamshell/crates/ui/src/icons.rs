@@ -67,6 +67,8 @@ pub enum Icon {
     Phone,
     /// Sleep: a crescent moon.
     Moon,
+    /// Nothing: a circle struck through.
+    Off,
 }
 
 impl Icon {
@@ -331,6 +333,10 @@ pub fn draw(c: &mut Canvas, icon: Icon, r: Rect, color: Color) {
         Icon::Wifi { bars } => wifi(p, bars),
         Icon::Volume { waves, muted } => volume(p, waves, muted),
         Icon::Brightness => sun(p),
+        Icon::Off => {
+            p.frame((3.5, 3.5, 17.0, 17.0), 8.5, LINE);
+            p.line(&[(6.5, 17.5), (17.5, 6.5)], LINE);
+        }
         Icon::Moon => {
             // The lit edge (the long way round the left), and the shadow's edge joining its ends.
             p.arc((12.0, 12.0), 8.0, (60.0, 300.0), LINE);
@@ -565,12 +571,13 @@ mod tests {
             Icon::Headphones,
             Icon::Moon,
             Icon::Phone,
+            Icon::Off,
         ];
         let mut seen = std::collections::HashSet::new();
         for icon in &all {
             seen.insert(variant(*icon));
         }
-        assert_eq!(seen.len(), 43, "a variant is missing from the list");
+        assert_eq!(seen.len(), 44, "a variant is missing from the list");
         all
     }
 
@@ -620,6 +627,7 @@ mod tests {
             Icon::Headphones => 41,
             Icon::Phone => 42,
             Icon::Moon => 43,
+            Icon::Off => 44,
         }
     }
 

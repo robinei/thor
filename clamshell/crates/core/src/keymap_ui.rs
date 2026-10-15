@@ -1,12 +1,14 @@
 //! The keymaps' screens on the second screen, over the settings tab: the picker (Default, then the
 //! keymaps with how many games use each, and New), a keymap's menu (Edit, Rename, Duplicate, Delete,
-//! deleting one in use after a confirmation), the edit screen ("map from": the pad's inputs in one layer
-//! of the keymap, main or Back held ([`EditView`]); an input chosen by touch or by pressing it on the pad,
-//! which listens meanwhile, is selected into a panel with Change and Reset, and chosen again, Change;
-//! the pad's Back button shows the other layer; "No changes" clears the layer shown, once confirmed),
-//! what an input maps to ("map to": the targets that fit its kind, with speed, threshold and the gyro's
-//! hold), and a key chord or a stick's four keys typed on the keyboard. Names are typed in the editor.
-//! Also the keymap in force, sent to the pad whenever it changes.
+//! deleting one in use after a confirmation), and the edit screen: the pad's inputs in one layer of the
+//! keymap, main or Back held ([`EditView`]); an input chosen by touch or by pressing it on the pad, which
+//! listens meanwhile, is selected into a panel with the ways to remap it that fit its kind ([`ways`]) and
+//! its parameters; the pad's Back button shows the other layer; "No changes" clears the layer shown, once
+//! confirmed. A way to remap opens what it needs, which closes as soon as something is chosen (Back gives
+//! up): a control picked on the pad's drawing (tapped, or pressed on the pad), a key chord or a stick's
+//! four keys typed on the keyboard, a part of the mouse on its drawing; the pointer, nothing and "as
+//! before" apply at once. Names are typed in the editor. Also the keymap in force, sent to the pad
+//! whenever it changes.
 
 use crate::State;
 use crate::editor::{Editor, KeymapName, Purpose};
@@ -14,7 +16,7 @@ use crate::effect::{Effect, Save};
 use crate::id::{KeymapId, Target};
 use crate::items::ItemKey;
 use crate::keyboard::{Key, Stroke};
-use crate::keymap::{Binding, Chord, Input, Keymap, Keymaps, Layer, Output, PadOut, Param, as_on_the_pad};
+use crate::keymap::{Binding, Chord, Input, Keymap, Keymaps, Kind, Layer, Output, PadOut, Param, as_on_the_pad};
 use crate::scroll::{RowPart, Rows};
 use crate::settings::Setting;
 use crate::slider::{Control, Slider};
@@ -28,14 +30,15 @@ pub enum Screen {
     Menu(u16),
     /// Deleting a keymap games use: are you sure.
     Delete(u16),
-    /// A keymap's inputs ("map from"): the pad listens.
+    /// A keymap's inputs: the pad listens.
     Edit(u16),
-    /// What one input maps to.
-    MapTo { id: u16, input: Input },
+    /// The edit screen while the control `input` maps to is picked on the drawing, tapped or pressed on
+    /// the pad (the pad listens).
+    Pick { id: u16, input: Input },
     /// What holds the gyro on (`input`: the gyro).
     Holds { id: u16, input: Input },
-    /// Waiting for a press on the pad: the pad button `input` maps to (the pad listens).
-    PressPad { id: u16, input: Input },
+    /// A part of the mouse for `input`, on its drawing.
+    Mouse { id: u16, input: Input },
     /// A key chord typed on the keyboard for `input`; for a stick's four keys, which one and those so far.
     Capture { id: u16, input: Input, keys: Option<(usize, [Chord; 4])> },
 }
@@ -43,7 +46,7 @@ pub enum Screen {
 impl Screen {
     /// Whether the pad listens: its presses choose inputs instead of moving the focus.
     pub fn listens(self) -> bool {
-        matches!(self, Screen::Edit(_) | Screen::PressPad { .. })
+        matches!(self, Screen::Edit(_) | Screen::Pick { .. })
     }
 
     /// The keymap it is about, if one.
@@ -51,9 +54,47 @@ impl Screen {
         match self {
             Screen::List => None,
             Screen::Menu(id) | Screen::Delete(id) | Screen::Edit(id) => Some(id),
-            Screen::MapTo { id, .. } | Screen::Holds { id, .. } | Screen::PressPad { id, .. } | Screen::Capture { id, .. } => Some(id),
+            Screen::Pick { id, .. } | Screen::Holds { id, .. } | Screen::Mouse { id, .. } | Screen::Capture { id, .. } => Some(id),
         }
     }
+}
+
+/// The ways to remap an input of `kind`, as the panel offers them: picking a control on the drawing,
+/// typing keys, the mouse (its parts, or for motion the pointer), as before (`Default`), nothing. The
+/// gyro's "as before" is off.
+pub fn ways(kind: Kind) -> &'static [Target] {
+    match kind {
+        Kind::Digital | Kind::Trigger => &[Target::Pick, Target::Key, Target::MouseParts, Target::Default, Target::Nothing],
+        Kind::Stick => &[Target::Pick, Target::Keys, Target::Pointer, Target::Default, Target::Nothing],
+        Kind::Gyro => &[Target::Pick, Target::Pointer, Target::Default],
+    }
+}
+
+/// The way an input mapped to `output` was remapped (none: it isn't; `Default`).
+pub fn way_of(output: Option<Output>) -> Target {
+    match output {
+        None => Target::Default,
+        Some(Output::Nothing) => Target::Nothing,
+        Some(Output::Pad(_) | Output::Stick(_) | Output::Trigger(_) | Output::Dpad) => Target::Pick,
+        Some(Output::Key(_)) => Target::Key,
+        Some(Output::Keys(_)) => Target::Keys,
+        Some(Output::Mouse(_) | Output::Wheel(_)) => Target::MouseParts,
+        Some(Output::Pointer) => Target::Pointer,
+    }
+}
+
+/// What picking `tapped` on the pad's drawing (or pressing it) maps `source` to, if that fits it: a
+/// button or the D-pad's direction for a button; a trigger to a trigger; a stick (or a direction of it) to
+/// that stick and the D-pad to the D-pad for a stick or the gyro.
+pub fn picked(source: Input, tapped: Input) -> Option<Output> {
+    let kind = source.kind();
+    let out = match (kind, tapped) {
+        (Kind::Stick | Kind::Gyro, Input::Stick(s) | Input::StickDir(s, _)) => Output::Stick(s),
+        (Kind::Stick, Input::Dpad(_)) => Output::Dpad,
+        (Kind::Trigger, Input::Trigger(s)) => Output::Trigger(s),
+        (_, t) => Output::Pad(PadOut::of(t)?),
+    };
+    out.fits(kind).then_some(out)
 }
 
 /// The edit screen's own state, kept while its input's screens are open: the layer shown and edited, the
@@ -124,6 +165,7 @@ impl State {
         }
         match self.bottom.keymaps? {
             Screen::Edit(_) if self.listening() => Some(crate::Id::Keymap(KeymapId::Layer(self.bottom.keymap_edit.layer.other()))),
+            // (Picking a control: Back gives up, like the other ways' screens.)
             _ => Some(crate::Id::Keymap(KeymapId::Back)),
         }
     }
@@ -244,18 +286,9 @@ impl State {
                 self.bottom.keymap_edit.selected = Some(input);
                 self.bind(k, input, None)
             }
-            (KeymapId::Input(input), Screen::Edit(k)) => {
-                self.select(k, input);
-                vec![]
-            }
-            (KeymapId::Change, Screen::Edit(k)) => {
-                if let Some(input) = self.bottom.keymap_edit.selected {
-                    self.bottom.keymaps = Some(Screen::MapTo { id: k, input });
-                }
-                vec![]
-            }
-            (KeymapId::Reset, Screen::Edit(k)) => match self.bottom.keymap_edit.selected {
-                Some(input) => self.bind(k, input, None),
+            (KeymapId::Input(input), Screen::Edit(k)) => self.select(k, input),
+            (KeymapId::Input(tapped), Screen::Pick { id: k, input }) => match picked(input, tapped) {
+                Some(output) => self.choose(k, input, output),
                 None => vec![],
             },
             (KeymapId::Layer(layer), Screen::Edit(_)) => {
@@ -273,7 +306,11 @@ impl State {
                 let changed = self.keymaps.get_mut(k).is_some_and(|k| k.clear(layer));
                 if changed { vec![self.save_keymaps()] } else { vec![] }
             }
-            (KeymapId::Target(target), Screen::MapTo { id: k, input }) => self.map_to(k, input, target),
+            (KeymapId::Target(target), Screen::Edit(k)) => match self.bottom.keymap_edit.selected {
+                Some(input) => self.map_to(k, input, target),
+                None => vec![],
+            },
+            (KeymapId::Target(target), Screen::Pick { id: k, input } | Screen::Mouse { id: k, input }) => self.map_to(k, input, target),
             (KeymapId::Toggle(param), Screen::Edit(k)) => match self.param_binding(param) {
                 Some((_, input, mut b)) => {
                     let on = param.get(&b) > 0;
@@ -317,10 +354,10 @@ impl State {
         self.bottom.keymaps = match self.bottom.keymaps {
             None | Some(Screen::List) => None,
             Some(Screen::Menu(_) | Screen::Delete(_) | Screen::Edit(_)) => Some(Screen::List),
-            Some(Screen::MapTo { id, .. } | Screen::Holds { id, .. }) => Some(Screen::Edit(id)),
-            Some(Screen::PressPad { id, input } | Screen::Capture { id, input, .. }) => {
+            Some(Screen::Pick { id, .. } | Screen::Holds { id, .. } | Screen::Mouse { id, .. }) => Some(Screen::Edit(id)),
+            Some(Screen::Capture { id, .. }) => {
                 self.keyboard.take_modifiers();
-                Some(Screen::MapTo { id, input })
+                Some(Screen::Edit(id))
             }
         };
     }
@@ -332,30 +369,30 @@ impl State {
     }
 
     /// An input chosen on the edit screen (touched, or pressed on the pad): selected into the panel; the
-    /// one selected already, its "map to" opens.
-    fn select(&mut self, id: u16, input: Input) {
+    /// one selected already, the way it is mapped now opens again (a key: the keyboard), if it has one.
+    fn select(&mut self, id: u16, input: Input) -> Vec<Effect> {
         let view = &mut self.bottom.keymap_edit;
         view.clearing = false;
-        if view.selected == Some(input) {
-            self.bottom.keymaps = Some(Screen::MapTo { id, input });
-        } else {
+        if view.selected != Some(input) {
             view.selected = Some(input);
+            return vec![];
+        }
+        match way_of(self.binding_shown(id, input).map(|b| b.output)) {
+            way @ (Target::Pick | Target::Key | Target::Keys | Target::MouseParts) => self.map_to(id, input, way),
+            _ => vec![],
         }
     }
 
     /// An input pressed on the pad while it listens: on the edit screen, it is selected as a touch
-    /// selects it (pressed again, its "map to" opens); waiting for a pad button, it is the one.
+    /// selects it; while a control is picked, it is the one (if it fits).
     pub(crate) fn listened(&mut self, input: Input) -> Vec<Effect> {
         if self.pad.route() != crate::PadRoute::Listen {
             return vec![];
         }
         match self.bottom.keymaps {
-            Some(Screen::Edit(id)) => {
-                self.select(id, input);
-                vec![]
-            }
-            Some(Screen::PressPad { id, input: to }) => match PadOut::of(input) {
-                Some(out) => self.choose(id, to, Output::Pad(out)),
+            Some(Screen::Edit(id)) => self.select(id, input),
+            Some(Screen::Pick { id, input: to }) => match picked(to, input) {
+                Some(out) => self.choose(id, to, out),
                 None => vec![],
             },
             _ => vec![],
@@ -421,30 +458,31 @@ impl State {
         self.keymaps.get(id).and_then(|k| k.get_in(self.bottom.keymap_edit.layer, input)).copied()
     }
 
-    /// A target tapped on the "map to" screen.
+    /// A way to remap `input` (a panel's icon): what it needs opens, or it applies at once; or an output
+    /// chosen (the mouse's parts, the control pipe).
     fn map_to(&mut self, id: u16, input: Input, target: Target) -> Vec<Effect> {
-        let output = match target {
+        let screen = match target {
+            Target::Pick => Screen::Pick { id, input },
+            Target::Key => Screen::Capture { id, input, keys: None },
+            Target::Keys => Screen::Capture { id, input, keys: Some((0, [Chord::default(); 4])) },
+            Target::MouseParts => Screen::Mouse { id, input },
             Target::Default => {
-                let effects = self.bind(id, input, None);
                 self.bottom.keymaps = Some(Screen::Edit(id));
-                return effects;
+                return self.bind(id, input, None);
             }
-            Target::PressPad => {
-                self.bottom.keymaps = Some(Screen::PressPad { id, input });
-                return vec![];
-            }
-            Target::Key => {
-                self.bottom.keymaps = Some(Screen::Capture { id, input, keys: None });
-                return vec![];
-            }
-            Target::Keys => {
-                self.bottom.keymaps = Some(Screen::Capture { id, input, keys: Some((0, [Chord::default(); 4])) });
-                return vec![];
-            }
-            Target::Own => match as_on_the_pad(input) {
-                Some(output) => output,
-                None => return vec![],
-            },
+            _ => return self.chosen(id, input, target),
+        };
+        // (Only the ways that fit it: a stick has no key chord of its own, the gyro no mouse buttons.)
+        if ways(input.kind()).contains(&target) {
+            self.bottom.keymaps = Some(screen);
+        }
+        vec![]
+    }
+
+    /// An output chosen for `input`, by the way it was asked for.
+    fn chosen(&mut self, id: u16, input: Input, target: Target) -> Vec<Effect> {
+        let output = match target {
+            Target::Default | Target::Pick | Target::Key | Target::Keys | Target::MouseParts => return vec![],
             Target::Nothing => Output::Nothing,
             Target::Pad(p) => Output::Pad(p),
             Target::Mouse(m) => Output::Mouse(m),
@@ -608,10 +646,9 @@ mod tests {
         fx
     }
 
-    /// An input's "map to" from the edit screen: selected, then chosen again.
+    /// An input selected on the edit screen (its panel's ways then remap it).
     fn open(s: &mut State, input: Input) {
-        keymap(s, KeymapId::Input(input));
-        if matches!(s.keymap_screen(), Some(Screen::Edit(_))) {
+        if s.keymap_edit().selected != Some(input) {
             keymap(s, KeymapId::Input(input));
         }
     }
@@ -662,13 +699,14 @@ mod tests {
         assert_eq!(s.keymap_screen(), Some(Screen::Edit(2)));
         assert!(s.listening(), "the pad listens on the edit screen");
         assert_eq!(s.pad().route(), PadRoute::Listen);
-        // A pressed on the pad: selected; pressed again, its "map to"; a key chord typed: Ctrl, then x.
+        // A pressed on the pad: selected; the keyboard; a key chord typed: Ctrl, then x.
         s.apply(Event::Listened(Input::Button(Button::A)));
         assert_eq!((s.keymap_screen(), s.keymap_edit().selected), (Some(Screen::Edit(2)), Some(Input::Button(Button::A))));
         s.apply(Event::Listened(Input::Button(Button::A)));
-        assert_eq!(s.keymap_screen(), Some(Screen::MapTo { id: 2, input: Input::Button(Button::A) }));
-        assert_eq!(s.pad().route(), PadRoute::Ui, "the pad moves the focus there");
+        assert_eq!(s.keymap_screen(), Some(Screen::Edit(2)), "pressed again, nothing to reopen yet");
         keymap(&mut s, KeymapId::Target(Target::Key));
+        assert_eq!(s.keymap_screen(), Some(Screen::Capture { id: 2, input: Input::Button(Button::A), keys: None }));
+        assert_eq!(s.pad().route(), PadRoute::Ui, "the pad moves the focus there");
         key(&mut s, Key::Mod(Modifier::Ctrl));
         let fx = key(&mut s, Key::Char('x'));
         assert!(fx.iter().all(|e| !matches!(e, Effect::Key(_))), "not typed into an app");
@@ -702,14 +740,32 @@ mod tests {
         keymap(&mut s, KeymapId::Done);
         assert_eq!(s.keymaps().get(2).unwrap().get(Input::Button(Button::LB)).map(|b| b.output), Some(Output::Key(Chord { shift: true, ..Chord::default() })));
         assert!(!s.keyboard().shift.on(), "used up");
-        // B to a pad button pressed on the pad (Y); the trigger to a mouse button past 75 %.
+        // A pressed again: the keyboard again, for the key it has; Back gives up, nothing changed.
+        keymap(&mut s, KeymapId::Input(Input::Button(Button::A)));
+        keymap(&mut s, KeymapId::Input(Input::Button(Button::A)));
+        assert!(matches!(s.keymap_screen(), Some(Screen::Capture { .. })));
+        keymap(&mut s, KeymapId::Back);
+        assert_eq!(s.keymap_screen(), Some(Screen::Edit(2)));
+        assert!(s.keymaps().get(2).unwrap().get(Input::Button(Button::A)).is_some());
+        // B to a pad button pressed on the pad (Y); then to one tapped on the drawing (X).
         open(&mut s, Input::Button(Button::B));
-        keymap(&mut s, KeymapId::Target(Target::PressPad));
+        keymap(&mut s, KeymapId::Target(Target::Pick));
+        assert_eq!(s.keymap_screen(), Some(Screen::Pick { id: 2, input: Input::Button(Button::B) }));
         assert_eq!(s.pad().route(), PadRoute::Listen);
+        s.apply(Event::Listened(Input::Stick(Side::Left)));
+        assert!(matches!(s.keymap_screen(), Some(Screen::Pick { .. })), "a stick isn't a button: still picking");
         s.apply(Event::Listened(Input::Button(Button::Y)));
         assert_eq!(s.keymaps().get(2).unwrap().get(Input::Button(Button::B)).map(|b| b.output), Some(Output::Pad(PadOut::Button(Button::Y))));
+        assert_eq!(s.keymap_screen(), Some(Screen::Edit(2)), "chosen: closed");
+        keymap(&mut s, KeymapId::Target(Target::Pick));
+        keymap(&mut s, KeymapId::Input(Input::Button(Button::X)));
+        assert_eq!(s.keymaps().get(2).unwrap().get(Input::Button(Button::B)).map(|b| b.output), Some(Output::Pad(PadOut::Button(Button::X))));
+        // The trigger to a mouse button on the mouse's drawing, past 75 %.
         open(&mut s, Input::Trigger(Side::Right));
+        keymap(&mut s, KeymapId::Target(Target::MouseParts));
+        assert_eq!(s.keymap_screen(), Some(Screen::Mouse { id: 2, input: Input::Trigger(Side::Right) }));
         keymap(&mut s, KeymapId::Target(Target::Mouse(MouseButton::Left)));
+        assert_eq!(s.keymap_screen(), Some(Screen::Edit(2)));
         slide(&mut s, Param::Threshold, 75);
         assert_eq!(s.keymaps().get(2).unwrap().get(Input::Trigger(Side::Right)).map(|b| b.threshold), Some(75));
         // A long press on an input: as on the pad again. Home leaves the edit screen.
@@ -721,6 +777,23 @@ mod tests {
         // The saved text has it all.
         let fresh = Keymaps::load(&s.keymaps().text());
         assert_eq!(&fresh, s.keymaps());
+    }
+
+    #[test]
+    fn picking_on_the_drawing_fits_the_input() {
+        let (a, ls, rs, lt) = (Input::Button(Button::A), Input::Stick(Side::Left), Input::Stick(Side::Right), Input::Trigger(Side::Left));
+        assert_eq!(picked(a, Input::Button(Button::B)), Some(Output::Pad(PadOut::Button(Button::B))));
+        assert_eq!(picked(a, Input::Dpad(Dir::Up)), Some(Output::Pad(PadOut::Dpad(Dir::Up))));
+        assert_eq!(picked(a, Input::Trigger(Side::Right)), Some(Output::Pad(PadOut::Trigger(Side::Right))));
+        assert_eq!(picked(a, rs), None, "a button can't be a stick");
+        assert_eq!(picked(lt, Input::Trigger(Side::Right)), Some(Output::Trigger(Side::Right)));
+        assert_eq!(picked(ls, Input::StickDir(Side::Right, Dir::Up)), Some(Output::Stick(Side::Right)));
+        assert_eq!(picked(ls, Input::Dpad(Dir::Left)), Some(Output::Dpad));
+        assert_eq!(picked(ls, a), None);
+        assert_eq!(picked(Input::Gyro, rs), Some(Output::Stick(Side::Right)));
+        assert_eq!(picked(Input::Gyro, Input::Dpad(Dir::Up)), None);
+        assert_eq!(way_of(Some(Output::Wheel(Dir::Up))), Target::MouseParts);
+        assert_eq!(way_of(None), Target::Default);
     }
 
     #[test]
@@ -814,21 +887,25 @@ mod tests {
         let mut s = edit_screen();
         let a = Input::Button(Button::A);
         assert_eq!(s.keymap_edit(), EditView::default(), "the main layer, nothing selected");
-        assert_eq!(keymap(&mut s, KeymapId::Change), vec![], "nothing to change");
+        assert_eq!(keymap(&mut s, KeymapId::Target(Target::Key)), vec![], "nothing selected");
+        assert_eq!(s.keymap_screen(), Some(Screen::Edit(1)));
         keymap(&mut s, KeymapId::Input(a));
         assert_eq!((s.keymap_screen(), s.keymap_edit().selected), (Some(Screen::Edit(1)), Some(a)), "a touch selects");
         s.apply(Event::Listened(Input::Button(Button::B)));
         assert_eq!(s.keymap_edit().selected, Some(Input::Button(Button::B)), "so does a press");
         s.apply(Event::Listened(a));
-        keymap(&mut s, KeymapId::Change);
-        assert_eq!(s.keymap_screen(), Some(Screen::MapTo { id: 1, input: a }));
+        keymap(&mut s, KeymapId::Target(Target::MouseParts));
         keymap(&mut s, KeymapId::Target(Target::Mouse(MouseButton::Left)));
         assert_eq!((s.keymap_screen(), s.keymap_edit().selected), (Some(Screen::Edit(1)), Some(a)), "back with it still selected");
         assert_eq!(s.keymaps().get(1).unwrap().get(a).map(|b| b.output), Some(Output::Mouse(MouseButton::Left)));
-        let fx = keymap(&mut s, KeymapId::Reset);
+        let fx = keymap(&mut s, KeymapId::Target(Target::Default));
         assert!(matches!(fx.as_slice(), [Effect::Save(Save::Keymaps(_))]), "{fx:?}");
         assert_eq!(s.keymaps().get(1).unwrap().get(a), None, "as on the pad");
-        assert_eq!(keymap(&mut s, KeymapId::Reset), vec![], "already");
+        assert_eq!(keymap(&mut s, KeymapId::Target(Target::Default)), vec![], "already");
+        // Only the ways that fit: a button has no pointer, nor four keys.
+        assert_eq!(ways(Kind::Digital).iter().filter(|w| matches!(w, Target::Pointer | Target::Keys)).count(), 0);
+        keymap(&mut s, KeymapId::Target(Target::Keys));
+        assert_eq!(s.keymap_screen(), Some(Screen::Edit(1)));
     }
 
     #[test]
@@ -848,18 +925,19 @@ mod tests {
         assert_eq!(k.get_in(Layer::Back, a).map(|b| b.output), Some(Output::Key(Chord::of(Key::Char('y')))));
         assert_eq!(k.get(a).map(|b| b.output), Some(Output::Pad(PadOut::Button(Button::B))));
         assert!(s.keymaps().text().contains("layer back\na = key y\n"), "{}", s.keymaps().text());
-        // X as on the pad, over main's Y; the gyro off in it.
+        // X as on the pad (picked: itself), over main's Y; the gyro off in it.
         let x = Input::Button(Button::X);
         open(&mut s, x);
-        keymap(&mut s, KeymapId::Target(Target::Own));
+        keymap(&mut s, KeymapId::Target(Target::Pick));
+        keymap(&mut s, KeymapId::Input(x));
         open(&mut s, Input::Gyro);
-        keymap(&mut s, KeymapId::Target(Target::Own));
+        keymap(&mut s, KeymapId::Target(Target::Nothing));
         let k = s.keymaps().get(1).unwrap();
         assert_eq!(k.get_in(Layer::Back, x).map(|b| b.output), Some(Output::Pad(PadOut::Button(Button::X))));
         assert_eq!(k.get_in(Layer::Back, Input::Gyro).map(|b| b.output), Some(Output::Nothing));
         // Reset in the Back layer: as the main layer again.
         keymap(&mut s, KeymapId::Input(x));
-        keymap(&mut s, KeymapId::Reset);
+        keymap(&mut s, KeymapId::Target(Target::Default));
         assert_eq!(s.keymaps().get(1).unwrap().get_in(Layer::Back, x), None);
         assert_eq!(s.keymaps().get(1).unwrap().get(x).map(|b| b.output), Some(Output::Pad(PadOut::Button(Button::Y))));
         // The keymap sent to the pad has both layers.
@@ -867,10 +945,11 @@ mod tests {
         tap(&mut s, row(1));
         let fx = s.apply(GameEvent::Started("zelda-lttp".into()).into()).1;
         assert_eq!(sent(&fx).map(|k| (k.bindings().len(), k.layer(Layer::Back).len())), Some((4, 2)), "{fx:?}");
-        // Off the edit screen the pad's Back goes back.
+        // Picking a control, the pad's Back gives up.
         let mut s = edit_screen();
         open(&mut s, a);
-        assert_eq!(s.pad_back(), Some(Id::Keymap(KeymapId::Back)), "from \"map to\": back");
+        keymap(&mut s, KeymapId::Target(Target::Pick));
+        assert_eq!(s.pad_back(), Some(Id::Keymap(KeymapId::Back)), "picking: back");
     }
 
     #[test]

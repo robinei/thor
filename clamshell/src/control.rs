@@ -11,12 +11,13 @@
 //!   the keymaps' screens: `keymap N` (the picker's row N: 0 Default, then the keymaps; a long press
 //!   opens its menu), `keymap-edit N`, `keymap-new`, `keymap-back`, `keymap-menu
 //!   edit|rename|duplicate|delete`, `keymap-delete` (confirmed), `map-from INPUT` (as in keymaps.txt:
-//!   `a`, `lb`, `up`, `lstick`, `rstick-up`, `lt`, `gyro`: selects it, again opens its "map to"; a long
-//!   press sets it back), `keymap-change`, `keymap-reset`, `keymap-layer main|back`, `keymap-clear`,
-//!   `keymap-clear-confirm`, `keymap-active` (the gyro's hold), `invert x|y`, `map-to TARGET`
-//!   (`default`, `own`, `nothing`, `pad-INPUT`, `press`, `key`, `keys`,
-//!   `mouse-left|right|middle|back|forward`, `wheel-up|down|left|right`, `stick-left|right`, `pointer`,
-//!   `dpad`, `trigger-left|right`), `gyro-hold INPUT|always`, `key-done`; `key NAME` (an on-screen keyboard key: a
+//!   `a`, `lb`, `up`, `lstick`, `rstick-up`, `lt`, `gyro`: selects it, again reopens the way it is
+//!   mapped; while a control is picked, the one picked; a long press sets it back),
+//!   `keymap-layer main|back`, `keymap-clear`, `keymap-clear-confirm`, `keymap-active` (the gyro's
+//!   hold), `invert x|y`, `map-to TARGET` (the panel's ways: `pick`, `key`, `keys`, `mouse`, `pointer`,
+//!   `default`, `nothing`; or an output: `pad-INPUT`, `mouse-left|right|middle|back|forward`,
+//!   `wheel-up|down|left|right`, `stick-left|right`, `dpad`, `trigger-left|right`),
+//!   `gyro-hold INPUT|always`, `key-done`; `key NAME` (an on-screen keyboard key: a
 //!   character, `space`, `ctrl`, `alt`, `shift`, `fn`, `enter`, `esc`, `backspace`, `tab`)
 //! - `tab NAME`: open a tab (dock, wifi, keyboard, ...)
 //! - `home`; `list N`: move shelf's selection by N
@@ -199,8 +200,6 @@ fn target_id(words: &[&str]) -> Result<Id, ParseError> {
         }),
         ["map-from", input] => Id::Keymap(KeymapId::Input(input_named(input)?)),
         ["map-to", target] => Id::Keymap(KeymapId::Target(target_named(target)?)),
-        ["keymap-change"] => Id::Keymap(KeymapId::Change),
-        ["keymap-reset"] => Id::Keymap(KeymapId::Reset),
         ["keymap-layer", "main"] => Id::Keymap(KeymapId::Layer(Layer::Main)),
         ["keymap-layer", "back"] => Id::Keymap(KeymapId::Layer(Layer::Back)),
         ["keymap-clear"] => Id::Keymap(KeymapId::Clear),
@@ -235,8 +234,8 @@ fn target_named(word: &str) -> Result<Target, ParseError> {
         None => match word {
             "default" => Target::Default,
             "nothing" => Target::Nothing,
-            "press" => Target::PressPad,
-            "own" => Target::Own,
+            "pick" => Target::Pick,
+            "mouse" => Target::MouseParts,
             "key" => Target::Key,
             "keys" => Target::Keys,
             "pointer" => Target::Pointer,
@@ -387,8 +386,8 @@ mod tests {
         assert_eq!(parse("tap gyro-hold always"), Ok(km(KeymapId::Hold(None))));
         assert_eq!(parse("tap keymap-layer back"), Ok(km(KeymapId::Layer(Layer::Back))));
         assert_eq!(parse("tap invert y"), Ok(km(KeymapId::Toggle(Param::InvertY))));
-        assert_eq!(parse("tap map-to own"), Ok(km(KeymapId::Target(Target::Own))));
-        assert_eq!(parse("tap keymap-change"), Ok(km(KeymapId::Change)));
+        assert_eq!(parse("tap map-to pick"), Ok(km(KeymapId::Target(Target::Pick))));
+        assert_eq!(parse("tap map-to mouse"), Ok(km(KeymapId::Target(Target::MouseParts))));
         assert_eq!(parse("tap key ctrl"), Ok(activate(key(Key::Mod(Modifier::Ctrl)).unwrap())));
         assert_eq!(parse("tap key x"), Ok(activate(key(Key::Char('x')).unwrap())));
         assert_eq!(parse("listen a"), Ok(vec![Event::Listened(Input::Button(Button::A))]));
