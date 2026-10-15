@@ -1,13 +1,14 @@
-//! The controller path (docs/plans.md, "Owning the input path"): the real Xbox-style controller is
-//! grabbed for good, and games get a virtual Xbox 360 pad that is always there. Where its events go is
-//! the state's choice ([`PadRoute`]): the game's virtual pad (copied straight through); the pad mouse (a
-//! virtual mouse: left stick moves the pointer, right stick scrolls, A or the right trigger clicks left,
-//! B right, X middle, the D-pad sends arrow keys); ClamShell's screens ([`Event::Pad`]: D-pad or left
-//! stick move focus, repeated while held; A, B, Y, the shoulders, View); or typing into an app (D-pad
-//! arrows, A Enter, B Backspace). With the pad mouse or typing, View goes to ClamShell, to move the pad
-//! to the second screen. Away from the game the virtual pad shows a neutral controller, so games never
-//! see it disappear. The home button (BTN_MODE) is ours: games never see it, it goes to the program as
-//! [`Event::Home`]. Button layers (remaps) go in this same path later.
+//! The controller path: the real Xbox-style controller is grabbed for good, and games get a virtual Xbox
+//! 360 pad that is always there. Where its events go is the state's choice ([`PadRoute`]): the game's
+//! virtual pad (copied straight through); the pad mouse (a virtual mouse: left stick moves the pointer,
+//! right stick scrolls, A or the right trigger clicks left, B right, X middle, the D-pad sends arrow
+//! keys); ClamShell's screens ([`Event::Pad`]: D-pad or left stick move focus, repeated while held; A,
+//! B, Y, the shoulders, View); or typing into an app (D-pad arrows, A Enter, B Backspace). With the pad
+//! mouse or typing, View goes to ClamShell, to move the pad to the second screen. Away from the game the
+//! virtual pad shows a neutral controller, so games never see it disappear. The home button (BTN_MODE)
+//! is ours: games never see it, it goes to the program as [`Event::Home`]. The virtual devices outlive
+//! the controller: unplugged (or failing), the pad stays, at rest, until one is back. Button layers
+//! (remaps) go in this same path later.
 //!
 //! Not yet: forwarding rumble from the virtual pad to the real one (uinput force-feedback uploads).
 
@@ -327,51 +328,76 @@ pub fn typing(kind: u16, code: u16, value: i32, out: &mut Vec<Out>) {
     }
 }
 
-/// Where the pad's events go.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-struct Routes {
-    route: PadRoute,
+/// What a route means for the pad's events.
+trait Route {
+    /// Away from games: the virtual pad shows a neutral controller.
+    fn away(self) -> bool;
+    fn mouse(self) -> bool;
+    fn typing(self) -> bool;
+    fn navigating(self) -> bool;
 }
 
-impl Routes {
-    /// Away from games: the virtual pad shows a neutral controller.
+impl Route for PadRoute {
     fn away(self) -> bool {
-        self.route != PadRoute::Game
+        self != PadRoute::Game
     }
 
     fn mouse(self) -> bool {
-        self.route == PadRoute::Mouse
+        self == PadRoute::Mouse
     }
 
     fn typing(self) -> bool {
-        self.route == PadRoute::Keys
+        self == PadRoute::Keys
     }
 
     fn navigating(self) -> bool {
-        self.route == PadRoute::Ui
+        self == PadRoute::Ui
     }
+}
 
-    fn apply(&mut self, command: Command) {
-        if let Command::Route(route) = command {
-            self.route = route;
-        }
-    }
+/// The virtual devices, kept across the controller's comings and goings (an unplug, an error), so games
+/// never see their pad go: made for the first controller, made again only for one with other buttons.
+struct Virtual {
+    /// The controller they were made for: its buttons and axes.
+    made_for: (Vec<u16>, Vec<(AbsoluteAxisCode, AbsInfo)>),
+    pad: VirtualDevice,
+    mouse: VirtualDevice,
+    /// The pad untouched: every button up, every axis at rest (shown while no controller is there).
+    neutral: Vec<InputEvent>,
 }
 
 /// Owns the controller whenever one is connected (`wanted`: its /dev/input path or part of its name;
 /// `None`: the first device that looks like a gamepad), looking again every second when there is none.
 pub fn spawn(wanted: Option<String>, commands: Receiver<Command>, sink: impl Sink) -> io::Result<JoinHandle<()>> {
     thread::Builder::new().name("pad".into()).spawn(move || {
-        let mut routes = Routes::default();
+        let mut route = PadRoute::default();
         let mut shaping = Shaping::default();
+        let mut devices: Option<Virtual> = None;
+        // The first failure in a row is worth a warning; the retries each second aren't.
+        let mut warned = false;
         loop {
-            match run(wanted.as_deref(), &commands, &sink, &mut routes, &mut shaping) {
+            let mut grabbed = false;
+            match run(wanted.as_deref(), &commands, &sink, &mut route, &mut shaping, &mut devices, &mut grabbed) {
                 Ok(()) => return,
+                // (No controller is a normal state, not a failure.)
+                Err(e) if e.kind() != io::ErrorKind::NotFound && (grabbed || !warned) => {
+                    log::warn!("pad: {e}");
+                    warned = true;
+                }
                 Err(e) => log::debug!("pad: {e}"),
+            }
+            if grabbed {
+                warned = false;
+                // The controller is gone: the virtual pad stays, at rest.
+                if let Some(v) = devices.as_mut()
+                    && let Err(e) = v.pad.emit(&v.neutral)
+                {
+                    log::warn!("pad: {e}");
+                }
             }
             match commands.recv_timeout(Duration::from_secs(1)) {
                 Ok(Command::Shape(s)) => shaping = s,
-                Ok(command) => routes.apply(command),
+                Ok(Command::Route(r)) => route = r,
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
             }
@@ -414,7 +440,15 @@ impl Held {
 
 /// Runs while the controller is connected: Ok when the program is going away, Err when the controller
 /// is gone (or none was found).
-fn run(wanted: Option<&str>, commands: &Receiver<Command>, sink: &impl Sink, routes: &mut Routes, shaping: &mut Shaping) -> io::Result<()> {
+fn run(
+    wanted: Option<&str>,
+    commands: &Receiver<Command>,
+    sink: &impl Sink,
+    routes: &mut PadRoute,
+    shaping: &mut Shaping,
+    devices: &mut Option<Virtual>,
+    grabbed: &mut bool,
+) -> io::Result<()> {
     let mut real = find(wanted)?;
     let abs = real.get_abs_state()?;
     // Each supported axis with its current value and range.
@@ -442,9 +476,19 @@ fn run(wanted: Option<&str>, commands: &Receiver<Command>, sink: &impl Sink, rou
             .map(|(code, a)| (code.0, a.value(), if a.minimum() < 0 { 0 } else { a.minimum() }))
             .collect(),
     };
-    let mut virtual_pad = virtual_pad(&real, &axes)?;
-    let mut mouse = virtual_mouse()?;
+    let keys: Vec<u16> = real.supported_keys().map(|k| k.iter().map(|c| c.0).collect()).unwrap_or_default();
+    let made_for = (keys, axes.clone());
+    if devices.as_ref().is_none_or(|v| v.made_for != made_for) {
+        let mut neutral: Vec<InputEvent> = made_for.0.iter().map(|&k| InputEvent::new(EV_KEY, k, 0)).collect();
+        neutral.extend(held.axes.iter().map(|&(code, _, rest)| InputEvent::new(EV_ABS, code, rest)));
+        neutral.push(InputEvent::new(EV_SYN, 0, 0));
+        *devices = Some(Virtual { pad: virtual_pad(&real, &axes)?, mouse: virtual_mouse()?, made_for, neutral });
+    }
+    let Some(Virtual { pad: virtual_pad, mouse, .. }) = devices.as_mut() else {
+        return Err(io::Error::other("no virtual devices"));
+    };
     real.grab()?;
+    *grabbed = true;
     let flags = rustix::fs::fcntl_getfl(&real)?;
     rustix::fs::fcntl_setfl(&real, flags | rustix::fs::OFlags::NONBLOCK)?;
     log::info!("pad: {} grabbed; games see the virtual pad", real.name().unwrap_or("controller"));
@@ -463,9 +507,9 @@ fn run(wanted: Option<&str>, commands: &Receiver<Command>, sink: &impl Sink, rou
         loop {
             match commands.try_recv() {
                 Ok(Command::Shape(s)) => *shaping = s,
-                Ok(command) => {
+                Ok(Command::Route(route)) => {
                     let before = *routes;
-                    routes.apply(command);
+                    *routes = route;
                     if before.mouse() && !routes.mouse() {
                         mapping.reset(&mut out);
                     }
@@ -480,7 +524,7 @@ fn run(wanted: Option<&str>, commands: &Receiver<Command>, sink: &impl Sink, rou
                         held.events(!routes.away(), &mut to_pad);
                     }
                     if before != *routes {
-                        log::info!("pad: {:?}", routes.route);
+                        log::info!("pad: {routes:?}");
                     }
                 }
                 Err(TryRecvError::Empty) => break,
@@ -492,7 +536,11 @@ fn run(wanted: Option<&str>, commands: &Receiver<Command>, sink: &impl Sink, rou
         let wait = if routes.mouse() && mapping.moving() { MOTION_EVERY } else { repeat_in.unwrap_or(Duration::from_millis(100)).min(Duration::from_millis(100)) };
         let timeout = rustix::event::Timespec { tv_sec: 0, tv_nsec: i64::from(wait.subsec_nanos()) };
         let mut fds = [rustix::event::PollFd::new(&real, rustix::event::PollFlags::IN)];
-        rustix::event::poll(&mut fds, Some(&timeout))?;
+        match rustix::event::poll(&mut fds, Some(&timeout)) {
+            // (Interrupted by a signal: just again.)
+            Ok(_) | Err(rustix::io::Errno::INTR) => {}
+            Err(e) => return Err(e.into()),
+        }
         match real.fetch_events() {
             Ok(events) => {
                 for e in events {
@@ -709,13 +757,9 @@ mod tests {
         typing(EV_KEY, KeyCode::BTN_EAST.0, 2, &mut out);
         typing(EV_KEY, KeyCode::BTN_NORTH.0, 1, &mut out);
         assert_eq!(out, vec![(EV_KEY, KeyCode::KEY_ENTER.0, 1), (EV_SYN, 0, 0), (EV_KEY, KeyCode::KEY_BACKSPACE.0, 2), (EV_SYN, 0, 0)]);
-        let mut routes = Routes::default();
-        routes.apply(Command::Route(PadRoute::Keys));
-        assert!(routes.away() && routes.typing());
-        routes.apply(Command::Route(PadRoute::Mouse));
-        assert!(routes.away() && routes.mouse() && !routes.typing());
-        routes.apply(Command::Route(PadRoute::Game));
-        assert!(!routes.away());
+        assert!(PadRoute::Keys.away() && PadRoute::Keys.typing());
+        assert!(PadRoute::Mouse.away() && PadRoute::Mouse.mouse() && !PadRoute::Mouse.typing());
+        assert!(!PadRoute::Game.away() && PadRoute::Ui.navigating());
     }
 
     #[test]

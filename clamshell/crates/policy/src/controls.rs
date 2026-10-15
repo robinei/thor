@@ -1,14 +1,16 @@
 //! Volume and brightness, set from the bar's sliders and the volume and brightness tabs: the output
 //! volume, an app's volume and mute, and which output plays through PipeWire (`wpctl`); the screens'
 //! brightness (each backlight to the level times its factor) through logind, which lets the session's
-//! user set it without root.
-//! While a finger slides, requests come faster than they can be carried out; only the latest of each is.
+//! user set it without root. Sound and brightness are carried out on threads of their own, so a stuck
+//! PipeWire doesn't hold up the screens' brightness. While a finger slides, requests come faster than they
+//! can be carried out; only the latest of each is.
 
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::Command as Process;
-use std::sync::mpsc::Receiver;
+use std::sync::mpsc::{self, Receiver};
 use std::thread;
+
+use crate::command;
 
 use zbus::blocking::{Connection, Proxy};
 
@@ -27,14 +29,14 @@ pub enum Command {
 
 impl Command {
     /// Commands with the same key replace each other: only the latest is carried out.
-    fn key(&self) -> (u8, Option<&str>, u32) {
+    fn key(&self) -> (u8, u32) {
         match self {
-            Command::Volume(_) => (0, None, 0),
-            Command::Mute(_) => (1, None, 0),
-            Command::Brightness { .. } => (2, None, 0),
-            Command::StreamVolume(id, _) => (4, None, *id),
-            Command::StreamMute(id, _) => (5, None, *id),
-            Command::Output(_) => (6, None, 0),
+            Command::Volume(_) => (0, 0),
+            Command::Mute(_) => (1, 0),
+            Command::Brightness { .. } => (2, 0),
+            Command::StreamVolume(id, _) => (3, *id),
+            Command::StreamMute(id, _) => (4, *id),
+            Command::Output(_) => (5, 0),
         }
     }
 }
@@ -89,44 +91,55 @@ fn raw(level: u8, factor: u8, max: u32) -> u32 {
     ((f64::from(max) * share).round() as u32).clamp(1, max.max(1))
 }
 
-/// Carries out the commands as they come, the latest of each kind when several are waiting.
+/// Carries out the commands as they come: sound on one thread, brightness on another, each the latest
+/// of each kind when several are waiting.
 pub fn spawn(commands: Receiver<Command>) -> io::Result<()> {
+    let (sound_tx, sound) = mpsc::channel();
+    let (light_tx, light) = mpsc::channel();
     thread::Builder::new().name("controls".into()).spawn(move || {
-        let mut logind = None;
-        while let Ok(first) = commands.recv() {
-            for command in latest(std::iter::once(first).chain(commands.try_iter()).collect()) {
+        for command in commands {
+            let to = if matches!(command, Command::Brightness { .. }) { &light_tx } else { &sound_tx };
+            if to.send(command).is_err() {
+                return;
+            }
+        }
+    })?;
+    thread::Builder::new().name("sound".into()).spawn(move || {
+        while let Ok(first) = sound.recv() {
+            for command in latest(std::iter::once(first).chain(sound.try_iter()).collect()) {
                 let flag = |on: bool| if on { "1" } else { "0" };
-                match command {
-                    Command::Mute(m) => wpctl(&["set-mute", "@DEFAULT_AUDIO_SINK@", flag(m)]),
-                    Command::Volume(v) => wpctl(&["set-volume", "@DEFAULT_AUDIO_SINK@", &format!("{v}%")]),
-                    Command::StreamMute(id, m) => wpctl(&["set-mute", &id.to_string(), flag(m)]),
-                    Command::StreamVolume(id, v) => wpctl(&["set-volume", &id.to_string(), &format!("{v}%")]),
-                    Command::Output(id) => wpctl(&["set-default", &id.to_string()]),
-                    Command::Brightness { level, factors } => {
-                        for dir in backlights() {
-                            let name = dir.file_name().and_then(|n| n.to_str()).unwrap_or_default();
-                            let factor = factors.iter().find(|(n, _)| n == name).map_or(100, |(_, f)| *f);
-                            set_backlight(&dir, level, factor, &mut logind);
-                        }
-                    }
-                }
+                let _ = match command {
+                    Command::Mute(m) => command::run("wpctl", &["set-mute", "@DEFAULT_AUDIO_SINK@", flag(m)]),
+                    Command::Volume(v) => command::run("wpctl", &["set-volume", "@DEFAULT_AUDIO_SINK@", &format!("{v}%")]),
+                    Command::StreamMute(id, m) => command::run("wpctl", &["set-mute", &id.to_string(), flag(m)]),
+                    Command::StreamVolume(id, v) => command::run("wpctl", &["set-volume", &id.to_string(), &format!("{v}%")]),
+                    Command::Output(id) => command::run("wpctl", &["set-default", &id.to_string()]),
+                    Command::Brightness { .. } => true,
+                };
+            }
+        }
+    })?;
+    thread::Builder::new().name("brightness".into()).spawn(move || {
+        let mut logind = None;
+        let mut warned = false;
+        while let Ok(first) = light.recv() {
+            let Some(Command::Brightness { level, factors }) = light.try_iter().last().or(Some(first)) else {
+                continue;
+            };
+            for dir in backlights() {
+                let name = dir.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+                let factor = factors.iter().find(|(n, _)| n == name).map_or(100, |(_, f)| *f);
+                set_backlight(&dir, level, factor, &mut logind, &mut warned);
             }
         }
     })?;
     Ok(())
 }
 
-fn wpctl(args: &[&str]) {
-    match Process::new("wpctl").args(args).status() {
-        Ok(s) if s.success() => {}
-        Ok(s) => log::warn!("wpctl {}: {s}", args.join(" ")),
-        Err(e) => log::warn!("wpctl: {e}"),
-    }
-}
-
-/// A backlight to `level` times `factor`: through logind's session (kept connected), else straight to
-/// sysfs (which needs write access).
-fn set_backlight(dir: &Path, level: u8, factor: u8, logind: &mut Option<Connection>) {
+/// A backlight to `level` times `factor`: through logind's session (kept connected; connected again
+/// after the bus fails), else straight to sysfs (which needs write access; a failure there is warned
+/// about once).
+fn set_backlight(dir: &Path, level: u8, factor: u8, logind: &mut Option<Connection>, warned: &mut bool) {
     let (Some(name), Some(max)) = (dir.file_name().and_then(|n| n.to_str()), read_number(&dir.join("max_brightness"))) else {
         return;
     };
@@ -143,9 +156,18 @@ fn set_backlight(dir: &Path, level: u8, factor: u8, logind: &mut Option<Connecti
         other => {
             if let Some(Err(e)) = other {
                 log::debug!("brightness through logind: {e}");
+                // logind said no (a method error): it stays; the bus itself failed: connect again.
+                if !matches!(e, zbus::Error::MethodError(..)) {
+                    *logind = None;
+                }
             }
-            if let Err(e) = std::fs::write(dir.join("brightness"), value.to_string()) {
-                log::warn!("brightness {name}: {e}");
+            match std::fs::write(dir.join("brightness"), value.to_string()) {
+                Ok(()) => *warned = false,
+                Err(e) if !*warned => {
+                    log::warn!("brightness {name}: {e}");
+                    *warned = true;
+                }
+                Err(_) => {}
             }
         }
     }

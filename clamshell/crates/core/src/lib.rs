@@ -308,6 +308,8 @@ pub enum Event {
     /// The UI is up: what the state in force needs at start (the tab's watch, the screens' brightness,
     /// where the pad goes).
     Start,
+    /// Touchpad mode works, or why it doesn't (no touchscreen, the grab refused).
+    TouchpadProblem(Option<String>),
     /// The pad's home button.
     Home,
     /// View, away from shelf: the pad between the second screen and what else wants it (the pad mouse,
@@ -470,6 +472,8 @@ pub struct State {
     /// The level row a finger is on.
     dragging: Option<mixer::Level>,
     pub power: power::Power,
+    /// Why touchpad mode doesn't work, if it doesn't.
+    pub touchpad_problem: Option<String>,
     pub focus: Option<Id>,
     /// The focus ring is shown only while navigating with the pad.
     pub show_focus: bool,
@@ -829,6 +833,11 @@ impl State {
             }
             Event::LevelStep(level, direction) => (Dirty::BOTTOM, self.step_level(level, direction)),
             Event::Home => (Dirty::NONE, self.home()),
+            Event::TouchpadProblem(problem) => {
+                let changed = problem != self.touchpad_problem;
+                self.touchpad_problem = problem;
+                (if changed { Dirty::BOTTOM } else { Dirty::NONE }, vec![])
+            }
             Event::Start => {
                 let mut effects: Vec<Effect> = self.mode.watch(true).into_iter().collect();
                 effects.extend(self.brightness_effect());

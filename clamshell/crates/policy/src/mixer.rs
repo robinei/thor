@@ -59,18 +59,16 @@ pub fn spawn(sink: impl Sink, commands: Receiver<Command>) -> io::Result<()> {
 }
 
 fn read_audio() -> Audio {
-    match std::process::Command::new("pw-dump").output() {
-        Ok(out) if out.status.success() => serde_json::from_slice(&out.stdout).map(|v| parse(&v)).unwrap_or_default(),
-        Ok(out) => {
-            log::debug!("pw-dump: {}", out.status);
-            Audio::default()
-        }
-        Err(e) => {
-            log::debug!("pw-dump: {e}");
-            Audio::default()
-        }
-    }
+    crate::command::output("pw-dump", &[]).and_then(|out| serde_json::from_slice(&out).ok()).map(|v| parse(&v)).unwrap_or_default()
 }
+
+/// `wpctl get-volume` output, "Volume: 0.60" or "Volume: 0.60 [MUTED]": the volume 0-100 and mute.
+pub(crate) fn parse_get_volume(text: &str) -> Option<(u8, bool)> {
+    let rest = text.trim().strip_prefix("Volume:")?;
+    let volume: f32 = rest.split_whitespace().next()?.parse().ok()?;
+    Some(((volume * 100.0).round().clamp(0.0, 100.0) as u8, rest.contains("[MUTED]")))
+}
+
 
 static NULL: Value = Value::Null;
 
@@ -79,7 +77,7 @@ fn at<'v>(v: &'v Value, pointer: &str) -> &'v Value {
     v.pointer(pointer).unwrap_or(&NULL)
 }
 
-/// A volume as wpctl shows it: the cube root of PipeWire's linear channel volumes (their average).
+/// A volume as wpctl shows it (as `parse_get_volume` reads it): the cube root of PipeWire's linear channel volumes (their average).
 fn percent(volumes: &[Value]) -> u8 {
     let values: Vec<f64> = volumes.iter().filter_map(Value::as_f64).collect();
     if values.is_empty() {

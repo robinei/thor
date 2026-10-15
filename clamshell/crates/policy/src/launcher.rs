@@ -146,15 +146,7 @@ fn run_command(
         units::wait(&format!("{unit}.scope"), GAME_START)?;
         return Ok((start, started.elapsed().as_secs()));
     }
-    let mut cmd = if config.scope {
-        let mut cmd = Command::new("systemd-run");
-        cmd.args(["--user", "--scope", "--quiet", "--collect", &format!("--unit={unit}"), "--"]).arg(&c.program).args(&c.args);
-        cmd
-    } else {
-        let mut cmd = Command::new(&c.program);
-        cmd.args(&c.args);
-        cmd
-    };
+    let mut cmd = crate::job::scoped(config.scope, &unit, &c.program, &c.args);
     // Its own process group: our signals (a Ctrl-C in a terminal) don't reach it.
     cmd.current_dir(&c.workdir).envs(config.env.iter().map(|(k, v)| (k, v))).stdin(Stdio::null()).process_group(0);
     let mut child = cmd.spawn()?;

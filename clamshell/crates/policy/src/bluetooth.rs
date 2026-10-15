@@ -1,12 +1,15 @@
 //! Bluetooth through BlueZ (D-Bus, system bus): the adapter and its devices, sent as
-//! [`Event::Bluetooth`] when they change (every few seconds; every second while the Bluetooth mode is
+//! [`Event::Bluetooth`] when they change (every few seconds; every second while the Bluetooth tab is
 //! open, which also looks for new devices). Connecting a new device pairs, trusts and connects it; for
 //! the pairing a "no input, no output" agent is registered (headphones and controllers pair without a
-//! code), and unregistered after, so a desktop's own agent stays the default otherwise.
+//! code), and unregistered after, so a desktop's own agent stays the default otherwise. Connecting (and
+//! pairing, which can take long) runs on a worker of its own, so the list, the radio's switch and leaving
+//! the tab don't wait for it; every call has a time limit.
 
 use std::collections::HashMap;
 use std::io;
-use std::sync::mpsc::{Receiver, RecvTimeoutError};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -24,10 +27,12 @@ const AGENT_PATH: &str = "/org/clamshell/agent";
 
 const READ_WATCHING: Duration = Duration::from_secs(1);
 const READ_IDLE: Duration = Duration::from_secs(5);
+/// How long a call may take: pairing waits for the device (BlueZ gives up within about half a minute).
+const CALL_LIMIT: Duration = Duration::from_secs(45);
 
 type Objects = HashMap<OwnedObjectPath, HashMap<String, HashMap<String, OwnedValue>>>;
 
-/// What this thread keeps between reads.
+/// What this side keeps between reads (shared with the connecting worker).
 #[derive(Default)]
 struct Side {
     watching: bool,
@@ -35,22 +40,37 @@ struct Side {
     error: Option<String>,
 }
 
+type Shared = Arc<Mutex<Side>>;
+
+fn side(shared: &Shared) -> std::sync::MutexGuard<'_, Side> {
+    shared.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 pub fn spawn(sink: impl Sink, commands: Receiver<Command>) -> io::Result<()> {
     thread::Builder::new().name("bluetooth".into()).spawn(move || {
-        let mut side = Side::default();
+        let shared = Shared::default();
         loop {
-            match run(&sink, &commands, &mut side) {
+            match run(&sink, &commands, &shared) {
                 Ok(()) => return,
                 Err(e) => {
                     log::debug!("bluetooth: {e}");
-                    if !sink.send(Event::Bluetooth(Bluetooth::default())) {
+                    let error = side(&shared).error.clone();
+                    if !sink.send(Event::Bluetooth(Bluetooth { error, ..Bluetooth::default() })) {
                         return;
                     }
                 }
             }
+            // BlueZ isn't there (or went away): try again in a while; what is asked meanwhile can't be done.
             match commands.recv_timeout(Duration::from_secs(10)) {
-                Ok(Command::Watch(on)) => side.watching = on,
-                Ok(_) | Err(RecvTimeoutError::Timeout) => {}
+                Ok(Command::Watch(on)) => side(&shared).watching = on,
+                Ok(command) => {
+                    let error = format!("{}: Bluetooth isn't available", what_failed(&command));
+                    side(&shared).error = Some(error.clone());
+                    if !sink.send(Event::Bluetooth(Bluetooth { error: Some(error), ..Bluetooth::default() })) {
+                        return;
+                    }
+                }
+                Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => return,
             }
         }
@@ -58,31 +78,43 @@ pub fn spawn(sink: impl Sink, commands: Receiver<Command>) -> io::Result<()> {
     Ok(())
 }
 
-fn run(sink: &impl Sink, commands: &Receiver<Command>, side: &mut Side) -> zbus::Result<()> {
-    let conn = Connection::system()?;
+fn connect_bus() -> zbus::Result<Connection> {
+    zbus::blocking::connection::Builder::system()?.method_timeout(CALL_LIMIT).build()
+}
+
+fn run(sink: &impl Sink, commands: &Receiver<Command>, shared: &Shared) -> zbus::Result<()> {
+    let conn = connect_bus()?;
     let manager = Proxy::new(&conn, BLUEZ, "/", "org.freedesktop.DBus.ObjectManager")?;
+    let connecting = connecting_worker(conn.clone(), shared.clone())?;
     let mut last = None;
     // Discovery picks up where it was, after a reconnect.
-    if side.watching {
+    if side(shared).watching {
         discover(&conn, &manager, true);
     }
     loop {
         let objects: Objects = manager.call("GetManagedObjects", &())?;
-        let bt = read(&objects, side);
+        let bt = read(&objects, &side(shared));
         if last.as_ref() != Some(&bt) {
             if !sink.send(Event::Bluetooth(bt.clone())) {
                 return Ok(());
             }
             last = Some(bt);
         }
-        let wait = if side.watching { READ_WATCHING } else { READ_IDLE };
+        let wait = if side(shared).watching { READ_WATCHING } else { READ_IDLE };
         match commands.recv_timeout(wait) {
             Ok(command) => {
-                if let Err(e) = carry_out(&conn, &manager, &command, side) {
-                    log::warn!("bluetooth: {command:?}: {e}");
-                    side.error = Some(failure(&command, &e));
+                // A new attempt: what went wrong before is old news.
+                side(shared).error = None;
+                if let Command::Connect(address) = command {
+                    if connecting.send(address).is_err() {
+                        return Err(zbus::Error::Failure("the connecting worker is gone".into()));
+                    }
+                    continue;
                 }
-                side.busy = None;
+                if let Err(e) = carry_out(&conn, &manager, &command, shared) {
+                    log::warn!("bluetooth: {command:?}: {e}");
+                    side(shared).error = Some(failure(&command, &e));
+                }
             }
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => return Ok(()),
@@ -90,15 +122,52 @@ fn run(sink: &impl Sink, commands: &Receiver<Command>, side: &mut Side) -> zbus:
     }
 }
 
-/// What went wrong, for the screen.
-fn failure(command: &Command, e: &zbus::Error) -> String {
-    let what = match command {
+/// Connects (pairing and trusting a new device first) the devices it is sent, one at a time, showing
+/// which in `busy` meanwhile and what went wrong in `error`.
+fn connecting_worker(conn: Connection, shared: Shared) -> zbus::Result<Sender<String>> {
+    let (tx, rx) = mpsc::channel::<String>();
+    thread::Builder::new()
+        .name("bluetooth-connect".into())
+        .spawn(move || {
+            for address in rx {
+                side(&shared).busy = Some(address.clone());
+                if let Err(e) = connect(&conn, &address) {
+                    log::warn!("bluetooth: connecting {address}: {e}");
+                    side(&shared).error = Some(failure(&Command::Connect(address.clone()), &e));
+                }
+                side(&shared).busy = None;
+            }
+        })
+        .map_err(|e| zbus::Error::Failure(e.to_string()))?;
+    Ok(tx)
+}
+
+fn connect(conn: &Connection, address: &str) -> zbus::Result<()> {
+    let manager = Proxy::new(conn, BLUEZ, "/", "org.freedesktop.DBus.ObjectManager")?;
+    let adapter = adapter_path(&manager)?;
+    let d = Proxy::new(conn, BLUEZ, device_path(&adapter, address), DEVICE)?;
+    if !d.get_property::<bool>("Paired")? {
+        pair(conn, &d)?;
+        d.set_property("Trusted", true).map_err(zbus::Error::from)?;
+    }
+    d.call::<_, _, ()>("Connect", &())?;
+    log::info!("bluetooth: connected {address}");
+    Ok(())
+}
+
+fn what_failed(command: &Command) -> &'static str {
+    match command {
         Command::Connect(_) => "Couldn't connect",
         Command::Disconnect(_) => "Couldn't disconnect",
         Command::Forget(_) => "Couldn't forget it",
         Command::Power(_) => "Couldn't switch Bluetooth",
         Command::Watch(_) => "Couldn't look for devices",
-    };
+    }
+}
+
+/// What went wrong, for the screen.
+fn failure(command: &Command, e: &zbus::Error) -> String {
+    let what = what_failed(command);
     // BlueZ's errors: "org.bluez.Error.AuthenticationFailed: ..." and the like.
     let reason = match e {
         zbus::Error::MethodError(name, detail, _) => detail.clone().unwrap_or_else(|| name.as_str().trim_start_matches("org.bluez.Error.").to_owned()),
@@ -171,27 +240,18 @@ fn discover(conn: &Connection, manager: &Proxy, on: bool) {
     let _ = proxy.call::<_, _, ()>(if on { "StartDiscovery" } else { "StopDiscovery" }, &());
 }
 
-fn carry_out(conn: &Connection, manager: &Proxy, command: &Command, side: &mut Side) -> zbus::Result<()> {
+fn carry_out(conn: &Connection, manager: &Proxy, command: &Command, shared: &Shared) -> zbus::Result<()> {
     let adapter = adapter_path(manager)?;
     let adapter_proxy = Proxy::new(conn, BLUEZ, adapter.as_str().to_owned(), ADAPTER)?;
     let device = |address: &str| Proxy::new(conn, BLUEZ, device_path(&adapter, address), DEVICE);
     match command {
         Command::Watch(on) => {
-            side.watching = *on;
+            side(shared).watching = *on;
             discover(conn, manager, *on);
         }
         Command::Power(on) => adapter_proxy.set_property("Powered", *on).map_err(zbus::Error::from)?,
-        Command::Connect(address) => {
-            side.error = None;
-            side.busy = Some(address.clone());
-            let d = device(address)?;
-            if !d.get_property::<bool>("Paired")? {
-                pair(conn, &d)?;
-                d.set_property("Trusted", true).map_err(zbus::Error::from)?;
-            }
-            d.call::<_, _, ()>("Connect", &())?;
-            log::info!("bluetooth: connected {address}");
-        }
+        // (The connecting worker's.)
+        Command::Connect(_) => {}
         Command::Disconnect(address) => device(address)?.call::<_, _, ()>("Disconnect", &())?,
         Command::Forget(address) => {
             let path = zbus::zvariant::ObjectPath::try_from(device_path(&adapter, address))?;

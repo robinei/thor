@@ -1,7 +1,7 @@
-//! The screens. Each is a function of the state and its size that draws everything and lists what can
-//! be tapped or focused (immediate mode; docs/plans.md, "UI code"). One module per screen; what they
-//! share is here: the palette, text helpers, and [`Frame::button`], which gives every tappable thing the
-//! same pressed highlight, focus ring and target.
+//! The screens. Each is a function of the state and its size that draws everything and lists what can be
+//! tapped or focused (immediate mode). One module per screen; what they share is here: the palette, text
+//! helpers, and [`Frame::button`], which gives every tappable thing the same pressed highlight, focus
+//! ring and target.
 //!
 //! OLED-friendly: black background, grey text and lines (no full white on static elements), colour only
 //! where it means something (focus, the active mode, the game's own colour, Fn labels, Launch).

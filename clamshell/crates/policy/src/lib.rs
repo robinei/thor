@@ -1,8 +1,9 @@
-//! Threads that watch the system and send [`Event`]s: the clock and the bar's status. Later evdev and uinput (the
-//! input loop, at raised priority), logind inhibitor locks, sway IPC, sysfs (power, backlight, charger).
-//! Nothing here waits for the UI.
+//! Threads that watch the system and carry out what the state asks for: here the clock (with waking from
+//! sleep) and the bar's status; in the modules the pad and touchpad paths (evdev, uinput), sway, systemd,
+//! NetworkManager, BlueZ, PipeWire, UPower, logind and sysfs. Nothing here waits for the UI.
 
 pub mod bluetooth;
+pub mod command;
 pub mod controls;
 pub mod desktop;
 pub mod frames;
@@ -57,8 +58,8 @@ pub fn spawn_clock(sink: impl Sink) -> std::io::Result<JoinHandle<()>> {
     })
 }
 
-/// How often the status is read. Battery and Wi-Fi change slowly; volume will come from PipeWire events
-/// instead of polling once the program talks to it directly.
+/// How often the status is read: battery and Wi-Fi change slowly; a volume changed elsewhere (not with
+/// ClamShell's own controls, which show it at once) shows within this.
 const STATUS_EVERY: Duration = Duration::from_secs(5);
 
 /// Reads battery, Wi-Fi and volume every few seconds and sends them when they change.
@@ -81,13 +82,10 @@ pub fn spawn_status(sink: impl Sink) -> std::io::Result<JoinHandle<()>> {
 fn read_status() -> Status {
     let (battery, charging) = read_battery().unwrap_or((None, false));
     let wifi = std::fs::read_to_string("/proc/net/wireless").ok().as_deref().and_then(parse_wireless);
-    let (volume, muted) = std::process::Command::new("wpctl")
-        .args(["get-volume", "@DEFAULT_AUDIO_SINK@"])
-        .output()
-        .ok()
-        .and_then(|out| String::from_utf8(out.stdout).ok())
+    let (volume, muted) = command::output("wpctl", &["get-volume", "@DEFAULT_AUDIO_SINK@"])
+        .and_then(|out| String::from_utf8(out).ok())
         .as_deref()
-        .and_then(parse_wpctl)
+        .and_then(mixer::parse_get_volume)
         .map_or((None, false), |(v, m)| (Some(v), m));
     Status { battery, charging, wifi, volume, muted, brightness: controls::brightness() }
 }
@@ -116,12 +114,6 @@ fn parse_wireless(text: &str) -> Option<u8> {
     Some((quality / 70.0 * 100.0).clamp(0.0, 100.0) as u8)
 }
 
-/// `wpctl get-volume` output, "Volume: 0.60" or "Volume: 0.60 [MUTED]": the volume 0-100 and mute.
-fn parse_wpctl(text: &str) -> Option<(u8, bool)> {
-    let rest = text.trim().strip_prefix("Volume:")?;
-    let volume: f32 = rest.split_whitespace().next()?.parse().ok()?;
-    Some(((volume * 100.0).round().clamp(0.0, 100.0) as u8, rest.contains("[MUTED]")))
-}
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
@@ -137,8 +129,8 @@ mod tests {
 
     #[test]
     fn wpctl_volume_and_mute() {
-        assert_eq!(parse_wpctl("Volume: 0.60\n"), Some((60, false)));
-        assert_eq!(parse_wpctl("Volume: 0.35 [MUTED]\n"), Some((35, true)));
-        assert_eq!(parse_wpctl("garbage"), None);
+        assert_eq!(mixer::parse_get_volume("Volume: 0.60\n"), Some((60, false)));
+        assert_eq!(mixer::parse_get_volume("Volume: 0.35 [MUTED]\n"), Some((35, true)));
+        assert_eq!(mixer::parse_get_volume("garbage"), None);
     }
 }

@@ -36,7 +36,7 @@ pub enum Command {
     Workspace(String),
     /// Run a job (see [`crate::job`]) for this workspace, without showing it.
     Launch { workspace: String, job: PathBuf },
-    Focus(i64),
+    /// Ask a window to close (as its close button would).
     Close(i64),
     /// Move windows to a workspace (on the main screen), without showing it.
     Move { windows: Vec<i64>, workspace: String },
@@ -219,7 +219,6 @@ pub fn spawn(sink: impl Sink, commands: Receiver<Command>, bottom: String) -> io
                 let text = match &command {
                     Command::Workspace(name) => show(name, top.as_deref()),
                     Command::Launch { workspace, job } => launch(workspace, job, &exe, top.as_deref())?,
-                    Command::Focus(id) => format!("[con_id={id}] focus"),
                     Command::Close(id) => format!("[con_id={id}] kill"),
                     Command::Move { windows, workspace } => {
                         let moves: Vec<String> = windows.iter().map(|id| format!("[con_id={id}] move container to workspace \"{workspace}\"")).collect();

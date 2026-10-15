@@ -123,8 +123,11 @@ Known issues and risks, to check first:
 Each subsystem, then hibernate with each in use (hibernate matters more to me than suspend).
 
 - [ ] Screens: both on, right size, orientation and position; layer surface on DSI-1.
-- [ ] Touch: the bottom screen's touch on DSI-1 (sway's `map_to_output`); touchpad mode grabs it.
-- [ ] Gamepad: evdev events; our virtual pad and pad mouse; per-game buttons and deadzone.
+- [ ] Touch: the bottom screen's touch on DSI-1 (sway's `map_to_output`); the Touchpad tab grabs it;
+      two fingers on the bar at once (one sliding, one tapping).
+- [ ] Gamepad: evdev events; our virtual pad and pad mouse; per-game buttons and deadzone; unplugging
+      the controller mid-game (the game's pad stays, at rest, and picks up again); A held on an
+      on-screen key while View moves the pad away (the key must not keep repeating).
 - [ ] GPU: Freedreno (sway) and Turnip (`vkcube`, a game); MangoHud frame rate in sysinfo.
 - [ ] Wi-Fi from the Wi-Fi mode (NetworkManager): scan, join with a password, forget; polkit lets the
       session's user do it (tested in the VM as an autologin session user, not on the device).

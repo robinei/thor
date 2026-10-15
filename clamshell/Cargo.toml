@@ -27,7 +27,7 @@ zbus = "5"
 resvg = { version = "0.48", default-features = false }
 env_logger = { version = "0.11", default-features = false, features = ["auto-color"] }
 
-# No panics by construction (docs/plans.md, "Rust and a project structure"): errors are values.
+# No panics by construction: errors are values.
 [workspace.lints.clippy]
 unwrap_used = "deny"
 expect_used = "deny"

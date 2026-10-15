@@ -1,7 +1,7 @@
 //! Installed Steam games, from Steam's own files: the library folders (`libraryfolders.vdf`), each
 //! game's manifest (`appmanifest_<id>.acf`), and its portrait art in Steam's cache. Steam's tools
 //! (Proton, the Linux runtimes, the redistributables) are left out. Installing and browsing stay in
-//! Steam (docs/plans.md, "Steam in shelf").
+//! Steam.
 
 use std::fs;
 use std::path::{Path, PathBuf};

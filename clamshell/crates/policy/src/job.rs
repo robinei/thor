@@ -36,18 +36,24 @@ pub fn write(job: &Job) -> io::Result<PathBuf> {
     Ok(path)
 }
 
+/// `program` with `args`, in a systemd scope named `unit` (`--user`, collected when it ends) when
+/// `scope`, else as it is.
+pub fn scoped(scope: bool, unit: &str, program: impl AsRef<std::ffi::OsStr>, args: &[impl AsRef<std::ffi::OsStr>]) -> Command {
+    let mut cmd = if scope {
+        let mut cmd = Command::new("systemd-run");
+        cmd.args(["--user", "--scope", "--quiet", "--collect", &format!("--unit={unit}"), "--"]).arg(program);
+        cmd
+    } else {
+        Command::new(program)
+    };
+    cmd.args(args);
+    cmd
+}
+
 /// The command a job runs as.
 pub fn command(job: &Job) -> Option<Command> {
     let (program, args) = job.argv.split_first()?;
-    let mut cmd = if job.scope {
-        let mut cmd = Command::new("systemd-run");
-        cmd.args(["--user", "--scope", "--quiet", "--collect", &format!("--unit={}", job.unit), "--"]).arg(program).args(args);
-        cmd
-    } else {
-        let mut cmd = Command::new(program);
-        cmd.args(args);
-        cmd
-    };
+    let mut cmd = scoped(job.scope, &job.unit, program, args);
     match &job.workdir {
         Some(dir) => cmd.current_dir(dir),
         None => cmd.current_dir(std::env::var_os("HOME").map_or_else(|| PathBuf::from("/"), PathBuf::from)),

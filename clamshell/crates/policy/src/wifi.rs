@@ -2,6 +2,9 @@
 //! range (scanned every few seconds), which are saved and which is connected, sent as [`Event::Wifi`]
 //! when they change; joining (a saved connection, or a new one with a password), forgetting, the radio
 //! on and off. A new connection that fails to join is deleted again, so a mistyped password isn't kept.
+//! A join is followed through the active connection NetworkManager makes for it (not the device, which
+//! also goes through leaving the network it was on); why one failed, from the device's failure (which
+//! leaving a network doesn't go through).
 
 use std::collections::HashMap;
 use std::io;
@@ -24,16 +27,24 @@ const WIRELESS: &str = "org.freedesktop.NetworkManager.Device.Wireless";
 const ACCESS_POINT: &str = "org.freedesktop.NetworkManager.AccessPoint";
 const SETTINGS: &str = "org.freedesktop.NetworkManager.Settings";
 const CONNECTION: &str = "org.freedesktop.NetworkManager.Settings.Connection";
+const ACTIVE: &str = "org.freedesktop.NetworkManager.Connection.Active";
 
 /// NM_DEVICE_TYPE_WIFI.
 const TYPE_WIFI: u32 = 2;
-/// NMDeviceState: disconnected, activated, failed; preparing to connecting are between.
-const STATE_DISCONNECTED: u32 = 30;
+/// NMDeviceState activated, failed.
 const STATE_ACTIVATED: u32 = 100;
 const STATE_FAILED: u32 = 120;
-/// NMDeviceStateReason: no address from the network; the secrets (the password) missing or refused.
+/// NMDeviceStateReason: no address from the network (IP configuration unavailable); the secrets (the
+/// password) missing or refused.
+const DEVICE_NO_ADDRESS: u32 = 5;
+const DEVICE_NO_SECRETS: u32 = 7;
+/// NMActiveConnectionState activated, deactivated.
+const ACTIVE_ACTIVATED: u32 = 2;
+const ACTIVE_DEACTIVATED: u32 = 4;
+/// NMActiveConnectionStateReason: no address from the network; the secrets (the password) missing or
+/// refused.
 const REASON_NO_ADDRESS: u32 = 5;
-const REASON_NO_SECRETS: u32 = 7;
+const REASON_NO_SECRETS: u32 = 9;
 /// NM80211ApFlags privacy; NM80211ApSecurityFlags key management PSK, 802.1X, SAE.
 const AP_PRIVACY: u32 = 0x1;
 const KEY_MGMT_PSK: u32 = 0x100;
@@ -52,11 +63,14 @@ struct Attempt {
     ssid: String,
     /// The connection we added for it (deleted again if the join fails).
     added: Option<OwnedObjectPath>,
+    /// The active connection NetworkManager made for it.
+    active: OwnedObjectPath,
     started: Instant,
-    /// The device left the disconnected state since (so going back to it means failure).
-    under_way: bool,
-    /// Why the device failed, from its state changes (failing passes too quickly to be polled).
-    failures: Receiver<u32>,
+    /// Active connections' state changes (path, state, reason), subscribed to before the join started
+    /// (failing passes too quickly to be polled).
+    changes: Receiver<(OwnedObjectPath, u32, u32)>,
+    /// The device's state changes meanwhile (state, reason): why it failed, if it did.
+    device_changes: Receiver<(u32, u32)>,
 }
 
 /// What this thread keeps between reads.
@@ -81,10 +95,16 @@ pub fn spawn(sink: impl Sink, commands: Receiver<Command>) -> io::Result<()> {
                     }
                 }
             }
-            // Try again on the next command, or in a while.
+            // Try again in a while; what is asked meanwhile can't be done, and says so.
             match commands.recv_timeout(Duration::from_secs(10)) {
                 Ok(Command::Watch(on)) => side.watching = on,
-                Ok(_) | Err(RecvTimeoutError::Timeout) => {}
+                Ok(_) => {
+                    let error = "NetworkManager isn't available".to_owned();
+                    if !sink.send(Event::Wifi(Wifi { error: Some(error), ..Wifi::default() })) {
+                        return;
+                    }
+                }
+                Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => return,
             }
         }
@@ -218,7 +238,7 @@ fn read(conn: &Connection, nm: &Proxy, device: Option<&OwnedObjectPath>, side: &
     let known = saved(conn)?;
     let aps = access_points(conn, device)?;
     let active_ssid = aps.iter().find(|ap| ap.path == active_ap && state == STATE_ACTIVATED).map(|ap| ap.ssid.clone());
-    follow_attempt(conn, &dev, state, active_ssid.as_deref(), side)?;
+    follow_attempt(conn, active_ssid.as_deref(), side)?;
     let networks = aps
         .into_iter()
         .map(|ap| Network {
@@ -240,29 +260,38 @@ fn read(conn: &Connection, nm: &Proxy, device: Option<&OwnedObjectPath>, side: &
 }
 
 /// Ends the attempt once the network is connected, or with an error once it has failed.
-fn follow_attempt(conn: &Connection, dev: &Proxy, state: u32, active: Option<&str>, side: &mut Side) -> zbus::Result<()> {
+fn follow_attempt(conn: &Connection, active: Option<&str>, side: &mut Side) -> zbus::Result<()> {
     let Some(attempt) = side.attempt.as_mut() else {
         return Ok(());
     };
-    if active == Some(attempt.ssid.as_str()) {
+    let mut joined = active == Some(attempt.ssid.as_str());
+    let mut ended = None;
+    for (path, state, reason) in attempt.changes.try_iter() {
+        if path == attempt.active {
+            joined |= state == ACTIVE_ACTIVATED;
+            if state == ACTIVE_DEACTIVATED {
+                ended = Some(reason);
+            }
+        }
+    }
+    if joined {
         log::info!("wifi: joined {}", attempt.ssid);
         side.attempt = None;
         return Ok(());
     }
-    if state != STATE_DISCONNECTED {
-        attempt.under_way = true;
+    // Gone without a word (it is removed once deactivated): failed, the reason unknown.
+    if ended.is_none() && proxy(conn, attempt.active.as_str(), ACTIVE)?.get_property::<u32>("State").is_err() {
+        ended = Some(0);
     }
-    let failed = state == STATE_FAILED || (attempt.under_way && state == STATE_DISCONNECTED);
     let timed_out = attempt.started.elapsed() > JOIN_FOR;
-    let failed_now = attempt.failures.try_recv().ok();
-    let failed = failed || failed_now.is_some();
-    if !(failed || timed_out) {
+    if ended.is_none() && !timed_out {
         return Ok(());
     }
-    let reason = failed_now.unwrap_or_else(|| dev.get_property::<(u32, u32)>("StateReason").map_or(0, |r| r.1));
-    let message = if reason == REASON_NO_SECRETS {
+    let reason = ended.unwrap_or(0);
+    let device_reason = attempt.device_changes.try_iter().filter(|(state, _)| *state == STATE_FAILED).map(|(_, reason)| reason).last();
+    let message = if reason == REASON_NO_SECRETS || device_reason == Some(DEVICE_NO_SECRETS) {
         format!("Couldn't join {}: wrong password?", attempt.ssid)
-    } else if reason == REASON_NO_ADDRESS {
+    } else if reason == REASON_NO_ADDRESS || device_reason == Some(DEVICE_NO_ADDRESS) {
         format!("Joined {}, but it gave no address", attempt.ssid)
     } else if timed_out {
         format!("Couldn't join {}: no answer", attempt.ssid)
@@ -299,45 +328,69 @@ fn carry_out(conn: &Connection, nm: &Proxy, command: Command, side: &mut Side) -
                 return Err(zbus::Error::Failure("no Wi-Fi device".into()));
             };
             let root = ObjectPath::try_from("/")?;
-            let failures = watch_failures(conn, &device)?;
-            let added = match (saved(conn)?.into_iter().find(|(_, s)| *s == ssid), password) {
+            let changes = watch_active(conn)?;
+            let device_changes = watch_device(conn, &device)?;
+            let (added, active) = match (saved(conn)?.into_iter().find(|(_, s)| *s == ssid), password) {
                 (Some((connection, _)), None) => {
-                    let _: OwnedObjectPath = nm.call("ActivateConnection", &(connection, &device, &root))?;
-                    None
+                    let active: OwnedObjectPath = nm.call("ActivateConnection", &(connection, &device, &root))?;
+                    (None, active)
                 }
                 (_, password) => {
                     let aps = access_points(conn, &device)?;
                     let ap = aps.iter().filter(|ap| ap.ssid == ssid).max_by_key(|ap| ap.strength);
                     let settings = new_connection(&ssid, password.as_deref(), ap);
                     let ap_path = ap.map_or_else(|| root.clone(), |ap| ap.path.as_ref().clone());
-                    let (path, _active): (OwnedObjectPath, OwnedObjectPath) = nm.call("AddAndActivateConnection", &(settings, &device, ap_path))?;
-                    Some(path)
+                    let (path, active): (OwnedObjectPath, OwnedObjectPath) = nm.call("AddAndActivateConnection", &(settings, &device, ap_path))?;
+                    (Some(path), active)
                 }
             };
             log::info!("wifi: joining {ssid}");
-            side.attempt = Some(Attempt { ssid, added, started: Instant::now(), under_way: false, failures });
+            side.attempt = Some(Attempt { ssid, added, active, started: Instant::now(), changes, device_changes });
         }
     }
     Ok(())
 }
 
-/// The reasons the device fails for, from its StateChanged signals, until it is connected, has failed
-/// or is back to disconnected (subscribed before the join starts, so none is missed).
-fn watch_failures(conn: &Connection, device: &OwnedObjectPath) -> zbus::Result<Receiver<u32>> {
+/// The device's state changes (the new state, the reason), from its StateChanged signals. The thread
+/// ends at the first change after the receiver is dropped.
+fn watch_device(conn: &Connection, device: &OwnedObjectPath) -> zbus::Result<Receiver<(u32, u32)>> {
     let signals = proxy(conn, device.as_str(), DEVICE)?.receive_signal("StateChanged")?;
     let (tx, rx) = mpsc::channel();
     thread::Builder::new()
-        .name("wifi-join".into())
+        .name("wifi-device".into())
         .spawn(move || {
             for message in signals {
                 let Ok((new, _old, reason)) = message.body().deserialize::<(u32, u32, u32)>() else {
                     continue;
                 };
-                if new == STATE_FAILED {
-                    let _ = tx.send(reason);
+                if tx.send((new, reason)).is_err() {
+                    return;
                 }
-                // Joined, failed, or given up (back to disconnected): done.
-                if matches!(new, STATE_FAILED | STATE_ACTIVATED | STATE_DISCONNECTED) {
+            }
+        })
+        .map_err(|e| zbus::Error::Failure(e.to_string()))?;
+    Ok(rx)
+}
+
+/// Every active connection's state changes (its path, the state, the reason), from their StateChanged
+/// signals: subscribed to before a join starts, so none of its own is missed. The thread ends at the
+/// first change after the receiver is dropped.
+fn watch_active(conn: &Connection) -> zbus::Result<Receiver<(OwnedObjectPath, u32, u32)>> {
+    let rule = zbus::MatchRule::builder().msg_type(zbus::message::Type::Signal).interface(ACTIVE)?.member("StateChanged")?.build();
+    let signals = zbus::blocking::MessageIterator::for_match_rule(rule, conn, None)?;
+    let (tx, rx) = mpsc::channel();
+    thread::Builder::new()
+        .name("wifi-join".into())
+        .spawn(move || {
+            for message in signals.flatten() {
+                let header = message.header();
+                let Some(path) = header.path().map(|p| OwnedObjectPath::from(p.to_owned())) else {
+                    continue;
+                };
+                let Ok((state, reason)) = message.body().deserialize::<(u32, u32)>() else {
+                    continue;
+                };
+                if tx.send((path, state, reason)).is_err() {
                     return;
                 }
             }

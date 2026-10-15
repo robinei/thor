@@ -4,7 +4,8 @@
 //!
 //! These write `scaling_max_freq` of each cpufreq policy, `max_freq` of the GPU's devfreq device, CPUs'
 //! `online`, and the battery's `charge_control_end_threshold`, which needs write access to them (on the
-//! device: a udev rule for the program's user).
+//! device: a udev rule for the program's user). The hardware is set on a thread of its own ([`spawn`]):
+//! taking cores offline can take a while, and drawing mustn't wait for it.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -83,6 +84,18 @@ pub fn big_cpus(clusters: &[(u64, Vec<u32>)]) -> Vec<u32> {
         return vec![];
     };
     clusters.iter().filter(|(max, _)| *max > slowest).flat_map(|(_, cpus)| cpus.iter().copied()).filter(|&c| c != 0).collect()
+}
+
+/// The hardware thread: applies the settings it is sent, only the latest when several wait.
+pub fn spawn() -> std::io::Result<std::sync::mpsc::Sender<Values>> {
+    let (tx, rx) = std::sync::mpsc::channel::<Values>();
+    std::thread::Builder::new().name("tuning".into()).spawn(move || {
+        while let Ok(first) = rx.recv() {
+            let latest = rx.try_iter().last().unwrap_or(first);
+            apply_hardware(&latest);
+        }
+    })?;
+    Ok(tx)
 }
 
 /// Applies the settings in force to the hardware: frequency caps for the profile (or the CPU and GPU

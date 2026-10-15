@@ -1,9 +1,9 @@
-//! Touchpad mode: the second screen as a laptop touchpad (docs/plans.md, "Second screen").
+//! Touchpad mode: the second screen as a laptop touchpad.
 //!
 //! While on, the touchscreen is grabbed (sway sees none of its touches). Each finger is decided at
 //! touch-down: one that starts on a region the UI keeps (the bar) is a tap on that target (moving, on the
-//! volume or brightness slider); any other is
-//! copied, multitouch events as they come, to a virtual touchpad. sway's libinput then does what it does
+//! volume or brightness slider); any other is copied, multitouch events as they come, to a virtual
+//! touchpad the size of the area below the bar (made again when that changes). sway's libinput then does what it does
 //! for a laptop touchpad: pointer motion with acceleration, tap to click, two-finger scroll, gestures,
 //! palm detection, all configurable with `input` lines. Our part is only this forwarding.
 
@@ -90,6 +90,19 @@ pub struct Router {
 impl Router {
     pub fn new(axes: Axes) -> Self {
         Router { axes, slot: 0, touches: vec![Touch::default(); SLOTS], frame: Vec::with_capacity(64), fingers: 0, first: None }
+    }
+
+    /// The UI targets fingers are on now.
+    pub fn ui_touches(&self) -> impl Iterator<Item = &Id> {
+        self.touches.iter().filter_map(|t| match &t.owner {
+            Owner::Ui(id) if !t.ended => Some(id),
+            _ => None,
+        })
+    }
+
+    /// Whether a finger is on the touchpad part.
+    pub fn pad_fingers(&self) -> bool {
+        self.fingers > 0
     }
 
     fn to_screen(&self, x: i32, y: i32, layout: &TouchLayout) -> (f32, f32) {
@@ -263,28 +276,68 @@ pub fn spawn(
                 Err(_) => return,
             }
             log::info!("touchpad mode on");
-            if let Err(e) = run(&config, &layout, &commands, &sink) {
+            let mut session = Session::default();
+            let result = run(&config, &layout, &commands, &sink, &mut session);
+            // What the UI had under fingers ends (no tap): the targets let go, a slide ended.
+            let mut events: Vec<Event> = session.router.iter().flat_map(Router::ui_touches).map(|id| Event::Up(id.clone())).collect();
+            if session.bar_press.is_some_and(|p| p.sliding) {
+                events.push(Event::SlideEnd);
+            }
+            // Whether it worked, for the touchpad tab to say.
+            events.push(Event::TouchpadProblem(result.as_ref().err().map(|e| {
                 log::warn!("touchpad mode: {e}");
+                format!("No touchpad: {e}")
+            })));
+            if !events.into_iter().all(|e| sink.send(e)) {
+                return;
             }
             log::info!("touchpad mode off");
         }
     })
 }
 
-fn run(config: &Config, layout: &Mutex<TouchLayout>, commands: &Receiver<Command>, sink: &impl Sink) -> io::Result<()> {
+/// What a run of touchpad mode leaves to clean up after it.
+#[derive(Default)]
+struct Session {
+    router: Option<Router>,
+    bar_press: Option<BarPress>,
+}
+
+/// The touchpad area (pixels), once the UI has laid it out (at start it may not have yet).
+fn pad_area(layout: &Mutex<TouchLayout>) -> Option<(f32, f32, f32, f32)> {
+    layout.lock().ok().map(|l| l.pad).filter(|(x0, y0, x1, y1)| x1 > x0 && y1 > y0)
+}
+
+fn run(config: &Config, layout: &Mutex<TouchLayout>, commands: &Receiver<Command>, sink: &impl Sink, session: &mut Session) -> io::Result<()> {
     let mut device = find(config.device.as_deref())?;
     let abs = device.get_abs_state()?;
     let range = |code: AbsoluteAxisCode| abs.get(usize::from(code.0)).map_or((0, 1), |a| (a.minimum, a.maximum));
-    let mut router = Router::new(Axes { x: range(AbsoluteAxisCode::ABS_MT_POSITION_X), y: range(AbsoluteAxisCode::ABS_MT_POSITION_Y) });
-    let pad = layout.lock().map(|l| l.pad).unwrap_or_default();
+    // The area, once drawn (a few frames at most).
+    let waited = Instant::now();
+    let mut pad = loop {
+        if let Some(pad) = pad_area(layout) {
+            break pad;
+        }
+        if waited.elapsed() > std::time::Duration::from_secs(3) {
+            return Err(io::Error::other("the touchpad area wasn't laid out"));
+        }
+        if matches!(commands.try_recv(), Ok(Command::Off) | Err(TryRecvError::Disconnected)) {
+            return Ok(());
+        }
+        thread::sleep(std::time::Duration::from_millis(20));
+    };
     let mut touchpad = virtual_touchpad(pad, config.px_per_mm)?;
     device.grab()?;
     let flags = rustix::fs::fcntl_getfl(&device)?;
     rustix::fs::fcntl_setfl(&device, flags | rustix::fs::OFlags::NONBLOCK)?;
+    if !sink.send(Event::TouchpadProblem(None)) {
+        return Ok(());
+    }
+    let router = session.router.insert(Router::new(Axes { x: range(AbsoluteAxisCode::ABS_MT_POSITION_X), y: range(AbsoluteAxisCode::ABS_MT_POSITION_Y) }));
+    let bar_press = &mut session.bar_press;
 
     let mut out = Vec::new();
     let mut batch = Vec::new();
-    let mut bar_press: Option<BarPress> = None;
     let mut events = Vec::new();
     let tick = rustix::event::Timespec { tv_sec: 0, tv_nsec: 100_000_000 };
     loop {
@@ -292,9 +345,20 @@ fn run(config: &Config, layout: &Mutex<TouchLayout>, commands: &Receiver<Command
             Ok(Command::Off) | Err(TryRecvError::Disconnected) => return Ok(()),
             Ok(Command::On) | Err(TryRecvError::Empty) => {}
         }
-        // Wakes for touches at once; the timeout only bounds how long an Off waits.
+        // The area changed (a new layout): a touchpad its new size, between touches.
+        if let Some(now) = pad_area(layout).filter(|now| *now != pad)
+            && !router.pad_fingers()
+        {
+            log::info!("touchpad mode: the area changed, the touchpad follows");
+            touchpad = virtual_touchpad(now, config.px_per_mm)?;
+            pad = now;
+        }
+        // Wakes for touches at once; the timeout only bounds how long an Off waits (interrupted: again).
         let mut fds = [rustix::event::PollFd::new(&device, rustix::event::PollFlags::IN)];
-        rustix::event::poll(&mut fds, Some(&tick))?;
+        match rustix::event::poll(&mut fds, Some(&tick)) {
+            Ok(_) | Err(rustix::io::Errno::INTR) => {}
+            Err(e) => return Err(e.into()),
+        }
         {
             let layout = layout.lock().map_err(|_| io::Error::other("touch layout lock poisoned"))?;
             match device.fetch_events() {
@@ -325,7 +389,7 @@ fn run(config: &Config, layout: &Mutex<TouchLayout>, commands: &Receiver<Command
                         return Ok(());
                     }
                     if let (Id::Control(control), Some(at)) = (id, layout_x) {
-                        bar_press = Some(BarPress::new(control, at(x), now));
+                        *bar_press = Some(BarPress::new(control, at(x), now));
                     }
                 }
                 Out::Move { x } => {

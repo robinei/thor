@@ -1,5 +1,4 @@
-//! ClamShell: shelf, the second screen, the bar, input and power policy in one process with one
-//! state (docs/plans.md in the GPD repo, "One system program").
+//! ClamShell: shelf, the second screen, the bar, input and power policy in one process with one state.
 
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex, mpsc};
@@ -140,9 +139,13 @@ fn main() -> ExitCode {
     }
     let gamepad = std::env::var("CLAMSHELL_GAMEPAD").ok();
     // The global settings, until a game brings its own.
-    apply_settings(&state.settings.global, None, &clamshell_policy::frames::default_dir(), &padmouse_tx);
-    // Games start from the launcher thread, one at a time, with MangoHud's environment; plays go to
-    // stats.db in the state dir.
+    let tuning_tx = tuning::spawn().unwrap_or_else(|e| {
+        log::error!("tuning thread: {e}");
+        mpsc::channel().0
+    });
+    apply_settings(&state.settings.global, None, &clamshell_policy::frames::default_dir(), &padmouse_tx, &tuning_tx);
+    // Games start from the launcher (each on a thread of its own, so several run side by side), with
+    // MangoHud's environment; plays go to stats.db in the state dir.
     let (launch_tx, launch_rx) = mpsc::channel();
     // sway's windows, for the launcher (focus, close).
     let (sway_tx, sway_rx) = mpsc::channel();
@@ -261,7 +264,7 @@ fn main() -> ExitCode {
             Effect::Launch { game, workspace, launch, file, settings, env } => {
                 log::info!("launching {game}");
                 let mut env = env.clone();
-                if let Some(config) = apply_settings(settings, Some(game), &mangohud_dir, &padmouse_tx) {
+                if let Some(config) = apply_settings(settings, Some(game), &mangohud_dir, &padmouse_tx, &tuning_tx) {
                     // MangoHud's first, so a game's own variables can still override it.
                     env.splice(0..0, tuning::mangohud_env(&config));
                 }
@@ -278,7 +281,7 @@ fn main() -> ExitCode {
                 }
             }
             Effect::Apply { game, settings } => {
-                apply_settings(settings, game.as_deref(), &mangohud_dir, &padmouse_tx);
+                apply_settings(settings, game.as_deref(), &mangohud_dir, &padmouse_tx, &tuning_tx);
             }
             Effect::SaveSettings(text) => {
                 if let Some(dir) = &state_dir
@@ -593,10 +596,9 @@ fn end_units_later(units: Vec<String>) {
     let ended = std::thread::Builder::new().name("quit".into()).spawn(move || {
         std::thread::sleep(std::time::Duration::from_secs(5));
         for unit in units {
-            let active = std::process::Command::new("systemctl").args(["--user", "is-active", "--quiet", &unit]).status();
-            if active.is_ok_and(|s| s.success()) {
+            if clamshell_policy::command::succeeds("systemctl", &["--user", "is-active", "--quiet", &unit]) {
                 log::info!("{unit} still runs: killing it");
-                let _ = std::process::Command::new("systemctl").args(["--user", "kill", "--signal=SIGKILL", &unit]).status();
+                clamshell_policy::command::run("systemctl", &["--user", "kill", "--signal=SIGKILL", &unit]);
             }
         }
     });
@@ -607,13 +609,18 @@ fn end_units_later(units: Vec<String>) {
 
 /// Applies the settings in force: hardware (power, cores, charge limit), the pad's shaping, and for a
 /// game its MangoHud config (written, and reloaded live if it runs). Returns that config's path.
+/// The settings in force to the hardware (its own thread), the virtual pad's shaping, and the game's
+/// MangoHud config (returned, for its launch).
 fn apply_settings(
     v: &Values,
     game: Option<&str>,
     mangohud_dir: &std::path::Path,
     pad_tx: &mpsc::Sender<pad::Command>,
+    tuning_tx: &mpsc::Sender<Values>,
 ) -> Option<std::path::PathBuf> {
-    tuning::apply_hardware(v);
+    if tuning_tx.send(*v).is_err() {
+        log::warn!("tuning thread is gone");
+    }
     let shaping = pad::Shaping { nintendo: v.get(Setting::Buttons) == 1, deadzone: v.get(Setting::Deadzone) };
     let _ = pad_tx.send(pad::Command::Shape(shaping));
     let game = game?;
