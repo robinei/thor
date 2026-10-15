@@ -1,8 +1,8 @@
 //! The controller path: the real Xbox-style controller is grabbed for good, and games get a virtual Xbox
 //! 360 pad that is always there. Where its events go is the state's choice ([`PadRoute`], see
 //! [`route`]): the game, through the keymap in force ([`remap`]: the virtual pad, keys and mouse
-//! buttons on the virtual mouse's keyboard, the pointer; the deadzone of [`Shaping`] on the pad's
-//! sticks); the pad mouse ([`mouse`]); ClamShell's screens ([`navigator`]); typing into an app
+//! buttons on the virtual mouse's keyboard, the pointer; a stick's or trigger's tuning, such as its
+//! deadzone, is the keymap's); the pad mouse ([`mouse`]); ClamShell's screens ([`navigator`]); typing into an app
 //! ([`typing`]); or a keymap's edit screen listening ([`listen`]). The gyro comes from a motion sensor
 //! next to the controller ([`motion`]). Away from the game the virtual pad shows a neutral controller,
 //! so games never see it disappear. The home button (BTN_MODE) is ours: it goes to the program as
@@ -19,7 +19,6 @@ mod mouse;
 mod navigator;
 mod remap;
 mod route;
-mod shaping;
 mod typing;
 
 use std::io;
@@ -31,7 +30,6 @@ use clamshell_core::keymap::Keymap;
 use rustix::event::{PollFd, PollFlags, Timespec};
 
 use crate::input::device::{DeviceSpec, Grabbed};
-use crate::input::Raw;
 use crate::worker::{self, Ended, Service, Worker, lost_on};
 use crate::{Closed, Sink};
 use device::{Capabilities, VirtualDevices};
@@ -39,7 +37,6 @@ use motion::{EvdevMotion, MotionSource, Sample};
 use route::{Out, PadRouter, Ranges};
 
 pub use route::{Mapping, PadSnapshot};
-pub use shaping::Shaping;
 
 /// How often a missing controller is looked for.
 const RETRY: Duration = Duration::from_secs(1);
@@ -49,7 +46,6 @@ const COMMANDS_EVERY: Duration = Duration::from_millis(100);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     Route(PadRoute),
-    Shape(Shaping),
     /// The keymap in force (Default: no bindings).
     Keymap(Keymap),
 }
@@ -60,7 +56,7 @@ lost_on!(io::Error);
 /// when there is none.
 pub fn spawn(spec: DeviceSpec, sink: impl Sink) -> io::Result<Worker<Command>> {
     Worker::spawn("pad", move |commands| {
-        let mut pad = PadThread { spec, sink, route: PadRoute::default(), shaping: Shaping::default(), keymap: Keymap::default(), devices: None };
+        let mut pad = PadThread { spec, sink, route: PadRoute::default(), keymap: Keymap::default(), devices: None };
         worker::supervise(&mut pad, &commands, RETRY);
     })
 }
@@ -70,7 +66,6 @@ struct PadThread<S> {
     spec: DeviceSpec,
     sink: S,
     route: PadRoute,
-    shaping: Shaping,
     keymap: Keymap,
     devices: Option<VirtualDevices>,
 }
@@ -86,7 +81,6 @@ struct Controller {
 impl<S: Sink> PadThread<S> {
     fn apply(&mut self, command: Command, router: Option<(&mut PadRouter, &mut Out)>) {
         match command {
-            Command::Shape(shaping) => self.shaping = shaping,
             Command::Keymap(keymap) => {
                 log::info!("pad: keymap {} ({})", keymap.id, if keymap.id == 0 { "Default" } else { keymap.name.as_str() });
                 if let Some((router, out)) = router {
@@ -104,7 +98,7 @@ impl<S: Sink> PadThread<S> {
     }
 
     /// Sends what the router made of the controller's events: to the virtual devices and the state.
-    fn emit(&mut self, ranges: Ranges, out: &mut Out) -> Result<(), Ended<io::Error>> {
+    fn emit(&mut self, out: &mut Out) -> Result<(), Ended<io::Error>> {
         for event in out.events.drain(..) {
             self.sink.send(event)?;
         }
@@ -112,8 +106,8 @@ impl<S: Sink> PadThread<S> {
             return Err(Ended::Lost(io::Error::other("no virtual devices")));
         };
         if !out.pad.is_empty() {
-            let shaped: Vec<Raw> = out.pad.drain(..).map(|r| self.shaping.apply(ranges.stick, r)).collect();
-            device::emit(&mut devices.pad, &shaped)?;
+            device::emit(&mut devices.pad, &out.pad)?;
+            out.pad.clear();
         }
         if !out.mouse.is_empty() {
             device::emit(&mut devices.mouse, &out.mouse)?;
@@ -153,7 +147,7 @@ impl<S: Sink> Service for PadThread<S> {
         let result = self.route_events(&mut grabbed, &mut motion, &mut router, &mut out, commands);
         // Gone (or failing): what the route held on the keyboard and mouse is let go.
         router.lose(&mut out);
-        if let Err(e) = self.emit(ranges, &mut out) {
+        if let Err(e) = self.emit(&mut out) {
             log::warn!("pad: letting go: {e:?}");
         }
         result
@@ -203,7 +197,6 @@ impl<S: Sink> PadThread<S> {
         out: &mut Out,
         commands: &Receiver<Command>,
     ) -> Result<(), Ended<io::Error>> {
-        let ranges = router.ranges();
         let mut raws = Vec::new();
         let mut samples: Vec<Sample> = Vec::new();
         let mut wake = None;
@@ -215,7 +208,7 @@ impl<S: Sink> PadThread<S> {
                     Err(TryRecvError::Disconnected) => return Ok(()),
                 }
             }
-            self.emit(ranges, out)?;
+            self.emit(out)?;
             // Wake for events, when the mapping wants a tick, and now and then for commands.
             let wait_for = wake.map_or(COMMANDS_EVERY, |at: Instant| at.saturating_duration_since(Instant::now())).min(COMMANDS_EVERY);
             wait(grabbed, motion.as_deref(), wait_for)?;
@@ -235,7 +228,7 @@ impl<S: Sink> PadThread<S> {
                 router.motion(sample, out);
             }
             wake = router.tick(now, out);
-            self.emit(ranges, out)?;
+            self.emit(out)?;
         }
     }
 }

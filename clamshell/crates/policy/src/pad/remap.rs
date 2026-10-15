@@ -25,10 +25,8 @@ use crate::keyboard::{MODIFIERS, chord_keys};
 /// A stick or trigger counts as pushed (a direction, a button) past this.
 pub const HALF: f32 = 0.5;
 /// Pointer speed of a stick at full deflection, pixels per second, at speeds 0, 25, 50, 75 and 100
-/// (between, in proportion); quadratic below.
+/// (between, in proportion); below full, as the binding's deadzone and curve make it.
 const STICK_POINTER: [f32; 5] = [500.0, 900.0, 1400.0, 2100.0, 3000.0];
-/// Stick deflection below this (of full) doesn't move the pointer.
-const STICK_DEADZONE: f32 = 0.15;
 /// The gyro to the pointer: pixels per degree turned, at the same speeds.
 const GYRO_POINTER: [f32; 5] = [6.0, 10.0, 15.0, 22.0, 32.0];
 /// The gyro to a stick: degrees per second for full deflection, at the same speeds.
@@ -258,9 +256,8 @@ impl Remap {
             let secs = dt.as_secs_f32();
             for &((x, y), speed) in &self.sent.pointer {
                 let max = step(&STICK_POINTER, speed);
-                let (sx, sy) = shape((x, y));
-                self.carry.0 += sx * max * secs;
-                self.carry.1 += sy * max * secs;
+                self.carry.0 += x * max * secs;
+                self.carry.1 += y * max * secs;
             }
             self.flush_pointer(out);
             self.last_pointer = Some(now);
@@ -336,12 +333,12 @@ impl Remap {
     /// as buttons instead).
     fn stick(&self, s: Side, snap: &PadSnapshot) -> (f32, f32) {
         let (mut x, mut y) = match self.get(Input::Stick(s), snap) {
-            Some(b) if b.tuned() => {
+            Some(b) if b.shapes() => {
                 let half = self.stick_middle().1;
                 let (x, y) = self.tuned_stick(s, snap);
                 (x * half, y * half)
             }
-            // (Untuned, in raw units as they are.)
+            // (Not shaped: in raw units as they are.)
             _ => {
                 let (ax, ay) = stick_axes(s);
                 let mid = self.stick_middle().0;
@@ -450,7 +447,8 @@ impl Remap {
                                 *t = (t.0 + x, t.1 + y);
                             }
                         }
-                        Output::Pointer if shape((x / half, y / half)) != (0.0, 0.0) => w.pointer.push(((x / half, y / half), b.speed)),
+                        // (Tuned already: its deadzone and curve are the binding's.)
+                        Output::Pointer if (x, y) != (0.0, 0.0) => w.pointer.push(((x / half, y / half), b.speed)),
                         Output::Dpad => {
                             for d in Dir::ALL {
                                 let on = self.digital(Input::StickDir(s, d), snap);
@@ -488,7 +486,7 @@ impl Remap {
             let (ax, ay) = stick_axes(s);
 
             // A stick as itself keeps its exact values.
-            let plain = self.get(Input::Stick(s), snap).is_none_or(|b| b.output == Output::Stick(s) && !b.tuned());
+            let plain = self.get(Input::Stick(s), snap).is_none_or(|b| b.output == Output::Stick(s) && !b.shapes());
             let own = plain && self.get(Input::Gyro, snap).is_none_or(|g| g.output != Output::Stick(s));
             let other = Side::ALL.into_iter().filter(|o| *o != s).any(|o| self.get(Input::Stick(o), snap).is_some_and(|b| b.output == Output::Stick(s)));
             let dirs = Dir::ALL.into_iter().any(|d| self.get(Input::StickDir(s, d), snap).is_some());
@@ -505,7 +503,7 @@ impl Remap {
             if snap.value(axis).is_none() {
                 continue;
             }
-            let plain = self.get(Input::Trigger(s), snap).is_none_or(|b| b.output == Output::Trigger(s) && !b.tuned());
+            let plain = self.get(Input::Trigger(s), snap).is_none_or(|b| b.output == Output::Trigger(s) && !b.shapes());
             let own = plain && v == self.trigger(s, snap);
             let value = if own { snap.value(axis).unwrap_or(trig.min) } else { trig.min + ((trig.max - trig.min) as f32 * v.clamp(0.0, 1.0)).round() as i32 };
             w.pad_axes.push((axis, value));
@@ -592,16 +590,6 @@ fn chord_down(keys: &mut Vec<KeyCode>, chord: &Chord) {
 /// The gyro's motion turned round across and up/down, as its binding says.
 fn gyro_signs(b: &Binding) -> (f32, f32) {
     (if b.invert_x { -1.0 } else { 1.0 }, if b.invert_y { -1.0 } else { 1.0 })
-}
-
-/// A stick vector after the radial deadzone and the curve: 0 at the deadzone's edge, 1 at full.
-fn shape((x, y): (f32, f32)) -> (f32, f32) {
-    let len = x.hypot(y);
-    if len <= STICK_DEADZONE {
-        return (0.0, 0.0);
-    }
-    let scaled = ((len.min(1.0) - STICK_DEADZONE) / (1.0 - STICK_DEADZONE)).powi(2);
-    (x / len * scaled, y / len * scaled)
 }
 
 #[cfg(test)]
@@ -1006,6 +994,34 @@ mod tests {
         axis(&mut r, AbsoluteAxisCode::ABS_RZ, 470, &mut out);
         assert_eq!(held(&out.mouse), vec![KeyCode::KEY_X], "46 % is 92 % of the way to full at 50 %");
     }
+
+    #[test]
+    fn a_stick_on_the_pointer_moves_as_before_by_default_and_without_a_deadzone_at_0() {
+        // How the pointer moved before the parameters: a radial deadzone of 15 %, then squared.
+        let old = |v: f32| ((v - 0.15) / 0.85).max(0.0).powi(2) * step(&STICK_POINTER, DEFAULT_SPEED_FOR_TEST);
+        let moved = |b: Binding, deflection: f32| {
+            let (mut r, mut out) = router(keymap(&[(Input::Stick(Side::Right), b)]), PadRoute::Game);
+            axis(&mut r, AbsoluteAxisCode::ABS_RX, (deflection * STICK_MAX as f32) as i32, &mut out);
+            let mut t = Instant::now();
+            r.tick(t, &mut out);
+            for _ in 0..125 {
+                t += POINTER_EVERY;
+                r.tick(t, &mut out);
+            }
+            sum(&out.mouse, RelativeAxisCode::REL_X) as f32
+        };
+        let default = Binding::of(Input::Stick(Side::Right), Output::Pointer);
+        assert_eq!((default.deadzone, default.curve), (15, 50), "the panel shows what applies");
+        for v in [0.1, 0.3, 0.5, 0.8, 1.0] {
+            let (now, before) = (moved(default, v), old(v));
+            assert!((now - before).abs() <= before * 0.02 + 2.0, "{v}: {now} px, before {before} px");
+        }
+        let plain = Binding { deadzone: 0, curve: 0, ..default };
+        let slight = moved(plain, 0.1);
+        assert!((slight - 140.0).abs() < 5.0, "no deadzone, linear: a tenth of the speed: {slight}");
+    }
+
+    const DEFAULT_SPEED_FOR_TEST: u8 = clamshell_core::keymap::DEFAULT_SPEED;
 
     #[test]
     fn a_parameter_slid_applies_at_once() {

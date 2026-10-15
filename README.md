@@ -232,7 +232,6 @@ off and the device sleeps) are on the Battery tab, not here: they aren't a game'
 | Cores | the little cluster only (the others offline) |
 | Mouse | the pad mouse turned on at launch, off at the end |
 | Keymap | the keymap the game's controller goes through (its name; Default: as on the pad); a tap opens the keymaps (below) |
-| Deadzone | a stick deadzone, in the virtual pad, after the keymap (a keymap also has a deadzone per stick: both apply) |
 | CPU, GPU | a frequency cap in percent, instead of the profile's |
 | Env | extra environment variables (`KEY=value`, typed on the on-screen keyboard); a game's come after the defaults' |
 | Refresh | the main screen's refresh rate: the nearest its modes have (through the compositor's output management protocol) |
@@ -256,7 +255,11 @@ instead of moving the focus (Home leaves; Home is never mapped); the panel betwe
 then shows what it does in the layer, Change (or select it again) and Reset (the main layer: as on the
 pad; the Back layer: as in Main), and its parameters: a stick's deadzone, full point, curve and X/Y
 inversion (and speed on the pointer), a trigger's deadzone and full point (and threshold on a button), the
-gyro's speed, inversion and what holds it on. A value is held (or slid) for the bar's slider, which sets
+gyro's speed, inversion and what holds it on. The defaults are the same for every input and target but a
+stick on the pointer, which has a deadzone of 15 % and a curve of 50 % (the distance past it squared, as
+the pointer moved before); the panel shows the values that apply, and a new target takes its own defaults
+for the values not set. A stick's deadzone is the keymap's only one (a game that needs another uses a
+keymap of its own; the old per-game Deadzone setting is gone, its `deadzone=` key ignored). A value is held (or slid) for the bar's slider, which sets
 it as the finger moves (the game gets it at once); the panel's parameters are touch only, since the pad
 listens on that screen. A long press on an input sets it back; "No changes" clears the layer shown, once
 confirmed. What an input may map to fits its kind: a button, D-pad direction or stick direction to a pad

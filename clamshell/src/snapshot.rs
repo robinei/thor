@@ -152,7 +152,7 @@ pub fn shots(now: u64) -> Result<Vec<Shot>, ParseError> {
             [tap(Id::Settings(SettingsId::Scope(Scope::Global)))]
                 .into_iter()
                 .chain(taps(Setting::Power, 1))
-                .chain(taps(Setting::Deadzone, 2))
+                .chain(taps(Setting::Rumble, 2))
                 .chain(taps(Setting::ChargeLimit, 2))
                 .collect(),
         ),

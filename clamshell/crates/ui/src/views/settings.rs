@@ -41,7 +41,7 @@ enum Tile {
 
 /// The grid, in order; on a game's tab Reset follows. (Settings for the device rather than a game, the
 /// charge limit and idle, are the battery tab's.)
-const GRID: [Tile; 15] = [
+const GRID: [Tile; 14] = [
     Tile::Setting(Setting::Power),
     Tile::Setting(Setting::FpsCap),
     Tile::Setting(Setting::Refresh),
@@ -52,7 +52,6 @@ const GRID: [Tile; 15] = [
     Tile::Setting(Setting::Fan),
     Tile::Setting(Setting::PadMouse),
     Tile::Setting(Setting::Keymap),
-    Tile::Setting(Setting::Deadzone),
     Tile::Setting(Setting::Rumble),
     Tile::Setting(Setting::CpuMax),
     Tile::Setting(Setting::GpuMax),

@@ -33,8 +33,6 @@ pub enum Setting {
     /// The keymap (see [`crate::keymap`]), by its id; 0: Default, no remapping. Chosen in its picker
     /// (any id is kept; one that is gone counts as Default).
     Keymap,
-    /// The sticks' deadzone, in percent.
-    Deadzone,
     /// Rumble: 0 off up to 3 full.
     Rumble,
     /// The CPU's frequency cap in percent of its range; 0: the power profile's.
@@ -49,7 +47,7 @@ pub enum Setting {
     Sleep,
 }
 
-pub const COUNT: usize = 17;
+pub const COUNT: usize = 16;
 
 /// What a value does, for the tile's colour: nothing (the stock value), saves power or eases the load,
 /// costs power, or changes how the game looks or plays.
@@ -73,7 +71,6 @@ impl Setting {
         Setting::Fan,
         Setting::PadMouse,
         Setting::Keymap,
-        Setting::Deadzone,
         Setting::Rumble,
         Setting::CpuMax,
         Setting::GpuMax,
@@ -99,7 +96,6 @@ impl Setting {
             Setting::Fan => "fan",
             Setting::PadMouse => "padmouse",
             Setting::Keymap => "keymap",
-            Setting::Deadzone => "deadzone",
             Setting::Rumble => "rumble",
             Setting::CpuMax => "cpumax",
             Setting::GpuMax => "gpumax",
@@ -119,7 +115,6 @@ impl Setting {
             Setting::BottomScreen | Setting::BigCores | Setting::PadMouse => &[0, 1],
             // (The others are the keymaps there are.)
             Setting::Keymap => &[0],
-            Setting::Deadzone => &[0, 4, 8, 12, 16, 20],
             Setting::CpuMax | Setting::GpuMax => &[0, 40, 50, 60, 70, 80, 90, 100],
             Setting::ChargeLimit => &[100, 90, 80],
             Setting::ScreenOff => &[1, 2, 5, 10, 0],
@@ -159,7 +154,7 @@ impl Setting {
             // Never, or later than by default, costs power; sooner saves it.
             (Setting::ScreenOff | Setting::Sleep, v) if v == 0 || v > self.default_value() => Impact::Costs,
             (Setting::Upscale, 3) | (Setting::Fan, _) => Impact::Changes,
-            (Setting::Hud | Setting::PadMouse | Setting::Keymap | Setting::Deadzone | Setting::Rumble, _) => Impact::Changes,
+            (Setting::Hud | Setting::PadMouse | Setting::Keymap | Setting::Rumble, _) => Impact::Changes,
             _ => Impact::Saves,
         }
     }
@@ -199,7 +194,6 @@ impl Setting {
             (Setting::Keymap, 0) => "Default",
             // (The tile shows the keymap's name.)
             (Setting::Keymap, v) => return number(buf, "Keymap ", v, ""),
-            (Setting::Deadzone, 0) => "No deadzone",
             (Setting::Rumble, 0) => "Rumble off",
             (Setting::Rumble, 1) => "Rumble low",
             (Setting::Rumble, 2) => "Rumble mid",
@@ -212,7 +206,6 @@ impl Setting {
             // Numbers: the value with its unit.
             (Setting::FpsCap, v) => return number(buf, "", v, " fps"),
             (Setting::Refresh, v) => return number(buf, "", v, " Hz"),
-            (Setting::Deadzone, v) => return number(buf, "Deadzone ", v, " %"),
             (Setting::CpuMax, v) => return number(buf, "CPU ", v, " %"),
             (Setting::GpuMax, v) => return number(buf, "GPU ", v, " %"),
             (Setting::ChargeLimit, v) => return number(buf, "Charge to ", v, " %"),
@@ -503,6 +496,7 @@ mod tests {
         assert_eq!(text, "\tfps=40\tkeymap=7");
         assert_eq!(parse(text.split('\t')), o);
         assert!(parse(["buttons=1"].into_iter()).is_empty(), "the old Buttons setting is gone");
+        assert!(parse(["deadzone=8"].into_iter()).is_empty(), "the old Deadzone setting too (the keymap's sticks have theirs)");
         assert_eq!(o.over(&Values::default()).get(Setting::FpsCap), 40);
         assert_eq!(o.over(&Values::default()).get(Setting::Power), 1);
     }

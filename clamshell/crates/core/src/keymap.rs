@@ -556,6 +556,11 @@ pub const DEFAULT_SPEED: u8 = 50;
 /// A trigger mapped to a button acts past this (percent of its travel, 1 to 100).
 pub const DEFAULT_THRESHOLD: u8 = 50;
 
+/// A stick on the pointer: its deadzone and curve unless set otherwise (as the pointer moved before the
+/// parameters were there: nothing within 15 % of the middle, then the distance from there squared).
+pub const POINTER_DEADZONE: u8 = 15;
+pub const POINTER_CURVE: u8 = 50;
+
 /// An input's binding: what it maps to, and how. A stick's or trigger's tuning (deadzone, where it is
 /// full, curve, inversion) applies to its values before they are mapped, whatever they map to; a binding
 /// to the input itself ([`as_on_the_pad`]) with tuning is the input as on the pad, tuned.
@@ -580,13 +585,43 @@ pub struct Binding {
 }
 
 impl Binding {
+    /// A binding to `output` with the parameters' general defaults (no deadzone, linear); see
+    /// [`Binding::of`] for an input's.
     pub fn to(output: Output) -> Binding {
         Binding { output, speed: DEFAULT_SPEED, threshold: DEFAULT_THRESHOLD, deadzone: 0, full: 100, curve: 0, invert_x: false, invert_y: false, hold: None }
     }
 
-    /// Whether any parameter differs from its default (its output aside).
-    pub fn tuned(&self) -> bool {
-        Param::ALL.into_iter().any(|p| p.get(self) != p.default_value()) || self.hold.is_some()
+    /// `input`'s binding to `output` with the defaults for that pair ([`Param::default_for`]: a stick on
+    /// the pointer has a deadzone and a curve).
+    pub fn of(input: Input, output: Output) -> Binding {
+        let mut b = Binding::to(output);
+        for p in Param::ALL {
+            p.set(&mut b, p.default_for(input, output));
+        }
+        b
+    }
+
+    /// Whether any parameter of `input`'s differs from its default for this output.
+    pub fn tuned(&self, input: Input) -> bool {
+        params(input, self.output).any(|p| p.get(self) != p.default_for(input, self.output)) || self.hold.is_some()
+    }
+
+    /// Whether it changes a stick's or trigger's values (a deadzone, a full point short of the end, a
+    /// curve, an inversion).
+    pub fn shapes(&self) -> bool {
+        self.deadzone > 0 || self.full < 100 || self.curve > 0 || self.invert_x || self.invert_y
+    }
+
+    /// The same binding to another output: each parameter at its default for the old output goes to its
+    /// default for the new one; the ones set stay.
+    pub fn retarget(&self, input: Input, output: Output) -> Binding {
+        let mut b = Binding { output, ..*self };
+        for p in Param::ALL {
+            if p.get(self) == p.default_for(input, self.output) {
+                p.set(&mut b, p.default_for(input, output));
+            }
+        }
+        b
     }
 }
 
@@ -649,11 +684,16 @@ impl Param {
         }
     }
 
-    pub fn default_value(self) -> u8 {
+    /// Its value unless set, for `input` mapped to `output`: the same for every pair but a stick on
+    /// the pointer, whose deadzone and curve are [`POINTER_DEADZONE`] and [`POINTER_CURVE`].
+    pub fn default_for(self, input: Input, output: Output) -> u8 {
+        let pointer = input.kind() == Kind::Stick && output == Output::Pointer;
         match self {
             Param::Speed => DEFAULT_SPEED,
             Param::Threshold => DEFAULT_THRESHOLD,
             Param::Full => 100,
+            Param::Deadzone if pointer => POINTER_DEADZONE,
+            Param::Curve if pointer => POINTER_CURVE,
             Param::Deadzone | Param::Curve | Param::InvertX | Param::InvertY => 0,
         }
     }
@@ -716,7 +756,7 @@ pub fn change(input: Input, binding: Option<&Binding>) -> Change {
     match binding {
         None => Change::None,
         Some(b) if Some(b.output) != as_on_the_pad(input) => Change::Mapped,
-        Some(b) if b.tuned() => Change::Tuned,
+        Some(b) if b.tuned(input) => Change::Tuned,
         Some(_) => Change::None,
     }
 }
@@ -988,7 +1028,7 @@ fn write_bindings(bindings: &[(Input, Binding)], text: &mut String) {
         let _ = write_output(&b.output, text);
         for p in params(*input, b.output).filter(|p| !p.switch()) {
             let v = p.get(b);
-            if v != p.default_value() {
+            if v != p.default_for(*input, b.output) {
                 // (Speed with a percent sign: files from before have a step there.)
                 let _ = write!(text, " {}={v}{}", p.name(), if p == Param::Speed { "%" } else { "" });
             }
@@ -1071,7 +1111,7 @@ fn parse_binding(line: &str) -> Option<(Input, Binding)> {
     if !matches!(output, Output::Nothing | Output::Pointer | Output::Dpad | Output::Keys(_)) {
         words.next();
     }
-    let mut binding = Binding::to(output);
+    let mut binding = Binding::of(input, output);
     for word in words {
         match word.split_once('=') {
             Some(("speed", v)) => binding.speed = speed(v).unwrap_or(DEFAULT_SPEED),
@@ -1186,7 +1226,7 @@ mod tests {
         assert_eq!(get(1, Input::Trigger(Side::Left)).threshold, 75, "thresholds were percent already");
         assert_eq!(get(1, Input::Trigger(Side::Right)).threshold, DEFAULT_THRESHOLD, "out of range");
         assert_eq!(get(2, Input::Stick(Side::Right)).speed, 4, "a percent");
-        assert_eq!(get(2, Input::Stick(Side::Right)).deadzone, 0, "out of range");
+        assert_eq!(get(2, Input::Stick(Side::Right)).deadzone, POINTER_DEADZONE, "out of range: its default");
         assert!(maps.text().contains("rstick = pointer speed=75%\n"), "{}", maps.text());
         let mut b = Binding::to(Output::Pointer);
         Param::Full.set(&mut b, 10);
@@ -1203,6 +1243,25 @@ mod tests {
         assert_eq!(ps(Input::Trigger(Side::Left), Output::Key(chord("x"))), vec![Param::Deadzone, Param::Full, Param::Threshold]);
         assert_eq!(ps(Input::Trigger(Side::Left), Output::Trigger(Side::Right)), vec![Param::Deadzone, Param::Full]);
         assert_eq!(ps(Input::Button(Button::A), Output::Key(chord("x"))), vec![]);
+    }
+
+    #[test]
+    fn a_stick_on_the_pointer_has_defaults_of_its_own() {
+        let rs = Input::Stick(Side::Right);
+        let b = Binding::of(rs, Output::Pointer);
+        assert_eq!((b.deadzone, b.curve), (POINTER_DEADZONE, POINTER_CURVE));
+        assert!(!b.tuned(rs));
+        // Back to the stick: those defaults go with it; a value set stays.
+        let own = b.retarget(rs, Output::Stick(Side::Right));
+        assert_eq!((own.deadzone, own.curve), (0, 0));
+        let set = Binding { deadzone: 20, ..b }.retarget(rs, Output::Stick(Side::Right));
+        assert_eq!((set.deadzone, set.curve), (20, 0));
+        // Written only where it differs from them; read back with them.
+        let mut maps = Keymaps::initial();
+        maps.get_mut(1).unwrap().set(rs, Some(Binding { deadzone: 0, ..b }));
+        assert!(maps.text().contains("rstick = pointer deadzone=0\n"), "{}", maps.text());
+        assert_eq!(Keymaps::load(&maps.text()), maps);
+        assert_eq!(Keymaps::load("keymap 1 K\nrstick = pointer\n").get(1).unwrap().get(rs), Some(&b));
     }
 
     #[test]

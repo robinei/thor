@@ -464,7 +464,7 @@ impl State {
             return vec![];
         }
         let kept = self.binding_shown(id, input);
-        let binding = Binding { output, ..kept.unwrap_or(Binding::to(output)) };
+        let binding = kept.map_or(Binding::of(input, output), |k| k.retarget(input, output));
         let effects = self.bind(id, input, Some(binding));
         self.bottom.keymaps = Some(Screen::Edit(id));
         effects
@@ -483,7 +483,7 @@ impl State {
     pub fn param_base(&self, id: u16, input: Input) -> Option<Binding> {
         let k = self.keymaps.get(id);
         let layer = self.bottom.keymap_edit.layer;
-        k.and_then(|k| k.lookup(input, layer == Layer::Back)).copied().or_else(|| as_on_the_pad(input).map(Binding::to))
+        k.and_then(|k| k.lookup(input, layer == Layer::Back)).copied().or_else(|| as_on_the_pad(input).map(|o| Binding::of(input, o)))
     }
 
     /// The selected input and what its parameters start from, if `param` applies to it (on the edit
@@ -501,7 +501,7 @@ impl State {
     /// on the pad again (then it has no binding). Whether it changed.
     fn set_tuned(&mut self, id: u16, input: Input, b: Binding) -> bool {
         let layer = self.bottom.keymap_edit.layer;
-        let plain = layer == Layer::Main && as_on_the_pad(input).map(Binding::to) == Some(b);
+        let plain = layer == Layer::Main && as_on_the_pad(input).map(|o| Binding::of(input, o)) == Some(b);
         self.keymaps.get_mut(id).is_some_and(|k| k.set_in(layer, input, (!plain).then_some(b)))
     }
 

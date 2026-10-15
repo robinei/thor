@@ -55,7 +55,7 @@ pub fn release_mouse_keys(out: &mut Out) {
 /// What the pad's events become.
 #[derive(Debug, Default, PartialEq)]
 pub struct Out {
-    /// For the game's virtual pad (the deadzone applied on the way, see [`super::Shaping`]).
+    /// For the game's virtual pad.
     pub pad: Vec<Raw>,
     /// For the virtual mouse (pointer, buttons, wheel, and the keys the pad types or a keymap presses).
     pub mouse: Vec<Raw>,
@@ -181,7 +181,6 @@ pub struct PadRouter {
     typing: Typing,
     listener: Listener,
     remap: Remap,
-    ranges: Ranges,
     /// Events passed through to the game's pad since the last report.
     passed: bool,
     /// The gyro's last sample's time.
@@ -205,7 +204,6 @@ impl PadRouter {
             typing: Typing,
             listener: Listener::new(ranges),
             remap,
-            ranges,
             passed: false,
             gyro_at: None,
             snapshot,
@@ -234,10 +232,6 @@ impl PadRouter {
     fn enter_game(&mut self, out: &mut Out) {
         self.snapshot.events_where(true, |r| !remap::known(r), &mut out.pad);
         self.remap.update(&self.snapshot, out);
-    }
-
-    pub fn ranges(&self) -> Ranges {
-        self.ranges
     }
 
     /// A new keymap in force: applied at once while the game has the pad (what the old one held is

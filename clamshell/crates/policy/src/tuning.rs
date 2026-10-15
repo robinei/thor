@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use clamshell_core::PowerProfile;
 use clamshell_core::settings::{Setting, Values};
 
-use crate::pad::{self, Shaping};
+use crate::pad;
 use crate::sys;
 use crate::worker::{self, Quiet, Worker};
 
@@ -87,7 +87,7 @@ pub fn spawn() -> io::Result<Worker<Values>> {
     worker::spawn_coalescing("tuning", |_| (), move |values| apply_hardware(&values, &mut quiet))
 }
 
-/// Where the settings in force go: the hardware thread, the virtual pad's shaping and keymap, and a
+/// Where the settings in force go: the hardware thread, the pad's keymap, and a
 /// game's MangoHud config (in `mangohud`).
 #[derive(Clone)]
 pub struct Tuning {
@@ -97,17 +97,16 @@ pub struct Tuning {
 }
 
 impl Tuning {
-    /// The keymap in force, for the pad (the settings' deadzone goes with [`Tuning::apply`]).
+    /// The keymap in force, for the pad.
     pub fn keymap(&self, keymap: &clamshell_core::keymap::Keymap) {
         self.pad.send(pad::Command::Keymap(keymap.clone()));
     }
 
-    /// Applies the settings in force (`game`'s, or the global ones without a game): the hardware, the
-    /// pad's shaping, and for a game its MangoHud config (written, and reloaded live if it runs), whose
+    /// Applies the settings in force (`game`'s, or the global ones without a game): the hardware, and
+    /// for a game its MangoHud config (written, and reloaded live if it runs), whose
     /// path is returned for its launch.
     pub fn apply(&self, v: &Values, game: Option<&str>) -> Option<PathBuf> {
         self.hardware.send(*v);
-        self.pad.send(pad::Command::Shape(Shaping::from_settings(v)));
         let game = game?;
         mangohud_config(&self.mangohud, game, v.get(Setting::FpsCap), v.get(Setting::Hud))
             .map_err(|e| log::warn!("MangoHud config: {e}"))

@@ -534,7 +534,7 @@ fn panel(f: &mut Frame, body: Rect, r: Rect, id: u16, keymap: Option<&Keymap>, v
             return;
         };
         let v = p.get(&base);
-        let changed = v != p.default_value();
+        let changed = v != p.default_for(input, base.output);
         if p.switch() {
             f.button(Id::Keymap(KeymapId::Toggle(p)), row, Look::ROW, |f| {
                 let inner = row.inset(small * 0.4);
