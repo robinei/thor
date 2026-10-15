@@ -9,8 +9,8 @@
 //! [`Event::Home`]; held, then the Back button with a game in front, it is the game's Guide (see
 //! [`route`]). The Back button (the layer key, [`remap::LAYER_KEYS`]) is ours too. The virtual
 //! devices outlive the controller: unplugged (or failing), the pad stays, at rest, until one is back.
-//!
-//! Not yet: forwarding rumble from the virtual pad to the real one (uinput force-feedback uploads).
+//! Games' rumble on the virtual pad reaches the real controller's motors while the game has the pad
+//! ([`rumble`]), scaled by the Rumble setting.
 
 mod device;
 mod listen;
@@ -19,9 +19,11 @@ mod mouse;
 mod navigator;
 mod remap;
 mod route;
+mod rumble;
 mod typing;
 
 use std::io;
+use std::os::fd::{AsFd, BorrowedFd};
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
@@ -35,6 +37,7 @@ use crate::{Closed, Sink};
 use device::{Capabilities, VirtualDevices};
 use motion::{EvdevMotion, MotionSource, Sample};
 use route::{Out, PadRouter, Ranges};
+use rumble::{Effects, Rumble};
 
 pub use route::{Mapping, PadSnapshot};
 
@@ -50,6 +53,8 @@ pub enum Command {
     Keymap(Keymap),
     /// Calibrate the gyro from its next samples.
     CalibrateGyro,
+    /// The Rumble setting in force: 0 off, 1 low, 2 mid, 3 full.
+    Rumble(u16),
 }
 
 lost_on!(io::Error);
@@ -58,7 +63,15 @@ lost_on!(io::Error);
 /// when there is none.
 pub fn spawn(spec: DeviceSpec, sink: impl Sink) -> io::Result<Worker<Command>> {
     Worker::spawn("pad", move |commands| {
-        let mut pad = PadThread { spec, sink, route: PadRoute::default(), keymap: Keymap::default(), devices: None };
+        let mut pad = PadThread {
+            spec,
+            sink,
+            route: PadRoute::default(),
+            keymap: Keymap::default(),
+            devices: None,
+            effects: Effects::default(),
+            rumble_setting: 3,
+        };
         worker::supervise(&mut pad, &commands, RETRY);
     })
 }
@@ -70,6 +83,9 @@ struct PadThread<S> {
     route: PadRoute,
     keymap: Keymap,
     devices: Option<VirtualDevices>,
+    /// Games' rumble effects on the virtual pad, and the Rumble setting.
+    effects: Effects,
+    rumble_setting: u16,
 }
 
 /// A controller taken over, with its gyro if one is found.
@@ -78,6 +94,8 @@ struct Controller {
     ranges: Ranges,
     snapshot: PadSnapshot,
     motion: Option<Box<dyn MotionSource>>,
+    /// Its motors, if it has force feedback.
+    rumble: Option<Rumble>,
 }
 
 impl<S: Sink> PadThread<S> {
@@ -96,6 +114,7 @@ impl<S: Sink> PadThread<S> {
                     router.set_route(route, out);
                 }
             }
+            Command::Rumble(setting) => self.rumble_setting = setting,
             Command::CalibrateGyro => match router {
                 Some((router, _)) => router.calibrate(),
                 // (No controller: no gyro to calibrate.)
@@ -133,25 +152,37 @@ impl<S: Sink> Service for PadThread<S> {
     /// Finds the controller, (re)makes the virtual devices if it differs from the one they were made
     /// for, and grabs it.
     fn connect(&mut self) -> io::Result<Controller> {
-        let real = device::find(&self.spec)?;
+        // (Games wait for their rumble uploads to be answered, controller or not.)
+        self.serve_effects(Instant::now());
+        let mut real = device::find(&self.spec)?;
         let caps = Capabilities::of(&real)?;
         let (ranges, snapshot) = (caps.ranges(), caps.snapshot());
         if self.devices.as_ref().is_none_or(|v| v.made_for != caps) {
             self.devices = Some(VirtualDevices::new(caps)?);
         }
         let (name, phys) = (real.name().unwrap_or("").to_owned(), real.physical_path().unwrap_or("").to_owned());
+        let rumble = Rumble::of(&mut real).unwrap_or_else(|e| {
+            log::warn!("pad: rumble: {e}");
+            None
+        });
+        if rumble.is_none() {
+            log::info!("pad: the controller has no rumble");
+        }
         let grabbed = Grabbed::new(real)?;
         log::info!("pad: {} grabbed; games see the virtual pad", grabbed.device().name().unwrap_or("controller"));
         let motion = EvdevMotion::find(&name, &phys).map(|m| Box::new(m) as Box<dyn MotionSource>);
-        Ok(Controller { grabbed, ranges, snapshot, motion })
+        Ok(Controller { grabbed, ranges, snapshot, motion, rumble })
     }
 
     /// Routes the controller's events until it is gone (or the program is).
     fn run_while_up(&mut self, c: Controller, commands: &Receiver<Command>) -> Result<(), Ended<io::Error>> {
-        let Controller { mut grabbed, ranges, snapshot, mut motion } = c;
+        let Controller { mut grabbed, ranges, snapshot, mut motion, mut rumble } = c;
         let mut out = Out::default();
         let mut router = PadRouter::new(ranges, snapshot, self.route, self.keymap.clone(), &mut out);
-        let result = self.route_events(&mut grabbed, &mut motion, &mut router, &mut out, commands);
+        let result = self.route_events(&mut grabbed, &mut motion, &mut rumble, &mut router, &mut out, commands);
+        if let Some(r) = rumble.as_mut() {
+            let _ = r.set(0, 0);
+        }
         // Gone (or failing): what the route held on the keyboard and mouse is let go.
         router.lose(&mut out);
         if let Err(e) = self.emit(&mut out) {
@@ -181,12 +212,15 @@ impl<S: Sink> Service for PadThread<S> {
     }
 }
 
-/// Waits up to `timeout` for the controller's or the gyro's events.
-fn wait(pad: &Grabbed, motion: Option<&dyn MotionSource>, timeout: Duration) -> io::Result<()> {
+/// Waits up to `timeout` for the controller's, the gyro's or the virtual pad's (rumble) events.
+fn wait(pad: &Grabbed, motion: Option<&dyn MotionSource>, virtual_pad: Option<BorrowedFd>, timeout: Duration) -> io::Result<()> {
     let timeout = Timespec { tv_sec: i64::try_from(timeout.as_secs()).unwrap_or(i64::MAX), tv_nsec: i64::from(timeout.subsec_nanos()) };
     let mut fds = vec![PollFd::new(pad.device(), PollFlags::IN)];
     if let Some(m) = motion {
         fds.push(PollFd::from_borrowed_fd(m.fd(), PollFlags::IN));
+    }
+    if let Some(v) = virtual_pad {
+        fds.push(PollFd::from_borrowed_fd(v, PollFlags::IN));
     }
     match rustix::event::poll(&mut fds, Some(&timeout)) {
         Ok(_) | Err(rustix::io::Errno::INTR) => Ok(()),
@@ -200,6 +234,7 @@ impl<S: Sink> PadThread<S> {
         &mut self,
         grabbed: &mut Grabbed,
         motion: &mut Option<Box<dyn MotionSource>>,
+        rumble: &mut Option<Rumble>,
         router: &mut PadRouter,
         out: &mut Out,
         commands: &Receiver<Command>,
@@ -218,7 +253,8 @@ impl<S: Sink> PadThread<S> {
             self.emit(out)?;
             // Wake for events, when the mapping wants a tick, and now and then for commands.
             let wait_for = wake.map_or(COMMANDS_EVERY, |at: Instant| at.saturating_duration_since(Instant::now())).min(COMMANDS_EVERY);
-            wait(grabbed, motion.as_deref(), wait_for)?;
+            let virtual_pad = self.devices.as_ref().map(|d| d.pad.as_fd());
+            wait(grabbed, motion.as_deref(), virtual_pad, wait_for)?;
             grabbed.fetch(&mut raws)?;
             if let Some(m) = motion.as_mut()
                 && let Err(e) = m.fetch(&mut samples)
@@ -235,7 +271,27 @@ impl<S: Sink> PadThread<S> {
                 router.motion(sample, out);
             }
             wake = router.tick(now, out);
+            // Games' rumble, on the controller while the game has the pad.
+            self.serve_effects(now);
+            let (strong, weak) = if self.route == PadRoute::Game { self.effects.level(now) } else { (0, 0) };
+            let setting = self.rumble_setting;
+            if let Some(r) = rumble.as_mut()
+                && let Err(e) = r.set(rumble::scale(strong, setting), rumble::scale(weak, setting))
+            {
+                log::warn!("pad: rumble: {e}");
+                *rumble = None;
+            }
+            wake = [wake, self.effects.next_end()].into_iter().flatten().min();
             self.emit(out)?;
+        }
+    }
+
+    /// Answers the virtual pad's rumble uploads and follows its play events.
+    fn serve_effects(&mut self, now: Instant) {
+        if let Some(devices) = self.devices.as_mut()
+            && let Err(e) = self.effects.serve(&mut devices.pad, now)
+        {
+            log::warn!("pad: rumble requests: {e}");
         }
     }
 }

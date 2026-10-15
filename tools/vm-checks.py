@@ -823,6 +823,35 @@ class Checks:
         self.check("  Y again: T off", got == ["KEY_T0"], f"{got}")
         press("home")
 
+    def rumble(self):
+        """A game's rumble on the virtual pad reaches the controller: an effect uploaded to the virtual pad,
+        played and stopped, read back from the fake pad's own rumble (it says what it is asked to play)."""
+        if not self.check("rumble: the fake pad grabbed", plug_pad()):
+            return
+        control("tap launch")
+        if not self.check("  a game in front", until(lambda: bool(units("game")) and front() not in ("", "clamshell-shelf"), 10)):
+            return
+        virtual = device("clamshell pad (Xbox 360)")
+        # struct ff_effect: type, id, direction, trigger, replay (length 500 ms), then the rumble's
+        # strong and weak magnitudes in a 32-byte union at offset 16; EVIOCSFF; then EV_FF play and stop.
+        game = (
+            "import fcntl,os,struct,sys,time\n"
+            "fd=os.open(sys.argv[1],os.O_RDWR)\n"
+            "e=bytearray(struct.pack('HhHHHHH',0x50,-1,0,0,0,500,0)+b'\\0'*2+struct.pack('HH',40000,20000)+b'\\0'*28)\n"
+            "fcntl.ioctl(fd,0x40304580,e)\n"
+            "i=struct.unpack_from('h',e,2)[0]\n"
+            "os.write(fd,struct.pack('llHHi',0,0,0x15,i,1));time.sleep(0.3)\n"
+            "os.write(fd,struct.pack('llHHi',0,0,0x15,i,0));time.sleep(0.2)\n"
+        )
+        since = now()
+        ran = sh(f"python3 -c {shlex.quote(game)} {virtual} && echo played").strip()
+        time.sleep(0.5)
+        said = sh(f"journalctl --user -u {vm.FAKE_PAD_UNIT} --since @{since} -o cat --no-pager | grep rumble || true")
+        self.check("  the game's effect uploaded and played on the virtual pad", ran.endswith("played"), ran)
+        self.check("  the controller rumbles at the game's strengths, then stops",
+                   "rumble 40000 20000" in said and said.strip().endswith("rumble stop"), said)
+        press("home")
+
     # Bluetooth
 
     def bluetooth(self):
@@ -850,7 +879,7 @@ class Checks:
 
 CHECKS = ["shelf_scroll", "bar_tap", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad",
           "pad_shelf", "pad_view", "pad_mouse", "pad_typing", "pad_held_key", "pad_unplug", "pad_guide", "keymaps", "keymap_layers",
-          "keymap_actuations", "bluetooth"]
+          "keymap_actuations", "rumble", "bluetooth"]
 
 
 def main():

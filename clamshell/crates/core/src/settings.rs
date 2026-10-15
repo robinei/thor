@@ -135,7 +135,7 @@ impl Setting {
 
     /// Whether changing it does something yet (the rest are kept, and work once implemented).
     pub fn active(self) -> bool {
-        !matches!(self, Setting::Upscale | Setting::Fan | Setting::Rumble)
+        !matches!(self, Setting::Upscale | Setting::Fan)
     }
 
     /// Only for all games (not per game).

@@ -235,7 +235,8 @@ off and the device sleeps) are on the Battery tab, not here: they aren't a game'
 | CPU, GPU | a frequency cap in percent, instead of the profile's |
 | Env | extra environment variables (`KEY=value`, typed on the on-screen keyboard); a game's come after the defaults' |
 | Refresh | the main screen's refresh rate: the nearest its modes have (through the compositor's output management protocol) |
-| Upscale, Fan, Rumble | saved, marked "later": not applied yet |
+| Upscale, Fan | saved, marked "later": not applied yet |
+| Rumble | games' rumble on the controller's motors (where it has them) while the game has the pad: off, low, mid or full |
 
 **Keymaps** remap the controller for games: named, shared between games, saved in `keymaps.txt` next to
 `game-settings.txt` (a `keymap ID NAME` line, then a line per binding, `INPUT = OUTPUT [option=value]`, e.g.

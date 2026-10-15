@@ -20,7 +20,9 @@
 //! - `sleep MS`
 //! - `quit`
 //!
-//! Each line is answered on standard error. `tools/vm.py pad` runs it in the virtual Thor.
+//! Each line is answered on standard error. `tools/vm.py pad` runs it in the virtual Thor. Controlled, it
+//! has rumble (FF_RUMBLE): it answers effect uploads and says on standard error what it is asked to play
+//! (`rumble STRONG WEAK`, `rumble stop`).
 //!
 //! Beside the pad it makes a motion sensor as the kernel's controller drivers do ("clamshell fake pad
 //! Motion Sensors": INPUT_PROP_ACCELEROMETER, the accelerometer on ABS_X/Y/Z, the gyro on ABS_RX/RY/RZ
@@ -35,7 +37,10 @@ use std::time::{Duration, Instant};
 
 use evdev::raw_stream::RawDevice;
 use evdev::uinput::VirtualDevice;
-use evdev::{AbsInfo, AbsoluteAxisCode, AttributeSet, EventType, InputEvent, KeyCode, MiscCode, PropType, RelativeAxisCode, UinputAbsSetup};
+use evdev::{
+    AbsInfo, AbsoluteAxisCode, AttributeSet, EventSummary, EventType, FFEffectCode, FFEffectKind, InputEvent, KeyCode, MiscCode, PropType, RelativeAxisCode,
+    UInputCode, UinputAbsSetup,
+};
 
 const STICK_MAX: i32 = 32767;
 const TRIGGER_MAX: i32 = 1023;
@@ -81,11 +86,16 @@ fn stick(dev: &mut VirtualDevice, x: i32, y: i32) -> io::Result<()> {
 }
 
 fn make_pad() -> io::Result<VirtualDevice> {
+    make_pad_with(false)
+}
+
+/// The pad, with rumble if `rumble` (then someone must answer its effect uploads: [`serve_rumble`]).
+fn make_pad_with(rumble: bool) -> io::Result<VirtualDevice> {
     let stick_axis = |code| UinputAbsSetup::new(code, AbsInfo::new(0, -STICK_MAX - 1, STICK_MAX, 16, 128, 0));
     let trigger = |code| UinputAbsSetup::new(code, AbsInfo::new(0, 0, TRIGGER_MAX, 0, 0, 0));
     let hat = |code| UinputAbsSetup::new(code, AbsInfo::new(0, -1, 1, 0, 0, 0));
     let keys: AttributeSet<KeyCode> = BUTTONS.iter().map(|&(_, code)| code).collect();
-    VirtualDevice::builder()?
+    let builder = VirtualDevice::builder()?
         .name("clamshell fake pad")
         .with_keys(&keys)?
         .with_absolute_axis(&stick_axis(AbsoluteAxisCode::ABS_X))?
@@ -95,8 +105,60 @@ fn make_pad() -> io::Result<VirtualDevice> {
         .with_absolute_axis(&trigger(AbsoluteAxisCode::ABS_Z))?
         .with_absolute_axis(&trigger(AbsoluteAxisCode::ABS_RZ))?
         .with_absolute_axis(&hat(AbsoluteAxisCode::ABS_HAT0X))?
-        .with_absolute_axis(&hat(AbsoluteAxisCode::ABS_HAT0Y))?
-        .build()
+        .with_absolute_axis(&hat(AbsoluteAxisCode::ABS_HAT0Y))?;
+    let builder = if rumble {
+        let ff: AttributeSet<FFEffectCode> = [FFEffectCode::FF_RUMBLE].into_iter().collect();
+        builder.with_ff(&ff)?.with_ff_effects_max(4)
+    } else {
+        builder
+    };
+    let pad = builder.build()?;
+    let flags = rustix::fs::fcntl_getfl(&pad)?;
+    rustix::fs::fcntl_setfl(&pad, flags | rustix::fs::OFlags::NONBLOCK)?;
+    Ok(pad)
+}
+
+/// Answers the pad's effect uploads and says what it is asked to play, until the pad is gone.
+fn serve_rumble(pad: Arc<Mutex<VirtualDevice>>) {
+    let mut effects: Vec<(i16, (u16, u16))> = Vec::new();
+    loop {
+        sleep(Duration::from_millis(2));
+        let Ok(mut pad) = pad.lock() else {
+            return;
+        };
+        let events: Vec<InputEvent> = match pad.fetch_events() {
+            Ok(events) => events.collect(),
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+            Err(_) => return,
+        };
+        for event in events {
+            match event.destructure() {
+                EventSummary::UInput(request, UInputCode::UI_FF_UPLOAD, _) => {
+                    if let Ok(mut upload) = pad.process_ff_upload(request) {
+                        if let FFEffectKind::Rumble { strong_magnitude, weak_magnitude } = upload.effect().kind {
+                            let id = upload.effect_id();
+                            effects.retain(|(e, _)| *e != id);
+                            effects.push((id, (strong_magnitude, weak_magnitude)));
+                        }
+                        upload.set_retval(0);
+                    }
+                }
+                EventSummary::UInput(request, UInputCode::UI_FF_ERASE, _) => {
+                    if let Ok(mut erase) = pad.process_ff_erase(request) {
+                        erase.set_retval(0);
+                    }
+                }
+                EventSummary::ForceFeedback(_, FFEffectCode(id), value) => {
+                    let level = effects.iter().find(|(e, _)| i32::from(*e) == i32::from(id)).map(|(_, l)| *l);
+                    match (value > 0, level) {
+                        (true, Some((strong, weak))) => eprintln!("rumble {strong} {weak}"),
+                        _ => eprintln!("rumble stop"),
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
 /// The motion sensor beside the pad.
@@ -153,12 +215,14 @@ fn main() -> io::Result<()> {
 
 /// Reads commands from `path` (made as a named pipe if missing; reopened after each writer) or stdin.
 fn controlled(path: &str) -> io::Result<()> {
-    let mut pad = make_pad()?;
+    let pad = Arc::new(Mutex::new(make_pad_with(true)?));
     let gyro = Gyro::default();
     let motion = make_motion()?;
     let reporting = gyro.clone();
     spawn(move || report_motion(motion, reporting));
-    let mut pad = Fake { pad: &mut pad, gyro };
+    let serving = pad.clone();
+    spawn(move || serve_rumble(serving));
+    let mut pad = Fake { pad, gyro };
     let pad = &mut pad;
     eprintln!("fake pad ready; commands from {path}");
     if path == "-" {
@@ -181,9 +245,9 @@ fn controlled(path: &str) -> io::Result<()> {
     }
 }
 
-/// The fake controller: its pad, and its gyro's rate.
-struct Fake<'a> {
-    pad: &'a mut VirtualDevice,
+/// The fake controller: its pad (shared with the thread answering its rumble), and its gyro's rate.
+struct Fake {
+    pad: Arc<Mutex<VirtualDevice>>,
     gyro: Gyro,
 }
 
@@ -226,7 +290,8 @@ fn scaled(value: f32, max: i32) -> i32 {
 }
 
 fn command(fake: &mut Fake, words: &[&str]) -> io::Result<()> {
-    let pad = &mut *fake.pad;
+    let mut held = fake.pad.lock().map_err(|_| io::Error::other("the pad's lock"))?;
+    let pad = &mut *held;
     match words {
         ["gyro", x, y, z] => {
             let rate = [number(x)?, number(y)?, number(z)?];

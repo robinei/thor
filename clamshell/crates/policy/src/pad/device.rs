@@ -5,7 +5,7 @@ use std::io;
 
 use evdev::raw_stream::RawDevice;
 use evdev::uinput::VirtualDevice;
-use evdev::{AbsInfo, AbsoluteAxisCode, AttributeSet, BusType, InputEvent, InputId, KeyCode, RelativeAxisCode, UinputAbsSetup};
+use evdev::{AbsInfo, AbsoluteAxisCode, AttributeSet, BusType, FFEffectCode, InputEvent, InputId, KeyCode, RelativeAxisCode, UinputAbsSetup};
 
 use super::remap::is_layer_key;
 use super::route::{Axis, PadSnapshot, Ranges, mouse_device_keys};
@@ -102,7 +102,13 @@ fn pad_keys(caps: &Capabilities) -> impl Iterator<Item = KeyCode> + '_ {
 /// A pad with the real one's buttons and axes, identified as a wired Xbox 360 controller so SDL, Wine
 /// and Steam map it without configuration.
 fn virtual_pad(caps: &Capabilities) -> io::Result<VirtualDevice> {
-    let mut builder = VirtualDevice::builder()?.name(VIRTUAL_PAD).input_id(InputId::new(BusType::BUS_USB, 0x045e, 0x028e, 0x0110));
+    // Rumble, as an Xbox 360 pad has it (games' effects come back on its file, read without blocking).
+    let ff: AttributeSet<FFEffectCode> = [FFEffectCode::FF_RUMBLE].into_iter().collect();
+    let mut builder = VirtualDevice::builder()?
+        .name(VIRTUAL_PAD)
+        .input_id(InputId::new(BusType::BUS_USB, 0x045e, 0x028e, 0x0110))
+        .with_ff(&ff)?
+        .with_ff_effects_max(super::rumble::EFFECTS_MAX);
     let keys: Vec<KeyCode> = pad_keys(caps).collect();
     if !keys.is_empty() {
         builder = builder.with_keys(&keyset(&keys))?;
@@ -110,7 +116,10 @@ fn virtual_pad(caps: &Capabilities) -> io::Result<VirtualDevice> {
     for &(code, info) in &caps.axes {
         builder = builder.with_absolute_axis(&UinputAbsSetup::new(code, info))?;
     }
-    builder.build()
+    let pad = builder.build()?;
+    let flags = rustix::fs::fcntl_getfl(&pad)?;
+    rustix::fs::fcntl_setfl(&pad, flags | rustix::fs::OFlags::NONBLOCK)?;
+    Ok(pad)
 }
 
 fn virtual_mouse() -> io::Result<VirtualDevice> {

@@ -112,6 +112,7 @@ impl Tuning {
     /// path is returned for its launch.
     pub fn apply(&self, v: &Values, game: Option<&str>) -> Option<PathBuf> {
         self.hardware.send(*v);
+        self.pad.send(pad::Command::Rumble(v.get(Setting::Rumble)));
         let game = game?;
         mangohud_config(&self.mangohud, game, v.get(Setting::FpsCap), v.get(Setting::Hud))
             .map_err(|e| log::warn!("MangoHud config: {e}"))
