@@ -210,6 +210,7 @@ pub fn bottom(c: &mut Canvas, s: &State, w: f32, h: f32, images: &mut Images, sc
         Mode::Battery => battery::draw(f, body, &mut scratch.text),
         Mode::Bluetooth => bluetooth::draw(f, body, &mut scratch.text),
     }
+    bar::draw_slider_over(f, w, bar_h, scratch);
     body
 }
 

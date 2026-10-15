@@ -81,7 +81,7 @@ fn wifi_bars(quality: Option<u8>) -> Option<u8> {
     })
 }
 
-/// Draws the bar (and a slider over it while one moves); returns its height.
+/// Draws the bar; returns its height.
 pub(super) fn draw(f: &mut Frame, w: f32, h: f32, scratch: &mut Scratch) -> f32 {
     let bar_h = (h * BAR_H).max(20.0);
     let side = bar_h * ICON;
@@ -144,10 +144,14 @@ pub(super) fn draw(f: &mut Frame, w: f32, h: f32, scratch: &mut Scratch) -> f32 
     let (icon, color) = battery(&f.s.status).unwrap_or((Icon::Battery { tenths: 0, charging: false }, DIM));
     let color = if f.s.mode == Mode::Battery { ACCENT } else { color };
     icon_button(f, Id::Mode(Mode::Battery), at(i), icon, color);
+    bar_h
+}
+
+/// The slider, while one moves: drawn last, over the bar and the mode below it.
+pub(super) fn draw_slider_over(f: &mut Frame, w: f32, bar_h: f32, scratch: &mut Scratch) {
     if let Some(slider) = f.s.slider {
         draw_slider(f, slider, w, bar_h, scratch);
     }
-    bar_h
 }
 
 /// The slider over the bar's row: the track (the level lit), the thumb under the finger, and the level
