@@ -20,11 +20,11 @@ keymap-edit-rstick.png 5b6a1a5b92cce557
 keymap-edit-slider.png d52dcb946094df9e
 keymap-edit-stick.png 277d5cea040d7e70
 keymap-edit.png 906ffc4158c1e829
-keymap-holds.png 8c49d172e8c7b852
+keymap-holds.png 3d12fdd9f291172c
 keymap-menu.png 26be46ff7cd997ca
 keymap-mouse.png f905fefddc9a41da
 keymap-name.png b90a5f7f7ed3da5d
-keymap-pick.png 2814796ae6105e9c
+keymap-pick.png c92a627615f8490e
 keymaps.png c57f9e28007bf402
 launcher-running.png 382b49e3cbca6c0e
 launcher.png 2470ba428dff9659

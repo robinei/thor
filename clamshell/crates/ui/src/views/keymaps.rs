@@ -229,6 +229,8 @@ const PANEL_TEXT: f32 = 0.8;
 const PART_LINE: Rgb = Rgb(0x4a4a54);
 /// The buttons drawn that can't be remapped (Home, the AYN button and its neighbours).
 const FIXED: Rgb = Rgb(0x2a2a30);
+/// While a control is picked, those that can't be: barely there.
+const MUTED: Rgb = Rgb(0x1c1c21);
 const LEADER_ALPHA: f32 = 0.45;
 /// Line widths in logical pixels: the controls', the lines in, a selected control's.
 const PART_W: f32 = 1.5;
@@ -446,7 +448,7 @@ fn edit(f: &mut Frame, body: Rect, id: u16, picking: Option<Picking>) {
     for side in Side::ALL {
         if let Some(well) = pad.well(side) {
             let muted = picking.is_some_and(|p| !p.takes(Input::Stick(side)));
-            f.c.outline(well, well.w, PART_W, if muted { FIXED } else { PART_LINE });
+            f.c.outline(well, well.w, PART_W, if muted { MUTED } else { PART_LINE });
         }
     }
     let click = |i: &Input| matches!(i, Input::Button(Button::LS | Button::RS));
@@ -481,10 +483,11 @@ fn edit(f: &mut Frame, body: Rect, id: u16, picking: Option<Picking>) {
     }
 
     // Home (ClamShell's, drawn dim) and Back (the layer key), at the screen's bottom corners.
+    let fixed = if picking.is_some() { MUTED } else { FIXED };
     if let Some(r) = pad.foot(Side::Left) {
-        f.c.outline(r, r.w, PART_W, FIXED);
+        f.c.outline(r, r.w, PART_W, fixed);
         let w = f.c.text_width(size, "Home");
-        f.c.text_in(Rect::new(r.x - r.w * 0.6 - w, r.y, w, r.h), size, FIXED, "Home", Align::Start);
+        f.c.text_in(Rect::new(r.x - r.w * 0.6 - w, r.y, w, r.h), size, fixed, "Home", Align::Start);
     }
     if let Some(r) = pad.foot(Side::Right) {
         let held = layer == Layer::Back;
@@ -499,17 +502,23 @@ fn edit(f: &mut Frame, body: Rect, id: u16, picking: Option<Picking>) {
             if held {
                 f.c.circle(r.center().0, r.center().1, r.w / 2.0, PRESSED);
             }
-            let line = if faded { FIXED } else if held { Tone::High.rgb() } else { PART_LINE };
+            let line = if faded { MUTED } else if held { Tone::High.rgb() } else { PART_LINE };
             f.c.outline(r, r.w, PART_W, line);
-            let tone = if faded { Tone::Dim } else { Tone::high_if(held) };
+            let tone = if faded { MUTED } else { Tone::high_if(held).rgb() };
             f.c.text_in(Rect::new(r.right() + r.w * 0.6, r.y, w, r.h), size, tone, name, Align::Start);
         });
     }
 
     // The middle: the gyro and the AYN button at the bottom, the panel above.
     let foot = pad.foot(Side::Left).map_or(area.bottom() - line, |r| r.center().1);
-    let gyro_muted = picking.is_some_and(|p| !p.takes(Input::Gyro));
-    let gyro_top = middle(f, strip, foot, keymap, layer, view.selected == Some(Input::Gyro), gyro_muted, size);
+    let mark = if view.selected == Some(Input::Gyro) {
+        Mark::Selected
+    } else if picking.is_some_and(|p| !p.takes(Input::Gyro)) {
+        Mark::Muted
+    } else {
+        Mark::Plain
+    };
+    let gyro_top = middle(f, strip, foot, keymap, layer, mark, size);
     let margin = (strip.w * 0.04).min(size);
     let panel_r = Rect::new(strip.x + margin, area.y, (strip.w - 2.0 * margin).max(1.0), (gyro_top - area.y - size).max(1.0));
     match picking {
@@ -788,18 +797,27 @@ fn foot_actions(f: &mut Frame, body: Rect, row: Rect, keymap: Option<&Keymap>, v
 /// The middle, at the bottom: the AYN button and the small round buttons beside it (drawn, not
 /// remappable), level with Home and Back at `y`; above them the gyro's button ("Gyro · Mouse", "Gyro ·
 /// off"). Returns the top of the gyro's button.
-fn middle(f: &mut Frame, strip: Rect, y: f32, keymap: Option<&Keymap>, layer: Layer, selected: bool, muted: bool, size: f32) -> f32 {
+/// How a control is drawn besides its tone: as it is, selected, or faded (it can't be picked).
+#[derive(Clone, Copy, PartialEq)]
+enum Mark {
+    Plain,
+    Selected,
+    Muted,
+}
+
+fn middle(f: &mut Frame, strip: Rect, y: f32, keymap: Option<&Keymap>, layer: Layer, mark: Mark, size: f32) -> f32 {
     let line = size * LINE;
     // The AYN button's row.
     let pill_w = (strip.w * 0.36).min(size * 2.4);
     let pill_h = pill_w * 0.38;
     let cx = strip.center().0;
     let ayn = Rect::new(cx - pill_w / 2.0, y - pill_h / 2.0, pill_w, pill_h);
-    f.c.outline(ayn, pill_h / 2.0, PART_W, FIXED);
+    let fixed = if mark == Mark::Muted { MUTED } else { FIXED };
+    f.c.outline(ayn, pill_h / 2.0, PART_W, fixed);
     for k in [-1.0, 1.0] {
         let r = pill_h * 0.4;
         let x = cx + k * (pill_w / 2.0 + r * 2.4);
-        f.c.outline(Rect::new(x - r, y - r, 2.0 * r, 2.0 * r), r, PART_W, FIXED);
+        f.c.outline(Rect::new(x - r, y - r, 2.0 * r, 2.0 * r), r, PART_W, fixed);
     }
     // The gyro's button, above it.
     let own = binding(keymap, layer, Input::Gyro);
@@ -817,13 +835,17 @@ fn middle(f: &mut Frame, strip: Rect, y: f32, keymap: Option<&Keymap>, layer: La
     // (A finger's room around it.)
     let target = Rect::new(r.x - h * 0.3, r.y - h * 0.3, r.w + h * 0.6, h * 1.6).intersect(strip);
     f.button_in(Id::Keymap(KeymapId::Input(Input::Gyro)), target, r, look, |f| {
-        let (lw, lc) = match (selected, muted) {
-            (true, _) => (SELECTED_W, Tone::High.rgb()),
-            (false, true) => (PART_W, FIXED),
-            (false, false) => (PART_W, PART_LINE),
+        let (lw, lc) = match mark {
+            Mark::Selected => (SELECTED_W, Tone::High.rgb()),
+            Mark::Muted => (PART_W, MUTED),
+            Mark::Plain => (PART_W, PART_LINE),
         };
         f.c.outline(r, h / 2.0, lw, lc);
-        centred(f, r, size, if muted { Tone::Dim } else { tone }, &text);
+        if mark == Mark::Muted {
+            f.c.text_in(r, size, MUTED, &text, Align::Center);
+        } else {
+            centred(f, r, size, tone, &text);
+        }
     });
     target.y
 }
@@ -836,10 +858,10 @@ fn control(f: &mut Frame, input: Input, p: Part, tone: Tone, selected: bool, mut
     let id = Id::Keymap(KeymapId::Input(input));
     let (lw, lc) = match (selected, muted) {
         (true, _) => (SELECTED_W, Tone::High.rgb()),
-        (false, true) => (PART_W, FIXED),
+        (false, true) => (PART_W, MUTED),
         (false, false) => (PART_W, PART_LINE),
     };
-    let tone = if muted { Tone::Dim } else { tone };
+    let tone = if muted { MUTED } else { tone.rgb() };
     // A stick takes its group's corners as well (drawn first, so the cap's outline stays on top).
     for corner in p.corners.into_iter().flatten() {
         f.button_in(id.clone(), corner, shown, look, |_| {});
