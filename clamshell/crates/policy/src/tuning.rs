@@ -8,11 +8,15 @@
 //! taking cores offline can take a while, and drawing mustn't wait for it.
 
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use clamshell_core::PowerProfile;
 use clamshell_core::settings::{Setting, Values};
+
+use crate::pad::{self, Shaping};
+use crate::sys;
+use crate::worker::{self, Quiet, Worker};
 
 /// A profile's share of each frequency range.
 fn fraction(power: PowerProfile) -> f64 {
@@ -35,21 +39,15 @@ pub fn pick(available: &[u64], min: u64, max: u64, fraction: f64) -> u64 {
     }
 }
 
-fn read_u64(path: &Path) -> Option<u64> {
-    fs::read_to_string(path).ok()?.trim().parse().ok()
-}
-
 fn read_list(path: &Path) -> Vec<u64> {
-    fs::read_to_string(path).map(|s| s.split_whitespace().filter_map(|f| f.parse().ok()).collect()).unwrap_or_default()
+    sys::text(path).map(|s| s.split_whitespace().filter_map(|f| f.parse().ok()).collect()).unwrap_or_default()
 }
 
-static WARNED: AtomicBool = AtomicBool::new(false);
-
-fn write(path: &Path, value: u64) {
-    if let Err(e) = fs::write(path, value.to_string())
-        && !WARNED.swap(true, Ordering::Relaxed)
-    {
-        log::warn!("power profiles need write access to cpufreq and devfreq ({}: {e})", path.display());
+/// Writes a sysfs value. Failing is worth one warning (a missing udev rule fails every write, at every
+/// change of the settings).
+fn write(path: &Path, value: u64, quiet: &mut Quiet) {
+    if let Err(e) = fs::write(path, value.to_string()) {
+        quiet.failed("power profiles need write access to cpufreq and devfreq", &format_args!("{}: {e}", path.display()));
     }
 }
 
@@ -61,17 +59,14 @@ fn share(power: PowerProfile, percent: u16) -> f64 {
 /// The cpufreq policies: (dir, min and max frequency, its CPUs).
 fn policies() -> Vec<(PathBuf, u64, u64, Vec<u32>)> {
     let mut out = Vec::new();
-    for policy in fs::read_dir("/sys/devices/system/cpu/cpufreq").into_iter().flatten().flatten() {
-        let dir = policy.path();
+    for dir in sys::entries("/sys/devices/system/cpu/cpufreq") {
         if !dir.file_name().is_some_and(|n| n.to_string_lossy().starts_with("policy")) {
             continue;
         }
-        let (Some(min), Some(max)) = (read_u64(&dir.join("cpuinfo_min_freq")), read_u64(&dir.join("cpuinfo_max_freq"))) else {
+        let (Some(min), Some(max)) = (sys::read(dir.join("cpuinfo_min_freq")), sys::read(dir.join("cpuinfo_max_freq"))) else {
             continue;
         };
-        let cpus = fs::read_to_string(dir.join("related_cpus"))
-            .map(|s| s.split_whitespace().filter_map(|c| c.parse().ok()).collect())
-            .unwrap_or_default();
+        let cpus = sys::text(dir.join("related_cpus")).map(|s| s.split_whitespace().filter_map(|c| c.parse().ok()).collect()).unwrap_or_default();
         out.push((dir, min, max, cpus));
     }
     out
@@ -87,20 +82,37 @@ pub fn big_cpus(clusters: &[(u64, Vec<u32>)]) -> Vec<u32> {
 }
 
 /// The hardware thread: applies the settings it is sent, only the latest when several wait.
-pub fn spawn() -> std::io::Result<std::sync::mpsc::Sender<Values>> {
-    let (tx, rx) = std::sync::mpsc::channel::<Values>();
-    std::thread::Builder::new().name("tuning".into()).spawn(move || {
-        while let Ok(first) = rx.recv() {
-            let latest = rx.try_iter().last().unwrap_or(first);
-            apply_hardware(&latest);
-        }
-    })?;
-    Ok(tx)
+pub fn spawn() -> io::Result<Worker<Values>> {
+    let mut quiet = Quiet::default();
+    worker::spawn_coalescing("tuning", |_| (), move |values| apply_hardware(&values, &mut quiet))
+}
+
+/// Where the settings in force go: the hardware thread, the virtual pad's shaping, and a game's MangoHud
+/// config (in `mangohud`).
+#[derive(Clone)]
+pub struct Tuning {
+    pub hardware: Worker<Values>,
+    pub pad: Worker<pad::Command>,
+    pub mangohud: PathBuf,
+}
+
+impl Tuning {
+    /// Applies the settings in force (`game`'s, or the global ones without a game): the hardware, the
+    /// pad's shaping, and for a game its MangoHud config (written, and reloaded live if it runs), whose
+    /// path is returned for its launch.
+    pub fn apply(&self, v: &Values, game: Option<&str>) -> Option<PathBuf> {
+        self.hardware.send(*v);
+        self.pad.send(pad::Command::Shape(Shaping::from_settings(v)));
+        let game = game?;
+        mangohud_config(&self.mangohud, game, v.get(Setting::FpsCap), v.get(Setting::Hud))
+            .map_err(|e| log::warn!("MangoHud config: {e}"))
+            .ok()
+    }
 }
 
 /// Applies the settings in force to the hardware: frequency caps for the profile (or the CPU and GPU
 /// caps where set), the big cores, the charge limit.
-pub fn apply_hardware(v: &Values) {
+fn apply_hardware(v: &Values, quiet: &mut Quiet) {
     let power = PowerProfile::from_value(v.get(Setting::Power));
     let policies = policies();
     // Cores first, so the caps reach the policies that stay online.
@@ -110,34 +122,33 @@ pub fn apply_hardware(v: &Values) {
         for &cpu in cpus.iter().filter(|&&c| c != 0) {
             let online = Path::new("/sys/devices/system/cpu").join(format!("cpu{cpu}/online"));
             let want = u64::from(!off.contains(&cpu));
-            if read_u64(&online) != Some(want) {
-                write(&online, want);
+            if sys::read(&online) != Some(want) {
+                write(&online, want, quiet);
             }
         }
     }
     let f = share(power, v.get(Setting::CpuMax));
     for (dir, min, max, _) in &policies {
         let freq = pick(&read_list(&dir.join("scaling_available_frequencies")), *min, *max, f);
-        write(&dir.join("scaling_max_freq"), freq);
+        write(&dir.join("scaling_max_freq"), freq, quiet);
     }
     let f = share(power, v.get(Setting::GpuMax));
-    for dev in fs::read_dir("/sys/class/devfreq").into_iter().flatten().flatten() {
-        if !dev.file_name().to_string_lossy().contains("gpu") {
+    for dir in sys::entries("/sys/class/devfreq") {
+        if !dir.file_name().is_some_and(|n| n.to_string_lossy().contains("gpu")) {
             continue;
         }
-        let dir = dev.path();
         let steps = read_list(&dir.join("available_frequencies"));
         let (Some(&min), Some(&max)) = (steps.iter().min(), steps.iter().max()) else {
             continue;
         };
-        write(&dir.join("max_freq"), pick(&steps, min, max, f));
+        write(&dir.join("max_freq"), pick(&steps, min, max, f), quiet);
     }
     // Battery care: only where the battery has the setting, and only if it differs.
-    for supply in fs::read_dir("/sys/class/power_supply").into_iter().flatten().flatten() {
-        let file = supply.path().join("charge_control_end_threshold");
+    for supply in sys::power_supplies() {
+        let file = supply.join("charge_control_end_threshold");
         let limit = u64::from(v.get(Setting::ChargeLimit));
-        if file.exists() && read_u64(&file) != Some(limit) {
-            write(&file, limit);
+        if file.exists() && sys::read(&file) != Some(limit) {
+            write(&file, limit, quiet);
         }
     }
     log::info!("settings applied: power {}", power.label());
@@ -146,7 +157,7 @@ pub fn apply_hardware(v: &Values) {
 /// The MangoHud config file for a game (in `dir`), written with its frame rate cap (0: none) and HUD
 /// (0: invisible, 1: the frame rate only, 2: the full overlay), logging for the FPS tile. Rewritten in
 /// place, which MangoHud picks up live.
-pub fn mangohud_config(dir: &Path, game: &str, fps_cap: u16, hud: u16) -> std::io::Result<PathBuf> {
+pub fn mangohud_config(dir: &Path, game: &str, fps_cap: u16, hud: u16) -> io::Result<PathBuf> {
     fs::create_dir_all(dir)?;
     let hash = game.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3));
     let path = dir.join(format!("game-{hash:016x}.conf"));

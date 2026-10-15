@@ -1,0 +1,70 @@
+//! Everything ClamShell reads from its environment, read once at start and passed to what needs it.
+
+use std::path::PathBuf;
+
+use clamshell_core::Tab;
+use clamshell_policy::input::device::DeviceSpec;
+use clamshell_policy::paths::Base;
+
+pub struct Env {
+    /// CLAMSHELL_BOTTOM_OUTPUT: the second screen's output, which gets the bottom view as a layer-shell
+    /// surface (default DSI-1, the Thor's).
+    pub bottom_output: String,
+    /// CLAMSHELL_BOTTOM_PANEL=1: on a desktop, the bottom view as a panel in a corner instead of a
+    /// window, so tapping its keyboard leaves the keyboard focus on the app being typed into.
+    pub bottom_panel: bool,
+    /// CLAMSHELL_GAMEPAD: the controller, its /dev/input path or part of its name (default: the first
+    /// gamepad).
+    pub gamepad: DeviceSpec,
+    /// CLAMSHELL_TOUCHSCREEN: the second screen's touchscreen, likewise (default: the first direct-touch
+    /// multitouch device).
+    pub touchscreen: DeviceSpec,
+    /// CLAMSHELL_PEGASUS_CONFIG: another Pegasus config dir (tests).
+    pub pegasus_config: Option<PathBuf>,
+    /// CLAMSHELL_STEAM=off: without Steam's games (tests).
+    pub steam: bool,
+    /// CLAMSHELL_START_MODE: start in this tab (touchpad, keyboard, dock, ...; development). What it
+    /// watches starts with the others' at the start.
+    pub start_tab: Option<Tab>,
+    /// CLAMSHELL_PAD_MOUSE=1: start with the pad mouse on (where the pad goes is sent at the start).
+    pub pad_mouse: bool,
+    /// CLAMSHELL_CONTROL: a pipe tests drive the program through, instead of input devices (see
+    /// [`crate::control`]).
+    pub control: Option<PathBuf>,
+    /// CLAMSHELL_BACKLIGHTS: another folder laid out as /sys/class/backlight (tests, desktops without
+    /// one).
+    pub backlights: PathBuf,
+    /// CLAMSHELL_SNAPSHOT_LIBRARY=real: snapshots of the real library instead of the demo games.
+    pub snapshot_real_library: bool,
+    /// CLAMSHELL_SNAPSHOT_NOW set: snapshots at the time they are taken, instead of a fixed time (with
+    /// which they compare byte for byte across runs).
+    pub snapshot_now: bool,
+    /// SWAYSOCK: sway's socket, under sway.
+    pub sway: Option<PathBuf>,
+    /// HOME and the XDG base directories, where ClamShell's files go (see [`clamshell_policy::paths`]).
+    pub base: Base,
+}
+
+impl Env {
+    pub fn from_env() -> Env {
+        let var = |name: &str| std::env::var(name).ok();
+        let flag = |name: &str, on: &str| var(name).as_deref() == Some(on);
+        let path = |name: &str| std::env::var_os(name).map(PathBuf::from);
+        Env {
+            bottom_output: var("CLAMSHELL_BOTTOM_OUTPUT").unwrap_or_else(|| "DSI-1".into()),
+            bottom_panel: flag("CLAMSHELL_BOTTOM_PANEL", "1"),
+            gamepad: DeviceSpec::parse(var("CLAMSHELL_GAMEPAD").as_deref()),
+            touchscreen: DeviceSpec::parse(var("CLAMSHELL_TOUCHSCREEN").as_deref()),
+            pegasus_config: path("CLAMSHELL_PEGASUS_CONFIG"),
+            steam: !flag("CLAMSHELL_STEAM", "off"),
+            start_tab: var("CLAMSHELL_START_MODE").and_then(|t| Tab::from_name(&t)),
+            pad_mouse: flag("CLAMSHELL_PAD_MOUSE", "1"),
+            control: path("CLAMSHELL_CONTROL"),
+            backlights: path("CLAMSHELL_BACKLIGHTS").unwrap_or_else(|| PathBuf::from("/sys/class/backlight")),
+            snapshot_real_library: flag("CLAMSHELL_SNAPSHOT_LIBRARY", "real"),
+            snapshot_now: std::env::var_os("CLAMSHELL_SNAPSHOT_NOW").is_some(),
+            sway: path("SWAYSOCK"),
+            base: Base::from_env(),
+        }
+    }
+}

@@ -10,14 +10,15 @@
 //! setup doesn't run games inside gamescope, so this reads MangoHud's own log instead.
 
 use std::fs;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::thread::{self, JoinHandle};
+use std::thread;
 use std::time::{Duration, SystemTime};
 
 use clamshell_core::{Event, Reading};
 
-use crate::Sink;
+use crate::worker::{self, Changed};
+use crate::{Closed, Sink};
 
 /// How often we look (MangoHud logs every 500 ms, tuning::mangohud_config).
 const LOG_INTERVAL_MS: u64 = 500;
@@ -25,11 +26,6 @@ const LOG_INTERVAL_MS: u64 = 500;
 const STALE: Duration = Duration::from_secs(3);
 /// Ended games' logs are removed after this.
 const KEEP: Duration = Duration::from_secs(600);
-
-/// The folder for the logs: in the runtime directory, so in RAM.
-pub fn default_dir() -> PathBuf {
-    std::env::var_os("XDG_RUNTIME_DIR").map_or_else(|| PathBuf::from("/tmp"), PathBuf::from).join("clamshell/mangohud")
-}
 
 /// Reads a growing MangoHud CSV: finds the fps and frametime columns from the header row, and keeps
 /// the latest values. Pure.
@@ -62,30 +58,37 @@ impl Tail {
     }
 }
 
-pub fn spawn(dir: PathBuf, sink: impl Sink) -> std::io::Result<JoinHandle<()>> {
+/// Follows the logs in `dir` (MangoHud's folder, [`crate::paths::Paths::mangohud`]).
+pub fn spawn(dir: PathBuf, sink: impl Sink) -> io::Result<()> {
     fs::create_dir_all(&dir)?;
-    thread::Builder::new().name("frames".into()).spawn(move || {
-        let mut current: Option<(PathBuf, u64, Tail)> = None;
-        let mut sent = None;
-        loop {
-            thread::sleep(Duration::from_millis(LOG_INTERVAL_MS));
-            let newest = newest_fresh_log(&dir);
-            if newest.as_ref() != current.as_ref().map(|(p, _, _)| p) {
-                current = newest.map(|p| (p, 0, Tail::default()));
-            }
-            let reading = match current.as_mut() {
-                Some((path, offset, tail)) => read_new(path, offset).and_then(|text| tail.feed(&text)).or(sent),
-                None => None,
-            };
-            if reading != sent {
-                log::debug!("frames: {reading:?}");
-                if !sink.send(Event::Reading(Reading::Frames { fps: reading.map(|r| r.0), frame_ms: reading.map(|r| r.1) })) {
-                    return;
-                }
-                sent = reading;
-            }
-        }
+    worker::detached("frames", move || {
+        let _ = follow(&dir, &sink);
     })
+}
+
+/// Sends the latest frame rate whenever it changes, until the UI is gone.
+fn follow(dir: &Path, sink: &impl Sink) -> Result<(), Closed> {
+    // The log followed: its path, how far it has been read, and its columns.
+    let mut current: Option<(PathBuf, u64, Tail)> = None;
+    let mut last = None;
+    // No frame rate to begin with: the state has none either.
+    let mut sent = Changed::starting(None);
+    loop {
+        thread::sleep(Duration::from_millis(LOG_INTERVAL_MS));
+        let newest = newest_fresh_log(dir);
+        if newest.as_ref() != current.as_ref().map(|(p, _, _)| p) {
+            current = newest.map(|p| (p, 0, Tail::default()));
+        }
+        // Without a new row the last reading stands; without a log there is none.
+        last = match current.as_mut() {
+            Some((path, offset, tail)) => read_new(path, offset).and_then(|text| tail.feed(&text)).or(last),
+            None => None,
+        };
+        if let Some(reading) = sent.offer(last) {
+            log::debug!("frames: {reading:?}");
+            sink.send(Event::Reading(Reading::Frames { fps: reading.map(|r| r.0), frame_ms: reading.map(|r| r.1) }))?;
+        }
+    }
 }
 
 /// The most recently written CSV in `dir`, if it is still being written; removes old ones.

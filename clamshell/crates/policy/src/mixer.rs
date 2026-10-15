@@ -1,19 +1,20 @@
 //! What the volume and brightness tabs show, read every second while one is open: PipeWire's outputs
-//! and the apps playing (`pw-dump`), and the backlights' names. Setting them is the controls thread's.
+//! and the apps playing (`pw-dump`), and the backlights' names. Setting them is the sound and brightness
+//! threads'.
 
 use std::io;
-use std::sync::mpsc::{Receiver, RecvTimeoutError};
-use std::thread;
+use std::sync::mpsc::Receiver;
 use std::time::Duration;
 
-use clamshell_core::{Event, Reading};
 use clamshell_core::levels::{Audio, Output, Stream};
+use clamshell_core::{Event, Reading};
 use serde_json::Value;
 
-use crate::Sink;
-use crate::controls;
+use crate::brightness::Backlights;
+use crate::worker::{self, Changed, Next, Worker};
+use crate::{Closed, Sink};
 
-/// What to read.
+/// What to read: each while its tab is open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command {
     Audio(bool),
@@ -22,40 +23,37 @@ pub enum Command {
 
 const READ_EVERY: Duration = Duration::from_secs(1);
 
-pub fn spawn(sink: impl Sink, commands: Receiver<Command>) -> io::Result<()> {
-    thread::Builder::new().name("mixer".into()).spawn(move || {
-        let (mut audio, mut backlights) = (false, false);
-        let (mut last_audio, mut last_backlights) = (None, None);
-        loop {
-            if audio {
-                let read = read_audio();
-                if last_audio.as_ref() != Some(&read) {
-                    if !sink.send(Event::Reading(Reading::Audio(read.clone()))) {
-                        return;
-                    }
-                    last_audio = Some(read);
-                }
-            }
-            if backlights {
-                let read = controls::backlight_names();
-                if last_backlights.as_ref() != Some(&read) {
-                    if !sink.send(Event::Reading(Reading::Backlights(read.clone()))) {
-                        return;
-                    }
-                    last_backlights = Some(read);
-                }
-            }
-            let wait = if audio || backlights { READ_EVERY } else { Duration::from_secs(3600) };
-            match commands.recv_timeout(wait) {
-                // Read again when opened: what changed meanwhile goes through.
-                Ok(Command::Audio(on)) => (audio, last_audio) = (on, None),
-                Ok(Command::Backlights(on)) => (backlights, last_backlights) = (on, None),
-                Err(RecvTimeoutError::Timeout) => {}
-                Err(RecvTimeoutError::Disconnected) => return,
-            }
+pub fn spawn(backlights: Backlights, sink: impl Sink) -> io::Result<Worker<Command>> {
+    Worker::spawn("mixer", move |commands| {
+        let _ = follow(&backlights, &commands, &sink);
+    })
+}
+
+/// Reads what is watched every second and sends it when it changed, until the commands or the UI go.
+fn follow(backlights: &Backlights, commands: &Receiver<Command>, sink: &impl Sink) -> Result<(), Closed> {
+    let (mut audio, mut lights) = (false, false);
+    let (mut last_audio, mut last_lights) = (Changed::default(), Changed::default());
+    loop {
+        if audio && let Some(read) = last_audio.offer(read_audio()) {
+            sink.send(Event::Reading(Reading::Audio(read)))?;
         }
-    })?;
-    Ok(())
+        if lights && let Some(read) = last_lights.offer(backlights.names()) {
+            sink.send(Event::Reading(Reading::Backlights(read)))?;
+        }
+        match worker::next(commands, (audio || lights).then_some(READ_EVERY)) {
+            // Read again when opened: what changed meanwhile goes through.
+            Next::Command(Command::Audio(on)) => {
+                audio = on;
+                last_audio.forget();
+            }
+            Next::Command(Command::Backlights(on)) => {
+                lights = on;
+                last_lights.forget();
+            }
+            Next::Elapsed => {}
+            Next::Disconnected => return Ok(()),
+        }
+    }
 }
 
 fn read_audio() -> Audio {
@@ -63,7 +61,7 @@ fn read_audio() -> Audio {
 }
 
 /// `wpctl get-volume` output, "Volume: 0.60" or "Volume: 0.60 [MUTED]": the volume 0-100 and mute.
-pub(crate) fn parse_get_volume(text: &str) -> Option<(u8, bool)> {
+pub fn parse_get_volume(text: &str) -> Option<(u8, bool)> {
     let rest = text.trim().strip_prefix("Volume:")?;
     let volume: f32 = rest.split_whitespace().next()?.parse().ok()?;
     Some(((volume * 100.0).round().clamp(0.0, 100.0) as u8, rest.contains("[MUTED]")))
@@ -77,7 +75,8 @@ fn at<'v>(v: &'v Value, pointer: &str) -> &'v Value {
     v.pointer(pointer).unwrap_or(&NULL)
 }
 
-/// A volume as wpctl shows it (as `parse_get_volume` reads it): the cube root of PipeWire's linear channel volumes (their average).
+/// A volume as wpctl shows it (as `parse_get_volume` reads it): the cube root of PipeWire's linear
+/// channel volumes (their average).
 fn percent(volumes: &[Value]) -> u8 {
     let values: Vec<f64> = volumes.iter().filter_map(Value::as_f64).collect();
     if values.is_empty() {
@@ -154,20 +153,23 @@ mod tests {
         assert_eq!(audio.streams, vec![Stream { id: 90, app: "Firefox".into(), title: "A video".into(), volume: 60, muted: true }]);
     }
 
-    /// With PipeWire running (a desktop): its view reads (nothing is changed).
     #[test]
-    fn reads_pipewire() {
-        let audio = read_audio();
-        assert!(audio.outputs.iter().filter(|o| o.default).count() <= 1);
+    fn wpctl_volume_and_mute() {
+        assert_eq!(parse_get_volume("Volume: 0.60\n"), Some((60, false)));
+        assert_eq!(parse_get_volume("Volume: 0.35 [MUTED]\n"), Some((35, true)));
+        assert_eq!(parse_get_volume("garbage"), None);
     }
 }
 
 #[cfg(test)]
 mod live {
-    /// Prints what the volume tab would show (run by hand: `--ignored --nocapture`).
+    /// With PipeWire running (a desktop): prints what the volume tab would show; nothing is changed (run
+    /// by hand: `--ignored --nocapture`).
     #[test]
     #[ignore]
-    fn print_audio() {
-        println!("{:#?}", super::read_audio());
+    fn reads_pipewire() {
+        let audio = super::read_audio();
+        println!("{audio:#?}");
+        assert!(audio.outputs.iter().filter(|o| o.default).count() <= 1);
     }
 }

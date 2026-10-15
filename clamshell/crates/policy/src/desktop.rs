@@ -1,9 +1,69 @@
-//! Desktop files: a launcher app named by its desktop id gets its name, command and icon from `<data dir>/applications/<id>.desktop` (the XDG data dirs), its icon from the icon themes.
+//! The dock's apps: their file (launcher.json, see [`clamshell_core::apps`]), and desktop files: an app
+//! named by its desktop id gets its name, command and icon from `<data dir>/applications/<id>.desktop`
+//! (the XDG data dirs), its icon from the icon themes.
 
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use clamshell_core::apps::App;
+use clamshell_core::Apps;
+use clamshell_core::apps::{self, App};
+
+/// What is wrong with an app of launcher.json.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Error {
+    /// The desktop file it names isn't in any data dir.
+    NoDesktopFile(String),
+    /// Its desktop file has no command, and launcher.json gives none.
+    NoExec(String),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::NoDesktopFile(id) => write!(f, "no desktop file {id}.desktop"),
+            Error::NoExec(id) => write!(f, "{id}.desktop: no Exec"),
+        }
+    }
+}
+
+/// The dock's apps from their file (desktop files read for those that name one), or the defaults
+/// without one; with what is wrong, if anything (apps whose desktop file is missing are left out).
+pub fn load_apps(file: Option<&Path>) -> Apps {
+    let Some(text) = file.and_then(|f| fs::read_to_string(f).ok()) else {
+        return Apps::default();
+    };
+    from_text(&text)
+}
+
+/// The dock's apps from launcher.json's text.
+pub fn from_text(text: &str) -> Apps {
+    match apps::parse(text) {
+        Ok(list) => resolve_apps(list, &data_dirs()),
+        Err(e) => {
+            log::warn!("launcher.json: {e}");
+            Apps { list: apps::defaults(), error: Some(format!("launcher.json: {e}")) }
+        }
+    }
+}
+
+/// Fills in each app from its desktop file; apps whose desktop file is missing or useless are left
+/// out, the first such problem kept to show.
+fn resolve_apps(list: Vec<App>, dirs: &[PathBuf]) -> Apps {
+    let mut error = None;
+    let list = list
+        .into_iter()
+        .filter_map(|mut app| match resolve(&mut app, dirs) {
+            Ok(()) => Some(app),
+            Err(e) => {
+                log::warn!("launcher.json: {e}");
+                error.get_or_insert(format!("launcher.json: {e}"));
+                None
+            }
+        })
+        .collect();
+    Apps { list, error }
+}
 
 /// The XDG data dirs, the user's first.
 pub fn data_dirs() -> Vec<PathBuf> {
@@ -85,7 +145,7 @@ pub fn exec_args(exec: &str) -> Vec<String> {
 }
 
 /// Fills in from its desktop file what the app's JSON didn't give: name, command, icon image.
-pub fn resolve(app: &mut App, dirs: &[PathBuf]) -> Result<(), String> {
+pub fn resolve(app: &mut App, dirs: &[PathBuf]) -> Result<(), Error> {
     let Some(id) = app.desktop.clone() else {
         return Ok(());
     };
@@ -93,7 +153,7 @@ pub fn resolve(app: &mut App, dirs: &[PathBuf]) -> Result<(), String> {
     let text = dirs
         .iter()
         .find_map(|d| fs::read_to_string(d.join("applications").join(format!("{id}.desktop"))).ok())
-        .ok_or_else(|| format!("no desktop file {id}.desktop"))?;
+        .ok_or_else(|| Error::NoDesktopFile(id.clone()))?;
     let entry = parse(&text);
     if app.name.is_empty() {
         app.name = if entry.name.is_empty() { id.clone() } else { entry.name };
@@ -101,7 +161,7 @@ pub fn resolve(app: &mut App, dirs: &[PathBuf]) -> Result<(), String> {
     if app.command.is_empty() {
         app.command = exec_args(&entry.exec);
         if app.command.is_empty() {
-            return Err(format!("{id}.desktop: no Exec"));
+            return Err(Error::NoExec(id));
         }
     }
     if app.icon.is_empty() && !entry.icon.is_empty() {
@@ -174,7 +234,18 @@ mod tests {
         resolve(&mut named, std::slice::from_ref(&dir)).unwrap();
         assert_eq!((named.name.as_str(), named.icon_file.is_none()), ("Mine", true));
         let mut missing = App { desktop: Some("nope".into()), ..App::default() };
-        assert!(resolve(&mut missing, std::slice::from_ref(&dir)).is_err());
+        assert_eq!(resolve(&mut missing, std::slice::from_ref(&dir)), Err(Error::NoDesktopFile("nope".into())));
+        // The missing one is left out, and said.
+        let apps = resolve_apps(vec![App { desktop: Some("nope".into()), ..App::default() }, named], std::slice::from_ref(&dir));
+        assert_eq!((apps.list.len(), apps.error.as_deref()), (1, Some("launcher.json: no desktop file nope.desktop")));
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_broken_file_gives_the_defaults_and_says_why() {
+        let apps = from_text("{ \"apps\": 3 }");
+        assert_eq!(apps.list, apps::defaults());
+        assert!(apps.error.is_some_and(|e| e.starts_with("launcher.json: ")));
+        assert_eq!(load_apps(None), Apps::default());
     }
 }

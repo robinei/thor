@@ -13,10 +13,10 @@ touchpad, the on-screen keyboard), and the games' power settings. Rust, a Cargo 
 | Crate | What |
 |---|---|
 | `crates/core` | the state and its rules: events in, dirty screens and effects out; no I/O, unit-tested |
-| `crates/policy` | threads that watch the system and send events, and carry out effects (sway, systemd, NetworkManager, evdev/uinput, sysfs) |
-| `crates/library` | the game library (today: demo games) |
+| `crates/policy` | threads that watch the system and send events, and carry out effects (sway, systemd, NetworkManager, BlueZ, evdev/uinput, sysfs); the game library from disk (Pegasus' game dirs, Steam, play time, favourites) |
+| `crates/library` | the game library's model (games, collections, their order, the demo games) and the parts of Pegasus' and Steam's formats that need no disk; no dependencies |
 | `crates/ui` | Wayland (smithay-client-toolkit), CPU drawing (tiny-skia, fontdue), the views, pad navigation; the font built in (Noto Sans Regular, SIL Open Font License 1.1: `crates/ui/fonts/OFL.txt`), with fontconfig for characters it lacks |
-| `src/main.rs` | wires them together |
+| `src/` | the program around them: the command line, the environment, starting the threads, the test pipe, the snapshots |
 
 No panics by construction: `unwrap`, `expect`, `panic!` and slice indexing are denied outside tests.
 
@@ -26,6 +26,10 @@ headless sway with the program inside, a test library and test apps, drives it t
 `tap network 1`, `type text`, `tap save`, `slide volume 280 330 [hold]`, `home`), checks sway's tree and
 systemd's units, and cleans up after itself; about a minute, nothing shows on the desktop.
 `CLAMSHELL_STEAM=off` leaves Steam's games out.
+
+**Snapshots in the tests**: `cargo test` also draws the `--snapshot` files and compares their hashes
+with `clamshell/tests/snapshots.txt`. After a change meant to change what is drawn (look at the files
+first), write the new hashes with `CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots`.
 
 **A virtual Thor** (`tools/vm.py`, Python, standard library only): a QEMU/KVM machine with the device's
 session: two screens at the Thor's sizes (sway on real DRM outputs, the second forced on through the
@@ -124,7 +128,8 @@ them. PipeWire moves the sound to headphones on its own.
 **Battery** (tap the battery icon; lit while open): the level, charging or discharging with the drain and
 the time left, and the charge limit as a button (full, 90, 80 %, the same setting as its tile); the
 charge over the last day from UPower (charging in green); then what is using the machine now, the busiest
-first, as many as fit: CPU time per process and GPU time per DRM client (`fdinfo`), grouped by our scopes
+first, as many as fit: CPU time per process and GPU time per DRM client (`fdinfo`, the render engine's, as the sysinfo tab
+counts it), grouped by our scopes
 (an app instance, the game), else by program for the user's processes, else as System. The battery only
 reports its total drain, so these are shares of the work, not watts.
 

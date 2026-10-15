@@ -6,9 +6,11 @@
 
 use std::io;
 
-use evdev::uinput::VirtualDevice;
-use evdev::{AttributeSet, EventType, InputEvent, KeyCode};
 use clamshell_core::keyboard::{Key, Named, Stroke};
+use evdev::uinput::VirtualDevice;
+use evdev::{InputEvent, KeyCode};
+
+use crate::input::{Press, Raw, keyset};
 
 pub const NAME: &str = "clamshell keyboard";
 
@@ -108,8 +110,8 @@ fn key_of(stroke: &Stroke) -> Option<KeyCode> {
     }
 }
 
-/// The events for one stroke: modifiers down, the key down, (report), the key up, modifiers up, (report).
-pub fn events(stroke: &Stroke) -> Vec<(KeyCode, i32)> {
+/// The keys of one stroke in order: modifiers down, the key down, the key up, modifiers up.
+pub fn events(stroke: &Stroke) -> Vec<(KeyCode, Press)> {
     let Some(key) = key_of(stroke) else {
         return Vec::new();
     };
@@ -122,10 +124,10 @@ pub fn events(stroke: &Stroke) -> Vec<(KeyCode, i32)> {
     .into_iter()
     .filter_map(|(on, code)| on.then_some(code))
     .collect();
-    let mut out: Vec<(KeyCode, i32)> = mods.iter().map(|&m| (m, 1)).collect();
-    out.push((key, 1));
-    out.push((key, 0));
-    out.extend(mods.iter().rev().map(|&m| (m, 0)));
+    let mut out: Vec<(KeyCode, Press)> = mods.iter().map(|&m| (m, Press::Down)).collect();
+    out.push((key, Press::Down));
+    out.push((key, Press::Up));
+    out.extend(mods.iter().rev().map(|&m| (m, Press::Up)));
     out
 }
 
@@ -136,14 +138,7 @@ pub struct VirtualKeyboard {
 impl VirtualKeyboard {
     /// Creates the device; it has every key the on-screen keyboard can press.
     pub fn new() -> io::Result<Self> {
-        let mut keys: AttributeSet<KeyCode> = [
-            KeyCode::KEY_LEFTCTRL,
-            KeyCode::KEY_LEFTALT,
-            KeyCode::KEY_LEFTMETA,
-            KeyCode::KEY_LEFTSHIFT,
-        ]
-        .into_iter()
-        .collect();
+        let mut keys = keyset(&[KeyCode::KEY_LEFTCTRL, KeyCode::KEY_LEFTALT, KeyCode::KEY_LEFTMETA, KeyCode::KEY_LEFTSHIFT]);
         for c in ' '..='~' {
             if let Some(k) = char_key(c) {
                 keys.insert(k);
@@ -177,19 +172,15 @@ impl VirtualKeyboard {
     /// Types one stroke. The key goes down and up in separate reports, as from a real keyboard.
     pub fn stroke(&mut self, stroke: &Stroke) -> io::Result<()> {
         let events = events(stroke);
-        let Some(release) = events.iter().position(|&(_, v)| v == 0) else {
+        let Some(release) = events.iter().position(|&(_, press)| press == Press::Up) else {
             return Ok(());
         };
-        let key = |&(code, value): &(KeyCode, i32)| InputEvent::new(EventType::KEY.0, code.0, value);
-        let syn = InputEvent::new(EventType::SYNCHRONIZATION.0, 0, 0);
+        let report = |keys: &[(KeyCode, Press)]| -> Vec<InputEvent> {
+            keys.iter().map(|&(code, press)| Raw::key(code, press).into()).chain([Raw::REPORT.into()]).collect()
+        };
         let (down, up) = events.split_at(release);
-        let mut batch: Vec<InputEvent> = down.iter().map(key).collect();
-        batch.push(syn);
-        self.device.emit(&batch)?;
-        batch.clear();
-        batch.extend(up.iter().map(key));
-        batch.push(syn);
-        self.device.emit(&batch)
+        self.device.emit(&report(down))?;
+        self.device.emit(&report(up))
     }
 }
 
@@ -240,20 +231,20 @@ mod tests {
         assert_eq!(
             events(&s),
             vec![
-                (KeyCode::KEY_LEFTCTRL, 1),
-                (KeyCode::KEY_LEFTSHIFT, 1),
-                (KeyCode::KEY_T, 1),
-                (KeyCode::KEY_T, 0),
-                (KeyCode::KEY_LEFTSHIFT, 0),
-                (KeyCode::KEY_LEFTCTRL, 0),
+                (KeyCode::KEY_LEFTCTRL, Press::Down),
+                (KeyCode::KEY_LEFTSHIFT, Press::Down),
+                (KeyCode::KEY_T, Press::Down),
+                (KeyCode::KEY_T, Press::Up),
+                (KeyCode::KEY_LEFTSHIFT, Press::Up),
+                (KeyCode::KEY_LEFTCTRL, Press::Up),
             ]
         );
     }
 
     #[test]
     fn named_keys_and_f_keys() {
-        assert_eq!(events(&stroke(Key::Named(Named::F(12))))[0], (KeyCode::KEY_F12, 1));
-        assert_eq!(events(&stroke(Key::Named(Named::Delete)))[0], (KeyCode::KEY_DELETE, 1));
+        assert_eq!(events(&stroke(Key::Named(Named::F(12))))[0], (KeyCode::KEY_F12, Press::Down));
+        assert_eq!(events(&stroke(Key::Named(Named::Delete)))[0], (KeyCode::KEY_DELETE, Press::Down));
         assert!(events(&stroke(Key::Named(Named::F(13)))).is_empty());
     }
 
@@ -270,7 +261,7 @@ mod tests {
         let mut keys = Vec::new();
         while keys.len() < 4 {
             for e in reader.fetch_events().expect("read") {
-                if e.event_type() == EventType::KEY {
+                if e.event_type() == evdev::EventType::KEY {
                     keys.push((e.code(), e.value()));
                 }
             }

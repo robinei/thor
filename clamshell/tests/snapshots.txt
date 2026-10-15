@@ -1,0 +1,30 @@
+# FNV-1a hashes of the `clamshell --snapshot` files (src/snapshot.rs). After a change meant to change
+# what is drawn: CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots
+battery.png ee32562dfbb3ee7d
+bluetooth.png 0546ae9e65208489
+bottom.png 6bd1ef6f5d38ddcf
+brightness.png a5217647dd8320ed
+keyboard-back.png f9cbd23f826f1aec
+keyboard-caps.png 890ccc4a5fe76ec5
+keyboard-fn.png 72c77c379dfb8bc0
+keyboard-mods.png 6d1e6f9f94aa3ee5
+keyboard-pressed.png 353e5801cc63988e
+keyboard.png 8ad3cc6b023d4fbf
+launcher-running.png 3584eebcee605ec9
+launcher.png 3554394e88e0a857
+settings-env.png 7204793a2427d073
+settings-global.png eaffe630cc517b93
+settings-running.png 5fc89fd9213bc856
+settings.png 5ff0ea504ebc29a7
+slider.png 4a54b5b4ed1bf4b4
+status-low.png 0aed5e767fb45456
+sysinfo.png f60cb171773bdcc5
+top-back.png 762fb0c6b0bd0ee2
+top-played.png 39bea4d682dae174
+top-switch.png d1ee1946d773767c
+top-tab2-down.png 31fe62b8b5bd4e18
+top-tab2.png d545a228e3bb2c2a
+top.png e31e7f2948514d25
+touchpad.png 32e820482263797b
+volume.png 5f12e1deb3d93cd0
+wifi.png 05e360549b3a1457
