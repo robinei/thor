@@ -15,13 +15,13 @@ keymap-delete.png 15a35fe869034d67
 keymap-edit-back.png 445273a25f5d957a
 keymap-edit-clear.png 0f4b522d67ff4598
 keymap-edit-new.png 0d67bb5bf58b68f2
-keymap-edit-slider.png 2ca29536b070d8c9
-keymap-edit-stick.png 0f6df0198562a2d2
-keymap-edit.png 6a8b86da28de03df
+keymap-edit-slider.png ebaac1fec93a9a53
+keymap-edit-stick.png b8f24497964acf23
+keymap-edit.png 3254a92b05eacf30
 keymap-holds.png a25ace31d2cf24e4
 keymap-map-to-gyro.png 84cc4cc5178e8bbc
 keymap-map-to-stick.png f189c2fa5626a858
-keymap-map-to.png 931912a81442582d
+keymap-map-to.png ce371e5958a42931
 keymap-menu.png 26be46ff7cd997ca
 keymap-name.png b90a5f7f7ed3da5d
 keymap-press.png 03bc9e35ad1beddb

@@ -204,13 +204,10 @@ const LABEL_MIN: f32 = 4.5;
 /// The most controls in a cluster.
 const CONTROLS: usize = 16;
 
-/// What a binding maps to, in words; the game pad's buttons and triggers as the Xbox pad's that games
-/// see.
+/// What a binding maps to, in words; the pad's buttons by the Thor's printed names, as for inputs (games
+/// get them by position: the printed B is the Xbox pad's A).
 fn mapping(b: Binding) -> Fmt<48> {
-    match b.output {
-        Output::Pad(PadOut::Button(_) | PadOut::Trigger(_)) | Output::Trigger(_) => Fmt::of(format_args!("Xbox {}", OutputLabel(b.output))),
-        out => Fmt::of(format_args!("{}", OutputLabel(out))),
-    }
+    Fmt::of(format_args!("{}", OutputLabel(b.output)))
 }
 
 /// What an input's binding in a layer says, and its tone: blue where it maps the input to something
@@ -796,7 +793,11 @@ struct OutputLabel(Output);
 
 impl std::fmt::Display for OutputLabel {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        self.0.label(f)
+        match self.0 {
+            Output::Pad(PadOut::Button(b)) => f.write_str(thor(b)),
+            Output::Pad(PadOut::Trigger(s)) | Output::Trigger(s) => f.write_str(if s == Side::Left { "L2" } else { "R2" }),
+            out => out.label(f),
+        }
     }
 }
 
@@ -935,7 +936,7 @@ fn holds(f: &mut Frame, body: Rect, id: u16, input: Input) {
 /// What a button may map to: the pad's buttons (or one pressed on the pad), a key chord, the mouse's
 /// buttons, the wheel.
 fn digital_targets(f: &mut Frame, flow: &mut Flow, out: Option<Output>) {
-    flow.section(f, "Xbox pad");
+    flow.section(f, "Pad");
     for p in PadOut::all() {
         let label = Fmt::<16>::of(format_args!("{}", OutputLabel(Output::Pad(p))));
         flow.chip(f, target(Target::Pad(p)), &label, out == Some(Output::Pad(p)));
