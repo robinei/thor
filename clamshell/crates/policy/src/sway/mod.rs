@@ -148,8 +148,13 @@ impl<S: Sink> Service for Windows<S> {
         }
         let top = self.top.read(&mut queries);
         for rule in commands::rules(top.as_deref(), &self.top.bottom) {
-            if let Some(error) = ipc::refused(&queries.command(&rule)?) {
-                log::warn!("sway: {rule}: {error}");
+            // Parts of a rule may fail as things are (shelf's window not open yet): only a rule that
+            // failed entirely is worth a warning.
+            let outcomes = queries.command(&rule)?;
+            if !outcomes.iter().any(|o| o.success) {
+                log::warn!("sway: {rule}: {}", ipc::refused(&outcomes).unwrap_or_default());
+            } else if let Some(error) = ipc::refused(&outcomes) {
+                log::debug!("sway: {rule}: {error}");
             }
         }
         Ok(Connected { events, queries })
