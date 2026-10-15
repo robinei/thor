@@ -119,14 +119,14 @@ fn half_beat(rate: u8) -> u128 {
 struct Actuator {
     input: Input,
     phase: Phase,
-    beats: [Beat; 3],
+    beats: [Beat; 4],
     /// When the phase moves on by itself (a hold's time, a double's window, a tap's end).
     due: Option<Instant>,
 }
 
 impl Actuator {
     fn new(input: Input) -> Actuator {
-        Actuator { input, phase: Phase::Up, beats: [Beat::default(); 3], due: None }
+        Actuator { input, phase: Phase::Up, beats: [Beat::default(); 4], due: None }
     }
 
     /// The input on or off at `now`, with a hold's binding (its time) and a double's or not: the phase
@@ -376,10 +376,26 @@ impl Remap {
 
     /// The digital inputs' actuations follow the controller at `now`.
     fn actuate(&mut self, snap: &PadSnapshot, now: Instant) {
-        let inputs = Input::all().filter(|i| i.kind() == Kind::Digital || (i.kind() == Kind::Trigger && self.binding(*i, snap).is_some_and(|b| b.output.digital())));
-        for input in inputs.collect::<Vec<_>>() {
-            let on = self.pressed(input, snap);
-            let back = Self::back(snap);
+        // What each input is doing now (read first; the actuators follow below).
+        let back = Self::back(snap);
+        let mut states = Vec::new();
+        for input in Input::all() {
+            let digital_trigger = self.binding(input, snap).is_some_and(|b| b.output.digital());
+            let full_pull = self.keymap.lookup_of(input, Actuation::FullPull, back).copied();
+            let watched = match input.kind() {
+                Kind::Digital => true,
+                Kind::Trigger => digital_trigger || full_pull.is_some(),
+                Kind::Stick | Kind::Gyro => false,
+            };
+            if !watched {
+                continue;
+            }
+            // A trigger's full pull: on past its own threshold, beside the pull.
+            let full = match (input, full_pull) {
+                (Input::Trigger(s), Some(b)) => self.trigger(s, snap) * 100.0 >= f32::from(b.threshold),
+                _ => false,
+            };
+            let on = (input.kind() == Kind::Digital || digital_trigger) && self.pressed(input, snap);
             let hold = self.keymap.lookup_of(input, Actuation::Hold, back).map(|b| Duration::from_millis(u64::from(b.hold_time) * 10));
             let double = self.keymap.lookup_of(input, Actuation::Double, back).is_some();
             let binding = |act| match act {
@@ -387,8 +403,11 @@ impl Remap {
                 act => self.keymap.lookup_of(input, act, back).copied(),
             };
             let toggles = Actuation::ALL.map(|a| binding(a).is_some_and(|b| b.toggle));
+            states.push((input, on, full, hold, double, toggles));
+        }
+        for (input, on, full, hold, double, toggles) in states {
             let found = self.actuators.iter().position(|a| a.input == input);
-            if found.is_none() && !on {
+            if found.is_none() && !on && !full {
                 continue;
             }
             let i = found.unwrap_or_else(|| {
@@ -400,7 +419,7 @@ impl Remap {
             };
             a.step(on, hold, double, now);
             for (act, toggle) in Actuation::ALL.into_iter().zip(toggles) {
-                let raw = a.actuated(act);
+                let raw = if act == Actuation::FullPull { full } else { a.actuated(act) };
                 if let Some(beat) = a.beats.get_mut(act as usize) {
                     beat.follow(raw, toggle, now);
                 }
@@ -673,6 +692,11 @@ impl Remap {
                             }
                         }
                         ref o => digital(&mut w, input, self.on(input, Actuation::Press, &b, now), o, &mut triggers, &mut dpad),
+                    }
+                    // Its full pull, a second stage beside the pull.
+                    if let Some(full) = self.keymap.lookup_of(input, Actuation::FullPull, Self::back(snap)) {
+                        let on = self.on(input, Actuation::FullPull, full, now);
+                        digital(&mut w, input, on, &full.output, &mut triggers, &mut dpad);
                     }
                 }
                 Input::Stick(s) => {
@@ -1427,6 +1451,22 @@ mod tests {
         r.tick(t2 + DOUBLE_WINDOW, &mut out);
         assert_eq!(held(&out.mouse), vec![KeyCode::KEY_X]);
         press_at(&mut r, KeyCode::BTN_SOUTH, false, t2 + ms(900), &mut out);
+        assert!(held(&out.mouse).is_empty());
+    }
+
+    #[test]
+    fn a_trigger_pulls_and_clicks_at_full_pull() {
+        let mut k = keymap(&[]);
+        let full = Binding { threshold: 95, ..to(Output::Mouse(MouseButton::Left)) };
+        assert!(k.set_of(clamshell_core::keymap::Layer::Main, Input::Trigger(Side::Right), Actuation::FullPull, Some(full)));
+        let (mut r, mut out) = router(k, PadRoute::Game);
+        axis(&mut r, AbsoluteAxisCode::ABS_RZ, 500, &mut out);
+        assert_eq!(last(&out.pad, AbsoluteAxisCode::ABS_RZ), Some(500), "the pull as it is");
+        assert!(held(&out.mouse).is_empty());
+        axis(&mut r, AbsoluteAxisCode::ABS_RZ, 1000, &mut out);
+        assert_eq!(last(&out.pad, AbsoluteAxisCode::ABS_RZ), Some(1000), "still the game's trigger");
+        assert_eq!(held(&out.mouse), vec![KeyCode::BTN_LEFT], "and a click past 95 %");
+        axis(&mut r, AbsoluteAxisCode::ABS_RZ, 600, &mut out);
         assert!(held(&out.mouse).is_empty());
     }
 

@@ -99,7 +99,7 @@ pub struct Tuning {
 impl Tuning {
     /// The keymap in force, for the pad.
     pub fn keymap(&self, keymap: &clamshell_core::keymap::Keymap) {
-        self.pad.send(pad::Command::Keymap(keymap.clone()));
+        self.pad.send(pad::Command::Keymap(Box::new(keymap.clone())));
     }
 
     /// The gyro calibrated from its next second.

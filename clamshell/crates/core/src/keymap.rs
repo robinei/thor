@@ -558,6 +558,8 @@ impl Output {
 pub const DEFAULT_SPEED: u8 = 50;
 /// A trigger mapped to a button acts past this (percent of its travel, 1 to 100).
 pub const DEFAULT_THRESHOLD: u8 = 50;
+/// A trigger's full pull acts past this (percent of its travel) unless set otherwise.
+pub const FULL_PULL: u8 = 95;
 /// A press held this long is a hold (hundredths of a second, 20 to 100).
 pub const DEFAULT_HOLD_TIME: u8 = 40;
 /// The gyro: turning faster than this (degrees per second) gets the whole of its acceleration.
@@ -775,9 +777,11 @@ impl Param {
 
     /// [`Param::applies`] for `input`'s binding of `act`: a hold's also has its time.
     pub fn applies_to(self, input: Input, output: Output, act: Actuation) -> bool {
-        match self {
-            Param::HoldTime => act == Actuation::Hold,
-            p => p.applies(input, output),
+        match (self, act) {
+            (Param::HoldTime, _) => act == Actuation::Hold,
+            // (A full pull has its threshold; the trigger's tuning is the pull's.)
+            (Param::Deadzone | Param::Full, Actuation::FullPull) => false,
+            (p, _) => p.applies(input, output),
         }
     }
 
@@ -893,26 +897,37 @@ pub fn params_of(input: Input, output: Output, act: Actuation) -> impl Iterator<
     Param::ALL.into_iter().filter(move |p| p.applies_to(input, output, act))
 }
 
-/// How a button (a D-pad or stick direction too) is used: pressed (as usual), held long, or pressed
-/// twice quickly. Each may have a binding of its own; with a hold's or a double's, a short press acts
-/// only once it is known not to be one of those (on letting go, or after the window for a second
-/// press).
+/// How an input is used: pressed (as usual; a trigger pulled), held long, pressed twice quickly (a button,
+/// a D-pad or stick direction), or pulled all the way (a trigger). Each may have a binding of its own;
+/// with a hold's or a double's, a short press acts only once it is known not to be one of those (on
+/// letting go, or after the window for a second press). A trigger's full pull acts past its own
+/// threshold beside the pull's binding (analog, or a button past its threshold): two stages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Actuation {
     #[default]
     Press,
     Hold,
     Double,
+    FullPull,
 }
 
 impl Actuation {
-    pub const ALL: [Actuation; 3] = [Actuation::Press, Actuation::Hold, Actuation::Double];
+    pub const ALL: [Actuation; 4] = [Actuation::Press, Actuation::Hold, Actuation::Double, Actuation::FullPull];
 
     pub fn label(self) -> &'static str {
         match self {
             Actuation::Press => "Press",
             Actuation::Hold => "Hold",
             Actuation::Double => "Double",
+            Actuation::FullPull => "Full pull",
+        }
+    }
+
+    /// Its label for an input of `kind` (a trigger's press is its pull).
+    pub fn label_for(self, kind: Kind) -> &'static str {
+        match (self, kind) {
+            (Actuation::Press, Kind::Trigger) => "Pull",
+            (a, _) => a.label(),
         }
     }
 
@@ -922,13 +937,23 @@ impl Actuation {
             Actuation::Press => "",
             Actuation::Hold => "hold",
             Actuation::Double => "double",
+            Actuation::FullPull => "full",
         }
     }
 
-    /// Whether an input of `kind` has it: every input is pressed; only buttons and directions are held
-    /// or pressed twice.
+    /// Whether an input of `kind` has it: every input is pressed; buttons and directions are held or
+    /// pressed twice; a trigger is pulled all the way.
     pub fn fits(self, kind: Kind) -> bool {
-        self == Actuation::Press || kind == Kind::Digital
+        match self {
+            Actuation::Press => true,
+            Actuation::Hold | Actuation::Double => kind == Kind::Digital,
+            Actuation::FullPull => kind == Kind::Trigger,
+        }
+    }
+
+    /// The actuations an input of `kind` has, in the order shown.
+    pub fn of(kind: Kind) -> impl Iterator<Item = Actuation> {
+        Actuation::ALL.into_iter().filter(move |a| a.fits(kind))
     }
 }
 
@@ -998,6 +1023,7 @@ struct Bindings {
     press: Vec<(Input, Binding)>,
     hold: Vec<(Input, Binding)>,
     double: Vec<(Input, Binding)>,
+    full: Vec<(Input, Binding)>,
 }
 
 impl Bindings {
@@ -1006,6 +1032,7 @@ impl Bindings {
             Actuation::Press => &self.press,
             Actuation::Hold => &self.hold,
             Actuation::Double => &self.double,
+            Actuation::FullPull => &self.full,
         }
     }
 
@@ -1014,6 +1041,7 @@ impl Bindings {
             Actuation::Press => &mut self.press,
             Actuation::Hold => &mut self.hold,
             Actuation::Double => &mut self.double,
+            Actuation::FullPull => &mut self.full,
         }
     }
 
@@ -1115,6 +1143,10 @@ impl Keymap {
     /// it changed.
     pub fn set_of(&mut self, layer: Layer, input: Input, act: Actuation, binding: Option<Binding>) -> bool {
         if binding.is_some_and(|b| !b.output.fits(input.kind())) || (binding.is_some() && !act.fits(input.kind())) {
+            return false;
+        }
+        // (A full pull acts as a button: something on or off, or nothing.)
+        if act == Actuation::FullPull && binding.is_some_and(|b| !b.output.digital() && b.output != Output::Nothing) {
             return false;
         }
         let list = self.bindings_in_mut(layer).of_mut(act);

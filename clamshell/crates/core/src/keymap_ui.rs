@@ -530,11 +530,18 @@ impl State {
     /// `input` maps to `output` (its parameters and hold kept): back to the edit screen, whose panel
     /// has its parameters.
     fn choose(&mut self, id: u16, input: Input, output: Output) -> Vec<Effect> {
+        let full_pull = self.bottom.keymap_edit.act == Actuation::FullPull;
+        // (A full pull to a trigger picked: that trigger pulled all the way, as a button.)
+        let output = match output {
+            Output::Trigger(s) if full_pull => Output::Pad(PadOut::Trigger(s)),
+            o => o,
+        };
         if !output.fits(input.kind()) {
             return vec![];
         }
         let kept = self.binding_shown(id, input);
-        let binding = kept.map_or(Binding::of(input, output), |k| k.retarget(input, output));
+        let fresh = || Binding { threshold: if full_pull { crate::keymap::FULL_PULL } else { crate::keymap::DEFAULT_THRESHOLD }, ..Binding::of(input, output) };
+        let binding = kept.map_or_else(fresh, |k| k.retarget(input, output));
         let effects = self.bind(id, input, Some(binding));
         self.bottom.keymaps = Some(Screen::Edit(id));
         effects
@@ -1072,6 +1079,27 @@ mod tests {
         s.apply(Slide::Start { control: Control::Volume, x: 300.0, width: 620.0 }.into());
         assert!(s.levels().slider().is_some() && s.keymap_edit().slider.is_none());
         s.apply(Slide::End.into());
+    }
+
+    #[test]
+    fn a_trigger_full_pull_beside_its_pull() {
+        let mut s = edit_screen();
+        let rt = Input::Trigger(Side::Right);
+        keymap(&mut s, KeymapId::Input(rt));
+        keymap(&mut s, KeymapId::Actuation(Actuation::Hold));
+        assert_eq!(s.keymap_edit().act, Actuation::Press, "a trigger has no hold");
+        keymap(&mut s, KeymapId::Actuation(Actuation::FullPull));
+        assert_eq!(s.keymap_edit().act, Actuation::FullPull);
+        keymap(&mut s, KeymapId::Target(Target::MouseParts));
+        keymap(&mut s, KeymapId::Target(Target::Mouse(MouseButton::Left)));
+        let k = s.keymaps().get(1).unwrap();
+        assert_eq!(k.get_of(Layer::Main, rt, Actuation::FullPull).map(|b| (b.output, b.threshold)), Some((Output::Mouse(MouseButton::Left), 95)));
+        assert_eq!(k.get(rt), None, "the pull as on the pad (analog)");
+        // Picking the other trigger: it, pulled all the way.
+        keymap(&mut s, KeymapId::Target(Target::Pick));
+        keymap(&mut s, KeymapId::Input(Input::Trigger(Side::Left)));
+        let full = s.keymaps().get(1).unwrap().get_of(Layer::Main, rt, Actuation::FullPull).map(|b| b.output);
+        assert_eq!(full, Some(Output::Pad(PadOut::Trigger(Side::Left))));
     }
 
     #[test]

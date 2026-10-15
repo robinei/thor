@@ -266,7 +266,9 @@ on or off turbo (a slider from Off to 30 a second) and toggle (a switch). Only a
 double waits to decide: held past the hold's time it is a hold, pressed again within 300 ms a double,
 else a press, sent as a 60 ms tap once that is known (the Press tab says so); one without acts at once.
 Turbo beats while its actuation is on (a hold's from the hold's time, a double's from the second press);
-a toggle flips when its actuation starts. The defaults are the same for every input and target but a
+a toggle flips when its actuation starts. A trigger has Pull and Full pull tabs instead: its full pull is
+a second stage beside the pull (which stays analog, or a button past its threshold), something on or off
+past its own threshold (95 % unless set), e.g. `rt full = mouse left threshold=95`. The defaults are the same for every input and target but a
 stick on the pointer, which has a deadzone of 15 % and a curve of 50 % (the distance past it squared, as
 the pointer moved before); the panel shows the values that apply, and a new target takes its own defaults
 for the values not set. A stick's deadzone is the keymap's only one (a game that needs another uses a

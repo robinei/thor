@@ -13,7 +13,7 @@
 //!   edit|rename|duplicate|delete`, `keymap-delete` (confirmed), `map-from INPUT` (as in keymaps.txt:
 //!   `a`, `lb`, `up`, `lstick`, `rstick-up`, `lt`, `gyro`: selects it, again reopens the way it is
 //!   mapped; while a control is picked, the one picked; a long press sets it back),
-//!   `keymap-act press|hold|double` (the panel's tab), `keymap-layer main|back`, `keymap-clear`,
+//!   `keymap-act press|hold|double|full` (the panel's tab), `keymap-layer main|back`, `keymap-clear`,
 //!   `keymap-clear-confirm`, `toggle` (the binding's toggle), `twist`, `ratchet` and `calibrate` (the
 //!   gyro's), `keymap-active` (the gyro's hold), `invert x|y`, `map-to TARGET` (the panel's ways: `pick`,
 //!   `key`, `keys`, `mouse`, `pointer`, `default`, `nothing`; or an output: `pad-INPUT`,
@@ -209,7 +209,10 @@ fn target_id(words: &[&str]) -> Result<Id, ParseError> {
         ["map-from", input] => Id::Keymap(KeymapId::Input(input_named(input)?)),
         ["map-to", target] => Id::Keymap(KeymapId::Target(target_named(target)?)),
         ["keymap-act", act] => Id::Keymap(KeymapId::Actuation(
-            Actuation::ALL.into_iter().find(|a| a.label().eq_ignore_ascii_case(act)).ok_or_else(|| ParseError::Name((*act).to_owned()))?,
+            Actuation::ALL
+                .into_iter()
+                .find(|a| a.label().eq_ignore_ascii_case(act) || (*act == "full" && *a == Actuation::FullPull))
+                .ok_or_else(|| ParseError::Name((*act).to_owned()))?,
         )),
         ["keymap-layer", "main"] => Id::Keymap(KeymapId::Layer(Layer::Main)),
         ["keymap-layer", "back"] => Id::Keymap(KeymapId::Layer(Layer::Back)),

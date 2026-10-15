@@ -186,7 +186,7 @@ mod tests {
         e.gain = u16::MAX / 2;
         e.play(0, true, t0);
         assert_eq!(e.level(t0), (19_999, 0));
-        e.upload(0, FFEffectData { kind: FFEffectKind::Constant { level: 100, envelope: Default::default() }, ..rumble(0, 0, 0) });
+        e.upload(0, FFEffectData { kind: FFEffectKind::Constant { level: 100, envelope: evdev::FFEnvelope { attack_length: 0, attack_level: 0, fade_length: 0, fade_level: 0 } }, ..rumble(0, 0, 0) });
         assert_eq!(e.level(t0), (0, 0));
         assert_eq!((scale(60_000, 0), scale(60_000, 1), scale(60_000, 3)), (0, 20_000, 60_000));
     }

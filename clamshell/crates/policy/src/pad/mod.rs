@@ -50,7 +50,7 @@ const COMMANDS_EVERY: Duration = Duration::from_millis(100);
 pub enum Command {
     Route(PadRoute),
     /// The keymap in force (Default: no bindings).
-    Keymap(Keymap),
+    Keymap(Box<Keymap>),
     /// Calibrate the gyro from its next samples.
     CalibrateGyro,
     /// The Rumble setting in force: 0 off, 1 low, 2 mid, 3 full.
@@ -104,9 +104,9 @@ impl<S: Sink> PadThread<S> {
             Command::Keymap(keymap) => {
                 log::info!("pad: keymap {} ({})", keymap.id, if keymap.id == 0 { "Default" } else { keymap.name.as_str() });
                 if let Some((router, out)) = router {
-                    router.set_keymap(keymap.clone(), out);
+                    router.set_keymap((*keymap).clone(), out);
                 }
-                self.keymap = keymap;
+                self.keymap = *keymap;
             }
             Command::Route(route) => {
                 self.route = route;

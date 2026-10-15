@@ -332,6 +332,7 @@ fn act_word(act: Actuation) -> &'static str {
         Actuation::Press => "",
         Actuation::Hold => "hold",
         Actuation::Double => "2×",
+        Actuation::FullPull => "full",
     }
 }
 
@@ -506,7 +507,7 @@ fn edit(f: &mut Frame, body: Rect, id: u16, picking: Option<Picking>) {
             (Actuation::Press, text, tone)
         });
         let mut extra = [None, None];
-        for (slot, act) in extra.iter_mut().zip([Actuation::Hold, Actuation::Double]) {
+        for (slot, act) in extra.iter_mut().zip(Actuation::of(input.kind()).filter(|a| *a != Actuation::Press)) {
             let Some(b) = keymap.and_then(|k| k.get_of(layer, input, act)) else {
                 continue;
             };
@@ -558,7 +559,7 @@ fn edit(f: &mut Frame, body: Rect, id: u16, picking: Option<Picking>) {
     let click = |i: &Input| matches!(i, Input::Button(Button::LS | Button::RS));
     for input in Input::all().filter(|i| !click(i)).chain(Input::all().filter(click)) {
         if let Some(part) = pad.part(input) {
-            let extra = [Actuation::Hold, Actuation::Double].into_iter().any(|a| keymap.is_some_and(|k| k.get_of(layer, input, a).is_some()));
+            let extra = Actuation::of(input.kind()).filter(|a| *a != Actuation::Press).any(|a| keymap.is_some_and(|k| k.get_of(layer, input, a).is_some()));
             let tone = match binding(keymap, layer, input) {
                 _ if extra => Tone::Fn,
                 Some(b) => described(input, &b).1,
@@ -722,15 +723,17 @@ fn panel(f: &mut Frame, body: Rect, r: Rect, id: u16, keymap: Option<&Keymap>, v
     if let Some(row) = col.take(heading * LINE) {
         centred(f, row, heading, Tone::High, &name);
     }
-    // Press, Hold, Double (a button's, a direction's): the one shown in white; a dot under one set.
-    if input.kind() == Kind::Digital
+    // Press, Hold, Double (a button's, a direction's), Pull and Full pull (a trigger's): the one shown in
+    // white; a dot under one set.
+    let tabs = Actuation::of(input.kind()).count();
+    if tabs > 1
         && let Some(row) = col.take(small * LINE * 1.6)
     {
-        let w = row.w / Actuation::ALL.len() as f32;
-        for (i, a) in Actuation::ALL.into_iter().enumerate() {
+        let w = row.w / tabs as f32;
+        for (i, a) in Actuation::of(input.kind()).enumerate() {
             let tab = Rect::new(row.x + i as f32 * w, row.y, w, row.h * 0.8);
             let tone = if a == act { Tone::High } else { Tone::Fn };
-            f.text_button(Id::Keymap(KeymapId::Actuation(a)), tab, small, tone, a.label(), Align::Center);
+            f.text_button(Id::Keymap(KeymapId::Actuation(a)), tab, small, tone, a.label_for(input.kind()), Align::Center);
             if keymap.is_some_and(|k| k.get_of(layer, input, a).is_some()) {
                 f.c.circle(tab.center().0, row.bottom() - small * 0.25, small * 0.1, tone);
             }
@@ -741,6 +744,7 @@ fn panel(f: &mut Frame, body: Rect, r: Rect, id: u16, keymap: Option<&Keymap>, v
         Actuation::Press => as_on_pad(input),
         Actuation::Hold => Fmt::of(format_args!("No hold")),
         Actuation::Double => Fmt::of(format_args!("No double")),
+        Actuation::FullPull => Fmt::of(format_args!("No full pull")),
     };
     let main = || keymap.and_then(|k| k.get_of(Layer::Main, input, act)).map(|b| summary(input, b)).unwrap_or_else(|| unset(input));
     if let Some(row) = col.take(small * LINE * 2.2) {

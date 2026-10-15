@@ -203,6 +203,16 @@ pub fn shots(now: u64) -> Result<Vec<Shot>, ParseError> {
             .concat(),
         ),
         shot("keymap-edit-hold.png", Bottom, vec![km(KeymapId::Input(Input::Button(Button::LB))), km(KeymapId::Actuation(Actuation::Hold))]),
+        shot(
+            "keymap-edit-trigger.png",
+            Bottom,
+            vec![
+                km(KeymapId::Input(Input::Trigger(Side::Right))),
+                km(KeymapId::Actuation(Actuation::FullPull)),
+                km(KeymapId::Target(Target::MouseParts)),
+                km(KeymapId::Target(Target::Mouse(MouseButton::Left))),
+            ],
+        ),
         shot("keymap-edit-stick.png", Bottom, vec![km(KeymapId::Input(Input::Stick(Side::Left)))]),
         shot("keymap-edit-slider.png", Bottom, slide(Param::Curve, 0.3, false)),
         shot("keymap-edit-back.png", Bottom, [vec![Slide::End.into(), km(KeymapId::Layer(Layer::Back))], select(Input::Button(Button::A)), vec![km(KeymapId::Target(Target::Key)), key(Key::Char('y'))?, km(KeymapId::Input(Input::Button(Button::LB)))]].concat()),
