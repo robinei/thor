@@ -135,9 +135,17 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
 - [ ] Screens: both on, right size, orientation and position; layer surface on DSI-1.
 - [ ] Touch: the bottom screen's touch on DSI-1 (sway's `map_to_output`); the Touchpad tab grabs it;
       two fingers on the bar at once (one sliding, one tapping).
-- [ ] Gamepad: evdev events; our virtual pad and pad mouse; per-game buttons and deadzone; unplugging
+- [ ] Gamepad: evdev events; our virtual pad and pad mouse; per-game keymaps (a key chord, the pointer
+      from a stick) and deadzone; the back buttons' key codes (ClamShell takes BTN_TRIGGER_HAPPY1-4 and
+      BTN_GRIPL/R/L2/R2 as L4, R4, L5, R5); unplugging
       the controller mid-game (the game's pad stays, at rest, and picks up again); A held on an
       on-screen key while View moves the pad away (the key must not keep repeating).
+- [ ] Gyro: what the Thor's IMU is (an IIO device, or evdev from the gamepad driver?), its axes, signs and
+      units. ClamShell reads an evdev motion sensor (INPUT_PROP_ACCELEROMETER, ABS_RX/RY/RZ, resolution in
+      units per °/s) paired with the controller; an IIO sensor needs a source of its own behind the same
+      seam (`pad/motion.rs`, `MotionSource`). Then the feel: gyro to the pointer at each speed (pixels per
+      degree, the 1 °/s drift deadzone), which way turning and tilting move it, gyro to a stick, holding
+      a trigger to aim.
 - [ ] GPU: Freedreno (sway) and Turnip (`vkcube`, a game); MangoHud frame rate in sysinfo.
 - [ ] Wi-Fi from the Wi-Fi mode (NetworkManager): scan, join with a password, forget; polkit lets the
       session's user do it (tested in the VM as an autologin session user, not on the device).

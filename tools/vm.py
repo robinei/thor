@@ -894,7 +894,7 @@ def main():
     t.add_parser("plug")
     t.add_parser("unplug")
     q = t.add_parser("do", help="commands, comma-separated: tap a, press a, release a, dpad down, "
-                                "stick left 0.5 0, trigger right 1, sleep 100")
+                                "stick left 0.5 0, trigger right 1, gyro 0 30 0, sleep 100")
     q.add_argument("command", nargs="+")
     p.set_defaults(func=pad)
     sub.add_parser("bluetooth", help="virtual Bluetooth controllers and a test device in the machine").set_defaults(func=bluetooth)

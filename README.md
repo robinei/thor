@@ -52,7 +52,8 @@ screen's touchscreen through QEMU's QMP socket (`input-send-event`, multitouch),
 pad plug` runs the `fake_pad` example (the host's build: `cargo build --release -p clamshell-policy
 --examples`) in the machine as a user service reading commands from a pipe, which ClamShell grabs as the
 controller; `pad do 'tap a, dpad down, sleep 100, stick left 1 0, press a, release a'` drives it (buttons
-a b x y lb rb view menu home ls rs, `trigger left|right V`), `pad unplug` stops it. `tools/vm.py
+a b x y lb rb view menu home ls rs, `trigger left|right V`, `gyro X Y Z` in degrees per second: the fake
+pad has a motion sensor beside it), `pad unplug` stops it. `tools/vm.py
 bluetooth` (again after each boot) builds BlueZ's `btvirt` emulator in the machine once (Arch doesn't
 ship it) and starts two virtual controllers: bluetoothd keeps the first (`MaxControllers=1`), the second
 is a test device, ThorTestDevice (`tools/vm-bt-device.py`: discoverable, accepts "just works" pairing,
@@ -66,7 +67,10 @@ backlight), a slide while a second finger taps a tab, forgetting a Wi-Fi network
 scrolling shelf's list (the test library has more games than fit) and the Wi-Fi list (the simulated
 radios loaded again with eight more test networks for it) and tapping a row after, the
 touchpad tab, the pad on shelf (D-pad, A, Home), View, the pad mouse, typing with the pad, a held A on an
-on-screen key when View moves the pad away, unplugging the controller during a game, Home held as the game's Guide, and Bluetooth. For
+on-screen key when View moves the pad away, unplugging the controller during a game, Home held as the game's Guide, a keymap made
+through its screens and the pad (A to Ctrl+X, the right stick and the gyro while LB is held to the
+pointer) read back from the virtual devices in a game, then Default passing everything through, and
+Bluetooth. For
 them ClamShell runs with a test library, the fake backlight and its own state directory (a runtime
 drop-in for its service, removed afterwards; `--keep` leaves it). It prints ok/FAIL lines and a count;
 the exit status is the number of failures. About three minutes.
@@ -225,11 +229,40 @@ off and the device sleeps) are on the Battery tab, not here: they aren't a game'
 | Screen | the second screen dark while the game runs, until tapped |
 | Cores | the little cluster only (the others offline) |
 | Mouse | the pad mouse turned on at launch, off at the end |
-| Buttons, Deadzone | Nintendo layout (A/B, X/Y swapped) and a stick deadzone, in the virtual pad |
+| Keymap | the keymap the game's controller goes through (its name; Default: as on the pad); a tap opens the keymaps (below) |
+| Deadzone | a stick deadzone, in the virtual pad |
 | CPU, GPU | a frequency cap in percent, instead of the profile's |
 | Env | extra environment variables (`KEY=value`, typed on the on-screen keyboard); a game's come after the defaults' |
 | Refresh | the main screen's refresh rate: the nearest its modes have (through the compositor's output management protocol) |
 | Upscale, Fan, Rumble | saved, marked "later": not applied yet |
+
+**Keymaps** remap the controller for games: named, shared between games, saved in `keymaps.txt` next to
+`game-settings.txt` (a `keymap ID NAME` line, then a line per binding, `INPUT = OUTPUT [option=value]`, e.g.
+`a = key ctrl+x`, `rstick = pointer speed=4`, `gyro = pointer hold=lt`; lines not understood are skipped).
+The first start makes a "Nintendo layout" keymap (A and B, X and Y swapped), an ordinary one. The Keymap
+tile opens the picker over the settings: Default, then the keymaps with how many games use each; a tap
+chooses one for the scope being edited, Edit (or a long press: rename, duplicate, delete; deleting one in
+use asks first and puts its games back on Default) opens it, New names one (the editor) and opens it. The
+edit screen draws the pad (shoulders and triggers, sticks with a marker per direction, D-pad, face
+buttons, View and Menu, stick clicks, back buttons, the gyro), each input with what it maps to in blue;
+an input is chosen by touch or by pressing (or pushing past half) it on the pad, which listens there
+instead of moving the focus (Home leaves; Home is never mapped); a long press sets one back. What it may
+map to fits its kind: a button, D-pad direction or stick direction to a pad button (one of the list, or
+the next pressed on the pad), a key chord (typed on the keyboard: modifiers latch, the next key completes
+it; Done takes the modifiers alone), a mouse button or a wheel step; a stick to a stick, the pointer (a
+speed, 1-5), four keys typed in turn (WASD) or the D-pad; a trigger to a trigger, or past 25, 50 or 75 %
+to anything a button maps to; the gyro to the pointer or a stick (a speed), always or while a chosen
+button or trigger is held (which keeps its own mapping), off by default. An input without a binding does
+what it does on the pad. Only on the game's route: ClamShell's screens, typing and the pad mouse see the
+plain pad. The pad thread maps the controller's state to what every output should be and sends what
+changed: the game's virtual pad, keys and mouse buttons on the pad's virtual mouse (it has a keyboard's
+keys; held while the button is, repeated by the compositor), the pointer; so leaving the game, losing the
+controller or a keymap change mid-press leaves nothing held, and chords press their modifiers first and
+let them go last. **The gyro** is read from a motion sensor next to the controller (an evdev device with
+INPUT_PROP_ACCELEROMETER and the gyro on ABS_RX/RY/RZ, as the kernel's controller drivers make: the one
+paired with the controller by name or port, or the only one); to the pointer it is integrated (yaw to x,
+pitch to y; below 1 °/s it is drift) with sub-pixel remainders kept, to a stick scaled and clamped. The
+Thor's own sensor is still unknown: it plugs in at the same place (`pad/motion.rs`).
 
 Saved in `game-settings.txt` next to `stats.db`, applied at a game's launch and at once while it runs.
 Frequency caps, cores and the charge limit need write access to cpufreq's `scaling_max_freq`, CPUs'
@@ -250,7 +283,8 @@ pad goes where what is in front says: with **shelf in front, ClamShell owns it**
 move focus, repeating while held, across both screens; A acts; B cancels the editor; Y favourite; LB/RB
 the previous or next tab on top, the bar's tabs below; View/Select moves focus to the other screen, back
 to where it was there); with the on-screen keyboard open over an app it **types** (D-pad arrows, A Enter,
-B Backspace); over any other app it drives the second screen; with a game in front, the game has it.
+B Backspace); over any other app it drives the second screen; with a game in front, the game has it,
+through the keymap in force (see Keymaps).
 Outside a game, **View moves the pad between the second screen and what else wants it**: the pad mouse
 when on, typing when the keyboard is open (on the second screen the D-pad then picks keys and A presses
 them). With nothing else wanting it, View does nothing and the pad stays on the second screen; if it is

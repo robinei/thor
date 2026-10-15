@@ -238,7 +238,8 @@ cat > {CHECKS_DIR}/games/metadata.pegasus.txt <<'EOF'
 {LIBRARY}EOF
 touch {CHECKS_DIR}/games/test.game {CHECKS_DIR}/games/zeta.game {" ".join(f"{CHECKS_DIR}/games/zulu{i:02}.game" for i in range(1, 15))}
 echo 100 > {BACKLIGHT}/max_brightness; echo 50 > {BACKLIGHT}/brightness
-rm -f {STATE}/last {STATE}/brightness {CHECKS_DIR}/pegasus/stats.db* {CHECKS_DIR}/pegasus/favorites.txt
+rm -f {STATE}/last {STATE}/brightness {CHECKS_DIR}/pegasus/stats.db* {CHECKS_DIR}/pegasus/favorites.txt \\
+    {CHECKS_DIR}/pegasus/keymaps.txt {CHECKS_DIR}/pegasus/game-settings.txt
 mkdir -p $(dirname {DROP_IN})
 printf '%s\\n' '[Service]' 'Environment=CLAMSHELL_PEGASUS_CONFIG={CHECKS_DIR}/pegasus' \\
     'Environment=CLAMSHELL_BACKLIGHTS={CHECKS_DIR}/backlight' 'Environment=XDG_STATE_HOME={CHECKS_DIR}/state' > {DROP_IN}
@@ -644,6 +645,65 @@ class Checks:
                    until(lambda: front() == "clamshell-shelf", 3) and "BTN_MODE" not in out.split("Testing ...")[-1],
                    f"front {front()!r}")
 
+    # keymaps
+
+    def keymaps(self):
+        """A keymap made through the screens (the control pipe, and the pad on the edit screen): A to
+        Ctrl+X, the right stick to the pointer, the gyro to the pointer while LB is held; then a game with
+        it, read from the virtual devices; then Default."""
+        if not self.check("keymaps: the fake pad grabbed", plug_pad()):
+            return
+        keymaps_file = f"{CHECKS_DIR}/pegasus/keymaps.txt"
+        self.check("  the first start made the Nintendo layout", "keymap 1 Nintendo layout" in sh(f"cat {keymaps_file}"),
+                   sh(f"cat {keymaps_file}"))
+        since = now()
+        for line in ["tab settings", "scope game", "tap setting keymap", "tap keymap-new", "type Check", "tap save"]:
+            control(line)
+        listening = logged(since, "PadRoute(Listen)", 3)
+        self.check("  named; the edit screen listens to the pad", listening, journal(since)[-300:])
+        press("a")  # chooses A on the edit screen
+        for line in ["tap map-to key", "tap key ctrl", "tap key x", "tap map-from rstick", "tap map-to pointer",
+                     "tap keymap-back", "tap map-from gyro", "tap map-to pointer", "tap gyro-hold lb", "tap keymap-back",
+                     "tap keymap-back", "tap keymap 2"]:
+            control(line)
+        text = sh(f"cat {keymaps_file}")
+        saved = "keymap 2 Check" in text and "a = key ctrl+x" in text and "rstick = pointer" in text and "gyro = pointer hold=lb" in text
+        self.check("  A to Ctrl+X, the right stick and the gyro (while LB) to the pointer, saved", saved, text)
+        chosen = until(lambda: "keymap=2" in sh(f"cat {CHECKS_DIR}/pegasus/game-settings.txt 2>/dev/null"), 3)
+        self.check("  chosen for the selected game", chosen, sh(f"cat {CHECKS_DIR}/pegasus/game-settings.txt 2>/dev/null"))
+        since = now()
+        control("tap launch")
+        launched = until(lambda: bool(units("game")) and front() not in ("", "clamshell-shelf"), 10)
+        if not self.check("  the game runs with it", launched and logged(since, "pad: keymap 2 (Check)", 5),
+                          f"front {front()!r}; {journal(since)[-300:]!r}"):
+            return
+        mouse, virtual = device("clamshell pad mouse"), device("clamshell pad (Xbox 360)")
+        both = f"sh -c 'evtest {mouse} > /tmp/thor-checks-mouse 2>&1 & evtest {virtual}'"
+        out = capture(both, 2, lambda: press("a", 150))
+        keys = [line.split("(")[2].split(")")[0] + line.rsplit(" ", 1)[1] for line in sh("cat /tmp/thor-checks-mouse").splitlines()
+                if "(EV_KEY)" in line and "value" in line]
+        self.check("  A on the pad: Ctrl+X on the virtual keyboard, Ctrl first and last",
+                   keys == ["KEY_LEFTCTRL1", "KEY_X1", "KEY_X0", "KEY_LEFTCTRL0"], f"{keys}")
+        self.check("  and nothing on the game's pad", "BTN_SOUTH" not in out.split("Testing ...")[-1], out.strip()[-300:])
+        out = capture(f"evtest {mouse}", 2, lambda: pad("stick right 1 0", "sleep 600", "stick right 0 0"))
+        moves = len([line for line in out.splitlines() if "(REL_X)" in line and "value" in line])
+        self.check("  the right stick moves the pointer", moves > 20, f"{moves} REL_X events")
+        out = capture(f"evtest {mouse}", 2, lambda: pad("gyro 0 -60 0", "sleep 600", "gyro 0 0 0"))
+        moves = [line for line in out.splitlines() if "(REL_X)" in line and "value" in line]
+        self.check("  the gyro without LB: nothing", not moves, moves[:5])
+        out = capture(f"evtest {mouse}", 2.5, lambda: pad("press lb", "gyro 0 -60 0", "sleep 600", "gyro 0 0 0", "release lb"))
+        moved = sum(int(line.rsplit(" ", 1)[1]) for line in out.splitlines() if "(REL_X)" in line and "value" in line)
+        self.check("  the gyro with LB held moves the pointer", moved > 100, f"pointer moved {moved} px")
+        # Default for the game again: everything as on the pad.
+        since = now()
+        for line in ["tab settings", "tap setting keymap", "tap keymap 0"]:
+            control(line)
+        self.check("  Default chosen, sent to the pad", logged(since, "pad: keymap 0 (Default)", 3), journal(since)[-300:])
+        out = capture(both, 2, lambda: press("a", 150))
+        mouse_keys = [line for line in sh("cat /tmp/thor-checks-mouse").splitlines() if "(EV_KEY)" in line and "value" in line]
+        self.check("  Default: A is the game's A, nothing on the keyboard", "(BTN_SOUTH), value 1" in out and not mouse_keys,
+                   f"{out.strip()[-200:]!r}; mouse {mouse_keys}")
+
     # Bluetooth
 
     def bluetooth(self):
@@ -670,7 +730,7 @@ class Checks:
 
 
 CHECKS = ["shelf_scroll", "bar_tap", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad",
-          "pad_shelf", "pad_view", "pad_mouse", "pad_typing", "pad_held_key", "pad_unplug", "pad_guide", "bluetooth"]
+          "pad_shelf", "pad_view", "pad_mouse", "pad_typing", "pad_held_key", "pad_unplug", "pad_guide", "keymaps", "bluetooth"]
 
 
 def main():
