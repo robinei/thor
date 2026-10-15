@@ -149,6 +149,13 @@ impl Input {
         self.presses.push((source, Press::new(id.clone(), gesture, y, target.list, now)));
         actions.extend([Action::Emit(PointerEvent::HideFocus.into()), Action::Emit(PointerEvent::Down(id).into())]);
         match gesture {
+            // A keymap parameter's row has nothing to tap: it slides at once, from where the finger came
+            // down (so a touch without moving changes nothing).
+            Gesture::PendingSlide { control: Control::Param(_), .. } => {
+                if let Some((_, press)) = self.presses.last_mut() {
+                    actions.extend(Self::start_slide(press));
+                }
+            }
             Gesture::PendingSlide { .. } => {
                 actions.push(Action::Arm(source, Timer::Hold, LONG_PRESS));
                 actions.push(Action::Arm(source, Timer::Slide, SLIDE_AFTER));
@@ -519,6 +526,21 @@ mod tests {
         let up = input.up(Source::Mouse, End::Release, &blank(), t0());
         assert!(up.contains(&Action::Disarm(Source::Mouse, Timer::Slide)));
         assert!(events(&up).contains(&PointerEvent::Activate(Id::Control(Control::Volume)).into()));
+    }
+
+    #[test]
+    fn a_keymap_parameter_slides_at_once() {
+        use clamshell_core::keymap::Param;
+        let control = Control::Param(Param::Speed);
+        let row = Target { id: Id::Control(control), ..volume() };
+        let mut input = Input::default();
+        let down = input.touch(Source::Touch(1), &row, (300.0, 0.0), t0());
+        assert_eq!(events(&down)[2..], [Slide::Start { control, x: 290.0, width: 600.0 }.into()], "no wait");
+        assert!(!down.iter().any(|a| matches!(a, Action::Arm(..))), "no timers: {down:?}");
+        assert_eq!(events(&input.moved(Source::Touch(1), (310.0, 0.0), t0())), vec![Slide::To { x: 300.0 }.into()]);
+        let up = input.up(Source::Touch(1), End::Release, &blank(), t0());
+        assert!(events(&up).contains(&Slide::End.into()));
+        assert!(!events(&up).contains(&PointerEvent::Activate(Id::Control(control)).into()), "not a tap");
     }
 
     #[test]

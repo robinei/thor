@@ -15,8 +15,8 @@ keymap-delete.png 15a35fe869034d67
 keymap-edit-back.png 445273a25f5d957a
 keymap-edit-clear.png 0f4b522d67ff4598
 keymap-edit-new.png 0d67bb5bf58b68f2
-keymap-edit-slider.png ac0bb8c0571e0f1f
-keymap-edit-stick.png a3ed85ad6c6b6634
+keymap-edit-slider.png 2ca29536b070d8c9
+keymap-edit-stick.png 0f6df0198562a2d2
 keymap-edit.png 6a8b86da28de03df
 keymap-holds.png a25ace31d2cf24e4
 keymap-map-to-gyro.png 84cc4cc5178e8bbc

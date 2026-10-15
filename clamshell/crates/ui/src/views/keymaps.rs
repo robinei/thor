@@ -556,7 +556,7 @@ fn panel(f: &mut Frame, body: Rect, r: Rect, id: u16, keymap: Option<&Keymap>, v
         f.button(Id::Keymap(KeymapId::Holds), row, Look::ROW, |f| param_row(f, row, small, "Active", &value, base.hold.is_some()));
     }
     if let Some(row) = col.take(small * LINE * 1.5) {
-        let hint = if params(input, base.output).next().is_some() { "Hold a value to slide it" } else { "Press again to change" };
+        let hint = if params(input, base.output).next().is_some() { "Slide a value to set it" } else { "Press again to change" };
         centred(f, row.shifted(0.0, small * 0.3), small * 0.85, Tone::Dim, hint);
     }
 }
