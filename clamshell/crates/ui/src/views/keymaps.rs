@@ -348,8 +348,8 @@ pub(super) fn edit_layout(body: Rect) -> EditLayout {
 }
 
 /// The edit screen's header: Back, the keymap's name, and on the right the layer shown (Main or Back
-/// held, a segmented switch).
-fn edit_header(f: &mut Frame, body: Rect, title: &str, layer: Layer) {
+/// held, a segmented switch; faded while a control is picked, when it stays as it is).
+fn edit_header(f: &mut Frame, body: Rect, title: &str, layer: Layer, faded: bool) {
     let pad = style::pad(body.h);
     let mut area = style::content(body);
     let mut bar = area.take_top(body.h * HEADER_H);
@@ -366,7 +366,13 @@ fn edit_header(f: &mut Frame, body: Rect, title: &str, layer: Layer) {
         let r = Rect::new(right - w, bar.y + (bar.h - seg_h) / 2.0, w, seg_h);
         right -= w + pad * 0.2;
         let on = l == layer;
-        f.text_button(Id::Keymap(KeymapId::Layer(l)), r, size, if on { Tone::High } else { Tone::Fn }, l.label(), Align::Center);
+        let tone = match (faded, on) {
+            (true, true) => Tone::Normal,
+            (true, false) => Tone::Dim,
+            (false, true) => Tone::High,
+            (false, false) => Tone::Fn,
+        };
+        f.text_button(Id::Keymap(KeymapId::Layer(l)), r, size, tone, l.label(), Align::Center);
     }
     let title_w = (right - pad * 0.5 - bar.x - pad * 0.4).max(0.0);
     f.c.text_fit(Rect::new(bar.x + pad * 0.4, bar.y, title_w, bar.h), Text::Heading.size(body.h), Tone::High, title, Keep::Start);
@@ -387,7 +393,7 @@ fn edit(f: &mut Frame, body: Rect, id: u16, picking: Option<Picking>) {
     let view = s.keymap_edit();
     let layer = view.layer;
     let name = keymap.map_or("", |k| k.name.as_str());
-    edit_header(f, body, name, layer);
+    edit_header(f, body, name, layer, picking.is_some());
     let EditLayout { area, foot_row, cw, gap, lw, strip } = edit_layout(body);
     let size = Text::Small.size(body.h) * LABEL;
     let line = size * LINE;
@@ -399,6 +405,10 @@ fn edit(f: &mut Frame, body: Rect, id: u16, picking: Option<Picking>) {
             continue;
         };
         if layer == Layer::Main && change(input, Some(&b)) == Change::None {
+            continue;
+        }
+        // While a control is picked, those that can't be have no label.
+        if picking.is_some_and(|p| !p.takes(input)) {
             continue;
         }
         let (text, tone) = described(input, &b);
@@ -435,7 +445,8 @@ fn edit(f: &mut Frame, body: Rect, id: u16, picking: Option<Picking>) {
     // The controls (the clicks last: they sit on the sticks' caps).
     for side in Side::ALL {
         if let Some(well) = pad.well(side) {
-            f.c.outline(well, well.w, PART_W, PART_LINE);
+            let muted = picking.is_some_and(|p| !p.takes(Input::Stick(side)));
+            f.c.outline(well, well.w, PART_W, if muted { FIXED } else { PART_LINE });
         }
     }
     let click = |i: &Input| matches!(i, Input::Button(Button::LS | Button::RS));
@@ -477,6 +488,8 @@ fn edit(f: &mut Frame, body: Rect, id: u16, picking: Option<Picking>) {
     }
     if let Some(r) = pad.foot(Side::Right) {
         let held = layer == Layer::Back;
+        // (Faded while a control is picked: the layer stays as it is.)
+        let faded = picking.is_some();
         let name = if held { "Back held" } else { "Back" };
         let w = f.c.text_width(size, name);
         let row = pad.foot_row(Side::Right).unwrap_or(r);
@@ -486,14 +499,17 @@ fn edit(f: &mut Frame, body: Rect, id: u16, picking: Option<Picking>) {
             if held {
                 f.c.circle(r.center().0, r.center().1, r.w / 2.0, PRESSED);
             }
-            f.c.outline(r, r.w, PART_W, if held { Tone::High.rgb() } else { PART_LINE });
-            f.c.text_in(Rect::new(r.right() + r.w * 0.6, r.y, w, r.h), size, Tone::high_if(held), name, Align::Start);
+            let line = if faded { FIXED } else if held { Tone::High.rgb() } else { PART_LINE };
+            f.c.outline(r, r.w, PART_W, line);
+            let tone = if faded { Tone::Dim } else { Tone::high_if(held) };
+            f.c.text_in(Rect::new(r.right() + r.w * 0.6, r.y, w, r.h), size, tone, name, Align::Start);
         });
     }
 
     // The middle: the gyro and the AYN button at the bottom, the panel above.
     let foot = pad.foot(Side::Left).map_or(area.bottom() - line, |r| r.center().1);
-    let gyro_top = middle(f, strip, foot, keymap, layer, view.selected == Some(Input::Gyro), size);
+    let gyro_muted = picking.is_some_and(|p| !p.takes(Input::Gyro));
+    let gyro_top = middle(f, strip, foot, keymap, layer, view.selected == Some(Input::Gyro), gyro_muted, size);
     let margin = (strip.w * 0.04).min(size);
     let panel_r = Rect::new(strip.x + margin, area.y, (strip.w - 2.0 * margin).max(1.0), (gyro_top - area.y - size).max(1.0));
     match picking {
@@ -772,7 +788,7 @@ fn foot_actions(f: &mut Frame, body: Rect, row: Rect, keymap: Option<&Keymap>, v
 /// The middle, at the bottom: the AYN button and the small round buttons beside it (drawn, not
 /// remappable), level with Home and Back at `y`; above them the gyro's button ("Gyro · Mouse", "Gyro ·
 /// off"). Returns the top of the gyro's button.
-fn middle(f: &mut Frame, strip: Rect, y: f32, keymap: Option<&Keymap>, layer: Layer, selected: bool, size: f32) -> f32 {
+fn middle(f: &mut Frame, strip: Rect, y: f32, keymap: Option<&Keymap>, layer: Layer, selected: bool, muted: bool, size: f32) -> f32 {
     let line = size * LINE;
     // The AYN button's row.
     let pill_w = (strip.w * 0.36).min(size * 2.4);
@@ -801,8 +817,13 @@ fn middle(f: &mut Frame, strip: Rect, y: f32, keymap: Option<&Keymap>, layer: La
     // (A finger's room around it.)
     let target = Rect::new(r.x - h * 0.3, r.y - h * 0.3, r.w + h * 0.6, h * 1.6).intersect(strip);
     f.button_in(Id::Keymap(KeymapId::Input(Input::Gyro)), target, r, look, |f| {
-        f.c.outline(r, h / 2.0, if selected { SELECTED_W } else { PART_W }, if selected { Tone::High.rgb() } else { PART_LINE });
-        centred(f, r, size, tone, &text);
+        let (lw, lc) = match (selected, muted) {
+            (true, _) => (SELECTED_W, Tone::High.rgb()),
+            (false, true) => (PART_W, FIXED),
+            (false, false) => (PART_W, PART_LINE),
+        };
+        f.c.outline(r, h / 2.0, lw, lc);
+        centred(f, r, size, if muted { Tone::Dim } else { tone }, &text);
     });
     target.y
 }
