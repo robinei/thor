@@ -51,6 +51,8 @@ pub enum Event {
     PadSwitch,
     /// The pad, while it drives ClamShell (the UI handles these; the state ignores them).
     Pad(PadInput),
+    /// An input pressed or moved on the pad while it listens (the keymap's edit screen).
+    Listened(crate::keymap::Input),
     /// A text field of the app in front wants typing (true), or no longer does (the Wayland side).
     TextInput(bool),
     /// The system woke from sleep.

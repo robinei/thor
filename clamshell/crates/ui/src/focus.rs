@@ -180,9 +180,12 @@ pub(crate) fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
     }
 }
 
-/// B: cancels the editor, if one is open.
+/// B: cancels the editor, if one is open, else goes back one of the keymaps' screens.
 pub(crate) fn back(s: &State) -> Option<Event> {
-    s.bottom().editor().is_some().then(|| PointerEvent::Activate(Id::Editor(EditorId::Cancel)).into())
+    if s.bottom().editor().is_some() {
+        return Some(PointerEvent::Activate(Id::Editor(EditorId::Cancel)).into());
+    }
+    s.keymap_screen().map(|_| PointerEvent::Activate(Id::Keymap(clamshell_core::KeymapId::Back)).into())
 }
 
 /// On a desktop, keys stand in for the pad: arrows move focus, Enter/Space is A (press, hold), Tab is

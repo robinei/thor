@@ -17,6 +17,7 @@ mod dock;
 mod editor;
 pub(crate) mod format;
 mod keyboard;
+mod keymaps;
 mod levels;
 mod radio;
 pub(crate) mod scroll;
@@ -227,6 +228,60 @@ mod tests {
     fn overlap(a: Rect, b: Rect) -> bool {
         let apart = a.x + a.w <= b.x + 0.5 || b.x + b.w <= a.x + 0.5 || a.y + a.h <= b.y + 0.5 || b.y + b.h <= a.y + 0.5;
         !apart
+    }
+
+    /// The keymaps' screens one after another (as a user goes through them) at the desktop's window, the
+    /// Thor's screen and a narrow one: targets within the area, none overlapping but on purpose.
+    #[test]
+    fn the_keymap_screens_lay_out() {
+        use clamshell_core::keymap::{Button, Input, Keymaps, Side};
+        use clamshell_core::{KeymapId, ListId, PointerEvent, SettingsId, Target};
+        use clamshell_core::settings::Setting;
+        let tap = |id| Event::Pointer(PointerEvent::Activate(id));
+        let km = |id| tap(Id::Keymap(id));
+        let screens: Vec<(&str, Vec<Event>)> = vec![
+            ("picker", vec![tap(Id::Tab(Tab::Settings)), tap(Id::Settings(SettingsId::Tile(Setting::Keymap)))]),
+            ("menu", vec![Event::Pointer(PointerEvent::LongPress(ListId::Keymaps.row(1)))]),
+            ("name", vec![km(KeymapId::Rename)]),
+            ("delete", vec![tap(Id::Editor(clamshell_core::EditorId::Cancel)), km(KeymapId::Back), tap(ListId::Keymaps.row(1)), tap(Id::Settings(SettingsId::Tile(Setting::Keymap))), Event::Pointer(PointerEvent::LongPress(ListId::Keymaps.row(1))), km(KeymapId::Delete)]),
+            ("edit", vec![km(KeymapId::Back), tap(Id::Row { list: ListId::Keymaps, i: 1, part: clamshell_core::RowPart::Edit })]),
+            ("map to, a button", vec![km(KeymapId::Input(Input::Button(Button::A)))]),
+            ("map to, a trigger", vec![km(KeymapId::Back), km(KeymapId::Input(Input::Trigger(Side::Left))), km(KeymapId::Target(Target::Key))]),
+            ("capture", vec![]),
+            ("map to, the gyro", vec![km(KeymapId::Back), km(KeymapId::Back), km(KeymapId::Input(Input::Gyro)), km(KeymapId::Target(Target::Pointer))]),
+            ("map to, a stick", vec![km(KeymapId::Back), km(KeymapId::Input(Input::Stick(Side::Right))), km(KeymapId::Target(Target::Pointer))]),
+            ("press", vec![km(KeymapId::Back), km(KeymapId::Input(Input::Button(Button::B))), km(KeymapId::Target(Target::PressPad))]),
+        ];
+        let mut cache = DrawCache::load();
+        for (w, h) in [(620u32, 540u32), (1240, 1080), (300, 540)] {
+            let mut state = State::new(Init { library: clamshell_library::demo_library(), keymaps: Keymaps::initial(), ..Init::default() });
+            for (name, events) in &screens {
+                for e in events {
+                    state.apply(e.clone());
+                }
+                assert!(state.keymap_screen().is_some() || state.bottom().editor().is_some(), "{name}: a keymap screen");
+                let mut pixmap = Pixmap::new(w, h).expect("pixmap");
+                let mut targets = Vec::new();
+                let mut canvas = Canvas::new(&mut pixmap, 1.0, &mut cache);
+                let (mut images, mut scratch) = (Images::synchronous(), Scratch::default());
+                let mut f = Frame::new(&mut canvas, &state, &mut images, &mut scratch, &mut targets);
+                let screen = Rect::new(0.0, 0.0, w as f32, h as f32);
+                bottom(&mut f, screen);
+                let body = f.finish().touchpad_area.expect("the area below the bar");
+                let case = format!("{name} at {w}x{h}");
+                assert!(targets.iter().any(|t| matches!(t.id, Id::Keymap(_) | Id::Row { .. } | Id::Editor(_))), "{case}: its buttons");
+                for (i, a) in targets.iter().enumerate() {
+                    assert!(a.rect.w > 0.0 && a.rect.h > 0.0, "{case}: {:?} has no size", a.id);
+                    if a.rect.y + a.rect.h > body.y + 0.5 {
+                        let inside = a.rect.x >= body.x - 0.5 && a.rect.y >= body.y - 0.5 && a.rect.right() <= body.right() + 0.5 && a.rect.bottom() <= body.bottom() + 0.5;
+                        assert!(inside, "{case}: {:?} at {:?} is outside {body:?}", a.id, a.rect);
+                    }
+                    for b in targets.iter().skip(i + 1) {
+                        assert!(!overlap(a.rect, b.rect) || stacked(&a.id, &b.id), "{case}: {:?} and {:?} overlap", a.id, b.id);
+                    }
+                }
+            }
+        }
     }
 
     /// Long lists (more networks, devices, apps playing and backlights than fit) at the desktop's window,

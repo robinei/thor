@@ -2,7 +2,7 @@
 # what is drawn: CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots
 battery.png e6b6e102b510ff42
 bluetooth.png 736938c296cb2fa8
-bottom.png edfcb8f97eee8d3c
+bottom.png b34f04a8e5a76750
 brightness.png 0e82dc44d6027da8
 keyboard-back.png 732462ca1a23d193
 keyboard-caps.png 371ce684dba1e6b2
@@ -10,14 +10,24 @@ keyboard-fn.png 465a238d6b635d83
 keyboard-mods.png e382140304dfed10
 keyboard-pressed.png 55782fee819edf3f
 keyboard.png f195925c14f450a7
+keymap-capture.png 40efb303597a1c2c
+keymap-delete.png b31cfeecc5f59b02
+keymap-edit.png b3a327eefb47d2a3
+keymap-map-to-gyro.png 45fdb5c567a16a04
+keymap-map-to-stick.png 2ac127b572bfe235
+keymap-map-to.png f4382da5d9d743fa
+keymap-menu.png 4786c73641083ef9
+keymap-name.png 4a6a60c732513754
+keymap-press.png 92262e1329084914
+keymaps.png b8b0568d218348e9
 launcher-running.png 382b49e3cbca6c0e
 launcher.png 2470ba428dff9659
 settings-env.png d8dd30b9be6aa490
-settings-global.png d80adda76e8dc937
-settings-running.png 618e94557f91adc2
-settings.png 5a54e3805d7c054b
+settings-global.png 2b71977259c45d06
+settings-running.png 6cebb06abbb3ece5
+settings.png 08e7562317400418
 slider.png ea6a9be4cae75eca
-status-low.png 2556d54eb70eb679
+status-low.png 84573843b17f2237
 sysinfo.png deecdc74683251e0
 top-back.png a32a2fab862c039e
 top-played.png 3ac367c25bed5050

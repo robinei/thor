@@ -24,6 +24,8 @@ pub enum ListId {
     /// The apps playing (the volume tab).
     Streams,
     Backlights,
+    /// The keymap picker's: Default, then the keymaps.
+    Keymaps,
 }
 
 /// Which part of a row a target is: the row itself, or one of its controls.
@@ -34,11 +36,13 @@ pub enum RowPart {
     Level,
     /// Its mute button (the apps playing).
     Mute,
+    /// Its Edit button (the keymaps).
+    Edit,
 }
 
 impl ListId {
-    pub const COUNT: usize = 5;
-    pub const ALL: [ListId; ListId::COUNT] = [ListId::Shelf, ListId::Wifi, ListId::Bluetooth, ListId::Streams, ListId::Backlights];
+    pub const COUNT: usize = 6;
+    pub const ALL: [ListId; ListId::COUNT] = [ListId::Shelf, ListId::Wifi, ListId::Bluetooth, ListId::Streams, ListId::Backlights, ListId::Keymaps];
 
     pub fn index(self) -> usize {
         self as usize
@@ -217,6 +221,7 @@ impl State {
             ListId::Bluetooth => &self.radios.bluetooth,
             ListId::Streams => self.levels.audio(),
             ListId::Backlights => self.levels.backlight_rows(),
+            ListId::Keymaps => &self.keymaps,
         }
     }
 
@@ -226,6 +231,7 @@ impl State {
             ListId::Wifi => self.tap_network(i, long),
             ListId::Bluetooth => self.tap_device(i, long),
             ListId::Streams => self.on_stream(i, part),
+            ListId::Keymaps => self.on_keymap_row(i, part, long),
             // (A shelf game's row is its game's target; a backlight's row is only its level.)
             ListId::Shelf | ListId::Backlights => vec![],
         }

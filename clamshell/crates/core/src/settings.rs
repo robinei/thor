@@ -30,8 +30,9 @@ pub enum Setting {
     Fan,
     /// The pad mouse at launch: 0 off, 1 on.
     PadMouse,
-    /// The pad's face buttons: 0 Xbox layout, 1 Nintendo layout (A/B and X/Y swapped).
-    Buttons,
+    /// The keymap (see [`crate::keymap`]), by its id; 0: Default, no remapping. Chosen in its picker
+    /// (any id is kept; one that is gone counts as Default).
+    Keymap,
     /// The sticks' deadzone, in percent.
     Deadzone,
     /// Rumble: 0 off up to 3 full.
@@ -71,7 +72,7 @@ impl Setting {
         Setting::BigCores,
         Setting::Fan,
         Setting::PadMouse,
-        Setting::Buttons,
+        Setting::Keymap,
         Setting::Deadzone,
         Setting::Rumble,
         Setting::CpuMax,
@@ -97,7 +98,7 @@ impl Setting {
             Setting::BigCores => "bigcores",
             Setting::Fan => "fan",
             Setting::PadMouse => "padmouse",
-            Setting::Buttons => "buttons",
+            Setting::Keymap => "keymap",
             Setting::Deadzone => "deadzone",
             Setting::Rumble => "rumble",
             Setting::CpuMax => "cpumax",
@@ -115,7 +116,9 @@ impl Setting {
             Setting::FpsCap => &[0, 30, 40, 45, 60, 90, 120],
             Setting::Refresh => &[0, 60, 90, 120],
             Setting::Upscale | Setting::Rumble => &[0, 1, 2, 3],
-            Setting::BottomScreen | Setting::BigCores | Setting::PadMouse | Setting::Buttons => &[0, 1],
+            Setting::BottomScreen | Setting::BigCores | Setting::PadMouse => &[0, 1],
+            // (The others are the keymaps there are.)
+            Setting::Keymap => &[0],
             Setting::Deadzone => &[0, 4, 8, 12, 16, 20],
             Setting::CpuMax | Setting::GpuMax => &[0, 40, 50, 60, 70, 80, 90, 100],
             Setting::ChargeLimit => &[100, 90, 80],
@@ -156,7 +159,7 @@ impl Setting {
             // Never, or later than by default, costs power; sooner saves it.
             (Setting::ScreenOff | Setting::Sleep, v) if v == 0 || v > self.default_value() => Impact::Costs,
             (Setting::Upscale, 3) | (Setting::Fan, _) => Impact::Changes,
-            (Setting::Hud | Setting::PadMouse | Setting::Buttons | Setting::Deadzone | Setting::Rumble, _) => Impact::Changes,
+            (Setting::Hud | Setting::PadMouse | Setting::Keymap | Setting::Deadzone | Setting::Rumble, _) => Impact::Changes,
             _ => Impact::Saves,
         }
     }
@@ -193,8 +196,9 @@ impl Setting {
             (Setting::Fan, _) => "Fan max",
             (Setting::PadMouse, 0) => "Mouse off",
             (Setting::PadMouse, _) => "Mouse on",
-            (Setting::Buttons, 0) => "Xbox",
-            (Setting::Buttons, _) => "Nintendo",
+            (Setting::Keymap, 0) => "Default",
+            // (The tile shows the keymap's name.)
+            (Setting::Keymap, v) => return number(buf, "Keymap ", v, ""),
             (Setting::Deadzone, 0) => "No deadzone",
             (Setting::Rumble, 0) => "Rumble off",
             (Setting::Rumble, 1) => "Rumble low",
@@ -301,7 +305,7 @@ pub fn parse<'a>(fields: impl Iterator<Item = &'a str>) -> Overrides {
             continue;
         };
         if let Ok(v) = value.parse::<u16>()
-            && s.choices().contains(&v)
+            && (s.choices().contains(&v) || s == Setting::Keymap)
         {
             o.set(s, Some(v));
         }
@@ -465,7 +469,7 @@ mod tests {
         assert_eq!(Setting::BigCores.impact(0), Impact::Saves);
         assert_eq!(Setting::CpuMax.impact(60), Impact::Saves);
         assert_eq!(Setting::CpuMax.impact(100), Impact::Costs);
-        assert_eq!(Setting::Buttons.impact(1), Impact::Changes);
+        assert_eq!(Setting::Keymap.impact(1), Impact::Changes);
         assert_eq!(Setting::Fan.impact(1), Impact::Changes);
         assert_eq!(Setting::ChargeLimit.impact(80), Impact::Saves);
     }
@@ -493,11 +497,12 @@ mod tests {
     fn overrides_round_trip_as_fields() {
         let mut o = Overrides::default();
         o.set(Setting::FpsCap, Some(40));
-        o.set(Setting::Buttons, Some(1));
+        o.set(Setting::Keymap, Some(7));
         let mut text = String::new();
         fields(&o, &mut text);
-        assert_eq!(text, "\tfps=40\tbuttons=1");
+        assert_eq!(text, "\tfps=40\tkeymap=7");
         assert_eq!(parse(text.split('\t')), o);
+        assert!(parse(["buttons=1"].into_iter()).is_empty(), "the old Buttons setting is gone");
         assert_eq!(o.over(&Values::default()).get(Setting::FpsCap), 40);
         assert_eq!(o.over(&Values::default()).get(Setting::Power), 1);
     }

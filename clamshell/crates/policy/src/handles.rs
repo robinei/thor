@@ -64,6 +64,7 @@ impl Handles {
             Effect::Apply { game, settings } => {
                 self.tuning.apply(settings, game.as_deref());
             }
+            Effect::Keymap(keymap) => self.tuning.keymap(keymap),
             Effect::Save(save) => self.save(save),
             Effect::RecordPlay { game, start, duration } => {
                 if let Some(db) = self.paths.stats_db()
@@ -131,6 +132,7 @@ impl Handles {
             Save::Settings(text) => (self.paths.game_settings(), text),
             Save::Resume(text) => (self.paths.resume.clone(), text),
             Save::Brightness(text) => (self.paths.brightness.clone(), text),
+            Save::Keymaps(text) => (self.paths.keymaps(), text),
             Save::Favourites(ids) => {
                 if let Some(dir) = &self.paths.state_dir
                     && let Err(e) = favorites::write(dir, ids.iter().map(String::as_str))

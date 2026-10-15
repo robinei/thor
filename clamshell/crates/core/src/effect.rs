@@ -28,6 +28,9 @@ pub enum Effect {
     /// The settings in force changed: the running game's (`game`), or the global ones while none runs
     /// (also when a game ends). Apply them now.
     Apply { game: Option<Arc<str>>, settings: Values },
+    /// The keymap in force changed (the game's, or all games'; Default: id 0, no bindings): the pad
+    /// remaps by it.
+    Keymap(crate::keymap::Keymap),
     /// Write one of ClamShell's files.
     Save(Save),
     /// A key press for the focused app (virtual keyboard).
@@ -82,6 +85,8 @@ pub enum Watch {
 pub enum Save {
     /// The games' settings (see [`crate::settings::Settings::text`]).
     Settings(String),
+    /// The keymaps (see [`crate::keymap::Keymaps::text`]).
+    Keymaps(String),
     /// The favourites (favorites.txt).
     Favourites(Vec<String>),
     /// Where shelf and the second screen are (see [`crate::State::resume_text`]), to start there next

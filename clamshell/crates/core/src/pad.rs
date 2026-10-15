@@ -26,6 +26,9 @@ pub enum PadRoute {
     Keys,
     /// The pad mouse.
     Mouse,
+    /// The pad's inputs as themselves, for choosing them ([`crate::Event::Listened`]): a keymap's edit
+    /// screen is open where the pad would drive the second screen.
+    Listen,
 }
 
 /// The controller driving ClamShell's screens.
@@ -123,14 +126,17 @@ impl Pad {
 
     /// After anything changed: the claimant as things are now (what is in front, the tab, whether the
     /// focus ring shows), and where the pad goes; the new route, if it changed.
-    pub(crate) fn reconcile(&mut self, front: Front, tab: Tab, focus_shown: bool) -> Option<PadRoute> {
+    pub(crate) fn reconcile(&mut self, front: Front, tab: Tab, focus_shown: bool, listening: bool) -> Option<PadRoute> {
         let claimant = self.claimant(front, tab);
         if claimant != self.last_claimant {
             let in_use = self.route == PadRoute::Ui && focus_shown;
             self.moved_to_ui = self.last_claimant.is_none() && in_use && claimant != Some(Claimant::Mouse);
             self.last_claimant = claimant;
         }
-        let route = self.wanted_route();
+        let route = match self.wanted_route() {
+            PadRoute::Ui if listening => PadRoute::Listen,
+            route => route,
+        };
         (route != self.route).then(|| {
             self.route = route;
             route

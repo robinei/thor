@@ -99,6 +99,8 @@ pub struct Bottom {
     pub(crate) editor: Option<Editor>,
     /// What the settings panel edits (global whenever there is no game in context).
     pub(crate) scope: Scope,
+    /// The keymaps' screen open over the settings tab (see [`crate::keymap_ui`]).
+    pub(crate) keymaps: Option<crate::keymap_ui::Screen>,
     /// The dark second screen was tapped awake (until the next game).
     pub(crate) woken: bool,
     /// What a key just did (a level, a screenshot), shown under the bar for a moment.

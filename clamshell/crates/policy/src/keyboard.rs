@@ -131,6 +131,42 @@ pub fn events(stroke: &Stroke) -> Vec<(KeyCode, Press)> {
     out
 }
 
+/// The modifier keys, in the order they go down (and come up reversed).
+pub const MODIFIERS: [KeyCode; 4] = [KeyCode::KEY_LEFTCTRL, KeyCode::KEY_LEFTALT, KeyCode::KEY_LEFTMETA, KeyCode::KEY_LEFTSHIFT];
+
+/// A keymap's chord: its modifiers' keys and its key's, if it has one.
+pub fn chord_keys(chord: &clamshell_core::keymap::Chord) -> (Vec<KeyCode>, Option<KeyCode>) {
+    let mods = [chord.ctrl, chord.alt, chord.logo, chord.shift].into_iter().zip(MODIFIERS).filter_map(|(on, k)| on.then_some(k)).collect();
+    let key = chord.key.and_then(|key| key_of(&Stroke { key, shift: false, ctrl: false, alt: false, logo: false }));
+    (mods, key)
+}
+
+/// Every key the on-screen keyboard (or a keymap's chord) can press.
+pub fn all_keys() -> Vec<KeyCode> {
+    let mut keys = MODIFIERS.to_vec();
+    keys.extend((' '..='~').filter_map(char_key));
+    let named = [
+        Named::Backspace,
+        Named::Tab,
+        Named::Enter,
+        Named::Esc,
+        Named::Delete,
+        Named::Insert,
+        Named::Home,
+        Named::End,
+        Named::PageUp,
+        Named::PageDown,
+        Named::Left,
+        Named::Right,
+        Named::Up,
+        Named::Down,
+    ];
+    keys.extend(named.into_iter().chain((1..=12).map(Named::F)).map(named_key));
+    keys.sort_by_key(|k| k.0);
+    keys.dedup();
+    keys
+}
+
 pub struct VirtualKeyboard {
     device: VirtualDevice,
 }
@@ -138,33 +174,7 @@ pub struct VirtualKeyboard {
 impl VirtualKeyboard {
     /// Creates the device; it has every key the on-screen keyboard can press.
     pub fn new() -> io::Result<Self> {
-        let mut keys = keyset(&[KeyCode::KEY_LEFTCTRL, KeyCode::KEY_LEFTALT, KeyCode::KEY_LEFTMETA, KeyCode::KEY_LEFTSHIFT]);
-        for c in ' '..='~' {
-            if let Some(k) = char_key(c) {
-                keys.insert(k);
-            }
-        }
-        for n in [
-            Named::Backspace,
-            Named::Tab,
-            Named::Enter,
-            Named::Esc,
-            Named::Delete,
-            Named::Insert,
-            Named::Home,
-            Named::End,
-            Named::PageUp,
-            Named::PageDown,
-            Named::Left,
-            Named::Right,
-            Named::Up,
-            Named::Down,
-        ]
-        .into_iter()
-        .chain((1..=12).map(Named::F))
-        {
-            keys.insert(named_key(n));
-        }
+        let keys = keyset(&all_keys());
         let device = VirtualDevice::builder()?.name(NAME).with_keys(&keys)?.build()?;
         Ok(VirtualKeyboard { device })
     }

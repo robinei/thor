@@ -20,6 +20,8 @@ pub mod idle;
 pub mod instance;
 mod items;
 pub mod keyboard;
+pub mod keymap;
+pub mod keymap_ui;
 pub mod levels;
 pub mod metrics;
 mod pad;
@@ -51,7 +53,7 @@ pub use editor::{Editor, count_env, parse_env};
 pub use effect::{Dirty, Effect, Save, Watch, WindowCommand};
 pub use event::{Event, GameEvent, LevelEvent, PointerEvent, Reading, ShelfEvent, Slide};
 pub use game::{Front, Launching, Origin, Queued, RunningGame};
-pub use id::{AudioId, BtId, DockId, EditorId, Hold, Id, SettingsId, ShelfId, WifiId};
+pub use id::{AudioId, BtId, DockId, EditorId, Hold, Id, KeymapId, SettingsId, ShelfId, Target, WifiId};
 pub use instance::Instance;
 pub use levels::{Brightness, Level, Levels, Sound};
 pub use pad::{Claimant, Pad, PadInput, PadMouse, PadRoute};
@@ -102,6 +104,8 @@ pub struct Init {
     pub library: Library,
     /// Every game's settings and environment.
     pub settings: Settings,
+    /// The keymaps.
+    pub keymaps: keymap::Keymaps,
     /// The screens' brightness as it was left.
     pub brightness: Brightness,
     pub apps: Apps,
@@ -128,6 +132,9 @@ pub struct State {
     sys: Sys,
     settings: Settings,
     keyboard: Keyboard,
+    keymaps: keymap::Keymaps,
+    /// The keymap in force as last sent to the pad.
+    keymap_sent: Option<keymap::Keymap>,
     lists: Lists,
     unix_secs: u64,
     saves: Saves,
@@ -148,6 +155,7 @@ impl State {
         let mut s = State {
             shelf: Shelf::new(init.library),
             settings: init.settings,
+            keymaps: init.keymaps,
             levels: Levels::new(init.brightness),
             apps: init.apps,
             device_session: init.device_session,
@@ -161,6 +169,7 @@ impl State {
             s.bottom.tab = tab;
         }
         s.reconcile_pad();
+        s.keymap_sent = Some(s.keymap_in_force());
         if init.pad_mouse {
             s.pad.toggle_mouse();
             s.reconcile_pad();
@@ -247,6 +256,7 @@ impl State {
         if self.session.current != game && self.follow_pad_mouse() {
             dirty = Dirty::BOTH;
         }
+        effects.extend(self.follow_keymap(false));
         if let Some(route) = self.reconcile_pad() {
             effects.push(Effect::PadRoute(route));
             // The focus ring shows where the pad is.
@@ -266,7 +276,8 @@ impl State {
 
     /// Where the pad goes, as things are now; the new route, if it changed.
     fn reconcile_pad(&mut self) -> Option<PadRoute> {
-        self.pad.reconcile(self.session.front(), self.bottom.tab, self.pointer.show_focus)
+        let listening = self.listening();
+        self.pad.reconcile(self.session.front(), self.bottom.tab, self.pointer.show_focus, listening)
     }
 
     fn apply_event(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
@@ -296,9 +307,16 @@ impl State {
                 let mut effects: Vec<Effect> = self.bottom.tab.watch().map(|w| Effect::Watch(w, true)).into_iter().collect();
                 effects.extend(self.levels.brightness_effect());
                 effects.push(Effect::PadRoute(self.pad.route()));
+                effects.extend(self.follow_keymap(true));
                 (Dirty::BOTH, effects)
             }
+            // On a screen that listens, Home leaves it (it is never an input).
+            Event::Home if self.listening() => {
+                self.keymap_back();
+                (Dirty::BOTTOM, vec![])
+            }
             Event::Home => (Dirty::NONE, self.home()),
+            Event::Listened(input) => (Dirty::BOTTOM, self.listened(input)),
             Event::PadSwitch => {
                 self.pad.switch();
                 (Dirty::NONE, vec![])
@@ -445,6 +463,7 @@ impl State {
             Id::Bluetooth(id) => (Dirty::BOTTOM, self.on_bluetooth(id)),
             Id::Audio(id) => (Dirty::BOTTOM, self.on_audio(id)),
             Id::Row { list, i, part } => (list.screens(), self.on_row(list, usize::from(i), part, long)),
+            Id::Keymap(id) => (Dirty::BOTTOM, self.on_keymap(id, long)),
             Id::Tab(tab) => (Dirty::BOTH, self.choose_tab(tab)),
             // A tap opens the tab (a slide is the UI's: it doesn't end in a tap).
             Id::Control(control) if !long => {
@@ -460,6 +479,7 @@ impl State {
                 // Into the editor while it is open, else to the focused app.
                 let effects = match stroke {
                     Some(stroke) if self.bottom.editor.is_some() => self.edit(stroke),
+                    Some(stroke) if self.capturing() => self.captured(State::chord(stroke)),
                     Some(stroke) => vec![Effect::Key(stroke)],
                     None => vec![],
                 };
@@ -640,6 +660,7 @@ impl State {
         self.saves.resume.touch(self.unix_secs);
         self.bottom.tab = tab;
         self.bottom.editor = None;
+        self.bottom.keymaps = None;
         self.levels.leave();
         let watch = |tab: Tab, on| tab.watch().map(|w| Effect::Watch(w, on));
         watch(before, false).into_iter().chain(watch(tab, true)).collect()

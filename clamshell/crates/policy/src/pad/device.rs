@@ -1,5 +1,5 @@
 //! The real controller and our virtual devices: a pad identified as an Xbox 360 controller (for games)
-//! and a mouse with a few keys (the pad mouse, typing).
+//! and a mouse with a keyboard's keys (the pad mouse, typing, what a keymap presses).
 
 use std::io;
 
@@ -7,7 +7,7 @@ use evdev::raw_stream::RawDevice;
 use evdev::uinput::VirtualDevice;
 use evdev::{AbsInfo, AbsoluteAxisCode, AttributeSet, BusType, InputEvent, InputId, KeyCode, RelativeAxisCode, UinputAbsSetup};
 
-use super::route::{Axis, MOUSE_DEVICE_KEYS, PadSnapshot, Ranges};
+use super::route::{Axis, PadSnapshot, Ranges, mouse_device_keys};
 use crate::input::device::{self, DeviceSpec};
 use crate::input::{Press, Range, Raw, keyset};
 
@@ -117,5 +117,5 @@ fn virtual_mouse() -> io::Result<VirtualDevice> {
     ]
     .into_iter()
     .collect();
-    VirtualDevice::builder()?.name(VIRTUAL_MOUSE).with_keys(&keyset(&MOUSE_DEVICE_KEYS))?.with_relative_axes(&rel)?.build()
+    VirtualDevice::builder()?.name(VIRTUAL_MOUSE).with_keys(&keyset(&mouse_device_keys()))?.with_relative_axes(&rel)?.build()
 }

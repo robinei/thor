@@ -131,6 +131,37 @@ fn warm_frames_do_not_allocate() {
             ],
         ),
         ("shelf, dragged part way", vec![Event::Shelf(clamshell_core::ShelfEvent::Rows(3)), Event::List(clamshell_core::ListEvent::Scroll(clamshell_core::ListId::Shelf, 1.6))]),
+        ("keymap picker", vec![tap(Id::Tab(Tab::Settings)), tap(Id::Settings(SettingsId::Tile(clamshell_core::settings::Setting::Keymap)))]),
+        (
+            "keymap edit screen",
+            vec![
+                tap(Id::Tab(Tab::Settings)),
+                tap(Id::Settings(SettingsId::Tile(clamshell_core::settings::Setting::Keymap))),
+                tap(Id::Row { list: clamshell_core::ListId::Keymaps, i: 1, part: clamshell_core::RowPart::Edit }),
+            ],
+        ),
+        (
+            "keymap map to",
+            vec![
+                tap(Id::Tab(Tab::Settings)),
+                tap(Id::Settings(SettingsId::Tile(clamshell_core::settings::Setting::Keymap))),
+                tap(Id::Row { list: clamshell_core::ListId::Keymaps, i: 1, part: clamshell_core::RowPart::Edit }),
+                tap(Id::Keymap(clamshell_core::KeymapId::Input(clamshell_core::keymap::Input::Trigger(clamshell_core::keymap::Side::Left)))),
+                tap(Id::Keymap(clamshell_core::KeymapId::Target(clamshell_core::Target::Mouse(clamshell_core::keymap::MouseButton::Left)))),
+            ],
+        ),
+        (
+            "keymap key capture",
+            vec![
+                tap(Id::Tab(Tab::Settings)),
+                tap(Id::Settings(SettingsId::Tile(clamshell_core::settings::Setting::Keymap))),
+                tap(Id::Row { list: clamshell_core::ListId::Keymaps, i: 1, part: clamshell_core::RowPart::Edit }),
+                tap(Id::Keymap(clamshell_core::KeymapId::Input(clamshell_core::keymap::Input::Stick(clamshell_core::keymap::Side::Left)))),
+                tap(Id::Keymap(clamshell_core::KeymapId::Target(clamshell_core::Target::Keys))),
+                key(Key::Char('w')),
+                key(Key::Mod(Modifier::Shift)),
+            ],
+        ),
         ("wifi password", vec![tap(Id::Tab(Tab::Wifi)), wifi_reading(), tap(clamshell_core::ListId::Wifi.row(1)), tap(clamshell_core::ListId::Wifi.row(0))]),
         (
             "sliding",
@@ -207,7 +238,7 @@ fn warm_frames_do_not_allocate() {
         ),
     ];
     for (name, events) in cases {
-        let mut state = State::new(Init { library: clamshell_library::demo_library(), ..Init::default() });
+        let mut state = State::new(Init { library: clamshell_library::demo_library(), keymaps: clamshell_core::keymap::Keymaps::initial(), ..Init::default() });
         state.apply(Event::Tick { unix_secs: 1_700_000_000 });
         for event in events {
             state.apply(event);

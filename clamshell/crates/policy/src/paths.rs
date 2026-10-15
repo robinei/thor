@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 pub struct Paths {
     /// Pegasus' config dir, with `game_dirs.txt`: ~/.config/pegasus-frontend unless given.
     pub pegasus_config: Option<PathBuf>,
-    /// Play time (stats.db), favourites (favorites.txt) and the games' settings (game-settings.txt):
+    /// Play time (stats.db), favourites (favorites.txt), the games' settings (game-settings.txt) and the
+    /// keymaps (keymaps.txt):
     /// Pegasus' config dir if it exists (shared with Pegasus), else ~/.local/share/clamshell.
     pub state_dir: Option<PathBuf>,
     /// Where shelf and the second screen were (~/.local/state/clamshell/last).
@@ -83,6 +84,11 @@ impl Paths {
 
     pub fn game_settings(&self) -> Option<PathBuf> {
         self.state_dir.as_ref().map(|d| d.join("game-settings.txt"))
+    }
+
+    /// The keymaps (keymaps.txt), next to the games' settings.
+    pub fn keymaps(&self) -> Option<PathBuf> {
+        self.state_dir.as_ref().map(|d| d.join("keymaps.txt"))
     }
 
     /// Whether there is a systemd user session to put apps and games in scopes of.

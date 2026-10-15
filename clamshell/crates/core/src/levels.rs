@@ -459,7 +459,7 @@ impl State {
     pub(crate) fn on_stream(&mut self, i: usize, part: RowPart) -> Vec<Effect> {
         match part {
             RowPart::Mute => self.levels.toggle_stream_mute(i),
-            RowPart::Main | RowPart::Level => vec![],
+            RowPart::Main | RowPart::Level | RowPart::Edit => vec![],
         }
     }
 }

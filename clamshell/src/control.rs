@@ -7,7 +7,15 @@
 //!   launcher.json), `plus N` (another instance of app N), `game` / `game N` (the dock's game tiles),
 //!   `start-game`, `launch`, `keep`, `close` (shelf), `network N`, `wifi-power`, `device N`,
 //!   `bluetooth-power`, `pad-mouse`, `save` (the editor), `setting KEY` (a settings tile, by its key in
-//!   game-settings.txt: `pad`, `fps`, ...), `scope game|all` (the settings' game or all games)
+//!   game-settings.txt: `pad`, `fps`, `keymap`, ...), `scope game|all` (the settings' game or all games);
+//!   the keymaps' screens: `keymap N` (the picker's row N: 0 Default, then the keymaps; a long press
+//!   opens its menu), `keymap-edit N`, `keymap-new`, `keymap-back`, `keymap-menu
+//!   edit|rename|duplicate|delete`, `keymap-delete` (confirmed), `map-from INPUT` (as in keymaps.txt:
+//!   `a`, `lb`, `up`, `lstick`, `rstick-up`, `lt`, `gyro`; a long press sets it back), `map-to TARGET`
+//!   (`default`, `nothing`, `pad-INPUT`, `press`, `key`, `keys`, `mouse-left|right|middle|back|forward`,
+//!   `wheel-up|down|left|right`, `stick-left|right`, `pointer`, `dpad`, `trigger-left|right`), `speed N`,
+//!   `threshold N`, `gyro-hold INPUT|always`, `key-done`; `key NAME` (an on-screen keyboard key: a
+//!   character, `space`, `ctrl`, `alt`, `shift`, `fn`, `enter`, `esc`, `backspace`, `tab`)
 //! - `tab NAME`: open a tab (dock, wifi, keyboard, ...)
 //! - `home`; `list N`: move shelf's selection by N
 //! - `type TEXT`: type on the on-screen keyboard
@@ -17,17 +25,19 @@
 //!   tab set to V
 //! - `pad up|down|left|right|a|b|y|lb|rb|switch`: the pad while shelf is in front (`a` presses and
 //!   releases)
+//! - `listen INPUT`: an input as the pad sends it while it listens (a keymap's edit screen)
 
 use std::fmt;
 use std::io::BufRead;
 use std::path::PathBuf;
 
 use clamshell_core::hardware::DeviceKey;
-use clamshell_core::keyboard::{self, Key, Modifier};
+use clamshell_core::keyboard::{self, Key, Modifier, Named};
+use clamshell_core::keymap::{Dir, Input, MouseButton, PadOut, Side};
 use clamshell_core::levels::Level;
 use clamshell_core::slider::Control;
 use clamshell_core::{
-    BtId, DockId, ListId, EditorId, Event, Id, LevelEvent, PadInput, PointerEvent, SettingsId, ShelfEvent, ShelfId, Slide, Tab,
+    BtId, DockId, ListId, EditorId, KeymapId, RowPart, Target, Event, Id, LevelEvent, PadInput, PointerEvent, SettingsId, ShelfEvent, ShelfId, Slide, Tab,
     WifiId,
 };
 use clamshell_core::Scope;
@@ -92,6 +102,7 @@ pub fn parse(line: &str) -> Result<Vec<Event>, ParseError> {
         ["list", step] => vec![ShelfEvent::ListStep(number(step)?).into()],
         ["tab", name] => vec![PointerEvent::Activate(Id::Tab(Tab::from_name(name).ok_or_else(|| ParseError::Name((*name).to_owned()))?)).into()],
         ["pad", button] => pad(button)?,
+        ["listen", input] => vec![Event::Listened(Input::parse(input).ok_or_else(|| ParseError::Name((*input).to_owned()))?)],
         // (A slide never ends in a tap: that would open the tab.)
         ["lift", name] => vec![Slide::End.into(), PointerEvent::Up(Id::Control(control(name)?)).into()],
         ["slide", name, from, to, rest @ ..] => {
@@ -165,10 +176,82 @@ fn target_id(words: &[&str]) -> Result<Id, ParseError> {
             Setting::ALL.into_iter().find(|s| s.key() == *key).ok_or_else(|| ParseError::Name((*key).to_owned()))?,
         )),
         ["save"] => Id::Editor(EditorId::Save),
+        ["keymap", n] => ListId::Keymaps.row(number(n)?),
+        ["keymap-edit", n] => Id::Row { list: ListId::Keymaps, i: number(n)?, part: RowPart::Edit },
+        ["keymap-new"] => Id::Keymap(KeymapId::New),
+        ["keymap-back"] => Id::Keymap(KeymapId::Back),
+        ["keymap-delete"] => Id::Keymap(KeymapId::ConfirmDelete),
+        ["keymap-menu", action] => Id::Keymap(match *action {
+            "edit" => KeymapId::Edit,
+            "rename" => KeymapId::Rename,
+            "duplicate" => KeymapId::Duplicate,
+            "delete" => KeymapId::Delete,
+            other => return Err(ParseError::Name(other.to_owned())),
+        }),
+        ["map-from", input] => Id::Keymap(KeymapId::Input(input_named(input)?)),
+        ["map-to", target] => Id::Keymap(KeymapId::Target(target_named(target)?)),
+        ["speed", n] => Id::Keymap(KeymapId::Speed(number(n)?)),
+        ["threshold", n] => Id::Keymap(KeymapId::Threshold(number(n)?)),
+        ["gyro-hold", "always"] => Id::Keymap(KeymapId::Hold(None)),
+        ["gyro-hold", input] => Id::Keymap(KeymapId::Hold(Some(input_named(input)?))),
+        ["key-done"] => Id::Keymap(KeymapId::Done),
+        ["key", name] => key(key_named(name)?)?,
         ["keep"] => Id::Shelf(ShelfId::StartKeep),
         ["close"] => Id::Shelf(ShelfId::StartClose),
         ["launch"] => Id::Shelf(ShelfId::Launch),
         _ => return Err(ParseError::Unknown),
+    })
+}
+
+fn input_named(word: &str) -> Result<Input, ParseError> {
+    Input::parse(word).ok_or_else(|| ParseError::Name(word.to_owned()))
+}
+
+/// A target of the "map to" screen by name.
+fn target_named(word: &str) -> Result<Target, ParseError> {
+    let name = || ParseError::Name(word.to_owned());
+    let side = |w: &str| match w {
+        "left" => Ok(Side::Left),
+        "right" => Ok(Side::Right),
+        _ => Err(name()),
+    };
+    Ok(match word.split_once('-') {
+        None => match word {
+            "default" => Target::Default,
+            "nothing" => Target::Nothing,
+            "press" => Target::PressPad,
+            "key" => Target::Key,
+            "keys" => Target::Keys,
+            "pointer" => Target::Pointer,
+            "dpad" => Target::Dpad,
+            _ => return Err(name()),
+        },
+        Some(("pad", input)) => Target::Pad(PadOut::of(input_named(input)?).ok_or_else(name)?),
+        Some(("mouse", m)) => Target::Mouse(MouseButton::ALL.into_iter().find(|b| b.name() == m).ok_or_else(name)?),
+        Some(("wheel", d)) => Target::Wheel(Dir::ALL.into_iter().find(|x| x.name() == d).ok_or_else(name)?),
+        Some(("stick", s)) => Target::Stick(side(s)?),
+        Some(("trigger", s)) => Target::Trigger(side(s)?),
+        _ => return Err(name()),
+    })
+}
+
+/// An on-screen keyboard key by name.
+fn key_named(word: &str) -> Result<Key, ParseError> {
+    let mut chars = word.chars();
+    if let (Some(c), None) = (chars.next(), chars.next()) {
+        return Ok(Key::Char(c));
+    }
+    Ok(match word {
+        "space" => Key::Char(' '),
+        "ctrl" => Key::Mod(Modifier::Ctrl),
+        "alt" => Key::Mod(Modifier::Alt),
+        "shift" => Key::Mod(Modifier::Shift),
+        "fn" => Key::Mod(Modifier::Fn),
+        "enter" => Key::Named(Named::Enter),
+        "esc" => Key::Named(Named::Esc),
+        "backspace" => Key::Named(Named::Backspace),
+        "tab" => Key::Named(Named::Tab),
+        other => return Err(ParseError::Name(other.to_owned())),
     })
 }
 
@@ -265,6 +348,31 @@ mod tests {
         assert_eq!(parse("poke app 1"), Err(ParseError::Unknown));
         assert_eq!(parse("tap app x"), Err(ParseError::Number("x".into())));
         assert_eq!(parse("tap nothing"), Err(ParseError::Unknown));
+    }
+
+    #[test]
+    fn the_keymaps_screens() {
+        use clamshell_core::keymap::Button;
+        let km = |id| activate(Id::Keymap(id));
+        assert_eq!(parse("tap keymap 1"), Ok(activate(ListId::Keymaps.row(1))));
+        assert_eq!(parse("long keymap 2"), Ok(vec![PointerEvent::LongPress(ListId::Keymaps.row(2)).into()]));
+        assert_eq!(parse("tap keymap-edit 1"), Ok(activate(Id::Row { list: ListId::Keymaps, i: 1, part: RowPart::Edit })));
+        assert_eq!(parse("tap keymap-new"), Ok(km(KeymapId::New)));
+        assert_eq!(parse("tap keymap-menu rename"), Ok(km(KeymapId::Rename)));
+        assert_eq!(parse("tap map-from rstick"), Ok(km(KeymapId::Input(Input::Stick(Side::Right)))));
+        assert_eq!(parse("tap map-from lstick-up"), Ok(km(KeymapId::Input(Input::StickDir(Side::Left, Dir::Up)))));
+        assert_eq!(parse("tap map-to key"), Ok(km(KeymapId::Target(Target::Key))));
+        assert_eq!(parse("tap map-to pad-b"), Ok(km(KeymapId::Target(Target::Pad(PadOut::Button(Button::B))))));
+        assert_eq!(parse("tap map-to pad-l4"), Err(ParseError::Name("pad-l4".into())), "not on the game's pad");
+        assert_eq!(parse("tap map-to mouse-right"), Ok(km(KeymapId::Target(Target::Mouse(MouseButton::Right)))));
+        assert_eq!(parse("tap map-to stick-left"), Ok(km(KeymapId::Target(Target::Stick(Side::Left)))));
+        assert_eq!(parse("tap gyro-hold lt"), Ok(km(KeymapId::Hold(Some(Input::Trigger(Side::Left))))));
+        assert_eq!(parse("tap gyro-hold always"), Ok(km(KeymapId::Hold(None))));
+        assert_eq!(parse("tap speed 4"), Ok(km(KeymapId::Speed(4))));
+        assert_eq!(parse("tap key ctrl"), Ok(activate(key(Key::Mod(Modifier::Ctrl)).unwrap())));
+        assert_eq!(parse("tap key x"), Ok(activate(key(Key::Char('x')).unwrap())));
+        assert_eq!(parse("listen a"), Ok(vec![Event::Listened(Input::Button(Button::A))]));
+        assert_eq!(parse("listen home"), Err(ParseError::Name("home".into())));
     }
 
     #[test]

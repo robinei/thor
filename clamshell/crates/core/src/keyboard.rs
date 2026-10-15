@@ -306,6 +306,18 @@ impl Keyboard {
         }
     }
 
+    /// The modifiers armed or held, as a chord of their own; they are let go (a chord of modifiers
+    /// alone is done).
+    pub fn take_modifiers(&mut self) -> crate::keymap::Chord {
+        let chord = crate::keymap::Chord { key: None, shift: self.shift.on(), ctrl: self.ctrl.on(), alt: self.alt.on(), logo: self.logo.on() };
+        for m in Modifier::ALL {
+            let latch = self.latch_mut(m);
+            latch.armed = false;
+            latch.used = latch.held;
+        }
+        chord
+    }
+
     /// What the key at `pos` does now (its Fn function while Fn is on).
     pub fn effective(&self, pos: KeyPos) -> Option<Key> {
         let slot = slot(pos)?;
