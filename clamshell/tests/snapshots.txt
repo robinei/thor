@@ -12,7 +12,8 @@ keyboard-pressed.png 55782fee819edf3f
 keyboard.png f195925c14f450a7
 keymap-capture.png 40efb303597a1c2c
 keymap-delete.png b31cfeecc5f59b02
-keymap-edit.png b3a327eefb47d2a3
+keymap-edit-new.png 1f100d7f932e6cf9
+keymap-edit.png 97af51e91253a276
 keymap-map-to-gyro.png 45fdb5c567a16a04
 keymap-map-to-stick.png 2ac127b572bfe235
 keymap-map-to.png f4382da5d9d743fa

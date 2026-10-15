@@ -462,6 +462,21 @@ impl<'a> Canvas<'a> {
         }
     }
 
+    /// A straight line from (x0, y0) to (x1, y1), `width` wide with round ends; any angle, antialiased,
+    /// computed per pixel (no path).
+    pub fn line(&mut self, (x0, y0): (f32, f32), (x1, y1): (f32, f32), width: f32, color: impl Into<Color>) {
+        let (ax, ay, bx, by) = (self.px(x0), self.py(y0), self.px(x1), self.py(y1));
+        let half = width * self.scale / 2.0;
+        let (dx, dy) = (bx - ax, by - ay);
+        let len2 = (dx * dx + dy * dy).max(1e-6);
+        let bounds = (ax.min(bx) - half - 1.0, ay.min(by) - half - 1.0, ax.max(bx) + half + 1.0, ay.max(by) + half + 1.0);
+        self.shade(bounds, color.into(), |x, y| {
+            let t = (((x - ax) * dx + (y - ay) * dy) / len2).clamp(0.0, 1.0);
+            let d = (x - ax - t * dx).hypot(y - ay - t * dy);
+            (half + 0.5 - d).clamp(0.0, 1.0)
+        });
+    }
+
     /// Connected lines through `points`, round caps and joins. Uses tiny-skia (allocates): for drawing
     /// icons into their cache only.
     pub fn polyline(&mut self, points: &[(f32, f32)], width: f32, color: Color) {

@@ -7,7 +7,7 @@ use std::fmt;
 use std::path::Path;
 
 use clamshell_core::keyboard::{Key, Modifier};
-use clamshell_core::keymap::{Button, Dir, Input, MouseButton, Side};
+use clamshell_core::keymap::{Button, Dir, Input, MouseButton, PadOut, Side};
 use clamshell_core::levels::Level;
 use clamshell_core::settings::Setting;
 use clamshell_core::slider::Control;
@@ -151,11 +151,11 @@ pub fn shots(now: u64) -> Result<Vec<Shot>, ParseError> {
         ),
         shot("status-low.png", Bottom, vec![tap(Id::Editor(EditorId::Save)), Reading::Status(demo::STATUS_LOW).into()]),
         shot("keymap-name.png", Bottom, [keymap_tile(), km(KeymapId::New)].into_iter().chain(control::type_text("FPS")?).collect()),
+        shot("keymap-edit-new.png", Bottom, vec![tap(Id::Editor(EditorId::Save))]),
         shot(
             "keymap-edit.png",
             Bottom,
             vec![
-                tap(Id::Editor(EditorId::Save)),
                 km(KeymapId::Input(Input::Button(Button::A))),
                 km(KeymapId::Target(Target::Key)),
                 key(Key::Mod(Modifier::Ctrl))?,
@@ -174,6 +174,11 @@ pub fn shots(now: u64) -> Result<Vec<Shot>, ParseError> {
                 km(KeymapId::Target(Target::Pointer)),
                 km(KeymapId::Hold(Some(Input::Trigger(Side::Left)))),
                 km(KeymapId::Back),
+                km(KeymapId::Input(Input::Button(Button::L4))),
+                km(KeymapId::Target(Target::Key)),
+                key(Key::Char('r'))?,
+                km(KeymapId::Input(Input::Button(Button::B))),
+                km(KeymapId::Target(Target::Pad(PadOut::Button(Button::Y)))),
             ],
         ),
         shot("keymap-map-to.png", Bottom, vec![km(KeymapId::Input(Input::Button(Button::A)))]),

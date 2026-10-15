@@ -19,6 +19,7 @@ pub(crate) mod format;
 mod keyboard;
 mod keymaps;
 mod levels;
+mod pad;
 mod radio;
 pub(crate) mod scroll;
 mod settings;
@@ -138,10 +139,16 @@ impl<'f, 'c> Frame<'f, 'c> {
     /// A tappable, focusable area: its background (lit while pressed), `content`, then the focus ring if
     /// focused; `rect` becomes its target.
     fn button(&mut self, id: Id, rect: Rect, look: Look, content: impl FnOnce(&mut Self)) {
+        self.button_in(id, rect, rect, look, content);
+    }
+
+    /// [`Frame::button`] for something drawn smaller than its target: the background and the focus ring
+    /// follow `shown`, the target is `rect`.
+    fn button_in(&mut self, id: Id, rect: Rect, shown: Rect, look: Look, content: impl FnOnce(&mut Self)) {
         let pressed = self.s.pointer().pressed() == Some(&id);
         let background = if pressed { Some(PRESSED) } else { look.fill };
         if let Some(color) = background {
-            let r = rect.inset(look.inset);
+            let r = shown.inset(look.inset);
             if look.radius > 0.0 {
                 self.c.rounded(r, look.radius, color);
             } else {
@@ -150,7 +157,7 @@ impl<'f, 'c> Frame<'f, 'c> {
         }
         content(self);
         if self.s.pointer().focused(&id) {
-            self.c.outline(rect.inset(look.ring), look.radius.max(RADIUS_S), 2.0, Tone::Accent);
+            self.c.outline(shown.inset(look.ring), look.radius.max(RADIUS_S), 2.0, Tone::Accent);
         }
         self.targets.push(Target { rect, id, track: None, list: None });
     }
@@ -222,7 +229,15 @@ mod tests {
         if matches!(a, Id::List(_)) || matches!(b, Id::List(_)) {
             return true;
         }
-        matches!((a, b), (Id::Dock(DockId::App(i)), Id::Dock(DockId::NewInstance(j))) | (Id::Dock(DockId::NewInstance(j)), Id::Dock(DockId::App(i))) if i == j)
+        use clamshell_core::KeymapId::Input as K;
+        use clamshell_core::keymap::{Button, Input, Side};
+        // A stick's click sits on its cap.
+        let click = |a: &Id, b: &Id| {
+            matches!((a, b), (Id::Keymap(K(Input::Stick(Side::Left))), Id::Keymap(K(Input::Button(Button::LS)))) | (Id::Keymap(K(Input::Stick(Side::Right))), Id::Keymap(K(Input::Button(Button::RS)))))
+        };
+        click(a, b)
+            || click(b, a)
+            || matches!((a, b), (Id::Dock(DockId::App(i)), Id::Dock(DockId::NewInstance(j))) | (Id::Dock(DockId::NewInstance(j)), Id::Dock(DockId::App(i))) if i == j)
     }
 
     fn overlap(a: Rect, b: Rect) -> bool {
@@ -270,6 +285,15 @@ mod tests {
                 let body = f.finish().touchpad_area.expect("the area below the bar");
                 let case = format!("{name} at {w}x{h}");
                 assert!(targets.iter().any(|t| matches!(t.id, Id::Keymap(_) | Id::Row { .. } | Id::Editor(_))), "{case}: its buttons");
+                if *name == "edit" {
+                    // Every input can be touched; on the Thor's screen, with room for a finger.
+                    for input in Input::all() {
+                        let id = Id::Keymap(KeymapId::Input(input));
+                        let biggest = targets.iter().filter(|t| t.id == id).map(|t| t.rect.w.min(t.rect.h)).fold(0.0, f32::max);
+                        assert!(biggest > 0.0, "{case}: {input:?} has no target");
+                        assert!(w != 1240 || biggest >= 48.0, "{case}: {input:?}'s target is {biggest} across");
+                    }
+                }
                 for (i, a) in targets.iter().enumerate() {
                     assert!(a.rect.w > 0.0 && a.rect.h > 0.0, "{case}: {:?} has no size", a.id);
                     if a.rect.y + a.rect.h > body.y + 0.5 {
