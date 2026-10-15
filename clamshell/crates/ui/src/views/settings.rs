@@ -39,7 +39,8 @@ enum Tile {
     Reset,
 }
 
-/// The grid, in order; the last tile is Reset on a game's tab, the charge limit on All games.
+/// The grid, in order; on a game's tab Reset follows. (Settings for the device rather than a game, the
+/// charge limit and idle, are the battery tab's.)
 const GRID: [Tile; 15] = [
     Tile::Setting(Setting::Power),
     Tile::Setting(Setting::FpsCap),
@@ -89,8 +90,8 @@ pub(super) fn draw(f: &mut Frame, body: Rect) {
 
     // The grid below.
     let grid = Rect::new(grid.x, grid.y + pad * 0.6, grid.w, grid.h - pad * 0.6);
-    let last = if game.is_some() { Tile::Reset } else { Tile::Setting(Setting::ChargeLimit) };
-    for (i, tile) in GRID.into_iter().chain([last]).enumerate() {
+    let reset = game.is_some().then_some(Tile::Reset);
+    for (i, tile) in GRID.into_iter().chain(reset).enumerate() {
         draw_tile(f, grid.cell(COLUMNS, ROWS, body.h * GAP, i), tile);
     }
 }

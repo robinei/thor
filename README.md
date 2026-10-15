@@ -179,7 +179,8 @@ tap steps to the next value, a long press goes back to the default. Tiles sit on
 says what its value does: grey stock, green saves power, amber costs power, blue changes how the game
 looks or plays. Two tabs: *All games*, the defaults, and the game in context (the running one, else
 shelf's selection), whose own choices override the defaults one by one (a dot on the tile; values taken
-from the defaults are dimmed); its last tile is Reset, where *All games* has the charge limit instead.
+from the defaults are dimmed); on a game's tab its last tile is Reset. The device's own settings (the charge limit, when the screens go
+off and the device sleeps) are on the Battery tab, not here: they aren't a game's.
 
 | Tile | Does |
 |---|---|
@@ -191,7 +192,6 @@ from the defaults are dimmed); its last tile is Reset, where *All games* has the
 | Buttons, Deadzone | Nintendo layout (A/B, X/Y swapped) and a stick deadzone, in the virtual pad |
 | CPU, GPU | a frequency cap in percent, instead of the profile's |
 | Env | extra environment variables (`KEY=value`, typed on the on-screen keyboard); a game's come after the defaults' |
-| Charge | charging stops at 90 or 80 % (*All games* only) |
 | Refresh | the main screen's refresh rate: the nearest its modes have (through the compositor's output management protocol) |
 | Upscale, Fan, Rumble | saved, marked "later": not applied yet |
 

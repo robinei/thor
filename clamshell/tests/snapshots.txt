@@ -13,7 +13,7 @@ keyboard.png f195925c14f450a7
 launcher-running.png 382b49e3cbca6c0e
 launcher.png 2470ba428dff9659
 settings-env.png d8dd30b9be6aa490
-settings-global.png be381b93fc004ce3
+settings-global.png d80adda76e8dc937
 settings-running.png 618e94557f91adc2
 settings.png 5a54e3805d7c054b
 slider.png ea6a9be4cae75eca
