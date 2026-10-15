@@ -11,16 +11,16 @@
 
 use std::fmt::Write;
 
-use clamshell_core::keymap::{Binding, Button, Change, Chord, Dir, Input, Keymap, Kind, Layer, MouseButton, Output, PadOut, Param, Side, as_on_the_pad, change, gyro_holds, params};
+use clamshell_core::keymap::{Binding, Button, Change, Chord, Dir, Input, Keymap, Kind, Layer, MouseButton, Output, PadOut, Side, as_on_the_pad, change, gyro_holds, params};
 use clamshell_core::keymap_ui::{EditView, Screen};
-use clamshell_core::slider::Control;
+use clamshell_core::slider::{Control, Slider};
 use clamshell_core::{Id, KeymapId, ListId, RowPart, Scope, Target};
 
 use super::format::Fmt;
 use super::scroll::Scrolled;
 use super::pad::{Pad, Part};
 use super::style::{self, Look, PRESSED, SURFACE, SURFACE_HI, Text, Tone};
-use super::{Frame, Track, editor};
+use super::{Frame, Track, editor, widgets};
 use crate::draw::{Align, Keep, LINE, Rect, Rgb, Span};
 use crate::icons::Icon;
 
@@ -187,8 +187,8 @@ fn binding(k: Option<&Keymap>, layer: Layer, input: Input) -> Option<Binding> {
 /// bottom row's height and the panel's rows', of the area's height.
 const LABEL: f32 = 0.66;
 const CLUSTER_W: f32 = 0.225;
-const GAP: f32 = 0.04;
-const LABEL_COLUMN_W: f32 = 0.125;
+const GAP: f32 = 0.03;
+const LABEL_COLUMN_W: f32 = 0.1;
 const FOOT_ROW_H: f32 = 0.065;
 const PANEL_ROW_H: f32 = 0.055;
 /// The panel's and the bottom row's text, of the small text size.
@@ -202,6 +202,9 @@ const LEADER_ALPHA: f32 = 0.45;
 const PART_W: f32 = 1.5;
 const LEADER_W: f32 = 1.0;
 const SELECTED_W: f32 = 2.5;
+/// The least room between labels, and the narrowest column (of the labels' text size) that has words.
+const LABEL_GAP: f32 = 1.2;
+const LABEL_MIN: f32 = 4.5;
 /// The most controls in a cluster.
 const CONTROLS: usize = 16;
 
@@ -375,7 +378,7 @@ fn edit(f: &mut Frame, body: Rect, id: u16) {
         if part.side == Side::Left { left.push(c) } else { right.push(c) }
     }
     for column in [&mut left, &mut right] {
-        column.place(area.y, area.bottom(), line, size * 0.4);
+        column.place(area.y, area.bottom(), line, size * LABEL_GAP);
     }
 
     // Lines in, from each changed control to its label.
@@ -415,10 +418,17 @@ fn edit(f: &mut Frame, body: Rect, id: u16) {
         }
     }
 
-    // The labels.
+    // The labels; where their column is too narrow for words (a narrow window), a dot at the line's end
+    // (the panel says what the selected one does).
+    let words = lw >= size * LABEL_MIN;
     for (side, column) in [(Side::Left, &left), (Side::Right, &right)] {
         let cluster = pad.cluster(side);
         for c in column.iter() {
+            if !words {
+                let x = if side == Side::Left { cluster.right() + gap - size * 0.3 } else { cluster.x - gap + size * 0.3 };
+                f.c.circle(x, c.top + line / 2.0, size * 0.15, c.tone);
+                continue;
+            }
             let w = f.c.text_width(size, &c.text).min(lw);
             let x = if side == Side::Left { cluster.right() + gap } else { cluster.x - gap - w };
             f.c.text_fit(Rect::new(x, c.top, w + 1.0, line), size, c.tone, &c.text, Keep::Start);
@@ -452,19 +462,14 @@ fn edit(f: &mut Frame, body: Rect, id: u16) {
     let gyro_top = middle(f, strip, foot, keymap, layer, view.selected == Some(Input::Gyro), size);
     let margin = (strip.w * 0.04).min(size);
     let panel_r = Rect::new(strip.x + margin, area.y, (strip.w - 2.0 * margin).max(1.0), (gyro_top - area.y - size).max(1.0));
-    let sliding_row = panel(f, body, panel_r, id, keymap, view);
+    panel(f, body, panel_r, id, keymap, view);
     foot_actions(f, body, foot_row, keymap, view);
 
-    // A parameter's slider over everything, on its row's height.
-    if let Some(slider) = view.slider {
-        let cy = sliding_row.unwrap_or(panel_r.center().1);
-        super::bar::draw_slider(f, slider, body.w, cy, body.y.max(20.0));
-    }
 }
 
 /// The panel: the selected input's name; what it does in the layer shown; Change and Reset; its
-/// parameters, a row each. Returns the middle of the row whose slider is up, if one is.
-fn panel(f: &mut Frame, body: Rect, r: Rect, id: u16, keymap: Option<&Keymap>, view: EditView) -> Option<f32> {
+/// parameters, a row each (one whose slider is up shows it in its place).
+fn panel(f: &mut Frame, body: Rect, r: Rect, id: u16, keymap: Option<&Keymap>, view: EditView) {
     let s = f.s;
     let pad = style::pad(body.h);
     let small = Text::Small.size(body.h) * PANEL_TEXT;
@@ -474,7 +479,7 @@ fn panel(f: &mut Frame, body: Rect, r: Rect, id: u16, keymap: Option<&Keymap>, v
         for (i, t) in ["Press or touch an input", "to see what it does"].into_iter().enumerate() {
             centred(f, Rect::new(r.x, y + i as f32 * small * LINE, r.w, small * LINE), small, Tone::Dim, t);
         }
-        return None;
+        return;
     };
     let layer = view.layer;
     let own = binding(keymap, layer, input);
@@ -493,8 +498,17 @@ fn panel(f: &mut Frame, body: Rect, r: Rect, id: u16, keymap: Option<&Keymap>, v
         }
         (None, Layer::Main) => (as_on_pad(input), Tone::Dim),
     };
-    if let Some(row) = col.take(small * LINE * 1.4) {
-        centred(f, row, small, tone, &what);
+    if let Some(row) = col.take(small * LINE * 2.2) {
+        match (own, layer) {
+            (None, Layer::Back) => {
+                let main = keymap.and_then(|k| k.get(input)).map(|b| described(input, b).0).unwrap_or_else(|| as_on_pad(input));
+                let line = small * LINE;
+                let top = row.y + (row.h - 2.0 * line) / 2.0;
+                centred(f, Rect::new(row.x, top, row.w, line), small, Tone::Dim, "As in Main");
+                centred(f, Rect::new(row.x, top + line, row.w, line), small, Tone::Dim, &main);
+            }
+            _ => centred_lines(f, row, small, tone, &what),
+        }
     }
     // Change, Reset.
     let bh = body.h * BUTTON_H * 0.65;
@@ -511,34 +525,37 @@ fn panel(f: &mut Frame, body: Rect, r: Rect, id: u16, keymap: Option<&Keymap>, v
     }
     col.skip(pad * 0.4);
     // The parameters (from the main layer's in the Back layer without its own, else as on the pad).
-    let base = s.param_base(id, input)?;
-    let mut sliding_row = None;
+    let Some(base) = s.param_base(id, input) else {
+        return;
+    };
     let rh = body.h * PANEL_ROW_H;
     for p in params(input, base.output) {
         let Some(row) = col.take(rh) else {
-            return sliding_row;
+            return;
         };
         let v = p.get(&base);
-        let value = match p {
-            _ if p.switch() => Fmt::<16>::of(format_args!("{}", if v > 0 { "On" } else { "Off" })),
-            Param::Speed | Param::Curve => Fmt::of(format_args!("{v}")),
-            _ => Fmt::of(format_args!("{v} %")),
-        };
         let changed = v != p.default_value();
         if p.switch() {
-            f.button(Id::Keymap(KeymapId::Toggle(p)), row, Look::ROW, |f| param_row(f, row, small, p.label(), &value, changed));
+            f.button(Id::Keymap(KeymapId::Toggle(p)), row, Look::ROW, |f| {
+                let inner = row.inset(small * 0.4);
+                let sw = Rect::new(inner.right() - row.h * 0.9, row.y, row.h * 0.9, row.h);
+                f.c.text_fit(Rect::new(inner.x, row.y, sw.x - inner.x, row.h), small, Tone::Dim, p.label(), Keep::Start);
+                widgets::switch_shape(f.c, sw, v > 0);
+            });
         } else {
-            let sliding = view.slider.is_some_and(|sl| sl.control == Control::Param(p));
-            if sliding {
-                sliding_row = Some(row.center().1);
-            }
-            f.button(Id::Control(Control::Param(p)), row, Look::ROW, |f| param_row(f, row, small, p.label(), &value, changed));
-            f.track(Track { x0: body.x, w: body.w });
+            let value = Fmt::<16>::of(format_args!("{v} %"));
+            let slider = view.slider.filter(|sl| sl.control == Control::Param(p));
+            let track = Track { x0: r.x, w: r.w };
+            f.button(Id::Control(Control::Param(p)), row, Look::ROW, |f| match slider {
+                Some(sl) => slider_row(f, row, track, sl, small, p.label()),
+                None => param_row(f, row, small, p.label(), &value, changed),
+            });
+            f.track(track);
         }
     }
     if input == Input::Gyro && matches!(base.output, Output::Pointer | Output::Stick(_)) {
         let Some(row) = col.take(rh) else {
-            return sliding_row;
+            return;
         };
         let value = match base.hold {
             Some(h) => Fmt::<24>::of(format_args!("while {}", Label(h))),
@@ -547,10 +564,9 @@ fn panel(f: &mut Frame, body: Rect, r: Rect, id: u16, keymap: Option<&Keymap>, v
         f.button(Id::Keymap(KeymapId::Holds), row, Look::ROW, |f| param_row(f, row, small, "Active", &value, base.hold.is_some()));
     }
     if let Some(row) = col.take(small * LINE * 1.5) {
-        let hint = if params(input, base.output).next().is_some() { "Hold a value to slide it" } else { "Press it again to change it" };
+        let hint = if params(input, base.output).next().is_some() { "Hold a value to slide it" } else { "Press again to change" };
         centred(f, row.shifted(0.0, small * 0.3), small * 0.85, Tone::Dim, hint);
     }
-    sliding_row
 }
 
 /// "As on the pad" in words, for an input (the gyro: off).
@@ -564,6 +580,34 @@ fn param_row(f: &mut Frame, row: Rect, size: f32, label: &str, value: &str, chan
     let vw = f.c.text_width(size, value).min(inner.w * 0.5);
     f.c.text_fit(Rect::new(inner.x, row.y, inner.w - vw - size * 0.3, row.h), size, Tone::Dim, label, Keep::Start);
     f.c.text_fit(Rect::new(inner.right() - vw, row.y, vw + 1.0, row.h), size, Tone::high_if(changed), value, Keep::Start);
+}
+
+/// A parameter's row while its slider is up (the bar's slider, within the panel): the name and value
+/// above, the track along the row with the thumb under the finger.
+fn slider_row(f: &mut Frame, row: Rect, track: Track, sl: Slider, size: f32, label: &str) {
+    f.c.rounded(row, row.h * 0.2, SURFACE_HI);
+    let text = Fmt::<32>::of(format_args!("{label} {} %", sl.value));
+    centred(f, Rect::new(row.x, row.y, row.w, row.h * 0.55), size, Tone::High, &text);
+    let t = Track { x0: track.x0 + sl.track_start(), w: sl.length };
+    widgets::track(f.c, t, row.y + row.h * 0.75, row.h * 0.07, row.h * 0.15, Some(sl.value), Tone::High);
+}
+
+/// Text centred in a row, on two lines (split at a space near the middle) if it doesn't fit on one.
+fn centred_lines(f: &mut Frame, row: Rect, size: f32, tone: Tone, text: &str) {
+    let line = size * LINE;
+    if f.c.text_width(size, text) <= row.w {
+        centred(f, Rect::new(row.x, row.y + (row.h - line) / 2.0, row.w, line), size, tone, text);
+        return;
+    }
+    let middle = text.len() / 2;
+    let split = text.match_indices(' ').map(|(i, _)| i).min_by_key(|i| i.abs_diff(middle));
+    let (a, b) = match split {
+        Some(i) => (text.get(..i).unwrap_or(text), text.get(i + 1..).unwrap_or("")),
+        None => (text, ""),
+    };
+    let top = row.y + (row.h - 2.0 * line) / 2.0;
+    centred(f, Rect::new(row.x, top, row.w, line), size, tone, a);
+    centred(f, Rect::new(row.x, top + line, row.w, line), size, tone, b);
 }
 
 /// Text centred in a row (cut to fit).

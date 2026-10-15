@@ -121,7 +121,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> Rect {
 /// tab below it.
 pub(super) fn draw_slider_over(f: &mut Frame, screen: Rect, bar_h: f32) {
     if let Some(slider) = f.s.levels().slider() {
-        draw_slider(f, *slider, screen.w, bar_h / 2.0, bar_h);
+        draw_slider(f, *slider, screen.w, bar_h);
     } else if let Some(notice) = f.s.bottom().notice() {
         draw_notice(f, &notice.what, screen.w, bar_h);
     }
@@ -161,11 +161,11 @@ fn draw_notice(f: &mut Frame, what: &NoticeKind, w: f32, bar_h: f32) {
     f.c.text_in(Rect::new(gx + icon_w, gy, text_w, side), size, Tone::High, &text, Align::Start);
 }
 
-/// The slider over a row centred at `cy` (the bar's, or a keymap parameter's on the edit screen; `bar_h`
-/// the bar's height, which sizes it): the track (the level lit), the thumb under the finger, and the
-/// level as a number below the row, to the side away from the finger (a parameter's with its name).
-pub(super) fn draw_slider(f: &mut Frame, slider: Slider, w: f32, cy: f32, bar_h: f32) {
+/// The slider over the bar's row: the track (the level lit), the thumb under the finger, and the level
+/// as a number below the bar, to the side away from the finger.
+fn draw_slider(f: &mut Frame, slider: Slider, w: f32, bar_h: f32) {
     let track = Track { x0: slider.track_start(), w: slider.length };
+    let cy = bar_h / 2.0;
     let thumb = bar_h * THUMB;
     let at = track.x0 + track.w * f32::from(slider.value) / 100.0;
     let band = Rect::new(track.x0 - thumb * 2.0, cy - thumb * 1.8, track.w + thumb * 4.0, thumb * 3.6);
@@ -174,26 +174,20 @@ pub(super) fn draw_slider(f: &mut Frame, slider: Slider, w: f32, cy: f32, bar_h:
 
     let side = bar_h * ICON;
     let icon = match slider.control {
-        Control::Volume => Some(Icon::volume(slider.value, f.s.levels().muted())),
-        Control::Brightness => Some(Icon::Brightness),
-        Control::Param(_) => None,
+        Control::Volume => Icon::volume(slider.value, f.s.levels().muted()),
+        // (A keymap parameter's slider is drawn in its row on the edit screen.)
+        Control::Brightness | Control::Param(_) => Icon::Brightness,
     };
-    let text = match slider.control {
-        Control::Param(p) => Fmt::<32>::of(format_args!("{} {}", p.label(), slider.value)),
-        _ => Fmt::<32>::of(format_args!("{}", slider.value)),
-    };
+    let text = Fmt::<4>::of(format_args!("{}", slider.value));
     let size = bar_h * LEVEL_TEXT;
     let text_w = f.c.text_width(size, &text);
-    let icon_w = if icon.is_some() { side * 1.3 } else { 0.0 };
-    let group_w = icon_w + text_w;
+    let group_w = side * 1.3 + text_w;
     let away = w * LEVEL_AWAY;
     let gx = if at < w / 2.0 { at + away } else { at - away - group_w };
-    let gy = cy + bar_h * 0.8;
+    let gy = bar_h * 1.3;
     // On a small card of its own, over whatever the tab shows there.
     let card = Rect::new(gx - side * 0.4, gy - side * 0.3, group_w + side * 0.8, side * 1.6);
     f.c.rounded(card, side * 0.3, SHADE.alpha(SHADE_ALPHA));
-    if let Some(icon) = icon {
-        f.c.icon(icon, Rect::new(gx, gy, side, side), Tone::Normal);
-    }
-    f.c.text_in(Rect::new(gx + icon_w, gy, text_w, side), size, Tone::High, &text, Align::Start);
+    f.c.icon(icon, Rect::new(gx, gy, side, side), Tone::Normal);
+    f.c.text_in(Rect::new(gx + side * 1.3, gy, text_w, side), size, Tone::High, &text, Align::Start);
 }

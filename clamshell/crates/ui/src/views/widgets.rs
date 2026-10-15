@@ -52,13 +52,16 @@ const KNOB: f32 = 0.38;
 
 /// An on/off switch, centred in its button `r`: green with the knob right when on.
 pub(super) fn switch(f: &mut Frame, id: Id, r: Rect, on: bool) {
-    f.button(id, r, Look::ICON, |f| {
-        let (h, w) = (r.h * SWITCH_H, r.h * SWITCH_W);
-        let track = r.centered(w, h);
-        f.c.rounded(track, h / 2.0, if on { Tone::Go.rgb() } else { SURFACE_HI });
-        let knob_x = if on { track.x + track.w - h / 2.0 } else { track.x + h / 2.0 };
-        f.c.circle(knob_x, track.y + h / 2.0, h * KNOB, if on { Tone::High } else { Tone::Dim });
-    });
+    f.button(id, r, Look::ICON, |f| switch_shape(f.c, r, on));
+}
+
+/// A switch's drawing, centred in `r` (sized by its height).
+pub(super) fn switch_shape(c: &mut Canvas, r: Rect, on: bool) {
+    let (h, w) = (r.h * SWITCH_H, r.h * SWITCH_W);
+    let track = r.centered(w, h);
+    c.rounded(track, h / 2.0, if on { Tone::Go.rgb() } else { SURFACE_HI });
+    let knob_x = if on { track.x + track.w - h / 2.0 } else { track.x + h / 2.0 };
+    c.circle(knob_x, track.y + h / 2.0, h * KNOB, if on { Tone::High } else { Tone::Dim });
 }
 
 /// What a status row shows: its icon and name (in `tone`), a lock before the state if `lock`, and the
