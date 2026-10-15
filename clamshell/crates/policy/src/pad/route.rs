@@ -3,7 +3,7 @@
 //! switching routes is tested here (whatever a mapping holds down is let go when the pad leaves it).
 
 use clamshell_core::hardware::DeviceKey;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use clamshell_core::{Event, PadInput, PadRoute};
 use evdev::{AbsoluteAxisCode, KeyCode};
@@ -113,13 +113,26 @@ fn away(route: PadRoute) -> bool {
     route != PadRoute::Game
 }
 
-/// Routes the pad's events. The home button is always ClamShell's: on its own it is [`Event::Home`]
-/// (on release, so it can start a combination), with RB a screenshot. With the pad mouse or typing, View
-/// is ClamShell's too (to move the pad to the second screen).
+/// A game in front gets Guide when Home is held this long (Steam's overlay, its chords).
+const GUIDE_AFTER: Duration = Duration::from_millis(500);
+
+/// The home button.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Home {
+    Up,
+    /// Held since then; whether a combination used it (then letting go isn't Home).
+    Held { since: Instant, combined: bool },
+    /// Held long with a game in front: the virtual pad's Guide is down until Home is let go.
+    Guide,
+}
+
+/// Routes the pad's events. The home button is ClamShell's: on its own it is [`Event::Home`] (on
+/// release, so it can start a combination), with RB a screenshot; held for [`GUIDE_AFTER`] with a game
+/// in front, it is the game's Guide button (Steam's overlay) until let go. With the pad mouse or typing,
+/// View is ClamShell's too (to move the pad to the second screen).
 pub struct PadRouter {
     route: PadRoute,
-    /// Home is held; whether a combination used it (then letting go isn't Home).
-    home: Option<bool>,
+    home: Home,
     /// RB went into a combination: its release stays ClamShell's too.
     rb_taken: bool,
     mouse: PadMouse,
@@ -135,7 +148,7 @@ impl PadRouter {
         if away(route) {
             snapshot.events(false, &mut out.pad);
         }
-        PadRouter { route, home: None, rb_taken: false, mouse: PadMouse::new(ranges), navigator: Navigator::new(ranges.stick), typing: Typing, snapshot }
+        PadRouter { route, home: Home::Up, rb_taken: false, mouse: PadMouse::new(ranges), navigator: Navigator::new(ranges.stick), typing: Typing, snapshot }
     }
 
     fn mapping(&mut self, route: PadRoute) -> Option<&mut dyn Mapping> {
@@ -157,6 +170,10 @@ impl PadRouter {
         if let Some(mapping) = self.mapping(from) {
             mapping.release(out);
         }
+        if self.home == Home::Guide {
+            self.guide(false, out);
+            self.home = Home::Held { since: Instant::now(), combined: true };
+        }
         if away(from) != away(to) {
             self.snapshot.events(!away(to), &mut out.pad);
         }
@@ -169,19 +186,22 @@ impl PadRouter {
         let key = raw.as_key();
         match key {
             Some((KeyCode::BTN_MODE, Press::Down)) => {
-                self.home = Some(false);
+                self.home = Home::Held { since: now, combined: false };
                 return;
             }
             Some((KeyCode::BTN_MODE, Press::Up)) => {
-                if self.home.take() == Some(false) {
-                    out.events.push(Event::Home);
+                match std::mem::replace(&mut self.home, Home::Up) {
+                    Home::Held { combined: false, .. } => out.events.push(Event::Home),
+                    Home::Guide => self.guide(false, out),
+                    Home::Held { .. } | Home::Up => {}
                 }
                 return;
             }
             Some((KeyCode::BTN_MODE, Press::Repeat)) => return,
-            // Home with RB: a screenshot (the game never sees this RB).
-            Some((KeyCode::BTN_TR, Press::Down)) if self.home.is_some() => {
-                self.home = Some(true);
+            // Home with RB: a screenshot (the game never sees this RB). Once Home is Guide, RB is the
+            // game's (Steam's chords).
+            Some((KeyCode::BTN_TR, Press::Down)) if matches!(self.home, Home::Held { .. }) => {
+                self.home = Home::Held { since: now, combined: true };
                 self.rb_taken = true;
                 out.events.push(Event::Device(DeviceKey::Screenshot));
                 return;
@@ -209,9 +229,28 @@ impl PadRouter {
         }
     }
 
-    /// Ticks the mapping in force; when to tick it next, if it needs to be.
+    /// Ticks the mapping in force, and a held Home; when to tick next, if needed.
     pub fn tick(&mut self, now: Instant, out: &mut Out) -> Option<Instant> {
-        self.mapping(self.route).and_then(|m| m.tick(now, out))
+        let home = match self.home {
+            Home::Held { since, combined: false } if self.route == PadRoute::Game => {
+                let at = since + GUIDE_AFTER;
+                if now >= at {
+                    self.home = Home::Guide;
+                    self.guide(true, out);
+                    None
+                } else {
+                    Some(at)
+                }
+            }
+            _ => None,
+        };
+        let mapping = self.mapping(self.route).and_then(|m| m.tick(now, out));
+        [home, mapping].into_iter().flatten().min()
+    }
+
+    /// The virtual pad's Guide button down or up.
+    fn guide(&self, down: bool, out: &mut Out) {
+        out.pad.extend([Raw::key(KeyCode::BTN_MODE, if down { Press::Down } else { Press::Up }), Raw::REPORT]);
     }
 }
 
@@ -319,6 +358,53 @@ mod tests {
         // RB on its own is the game's again.
         r.event(key(KeyCode::BTN_TR, Press::Down), now, &mut out);
         assert_eq!(out.pad, vec![key(KeyCode::BTN_TR, Press::Down)]);
+    }
+
+    #[test]
+    fn home_held_with_a_game_in_front_is_its_guide_button() {
+        let (mut r, mut out) = router(PadRoute::Game);
+        let t0 = Instant::now();
+        r.event(key(KeyCode::BTN_MODE, Press::Down), t0, &mut out);
+        assert_eq!(r.tick(t0, &mut out), Some(t0 + GUIDE_AFTER), "wakes when it becomes Guide");
+        assert!(out.pad.is_empty());
+        r.tick(t0 + GUIDE_AFTER, &mut out);
+        assert_eq!(out.pad, vec![key(KeyCode::BTN_MODE, Press::Down), Raw::REPORT]);
+        // RB is now the game's (a Steam chord), not a screenshot.
+        r.event(key(KeyCode::BTN_TR, Press::Down), t0 + GUIDE_AFTER, &mut out);
+        r.event(key(KeyCode::BTN_MODE, Press::Up), t0 + GUIDE_AFTER, &mut out);
+        assert_eq!(held(&out.pad), vec![KeyCode::BTN_TR]);
+        assert!(out.events.is_empty(), "not Home");
+    }
+
+    #[test]
+    fn home_held_away_from_the_game_or_in_a_combination_stays_clamshells() {
+        let (mut r, mut out) = router(PadRoute::Ui);
+        out.pad.clear();
+        let t0 = Instant::now();
+        r.event(key(KeyCode::BTN_MODE, Press::Down), t0, &mut out);
+        assert_eq!(r.tick(t0 + GUIDE_AFTER, &mut out), None);
+        r.event(key(KeyCode::BTN_MODE, Press::Up), t0 + GUIDE_AFTER, &mut out);
+        assert_eq!(out.events, vec![Event::Home]);
+        assert!(out.pad.is_empty());
+        // In a game, Home with RB before the hold is up: a screenshot, never Guide.
+        let (mut r, mut out) = router(PadRoute::Game);
+        r.event(key(KeyCode::BTN_MODE, Press::Down), t0, &mut out);
+        r.event(key(KeyCode::BTN_TR, Press::Down), t0, &mut out);
+        r.tick(t0 + GUIDE_AFTER * 2, &mut out);
+        assert!(out.pad.is_empty(), "{:?}", out.pad);
+    }
+
+    #[test]
+    fn guide_is_let_go_when_the_pad_leaves_the_game() {
+        let (mut r, mut out) = router(PadRoute::Game);
+        let t0 = Instant::now();
+        r.event(key(KeyCode::BTN_MODE, Press::Down), t0, &mut out);
+        r.tick(t0 + GUIDE_AFTER, &mut out);
+        r.set_route(PadRoute::Ui, &mut out);
+        assert!(!held(&out.pad).contains(&KeyCode::BTN_MODE), "no stuck Guide");
+        out.events.clear();
+        r.event(key(KeyCode::BTN_MODE, Press::Up), t0 + GUIDE_AFTER, &mut out);
+        assert!(out.events.is_empty(), "letting go afterwards isn't Home");
     }
 
     #[test]

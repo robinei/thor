@@ -3,7 +3,8 @@
 //! [`route`]): the game's virtual pad (copied straight through, [`Shaping`] applied); the pad mouse
 //! ([`mouse`]); ClamShell's screens ([`navigator`]); or typing into an app ([`typing`]). Away from the
 //! game the virtual pad shows a neutral controller, so games never see it disappear. The home button
-//! (BTN_MODE) is ours: games never see it, it goes to the program as [`Event::Home`]. The virtual devices
+//! (BTN_MODE) is ours: it goes to the program as [`Event::Home`]; only held with a game in front is it
+//! the game's Guide (see [`route`]). The virtual devices
 //! outlive the controller: unplugged (or failing), the pad stays, at rest, until one is back. Button
 //! layers (remaps) go in this same path later.
 //!

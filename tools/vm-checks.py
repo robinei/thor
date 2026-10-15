@@ -534,6 +534,25 @@ class Checks:
                    bool(device("clamshell pad (Xbox 360)")) and not device("clamshell fake pad"))
         self.check("  plugged in again: grabbed again", plug_pad() and bool(device("clamshell pad (Xbox 360)")))
 
+    def pad_guide(self):
+        if not plug_pad():
+            return self.check("pad: the fake pad grabbed", False)
+        control("tap launch")
+        launched = until(lambda: bool(units("game")) and front() not in ("", "clamshell-shelf"), 10)
+        if not self.check("pad: a game in front", launched, f"front {front()!r}"):
+            return
+        game = front()
+        virtual = device("clamshell pad (Xbox 360)")
+        out = capture(f"evtest {virtual}", 3, lambda: pad("tap home 900"))
+        mode = [line for line in out.splitlines() if "BTN_MODE" in line and "value" in line]
+        self.check("  Home held: the game's Guide, down then up", len(mode) == 2 and "value 1" in mode[0]
+                   and "value 0" in mode[1], f"{mode}")
+        self.check("  and not ClamShell's Home (the game stays in front)", front() == game, f"front {front()!r}")
+        out = capture(f"evtest {virtual}", 2, lambda: press("home"))
+        self.check("  Home pressed: ClamShell's (shelf in front), the game sees nothing",
+                   until(lambda: front() == "clamshell-shelf", 3) and "BTN_MODE" not in out.split("Testing ...")[-1],
+                   f"front {front()!r}")
+
     # Bluetooth
 
     def bluetooth(self):
@@ -560,7 +579,7 @@ class Checks:
 
 
 CHECKS = ["bar_tap", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "touchpad",
-          "pad_shelf", "pad_view", "pad_mouse", "pad_typing", "pad_held_key", "pad_unplug", "bluetooth"]
+          "pad_shelf", "pad_view", "pad_mouse", "pad_typing", "pad_held_key", "pad_unplug", "pad_guide", "bluetooth"]
 
 
 def main():

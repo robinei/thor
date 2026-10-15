@@ -64,7 +64,7 @@ sway's workspaces, the input devices (evtest, libinput), NetworkManager, BlueZ, 
 taps, holds and slides on the bar (volume through a PipeWire null sink, brightness through a fake
 backlight), a slide while a second finger taps a tab, forgetting a Wi-Fi network by a long press, the
 touchpad tab, the pad on shelf (D-pad, A, Home), View, the pad mouse, typing with the pad, a held A on an
-on-screen key when View moves the pad away, unplugging the controller during a game, and Bluetooth. For
+on-screen key when View moves the pad away, unplugging the controller during a game, Home held as the game's Guide, and Bluetooth. For
 them ClamShell runs with a test library, the fake backlight and its own state directory (a runtime
 drop-in for its service, removed afterwards; `--keep` leaves it). It prints ok/FAIL lines and a count;
 the exit status is the number of failures. About three minutes.
@@ -267,7 +267,8 @@ desktop's) and shows the new level under the bar for a moment. `clamshell ctl vo
 `$XDG_RUNTIME_DIR/clamshell-control`). A screenshot (the pad's Home with RB, or `ctl screenshot`, which the
 image binds to a keyboard's Print) is both screens in one PNG in `~/Pictures/Screenshots`, taken by grim;
 "Screenshot saved" shows under the bar. Home on its own acts when it is let go, so it can start a
-combination.
+combination. Held for half a second with a game in front, Home is the game's Guide button instead (Steam's
+overlay and its Guide chords), until it is let go.
 
 **Sleep**: the power button and the lid put the device to sleep through logind (the image's
 `logind.conf.d/thor.conf`): suspend, then hibernate after 30 minutes (`sleep.conf.d/thor.conf`), or
