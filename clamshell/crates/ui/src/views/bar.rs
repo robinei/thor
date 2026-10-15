@@ -3,7 +3,8 @@
 //! the battery (tabs too, that carry their status), all spread evenly; then, past a faint line, the clock
 //! and the pad mouse toggle, which is a switch rather than a tab.
 //!
-//! While a finger is on volume or brightness, a slider is drawn over the bar (the bar stays visible
+//! While a finger is held on volume or brightness (or slides off it sideways), a slider is drawn over
+//! the bar (the bar stays visible
 //! under it): a track whose current level sits under the finger, and the level as a number beside it.
 
 use std::fmt::Write;
@@ -48,13 +49,15 @@ fn mode_icon(mode: Mode) -> Icon {
         Mode::Keyboard => Icon::Keyboard,
         Mode::Touchpad => Icon::Touchpad,
         Mode::Sysinfo => Icon::Sysinfo,
+        Mode::Volume => Icon::Volume { waves: 3, muted: false },
+        Mode::Brightness => Icon::Brightness,
         Mode::Wifi => Icon::Wifi { bars: Some(3) },
         Mode::Battery => Icon::Battery { tenths: 10, charging: false },
         Mode::Bluetooth => Icon::Bluetooth { connected: false },
     }
 }
 
-fn volume_icon(level: u8, muted: bool) -> Icon {
+pub(super) fn volume_icon(level: u8, muted: bool) -> Icon {
     let waves = match level {
         0 => 0,
         1..=33 => 1,
@@ -106,7 +109,8 @@ pub(super) fn draw(f: &mut Frame, w: f32, h: f32, scratch: &mut Scratch) -> f32 
     f.c.fill(Rect::new(line_x - 0.5, (bar_h - line) / 2.0, 1.0, line), rgba(DIM, DIVIDER_ALPHA));
 
     // Before the line, evenly spread: the tabs, volume and brightness (near the middle; the slider
-    // makes do with the room on either side), and the status tabs.
+    // makes do with the room on either side), and the status tabs. Each opens its tab (lit while open);
+    // volume and brightness, held or slid, bring up the slider.
     let cell = (line_x / ICONS as f32).max(slot);
     let at = |i: usize| Rect::new(i as f32 * cell, 0.0, cell, bar_h);
     for (i, mode) in Mode::BAR.into_iter().enumerate() {
@@ -117,10 +121,18 @@ pub(super) fn draw(f: &mut Frame, w: f32, h: f32, scratch: &mut Scratch) -> f32 
     // Dim without a reading (always shown, so a desktop shows everything the device does).
     let volume = f.s.level(Control::Volume);
     let icon = volume_icon(volume.unwrap_or(0), f.s.status.muted);
-    let color = if volume.is_some() { TEXT } else { DIM };
+    let color = match (f.s.mode == Mode::Volume, volume) {
+        (true, _) => ACCENT,
+        (false, Some(_)) => TEXT,
+        (false, None) => DIM,
+    };
     icon_button(f, Id::Control(Control::Volume), at(i), icon, color);
     i += 1;
-    let color = if f.s.level(Control::Brightness).is_some() { TEXT } else { DIM };
+    let color = match (f.s.mode == Mode::Brightness, f.s.level(Control::Brightness)) {
+        (true, _) => ACCENT,
+        (false, Some(_)) => TEXT,
+        (false, None) => DIM,
+    };
     icon_button(f, Id::Control(Control::Brightness), at(i), Icon::Brightness, color);
     i += 1;
     let bt = &f.s.bluetooth;

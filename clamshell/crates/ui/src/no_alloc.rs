@@ -145,6 +145,24 @@ fn warm_frames_do_not_allocate() {
                 }),
             ],
         ),
+        (
+            "volume",
+            vec![
+                Event::Activate(Id::Mode(Mode::Volume)),
+                Event::Audio(clamshell_core::mixer::Audio {
+                    outputs: vec![clamshell_core::mixer::Output { id: 1, name: "Speakers".into(), default: true }],
+                    streams: vec![clamshell_core::mixer::Stream { id: 2, app: "Firefox".into(), title: String::new(), volume: 40, muted: false }],
+                }),
+                Event::Down(Id::Level(clamshell_core::mixer::Level::Stream(0))),
+            ],
+        ),
+        (
+            "brightness",
+            vec![
+                Event::Activate(Id::Mode(Mode::Brightness)),
+                Event::Backlights(vec![clamshell_core::mixer::Backlight { name: "panel".into(), level: 60 }]),
+            ],
+        ),
         ("keyboard", vec![Event::Activate(Id::Mode(Mode::Keyboard))]),
         ("keyboard, Fn", vec![key(Key::Mod(Modifier::Fn))]),
         ("keyboard, Shift and a pressed key", vec![key(Key::Mod(Modifier::Shift)), key(Key::Char('h'))]),

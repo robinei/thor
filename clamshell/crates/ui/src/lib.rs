@@ -131,6 +131,8 @@ pub fn run(
         images: images::Images::new(image_requests),
         presses: HashMap::new(),
         slider_source: None,
+        pending_slide: None,
+        level_drag: None,
         last_focus: [None, None],
         hold_timer: None,
         text_input: text_input::TextInput::bind(&globals, &qh),
@@ -225,6 +227,10 @@ struct App {
     presses: HashMap<Source, Press>,
     /// The press that is moving a slider, if any.
     slider_source: Option<Source>,
+    /// A finger on volume or brightness that may become a slide.
+    pending_slide: Option<input::PendingSlide>,
+    /// A finger setting a level row.
+    level_drag: Option<input::LevelDrag>,
     /// Where the pad's focus was on each screen, for View/Select switching back to it.
     last_focus: [Option<clamshell_core::Id>; 2],
     /// Fires when the latest press becomes a hold, then at the repeat rate for repeating keys.

@@ -9,6 +9,7 @@ pub mod controls;
 pub mod editor;
 mod game;
 pub mod metrics;
+pub mod mixer;
 mod panel;
 pub mod power;
 mod resume;
@@ -41,6 +42,8 @@ pub enum Mode {
     Touchpad,
     #[default]
     Sysinfo,
+    Volume,
+    Brightness,
     Wifi,
     Bluetooth,
     Battery,
@@ -49,6 +52,19 @@ pub enum Mode {
 impl Mode {
     /// The modes with their own icon on the left of the bar, in order (the others open from status icons).
     pub const BAR: [Mode; 5] = [Mode::Settings, Mode::Dock, Mode::Keyboard, Mode::Touchpad, Mode::Sysinfo];
+    /// Every tab, in the bar's order.
+    pub const TABS: [Mode; 10] = [
+        Mode::Settings,
+        Mode::Dock,
+        Mode::Keyboard,
+        Mode::Touchpad,
+        Mode::Sysinfo,
+        Mode::Volume,
+        Mode::Brightness,
+        Mode::Bluetooth,
+        Mode::Wifi,
+        Mode::Battery,
+    ];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -57,6 +73,8 @@ impl Mode {
             Mode::Keyboard => "keyboard",
             Mode::Touchpad => "touchpad",
             Mode::Sysinfo => "sysinfo",
+            Mode::Volume => "volume",
+            Mode::Brightness => "brightness",
             Mode::Wifi => "wifi",
             Mode::Battery => "battery",
             Mode::Bluetooth => "bluetooth",
@@ -66,7 +84,7 @@ impl Mode {
     pub fn from_name(name: &str) -> Option<Mode> {
         // ("launcher": the dock's old name, in saved places and scripts.)
         let name = if name == "launcher" { "dock" } else { name };
-        Mode::BAR.into_iter().chain([Mode::Wifi, Mode::Bluetooth, Mode::Battery]).find(|m| m.name() == name)
+        Mode::TABS.into_iter().find(|m| m.name() == name)
     }
 }
 
@@ -179,8 +197,14 @@ pub enum Id {
     Key(KeyPos),
     /// The pad mouse toggle.
     PadMouse,
-    /// Volume or brightness in the bar: a touch brings up its slider.
+    /// Volume or brightness in the bar: a tap opens its tab, a hold or a slide brings up its slider.
     Control(Control),
+    /// A level row in the volume or brightness tab: the finger sets it.
+    Level(mixer::Level),
+    /// The volume tab's mute button, an app's mute button, and an output, by position.
+    MuteOutput,
+    StreamMute(u16),
+    Output(u16),
     /// The Wi-Fi mode's radio switch, and a network by position.
     WifiPower,
     Network(u16),
@@ -252,6 +276,13 @@ pub enum Event {
     Bluetooth(bluetooth::Bluetooth),
     /// The charge history and what is using the machine (every few seconds while the battery mode is open).
     Power(power::Power),
+    /// The outputs and the apps playing (while the volume tab is open), the backlights (while the
+    /// brightness tab is open).
+    Audio(mixer::Audio),
+    Backlights(Vec<mixer::Backlight>),
+    /// A level row set by the finger, or stepped by the pad (-1 or 1).
+    SetLevel(mixer::Level, u8),
+    LevelStep(mixer::Level, i16),
     /// The pad's home button.
     Home,
     /// View, away from shelf: the pad between the second screen and what else wants it (the pad mouse,
@@ -321,6 +352,11 @@ pub enum Effect {
     Bluetooth(bluetooth::Command),
     /// The battery mode opened (read the charge history and the spenders) or closed.
     WatchPower(bool),
+    Audio(mixer::Command),
+    /// The brightness tab opened (read the backlights) or closed.
+    WatchBacklights(bool),
+    /// One backlight to a level (0-100).
+    SetBacklight { name: String, level: u8 },
     Quit,
 }
 
@@ -401,6 +437,10 @@ pub struct State {
     pub slider: Option<Slider>,
     pub wifi: wifi::Wifi,
     pub bluetooth: bluetooth::Bluetooth,
+    pub audio: mixer::Audio,
+    pub backlights: Vec<mixer::Backlight>,
+    /// The level row a finger is on.
+    dragging: Option<mixer::Level>,
     pub power: power::Power,
     pub focus: Option<Id>,
     /// The focus ring is shown only while navigating with the pad.
@@ -452,6 +492,10 @@ fn screen_of(id: &Id) -> Dirty {
         | Id::Key(_)
         | Id::PadMouse
         | Id::Control(_)
+        | Id::Level(_)
+        | Id::MuteOutput
+        | Id::StreamMute(_)
+        | Id::Output(_)
         | Id::WifiPower
         | Id::Network(_)
         | Id::BluetoothPower
@@ -553,6 +597,7 @@ impl State {
                 (if minute_changed { Dirty::BOTH } else { Dirty::NONE }, effects)
             }
             Event::Status(status) => {
+                let status = self.keep_dragged(status);
                 let changed = status != self.status;
                 self.status = status;
                 (if changed { Dirty::BOTTOM } else { Dirty::NONE }, vec![])
@@ -678,6 +723,9 @@ impl State {
                 if matches!(id, Id::Control(_)) {
                     self.slide_end();
                 }
+                if matches!(id, Id::Level(_)) {
+                    self.dragging = None;
+                }
                 if let Id::Key(pos) = id {
                     self.keyboard.up(pos);
                 }
@@ -704,6 +752,19 @@ impl State {
                 self.power = power;
                 (if self.mode == Mode::Battery { Dirty::BOTTOM } else { Dirty::NONE }, vec![])
             }
+            Event::Audio(audio) => {
+                let changed = self.set_audio(audio);
+                (if changed { Dirty::BOTTOM } else { Dirty::NONE }, vec![])
+            }
+            Event::Backlights(backlights) => {
+                let changed = self.set_backlights(backlights);
+                (if changed { Dirty::BOTTOM } else { Dirty::NONE }, vec![])
+            }
+            Event::SetLevel(level, value) => {
+                let effects = self.set_level(level, value);
+                (if effects.is_empty() { Dirty::NONE } else { Dirty::BOTTOM }, effects)
+            }
+            Event::LevelStep(level, direction) => (Dirty::BOTTOM, self.step_level(level, direction)),
             Event::Home => (Dirty::NONE, self.home()),
             Event::PadSwitch => {
                 if matches!(self.pad_wanted_by(), Some(PadRoute::Mouse | PadRoute::Keys)) {
@@ -794,8 +855,19 @@ impl State {
                 self.pad_mouse = !self.pad_mouse;
                 (Dirty::BOTTOM, vec![Effect::PadMouse(self.pad_mouse)])
             }
-            Id::Control(control) if !long => (Dirty::BOTTOM, self.tap_control(control)),
-            Id::Control(_) => (Dirty::NONE, vec![]),
+            // A tap opens the tab (a slide is the UI's: it doesn't end in a tap).
+            Id::Control(control) if !long => {
+                self.raised_from = None;
+                let mode = match control {
+                    Control::Volume => Mode::Volume,
+                    Control::Brightness => Mode::Brightness,
+                };
+                (Dirty::BOTH, self.set_mode(mode))
+            }
+            Id::Control(_) | Id::Level(_) => (Dirty::NONE, vec![]),
+            Id::MuteOutput => (Dirty::BOTTOM, self.toggle_mute()),
+            Id::StreamMute(i) => (Dirty::BOTTOM, self.toggle_stream_mute(usize::from(i))),
+            Id::Output(i) => (Dirty::BOTTOM, self.choose_output(usize::from(i))),
             Id::WifiPower => (Dirty::BOTTOM, vec![Effect::Wifi(wifi::Command::Enable(!self.wifi.enabled))]),
             Id::Network(i) => (Dirty::BOTTOM, self.tap_network(usize::from(i), long)),
             Id::BluetoothPower => (Dirty::BOTTOM, vec![Effect::Bluetooth(bluetooth::Command::Power(!self.bluetooth.powered))]),
@@ -830,6 +902,14 @@ impl State {
         let bt = |m: Mode| m == Mode::Bluetooth;
         if bt(before) != bt(self.mode) {
             effects.push(Effect::Bluetooth(bluetooth::Command::Watch(bt(self.mode))));
+        }
+        let volume = |m: Mode| m == Mode::Volume;
+        if volume(before) != volume(self.mode) {
+            effects.push(Effect::Audio(mixer::Command::Watch(volume(self.mode))));
+        }
+        let brightness = |m: Mode| m == Mode::Brightness;
+        if brightness(before) != brightness(self.mode) {
+            effects.push(Effect::WatchBacklights(brightness(self.mode)));
         }
         let wifi = |m: Mode| m == Mode::Wifi;
         if wifi(before) != wifi(self.mode) {

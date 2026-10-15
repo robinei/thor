@@ -131,8 +131,10 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
 - [ ] Bluetooth: does the chip work with ROCKNIX's kernel and firmware? Then the Bluetooth mode: pair
       headphones (sound moves to them) and a controller (no code needed), forget one.
 - [ ] Text fields bring up the keyboard tab (input-method-v2 in the device's sway; Steam's own fields?).
-- [ ] Sound through speakers and headphones; volume keys; the volume slider (`wpctl`).
-- [ ] Brightness: one backlight per panel in `/sys/class/backlight`? Names, ranges, whether logind's
+- [ ] Sound through speakers and headphones; volume keys; the volume slider (`wpctl`); the volume tab:
+      apps listed while playing (Steam, Proton games), their levels and mutes, switching outputs.
+- [ ] Brightness: one backlight per panel in `/sys/class/backlight`? Which name is which screen (for
+      the brightness tab's labels)? Ranges, whether logind's
       SetBrightness works on them, and whether the lowest level (raw 1) is still visible.
 - [ ] Home button: which device and key code it sends (BTN_MODE on the gamepad, or KEY_HOMEPAGE on a
       separate gpio-keys device?). ClamShell takes BTN_MODE from the grabbed pad only; Steam's overlay

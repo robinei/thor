@@ -3,14 +3,18 @@
 //! for the pad.
 
 use smithay_client_toolkit::reexports::{
+    calloop::RegistrationToken,
     calloop::timer::{TimeoutAction, Timer},
     client::protocol::wl_surface::WlSurface,
 };
 use smithay_client_toolkit::seat::keyboard::Keysym;
 use std::time::Duration;
+use clamshell_core::controls::Control;
+use clamshell_core::mixer::Level;
 use clamshell_core::{Event, Hold, Id, Mode, PadInput, PadRoute};
 
 use crate::draw::Rect;
+use crate::views::levels;
 use crate::nav::{self, Dir, NavTarget};
 use crate::{App, Screen};
 
@@ -18,6 +22,10 @@ use crate::{App, Screen};
 const LONG_PRESS: Duration = Duration::from_millis(450);
 /// Key repeat interval while held (25 per second).
 const REPEAT: Duration = Duration::from_millis(40);
+/// A finger held this long on volume or brightness brings up the slider (a shorter touch is a tap,
+/// which opens the tab); moving sideways this far (logical pixels) brings it up at once.
+const SLIDE_AFTER: Duration = Duration::from_millis(200);
+const SLIDE_MOVE: f32 = 8.0;
 
 /// Where a press comes from: each touch point, the mouse, or the pad's A (Enter on the desktop).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -25,6 +33,24 @@ pub(crate) enum Source {
     Touch(i32),
     Mouse,
     PadA,
+}
+
+/// A finger on volume or brightness that may become a slide: where it came down, where it is now (in
+/// the second screen's layout units), and the timer that starts the slide.
+pub(crate) struct PendingSlide {
+    source: Source,
+    control: Control,
+    down_x: f32,
+    x: f32,
+    width: f32,
+    timer: Option<RegistrationToken>,
+}
+
+/// A finger setting a level row: the row's track, in the view's logical pixels.
+pub(crate) struct LevelDrag {
+    source: Source,
+    level: Level,
+    track: Rect,
 }
 
 /// A press in progress, on the target it started on.
@@ -37,38 +63,91 @@ pub(crate) struct Press {
 impl App {
     /// What the last frame drew at `position` on `surface`: the topmost (last drawn) target there, so a
     /// button on a tile (the launcher's "+") wins over the tile.
-    pub(crate) fn target_at(&mut self, surface: &WlSurface, (x, y): (f64, f64)) -> Option<Id> {
+    pub(crate) fn target_at(&mut self, surface: &WlSurface, (x, y): (f64, f64)) -> Option<(Id, Rect)> {
         let view = self.view_mut(surface)?;
-        view.targets.iter().rev().find(|t| t.rect.contains(x as f32, y as f32)).map(|t| t.id.clone())
+        view.targets.iter().rev().find(|t| t.rect.contains(x as f32, y as f32)).map(|t| (t.id.clone(), t.rect))
     }
 
-    /// A finger or button comes down at `position` on `surface`: a press on what is there, and on volume
-    /// or brightness the start of a slide.
+    /// A finger or button comes down at `position` on `surface`: a press on what is there. On volume or
+    /// brightness a slide may follow (held, or moved sideways); on a level row the finger sets it.
     pub(crate) fn press_at(&mut self, source: Source, surface: &WlSurface, position: (f64, f64)) {
-        let Some(id) = self.target_at(surface, position) else {
+        let Some((id, rect)) = self.target_at(surface, position) else {
             return;
         };
-        let control = match id {
-            Id::Control(control) => Some(control),
-            _ => None,
-        };
-        self.down(source, id);
-        if let Some(control) = control
-            && let Some(view) = self.view_mut(surface)
-        {
-            let (x, width) = (position.0 as f32 - view.origin.0, view.layout_w);
-            self.slider_source = Some(source);
-            self.handle(Event::SlideStart { control, x, width });
+        let origin_w = self.view_mut(surface).map(|v| (v.origin.0, v.layout_w));
+        let busy = self.presses.contains_key(&source);
+        self.down(source, id.clone());
+        if busy {
+            return;
+        }
+        match id {
+            Id::Control(control) => {
+                let Some((origin, width)) = origin_w else {
+                    return;
+                };
+                let x = position.0 as f32 - origin;
+                let timer = Timer::from_duration(SLIDE_AFTER);
+                let token = self
+                    .loop_handle
+                    .insert_source(timer, move |_, _, app: &mut App| {
+                        app.start_slide(source);
+                        TimeoutAction::Drop
+                    })
+                    .map_err(|e| log::warn!("slide timer: {}", e.error))
+                    .ok();
+                self.cancel_pending_slide();
+                self.pending_slide = Some(PendingSlide { source, control, down_x: x, x, width, timer: token });
+            }
+            Id::Level(level) => {
+                self.level_drag = Some(LevelDrag { source, level, track: rect });
+                self.handle(Event::SetLevel(level, levels::value_at(rect, position.0 as f32)));
+            }
+            _ => {}
         }
     }
 
-    /// A finger or the mouse moved: the slider follows the press that started it.
+    /// The slide a finger on volume or brightness was waiting for: the slider comes up under it, and
+    /// the press won't be a tap.
+    fn start_slide(&mut self, source: Source) {
+        let Some(pending) = self.pending_slide.take().filter(|p| p.source == source) else {
+            return;
+        };
+        if let Some(token) = pending.timer {
+            self.loop_handle.remove(token);
+        }
+        if let Some(press) = self.presses.get_mut(&source) {
+            press.held = true;
+        }
+        self.slider_source = Some(source);
+        self.handle(Event::SlideStart { control: pending.control, x: pending.x, width: pending.width });
+    }
+
+    fn cancel_pending_slide(&mut self) {
+        if let Some(token) = self.pending_slide.take().and_then(|p| p.timer) {
+            self.loop_handle.remove(token);
+        }
+    }
+
+    /// A finger or the mouse moved: a slide may start, the slider or a level row follows the press on it.
     pub(crate) fn moved(&mut self, source: Source, position: (f64, f64)) {
+        let origin = self.bottom.as_ref().map_or(0.0, |v| v.origin.0);
+        let x = position.0 as f32 - origin;
+        if let Some(pending) = self.pending_slide.as_mut().filter(|p| p.source == source) {
+            pending.x = x;
+            if (x - pending.down_x).abs() >= SLIDE_MOVE {
+                self.start_slide(source);
+            }
+            return;
+        }
+        if let Some(drag) = self.level_drag.as_ref().filter(|d| d.source == source) {
+            let event = Event::SetLevel(drag.level, levels::value_at(drag.track, position.0 as f32));
+            self.handle(event);
+            return;
+        }
         if self.slider_source != Some(source) {
             return;
         }
-        let origin = self.bottom.as_ref().map_or(0.0, |v| v.origin.0);
-        self.handle(Event::SlideTo { x: position.0 as f32 - origin });
+        self.handle(Event::SlideTo { x });
     }
 
     /// A press starts: light the target, and arm the hold timer. A tap acts on release; a hold acts
@@ -121,6 +200,12 @@ impl App {
         if self.slider_source == Some(source) {
             self.slider_source = None;
         }
+        if self.pending_slide.as_ref().is_some_and(|p| p.source == source) {
+            self.cancel_pending_slide();
+        }
+        if self.level_drag.as_ref().is_some_and(|d| d.source == source) {
+            self.level_drag = None;
+        }
         let Some(press) = self.presses.remove(&source) else {
             return;
         };
@@ -169,6 +254,12 @@ impl App {
             self.focus_bottom();
             return;
         }
+        // On a level row, left and right step it.
+        if let (Some(Id::Level(level)), Dir::Left | Dir::Right) = (&self.state.focus, dir) {
+            let step = if dir == Dir::Left { -1 } else { 1 };
+            self.handle(Event::LevelStep(*level, step));
+            return;
+        }
         let mut all = Vec::new();
         for view in self.views().filter(|v| top || v.screen == Screen::Bottom) {
             let (w, h) = (view.size.0.max(1) as f32, view.size.1.max(1) as f32);
@@ -215,7 +306,7 @@ impl App {
                     self.handle(Event::TabStep(step));
                 } else {
                     // The bar's tabs, left to right.
-                    let modes = [Mode::Settings, Mode::Dock, Mode::Keyboard, Mode::Touchpad, Mode::Sysinfo, Mode::Bluetooth, Mode::Wifi, Mode::Battery];
+                    let modes = Mode::TABS;
                     let at = modes.iter().position(|m| *m == self.state.mode).unwrap_or(0) as i32;
                     let next = (at + step).rem_euclid(modes.len() as i32) as usize;
                     if let Some(&mode) = modes.get(next) {

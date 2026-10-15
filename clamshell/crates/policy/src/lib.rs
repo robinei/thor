@@ -10,6 +10,7 @@ pub mod job;
 pub mod keyboard;
 pub mod launcher;
 pub mod metrics;
+pub mod mixer;
 pub mod pad;
 pub mod power;
 pub mod sleep;

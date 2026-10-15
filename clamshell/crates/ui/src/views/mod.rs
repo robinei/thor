@@ -14,6 +14,7 @@ mod bluetooth;
 mod editor;
 mod keyboard;
 mod dock;
+pub(crate) mod levels;
 mod settings;
 mod shelf;
 mod sysinfo;
@@ -209,6 +210,8 @@ pub fn bottom(c: &mut Canvas, s: &State, w: f32, h: f32, images: &mut Images, sc
         Mode::Wifi => wifi::draw(f, body, &mut scratch.text),
         Mode::Battery => battery::draw(f, body, &mut scratch.text),
         Mode::Bluetooth => bluetooth::draw(f, body, &mut scratch.text),
+        Mode::Volume => levels::draw_volume(f, body, &mut scratch.text),
+        Mode::Brightness => levels::draw_brightness(f, body, &mut scratch.text),
     }
     bar::draw_slider_over(f, w, bar_h, scratch);
     body

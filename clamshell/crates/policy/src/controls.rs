@@ -1,7 +1,7 @@
-//! Volume and brightness, set from the bar's sliders: the output volume through PipeWire (`wpctl`), the
-//! screens' brightness on every backlight (the Thor has one per panel) through logind, which lets the
-//! session's user set it without root. While a finger slides, requests come faster than they can be
-//! carried out; only the latest of each is.
+//! Volume and brightness, set from the bar's sliders and the volume and brightness tabs: the output
+//! volume, an app's volume and mute, and which output plays through PipeWire (`wpctl`); the screens'
+//! brightness, all of them or one, through logind, which lets the session's user set it without root.
+//! While a finger slides, requests come faster than they can be carried out; only the latest of each is.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -11,11 +11,45 @@ use std::thread;
 
 use zbus::blocking::{Connection, Proxy};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     Volume(u8),
     Mute(bool),
     Brightness(u8),
+    /// One backlight, by name.
+    Backlight(String, u8),
+    /// A PipeWire node (an app's stream): its volume, its mute.
+    StreamVolume(u32, u8),
+    StreamMute(u32, bool),
+    /// Sound to this output (a PipeWire sink).
+    Output(u32),
+}
+
+impl Command {
+    /// Commands with the same key replace each other: only the latest is carried out.
+    fn key(&self) -> (u8, Option<&str>, u32) {
+        match self {
+            Command::Volume(_) => (0, None, 0),
+            Command::Mute(_) => (1, None, 0),
+            Command::Brightness(_) => (2, None, 0),
+            Command::Backlight(name, _) => (3, Some(name), 0),
+            Command::StreamVolume(id, _) => (4, None, *id),
+            Command::StreamMute(id, _) => (5, None, *id),
+            Command::Output(_) => (6, None, 0),
+        }
+    }
+}
+
+/// The latest of each kind, in the order they first came (a mute before a volume stays before it).
+fn latest(commands: Vec<Command>) -> Vec<Command> {
+    let mut kept: Vec<Command> = Vec::new();
+    for c in commands {
+        match kept.iter_mut().find(|k| k.key() == c.key()) {
+            Some(k) => *k = c,
+            None => kept.push(c),
+        }
+    }
+    kept
 }
 
 /// Where the backlights are; CLAMSHELL_BACKLIGHTS: another folder laid out the same way (tests, a desktop
@@ -34,12 +68,23 @@ fn read_number(path: &Path) -> Option<u32> {
     std::fs::read_to_string(path).ok()?.trim().parse().ok()
 }
 
-/// The first backlight's brightness, 0-100; `None` without a backlight.
-pub fn brightness() -> Option<u8> {
-    let dir = backlights().into_iter().next()?;
+fn level(dir: &Path) -> Option<u8> {
     let max = read_number(&dir.join("max_brightness"))?.max(1);
     let now = read_number(&dir.join("brightness"))?;
     Some((f64::from(now) * 100.0 / f64::from(max)).round().clamp(0.0, 100.0) as u8)
+}
+
+/// The first backlight's brightness, 0-100; `None` without a backlight.
+pub fn brightness() -> Option<u8> {
+    level(&backlights().into_iter().next()?)
+}
+
+/// Every backlight's level, by name.
+pub fn backlight_levels() -> Vec<clamshell_core::mixer::Backlight> {
+    backlights()
+        .iter()
+        .filter_map(|dir| Some(clamshell_core::mixer::Backlight { name: dir.file_name()?.to_str()?.to_owned(), level: level(dir)? }))
+        .collect()
 }
 
 /// A level 0-100 as a backlight's raw value: never 0, which turns some panels off.
@@ -52,22 +97,21 @@ pub fn spawn(commands: Receiver<Command>) -> io::Result<()> {
     thread::Builder::new().name("controls".into()).spawn(move || {
         let mut logind = None;
         while let Ok(first) = commands.recv() {
-            let (mut volume, mut mute, mut brightness) = (None, None, None);
-            for command in std::iter::once(first).chain(commands.try_iter()) {
+            for command in latest(std::iter::once(first).chain(commands.try_iter()).collect()) {
+                let flag = |on: bool| if on { "1" } else { "0" };
                 match command {
-                    Command::Volume(v) => volume = Some(v),
-                    Command::Mute(m) => mute = Some(m),
-                    Command::Brightness(b) => brightness = Some(b),
+                    Command::Mute(m) => wpctl(&["set-mute", "@DEFAULT_AUDIO_SINK@", flag(m)]),
+                    Command::Volume(v) => wpctl(&["set-volume", "@DEFAULT_AUDIO_SINK@", &format!("{v}%")]),
+                    Command::StreamMute(id, m) => wpctl(&["set-mute", &id.to_string(), flag(m)]),
+                    Command::StreamVolume(id, v) => wpctl(&["set-volume", &id.to_string(), &format!("{v}%")]),
+                    Command::Output(id) => wpctl(&["set-default", &id.to_string()]),
+                    Command::Brightness(b) => {
+                        for dir in backlights() {
+                            set_backlight(&dir, b, &mut logind);
+                        }
+                    }
+                    Command::Backlight(name, b) => set_backlight(&backlights_dir().join(name), b, &mut logind),
                 }
-            }
-            if let Some(m) = mute {
-                wpctl(&["set-mute", "@DEFAULT_AUDIO_SINK@", if m { "1" } else { "0" }]);
-            }
-            if let Some(v) = volume {
-                wpctl(&["set-volume", "@DEFAULT_AUDIO_SINK@", &format!("{v}%")]);
-            }
-            if let Some(b) = brightness {
-                set_brightness(b, &mut logind);
             }
         }
     })?;
@@ -82,30 +126,28 @@ fn wpctl(args: &[&str]) {
     }
 }
 
-/// Every backlight to `percent`: through logind's session (kept connected), else straight to sysfs
-/// (which needs write access).
-fn set_brightness(percent: u8, logind: &mut Option<Connection>) {
-    for dir in backlights() {
-        let (Some(name), Some(max)) = (dir.file_name().and_then(|n| n.to_str()), read_number(&dir.join("max_brightness"))) else {
-            continue;
-        };
-        let value = raw(percent, max);
-        if logind.is_none() {
-            *logind = Connection::system().map_err(|e| log::warn!("brightness: system bus: {e}")).ok();
-        }
-        let through_logind = logind.as_ref().map(|conn| {
-            Proxy::new(conn, "org.freedesktop.login1", "/org/freedesktop/login1/session/auto", "org.freedesktop.login1.Session")
-                .and_then(|session| session.call::<_, _, ()>("SetBrightness", &("backlight", name, value)))
-        });
-        match through_logind {
-            Some(Ok(())) => {}
-            other => {
-                if let Some(Err(e)) = other {
-                    log::debug!("brightness through logind: {e}");
-                }
-                if let Err(e) = std::fs::write(dir.join("brightness"), value.to_string()) {
-                    log::warn!("brightness {name}: {e}");
-                }
+/// A backlight to `percent`: through logind's session (kept connected), else straight to sysfs (which
+/// needs write access).
+fn set_backlight(dir: &Path, percent: u8, logind: &mut Option<Connection>) {
+    let (Some(name), Some(max)) = (dir.file_name().and_then(|n| n.to_str()), read_number(&dir.join("max_brightness"))) else {
+        return;
+    };
+    let value = raw(percent, max);
+    if logind.is_none() {
+        *logind = Connection::system().map_err(|e| log::warn!("brightness: system bus: {e}")).ok();
+    }
+    let through_logind = logind.as_ref().map(|conn| {
+        Proxy::new(conn, "org.freedesktop.login1", "/org/freedesktop/login1/session/auto", "org.freedesktop.login1.Session")
+            .and_then(|session| session.call::<_, _, ()>("SetBrightness", &("backlight", name, value)))
+    });
+    match through_logind {
+        Some(Ok(())) => {}
+        other => {
+            if let Some(Err(e)) = other {
+                log::debug!("brightness through logind: {e}");
+            }
+            if let Err(e) = std::fs::write(dir.join("brightness"), value.to_string()) {
+                log::warn!("brightness {name}: {e}");
             }
         }
     }
@@ -114,6 +156,31 @@ fn set_brightness(percent: u8, logind: &mut Option<Connection>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_the_latest_of_each_is_carried_out() {
+        let commands = vec![
+            Command::Mute(false),
+            Command::Volume(10),
+            Command::StreamVolume(80, 5),
+            Command::Volume(20),
+            Command::StreamVolume(81, 7),
+            Command::StreamVolume(80, 6),
+            Command::Backlight("a".into(), 1),
+            Command::Backlight("b".into(), 2),
+        ];
+        assert_eq!(
+            latest(commands),
+            vec![
+                Command::Mute(false),
+                Command::Volume(20),
+                Command::StreamVolume(80, 6),
+                Command::StreamVolume(81, 7),
+                Command::Backlight("a".into(), 1),
+                Command::Backlight("b".into(), 2)
+            ]
+        );
+    }
 
     #[test]
     fn levels_as_raw_values_never_turn_the_panel_off() {

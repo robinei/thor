@@ -154,6 +154,7 @@ fn main() -> ExitCode {
     }
     let (wifi_tx, wifi_rx) = mpsc::channel();
     let (power_tx, power_rx) = mpsc::channel();
+    let (mixer_tx, mixer_rx) = mpsc::channel();
     let (bluetooth_tx, bluetooth_rx) = mpsc::channel();
     let on_sway = std::env::var_os("SWAYSOCK").is_some();
     let launcher = clamshell_policy::launcher::Config {
@@ -222,6 +223,10 @@ fn main() -> ExitCode {
             let power = sender.clone();
             if let Err(e) = clamshell_policy::power::spawn(move |event| power.send(event), power_rx) {
                 log::error!("power thread: {e}");
+            }
+            let mixer = sender.clone();
+            if let Err(e) = clamshell_policy::mixer::spawn(move |event| mixer.send(event), mixer_rx) {
+                log::error!("mixer thread: {e}");
             }
             let bluetooth = sender.clone();
             if let Err(e) = clamshell_policy::bluetooth::spawn(move |event| bluetooth.send(event), bluetooth_rx) {
@@ -368,6 +373,21 @@ fn main() -> ExitCode {
             }
             Effect::WatchPower(on) => {
                 let _ = power_tx.send(*on);
+            }
+            Effect::WatchBacklights(on) => {
+                let _ = mixer_tx.send(clamshell_policy::mixer::Command::Backlights(*on));
+            }
+            Effect::SetBacklight { name, level } => {
+                let _ = controls_tx.send(controls::Command::Backlight(name.clone(), *level));
+            }
+            Effect::Audio(command) => {
+                use clamshell_core::mixer::Command as Audio;
+                let _ = match command {
+                    Audio::Watch(on) => mixer_tx.send(clamshell_policy::mixer::Command::Audio(*on)).is_ok(),
+                    Audio::Output(id) => controls_tx.send(controls::Command::Output(*id)).is_ok(),
+                    Audio::StreamVolume(id, v) => controls_tx.send(controls::Command::StreamVolume(*id, *v)).is_ok(),
+                    Audio::StreamMute(id, m) => controls_tx.send(controls::Command::StreamMute(*id, *m)).is_ok(),
+                };
             }
             Effect::QuitGame { windows, units } => {
                 log::info!("quitting the game");
@@ -773,6 +793,36 @@ fn snapshot(state: &mut State, dir: &std::path::Path) -> ExitCode {
             Screen::Bottom,
             bottom,
             "bluetooth.png",
+        ),
+        (
+            vec![
+                Event::Activate(Id::Mode(Mode::Volume)),
+                Event::Status(clamshell_core::Status { volume: Some(64), brightness: Some(70), battery: Some(76), wifi: Some(80), ..clamshell_core::Status::default() }),
+                Event::Audio(clamshell_core::mixer::Audio {
+                    outputs: vec![
+                        clamshell_core::mixer::Output { id: 50, name: "Speakers".into(), default: true },
+                        clamshell_core::mixer::Output { id: 51, name: "WH-1000XM4".into(), default: false },
+                    ],
+                    streams: [("Firefox", 80, false), ("Steam", 100, false), ("Spotify", 35, true)]
+                        .map(|(app, volume, muted)| clamshell_core::mixer::Stream { id: 90, app: app.into(), title: String::new(), volume, muted })
+                        .to_vec(),
+                }),
+            ],
+            Screen::Bottom,
+            bottom,
+            "volume.png",
+        ),
+        (
+            vec![
+                Event::Activate(Id::Mode(Mode::Brightness)),
+                Event::Backlights(vec![
+                    clamshell_core::mixer::Backlight { name: "dsi0-backlight".into(), level: 70 },
+                    clamshell_core::mixer::Backlight { name: "dsi1-backlight".into(), level: 45 },
+                ]),
+            ],
+            Screen::Bottom,
+            bottom,
+            "brightness.png",
         ),
         (
             vec![

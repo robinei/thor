@@ -1,6 +1,6 @@
-//! Volume and brightness: a finger on either icon brings up a slider whose current value is under the
-//! finger; moving sets the level as it goes, lifting leaves it there. A tap on the volume icon (no
-//! movement) mutes or unmutes.
+//! Volume and brightness in the bar: a finger held on either icon (or sliding off it sideways) brings
+//! up a slider whose current value is under the finger; moving sets the level as it goes, lifting leaves
+//! it there. A tap opens the icon's tab instead.
 //!
 //! The slider runs along the screen's width. Its length is what fits on both sides of where the finger
 //! came down, given the level there (the part below the level goes left of the finger, the rest right),
@@ -102,16 +102,6 @@ impl State {
         }
     }
 
-    /// A tap on a control: the volume's mutes or unmutes.
-    pub(crate) fn tap_control(&mut self, control: Control) -> Vec<Effect> {
-        let tapped = self.slider.is_some_and(|s| s.control == control && !s.moved);
-        if control != Control::Volume || !tapped || self.status.volume.is_none() {
-            return vec![];
-        }
-        self.status.muted = !self.status.muted;
-        vec![Effect::SetMute(self.status.muted)]
-    }
-
     /// The finger lifted: the level stays (the bar shows it until the system's next reading).
     pub(crate) fn slide_end(&mut self) {
         let Some(slider) = self.slider.take() else {
@@ -156,16 +146,14 @@ mod tests {
     }
 
     #[test]
-    fn sliding_the_volume_unmutes_and_a_tap_toggles_mute() {
+    fn sliding_the_volume_unmutes_and_a_tap_opens_its_tab() {
         let mut s = with_levels();
         s.apply(Event::SlideStart { control: Control::Volume, x: 280.0, width: 620.0 });
         assert_eq!(s.apply(Event::SlideTo { x: 250.0 }).1, vec![Effect::SetMute(false), Effect::SetVolume(30)]);
-        assert_eq!(s.apply(Event::Activate(Id::Control(Control::Volume))).1, vec![], "moved: not a tap");
         s.apply(Event::Up(Id::Control(Control::Volume)));
-        s.apply(Event::SlideStart { control: Control::Volume, x: 280.0, width: 620.0 });
-        assert_eq!(s.apply(Event::Activate(Id::Control(Control::Volume))).1, vec![Effect::SetMute(true)]);
-        s.apply(Event::Up(Id::Control(Control::Volume)));
-        assert!(s.status.muted);
+        assert_eq!(s.status.volume, Some(30));
+        s.apply(Event::Activate(Id::Control(Control::Brightness)));
+        assert_eq!(s.mode, crate::Mode::Brightness);
     }
 
     #[test]

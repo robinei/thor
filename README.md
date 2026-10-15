@@ -77,16 +77,22 @@ bounce it) the tab before it comes back, unless a tab was chosen meanwhile. Not 
 SDL asks for text input whether or not the game needs it. With another input method running (fcitx, ibus)
 the compositor gives the seat to that one and this does nothing.
 
-**The bar**: tabs for the modes, volume and brightness near the middle, Bluetooth, Wi-Fi and the battery
-(tabs as well, that also show their status), spread evenly; past a faint line, the clock and the
-pad mouse switch. A finger on volume or brightness turns the bar's row into a slider whose
-current level is under the finger: moving sets the level as it goes, lifting leaves it there (the icons
-sit near the middle; the track's length is what fits on both sides for the level under the finger, at
-most half the screen, about 33 mm on the Thor). A tap on volume
-mutes or unmutes; sliding it unmutes. Volume goes through `wpctl` (PipeWire's default sink), brightness to
+**The bar**: tabs for the modes, volume and brightness near the middle (tabs too), Bluetooth, Wi-Fi and
+the battery (tabs as well, that also show their status), spread evenly; past a faint line, the clock and
+the pad mouse switch. A tap on volume or brightness opens its tab; a finger held there for 0.2 s, or
+moved sideways off it, turns the bar's row into a slider whose current level is under the finger: moving
+sets the level as it goes, lifting leaves it there (the icons sit near the middle; the track's length is
+what fits on both sides for the level under the finger, at most half the screen, about 33 mm on the
+Thor). Sliding the volume unmutes. Volume goes through `wpctl` (PipeWire's default sink), brightness to
 every backlight through logind (`CLAMSHELL_BACKLIGHTS`: another folder laid out like
 `/sys/class/backlight`, for a desktop without one). Every icon always shows, dim without a reading (a
 slider then starts in the middle), so a desktop shows everything the device does.
+
+**Volume** (tab): the output volume with its mute button; the outputs, where a tap sends the sound
+(`wpctl set-default`); then each app playing (PipeWire's output streams, read with `pw-dump` every second
+while open) with its own level and mute button. **Brightness** (tab): each backlight with its own level
+(the bar's slider sets them all). A level row is set where the finger is on it and follows the finger; with
+the pad, left and right step it by 5.
 
 **Wi-Fi** (tap the Wi-Fi icon; lit while open): through NetworkManager on the
 system bus. The networks in range (rescanned every 10 s while open), the connected and saved ones first,
