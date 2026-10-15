@@ -17,6 +17,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clamshell_core::levels::Brightness;
+use clamshell_core::keymap::Keymaps;
 use clamshell_core::settings::Settings;
 use clamshell_core::{Init, Library, State};
 use clamshell_policy::library::{self, Sources};
@@ -99,6 +100,27 @@ fn main() -> ExitCode {
     }
 }
 
+/// The keymaps from keymaps.txt; without the file (the first start), the ready-made ones, saved.
+fn load_keymaps(paths: &Paths) -> Keymaps {
+    let Some(file) = paths.keymaps() else {
+        return Keymaps::initial();
+    };
+    match std::fs::read_to_string(&file) {
+        Ok(text) => Keymaps::load(&text),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            let keymaps = Keymaps::initial();
+            if let Err(e) = clamshell_policy::paths::write(&file, &keymaps.text()) {
+                log::warn!("{}: {e}", file.display());
+            }
+            keymaps
+        }
+        Err(e) => {
+            log::warn!("{}: {e}", file.display());
+            Keymaps::default()
+        }
+    }
+}
+
 /// The library: Pegasus game dirs and Steam; the demo games if it is empty.
 fn load_library(sources: &Sources) -> Library {
     let library = library::load(sources);
@@ -122,6 +144,8 @@ fn run(env: &Env, paths: Paths, sources: &Sources) -> ExitCode {
         library: load_library(sources),
         // Each game's settings (power profile, FPS cap).
         settings: read(paths.game_settings().as_deref()).map_or_else(Settings::default, |t| Settings::load(&t)),
+        // The keymaps; the first time, the Nintendo layout, written at once.
+        keymaps: load_keymaps(&paths),
         // The screens' brightness as it was left: the level and each screen's share.
         brightness: read(paths.brightness.as_deref()).map_or_else(Brightness::default, |t| Brightness::from_text(&t)),
         // The dock's apps (without launcher.json: Steam and a terminal).

@@ -55,6 +55,14 @@ pub fn wifi() -> Wifi {
     }
 }
 
+/// Many networks (a city street): more than the list shows.
+pub fn wifi_crowded() -> Wifi {
+    let mut wifi = wifi();
+    let more = ["FRITZ!Box 7590", "TP-Link_5G", "eduroam", "Vodafone Hotspot", "DIRECT-printer", "Bakery", "Library Guest", "AndroidAP", "Linksys", "Hotel Lobby", "upstairs", "garden"];
+    wifi.networks.extend(more.iter().enumerate().map(|(i, ssid)| Network { ssid: (*ssid).into(), strength: 60 - 4 * i as u8, secure: i % 3 != 1, known: false, active: false, enterprise: false }));
+    wifi
+}
+
 /// Four devices: paired and connected, paired, and new ones.
 pub fn bluetooth() -> Bluetooth {
     Bluetooth {

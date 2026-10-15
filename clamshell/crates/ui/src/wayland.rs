@@ -199,12 +199,18 @@ impl PointerHandler for App {
                 PointerEventKind::Press { .. } => self.press_at(Source::Mouse, &event.surface, event.position),
                 PointerEventKind::Motion { .. } => self.moved(Source::Mouse, event.position),
                 PointerEventKind::Release { .. } => self.up(Source::Mouse, End::Release),
-                // The wheel over the main screen scrolls shelf's list, a game per notch.
+                // The wheel over the main screen scrolls shelf's list, a game per notch; over a list on the
+                // second screen, a row per notch.
                 PointerEventKind::Axis { vertical, .. } => {
                     let over_top = self.views.top.as_ref().is_some_and(|v| v.shell.surface() == &event.surface);
                     let notches = if vertical.discrete != 0 { vertical.discrete } else { (vertical.absolute / 10.0) as i32 };
-                    if over_top && notches != 0 {
+                    if notches == 0 {
+                        continue;
+                    }
+                    if over_top {
                         self.handle(Event::Shelf(ShelfEvent::ListStep(notches)));
+                    } else {
+                        self.wheel(&event.surface, event.position, notches);
                     }
                 }
                 _ => {}

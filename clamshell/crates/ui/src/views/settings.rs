@@ -6,7 +6,7 @@
 //! the rest show the default's value dimmed. Changes reach a running game at once. The environment tile opens an editor
 //! over the on-screen keyboard.
 
-use clamshell_core::editor::{Editor, Purpose};
+use clamshell_core::editor::{Editor, KeymapName, Purpose};
 use clamshell_core::settings::{Impact, Setting};
 use clamshell_core::{Id, Scope, SettingsId, State, TileOrigin};
 
@@ -51,7 +51,7 @@ const GRID: [Tile; 15] = [
     Tile::Setting(Setting::BigCores),
     Tile::Setting(Setting::Fan),
     Tile::Setting(Setting::PadMouse),
-    Tile::Setting(Setting::Buttons),
+    Tile::Setting(Setting::Keymap),
     Tile::Setting(Setting::Deadzone),
     Tile::Setting(Setting::Rumble),
     Tile::Setting(Setting::CpuMax),
@@ -62,6 +62,9 @@ const GRID: [Tile; 15] = [
 pub(super) fn draw(f: &mut Frame, body: Rect) {
     if f.s.bottom().editor().is_some() {
         return editor(f, body);
+    }
+    if let Some(screen) = f.s.keymap_screen() {
+        return super::keymaps::draw(f, body, screen);
     }
     let s = f.s;
     let context = s.context();
@@ -113,10 +116,15 @@ fn face(s: &State, scratch: &mut super::Scratch, tile: Tile) -> Face {
     match tile {
         Tile::Setting(setting) => {
             let value = s.tile_value(setting);
+            // The keymap's tile shows its name.
+            let text = match setting {
+                Setting::Keymap => Fmt::of(format_args!("{}", s.keymap_name(value))),
+                _ => scratch.describe(setting, value),
+            };
             Face {
                 id: Id::Settings(SettingsId::Tile(setting)),
                 icon: Icon::for_setting(setting),
-                value: scratch.describe(setting, value),
+                value: text,
                 impact: setting.impact(value),
                 origin: s.tile_origin(setting),
                 active: setting.active(),
@@ -164,16 +172,24 @@ fn draw_tile(f: &mut Frame, r: Rect, tile: Tile) {
     });
 }
 
-/// The environment editor: what it edits, then the shared editor (field, Cancel and Save, keyboard).
+/// The editor over the settings: the environment, or a keymap's name; then the shared editor (field,
+/// Cancel and Save, keyboard).
 fn editor(f: &mut Frame, body: Rect) {
     let s = f.s;
-    let Some(Editor { purpose: Purpose::Env { game }, .. }) = s.bottom().editor() else {
-        return;
+    let title = match s.bottom().editor() {
+        Some(Editor { purpose: Purpose::Env { game }, .. }) => {
+            let title = match game {
+                Some(id) => s.game(id).map_or("this game", |g| g.title.as_str()),
+                None => "all games",
+            };
+            Fmt::<160>::of(format_args!("Environment for {title}: KEY=value, space-separated"))
+        }
+        Some(Editor { purpose: Purpose::KeymapName(name), .. }) => match name {
+            KeymapName::New => Fmt::of(format_args!("Name of the new keymap")),
+            KeymapName::Rename(id) => Fmt::of(format_args!("New name for {}", s.keymap_name(*id))),
+            KeymapName::Duplicate(id) => Fmt::of(format_args!("Name of the copy of {}", s.keymap_name(*id))),
+        },
+        _ => return,
     };
-    let title = match game {
-        Some(id) => s.game(id).map_or("this game", |g| g.title.as_str()),
-        None => "all games",
-    };
-    let title = Fmt::<160>::of(format_args!("Environment for {title}: KEY=value, space-separated"));
     super::editor::draw(f, body, &title, "Save");
 }

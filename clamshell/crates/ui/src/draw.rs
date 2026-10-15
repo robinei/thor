@@ -106,8 +106,7 @@ impl Rect {
     }
 }
 
-/// Lines stacked down an area: each [`Column::next`] takes the next `h` below the last, while there is
-/// room for it.
+/// Lines stacked down an area: each [`Column::take`] takes the next `h` below the last.
 #[derive(Debug, Clone, Copy)]
 pub struct Column {
     area: Rect,
@@ -132,11 +131,6 @@ impl Column {
     /// Whether `h` more fits.
     pub fn fits(&self, h: f32) -> bool {
         self.y + h <= self.end()
-    }
-
-    /// The next `h` of the area, full width; `None` (nothing taken) when it doesn't fit.
-    pub fn next(&mut self, h: f32) -> Option<Rect> {
-        self.fits(h).then(|| self.take(h))
     }
 
     /// The next `h`, whether it fits or not.
@@ -312,12 +306,29 @@ pub struct Canvas<'a> {
     scale: f32,
     /// Whole buffer pixels everything is moved by (burn-in orbit).
     offset: (f32, f32),
+    /// Where drawing reaches, in buffer pixels (x0, y0, x1, y1): the pixmap, or a scrolled list's area.
+    clip: (i32, i32, i32, i32),
     cache: &'a mut DrawCache,
 }
 
 impl<'a> Canvas<'a> {
     pub fn new(pixmap: &'a mut Pixmap, scale: f32, cache: &'a mut DrawCache) -> Self {
-        Canvas { pixmap, scale, offset: (0.0, 0.0), cache }
+        let clip = (0, 0, pixmap.width() as i32, pixmap.height() as i32);
+        Canvas { pixmap, scale, offset: (0.0, 0.0), clip, cache }
+    }
+
+    /// Drawing kept within `r` from now on (`None`: the whole pixmap again).
+    pub fn clip(&mut self, r: Option<Rect>) {
+        let (pw, ph) = (self.pixmap.width() as i32, self.pixmap.height() as i32);
+        self.clip = match r {
+            Some(r) => (
+                (self.px(r.x).floor() as i32).clamp(0, pw),
+                (self.py(r.y).floor() as i32).clamp(0, ph),
+                (self.px(r.x + r.w).ceil() as i32).clamp(0, pw),
+                (self.py(r.y + r.h).ceil() as i32).clamp(0, ph),
+            ),
+            None => (0, 0, pw, ph),
+        };
     }
 
     /// Buffer pixels per logical pixel.
@@ -351,7 +362,7 @@ impl<'a> Canvas<'a> {
     pub fn vline(&mut self, x: f32, y0: f32, y1: f32, px: u32, color: impl Into<Color>) {
         let left = (self.px(x) - px as f32 / 2.0).round();
         let (top, bottom) = (self.py(y0).round(), self.py(y1).round());
-        if let Some(rect) = tiny_skia::Rect::from_ltrb(left, top, left + px as f32, bottom) {
+        if let Some(rect) = self.clipped(left, top, left + px as f32, bottom) {
             self.pixmap.fill_rect(rect, &Self::paint(color.into()), Transform::identity(), None);
         }
     }
@@ -360,7 +371,7 @@ impl<'a> Canvas<'a> {
     pub fn hline(&mut self, x0: f32, x1: f32, y: f32, px: u32, color: impl Into<Color>) {
         let top = (self.py(y) - px as f32 / 2.0).round();
         let (left, right) = (self.px(x0).round(), self.px(x1).round());
-        if let Some(rect) = tiny_skia::Rect::from_ltrb(left, top, right, top + px as f32) {
+        if let Some(rect) = self.clipped(left, top, right, top + px as f32) {
             self.pixmap.fill_rect(rect, &Self::paint(color.into()), Transform::identity(), None);
         }
     }
@@ -368,10 +379,16 @@ impl<'a> Canvas<'a> {
     pub fn fill(&mut self, r: Rect, color: impl Into<Color>) {
         // In buffer pixels, filled without a transform: tiny-skia fills a transformed rect as a path,
         // which allocates.
-        let rect = tiny_skia::Rect::from_xywh(self.px(r.x), self.py(r.y), r.w * self.scale, r.h * self.scale);
-        if let Some(rect) = rect {
+        let (x0, y0) = (self.px(r.x), self.py(r.y));
+        if let Some(rect) = self.clipped(x0, y0, x0 + r.w * self.scale, y0 + r.h * self.scale) {
             self.pixmap.fill_rect(rect, &Self::paint(color.into()), Transform::identity(), None);
         }
+    }
+
+    /// A rectangle in buffer pixels cut to the clip; `None` if nothing is left.
+    fn clipped(&self, x0: f32, y0: f32, x1: f32, y1: f32) -> Option<tiny_skia::Rect> {
+        let (cx0, cy0, cx1, cy1) = self.clip;
+        tiny_skia::Rect::from_ltrb(x0.max(cx0 as f32), y0.max(cy0 as f32), x1.min(cx1 as f32), y1.min(cy1 as f32))
     }
 
     fn stroke_path(&mut self, path: Path, stroke: &Stroke, color: Color) {
@@ -401,9 +418,10 @@ impl<'a> Canvas<'a> {
     /// Blends `color` over the pixels in `bounds` (x0, y0, x1, y1 in buffer pixels) with the coverage
     /// `coverage` gives for each pixel centre.
     fn shade(&mut self, (x0, y0, x1, y1): (f32, f32, f32, f32), color: Color, coverage: impl Fn(f32, f32) -> f32) {
-        let (pw, ph) = (self.pixmap.width() as i32, self.pixmap.height() as i32);
-        let (x0, y0) = ((x0.floor() as i32).max(0), (y0.floor() as i32).max(0));
-        let (x1, y1) = ((x1.ceil() as i32).min(pw), (y1.ceil() as i32).min(ph));
+        let pw = self.pixmap.width() as i32;
+        let (cx0, cy0, cx1, cy1) = self.clip;
+        let (x0, y0) = ((x0.floor() as i32).max(cx0), (y0.floor() as i32).max(cy0));
+        let (x1, y1) = ((x1.ceil() as i32).min(cx1), (y1.ceil() as i32).min(cy1));
         let src = premultiplied(color);
         let data = self.pixmap.data_mut();
         for y in y0..y1 {
@@ -429,7 +447,8 @@ impl<'a> Canvas<'a> {
             };
             {
                 let logical = side as f32 / self.scale;
-                let mut c = Canvas { pixmap: &mut mask, scale: self.scale, offset: (0.0, 0.0), cache: &mut *self.cache };
+                let clip = (0, 0, side as i32, side as i32);
+                let mut c = Canvas { pixmap: &mut mask, scale: self.scale, offset: (0.0, 0.0), clip, cache: &mut *self.cache };
                 icons::draw(&mut c, icon, Rect::new(0.0, 0.0, logical, logical), Color::WHITE);
             }
             let coverage = mask.data().chunks_exact(4).filter_map(|px| px.get(3).copied()).collect();
@@ -439,7 +458,7 @@ impl<'a> Canvas<'a> {
         let x = (self.px(cx) - side as f32 / 2.0).round() as i32;
         let y = (self.py(cy) - side as f32 / 2.0).round() as i32;
         if let Some(coverage) = self.cache.icons.get(&key) {
-            blend_mask(self.pixmap, x, y, side as usize, coverage, color.into().premultiply().to_color_u8());
+            blend_mask(self.pixmap, self.clip, x, y, side as usize, coverage, color.into().premultiply().to_color_u8());
         }
     }
 
@@ -488,17 +507,18 @@ impl<'a> Canvas<'a> {
     /// (of 256).
     fn blit(&mut self, image: &Pixmap, x: f32, y: f32, grey: Option<u32>) {
         let (x0, y0) = (self.px(x).round() as i32, self.py(y).round() as i32);
-        let (pw, ph) = (self.pixmap.width() as i32, self.pixmap.height() as i32);
+        let pw = self.pixmap.width() as i32;
+        let (cx0, cy0, cx1, cy1) = self.clip;
         let iw = image.width() as usize;
         let data = self.pixmap.data_mut();
         for (row, src_row) in image.data().chunks_exact(iw * 4).enumerate() {
             let y = y0 + row as i32;
-            if y < 0 || y >= ph {
+            if y < cy0 || y >= cy1 {
                 continue;
             }
             for (col, src) in src_row.chunks_exact(4).enumerate() {
                 let x = x0 + col as i32;
-                if x < 0 || x >= pw {
+                if x < cx0 || x >= cx1 {
                     continue;
                 }
                 let i = ((y * pw + x) * 4) as usize;
@@ -531,7 +551,7 @@ impl<'a> Canvas<'a> {
             };
             let gx = (pen + metrics.xmin as f32).round() as i32;
             let gy = (baseline - metrics.height as f32 - metrics.ymin as f32) as i32;
-            blend_mask(self.pixmap, gx, gy, metrics.width, coverage, color);
+            blend_mask(self.pixmap, self.clip, gx, gy, metrics.width, coverage, color);
             pen += metrics.advance_width;
         }
         (pen - start) / self.scale
@@ -642,22 +662,23 @@ impl<'a> Canvas<'a> {
 }
 
 /// Blends a glyph's coverage (`width` bytes per row) in `color` onto the pixmap at (x, y), source-over,
-/// premultiplied; clipped to the pixmap.
-fn blend_mask(pixmap: &mut Pixmap, x: i32, y: i32, width: usize, coverage: &[u8], color: PremultipliedColorU8) {
+/// premultiplied; within `clip` (x0, y0, x1, y1, inside the pixmap).
+fn blend_mask(pixmap: &mut Pixmap, clip: (i32, i32, i32, i32), x: i32, y: i32, width: usize, coverage: &[u8], color: PremultipliedColorU8) {
     if width == 0 {
         return;
     }
-    let (pw, ph) = (pixmap.width() as i32, pixmap.height() as i32);
+    let pw = pixmap.width() as i32;
+    let (cx0, cy0, cx1, cy1) = clip;
     let src = [color.red(), color.green(), color.blue(), color.alpha()].map(u32::from);
     let data = pixmap.data_mut();
     for (gy, row) in coverage.chunks_exact(width).enumerate() {
         let ty = y + gy as i32;
-        if ty < 0 || ty >= ph {
+        if ty < cy0 || ty >= cy1 {
             continue;
         }
         for (gx, &cov) in row.iter().enumerate() {
             let tx = x + gx as i32;
-            if cov == 0 || tx < 0 || tx >= pw {
+            if cov == 0 || tx < cx0 || tx >= cx1 {
                 continue;
             }
             let i = ((ty * pw + tx) * 4) as usize;

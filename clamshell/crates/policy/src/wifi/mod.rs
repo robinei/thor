@@ -149,14 +149,21 @@ impl Session {
         dbus::proxy(&self.conn, path)
     }
 
-    /// The first Wi-Fi device, if any.
+    /// The first Wi-Fi device NetworkManager manages (one it leaves alone, an access point's radio,
+    /// isn't joined from), else the first Wi-Fi device, if any.
     fn wifi_device(&self) -> zbus::Result<Option<OwnedObjectPath>> {
+        let mut unmanaged = None;
         for path in self.nm.get_devices()? {
-            if self.proxy::<DeviceProxy>(path.as_str())?.device_type()? == DeviceType::Wifi as u32 {
+            let device = self.proxy::<DeviceProxy>(path.as_str())?;
+            if device.device_type()? != DeviceType::Wifi as u32 {
+                continue;
+            }
+            if device.state()? != DeviceState::Unmanaged as u32 {
                 return Ok(Some(path));
             }
+            unmanaged.get_or_insert(path);
         }
-        Ok(None)
+        Ok(unmanaged)
     }
 
     fn access_points(&self, device: &OwnedObjectPath) -> zbus::Result<Vec<Ap>> {

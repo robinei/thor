@@ -7,11 +7,12 @@ use std::fmt;
 use std::path::Path;
 
 use clamshell_core::keyboard::{Key, Modifier};
+use clamshell_core::keymap::{Button, Dir, Input, MouseButton, Side};
 use clamshell_core::levels::Level;
 use clamshell_core::settings::Setting;
 use clamshell_core::slider::Control;
 use clamshell_core::{
-    Apps, EditorId, Event, GameEvent, Id, Init, Library, LevelEvent, PointerEvent, Reading, Scope, SettingsId, ShelfEvent, ShelfId, Slide, State, Status, Tab,
+    Apps, EditorId, Event, GameEvent, Id, Init, KeymapId, Library, LevelEvent, ListEvent, ListId, PointerEvent, Reading, Scope, SettingsId, ShelfEvent, ShelfId, Slide, State, Status, Tab, Target,
 };
 use clamshell_ui::Screen;
 
@@ -65,7 +66,7 @@ pub fn state(library: Library) -> State {
 }
 
 fn state_with(library: Library, apps: Apps) -> State {
-    State::new(Init { library, apps, ..Init::default() })
+    State::new(Init { library, apps, keymaps: clamshell_core::keymap::Keymaps::initial(), ..Init::default() })
 }
 
 fn tap(id: Id) -> Event {
@@ -74,6 +75,16 @@ fn tap(id: Id) -> Event {
 
 fn key(k: Key) -> Result<Event, ParseError> {
     control::key(k).map(tap)
+}
+
+/// A button of the keymaps' screens.
+fn km(id: KeymapId) -> Event {
+    tap(Id::Keymap(id))
+}
+
+/// The settings' keymap tile: the picker.
+fn keymap_tile() -> Event {
+    tap(Id::Settings(SettingsId::Tile(Setting::Keymap)))
 }
 
 fn tab(t: Tab) -> Event {
@@ -111,7 +122,12 @@ pub fn shots(now: u64) -> Result<Vec<Shot>, ParseError> {
         shot(
             "settings-running.png",
             Bottom,
-            [tab(Tab::Settings)].into_iter().chain(taps(Setting::FpsCap, 4)).chain(taps(Setting::Buttons, 1)).chain(taps(Setting::Hud, 1)).collect(),
+            [tab(Tab::Settings)]
+                .into_iter()
+                .chain(taps(Setting::FpsCap, 4))
+                .chain([tap(Id::Settings(SettingsId::Tile(Setting::Keymap))), tap(ListId::Keymaps.row(1))])
+                .chain(taps(Setting::Hud, 1))
+                .collect(),
         ),
         shot(
             "settings-global.png",
@@ -134,10 +150,50 @@ pub fn shots(now: u64) -> Result<Vec<Shot>, ParseError> {
             [tap(Id::Settings(SettingsId::Env))].into_iter().chain(control::type_text("dxvk_hud=fps mesa_vk_wsi_present_mode=fifo")?).collect(),
         ),
         shot("status-low.png", Bottom, vec![tap(Id::Editor(EditorId::Save)), Reading::Status(demo::STATUS_LOW).into()]),
-        shot("bottom.png", Bottom, vec![Reading::Status(demo::STATUS).into()]),
+        shot("keymap-name.png", Bottom, [keymap_tile(), km(KeymapId::New)].into_iter().chain(control::type_text("FPS")?).collect()),
+        shot(
+            "keymap-edit.png",
+            Bottom,
+            vec![
+                tap(Id::Editor(EditorId::Save)),
+                km(KeymapId::Input(Input::Button(Button::A))),
+                km(KeymapId::Target(Target::Key)),
+                key(Key::Mod(Modifier::Ctrl))?,
+                key(Key::Char('x'))?,
+                km(KeymapId::Input(Input::Button(Button::LB))),
+                km(KeymapId::Target(Target::Mouse(MouseButton::Right))),
+                km(KeymapId::Input(Input::Stick(Side::Left))),
+                km(KeymapId::Target(Target::Keys)),
+                key(Key::Char('w'))?,
+                key(Key::Char('a'))?,
+                key(Key::Char('s'))?,
+                key(Key::Char('d'))?,
+                km(KeymapId::Input(Input::StickDir(Side::Right, Dir::Up))),
+                km(KeymapId::Target(Target::Wheel(Dir::Up))),
+                km(KeymapId::Input(Input::Gyro)),
+                km(KeymapId::Target(Target::Pointer)),
+                km(KeymapId::Hold(Some(Input::Trigger(Side::Left)))),
+                km(KeymapId::Back),
+            ],
+        ),
+        shot("keymap-map-to.png", Bottom, vec![km(KeymapId::Input(Input::Button(Button::A)))]),
+        shot("keymap-map-to-gyro.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Input(Input::Gyro))]),
+        shot(
+            "keymap-map-to-stick.png",
+            Bottom,
+            vec![km(KeymapId::Back), km(KeymapId::Input(Input::Stick(Side::Right))), km(KeymapId::Target(Target::Pointer)), km(KeymapId::Speed(4))],
+        ),
+        shot("keymap-capture.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Input(Input::Button(Button::Y))), km(KeymapId::Target(Target::Key)), key(Key::Mod(Modifier::Alt))?]),
+        shot("keymap-press.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Back), km(KeymapId::Input(Input::Button(Button::B))), km(KeymapId::Target(Target::PressPad))]),
+        shot("keymaps.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Back), km(KeymapId::Back)]),
+        shot("keymap-menu.png", Bottom, vec![PointerEvent::LongPress(ListId::Keymaps.row(2)).into()]),
+        shot("keymap-delete.png", Bottom, vec![km(KeymapId::Back), tap(ListId::Keymaps.row(2)), keymap_tile(), PointerEvent::LongPress(ListId::Keymaps.row(2)).into(), km(KeymapId::Delete)]),
+        shot("bottom.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Back), Reading::Status(demo::STATUS).into()]),
         shot("launcher.png", Bottom, vec![tab(Tab::Dock), PointerEvent::HideFocus.into()]),
         shot("launcher-running.png", Bottom, demo::running()),
         shot("wifi.png", Bottom, vec![tab(Tab::Wifi), Reading::Wifi(demo::wifi()).into()]),
+        shot("wifi-crowded.png", Bottom, vec![Reading::Wifi(demo::wifi_crowded()).into()]),
+        shot("wifi-scrolled.png", Bottom, vec![ListEvent::Scroll(ListId::Wifi, 3.4).into()]),
         shot("battery.png", Bottom, demo::battery(now)),
         shot("bluetooth.png", Bottom, vec![tab(Tab::Bluetooth), Reading::Bluetooth(demo::bluetooth()).into()]),
         shot(
@@ -156,7 +212,7 @@ pub fn shots(now: u64) -> Result<Vec<Shot>, ParseError> {
                 tab(Tab::Brightness),
                 Reading::Backlights(vec!["dsi0-backlight".into(), "dsi1-backlight".into()]).into(),
                 LevelEvent::Set(Level::Backlight(1), 65).into(),
-                PointerEvent::Up(Id::Level(Level::Backlight(1))).into(),
+                PointerEvent::Up(Level::Backlight(1).id()).into(),
             ],
         ),
         shot(
@@ -194,10 +250,10 @@ pub fn render(state: &mut State, now: u64, dir: &Path) -> Result<(), Error> {
             state.apply(event);
         }
         let path = dir.join(name);
-        // The top screen's rows, as a live frame reports them, keep shelf's selection on screen.
-        let rows = clamshell_ui::snapshot(state, screen, size(screen), 1, &path).map_err(|e| Error::Render(path.display().to_string(), e))?;
-        if let Some(rows) = rows {
-            state.apply(Event::Shelf(ShelfEvent::Rows(rows)));
+        // What a live frame reports (shelf's rows, the lists' rows) keeps the selections on screen.
+        let events = clamshell_ui::snapshot(state, screen, size(screen), 1, &path).map_err(|e| Error::Render(path.display().to_string(), e))?;
+        for event in events {
+            state.apply(event);
         }
         log::info!("wrote {}", path.display());
     }

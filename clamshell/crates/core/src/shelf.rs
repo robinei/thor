@@ -4,13 +4,22 @@
 
 use std::sync::Arc;
 
+use crate::scroll::{Rows, Scroll};
 use crate::{Collection, Game, Library};
 
-/// A collection's place in its list: the selected game's position, and the first row on screen.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// A collection's place in its list: the selected game's position, and the rows scrolled past (whole
+/// rows at rest; fractions while a finger drags the list).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Cursor {
     pub index: usize,
-    pub top: usize,
+    pub top: f32,
+}
+
+/// A collection's place as kept: the selected game's position and the list's scroll.
+#[derive(Debug, Clone, Default)]
+struct Place {
+    index: usize,
+    scroll: Scroll,
 }
 
 #[derive(Debug, Default)]
@@ -18,7 +27,7 @@ pub struct Shelf {
     library: Library,
     /// The current collection, and each collection's cursor.
     current: usize,
-    cursors: Vec<Cursor>,
+    cursors: Vec<Place>,
     /// List rows on screen (reported by the UI).
     rows: usize,
     /// Id of the selected game (shelf's list on top, its settings below): the current collection's
@@ -28,7 +37,7 @@ pub struct Shelf {
 
 impl Shelf {
     pub(crate) fn new(library: Library) -> Shelf {
-        let cursors = vec![Cursor::default(); library.collections.len()];
+        let cursors = vec![Place::default(); library.collections.len()];
         let mut shelf = Shelf { library, cursors, rows: 1, ..Shelf::default() };
         shelf.sync();
         shelf
@@ -56,7 +65,16 @@ impl Shelf {
     }
 
     pub fn cursor(&self) -> Cursor {
-        self.cursors.get(self.current).copied().unwrap_or_default()
+        self.cursors.get(self.current).map_or_else(Cursor::default, |p| Cursor { index: p.index, top: p.scroll.offset() })
+    }
+
+    /// The current collection's scroll.
+    pub(crate) fn scroll(&self) -> &Scroll {
+        self.cursors.get(self.current).map_or(&crate::scroll::EMPTY, |p| &p.scroll)
+    }
+
+    pub(crate) fn scroll_mut(&mut self) -> Option<&mut Scroll> {
+        self.cursors.get_mut(self.current).map(|p| &mut p.scroll)
     }
 
     /// A game by its id.
@@ -84,15 +102,11 @@ impl Shelf {
     pub(crate) fn sync(&mut self) -> bool {
         let before = self.selected.clone();
         let len = self.collection().map_or(0, |c| c.games.len());
-        let rows = self.rows.max(1);
+        let rows = self.rows.max(1) as f32;
         if let Some(c) = self.cursors.get_mut(self.current) {
             c.index = c.index.min(len.saturating_sub(1));
-            if c.index < c.top {
-                c.top = c.index;
-            } else if c.index >= c.top + rows {
-                c.top = c.index + 1 - rows;
-            }
-            c.top = c.top.min(len.saturating_sub(rows));
+            c.scroll.set_visible(rows, len);
+            c.scroll.show(c.index, len);
         }
         self.selected = self.selected_game().map(|g| g.id.clone());
         self.selected != before
@@ -157,7 +171,7 @@ impl Shelf {
             .library
             .collections
             .iter()
-            .map(|c| names.iter().position(|n| *n == c.name).and_then(|i| old.get(i).copied()).unwrap_or_default())
+            .map(|c| names.iter().position(|n| *n == c.name).and_then(|i| old.get(i).cloned()).unwrap_or_default())
             .collect();
         self.current = current_name.and_then(|n| self.library.collections.iter().position(|c| c.name == n)).unwrap_or(0);
         if let Some(id) = selected {
@@ -193,8 +207,8 @@ impl Shelf {
     /// Each collection's name and its selected game's id, tab-separated, a line each.
     pub(crate) fn selections(&self, text: &mut String) {
         for (i, c) in self.library.collections.iter().enumerate() {
-            let cursor = self.cursors.get(i).copied().unwrap_or_default();
-            if let Some(g) = c.games.get(cursor.index).and_then(|&g| self.library.games.get(g)) {
+            let index = self.cursors.get(i).map_or(0, |p| p.index);
+            if let Some(g) = c.games.get(index).and_then(|&g| self.library.games.get(g)) {
                 text.push_str(&c.name);
                 text.push('\t');
                 text.push_str(&g.id);
@@ -225,6 +239,13 @@ impl Shelf {
     }
 }
 
+/// The current collection's games as a list's rows (its place is kept by position, per collection).
+impl Rows for Shelf {
+    fn len(&self) -> usize {
+        self.collection().map_or(0, |c| c.games.len())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::testkit::*;
@@ -235,13 +256,26 @@ mod tests {
         let mut s = state();
         s.apply(ShelfEvent::Rows(3).into());
         s.apply(ShelfEvent::ListStep(4).into());
-        assert_eq!(s.shelf().cursor(), Cursor { index: 4, top: 2 });
+        assert_eq!(s.shelf().cursor(), Cursor { index: 4, top: 2.0 });
         assert_eq!(s.shelf().selected().map(|g| &**g), Some("dark-souls"));
         assert_eq!(s.pointer().focus(), Some(&game("dark-souls")));
         s.apply(ShelfEvent::ListStep(-100).into());
-        assert_eq!(s.shelf().cursor(), Cursor { index: 0, top: 0 });
+        assert_eq!(s.shelf().cursor(), Cursor { index: 0, top: 0.0 });
         s.apply(ShelfEvent::ListStep(100).into());
         assert_eq!(s.shelf().cursor().index, 6);
+    }
+
+    #[test]
+    fn a_drag_scrolls_without_moving_the_selection_and_the_pad_brings_it_back() {
+        let mut s = state();
+        s.apply(ShelfEvent::Rows(3).into());
+        let (dirty, _) = s.apply(ListEvent::Scroll(ListId::Shelf, 2.5).into());
+        assert_eq!((dirty, s.shelf().cursor()), (Dirty::BOTH, Cursor { index: 0, top: 2.5 }));
+        s.apply(ListEvent::Scroll(ListId::Shelf, 100.0).into());
+        assert_eq!(s.shelf().cursor().top, 4.0, "the last game on the last row");
+        assert!(!s.list_can_scroll(ListId::Shelf, 1.0) && s.list_can_scroll(ListId::Shelf, -1.0));
+        s.apply(ShelfEvent::ListStep(1).into());
+        assert_eq!(s.shelf().cursor(), Cursor { index: 1, top: 1.0 }, "the selection on screen again");
     }
 
     #[test]

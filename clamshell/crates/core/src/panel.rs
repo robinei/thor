@@ -80,6 +80,10 @@ impl State {
     /// A tap or long press in the settings tab.
     pub(crate) fn on_settings(&mut self, id: SettingsId, long: bool) -> Vec<Effect> {
         match id {
+            SettingsId::Tile(Setting::Keymap) if !long => {
+                self.open_keymaps();
+                vec![]
+            }
             SettingsId::Tile(setting) => {
                 let value = if long { None } else { Some(setting.next(self.tile_value(setting))) };
                 self.change(setting, value)
@@ -110,14 +114,14 @@ impl State {
     /// Changes `setting` where the panel edits (the game's overrides, or the global settings): to
     /// `value`, or back to the default (none). Saved, and applied at once if the settings in force
     /// changed.
-    fn change(&mut self, setting: Setting, value: Option<u16>) -> Vec<Effect> {
+    pub(crate) fn change(&mut self, setting: Setting, value: Option<u16>) -> Vec<Effect> {
         let before = self.in_force();
         let game = self.editing().map(|g| g.id.clone());
         self.settings.set(game.as_ref(), setting, value);
         self.saved_and_applied(before)
     }
 
-    fn saved_and_applied(&self, before: Values) -> Vec<Effect> {
+    pub(crate) fn saved_and_applied(&self, before: Values) -> Vec<Effect> {
         let mut effects = vec![Effect::Save(Save::Settings(self.settings.text()))];
         let now = self.in_force();
         if now != before {
@@ -156,6 +160,7 @@ impl State {
                 vec![Effect::Save(Save::Settings(self.settings.text()))]
             }
             Purpose::Password { ssid } => self.join(ssid, Some(editor.text)),
+            Purpose::KeymapName(action) => self.named_keymap(action, &editor.text),
         }
     }
 
@@ -215,10 +220,10 @@ mod tests {
         assert_eq!(fresh.settings().of("zelda-lttp"), zelda);
         assert_eq!(fresh.settings().global, s.settings().global);
         // A long press drops one override; Reset all of them.
-        taps(&mut s, Setting::Buttons, 1);
+        taps(&mut s, Setting::Deadzone, 1);
         long(&mut s, Id::Settings(SettingsId::Tile(Setting::Power)));
         assert_eq!(s.settings().overrides_of("zelda-lttp").get(Setting::Power), None);
-        assert_eq!(s.settings().overrides_of("zelda-lttp").get(Setting::Buttons), Some(1));
+        assert_eq!(s.settings().overrides_of("zelda-lttp").get(Setting::Deadzone), Some(4));
         tap(&mut s, Id::Settings(SettingsId::Reset));
         assert!(s.settings().overrides.is_empty());
         // Global-only settings change the global value even on a game's tab.

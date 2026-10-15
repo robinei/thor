@@ -93,6 +93,7 @@ pub enum DeviceType {
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeviceState {
+    Unmanaged = 10,
     Activated = 100,
     Failed = 120,
 }

@@ -36,6 +36,13 @@ pub enum Id {
     Control(Control),
     /// The pad mouse toggle.
     PadMouse,
+    /// A row of a scrolled list, by position: the row, or one of its controls.
+    Row { list: crate::scroll::ListId, i: u16, part: crate::scroll::RowPart },
+    /// The keymaps' screens' buttons (see [`crate::keymap_ui`]).
+    Keymap(KeymapId),
+    /// A scrolled list's area, under its rows: a finger on it (between rows) drags the list; a tap does
+    /// nothing.
+    List(crate::scroll::ListId),
     /// The dark second screen (while a game runs): a tap anywhere lights it.
     Wake,
 }
@@ -75,6 +82,55 @@ pub enum SettingsId {
     Reset,
 }
 
+/// The keymaps' screens' buttons (the picker's rows are [`Id::Row`]s of [`crate::ListId::Keymaps`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum KeymapId {
+    /// Back one screen.
+    Back,
+    /// The picker's New.
+    New,
+    /// A keymap's menu.
+    Edit,
+    Rename,
+    Duplicate,
+    Delete,
+    /// Deleting a keymap games use, after all.
+    ConfirmDelete,
+    /// An input on the edit screen: a tap opens what it maps to, a long press sets it back to the pad's.
+    Input(crate::keymap::Input),
+    /// What an input maps to.
+    Target(Target),
+    /// The speed of motion mapped to the pointer or a stick.
+    Speed(u8),
+    /// The threshold of a trigger mapped to a button.
+    Threshold(u8),
+    /// What holds the gyro on (none: always on).
+    Hold(Option<crate::keymap::Input>),
+    /// The modifiers alone as the chord (Shift as a key).
+    Done,
+}
+
+/// A target on the "map to" screen: an output, or a way to choose one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Target {
+    /// As on the pad (no binding).
+    Default,
+    Nothing,
+    Pad(crate::keymap::PadOut),
+    /// The next button pressed on the pad.
+    PressPad,
+    /// A key chord, typed on the keyboard.
+    Key,
+    Mouse(crate::keymap::MouseButton),
+    Wheel(crate::keymap::Dir),
+    Stick(crate::keymap::Side),
+    Pointer,
+    /// Four keys, typed in turn.
+    Keys,
+    Dpad,
+    Trigger(crate::keymap::Side),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EditorId {
     Save,
@@ -85,24 +141,18 @@ pub enum EditorId {
 pub enum WifiId {
     /// The radio's switch.
     Power,
-    /// A network, by position.
-    Network(u16),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BtId {
     /// The radio's switch.
     Power,
-    /// A device, by position.
-    Device(u16),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AudioId {
     /// The output volume's mute button.
     MuteOutput,
-    /// An app's mute button, by position.
-    StreamMute(u16),
     /// An output, by position.
     Output(u16),
 }

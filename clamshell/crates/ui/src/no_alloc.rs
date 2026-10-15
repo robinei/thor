@@ -5,7 +5,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
 use clamshell_core::keyboard::{self, Key, Modifier};
-use clamshell_core::{DockId, EditorId, Event, GameEvent, Id, Instance, PointerEvent, Reading, SettingsId, Slide, Init, State, Tab, WifiId};
+use clamshell_core::{DockId, EditorId, Event, GameEvent, Id, Instance, PointerEvent, Reading, SettingsId, Slide, Init, State, Tab};
 
 use crate::Screen;
 use crate::draw::DrawCache;
@@ -116,7 +116,53 @@ fn warm_frames_do_not_allocate() {
                 wifi_reading(),
             ],
         ),
-        ("wifi password", vec![tap(Id::Tab(Tab::Wifi)), wifi_reading(), tap(Id::Wifi(WifiId::Network(1))), tap(Id::Wifi(WifiId::Network(0)))]),
+        (
+            "wifi, scrolled part way",
+            vec![
+                tap(Id::Tab(Tab::Wifi)),
+                Event::Reading(Reading::Wifi(clamshell_core::wifi::Wifi {
+                    device: true,
+                    enabled: true,
+                    networks: (0..20).map(|i| clamshell_core::wifi::Network { ssid: format!("n{i}"), strength: 50, ..Default::default() }).collect(),
+                    ..Default::default()
+                })),
+                Event::List(clamshell_core::ListEvent::Visible(clamshell_core::ListId::Wifi, 6.5)),
+                Event::List(clamshell_core::ListEvent::Scroll(clamshell_core::ListId::Wifi, 3.3)),
+            ],
+        ),
+        ("shelf, dragged part way", vec![Event::Shelf(clamshell_core::ShelfEvent::Rows(3)), Event::List(clamshell_core::ListEvent::Scroll(clamshell_core::ListId::Shelf, 1.6))]),
+        ("keymap picker", vec![tap(Id::Tab(Tab::Settings)), tap(Id::Settings(SettingsId::Tile(clamshell_core::settings::Setting::Keymap)))]),
+        (
+            "keymap edit screen",
+            vec![
+                tap(Id::Tab(Tab::Settings)),
+                tap(Id::Settings(SettingsId::Tile(clamshell_core::settings::Setting::Keymap))),
+                tap(Id::Row { list: clamshell_core::ListId::Keymaps, i: 1, part: clamshell_core::RowPart::Edit }),
+            ],
+        ),
+        (
+            "keymap map to",
+            vec![
+                tap(Id::Tab(Tab::Settings)),
+                tap(Id::Settings(SettingsId::Tile(clamshell_core::settings::Setting::Keymap))),
+                tap(Id::Row { list: clamshell_core::ListId::Keymaps, i: 1, part: clamshell_core::RowPart::Edit }),
+                tap(Id::Keymap(clamshell_core::KeymapId::Input(clamshell_core::keymap::Input::Trigger(clamshell_core::keymap::Side::Left)))),
+                tap(Id::Keymap(clamshell_core::KeymapId::Target(clamshell_core::Target::Mouse(clamshell_core::keymap::MouseButton::Left)))),
+            ],
+        ),
+        (
+            "keymap key capture",
+            vec![
+                tap(Id::Tab(Tab::Settings)),
+                tap(Id::Settings(SettingsId::Tile(clamshell_core::settings::Setting::Keymap))),
+                tap(Id::Row { list: clamshell_core::ListId::Keymaps, i: 1, part: clamshell_core::RowPart::Edit }),
+                tap(Id::Keymap(clamshell_core::KeymapId::Input(clamshell_core::keymap::Input::Stick(clamshell_core::keymap::Side::Left)))),
+                tap(Id::Keymap(clamshell_core::KeymapId::Target(clamshell_core::Target::Keys))),
+                key(Key::Char('w')),
+                key(Key::Mod(Modifier::Shift)),
+            ],
+        ),
+        ("wifi password", vec![tap(Id::Tab(Tab::Wifi)), wifi_reading(), tap(clamshell_core::ListId::Wifi.row(1)), tap(clamshell_core::ListId::Wifi.row(0))]),
         (
             "sliding",
             vec![
@@ -170,7 +216,7 @@ fn warm_frames_do_not_allocate() {
                     outputs: vec![clamshell_core::levels::Output { id: 1, name: "Speakers".into(), default: true }],
                     streams: vec![clamshell_core::levels::Stream { id: 2, app: "Firefox".into(), title: String::new(), volume: 40, muted: false }],
                 })),
-                Event::Pointer(PointerEvent::Down(Id::Level(clamshell_core::levels::Level::Stream(0)))),
+                Event::Pointer(PointerEvent::Down(clamshell_core::levels::Level::Stream(0).id())),
             ],
         ),
         (
@@ -192,7 +238,7 @@ fn warm_frames_do_not_allocate() {
         ),
     ];
     for (name, events) in cases {
-        let mut state = State::new(Init { library: clamshell_library::demo_library(), ..Init::default() });
+        let mut state = State::new(Init { library: clamshell_library::demo_library(), keymaps: clamshell_core::keymap::Keymaps::initial(), ..Init::default() });
         state.apply(Event::Tick { unix_secs: 1_700_000_000 });
         for event in events {
             state.apply(event);

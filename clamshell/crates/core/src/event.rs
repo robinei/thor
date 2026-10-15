@@ -13,6 +13,7 @@ use crate::instance::Instance;
 use crate::levels::{Audio, Level};
 use crate::metrics::Metrics;
 use crate::pad::PadInput;
+use crate::scroll::ListEvent;
 use crate::slider::Control;
 use crate::sys::{Status, TouchpadProblem};
 use crate::wifi::Wifi;
@@ -30,6 +31,8 @@ pub enum Event {
     Slide(Slide),
     /// A level row set by the finger, or stepped by the pad.
     Level(LevelEvent),
+    /// A scrolled list moved or was laid out.
+    List(ListEvent),
     /// The pad in shelf, and shelf's layout.
     Shelf(ShelfEvent),
     /// A game shelf started began, ended, or couldn't start (the launcher thread).
@@ -48,6 +51,8 @@ pub enum Event {
     PadSwitch,
     /// The pad, while it drives ClamShell (the UI handles these; the state ignores them).
     Pad(PadInput),
+    /// An input pressed or moved on the pad while it listens (the keymap's edit screen).
+    Listened(crate::keymap::Input),
     /// A text field of the app in front wants typing (true), or no longer does (the Wayland side).
     TextInput(bool),
     /// The system woke from sleep.
@@ -152,4 +157,4 @@ macro_rules! into_event {
     };
 }
 
-into_event!(Reading => Reading, PointerEvent => Pointer, Slide => Slide, LevelEvent => Level, ShelfEvent => Shelf, GameEvent => Game);
+into_event!(ListEvent => List, Reading => Reading, PointerEvent => Pointer, Slide => Slide, LevelEvent => Level, ShelfEvent => Shelf, GameEvent => Game);

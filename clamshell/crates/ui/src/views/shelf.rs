@@ -5,10 +5,11 @@
 
 use std::fmt::{self, Display, Formatter};
 
-use clamshell_core::{Game, Id, ShelfId};
+use clamshell_core::{Game, Id, ListId, ShelfId};
 
 use super::format::{DaysAgo, Fmt, PlayTime};
-use super::style::{self, Look, RADIUS_L, SURFACE, SURFACE_HI, Tone};
+use super::scroll::Scrolled;
+use super::style::{self, Look, RADIUS_L, SURFACE_HI, Tone};
 use super::{Frame, widgets};
 use crate::draw::{Align, Column, Keep, Rect, Span, WRAP_LINE};
 
@@ -54,33 +55,26 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
     let Some(coll) = s.shelf().collection() else {
         return rows;
     };
-    list_rows(f, list, rows, pad);
-    // Where in the list: a thin bar along its right edge, when it doesn't all fit.
-    let (len, top) = (coll.games.len(), s.shelf().cursor().top);
-    if len > rows {
-        let track = Rect::new(list.x + list.w - 3.0, list.y, 2.0, list.h);
-        f.c.fill(track, SURFACE);
-        let thumb_h = (track.h * rows as f32 / len as f32).max(8.0);
-        let y = track.y + (track.h - thumb_h) * top as f32 / (len - rows) as f32;
-        f.c.fill(Rect::new(track.x, y, track.w, thumb_h), Tone::Dim);
-    }
+    list_rows(f, list, rows, coll.games.len(), pad);
     if let Some(game) = s.shelf().selected_game() {
         selected(f, game, screen, list, pad);
     }
     rows
 }
 
-/// The list's `rows` rows from the cursor's top, the selection on a background.
-fn list_rows(f: &mut Frame, list: Rect, rows: usize, pad: f32) {
+/// The list (`len` games, `rows` on screen), scrolled as the cursor says, the selection on a background;
+/// where in the list: a thin bar along its right edge, when it doesn't all fit.
+fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
     let s = f.s;
     let row_h = list.h / rows as f32;
     let cursor = s.shelf().cursor();
-    for row in 0..rows {
-        let position = cursor.top + row;
+    let scrolled = Scrolled::begin(f, ListId::Shelf, list, row_h, len);
+    for position in scrolled.shown() {
         let Some(game) = s.shelf().game_at(position) else {
             break;
         };
-        let r = Rect::new(list.x, list.y + row as f32 * row_h, list.w - pad * 0.6, row_h - 2.0);
+        let at = scrolled.row(position);
+        let r = Rect::new(at.x, at.y, list.w - pad * 0.6, row_h - 2.0);
         let selected = position == cursor.index;
         let look = Look { fill: selected.then_some(SURFACE_HI), ..Look::CARD };
         let thumb_h = r.h * THUMB;
@@ -92,6 +86,7 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, pad: f32) {
             f.c.text_fit(title, row_h * ROW_TEXT, Tone::high_if(selected), &game.title, Keep::Start);
         });
     }
+    scrolled.end(f, list.x + list.w - 3.0);
 }
 
 /// The selected game right of the `list`, as high as it: large art, then beside it the title, what

@@ -4,9 +4,10 @@
 //! by where the finger is on its track (and follows it); the pad's left and right step it.
 
 use clamshell_core::levels::Level;
-use clamshell_core::{AudioId, Id};
+use clamshell_core::{AudioId, Id, ListId, RowPart};
 
 use super::format::{self, Fmt};
+use super::scroll::Scrolled;
 use super::style::{self, Look, Text, Tone};
 use super::{Frame, Track, widgets};
 use crate::draw::{Align, Column, Keep, Rect};
@@ -59,7 +60,7 @@ fn level(f: &mut Frame, level: Level, r: Rect, muted: bool) {
     let thumb = r.h * THUMB;
     let along = Track { x0: r.x + thumb, w: r.w - 2.0 * thumb };
     let lit = if muted { Tone::Dim } else { Tone::High };
-    f.button(Id::Level(level), r, Look::ROW, |f| widgets::track(f.c, along, r.y + r.h / 2.0, r.h * TRACK, thumb, value, lit));
+    f.button(level.id(), r, Look::ROW, |f| widgets::track(f.c, along, r.y + r.h / 2.0, r.h * TRACK, thumb, value, lit));
     f.track(along);
 }
 
@@ -147,20 +148,23 @@ pub(super) fn draw_volume(f: &mut Frame, body: Rect) {
         let r = col.rest();
         f.c.text(r.x, r.y, z.text, Tone::Dim, "Nothing is playing");
     }
-    for (i, stream) in streams.iter().enumerate() {
-        let Some(mut row) = col.next(z.row_h) else {
-            break;
+    let rows = Scrolled::begin(f, ListId::Streams, col.rest(), z.row_h, streams.len());
+    for i in rows.shown() {
+        let Some(stream) = streams.get(i) else {
+            continue;
         };
+        let mut row = rows.row(i);
         let name = row.take_left(name_w);
         let mute = row.take_right(number_w);
         let tone = if stream.muted { Tone::Dim } else { Tone::Normal };
         f.c.text_fit(Rect::new(name.x, name.y, name_w - z.pad, name.h), z.text, tone, &stream.app, Keep::Start);
         let i = i as u16;
         level(f, Level::Stream(i), row, stream.muted);
-        f.button(Id::Audio(AudioId::StreamMute(i)), mute, Look::ROW, |f| {
+        f.button(Id::Row { list: ListId::Streams, i, part: RowPart::Mute }, mute, Look::ROW, |f| {
             f.c.icon(Icon::volume(stream.volume, stream.muted), mute.square_center(z.icon), mute_tone(stream.muted));
         });
     }
+    rows.end(f, area.right() + z.pad * 0.4);
 }
 
 pub(super) fn draw_brightness(f: &mut Frame, body: Rect) {
@@ -187,10 +191,13 @@ pub(super) fn draw_brightness(f: &mut Frame, body: Rect) {
         f.c.text(r.x, r.y, z.text, Tone::Dim, "No backlight");
         return;
     }
-    for (i, backlight) in s.levels().backlights().iter().enumerate() {
-        let Some(mut row) = col.next(z.row_h) else {
-            break;
+    let backlights = s.levels().backlights();
+    let rows = Scrolled::begin(f, ListId::Backlights, col.rest(), z.row_h, backlights.len());
+    for i in rows.shown() {
+        let Some(backlight) = backlights.get(i) else {
+            continue;
         };
+        let mut row = rows.row(i);
         let name = row.take_left(name_w);
         let percent = row.take_right(percent_w);
         f.c.text_fit(Rect::new(name.x, name.y, name_w - z.pad, name.h), z.text, Tone::Normal, backlight, Keep::Start);
@@ -198,4 +205,5 @@ pub(super) fn draw_brightness(f: &mut Frame, body: Rect) {
         level(f, level_id, row, false);
         number(f, percent, s.levels().level(level_id), " %", z.text);
     }
+    rows.end(f, area.right() + z.pad * 0.4);
 }

@@ -1,5 +1,5 @@
 //! The editor: a line of text typed on the on-screen keyboard (Enter saves, Esc cancels), for a game's
-//! environment or a Wi-Fi password; and environment variables as text, `KEY=value` words.
+//! environment, a Wi-Fi password or a keymap's name; and environment variables as text, `KEY=value` words.
 
 use std::sync::Arc;
 
@@ -18,6 +18,17 @@ pub enum Purpose {
     Env { game: Option<Arc<str>> },
     /// The password for joining this Wi-Fi network.
     Password { ssid: String },
+    /// A keymap's name.
+    KeymapName(KeymapName),
+}
+
+/// What a keymap's name is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeymapName {
+    New,
+    Rename(u16),
+    /// A copy of this one.
+    Duplicate(u16),
 }
 
 /// How a key ended the editing.

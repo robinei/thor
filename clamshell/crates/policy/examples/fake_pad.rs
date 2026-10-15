@@ -15,23 +15,37 @@
 //! - `dpad up|down|left|right|none`: the D-pad (a hat), held until the next `dpad`
 //! - `stick left|right X Y`: a stick at X, Y (-1.0 to 1.0, y down), held until changed
 //! - `trigger left|right V`: a trigger at V (0.0 to 1.0)
+//! - `gyro X Y Z`: the gyro turning at X, Y, Z degrees per second (pitch, yaw, roll: ABS_RX, RY, RZ),
+//!   held until changed (`gyro 0 0 0`)
 //! - `sleep MS`
 //! - `quit`
 //!
 //! Each line is answered on standard error. `tools/vm.py pad` runs it in the virtual Thor.
+//!
+//! Beside the pad it makes a motion sensor as the kernel's controller drivers do ("clamshell fake pad
+//! Motion Sensors": INPUT_PROP_ACCELEROMETER, the accelerometer on ABS_X/Y/Z, the gyro on ABS_RX/RY/RZ
+//! with its resolution, units per degree per second, and MSC_TIMESTAMP), reporting at 250 Hz.
 
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 use std::thread::{sleep, spawn};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use evdev::raw_stream::RawDevice;
 use evdev::uinput::VirtualDevice;
-use evdev::{AbsInfo, AbsoluteAxisCode, AttributeSet, EventType, InputEvent, KeyCode, RelativeAxisCode, UinputAbsSetup};
+use evdev::{AbsInfo, AbsoluteAxisCode, AttributeSet, EventType, InputEvent, KeyCode, MiscCode, PropType, RelativeAxisCode, UinputAbsSetup};
 
 const STICK_MAX: i32 = 32767;
 const TRIGGER_MAX: i32 = 1023;
+/// The gyro's units per degree per second, and its range in degrees per second.
+const GYRO_RES: i32 = 1024;
+const GYRO_RANGE: i32 = 2000;
+/// The accelerometer's units per g.
+const ACCEL_RES: i32 = 8192;
+/// How often the motion sensor reports.
+const MOTION_EVERY: Duration = Duration::from_millis(4);
 
 /// The buttons by name, as an Xbox controller's (Linux's xpad codes).
 const BUTTONS: [(&str, KeyCode); 11] = [
@@ -83,6 +97,49 @@ fn make_pad() -> io::Result<VirtualDevice> {
         .build()
 }
 
+/// The motion sensor beside the pad.
+fn make_motion() -> io::Result<VirtualDevice> {
+    let gyro = |code| UinputAbsSetup::new(code, AbsInfo::new(0, -GYRO_RANGE * GYRO_RES, GYRO_RANGE * GYRO_RES, 16, 0, GYRO_RES));
+    let accel = |code| UinputAbsSetup::new(code, AbsInfo::new(0, -4 * ACCEL_RES, 4 * ACCEL_RES, 4, 0, ACCEL_RES));
+    let props: AttributeSet<PropType> = [PropType::ACCELEROMETER].into_iter().collect();
+    let msc: AttributeSet<MiscCode> = [MiscCode::MSC_TIMESTAMP].into_iter().collect();
+    VirtualDevice::builder()?
+        .name("clamshell fake pad Motion Sensors")
+        .with_properties(&props)?
+        .with_msc(&msc)?
+        .with_absolute_axis(&accel(AbsoluteAxisCode::ABS_X))?
+        .with_absolute_axis(&accel(AbsoluteAxisCode::ABS_Y))?
+        .with_absolute_axis(&accel(AbsoluteAxisCode::ABS_Z))?
+        .with_absolute_axis(&gyro(AbsoluteAxisCode::ABS_RX))?
+        .with_absolute_axis(&gyro(AbsoluteAxisCode::ABS_RY))?
+        .with_absolute_axis(&gyro(AbsoluteAxisCode::ABS_RZ))?
+        .build()
+}
+
+/// The gyro's rate as last set (degrees per second), reported every [`MOTION_EVERY`] with gravity
+/// straight down, as a handheld held level.
+type Gyro = Arc<Mutex<[f32; 3]>>;
+
+fn report_motion(mut device: VirtualDevice, gyro: Gyro) {
+    let start = Instant::now();
+    loop {
+        let rate = gyro.lock().map(|g| *g).unwrap_or_default();
+        let micros = start.elapsed().as_micros() as u32;
+        let mut events: Vec<InputEvent> = [AbsoluteAxisCode::ABS_RX, AbsoluteAxisCode::ABS_RY, AbsoluteAxisCode::ABS_RZ]
+            .into_iter()
+            .zip(rate)
+            .map(|(code, deg)| abs(code, (deg * GYRO_RES as f32).round() as i32))
+            .collect();
+        events.push(abs(AbsoluteAxisCode::ABS_Y, ACCEL_RES));
+        events.push(InputEvent::new(EventType::MISC.0, MiscCode::MSC_TIMESTAMP.0, micros as i32));
+        events.push(syn());
+        if device.emit(&events).is_err() {
+            return;
+        }
+        sleep(MOTION_EVERY);
+    }
+}
+
 fn main() -> io::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
@@ -95,10 +152,16 @@ fn main() -> io::Result<()> {
 /// Reads commands from `path` (made as a named pipe if missing; reopened after each writer) or stdin.
 fn controlled(path: &str) -> io::Result<()> {
     let mut pad = make_pad()?;
+    let gyro = Gyro::default();
+    let motion = make_motion()?;
+    let reporting = gyro.clone();
+    spawn(move || report_motion(motion, reporting));
+    let mut pad = Fake { pad: &mut pad, gyro };
+    let pad = &mut pad;
     eprintln!("fake pad ready; commands from {path}");
     if path == "-" {
         for line in io::stdin().lock().lines() {
-            if !run_line(&mut pad, &line?) {
+            if !run_line(pad, &line?) {
                 break;
             }
         }
@@ -109,15 +172,21 @@ fn controlled(path: &str) -> io::Result<()> {
     }
     loop {
         for line in BufReader::new(File::open(path)?).lines() {
-            if !run_line(&mut pad, &line?) {
+            if !run_line(pad, &line?) {
                 return Ok(());
             }
         }
     }
 }
 
+/// The fake controller: its pad, and its gyro's rate.
+struct Fake<'a> {
+    pad: &'a mut VirtualDevice,
+    gyro: Gyro,
+}
+
 /// Carries out one command line; false for `quit`.
-fn run_line(pad: &mut VirtualDevice, line: &str) -> bool {
+fn run_line(pad: &mut Fake, line: &str) -> bool {
     let words: Vec<&str> = line.split_whitespace().collect();
     if words.is_empty() {
         return true;
@@ -154,8 +223,16 @@ fn scaled(value: f32, max: i32) -> i32 {
     (value.clamp(-1.0, 1.0) * max as f32).round() as i32
 }
 
-fn command(pad: &mut VirtualDevice, words: &[&str]) -> io::Result<()> {
+fn command(fake: &mut Fake, words: &[&str]) -> io::Result<()> {
+    let pad = &mut *fake.pad;
     match words {
+        ["gyro", x, y, z] => {
+            let rate = [number(x)?, number(y)?, number(z)?];
+            if let Ok(mut g) = fake.gyro.lock() {
+                *g = rate;
+            }
+            Ok(())
+        }
         ["press", name] => pad.emit(&[key(button(name)?, true), syn()]),
         ["release", name] => pad.emit(&[key(button(name)?, false), syn()]),
         ["tap", name, rest @ ..] => {

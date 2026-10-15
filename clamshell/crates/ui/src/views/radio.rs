@@ -1,8 +1,9 @@
 //! What the Wi-Fi and Bluetooth tabs share: a header with what the radio is doing on the left and its
-//! switch on the right, then a list of rows (networks, devices) above a hint line.
+//! switch on the right, then a scrolled list of rows (networks, devices) above a hint line.
 
-use clamshell_core::Id;
+use clamshell_core::{Id, ListId};
 
+use super::scroll::Scrolled;
 use super::style::{self, Text, Tone};
 use super::{Frame, widgets};
 use crate::draw::{Keep, LINE, Rect};
@@ -22,15 +23,21 @@ pub(super) struct List {
     pub size: f32,
     pub area: Rect,
     pub row_h: f32,
-    /// How many rows fit above the hint line, and where that line is.
-    pub rows: usize,
+    /// Where the hint line is (the rows scroll above it).
     pub hint_y: f32,
 }
 
 impl List {
-    /// Row `i`'s rect (a little wider than the area, for the pressed highlight).
-    pub fn row(&self, i: usize) -> Rect {
-        Rect::new(self.area.x - self.pad * 0.5, self.area.y + i as f32 * self.row_h, self.area.w + self.pad, self.row_h)
+    /// The rows' list begun: `len` rows above the hint line, each a little wider than the area (for the
+    /// pressed highlight).
+    pub fn scrolled(&self, f: &mut Frame, list: ListId, len: usize) -> Scrolled {
+        let view = Rect::new(self.area.x - self.pad * 0.5, self.area.y, self.area.w + self.pad, self.hint_y - self.area.y - self.pad * 0.3);
+        Scrolled::begin(f, list, view, self.row_h, len)
+    }
+
+    /// Where the scroll bar goes: just right of the rows.
+    pub fn bar_x(&self) -> f32 {
+        self.area.x + self.area.w + self.pad * 0.6
     }
 
     /// The hint at the bottom, in small dim text.
@@ -56,6 +63,5 @@ pub(super) fn header(f: &mut Frame, body: Rect, switch: Id, on: bool, (tone, sta
     f.c.text_fit(Rect::new(header.x, header.y, header.w - pad, header.h), size, tone, status, Keep::Start);
     let row_h = body.h * ROW_H;
     let hint_y = list.y + list.h - size * LINE;
-    let rows = ((hint_y - list.y) / row_h).floor().max(0.0) as usize;
-    List { pad, size, area: list, row_h, rows, hint_y }
+    List { pad, size, area: list, row_h, hint_y }
 }

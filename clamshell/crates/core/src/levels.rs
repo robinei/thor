@@ -14,7 +14,11 @@
 
 use std::fmt::Write;
 
+use crate::State;
 use crate::effect::Effect;
+use crate::id::Id;
+use crate::items::ItemKey;
+use crate::scroll::{ListId, RowPart, Rows};
 use crate::slider::{Control, Slider};
 
 /// A level row.
@@ -28,6 +32,27 @@ pub enum Level {
     Stream(u16),
     /// A backlight, by position.
     Backlight(u16),
+}
+
+impl Level {
+    /// Its row's target: the bar's levels' own, a stream's or a backlight's in its list's row.
+    pub fn id(self) -> Id {
+        match self {
+            Level::Stream(i) => Id::Row { list: ListId::Streams, i, part: RowPart::Level },
+            Level::Backlight(i) => Id::Row { list: ListId::Backlights, i, part: RowPart::Level },
+            level => Id::Level(level),
+        }
+    }
+
+    /// The level a target sets, if it is a level's.
+    pub fn of(id: &Id) -> Option<Level> {
+        match id {
+            Id::Level(level) => Some(*level),
+            Id::Row { list: ListId::Streams, i, part: RowPart::Level } => Some(Level::Stream(*i)),
+            Id::Row { list: ListId::Backlights, i, part: RowPart::Level } => Some(Level::Backlight(*i)),
+            _ => None,
+        }
+    }
 }
 
 impl From<Control> for Level {
@@ -218,6 +243,11 @@ impl Levels {
         &self.backlights
     }
 
+    /// The backlights as a list's rows.
+    pub(crate) fn backlight_rows(&self) -> &Vec<String> {
+        &self.backlights
+    }
+
     pub fn brightness(&self) -> &Brightness {
         &self.brightness
     }
@@ -394,6 +424,46 @@ impl Levels {
     }
 }
 
+/// The apps playing as a list's rows (found again by their PipeWire id).
+impl Rows for Audio {
+    fn len(&self) -> usize {
+        self.streams.len()
+    }
+
+    fn key(&self, i: usize) -> Option<ItemKey> {
+        self.streams.get(i).map(|s| ItemKey::Number(s.id))
+    }
+
+    fn find(&self, key: &ItemKey) -> Option<usize> {
+        self.streams.iter().position(|s| *key == ItemKey::Number(s.id))
+    }
+}
+
+/// The backlights as a list's rows (by name).
+impl Rows for Vec<String> {
+    fn len(&self) -> usize {
+        self.as_slice().len()
+    }
+
+    fn key(&self, i: usize) -> Option<ItemKey> {
+        self.get(i).map(|b| ItemKey::Name(b.clone()))
+    }
+
+    fn find(&self, key: &ItemKey) -> Option<usize> {
+        self.iter().position(|b| *key == ItemKey::Name(b.clone()))
+    }
+}
+
+impl State {
+    /// A tap on a part of an app's row: its mute button mutes it (its level is set by the finger).
+    pub(crate) fn on_stream(&mut self, i: usize, part: RowPart) -> Vec<Effect> {
+        match part {
+            RowPart::Mute => self.levels.toggle_stream_mute(i),
+            RowPart::Main | RowPart::Level | RowPart::Edit => vec![],
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -428,7 +498,7 @@ mod tests {
         assert_eq!(set(&mut s, Level::Stream(0), 20), vec![Effect::Sound(Sound::StreamVolume(80, 20))]);
         read(&mut s, Reading::Audio(audio()));
         assert_eq!(s.levels().level(Level::Stream(0)), Some(20), "kept while held");
-        assert_eq!(tap(&mut s, Id::Audio(AudioId::StreamMute(0))), vec![Effect::Sound(Sound::StreamMute(80, true))]);
+        assert_eq!(tap(&mut s, Id::Row { list: ListId::Streams, i: 0, part: RowPart::Mute }), vec![Effect::Sound(Sound::StreamMute(80, true))]);
         assert_eq!(tap(&mut s, Id::Audio(AudioId::Output(1))), vec![Effect::Sound(Sound::Output(51))]);
         assert_eq!(tap(&mut s, Id::Audio(AudioId::Output(1))), vec![], "already there");
         assert_eq!(tap(&mut s, Id::Tab(Tab::Brightness)), vec![Effect::Watch(Watch::Audio, false), Effect::Watch(Watch::Backlights, true)]);

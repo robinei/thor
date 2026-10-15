@@ -7,7 +7,7 @@ use std::fmt::{self, Display, Formatter};
 
 use clamshell_core::editor::{Editor, Purpose};
 use clamshell_core::wifi::{NetState, Problem, Wifi};
-use clamshell_core::{Id, RadioStatus, WifiId};
+use clamshell_core::{Id, ListId, RadioStatus, WifiId};
 
 use super::format::Fmt;
 use super::style::Tone;
@@ -31,7 +31,11 @@ pub(super) fn draw(f: &mut Frame, body: Rect) {
     if wifi.enabled && wifi.networks.is_empty() {
         list.empty(f, "Looking for networks");
     }
-    for (i, n) in wifi.networks.iter().enumerate().take(list.rows) {
+    let rows = list.scrolled(f, ListId::Wifi, wifi.networks.len());
+    for i in rows.shown() {
+        let Some(n) = wifi.networks.get(i) else {
+            continue;
+        };
         let (state, state_tone) = match wifi.net_state(n) {
             NetState::Connected => ("Connected", Tone::Go),
             NetState::Joining => ("Joining", Tone::Accent),
@@ -40,8 +44,9 @@ pub(super) fn draw(f: &mut Frame, body: Rect) {
             NetState::Other => ("", Tone::Dim),
         };
         let face = RowFace { icon: Icon::wifi(Some(n.strength)), name: &n.ssid, tone: Tone::high_if(n.active), lock: n.secure, state, state_tone };
-        widgets::status_row(f, Id::Wifi(WifiId::Network(i as u16)), list.row(i), list.pad, list.size, face);
+        widgets::status_row(f, ListId::Wifi.row(i as u16), rows.row(i), list.pad, list.size, face);
     }
+    rows.end(f, list.bar_x());
 }
 
 /// The header's tone: an error stands out; off, missing or idle is dim.

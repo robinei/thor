@@ -1,6 +1,8 @@
 //! Where the controller's events go: the route the state chose ([`PadRoute`]) and the mapping that
-//! carries it out. Pure: controller events in, events for the virtual devices and the state out, so
-//! switching routes is tested here (whatever a mapping holds down is let go when the pad leaves it).
+//! carries it out: the game's (the keymap in force, [`Remap`]), or ClamShell's (navigation, typing, the
+//! pad mouse, listening). Pure: controller and gyro events in, events for the virtual devices and the
+//! state out, so switching routes is tested here (whatever a mapping holds down is let go when the pad
+//! leaves it).
 
 use clamshell_core::hardware::DeviceKey;
 use std::time::{Duration, Instant};
@@ -8,8 +10,13 @@ use std::time::{Duration, Instant};
 use clamshell_core::{Event, PadInput, PadRoute};
 use evdev::{AbsoluteAxisCode, KeyCode};
 
+use clamshell_core::keymap::Keymap;
+
+use super::listen::Listener;
+use super::motion::{Sample, interval};
 use super::mouse::PadMouse;
 use super::navigator::Navigator;
+use super::remap::{self, Remap, mouse_codes};
 use super::typing::Typing;
 use crate::input::{Press, Range, Raw};
 
@@ -27,7 +34,19 @@ pub const MOUSE_DEVICE_KEYS: [KeyCode; 9] = [
     KeyCode::KEY_BACKSPACE,
 ];
 
-/// Every key of the virtual mouse up (the kernel passes on only the ones that were down).
+/// Every key the virtual mouse has: its own (the pad mouse, typing), and what a keymap may press (the
+/// keyboard's keys, the mouse's side buttons).
+pub fn mouse_device_keys() -> Vec<KeyCode> {
+    let mut keys = MOUSE_DEVICE_KEYS.to_vec();
+    keys.extend(mouse_codes());
+    keys.extend(crate::keyboard::all_keys());
+    keys.sort_by_key(|k| k.0);
+    keys.dedup();
+    keys
+}
+
+/// Every key of the virtual mouse that the pad mouse and typing use up (the kernel passes on only the
+/// ones that were down).
 pub fn release_mouse_keys(out: &mut Out) {
     out.mouse.extend(MOUSE_DEVICE_KEYS.iter().map(|&k| Raw::key(k, Press::Up)));
     out.mouse.push(Raw::REPORT);
@@ -36,9 +55,9 @@ pub fn release_mouse_keys(out: &mut Out) {
 /// What the pad's events become.
 #[derive(Debug, Default, PartialEq)]
 pub struct Out {
-    /// For the game's virtual pad (shaped on the way, see [`super::Shaping`]).
+    /// For the game's virtual pad (the deadzone applied on the way, see [`super::Shaping`]).
     pub pad: Vec<Raw>,
-    /// For the virtual mouse (pointer, buttons, wheel, and the keys the pad types).
+    /// For the virtual mouse (pointer, buttons, wheel, and the keys the pad types or a keymap presses).
     pub mouse: Vec<Raw>,
     /// For the state.
     pub events: Vec<Event>,
@@ -101,10 +120,28 @@ impl PadSnapshot {
 
     /// Events that make a pad look like this state (`real`) or like an untouched one.
     pub fn events(&self, real: bool, out: &mut Vec<Raw>) {
+        self.events_where(real, |_| true, out);
+    }
+
+    /// [`PadSnapshot::events`] for the keys and axes whose event `pick` takes.
+    pub fn events_where(&self, real: bool, pick: impl Fn(Raw) -> bool, out: &mut Vec<Raw>) {
         let press = if real { Press::Down } else { Press::Up };
-        out.extend(self.keys.iter().map(|&k| Raw::key(k, press)));
-        out.extend(self.axes.iter().map(|a| Raw::abs(a.code, if real { a.value } else { a.rest })));
-        out.push(Raw::REPORT);
+        let start = out.len();
+        out.extend(self.keys.iter().map(|&k| Raw::key(k, press)).filter(|r| pick(*r)));
+        out.extend(self.axes.iter().map(|a| Raw::abs(a.code, if real { a.value } else { a.rest })).filter(|r| pick(*r)));
+        if out.len() > start {
+            out.push(Raw::REPORT);
+        }
+    }
+
+    /// Whether a key is held.
+    pub fn held(&self, key: KeyCode) -> bool {
+        self.keys.contains(&key)
+    }
+
+    /// An axis' value, if the controller has it.
+    pub fn value(&self, code: AbsoluteAxisCode) -> Option<i32> {
+        self.axes.iter().find(|a| a.code == code).map(|a| a.value)
     }
 }
 
@@ -138,17 +175,44 @@ pub struct PadRouter {
     mouse: PadMouse,
     navigator: Navigator,
     typing: Typing,
+    listener: Listener,
+    remap: Remap,
+    ranges: Ranges,
+    /// Events passed through to the game's pad since the last report.
+    passed: bool,
+    /// The gyro's last sample's time.
+    gyro_at: Option<std::time::Duration>,
     snapshot: PadSnapshot,
 }
 
 impl PadRouter {
     /// A controller just taken over (its ranges, its axes now), the pad going to `route`: away from the
     /// game, the virtual pad is blanked.
-    pub fn new(ranges: Ranges, snapshot: PadSnapshot, route: PadRoute, out: &mut Out) -> PadRouter {
+    /// `keymap`: the keymap in force.
+    pub fn new(ranges: Ranges, snapshot: PadSnapshot, route: PadRoute, keymap: Keymap, out: &mut Out) -> PadRouter {
+        let mut remap = Remap::new(ranges);
+        remap.set_keymap(keymap, &snapshot, false, out);
+        let mut router = PadRouter {
+            route,
+            home: Home::Up,
+            rb_taken: false,
+            mouse: PadMouse::new(ranges),
+            navigator: Navigator::new(ranges.stick),
+            typing: Typing,
+            listener: Listener::new(ranges),
+            remap,
+            ranges,
+            passed: false,
+            gyro_at: None,
+            snapshot,
+        };
         if away(route) {
-            snapshot.events(false, &mut out.pad);
+            router.snapshot.events(false, &mut out.pad);
+        } else {
+            // (The virtual pad is taken to show the controller as it is, as games saw it before.)
+            router.remap.prime(&router.snapshot);
         }
-        PadRouter { route, home: Home::Up, rb_taken: false, mouse: PadMouse::new(ranges), navigator: Navigator::new(ranges.stick), typing: Typing, snapshot }
+        router
     }
 
     fn mapping(&mut self, route: PadRoute) -> Option<&mut dyn Mapping> {
@@ -157,6 +221,42 @@ impl PadRouter {
             PadRoute::Ui => Some(&mut self.navigator),
             PadRoute::Keys => Some(&mut self.typing),
             PadRoute::Mouse => Some(&mut self.mouse),
+            PadRoute::Listen => Some(&mut self.listener),
+        }
+    }
+
+    /// The pad comes to the game: what the keymap makes of the controller now, and what it doesn't
+    /// know as it is.
+    fn enter_game(&mut self, out: &mut Out) {
+        self.snapshot.events_where(true, |r| !remap::known(r), &mut out.pad);
+        self.remap.update(&self.snapshot, out);
+    }
+
+    pub fn ranges(&self) -> Ranges {
+        self.ranges
+    }
+
+    /// A new keymap in force: applied at once while the game has the pad (what the old one held is
+    /// let go).
+    pub fn set_keymap(&mut self, keymap: Keymap, out: &mut Out) {
+        let live = self.route == PadRoute::Game;
+        self.remap.set_keymap(keymap, &self.snapshot, live, out);
+    }
+
+    /// A gyro sample: to the keymap while the game has the pad.
+    pub fn motion(&mut self, sample: Sample, out: &mut Out) {
+        let dt = interval(self.gyro_at, sample.at);
+        self.gyro_at = Some(sample.at);
+        if self.route == PadRoute::Game {
+            self.remap.motion(sample.rate, dt, &self.snapshot, out);
+        }
+    }
+
+    /// The controller is gone: whatever the route holds down outside the game's pad is let go.
+    pub fn lose(&mut self, out: &mut Out) {
+        match self.mapping(self.route) {
+            Some(mapping) => mapping.release(out),
+            None => self.remap.release(out),
         }
     }
 
@@ -167,17 +267,21 @@ impl PadRouter {
         if from == to {
             return;
         }
-        if let Some(mapping) = self.mapping(from) {
-            mapping.release(out);
+        match self.mapping(from) {
+            Some(mapping) => mapping.release(out),
+            None => self.remap.release(out),
         }
         if self.home == Home::Guide {
             self.guide(false, out);
             self.home = Home::Held { since: Instant::now(), combined: true };
         }
-        if away(from) != away(to) {
-            self.snapshot.events(!away(to), &mut out.pad);
-        }
         self.route = to;
+        if away(to) && !away(from) {
+            // (The keymap let go of its own outputs above; the rest as it is on the controller.)
+            self.snapshot.events_where(false, |r| !remap::known(r), &mut out.pad);
+        } else if away(from) && !away(to) {
+            self.enter_game(out);
+        }
         log::info!("pad: {to:?}");
     }
 
@@ -225,7 +329,17 @@ impl PadRouter {
         }
         match self.mapping(self.route) {
             Some(mapping) => mapping.event(raw, now, out),
-            None => out.pad.push(raw),
+            None if remap::known(raw) => self.remap.update(&self.snapshot, out),
+            // What the keymap doesn't know passes through, with its report.
+            None if raw.is_report() => {
+                if std::mem::take(&mut self.passed) {
+                    out.pad.push(raw);
+                }
+            }
+            None => {
+                self.passed = true;
+                out.pad.push(raw);
+            }
         }
     }
 
@@ -244,7 +358,10 @@ impl PadRouter {
             }
             _ => None,
         };
-        let mapping = self.mapping(self.route).and_then(|m| m.tick(now, out));
+        let mapping = match self.mapping(self.route) {
+            Some(m) => m.tick(now, out),
+            None => self.remap.tick(now, out),
+        };
         [home, mapping].into_iter().flatten().min()
     }
 
@@ -263,7 +380,7 @@ mod tests {
         let ranges = Ranges { stick: Range::STICK, trigger: Range { min: 0, max: 1023 } };
         let axes = vec![Axis { code: AbsoluteAxisCode::ABS_X, value: 1000, rest: 0 }, Axis { code: AbsoluteAxisCode::ABS_RZ, value: 0, rest: 0 }];
         let mut out = Out::default();
-        let router = PadRouter::new(ranges, PadSnapshot::new(axes), route, &mut out);
+        let router = PadRouter::new(ranges, PadSnapshot::new(axes), route, Keymap::default(), &mut out);
         (router, out)
     }
 
@@ -332,12 +449,12 @@ mod tests {
         assert!(out.pad.is_empty(), "the game sees the controller");
         let now = Instant::now();
         r.event(key(KeyCode::BTN_TL, Press::Down), now, &mut out);
-        assert_eq!(out.pad, vec![key(KeyCode::BTN_TL, Press::Down)], "passed through");
+        assert_eq!(out.pad, vec![key(KeyCode::BTN_TL, Press::Down), Raw::REPORT], "passed through");
         out.pad.clear();
         r.set_route(PadRoute::Mouse, &mut out);
         let axis = |v| Raw::abs(AbsoluteAxisCode::ABS_X, v);
         let rz = Raw::abs(AbsoluteAxisCode::ABS_RZ, 0);
-        assert_eq!(out.pad, vec![key(KeyCode::BTN_TL, Press::Up), axis(0), rz, Raw::REPORT], "at rest");
+        assert_eq!(out.pad, vec![key(KeyCode::BTN_TL, Press::Up), axis(0), Raw::REPORT], "at rest (the trigger was)");
         out.pad.clear();
         r.set_route(PadRoute::Keys, &mut out);
         assert!(out.pad.is_empty(), "still away");
@@ -357,7 +474,7 @@ mod tests {
         assert!(out.pad.is_empty(), "RB stays ClamShell's: {:?}", out.pad);
         // RB on its own is the game's again.
         r.event(key(KeyCode::BTN_TR, Press::Down), now, &mut out);
-        assert_eq!(out.pad, vec![key(KeyCode::BTN_TR, Press::Down)]);
+        assert_eq!(out.pad, vec![key(KeyCode::BTN_TR, Press::Down), Raw::REPORT]);
     }
 
     #[test]
@@ -416,7 +533,7 @@ mod tests {
         r.event(key(KeyCode::BTN_MODE, Press::Up), now, &mut out);
         r.event(key(KeyCode::BTN_SELECT, Press::Down), now, &mut out);
         assert_eq!(out.events, vec![Event::Home]);
-        assert_eq!(out.pad, vec![key(KeyCode::BTN_SELECT, Press::Down)], "View is the game's");
+        assert_eq!(out.pad, vec![key(KeyCode::BTN_SELECT, Press::Down), Raw::REPORT], "View is the game's");
         r.set_route(PadRoute::Mouse, &mut out);
         out = Out::default();
         r.event(key(KeyCode::BTN_SELECT, Press::Down), now, &mut out);

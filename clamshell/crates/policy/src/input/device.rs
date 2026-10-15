@@ -50,16 +50,22 @@ pub fn open(spec: &DeviceSpec, what: &str, looks_right: impl Fn(&RawDevice) -> b
         return RawDevice::open(path);
     }
     let not_ours = |d: &RawDevice| d.name().is_none_or(|n| !ours.contains(&n));
-    evdev::raw_stream::enumerate()
-        .map(|(_, d)| d)
-        .find(|d| {
-            not_ours(d)
-                && match spec {
-                    DeviceSpec::Named(name) => d.name().is_some_and(|n| n.contains(name.as_str())),
-                    _ => looks_right(d),
-                }
-        })
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, format!("no {what} ({spec})")))
+    let candidates = evdev::raw_stream::enumerate().map(|(_, d)| d).filter(|d| {
+        not_ours(d)
+            && match spec {
+                DeviceSpec::Named(name) => d.name().is_some_and(|n| n.contains(name.as_str())),
+                _ => looks_right(d),
+            }
+    });
+    // By name: one that also looks right first (a controller's motion sensor shares its name).
+    let mut first = None;
+    for d in candidates {
+        if looks_right(&d) {
+            return Ok(d);
+        }
+        first.get_or_insert(d);
+    }
+    first.ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, format!("no {what} ({spec})")))
 }
 
 /// A device grabbed (nothing else sees its events while we hold it; let go when dropped) and read

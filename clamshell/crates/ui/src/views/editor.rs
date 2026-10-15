@@ -1,6 +1,7 @@
-//! The editor's screen, shared by the environment and Wi-Fi passwords: a line saying what is edited, the
-//! field with the text so far (its end, if long), Cancel and the save button, and the keyboard below (its
-//! keys type here, Enter saves, Esc cancels).
+//! The editor's screen, shared by the environment, Wi-Fi passwords and keymaps' names: a line saying what
+//! is edited, the field with the text so far (its end, if long), Cancel and the save button, and the
+//! keyboard below (its keys type here, Enter saves, Esc cancels). A key chord being typed for a keymap
+//! looks the same ([`field`]).
 
 use clamshell_core::{EditorId, Id};
 
@@ -19,6 +20,12 @@ pub(super) fn draw(f: &mut Frame, body: Rect, title: &str, save: &str) {
     let Some(editor) = f.s.bottom().editor() else {
         return;
     };
+    field(f, body, title, &editor.text, (Id::Editor(EditorId::Cancel), "Cancel"), (Id::Editor(EditorId::Save), save));
+}
+
+/// The editor's layout: `title`, a field with `text` and a caret, the two buttons (`cancel`, `save`:
+/// their targets and labels), the keyboard below.
+pub(super) fn field(f: &mut Frame, body: Rect, title: &str, text: &str, cancel: (Id, &str), save: (Id, &str)) {
     let pad = style::pad(body.h);
     let area = style::content(body).shifted(0.0, pad * 0.5);
     let size = Text::Small.size(body.h);
@@ -29,19 +36,21 @@ pub(super) fn draw(f: &mut Frame, body: Rect, title: &str, save: &str) {
     let field = row.take_left(row.w * FIELD_W);
     f.c.rounded(field, RADIUS, SURFACE_HI);
     let text_size = field.h * FIELD_TEXT;
-    let text = Rect::new(field.x + pad * 0.6, field.y, field.w - pad * 1.5, field.h);
-    let tw = f.c.text_fit(text, text_size, Tone::High, &editor.text, Keep::End);
+    let text_area = Rect::new(field.x + pad * 0.6, field.y, field.w - pad * 1.5, field.h);
+    let tw = f.c.text_fit(text_area, text_size, Tone::High, text, Keep::End);
     let ty = field.y + (field.h - text_size * LINE) / 2.0;
-    f.c.fill(Rect::new(text.x + tw + 2.0, ty, 2.0, text_size * LINE), Tone::Accent);
+    f.c.fill(Rect::new(text_area.x + tw + 2.0, ty, 2.0, text_size * LINE), Tone::Accent);
 
     let buttons = Rect::new(row.x + pad * 0.5, row.y, row.w - pad * 0.5, row.h);
+    let (cancel_id, cancel_label) = cancel;
     let cancel = buttons.cell(2, 1, pad * 0.5, 0);
-    f.button(Id::Editor(EditorId::Cancel), cancel, Look { fill: Some(SURFACE), ..Look::CARD }, |f| {
-        f.c.text_in(cancel, cancel.h * BUTTON_TEXT, Tone::Normal, "Cancel", Align::Center);
+    f.button(cancel_id, cancel, Look { fill: Some(SURFACE), ..Look::CARD }, |f| {
+        f.c.text_in(cancel, cancel.h * BUTTON_TEXT, Tone::Normal, cancel_label, Align::Center);
     });
+    let (save_id, save_label) = save;
     let ok = buttons.cell(2, 1, pad * 0.5, 1);
-    f.button(Id::Editor(EditorId::Save), ok, Look { fill: Some(PRESSED), ..Look::CARD }, |f| {
-        f.c.text_in(ok, ok.h * BUTTON_TEXT, Tone::High, save, Align::Center);
+    f.button(save_id, ok, Look { fill: Some(PRESSED), ..Look::CARD }, |f| {
+        f.c.text_in(ok, ok.h * BUTTON_TEXT, Tone::High, save_label, Align::Center);
     });
 
     let keys_y = field.y + field.h + pad;

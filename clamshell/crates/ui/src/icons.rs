@@ -120,7 +120,7 @@ impl Icon {
             Setting::BigCores => Icon::Cores,
             Setting::Fan => Icon::Fan,
             Setting::PadMouse => Icon::Mouse,
-            Setting::Buttons => Icon::Buttons,
+            Setting::Keymap => Icon::Buttons,
             Setting::Deadzone => Icon::Deadzone,
             Setting::Rumble => Icon::Rumble,
             Setting::CpuMax => Icon::Cpu,

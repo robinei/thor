@@ -87,8 +87,8 @@ pub fn spawn() -> io::Result<Worker<Values>> {
     worker::spawn_coalescing("tuning", |_| (), move |values| apply_hardware(&values, &mut quiet))
 }
 
-/// Where the settings in force go: the hardware thread, the virtual pad's shaping, and a game's MangoHud
-/// config (in `mangohud`).
+/// Where the settings in force go: the hardware thread, the virtual pad's shaping and keymap, and a
+/// game's MangoHud config (in `mangohud`).
 #[derive(Clone)]
 pub struct Tuning {
     pub hardware: Worker<Values>,
@@ -97,6 +97,11 @@ pub struct Tuning {
 }
 
 impl Tuning {
+    /// The keymap in force, for the pad (the settings' deadzone goes with [`Tuning::apply`]).
+    pub fn keymap(&self, keymap: &clamshell_core::keymap::Keymap) {
+        self.pad.send(pad::Command::Keymap(keymap.clone()));
+    }
+
     /// Applies the settings in force (`game`'s, or the global ones without a game): the hardware, the
     /// pad's shaping, and for a game its MangoHud config (written, and reloaded live if it runs), whose
     /// path is returned for its launch.
