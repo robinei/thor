@@ -19,7 +19,9 @@ use crate::draw::{Align, Keep, LINE, Rect};
 const TOP_H: f32 = 0.22;
 /// The settings tiles beside the level, and a tile's width, of the row's (near the settings grid's).
 const TILES: [Setting; 3] = [Setting::ChargeLimit, Setting::ScreenOff, Setting::Sleep];
-const TILE_W: f32 = 0.22;
+const TILE_W: f32 = 0.23;
+/// A tile's height, of the area's height (the settings grid's).
+const TILE_H: f32 = 0.19;
 const LEVEL: f32 = 0.075;
 const TEXT_SIZE: f32 = 0.036;
 /// The graph's height, of the area's height; the line's width.
@@ -84,8 +86,11 @@ fn top_line(f: &mut Frame, top: Rect, body_h: f32) {
     let size = body_h * TEXT_SIZE;
     let mut row = top;
     let tile_w = top.w * TILE_W;
+    // As tall as the settings grid's tiles (their captions the same size), in the row's middle.
+    let tile_h = body_h * TILE_H;
     for setting in TILES.into_iter().rev() {
-        let tile = row.take_right(tile_w);
+        let column = row.take_right(tile_w);
+        let tile = Rect::new(column.x, column.y + (column.h - tile_h) / 2.0, column.w, tile_h);
         super::settings::setting_tile(f, tile, setting);
     }
     // The level and two lines under it, in the middle of the row.

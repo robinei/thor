@@ -213,7 +213,7 @@ impl Setting {
             (Setting::GpuMax, v) => return number(buf, "GPU ", v, " %"),
             (Setting::ChargeLimit, v) => return number(buf, "Charge to ", v, " %"),
             (Setting::ScreenOff, v) => return number(buf, "Off after ", v, " min"),
-            (Setting::Sleep, v) => return number(buf, "Sleep ", v, " min"),
+            (Setting::Sleep, v) => return number(buf, "Sleep after ", v, " min"),
         };
         buf.push_str(text);
     }
