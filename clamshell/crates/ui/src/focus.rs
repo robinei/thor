@@ -5,7 +5,7 @@
 //! Where the pad may go ([`PadScope`]): with shelf in front, both screens, and in shelf's list up and
 //! down step through the games; with anything else in front, only the second screen.
 
-use clamshell_core::{EditorId, Event, Id, LevelEvent, PadInput, PointerEvent, ShelfEvent, ShelfId, State, Tab};
+use clamshell_core::{EditorId, Event, Id, LevelEvent, ListId, PadInput, PointerEvent, ShelfEvent, ShelfId, State, Tab};
 use smithay_client_toolkit::seat::keyboard::Keysym;
 
 use crate::draw::Rect;
@@ -116,6 +116,17 @@ pub(crate) fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, 
         let step = if dir == Dir::Left { -1 } else { 1 };
         return Some(LevelEvent::Step(*level, step).into());
     }
+    // In a scrolled list, up and down go to the row above or below, shown or not (the list scrolls to
+    // it); past either end, on by direction.
+    if let (Some(focus), Dir::Up | Dir::Down) = (s.pointer().focus(), dir)
+        && let Some((list, i)) = ListId::of(focus)
+        && drawn_on(d, None, focus)
+    {
+        let next = if dir == Dir::Up { i.checked_sub(1) } else { Some(i + 1).filter(|&n| n < s.list_len(list)) };
+        if let Some(id) = next.and_then(|n| u16::try_from(n).ok()).and_then(|n| ListId::sibling(focus, n)) {
+            return Some(PointerEvent::Focus(id).into());
+        }
+    }
     let screens: &[Screen] = if scope == PadScope::BottomOnly { &[Screen::Bottom] } else { &Screen::BOTH };
     let mut all = Vec::new();
     for &screen in screens {
@@ -125,7 +136,8 @@ pub(crate) fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, 
             Screen::Top => 0.0,
             Screen::Bottom => 1.0,
         };
-        all.extend(d.targets(screen).iter().map(|t| NavTarget {
+        // (A list's area is for fingers: the pad goes to its rows.)
+        all.extend(d.targets(screen).iter().filter(|t| !matches!(t.id, Id::List(_))).map(|t| NavTarget {
             screen,
             rect: Rect::new(t.rect.x / w, y0 + t.rect.y / h, t.rect.w / w, t.rect.h / h),
             id: t.id.clone(),
@@ -215,7 +227,7 @@ mod tests {
     }
 
     fn t(x: f32, y: f32, id: Id) -> Target {
-        Target { rect: Rect::new(x, y, 10.0, 10.0), id, track: None }
+        Target { rect: Rect::new(x, y, 10.0, 10.0), id, track: None, list: None }
     }
 
     fn state() -> State {
@@ -314,6 +326,26 @@ mod tests {
         let g = game(&s, 0);
         focus(&mut s, g);
         assert_eq!(shoulder(&s, &d, -1), vec![ShelfEvent::CollectionStep(-1).into()]);
+    }
+
+    #[test]
+    fn up_and_down_in_a_list_go_to_the_next_row_shown_or_not() {
+        use clamshell_core::wifi::{Network, Wifi};
+        use clamshell_core::{Reading, WifiId};
+        let mut s = state();
+        let networks = (0..10).map(|i| Network { ssid: format!("n{i}"), ..Network::default() }).collect();
+        s.apply(Reading::Wifi(Wifi { device: true, enabled: true, networks, ..Wifi::default() }).into());
+        s.apply(PointerEvent::Activate(Id::Tab(Tab::Wifi)).into());
+        let row = |i| Id::Wifi(WifiId::Network(i));
+        // Rows 3 and 4 drawn, the list's area under them.
+        let d = Fake(Screens { top: vec![], bottom: vec![t(0.0, 0.0, Id::List(ListId::Wifi)), t(0.0, 30.0, row(3)), t(0.0, 40.0, row(4))] });
+        let memory = Screens::default();
+        focus(&mut s, row(4));
+        assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(PointerEvent::Focus(row(5)).into()), "not drawn: the list scrolls to it");
+        focus(&mut s, row(3));
+        assert_eq!(navigate(&s, &d, &memory, Dir::Up), Some(PointerEvent::Focus(row(2)).into()));
+        // Sideways and past the ends: by direction, never onto the list's area.
+        assert_ne!(navigate(&s, &d, &memory, Dir::Left), Some(PointerEvent::Focus(Id::List(ListId::Wifi)).into()));
     }
 
     #[test]

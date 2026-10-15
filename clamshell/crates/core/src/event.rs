@@ -13,6 +13,7 @@ use crate::instance::Instance;
 use crate::levels::{Audio, Level};
 use crate::metrics::Metrics;
 use crate::pad::PadInput;
+use crate::scroll::ListEvent;
 use crate::slider::Control;
 use crate::sys::{Status, TouchpadProblem};
 use crate::wifi::Wifi;
@@ -30,6 +31,8 @@ pub enum Event {
     Slide(Slide),
     /// A level row set by the finger, or stepped by the pad.
     Level(LevelEvent),
+    /// A scrolled list moved or was laid out.
+    List(ListEvent),
     /// The pad in shelf, and shelf's layout.
     Shelf(ShelfEvent),
     /// A game shelf started began, ended, or couldn't start (the launcher thread).
@@ -152,4 +155,4 @@ macro_rules! into_event {
     };
 }
 
-into_event!(Reading => Reading, PointerEvent => Pointer, Slide => Slide, LevelEvent => Level, ShelfEvent => Shelf, GameEvent => Game);
+into_event!(ListEvent => List, Reading => Reading, PointerEvent => Pointer, Slide => Slide, LevelEvent => Level, ShelfEvent => Shelf, GameEvent => Game);

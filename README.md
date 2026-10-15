@@ -124,6 +124,15 @@ default sink), brightness to every backlight through logind (`CLAMSHELL_BACKLIGH
 out like `/sys/class/backlight`, for a desktop without one). Every icon always shows, dim without a
 reading (a slider then starts in the middle), so a desktop shows everything the device does.
 
+**Lists** (shelf's games, Wi-Fi's networks, Bluetooth's devices, the apps playing, the backlights, the
+keymaps) scroll: a finger moved up or down on one drags it (past 12 pixels: the row it came down on is
+let go without a tap), and let go while moving it flings on, slowing down, to a stop or an end; shelf then
+settles on a whole row. A finger held still is a tap or a long press as anywhere. With the pad, up and down
+go row by row and the list scrolls just enough to show the focused one. A thin dim bar at the right edge
+shows where in the list the view is, only while it has more rows than fit. The place is the state's, in
+rows; a list that changes under the view keeps the row at its top where it is (a network vanishing above
+doesn't move the ones under the finger), unless the view is at the very top, where new rows show.
+
 **Volume** (tab): the output volume with its mute button; the outputs, where a tap sends the sound
 (`wpctl set-default`); then each app playing (PipeWire's output streams, read with `pw-dump` every second
 while open) with its own level and mute button. **Brightness** (tab): the level (the bar's), then each

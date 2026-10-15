@@ -36,7 +36,7 @@ impl State {
     }
 
     /// Where the item with `key` is now, as an id of the same kind as `id`.
-    fn find_item(&self, id: &Id, key: &ItemKey) -> Option<Id> {
+    pub(crate) fn find_item(&self, id: &Id, key: &ItemKey) -> Option<Id> {
         let index = |p: Option<usize>| p.and_then(|p| u16::try_from(p).ok());
         let (wifi, bluetooth, audio) = (&self.radios.wifi, &self.radios.bluetooth, self.levels.audio());
         let stream = |n: &u32| index(audio.streams.iter().position(|x| x.id == *n));

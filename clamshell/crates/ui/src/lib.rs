@@ -48,7 +48,7 @@ use smithay_client_toolkit::{
     shm::{Shm, slot::SlotPool},
 };
 use clamshell_core::touch::TouchLayout;
-use clamshell_core::{Dirty, Effect, Event, Id, PadInput, ShelfEvent, State};
+use clamshell_core::{Dirty, Effect, Event, Id, ListEvent, ListId, PadInput, ShelfEvent, State};
 
 use draw::DrawCache;
 use focus::PadPress;
@@ -187,14 +187,31 @@ impl BottomKind {
 }
 
 /// Renders one screen without Wayland, at `size` logical pixels and integer `scale`, to a PNG file.
-/// For checking layouts and for automated tests. Returns the top screen's list rows, as a live frame
-/// reports them.
-pub fn snapshot(state: &State, screen: Screen, size: (u32, u32), scale: u32, path: &std::path::Path) -> Result<Option<usize>, Error> {
+/// For checking layouts and for automated tests. Returns what a live frame would tell the state (shelf's
+/// rows, the lists' rows).
+pub fn snapshot(state: &State, screen: Screen, size: (u32, u32), scale: u32, path: &std::path::Path) -> Result<Vec<Event>, Error> {
     let mut picture = Picture::default();
     let at = Placement { size_px: (size.0 * scale, size.1 * scale), scale, drift: (0, 0) };
     let rendered = render::render(&mut picture, at, screen, state, &mut DrawCache::load(), &mut images::Images::synchronous())?;
     picture.pixmap.ok_or("no picture")?.save_png(path)?;
-    Ok(rendered.out.list_rows)
+    Ok(frame_events(state, &rendered.out))
+}
+
+/// What a frame says about the lists it drew that the state doesn't know yet: how many rows each
+/// shows (shelf's come as its rows).
+fn list_changes(state: &State, out: &views::FrameOut) -> impl Iterator<Item = Event> {
+    ListId::ALL.into_iter().filter(|l| *l != ListId::Shelf).filter_map(move |list| {
+        let rows = out.lists.get(list.index()).copied().flatten()?;
+        (state.lists().get(list).visible() != Some(rows)).then(|| ListEvent::Visible(list, rows).into())
+    })
+}
+
+/// What a frame drawn without Wayland reports back to the state, as a live one would: shelf's rows, the
+/// lists' visible rows.
+fn frame_events(state: &State, out: &views::FrameOut) -> Vec<Event> {
+    let mut events: Vec<Event> = out.list_rows.filter(|&r| r != state.shelf().rows()).map(|r| ShelfEvent::Rows(r).into()).into_iter().collect();
+    events.extend(list_changes(state, out));
+    events
 }
 
 struct App {
@@ -301,7 +318,7 @@ impl App {
         }
         let (dirty, effects) = self.state.apply(event);
         self.mark(dirty);
-        let released = self.input.pad_route(self.state.pad().route());
+        let released = self.input.pad_route(self.state.pad().route(), &self.state);
         self.run_actions(released);
         for effect in &effects {
             match effect {
@@ -339,6 +356,7 @@ impl App {
 
     fn redraw_dirty(&mut self) {
         let mut rows_changed = None;
+        let mut lists = Vec::new();
         for (screen, view) in self.views.iter_mut() {
             let Some(view) = view.as_mut().filter(|v| v.due()) else {
                 continue;
@@ -351,6 +369,7 @@ impl App {
                         view::publish(&self.touch_layout, &view.picture.targets, area, rendered.origin.0, scale, screen_px);
                     }
                     rows_changed = rows_changed.or(rendered.out.list_rows.filter(|&rows| rows != self.state.shelf().rows()));
+                    lists.extend(list_changes(&self.state, &rendered.out));
                 }
                 Err(e) => {
                     log::warn!("drawing {screen:?}: {e}");
@@ -362,6 +381,7 @@ impl App {
         if let Some(rows) = rows_changed {
             self.handle(Event::Shelf(ShelfEvent::Rows(rows)));
         }
+        self.handle_all(lists);
     }
 
     /// Carries out what the input side asks: events, and the presses' timers on the event loop.
@@ -386,7 +406,7 @@ impl App {
         let fire = move |_, _: &mut (), app: &mut App| {
             // This timer is done (dropped by returning Drop), not to be removed from inside itself.
             app.timers.remove(&(source, timer));
-            let actions = app.input.timer(source, timer, &app.state);
+            let actions = app.input.timer(source, timer, &app.state, std::time::Instant::now());
             app.run_actions(actions);
             TimeoutAction::Drop
         };
@@ -407,22 +427,33 @@ impl App {
         let Some(target) = view.picture.targets.iter().rev().find(|t| t.rect.contains(x as f32, y as f32)).cloned() else {
             return;
         };
-        let actions = self.input.touch(source, &target, x as f32);
+        let actions = self.input.touch(source, &target, (x as f32, y as f32), std::time::Instant::now());
         self.run_actions(actions);
     }
 
-    fn moved(&mut self, source: Source, (x, _): (f64, f64)) {
-        let actions = self.input.moved(source, x as f32);
+    /// The wheel over a scrolled list on `surface` at `position`: it scrolls by `notches` rows.
+    fn wheel(&mut self, surface: &WlSurface, (x, y): (f64, f64), notches: i32) {
+        let Some(view) = self.view_mut(surface) else {
+            return;
+        };
+        let list = view.picture.targets.iter().rev().find(|t| t.rect.contains(x as f32, y as f32)).and_then(|t| t.list);
+        if let Some(list) = list {
+            self.handle(ListEvent::Scroll(list.list, notches as f32).into());
+        }
+    }
+
+    fn moved(&mut self, source: Source, (x, y): (f64, f64)) {
+        let actions = self.input.moved(source, (x as f32, y as f32), std::time::Instant::now());
         self.run_actions(actions);
     }
 
     fn up(&mut self, source: Source, end: End) {
-        let actions = self.input.up(source, end);
+        let actions = self.input.up(source, end, &self.state, std::time::Instant::now());
         self.run_actions(actions);
     }
 
     fn cancel_touches(&mut self) {
-        let actions = self.input.cancel_touches();
+        let actions = self.input.cancel_touches(&self.state);
         self.run_actions(actions);
     }
 
@@ -473,7 +504,7 @@ impl App {
     fn press_focus(&mut self, source: Source) {
         match focus::press(&self.state, &self.views, &self.focus_memory) {
             Some(PadPress::Press(id)) => {
-                let actions = self.input.press(source, id);
+                let actions = self.input.press(source, id, std::time::Instant::now());
                 self.run_actions(actions);
             }
             Some(PadPress::Focus(event)) => self.handle(event),

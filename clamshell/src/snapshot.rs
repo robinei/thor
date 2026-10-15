@@ -11,7 +11,7 @@ use clamshell_core::levels::Level;
 use clamshell_core::settings::Setting;
 use clamshell_core::slider::Control;
 use clamshell_core::{
-    Apps, EditorId, Event, GameEvent, Id, Init, Library, LevelEvent, PointerEvent, Reading, Scope, SettingsId, ShelfEvent, ShelfId, Slide, State, Status, Tab,
+    Apps, EditorId, Event, GameEvent, Id, Init, Library, LevelEvent, ListEvent, ListId, PointerEvent, Reading, Scope, SettingsId, ShelfEvent, ShelfId, Slide, State, Status, Tab,
 };
 use clamshell_ui::Screen;
 
@@ -138,6 +138,8 @@ pub fn shots(now: u64) -> Result<Vec<Shot>, ParseError> {
         shot("launcher.png", Bottom, vec![tab(Tab::Dock), PointerEvent::HideFocus.into()]),
         shot("launcher-running.png", Bottom, demo::running()),
         shot("wifi.png", Bottom, vec![tab(Tab::Wifi), Reading::Wifi(demo::wifi()).into()]),
+        shot("wifi-crowded.png", Bottom, vec![Reading::Wifi(demo::wifi_crowded()).into()]),
+        shot("wifi-scrolled.png", Bottom, vec![ListEvent::Scroll(ListId::Wifi, 3.4).into()]),
         shot("battery.png", Bottom, demo::battery(now)),
         shot("bluetooth.png", Bottom, vec![tab(Tab::Bluetooth), Reading::Bluetooth(demo::bluetooth()).into()]),
         shot(
@@ -194,10 +196,10 @@ pub fn render(state: &mut State, now: u64, dir: &Path) -> Result<(), Error> {
             state.apply(event);
         }
         let path = dir.join(name);
-        // The top screen's rows, as a live frame reports them, keep shelf's selection on screen.
-        let rows = clamshell_ui::snapshot(state, screen, size(screen), 1, &path).map_err(|e| Error::Render(path.display().to_string(), e))?;
-        if let Some(rows) = rows {
-            state.apply(Event::Shelf(ShelfEvent::Rows(rows)));
+        // What a live frame reports (shelf's rows, the lists' rows) keeps the selections on screen.
+        let events = clamshell_ui::snapshot(state, screen, size(screen), 1, &path).map_err(|e| Error::Render(path.display().to_string(), e))?;
+        for event in events {
+            state.apply(event);
         }
         log::info!("wrote {}", path.display());
     }

@@ -116,6 +116,21 @@ fn warm_frames_do_not_allocate() {
                 wifi_reading(),
             ],
         ),
+        (
+            "wifi, scrolled part way",
+            vec![
+                tap(Id::Tab(Tab::Wifi)),
+                Event::Reading(Reading::Wifi(clamshell_core::wifi::Wifi {
+                    device: true,
+                    enabled: true,
+                    networks: (0..20).map(|i| clamshell_core::wifi::Network { ssid: format!("n{i}"), strength: 50, ..Default::default() }).collect(),
+                    ..Default::default()
+                })),
+                Event::List(clamshell_core::ListEvent::Visible(clamshell_core::ListId::Wifi, 6.5)),
+                Event::List(clamshell_core::ListEvent::Scroll(clamshell_core::ListId::Wifi, 3.3)),
+            ],
+        ),
+        ("shelf, dragged part way", vec![Event::Shelf(clamshell_core::ShelfEvent::Rows(3)), Event::List(clamshell_core::ListEvent::Scroll(clamshell_core::ListId::Shelf, 1.6))]),
         ("wifi password", vec![tap(Id::Tab(Tab::Wifi)), wifi_reading(), tap(Id::Wifi(WifiId::Network(1))), tap(Id::Wifi(WifiId::Network(0)))]),
         (
             "sliding",

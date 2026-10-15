@@ -27,6 +27,7 @@ mod panel;
 mod pointer;
 mod radios;
 mod resume;
+pub mod scroll;
 mod session;
 pub mod settings;
 mod shelf;
@@ -57,6 +58,7 @@ pub use pad::{Claimant, Pad, PadInput, PadMouse, PadRoute};
 pub use panel::{Scope, TileOrigin};
 pub use pointer::Pointer;
 pub use radios::{RadioStatus, Radios};
+pub use scroll::{ListEvent, ListId, Lists};
 pub use session::{Pending, Session};
 pub use shelf::{Cursor, Shelf};
 pub use sys::{Status, Sys, TouchpadProblem};
@@ -126,6 +128,7 @@ pub struct State {
     sys: Sys,
     settings: Settings,
     keyboard: Keyboard,
+    lists: Lists,
     unix_secs: u64,
     saves: Saves,
     idle: idle::Idle,
@@ -269,7 +272,14 @@ impl State {
     fn apply_event(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
         match event {
             Event::Tick { unix_secs } => self.tick(unix_secs),
-            Event::Reading(reading) => (self.on_reading(reading), vec![]),
+            Event::Reading(reading) => {
+                let dirty = self.on_reading(reading);
+                (if self.follow_lists() { Dirty::BOTTOM } else { dirty }, vec![])
+            }
+            Event::List(e) => {
+                let screen = if matches!(e, ListEvent::Scroll(ListId::Shelf, _)) { Dirty::BOTH } else { Dirty::BOTTOM };
+                (if self.on_list(e) { screen } else { Dirty::NONE }, vec![])
+            }
             Event::Pointer(e) => self.on_pointer(e),
             Event::Slide(slide) => self.on_slide(slide),
             Event::Level(e) => self.on_level(e),
@@ -382,6 +392,7 @@ impl State {
         self.idle.own_input(self.unix_secs);
         match event {
             PointerEvent::Focus(id) => {
+                self.show_focused(&id);
                 self.pointer.focus = Some(id);
                 self.pointer.show_focus = true;
                 (Dirty::BOTH, vec![])
@@ -445,7 +456,7 @@ impl State {
                 };
                 (Dirty::BOTH, self.choose_tab(tab))
             }
-            Id::Control(_) | Id::Level(_) => (Dirty::NONE, vec![]),
+            Id::Control(_) | Id::Level(_) | Id::List(_) => (Dirty::NONE, vec![]),
             Id::Key(pos) => {
                 let stroke = self.keyboard.press(pos, long);
                 // Into the editor while it is open, else to the focused app.

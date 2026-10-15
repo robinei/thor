@@ -6,7 +6,7 @@
 use std::fmt::{self, Display, Formatter};
 
 use clamshell_core::bluetooth::{Action, Bluetooth, DeviceState, Problem, Reason};
-use clamshell_core::{BtId, Id, RadioStatus};
+use clamshell_core::{BtId, Id, ListId, RadioStatus};
 
 use super::format::Fmt;
 use super::style::Tone;
@@ -25,7 +25,11 @@ pub(super) fn draw(f: &mut Frame, body: Rect) {
     if bt.powered && bt.devices.is_empty() {
         list.empty(f, "Looking for devices");
     }
-    for (i, d) in bt.devices.iter().enumerate().take(list.rows) {
+    let rows = list.scrolled(f, ListId::Bluetooth, bt.devices.len());
+    for i in rows.shown() {
+        let Some(d) = bt.devices.get(i) else {
+            continue;
+        };
         let (state, state_tone) = match bt.device_state(d) {
             DeviceState::Connected => ("Connected", Tone::Go),
             DeviceState::Connecting => ("Connecting", Tone::Accent),
@@ -33,8 +37,9 @@ pub(super) fn draw(f: &mut Frame, body: Rect) {
             DeviceState::Other => ("", Tone::Dim),
         };
         let face = RowFace { icon: Icon::for_device(d.kind), name: &d.name, tone: Tone::high_if(d.connected), lock: false, state, state_tone };
-        widgets::status_row(f, Id::Bluetooth(BtId::Device(i as u16)), list.row(i), list.pad, list.size, face);
+        widgets::status_row(f, Id::Bluetooth(BtId::Device(i as u16)), rows.row(i), list.pad, list.size, face);
     }
+    rows.end(f, list.bar_x());
 }
 
 /// The header's tone: an error stands out; off, missing or idle is dim.

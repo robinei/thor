@@ -27,4 +27,6 @@ top-tab2.png 09d5a531471835b4
 top.png 7b4397816f2a6f41
 touchpad.png db2101da0f328cc0
 volume.png 9a68522d6f90df8f
+wifi-crowded.png d64e23349e12f2c2
+wifi-scrolled.png 33c5a82e640bb994
 wifi.png 4039a0f73c4b5a23

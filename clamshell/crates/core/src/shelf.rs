@@ -6,11 +6,12 @@ use std::sync::Arc;
 
 use crate::{Collection, Game, Library};
 
-/// A collection's place in its list: the selected game's position, and the first row on screen.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// A collection's place in its list: the selected game's position, and the rows scrolled past (whole
+/// rows at rest; fractions while a finger drags the list).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Cursor {
     pub index: usize,
-    pub top: usize,
+    pub top: f32,
 }
 
 #[derive(Debug, Default)]
@@ -84,15 +85,16 @@ impl Shelf {
     pub(crate) fn sync(&mut self) -> bool {
         let before = self.selected.clone();
         let len = self.collection().map_or(0, |c| c.games.len());
-        let rows = self.rows.max(1);
+        let rows = self.rows.max(1) as f32;
         if let Some(c) = self.cursors.get_mut(self.current) {
             c.index = c.index.min(len.saturating_sub(1));
-            if c.index < c.top {
-                c.top = c.index;
-            } else if c.index >= c.top + rows {
-                c.top = c.index + 1 - rows;
+            let index = c.index as f32;
+            if index < c.top {
+                c.top = index;
+            } else if index + 1.0 > c.top + rows {
+                c.top = index + 1.0 - rows;
             }
-            c.top = c.top.min(len.saturating_sub(rows));
+            c.top = c.top.clamp(0.0, (len as f32 - rows).max(0.0));
         }
         self.selected = self.selected_game().map(|g| g.id.clone());
         self.selected != before
@@ -125,6 +127,30 @@ impl Shelf {
         self.current = i;
         self.sync();
         true
+    }
+
+    /// The furthest the current collection scrolls: its last game on the last row.
+    fn max_top(&self) -> f32 {
+        let len = self.collection().map_or(0, |c| c.games.len());
+        (len as f32 - self.rows.max(1) as f32).max(0.0)
+    }
+
+    /// Scrolls the list by `rows` (a finger dragging it; the selection stays as it is, maybe off
+    /// screen). Whether it moved.
+    pub(crate) fn scroll(&mut self, rows: f32) -> bool {
+        let max = self.max_top();
+        let Some(c) = self.cursors.get_mut(self.current) else {
+            return false;
+        };
+        let before = c.top;
+        c.top = (c.top + rows).clamp(0.0, max);
+        c.top != before
+    }
+
+    /// Whether scrolling by `rows` would move the list.
+    pub(crate) fn can_scroll(&self, rows: f32) -> bool {
+        let top = self.cursor().top;
+        (rows > 0.0 && top < self.max_top()) || (rows < 0.0 && top > 0.0)
     }
 
     /// Goes `step` collections on, wrapping (whether there are any).
@@ -235,13 +261,26 @@ mod tests {
         let mut s = state();
         s.apply(ShelfEvent::Rows(3).into());
         s.apply(ShelfEvent::ListStep(4).into());
-        assert_eq!(s.shelf().cursor(), Cursor { index: 4, top: 2 });
+        assert_eq!(s.shelf().cursor(), Cursor { index: 4, top: 2.0 });
         assert_eq!(s.shelf().selected().map(|g| &**g), Some("dark-souls"));
         assert_eq!(s.pointer().focus(), Some(&game("dark-souls")));
         s.apply(ShelfEvent::ListStep(-100).into());
-        assert_eq!(s.shelf().cursor(), Cursor { index: 0, top: 0 });
+        assert_eq!(s.shelf().cursor(), Cursor { index: 0, top: 0.0 });
         s.apply(ShelfEvent::ListStep(100).into());
         assert_eq!(s.shelf().cursor().index, 6);
+    }
+
+    #[test]
+    fn a_drag_scrolls_without_moving_the_selection_and_the_pad_brings_it_back() {
+        let mut s = state();
+        s.apply(ShelfEvent::Rows(3).into());
+        let (dirty, _) = s.apply(ListEvent::Scroll(ListId::Shelf, 2.5).into());
+        assert_eq!((dirty, s.shelf().cursor()), (Dirty::BOTH, Cursor { index: 0, top: 2.5 }));
+        s.apply(ListEvent::Scroll(ListId::Shelf, 100.0).into());
+        assert_eq!(s.shelf().cursor().top, 4.0, "the last game on the last row");
+        assert!(!s.list_can_scroll(ListId::Shelf, 1.0) && s.list_can_scroll(ListId::Shelf, -1.0));
+        s.apply(ShelfEvent::ListStep(1).into());
+        assert_eq!(s.shelf().cursor(), Cursor { index: 1, top: 1.0 }, "the selection on screen again");
     }
 
     #[test]

@@ -36,6 +36,9 @@ pub enum Id {
     Control(Control),
     /// The pad mouse toggle.
     PadMouse,
+    /// A scrolled list's area, under its rows: a finger on it (between rows) drags the list; a tap does
+    /// nothing.
+    List(crate::scroll::ListId),
     /// The dark second screen (while a game runs): a tap anywhere lights it.
     Wake,
 }
