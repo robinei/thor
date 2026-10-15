@@ -55,15 +55,6 @@ impl Level {
     }
 }
 
-impl From<Control> for Level {
-    fn from(control: Control) -> Level {
-        match control {
-            Control::Volume => Level::Volume,
-            Control::Brightness => Level::Brightness,
-        }
-    }
-}
-
 /// An output (a PipeWire sink).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Output {
@@ -270,7 +261,7 @@ impl Levels {
     pub fn control(&self, control: Control) -> Option<u8> {
         match self.slider {
             Some(s) if s.control == control => Some(s.value),
-            _ => self.level(Level::from(control)),
+            _ => self.level(control.level()?),
         }
     }
 

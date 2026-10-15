@@ -7,7 +7,7 @@ use std::fmt;
 use std::path::Path;
 
 use clamshell_core::keyboard::{Key, Modifier};
-use clamshell_core::keymap::{Button, Dir, Input, MouseButton, PadOut, Side};
+use clamshell_core::keymap::{Button, Dir, Input, Layer, MouseButton, PadOut, Param, Side};
 use clamshell_core::levels::Level;
 use clamshell_core::settings::Setting;
 use clamshell_core::slider::Control;
@@ -80,6 +80,23 @@ fn key(k: Key) -> Result<Event, ParseError> {
 /// A button of the keymaps' screens.
 fn km(id: KeymapId) -> Event {
     tap(Id::Keymap(id))
+}
+
+/// An input on the keymap edit screen chosen twice: selected, then its "map to".
+fn pick(input: Input) -> Vec<Event> {
+    vec![km(KeymapId::Input(input)), km(KeymapId::Input(input))]
+}
+
+/// The selected input's parameter slid by `by` of half the Thor's second screen, the finger lifted if
+/// `lift`.
+fn slide(param: Param, by: f32, lift: bool) -> Vec<Event> {
+    let control = clamshell_core::slider::Control::Param(param);
+    let (x, width) = (620.0, 1240.0);
+    let mut events = vec![Slide::Start { control, x, width }.into(), Slide::To { x: x + by * width * 0.5 }.into()];
+    if lift {
+        events.push(Slide::End.into());
+    }
+    events
 }
 
 /// The settings' keymap tile: the picker.
@@ -155,44 +172,40 @@ pub fn shots(now: u64) -> Result<Vec<Shot>, ParseError> {
         shot(
             "keymap-edit.png",
             Bottom,
-            vec![
-                km(KeymapId::Input(Input::Button(Button::A))),
-                km(KeymapId::Target(Target::Key)),
-                key(Key::Mod(Modifier::Ctrl))?,
-                key(Key::Char('x'))?,
-                km(KeymapId::Input(Input::Button(Button::LB))),
-                km(KeymapId::Target(Target::Mouse(MouseButton::Right))),
-                km(KeymapId::Input(Input::Stick(Side::Left))),
-                km(KeymapId::Target(Target::Keys)),
-                key(Key::Char('w'))?,
-                key(Key::Char('a'))?,
-                key(Key::Char('s'))?,
-                key(Key::Char('d'))?,
-                km(KeymapId::Input(Input::StickDir(Side::Right, Dir::Up))),
-                km(KeymapId::Target(Target::Wheel(Dir::Up))),
-                km(KeymapId::Input(Input::Gyro)),
-                km(KeymapId::Target(Target::Pointer)),
-                km(KeymapId::Hold(Some(Input::Trigger(Side::Left)))),
-                km(KeymapId::Back),
-                km(KeymapId::Input(Input::Button(Button::View))),
-                km(KeymapId::Target(Target::Key)),
-                key(Key::Char('m'))?,
-                km(KeymapId::Input(Input::Dpad(Dir::Left))),
-                km(KeymapId::Target(Target::Key)),
-                key(Key::Char('1'))?,
-                km(KeymapId::Input(Input::Button(Button::B))),
-                km(KeymapId::Target(Target::Pad(PadOut::Button(Button::Y)))),
-            ],
+            [
+                pick(Input::Button(Button::A)),
+                vec![km(KeymapId::Target(Target::Key)), key(Key::Mod(Modifier::Ctrl))?, key(Key::Char('x'))?],
+                pick(Input::Button(Button::LB)),
+                vec![km(KeymapId::Target(Target::Mouse(MouseButton::Right)))],
+                pick(Input::Stick(Side::Left)),
+                vec![km(KeymapId::Target(Target::Keys)), key(Key::Char('w'))?, key(Key::Char('a'))?, key(Key::Char('s'))?, key(Key::Char('d'))?],
+                pick(Input::StickDir(Side::Right, Dir::Up)),
+                vec![km(KeymapId::Target(Target::Wheel(Dir::Up)))],
+                pick(Input::Gyro),
+                vec![km(KeymapId::Target(Target::Pointer)), km(KeymapId::Holds), km(KeymapId::Hold(Some(Input::Trigger(Side::Left))))],
+                pick(Input::Button(Button::View)),
+                vec![km(KeymapId::Target(Target::Key)), key(Key::Char('m'))?],
+                pick(Input::Dpad(Dir::Left)),
+                vec![km(KeymapId::Target(Target::Key)), key(Key::Char('1'))?],
+                pick(Input::Button(Button::B)),
+                vec![km(KeymapId::Target(Target::Pad(PadOut::Button(Button::Y))))],
+                // The right stick as on the pad, its deadzone tuned.
+                vec![km(KeymapId::Input(Input::Stick(Side::Right)))],
+                slide(Param::Deadzone, 0.12, true),
+                vec![km(KeymapId::Input(Input::Button(Button::A)))],
+            ]
+            .concat(),
         ),
-        shot("keymap-map-to.png", Bottom, vec![km(KeymapId::Input(Input::Button(Button::A)))]),
-        shot("keymap-map-to-gyro.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Input(Input::Gyro))]),
-        shot(
-            "keymap-map-to-stick.png",
-            Bottom,
-            vec![km(KeymapId::Back), km(KeymapId::Input(Input::Stick(Side::Right))), km(KeymapId::Target(Target::Pointer)), km(KeymapId::Speed(4))],
-        ),
-        shot("keymap-capture.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Input(Input::Button(Button::Y))), km(KeymapId::Target(Target::Key)), key(Key::Mod(Modifier::Alt))?]),
-        shot("keymap-press.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Back), km(KeymapId::Input(Input::Button(Button::B))), km(KeymapId::Target(Target::PressPad))]),
+        shot("keymap-edit-stick.png", Bottom, vec![km(KeymapId::Input(Input::Stick(Side::Left)))]),
+        shot("keymap-edit-slider.png", Bottom, slide(Param::Curve, 0.3, false)),
+        shot("keymap-edit-back.png", Bottom, [vec![Slide::End.into(), km(KeymapId::Layer(Layer::Back))], pick(Input::Button(Button::A)), vec![km(KeymapId::Target(Target::Key)), key(Key::Char('y'))?, km(KeymapId::Input(Input::Button(Button::LB)))]].concat()),
+        shot("keymap-edit-clear.png", Bottom, vec![km(KeymapId::Clear)]),
+        shot("keymap-map-to.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Layer(Layer::Main)), km(KeymapId::Input(Input::Button(Button::A))), km(KeymapId::Change)]),
+        shot("keymap-map-to-gyro.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Input(Input::Gyro)), km(KeymapId::Change)]),
+        shot("keymap-holds.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Holds)]),
+        shot("keymap-map-to-stick.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Input(Input::Stick(Side::Right))), km(KeymapId::Change)]),
+        shot("keymap-capture.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Input(Input::Button(Button::Y))), km(KeymapId::Change), km(KeymapId::Target(Target::Key)), key(Key::Mod(Modifier::Alt))?]),
+        shot("keymap-press.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Back), km(KeymapId::Input(Input::Button(Button::B))), km(KeymapId::Change), km(KeymapId::Target(Target::PressPad))]),
         shot("keymaps.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Back), km(KeymapId::Back)]),
         shot("keymap-menu.png", Bottom, vec![PointerEvent::LongPress(ListId::Keymaps.row(2)).into()]),
         shot("keymap-delete.png", Bottom, vec![km(KeymapId::Back), tap(ListId::Keymaps.row(2)), keymap_tile(), PointerEvent::LongPress(ListId::Keymaps.row(2)).into(), km(KeymapId::Delete)]),

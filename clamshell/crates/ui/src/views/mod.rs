@@ -249,23 +249,39 @@ mod tests {
     /// Thor's screen and a narrow one: targets within the area, none overlapping but on purpose.
     #[test]
     fn the_keymap_screens_lay_out() {
-        use clamshell_core::keymap::{Button, Input, Keymaps, Side};
+        use clamshell_core::keymap::{Button, Input, Keymaps, Layer, Param, Side};
         use clamshell_core::{KeymapId, ListId, PointerEvent, SettingsId, Target};
         use clamshell_core::settings::Setting;
         let tap = |id| Event::Pointer(PointerEvent::Activate(id));
         let km = |id| tap(Id::Keymap(id));
+        let pick = |input| vec![km(KeymapId::Input(input)), km(KeymapId::Input(input))];
+        let slide = |param, lift: bool| {
+            let control = clamshell_core::slider::Control::Param(param);
+            let mut v = vec![Event::Slide(clamshell_core::Slide::Start { control, x: 100.0, width: 300.0 }), Event::Slide(clamshell_core::Slide::To { x: 160.0 })];
+            if lift {
+                v.push(Event::Slide(clamshell_core::Slide::End));
+            }
+            v
+        };
         let screens: Vec<(&str, Vec<Event>)> = vec![
             ("picker", vec![tap(Id::Tab(Tab::Settings)), tap(Id::Settings(SettingsId::Tile(Setting::Keymap)))]),
             ("menu", vec![Event::Pointer(PointerEvent::LongPress(ListId::Keymaps.row(1)))]),
             ("name", vec![km(KeymapId::Rename)]),
             ("delete", vec![tap(Id::Editor(clamshell_core::EditorId::Cancel)), km(KeymapId::Back), tap(ListId::Keymaps.row(1)), tap(Id::Settings(SettingsId::Tile(Setting::Keymap))), Event::Pointer(PointerEvent::LongPress(ListId::Keymaps.row(1))), km(KeymapId::Delete)]),
             ("edit", vec![km(KeymapId::Back), tap(Id::Row { list: ListId::Keymaps, i: 1, part: clamshell_core::RowPart::Edit })]),
-            ("map to, a button", vec![km(KeymapId::Input(Input::Button(Button::A)))]),
-            ("map to, a trigger", vec![km(KeymapId::Back), km(KeymapId::Input(Input::Trigger(Side::Left))), km(KeymapId::Target(Target::Key))]),
+            ("edit, a button selected", vec![km(KeymapId::Input(Input::Button(Button::A)))]),
+            ("map to, a button", vec![km(KeymapId::Change)]),
+            ("map to, a trigger", [vec![km(KeymapId::Back)], pick(Input::Trigger(Side::Left)), vec![km(KeymapId::Target(Target::Key))]].concat()),
             ("capture", vec![]),
-            ("map to, the gyro", vec![km(KeymapId::Back), km(KeymapId::Back), km(KeymapId::Input(Input::Gyro)), km(KeymapId::Target(Target::Pointer))]),
-            ("map to, a stick", vec![km(KeymapId::Back), km(KeymapId::Input(Input::Stick(Side::Right))), km(KeymapId::Target(Target::Pointer))]),
-            ("press", vec![km(KeymapId::Back), km(KeymapId::Input(Input::Button(Button::B))), km(KeymapId::Target(Target::PressPad))]),
+            ("map to, the gyro", [vec![km(KeymapId::Back), km(KeymapId::Back)], pick(Input::Gyro), vec![km(KeymapId::Target(Target::Pointer)), km(KeymapId::Input(Input::Gyro))]].concat()),
+            ("edit, the gyro's panel", vec![km(KeymapId::Back)]),
+            ("the gyro's hold", vec![km(KeymapId::Holds)]),
+            ("map to, a stick", [vec![km(KeymapId::Back)], pick(Input::Stick(Side::Right)), vec![km(KeymapId::Target(Target::Pointer))]].concat()),
+            ("edit, a stick's panel", vec![]),
+            ("edit, a slider up", slide(Param::Speed, false)),
+            ("edit, the Back layer", [slide(Param::Speed, true), vec![km(KeymapId::Layer(Layer::Back)), km(KeymapId::Input(Input::Trigger(Side::Right)))]].concat()),
+            ("edit, clearing", vec![km(KeymapId::Clear)]),
+            ("press", [vec![km(KeymapId::Back), km(KeymapId::Layer(Layer::Main))], pick(Input::Button(Button::B)), vec![km(KeymapId::Target(Target::PressPad))]].concat()),
         ];
         let mut cache = DrawCache::load();
         for (w, h) in [(620u32, 540u32), (1240, 1080), (300, 540)] {
@@ -285,6 +301,18 @@ mod tests {
                 let body = f.finish().touchpad_area.expect("the area below the bar");
                 let case = format!("{name} at {w}x{h}");
                 assert!(targets.iter().any(|t| matches!(t.id, Id::Keymap(_) | Id::Row { .. } | Id::Editor(_))), "{case}: its buttons");
+                if name.starts_with("edit") {
+                    // The panel, its buttons and rows, between the label columns; the label columns
+                    // clear of the clusters.
+                    let l = keymaps::edit_layout(body);
+                    for t in targets.iter().filter(|t| matches!(t.id, Id::Control(clamshell_core::slider::Control::Param(_)) | Id::Keymap(KeymapId::Change | KeymapId::Reset | KeymapId::Toggle(_) | KeymapId::Holds))) {
+                        assert!(t.rect.x >= l.strip.x - 0.5 && t.rect.right() <= l.strip.right() + 0.5, "{case}: {:?} at {:?} is outside the panel's strip {:?}", t.id, t.rect, l.strip);
+                    }
+                    assert!(l.strip.w > 0.0, "{case}: no room for the panel");
+                    if w >= 620 {
+                        assert!(l.strip.w >= w as f32 * 0.2, "{case}: the panel is {} wide", l.strip.w);
+                    }
+                }
                 if *name == "edit" {
                     // Every input the Thor has can be touched; on its screen, with room for a finger.
                     // (The Thor has no back buttons.)
@@ -416,3 +444,4 @@ mod tests {
         }
     }
 }
+

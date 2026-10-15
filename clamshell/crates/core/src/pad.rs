@@ -49,6 +49,9 @@ pub enum PadInput {
     Shoulder(i32),
     /// View/Select: focus to the other screen.
     Switch,
+    /// The Back button (the keymaps' layer key in a game): back one screen (see
+    /// [`crate::State::pad_back`]).
+    Back,
 }
 
 /// The pad mouse: off, on for the game in front, or switched on by the user.

@@ -49,7 +49,7 @@ use smithay_client_toolkit::{
     shm::{Shm, slot::SlotPool},
 };
 use clamshell_core::touch::TouchLayout;
-use clamshell_core::{Dirty, Effect, Event, Id, ListEvent, ListId, PadInput, ShelfEvent, State};
+use clamshell_core::{Dirty, Effect, Event, Id, ListEvent, ListId, PadInput, PointerEvent, ShelfEvent, State};
 
 use draw::DrawCache;
 use focus::PadPress;
@@ -480,6 +480,12 @@ impl App {
             PadInput::A(false) => self.up(Source::PadA, End::Release),
             PadInput::B => self.handle_all(focus::back(&self.state)),
             PadInput::Y => self.handle(ShelfEvent::ToggleFavourite.into()),
+            // The Back button: what the screen has for back (the edit screen's other layer).
+            PadInput::Back => {
+                if let Some(id) = self.state.pad_back() {
+                    self.handle(PointerEvent::Activate(id).into());
+                }
+            }
             PadInput::Shoulder(step) => self.handle_all(focus::shoulder(&self.state, &self.views, step)),
             PadInput::Switch if self.state.pad_on_top() => {
                 let event = focus::switch_screen(&self.state, &self.views, &mut self.focus_memory);

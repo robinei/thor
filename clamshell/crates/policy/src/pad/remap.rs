@@ -7,7 +7,10 @@
 //! Chords press their modifiers before their key and let them go after it.
 //!
 //! Without a binding an input does what it does on the pad; the controller's events this doesn't know
-//! (other buttons and axes) pass through as they are.
+//! (other buttons and axes) pass through as they are. While the layer key (the Thor's Back button,
+//! [`LAYER_KEYS`]) is held the keymap's Back layer applies, falling through to the main one; the key
+//! itself never reaches the game. A stick's and a trigger's tuning (deadzone, full point, curve,
+//! inversion) applies to its values before they are mapped, to the input as on the pad as well.
 
 use std::time::{Duration, Instant};
 
@@ -35,6 +38,15 @@ const GYRO_DEADZONE: f32 = 1.0;
 pub const POINTER_EVERY: Duration = Duration::from_millis(8);
 /// High-resolution wheel units per notch (the kernel's convention).
 const NOTCH: i32 = 120;
+
+/// The layer key's codes: the Thor's Back button, under the screen. (KEY_BACK is assumed until the
+/// device test, docs/thor-gameplan.md.)
+pub const LAYER_KEYS: [KeyCode; 1] = [KeyCode::KEY_BACK];
+
+/// Whether a code is the layer key's.
+pub fn is_layer_key(code: KeyCode) -> bool {
+    LAYER_KEYS.contains(&code)
+}
 
 /// The controller's codes for a button (the back buttons go by several names).
 pub fn button_codes(b: Button) -> &'static [KeyCode] {
@@ -106,16 +118,44 @@ pub fn mouse_codes() -> [KeyCode; 5] {
 /// Whether the remapping handles this event (else it passes through).
 pub fn known(raw: Raw) -> bool {
     if let Some((code, _)) = raw.as_key() {
-        return button_of(code).is_some() || Dir::ALL.into_iter().any(|d| dpad_code(d) == code);
+        return button_of(code).is_some() || is_layer_key(code) || Dir::ALL.into_iter().any(|d| dpad_code(d) == code);
     }
     raw.as_abs().is_some_and(|(axis, _)| {
         HAT.contains(&axis) || Side::ALL.into_iter().any(|s| trigger_axis(s) == axis || stick_axes(s).0 == axis || stick_axes(s).1 == axis)
     })
 }
 
-/// A step of a list of speeds.
+/// A speed (0 to 100) along a table of five speeds, at 0, 25, 50, 75 and 100 (between them, in
+/// proportion).
 fn step(table: &[f32; 5], speed: u8) -> f32 {
-    table.get(usize::from(speed.clamp(1, 5)) - 1).copied().unwrap_or(1.0)
+    let at = f32::from(speed.min(100)) / 25.0;
+    let i = (at.floor() as usize).min(3);
+    let (Some(a), Some(b)) = (table.get(i), table.get(i + 1)) else {
+        return 1.0;
+    };
+    a + (b - a) * (at - i as f32)
+}
+
+/// A value from 0 to 1 with its deadzone and full point (percent): 0 up to the deadzone, 1 from the
+/// full point, stretched between.
+fn range(v: f32, deadzone: u8, full: u8) -> f32 {
+    let (dz, full) = (f32::from(deadzone) / 100.0, f32::from(full.max(deadzone.saturating_add(1))) / 100.0);
+    ((v - dz) / (full - dz).max(0.01)).clamp(0.0, 1.0)
+}
+
+/// A stick's position (each axis -1 to 1, y down) tuned by its binding: inverted, its distance from the
+/// middle through the deadzone, the full point and the curve (the direction kept).
+pub fn tune_stick((x, y): (f32, f32), b: &Binding) -> (f32, f32) {
+    let (x, y) = (if b.invert_x { -x } else { x }, if b.invert_y { -y } else { y });
+    if b.deadzone == 0 && b.full >= 100 && b.curve == 0 {
+        return (x, y);
+    }
+    let len = x.hypot(y);
+    if len <= 0.0 {
+        return (0.0, 0.0);
+    }
+    let tuned = range(len.min(1.0), b.deadzone, b.full).powf(1.0 + 2.0 * f32::from(b.curve) / 100.0);
+    (x / len * tuned, y / len * tuned)
 }
 
 /// What every output should be now.
@@ -196,9 +236,10 @@ impl Remap {
         {
             let px = step(&GYRO_POINTER, b.speed);
             let dead = |v: f32| if v.abs() < GYRO_DEADZONE { 0.0 } else { v };
+            let (sx, sy) = gyro_signs(&b);
             // Turning left (yaw) moves the pointer left; tilting the top back (pitch) moves it up.
-            self.carry.0 -= dead(rate.yaw) * dt * px;
-            self.carry.1 -= dead(rate.pitch) * dt * px;
+            self.carry.0 -= sx * dead(rate.yaw) * dt * px;
+            self.carry.1 -= sy * dead(rate.pitch) * dt * px;
             self.flush_pointer(out);
         }
         self.update(snap, out);
@@ -241,15 +282,25 @@ impl Remap {
         }
     }
 
+    /// Whether the layer key is held (the Back layer applies).
+    fn back(snap: &PadSnapshot) -> bool {
+        LAYER_KEYS.iter().any(|&k| snap.held(k))
+    }
+
+    /// `input`'s binding in the layer in force, if it has one.
+    fn get(&self, input: Input, snap: &PadSnapshot) -> Option<&Binding> {
+        self.keymap.lookup(input, Self::back(snap))
+    }
+
     /// The gyro's binding, if it acts now (its hold held, or none).
     fn gyro_binding(&self, snap: &PadSnapshot) -> Option<Binding> {
-        let b = *self.keymap.get(Input::Gyro)?;
+        let b = *self.get(Input::Gyro, snap)?;
         let held = b.hold.is_none_or(|h| self.digital(h, snap));
         held.then_some(b)
     }
 
-    fn binding(&self, input: Input) -> Option<Binding> {
-        if let Some(b) = self.keymap.get(input) {
+    fn binding(&self, input: Input, snap: &PadSnapshot) -> Option<Binding> {
+        if let Some(b) = self.get(input, snap) {
             return Some(*b);
         }
         // As on the pad.
@@ -269,14 +320,35 @@ impl Remap {
         ((r.min + r.max + 1) / 2, ((r.max - r.min) as f32 / 2.0).max(1.0))
     }
 
-    /// A stick as raw units from its middle (y down), its bound directions taken out (they act as
-    /// buttons instead).
-    fn stick(&self, s: Side, snap: &PadSnapshot) -> (f32, f32) {
+    /// A stick's position (each axis -1 to 1, y down), tuned by its binding.
+    fn tuned_stick(&self, s: Side, snap: &PadSnapshot) -> (f32, f32) {
         let (ax, ay) = stick_axes(s);
-        let mid = self.stick_middle().0;
-        let at = |a| snap.value(a).map_or(0.0, |v| (v - mid) as f32);
-        let (mut x, mut y) = (at(ax), at(ay));
-        let bound = |d| self.keymap.get(Input::StickDir(s, d)).is_some();
+        let at = |a| self.ranges.stick.centered(snap.value(a).unwrap_or(0));
+        let xy = (at(ax), at(ay));
+        match self.get(Input::Stick(s), snap) {
+            Some(b) => tune_stick(xy, b),
+            None => xy,
+        }
+    }
+
+    /// A stick as raw units from its middle (y down), tuned, its bound directions taken out (they act
+    /// as buttons instead).
+    fn stick(&self, s: Side, snap: &PadSnapshot) -> (f32, f32) {
+        let (mut x, mut y) = match self.get(Input::Stick(s), snap) {
+            Some(b) if b.tuned() => {
+                let half = self.stick_middle().1;
+                let (x, y) = self.tuned_stick(s, snap);
+                (x * half, y * half)
+            }
+            // (Untuned, in raw units as they are.)
+            _ => {
+                let (ax, ay) = stick_axes(s);
+                let mid = self.stick_middle().0;
+                let at = |a| snap.value(a).map_or(0.0, |v| (v - mid) as f32);
+                (at(ax), at(ay))
+            }
+        };
+        let bound = |d| self.get(Input::StickDir(s, d), snap).is_some();
         if (x < 0.0 && bound(Dir::Left)) || (x > 0.0 && bound(Dir::Right)) {
             x = 0.0;
         }
@@ -286,8 +358,13 @@ impl Remap {
         (x, y)
     }
 
+    /// A trigger's pull, 0 to 1, tuned by its binding (deadzone, full point).
     fn trigger(&self, s: Side, snap: &PadSnapshot) -> f32 {
-        self.ranges.trigger.unit(snap.value(trigger_axis(s)).unwrap_or(self.ranges.trigger.min))
+        let v = self.ranges.trigger.unit(snap.value(trigger_axis(s)).unwrap_or(self.ranges.trigger.min));
+        match self.get(Input::Trigger(s), snap) {
+            Some(b) if b.deadzone > 0 || b.full < 100 => range(v, b.deadzone, b.full),
+            _ => v,
+        }
     }
 
     /// Whether a digital input is on (a trigger: past half).
@@ -304,11 +381,7 @@ impl Remap {
                 let hat = |a| snap.value(a).unwrap_or(0) as f32;
                 snap.held(dpad_code(d)) || pushed((hat(AbsoluteAxisCode::ABS_HAT0X), hat(AbsoluteAxisCode::ABS_HAT0Y)), d)
             }
-            Input::StickDir(s, d) => {
-                let (ax, ay) = stick_axes(s);
-                let at = |a| self.ranges.stick.centered(snap.value(a).unwrap_or(0));
-                pushed((at(ax), at(ay)), d)
-            }
+            Input::StickDir(s, d) => pushed(self.tuned_stick(s, snap), d),
             Input::Trigger(s) => self.trigger(s, snap) >= HALF,
             Input::Stick(_) | Input::Gyro => false,
         }
@@ -348,7 +421,7 @@ impl Remap {
             }
         };
         for input in Input::all() {
-            let Some(b) = self.binding(input) else {
+            let Some(b) = self.binding(input, snap) else {
                 continue;
             };
             match input {
@@ -403,7 +476,8 @@ impl Remap {
             let full = step(&GYRO_STICK, b.speed);
             let half = self.stick_middle().1;
             let dead = |v: f32| if v.abs() < GYRO_DEADZONE { 0.0 } else { v };
-            *t = (t.0 - dead(self.gyro.yaw) / full * half, t.1 - dead(self.gyro.pitch) / full * half);
+            let (sx, sy) = gyro_signs(&b);
+            *t = (t.0 - sx * dead(self.gyro.yaw) / full * half, t.1 - sy * dead(self.gyro.pitch) / full * half);
         }
         // The pad's axes from the outputs: sticks, triggers, the D-pad.
         let stick = self.ranges.stick;
@@ -413,9 +487,10 @@ impl Remap {
             let (ax, ay) = stick_axes(s);
 
             // A stick as itself keeps its exact values.
-            let own = self.keymap.get(Input::Stick(s)).is_none() && self.keymap.get(Input::Gyro).is_none_or(|g| g.output != Output::Stick(s));
-            let other = Side::ALL.into_iter().filter(|o| *o != s).any(|o| self.keymap.get(Input::Stick(o)).is_some_and(|b| b.output == Output::Stick(s)));
-            let dirs = Dir::ALL.into_iter().any(|d| self.keymap.get(Input::StickDir(s, d)).is_some());
+            let plain = self.get(Input::Stick(s), snap).is_none_or(|b| b.output == Output::Stick(s) && !b.tuned());
+            let own = plain && self.get(Input::Gyro, snap).is_none_or(|g| g.output != Output::Stick(s));
+            let other = Side::ALL.into_iter().filter(|o| *o != s).any(|o| self.get(Input::Stick(o), snap).is_some_and(|b| b.output == Output::Stick(s)));
+            let dirs = Dir::ALL.into_iter().any(|d| self.get(Input::StickDir(s, d), snap).is_some());
             // (Only the axes the pad has: the game's pad has the controller's.)
             for (axis, v) in [(ax, x), (ay, y)] {
                 if let Some(value) = snap.value(axis) {
@@ -429,7 +504,8 @@ impl Remap {
             if snap.value(axis).is_none() {
                 continue;
             }
-            let own = self.keymap.get(Input::Trigger(s)).is_none() && v == self.trigger(s, snap);
+            let plain = self.get(Input::Trigger(s), snap).is_none_or(|b| b.output == Output::Trigger(s) && !b.tuned());
+            let own = plain && v == self.trigger(s, snap);
             let value = if own { snap.value(axis).unwrap_or(trig.min) } else { trig.min + ((trig.max - trig.min) as f32 * v.clamp(0.0, 1.0)).round() as i32 };
             w.pad_axes.push((axis, value));
         }
@@ -485,7 +561,7 @@ impl Remap {
         }
         // A wheel step for each input that just came on.
         for &(input, d) in &wanted.wheels {
-            if !self.sent.wheels.iter().any(|(i, _)| *i == input) {
+            if !self.sent.wheels.contains(&(input, d)) {
                 let (axis, hi, v) = match d {
                     Dir::Up => (RelativeAxisCode::REL_WHEEL, RelativeAxisCode::REL_WHEEL_HI_RES, 1),
                     Dir::Down => (RelativeAxisCode::REL_WHEEL, RelativeAxisCode::REL_WHEEL_HI_RES, -1),
@@ -510,6 +586,11 @@ fn chord_down(keys: &mut Vec<KeyCode>, chord: &Chord) {
             keys.push(k);
         }
     }
+}
+
+/// The gyro's motion turned round across and up/down, as its binding says.
+fn gyro_signs(b: &Binding) -> (f32, f32) {
+    (if b.invert_x { -1.0 } else { 1.0 }, if b.invert_y { -1.0 } else { 1.0 })
 }
 
 /// A stick vector after the radial deadzone and the curve: 0 at the deadzone's edge, 1 at full.
@@ -760,7 +841,7 @@ mod tests {
 
     #[test]
     fn the_gyro_to_a_stick() {
-        let k = keymap(&[(Input::Gyro, Binding { speed: 3, ..to(Output::Stick(Side::Right)) })]);
+        let k = keymap(&[(Input::Gyro, Binding { speed: 50, ..to(Output::Stick(Side::Right)) })]);
         let (mut r, mut out) = router(k, PadRoute::Game);
         gyro(&mut r, 0, -50.0, &mut out);
         let half = last(&out.pad, AbsoluteAxisCode::ABS_RX).unwrap();
@@ -820,5 +901,121 @@ mod tests {
         assert_eq!((last(&out.pad, AbsoluteAxisCode::ABS_X), last(&out.pad, AbsoluteAxisCode::ABS_RZ)), (Some(12345), Some(77)));
         assert_eq!(last(&out.pad, AbsoluteAxisCode::ABS_HAT0X), Some(-1));
         assert!(out.mouse.is_empty());
+    }
+
+    fn back_layer(k: &mut Keymap, input: Input, b: Binding) {
+        assert!(k.set_in(clamshell_core::keymap::Layer::Back, input, Some(b)));
+    }
+
+    #[test]
+    fn the_back_layer_while_back_is_held_and_nothing_stuck_letting_go_mid_press() {
+        let mut k = keymap(&[(Input::Button(Button::A), to(Output::Key(chord("ctrl+x")))), (Input::Button(Button::B), to(Output::Key(chord("z"))))]);
+        back_layer(&mut k, Input::Button(Button::A), to(Output::Key(chord("ctrl+y"))));
+        let (mut r, mut out) = router(k, PadRoute::Game);
+        press(&mut r, KeyCode::BTN_SOUTH, true, &mut out);
+        assert_eq!(held(&out.mouse), vec![KeyCode::KEY_LEFTCTRL, KeyCode::KEY_X], "main");
+        press(&mut r, KeyCode::BTN_SOUTH, false, &mut out);
+        press(&mut r, KeyCode::KEY_BACK, true, &mut out);
+        assert!(out.pad.is_empty() && held(&out.mouse).is_empty(), "Back alone sends nothing: {out:?}");
+        press(&mut r, KeyCode::BTN_SOUTH, true, &mut out);
+        press(&mut r, KeyCode::BTN_EAST, true, &mut out);
+        assert_eq!(held(&out.mouse), vec![KeyCode::KEY_Y, KeyCode::KEY_LEFTCTRL, KeyCode::KEY_Z], "the Back layer's, B falling through");
+        // Back let go while A is held: Ctrl+Y up, A is main's Ctrl+X now.
+        press(&mut r, KeyCode::KEY_BACK, false, &mut out);
+        assert_eq!(held(&out.mouse), vec![KeyCode::KEY_LEFTCTRL, KeyCode::KEY_Z, KeyCode::KEY_X]);
+        press(&mut r, KeyCode::BTN_SOUTH, false, &mut out);
+        press(&mut r, KeyCode::BTN_EAST, false, &mut out);
+        assert!(held(&out.mouse).is_empty(), "nothing stuck");
+        assert!(!out.pad.iter().any(|e| e.as_key().is_some_and(|(k, _)| k == KeyCode::KEY_BACK)), "the game never sees Back");
+        // Back held when the pad leaves the game: everything let go.
+        press(&mut r, KeyCode::KEY_BACK, true, &mut out);
+        press(&mut r, KeyCode::BTN_SOUTH, true, &mut out);
+        r.set_route(PadRoute::Ui, &mut out);
+        assert!(held(&out.mouse).is_empty() && held(&out.pad).is_empty());
+    }
+
+    #[test]
+    fn the_gyro_differs_by_layer() {
+        let mut k = keymap(&[]);
+        back_layer(&mut k, Input::Gyro, to(Output::Pointer));
+        let (mut r, mut out) = router(k, PadRoute::Game);
+        for i in 0..=50 {
+            gyro(&mut r, i * 4, -20.0, &mut out);
+        }
+        assert_eq!(sum(&out.mouse, RelativeAxisCode::REL_X), 0, "off in the main layer");
+        press(&mut r, KeyCode::KEY_BACK, true, &mut out);
+        for i in 51..=300 {
+            gyro(&mut r, i * 4, -20.0, &mut out);
+        }
+        assert!(sum(&out.mouse, RelativeAxisCode::REL_X) > 250, "{}", sum(&out.mouse, RelativeAxisCode::REL_X));
+    }
+
+    #[test]
+    fn speeds_between_the_stock_steps() {
+        assert_eq!(step(&STICK_POINTER, 50), 1400.0);
+        assert_eq!(step(&STICK_POINTER, 100), 3000.0);
+        assert_eq!(step(&STICK_POINTER, 0), 500.0);
+        assert!((step(&STICK_POINTER, 60) - 1680.0).abs() < 0.01, "two fifths from 1400 to 2100");
+    }
+
+    #[test]
+    fn a_stick_as_on_the_pad_tuned() {
+        let own = to(Output::Stick(Side::Left));
+        let k = keymap(&[(Input::Stick(Side::Left), Binding { deadzone: 20, full: 80, invert_x: true, ..own })]);
+        let (mut r, mut out) = router(k, PadRoute::Game);
+        axis(&mut r, AbsoluteAxisCode::ABS_X, STICK_MAX / 10, &mut out);
+        assert_eq!(last(&out.pad, AbsoluteAxisCode::ABS_X), Some(0), "inside the deadzone");
+        axis(&mut r, AbsoluteAxisCode::ABS_X, STICK_MAX * 8 / 10, &mut out);
+        assert!(last(&out.pad, AbsoluteAxisCode::ABS_X).unwrap() <= -STICK_MAX + 2, "full at 80 %, and inverted: {:?}", last(&out.pad, AbsoluteAxisCode::ABS_X));
+        axis(&mut r, AbsoluteAxisCode::ABS_X, STICK_MAX / 2, &mut out);
+        let half = last(&out.pad, AbsoluteAxisCode::ABS_X).unwrap();
+        assert!((half + STICK_MAX / 2).abs() < 400, "(50-20)/(80-20): half way: {half}");
+        // The right stick untouched: its exact values.
+        axis(&mut r, AbsoluteAxisCode::ABS_RX, 1234, &mut out);
+        assert_eq!(last(&out.pad, AbsoluteAxisCode::ABS_RX), Some(1234));
+    }
+
+    #[test]
+    fn a_stick_curve_and_tuning_before_mapping() {
+        let k = keymap(&[(Input::Stick(Side::Left), Binding { curve: 100, ..to(Output::Stick(Side::Left)) })]);
+        let (mut r, mut out) = router(k, PadRoute::Game);
+        axis(&mut r, AbsoluteAxisCode::ABS_X, STICK_MAX / 2, &mut out);
+        let v = last(&out.pad, AbsoluteAxisCode::ABS_X).unwrap();
+        assert!((v - STICK_MAX / 8).abs() < 200, "cubed: an eighth: {v}");
+        // A stick on keys with a deadzone of 50: its directions count past it.
+        let k = keymap(&[(Input::Stick(Side::Left), Binding { deadzone: 50, ..to(Output::Keys([chord("w"), chord("a"), chord("s"), chord("d")])) })]);
+        let (mut r, mut out) = router(k, PadRoute::Game);
+        axis(&mut r, AbsoluteAxisCode::ABS_X, STICK_MAX * 7 / 10, &mut out);
+        assert!(held(&out.mouse).is_empty(), "70 % is under half once past the deadzone");
+        axis(&mut r, AbsoluteAxisCode::ABS_X, STICK_MAX * 8 / 10, &mut out);
+        assert_eq!(held(&out.mouse), vec![KeyCode::KEY_D]);
+    }
+
+    #[test]
+    fn a_trigger_tuned_as_on_the_pad_and_on_a_key() {
+        let k = keymap(&[
+            (Input::Trigger(Side::Left), Binding { deadzone: 10, full: 60, ..to(Output::Trigger(Side::Left)) }),
+            (Input::Trigger(Side::Right), Binding { full: 50, threshold: 90, ..to(Output::Key(chord("x"))) }),
+        ]);
+        let (mut r, mut out) = router(k, PadRoute::Game);
+        axis(&mut r, AbsoluteAxisCode::ABS_Z, 80, &mut out);
+        assert_eq!(last(&out.pad, AbsoluteAxisCode::ABS_Z), Some(0), "inside its deadzone");
+        axis(&mut r, AbsoluteAxisCode::ABS_Z, 700, &mut out);
+        assert_eq!(last(&out.pad, AbsoluteAxisCode::ABS_Z), Some(1023), "past its full point");
+        axis(&mut r, AbsoluteAxisCode::ABS_RZ, 470, &mut out);
+        assert_eq!(held(&out.mouse), vec![KeyCode::KEY_X], "46 % is 92 % of the way to full at 50 %");
+    }
+
+    #[test]
+    fn a_parameter_slid_applies_at_once() {
+        let own = to(Output::Stick(Side::Left));
+        let (mut r, mut out) = router(Keymap::default(), PadRoute::Game);
+        axis(&mut r, AbsoluteAxisCode::ABS_X, STICK_MAX / 2, &mut out);
+        assert_eq!(last(&out.pad, AbsoluteAxisCode::ABS_X), Some(STICK_MAX / 2));
+        // The slider sends the keymap as it moves (see core's keymap_ui): the stick held still follows.
+        for dz in [10, 30, 50] {
+            r.set_keymap(keymap(&[(Input::Stick(Side::Left), Binding { deadzone: dz, ..own })]), &mut out);
+        }
+        assert_eq!(last(&out.pad, AbsoluteAxisCode::ABS_X), Some(0), "half way is inside a deadzone of 50");
     }
 }

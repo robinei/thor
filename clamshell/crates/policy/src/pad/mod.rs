@@ -6,7 +6,8 @@
 //! ([`typing`]); or a keymap's edit screen listening ([`listen`]). The gyro comes from a motion sensor
 //! next to the controller ([`motion`]). Away from the game the virtual pad shows a neutral controller,
 //! so games never see it disappear. The home button (BTN_MODE) is ours: it goes to the program as
-//! [`Event::Home`]; only held with a game in front is it the game's Guide (see [`route`]). The virtual
+//! [`Event::Home`]; held, then the Back button with a game in front, it is the game's Guide (see
+//! [`route`]). The Back button (the layer key, [`remap::LAYER_KEYS`]) is ours too. The virtual
 //! devices outlive the controller: unplugged (or failing), the pad stays, at rest, until one is back.
 //!
 //! Not yet: forwarding rumble from the virtual pad to the real one (uinput force-feedback uploads).

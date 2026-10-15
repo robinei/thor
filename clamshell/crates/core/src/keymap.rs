@@ -6,9 +6,14 @@
 //! D-pad; a trigger to a trigger or, past a threshold, anything a button maps to; the gyro to the mouse
 //! pointer or a stick, always or while a chosen button is held.
 //!
+//! Each keymap has two layers ([`Layer`]): the main one, and one in force while the pad's Back button is
+//! held. An input without a binding in the Back layer does what the main layer says.
+//!
 //! Saved in `keymaps.txt` (next to `game-settings.txt`): a `keymap ID NAME` line starts a keymap, then a
-//! line per binding, `INPUT = OUTPUT [option=value ...]`. Lines it doesn't understand are skipped, so
-//! later features (turbo, toggles, layers) can add their own.
+//! line per binding, `INPUT = OUTPUT [option=value ...]`; a `layer back` line starts the Back layer's
+//! bindings (`layer main` the main layer's again). Lines it doesn't understand are skipped, and so are the
+//! bindings of a layer it doesn't know, so later features (turbo, toggles, more layers) can add their
+//! own.
 
 use std::fmt::{self, Write};
 
@@ -545,28 +550,174 @@ impl Output {
     }
 }
 
-/// The speed steps of motion mapped to a stick or the pointer, 1 to 5.
-pub const SPEEDS: [u8; 5] = [1, 2, 3, 4, 5];
-pub const DEFAULT_SPEED: u8 = 3;
-/// A trigger mapped to a button acts past this (percent of its travel).
-pub const THRESHOLDS: [u8; 3] = [25, 50, 75];
+/// Motion mapped to a stick or the pointer: its speed, 0 to 100 (50 is the stock speed). Files from
+/// before kept it as a step of 1 to 5, which load as 0, 25, 50, 75, 100.
+pub const DEFAULT_SPEED: u8 = 50;
+/// A trigger mapped to a button acts past this (percent of its travel, 1 to 100).
 pub const DEFAULT_THRESHOLD: u8 = 50;
 
-/// An input's binding: what it maps to, and how.
+/// An input's binding: what it maps to, and how. A stick's or trigger's tuning (deadzone, where it is
+/// full, curve, inversion) applies to its values before they are mapped, whatever they map to; a binding
+/// to the input itself ([`as_on_the_pad`]) with tuning is the input as on the pad, tuned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Binding {
     pub output: Output,
-    /// Motion to the pointer or a stick: one of [`SPEEDS`].
+    /// Motion to the pointer or a stick: 0 to 100 (see [`DEFAULT_SPEED`]).
     pub speed: u8,
     /// A trigger to a button: percent of its travel.
     pub threshold: u8,
+    /// A stick or trigger: percent of its travel that counts as rest, and where it counts as full
+    /// (the range between stretched to the whole).
+    pub deadzone: u8,
+    pub full: u8,
+    /// A stick: 0 is linear, more is finer near the middle (up to its distance cubed).
+    pub curve: u8,
+    /// A stick or the gyro's motion: across and up/down turned round.
+    pub invert_x: bool,
+    pub invert_y: bool,
     /// The gyro acts only while this is held (a button, or a trigger past half); always without one.
     pub hold: Option<Input>,
 }
 
 impl Binding {
     pub fn to(output: Output) -> Binding {
-        Binding { output, speed: DEFAULT_SPEED, threshold: DEFAULT_THRESHOLD, hold: None }
+        Binding { output, speed: DEFAULT_SPEED, threshold: DEFAULT_THRESHOLD, deadzone: 0, full: 100, curve: 0, invert_x: false, invert_y: false, hold: None }
+    }
+
+    /// Whether any parameter differs from its default (its output aside).
+    pub fn tuned(&self) -> bool {
+        Param::ALL.into_iter().any(|p| p.get(self) != p.default_value()) || self.hold.is_some()
+    }
+}
+
+/// A binding's parameters beside its output: values set with a slider (0 to 100 on its track), and
+/// switches ([`Param::switch`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Param {
+    Speed,
+    Threshold,
+    Deadzone,
+    Full,
+    Curve,
+    InvertX,
+    InvertY,
+}
+
+impl Param {
+    pub const ALL: [Param; 7] = [Param::Speed, Param::Deadzone, Param::Full, Param::Curve, Param::Threshold, Param::InvertX, Param::InvertY];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Param::Speed => "Speed",
+            Param::Threshold => "Acts past",
+            Param::Deadzone => "Deadzone",
+            Param::Full => "Full at",
+            Param::Curve => "Curve",
+            Param::InvertX => "Invert X",
+            Param::InvertY => "Invert Y",
+        }
+    }
+
+    /// On or off (a tap switches it), rather than a value on a slider.
+    pub fn switch(self) -> bool {
+        matches!(self, Param::InvertX | Param::InvertY)
+    }
+
+    /// Whether `input` mapped to `output` has it: a stick its deadzone, full point, curve and inversion
+    /// (and speed on the pointer); a trigger its deadzone and full point (and threshold on a button);
+    /// the gyro on motion its speed and inversion.
+    pub fn applies(self, input: Input, output: Output) -> bool {
+        let motion = matches!(output, Output::Pointer | Output::Stick(_));
+        match (input.kind(), self) {
+            (Kind::Stick, Param::Deadzone | Param::Full | Param::Curve | Param::InvertX | Param::InvertY) => true,
+            (Kind::Stick, Param::Speed) => output == Output::Pointer,
+            (Kind::Trigger, Param::Deadzone | Param::Full) => true,
+            (Kind::Trigger, Param::Threshold) => output.digital(),
+            (Kind::Gyro, Param::Speed | Param::InvertX | Param::InvertY) => motion,
+            _ => false,
+        }
+    }
+
+    /// The values it may take.
+    pub fn range(self) -> std::ops::RangeInclusive<u8> {
+        match self {
+            Param::Speed | Param::Curve => 0..=100,
+            Param::Threshold => 1..=100,
+            Param::Deadzone => 0..=50,
+            Param::Full => 50..=100,
+            Param::InvertX | Param::InvertY => 0..=1,
+        }
+    }
+
+    pub fn default_value(self) -> u8 {
+        match self {
+            Param::Speed => DEFAULT_SPEED,
+            Param::Threshold => DEFAULT_THRESHOLD,
+            Param::Full => 100,
+            Param::Deadzone | Param::Curve | Param::InvertX | Param::InvertY => 0,
+        }
+    }
+
+    pub fn get(self, b: &Binding) -> u8 {
+        match self {
+            Param::Speed => b.speed,
+            Param::Threshold => b.threshold,
+            Param::Deadzone => b.deadzone,
+            Param::Full => b.full,
+            Param::Curve => b.curve,
+            Param::InvertX => u8::from(b.invert_x),
+            Param::InvertY => u8::from(b.invert_y),
+        }
+    }
+
+    /// Sets it, kept within [`Param::range`].
+    pub fn set(self, b: &mut Binding, value: u8) {
+        let value = value.clamp(*self.range().start(), *self.range().end());
+        match self {
+            Param::Speed => b.speed = value,
+            Param::Threshold => b.threshold = value,
+            Param::Deadzone => b.deadzone = value,
+            Param::Full => b.full = value,
+            Param::Curve => b.curve = value,
+            Param::InvertX => b.invert_x = value > 0,
+            Param::InvertY => b.invert_y = value > 0,
+        }
+    }
+
+    /// Its name in the keymap file (the switches go together as `invert=x`, `invert=xy`).
+    fn name(self) -> &'static str {
+        match self {
+            Param::Speed => "speed",
+            Param::Threshold => "threshold",
+            Param::Deadzone => "deadzone",
+            Param::Full => "full",
+            Param::Curve => "curve",
+            Param::InvertX | Param::InvertY => "invert",
+        }
+    }
+}
+
+/// The parameters `input` mapped to `output` has, in the order shown.
+pub fn params(input: Input, output: Output) -> impl Iterator<Item = Param> {
+    Param::ALL.into_iter().filter(move |p| p.applies(input, output))
+}
+
+/// How the panel and the labels tell an input's binding: none, its own output only tuned, or mapped to
+/// something else.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Change {
+    None,
+    Tuned,
+    Mapped,
+}
+
+/// What `binding` (of `input`) changes.
+pub fn change(input: Input, binding: Option<&Binding>) -> Change {
+    match binding {
+        None => Change::None,
+        Some(b) if Some(b.output) != as_on_the_pad(input) => Change::Mapped,
+        Some(b) if b.tuned() => Change::Tuned,
+        Some(_) => Change::None,
     }
 }
 
@@ -575,42 +726,135 @@ pub fn gyro_holds() -> impl Iterator<Item = Input> {
     Button::ALL.into_iter().map(Input::Button).chain(Side::ALL.into_iter().map(Input::Trigger))
 }
 
-/// A named set of bindings (the inputs without one do what they do on the pad).
+/// A keymap's layers: the main one, and the one in force while the pad's Back button is held (its
+/// inputs without a binding do what the main layer says).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum Layer {
+    #[default]
+    Main,
+    Back,
+}
+
+impl Layer {
+    pub const ALL: [Layer; 2] = [Layer::Main, Layer::Back];
+
+    /// Its name in the keymap file (`layer back`).
+    pub fn name(self) -> &'static str {
+        match self {
+            Layer::Main => "main",
+            Layer::Back => "back",
+        }
+    }
+
+    /// How it reads on screen.
+    pub fn label(self) -> &'static str {
+        match self {
+            Layer::Main => "Main",
+            Layer::Back => "Back held",
+        }
+    }
+
+    pub fn other(self) -> Layer {
+        match self {
+            Layer::Main => Layer::Back,
+            Layer::Back => Layer::Main,
+        }
+    }
+}
+
+/// A named set of bindings in two layers (the inputs without one in the main layer do what they do on
+/// the pad; without one in the Back layer, what the main layer says).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Keymap {
     /// Its number, kept across renames (0 is Default, which no keymap has).
     pub id: u16,
     pub name: String,
-    /// In [`Input::all`]'s order, one per input at most.
+    /// Each layer's, in [`Input::all`]'s order, one per input at most.
     bindings: Vec<(Input, Binding)>,
+    back: Vec<(Input, Binding)>,
 }
 
 impl Keymap {
     pub fn new(id: u16, name: &str) -> Keymap {
-        Keymap { id, name: name.to_owned(), bindings: Vec::new() }
+        Keymap { id, name: name.to_owned(), bindings: Vec::new(), back: Vec::new() }
     }
 
+    /// The main layer's bindings.
     pub fn bindings(&self) -> &[(Input, Binding)] {
         &self.bindings
     }
 
-    pub fn get(&self, input: Input) -> Option<&Binding> {
-        self.bindings.iter().find(|(i, _)| *i == input).map(|(_, b)| b)
+    pub fn layer(&self, layer: Layer) -> &[(Input, Binding)] {
+        match layer {
+            Layer::Main => &self.bindings,
+            Layer::Back => &self.back,
+        }
     }
 
-    /// Binds `input` (none: back to what it does on the pad). A binding that doesn't fit the input's
-    /// kind is refused; whether it changed.
+    fn layer_mut(&mut self, layer: Layer) -> &mut Vec<(Input, Binding)> {
+        match layer {
+            Layer::Main => &mut self.bindings,
+            Layer::Back => &mut self.back,
+        }
+    }
+
+    /// `input`'s binding in the main layer.
+    pub fn get(&self, input: Input) -> Option<&Binding> {
+        self.get_in(Layer::Main, input)
+    }
+
+    /// `input`'s binding in `layer` itself (none in the Back layer: the main layer's applies).
+    pub fn get_in(&self, layer: Layer, input: Input) -> Option<&Binding> {
+        self.layer(layer).iter().find(|(i, _)| *i == input).map(|(_, b)| b)
+    }
+
+    /// The binding in force for `input`, with Back held (`back`) or not: the Back layer's, else the main
+    /// layer's.
+    pub fn lookup(&self, input: Input, back: bool) -> Option<&Binding> {
+        back.then(|| self.get_in(Layer::Back, input)).flatten().or_else(|| self.get(input))
+    }
+
+    /// Binds `input` in the main layer (none: back to what it does on the pad); see [`Keymap::set_in`].
     pub fn set(&mut self, input: Input, binding: Option<Binding>) -> bool {
+        self.set_in(Layer::Main, input, binding)
+    }
+
+    /// Binds `input` in `layer` (none: as on the pad in the main layer, as the main layer in the Back
+    /// layer). A binding that doesn't fit the input's kind is refused; whether it changed.
+    pub fn set_in(&mut self, layer: Layer, input: Input, binding: Option<Binding>) -> bool {
         if binding.is_some_and(|b| !b.output.fits(input.kind())) {
             return false;
         }
-        let before = self.bindings.clone();
-        self.bindings.retain(|(i, _)| *i != input);
+        let list = self.layer_mut(layer);
+        let before = list.clone();
+        list.retain(|(i, _)| *i != input);
         if let Some(b) = binding {
-            self.bindings.push((input, b));
-            self.bindings.sort_by_key(|(i, _)| *i);
+            list.push((input, b));
+            list.sort_by_key(|(i, _)| *i);
         }
-        self.bindings != before
+        *list != before
+    }
+
+    /// Drops every binding of `layer`; whether it had any.
+    pub fn clear(&mut self, layer: Layer) -> bool {
+        let list = self.layer_mut(layer);
+        let had = !list.is_empty();
+        list.clear();
+        had
+    }
+}
+
+/// What does what `input` does on the pad, as a binding's output (to say so in the Back layer while the
+/// main layer maps it): a button, D-pad direction, stick or trigger as itself; the gyro off. A stick's
+/// direction has none (it is part of its stick).
+pub fn as_on_the_pad(input: Input) -> Option<Output> {
+    match input {
+        Input::Button(b) => Some(Output::Pad(PadOut::Button(b))),
+        Input::Dpad(d) => Some(Output::Pad(PadOut::Dpad(d))),
+        Input::Stick(s) => Some(Output::Stick(s)),
+        Input::Trigger(s) => Some(Output::Trigger(s)),
+        Input::Gyro => Some(Output::Nothing),
+        Input::StickDir(..) => None,
     }
 }
 
@@ -667,10 +911,11 @@ impl Keymaps {
 
     /// A copy of keymap `id` named `name` (made unique); the copy's id.
     pub fn duplicate(&mut self, id: u16, name: &str) -> Option<u16> {
-        let bindings = self.get(id)?.bindings.clone();
+        let (bindings, back) = self.get(id).map(|k| (k.bindings.clone(), k.back.clone()))?;
         let copy = self.add(name);
         if let Some(k) = self.get_mut(copy) {
             k.bindings = bindings;
+            k.back = back;
         }
         Some(copy)
     }
@@ -695,29 +940,21 @@ impl Keymaps {
         let mut text = String::new();
         for k in &self.list {
             let _ = writeln!(text, "keymap {} {}", k.id, k.name);
-            for (input, b) in &k.bindings {
-                let _ = input.name(&mut text);
-                text.push_str(" = ");
-                let _ = write_output(&b.output, &mut text);
-                if matches!(b.output, Output::Stick(_) | Output::Pointer) && b.speed != DEFAULT_SPEED {
-                    let _ = write!(text, " speed={}", b.speed);
-                }
-                if input.kind() == Kind::Trigger && b.output.digital() && b.threshold != DEFAULT_THRESHOLD {
-                    let _ = write!(text, " threshold={}", b.threshold);
-                }
-                if let Some(hold) = b.hold {
-                    text.push_str(" hold=");
-                    let _ = hold.name(&mut text);
-                }
-                text.push('\n');
+            write_bindings(&k.bindings, &mut text);
+            if !k.back.is_empty() {
+                let _ = writeln!(text, "layer {}", Layer::Back.name());
+                write_bindings(&k.back, &mut text);
             }
         }
         text
     }
 
-    /// Reads [`Keymaps::text`] back; lines it doesn't understand are skipped.
+    /// Reads [`Keymaps::text`] back; lines it doesn't understand are skipped, and the bindings of a
+    /// layer it doesn't know.
     pub fn load(text: &str) -> Keymaps {
         let mut keymaps = Keymaps::default();
+        // The layer the lines are in (none: one not known).
+        let mut layer = Some(Layer::Main);
         for line in text.lines().map(str::trim) {
             if let Some(rest) = line.strip_prefix("keymap ") {
                 let (id, name) = rest.split_once(' ').unwrap_or((rest, ""));
@@ -727,14 +964,43 @@ impl Keymaps {
                 {
                     keymaps.list.push(Keymap::new(id, name.trim()));
                 }
+                layer = Some(Layer::Main);
                 continue;
             }
-            let (Some(keymap), Some((input, binding))) = (keymaps.list.last_mut(), parse_binding(line)) else {
+            if let Some(name) = line.strip_prefix("layer ") {
+                layer = Layer::ALL.into_iter().find(|l| l.name() == name.trim());
+                continue;
+            }
+            let (Some(keymap), Some(layer), Some((input, binding))) = (keymaps.list.last_mut(), layer, parse_binding(line)) else {
                 continue;
             };
-            keymap.set(input, Some(binding));
+            keymap.set_in(layer, input, Some(binding));
         }
         keymaps
+    }
+}
+
+/// A layer's bindings, a line each (see the module's doc).
+fn write_bindings(bindings: &[(Input, Binding)], text: &mut String) {
+    for (input, b) in bindings {
+        let _ = input.name(text);
+        text.push_str(" = ");
+        let _ = write_output(&b.output, text);
+        for p in params(*input, b.output).filter(|p| !p.switch()) {
+            let v = p.get(b);
+            if v != p.default_value() {
+                // (Speed with a percent sign: files from before have a step there.)
+                let _ = write!(text, " {}={v}{}", p.name(), if p == Param::Speed { "%" } else { "" });
+            }
+        }
+        if b.invert_x || b.invert_y {
+            let _ = write!(text, " invert={}{}", if b.invert_x { "x" } else { "" }, if b.invert_y { "y" } else { "" });
+        }
+        if let Some(hold) = b.hold {
+            text.push_str(" hold=");
+            let _ = hold.name(text);
+        }
+        text.push('\n');
     }
 }
 
@@ -770,6 +1036,14 @@ fn side(word: &str) -> Option<Side> {
     Side::ALL.into_iter().find(|s| s.name() == word)
 }
 
+/// A speed as written: `N%` (0 to 100), or a step of 1 to 5 (files from before).
+fn speed(v: &str) -> Option<u8> {
+    match v.strip_suffix('%') {
+        Some(percent) => percent.parse().ok().filter(|p| Param::Speed.range().contains(p)),
+        None => v.parse::<u8>().ok().filter(|s| (1..=5).contains(s)).map(|s| (s - 1) * 25),
+    }
+}
+
 /// `INPUT = OUTPUT [option=value ...]`.
 fn parse_binding(line: &str) -> Option<(Input, Binding)> {
     let (input, rest) = line.split_once('=')?;
@@ -800,8 +1074,19 @@ fn parse_binding(line: &str) -> Option<(Input, Binding)> {
     let mut binding = Binding::to(output);
     for word in words {
         match word.split_once('=') {
-            Some(("speed", v)) => binding.speed = v.parse().ok().filter(|v| SPEEDS.contains(v)).unwrap_or(DEFAULT_SPEED),
-            Some(("threshold", v)) => binding.threshold = v.parse().ok().filter(|v| THRESHOLDS.contains(v)).unwrap_or(DEFAULT_THRESHOLD),
+            Some(("speed", v)) => binding.speed = speed(v).unwrap_or(DEFAULT_SPEED),
+            Some(("threshold", v)) => binding.threshold = v.parse().ok().filter(|v| Param::Threshold.range().contains(v)).unwrap_or(DEFAULT_THRESHOLD),
+            Some((name @ ("deadzone" | "full" | "curve"), v)) => {
+                if let Some(p) = Param::ALL.into_iter().find(|p| p.name() == name)
+                    && let Some(v) = v.parse().ok().filter(|v| p.range().contains(v))
+                {
+                    p.set(&mut binding, v);
+                }
+            }
+            Some(("invert", v)) => {
+                binding.invert_x = v.contains('x');
+                binding.invert_y = v.contains('y');
+            }
             Some(("hold", v)) => binding.hold = Input::parse(v).filter(|h| gyro_holds().any(|g| g == *h)),
             // (Options of later features.)
             _ => {}
@@ -860,31 +1145,118 @@ mod tests {
         let fps = maps.add("FPS");
         let k = maps.get_mut(fps).unwrap();
         k.set(Input::Button(Button::A), Some(Binding::to(Output::Key(chord("ctrl+x")))));
-        k.set(Input::Stick(Side::Right), Some(Binding { speed: 4, ..Binding::to(Output::Pointer) }));
+        k.set(Input::Stick(Side::Right), Some(Binding { speed: 75, deadzone: 20, full: 90, curve: 40, invert_y: true, ..Binding::to(Output::Pointer) }));
+        k.set(Input::Trigger(Side::Right), Some(Binding { deadzone: 5, ..Binding::to(Output::Trigger(Side::Right)) }));
         k.set(Input::Stick(Side::Left), Some(Binding::to(Output::Keys([chord("w"), chord("a"), chord("s"), chord("d")]))));
         k.set(Input::Trigger(Side::Left), Some(Binding { threshold: 25, ..Binding::to(Output::Mouse(MouseButton::Right)) }));
-        k.set(Input::Trigger(Side::Right), Some(Binding::to(Output::Trigger(Side::Left))));
         k.set(Input::StickDir(Side::Right, Dir::Up), Some(Binding::to(Output::Wheel(Dir::Up))));
         k.set(Input::Dpad(Dir::Down), Some(Binding::to(Output::Nothing)));
         k.set(Input::Button(Button::L4), Some(Binding::to(Output::Pad(PadOut::Dpad(Dir::Left)))));
-        k.set(Input::Gyro, Some(Binding { speed: 2, hold: Some(Input::Trigger(Side::Left)), ..Binding::to(Output::Pointer) }));
+        k.set(Input::Gyro, Some(Binding { speed: 37, hold: Some(Input::Trigger(Side::Left)), ..Binding::to(Output::Pointer) }));
         let text = maps.text();
         assert!(text.starts_with("keymap 1 Nintendo layout\na = pad b\nb = pad a\nx = pad y\ny = pad x\nkeymap 2 FPS\na = key ctrl+x\nl4 = pad left\n"), "{text}");
-        assert!(text.contains("\nlstick = keys w a s d\n") && text.contains("\nrstick = pointer speed=4\n") && text.contains("\ngyro = pointer speed=2 hold=lt\n"), "{text}");
-        assert!(text.contains("\nlt = mouse right threshold=25\n") && text.contains("\nrt = trigger left\n") && text.contains("\nrstick-up = wheel up\n"), "{text}");
+        assert!(text.contains("\nlstick = keys w a s d\n") && text.contains("\nrstick = pointer speed=75% deadzone=20 full=90 curve=40 invert=y\n") && text.contains("\ngyro = pointer speed=37% hold=lt\n"), "{text}");
+        assert!(text.contains("\nlt = mouse right threshold=25\n") && text.contains("\nrt = trigger right deadzone=5\n") && text.contains("\nrstick-up = wheel up\n"), "{text}");
         assert_eq!(Keymaps::load(&text), maps);
     }
 
     #[test]
     fn lines_not_understood_are_skipped() {
-        let text = "# a comment\nkeymap 3 Turbo\na = key x turbo=10\nb = warp 9\nlayer 2\nzz = pad a\nlstick = key x\ngyro = pointer hold=up\nx = pad x hold=a\nkeymap 0 bad\nkeymap x bad\nkeymap 3 again\n";
+        let text = "# a comment\nkeymap 3 Turbo\na = key x turbo=10\nb = warp 9\nzz = pad a\nlstick = key x\ngyro = pointer hold=up\nx = pad x hold=a\nlayer 2\ny = pad a\nlayer main\nlt = trigger right\nkeymap 0 bad\nkeymap x bad\nkeymap 3 again\n";
         let maps = Keymaps::load(text);
         assert_eq!(maps.list().len(), 1);
         let k = maps.get(3).unwrap();
         assert_eq!(k.name, "Turbo");
         assert_eq!(k.get(Input::Button(Button::A)).map(|b| b.output), Some(Output::Key(chord("x"))), "an unknown option is skipped");
         assert_eq!(k.get(Input::Gyro).map(|b| b.hold), Some(None), "a D-pad direction doesn't hold the gyro");
-        assert_eq!(k.bindings().len(), 2, "{k:?}");
+        assert_eq!(k.get(Input::Button(Button::Y)), None, "a layer not known is skipped");
+        assert_eq!(k.get(Input::Trigger(Side::Left)).map(|b| b.output), Some(Output::Trigger(Side::Right)), "main again");
+        assert_eq!(k.bindings().len(), 3, "{k:?}");
+        assert!(k.layer(Layer::Back).is_empty());
+    }
+
+    #[test]
+    fn speeds_from_before_load_as_their_equivalents() {
+        let text = "keymap 1 Old\nrstick = pointer speed=4\nlstick = pointer speed=1\ngyro = stick right speed=5\nlt = key x threshold=75\nrt = key y threshold=0\nkeymap 2 New\nrstick = pointer speed=4% deadzone=60\n";
+        let maps = Keymaps::load(text);
+        let get = |k: u16, i: Input| *maps.get(k).unwrap().get(i).unwrap();
+        assert_eq!(get(1, Input::Stick(Side::Right)).speed, 75);
+        assert_eq!(get(1, Input::Stick(Side::Left)).speed, 0);
+        assert_eq!(get(1, Input::Gyro).speed, 100);
+        assert_eq!(get(1, Input::Trigger(Side::Left)).threshold, 75, "thresholds were percent already");
+        assert_eq!(get(1, Input::Trigger(Side::Right)).threshold, DEFAULT_THRESHOLD, "out of range");
+        assert_eq!(get(2, Input::Stick(Side::Right)).speed, 4, "a percent");
+        assert_eq!(get(2, Input::Stick(Side::Right)).deadzone, 0, "out of range");
+        assert!(maps.text().contains("rstick = pointer speed=75%\n"), "{}", maps.text());
+        let mut b = Binding::to(Output::Pointer);
+        Param::Full.set(&mut b, 10);
+        assert_eq!(b.full, 50);
+        Param::Deadzone.set(&mut b, 90);
+        Param::Threshold.set(&mut b, 0);
+        assert_eq!((b.deadzone, b.threshold), (50, 1), "kept in range");
+        let ps = |i, o| params(i, o).collect::<Vec<_>>();
+        let stick = vec![Param::Deadzone, Param::Full, Param::Curve, Param::InvertX, Param::InvertY];
+        assert_eq!(ps(Input::Stick(Side::Left), Output::Pointer), [vec![Param::Speed], stick.clone()].concat());
+        assert_eq!(ps(Input::Stick(Side::Left), Output::Stick(Side::Left)), stick, "as on the pad: tuned all the same");
+        assert_eq!(ps(Input::Gyro, Output::Stick(Side::Right)), vec![Param::Speed, Param::InvertX, Param::InvertY]);
+        assert_eq!(ps(Input::Gyro, Output::Nothing), vec![], "off");
+        assert_eq!(ps(Input::Trigger(Side::Left), Output::Key(chord("x"))), vec![Param::Deadzone, Param::Full, Param::Threshold]);
+        assert_eq!(ps(Input::Trigger(Side::Left), Output::Trigger(Side::Right)), vec![Param::Deadzone, Param::Full]);
+        assert_eq!(ps(Input::Button(Button::A), Output::Key(chord("x"))), vec![]);
+    }
+
+    #[test]
+    fn an_input_only_tuned_counts_as_changed_but_not_remapped() {
+        let ls = Input::Stick(Side::Left);
+        let own = Binding::to(Output::Stick(Side::Left));
+        assert_eq!(change(ls, None), Change::None);
+        assert_eq!(change(ls, Some(&own)), Change::None, "as on the pad, said");
+        assert_eq!(change(ls, Some(&Binding { deadzone: 12, ..own })), Change::Tuned);
+        assert_eq!(change(ls, Some(&Binding { deadzone: 12, ..Binding::to(Output::Pointer) })), Change::Mapped);
+        assert_eq!(change(Input::Button(Button::A), Some(&Binding::to(Output::Pad(PadOut::Button(Button::B))))), Change::Mapped);
+        let text = "keymap 1 T\nlstick = stick left deadzone=12 invert=xy\n";
+        let maps = Keymaps::load(text);
+        assert_eq!(maps.get(1).unwrap().get(ls), Some(&Binding { deadzone: 12, invert_x: true, invert_y: true, ..own }));
+        assert_eq!(maps.text(), text);
+    }
+
+    #[test]
+    fn the_back_layer_round_trips_and_old_files_load_unchanged() {
+        let old = "keymap 1 Nintendo layout\na = pad b\nb = pad a\nx = pad y\ny = pad x\n";
+        let maps = Keymaps::load(old);
+        assert_eq!(maps, Keymaps::initial(), "a file from before layers");
+        assert_eq!(maps.text(), old, "and written the same");
+        let mut maps = Keymaps::initial();
+        let k = maps.get_mut(1).unwrap();
+        assert!(k.set_in(Layer::Back, Input::Button(Button::A), Some(Binding::to(Output::Key(chord("ctrl+y"))))));
+        assert!(k.set_in(Layer::Back, Input::Gyro, Some(Binding { hold: Some(Input::Button(Button::RB)), ..Binding::to(Output::Pointer) })));
+        assert!(k.set_in(Layer::Back, Input::Button(Button::B), as_on_the_pad(Input::Button(Button::B)).map(Binding::to)));
+        let text = maps.text();
+        assert_eq!(text, format!("{old}layer back\na = key ctrl+y\nb = pad b\ngyro = pointer hold=rb\n"));
+        assert_eq!(Keymaps::load(&text), maps);
+        // A copy has both layers; clearing one leaves the other.
+        let copy = maps.duplicate(1, "Copy").unwrap();
+        let k = maps.get_mut(copy).unwrap();
+        assert_eq!(k.layer(Layer::Back).len(), 3);
+        assert!(k.clear(Layer::Back) && !k.clear(Layer::Back));
+        assert_eq!(k.bindings().len(), 4);
+    }
+
+    #[test]
+    fn the_back_layer_falls_through_to_the_main_one() {
+        let mut k = nintendo(1);
+        let a = Input::Button(Button::A);
+        let x = Input::Button(Button::X);
+        k.set_in(Layer::Back, a, Some(Binding::to(Output::Mouse(MouseButton::Left))));
+        k.set_in(Layer::Back, x, as_on_the_pad(x).map(Binding::to));
+        let out = |input, back| k.lookup(input, back).map(|b| b.output);
+        assert_eq!(out(a, false), Some(Output::Pad(PadOut::Button(Button::B))), "main");
+        assert_eq!(out(a, true), Some(Output::Mouse(MouseButton::Left)), "the Back layer's own");
+        assert_eq!(out(Input::Button(Button::B), true), Some(Output::Pad(PadOut::Button(Button::A))), "not in it: main's");
+        assert_eq!(out(x, true), Some(Output::Pad(PadOut::Button(Button::X))), "as on the pad, over main's Y");
+        assert_eq!(out(Input::Button(Button::LB), true), None, "in neither: as on the pad");
+        assert_eq!(as_on_the_pad(Input::StickDir(Side::Left, Dir::Up)), None);
+        assert!(Input::all().filter_map(|i| as_on_the_pad(i).map(|o| (i, o))).all(|(i, o)| o.fits(i.kind())));
     }
 
     #[test]

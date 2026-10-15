@@ -11,7 +11,7 @@
 //! if missing; `-` for standard input) say, until `quit` or until it is killed (which unplugs the pad):
 //!
 //! - `press BUTTON`, `release BUTTON`, `tap BUTTON [MS]` (pressed for MS, default 80): a, b, x, y, lb,
-//!   rb, view, menu, home, ls, rs
+//!   rb, view, menu, home, ls, rs, back
 //! - `dpad up|down|left|right|none`: the D-pad (a hat), held until the next `dpad`
 //! - `stick left|right X Y`: a stick at X, Y (-1.0 to 1.0, y down), held until changed
 //! - `trigger left|right V`: a trigger at V (0.0 to 1.0)
@@ -47,8 +47,9 @@ const ACCEL_RES: i32 = 8192;
 /// How often the motion sensor reports.
 const MOTION_EVERY: Duration = Duration::from_millis(4);
 
-/// The buttons by name, as an Xbox controller's (Linux's xpad codes).
-const BUTTONS: [(&str, KeyCode); 11] = [
+/// The buttons by name, as an Xbox controller's (Linux's xpad codes), and the Thor's Back button (its
+/// code assumed until the device test).
+const BUTTONS: [(&str, KeyCode); 12] = [
     ("a", KeyCode::BTN_SOUTH),
     ("b", KeyCode::BTN_EAST),
     ("x", KeyCode::BTN_WEST),
@@ -60,6 +61,7 @@ const BUTTONS: [(&str, KeyCode); 11] = [
     ("home", KeyCode::BTN_MODE),
     ("ls", KeyCode::BTN_THUMBL),
     ("rs", KeyCode::BTN_THUMBR),
+    ("back", KeyCode::KEY_BACK),
 ];
 
 fn syn() -> InputEvent {

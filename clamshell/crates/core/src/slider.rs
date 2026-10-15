@@ -1,6 +1,7 @@
 //! Volume and brightness in the bar: a finger held on either icon (or sliding off it sideways) brings
 //! up a slider whose current value is under the finger; moving sets the level as it goes, lifting leaves
-//! it there. A tap opens the icon's tab instead.
+//! it there. A tap opens the icon's tab instead. The same slider sets a keymap binding's parameters
+//! from the edit screen's panel ([`Control::Param`], see `keymap_ui`).
 //!
 //! The slider runs along the screen's width. Its length is what fits on both sides of where the finger
 //! came down, given the level there (the part below the level goes left of the finger, the rest right),
@@ -14,6 +15,19 @@ use crate::levels::{Level, Levels};
 pub enum Control {
     Volume,
     Brightness,
+    /// A parameter of the input selected on the keymap edit screen, in the layer shown.
+    Param(crate::keymap::Param),
+}
+
+impl Control {
+    /// The level it sets, if it is a level's.
+    pub fn level(self) -> Option<Level> {
+        match self {
+            Control::Volume => Some(Level::Volume),
+            Control::Brightness => Some(Level::Brightness),
+            Control::Param(_) => None,
+        }
+    }
 }
 
 /// A slide in progress, in the second screen's layout units.
@@ -47,6 +61,11 @@ const LONGEST: f32 = 0.5;
 const SHORTEST: f32 = 0.1;
 
 impl Slider {
+    /// A slider for `control` at value `start` (0-100), the finger at `x` on a screen `width` wide.
+    pub fn new(control: Control, start: u8, x: f32, width: f32) -> Slider {
+        Slider { control, start, value: start, x, length: Slider::length_at(x, start, width), moved: false }
+    }
+
     /// The longest track (up to half the screen) that stays on a screen `width` wide with level `start`
     /// at `x`: the part for 0 to `start` left of `x`, the rest right of it.
     pub fn length_at(x: f32, start: u8, width: f32) -> f32 {
@@ -63,7 +82,7 @@ impl Slider {
     }
 
     /// The level with the finger at `x`.
-    fn value_at(&self, x: f32) -> u8 {
+    pub(crate) fn value_at(&self, x: f32) -> u8 {
         let v = f32::from(self.start) + (x - self.x) / self.length.max(1.0) * 100.0;
         v.round().clamp(0.0, 100.0) as u8
     }
@@ -73,12 +92,14 @@ impl Levels {
     pub(crate) fn slide_start(&mut self, control: Control, x: f32, width: f32) {
         // Without a reading (a desktop without a backlight), from the middle: the slider still shows.
         let start = self.control(control).unwrap_or(UNKNOWN_START);
-        let length = Slider::length_at(x, start, width);
-        self.slider = Some(Slider { control, start, value: start, x, length, moved: false });
+        self.slider = Some(Slider::new(control, start, x, width));
     }
 
     pub(crate) fn slide_to(&mut self, x: f32) -> Vec<Effect> {
         let Some(slider) = self.slider.as_mut() else {
+            return vec![];
+        };
+        let Some(level) = slider.control.level() else {
             return vec![];
         };
         let value = slider.value_at(x);
@@ -88,7 +109,6 @@ impl Levels {
         slider.value = value;
         slider.moved = true;
         // The same level as the tab's row (turning the volume up or down unmutes).
-        let level = Level::from(slider.control);
         self.set(level, value)
     }
 

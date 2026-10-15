@@ -7,6 +7,7 @@ use evdev::raw_stream::RawDevice;
 use evdev::uinput::VirtualDevice;
 use evdev::{AbsInfo, AbsoluteAxisCode, AttributeSet, BusType, InputEvent, InputId, KeyCode, RelativeAxisCode, UinputAbsSetup};
 
+use super::remap::is_layer_key;
 use super::route::{Axis, PadSnapshot, Ranges, mouse_device_keys};
 use crate::input::device::{self, DeviceSpec};
 use crate::input::{Press, Range, Raw, keyset};
@@ -75,7 +76,7 @@ pub struct VirtualDevices {
 
 impl VirtualDevices {
     pub fn new(caps: Capabilities) -> io::Result<VirtualDevices> {
-        let mut neutral: Vec<Raw> = caps.keys.iter().map(|&k| Raw::key(k, Press::Up)).collect();
+        let mut neutral: Vec<Raw> = pad_keys(&caps).map(|k| Raw::key(k, Press::Up)).collect();
         neutral.extend(caps.axes.iter().map(|(code, a)| Raw::abs(*code, rest(a))));
         neutral.push(Raw::REPORT);
         Ok(VirtualDevices { pad: virtual_pad(&caps)?, mouse: virtual_mouse()?, made_for: caps, neutral })
@@ -93,12 +94,18 @@ pub fn emit(device: &mut VirtualDevice, events: &[Raw]) -> io::Result<()> {
     device.emit(&events)
 }
 
+/// The real pad's keys the virtual one has: all but the layer key (ClamShell's, never the game's).
+fn pad_keys(caps: &Capabilities) -> impl Iterator<Item = KeyCode> + '_ {
+    caps.keys.iter().copied().filter(|&k| !is_layer_key(k))
+}
+
 /// A pad with the real one's buttons and axes, identified as a wired Xbox 360 controller so SDL, Wine
 /// and Steam map it without configuration.
 fn virtual_pad(caps: &Capabilities) -> io::Result<VirtualDevice> {
     let mut builder = VirtualDevice::builder()?.name(VIRTUAL_PAD).input_id(InputId::new(BusType::BUS_USB, 0x045e, 0x028e, 0x0110));
-    if !caps.keys.is_empty() {
-        builder = builder.with_keys(&keyset(&caps.keys))?;
+    let keys: Vec<KeyCode> = pad_keys(caps).collect();
+    if !keys.is_empty() {
+        builder = builder.with_keys(&keyset(&keys))?;
     }
     for &(code, info) in &caps.axes {
         builder = builder.with_absolute_axis(&UinputAbsSetup::new(code, info))?;

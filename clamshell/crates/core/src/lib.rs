@@ -470,6 +470,8 @@ impl State {
                 let tab = match control {
                     Control::Volume => Tab::Volume,
                     Control::Brightness => Tab::Brightness,
+                    // (A keymap's parameter is held or slid, not tapped.)
+                    Control::Param(_) => return (Dirty::NONE, vec![]),
                 };
                 (Dirty::BOTH, self.choose_tab(tab))
             }
@@ -611,17 +613,22 @@ impl State {
 
     fn on_slide(&mut self, slide: Slide) -> (Dirty, Vec<Effect>) {
         match slide {
+            Slide::Start { control: Control::Param(param), x, width } => {
+                self.param_slide_start(param, x, width);
+                (Dirty::BOTTOM, vec![])
+            }
             Slide::Start { control, x, width } => {
                 self.levels.slide_start(control, x, width);
                 (Dirty::BOTTOM, vec![])
             }
+            Slide::To { x } if self.levels.slider().is_none() => (if self.param_slide_to(x) { Dirty::BOTTOM } else { Dirty::NONE }, vec![]),
             Slide::To { x } => {
                 let effects = self.change_levels(|l| l.slide_to(x));
                 (if effects.is_empty() { Dirty::NONE } else { Dirty::BOTTOM }, effects)
             }
             Slide::End => {
                 self.levels.slide_end();
-                (Dirty::BOTTOM, vec![])
+                (Dirty::BOTTOM, self.param_slide_end())
             }
         }
     }

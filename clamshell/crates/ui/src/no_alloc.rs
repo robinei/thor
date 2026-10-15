@@ -147,7 +147,19 @@ fn warm_frames_do_not_allocate() {
                 tap(Id::Settings(SettingsId::Tile(clamshell_core::settings::Setting::Keymap))),
                 tap(Id::Row { list: clamshell_core::ListId::Keymaps, i: 1, part: clamshell_core::RowPart::Edit }),
                 tap(Id::Keymap(clamshell_core::KeymapId::Input(clamshell_core::keymap::Input::Trigger(clamshell_core::keymap::Side::Left)))),
-                tap(Id::Keymap(clamshell_core::KeymapId::Target(clamshell_core::Target::Mouse(clamshell_core::keymap::MouseButton::Left)))),
+                tap(Id::Keymap(clamshell_core::KeymapId::Change)),
+            ],
+        ),
+        (
+            "keymap panel, a slider up, the Back layer",
+            vec![
+                tap(Id::Tab(Tab::Settings)),
+                tap(Id::Settings(SettingsId::Tile(clamshell_core::settings::Setting::Keymap))),
+                tap(Id::Row { list: clamshell_core::ListId::Keymaps, i: 1, part: clamshell_core::RowPart::Edit }),
+                tap(Id::Keymap(clamshell_core::KeymapId::Layer(clamshell_core::keymap::Layer::Back))),
+                tap(Id::Keymap(clamshell_core::KeymapId::Input(clamshell_core::keymap::Input::Stick(clamshell_core::keymap::Side::Left)))),
+                Event::Slide(Slide::Start { control: clamshell_core::slider::Control::Param(clamshell_core::keymap::Param::Deadzone), x: 285.0, width: 620.0 }),
+                Event::Slide(Slide::To { x: 320.0 }),
             ],
         ),
         (
@@ -157,6 +169,7 @@ fn warm_frames_do_not_allocate() {
                 tap(Id::Settings(SettingsId::Tile(clamshell_core::settings::Setting::Keymap))),
                 tap(Id::Row { list: clamshell_core::ListId::Keymaps, i: 1, part: clamshell_core::RowPart::Edit }),
                 tap(Id::Keymap(clamshell_core::KeymapId::Input(clamshell_core::keymap::Input::Stick(clamshell_core::keymap::Side::Left)))),
+                tap(Id::Keymap(clamshell_core::KeymapId::Change)),
                 tap(Id::Keymap(clamshell_core::KeymapId::Target(clamshell_core::Target::Keys))),
                 key(Key::Char('w')),
                 key(Key::Mod(Modifier::Shift)),

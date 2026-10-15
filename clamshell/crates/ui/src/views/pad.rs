@@ -2,8 +2,8 @@
 //! bottom screen, so they are drawn as two clusters at the screen's edges, each a column of groups in
 //! the order of [`LEFT`] and [`RIGHT`]: the shoulders (on the back's top edge), a small round button
 //! above the screen's corner (Select, Start), a stick and the D-pad or the face buttons, and a small
-//! round button at the screen's bottom corner (Home, Back: drawn, not remappable). The gyro sits in the
-//! middle, at the bottom, where the AYN button is under the screen.
+//! round button at the screen's bottom corner (Home: drawn, not remappable; Back: the keymap's layer
+//! key). The gyro sits in the middle, at the bottom, where the AYN button is under the screen.
 //!
 //! A remapped control has a line in to its label (between the clusters): it leaves the control's inner
 //! side straight across, or, for the controls a line across would pass through others (the outer one of
@@ -30,8 +30,8 @@ pub enum Group {
 }
 
 /// Each side's groups from top to bottom, and the share of the cluster's height each takes.
-pub const LEFT: [(Group, f32); 6] = [(Group::Trigger, 0.11), (Group::Bumper, 0.08), (Group::Top, 0.1), (Group::Stick, 0.31), (Group::Dpad, 0.31), (Group::Foot, 0.09)];
-pub const RIGHT: [(Group, f32); 6] = [(Group::Trigger, 0.11), (Group::Bumper, 0.08), (Group::Top, 0.1), (Group::Face, 0.31), (Group::Stick, 0.31), (Group::Foot, 0.09)];
+pub const LEFT: [(Group, f32); 6] = [(Group::Trigger, 0.1), (Group::Bumper, 0.085), (Group::Top, 0.09), (Group::Stick, 0.33), (Group::Dpad, 0.32), (Group::Foot, 0.075)];
+pub const RIGHT: [(Group, f32); 6] = [(Group::Trigger, 0.1), (Group::Bumper, 0.085), (Group::Top, 0.09), (Group::Face, 0.32), (Group::Stick, 0.33), (Group::Foot, 0.075)];
 
 /// Sizes in a group, of the smaller of its width and height. A stick: the well's radius, the cap's and
 /// the click's (dimple); the click's target's half height (its width is the cap's).
@@ -119,10 +119,16 @@ impl Pad {
         square((x, g.center().1), r)
     }
 
-    /// Home's or Back's small round button, at the screen's bottom corner (drawn, not remappable).
+    /// Home's or Back's small round button, at the screen's bottom corner (Home drawn, not remappable;
+    /// Back the keymap's layer key).
     pub fn foot(&self, side: Side) -> Option<Rect> {
         let g = self.group(side, Group::Foot)?;
         Some(self.round(side, g))
+    }
+
+    /// The row the foot's button is in, on `side` (what a finger may hit for it).
+    pub fn foot_row(&self, side: Side) -> Option<Rect> {
+        self.group(side, Group::Foot)
     }
 
     /// Where `input` is, if it is in a cluster (the gyro is in the middle; the Thor has no back buttons).

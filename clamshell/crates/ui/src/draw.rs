@@ -47,6 +47,13 @@ impl Rect {
         Rect::new(self.x + d, self.y + d, self.w - 2.0 * d, self.h - 2.0 * d)
     }
 
+    /// The part of this inside `other` (empty, with no size, if none).
+    pub fn intersect(&self, other: Rect) -> Rect {
+        let (x0, y0) = (self.x.max(other.x), self.y.max(other.y));
+        let (x1, y1) = (self.right().min(other.right()), self.bottom().min(other.bottom()));
+        Rect::new(x0, y0, (x1 - x0).max(0.0), (y1 - y0).max(0.0))
+    }
+
     /// Moved by `dx`, `dy`.
     pub fn shifted(&self, dx: f32, dy: f32) -> Rect {
         Rect::new(self.x + dx, self.y + dy, self.w, self.h)

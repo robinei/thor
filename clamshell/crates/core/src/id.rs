@@ -96,14 +96,24 @@ pub enum KeymapId {
     Delete,
     /// Deleting a keymap games use, after all.
     ConfirmDelete,
-    /// An input on the edit screen: a tap opens what it maps to, a long press sets it back to the pad's.
+    /// An input on the edit screen: a tap selects it (its panel), a tap on the selected one opens what it
+    /// maps to; a long press sets it back (in the layer shown).
     Input(crate::keymap::Input),
+    /// The edit screen's panel: what the selected input maps to opens; it is set back (as on the pad in
+    /// the main layer, as the main layer in the Back layer).
+    Change,
+    Reset,
+    /// The edit screen shows and edits this layer.
+    Layer(crate::keymap::Layer),
+    /// "No changes": the layer shown is cleared, once confirmed.
+    Clear,
+    ConfirmClear,
     /// What an input maps to.
     Target(Target),
-    /// The speed of motion mapped to the pointer or a stick.
-    Speed(u8),
-    /// The threshold of a trigger mapped to a button.
-    Threshold(u8),
+    /// A switch among the selected input's parameters (an inversion), flipped.
+    Toggle(crate::keymap::Param),
+    /// The panel's "Active" row of the gyro: the choice of what holds it on opens.
+    Holds,
     /// What holds the gyro on (none: always on).
     Hold(Option<crate::keymap::Input>),
     /// The modifiers alone as the chord (Shift as a key).
@@ -113,8 +123,10 @@ pub enum KeymapId {
 /// A target on the "map to" screen: an output, or a way to choose one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Target {
-    /// As on the pad (no binding).
+    /// No binding: as on the pad in the main layer, as the main layer in the Back layer.
     Default,
+    /// As on the pad, said in the Back layer (over what the main layer maps it to).
+    Own,
     Nothing,
     Pad(crate::keymap::PadOut),
     /// The next button pressed on the pad.

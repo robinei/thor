@@ -1,7 +1,7 @@
 //! The pad listened to (a keymap's edit screen): each input pressed or moved is sent to the state as
 //! itself ([`Event::Listened`]) instead of moving the focus: a button as it goes down, a D-pad direction,
-//! a stick pushed past half its travel (its direction), a trigger past half. Home stays ClamShell's (the
-//! router's): it leaves the screen.
+//! a stick pushed past half its travel (its direction), a trigger past half. Home and Back stay
+//! ClamShell's (the router's): Home leaves the screen, Back shows the keymap's other layer.
 
 use std::time::Instant;
 

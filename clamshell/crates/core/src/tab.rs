@@ -101,6 +101,8 @@ pub struct Bottom {
     pub(crate) scope: Scope,
     /// The keymaps' screen open over the settings tab (see [`crate::keymap_ui`]).
     pub(crate) keymaps: Option<crate::keymap_ui::Screen>,
+    /// The edit screen's layer, selection and confirmation.
+    pub(crate) keymap_edit: crate::keymap_ui::EditView,
     /// The dark second screen was tapped awake (until the next game).
     pub(crate) woken: bool,
     /// What a key just did (a level, a screenshot), shown under the bar for a moment.
