@@ -77,11 +77,12 @@ bounce it) the tab before it comes back, unless a tab was chosen meanwhile. Not 
 SDL asks for text input whether or not the game needs it. With another input method running (fcitx, ibus)
 the compositor gives the seat to that one and this does nothing.
 
-**The bar**: tabs for the modes on the left; volume and brightness in the middle; Bluetooth, Wi-Fi and the
-battery (tabs as well, that also show their status) on the right; past a faint line, the clock and the
+**The bar**: tabs for the modes, volume and brightness near the middle, Bluetooth, Wi-Fi and the battery
+(tabs as well, that also show their status), spread evenly; past a faint line, the clock and the
 pad mouse switch. A finger on volume or brightness turns the bar's row into a slider whose
 current level is under the finger: moving sets the level as it goes, lifting leaves it there (the icons
-sit mid-screen so the track fits on both sides; it is about 31 mm long on the Thor). A tap on volume
+sit near the middle; the track's length is what fits on both sides for the level under the finger, at
+most half the screen, about 33 mm on the Thor). A tap on volume
 mutes or unmutes; sliding it unmutes. Volume goes through `wpctl` (PipeWire's default sink), brightness to
 every backlight through logind (`CLAMSHELL_BACKLIGHTS`: another folder laid out like
 `/sys/class/backlight`, for a desktop without one). Every icon always shows, dim without a reading (a

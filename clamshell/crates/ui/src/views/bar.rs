@@ -1,7 +1,7 @@
-//! The bar along the top of the second screen: the tabs (the modes) on the left, the open one lit;
-//! volume and brightness in the middle, where a slider has room on both sides of the finger; on the
-//! right Bluetooth, Wi-Fi and the battery (tabs too, that carry their status); then, past a faint line,
-//! the clock and the pad mouse toggle, which is a switch rather than a tab.
+//! The bar along the top of the second screen: the tabs (the modes), the open one lit; volume and
+//! brightness, near the middle, where a slider has room on both sides of the finger; Bluetooth, Wi-Fi and
+//! the battery (tabs too, that carry their status), all spread evenly; then, past a faint line, the clock
+//! and the pad mouse toggle, which is a switch rather than a tab.
 //!
 //! While a finger is on volume or brightness, a slider is drawn over the bar (the bar stays visible
 //! under it): a track whose current level sits under the finger, and the level as a number beside it.
@@ -22,8 +22,10 @@ const ICON: f32 = 0.62;
 const CLOCK_TEXT: f32 = 0.34;
 /// Room around the clock text, of the bar's height.
 const CLOCK_PAD: f32 = 0.5;
-/// A button's tap slot (modes, controls, toggles), of the bar's height.
+/// A button's tap slot (the least; the icons before the clock share its room), of the bar's height.
 const SLOT: f32 = 1.15;
+/// The icons spread before the clock: the five tabs, volume, brightness, and the three status tabs.
+const ICONS: usize = 10;
 /// The line before the clock and the pad mouse toggle: its height, of the bar's, and how strongly it shows.
 const DIVIDER: f32 = 0.4;
 const DIVIDER_ALPHA: f32 = 0.35;
@@ -91,45 +93,36 @@ pub(super) fn draw(f: &mut Frame, w: f32, h: f32, scratch: &mut Scratch) -> f32 
             c.icon(icon, Rect::new(cx - side / 2.0, cy - side / 2.0, side, side), rgb(color));
         });
     };
-    for (i, mode) in Mode::BAR.into_iter().enumerate() {
-        let color = if f.s.mode == mode { ACCENT } else { DIM };
-        icon_button(f, Id::Mode(mode), Rect::new(i as f32 * slot, 0.0, slot, bar_h), mode_icon(mode), color);
-    }
-
-    // Volume left of the middle, brightness right of it; dim without a reading (always shown, so a
-    // desktop shows everything the device does).
-    let volume = f.s.level(Control::Volume);
-    let icon = volume_icon(volume.unwrap_or(0), f.s.status.muted);
-    let color = if volume.is_some() { TEXT } else { DIM };
-    icon_button(f, Id::Control(Control::Volume), Rect::new(w / 2.0 - slot, 0.0, slot, bar_h), icon, color);
-    let color = if f.s.level(Control::Brightness).is_some() { TEXT } else { DIM };
-    icon_button(f, Id::Control(Control::Brightness), Rect::new(w / 2.0, 0.0, slot, bar_h), Icon::Brightness, color);
-
-    // From the right: the pad mouse, the clock, the line, the battery, Wi-Fi, Bluetooth.
-    let mut x = w - slot;
+    // On the right: the pad mouse, the clock, and the line before them.
+    let mouse_x = w - slot;
     let color = if f.s.pad_mouse { ACCENT } else { DIM };
-    icon_button(f, Id::PadMouse, Rect::new(x, 0.0, slot, bar_h), Icon::Mouse, color);
+    icon_button(f, Id::PadMouse, Rect::new(mouse_x, 0.0, slot, bar_h), Icon::Mouse, color);
     let clock = scratch.clock(f.s.unix_secs);
     let size = bar_h * CLOCK_TEXT;
     let clock_w = f.c.text_width(size, clock) + bar_h * CLOCK_PAD;
-    x -= clock_w;
-    label(f.c, Rect::new(x, 0.0, clock_w, bar_h), size, TEXT, clock);
+    let line_x = mouse_x - clock_w;
+    label(f.c, Rect::new(line_x, 0.0, clock_w, bar_h), size, TEXT, clock);
     let line = bar_h * DIVIDER;
-    f.c.fill(Rect::new(x - 0.5, (bar_h - line) / 2.0, 1.0, line), rgba(DIM, DIVIDER_ALPHA));
-    // Opens the battery mode (lit while open); an empty, dim battery when there is none.
-    let (icon, color) = battery(&f.s.status).unwrap_or((Icon::Battery { tenths: 0, charging: false }, DIM));
-    let color = if f.s.mode == Mode::Battery { ACCENT } else { color };
-    x -= slot;
-    icon_button(f, Id::Mode(Mode::Battery), Rect::new(x, 0.0, slot, bar_h), icon, color);
-    x -= slot;
-    let bars = wifi_bars(f.s.status.wifi);
-    let color = match (f.s.mode == Mode::Wifi, bars) {
-        (true, _) => ACCENT,
-        (false, Some(_)) => TEXT,
-        (false, None) => DIM,
-    };
-    icon_button(f, Id::Mode(Mode::Wifi), Rect::new(x, 0.0, slot, bar_h), Icon::Wifi { bars }, color);
-    x -= slot;
+    f.c.fill(Rect::new(line_x - 0.5, (bar_h - line) / 2.0, 1.0, line), rgba(DIM, DIVIDER_ALPHA));
+
+    // Before the line, evenly spread: the tabs, volume and brightness (near the middle; the slider
+    // makes do with the room on either side), and the status tabs.
+    let cell = (line_x / ICONS as f32).max(slot);
+    let at = |i: usize| Rect::new(i as f32 * cell, 0.0, cell, bar_h);
+    for (i, mode) in Mode::BAR.into_iter().enumerate() {
+        let color = if f.s.mode == mode { ACCENT } else { DIM };
+        icon_button(f, Id::Mode(mode), at(i), mode_icon(mode), color);
+    }
+    let mut i = Mode::BAR.len();
+    // Dim without a reading (always shown, so a desktop shows everything the device does).
+    let volume = f.s.level(Control::Volume);
+    let icon = volume_icon(volume.unwrap_or(0), f.s.status.muted);
+    let color = if volume.is_some() { TEXT } else { DIM };
+    icon_button(f, Id::Control(Control::Volume), at(i), icon, color);
+    i += 1;
+    let color = if f.s.level(Control::Brightness).is_some() { TEXT } else { DIM };
+    icon_button(f, Id::Control(Control::Brightness), at(i), Icon::Brightness, color);
+    i += 1;
     let bt = &f.s.bluetooth;
     let connected = bt.connected() > 0;
     let color = match (f.s.mode == Mode::Bluetooth, bt.powered, connected) {
@@ -137,7 +130,20 @@ pub(super) fn draw(f: &mut Frame, w: f32, h: f32, scratch: &mut Scratch) -> f32 
         (false, true, true) => TEXT,
         _ => DIM,
     };
-    icon_button(f, Id::Mode(Mode::Bluetooth), Rect::new(x, 0.0, slot, bar_h), Icon::Bluetooth { connected }, color);
+    icon_button(f, Id::Mode(Mode::Bluetooth), at(i), Icon::Bluetooth { connected }, color);
+    i += 1;
+    let bars = wifi_bars(f.s.status.wifi);
+    let color = match (f.s.mode == Mode::Wifi, bars) {
+        (true, _) => ACCENT,
+        (false, Some(_)) => TEXT,
+        (false, None) => DIM,
+    };
+    icon_button(f, Id::Mode(Mode::Wifi), at(i), Icon::Wifi { bars }, color);
+    i += 1;
+    // An empty, dim battery when there is none.
+    let (icon, color) = battery(&f.s.status).unwrap_or((Icon::Battery { tenths: 0, charging: false }, DIM));
+    let color = if f.s.mode == Mode::Battery { ACCENT } else { color };
+    icon_button(f, Id::Mode(Mode::Battery), at(i), icon, color);
     if let Some(slider) = f.s.slider {
         draw_slider(f, slider, w, bar_h, scratch);
     }
