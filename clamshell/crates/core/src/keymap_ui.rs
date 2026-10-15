@@ -16,7 +16,7 @@ use crate::effect::{Effect, Save};
 use crate::id::{KeymapId, Target};
 use crate::items::ItemKey;
 use crate::keyboard::{Key, Stroke};
-use crate::keymap::{Binding, Chord, Input, Keymap, Keymaps, Kind, Layer, Output, PadOut, Param, as_on_the_pad};
+use crate::keymap::{Actuation, Binding, Chord, Input, Keymap, Keymaps, Kind, Layer, Output, PadOut, Param, as_on_the_pad};
 use crate::scroll::{RowPart, Rows};
 use crate::settings::Setting;
 use crate::slider::{Control, Slider};
@@ -104,12 +104,13 @@ pub fn picked(source: Input, tapped: Input) -> Option<Output> {
 }
 
 /// The edit screen's own state, kept while its input's screens are open: the layer shown and edited, the
-/// input selected (shown in the panel), whether "No changes" waits for its confirmation, and the slider
-/// of one of the selected input's parameters while a finger is on it.
+/// input selected (shown in the panel) and which of its actuations, whether "No changes" waits for its
+/// confirmation, and the slider of one of its parameters while a finger is on it.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct EditView {
     pub layer: Layer,
     pub selected: Option<Input>,
+    pub act: Actuation,
     pub clearing: bool,
     pub slider: Option<Slider>,
 }
@@ -297,6 +298,13 @@ impl State {
                 Some(output) => self.choose(k, input, output),
                 None => vec![],
             },
+            (KeymapId::Actuation(act), Screen::Edit(_)) => {
+                let view = &mut self.bottom.keymap_edit;
+                if view.selected.is_some_and(|i| act.fits(i.kind())) {
+                    view.act = act;
+                }
+                vec![]
+            }
             (KeymapId::Layer(layer), Screen::Edit(_)) => {
                 self.bottom.keymap_edit.layer = layer;
                 self.bottom.keymap_edit.clearing = false;
@@ -362,6 +370,13 @@ impl State {
         };
     }
 
+    /// Whether the selected input has a hold's or a double's binding in force in the layer shown (its press
+    /// then acts only once it is known not to be one).
+    pub fn press_waits(&self, id: u16, input: Input) -> bool {
+        let back = self.bottom.keymap_edit.layer == Layer::Back;
+        self.keymaps.get(id).is_some_and(|k| [Actuation::Hold, Actuation::Double].into_iter().any(|a| k.lookup_of(input, a, back).is_some()))
+    }
+
     /// The edit screen of keymap `id`, as first opened: the main layer, nothing selected.
     fn open_edit(&mut self, id: u16) {
         self.bottom.keymaps = Some(Screen::Edit(id));
@@ -375,6 +390,7 @@ impl State {
         view.clearing = false;
         if view.selected != Some(input) {
             view.selected = Some(input);
+            view.act = Actuation::Press;
             return vec![];
         }
         match way_of(self.binding_shown(id, input).map(|b| b.output)) {
@@ -456,17 +472,18 @@ impl State {
         effects
     }
 
-    /// `input` of keymap `id` bound to `binding` in the layer shown (none: as on the pad, or as the main
-    /// layer); saved if it changed.
+    /// `input` of keymap `id` bound to `binding` in the layer and actuation shown (none: as on the pad, or
+    /// as the main layer; no hold or double); saved if it changed.
     fn bind(&mut self, id: u16, input: Input, binding: Option<Binding>) -> Vec<Effect> {
-        let layer = self.bottom.keymap_edit.layer;
-        let changed = self.keymaps.get_mut(id).is_some_and(|k| k.set_in(layer, input, binding));
+        let EditView { layer, act, .. } = self.bottom.keymap_edit;
+        let changed = self.keymaps.get_mut(id).is_some_and(|k| k.set_of(layer, input, act, binding));
         if changed { vec![self.save_keymaps()] } else { vec![] }
     }
 
-    /// `input`'s binding in the layer shown.
+    /// `input`'s binding in the layer and actuation shown.
     fn binding_shown(&self, id: u16, input: Input) -> Option<Binding> {
-        self.keymaps.get(id).and_then(|k| k.get_in(self.bottom.keymap_edit.layer, input)).copied()
+        let EditView { layer, act, .. } = self.bottom.keymap_edit;
+        self.keymaps.get(id).and_then(|k| k.get_of(layer, input, act)).copied()
     }
 
     /// A way to remap `input` (a panel's icon): what it needs opens, or it applies at once; or an output
@@ -527,12 +544,17 @@ impl State {
         self.bottom.keymap_edit.slider = Some(Slider::new(Control::Param(param), param.get(&b), x, width));
     }
 
-    /// What the selected input's parameters start from in the layer shown: its binding there; in the
-    /// Back layer without one, the main layer's; else the input as on the pad.
+    /// What the selected input's parameters start from in the layer and actuation shown: its binding
+    /// there; in the Back layer without one, the main layer's; else, for a press, the input as on the pad
+    /// (a hold or double without a binding has none).
     pub fn param_base(&self, id: u16, input: Input) -> Option<Binding> {
         let k = self.keymaps.get(id);
-        let layer = self.bottom.keymap_edit.layer;
-        k.and_then(|k| k.lookup(input, layer == Layer::Back)).copied().or_else(|| as_on_the_pad(input).map(|o| Binding::of(input, o)))
+        let EditView { layer, act, .. } = self.bottom.keymap_edit;
+        let found = k.and_then(|k| k.lookup_of(input, act, layer == Layer::Back)).copied();
+        match act {
+            Actuation::Press => found.or_else(|| as_on_the_pad(input).map(|o| Binding::of(input, o))),
+            _ => found,
+        }
     }
 
     /// The selected input and what its parameters start from, if `param` applies to it (on the edit
@@ -543,15 +565,15 @@ impl State {
         };
         let input = self.bottom.keymap_edit.selected?;
         let b = self.param_base(id, input)?;
-        param.applies(input, b.output).then_some((id, input, b))
+        param.applies_to(input, b.output, self.bottom.keymap_edit.act).then_some((id, input, b))
     }
 
     /// `input`'s parameters changed in the layer shown: kept, unless in the main layer they are all as
     /// on the pad again (then it has no binding). Whether it changed.
     fn set_tuned(&mut self, id: u16, input: Input, b: Binding) -> bool {
-        let layer = self.bottom.keymap_edit.layer;
-        let plain = layer == Layer::Main && as_on_the_pad(input).map(|o| Binding::of(input, o)) == Some(b);
-        self.keymaps.get_mut(id).is_some_and(|k| k.set_in(layer, input, (!plain).then_some(b)))
+        let EditView { layer, act, .. } = self.bottom.keymap_edit;
+        let plain = layer == Layer::Main && act == Actuation::Press && as_on_the_pad(input).map(|o| Binding::of(input, o)) == Some(b);
+        self.keymaps.get_mut(id).is_some_and(|k| k.set_of(layer, input, act, (!plain).then_some(b)))
     }
 
     /// The parameter's slider moved: the binding follows at once (the pad gets the keymap as it changes),
@@ -1046,6 +1068,38 @@ mod tests {
         s.apply(Slide::Start { control: Control::Volume, x: 300.0, width: 620.0 }.into());
         assert!(s.levels().slider().is_some() && s.keymap_edit().slider.is_none());
         s.apply(Slide::End.into());
+    }
+
+    #[test]
+    fn the_hold_and_double_tabs_edit_their_own_bindings() {
+        let mut s = edit_screen();
+        let a = Input::Button(Button::A);
+        keymap(&mut s, KeymapId::Input(a));
+        keymap(&mut s, KeymapId::Actuation(Actuation::Hold));
+        assert_eq!(s.keymap_edit().act, Actuation::Hold);
+        assert_eq!(s.param_base(1, a), None, "no hold yet: no parameters");
+        keymap(&mut s, KeymapId::Target(Target::Key));
+        key(&mut s, Key::Char('e'));
+        let k = s.keymaps().get(1).unwrap();
+        assert_eq!(k.get_of(Layer::Main, a, Actuation::Hold).map(|b| b.output), Some(Output::Key(Chord::of(Key::Char('e')))));
+        assert_eq!(k.get(a).map(|b| b.output), Some(Output::Pad(PadOut::Button(Button::B))), "the press as it was");
+        assert!(s.press_waits(1, a));
+        // Its time, and turbo, by slider; toggle by switch.
+        slide(&mut s, Param::HoldTime, 60);
+        slide(&mut s, Param::Turbo, 12);
+        keymap(&mut s, KeymapId::Toggle(Param::Toggle));
+        let b = s.keymaps().get(1).unwrap().get_of(Layer::Main, a, Actuation::Hold).copied().unwrap();
+        assert_eq!((b.hold_time, b.turbo, b.toggle), (60, 12, true));
+        // Reset on the Hold tab: no hold again; the press untouched.
+        keymap(&mut s, KeymapId::Target(Target::Default));
+        assert_eq!(s.keymaps().get(1).unwrap().get_of(Layer::Main, a, Actuation::Hold), None);
+        assert!(!s.press_waits(1, a));
+        // A stick has no tabs; another input selected starts on Press.
+        keymap(&mut s, KeymapId::Actuation(Actuation::Double));
+        keymap(&mut s, KeymapId::Input(Input::Stick(Side::Left)));
+        assert_eq!(s.keymap_edit().act, Actuation::Press);
+        keymap(&mut s, KeymapId::Actuation(Actuation::Hold));
+        assert_eq!(s.keymap_edit().act, Actuation::Press, "not for a stick");
     }
 
     fn slide_start(s: &mut State, param: Param) -> Option<Slider> {

@@ -102,6 +102,8 @@ pub enum KeymapId {
     Input(crate::keymap::Input),
     /// The edit screen shows and edits this layer.
     Layer(crate::keymap::Layer),
+    /// The panel shows and edits the selected input's binding of this actuation (press, hold, double).
+    Actuation(crate::keymap::Actuation),
     /// "No changes": the layer shown is cleared, once confirmed.
     Clear,
     ConfirmClear,

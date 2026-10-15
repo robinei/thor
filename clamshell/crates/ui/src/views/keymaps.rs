@@ -11,7 +11,7 @@
 
 use std::fmt::Write;
 
-use clamshell_core::keymap::{Binding, Button, Change, Chord, Dir, Input, Keymap, Kind, Layer, MouseButton, Output, PadOut, Side, change, params};
+use clamshell_core::keymap::{Actuation, Binding, Button, Change, Chord, Dir, Input, Keymap, Kind, Layer, MouseButton, Output, PadOut, Param, Side, change, params_of};
 use clamshell_core::keymap_ui::{EditView, Screen, holds, picked, way_of, ways};
 use clamshell_core::slider::{Control, Slider};
 use clamshell_core::{Id, KeymapId, ListId, RowPart, Scope, Target};
@@ -253,11 +253,42 @@ fn mapping(b: Binding) -> Fmt<48> {
 fn described(input: Input, b: &Binding) -> (Fmt<48>, Tone) {
     match change(input, Some(b)) {
         Change::Mapped if input == Input::Gyro => (Fmt::of(format_args!("Gyro · {}", mapping(*b).as_str())), Tone::Fn),
-        Change::Mapped => (mapping(*b), Tone::Fn),
+        Change::Mapped => (summary(input, b), Tone::Fn),
         _ if input == Input::Gyro => (Fmt::of(format_args!("Gyro · off")), Tone::Normal),
-        Change::Tuned => (Fmt::of(format_args!("Tuned")), Tone::Normal),
+        Change::Tuned => (summary(input, b), Tone::Normal),
         Change::None => (Fmt::of(format_args!("As on pad")), Tone::Normal),
     }
+}
+
+/// A binding in a few words: what it maps to, with its turbo and toggle (`Ctrl+X · 12/s`); one that only
+/// repeats or toggles the input as on the pad says just that (`Turbo 12/s`), one only tuned otherwise
+/// `Tuned`.
+fn summary(input: Input, b: &Binding) -> Fmt<48> {
+    let mut text = Fmt::<48>::new();
+    let mapped = Some(b.output) != clamshell_core::keymap::as_on_the_pad(input);
+    match (mapped, b.turbo, b.toggle) {
+        (true, ..) => {
+            let _ = write!(text, "{}", OutputLabel(b.output));
+            if b.turbo > 0 {
+                let _ = write!(text, " · {}/s", b.turbo);
+            }
+            if b.toggle {
+                let _ = write!(text, " · toggle");
+            }
+        }
+        (false, 0, false) => {
+            let _ = write!(text, "Tuned");
+        }
+        (false, t, toggle) => {
+            if t > 0 {
+                let _ = write!(text, "Turbo {t}/s");
+            }
+            if toggle {
+                let _ = write!(text, "{}Toggle", if t > 0 { " · " } else { "" });
+            }
+        }
+    }
+    text
 }
 
 /// A changed control's label beside its cluster: the control, its text and tone, and the label's top
@@ -265,15 +296,42 @@ fn described(input: Input, b: &Binding) -> (Fmt<48>, Tone) {
 #[derive(Clone, Copy)]
 struct Callout {
     part: Part,
+    /// Its first line (a press's, else a hold's or a double's), and its tone.
+    act: Actuation,
     text: Fmt<48>,
     tone: Tone,
+    /// A hold's and a double's lines below it, smaller.
+    extra: [Option<(Actuation, Fmt<48>)>; 2],
     top: f32,
+    /// Its extra lines left out for room (the first says how many with "+N").
+    collapsed: bool,
 }
 
 impl Callout {
     /// The height its line reaches the labels' side at.
     fn exit(&self) -> f32 {
         self.part.lane.unwrap_or(self.part.anchor.1)
+    }
+
+    fn extras(&self) -> usize {
+        self.extra.iter().flatten().count()
+    }
+
+    /// Its height: the first line's, and the extra lines' unless collapsed.
+    fn height(&self, line: f32) -> f32 {
+        line + if self.collapsed { 0.0 } else { self.extras() as f32 * line * EXTRA }
+    }
+}
+
+/// An extra line of a label (a hold's, a double's), of a line's height and text size.
+const EXTRA: f32 = 0.85;
+
+/// The word before a hold's or a double's line on a label.
+fn act_word(act: Actuation) -> &'static str {
+    match act {
+        Actuation::Press => "",
+        Actuation::Hold => "hold",
+        Actuation::Double => "2×",
     }
 }
 
@@ -306,20 +364,51 @@ impl Column {
         self.len += 1;
     }
 
-    /// Places the labels (`h` high) level with their lines where they can be, within `y0`..`y1`, at
-    /// least `h + gap` apart (less if they don't fit).
-    fn place(&mut self, y0: f32, y1: f32, h: f32, gap: f32) {
-        let step = (h + gap).min((y1 - y0 - h) / self.len.saturating_sub(1).max(1) as f32).max(0.0);
+    /// The labels' heights together, with `gap` between them.
+    fn total(&self, line: f32, gap: f32) -> f32 {
+        self.iter().map(|c| c.height(line)).sum::<f32>() + gap * self.len.saturating_sub(1) as f32
+    }
+
+    /// Places the labels (their first lines `line` high) level with their lines where they can be,
+    /// within `y0`..`y1`, at least `gap` apart (less if they don't fit; their extra lines left out first).
+    fn place(&mut self, y0: f32, y1: f32, line: f32, gap: f32) {
+        if self.total(line, gap) > y1 - y0 {
+            for c in self.items.iter_mut().take(self.len).flatten() {
+                c.collapsed = c.extras() > 0;
+            }
+        }
+        let heights: f32 = self.iter().map(|c| c.height(line)).sum();
+        let gap = gap.min((y1 - y0 - heights) / self.len.saturating_sub(1).max(1) as f32).max(0.0);
         let mut next = y0;
         for c in self.items.iter_mut().take(self.len).flatten() {
-            c.top = (c.exit() - h / 2.0).min(y1 - h).max(next);
-            next = c.top + step;
+            let h = c.height(line);
+            c.top = (c.exit() - line / 2.0).min(y1 - h).max(next);
+            next = c.top + h + gap;
         }
-        let mut last = y1 - h + step;
+        let mut last = y1 + gap;
         for c in self.items.iter_mut().take(self.len).rev().flatten() {
-            c.top = c.top.min(last - step);
+            c.top = c.top.min(last - gap - c.height(line));
             last = c.top;
         }
+    }
+}
+
+/// One line of a label at `y`: a dim word first (`hold`, `2×`; none for a press), the text in `tone`
+/// (cut to `lw`), and a dim note after it (`+2`); placed by `at` from its width (from the left or right).
+#[allow(clippy::too_many_arguments)]
+fn label_line(f: &mut Frame, at: impl Fn(f32) -> f32, y: f32, size: f32, lw: f32, word: &str, text: &str, tone: Tone, note: &str) {
+    let space = size * 0.3;
+    let word_w = if word.is_empty() { 0.0 } else { f.c.text_width(size, word) + space };
+    let note_w = if note.is_empty() { 0.0 } else { f.c.text_width(size, note) };
+    let text_w = f.c.text_width(size, text).min((lw - word_w - note_w).max(size));
+    let x = at(word_w + text_w + note_w);
+    let h = size * LINE;
+    if !word.is_empty() {
+        f.c.text_in(Rect::new(x, y, word_w, h), size, Tone::Dim, word, Align::Start);
+    }
+    f.c.text_fit(Rect::new(x + word_w, y, text_w + 1.0, h), size, tone, text, Keep::Start);
+    if !note.is_empty() {
+        f.c.text_in(Rect::new(x + word_w + text_w, y, note_w + 1.0, h), size, Tone::Dim, note, Align::Start);
     }
 }
 
@@ -403,18 +492,33 @@ fn edit(f: &mut Frame, body: Rect, id: u16, picking: Option<Picking>) {
 
     let (mut left, mut right) = (Column::new(), Column::new());
     for input in Input::all() {
-        let (Some(part), Some(b)) = (pad.part(input), binding(keymap, layer, input)) else {
+        let Some(part) = pad.part(input) else {
             continue;
         };
-        if layer == Layer::Main && change(input, Some(&b)) == Change::None {
-            continue;
-        }
         // While a control is picked, those that can't be have no label.
         if picking.is_some_and(|p| !p.takes(input)) {
             continue;
         }
-        let (text, tone) = described(input, &b);
-        let c = Callout { part, text, tone, top: 0.0 };
+        // Its press (unless as on the pad in the main layer), then its hold and double.
+        let press = binding(keymap, layer, input).filter(|b| layer == Layer::Back || change(input, Some(b)) != Change::None);
+        let mut lines = press.map(|b| {
+            let (text, tone) = described(input, &b);
+            (Actuation::Press, text, tone)
+        });
+        let mut extra = [None, None];
+        for (slot, act) in extra.iter_mut().zip([Actuation::Hold, Actuation::Double]) {
+            let Some(b) = keymap.and_then(|k| k.get_of(layer, input, act)) else {
+                continue;
+            };
+            match lines {
+                None => lines = Some((act, summary(input, b), Tone::Fn)),
+                Some(_) => *slot = Some((act, summary(input, b))),
+            }
+        }
+        let Some((act, text, tone)) = lines else {
+            continue;
+        };
+        let c = Callout { part, act, text, tone, extra, top: 0.0, collapsed: false };
         if part.side == Side::Left { left.push(c) } else { right.push(c) }
     }
     for column in [&mut left, &mut right] {
@@ -454,7 +558,12 @@ fn edit(f: &mut Frame, body: Rect, id: u16, picking: Option<Picking>) {
     let click = |i: &Input| matches!(i, Input::Button(Button::LS | Button::RS));
     for input in Input::all().filter(|i| !click(i)).chain(Input::all().filter(click)) {
         if let Some(part) = pad.part(input) {
-            let tone = binding(keymap, layer, input).map_or(Tone::Dim, |b| described(input, &b).1);
+            let extra = [Actuation::Hold, Actuation::Double].into_iter().any(|a| keymap.is_some_and(|k| k.get_of(layer, input, a).is_some()));
+            let tone = match binding(keymap, layer, input) {
+                _ if extra => Tone::Fn,
+                Some(b) => described(input, &b).1,
+                None => Tone::Dim,
+            };
             let muted = picking.is_some_and(|p| !p.takes(input));
             // (Picking the gyro's hold, the one holding it now is lit.)
             let hold = match picking {
@@ -476,9 +585,17 @@ fn edit(f: &mut Frame, body: Rect, id: u16, picking: Option<Picking>) {
                 f.c.circle(x, c.top + line / 2.0, size * 0.15, c.tone);
                 continue;
             }
-            let w = f.c.text_width(size, &c.text).min(lw);
-            let x = if side == Side::Left { cluster.right() + gap } else { cluster.x - gap - w };
-            f.c.text_fit(Rect::new(x, c.top, w + 1.0, line), size, c.tone, &c.text, Keep::Start);
+            let more = if c.collapsed { Fmt::<8>::of(format_args!(" +{}", c.extras())) } else { Fmt::new() };
+            let at = |w: f32| if side == Side::Left { cluster.right() + gap } else { cluster.x - gap - w };
+            label_line(f, at, c.top, size, lw, act_word(c.act), &c.text, c.tone, &more);
+            if c.collapsed {
+                continue;
+            }
+            let mut y = c.top + line;
+            for (act, text) in c.extra.iter().flatten() {
+                label_line(f, at, y, size * EXTRA, lw, act_word(*act), text, Tone::Fn, "");
+                y += line * EXTRA;
+            }
         }
     }
 
@@ -597,36 +714,58 @@ fn panel(f: &mut Frame, body: Rect, r: Rect, id: u16, keymap: Option<&Keymap>, v
         return;
     };
     let layer = view.layer;
-    let own = binding(keymap, layer, input);
+    let act = view.act;
+    let own = keymap.and_then(|k| k.get_of(layer, input, act)).copied();
     // The name.
     let name = Fmt::<32>::of(format_args!("{}", Label(input)));
     let heading = Text::Heading.size(body.h) * 0.9;
     if let Some(row) = col.take(heading * LINE) {
         centred(f, row, heading, Tone::High, &name);
     }
-    // What it does.
-    let (what, tone) = match (own, layer) {
-        // (Under its heading the gyro needs no "Gyro ·".)
-        (Some(b), _) if input == Input::Gyro && change(input, Some(&b)) == Change::Mapped => (mapping(b), Tone::Fn),
-        (Some(b), _) => described(input, &b),
-        (None, Layer::Back) => {
-            let main = keymap.and_then(|k| k.get(input)).map(|b| described(input, b).0).unwrap_or_else(|| as_on_pad(input));
-            (Fmt::of(format_args!("As in Main: {}", main.as_str())), Tone::Dim)
+    // Press, Hold, Double (a button's, a direction's): the one shown in white; a dot under one set.
+    if input.kind() == Kind::Digital
+        && let Some(row) = col.take(small * LINE * 1.6)
+    {
+        let w = row.w / Actuation::ALL.len() as f32;
+        for (i, a) in Actuation::ALL.into_iter().enumerate() {
+            let tab = Rect::new(row.x + i as f32 * w, row.y, w, row.h * 0.8);
+            let tone = if a == act { Tone::High } else { Tone::Fn };
+            f.text_button(Id::Keymap(KeymapId::Actuation(a)), tab, small, tone, a.label(), Align::Center);
+            if keymap.is_some_and(|k| k.get_of(layer, input, a).is_some()) {
+                f.c.circle(tab.center().0, row.bottom() - small * 0.25, small * 0.1, tone);
+            }
         }
-        (None, Layer::Main) => (as_on_pad(input), Tone::Dim),
+    }
+    // What it does: its binding of the actuation shown; in the Back layer without one, the main layer's.
+    let unset = |input: Input| match act {
+        Actuation::Press => as_on_pad(input),
+        Actuation::Hold => Fmt::of(format_args!("No hold")),
+        Actuation::Double => Fmt::of(format_args!("No double")),
     };
+    let main = || keymap.and_then(|k| k.get_of(Layer::Main, input, act)).map(|b| summary(input, b)).unwrap_or_else(|| unset(input));
     if let Some(row) = col.take(small * LINE * 2.2) {
         match (own, layer) {
             (None, Layer::Back) => {
-                let main = keymap.and_then(|k| k.get(input)).map(|b| described(input, b).0).unwrap_or_else(|| as_on_pad(input));
                 let line = small * LINE;
                 let top = row.y + (row.h - 2.0 * line) / 2.0;
                 centred(f, Rect::new(row.x, top, row.w, line), small, Tone::Dim, "As in Main");
-                centred(f, Rect::new(row.x, top + line, row.w, line), small, Tone::Dim, &main);
+                centred(f, Rect::new(row.x, top + line, row.w, line), small, Tone::Dim, &main());
             }
+            (None, Layer::Main) => centred_lines(f, row, small, Tone::Dim, &unset(input)),
             // (The panel's own content in white: blue is for labels of what is remapped, and actions.)
-            _ => centred_lines(f, row, small, if tone == Tone::Fn { Tone::High } else { tone }, &what),
+            (Some(b), _) => {
+                let tone = if input == Input::Gyro || change(input, Some(&b)) == Change::Mapped || act != Actuation::Press { Tone::High } else { described(input, &b).1 };
+                centred_lines(f, row, small, tone, &summary(input, &b));
+            }
         }
+    }
+    // A press that waits (the input has a hold or a double).
+    if act == Actuation::Press
+        && input.kind() == Kind::Digital
+        && s.press_waits(id, input)
+        && let Some(row) = col.take(small * LINE)
+    {
+        centred(f, row, small * 0.85, Tone::Dim, "A short press acts on letting go");
     }
     // The ways to remap it.
     let bh = body.h * BUTTON_H * 0.75;
@@ -648,7 +787,7 @@ fn panel(f: &mut Frame, body: Rect, r: Rect, id: u16, keymap: Option<&Keymap>, v
         return;
     };
     let rh = body.h * PANEL_ROW_H;
-    for p in params(input, base.output) {
+    for p in params_of(input, base.output, act) {
         let Some(row) = col.take(rh) else {
             return;
         };
@@ -662,11 +801,11 @@ fn panel(f: &mut Frame, body: Rect, r: Rect, id: u16, keymap: Option<&Keymap>, v
                 widgets::switch_shape(f.c, sw, v > 0);
             });
         } else {
-            let value = Fmt::<16>::of(format_args!("{v} %"));
+            let value = shown(p, v);
             let slider = view.slider.filter(|sl| sl.control == Control::Param(p));
             let track = Track { x0: r.x, w: r.w };
             f.button(Id::Control(Control::Param(p)), row, Look::ROW, |f| match slider {
-                Some(sl) => slider_row(f, row, track, sl, small, p.label()),
+                Some(sl) => slider_row(f, row, track, sl, small, p),
                 None => param_row(f, row, small, p.label(), &value, changed),
             });
             f.track(track);
@@ -682,7 +821,7 @@ fn panel(f: &mut Frame, body: Rect, r: Rect, id: u16, keymap: Option<&Keymap>, v
         };
         f.button(Id::Keymap(KeymapId::Holds), row, Look::ROW, |f| param_row(f, row, small, "Active", &value, base.hold.is_some()));
     }
-    if params(input, base.output).next().is_some()
+    if params_of(input, base.output, act).any(|p| !p.switch())
         && let Some(row) = col.take(small * LINE * 1.5)
     {
         centred(f, row.shifted(0.0, small * 0.3), small * 0.85, Tone::Dim, "Slide a value to set it");
@@ -702,11 +841,18 @@ fn param_row(f: &mut Frame, row: Rect, size: f32, label: &str, value: &str, chan
     f.c.text_fit(Rect::new(inner.right() - vw, row.y, vw + 1.0, row.h), size, Tone::high_if(changed), value, Keep::Start);
 }
 
+/// A parameter's value in words (`40 %`, `Off`, `12/s`, `400 ms`).
+fn shown(p: Param, v: u8) -> Fmt<16> {
+    let mut text = Fmt::<16>::new();
+    let _ = p.show(v, &mut text);
+    text
+}
+
 /// A parameter's row while its slider is up (the bar's slider, within the panel): the name and value
 /// above, the track along the row with the thumb under the finger.
-fn slider_row(f: &mut Frame, row: Rect, track: Track, sl: Slider, size: f32, label: &str) {
+fn slider_row(f: &mut Frame, row: Rect, track: Track, sl: Slider, size: f32, p: Param) {
     f.c.rounded(row, row.h * 0.2, SURFACE_HI);
-    let text = Fmt::<32>::of(format_args!("{label} {} %", sl.value));
+    let text = Fmt::<32>::of(format_args!("{} {}", p.label(), shown(p, sl.value).as_str()));
     centred(f, Rect::new(row.x, row.y, row.w, row.h * 0.55), size, Tone::High, &text);
     let t = Track { x0: track.x0 + sl.track_start(), w: sl.length };
     widgets::track(f.c, t, row.y + row.h * 0.75, row.h * 0.07, row.h * 0.15, Some(sl.value), Tone::High);

@@ -13,8 +13,8 @@
 //!   edit|rename|duplicate|delete`, `keymap-delete` (confirmed), `map-from INPUT` (as in keymaps.txt:
 //!   `a`, `lb`, `up`, `lstick`, `rstick-up`, `lt`, `gyro`: selects it, again reopens the way it is
 //!   mapped; while a control is picked, the one picked; a long press sets it back),
-//!   `keymap-layer main|back`, `keymap-clear`, `keymap-clear-confirm`, `keymap-active` (the gyro's
-//!   hold), `invert x|y`, `map-to TARGET` (the panel's ways: `pick`, `key`, `keys`, `mouse`, `pointer`,
+//!   `keymap-act press|hold|double` (the panel's tab), `keymap-layer main|back`, `keymap-clear`,
+//!   `keymap-clear-confirm`, `toggle` (the binding's toggle), `keymap-active` (the gyro's hold), `invert x|y`, `map-to TARGET` (the panel's ways: `pick`, `key`, `keys`, `mouse`, `pointer`,
 //!   `default`, `nothing`; or an output: `pad-INPUT`, `mouse-left|right|middle|back|forward`,
 //!   `wheel-up|down|left|right`, `stick-left|right`, `dpad`, `trigger-left|right`),
 //!   `gyro-hold INPUT|always`, `key-done`; `key NAME` (an on-screen keyboard key: a
@@ -24,7 +24,7 @@
 //! - `type TEXT`: type on the on-screen keyboard
 //! - `slide volume|brightness FROM TO [hold]`: a finger down at FROM on a 620-wide layout, moved to TO,
 //!   lifted unless held; `lift volume|brightness` lifts it; the same for the selected input's parameter
-//!   on the keymap edit screen: `slide speed|threshold|deadzone|full|curve FROM TO [hold]`
+//!   on the keymap edit screen: `slide speed|threshold|deadzone|full|curve|turbo|holdtime FROM TO [hold]`
 //! - `level volume|brightness V`, `level backlight|stream N V`: a level row in the volume or brightness
 //!   tab set to V
 //! - `pad up|down|left|right|a|b|y|lb|rb|switch|back`: the pad on ClamShell's screens (`a` presses and
@@ -37,7 +37,7 @@ use std::path::PathBuf;
 
 use clamshell_core::hardware::DeviceKey;
 use clamshell_core::keyboard::{self, Key, Modifier, Named};
-use clamshell_core::keymap::{Dir, Input, Layer, MouseButton, PadOut, Param, Side};
+use clamshell_core::keymap::{Actuation, Dir, Input, Layer, MouseButton, PadOut, Param, Side};
 use clamshell_core::levels::Level;
 use clamshell_core::slider::Control;
 use clamshell_core::{
@@ -89,6 +89,8 @@ fn control(name: &str) -> Result<Control, ParseError> {
         "deadzone" => Ok(Control::Param(Param::Deadzone)),
         "full" => Ok(Control::Param(Param::Full)),
         "curve" => Ok(Control::Param(Param::Curve)),
+        "turbo" => Ok(Control::Param(Param::Turbo)),
+        "holdtime" => Ok(Control::Param(Param::HoldTime)),
         other => Err(ParseError::Name(other.to_owned())),
     }
 }
@@ -200,6 +202,9 @@ fn target_id(words: &[&str]) -> Result<Id, ParseError> {
         }),
         ["map-from", input] => Id::Keymap(KeymapId::Input(input_named(input)?)),
         ["map-to", target] => Id::Keymap(KeymapId::Target(target_named(target)?)),
+        ["keymap-act", act] => Id::Keymap(KeymapId::Actuation(
+            Actuation::ALL.into_iter().find(|a| a.label().eq_ignore_ascii_case(act)).ok_or_else(|| ParseError::Name((*act).to_owned()))?,
+        )),
         ["keymap-layer", "main"] => Id::Keymap(KeymapId::Layer(Layer::Main)),
         ["keymap-layer", "back"] => Id::Keymap(KeymapId::Layer(Layer::Back)),
         ["keymap-clear"] => Id::Keymap(KeymapId::Clear),
@@ -207,6 +212,7 @@ fn target_id(words: &[&str]) -> Result<Id, ParseError> {
         ["keymap-active"] => Id::Keymap(KeymapId::Holds),
         ["invert", "x"] => Id::Keymap(KeymapId::Toggle(Param::InvertX)),
         ["invert", "y"] => Id::Keymap(KeymapId::Toggle(Param::InvertY)),
+        ["toggle"] => Id::Keymap(KeymapId::Toggle(Param::Toggle)),
         ["gyro-hold", "always"] => Id::Keymap(KeymapId::Hold(None)),
         ["gyro-hold", input] => Id::Keymap(KeymapId::Hold(Some(input_named(input)?))),
         ["key-done"] => Id::Keymap(KeymapId::Done),
@@ -387,6 +393,7 @@ mod tests {
         assert_eq!(parse("tap keymap-layer back"), Ok(km(KeymapId::Layer(Layer::Back))));
         assert_eq!(parse("tap invert y"), Ok(km(KeymapId::Toggle(Param::InvertY))));
         assert_eq!(parse("tap map-to pick"), Ok(km(KeymapId::Target(Target::Pick))));
+        assert_eq!(parse("tap keymap-act hold"), Ok(km(KeymapId::Actuation(Actuation::Hold))));
         assert_eq!(parse("tap map-to mouse"), Ok(km(KeymapId::Target(Target::MouseParts))));
         assert_eq!(parse("tap key ctrl"), Ok(activate(key(Key::Mod(Modifier::Ctrl)).unwrap())));
         assert_eq!(parse("tap key x"), Ok(activate(key(Key::Char('x')).unwrap())));

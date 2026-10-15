@@ -6,8 +6,8 @@
 use std::fmt;
 use std::path::Path;
 
-use clamshell_core::keyboard::{Key, Modifier};
-use clamshell_core::keymap::{Button, Dir, Input, Layer, MouseButton, PadOut, Param, Side};
+use clamshell_core::keyboard::{Key, Modifier, Named};
+use clamshell_core::keymap::{Actuation, Button, Dir, Input, Layer, MouseButton, PadOut, Param, Side};
 use clamshell_core::levels::Level;
 use clamshell_core::settings::Setting;
 use clamshell_core::slider::Control;
@@ -189,6 +189,12 @@ pub fn shots(now: u64) -> Result<Vec<Shot>, ParseError> {
                 vec![km(KeymapId::Target(Target::Key)), key(Key::Char('1'))?],
                 select(Input::Button(Button::B)),
                 vec![km(KeymapId::Target(Target::Pad(PadOut::Button(Button::Y))))],
+                // L1 held: Esc; pressed twice: Tab. R1 with turbo as on the pad.
+                select(Input::Button(Button::LB)),
+                vec![km(KeymapId::Actuation(Actuation::Hold)), km(KeymapId::Target(Target::Key)), key(Key::Named(Named::Esc))?],
+                vec![km(KeymapId::Actuation(Actuation::Double)), km(KeymapId::Target(Target::Key)), key(Key::Named(Named::Tab))?],
+                select(Input::Button(Button::RB)),
+                slide(Param::Turbo, 0.2, true),
                 // The right stick as on the pad, its deadzone tuned.
                 vec![km(KeymapId::Input(Input::Stick(Side::Right)))],
                 slide(Param::Deadzone, 0.12, true),
@@ -196,6 +202,7 @@ pub fn shots(now: u64) -> Result<Vec<Shot>, ParseError> {
             ]
             .concat(),
         ),
+        shot("keymap-edit-hold.png", Bottom, vec![km(KeymapId::Input(Input::Button(Button::LB))), km(KeymapId::Actuation(Actuation::Hold))]),
         shot("keymap-edit-stick.png", Bottom, vec![km(KeymapId::Input(Input::Stick(Side::Left)))]),
         shot("keymap-edit-slider.png", Bottom, slide(Param::Curve, 0.3, false)),
         shot("keymap-edit-back.png", Bottom, [vec![Slide::End.into(), km(KeymapId::Layer(Layer::Back))], select(Input::Button(Button::A)), vec![km(KeymapId::Target(Target::Key)), key(Key::Char('y'))?, km(KeymapId::Input(Input::Button(Button::LB)))]].concat()),
