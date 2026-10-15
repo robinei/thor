@@ -56,7 +56,9 @@ pub fn rules(top: Option<&str>, bottom: &str) -> Vec<String> {
     if let Some(top) = top {
         rules.push(format!("{}{}", pin(&shelf, Some(top)), pin(&landing, Some(top)).trim_end_matches("; ")));
         rules.push(format!("workspace \"{second}\" output \"{bottom}\"; focus output \"{bottom}\"; workspace \"{second}\""));
-        rules.push(format!("for_window [workspace=\"^{second}$\"] move container to output \"{top}\", focus"));
+        // (The rule's command in quotes: unquoted, sway would end the rule at the comma and run `focus`
+        // once, now.)
+        rules.push(format!("for_window [workspace=\"^{second}$\"] 'move container to output \"{top}\", focus'"));
     }
     rules.push(format!("[app_id=\"^{SHELF_APP_ID}$\"] move container to workspace \"{shelf}\"; {}", show(&shelf, top)));
     rules
@@ -74,7 +76,7 @@ mod tests {
         assert!(launch("w", Path::new("/a\"b"), Path::new("/x"), None).is_err());
         let rules = rules(Some("DSI-2"), "DSI-1");
         assert!(rules.iter().any(|r| r.contains("for_window [class=\"^steam_app_\"]")));
-        assert!(rules.iter().any(|r| r.starts_with("for_window [workspace=\"^clamshell-bottom$\"] move container to output \"DSI-2\"")));
+        assert!(rules.iter().any(|r| r.starts_with("for_window [workspace=\"^clamshell-bottom$\"] 'move container to output \"DSI-2\", focus'")));
     }
 
     #[test]
