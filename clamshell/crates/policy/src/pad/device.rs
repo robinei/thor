@@ -1,6 +1,5 @@
-//! The real controller and our virtual devices: the pad games see ([`GamePad`]: an Xbox 360 controller
-//! through uinput, or a DualSense or Switch Pro Controller through uhid) and a mouse with a few keys
-//! (the pad mouse, typing).
+//! The real controller and our virtual devices: a pad identified as an Xbox 360 controller (for games)
+//! and a mouse with a few keys (the pad mouse, typing).
 
 use std::io;
 
@@ -8,10 +7,7 @@ use evdev::raw_stream::RawDevice;
 use evdev::uinput::VirtualDevice;
 use evdev::{AbsInfo, AbsoluteAxisCode, AttributeSet, BusType, InputEvent, InputId, KeyCode, RelativeAxisCode, UinputAbsSetup};
 
-use super::hid::{VirtualHid, dualsense, motion, procon};
 use super::route::{Axis, MOUSE_DEVICE_KEYS, PadSnapshot, Ranges};
-use super::rumble::RumbleSlot;
-use super::shaping::PadKind;
 use crate::input::device::{self, DeviceSpec};
 use crate::input::{Press, Range, Raw, keyset};
 
@@ -23,8 +19,7 @@ pub fn find(spec: &DeviceSpec) -> io::Result<RawDevice> {
     let gamepad = |d: &RawDevice| {
         d.supported_keys().is_some_and(|k| k.contains(KeyCode::BTN_SOUTH)) && d.supported_absolute_axes().is_some_and(|a| a.contains(AbsoluteAxisCode::ABS_RX))
     };
-    let ours = [VIRTUAL_PAD, dualsense::NAME, dualsense::MOTION_NAME, dualsense::TOUCHPAD_NAME, procon::NAME, procon::IMU_NAME];
-    device::open(spec, "controller", gamepad, &ours)
+    device::open(spec, "controller", gamepad, &[VIRTUAL_PAD])
 }
 
 /// A controller's buttons and axes (each with its range and current value).
@@ -68,81 +63,27 @@ fn rest(axis: &AbsInfo) -> i32 {
     if axis.minimum() < 0 { 0 } else { axis.minimum() }
 }
 
-/// The pad games see. Either takes the same events (the controller's, shaped); the router doesn't
-/// know which it feeds.
-pub enum GamePad {
-    Xbox(VirtualDevice),
-    Hid(PadKind, VirtualHid),
-}
-
-impl GamePad {
-    fn new(kind: PadKind, caps: &Capabilities, rumble: &RumbleSlot) -> io::Result<GamePad> {
-        Ok(match kind {
-            PadKind::Xbox => GamePad::Xbox(virtual_pad(caps)?),
-            PadKind::PlayStation => GamePad::Hid(kind, VirtualHid::new(Box::new(dualsense::DualSense::default()), caps.ranges(), motion::default_source(), rumble.clone())?),
-            PadKind::Nintendo => GamePad::Hid(kind, VirtualHid::new(Box::new(procon::ProController::default()), caps.ranges(), motion::default_source(), rumble.clone())?),
-        })
-    }
-
-    pub fn kind(&self) -> PadKind {
-        match self {
-            GamePad::Xbox(_) => PadKind::Xbox,
-            GamePad::Hid(kind, _) => *kind,
-        }
-    }
-
-    pub fn emit(&mut self, events: &[Raw]) -> io::Result<()> {
-        match self {
-            GamePad::Xbox(device) => emit(device, events),
-            GamePad::Hid(_, device) => device.emit(events),
-        }
-    }
-}
-
 /// The virtual devices, kept across the controller's comings and goings (an unplug, an error), so games
 /// never see their pad go: made for the first controller, made again only for one with other buttons.
-/// The pad is made again, of the other kind, when the settings in force ask for it.
 pub struct VirtualDevices {
     pub made_for: Capabilities,
-    pub pad: GamePad,
+    pub pad: VirtualDevice,
     pub mouse: VirtualDevice,
     /// The pad untouched: every button up, every axis at rest (shown while no controller is there).
     neutral: Vec<Raw>,
-    rumble: RumbleSlot,
 }
 
 impl VirtualDevices {
-    pub fn new(caps: Capabilities, kind: PadKind, rumble: RumbleSlot) -> io::Result<VirtualDevices> {
+    pub fn new(caps: Capabilities) -> io::Result<VirtualDevices> {
         let mut neutral: Vec<Raw> = caps.keys.iter().map(|&k| Raw::key(k, Press::Up)).collect();
         neutral.extend(caps.axes.iter().map(|(code, a)| Raw::abs(*code, rest(a))));
         neutral.push(Raw::REPORT);
-        let pad = GamePad::new(kind, &caps, &rumble).or_else(|e| {
-            log::warn!("pad: no {kind:?} pad ({e}); games get the Xbox one");
-            GamePad::new(PadKind::Xbox, &caps, &rumble)
-        })?;
-        Ok(VirtualDevices { pad, mouse: virtual_mouse()?, made_for: caps, neutral, rumble })
-    }
-
-    /// The pad made again as `kind` if it is the other (games see one controller unplugged and another
-    /// plugged in), at rest; whether it was. If the new one can't be made, the old one stays.
-    pub fn set_kind(&mut self, kind: PadKind) -> io::Result<bool> {
-        if self.pad.kind() == kind {
-            return Ok(false);
-        }
-        match GamePad::new(kind, &self.made_for, &self.rumble) {
-            Ok(pad) => self.pad = pad,
-            Err(e) => {
-                log::warn!("pad: no {kind:?} pad ({e}); games keep the {:?} one", self.pad.kind());
-                return Ok(false);
-            }
-        }
-        self.rest()?;
-        Ok(true)
+        Ok(VirtualDevices { pad: virtual_pad(&caps)?, mouse: virtual_mouse()?, made_for: caps, neutral })
     }
 
     /// The controller is gone: the virtual pad stays, at rest.
     pub fn rest(&mut self) -> io::Result<()> {
-        self.pad.emit(&self.neutral)
+        emit(&mut self.pad, &self.neutral)
     }
 }
 

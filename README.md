@@ -214,7 +214,7 @@ off and the device sleeps) are on the Battery tab, not here: they aren't a game'
 | Screen | the second screen dark while the game runs, until tapped |
 | Cores | the little cluster only (the others offline) |
 | Mouse | the pad mouse turned on at launch, off at the end |
-| Pad, Deadzone | the virtual pad games see: Xbox (360), PlayStation (DualSense) or Nintendo (Switch Pro Controller), the last two with motion sensors and rumble; and a stick deadzone |
+| Buttons, Deadzone | Nintendo layout (A/B, X/Y swapped) and a stick deadzone, in the virtual pad |
 | CPU, GPU | a frequency cap in percent, instead of the profile's |
 | Env | extra environment variables (`KEY=value`, typed on the on-screen keyboard); a game's come after the defaults' |
 | Refresh | the main screen's refresh rate: the nearest its modes have (through the compositor's output management protocol) |
@@ -232,17 +232,7 @@ invisible) to a folder in RAM that ClamShell follows. For a Steam game, as launc
 $(clamshell --mangohud-env) %command%`; by hand: `env $(clamshell --mangohud-env) vkcube`.
 
 **The controller** (any Xbox-style pad; `CLAMSHELL_GAMEPAD`: path or part of its name) is grabbed for
-good; games see a virtual pad that is always there, of the kind the Pad setting says: an Xbox 360 pad
-(uinput), a USB DualSense or a Bluetooth Switch Pro Controller. The last two are made through
-`/dev/uhid` and bound by the kernel's own drivers (hid-playstation, hid-nintendo), so games and Steam
-Input (over their hidraw nodes) get their gyro and accelerometer, and rumble reaches the real controller
-when it has force feedback. Buttons go by position (the bottom face button is A on the Xbox pad, Cross
-on the DualSense, B on the Pro Controller). The motion readings are a level device at rest until the
-Thor's own sensor is read; the DualSense's touchpad is never touched. The Pro Controller reports every
-12 ms all the time (hid-nintendo only sends commands and rumble while reports keep coming). A change of
-pad type unplugs one virtual pad and plugs in the other (normally at a game's launch). `/dev/uhid`
-must be writable by the session's user (the image's udev rule: group `input`); `cargo run -p
-clamshell-policy --example hid_pad_check` checks both against the running kernel on a desktop. The **pad mouse** toggle (mouse icon in the
+good; games see a virtual Xbox 360 pad that is always there. The **pad mouse** toggle (mouse icon in the
 bar) routes the controller to a virtual mouse instead (left stick pointer, right stick scroll, A/RT left
 click, B right, X middle, D-pad arrows) while the virtual pad shows a neutral controller. Otherwise the
 pad goes where what is in front says: with **shelf in front, ClamShell owns it** (D-pad or left stick

@@ -51,7 +51,7 @@ const GRID: [Tile; 15] = [
     Tile::Setting(Setting::BigCores),
     Tile::Setting(Setting::Fan),
     Tile::Setting(Setting::PadMouse),
-    Tile::Setting(Setting::Pad),
+    Tile::Setting(Setting::Buttons),
     Tile::Setting(Setting::Deadzone),
     Tile::Setting(Setting::Rumble),
     Tile::Setting(Setting::CpuMax),
