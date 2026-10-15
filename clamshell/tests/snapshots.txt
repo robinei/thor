@@ -10,13 +10,13 @@ keyboard-fn.png 72c77c379dfb8bc0
 keyboard-mods.png 6d1e6f9f94aa3ee5
 keyboard-pressed.png 353e5801cc63988e
 keyboard.png 8ad3cc6b023d4fbf
-launcher-running.png 3584eebcee605ec9
-launcher.png 3554394e88e0a857
+launcher-running.png 3585276900ede968
+launcher.png 29eb6a022b03002b
 settings-env.png 7204793a2427d073
 settings-global.png eaffe630cc517b93
 settings-running.png 5fc89fd9213bc856
 settings.png 5ff0ea504ebc29a7
-slider.png 4a54b5b4ed1bf4b4
+slider.png a965197251995844
 status-low.png 0aed5e767fb45456
 sysinfo.png f60cb171773bdcc5
 top-back.png 762fb0c6b0bd0ee2

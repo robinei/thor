@@ -36,10 +36,15 @@ pub fn load_apps(file: Option<&Path>) -> Apps {
     from_text(&text)
 }
 
-/// The dock's apps from launcher.json's text.
+/// The dock's apps from launcher.json's text, their desktop files from the XDG data dirs.
 pub fn from_text(text: &str) -> Apps {
+    from_text_in(text, &data_dirs())
+}
+
+/// The dock's apps from launcher.json's text, their desktop files from `dirs`.
+pub fn from_text_in(text: &str, dirs: &[PathBuf]) -> Apps {
     match apps::parse(text) {
-        Ok(list) => resolve_apps(list, &data_dirs()),
+        Ok(list) => resolve_apps(list, dirs),
         Err(e) => {
             log::warn!("launcher.json: {e}");
             Apps { list: apps::defaults(), error: Some(format!("launcher.json: {e}")) }

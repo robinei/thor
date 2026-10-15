@@ -43,7 +43,7 @@ pub enum Command {
     Shape(Shaping),
 }
 
-lost_on!(io::Error:);
+lost_on!(io::Error);
 
 /// Owns the controller whenever one is connected (`spec`: CLAMSHELL_GAMEPAD), looking again every second
 /// when there is none.

@@ -11,7 +11,7 @@ use clamshell_core::levels::Level;
 use clamshell_core::settings::Setting;
 use clamshell_core::slider::Control;
 use clamshell_core::{
-    EditorId, Event, GameEvent, Id, Init, Library, LevelEvent, PointerEvent, Reading, Scope, SettingsId, ShelfEvent, ShelfId, Slide, State, Status, Tab,
+    Apps, EditorId, Event, GameEvent, Id, Init, Library, LevelEvent, PointerEvent, Reading, Scope, SettingsId, ShelfEvent, ShelfId, Slide, State, Status, Tab,
 };
 use clamshell_ui::Screen;
 
@@ -58,9 +58,13 @@ impl From<ParseError> for Error {
     }
 }
 
-/// The state snapshots start from: a library, the example launcher.json's apps, nothing remembered.
+/// The state snapshots start from: a library, the example launcher.json's apps (their desktop files
+/// from this machine's data dirs), nothing remembered.
 pub fn state(library: Library) -> State {
-    let apps = clamshell_policy::desktop::from_text(crate::LAUNCHER_EXAMPLE);
+    state_with(library, clamshell_policy::desktop::from_text(crate::LAUNCHER_EXAMPLE))
+}
+
+fn state_with(library: Library, apps: Apps) -> State {
     State::new(Init { library, apps, ..Init::default() })
 }
 
@@ -217,19 +221,32 @@ mod tests {
         bytes.iter().fold(0xcbf2_9ce4_8422_2325, |h, &b| (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3))
     }
 
+    /// The example apps with desktop files of their own (no icons), so what is drawn doesn't depend on
+    /// what this machine has installed.
+    fn apps(dir: &Path) -> Apps {
+        let apps = dir.join("applications");
+        std::fs::create_dir_all(&apps).unwrap();
+        for (id, name) in [("steam", "Steam"), ("firefox", "Firefox")] {
+            std::fs::write(apps.join(format!("{id}.desktop")), format!("[Desktop Entry]\nName={name}\nExec={id}\n")).unwrap();
+        }
+        clamshell_policy::desktop::from_text_in(crate::LAUNCHER_EXAMPLE, &[dir.to_path_buf()])
+    }
+
     /// The snapshots, drawn and hashed, against the reference hashes. After a change meant to change what
     /// is drawn (look at the files: `clamshell --snapshot DIR`), write the new hashes with
     /// `CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots`.
     #[test]
     fn snapshots_match_their_reference() {
-        let dir = std::env::temp_dir().join(format!("clamshell-snapshots-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("clamshell-snapshots-{}", std::process::id()));
+        let dir = base.join("shots");
         std::fs::create_dir_all(&dir).unwrap();
-        render(&mut state(clamshell_library::demo_library()), FIXED_NOW, &dir).unwrap();
+        let mut state = state_with(clamshell_library::demo_library(), apps(&base.join("data")));
+        render(&mut state, FIXED_NOW, &dir).unwrap();
         let mut hashes = BTreeMap::new();
         for entry in std::fs::read_dir(&dir).unwrap().flatten() {
             hashes.insert(entry.file_name().to_string_lossy().into_owned(), format!("{:016x}", hash(&std::fs::read(entry.path()).unwrap())));
         }
-        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&base);
         let text: String = std::iter::once(HEADER.to_owned()).chain(hashes.iter().map(|(name, hash)| format!("{name} {hash}\n"))).collect();
         let reference = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(REFERENCE);
         if std::env::var_os("CLAMSHELL_UPDATE_SNAPSHOTS").is_some() {
