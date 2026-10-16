@@ -830,7 +830,7 @@ mod tests {
         s.apply(Slide::Start { control: Control::Param(param), x: 300.0, width: 620.0 }.into());
         let slider = s.keymap_edit().slider.unwrap();
         assert_eq!(slider.start, param.get(&s.param_base(s.keymap_screen().and_then(Screen::keymap).unwrap(), s.keymap_edit().selected.unwrap()).unwrap()));
-        let x = slider.x + (f32::from(value) - f32::from(slider.start)) / 100.0 * slider.length;
+        let x = slider.x + (f32::from(value) - f32::from(slider.start)) / f32::from(slider.hi - slider.lo) * slider.length;
         let mut fx = s.apply(Slide::To { x }.into()).1;
         fx.extend(s.apply(Slide::End.into()).1);
         fx
@@ -1260,7 +1260,9 @@ mod tests {
         s.apply(Slide::Start { control: Control::Param(Param::Deadzone), x: 300.0, width: 620.0 }.into());
         let slider = s.keymap_edit().slider.unwrap();
         assert_eq!((slider.start, slider.control), (0, Control::Param(Param::Deadzone)));
-        let (_, fx) = s.apply(Slide::To { x: 300.0 + 0.12 * slider.length }.into());
+        // (Deadzone's range is 0-50: a quarter of the track is 12.)
+        assert_eq!((slider.lo, slider.hi), (0, 50));
+        let (_, fx) = s.apply(Slide::To { x: 300.0 + 0.24 * slider.length }.into());
         assert!(fx.iter().all(|e| !matches!(e, Effect::Save(_))), "not saved while sliding: {fx:?}");
         let k = s.keymaps().get(1).unwrap().get(ls).copied();
         assert_eq!(k.map(|b| (b.output, b.deadzone)), Some((Output::Stick(Side::Left), 12)));

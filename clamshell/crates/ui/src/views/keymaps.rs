@@ -20,7 +20,7 @@ use clamshell_core::{Id, KeymapId, ListId, RowPart, Scope, Target};
 use super::format::Fmt;
 use super::scroll::Scrolled;
 use super::pad::{Pad, Part};
-use super::style::{self, Look, SURFACE_HI, Text, Tone};
+use super::style::{self, Look, Text, Tone};
 use super::{Frame, Track, editor, widgets};
 use crate::draw::{Align, Keep, LINE, Rect, Rgb, Span};
 use crate::icons::Icon;
@@ -814,60 +814,71 @@ fn panel(f: &mut Frame, body: Rect, r: Rect, id: u16, keymap: Option<&Keymap>, v
         Param::Ratchet | Param::InvertY => false,
         _ => true,
     });
-    for p in shown_params {
-        let Some(row) = col.take(rh) else {
-            return;
-        };
-        let v = p.get(&base);
-        let changed = v != p.default_for(input, base.output);
-        if p == Param::InvertX {
-            invert_row(f, row, small, &base);
-        } else if p.switch() {
-            f.button(Id::Keymap(KeymapId::Toggle(p)), row, Look::ROW, |f| {
-                let inner = row.inset(small * 0.4);
-                let sw = Rect::new(inner.right() - switch_w(small), row.y, switch_w(small), row.h);
-                f.c.text_fit(Rect::new(inner.x, row.y, sw.x - inner.x, row.h), small, Tone::Dim, p.label(), Keep::Start);
-                widgets::switch_shape(f.c, sw, v > 0);
-            });
-        } else {
-            let value = shown(p, v);
-            let slider = view.slider.filter(|sl| sl.control == Control::Param(p));
-            // (Inset so the thumb stays in the row at either end.)
-            let inset = rh * 0.25;
-            let track = Track { x0: r.x + inset, w: (r.w - 2.0 * inset).max(1.0) };
-            f.button(Id::Control(Control::Param(p)), row, Look::ROW, |f| match slider {
-                Some(sl) => slider_row(f, row, track, sl, small, p),
-                None => param_row(f, row, small, p.label(), &value, changed),
-            });
-            f.track(track);
+    let mut held = None;
+    'rows: {
+        for p in shown_params {
+            let Some(row) = col.take(rh) else {
+                break 'rows;
+            };
+            let v = p.get(&base);
+            let changed = v != p.default_for(input, base.output);
+            if p == Param::InvertX {
+                invert_row(f, row, small, &base);
+            } else if p.switch() {
+                f.button(Id::Keymap(KeymapId::Toggle(p)), row, Look::ROW, |f| {
+                    let inner = row.inset(small * 0.4);
+                    let sw = Rect::new(inner.right() - switch_w(small), row.y, switch_w(small), row.h);
+                    f.c.text_fit(Rect::new(inner.x, row.y, sw.x - inner.x, row.h), small, Tone::Dim, p.label(), Keep::Start);
+                    widgets::switch_shape(f.c, sw, v > 0);
+                });
+            } else {
+                let value = shown(p, v);
+                let slider = view.slider.filter(|sl| sl.control == Control::Param(p));
+                // (Inset so the thumb stays in the row at either end.)
+                let inset = rh * 0.25;
+                let track = Track { x0: r.x + inset, w: (r.w - 2.0 * inset).max(1.0) };
+                // (A held slider is drawn last, its card over the rows below it.)
+                if let Some(sl) = slider {
+                    held = Some((row, track, sl, p));
+                }
+                f.button(Id::Control(Control::Param(p)), row, Look::ROW, |f| {
+                    if slider.is_none() {
+                        param_row(f, row, small, p.label(), &value, changed);
+                    }
+                });
+                f.track(track);
+            }
         }
-    }
-    if input == Input::Gyro && matches!(base.output, Output::Pointer | Output::Stick(_)) {
-        let Some(row) = col.take(rh) else {
-            return;
-        };
-        let value = match base.hold {
-            Some(h) => Fmt::<24>::of(format_args!("while {}", Label(h))),
-            None => Fmt::of(format_args!("Always")),
-        };
-        f.button(Id::Keymap(KeymapId::Holds), row, Look::ROW, |f| param_row(f, row, small, "Active", &value, base.hold.is_some()));
-        if base.hold.is_some()
-            && let Some(row) = col.take(rh)
-        {
-            let on = base.ratchet;
-            f.button(Id::Keymap(KeymapId::Toggle(Param::Ratchet)), row, Look::ROW, |f| {
-                let inner = row.inset(small * 0.4);
-                let sw = Rect::new(inner.right() - switch_w(small), row.y, switch_w(small), row.h);
-                f.c.text_fit(Rect::new(inner.x, row.y, sw.x - inner.x, row.h), small, Tone::Dim, Param::Ratchet.label(), Keep::Start);
-                widgets::switch_shape(f.c, sw, on);
-            });
+        if input == Input::Gyro && matches!(base.output, Output::Pointer | Output::Stick(_)) {
+            let Some(row) = col.take(rh) else {
+                break 'rows;
+            };
+            let value = match base.hold {
+                Some(h) => Fmt::<24>::of(format_args!("while {}", Label(h))),
+                None => Fmt::of(format_args!("Always")),
+            };
+            f.button(Id::Keymap(KeymapId::Holds), row, Look::ROW, |f| param_row(f, row, small, "Active", &value, base.hold.is_some()));
+            if base.hold.is_some()
+                && let Some(row) = col.take(rh)
+            {
+                let on = base.ratchet;
+                f.button(Id::Keymap(KeymapId::Toggle(Param::Ratchet)), row, Look::ROW, |f| {
+                    let inner = row.inset(small * 0.4);
+                    let sw = Rect::new(inner.right() - switch_w(small), row.y, switch_w(small), row.h);
+                    f.c.text_fit(Rect::new(inner.x, row.y, sw.x - inner.x, row.h), small, Tone::Dim, Param::Ratchet.label(), Keep::Start);
+                    widgets::switch_shape(f.c, sw, on);
+                });
+            }
         }
-    }
 
-    if params_of(input, base.output, act).any(|p| !p.switch())
-        && let Some(row) = col.take(small * LINE * 1.5)
-    {
-        centred(f, row.shifted(0.0, small * 0.3), small * 0.85, Tone::Dim, "Slide a value to set it");
+        if params_of(input, base.output, act).any(|p| !p.switch())
+            && let Some(row) = col.take(small * LINE * 1.5)
+        {
+            centred(f, row.shifted(0.0, small * 0.3), small * 0.85, Tone::Dim, "Slide a value to set it");
+        }
+    }
+    if let Some((row, track, sl, p)) = held {
+        slider_row(f, row, track, sl, p, r);
     }
 }
 
@@ -923,12 +934,11 @@ fn shown(p: Param, v: u8) -> Fmt<16> {
 
 /// A parameter's row while its slider is up (the bar's slider, within the panel): the name and value
 /// above, the track along the row with the thumb under the finger.
-fn slider_row(f: &mut Frame, row: Rect, track: Track, sl: Slider, size: f32, p: Param) {
-    f.c.rounded(row, row.h * 0.2, SURFACE_HI);
+fn slider_row(f: &mut Frame, row: Rect, track: Track, sl: Slider, p: Param, panel: Rect) {
+    // As the bar's: the track across the row, the value on a card beside the finger.
     let text = Fmt::<32>::of(format_args!("{} {}", p.label(), shown(p, sl.value).as_str()));
-    centred(f, Rect::new(row.x, row.y, row.w, row.h * 0.55), size, Tone::High, &text);
-    let t = Track { x0: track.x0 + sl.track_start(), w: sl.length };
-    widgets::track(f.c, t, row.y + row.h * 0.75, row.h * 0.07, row.h * 0.15, Some(sl.percent()), Tone::High);
+    let within = Rect::new(row.x, panel.y, row.w, panel.h);
+    widgets::held_slider(f, &sl, track.x0, row.y + row.h / 2.0, row.h * 0.75, within, None, &text);
 }
 
 /// Text centred in a row, on two lines (split at a space near the middle) if it doesn't fit on one.

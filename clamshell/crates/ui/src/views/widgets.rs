@@ -32,6 +32,67 @@ pub(super) fn tabs<'a>(f: &mut Frame, area: Rect, size: f32, inner: f32, max: f3
     x
 }
 
+/// A held slider's sizes, of `h` (the bar's height, a panel row's): the track's thickness, the thumb's
+/// radius, a card's icon and text; how far beside the thumb its card sits, of the width it may use.
+const SLIDER_TRACK: f32 = 0.08;
+const SLIDER_THUMB: f32 = 0.24;
+const SLIDER_ICON: f32 = 0.62;
+const SLIDER_TEXT: f32 = 0.5;
+const SLIDER_AWAY: f32 = 0.12;
+/// A held slider's card: its top below the slider's middle (or its bottom above it), of `h`.
+const SLIDER_BELOW: f32 = 0.8;
+/// Behind a held slider and its card: dark and see-through, so what is under them shows, dimmed.
+pub(super) const SHADE: Rgb = SURFACE_HI;
+pub(super) const SHADE_ALPHA: f32 = 0.85;
+
+/// A held slider (volume and brightness over the bar, a keymap parameter in its row): on a shaded band
+/// at height `cy`, the track laid out from `x0` with the value it had under the finger (the value lit,
+/// the thumb where it is now), and the value (`icon` and `text`) on a small card of its own where the
+/// finger doesn't cover it: below the slider (above it without room below, in `within`), to the side
+/// away from the finger.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn held_slider(f: &mut Frame, slider: &clamshell_core::slider::Slider, x0: f32, cy: f32, h: f32, within: Rect, icon: Option<Icon>, text: &str) {
+    let track = Track { x0: x0 + slider.track_start(), w: slider.length };
+    let thumb = h * SLIDER_THUMB;
+    let at = track.x0 + track.w * slider.fraction(slider.value);
+    let band = Rect::new(track.x0 - thumb * 2.0, cy - thumb * 1.8, track.w + thumb * 4.0, thumb * 3.6);
+    f.c.rounded(band, band.h / 2.0, SHADE.alpha(SHADE_ALPHA));
+    self::track(f.c, track, cy, h * SLIDER_TRACK, thumb, Some(slider.percent()), Tone::High);
+
+    let content_w = card_width(f, h, icon.is_some(), text);
+    let side = h * SLIDER_ICON;
+    let margin = side * 0.4;
+    let below = cy + h * SLIDER_BELOW;
+    let card_y = if below + side * 1.3 <= within.bottom() { below } else { cy - h * SLIDER_BELOW - side };
+    let (wx, ww) = (within.x, within.w);
+    let away = ww * SLIDER_AWAY;
+    let gx = if at < wx + ww / 2.0 { at + away } else { at - away - content_w };
+    let gx = gx.clamp(wx + margin, (wx + ww - content_w - margin).max(wx + margin));
+    card(f, gx, card_y, h, icon, text);
+}
+
+/// A card's content width (an icon and a line of text), at size `h` (see [`card`]).
+pub(super) fn card_width(f: &mut Frame, h: f32, icon: bool, text: &str) -> f32 {
+    let icon_w = if icon { h * SLIDER_ICON * 1.3 } else { 0.0 };
+    icon_w + f.c.text_width(h * SLIDER_TEXT, text)
+}
+
+/// A small card of its own over whatever is under it (shaded): an icon and a line of text, its content
+/// from `x` at `y`, sized by `h` (the bar's height, a panel row's). A held slider's value and the bar's
+/// notices.
+pub(super) fn card(f: &mut Frame, x: f32, y: f32, h: f32, icon: Option<Icon>, text: &str) {
+    let side = h * SLIDER_ICON;
+    let size = h * SLIDER_TEXT;
+    let icon_w = if icon.is_some() { side * 1.3 } else { 0.0 };
+    let text_w = f.c.text_width(size, text);
+    let r = Rect::new(x - side * 0.4, y - side * 0.3, icon_w + text_w + side * 0.8, side * 1.6);
+    f.c.rounded(r, side * 0.3, SHADE.alpha(SHADE_ALPHA));
+    if let Some(icon) = icon {
+        f.c.icon(icon, Rect::new(x, y, side, side), Tone::Normal);
+    }
+    f.c.text_in(Rect::new(x + icon_w, y, text_w + 1.0, side), size, Tone::High, text, Align::Start);
+}
+
 /// A level along `track` at height `cy`, `thick` thick: dim the whole way, lit up to `value` with the
 /// thumb (`thumb` its radius) there; only the dim line without a value.
 pub(super) fn track(c: &mut Canvas, track: Track, cy: f32, thick: f32, thumb: f32, value: Option<u8>, lit: Tone) {

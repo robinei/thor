@@ -19,7 +19,7 @@ keymap-edit-hold.png be4920288ebcfbdc
 keymap-edit-layer-key.png 6da942f55bc24548
 keymap-edit-new.png 5a42dade05908276
 keymap-edit-rstick.png 3f7e3db7d0d2c85c
-keymap-edit-slider.png ebcd4c246fc85d5f
+keymap-edit-slider.png 5fe719401704799f
 keymap-edit-stick.png 115d4552a8e49ac3
 keymap-edit-trigger.png 3febe60cadf84060
 keymap-edit.png bc2ab24be34f0f64

@@ -12,9 +12,9 @@ use clamshell_core::slider::{Control, Slider};
 use clamshell_core::{Id, State, Tab};
 
 use super::format::Fmt;
-use super::style::{Look, SURFACE_HI, Tone};
+use super::style::{Look, Tone};
 use super::{Frame, Track, widgets};
-use crate::draw::{Align, Rect, Rgb};
+use crate::draw::{Align, Rect};
 use crate::icons::Icon;
 
 /// The bar's height, of the screen's (at least 20 pixels).
@@ -32,15 +32,6 @@ const DIVIDER: f32 = 0.4;
 const DIVIDER_ALPHA: f32 = 0.35;
 /// Battery at or below this (and not charging) shows in the accent colour.
 const LOW_BATTERY: u8 = 15;
-/// The slider: track and thumb, of the bar's height; the level's text size, of the bar's height, and
-/// how far beside the thumb it sits, of the screen's width.
-const TRACK: f32 = 0.08;
-const THUMB: f32 = 0.24;
-const LEVEL_TEXT: f32 = 0.5;
-const LEVEL_AWAY: f32 = 0.12;
-/// Behind the slider and its level: dark and see-through, so the bar shows under it, dimmed.
-const SHADE: Rgb = SURFACE_HI;
-const SHADE_ALPHA: f32 = 0.85;
 
 /// A tab's button in the bar: its id (volume and brightness are controls, which open their tab on a
 /// tap), its icon (with its level or status), and its tone: lit while open, dim without a reading.
@@ -130,15 +121,10 @@ pub(super) fn draw_slider_over(f: &mut Frame, screen: Rect, bar_h: f32) {
 /// A notice on a card below the bar, in the middle: a level a key changed (its icon and number), or
 /// the screenshot's outcome.
 fn draw_notice(f: &mut Frame, what: &NoticeKind, w: f32, bar_h: f32) {
-    let side = bar_h * ICON;
-    let size = bar_h * LEVEL_TEXT;
     let (icon, text): (Option<Icon>, Fmt<32>) = match what {
         NoticeKind::Level(control) => {
             let level = f.s.levels().control(*control);
-            let icon = match control {
-                Control::Volume => Icon::volume(level.unwrap_or(0), f.s.levels().muted()),
-                Control::Brightness | Control::Param(_) => Icon::Brightness,
-            };
+            let icon = level_icon(f, *control, level.unwrap_or(0));
             let text = match (control, level) {
                 (Control::Volume, _) if f.s.levels().muted() => Fmt::of(format_args!("Muted")),
                 (_, Some(v)) => Fmt::of(format_args!("{v}")),
@@ -152,45 +138,22 @@ fn draw_notice(f: &mut Frame, what: &NoticeKind, w: f32, bar_h: f32) {
         NoticeKind::Gyro(Some(true)) => (None, Fmt::of(format_args!("Gyro calibrated"))),
         NoticeKind::Gyro(Some(false)) => (None, Fmt::of(format_args!("Moved: gyro not calibrated"))),
     };
-    let text_w = f.c.text_width(size, &text);
-    let icon_w = if icon.is_some() { side * 1.3 } else { 0.0 };
-    let group_w = icon_w + text_w;
-    let (gx, gy) = ((w - group_w) / 2.0, bar_h * 1.3);
-    let card = Rect::new(gx - side * 0.4, gy - side * 0.3, group_w + side * 0.8, side * 1.6);
-    f.c.rounded(card, side * 0.3, SHADE.alpha(SHADE_ALPHA));
-    if let Some(icon) = icon {
-        f.c.icon(icon, Rect::new(gx, gy, side, side), Tone::Normal);
-    }
-    f.c.text_in(Rect::new(gx + icon_w, gy, text_w, side), size, Tone::High, &text, Align::Start);
+    let x = (w - widgets::card_width(f, bar_h, icon.is_some(), &text)) / 2.0;
+    widgets::card(f, x, bar_h * 1.3, bar_h, icon, &text);
 }
 
-/// The slider over the bar's row: the track (the level lit), the thumb under the finger, and the level
-/// as a number below the bar, to the side away from the finger.
+/// The slider over the bar's row (see [`widgets::held_slider`]): the level as a number below the bar.
 fn draw_slider(f: &mut Frame, slider: Slider, w: f32, bar_h: f32) {
-    let track = Track { x0: slider.track_start(), w: slider.length };
-    let cy = bar_h / 2.0;
-    let thumb = bar_h * THUMB;
-    let at = track.x0 + track.w * slider.fraction(slider.value);
-    let band = Rect::new(track.x0 - thumb * 2.0, cy - thumb * 1.8, track.w + thumb * 4.0, thumb * 3.6);
-    f.c.rounded(band, band.h / 2.0, SHADE.alpha(SHADE_ALPHA));
-    widgets::track(f.c, track, cy, bar_h * TRACK, thumb, Some(slider.percent()), Tone::High);
-
-    let side = bar_h * ICON;
-    let icon = match slider.control {
-        Control::Volume => Icon::volume(slider.value, f.s.levels().muted()),
-        // (A keymap parameter's slider is drawn in its row on the edit screen.)
-        Control::Brightness | Control::Param(_) => Icon::Brightness,
-    };
+    let icon = level_icon(f, slider.control, slider.value);
     let text = Fmt::<4>::of(format_args!("{}", slider.value));
-    let size = bar_h * LEVEL_TEXT;
-    let text_w = f.c.text_width(size, &text);
-    let group_w = side * 1.3 + text_w;
-    let away = w * LEVEL_AWAY;
-    let gx = if at < w / 2.0 { at + away } else { at - away - group_w };
-    let gy = bar_h * 1.3;
-    // On a small card of its own, over whatever the tab shows there.
-    let card = Rect::new(gx - side * 0.4, gy - side * 0.3, group_w + side * 0.8, side * 1.6);
-    f.c.rounded(card, side * 0.3, SHADE.alpha(SHADE_ALPHA));
-    f.c.icon(icon, Rect::new(gx, gy, side, side), Tone::Normal);
-    f.c.text_in(Rect::new(gx + side * 1.3, gy, text_w, side), size, Tone::High, &text, Align::Start);
+    widgets::held_slider(f, &slider, 0.0, bar_h / 2.0, bar_h, Rect::new(0.0, 0.0, w, f32::INFINITY), Some(icon), &text);
+}
+
+/// A level's icon at `value`: volume's (muted, or how loud), brightness's. (A keymap parameter's slider
+/// is drawn in its row on the edit screen, without one.)
+fn level_icon(f: &Frame, control: Control, value: u8) -> Icon {
+    match control {
+        Control::Volume => Icon::volume(value, f.s.levels().muted()),
+        Control::Brightness | Control::Param(_) => Icon::Brightness,
+    }
 }
