@@ -695,7 +695,11 @@ impl State {
         let Some((_, _, b)) = self.param_binding(param) else {
             return;
         };
-        self.bottom.keymap_edit.slider = Some(Slider::new(Control::Param(param), param.get(&b), x, width));
+        // (The track is the row's whole width: the value moves by as much of the range as the finger
+        // moves of the row.)
+        let range = param.range();
+        let slider = Slider::ranged(Control::Param(param), param.get(&b), *range.start(), *range.end(), x, width);
+        self.bottom.keymap_edit.slider = Some(Slider { length: width.max(1.0), ..slider });
     }
 
     /// What the selected input's parameters start from in the layer and actuation shown: its binding

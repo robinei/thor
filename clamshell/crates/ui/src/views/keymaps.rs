@@ -832,7 +832,9 @@ fn panel(f: &mut Frame, body: Rect, r: Rect, id: u16, keymap: Option<&Keymap>, v
         } else {
             let value = shown(p, v);
             let slider = view.slider.filter(|sl| sl.control == Control::Param(p));
-            let track = Track { x0: r.x, w: r.w };
+            // (Inset so the thumb stays in the row at either end.)
+            let inset = rh * 0.25;
+            let track = Track { x0: r.x + inset, w: (r.w - 2.0 * inset).max(1.0) };
             f.button(Id::Control(Control::Param(p)), row, Look::ROW, |f| match slider {
                 Some(sl) => slider_row(f, row, track, sl, small, p),
                 None => param_row(f, row, small, p.label(), &value, changed),
@@ -925,8 +927,7 @@ fn slider_row(f: &mut Frame, row: Rect, track: Track, sl: Slider, size: f32, p: 
     f.c.rounded(row, row.h * 0.2, SURFACE_HI);
     let text = Fmt::<32>::of(format_args!("{} {}", p.label(), shown(p, sl.value).as_str()));
     centred(f, Rect::new(row.x, row.y, row.w, row.h * 0.55), size, Tone::High, &text);
-    let t = Track { x0: track.x0 + sl.track_start(), w: sl.length };
-    widgets::track(f.c, t, row.y + row.h * 0.75, row.h * 0.07, row.h * 0.15, Some(sl.value), Tone::High);
+    widgets::track(f.c, track, row.y + row.h * 0.75, row.h * 0.07, row.h * 0.15, Some(sl.percent()), Tone::High);
 }
 
 /// Text centred in a row, on two lines (split at a space near the middle) if it doesn't fit on one.

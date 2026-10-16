@@ -34,10 +34,13 @@ impl Control {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Slider {
     pub control: Control,
-    /// The level when the finger came down, and now (0-100).
+    /// The value when the finger came down, and now, in `lo..=hi` (a level's 0-100, a parameter's
+    /// range).
     pub start: u8,
     pub value: u8,
-    /// Where the finger came down, and the track's length (the whole 0-100 range).
+    pub lo: u8,
+    pub hi: u8,
+    /// Where the finger came down, and the track's length (the whole range).
     pub x: f32,
     pub length: f32,
     /// The level changed during this touch (so lifting isn't a tap).
@@ -63,13 +66,32 @@ const SHORTEST: f32 = 0.1;
 impl Slider {
     /// A slider for `control` at value `start` (0-100), the finger at `x` on a screen `width` wide.
     pub fn new(control: Control, start: u8, x: f32, width: f32) -> Slider {
-        Slider { control, start, value: start, x, length: Slider::length_at(x, start, width), moved: false }
+        Slider::ranged(control, start, 0, 100, x, width)
     }
 
-    /// The longest track (up to half the screen) that stays on a screen `width` wide with level `start`
-    /// at `x`: the part for 0 to `start` left of `x`, the rest right of it.
-    pub fn length_at(x: f32, start: u8, width: f32) -> f32 {
-        let below = f32::from(start.min(100)) / 100.0;
+    /// A slider over `lo..=hi`, at `start`.
+    pub fn ranged(control: Control, start: u8, lo: u8, hi: u8, x: f32, width: f32) -> Slider {
+        let start = start.clamp(lo, hi.max(lo));
+        let mut s = Slider { control, start, value: start, lo, hi: hi.max(lo), x, length: 0.0, moved: false };
+        s.length = Slider::length_at(x, s.fraction(start), width);
+        s
+    }
+
+    /// Where a value is along the range, 0 to 1.
+    pub fn fraction(&self, v: u8) -> f32 {
+        let span = f32::from(self.hi.saturating_sub(self.lo)).max(1.0);
+        (f32::from(v.clamp(self.lo, self.hi)) - f32::from(self.lo)) / span
+    }
+
+    /// The value now, as a percent of the range (where the track's thumb is).
+    pub fn percent(&self) -> u8 {
+        (self.fraction(self.value) * 100.0).round() as u8
+    }
+
+    /// The longest track (up to half the screen) that stays on a screen `width` wide with the part
+    /// `below` (0 to 1) of it left of `x`, the rest right of it.
+    pub fn length_at(x: f32, below: f32, width: f32) -> f32 {
+        let below = below.clamp(0.0, 1.0);
         let (left, right) = (x - width * EDGE, width * (1.0 - EDGE) - x);
         // A part of zero fits any length.
         let fits = |room: f32, part: f32| if part > 0.0 { room / part } else { f32::INFINITY };
@@ -78,13 +100,14 @@ impl Slider {
 
     /// Where the track starts: so that the starting level sits under the finger.
     pub fn track_start(&self) -> f32 {
-        self.x - f32::from(self.start) / 100.0 * self.length
+        self.x - self.fraction(self.start) * self.length
     }
 
-    /// The level with the finger at `x`.
+    /// The value with the finger at `x`.
     pub(crate) fn value_at(&self, x: f32) -> u8 {
-        let v = f32::from(self.start) + (x - self.x) / self.length.max(1.0) * 100.0;
-        v.round().clamp(0.0, 100.0) as u8
+        let span = f32::from(self.hi - self.lo);
+        let v = f32::from(self.start) + (x - self.x) / self.length.max(1.0) * span;
+        v.round().clamp(f32::from(self.lo), f32::from(self.hi)) as u8
     }
 }
 
@@ -183,18 +206,31 @@ mod tests {
     }
 
     #[test]
+    fn a_range_other_than_0_to_100_spans_the_whole_track() {
+        // Turbo: Off (0) to 30 a second, from Off under the finger.
+        let s = Slider::ranged(Control::Volume, 0, 0, 30, 100.0, 620.0);
+        let start = s.track_start();
+        assert_eq!(start, 100.0, "Off under the finger, the track to its right");
+        assert_eq!((s.value_at(start + s.length), s.value_at(start + s.length / 2.0), s.value_at(start - 50.0)), (30, 15, 0));
+        assert_eq!(Slider { value: 15, ..s }.percent(), 50, "the thumb halfway");
+        // A range from above 0 (a hold's time, 20 to 100).
+        let s = Slider::ranged(Control::Volume, 40, 20, 100, 300.0, 620.0);
+        assert_eq!((s.value_at(s.track_start()), s.value_at(s.track_start() + s.length)), (20, 100));
+    }
+
+    #[test]
     fn the_track_fits_wherever_the_finger_comes_down() {
         let width = 620.0;
         for x in [250.0, 284.0, 310.0, 335.0, 370.0] {
             for start in [0, 1, 30, 50, 80, 99, 100] {
-                let length = Slider::length_at(x, start, width);
-                let slider = Slider { control: Control::Volume, start, value: start, x, length, moved: false };
+                let length = Slider::length_at(x, f32::from(start) / 100.0, width);
+                let slider = Slider { control: Control::Volume, start, value: start, lo: 0, hi: 100, x, length, moved: false };
                 let (from, to) = (slider.track_start(), slider.track_start() + length);
                 assert!(from >= width * EDGE - 0.01 && to <= width * (1.0 - EDGE) + 0.01, "x {x}, level {start}: {from}..{to}");
                 assert!(length >= width * 0.3, "x {x}, level {start}: {length} is short");
             }
         }
-        assert_eq!(Slider::length_at(310.0, 50, width), width * LONGEST, "the middle: at most half the screen");
+        assert_eq!(Slider::length_at(310.0, 0.5, width), width * LONGEST, "the middle: at most half the screen");
     }
 
     #[test]

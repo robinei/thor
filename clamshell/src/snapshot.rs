@@ -91,8 +91,9 @@ fn select(input: Input) -> Vec<Event> {
 /// `lift`.
 fn slide(param: Param, by: f32, lift: bool) -> Vec<Event> {
     let control = clamshell_core::slider::Control::Param(param);
-    let (x, width) = (620.0, 1240.0);
-    let mut events = vec![Slide::Start { control, x, width }.into(), Slide::To { x: x + by * width * 0.5 }.into()];
+    // (Along the panel's track, as touch gives it: a finger down in its middle.)
+    let (x, width) = (150.0, 300.0);
+    let mut events = vec![Slide::Start { control, x, width }.into(), Slide::To { x: x + by * width }.into()];
     if lift {
         events.push(Slide::End.into());
     }
