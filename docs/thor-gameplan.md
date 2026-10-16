@@ -214,6 +214,14 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
 - [ ] Battery: capacity, charging, power draw in sysinfo; the charge limit setting (sysfs path?); UPower
       sees it (the battery mode's graph) and powers off at 3 %; GPU time per program in the battery mode
       (msm's `drm-engine-gpu` in fdinfo).
+- [ ] Bypass charging (Android has it: plugged in, the device runs from the charger and the battery is left
+      alone; less heat and wear while playing). What the battery's power supply offers (`ls
+      /sys/class/power_supply/*/`): `charge_behaviour` (`inhibit-charge` is bypass, the standard way),
+      `charge_control_end_threshold` (the Charge limit setting's: at or below the level now, charging
+      stops and the system runs from the charger), or a vendor node (Qualcomm's downstream
+      `charging_enabled` or the like). With the charger in and a game running, try each, watching the
+      battery's `current_now` and `capacity`: bypass is the current near zero and the level holding. Then
+      a Bypass choice on the Charge limit setting, by whichever works.
 - [ ] Power profiles: cpufreq policies (3 clusters?), GPU devfreq, little-cores-only; the udev rule giving
       our user write access.
 - [ ] Fan: is there a sysfs control?
