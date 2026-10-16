@@ -61,6 +61,8 @@ pub struct Out {
     pub mouse: Vec<Raw>,
     /// For the state.
     pub events: Vec<Event>,
+    /// For the controller's motors.
+    pub buzz: Option<super::rumble::Buzz>,
 }
 
 /// A way of turning the pad's events into something else, while its route is in force.

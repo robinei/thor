@@ -12,6 +12,26 @@ use evdev::raw_stream::RawDevice;
 use evdev::uinput::VirtualDevice;
 use evdev::{EventSummary, FFEffect, FFEffectCode, FFEffectData, FFEffectKind, FFReplay, FFTrigger, InputEvent, UInputCode};
 
+/// A short buzz of the controller's own (not a game's): a layer that stays on came on (or was armed),
+/// or the pad is back in the layers beneath (one went off, or was used).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Buzz {
+    On,
+    Off,
+}
+
+impl Buzz {
+    pub const LENGTH: Duration = Duration::from_millis(40);
+
+    /// The motors' strengths (0-65535): on the light motor coming on, the heavy one going off.
+    pub fn level(self) -> (u16, u16) {
+        match self {
+            Buzz::On => (0, 40_000),
+            Buzz::Off => (30_000, 0),
+        }
+    }
+}
+
 /// How many effects a game may upload to the virtual pad at once.
 pub const EFFECTS_MAX: u32 = 16;
 

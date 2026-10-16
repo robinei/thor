@@ -10,7 +10,11 @@
 //! (other buttons and axes) pass through as they are. A binding to a layer of the keymap turns it on
 //! while it is on (held, or toggled): the bindings come from the layers on, the newest first, then Base;
 //! the binding that turned a layer on stays as it was until it goes off, whatever the layer makes of its
-//! input ([`Activation`]). The Thor's Back button ([`BACK_KEY`]) is an input like the others (nothing
+//! input ([`Activation`]). A Once layer turned on by a tap stays armed until the first input it maps has
+//! acted (a toggled one too, its toggle going off with it); its binding pressed again turns it off
+//! ([`Span`]). A hold to a layer is decided at once when an input that layer maps is pressed, so a quick
+//! chord acts in the layer. A layer that stays on (armed, toggled) buzzes the controller as it comes on
+//! and as it goes off ([`Buzz`]). The Thor's Back button ([`BACK_KEY`]) is an input like the others (nothing
 //! in the game as on the pad). A stick's and a trigger's tuning (deadzone, full point, curve,
 //! inversion) applies to its values before they are mapped, to the input as on the pad as well.
 //!
@@ -28,6 +32,7 @@ use evdev::{AbsoluteAxisCode, KeyCode, RelativeAxisCode};
 
 use super::motion::Rate;
 use super::route::{Out, PadSnapshot, Ranges};
+use super::rumble::Buzz;
 use crate::input::{Press, Raw};
 use crate::keyboard::{MODIFIERS, chord_keys};
 
@@ -190,13 +195,27 @@ pub fn is_back_key(code: KeyCode) -> bool {
     code == BACK_KEY
 }
 
-/// A binding to a layer that is on: whose (an input's actuation), and the binding as it was when it came
-/// on (kept while on, whatever the layers since make of that input).
+/// A binding to a layer that is on: whose (an input's actuation), the binding as it was when it came on
+/// (kept while on, whatever the layers since make of that input), how it is on, and the first input the
+/// layer maps that acted while it was (a Once layer's end).
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Activation {
     input: Input,
     act: Actuation,
     binding: Binding,
+    span: Span,
+    used_by: Option<Input>,
+}
+
+/// How a layer is on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Span {
+    /// Its binding is on (held, or toggled).
+    Held,
+    /// A Once layer whose binding went off before it was used: on until the first input it maps acts.
+    Armed,
+    /// An armed layer whose binding was pressed again: off, the binding's own until it goes off.
+    Cancelled,
 }
 
 /// The controller's codes for a button (the back buttons go by several names).
@@ -338,11 +357,13 @@ pub struct Remap {
     activations: Vec<Activation>,
     /// The digital inputs' actuations (those that have been pressed).
     actuators: Vec<Actuator>,
+    /// A buzz due (a layer that stays on came on or went off), for the next update to send.
+    buzz: Option<Buzz>,
 }
 
 impl Remap {
     pub fn new(ranges: Ranges) -> Remap {
-        Remap { keymap: Keymap::default(), ranges, sent: Wanted::default(), gyro: Rate::default(), carry: (0.0, 0.0), last_pointer: None, activations: Vec::new(), actuators: Vec::new() }
+        Remap { keymap: Keymap::default(), ranges, sent: Wanted::default(), gyro: Rate::default(), carry: (0.0, 0.0), last_pointer: None, activations: Vec::new(), actuators: Vec::new(), buzz: None }
     }
 
     /// The pad's state as it was when nothing had been sent (a fresh pad, or after letting go).
@@ -369,6 +390,7 @@ impl Remap {
         self.last_pointer = None;
         self.actuators.clear();
         self.activations.clear();
+        self.buzz = None;
     }
 
     fn axis_rest(&self, axis: AbsoluteAxisCode) -> i32 {
@@ -380,6 +402,7 @@ impl Remap {
         let now = Instant::now();
         self.actuate(snap, now);
         self.sent = self.wanted(snap, now);
+        self.buzz = None;
     }
 
     /// The controller's state changed (`snap` is it now, at `now`): the outputs follow.
@@ -387,21 +410,20 @@ impl Remap {
         self.actuate(snap, now);
         let wanted = self.wanted(snap, now);
         self.send(wanted, out);
+        if let Some(buzz) = self.buzz.take() {
+            out.buzz = Some(buzz);
+        }
     }
 
     /// The digital inputs' actuations follow the controller at `now`.
     fn actuate(&mut self, snap: &PadSnapshot, now: Instant) {
+        self.decide_layer_holds(snap, now);
         // What each input is doing now (read first; the actuators follow below).
         let mut states = Vec::new();
         for input in Input::all() {
             let digital_trigger = self.binding(input, snap).is_some_and(|b| b.output.digital());
             let full_pull = self.find(input, Actuation::FullPull).copied();
-            let watched = match input.kind() {
-                Kind::Digital => true,
-                Kind::Trigger => digital_trigger || full_pull.is_some(),
-                Kind::Stick | Kind::Gyro => false,
-            };
-            if !watched {
+            if !self.watched(input, snap) {
                 continue;
             }
             // A trigger's full pull: on past its own threshold, beside the pull.
@@ -416,6 +438,8 @@ impl Remap {
             let toggles = Actuation::ALL.map(|a| binding(a).is_some_and(|b| b.toggle));
             states.push((input, on, full, hold, double, toggles));
         }
+        // The actuations that came on now (a Once layer's use).
+        let mut risen = Vec::new();
         for (input, on, full, hold, double, toggles) in states {
             let found = self.actuators.iter().position(|a| a.input == input);
             if found.is_none() && !on && !full {
@@ -432,39 +456,169 @@ impl Remap {
             for (act, toggle) in Actuation::ALL.into_iter().zip(toggles) {
                 let raw = if act == Actuation::FullPull { full } else { a.actuated(act) };
                 if let Some(beat) = a.beats.get_mut(act as usize) {
+                    if raw && !beat.raw {
+                        risen.push((input, act));
+                    }
                     beat.follow(raw, toggle, now);
                 }
             }
         }
         // (Those at rest and holding nothing on are dropped.)
         self.actuators.retain(|a| a.phase != Phase::Up || a.beats.iter().any(|b| b.raw || b.latched));
-        // Layers on and off: a binding to one is on while its actuation (or its toggle) is.
-        let mut changes = Vec::new();
+        self.activate(snap, now, &risen);
+    }
+
+    /// Whether an input's actuations are followed: a digital input, or a trigger mapped to something on
+    /// or off (or with a full pull).
+    fn watched(&self, input: Input, snap: &PadSnapshot) -> bool {
+        match input.kind() {
+            Kind::Digital => true,
+            Kind::Trigger => self.binding(input, snap).is_some_and(|b| b.output.digital()) || self.find(input, Actuation::FullPull).is_some(),
+            Kind::Stick | Kind::Gyro => false,
+        }
+    }
+
+    /// A hold to a layer still deciding is decided now if an input that layer maps is pressed: a quick
+    /// chord acts in the layer, as it would have once the hold's time was up.
+    fn decide_layer_holds(&mut self, snap: &PadSnapshot, now: Instant) {
+        let mut decided = Vec::new();
+        for a in &self.actuators {
+            if !matches!(a.phase, Phase::Deciding(_)) {
+                continue;
+            }
+            let Some(b) = self.find(a.input, Actuation::Hold).filter(|b| matches!(b.output, Output::Layer(_))) else {
+                continue;
+            };
+            let Output::Layer(layer) = b.output else {
+                continue;
+            };
+            let new_press = |i: Input| {
+                i != a.input
+                    && Actuation::ALL.into_iter().any(|act| self.keymap.get_of(layer, i, act).is_some())
+                    && self.watched(i, snap)
+                    && self.pressed(i, snap)
+                    && !self.actuators.iter().any(|x| x.input == i && x.phase != Phase::Up)
+            };
+            if Input::all().any(new_press) {
+                decided.push((a.input, b.toggle));
+            }
+        }
+        if decided.is_empty() {
+            return;
+        }
+        for (input, toggle) in decided {
+            if let Some(a) = self.actuators.iter_mut().find(|a| a.input == input) {
+                a.phase = Phase::On { act: Actuation::Hold, until: None };
+                a.due = None;
+                if let Some(beat) = a.beats.get_mut(Actuation::Hold as usize) {
+                    beat.follow(true, toggle, now);
+                }
+            }
+        }
+        self.activate(snap, now, &[]);
+    }
+
+    /// Layers on and off. A binding to one turns it on while its actuation (or its toggle) is; a Once
+    /// layer turned on by a tap (its binding off before it was used) stays armed until the first input
+    /// it maps has acted and let go, as does a toggled one (and its toggle goes off with it); its binding
+    /// pressed again while armed turns it off. `risen`: the actuations that came on now.
+    fn activate(&mut self, snap: &PadSnapshot, now: Instant, risen: &[(Input, Actuation)]) {
+        // An input a Once layer maps acted: the newest such layer on is used.
+        for &(input, act) in risen {
+            if self.activations.iter().any(|x| x.input == input) {
+                continue;
+            }
+            let keymap = &self.keymap;
+            let maps = |x: &Activation| match x.binding.output {
+                Output::Layer(l) => x.span != Span::Cancelled && keymap.get_of(l, input, act).is_some(),
+                _ => false,
+            };
+            if let Some(x) = self.activations.iter_mut().rev().find(|x| maps(x))
+                && x.used_by.is_none()
+            {
+                x.used_by = Some(input);
+            }
+        }
+        // The bindings to layers, on or off now.
+        let mut seen = Vec::new();
         for a in &self.actuators {
             for act in Actuation::ALL {
                 let Some(b) = self.binding_of(a.input, act, snap).filter(|b| matches!(b.output, Output::Layer(_))) else {
                     continue;
                 };
-                let on = a.beat(act).on(&b, now);
-                let was = self.activations.iter().any(|x| x.input == a.input && x.act == act);
-                if on != was {
-                    changes.push((Activation { input: a.input, act, binding: b }, on));
+                seen.push((a.input, act, b, a.beat(act).on(&b, now)));
+            }
+        }
+        // (Those whose input is at rest, its actuator gone: off.)
+        for x in &self.activations {
+            if !self.actuators.iter().any(|a| a.input == x.input) {
+                seen.push((x.input, x.act, x.binding, false));
+            }
+        }
+        for (input, act, b, on) in seen {
+            let i = self.activations.iter().position(|x| (x.input, x.act) == (input, act));
+            let once = |x: &Activation| matches!(x.binding.output, Output::Layer(l) if self.keymap.layer_once(l));
+            match (i.and_then(|i| self.activations.get(i)).copied(), on) {
+                (None, true) => {
+                    self.activations.push(Activation { input, act, binding: b, span: Span::Held, used_by: None });
+                    if b.toggle {
+                        self.buzz = Some(Buzz::On);
+                    }
                 }
+                (Some(x), false) if x.span == Span::Held => {
+                    if once(&x) && x.used_by.is_none() && !x.binding.toggle {
+                        self.set_span(input, act, Span::Armed);
+                        self.buzz = Some(Buzz::On);
+                    } else {
+                        self.activations.retain(|y| (y.input, y.act) != (input, act));
+                        if x.binding.toggle {
+                            self.buzz = Some(Buzz::Off);
+                        }
+                    }
+                }
+                (Some(x), true) if x.span == Span::Armed => {
+                    self.set_span(input, act, Span::Cancelled);
+                    self.buzz = Some(Buzz::Off);
+                }
+                (Some(x), false) if x.span == Span::Cancelled => self.activations.retain(|y| (y.input, y.act) != (input, act)),
+                _ => {}
             }
         }
-        for (activation, on) in changes {
-            self.activations.retain(|x| (x.input, x.act) != (activation.input, activation.act));
-            if on {
-                self.activations.push(activation);
+        // A Once layer armed or toggled, used: off once the input that used it has let go (a toggle too).
+        let busy = |actuators: &[Actuator], i: Input| actuators.iter().any(|a| a.input == i && (a.phase != Phase::Up || a.beats.iter().any(|b| b.raw)));
+        let mut ended = Vec::new();
+        for x in &self.activations {
+            let once = matches!(x.binding.output, Output::Layer(l) if self.keymap.layer_once(l));
+            let waits = x.span == Span::Armed || (x.span == Span::Held && x.binding.toggle);
+            if let Some(user) = x.used_by
+                && once
+                && waits
+                && !busy(&self.actuators, user)
+            {
+                ended.push((x.input, x.act));
             }
         }
+        for (input, act) in ended {
+            self.activations.retain(|y| (y.input, y.act) != (input, act));
+            if let Some(beat) = self.actuators.iter_mut().find(|a| a.input == input).and_then(|a| a.beats.get_mut(act as usize)) {
+                beat.latched = false;
+            }
+            self.buzz = Some(Buzz::Off);
+        }
+        // (A layer's binding at rest: off, but an armed one.)
         let actuators = &self.actuators;
-        self.activations.retain(|x| actuators.iter().any(|a| a.input == x.input));
+        self.activations.retain(|x| x.span == Span::Armed || actuators.iter().any(|a| a.input == x.input));
+    }
+
+    fn set_span(&mut self, input: Input, act: Actuation, span: Span) {
+        if let Some(x) = self.activations.iter_mut().find(|x| (x.input, x.act) == (input, act)) {
+            x.span = span;
+        }
     }
 
     /// The layers on, in the order they came on.
     fn layers_on(&self) -> Vec<Layer> {
-        self.activations.iter().filter_map(|a| if let Output::Layer(l) = a.binding.output { Some(l) } else { None }).collect()
+        self.activations.iter().filter(|a| a.span != Span::Cancelled).filter_map(|a| if let Output::Layer(l) = a.binding.output { Some(l) } else { None }).collect()
     }
 
     /// `input`'s binding of `act` in force: the one turning a layer on if it is, else the newest layer's
@@ -1322,6 +1476,109 @@ mod tests {
         press(&mut r, KeyCode::BTN_SOUTH, true, &mut out);
         r.set_route(PadRoute::Ui, &mut out);
         assert!(held(&out.mouse).is_empty() && held(&out.pad).is_empty());
+    }
+
+    #[test]
+    fn a_hold_to_a_layer_is_decided_by_an_input_the_layer_maps() {
+        // LB: X tapped, held a layer where A is Y.
+        let mut k = keymap(&[(Input::Button(Button::LB), to(Output::Key(chord("x"))))]);
+        let aim = k.add_layer("aim").unwrap();
+        k.set_of(Layer::BASE, Input::Button(Button::LB), Actuation::Hold, Some(to(Output::Layer(aim))));
+        k.set_in(aim, Input::Button(Button::A), Some(to(Output::Key(chord("y")))));
+        let (mut r, mut out) = router(k, PadRoute::Game);
+        let t0 = Instant::now();
+        // B (not in the layer) meanwhile: as on the pad, LB still deciding.
+        press_at(&mut r, KeyCode::BTN_TL, true, t0, &mut out);
+        press_at(&mut r, KeyCode::BTN_EAST, true, t0 + ms(20), &mut out);
+        assert!(held(&out.pad).contains(&KeyCode::BTN_EAST) && held(&out.mouse).is_empty());
+        // A soon after: the hold, at once; A is Y.
+        press_at(&mut r, KeyCode::BTN_SOUTH, true, t0 + ms(50), &mut out);
+        assert_eq!(held(&out.mouse), vec![KeyCode::KEY_Y]);
+        for (code, t) in [(KeyCode::BTN_SOUTH, 80), (KeyCode::BTN_EAST, 90), (KeyCode::BTN_TL, 100)] {
+            press_at(&mut r, code, false, t0 + ms(t), &mut out);
+        }
+        assert!(!out.mouse.iter().any(|e| e.as_key().is_some_and(|(k, _)| k == KeyCode::KEY_X)), "never X");
+        // Alone and short: X.
+        let t1 = t0 + ms(1000);
+        press_at(&mut r, KeyCode::BTN_TL, true, t1, &mut out);
+        press_at(&mut r, KeyCode::BTN_TL, false, t1 + ms(100), &mut out);
+        assert_eq!(held(&out.mouse), vec![KeyCode::KEY_X]);
+        assert_eq!(out.buzz, None, "a held layer: no buzz");
+    }
+
+    #[test]
+    fn a_once_layer_tapped_is_on_until_an_input_it_maps_has_acted() {
+        // LB: a Once layer where A is Enter and B Esc.
+        let mut k = keymap(&[]);
+        let menu = k.add_layer("menu").unwrap();
+        k.set_layer_once(menu, true);
+        k.set(Input::Button(Button::LB), Some(to(Output::Layer(menu))));
+        k.set_in(menu, Input::Button(Button::A), Some(to(Output::Key(chord("enter")))));
+        k.set_in(menu, Input::Button(Button::B), Some(to(Output::Key(chord("esc")))));
+        let (mut r, mut out) = router(k, PadRoute::Game);
+        let tap = |r: &mut PadRouter, code, out: &mut Out| {
+            press(r, code, true, out);
+            press(r, code, false, out);
+        };
+        tap(&mut r, KeyCode::BTN_TL, &mut out);
+        assert_eq!(out.buzz.take(), Some(Buzz::On), "armed");
+        // X (not in it): as on the pad; still armed.
+        tap(&mut r, KeyCode::BTN_WEST, &mut out);
+        assert_eq!(out.buzz.take(), None);
+        press(&mut r, KeyCode::BTN_SOUTH, true, &mut out);
+        assert_eq!(held(&out.mouse), vec![KeyCode::KEY_ENTER], "A in the layer");
+        press(&mut r, KeyCode::BTN_SOUTH, false, &mut out);
+        assert_eq!(out.buzz.take(), Some(Buzz::Off), "used: off");
+        press(&mut r, KeyCode::BTN_SOUTH, true, &mut out);
+        assert!(held(&out.pad).contains(&KeyCode::BTN_SOUTH) && held(&out.mouse).is_empty(), "Base again");
+        press(&mut r, KeyCode::BTN_SOUTH, false, &mut out);
+        // Tapped twice: armed, then off.
+        tap(&mut r, KeyCode::BTN_TL, &mut out);
+        tap(&mut r, KeyCode::BTN_TL, &mut out);
+        assert_eq!(out.buzz.take(), Some(Buzz::Off));
+        press(&mut r, KeyCode::BTN_SOUTH, true, &mut out);
+        assert!(held(&out.mouse).is_empty(), "off");
+        press(&mut r, KeyCode::BTN_SOUTH, false, &mut out);
+        // Held: as any layer, used as often as wanted; off on letting go, without a buzz.
+        press(&mut r, KeyCode::BTN_TL, true, &mut out);
+        tap(&mut r, KeyCode::BTN_SOUTH, &mut out);
+        press(&mut r, KeyCode::BTN_EAST, true, &mut out);
+        assert_eq!(held(&out.mouse), vec![KeyCode::KEY_ESC], "still on");
+        press(&mut r, KeyCode::BTN_EAST, false, &mut out);
+        press(&mut r, KeyCode::BTN_TL, false, &mut out);
+        assert_eq!(out.buzz.take(), None);
+        press(&mut r, KeyCode::BTN_SOUTH, true, &mut out);
+        assert!(held(&out.mouse).is_empty(), "off");
+        press(&mut r, KeyCode::BTN_SOUTH, false, &mut out);
+    }
+
+    #[test]
+    fn a_toggled_once_layer_goes_off_with_its_toggle_once_used() {
+        let mut k = keymap(&[]);
+        let menu = k.add_layer("menu").unwrap();
+        k.set_layer_once(menu, true);
+        k.set(Input::Button(Button::LB), Some(Binding { toggle: true, ..to(Output::Layer(menu)) }));
+        k.set_in(menu, Input::Button(Button::A), Some(to(Output::Key(chord("enter")))));
+        let (mut r, mut out) = router(k, PadRoute::Game);
+        for _ in 0..2 {
+            press(&mut r, KeyCode::BTN_TL, true, &mut out);
+            press(&mut r, KeyCode::BTN_TL, false, &mut out);
+            assert_eq!(out.buzz.take(), Some(Buzz::On), "toggled on");
+            press(&mut r, KeyCode::BTN_SOUTH, true, &mut out);
+            assert_eq!(held(&out.mouse), vec![KeyCode::KEY_ENTER]);
+            press(&mut r, KeyCode::BTN_SOUTH, false, &mut out);
+            assert_eq!(out.buzz.take(), Some(Buzz::Off), "used: off, and its toggle (so the next press turns it on)");
+        }
+        // A plain toggled layer: a buzz on and off.
+        let mut k = keymap(&[]);
+        let aim = k.add_layer("aim").unwrap();
+        k.set(Input::Button(Button::LB), Some(Binding { toggle: true, ..to(Output::Layer(aim)) }));
+        let (mut r, mut out) = router(k, PadRoute::Game);
+        press(&mut r, KeyCode::BTN_TL, true, &mut out);
+        assert_eq!(out.buzz.take(), Some(Buzz::On));
+        press(&mut r, KeyCode::BTN_TL, false, &mut out);
+        press(&mut r, KeyCode::BTN_TL, true, &mut out);
+        assert_eq!(out.buzz.take(), Some(Buzz::Off));
     }
 
     #[test]

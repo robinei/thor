@@ -229,7 +229,8 @@ pub fn shots(now: u64) -> Result<Vec<Shot>, ParseError> {
             .concat(),
         ),
         shot("keymap-layer-picker.png", Bottom, vec![km(KeymapId::LayerPicker)]),
-        shot("keymap-layer-clear.png", Bottom, vec![PointerEvent::LongPress(Id::Keymap(KeymapId::Layer(Layer(1)))).into(), km(KeymapId::Clear)]),
+        shot("keymap-layer-menu.png", Bottom, vec![PointerEvent::LongPress(Id::Keymap(KeymapId::Layer(Layer(1)))).into(), km(KeymapId::LayerOnce)]),
+        shot("keymap-layer-clear.png", Bottom, vec![km(KeymapId::Clear)]),
         shot(
             "keymap-layers.png",
             Bottom,

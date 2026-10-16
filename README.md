@@ -245,7 +245,12 @@ off and the device sleeps) are on the Battery tab, not here: they aren't a game'
 line starts a layer's bindings, Base's coming first; lines not understood are skipped, and a layer not
 known). Each keymap has
 **layers**: Base, and the ones added (named), each on while a binding to it is: held (a press or a hold
-to it), toggled (a toggle), or pressed twice (a double), any button or trigger turning one on. Layers on
+to it), toggled (a toggle), or pressed twice (a double), any button or trigger turning one on. A hold to
+a layer is decided at once when an input the layer maps is pressed (a quick chord acts in the layer). A
+layer can be Once (its menu): tapped (or toggled), it stays armed until the first input it maps has acted,
+inputs it doesn't map doing what Base says meanwhile; tapped again, it goes off; held, it is on while
+held. A layer that stays on (armed, toggled) gives a short buzz as it comes on and another as it goes
+off, scaled by the Rumble setting. Layers on
 stack, the newest first: an input without a binding in it does what the layers beneath say, Base last;
 the binding that turned a layer on stays as it was until it goes off, whatever the layer makes of that
 input. The Thor's Back button is an input like the others (in a game, nothing as on the pad). The first
@@ -255,7 +260,7 @@ over the settings: Default, then the keymaps with how many games use each; a tap
 being edited, Edit (or a long press: rename, duplicate, delete; deleting one in use asks first and puts its
 games back on Default) opens it, New names one (the editor) and opens it. The edit screen shows one layer,
 named at its top right: a button to the list of the keymap's layers (one tapped is shown; New layer… adds
-one, named; a long press on one: rename, clear once confirmed, delete with the bindings to it; Base:
+one, named; a long press on one: Once, rename, clear once confirmed, delete with the bindings to it; Base:
 clear), with Close at the top left. Below them, the Thor's controls in two clusters at the screen's edges
 (the gyro below the D-pad), each input the layer changes with a label, blue where it maps to something else, grey where it is the input as on the pad, only tuned. An
 input is selected by touch or by pressing (or pushing past half) it on the pad, which listens there

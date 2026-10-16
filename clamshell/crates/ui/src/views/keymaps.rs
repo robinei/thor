@@ -1088,7 +1088,23 @@ fn layer_menu(f: &mut Frame, body: Rect, id: u16, layer: Layer) {
     } else if layer == Layer::BASE {
         buttons(f, area, body, &[(k(KeymapId::Clear), "Clear", Tone::Fn)]);
     } else {
-        buttons(f, area, body, &[(k(KeymapId::RenameLayer), "Rename", Tone::Fn), (k(KeymapId::Clear), "Clear", Tone::Fn), (k(KeymapId::DeleteLayer), "Delete", Tone::Accent)]);
+        // Once: a switch, and what it means.
+        let size = Text::Body.size(body.h);
+        let small = Text::Small.size(body.h);
+        let mut rest = area;
+        let row = rest.take_top(body.h * BUTTON_H);
+        let w = (area.w * MENU_W).max(size * 6.0).min(area.w);
+        let on = f.s.keymaps().get(id).is_some_and(|k| k.layer_once(layer));
+        let r = Rect::new(row.x, row.y, w, row.h);
+        f.button(k(KeymapId::LayerOnce), r, Look::ROW, |f| {
+            let sw = Rect::new(r.right() - switch_w(size), r.y, switch_w(size), r.h);
+            f.c.text_fit(Rect::new(r.x, r.y, sw.x - r.x, r.h), size, Tone::Normal, "Once", Keep::Start);
+            widgets::switch_shape(f.c, sw, on);
+        });
+        let note = rest.take_top(small * LINE * 1.6);
+        f.c.text_fit(Rect::new(note.x, note.y, note.w, small * LINE), small, Tone::Dim, "Tapped: on until the next input it maps", Keep::Start);
+        rest.take_top(style::pad(body.h) * 0.5);
+        buttons(f, rest, body, &[(k(KeymapId::RenameLayer), "Rename", Tone::Fn), (k(KeymapId::Clear), "Clear", Tone::Fn), (k(KeymapId::DeleteLayer), "Delete", Tone::Accent)]);
     }
 }
 

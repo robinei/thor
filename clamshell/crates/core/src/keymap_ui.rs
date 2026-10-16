@@ -349,6 +349,13 @@ impl State {
                 self.name_keymap(KeymapName::RenameLayer(k, layer), name);
                 vec![]
             }
+            (KeymapId::LayerOnce, Screen::LayerMenu { id: k, layer }) => {
+                let changed = self.keymaps.get_mut(k).is_some_and(|km| {
+                    let once = !km.layer_once(layer);
+                    km.set_layer_once(layer, once)
+                });
+                if changed { vec![self.save_keymaps()] } else { vec![] }
+            }
             (KeymapId::DeleteLayer, Screen::LayerMenu { id: k, layer }) if layer != Layer::BASE => {
                 self.bottom.keymaps = Some(Screen::LayerPicker(k));
                 if self.bottom.keymap_edit.layer == layer {
@@ -1129,6 +1136,12 @@ mod tests {
         assert_eq!(s.keymap_screen(), Some(Screen::LayerPicker(1)));
         long(&mut s, Id::Keymap(KeymapId::Layer(aim)));
         assert_eq!(s.keymap_screen(), Some(Screen::LayerMenu { id: 1, layer: aim }));
+        // Once, switched on and off (saved).
+        let fx = keymap(&mut s, KeymapId::LayerOnce);
+        assert!(matches!(fx.as_slice(), [Effect::Save(Save::Keymaps(_))]), "{fx:?}");
+        assert!(s.keymaps().get(1).unwrap().layer_once(aim));
+        keymap(&mut s, KeymapId::LayerOnce);
+        assert!(!s.keymaps().get(1).unwrap().layer_once(aim));
         keymap(&mut s, KeymapId::Clear);
         assert!(s.keymap_edit().clearing, "asked first");
         // Back instead: not cleared, still its menu.

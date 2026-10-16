@@ -15,7 +15,7 @@
 //!
 //! Saved in `keymaps.txt` (next to `game-settings.txt`): a `keymap ID NAME` line starts a keymap, then a
 //! line per binding, `INPUT [hold|double] = OUTPUT [option=value ...] [toggle]`; a `layer N NAME` line
-//! starts layer N's bindings (Base's come first). Lines it doesn't understand are skipped, and so are the
+//! starts layer N's bindings (Base's come first), a `once` line after it making it Once. Lines it doesn't understand are skipped, and so are the
 //! bindings of a layer it doesn't know, so later features can add their own.
 
 use std::fmt::{self, Write};
@@ -1040,12 +1040,14 @@ impl Bindings {
     }
 }
 
-/// A layer of a keymap: its number, its name, and its bindings.
+/// A layer of a keymap: its number, its name, its bindings, and whether it is Once (see
+/// [`Keymap::layer_once`]).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 struct LayerOf {
     id: Layer,
     name: String,
     bindings: Bindings,
+    once: bool,
 }
 
 /// A named set of bindings in layers ([`Layer`]: Base, and those added), each actuation's ([`Actuation`]).
@@ -1069,7 +1071,7 @@ static NO_BINDINGS: Bindings = Bindings { press: Vec::new(), hold: Vec::new(), d
 
 impl Keymap {
     pub fn new(id: u16, name: &str) -> Keymap {
-        Keymap { id, name: name.to_owned(), layers: vec![LayerOf { id: Layer::BASE, name: "Base".into(), bindings: Bindings::default() }] }
+        Keymap { id, name: name.to_owned(), layers: vec![LayerOf { id: Layer::BASE, name: "Base".into(), bindings: Bindings::default(), once: false }] }
     }
 
     /// Base's bindings (a press's).
@@ -1090,7 +1092,7 @@ impl Keymap {
     /// A new layer named `name`; its number (none: no more room, 255 layers).
     pub fn add_layer(&mut self, name: &str) -> Option<Layer> {
         let id = Layer(self.layers.iter().map(|l| l.id.0).max().unwrap_or(0).checked_add(1)?);
-        self.layers.push(LayerOf { id, name: name.trim().to_owned(), bindings: Bindings::default() });
+        self.layers.push(LayerOf { id, name: name.trim().to_owned(), bindings: Bindings::default(), once: false });
         Some(id)
     }
 
@@ -1106,8 +1108,25 @@ impl Keymap {
             Some(_) => {}
             None => {
                 let name = name.map_or_else(|| format!("Layer {}", id.0), |n| n.trim().to_owned());
-                self.layers.push(LayerOf { id, name, bindings: Bindings::default() });
+                self.layers.push(LayerOf { id, name, bindings: Bindings::default(), once: false });
             }
+        }
+    }
+
+    /// Whether a layer is Once: turned on by a tap (or a toggle), it stays on until the first input it
+    /// maps has acted, then goes off; held, it is on while held, as any layer. (Base never is.)
+    pub fn layer_once(&self, layer: Layer) -> bool {
+        self.layers.iter().any(|l| l.id == layer && l.once)
+    }
+
+    /// Makes a layer (not Base) Once or not; whether it is there.
+    pub fn set_layer_once(&mut self, layer: Layer, once: bool) -> bool {
+        match self.layers.iter_mut().find(|l| l.id == layer && l.id != Layer::BASE) {
+            Some(l) => {
+                l.once = once;
+                true
+            }
+            None => false,
         }
     }
 
@@ -1337,6 +1356,9 @@ impl Keymaps {
             for l in &k.layers {
                 if l.id != Layer::BASE {
                     let _ = writeln!(text, "layer {} {}", l.id.0, l.name);
+                    if l.once {
+                        text.push_str("once\n");
+                    }
                 }
                 write_bindings(&l.bindings, &mut text);
             }
@@ -1375,6 +1397,12 @@ impl Keymaps {
                     }
                     Err(_) => None,
                 };
+                continue;
+            }
+            if line == "once" {
+                if let (Some(keymap), Some(layer)) = (keymaps.list.last_mut(), layer) {
+                    keymap.set_layer_once(layer, true);
+                }
                 continue;
             }
             let (Some(keymap), Some(layer), Some((input, act, binding))) = (keymaps.list.last_mut(), layer, parse_binding(line)) else {
@@ -1734,8 +1762,10 @@ mod tests {
         assert!(k.set_in(aim, Input::Button(Button::A), Some(Binding::to(Output::Key(chord("ctrl+y"))))));
         assert!(k.set_in(aim, Input::Gyro, Some(Binding { hold: Some(Input::Button(Button::RB)), ..Binding::to(Output::Pointer) })));
         assert!(k.set_in(aim, Input::Button(Button::B), as_on_the_pad(Input::Button(Button::B)).map(Binding::to)));
+        assert!(!k.set_layer_once(Layer::BASE, true), "Base is never Once");
+        assert!(k.set_layer_once(aim, true) && k.layer_once(aim));
         let text = maps.text();
-        assert_eq!(text, format!("{base}layer 1 Aim\na = key ctrl+y\nb = pad b\ngyro = pointer hold=rb\n"));
+        assert_eq!(text, format!("{base}layer 1 Aim\nonce\na = key ctrl+y\nb = pad b\ngyro = pointer hold=rb\n"));
         assert_eq!(Keymaps::load(&text), maps);
         // A copy has its layers; clearing one leaves the others.
         let copy = maps.duplicate(1, "Copy").unwrap();

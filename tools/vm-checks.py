@@ -734,8 +734,8 @@ class Checks:
 
     def keymap_layers(self):
         """A keymap with A to Ctrl+X, and to Ctrl+Y in a layer Back turns on while held, made through the
-        screens (the +, a name, Back to the layer from the layers' list); in a game: A, Back with A, and
-        Back let go while A is held, read from the virtual keyboard."""
+        screens (New layer in the layer list, a name, Back to the layer as a target); in a game: A, Back with
+        A, and Back let go while A is held, read from the virtual keyboard; then the layer made Once."""
         if not self.check("keymap layers: the fake pad grabbed", plug_pad()):
             return
         keymaps_file = f"{CHECKS_DIR}/pegasus/keymaps.txt"
@@ -777,6 +777,20 @@ class Checks:
         got = keys("press back", "sleep 100", "press a", "sleep 150", "release back", "sleep 150", "release a")
         self.check("  Back let go while A is held: Ctrl+Y up, then A's Ctrl+X, nothing left down",
                    "KEY_Y0" in got and "KEY_X1" in got and not held(got), f"{got}")
+        # The layer made Once in its menu, the game still running: Back tapped, then A twice: Ctrl+Y, then
+        # Ctrl+X; the controller buzzes as the layer is armed and as it goes off.
+        for line in ["tab settings", "tap setting keymap", f"tap keymap-edit {rows}", "tap keymap-layers", "long keymap-layer 1",
+                     "tap layer-once", "tap keymap-back", "tap keymap-back", "tap keymap-back", "tap keymap-back"]:
+            control(line)
+        text = sh(f"cat {keymaps_file}")
+        self.check("  the layer made Once, saved", "layer 1 held\nonce\n" in text, text)
+        since = now()
+        got = keys("press back", "sleep 80", "release back", "sleep 150", "press a", "sleep 150", "release a", "sleep 150",
+                   "press a", "sleep 150", "release a", seconds=3.0)
+        self.check("  Once: Back tapped, then A twice: Ctrl+Y, then Ctrl+X",
+                   got == ["KEY_LEFTCTRL1", "KEY_Y1", "KEY_Y0", "KEY_LEFTCTRL0", "KEY_LEFTCTRL1", "KEY_X1", "KEY_X0", "KEY_LEFTCTRL0"], f"{got}")
+        said = sh(f"journalctl --user -u {vm.FAKE_PAD_UNIT} --since @{since} -o cat --no-pager | grep rumble || true")
+        self.check("  a buzz as it is armed, another as it goes off", "rumble 0 40000" in said and "rumble 30000 0" in said, said)
         self.check("  the game stays in front", front() == game, f"front {front()!r}")
         press("home")
         self.check("  a Home tap: shelf", until(lambda: front() == "clamshell-shelf", 3), f"front {front()!r}")

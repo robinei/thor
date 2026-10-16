@@ -102,6 +102,8 @@ pub enum KeymapId {
     Input(crate::keymap::Input),
     /// The edit screen shows and edits this layer (a long press: its menu).
     Layer(crate::keymap::Layer),
+    /// A layer's menu: its Once switch.
+    LayerOnce,
     /// The edit screen's layer button: the list of the keymap's layers (to show one, add one, or a
     /// long press: its menu).
     LayerPicker,

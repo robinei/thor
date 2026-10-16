@@ -25,6 +25,7 @@ keymap-edit-trigger.png 22dac37f01a8c3e2
 keymap-edit.png 95d3bb9ea7aefce8
 keymap-holds.png 57cb382290d32032
 keymap-layer-clear.png 9c8d80332abaf9b1
+keymap-layer-menu.png f551f7dc7d8865c9
 keymap-layer-picker.png d3226c929fd41974
 keymap-layers.png c1b9dcb4c9f4bffb
 keymap-menu.png 26be46ff7cd997ca

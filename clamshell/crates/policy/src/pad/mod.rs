@@ -38,7 +38,7 @@ use crate::{Closed, Sink};
 use device::{Capabilities, VirtualDevices};
 use motion::{EvdevMotion, MotionSource, Sample};
 use route::{Out, PadRouter, Ranges};
-use rumble::{Effects, Rumble};
+use rumble::{Buzz, Effects, Rumble};
 
 pub use route::{Mapping, PadSnapshot};
 
@@ -72,6 +72,7 @@ pub fn spawn(spec: DeviceSpec, sink: impl Sink) -> io::Result<Worker<Command>> {
             devices: None,
             effects: Effects::default(),
             rumble_setting: 3,
+            buzz: None,
         };
         worker::supervise(&mut pad, &commands, RETRY);
     })
@@ -87,6 +88,8 @@ struct PadThread<S> {
     /// Games' rumble effects on the virtual pad, and the Rumble setting.
     effects: Effects,
     rumble_setting: u16,
+    /// The keymap's buzz playing, until when.
+    buzz: Option<(Buzz, Instant)>,
 }
 
 /// A controller taken over, with its gyro if one is found.
@@ -272,9 +275,17 @@ impl<S: Sink> PadThread<S> {
                 router.motion(sample, out);
             }
             wake = router.tick(now, out);
-            // Games' rumble, on the controller while the game has the pad.
+            // Games' rumble, on the controller while the game has the pad, with the keymap's buzzes.
             self.serve_effects(now);
-            let (strong, weak) = if self.route == PadRoute::Game { self.effects.level(now) } else { (0, 0) };
+            if let Some(buzz) = out.buzz.take() {
+                self.buzz = Some((buzz, now + Buzz::LENGTH));
+            }
+            self.buzz = self.buzz.filter(|(_, until)| now < *until);
+            let (mut strong, mut weak) = if self.route == PadRoute::Game { self.effects.level(now) } else { (0, 0) };
+            if let Some((buzz, _)) = self.buzz {
+                let (s, w) = buzz.level();
+                (strong, weak) = (strong.max(s), weak.max(w));
+            }
             let setting = self.rumble_setting;
             if let Some(r) = rumble.as_mut()
                 && let Err(e) = r.set(rumble::scale(strong, setting), rumble::scale(weak, setting))
@@ -282,7 +293,7 @@ impl<S: Sink> PadThread<S> {
                 log::warn!("pad: rumble: {e}");
                 *rumble = None;
             }
-            wake = [wake, self.effects.next_end()].into_iter().flatten().min();
+            wake = [wake, self.effects.next_end(), self.buzz.map(|(_, until)| until)].into_iter().flatten().min();
             self.emit(out)?;
         }
     }

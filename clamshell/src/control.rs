@@ -14,7 +14,7 @@
 //!   `a`, `lb`, `up`, `lstick`, `rstick-up`, `lt`, `gyro`: selects it, again reopens the way it is
 //!   mapped; while a control is picked, the one picked; a long press sets it back),
 //!   `keymap-act press|hold|double|full` (the panel's tab), `keymap-layers` (the layer button: the
-//!   list), `keymap-layer base|N` (in the list; a long press: its menu, `layer-rename`, `layer-delete`,
+//!   list), `keymap-layer base|N` (in the list; a long press: its menu, `layer-rename`, `layer-once`, `layer-delete`,
 //!   `keymap-clear`), `new-layer` (in either list), `to-layer N` (the layers' list as a target), `keymap-clear`,
 //!   `keymap-clear-confirm`, `toggle` (the binding's toggle), `twist`, `ratchet` and `calibrate` (the
 //!   gyro's), `keymap-active` (the gyro's hold), `invert x|y`, `map-to TARGET` (the panel's ways: `pick`,
@@ -221,6 +221,7 @@ fn target_id(words: &[&str]) -> Result<Id, ParseError> {
         ["keymap-layers"] => Id::Keymap(KeymapId::LayerPicker),
         ["layer-rename"] => Id::Keymap(KeymapId::RenameLayer),
         ["layer-delete"] => Id::Keymap(KeymapId::DeleteLayer),
+        ["layer-once"] => Id::Keymap(KeymapId::LayerOnce),
         ["to-layer", n] => Id::Keymap(KeymapId::ToLayer(Layer(number(n)?))),
         ["new-layer"] => Id::Keymap(KeymapId::NewLayer),
         ["keymap-clear"] => Id::Keymap(KeymapId::Clear),
