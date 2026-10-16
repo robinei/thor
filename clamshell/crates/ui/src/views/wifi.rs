@@ -45,7 +45,7 @@ pub(super) fn draw(f: &mut Frame) {
         let face = RowFace { icon: Icon::wifi(Some(n.strength)), name: &n.ssid, tone: Tone::high_if(n.active), lock: n.secure, state, state_tone };
         widgets::status_row(f, ListId::Wifi.row(i as u16), rows.row(i), list.pad, list.size, face);
     }
-    rows.end(f, list.bar_x());
+    list.end(f, rows);
 }
 
 /// The header's tone: an error stands out; off, missing or idle is dim.

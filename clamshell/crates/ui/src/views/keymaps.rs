@@ -18,10 +18,9 @@ use clamshell_core::slider::{Control, Slider};
 use clamshell_core::{Id, KeymapId, ListId, RowPart, Scope, Target};
 
 use super::format::Fmt;
-use super::scroll::Scrolled;
 use super::pad::{Pad, Part};
 use super::style::{self, Look, Text, Tone};
-use super::widgets::{EditCell, HeaderRight, HeldSlider, ListRow};
+use super::widgets::{EditCell, HeaderRight, HeldSlider, ListArea, ListRow};
 use super::{Frame, Track, editor, widgets};
 use crate::draw::{Align, Column, Keep, LINE, Rect, Rgb, Span};
 use crate::icons::Icon;
@@ -100,12 +99,10 @@ fn list(f: &mut Frame) {
     };
     let title = Fmt::<128>::of(format_args!("Keymap for {scope}"));
     let area = header(f, &title, HeaderRight::Action(Id::Keymap(KeymapId::New), "New"));
-    let pad = f.pad();
-    let size = f.text(Text::Body);
-    let hint = f.text(Text::Small);
-    let view = Rect::new(area.x - pad * 0.5, area.y, area.w + pad, area.h - hint * LINE * 1.5);
+    let list = ListArea::new(f, area, f.body().h * ROW_H);
+    list.hint(f, "Long press a keymap to rename, duplicate or delete it");
     let chosen = s.keymap_chosen();
-    let rows = Scrolled::begin(f, ListId::Keymaps, view, f.body().h * ROW_H, s.list_len(ListId::Keymaps));
+    let rows = list.scrolled(f, ListId::Keymaps, s.list_len(ListId::Keymaps));
     for i in rows.shown() {
         let Some(row) = s.keymap_row(i) else {
             continue;
@@ -116,10 +113,9 @@ fn list(f: &mut Frame) {
         let who = if row.is_some() { users(f, id) } else { Fmt::of(format_args!("As on the pad")) };
         let at = |part| Id::Row { list: ListId::Keymaps, i: i as u16, part };
         let item = ListRow { label: row.map_or("Default", |k| k.name.as_str()), tone: Tone::high_if(mine), mark: mine, note: &who, edit: if row.is_some() { EditCell::Edit(at(RowPart::Edit)) } else { EditCell::Empty } };
-        widgets::list_row(f, at(RowPart::Main), rows.row(i), pad, size, item);
+        widgets::list_row(f, at(RowPart::Main), rows.row(i), list.pad, list.size, item);
     }
-    rows.end(f, area.x + area.w + pad * 0.6);
-    f.c.text_fit(Rect::new(area.x, area.y + area.h - hint * LINE, area.w, hint * LINE), hint, Tone::Dim, "Long press a keymap to rename, duplicate or delete it", Keep::Start);
+    list.end(f, rows);
 }
 
 
@@ -375,14 +371,17 @@ fn label_line(f: &mut Frame, at: impl Fn(f32) -> f32, y: f32, size: f32, lw: f32
     let word_w = if word.is_empty() { 0.0 } else { f.c.text_width(size, word) + space };
     let note_w = if note.is_empty() { 0.0 } else { f.c.text_width(size, note) };
     let text_w = f.c.text_width(size, text).min((lw - word_w - note_w).max(size));
-    let x = at(word_w + text_w + note_w);
+    // The three in a run from where `at` puts it.
+    let mut x = at(word_w + text_w + note_w);
     let h = size * LINE;
     if !word.is_empty() {
         f.c.text_in(Rect::new(x, y, word_w, h), size, Tone::Dim, word, Align::Start);
     }
-    f.c.text_fit(Rect::new(x + word_w, y, text_w + 1.0, h), size, tone, text, Keep::Start);
+    x += word_w;
+    f.c.text_fit(Rect::new(x, y, text_w + 1.0, h), size, tone, text, Keep::Start);
+    x += text_w;
     if !note.is_empty() {
-        f.c.text_in(Rect::new(x + word_w + text_w, y, note_w + 1.0, h), size, Tone::Dim, note, Align::Start);
+        f.c.text_in(Rect::new(x, y, note_w + 1.0, h), size, Tone::Dim, note, Align::Start);
     }
 }
 
@@ -432,7 +431,8 @@ fn edit_corners(f: &mut Frame, l: &EditLayout, keymap: Option<&Keymap>, layer: L
         let w = f.c.text_width(size, name).min(r.w - arrow * 1.6);
         let x = r.right() - arrow - size * 0.3 - w;
         f.c.text_fit(Rect::new(x, r.y, w + 1.0, r.h), size, tone, name, Keep::Start);
-        f.c.icon(Icon::ArrowDown, Rect::new(r.right() - arrow, r.y + (r.h - arrow) / 2.0, arrow, arrow), tone);
+        let mut room = r;
+        f.c.icon(Icon::ArrowDown, room.take_right(arrow).square_center(arrow), tone);
     };
     // Close, and Undo beside it (faded with nothing to undo).
     let close_w = f.c.text_width(size, "Close") + size * 1.2;
@@ -631,7 +631,7 @@ fn picking_panel(f: &mut Frame, r: Rect, id: u16, picking: Picking) {
     match picking {
         Picking::Hold(gyro) => {
             let always = f.s.param_base(id, gyro).is_some_and(|b| b.hold.is_none());
-            let (a, c) = (Rect::new(row.x, row.y, row.w / 2.0, row.h), Rect::new(row.x + row.w / 2.0, row.y, row.w / 2.0, row.h));
+            let (a, c) = (row.cell(2, 1, 0.0, 0), row.cell(2, 1, 0.0, 1));
             f.text_button(Id::Keymap(KeymapId::Hold(None)), a, small, if always { Tone::High } else { Tone::Fn }, "Always", Align::Center);
             f.text_button(Id::Keymap(KeymapId::Back), c, small, Tone::Fn, "Cancel", Align::Center);
         }
@@ -661,16 +661,14 @@ fn panel(f: &mut Frame, r: Rect, id: u16, keymap: Option<&Keymap>, view: EditVie
     let small = f.text(Text::Small) * PANEL_TEXT;
     let mut col = Column::new(r);
     let Some(input) = view.selected else {
-        let y = r.y + r.h * 0.4;
-        for (i, t) in ["Press or touch an input", "to see what it does"].into_iter().enumerate() {
-            widgets::centred_text(f, Rect::new(r.x, y + i as f32 * small * LINE, r.w, small * LINE), small, Tone::Dim, t);
-        }
+        let mut lines = Column::new(r);
+        lines.skip(r.h * 0.4);
+        widgets::text_lines(f, &mut lines, &[(small, Tone::Dim, "Press or touch an input"), (small, Tone::Dim, "to see what it does")]);
         // In another layer than Base: which, and what the faded labels are.
         if view.layer != Layer::BASE {
             let name = keymap.and_then(|k| k.layer_name(view.layer)).unwrap_or("");
-            let y = y + small * LINE * 3.0;
-            widgets::centred_text(f, Rect::new(r.x, y, r.w, small * LINE), small, Tone::High, name);
-            widgets::centred_text(f, Rect::new(r.x, y + small * LINE, r.w, small * LINE), small * 0.85, Tone::Dim, "Faded: as in Base");
+            lines.skip(small * LINE);
+            widgets::text_lines(f, &mut lines, &[(small, Tone::High, name), (small * 0.85, Tone::Dim, "Faded: as in Base")]);
         }
         return;
     };
@@ -689,9 +687,9 @@ fn panel(f: &mut Frame, r: Rect, id: u16, keymap: Option<&Keymap>, view: EditVie
     if tabs > 1
         && let Some(row) = col.next(small * LINE * 2.2)
     {
-        let w = row.w / tabs as f32;
         for (i, a) in Actuation::of(input.kind()).enumerate() {
-            let tab = Rect::new(row.x + i as f32 * w, row.y, w, row.h * 0.85);
+            let cell = row.cell(tabs, 1, 0.0, i);
+            let tab = Rect::new(cell.x, cell.y, cell.w, cell.h * 0.85);
             let tone = if a == act { Tone::High } else { Tone::Fn };
             f.text_button(Id::Keymap(KeymapId::Actuation(a)), tab, small, tone, a.label_for(input.kind()), Align::Center);
             if keymap.is_some_and(|k| k.get_of(layer, input, a).is_some()) {
@@ -710,10 +708,8 @@ fn panel(f: &mut Frame, r: Rect, id: u16, keymap: Option<&Keymap>, view: EditVie
     if let Some(row) = col.next(small * LINE * 2.2) {
         match (own, layer) {
             (None, l) if l != Layer::BASE => {
-                let line = small * LINE;
-                let top = row.y + (row.h - 2.0 * line) / 2.0;
-                widgets::centred_text(f, Rect::new(row.x, top, row.w, line), small, Tone::Dim, "As in Base");
-                widgets::centred_text(f, Rect::new(row.x, top + line, row.w, line), small, Tone::Dim, &main());
+                let mut lines = Column::new(row.centered(row.w, 2.0 * small * LINE));
+                widgets::text_lines(f, &mut lines, &[(small, Tone::Dim, "As in Base"), (small, Tone::Dim, &main())]);
             }
             (None, _) => widgets::centred_lines(f, row, small, Tone::Dim, &unset(input)),
             // (The panel's own content in white: blue is for labels of what is remapped, and actions.)
@@ -737,9 +733,8 @@ fn panel(f: &mut Frame, r: Rect, id: u16, keymap: Option<&Keymap>, view: EditVie
     if let Some(row) = col.next(bh) {
         let ways = ways(input.kind());
         let now = way_of(own.map(|b| b.output));
-        let w = row.w / ways.len().max(1) as f32;
         for (i, way) in ways.iter().enumerate() {
-            let r = Rect::new(row.x + i as f32 * w, row.y, w, row.h);
+            let r = row.cell(ways.len(), 1, 0.0, i);
             let kid = Id::Keymap(KeymapId::Target(*way));
             let tone = if *way == now || f.pressed(&kid) { Tone::High } else { Tone::Fn };
             f.button(kid, r, Look::TEXT, |f| f.c.icon(way_icon(*way), r.square_center(row.h * 0.5), tone));
@@ -995,10 +990,8 @@ fn layers(f: &mut Frame, id: u16, input: Input) {
 fn layer_list(f: &mut Frame, area: Rect, id: u16, current: impl Fn(Layer) -> bool, edit: bool) {
     let s = f.s;
     let keymap = s.keymaps().get(id);
-    let pad = f.pad();
-    let size = f.text(Text::Body);
-    let view = Rect::new(area.x - pad * 0.5, area.y, area.w + pad, area.h);
-    let rows = Scrolled::begin(f, ListId::Layers, view, f.body().h * ROW_H, s.list_len(ListId::Layers));
+    let list = ListArea::new(f, area, f.body().h * ROW_H);
+    let rows = list.scrolled(f, ListId::Layers, s.list_len(ListId::Layers));
     for i in rows.shown() {
         let at = |part| Id::Row { list: ListId::Layers, i: i as u16, part };
         let layer = s.layer_row(i);
@@ -1013,9 +1006,9 @@ fn layer_list(f: &mut Frame, area: Rect, id: u16, current: impl Fn(Layer) -> boo
             (true, None) => EditCell::Empty,
         };
         let item = ListRow { label: name, tone, mark: mine, note: &what, edit: cell };
-        widgets::list_row(f, at(RowPart::Main), rows.row(i), pad, size, item);
+        widgets::list_row(f, at(RowPart::Main), rows.row(i), list.pad, list.size, item);
     }
-    rows.end(f, area.x + area.w + pad * 0.6);
+    list.end(f, rows);
 }
 
 /// A layer's menu: rename it, delete it (what maps to it too).
@@ -1035,11 +1028,10 @@ fn layer_menu(f: &mut Frame, id: u16, layer: Layer) {
         let row = rest.take_top(f.body().h * BUTTON_H);
         let on = f.s.keymaps().get(id).is_some_and(|k| k.layer_once(layer));
         // (Its row reaches into the margin, so its label lines up with the actions below.)
-        let inset = size * 0.4;
-        let r = Rect::new(row.x - inset, row.y, widgets::menu_w(area, size) + 2.0 * inset, row.h);
+        let r = Rect::new(row.x, row.y, widgets::menu_w(area, size), row.h).widened(size * 0.4);
         widgets::switch_row(f, k(KeymapId::LayerOnce), r, size, "Once", on);
         let note = rest.take_top(small * LINE * 1.6);
-        f.c.text_fit(Rect::new(note.x, note.y, note.w, small * LINE), small, Tone::Dim, "Tapped: on until the next input it maps", Keep::Start);
+        f.c.text_fit(note.top_line(small), small, Tone::Dim, "Tapped: on until the next input it maps", Keep::Start);
         rest.take_top(f.pad() * 0.5);
         widgets::menu(f, rest, &[(k(KeymapId::RenameLayer), "Rename", Tone::Fn), (k(KeymapId::Clear), "Clear", Tone::Fn), (k(KeymapId::DeleteLayer), "Delete", Tone::Accent)]);
     }
@@ -1102,8 +1094,7 @@ fn mouse(f: &mut Frame, id: u16, input: Input) {
     let out = binding(s.keymaps().get(id), s.keymap_edit().layer, input).map(|b| b.output);
     let area = choice_header(f, &remap_title(input));
     let small = f.text(Text::Small);
-    let hint_h = small * LINE * 1.5;
-    let room = Rect::new(area.x, area.y, area.w, area.h - hint_h);
+    let room = widgets::hint(f, area, "A button, the wheel (its middle button) or an arrow (a turn of it)");
     let h = (room.h * MOUSE_H).min(room.w * 0.5 / MOUSE_ASPECT);
     let w = h * MOUSE_ASPECT;
     let m = Rect::new(room.center().0 - w / 2.0, room.y + (room.h - h) / 2.0, w, h);
@@ -1167,8 +1158,6 @@ fn mouse(f: &mut Frame, id: u16, input: Input) {
             f.c.text_in(Rect::new(target.x, y, tw, shown.h), small * 0.9, tone, name, Align::Start);
         });
     }
-    let hint = "A button, the wheel (its middle button) or an arrow (a turn of it)";
-    f.c.text_fit(Rect::new(area.x, area.bottom() - hint_h, area.w, hint_h), small * 0.9, Tone::Dim, hint, Keep::Start);
 }
 
 /// A key chord (or a stick's four keys, in turn) typed on the keyboard below.

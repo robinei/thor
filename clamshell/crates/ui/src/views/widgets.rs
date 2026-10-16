@@ -6,8 +6,9 @@
 use clamshell_core::{Game, Id};
 
 use super::style::{self, Look, SURFACE_HI, Text, Tone};
+use super::scroll::Scrolled;
 use super::{Frame, Track};
-use crate::draw::{Align, Canvas, Keep, LINE, Rect, Rgb};
+use crate::draw::{Align, Canvas, Column, Keep, LINE, Rect, Rgb};
 use crate::icons::Icon;
 use crate::images::Images;
 
@@ -420,4 +421,70 @@ pub(super) fn centred_lines(f: &mut Frame, r: Rect, size: f32, tone: Tone, text:
     let top = r.y + (r.h - 2.0 * line) / 2.0;
     centred_text(f, Rect::new(r.x, top, r.w, line), size, tone, a);
     centred_text(f, Rect::new(r.x, top + line, r.w, line), size, tone, b);
+}
+
+/// A hint's text, of the body text.
+const HINT: f32 = 0.8;
+
+/// A hint line's height (small dim text at the bottom of a screen).
+pub(super) fn hint_h(f: &Frame) -> f32 {
+    f.text(Text::Body) * HINT * LINE * 1.25
+}
+
+/// A hint along the bottom of `area` (small, dim); returns the room above it.
+pub(super) fn hint(f: &mut Frame, mut area: Rect, text: &str) -> Rect {
+    let h = hint_h(f);
+    let line = area.take_bottom(h);
+    let size = f.text(Text::Body) * HINT;
+    f.c.text_fit(line.top_line(size), size, Tone::Dim, text, Keep::Start);
+    area
+}
+
+/// A screen's scrolled list (networks, devices, keymaps, layers): its rows in `area` above a hint line,
+/// each reaching a little into the side margins (for its pressed look), the scroll bar just right of
+/// them.
+pub(super) struct ListArea {
+    pub pad: f32,
+    /// The rows' text size.
+    pub size: f32,
+    pub area: Rect,
+    pub row_h: f32,
+}
+
+impl ListArea {
+    pub fn new(f: &Frame, area: Rect, row_h: f32) -> ListArea {
+        ListArea { pad: f.pad(), size: f.text(Text::Body), area, row_h }
+    }
+
+    /// The rows' list begun (see [`Scrolled`]): `len` rows above the hint line.
+    pub fn scrolled(&self, f: &mut Frame, list: clamshell_core::ListId, len: usize) -> Scrolled {
+        let view = Rect::new(self.area.x, self.area.y, self.area.w, self.area.h - hint_h(f) - self.pad * 0.3).widened(self.pad * 0.5);
+        Scrolled::begin(f, list, view, self.row_h, len)
+    }
+
+    /// The list drawn: its scroll bar just right of the rows.
+    pub fn end(&self, f: &mut Frame, rows: Scrolled) {
+        rows.end(f, self.area.right() + self.pad * 0.6);
+    }
+
+    /// The hint at the bottom.
+    pub fn hint(&self, f: &mut Frame, text: &str) {
+        hint(f, self.area, text);
+    }
+
+    /// A dim line where the rows would be (nothing found yet).
+    pub fn empty(&self, f: &mut Frame, text: &str) {
+        f.c.text(self.area.x, self.area.y + self.pad, self.size, Tone::Dim, text);
+    }
+}
+
+/// Lines of text centred across `col`'s width, one under another, each `(size, tone, text)`, as many as
+/// fit.
+pub(super) fn text_lines(f: &mut Frame, col: &mut Column, lines: &[(f32, Tone, &str)]) {
+    for &(size, tone, text) in lines {
+        let Some(r) = col.next(size * LINE) else {
+            return;
+        };
+        centred_text(f, r, size, tone, text);
+    }
 }

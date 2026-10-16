@@ -38,7 +38,7 @@ pub(super) fn draw(f: &mut Frame) {
         let face = RowFace { icon: Icon::for_device(d.kind), name: &d.name, tone: Tone::high_if(d.connected), lock: false, state, state_tone };
         widgets::status_row(f, ListId::Bluetooth.row(i as u16), rows.row(i), list.pad, list.size, face);
     }
-    rows.end(f, list.bar_x());
+    list.end(f, rows);
 }
 
 /// The header's tone: an error stands out; off, missing or idle is dim.
