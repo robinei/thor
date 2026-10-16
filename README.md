@@ -285,9 +285,9 @@ past its own threshold (95 % unless set), e.g. `rt full = mouse left threshold=9
 stick on the pointer, which has a deadzone of 15 % and a curve of 50 % (the distance past it squared, as
 the pointer moved before); the panel shows the values that apply, and a new target takes its own defaults
 for the values not set. A stick's deadzone is the keymap's only one (a game that needs another uses a
-keymap of its own). A value is held (or slid) for a slider across its row (the
-parameter's whole range, Off to 30/s for turbo), which moves it by as much as the finger moves and sets
-it as it goes (the game gets it at once); the panel's parameters are touch only, since the pad
+keymap of its own). A value is held (or slid) for a slider in its row, its value
+now under the finger as with the bar's (the parameter's whole range on the track, Off to 30/s for turbo),
+which sets it as the finger moves (the game gets it at once); the panel's parameters are touch only, since the pad
 listens on that screen. A long press on an input sets it back. What an input may map to fits its kind: a button, D-pad direction or stick direction to a pad
 button (one of the list, or the next pressed on the pad), a key chord (typed on the keyboard: modifiers
 latch, the next key completes it; Done takes the modifiers alone), a mouse button or a wheel step; a stick

@@ -170,10 +170,10 @@ fn draw_slider(f: &mut Frame, slider: Slider, w: f32, bar_h: f32) {
     let track = Track { x0: slider.track_start(), w: slider.length };
     let cy = bar_h / 2.0;
     let thumb = bar_h * THUMB;
-    let at = track.x0 + track.w * f32::from(slider.value) / 100.0;
+    let at = track.x0 + track.w * slider.fraction(slider.value);
     let band = Rect::new(track.x0 - thumb * 2.0, cy - thumb * 1.8, track.w + thumb * 4.0, thumb * 3.6);
     f.c.rounded(band, band.h / 2.0, SHADE.alpha(SHADE_ALPHA));
-    widgets::track(f.c, track, cy, bar_h * TRACK, thumb, Some(slider.value), Tone::High);
+    widgets::track(f.c, track, cy, bar_h * TRACK, thumb, Some(slider.percent()), Tone::High);
 
     let side = bar_h * ICON;
     let icon = match slider.control {

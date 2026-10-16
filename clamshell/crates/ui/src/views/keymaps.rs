@@ -927,7 +927,8 @@ fn slider_row(f: &mut Frame, row: Rect, track: Track, sl: Slider, size: f32, p: 
     f.c.rounded(row, row.h * 0.2, SURFACE_HI);
     let text = Fmt::<32>::of(format_args!("{} {}", p.label(), shown(p, sl.value).as_str()));
     centred(f, Rect::new(row.x, row.y, row.w, row.h * 0.55), size, Tone::High, &text);
-    widgets::track(f.c, track, row.y + row.h * 0.75, row.h * 0.07, row.h * 0.15, Some(sl.percent()), Tone::High);
+    let t = Track { x0: track.x0 + sl.track_start(), w: sl.length };
+    widgets::track(f.c, t, row.y + row.h * 0.75, row.h * 0.07, row.h * 0.15, Some(sl.percent()), Tone::High);
 }
 
 /// Text centred in a row, on two lines (split at a space near the middle) if it doesn't fit on one.
