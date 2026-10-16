@@ -141,10 +141,10 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       the controller mid-game (the game's pad stays, at rest, and picks up again); A held on an
       on-screen key while View moves the pad away (the key must not keep repeating).
 - [ ] Back button (the small round one at the bottom screen's bottom-right corner): which device and
-      key code it sends (`evtest`). ClamShell assumes KEY_BACK on the controller (`pad/remap.rs`,
-      `LAYER_KEYS`, and the fake pad's `back`); if it comes from a separate button device, the pad thread
-      has to read (and grab) that one too. Then: Back held in a game applies the keymap's Back layer, Back
-      on ClamShell's screens goes back, on the keymap edit screen it shows the other layer.
+      key code it sends (`evtest`). ClamShell assumes KEY_BACK on the controller (`BACK_KEY` in
+      `pad/remap`, and the fake pad's `back`); if it comes from a separate button device, the pad thread
+      has to read (and grab) that one too. Then: Back as a keymap input in a game (mapped to a layer, a
+      key), Back on ClamShell's screens goes back, and on the keymap edit screen it selects Back.
 - [ ] Home then Back with Steam: the virtual pad's Guide (BTN_MODE) while both are held opens Steam's
       overlay, and Guide chords (Guide with a button pressed meanwhile) work; Home alone still goes to
       shelf, Home with R1 takes a screenshot.
@@ -162,6 +162,12 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       acceleration and tightening's defaults, which way turning and tilting move it (`ROLL_TURNS` in
       `pad/remap.rs` for tilting), gyro to a stick with its minimum, holding a trigger to aim, and the
       ratchet.
+- [ ] Rumble: a game's rumble on the controller's motors at each Rumble setting; the keymap's buzzes (a
+      layer armed or toggled on, and off: `Buzz` in `pad/rumble.rs`, 40 ms at 40000 on the light motor,
+      30000 on the heavy one) felt, and not confused with a game's.
+- [ ] Drawing cost: how long a full redraw of each screen takes on the device's CPU (tiny-skia, no GPU)
+      and what the second screen costs in power while a game runs (a slider held, a list flung, the
+      keymap edit screen with its labels).
 - [ ] GPU: Freedreno (sway) and Turnip (`vkcube`, a game); MangoHud frame rate in sysinfo.
 - [ ] Wi-Fi from the Wi-Fi mode (NetworkManager): scan, join with a password, forget; polkit lets the
       session's user do it (tested in the VM as an autologin session user, not on the device).
