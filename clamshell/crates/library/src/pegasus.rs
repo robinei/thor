@@ -1,7 +1,7 @@
 //! Pegasus Frontend's library format (docs/pegasus-format.md in the GPD repo), the parts that need no
 //! disk: which files are metadata files, file names as titles, the values of `players` and `release`,
 //! and which keys mean what (Pegasus accepts several spellings of most). Reading the files and the game
-//! dirs is clamshell-policy's (`library::pegasus`).
+//! dirs is clamshell-system's (`library::pegasus`).
 
 use std::path::{Component, Path, PathBuf};
 

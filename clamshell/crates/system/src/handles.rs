@@ -29,7 +29,7 @@ pub struct Handles {
     pub brightness: Worker<brightness::Command>,
     pub tuning: Tuning,
     /// Screenshots and sleep.
-    pub system: Worker<crate::system::Command>,
+    pub system: Worker<crate::device::Command>,
     /// The on-screen keyboard types through it; `None` if it couldn't be made.
     pub keyboard: Option<VirtualKeyboard>,
 }
@@ -102,8 +102,8 @@ impl Handles {
                 }
                 launcher::end_later(units.iter().filter_map(Instance::unit).collect());
             }
-            Effect::Screenshot => self.system.send(crate::system::Command::Screenshot),
-            Effect::Sleep => self.system.send(crate::system::Command::Sleep),
+            Effect::Screenshot => self.system.send(crate::device::Command::Screenshot),
+            Effect::Sleep => self.system.send(crate::device::Command::Sleep),
             // (The UI handles quitting and the screens' power: they are its Wayland business.)
             Effect::Quit | Effect::Screens(_) => {}
         }

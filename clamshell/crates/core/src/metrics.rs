@@ -6,7 +6,7 @@ pub const MAX_CORES: usize = 16;
 /// Samples kept per graph (one a second).
 pub const HISTORY: usize = 60;
 
-/// One reading of the system (policy thread, once a second). `None`: not available on this machine.
+/// One reading of the system (system thread, once a second). `None`: not available on this machine.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Metrics {
     /// Total CPU load, 0-1.

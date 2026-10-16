@@ -6,7 +6,7 @@
 use crate::battery::Battery;
 use crate::metrics::{History, Metrics};
 
-/// The system's status as policy threads read it.
+/// The system's status as system threads read it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Status {
     /// Battery charge 0-100, if there is a battery.

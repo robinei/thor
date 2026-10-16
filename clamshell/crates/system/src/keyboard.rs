@@ -259,7 +259,7 @@ mod tests {
     }
 
     /// Creates the real device and reads it back. Needs /dev/uinput; the reader grabs the device first,
-    /// so the compositor never sees these keys. `cargo test -p clamshell-policy -- --ignored`
+    /// so the compositor never sees these keys. `cargo test -p clamshell-system -- --ignored`
     #[test]
     #[ignore]
     fn the_virtual_keyboard_sends_its_keys() {

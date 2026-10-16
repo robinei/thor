@@ -1,4 +1,4 @@
-//! The keymaps' screens, over the settings tab (see `core`'s `keymap_ui`): the picker (a scrolled list:
+//! The keymaps' screens, over the settings tab (see `core`'s `keymap_screens`): the picker (a scrolled list:
 //! Default, then the keymaps, each with who uses it and an Edit button; New), a keymap's menu, deleting
 //! one in use, the edit screen (one layer of the keymap, named at the top right, a button to the list of
 //! layers; Close at the top left; the pad's controls drawn in two clusters at the sides, as they sit
@@ -15,7 +15,7 @@ use std::fmt::Write;
 use clamshell_core::keymap::{
     Actuation, Binding, Button, Change, Chord, Dir, Input, Keymap, Kind, Layer, MouseButton, Output, PadOut, Param, Side, change, params_of,
 };
-use clamshell_core::keymap_ui::{EditView, Screen, holds, picked, way_of, ways};
+use clamshell_core::keymap_screens::{EditView, Screen, holds, picked, way_of, ways};
 use clamshell_core::slider::{Control, Slider};
 use clamshell_core::{Id, KeymapId, ListId, RowPart, Scope, Target};
 

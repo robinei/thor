@@ -3,8 +3,8 @@
 use std::path::PathBuf;
 
 use clamshell_core::Tab;
-use clamshell_policy::input::device::DeviceSpec;
-use clamshell_policy::paths::Base;
+use clamshell_system::input::device::DeviceSpec;
+use clamshell_system::paths::Base;
 
 pub struct Env {
     /// CLAMSHELL_BOTTOM_OUTPUT: the second screen's output, which gets the bottom view as a layer-shell
@@ -44,7 +44,7 @@ pub struct Env {
     pub snapshot_now: bool,
     /// SWAYSOCK: sway's socket, under sway.
     pub sway: Option<PathBuf>,
-    /// HOME and the XDG base directories, where ClamShell's files go (see [`clamshell_policy::paths`]).
+    /// HOME and the XDG base directories, where ClamShell's files go (see [`clamshell_system::paths`]).
     pub base: Base,
 }
 

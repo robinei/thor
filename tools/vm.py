@@ -774,7 +774,7 @@ def pad(args):
     fifo = "$XDG_RUNTIME_DIR/fake-pad"
     if args.pad_action == "plug":
         binary = "/mnt/thor/clamshell/target/release/examples/fake_pad"
-        script = (f"test -x {binary} || {{ echo 'no {binary}: cargo build --release -p clamshell-policy --examples' >&2; exit 1; }}; "
+        script = (f"test -x {binary} || {{ echo 'no {binary}: cargo build --release -p clamshell-system --examples' >&2; exit 1; }}; "
                   f"systemctl --user stop {FAKE_PAD_UNIT} 2>/dev/null; rm -f {fifo}; mkfifo {fifo}; "
                   f"systemd-run --user --quiet --collect --unit={FAKE_PAD_UNIT} {binary} --control {fifo}")
     elif args.pad_action == "unplug":

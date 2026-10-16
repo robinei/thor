@@ -3,7 +3,7 @@
 //! to grab it, then plays: a one-finger swipe on the pad, a two-finger scroll, and a tap on the bar's
 //! touchpad icon (which ends touchpad mode).
 //!
-//!     cargo run -p clamshell-policy --example fake_touchscreen
+//!     cargo run -p clamshell-system --example fake_touchscreen
 //!     CLAMSHELL_TOUCHSCREEN="clamshell fake touchscreen" CLAMSHELL_START_MODE=touchpad cargo run
 
 use std::io;

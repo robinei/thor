@@ -1,7 +1,7 @@
 //! The game library's model: games, collections and how they sort, and the parts of Pegasus
 //! Frontend's format (the one shelf used on the GPD, docs/pegasus-format.md in the GPD repo) and Steam's
 //! files that need no disk. No I/O and no dependencies: scanning the game dirs and Steam's folders,
-//! play time (stats.db) and favourites (favorites.txt) are clamshell-policy's (`library`).
+//! play time (stats.db) and favourites (favorites.txt) are clamshell-system's (`library`).
 
 pub mod launch;
 pub mod metafile;

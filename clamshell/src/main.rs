@@ -1,6 +1,6 @@
 //! ClamShell: shelf, the second screen, the bar, input and power policy in one process with one state.
 //! This is the program around them: the command line ([`cli`]), the environment ([`config`]), starting
-//! the policy threads ([`wiring`]), the test pipe ([`control`]) and the snapshots ([`snapshot`]).
+//! the system threads ([`wiring`]), the test pipe ([`control`]) and the snapshots ([`snapshot`]).
 
 mod cli;
 mod config;
@@ -20,9 +20,9 @@ use clamshell_core::keymap::Keymaps;
 use clamshell_core::levels::Brightness;
 use clamshell_core::settings::Settings;
 use clamshell_core::{Init, Library, State};
-use clamshell_policy::library::{self, Sources};
-use clamshell_policy::paths::Paths;
-use clamshell_policy::{Handles, desktop, job, tuning};
+use clamshell_system::library::{self, Sources};
+use clamshell_system::paths::Paths;
+use clamshell_system::{Handles, desktop, job, tuning};
 use clamshell_ui::Config;
 
 use cli::Command;
@@ -113,7 +113,7 @@ fn load_keymaps(paths: &Paths) -> Keymaps {
         Ok(text) => Keymaps::load(&text),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             let keymaps = Keymaps::initial();
-            if let Err(e) = clamshell_policy::paths::write(&file, &keymaps.text()) {
+            if let Err(e) = clamshell_system::paths::write(&file, &keymaps.text()) {
                 log::warn!("{}: {e}", file.display());
             }
             keymaps
@@ -141,7 +141,7 @@ fn print_library(library: &Library) {
     }
 }
 
-/// The session: the state from what was saved, the UI, and the policy threads.
+/// The session: the state from what was saved, the UI, and the system threads.
 fn run(env: &Env, paths: Paths, sources: &Sources) -> ExitCode {
     let read = |file: Option<&Path>| file.and_then(|f| std::fs::read_to_string(f).ok());
     let state = State::new(Init {

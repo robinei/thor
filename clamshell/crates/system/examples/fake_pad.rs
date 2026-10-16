@@ -4,7 +4,7 @@
 //! right for 0.5 s and down for 0.25 s (no buttons: they would click whatever is under the pointer), and
 //! reports what came out: the virtual mouse's motion and the virtual pad's stick.
 //!
-//!     cargo run -p clamshell-policy --example fake_pad &
+//!     cargo run -p clamshell-system --example fake_pad &
 //!     CLAMSHELL_GAMEPAD="clamshell fake pad" [CLAMSHELL_PAD_MOUSE=1] cargo run
 //!
 //! With `--control PATH` it creates the pad and then does what lines read from PATH (a named pipe, made

@@ -1,4 +1,4 @@
-//! Starting the policy threads once the UI's event loop is up (their events go to it), and gathering
+//! Starting the system threads once the UI's event loop is up (their events go to it), and gathering
 //! the handles the state's effects go to.
 
 use std::io;
@@ -6,13 +6,13 @@ use std::sync::{Arc, Mutex};
 
 use clamshell_core::settings::Values;
 use clamshell_core::touch::TouchLayout;
-use clamshell_policy::brightness::Backlights;
-use clamshell_policy::job::Runner;
-use clamshell_policy::keyboard::VirtualKeyboard;
-use clamshell_policy::paths::Paths;
-use clamshell_policy::tuning::Tuning;
-use clamshell_policy::worker::Worker;
-use clamshell_policy::{
+use clamshell_system::brightness::Backlights;
+use clamshell_system::job::Runner;
+use clamshell_system::keyboard::VirtualKeyboard;
+use clamshell_system::paths::Paths;
+use clamshell_system::tuning::Tuning;
+use clamshell_system::worker::Worker;
+use clamshell_system::{
     Closed, Handles, Sink, battery, bluetooth, brightness, clock, frames, launcher, metrics, mixer, pad, sound, status, sway, touchpad, tuning, units, wifi,
 };
 use clamshell_ui::EventSender;
@@ -23,7 +23,7 @@ use crate::control;
 /// The second screen's pixels per millimetre: the Thor's bottom panel, 1240 pixels across about 75 mm.
 const BOTTOM_PX_PER_MM: f32 = 16.5;
 
-/// The policy threads' sink: the UI's event loop.
+/// The system threads' sink: the UI's event loop.
 #[derive(Clone)]
 pub struct UiSink(pub EventSender);
 
@@ -48,7 +48,7 @@ fn detached(name: &str, result: io::Result<()>) {
     }
 }
 
-/// Starts every policy thread, sending to `sender`, and applies the global settings (in force until a
+/// Starts every system thread, sending to `sender`, and applies the global settings (in force until a
 /// game brings its own). `layout`: the touch layout the UI keeps up to date.
 pub fn start(env: &Env, paths: &Paths, layout: Arc<Mutex<TouchLayout>>, global: &Values, sender: EventSender) -> Handles {
     let sink = UiSink(sender);
@@ -65,7 +65,7 @@ pub fn start(env: &Env, paths: &Paths, layout: Arc<Mutex<TouchLayout>>, global: 
         control::spawn(path.clone(), sink.clone());
     }
     // Input on every device, for idle; the hardware keys in the device's own session.
-    detached("input watch", clamshell_policy::input::watch::spawn(env.device_session, sink.clone()));
+    detached("input watch", clamshell_system::input::watch::spawn(env.device_session, sink.clone()));
     let sway = sway::spawn(env.sway.clone(), env.bottom_output.clone(), sink.clone()).unwrap_or_else(|e| {
         log::error!("sway thread: {e}");
         env.sway.as_ref().map(|_| Worker::gone("sway commands"))
@@ -80,7 +80,7 @@ pub fn start(env: &Env, paths: &Paths, layout: Arc<Mutex<TouchLayout>>, global: 
     let battery = started("battery", battery::spawn(sink.clone()));
     let mixer = started("mixer", mixer::spawn(backlights.clone(), sink.clone()));
     let bluetooth = started("bluetooth", bluetooth::spawn(sink.clone()));
-    let system = started("system", clamshell_policy::system::spawn(paths.screenshots.clone(), sink.clone()));
+    let system = started("system", clamshell_system::device::spawn(paths.screenshots.clone(), sink.clone()));
     let wifi = started("wifi", wifi::spawn(sink));
     let tuning = Tuning { hardware: started("tuning", tuning::spawn()), pad: pad.clone(), mangohud: paths.mangohud.clone() };
     tuning.apply(global, None);

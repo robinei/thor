@@ -19,7 +19,7 @@ use clamshell_core::{
     BtId, DockId, EditorId, Event, Id, KeymapId, LevelEvent, ListId, PadInput, PointerEvent, RowPart, SettingsId, ShelfEvent, ShelfId, Slide, Tab, Target,
     WifiId,
 };
-use clamshell_policy::{Sink, worker};
+use clamshell_system::{Sink, worker};
 
 /// The layout width a slide's positions are on (the second screen at half size).
 const SLIDE_WIDTH: f32 = 620.0;

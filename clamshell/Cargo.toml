@@ -9,7 +9,7 @@ license = "MIT"
 
 [workspace.dependencies]
 clamshell-core = { path = "crates/core" }
-clamshell-policy = { path = "crates/policy" }
+clamshell-system = { path = "crates/system" }
 clamshell-library = { path = "crates/library" }
 clamshell-ui = { path = "crates/ui" }
 smithay-client-toolkit = "0.21"
@@ -45,7 +45,7 @@ license.workspace = true
 
 [dependencies]
 clamshell-core.workspace = true
-clamshell-policy.workspace = true
+clamshell-system.workspace = true
 clamshell-library.workspace = true
 clamshell-ui.workspace = true
 log.workspace = true

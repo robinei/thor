@@ -349,7 +349,7 @@ version = "0.1.0"
 dependencies = [
  "clamshell-core",
  "clamshell-library",
- "clamshell-policy",
+ "clamshell-system",
  "clamshell-ui",
  "env_logger",
  "log",
@@ -370,7 +370,7 @@ name = "clamshell-library"
 version = "0.1.0"
 
 [[package]]
-name = "clamshell-policy"
+name = "clamshell-system"
 version = "0.1.0"
 dependencies = [
  "clamshell-core",

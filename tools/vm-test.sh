@@ -6,7 +6,7 @@
 #   tools/vm-test.sh
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-cd "$ROOT/clamshell" && cargo build --release --quiet && cargo build --release --quiet -p clamshell-policy --examples || exit 1
+cd "$ROOT/clamshell" && cargo build --release --quiet && cargo build --release --quiet -p clamshell-system --examples || exit 1
 cd "$ROOT"
 LOG=$(mktemp "${TMPDIR:-/tmp}/vm-run.XXXXXX")
 python3 tools/vm.py run --headless > "$LOG" 2>&1 &

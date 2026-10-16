@@ -63,7 +63,7 @@ impl From<ParseError> for Error {
 /// The state snapshots start from: a library, the example launcher.json's apps (their desktop files
 /// from this machine's data dirs), nothing remembered.
 pub fn state(library: Library) -> State {
-    state_with(library, clamshell_policy::desktop::from_text(crate::LAUNCHER_EXAMPLE))
+    state_with(library, clamshell_system::desktop::from_text(crate::LAUNCHER_EXAMPLE))
 }
 
 fn state_with(library: Library, apps: Apps) -> State {
@@ -449,7 +449,7 @@ mod tests {
         for (id, name) in [("steam", "Steam"), ("firefox", "Firefox")] {
             std::fs::write(apps.join(format!("{id}.desktop")), format!("[Desktop Entry]\nName={name}\nExec={id}\n")).unwrap();
         }
-        clamshell_policy::desktop::from_text_in(crate::LAUNCHER_EXAMPLE, &[dir.to_path_buf()])
+        clamshell_system::desktop::from_text_in(crate::LAUNCHER_EXAMPLE, &[dir.to_path_buf()])
     }
 
     /// The snapshots, drawn and hashed, against the reference hashes. After a change meant to change what

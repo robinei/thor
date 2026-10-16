@@ -1,4 +1,4 @@
-//! Bluetooth as the Bluetooth tab shows it (BlueZ's view, read by the policy side), and its rules: a tap
+//! Bluetooth as the Bluetooth tab shows it (BlueZ's view, read by the system side), and its rules: a tap
 //! connects a paired device or pairs a new one (pair, trust, connect), a long press forgets a paired one.
 //! What a device's row and the tab's header say is decided here ([`Bluetooth::device_state`],
 //! [`Bluetooth::status`]); the UI words it.

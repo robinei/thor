@@ -1,5 +1,5 @@
 //! What the battery tab shows beyond the bar's status: the charge over the last day (UPower's history)
-//! and what is using the machine now (CPU and GPU time per program, read by the policy side). The battery
+//! and what is using the machine now (CPU and GPU time per program, read by the system side). The battery
 //! reports only its total drain; per program there is no power reading, so programs are ranked by their
 //! share of the work instead.
 

@@ -1,4 +1,4 @@
-//! The radios as their tabs show them: Wi-Fi and Bluetooth, each as its policy thread last read it, and
+//! The radios as their tabs show them: Wi-Fi and Bluetooth, each as its system thread last read it, and
 //! what the tab's header says about either.
 
 use crate::bluetooth::Bluetooth;

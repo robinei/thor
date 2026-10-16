@@ -4,10 +4,10 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
-    /// No arguments: run the session (the UI and every policy thread).
+    /// No arguments: run the session (the UI and every system thread).
     Run,
     /// `--run FILE`: become a launched job's program (sway's exec starts us this way; see
-    /// clamshell_policy::job).
+    /// clamshell_system::job).
     RunJob(PathBuf),
     /// `--launcher-example`: print an example launcher.json, to start one from.
     LauncherExample,

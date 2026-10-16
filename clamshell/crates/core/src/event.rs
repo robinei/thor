@@ -1,5 +1,5 @@
 //! What comes in: everything that changes the state is an [`Event`], from the UI (input, layout) or a
-//! policy thread (readings of the system, the compositor's windows, systemd's scopes, games starting and
+//! system thread (readings of the system, the compositor's windows, systemd's scopes, games starting and
 //! ending), grouped by what they are about.
 
 use std::sync::Arc;
@@ -21,11 +21,11 @@ use crate::windows::Window;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
-    /// Wall clock, once a second (policy thread).
+    /// Wall clock, once a second (system thread).
     Tick {
         unix_secs: u64,
     },
-    /// The system as a policy thread read it.
+    /// The system as a system thread read it.
     Reading(Reading),
     /// Touch, the mouse or the pad on a target.
     Pointer(PointerEvent),
@@ -71,7 +71,7 @@ pub enum Event {
     Quit,
 }
 
-/// What a policy thread read from the system.
+/// What a system thread read from the system.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Reading {
     /// Battery, Wi-Fi signal, volume, brightness (when they change).

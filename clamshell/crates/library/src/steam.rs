@@ -1,7 +1,7 @@
 //! Steam's own files, the parts that need no disk: Valve's KeyValues text (VDF), the library folders
 //! listed in `libraryfolders.vdf`, and what a game's manifest (`appmanifest_<id>.acf`) says. Steam's
 //! tools (Proton, the Linux runtimes, the redistributables) are left out. Finding the files and the art
-//! is clamshell-policy's (`library::steam`).
+//! is clamshell-system's (`library::steam`).
 
 use std::path::PathBuf;
 

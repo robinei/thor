@@ -11,6 +11,7 @@ pub mod clock;
 pub mod command;
 pub mod dbus;
 pub mod desktop;
+pub mod device;
 pub mod drm;
 pub mod frames;
 pub mod handles;
@@ -28,7 +29,6 @@ pub mod sound;
 pub mod status;
 pub mod sway;
 pub mod sys;
-pub mod system;
 pub mod touchpad;
 pub mod tuning;
 pub mod units;
@@ -45,7 +45,7 @@ pub use handles::Handles;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Closed;
 
-/// Where policy threads deliver events: the UI's event loop.
+/// Where system threads deliver events: the UI's event loop.
 pub trait Sink: Send + 'static {
     fn send(&self, event: Event) -> Result<(), Closed>;
 }

@@ -1,4 +1,4 @@
-//! What every policy thread is made of. A thread is spawned with its command channel made inside
+//! What every system thread is made of. A thread is spawned with its command channel made inside
 //! ([`Worker::spawn`]); it waits for the next command or for its period ([`next`]); it sends a reading
 //! only when it changed ([`Changed`]); a thread that talks to a service (a bus, a socket, a device)
 //! connects, runs while the service is up, and is supervised: tried again every `retry` while the

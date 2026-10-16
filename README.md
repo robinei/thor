@@ -16,7 +16,7 @@ on-screen keyboard), and the games' settings and keymaps. Rust, a Cargo workspac
 | Crate | What |
 |---|---|
 | `crates/core` | the state and its rules: events in, dirty screens and effects out; no I/O |
-| `crates/policy` | threads that watch the system and send events, and carry out effects (sway, systemd, NetworkManager, BlueZ, evdev/uinput, sysfs); the game library from disk |
+| `crates/system` | threads that watch the system and send events, and carry out effects (sway, systemd, NetworkManager, BlueZ, evdev/uinput, sysfs); the game library from disk |
 | `crates/library` | the game library's model and the parts of Pegasus' and Steam's formats that need no disk |
 | `crates/ui` | Wayland, CPU drawing (tiny-skia, fontdue), the views, pad navigation; the font built in (Noto Sans, SIL Open Font License 1.1: `crates/ui/fonts/OFL.txt`) |
 | `src/` | the program around them: the command line, the environment, the threads, the control pipe, the snapshots |

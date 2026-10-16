@@ -90,12 +90,12 @@ pub struct Bottom {
     pub(crate) editors: Vec<Editor>,
     /// What the settings panel edits (global whenever there is no game in context).
     pub(crate) scope: Scope,
-    /// The keymaps' screen open over the settings tab (see [`crate::keymap_ui`]).
-    pub(crate) keymaps: Option<crate::keymap_ui::Screen>,
+    /// The keymaps' screen open over the settings tab (see [`crate::keymap_screens`]).
+    pub(crate) keymaps: Option<crate::keymap_screens::Screen>,
     /// The edit screen's layer, selection and confirmation.
-    pub(crate) keymap_edit: crate::keymap_ui::EditView,
+    pub(crate) keymap_edit: crate::keymap_screens::EditView,
     /// The keymap being edited as it was before each change since its edit screen opened (Undo).
-    pub(crate) keymap_undo: crate::keymap_ui::Undo,
+    pub(crate) keymap_undo: crate::keymap_screens::Undo,
     /// The dark second screen was tapped awake (until the next game).
     pub(crate) woken: bool,
     /// What a key just did (a level, a screenshot), shown under the bar for a moment.

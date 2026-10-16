@@ -1,4 +1,4 @@
-//! Wi-Fi as the Wi-Fi tab shows it (NetworkManager's view, read by the policy side), and its rules: a
+//! Wi-Fi as the Wi-Fi tab shows it (NetworkManager's view, read by the system side), and its rules: a
 //! tap joins a network (asking for its password first if it has one and isn't saved), a long press
 //! forgets a saved one. What a network's row and the tab's header say is decided here
 //! ([`Wifi::net_state`], [`Wifi::status`]); the UI words it.

@@ -1,5 +1,5 @@
 //! The program's state and its rules. No I/O: every change comes in as an [`Event`], and what the outside
-//! world must do comes back as [`Effect`]s. The UI and the policy threads only read the state and send
+//! world must do comes back as [`Effect`]s. The UI and the system threads only read the state and send
 //! events, so all of this is unit-testable.
 //!
 //! The state is grouped by what it is about: shelf ([`Shelf`]), the second screen ([`Bottom`]), what runs
@@ -21,7 +21,7 @@ pub mod instance;
 mod items;
 pub mod keyboard;
 pub mod keymap;
-pub mod keymap_ui;
+pub mod keymap_screens;
 pub mod levels;
 pub mod metrics;
 mod pad;

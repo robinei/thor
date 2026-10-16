@@ -1,7 +1,7 @@
 //! Volume and brightness in the bar: a finger held on either icon (or sliding off it sideways) brings
 //! up a slider whose current value is under the finger; moving sets the level as it goes, lifting leaves
 //! it there. A tap opens the icon's tab instead. The same slider sets a keymap binding's parameters
-//! from the edit screen's panel ([`Control::Param`], see `keymap_ui`).
+//! from the edit screen's panel ([`Control::Param`], see `keymap_screens`).
 //!
 //! The slider runs along the screen's width. Its length is what fits on both sides of where the finger
 //! came down, given the level there (the part below the level goes left of the finger, the rest right),

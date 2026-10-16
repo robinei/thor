@@ -92,7 +92,7 @@ impl EventSender {
     }
 }
 
-/// Runs the UI until quit. `start` gets a sender for the policy threads; `on_effect` carries out what the
+/// Runs the UI until quit. `start` gets a sender for the system threads; `on_effect` carries out what the
 /// state asks for (launching games, ...).
 pub fn run(state: State, config: Config, start: impl FnOnce(EventSender), on_effect: impl FnMut(&Effect) + 'static) -> Result<(), Error> {
     let conn = Connection::connect_to_env()?;
