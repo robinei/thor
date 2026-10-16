@@ -103,6 +103,8 @@ pub struct Bottom {
     pub(crate) keymaps: Option<crate::keymap_ui::Screen>,
     /// The edit screen's layer, selection and confirmation.
     pub(crate) keymap_edit: crate::keymap_ui::EditView,
+    /// The keymap being edited as it was before each change since its edit screen opened (Undo).
+    pub(crate) keymap_undo: crate::keymap_ui::Undo,
     /// The dark second screen was tapped awake (until the next game).
     pub(crate) woken: bool,
     /// What a key just did (a level, a screenshot), shown under the bar for a moment.

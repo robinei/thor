@@ -214,6 +214,30 @@ fn delete(f: &mut Frame, body: Rect, id: u16) {
 }
 
 /// An input's binding in keymap `k`'s `layer` itself, if it has one there.
+/// A label's first line: its actuation, text and tone.
+type FirstLine = (Actuation, Fmt<48>, Tone);
+
+/// An input's label in a layer: its press's line (unless as on the pad in Base), then its hold's and
+/// double's (the first of those its first line without a press).
+fn callout_lines(keymap: Option<&Keymap>, layer: Layer, input: Input) -> (Option<FirstLine>, [Option<(Actuation, Fmt<48>)>; 2]) {
+    let press = binding(keymap, layer, input).filter(|b| layer != Layer::BASE || change(input, Some(b)) != Change::None);
+    let mut lines = press.map(|b| {
+        let (text, tone) = described(input, &b, keymap);
+        (Actuation::Press, text, tone)
+    });
+    let mut extra = [None, None];
+    for (slot, act) in extra.iter_mut().zip(Actuation::of(input.kind()).filter(|a| *a != Actuation::Press)) {
+        let Some(b) = keymap.and_then(|k| k.get_of(layer, input, act)) else {
+            continue;
+        };
+        match lines {
+            None => lines = Some((act, summary(input, b, keymap), Tone::Fn)),
+            Some(_) => *slot = Some((act, summary(input, b, keymap))),
+        }
+    }
+    (lines, extra)
+}
+
 fn binding(k: Option<&Keymap>, layer: Layer, input: Input) -> Option<Binding> {
     k.and_then(|k| k.get_in(layer, input)).copied()
 }
@@ -222,9 +246,9 @@ fn binding(k: Option<&Keymap>, layer: Layer, input: Input) -> Option<Binding> {
 /// the room between it and its labels (where the lines turn), and the labels' column's width; the
 /// bottom row's height and the panel's rows', of the area's height.
 const LABEL: f32 = 0.66;
-const CLUSTER_W: f32 = 0.225;
-const GAP: f32 = 0.03;
-const LABEL_COLUMN_W: f32 = 0.1;
+const CLUSTER_W: f32 = 0.222;
+const GAP: f32 = 0.016;
+const LABEL_COLUMN_W: f32 = 0.115;
 const PANEL_ROW_H: f32 = 0.075;
 /// The panel's and the bottom row's text, of the small text size.
 const PANEL_TEXT: f32 = 0.8;
@@ -311,6 +335,8 @@ struct Callout {
     top: f32,
     /// Its extra lines left out for room (the first says how many with "+N").
     collapsed: bool,
+    /// Base's, shown faded in another layer that doesn't map the input.
+    faded: bool,
 }
 
 impl Callout {
@@ -435,8 +461,13 @@ pub(super) struct EditLayout {
 /// The corners' height (Close, the layer button), of the area's height.
 const CORNER_H: f32 = 0.075;
 
+/// The edit screen's margin at the sides, of the usual one (the drawing wants the room).
+const EDIT_SIDE: f32 = 0.35;
+
 pub(super) fn edit_layout(body: Rect) -> EditLayout {
-    let full = style::content(body);
+    let pad = style::pad(body.h);
+    let side = pad * EDIT_SIDE;
+    let full = Rect::new(body.x + side, body.y, body.w - 2.0 * side, body.h - pad);
     let cw = (full.w * CLUSTER_W).floor();
     let gap = (full.w * GAP).floor();
     let lw = (full.w * LABEL_COLUMN_W).floor();
@@ -449,8 +480,8 @@ pub(super) fn edit_layout(body: Rect) -> EditLayout {
     EditLayout { area, close, layer, cw, gap, lw, strip }
 }
 
-/// The edit screen's corners: Close at the top left, the layer shown at the top right, a button to the
-/// list of layers (both faded while a control is picked).
+/// The edit screen's corners: Close and Undo at the top left, the layer shown at the top right, a button
+/// to the list of layers (all faded while a control is picked).
 fn edit_corners(f: &mut Frame, body: Rect, l: &EditLayout, keymap: Option<&Keymap>, layer: Layer, picking: bool) {
     let size = Text::Small.size(body.h);
     let name = keymap.and_then(|k| k.layer_name(layer)).unwrap_or("Base");
@@ -462,15 +493,26 @@ fn edit_corners(f: &mut Frame, body: Rect, l: &EditLayout, keymap: Option<&Keyma
         f.c.text_fit(Rect::new(x, r.y, w + 1.0, r.h), size, tone, name, Keep::Start);
         f.c.icon(Icon::ArrowDown, Rect::new(r.right() - arrow, r.y + (r.h - arrow) / 2.0, arrow, arrow), tone);
     };
+    // Close, and Undo beside it (faded with nothing to undo).
+    let close_w = f.c.text_width(size, "Close") + size * 1.2;
+    let close = Rect::new(l.close.x, l.close.y, close_w, l.close.h);
+    let undo = Rect::new(close.right(), l.close.y, (l.close.w - close_w).max(1.0), l.close.h);
     // (Picking: the panel has Cancel; these wait, faded.)
     if picking {
-        f.c.text_in(l.close, size, Tone::Dim, "Close", Align::Start);
+        f.c.text_in(close, size, Tone::Dim, "Close", Align::Start);
+        f.c.text_in(undo, size, Tone::Dim, "Undo", Align::Start);
         layer_button(f, Tone::Dim);
         return;
     }
-    f.text_button(Id::Keymap(KeymapId::Back), l.close, size, Tone::Fn, "Close", Align::Start);
+    f.text_button(Id::Keymap(KeymapId::Back), close, size, Tone::Fn, "Close", Align::Start);
+    if f.s.can_undo() {
+        f.text_button(Id::Keymap(KeymapId::Undo), undo, size, Tone::Fn, "Undo", Align::Start);
+    } else {
+        f.c.text_in(undo, size, Tone::Dim, "Undo", Align::Start);
+    }
+    // The layer shown: Base in blue as any button; another in white, so it is plain which one is edited.
     let id = Id::Keymap(KeymapId::LayerPicker);
-    let tone = if f.pressed(&id) { Tone::High } else { Tone::Fn };
+    let tone = if f.pressed(&id) || layer != Layer::BASE { Tone::High } else { Tone::Fn };
     f.button(id, r, Look::TEXT, |f| layer_button(f, tone));
 }
 
@@ -504,26 +546,18 @@ fn edit(f: &mut Frame, body: Rect, id: u16, picking: Option<Picking>) {
         if picking.is_some_and(|p| !p.takes(input)) {
             continue;
         }
-        // Its press (unless as on the pad in the main layer), then its hold and double.
-        let press = binding(keymap, layer, input).filter(|b| layer != Layer::BASE || change(input, Some(b)) != Change::None);
-        let mut lines = press.map(|b| {
-            let (text, tone) = described(input, &b, keymap);
-            (Actuation::Press, text, tone)
-        });
-        let mut extra = [None, None];
-        for (slot, act) in extra.iter_mut().zip(Actuation::of(input.kind()).filter(|a| *a != Actuation::Press)) {
-            let Some(b) = keymap.and_then(|k| k.get_of(layer, input, act)) else {
-                continue;
-            };
-            match lines {
-                None => lines = Some((act, summary(input, b, keymap), Tone::Fn)),
-                Some(_) => *slot = Some((act, summary(input, b, keymap))),
-            }
+        // The layer's own; in another layer than Base, an input it doesn't map: Base's, faded.
+        let (mut lines, mut extra) = callout_lines(keymap, layer, input);
+        let mut faded = false;
+        if lines.is_none() && layer != Layer::BASE {
+            (lines, extra) = callout_lines(keymap, Layer::BASE, input);
+            faded = true;
         }
         let Some((act, text, tone)) = lines else {
             continue;
         };
-        let c = Callout { part, act, text, tone, extra, top: 0.0, collapsed: false };
+        let tone = if faded { Tone::Dim } else { tone };
+        let c = Callout { part, act, text, tone, extra, top: 0.0, collapsed: false, faded };
         if part.side == Side::Left { left.push(c) } else { right.push(c) }
     }
     for column in [&mut left, &mut right] {
@@ -598,13 +632,13 @@ fn edit(f: &mut Frame, body: Rect, id: u16, picking: Option<Picking>) {
             }
             let mut y = c.top + line;
             for (act, text) in c.extra.iter().flatten() {
-                label_line(f, at, y, size * EXTRA, lw, act_word(*act), text, Tone::Fn, "");
+                label_line(f, at, y, size * EXTRA, lw, act_word(*act), text, if c.faded { Tone::Dim } else { Tone::Fn }, "");
                 y += line * EXTRA;
             }
         }
     }
 
-    // Home (ClamShell's, drawn dim) and Back (the layer key), at the screen's bottom corners.
+    // Home (ClamShell's, drawn dim), at the screen's bottom left corner.
     let fixed = if picking.is_some() { MUTED } else { FIXED };
     if let Some(r) = pad.foot(Side::Left) {
         f.c.outline(r, r.w, PART_W, fixed);
@@ -686,6 +720,13 @@ fn panel(f: &mut Frame, body: Rect, r: Rect, id: u16, keymap: Option<&Keymap>, v
         let y = r.y + r.h * 0.4;
         for (i, t) in ["Press or touch an input", "to see what it does"].into_iter().enumerate() {
             centred(f, Rect::new(r.x, y + i as f32 * small * LINE, r.w, small * LINE), small, Tone::Dim, t);
+        }
+        // In another layer than Base: which, and what the faded labels are.
+        if view.layer != Layer::BASE {
+            let name = keymap.and_then(|k| k.layer_name(view.layer)).unwrap_or("");
+            let y = y + small * LINE * 3.0;
+            centred(f, Rect::new(r.x, y, r.w, small * LINE), small, Tone::High, name);
+            centred(f, Rect::new(r.x, y + small * LINE, r.w, small * LINE), small * 0.85, Tone::Dim, "Faded: as in Base");
         }
         return;
     };
@@ -1118,19 +1159,65 @@ fn layer_picker(f: &mut Frame, body: Rect, id: u16) {
     let pad = style::pad(body.h);
     let h = body.h * BUTTON_H;
     let size = Text::Body.size(body.h);
-    let w = (area.w * MENU_W).max(size * 8.0).min(area.w);
+    let small = Text::Small.size(body.h);
+    let edit_w = f.c.text_width(size, "Edit") + size;
     let mut y = area.y;
     for (l, name) in keymap.into_iter().flat_map(|k| k.layers()) {
-        if y + h > area.bottom() {
+        let row_h = h + small * LINE;
+        if y + row_h > area.bottom() {
             return;
         }
+        // Its name (shows it), what turns it on below, and Edit (its menu) on the right.
         let tone = if l == shown { Tone::High } else { Tone::Fn };
-        f.text_button(Id::Keymap(KeymapId::Layer(l)), Rect::new(area.x, y, w, h), size, tone, name, Align::Start);
-        y += h + pad * 0.5;
+        let row = Rect::new(area.x, y, area.w - edit_w, row_h);
+        f.button(Id::Keymap(KeymapId::Layer(l)), row, Look::TEXT, |f| {
+            f.c.text_fit(Rect::new(row.x, row.y, row.w, h), size, tone, name, Keep::Start);
+            let what = keymap.map_or(Fmt::new(), |k| turned_on_by(k, l));
+            f.c.text_fit(Rect::new(row.x, row.y + h * 0.8, row.w, small * LINE), small, Tone::Dim, &what, Keep::Start);
+        });
+        f.text_button(Id::Keymap(KeymapId::EditLayer(l)), Rect::new(area.right() - edit_w, y, edit_w, h), size, Tone::Fn, "Edit", Align::End);
+        y += row_h + pad * 0.5;
     }
     if y + h <= area.bottom() {
+        let w = (area.w * MENU_W).max(size * 8.0).min(area.w);
         f.text_button(Id::Keymap(KeymapId::NewLayer), Rect::new(area.x, y, w, h), size, Tone::Fn, "New layer…", Align::Start);
     }
+}
+
+/// What turns layer `l` on, in words: each binding to it (`Back`, `LB held`, `L1 twice`, toggles saying
+/// so; a Once layer says so first); Base is beneath the others.
+fn turned_on_by(k: &Keymap, l: Layer) -> Fmt<96> {
+    let mut out = Fmt::new();
+    if l == Layer::BASE {
+        let _ = write!(out, "Beneath the others");
+        return out;
+    }
+    if k.layer_once(l) {
+        let _ = write!(out, "Once · ");
+    }
+    let mut any = false;
+    for (from, _) in k.layers() {
+        for act in Actuation::ALL {
+            for (input, b) in k.layer_of(from, act) {
+                if b.output != Output::Layer(l) {
+                    continue;
+                }
+                let how = match (act, b.toggle) {
+                    (_, true) => " toggles",
+                    (Actuation::Press, _) => "",
+                    (Actuation::Hold, _) => " held",
+                    (Actuation::Double, _) => " twice",
+                    (Actuation::FullPull, _) => " full",
+                };
+                let _ = write!(out, "{}{}{how}", if any { ", " } else { "" }, Label(*input));
+                any = true;
+            }
+        }
+    }
+    if !any {
+        let _ = write!(out, "Nothing turns it on");
+    }
+    out
 }
 
 /// The mouse's drawing, of the room under the header: its height, and its width of its height.

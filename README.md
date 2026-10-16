@@ -259,10 +259,12 @@ start makes a
 over the settings: Default, then the keymaps with how many games use each; a tap chooses one for the scope
 being edited, Edit (or a long press: rename, duplicate, delete; deleting one in use asks first and puts its
 games back on Default) opens it, New names one (the editor) and opens it. The edit screen shows one layer,
-named at its top right: a button to the list of the keymap's layers (one tapped is shown; New layer… adds
-one, named; a long press on one: Once, rename, clear once confirmed, delete with the bindings to it; Base:
-clear), with Close at the top left. Below them, the Thor's controls in two clusters at the screen's edges
-(the gyro below the D-pad), each input the layer changes with a label, blue where it maps to something else, grey where it is the input as on the pad, only tuned. An
+named at its top right (in white when it isn't Base): a button to the list of the keymap's layers, each
+with what turns it on (one tapped is shown; New layer… adds one, named; Edit or a long press: Once,
+rename, clear once confirmed, delete with the bindings to it; Base: clear), with Close and Undo (each
+change since the screen opened, back to the one before) at the top left. Below them, the Thor's controls in two clusters at the screen's edges
+(the gyro below the D-pad), each input the layer changes with a label (in a layer, the inputs it doesn't
+map have Base's, faded), blue where it maps to something else, grey where it is the input as on the pad, only tuned. An
 input is selected by touch or by pressing (or pushing past half) it on the pad, which listens there
 instead of moving the focus (Home leaves; Home is never mapped); the panel between the label columns, the
 screen's whole height, then shows, for a button or a direction, Press, Hold and Double tabs (each actuation's binding of its own;

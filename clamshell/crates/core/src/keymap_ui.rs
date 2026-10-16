@@ -155,6 +155,16 @@ impl LayersShown {
     }
 }
 
+/// The edit screen's Undo: the keymap being edited as last saved, and as it was before each change.
+#[derive(Debug, Clone, Default)]
+pub struct Undo {
+    pub(crate) last: Option<Keymap>,
+    pub(crate) steps: Vec<Keymap>,
+}
+
+/// How many changes Undo goes back over.
+const UNDO_MAX: usize = 50;
+
 /// Who uses a keymap: all games (it is their default), and how many games of their own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Users {
@@ -239,8 +249,44 @@ impl State {
         Some(Effect::Keymap(now))
     }
 
-    fn save_keymaps(&self) -> Effect {
+    /// The keymaps saved; a change to the keymap being edited is a step Undo goes back over.
+    fn save_keymaps(&mut self) -> Effect {
+        let undo = &mut self.bottom.keymap_undo;
+        if let Some(last) = undo.last.as_ref()
+            && let Some(now) = self.keymaps.get(last.id)
+            && now != last
+        {
+            let before = undo.last.replace(now.clone());
+            undo.steps.extend(before);
+            if undo.steps.len() > UNDO_MAX {
+                undo.steps.remove(0);
+            }
+        }
         Effect::Save(Save::Keymaps(self.keymaps.text()))
+    }
+
+    /// Whether the edit screen's Undo has a change to go back over.
+    pub fn can_undo(&self) -> bool {
+        !self.bottom.keymap_undo.steps.is_empty()
+    }
+
+    /// Undo: the keymap being edited as it was before its last change (the layer shown Base if that one
+    /// is gone).
+    fn undo(&mut self, id: u16) -> Vec<Effect> {
+        let undo = &mut self.bottom.keymap_undo;
+        let Some(before) = undo.steps.pop().filter(|k| k.id == id) else {
+            return vec![];
+        };
+        undo.last = Some(before.clone());
+        if let Some(k) = self.keymaps.get_mut(id) {
+            *k = before;
+        }
+        let view = &mut self.bottom.keymap_edit;
+        if self.keymaps.get(id).is_none_or(|k| k.layer_name(view.layer).is_none()) {
+            view.layer = Layer::BASE;
+        }
+        view.slider = None;
+        vec![self.save_keymaps()]
     }
 
     /// The keymap tile: the picker opens.
@@ -319,6 +365,12 @@ impl State {
                 if view.selected.is_some_and(|i| act.fits(i.kind())) {
                     view.act = act;
                 }
+                vec![]
+            }
+            (KeymapId::Undo, Screen::Edit(k)) => self.undo(k),
+            (KeymapId::EditLayer(layer), Screen::LayerPicker(k)) => {
+                self.bottom.keymap_edit.clearing = false;
+                self.bottom.keymaps = Some(Screen::LayerMenu { id: k, layer });
                 vec![]
             }
             (KeymapId::LayerPicker, Screen::Edit(k)) => {
@@ -454,6 +506,7 @@ impl State {
     fn open_edit(&mut self, id: u16) {
         self.bottom.keymaps = Some(Screen::Edit(id));
         self.bottom.keymap_edit = EditView::default();
+        self.bottom.keymap_undo = Undo { last: self.keymaps.get(id).cloned(), steps: Vec::new() };
     }
 
     /// An input chosen on the edit screen (touched, or pressed on the pad): selected into the panel; the
@@ -1123,6 +1176,34 @@ mod tests {
         type_text(s, name);
         tap(s, Id::Editor(EditorId::Save));
         s.keymap_edit().layer
+    }
+
+    #[test]
+    fn undo_goes_back_over_the_changes_since_the_edit_screen_opened() {
+        let mut s = edit_screen();
+        let start = s.keymaps().get(1).unwrap().clone();
+        assert!(!s.can_undo());
+        assert_eq!(keymap(&mut s, KeymapId::Undo), vec![], "nothing to undo");
+        open(&mut s, Input::Button(Button::LB));
+        keymap(&mut s, KeymapId::Target(Target::Nothing));
+        let after_lb = s.keymaps().get(1).unwrap().clone();
+        let aim = add_layer(&mut s, "aim");
+        assert_eq!(s.keymap_edit().layer, aim);
+        assert!(s.can_undo());
+        // The layer's adding undone: gone, Base shown; then LB's.
+        let fx = keymap(&mut s, KeymapId::Undo);
+        assert!(matches!(fx.as_slice(), [Effect::Save(Save::Keymaps(_))]), "{fx:?}");
+        assert_eq!(s.keymaps().get(1), Some(&after_lb));
+        assert_eq!(s.keymap_edit().layer, Layer::BASE);
+        keymap(&mut s, KeymapId::Undo);
+        assert_eq!(s.keymaps().get(1), Some(&start));
+        assert!(!s.can_undo());
+        // Opened again: a fresh start.
+        open(&mut s, Input::Button(Button::LB));
+        keymap(&mut s, KeymapId::Target(Target::Nothing));
+        keymap(&mut s, KeymapId::Back);
+        tap(&mut s, Id::Row { list: ListId::Keymaps, i: 1, part: RowPart::Edit });
+        assert!(!s.can_undo());
     }
 
     #[test]
