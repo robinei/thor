@@ -1291,8 +1291,8 @@ mod tests {
 
     /// `input` bound in a layer on while Back is held (made the first time), as old Back layers load.
     fn back_layer(k: &mut Keymap, input: Input, b: Binding) {
-        let held = k.layers().find(|(_, n)| *n == "Back held").map(|(l, _)| l);
-        let layer = held.or_else(|| k.add_layer("Back held")).unwrap();
+        let held = k.layers().find(|(_, n)| *n == "held").map(|(l, _)| l);
+        let layer = held.or_else(|| k.add_layer("held")).unwrap();
         k.set(Input::Button(Button::Back), Some(to(Output::Layer(layer))));
         assert!(k.set_in(layer, input, Some(b)));
     }

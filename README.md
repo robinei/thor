@@ -241,9 +241,9 @@ off and the device sleeps) are on the Battery tab, not here: they aren't a game'
 **Keymaps** remap the controller for games: named, shared between games, saved in `keymaps.txt` next to
 `game-settings.txt` (a `keymap ID NAME` line, then a line per binding, `INPUT = OUTPUT [option=value]`, e.g.
 `a = key ctrl+x turbo=12`, `a hold = key esc holdtime=60`, `b double = mouse left toggle`,
-`rstick = pointer speed=75% deadzone=10`, `gyro = pointer hold=lt`, `back = layer 1`; a `layer N NAME`
+`rstick = pointer speed=75 deadzone=10`, `gyro = pointer hold=lt`, `back = layer 1`; a `layer N NAME`
 line starts a layer's bindings, Base's coming first; lines not understood are skipped, and a layer not
-known; a file's old `layer back` becomes a layer "Back held" with Back mapped to it). Each keymap has
+known). Each keymap has
 **layers**: Base, and the ones added (named), each on while a binding to it is: held (a press or a hold
 to it), toggled (a toggle), or pressed twice (a double), any button or trigger turning one on. Layers on
 stack, the newest first: an input without a binding in it does what the layers beneath say, Base last;
@@ -278,7 +278,7 @@ past its own threshold (95 % unless set), e.g. `rt full = mouse left threshold=9
 stick on the pointer, which has a deadzone of 15 % and a curve of 50 % (the distance past it squared, as
 the pointer moved before); the panel shows the values that apply, and a new target takes its own defaults
 for the values not set. A stick's deadzone is the keymap's only one (a game that needs another uses a
-keymap of its own; the old per-game Deadzone setting is gone, its `deadzone=` key ignored). A value is held (or slid) for the bar's slider, which sets
+keymap of its own). A value is held (or slid) for the bar's slider, which sets
 it as the finger moves (the game gets it at once); the panel's parameters are touch only, since the pad
 listens on that screen. A long press on an input sets it back. What an input may map to fits its kind: a button, D-pad direction or stick direction to a pad
 button (one of the list, or the next pressed on the pad), a key chord (typed on the keyboard: modifiers

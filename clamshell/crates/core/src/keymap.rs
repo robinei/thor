@@ -14,9 +14,9 @@
 //! on (turbo) or stay on from one actuation to the next (toggle).
 //!
 //! Saved in `keymaps.txt` (next to `game-settings.txt`): a `keymap ID NAME` line starts a keymap, then a
-//! line per binding, `INPUT [hold|double] = OUTPUT [option=value ...] [toggle]`; a `layer back` line
-//! starts the Back layer's bindings (`layer main` the main layer's again). Lines it doesn't understand are
-//! skipped, and so are the bindings of a layer it doesn't know, so later features can add their own.
+//! line per binding, `INPUT [hold|double] = OUTPUT [option=value ...] [toggle]`; a `layer N NAME` line
+//! starts layer N's bindings (Base's come first). Lines it doesn't understand are skipped, and so are the
+//! bindings of a layer it doesn't know, so later features can add their own.
 
 use std::fmt::{self, Write};
 
@@ -567,15 +567,12 @@ impl Output {
     }
 }
 
-/// Motion mapped to a stick or the pointer: its speed, 0 to 100 (50 is the stock speed). Files from
-/// before kept it as a step of 1 to 5, which load as 0, 25, 50, 75, 100.
+/// Motion mapped to a stick or the pointer: its speed, 0 to 100 (50 is the stock speed).
 pub const DEFAULT_SPEED: u8 = 50;
 /// A trigger mapped to a button acts past this (percent of its travel, 1 to 100).
 pub const DEFAULT_THRESHOLD: u8 = 50;
 /// A trigger's full pull acts past this (percent of its travel) unless set otherwise.
 pub const FULL_PULL: u8 = 95;
-/// The name the Back layer of files from before named layers gets.
-const BACK_HELD: &str = "Back held";
 /// A press held this long is a hold (hundredths of a second, 20 to 100).
 pub const DEFAULT_HOLD_TIME: u8 = 40;
 /// The gyro: turning faster than this (degrees per second) gets the whole of its acceleration.
@@ -1370,24 +1367,13 @@ impl Keymaps {
                     continue;
                 };
                 let (id, name) = rest.trim().split_once(' ').unwrap_or((rest.trim(), ""));
-                layer = match (id, id.parse::<u8>()) {
-                    ("main", _) | (_, Ok(0)) => Some(Layer::BASE),
-                    // Files from before named layers: the Back layer is a layer on while Back is held.
-                    ("back", _) => {
-                        let found = keymap.layers.iter().find(|l| l.name == BACK_HELD).map(|l| l.id);
-                        let back = found.or_else(|| keymap.add_layer(BACK_HELD));
-                        if let Some(l) = back
-                            && keymap.get(Input::Button(Button::Back)).is_none()
-                        {
-                            keymap.set(Input::Button(Button::Back), Some(Binding::to(Output::Layer(l))));
-                        }
-                        back
-                    }
-                    (_, Ok(n)) => {
+                layer = match id.parse::<u8>() {
+                    Ok(0) => Some(Layer::BASE),
+                    Ok(n) => {
                         keymap.ensure_layer(Layer(n), (!name.trim().is_empty()).then_some(name));
                         Some(Layer(n))
                     }
-                    _ => None,
+                    Err(_) => None,
                 };
                 continue;
             }
@@ -1417,8 +1403,7 @@ fn write_bindings(bindings: &Bindings, text: &mut String) {
             for p in params_of(*input, b.output, act).filter(|p| !p.switch()) {
                 let v = p.get(b);
                 if v != p.default_for(*input, b.output) {
-                    // (Speed with a percent sign: files from before have a step there.)
-                    let _ = write!(text, " {}={v}{}", p.name(), if p == Param::Speed { "%" } else { "" });
+                    let _ = write!(text, " {}={v}", p.name());
                 }
             }
             if b.invert_x || b.invert_y {
@@ -1472,14 +1457,6 @@ fn side(word: &str) -> Option<Side> {
     Side::ALL.into_iter().find(|s| s.name() == word)
 }
 
-/// A speed as written: `N%` (0 to 100), or a step of 1 to 5 (files from before).
-fn speed(v: &str) -> Option<u8> {
-    match v.strip_suffix('%') {
-        Some(percent) => percent.parse().ok().filter(|p| Param::Speed.range().contains(p)),
-        None => v.parse::<u8>().ok().filter(|s| (1..=5).contains(s)).map(|s| (s - 1) * 25),
-    }
-}
-
 /// `INPUT = OUTPUT [option=value ...]`.
 fn parse_binding(line: &str) -> Option<(Input, Actuation, Binding)> {
     let (input, rest) = line.split_once('=')?;
@@ -1516,9 +1493,7 @@ fn parse_binding(line: &str) -> Option<(Input, Actuation, Binding)> {
     let mut binding = Binding::of(input, output);
     for word in words {
         match word.split_once('=') {
-            Some(("speed", v)) => binding.speed = speed(v).unwrap_or(DEFAULT_SPEED),
-            Some(("threshold", v)) => binding.threshold = v.parse().ok().filter(|v| Param::Threshold.range().contains(v)).unwrap_or(DEFAULT_THRESHOLD),
-            Some((name @ ("deadzone" | "full" | "curve" | "turbo" | "holdtime" | "accel" | "accelat" | "tighten" | "stickmin"), v)) => {
+            Some((name @ ("speed" | "threshold" | "deadzone" | "full" | "curve" | "turbo" | "holdtime" | "accel" | "accelat" | "tighten" | "stickmin"), v)) => {
                 if let Some(p) = Param::ALL.into_iter().find(|p| p.name() == name)
                     && let Some(v) = v.parse().ok().filter(|v| p.range().contains(v))
                 {
@@ -1600,14 +1575,14 @@ mod tests {
         k.set(Input::Gyro, Some(Binding { speed: 37, hold: Some(Input::Trigger(Side::Left)), ..Binding::to(Output::Pointer) }));
         let text = maps.text();
         assert!(text.starts_with("keymap 1 Nintendo layout\na = pad b\nb = pad a\nx = pad y\ny = pad x\nkeymap 2 FPS\na = key ctrl+x\nl4 = pad left\n"), "{text}");
-        assert!(text.contains("\nlstick = keys w a s d\n") && text.contains("\nrstick = pointer speed=75% deadzone=20 full=90 curve=40 invert=y\n") && text.contains("\ngyro = pointer speed=37% hold=lt\n"), "{text}");
+        assert!(text.contains("\nlstick = keys w a s d\n") && text.contains("\nrstick = pointer speed=75 deadzone=20 full=90 curve=40 invert=y\n") && text.contains("\ngyro = pointer speed=37 hold=lt\n"), "{text}");
         assert!(text.contains("\nlt = mouse right threshold=25\n") && text.contains("\nrt = trigger right deadzone=5\n") && text.contains("\nrstick-up = wheel up\n"), "{text}");
         assert_eq!(Keymaps::load(&text), maps);
     }
 
     #[test]
     fn lines_not_understood_are_skipped() {
-        let text = "# a comment\nkeymap 3 Turbo\na = key x turbo=10\nb = warp 9\nzz = pad a\nlstick = key x\ngyro = pointer hold=up\nx = pad x hold=a\nlayer x\ny = pad a\nlayer main\nlt = trigger right\nkeymap 0 bad\nkeymap x bad\nkeymap 3 again\n";
+        let text = "# a comment\nkeymap 3 Turbo\na = key x turbo=10\nb = warp 9\nzz = pad a\nlstick = key x\ngyro = pointer hold=up\nx = pad x hold=a\nlayer x\ny = pad a\nlayer 0\nlt = trigger right\nkeymap 0 bad\nkeymap x bad\nkeymap 3 again\n";
         let maps = Keymaps::load(text);
         assert_eq!(maps.list().len(), 1);
         let k = maps.get(3).unwrap();
@@ -1615,13 +1590,13 @@ mod tests {
         assert_eq!(k.get(Input::Button(Button::A)).map(|b| b.output), Some(Output::Key(chord("x"))), "an unknown option is skipped");
         assert_eq!(k.get(Input::Gyro).map(|b| b.hold), Some(None), "a D-pad direction doesn't hold the gyro");
         assert_eq!(k.get(Input::Button(Button::Y)), None, "a layer not known is skipped");
-        assert_eq!(k.get(Input::Trigger(Side::Left)).map(|b| b.output), Some(Output::Trigger(Side::Right)), "main again");
+        assert_eq!(k.get(Input::Trigger(Side::Left)).map(|b| b.output), Some(Output::Trigger(Side::Right)), "Base again");
         assert_eq!(k.bindings().len(), 3, "{k:?}");
         assert_eq!(k.layers().count(), 1, "Base only");
     }
 
     #[test]
-    fn layers_are_named_targets_and_old_back_layers_carry_over() {
+    fn layers_are_named_targets() {
         let a = Input::Button(Button::A);
         let back = Input::Button(Button::Back);
         let mut k = Keymap::new(5, "Layers");
@@ -1639,31 +1614,21 @@ mod tests {
         // Removed: its bindings, and those to it, go.
         assert!(k.remove_layer(aim));
         assert_eq!((k.layers().count(), k.get(Input::Button(Button::LB))), (1, None));
-        // A file from before named layers: its Back layer is a layer on while Back is held.
-        let old = Keymaps::load("keymap 1 Old\na = key x\nlayer back\na = key ctrl+y\n");
-        let k = old.get(1).unwrap();
-        let held: Vec<_> = k.layers().collect();
-        assert_eq!(held, vec![(Layer::BASE, "Base"), (Layer(1), "Back held")]);
-        assert_eq!(k.get(back).map(|b| b.output), Some(Output::Layer(Layer(1))));
-        assert_eq!(k.get_in(Layer(1), a).map(|b| b.output), Some(Output::Key(chord("ctrl+y"))));
         // Back on the pad games see: nothing as on the pad; not a pad output.
         assert_eq!(as_on_the_pad(back), Some(Output::Nothing));
         assert_eq!(PadOut::of(back), None);
     }
 
     #[test]
-    fn speeds_from_before_load_as_their_equivalents() {
-        let text = "keymap 1 Old\nrstick = pointer speed=4\nlstick = pointer speed=1\ngyro = stick right speed=5\nlt = key x threshold=75\nrt = key y threshold=0\nkeymap 2 New\nrstick = pointer speed=4% deadzone=60\n";
+    fn parameters_load_in_range_and_apply_by_target() {
+        let text = "keymap 1 K\nrstick = pointer speed=75 deadzone=60\nlt = key x threshold=75\nrt = key y threshold=0\n";
         let maps = Keymaps::load(text);
-        let get = |k: u16, i: Input| *maps.get(k).unwrap().get(i).unwrap();
-        assert_eq!(get(1, Input::Stick(Side::Right)).speed, 75);
-        assert_eq!(get(1, Input::Stick(Side::Left)).speed, 0);
-        assert_eq!(get(1, Input::Gyro).speed, 100);
-        assert_eq!(get(1, Input::Trigger(Side::Left)).threshold, 75, "thresholds were percent already");
-        assert_eq!(get(1, Input::Trigger(Side::Right)).threshold, DEFAULT_THRESHOLD, "out of range");
-        assert_eq!(get(2, Input::Stick(Side::Right)).speed, 4, "a percent");
-        assert_eq!(get(2, Input::Stick(Side::Right)).deadzone, POINTER_DEADZONE, "out of range: its default");
-        assert!(maps.text().contains("rstick = pointer speed=75%\n"), "{}", maps.text());
+        let get = |i: Input| *maps.get(1).unwrap().get(i).unwrap();
+        assert_eq!(get(Input::Stick(Side::Right)).speed, 75);
+        assert_eq!(get(Input::Stick(Side::Right)).deadzone, POINTER_DEADZONE, "out of range: its default");
+        assert_eq!(get(Input::Trigger(Side::Left)).threshold, 75);
+        assert_eq!(get(Input::Trigger(Side::Right)).threshold, DEFAULT_THRESHOLD, "out of range");
+        assert!(maps.text().contains("rstick = pointer speed=75\n"), "{}", maps.text());
         let mut b = Binding::to(Output::Pointer);
         Param::Full.set(&mut b, 10);
         assert_eq!(b.full, 50);
@@ -1761,11 +1726,8 @@ mod tests {
     }
 
     #[test]
-    fn layers_round_trip_and_old_files_load_unchanged() {
-        let old = "keymap 1 Nintendo layout\na = pad b\nb = pad a\nx = pad y\ny = pad x\n";
-        let maps = Keymaps::load(old);
-        assert_eq!(maps, Keymaps::initial(), "a file from before layers");
-        assert_eq!(maps.text(), old, "and written the same");
+    fn layers_round_trip() {
+        let base = "keymap 1 Nintendo layout\na = pad b\nb = pad a\nx = pad y\ny = pad x\n";
         let mut maps = Keymaps::initial();
         let k = maps.get_mut(1).unwrap();
         let aim = k.add_layer("Aim").unwrap();
@@ -1773,7 +1735,7 @@ mod tests {
         assert!(k.set_in(aim, Input::Gyro, Some(Binding { hold: Some(Input::Button(Button::RB)), ..Binding::to(Output::Pointer) })));
         assert!(k.set_in(aim, Input::Button(Button::B), as_on_the_pad(Input::Button(Button::B)).map(Binding::to)));
         let text = maps.text();
-        assert_eq!(text, format!("{old}layer 1 Aim\na = key ctrl+y\nb = pad b\ngyro = pointer hold=rb\n"));
+        assert_eq!(text, format!("{base}layer 1 Aim\na = key ctrl+y\nb = pad b\ngyro = pointer hold=rb\n"));
         assert_eq!(Keymaps::load(&text), maps);
         // A copy has its layers; clearing one leaves the others.
         let copy = maps.duplicate(1, "Copy").unwrap();
