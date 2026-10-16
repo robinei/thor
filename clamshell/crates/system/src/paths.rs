@@ -97,6 +97,11 @@ impl Paths {
         self.state_dir.as_ref().map(|d| d.join("keymaps.txt"))
     }
 
+    /// Which programs' windows go to the bottom screen.
+    pub fn window_rules(&self) -> Option<PathBuf> {
+        self.state_dir.as_ref().map(|d| d.join("window-rules.txt"))
+    }
+
     /// Whether there is a systemd user session to put apps and games in scopes of.
     pub fn has_user_systemd(&self) -> bool {
         self.runtime.as_deref().is_some_and(|d| d.join("systemd/private").exists())

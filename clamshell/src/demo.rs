@@ -24,6 +24,7 @@ pub fn running() -> Vec<Event> {
         focused,
         unit: Some(unit.into()),
         workspace: unit.trim_end_matches(".scope").replace("clamshell-game-1-0", &Instance::Landing.name()),
+        ..Window::default()
     };
     vec![
         Event::Game(GameEvent::Started("zelda-lttp".into())),

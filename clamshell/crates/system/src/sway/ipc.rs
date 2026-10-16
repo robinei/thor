@@ -101,6 +101,8 @@ pub struct Node {
     pub app_id: Option<String>,
     pub window_properties: Option<WindowProperties>,
     pub focused: bool,
+    /// Marks on it (ours: [`super::commands::DOWN_MARK`] on a window moved to the bottom screen).
+    pub marks: Vec<String>,
     pub nodes: Vec<Node>,
     pub floating_nodes: Vec<Node>,
 }

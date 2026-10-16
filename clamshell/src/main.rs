@@ -16,6 +16,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use clamshell_core::bottom_screen::WindowRules;
 use clamshell_core::keymap::Keymaps;
 use clamshell_core::levels::Brightness;
 use clamshell_core::settings::Settings;
@@ -105,6 +106,18 @@ fn main() -> ExitCode {
 }
 
 /// The keymaps from keymaps.txt; without the file (the first start), the ready-made ones, saved.
+/// Which programs' windows go to the bottom screen (none until a window is moved there).
+fn load_window_rules(paths: &Paths) -> WindowRules {
+    match paths.window_rules().map(std::fs::read_to_string) {
+        Some(Ok(text)) => WindowRules::load(&text),
+        Some(Err(e)) if e.kind() != std::io::ErrorKind::NotFound => {
+            log::warn!("window rules: {e}");
+            WindowRules::default()
+        }
+        _ => WindowRules::default(),
+    }
+}
+
 fn load_keymaps(paths: &Paths) -> Keymaps {
     let Some(file) = paths.keymaps() else {
         return Keymaps::initial();
@@ -150,6 +163,7 @@ fn run(env: &Env, paths: Paths, sources: &Sources) -> ExitCode {
         settings: read(paths.game_settings().as_deref()).map_or_else(Settings::default, |t| Settings::load(&t)),
         // The keymaps; the first time, the Nintendo layout, written at once.
         keymaps: load_keymaps(&paths),
+        window_rules: load_window_rules(&paths),
         // The screens' brightness as it was left: the level and each screen's share.
         brightness: read(paths.brightness.as_deref()).map_or_else(Brightness::default, |t| Brightness::from_text(&t)),
         // The dock's apps (without launcher.json: Steam and a terminal).

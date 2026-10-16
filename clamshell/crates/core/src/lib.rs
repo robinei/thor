@@ -10,6 +10,7 @@
 pub mod apps;
 pub mod battery;
 pub mod bluetooth;
+pub mod bottom_screen;
 pub mod editor;
 mod effect;
 mod event;
@@ -118,6 +119,8 @@ pub struct Init {
     pub pad_mouse: bool,
     /// ClamShell is the device's own session: it may put the device to sleep when idle.
     pub device_session: bool,
+    /// Which programs' windows go to the bottom screen.
+    pub window_rules: bottom_screen::WindowRules,
 }
 
 #[derive(Debug, Default)]
@@ -142,6 +145,8 @@ pub struct State {
     idle: idle::Idle,
     /// ClamShell is the device's own session (see [`Init::device_session`]).
     device_session: bool,
+    /// Which programs' windows go to the bottom screen.
+    window_rules: bottom_screen::WindowRules,
 }
 
 /// Replaces `slot` with `value`; whether that changed it.
@@ -157,6 +162,7 @@ impl State {
             shelf: Shelf::new(init.library),
             settings: init.settings,
             keymaps: init.keymaps,
+            window_rules: init.window_rules,
             levels: Levels::new(init.brightness),
             apps: init.apps,
             device_session: init.device_session,
@@ -297,6 +303,7 @@ impl State {
             Event::Windows(windows) => {
                 self.session.set_windows(windows);
                 let mut effects = self.follow_games();
+                effects.extend(self.follow_window_rules());
                 effects.extend(self.session.show_pending());
                 (Dirty::BOTH, effects)
             }
@@ -738,7 +745,7 @@ pub(crate) mod testkit {
     }
 
     pub fn win(id: i64, app_id: &str, workspace: &str, focused: bool) -> Window {
-        Window { id, app_id: app_id.into(), title: String::new(), focused, unit: None, workspace: workspace.into() }
+        Window { id, app_id: app_id.into(), title: String::new(), focused, unit: None, workspace: workspace.into(), ..Window::default() }
     }
 
     /// A terminal of the user's in front (not one of ours).

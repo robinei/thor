@@ -32,6 +32,8 @@ pub struct Session {
     pub(crate) queued: Option<Queued>,
     /// The compositor's windows.
     pub(crate) windows: Vec<Window>,
+    /// Windows sent to the bottom screen by a rule (each once; dropped when it closes).
+    pub(crate) sent_down: Vec<i64>,
     /// Our running scopes (systemd's list).
     pub(crate) units: Vec<Instance>,
     /// Workspaces by when they were last in front, most recent first.

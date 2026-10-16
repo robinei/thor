@@ -107,6 +107,22 @@ check_soon "a slow app: its window on its workspace, brought to the front" '[ "$
 ctl tap app $SPAWNER
 check_soon "a later window of a launch: on the launch's workspace" '[ -n "$(ws_of late)" ] && [ "$(ws_of first)" = "$(units app-spawner)" ] && [ "$(ws_of late)" = "$(units app-spawner)" ]' 8
 
+# The bottom screen: the spawner's windows moved down (Home+Down) and up again (Home+Up).
+SP=$(units app-spawner)
+RULES="$T/pegasus/window-rules.txt"
+focused_output() { json get_outputs "import json,sys; print(next((o['name'] for o in json.load(sys.stdin) if o['focused']), ''))"; }
+msg "[app_id=\"^late$\"] focus"; sleep 0.3
+ctl window down
+check_soon "Home+Down: the window in front to the bottom screen; the main screen keeps the keyboard" \
+    '[ "$(output_of "$(ws_of late)")" = HEADLESS-2 ] && [ "$(ws_of first)" = "$SP" ] && [ "$(focused_output)" = HEADLESS-1 ]'
+check "  remembered for its program" 'grep -q "^bottom	app	spawner	late	" "$RULES"'
+msg "[app_id=\"^first$\"] focus"; sleep 0.3
+ctl window down
+check_soon "  its last window down too: its workspace empty, shelf in front" '[ "$(output_of "$(ws_of first)")" = HEADLESS-2 ] && [ "$(front)" = clamshell-shelf ]'
+ctl window up; sleep 0.3; ctl window up
+sleep 1; echo "DBG late=$(ws_of late) first=$(ws_of first) SP=$SP"; echo "DBG rules:"; cat "$RULES"; grep -iE "sway:|bottom|window" "$T/program.log" | tail -8
+check_soon "Home+Up, twice: both back on their workspace, the rules forgotten" '[ "$(ws_of late)" = "$SP" ] && [ "$(ws_of first)" = "$SP" ] && ! grep -q "^bottom" "$RULES"'
+
 ctl tap app $DETACHED
 check_soon "a window sway can't trace (detached, no token): on its instance's workspace, by its scope" '[ -n "$(ws_of detached)" ] && [ "$(ws_of detached)" = "$(units app-detached)" ]' 8
 

@@ -153,7 +153,14 @@ fn away(route: PadRoute) -> bool {
 }
 
 /// Home held with one of these buttons: ClamShell's system shortcut (the game never sees the button).
-const SYSTEM: [(KeyCode, DeviceKey); 1] = [(KeyCode::BTN_TR, DeviceKey::Screenshot)];
+/// The D-pad as a hat (most controllers) is in [`PadRouter::event`]; as buttons, here.
+const SYSTEM: [(KeyCode, DeviceKey); 5] = [
+    (KeyCode::BTN_TR, DeviceKey::Screenshot),
+    (KeyCode::BTN_SELECT, DeviceKey::BottomNext),
+    (KeyCode::BTN_START, DeviceKey::BottomPower),
+    (KeyCode::BTN_DPAD_UP, DeviceKey::WindowUp),
+    (KeyCode::BTN_DPAD_DOWN, DeviceKey::WindowDown),
+];
 
 /// The home button.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -180,6 +187,8 @@ pub struct PadRouter {
     home: Home,
     /// Buttons a combination took: their release stays ClamShell's too.
     taken: Vec<KeyCode>,
+    /// The D-pad's up or down taken by a Home shortcut: its events are ClamShell's until it is centred.
+    hat_taken: bool,
     mouse: PadMouse,
     navigator: Navigator,
     typing: Typing,
@@ -204,6 +213,7 @@ impl PadRouter {
             route,
             home: Home::Up,
             taken: Vec::new(),
+            hat_taken: false,
             mouse: PadMouse::new(ranges),
             navigator: Navigator::new(ranges.stick),
             typing: Typing,
@@ -337,6 +347,18 @@ impl PadRouter {
                     self.guide(true, out);
                 } else {
                     self.home = Home::Held { combined: true };
+                }
+                return;
+            }
+            // Home with the D-pad up or down (a hat): a window between the screens.
+            None if raw.as_abs().is_some_and(|(axis, _)| axis == AbsoluteAxisCode::ABS_HAT0Y) && (held || self.hat_taken) => {
+                let value = raw.as_abs().map_or(0, |(_, v)| v);
+                if self.hat_taken {
+                    self.hat_taken = value != 0;
+                } else if value != 0 {
+                    self.home = Home::Held { combined: true };
+                    self.hat_taken = true;
+                    out.events.push(Event::Device(if value < 0 { DeviceKey::WindowUp } else { DeviceKey::WindowDown }));
                 }
                 return;
             }
@@ -488,6 +510,50 @@ mod tests {
         assert!(out.pad.is_empty(), "still away");
         r.set_route(PadRoute::Game, &mut out);
         assert_eq!(out.pad, vec![key(KeyCode::BTN_TL, Press::Down), axis(1000), rz, Raw::REPORT], "as it is");
+    }
+
+    #[test]
+    fn home_with_select_start_and_the_dpad_are_the_bottom_screens_and_the_game_sees_none() {
+        // (A controller with a D-pad hat.)
+        let ranges = Ranges { stick: Range::STICK, trigger: Range { min: 0, max: 1023 } };
+        let axes = vec![Axis { code: AbsoluteAxisCode::ABS_HAT0Y, value: 0, rest: 0 }];
+        let mut out = Out::default();
+        let mut r = PadRouter::new(ranges, PadSnapshot::new(axes), PadRoute::Game, Keymap::default(), &mut out);
+        let now = Instant::now();
+        let hat = |v| Raw::abs(AbsoluteAxisCode::ABS_HAT0Y, v);
+        r.event(key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
+        for code in [KeyCode::BTN_SELECT, KeyCode::BTN_START] {
+            r.event(key(code, Press::Down), now, &mut out);
+            r.event(key(code, Press::Up), now, &mut out);
+        }
+        // The D-pad as a hat: down, centred, up, centred; then Home let go.
+        for v in [1, 0, -1, 0] {
+            r.event(hat(v), now, &mut out);
+            r.event(Raw::REPORT, now, &mut out);
+        }
+        r.event(key(KeyCode::BTN_MODE, Press::Up), now, &mut out);
+        let device = |k| Event::Device(k);
+        assert_eq!(
+            out.events,
+            vec![device(DeviceKey::BottomNext), device(DeviceKey::BottomPower), device(DeviceKey::WindowDown), device(DeviceKey::WindowUp)],
+            "not Home as well"
+        );
+        let dpad = |pad: &[Raw]| pad.iter().any(|e| e.as_key().is_some_and(|(k, _)| matches!(k, KeyCode::BTN_DPAD_UP | KeyCode::BTN_DPAD_DOWN)));
+        assert!(!dpad(&out.pad), "the game saw no D-pad: {:?}", out.pad);
+        // Home let go while the D-pad is still down: the rest of that press is ClamShell's too.
+        out.events.clear();
+        out.pad.clear();
+        r.event(key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
+        r.event(hat(1), now, &mut out);
+        r.event(key(KeyCode::BTN_MODE, Press::Up), now, &mut out);
+        r.event(hat(0), now, &mut out);
+        r.event(Raw::REPORT, now, &mut out);
+        assert_eq!(out.events, vec![device(DeviceKey::WindowDown)]);
+        assert!(!dpad(&out.pad), "{:?}", out.pad);
+        // Without Home, the D-pad is the game's.
+        r.event(hat(1), now, &mut out);
+        r.event(Raw::REPORT, now, &mut out);
+        assert!(out.pad.contains(&key(KeyCode::BTN_DPAD_DOWN, Press::Down)), "{:?}", out.pad);
     }
 
     #[test]

@@ -145,6 +145,8 @@ fn draw_notice(f: &mut Frame, what: &NoticeKind, w: f32, bar_h: f32) {
         NoticeKind::Gyro(None) => (None, Fmt::of(format_args!("Hold still: calibrating the gyro"))),
         NoticeKind::Gyro(Some(true)) => (None, Fmt::of(format_args!("Gyro calibrated"))),
         NoticeKind::Gyro(Some(false)) => (None, Fmt::of(format_args!("Moved: gyro not calibrated"))),
+        NoticeKind::BottomRule(true) => (None, Fmt::of(format_args!("On the bottom screen from now on"))),
+        NoticeKind::BottomRule(false) => (None, Fmt::of(format_args!("Back on top from now on"))),
     };
     let x = (w - widgets::card_width(f, bar_h, icon.is_some(), &text)) / 2.0;
     widgets::card(f, x, bar_h * 1.3, bar_h, icon, &text);

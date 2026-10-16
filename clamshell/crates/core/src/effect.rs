@@ -113,6 +113,8 @@ pub enum Save {
     Resume(String),
     /// The screens' brightness (see [`crate::levels::Brightness::text`]), to apply at the next start.
     Brightness(String),
+    /// The window rules (see [`crate::bottom_screen::WindowRules::text`]).
+    WindowRules(String),
 }
 
 /// What the compositor is asked to do.
@@ -126,6 +128,17 @@ pub enum WindowCommand {
     Move { windows: Vec<i64>, to: Instance },
     /// Bring shelf's window to the front.
     ShowShelf,
+    /// A window to the bottom screen (marked there, so it stays), shown there; the top screen keeps the
+    /// keyboard.
+    Down(i64),
+    /// A window moved down back to the top screen: to its workspace (or the one in front).
+    Up { window: i64, to: Option<Instance> },
+    /// The bottom screen shows this window moved there; the top screen keeps the keyboard.
+    ShowDown(i64),
+    /// The bottom screen's output on or off.
+    BottomPower(bool),
+    /// Show this window (a program's next one on the top screen).
+    FocusWindow(i64),
 }
 
 /// Which screens need a new frame after an event.

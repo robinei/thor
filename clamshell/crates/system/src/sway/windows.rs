@@ -13,11 +13,15 @@ use super::ipc::Node;
 /// systemd unit.
 pub fn windows(tree: &Node, unit: &mut impl FnMut(u32) -> Option<String>) -> Vec<Window> {
     let mut out = Vec::new();
-    collect(tree, "", unit, &mut out);
+    collect(tree, "", "", unit, &mut out);
     out
 }
 
-fn collect(node: &Node, workspace: &str, unit: &mut impl FnMut(u32) -> Option<String>, out: &mut Vec<Window>) {
+fn collect(node: &Node, output: &str, workspace: &str, unit: &mut impl FnMut(u32) -> Option<String>, out: &mut Vec<Window>) {
+    let output = match node.kind.as_str() {
+        "output" => node.name.as_deref().unwrap_or(""),
+        _ => output,
+    };
     let workspace = match node.kind.as_str() {
         "workspace" => node.name.as_deref().unwrap_or(""),
         _ => workspace,
@@ -32,10 +36,12 @@ fn collect(node: &Node, workspace: &str, unit: &mut impl FnMut(u32) -> Option<St
             focused: node.focused,
             unit: unit(pid),
             workspace: workspace.to_owned(),
+            output: output.to_owned(),
+            down: node.marks.iter().any(|m| m.starts_with(commands::DOWN_MARK)),
         });
     }
     for child in node.children() {
-        collect(child, workspace, unit, out);
+        collect(child, output, workspace, unit, out);
     }
 }
 
@@ -63,7 +69,20 @@ pub fn emptied(tree: &Node) -> Option<&str> {
 /// screen's output.
 pub fn reconcile(windows: &[Window], emptied: Option<&str>, top: Option<&str>, tried: &mut HashSet<(i64, String)>) -> Vec<String> {
     let mut out = Vec::new();
+    let bottom = Instance::Bottom.name();
     for w in windows {
+        // Moved to the bottom screen by us: left there.
+        if w.down {
+            continue;
+        }
+        // Landed on the bottom screen by itself (a tap there focuses its output): to its home, or the
+        // main screen.
+        if w.workspace == bottom && w.home().is_none() {
+            if tried.insert((w.id, String::new())) {
+                out.push(commands::to_top(w.id, top));
+            }
+            continue;
+        }
         let Some(home) = w.home().filter(|h| !h.is(&w.workspace)) else {
             continue;
         };
@@ -129,7 +148,7 @@ mod tests {
     }
 
     fn window(id: i64, app_id: &str, unit: Option<&str>, workspace: &str) -> Window {
-        Window { id, app_id: app_id.into(), title: String::new(), focused: false, unit: unit.map(Into::into), workspace: workspace.into() }
+        Window { id, app_id: app_id.into(), unit: unit.map(Into::into), workspace: workspace.into(), ..Window::default() }
     }
 
     #[test]
@@ -141,6 +160,27 @@ mod tests {
         let asked = reconcile(&[late.clone(), home, stray], None, Some("DSI-2"), &mut tried);
         assert_eq!(asked, vec![r#"workspace "clamshell-app-spawner-1-0" output "DSI-2"; [con_id=4] move container to workspace "clamshell-app-spawner-1-0""#]);
         assert!(reconcile(&[late], None, Some("DSI-2"), &mut tried).is_empty(), "not asked again");
+    }
+
+    #[test]
+    fn windows_moved_down_stay_and_strays_on_the_bottom_screen_go_up() {
+        let bottom = Instance::Bottom.name();
+        let ours = "clamshell-game-1-0.scope";
+        let down = Window { down: true, ..window(4, "emu", Some(ours), &bottom) };
+        let stray = window(5, "foot", None, &bottom);
+        let mut tried = HashSet::new();
+        let asked = reconcile(&[down, stray], None, Some("DSI-2"), &mut tried);
+        assert_eq!(asked, vec![r#"[con_id=5] move container to output "DSI-2", focus"#], "the marked one left down");
+    }
+
+    #[test]
+    fn the_tree_says_which_output_a_window_is_on_and_whether_it_is_down() {
+        let tree = tree(
+            r#"{"type": "root", "nodes": [{"type": "output", "name": "DSI-1", "nodes": [{"type": "workspace", "name": "clamshell-bottom",
+                "nodes": [{"type": "con", "id": 7, "pid": 100, "app_id": "emu", "marks": ["clamshell-down-7"], "nodes": []}]}]}]}"#,
+        );
+        let w = windows(&tree, &mut |_| None);
+        assert_eq!((w[0].output.as_str(), w[0].down), ("DSI-1", true));
     }
 
     #[test]

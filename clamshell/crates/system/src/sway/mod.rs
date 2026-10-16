@@ -48,6 +48,16 @@ pub enum Command {
     Close(i64),
     /// Move windows to a workspace (on the main screen), without showing it.
     Move { windows: Vec<i64>, workspace: String },
+    /// A window to the bottom screen (marked, so it stays), shown there.
+    Down(i64),
+    /// A window moved down back up: to this workspace (or the main screen).
+    Up { window: i64, workspace: Option<String> },
+    /// The bottom screen shows this window moved there.
+    ShowDown(i64),
+    /// The bottom screen's output on or off.
+    Power(bool),
+    /// Show a window (focus it).
+    FocusWindow(i64),
 }
 
 /// The main screen's output: the first active one that isn't the second screen's. Kept by the window
@@ -100,6 +110,7 @@ pub fn spawn(socket: Option<PathBuf>, bottom: String, sink: impl Sink) -> io::Re
 /// Carries out one command on a connection of its own (sway may have restarted since the last).
 fn carry_out(socket: &Path, top: &TopOutput, exe: &Path, command: &Command) -> Result<(), Error> {
     let mut ipc = Ipc::connect(socket)?;
+    let bottom = top.bottom.clone();
     let top = top.get(&mut ipc);
     let top = top.as_deref();
     let text = match command {
@@ -107,6 +118,11 @@ fn carry_out(socket: &Path, top: &TopOutput, exe: &Path, command: &Command) -> R
         Command::Launch { workspace, job } => commands::launch(workspace, job, exe, top)?,
         Command::Close(id) => commands::close(*id),
         Command::Move { windows, workspace } => commands::move_windows(windows, workspace, top),
+        Command::Down(id) => commands::down(*id, top),
+        Command::Up { window, workspace } => commands::up(*window, workspace.as_deref(), top),
+        Command::ShowDown(id) => commands::show_down(*id, top),
+        Command::Power(on) => commands::power(&bottom, *on),
+        Command::FocusWindow(id) => format!("[con_id={id}] focus"),
     };
     if let Some(error) = ipc::refused(&ipc.command(&text)?) {
         log::debug!("sway: {text}: {error}");

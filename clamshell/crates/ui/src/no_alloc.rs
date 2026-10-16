@@ -43,7 +43,7 @@ fn allocs() -> usize {
 
 fn window(id: i64, app_id: &str, unit: Option<&str>, focused: bool) -> clamshell_core::windows::Window {
     let workspace = unit.map_or("1", |u| u.trim_end_matches(".scope")).to_owned();
-    clamshell_core::windows::Window { id, app_id: app_id.into(), title: String::new(), focused, unit: unit.map(Into::into), workspace }
+    clamshell_core::windows::Window { id, app_id: app_id.into(), focused, unit: unit.map(Into::into), workspace, ..Default::default() }
 }
 
 fn key(k: Key) -> Event {

@@ -59,6 +59,8 @@ pub(crate) struct View {
     pub(crate) picture: Picture,
     /// shm buffers, reused once the compositor releases them (two in turn, a third if it holds both).
     buffers: Vec<Buffer>,
+    /// A layer surface's place: behind the windows, or over them (see [`View::set_behind`]).
+    behind: bool,
 }
 
 impl View {
@@ -74,6 +76,7 @@ impl View {
             frame_pending: false,
             picture: Picture::default(),
             buffers: Vec::new(),
+            behind: false,
         }
     }
 
@@ -101,7 +104,9 @@ impl View {
         corner: Option<(u32, u32)>,
     ) -> Self {
         let surface = compositor.create_surface(qh);
-        let layer = layer_shell.create_layer_surface(qh, surface, Layer::Top, Some("clamshell-bottom"), output);
+        // (Over the windows, a fullscreen one too: a window moved to the bottom screen is shown by putting
+        // this behind it, see `set_behind`.)
+        let layer = layer_shell.create_layer_surface(qh, surface, Layer::Overlay, Some("clamshell-bottom"), output);
         match corner {
             // The whole output (the device's second screen).
             None => {
@@ -118,6 +123,19 @@ impl View {
         layer.set_keyboard_interactivity(KeyboardInteractivity::None);
         layer.commit();
         View::new(Screen::Bottom, Shell::Layer(layer), (1, 1))
+    }
+
+    /// The bottom screen's layer surface behind the windows (a window moved there is shown) or over
+    /// them (ClamShell's view shown, also over a fullscreen window); a change is committed with the next
+    /// frame. A window has no layer.
+    pub(crate) fn set_behind(&mut self, behind: bool) {
+        if let Shell::Layer(layer) = &self.shell
+            && self.behind != behind
+        {
+            layer.set_layer(if behind { Layer::Background } else { Layer::Overlay });
+            self.behind = behind;
+            self.dirty = true;
+        }
     }
 
     /// Whether a frame is due: configured, changed, and the last frame shown.

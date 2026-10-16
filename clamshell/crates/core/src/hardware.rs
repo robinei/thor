@@ -16,6 +16,14 @@ pub enum DeviceKey {
     BrightnessDown,
     /// Both screens to a file (the pad's Home with RB, a keyboard's Print).
     Screenshot,
+    /// The bottom screen shows the next of ClamShell's view and the windows moved there (Home+Select).
+    BottomNext,
+    /// The bottom screen off, or on again (Home+Start).
+    BottomPower,
+    /// The window in front on the top screen to the bottom screen (Home+Down).
+    WindowDown,
+    /// The window the bottom screen shows back to the top screen (Home+Up).
+    WindowUp,
 }
 
 /// How long a notice shows, in seconds.
@@ -36,6 +44,8 @@ pub enum NoticeKind {
     Screenshot(Result<String, String>),
     /// The gyro calibrating (none: hold still), or done (whether it took).
     Gyro(Option<bool>),
+    /// A window moved down is remembered for its program (true), or moved up and forgotten (false).
+    BottomRule(bool),
 }
 
 impl State {
@@ -51,6 +61,10 @@ impl State {
                 return self.levels.toggle_mute();
             }
             DeviceKey::Screenshot => return vec![Effect::Screenshot],
+            DeviceKey::BottomNext => return self.rotate_bottom(),
+            DeviceKey::BottomPower => return self.toggle_bottom_power(),
+            DeviceKey::WindowDown => return self.window_down(),
+            DeviceKey::WindowUp => return self.window_up(),
         };
         let control = if level == Level::Volume { Control::Volume } else { Control::Brightness };
         self.notify(NoticeKind::Level(control));

@@ -90,6 +90,8 @@ pub struct Bottom {
     pub(crate) keymap_undo: crate::keymap_screens::Undo,
     /// The dark second screen was tapped awake (until the next game).
     pub(crate) woken: bool,
+    /// What the bottom screen shows (ClamShell's view or a window moved down), and whether it is off.
+    pub(crate) screen: crate::bottom_screen::BottomScreen,
     /// What a key just did (a level, a screenshot), shown under the bar for a moment.
     pub(crate) notice: Option<crate::hardware::Notice>,
 }

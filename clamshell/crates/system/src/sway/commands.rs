@@ -36,6 +36,47 @@ pub fn move_windows(windows: &[i64], workspace: &str, top: Option<&str>) -> Stri
     format!("{}{}", pin(workspace, top), moves.join("; "))
 }
 
+/// The mark on a window we moved to the bottom screen, before its id (sway's marks are unique to a
+/// window): reconciling leaves it there.
+pub const DOWN_MARK: &str = "clamshell-down";
+
+/// A window to the bottom screen's workspace, marked so it stays, the windows there tabbed (one shown),
+/// shown there; then the main screen has the keyboard again.
+pub fn down(window: i64, top: Option<&str>) -> String {
+    let bottom = Instance::Bottom.name();
+    format!(
+        "[con_id={window}] mark --add {DOWN_MARK}-{window}; [con_id={window}] move container to workspace \"{bottom}\"; [con_id={window}] layout tabbed; {}",
+        show_down(window, top)
+    )
+}
+
+/// The bottom screen shows a window moved there (its tab focused); the main screen keeps the keyboard.
+pub fn show_down(window: i64, top: Option<&str>) -> String {
+    let back = top.map_or_else(String::new, |top| format!("; focus output \"{top}\""));
+    format!("[con_id={window}] focus{back}")
+}
+
+/// A window moved down back to a workspace of the main screen (its instance's), or to the main screen,
+/// unmarked, and focused.
+pub fn up(window: i64, workspace: Option<&str>, top: Option<&str>) -> String {
+    let to = match (workspace, top) {
+        (Some(ws), _) => format!("{}[con_id={window}] move container to workspace \"{ws}\"", pin(ws, top)),
+        (None, Some(top)) => format!("[con_id={window}] move container to output \"{top}\""),
+        (None, None) => String::new(),
+    };
+    format!("[con_id={window}] unmark {DOWN_MARK}-{window}; {to}; [con_id={window}] focus")
+}
+
+/// A window that landed on the bottom screen by itself, to the main screen.
+pub fn to_top(window: i64, top: Option<&str>) -> String {
+    top.map_or_else(String::new, |top| format!("[con_id={window}] move container to output \"{top}\", focus"))
+}
+
+/// The bottom screen's output on or off.
+pub fn power(bottom: &str, on: bool) -> String {
+    format!("output \"{bottom}\" power {}", if on { "on" } else { "off" })
+}
+
 /// Asks a window to close, as its close button would.
 pub fn close(window: i64) -> String {
     format!("[con_id={window}] kill")
@@ -49,16 +90,18 @@ pub fn rules(top: Option<&str>, bottom: &str) -> Vec<String> {
     // The second screen's workspace: windows opening there go to the main screen.
     let second = Instance::Bottom.name();
     let mut rules = vec![
+        // A screen shows one window at a time: our workspaces' windows are tabs (a dock tile steps through
+        // a program's). (A rule per window: `workspace_layout` is the config file's alone.)
+        "for_window [workspace=\"^clamshell-\"] layout tabbed".to_owned(),
         format!("for_window [app_id=\"^{SHELF_APP_ID}$\"] move container to workspace \"{shelf}\""),
         format!("for_window [app_id=\"^{STEAM_APP_PREFIX}\"] move container to workspace \"{landing}\""),
         format!("for_window [class=\"^{STEAM_APP_PREFIX}\"] move container to workspace \"{landing}\""),
     ];
     if let Some(top) = top {
         rules.push(format!("{}{}", pin(&shelf, Some(top)), pin(&landing, Some(top)).trim_end_matches("; ")));
-        rules.push(format!("workspace \"{second}\" output \"{bottom}\"; focus output \"{bottom}\"; workspace \"{second}\""));
-        // (The rule's command in quotes: unquoted, sway would end the rule at the comma and run `focus`
-        // once, now.)
-        rules.push(format!("for_window [workspace=\"^{second}$\"] 'move container to output \"{top}\", focus'"));
+        // (A window landing there by itself goes to the main screen: see `windows::reconcile`, which knows
+        // the windows moved there on purpose.)
+        rules.push(format!("workspace \"{second}\" output \"{bottom}\"; focus output \"{bottom}\"; workspace \"{second}\"; focus output \"{top}\""));
     }
     rules.push(format!("[app_id=\"^{SHELF_APP_ID}$\"] move container to workspace \"{shelf}\"; {}", show(&shelf, top)));
     rules
@@ -76,7 +119,24 @@ mod tests {
         assert!(launch("w", Path::new("/a\"b"), Path::new("/x"), None).is_err());
         let rules = rules(Some("DSI-2"), "DSI-1");
         assert!(rules.iter().any(|r| r.contains("for_window [class=\"^steam_app_\"]")));
-        assert!(rules.iter().any(|r| r.starts_with("for_window [workspace=\"^clamshell-bottom$\"] 'move container to output \"DSI-2\", focus'")));
+        assert!(rules.iter().any(|r| r.starts_with(r#"workspace "clamshell-bottom" output "DSI-1""#)), "the bottom screen's workspace there");
+        assert!(!rules.iter().any(|r| r.contains("for_window [workspace=\"^clamshell-bottom")), "no rule sends windows off it (reconciling does)");
+        assert!(rules.iter().any(|r| r == r#"for_window [workspace="^clamshell-"] layout tabbed"#), "one window at a time");
+    }
+
+    #[test]
+    fn windows_go_down_marked_and_back_up_unmarked_the_main_screen_keeping_the_keyboard() {
+        assert_eq!(
+            down(7, Some("DSI-2")),
+            r#"[con_id=7] mark --add clamshell-down-7; [con_id=7] move container to workspace "clamshell-bottom"; [con_id=7] layout tabbed; [con_id=7] focus; focus output "DSI-2""#
+        );
+        assert_eq!(show_down(7, Some("DSI-2")), r#"[con_id=7] focus; focus output "DSI-2""#);
+        assert_eq!(
+            up(7, Some("clamshell-game-1-0"), Some("DSI-2")),
+            r#"[con_id=7] unmark clamshell-down-7; workspace "clamshell-game-1-0" output "DSI-2"; [con_id=7] move container to workspace "clamshell-game-1-0"; [con_id=7] focus"#
+        );
+        assert_eq!(up(7, None, Some("DSI-2")), r#"[con_id=7] unmark clamshell-down-7; [con_id=7] move container to output "DSI-2"; [con_id=7] focus"#);
+        assert_eq!(power("DSI-1", false), r#"output "DSI-1" power off"#);
     }
 
     #[test]

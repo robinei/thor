@@ -130,6 +130,11 @@ impl Handles {
             WindowCommand::Focus(name) => sway.send(sway::Command::Workspace(name.clone())),
             WindowCommand::Move { windows, to } => sway.send(sway::Command::Move { windows: windows.clone(), workspace: to.name() }),
             WindowCommand::Close(ids) => ids.iter().for_each(|id| sway.send(sway::Command::Close(*id))),
+            WindowCommand::Down(id) => sway.send(sway::Command::Down(*id)),
+            WindowCommand::Up { window, to } => sway.send(sway::Command::Up { window: *window, workspace: to.as_ref().map(|i| i.name()) }),
+            WindowCommand::ShowDown(id) => sway.send(sway::Command::ShowDown(*id)),
+            WindowCommand::BottomPower(on) => sway.send(sway::Command::Power(*on)),
+            WindowCommand::FocusWindow(id) => sway.send(sway::Command::FocusWindow(*id)),
         }
     }
 
@@ -140,6 +145,7 @@ impl Handles {
             Save::Resume(text) => (self.paths.resume.clone(), text),
             Save::Brightness(text) => (self.paths.brightness.clone(), text),
             Save::Keymaps(text) => (self.paths.keymaps(), text),
+            Save::WindowRules(text) => (self.paths.window_rules(), text),
             Save::Favourites(ids) => {
                 if let Some(dir) = &self.paths.state_dir
                     && let Err(e) = favorites::write(dir, ids.iter().map(String::as_str))

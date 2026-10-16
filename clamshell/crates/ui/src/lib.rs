@@ -363,6 +363,11 @@ impl App {
     fn redraw_dirty(&mut self) {
         let mut rows_changed = None;
         let mut lists = Vec::new();
+        // ClamShell's bottom view behind a window moved to the bottom screen while that is shown.
+        let behind = self.state.bottom_window().is_some();
+        if let Some(view) = self.views.iter_mut().find(|(s, _)| *s == Screen::Bottom).and_then(|(_, v)| v.as_mut()) {
+            view.set_behind(behind);
+        }
         for (screen, view) in self.views.iter_mut() {
             let Some(view) = view.as_mut().filter(|v| v.due()) else {
                 continue;
