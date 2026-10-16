@@ -8,6 +8,7 @@ use std::fmt::Write;
 use std::sync::Arc;
 
 use crate::editor::parse_env;
+use crate::names::names;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Setting {
@@ -59,50 +60,31 @@ pub enum Impact {
     Changes,
 }
 
-impl Setting {
-    pub const ALL: [Setting; COUNT] = [
-        Setting::Power,
-        Setting::FpsCap,
-        Setting::Refresh,
-        Setting::Hud,
-        Setting::Upscale,
-        Setting::BottomScreen,
-        Setting::BigCores,
-        Setting::Fan,
-        Setting::PadMouse,
-        Setting::Keymap,
-        Setting::Rumble,
-        Setting::CpuMax,
-        Setting::GpuMax,
-        Setting::ChargeLimit,
-        Setting::ScreenOff,
-        Setting::Sleep,
-    ];
+// (In the enum's order: a setting's index is its place. The name is its key in the settings file.)
+names!(Setting {
+    Power: "power";
+    FpsCap: "fps";
+    Refresh: "refresh";
+    Hud: "hud";
+    Upscale: "upscale";
+    BottomScreen: "bottom";
+    BigCores: "bigcores";
+    Fan: "fan";
+    PadMouse: "padmouse";
+    Keymap: "keymap";
+    Rumble: "rumble";
+    CpuMax: "cpumax";
+    GpuMax: "gpumax";
+    ChargeLimit: "charge";
+    ScreenOff: "screenoff";
+    Sleep: "sleep";
+});
 
+const _: () = assert!(Setting::ALL.len() == COUNT, "every setting in the list");
+
+impl Setting {
     fn index(self) -> usize {
         self as usize
-    }
-
-    /// Its name in the settings file.
-    pub fn key(self) -> &'static str {
-        match self {
-            Setting::Power => "power",
-            Setting::FpsCap => "fps",
-            Setting::Refresh => "refresh",
-            Setting::Hud => "hud",
-            Setting::Upscale => "upscale",
-            Setting::BottomScreen => "bottom",
-            Setting::BigCores => "bigcores",
-            Setting::Fan => "fan",
-            Setting::PadMouse => "padmouse",
-            Setting::Keymap => "keymap",
-            Setting::Rumble => "rumble",
-            Setting::CpuMax => "cpumax",
-            Setting::GpuMax => "gpumax",
-            Setting::ChargeLimit => "charge",
-            Setting::ScreenOff => "screenoff",
-            Setting::Sleep => "sleep",
-        }
     }
 
     /// The values a tap steps through, in order.
@@ -281,7 +263,7 @@ impl Overrides {
 pub fn fields(o: &Overrides, out: &mut String) {
     for s in Setting::ALL {
         if let Some(v) = o.get(s) {
-            let _ = write!(out, "\t{}={v}", s.key());
+            let _ = write!(out, "\t{}={v}", s.name());
         }
     }
 }
@@ -293,7 +275,7 @@ pub fn parse<'a>(fields: impl Iterator<Item = &'a str>) -> Overrides {
         let Some((key, value)) = field.split_once('=') else {
             continue;
         };
-        let Some(s) = Setting::ALL.into_iter().find(|s| s.key() == key) else {
+        let Some(s) = Setting::from_name(key) else {
             continue;
         };
         if let Ok(v) = value.parse::<u16>()

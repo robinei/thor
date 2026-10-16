@@ -7,6 +7,7 @@
 use crate::editor::Editor;
 use crate::effect::Watch;
 use crate::event::Reading;
+use crate::names::names;
 use crate::panel::Scope;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -25,30 +26,21 @@ pub enum Tab {
     Battery,
 }
 
+// (In the bar's order.)
+names!(Tab {
+    Settings: "settings";
+    Dock: "dock";
+    Keyboard: "keyboard";
+    Touchpad: "touchpad";
+    Sysinfo: "sysinfo";
+    Volume: "volume";
+    Brightness: "brightness";
+    Bluetooth: "bluetooth";
+    Wifi: "wifi";
+    Battery: "battery";
+});
+
 impl Tab {
-    /// Every tab, in the bar's order.
-    pub const ALL: [Tab; 10] =
-        [Tab::Settings, Tab::Dock, Tab::Keyboard, Tab::Touchpad, Tab::Sysinfo, Tab::Volume, Tab::Brightness, Tab::Bluetooth, Tab::Wifi, Tab::Battery];
-
-    pub fn name(self) -> &'static str {
-        match self {
-            Tab::Settings => "settings",
-            Tab::Dock => "dock",
-            Tab::Keyboard => "keyboard",
-            Tab::Touchpad => "touchpad",
-            Tab::Sysinfo => "sysinfo",
-            Tab::Volume => "volume",
-            Tab::Brightness => "brightness",
-            Tab::Wifi => "wifi",
-            Tab::Battery => "battery",
-            Tab::Bluetooth => "bluetooth",
-        }
-    }
-
-    pub fn from_name(name: &str) -> Option<Tab> {
-        Tab::ALL.into_iter().find(|t| t.name() == name)
-    }
-
     /// What the tab watches while open (the system read for it); the touchpad grabs the touchscreen.
     pub fn watch(self) -> Option<Watch> {
         match self {

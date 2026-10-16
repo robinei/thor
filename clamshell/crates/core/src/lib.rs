@@ -24,6 +24,7 @@ pub mod keymap;
 pub mod keymap_screens;
 pub mod levels;
 pub mod metrics;
+mod names;
 mod pad;
 mod panel;
 mod pointer;

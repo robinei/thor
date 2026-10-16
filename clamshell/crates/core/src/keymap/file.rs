@@ -66,10 +66,6 @@ pub(super) fn write_output(o: &Output, out: &mut String) -> fmt::Result {
     }
 }
 
-pub(super) fn side(word: &str) -> Option<Side> {
-    Side::ALL.into_iter().find(|s| s.name() == word)
-}
-
 /// `INPUT = OUTPUT [option=value ...]`.
 pub(super) fn parse_binding(line: &str) -> Option<(Input, Actuation, Binding)> {
     let (input, rest) = line.split_once('=')?;
@@ -77,7 +73,7 @@ pub(super) fn parse_binding(line: &str) -> Option<(Input, Actuation, Binding)> {
     let input = Input::parse(left.next()?)?;
     let act = match left.next() {
         None => Actuation::Press,
-        Some(w) => Actuation::ALL.into_iter().find(|a| a.name() == w && *a != Actuation::Press)?,
+        Some(w) => Actuation::from_name(w).filter(|a| *a != Actuation::Press)?,
     };
     let mut words = rest.split_whitespace().peekable();
     let output = match (words.next()?, words.peek().copied()) {
@@ -86,10 +82,10 @@ pub(super) fn parse_binding(line: &str) -> Option<(Input, Actuation, Binding)> {
         ("dpad", _) => Output::Dpad,
         ("pad", Some(w)) => Output::Pad(PadOut::of(Input::parse(w)?)?),
         ("key", Some(w)) => Output::Key(Chord::parse(w)?),
-        ("mouse", Some(w)) => Output::Mouse(MouseButton::ALL.into_iter().find(|m| m.name() == w)?),
-        ("wheel", Some(w)) => Output::Wheel(Dir::ALL.into_iter().find(|d| d.name() == w)?),
-        ("stick", Some(w)) => Output::Stick(side(w)?),
-        ("trigger", Some(w)) => Output::Trigger(side(w)?),
+        ("mouse", Some(w)) => Output::Mouse(MouseButton::from_name(w)?),
+        ("wheel", Some(w)) => Output::Wheel(Dir::from_name(w)?),
+        ("stick", Some(w)) => Output::Stick(Side::from_name(w)?),
+        ("trigger", Some(w)) => Output::Trigger(Side::from_name(w)?),
         ("layer", Some(w)) => Output::Layer(Layer(w.parse().ok().filter(|n| *n > 0)?)),
         ("keys", Some(_)) => {
             let mut keys = [Chord::default(); 4];
@@ -107,7 +103,7 @@ pub(super) fn parse_binding(line: &str) -> Option<(Input, Actuation, Binding)> {
     for word in words {
         match word.split_once('=') {
             Some((name @ ("speed" | "threshold" | "deadzone" | "full" | "curve" | "turbo" | "holdtime" | "accel" | "accelat" | "tighten" | "stickmin"), v)) => {
-                if let Some(p) = Param::ALL.into_iter().find(|p| p.name() == name)
+                if let Some(p) = Param::from_name(name)
                     && let Some(v) = v.parse().ok().filter(|v| p.range().contains(v))
                 {
                     p.set(&mut binding, v);

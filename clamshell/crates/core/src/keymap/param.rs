@@ -2,6 +2,7 @@
 //! input mapped to an output.
 
 use super::*;
+use crate::names::names;
 
 /// A binding's parameters beside its output: values set with a slider (0 to 100 on its track), and
 /// switches ([`Param::switch`]).
@@ -28,47 +29,27 @@ pub enum Param {
     Ratchet,
 }
 
+// (In the panel's order. Both inversions are `invert` in the file, as `invert=xy`.)
+names!(Param {
+    Speed: "speed", "Speed";
+    Accel: "accel", "Acceleration";
+    AccelAt: "accelat", "Fastest at";
+    Tighten: "tighten", "Tightening";
+    StickMin: "stickmin", "Stick from";
+    Deadzone: "deadzone", "Deadzone";
+    Full: "full", "Full at";
+    Curve: "curve", "Curve";
+    Threshold: "threshold", "Acts past";
+    HoldTime: "holdtime", "Hold for";
+    Turbo: "turbo", "Turbo";
+    Toggle: "toggle", "Toggle";
+    Twist: "twist", "Turn by tilting";
+    InvertX: "invert", "Invert X";
+    InvertY: "invert", "Invert Y";
+    Ratchet: "ratchet", "Off while held";
+});
+
 impl Param {
-    pub const ALL: [Param; 16] = [
-        Param::Speed,
-        Param::Accel,
-        Param::AccelAt,
-        Param::Tighten,
-        Param::StickMin,
-        Param::Deadzone,
-        Param::Full,
-        Param::Curve,
-        Param::Threshold,
-        Param::HoldTime,
-        Param::Turbo,
-        Param::Toggle,
-        Param::Twist,
-        Param::InvertX,
-        Param::InvertY,
-        Param::Ratchet,
-    ];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Param::Speed => "Speed",
-            Param::Threshold => "Acts past",
-            Param::Deadzone => "Deadzone",
-            Param::Full => "Full at",
-            Param::Curve => "Curve",
-            Param::InvertX => "Invert X",
-            Param::InvertY => "Invert Y",
-            Param::HoldTime => "Hold for",
-            Param::Turbo => "Turbo",
-            Param::Toggle => "Toggle",
-            Param::Accel => "Acceleration",
-            Param::AccelAt => "Fastest at",
-            Param::Tighten => "Tightening",
-            Param::StickMin => "Stick from",
-            Param::Twist => "Turn by tilting",
-            Param::Ratchet => "Off while held",
-        }
-    }
-
     /// On or off (a tap switches it), rather than a value on a slider.
     pub fn switch(self) -> bool {
         matches!(self, Param::InvertX | Param::InvertY | Param::Toggle | Param::Twist | Param::Ratchet)
@@ -195,27 +176,6 @@ impl Param {
             Param::StickMin => b.stick_min = value,
             Param::Twist => b.twist = value > 0,
             Param::Ratchet => b.ratchet = value > 0,
-        }
-    }
-
-    /// Its name in the keymap file (the switches go together as `invert=x`, `invert=xy`).
-    pub(super) fn name(self) -> &'static str {
-        match self {
-            Param::Speed => "speed",
-            Param::Threshold => "threshold",
-            Param::Deadzone => "deadzone",
-            Param::Full => "full",
-            Param::Curve => "curve",
-            Param::InvertX | Param::InvertY => "invert",
-            Param::HoldTime => "holdtime",
-            Param::Turbo => "turbo",
-            Param::Toggle => "toggle",
-            Param::Accel => "accel",
-            Param::AccelAt => "accelat",
-            Param::Tighten => "tighten",
-            Param::StickMin => "stickmin",
-            Param::Twist => "twist",
-            Param::Ratchet => "ratchet",
         }
     }
 }

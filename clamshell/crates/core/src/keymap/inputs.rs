@@ -2,6 +2,7 @@
 //! game's pad's own outputs (PadOut).
 
 use super::*;
+use crate::names::names;
 
 /// A face, shoulder, menu, stick-click or back button.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -25,25 +26,25 @@ pub enum Button {
     R5,
 }
 
-impl Button {
-    pub const ALL: [Button; 15] = [
-        Button::A,
-        Button::B,
-        Button::X,
-        Button::Y,
-        Button::LB,
-        Button::RB,
-        Button::View,
-        Button::Menu,
-        Button::LS,
-        Button::RS,
-        Button::Back,
-        Button::L4,
-        Button::R4,
-        Button::L5,
-        Button::R5,
-    ];
+names!(Button {
+    A: "a", "A";
+    B: "b", "B";
+    X: "x", "X";
+    Y: "y", "Y";
+    LB: "lb", "LB";
+    RB: "rb", "RB";
+    View: "view", "View";
+    Menu: "menu", "Menu";
+    LS: "ls", "LS";
+    RS: "rs", "RS";
+    Back: "back", "Back";
+    L4: "l4", "L4";
+    R4: "r4", "R4";
+    L5: "l5", "L5";
+    R5: "r5", "R5";
+});
 
+impl Button {
     /// Whether it is a back button (a paddle; not on the Xbox pad games see).
     pub fn is_back(self) -> bool {
         matches!(self, Button::L4 | Button::R4 | Button::L5 | Button::R5)
@@ -52,47 +53,6 @@ impl Button {
     /// Whether the Xbox pad games see has it (a pad output can be it): not the paddles, not Back.
     pub fn on_pad(self) -> bool {
         !self.is_back() && self != Button::Back
-    }
-
-    pub fn name(self) -> &'static str {
-        match self {
-            Button::A => "a",
-            Button::B => "b",
-            Button::X => "x",
-            Button::Y => "y",
-            Button::LB => "lb",
-            Button::RB => "rb",
-            Button::View => "view",
-            Button::Menu => "menu",
-            Button::LS => "ls",
-            Button::RS => "rs",
-            Button::Back => "back",
-            Button::L4 => "l4",
-            Button::R4 => "r4",
-            Button::L5 => "l5",
-            Button::R5 => "r5",
-        }
-    }
-
-    /// How it reads on screen.
-    pub fn label(self) -> &'static str {
-        match self {
-            Button::A => "A",
-            Button::B => "B",
-            Button::X => "X",
-            Button::Y => "Y",
-            Button::LB => "LB",
-            Button::RB => "RB",
-            Button::View => "View",
-            Button::Menu => "Menu",
-            Button::LS => "LS",
-            Button::RS => "RS",
-            Button::Back => "Back",
-            Button::L4 => "L4",
-            Button::R4 => "R4",
-            Button::L5 => "L5",
-            Button::R5 => "R5",
-        }
     }
 }
 
@@ -104,27 +64,12 @@ pub enum Dir {
     Right,
 }
 
-impl Dir {
-    pub const ALL: [Dir; 4] = [Dir::Up, Dir::Down, Dir::Left, Dir::Right];
-
-    pub fn name(self) -> &'static str {
-        match self {
-            Dir::Up => "up",
-            Dir::Down => "down",
-            Dir::Left => "left",
-            Dir::Right => "right",
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Dir::Up => "Up",
-            Dir::Down => "Down",
-            Dir::Left => "Left",
-            Dir::Right => "Right",
-        }
-    }
-}
+names!(Dir {
+    Up: "up", "Up";
+    Down: "down", "Down";
+    Left: "left", "Left";
+    Right: "right", "Right";
+});
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Side {
@@ -132,20 +77,16 @@ pub enum Side {
     Right,
 }
 
-impl Side {
-    pub const ALL: [Side; 2] = [Side::Left, Side::Right];
+names!(Side {
+    Left: "left";
+    Right: "right";
+});
 
+impl Side {
     fn letter(self) -> &'static str {
         match self {
             Side::Left => "l",
             Side::Right => "r",
-        }
-    }
-
-    pub fn name(self) -> &'static str {
-        match self {
-            Side::Left => "left",
-            Side::Right => "right",
         }
     }
 }

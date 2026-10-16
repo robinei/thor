@@ -183,7 +183,7 @@ pub const TARGETS: &[Form<Id>] = &[
     form("scope all", "the settings' all games tab", |_| Ok(Id::Settings(SettingsId::Scope(Scope::Global)))),
     form("setting KEY", "a settings tile by its key in game-settings.txt (pad, fps, keymap, ...)", |a| {
         let key = arg(a, 0);
-        Ok(Id::Settings(SettingsId::Tile(Setting::ALL.into_iter().find(|s| s.key() == key).ok_or_else(|| name_err(key))?)))
+        Ok(Id::Settings(SettingsId::Tile(Setting::from_name(key).ok_or_else(|| name_err(key))?)))
     }),
     form("save", "the editor's save", |_| Ok(Id::Editor(EditorId::Save))),
     form("key NAME", "an on-screen key: a character, space, ctrl, alt, shift, fn, enter, esc, backspace, tab", |a| key(key_named(arg(a, 0))?)),
@@ -326,8 +326,8 @@ fn target_named(word: &str) -> Result<Target, ParseError> {
             _ => return Err(name()),
         },
         Some(("pad", input)) => Target::Pad(PadOut::of(input_named(input)?).ok_or_else(name)?),
-        Some(("mouse", m)) => Target::Mouse(MouseButton::ALL.into_iter().find(|b| b.name() == m).ok_or_else(name)?),
-        Some(("wheel", d)) => Target::Wheel(Dir::ALL.into_iter().find(|x| x.name() == d).ok_or_else(name)?),
+        Some(("mouse", m)) => Target::Mouse(MouseButton::from_name(m).ok_or_else(name)?),
+        Some(("wheel", d)) => Target::Wheel(Dir::from_name(d).ok_or_else(name)?),
         Some(("stick", s)) => Target::Stick(side(s)?),
         Some(("trigger", s)) => Target::Trigger(side(s)?),
         _ => return Err(name()),

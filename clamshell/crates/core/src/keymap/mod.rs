@@ -22,6 +22,7 @@
 use std::fmt::{self, Write};
 
 use crate::keyboard::{Key, Named};
+use crate::names::names;
 
 mod file;
 mod inputs;
@@ -168,33 +169,20 @@ pub enum Actuation {
     FullPull,
 }
 
+// (The name is its word after the input in the keymap file; a press has none.)
+names!(Actuation {
+    Press: "", "Press";
+    Hold: "hold", "Hold";
+    Double: "double", "Double";
+    FullPull: "full", "Full pull";
+});
+
 impl Actuation {
-    pub const ALL: [Actuation; 4] = [Actuation::Press, Actuation::Hold, Actuation::Double, Actuation::FullPull];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Actuation::Press => "Press",
-            Actuation::Hold => "Hold",
-            Actuation::Double => "Double",
-            Actuation::FullPull => "Full pull",
-        }
-    }
-
     /// Its label for an input of `kind` (a trigger's press is its pull).
     pub fn label_for(self, kind: Kind) -> &'static str {
         match (self, kind) {
             (Actuation::Press, Kind::Trigger) => "Pull",
             (a, _) => a.label(),
-        }
-    }
-
-    /// Its word after the input in the keymap file (a press has none).
-    fn name(self) -> &'static str {
-        match self {
-            Actuation::Press => "",
-            Actuation::Hold => "hold",
-            Actuation::Double => "double",
-            Actuation::FullPull => "full",
         }
     }
 

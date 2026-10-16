@@ -1,6 +1,7 @@
 //! What an input may be mapped to (Output): a key chord, a mouse button, the pad's own, a layer, ...
 
 use super::*;
+use crate::names::names;
 
 /// A key with the modifiers held for it; or the modifiers alone (no key: Shift as a key of its own).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -193,29 +194,13 @@ pub enum MouseButton {
     Forward,
 }
 
-impl MouseButton {
-    pub const ALL: [MouseButton; 5] = [MouseButton::Left, MouseButton::Right, MouseButton::Middle, MouseButton::Back, MouseButton::Forward];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            MouseButton::Left => "Left click",
-            MouseButton::Right => "Right click",
-            MouseButton::Middle => "Middle click",
-            MouseButton::Back => "Back",
-            MouseButton::Forward => "Forward",
-        }
-    }
-
-    pub fn name(self) -> &'static str {
-        match self {
-            MouseButton::Left => "left",
-            MouseButton::Right => "right",
-            MouseButton::Middle => "middle",
-            MouseButton::Back => "back",
-            MouseButton::Forward => "forward",
-        }
-    }
-}
+names!(MouseButton {
+    Left: "left", "Left click";
+    Right: "right", "Right click";
+    Middle: "middle", "Middle click";
+    Back: "back", "Back";
+    Forward: "forward", "Forward";
+});
 
 /// What an input does instead of what it does on the pad.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
