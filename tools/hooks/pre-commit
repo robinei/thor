@@ -1,0 +1,3 @@
+#!/bin/sh
+# Runs tools/check.sh before each commit (enabled with `git config core.hooksPath tools/hooks`).
+exec "$(git rev-parse --show-toplevel)/tools/check.sh"
