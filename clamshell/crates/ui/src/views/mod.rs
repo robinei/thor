@@ -145,7 +145,7 @@ impl<'f, 'c> Frame<'f, 'c> {
     /// [`Frame::button`] for something drawn smaller than its target: the background and the focus ring
     /// follow `shown`, the target is `rect`.
     fn button_in(&mut self, id: Id, rect: Rect, shown: Rect, look: Look, content: impl FnOnce(&mut Self)) {
-        let pressed = self.s.pointer().pressed() == Some(&id);
+        let pressed = self.pressed(&id);
         let background = if pressed && look.press_fill { Some(PRESSED) } else { look.fill };
         if let Some(color) = background {
             let r = shown.inset(look.inset);
@@ -162,9 +162,19 @@ impl<'f, 'c> Frame<'f, 'c> {
         self.targets.push(Target { rect, id, track: None, list: None });
     }
 
-    /// Whether `id` is under a finger (or the pad's A) now.
+    /// Whether `id` is under a finger (or the pad's A) now: not a control whose slider is up (the
+    /// finger is on the slider then, not the button).
     fn pressed(&self, id: &Id) -> bool {
-        self.s.pointer().pressed() == Some(id)
+        self.s.pointer().pressed() == Some(id) && !self.sliding(id)
+    }
+
+    /// Whether `id` is a control whose held slider is up (the bar's, a keymap parameter's).
+    fn sliding(&self, id: &Id) -> bool {
+        let Id::Control(control) = id else {
+            return false;
+        };
+        let up = |s: Option<clamshell_core::slider::Slider>| s.is_some_and(|s| s.control == *control);
+        up(self.s.levels().slider().copied()) || up(self.s.keymap_edit().slider)
     }
 
     /// A text action (see [`Look::TEXT`]): `label` in `r` at `size` (centred, or from the left with

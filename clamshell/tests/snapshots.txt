@@ -40,7 +40,7 @@ settings-env.png 378385152d887f3d
 settings-global.png 055735840d2e0395
 settings-running.png 93aee9c9852fbdc9
 settings.png 8f82599909e6d47d
-slider.png ea6a9be4cae75eca
+slider.png aea635b8f5a93180
 status-low.png dc3f514e77494e28
 sysinfo.png deecdc74683251e0
 top-back.png a32a2fab862c039e
