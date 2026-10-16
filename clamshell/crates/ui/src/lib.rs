@@ -31,11 +31,16 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use clamshell_core::touch::TouchLayout;
+use clamshell_core::{Dirty, Effect, Event, Id, ListEvent, ListId, PadInput, PointerEvent, ShelfEvent, State};
 use smithay_client_toolkit::{
     compositor::CompositorState,
     output::OutputState,
     reexports::{
-        calloop::{EventLoop, LoopHandle, RegistrationToken, channel, timer::{TimeoutAction, Timer}},
+        calloop::{
+            EventLoop, LoopHandle, RegistrationToken, channel,
+            timer::{TimeoutAction, Timer},
+        },
         calloop_wayland_source::WaylandSource,
         client::{
             Connection, QueueHandle,
@@ -48,8 +53,6 @@ use smithay_client_toolkit::{
     shell::{wlr_layer::LayerShell, xdg::XdgShell},
     shm::{Shm, slot::SlotPool},
 };
-use clamshell_core::touch::TouchLayout;
-use clamshell_core::{Dirty, Effect, Event, Id, ListEvent, ListId, PadInput, PointerEvent, ShelfEvent, State};
 
 use draw::DrawCache;
 use focus::PadPress;

@@ -43,7 +43,13 @@ impl Base {
     /// HOME and the XDG base directories from the environment.
     pub fn from_env() -> Base {
         let var = |name: &str| std::env::var_os(name).map(PathBuf::from);
-        Base { home: var("HOME"), config_home: var("XDG_CONFIG_HOME"), data_home: var("XDG_DATA_HOME"), state_home: var("XDG_STATE_HOME"), runtime: var("XDG_RUNTIME_DIR") }
+        Base {
+            home: var("HOME"),
+            config_home: var("XDG_CONFIG_HOME"),
+            data_home: var("XDG_DATA_HOME"),
+            state_home: var("XDG_STATE_HOME"),
+            runtime: var("XDG_RUNTIME_DIR"),
+        }
     }
 
     /// An XDG directory, else its default under HOME.

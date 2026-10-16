@@ -232,10 +232,8 @@ mod tests {
 
     #[test]
     fn connected_and_paired_first() {
-        let names: Vec<String> = sort(vec![dev("zz", false, false), dev("", false, false), dev("pad", true, false), dev("buds", true, true)])
-            .into_iter()
-            .map(|d| d.name)
-            .collect();
+        let names: Vec<String> =
+            sort(vec![dev("zz", false, false), dev("", false, false), dev("pad", true, false), dev("buds", true, true)]).into_iter().map(|d| d.name).collect();
         assert_eq!(names, ["buds", "pad", "zz", ""]);
         assert_eq!(Kind::from_icon("audio-headphones"), Kind::Audio);
         assert_eq!(Kind::from_icon("input-gaming"), Kind::Gamepad);

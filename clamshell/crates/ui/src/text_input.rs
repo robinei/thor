@@ -5,6 +5,7 @@
 
 use std::time::Duration;
 
+use clamshell_core::Event;
 use smithay_client_toolkit::{
     dispatch2::Dispatch2,
     reexports::{
@@ -17,7 +18,6 @@ use smithay_client_toolkit::{
         },
     },
 };
-use clamshell_core::Event;
 
 use crate::App;
 

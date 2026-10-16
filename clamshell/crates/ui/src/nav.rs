@@ -56,8 +56,8 @@ pub fn step(targets: &[NavTarget], current: Option<&Id>, dir: Dir) -> Option<Id>
 mod tests {
     use super::*;
     use clamshell_core::Tab;
-    use clamshell_core::{SettingsId, ShelfId};
     use clamshell_core::settings::Setting;
+    use clamshell_core::{SettingsId, ShelfId};
 
     fn t(screen: Screen, x: f32, y: f32, id: Id) -> NavTarget {
         NavTarget { screen, rect: Rect::new(x, y, 0.1, 0.1), id }

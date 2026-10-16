@@ -5,7 +5,7 @@
 
 use clamshell_core::{EditorId, Id};
 
-use super::style::{self, SURFACE_HI, Text, Tone, RADIUS};
+use super::style::{self, RADIUS, SURFACE_HI, Text, Tone};
 use super::{Frame, keyboard};
 use crate::draw::{Align, Keep, LINE, Rect};
 

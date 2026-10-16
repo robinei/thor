@@ -160,7 +160,9 @@ const SYSTEM: [(KeyCode, DeviceKey); 1] = [(KeyCode::BTN_TR, DeviceKey::Screensh
 enum Home {
     Up,
     /// Held; whether a combination used it (then letting go isn't Home).
-    Held { combined: bool },
+    Held {
+        combined: bool,
+    },
     /// Held, then the Back button with a game in front: the virtual pad's Guide is down until either is
     /// let go.
     Guide,

@@ -16,8 +16,8 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use clamshell_core::levels::Brightness;
 use clamshell_core::keymap::Keymaps;
+use clamshell_core::levels::Brightness;
 use clamshell_core::settings::Settings;
 use clamshell_core::{Init, Library, State};
 use clamshell_policy::library::{self, Sources};

@@ -47,9 +47,14 @@ pub fn wifi() -> Wifi {
     Wifi {
         device: true,
         enabled: true,
-        networks: [("home", 82, true, true, true), ("cafe-guest", 64, false, false, false), ("neighbours", 41, true, false, false), ("office", 30, true, true, false)]
-            .map(|(ssid, strength, secure, known, active)| Network { ssid: ssid.into(), strength, secure, known, active, enterprise: false })
-            .to_vec(),
+        networks: [
+            ("home", 82, true, true, true),
+            ("cafe-guest", 64, false, false, false),
+            ("neighbours", 41, true, false, false),
+            ("office", 30, true, true, false),
+        ]
+        .map(|(ssid, strength, secure, known, active)| Network { ssid: ssid.into(), strength, secure, known, active, enterprise: false })
+        .to_vec(),
         connecting: None,
         error: None,
     }
@@ -58,8 +63,28 @@ pub fn wifi() -> Wifi {
 /// Many networks (a city street): more than the list shows.
 pub fn wifi_crowded() -> Wifi {
     let mut wifi = wifi();
-    let more = ["FRITZ!Box 7590", "TP-Link_5G", "eduroam", "Vodafone Hotspot", "DIRECT-printer", "Bakery", "Library Guest", "AndroidAP", "Linksys", "Hotel Lobby", "upstairs", "garden"];
-    wifi.networks.extend(more.iter().enumerate().map(|(i, ssid)| Network { ssid: (*ssid).into(), strength: 60 - 4 * i as u8, secure: i % 3 != 1, known: false, active: false, enterprise: false }));
+    let more = [
+        "FRITZ!Box 7590",
+        "TP-Link_5G",
+        "eduroam",
+        "Vodafone Hotspot",
+        "DIRECT-printer",
+        "Bakery",
+        "Library Guest",
+        "AndroidAP",
+        "Linksys",
+        "Hotel Lobby",
+        "upstairs",
+        "garden",
+    ];
+    wifi.networks.extend(more.iter().enumerate().map(|(i, ssid)| Network {
+        ssid: (*ssid).into(),
+        strength: 60 - 4 * i as u8,
+        secure: i % 3 != 1,
+        known: false,
+        active: false,
+        enterprise: false,
+    }));
     wifi
 }
 

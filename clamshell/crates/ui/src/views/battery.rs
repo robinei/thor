@@ -5,13 +5,12 @@
 //! machine now, the busiest first, as many as fit: each a bar of its share of the work and its CPU and GPU.
 //! The battery reports only its total drain, so programs are ranked by work, not watts.
 
-
-use clamshell_core::settings::Setting;
 use clamshell_core::State;
+use clamshell_core::settings::Setting;
 
+use super::Frame;
 use super::format::{Duration, Fmt, Share};
 use super::style::{self, SURFACE, SURFACE_HI, Tone};
-use super::Frame;
 use crate::draw::{Align, Keep, LINE, Rect};
 
 /// The top row's height, the level's and the other text's sizes, of the area's height. (The text is

@@ -3,9 +3,9 @@
 
 use clamshell_core::metrics::{HISTORY, Ring};
 
+use super::Frame;
 use super::format::{Fmt, Frequency, HoursMinutes, Percent, Temp};
 use super::style::{self, SURFACE, Tone};
-use super::Frame;
 use crate::draw::{Canvas, Rect, Rgb};
 
 /// Sizes and positions, of a tile's height: label, value, detail; the graph's share at the bottom.

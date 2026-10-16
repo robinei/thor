@@ -1,10 +1,10 @@
 //! The device's own buttons and what they do: volume and brightness up and down, mute, a screenshot; and
 //! the short notice under the bar that says what happened (the new level, the screenshot saved).
 
+use crate::State;
 use crate::effect::Effect;
 use crate::levels::Level;
 use crate::slider::Control;
-use crate::State;
 
 /// A hardware key (or the same asked for through the control pipe).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

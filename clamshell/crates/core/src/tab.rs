@@ -27,18 +27,8 @@ pub enum Tab {
 
 impl Tab {
     /// Every tab, in the bar's order.
-    pub const ALL: [Tab; 10] = [
-        Tab::Settings,
-        Tab::Dock,
-        Tab::Keyboard,
-        Tab::Touchpad,
-        Tab::Sysinfo,
-        Tab::Volume,
-        Tab::Brightness,
-        Tab::Bluetooth,
-        Tab::Wifi,
-        Tab::Battery,
-    ];
+    pub const ALL: [Tab; 10] =
+        [Tab::Settings, Tab::Dock, Tab::Keyboard, Tab::Touchpad, Tab::Sysinfo, Tab::Volume, Tab::Brightness, Tab::Bluetooth, Tab::Wifi, Tab::Battery];
 
     pub fn name(self) -> &'static str {
         match self {

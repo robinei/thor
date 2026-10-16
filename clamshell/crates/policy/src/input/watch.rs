@@ -12,14 +12,14 @@ use std::io;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use clamshell_core::Event;
 use clamshell_core::hardware::DeviceKey;
 use clamshell_core::idle::IdleEvent;
-use clamshell_core::Event;
 use evdev::raw_stream::RawDevice;
 use evdev::{AbsoluteAxisCode, EventType, KeyCode, PropType};
 use rustix::event::{PollFd, PollFlags, Timespec};
 
-use super::{Press, Raw, Range};
+use super::{Press, Range, Raw};
 use crate::worker;
 use crate::{Closed, Sink};
 

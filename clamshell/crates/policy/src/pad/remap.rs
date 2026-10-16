@@ -66,7 +66,10 @@ enum Phase {
     /// Let go then after a short press: a second press soon makes a double.
     Waiting(Instant),
     /// An actuation on: while held, or (a tap) until then.
-    On { act: Actuation, until: Option<Instant> },
+    On {
+        act: Actuation,
+        until: Option<Instant>,
+    },
 }
 
 /// A binding's on and off: its actuation on now, its toggle's state, and since when it has been on (turbo's
@@ -363,7 +366,17 @@ pub struct Remap {
 
 impl Remap {
     pub fn new(ranges: Ranges) -> Remap {
-        Remap { keymap: Keymap::default(), ranges, sent: Wanted::default(), gyro: Rate::default(), carry: (0.0, 0.0), last_pointer: None, activations: Vec::new(), actuators: Vec::new(), buzz: None }
+        Remap {
+            keymap: Keymap::default(),
+            ranges,
+            sent: Wanted::default(),
+            gyro: Rate::default(),
+            carry: (0.0, 0.0),
+            last_pointer: None,
+            activations: Vec::new(),
+            actuators: Vec::new(),
+            buzz: None,
+        }
     }
 
     /// The pad's state as it was when nothing had been sent (a fresh pad, or after letting go).
@@ -618,7 +631,11 @@ impl Remap {
 
     /// The layers on, in the order they came on.
     fn layers_on(&self) -> Vec<Layer> {
-        self.activations.iter().filter(|a| a.span != Span::Cancelled).filter_map(|a| if let Output::Layer(l) = a.binding.output { Some(l) } else { None }).collect()
+        self.activations
+            .iter()
+            .filter(|a| a.span != Span::Cancelled)
+            .filter_map(|a| if let Output::Layer(l) = a.binding.output { Some(l) } else { None })
+            .collect()
     }
 
     /// `input`'s binding of `act` in force: the one turning a layer on if it is, else the newest layer's
@@ -1596,7 +1613,10 @@ mod tests {
         let (mut r, mut out) = router(k, PadRoute::Game);
         press(&mut r, KeyCode::BTN_TL, true, &mut out);
         press(&mut r, KeyCode::BTN_TL, false, &mut out);
-        assert!(held(&out.mouse).is_empty() && out.pad.iter().all(|e| e.as_key().is_none_or(|(k, _)| k != KeyCode::BTN_TL)), "LB is the layer key: nothing else");
+        assert!(
+            held(&out.mouse).is_empty() && out.pad.iter().all(|e| e.as_key().is_none_or(|(k, _)| k != KeyCode::BTN_TL)),
+            "LB is the layer key: nothing else"
+        );
         press(&mut r, KeyCode::BTN_SOUTH, true, &mut out);
         assert_eq!(held(&out.mouse), vec![KeyCode::KEY_Y, KeyCode::KEY_LEFTCTRL], "aim, toggled on");
         press(&mut r, KeyCode::BTN_SOUTH, false, &mut out);
@@ -1646,7 +1666,11 @@ mod tests {
         axis(&mut r, AbsoluteAxisCode::ABS_X, STICK_MAX / 10, &mut out);
         assert_eq!(last(&out.pad, AbsoluteAxisCode::ABS_X), Some(0), "inside the deadzone");
         axis(&mut r, AbsoluteAxisCode::ABS_X, STICK_MAX * 8 / 10, &mut out);
-        assert!(last(&out.pad, AbsoluteAxisCode::ABS_X).unwrap() <= -STICK_MAX + 2, "full at 80 %, and inverted: {:?}", last(&out.pad, AbsoluteAxisCode::ABS_X));
+        assert!(
+            last(&out.pad, AbsoluteAxisCode::ABS_X).unwrap() <= -STICK_MAX + 2,
+            "full at 80 %, and inverted: {:?}",
+            last(&out.pad, AbsoluteAxisCode::ABS_X)
+        );
         axis(&mut r, AbsoluteAxisCode::ABS_X, STICK_MAX / 2, &mut out);
         let half = last(&out.pad, AbsoluteAxisCode::ABS_X).unwrap();
         assert!((half + STICK_MAX / 2).abs() < 400, "(50-20)/(80-20): half way: {half}");

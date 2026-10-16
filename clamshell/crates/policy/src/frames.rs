@@ -152,5 +152,4 @@ mod tests {
         let mut t = Tail::default();
         assert_eq!(t.feed("1,2,3\n"), None);
     }
-
 }

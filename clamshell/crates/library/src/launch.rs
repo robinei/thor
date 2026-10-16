@@ -90,11 +90,7 @@ fn substitute(token: &str, file: &Path) -> String {
         _ => name,
     };
     let dir = file.parent().map(|d| d.to_string_lossy().into_owned()).unwrap_or_default();
-    token
-        .replace("{file.path}", &file.to_string_lossy())
-        .replace("{file.name}", name)
-        .replace("{file.basename}", base)
-        .replace("{file.dir}", &dir)
+    token.replace("{file.path}", &file.to_string_lossy()).replace("{file.name}", name).replace("{file.basename}", base).replace("{file.dir}", &dir)
 }
 
 /// The program, arguments and working dir for launching `file` with `command` (from a game whose

@@ -81,10 +81,7 @@ pub fn defaults() -> Vec<App> {
         command: command.iter().map(|&s| s.into()).collect(),
         ..App::default()
     };
-    vec![app("Steam", "gamepad", &["steam"]), App { multiple: true, ..app("Terminal", "terminal", &["foot"]) }]
-        .into_iter()
-        .map(App::with_key)
-        .collect()
+    vec![app("Steam", "gamepad", &["steam"]), App { multiple: true, ..app("Terminal", "terminal", &["foot"]) }].into_iter().map(App::with_key).collect()
 }
 
 /// shelf's own window.

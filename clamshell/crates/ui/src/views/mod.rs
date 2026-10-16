@@ -109,7 +109,6 @@ impl Scratch {
             }
         }
     }
-
 }
 
 /// One screen's drawing pass: the canvas, the state it shows, images and kept text, the targets it
@@ -274,14 +273,20 @@ mod tests {
         use clamshell_core::keymap::{Button, Input, Side};
         // A stick's click sits on its cap.
         let click = |a: &Id, b: &Id| {
-            matches!((a, b), (Id::Keymap(K(Input::Stick(Side::Left))), Id::Keymap(K(Input::Button(Button::LS)))) | (Id::Keymap(K(Input::Stick(Side::Right))), Id::Keymap(K(Input::Button(Button::RS)))))
+            matches!(
+                (a, b),
+                (Id::Keymap(K(Input::Stick(Side::Left))), Id::Keymap(K(Input::Button(Button::LS))))
+                    | (Id::Keymap(K(Input::Stick(Side::Right))), Id::Keymap(K(Input::Button(Button::RS))))
+            )
         };
         // The mouse's wheel and its turns sit on its buttons.
         use clamshell_core::Target;
         use clamshell_core::keymap::MouseButton;
         let button = |id: &Id| matches!(id, Id::Keymap(clamshell_core::KeymapId::Target(Target::Mouse(MouseButton::Left | MouseButton::Right))));
         let wheel = |id: &Id| matches!(id, Id::Keymap(clamshell_core::KeymapId::Target(Target::Mouse(MouseButton::Middle) | Target::Wheel(_))));
-        click(a, b) || (button(a) && wheel(b)) || (wheel(a) && button(b))
+        click(a, b)
+            || (button(a) && wheel(b))
+            || (wheel(a) && button(b))
             || click(b, a)
             || matches!((a, b), (Id::Dock(DockId::App(i)), Id::Dock(DockId::NewInstance(j))) | (Id::Dock(DockId::NewInstance(j)), Id::Dock(DockId::App(i))) if i == j)
     }
@@ -296,14 +301,15 @@ mod tests {
     #[test]
     fn the_keymap_screens_lay_out() {
         use clamshell_core::keymap::{Button, Input, Keymaps, Layer, Param, Side};
-        use clamshell_core::{KeymapId, ListId, PointerEvent, SettingsId, Target};
         use clamshell_core::settings::Setting;
+        use clamshell_core::{KeymapId, ListId, PointerEvent, SettingsId, Target};
         let tap = |id| Event::Pointer(PointerEvent::Activate(id));
         let km = |id| tap(Id::Keymap(id));
         let pick = |input| vec![km(KeymapId::Input(input))];
         let slide = |param, lift: bool| {
             let control = clamshell_core::slider::Control::Param(param);
-            let mut v = vec![Event::Slide(clamshell_core::Slide::Start { control, x: 100.0, width: 300.0 }), Event::Slide(clamshell_core::Slide::To { x: 160.0 })];
+            let mut v =
+                vec![Event::Slide(clamshell_core::Slide::Start { control, x: 100.0, width: 300.0 }), Event::Slide(clamshell_core::Slide::To { x: 160.0 })];
             if lift {
                 v.push(Event::Slide(clamshell_core::Slide::End));
             }
@@ -313,7 +319,17 @@ mod tests {
             ("picker", vec![tap(Id::Tab(Tab::Settings)), tap(Id::Settings(SettingsId::Tile(Setting::Keymap)))]),
             ("menu", vec![Event::Pointer(PointerEvent::LongPress(ListId::Keymaps.row(1)))]),
             ("name", vec![km(KeymapId::Rename)]),
-            ("delete", vec![tap(Id::Editor(clamshell_core::EditorId::Cancel)), km(KeymapId::Back), tap(ListId::Keymaps.row(1)), tap(Id::Settings(SettingsId::Tile(Setting::Keymap))), Event::Pointer(PointerEvent::LongPress(ListId::Keymaps.row(1))), km(KeymapId::Delete)]),
+            (
+                "delete",
+                vec![
+                    tap(Id::Editor(clamshell_core::EditorId::Cancel)),
+                    km(KeymapId::Back),
+                    tap(ListId::Keymaps.row(1)),
+                    tap(Id::Settings(SettingsId::Tile(Setting::Keymap))),
+                    Event::Pointer(PointerEvent::LongPress(ListId::Keymaps.row(1))),
+                    km(KeymapId::Delete),
+                ],
+            ),
             ("edit", vec![km(KeymapId::Back), tap(Id::Row { list: ListId::Keymaps, i: 1, part: clamshell_core::RowPart::Edit })]),
             ("edit, a button selected", vec![km(KeymapId::Input(Input::Button(Button::A)))]),
             ("the mouse", vec![km(KeymapId::Target(Target::MouseParts))]),
@@ -322,9 +338,15 @@ mod tests {
             ("the gyro's hold", vec![km(KeymapId::Holds)]),
             ("edit, a stick's panel", [vec![km(KeymapId::Back)], pick(Input::Stick(Side::Right)), vec![km(KeymapId::Target(Target::Pointer))]].concat()),
             ("edit, a slider up", slide(Param::Speed, false)),
-            ("edit, the Back layer", [slide(Param::Speed, true), vec![km(KeymapId::Layer(Layer(1))), km(KeymapId::Input(Input::Trigger(Side::Right)))]].concat()),
+            (
+                "edit, the Back layer",
+                [slide(Param::Speed, true), vec![km(KeymapId::Layer(Layer(1))), km(KeymapId::Input(Input::Trigger(Side::Right)))]].concat(),
+            ),
             ("edit, clearing", vec![km(KeymapId::Clear)]),
-            ("edit, picking a control", [vec![km(KeymapId::Back), km(KeymapId::Layer(Layer::BASE))], pick(Input::Button(Button::B)), vec![km(KeymapId::Target(Target::Pick))]].concat()),
+            (
+                "edit, picking a control",
+                [vec![km(KeymapId::Back), km(KeymapId::Layer(Layer::BASE))], pick(Input::Button(Button::B)), vec![km(KeymapId::Target(Target::Pick))]].concat(),
+            ),
         ];
         let mut cache = DrawCache::load();
         for (w, h) in [(620u32, 540u32), (1240, 1080), (300, 540)] {
@@ -351,8 +373,19 @@ mod tests {
                     // The panel, its buttons and rows, between the label columns; the label columns
                     // clear of the clusters.
                     let l = keymaps::edit_layout(body);
-                    for t in targets.iter().filter(|t| matches!(t.id, Id::Control(clamshell_core::slider::Control::Param(_)) | Id::Keymap(KeymapId::Target(_) | KeymapId::Toggle(_) | KeymapId::Holds))) {
-                        assert!(t.rect.x >= l.strip.x - 0.5 && t.rect.right() <= l.strip.right() + 0.5, "{case}: {:?} at {:?} is outside the panel's strip {:?}", t.id, t.rect, l.strip);
+                    for t in targets.iter().filter(|t| {
+                        matches!(
+                            t.id,
+                            Id::Control(clamshell_core::slider::Control::Param(_)) | Id::Keymap(KeymapId::Target(_) | KeymapId::Toggle(_) | KeymapId::Holds)
+                        )
+                    }) {
+                        assert!(
+                            t.rect.x >= l.strip.x - 0.5 && t.rect.right() <= l.strip.right() + 0.5,
+                            "{case}: {:?} at {:?} is outside the panel's strip {:?}",
+                            t.id,
+                            t.rect,
+                            l.strip
+                        );
                     }
                     assert!(l.strip.w > 0.0, "{case}: no room for the panel");
                     if w >= 620 {
@@ -372,7 +405,10 @@ mod tests {
                 for (i, a) in targets.iter().enumerate() {
                     assert!(a.rect.w > 0.0 && a.rect.h > 0.0, "{case}: {:?} has no size", a.id);
                     if a.rect.y + a.rect.h > body.y + 0.5 {
-                        let inside = a.rect.x >= body.x - 0.5 && a.rect.y >= body.y - 0.5 && a.rect.right() <= body.right() + 0.5 && a.rect.bottom() <= body.bottom() + 0.5;
+                        let inside = a.rect.x >= body.x - 0.5
+                            && a.rect.y >= body.y - 0.5
+                            && a.rect.right() <= body.right() + 0.5
+                            && a.rect.bottom() <= body.bottom() + 0.5;
                         assert!(inside, "{case}: {:?} at {:?} is outside {body:?}", a.id, a.rect);
                     }
                     for b in targets.iter().skip(i + 1) {
@@ -394,17 +430,29 @@ mod tests {
         use clamshell_core::{ListEvent, ListId};
         let mut cache = DrawCache::load();
         let readings = [
-            Reading::Wifi(Wifi { device: true, enabled: true, networks: (0..30).map(|i| Network { ssid: format!("net {i}"), ..Network::default() }).collect(), ..Wifi::default() }),
+            Reading::Wifi(Wifi {
+                device: true,
+                enabled: true,
+                networks: (0..30).map(|i| Network { ssid: format!("net {i}"), ..Network::default() }).collect(),
+                ..Wifi::default()
+            }),
             Reading::Bluetooth(Bluetooth {
                 adapter: true,
                 powered: true,
-                devices: (0..30).map(|i| Device { address: format!("{i}"), name: format!("dev {i}"), kind: Kind::Other, paired: true, connected: false }).collect(),
+                devices: (0..30)
+                    .map(|i| Device { address: format!("{i}"), name: format!("dev {i}"), kind: Kind::Other, paired: true, connected: false })
+                    .collect(),
                 ..Bluetooth::default()
             }),
-            Reading::Audio(Audio { outputs: vec![], streams: (0..30).map(|i| Stream { id: i, app: format!("app {i}"), title: String::new(), volume: 50, muted: false }).collect() }),
+            Reading::Audio(Audio {
+                outputs: vec![],
+                streams: (0..30).map(|i| Stream { id: i, app: format!("app {i}"), title: String::new(), volume: 50, muted: false }).collect(),
+            }),
             Reading::Backlights((0..30).map(|i| format!("panel {i}")).collect()),
         ];
-        for (tab, list) in [(Tab::Wifi, ListId::Wifi), (Tab::Bluetooth, ListId::Bluetooth), (Tab::Volume, ListId::Streams), (Tab::Brightness, ListId::Backlights)] {
+        for (tab, list) in
+            [(Tab::Wifi, ListId::Wifi), (Tab::Bluetooth, ListId::Bluetooth), (Tab::Volume, ListId::Streams), (Tab::Brightness, ListId::Backlights)]
+        {
             for (w, h) in [(620u32, 540u32), (1240, 1080), (300, 540)] {
                 for scrolled in [0.0, 2.5] {
                     let mut state = demo();
@@ -429,7 +477,10 @@ mod tests {
                     let body = draw(&state, &mut cache, &mut pixmap, &mut targets).touchpad_area.expect("the area below the bar");
                     let case = format!("{tab:?} at {w}x{h} scrolled {scrolled}");
                     let area = targets.iter().find(|t| t.id == Id::List(list)).map(|t| t.rect).expect("the list's area");
-                    assert!(visible > 1.0 && (visible - area.h / targets.iter().find_map(|t| t.list).map_or(1.0, |l| l.row_h)).abs() < 1e-3, "{case}: {visible}");
+                    assert!(
+                        visible > 1.0 && (visible - area.h / targets.iter().find_map(|t| t.list).map_or(1.0, |l| l.row_h)).abs() < 1e-3,
+                        "{case}: {visible}"
+                    );
                     let rows: Vec<&Target> = targets.iter().filter(|t| clamshell_core::ListId::of(&t.id).is_some_and(|(l, _)| l == list)).collect();
                     assert!(!rows.is_empty(), "{case}: rows drawn");
                     let first = rows.iter().filter_map(|t| clamshell_core::ListId::of(&t.id)).map(|(_, i)| i).min();
@@ -490,4 +541,3 @@ mod tests {
         }
     }
 }
-

@@ -27,7 +27,10 @@ pub enum Effect {
     },
     /// The settings in force changed: the running game's (`game`), or the global ones while none runs
     /// (also when a game ends). Apply them now.
-    Apply { game: Option<Arc<str>>, settings: Values },
+    Apply {
+        game: Option<Arc<str>>,
+        settings: Values,
+    },
     /// The keymap in force changed (the game's, or all games'; Default: id 0, no bindings): the pad
     /// remaps by it.
     Keymap(crate::keymap::Keymap),
@@ -38,18 +41,31 @@ pub enum Effect {
     /// Where the controller's input goes now.
     PadRoute(PadRoute),
     /// Start a dock app's command as a new instance (its scope and workspace).
-    RunApp { instance: Instance, command: Vec<String> },
+    RunApp {
+        instance: Instance,
+        command: Vec<String>,
+    },
     /// The compositor: show, close or move windows.
     Window(WindowCommand),
     /// Quit the game: close its windows, then end its scopes (ours only) if it doesn't go.
-    QuitGame { windows: Vec<i64>, units: Vec<Instance> },
+    QuitGame {
+        windows: Vec<i64>,
+        units: Vec<Instance>,
+    },
     /// Record a play that ClamShell didn't start (a game Steam started): in stats.db.
-    RecordPlay { game: Arc<str>, start: u64, duration: u64 },
+    RecordPlay {
+        game: Arc<str>,
+        start: u64,
+        duration: u64,
+    },
     /// Output volume and mute, an app's, the output.
     Sound(Sound),
     /// The screens' brightness: each backlight to `level` times its share (both 0-100; a backlight
     /// without one: 100).
-    Brightness { level: u8, shares: Vec<Share> },
+    Brightness {
+        level: u8,
+        shares: Vec<Share>,
+    },
     Wifi(wifi::Command),
     Bluetooth(bluetooth::Command),
     /// Start (true) or stop reading something for a tab while it is open.

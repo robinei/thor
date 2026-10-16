@@ -67,7 +67,6 @@ pub fn parse_get_volume(text: &str) -> Option<(u8, bool)> {
     Some(((volume * 100.0).round().clamp(0.0, 100.0) as u8, rest.contains("[MUTED]")))
 }
 
-
 static NULL: Value = Value::Null;
 
 /// The value at a JSON pointer (`/a/b`), or null.
@@ -113,10 +112,8 @@ fn parse(dump: &Value) -> Audio {
                 audio.outputs.push(Output { id, name, default });
             }
             Some("Stream/Output/Audio") => {
-                let app = [text("application.name"), text("application.process.binary"), text("node.name")]
-                    .into_iter()
-                    .find(|n| !n.is_empty())
-                    .unwrap_or_default();
+                let app =
+                    [text("application.name"), text("application.process.binary"), text("node.name")].into_iter().find(|n| !n.is_empty()).unwrap_or_default();
                 let volume = volumes.map_or(100, |v| percent(v));
                 audio.streams.push(Stream { id, app, title: text("media.name"), volume, muted });
             }

@@ -10,10 +10,10 @@
 use clamshell_core::apps::App;
 use clamshell_core::{DockId, Game, Id};
 
+use super::Frame;
 use super::format::{Fmt, Position};
 use super::style::{self, Look, Text, Tone};
 use super::widgets::{self, CAPTION_Y, TileFace, TileShape};
-use super::Frame;
 use crate::draw::{Align, Keep, Rect};
 use crate::icons::Icon;
 

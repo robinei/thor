@@ -59,7 +59,13 @@ impl Handles {
                 let mut game_env = self.tuning.apply(settings, Some(game)).map(|config| crate::tuning::mangohud_env(&config)).unwrap_or_default();
                 game_env.extend(env.iter().cloned());
                 // Its own workspace, shown when its first window appears (the state asks for that).
-                self.launcher.send(launcher::Request { game: game.clone(), instance: instance.clone(), launch: launch.clone(), file: file.clone(), env: game_env });
+                self.launcher.send(launcher::Request {
+                    game: game.clone(),
+                    instance: instance.clone(),
+                    launch: launch.clone(),
+                    file: file.clone(),
+                    env: game_env,
+                });
             }
             Effect::Apply { game, settings } => {
                 self.tuning.apply(settings, game.as_deref());

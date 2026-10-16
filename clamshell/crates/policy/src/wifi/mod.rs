@@ -22,8 +22,8 @@ use zbus::zvariant::{ObjectPath, OwnedObjectPath, Value};
 use crate::dbus::{self, Props};
 use crate::worker::{self, Changed, Ended, Next, Service, Worker, lost_on};
 use crate::{Closed, Sink};
-use nm::{AccessPointProxy, ActiveProxy, ActiveReason, ActiveState, ConnectionProxy, DeviceProxy, DeviceReason, DeviceState, DeviceType};
 use nm::{AP_PRIVACY, KEY_MGMT_8021X, KEY_MGMT_PSK, KEY_MGMT_SAE, ManagerProxy, SettingsProxy, WirelessProxy};
+use nm::{AccessPointProxy, ActiveProxy, ActiveReason, ActiveState, ConnectionProxy, DeviceProxy, DeviceReason, DeviceState, DeviceType};
 
 /// How often the list is read while the mode is open, and how often a scan is asked for.
 const READ_EVERY: Duration = Duration::from_secs(1);
@@ -136,9 +136,8 @@ impl Session {
         nm.wireless_enabled()?;
         // Active connections signal (state, reason); devices (new state, old state, reason).
         let active_changes = state_changes(&conn, nm::ACTIVE, "wifi-active", |body| body.deserialize::<(u32, u32)>().ok())?;
-        let device_changes = state_changes(&conn, nm::DEVICE, "wifi-device", |body| {
-            body.deserialize::<(u32, u32, u32)>().ok().map(|(new, _old, reason)| (new, reason))
-        })?;
+        let device_changes =
+            state_changes(&conn, nm::DEVICE, "wifi-device", |body| body.deserialize::<(u32, u32, u32)>().ok().map(|(new, _old, reason)| (new, reason)))?;
         Ok(Session { conn, nm, active_changes, device_changes })
     }
 
@@ -269,13 +268,7 @@ impl<S: Sink> WifiThread<S> {
                 ssid: ap.ssid,
             })
             .collect();
-        Ok(Wifi {
-            device: true,
-            enabled,
-            networks: wifi::sort(networks),
-            connecting: st.attempt.as_ref().map(|a| a.ssid.clone()),
-            error: st.error.clone(),
-        })
+        Ok(Wifi { device: true, enabled, networks: wifi::sort(networks), connecting: st.attempt.as_ref().map(|a| a.ssid.clone()), error: st.error.clone() })
     }
 
     /// Ends the attempt once the network is connected, or with an error once it has failed.

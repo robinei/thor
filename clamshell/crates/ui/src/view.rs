@@ -3,6 +3,8 @@
 
 use std::sync::Mutex;
 
+use clamshell_core::touch::{Region, TouchLayout};
+use clamshell_core::{Id, State};
 use smithay_client_toolkit::{
     compositor::{CompositorState, FrameCallbackData},
     reexports::client::{
@@ -19,8 +21,6 @@ use smithay_client_toolkit::{
     },
     shm::slot::{Buffer, SlotPool},
 };
-use clamshell_core::touch::{Region, TouchLayout};
-use clamshell_core::{Id, State};
 
 use crate::draw::{DrawCache, Rect};
 use crate::focus::Drawn;
@@ -181,7 +181,6 @@ impl View {
         surface.commit();
         Ok(true)
     }
-
 }
 
 /// A `w` x `h` buffer the compositor isn't reading: one kept, or a new one if fewer than three are kept;

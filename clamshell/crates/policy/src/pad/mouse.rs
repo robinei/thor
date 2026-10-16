@@ -72,12 +72,9 @@ impl PadMouse {
         self.scroll_carry = (self.scroll_carry.0 - hx, self.scroll_carry.1 - hy);
 
         let start = out.mouse.len();
-        for (axis, value) in [
-            (RelativeAxisCode::REL_X, dx),
-            (RelativeAxisCode::REL_Y, dy),
-            (RelativeAxisCode::REL_WHEEL_HI_RES, hy),
-            (RelativeAxisCode::REL_HWHEEL_HI_RES, hx),
-        ] {
+        for (axis, value) in
+            [(RelativeAxisCode::REL_X, dx), (RelativeAxisCode::REL_Y, dy), (RelativeAxisCode::REL_WHEEL_HI_RES, hy), (RelativeAxisCode::REL_HWHEEL_HI_RES, hx)]
+        {
             if value != 0.0 {
                 out.mouse.push(Raw::rel(axis, value as i32));
             }

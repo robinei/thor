@@ -76,11 +76,7 @@ fn load((busy0, total0): (u64, u64), (busy1, total1): (u64, u64)) -> Option<f32>
 /// MemTotal, MemAvailable, SwapTotal, SwapFree from /proc/meminfo, in bytes.
 fn parse_meminfo(text: &str) -> (u64, u64, u64, u64) {
     let field = |name: &str| {
-        text.lines()
-            .find(|l| l.starts_with(name))
-            .and_then(|l| l.split_whitespace().nth(1))
-            .and_then(|v| v.parse::<u64>().ok())
-            .map_or(0, |kb| kb * 1024)
+        text.lines().find(|l| l.starts_with(name)).and_then(|l| l.split_whitespace().nth(1)).and_then(|v| v.parse::<u64>().ok()).map_or(0, |kb| kb * 1024)
     };
     (field("MemTotal:"), field("MemAvailable:"), field("SwapTotal:"), field("SwapFree:"))
 }
@@ -100,10 +96,8 @@ fn read(previous: &CpuTimes, now: &CpuTimes) -> Metrics {
         *slot = load(*a, *b).unwrap_or(0.0);
         m.core_count += 1;
     }
-    m.cpu_mhz = (0..256)
-        .map_while(|i| sys::read::<f64>(format!("/sys/devices/system/cpu/cpu{i}/cpufreq/scaling_cur_freq")))
-        .map(|khz| (khz / 1000.0) as u32)
-        .max();
+    m.cpu_mhz =
+        (0..256).map_while(|i| sys::read::<f64>(format!("/sys/devices/system/cpu/cpu{i}/cpufreq/scaling_cur_freq"))).map(|khz| (khz / 1000.0) as u32).max();
 
     // GPU: amdgpu (desktop), else a devfreq device named like a GPU (Adreno: 3d00000.gpu).
     for card in sys::entries("/sys/class/drm") {

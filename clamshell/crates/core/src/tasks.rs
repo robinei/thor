@@ -78,13 +78,8 @@ impl State {
     /// first.
     fn current_instance(&self, i: usize) -> Option<Found<'_>> {
         let session = &self.session;
-        let recent = || {
-            session.recent.iter().map(String::as_str).find(|ws| session.units.iter().any(|u| u.is(ws)) && self.is_instance(i, ws))
-        };
-        self.front_instance(i)
-            .or_else(recent)
-            .map(Found::Workspace)
-            .or_else(|| self.instances(i).min_by_key(|u| u.order()).map(Found::Unit))
+        let recent = || session.recent.iter().map(String::as_str).find(|ws| session.units.iter().any(|u| u.is(ws)) && self.is_instance(i, ws));
+        self.front_instance(i).or_else(recent).map(Found::Workspace).or_else(|| self.instances(i).min_by_key(|u| u.order()).map(Found::Unit))
     }
 
     /// Which of app `i`'s instances the tile is on, of how many: (position from 1, count), in the order

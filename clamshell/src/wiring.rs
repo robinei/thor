@@ -13,8 +13,7 @@ use clamshell_policy::paths::Paths;
 use clamshell_policy::tuning::Tuning;
 use clamshell_policy::worker::Worker;
 use clamshell_policy::{
-    Closed, Handles, Sink, battery, bluetooth, brightness, clock, frames, launcher, metrics, mixer, pad, sound, status, sway, touchpad, tuning, units,
-    wifi,
+    Closed, Handles, Sink, battery, bluetooth, brightness, clock, frames, launcher, metrics, mixer, pad, sound, status, sway, touchpad, tuning, units, wifi,
 };
 use clamshell_ui::EventSender;
 
@@ -59,7 +58,8 @@ pub fn start(env: &Env, paths: &Paths, layout: Arc<Mutex<TouchLayout>>, global: 
     detached("status", status::spawn(backlights.clone(), sink.clone()));
     detached("metrics", metrics::spawn(sink.clone()));
     detached("frames", frames::spawn(paths.mangohud.clone(), sink.clone()));
-    let touchpad = started("touchpad", touchpad::spawn(touchpad::Config { device: env.touchscreen.clone(), px_per_mm: BOTTOM_PX_PER_MM }, layout, sink.clone()));
+    let touchpad =
+        started("touchpad", touchpad::spawn(touchpad::Config { device: env.touchscreen.clone(), px_per_mm: BOTTOM_PX_PER_MM }, layout, sink.clone()));
     // Commands (`clamshell ctl`, tests) come through a pipe.
     if let Some(path) = env.control.as_ref().or(paths.control.as_ref()) {
         control::spawn(path.clone(), sink.clone());

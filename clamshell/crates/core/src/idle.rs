@@ -10,10 +10,10 @@
 //! Sleep is only where the program may (the device's own session: never a desktop that runs ClamShell
 //! for testing), and never while a game is in front: the screens go off, the game keeps running.
 
+use crate::State;
 use crate::effect::Effect;
 use crate::game::Front;
 use crate::settings::{Setting, Values};
-use crate::State;
 
 /// The compositor reports no input after this many seconds without any.
 pub const NOTIFY_AFTER: u64 = 10;
@@ -243,10 +243,12 @@ mod tests {
         use crate::sys::Status;
         use crate::testkit::state;
         use crate::{Event, Reading};
-        let brightness = |e: &[Effect]| e.iter().find_map(|e| match e {
-            Effect::Brightness { level, .. } => Some(*level),
-            _ => None,
-        });
+        let brightness = |e: &[Effect]| {
+            e.iter().find_map(|e| match e {
+                Effect::Brightness { level, .. } => Some(*level),
+                _ => None,
+            })
+        };
         let mut s = state();
         s.apply(Reading::Status(Status { brightness: Some(60), ..Status::default() }).into());
         s.apply(crate::LevelEvent::Set(crate::Level::Brightness, 60).into());

@@ -23,8 +23,7 @@ pub enum Command {
     Ctl(Vec<String>),
 }
 
-pub const USAGE: &str =
-    "usage: clamshell [ctl COMMAND... | --snapshot DIR | --library | --launcher-example | --mangohud-env | --run FILE]";
+pub const USAGE: &str = "usage: clamshell [ctl COMMAND... | --snapshot DIR | --library | --launcher-example | --mangohud-env | --run FILE]";
 
 /// The command the arguments (without the program's name) ask for.
 pub fn parse(args: &[String]) -> Option<Command> {

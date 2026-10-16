@@ -12,7 +12,8 @@ use clamshell_core::levels::Level;
 use clamshell_core::settings::Setting;
 use clamshell_core::slider::Control;
 use clamshell_core::{
-    Apps, EditorId, Event, GameEvent, Id, Init, KeymapId, Library, LevelEvent, ListEvent, ListId, PointerEvent, Reading, Scope, SettingsId, ShelfEvent, ShelfId, Slide, State, Status, Tab, Target,
+    Apps, EditorId, Event, GameEvent, Id, Init, KeymapId, LevelEvent, Library, ListEvent, ListId, PointerEvent, Reading, Scope, SettingsId, ShelfEvent,
+    ShelfId, Slide, State, Status, Tab, Target,
 };
 use clamshell_ui::Screen;
 
@@ -250,11 +251,19 @@ pub fn shots(now: u64) -> Result<Vec<Shot>, ParseError> {
         shot("keymap-edit-gyro-accel.png", Bottom, [slide(Param::Accel, 0.25, true), vec![km(KeymapId::Toggle(Param::Twist))]].concat()),
         shot("keymap-holds.png", Bottom, vec![km(KeymapId::Holds)]),
         shot("keymap-edit-rstick.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Input(Input::Stick(Side::Right)))]),
-        shot("keymap-capture.png", Bottom, vec![km(KeymapId::Input(Input::Button(Button::Y))), km(KeymapId::Target(Target::Key)), key(Key::Mod(Modifier::Alt))?]),
+        shot(
+            "keymap-capture.png",
+            Bottom,
+            vec![km(KeymapId::Input(Input::Button(Button::Y))), km(KeymapId::Target(Target::Key)), key(Key::Mod(Modifier::Alt))?],
+        ),
         shot("keymap-pick.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Input(Input::Button(Button::B))), km(KeymapId::Target(Target::Pick))]),
         shot("keymaps.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Back)]),
         shot("keymap-menu.png", Bottom, vec![PointerEvent::LongPress(ListId::Keymaps.row(2)).into()]),
-        shot("keymap-delete.png", Bottom, vec![km(KeymapId::Back), tap(ListId::Keymaps.row(2)), keymap_tile(), PointerEvent::LongPress(ListId::Keymaps.row(2)).into(), km(KeymapId::Delete)]),
+        shot(
+            "keymap-delete.png",
+            Bottom,
+            vec![km(KeymapId::Back), tap(ListId::Keymaps.row(2)), keymap_tile(), PointerEvent::LongPress(ListId::Keymaps.row(2)).into(), km(KeymapId::Delete)],
+        ),
         shot("bottom.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Back), Reading::Status(demo::STATUS).into()]),
         shot("launcher.png", Bottom, vec![tab(Tab::Dock), PointerEvent::HideFocus.into()]),
         shot("launcher-running.png", Bottom, demo::running()),
@@ -294,11 +303,7 @@ pub fn shots(now: u64) -> Result<Vec<Shot>, ParseError> {
         ),
         shot("keyboard.png", Bottom, vec![Slide::End.into(), PointerEvent::Up(volume).into(), tab(Tab::Keyboard)]),
         shot("keyboard-fn.png", Bottom, vec![key(Key::Mod(Modifier::Fn))?]),
-        shot(
-            "keyboard-mods.png",
-            Bottom,
-            vec![key(Key::Mod(Modifier::Fn))?, key(Key::Mod(Modifier::Shift))?, PointerEvent::Down(ctrl()?).into()],
-        ),
+        shot("keyboard-mods.png", Bottom, vec![key(Key::Mod(Modifier::Fn))?, key(Key::Mod(Modifier::Shift))?, PointerEvent::Down(ctrl()?).into()]),
         shot("keyboard-caps.png", Bottom, vec![PointerEvent::Up(ctrl()?).into(), key(Key::Mod(Modifier::Shift))?, key(Key::Caps)?]),
         shot("touchpad.png", Bottom, vec![tab(Tab::Touchpad), tap(Id::PadMouse)]),
         shot("sysinfo.png", Bottom, demo::metrics()),
@@ -383,9 +388,6 @@ mod tests {
             .filter_map(|l| l.split_once(' ').map(|(n, h)| (n.to_owned(), h.to_owned())))
             .collect();
         let changed: std::collections::BTreeSet<&String> = hashes.keys().chain(expected.keys()).filter(|n| hashes.get(*n) != expected.get(*n)).collect();
-        assert!(
-            changed.is_empty(),
-            "snapshots changed: {changed:?}; if meant, update with `CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots`"
-        );
+        assert!(changed.is_empty(), "snapshots changed: {changed:?}; if meant, update with `CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots`");
     }
 }

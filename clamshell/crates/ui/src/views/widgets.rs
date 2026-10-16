@@ -5,8 +5,8 @@
 
 use clamshell_core::{Game, Id};
 
-use super::style::{self, Look, SURFACE_HI, Text, Tone};
 use super::scroll::Scrolled;
+use super::style::{self, Look, SURFACE_HI, Text, Tone};
 use super::{Frame, Track};
 use crate::draw::{Align, Canvas, Column, Keep, LINE, Rect, Rgb};
 use crate::icons::Icon;

@@ -37,7 +37,15 @@ const LOW_BATTERY: u8 = 15;
 /// tap), its icon (with its level or status), and its tone: lit while open, dim without a reading.
 fn tab_button(s: &State, tab: Tab) -> (Id, Icon, Tone) {
     let open = s.bottom().tab() == tab;
-    let lit = |reading: bool| if open { Tone::Accent } else if reading { Tone::Normal } else { Tone::Dim };
+    let lit = |reading: bool| {
+        if open {
+            Tone::Accent
+        } else if reading {
+            Tone::Normal
+        } else {
+            Tone::Dim
+        }
+    };
     match tab {
         Tab::Volume => {
             let volume = s.levels().control(Control::Volume);

@@ -5,7 +5,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
 use clamshell_core::keyboard::{self, Key, Modifier};
-use clamshell_core::{DockId, EditorId, Event, GameEvent, Id, Instance, PointerEvent, Reading, SettingsId, Slide, Init, State, Tab};
+use clamshell_core::{DockId, EditorId, Event, GameEvent, Id, Init, Instance, PointerEvent, Reading, SettingsId, Slide, State, Tab};
 
 use crate::Screen;
 use crate::draw::DrawCache;
@@ -94,7 +94,10 @@ fn warm_frames_do_not_allocate() {
                 tap(Id::Editor(EditorId::Save)),
             ],
         ),
-        ("dock, an app running", vec![Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Dock))), Event::Pointer(PointerEvent::Activate(Id::Dock(DockId::App(1))))]),
+        (
+            "dock, an app running",
+            vec![Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Dock))), Event::Pointer(PointerEvent::Activate(Id::Dock(DockId::App(1))))],
+        ),
         (
             "dock, a game and windows",
             vec![
@@ -130,7 +133,10 @@ fn warm_frames_do_not_allocate() {
                 Event::List(clamshell_core::ListEvent::Scroll(clamshell_core::ListId::Wifi, 3.3)),
             ],
         ),
-        ("shelf, dragged part way", vec![Event::Shelf(clamshell_core::ShelfEvent::Rows(3)), Event::List(clamshell_core::ListEvent::Scroll(clamshell_core::ListId::Shelf, 1.6))]),
+        (
+            "shelf, dragged part way",
+            vec![Event::Shelf(clamshell_core::ShelfEvent::Rows(3)), Event::List(clamshell_core::ListEvent::Scroll(clamshell_core::ListId::Shelf, 1.6))],
+        ),
         ("keymap picker", vec![tap(Id::Tab(Tab::Settings)), tap(Id::Settings(SettingsId::Tile(clamshell_core::settings::Setting::Keymap)))]),
         (
             "keymap edit screen",
@@ -241,13 +247,7 @@ fn warm_frames_do_not_allocate() {
                 Event::Pointer(PointerEvent::Down(clamshell_core::levels::Level::Stream(0).id())),
             ],
         ),
-        (
-            "brightness",
-            vec![
-                Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Brightness))),
-                Event::Reading(Reading::Backlights(vec!["panel".into()])),
-            ],
-        ),
+        ("brightness", vec![Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Brightness))), Event::Reading(Reading::Backlights(vec!["panel".into()]))]),
         (
             "dark while a game runs",
             vec![Event::Game(GameEvent::Started("zelda-lttp".into())), tap(Id::Settings(SettingsId::Tile(clamshell_core::settings::Setting::BottomScreen)))],
@@ -256,7 +256,11 @@ fn warm_frames_do_not_allocate() {
         ("keyboard, Fn", vec![tap(Id::Tab(Tab::Keyboard)), key(Key::Mod(Modifier::Fn))]),
         (
             "keyboard, Shift and a pressed key",
-            vec![tap(Id::Tab(Tab::Keyboard)), key(Key::Mod(Modifier::Shift)), Event::Pointer(PointerEvent::Down(Id::Key(keyboard::find(Key::Char('h')).expect("h"))))],
+            vec![
+                tap(Id::Tab(Tab::Keyboard)),
+                key(Key::Mod(Modifier::Shift)),
+                Event::Pointer(PointerEvent::Down(Id::Key(keyboard::find(Key::Char('h')).expect("h")))),
+            ],
         ),
     ];
     for (name, events) in cases {
@@ -280,4 +284,3 @@ fn warm_frames_do_not_allocate() {
         }
     }
 }
-

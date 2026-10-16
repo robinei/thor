@@ -36,9 +36,9 @@ pub fn system_battery() -> Option<PathBuf> {
 }
 
 fn system_battery_in(class: &Path) -> Option<PathBuf> {
-    entries(class).into_iter().find(|dir| {
-        read::<String>(dir.join("type")).as_deref() == Some("Battery") && read::<String>(dir.join("scope")).as_deref() != Some("Device")
-    })
+    entries(class)
+        .into_iter()
+        .find(|dir| read::<String>(dir.join("type")).as_deref() == Some("Battery") && read::<String>(dir.join("scope")).as_deref() != Some("Device"))
 }
 
 /// Every power supply (for settings only some have, as the charge limit).

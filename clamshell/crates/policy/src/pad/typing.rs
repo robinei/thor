@@ -51,9 +51,6 @@ mod tests {
         Typing.event(Raw::key(KeyCode::BTN_SOUTH, Press::Down), now, &mut out);
         Typing.event(Raw::key(KeyCode::BTN_EAST, Press::Repeat), now, &mut out);
         Typing.event(Raw::key(KeyCode::BTN_NORTH, Press::Down), now, &mut out);
-        assert_eq!(
-            out.mouse,
-            vec![Raw::key(KeyCode::KEY_ENTER, Press::Down), Raw::REPORT, Raw::key(KeyCode::KEY_BACKSPACE, Press::Repeat), Raw::REPORT]
-        );
+        assert_eq!(out.mouse, vec![Raw::key(KeyCode::KEY_ENTER, Press::Down), Raw::REPORT, Raw::key(KeyCode::KEY_BACKSPACE, Press::Repeat), Raw::REPORT]);
     }
 }

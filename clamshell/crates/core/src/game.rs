@@ -187,12 +187,7 @@ impl State {
         if session.current.as_deref() != Some(game) {
             return self.queued_launch(game);
         }
-        let next = session
-            .recent
-            .iter()
-            .find_map(|ws| session.games.iter().find(|g| g.instance.is(ws)))
-            .or_else(|| session.games.last())
-            .map(|g| g.id.clone());
+        let next = session.recent.iter().find_map(|ws| session.games.iter().find(|g| g.instance.is(ws))).or_else(|| session.games.last()).map(|g| g.id.clone());
         session.current = next.clone();
         let apply = match next {
             Some(id) => Effect::Apply { settings: self.settings.of(&id), game: Some(id) },
@@ -226,8 +221,7 @@ impl State {
         // A new Steam game.
         let session = &self.session;
         let new = session.windows.iter().filter_map(Window::steam_id).find_map(|appid| {
-            let running =
-                session.games.iter().any(|g| g.appid() == Some(appid)) || session.launching.iter().any(|l| l.appid == Some(appid));
+            let running = session.games.iter().any(|g| g.appid() == Some(appid)) || session.launching.iter().any(|l| l.appid == Some(appid));
             let game = self.shelf.library().games.iter().find(|g| g.launch == Launch::Steam { appid });
             game.filter(|_| !running).map(|g| (g.id.clone(), appid))
         });
@@ -245,8 +239,7 @@ impl State {
             let Some(appid) = g.appid() else {
                 continue;
             };
-            let stray: Vec<i64> =
-                session.windows.iter().filter(|w| w.steam_id() == Some(appid) && !g.instance.is(&w.workspace)).map(|w| w.id).collect();
+            let stray: Vec<i64> = session.windows.iter().filter(|w| w.steam_id() == Some(appid) && !g.instance.is(&w.workspace)).map(|w| w.id).collect();
             if !stray.is_empty() {
                 effects.push(Effect::Window(WindowCommand::Move { windows: stray, to: g.instance.clone() }));
             }

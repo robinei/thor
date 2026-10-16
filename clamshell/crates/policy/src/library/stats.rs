@@ -71,7 +71,10 @@ mod tests {
         // Pegasus' schema, byte for byte.
         let c = Connection::open(&db).unwrap();
         let sql: String = c.query_row("SELECT sql FROM sqlite_master WHERE name='plays'", [], |r| r.get(0)).unwrap();
-        assert_eq!(sql, "CREATE TABLE plays(id INTEGER PRIMARY KEY,path_id INTEGER NOT NULL REFERENCES plays(id),start_time INTEGER NOT NULL,duration INTEGER NOT NULL)");
+        assert_eq!(
+            sql,
+            "CREATE TABLE plays(id INTEGER PRIMARY KEY,path_id INTEGER NOT NULL REFERENCES plays(id),start_time INTEGER NOT NULL,duration INTEGER NOT NULL)"
+        );
         let _ = std::fs::remove_file(&db);
     }
 }

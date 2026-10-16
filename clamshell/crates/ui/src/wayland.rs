@@ -1,6 +1,7 @@
 //! The Wayland protocol handlers: configures and frame callbacks for the views, seats and their
 //! keyboard, pointer and touch, passed on to the input side.
 
+use clamshell_core::{Event, ShelfEvent};
 use smithay_client_toolkit::{
     compositor::CompositorHandler,
     delegate_registry,
@@ -24,7 +25,6 @@ use smithay_client_toolkit::{
     },
     shm::{Shm, ShmHandler},
 };
-use clamshell_core::{Event, ShelfEvent};
 
 use crate::App;
 use crate::input::{End, Source};
@@ -71,14 +71,7 @@ impl LayerShellHandler for App {
         self.exit = true;
     }
 
-    fn configure(
-        &mut self,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-        layer: &LayerSurface,
-        configure: LayerSurfaceConfigure,
-        _: u32,
-    ) {
+    fn configure(&mut self, _: &Connection, _: &QueueHandle<Self>, layer: &LayerSurface, configure: LayerSurfaceConfigure, _: u32) {
         if let Some(view) = self.view_mut(layer.wl_surface()) {
             let (w, h) = configure.new_size;
             view.size = (if w == 0 { view.default_size.0 } else { w }, if h == 0 { view.default_size.1 } else { h });
@@ -151,17 +144,7 @@ impl SeatHandler for App {
 }
 
 impl KeyboardHandler for App {
-    fn enter(
-        &mut self,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-        _: &wl_keyboard::WlKeyboard,
-        _: &WlSurface,
-        _: u32,
-        _: &[u32],
-        _: &[Keysym],
-    ) {
-    }
+    fn enter(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: &WlSurface, _: u32, _: &[u32], _: &[Keysym]) {}
 
     fn leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: &WlSurface, _: u32) {}
 
@@ -179,17 +162,7 @@ impl KeyboardHandler for App {
         self.key(event.keysym, false);
     }
 
-    fn update_modifiers(
-        &mut self,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-        _: &wl_keyboard::WlKeyboard,
-        _: u32,
-        _: Modifiers,
-        _: RawModifiers,
-        _: u32,
-    ) {
-    }
+    fn update_modifiers(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, _: Modifiers, _: RawModifiers, _: u32) {}
 }
 
 impl PointerHandler for App {
@@ -220,17 +193,7 @@ impl PointerHandler for App {
 }
 
 impl TouchHandler for App {
-    fn down(
-        &mut self,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-        _: &wl_touch::WlTouch,
-        _: u32,
-        _: u32,
-        surface: WlSurface,
-        id: i32,
-        position: (f64, f64),
-    ) {
+    fn down(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, _: u32, _: u32, surface: WlSurface, id: i32, position: (f64, f64)) {
         self.press_at(Source::Touch(id), &surface, position);
     }
 

@@ -184,10 +184,8 @@ mod live {
         let manager = manager(&Connection::session().unwrap()).unwrap();
         let instance = Instance::App { key: "unittest".into(), secs: u64::from(std::process::id()), n: 0 };
         let name = instance.name();
-        let mut child = Command::new("systemd-run")
-            .args(["--user", "--scope", "--quiet", "--collect", &format!("--unit={name}"), "--", "sleep", "1"])
-            .spawn()
-            .unwrap();
+        let mut child =
+            Command::new("systemd-run").args(["--user", "--scope", "--quiet", "--collect", &format!("--unit={name}"), "--", "sleep", "1"]).spawn().unwrap();
         let start = Instant::now();
         while !list(&manager).unwrap().contains(&instance) {
             assert!(start.elapsed() < Duration::from_secs(5), "listed");

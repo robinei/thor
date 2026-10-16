@@ -167,12 +167,8 @@ impl Shelf {
         let selected = self.selected.clone();
         change(&mut self.library);
         let old = std::mem::take(&mut self.cursors);
-        self.cursors = self
-            .library
-            .collections
-            .iter()
-            .map(|c| names.iter().position(|n| *n == c.name).and_then(|i| old.get(i).cloned()).unwrap_or_default())
-            .collect();
+        self.cursors =
+            self.library.collections.iter().map(|c| names.iter().position(|n| *n == c.name).and_then(|i| old.get(i).cloned()).unwrap_or_default()).collect();
         self.current = current_name.and_then(|n| self.library.collections.iter().position(|c| c.name == n)).unwrap_or(0);
         if let Some(id) = selected {
             let position = self.position(&id);
@@ -222,9 +218,7 @@ impl Shelf {
         let Some(i) = self.library.collections.iter().position(|c| c.name == name) else {
             return;
         };
-        let position = self.library.collections.get(i).and_then(|c| {
-            c.games.iter().position(|&g| self.library.games.get(g).is_some_and(|g| &*g.id == game))
-        });
+        let position = self.library.collections.get(i).and_then(|c| c.games.iter().position(|&g| self.library.games.get(g).is_some_and(|g| &*g.id == game)));
         if let (Some(p), Some(cursor)) = (position, self.cursors.get_mut(i)) {
             cursor.index = p;
         }

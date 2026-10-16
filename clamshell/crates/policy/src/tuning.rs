@@ -114,9 +114,7 @@ impl Tuning {
         self.hardware.send(*v);
         self.pad.send(pad::Command::Rumble(v.get(Setting::Rumble)));
         let game = game?;
-        mangohud_config(&self.mangohud, game, v.get(Setting::FpsCap), v.get(Setting::Hud))
-            .map_err(|e| log::warn!("MangoHud config: {e}"))
-            .ok()
+        mangohud_config(&self.mangohud, game, v.get(Setting::FpsCap), v.get(Setting::Hud)).map_err(|e| log::warn!("MangoHud config: {e}")).ok()
     }
 }
 
@@ -176,10 +174,7 @@ pub fn mangohud_config(dir: &Path, game: &str, fps_cap: u16, hud: u16) -> io::Re
         1 => "fps_only\n",
         _ => "",
     };
-    let text = format!(
-        "{overlay}autostart_log=1\nlog_interval=500\noutput_folder={}\nfps_limit={fps_cap}\n",
-        dir.display()
-    );
+    let text = format!("{overlay}autostart_log=1\nlog_interval=500\noutput_folder={}\nfps_limit={fps_cap}\n", dir.display());
     fs::write(&path, text)?;
     Ok(path)
 }

@@ -276,14 +276,6 @@ mod tests {
                 }
             }
         }
-        assert_eq!(
-            keys,
-            vec![
-                (KeyCode::KEY_LEFTSHIFT.0, 1),
-                (KeyCode::KEY_A.0, 1),
-                (KeyCode::KEY_A.0, 0),
-                (KeyCode::KEY_LEFTSHIFT.0, 0)
-            ]
-        );
+        assert_eq!(keys, vec![(KeyCode::KEY_LEFTSHIFT.0, 1), (KeyCode::KEY_A.0, 1), (KeyCode::KEY_A.0, 0), (KeyCode::KEY_LEFTSHIFT.0, 0)]);
     }
 }

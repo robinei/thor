@@ -368,7 +368,13 @@ impl State {
             effects.push(Effect::Save(Save::Brightness(self.levels.brightness().text())));
         }
         let notice_gone = self.expire_notice(unix_secs);
-        let dirty = if minute_changed { Dirty::BOTH } else if notice_gone { Dirty::BOTTOM } else { Dirty::NONE };
+        let dirty = if minute_changed {
+            Dirty::BOTH
+        } else if notice_gone {
+            Dirty::BOTTOM
+        } else {
+            Dirty::NONE
+        };
         (dirty, effects)
     }
 

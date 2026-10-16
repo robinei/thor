@@ -129,9 +129,7 @@ impl Library {
     /// collections; either is left out while empty.
     pub fn rebuild_derived(&mut self) {
         self.collections.retain(|c| !c.derived);
-        let mut recent: Vec<usize> = (0..self.games.len())
-            .filter(|&i| self.games.get(i).is_some_and(|g| g.plays.count > 0 && !g.tool))
-            .collect();
+        let mut recent: Vec<usize> = (0..self.games.len()).filter(|&i| self.games.get(i).is_some_and(|g| g.plays.count > 0 && !g.tool)).collect();
         recent.sort_by_key(|&i| std::cmp::Reverse(self.games.get(i).map_or(0, |g| g.plays.last)));
         recent.truncate(RECENT);
         let mut favourites: Vec<usize> = (0..self.games.len()).filter(|&i| self.games.get(i).is_some_and(|g| g.favourite)).collect();

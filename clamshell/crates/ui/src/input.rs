@@ -519,7 +519,10 @@ mod tests {
 
         // Held still: the timer starts it.
         input.touch(Source::Mouse, &volume(), (300.0, 0.0), t0());
-        assert_eq!(events(&input.timer(Source::Mouse, Timer::Slide, &state, t0())), vec![Slide::Start { control: Control::Volume, x: 290.0, width: 600.0 }.into()]);
+        assert_eq!(
+            events(&input.timer(Source::Mouse, Timer::Slide, &state, t0())),
+            vec![Slide::Start { control: Control::Volume, x: 290.0, width: 600.0 }.into()]
+        );
         // Lifted before either: a tap (it opens the tab).
         input.up(Source::Mouse, End::Release, &blank(), t0());
         input.touch(Source::Mouse, &volume(), (300.0, 0.0), t0());

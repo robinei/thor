@@ -12,7 +12,9 @@
 
 use std::fmt::Write;
 
-use clamshell_core::keymap::{Actuation, Binding, Button, Change, Chord, Dir, Input, Keymap, Kind, Layer, MouseButton, Output, PadOut, Param, Side, change, params_of};
+use clamshell_core::keymap::{
+    Actuation, Binding, Button, Change, Chord, Dir, Input, Keymap, Kind, Layer, MouseButton, Output, PadOut, Param, Side, change, params_of,
+};
 use clamshell_core::keymap_ui::{EditView, Screen, holds, picked, way_of, ways};
 use clamshell_core::slider::{Control, Slider};
 use clamshell_core::{Id, KeymapId, ListId, RowPart, Scope, Target};
@@ -112,19 +114,28 @@ fn list(f: &mut Frame) {
         let mine = id == chosen || (id == 0 && s.keymaps().get(chosen).is_none());
         let who = if row.is_some() { users(f, id) } else { Fmt::of(format_args!("As on the pad")) };
         let at = |part| Id::Row { list: ListId::Keymaps, i: i as u16, part };
-        let item = ListRow { label: row.map_or("Default", |k| k.name.as_str()), tone: Tone::high_if(mine), mark: mine, note: &who, edit: if row.is_some() { EditCell::Edit(at(RowPart::Edit)) } else { EditCell::Empty } };
+        let item = ListRow {
+            label: row.map_or("Default", |k| k.name.as_str()),
+            tone: Tone::high_if(mine),
+            mark: mine,
+            note: &who,
+            edit: if row.is_some() { EditCell::Edit(at(RowPart::Edit)) } else { EditCell::Empty },
+        };
         widgets::list_row(f, at(RowPart::Main), rows.row(i), list.pad, list.size, item);
     }
     list.end(f, rows);
 }
 
-
 fn menu(f: &mut Frame, id: u16) {
     let name = f.s.keymap_name(id);
     let area = header(f, name, HeaderRight::None);
     let k = |id| Id::Keymap(id);
-    let items =
-        [(k(KeymapId::Edit), "Edit", Tone::Fn), (k(KeymapId::Rename), "Rename", Tone::Fn), (k(KeymapId::Duplicate), "Duplicate", Tone::Fn), (k(KeymapId::Delete), "Delete", Tone::Accent)];
+    let items = [
+        (k(KeymapId::Edit), "Edit", Tone::Fn),
+        (k(KeymapId::Rename), "Rename", Tone::Fn),
+        (k(KeymapId::Duplicate), "Duplicate", Tone::Fn),
+        (k(KeymapId::Delete), "Delete", Tone::Accent),
+    ];
     widgets::menu(f, area, &items);
 }
 
@@ -714,7 +725,11 @@ fn panel(f: &mut Frame, r: Rect, id: u16, keymap: Option<&Keymap>, view: EditVie
             (None, _) => widgets::centred_lines(f, row, small, Tone::Dim, &unset(input)),
             // (The panel's own content in white: blue is for labels of what is remapped, and actions.)
             (Some(b), _) => {
-                let tone = if input == Input::Gyro || change(input, Some(&b)) == Change::Mapped || act != Actuation::Press { Tone::High } else { described(input, &b, keymap).1 };
+                let tone = if input == Input::Gyro || change(input, Some(&b)) == Change::Mapped || act != Actuation::Press {
+                    Tone::High
+                } else {
+                    described(input, &b, keymap).1
+                };
                 widgets::centred_lines(f, row, small, tone, &summary(input, &b, keymap));
             }
         }
@@ -834,12 +849,10 @@ fn invert_row(f: &mut Frame, row: Rect, size: f32, b: &Binding) {
     }
 }
 
-
 /// "As on the pad" in words, for an input (the gyro: off).
 fn as_on_pad(input: Input) -> Fmt<48> {
     Fmt::of(format_args!("{}", if input == Input::Gyro { "Off" } else { "As on the pad" }))
 }
-
 
 /// A parameter's value in words (`40 %`, `Off`, `12/s`, `400 ms`).
 fn shown(p: Param, v: u8) -> Fmt<16> {
@@ -856,9 +869,6 @@ fn slider_row(f: &mut Frame, row: Rect, track: Track, sl: Slider, p: Param, pane
     let within = Rect::new(track.x0, panel.y, track.w, panel.h);
     widgets::held_slider(f, HeldSlider { slider: &sl, x0: track.x0, cy: row.y + row.h / 2.0, h: row.h * 0.75, within, icon: None, text: &text });
 }
-
-
-
 
 /// A control in a cluster: its outline and its own mark, in `tone` (blue mapped, grey tuned, dim as on
 /// the pad); outlined brighter when selected, darker when `muted` (it can't be picked); a target.
@@ -1033,7 +1043,11 @@ fn layer_menu(f: &mut Frame, id: u16, layer: Layer) {
         let note = rest.take_top(small * LINE * 1.6);
         f.c.text_fit(note.top_line(small), small, Tone::Dim, "Tapped: on until the next input it maps", Keep::Start);
         rest.take_top(f.pad() * 0.5);
-        widgets::menu(f, rest, &[(k(KeymapId::RenameLayer), "Rename", Tone::Fn), (k(KeymapId::Clear), "Clear", Tone::Fn), (k(KeymapId::DeleteLayer), "Delete", Tone::Accent)]);
+        widgets::menu(
+            f,
+            rest,
+            &[(k(KeymapId::RenameLayer), "Rename", Tone::Fn), (k(KeymapId::Clear), "Clear", Tone::Fn), (k(KeymapId::DeleteLayer), "Delete", Tone::Accent)],
+        );
     }
 }
 

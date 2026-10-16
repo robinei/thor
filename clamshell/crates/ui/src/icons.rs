@@ -52,17 +52,27 @@ pub enum Icon {
     ArrowLeft,
     ArrowRight,
     /// Charge in tenths (0-10) and whether it is charging.
-    Battery { tenths: u8, charging: bool },
+    Battery {
+        tenths: u8,
+        charging: bool,
+    },
     /// Lit arcs (0-3); `None`: not connected.
-    Wifi { bars: Option<u8> },
+    Wifi {
+        bars: Option<u8>,
+    },
     /// Sound waves (0-3) and mute.
-    Volume { waves: u8, muted: bool },
+    Volume {
+        waves: u8,
+        muted: bool,
+    },
     /// The screens' brightness: a sun.
     Brightness,
     /// A network that needs a password.
     Lock,
     /// Bluetooth's rune; `connected`: with the dots beside it.
-    Bluetooth { connected: bool },
+    Bluetooth {
+        connected: bool,
+    },
     Headphones,
     Phone,
     /// Sleep: a crescent moon.

@@ -12,14 +12,8 @@ use crate::input::{Range, Rect, keyset};
 
 /// The virtual touchpad's keys: one dummy button, so libinput takes it as a touchpad with buttons and
 /// taps for clicks, and the touch and finger-count keys.
-const TOUCHPAD_KEYS: [KeyCode; 6] = [
-    KeyCode::BTN_LEFT,
-    KeyCode::BTN_TOUCH,
-    KeyCode::BTN_TOOL_FINGER,
-    KeyCode::BTN_TOOL_DOUBLETAP,
-    KeyCode::BTN_TOOL_TRIPLETAP,
-    KeyCode::BTN_TOOL_QUADTAP,
-];
+const TOUCHPAD_KEYS: [KeyCode; 6] =
+    [KeyCode::BTN_LEFT, KeyCode::BTN_TOUCH, KeyCode::BTN_TOOL_FINGER, KeyCode::BTN_TOOL_DOUBLETAP, KeyCode::BTN_TOOL_TRIPLETAP, KeyCode::BTN_TOOL_QUADTAP];
 
 /// The configured touchscreen, or the first direct-touch multitouch device.
 pub fn find(spec: &DeviceSpec) -> io::Result<RawDevice> {

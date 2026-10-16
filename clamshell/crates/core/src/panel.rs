@@ -2,6 +2,7 @@
 //! changes applied at once when they change the settings in force, the environment editor typing on the
 //! keyboard, and the dark second screen.
 
+use crate::Game;
 use crate::State;
 use crate::editor::{Done, Editor, Purpose};
 use crate::effect::{Effect, Save};
@@ -9,7 +10,6 @@ use crate::game::Front;
 use crate::id::{EditorId, SettingsId};
 use crate::keyboard::Stroke;
 use crate::settings::{Setting, Values};
-use crate::Game;
 
 /// What the settings panel edits: the global settings, or the game in context's overrides.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -237,9 +237,7 @@ mod tests {
         let mut s = state_with("*\tenv=A=1 B=2\nzelda-lttp\tenv=B=3 'C=x y'\n");
         taps(&mut s, Setting::FpsCap, 2);
         let fx = tap(&mut s, Id::Shelf(ShelfId::Launch));
-        let Some(Effect::Launch { settings, env, .. }) = fx.iter().find(|e| matches!(e, Effect::Launch { .. })) else {
-            unreachable!("{fx:?}")
-        };
+        let Some(Effect::Launch { settings, env, .. }) = fx.iter().find(|e| matches!(e, Effect::Launch { .. })) else { unreachable!("{fx:?}") };
         assert_eq!(settings.get(Setting::FpsCap), 40);
         let pairs: Vec<(&str, &str)> = env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
         assert_eq!(pairs, [("A", "1"), ("B", "2"), ("B", "3"), ("C", "x y")], "the game's last, so they win");

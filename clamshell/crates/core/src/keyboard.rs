@@ -116,30 +116,8 @@ pub const LAYOUT: &[&[Slot]] = &[
         cf('-', f(11)),
         cf('=', f(12)),
     ],
-    &[
-        cf('1', f(1)),
-        cf('2', f(2)),
-        cf('3', f(3)),
-        cf('4', f(4)),
-        cf('5', f(5)),
-        cf('6', f(6)),
-        cf('7', f(7)),
-        cf('8', f(8)),
-        cf('9', f(9)),
-        cf('0', f(10)),
-    ],
-    &[
-        c('q'),
-        cf('w', n(Named::Up)),
-        c('e'),
-        c('r'),
-        c('t'),
-        c('y'),
-        c('u'),
-        cf('i', n(Named::PageUp)),
-        cf('o', n(Named::Home)),
-        cf('p', n(Named::Insert)),
-    ],
+    &[cf('1', f(1)), cf('2', f(2)), cf('3', f(3)), cf('4', f(4)), cf('5', f(5)), cf('6', f(6)), cf('7', f(7)), cf('8', f(8)), cf('9', f(9)), cf('0', f(10))],
+    &[c('q'), cf('w', n(Named::Up)), c('e'), c('r'), c('t'), c('y'), c('u'), cf('i', n(Named::PageUp)), cf('o', n(Named::Home)), cf('p', n(Named::Insert))],
     &[
         cf('a', n(Named::Left)),
         cf('s', n(Named::Down)),
@@ -347,13 +325,7 @@ impl Keyboard {
                 None
             }
             key => {
-                let stroke = Stroke {
-                    key,
-                    shift: self.shifts(key),
-                    ctrl: self.ctrl.on(),
-                    alt: self.alt.on(),
-                    logo: self.logo.on(),
-                };
+                let stroke = Stroke { key, shift: self.shifts(key), ctrl: self.ctrl.on(), alt: self.alt.on(), logo: self.logo.on() };
                 // Armed modifiers are used up; held ones stay until lifted.
                 for m in Modifier::ALL {
                     let latch = self.latch_mut(m);

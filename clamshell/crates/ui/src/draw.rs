@@ -250,9 +250,7 @@ pub struct DrawCache {
 
 impl DrawCache {
     pub fn load() -> DrawCache {
-        let font = fontdue::Font::from_bytes(NOTO_SANS, fontdue::FontSettings::default())
-            .map_err(|e| log::error!("the built-in font: {e}"))
-            .ok();
+        let font = fontdue::Font::from_bytes(NOTO_SANS, fontdue::FontSettings::default()).map_err(|e| log::error!("the built-in font: {e}")).ok();
         DrawCache { font, fallbacks: Vec::new(), fallback_for: HashMap::new(), glyphs: HashMap::new(), icons: HashMap::new(), path: None }
     }
 
@@ -522,8 +520,7 @@ impl<'a> Canvas<'a> {
             pb.close();
         }
         if let Some(path) = pb.finish() {
-            let stroke =
-                Stroke { width: width * self.scale, line_cap: LineCap::Round, line_join: LineJoin::Round, ..Stroke::default() };
+            let stroke = Stroke { width: width * self.scale, line_cap: LineCap::Round, line_join: LineJoin::Round, ..Stroke::default() };
             self.stroke_path(path, &stroke, color);
         }
     }

@@ -34,7 +34,8 @@ pub enum Group {
 /// Each side's groups from top to bottom, and the share of the cluster's height each takes.
 pub const LEFT: [(Group, f32); 7] =
     [(Group::Trigger, 0.1), (Group::Bumper, 0.085), (Group::Top, 0.09), (Group::Stick, 0.3), (Group::Dpad, 0.285), (Group::Gyro, 0.07), (Group::Foot, 0.07)];
-pub const RIGHT: [(Group, f32); 6] = [(Group::Trigger, 0.1), (Group::Bumper, 0.085), (Group::Top, 0.09), (Group::Face, 0.32), (Group::Stick, 0.33), (Group::Foot, 0.075)];
+pub const RIGHT: [(Group, f32); 6] =
+    [(Group::Trigger, 0.1), (Group::Bumper, 0.085), (Group::Top, 0.09), (Group::Face, 0.32), (Group::Stick, 0.33), (Group::Foot, 0.075)];
 
 /// Sizes in a group, of the smaller of its width and height. A stick: the well's radius, the cap's and
 /// the click's (dimple); the click's target's half height (its width is the cap's).
@@ -185,7 +186,15 @@ impl Pad {
                     Rect::new(g.x, y1, x0 - g.x, g.bottom() - y1),
                     Rect::new(x1, y1, g.right() - x1, g.bottom() - y1),
                 ];
-                Part { shown: square((cx, cy), r), radius: r, target: square((cx, cy), r), corners: Some(corners), anchor: (cx + k * 0.8 * r, cy - 0.6 * r), lane: None, side }
+                Part {
+                    shown: square((cx, cy), r),
+                    radius: r,
+                    target: square((cx, cy), r),
+                    corners: Some(corners),
+                    anchor: (cx + k * 0.8 * r, cy - 0.6 * r),
+                    lane: None,
+                    side,
+                }
             }
             Input::Button(Button::LS | Button::RS) => {
                 let (r, cap) = (DIMPLE * s, CAP * s);

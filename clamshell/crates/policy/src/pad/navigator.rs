@@ -130,9 +130,6 @@ mod tests {
         ] {
             nav.event(Raw::key(code, press), t0, &mut out);
         }
-        assert_eq!(
-            out.events,
-            pad(&[PadInput::Right, PadInput::A(true), PadInput::A(false), PadInput::B, PadInput::Switch, PadInput::Shoulder(1)])
-        );
+        assert_eq!(out.events, pad(&[PadInput::Right, PadInput::A(true), PadInput::A(false), PadInput::B, PadInput::Switch, PadInput::Shoulder(1)]));
     }
 }

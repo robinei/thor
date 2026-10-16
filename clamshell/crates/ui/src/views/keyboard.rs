@@ -45,9 +45,11 @@ fn cells(body: Rect) -> impl Iterator<Item = (KeyPos, &'static Slot, Rect)> {
             *x += slot.width * unit;
             Some(start)
         });
-        slots.iter().zip(starts).enumerate().map(move |(col, (slot, x))| {
-            (KeyPos { row: row as u8, col: col as u8 }, slot, Rect::new(x, y, slot.width * unit, row_h))
-        })
+        slots
+            .iter()
+            .zip(starts)
+            .enumerate()
+            .map(move |(col, (slot, x))| (KeyPos { row: row as u8, col: col as u8 }, slot, Rect::new(x, y, slot.width * unit, row_h)))
     })
 }
 
@@ -98,9 +100,7 @@ fn face(kb: &Keyboard, slot: &Slot) -> KeyFace {
     let fn_label = slot.fn_key.map(Label::plain);
     match (kb.fn_layer.on(), slot.fn_key, kb.shift.on(), shift_char) {
         (true, Some(fn_key), _, _) => KeyFace { main: Label::plain(fn_key), above: None, below: Some(Label::plain(slot.base)) },
-        (_, _, true, Some(ch)) => {
-            KeyFace { main: Label { key: Key::Char(ch), shifted: true }, above: Some(Label::plain(Key::Char(ch))), below: fn_label }
-        }
+        (_, _, true, Some(ch)) => KeyFace { main: Label { key: Key::Char(ch), shifted: true }, above: Some(Label::plain(Key::Char(ch))), below: fn_label },
         _ => KeyFace {
             main: Label { key: slot.base, shifted: kb.shifts(slot.base) },
             above: shift_char.map(|ch| Label { key: Key::Char(ch), shifted: true }),

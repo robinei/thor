@@ -315,6 +315,17 @@ mod tests {
         let (mut r, l) = setup();
         frame(&mut r, &l, &[(SLOT, 0), (ID, 1), (X, 500), (Y, 500), (SLOT, 1), (ID, 2), (X, 600), (Y, 600)]);
         let both = frame(&mut r, &l, &[(SLOT, 0), (X, 510), (SLOT, 1), (Y, 610)]);
-        assert_eq!(both.pad, vec![Raw::abs(SLOT, 0), Raw::abs(X, 510), Raw::abs(SLOT, 1), Raw::abs(Y, 388), Raw::abs(AbsoluteAxisCode::ABS_X, 510), Raw::abs(AbsoluteAxisCode::ABS_Y, 300), Raw::REPORT]);
+        assert_eq!(
+            both.pad,
+            vec![
+                Raw::abs(SLOT, 0),
+                Raw::abs(X, 510),
+                Raw::abs(SLOT, 1),
+                Raw::abs(Y, 388),
+                Raw::abs(AbsoluteAxisCode::ABS_X, 510),
+                Raw::abs(AbsoluteAxisCode::ABS_Y, 300),
+                Raw::REPORT
+            ]
+        );
     }
 }

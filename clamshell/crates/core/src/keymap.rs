@@ -781,7 +781,9 @@ impl Param {
             (Kind::Stick, Param::Speed) => output == Output::Pointer,
             (Kind::Trigger, Param::Deadzone | Param::Full) => true,
             (Kind::Trigger, Param::Threshold) => output.digital(),
-            (Kind::Gyro, Param::Speed | Param::InvertX | Param::InvertY | Param::Accel | Param::AccelAt | Param::Tighten | Param::Twist | Param::Ratchet) => motion,
+            (Kind::Gyro, Param::Speed | Param::InvertX | Param::InvertY | Param::Accel | Param::AccelAt | Param::Tighten | Param::Twist | Param::Ratchet) => {
+                motion
+            }
             (Kind::Gyro, Param::StickMin) => matches!(output, Output::Stick(_)),
             (Kind::Digital | Kind::Trigger, Param::Toggle) => output.digital(),
             // (A layer doesn't beat.)
@@ -1602,9 +1604,22 @@ mod tests {
         k.set(Input::Button(Button::L4), Some(Binding::to(Output::Pad(PadOut::Dpad(Dir::Left)))));
         k.set(Input::Gyro, Some(Binding { speed: 37, hold: Some(Input::Trigger(Side::Left)), ..Binding::to(Output::Pointer) }));
         let text = maps.text();
-        assert!(text.starts_with("keymap 1 Nintendo layout\na = pad b\nb = pad a\nx = pad y\ny = pad x\nkeymap 2 FPS\na = key ctrl+x\nl4 = pad left\n"), "{text}");
-        assert!(text.contains("\nlstick = keys w a s d\n") && text.contains("\nrstick = pointer speed=75 deadzone=20 full=90 curve=40 invert=y\n") && text.contains("\ngyro = pointer speed=37 hold=lt\n"), "{text}");
-        assert!(text.contains("\nlt = mouse right threshold=25\n") && text.contains("\nrt = trigger right deadzone=5\n") && text.contains("\nrstick-up = wheel up\n"), "{text}");
+        assert!(
+            text.starts_with("keymap 1 Nintendo layout\na = pad b\nb = pad a\nx = pad y\ny = pad x\nkeymap 2 FPS\na = key ctrl+x\nl4 = pad left\n"),
+            "{text}"
+        );
+        assert!(
+            text.contains("\nlstick = keys w a s d\n")
+                && text.contains("\nrstick = pointer speed=75 deadzone=20 full=90 curve=40 invert=y\n")
+                && text.contains("\ngyro = pointer speed=37 hold=lt\n"),
+            "{text}"
+        );
+        assert!(
+            text.contains("\nlt = mouse right threshold=25\n")
+                && text.contains("\nrt = trigger right deadzone=5\n")
+                && text.contains("\nrstick-up = wheel up\n"),
+            "{text}"
+        );
         assert_eq!(Keymaps::load(&text), maps);
     }
 
@@ -1678,7 +1693,16 @@ mod tests {
         assert_eq!(ps(Input::Gyro, Output::Stick(Side::Right)), gyro(true));
         assert_eq!(ps(Input::Gyro, Output::Pointer), gyro(false));
         // Written and read back.
-        let b = Binding { accel: 40, accel_at: 90, tighten: 25, stick_min: 15, twist: true, ratchet: true, hold: Some(Input::Button(Button::LB)), ..Binding::to(Output::Stick(Side::Right)) };
+        let b = Binding {
+            accel: 40,
+            accel_at: 90,
+            tighten: 25,
+            stick_min: 15,
+            twist: true,
+            ratchet: true,
+            hold: Some(Input::Button(Button::LB)),
+            ..Binding::to(Output::Stick(Side::Right))
+        };
         let mut k = Keymap::new(1, "g");
         k.set(Input::Gyro, Some(b));
         let maps = Keymaps { list: vec![k] };
@@ -1716,7 +1740,10 @@ mod tests {
             p.show(v, &mut s).unwrap();
             s
         };
-        assert_eq!((show(Param::Turbo, 0), show(Param::Turbo, 12), show(Param::HoldTime, 40), show(Param::Curve, 30)), ("Off".into(), "12/s".into(), "400 ms".into(), "30 %".into()));
+        assert_eq!(
+            (show(Param::Turbo, 0), show(Param::Turbo, 12), show(Param::HoldTime, 40), show(Param::Curve, 30)),
+            ("Off".into(), "12/s".into(), "400 ms".into(), "30 %".into())
+        );
     }
 
     #[test]

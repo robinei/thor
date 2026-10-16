@@ -37,7 +37,11 @@ pub enum Id {
     /// The pad mouse toggle.
     PadMouse,
     /// A row of a scrolled list, by position: the row, or one of its controls.
-    Row { list: crate::scroll::ListId, i: u16, part: crate::scroll::RowPart },
+    Row {
+        list: crate::scroll::ListId,
+        i: u16,
+        part: crate::scroll::RowPart,
+    },
     /// The keymaps' screens' buttons (see [`crate::keymap_ui`]).
     Keymap(KeymapId),
     /// A scrolled list's area, under its rows: a finger on it (between rows) drags the list; a tap does

@@ -39,17 +39,17 @@ use std::fmt;
 use std::io::BufRead;
 use std::path::PathBuf;
 
+use clamshell_core::Scope;
 use clamshell_core::hardware::DeviceKey;
 use clamshell_core::keyboard::{self, Key, Modifier, Named};
 use clamshell_core::keymap::{Actuation, Dir, Input, Layer, MouseButton, PadOut, Param, Side};
 use clamshell_core::levels::Level;
+use clamshell_core::settings::Setting;
 use clamshell_core::slider::Control;
 use clamshell_core::{
-    BtId, DockId, ListId, EditorId, KeymapId, RowPart, Target, Event, Id, LevelEvent, PadInput, PointerEvent, SettingsId, ShelfEvent, ShelfId, Slide, Tab,
+    BtId, DockId, EditorId, Event, Id, KeymapId, LevelEvent, ListId, PadInput, PointerEvent, RowPart, SettingsId, ShelfEvent, ShelfId, Slide, Tab, Target,
     WifiId,
 };
-use clamshell_core::Scope;
-use clamshell_core::settings::Setting;
 use clamshell_policy::{Sink, worker};
 
 /// The layout width a slide's positions are on (the second screen at half size).
@@ -192,9 +192,9 @@ fn target_id(words: &[&str]) -> Result<Id, ParseError> {
         ["pad-mouse"] => Id::PadMouse,
         ["scope", "game"] => Id::Settings(SettingsId::Scope(Scope::Game)),
         ["scope", "all"] => Id::Settings(SettingsId::Scope(Scope::Global)),
-        ["setting", key] => Id::Settings(SettingsId::Tile(
-            Setting::ALL.into_iter().find(|s| s.key() == *key).ok_or_else(|| ParseError::Name((*key).to_owned()))?,
-        )),
+        ["setting", key] => {
+            Id::Settings(SettingsId::Tile(Setting::ALL.into_iter().find(|s| s.key() == *key).ok_or_else(|| ParseError::Name((*key).to_owned()))?))
+        }
         ["save"] => Id::Editor(EditorId::Save),
         ["keymap", n] => ListId::Keymaps.row(number(n)?),
         ["keymap-edit", n] => Id::Row { list: ListId::Keymaps, i: number(n)?, part: RowPart::Edit },

@@ -45,7 +45,8 @@ pub enum RowPart {
 
 impl ListId {
     pub const COUNT: usize = 7;
-    pub const ALL: [ListId; ListId::COUNT] = [ListId::Shelf, ListId::Wifi, ListId::Bluetooth, ListId::Streams, ListId::Backlights, ListId::Keymaps, ListId::Layers];
+    pub const ALL: [ListId; ListId::COUNT] =
+        [ListId::Shelf, ListId::Wifi, ListId::Bluetooth, ListId::Streams, ListId::Backlights, ListId::Keymaps, ListId::Layers];
 
     pub fn index(self) -> usize {
         self as usize

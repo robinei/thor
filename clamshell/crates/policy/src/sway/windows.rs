@@ -139,10 +139,7 @@ mod tests {
         let stray = window(6, "foot", None, "1");
         let mut tried = HashSet::new();
         let asked = reconcile(&[late.clone(), home, stray], None, Some("DSI-2"), &mut tried);
-        assert_eq!(
-            asked,
-            vec![r#"workspace "clamshell-app-spawner-1-0" output "DSI-2"; [con_id=4] move container to workspace "clamshell-app-spawner-1-0""#]
-        );
+        assert_eq!(asked, vec![r#"workspace "clamshell-app-spawner-1-0" output "DSI-2"; [con_id=4] move container to workspace "clamshell-app-spawner-1-0""#]);
         assert!(reconcile(&[late], None, Some("DSI-2"), &mut tried).is_empty(), "not asked again");
     }
 

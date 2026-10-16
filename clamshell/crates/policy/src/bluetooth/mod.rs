@@ -90,7 +90,9 @@ lost_on!(Error: zbus::Error, io::Error);
 fn failure(action: Action, e: &Error) -> Problem {
     // BlueZ's errors: "org.bluez.Error.AuthenticationFailed: ..." and the like.
     let reason = match e {
-        Error::Bus(zbus::Error::MethodError(name, detail, _)) => detail.clone().unwrap_or_else(|| name.as_str().trim_start_matches("org.bluez.Error.").to_owned()),
+        Error::Bus(zbus::Error::MethodError(name, detail, _)) => {
+            detail.clone().unwrap_or_else(|| name.as_str().trim_start_matches("org.bluez.Error.").to_owned())
+        }
         other => other.to_string(),
     };
     Problem { action, reason: Reason::Bus(reason) }
@@ -222,13 +224,7 @@ fn read(objects: &ManagedObjects, state: &BtState) -> Bluetooth {
             })
         })
         .collect();
-    Bluetooth {
-        adapter: true,
-        powered: adapter.flag("Powered"),
-        devices: bluetooth::sort(devices),
-        busy: state.busy.clone(),
-        error: state.error.clone(),
-    }
+    Bluetooth { adapter: true, powered: adapter.flag("Powered"), devices: bluetooth::sort(devices), busy: state.busy.clone(), error: state.error.clone() }
 }
 
 impl<S: Sink> BtThread<S> {

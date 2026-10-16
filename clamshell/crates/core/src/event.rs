@@ -5,10 +5,10 @@
 use std::sync::Arc;
 
 use crate::battery::Battery;
-use crate::hardware::DeviceKey;
-use crate::idle::IdleEvent;
 use crate::bluetooth::Bluetooth;
+use crate::hardware::DeviceKey;
 use crate::id::Id;
+use crate::idle::IdleEvent;
 use crate::instance::Instance;
 use crate::levels::{Audio, Level};
 use crate::metrics::Metrics;
@@ -22,7 +22,9 @@ use crate::windows::Window;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
     /// Wall clock, once a second (policy thread).
-    Tick { unix_secs: u64 },
+    Tick {
+        unix_secs: u64,
+    },
     /// The system as a policy thread read it.
     Reading(Reading),
     /// Touch, the mouse or the pad on a target.
@@ -113,8 +115,14 @@ pub enum PointerEvent {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Slide {
     /// The finger came down (or was held long enough): the slider comes up under it.
-    Start { control: Control, x: f32, width: f32 },
-    To { x: f32 },
+    Start {
+        control: Control,
+        x: f32,
+        width: f32,
+    },
+    To {
+        x: f32,
+    },
     /// The finger that slides lifted.
     End,
 }
