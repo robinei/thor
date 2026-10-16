@@ -151,8 +151,9 @@ def ssh_key():
 
 
 SWAY_CONFIG = f"""\
-# The virtual Thor: the main screen on top, the second screen under it (as on the device). Only the
-# machine is here: ClamShell sets how the session behaves when it connects (as on the device).
+# The virtual Thor: the main screen on top, the second screen under it (as on the device). The machine
+# is here; how a ClamShell session behaves is the repository's clamshell.conf (as on the device).
+include /mnt/thor/clamshell/sway/clamshell.conf
 output Virtual-1 mode {TOP[0]}x{TOP[1]} position 0 0
 output Virtual-2 mode --custom {BOTTOM[0]}x{BOTTOM[1]} position 0 {TOP[1]}
 # The host's mouse: an absolute pointer per screen window (QEMU binds each to its display head).

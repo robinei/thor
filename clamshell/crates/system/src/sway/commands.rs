@@ -36,13 +36,6 @@ pub fn move_windows(windows: &[i64], workspace: &str, top: Option<&str>) -> Stri
     format!("{}{}", pin(workspace, top), moves.join("; "))
 }
 
-/// The tabs' look (ClamShell's palette: black, the bright text for the tab shown, grey for the rest).
-const TAB_STYLE: &str = "font pango:Noto Sans 11; title_align center; titlebar_border_thickness 0; titlebar_padding 8 4; \
-    client.focused #000000 #000000 #c8c8d0 #000000 #000000; \
-    client.focused_inactive #000000 #000000 #c8c8d0 #000000 #000000; \
-    client.unfocused #000000 #000000 #5a5a64 #000000 #000000; \
-    client.urgent #000000 #000000 #e0a040 #000000 #000000";
-
 /// The mark on a window we moved to the bottom screen, before its id (sway's marks are unique to a
 /// window): reconciling leaves it there.
 pub const DOWN_MARK: &str = "clamshell-down";
@@ -90,23 +83,15 @@ pub fn close(window: i64) -> String {
 }
 
 /// sway's rules for our windows, given once when we connect (and again on reconnecting; sway keeps
-/// them until it restarts). Then shelf's window, if already open, is put in its place and shown.
-/// `bottom`: the second screen's output.
+/// them until it restarts): what depends on the running machine (the outputs' names). How the session
+/// behaves otherwise (borders, focus, tabs) is `clamshell/sway/clamshell.conf`, which every machine's
+/// config includes. Then shelf's window, if already open, is put in its place and shown. `bottom`: the
+/// second screen's output.
 pub fn rules(top: Option<&str>, bottom: &str) -> Vec<String> {
     let (shelf, landing) = (Instance::Shelf.name(), Instance::Landing.name());
     // The second screen's workspace: windows opening there go to the main screen.
     let second = Instance::Bottom.name();
     let mut rules = vec![
-        // How the session behaves is ours, set here; the config file keeps to the machine (outputs,
-        // inputs, starting ClamShell). No borders; focus never follows the pointer (the pad mouse crossing
-        // to the second screen mustn't take the keyboard from a game), nor the pointer focus.
-        "default_border none; default_floating_border none; focus_follows_mouse no; mouse_warping none".to_owned(),
-        // A screen shows one window at a time: our workspaces' windows are tabs, the tab bar hidden over a
-        // lone window (sway's `--i3` behaviour), in ClamShell's look: black, its font, the title centred,
-        // the tab shown in the bright text and the others grey, no lines. (A rule per window:
-        // `workspace_layout` is the config file's alone.)
-        format!("hide_edge_borders --i3 smart; {TAB_STYLE}"),
-        "for_window [workspace=\"^clamshell-\"] layout tabbed".to_owned(),
         format!("for_window [app_id=\"^{SHELF_APP_ID}$\"] move container to workspace \"{shelf}\""),
         format!("for_window [app_id=\"^{STEAM_APP_PREFIX}\"] move container to workspace \"{landing}\""),
         format!("for_window [class=\"^{STEAM_APP_PREFIX}\"] move container to workspace \"{landing}\""),
@@ -135,12 +120,6 @@ mod tests {
         assert!(rules.iter().any(|r| r.contains("for_window [class=\"^steam_app_\"]")));
         assert!(rules.iter().any(|r| r.starts_with(r#"workspace "clamshell-bottom" output "DSI-1""#)), "the bottom screen's workspace there");
         assert!(!rules.iter().any(|r| r.contains("for_window [workspace=\"^clamshell-bottom")), "no rule sends windows off it (reconciling does)");
-        assert!(rules.iter().any(|r| r.contains("focus_follows_mouse no")), "the session's behaviour set by us");
-        assert!(
-            rules.iter().any(|r| r.contains("client.focused #000000") && r.contains("hide_edge_borders --i3 smart")),
-            "the tabs in ClamShell's look, none over a lone window"
-        );
-        assert!(rules.iter().any(|r| r == r#"for_window [workspace="^clamshell-"] layout tabbed"#), "one window at a time");
     }
 
     #[test]

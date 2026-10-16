@@ -20,6 +20,11 @@ for _ in $(seq 1 60); do
     sleep 4
 done
 [ -n "$up" ] || { echo "the VM didn't start ClamShell (log: $LOG)"; exit 1; }
+# The session files as this repository has them (sway's config, the service); sway reloaded drops the
+# rules ClamShell gave it, so ClamShell starts again and gives them anew.
+python3 tools/vm/vm.py sync > /dev/null
+python3 tools/vm/vm.py restart > /dev/null
+sleep 3
 python3 tools/vm/vm.py bluetooth
 sleep 5
 python3 tools/vm/vm-checks.py

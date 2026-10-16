@@ -205,12 +205,14 @@ SCRIPT
 chmod 755 "$H/.local/bin/thor-outputs"
 echo '[ "$(tty)" = /dev/tty1 ] && "$HOME/.local/bin/thor-outputs" && exec sway > "$HOME/sway.log" 2>&1' > "$H/.bash_profile"
 C=/home/$USER_NAME/.local/bin/clamshell
+install -m 644 "$(dirname "$0")/../../clamshell/sway/clamshell.conf" "$H/.config/sway/clamshell.conf"
 cat > "$H/.config/sway/config" <<CONFIG
 # The Thor: DSI-2 the main (top) screen, DSI-1 the second (bottom) screen (as ROCKNIX and Kettle have them).
-# Only the machine is here (outputs, inputs, keys, starting ClamShell): how the session behaves (borders,
-# focus, tabs, where windows go) ClamShell sets itself when it connects. sway's default config, with its
-# key bindings, isn't read: this one replaces it.
+# The machine is here (outputs, inputs, keys, starting ClamShell); how a ClamShell session behaves
+# (borders, focus, tabs) is clamshell.conf, from the repository. sway's default config, with its key
+# bindings, isn't read: this one replaces it.
 include ~/.config/sway/outputs
+include ~/.config/sway/clamshell.conf
 # A keyboard's Print key: a screenshot through ClamShell (clamshell ctl writes to its control pipe). The
 # Thor's volume and brightness keys ClamShell reads itself from evdev (CLAMSHELL_SESSION=device).
 bindsym --locked Print exec $C ctl screenshot
