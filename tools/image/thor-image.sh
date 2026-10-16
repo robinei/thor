@@ -207,8 +207,10 @@ echo '[ "$(tty)" = /dev/tty1 ] && "$HOME/.local/bin/thor-outputs" && exec sway >
 C=/home/$USER_NAME/.local/bin/clamshell
 cat > "$H/.config/sway/config" <<CONFIG
 # The Thor: DSI-2 the main (top) screen, DSI-1 the second (bottom) screen (as ROCKNIX and Kettle have them).
+# Only the machine is here (outputs, inputs, keys, starting ClamShell): how the session behaves (borders,
+# focus, tabs, where windows go) ClamShell sets itself when it connects. sway's default config, with its
+# key bindings, isn't read: this one replaces it.
 include ~/.config/sway/outputs
-default_border none
 # A keyboard's Print key: a screenshot through ClamShell (clamshell ctl writes to its control pipe). The
 # Thor's volume and brightness keys ClamShell reads itself from evdev (CLAMSHELL_SESSION=device).
 bindsym --locked Print exec $C ctl screenshot

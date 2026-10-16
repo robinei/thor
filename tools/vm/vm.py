@@ -151,11 +151,10 @@ def ssh_key():
 
 
 SWAY_CONFIG = f"""\
-# The virtual Thor: the main screen on top, the second screen under it (as on the device).
+# The virtual Thor: the main screen on top, the second screen under it (as on the device). Only the
+# machine is here: ClamShell sets how the session behaves when it connects (as on the device).
 output Virtual-1 mode {TOP[0]}x{TOP[1]} position 0 0
 output Virtual-2 mode --custom {BOTTOM[0]}x{BOTTOM[1]} position 0 {TOP[1]}
-default_border none
-default_floating_border none
 # The host's mouse: an absolute pointer per screen window (QEMU binds each to its display head).
 input "1575:3:QEMU_Virtio_Tablet" map_to_output Virtual-1
 input "1575:1:QEMU_QEMU_USB_Tablet" map_to_output Virtual-2

@@ -45,9 +45,8 @@ file: zeta.game
 launch: sh -c "foot --app-id=zetagame sleep 300 & sleep 300"
 EOF
 touch "$T/games/test.game" "$T/games/zeta.game"
+# (Only the outputs: ClamShell sets how the session behaves when it connects.)
 cat > "$T/sway.conf" <<'EOF'
-default_border none
-default_floating_border none
 output HEADLESS-1 resolution 960x540 position 0 0
 output HEADLESS-2 resolution 620x540 position 960 0
 EOF
