@@ -32,7 +32,6 @@ mod wifi;
 
 use std::fmt::Write;
 
-use clamshell_core::settings::Setting;
 use clamshell_core::{Id, ListId, State, Tab};
 
 use crate::draw::{Canvas, Rect};
@@ -86,12 +85,11 @@ pub struct FrameOut {
     pub lists: [Option<f32>; ListId::COUNT],
 }
 
-/// Text kept between frames: the clock (formatted once a minute), and the buffer `core`'s setting
-/// descriptions are written into.
+/// Kept between frames: the clock's text, formatted once a minute (the time zone looked up then, not
+/// every frame).
 #[derive(Debug, Default)]
 pub struct Scratch {
     clock: Option<(u64, Fmt<8>)>,
-    describe: String,
 }
 
 impl Scratch {
@@ -112,11 +110,6 @@ impl Scratch {
         }
     }
 
-    /// How `value` of `setting` reads on its tile.
-    fn describe(&mut self, setting: Setting, value: u16) -> Fmt<32> {
-        setting.describe(value, &mut self.describe);
-        Fmt::of(format_args!("{}", self.describe))
-    }
 }
 
 /// One screen's drawing pass: the canvas, the state it shows, images and kept text, the targets it

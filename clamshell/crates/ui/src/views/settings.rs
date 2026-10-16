@@ -111,7 +111,7 @@ struct Face {
     active: bool,
 }
 
-fn face(s: &State, scratch: &mut super::Scratch, tile: Tile) -> Face {
+fn face(s: &State, tile: Tile) -> Face {
     let game = s.editing().map(|g| &g.id);
     match tile {
         Tile::Setting(setting) => {
@@ -119,7 +119,11 @@ fn face(s: &State, scratch: &mut super::Scratch, tile: Tile) -> Face {
             // The keymap's tile shows its name.
             let text = match setting {
                 Setting::Keymap => Fmt::of(format_args!("{}", s.keymap_name(value))),
-                _ => scratch.describe(setting, value),
+                _ => {
+                    let mut text = Fmt::new();
+                    setting.describe(value, &mut text);
+                    text
+                }
             };
             Face {
                 id: Id::Settings(SettingsId::Tile(setting)),
@@ -150,7 +154,7 @@ pub(super) fn setting_tile(f: &mut Frame, r: Rect, setting: Setting) {
 }
 
 fn draw_tile(f: &mut Frame, r: Rect, tile: Tile) {
-    let face = face(f.s, f.scratch, tile);
+    let face = face(f.s, tile);
     let later = !face.active && !matches!(tile, Tile::Reset);
     let tile_face = TileFace {
         caption: &face.value,

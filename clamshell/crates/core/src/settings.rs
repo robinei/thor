@@ -166,9 +166,8 @@ impl Setting {
         choices.get(i).copied().unwrap_or(value)
     }
 
-    /// How `value` reads on its tile.
-    pub fn describe(self, value: u16, buf: &mut String) {
-        buf.clear();
+    /// How `value` reads on its tile, written to `buf`.
+    pub fn describe(self, value: u16, buf: &mut impl Write) {
         let text = match (self, value) {
             (Setting::Power, 0) => "Battery",
             (Setting::Power, 1) => "Balanced",
@@ -212,11 +211,11 @@ impl Setting {
             (Setting::ScreenOff, v) => return number(buf, "Off after ", v, " min"),
             (Setting::Sleep, v) => return number(buf, "Sleep after ", v, " min"),
         };
-        buf.push_str(text);
+        let _ = buf.write_str(text);
     }
 }
 
-fn number(buf: &mut String, before: &str, v: u16, after: &str) {
+fn number(buf: &mut impl Write, before: &str, v: u16, after: &str) {
     let _ = write!(buf, "{before}{v}{after}");
 }
 
