@@ -1,9 +1,11 @@
-//! Pieces more than one view draws: a row of tabs, a level's track, a switch, a status row (a network, a
-//! device), a tile (an icon over a caption), and a game's box art.
+//! Pieces more than one view draws: a screen's header, a menu of text actions, a list's row, a row of
+//! tabs, a level's track, a held slider and its card, a switch and a switch's row, a value's row, a
+//! status row (a network, a device), a tile (an icon over a caption), a game's box art, and centred
+//! text.
 
 use clamshell_core::{Game, Id};
 
-use super::style::{Look, SURFACE_HI, Tone};
+use super::style::{self, Look, SURFACE_HI, Text, Tone};
 use super::{Frame, Track};
 use crate::draw::{Align, Canvas, Keep, LINE, Rect, Rgb};
 use crate::icons::Icon;
@@ -239,4 +241,171 @@ pub(super) fn art(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect, rad
         }
         None => c.rounded(r, radius, Rgb(game.color)),
     }
+}
+
+/// A screen's header band, of the body's height; a menu's and a list's text buttons, and a menu's width,
+/// of the body's height and the area's width.
+const HEADER_H: f32 = 0.1;
+const MENU_BUTTON_H: f32 = 0.085;
+const MENU_W: f32 = 0.45;
+
+/// What a header has on its right: nothing, or an action (blue text).
+pub(super) enum HeaderRight<'a> {
+    None,
+    Action(Id, &'a str),
+}
+
+/// A screen's header over `body`: a back arrow (`back`, its target) on the left, the title (from the
+/// left after it, or centred), and on the right an action. Returns the area below it.
+pub(super) fn header(f: &mut Frame, body: Rect, back: Option<Id>, title: &str, centred: bool, right: HeaderRight) -> Rect {
+    let pad = style::pad(body.h);
+    let mut area = style::content(body);
+    let mut bar = area.take_top(body.h * HEADER_H);
+    let full = bar;
+    let size = Text::Heading.size(body.h);
+    let left_w = match back {
+        Some(id) => {
+            let r = bar.take_left(bar.h);
+            f.button(id, r, Look::ICON, |f| f.c.icon(Icon::ArrowLeft, r.square_center(r.h * 0.45), Tone::Normal));
+            r.w
+        }
+        None => 0.0,
+    };
+    let right_w = match right {
+        HeaderRight::Action(id, label) => {
+            let w = (f.c.text_width(size * 0.85, label) + pad * 2.0).min(bar.w * 0.4);
+            let r = bar.take_right(w);
+            f.text_button(id, r.centered(r.w, r.h * 0.8), size * 0.85, Tone::Fn, label, Align::Center);
+            w
+        }
+        HeaderRight::None => 0.0,
+    };
+    if centred {
+        let side = left_w.max(right_w);
+        centred_text(f, Rect::new(full.x + side, full.y, (full.w - 2.0 * side).max(1.0), full.h), size, Tone::High, title);
+    } else {
+        f.c.text_fit(Rect::new(bar.x + pad * 0.4, bar.y, bar.w - pad, bar.h), size, Tone::High, title, Keep::Start);
+    }
+    area.y += pad * 0.4;
+    area.h -= pad * 0.4;
+    area
+}
+
+/// A menu: text actions down `area` from its top (each `(target, label, tone)`), as many as fit.
+pub(super) fn menu(f: &mut Frame, area: Rect, body: Rect, items: &[(Id, &str, Tone)]) {
+    let pad = style::pad(body.h);
+    let h = body.h * MENU_BUTTON_H;
+    let size = Text::Body.size(body.h);
+    for (i, (id, label, tone)) in items.iter().enumerate() {
+        let r = Rect::new(area.x, area.y + i as f32 * (h + pad * 0.5), menu_w(area, size), h);
+        if r.bottom() > area.bottom() {
+            break;
+        }
+        f.text_button(id.clone(), r, size, *tone, label, Align::Start);
+    }
+}
+
+/// A menu's width in `area`, for text at `size`.
+pub(super) fn menu_w(area: Rect, size: f32) -> f32 {
+    (area.w * MENU_W).max(size * 6.0).min(area.w)
+}
+
+/// A list's row: its label (in `tone`, after a dot if it is the one in force), a note in a column on
+/// the right (dim), and at the end an Edit action (its target, a target of its own), or its room kept
+/// empty (so the notes line up in a list where other rows have one).
+pub(super) struct ListRow<'a> {
+    pub label: &'a str,
+    pub tone: Tone,
+    pub mark: bool,
+    pub note: &'a str,
+    pub edit: EditCell,
+}
+
+/// A list row's end: nothing, an empty Edit column, or Edit.
+pub(super) enum EditCell {
+    None,
+    Empty,
+    Edit(Id),
+}
+
+/// A list row's note column and Edit action, of the row's width.
+const NOTE_W: f32 = 0.36;
+const EDIT_W: f32 = 0.14;
+
+/// A list's row (see [`ListRow`]) over `r`, its main target `id`, its text at `size`.
+pub(super) fn list_row(f: &mut Frame, id: Id, mut r: Rect, pad: f32, size: f32, row: ListRow) {
+    let edit = match row.edit {
+        EditCell::None => None,
+        EditCell::Empty => {
+            r.take_right(r.w * EDIT_W);
+            None
+        }
+        EditCell::Edit(id) => Some((id, r.take_right(r.w * EDIT_W))),
+    };
+    f.button(id, r, Look::ROW, |f| {
+        let dot = r.h * 0.06;
+        if row.mark {
+            f.c.circle(r.x + pad * 0.5 + dot, r.y + r.h / 2.0, dot, Tone::Normal);
+        }
+        let x = r.x + pad * 0.5 + dot * 4.0;
+        let note_w = if row.note.is_empty() { 0.0 } else { r.w * NOTE_W };
+        f.c.text_fit(Rect::new(x, r.y, r.x + r.w - note_w - x - pad * 0.5, r.h), size, row.tone, row.label, Keep::Start);
+        if !row.note.is_empty() {
+            f.c.text_fit(Rect::new(r.x + r.w - note_w, r.y, note_w - pad * 0.5, r.h), size * 0.8, Tone::Dim, row.note, Keep::Start);
+        }
+    });
+    if let Some((id, e)) = edit {
+        let tone = if f.pressed(&id) { Tone::High } else { Tone::Fn };
+        f.button(id, e, Look::ROW, |f| {
+            f.c.text_in(e, size * 0.85, tone, "Edit", Align::Center);
+        });
+    }
+}
+
+/// A switch's width in a row, for the row's text size.
+pub(super) fn switch_w(size: f32) -> f32 {
+    size * 2.3
+}
+
+/// A switch's row: `label` on the left (dim), the switch (`on`) on the right; the whole row its target.
+pub(super) fn switch_row(f: &mut Frame, id: Id, row: Rect, size: f32, label: &str, on: bool) {
+    f.button(id, row, Look::ROW, |f| {
+        let inner = row.inset(size * 0.4);
+        let sw = Rect::new(inner.right() - switch_w(size), row.y, switch_w(size), row.h);
+        f.c.text_fit(Rect::new(inner.x, row.y, sw.x - inner.x, row.h), size, Tone::Dim, label, Keep::Start);
+        switch_shape(f.c, sw, on);
+    });
+}
+
+/// A value's row: `label` on the left (dim), `value` on the right (brighter when `changed` from its
+/// default). Its target is the caller's (a held slider's, a choice's).
+pub(super) fn value_row(f: &mut Frame, row: Rect, size: f32, label: &str, value: &str, changed: bool) {
+    let inner = row.inset(size * 0.4);
+    let vw = f.c.text_width(size, value).min(inner.w * 0.5);
+    f.c.text_fit(Rect::new(inner.x, row.y, inner.w - vw - size * 0.3, row.h), size, Tone::Dim, label, Keep::Start);
+    f.c.text_fit(Rect::new(inner.right() - vw, row.y, vw + 1.0, row.h), size, Tone::high_if(changed), value, Keep::Start);
+}
+
+/// Text centred in `r` (cut to fit).
+pub(super) fn centred_text(f: &mut Frame, r: Rect, size: f32, tone: Tone, text: &str) {
+    let w = f.c.text_width(size, text).min(r.w);
+    f.c.text_fit(Rect::new(r.x + (r.w - w) / 2.0, r.y, w + 1.0, r.h), size, tone, text, Keep::Start);
+}
+
+/// Text centred in `r`, on two lines (split at a space near the middle) if it doesn't fit on one.
+pub(super) fn centred_lines(f: &mut Frame, r: Rect, size: f32, tone: Tone, text: &str) {
+    let line = size * LINE;
+    if f.c.text_width(size, text) <= r.w {
+        centred_text(f, Rect::new(r.x, r.y + (r.h - line) / 2.0, r.w, line), size, tone, text);
+        return;
+    }
+    let middle = text.len() / 2;
+    let split = text.match_indices(' ').map(|(i, _)| i).min_by_key(|i| i.abs_diff(middle));
+    let (a, b) = match split {
+        Some(i) => (text.get(..i).unwrap_or(text), text.get(i + 1..).unwrap_or("")),
+        None => (text, ""),
+    };
+    let top = r.y + (r.h - 2.0 * line) / 2.0;
+    centred_text(f, Rect::new(r.x, top, r.w, line), size, tone, a);
+    centred_text(f, Rect::new(r.x, top + line, r.w, line), size, tone, b);
 }

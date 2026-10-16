@@ -147,6 +147,14 @@ impl Column {
         r
     }
 
+    /// The next `h`, if it fits (rows taken while there is room).
+    pub fn next(&mut self, h: f32) -> Option<Rect> {
+        if self.y + h > self.end() + 0.01 {
+            return None;
+        }
+        Some(self.take(h))
+    }
+
     /// Leaves `h` empty.
     pub fn skip(&mut self, h: f32) {
         self.y += h;

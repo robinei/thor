@@ -26,6 +26,9 @@ pub enum ListId {
     Backlights,
     /// The keymap picker's: Default, then the keymaps.
     Keymaps,
+    /// A keymap's layers: to show one (all, then New layer), or as a target (all but Base, then New
+    /// layer).
+    Layers,
 }
 
 /// Which part of a row a target is: the row itself, or one of its controls.
@@ -41,8 +44,8 @@ pub enum RowPart {
 }
 
 impl ListId {
-    pub const COUNT: usize = 6;
-    pub const ALL: [ListId; ListId::COUNT] = [ListId::Shelf, ListId::Wifi, ListId::Bluetooth, ListId::Streams, ListId::Backlights, ListId::Keymaps];
+    pub const COUNT: usize = 7;
+    pub const ALL: [ListId; ListId::COUNT] = [ListId::Shelf, ListId::Wifi, ListId::Bluetooth, ListId::Streams, ListId::Backlights, ListId::Keymaps, ListId::Layers];
 
     pub fn index(self) -> usize {
         self as usize
@@ -82,6 +85,36 @@ impl ListId {
 
 /// A list's rows as its feature has them: how many, and what each is (to find it again after the list
 /// changed; none: its place isn't kept by item).
+/// A list's rows as the lists see them: its feature's, or just how many (rows not found again by a key
+/// when they change, as a keymap's layers on the screen showing them).
+pub(crate) enum RowsOf<'a> {
+    Of(&'a dyn Rows),
+    Count(usize),
+}
+
+impl RowsOf<'_> {
+    fn len(&self) -> usize {
+        match self {
+            RowsOf::Of(r) => r.len(),
+            RowsOf::Count(n) => *n,
+        }
+    }
+
+    pub(crate) fn key(&self, i: usize) -> Option<ItemKey> {
+        match self {
+            RowsOf::Of(r) => r.key(i),
+            RowsOf::Count(_) => None,
+        }
+    }
+
+    pub(crate) fn find(&self, key: &ItemKey) -> Option<usize> {
+        match self {
+            RowsOf::Of(r) => r.find(key),
+            RowsOf::Count(_) => None,
+        }
+    }
+}
+
 pub(crate) trait Rows {
     fn len(&self) -> usize;
 
@@ -214,14 +247,15 @@ impl State {
     }
 
     /// Each list's rows: its feature's.
-    pub(crate) fn rows(&self, list: ListId) -> &dyn Rows {
+    pub(crate) fn rows(&self, list: ListId) -> RowsOf<'_> {
         match list {
-            ListId::Shelf => &self.shelf,
-            ListId::Wifi => &self.radios.wifi,
-            ListId::Bluetooth => &self.radios.bluetooth,
-            ListId::Streams => self.levels.audio(),
-            ListId::Backlights => self.levels.backlight_rows(),
-            ListId::Keymaps => &self.keymaps,
+            ListId::Shelf => RowsOf::Of(&self.shelf),
+            ListId::Wifi => RowsOf::Of(&self.radios.wifi),
+            ListId::Bluetooth => RowsOf::Of(&self.radios.bluetooth),
+            ListId::Streams => RowsOf::Of(self.levels.audio()),
+            ListId::Backlights => RowsOf::Of(self.levels.backlight_rows()),
+            ListId::Keymaps => RowsOf::Of(&self.keymaps),
+            ListId::Layers => RowsOf::Count(self.layer_rows()),
         }
     }
 
@@ -232,6 +266,7 @@ impl State {
             ListId::Bluetooth => self.tap_device(i, long),
             ListId::Streams => self.on_stream(i, part),
             ListId::Keymaps => self.on_keymap_row(i, part, long),
+            ListId::Layers => self.on_layer_row(i, part, long),
             // (A shelf game's row is its game's target; a backlight's row is only its level.)
             ListId::Shelf | ListId::Backlights => vec![],
         }

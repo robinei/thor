@@ -21,19 +21,14 @@ use super::format::Fmt;
 use super::scroll::Scrolled;
 use super::pad::{Pad, Part};
 use super::style::{self, Look, Text, Tone};
+use super::widgets::{EditCell, HeaderRight, ListRow};
 use super::{Frame, Track, editor, widgets};
-use crate::draw::{Align, Keep, LINE, Rect, Rgb, Span};
+use crate::draw::{Align, Column, Keep, LINE, Rect, Rgb, Span};
 use crate::icons::Icon;
 
-/// The header's height, a list row's and a button's, of the area's height.
-const HEADER_H: f32 = 0.1;
+/// A list row's height and a button's, of the area's height.
 const ROW_H: f32 = 0.1;
 const BUTTON_H: f32 = 0.085;
-/// A menu's buttons' width, of the area's width.
-const MENU_W: f32 = 0.45;
-/// A row's Edit button and who uses it, of the row's width.
-const EDIT_W: f32 = 0.14;
-const USERS_W: f32 = 0.3;
 
 pub(super) fn draw(f: &mut Frame, body: Rect, screen: Screen) {
     match screen {
@@ -51,33 +46,9 @@ pub(super) fn draw(f: &mut Frame, body: Rect, screen: Screen) {
     }
 }
 
-/// The header: Back, the title, and on the right a note or a button; returns the area below it.
-fn header(f: &mut Frame, body: Rect, title: &str, right: Option<(Id, &str)>, note: &str) -> Rect {
-    let pad = style::pad(body.h);
-    let mut area = style::content(body);
-    let mut bar = area.take_top(body.h * HEADER_H);
-    let back = bar.take_left(bar.h);
-    f.button(Id::Keymap(KeymapId::Back), back, Look::ICON, |f| {
-        f.c.icon(Icon::ArrowLeft, back.square_center(back.h * 0.45), Tone::Normal);
-    });
-    let size = Text::Heading.size(body.h);
-    if let Some((id, label)) = right {
-        let w = f.c.text_width(size, label) + pad * 2.0;
-        let r = bar.take_right(w.min(bar.w * 0.4));
-        let r = r.centered(r.w, r.h * 0.8);
-        f.text_button(id, r, size * 0.85, Tone::Fn, label, Align::Center);
-    } else if !note.is_empty() {
-        let small = Text::Small.size(body.h);
-        let w = f.c.text_width(small, note);
-        if w < bar.w * 0.6 {
-            let r = bar.take_right(w);
-            f.c.text_in(r, small, Tone::Dim, note, Align::End);
-        }
-    }
-    f.c.text_fit(Rect::new(bar.x + pad * 0.4, bar.y, bar.w - pad, bar.h), size, Tone::High, title, Keep::Start);
-    area.y += pad * 0.4;
-    area.h -= pad * 0.4;
-    area
+/// The keymap screens' header (see [`widgets::header`]): Back, the title, and on the right `right`.
+fn header(f: &mut Frame, body: Rect, title: &str, right: HeaderRight) -> Rect {
+    widgets::header(f, body, Some(Id::Keymap(KeymapId::Back)), title, false, right)
 }
 
 /// What is picked on the edit screen's drawing: what an input maps to, or what holds the gyro on.
@@ -101,17 +72,7 @@ impl Picking {
 /// Cancel on the right; no back arrow, since choosing something closes it and Cancel gives up. Returns
 /// the area below it.
 fn choice_header(f: &mut Frame, body: Rect, title: &str) -> Rect {
-    let pad = style::pad(body.h);
-    let mut area = style::content(body);
-    let bar = area.take_top(body.h * HEADER_H);
-    let size = Text::Heading.size(body.h);
-    let cancel_w = f.c.text_width(size * 0.85, "Cancel") + pad * 2.0;
-    let cancel = Rect::new(bar.right() - cancel_w, bar.y + bar.h * 0.1, cancel_w, bar.h * 0.8);
-    f.text_button(Id::Keymap(KeymapId::Back), cancel, size * 0.85, Tone::Fn, "Cancel", Align::Center);
-    centred(f, Rect::new(bar.x + cancel_w, bar.y, (bar.w - 2.0 * cancel_w).max(1.0), bar.h), size, Tone::High, title);
-    area.y += pad * 0.4;
-    area.h -= pad * 0.4;
-    area
+    widgets::header(f, body, None, title, true, HeaderRight::Action(Id::Keymap(KeymapId::Back), "Cancel"))
 }
 
 /// "Remap A to…".
@@ -138,7 +99,7 @@ fn list(f: &mut Frame, body: Rect) {
         _ => "all games",
     };
     let title = Fmt::<128>::of(format_args!("Keymap for {scope}"));
-    let area = header(f, body, &title, Some((Id::Keymap(KeymapId::New), "New")), "");
+    let area = header(f, body, &title, HeaderRight::Action(Id::Keymap(KeymapId::New), "New"));
     let pad = style::pad(body.h);
     let size = Text::Body.size(body.h);
     let hint = Text::Small.size(body.h);
@@ -150,67 +111,38 @@ fn list(f: &mut Frame, body: Rect) {
             continue;
         };
         let id = row.map_or(0, |k| k.id);
-        let mut r = rows.row(i);
-        let edit = row.map(|_| r.take_right(r.w * EDIT_W));
         // (A keymap that is gone counts as Default.)
         let mine = id == chosen || (id == 0 && s.keymaps().get(chosen).is_none());
-        let name = row.map_or("Default", |k| k.name.as_str());
         let who = if row.is_some() { users(f, id) } else { Fmt::of(format_args!("As on the pad")) };
-        f.button(Id::Row { list: ListId::Keymaps, i: i as u16, part: RowPart::Main }, r, Look::ROW, |f| {
-            let dot = r.h * 0.06;
-            if mine {
-                f.c.circle(r.x + pad * 0.5 + dot, r.y + r.h / 2.0, dot, Tone::Normal);
-            }
-            let x = r.x + pad * 0.5 + dot * 4.0;
-            let users_w = r.w * USERS_W;
-            f.c.text_fit(Rect::new(x, r.y, r.x + r.w - users_w - x - pad * 0.5, r.h), size, Tone::high_if(mine), name, Keep::Start);
-            let who_r = Rect::new(r.x + r.w - users_w, r.y, users_w - pad * 0.5, r.h);
-            f.c.text_fit(who_r, size * 0.8, Tone::Dim, &who, Keep::Start);
-        });
-        if let Some(e) = edit {
-            f.button(Id::Row { list: ListId::Keymaps, i: i as u16, part: RowPart::Edit }, e, Look::ROW, |f| {
-                f.c.text_in(e, size * 0.85, if f.pressed(&Id::Row { list: ListId::Keymaps, i: i as u16, part: RowPart::Edit }) { Tone::High } else { Tone::Fn }, "Edit", Align::Center);
-            });
-        }
+        let at = |part| Id::Row { list: ListId::Keymaps, i: i as u16, part };
+        let item = ListRow { label: row.map_or("Default", |k| k.name.as_str()), tone: Tone::high_if(mine), mark: mine, note: &who, edit: if row.is_some() { EditCell::Edit(at(RowPart::Edit)) } else { EditCell::Empty } };
+        widgets::list_row(f, at(RowPart::Main), rows.row(i), pad, size, item);
     }
     rows.end(f, area.x + area.w + pad * 0.6);
     f.c.text_fit(Rect::new(area.x, area.y + area.h - hint * LINE, area.w, hint * LINE), hint, Tone::Dim, "Long press a keymap to rename, duplicate or delete it", Keep::Start);
 }
 
-/// A column of wide buttons, from the top of `area`.
-fn buttons(f: &mut Frame, area: Rect, body: Rect, items: &[(Id, &str, Tone)]) {
-    let pad = style::pad(body.h);
-    let h = body.h * BUTTON_H;
-    let size = Text::Body.size(body.h);
-    for (i, (id, label, tone)) in items.iter().enumerate() {
-        let r = Rect::new(area.x, area.y + i as f32 * (h + pad * 0.5), (area.w * MENU_W).max(size * 6.0).min(area.w), h);
-        if r.bottom() > area.bottom() {
-            break;
-        }
-        f.text_button(id.clone(), r, size, *tone, label, Align::Start);
-    }
-}
 
 fn menu(f: &mut Frame, body: Rect, id: u16) {
     let name = f.s.keymap_name(id);
-    let area = header(f, body, name, None, "");
+    let area = header(f, body, name, HeaderRight::None);
     let k = |id| Id::Keymap(id);
     let items =
         [(k(KeymapId::Edit), "Edit", Tone::Fn), (k(KeymapId::Rename), "Rename", Tone::Fn), (k(KeymapId::Duplicate), "Duplicate", Tone::Fn), (k(KeymapId::Delete), "Delete", Tone::Accent)];
-    buttons(f, area, body, &items);
+    widgets::menu(f, area, body, &items);
 }
 
 fn delete(f: &mut Frame, body: Rect, id: u16) {
     let name = f.s.keymap_name(id);
     let title = Fmt::<128>::of(format_args!("Delete {name}?"));
-    let area = header(f, body, &title, None, "");
+    let area = header(f, body, &title, HeaderRight::None);
     let who = users(f, id);
     let size = Text::Body.size(body.h);
     let text = Fmt::<160>::of(format_args!("In use ({}): deleting it puts them back on Default.", who.as_str()));
     let used = f.c.wrap(Span { x: area.x, y: area.y, w: area.w }, size, Tone::Normal, &text, 3);
     let pad = style::pad(body.h);
     let rest = Rect::new(area.x, area.y + used + pad, area.w, area.h - used - pad);
-    buttons(f, rest, body, &[(Id::Keymap(KeymapId::Back), "Keep it", Tone::Fn), (Id::Keymap(KeymapId::ConfirmDelete), "Delete", Tone::Accent)]);
+    widgets::menu(f, rest, body, &[(Id::Keymap(KeymapId::Back), "Keep it", Tone::Fn), (Id::Keymap(KeymapId::ConfirmDelete), "Delete", Tone::Accent)]);
 }
 
 /// An input's binding in keymap `k`'s `layer` itself, if it has one there.
@@ -369,14 +301,14 @@ fn act_word(act: Actuation) -> &'static str {
 }
 
 /// One cluster's labels, in the order their lines arrive in (top to bottom).
-struct Column {
+struct Labels {
     items: [Option<Callout>; CONTROLS],
     len: usize,
 }
 
-impl Column {
-    fn new() -> Column {
-        Column { items: [None; CONTROLS], len: 0 }
+impl Labels {
+    fn new() -> Labels {
+        Labels { items: [None; CONTROLS], len: 0 }
     }
 
     fn iter(&self) -> impl Iterator<Item = &Callout> {
@@ -537,7 +469,7 @@ fn edit(f: &mut Frame, body: Rect, id: u16, picking: Option<Picking>) {
     let line = size * LINE;
     let pad = Pad::new(area, cw);
 
-    let (mut left, mut right) = (Column::new(), Column::new());
+    let (mut left, mut right) = (Labels::new(), Labels::new());
     for input in Input::all() {
         let Some(part) = pad.part(input) else {
             continue;
@@ -660,7 +592,7 @@ fn edit(f: &mut Frame, body: Rect, id: u16, picking: Option<Picking>) {
 fn picking_panel(f: &mut Frame, body: Rect, r: Rect, id: u16, picking: Picking) {
     let small = Text::Small.size(body.h) * PANEL_TEXT;
     let heading = Text::Heading.size(body.h) * 0.9;
-    let mut col = Column1::new(r);
+    let mut col = Column::new(r);
     let (title, what) = match picking {
         Picking::Target(input) => (
             remap_title(input),
@@ -675,14 +607,14 @@ fn picking_panel(f: &mut Frame, body: Rect, r: Rect, id: u16, picking: Picking) 
     };
     // (On two lines if it doesn't fit on one.)
     let lines = if f.c.text_width(heading, &title) > r.w { 2.0 } else { 1.0 };
-    if let Some(row) = col.take(heading * LINE * lines) {
-        centred_lines(f, row, heading, Tone::High, &title);
+    if let Some(row) = col.next(heading * LINE * lines) {
+        widgets::centred_lines(f, row, heading, Tone::High, &title);
     }
-    if let Some(row) = col.take(small * LINE * 2.2) {
-        centred_lines(f, row, small, Tone::Normal, what);
+    if let Some(row) = col.next(small * LINE * 2.2) {
+        widgets::centred_lines(f, row, small, Tone::Normal, what);
     }
     col.skip(style::pad(body.h) * 0.3);
-    let Some(row) = col.take(body.h * BUTTON_H * 0.65) else {
+    let Some(row) = col.next(body.h * BUTTON_H * 0.65) else {
         return;
     };
     match picking {
@@ -715,18 +647,18 @@ fn panel(f: &mut Frame, body: Rect, r: Rect, id: u16, keymap: Option<&Keymap>, v
     let s = f.s;
     let pad = style::pad(body.h);
     let small = Text::Small.size(body.h) * PANEL_TEXT;
-    let mut col = Column1::new(r);
+    let mut col = Column::new(r);
     let Some(input) = view.selected else {
         let y = r.y + r.h * 0.4;
         for (i, t) in ["Press or touch an input", "to see what it does"].into_iter().enumerate() {
-            centred(f, Rect::new(r.x, y + i as f32 * small * LINE, r.w, small * LINE), small, Tone::Dim, t);
+            widgets::centred_text(f, Rect::new(r.x, y + i as f32 * small * LINE, r.w, small * LINE), small, Tone::Dim, t);
         }
         // In another layer than Base: which, and what the faded labels are.
         if view.layer != Layer::BASE {
             let name = keymap.and_then(|k| k.layer_name(view.layer)).unwrap_or("");
             let y = y + small * LINE * 3.0;
-            centred(f, Rect::new(r.x, y, r.w, small * LINE), small, Tone::High, name);
-            centred(f, Rect::new(r.x, y + small * LINE, r.w, small * LINE), small * 0.85, Tone::Dim, "Faded: as in Base");
+            widgets::centred_text(f, Rect::new(r.x, y, r.w, small * LINE), small, Tone::High, name);
+            widgets::centred_text(f, Rect::new(r.x, y + small * LINE, r.w, small * LINE), small * 0.85, Tone::Dim, "Faded: as in Base");
         }
         return;
     };
@@ -736,14 +668,14 @@ fn panel(f: &mut Frame, body: Rect, r: Rect, id: u16, keymap: Option<&Keymap>, v
     // The name.
     let name = Fmt::<32>::of(format_args!("{}", Label(input)));
     let heading = Text::Heading.size(body.h) * 0.9;
-    if let Some(row) = col.take(heading * LINE) {
-        centred(f, row, heading, Tone::High, &name);
+    if let Some(row) = col.next(heading * LINE) {
+        widgets::centred_text(f, row, heading, Tone::High, &name);
     }
     // Press, Hold, Double (a button's, a direction's), Pull and Full pull (a trigger's): the one shown in
     // white; a dot under one set.
     let tabs = Actuation::of(input.kind()).count();
     if tabs > 1
-        && let Some(row) = col.take(small * LINE * 2.2)
+        && let Some(row) = col.next(small * LINE * 2.2)
     {
         let w = row.w / tabs as f32;
         for (i, a) in Actuation::of(input.kind()).enumerate() {
@@ -763,19 +695,19 @@ fn panel(f: &mut Frame, body: Rect, r: Rect, id: u16, keymap: Option<&Keymap>, v
         Actuation::FullPull => Fmt::of(format_args!("No full pull")),
     };
     let main = || keymap.and_then(|k| k.get_of(Layer::BASE, input, act)).map(|b| summary(input, b, keymap)).unwrap_or_else(|| unset(input));
-    if let Some(row) = col.take(small * LINE * 2.2) {
+    if let Some(row) = col.next(small * LINE * 2.2) {
         match (own, layer) {
             (None, l) if l != Layer::BASE => {
                 let line = small * LINE;
                 let top = row.y + (row.h - 2.0 * line) / 2.0;
-                centred(f, Rect::new(row.x, top, row.w, line), small, Tone::Dim, "As in Base");
-                centred(f, Rect::new(row.x, top + line, row.w, line), small, Tone::Dim, &main());
+                widgets::centred_text(f, Rect::new(row.x, top, row.w, line), small, Tone::Dim, "As in Base");
+                widgets::centred_text(f, Rect::new(row.x, top + line, row.w, line), small, Tone::Dim, &main());
             }
-            (None, _) => centred_lines(f, row, small, Tone::Dim, &unset(input)),
+            (None, _) => widgets::centred_lines(f, row, small, Tone::Dim, &unset(input)),
             // (The panel's own content in white: blue is for labels of what is remapped, and actions.)
             (Some(b), _) => {
                 let tone = if input == Input::Gyro || change(input, Some(&b)) == Change::Mapped || act != Actuation::Press { Tone::High } else { described(input, &b, keymap).1 };
-                centred_lines(f, row, small, tone, &summary(input, &b, keymap));
+                widgets::centred_lines(f, row, small, tone, &summary(input, &b, keymap));
             }
         }
     }
@@ -783,14 +715,14 @@ fn panel(f: &mut Frame, body: Rect, r: Rect, id: u16, keymap: Option<&Keymap>, v
     if act == Actuation::Press
         && input.kind() == Kind::Digital
         && s.press_waits(id, input)
-        && let Some(row) = col.take(small * LINE)
+        && let Some(row) = col.next(small * LINE)
     {
-        centred(f, row, small * 0.85, Tone::Dim, "A short press acts on letting go");
+        widgets::centred_text(f, row, small * 0.85, Tone::Dim, "A short press acts on letting go");
     }
     // The ways to remap it.
     let bh = body.h * BUTTON_H;
     col.skip(pad * 0.5);
-    if let Some(row) = col.take(bh) {
+    if let Some(row) = col.next(bh) {
         let ways = ways(input.kind());
         let now = way_of(own.map(|b| b.output));
         let w = row.w / ways.len().max(1) as f32;
@@ -817,7 +749,7 @@ fn panel(f: &mut Frame, body: Rect, r: Rect, id: u16, keymap: Option<&Keymap>, v
     let mut held = None;
     'rows: {
         for p in shown_params {
-            let Some(row) = col.take(rh) else {
+            let Some(row) = col.next(rh) else {
                 break 'rows;
             };
             let v = p.get(&base);
@@ -825,12 +757,7 @@ fn panel(f: &mut Frame, body: Rect, r: Rect, id: u16, keymap: Option<&Keymap>, v
             if p == Param::InvertX {
                 invert_row(f, row, small, &base);
             } else if p.switch() {
-                f.button(Id::Keymap(KeymapId::Toggle(p)), row, Look::ROW, |f| {
-                    let inner = row.inset(small * 0.4);
-                    let sw = Rect::new(inner.right() - switch_w(small), row.y, switch_w(small), row.h);
-                    f.c.text_fit(Rect::new(inner.x, row.y, sw.x - inner.x, row.h), small, Tone::Dim, p.label(), Keep::Start);
-                    widgets::switch_shape(f.c, sw, v > 0);
-                });
+                widgets::switch_row(f, Id::Keymap(KeymapId::Toggle(p)), row, small, p.label(), v > 0);
             } else {
                 let value = shown(p, v);
                 let slider = view.slider.filter(|sl| sl.control == Control::Param(p));
@@ -842,38 +769,32 @@ fn panel(f: &mut Frame, body: Rect, r: Rect, id: u16, keymap: Option<&Keymap>, v
                 }
                 f.button(Id::Control(Control::Param(p)), row, Look::ROW, |f| {
                     if slider.is_none() {
-                        param_row(f, row, small, p.label(), &value, changed);
+                        widgets::value_row(f, row, small, p.label(), &value, changed);
                     }
                 });
                 f.track(track);
             }
         }
         if input == Input::Gyro && matches!(base.output, Output::Pointer | Output::Stick(_)) {
-            let Some(row) = col.take(rh) else {
+            let Some(row) = col.next(rh) else {
                 break 'rows;
             };
             let value = match base.hold {
                 Some(h) => Fmt::<24>::of(format_args!("while {}", Label(h))),
                 None => Fmt::of(format_args!("Always")),
             };
-            f.button(Id::Keymap(KeymapId::Holds), row, Look::ROW, |f| param_row(f, row, small, "Active", &value, base.hold.is_some()));
+            f.button(Id::Keymap(KeymapId::Holds), row, Look::ROW, |f| widgets::value_row(f, row, small, "Active", &value, base.hold.is_some()));
             if base.hold.is_some()
-                && let Some(row) = col.take(rh)
+                && let Some(row) = col.next(rh)
             {
-                let on = base.ratchet;
-                f.button(Id::Keymap(KeymapId::Toggle(Param::Ratchet)), row, Look::ROW, |f| {
-                    let inner = row.inset(small * 0.4);
-                    let sw = Rect::new(inner.right() - switch_w(small), row.y, switch_w(small), row.h);
-                    f.c.text_fit(Rect::new(inner.x, row.y, sw.x - inner.x, row.h), small, Tone::Dim, Param::Ratchet.label(), Keep::Start);
-                    widgets::switch_shape(f.c, sw, on);
-                });
+                widgets::switch_row(f, Id::Keymap(KeymapId::Toggle(Param::Ratchet)), row, small, Param::Ratchet.label(), base.ratchet);
             }
         }
 
         if params_of(input, base.output, act).any(|p| !p.switch())
-            && let Some(row) = col.take(small * LINE * 1.5)
+            && let Some(row) = col.next(small * LINE * 1.5)
         {
-            centred(f, row.shifted(0.0, small * 0.3), small * 0.85, Tone::Dim, "Slide a value to set it");
+            widgets::centred_text(f, row.shifted(0.0, small * 0.3), small * 0.85, Tone::Dim, "Slide a value to set it");
         }
     }
     if let Some((row, track, sl, p)) = held {
@@ -884,7 +805,7 @@ fn panel(f: &mut Frame, body: Rect, r: Rect, id: u16, keymap: Option<&Keymap>, v
 /// The inversions' row: "Invert", then a switch each for X and Y, each its own target.
 fn invert_row(f: &mut Frame, row: Rect, size: f32, b: &Binding) {
     let inner = row.inset(size * 0.4);
-    let (mut sw_w, mut letter) = (switch_w(size), size * 1.2);
+    let (mut sw_w, mut letter) = (widgets::switch_w(size), size * 1.2);
     // (Narrow: no word, the two switches scaled into the row.)
     let label = inner.w >= 2.0 * (sw_w + letter + size * 0.6) + size * 3.0;
     if !label {
@@ -899,30 +820,19 @@ fn invert_row(f: &mut Frame, row: Rect, size: f32, b: &Binding) {
             f.c.text_in(Rect::new(target.x, row.y, letter * 0.8, row.h), size, Tone::Dim, name, Align::Start);
             widgets::switch_shape(f.c, sw, on);
         });
-        x = target.x - size * 0.6 * if label { 1.0 } else { sw_w / switch_w(size) };
+        x = target.x - size * 0.6 * if label { 1.0 } else { sw_w / widgets::switch_w(size) };
     }
     if label {
         f.c.text_fit(Rect::new(inner.x, row.y, (x - inner.x).max(0.0), row.h), size, Tone::Dim, "Invert", Keep::Start);
     }
 }
 
-/// A switch's width in the panel, for its text size.
-fn switch_w(size: f32) -> f32 {
-    size * 2.3
-}
 
 /// "As on the pad" in words, for an input (the gyro: off).
 fn as_on_pad(input: Input) -> Fmt<48> {
     Fmt::of(format_args!("{}", if input == Input::Gyro { "Off" } else { "As on the pad" }))
 }
 
-/// A parameter's row: its name on the left, its value on the right (brighter when not the default).
-fn param_row(f: &mut Frame, row: Rect, size: f32, label: &str, value: &str, changed: bool) {
-    let inner = row.inset(size * 0.4);
-    let vw = f.c.text_width(size, value).min(inner.w * 0.5);
-    f.c.text_fit(Rect::new(inner.x, row.y, inner.w - vw - size * 0.3, row.h), size, Tone::Dim, label, Keep::Start);
-    f.c.text_fit(Rect::new(inner.right() - vw, row.y, vw + 1.0, row.h), size, Tone::high_if(changed), value, Keep::Start);
-}
 
 /// A parameter's value in words (`40 %`, `Off`, `12/s`, `400 ms`).
 fn shown(p: Param, v: u8) -> Fmt<16> {
@@ -940,54 +850,8 @@ fn slider_row(f: &mut Frame, row: Rect, track: Track, sl: Slider, p: Param, pane
     widgets::held_slider(f, &sl, track.x0, row.y + row.h / 2.0, row.h * 0.75, within, None, &text);
 }
 
-/// Text centred in a row, on two lines (split at a space near the middle) if it doesn't fit on one.
-fn centred_lines(f: &mut Frame, row: Rect, size: f32, tone: Tone, text: &str) {
-    let line = size * LINE;
-    if f.c.text_width(size, text) <= row.w {
-        centred(f, Rect::new(row.x, row.y + (row.h - line) / 2.0, row.w, line), size, tone, text);
-        return;
-    }
-    let middle = text.len() / 2;
-    let split = text.match_indices(' ').map(|(i, _)| i).min_by_key(|i| i.abs_diff(middle));
-    let (a, b) = match split {
-        Some(i) => (text.get(..i).unwrap_or(text), text.get(i + 1..).unwrap_or("")),
-        None => (text, ""),
-    };
-    let top = row.y + (row.h - 2.0 * line) / 2.0;
-    centred(f, Rect::new(row.x, top, row.w, line), size, tone, a);
-    centred(f, Rect::new(row.x, top + line, row.w, line), size, tone, b);
-}
 
-/// Text centred in a row (cut to fit).
-fn centred(f: &mut Frame, row: Rect, size: f32, tone: Tone, text: &str) {
-    let w = f.c.text_width(size, text).min(row.w);
-    f.c.text_fit(Rect::new(row.x + (row.w - w) / 2.0, row.y, w + 1.0, row.h), size, tone, text, Keep::Start);
-}
 
-/// Rows taken down a column, while they fit.
-struct Column1 {
-    r: Rect,
-    y: f32,
-}
-
-impl Column1 {
-    fn new(r: Rect) -> Column1 {
-        Column1 { r, y: r.y }
-    }
-
-    fn take(&mut self, h: f32) -> Option<Rect> {
-        if self.y + h > self.r.bottom() + 0.01 {
-            return None;
-        }
-        let row = Rect::new(self.r.x, self.y, self.r.w, h);
-        self.y += h;
-        Some(row)
-    }
-
-    fn skip(&mut self, h: f32) {
-        self.y += h;
-    }
-}
 
 /// A control in a cluster: its outline and its own mark, in `tone` (blue mapped, grey tuned, dim as on
 /// the pad); outlined brighter when selected, darker when `muted` (it can't be picked); a target.
@@ -1105,94 +969,76 @@ impl std::fmt::Display for OutputLabel {
     }
 }
 
-/// The layers for `input` to turn on: the keymap's, but Base (the one it maps to now lit), and New
-/// layer… at the end (named, then mapped to). Chosen, it closes; Cancel gives up.
+/// The layers for `input` to turn on: the keymap's, but Base (the one it maps to now marked), each with
+/// what turns it on, and New layer… at the end (named, then mapped to). Chosen, it closes; Cancel gives
+/// up.
 fn layers(f: &mut Frame, body: Rect, id: u16, input: Input) {
+    let now = binding(f.s.keymaps().get(id), f.s.keymap_edit().layer, input).map(|b| b.output);
+    let area = choice_header(f, body, &remap_title(input));
+    layer_list(f, body, area, id, |l| now == Some(Output::Layer(l)), false);
+}
+
+/// A keymap's layers on the scrolled list ([`ListId::Layers`]), the rows the state gives: each its name
+/// (`current` marked), what turns it on, its Edit (`edit`), then New layer….
+fn layer_list(f: &mut Frame, body: Rect, area: Rect, id: u16, current: impl Fn(Layer) -> bool, edit: bool) {
     let s = f.s;
     let keymap = s.keymaps().get(id);
-    let now = binding(keymap, s.keymap_edit().layer, input).map(|b| b.output);
-    let area = choice_header(f, body, &remap_title(input));
     let pad = style::pad(body.h);
-    let h = body.h * BUTTON_H;
     let size = Text::Body.size(body.h);
-    let w = (area.w * MENU_W).max(size * 8.0).min(area.w);
-    let mut y = area.y;
-    for (l, name) in keymap.into_iter().flat_map(|k| k.layers()).filter(|(l, _)| *l != Layer::BASE) {
-        if y + h > area.bottom() {
-            return;
-        }
-        let tone = if now == Some(Output::Layer(l)) { Tone::High } else { Tone::Fn };
-        f.text_button(Id::Keymap(KeymapId::ToLayer(l)), Rect::new(area.x, y, w, h), size, tone, name, Align::Start);
-        y += h + pad * 0.5;
+    let view = Rect::new(area.x - pad * 0.5, area.y, area.w + pad, area.h);
+    let rows = Scrolled::begin(f, ListId::Layers, view, body.h * ROW_H, s.list_len(ListId::Layers));
+    for i in rows.shown() {
+        let at = |part| Id::Row { list: ListId::Layers, i: i as u16, part };
+        let layer = s.layer_row(i);
+        let (name, what, mine) = match layer {
+            Some(l) => (keymap.and_then(|k| k.layer_name(l)).unwrap_or(""), keymap.map_or(Fmt::new(), |k| turned_on_by(k, l)), current(l)),
+            None => ("New layer…", Fmt::new(), false),
+        };
+        let tone = if layer.is_some() { Tone::high_if(mine) } else { Tone::Fn };
+        let cell = match (edit, layer) {
+            (false, _) => EditCell::None,
+            (true, Some(_)) => EditCell::Edit(at(RowPart::Edit)),
+            (true, None) => EditCell::Empty,
+        };
+        let item = ListRow { label: name, tone, mark: mine, note: &what, edit: cell };
+        widgets::list_row(f, at(RowPart::Main), rows.row(i), pad, size, item);
     }
-    if y + h <= area.bottom() {
-        f.text_button(Id::Keymap(KeymapId::NewLayer), Rect::new(area.x, y, w, h), size, Tone::Fn, "New layer…", Align::Start);
-    }
+    rows.end(f, area.x + area.w + pad * 0.6);
 }
 
 /// A layer's menu: rename it, delete it (what maps to it too).
 fn layer_menu(f: &mut Frame, body: Rect, id: u16, layer: Layer) {
     let name = f.s.keymaps().get(id).and_then(|k| k.layer_name(layer)).unwrap_or("");
-    let area = header(f, body, name, None, "");
+    let area = header(f, body, name, HeaderRight::None);
     let k = |id| Id::Keymap(id);
     if f.s.keymap_edit().clearing {
-        buttons(f, area, body, &[(k(KeymapId::ConfirmClear), "Clear all its bindings", Tone::Accent), (k(KeymapId::Back), "Cancel", Tone::Fn)]);
+        widgets::menu(f, area, body, &[(k(KeymapId::ConfirmClear), "Clear all its bindings", Tone::Accent), (k(KeymapId::Back), "Cancel", Tone::Fn)]);
     } else if layer == Layer::BASE {
-        buttons(f, area, body, &[(k(KeymapId::Clear), "Clear", Tone::Fn)]);
+        widgets::menu(f, area, body, &[(k(KeymapId::Clear), "Clear", Tone::Fn)]);
     } else {
         // Once: a switch, and what it means.
         let size = Text::Body.size(body.h);
         let small = Text::Small.size(body.h);
         let mut rest = area;
         let row = rest.take_top(body.h * BUTTON_H);
-        let w = (area.w * MENU_W).max(size * 6.0).min(area.w);
         let on = f.s.keymaps().get(id).is_some_and(|k| k.layer_once(layer));
-        let r = Rect::new(row.x, row.y, w, row.h);
-        f.button(k(KeymapId::LayerOnce), r, Look::ROW, |f| {
-            let sw = Rect::new(r.right() - switch_w(size), r.y, switch_w(size), r.h);
-            f.c.text_fit(Rect::new(r.x, r.y, sw.x - r.x, r.h), size, Tone::Normal, "Once", Keep::Start);
-            widgets::switch_shape(f.c, sw, on);
-        });
+        // (Its row reaches into the margin, so its label lines up with the actions below.)
+        let inset = size * 0.4;
+        let r = Rect::new(row.x - inset, row.y, widgets::menu_w(area, size) + 2.0 * inset, row.h);
+        widgets::switch_row(f, k(KeymapId::LayerOnce), r, size, "Once", on);
         let note = rest.take_top(small * LINE * 1.6);
         f.c.text_fit(Rect::new(note.x, note.y, note.w, small * LINE), small, Tone::Dim, "Tapped: on until the next input it maps", Keep::Start);
         rest.take_top(style::pad(body.h) * 0.5);
-        buttons(f, rest, body, &[(k(KeymapId::RenameLayer), "Rename", Tone::Fn), (k(KeymapId::Clear), "Clear", Tone::Fn), (k(KeymapId::DeleteLayer), "Delete", Tone::Accent)]);
+        widgets::menu(f, rest, body, &[(k(KeymapId::RenameLayer), "Rename", Tone::Fn), (k(KeymapId::Clear), "Clear", Tone::Fn), (k(KeymapId::DeleteLayer), "Delete", Tone::Accent)]);
     }
 }
 
-/// The keymap's layers, to show one on the edit screen (the one shown lit), and New layer… at the end;
-/// a long press on one: its menu. Back returns to the edit screen.
+/// The keymap's layers, to show one on the edit screen (the one shown marked), and New layer… at the
+/// end; a layer's Edit (or a long press): its menu. Back returns to the edit screen.
 fn layer_picker(f: &mut Frame, body: Rect, id: u16) {
-    let s = f.s;
-    let keymap = s.keymaps().get(id);
-    let shown = s.keymap_edit().layer;
+    let shown = f.s.keymap_edit().layer;
     let area = choice_header(f, body, "Layers");
-    let pad = style::pad(body.h);
-    let h = body.h * BUTTON_H;
-    let size = Text::Body.size(body.h);
-    let small = Text::Small.size(body.h);
-    let edit_w = f.c.text_width(size, "Edit") + size;
-    let mut y = area.y;
-    for (l, name) in keymap.into_iter().flat_map(|k| k.layers()) {
-        let row_h = h + small * LINE;
-        if y + row_h > area.bottom() {
-            return;
-        }
-        // Its name (shows it), what turns it on below, and Edit (its menu) on the right.
-        let tone = if l == shown { Tone::High } else { Tone::Fn };
-        let row = Rect::new(area.x, y, area.w - edit_w, row_h);
-        f.button(Id::Keymap(KeymapId::Layer(l)), row, Look::TEXT, |f| {
-            f.c.text_fit(Rect::new(row.x, row.y, row.w, h), size, tone, name, Keep::Start);
-            let what = keymap.map_or(Fmt::new(), |k| turned_on_by(k, l));
-            f.c.text_fit(Rect::new(row.x, row.y + h * 0.8, row.w, small * LINE), small, Tone::Dim, &what, Keep::Start);
-        });
-        f.text_button(Id::Keymap(KeymapId::EditLayer(l)), Rect::new(area.right() - edit_w, y, edit_w, h), size, Tone::Fn, "Edit", Align::End);
-        y += row_h + pad * 0.5;
-    }
-    if y + h <= area.bottom() {
-        let w = (area.w * MENU_W).max(size * 8.0).min(area.w);
-        f.text_button(Id::Keymap(KeymapId::NewLayer), Rect::new(area.x, y, w, h), size, Tone::Fn, "New layer…", Align::Start);
-    }
+    layer_list(f, body, area, id, |l| l == shown, true);
 }
 
 /// What turns layer `l` on, in words: each binding to it (`Back`, `LB held`, `L1 twice`, toggles saying

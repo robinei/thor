@@ -323,6 +323,42 @@ impl State {
         }
     }
 
+    /// The layers' list's rows (see [`ListId::Layers`]): the keymap's layers (but Base, as a target),
+    /// then New layer; none on another screen.
+    pub(crate) fn layer_rows(&self) -> usize {
+        let (id, all) = match self.bottom.keymaps {
+            Some(Screen::LayerPicker(id)) => (id, true),
+            Some(Screen::Layers { id, .. }) => (id, false),
+            _ => return 0,
+        };
+        let n = self.keymaps.get(id).map_or(0, |k| k.layers().count());
+        if all { n + 1 } else { n }
+    }
+
+    /// The layer on the layers' list's row `i`, if it is one (the last row is New layer).
+    pub fn layer_row(&self, i: usize) -> Option<Layer> {
+        let (id, skip) = match self.bottom.keymaps? {
+            Screen::LayerPicker(id) => (id, 0),
+            Screen::Layers { id, .. } => (id, 1),
+            _ => return None,
+        };
+        self.keymaps.get(id)?.layers().nth(i + skip).map(|(l, _)| l)
+    }
+
+    /// A row of the layers' list: a layer shown (its Edit or a long press: its menu), chosen as a target,
+    /// or New layer.
+    pub(crate) fn on_layer_row(&mut self, i: usize, part: RowPart, long: bool) -> Vec<Effect> {
+        let target = matches!(self.bottom.keymaps, Some(Screen::Layers { .. }));
+        let id = match (self.layer_row(i), part, target) {
+            (Some(l), RowPart::Edit, false) => KeymapId::EditLayer(l),
+            (Some(l), _, false) => KeymapId::Layer(l),
+            (Some(l), _, true) => KeymapId::ToLayer(l),
+            (None, ..) if i + 1 == self.layer_rows() => KeymapId::NewLayer,
+            (None, ..) => return vec![],
+        };
+        self.on_keymap(id, long)
+    }
+
     /// The keymaps' screens' buttons.
     pub(crate) fn on_keymap(&mut self, id: KeymapId, long: bool) -> Vec<Effect> {
         let Some(screen) = self.bottom.keymaps else {
@@ -1186,6 +1222,39 @@ mod tests {
         type_text(s, name);
         tap(s, Id::Editor(EditorId::Save));
         s.keymap_edit().layer
+    }
+
+    #[test]
+    fn the_layer_lists_rows_show_choose_and_add_layers() {
+        let mut s = edit_screen();
+        let aim = add_layer(&mut s, "aim");
+        let row = |i: u16, part| Id::Row { list: ListId::Layers, i, part };
+        // The list to show one: Base, aim, New layer; nothing on another screen.
+        keymap(&mut s, KeymapId::Back);
+        assert_eq!(s.list_len(ListId::Layers), 0);
+        tap(&mut s, Id::Row { list: ListId::Keymaps, i: 1, part: RowPart::Edit });
+        keymap(&mut s, KeymapId::LayerPicker);
+        assert_eq!((s.list_len(ListId::Layers), s.layer_row(1), s.layer_row(2)), (3, Some(aim), None));
+        tap(&mut s, row(1, RowPart::Main));
+        assert_eq!((s.keymap_screen(), s.keymap_edit().layer), (Some(Screen::Edit(1)), aim));
+        keymap(&mut s, KeymapId::LayerPicker);
+        tap(&mut s, row(1, RowPart::Edit));
+        assert_eq!(s.keymap_screen(), Some(Screen::LayerMenu { id: 1, layer: aim }));
+        keymap(&mut s, KeymapId::Back);
+        tap(&mut s, row(2, RowPart::Main));
+        assert!(matches!(s.bottom().editor(), Some(Editor { purpose: Purpose::KeymapName(KeymapName::NewLayer(1, None)), .. })), "New layer");
+        tap(&mut s, Id::Editor(EditorId::Cancel));
+        // As a target: aim, New layer (no Base); a row chooses it.
+        let mut s = edit_screen();
+        let aim = add_layer(&mut s, "aim");
+        keymap(&mut s, KeymapId::LayerPicker);
+        tap(&mut s, row(0, RowPart::Main));
+        open(&mut s, Input::Button(Button::Back));
+        keymap(&mut s, KeymapId::Target(Target::Layers));
+        assert_eq!((s.list_len(ListId::Layers), s.layer_row(0), s.layer_row(1)), (2, Some(aim), None));
+        tap(&mut s, row(0, RowPart::Main));
+        assert_eq!(s.keymaps().get(1).unwrap().get(Input::Button(Button::Back)).map(|b| b.output), Some(Output::Layer(aim)));
+        assert_eq!(s.keymap_screen(), Some(Screen::Edit(1)), "chosen: closed");
     }
 
     #[test]
