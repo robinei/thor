@@ -169,6 +169,17 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       and what the second screen costs in power while a game runs (a slider held, a list flung, the
       keymap edit screen with its labels).
 - [ ] GPU: Freedreno (sway) and Turnip (`vkcube`, a game); MangoHud frame rate in sysinfo.
+- [ ] HDR, an experiment (the panels take no HDR signal; HDR as on phones: the panel driven brighter,
+      ordinary content drawn dimmer within it, highlights above). Peaks from the spec sheets: top 650
+      nits, bottom 550 (the bottom one needs none). First the facts: the DSI link's bits per colour and
+      whether the display processor dithers (banding); how far the kernel's brightness goes and whether
+      its top is near 650 nits or the panel's high-brightness mode is out of reach; which colour
+      properties msm exposes on the connector and CRTC (CTM, GAMMA_LUT, DEGAMMA_LUT); Turnip under
+      wlroots' Vulkan renderer (Sway 1.12's HDR needs it). Then a game with HDR under gamescope on the
+      top screen with HDR output forced (its debug options), the peak at about 650 nits and ordinary
+      content at about 200 (about 1.7 stops of headroom), the panel at the top of its brightness: do the
+      highlights look better, without banding, heat or burn-in worries (a cap or time limit on highlights
+      if needed). Only if it pays: a headroom output mode patched into wlroots and Sway for the desktop.
 - [ ] Wi-Fi from the Wi-Fi mode (NetworkManager): scan, join with a password, forget; polkit lets the
       session's user do it (tested in the VM as an autologin session user, not on the device).
 - [ ] Bluetooth: does the chip work with ROCKNIX's kernel and firmware? Then the Bluetooth mode: pair
