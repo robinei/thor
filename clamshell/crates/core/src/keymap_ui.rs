@@ -197,15 +197,20 @@ impl State {
     /// Cancel; on the keymaps' screens, back one (picking a control: give up). (Elsewhere nothing has a
     /// back of its own. On the edit screen while the pad listens, Back comes as an input to remap.)
     pub fn pad_back(&self) -> Option<crate::Id> {
-        if self.bottom.editor.is_some() {
+        if self.bottom.editor().is_some() {
             return Some(crate::Id::Editor(crate::EditorId::Cancel));
         }
-        self.bottom.keymaps.map(|_| crate::Id::Keymap(KeymapId::Back))
+        self.keymaps_shown().map(|_| crate::Id::Keymap(KeymapId::Back))
+    }
+
+    /// The keymaps' screen open, while the settings (its tab) are shown.
+    fn keymaps_shown(&self) -> Option<Screen> {
+        self.bottom.keymaps.filter(|_| self.bottom.tab == crate::Tab::Settings)
     }
 
     /// Whether the pad listens for inputs (the edit screen, or waiting for a pad button, in view).
     pub(crate) fn listening(&self) -> bool {
-        self.bottom.tab == crate::Tab::Settings && self.bottom.editor.is_none() && self.bottom.keymaps.is_some_and(Screen::listens)
+        self.bottom.editor().is_none() && self.keymaps_shown().is_some_and(Screen::listens)
     }
 
     /// The picker's row `i`: Default (0), or a keymap.
@@ -554,7 +559,7 @@ impl State {
 
     /// Opens the editor for a keymap's name.
     fn name_keymap(&mut self, action: KeymapName, text: String) {
-        self.bottom.editor = Some(Editor { purpose: Purpose::KeymapName(action), text });
+        self.bottom.open_editor(Editor { purpose: Purpose::KeymapName(action), text });
     }
 
     /// The editor saved a keymap's name: a new keymap (then its edit screen), renamed, or a copy.
@@ -788,7 +793,7 @@ impl State {
 
     /// Whether the keyboard's keys make a chord now (the capture screen is open).
     pub(crate) fn capturing(&self) -> bool {
-        matches!(self.bottom.keymaps, Some(Screen::Capture { .. })) && self.bottom.editor.is_none()
+        matches!(self.keymaps_shown(), Some(Screen::Capture { .. })) && self.bottom.editor().is_none()
     }
 
     /// A stroke of the keyboard as a chord.
@@ -1058,17 +1063,20 @@ mod tests {
     }
 
     #[test]
-    fn the_picker_closes_with_its_tab_and_listens_only_in_view() {
+    fn the_keymap_screens_stay_with_their_tab_and_listen_only_in_view() {
         let mut s = State::new(Init { keymaps: Keymaps::initial(), ..init() });
         picker(&mut s);
         tap(&mut s, Id::Row { list: ListId::Keymaps, i: 1, part: RowPart::Edit });
+        open(&mut s, Input::Button(Button::LB));
         assert_eq!(s.pad().route(), PadRoute::Listen);
+        // Another tab: not listening, nothing for the pad's Back; back to the settings: as left.
         let fx = tap(&mut s, Id::Tab(Tab::Dock));
         assert_eq!(fx, vec![Effect::PadRoute(PadRoute::Ui)]);
-        assert_eq!(s.keymap_screen(), None);
+        assert_eq!(s.pad_back(), None);
+        let fx = tap(&mut s, Id::Tab(Tab::Settings));
+        assert!(fx.contains(&Effect::PadRoute(PadRoute::Listen)), "{fx:?}");
+        assert_eq!((s.keymap_screen(), s.keymap_edit().selected), (Some(Screen::Edit(1)), Some(Input::Button(Button::LB))));
         // A game in front keeps the pad.
-        picker(&mut s);
-        tap(&mut s, Id::Row { list: ListId::Keymaps, i: 1, part: RowPart::Edit });
         s.apply(GameEvent::Started("zelda-lttp".into()).into());
         assert_eq!(s.pad().route(), PadRoute::Game);
         s.apply(Event::Listened(Input::Button(Button::A)));

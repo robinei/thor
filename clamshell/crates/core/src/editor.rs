@@ -12,6 +12,16 @@ pub struct Editor {
     pub text: String,
 }
 
+impl Editor {
+    /// The tab it belongs to (opened from): a Wi-Fi password's, Wi-Fi; the rest, the settings'.
+    pub fn tab(&self) -> crate::Tab {
+        match self.purpose {
+            Purpose::Password { .. } => crate::Tab::Wifi,
+            Purpose::Env { .. } | Purpose::KeymapName(_) => crate::Tab::Settings,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Purpose {
     /// A game's environment variables, or all games' (`None`).

@@ -185,7 +185,7 @@ impl State {
             return vec![];
         }
         if n.secure && !n.known {
-            self.bottom.editor = Some(Editor { purpose: Purpose::Password { ssid }, text: String::new() });
+            self.bottom.open_editor(Editor { purpose: Purpose::Password { ssid }, text: String::new() });
             return vec![];
         }
         self.join(ssid, None)

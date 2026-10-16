@@ -484,7 +484,7 @@ impl State {
                 let stroke = self.keyboard.press(pos, long);
                 // Into the editor while it is open, else to the focused app.
                 let effects = match stroke {
-                    Some(stroke) if self.bottom.editor.is_some() => self.edit(stroke),
+                    Some(stroke) if self.bottom.editor().is_some() => self.edit(stroke),
                     Some(stroke) if self.capturing() => self.captured(State::chord(stroke)),
                     Some(stroke) => vec![Effect::Key(stroke)],
                     None => vec![],
@@ -661,8 +661,8 @@ impl State {
     }
 
     /// Changes the second screen's tab. The touchpad and the watches (Wi-Fi, Bluetooth, battery,
-    /// audio, backlights) start and stop with their tabs; what belonged to the tab left (an open editor,
-    /// a level being set) ends.
+    /// audio, backlights) start and stop with their tabs; a level being set ends. What the tab left had
+    /// open (an editor, the keymaps' screens) stays for coming back to.
     fn set_tab(&mut self, tab: Tab) -> Vec<Effect> {
         let before = self.bottom.tab;
         if tab == before {
@@ -670,8 +670,6 @@ impl State {
         }
         self.saves.resume.touch(self.unix_secs);
         self.bottom.tab = tab;
-        self.bottom.editor = None;
-        self.bottom.keymaps = None;
         self.levels.leave();
         let watch = |tab: Tab, on| tab.watch().map(|w| Effect::Watch(w, on));
         watch(before, false).into_iter().chain(watch(tab, true)).collect()
@@ -683,7 +681,7 @@ impl State {
     fn text_input(&mut self, active: bool) -> Vec<Effect> {
         if active {
             // (Not over an open editor: what is typed there would be lost.)
-            if self.bottom.tab == Tab::Keyboard || self.session.front() == Front::Game || self.bottom.editor.is_some() {
+            if self.bottom.tab == Tab::Keyboard || self.session.front() == Front::Game || self.bottom.editor().is_some() {
                 return vec![];
             }
             self.bottom.raised_from = Some(self.bottom.tab);

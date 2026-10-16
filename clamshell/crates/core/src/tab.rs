@@ -95,8 +95,9 @@ pub struct Bottom {
     /// The tab the keyboard was brought up from by an app's text field: back there when the field is
     /// done, unless the user chose a tab meanwhile.
     pub(crate) raised_from: Option<Tab>,
-    /// The text being edited (a game's environment, a Wi-Fi password), if the editor is open.
-    pub(crate) editor: Option<Editor>,
+    /// The texts being edited (a game's environment, a Wi-Fi password), each in its own tab, kept while
+    /// another tab is shown (at most one a tab).
+    pub(crate) editors: Vec<Editor>,
     /// What the settings panel edits (global whenever there is no game in context).
     pub(crate) scope: Scope,
     /// The keymaps' screen open over the settings tab (see [`crate::keymap_ui`]).
@@ -116,8 +117,27 @@ impl Bottom {
         self.tab
     }
 
+    /// The editor open in the tab shown, if any.
     pub fn editor(&self) -> Option<&Editor> {
-        self.editor.as_ref()
+        self.editors.iter().find(|e| e.tab() == self.tab)
+    }
+
+    pub(crate) fn editor_mut(&mut self) -> Option<&mut Editor> {
+        let tab = self.tab;
+        self.editors.iter_mut().find(|e| e.tab() == tab)
+    }
+
+    /// Opens an editor in its tab (one there before is replaced).
+    pub(crate) fn open_editor(&mut self, editor: Editor) {
+        self.editors.retain(|e| e.tab() != editor.tab());
+        self.editors.push(editor);
+    }
+
+    /// Closes the editor of the tab shown, giving it back.
+    pub(crate) fn close_editor(&mut self) -> Option<Editor> {
+        let tab = self.tab;
+        let i = self.editors.iter().position(|e| e.tab() == tab)?;
+        Some(self.editors.remove(i))
     }
 
     pub fn notice(&self) -> Option<&crate::hardware::Notice> {

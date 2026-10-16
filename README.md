@@ -122,7 +122,8 @@ the compositor gives the seat to that one and this does nothing.
 **The bar**: the second screen's tabs, spread evenly: Settings, Dock, Keyboard, Touchpad, Sysinfo, then
 Volume and Brightness near the middle, then Bluetooth, Wi-Fi and Battery, whose icons show their level or
 status; past a faint line, the clock and the pad mouse switch. The tab last chosen comes back after a
-restart (not Touchpad, which grabs the touchscreen). A tap on volume or brightness opens its tab; a
+restart (not Touchpad, which grabs the touchscreen). A tab keeps what was open in it while another is
+shown (the keymaps' screens as left, an editor with its text). A tap on volume or brightness opens its tab; a
 finger held there for 0.2 s, or moved sideways off it, doesn't (also with the Touchpad tab open, where
 the touchpad thread decides the same way): it turns the bar's row into a slider whose current level is
 under the finger: moving sets the level as it goes, lifting leaves it there (the icons sit near the

@@ -105,7 +105,7 @@ impl State {
         match id {
             EditorId::Save => self.save_editor(),
             EditorId::Cancel => {
-                self.bottom.editor = None;
+                self.bottom.close_editor();
                 vec![]
             }
         }
@@ -134,15 +134,15 @@ impl State {
     fn open_editor(&mut self) {
         let game = self.editing().map(|g| g.id.clone());
         let text = self.settings.env_text(game.as_deref()).to_owned();
-        self.bottom.editor = Some(Editor { purpose: Purpose::Env { game }, text });
+        self.bottom.open_editor(Editor { purpose: Purpose::Env { game }, text });
     }
 
     /// A key from the on-screen keyboard while the editor is open.
     pub(crate) fn edit(&mut self, stroke: Stroke) -> Vec<Effect> {
-        match self.bottom.editor.as_mut().and_then(|e| e.key(stroke)) {
+        match self.bottom.editor_mut().and_then(|e| e.key(stroke)) {
             Some(Done::Save) => self.save_editor(),
             Some(Done::Cancel) => {
-                self.bottom.editor = None;
+                self.bottom.close_editor();
                 vec![]
             }
             None => vec![],
@@ -151,7 +151,7 @@ impl State {
 
     /// The editor's Save: the environment saved, or the network joined with the password.
     fn save_editor(&mut self) -> Vec<Effect> {
-        let Some(editor) = self.bottom.editor.take() else {
+        let Some(editor) = self.bottom.close_editor() else {
             return vec![];
         };
         match editor.purpose {
@@ -289,6 +289,7 @@ mod tests {
     #[test]
     fn the_environment_editor_takes_the_keyboard() {
         let mut s = state();
+        tap(&mut s, Id::Tab(Tab::Settings));
         tap(&mut s, Id::Settings(SettingsId::Env));
         let key = |s: &mut State, k| tap(s, Id::Key(find(k).unwrap()));
         for c in ['d', 'x', 'v', 'k'] {
@@ -314,5 +315,20 @@ mod tests {
         assert!(s.bottom().editor().is_some());
         s.apply(Event::TextInput(true));
         assert!(s.bottom().editor().is_some() && s.bottom().tab() == Tab::Settings, "its typing would be lost");
+    }
+
+    #[test]
+    fn an_editor_stays_with_its_tab() {
+        let mut s = state();
+        tap(&mut s, Id::Tab(Tab::Settings));
+        tap(&mut s, Id::Settings(SettingsId::Env));
+        let key = |s: &mut State, k| tap(s, Id::Key(find(k).unwrap()));
+        key(&mut s, Key::Char('a'));
+        // The keyboard tab: its keys go to the app, not the editor left in the settings.
+        tap(&mut s, Id::Tab(Tab::Keyboard));
+        assert_eq!(s.bottom().editor(), None);
+        assert_eq!(key(&mut s, Key::Char('b')).len(), 1, "sent");
+        tap(&mut s, Id::Tab(Tab::Settings));
+        assert_eq!(s.bottom().editor().map(|e| e.text.as_str()), Some("a"), "as left");
     }
 }
