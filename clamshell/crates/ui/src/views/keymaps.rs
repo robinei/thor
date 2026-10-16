@@ -834,9 +834,8 @@ fn panel(f: &mut Frame, body: Rect, r: Rect, id: u16, keymap: Option<&Keymap>, v
             } else {
                 let value = shown(p, v);
                 let slider = view.slider.filter(|sl| sl.control == Control::Param(p));
-                // (Inset so the thumb stays in the row at either end.)
-                let inset = rh * 0.25;
-                let track = Track { x0: r.x + inset, w: (r.w - 2.0 * inset).max(1.0) };
+                // (The screen's width, as the bar's sliders: the track as long, over the drawing.)
+                let track = Track { x0: body.x, w: body.w };
                 // (A held slider is drawn last, its card over the rows below it.)
                 if let Some(sl) = slider {
                     held = Some((row, track, sl, p));
@@ -935,9 +934,9 @@ fn shown(p: Param, v: u8) -> Fmt<16> {
 /// A parameter's row while its slider is up (the bar's slider, within the panel): the name and value
 /// above, the track along the row with the thumb under the finger.
 fn slider_row(f: &mut Frame, row: Rect, track: Track, sl: Slider, p: Param, panel: Rect) {
-    // As the bar's: the track across the row, the value on a card beside the finger.
+    // As the bar's: the track along the screen through the row, the value on a card beside the finger.
     let text = Fmt::<32>::of(format_args!("{} {}", p.label(), shown(p, sl.value).as_str()));
-    let within = Rect::new(row.x, panel.y, row.w, panel.h);
+    let within = Rect::new(track.x0, panel.y, track.w, panel.h);
     widgets::held_slider(f, &sl, track.x0, row.y + row.h / 2.0, row.h * 0.75, within, None, &text);
 }
 
