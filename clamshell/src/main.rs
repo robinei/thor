@@ -88,7 +88,7 @@ fn main() -> ExitCode {
             // The demo games unless asked for the real library.
             let library = if env.snapshot_real_library { load_library(&sources) } else { clamshell_library::demo_library() };
             let now = if env.snapshot_now { SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() } else { snapshot::FIXED_NOW };
-            match snapshot::render(&mut snapshot::state(library), now, &dir) {
+            match snapshot::render(&|| snapshot::state(library.clone()), now, &dir) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(e) => {
                     log::error!("{e}");

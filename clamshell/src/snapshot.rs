@@ -1,5 +1,5 @@
 //! `--snapshot DIR`: both screens drawn at the Thor's size into PNG files, without Wayland: shelf, the
-//! second screen and every tab, each after the events that lead to it. At a fixed time (unless
+//! second screen and every tab, each after the events that lead to it, in groups that each start fresh. At a fixed time (unless
 //! CLAMSHELL_SNAPSHOT_NOW is set), so the files compare byte for byte across runs; the test below keeps
 //! their hashes (tests/snapshots.txt) to catch changes in what is drawn.
 
@@ -115,219 +115,311 @@ fn taps(setting: Setting, n: usize) -> impl Iterator<Item = Event> {
     (0..n).map(move |_| tap(Id::Settings(SettingsId::Tile(setting))))
 }
 
-/// The scenario, in order: each shot after the events that lead to it (they build on each other).
-pub fn shots(now: u64) -> Result<Vec<Shot>, ParseError> {
+/// A group of shots: from a fresh state, `start`'s events (a named starting state, see below), then each
+/// shot after the events that lead to it, building on the group's earlier ones. Groups don't share
+/// state, so a change shows in the shots of the groups it touches.
+pub struct Group {
+    pub start: Vec<Event>,
+    pub shots: Vec<Shot>,
+}
+
+/// A keymap named FPS made on the settings' keymap screens, on its edit screen with A selected: A to
+/// Ctrl+X, L1 to right click (held Esc, twice Tab), the left stick to WASD, the right stick's up to the
+/// wheel, the gyro to the pointer while L2 is held, Select to M, the D-pad's left to 1, B to the pad's
+/// Y, R1 with turbo, the right stick's deadzone tuned.
+fn fps_keymap() -> Result<Vec<Event>, ParseError> {
+    Ok([
+        vec![tab(Tab::Settings), keymap_tile(), km(KeymapId::New)],
+        control::type_text("FPS")?,
+        vec![tap(Id::Editor(EditorId::Save))],
+        select(Input::Button(Button::A)),
+        vec![km(KeymapId::Target(Target::Key)), key(Key::Mod(Modifier::Ctrl))?, key(Key::Char('x'))?],
+        select(Input::Button(Button::LB)),
+        vec![km(KeymapId::Target(Target::Mouse(MouseButton::Right)))],
+        select(Input::Stick(Side::Left)),
+        vec![km(KeymapId::Target(Target::Keys)), key(Key::Char('w'))?, key(Key::Char('a'))?, key(Key::Char('s'))?, key(Key::Char('d'))?],
+        select(Input::StickDir(Side::Right, Dir::Up)),
+        vec![km(KeymapId::Target(Target::Wheel(Dir::Up)))],
+        select(Input::Gyro),
+        vec![km(KeymapId::Target(Target::Pointer)), km(KeymapId::Holds), km(KeymapId::Hold(Some(Input::Trigger(Side::Left))))],
+        select(Input::Button(Button::View)),
+        vec![km(KeymapId::Target(Target::Key)), key(Key::Char('m'))?],
+        select(Input::Dpad(Dir::Left)),
+        vec![km(KeymapId::Target(Target::Key)), key(Key::Char('1'))?],
+        select(Input::Button(Button::B)),
+        vec![km(KeymapId::Target(Target::Pad(PadOut::Button(Button::Y))))],
+        select(Input::Button(Button::LB)),
+        vec![km(KeymapId::Actuation(Actuation::Hold)), km(KeymapId::Target(Target::Key)), key(Key::Named(Named::Esc))?],
+        vec![km(KeymapId::Actuation(Actuation::Double)), km(KeymapId::Target(Target::Key)), key(Key::Named(Named::Tab))?],
+        select(Input::Button(Button::RB)),
+        slide(Param::Turbo, 0.2, true),
+        vec![km(KeymapId::Input(Input::Stick(Side::Right)))],
+        slide(Param::Deadzone, 0.12, true),
+        vec![km(KeymapId::Input(Input::Button(Button::A)))],
+    ]
+    .concat())
+}
+
+/// [`fps_keymap`] with a layer named aim (A in it to Y), shown, L1 selected (as in Base there).
+fn fps_with_layer() -> Result<Vec<Event>, ParseError> {
+    Ok([
+        fps_keymap()?,
+        vec![km(KeymapId::LayerPicker), km(KeymapId::NewLayer)],
+        control::type_text("aim")?,
+        vec![tap(Id::Editor(EditorId::Save))],
+        select(Input::Button(Button::A)),
+        vec![km(KeymapId::Target(Target::Key)), key(Key::Char('y'))?, km(KeymapId::Input(Input::Button(Button::LB)))],
+    ]
+    .concat())
+}
+
+/// The scenario: groups of shots (see [`Group`]).
+pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
     use Screen::{Bottom, Top};
     let shot = |name, screen, before| Shot { name, screen, before };
+    let group = |start, shots| Group { start, shots };
     let ff6 = || tap(Id::Shelf(ShelfId::Game("ff6".into())));
     let ctrl = || control::key(Key::Mod(Modifier::Ctrl));
     let volume = Id::Control(Control::Volume);
     Ok(vec![
-        shot("top.png", Top, vec![]),
-        shot("top-tab2.png", Top, vec![ShelfEvent::CollectionStep(1).into()]),
-        shot("top-tab2-down.png", Top, vec![ShelfEvent::ListStep(5).into()]),
-        shot("top-back.png", Top, vec![ShelfEvent::CollectionStep(-1).into()]),
-        shot(
-            "top-played.png",
-            Top,
+        group(
+            vec![],
             vec![
-                GameEvent::Played { game: "zelda-lttp".into(), start: 1_759_900_000, duration: 4 * 3600 + 1260 }.into(),
-                ShelfEvent::ToggleFavourite.into(),
-                GameEvent::Started("zelda-lttp".into()).into(),
+                shot("top.png", Top, vec![]),
+                shot("top-tab2.png", Top, vec![ShelfEvent::CollectionStep(1).into()]),
+                shot("top-tab2-down.png", Top, vec![ShelfEvent::ListStep(5).into()]),
+                shot("top-back.png", Top, vec![ShelfEvent::CollectionStep(-1).into()]),
+                shot(
+                    "top-played.png",
+                    Top,
+                    vec![
+                        GameEvent::Played { game: "zelda-lttp".into(), start: 1_759_900_000, duration: 4 * 3600 + 1260 }.into(),
+                        ShelfEvent::ToggleFavourite.into(),
+                        GameEvent::Started("zelda-lttp".into()).into(),
+                    ],
+                ),
+                shot("top-switch.png", Top, vec![ff6(), ff6()]),
             ],
         ),
-        shot("top-switch.png", Top, vec![ff6(), ff6()]),
-        shot("bottom.png", Bottom, vec![]),
-        shot(
-            "settings-running.png",
-            Bottom,
-            [tab(Tab::Settings)]
-                .into_iter()
-                .chain(taps(Setting::FpsCap, 4))
-                .chain([tap(Id::Settings(SettingsId::Tile(Setting::Keymap))), tap(ListId::Keymaps.row(1))])
-                .chain(taps(Setting::Hud, 1))
-                .collect(),
+        group(vec![], vec![shot("bottom.png", Bottom, vec![])]),
+        // The settings, a game running.
+        group(
+            vec![ff6(), ff6()],
+            vec![
+                shot(
+                    "settings-running.png",
+                    Bottom,
+                    [tab(Tab::Settings)]
+                        .into_iter()
+                        .chain(taps(Setting::FpsCap, 4))
+                        .chain([keymap_tile(), tap(ListId::Keymaps.row(1))])
+                        .chain(taps(Setting::Hud, 1))
+                        .collect(),
+                ),
+                shot(
+                    "settings-global.png",
+                    Bottom,
+                    [tap(Id::Settings(SettingsId::Scope(Scope::Global)))]
+                        .into_iter()
+                        .chain(taps(Setting::Power, 1))
+                        .chain(taps(Setting::Rumble, 2))
+                        .chain(taps(Setting::ChargeLimit, 2))
+                        .collect(),
+                ),
+                shot(
+                    "settings.png",
+                    Bottom,
+                    vec![GameEvent::Played { game: "zelda-lttp".into(), start: now, duration: 60 }.into(), tap(Id::Settings(SettingsId::Scope(Scope::Game)))],
+                ),
+                shot(
+                    "settings-env.png",
+                    Bottom,
+                    [tap(Id::Settings(SettingsId::Env))].into_iter().chain(control::type_text("dxvk_hud=fps mesa_vk_wsi_present_mode=fifo")?).collect(),
+                ),
+                shot("status-low.png", Bottom, vec![tap(Id::Editor(EditorId::Save)), Reading::Status(demo::STATUS_LOW).into()]),
+            ],
         ),
-        shot(
-            "settings-global.png",
-            Bottom,
-            [tap(Id::Settings(SettingsId::Scope(Scope::Global)))]
-                .into_iter()
-                .chain(taps(Setting::Power, 1))
-                .chain(taps(Setting::Rumble, 2))
-                .chain(taps(Setting::ChargeLimit, 2))
-                .collect(),
+        // A new keymap named.
+        group(
+            vec![ff6(), ff6(), tab(Tab::Settings)],
+            vec![
+                shot("keymap-name.png", Bottom, [keymap_tile(), km(KeymapId::New)].into_iter().chain(control::type_text("FPS")?).collect()),
+                shot("keymap-edit-new.png", Bottom, vec![tap(Id::Editor(EditorId::Save))]),
+            ],
         ),
-        shot(
-            "settings.png",
-            Bottom,
-            vec![GameEvent::Played { game: "zelda-lttp".into(), start: now, duration: 60 }.into(), tap(Id::Settings(SettingsId::Scope(Scope::Game)))],
+        // The FPS keymap's edit screen.
+        group(
+            fps_keymap()?,
+            vec![
+                shot("keymap-edit.png", Bottom, vec![]),
+                shot("keymap-edit-hold.png", Bottom, vec![km(KeymapId::Input(Input::Button(Button::LB))), km(KeymapId::Actuation(Actuation::Hold))]),
+                shot(
+                    "keymap-edit-trigger.png",
+                    Bottom,
+                    vec![
+                        km(KeymapId::Input(Input::Trigger(Side::Right))),
+                        km(KeymapId::Actuation(Actuation::FullPull)),
+                        km(KeymapId::Target(Target::MouseParts)),
+                        km(KeymapId::Target(Target::Mouse(MouseButton::Left))),
+                    ],
+                ),
+                shot("keymap-edit-stick.png", Bottom, vec![km(KeymapId::Input(Input::Stick(Side::Left)))]),
+                shot("keymap-edit-slider.png", Bottom, slide(Param::Curve, 0.3, false)),
+            ],
         ),
-        shot(
-            "settings-env.png",
-            Bottom,
-            [tap(Id::Settings(SettingsId::Env))].into_iter().chain(control::type_text("dxvk_hud=fps mesa_vk_wsi_present_mode=fifo")?).collect(),
+        // Its layers.
+        group(
+            fps_with_layer()?,
+            vec![
+                shot("keymap-edit-back.png", Bottom, vec![]),
+                shot("keymap-layer-picker.png", Bottom, vec![km(KeymapId::LayerPicker)]),
+                shot("keymap-layer-menu.png", Bottom, vec![PointerEvent::LongPress(Id::Keymap(KeymapId::Layer(Layer(1)))).into(), km(KeymapId::LayerOnce)]),
+                shot("keymap-layer-clear.png", Bottom, vec![km(KeymapId::Clear)]),
+                shot(
+                    "keymap-layers.png",
+                    Bottom,
+                    vec![
+                        km(KeymapId::Back),
+                        km(KeymapId::Back),
+                        km(KeymapId::Layer(Layer::BASE)),
+                        km(KeymapId::Input(Input::Button(Button::Back))),
+                        km(KeymapId::Target(Target::Layers)),
+                    ],
+                ),
+                shot("keymap-edit-layer-key.png", Bottom, vec![km(KeymapId::ToLayer(Layer(1)))]),
+                shot("keymap-layer-list.png", Bottom, vec![km(KeymapId::LayerPicker)]),
+            ],
         ),
-        shot("status-low.png", Bottom, vec![tap(Id::Editor(EditorId::Save)), Reading::Status(demo::STATUS_LOW).into()]),
-        shot("keymap-name.png", Bottom, [keymap_tile(), km(KeymapId::New)].into_iter().chain(control::type_text("FPS")?).collect()),
-        shot("keymap-edit-new.png", Bottom, vec![tap(Id::Editor(EditorId::Save))]),
-        shot(
-            "keymap-edit.png",
-            Bottom,
+        // Its ways to remap and the gyro (Back to the layer, as a layer key).
+        group(
             [
-                select(Input::Button(Button::A)),
-                vec![km(KeymapId::Target(Target::Key)), key(Key::Mod(Modifier::Ctrl))?, key(Key::Char('x'))?],
-                select(Input::Button(Button::LB)),
-                vec![km(KeymapId::Target(Target::Mouse(MouseButton::Right)))],
-                select(Input::Stick(Side::Left)),
-                vec![km(KeymapId::Target(Target::Keys)), key(Key::Char('w'))?, key(Key::Char('a'))?, key(Key::Char('s'))?, key(Key::Char('d'))?],
-                select(Input::StickDir(Side::Right, Dir::Up)),
-                vec![km(KeymapId::Target(Target::Wheel(Dir::Up)))],
-                select(Input::Gyro),
-                vec![km(KeymapId::Target(Target::Pointer)), km(KeymapId::Holds), km(KeymapId::Hold(Some(Input::Trigger(Side::Left))))],
-                select(Input::Button(Button::View)),
-                vec![km(KeymapId::Target(Target::Key)), key(Key::Char('m'))?],
-                select(Input::Dpad(Dir::Left)),
-                vec![km(KeymapId::Target(Target::Key)), key(Key::Char('1'))?],
-                select(Input::Button(Button::B)),
-                vec![km(KeymapId::Target(Target::Pad(PadOut::Button(Button::Y))))],
-                // L1 held: Esc; pressed twice: Tab. R1 with turbo as on the pad.
-                select(Input::Button(Button::LB)),
-                vec![km(KeymapId::Actuation(Actuation::Hold)), km(KeymapId::Target(Target::Key)), key(Key::Named(Named::Esc))?],
-                vec![km(KeymapId::Actuation(Actuation::Double)), km(KeymapId::Target(Target::Key)), key(Key::Named(Named::Tab))?],
-                select(Input::Button(Button::RB)),
-                slide(Param::Turbo, 0.2, true),
-                // The right stick as on the pad, its deadzone tuned.
-                vec![km(KeymapId::Input(Input::Stick(Side::Right)))],
-                slide(Param::Deadzone, 0.12, true),
-                vec![km(KeymapId::Input(Input::Button(Button::A)))],
+                fps_with_layer()?,
+                vec![km(KeymapId::LayerPicker), km(KeymapId::Layer(Layer::BASE))],
+                select(Input::Button(Button::Back)),
+                vec![km(KeymapId::Target(Target::Layers)), km(KeymapId::ToLayer(Layer(1)))],
             ]
             .concat(),
-        ),
-        shot("keymap-edit-hold.png", Bottom, vec![km(KeymapId::Input(Input::Button(Button::LB))), km(KeymapId::Actuation(Actuation::Hold))]),
-        shot(
-            "keymap-edit-trigger.png",
-            Bottom,
             vec![
-                km(KeymapId::Input(Input::Trigger(Side::Right))),
-                km(KeymapId::Actuation(Actuation::FullPull)),
-                km(KeymapId::Target(Target::MouseParts)),
-                km(KeymapId::Target(Target::Mouse(MouseButton::Left))),
+                shot("keymap-mouse.png", Bottom, vec![km(KeymapId::Input(Input::Button(Button::A))), km(KeymapId::Target(Target::MouseParts))]),
+                shot("keymap-edit-gyro.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Input(Input::Gyro))]),
+                shot("keymap-edit-gyro-accel.png", Bottom, [slide(Param::Accel, 0.25, true), vec![km(KeymapId::Toggle(Param::Twist))]].concat()),
+                shot("keymap-holds.png", Bottom, vec![km(KeymapId::Holds)]),
+                shot("keymap-edit-rstick.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Input(Input::Stick(Side::Right)))]),
+                shot(
+                    "keymap-capture.png",
+                    Bottom,
+                    vec![km(KeymapId::Input(Input::Button(Button::Y))), km(KeymapId::Target(Target::Key)), key(Key::Mod(Modifier::Alt))?],
+                ),
+                shot("keymap-pick.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Input(Input::Button(Button::B))), km(KeymapId::Target(Target::Pick))]),
             ],
         ),
-        shot("keymap-edit-stick.png", Bottom, vec![km(KeymapId::Input(Input::Stick(Side::Left)))]),
-        shot("keymap-edit-slider.png", Bottom, slide(Param::Curve, 0.3, false)),
-        shot(
-            "keymap-edit-back.png",
-            Bottom,
-            [
-                // A layer added with the +, named, shown; A in it to Y; L1 selected (falls through to Base).
-                vec![Slide::End.into(), km(KeymapId::LayerPicker), km(KeymapId::NewLayer)],
-                control::type_text("aim")?,
-                vec![tap(Id::Editor(EditorId::Save))],
-                select(Input::Button(Button::A)),
-                vec![km(KeymapId::Target(Target::Key)), key(Key::Char('y'))?, km(KeymapId::Input(Input::Button(Button::LB)))],
-            ]
-            .concat(),
-        ),
-        shot("keymap-layer-picker.png", Bottom, vec![km(KeymapId::LayerPicker)]),
-        shot("keymap-layer-menu.png", Bottom, vec![PointerEvent::LongPress(Id::Keymap(KeymapId::Layer(Layer(1)))).into(), km(KeymapId::LayerOnce)]),
-        shot("keymap-layer-clear.png", Bottom, vec![km(KeymapId::Clear)]),
-        shot(
-            "keymap-layers.png",
-            Bottom,
+        // The keymaps' list.
+        group(
+            [vec![ff6(), ff6()], fps_keymap()?, vec![km(KeymapId::Back)]].concat(),
             vec![
-                km(KeymapId::Back),
-                km(KeymapId::Back),
-                km(KeymapId::Layer(Layer::BASE)),
-                km(KeymapId::Input(Input::Button(Button::Back))),
-                km(KeymapId::Target(Target::Layers)),
+                shot("keymaps.png", Bottom, vec![]),
+                shot("keymap-menu.png", Bottom, vec![PointerEvent::LongPress(ListId::Keymaps.row(2)).into()]),
+                shot(
+                    "keymap-delete.png",
+                    Bottom,
+                    vec![
+                        km(KeymapId::Back),
+                        tap(ListId::Keymaps.row(2)),
+                        keymap_tile(),
+                        PointerEvent::LongPress(ListId::Keymaps.row(2)).into(),
+                        km(KeymapId::Delete),
+                    ],
+                ),
             ],
         ),
-        shot("keymap-edit-layer-key.png", Bottom, vec![km(KeymapId::ToLayer(Layer(1)))]),
-        shot("keymap-layer-list.png", Bottom, vec![km(KeymapId::LayerPicker)]),
-        shot("keymap-mouse.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Input(Input::Button(Button::A))), km(KeymapId::Target(Target::MouseParts))]),
-        shot("keymap-edit-gyro.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Input(Input::Gyro))]),
-        shot("keymap-edit-gyro-accel.png", Bottom, [slide(Param::Accel, 0.25, true), vec![km(KeymapId::Toggle(Param::Twist))]].concat()),
-        shot("keymap-holds.png", Bottom, vec![km(KeymapId::Holds)]),
-        shot("keymap-edit-rstick.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Input(Input::Stick(Side::Right)))]),
-        shot(
-            "keymap-capture.png",
-            Bottom,
-            vec![km(KeymapId::Input(Input::Button(Button::Y))), km(KeymapId::Target(Target::Key)), key(Key::Mod(Modifier::Alt))?],
+        group(
+            vec![],
+            vec![shot("launcher.png", Bottom, vec![tab(Tab::Dock), PointerEvent::HideFocus.into()]), shot("launcher-running.png", Bottom, demo::running())],
         ),
-        shot("keymap-pick.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Input(Input::Button(Button::B))), km(KeymapId::Target(Target::Pick))]),
-        shot("keymaps.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Back)]),
-        shot("keymap-menu.png", Bottom, vec![PointerEvent::LongPress(ListId::Keymaps.row(2)).into()]),
-        shot(
-            "keymap-delete.png",
-            Bottom,
-            vec![km(KeymapId::Back), tap(ListId::Keymaps.row(2)), keymap_tile(), PointerEvent::LongPress(ListId::Keymaps.row(2)).into(), km(KeymapId::Delete)],
-        ),
-        shot("bottom.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Back), Reading::Status(demo::STATUS).into()]),
-        shot("launcher.png", Bottom, vec![tab(Tab::Dock), PointerEvent::HideFocus.into()]),
-        shot("launcher-running.png", Bottom, demo::running()),
-        shot("wifi.png", Bottom, vec![tab(Tab::Wifi), Reading::Wifi(demo::wifi()).into()]),
-        shot("wifi-crowded.png", Bottom, vec![Reading::Wifi(demo::wifi_crowded()).into()]),
-        shot("wifi-scrolled.png", Bottom, vec![ListEvent::Scroll(ListId::Wifi, 3.4).into()]),
-        shot("battery.png", Bottom, demo::battery(now)),
-        shot("bluetooth.png", Bottom, vec![tab(Tab::Bluetooth), Reading::Bluetooth(demo::bluetooth()).into()]),
-        shot(
-            "volume.png",
-            Bottom,
+        group(
+            vec![],
             vec![
-                tab(Tab::Volume),
-                Reading::Status(Status { volume: Some(64), brightness: Some(70), battery: Some(76), wifi: Some(80), ..Status::default() }).into(),
-                Reading::Audio(demo::audio()).into(),
+                shot("wifi.png", Bottom, vec![tab(Tab::Wifi), Reading::Wifi(demo::wifi()).into()]),
+                shot("wifi-crowded.png", Bottom, vec![Reading::Wifi(demo::wifi_crowded()).into()]),
+                shot("wifi-scrolled.png", Bottom, vec![ListEvent::Scroll(ListId::Wifi, 3.4).into()]),
             ],
         ),
-        shot(
-            "brightness.png",
-            Bottom,
+        group(vec![], vec![shot("battery.png", Bottom, demo::battery(now))]),
+        group(vec![], vec![shot("bluetooth.png", Bottom, vec![tab(Tab::Bluetooth), Reading::Bluetooth(demo::bluetooth()).into()])]),
+        group(
+            vec![],
+            vec![shot(
+                "volume.png",
+                Bottom,
+                vec![
+                    tab(Tab::Volume),
+                    Reading::Status(Status { volume: Some(64), brightness: Some(70), battery: Some(76), wifi: Some(80), ..Status::default() }).into(),
+                    Reading::Audio(demo::audio()).into(),
+                ],
+            )],
+        ),
+        group(
+            vec![],
+            vec![shot(
+                "brightness.png",
+                Bottom,
+                vec![
+                    tab(Tab::Brightness),
+                    Reading::Backlights(vec!["dsi0-backlight".into(), "dsi1-backlight".into()]).into(),
+                    LevelEvent::Set(Level::Backlight(1), 65).into(),
+                    PointerEvent::Up(Level::Backlight(1).id()).into(),
+                ],
+            )],
+        ),
+        // The volume's slider over the dock, then the keyboard.
+        group(
+            vec![],
             vec![
-                tab(Tab::Brightness),
-                Reading::Backlights(vec!["dsi0-backlight".into(), "dsi1-backlight".into()]).into(),
-                LevelEvent::Set(Level::Backlight(1), 65).into(),
-                PointerEvent::Up(Level::Backlight(1).id()).into(),
+                shot(
+                    "slider.png",
+                    Bottom,
+                    vec![
+                        tab(Tab::Dock),
+                        PointerEvent::Down(volume.clone()).into(),
+                        Slide::Start { control: Control::Volume, x: 560.0, width: 1232.0 }.into(),
+                        Slide::To { x: 700.0 }.into(),
+                    ],
+                ),
+                shot("keyboard.png", Bottom, vec![Slide::End.into(), PointerEvent::Up(volume).into(), tab(Tab::Keyboard)]),
+                shot("keyboard-fn.png", Bottom, vec![key(Key::Mod(Modifier::Fn))?]),
+                shot("keyboard-mods.png", Bottom, vec![key(Key::Mod(Modifier::Fn))?, key(Key::Mod(Modifier::Shift))?, PointerEvent::Down(ctrl()?).into()]),
+                shot("keyboard-caps.png", Bottom, vec![PointerEvent::Up(ctrl()?).into(), key(Key::Mod(Modifier::Shift))?, key(Key::Caps)?]),
+                shot("touchpad.png", Bottom, vec![tab(Tab::Touchpad), tap(Id::PadMouse)]),
+                shot("sysinfo.png", Bottom, demo::metrics()),
+                shot("keyboard-back.png", Bottom, vec![tab(Tab::Keyboard)]),
+                shot("keyboard-pressed.png", Bottom, vec![key(Key::Mod(Modifier::Shift))?, PointerEvent::Down(control::key(Key::Char('g'))?).into()]),
             ],
         ),
-        shot(
-            "slider.png",
-            Bottom,
-            vec![
-                tab(Tab::Dock),
-                PointerEvent::Down(volume.clone()).into(),
-                Slide::Start { control: Control::Volume, x: 560.0, width: 1232.0 }.into(),
-                Slide::To { x: 700.0 }.into(),
-            ],
-        ),
-        shot("keyboard.png", Bottom, vec![Slide::End.into(), PointerEvent::Up(volume).into(), tab(Tab::Keyboard)]),
-        shot("keyboard-fn.png", Bottom, vec![key(Key::Mod(Modifier::Fn))?]),
-        shot("keyboard-mods.png", Bottom, vec![key(Key::Mod(Modifier::Fn))?, key(Key::Mod(Modifier::Shift))?, PointerEvent::Down(ctrl()?).into()]),
-        shot("keyboard-caps.png", Bottom, vec![PointerEvent::Up(ctrl()?).into(), key(Key::Mod(Modifier::Shift))?, key(Key::Caps)?]),
-        shot("touchpad.png", Bottom, vec![tab(Tab::Touchpad), tap(Id::PadMouse)]),
-        shot("sysinfo.png", Bottom, demo::metrics()),
-        shot("keyboard-back.png", Bottom, vec![tab(Tab::Keyboard)]),
-        shot("keyboard-pressed.png", Bottom, vec![key(Key::Mod(Modifier::Shift))?, PointerEvent::Down(control::key(Key::Char('g'))?).into()]),
     ])
 }
 
-/// Draws the scenario into `dir` (each file written as its shot comes; a later shot of the same name
-/// replaces it).
-pub fn render(state: &mut State, now: u64, dir: &Path) -> Result<(), Error> {
-    state.apply(Event::Tick { unix_secs: now });
-    state.apply(Event::Reading(Reading::Status(demo::STATUS)));
-    for Shot { name, screen, before } in shots(now)? {
-        for event in before {
+/// Draws the scenario into `dir`, each group from a fresh state (`fresh`), each file written as its
+/// shot comes.
+pub fn render(fresh: &dyn Fn() -> State, now: u64, dir: &Path) -> Result<(), Error> {
+    for Group { start, shots } in shots(now)? {
+        let mut state = fresh();
+        state.apply(Event::Tick { unix_secs: now });
+        state.apply(Event::Reading(Reading::Status(demo::STATUS)));
+        for event in start {
             state.apply(event);
         }
-        let path = dir.join(name);
-        // What a live frame reports (shelf's rows, the lists' rows) keeps the selections on screen.
-        let events = clamshell_ui::snapshot(state, screen, size(screen), 1, &path).map_err(|e| Error::Render(path.display().to_string(), e))?;
-        for event in events {
-            state.apply(event);
+        for Shot { name, screen, before } in shots {
+            for event in before {
+                state.apply(event);
+            }
+            let path = dir.join(name);
+            // What a live frame reports (shelf's rows, the lists' rows) keeps the selections on screen.
+            let events = clamshell_ui::snapshot(&state, screen, size(screen), 1, &path).map_err(|e| Error::Render(path.display().to_string(), e))?;
+            for event in events {
+                state.apply(event);
+            }
+            log::info!("wrote {}", path.display());
         }
-        log::info!("wrote {}", path.display());
     }
     Ok(())
 }
@@ -368,8 +460,8 @@ mod tests {
         let base = std::env::temp_dir().join(format!("clamshell-snapshots-{}", std::process::id()));
         let dir = base.join("shots");
         std::fs::create_dir_all(&dir).unwrap();
-        let mut state = state_with(clamshell_library::demo_library(), apps(&base.join("data")));
-        render(&mut state, FIXED_NOW, &dir).unwrap();
+        let apps = apps(&base.join("data"));
+        render(&|| state_with(clamshell_library::demo_library(), apps.clone()), FIXED_NOW, &dir).unwrap();
         let mut hashes = BTreeMap::new();
         for entry in std::fs::read_dir(&dir).unwrap().flatten() {
             hashes.insert(entry.file_name().to_string_lossy().into_owned(), format!("{:016x}", hash(&std::fs::read(entry.path()).unwrap())));
