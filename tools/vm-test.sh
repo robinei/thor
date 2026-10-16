@@ -11,7 +11,8 @@ cd "$ROOT"
 LOG=$(mktemp "${TMPDIR:-/tmp}/vm-run.XXXXXX")
 python3 tools/vm.py run --headless > "$LOG" 2>&1 &
 VM=$!
-stop() { pkill -P "$VM" qemu-system-x86_64 2>/dev/null; kill "$VM" 2>/dev/null; wait "$VM" 2>/dev/null; }
+# (Checks that restart the machine leave a QEMU that isn't ours by parentage: stop any on the VM's disk.)
+stop() { kill "$VM" 2>/dev/null; wait "$VM" 2>/dev/null; pkill -f "qemu-system-.*thor-vm/.*/disk.qcow2" 2>/dev/null; }
 trap stop EXIT INT TERM
 up=""
 for _ in $(seq 1 60); do
