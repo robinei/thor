@@ -53,6 +53,10 @@ fn main() -> ExitCode {
     let paths = Paths::new(&env.base, env.pegasus_config.clone());
     let sources = Sources::new(&paths, env.base.home.as_deref(), env.steam);
     match command {
+        Command::Ctl(words) if words == ["help"] => {
+            print!("{}", control::help());
+            ExitCode::SUCCESS
+        }
         Command::Ctl(words) => match control::send(env.control.as_ref().or(paths.control.as_ref()), &words.join(" ")) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {

@@ -1,39 +1,8 @@
 //! The control pipe ($XDG_RUNTIME_DIR/clamshell-control, or CLAMSHELL_CONTROL): `clamshell ctl` and
 //! tests send commands through it, one per line, as the events the device's keys or a user's taps and
-//! presses would make. The grammar:
-//!
-//! - `volume up|down|mute`, `brightness up|down`, `screenshot`: as the hardware keys
-//! - `tap TARGET`, `long TARGET` (a tap, a long press) on: `app N` (the dock's apps, by position in
-//!   launcher.json), `plus N` (another instance of app N), `game` / `game N` (the dock's game tiles),
-//!   `start-game`, `launch`, `keep`, `close` (shelf), `network N`, `wifi-power`, `device N`,
-//!   `bluetooth-power`, `pad-mouse`, `save` (the editor), `setting KEY` (a settings tile, by its key in
-//!   game-settings.txt: `pad`, `fps`, `keymap`, ...), `scope game|all` (the settings' game or all games);
-//!   the keymaps' screens: `keymap N` (the picker's row N: 0 Default, then the keymaps; a long press
-//!   opens its menu), `keymap-edit N`, `keymap-new`, `keymap-back`, `keymap-menu
-//!   edit|rename|duplicate|delete`, `keymap-delete` (confirmed), `map-from INPUT` (as in keymaps.txt:
-//!   `a`, `lb`, `up`, `lstick`, `rstick-up`, `lt`, `gyro`: selects it, again reopens the way it is
-//!   mapped; while a control is picked, the one picked; a long press sets it back),
-//!   `keymap-act press|hold|double|full` (the panel's tab), `keymap-layers` (the layer button: the
-//!   list), `keymap-layer base|N` (in the list; `layer-edit N` or a long press: its menu, `layer-rename`, `layer-once`, `layer-delete`,
-//!   `keymap-clear`), `keymap-undo`, `new-layer` (in either list), `to-layer N` (the layers' list as a target), `keymap-clear`,
-//!   `keymap-clear-confirm`, `toggle` (the binding's toggle), `twist`, `ratchet` and `calibrate` (the
-//!   gyro's), `keymap-active` (the gyro's hold), `invert x|y`, `map-to TARGET` (the panel's ways: `pick`,
-//!   `key`, `keys`, `mouse`, `pointer`, `default`, `nothing`; or an output: `pad-INPUT`,
-//!   `mouse-left|right|middle|back|forward`, `wheel-up|down|left|right`, `stick-left|right`, `dpad`,
-//!   `trigger-left|right`), `gyro-hold INPUT|always`, `key-done`; `key NAME` (an on-screen keyboard key: a
-//!   character, `space`, `ctrl`, `alt`, `shift`, `fn`, `enter`, `esc`, `backspace`, `tab`)
-//! - `tab NAME`: open a tab (dock, wifi, keyboard, ...)
-//! - `home`; `list N`: move shelf's selection by N
-//! - `type TEXT`: type on the on-screen keyboard
-//! - `slide volume|brightness FROM TO [hold]`: a finger down at FROM on a 620-wide layout, moved to TO,
-//!   lifted unless held; `lift volume|brightness` lifts it; the same for the selected input's parameter
-//!   on the keymap edit screen: `slide speed|threshold|deadzone|full|curve|turbo|holdtime|accel|accelat|
-//!   tighten|stickmin FROM TO [hold]`
-//! - `level volume|brightness V`, `level backlight|stream N V`: a level row in the volume or brightness
-//!   tab set to V
-//! - `pad up|down|left|right|a|b|y|lb|rb|switch|back`: the pad on ClamShell's screens (`a` presses and
-//!   releases)
-//! - `listen INPUT`: an input as the pad sends it while it listens (a keymap's edit screen)
+//! presses would make. The commands and the targets a tap or a long press can be on are the rows of
+//! [`COMMANDS`] and [`TARGETS`]: each its words (placeholders in capitals), what it does, and what it
+//! makes; `clamshell ctl help` lists them.
 
 use std::fmt;
 use std::io::BufRead;
@@ -103,6 +72,191 @@ fn control(name: &str) -> Result<Control, ParseError> {
     }
 }
 
+/// A command or a target, as a row of the tables: its words (literal, or a placeholder in capitals that
+/// any word fills: `N`, `INPUT`, ...), what it does (for `clamshell ctl help`), and what it makes from the
+/// placeholders' words.
+pub struct Form<T> {
+    pub words: &'static str,
+    pub help: &'static str,
+    make: fn(&[&str]) -> Result<T, ParseError>,
+}
+
+const fn form<T>(words: &'static str, help: &'static str, make: fn(&[&str]) -> Result<T, ParseError>) -> Form<T> {
+    Form { words, help, make }
+}
+
+/// The placeholders' words, if `words` fit `pattern` (the same count, each literal the same).
+fn fits<'a>(pattern: &str, words: &[&'a str]) -> Option<Vec<&'a str>> {
+    let tokens: Vec<&str> = pattern.split(' ').collect();
+    if tokens.len() != words.len() {
+        return None;
+    }
+    let mut args = Vec::new();
+    for (t, w) in tokens.iter().zip(words) {
+        if t.chars().all(|c| c.is_ascii_uppercase()) {
+            args.push(*w);
+        } else if t != w {
+            return None;
+        }
+    }
+    Some(args)
+}
+
+/// The first row `words` fit, made; not a command if none.
+fn by_table<T>(table: &[Form<T>], words: &[&str]) -> Result<T, ParseError> {
+    for f in table {
+        if let Some(args) = fits(f.words, words) {
+            return (f.make)(&args);
+        }
+    }
+    Err(ParseError::Unknown)
+}
+
+/// The `i`th placeholder's word.
+fn arg<'a>(args: &[&'a str], i: usize) -> &'a str {
+    args.get(i).copied().unwrap_or("")
+}
+
+fn name_err(word: &str) -> ParseError {
+    ParseError::Name(word.to_owned())
+}
+
+fn device(key: DeviceKey) -> Result<Vec<Event>, ParseError> {
+    Ok(vec![Event::Device(key)])
+}
+
+/// The level row set to a value, and the finger lifted.
+fn level(level: Level, value: &str) -> Result<Vec<Event>, ParseError> {
+    Ok(vec![LevelEvent::Set(level, number(value)?).into(), PointerEvent::Up(level.id()).into()])
+}
+
+/// The commands (a tap's and a long press's targets are [`TARGETS`]; `type TEXT` types the rest of the
+/// line as it is).
+pub const COMMANDS: &[Form<Vec<Event>>] = &[
+    form("volume up", "the volume key", |_| device(DeviceKey::VolumeUp)),
+    form("volume down", "the volume key", |_| device(DeviceKey::VolumeDown)),
+    form("volume mute", "mute", |_| device(DeviceKey::Mute)),
+    form("brightness up", "the brightness key", |_| device(DeviceKey::BrightnessUp)),
+    form("brightness down", "the brightness key", |_| device(DeviceKey::BrightnessDown)),
+    form("screenshot", "the screenshot key", |_| device(DeviceKey::Screenshot)),
+    form("home", "the Home button", |_| Ok(vec![Event::Home])),
+    form("list N", "shelf's selection moved by N", |a| Ok(vec![ShelfEvent::ListStep(number(arg(a, 0))?).into()])),
+    form("tab NAME", "a tab opened (dock, wifi, keyboard, ...)", |a| {
+        let name = arg(a, 0);
+        Ok(vec![PointerEvent::Activate(Id::Tab(Tab::from_name(name).ok_or_else(|| name_err(name))?)).into()])
+    }),
+    form("pad BUTTON", "the pad on ClamShell's screens: up, down, left, right, a (pressed and let go), b, y, lb, rb, switch, back", |a| pad(arg(a, 0))),
+    form("listen INPUT", "an input as the pad sends it while it listens (a keymap's edit screen)", |a| Ok(vec![Event::Listened(input_named(arg(a, 0))?)])),
+    form("lift SLIDER", "a held slider let go", |a| Ok(vec![Slide::End.into(), PointerEvent::Up(Id::Control(control(arg(a, 0))?)).into()])),
+    form(
+        "slide SLIDER FROM TO",
+        "a finger down on a slider at FROM (on a 620-wide layout), moved to TO, lifted: volume, brightness, or the selected input's speed, threshold, deadzone, full, curve, turbo, holdtime, accel, accelat, tighten, stickmin",
+        |a| Ok(slide(control(arg(a, 0))?, number(arg(a, 1))?, number(arg(a, 2))?, false)),
+    ),
+    form("slide SLIDER FROM TO hold", "the same, held", |a| Ok(slide(control(arg(a, 0))?, number(arg(a, 1))?, number(arg(a, 2))?, true))),
+    form("level volume V", "the volume tab's level row set to V", |a| level(Level::Volume, arg(a, 0))),
+    form("level brightness V", "the brightness tab's level row set to V", |a| level(Level::Brightness, arg(a, 0))),
+    form("level backlight N V", "a screen's backlight row set to V", |a| level(Level::Backlight(number(arg(a, 0))?), arg(a, 1))),
+    form("level stream N V", "an app's volume row set to V", |a| level(Level::Stream(number(arg(a, 0))?), arg(a, 1))),
+];
+
+fn km(id: KeymapId) -> Result<Id, ParseError> {
+    Ok(Id::Keymap(id))
+}
+
+/// What a tap or a long press (`tap TARGET`, `long TARGET`) can be on.
+pub const TARGETS: &[Form<Id>] = &[
+    form("app N", "the dock's app N (by position in launcher.json)", |a| Ok(Id::Dock(DockId::App(number(arg(a, 0))?)))),
+    form("plus N", "another instance of app N", |a| Ok(Id::Dock(DockId::NewInstance(number(arg(a, 0))?)))),
+    form("game", "the dock's first game tile", |_| Ok(Id::Dock(DockId::GameTile(0)))),
+    form("game N", "the dock's game tile N", |a| Ok(Id::Dock(DockId::GameTile(number(arg(a, 0))?)))),
+    form("start-game", "the dock's start tile", |_| Ok(Id::Dock(DockId::StartGame))),
+    form("launch", "shelf's launch", |_| Ok(Id::Shelf(ShelfId::Launch))),
+    form("keep", "shelf's keep (another game running)", |_| Ok(Id::Shelf(ShelfId::StartKeep))),
+    form("close", "shelf's close (another game running)", |_| Ok(Id::Shelf(ShelfId::StartClose))),
+    form("network N", "Wi-Fi's network row N", |a| Ok(ListId::Wifi.row(number(arg(a, 0))?))),
+    form("wifi-power", "Wi-Fi's switch", |_| Ok(Id::Wifi(WifiId::Power))),
+    form("device N", "Bluetooth's device row N", |a| Ok(ListId::Bluetooth.row(number(arg(a, 0))?))),
+    form("bluetooth-power", "Bluetooth's switch", |_| Ok(Id::Bluetooth(BtId::Power))),
+    form("pad-mouse", "the bar's pad mouse switch", |_| Ok(Id::PadMouse)),
+    form("scope game", "the settings' game tab", |_| Ok(Id::Settings(SettingsId::Scope(Scope::Game)))),
+    form("scope all", "the settings' all games tab", |_| Ok(Id::Settings(SettingsId::Scope(Scope::Global)))),
+    form("setting KEY", "a settings tile by its key in game-settings.txt (pad, fps, keymap, ...)", |a| {
+        let key = arg(a, 0);
+        Ok(Id::Settings(SettingsId::Tile(Setting::ALL.into_iter().find(|s| s.key() == key).ok_or_else(|| name_err(key))?)))
+    }),
+    form("save", "the editor's save", |_| Ok(Id::Editor(EditorId::Save))),
+    form("key NAME", "an on-screen key: a character, space, ctrl, alt, shift, fn, enter, esc, backspace, tab", |a| key(key_named(arg(a, 0))?)),
+    // The keymaps' screens.
+    form("keymap N", "the keymap picker's row N (0 Default, then the keymaps; a long press: its menu)", |a| Ok(ListId::Keymaps.row(number(arg(a, 0))?))),
+    form("keymap-edit N", "row N's Edit", |a| Ok(Id::Row { list: ListId::Keymaps, i: number(arg(a, 0))?, part: RowPart::Edit })),
+    form("keymap-new", "the picker's New", |_| km(KeymapId::New)),
+    form("keymap-back", "back one keymap screen (picking: Cancel)", |_| km(KeymapId::Back)),
+    form("keymap-menu ACTION", "a keymap's menu: edit, rename, duplicate, delete", |a| {
+        km(match arg(a, 0) {
+            "edit" => KeymapId::Edit,
+            "rename" => KeymapId::Rename,
+            "duplicate" => KeymapId::Duplicate,
+            "delete" => KeymapId::Delete,
+            other => return Err(name_err(other)),
+        })
+    }),
+    form("keymap-delete", "deleting confirmed", |_| km(KeymapId::ConfirmDelete)),
+    form("keymap-undo", "the edit screen's Undo", |_| km(KeymapId::Undo)),
+    form("map-from INPUT", "an input selected (as in keymaps.txt: a, lb, up, lstick, rstick-up, lt, gyro; a long press sets it back)", |a| {
+        km(KeymapId::Input(input_named(arg(a, 0))?))
+    }),
+    form("keymap-act ACT", "the panel's tab: press, hold, double, full", |a| {
+        let act = arg(a, 0);
+        km(KeymapId::Actuation(
+            Actuation::ALL
+                .into_iter()
+                .find(|x| x.label().eq_ignore_ascii_case(act) || (act == "full" && *x == Actuation::FullPull))
+                .ok_or_else(|| name_err(act))?,
+        ))
+    }),
+    form(
+        "map-to TARGET",
+        "the panel's ways (pick, key, keys, mouse, layers, pointer, default, nothing) or an output (pad-INPUT, mouse-left|right|middle|back|forward, wheel-up|down|left|right, stick-left|right, dpad, trigger-left|right)",
+        |a| km(KeymapId::Target(target_named(arg(a, 0))?)),
+    ),
+    form("keymap-layers", "the layer button: the layers' list", |_| km(KeymapId::LayerPicker)),
+    form("keymap-layer base", "Base in the layers' list", |_| km(KeymapId::Layer(Layer::BASE))),
+    form("keymap-layer N", "layer N in the layers' list (a long press: its menu)", |a| km(KeymapId::Layer(Layer(number(arg(a, 0))?)))),
+    form("layer-edit N", "layer N's Edit: its menu", |a| km(KeymapId::EditLayer(Layer(number(arg(a, 0))?)))),
+    form("layer-once", "the layer menu's Once", |_| km(KeymapId::LayerOnce)),
+    form("layer-rename", "the layer menu's Rename", |_| km(KeymapId::RenameLayer)),
+    form("layer-delete", "the layer menu's Delete", |_| km(KeymapId::DeleteLayer)),
+    form("keymap-clear", "the layer menu's Clear", |_| km(KeymapId::Clear)),
+    form("keymap-clear-confirm", "clearing confirmed", |_| km(KeymapId::ConfirmClear)),
+    form("new-layer", "New layer, in either layers' list", |_| km(KeymapId::NewLayer)),
+    form("to-layer N", "layer N chosen as the target", |a| km(KeymapId::ToLayer(Layer(number(arg(a, 0))?)))),
+    form("toggle", "the binding's Toggle", |_| km(KeymapId::Toggle(Param::Toggle))),
+    form("invert x", "Invert X", |_| km(KeymapId::Toggle(Param::InvertX))),
+    form("invert y", "Invert Y", |_| km(KeymapId::Toggle(Param::InvertY))),
+    form("twist", "the gyro's Turn by tilting", |_| km(KeymapId::Toggle(Param::Twist))),
+    form("ratchet", "the gyro's Off while held", |_| km(KeymapId::Toggle(Param::Ratchet))),
+    form("calibrate", "the gyro's Calibrate", |_| km(KeymapId::Calibrate)),
+    form("keymap-active", "the gyro's Active row: what holds it on", |_| km(KeymapId::Holds)),
+    form("gyro-hold always", "the gyro always on", |_| km(KeymapId::Hold(None))),
+    form("gyro-hold INPUT", "the gyro on while INPUT is held", |a| km(KeymapId::Hold(Some(input_named(arg(a, 0))?)))),
+    form("key-done", "the keyboard's Done (the modifiers alone)", |_| km(KeymapId::Done)),
+];
+
+/// The commands and targets, a line each.
+pub fn help() -> String {
+    let mut text = String::from("Commands (`type TEXT` types the rest of the line):\n");
+    let line = |t: &mut String, words: &str, help: &str| t.push_str(&format!("  {words:<26} {help}\n"));
+    for f in COMMANDS {
+        line(&mut text, f.words, f.help);
+    }
+    text.push_str("\nTargets of `tap TARGET` and `long TARGET`:\n");
+    for f in TARGETS {
+        line(&mut text, f.words, f.help);
+    }
+    text
+}
+
 /// A line as the events it stands for.
 pub fn parse(line: &str) -> Result<Vec<Event>, ParseError> {
     // The text to type is the rest of the line, as it is.
@@ -110,42 +264,11 @@ pub fn parse(line: &str) -> Result<Vec<Event>, ParseError> {
         return type_text(text);
     }
     let words: Vec<&str> = line.split_whitespace().collect();
-    Ok(match words.as_slice() {
-        ["volume", "up"] => vec![Event::Device(DeviceKey::VolumeUp)],
-        ["volume", "down"] => vec![Event::Device(DeviceKey::VolumeDown)],
-        ["volume", "mute"] => vec![Event::Device(DeviceKey::Mute)],
-        ["brightness", "up"] => vec![Event::Device(DeviceKey::BrightnessUp)],
-        ["brightness", "down"] => vec![Event::Device(DeviceKey::BrightnessDown)],
-        ["screenshot"] => vec![Event::Device(DeviceKey::Screenshot)],
-        ["home"] => vec![Event::Home],
-        ["list", step] => vec![ShelfEvent::ListStep(number(step)?).into()],
-        ["tab", name] => vec![PointerEvent::Activate(Id::Tab(Tab::from_name(name).ok_or_else(|| ParseError::Name((*name).to_owned()))?)).into()],
-        ["pad", button] => pad(button)?,
-        ["listen", input] => vec![Event::Listened(Input::parse(input).ok_or_else(|| ParseError::Name((*input).to_owned()))?)],
-        // (A slide never ends in a tap: that would open the tab.)
-        ["lift", name] => vec![Slide::End.into(), PointerEvent::Up(Id::Control(control(name)?)).into()],
-        ["slide", name, from, to, rest @ ..] => {
-            let hold = match rest {
-                [] => false,
-                ["hold"] => true,
-                _ => return Err(ParseError::Unknown),
-            };
-            slide(control(name)?, number(from)?, number(to)?, hold)
-        }
-        ["level", rest @ ..] => {
-            let (level, value) = match rest {
-                ["volume", v] => (Level::Volume, v),
-                ["brightness", v] => (Level::Brightness, v),
-                ["backlight", n, v] => (Level::Backlight(number(n)?), v),
-                ["stream", n, v] => (Level::Stream(number(n)?), v),
-                _ => return Err(ParseError::Unknown),
-            };
-            vec![LevelEvent::Set(level, number(value)?).into(), PointerEvent::Up(level.id()).into()]
-        }
-        ["tap", target @ ..] => vec![PointerEvent::Activate(target_id(target)?).into()],
-        ["long", target @ ..] => vec![PointerEvent::LongPress(target_id(target)?).into()],
-        _ => return Err(ParseError::Unknown),
-    })
+    match words.as_slice() {
+        ["tap", target @ ..] => Ok(vec![PointerEvent::Activate(by_table(TARGETS, target)?).into()]),
+        ["long", target @ ..] => Ok(vec![PointerEvent::LongPress(by_table(TARGETS, target)?).into()]),
+        words => by_table(COMMANDS, words),
+    }
 }
 
 /// A finger down on a slider at `from`, moved to `to` in steps, lifted unless held.
@@ -177,77 +300,8 @@ fn pad(button: &str) -> Result<Vec<Event>, ParseError> {
     })
 }
 
-/// The target a tap or a long press is on.
-fn target_id(words: &[&str]) -> Result<Id, ParseError> {
-    Ok(match words {
-        ["app", n] => Id::Dock(DockId::App(number(n)?)),
-        ["plus", n] => Id::Dock(DockId::NewInstance(number(n)?)),
-        ["game"] => Id::Dock(DockId::GameTile(0)),
-        ["game", n] => Id::Dock(DockId::GameTile(number(n)?)),
-        ["start-game"] => Id::Dock(DockId::StartGame),
-        ["network", n] => ListId::Wifi.row(number(n)?),
-        ["wifi-power"] => Id::Wifi(WifiId::Power),
-        ["device", n] => ListId::Bluetooth.row(number(n)?),
-        ["bluetooth-power"] => Id::Bluetooth(BtId::Power),
-        ["pad-mouse"] => Id::PadMouse,
-        ["scope", "game"] => Id::Settings(SettingsId::Scope(Scope::Game)),
-        ["scope", "all"] => Id::Settings(SettingsId::Scope(Scope::Global)),
-        ["setting", key] => {
-            Id::Settings(SettingsId::Tile(Setting::ALL.into_iter().find(|s| s.key() == *key).ok_or_else(|| ParseError::Name((*key).to_owned()))?))
-        }
-        ["save"] => Id::Editor(EditorId::Save),
-        ["keymap", n] => ListId::Keymaps.row(number(n)?),
-        ["keymap-edit", n] => Id::Row { list: ListId::Keymaps, i: number(n)?, part: RowPart::Edit },
-        ["keymap-new"] => Id::Keymap(KeymapId::New),
-        ["keymap-back"] => Id::Keymap(KeymapId::Back),
-        ["keymap-delete"] => Id::Keymap(KeymapId::ConfirmDelete),
-        ["keymap-menu", action] => Id::Keymap(match *action {
-            "edit" => KeymapId::Edit,
-            "rename" => KeymapId::Rename,
-            "duplicate" => KeymapId::Duplicate,
-            "delete" => KeymapId::Delete,
-            other => return Err(ParseError::Name(other.to_owned())),
-        }),
-        ["map-from", input] => Id::Keymap(KeymapId::Input(input_named(input)?)),
-        ["map-to", target] => Id::Keymap(KeymapId::Target(target_named(target)?)),
-        ["keymap-act", act] => Id::Keymap(KeymapId::Actuation(
-            Actuation::ALL
-                .into_iter()
-                .find(|a| a.label().eq_ignore_ascii_case(act) || (*act == "full" && *a == Actuation::FullPull))
-                .ok_or_else(|| ParseError::Name((*act).to_owned()))?,
-        )),
-        ["keymap-layer", "base"] => Id::Keymap(KeymapId::Layer(Layer::BASE)),
-        ["keymap-layer", n] => Id::Keymap(KeymapId::Layer(Layer(number(n)?))),
-        ["keymap-layers"] => Id::Keymap(KeymapId::LayerPicker),
-        ["layer-rename"] => Id::Keymap(KeymapId::RenameLayer),
-        ["layer-delete"] => Id::Keymap(KeymapId::DeleteLayer),
-        ["layer-once"] => Id::Keymap(KeymapId::LayerOnce),
-        ["layer-edit", n] => Id::Keymap(KeymapId::EditLayer(Layer(number(n)?))),
-        ["keymap-undo"] => Id::Keymap(KeymapId::Undo),
-        ["to-layer", n] => Id::Keymap(KeymapId::ToLayer(Layer(number(n)?))),
-        ["new-layer"] => Id::Keymap(KeymapId::NewLayer),
-        ["keymap-clear"] => Id::Keymap(KeymapId::Clear),
-        ["keymap-clear-confirm"] => Id::Keymap(KeymapId::ConfirmClear),
-        ["keymap-active"] => Id::Keymap(KeymapId::Holds),
-        ["invert", "x"] => Id::Keymap(KeymapId::Toggle(Param::InvertX)),
-        ["invert", "y"] => Id::Keymap(KeymapId::Toggle(Param::InvertY)),
-        ["toggle"] => Id::Keymap(KeymapId::Toggle(Param::Toggle)),
-        ["twist"] => Id::Keymap(KeymapId::Toggle(Param::Twist)),
-        ["ratchet"] => Id::Keymap(KeymapId::Toggle(Param::Ratchet)),
-        ["calibrate"] => Id::Keymap(KeymapId::Calibrate),
-        ["gyro-hold", "always"] => Id::Keymap(KeymapId::Hold(None)),
-        ["gyro-hold", input] => Id::Keymap(KeymapId::Hold(Some(input_named(input)?))),
-        ["key-done"] => Id::Keymap(KeymapId::Done),
-        ["key", name] => key(key_named(name)?)?,
-        ["keep"] => Id::Shelf(ShelfId::StartKeep),
-        ["close"] => Id::Shelf(ShelfId::StartClose),
-        ["launch"] => Id::Shelf(ShelfId::Launch),
-        _ => return Err(ParseError::Unknown),
-    })
-}
-
 fn input_named(word: &str) -> Result<Input, ParseError> {
-    Input::parse(word).ok_or_else(|| ParseError::Name(word.to_owned()))
+    Input::parse(word).ok_or_else(|| name_err(word))
 }
 
 /// A target of the "map to" screen by name.
@@ -423,6 +477,25 @@ mod tests {
         assert_eq!(parse("tap key x"), Ok(activate(key(Key::Char('x')).unwrap())));
         assert_eq!(parse("listen a"), Ok(vec![Event::Listened(Input::Button(Button::A))]));
         assert_eq!(parse("listen home"), Err(ParseError::Name("home".into())));
+    }
+
+    #[test]
+    fn every_row_is_in_the_help_and_none_is_shadowed() {
+        let help = help();
+        for f in COMMANDS.iter().map(|f| (f.words, f.help)).chain(TARGETS.iter().map(|f| (f.words, f.help))) {
+            assert!(help.contains(f.0) && help.contains(f.1), "{f:?}");
+        }
+        // (A row whose words an earlier row's pattern takes would never be reached.)
+        let shadowed = |table: &[(&str, usize)]| {
+            for (i, (later, _)) in table.iter().enumerate() {
+                let words: Vec<&str> = later.split(' ').collect();
+                for (earlier, _) in table.iter().take(i) {
+                    assert!(fits(earlier, &words).is_none(), "{later:?} is taken by {earlier:?}");
+                }
+            }
+        };
+        shadowed(&COMMANDS.iter().map(|f| (f.words, 0)).collect::<Vec<_>>());
+        shadowed(&TARGETS.iter().map(|f| (f.words, 0)).collect::<Vec<_>>());
     }
 
     #[test]
