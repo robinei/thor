@@ -382,10 +382,11 @@ impl Settings {
         self.overrides.contains_key(game) || self.env.contains_key(game)
     }
 
-    /// As text: a `*` line with the global values, then a line per game with its overrides, as
-    /// tab-separated `key=value` fields; environment as an `env=` field (last on the line).
+    /// As text: the format's line ([`SETTINGS_FORMAT`]), a `*` line with the global values, then a line
+    /// per game with its overrides, as tab-separated `key=value` fields; environment as an `env=` field
+    /// (last on the line). Lines starting with `#` are comments.
     pub fn text(&self) -> String {
-        let mut text = String::from("*");
+        let mut text = format!("{SETTINGS_FORMAT}\n*");
         fields(&self.global.all(), &mut text);
         push_env(&mut text, &self.global_env);
         text.push('\n');
@@ -404,7 +405,7 @@ impl Settings {
     /// Reads [`Settings::text`] back (unknown fields are skipped).
     pub fn load(text: &str) -> Settings {
         let mut s = Settings::default();
-        for line in text.lines() {
+        for line in text.lines().filter(|l| !l.starts_with('#')) {
             let (line, env) = line.split_once("\tenv=").unwrap_or((line, ""));
             let mut fields = line.split('\t');
             let Some(id) = fields.next() else {
@@ -424,6 +425,10 @@ impl Settings {
         s
     }
 }
+
+/// The settings file's first line: its format and version (a change to the format bumps it, so loading
+/// can tell older files).
+pub const SETTINGS_FORMAT: &str = "# ClamShell game settings, format 1";
 
 /// Appends `env` as the line's last field (`env=...`), if any.
 fn push_env(text: &mut String, env: &str) {

@@ -13,7 +13,8 @@
 //! ([`Actuation`]): each is a binding of its own. A binding to something on or off may also repeat while
 //! on (turbo) or stay on from one actuation to the next (toggle).
 //!
-//! Saved in `keymaps.txt` (next to `game-settings.txt`): a `keymap ID NAME` line starts a keymap, then a
+//! Saved in `keymaps.txt` (next to `game-settings.txt`), its first line naming the format and its version
+//! ([`KEYMAPS_FORMAT`]; a change to the format bumps it, so loading can tell older files): a `keymap ID NAME` line starts a keymap, then a
 //! line per binding, `INPUT [hold|double] = OUTPUT [option=value ...] [toggle]`; a `layer N NAME` line
 //! starts layer N's bindings (Base's come first), a `once` line after it making it Once. Lines it doesn't understand are skipped, and so are the
 //! bindings of a layer it doesn't know, so later features can add their own.
@@ -571,6 +572,8 @@ impl Output {
 pub const DEFAULT_SPEED: u8 = 50;
 /// A trigger mapped to a button acts past this (percent of its travel, 1 to 100).
 pub const DEFAULT_THRESHOLD: u8 = 50;
+/// The keymaps file's first line: its format and version (a comment to the parser).
+pub const KEYMAPS_FORMAT: &str = "# ClamShell keymaps, format 1";
 /// A trigger's full pull acts past this (percent of its travel) unless set otherwise.
 pub const FULL_PULL: u8 = 95;
 /// A press held this long is a hold (hundredths of a second, 20 to 100).
@@ -1352,7 +1355,7 @@ impl Keymaps {
 
     /// As text (see the module's doc).
     pub fn text(&self) -> String {
-        let mut text = String::new();
+        let mut text = format!("{KEYMAPS_FORMAT}\n");
         for k in &self.list {
             let _ = writeln!(text, "keymap {} {}", k.id, k.name);
             for l in &k.layers {
@@ -1550,6 +1553,11 @@ fn parse_binding(line: &str) -> Option<(Input, Actuation, Binding)> {
 mod tests {
     use super::*;
 
+    /// A keymaps file's text after its format's line (which is checked).
+    fn body(text: &str) -> &str {
+        text.strip_prefix(KEYMAPS_FORMAT).and_then(|t| t.strip_prefix('\n')).unwrap()
+    }
+
     fn chord(text: &str) -> Chord {
         Chord::parse(text).unwrap()
     }
@@ -1604,6 +1612,7 @@ mod tests {
         k.set(Input::Button(Button::L4), Some(Binding::to(Output::Pad(PadOut::Dpad(Dir::Left)))));
         k.set(Input::Gyro, Some(Binding { speed: 37, hold: Some(Input::Trigger(Side::Left)), ..Binding::to(Output::Pointer) }));
         let text = maps.text();
+        let text = body(&text);
         assert!(
             text.starts_with("keymap 1 Nintendo layout\na = pad b\nb = pad a\nx = pad y\ny = pad x\nkeymap 2 FPS\na = key ctrl+x\nl4 = pad left\n"),
             "{text}"
@@ -1620,7 +1629,7 @@ mod tests {
                 && text.contains("\nrstick-up = wheel up\n"),
             "{text}"
         );
-        assert_eq!(Keymaps::load(&text), maps);
+        assert_eq!(Keymaps::load(&maps.text()), maps);
     }
 
     #[test]
@@ -1652,7 +1661,7 @@ mod tests {
         assert_eq!(k.lookup(a, &[]), None, "Base: as on the pad");
         let maps = Keymaps { list: vec![k.clone()] };
         let text = maps.text();
-        assert_eq!(text, "keymap 5 Layers\nlb = layer 1\nlayer 1 Aim\na = key y\n");
+        assert_eq!(body(&text), "keymap 5 Layers\nlb = layer 1\nlayer 1 Aim\na = key y\n");
         assert_eq!(Keymaps::load(&text), maps);
         // Removed: its bindings, and those to it, go.
         assert!(k.remove_layer(aim));
@@ -1731,7 +1740,10 @@ mod tests {
         assert_eq!(k.lookup_of(a, Actuation::Double, &[aim]).map(|b| b.toggle), Some(true), "falls through");
         let maps = Keymaps { list: vec![k] };
         let text = maps.text();
-        assert_eq!(text, "keymap 4 Combo\na = key x turbo=12\na hold = key esc holdtime=60\na double = mouse left toggle\nlayer 1 Aim\na hold = key tab\n");
+        assert_eq!(
+            body(&text),
+            "keymap 4 Combo\na = key x turbo=12\na hold = key esc holdtime=60\na double = mouse left toggle\nlayer 1 Aim\na hold = key tab\n"
+        );
         assert_eq!(Keymaps::load(&text), maps);
         assert!(!maps.list.first().unwrap().is_empty(aim));
         // Shown: turbo off or a rate, a hold's time.
@@ -1777,7 +1789,7 @@ mod tests {
         let text = "keymap 1 T\nlstick = stick left deadzone=12 invert=xy\n";
         let maps = Keymaps::load(text);
         assert_eq!(maps.get(1).unwrap().get(ls), Some(&Binding { deadzone: 12, invert_x: true, invert_y: true, ..own }));
-        assert_eq!(maps.text(), text);
+        assert_eq!(body(&maps.text()), text, "written with its format's line first");
     }
 
     #[test]
@@ -1792,7 +1804,7 @@ mod tests {
         assert!(!k.set_layer_once(Layer::BASE, true), "Base is never Once");
         assert!(k.set_layer_once(aim, true) && k.layer_once(aim));
         let text = maps.text();
-        assert_eq!(text, format!("{base}layer 1 Aim\nonce\na = key ctrl+y\nb = pad b\ngyro = pointer hold=rb\n"));
+        assert_eq!(body(&text), format!("{base}layer 1 Aim\nonce\na = key ctrl+y\nb = pad b\ngyro = pointer hold=rb\n"));
         assert_eq!(Keymaps::load(&text), maps);
         // A copy has its layers; clearing one leaves the others.
         let copy = maps.duplicate(1, "Copy").unwrap();

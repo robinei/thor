@@ -210,7 +210,7 @@ mod tests {
             Some(Effect::Save(Save::Settings(t))) => t.clone(),
             other => format!("{other:?}"),
         };
-        assert!(saved.starts_with("*\tpower=1\tfps=60\t"), "{saved}");
+        assert!(saved.starts_with(&format!("{}\n*\tpower=1\tfps=60\t", crate::settings::SETTINGS_FORMAT)), "{saved}");
         assert!(saved.ends_with("\nzelda-lttp\tpower=2\n"), "{saved}");
         let zelda = s.settings().of("zelda-lttp");
         assert_eq!((zelda.get(Setting::Power), zelda.get(Setting::FpsCap)), (2, 60));
