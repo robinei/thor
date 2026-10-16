@@ -169,6 +169,13 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       and what the second screen costs in power while a game runs (a slider held, a list flung, the
       keymap edit screen with its labels).
 - [ ] GPU: Freedreno (sway) and Turnip (`vkcube`, a game); MangoHud frame rate in sysinfo.
+- [ ] Direct scanout. The spec sheet gives the panels as 1080x1920 (main, 120 Hz) and 1080x1240 (second,
+      60 Hz): natively portrait, mounted sideways, as our configs' transforms assume. Confirm with the
+      connectors' native modes. Rotated, sway composites a fullscreen game every frame (wlroots rotates
+      itself; it doesn't use a plane's rotation): measure what that pass costs at 120 Hz (GPU time,
+      power), and see it in sway's debug log ("direct scan-out"). Whether the display engine's planes
+      rotate RGB buffers by 90° (`drm_info`: each plane's rotation property and values): if so, gamescope
+      (which uses it) could show games without a composition pass.
 - [ ] HDR, an experiment (the panels take no HDR signal; HDR as on phones: the panel driven brighter,
       ordinary content drawn dimmer within it, highlights above). Peaks from the spec sheets: top 650
       nits, bottom 550. The bottom needs no HDR, but it shows dual-screen emulators' second screen (DS,
