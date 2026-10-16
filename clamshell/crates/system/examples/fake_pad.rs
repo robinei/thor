@@ -20,7 +20,7 @@
 //! - `sleep MS`
 //! - `quit`
 //!
-//! Each line is answered on standard error. `tools/vm.py pad` runs it in the virtual Thor. Controlled, it
+//! Each line is answered on standard error. `tools/vm/vm.py pad` runs it in the virtual Thor. Controlled, it
 //! has rumble (FF_RUMBLE): it answers effect uploads and says on standard error what it is asked to play
 //! (`rumble STRONG WEAK`, `rumble stop`).
 //!

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """A Bluetooth device for the virtual Thor, on the second of btvirt's two virtual controllers (hci1): run
-as root in the machine by `tools/vm.py bluetooth`. Standard library only.
+as root in the machine by `tools/vm/vm.py bluetooth`. Standard library only.
 
 It takes hci1 away from bluetoothd (which has MaxControllers=1, so it keeps hci0 only: opening hci1's
 HCI user channel and closing it again makes the kernel announce it anew, and bluetoothd then ignores it),
@@ -264,7 +264,7 @@ STATE = "/run/thor-bt-device"
 
 
 def state(text):
-    """Where it is, for tools/vm.py bluetooth: waiting (for bluetoothd), ready."""
+    """Where it is, for tools/vm/vm.py bluetooth: waiting (for bluetoothd), ready."""
     with open(STATE, "w") as f:
         f.write(text + "\n")
 

@@ -4,24 +4,24 @@ doesn't need the real hardware. Two displays at the Thor's sizes (sway on real D
 and a mouse-driven absolute pointer on the bottom one, a fake battery and Wi-Fi, uinput for our virtual
 devices, ClamShell as a user service started by sway, and this repository shared read-only.
 
-  tools/vm.py image          make a fresh machine (downloads its system first)
-  tools/vm.py run            start the machine (the first start provisions it)
-  tools/vm.py run --headless without windows (the screens drawn offscreen; ssh and grim still work)
-  tools/vm.py run --pad 045e:028e   also pass a USB gamepad through (vendor:product)
-  tools/vm.py ssh [command]  a shell, or a command, in the machine
-  tools/vm.py build          build ClamShell in the machine (aarch64: there is no host build)
-  tools/vm.py restart        restart ClamShell in the machine (after a build)
-  tools/vm.py wake           wake the machine from sleep
-  tools/vm.py sync           write this script's session files (sway config, service) into the machine
-  tools/vm.py touch tap|hold|down|move|up|slide ...   the bottom screen's touchscreen, in its pixels
-  tools/vm.py pointer X Y [--head 0|1] [--click left]  the absolute pointer on a screen
-  tools/vm.py key a shift+b ret                        keys (QEMU's names)
-  tools/vm.py pad plug|unplug|do 'tap a, dpad down'    a fake controller in the machine (x86_64)
-  tools/vm.py bluetooth      two virtual Bluetooth controllers and a test device in the machine (x86_64)
-  tools/vm.py reset          throw the machine away (the download stays)
-  tools/vm.py --arch aarch64 thor-image   build an SD card image for the real Thor (best effort): Arch
+  tools/vm/vm.py image          make a fresh machine (downloads its system first)
+  tools/vm/vm.py run            start the machine (the first start provisions it)
+  tools/vm/vm.py run --headless without windows (the screens drawn offscreen; ssh and grim still work)
+  tools/vm/vm.py run --pad 045e:028e   also pass a USB gamepad through (vendor:product)
+  tools/vm/vm.py ssh [command]  a shell, or a command, in the machine
+  tools/vm/vm.py build          build ClamShell in the machine (aarch64: there is no host build)
+  tools/vm/vm.py restart        restart ClamShell in the machine (after a build)
+  tools/vm/vm.py wake           wake the machine from sleep
+  tools/vm/vm.py sync           write this script's session files (sway config, service) into the machine
+  tools/vm/vm.py touch tap|hold|down|move|up|slide ...   the bottom screen's touchscreen, in its pixels
+  tools/vm/vm.py pointer X Y [--head 0|1] [--click left]  the absolute pointer on a screen
+  tools/vm/vm.py key a shift+b ret                        keys (QEMU's names)
+  tools/vm/vm.py pad plug|unplug|do 'tap a, dpad down'    a fake controller in the machine (x86_64)
+  tools/vm/vm.py bluetooth      two virtual Bluetooth controllers and a test device in the machine (x86_64)
+  tools/vm/vm.py reset          throw the machine away (the download stays)
+  tools/vm/vm.py --arch aarch64 thor-image   build an SD card image for the real Thor (best effort): Arch
                              Linux ARM with ROCKNIX's SM8550 kernel, modules and firmware, our initramfs and
-                             session, in ROCKNIX's SD layout for its ABL (tools/thor-image.sh, in the machine)
+                             session, in ROCKNIX's SD layout for its ABL (tools/image/thor-image.sh, in the machine)
 
 --arch x86_64 (the default): Arch's cloud image, provisioned by cloud-init, with KVM: fast; it runs the
 host's build from the shared repository. --arch aarch64: Arch Linux ARM's root filesystem made into a disk
@@ -48,7 +48,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parent.parent.parent
 CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "thor-vm"
 USER = "thor"
 DISK_SIZE = "16G"
@@ -179,7 +179,7 @@ Description=ClamShell
 After=graphical-session.target
 
 [Service]
-# Tests drive it through this pipe (tools/vm.py ssh -- 'echo mode wifi > $XDG_RUNTIME_DIR/clamshell-control').
+# Tests drive it through this pipe (tools/vm/vm.py ssh -- 'echo mode wifi > $XDG_RUNTIME_DIR/clamshell-control').
 ExecStartPre=-/usr/bin/mkfifo %t/clamshell-control
 ExecStart={A.program}
 Environment=CLAMSHELL_BOTTOM_OUTPUT=Virtual-2
@@ -409,14 +409,14 @@ def image(_args):
     need("qemu-img")
     download()
     if A.disk.exists():
-        sys.exit(f"{A.disk} exists: `tools/vm.py --arch {A.name} reset` first")
+        sys.exit(f"{A.disk} exists: `tools/vm/vm.py --arch {A.name} reset` first")
     if A.arm:
         arm_image()
     else:
         # A disk on top of the image (the image stays as downloaded).
         run(["qemu-img", "create", "-f", "qcow2", "-F", "qcow2", "-b", A.base, A.disk, DISK_SIZE])
     A.provisioned.unlink(missing_ok=True)
-    print(f"ready: tools/vm.py --arch {A.name} run")
+    print(f"ready: tools/vm/vm.py --arch {A.name} run")
 
 
 def qemu_command(args, seed_port):
@@ -470,7 +470,7 @@ def qemu_command(args, seed_port):
 def start(args):
     need("qemu-system-aarch64" if A.arm else "qemu-system-x86_64")
     if not A.disk.exists():
-        sys.exit(f"no machine yet: tools/vm.py --arch {A.name} image")
+        sys.exit(f"no machine yet: tools/vm/vm.py --arch {A.name} image")
     first = not A.provisioned.exists()
     seed = serve_seed() if first and not A.arm else None
     if first:
@@ -564,9 +564,9 @@ def rocknix():
 
 def thor_image(args):
     if not A.arm:
-        sys.exit("the Thor's image is built in the aarch64 machine: tools/vm.py --arch aarch64 thor-image")
+        sys.exit("the Thor's image is built in the aarch64 machine: tools/vm/vm.py --arch aarch64 thor-image")
     if not A.provisioned.exists():
-        sys.exit("the aarch64 machine isn't provisioned yet: tools/vm.py --arch aarch64 run (once)")
+        sys.exit("the aarch64 machine isn't provisioned yet: tools/vm/vm.py --arch aarch64 run (once)")
     target = rocknix()
     sd = A.state / "thor-sd.img"
     sd.unlink(missing_ok=True)
@@ -583,7 +583,7 @@ def thor_image(args):
 sudo mkdir -p /mnt/cache
 mountpoint -q /mnt/cache || sudo mount -t 9p -o trans=virtio,version=9p2000.L,ro cache /mnt/cache
 cd /mnt/thor/clamshell && CARGO_TARGET_DIR=$HOME/target cargo build --release --locked
-sudo THOR_TIMEZONE={zone} bash /mnt/thor/tools/thor-image.sh /dev/vdb /mnt/cache/{target.relative_to(CACHE)} $HOME/target/release/clamshell '{ssh_key()}'
+sudo THOR_TIMEZONE={zone} bash /mnt/thor/tools/image/thor-image.sh /dev/vdb /mnt/cache/{target.relative_to(CACHE)} $HOME/target/release/clamshell '{ssh_key()}'
 sudo poweroff"""
     result = subprocess.run(ssh_args([inside]))
     machine.join(timeout=120)
@@ -619,7 +619,7 @@ class Qmp:
         try:
             self.sock.connect(str(A.state / "qmp.sock"))
         except OSError as e:
-            sys.exit(f"no QMP socket ({e}): is the machine running (tools/vm.py run)?")
+            sys.exit(f"no QMP socket ({e}): is the machine running (tools/vm/vm.py run)?")
         self.file = self.sock.makefile("rw")
         json.loads(self.file.readline())  # the greeting
         self.command("qmp_capabilities")
@@ -781,7 +781,7 @@ def pad(args):
         script = f"systemctl --user stop {FAKE_PAD_UNIT}"
     else:
         lines = " ".join(args.command).replace(",", "\n")
-        script = (f"systemctl --user -q is-active {FAKE_PAD_UNIT} || {{ echo 'no fake pad: tools/vm.py pad plug' >&2; exit 1; }}; "
+        script = (f"systemctl --user -q is-active {FAKE_PAD_UNIT} || {{ echo 'no fake pad: tools/vm/vm.py pad plug' >&2; exit 1; }}; "
                   f"timeout 5 sh -c 'cat > {fifo}'")
         return subprocess.run(ssh_args([script]), input=lines + "\n", text=True).returncode
     return subprocess.run(ssh_args([script])).returncode
@@ -811,7 +811,7 @@ rm -rf /var/lib/bluetooth/*/{BT_DEVICE} /var/lib/bluetooth/*/cache/{BT_DEVICE}
 systemd-run --quiet --collect --unit=thor-btvirt /usr/local/bin/btvirt -l2
 for i in $(seq 50); do btmgmt --index 1 info >/dev/null 2>&1 && break; sleep 0.1; done
 rm -f /run/thor-bt-device
-systemd-run --quiet --collect --unit=thor-bt-device python3 /mnt/thor/tools/vm-bt-device.py
+systemd-run --quiet --collect --unit=thor-bt-device python3 /mnt/thor/tools/vm/vm-bt-device.py
 for i in $(seq 50); do grep -q waiting /run/thor-bt-device 2>/dev/null && break; sleep 0.1; done
 systemctl start bluetooth
 for i in $(seq 100); do grep -q ready /run/thor-bt-device 2>/dev/null && break; sleep 0.1; done
@@ -822,7 +822,7 @@ if bluetoothctl list | grep -q {BT_DEVICE}; then echo "bluetoothd has the test d
 
 def bluetooth(_args):
     """Two virtual Bluetooth controllers in the machine (btvirt): bluetoothd has the first, the second is
-    a test device (tools/vm-bt-device.py) that can be found, paired, connected and forgotten. Again
+    a test device (tools/vm/vm-bt-device.py) that can be found, paired, connected and forgotten. Again
     after each boot; it also starts afresh (the device unpaired)."""
     if A.arm:
         sys.exit("x86_64 only")
@@ -836,7 +836,7 @@ def restart(_args):
 def reset(_args):
     for path in (A.disk, A.provisioned, A.state / "Image", A.state / "initramfs.img"):
         path.unlink(missing_ok=True)
-    print(f"the {A.name} machine is gone; the download stays (tools/vm.py --arch {A.name} image for a new one)")
+    print(f"the {A.name} machine is gone; the download stays (tools/vm/vm.py --arch {A.name} image for a new one)")
 
 
 def main():

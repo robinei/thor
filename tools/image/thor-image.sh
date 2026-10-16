@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds an SD card image for the AYN Thor, best effort, inside the aarch64 machine (tools/vm.py
+# Builds an SD card image for the AYN Thor, best effort, inside the aarch64 machine (tools/vm/vm.py
 # --arch aarch64 thor-image runs it as root there): Arch Linux ARM from its mirrors, ROCKNIX's SM8550
 # kernel (with the Thor's device tree and out-of-tree drivers), its modules and firmware, our initramfs
 # and session, in ROCKNIX's SD layout so their ABL boots it.

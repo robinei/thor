@@ -43,6 +43,6 @@ E the shoulders.
   hashes with `CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots`.
 - `clamshell/tests/nested-sway.sh` (after `cargo build --release`): a headless sway with ClamShell in it,
   driven through the control pipe; about a minute.
-- `tools/vm-test.sh`: the VM suite end to end, about twenty minutes; before pushing. The virtual Thor is
-  `tools/vm.py` (QEMU/KVM, both screens, a fake controller with a gyro and rumble, simulated Wi-Fi and
-  Bluetooth; `tools/vm.py --help`), and its checks `tools/vm-checks.py` (`--list`).
+- `tools/vm/vm-test.sh`: the VM suite end to end, about twenty minutes; before pushing. The virtual Thor is
+  `tools/vm/vm.py` (QEMU/KVM, both screens, a fake controller with a gyro and rumble, simulated Wi-Fi and
+  Bluetooth; `tools/vm/vm.py --help`), and its checks `tools/vm/vm-checks.py` (`--list`).

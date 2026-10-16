@@ -5,12 +5,12 @@ two virtual Bluetooth controllers (btvirt) with a test device. Each check acts a
 at what came of it: ClamShell's journal, its saved files, sway's workspaces, the devices it makes, the
 system (NetworkManager, BlueZ, PipeWire, a fake backlight), screenshots.
 
-    tools/vm.py run --headless &          (the machine running; ClamShell built on the host)
-    tools/vm-checks.py [CHECK ...]        (all of them by default; --list names them)
+    tools/vm/vm.py run --headless &          (the machine running; ClamShell built on the host)
+    tools/vm/vm-checks.py [CHECK ...]        (all of them by default; --list names them)
 
 For the checks ClamShell runs with a test library (a game that opens foot), a fake backlight and its own
 state directory (a runtime drop-in for its service, removed at the end), PipeWire gets a null sink (the
-machine has no audio device), and Bluetooth is set up (tools/vm.py bluetooth). The exit status is the
+machine has no audio device), and Bluetooth is set up (tools/vm/vm.py bluetooth). The exit status is the
 number of failed checks. Standard library only.
 """
 
@@ -187,7 +187,7 @@ class Inputs:
 
 
 def pad(*commands):
-    """Commands for the fake pad (tools/vm.py pad do)."""
+    """Commands for the fake pad (tools/vm/vm.py pad do)."""
     sh(f"timeout 5 sh -c 'cat > $XDG_RUNTIME_DIR/fake-pad'", input="\n".join(commands) + "\n")
 
 
@@ -872,7 +872,7 @@ class Checks:
 
     def bluetooth(self):
         if "ready" not in sh("cat /run/thor-bt-device 2>/dev/null"):
-            return self.check("Bluetooth: the test device (tools/vm.py bluetooth)", False, "not set up")
+            return self.check("Bluetooth: the test device (tools/vm/vm.py bluetooth)", False, "not set up")
         address = vm.BT_DEVICE
         self.open_tab("bluetooth")
         shown = until(lambda: "ThorTestDevice" in sh("bluetoothctl devices"), 20)

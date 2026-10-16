@@ -37,15 +37,15 @@ Android kept. Written 2026-10-14, before having the device; everything here is u
 - Backlights: the top one first (`ae96000.dsi.0`), the bottom labelled `bottom-panel`.
 - The bottom screen draws about 0.7 W at idle. Wi-Fi and Bluetooth work.
 
-## Our image (`tools/vm.py --arch aarch64 thor-image`, built in the ARM virtual machine)
+## Our image (`tools/vm/vm.py --arch aarch64 thor-image`, built in the ARM virtual machine)
 
 What goes in, and from where:
 
 | Part | Source |
 |---|---|
 | Bootloader | not in the image: stock U-Boot (UEFI), else ROCKNIX's ABL flashed once (see below) |
-| UEFI boot, on the same FAT partition (an EFI system partition) | systemd-boot as `EFI/BOOT/BOOTAA64.EFI`, ROCKNIX's kernel as `/Image` (decompressed), the Thor's device tree as `/dtbs/qcs8550-ayn-thor.dtb`, our initramfs, a loader entry with our command line; split out by `tools/bootimg.py split` |
-| `/KERNEL` on FAT `ROCKNIX` (GPT name `system`, legacy-boot attribute, at 16 MiB) | ROCKNIX's kernel and device trees, unchanged; our initramfs (mkinitcpio: base udev modconf block thor-root-wait resume filesystems fsck, no autodetect) and command line (`root=LABEL=THOR_ROOT rw` + ROCKNIX's SM8550 parameters; the first boot adds `resume=`, `resume_offset=`), repacked by `tools/bootimg.py` |
+| UEFI boot, on the same FAT partition (an EFI system partition) | systemd-boot as `EFI/BOOT/BOOTAA64.EFI`, ROCKNIX's kernel as `/Image` (decompressed), the Thor's device tree as `/dtbs/qcs8550-ayn-thor.dtb`, our initramfs, a loader entry with our command line; split out by `tools/image/bootimg.py split` |
+| `/KERNEL` on FAT `ROCKNIX` (GPT name `system`, legacy-boot attribute, at 16 MiB) | ROCKNIX's kernel and device trees, unchanged; our initramfs (mkinitcpio: base udev modconf block thor-root-wait resume filesystems fsck, no autodetect) and command line (`root=LABEL=THOR_ROOT rw` + ROCKNIX's SM8550 parameters; the first boot adds `resume=`, `resume_offset=`), repacked by `tools/image/bootimg.py` |
 | Kernel modules, firmware | ROCKNIX's `SYSTEM` (same release), incl. Qualcomm firmware: for this device only, not for sharing |
 | Root: ext4 `THOR_ROOT` | `pacstrap` from Arch Linux ARM's mirrors (unpinned): base, sudo, mkinitcpio, NetworkManager, OpenSSH, sway, foot, Xwayland, Mesa + `vulkan-freedreno`, PipeWire, Noto, SQLite, Python, vim, grim, growpart (`cloud-guest-utils`), gptfdisk |
 | System | time zone (`THOR_TIMEZONE`, else the build machine's `/etc/localtime`, else UTC), locale (`THOR_LOCALE`, default `en_US.UTF-8`), systemd-timesyncd, NetworkManager, sshd, Bluetooth |
@@ -206,7 +206,7 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       hibernate at 3 %. After a resume: ClamShell logs "woke from sleep" and "settings applied", and both
       screens redraw. In the x86 VM the image is written and found, but the resumed machine
       sometimes resets at once, or QEMU's ACPI S4 wakes the hibernating kernel; one resume went through.
-- [ ] The launcher under real use: tools/vm.py's checks again, on the device.
+- [ ] The launcher under real use: tools/vm/vm.py's checks again, on the device.
 - [ ] FEX for x86 games (32-bit Windows games are the open question).
 
 ## References
@@ -218,5 +218,5 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
 - Pocknix (Arch Linux ARM for SM8250/SM8550 handhelds): <https://github.com/shuuri-labs/pocknix-os>
 - Kettle Linux's Thor notes (stock U-Boot/UEFI, screens, touch, audio, power, gamepad):
   <https://github.com/kettlelinux/kettlelinux/blob/main/docs/THOR.md>
-- Our tools: `tools/vm.py` (virtual Thor, x86-64 and aarch64; `thor-image`), `tools/thor-image.sh`,
-  `tools/bootimg.py`, `clamshell/tests/nested-sway.sh`
+- Our tools: `tools/vm/vm.py` (virtual Thor, x86-64 and aarch64; `thor-image`), `tools/image/thor-image.sh`,
+  `tools/image/bootimg.py`, `clamshell/tests/nested-sway.sh`
