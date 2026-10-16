@@ -1598,6 +1598,82 @@ mod tests {
         assert_eq!(out.buzz.take(), Some(Buzz::Off));
     }
 
+    /// A keymap with every way of turning layers on, layered over each other, driven by random presses
+    /// and pauses (a fixed seed, so a failure repeats): whatever happened, with everything let go and
+    /// the timers run out nothing stays down, and only keys some binding sends ever were.
+    #[test]
+    fn random_presses_over_every_kind_of_layer_leave_nothing_down() {
+        use clamshell_core::keymap::Layer;
+        let key = |c: &str| to(Output::Key(chord(c)));
+        let mut k = keymap(&[]);
+        let menu = k.add_layer("menu").unwrap();
+        let aim = k.add_layer("aim").unwrap();
+        k.set_layer_once(menu, true);
+        let b = |x| Input::Button(x);
+        // LB: menu (Once). RB: R pressed, aim held. X: aim toggled. Y: T pressed, menu twice.
+        k.set(b(Button::LB), Some(to(Output::Layer(menu))));
+        k.set(b(Button::RB), Some(key("r")));
+        k.set_of(Layer::BASE, b(Button::RB), Actuation::Hold, Some(to(Output::Layer(aim))));
+        k.set(b(Button::X), Some(Binding { toggle: true, ..to(Output::Layer(aim)) }));
+        k.set(b(Button::Y), Some(key("t")));
+        k.set_of(Layer::BASE, b(Button::Y), Actuation::Double, Some(to(Output::Layer(menu))));
+        k.set(b(Button::A), Some(key("x")));
+        // menu: A Enter, B Esc. aim: A Ctrl+Y, LB Z, B held H.
+        k.set_in(menu, b(Button::A), Some(key("enter")));
+        k.set_in(menu, b(Button::B), Some(key("esc")));
+        k.set_in(aim, b(Button::A), Some(key("ctrl+y")));
+        k.set_in(aim, b(Button::LB), Some(key("z")));
+        k.set_of(aim, b(Button::B), Actuation::Hold, Some(key("h")));
+        let sent = [
+            KeyCode::KEY_R,
+            KeyCode::KEY_T,
+            KeyCode::KEY_X,
+            KeyCode::KEY_ENTER,
+            KeyCode::KEY_ESC,
+            KeyCode::KEY_LEFTCTRL,
+            KeyCode::KEY_Y,
+            KeyCode::KEY_Z,
+            KeyCode::KEY_H,
+        ];
+        let codes = [KeyCode::BTN_SOUTH, KeyCode::BTN_EAST, KeyCode::BTN_WEST, KeyCode::BTN_NORTH, KeyCode::BTN_TL, KeyCode::BTN_TR];
+        // (xorshift64: a few lines, and the same run every time.)
+        let mut seed = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut next = |n: u64| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed % n
+        };
+        for run in 0..300 {
+            let (mut r, mut out) = router(k.clone(), PadRoute::Game);
+            let mut t = Instant::now();
+            let mut down = [false; 6];
+            for _ in 0..40 {
+                let i = next(codes.len() as u64) as usize;
+                if let (Some(&code), Some(d)) = (codes.get(i), down.get_mut(i)) {
+                    *d = !*d;
+                    press_at(&mut r, code, *d, t, &mut out);
+                }
+                // A pause: none, within a tap or a double's window, past a hold's time.
+                t += ms([0, 30, 120, 250, 450][next(5) as usize]);
+                r.tick(t, &mut out);
+                let wrong: Vec<_> = held(&out.mouse).into_iter().filter(|c| !sent.contains(c)).collect();
+                assert!(wrong.is_empty(), "run {run}: {wrong:?} down");
+            }
+            for (i, &code) in codes.iter().enumerate() {
+                if down.get(i) == Some(&true) {
+                    press_at(&mut r, code, false, t, &mut out);
+                }
+            }
+            for _ in 0..4 {
+                t += ms(500);
+                r.tick(t, &mut out);
+            }
+            assert!(held(&out.mouse).is_empty(), "run {run}: {:?} still down", held(&out.mouse));
+            assert!(held(&out.pad).iter().all(|c| !codes.contains(c)), "run {run}: {:?} still down on the pad", held(&out.pad));
+        }
+    }
+
     #[test]
     fn a_toggled_layer_and_a_layer_key_the_layer_remaps() {
         let mut k = keymap(&[]);
