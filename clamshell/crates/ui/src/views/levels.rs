@@ -42,9 +42,9 @@ struct Sizes {
 }
 
 impl Sizes {
-    fn of(body: Rect) -> Sizes {
-        let row_h = body.h * ROW_H;
-        Sizes { pad: style::pad(body.h), row_h, text: Text::Body.size(body.h), heading: Text::Small.size(body.h), icon: row_h * ICON }
+    fn of(f: &Frame) -> Sizes {
+        let row_h = f.body().h * ROW_H;
+        Sizes { pad: f.pad(), row_h, text: f.text(Text::Body), heading: f.text(Text::Small), icon: row_h * ICON }
     }
 
     /// Where the rows go: the content area, a little down from the bar.
@@ -87,9 +87,10 @@ fn mute_tone(muted: bool) -> Tone {
     if muted { Tone::Accent } else { Tone::Normal }
 }
 
-pub(super) fn draw_volume(f: &mut Frame, body: Rect) {
+pub(super) fn draw_volume(f: &mut Frame) {
+    let body = f.body();
     let s = f.s;
-    let z = Sizes::of(body);
+    let z = Sizes::of(f);
     let area = z.area(body);
     let (name_w, number_w) = (area.w * NAME_W, area.w * NUMBER_W);
     let mut col = Column::new(area);
@@ -167,9 +168,10 @@ pub(super) fn draw_volume(f: &mut Frame, body: Rect) {
     rows.end(f, area.right() + z.pad * 0.4);
 }
 
-pub(super) fn draw_brightness(f: &mut Frame, body: Rect) {
+pub(super) fn draw_brightness(f: &mut Frame) {
+    let body = f.body();
     let s = f.s;
-    let z = Sizes::of(body);
+    let z = Sizes::of(f);
     let area = z.area(body);
     let (name_w, number_w, percent_w) = (area.w * BACKLIGHT_NAME_W, area.w * NUMBER_W, area.w * PERCENT_W);
     let mut col = Column::new(area);

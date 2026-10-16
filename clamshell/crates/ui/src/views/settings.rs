@@ -58,33 +58,34 @@ const GRID: [Tile; 14] = [
     Tile::Env,
 ];
 
-pub(super) fn draw(f: &mut Frame, body: Rect) {
+pub(super) fn draw(f: &mut Frame) {
+    let body = f.body();
     if f.s.bottom().editor().is_some() {
-        return editor(f, body);
+        return editor(f);
     }
     if let Some(screen) = f.s.keymap_screen() {
-        return super::keymaps::draw(f, body, screen);
+        return super::keymaps::draw(f, screen);
     }
     let s = f.s;
     let context = s.context();
     let game = s.editing();
-    let pad = style::pad(body.h);
+    let pad = f.pad();
     let mut grid = style::content(body);
-    let bar = grid.take_top(body.h * TABS_H);
+    let bar = grid.take_top(f.body().h * TABS_H);
 
     // Tabs: All games, then the game in context; a note on the right.
     let inner = pad * 0.8;
     let tabs = [(Scope::Global, Some("All games")), (Scope::Game, context.map(|g| g.title.as_str()))];
     let items = tabs.into_iter().filter_map(|(scope, name)| Some((Id::Settings(SettingsId::Scope(scope)), name?, (scope == Scope::Global) == game.is_none())));
     let tabs_area = Rect::new(bar.x - inner, bar.y, bar.w + inner, bar.h);
-    let tabs_end = widgets::tabs(f, tabs_area, Text::Heading.size(body.h), inner, bar.w * TAB_MAX, items);
+    let tabs_end = widgets::tabs(f, tabs_area, f.text(Text::Heading), inner, bar.w * TAB_MAX, items);
     let running = context.is_some_and(|g| s.current_game() == Some(&g.id));
     let note = match (game, running) {
         (Some(_), true) => "applies now",
         (Some(_), false) => "applies at launch",
         (None, _) => "defaults",
     };
-    let size = Text::Small.size(body.h);
+    let size = f.text(Text::Small);
     let note_w = f.c.text_width(size, note);
     if tabs_end + pad + note_w < bar.x + bar.w {
         f.c.text_in(bar, size, Tone::Dim, note, Align::End);
@@ -94,7 +95,7 @@ pub(super) fn draw(f: &mut Frame, body: Rect) {
     let grid = Rect::new(grid.x, grid.y + pad * 0.6, grid.w, grid.h - pad * 0.6);
     let reset = game.is_some().then_some(Tile::Reset);
     for (i, tile) in GRID.into_iter().chain(reset).enumerate() {
-        draw_tile(f, grid.cell(COLUMNS, ROWS, body.h * GAP, i), tile);
+        draw_tile(f, grid.cell(COLUMNS, ROWS, f.body().h * GAP, i), tile);
     }
 }
 
@@ -173,7 +174,7 @@ fn draw_tile(f: &mut Frame, r: Rect, tile: Tile) {
 
 /// The editor over the settings: the environment, or a keymap's name; then the shared editor (field,
 /// Cancel and Save, keyboard).
-fn editor(f: &mut Frame, body: Rect) {
+fn editor(f: &mut Frame) {
     let s = f.s;
     let title = match s.bottom().editor() {
         Some(Editor { purpose: Purpose::Env { game }, .. }) => {
@@ -195,5 +196,5 @@ fn editor(f: &mut Frame, body: Rect) {
         },
         _ => return,
     };
-    super::editor::draw(f, body, &title, "Save");
+    super::editor::draw(f, &title, "Save");
 }

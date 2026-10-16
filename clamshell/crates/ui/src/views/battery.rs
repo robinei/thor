@@ -35,15 +35,16 @@ const SMALL: f32 = 0.85;
 /// The history's span, seconds.
 const SPAN: f32 = 24.0 * 3600.0;
 
-pub(super) fn draw(f: &mut Frame, body: Rect) {
+pub(super) fn draw(f: &mut Frame) {
+    let body = f.body();
     let s = f.s;
-    let pad = style::pad(body.h);
+    let pad = f.pad();
     let mut rest = style::content(body);
-    let size = body.h * TEXT_SIZE;
-    let top = rest.take_top(body.h * TOP_H);
-    top_line(f, top, body.h);
+    let size = f.body().h * TEXT_SIZE;
+    let top = rest.take_top(f.body().h * TOP_H);
+    top_line(f, top, f.body().h);
 
-    let graph = rest.take_top(body.h * GRAPH_H);
+    let graph = rest.take_top(f.body().h * GRAPH_H);
     let graph = Rect::new(graph.x, graph.y + pad * 0.5, graph.w, graph.h - pad * 1.5);
     history(f, graph, size);
 
@@ -51,7 +52,7 @@ pub(super) fn draw(f: &mut Frame, body: Rect) {
     let title_y = rest.y + pad * 0.3;
     f.c.text(rest.x, title_y, size * SMALL, Tone::Dim, "Using the machine now");
     let list = Rect::new(rest.x, title_y + size * 1.6, rest.w, rest.y + rest.h - title_y - size * 1.6);
-    let row_h = body.h * ROW_H;
+    let row_h = f.body().h * ROW_H;
     let rows = (list.h / row_h).floor().max(0.0) as usize;
     let spenders = &s.sys().battery.spenders;
     if spenders.is_empty() {

@@ -38,7 +38,7 @@ use clamshell_core::{Id, ListId, State, Tab};
 use crate::draw::{Canvas, Rect};
 use crate::images::Images;
 use format::Fmt;
-use style::{BG, Look, PRESSED, RADIUS_S, Tone};
+use style::{BG, Look, PRESSED, RADIUS_S, Text, Tone};
 
 /// Something drawn that can be tapped or focused. While drawing, in layout units; once the frame is done,
 /// in the surface's logical pixels (moved by the burn-in offset).
@@ -128,12 +128,30 @@ pub struct Frame<'f, 'c> {
     scratch: &'f mut Scratch,
     targets: &'f mut Vec<Target>,
     out: FrameOut,
+    /// The area the screen's content goes in (the second screen's: below the bar), which its sizes are
+    /// fractions of (see [`Frame::pad`], [`Frame::text`]).
+    body: Rect,
 }
 
 impl<'f, 'c> Frame<'f, 'c> {
     pub fn new(c: &'f mut Canvas<'c>, s: &'f State, images: &'f mut Images, scratch: &'f mut Scratch, targets: &'f mut Vec<Target>) -> Self {
         targets.clear();
-        Frame { c, s, images, scratch, targets, out: FrameOut::default() }
+        Frame { c, s, images, scratch, targets, out: FrameOut::default(), body: Rect::new(0.0, 0.0, 0.0, 0.0) }
+    }
+
+    /// The area the screen's content goes in.
+    fn body(&self) -> Rect {
+        self.body
+    }
+
+    /// The padding, and the unit other spacing is counted in (see [`style::pad`]).
+    fn pad(&self) -> f32 {
+        style::pad(self.body.h)
+    }
+
+    /// A text size (see [`Text`]).
+    fn text(&self, t: Text) -> f32 {
+        t.size(self.body.h)
     }
 
     /// A tappable, focusable area: its background (lit while pressed), `content`, then the focus ring if
@@ -203,6 +221,7 @@ impl<'f, 'c> Frame<'f, 'c> {
 
 /// The main screen: shelf, over all of `screen`.
 pub fn top(f: &mut Frame, screen: Rect) {
+    f.body = screen;
     f.c.fill(screen, BG);
     f.out.list_rows = Some(shelf::draw(f, screen));
 }
@@ -210,6 +229,7 @@ pub fn top(f: &mut Frame, screen: Rect) {
 /// The second screen: the bar, the open tab below it, and the slider over both while one moves; or,
 /// while a game wants it dark, nothing.
 pub fn bottom(f: &mut Frame, screen: Rect) {
+    f.body = screen;
     f.c.fill(screen, BG);
     if f.s.bottom_dark() {
         dark::draw(f, screen);
@@ -217,17 +237,18 @@ pub fn bottom(f: &mut Frame, screen: Rect) {
         return;
     }
     let body = bar::draw(f, screen);
+    f.body = body;
     match f.s.bottom().tab() {
-        Tab::Settings => settings::draw(f, body),
+        Tab::Settings => settings::draw(f),
         Tab::Keyboard => keyboard::draw(f, body),
-        Tab::Dock => dock::draw(f, body),
-        Tab::Touchpad => touchpad::draw(f, body),
-        Tab::Sysinfo => sysinfo::draw(f, body),
-        Tab::Wifi => wifi::draw(f, body),
-        Tab::Battery => battery::draw(f, body),
-        Tab::Bluetooth => bluetooth::draw(f, body),
-        Tab::Volume => levels::draw_volume(f, body),
-        Tab::Brightness => levels::draw_brightness(f, body),
+        Tab::Dock => dock::draw(f),
+        Tab::Touchpad => touchpad::draw(f),
+        Tab::Sysinfo => sysinfo::draw(f),
+        Tab::Wifi => wifi::draw(f),
+        Tab::Battery => battery::draw(f),
+        Tab::Bluetooth => bluetooth::draw(f),
+        Tab::Volume => levels::draw_volume(f),
+        Tab::Brightness => levels::draw_brightness(f),
     }
     bar::draw_slider_over(f, screen, body.y);
     f.out.touchpad_area = Some(body);

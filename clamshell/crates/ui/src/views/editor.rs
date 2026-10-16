@@ -16,23 +16,24 @@ const FIELD_W: f32 = 0.7;
 const FIELD_TEXT: f32 = 0.42;
 const BUTTON_TEXT: f32 = 0.36;
 
-pub(super) fn draw(f: &mut Frame, body: Rect, title: &str, save: &str) {
+pub(super) fn draw(f: &mut Frame, title: &str, save: &str) {
     let Some(editor) = f.s.bottom().editor() else {
         return;
     };
-    field(f, body, title, &editor.text, (Id::Editor(EditorId::Cancel), "Cancel"), (Id::Editor(EditorId::Save), save));
+    field(f, title, &editor.text, (Id::Editor(EditorId::Cancel), "Cancel"), (Id::Editor(EditorId::Save), save));
 }
 
 /// The editor's layout: `title`, a field with `text` and a caret, the two buttons (`cancel`, `save`:
 /// their targets and labels), the keyboard below.
-pub(super) fn field(f: &mut Frame, body: Rect, title: &str, text: &str, cancel: (Id, &str), save: (Id, &str)) {
-    let pad = style::pad(body.h);
+pub(super) fn field(f: &mut Frame, title: &str, text: &str, cancel: (Id, &str), save: (Id, &str)) {
+    let body = f.body();
+    let pad = f.pad();
     let area = style::content(body).shifted(0.0, pad * 0.5);
-    let size = Text::Small.size(body.h);
+    let size = f.text(Text::Small);
     f.c.text_fit(area.top_line(size), size, Tone::Dim, title, Keep::Start);
 
     // The field, with a caret after the text (its end, when it is too long); Cancel and save beside it.
-    let mut row = Rect::new(area.x, area.y + size * 1.6, area.w, body.h * ROW_H);
+    let mut row = Rect::new(area.x, area.y + size * 1.6, area.w, f.body().h * ROW_H);
     let field = row.take_left(row.w * FIELD_W);
     f.c.rounded(field, RADIUS, SURFACE_HI);
     let text_size = field.h * FIELD_TEXT;
@@ -50,5 +51,5 @@ pub(super) fn field(f: &mut Frame, body: Rect, title: &str, text: &str, cancel: 
     f.text_button(save_id, ok, ok.h * BUTTON_TEXT, Tone::Fn, save_label, Align::Center);
 
     let keys_y = field.y + field.h + pad;
-    keyboard::draw(f, Rect::new(body.x, keys_y, body.w, body.y + body.h - keys_y));
+    keyboard::draw(f, Rect::new(body.x, keys_y, body.w, body.y + f.body().h - keys_y));
 }

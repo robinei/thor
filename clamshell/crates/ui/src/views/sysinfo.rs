@@ -62,11 +62,12 @@ impl Tile {
     }
 }
 
-pub(super) fn draw(f: &mut Frame, body: Rect) {
+pub(super) fn draw(f: &mut Frame) {
+    let body = f.body();
     let s = f.s;
     let (m, h) = (&s.sys().metrics, &s.sys().history);
+    let pad = f.pad();
     let c = &mut *f.c;
-    let pad = style::pad(body.h);
     let mut grid = style::content(body);
     grid.take_top(pad);
     let tile = |label, i| Tile { label, rect: grid.cell(2, 3, pad, i) };

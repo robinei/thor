@@ -43,20 +43,22 @@ fn running_tone(running: bool) -> Tone {
     if running { Tone::Go } else { Tone::Dim }
 }
 
-pub(super) fn draw(f: &mut Frame, body: Rect) {
+pub(super) fn draw(f: &mut Frame) {
+    let body = f.body();
     let s = f.s;
-    let pad = style::pad(body.h);
+    let pad = f.pad();
     let mut area = style::content(body);
     area.take_top(pad);
     if let Some(error) = &s.apps().error {
-        let size = Text::Small.size(body.h);
+        let size = f.text(Text::Small);
         let line = area.take_bottom(size * 1.6);
         f.c.text_fit(line.shifted(0.0, size * 0.4).top_line(size), size, Tone::Dim, error, Keep::Start);
     }
     let games = s.session().games();
     let game_tiles = games.len().max(1);
     let rows = (s.apps().list.len() + game_tiles).div_ceil(COLUMNS).max(MIN_ROWS);
-    let cell = |i| area.cell(COLUMNS, rows, body.h * GAP, i);
+    let gap = f.body().h * GAP;
+    let cell = |i| area.cell(COLUMNS, rows, gap, i);
     if games.is_empty() {
         start_tile(f, cell(0));
     }

@@ -47,13 +47,25 @@ const SLIDER_BELOW: f32 = 0.8;
 pub(super) const SHADE: Rgb = SURFACE_HI;
 pub(super) const SHADE_ALPHA: f32 = 0.85;
 
-/// A held slider (volume and brightness over the bar, a keymap parameter in its row): on a shaded band
-/// at height `cy`, the track laid out from `x0` with the value it had under the finger (the value lit,
-/// the thumb where it is now), and the value (`icon` and `text`) on a small card of its own where the
-/// finger doesn't cover it: below the slider (above it without room below, in `within`), to the side
-/// away from the finger.
-#[allow(clippy::too_many_arguments)]
-pub(super) fn held_slider(f: &mut Frame, slider: &clamshell_core::slider::Slider, x0: f32, cy: f32, h: f32, within: Rect, icon: Option<Icon>, text: &str) {
+/// A held slider (volume and brightness over the bar, a keymap parameter in its row): the slider, the
+/// x its track's positions count from, the height of its middle, its size (the bar's height, a row's),
+/// the room its card may use, and what the card says.
+pub(super) struct HeldSlider<'a> {
+    pub slider: &'a clamshell_core::slider::Slider,
+    pub x0: f32,
+    pub cy: f32,
+    pub h: f32,
+    pub within: Rect,
+    pub icon: Option<Icon>,
+    pub text: &'a str,
+}
+
+/// A held slider (see [`HeldSlider`]): on a shaded band at its height, the track laid out with the value
+/// it had under the finger (the value lit, the thumb where it is now), and the value on a small card of
+/// its own where the finger doesn't cover it: below the slider (above it without room below), to the
+/// side away from the finger.
+pub(super) fn held_slider(f: &mut Frame, held: HeldSlider) {
+    let HeldSlider { slider, x0, cy, h, within, icon, text } = held;
     let track = Track { x0: x0 + slider.track_start(), w: slider.length };
     let thumb = h * SLIDER_THUMB;
     let at = track.x0 + track.w * slider.fraction(slider.value);
@@ -255,14 +267,14 @@ pub(super) enum HeaderRight<'a> {
     Action(Id, &'a str),
 }
 
-/// A screen's header over `body`: a back arrow (`back`, its target) on the left, the title (from the
+/// A screen's header, at the top of the content area: a back arrow (`back`, its target) on the left, the title (from the
 /// left after it, or centred), and on the right an action. Returns the area below it.
-pub(super) fn header(f: &mut Frame, body: Rect, back: Option<Id>, title: &str, centred: bool, right: HeaderRight) -> Rect {
-    let pad = style::pad(body.h);
-    let mut area = style::content(body);
-    let mut bar = area.take_top(body.h * HEADER_H);
+pub(super) fn header(f: &mut Frame, back: Option<Id>, title: &str, centred: bool, right: HeaderRight) -> Rect {
+    let pad = f.pad();
+    let mut area = style::content(f.body());
+    let mut bar = area.take_top(f.body().h * HEADER_H);
     let full = bar;
-    let size = Text::Heading.size(body.h);
+    let size = f.text(Text::Heading);
     let left_w = match back {
         Some(id) => {
             let r = bar.take_left(bar.h);
@@ -292,10 +304,10 @@ pub(super) fn header(f: &mut Frame, body: Rect, back: Option<Id>, title: &str, c
 }
 
 /// A menu: text actions down `area` from its top (each `(target, label, tone)`), as many as fit.
-pub(super) fn menu(f: &mut Frame, area: Rect, body: Rect, items: &[(Id, &str, Tone)]) {
-    let pad = style::pad(body.h);
-    let h = body.h * MENU_BUTTON_H;
-    let size = Text::Body.size(body.h);
+pub(super) fn menu(f: &mut Frame, area: Rect, items: &[(Id, &str, Tone)]) {
+    let pad = f.pad();
+    let h = f.body().h * MENU_BUTTON_H;
+    let size = f.text(Text::Body);
     for (i, (id, label, tone)) in items.iter().enumerate() {
         let r = Rect::new(area.x, area.y + i as f32 * (h + pad * 0.5), menu_w(area, size), h);
         if r.bottom() > area.bottom() {

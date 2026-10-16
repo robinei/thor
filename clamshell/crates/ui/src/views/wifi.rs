@@ -13,17 +13,16 @@ use super::format::Fmt;
 use super::style::Tone;
 use super::widgets::{self, RowFace};
 use super::{Frame, radio};
-use crate::draw::Rect;
 use crate::icons::Icon;
 
-pub(super) fn draw(f: &mut Frame, body: Rect) {
+pub(super) fn draw(f: &mut Frame) {
     if let Some(Editor { purpose: Purpose::Password { ssid }, .. }) = f.s.bottom().editor() {
         let title = Fmt::<128>::of(format_args!("Password for {ssid}"));
-        return super::editor::draw(f, body, &title, "Join");
+        return super::editor::draw(f, &title, "Join");
     }
     let wifi = &f.s.radios().wifi;
     let status = Fmt::<256>::of(format_args!("{}", Status(wifi)));
-    let list = radio::header(f, body, Id::Wifi(WifiId::Power), wifi.enabled, (status_tone(wifi), &status));
+    let list = radio::header(f, Id::Wifi(WifiId::Power), wifi.enabled, (status_tone(wifi), &status));
     // The networks, as many as fit above the hint.
     if wifi.networks.iter().any(|n| n.known) {
         list.hint(f, "Long press a saved network to forget it");

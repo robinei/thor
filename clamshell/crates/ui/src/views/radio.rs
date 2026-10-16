@@ -53,15 +53,16 @@ impl List {
 
 /// The header over `body`: the radio's `switch` (on or off) and what it is doing (`status`, in its
 /// tone); returns where the rows go.
-pub(super) fn header(f: &mut Frame, body: Rect, switch: Id, on: bool, (tone, status): (Tone, &str)) -> List {
-    let pad = style::pad(body.h);
+pub(super) fn header(f: &mut Frame, switch: Id, on: bool, (tone, status): (Tone, &str)) -> List {
+    let body = f.body();
+    let pad = f.pad();
     let mut list = style::content(body);
-    let mut header = list.take_top(body.h * HEADER_H);
-    let size = Text::Body.size(body.h);
+    let mut header = list.take_top(f.body().h * HEADER_H);
+    let size = f.text(Text::Body);
     let sw = header.take_right(header.h * SWITCH_W);
     widgets::switch(f, switch, sw, on);
     f.c.text_fit(Rect::new(header.x, header.y, header.w - pad, header.h), size, tone, status, Keep::Start);
-    let row_h = body.h * ROW_H;
+    let row_h = f.body().h * ROW_H;
     let hint_y = list.y + list.h - size * LINE;
     List { pad, size, area: list, row_h, hint_y }
 }

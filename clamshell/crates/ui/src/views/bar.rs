@@ -146,7 +146,8 @@ fn draw_notice(f: &mut Frame, what: &NoticeKind, w: f32, bar_h: f32) {
 fn draw_slider(f: &mut Frame, slider: Slider, w: f32, bar_h: f32) {
     let icon = level_icon(f, slider.control, slider.value);
     let text = Fmt::<4>::of(format_args!("{}", slider.value));
-    widgets::held_slider(f, &slider, 0.0, bar_h / 2.0, bar_h, Rect::new(0.0, 0.0, w, f32::INFINITY), Some(icon), &text);
+    let within = Rect::new(0.0, 0.0, w, f32::INFINITY);
+    widgets::held_slider(f, widgets::HeldSlider { slider: &slider, x0: 0.0, cy: bar_h / 2.0, h: bar_h, within, icon: Some(icon), text: &text });
 }
 
 /// A level's icon at `value`: volume's (muted, or how loud), brightness's. (A keymap parameter's slider

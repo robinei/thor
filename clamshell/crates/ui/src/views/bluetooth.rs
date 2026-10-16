@@ -12,13 +12,12 @@ use super::format::Fmt;
 use super::style::Tone;
 use super::widgets::{self, RowFace};
 use super::{Frame, radio};
-use crate::draw::Rect;
 use crate::icons::Icon;
 
-pub(super) fn draw(f: &mut Frame, body: Rect) {
+pub(super) fn draw(f: &mut Frame) {
     let bt = &f.s.radios().bluetooth;
     let status = Fmt::<256>::of(format_args!("{}", Status(bt)));
-    let list = radio::header(f, body, Id::Bluetooth(BtId::Power), bt.powered, (status_tone(bt), &status));
+    let list = radio::header(f, Id::Bluetooth(BtId::Power), bt.powered, (status_tone(bt), &status));
     if bt.devices.iter().any(|d| d.paired) {
         list.hint(f, "Long press a paired device to forget it");
     }
