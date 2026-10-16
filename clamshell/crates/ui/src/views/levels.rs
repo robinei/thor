@@ -6,12 +6,12 @@
 use clamshell_core::levels::Level;
 use clamshell_core::{AudioId, Id, ListId, RowPart};
 
-use super::format::{self, Fmt};
-use super::scroll::Scrolled;
-use super::style::{self, Look, Text, Tone};
-use super::{Frame, Track, widgets};
 use crate::draw::{Align, Column, Keep, Rect};
 use crate::icons::Icon;
+use crate::toolkit::format::{self, Fmt};
+use crate::toolkit::scroll::Scrolled;
+use crate::toolkit::style::{self, Look, Text, Tone};
+use crate::toolkit::{Frame, Track, widgets};
 
 /// A row's height, of the area's height.
 const ROW_H: f32 = 0.11;

@@ -3,10 +3,10 @@
 
 use clamshell_core::metrics::{HISTORY, Ring};
 
-use super::Frame;
-use super::format::{Fmt, Frequency, HoursMinutes, Percent, Temp};
-use super::style::{self, SURFACE, Tone};
 use crate::draw::{Canvas, Rect, Rgb};
+use crate::toolkit::Frame;
+use crate::toolkit::format::{Fmt, Frequency, HoursMinutes, Percent, Temp};
+use crate::toolkit::style::{self, SURFACE, Tone};
 
 /// Sizes and positions, of a tile's height: label, value, detail; the graph's share at the bottom.
 const LABEL: f32 = 0.11;

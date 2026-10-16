@@ -17,8 +17,8 @@ use clamshell_core::slider::{Control, SLIDE_AFTER, SLIDE_MOVE};
 use clamshell_core::{Event, Hold, Id, LevelEvent, ListEvent, PadRoute, PointerEvent, Slide, State};
 
 use crate::fling::{FLING_EVERY, Fling, Trail};
-use crate::views::scroll::InList;
-use crate::views::{Target, Track};
+use crate::toolkit::scroll::InList;
+use crate::toolkit::{Target, Track};
 
 /// A finger on a list moved this far up or down (logical pixels) drags the list.
 pub(crate) const DRAG_START: f32 = 12.0;

@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use clamshell_core::{ListId, State};
 
-use crate::views::scroll::InList;
+use crate::toolkit::scroll::InList;
 
 /// A step: about a frame.
 pub(crate) const FLING_EVERY: Duration = Duration::from_millis(16);

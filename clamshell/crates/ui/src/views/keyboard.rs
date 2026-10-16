@@ -6,10 +6,10 @@
 use clamshell_core::Id;
 use clamshell_core::keyboard::{self, Key, KeyPos, Keyboard, LAYOUT, Modifier, Named, Slot};
 
-use super::Frame;
-use super::style::{Look, Tone};
 use crate::draw::{Align, Canvas, Rect};
 use crate::icons::Icon;
+use crate::toolkit::Frame;
+use crate::toolkit::style::{Look, Tone};
 
 /// Label sizes, of a key's height: the main one and the small ones above and below.
 const MAIN_TEXT: f32 = 0.3;

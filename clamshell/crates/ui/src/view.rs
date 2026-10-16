@@ -27,7 +27,7 @@ use crate::focus::Drawn;
 use crate::images::Images;
 use crate::render::{self, Picture, Placement, Rendered};
 use crate::screens::{Screen, Screens};
-use crate::views::Target;
+use crate::toolkit::Target;
 use crate::{App, Error};
 
 pub(crate) enum Shell {

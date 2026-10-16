@@ -7,11 +7,11 @@ use std::fmt::{self, Display, Formatter};
 
 use clamshell_core::{Game, Id, ListId, ShelfId};
 
-use super::format::{DaysAgo, Fmt, PlayTime};
-use super::scroll::Scrolled;
-use super::style::{self, Look, RADIUS_L, SURFACE_HI, Tone};
-use super::{Frame, widgets};
 use crate::draw::{Align, Column, Keep, Rect, Span, WRAP_LINE};
+use crate::toolkit::format::{DaysAgo, Fmt, PlayTime};
+use crate::toolkit::scroll::Scrolled;
+use crate::toolkit::style::{self, Look, RADIUS_L, SURFACE_HI, Tone};
+use crate::toolkit::{Frame, widgets};
 
 /// The tab bar's height and text size, of the screen's height.
 const TABS_H: f32 = 0.08;

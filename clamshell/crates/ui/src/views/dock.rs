@@ -10,12 +10,12 @@
 use clamshell_core::apps::App;
 use clamshell_core::{DockId, Game, Id};
 
-use super::Frame;
-use super::format::{Fmt, Position};
-use super::style::{self, Look, Text, Tone};
-use super::widgets::{self, CAPTION_Y, TileFace, TileShape};
 use crate::draw::{Align, Keep, Rect};
 use crate::icons::Icon;
+use crate::toolkit::Frame;
+use crate::toolkit::format::{Fmt, Position};
+use crate::toolkit::style::{self, Look, Text, Tone};
+use crate::toolkit::widgets::{self, CAPTION_Y, TileFace, TileShape};
 
 /// The grid: at least this many rows, so a few apps keep tile-sized tiles.
 const COLUMNS: usize = 4;

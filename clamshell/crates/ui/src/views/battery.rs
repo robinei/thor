@@ -8,10 +8,10 @@
 use clamshell_core::State;
 use clamshell_core::settings::Setting;
 
-use super::Frame;
-use super::format::{Duration, Fmt, Share};
-use super::style::{self, SURFACE, SURFACE_HI, Tone};
 use crate::draw::{Align, Keep, LINE, Rect};
+use crate::toolkit::Frame;
+use crate::toolkit::format::{Duration, Fmt, Share};
+use crate::toolkit::style::{self, SURFACE, SURFACE_HI, Tone};
 
 /// The top row's height, the level's and the other text's sizes, of the area's height. (The text is
 /// a little smaller than other tabs' body text, for the figures to fit.)

@@ -14,7 +14,8 @@ use tiny_skia::Pixmap;
 
 use crate::draw::{Canvas, DrawCache, Rect};
 use crate::images::Images;
-use crate::views::{self, Frame, FrameOut, Scratch, Target};
+use crate::toolkit::{Frame, FrameOut, Scratch, Target};
+use crate::views;
 use crate::{Error, Screen};
 
 /// OLED burn-in protection: every screen is laid out inside a black margin of MARGIN buffer pixels on

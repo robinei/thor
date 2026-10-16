@@ -8,11 +8,12 @@ use std::fmt::{self, Display, Formatter};
 use clamshell_core::bluetooth::{Action, Bluetooth, DeviceState, Problem, Reason};
 use clamshell_core::{BtId, Id, ListId, RadioStatus};
 
-use super::format::Fmt;
-use super::style::Tone;
-use super::widgets::{self, RowFace};
-use super::{Frame, radio};
+use super::radio;
 use crate::icons::Icon;
+use crate::toolkit::Frame;
+use crate::toolkit::format::Fmt;
+use crate::toolkit::style::Tone;
+use crate::toolkit::widgets::{self, RowFace};
 
 pub(super) fn draw(f: &mut Frame) {
     let bt = &f.s.radios().bluetooth;

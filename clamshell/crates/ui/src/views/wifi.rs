@@ -9,11 +9,12 @@ use clamshell_core::editor::{Editor, Purpose};
 use clamshell_core::wifi::{NetState, Problem, Wifi};
 use clamshell_core::{Id, ListId, RadioStatus, WifiId};
 
-use super::format::Fmt;
-use super::style::Tone;
-use super::widgets::{self, RowFace};
-use super::{Frame, radio};
+use super::radio;
 use crate::icons::Icon;
+use crate::toolkit::Frame;
+use crate::toolkit::format::Fmt;
+use crate::toolkit::style::Tone;
+use crate::toolkit::widgets::{self, RowFace};
 
 pub(super) fn draw(f: &mut Frame) {
     if let Some(Editor { purpose: Purpose::Password { ssid }, .. }) = f.s.bottom().editor() {

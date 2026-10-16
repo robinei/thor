@@ -3,9 +3,9 @@
 
 use clamshell_core::Id;
 
-use super::Frame;
-use super::style::Look;
 use crate::draw::Rect;
+use crate::toolkit::Frame;
+use crate::toolkit::style::Look;
 
 pub(super) fn draw(f: &mut Frame, screen: Rect) {
     f.button(Id::Wake, screen, Look::PLAIN, |_| {});

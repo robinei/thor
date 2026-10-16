@@ -23,6 +23,7 @@ mod no_alloc;
 mod render;
 mod screens;
 mod text_input;
+mod toolkit;
 mod view;
 mod views;
 mod wayland;
@@ -203,7 +204,7 @@ pub fn snapshot(state: &State, screen: Screen, size: (u32, u32), scale: u32, pat
 
 /// What a frame says about the lists it drew that the state doesn't know yet: how many rows each
 /// shows (as the state has it, give or take rounding).
-fn list_changes(state: &State, out: &views::FrameOut) -> impl Iterator<Item = Event> {
+fn list_changes(state: &State, out: &toolkit::FrameOut) -> impl Iterator<Item = Event> {
     ListId::ALL.into_iter().filter_map(move |list| {
         let rows = out.lists.get(list.index()).copied().flatten()?;
         let known = state.scroll(list).visible().is_some_and(|v| (v - rows).abs() < 1e-3);
@@ -213,7 +214,7 @@ fn list_changes(state: &State, out: &views::FrameOut) -> impl Iterator<Item = Ev
 
 /// What a frame drawn without Wayland reports back to the state, as a live one would: shelf's rows, the
 /// lists' visible rows.
-fn frame_events(state: &State, out: &views::FrameOut) -> Vec<Event> {
+fn frame_events(state: &State, out: &toolkit::FrameOut) -> Vec<Event> {
     let mut events: Vec<Event> = out.list_rows.filter(|&r| r != state.shelf().rows()).map(|r| ShelfEvent::Rows(r).into()).into_iter().collect();
     events.extend(list_changes(state, out));
     events

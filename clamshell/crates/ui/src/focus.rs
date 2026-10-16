@@ -12,7 +12,7 @@ use smithay_client_toolkit::seat::keyboard::Keysym;
 use crate::draw::Rect;
 use crate::nav::{self, Dir, NavTarget};
 use crate::screens::{Screen, Screens};
-use crate::views::Target;
+use crate::toolkit::Target;
 
 /// What the last frames drew on each screen, and the screens' sizes (in surface pixels).
 pub(crate) trait Drawn {

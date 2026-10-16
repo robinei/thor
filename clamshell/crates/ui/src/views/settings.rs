@@ -10,12 +10,12 @@ use clamshell_core::editor::{Editor, KeymapName, Purpose};
 use clamshell_core::settings::{Impact, Setting};
 use clamshell_core::{Id, Scope, SettingsId, State, TileOrigin};
 
-use super::Frame;
-use super::format::{Fmt, Variables};
-use super::style::{self, Text, Tone};
-use super::widgets::{self, TileFace, TileShape};
 use crate::draw::{Align, Rect, Rgb};
 use crate::icons::Icon;
+use crate::toolkit::Frame;
+use crate::toolkit::format::{Fmt, Variables};
+use crate::toolkit::style::{self, Text, Tone};
+use crate::toolkit::widgets::{self, TileFace, TileShape};
 
 /// The scope tabs' row, of the area's height.
 const TABS_H: f32 = 0.1;

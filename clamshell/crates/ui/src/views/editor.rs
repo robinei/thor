@@ -5,9 +5,10 @@
 
 use clamshell_core::{EditorId, Id};
 
-use super::style::{self, RADIUS, SURFACE_HI, Text, Tone};
-use super::{Frame, keyboard};
+use super::keyboard;
 use crate::draw::{Align, Keep, LINE, Rect};
+use crate::toolkit::Frame;
+use crate::toolkit::style::{self, RADIUS, SURFACE_HI, Text, Tone};
 
 /// The field's row, of the area's height; the field's share of the row's width; the field's and the
 /// buttons' text, of the row's height.

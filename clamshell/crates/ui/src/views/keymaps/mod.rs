@@ -19,21 +19,23 @@ use clamshell_core::keymap_ui::{EditView, Screen, holds, picked, way_of, ways};
 use clamshell_core::slider::{Control, Slider};
 use clamshell_core::{Id, KeymapId, ListId, RowPart, Scope, Target};
 
-use super::format::Fmt;
-use super::pad::{Pad, Part};
-use super::style::{self, Look, Text, Tone};
-use super::widgets::{EditCell, HeaderRight, HeldSlider, ListArea, ListRow};
-use super::{Frame, Track, editor, widgets};
+use super::editor;
 use crate::draw::{Align, Column, Keep, LINE, Rect, Rgb, Span};
 use crate::icons::Icon;
+use crate::toolkit::format::Fmt;
+use crate::toolkit::style::{self, Look, Text, Tone};
+use crate::toolkit::widgets::{EditCell, HeaderRight, HeldSlider, ListArea, ListRow};
+use crate::toolkit::{Frame, Track, widgets};
 
 mod choose;
 mod edit;
+mod pad;
 mod panel;
 mod words;
 
 use choose::*;
 use edit::*;
+use pad::{Pad, Part};
 use panel::*;
 use words::*;
 

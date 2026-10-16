@@ -11,11 +11,11 @@ use clamshell_core::hardware::NoticeKind;
 use clamshell_core::slider::{Control, Slider};
 use clamshell_core::{Id, State, Tab};
 
-use super::format::Fmt;
-use super::style::{Look, Tone};
-use super::{Frame, Track, widgets};
 use crate::draw::{Align, Rect};
 use crate::icons::Icon;
+use crate::toolkit::format::Fmt;
+use crate::toolkit::style::{Look, Tone};
+use crate::toolkit::{Frame, Track, widgets};
 
 /// The bar's height, of the screen's (at least 20 pixels).
 const BAR_H: f32 = 0.075;

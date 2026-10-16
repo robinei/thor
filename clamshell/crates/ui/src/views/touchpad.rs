@@ -4,10 +4,10 @@
 
 use clamshell_core::TouchpadProblem;
 
-use super::Frame;
-use super::format::Fmt;
-use super::style::{Text, Tone};
 use crate::draw::{Align, Rect, Rgb};
+use crate::toolkit::Frame;
+use crate::toolkit::format::Fmt;
+use crate::toolkit::style::{Text, Tone};
 
 /// The cross: barely above black.
 const CROSS: Rgb = Rgb(0x18181c);

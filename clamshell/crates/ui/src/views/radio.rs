@@ -3,10 +3,10 @@
 
 use clamshell_core::Id;
 
-use super::style::{self, Text, Tone};
-use super::widgets::ListArea;
-use super::{Frame, widgets};
 use crate::draw::{Keep, Rect};
+use crate::toolkit::style::{self, Text, Tone};
+use crate::toolkit::widgets::ListArea;
+use crate::toolkit::{Frame, widgets};
 
 /// The header's height and a row's height, of the area's height.
 const HEADER_H: f32 = 0.1;
