@@ -32,7 +32,7 @@ LOCALE=${THOR_LOCALE:-en_US.UTF-8}
 SWAP_GIB=16
 # The device's packages: the base system, network, the session, the GPU (Freedreno/Turnip), sound,
 # screenshots (grim), growing the root on first boot (growpart, which uses sgdisk for GPT).
-PACKAGES=(base sudo mkinitcpio networkmanager polkit upower bluez openssh sway swaybg foot xorg-xwayland mesa vulkan-freedreno
+PACKAGES=(base sudo mkinitcpio networkmanager polkit upower bluez openssh sway foot xorg-xwayland mesa vulkan-freedreno
           pipewire pipewire-pulse wireplumber alsa-ucm-conf noto-fonts sqlite python less vim grim cloud-guest-utils gptfdisk)
 # The kernel command line: ROCKNIX's tuning for SM8550, our root. The first boot adds resume= and
 # resume_offset= (the swap file's place) to both copies of it: /KERNEL's and the loader entry's.

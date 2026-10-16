@@ -60,7 +60,7 @@ BOTTOM = (1240, 1080)
 KERNEL_VIDEO = f"video=Virtual-1:{TOP[0]}x{TOP[1]}@60 video=Virtual-2:{BOTTOM[0]}x{BOTTOM[1]}@60e"
 # Packages the session needs.
 PACKAGES = [
-    "sway", "swaybg", "foot", "xorg-xwayland", "mesa", "pipewire", "pipewire-pulse", "wireplumber",
+    "sway", "foot", "xorg-xwayland", "mesa", "pipewire", "pipewire-pulse", "wireplumber",
     "sqlite", "grim", "python", "libinput-tools", "evtest", "iw", "noto-fonts",
     # Wi-Fi as on the device (NetworkManager), and test networks to join (hostapd on simulated radios).
     "networkmanager", "polkit", "hostapd", "dnsmasq",
