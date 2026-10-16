@@ -171,7 +171,10 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
 - [ ] GPU: Freedreno (sway) and Turnip (`vkcube`, a game); MangoHud frame rate in sysinfo.
 - [ ] HDR, an experiment (the panels take no HDR signal; HDR as on phones: the panel driven brighter,
       ordinary content drawn dimmer within it, highlights above). Peaks from the spec sheets: top 650
-      nits, bottom 550 (the bottom one needs none). First the facts: the DSI link's bits per colour and
+      nits, bottom 550. The bottom needs no HDR, but it shows dual-screen emulators' second screen (DS,
+      3DS, Wii U), so its white and colours must match the top's: with the top in headroom mode, the
+      bottom's ordinary white at the same level as the top's (about 200 nits), and the two panels'
+      white points and gamuts matched to begin with (two OLED panels can differ). First the facts: the DSI link's bits per colour and
       whether the display processor dithers (banding); how far the kernel's brightness goes and whether
       its top is near 650 nits or the panel's high-brightness mode is out of reach; which colour
       properties msm exposes on the connector and CRTC (CTM, GAMMA_LUT, DEGAMMA_LUT); Turnip under
