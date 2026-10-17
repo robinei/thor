@@ -5,7 +5,7 @@ use super::*;
 use crate::names::names;
 
 /// A face, shoulder, menu, stick-click or back button.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub enum Button {
     A,
     B,
@@ -56,7 +56,7 @@ impl Button {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub enum Dir {
     Up,
     Down,
@@ -71,7 +71,7 @@ names!(Dir {
     Right: "right", "Right";
 });
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub enum Side {
     Left,
     Right,
@@ -92,7 +92,7 @@ impl Side {
 }
 
 /// One of the pad's inputs that a keymap can map. (Home is ClamShell's: never mapped.)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub enum Input {
     Button(Button),
     Dpad(Dir),
@@ -168,7 +168,7 @@ impl Input {
 
 /// A button on the pad games see (the Xbox 360 pad): a button (not a back button), a D-pad direction,
 /// or a trigger pressed fully.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum PadOut {
     Button(Button),
     Dpad(Dir),

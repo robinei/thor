@@ -1,5 +1,4 @@
-//! An entry's play history (`stats.db`), summed up. Reading and writing the database is
-//! clamshell-system's (`library::stats`).
+//! An entry's play history, summed up. Reading and writing it is clamshell-system's (`store`).
 
 /// A game's plays: how many, how long in all (seconds), and when the last one ended (epoch seconds).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

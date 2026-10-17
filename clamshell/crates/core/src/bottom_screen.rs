@@ -7,9 +7,8 @@
 //!
 //! Moving a game's or a dock app's window down is remembered as a rule ([`WindowRule`]: the program, the
 //! window's app id and title): the next time it opens a window like it, the window goes down by itself.
-//! Moving it up forgets the rule. The rules are saved in `window-rules.txt` ([`WindowRules::text`]).
+//! Moving it up forgets the rule. The rules are saved.
 
-use std::fmt::Write;
 use std::sync::Arc;
 
 use crate::State;
@@ -33,9 +32,6 @@ impl WindowRule {
     }
 }
 
-/// The window rules file's first line: its format and version.
-pub const WINDOW_RULES_FORMAT: &str = "# ClamShell window rules, format 2";
-
 /// The rules: which programs' windows go to the bottom screen.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct WindowRules {
@@ -43,34 +39,13 @@ pub struct WindowRules {
 }
 
 impl WindowRules {
+    /// These rules, as saved.
+    pub fn from_list(list: Vec<WindowRule>) -> WindowRules {
+        WindowRules { list }
+    }
+
     pub fn list(&self) -> &[WindowRule] {
         &self.list
-    }
-
-    /// As text: the format's line, then a rule per line, tab-separated: `bottom`, the entry's id, the app
-    /// id, the title.
-    pub fn text(&self) -> String {
-        let mut text = format!("{WINDOW_RULES_FORMAT}\n");
-        for r in &self.list {
-            let _ = writeln!(text, "bottom\t{}\t{}\t{}", r.owner, r.app_id, r.title);
-        }
-        text
-    }
-
-    /// From text (lines it doesn't understand are skipped).
-    pub fn load(text: &str) -> WindowRules {
-        let list = text
-            .lines()
-            .filter(|l| !l.starts_with('#'))
-            .filter_map(|line| {
-                let mut f = line.splitn(4, '\t');
-                let (Some("bottom"), Some(owner), Some(app_id), Some(title)) = (f.next(), f.next(), f.next(), f.next()) else {
-                    return None;
-                };
-                Some(WindowRule { owner: owner.into(), app_id: app_id.to_owned(), title: title.to_owned() })
-            })
-            .collect();
-        WindowRules { list }
     }
 
     /// Adds a rule (unless there is one like it); whether it was new.
@@ -135,7 +110,7 @@ impl State {
             && self.window_rules.add(WindowRule { owner, app_id: w.app_id.clone(), title: w.title.clone() })
         {
             self.notify(NoticeKind::BottomRule(true));
-            effects.push(Effect::Save(Save::WindowRules(self.window_rules.text())));
+            effects.push(Effect::Save(Save::WindowRules(self.window_rules.clone())));
         }
         effects
     }
@@ -164,7 +139,7 @@ impl State {
             && self.window_rules.forget(&owner, &w)
         {
             self.notify(NoticeKind::BottomRule(false));
-            effects.push(Effect::Save(Save::WindowRules(self.window_rules.text())));
+            effects.push(Effect::Save(Save::WindowRules(self.window_rules.clone())));
         }
         effects
     }
@@ -274,7 +249,8 @@ mod tests {
         assert!(!s.bottom_shows_windows());
         let fx = key(&mut s, DeviceKey::WindowDown);
         assert_eq!(fx[0], Effect::Window(WindowCommand::Down(2)));
-        assert!(matches!(&fx[1], Effect::Save(Save::WindowRules(t)) if t.ends_with("bottom\tmelonds\temu\tBottom\n")), "{fx:?}");
+        let rule = WindowRule { owner: "melonds".into(), app_id: "emu".into(), title: "Bottom".into() };
+        assert!(matches!(&fx[1], Effect::Save(Save::WindowRules(r)) if r.list() == [rule.clone()]), "{fx:?}");
         assert_eq!(s.bottom().notice().map(|n| &n.what), Some(&NoticeKind::BottomRule(true)));
         // sway reports it down: shown there.
         s.apply(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]));
@@ -288,7 +264,7 @@ mod tests {
         // Up: back to its workspace, the rule forgotten, ClamShell's view below.
         let fx = key(&mut s, DeviceKey::WindowUp);
         assert_eq!(fx[0], Effect::Window(WindowCommand::Up { window: 2, to: Some(emu()) }));
-        assert!(matches!(&fx[1], Effect::Save(Save::WindowRules(t)) if t == &format!("{WINDOW_RULES_FORMAT}\n")), "{fx:?}");
+        assert!(matches!(&fx[1], Effect::Save(Save::WindowRules(r)) if r.list().is_empty()), "{fx:?}");
         s.apply(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, false)]));
         assert!(!s.bottom_shows_windows(), "none down: ClamShell's view");
     }
@@ -301,8 +277,7 @@ mod tests {
         // A fresh start with the rules: the game's windows open on top; the one the rule names goes down,
         // once.
         let mut s = state();
-        s.window_rules = WindowRules::load(&rules.text());
-        assert_eq!(s.window_rules, rules, "read back as written");
+        s.window_rules = WindowRules::from_list(rules.list().to_vec());
         s.session.running.push(running("melonds", "melonds_1"));
         let fx = s.apply(Event::Windows(vec![win(5, GAME, "Top", true, false), win(6, GAME, "Bottom", false, false)])).1;
         assert!(fx.contains(&Effect::Window(WindowCommand::Down(6))), "{fx:?}");
@@ -361,12 +336,5 @@ mod tests {
         let fx = key(&mut s, DeviceKey::WindowDown);
         assert!(fx.contains(&Effect::Window(WindowCommand::BottomPower(true))), "{fx:?}");
         assert!(!s.bottom_off());
-    }
-
-    #[test]
-    fn rules_files_skip_what_they_dont_understand() {
-        let rules = WindowRules::load("# a comment\nbottom\tx\temu\tBottom screen\nbottom\tx\ta\nnonsense\n");
-        assert_eq!(rules.list().len(), 1);
-        assert_eq!(rules.list()[0].title, "Bottom screen");
     }
 }

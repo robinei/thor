@@ -125,7 +125,7 @@ impl State {
     }
 
     pub(crate) fn saved_and_applied(&self, before: Values) -> Vec<Effect> {
-        let mut effects = vec![Effect::Save(Save::Settings(self.settings.text()))];
+        let mut effects = vec![Effect::Save(Save::Settings(self.settings.clone()))];
         let now = self.in_force();
         if now != before {
             effects.push(Effect::Apply { game: self.session.program.clone(), settings: now });
@@ -160,7 +160,7 @@ impl State {
         match editor.purpose {
             Purpose::Env { game } => {
                 self.settings.set_env(game, &editor.text);
-                vec![Effect::Save(Save::Settings(self.settings.text()))]
+                vec![Effect::Save(Save::Settings(self.settings.clone()))]
             }
             Purpose::Password { ssid } => self.join(ssid, Some(editor.text)),
             Purpose::KeymapName(action) => self.named_keymap(action, &editor.text),
@@ -198,8 +198,8 @@ mod tests {
         tap(s, Id::Settings(SettingsId::Scope(scope)));
     }
 
-    fn state_with(text: &str) -> State {
-        State::new(Init { settings: settings::Settings::load(text), ..init() })
+    fn state_with(settings: &settings::Settings) -> State {
+        State::new(Init { settings: settings.clone(), ..init() })
     }
 
     #[test]
@@ -209,17 +209,16 @@ mod tests {
         taps(&mut s, Setting::FpsCap, 4); // 30, 40, 45, 60
         scope(&mut s, Scope::Game);
         let fx = taps(&mut s, Setting::Power, 1); // Balanced -> Performance
-        let saved = match fx.first() {
-            Some(Effect::Save(Save::Settings(t))) => t.clone(),
-            other => format!("{other:?}"),
+        let Some(Effect::Save(Save::Settings(saved))) = fx.first() else {
+            unreachable!("{fx:?}");
         };
-        assert!(saved.starts_with(&format!("{}\n*\tpower=1\tfps=60\t", crate::settings::SETTINGS_FORMAT)), "{saved}");
-        assert!(saved.ends_with("\nzelda-lttp\tpower=2\n"), "{saved}");
+        assert_eq!(saved, s.settings(), "saved whole");
+        assert_eq!(saved.overrides_of("zelda-lttp").get(Setting::Power), Some(2));
         let zelda = s.settings().of("zelda-lttp");
         assert_eq!((zelda.get(Setting::Power), zelda.get(Setting::FpsCap)), (2, 60));
         assert_eq!(s.settings().of("ff6").get(Setting::Power), 1);
         assert_eq!((s.tile_origin(Setting::Power), s.tile_origin(Setting::FpsCap)), (TileOrigin::Own, TileOrigin::Inherited));
-        let fresh = state_with(&saved);
+        let fresh = state_with(saved);
         assert_eq!(fresh.settings().of("zelda-lttp"), zelda);
         assert_eq!(fresh.settings().global, s.settings().global);
         // A long press drops one override; Reset all of them.
@@ -237,7 +236,10 @@ mod tests {
 
     #[test]
     fn the_launch_carries_the_games_settings_and_environment() {
-        let mut s = state_with("*\tenv=A=1 B=2\nzelda-lttp\tenv=B=3 'C=x y'\n");
+        let mut settings = settings::Settings::default();
+        settings.set_env(None, "A=1 B=2");
+        settings.set_env(Some("zelda-lttp".into()), "B=3 'C=x y'");
+        let mut s = state_with(&settings);
         taps(&mut s, Setting::FpsCap, 2);
         let fx = tap(&mut s, Id::Shelf(ShelfId::Launch));
         let Some(Effect::Launch { settings, env, .. }) = fx.iter().find(|e| matches!(e, Effect::Launch { .. })) else { unreachable!("{fx:?}") };
@@ -300,10 +302,10 @@ mod tests {
         key(&mut s, Key::Char('='));
         key(&mut s, Key::Char('1'));
         let fx = key(&mut s, Key::Named(Named::Enter));
-        assert!(matches!(fx.first(), Some(Effect::Save(Save::Settings(t))) if t.ends_with("zelda-lttp\tenv=dxv=1\n")), "{fx:?}");
+        assert!(matches!(fx.first(), Some(Effect::Save(Save::Settings(t))) if t.env_text(Some("zelda-lttp")) == "dxv=1"), "{fx:?}");
         assert_eq!(s.bottom().editor(), None);
         assert_eq!(s.settings().env_of("zelda-lttp"), vec![("dxv".to_owned(), "1".to_owned())]);
-        let fresh = state_with(&s.settings().text());
+        let fresh = state_with(s.settings());
         assert_eq!(fresh.settings().env_of("zelda-lttp"), s.settings().env_of("zelda-lttp"));
     }
 

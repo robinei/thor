@@ -119,7 +119,7 @@ impl State {
         self.session.launching.push(Launching { game: game.clone(), instance: instance.clone(), appid });
         // Shown once its first window appears.
         self.session.pending_show = Some(instance.clone());
-        vec![Effect::Save(Save::Resume(self.resume_text())), Effect::Launch { game, instance, settings, env, launch }]
+        vec![Effect::Save(Save::Resume(self.resume())), Effect::Launch { game, instance, settings, env, launch }]
     }
 
     /// A launch has started (or a Steam game Steam started is seen): the entry runs (one launch more), and

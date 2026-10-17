@@ -41,6 +41,10 @@ tab, a dir, name patterns, and the command that starts an entry, `{path}` in it 
 `items` makes each matched folder a group that opens in shelf (a series, its seasons, their episodes).
 The rules (ids, titles, art, icons): `crates/system/src/library/content.rs`.
 
+What ClamShell keeps (play time, favourites, settings, keymaps, window rules, the dock's pins, where shelf
+was, brightness) is in one SQLite database, `~/.local/share/clamshell/clamshell.db`; its tables:
+`crates/system/src/store.rs`.
+
 ## Running
 
     cd clamshell

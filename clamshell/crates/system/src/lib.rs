@@ -27,6 +27,7 @@ pub mod paths;
 pub mod sleep;
 pub mod sound;
 pub mod status;
+pub mod store;
 pub mod sway;
 pub mod sys;
 pub mod touchpad;

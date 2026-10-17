@@ -12,8 +12,6 @@
 //!
 //! The bar's sliders set the same levels as the tabs' rows (`Level::Volume`, `Level::Brightness`).
 
-use std::fmt::Write;
-
 use crate::State;
 use crate::effect::Effect;
 use crate::id::Id;
@@ -99,41 +97,11 @@ pub struct Brightness {
 }
 
 impl Brightness {
-    /// As saved: `level <n>` and `factor <backlight> <n>` lines, tab-separated.
-    pub fn text(&self) -> String {
-        let mut text = String::new();
-        if let Some(level) = self.level {
-            let _ = writeln!(text, "level\t{level}");
-        }
-        for s in &self.shares {
-            let _ = writeln!(text, "factor\t{}\t{}", s.backlight, s.share);
-        }
-        text
-    }
-
-    /// From what [`Brightness::text`] wrote (lines it doesn't know are skipped).
-    pub fn from_text(text: &str) -> Brightness {
-        let mut b = Brightness::default();
-        for line in text.lines() {
-            let fields: Vec<&str> = line.split('\t').collect();
-            match fields.as_slice() {
-                ["level", n] => b.level = n.parse::<u8>().ok().map(|l| l.min(100)),
-                ["factor", name, n] => {
-                    if let Ok(f) = n.parse::<u8>() {
-                        b.set_share(name, f.min(100));
-                    }
-                }
-                _ => {}
-            }
-        }
-        b
-    }
-
     pub fn share(&self, backlight: &str) -> u8 {
         self.shares.iter().find(|s| s.backlight == backlight).map_or(100, |s| s.share)
     }
 
-    fn set_share(&mut self, backlight: &str, share: u8) {
+    pub fn set_share(&mut self, backlight: &str, share: u8) {
         match self.shares.iter_mut().find(|s| s.backlight == backlight) {
             Some(s) => s.share = share,
             None => self.shares.push(Share { backlight: backlight.to_owned(), share }),
@@ -525,11 +493,11 @@ mod tests {
         assert_eq!(s.apply(LevelEvent::Step(Level::Brightness, -1).into()).1.len(), 1);
         // Saved a moment later; back after a restart.
         let saved = s.apply(Event::Tick { unix_secs: 10 }).1;
-        let text = saved.iter().find_map(|e| match e {
-            Effect::Save(Save::Brightness(text)) => Some(text.clone()),
+        let brightness = saved.iter().find_map(|e| match e {
+            Effect::Save(Save::Brightness(b)) => Some(b),
             _ => None,
         });
-        assert_eq!(text.map(|t| Brightness::from_text(&t)).as_ref(), Some(s.levels().brightness()));
+        assert_eq!(brightness, Some(s.levels().brightness()));
     }
 
     #[test]

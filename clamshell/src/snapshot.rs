@@ -62,7 +62,7 @@ impl From<ParseError> for Error {
 
 /// The state snapshots start from: a library, its apps pinned to the dock, nothing else remembered.
 pub fn state(library: Library) -> State {
-    let dock = Dock::load("desktop:steam\ndesktop:foot\ndesktop:firefox\n");
+    let dock = Dock::pinned(vec!["desktop:steam".into(), "desktop:foot".into(), "desktop:firefox".into()]);
     State::new(Init { library, dock, keymaps: clamshell_core::keymap::Keymaps::initial(), ..Init::default() })
 }
 

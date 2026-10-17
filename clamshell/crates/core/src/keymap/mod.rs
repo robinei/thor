@@ -17,19 +17,14 @@
 //! ([`Actuation`]): each is a binding of its own. A binding to something on or off may also repeat while
 //! on (turbo) or stay on from one actuation to the next (toggle).
 //!
-//! Saved in `keymaps.txt` (next to `game-settings.txt`), its first line naming the format and its version
-//! ([`KEYMAPS_FORMAT`]; a change to the format bumps it, so loading can tell older files): a `keymap ID NAME` line starts a keymap (a
-//! game's own: `keymap ID`, then `game GAME`), then a
-//! line per binding, `INPUT [hold|double] = OUTPUT [option=value ...] [toggle]`; a `layer N NAME` line
-//! starts layer N's bindings (Base's come first), a `once` line after it making it Once. Lines it doesn't understand are skipped, and so are the
-//! bindings of a layer it doesn't know, so later features can add their own.
+//! Saved in ClamShell's database, a keymap a row (as JSON, through serde: see clamshell-system's
+//! `store`).
 
 use std::fmt::{self, Write};
 
 use crate::keyboard::{Key, Named};
 use crate::names::names;
 
-mod file;
 mod inputs;
 mod outputs;
 mod param;
@@ -42,8 +37,6 @@ pub use param::*;
 pub const DEFAULT_SPEED: u8 = 50;
 /// A trigger mapped to a button acts past this (percent of its travel, 1 to 100).
 pub const DEFAULT_THRESHOLD: u8 = 50;
-/// The keymaps file's first line: its format and version (a comment to the parser).
-pub const KEYMAPS_FORMAT: &str = "# ClamShell keymaps, format 2";
 /// A trigger's full pull acts past this (percent of its travel) unless set otherwise.
 pub const FULL_PULL: u8 = 95;
 /// A press held this long is a hold (hundredths of a second, 20 to 100).
@@ -62,7 +55,7 @@ pub const POINTER_CURVE: u8 = 50;
 /// An input's binding: what it maps to, and how. A stick's or trigger's tuning (deadzone, where it is
 /// full, curve, inversion) applies to its values before they are mapped, whatever they map to; a binding
 /// to the input itself ([`as_on_the_pad`]) with tuning is the input as on the pad, tuned.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct Binding {
     pub output: Output,
     /// Motion to the pointer or a stick: 0 to 100 (see [`DEFAULT_SPEED`]).
@@ -235,7 +228,7 @@ pub fn gyro_holds() -> impl Iterator<Item = Input> {
 /// they do on the pad, and the layers added to it, each on while a binding to it is
 /// ([`Output::Layer`]), its inputs without a binding doing what the layers on before it say (Base
 /// last).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub struct Layer(pub u8);
 
 impl Layer {
@@ -243,7 +236,7 @@ impl Layer {
 }
 
 /// One layer's bindings, an actuation's each in [`Input::all`]'s order, one per input at most.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 struct Bindings {
     press: Vec<(Input, Binding)>,
     hold: Vec<(Input, Binding)>,
@@ -277,7 +270,7 @@ impl Bindings {
 
 /// A layer of a keymap: its number, its name, its bindings, and whether it is Once (see
 /// [`Keymap::layer_once`]).
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 struct LayerOf {
     id: Layer,
     name: String,
@@ -287,7 +280,7 @@ struct LayerOf {
 
 /// A set of bindings in layers ([`Layer`]: Base, and those added), each actuation's ([`Actuation`]): named,
 /// or a game's own.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Keymap {
     /// Its number, kept across renames (0 is Default, which no keymap has).
     pub id: u16,
@@ -338,23 +331,6 @@ impl Keymap {
         let id = Layer(self.layers.iter().map(|l| l.id.0).max().unwrap_or(0).checked_add(1)?);
         self.layers.push(LayerOf { id, name: name.trim().to_owned(), bindings: Bindings::default(), once: false });
         Some(id)
-    }
-
-    /// The layer numbered `id`, made (named `name`, or after its number) if it isn't there yet; named
-    /// `name` if given. (Loading: a binding may name a layer before its own line does.)
-    fn ensure_layer(&mut self, id: Layer, name: Option<&str>) {
-        match self.layers.iter_mut().find(|l| l.id == id) {
-            Some(l) if l.id != Layer::BASE => {
-                if let Some(name) = name {
-                    l.name = name.trim().to_owned();
-                }
-            }
-            Some(_) => {}
-            None => {
-                let name = name.map_or_else(|| format!("Layer {}", id.0), |n| n.trim().to_owned());
-                self.layers.push(LayerOf { id, name, bindings: Bindings::default(), once: false });
-            }
-        }
     }
 
     /// Whether a layer is Once: turned on by a tap (or a toggle), it stays on until the first input it
@@ -532,7 +508,12 @@ pub struct Keymaps {
 }
 
 impl Keymaps {
-    /// What there is without a keymap file: the Nintendo layout.
+    /// These keymaps, as saved.
+    pub fn from_list(list: Vec<Keymap>) -> Keymaps {
+        Keymaps { list }
+    }
+
+    /// What there is before any were saved: the Nintendo layout.
     pub fn initial() -> Keymaps {
         Keymaps { list: vec![nintendo(1)] }
     }

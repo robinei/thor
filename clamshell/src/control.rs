@@ -205,7 +205,7 @@ pub const TARGETS: &[Form<Id>] = &[
     form("pad-mouse", "the bar's pad mouse switch", |_| Ok(Id::PadMouse)),
     form("scope game", "the settings' game tab", |_| Ok(Id::Settings(SettingsId::Scope(Scope::Game)))),
     form("scope all", "the settings' all games tab", |_| Ok(Id::Settings(SettingsId::Scope(Scope::Global)))),
-    form("setting KEY", "a settings tile by its key in game-settings.txt (pad, fps, keymap, ...)", |a| {
+    form("setting KEY", "a settings tile by its key (power, fps, keymap, ...)", |a| {
         let key = arg(a, 0);
         Ok(Id::Settings(SettingsId::Tile(Setting::from_name(key).ok_or_else(|| name_err(key))?)))
     }),
@@ -235,7 +235,7 @@ pub const TARGETS: &[Form<Id>] = &[
     form("keymap-replace", "saving over a named keymap confirmed", |_| km(KeymapId::ConfirmSave)),
     form("keymap-make-own", "the edit screen's Make own (a game's own keymap, a copy)", |_| km(KeymapId::MakeOwn)),
     form("keymap-undo", "the edit screen's Undo", |_| km(KeymapId::Undo)),
-    form("map-from INPUT", "an input selected (as in keymaps.txt: a, lb, up, lstick, rstick-up, lt, gyro; a long press sets it back)", |a| {
+    form("map-from INPUT", "an input selected (a, lb, up, lstick, rstick-up, lt, gyro; a long press sets it back)", |a| {
         km(KeymapId::Input(input_named(arg(a, 0))?))
     }),
     form("keymap-act ACT", "the panel's tab: press, hold, double, full", |a| {

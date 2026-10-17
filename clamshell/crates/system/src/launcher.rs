@@ -7,7 +7,7 @@
 //! - A Steam game is started with `steam -applaunch <id>`; it counts as running while Steam's launcher
 //!   process for that app id (`reaper SteamLaunch AppId=<id>`) exists.
 //!
-//! Every play is added to stats.db and reported, with its start and duration.
+//! Every play is added to the database (see [`crate::store`]) and reported, with its start and duration.
 
 use std::fmt;
 use std::io;
@@ -21,7 +21,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use clamshell_core::{Event, GameEvent, Instance, Launch};
 
 use crate::job::{self, Job, Runner, Started};
-use crate::library::stats;
+use crate::store::Store;
 use crate::worker::{self, Worker};
 use crate::{Closed, Sink, command, sys, units};
 
@@ -41,8 +41,8 @@ pub struct Request {
 
 #[derive(Clone)]
 pub struct Config {
-    /// Where plays are recorded; `None`: not recorded.
-    pub stats_db: Option<PathBuf>,
+    /// The database plays are recorded in; `None`: not recorded.
+    pub db: Option<PathBuf>,
     /// Run games in their own systemd scope.
     pub scope: bool,
     /// How jobs start: under sway, through it (see [`crate::sway`]), so the game's window opens on the
@@ -161,8 +161,8 @@ fn play(config: &Config, request: &Request, sink: &impl Sink) -> Result<(), Clos
                 Ok(()) => {
                     let duration = started.elapsed().as_secs();
                     log::info!("launcher: {game} ran {duration} s");
-                    if let Some(db) = &config.stats_db
-                        && let Err(e) = stats::record(db, game, start, duration)
+                    if let Some(db) = &config.db
+                        && let Err(e) = Store::open(db).and_then(|s| s.add_play(game, start, duration))
                     {
                         log::warn!("launcher: recording the play: {e}");
                     }
@@ -306,8 +306,8 @@ mod tests {
     use super::*;
     use std::sync::mpsc;
 
-    fn config(stats_db: Option<PathBuf>) -> Config {
-        Config { stats_db, scope: false, jobs: Runner { jobs: std::env::temp_dir(), sway: None } }
+    fn config(db: Option<PathBuf>) -> Config {
+        Config { db, scope: false, jobs: Runner { jobs: std::env::temp_dir(), sway: None } }
     }
 
     #[test]
@@ -317,7 +317,7 @@ mod tests {
         let script = dir.join("game.sh");
         std::fs::write(&script, "#!/bin/sh\nsleep 1\npwd > ran-in\n").unwrap();
         std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-        let db = dir.join("stats.db");
+        let db = dir.join("clamshell.db");
 
         let (tx, events) = mpsc::channel();
         let launcher = spawn(config(Some(db.clone())), tx).unwrap();
@@ -331,7 +331,7 @@ mod tests {
         assert_eq!(events.first(), Some(&Event::Game(GameEvent::Started(id.clone()))));
         assert!(matches!(events.get(1), Some(Event::Game(GameEvent::Played { game, duration, .. })) if *game == id && *duration >= 1));
         assert_eq!(std::fs::read_to_string(dir.join("ran-in")).unwrap().trim(), dir.to_string_lossy(), "in its own dir");
-        assert_eq!(stats::read(&db).get(&*id).map(|p| p.count), Some(1));
+        assert_eq!(Store::open(&db).unwrap().plays().unwrap().get(&*id).map(|p| p.count), Some(1));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

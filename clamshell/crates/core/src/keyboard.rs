@@ -3,7 +3,7 @@
 //! Keys are identified by their position, so the same key keeps its id on both layers.
 
 /// What a key does.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Key {
     /// A printable ASCII character, unshifted (`a`, `1`, `[`); Shift picks the US shifted one.
     Char(char),
@@ -14,7 +14,7 @@ pub enum Key {
 }
 
 /// Keys that type no character.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Named {
     Backspace,
     Tab,
@@ -34,7 +34,7 @@ pub enum Named {
     F(u8),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Modifier {
     Shift,
     Ctrl,

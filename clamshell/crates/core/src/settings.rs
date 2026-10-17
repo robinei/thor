@@ -1,7 +1,7 @@
 //! The tweakable settings: a fixed table of settings, each with a short list of values (tapping a tile
 //! steps through them). [`Values`] holds one value per setting (the global ones, or a game's effective
 //! ones); [`Overrides`] a game's own choices, each replacing the global one where set; [`Settings`] all
-//! of them, with the environment variables, and their file format.
+//! of them, with the environment variables.
 
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -85,6 +85,11 @@ const _: () = assert!(Setting::ALL.len() == COUNT, "every setting in the list");
 impl Setting {
     fn index(self) -> usize {
         self as usize
+    }
+
+    /// Whether `value` is one it takes: one of its choices (any keymap's id, for the keymap).
+    pub fn accepts(self, value: u16) -> bool {
+        self == Setting::Keymap || self.choices().contains(&value)
     }
 
     /// The values a tap steps through, in order.
@@ -259,37 +264,9 @@ impl Overrides {
     }
 }
 
-/// `key=value` fields, tab-separated, for the settings file.
-pub fn fields(o: &Overrides, out: &mut String) {
-    for s in Setting::ALL {
-        if let Some(v) = o.get(s) {
-            let _ = write!(out, "\t{}={v}", s.name());
-        }
-    }
-}
-
-/// Reads `key=value` fields back (unknown keys and values not offered are skipped).
-pub fn parse<'a>(fields: impl Iterator<Item = &'a str>) -> Overrides {
-    let mut o = Overrides::default();
-    for field in fields {
-        let Some((key, value)) = field.split_once('=') else {
-            continue;
-        };
-        let Some(s) = Setting::from_name(key) else {
-            continue;
-        };
-        if let Ok(v) = value.parse::<u16>()
-            && (s.choices().contains(&v) || s == Setting::Keymap)
-        {
-            o.set(s, Some(v));
-        }
-    }
-    o
-}
-
-/// Every game's settings: the global values and environment, and each game's overrides and
-/// environment. Saved as text ([`Settings::text`]).
-#[derive(Debug, Clone, Default)]
+/// Every entry's settings: the global values and environment, and each entry's overrides and
+/// environment. Saved in ClamShell's database (clamshell-system's `store`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settings {
     pub global: Values,
     pub overrides: HashMap<Arc<str>, Overrides>,
@@ -363,61 +340,6 @@ impl Settings {
     pub fn has_own(&self, game: &str) -> bool {
         self.overrides.contains_key(game) || self.env.contains_key(game)
     }
-
-    /// As text: the format's line ([`SETTINGS_FORMAT`]), a `*` line with the global values, then a line
-    /// per game with its overrides, as tab-separated `key=value` fields; environment as an `env=` field
-    /// (last on the line). Lines starting with `#` are comments.
-    pub fn text(&self) -> String {
-        let mut text = format!("{SETTINGS_FORMAT}\n*");
-        fields(&self.global.all(), &mut text);
-        push_env(&mut text, &self.global_env);
-        text.push('\n');
-        let mut ids: Vec<&Arc<str>> = self.overrides.keys().chain(self.env.keys()).collect();
-        ids.sort();
-        ids.dedup();
-        for id in ids {
-            text.push_str(id);
-            fields(&self.overrides_of(id), &mut text);
-            push_env(&mut text, self.env_text(Some(id)));
-            text.push('\n');
-        }
-        text
-    }
-
-    /// Reads [`Settings::text`] back (unknown fields are skipped).
-    pub fn load(text: &str) -> Settings {
-        let mut s = Settings::default();
-        for line in text.lines().filter(|l| !l.starts_with('#')) {
-            let (line, env) = line.split_once("\tenv=").unwrap_or((line, ""));
-            let mut fields = line.split('\t');
-            let Some(id) = fields.next() else {
-                continue;
-            };
-            let o = parse(fields);
-            if id == "*" {
-                s.global = o.over(&Values::default());
-                s.global_env = env.to_owned();
-            } else {
-                if !o.is_empty() {
-                    s.overrides.insert(id.into(), o);
-                }
-                s.set_env(Some(id.into()), env);
-            }
-        }
-        s
-    }
-}
-
-/// The settings file's first line: its format and version (a change to the format bumps it, so loading
-/// can tell older files).
-pub const SETTINGS_FORMAT: &str = "# ClamShell game settings, format 1";
-
-/// Appends `env` as the line's last field (`env=...`), if any.
-fn push_env(text: &mut String, env: &str) {
-    if !env.trim().is_empty() {
-        text.push_str("\tenv=");
-        text.push_str(env.trim());
-    }
 }
 
 #[cfg(test)]
@@ -454,36 +376,19 @@ mod tests {
     }
 
     #[test]
-    fn settings_round_trip_as_text() {
+    fn an_entrys_own_settings_and_environment() {
         let mut s = Settings::default();
         let zelda: Arc<str> = "zelda".into();
         s.set(None, Setting::FpsCap, Some(60));
         s.set(Some(&zelda), Setting::Power, Some(2));
         s.set(Some(&zelda), Setting::ChargeLimit, Some(80));
         s.set_env(Some("ff6".into()), " A=1 ");
-        let text = s.text();
-        assert!(text.ends_with("\tcharge=80\tscreenoff=5\tsleep=15\nff6\tenv=A=1\nzelda\tpower=2\n"), "{text}");
-        let back = Settings::load(&text);
-        assert_eq!(back.of("zelda"), s.of("zelda"));
-        assert_eq!(back.global, s.global, "global-only settings go global");
-        assert_eq!(back.env_of("ff6"), vec![("A".to_owned(), "1".to_owned())]);
+        assert_eq!(s.of("zelda").get(Setting::Power), 2);
+        assert_eq!(s.global.get(Setting::ChargeLimit), 80, "global-only settings go global");
+        assert_eq!(s.env_of("ff6"), vec![("A".to_owned(), "1".to_owned())]);
+        assert!(Setting::FpsCap.accepts(40) && !Setting::FpsCap.accepts(33) && Setting::Keymap.accepts(7));
         s.reset("zelda");
         assert!(!s.has_own("zelda"));
         assert_eq!(s.of("zelda"), s.global);
-    }
-
-    #[test]
-    fn overrides_round_trip_as_fields() {
-        let mut o = Overrides::default();
-        o.set(Setting::FpsCap, Some(40));
-        o.set(Setting::Keymap, Some(7));
-        let mut text = String::new();
-        fields(&o, &mut text);
-        assert_eq!(text, "\tfps=40\tkeymap=7");
-        assert_eq!(parse(text.split('\t')), o);
-        assert!(parse(["buttons=1"].into_iter()).is_empty(), "the old Buttons setting is gone");
-        assert!(parse(["deadzone=8"].into_iter()).is_empty(), "the old Deadzone setting too (the keymap's sticks have theirs)");
-        assert_eq!(o.over(&Values::default()).get(Setting::FpsCap), 40);
-        assert_eq!(o.over(&Values::default()).get(Setting::Power), 1);
     }
 }

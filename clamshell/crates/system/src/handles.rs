@@ -1,18 +1,20 @@
-//! Carrying out the state's effects: each goes to the thread or the file it is for.
+//! Carrying out the state's effects: each goes to the thread, the device or the database it is for.
 
 use clamshell_core::{Effect, Instance, Save, Watch, WindowCommand};
 
 use crate::job::Runner;
 use crate::keyboard::VirtualKeyboard;
-use crate::library::{favorites, stats};
-use crate::paths::{self, Paths};
+use crate::paths::Paths;
+use crate::store::Store;
 use crate::tuning::Tuning;
 use crate::worker::Worker;
 use crate::{battery, bluetooth, brightness, launcher, mixer, pad, sway, touchpad, wifi};
 
-/// The threads (and the one device and the files) that effects go to.
+/// The threads (and the one device and the database) that effects go to.
 pub struct Handles {
     pub paths: Paths,
+    /// Where saves go; `None` if it couldn't be opened (then nothing is kept).
+    pub store: Option<Store>,
     /// Apps and games run in systemd scopes (there is a user session).
     pub scope: bool,
     pub touchpad: Worker<touchpad::Command>,
@@ -68,8 +70,8 @@ impl Handles {
             Effect::CalibrateGyro => self.tuning.calibrate_gyro(),
             Effect::Save(save) => self.save(save),
             Effect::RecordPlay { game, start, duration } => {
-                if let Some(db) = self.paths.stats_db()
-                    && let Err(e) = stats::record(&db, game, *start, *duration)
+                if let Some(store) = &self.store
+                    && let Err(e) = store.add_play(game, *start, *duration)
                 {
                     log::warn!("recording the play of {game}: {e}");
                 }
@@ -132,28 +134,22 @@ impl Handles {
         }
     }
 
-    /// Writes one of ClamShell's files.
-    fn save(&self, save: &Save) {
-        let (file, text) = match save {
-            Save::Settings(text) => (self.paths.game_settings(), text),
-            Save::Resume(text) => (self.paths.resume.clone(), text),
-            Save::Brightness(text) => (self.paths.brightness.clone(), text),
-            Save::Keymaps(text) => (self.paths.keymaps(), text),
-            Save::WindowRules(text) => (self.paths.window_rules(), text),
-            Save::Dock(text) => (self.paths.dock(), text),
-            Save::Favourites(ids) => {
-                if let Some(dir) = &self.paths.state_dir
-                    && let Err(e) = favorites::write(dir, ids.iter().map(String::as_str))
-                {
-                    log::warn!("favourites: {e}");
-                }
-                return;
-            }
+    /// Saves what the state keeps, replacing what was saved of it.
+    fn save(&mut self, save: &Save) {
+        let Some(store) = self.store.as_mut() else {
+            return;
         };
-        if let Some(file) = file
-            && let Err(e) = paths::write(&file, text)
-        {
-            log::warn!("{}: {e}", file.display());
+        let saved = match save {
+            Save::Settings(s) => store.save_settings(s),
+            Save::Keymaps(k) => store.save_keymaps(k),
+            Save::Favourites(ids) => store.save_favourites(ids),
+            Save::Resume(r) => store.save_resume(r),
+            Save::Brightness(b) => store.save_brightness(b),
+            Save::WindowRules(r) => store.save_window_rules(r),
+            Save::Dock(ids) => store.save_dock(ids),
+        };
+        if let Err(e) = saved {
+            log::warn!("store: {e}");
         }
     }
 }

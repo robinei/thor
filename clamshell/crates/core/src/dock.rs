@@ -1,11 +1,10 @@
-//! The dock: the entries pinned there, in the user's order (saved in `dock.txt`), and those running,
+//! The dock: the entries pinned there, in the user's order (saved), and those running,
 //! added at the end as they start and gone again when they stop (unless pinned). A pinned entry not
 //! running shows dimmed; a tap starts it. A tap on a running one shows its workspace (all its windows on
 //! the bottom screen: shows them there). A long press opens its menu: Open another (another launch,
 //! another tab), Close window (the one in view), Pin or Unpin, Move (the D-pad moves it, A or B ends),
 //! Quit and Force kill; a stopped one's: Unpin and Move.
 
-use std::fmt::Write;
 use std::sync::Arc;
 
 use crate::State;
@@ -16,9 +15,6 @@ use crate::windows::{SHELF_APP_ID, Window};
 
 /// The dock's tiles in a row.
 pub const DOCK_COLUMNS: usize = 4;
-
-/// The dock file's first line: its format and version.
-pub const DOCK_FORMAT: &str = "# ClamShell dock, format 1";
 
 /// An entry on the dock.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,19 +34,14 @@ pub struct Dock {
 }
 
 impl Dock {
-    /// The pinned entries, an id a line after the format's line (lines it doesn't understand skipped).
-    pub fn load(text: &str) -> Dock {
-        let items = text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).map(|id| DockItem { id: id.into(), pinned: true }).collect();
-        Dock { items, ..Dock::default() }
+    /// The pinned entries, in order, as saved.
+    pub fn pinned(ids: Vec<Arc<str>>) -> Dock {
+        Dock { items: ids.into_iter().map(|id| DockItem { id, pinned: true }).collect(), ..Dock::default() }
     }
 
-    /// As saved: the pinned entries, in order.
-    pub fn text(&self) -> String {
-        let mut text = format!("{DOCK_FORMAT}\n");
-        for item in self.items.iter().filter(|i| i.pinned) {
-            let _ = writeln!(text, "{}", item.id);
-        }
-        text
+    /// The pinned entries' ids, in order (what is saved).
+    pub fn pinned_ids(&self) -> Vec<Arc<str>> {
+        self.items.iter().filter(|i| i.pinned).map(|i| i.id.clone()).collect()
     }
 
     pub fn items(&self) -> &[DockItem] {
@@ -160,7 +151,7 @@ impl State {
                     item.pinned = !item.pinned;
                 }
                 self.follow_dock();
-                vec![Effect::Save(Save::Dock(self.dock.text()))]
+                vec![Effect::Save(Save::Dock(self.dock.pinned_ids()))]
             }
             DockId::Move => {
                 self.dock.moving = Some(entry);
@@ -189,7 +180,7 @@ impl State {
         }
         let item = self.dock.items.remove(at);
         self.dock.items.insert(to, item);
-        vec![Effect::Save(Save::Dock(self.dock.text()))]
+        vec![Effect::Save(Save::Dock(self.dock.pinned_ids()))]
     }
 
     /// Home with B, let go at once: the window in front on the top screen closes, politely (not shelf's).
@@ -237,7 +228,7 @@ mod tests {
         long(&mut s, dock(0));
         assert_eq!(s.dock().menu.as_deref(), Some("zelda-lttp"));
         let fx = tap(&mut s, Id::Dock(DockId::Pin));
-        assert!(matches!(fx.as_slice(), [Effect::Save(Save::Dock(t))] if t.ends_with("\nzelda-lttp\n")), "{fx:?}");
+        assert!(matches!(fx.as_slice(), [Effect::Save(Save::Dock(ids))] if ids.last().is_some_and(|i| &**i == "zelda-lttp")), "{fx:?}");
         // It stops: still there (pinned), a tap starts it.
         played(&mut s, "zelda-lttp");
         assert_eq!(entry(&s, 0), Some("zelda-lttp"));
@@ -251,12 +242,12 @@ mod tests {
 
     #[test]
     fn move_mode_reorders_by_the_dpad_and_saves_the_pins() {
-        let mut s = State::new(Init { dock: dock::Dock::load("# ClamShell dock, format 1\nzelda-lttp\nff6\n"), ..init() });
+        let mut s = State::new(Init { dock: dock::Dock::pinned(vec!["zelda-lttp".into(), "ff6".into()]), ..init() });
         assert_eq!((entry(&s, 0), entry(&s, 1)), (Some("zelda-lttp"), Some("ff6")));
         long(&mut s, dock(0));
         tap(&mut s, Id::Dock(DockId::Move));
         let fx = tap(&mut s, Id::Dock(DockId::Step(keymap::Dir::Right)));
-        assert!(matches!(fx.as_slice(), [Effect::Save(Save::Dock(t))] if t.ends_with("ff6\nzelda-lttp\n")), "{fx:?}");
+        assert!(matches!(fx.as_slice(), [Effect::Save(Save::Dock(ids))] if ids.iter().map(|i| &**i).eq(["ff6", "zelda-lttp"])), "{fx:?}");
         assert_eq!(tap(&mut s, Id::Dock(DockId::Step(keymap::Dir::Right))), vec![], "at the end");
         tap(&mut s, Id::Dock(DockId::Done));
         assert_eq!(s.dock().moving, None);

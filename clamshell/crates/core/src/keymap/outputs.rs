@@ -4,7 +4,7 @@ use super::*;
 use crate::names::names;
 
 /// A key with the modifiers held for it; or the modifiers alone (no key: Shift as a key of its own).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize)]
 pub struct Chord {
     pub key: Option<Key>,
     pub shift: bool,
@@ -185,7 +185,7 @@ fn parse_named(word: &str) -> Option<Named> {
     .find(|n| named_name(*n) == word)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum MouseButton {
     Left,
     Right,
@@ -203,7 +203,7 @@ names!(MouseButton {
 });
 
 /// What an input does instead of what it does on the pad.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Output {
     /// Nothing at all.
     Nothing,

@@ -52,7 +52,7 @@ pub enum Effect {
     EndSteam {
         appid: u32,
     },
-    /// Record a play that ClamShell didn't start (a game Steam started): in stats.db.
+    /// Record a play that ClamShell didn't start (a game Steam started), in the database.
     RecordPlay {
         game: Arc<str>,
         start: u64,
@@ -110,24 +110,22 @@ pub enum Watch {
     Time,
 }
 
-/// ClamShell's own files.
+/// What ClamShell keeps (in its database): each saved whole.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Save {
-    /// The games' settings (see [`crate::settings::Settings::text`]).
-    Settings(String),
-    /// The keymaps (see [`crate::keymap::Keymaps::text`]).
-    Keymaps(String),
-    /// The favourites (favorites.txt).
+    /// The entries' settings and environment.
+    Settings(crate::settings::Settings),
+    Keymaps(crate::keymap::Keymaps),
+    /// The favourite entries' ids.
     Favourites(Vec<String>),
-    /// Where shelf and the second screen are (see [`crate::State::resume_text`]), to start there next
-    /// time.
-    Resume(String),
-    /// The screens' brightness (see [`crate::levels::Brightness::text`]), to apply at the next start.
-    Brightness(String),
-    /// The window rules (see [`crate::bottom_screen::WindowRules::text`]).
-    WindowRules(String),
-    /// The dock's pinned entries (see [`crate::dock::Dock::text`]).
-    Dock(String),
+    /// Where shelf and the second screen are, to start there next time.
+    Resume(crate::Resume),
+    /// The screens' brightness, to apply at the next start.
+    Brightness(crate::levels::Brightness),
+    /// Which programs' windows go to the bottom screen.
+    WindowRules(crate::bottom_screen::WindowRules),
+    /// The dock's pinned entries' ids, in order.
+    Dock(Vec<std::sync::Arc<str>>),
 }
 
 /// What the compositor is asked to do.

@@ -1,9 +1,8 @@
 //! The library from disk: library.json's content dirs (see [`content`]), installed Steam games, the
-//! desktop files' games and apps, play time and favourites. The model is clamshell-library's.
+//! desktop files' games and apps; play time and favourites from the database. The model is
+//! clamshell-library's.
 
 pub mod content;
-pub mod favorites;
-pub mod stats;
 pub mod steam;
 
 use std::path::PathBuf;
@@ -21,8 +20,8 @@ pub struct Sources {
     pub home: Option<PathBuf>,
     /// Steam's data dir.
     pub steam: Option<PathBuf>,
-    /// Where play time (stats.db) and favourites (favorites.txt) are kept.
-    pub state_dir: Option<PathBuf>,
+    /// The database, for play time and favourites.
+    pub db: Option<PathBuf>,
     /// The XDG data dirs, the installed apps' desktop files in their `applications` (see
     /// [`crate::desktop`]).
     pub data_dirs: Vec<PathBuf>,
@@ -35,7 +34,7 @@ impl Sources {
             config: paths.library.clone(),
             home: home.map(std::path::Path::to_path_buf),
             steam: home.filter(|_| steam).and_then(steam::default_root),
-            state_dir: paths.state_dir.clone(),
+            db: paths.db(),
             data_dirs: crate::desktop::data_dirs(),
         }
     }
@@ -91,9 +90,15 @@ pub fn load(sources: &Sources) -> Library {
             key(a).cmp(&key(b))
         });
     }
-    if let Some(dir) = sources.state_dir.as_deref() {
-        let plays = stats::read(&dir.join("stats.db"));
-        let favourites = favorites::read(dir);
+    if let Some(db) = sources.db.as_deref().and_then(|f| crate::store::Store::open(f).map_err(|e| log::warn!("library: {}: {e}", f.display())).ok()) {
+        let plays = db.plays().unwrap_or_else(|e| {
+            log::warn!("library: play time: {e}");
+            Default::default()
+        });
+        let favourites = db.favourites().unwrap_or_else(|e| {
+            log::warn!("library: favourites: {e}");
+            Default::default()
+        });
         for g in &mut games {
             if let Some(p) = plays.get(&*g.id) {
                 g.plays = *p;

@@ -45,6 +45,7 @@ pub mod wifi;
 pub mod windows;
 
 use keyboard::{Key, Keyboard};
+pub use resume::Resume;
 use resume::{SAVE_AFTER, Saves};
 use settings::{Setting, Settings};
 use slider::Control;
@@ -113,8 +114,8 @@ pub struct Init {
     pub brightness: Brightness,
     /// The dock's pinned entries, in order.
     pub dock: Dock,
-    /// Where shelf and the second screen were (see [`State::resume_text`]).
-    pub resume: Option<String>,
+    /// Where shelf and the second screen were.
+    pub resume: Option<Resume>,
     /// The tab to start in instead (a development option).
     pub start_tab: Option<Tab>,
     /// Start with the pad mouse on.
@@ -170,8 +171,8 @@ impl State {
             device_session: init.device_session,
             ..State::default()
         };
-        if let Some(text) = &init.resume {
-            s.restore(text);
+        if let Some(resume) = &init.resume {
+            s.restore(resume);
         }
         s.pointer.focus = s.shelf.selected().cloned().map(|g| Id::Shelf(ShelfId::Game(g)));
         if let Some(tab) = init.start_tab {
@@ -354,7 +355,7 @@ impl State {
                 self.notify(crate::hardware::NoticeKind::Gyro(Some(ok)));
                 (Dirty::BOTTOM, vec![])
             }
-            Event::Quit => (Dirty::NONE, vec![Effect::Save(Save::Resume(self.resume_text())), Effect::Quit]),
+            Event::Quit => (Dirty::NONE, vec![Effect::Save(Save::Resume(self.resume())), Effect::Quit]),
         }
     }
 
@@ -369,10 +370,10 @@ impl State {
         self.unix_secs = unix_secs;
         let mut effects = vec![];
         if self.saves.resume.due(unix_secs, SAVE_AFTER) {
-            effects.push(Effect::Save(Save::Resume(self.resume_text())));
+            effects.push(Effect::Save(Save::Resume(self.resume())));
         }
         if self.saves.brightness.due(unix_secs, SAVE_AFTER) {
-            effects.push(Effect::Save(Save::Brightness(self.levels.brightness().text())));
+            effects.push(Effect::Save(Save::Brightness(self.levels.brightness().clone())));
         }
         let notice_gone = self.expire_notice(unix_secs);
         let dirty = if minute_changed {

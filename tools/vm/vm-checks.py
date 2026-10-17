@@ -29,10 +29,11 @@ vm = importlib.import_module("vm")
 
 HOME = f"/home/{vm.USER}"
 CHECKS_DIR = f"{HOME}/.cache/thor-checks"
-STATE = f"{CHECKS_DIR}/state/clamshell"
-# ClamShell's library config, and its state (play time, favourites, settings, keymaps, the dock).
+# ClamShell's library config, and its database (play time, favourites, settings, keymaps, the dock, where
+# shelf was, brightness).
 CONFIG = f"{CHECKS_DIR}/config/clamshell"
 DATA = f"{CHECKS_DIR}/data/clamshell"
+DB = f"{DATA}/clamshell.db"
 BACKLIGHT = f"{CHECKS_DIR}/backlight/panel"
 DROP_IN = "$XDG_RUNTIME_DIR/systemd/user/clamshell.service.d/thor-checks.conf"
 # The bar's icons, in the bottom screen's pixels (their centres; the burn-in orbit moves them a few
@@ -96,20 +97,52 @@ def control(line):
     time.sleep(0.3)
 
 
-def saved():
-    """ClamShell's resume file: the tab ("@mode") and shelf's selections, by name."""
-    lines = sh(f"cat {STATE}/last 2>/dev/null").splitlines()
-    return dict(line.split("\t", 1) for line in lines[1:] if "\t" in line)
+def query(sql):
+    """Rows from ClamShell's database, a list of fields each."""
+    out = sh(f"sqlite3 -separator '\t' {DB} {shlex.quote(sql)} 2>/dev/null")
+    return [line.split("\t") for line in out.splitlines()]
+
+
+def kv(key):
+    rows = query(f"SELECT value FROM kv WHERE key = '{key}'")
+    return rows[0][0] if rows else None
 
 
 def selection():
-    """shelf's selected game in the collection shown."""
-    lines = sh(f"cat {STATE}/last 2>/dev/null").splitlines()
-    return saved().get(lines[0]) if lines else None
+    """shelf's selected entry in the collection shown (as saved)."""
+    rows = query(f"SELECT path FROM places WHERE collection = '{kv('collection')}'")
+    return json.loads(rows[0][0])[-1] if rows else None
 
 
 def tab():
-    return saved().get("@mode")
+    """The second screen's tab (as saved)."""
+    return kv("tab")
+
+
+def saved_keymaps():
+    """The keymaps as saved: each as JSON (clamshell-core's Keymap)."""
+    return [json.loads(row[0]) for row in query("SELECT keymap FROM keymaps ORDER BY position")]
+
+
+def keymap_named(name):
+    return next((k for k in saved_keymaps() if k["name"] == name), None)
+
+
+def bound(keymap, input, act="press", layer=0):
+    """A keymap's binding of `input` (as JSON: {"Button": "A"}, "Gyro", ...) in a layer, if any."""
+    for l in (keymap or {}).get("layers", []):
+        if l["id"] == layer:
+            return next((b for i, b in l["bindings"][act] if i == input), None)
+    return None
+
+
+def output(keymap, input, act="press", layer=0):
+    return (bound(keymap, input, act, layer) or {}).get("output")
+
+
+def chord(char, ctrl=False):
+    """A key chord's JSON: a character, Ctrl held or not."""
+    return {"Key": {"key": {"Char": char}, "shift": False, "ctrl": ctrl, "alt": False, "logo": False}}
 
 
 def front():
@@ -235,16 +268,18 @@ def setup(bluetooth):
     print("setting up: test library, fake backlight, null sink, ClamShell's test environment")
     since = now()
     script = f"""set -e
-mkdir -p {CONFIG} {DATA} {CHECKS_DIR}/games {BACKLIGHT} {STATE}
-printf '# ClamShell dock, format 1\\ndesktop:foot\\n' > {DATA}/dock.txt
+mkdir -p {CONFIG} {DATA} {CHECKS_DIR}/games {BACKLIGHT}
+# (ClamShell stopped first: it keeps the database open.)
+systemctl --user stop clamshell
+rm -f {DB} {DB}-wal {DB}-shm
+sqlite3 {DB} "CREATE TABLE dock (position INTEGER PRIMARY KEY, id TEXT NOT NULL); INSERT INTO dock VALUES (0, 'desktop:foot');"
 cat > {CONFIG}/library.json <<'EOF'
 {LIBRARY}EOF
 touch {CHECKS_DIR}/games/test.game {CHECKS_DIR}/games/zeta.game {" ".join(f"{CHECKS_DIR}/games/zulu{i:02}.game" for i in range(1, 15))}
 echo 100 > {BACKLIGHT}/max_brightness; echo 50 > {BACKLIGHT}/brightness
-rm -f {STATE}/last {STATE}/brightness {DATA}/stats.db* {DATA}/favorites.txt {DATA}/keymaps.txt {DATA}/game-settings.txt
 mkdir -p $(dirname {DROP_IN})
 printf '%s\\n' '[Service]' 'Environment=XDG_CONFIG_HOME={CHECKS_DIR}/config' 'Environment=XDG_DATA_HOME={CHECKS_DIR}/data' \\
-    'Environment=CLAMSHELL_BACKLIGHTS={CHECKS_DIR}/backlight' 'Environment=XDG_STATE_HOME={CHECKS_DIR}/state' > {DROP_IN}
+    'Environment=CLAMSHELL_BACKLIGHTS={CHECKS_DIR}/backlight' > {DROP_IN}
 wpctl status | grep -q thor-checks-sink || wpctl status | grep -q 'Test sink' || pw-cli create-node adapter \\
     '{{ factory.name=support.null-audio-sink node.name=thor-checks-sink node.description="Test sink" media.class=Audio/Sink object.linger=true audio.position=[FL FR] }}' > /dev/null 2>&1
 sleep 0.5
@@ -396,8 +431,7 @@ class Checks:
         self.i.touch.up(0)
         raised = until(lambda: level() > start + 10, 3)
         self.check("bar: a slide on brightness sets the backlight (a fake one)", raised, f"{start} -> {level()}")
-        self.check("  and is saved", until(lambda: sh(f"cat {STATE}/brightness 2>/dev/null").strip() != "", 5),
-                   sh(f"ls {STATE}"))
+        self.check("  and is saved", until(lambda: kv("brightness") is not None, 5), f"{query('SELECT * FROM kv')}")
         time.sleep(1)
         self.check("  and doesn't open the brightness tab", tab() == "dock", f"tab {tab()!r}")
 
@@ -492,9 +526,8 @@ class Checks:
         """More games than fit in shelf's list: a drag with the pointer scrolls it, settling on a whole row,
         and a click then selects the game under it."""
         sh("swaymsg workspace clamshell-shelf > /dev/null")
-        lines = sh(f"cat {STATE}/last 2>/dev/null").splitlines()
-        if lines and lines[0] != "Test":
-            return self.check("shelf: the Test collection in front", False, f"collection {lines[0]!r}")
+        if kv("collection") not in (None, "Test"):
+            return self.check("shelf: the Test collection in front", False, f"collection {kv('collection')!r}")
         # Down by three rows and a bit, slowly; it settles on three.
         x, y0 = SHELF_X, SHELF_FIRST_Y + 6 * SHELF_ROW_H
         self.i.pointer(x, y0, "down")
@@ -555,7 +588,7 @@ class Checks:
         dpad("up")
         until(lambda: selection() == before, 3)
         press("a")
-        launched = until(lambda: bool(units("game")) and front() not in ("", "clamshell-shelf"), 10)
+        launched = until(lambda: bool(units("run-")) and front() not in ("", "clamshell-shelf"), 10)
         game = front()
         self.check("  A launches the selected game, in front", launched, f"units {units('game')}, front {game!r}")
         if not launched:
@@ -645,7 +678,7 @@ class Checks:
             return self.check("pad: the fake pad grabbed", False)
         since = now()
         control("tap launch")
-        launched = until(lambda: bool(units("game")) and front() not in ("", "clamshell-shelf"), 10)
+        launched = until(lambda: bool(units("run-")) and front() not in ("", "clamshell-shelf"), 10)
         game_route = logged(since, "PadRoute(Game)")
         if not self.check("pad: a game in front, the pad goes to it", launched and game_route, f"front {front()!r}"):
             return
@@ -659,7 +692,7 @@ class Checks:
         if not plug_pad():
             return self.check("pad: the fake pad grabbed", False)
         control("tap launch")
-        launched = until(lambda: bool(units("game")) and front() not in ("", "clamshell-shelf"), 10)
+        launched = until(lambda: bool(units("run-")) and front() not in ("", "clamshell-shelf"), 10)
         if not self.check("pad: a game in front", launched, f"front {front()!r}"):
             return
         game = front()
@@ -689,9 +722,7 @@ class Checks:
         it, read from the virtual devices; then Default."""
         if not self.check("keymaps: the fake pad grabbed", plug_pad()):
             return
-        keymaps_file = f"{DATA}/keymaps.txt"
-        self.check("  the first start made the Nintendo layout", "keymap 1 Nintendo layout" in sh(f"cat {keymaps_file}"),
-                   sh(f"cat {keymaps_file}"))
+        self.check("  the first start made the Nintendo layout", keymap_named("Nintendo layout") is not None, saved_keymaps())
         since = now()
         for line in ["tab settings", "scope game", "tap setting keymap", "tap keymap-new", "type Check", "tap save"]:
             control(line)
@@ -704,22 +735,24 @@ class Checks:
             control(line)
         press("y")  # picks the pad's Y for X
         control("tap keymap-back")
-        text = sh(f"cat {keymaps_file}")
         # (Its id and its row in the picker, after the game's own keymap's row and Default: other checks may
         # have made keymaps before.)
-        ids = [line.split()[1] for line in text.splitlines() if line.startswith("keymap ")]
-        ident = next((line.split()[1] for line in text.splitlines() if line.startswith("keymap ") and line.endswith(" Check")), "?")
+        ids = [k["id"] for k in saved_keymaps()]
+        k = keymap_named("Check")
+        ident = k["id"] if k else "?"
         row = ids.index(ident) + 2 if ident in ids else 1
         control(f"tap keymap {row}")
-        saved = (f"keymap {ident} Check" in text and "a = key ctrl+x" in text and "rstick = pointer" in text
-                 and "gyro = pointer hold=lb" in text and "x = pad y" in text)
+        gyro = bound(k, "Gyro") or {}
+        saved = (output(k, {"Button": "A"}) == chord("x", ctrl=True) and output(k, {"Stick": "Right"}) == "Pointer"
+                 and gyro.get("output") == "Pointer" and gyro.get("hold") == {"Button": "LB"}
+                 and output(k, {"Button": "X"}) == {"Pad": {"Button": "Y"}})
         self.check("  A to Ctrl+X, the right stick and the gyro (while LB) to the pointer, X to Y picked by pressing it, saved",
-                   saved, text)
-        chosen = until(lambda: f"keymap={ident}" in sh(f"cat {DATA}/game-settings.txt 2>/dev/null"), 3)
-        self.check("  chosen for the selected game", chosen, sh(f"cat {DATA}/game-settings.txt 2>/dev/null"))
+                   saved, k)
+        chosen = until(lambda: [str(ident)] in query("SELECT value FROM settings WHERE name = 'keymap' AND entry != ''"), 3)
+        self.check("  chosen for the selected game", chosen, query("SELECT * FROM settings WHERE name = 'keymap'"))
         since = now()
         control("tap launch")
-        launched = until(lambda: bool(units("game")) and front() not in ("", "clamshell-shelf"), 10)
+        launched = until(lambda: bool(units("run-")) and front() not in ("", "clamshell-shelf"), 10)
         if not self.check("  the game runs with it", launched and logged(since, f"pad: keymap {ident} (Check)", 5),
                           f"front {front()!r}; {journal(since)[-300:]!r}"):
             return
@@ -747,9 +780,9 @@ class Checks:
         sent = logged(since, f"pad: keymap {ident} (Check)", 3)
         out = capture(f"evtest {mouse}", 2.5, lambda: pad("press lb", "gyro 0 -60 0", "sleep 600", "gyro 0 0 0", "release lb"))
         faster = sum(int(line.rsplit(" ", 1)[1]) for line in out.splitlines() if "(REL_X)" in line and "value" in line)
-        text = sh(f"cat {keymaps_file}")
+        speed = (bound(keymap_named("Check"), "Gyro") or {}).get("speed", 0)
         self.check("  the gyro's speed slid up: sent to the pad at once, saved, the pointer goes further",
-                   sent and "gyro = pointer speed=9" in text and faster > moved * 1.5, f"{moved} px, then {faster} px; {text}")
+                   sent and speed >= 90 and faster > moved * 1.5, f"{moved} px, then {faster} px; speed {speed}")
         for line in ["tap keymap-back", "tap keymap-back"]:
             control(line)
         # Default for the game again: everything as on the pad.
@@ -768,23 +801,24 @@ class Checks:
         A, and Back let go while A is held, read from the virtual keyboard; then the layer made Once."""
         if not self.check("keymap layers: the fake pad grabbed", plug_pad()):
             return
-        keymaps_file = f"{DATA}/keymaps.txt"
         for line in ["tab settings", "scope game", "tap setting keymap", "tap keymap-new", "type Layers", "tap save",
                      "tap map-from a", "tap map-to key", "tap key ctrl", "tap key x",
                      "tap keymap-layers", "tap new-layer", "type held", "tap save", "tap map-from a", "tap map-to key", "tap key ctrl",
                      "tap key y", "tap keymap-layers", "tap keymap-layer base", "tap map-from back", "tap map-to layers", "tap to-layer 1",
                      "tap keymap-back"]:
             control(line)
-        text = sh(f"cat {keymaps_file}")
         # (The last keymap's row: after the game's own keymap's row and Default.)
-        rows = text.count("keymap ") + 1
-        layers = "a = key ctrl+x\nback = layer 1\nlayer 1 held\na = key ctrl+y\n" in text
-        if not self.check("  A to Ctrl+X, and to Ctrl+Y while Back is held, saved", layers, text):
+        rows = len(saved_keymaps()) + 1
+        k = keymap_named("Layers")
+        held = next((l for l in (k or {}).get("layers", []) if l["id"] == 1), {})
+        layers = (output(k, {"Button": "A"}) == chord("x", ctrl=True) and output(k, {"Button": "Back"}) == {"Layer": 1}
+                  and held.get("name") == "held" and output(k, {"Button": "A"}, layer=1) == chord("y", ctrl=True))
+        if not self.check("  A to Ctrl+X, and to Ctrl+Y while Back is held, saved", layers, k):
             return
         since = now()
         control(f"tap keymap {rows}")
         control("tap launch")
-        launched = until(lambda: bool(units("game")) and front() not in ("", "clamshell-shelf"), 10)
+        launched = until(lambda: bool(units("run-")) and front() not in ("", "clamshell-shelf"), 10)
         if not self.check("  the game runs with it", launched and logged(since, "(Layers)", 5), f"front {front()!r}"):
             return
         game = front()
@@ -813,8 +847,9 @@ class Checks:
         for line in ["tab settings", "tap setting keymap", f"tap keymap-edit {rows}", "tap keymap-layers", "long keymap-layer 1",
                      "tap layer-once", "tap keymap-back", "tap keymap-back", "tap keymap-back", "tap keymap-back"]:
             control(line)
-        text = sh(f"cat {keymaps_file}")
-        self.check("  the layer made Once, saved", "layer 1 held\nonce\n" in text, text)
+        k = keymap_named("Layers")
+        once = any(l["id"] == 1 and l["once"] for l in (k or {}).get("layers", []))
+        self.check("  the layer made Once, saved", once, k)
         since = now()
         got = keys("press back", "sleep 80", "release back", "sleep 150", "press a", "sleep 150", "release a", "sleep 150",
                    "press a", "sleep 150", "release a", seconds=3.0)
@@ -831,21 +866,22 @@ class Checks:
         made through the screens; in a game, read from the virtual keyboard."""
         if not self.check("keymap actuations: the fake pad grabbed", plug_pad()):
             return
-        keymaps_file = f"{DATA}/keymaps.txt"
         for line in ["tab settings", "scope game", "tap setting keymap", "tap keymap-new", "type Acts", "tap save",
                      "tap map-from a", "tap map-to key", "tap key x", "tap keymap-act hold", "tap map-to key", "tap key e",
                      "tap map-from b", "tap keymap-act double", "tap map-to key", "tap key z",
                      "tap map-from y", "tap map-to key", "tap key t", "tap toggle", "tap keymap-back"]:
             control(line)
-        text = sh(f"cat {keymaps_file}")
-        rows = text.count("keymap ") + 1
-        saved = "a = key x\n" in text and "y = key t toggle\n" in text and "a hold = key e\n" in text and "b double = key z\n" in text
-        if not self.check("  A: X, held E; B twice: Z; Y: T toggled; saved", saved, text):
+        rows = len(saved_keymaps()) + 1
+        k = keymap_named("Acts")
+        saved = (output(k, {"Button": "A"}) == chord("x") and output(k, {"Button": "Y"}) == chord("t")
+                 and (bound(k, {"Button": "Y"}) or {}).get("toggle") is True
+                 and output(k, {"Button": "A"}, "hold") == chord("e") and output(k, {"Button": "B"}, "double") == chord("z"))
+        if not self.check("  A: X, held E; B twice: Z; Y: T toggled; saved", saved, k):
             return
         since = now()
         control(f"tap keymap {rows}")
         control("tap launch")
-        launched = until(lambda: bool(units("game")) and front() not in ("", "clamshell-shelf"), 10)
+        launched = until(lambda: bool(units("run-")) and front() not in ("", "clamshell-shelf"), 10)
         if not self.check("  the game runs with it", launched and logged(since, "(Acts)", 5), f"front {front()!r}"):
             return
         mouse = device("clamshell pad mouse")
@@ -876,7 +912,7 @@ class Checks:
         if not self.check("rumble: the fake pad grabbed", plug_pad()):
             return
         control("tap launch")
-        if not self.check("  a game in front", until(lambda: bool(units("game")) and front() not in ("", "clamshell-shelf"), 10)):
+        if not self.check("  a game in front", until(lambda: bool(units("run-")) and front() not in ("", "clamshell-shelf"), 10)):
             return
         virtual = device("clamshell pad (Xbox 360)")
         # struct ff_effect: type, id, direction, trigger, replay (length 500 ms), then the rumble's

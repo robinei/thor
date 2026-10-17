@@ -79,7 +79,7 @@ fn a_new_keymap_is_named_edited_and_mapped() {
     assert!(matches!(s.bottom().editor(), Some(Editor { purpose: Purpose::KeymapName(KeymapName::New), .. })));
     type_text(&mut s, "fps");
     let fx = tap(&mut s, Id::Editor(EditorId::Save));
-    assert!(matches!(fx.first(), Some(Effect::Save(Save::Keymaps(t))) if t.ends_with("keymap 2 fps\n")), "{fx:?}");
+    assert!(matches!(fx.first(), Some(Effect::Save(Save::Keymaps(k))) if k.get(2).is_some_and(|k| k.name == "fps")), "{fx:?}");
     assert_eq!(s.keymap_screen(), Some(Screen::Edit(2)));
     assert!(s.listening(), "the pad listens on the edit screen");
     assert_eq!(s.pad().route(), PadRoute::Listen);
@@ -170,9 +170,6 @@ fn a_new_keymap_is_named_edited_and_mapped() {
     s.apply(Event::Home);
     assert_eq!(s.keymap_screen(), Some(Screen::List));
     assert_eq!(s.pad().route(), PadRoute::Ui);
-    // The saved text has it all.
-    let fresh = Keymaps::load(&s.keymaps().text());
-    assert_eq!(&fresh, s.keymaps());
 }
 
 #[test]
@@ -321,7 +318,6 @@ fn layers_are_added_shown_edited_and_fall_through() {
     let k = s.keymaps().get(1).unwrap();
     assert_eq!(k.get_in(aim, a).map(|b| b.output), Some(Output::Key(Chord::of(Key::Char('y')))));
     assert_eq!(k.get(a).map(|b| b.output), Some(Output::Pad(PadOut::Button(Button::B))));
-    assert!(s.keymaps().text().contains("layer 1 aim\na = key y\n"), "{}", s.keymaps().text());
     // X as on the pad (picked: itself), over Base's Y; reset: as Base again.
     let x = Input::Button(Button::X);
     open(&mut s, x);

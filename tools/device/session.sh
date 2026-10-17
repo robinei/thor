@@ -86,7 +86,11 @@ Exec=foot --app-id=maintenance $FINAL/thor/tools/device/maintain
 Icon=utilities-terminal
 EOF
 
-# The dock's first pins: Steam, the terminal, Maintenance (the user's own, once there are any, are kept).
-if [ ! -e "$H/.local/share/clamshell/dock.txt" ]; then
-    printf '# ClamShell dock, format 1\ndesktop:steam\ndesktop:foot\ndesktop:thor-maintenance\n' > "$H/.local/share/clamshell/dock.txt"
+# The dock's first pins, in ClamShell's database before it has one: Steam, the terminal, Maintenance
+# (once the database is there, the user's pins are kept). The dock's table as ClamShell makes it; ClamShell
+# adds the rest. (sqlite3: the sqlite package, on the machine building the image.)
+DB=$H/.local/share/clamshell/clamshell.db
+if [ ! -e "$DB" ]; then
+    sqlite3 "$DB" "CREATE TABLE dock (position INTEGER PRIMARY KEY, id TEXT NOT NULL);
+        INSERT INTO dock VALUES (0, 'desktop:steam'), (1, 'desktop:foot'), (2, 'desktop:thor-maintenance');"
 fi

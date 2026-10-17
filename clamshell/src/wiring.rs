@@ -10,6 +10,7 @@ use clamshell_system::brightness::Backlights;
 use clamshell_system::job::Runner;
 use clamshell_system::keyboard::VirtualKeyboard;
 use clamshell_system::paths::Paths;
+use clamshell_system::store::Store;
 use clamshell_system::tuning::Tuning;
 use clamshell_system::worker::Worker;
 use clamshell_system::{
@@ -72,9 +73,9 @@ pub fn start(env: &Env, paths: &Paths, layout: Arc<Mutex<TouchLayout>>, global: 
     });
     detached("units", units::spawn(sink.clone()));
     // Games start from the launcher (each on a thread of its own, so several run side by side); plays go
-    // to stats.db in the state dir.
+    // to the database.
     let jobs = Runner { jobs: paths.jobs.clone(), sway: sway.clone() };
-    let launcher = started("launcher", launcher::spawn(launcher::Config { stats_db: paths.stats_db(), scope, jobs: jobs.clone() }, sink.clone()));
+    let launcher = started("launcher", launcher::spawn(launcher::Config { db: paths.db(), scope, jobs: jobs.clone() }, sink.clone()));
     // The controller, grabbed for good with a virtual Xbox pad for games.
     let pad = started("pad", pad::spawn(env.gamepad.clone(), sink.clone()));
     let battery = started("battery", battery::spawn(sink.clone()));
@@ -84,8 +85,10 @@ pub fn start(env: &Env, paths: &Paths, layout: Arc<Mutex<TouchLayout>>, global: 
     let wifi = started("wifi", wifi::spawn(sink));
     let tuning = Tuning { hardware: started("tuning", tuning::spawn()), pad: pad.clone(), mangohud: paths.mangohud.clone() };
     tuning.apply(global, None);
+    let store = paths.db().and_then(|f| Store::open(&f).map_err(|e| log::error!("store: {}: {e}", f.display())).ok());
     Handles {
         paths: paths.clone(),
+        store,
         scope,
         touchpad,
         mixer,

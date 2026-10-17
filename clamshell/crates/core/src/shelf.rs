@@ -292,9 +292,9 @@ impl Shelf {
         })
     }
 
-    /// Each collection's name, its open groups' ids and its selected entry's id, tab-separated, a line
-    /// each.
-    pub(crate) fn selections(&self, text: &mut String) {
+    /// Each collection's place: its name, then its open groups' ids and its selected entry's id.
+    pub(crate) fn places(&self) -> Vec<(String, Vec<String>)> {
+        let mut places = Vec::new();
         for (c, coll) in self.library.collections.iter().enumerate() {
             let Some(nav) = self.navs.get(c) else {
                 continue;
@@ -303,15 +303,11 @@ impl Shelf {
             let Some(g) = self.list_of(c).get(index).and_then(|&g| self.library.games.get(g)) else {
                 continue;
             };
-            text.push_str(&coll.name);
-            for group in nav.open.iter().filter_map(|&o| self.library.games.get(o)) {
-                text.push('\t');
-                text.push_str(&group.id);
-            }
-            text.push('\t');
-            text.push_str(&g.id);
-            text.push('\n');
+            let mut ids: Vec<String> = nav.open.iter().filter_map(|&o| self.library.games.get(o)).map(|g| g.id.to_string()).collect();
+            ids.push(g.id.to_string());
+            places.push((coll.name.clone(), ids));
         }
+        places
     }
 
     /// Opens the groups `ids` names but the last, then selects the last, in the collection named `name`

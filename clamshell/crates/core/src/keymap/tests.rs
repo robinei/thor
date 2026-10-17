@@ -1,8 +1,9 @@
 use super::*;
 
-/// A keymaps file's text after its format's line (which is checked).
-fn body(text: &str) -> &str {
-    text.strip_prefix(KEYMAPS_FORMAT).and_then(|t| t.strip_prefix('\n')).unwrap()
+/// The keymaps saved (each as JSON, as the database keeps them) and read back.
+fn round_trip(maps: &Keymaps) -> Keymaps {
+    let saved: Vec<String> = maps.list().iter().map(|k| serde_json::to_string(k).unwrap()).collect();
+    Keymaps::from_list(saved.iter().map(|k| serde_json::from_str(k).unwrap()).collect())
 }
 
 fn chord(text: &str) -> Chord {
@@ -45,7 +46,7 @@ fn only_fitting_targets_bind() {
 }
 
 #[test]
-fn keymaps_round_trip_as_text() {
+fn keymaps_round_trip() {
     let mut maps = Keymaps::initial();
     let fps = maps.add("FPS");
     let k = maps.get_mut(fps).unwrap();
@@ -58,20 +59,7 @@ fn keymaps_round_trip_as_text() {
     k.set(Input::Dpad(Dir::Down), Some(Binding::to(Output::Nothing)));
     k.set(Input::Button(Button::L4), Some(Binding::to(Output::Pad(PadOut::Dpad(Dir::Left)))));
     k.set(Input::Gyro, Some(Binding { speed: 37, hold: Some(Input::Trigger(Side::Left)), ..Binding::to(Output::Pointer) }));
-    let text = maps.text();
-    let text = body(&text);
-    assert!(text.starts_with("keymap 1 Nintendo layout\na = pad b\nb = pad a\nx = pad y\ny = pad x\nkeymap 2 FPS\na = key ctrl+x\nl4 = pad left\n"), "{text}");
-    assert!(
-        text.contains("\nlstick = keys w a s d\n")
-            && text.contains("\nrstick = pointer speed=75 deadzone=20 full=90 curve=40 invert=y\n")
-            && text.contains("\ngyro = pointer speed=37 hold=lt\n"),
-        "{text}"
-    );
-    assert!(
-        text.contains("\nlt = mouse right threshold=25\n") && text.contains("\nrt = trigger right deadzone=5\n") && text.contains("\nrstick-up = wheel up\n"),
-        "{text}"
-    );
-    assert_eq!(Keymaps::load(&maps.text()), maps);
+    assert_eq!(round_trip(&maps), maps);
 }
 
 #[test]
@@ -80,25 +68,10 @@ fn a_games_own_keymap_round_trips() {
     let game: std::sync::Arc<str> = "zelda-lttp".into();
     let own = maps.make_own(1, &game);
     assert_eq!(maps.get(own).map(|k| (k.name.as_str(), k.bindings().len())), Some(("", 4)), "a copy of Nintendo layout");
-    assert!(body(&maps.text()).contains(&format!("keymap {own}\ngame zelda-lttp\na = pad b\n")), "{}", maps.text());
-    assert_eq!(Keymaps::load(&maps.text()), maps);
+    assert_eq!(round_trip(&maps), maps);
+    assert_eq!(round_trip(&maps).get(own).and_then(|k| k.owner.clone()), Some(game));
     assert_eq!(maps.named().count(), 1, "not among the named");
     assert_eq!(maps.own_of("zelda-lttp").map(|k| k.id), Some(own));
-}
-
-#[test]
-fn lines_not_understood_are_skipped() {
-    let text = "# a comment\nkeymap 3 Turbo\na = key x turbo=10\nb = warp 9\nzz = pad a\nlstick = key x\ngyro = pointer hold=up\nx = pad x hold=a\nlayer x\ny = pad a\nlayer 0\nlt = trigger right\nkeymap 0 bad\nkeymap x bad\nkeymap 3 again\n";
-    let maps = Keymaps::load(text);
-    assert_eq!(maps.list().len(), 1);
-    let k = maps.get(3).unwrap();
-    assert_eq!(k.name, "Turbo");
-    assert_eq!(k.get(Input::Button(Button::A)).map(|b| b.output), Some(Output::Key(chord("x"))), "an unknown option is skipped");
-    assert_eq!(k.get(Input::Gyro).map(|b| b.hold), Some(None), "a D-pad direction doesn't hold the gyro");
-    assert_eq!(k.get(Input::Button(Button::Y)), None, "a layer not known is skipped");
-    assert_eq!(k.get(Input::Trigger(Side::Left)).map(|b| b.output), Some(Output::Trigger(Side::Right)), "Base again");
-    assert_eq!(k.bindings().len(), 3, "{k:?}");
-    assert_eq!(k.layers().count(), 1, "Base only");
 }
 
 #[test]
@@ -114,9 +87,7 @@ fn layers_are_named_targets() {
     assert_eq!(k.lookup(a, &[aim]).map(|b| b.output), Some(Output::Key(chord("y"))));
     assert_eq!(k.lookup(a, &[]), None, "Base: as on the pad");
     let maps = Keymaps { list: vec![k.clone()] };
-    let text = maps.text();
-    assert_eq!(body(&text), "keymap 5 Layers\nlb = layer 1\nlayer 1 Aim\na = key y\n");
-    assert_eq!(Keymaps::load(&text), maps);
+    assert_eq!(round_trip(&maps), maps);
     // Removed: its bindings, and those to it, go.
     assert!(k.remove_layer(aim));
     assert_eq!((k.layers().count(), k.get(Input::Button(Button::LB))), (1, None));
@@ -126,15 +97,7 @@ fn layers_are_named_targets() {
 }
 
 #[test]
-fn parameters_load_in_range_and_apply_by_target() {
-    let text = "keymap 1 K\nrstick = pointer speed=75 deadzone=60\nlt = key x threshold=75\nrt = key y threshold=0\n";
-    let maps = Keymaps::load(text);
-    let get = |i: Input| *maps.get(1).unwrap().get(i).unwrap();
-    assert_eq!(get(Input::Stick(Side::Right)).speed, 75);
-    assert_eq!(get(Input::Stick(Side::Right)).deadzone, POINTER_DEADZONE, "out of range: its default");
-    assert_eq!(get(Input::Trigger(Side::Left)).threshold, 75);
-    assert_eq!(get(Input::Trigger(Side::Right)).threshold, DEFAULT_THRESHOLD, "out of range");
-    assert!(maps.text().contains("rstick = pointer speed=75\n"), "{}", maps.text());
+fn parameters_stay_in_range_and_apply_by_target() {
     let mut b = Binding::to(Output::Pointer);
     Param::Full.set(&mut b, 10);
     assert_eq!(b.full, 50);
@@ -169,8 +132,7 @@ fn parameters_load_in_range_and_apply_by_target() {
     let mut k = Keymap::new(1, "g");
     k.set(Input::Gyro, Some(b));
     let maps = Keymaps { list: vec![k] };
-    assert!(maps.text().contains("gyro = stick right accel=40 accelat=90 tighten=25 stickmin=15 hold=lb twist ratchet\n"), "{}", maps.text());
-    assert_eq!(Keymaps::load(&maps.text()), maps);
+    assert_eq!(round_trip(&maps), maps);
     assert_eq!(ps(Input::Gyro, Output::Nothing), vec![], "off");
     assert_eq!(ps(Input::Trigger(Side::Left), Output::Key(chord("x"))), vec![Param::Deadzone, Param::Full, Param::Threshold, Param::Turbo, Param::Toggle]);
     assert_eq!(ps(Input::Trigger(Side::Left), Output::Trigger(Side::Right)), vec![Param::Deadzone, Param::Full]);
@@ -181,7 +143,7 @@ fn parameters_load_in_range_and_apply_by_target() {
 }
 
 #[test]
-fn holds_doubles_turbo_and_toggle_are_kept_and_written() {
+fn holds_doubles_turbo_and_toggle_are_kept() {
     let a = Input::Button(Button::A);
     let mut k = Keymap::new(4, "Combo");
     assert!(k.set(a, Some(Binding { turbo: 12, ..Binding::to(Output::Key(chord("x"))) })));
@@ -193,9 +155,7 @@ fn holds_doubles_turbo_and_toggle_are_kept_and_written() {
     assert_eq!(k.lookup_of(a, Actuation::Hold, &[aim]).map(|b| b.output), Some(Output::Key(chord("tab"))));
     assert_eq!(k.lookup_of(a, Actuation::Double, &[aim]).map(|b| b.toggle), Some(true), "falls through");
     let maps = Keymaps { list: vec![k] };
-    let text = maps.text();
-    assert_eq!(body(&text), "keymap 4 Combo\na = key x turbo=12\na hold = key esc holdtime=60\na double = mouse left toggle\nlayer 1 Aim\na hold = key tab\n");
-    assert_eq!(Keymaps::load(&text), maps);
+    assert_eq!(round_trip(&maps), maps);
     assert!(!maps.list.first().unwrap().is_empty(aim));
     // Shown: turbo off or a rate, a hold's time.
     let show = |p: Param, v| {
@@ -220,12 +180,9 @@ fn a_stick_on_the_pointer_has_defaults_of_its_own() {
     assert_eq!((own.deadzone, own.curve), (0, 0));
     let set = Binding { deadzone: 20, ..b }.retarget(rs, Output::Stick(Side::Right));
     assert_eq!((set.deadzone, set.curve), (20, 0));
-    // Written only where it differs from them; read back with them.
     let mut maps = Keymaps::initial();
     maps.get_mut(1).unwrap().set(rs, Some(Binding { deadzone: 0, ..b }));
-    assert!(maps.text().contains("rstick = pointer deadzone=0\n"), "{}", maps.text());
-    assert_eq!(Keymaps::load(&maps.text()), maps);
-    assert_eq!(Keymaps::load("keymap 1 K\nrstick = pointer\n").get(1).unwrap().get(rs), Some(&b));
+    assert_eq!(round_trip(&maps), maps);
 }
 
 #[test]
@@ -237,15 +194,14 @@ fn an_input_only_tuned_counts_as_changed_but_not_remapped() {
     assert_eq!(change(ls, Some(&Binding { deadzone: 12, ..own })), Change::Tuned);
     assert_eq!(change(ls, Some(&Binding { deadzone: 12, ..Binding::to(Output::Pointer) })), Change::Mapped);
     assert_eq!(change(Input::Button(Button::A), Some(&Binding::to(Output::Pad(PadOut::Button(Button::B))))), Change::Mapped);
-    let text = "keymap 1 T\nlstick = stick left deadzone=12 invert=xy\n";
-    let maps = Keymaps::load(text);
-    assert_eq!(maps.get(1).unwrap().get(ls), Some(&Binding { deadzone: 12, invert_x: true, invert_y: true, ..own }));
-    assert_eq!(body(&maps.text()), text, "written with its format's line first");
+    let tuned = Binding { deadzone: 12, invert_x: true, invert_y: true, ..own };
+    let mut k = Keymap::new(1, "T");
+    k.set(ls, Some(tuned));
+    assert_eq!(k.get(ls), Some(&tuned));
 }
 
 #[test]
 fn layers_round_trip() {
-    let base = "keymap 1 Nintendo layout\na = pad b\nb = pad a\nx = pad y\ny = pad x\n";
     let mut maps = Keymaps::initial();
     let k = maps.get_mut(1).unwrap();
     let aim = k.add_layer("Aim").unwrap();
@@ -254,9 +210,9 @@ fn layers_round_trip() {
     assert!(k.set_in(aim, Input::Button(Button::B), as_on_the_pad(Input::Button(Button::B)).map(Binding::to)));
     assert!(!k.set_layer_once(Layer::BASE, true), "Base is never Once");
     assert!(k.set_layer_once(aim, true) && k.layer_once(aim));
-    let text = maps.text();
-    assert_eq!(body(&text), format!("{base}layer 1 Aim\nonce\na = key ctrl+y\nb = pad b\ngyro = pointer hold=rb\n"));
-    assert_eq!(Keymaps::load(&text), maps);
+    let back = round_trip(&maps);
+    assert_eq!(back, maps);
+    assert!(back.get(1).unwrap().layer_once(aim));
     // A copy has its layers; clearing one leaves the others.
     let copy = maps.duplicate(1, "Copy").unwrap();
     let k = maps.get_mut(copy).unwrap();

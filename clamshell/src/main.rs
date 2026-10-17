@@ -10,19 +10,16 @@ mod snapshot;
 mod wiring;
 
 use std::cell::RefCell;
-use std::path::Path;
 use std::process::ExitCode;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use clamshell_core::bottom_screen::WindowRules;
 use clamshell_core::keymap::Keymaps;
-use clamshell_core::levels::Brightness;
-use clamshell_core::settings::Settings;
-use clamshell_core::{Dock, Init, Library, State};
+use clamshell_core::{Init, Library, State};
 use clamshell_system::library::{self, Sources};
 use clamshell_system::paths::Paths;
+use clamshell_system::store::Store;
 use clamshell_system::{Handles, job, tuning};
 use clamshell_ui::Config;
 
@@ -88,36 +85,42 @@ fn main() -> ExitCode {
     }
 }
 
-/// The keymaps from keymaps.txt; without the file (the first start), the ready-made ones, saved.
-/// Which programs' windows go to the bottom screen (none until a window is moved there).
-fn load_window_rules(paths: &Paths) -> WindowRules {
-    match paths.window_rules().map(std::fs::read_to_string) {
-        Some(Ok(text)) => WindowRules::load(&text),
-        Some(Err(e)) if e.kind() != std::io::ErrorKind::NotFound => {
-            log::warn!("window rules: {e}");
-            WindowRules::default()
-        }
-        _ => WindowRules::default(),
-    }
-}
-
-fn load_keymaps(paths: &Paths) -> Keymaps {
-    let Some(file) = paths.keymaps() else {
-        return Keymaps::initial();
+/// What was saved: from the database, each piece's default where there is none (or the database can't
+/// be read: logged). The keymaps the first time: the ready-made ones.
+fn saved(paths: &Paths) -> Init {
+    let Some(mut store) = paths.db().and_then(|f| Store::open(&f).map_err(|e| log::error!("store: {}: {e}", f.display())).ok()) else {
+        return Init { keymaps: Keymaps::initial(), ..Init::default() };
     };
-    match std::fs::read_to_string(&file) {
-        Ok(text) => Keymaps::load(&text),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            let keymaps = Keymaps::initial();
-            if let Err(e) = clamshell_system::paths::write(&file, &keymaps.text()) {
-                log::warn!("{}: {e}", file.display());
+    fn or_default<T: Default>(what: &str, r: Result<T, clamshell_system::store::Error>) -> T {
+        r.unwrap_or_else(|e| {
+            log::warn!("store: {what}: {e}");
+            T::default()
+        })
+    }
+    // The first start: the ready-made keymaps, saved at once.
+    // (Not when they couldn't be read: then what was saved stays.)
+    let keymaps = match store.keymaps() {
+        Ok(Some(keymaps)) => keymaps,
+        Ok(None) => {
+            let initial = Keymaps::initial();
+            if let Err(e) = store.save_keymaps(&initial) {
+                log::warn!("store: keymaps: {e}");
             }
-            keymaps
+            initial
         }
         Err(e) => {
-            log::warn!("{}: {e}", file.display());
-            Keymaps::default()
+            log::warn!("store: keymaps: {e}");
+            Keymaps::initial()
         }
+    };
+    Init {
+        settings: or_default("settings", store.settings()),
+        keymaps,
+        window_rules: or_default("window rules", store.window_rules()),
+        brightness: or_default("brightness", store.brightness()),
+        dock: or_default("dock", store.dock()),
+        resume: or_default("resume", store.resume()),
+        ..Init::default()
     }
 }
 
@@ -155,29 +158,14 @@ fn print_entry(library: &Library, i: usize, depth: usize) {
 
 /// The session: the state from what was saved, the UI, and the system threads.
 fn run(env: &Env, paths: Paths, sources: &Sources) -> ExitCode {
-    let read = |file: Option<&Path>| file.and_then(|f| std::fs::read_to_string(f).ok());
     let state = State::new(Init {
         library: load_library(sources),
-        // Each game's settings (power profile, FPS cap).
-        settings: read(paths.game_settings().as_deref()).map_or_else(Settings::default, |t| Settings::load(&t)),
-        // The keymaps; the first time, the Nintendo layout, written at once.
-        keymaps: load_keymaps(&paths),
-        window_rules: load_window_rules(&paths),
-        // The screens' brightness as it was left: the level and each screen's share.
-        brightness: read(paths.brightness.as_deref()).map_or_else(Brightness::default, |t| Brightness::from_text(&t)),
-        // The dock's pinned entries, in order.
-        dock: read(paths.dock().as_deref()).map_or_else(Dock::default, |t| Dock::load(&t)),
-        // Where shelf and the second screen were last time.
-        resume: read(paths.resume.as_deref()),
         start_tab: env.start_tab,
         pad_mouse: env.pad_mouse,
         device_session: env.device_session,
+        // Settings, keymaps, window rules, brightness, the dock, where shelf was.
+        ..saved(&paths)
     });
-    if let Some(dir) = &paths.state_dir
-        && let Err(e) = std::fs::create_dir_all(dir)
-    {
-        log::warn!("state dir {}: {e}", dir.display());
-    }
     let config = Config {
         bottom_output: env.bottom_output.clone(),
         // The Thor's panels at half size: top 1920x1080 (landscape), bottom 1240x1080.

@@ -57,7 +57,7 @@ pub struct Game {
     pub items: Vec<usize>,
     /// The group it is in, if any.
     pub parent: Option<usize>,
-    /// Play history (stats.db) and favourite (favorites.txt).
+    /// Play history and favourite (from the database).
     pub plays: Plays,
     pub favourite: bool,
 }
@@ -165,7 +165,7 @@ impl Library {
         self.collections.splice(0..0, front);
     }
 
-    /// The ids of the favourite entries (for favorites.txt).
+    /// The ids of the favourite entries (as saved).
     pub fn favourite_ids(&self) -> impl Iterator<Item = &str> {
         self.games.iter().filter(|g| g.favourite).map(|g| &*g.id)
     }

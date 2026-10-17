@@ -186,7 +186,7 @@ mod tests {
         tap(&mut s, Id::Tab(Tab::Keyboard));
         s.apply(Event::TextInput(false));
         assert_eq!(s.bottom().tab(), Tab::Keyboard);
-        assert!(s.resume_text().contains("@mode\tkeyboard"));
+        assert_eq!(s.resume().tab, "keyboard");
         // Already on the keyboard: nothing to go back to.
         tap(&mut s, Id::Tab(Tab::Dock));
         tap(&mut s, Id::Tab(Tab::Keyboard));

@@ -26,7 +26,7 @@ impl State {
                 undo.steps.remove(0);
             }
         }
-        Effect::Save(Save::Keymaps(self.keymaps.text()))
+        Effect::Save(Save::Keymaps(self.keymaps.clone()))
     }
 
     /// Whether the edit screen's Undo has a change to go back over.
