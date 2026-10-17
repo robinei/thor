@@ -468,6 +468,16 @@ mod tests {
     }
 
     #[test]
+    fn the_details_actions_toggle_the_favourite_and_the_pin() {
+        let mut s = state();
+        let fx = tap(&mut s, Id::Shelf(ShelfId::Favourite));
+        assert_eq!(fx, vec![Effect::Save(Save::Favourites(vec!["zelda-lttp".into()]))]);
+        let fx = tap(&mut s, Id::Shelf(ShelfId::Pin));
+        assert!(matches!(fx.as_slice(), [Effect::Save(Save::Dock(ids))] if ids.len() == 1), "{fx:?}");
+        assert!(s.dock().is_pinned("zelda-lttp"));
+    }
+
+    #[test]
     fn selecting_then_activating_again_launches() {
         let mut s = state();
         assert!(tap(&mut s, game("ff6")).is_empty());

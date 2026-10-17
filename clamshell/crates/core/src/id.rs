@@ -64,6 +64,9 @@ pub enum ShelfId {
     Launch,
     /// Out of the open group (back to the list it is in).
     Up,
+    /// The details' actions: the selected entry a favourite or not, pinned to the dock or not.
+    Favourite,
+    Pin,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

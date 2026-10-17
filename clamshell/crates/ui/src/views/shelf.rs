@@ -35,6 +35,8 @@ const ART_H: f32 = 0.78;
 const TITLE: f32 = 0.05;
 const DETAIL: f32 = 0.03;
 const SUMMARY: f32 = 0.028;
+/// An action row's height, of the details' text size.
+const ACTION: f32 = 1.45;
 /// A screenshot's height at most, of the list's height (it is as wide as the details, 16:9).
 const SHOT_H: f32 = 0.45;
 /// The box art's width at most, of the room right of the list: a portrait one is as high as it may be
@@ -163,30 +165,28 @@ fn selected(f: &mut Frame, game: &Game, screen: Rect, list: Rect, pad: f32) {
         col.skip(f.c.wrap(span(&col), detail, Tone::Dim, &maker, 2) + pad * 0.4);
     }
 
-    // A folder: what is in it, and that A opens it.
+    // A folder: what is in it.
     if game.is_group() {
         let inside = Fmt::<64>::of(format_args!("{}", Inside(s, game)));
         col.skip(f.c.wrap(span(&col), detail, Tone::Normal, &inside, 2) + pad * 0.4);
     }
 
-    // Whether it runs (A shows it), then whether it is a favourite, each on a line of its own.
-    let mut mx = tx;
-    if s.session().running(&game.id).is_some() {
-        mx += f.c.text(mx, col.y(), detail, Tone::Go, "Running · A to show it") + pad;
+    // What A does, whether it is a favourite (Y) and on the dock (X): each a row to tap, with its button.
+    let action_h = detail * ACTION;
+    let running = s.session().running(&game.id).is_some();
+    let play = match (game.is_group(), running) {
+        (true, _) => ("Open", Tone::Normal),
+        (false, true) => ("Running · show it", Tone::Go),
+        (false, false) => ("Play", Tone::Normal),
+    };
+    let favourite = if game.favourite { ("Favourite", Tone::Accent) } else { ("Not a favourite", Tone::Dim) };
+    let pinned = if s.dock().is_pinned(&game.id) { ("On the dock", Tone::Normal) } else { ("Not on the dock", Tone::Dim) };
+    for (id, key, (label, tone)) in [(ShelfId::Launch, "A", play), (ShelfId::Favourite, "Y", favourite), (ShelfId::Pin, "X", pinned)] {
+        let r = Rect::new(tx, col.y(), text_w.min(detail * 14.0), action_h);
+        widgets::key_action(f, Id::Shelf(id), r, key, label, tone);
+        col.skip(action_h + pad * 0.15);
     }
-    if mx > tx {
-        col.skip(detail * WRAP_LINE + pad * 0.2);
-        mx = tx;
-    }
-    if game.favourite {
-        mx += f.c.text(mx, col.y(), detail, Tone::Accent, "Favourite") + pad;
-    }
-    if s.dock().is_pinned(&game.id) {
-        mx += f.c.text(mx, col.y(), detail, Tone::Dim, "On the dock");
-    }
-    if mx > tx {
-        col.skip(detail * WRAP_LINE + pad * 0.4);
-    }
+    col.skip(pad * 0.3);
 
     // The play time.
     let plays = game.plays;
@@ -224,7 +224,7 @@ fn selected(f: &mut Frame, game: &Game, screen: Rect, list: Rect, pad: f32) {
     }
 }
 
-/// What a folder holds and how it opens: "2 folders · 3 entries · A to open", "24 entries · A to open".
+/// What a folder holds: "2 folders · 3 entries", "24 entries".
 struct Inside<'a>(&'a State, &'a Game);
 
 impl Display for Inside<'_> {
@@ -234,12 +234,13 @@ impl Display for Inside<'_> {
         let entries = self.1.items.len() - folders;
         let plural = |n: usize| if n == 1 { "" } else { "s" };
         if folders > 0 {
-            write!(f, "{folders} folder{} · ", plural(folders))?;
+            write!(f, "{folders} folder{}", plural(folders))?;
         }
         if entries > 0 || folders == 0 {
-            write!(f, "{entries} entr{} · ", if entries == 1 { "y" } else { "ies" })?;
+            let between = if folders > 0 { " · " } else { "" };
+            write!(f, "{between}{entries} entr{}", if entries == 1 { "y" } else { "ies" })?;
         }
-        f.write_str("A to open")
+        Ok(())
     }
 }
 

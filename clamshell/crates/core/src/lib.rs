@@ -580,6 +580,8 @@ impl State {
                 vec![]
             }
             ShelfId::Launch => self.activate_selected(),
+            ShelfId::Favourite => self.on_shelf_event(ShelfEvent::ToggleFavourite).1,
+            ShelfId::Pin => self.on_shelf_event(ShelfEvent::TogglePin).1,
             ShelfId::Up => {
                 if self.shelf.up() {
                     self.moved_collection();

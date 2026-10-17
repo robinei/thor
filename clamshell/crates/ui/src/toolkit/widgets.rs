@@ -455,6 +455,20 @@ pub(crate) fn value_row(f: &mut Frame, row: Rect, size: f32, label: &str, value:
     f.c.text_fit(Rect::new(inner.right() - vw, row.y, vw + 1.0, row.h), size, Tone::high_if(changed), value, Keep::Start);
 }
 
+/// An action and the pad button that does it, a target filling `r`: the button's letter in a ring, then
+/// the label (in `tone`).
+pub(crate) fn key_action(f: &mut Frame, id: Id, r: Rect, key: &str, label: &str, tone: Tone) {
+    let pad = f.pad();
+    f.button(id, r, Look::ICON, |f| {
+        let d = r.h * 0.78;
+        let ring = Rect::new(r.x, r.y + (r.h - d) / 2.0, d, d);
+        f.c.outline(ring, d / 2.0, 1.5, Tone::Dim);
+        centred_text(f, ring, d * 0.55, Tone::Normal, key);
+        let x = ring.x + d + pad * 0.5;
+        f.c.text_fit(Rect::new(x, r.y, r.x + r.w - x, r.h), r.h * 0.62, tone, label, Keep::Start);
+    });
+}
+
 /// Text centred in `r` (cut to fit).
 pub(crate) fn centred_text(f: &mut Frame, r: Rect, size: f32, tone: Tone, text: &str) {
     let w = f.c.text_width(size, text).min(r.w);
