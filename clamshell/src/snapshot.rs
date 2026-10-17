@@ -343,6 +343,9 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 shot("keymap-own-menu.png", Bottom, vec![PointerEvent::LongPress(ListId::Keymaps.row(0)).into()]),
                 shot("keymap-own-kept.png", Bottom, vec![km(KeymapId::Back), tap(ListId::Keymaps.row(3)), keymap_tile()]),
                 shot("keymap-load.png", Bottom, vec![PointerEvent::LongPress(ListId::Keymaps.row(0)).into(), km(KeymapId::LoadFrom)]),
+                shot("keymap-save.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::SaveAs)]),
+                shot("keymap-replace.png", Bottom, vec![tap(ListId::Keymaps.row(2))]),
+                shot("keymap-edit-own.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Back), km(KeymapId::Edit)]),
             ],
         ),
         group(

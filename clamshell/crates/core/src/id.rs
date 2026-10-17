@@ -105,8 +105,10 @@ pub enum KeymapId {
     /// A game's own keymap made from the one in force there (the picker's row, the edit screen's action
     /// while a shared keymap is edited).
     MakeOwn,
-    /// A game's own keymap's menu: name it, which shares it.
-    Share,
+    /// A game's own keymap's menu: the named keymaps to save it over, or as a new one.
+    SaveAs,
+    /// Saving over a named keymap, after all.
+    ConfirmSave,
     /// A game's own keymap's menu: the keymaps to load into it.
     LoadFrom,
     /// An input on the edit screen: a tap selects it (its panel), a tap on the selected one opens the way

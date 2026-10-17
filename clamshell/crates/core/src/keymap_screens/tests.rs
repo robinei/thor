@@ -620,28 +620,41 @@ fn a_games_own_keymap_is_made_and_kept_while_another_is_chosen() {
 }
 
 #[test]
-fn a_games_own_keymap_saved_as_a_named_one_is_shared() {
+fn a_games_own_keymap_is_saved_as_a_new_named_one_or_over_one() {
     let mut s = State::new(Init { keymaps: Keymaps::initial(), ..init() });
+    picker(&mut s);
+    tap(&mut s, row(2));
     picker(&mut s);
     tap(&mut s, row(0));
     let own = s.keymaps().own_of("zelda-lttp").unwrap().id;
+    keymap(&mut s, KeymapId::Input(Input::Button(Button::A)));
+    keymap(&mut s, KeymapId::Target(Target::Nothing));
     keymap(&mut s, KeymapId::Back);
+    // As a new one: a copy, named; the game keeps its own.
     long(&mut s, row(0));
-    assert_eq!(s.keymap_screen(), Some(Screen::Menu(own)));
-    keymap(&mut s, KeymapId::Share);
+    keymap(&mut s, KeymapId::SaveAs);
+    assert_eq!(s.keymap_screen(), Some(Screen::SaveAs(own)));
+    assert_eq!((s.keymap_row(0), s.list_len(ListId::Keymaps)), (Some(PickerRow::New), 2), "a new one, Nintendo layout");
+    tap(&mut s, row(0));
     type_text(&mut s, "zelda");
     tap(&mut s, Id::Editor(EditorId::Save));
-    assert_eq!(s.keymap_name(own), "zelda");
-    assert!(s.keymaps().own_of("zelda-lttp").is_none());
-    assert_eq!(s.keymap_users(own), Users { all_games: false, games: 1 }, "the game keeps it");
-    assert_eq!(s.keymap_row(0), Some(PickerRow::Own(None)));
-    // From a shared keymap's edit screen, Make own: a copy for the game, edited from then on.
-    tap(&mut s, Id::Row { list: ListId::Keymaps, i: 3, part: RowPart::Edit });
-    assert_eq!(s.keymap_screen(), Some(Screen::Edit(own)));
-    keymap(&mut s, KeymapId::MakeOwn);
-    let copy = s.keymaps().own_of("zelda-lttp").unwrap().id;
-    assert_eq!((s.keymap_screen(), s.settings().overrides_of("zelda-lttp").get(Setting::Keymap)), (Some(Screen::Edit(copy)), Some(copy)));
-    // With its own, no second one.
+    let copy = s.keymaps().named().find(|k| k.name == "zelda").unwrap().id;
+    assert_eq!(s.keymaps().get(copy).unwrap().get(Input::Button(Button::A)).map(|b| b.output), Some(Output::Nothing));
+    assert_eq!(s.keymaps().own_of("zelda-lttp").map(|k| k.id), Some(own), "kept");
+    assert_eq!(s.settings().overrides_of("zelda-lttp").get(Setting::Keymap), Some(own), "still chosen");
+    // Over Nintendo layout: asked first; then it has the own one's bindings.
+    long(&mut s, row(0));
+    keymap(&mut s, KeymapId::SaveAs);
+    tap(&mut s, row(1));
+    assert_eq!(s.keymap_screen(), Some(Screen::Overwrite { own, to: 1 }));
+    keymap(&mut s, KeymapId::Back);
+    assert_eq!(s.keymap_screen(), Some(Screen::SaveAs(own)), "not after all");
+    tap(&mut s, row(1));
+    let fx = keymap(&mut s, KeymapId::ConfirmSave);
+    assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Keymaps(_)))), "{fx:?}");
+    assert_eq!(s.keymaps().get(1).unwrap().get(Input::Button(Button::A)).map(|b| b.output), Some(Output::Nothing));
+    assert_eq!(s.keymap_name(1), "Nintendo layout", "its name kept");
+    // From a shared keymap's edit screen, Make own: only for a game without one.
     assert!(!s.keymap_can_make_own());
 }
 

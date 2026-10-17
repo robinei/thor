@@ -2,7 +2,8 @@
 //! keymap, or the row that makes one from the keymap in force; then Default, then the named keymaps
 //! with how many games use each, and New), a keymap's menu (Edit, Rename, Duplicate, Delete, deleting one
 //! in use after a confirmation; a game's own, which stays while another is chosen: Edit, Load from (Default
-//! or a named keymap copied into it, then its edit screen, where Undo goes back), Save as, Delete), and the edit screen: the pad's inputs in one layer of the
+//! or a named keymap copied into it, then its edit screen, where Undo goes back), Save as (a copy, as a new
+//! named keymap or over one, which asks first), Delete), and the edit screen: the pad's inputs in one layer of the
 //! keymap ([`EditView`]; the layer button opens the list of layers: show one, add one, a long press for
 //! rename, clear and delete); an input chosen by touch or by pressing it on the pad, which listens
 //! meanwhile, is selected into a panel with the ways to remap it that fit its kind ([`ways`]) and its
@@ -39,6 +40,10 @@ pub enum Screen {
     Delete(u16),
     /// Default and the named keymaps, one to copy into this (a game's own).
     Load(u16),
+    /// A new named keymap and the named keymaps, to save this (a game's own) as.
+    SaveAs(u16),
+    /// Saving `own` over the named keymap `to`: are you sure.
+    Overwrite { own: u16, to: u16 },
     /// A keymap's inputs: the pad listens.
     Edit(u16),
     /// The edit screen while the control `input` maps to is picked on the drawing, tapped or pressed on
@@ -69,7 +74,8 @@ impl Screen {
     pub fn keymap(self) -> Option<u16> {
         match self {
             Screen::List => None,
-            Screen::Menu(id) | Screen::Delete(id) | Screen::Load(id) | Screen::Edit(id) => Some(id),
+            Screen::Menu(id) | Screen::Delete(id) | Screen::Load(id) | Screen::SaveAs(id) | Screen::Edit(id) => Some(id),
+            Screen::Overwrite { own, .. } => Some(own),
             Screen::Pick { id, .. } | Screen::Holds { id, .. } | Screen::Mouse { id, .. } | Screen::Capture { id, .. } => Some(id),
             Screen::Layers { id, .. } | Screen::LayerMenu { id, .. } | Screen::LayerPicker(id) => Some(id),
         }
@@ -137,6 +143,8 @@ pub struct EditView {
 pub enum PickerRow<'a> {
     /// The game's own keymap; none: the row that makes it.
     Own(Option<&'a Keymap>),
+    /// Saving a game's own: as a new named keymap.
+    New,
     Default,
     Named(&'a Keymap),
 }
@@ -190,11 +198,18 @@ impl State {
     }
 
     /// The picker's rows: for a game, its own keymap (or the row making one), then Default and the named
-    /// keymaps. Loading into a game's own: Default and the named keymaps.
+    /// keymaps. Loading into a game's own: Default and the named keymaps; saving it: a new one and the named
+    /// keymaps.
     fn keymap_rows(&self) -> impl Iterator<Item = PickerRow<'_>> {
-        let loading = matches!(self.bottom.keymaps, Some(Screen::Load(_)));
-        let own = self.editing().filter(|_| !loading).map(|g| PickerRow::Own(self.keymaps.own_of(&g.id)));
-        own.into_iter().chain([PickerRow::Default]).chain(self.keymaps.named().map(PickerRow::Named))
+        let (loading, saving) = match self.bottom.keymaps {
+            Some(Screen::Load(_)) => (true, false),
+            Some(Screen::SaveAs(_)) => (false, true),
+            _ => (false, false),
+        };
+        let own = self.editing().filter(|_| !loading && !saving).map(|g| PickerRow::Own(self.keymaps.own_of(&g.id)));
+        let new = saving.then_some(PickerRow::New);
+        let default = (!saving).then_some(PickerRow::Default);
+        own.into_iter().chain(new).chain(default).chain(self.keymaps.named().map(PickerRow::Named))
     }
 
     pub(crate) fn keymap_rows_len(&self) -> usize {
@@ -261,15 +276,26 @@ impl State {
     /// press opens a keymap's menu; its Edit button its edit screen. The game's row without its own keymap
     /// makes it.
     pub(crate) fn on_keymap_row(&mut self, i: usize, part: RowPart, long: bool) -> Vec<Effect> {
-        if let Some(Screen::Load(own)) = self.bottom.keymaps {
-            return match self.keymap_row(i) {
-                Some(PickerRow::Default) if !long => self.load_into(own, 0),
-                Some(PickerRow::Named(k)) if !long => self.load_into(own, k.id),
-                _ => vec![],
-            };
+        match self.bottom.keymaps {
+            Some(Screen::Load(own)) => {
+                return match self.keymap_row(i) {
+                    Some(PickerRow::Default) if !long => self.load_into(own, 0),
+                    Some(PickerRow::Named(k)) if !long => self.load_into(own, k.id),
+                    _ => vec![],
+                };
+            }
+            Some(Screen::SaveAs(own)) => {
+                match self.keymap_row(i) {
+                    Some(PickerRow::New) if !long => self.name_keymap(KeymapName::SaveAs(own), String::new()),
+                    Some(PickerRow::Named(k)) if !long => self.bottom.keymaps = Some(Screen::Overwrite { own, to: k.id }),
+                    _ => {}
+                }
+                return vec![];
+            }
+            _ => {}
         }
         let (id, keymap) = match self.keymap_row(i) {
-            None => return vec![],
+            None | Some(PickerRow::New) => return vec![],
             Some(PickerRow::Own(None)) => return self.make_own(self.keymap_chosen()),
             Some(PickerRow::Default) => (0, false),
             Some(PickerRow::Own(Some(k)) | PickerRow::Named(k)) => (k.id, true),
@@ -351,9 +377,18 @@ impl State {
                 self.bottom.keymaps = Some(Screen::Load(k));
                 vec![]
             }
-            (KeymapId::Share, Screen::Menu(k)) => {
-                self.name_keymap(KeymapName::Share(k), String::new());
+            (KeymapId::SaveAs, Screen::Menu(k)) if self.keymap_is_own(k) => {
+                self.bottom.keymaps = Some(Screen::SaveAs(k));
                 vec![]
+            }
+            (KeymapId::ConfirmSave, Screen::Overwrite { own, to }) => {
+                self.bottom.keymaps = Some(Screen::List);
+                if !self.keymaps.copy_into(to, own) {
+                    return vec![];
+                }
+                let mut effects = vec![self.save_keymaps()];
+                effects.extend(self.follow_keymap(false));
+                effects
             }
             (KeymapId::MakeOwn, Screen::Edit(k)) => self.make_own(k),
             (KeymapId::Delete, Screen::Menu(k)) if self.keymap_users(k).any() => {
@@ -488,7 +523,8 @@ impl State {
         self.bottom.keymaps = match self.bottom.keymaps {
             None | Some(Screen::List) => None,
             Some(Screen::Menu(_) | Screen::Delete(_) | Screen::Edit(_)) => Some(Screen::List),
-            Some(Screen::Load(id)) => Some(Screen::Menu(id)),
+            Some(Screen::Load(id) | Screen::SaveAs(id)) => Some(Screen::Menu(id)),
+            Some(Screen::Overwrite { own, .. }) => Some(Screen::SaveAs(own)),
             Some(Screen::Pick { id, .. } | Screen::Holds { id, .. } | Screen::Mouse { id, .. }) => Some(Screen::Edit(id)),
             Some(Screen::Layers { id, .. } | Screen::LayerPicker(id)) => Some(Screen::Edit(id)),
             Some(Screen::LayerMenu { id, .. }) => Some(Screen::LayerPicker(id)),
@@ -572,8 +608,8 @@ impl State {
                 self.keymaps.duplicate(id, name);
                 self.bottom.keymaps = Some(Screen::List);
             }
-            KeymapName::Share(id) => {
-                self.keymaps.share(id, name);
+            KeymapName::SaveAs(id) => {
+                self.keymaps.duplicate(id, name);
                 self.bottom.keymaps = Some(Screen::List);
             }
             KeymapName::NewLayer(id, for_input) => {

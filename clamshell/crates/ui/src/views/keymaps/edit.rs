@@ -372,15 +372,15 @@ pub(super) fn edit(f: &mut Frame, id: u16, picking: Option<Picking>) {
         f.c.text_in(Rect::new(r.x - r.w * 0.6 - w, r.y, w, r.h), size, fixed, "Home", Align::Start);
     }
 
-    // The panel: the whole strip between the label columns, above who uses a named keymap (its edits
-    // reach them all) and, for a game, Make own.
+    // The panel: the whole strip between the label columns, above the keymap's line: which keymap is edited
+    // (a game's own, or a named one with who uses it: its edits reach them all) and Make own.
     let margin = (strip.w * 0.04).min(size);
     let mut panel_r = Rect::new(strip.x + margin, strip.y, (strip.w - 2.0 * margin).max(1.0), strip.h);
-    if picking.is_none() && !s.keymap_is_own(id) && s.keymap_users(id).any() {
+    if picking.is_none() {
         let small = f.text(Text::Small) * PANEL_TEXT;
         let row = panel_r.take_bottom(small * LINE * 1.6);
         // (Wider than the panel: the label columns are free at the bottom, between Home and Back.)
-        shared_line(f, Rect::new(strip.x - lw * 0.9, row.y, strip.w + lw * 1.8, row.h), id, small);
+        keymap_line(f, Rect::new(strip.x - lw * 0.9, row.y, strip.w + lw * 1.8, row.h), id, small);
     }
     match picking {
         Some(p) => picking_panel(f, panel_r, id, p),
@@ -388,12 +388,17 @@ pub(super) fn edit(f: &mut Frame, id: u16, picking: Option<Picking>) {
     }
 }
 
-/// Who uses a named keymap being edited ("Used by all games, 2 games"), and for a game without its own
-/// keymap "Make own" (a copy for the game alone, edited from then on).
-fn shared_line(f: &mut Frame, mut row: Rect, id: u16, size: f32) {
-    let who = super::users(f, id);
-    let text = Fmt::<64>::of(format_args!("Used by {}", Lower(who.as_str())));
-    let label = if f.s.keymap_can_make_own() { "Make own" } else { "" };
+/// Which keymap is edited: a game's own ("Own keymap of Hades"), or a named one with who uses it ("FPS,
+/// used by all games, 2 games"), and then for a game without its own keymap "Make own" (a copy for the
+/// game alone, edited from then on).
+fn keymap_line(f: &mut Frame, mut row: Rect, id: u16, size: f32) {
+    let own = f.s.keymap_is_own(id);
+    let text = match (own, f.s.editing()) {
+        (true, Some(game)) => Fmt::<128>::of(format_args!("Own keymap of {}", game.title)),
+        (true, None) => Fmt::of(format_args!("Own keymap")),
+        (false, _) => Fmt::of(format_args!("{}, used by {}", f.s.keymap_name(id), Lower(super::users(f, id).as_str()))),
+    };
+    let label = if !own && f.s.keymap_can_make_own() { "Make own" } else { "" };
     // Centred together: the text, then the action.
     let gap = size;
     let action_w = if label.is_empty() { 0.0 } else { f.c.text_width(size, label) + gap };

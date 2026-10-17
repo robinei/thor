@@ -39,8 +39,8 @@ pub enum KeymapName {
     Rename(u16),
     /// A copy of this one.
     Duplicate(u16),
-    /// A game's own keymap, named: shared from then on.
-    Share(u16),
+    /// A copy of a game's own keymap, as a new named one.
+    SaveAs(u16),
     /// A new layer of this keymap (shown once made); for an input, mapped to it.
     NewLayer(u16, Option<(crate::keymap::Input, crate::keymap::Actuation)>),
     RenameLayer(u16, crate::keymap::Layer),

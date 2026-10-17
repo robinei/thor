@@ -192,7 +192,7 @@ fn editor(f: &mut Frame) {
             KeymapName::New => Fmt::of(format_args!("Name of the new keymap")),
             KeymapName::Rename(id) => Fmt::of(format_args!("New name for {}", s.keymap_name(*id))),
             KeymapName::Duplicate(id) => Fmt::of(format_args!("Name of the copy of {}", s.keymap_name(*id))),
-            KeymapName::Share(_) => Fmt::of(format_args!("A name for it (other games can use it then)")),
+            KeymapName::SaveAs(_) => Fmt::of(format_args!("A name for the copy (other games can use it)")),
             KeymapName::NewLayer(..) => Fmt::of(format_args!("Name of the new layer")),
             KeymapName::RenameLayer(id, layer) => {
                 let name = s.keymaps().get(*id).and_then(|k| k.layer_name(*layer)).unwrap_or("the layer");

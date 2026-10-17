@@ -207,11 +207,12 @@ pub const TARGETS: &[Form<Id>] = &[
             "duplicate" => KeymapId::Duplicate,
             "delete" => KeymapId::Delete,
             "load" => KeymapId::LoadFrom,
-            "save-as" => KeymapId::Share,
+            "save-as" => KeymapId::SaveAs,
             other => return Err(name_err(other)),
         })
     }),
     form("keymap-delete", "deleting confirmed", |_| km(KeymapId::ConfirmDelete)),
+    form("keymap-replace", "saving over a named keymap confirmed", |_| km(KeymapId::ConfirmSave)),
     form("keymap-make-own", "the edit screen's Make own (a game's own keymap, a copy)", |_| km(KeymapId::MakeOwn)),
     form("keymap-undo", "the edit screen's Undo", |_| km(KeymapId::Undo)),
     form("map-from INPUT", "an input selected (as in keymaps.txt: a, lb, up, lstick, rstick-up, lt, gyro; a long press sets it back)", |a| {

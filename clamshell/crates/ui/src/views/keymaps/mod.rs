@@ -1,7 +1,8 @@
 //! The keymaps' screens, over the settings tab (see `core`'s `keymap_screens`): the picker (a scrolled list:
 //! for a game its own keymap, or Make own keymap; Default, then the named keymaps, each with who uses it
 //! and an Edit button; New), a keymap's menu, deleting one in use, the keymaps to load into a game's own
-//! (the picker's rows without the own one, Edit and the mark), the edit screen (one layer of the keymap, named at the top right, a button to the list of
+//! and to save it as (the picker's rows without the own one, Edit and the mark; saving: a new one first),
+//! saving over a named one, the edit screen (one layer of the keymap, named at the top right, a button to the list of
 //! layers; Close at the top left; the pad's controls drawn in two clusters at the sides, as they sit
 //! beside the screen, each the layer changes with a label; between the label columns, the whole height, a
 //! panel for the selected input: the ways to remap it as icons, its parameters), the layers' lists and a
@@ -49,8 +50,10 @@ const BUTTON_H: f32 = 0.085;
 
 pub(super) fn draw(f: &mut Frame, screen: Screen) {
     match screen {
-        Screen::List => list(f, None),
-        Screen::Load(own) => list(f, Some(own)),
+        Screen::List => list(f, Listing::Pick),
+        Screen::Load(_) => list(f, Listing::Load),
+        Screen::SaveAs(_) => list(f, Listing::Save),
+        Screen::Overwrite { to, .. } => overwrite(f, to),
         Screen::Menu(id) => menu(f, id),
         Screen::Delete(id) => delete(f, id),
         Screen::Edit(id) => edit(f, id, None),
@@ -109,25 +112,35 @@ fn users(f: &Frame, id: u16) -> Fmt<48> {
     }
 }
 
-/// The picker; or, `loading` into a game's own keymap, the keymaps to copy into it.
-fn list(f: &mut Frame, loading: Option<u16>) {
+/// What the keymaps' list is for.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Listing {
+    /// The picker.
+    Pick,
+    /// A keymap to copy into the game's own.
+    Load,
+    /// Where to save the game's own: a new one, or over a named one.
+    Save,
+}
+
+/// The picker; or the keymaps to load into a game's own, or to save it as.
+fn list(f: &mut Frame, listing: Listing) {
     let s = f.s;
     let scope = match (s.bottom().scope(), s.editing()) {
         (Scope::Game, Some(game)) => game.title.as_str(),
         _ => "all games",
     };
-    let area = match loading {
-        Some(_) => header(f, "Load into own keymap", HeaderRight::None),
-        None => {
+    let (area, hint) = match listing {
+        Listing::Load => (header(f, "Load into own keymap", HeaderRight::None), "Its bindings replace the own keymap's (Undo goes back)"),
+        Listing::Save => (header(f, "Save own keymap as", HeaderRight::None), "A new keymap, or one whose bindings it replaces"),
+        Listing::Pick => {
             let title = Fmt::<128>::of(format_args!("Keymap for {scope}"));
-            header(f, &title, HeaderRight::Action(Id::Keymap(KeymapId::New), "New"))
+            (header(f, &title, HeaderRight::Action(Id::Keymap(KeymapId::New), "New")), "Long press a keymap to rename, duplicate or delete it")
         }
     };
+    let loading = (listing != Listing::Pick).then_some(());
     let list = ListArea::new(f, area, f.body().h * ROW_H);
-    list.hint(
-        f,
-        if loading.is_some() { "Its bindings replace the own keymap's (Undo goes back)" } else { "Long press a keymap to rename, duplicate or delete it" },
-    );
+    list.hint(f, hint);
     let chosen = s.keymap_chosen();
     let rows = list.scrolled(f, ListId::Keymaps, s.list_len(ListId::Keymaps));
     for i in rows.shown() {
@@ -138,6 +151,7 @@ fn list(f: &mut Frame, loading: Option<u16>) {
         let (id, label, note) = match row {
             PickerRow::Own(Some(k)) => (Some(k.id), "Own keymap", Fmt::<48>::of(format_args!("This game only"))),
             PickerRow::Own(None) => (None, "Make own keymap", Fmt::of(format_args!("From {}", s.keymap_name(chosen)))),
+            PickerRow::New => (None, "New keymap…", Fmt::new()),
             PickerRow::Default => (Some(0), "Default", Fmt::of(format_args!("As on the pad"))),
             PickerRow::Named(k) => (Some(k.id), k.name.as_str(), users(f, k.id)),
         };
@@ -164,7 +178,7 @@ fn menu(f: &mut Frame, id: u16) {
         let items = [
             (k(KeymapId::Edit), "Edit", Tone::Fn),
             (k(KeymapId::LoadFrom), "Load from…", Tone::Fn),
-            (k(KeymapId::Share), "Save as…", Tone::Fn),
+            (k(KeymapId::SaveAs), "Save as…", Tone::Fn),
             (k(KeymapId::Delete), "Delete", Tone::Accent),
         ];
         return widgets::menu(f, area, &items);
@@ -189,6 +203,22 @@ fn delete(f: &mut Frame, id: u16) {
     let pad = f.pad();
     let rest = Rect::new(area.x, area.y + used + pad, area.w, area.h - used - pad);
     widgets::menu(f, rest, &[(Id::Keymap(KeymapId::Back), "Keep it", Tone::Fn), (Id::Keymap(KeymapId::ConfirmDelete), "Delete", Tone::Accent)]);
+}
+
+/// Saving a game's own keymap over named keymap `to`: are you sure (it reaches the games using it).
+fn overwrite(f: &mut Frame, to: u16) {
+    let name = f.s.keymap_name(to);
+    let title = Fmt::<128>::of(format_args!("Replace {name}?"));
+    let area = header(f, &title, HeaderRight::None);
+    let size = f.text(Text::Body);
+    let text = match f.s.keymap_users(to).any() {
+        true => Fmt::<160>::of(format_args!("Its bindings become the own keymap's, for every game using it ({}).", users(f, to).as_str())),
+        false => Fmt::of(format_args!("Its bindings become the own keymap's.")),
+    };
+    let used = f.c.wrap(Span { x: area.x, y: area.y, w: area.w }, size, Tone::Normal, &text, 3);
+    let pad = f.pad();
+    let rest = Rect::new(area.x, area.y + used + pad, area.w, area.h - used - pad);
+    widgets::menu(f, rest, &[(Id::Keymap(KeymapId::Back), "Keep it", Tone::Fn), (Id::Keymap(KeymapId::ConfirmSave), "Replace", Tone::Accent)]);
 }
 
 /// The edit screen: the labels' text, of the small text size; of the area's width, a cluster's width,

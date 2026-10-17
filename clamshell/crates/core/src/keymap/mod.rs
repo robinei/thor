@@ -1,8 +1,9 @@
 //! Keymaps: remappings of the controller (a game's or all games' setting,
 //! [`crate::settings::Setting::Keymap`], is a keymap's id; 0 is Default, no remapping). A keymap is
 //! named, and shared by the games that choose it, or a game's own: unnamed, offered to that game alone
-//! (kept while another is chosen, until deleted), made from the keymap in force there; naming it makes it
-//! a shared one. Each maps some of
+//! (kept while another is chosen, until deleted), made from the keymap in force there. Bindings move
+//! between the two by copying: a named keymap (or Default) loaded into a game's own, a game's own saved as
+//! a new named keymap or over one. Each maps some of
 //! the pad's inputs ([`Input`]) to something else ([`Output`]); an input without a binding does what it
 //! does on the pad. What an input may map to depends on its kind ([`Kind`]): a button to a pad button, a
 //! key chord, a mouse button or a wheel step; a stick to a stick, the mouse pointer, four keys or the
@@ -575,12 +576,6 @@ impl Keymaps {
     pub fn copy_into(&mut self, to: u16, from: u16) -> bool {
         let layers = self.get(from).map_or_else(|| Keymap::new(0, "").layers, |k| k.layers.clone());
         self.get_mut(to).map(|k| k.layers = layers).is_some()
-    }
-
-    /// A game's own keymap named, which makes it a shared one (the game keeps it); whether it was there.
-    pub fn share(&mut self, id: u16, name: &str) -> bool {
-        let name = self.unique_name(name);
-        self.get_mut(id).map(|k| (k.owner, k.name) = (None, name)).is_some()
     }
 
     /// A name no keymap has: `name`, else with a number after it.
