@@ -29,7 +29,8 @@
 //! - `desktop`: rules for the desktop files' apps and games (see [`DesktopRule`]): the first one
 //!   matching an entry (by its desktop file's id, its name, its categories: globs, any case) puts it in a
 //!   tab, or hides it; without one, a game (`Categories=Game`, not `Emulator`) goes in Games, the rest in
-//!   Apps. `{ "name": "Battle.net", "tab": "Apps" }`, `{ "id": "*uninstall*", "hide": true }`.
+//!   Apps; `group` puts it in a folder of the tab. `{ "name": "Battle.net", "tab": "Apps" }`,
+//!   `{ "id": "net.lutris.*", "tab": "Games", "group": "Launchers" }`, `{ "id": "*uninstall*", "hide": true }`.
 //! - `group`: a folder in the tab for the source's entries (`SNES`, or `Handhelds/GBA` for one in
 //!   another), so one tab can hold folders each with its own launch command; sources naming the same
 //!   folder share it. The folder's art: `poster`, `cover` or `folder` in the source's dir.
@@ -61,7 +62,8 @@ pub struct Config {
 }
 
 /// A rule for desktop files: those matching all of its `id`, `name` and `categories` (globs, any case;
-/// `categories` matches if any of an entry's does) go in `tab` (with `icon`), or are left out (`hide`).
+/// `categories` matches if any of an entry's does) go in `tab` (with `icon`; in its folder `group`, if
+/// given), or are left out (`hide`).
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DesktopRule {
@@ -73,6 +75,9 @@ pub struct DesktopRule {
     pub categories: Option<String>,
     #[serde(default)]
     pub tab: Option<String>,
+    /// A folder in the tab (as a source's `group`: `Launchers`, `Tools/Wine`).
+    #[serde(default)]
+    pub group: Option<String>,
     #[serde(default)]
     pub icon: Option<String>,
     #[serde(default)]

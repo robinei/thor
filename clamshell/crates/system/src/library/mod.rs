@@ -185,17 +185,6 @@ pub fn load(sources: &Sources) -> Loaded {
         };
         add(&mut collections, &source.tab, source.icon.as_deref(), entries);
     }
-    // A folder's entries (from its sources, and its folders) by title.
-    for &f in folders.values() {
-        let mut items = games.get(f).map(|g| g.items.clone()).unwrap_or_default();
-        items.sort_by(|&a, &b| {
-            let key = |i: usize| games.get(i).map(|g| (&g.sort_key, &g.title));
-            key(a).cmp(&key(b))
-        });
-        if let Some(g) = games.get_mut(f) {
-            g.items = items;
-        }
-    }
     let extend = |games: &mut Vec<Game>, more: Vec<Game>| {
         let first = games.len();
         games.extend(more);
@@ -211,7 +200,7 @@ pub fn load(sources: &Sources) -> Loaded {
     add(&mut collections, GAMES, Some("gamepad"), steam);
     // The desktop files' apps and games: where library.json's rules put them, else Games for a game and
     // Apps for the rest (the games first, then the apps, each tab made where it is first named).
-    let mut placed: Vec<(String, Option<String>, Game)> = Vec::new();
+    let mut placed: Vec<(String, Option<String>, Option<String>, Game)> = Vec::new();
     for d in crate::desktop::entries(&sources.data_dirs) {
         let rule = config.desktop.iter().find(|r| r.matches(&d.id, &d.name, &d.categories));
         if rule.is_some_and(|r| r.hide) {
@@ -222,16 +211,33 @@ pub fn load(sources: &Sources) -> Loaded {
         let icon = rule.and_then(|r| r.icon.clone()).or_else(|| (tab == default).then(|| if d.game.tool { "apps" } else { "gamepad" }.to_owned()));
         // (In Apps: an app, which Recent leaves out; anywhere else, played like a game.)
         let game = Game { tool: tab == APPS, ..d.game };
-        placed.push((tab, icon, game));
+        let group = rule.and_then(|r| r.group.clone()).map(|g| g.trim_matches('/').to_owned()).filter(|g| !g.is_empty());
+        placed.push((tab, icon, group, game));
     }
-    placed.sort_by_key(|(_, _, g)| g.tool);
-    for (tab, icon, game) in placed {
+    placed.sort_by_key(|(_, _, _, g)| g.tool);
+    for (tab, icon, group, game) in placed {
         let tool = game.tool;
         let i = extend(&mut games, vec![game]);
         if config.keys.steamgriddb.is_some() && !tool {
             hows.extend(i.iter().map(|&i| (i, How::SteamGridDb)));
         }
+        // In a folder of the tab (as a source's `group`), or at its top.
+        let i = match group {
+            Some(path) => into_folder(&mut games, &mut folders, &tab, &path, Path::new(""), &i).into_iter().collect(),
+            None => i,
+        };
         add(&mut collections, &tab, icon.as_deref(), i);
+    }
+    // A folder's entries (from its sources, and its folders) by title.
+    for &f in folders.values() {
+        let mut items = games.get(f).map(|g| g.items.clone()).unwrap_or_default();
+        items.sort_by(|&a, &b| {
+            let key = |i: usize| games.get(i).map(|g| (&g.sort_key, &g.title));
+            key(a).cmp(&key(b))
+        });
+        if let Some(g) = games.get_mut(f) {
+            g.items = items;
+        }
     }
     collections.retain(|c| !c.games.is_empty());
     for c in &mut collections {
@@ -354,12 +360,15 @@ mod tests {
         write("foot", "Foot", "System;");
         let config = r#"{ "desktop": [
             { "id": "lutris", "tab": "Launchers", "icon": "apps" },
+            { "id": "celeste", "tab": "Games", "group": "Platformers" },
             { "name": "uninstall*", "hide": true }
         ] }"#;
         std::fs::write(root.join("library.json"), config).unwrap();
         let lib = load(&Sources { config: Some(root.join("library.json")), data_dirs: vec![root.join("data")], ..Sources::default() }).library;
         let tab = |name: &str| lib.collections.iter().find(|c| c.name == name).map(|c| c.games.iter().map(|&i| lib.games[i].title.clone()).collect::<Vec<_>>());
-        assert_eq!(tab("Games"), Some(vec!["Celeste".to_owned()]));
+        assert_eq!(tab("Games"), Some(vec!["Platformers".to_owned()]), "in its folder");
+        let folder = lib.games.iter().find(|g| g.title == "Platformers").unwrap();
+        assert_eq!(folder.items.iter().map(|&i| lib.games[i].title.as_str()).collect::<Vec<_>>(), ["Celeste"]);
         assert_eq!(tab("Launchers"), Some(vec!["Lutris".to_owned()]));
         assert_eq!(tab("Apps"), Some(vec!["Foot".to_owned()]), "Uninstall Foo hidden");
         let _ = std::fs::remove_dir_all(&root);
