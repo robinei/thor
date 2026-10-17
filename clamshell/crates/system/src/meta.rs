@@ -105,14 +105,17 @@ pub struct Fetch {
     pub db: PathBuf,
 }
 
-/// The entries waiting to be fetched for, in order.
+/// The entries waiting to be fetched for, in order, and the fetching threads at work.
 #[derive(Clone, Default)]
-pub struct Queue(Arc<Mutex<VecDeque<Wanted>>>);
+pub struct Queue {
+    waiting: Arc<Mutex<VecDeque<Wanted>>>,
+    threads: Arc<std::sync::atomic::AtomicUsize>,
+}
 
 impl Queue {
     /// These entries (those still waiting) first, in this order.
     pub fn first(&self, ids: &[Arc<str>]) {
-        let Ok(mut q) = self.0.lock() else {
+        let Ok(mut q) = self.waiting.lock() else {
             return;
         };
         for id in ids.iter().rev() {
@@ -124,37 +127,42 @@ impl Queue {
         }
     }
 
+    /// `wanted` added at the end (those not waiting already); how many wait now.
+    fn add(&self, wanted: Vec<Wanted>) -> usize {
+        let Ok(mut q) = self.waiting.lock() else {
+            return 0;
+        };
+        for w in wanted {
+            if !q.iter().any(|x| x.id == w.id) {
+                q.push_back(w);
+            }
+        }
+        q.len()
+    }
+
     fn next(&self) -> Option<Wanted> {
-        self.0.lock().ok()?.pop_front()
+        self.waiting.lock().ok()?.pop_front()
     }
 }
 
-/// Fetches on [`THREADS`] threads until the list is done (or the UI is gone); the queue, to move what
-/// shelf shows to its front.
-pub fn spawn(fetch: Fetch, sink: impl Sink + Clone) -> std::io::Result<Queue> {
-    let queue = Queue(Arc::new(Mutex::new(fetch.wanted.into_iter().collect())));
-    let count = queue.0.lock().map_or(0, |q| q.len());
+/// Adds what `fetch` wants to `queue` and fetches on [`THREADS`] more threads until it is empty (or the
+/// UI is gone): `Fetching(true)` as they start, `Fetching(false)` when the last thread is done.
+pub fn spawn(fetch: Fetch, queue: &Queue, sink: impl Sink + Clone) -> std::io::Result<()> {
+    use std::sync::atomic::Ordering;
+    let count = queue.add(fetch.wanted);
     if count == 0 {
-        return Ok(queue);
+        return Ok(());
     }
     log::info!("meta: fetching for {count} entries");
     let _ = sink.send(Event::Fetching(true));
-    // The last thread done says so.
-    let running = Arc::new(std::sync::atomic::AtomicUsize::new(THREADS));
     let shared =
         Arc::new(Shared { keys: fetch.keys, art: fetch.art, db: fetch.db, listings: Mutex::new(HashMap::new()), databases: Mutex::new(HashMap::new()) });
     for _ in 0..THREADS {
-        let (queue, shared, sink, running) = (queue.clone(), shared.clone(), sink.clone(), running.clone());
+        let (queue, shared, sink) = (queue.clone(), shared.clone(), sink.clone());
+        queue.threads.fetch_add(1, Ordering::SeqCst);
         worker::detached("meta", move || {
             let store = Store::open(&shared.db).map_err(|e| log::warn!("meta: {e}")).ok();
-            loop {
-                let Some(w) = queue.next() else {
-                    if running.fetch_sub(1, std::sync::atomic::Ordering::SeqCst) == 1 {
-                        log::info!("meta: done");
-                        let _ = sink.send(Event::Fetching(false));
-                    }
-                    return;
-                };
+            while let Some(w) = queue.next() {
                 let meta = shared.fetch(&w);
                 if let Some(store) = &store
                     && let Err(e) = store.save_meta(&w.id, &w.how.source(), now(), &meta)
@@ -162,12 +170,16 @@ pub fn spawn(fetch: Fetch, sink: impl Sink + Clone) -> std::io::Result<Queue> {
                     log::warn!("meta: {}: {e}", w.id);
                 }
                 if meta != Meta::default() && sink.send(Event::Meta { id: w.id.clone(), meta }).is_err() {
-                    return;
+                    break;
                 }
+            }
+            if queue.threads.fetch_sub(1, Ordering::SeqCst) == 1 {
+                log::info!("meta: done");
+                let _ = sink.send(Event::Fetching(false));
             }
         })?;
     }
-    Ok(queue)
+    Ok(())
 }
 
 pub fn now() -> u64 {
@@ -675,7 +687,9 @@ mod tests {
     #[test]
     fn what_shelf_shows_comes_first() {
         let wanted = |id: &str| Wanted { id: id.into(), key: id.into(), title: id.into(), file: None, how: How::SteamGridDb, art: false };
-        let queue = Queue(Arc::new(Mutex::new(["a", "b", "c", "d"].map(wanted).into_iter().collect())));
+        let queue = Queue::default();
+        queue.add(["a", "b", "c", "d"].map(wanted).to_vec());
+        assert_eq!(queue.add(vec![wanted("b")]), 4, "not twice");
         queue.first(&["c".into(), "x".into(), "b".into()]);
         let order: Vec<String> = std::iter::from_fn(|| queue.next()).map(|w| w.id.to_string()).collect();
         assert_eq!(order, ["c", "b", "a", "d"]);

@@ -52,6 +52,9 @@ pub enum Effect {
     EndSteam {
         appid: u32,
     },
+    /// One of ClamShell's own tools (the Tools tab): `rescan` (the library read again), `refetch` (what
+    /// metadata wasn't found tried again, then a rescan).
+    Tool(String),
     /// What shelf shows (the selected entry first): fetch their metadata before the rest.
     FetchFirst(Vec<Arc<str>>),
     /// Record a play that ClamShell didn't start (a game Steam started), in the database.

@@ -84,6 +84,8 @@ pub enum Icon {
     Clock,
     /// A folder in shelf's list: a chevron, it opens.
     Chevron,
+    /// The Tools tab: a wrench.
+    Wrench,
 }
 
 impl Icon {
@@ -106,7 +108,7 @@ impl Icon {
     }
 
     /// A shelf tab's icon, by the name library.json gives (`gamepad`, `apps`, `film`, `tv`, `music`,
-    /// `star`, `clock`); none for another.
+    /// `star`, `clock`, `tools`); none for another.
     pub fn named(name: &str) -> Option<Icon> {
         Some(match name {
             "gamepad" => Icon::Gamepad,
@@ -116,6 +118,7 @@ impl Icon {
             "music" => Icon::Music,
             "star" => Icon::Star,
             "clock" => Icon::Clock,
+            "tools" => Icon::Wrench,
             _ => return None,
         })
     }
@@ -359,6 +362,10 @@ pub fn draw(c: &mut Canvas, icon: Icon, r: Rect, color: Color) {
         Icon::ArrowLeft => arrow(p, [(19.0, 12.0), (5.0, 12.0)], [(11.0, 6.0), (5.0, 12.0), (11.0, 18.0)]),
         Icon::ArrowRight => arrow(p, [(5.0, 12.0), (19.0, 12.0)], [(13.0, 6.0), (19.0, 12.0), (13.0, 18.0)]),
         Icon::Chevron => p.line(&[(9.0, 5.0), (16.0, 12.0), (9.0, 19.0)], 2.2),
+        Icon::Wrench => {
+            p.line(&[(4.5, 19.5), (13.0, 11.0)], 2.6);
+            p.arc((16.0, 8.0), 4.5, (-135.0, 135.0), LINE);
+        }
         Icon::Battery { tenths, charging } => battery(p, tenths, charging),
         Icon::Wifi { bars } => wifi(p, bars),
         Icon::Volume { waves, muted } => volume(p, waves, muted),
@@ -601,12 +608,13 @@ mod tests {
             Icon::Star,
             Icon::Clock,
             Icon::Chevron,
+            Icon::Wrench,
         ];
         let mut seen = std::collections::HashSet::new();
         for icon in &all {
             seen.insert(variant(*icon));
         }
-        assert_eq!(seen.len(), 46, "a variant is missing from the list");
+        assert_eq!(seen.len(), 47, "a variant is missing from the list");
         all
     }
 
@@ -659,6 +667,7 @@ mod tests {
             Icon::Star => 50,
             Icon::Clock => 51,
             Icon::Chevron => 52,
+            Icon::Wrench => 53,
         }
     }
 

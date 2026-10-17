@@ -79,7 +79,7 @@ fn main() -> ExitCode {
             let titles: std::collections::HashMap<_, _> = loaded.library.games.iter().map(|g| (g.id.clone(), g.title.clone())).collect();
             println!("fetching for {} entries", loaded.wanted.len());
             let (tx, rx) = std::sync::mpsc::channel();
-            if let Err(e) = meta::spawn(meta::Fetch { wanted: loaded.wanted, keys: loaded.keys, art, db }, tx) {
+            if let Err(e) = meta::spawn(meta::Fetch { wanted: loaded.wanted, keys: loaded.keys, art, db }, &meta::Queue::default(), tx) {
                 log::error!("{e}");
                 return ExitCode::FAILURE;
             }
@@ -161,7 +161,9 @@ fn saved(paths: &Paths) -> Init {
 /// The library: library.json's content dirs, Steam, the desktop files; the demo library if it is empty.
 fn load_library(sources: &Sources) -> library::Loaded {
     let loaded = library::load(sources);
-    if loaded.library.collections.is_empty() { library::Loaded { library: clamshell_library::demo_library(), ..library::Loaded::default() } } else { loaded }
+    // (Nothing but the Tools tab: the demo games.)
+    let empty = loaded.library.games.iter().all(|g| matches!(g.launch, clamshell_library::Launch::Tool(_)));
+    if empty { library::Loaded { library: clamshell_library::demo_library(), ..library::Loaded::default() } } else { loaded }
 }
 
 fn print_library(library: &Library) {
@@ -222,7 +224,7 @@ fn run(env: &Env, paths: Paths, sources: &Sources) -> ExitCode {
     let result = clamshell_ui::run(
         state,
         config,
-        move |sender| *started.borrow_mut() = Some(wiring::start(env, &paths, layout, &global, fetch, sender)),
+        move |sender| *started.borrow_mut() = Some(wiring::start(env, &paths, sources, layout, &global, fetch, sender)),
         move |effect| {
             if let Some(handles) = handles.borrow_mut().as_mut() {
                 handles.dispatch(effect);

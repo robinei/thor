@@ -90,6 +90,9 @@ impl State {
     /// Launches `game` (again, if it runs: another tab), unless a launch of it is starting; one Steam runs
     /// is shown instead (Steam doesn't start a game twice).
     pub(crate) fn launch(&mut self, game: Arc<str>) -> Vec<Effect> {
+        if let Some(Launch::Tool(tool)) = self.shelf.game(&game).map(|g| &g.launch) {
+            return vec![Effect::Tool(tool.clone())];
+        }
         if self.shelf.game(&game).is_some_and(crate::Game::is_group) {
             if !self.shelf.reveal(&game) {
                 return vec![];

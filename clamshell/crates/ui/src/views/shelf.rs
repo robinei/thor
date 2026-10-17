@@ -58,7 +58,20 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
         let icon = coll.icon.as_deref().and_then(Icon::named);
         (Id::Shelf(ShelfId::Collection(i as u16)), icon, coll.name.as_str(), i == s.shelf().current())
     });
-    widgets::tabs(f, Rect::new(pad, 0.0, w - 2.0 * pad, tabs_h), h * TAB_TEXT, pad * 0.8, f32::INFINITY, items);
+    let tabs_end = widgets::tabs(f, Rect::new(pad, 0.0, w - 2.0 * pad, tabs_h), h * TAB_TEXT, pad * 0.8, f32::INFINITY, items);
+
+    // What was wrong reading the library (library.json, a folder missing): the first, at the right end.
+    let problems = &s.shelf().library().problems;
+    if let Some(first) = problems.first() {
+        let more = Fmt::<16>::of(format_args!(" (+{})", problems.len() - 1));
+        let text = Fmt::<256>::of(format_args!("{first}{}", if problems.len() > 1 { &*more } else { "" }));
+        let x = tabs_end + pad * 2.0;
+        let size = h * DETAIL;
+        let tw = f.c.text_width(size, &text).min(w - pad - x);
+        if tw > size * 4.0 {
+            f.c.text_fit(Rect::new(w - pad - tw, 0.0, tw + 1.0, tabs_h), size, Tone::Accent, &text, Keep::Start);
+        }
+    }
 
     // The list, filling the height below the tabs (and an open group's header) exactly with whole rows.
     let mut list = Rect::new(pad, tabs_h + pad * 0.5, w * LIST_W - pad, h - tabs_h - pad * 1.5);
@@ -174,8 +187,10 @@ fn selected(f: &mut Frame, game: &Game, screen: Rect, list: Rect, pad: f32) {
     // What A does, whether it is a favourite (Y) and on the dock (X): each a row to tap, with its button.
     let action_h = detail * ACTION;
     let running = s.session().running(&game.id).is_some();
+    let tool = matches!(game.launch, clamshell_core::Launch::Tool(_));
     let play = match (game.is_group(), running) {
         (true, _) => ("Open", Tone::Normal),
+        (false, _) if tool => ("Run", Tone::Normal),
         (false, true) => ("Running · show it", Tone::Go),
         (false, false) => ("Play", Tone::Normal),
     };

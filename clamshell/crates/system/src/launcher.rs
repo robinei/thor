@@ -180,7 +180,7 @@ fn start(config: &Config, request: &Request) -> Result<Running, Error> {
         Launch::Program { argv, .. } if argv.is_empty() => Err(Error::EmptyCommand),
         Launch::Program { argv, workdir } => start_program(config, request, argv.clone(), workdir.clone()),
         Launch::Steam { appid } => start_steam(&request.env, *appid),
-        Launch::None => Err(Error::NoCommand),
+        Launch::None | Launch::Tool(_) => Err(Error::NoCommand),
     }
 }
 

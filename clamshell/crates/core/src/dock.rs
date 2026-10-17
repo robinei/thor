@@ -160,6 +160,15 @@ impl State {
         }
     }
 
+    /// The pins of entries the library doesn't have (and whose source isn't away) dropped, unless they
+    /// run. Whether any were.
+    pub(crate) fn drop_gone_pins(&mut self) -> bool {
+        let before = self.dock.items.len();
+        let (library, session) = (self.shelf.library(), &self.session);
+        self.dock.items.retain(|i| library.has(&i.id) || session.running(&i.id).is_some());
+        self.dock.items.len() != before
+    }
+
     /// Pins `entry` to the dock (at the end, if it isn't there), or unpins it (gone, unless it runs); the
     /// pins saved.
     pub(crate) fn toggle_pin(&mut self, entry: Arc<str>) -> Vec<Effect> {
@@ -264,6 +273,23 @@ mod tests {
         tap(&mut s, Id::Shelf(ShelfId::Up));
         s.apply(ShelfEvent::TogglePin.into());
         assert_eq!(entry(&s, 0), None);
+    }
+
+    #[test]
+    fn pins_of_entries_gone_are_dropped_but_not_those_away() {
+        let mut library = clamshell_library::demo_library();
+        library.away = vec!["sd:".into()];
+        let dock = dock::Dock::pinned(vec!["ff6".into(), "gone:x".into(), "sd:Zelda.sfc".into()]);
+        let mut s = State::new(Init { library, dock, ..init() });
+        assert_eq!(s.dock().pinned_ids(), vec![std::sync::Arc::from("ff6"), "sd:Zelda.sfc".into()], "the gone one dropped; the away one kept");
+        let fx = s.apply(Event::Start).1;
+        assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Dock(ids)) if ids.len() == 2)), "saved: {fx:?}");
+        // A rescan without ff6: dropped then too.
+        let mut library = clamshell_library::demo_library();
+        library.games.retain(|g| &*g.id != "ff6");
+        library.collections.iter_mut().for_each(|c| c.games.clear());
+        let fx = s.apply(Event::Library(Box::new(library))).1;
+        assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Dock(ids)) if ids.is_empty())), "{fx:?}");
     }
 
     #[test]

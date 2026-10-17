@@ -17,6 +17,9 @@ pub struct Handles {
     pub store: Option<Store>,
     /// What waits for its metadata.
     pub fetching: crate::meta::Queue,
+    /// Reads the library again (and fetches what it wants), on a thread; `true`: the metadata misses
+    /// forgotten first.
+    pub rescan: Box<dyn Fn(bool)>,
     /// Apps and games run in systemd scopes (there is a user session).
     pub scope: bool,
     pub touchpad: Worker<touchpad::Command>,
@@ -72,6 +75,11 @@ impl Handles {
             Effect::CalibrateGyro => self.tuning.calibrate_gyro(),
             Effect::Save(save) => self.save(save),
             Effect::FetchFirst(ids) => self.fetching.first(ids),
+            Effect::Tool(tool) => match tool.as_str() {
+                "rescan" => (self.rescan)(false),
+                "refetch" => (self.rescan)(true),
+                other => log::warn!("no tool {other}"),
+            },
             Effect::RecordPlay { game, start, duration } => {
                 if let Some(store) = &self.store
                     && let Err(e) = store.add_play(game, *start, *duration)

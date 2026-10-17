@@ -292,6 +292,23 @@ impl Shelf {
         self.sync()
     }
 
+    /// The library read again: each collection's place kept by name and ids (the scroll from the top).
+    /// Whether the selection changed.
+    pub(crate) fn reload(&mut self, library: Library) -> bool {
+        let before = self.selected.clone();
+        let places = self.places();
+        let current = self.collection().map(|c| c.name.clone());
+        let rows = self.rows;
+        *self = Shelf::new(library);
+        self.rows = rows;
+        for (name, ids) in &places {
+            let ids: Vec<&str> = ids.iter().map(String::as_str).collect();
+            self.restore_selection(name, &ids);
+        }
+        self.restore_current(current.as_deref().unwrap_or(""));
+        self.selected != before
+    }
+
     /// What was fetched about entry `id` (see [`Library::apply_meta`]). Whether it is there.
     pub(crate) fn apply_meta(&mut self, id: &str, meta: &crate::Meta) -> bool {
         let Some(i) = self.library.games.iter().position(|g| &*g.id == id) else {

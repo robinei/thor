@@ -23,6 +23,8 @@ pub enum Launch {
     Steam { appid: u32 },
     /// A program with its arguments (filled in already), in `workdir` (else the home dir).
     Program { argv: Vec<String>, workdir: Option<PathBuf> },
+    /// One of ClamShell's own tools (the Tools tab), by name.
+    Tool(String),
 }
 
 impl Launch {
@@ -163,6 +165,18 @@ impl Collection {
 pub struct Library {
     pub collections: Vec<Collection>,
     pub games: Vec<Game>,
+    /// What was wrong reading it (library.json's mistakes, a source's missing dir), to show.
+    pub problems: Vec<String>,
+    /// The id prefixes (`<source id>:`) of sources whose dir is missing (an SD card not in): their
+    /// entries are away, not gone.
+    pub away: Vec<String>,
+}
+
+impl Library {
+    /// Whether entry `id` is in it, or its source is away.
+    pub fn has(&self, id: &str) -> bool {
+        self.games.iter().any(|g| &*g.id == id) || self.away.iter().any(|p| id.starts_with(p.as_str()))
+    }
 }
 
 impl Library {
@@ -304,7 +318,7 @@ pub fn demo_library() -> Library {
         Collection::with_icon("TV", "tv", vec![series]),
         Collection::with_icon("Apps", "apps", (n..n + apps.len()).collect()),
     ];
-    Library { collections, games }
+    Library { collections, games, ..Library::default() }
 }
 
 #[cfg(test)]

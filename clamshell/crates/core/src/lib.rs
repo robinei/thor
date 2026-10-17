@@ -154,6 +154,8 @@ pub struct State {
     /// [`State::follow_shown`]).
     fetching: bool,
     shown: Option<(usize, Option<usize>, usize, usize, usize)>,
+    /// Pins of entries gone were dropped at start: saved once the UI is up.
+    pins_dropped: bool,
 }
 
 /// Replaces `slot` with `value`; whether that changed it.
@@ -178,6 +180,8 @@ impl State {
         if let Some(resume) = &init.resume {
             s.restore(resume);
         }
+        // (Saved once the UI is up.)
+        s.pins_dropped = s.drop_gone_pins();
         s.pointer.focus = s.shelf.selected().cloned().map(|g| Id::Shelf(ShelfId::Game(g)));
         if let Some(tab) = init.start_tab {
             s.bottom.tab = tab;
@@ -325,6 +329,18 @@ impl State {
                 (Dirty::BOTH, effects)
             }
             Event::Meta { id, meta } => (if self.shelf.apply_meta(&id, &meta) { Dirty::BOTH } else { Dirty::NONE }, vec![]),
+            Event::Library(library) => {
+                if self.shelf.reload(*library) {
+                    self.moved_collection();
+                }
+                let mut effects = vec![];
+                if self.drop_gone_pins() {
+                    effects.push(Effect::Save(Save::Dock(self.dock.pinned_ids())));
+                }
+                self.follow_dock();
+                self.shown = None;
+                (Dirty::BOTH, effects)
+            }
             Event::Fetching(on) => {
                 self.fetching = on;
                 self.shown = None;
@@ -338,6 +354,9 @@ impl State {
             }
             Event::Start => {
                 let mut effects: Vec<Effect> = self.bottom.tab.watch().map(|w| Effect::Watch(w, true)).into_iter().collect();
+                if std::mem::take(&mut self.pins_dropped) {
+                    effects.push(Effect::Save(Save::Dock(self.dock.pinned_ids())));
+                }
                 effects.extend(self.levels.brightness_effect());
                 effects.push(Effect::PadRoute(self.pad.route()));
                 effects.extend(self.follow_keymap(true));

@@ -69,15 +69,18 @@ pub struct Source {
     pub metadata: Option<String>,
 }
 
-/// The config at `file`; none if it is missing or doesn't parse (logged).
-pub fn read_config(file: &Path) -> Config {
+/// The config at `file`; none if it is missing, or if it doesn't parse (then what is wrong with it).
+pub fn read_config(file: &Path) -> (Config, Option<String>) {
     let Ok(text) = fs::read_to_string(file) else {
-        return Config::default();
+        return (Config::default(), None);
     };
-    serde_json::from_str(&text).unwrap_or_else(|e| {
-        log::warn!("library: {}: {e}", file.display());
-        Config::default()
-    })
+    match serde_json::from_str(&text) {
+        Ok(config) => (config, None),
+        Err(e) => {
+            log::warn!("library: {}: {e}", file.display());
+            (Config::default(), Some(format!("library.json: {e}")))
+        }
+    }
 }
 
 /// A source's entries: appended to `games` (groups before their items), the indices of its top-level
@@ -340,7 +343,9 @@ mod tests {
     fn a_config_that_doesnt_parse_is_none() {
         let file = std::env::temp_dir().join(format!("clamshell-library-{}.json", std::process::id()));
         fs::write(&file, r#"{ "sources": [ { "tab": "Games" } ] }"#).unwrap();
-        assert!(read_config(&file).sources.is_empty());
+        let (config, problem) = read_config(&file);
+        assert!(config.sources.is_empty());
+        assert!(problem.is_some_and(|p| p.starts_with("library.json: missing field")), "said");
         let _ = fs::remove_file(&file);
         assert_eq!(expand("~/Games", Some(Path::new("/h"))), PathBuf::from("/h/Games"));
     }

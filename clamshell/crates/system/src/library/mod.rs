@@ -88,6 +88,17 @@ fn into_folder(games: &mut Vec<Game>, folders: &mut HashMap<(String, String), us
     new_top
 }
 
+/// The Tools tab's entries: id, title, the tool, what it does.
+const TOOLS: [(&str, &str, &str, &str); 2] = [
+    (
+        "tool:rescan",
+        "Rescan library",
+        "rescan",
+        "Reads library.json, its folders, Steam and the desktop files again, then fetches the covers and details still missing.",
+    ),
+    ("tool:refetch", "Fetch missing art again", "refetch", "Tries again for the entries whose covers and details weren't found, then rescans."),
+];
+
 /// The library, and what to fetch for it.
 #[derive(Debug, Default)]
 pub struct Loaded {
@@ -102,7 +113,9 @@ pub struct Loaded {
 /// and Apps unless named already (each left out while empty); entries in each by title. Then each
 /// entry's plays, whether it is a favourite, and what was fetched about it.
 pub fn load(sources: &Sources) -> Loaded {
-    let config = sources.config.as_deref().map(content::read_config).unwrap_or_default();
+    let (config, config_problem) = sources.config.as_deref().map(content::read_config).unwrap_or_default();
+    let mut problems: Vec<String> = config_problem.into_iter().collect();
+    let mut away: Vec<String> = Vec::new();
     let mut games: Vec<Game> = Vec::new();
     let mut collections: Vec<Collection> = Vec::new();
     let add = |collections: &mut Vec<Collection>, tab: &str, icon: Option<&str>, entries: Vec<usize>| {
@@ -125,13 +138,21 @@ pub fn load(sources: &Sources) -> Loaded {
     // The sources' folders in their tabs, by tab and path.
     let mut folders: HashMap<(String, String), usize> = HashMap::new();
     for source in &config.sources {
+        let dir = content::expand(&source.dir, sources.home.as_deref());
+        if !dir.is_dir() {
+            problems.push(format!("{}: no folder {}", source.id, dir.display()));
+            away.push(format!("{}:", source.id));
+        }
         let entries = content::scan(source, sources.home.as_deref(), &mut games);
         let how = source.metadata.as_deref().and_then(|m| {
             How::parse(m).or_else(|| {
-                log::warn!("library: {}: metadata {m:?} isn't one of libretro:<system>, tmdb:movie, tmdb:tv", source.id);
+                problems.push(format!("{}: metadata \"{m}\" isn't libretro:<system>, tmdb:movie or tmdb:tv", source.id));
                 None
             })
         });
+        if matches!(how, Some(How::Tmdb(_))) && config.keys.tmdb.is_none() {
+            problems.push(format!("{}: tmdb needs keys.tmdb", source.id));
+        }
         if let Some(how) = how {
             // (libretro has games, not folders of them.)
             let fits = |i: &usize| !matches!(how, How::Libretro(_)) || games.get(*i).is_some_and(|g| !g.is_group());
@@ -179,6 +200,12 @@ pub fn load(sources: &Sources) -> Loaded {
     let apps = extend(&mut games, apps);
     add(&mut collections, APPS, Some("apps"), apps);
     collections.retain(|c| !c.games.is_empty());
+    // ClamShell's own tools, last.
+    let first = games.len();
+    for (id, title, tool, summary) in TOOLS {
+        games.push(Game { launch: Launch::Tool(tool.into()), tool: true, summary: summary.into(), ..Game::new(id, title) });
+    }
+    collections.push(Collection::with_icon("Tools", "tools", (first..games.len()).collect()));
     for c in &mut collections {
         c.games.sort_by(|&a, &b| {
             let key = |i: usize| games.get(i).map(|g| (&g.sort_key, &g.title));
@@ -206,7 +233,7 @@ pub fn load(sources: &Sources) -> Loaded {
             g.favourite = favourites.contains(&*g.id);
         }
     }
-    let mut library = Library { collections, games };
+    let mut library = Library { collections, games, problems, away };
     // What was fetched before, where its images are still there; what to fetch.
     let now = crate::meta::now();
     let mut wanted = Vec::new();
@@ -261,6 +288,8 @@ mod tests {
         );
         std::fs::write(root.join("library.json"), config).unwrap();
         let lib = load(&Sources { config: Some(root.join("library.json")), ..Sources::default() }).library;
+        assert!(lib.problems.is_empty(), "{:?}", lib.problems);
+        assert_eq!(lib.collections.last().map(|c| c.name.as_str()), Some("Tools"));
         let games = |ids: &[usize]| ids.iter().map(|&i| lib.games[i].title.clone()).collect::<Vec<_>>();
         let tab = lib.collections.iter().find(|c| c.name == "Games").unwrap();
         assert_eq!(games(&tab.games), ["Doom", "Handhelds", "SNES"]);

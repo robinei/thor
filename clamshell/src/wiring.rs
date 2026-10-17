@@ -9,6 +9,7 @@ use clamshell_core::touch::TouchLayout;
 use clamshell_system::brightness::Backlights;
 use clamshell_system::job::Runner;
 use clamshell_system::keyboard::VirtualKeyboard;
+use clamshell_system::library::{self, Sources};
 use clamshell_system::meta;
 use clamshell_system::paths::Paths;
 use clamshell_system::store::Store;
@@ -50,17 +51,56 @@ fn detached(name: &str, result: io::Result<()>) {
     }
 }
 
+/// The Tools tab's rescan: on a thread, the misses forgotten (`refetch`), the library read again and sent,
+/// and what it wants fetched.
+fn rescanner(sources: Sources, paths: Paths, queue: meta::Queue, sink: UiSink) -> Box<dyn Fn(bool)> {
+    Box::new(move |refetch| {
+        let (sources, paths, queue, sink) = (sources.clone(), paths.clone(), queue.clone(), sink.clone());
+        detached(
+            "rescan",
+            clamshell_system::worker::detached("rescan", move || {
+                if refetch
+                    && let Some(db) = paths.db()
+                    && let Err(e) = Store::open(&db).and_then(|s| s.forget_misses())
+                {
+                    log::warn!("rescan: forgetting the misses: {e}");
+                }
+                let loaded = library::load(&sources);
+                log::info!("rescan: {} entries", loaded.library.games.len());
+                if sink.send(clamshell_core::Event::Library(Box::new(loaded.library))).is_err() {
+                    return;
+                }
+                if let (Some(art), Some(db)) = (paths.art.clone(), paths.db()) {
+                    detached("meta", meta::spawn(meta::Fetch { wanted: loaded.wanted, keys: loaded.keys, art, db }, &queue, sink));
+                }
+            }),
+        );
+    })
+}
+
 /// Starts every system thread, sending to `sender`, and applies the global settings (in force until a
 /// game brings its own). `layout`: the touch layout the UI keeps up to date; `fetch`: the library's
 /// metadata to fetch.
-pub fn start(env: &Env, paths: &Paths, layout: Arc<Mutex<TouchLayout>>, global: &Values, fetch: Option<meta::Fetch>, sender: EventSender) -> Handles {
+pub fn start(
+    env: &Env,
+    paths: &Paths,
+    sources: &Sources,
+    layout: Arc<Mutex<TouchLayout>>,
+    global: &Values,
+    fetch: Option<meta::Fetch>,
+    sender: EventSender,
+) -> Handles {
     let sink = UiSink(sender);
     let backlights = Backlights::new(env.backlights.clone());
     let scope = paths.has_user_systemd();
     detached("clock", clock::spawn(sink.clone()));
     detached("status", status::spawn(backlights.clone(), sink.clone()));
     detached("metrics", metrics::spawn(sink.clone()));
-    let fetching = fetch.and_then(|f| meta::spawn(f, sink.clone()).map_err(|e| log::error!("meta thread: {e}")).ok()).unwrap_or_default();
+    let fetching = meta::Queue::default();
+    if let Some(fetch) = fetch {
+        detached("meta", meta::spawn(fetch, &fetching, sink.clone()));
+    }
+    let rescan = rescanner(sources.clone(), paths.clone(), fetching.clone(), sink.clone());
     detached("frames", frames::spawn(paths.mangohud.clone(), sink.clone()));
     let touchpad =
         started("touchpad", touchpad::spawn(touchpad::Config { device: env.touchscreen.clone(), px_per_mm: BOTTOM_PX_PER_MM }, layout, sink.clone()));
@@ -93,6 +133,7 @@ pub fn start(env: &Env, paths: &Paths, layout: Arc<Mutex<TouchLayout>>, global: 
         paths: paths.clone(),
         store,
         fetching,
+        rescan,
         scope,
         touchpad,
         mixer,

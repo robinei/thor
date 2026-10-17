@@ -303,6 +303,11 @@ impl Store {
         Ok(())
     }
 
+    /// The misses (fetched, nothing found) forgotten: fetched again.
+    pub fn forget_misses(&self) -> Result<usize, Error> {
+        self.db.execute("DELETE FROM meta WHERE cover IS NULL AND shot IS NULL AND summary = '' AND year IS NULL AND developer = ''", [])
+    }
+
     fn get(&self, key: &str) -> Result<Option<String>, Error> {
         self.db.query_row("SELECT value FROM kv WHERE key = ?1", [key], |r| r.get(0)).optional()
     }
@@ -376,6 +381,8 @@ mod tests {
         let metas = db.metas().unwrap();
         assert_eq!(metas.get("x"), Some(&Fetched { source: "libretro:SNES".into(), at: 5, meta }));
         assert_eq!(metas.get("y").map(|f| &f.meta), Some(&Meta::default()), "a miss");
+        assert_eq!(db.forget_misses().unwrap(), 1);
+        assert!(!db.metas().unwrap().contains_key("y") && db.metas().unwrap().contains_key("x"));
 
         // Another connection (the launcher's) sees the same.
         let other = Store::open(&dir.join("clamshell.db")).unwrap();
