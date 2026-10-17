@@ -163,9 +163,14 @@ pub fn load(sources: &Sources) -> Loaded {
                 None
             })
         });
-        if matches!(how, Some(How::Tmdb(_))) && config.keys.tmdb.is_none() {
-            problems.push(format!("{}: tmdb needs keys.tmdb", source.id));
-        }
+        // (Without the key nothing is asked: not a miss, so it is fetched once the key is there.)
+        let how = match how {
+            Some(How::Tmdb(_)) if config.keys.tmdb.is_none() => {
+                problems.push(format!("{}: tmdb needs keys.tmdb", source.id));
+                None
+            }
+            how => how,
+        };
         if let Some(how) = how {
             // (libretro has games, not folders of them.)
             let fits = |i: &usize| !matches!(how, How::Libretro(_)) || games.get(*i).is_some_and(|g| !g.is_group());

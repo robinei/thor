@@ -4,7 +4,8 @@
 //! `start=<seconds>` is the place. A video watched to its end has none. Both names are looked for (the
 //! path's first), in the folder mpv.conf names (`watch-later-dir`) and in mpv's own
 //! (~/.local/state/mpv/watch_later, older ~/.config/mpv/watch_later). The length is ffprobe's; a frame
-//! to show for it, ffmpeg's.
+//! to show for it, ffmpeg's: of the keyframes from a point on, the most representative (its `thumbnail`
+//! filter), so not a dark scene, a fade or a title card.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -56,17 +57,22 @@ pub fn duration(file: &Path) -> Option<u32> {
     (seconds > 0.0).then_some(seconds.round() as u32)
 }
 
-/// A frame of `file` at `at` seconds, 640 pixels wide, into `out` (JPEG; written whole, then renamed into
-/// place); whether it worked.
+/// Keyframes `frame` chooses among (from its starting point: a few minutes of a video).
+const FRAMES_LOOKED_AT: u32 = 60;
+
+/// A frame of `file`, 640 pixels wide, into `out` (JPEG; written whole, then renamed into place): of the
+/// [`FRAMES_LOOKED_AT`] keyframes from `at` seconds on, the most representative (ffmpeg's `thumbnail`
+/// filter; keyframes only, so it is quick). Whether it worked.
 pub fn frame(file: &Path, at: u32, out: &Path) -> bool {
     if let Some(dir) = out.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
     let part = out.with_extension("part.jpg");
+    let choose = format!("scale=640:-2,thumbnail={FRAMES_LOOKED_AT}");
     let ok = Command::new("ffmpeg")
-        .args(["-v", "quiet", "-y", "-ss", &at.to_string(), "-i"])
+        .args(["-v", "quiet", "-y", "-skip_frame", "nokey", "-ss", &at.to_string(), "-i"])
         .arg(file)
-        .args(["-frames:v", "1", "-vf", "scale=640:-2", "-q:v", "4"])
+        .args(["-vf", &choose, "-frames:v", "1", "-fps_mode", "vfr", "-q:v", "4"])
         .arg(&part)
         .stdin(Stdio::null())
         .stderr(Stdio::null())

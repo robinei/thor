@@ -223,7 +223,8 @@ impl Shared {
         meta
     }
 
-    /// A video's length, and a frame a quarter in as its screenshot.
+    /// A video's length, and its most representative frame from a quarter in (see [`crate::mpv::frame`])
+    /// as its screenshot.
     fn probe(&self, w: &Wanted) -> Meta {
         let Some(file) = w.file.as_deref() else {
             return Meta::default();
