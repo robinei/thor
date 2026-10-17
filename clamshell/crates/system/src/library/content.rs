@@ -22,6 +22,9 @@
 //! - Box art: `<name>.jpg` (or .jpeg, .png, .webp) beside a file, or `poster`, `cover` or `folder` in a
 //!   folder; else the group's.
 //! - `icon`: the tab's icon; sources in the same tab need it once.
+//! - `group`: a folder in the tab for the source's entries (`SNES`, or `Handhelds/GBA` for one in
+//!   another), so one tab can hold folders each with its own launch command; sources naming the same
+//!   folder share it. The folder's art: `poster`, `cover` or `folder` in the source's dir.
 //! - `metadata`: where to fetch covers, screenshots and the rest for its entries (`libretro:<system>`,
 //!   `tmdb:movie`, `tmdb:tv`); `keys`: the services' keys (see [`crate::meta`]).
 //!
@@ -49,6 +52,10 @@ pub struct Config {
 #[serde(deny_unknown_fields)]
 pub struct Source {
     pub tab: String,
+    /// The folder in the tab its entries go in (`SNES`; `Handhelds/GBA` one in another); none: the tab
+    /// itself.
+    #[serde(default)]
+    pub group: Option<String>,
     #[serde(default)]
     pub icon: Option<String>,
     pub id: String,
@@ -215,7 +222,7 @@ fn art_beside(file: &Path) -> Option<PathBuf> {
     IMAGES.iter().map(|ext| file.with_extension(ext)).find(|p| p.is_file())
 }
 
-fn folder_art(folder: &Path) -> Option<PathBuf> {
+pub(crate) fn folder_art(folder: &Path) -> Option<PathBuf> {
     FOLDER_ART.iter().flat_map(|name| IMAGES.iter().map(move |ext| folder.join(format!("{name}.{ext}")))).find(|p| p.is_file())
 }
 
@@ -240,7 +247,7 @@ fn untagged(title: &str) -> String {
 }
 
 /// `~/...` against `home`.
-fn expand(path: &str, home: Option<&Path>) -> PathBuf {
+pub(crate) fn expand(path: &str, home: Option<&Path>) -> PathBuf {
     match (path.strip_prefix("~/"), home) {
         (Some(rest), Some(home)) => home.join(rest),
         _ => PathBuf::from(path),

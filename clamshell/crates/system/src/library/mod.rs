@@ -5,7 +5,8 @@
 pub mod content;
 pub mod steam;
 
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 use clamshell_library::{Collection, Game, Launch, Library, Meta};
 
@@ -46,6 +47,47 @@ impl Sources {
 const GAMES: &str = "Games";
 const APPS: &str = "Apps";
 
+/// Puts `entries` (a source's, from `dir`) in the folder at `path` in `tab` (`A/B`: B in A), made where it
+/// isn't there yet (its art from `dir`); the folder at the top of the tab if it is new (to add to it).
+fn into_folder(games: &mut Vec<Game>, folders: &mut HashMap<(String, String), usize>, tab: &str, path: &str, dir: &Path, entries: &[usize]) -> Option<usize> {
+    let mut new_top = None;
+    let mut parent: Option<usize> = None;
+    let mut at = String::new();
+    for part in path.split('/').map(str::trim).filter(|p| !p.is_empty()) {
+        if !at.is_empty() {
+            at.push('/');
+        }
+        at.push_str(part);
+        let folder = match folders.get(&(tab.to_owned(), at.clone())) {
+            Some(&f) => f,
+            None => {
+                let f = games.len();
+                games.push(Game { parent, ..Game::new(&format!("folder:{tab}/{at}"), part) });
+                folders.insert((tab.to_owned(), at.clone()), f);
+                match parent.and_then(|p| games.get_mut(p)) {
+                    Some(p) => p.items.push(f),
+                    None => new_top = Some(f),
+                }
+                f
+            }
+        };
+        parent = Some(folder);
+    }
+    let folder = parent?;
+    for &e in entries {
+        if let Some(g) = games.get_mut(e) {
+            g.parent = Some(folder);
+        }
+    }
+    if let Some(g) = games.get_mut(folder) {
+        g.items.extend_from_slice(entries);
+        if g.box_front.is_none() {
+            g.box_front = content::folder_art(dir);
+        }
+    }
+    new_top
+}
+
 /// The library, and what to fetch for it.
 #[derive(Debug, Default)]
 pub struct Loaded {
@@ -80,6 +122,8 @@ pub fn load(sources: &Sources) -> Loaded {
     };
     // Where each entry's metadata comes from, if anywhere.
     let mut hows: Vec<(usize, How)> = Vec::new();
+    // The sources' folders in their tabs, by tab and path.
+    let mut folders: HashMap<(String, String), usize> = HashMap::new();
     for source in &config.sources {
         let entries = content::scan(source, sources.home.as_deref(), &mut games);
         let how = source.metadata.as_deref().and_then(|m| {
@@ -93,7 +137,25 @@ pub fn load(sources: &Sources) -> Loaded {
             let fits = |i: &usize| !matches!(how, How::Libretro(_)) || games.get(*i).is_some_and(|g| !g.is_group());
             hows.extend(entries.iter().copied().filter(fits).map(|i| (i, how.clone())));
         }
+        let entries = match source.group.as_deref().map(|g| g.trim_matches('/')).filter(|g| !g.is_empty() && !entries.is_empty()) {
+            Some(path) => {
+                let dir = content::expand(&source.dir, sources.home.as_deref());
+                into_folder(&mut games, &mut folders, &source.tab, path, &dir, &entries).into_iter().collect()
+            }
+            None => entries,
+        };
         add(&mut collections, &source.tab, source.icon.as_deref(), entries);
+    }
+    // A folder's entries (from its sources, and its folders) by title.
+    for &f in folders.values() {
+        let mut items = games.get(f).map(|g| g.items.clone()).unwrap_or_default();
+        items.sort_by(|&a, &b| {
+            let key = |i: usize| games.get(i).map(|g| (&g.sort_key, &g.title));
+            key(a).cmp(&key(b))
+        });
+        if let Some(g) = games.get_mut(f) {
+            g.items = items;
+        }
     }
     let extend = |games: &mut Vec<Game>, more: Vec<Game>| {
         let first = games.len();
@@ -168,4 +230,51 @@ pub fn load(sources: &Sources) -> Loaded {
     }
     library.rebuild_derived();
     Loaded { library, wanted, keys: config.keys }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sources_fill_folders_in_a_tab_each_with_its_own_launch() {
+        let root = std::env::temp_dir().join(format!("clamshell-folders-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for f in ["snes/Zelda.sfc", "snes/Mario.sfc", "snes/cover.png", "gba/Metroid.gba", "pc/Doom.sh"] {
+            let p = root.join(f);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, "").unwrap();
+        }
+        let source = |group: &str, id: &str, pattern: &str, emulator: &str| {
+            let group = if group.is_empty() { String::new() } else { format!(r#""group": "{group}","#) };
+            format!(
+                r#"{{ "tab": "Games", {group} "id": "{id}", "dir": "{}/{id}", "match": ["{pattern}"], "launch": ["{emulator}", "{{path}}"] }}"#,
+                root.display()
+            )
+        };
+        let config = format!(
+            r#"{{ "sources": [ {}, {}, {} ] }}"#,
+            source("SNES", "snes", "*.sfc", "snes9x"),
+            source("Handhelds/GBA", "gba", "*.gba", "mgba"),
+            source("", "pc", "*.sh", "sh")
+        );
+        std::fs::write(root.join("library.json"), config).unwrap();
+        let lib = load(&Sources { config: Some(root.join("library.json")), ..Sources::default() }).library;
+        let games = |ids: &[usize]| ids.iter().map(|&i| lib.games[i].title.clone()).collect::<Vec<_>>();
+        let tab = lib.collections.iter().find(|c| c.name == "Games").unwrap();
+        assert_eq!(games(&tab.games), ["Doom", "Handhelds", "SNES"]);
+        let snes = &lib.games[tab.games[2]];
+        assert_eq!(games(&snes.items), ["Mario", "Zelda"]);
+        assert_eq!(snes.box_front, Some(root.join("snes/cover.png")), "its source's dir's art");
+        let zelda = &lib.games[snes.items[1]];
+        assert!(matches!(&zelda.launch, Launch::Program { argv, .. } if argv[0] == "snes9x"));
+        assert_eq!(&*zelda.id, "snes:Zelda.sfc", "ids as without the folder");
+        let handhelds = &lib.games[tab.games[1]];
+        let gba = &lib.games[handhelds.items[0]];
+        assert_eq!((gba.title.as_str(), games(&gba.items)), ("GBA", vec!["Metroid".to_owned()]));
+        assert!(matches!(&lib.games[gba.items[0]].launch, Launch::Program { argv, .. } if argv[0] == "mgba"));
+        assert_eq!(lib.groups_of(gba.items[0]), [tab.games[1], handhelds.items[0]]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }

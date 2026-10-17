@@ -39,6 +39,8 @@ tab, a dir, name patterns, and the command that starts an entry, `{path}` in it 
 ```
 
 `items` makes each matched folder a group that opens in shelf (a series, its seasons, their episodes).
+`group` puts a source's entries in a folder of its tab (`"group": "SNES"`, or `"Handhelds/GBA"` for one in
+another), so one Games tab can hold a folder per system, each with its own launch command.
 The rules (ids, titles, art, icons): `crates/system/src/library/content.rs`.
 
 Covers, screenshots, descriptions, developers and years are fetched in the background after start
