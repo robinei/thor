@@ -247,18 +247,27 @@ fn greyed(color: u32) -> u32 {
     (v << 16) | (v << 8) | v
 }
 
+/// An entry's picture: its box art; without art or an icon, its screenshot (a video's frame).
+pub(crate) fn picture(game: &Game) -> Option<(&std::path::Path, Slot)> {
+    match (&game.box_front, &game.icon, &game.shot) {
+        (Some(art), _, _) => Some((art, Slot::Art)),
+        (None, None, Some(shot)) => Some((shot, Slot::Shot)),
+        _ => None,
+    }
+}
+
+/// Whether an entry's picture is its screenshot (a video's frame: landscape).
+pub(crate) fn wide_picture(game: &Game) -> bool {
+    matches!(picture(game), Some((_, Slot::Shot)))
+}
+
 /// An entry's box art as large as fits in `r` (portrait or landscape), at its top left; without art or an
 /// icon, its screenshot (a video's frame) instead; where it has none of them (or it hasn't loaded), the
 /// placeholder (or an app's icon) in a portrait box as high as `r`. The rectangle drawn.
 pub(crate) fn cover(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect, radius: f32, portrait: f32) -> Rect {
     let scale = c.scale();
     let (pw, ph) = ((r.w * scale).round() as u32, (r.h * scale).round() as u32);
-    let picture = match (&game.box_front, &game.icon, &game.shot) {
-        (Some(art), _, _) => Some((art, Slot::Art)),
-        (None, None, Some(shot)) => Some((shot, Slot::Shot)),
-        _ => None,
-    };
-    if let Some(img) = picture.and_then(|(path, slot)| images.get(&game.id, slot, path, pw, ph)) {
+    if let Some(img) = picture(game).and_then(|(path, slot)| images.get(&game.id, slot, path, pw, ph)) {
         let (iw, ih) = (img.width() as f32 / scale, img.height() as f32 / scale);
         c.image(img, r.x, r.y);
         return Rect::new(r.x, r.y, iw, ih);
@@ -291,7 +300,7 @@ pub(crate) fn shot(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect) {
 pub(crate) fn art(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect, radius: f32, align: Align, grey: bool) {
     let scale = c.scale();
     let (pw, ph) = ((r.w * scale).round() as u32, (r.h * scale).round() as u32);
-    match game.box_front.as_deref().and_then(|path| images.get(&game.id, Slot::Art, path, pw, ph)) {
+    match picture(game).and_then(|(path, slot)| images.get(&game.id, slot, path, pw, ph)) {
         Some(img) => {
             let (iw, ih) = (img.width() as f32 / scale, img.height() as f32 / scale);
             let y = match align {

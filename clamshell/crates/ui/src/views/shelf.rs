@@ -27,6 +27,8 @@ const THUMB: f32 = 0.82;
 /// A row's marks (favourite, on the dock): their size, of a row's height.
 const MARK: f32 = 0.3;
 const BOX_ASPECT: f32 = 2.0 / 3.0;
+/// A video's frame as a thumbnail: 16:9.
+const WIDE_ASPECT: f32 = 16.0 / 9.0;
 /// A thumbnail placeholder's corner radius.
 const THUMB_RADIUS: f32 = 3.0;
 /// The large art's height, of the list's height.
@@ -124,7 +126,9 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
         };
         let look = Look { fill: selected.then_some(SURFACE_HI), ..Look::CARD };
         let thumb_h = r.h * THUMB;
-        let thumb = Rect::new(r.x + pad * 0.4, r.y + (r.h - thumb_h) / 2.0, thumb_h * BOX_ASPECT, thumb_h);
+        // (A video's frame as its picture: a landscape thumbnail.)
+        let aspect = if widgets::wide_picture(game) { WIDE_ASPECT } else { BOX_ASPECT };
+        let thumb = Rect::new(r.x + pad * 0.4, r.y + (r.h - thumb_h) / 2.0, thumb_h * aspect, thumb_h);
         f.button(Id::Shelf(ShelfId::Game(game.id.clone())), r, look, |f| {
             widgets::art(f.c, f.images, game, thumb, THUMB_RADIUS, Align::Center, false);
             // Its marks at the row's right end, right to left: a folder's chevron, on the dock, a favourite.
@@ -252,8 +256,7 @@ fn selected(f: &mut Frame, game: &Game, screen: Rect, list: Rect, pad: f32) {
     // A screenshot: under a landscape box, as wide; else at the bottom of the text. What it is about in as
     // many lines as fit above that.
     // (Its screenshot as its picture already: not twice.)
-    let shot_is_cover = game.box_front.is_none() && game.icon.is_none();
-    let shot = match (game.shot.is_some() && !shot_is_cover, landscape) {
+    let shot = match (game.shot.is_some() && !widgets::wide_picture(game), landscape) {
         (false, _) => None,
         (true, true) => {
             let y = cover.y + cover.h + pad;
