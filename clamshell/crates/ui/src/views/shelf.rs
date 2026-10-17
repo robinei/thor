@@ -224,10 +224,10 @@ fn selected(f: &mut Frame, game: &Game, screen: Rect, list: Rect, pad: f32) {
     };
     let favourite = if game.favourite { ("Favourite", Tone::Accent) } else { ("Not a favourite", Tone::Dim) };
     let pinned = if s.dock().is_pinned(&game.id) { ("On the dock", Tone::Normal) } else { ("Not on the dock", Tone::Dim) };
-    // A folder with something to go on with (a series): Start continues it.
+    // A folder of videos with one to play next (a series): Start plays it (where in it is mpv's).
     let next = s.shelf().library().games.iter().position(|g| g.id == game.id).filter(|_| game.is_group()).and_then(|g| s.shelf().library().to_continue(g));
     let next = next.and_then(|i| s.shelf().library().games.get(i));
-    let continuing = next.map(|n| Fmt::<192>::of(format_args!("Continue · {}", Within(s, n, game))));
+    let continuing = next.map(|n| Fmt::<192>::of(format_args!("Play · {}", Within(s, n, game))));
     for (id, key, (label, tone)) in [(ShelfId::Launch, "A", play), (ShelfId::Favourite, "Y", favourite), (ShelfId::Pin, "X", pinned)] {
         let after_play = id == ShelfId::Launch;
         let r = Rect::new(tx, col.y(), text_w.min(detail * 14.0), action_h);

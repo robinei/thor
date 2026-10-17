@@ -57,7 +57,7 @@ sysinfo.png bcc1def10231fa16
 time-europe.png 50b43e8f1f5b99e0
 time.png 1bcd3c27629745f5
 top-back.png b45c4665585b0d97
-top-folder.png 9f9bb7122065510a
+top-folder.png 61e5987b604102ed
 top-group.png 6df1380e539c1d7b
 top-played.png a148629732b7caaf
 top-recent.png f29e33c55028a1e5

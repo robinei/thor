@@ -158,7 +158,7 @@ pub enum ShelfEvent {
     ToggleFavourite,
     /// The pad's X (desktop: P): the selected entry pinned to the dock, or unpinned.
     TogglePin,
-    /// The pad's Start (desktop: C): the selected folder's Continue (a series' next episode).
+    /// The pad's Start (desktop: C): the selected folder's next video played (a series' episode).
     Continue,
 }
 
