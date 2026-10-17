@@ -314,10 +314,11 @@ impl Shelf {
         self.selected != before
     }
 
-    /// Where mpv left a video (none: at its end).
-    pub(crate) fn set_position(&mut self, id: &str, position: Option<u32>) {
+    /// Where mpv left a video (none: at its end), at `now`.
+    pub(crate) fn set_position(&mut self, id: &str, position: Option<u32>, now: u64) {
         if let Some(g) = self.library.games.iter_mut().find(|g| &*g.id == id) {
             g.position = position;
+            g.position_at = now;
         }
     }
 

@@ -166,7 +166,7 @@ fn play(config: &Config, request: &Request, sink: &impl Sink) -> Result<(), Clos
                     let duration = started.elapsed().as_secs();
                     log::info!("launcher: {game} ran {duration} s");
                     if let Some(file) = &request.watch {
-                        let position = crate::mpv::position(&config.watch_later, file);
+                        let position = crate::mpv::position(&config.watch_later, file).map(|(s, _)| s);
                         sink.send(Event::Game(GameEvent::Position { game: game.clone(), position }))?;
                     }
                     if let Some(db) = &config.db

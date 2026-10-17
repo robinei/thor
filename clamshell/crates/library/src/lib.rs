@@ -64,6 +64,8 @@ pub struct Game {
     /// end), and how long it is (seconds, once read).
     pub position: Option<u32>,
     pub duration: Option<u32>,
+    /// When mpv kept that place (seconds since the epoch): it was watched then, maybe outside ClamShell.
+    pub position_at: u64,
     /// An app, not a game or a film: Recent leaves it out.
     pub tool: bool,
     /// A group's entries (a series' seasons, a season's episodes), as indices into [`Library::games`], in
@@ -94,6 +96,7 @@ impl Game {
             developer: String::new(),
             position: None,
             duration: None,
+            position_at: 0,
             tool: false,
             items: Vec::new(),
             parent: None,
@@ -114,6 +117,12 @@ impl Game {
         };
         let program = argv.first().map(|p| p.rsplit('/').next().unwrap_or(p));
         self.file.as_deref().filter(|_| program == Some("mpv"))
+    }
+
+    /// When it was last played or watched (seconds since the epoch): through ClamShell, or where mpv kept
+    /// its place.
+    pub fn last_watched(&self) -> u64 {
+        self.plays.last.max(self.position_at)
     }
 
     /// Watched: played and left at the end (mpv keeps no place), or quit near it (past [`DONE`]).
@@ -273,7 +282,7 @@ impl Library {
     }
 
     /// What a group's Continue plays: of the videos in it (mpv's, all the way down, in order), the one
-    /// played last unless it was watched, then the one after it; the first if none was played; none when
+    /// played or watched last (see [`Game::last_watched`]) unless it was watched to its end, then the one after it; the first if none was played; none when
     /// the last was watched to the end, or it holds no videos (a folder of games).
     pub fn to_continue(&self, group: usize) -> Option<usize> {
         let mut leaves = Vec::new();
@@ -288,7 +297,7 @@ impl Library {
         }
         let played = |i: &usize| self.games.get(*i).is_some_and(|g| g.plays.count > 0 || g.position.is_some());
         let Some(at) =
-            leaves.iter().enumerate().filter(|(_, i)| played(i)).max_by_key(|(_, i)| self.games.get(**i).map_or(0, |g| g.plays.last)).map(|(n, _)| n)
+            leaves.iter().enumerate().filter(|(_, i)| played(i)).max_by_key(|(_, i)| self.games.get(**i).map_or(0, Game::last_watched)).map(|(n, _)| n)
         else {
             return leaves.first().copied();
         };
@@ -455,6 +464,10 @@ mod tests {
         lib.games[e10].plays.add(9000, 2700);
         assert_eq!(lib.to_continue(tv), Some(s2e1));
         assert_eq!(lib.to_continue(s1), None, "the season watched");
+        // Places mpv kept outside ClamShell: the one kept last wins over plays before it.
+        lib.games[e1].position = Some(100);
+        lib.games[e1].position_at = 20_000;
+        assert_eq!(lib.to_continue(tv), Some(e1), "watched last, in mpv");
         let games = lib.collections.iter().find(|c| c.name == "Games").unwrap().games.clone();
         lib.games.push(Game { items: games, ..Game::new("folder:Games/All", "All") });
         assert_eq!(lib.to_continue(lib.games.len() - 1), None, "games: no Continue");

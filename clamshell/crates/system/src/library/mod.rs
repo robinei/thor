@@ -209,14 +209,30 @@ pub fn load(sources: &Sources) -> Loaded {
         }
     }
     add(&mut collections, GAMES, Some("gamepad"), steam);
-    let (apps, desktop_games): (Vec<Game>, Vec<Game>) = crate::desktop::entries(&sources.data_dirs).into_iter().partition(|g| g.tool);
-    let desktop_games = extend(&mut games, desktop_games);
-    if config.keys.steamgriddb.is_some() {
-        hows.extend(desktop_games.iter().map(|&i| (i, How::SteamGridDb)));
+    // The desktop files' apps and games: where library.json's rules put them, else Games for a game and
+    // Apps for the rest (the games first, then the apps, each tab made where it is first named).
+    let mut placed: Vec<(String, Option<String>, Game)> = Vec::new();
+    for d in crate::desktop::entries(&sources.data_dirs) {
+        let rule = config.desktop.iter().find(|r| r.matches(&d.id, &d.name, &d.categories));
+        if rule.is_some_and(|r| r.hide) {
+            continue;
+        }
+        let default = if d.game.tool { APPS } else { GAMES };
+        let tab = rule.and_then(|r| r.tab.clone()).unwrap_or_else(|| default.to_owned());
+        let icon = rule.and_then(|r| r.icon.clone()).or_else(|| (tab == default).then(|| if d.game.tool { "apps" } else { "gamepad" }.to_owned()));
+        // (In Apps: an app, which Recent leaves out; anywhere else, played like a game.)
+        let game = Game { tool: tab == APPS, ..d.game };
+        placed.push((tab, icon, game));
     }
-    add(&mut collections, GAMES, Some("gamepad"), desktop_games);
-    let apps = extend(&mut games, apps);
-    add(&mut collections, APPS, Some("apps"), apps);
+    placed.sort_by_key(|(_, _, g)| g.tool);
+    for (tab, icon, game) in placed {
+        let tool = game.tool;
+        let i = extend(&mut games, vec![game]);
+        if config.keys.steamgriddb.is_some() && !tool {
+            hows.extend(i.iter().map(|&i| (i, How::SteamGridDb)));
+        }
+        add(&mut collections, &tab, icon.as_deref(), i);
+    }
     collections.retain(|c| !c.games.is_empty());
     for c in &mut collections {
         c.games.sort_by(|&a, &b| {
@@ -283,7 +299,8 @@ pub fn load(sources: &Sources) -> Loaded {
         let Some(file) = g.mpv_file().map(std::path::Path::to_path_buf) else {
             continue;
         };
-        g.position = crate::mpv::position(&sources.watch_later, &file);
+        let kept = crate::mpv::position(&sources.watch_later, &file);
+        (g.position, g.position_at) = (kept.map(|(s, _)| s), kept.map_or(0, |(_, at)| at));
         let probe = probes.get(&*g.id).filter(|p| p.frame.as_ref().is_none_or(|f| f.exists()));
         match probe {
             Some(p) => {
@@ -313,6 +330,40 @@ pub fn load(sources: &Sources) -> Loaded {
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn desktop_rules_move_or_hide_entries() {
+        let rule = |json: &str| serde_json::from_str::<content::DesktopRule>(json).unwrap();
+        let cats = |c: &[&str]| c.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        assert!(rule(r#"{ "name": "battle.NET", "tab": "Apps" }"#).matches("net.lutris.battlenet-1", "Battle.net", &cats(&["Game"])), "any case");
+        assert!(rule(r#"{ "id": "*lutris*" }"#).matches("net.lutris.Lutris", "Lutris", &[]));
+        assert!(rule(r#"{ "categories": "Emu*" }"#).matches("x", "RetroArch", &cats(&["Game", "Emulator"])));
+        assert!(!rule(r#"{ "id": "*lutris*", "name": "Steam" }"#).matches("net.lutris.Lutris", "Lutris", &[]), "all of them");
+        assert!(rule("{}").matches("any", "Any", &[]), "nothing to match: every entry");
+        let root = std::env::temp_dir().join(format!("clamshell-rules-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let apps = root.join("data/applications");
+        std::fs::create_dir_all(&apps).unwrap();
+        let write = |id: &str, name: &str, cats: &str| {
+            std::fs::write(apps.join(format!("{id}.desktop")), format!("[Desktop Entry]\nType=Application\nName={name}\nExec={id}\nCategories={cats}\n"))
+                .unwrap();
+        };
+        write("celeste", "Celeste", "Game;");
+        write("lutris", "Lutris", "Game;");
+        write("uninstall-foo", "Uninstall Foo", "Utility;");
+        write("foot", "Foot", "System;");
+        let config = r#"{ "desktop": [
+            { "id": "lutris", "tab": "Launchers", "icon": "apps" },
+            { "name": "uninstall*", "hide": true }
+        ] }"#;
+        std::fs::write(root.join("library.json"), config).unwrap();
+        let lib = load(&Sources { config: Some(root.join("library.json")), data_dirs: vec![root.join("data")], ..Sources::default() }).library;
+        let tab = |name: &str| lib.collections.iter().find(|c| c.name == name).map(|c| c.games.iter().map(|&i| lib.games[i].title.clone()).collect::<Vec<_>>());
+        assert_eq!(tab("Games"), Some(vec!["Celeste".to_owned()]));
+        assert_eq!(tab("Launchers"), Some(vec!["Lutris".to_owned()]));
+        assert_eq!(tab("Apps"), Some(vec!["Foot".to_owned()]), "Uninstall Foo hidden");
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn sources_fill_folders_in_a_tab_each_with_its_own_launch() {

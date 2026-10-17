@@ -4,7 +4,8 @@
 //! `start=<seconds>` is the place. A video watched to its end has none. Both names are looked for (the
 //! path's first), in the folder mpv.conf names (`watch-later-dir`) and in mpv's own
 //! (~/.local/state/mpv/watch_later, older ~/.config/mpv/watch_later). The length is ffprobe's; a frame
-//! to show for it, ffmpeg's: of the keyframes from a point on, the most representative (its `thumbnail`
+//! to show for it, ffmpeg's (both at the lowest priority: a game started meanwhile comes first): of the
+//! keyframes from a point on, the most representative (its `thumbnail`
 //! filter), so not a dark scene, a fade or a title card.
 
 use std::path::{Path, PathBuf};
@@ -34,20 +35,23 @@ pub fn watch_later_dirs(config_home: Option<&Path>, state_home: Option<&Path>) -
     dirs
 }
 
-/// Where mpv left `file` (seconds), if it kept a place.
-pub fn position(dirs: &[PathBuf], file: &Path) -> Option<u32> {
+/// Where mpv left `file` (seconds), if it kept a place, and when it did (its file's time, seconds since
+/// the epoch).
+pub fn position(dirs: &[PathBuf], file: &Path) -> Option<(u32, u64)> {
     let path = file.to_string_lossy();
     let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let names = [md5_hex(path.as_bytes()), md5_hex(name.as_bytes())];
-    let text = names.iter().flat_map(|n| dirs.iter().map(move |d| d.join(n))).find_map(|f| std::fs::read_to_string(f).ok())?;
+    let kept = names.iter().flat_map(|n| dirs.iter().map(move |d| d.join(n))).find(|f| f.is_file())?;
+    let text = std::fs::read_to_string(&kept).ok()?;
     let start = text.lines().find_map(|l| l.trim().strip_prefix("start="))?;
-    start.trim().parse::<f64>().ok().filter(|s| *s >= 0.0).map(|s| s as u32)
+    let at = std::fs::metadata(&kept).and_then(|m| m.modified()).ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs());
+    start.trim().parse::<f64>().ok().filter(|s| *s >= 0.0).map(|s| (s as u32, at))
 }
 
 /// A video's length (seconds), from ffprobe.
 pub fn duration(file: &Path) -> Option<u32> {
-    let out = Command::new("ffprobe")
-        .args(["-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0"])
+    let out = Command::new("nice")
+        .args(["-n", "19", "ffprobe", "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0"])
         .arg(file)
         .stdin(Stdio::null())
         .stderr(Stdio::null())
@@ -69,8 +73,8 @@ pub fn frame(file: &Path, at: u32, out: &Path) -> bool {
     }
     let part = out.with_extension("part.jpg");
     let choose = format!("scale=640:-2,thumbnail={FRAMES_LOOKED_AT}");
-    let ok = Command::new("ffmpeg")
-        .args(["-v", "quiet", "-y", "-skip_frame", "nokey", "-ss", &at.to_string(), "-i"])
+    let ok = Command::new("nice")
+        .args(["-n", "19", "ffmpeg", "-v", "quiet", "-y", "-skip_frame", "nokey", "-ss", &at.to_string(), "-i"])
         .arg(file)
         .args(["-vf", &choose, "-frames:v", "1", "-fps_mode", "vfr", "-q:v", "4"])
         .arg(&part)
@@ -143,10 +147,11 @@ mod tests {
         assert_eq!(position(&dirs, film), None, "none kept");
         std::fs::create_dir_all(&dirs[1]).unwrap();
         std::fs::write(dirs[1].join(md5_hex(b"Film.mkv")), "# Film.mkv\nstart=1403.402000\nsid=1\n").unwrap();
-        assert_eq!(position(&dirs, film), Some(1403), "by its name");
+        assert_eq!(position(&dirs, film).map(|(s, _)| s), Some(1403), "by its name");
+        assert!(position(&dirs, film).is_some_and(|(_, at)| at > 1_700_000_000), "and when");
         std::fs::create_dir_all(&dirs[0]).unwrap();
         std::fs::write(dirs[0].join(md5_hex(b"/videos/Film.mkv")), "start=60.5\n").unwrap();
-        assert_eq!(position(&dirs, film), Some(60), "by its path first");
+        assert_eq!(position(&dirs, film).map(|(s, _)| s), Some(60), "by its path first");
         let _ = std::fs::remove_dir_all(&root);
     }
 }

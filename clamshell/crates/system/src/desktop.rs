@@ -16,6 +16,17 @@ pub fn data_dirs() -> Vec<PathBuf> {
     user.into_iter().chain(system.split(':').filter(|d| !d.is_empty()).map(PathBuf::from)).collect()
 }
 
+/// An installed app or game: its entry, and what library.json's desktop rules match it by (see
+/// [`crate::library::content::DesktopRule`]).
+#[derive(Debug, Clone)]
+pub struct Desktop {
+    /// The desktop file's id (its name without `.desktop`).
+    pub id: String,
+    pub name: String,
+    pub categories: Vec<String>,
+    pub game: clamshell_library::Game,
+}
+
 /// The `[Desktop Entry]` keys we use.
 #[derive(Debug, Default, PartialEq, Eq)]
 struct Entry {
@@ -33,7 +44,7 @@ struct Entry {
 /// The installed apps and games as library entries (id `desktop:<id>`; an app a tool), by desktop file:
 /// the first of an id in `dirs` (the user's dir first), applications with a command that aren't hidden
 /// (nor Steam's game shortcuts).
-pub fn entries(dirs: &[PathBuf]) -> Vec<clamshell_library::Game> {
+pub fn entries(dirs: &[PathBuf]) -> Vec<Desktop> {
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
     for dir in dirs {
@@ -61,7 +72,8 @@ pub fn entries(dirs: &[PathBuf]) -> Vec<clamshell_library::Game> {
             game.launch = clamshell_library::Launch::Program { argv, workdir: (!entry.path.is_empty()).then(|| PathBuf::from(&entry.path)) };
             game.icon = (!entry.icon.is_empty()).then(|| find_icon(&entry.icon, dirs)).flatten();
             game.tool = !category("Game") || category("Emulator");
-            out.push(game);
+            let categories = entry.categories.split(';').filter(|c| !c.is_empty()).map(str::to_owned).collect();
+            out.push(Desktop { id, name: title, categories, game });
         }
     }
     out
@@ -185,7 +197,7 @@ mod tests {
         write(&system, "celeste", "[Desktop Entry]\nType=Application\nName=Celeste\nExec=Celeste\nPath=/opt/celeste\nCategories=Game;ActionGame;\n");
         write(&system, "retroarch", "[Desktop Entry]\nType=Application\nName=RetroArch\nExec=retroarch\nCategories=Game;Emulator;\n");
         write(&user, "steam_9", "[Desktop Entry]\nType=Application\nName=Nine\nExec=steam steam://rungameid/9\nCategories=Game;\n");
-        let entries = entries(&[user.clone(), system.clone()]);
+        let entries: Vec<clamshell_library::Game> = entries(&[user.clone(), system.clone()]).into_iter().map(|d| d.game).collect();
         let found: Vec<(&str, &str, bool)> = entries.iter().map(|g| (&*g.id, g.title.as_str(), g.tool)).collect();
         assert_eq!(
             found,

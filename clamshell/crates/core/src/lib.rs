@@ -680,7 +680,7 @@ impl State {
         match event {
             GameEvent::Started(game) => self.started(game),
             GameEvent::Played { game, start, duration } => self.played(&game, start, duration),
-            GameEvent::Position { game, position } => self.shelf.set_position(&game, position),
+            GameEvent::Position { game, position } => self.shelf.set_position(&game, position, self.unix_secs),
             // (A launch that never started: nothing runs one less, but it is no longer starting.)
             GameEvent::LaunchFailed(game) => {
                 if let Some(i) = self.session.launching.iter().position(|l| l.game == game) {
