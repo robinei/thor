@@ -19,6 +19,8 @@ pub enum Button {
     RS,
     /// The Thor's Back button, under the screen: not on the Xbox pad games see.
     Back,
+    /// The Thor's AYN button, on the chin under the screen: the Guide button of the Xbox pad games see.
+    Ayn,
     /// The back buttons (paddles), where a controller has them.
     L4,
     R4,
@@ -38,6 +40,7 @@ names!(Button {
     LS: "ls", "LS";
     RS: "rs", "RS";
     Back: "back", "Back";
+    Ayn: "ayn", "AYN";
     L4: "l4", "L4";
     R4: "r4", "R4";
     L5: "l5", "L5";

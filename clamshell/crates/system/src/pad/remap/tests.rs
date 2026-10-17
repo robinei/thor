@@ -353,6 +353,21 @@ fn the_default_keymap_passes_everything_through() {
     assert!(out.mouse.is_empty());
 }
 
+#[test]
+fn the_ayn_button_is_the_games_guide_unless_mapped() {
+    let (mut r, mut out) = router(Keymap::default(), PadRoute::Game);
+    press(&mut r, KeyCode::KEY_F24, true, &mut out);
+    assert_eq!(held(&out.pad), vec![KeyCode::BTN_MODE], "as on the pad: Guide");
+    press(&mut r, KeyCode::KEY_F24, false, &mut out);
+    assert!(held(&out.pad).is_empty());
+    let (mut r, mut out) = router(keymap(&[(Input::Button(Button::Ayn), to(Output::Pad(PadOut::Button(Button::A))))]), PadRoute::Game);
+    press(&mut r, KeyCode::KEY_F24, true, &mut out);
+    assert_eq!(held(&out.pad), vec![KeyCode::BTN_SOUTH], "mapped: what it is mapped to, not Guide");
+    let (mut r, mut out) = router(keymap(&[(Input::Button(Button::B), to(Output::Pad(PadOut::Button(Button::Ayn))))]), PadRoute::Game);
+    press(&mut r, KeyCode::BTN_EAST, true, &mut out);
+    assert_eq!(held(&out.pad), vec![KeyCode::BTN_MODE], "another button to AYN: Guide");
+}
+
 /// `input` bound in a layer on while Back is held (made the first time), as old Back layers load.
 fn back_layer(k: &mut Keymap, input: Input, b: Binding) {
     let held = k.layers().find(|(_, n)| *n == "held").map(|(l, _)| l);
@@ -369,20 +384,20 @@ fn the_back_layer_while_back_is_held_and_nothing_stuck_letting_go_mid_press() {
     press(&mut r, KeyCode::BTN_SOUTH, true, &mut out);
     assert_eq!(held(&out.mouse), vec![KeyCode::KEY_LEFTCTRL, KeyCode::KEY_X], "main");
     press(&mut r, KeyCode::BTN_SOUTH, false, &mut out);
-    press(&mut r, KeyCode::KEY_BACK, true, &mut out);
+    press(&mut r, KeyCode::BTN_BACK, true, &mut out);
     assert!(out.pad.is_empty() && held(&out.mouse).is_empty(), "Back alone sends nothing: {out:?}");
     press(&mut r, KeyCode::BTN_SOUTH, true, &mut out);
     press(&mut r, KeyCode::BTN_EAST, true, &mut out);
     assert_eq!(held(&out.mouse), vec![KeyCode::KEY_Y, KeyCode::KEY_LEFTCTRL, KeyCode::KEY_Z], "the Back layer's, B falling through");
     // Back let go while A is held: Ctrl+Y up, A is main's Ctrl+X now.
-    press(&mut r, KeyCode::KEY_BACK, false, &mut out);
+    press(&mut r, KeyCode::BTN_BACK, false, &mut out);
     assert_eq!(held(&out.mouse), vec![KeyCode::KEY_LEFTCTRL, KeyCode::KEY_Z, KeyCode::KEY_X]);
     press(&mut r, KeyCode::BTN_SOUTH, false, &mut out);
     press(&mut r, KeyCode::BTN_EAST, false, &mut out);
     assert!(held(&out.mouse).is_empty(), "nothing stuck");
-    assert!(!out.pad.iter().any(|e| e.as_key().is_some_and(|(k, _)| k == KeyCode::KEY_BACK)), "the game never sees Back");
+    assert!(!out.pad.iter().any(|e| e.as_key().is_some_and(|(k, _)| k == KeyCode::BTN_BACK)), "the game never sees Back");
     // Back held when the pad leaves the game: everything let go.
-    press(&mut r, KeyCode::KEY_BACK, true, &mut out);
+    press(&mut r, KeyCode::BTN_BACK, true, &mut out);
     press(&mut r, KeyCode::BTN_SOUTH, true, &mut out);
     r.set_route(PadRoute::Ui, &mut out);
     assert!(held(&out.mouse).is_empty() && held(&out.pad).is_empty());
@@ -609,7 +624,7 @@ fn the_gyro_differs_by_layer() {
         gyro(&mut r, i * 4, -20.0, &mut out);
     }
     assert_eq!(sum(&out.mouse, RelativeAxisCode::REL_X), 0, "off in the main layer");
-    press(&mut r, KeyCode::KEY_BACK, true, &mut out);
+    press(&mut r, KeyCode::BTN_BACK, true, &mut out);
     for i in 51..=300 {
         gyro(&mut r, i * 4, -20.0, &mut out);
     }

@@ -7,7 +7,7 @@ use evdev::raw_stream::RawDevice;
 use evdev::uinput::VirtualDevice;
 use evdev::{AbsInfo, AbsoluteAxisCode, AttributeSet, BusType, FFEffectCode, InputEvent, InputId, KeyCode, RelativeAxisCode, UinputAbsSetup};
 
-use super::remap::is_back_key;
+use super::remap::{AYN_KEY, is_back_key};
 use super::route::{Axis, PadSnapshot, Ranges, mouse_device_keys};
 use crate::input::device::{self, DeviceSpec};
 use crate::input::{Press, Range, Raw, keyset};
@@ -21,6 +21,46 @@ pub fn find(spec: &DeviceSpec) -> io::Result<RawDevice> {
         d.supported_keys().is_some_and(|k| k.contains(KeyCode::BTN_SOUTH)) && d.supported_absolute_axes().is_some_and(|a| a.contains(AbsoluteAxisCode::ABS_RX))
     };
     device::open(spec, "controller", gamepad, &[VIRTUAL_PAD])
+}
+
+/// The device the Thor's AYN button is on (its GPIO keys), read alongside the controller for that one
+/// key. Not grabbed: other keys on it go where they would.
+pub struct AynKey {
+    device: RawDevice,
+}
+
+impl AynKey {
+    const NAME: &'static str = "gpio-keys-ayn";
+
+    pub fn find() -> Option<AynKey> {
+        let device =
+            evdev::raw_stream::enumerate().map(|(_, d)| d).find(|d| d.name() == Some(Self::NAME) && d.supported_keys().is_some_and(|k| k.contains(AYN_KEY)))?;
+        let nonblocking = rustix::fs::fcntl_getfl(&device).and_then(|f| rustix::fs::fcntl_setfl(&device, f | rustix::fs::OFlags::NONBLOCK));
+        if let Err(e) = nonblocking {
+            log::warn!("pad: AYN button: {e}");
+            return None;
+        }
+        log::info!("pad: the AYN button from {}", Self::NAME);
+        Some(AynKey { device })
+    }
+
+    pub fn device(&self) -> &RawDevice {
+        &self.device
+    }
+
+    /// Appends the AYN button's presses waiting, each with its report.
+    pub fn fetch(&mut self, out: &mut Vec<Raw>) -> io::Result<()> {
+        match self.device.fetch_events() {
+            Ok(events) => {
+                for e in events.filter(|e| e.event_type() == evdev::EventType::KEY && e.code() == AYN_KEY.0) {
+                    out.extend([Raw::from(e), Raw::REPORT]);
+                }
+                Ok(())
+            }
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => Ok(()),
+            Err(e) => Err(e),
+        }
+    }
 }
 
 /// A controller's buttons and axes (each with its range and current value).
@@ -94,9 +134,11 @@ pub fn emit(device: &mut VirtualDevice, events: &[Raw]) -> io::Result<()> {
     device.emit(&events)
 }
 
-/// The real pad's keys the virtual one has: all but the layer key (ClamShell's, never the game's).
+/// The real pad's keys the virtual one has: all but Back (an input of keymaps, nothing as on the pad),
+/// and Guide (the AYN button as on the pad; home's with Back) though the controller has none.
 fn pad_keys(caps: &Capabilities) -> impl Iterator<Item = KeyCode> + '_ {
-    caps.keys.iter().copied().filter(|&k| !is_back_key(k))
+    let guide = (!caps.keys.contains(&KeyCode::BTN_MODE)).then_some(KeyCode::BTN_MODE);
+    caps.keys.iter().copied().filter(|&k| !is_back_key(k)).chain(guide)
 }
 
 /// A pad with the real one's buttons and axes, identified as a wired Xbox 360 controller so SDL, Wine

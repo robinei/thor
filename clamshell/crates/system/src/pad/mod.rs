@@ -8,7 +8,8 @@
 //! so games never see it disappear. The home button (BTN_MODE) is ours: it goes to the program as
 //! [`Event::Home`]; held, then the Back button with a game in front, it is the game's Guide (see
 //! [`route`]). The Back button ([`remap::BACK_KEY`]) is a keymap's input in the game, back on
-//! ClamShell's screens. The virtual
+//! ClamShell's screens; the AYN button ([`remap::AYN_KEY`], on the Thor's GPIO keys, read alongside the
+//! controller: [`device::AynKey`]) a keymap's input in the game too, Guide as on the pad. The virtual
 //! devices outlive the controller: unplugged (or failing), the pad stays, at rest, until one is back.
 //! Games' rumble on the virtual pad reaches the real controller's motors while the game has the pad
 //! ([`rumble`]), scaled by the Rumble setting.
@@ -35,7 +36,7 @@ use rustix::event::{PollFd, PollFlags, Timespec};
 use crate::input::device::{DeviceSpec, Grabbed};
 use crate::worker::{self, Ended, Service, Worker, lost_on};
 use crate::{Closed, Sink};
-use device::{Capabilities, VirtualDevices};
+use device::{AynKey, Capabilities, VirtualDevices};
 use motion::{EvdevMotion, MotionSource, Sample};
 use route::{Out, PadRouter, Ranges};
 use rumble::{Buzz, Effects, Rumble};
@@ -98,6 +99,8 @@ struct Controller {
     ranges: Ranges,
     snapshot: PadSnapshot,
     motion: Option<Box<dyn MotionSource>>,
+    /// The AYN button's device, on the Thor.
+    ayn: Option<AynKey>,
     /// Its motors, if it has force feedback.
     rumble: Option<Rumble>,
 }
@@ -175,16 +178,16 @@ impl<S: Sink> Service for PadThread<S> {
         let grabbed = Grabbed::new(real)?;
         log::info!("pad: {} grabbed; games see the virtual pad", grabbed.device().name().unwrap_or("controller"));
         let motion = EvdevMotion::find(&name, &phys).map(|m| Box::new(m) as Box<dyn MotionSource>);
-        Ok(Controller { grabbed, ranges, snapshot, motion, rumble })
+        Ok(Controller { grabbed, ranges, snapshot, motion, ayn: AynKey::find(), rumble })
     }
 
     /// Routes the controller's events until it is gone (or the program is).
     fn run_while_up(&mut self, c: Controller, commands: &Receiver<Command>) -> Result<(), Ended<io::Error>> {
-        let Controller { mut grabbed, ranges, snapshot, mut motion, mut rumble } = c;
+        let mut c = c;
         let mut out = Out::default();
-        let mut router = PadRouter::new(ranges, snapshot, self.route, self.keymap.clone(), &mut out);
-        let result = self.route_events(&mut grabbed, &mut motion, &mut rumble, &mut router, &mut out, commands);
-        if let Some(r) = rumble.as_mut() {
+        let mut router = PadRouter::new(c.ranges, std::mem::take(&mut c.snapshot), self.route, self.keymap.clone(), &mut out);
+        let result = self.route_events(&mut c, &mut router, &mut out, commands);
+        if let Some(r) = c.rumble.as_mut() {
             let _ = r.set(0, 0);
         }
         // Gone (or failing): what the route held on the keyboard and mouse is let go.
@@ -216,12 +219,16 @@ impl<S: Sink> Service for PadThread<S> {
     }
 }
 
-/// Waits up to `timeout` for the controller's, the gyro's or the virtual pad's (rumble) events.
-fn wait(pad: &Grabbed, motion: Option<&dyn MotionSource>, virtual_pad: Option<BorrowedFd>, timeout: Duration) -> io::Result<()> {
+/// Waits up to `timeout` for the controller's, the gyro's, the AYN button's or the virtual pad's (rumble)
+/// events.
+fn wait(pad: &Grabbed, motion: Option<&dyn MotionSource>, ayn: Option<&AynKey>, virtual_pad: Option<BorrowedFd>, timeout: Duration) -> io::Result<()> {
     let timeout = Timespec { tv_sec: i64::try_from(timeout.as_secs()).unwrap_or(i64::MAX), tv_nsec: i64::from(timeout.subsec_nanos()) };
     let mut fds = vec![PollFd::new(pad.device(), PollFlags::IN)];
     if let Some(m) = motion {
         fds.push(PollFd::from_borrowed_fd(m.fd(), PollFlags::IN));
+    }
+    if let Some(a) = ayn {
+        fds.push(PollFd::new(a.device(), PollFlags::IN));
     }
     if let Some(v) = virtual_pad {
         fds.push(PollFd::from_borrowed_fd(v, PollFlags::IN));
@@ -234,15 +241,8 @@ fn wait(pad: &Grabbed, motion: Option<&dyn MotionSource>, virtual_pad: Option<Bo
 
 impl<S: Sink> PadThread<S> {
     /// Routes the controller's (and the gyro's) events until it is gone (or the program is).
-    fn route_events(
-        &mut self,
-        grabbed: &mut Grabbed,
-        motion: &mut Option<Box<dyn MotionSource>>,
-        rumble: &mut Option<Rumble>,
-        router: &mut PadRouter,
-        out: &mut Out,
-        commands: &Receiver<Command>,
-    ) -> Result<(), Ended<io::Error>> {
+    fn route_events(&mut self, c: &mut Controller, router: &mut PadRouter, out: &mut Out, commands: &Receiver<Command>) -> Result<(), Ended<io::Error>> {
+        let Controller { grabbed, motion, ayn, rumble, .. } = c;
         let mut raws = Vec::new();
         let mut samples: Vec<Sample> = Vec::new();
         let mut wake = None;
@@ -258,8 +258,15 @@ impl<S: Sink> PadThread<S> {
             // Wake for events, when the mapping wants a tick, and now and then for commands.
             let wait_for = wake.map_or(COMMANDS_EVERY, |at: Instant| at.saturating_duration_since(Instant::now())).min(COMMANDS_EVERY);
             let virtual_pad = self.devices.as_ref().map(|d| d.pad.as_fd());
-            wait(grabbed, motion.as_deref(), virtual_pad, wait_for)?;
+            wait(grabbed, motion.as_deref(), ayn.as_ref(), virtual_pad, wait_for)?;
             grabbed.fetch(&mut raws)?;
+            if let Some(a) = ayn.as_mut()
+                && let Err(e) = a.fetch(&mut raws)
+            {
+                // (Left out if it fails; the controller goes on.)
+                log::warn!("pad: AYN button: {e}");
+                *ayn = None;
+            }
             if let Some(m) = motion.as_mut()
                 && let Err(e) = m.fetch(&mut samples)
             {

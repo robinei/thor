@@ -3,7 +3,8 @@
 //! the order of [`LEFT`] and [`RIGHT`]: the shoulders (on the back's top edge), a small round button
 //! above the screen's corner (Select, Start), a stick and the D-pad or the face buttons, and a small
 //! round button at the screen's bottom corner (Home: drawn, not remappable; Back: an input like the
-//! others). The gyro sits on the left, below the D-pad.
+//! others). The gyro sits on the left, below the D-pad. The AYN button (on the chin, between them) is a
+//! pill on Home's row, toward the middle, Home moved out to make room.
 //!
 //! A remapped control has a line in to its label (between the clusters): it leaves the control's inner
 //! side straight across, or, for the controls a line across would pass through others (the outer one of
@@ -27,7 +28,7 @@ pub enum Group {
     Face,
     /// The gyro (a pill), below the D-pad.
     Gyro,
-    /// The small round button at the screen's bottom corner: Home, Back.
+    /// The small round button at the screen's bottom corner: Home, Back; AYN's pill beside Home.
     Foot,
 }
 
@@ -59,6 +60,10 @@ const BUMPER: (f32, f32) = (0.76, 0.5);
 /// cluster's inner edge, of their radius.
 const ROUND: f32 = 0.2;
 const ROUND_IN: f32 = 2.2;
+/// AYN's pill on Home's row: where its half of the row starts, of the row's width; its size, of that
+/// half's width and the row's height.
+const AYN_FROM: f32 = 0.5;
+const AYN: (f32, f32) = (0.62, 0.62);
 
 /// A control as drawn: its shape, its target, and where its line in leaves.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -124,10 +129,11 @@ impl Pad {
     }
 
     /// Home's or Back's small round button, at the screen's bottom corner (Home drawn, not remappable;
-    /// Back an input like the others).
+    /// Back an input like the others). Home sits in its row's outer half: AYN has the inner one.
     pub fn foot(&self, side: Side) -> Option<Rect> {
         let g = self.group(side, Group::Foot)?;
-        Some(self.round(side, g))
+        let round = self.round(side, g);
+        Some(if side == Side::Left { square((g.x + g.w * AYN_FROM - round.w, g.center().1), round.w / 2.0) } else { round })
     }
 
     /// Where `input` is, if it is in a cluster (the gyro is in the middle; the Thor has no back buttons).
@@ -144,6 +150,7 @@ impl Pad {
                 Button::View => (Side::Left, Group::Top),
                 Button::Menu => (Side::Right, Group::Top),
                 Button::Back => (Side::Right, Group::Foot),
+                Button::Ayn => (Side::Left, Group::Foot),
                 Button::A | Button::B | Button::X | Button::Y => (side_of(Group::Face), Group::Face),
                 // The Thor has no back buttons.
                 Button::L4 | Button::L5 | Button::R4 | Button::R5 => return None,
@@ -169,6 +176,12 @@ impl Pad {
             Input::Gyro => {
                 let shown = g.centered(g.w * 0.5, (g.h * 0.7).min(g.w * 0.16));
                 flat(shown, shown.h / 2.0)
+            }
+            Input::Button(Button::Ayn) => {
+                // The row's inner half (a little more room below for a finger, as Back's).
+                let half = Rect::new(g.x + g.w * AYN_FROM, g.y, g.w * (1.0 - AYN_FROM), g.h + 4.0);
+                let shown = Rect::new(half.x, g.y, half.w, g.h).centered(half.w * AYN.0, g.h * AYN.1);
+                Part { shown, radius: shown.h / 2.0, target: half, corners: None, anchor: (inner(shown, k), cy), lane: None, side }
             }
             Input::Button(Button::View | Button::Menu | Button::Back) => {
                 let shown = self.round(side, g);

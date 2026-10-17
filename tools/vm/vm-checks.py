@@ -703,7 +703,11 @@ class Checks:
         self.check("  Home then Back: the game's Guide, down then up", len(mode) == 2 and "value 1" in mode[0]
                    and "value 0" in mode[1], f"{mode}")
         self.check("  and not ClamShell's Home (the game stays in front), Back not the game's",
-                   front() == game and "KEY_BACK" not in out.split("Testing ...")[-1], f"front {front()!r}")
+                   front() == game and "BTN_BACK" not in out.split("Testing ...")[-1], f"front {front()!r}")
+        out = capture(f"evtest {virtual}", 3, lambda: pad("tap ayn 200"))
+        mode = [line for line in out.split("Testing ...")[-1].splitlines() if "BTN_MODE" in line and "value" in line]
+        self.check("  AYN: the game's Guide, down then up (the game stays in front)", len(mode) == 2 and "value 1" in mode[0]
+                   and "value 0" in mode[1] and front() == game, f"{mode}, front {front()!r}")
         out = capture(f"evtest {virtual}", 3, lambda: pad("tap home 900"))
         self.check("  Home held long alone: not Guide (Home on release: shelf in front)",
                    "BTN_MODE" not in out.split("Testing ...")[-1] and until(lambda: front() == "clamshell-shelf", 3),

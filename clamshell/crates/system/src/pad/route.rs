@@ -621,7 +621,7 @@ mod tests {
         assert_eq!(out.pad, vec![key(KeyCode::BTN_TR, Press::Down), Raw::REPORT]);
     }
 
-    const BACK: KeyCode = KeyCode::KEY_BACK;
+    const BACK: KeyCode = KeyCode::BTN_BACK;
 
     #[test]
     fn home_then_back_with_a_game_in_front_is_its_guide_while_both_are_held() {

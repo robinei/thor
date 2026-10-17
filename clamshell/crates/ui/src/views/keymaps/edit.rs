@@ -475,6 +475,10 @@ pub(super) fn control(f: &mut Frame, input: Input, p: Part, tone: Tone, selected
                 f.c.text_in(Rect::new(x, shown.y, w, shown.h), size, tone, thor(b), Align::Start);
             }
             Input::Stick(_) => f.c.outline(shown, shown.w, lw, lc),
+            Input::Button(Button::Ayn) => {
+                f.c.outline(shown, shown.h / 2.0, lw, lc);
+                name(f, "AYN", shown, size.min(shown.h * 0.6));
+            }
             Input::Gyro => {
                 f.c.outline(shown, shown.h / 2.0, lw, lc);
                 name(f, "Gyro", shown, size.min(shown.h * 0.6));

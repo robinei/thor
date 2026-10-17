@@ -11,7 +11,7 @@
 //! if missing; `-` for standard input) say, until `quit` or until it is killed (which unplugs the pad):
 //!
 //! - `press BUTTON`, `release BUTTON`, `tap BUTTON [MS]` (pressed for MS, default 80): a, b, x, y, lb,
-//!   rb, view, menu, home, ls, rs, back
+//!   rb, view, menu, home, ls, rs, back, ayn (on its own device, as the Thor's GPIO keys)
 //! - `dpad up|down|left|right|none`: the D-pad (a hat), held until the next `dpad`
 //! - `stick left|right X Y`: a stick at X, Y (-1.0 to 1.0, y down), held until changed
 //! - `trigger left|right V`: a trigger at V (0.0 to 1.0)
@@ -26,7 +26,8 @@
 //!
 //! Beside the pad it makes a motion sensor as the kernel's controller drivers do ("clamshell fake pad
 //! Motion Sensors": INPUT_PROP_ACCELEROMETER, the accelerometer on ABS_X/Y/Z, the gyro on ABS_RX/RY/RZ
-//! with its resolution, units per degree per second, and MSC_TIMESTAMP), reporting at 250 Hz.
+//! with its resolution, units per degree per second, and MSC_TIMESTAMP), reporting at 250 Hz; and, as
+//! the Thor has, "gpio-keys-ayn" with the AYN button's key (KEY_F24).
 
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
@@ -53,7 +54,7 @@ const ACCEL_RES: i32 = 8192;
 const MOTION_EVERY: Duration = Duration::from_millis(4);
 
 /// The buttons by name, as an Xbox controller's (Linux's xpad codes), and the Thor's Back button (its
-/// code assumed until the device test).
+/// code as InputPlumber has it, until the device test).
 const BUTTONS: [(&str, KeyCode); 12] = [
     ("a", KeyCode::BTN_SOUTH),
     ("b", KeyCode::BTN_EAST),
@@ -66,8 +67,16 @@ const BUTTONS: [(&str, KeyCode); 12] = [
     ("home", KeyCode::BTN_MODE),
     ("ls", KeyCode::BTN_THUMBL),
     ("rs", KeyCode::BTN_THUMBR),
-    ("back", KeyCode::KEY_BACK),
+    ("back", KeyCode::BTN_BACK),
 ];
+
+/// The Thor's AYN button: on its GPIO keys, not on the pad.
+const AYN: (&str, KeyCode) = ("ayn", KeyCode::KEY_F24);
+
+fn make_ayn_keys() -> io::Result<VirtualDevice> {
+    let keys: AttributeSet<KeyCode> = [AYN.1].into_iter().collect();
+    VirtualDevice::builder()?.name("gpio-keys-ayn").with_keys(&keys)?.build()
+}
 
 fn syn() -> InputEvent {
     InputEvent::new(EventType::SYNCHRONIZATION.0, 0, 0)
@@ -222,7 +231,7 @@ fn controlled(path: &str) -> io::Result<()> {
     spawn(move || report_motion(motion, reporting));
     let serving = pad.clone();
     spawn(move || serve_rumble(serving));
-    let mut pad = Fake { pad, gyro };
+    let mut pad = Fake { pad, gyro, ayn: make_ayn_keys()? };
     let pad = &mut pad;
     eprintln!("fake pad ready; commands from {path}");
     if path == "-" {
@@ -249,6 +258,8 @@ fn controlled(path: &str) -> io::Result<()> {
 struct Fake {
     pad: Arc<Mutex<VirtualDevice>>,
     gyro: Gyro,
+    /// The AYN button's device.
+    ayn: VirtualDevice,
 }
 
 /// Carries out one command line; false for `quit`.
@@ -290,6 +301,25 @@ fn scaled(value: f32, max: i32) -> i32 {
 }
 
 fn command(fake: &mut Fake, words: &[&str]) -> io::Result<()> {
+    // The AYN button, on its own device.
+    if let [verb @ ("press" | "release" | "tap"), "ayn", rest @ ..] = words {
+        let held = match (*verb, rest) {
+            ("tap", []) => Duration::from_millis(80),
+            ("tap", [ms]) => millis(ms)?,
+            (_, []) => Duration::ZERO,
+            _ => return Err(invalid("tap BUTTON [MS]")),
+        };
+        if *verb != "release" {
+            fake.ayn.emit(&[key(AYN.1, true), syn()])?;
+        }
+        if *verb == "tap" {
+            sleep(held);
+        }
+        if *verb != "press" {
+            fake.ayn.emit(&[key(AYN.1, false), syn()])?;
+        }
+        return Ok(());
+    }
     let mut held = fake.pad.lock().map_err(|_| io::Error::other("the pad's lock"))?;
     let pad = &mut *held;
     match words {

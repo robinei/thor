@@ -15,7 +15,7 @@
 //! ([`Span`]). A hold to a layer is decided at once when an input that layer maps is pressed, so a quick
 //! chord acts in the layer. A layer that stays on (armed, toggled) buzzes the controller as it comes on
 //! and as it goes off ([`Buzz`]). The Thor's Back button ([`BACK_KEY`]) is an input like the others (nothing
-//! in the game as on the pad). A stick's and a trigger's tuning (deadzone, full point, curve,
+//! in the game as on the pad), and so is its AYN button ([`AYN_KEY`]; Guide in the game as on the pad). A stick's and a trigger's tuning (deadzone, full point, curve,
 //! inversion) applies to its values before they are mapped, to the input as on the pad as well.
 //!
 //! A button (or a D-pad or stick direction) with a hold's or a double's binding goes through a little
@@ -191,7 +191,10 @@ impl Actuator {
 
 /// The Thor's Back button, under the screen (KEY_BACK is assumed until the device test,
 /// docs/thor-gameplan.md): an input of keymaps, never on the game's pad itself.
-pub const BACK_KEY: KeyCode = KeyCode::KEY_BACK;
+pub const BACK_KEY: KeyCode = KeyCode::BTN_BACK;
+
+/// The Thor's AYN button's code (on its own device: see [`super::device::AynKey`]).
+pub const AYN_KEY: KeyCode = KeyCode::KEY_F24;
 
 /// Whether a code is the Back button's.
 pub fn is_back_key(code: KeyCode) -> bool {
@@ -235,11 +238,20 @@ pub fn button_codes(b: Button) -> &'static [KeyCode] {
         Button::LS => &[KeyCode::BTN_THUMBL],
         Button::RS => &[KeyCode::BTN_THUMBR],
         Button::Back => &[BACK_KEY],
+        Button::Ayn => &[AYN_KEY],
         // BTN_TRIGGER_HAPPY1-4 (xpad's paddles), BTN_GRIPL/R/L2/R2 (newer kernels' back buttons).
         Button::L4 => &[KeyCode::BTN_TRIGGER_HAPPY1, KeyCode(0x224)],
         Button::R4 => &[KeyCode::BTN_TRIGGER_HAPPY2, KeyCode(0x225)],
         Button::L5 => &[KeyCode::BTN_TRIGGER_HAPPY3, KeyCode(0x226)],
         Button::R5 => &[KeyCode::BTN_TRIGGER_HAPPY4, KeyCode(0x227)],
+    }
+}
+
+/// The code a button is on the pad games see: its own, but AYN is Guide there.
+pub fn pad_code(b: Button) -> Option<KeyCode> {
+    match b {
+        Button::Ayn => Some(KeyCode::BTN_MODE),
+        b => button_codes(b).first().copied(),
     }
 }
 
@@ -866,7 +878,7 @@ impl Remap {
                     // A back button as itself: the code it came with.
                     (true, Input::Button(own)) if own == *b => w.pad_keys.extend(button_codes(*b).iter().filter(|&&c| snap.held(c))),
                     (true, _) => {}
-                    (false, _) => w.pad_keys.extend(button_codes(*b).first()),
+                    (false, _) => w.pad_keys.extend(pad_code(*b)),
                 },
                 Output::Pad(PadOut::Dpad(d)) => {
                     if let Some(slot) = dpad.get_mut(*d as usize) {

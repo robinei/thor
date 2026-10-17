@@ -265,6 +265,6 @@ fn inputs_by_name() {
         input.name(&mut name).unwrap();
         assert_eq!(Input::parse(&name), Some(input), "{name}");
     }
-    assert_eq!(Input::all().count(), 15 + 4 + 10 + 2 + 1);
-    assert_eq!(PadOut::all().count(), 16);
+    assert_eq!(Input::all().count(), 16 + 4 + 10 + 2 + 1);
+    assert_eq!(PadOut::all().count(), 17);
 }
