@@ -57,10 +57,10 @@ sysinfo.png bcc1def10231fa16
 time-europe.png 50b43e8f1f5b99e0
 time.png 1bcd3c27629745f5
 top-back.png b45c4665585b0d97
-top-folder.png 05e5acd1c503ba37
-top-group.png c129df67e925c653
+top-folder.png 9f9bb7122065510a
+top-group.png 6df1380e539c1d7b
 top-played.png a148629732b7caaf
-top-recent.png f6762e49eed7b3e5
+top-recent.png f29e33c55028a1e5
 top-switch.png 67aa85ef2b60a33a
 top-tab2-down.png b30cc949b764edae
 top-tab2.png 9e650dd92b7f3500

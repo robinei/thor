@@ -23,6 +23,7 @@ pub mod library;
 pub mod meta;
 pub mod metrics;
 pub mod mixer;
+pub mod mpv;
 pub mod pad;
 pub mod paths;
 pub mod sleep;

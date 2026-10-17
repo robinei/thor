@@ -114,10 +114,10 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
         let at = scrolled.row(position);
         let r = Rect::new(at.x, at.y, list.w - pad * 0.6, row_h - 2.0);
         let selected = position == cursor.index;
-        // An episode (an entry of a group) played already: dimmer.
+        // A video watched (to its end, or into its credits): dimmer.
         let tone = if selected {
             Tone::High
-        } else if game.parent.is_some() && game.plays.count > 0 {
+        } else if game.mpv_file().is_some() && game.watched() {
             Tone::Dim
         } else {
             Tone::Normal
@@ -152,6 +152,11 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
             } else {
                 let path = Fmt::<256>::of(format_args!("{}", Groups { s, game, own: true, between: " · " }));
                 f.c.text_fit(title, row_h * ROW_TEXT, tone, &path, Keep::Start);
+            }
+            // A video under way: how far, under its title.
+            if let Some(fraction) = watched_fraction(game).filter(|_| !game.watched()) {
+                let bar = Rect::new(tx, r.y + r.h * 0.8, (title.w * 0.6).min(row_h * 4.0), (r.h * 0.05).max(2.0));
+                widgets::progress(f.c, bar, fraction);
             }
         });
     }
@@ -192,6 +197,21 @@ fn selected(f: &mut Frame, game: &Game, screen: Rect, list: Rect, pad: f32) {
         col.skip(f.c.wrap(span(&col), detail, Tone::Normal, &inside, 2) + pad * 0.4);
     }
 
+    // A video: how far into it, and how long it is.
+    if let Some(at) = game.position.filter(|_| game.mpv_file().is_some()) {
+        let minutes = Fmt::<48>::of(format_args!("{}", Minutes(at, game.duration)));
+        let bar_w = (text_w * 0.45).min(detail * 9.0);
+        if let Some(fraction) = watched_fraction(game) {
+            let bar = Rect::new(tx, col.y() + detail * 0.42, bar_w, (detail * 0.22).max(3.0));
+            widgets::progress(f.c, bar, fraction);
+        }
+        let x = if watched_fraction(game).is_some() { tx + bar_w + pad * 0.6 } else { tx };
+        f.c.text(x, col.y(), detail, Tone::Normal, &minutes);
+        col.skip(detail * WRAP_LINE + pad * 0.4);
+    } else if game.mpv_file().is_some() && game.watched() {
+        col.skip(f.c.wrap(span(&col), detail, Tone::Dim, "Watched", 1) + pad * 0.4);
+    }
+
     // What A does, whether it is a favourite (Y) and on the dock (X): each a row to tap, with its button.
     let action_h = detail * ACTION;
     let running = s.session().running(&game.id).is_some();
@@ -204,10 +224,20 @@ fn selected(f: &mut Frame, game: &Game, screen: Rect, list: Rect, pad: f32) {
     };
     let favourite = if game.favourite { ("Favourite", Tone::Accent) } else { ("Not a favourite", Tone::Dim) };
     let pinned = if s.dock().is_pinned(&game.id) { ("On the dock", Tone::Normal) } else { ("Not on the dock", Tone::Dim) };
+    // A folder with something to go on with (a series): Start continues it.
+    let next = s.shelf().library().games.iter().position(|g| g.id == game.id).filter(|_| game.is_group()).and_then(|g| s.shelf().library().to_continue(g));
+    let next = next.and_then(|i| s.shelf().library().games.get(i));
+    let continuing = next.map(|n| Fmt::<192>::of(format_args!("Continue · {}", Within(s, n, game))));
     for (id, key, (label, tone)) in [(ShelfId::Launch, "A", play), (ShelfId::Favourite, "Y", favourite), (ShelfId::Pin, "X", pinned)] {
+        let after_play = id == ShelfId::Launch;
         let r = Rect::new(tx, col.y(), text_w.min(detail * 14.0), action_h);
         widgets::key_action(f, Id::Shelf(id), r, key, label, tone);
         col.skip(action_h + pad * 0.15);
+        if after_play && let Some(label) = &continuing {
+            let r = Rect::new(tx, col.y(), text_w, action_h);
+            widgets::key_action(f, Id::Shelf(ShelfId::Continue), r, "Start", label, Tone::Go);
+            col.skip(action_h + pad * 0.15);
+        }
     }
     col.skip(pad * 0.3);
 
@@ -244,6 +274,50 @@ fn selected(f: &mut Frame, game: &Game, screen: Rect, list: Rect, pad: f32) {
     }
     if let Some(r) = shot.filter(|r| r.h > pad) {
         widgets::shot(f.c, f.images, game, r);
+    }
+}
+
+/// How far into a video, of its length, if both are known.
+fn watched_fraction(game: &Game) -> Option<f32> {
+    let (at, length) = (game.position?, game.duration?);
+    (length > 0).then(|| at as f32 / length as f32)
+}
+
+/// Minutes into a video, and of how many: "23 of 45 min"; "23 min in" without its length.
+struct Minutes(u32, Option<u32>);
+
+impl Display for Minutes {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self.1 {
+            Some(length) => write!(f, "{} of {} min", self.0 / 60, length.div_ceil(60)),
+            None => write!(f, "{} min in", self.0 / 60),
+        }
+    }
+}
+
+/// An entry as seen from a folder it is in: the folders between, then its title ("Season 1 · 2. One
+/// Voice").
+struct Within<'a>(&'a State, &'a Game, &'a Game);
+
+impl Display for Within<'_> {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let games = &self.0.shelf().library().games;
+        // (The folders from the entry up to the folder, written from the top down.)
+        let mut chain = [None; 8];
+        let mut at = self.1.parent;
+        let mut n = 0;
+        while let (Some(i), Some(slot)) = (at, chain.get_mut(n)) {
+            if games.get(i).is_some_and(|g| g.id == self.2.id) {
+                break;
+            }
+            *slot = Some(i);
+            n += 1;
+            at = games.get(i).and_then(|g| g.parent);
+        }
+        for i in chain.iter().take(n).rev().flatten() {
+            write!(f, "{} · ", games.get(*i).map_or("", |g| g.title.as_str()))?;
+        }
+        f.write_str(&self.1.title)
     }
 }
 

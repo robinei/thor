@@ -118,7 +118,10 @@ pub fn start(
     // Games start from the launcher (each on a thread of its own, so several run side by side); plays go
     // to the database.
     let jobs = Runner { jobs: paths.jobs.clone(), sway: sway.clone() };
-    let launcher = started("launcher", launcher::spawn(launcher::Config { db: paths.db(), scope, jobs: jobs.clone() }, sink.clone()));
+    let launcher = started(
+        "launcher",
+        launcher::spawn(launcher::Config { db: paths.db(), scope, watch_later: paths.watch_later.clone(), jobs: jobs.clone() }, sink.clone()),
+    );
     // The controller, grabbed for good with a virtual Xbox pad for games.
     let pad = started("pad", pad::spawn(env.gamepad.clone(), sink.clone()));
     let battery = started("battery", battery::spawn(sink.clone()));

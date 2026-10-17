@@ -67,6 +67,8 @@ pub enum ShelfId {
     /// The details' actions: the selected entry a favourite or not, pinned to the dock or not.
     Favourite,
     Pin,
+    /// A folder's Continue (see [`crate::Library::to_continue`]).
+    Continue,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

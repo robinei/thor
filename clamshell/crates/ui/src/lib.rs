@@ -508,6 +508,7 @@ impl App {
             PadInput::B => self.handle_all(focus::back(&self.state)),
             PadInput::Y => self.handle(ShelfEvent::ToggleFavourite.into()),
             PadInput::X => self.handle(ShelfEvent::TogglePin.into()),
+            PadInput::Start => self.handle(ShelfEvent::Continue.into()),
             // The Back button: what the screen has for back (the edit screen's other layer).
             PadInput::Back => {
                 if let Some(id) = self.state.pad_back() {

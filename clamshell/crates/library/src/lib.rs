@@ -60,6 +60,10 @@ pub struct Game {
     pub summary: String,
     pub year: Option<u16>,
     pub developer: String,
+    /// A video mpv plays: where mpv was when last quit (seconds; none: not started, or watched to the
+    /// end), and how long it is (seconds, once read).
+    pub position: Option<u32>,
+    pub duration: Option<u32>,
     /// An app, not a game or a film: Recent leaves it out.
     pub tool: bool,
     /// A group's entries (a series' seasons, a season's episodes), as indices into [`Library::games`], in
@@ -88,6 +92,8 @@ impl Game {
             summary: String::new(),
             year: None,
             developer: String::new(),
+            position: None,
+            duration: None,
             tool: false,
             items: Vec::new(),
             parent: None,
@@ -100,7 +106,28 @@ impl Game {
     pub fn is_group(&self) -> bool {
         !self.items.is_empty()
     }
+
+    /// Its file, if mpv plays it (its launch command's program is mpv): where mpv keeps its place.
+    pub fn mpv_file(&self) -> Option<&std::path::Path> {
+        let Launch::Program { argv, .. } = &self.launch else {
+            return None;
+        };
+        let program = argv.first().map(|p| p.rsplit('/').next().unwrap_or(p));
+        self.file.as_deref().filter(|_| program == Some("mpv"))
+    }
+
+    /// Watched: played and left at the end (mpv keeps no place), or quit near it (past [`DONE`]).
+    pub fn watched(&self) -> bool {
+        match (self.position, self.duration) {
+            (None, _) => self.plays.count > 0,
+            (Some(at), Some(length)) => length > 0 && f64::from(at) >= f64::from(length) * DONE,
+            (Some(_), None) => false,
+        }
+    }
 }
+
+/// How far into a video counts as watched (the credits left).
+pub const DONE: f64 = 0.9;
 
 /// What was fetched about an entry (clamshell-system's `meta`): its cover, a screenshot, what it is
 /// about, the year it came out, who made it; each if found.
@@ -111,6 +138,8 @@ pub struct Meta {
     pub summary: String,
     pub year: Option<u16>,
     pub developer: String,
+    /// A video's length (seconds).
+    pub duration: Option<u32>,
 }
 
 /// An entry's key, from its id: what its launches' units and its workspace are named by. Letters, digits
@@ -237,7 +266,33 @@ impl Library {
             if !meta.developer.is_empty() {
                 g.developer.clone_from(&meta.developer);
             }
+            if meta.duration.is_some() {
+                g.duration = meta.duration;
+            }
         }
+    }
+
+    /// What a group's Continue plays: of the entries in it (all the way down, in order), the one played
+    /// last unless it was watched, then the one after it; the first if none was played; none when the
+    /// last was watched to the end.
+    pub fn to_continue(&self, group: usize) -> Option<usize> {
+        let mut leaves = Vec::new();
+        let mut stack: Vec<usize> = self.games.get(group)?.items.iter().rev().copied().collect();
+        while let Some(i) = stack.pop() {
+            match self.games.get(i) {
+                Some(g) if g.is_group() => stack.extend(g.items.iter().rev()),
+                Some(_) => leaves.push(i),
+                None => {}
+            }
+        }
+        let played = |i: &usize| self.games.get(*i).is_some_and(|g| g.plays.count > 0 || g.position.is_some());
+        let Some(at) =
+            leaves.iter().enumerate().filter(|(_, i)| played(i)).max_by_key(|(_, i)| self.games.get(**i).map_or(0, |g| g.plays.last)).map(|(n, _)| n)
+        else {
+            return leaves.first().copied();
+        };
+        let last = *leaves.get(at)?;
+        if self.games.get(last).is_some_and(Game::watched) { leaves.get(at + 1).copied() } else { Some(last) }
     }
 
     /// The groups entry `i` is in, outermost first.
@@ -302,8 +357,12 @@ pub fn demo_library() -> Library {
         for episode in episodes {
             let e = games.len();
             let file = format!("{id}/{episode}.mkv");
-            let argv = vec!["mpv".into(), format!("/videos/{}", file.trim_start_matches("tv:"))];
-            games.push(Game { parent: Some(s), color: 0x305a78, launch: Launch::program(argv), ..Game::new(&file, episode) });
+            let path = format!("/videos/{}", file.trim_start_matches("tv:"));
+            let argv = vec!["mpv".into(), path.clone()];
+            // (The second episode left halfway.)
+            let position = episode.starts_with("2.").then_some(1500);
+            let launch = Launch::program(argv);
+            games.push(Game { parent: Some(s), color: 0x305a78, launch, file: Some(path.into()), duration: Some(2640), position, ..Game::new(&file, episode) });
             if let Some(season) = games.get_mut(s) {
                 season.items.push(e);
             }
@@ -368,6 +427,32 @@ mod tests {
         assert_eq!(lib.games[first].box_front.as_deref(), Some(std::path::Path::new("poster.jpg")));
         assert_eq!(lib.games[second].box_front.as_deref(), Some(std::path::Path::new("own.jpg")));
         assert_eq!((lib.games[tv].summary.as_str(), lib.games[tv].year), ("Space.", Some(1980)));
+    }
+
+    #[test]
+    fn continue_goes_on_from_the_episode_played_last() {
+        let mut lib = demo_library();
+        let tv = lib.collections.iter().find(|c| c.name == "TV").unwrap().games[0];
+        let s1 = lib.games[tv].items[0];
+        let s2 = lib.games[tv].items[1];
+        let (e1, e2, e10) = (lib.games[s1].items[0], lib.games[s1].items[1], lib.games[s1].items[2]);
+        let s2e1 = lib.games[s2].items[0];
+        lib.games[e2].position = None;
+        assert_eq!(lib.to_continue(tv), Some(e1), "none played: the first");
+        // The first watched to the end (mpv kept no place): the next.
+        lib.games[e1].plays.add(100, 2700);
+        assert_eq!(lib.to_continue(tv), Some(e2));
+        // The second left halfway: it again.
+        lib.games[e2].plays.add(5000, 600);
+        lib.games[e2].position = Some(1200);
+        lib.games[e2].duration = Some(2700);
+        assert_eq!(lib.to_continue(tv), Some(e2));
+        // Quit in its credits: watched, so the one after (across seasons too).
+        lib.games[e2].position = Some(2600);
+        assert_eq!(lib.to_continue(tv), Some(e10));
+        lib.games[e10].plays.add(9000, 2700);
+        assert_eq!(lib.to_continue(tv), Some(s2e1));
+        assert_eq!(lib.to_continue(s1), None, "the season watched");
     }
 
     #[test]

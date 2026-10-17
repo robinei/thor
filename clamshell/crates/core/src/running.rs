@@ -110,7 +110,7 @@ impl State {
         let Some(g) = self.shelf.game(&game) else {
             return vec![];
         };
-        let (launch, key) = (g.launch.clone(), g.key.clone());
+        let (launch, key, watch) = (g.launch.clone(), g.key.clone(), g.mpv_file().map(std::path::Path::to_path_buf));
         let appid = match launch {
             Launch::Steam { appid } => Some(appid),
             _ => None,
@@ -122,7 +122,7 @@ impl State {
         self.session.launching.push(Launching { game: game.clone(), instance: instance.clone(), appid });
         // Shown once its first window appears.
         self.session.pending_show = Some(instance.clone());
-        vec![Effect::Save(Save::Resume(self.resume())), Effect::Launch { game, instance, settings, env, launch }]
+        vec![Effect::Save(Save::Resume(self.resume())), Effect::Launch { game, instance, settings, env, launch, watch }]
     }
 
     /// A launch has started (or a Steam game Steam started is seen): the entry runs (one launch more), and

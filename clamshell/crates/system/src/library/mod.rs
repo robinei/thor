@@ -28,6 +28,8 @@ pub struct Sources {
     /// The XDG data dirs, the installed apps' desktop files in their `applications` (see
     /// [`crate::desktop`]).
     pub data_dirs: Vec<PathBuf>,
+    /// Where mpv keeps videos' places.
+    pub watch_later: Vec<PathBuf>,
 }
 
 impl Sources {
@@ -39,6 +41,7 @@ impl Sources {
             steam: home.filter(|_| steam).and_then(steam::default_root),
             db: paths.db(),
             data_dirs: crate::desktop::data_dirs(),
+            watch_later: paths.watch_later.clone(),
         }
     }
 }
@@ -213,9 +216,14 @@ pub fn load(sources: &Sources) -> Loaded {
         });
     }
     let mut metas = std::collections::HashMap::new();
+    let mut durations = std::collections::HashMap::new();
     if let Some(db) = sources.db.as_deref().and_then(|f| crate::store::Store::open(f).map_err(|e| log::warn!("library: {}: {e}", f.display())).ok()) {
         metas = db.metas().unwrap_or_else(|e| {
             log::warn!("library: metadata: {e}");
+            Default::default()
+        });
+        durations = db.durations().unwrap_or_else(|e| {
+            log::warn!("library: lengths: {e}");
             Default::default()
         });
         let plays = db.plays().unwrap_or_else(|e| {
@@ -254,6 +262,18 @@ pub fn load(sources: &Sources) -> Loaded {
         } else if let Some(f) = fetched {
             library.apply_meta(i, &f.meta);
         }
+    }
+    // mpv's videos: where mpv left each, and its length (read once, then kept).
+    for (i, g) in library.games.iter_mut().enumerate() {
+        let Some(file) = g.mpv_file().map(std::path::Path::to_path_buf) else {
+            continue;
+        };
+        g.position = crate::mpv::position(&sources.watch_later, &file);
+        match durations.get(&*g.id) {
+            Some(d) => g.duration = *d,
+            None => wanted.push(Wanted { id: g.id.clone(), key: g.key.clone(), title: g.title.clone(), file: Some(file), how: How::Duration, art: true }),
+        }
+        let _ = i;
     }
     library.rebuild_derived();
     Loaded { library, wanted, keys: config.keys }

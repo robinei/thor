@@ -209,9 +209,9 @@ pub(crate) fn back(s: &State) -> Option<Event> {
 }
 
 /// On a desktop, keys stand in for the pad: arrows move focus, Enter/Space is A (press, hold), Tab is
-/// View, Backspace B, Q and E the shoulders, Home and End the triggers, F is Y, P is X. (Not on the device: there what reaches shelf's
+/// View, Backspace B, Q and E the shoulders, Home and End the triggers, F is Y, P is X, C is Start. (Not on the device: there what reaches shelf's
 /// window is typing.)
-const DESKTOP_KEYS: [(Keysym, PadInput); 15] = [
+const DESKTOP_KEYS: [(Keysym, PadInput); 16] = [
     (Keysym::Left, PadInput::Left),
     (Keysym::Right, PadInput::Right),
     (Keysym::Up, PadInput::Up),
@@ -221,6 +221,7 @@ const DESKTOP_KEYS: [(Keysym, PadInput); 15] = [
     (Keysym::space, PadInput::A(true)),
     (Keysym::f, PadInput::Y),
     (Keysym::p, PadInput::X),
+    (Keysym::c, PadInput::Start),
     (Keysym::Home, PadInput::Trigger(-1)),
     (Keysym::End, PadInput::Trigger(1)),
     (Keysym::Tab, PadInput::Switch),

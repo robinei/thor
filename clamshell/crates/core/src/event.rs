@@ -158,6 +158,8 @@ pub enum ShelfEvent {
     ToggleFavourite,
     /// The pad's X (desktop: P): the selected entry pinned to the dock, or unpinned.
     TogglePin,
+    /// The pad's Start (desktop: C): the selected folder's Continue (a series' next episode).
+    Continue,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -168,6 +170,8 @@ pub enum GameEvent {
     Played { game: Arc<str>, start: u64, duration: u64 },
     /// It couldn't be started.
     LaunchFailed(Arc<str>),
+    /// A video mpv played ended: where mpv left it (none: at its end).
+    Position { game: Arc<str>, position: Option<u32> },
 }
 
 macro_rules! into_event {

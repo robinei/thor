@@ -47,6 +47,8 @@ pub enum PadInput {
     Y,
     /// X: the selected entry pinned to the dock, or unpinned.
     X,
+    /// Start: the selected folder's Continue (a series' next episode).
+    Start,
     /// The shoulder buttons (L1, R1): a page up or down (shelf), the previous or next tab (the second
     /// screen).
     Shoulder(i32),

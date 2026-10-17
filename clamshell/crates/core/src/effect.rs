@@ -23,6 +23,8 @@ pub enum Effect {
         settings: Values,
         env: Vec<(String, String)>,
         launch: Launch,
+        /// A video mpv plays: its file (its place read again when it ends).
+        watch: Option<std::path::PathBuf>,
     },
     /// The settings in force changed: the running game's (`game`), or the global ones while none runs
     /// (also when a game ends). Apply them now.

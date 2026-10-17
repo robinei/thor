@@ -188,7 +188,8 @@ fn print_entry(library: &Library, i: usize, depth: usize) {
         }
     } else {
         let art = if g.box_front.is_some() { "art" } else { "no art" };
-        println!("{indent}{}  ({}) [{art}] {:?}", g.title, g.id, g.launch);
+        let at = g.position.map(|p| format!(" [at {} of {} s]", p, g.duration.map_or("?".to_owned(), |d| d.to_string()))).unwrap_or_default();
+        println!("{indent}{}  ({}) [{art}]{at} {:?}", g.title, g.id, g.launch);
     }
 }
 

@@ -65,6 +65,7 @@ impl Navigator {
             (KeyCode::BTN_EAST, _) => Some(PadInput::B),
             (KeyCode::BTN_NORTH, _) => Some(PadInput::Y),
             (KeyCode::BTN_WEST, _) => Some(PadInput::X),
+            (KeyCode::BTN_START, _) => Some(PadInput::Start),
             (KeyCode::BTN_TL, _) => Some(PadInput::Shoulder(-1)),
             (KeyCode::BTN_TR, _) => Some(PadInput::Shoulder(1)),
             (KeyCode::BTN_TL2, _) => Some(PadInput::Trigger(-1)),

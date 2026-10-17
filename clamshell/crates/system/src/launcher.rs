@@ -35,6 +35,8 @@ pub struct Request {
     /// Its scope and workspace, from the state.
     pub instance: Instance,
     pub launch: Launch,
+    /// A video mpv plays: its file, whose place mpv keeps (read again when it ends).
+    pub watch: Option<PathBuf>,
     /// The game's environment (its MangoHud config, its own variables).
     pub env: Vec<(String, String)>,
 }
@@ -45,6 +47,8 @@ pub struct Config {
     pub db: Option<PathBuf>,
     /// Run games in their own systemd scope.
     pub scope: bool,
+    /// Where mpv keeps videos' places.
+    pub watch_later: Vec<PathBuf>,
     /// How jobs start: under sway, through it (see [`crate::sway`]), so the game's window opens on the
     /// game's workspace.
     pub jobs: Runner,
@@ -161,6 +165,10 @@ fn play(config: &Config, request: &Request, sink: &impl Sink) -> Result<(), Clos
                 Ok(()) => {
                     let duration = started.elapsed().as_secs();
                     log::info!("launcher: {game} ran {duration} s");
+                    if let Some(file) = &request.watch {
+                        let position = crate::mpv::position(&config.watch_later, file);
+                        sink.send(Event::Game(GameEvent::Position { game: game.clone(), position }))?;
+                    }
                     if let Some(db) = &config.db
                         && let Err(e) = Store::open(db).and_then(|s| s.add_play(game, start, duration))
                     {
@@ -307,7 +315,7 @@ mod tests {
     use std::sync::mpsc;
 
     fn config(db: Option<PathBuf>) -> Config {
-        Config { db, scope: false, jobs: Runner { jobs: std::env::temp_dir(), sway: None } }
+        Config { db, scope: false, watch_later: Vec::new(), jobs: Runner { jobs: std::env::temp_dir(), sway: None } }
     }
 
     #[test]
@@ -324,7 +332,7 @@ mod tests {
         let id: Arc<str> = script.to_string_lossy().into();
         let launch = Launch::Program { argv: vec![script.to_string_lossy().into()], workdir: Some(dir.clone()) };
         let instance = Instance::Run { key: "test_1".into(), secs: u64::from(std::process::id()), n: 0 };
-        launcher.send(Request { game: id.clone(), instance, launch, env: vec![] });
+        launcher.send(Request { game: id.clone(), instance, launch, watch: None, env: vec![] });
         drop(launcher);
 
         let events: Vec<Event> = events.iter().collect();
@@ -341,7 +349,7 @@ mod tests {
         let launcher = spawn(config(None), tx).unwrap();
         let launch = Launch::program(vec!["/nonexistent/game".into()]);
         let instance = Instance::Run { key: "test_1".into(), secs: u64::from(std::process::id()), n: 1 };
-        launcher.send(Request { game: "x".into(), instance, launch, env: vec![] });
+        launcher.send(Request { game: "x".into(), instance, launch, watch: None, env: vec![] });
         drop(launcher);
         assert_eq!(events.iter().collect::<Vec<_>>(), vec![Event::Game(GameEvent::LaunchFailed("x".into()))]);
     }

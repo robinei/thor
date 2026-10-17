@@ -601,12 +601,22 @@ impl State {
             ShelfId::Launch => self.activate_selected(),
             ShelfId::Favourite => self.on_shelf_event(ShelfEvent::ToggleFavourite).1,
             ShelfId::Pin => self.on_shelf_event(ShelfEvent::TogglePin).1,
+            ShelfId::Continue => self.continue_selected(),
             ShelfId::Up => {
                 if self.shelf.up() {
                     self.moved_collection();
                 }
                 vec![]
             }
+        }
+    }
+
+    /// The selected group's Continue (see [`Library::to_continue`]): that entry played.
+    fn continue_selected(&mut self) -> Vec<Effect> {
+        let next = self.shelf.selected_index().and_then(|g| self.shelf.library().to_continue(g));
+        match next.and_then(|i| self.shelf.library().games.get(i)).map(|g| g.id.clone()) {
+            Some(id) => self.play(id),
+            None => vec![],
         }
     }
 
@@ -648,6 +658,7 @@ impl State {
                 (Dirty::BOTH, vec![])
             }
             ShelfEvent::Rows(rows) => (if self.shelf.set_rows(rows) { Dirty::BOTH } else { Dirty::NONE }, vec![]),
+            ShelfEvent::Continue => (Dirty::BOTH, self.continue_selected()),
             ShelfEvent::TogglePin => match self.shelf.selected().cloned() {
                 Some(id) => (Dirty::BOTH, self.toggle_pin(id)),
                 None => (Dirty::NONE, vec![]),
@@ -669,6 +680,7 @@ impl State {
         match event {
             GameEvent::Started(game) => self.started(game),
             GameEvent::Played { game, start, duration } => self.played(&game, start, duration),
+            GameEvent::Position { game, position } => self.shelf.set_position(&game, position),
             // (A launch that never started: nothing runs one less, but it is no longer starting.)
             GameEvent::LaunchFailed(game) => {
                 if let Some(i) = self.session.launching.iter().position(|l| l.game == game) {

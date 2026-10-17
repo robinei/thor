@@ -58,6 +58,8 @@ pub enum How {
     Steam(u32),
     /// SteamGridDB, by name.
     SteamGridDb,
+    /// A video's length, ffprobe's (kept apart from the rest: see [`crate::store`]).
+    Duration,
 }
 
 impl How {
@@ -77,6 +79,7 @@ impl How {
             How::Tmdb(kind) => format!("tmdb:{kind}"),
             How::Steam(appid) => format!("steam:{appid}"),
             How::SteamGridDb => "steamgriddb".into(),
+            How::Duration => "duration".into(),
         }
     }
 }
@@ -164,9 +167,12 @@ pub fn spawn(fetch: Fetch, queue: &Queue, sink: impl Sink + Clone) -> std::io::R
             let store = Store::open(&shared.db).map_err(|e| log::warn!("meta: {e}")).ok();
             while let Some(w) = queue.next() {
                 let meta = shared.fetch(&w);
-                if let Some(store) = &store
-                    && let Err(e) = store.save_meta(&w.id, &w.how.source(), now(), &meta)
-                {
+                let saved = match (&store, &w.how) {
+                    (Some(store), How::Duration) => store.save_duration(&w.id, meta.duration),
+                    (Some(store), _) => store.save_meta(&w.id, &w.how.source(), now(), &meta),
+                    (None, _) => Ok(()),
+                };
+                if let Err(e) = saved {
                     log::warn!("meta: {}: {e}", w.id);
                 }
                 if meta != Meta::default() && sink.send(Event::Meta { id: w.id.clone(), meta }).is_err() {
@@ -204,8 +210,9 @@ impl Shared {
             How::Tmdb(kind) => self.tmdb(w, kind),
             How::Steam(appid) => self.steam(w, *appid),
             How::SteamGridDb => self.steamgriddb(w),
+            How::Duration => Meta { duration: w.file.as_deref().and_then(crate::mpv::duration), ..Meta::default() },
         };
-        log::info!("meta: {}: {}", w.id, if meta == Meta::default() { "nothing found" } else { "found" });
+        log::debug!("meta: {}: {}", w.id, if meta == Meta::default() { "nothing found" } else { "found" });
         meta
     }
 
@@ -317,6 +324,7 @@ impl Shared {
             summary: path("overview").unwrap_or_default(),
             year: year_in(&date),
             developer: String::new(),
+            duration: None,
         }
     }
 
@@ -334,6 +342,7 @@ impl Shared {
             summary: text(data.get("short_description")),
             year: year_in(&text(data.get("release_date").and_then(|r| r.get("date")))),
             developer: text(data.get("developers").and_then(|d| d.get(0))),
+            duration: None,
         }
     }
 

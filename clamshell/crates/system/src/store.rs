@@ -19,6 +19,7 @@
 //! - `meta(id, source, fetched, cover, shot, summary, year, developer)`: what was fetched about an entry
 //!   (see [`crate::meta`]), from where (`source`) and when (`fetched`, seconds since the epoch); a row
 //!   with nothing in it is a miss.
+//! - `durations(id, seconds)`: a video's length (ffprobe's; none: it couldn't tell).
 //! - `kv(key, value)`: `collection` and `tab` (where shelf and the second screen were), `brightness`
 //!   (the level), `keymaps` (present once the keymaps were saved: without it, the initial ones).
 
@@ -50,6 +51,7 @@ CREATE TABLE IF NOT EXISTS places (collection TEXT PRIMARY KEY, path TEXT NOT NU
 CREATE TABLE IF NOT EXISTS shares (backlight TEXT PRIMARY KEY, share INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS meta (id TEXT PRIMARY KEY, source TEXT NOT NULL, fetched INTEGER NOT NULL, cover TEXT, shot TEXT,
     summary TEXT NOT NULL, year INTEGER, developer TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS durations (id TEXT PRIMARY KEY, seconds INTEGER);
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 ";
 
@@ -287,6 +289,7 @@ impl Store {
                 summary: r.get(5)?,
                 year: r.get::<_, Option<i64>>(6)?.and_then(|y| u16::try_from(y).ok()),
                 developer: r.get(7)?,
+                duration: None,
             };
             Ok((r.get::<_, String>(0)?, Fetched { source: r.get(1)?, at: u64::try_from(r.get::<_, i64>(2)?).unwrap_or(0), meta }))
         })?;
@@ -300,6 +303,18 @@ impl Store {
             "INSERT OR REPLACE INTO meta (id, source, fetched, cover, shot, summary, year, developer) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![id, source, i64::try_from(at).unwrap_or(i64::MAX), path(&meta.cover), path(&meta.shot), meta.summary, meta.year, meta.developer],
         )?;
+        Ok(())
+    }
+
+    /// The videos' lengths read (none: ffprobe couldn't tell), by id.
+    pub fn durations(&self) -> Result<HashMap<String, Option<u32>>, Error> {
+        let mut stmt = self.db.prepare("SELECT id, seconds FROM durations")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<i64>>(1)?.and_then(|s| u32::try_from(s).ok()))))?;
+        rows.collect()
+    }
+
+    pub fn save_duration(&self, id: &str, seconds: Option<u32>) -> Result<(), Error> {
+        self.db.execute("INSERT OR REPLACE INTO durations (id, seconds) VALUES (?1, ?2)", params![id, seconds])?;
         Ok(())
     }
 
@@ -382,6 +397,10 @@ mod tests {
         assert_eq!(metas.get("x"), Some(&Fetched { source: "libretro:SNES".into(), at: 5, meta }));
         assert_eq!(metas.get("y").map(|f| &f.meta), Some(&Meta::default()), "a miss");
         assert_eq!(db.forget_misses().unwrap(), 1);
+        db.save_duration("ep", Some(2700)).unwrap();
+        db.save_duration("odd", None).unwrap();
+        let durations = db.durations().unwrap();
+        assert_eq!((durations.get("ep"), durations.get("odd")), (Some(&Some(2700)), Some(&None)));
         assert!(!db.metas().unwrap().contains_key("y") && db.metas().unwrap().contains_key("x"));
 
         // Another connection (the launcher's) sees the same.

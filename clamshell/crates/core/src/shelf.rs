@@ -129,6 +129,11 @@ impl Shelf {
         self.library.games.get(*self.list().get(position)?)
     }
 
+    /// The selected entry's index in the library.
+    pub fn selected_index(&self) -> Option<usize> {
+        self.list().get(self.cursor().index).copied()
+    }
+
     pub fn selected_game(&self) -> Option<&Game> {
         self.game_at(self.cursor().index)
     }
@@ -307,6 +312,13 @@ impl Shelf {
         }
         self.restore_current(current.as_deref().unwrap_or(""));
         self.selected != before
+    }
+
+    /// Where mpv left a video (none: at its end).
+    pub(crate) fn set_position(&mut self, id: &str, position: Option<u32>) {
+        if let Some(g) = self.library.games.iter_mut().find(|g| &*g.id == id) {
+            g.position = position;
+        }
     }
 
     /// What was fetched about entry `id` (see [`Library::apply_meta`]). Whether it is there.
@@ -492,6 +504,33 @@ mod tests {
         let fx = tap(&mut s, Id::Shelf(ShelfId::Pin));
         assert!(matches!(fx.as_slice(), [Effect::Save(Save::Dock(ids))] if ids.len() == 1), "{fx:?}");
         assert!(s.dock().is_pinned("zelda-lttp"));
+    }
+
+    #[test]
+    fn continue_plays_on_where_the_series_was_left() {
+        let mut s = state();
+        tap(&mut s, Id::Shelf(ShelfId::Collection(2)));
+        let first = "tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv";
+        let launched = |fx: &[Effect]| {
+            fx.iter().find_map(|e| match e {
+                Effect::Launch { game, .. } => Some(game.to_string()),
+                _ => None,
+            })
+        };
+        // (The demo's second episode is under way: not here.)
+        s.apply(GameEvent::Position { game: "tv:Cosmos/Season 1/2. One Voice in the Cosmic Fugue.mkv".into(), position: None }.into());
+        let fx = tap(&mut s, Id::Shelf(ShelfId::Continue));
+        assert_eq!(launched(&fx).as_deref(), Some(first), "none watched: the first");
+        s.apply(GameEvent::Started(first.into()).into());
+        s.apply(GameEvent::Position { game: first.into(), position: Some(600) }.into());
+        played(&mut s, first);
+        let fx = s.apply(ShelfEvent::Continue.into()).1;
+        assert_eq!(launched(&fx).as_deref(), Some(first), "left early: it again");
+        s.apply(GameEvent::Started(first.into()).into());
+        s.apply(GameEvent::Position { game: first.into(), position: None }.into());
+        played(&mut s, first);
+        let fx = s.apply(ShelfEvent::Continue.into()).1;
+        assert_eq!(launched(&fx).as_deref(), Some("tv:Cosmos/Season 1/2. One Voice in the Cosmic Fugue.mkv"), "watched to its end: the next");
     }
 
     #[test]
