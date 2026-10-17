@@ -4,8 +4,9 @@
 //! an app starts it when it isn't running and shows its workspace when it is (its tabs switch its windows).
 //! A long press on a running app opens its menu: Open another (an app that allows several: another
 //! instance, a tab of the same workspace), Close (with several instances: Close active, the one whose
-//! tab is in view, and Close all), closing their windows politely, as their close buttons would.
-//! On a game's tile the menu has Quit. A new instance (or game) is shown when its first
+//! tab is in view, and Close all), closing their windows politely, as their close buttons would; an
+//! instance without a window (a program left running in the background) has its scope ended. On a game's
+//! tile the menu has Quit. A new instance (or game) is shown when its first
 //! window appears, not before, also if the user has gone elsewhere meanwhile; a newer start takes its
 //! place. A program whose windows are all on the bottom screen: a tap shows them there.
 
@@ -160,20 +161,28 @@ impl State {
         let below = |w: &&Window| w.down && self.program_has(Program::App(i), w);
         let active = windows.iter().filter(top).find(|w| w.focused).or_else(|| windows.iter().filter(top).find(|w| w.visible));
         let active = active.or_else(|| windows.iter().find(top).is_none().then(|| windows.iter().filter(below).find(|w| w.visible)).flatten());
-        let unit = active.and_then(|w| w.unit.clone());
-        let unit = unit.or_else(|| self.instances(i).max_by_key(|u| u.order()).and_then(Instance::unit));
-        let Some(unit) = unit else {
-            return vec![];
-        };
-        let closing: Vec<i64> = windows.iter().filter(|w| w.unit.as_deref() == Some(unit.as_str())).map(|w| w.id).collect();
-        if closing.is_empty() { vec![] } else { vec![Effect::Window(WindowCommand::Close(closing))] }
+        let instance = active.and_then(Window::instance).or_else(|| self.instances(i).max_by_key(|u| u.order()).cloned());
+        self.close(instance.into_iter().collect())
     }
 
-    /// The menu's Close all: every instance's windows, politely.
+    /// The menu's Close all: every instance.
     fn close_all(&self, i: usize) -> Vec<Effect> {
-        let units: Vec<String> = self.instances(i).filter_map(Instance::unit).collect();
-        let closing: Vec<i64> = self.session.windows.iter().filter(|w| w.unit.as_ref().is_some_and(|u| units.contains(u))).map(|w| w.id).collect();
-        if closing.is_empty() { vec![] } else { vec![Effect::Window(WindowCommand::Close(closing))] }
+        self.close(self.instances(i).cloned().collect())
+    }
+
+    /// App instances closed: their windows, politely; the scopes of those without one ended.
+    fn close(&self, instances: Vec<Instance>) -> Vec<Effect> {
+        let of = |w: &Window, instance: &Instance| w.unit.is_some() && w.unit == instance.unit();
+        let windows: Vec<i64> = self.session.windows.iter().filter(|w| instances.iter().any(|i| of(w, i))).map(|w| w.id).collect();
+        let windowless: Vec<Instance> = instances.into_iter().filter(|i| !self.session.windows.iter().any(|w| of(w, i))).collect();
+        let mut effects = vec![];
+        if !windows.is_empty() {
+            effects.push(Effect::Window(WindowCommand::Close(windows)));
+        }
+        if !windowless.is_empty() {
+            effects.push(Effect::EndScopes(windowless));
+        }
+        effects
     }
 
     /// Whether an app's menu offers another instance: it allows several and runs.
@@ -267,6 +276,10 @@ mod tests {
         s.apply(Event::Windows(vec![win(20, "firefox", "1", true), Window { down: true, visible: false, ..of(10, &t1, false) }, down(12, true)]));
         long(&mut s, app.clone());
         assert_eq!(tap(&mut s, Id::Dock(DockId::CloseActive)), vec![Effect::Window(WindowCommand::Close(vec![12]))]);
+        // Instances without a window (left running in the background): their scopes ended.
+        s.apply(Event::Windows(vec![win(20, "firefox", "1", true)]));
+        long(&mut s, app.clone());
+        assert_eq!(tap(&mut s, Id::Dock(DockId::CloseAll)), vec![Effect::EndScopes(vec![t1.clone(), t2.clone()])]);
         // Back, or another tab: closed without a choice.
         long(&mut s, app);
         tap(&mut s, Id::Dock(DockId::Back));

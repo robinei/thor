@@ -95,6 +95,7 @@ impl Handles {
                 log::info!("effect: {effect:?}");
                 self.bluetooth.send(bluetooth::Request::Do(command.clone()));
             }
+            Effect::EndScopes(instances) => launcher::end_now(instances.iter().filter_map(Instance::unit).collect()),
             Effect::QuitGame { windows, units } => {
                 log::info!("quitting the game: windows {windows:?}, scopes {units:?}");
                 if let Some(sway) = &self.sway {

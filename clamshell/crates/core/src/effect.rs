@@ -52,6 +52,9 @@ pub enum Effect {
         windows: Vec<i64>,
         units: Vec<Instance>,
     },
+    /// End these app instances' scopes (they have no window to close): systemd asks their processes to
+    /// end.
+    EndScopes(Vec<Instance>),
     /// Record a play that ClamShell didn't start (a game Steam started): in stats.db.
     RecordPlay {
         game: Arc<str>,

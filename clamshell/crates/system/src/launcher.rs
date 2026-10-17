@@ -247,6 +247,20 @@ pub fn run_app(jobs: &Runner, instance: &Instance, command: &[String], scope: bo
     }
 }
 
+/// Ends these scopes (app instances without a window): systemd asks their processes to end, then kills
+/// what is left after its timeout. On a thread of its own (stopping waits for them).
+pub fn end_now(units: Vec<String>) {
+    let ended = worker::detached("end", move || {
+        for unit in units {
+            log::info!("{unit}: no window, ending its scope");
+            command::run("systemctl", &["--user", "stop", &unit]);
+        }
+    });
+    if let Err(e) = ended {
+        log::warn!("end: {e}");
+    }
+}
+
 /// After a polite close: kills what is left of these scopes (the game's) if they are still there in a
 /// few seconds.
 pub fn end_later(units: Vec<String>) {
