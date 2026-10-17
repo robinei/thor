@@ -36,8 +36,8 @@ impl State {
         self.session.program.as_ref().map_or(self.settings.global, |id| self.settings.of(id))
     }
 
-    /// The program the settings panel is about, by what is in front: the game, a dock app, shelf's
-    /// selection, or none (a window of no program: the panel edits the defaults).
+    /// The program the settings panel is about, by what is in front: the entry whose window is in front,
+    /// shelf's selection, or none (a window of no program: the panel edits the defaults).
     pub fn context(&self) -> Option<Program<'_>> {
         let id = match self.session.front() {
             Front::Program => {
