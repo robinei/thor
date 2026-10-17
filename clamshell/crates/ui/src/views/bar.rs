@@ -1,7 +1,7 @@
 //! The bar along the top of the second screen: a button per tab, the open one lit; volume and
 //! brightness, near the middle, where a slider has room on both sides of the finger; Bluetooth, Wi-Fi and
 //! the battery (tabs too, that carry their status), all spread evenly; then, past a faint line, the clock
-//! and the pad mouse toggle, which is a switch rather than a tab.
+//! (the time tab's button) and the pad mouse toggle, which is a switch rather than a tab.
 //!
 //! While a finger is held on volume or brightness (or slides off it sideways), a slider is drawn over
 //! the bar (the bar stays visible under it): a track whose current level sits under the finger, and the
@@ -73,7 +73,7 @@ fn tab_button(s: &State, tab: Tab) -> (Id, Icon, Tone) {
             };
             (Id::Tab(tab), icon, if open { Tone::Accent } else { tone })
         }
-        Tab::Settings | Tab::Dock | Tab::Keyboard | Tab::Touchpad | Tab::Sysinfo => {
+        Tab::Settings | Tab::Dock | Tab::Keyboard | Tab::Touchpad | Tab::Sysinfo | Tab::Time => {
             (Id::Tab(tab), Icon::for_tab(tab), if open { Tone::Accent } else { Tone::Dim })
         }
     }
@@ -93,19 +93,22 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> Rect {
     let mouse = bar.take_right(bar_h * SLOT);
     let tone = if f.s.pad().mouse_on() { Tone::Accent } else { Tone::Dim };
     icon_button(f, Id::PadMouse, mouse, Icon::Mouse, tone);
-    let clock = f.scratch.clock(f.s.unix_secs());
+    let clock = f.scratch.clock(f.s.unix_secs(), f.s.time_zones().current.as_deref());
     let size = bar_h * CLOCK_TEXT;
     let clock_w = f.c.text_width(size, &clock) + bar_h * CLOCK_PAD;
     let clock_r = bar.take_right(clock_w);
-    f.c.text_in(clock_r, size, Tone::Normal, &clock, Align::Center);
+    let tone = if f.s.bottom().tab() == Tab::Time { Tone::Accent } else { Tone::Normal };
+    f.button(Id::Tab(Tab::Time), clock_r, Look::ICON, |f| {
+        f.c.text_in(clock_r, size, tone, &clock, Align::Center);
+    });
     let line = bar_h * DIVIDER;
     f.c.fill(Rect::new(clock_r.x - 0.5, (bar_h - line) / 2.0, 1.0, line), Tone::Dim.rgb().alpha(DIVIDER_ALPHA));
 
     // Before the line, every tab, evenly spread (volume and brightness land near the middle; their
     // slider makes do with the room on either side). Each opens its tab; volume and brightness, held or
     // slid, bring up the slider, which runs along the screen's whole width.
-    let cell = bar.w.max(0.0) / Tab::ALL.len() as f32;
-    for (i, tab) in Tab::ALL.into_iter().enumerate() {
+    let cell = bar.w.max(0.0) / (Tab::ALL.len() - 1) as f32;
+    for (i, tab) in Tab::ALL.into_iter().filter(|t| *t != Tab::Time).enumerate() {
         let (id, icon, tone) = tab_button(f.s, tab);
         let slides = matches!(id, Id::Control(_));
         icon_button(f, id, Rect::new(i as f32 * cell, 0.0, cell, bar_h), icon, tone);

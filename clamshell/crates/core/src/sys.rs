@@ -45,6 +45,8 @@ pub struct Sys {
     pub battery: Battery,
     /// Why touchpad mode doesn't work, if it doesn't.
     pub touchpad_problem: Option<TouchpadProblem>,
+    /// The time zone and the ones to choose from, as last read.
+    pub time: crate::time::TimeZones,
     /// The lowest of [`WARN_AT`] warned about since the battery last charged.
     warned: Option<u8>,
 }

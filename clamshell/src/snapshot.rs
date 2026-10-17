@@ -345,6 +345,13 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
             ],
         ),
         group(vec![], vec![shot("battery.png", Bottom, demo::battery(now))]),
+        group(
+            vec![],
+            vec![
+                shot("time.png", Bottom, vec![tab(Tab::Time), Reading::Time(demo::time_zones()).into()]),
+                shot("time-europe.png", Bottom, vec![PointerEvent::Activate(ListId::Time.row(7)).into()]),
+            ],
+        ),
         group(vec![], vec![shot("bluetooth.png", Bottom, vec![tab(Tab::Bluetooth), Reading::Bluetooth(demo::bluetooth()).into()])]),
         group(
             vec![],

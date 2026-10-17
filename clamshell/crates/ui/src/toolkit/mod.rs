@@ -68,19 +68,27 @@ pub struct FrameOut {
 #[derive(Debug, Default)]
 pub struct Scratch {
     clock: Option<(u64, Fmt<8>)>,
+    /// The clock's zone, by name, as last given.
+    zone: Option<(String, jiff::tz::TimeZone)>,
 }
 
 impl Scratch {
-    /// The local time, "14:05".
-    pub(crate) fn clock(&mut self, unix_secs: u64) -> Fmt<8> {
+    /// The local time, "14:05": in `zone` (the time tab's reading, once there is one: the system's zone
+    /// as it changes), else the system's zone as the program found it.
+    pub(crate) fn clock(&mut self, unix_secs: u64, zone: Option<&str>) -> Fmt<8> {
         let minute = unix_secs / 60;
+        if self.zone.as_ref().map(|(name, _)| name.as_str()) != zone {
+            let tz = zone.and_then(|z| jiff::tz::db().get(z).ok());
+            self.zone = zone.map(|z| (z.to_owned(), tz.unwrap_or_else(jiff::tz::TimeZone::system)));
+            self.clock = None;
+        }
         match self.clock {
             Some((m, text)) if m == minute => text,
             _ => {
                 let mut text = Fmt::new();
                 if let Some(t) = i64::try_from(unix_secs).ok().and_then(|secs| jiff::Timestamp::from_second(secs).ok()) {
-                    let local = t.to_zoned(jiff::tz::TimeZone::system());
-                    let _ = write!(text, "{}", local.strftime("%H:%M"));
+                    let tz = self.zone.as_ref().map_or_else(jiff::tz::TimeZone::system, |(_, tz)| tz.clone());
+                    let _ = write!(text, "{}", t.to_zoned(tz).strftime("%H:%M"));
                 }
                 self.clock = Some((minute, text));
                 text

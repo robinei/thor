@@ -104,6 +104,7 @@ impl Handles {
             }
             Effect::Screenshot => self.system.send(crate::device::Command::Screenshot),
             Effect::Sleep => self.system.send(crate::device::Command::Sleep),
+            Effect::SetTimeZone(zone) => self.system.send(crate::device::Command::SetTimeZone(zone.clone())),
             Effect::Notify { summary, body, urgent } => {
                 self.system.send(crate::device::Command::Notify { summary: summary.clone(), body: body.clone(), urgent: *urgent })
             }
@@ -121,6 +122,9 @@ impl Handles {
             Watch::Wifi => self.wifi.send(wifi::Request::Watch(on)),
             Watch::Bluetooth => self.bluetooth.send(bluetooth::Request::Watch(on)),
             Watch::Battery => self.battery.send(if on { battery::Command::Start } else { battery::Command::Stop }),
+            // (Read once as the tab opens: it changes only by the tab.)
+            Watch::Time if on => self.system.send(crate::device::Command::ReadTime),
+            Watch::Time => {}
         }
     }
 

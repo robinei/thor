@@ -36,12 +36,15 @@ DROP_IN = "$XDG_RUNTIME_DIR/systemd/user/clamshell.service.d/thor-checks.conf"
 # pixels).
 BAR_Y = 45
 ICONS = {"settings": 55, "dock": 157, "keyboard": 260, "touchpad": 363, "sysinfo": 466, "volume": 568,
-         "brightness": 671, "bluetooth": 774, "wifi": 877, "battery": 975, "pad-mouse": 1188}
+         "brightness": 671, "bluetooth": 774, "wifi": 877, "battery": 975, "clock": 1090, "pad-mouse": 1188}
 # A list's first row (Wi-Fi's networks, Bluetooth's devices), and a row's height.
 FIRST_ROW_Y = 240
 ROW_H = 103
 # shelf's list on the main screen: where its first row's middle is, and a row's height (1920x1080).
 SHELF_X, SHELF_FIRST_Y, SHELF_ROW_H = 300, 150, 94.6
+# The time tab: its list's first row, and its header's back arrow.
+TIME_FIRST_Y = 252
+TIME_BACK = (83, 135)
 # Below the bar: the touchpad's area in touchpad mode.
 PAD_Y = 600
 
@@ -325,6 +328,33 @@ class Checks:
                    f"tab {tab()!r}")
         self.icon("dock")
         self.check("bar: a tap on the dock opens it", until(lambda: tab() == "dock"), f"tab {tab()!r}")
+
+    def time_zone(self):
+        """The clock opens the time tab; a region, then a zone in it, sets the system's time zone (the
+        session's user may: the polkit rule); back returns to the regions. The zone is put back after."""
+        before = sh("timedatectl show --property=Timezone --value").strip()
+        since = now()
+        self.icon("clock")
+        self.check("time: a tap on the clock opens the time tab", until(lambda: tab() == "time") and logged(since, "Watch(Time, true)", 2),
+                   f"tab {tab()!r}")
+        # The regions: Africa, America, Antarctica, Arctic, Asia (the fifth), ...; Asia's first zone.
+        self.i.tap(300, TIME_FIRST_Y + 4 * ROW_H)
+        time.sleep(0.5)
+        since = now()
+        self.i.tap(300, TIME_FIRST_Y)
+        zone = lambda: sh("timedatectl show --property=Timezone --value").strip()
+        self.check("  Asia, then its first zone, sets it", until(lambda: zone().startswith("Asia/")) and logged(since, "time zone: Asia/", 2),
+                   f"time zone {zone()!r}")
+        self.i.tap(*TIME_BACK)
+        time.sleep(0.5)
+        since = now()
+        # Back at the regions: the last row, UTC, is out of sight; Africa's first zone instead.
+        self.i.tap(300, TIME_FIRST_Y)
+        time.sleep(0.5)
+        self.i.tap(300, TIME_FIRST_Y)
+        self.check("  back to the regions, then Africa's first zone", until(lambda: zone().startswith("Africa/")), f"time zone {zone()!r}")
+        sh(f"sudo timedatectl set-timezone {shlex.quote(before)}")
+        self.icon("dock")
 
     def volume_hold(self):
         before = light_pixels(screenshot(), BAR_Y, 20, 600)
@@ -893,7 +923,7 @@ class Checks:
         self.check("  a long press forgets it", forgot and "Paired: yes" not in sh(f"bluetoothctl info {address}"))
 
 
-CHECKS = ["shelf_scroll", "bar_tap", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad",
+CHECKS = ["shelf_scroll", "bar_tap", "time_zone", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad",
           "pad_shelf", "pad_view", "pad_mouse", "pad_typing", "pad_held_key", "pad_unplug", "pad_guide", "keymaps", "keymap_layers",
           "keymap_actuations", "rumble", "bluetooth"]
 

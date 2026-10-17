@@ -20,6 +20,7 @@ mod radio;
 mod settings;
 mod shelf;
 mod sysinfo;
+mod time;
 mod touchpad;
 mod wifi;
 
@@ -59,6 +60,7 @@ pub fn bottom(f: &mut Frame, screen: Rect) {
         Tab::Bluetooth => bluetooth::draw(f),
         Tab::Volume => levels::draw_volume(f),
         Tab::Brightness => levels::draw_brightness(f),
+        Tab::Time => time::draw(f),
     }
     bar::draw_slider_over(f, screen, body.y);
     f.out.touchpad_area = Some(body);

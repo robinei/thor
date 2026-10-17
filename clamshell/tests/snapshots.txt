@@ -43,6 +43,8 @@ settings.png eefab07cb0ce0a26
 slider.png 824a4e30cacfcb21
 status-low.png 79c0a1612e7eea12
 sysinfo.png c4f16131cd3915a5
+time-europe.png ad437a6a8dea925b
+time.png c0cc17cac56a3ab7
 top-back.png a32a2fab862c039e
 top-played.png 3ac367c25bed5050
 top-switch.png b1c2ef62206a7e2f

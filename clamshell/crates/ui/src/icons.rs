@@ -97,6 +97,8 @@ impl Icon {
             Tab::Wifi => Icon::Wifi { bars: Some(3) },
             Tab::Battery => Icon::Battery { tenths: 10, charging: false },
             Tab::Bluetooth => Icon::Bluetooth { connected: false },
+            // (Its button is the clock.)
+            Tab::Time => Icon::Gauge,
         }
     }
 

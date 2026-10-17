@@ -1,13 +1,14 @@
 //! The device as a whole: a screenshot of both screens (grim, through the compositor's screen capture),
 //! sleep through logind (suspend-then-hibernate where the system can, a swap file to hibernate to, else
 //! suspend; waking is noticed by the clock thread, see [`crate::sleep`]), and notifications through the
-//! session's notification daemon (mako, on the main screen).
+//! session's notification daemon (mako, on the main screen); the time zone through timedated
+//! (`timedatectl`: setting it needs polkit's permission, which the image gives the session's user).
 
 use std::io;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use clamshell_core::Event;
+use clamshell_core::{Event, Reading, TimeZones};
 
 use crate::worker::Worker;
 use crate::{Sink, command, dbus};
@@ -16,7 +17,14 @@ use crate::{Sink, command, dbus};
 pub enum Command {
     Screenshot,
     Sleep,
-    Notify { summary: String, body: String, urgent: bool },
+    Notify {
+        summary: String,
+        body: String,
+        urgent: bool,
+    },
+    /// Read the time zone and the ones to choose from.
+    ReadTime,
+    SetTimeZone(String),
 }
 
 #[zbus::proxy(
@@ -45,6 +53,17 @@ pub fn spawn(screenshots: Option<PathBuf>, sink: impl Sink) -> io::Result<Worker
                     }
                 }
                 Command::Sleep => sleep(),
+                Command::ReadTime => {
+                    if sink.send(Event::Reading(Reading::Time(read_time(None)))).is_err() {
+                        return;
+                    }
+                }
+                Command::SetTimeZone(zone) => {
+                    let error = set_time_zone(&zone).err();
+                    if sink.send(Event::Reading(Reading::Time(read_time(error)))).is_err() {
+                        return;
+                    }
+                }
                 Command::Notify { summary, body, urgent } => match notify(shown, &summary, &body, urgent) {
                     Ok(id) => shown = id,
                     Err(e) => log::warn!("notification \"{summary}\": {e}"),
@@ -100,6 +119,31 @@ fn sleep() {
     if let Err(e) = slept {
         log::warn!("sleep: {e}");
     }
+}
+
+/// The time zone and the ones to choose from (with `error`, from setting it, if any).
+fn read_time(error: Option<String>) -> TimeZones {
+    let text = |args: &[&str]| command::output("timedatectl", args).map(|out| String::from_utf8_lossy(&out).into_owned());
+    let current = text(&["show", "--property=Timezone", "--value"]).map(|z| z.trim().to_owned()).filter(|z| !z.is_empty());
+    let zones: Vec<String> = text(&["list-timezones"]).map(|list| list.lines().map(str::to_owned).collect()).unwrap_or_default();
+    let error = error.or_else(|| (current.is_none() || zones.is_empty()).then(|| "Couldn't read the time zone (timedatectl)".to_owned()));
+    TimeZones { current, zones, error }
+}
+
+/// Sets the system's time zone; what timedatectl said, if it failed (polkit refusing, an unknown zone).
+fn set_time_zone(zone: &str) -> Result<(), String> {
+    let out = std::process::Command::new("timedatectl")
+        .args(["--no-ask-password", "set-timezone", zone])
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map_err(|e| format!("timedatectl: {e}"))?;
+    if out.status.success() {
+        log::info!("time zone: {zone}");
+        return Ok(());
+    }
+    let said = String::from_utf8_lossy(&out.stderr).trim().to_owned();
+    log::warn!("time zone {zone}: {said}");
+    Err(format!("Couldn't set {zone}: {said}"))
 }
 
 /// A notification through the session bus' notification daemon, replacing `replaces` (0: none); its id.

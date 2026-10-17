@@ -76,6 +76,8 @@ pub enum Effect {
     Sleep,
     /// Both screens to a file; the result comes back as [`crate::Event::Screenshot`].
     Screenshot,
+    /// Set the system's time zone (tzdata's name); the time zones are read again after.
+    SetTimeZone(String),
     /// A desktop notification (on the main screen, over a game: the notification daemon's), urgent ones
     /// staying until dismissed.
     Notify {
@@ -104,6 +106,8 @@ pub enum Watch {
     Bluetooth,
     /// The charge history and the spenders.
     Battery,
+    /// The time zone and the ones to choose from.
+    Time,
 }
 
 /// ClamShell's own files.

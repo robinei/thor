@@ -24,6 +24,8 @@ pub enum Tab {
     Wifi,
     Bluetooth,
     Battery,
+    /// The clock's: the time zone.
+    Time,
 }
 
 // (In the bar's order.)
@@ -38,6 +40,7 @@ names!(Tab {
     Bluetooth: "bluetooth";
     Wifi: "wifi";
     Battery: "battery";
+    Time: "time";
 });
 
 impl Tab {
@@ -50,6 +53,7 @@ impl Tab {
             Tab::Wifi => Some(Watch::Wifi),
             Tab::Bluetooth => Some(Watch::Bluetooth),
             Tab::Battery => Some(Watch::Battery),
+            Tab::Time => Some(Watch::Time),
             Tab::Settings | Tab::Dock | Tab::Keyboard | Tab::Sysinfo => None,
         }
     }
@@ -66,6 +70,8 @@ impl Tab {
             Reading::Audio(_) => self == Tab::Volume,
             Reading::Backlights(_) => self == Tab::Brightness,
             Reading::TouchpadProblem(_) => self == Tab::Touchpad,
+            // (The clock shows it too.)
+            Reading::Time(_) => true,
         }
     }
 }
@@ -92,6 +98,8 @@ pub struct Bottom {
     pub(crate) woken: bool,
     /// What the bottom screen shows (ClamShell's view or a window moved down), and whether it is off.
     pub(crate) screen: crate::bottom_screen::BottomScreen,
+    /// The time tab's region open (in [`crate::time::REGIONS`]), if one is.
+    pub(crate) time_region: Option<u8>,
     /// What a key just did (a level, a screenshot), shown under the bar for a moment.
     pub(crate) notice: Option<crate::hardware::Notice>,
 }

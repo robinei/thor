@@ -29,6 +29,8 @@ pub enum ListId {
     /// A keymap's layers: to show one (all, then New layer), or as a target (all but Base, then New
     /// layer).
     Layers,
+    /// The time tab's regions, or a region's zones.
+    Time,
 }
 
 /// Which part of a row a target is: the row itself, or one of its controls.
@@ -44,9 +46,9 @@ pub enum RowPart {
 }
 
 impl ListId {
-    pub const COUNT: usize = 7;
+    pub const COUNT: usize = 8;
     pub const ALL: [ListId; ListId::COUNT] =
-        [ListId::Shelf, ListId::Wifi, ListId::Bluetooth, ListId::Streams, ListId::Backlights, ListId::Keymaps, ListId::Layers];
+        [ListId::Shelf, ListId::Wifi, ListId::Bluetooth, ListId::Streams, ListId::Backlights, ListId::Keymaps, ListId::Layers, ListId::Time];
 
     pub fn index(self) -> usize {
         self as usize
@@ -257,6 +259,7 @@ impl State {
             ListId::Backlights => RowsOf::Of(self.levels.backlight_rows()),
             ListId::Keymaps => RowsOf::Of(&self.keymaps),
             ListId::Layers => RowsOf::Count(self.layer_rows()),
+            ListId::Time => RowsOf::Count(self.time_rows()),
         }
     }
 
@@ -268,6 +271,7 @@ impl State {
             ListId::Streams => self.on_stream(i, part),
             ListId::Keymaps => self.on_keymap_row(i, part, long),
             ListId::Layers => self.on_layer_row(i, part, long),
+            ListId::Time => self.on_time_row(i),
             // (A shelf game's row is its game's target; a backlight's row is only its level.)
             ListId::Shelf | ListId::Backlights => vec![],
         }
@@ -281,7 +285,7 @@ impl State {
         }
     }
 
-    fn scroll_mut(&mut self, list: ListId) -> Option<&mut Scroll> {
+    pub(crate) fn scroll_mut(&mut self, list: ListId) -> Option<&mut Scroll> {
         match list {
             ListId::Shelf => self.shelf.scroll_mut(),
             _ => self.lists.get_mut(list),

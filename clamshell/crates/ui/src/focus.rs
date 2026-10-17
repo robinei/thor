@@ -185,6 +185,9 @@ pub(crate) fn back(s: &State) -> Option<Event> {
     if s.bottom().editor().is_some() {
         return Some(PointerEvent::Activate(Id::Editor(EditorId::Cancel)).into());
     }
+    if s.bottom().tab() == Tab::Time && s.time_region().is_some() {
+        return Some(PointerEvent::Activate(Id::TimeRegions).into());
+    }
     s.keymap_screen().map(|_| PointerEvent::Activate(Id::Keymap(clamshell_core::KeymapId::Back)).into())
 }
 

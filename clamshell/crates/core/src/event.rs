@@ -93,6 +93,8 @@ pub enum Reading {
     Backlights(Vec<String>),
     /// Touchpad mode works, or why it doesn't.
     TouchpadProblem(Option<TouchpadProblem>),
+    /// The time zone and the ones to choose from (while the time tab is open, and after setting one).
+    Time(crate::time::TimeZones),
 }
 
 /// A press on a target, from touch, the mouse or the pad's A; and the pad's focus.

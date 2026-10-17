@@ -39,6 +39,7 @@ pub mod slider;
 mod sys;
 mod tab;
 mod tasks;
+pub mod time;
 pub mod touch;
 pub mod wifi;
 pub mod windows;
@@ -67,6 +68,7 @@ pub use session::{Pending, Session};
 pub use shelf::{Cursor, Shelf};
 pub use sys::{Status, Sys, TouchpadProblem};
 pub use tab::{Bottom, Tab};
+pub use time::{TimeRow, TimeZones};
 
 pub use clamshell_library::{Collection, Game, Launch, Library};
 
@@ -408,6 +410,7 @@ impl State {
             Reading::Audio(audio) => self.levels.read_audio(audio),
             Reading::Backlights(backlights) => self.levels.read_backlights(backlights),
             Reading::TouchpadProblem(problem) => replace(&mut self.sys.touchpad_problem, problem),
+            Reading::Time(time) => replace(&mut self.sys.time, time),
         };
         if changed && shown { Dirty::BOTTOM } else { Dirty::NONE }
     }
@@ -506,6 +509,10 @@ impl State {
                     None => vec![],
                 };
                 (Dirty::BOTTOM, effects)
+            }
+            Id::TimeRegions => {
+                self.time_back();
+                (Dirty::BOTTOM, vec![])
             }
             Id::PadMouse => {
                 self.pad.toggle_mouse();

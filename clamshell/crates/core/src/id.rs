@@ -49,6 +49,8 @@ pub enum Id {
     List(crate::scroll::ListId),
     /// The dark second screen (while a game runs): a tap anywhere lights it.
     Wake,
+    /// The time tab's way back from a region's zones to the regions.
+    TimeRegions,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

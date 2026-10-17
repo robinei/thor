@@ -150,6 +150,36 @@ pub fn battery(now: u64) -> Vec<Event> {
     ]
 }
 
+/// The time zones as timedated lists them (a sample), Europe/Oslo in force.
+pub fn time_zones() -> clamshell_core::TimeZones {
+    let zones = [
+        "Africa/Cairo",
+        "Africa/Lagos",
+        "America/Argentina/Buenos_Aires",
+        "America/Chicago",
+        "America/New_York",
+        "America/Sao_Paulo",
+        "Asia/Tokyo",
+        "Australia/Sydney",
+        "Europe/Amsterdam",
+        "Europe/Berlin",
+        "Europe/Copenhagen",
+        "Europe/Helsinki",
+        "Europe/Lisbon",
+        "Europe/London",
+        "Europe/Madrid",
+        "Europe/Oslo",
+        "Europe/Paris",
+        "Europe/Rome",
+        "Europe/Stockholm",
+        "Europe/Vienna",
+        "Europe/Zurich",
+        "Pacific/Auckland",
+        "UTC",
+    ];
+    clamshell_core::TimeZones { current: Some("Europe/Oslo".into()), zones: zones.map(String::from).to_vec(), error: None }
+}
+
 /// A minute of made-up readings, then the sysinfo tab.
 pub fn metrics() -> Vec<Event> {
     let mut events: Vec<Event> = (0..60u32)
