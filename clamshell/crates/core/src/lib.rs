@@ -150,6 +150,10 @@ pub struct State {
     device_session: bool,
     /// Which programs' windows go to the bottom screen.
     window_rules: bottom_screen::WindowRules,
+    /// Metadata is being fetched; what shelf showed when it was last asked for first (see
+    /// [`State::follow_shown`]).
+    fetching: bool,
+    shown: Option<(usize, Option<usize>, usize, usize, usize)>,
 }
 
 /// Replaces `slot` with `value`; whether that changed it.
@@ -252,6 +256,7 @@ impl State {
     /// where it is wanted, and idle moves on (or back).
     pub fn apply(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
         let (mut dirty, mut effects) = self.apply_event(event);
+        effects.extend(self.follow_shown());
         effects.extend(self.follow_idle());
         let (changed, applied) = self.follow_program();
         effects.extend(applied);
@@ -267,6 +272,19 @@ impl State {
             }
         }
         (dirty, effects)
+    }
+
+    /// While metadata is fetched, what shelf shows changed: its entries' metadata first.
+    fn follow_shown(&mut self) -> Option<Effect> {
+        if !self.fetching {
+            return None;
+        }
+        let view = self.shelf.view();
+        if self.shown == Some(view) {
+            return None;
+        }
+        self.shown = Some(view);
+        Some(Effect::FetchFirst(self.shelf.shown()))
     }
 
     /// The program in force changed: the pad mouse on if it wants it (Setting::PadMouse), off again if it
@@ -307,6 +325,11 @@ impl State {
                 (Dirty::BOTH, effects)
             }
             Event::Meta { id, meta } => (if self.shelf.apply_meta(&id, &meta) { Dirty::BOTH } else { Dirty::NONE }, vec![]),
+            Event::Fetching(on) => {
+                self.fetching = on;
+                self.shown = None;
+                (Dirty::NONE, vec![])
+            }
             Event::Units(units) => {
                 self.session.set_units(units);
                 self.follow_units();
@@ -833,6 +856,19 @@ mod tests {
     fn starts_where_it_was_told() {
         let s = State::new(Init { start_tab: Some(Tab::Dock), pad_mouse: true, ..init() });
         assert_eq!((s.bottom().tab(), s.pad().mouse(), s.pad().route()), (Tab::Dock, PadMouse::ByUser, PadRoute::Mouse));
+    }
+
+    #[test]
+    fn while_metadata_is_fetched_shelfs_view_goes_first() {
+        let mut s = state();
+        assert!(!s.apply(ShelfEvent::ListStep(1).into()).1.iter().any(|e| matches!(e, Effect::FetchFirst(_))), "not fetching");
+        let (_, fx) = s.apply(Event::Fetching(true));
+        assert_eq!(fx, vec![Effect::FetchFirst(vec!["metroid-zm".into(), "mk-ds".into()])], "the selected first, then the rows shown");
+        assert!(!s.apply(Event::Tick { unix_secs: 5 }).1.iter().any(|e| matches!(e, Effect::FetchFirst(_))), "the same view: not again");
+        let (_, fx) = s.apply(ShelfEvent::ListStep(1).into());
+        assert!(fx.contains(&Effect::FetchFirst(vec!["mk-ds".into(), "ff6".into()])), "{fx:?}");
+        s.apply(Event::Fetching(false));
+        assert!(!s.apply(ShelfEvent::ListStep(1).into()).1.iter().any(|e| matches!(e, Effect::FetchFirst(_))), "done");
     }
 
     #[test]

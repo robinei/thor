@@ -43,7 +43,7 @@ The rules (ids, titles, art, icons): `crates/system/src/library/content.rs`.
 
 Covers, screenshots, descriptions, developers and years are fetched in the background after start
 (`clamshell --fetch-metadata` does it without the UI): a source's `"metadata": "libretro:<system>"`
-(libretro's thumbnails, by name), `"tmdb:movie"` or `"tmdb:tv"` (needs `"keys": { "tmdb": ... }`); Steam's
+(libretro's thumbnails and database, by the file's checksum or by name), `"tmdb:movie"` or `"tmdb:tv"` (needs `"keys": { "tmdb": ... }`); Steam's
 games from the store; the desktop files' games from SteamGridDB (needs `keys.steamgriddb`). Art beside a
 file wins. The rules: `crates/system/src/meta.rs`.
 

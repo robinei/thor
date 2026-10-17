@@ -15,6 +15,8 @@ pub struct Handles {
     pub paths: Paths,
     /// Where saves go; `None` if it couldn't be opened (then nothing is kept).
     pub store: Option<Store>,
+    /// What waits for its metadata.
+    pub fetching: crate::meta::Queue,
     /// Apps and games run in systemd scopes (there is a user session).
     pub scope: bool,
     pub touchpad: Worker<touchpad::Command>,
@@ -69,6 +71,7 @@ impl Handles {
             Effect::Keymap(keymap) => self.tuning.keymap(keymap),
             Effect::CalibrateGyro => self.tuning.calibrate_gyro(),
             Effect::Save(save) => self.save(save),
+            Effect::FetchFirst(ids) => self.fetching.first(ids),
             Effect::RecordPlay { game, start, duration } => {
                 if let Some(store) = &self.store
                     && let Err(e) = store.add_play(game, *start, *duration)

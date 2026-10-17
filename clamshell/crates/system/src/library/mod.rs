@@ -161,7 +161,7 @@ pub fn load(sources: &Sources) -> Loaded {
             }
         };
         if want {
-            wanted.push(Wanted { id: g.id.clone(), key: g.key.clone(), title: g.title.clone(), how, art: g.box_front.is_some() });
+            wanted.push(Wanted { id: g.id.clone(), key: g.key.clone(), title: g.title.clone(), file: g.file.clone(), how, art: g.box_front.is_some() });
         } else if let Some(f) = fetched {
             library.apply_meta(i, &f.meta);
         }

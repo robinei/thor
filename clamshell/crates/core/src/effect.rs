@@ -52,6 +52,8 @@ pub enum Effect {
     EndSteam {
         appid: u32,
     },
+    /// What shelf shows (the selected entry first): fetch their metadata before the rest.
+    FetchFirst(Vec<Arc<str>>),
     /// Record a play that ClamShell didn't start (a game Steam started), in the database.
     RecordPlay {
         game: Arc<str>,

@@ -98,7 +98,7 @@ pub fn scan(source: &Source, home: Option<&Path>, games: &mut Vec<Game>) -> Vec<
     let launch = Launcher { args: source.launch.iter().map(|a| expand(a, home).to_string_lossy().into_owned()).collect() };
     let mut tops = Vec::new();
     for (top, path) in found {
-        let title = if path.is_file() && path.parent() == Some(dir.as_path()) { stem(&top) } else { top.clone() };
+        let title = untagged(&if path.is_file() && path.parent() == Some(dir.as_path()) { stem(&top) } else { top.clone() });
         let id = format!("{}:{}", source.id, path.strip_prefix(&dir).unwrap_or(&path).to_string_lossy());
         let art = art(&path, &dir);
         let index = if path.is_dir() && !source.items.is_empty() {
@@ -107,7 +107,7 @@ pub fn scan(source: &Source, home: Option<&Path>, games: &mut Vec<Game>) -> Vec<
                 None => continue,
             }
         } else {
-            games.push(Game { launch: launch.of(&path), ..Game::new(&id, &title) });
+            games.push(Game { launch: launch.of(&path), file: Some(path.clone()), ..Game::new(&id, &title) });
             games.len() - 1
         };
         if let Some(g) = games.get_mut(index) {
@@ -184,7 +184,7 @@ fn group(folder: &Path, dir: &Path, source: &str, items: &[String], launch: &Lau
             continue;
         }
         let box_front = art_beside(path).or_else(|| art.clone());
-        games.push(Game { parent: Some(index), box_front, launch: launch.of(path), ..Game::new(&id(path), &stem(file)) });
+        games.push(Game { parent: Some(index), box_front, launch: launch.of(path), file: Some(path.clone()), ..Game::new(&id(path), &untagged(&stem(file))) });
         members.push(games.len() - 1);
     }
     if members.is_empty() {
@@ -222,6 +222,21 @@ fn folder_art(folder: &Path) -> Option<PathBuf> {
 /// A file name without its extension.
 fn stem(name: &str) -> String {
     name.rsplit_once('.').map_or(name, |(stem, _)| stem).to_owned()
+}
+
+/// A title without the tags at its end (`(U) [!]`, `(USA) (Rev 1)`, a translation's ` # SNES`); a year in
+/// brackets stays (a film's: `Cosmos (1980)`).
+fn untagged(title: &str) -> String {
+    let mut t = title.split_once(" # ").map_or(title, |(t, _)| t).trim_end();
+    while let Some(open) = t.strip_suffix([')', ']']).and_then(|rest| rest.rfind(['(', '['])) {
+        let tag = t.get(open + 1..t.len() - 1).unwrap_or("");
+        let rest = t.get(..open).unwrap_or("").trim_end();
+        if rest.is_empty() || (tag.len() == 4 && tag.bytes().all(|b| b.is_ascii_digit())) {
+            break;
+        }
+        t = rest;
+    }
+    t.to_owned()
 }
 
 /// `~/...` against `home`.
@@ -302,6 +317,16 @@ mod tests {
         assert_eq!(episode.parent, Some(show.items[0]));
         assert!(games[tops[0]].is_group(), "a film's folder too");
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn titles_lose_their_tags_but_not_a_year() {
+        assert_eq!(untagged("7th Saga, The (U) [!]"), "7th Saga, The");
+        assert_eq!(untagged("Super Metroid (Japan, USA) (En,Ja)"), "Super Metroid");
+        assert_eq!(untagged("Star Ocean # SNES"), "Star Ocean");
+        assert_eq!(untagged("Cosmos (1980)"), "Cosmos (1980)");
+        assert_eq!(untagged("(Untitled)"), "(Untitled)");
+        assert_eq!(untagged("1. Silence"), "1. Silence");
     }
 
     #[test]

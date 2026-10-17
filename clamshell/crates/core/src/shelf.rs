@@ -172,6 +172,27 @@ impl Shelf {
         self.sync()
     }
 
+    /// What the list shows, to tell when it changed: the collection, the open group, the first row
+    /// shown, the rows, the selected position.
+    pub(crate) fn view(&self) -> (usize, Option<usize>, usize, usize, usize) {
+        let group = self.navs.get(self.current).and_then(|n| n.open.last().copied());
+        (self.current, group, self.cursor().top.floor().max(0.0) as usize, self.rows, self.cursor().index)
+    }
+
+    /// The entries in view, the selected first, then the rows shown, then the groups the list is in (a
+    /// series, when its episodes show).
+    pub(crate) fn shown(&self) -> Vec<Arc<str>> {
+        let (_, group, top, rows, selected) = self.view();
+        let list = self.list();
+        let rows = (top..top + rows + 1).filter(|&p| p != selected);
+        let mut indices: Vec<usize> = std::iter::once(selected).chain(rows).filter_map(|p| list.get(p).copied()).collect();
+        if let Some(g) = group {
+            indices.extend(self.library.groups_of(g));
+            indices.push(g);
+        }
+        indices.iter().filter_map(|&i| self.library.games.get(i)).map(|g| g.id.clone()).collect()
+    }
+
     /// Opens the selected entry if it is a group (its list shown, from its first entry). Whether it did.
     pub(crate) fn open(&mut self) -> bool {
         let Some(&g) = self.list().get(self.cursor().index) else {

@@ -60,9 +60,7 @@ pub fn start(env: &Env, paths: &Paths, layout: Arc<Mutex<TouchLayout>>, global: 
     detached("clock", clock::spawn(sink.clone()));
     detached("status", status::spawn(backlights.clone(), sink.clone()));
     detached("metrics", metrics::spawn(sink.clone()));
-    if let Some(fetch) = fetch {
-        detached("meta", meta::spawn(fetch, sink.clone()));
-    }
+    let fetching = fetch.and_then(|f| meta::spawn(f, sink.clone()).map_err(|e| log::error!("meta thread: {e}")).ok()).unwrap_or_default();
     detached("frames", frames::spawn(paths.mangohud.clone(), sink.clone()));
     let touchpad =
         started("touchpad", touchpad::spawn(touchpad::Config { device: env.touchscreen.clone(), px_per_mm: BOTTOM_PX_PER_MM }, layout, sink.clone()));
@@ -94,6 +92,7 @@ pub fn start(env: &Env, paths: &Paths, layout: Arc<Mutex<TouchLayout>>, global: 
     Handles {
         paths: paths.clone(),
         store,
+        fetching,
         scope,
         touchpad,
         mixer,

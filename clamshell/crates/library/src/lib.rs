@@ -47,6 +47,8 @@ pub struct Game {
     /// Stand-in for box art while there is none or it is loading: 0xRRGGBB, from the id.
     pub color: u32,
     pub launch: Launch,
+    /// Its file or folder in its content dir (none for Steam's games and desktop files).
+    pub file: Option<PathBuf>,
     pub box_front: Option<PathBuf>,
     /// An icon (an app's), drawn where there is no box art.
     pub icon: Option<PathBuf>,
@@ -77,6 +79,7 @@ impl Game {
             sort_key: sort::key(title),
             color: color_of(id),
             launch: Launch::None,
+            file: None,
             box_front: None,
             icon: None,
             shot: None,

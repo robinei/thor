@@ -4,9 +4,14 @@
 //! saved in the database (also what wasn't: see [`crate::store`]) and sent to the state as it arrives.
 //!
 //! - A content dir's games (`"metadata": "libretro:<system>"` in library.json, the system as libretro
-//!   names its folder): box art and a screenshot from libretro's thumbnails, by name: the entry's title
+//!   names its folder): box art and a screenshot from libretro's thumbnails, and the developer and year
+//!   from libretro's database. The game is found by its file's checksum (CRC32: a zip's from its
+//!   directory, a file up to 64 MB read whole) in the database's No-Intro list, else by name: the entry's title
 //!   as libretro names the game, or the same once case, bracketed tags (`(USA)`), "the" and punctuation
-//!   are left out; of several, the USA release, then World, then Europe.
+//!   are left out, `and` and `&` alike, and Roman numerals read as numbers, or (where only one game fits) the same but for
+//!   libretro's subtitle after ` - `; of several releases, the USA one, then World, then Europe. (A
+//!   subtitle of the title's own isn't left out: "Front Mission - Gun Hazard" is another game than
+//!   "Front Mission".)
 //! - A content dir's films or series (`"tmdb:movie"`, `"tmdb:tv"`): poster, backdrop, overview and year
 //!   from TMDB, by title (a `(1980)` at its end the year); needs `keys.tmdb` in library.json.
 //! - Steam's games: the store's description, developer, year and first screenshot (no key).
@@ -83,6 +88,8 @@ pub struct Wanted {
     /// Its key: the art cache's files are named by it.
     pub key: String,
     pub title: String,
+    /// Its file in its content dir, for its checksum.
+    pub file: Option<PathBuf>,
     pub how: How,
     /// It has art of its own already (no cover wanted).
     pub art: bool,
@@ -98,20 +105,54 @@ pub struct Fetch {
     pub db: PathBuf,
 }
 
-/// Fetches on [`THREADS`] threads until the list is done (or the UI is gone).
-pub fn spawn(fetch: Fetch, sink: impl Sink + Clone) -> std::io::Result<()> {
-    if fetch.wanted.is_empty() {
-        return Ok(());
+/// The entries waiting to be fetched for, in order.
+#[derive(Clone, Default)]
+pub struct Queue(Arc<Mutex<VecDeque<Wanted>>>);
+
+impl Queue {
+    /// These entries (those still waiting) first, in this order.
+    pub fn first(&self, ids: &[Arc<str>]) {
+        let Ok(mut q) = self.0.lock() else {
+            return;
+        };
+        for id in ids.iter().rev() {
+            if let Some(at) = q.iter().position(|w| w.id == *id)
+                && let Some(w) = q.remove(at)
+            {
+                q.push_front(w);
+            }
+        }
     }
-    log::info!("meta: fetching for {} entries", fetch.wanted.len());
-    let queue = Arc::new(Mutex::new(fetch.wanted.into_iter().collect::<VecDeque<_>>()));
-    let shared = Arc::new(Shared { keys: fetch.keys, art: fetch.art, db: fetch.db, listings: Mutex::new(HashMap::new()) });
+
+    fn next(&self) -> Option<Wanted> {
+        self.0.lock().ok()?.pop_front()
+    }
+}
+
+/// Fetches on [`THREADS`] threads until the list is done (or the UI is gone); the queue, to move what
+/// shelf shows to its front.
+pub fn spawn(fetch: Fetch, sink: impl Sink + Clone) -> std::io::Result<Queue> {
+    let queue = Queue(Arc::new(Mutex::new(fetch.wanted.into_iter().collect())));
+    let count = queue.0.lock().map_or(0, |q| q.len());
+    if count == 0 {
+        return Ok(queue);
+    }
+    log::info!("meta: fetching for {count} entries");
+    let _ = sink.send(Event::Fetching(true));
+    // The last thread done says so.
+    let running = Arc::new(std::sync::atomic::AtomicUsize::new(THREADS));
+    let shared =
+        Arc::new(Shared { keys: fetch.keys, art: fetch.art, db: fetch.db, listings: Mutex::new(HashMap::new()), databases: Mutex::new(HashMap::new()) });
     for _ in 0..THREADS {
-        let (queue, shared, sink) = (queue.clone(), shared.clone(), sink.clone());
+        let (queue, shared, sink, running) = (queue.clone(), shared.clone(), sink.clone(), running.clone());
         worker::detached("meta", move || {
             let store = Store::open(&shared.db).map_err(|e| log::warn!("meta: {e}")).ok();
             loop {
-                let Some(w) = queue.lock().ok().and_then(|mut q| q.pop_front()) else {
+                let Some(w) = queue.next() else {
+                    if running.fetch_sub(1, std::sync::atomic::Ordering::SeqCst) == 1 {
+                        log::info!("meta: done");
+                        let _ = sink.send(Event::Fetching(false));
+                    }
                     return;
                 };
                 let meta = shared.fetch(&w);
@@ -126,7 +167,7 @@ pub fn spawn(fetch: Fetch, sink: impl Sink + Clone) -> std::io::Result<()> {
             }
         })?;
     }
-    Ok(())
+    Ok(queue)
 }
 
 pub fn now() -> u64 {
@@ -139,7 +180,9 @@ struct Shared {
     keys: Keys,
     art: PathBuf,
     db: PathBuf,
-    listings: Mutex<HashMap<String, Option<Arc<Vec<String>>>>>,
+    listings: Mutex<HashMap<String, Option<Arc<Vec<Name>>>>>,
+    /// libretro's database of each system, fetched once.
+    databases: Mutex<HashMap<String, Arc<Database>>>,
 }
 
 impl Shared {
@@ -161,29 +204,74 @@ impl Shared {
     }
 
     fn libretro(&self, w: &Wanted, system: &str) -> Meta {
-        let Some(names) = self.listing(system, "Named_Boxarts") else {
-            return Meta::default();
-        };
-        let Some(name) = best_match(&w.title, &names) else {
-            return Meta::default();
-        };
-        let url = |kind: &str| format!("{LIBRETRO}/{}/{kind}/{}.png", encode(system), encode(name));
-        Meta {
-            cover: (!w.art).then(|| self.image(w, "cover", &url("Named_Boxarts"))).flatten(),
-            shot: self.image(w, "shot", &url("Named_Snaps")),
-            ..Meta::default()
+        // By checksum: the game's name in the database, as its thumbnails are named.
+        let database = self.database(system);
+        let crc = w.file.as_deref().and_then(checksum);
+        let known = crc.and_then(|c| database.names.get(&c));
+        let by_name = || self.listing(system, "Named_Boxarts").and_then(|names| best_match(&w.title, &names).map(str::to_owned));
+        let get = |c: Option<u32>, of: &HashMap<u32, String>| c.and_then(|c| of.get(&c)).cloned().unwrap_or_default();
+        let mut meta = Meta { year: crc.and_then(|c| database.years.get(&c)).copied(), developer: get(crc, &database.developers), ..Meta::default() };
+        // The checksum's name, else (none, or no pictures under it) the title's.
+        let mut tried = None;
+        for name in [known.map(|n| thumbnail_name(n)), None] {
+            let Some(name) = name.or_else(|| by_name().filter(|n| tried.as_ref() != Some(n))) else {
+                continue;
+            };
+            let url = |kind: &str| format!("{LIBRETRO}/{}/{kind}/{}.png", encode(system), encode(&name));
+            meta.cover = (!w.art).then(|| self.image(w, "cover", &url("Named_Boxarts"))).flatten();
+            meta.shot = self.image(w, "shot", &url("Named_Snaps"));
+            if meta.cover.is_some() || meta.shot.is_some() {
+                break;
+            }
+            tried = Some(name);
         }
+        meta
+    }
+
+    /// libretro's database of `system`: its No-Intro list's names, and the developers and years, by
+    /// checksum; fetched once (empty where it couldn't be).
+    fn database(&self, system: &str) -> Arc<Database> {
+        let Ok(mut databases) = self.databases.lock() else {
+            return Arc::default();
+        };
+        if let Some(d) = databases.get(system) {
+            return d.clone();
+        }
+        let dat = |dir: &str| {
+            let url = format!("{DATABASE}/{dir}/{}.dat", encode(system));
+            get(&url, &[]).map(|b| String::from_utf8_lossy(&b).into_owned()).unwrap_or_default()
+        };
+        let mut d = Database::default();
+        for (crc, fields) in dat_games(&dat("no-intro")) {
+            if let Some(name) = fields.get("name") {
+                d.names.insert(crc, name.clone());
+            }
+        }
+        for (crc, fields) in dat_games(&dat("developer")) {
+            if let Some(dev) = fields.get("developer") {
+                d.developers.insert(crc, dev.clone());
+            }
+        }
+        for (crc, fields) in dat_games(&dat("releaseyear")) {
+            if let Some(year) = fields.get("releaseyear").and_then(|y| y.parse().ok()) {
+                d.years.insert(crc, year);
+            }
+        }
+        log::info!("meta: libretro's database of {system}: {} games", d.names.len());
+        let d = Arc::new(d);
+        databases.insert(system.to_owned(), d.clone());
+        d
     }
 
     /// The names (without `.png`) in a system's folder of a kind, fetched once.
-    fn listing(&self, system: &str, kind: &str) -> Option<Arc<Vec<String>>> {
+    fn listing(&self, system: &str, kind: &str) -> Option<Arc<Vec<Name>>> {
         let id = format!("{system}/{kind}");
         let mut listings = self.listings.lock().ok()?;
         if let Some(l) = listings.get(&id) {
             return l.clone();
         }
         let page = get(&format!("{LIBRETRO}/{}/{kind}/", encode(system)), &[]).map(|b| String::from_utf8_lossy(&b).into_owned());
-        let names = page.map(|p| Arc::new(hrefs(&p).filter_map(|h| h.strip_suffix(".png").map(str::to_owned)).collect::<Vec<_>>()));
+        let names = page.map(|p| Arc::new(hrefs(&p).filter_map(|h| h.strip_suffix(".png").map(Name::new)).collect::<Vec<_>>()));
         if names.is_none() {
             log::warn!("meta: libretro has no {id}");
         }
@@ -251,6 +339,115 @@ impl Shared {
 }
 
 const LIBRETRO: &str = "https://thumbnails.libretro.com";
+const DATABASE: &str = "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat";
+
+/// A system's games in libretro's database, by their files' checksums.
+#[derive(Debug, Default)]
+struct Database {
+    names: HashMap<u32, String>,
+    developers: HashMap<u32, String>,
+    years: HashMap<u32, u16>,
+}
+
+/// A clrmamepro DAT's games: each file's checksum (`rom ( ... crc XXXXXXXX ... )`) with its game's
+/// fields (`name "..."`, `developer "..."`, ...; the first of each).
+fn dat_games(text: &str) -> Vec<(u32, HashMap<String, String>)> {
+    let mut out = Vec::new();
+    let mut fields: HashMap<String, String> = HashMap::new();
+    let mut crcs: Vec<u32> = Vec::new();
+    let mut flush = |fields: &mut HashMap<String, String>, crcs: &mut Vec<u32>| {
+        for crc in crcs.drain(..) {
+            out.push((crc, fields.clone()));
+        }
+        fields.clear();
+    };
+    for line in text.lines().map(str::trim) {
+        if line.starts_with("game (") {
+            flush(&mut fields, &mut crcs);
+        } else if let Some(rom) = line.strip_prefix("rom (") {
+            let mut words = rom.split_whitespace();
+            while let Some(w) = words.next() {
+                if w == "crc"
+                    && let Some(crc) = words.next().and_then(|c| u32::from_str_radix(c, 16).ok())
+                {
+                    crcs.push(crc);
+                }
+            }
+        } else if let Some((key, rest)) = line.split_once(' ')
+            && let Some(value) = rest.trim().strip_prefix('"').and_then(|v| v.strip_suffix('"'))
+        {
+            fields.entry(key.to_owned()).or_insert_with(|| value.to_owned());
+        }
+    }
+    flush(&mut fields, &mut crcs);
+    out
+}
+
+/// A game's name as libretro's thumbnails name it: the characters a file name can't have as `_`.
+fn thumbnail_name(name: &str) -> String {
+    name.chars().map(|c| if "&*/:`<>?\\|\"".contains(c) { '_' } else { c }).collect()
+}
+
+/// The largest a file read whole for its checksum may be (bytes): a cartridge's, not a disc's.
+const CHECKSUM_MAX: u64 = 64 << 20;
+
+/// A game file's checksum (CRC32): a zip's largest file's, from the zip's directory; a file up to
+/// [`CHECKSUM_MAX`], read whole.
+fn checksum(file: &Path) -> Option<u32> {
+    if file.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")) {
+        return zip_tail(file).and_then(|(tail, base)| zip_crc(&tail, base));
+    }
+    if std::fs::metadata(file).ok()?.len() > CHECKSUM_MAX || !file.is_file() {
+        return None;
+    }
+    Some(crc32(&std::fs::read(file).ok()?))
+}
+
+/// The end of a zip (its last MiB: the central directory of a few files is there), and where in the file
+/// it starts.
+fn zip_tail(file: &Path) -> Option<(Vec<u8>, usize)> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut f = std::fs::File::open(file).ok()?;
+    let len = f.metadata().ok()?.len();
+    let base = len.saturating_sub(1 << 20);
+    f.seek(SeekFrom::Start(base)).ok()?;
+    let mut tail = Vec::new();
+    f.read_to_end(&mut tail).ok()?;
+    Some((tail, usize::try_from(base).ok()?))
+}
+
+/// The CRC32 of a zip's largest file, from its central directory: `zip` the end of the file, from
+/// `base` in it.
+fn zip_crc(zip: &[u8], base: usize) -> Option<u32> {
+    let u16_at = |at: usize| zip.get(at..at + 2).and_then(|b| <[u8; 2]>::try_from(b).ok()).map(u16::from_le_bytes);
+    let u32_at = |at: usize| zip.get(at..at + 4).and_then(|b| <[u8; 4]>::try_from(b).ok()).map(u32::from_le_bytes);
+    // The end of the central directory: its signature, within the last 64 KiB (after it, a comment).
+    let from = zip.len().saturating_sub(65_557);
+    let end = (from..zip.len().saturating_sub(21)).rev().find(|&i| u32_at(i) == Some(0x0605_4b50))?;
+    let count = usize::from(u16_at(end + 10)?);
+    let mut at = usize::try_from(u32_at(end + 16)?).ok()?.checked_sub(base)?;
+    let mut best: Option<(u32, u32)> = None;
+    for _ in 0..count {
+        if u32_at(at)? != 0x0201_4b50 {
+            return None;
+        }
+        let (crc, size) = (u32_at(at + 16)?, u32_at(at + 24)?);
+        if best.is_none_or(|(_, s)| size > s) {
+            best = Some((crc, size));
+        }
+        at += 46 + usize::from(u16_at(at + 28)?) + usize::from(u16_at(at + 30)?) + usize::from(u16_at(at + 32)?);
+    }
+    best.map(|(crc, _)| crc)
+}
+
+/// CRC32 (as zip and No-Intro have it).
+fn crc32(data: &[u8]) -> u32 {
+    let mut table = [0u32; 256];
+    for (i, t) in (0u32..).zip(table.iter_mut()) {
+        *t = (0..8).fold(i, |c, _| if c & 1 == 1 { 0xEDB8_8320 ^ (c >> 1) } else { c >> 1 });
+    }
+    !data.iter().fold(!0u32, |c, &b| table.get(usize::from((c as u8) ^ b)).copied().unwrap_or(0) ^ (c >> 8))
+}
 
 /// The body of `url` (a GET, redirects followed), if it answered 2xx.
 fn get(url: &str, headers: &[&str]) -> Option<Vec<u8>> {
@@ -328,9 +525,11 @@ fn hrefs(page: &str) -> impl Iterator<Item = String> + '_ {
     page.split("href=\"").skip(1).filter_map(|rest| rest.split('"').next()).map(decode)
 }
 
-/// A title as compared with libretro's names: bracketed parts, "the", case and anything but letters and
-/// digits left out.
+/// A title as compared with libretro's names: bracketed parts, a ` # ...` tail, "the" and "and", case and
+/// anything but letters and digits left out, Roman numerals (II to X) as numbers.
 fn normal(title: &str) -> String {
+    // (A ` # ...` tail: a translation's, "Star Ocean # SNES".)
+    let title = title.split_once(" # ").map_or(title, |(t, _)| t);
     let mut kept = String::with_capacity(title.len());
     let mut depth = 0u32;
     for c in title.chars() {
@@ -341,27 +540,61 @@ fn normal(title: &str) -> String {
             _ => {}
         }
     }
-    kept.to_lowercase().split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty() && *w != "the").collect()
+    let numeral = |w: &str| ["ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x"].iter().position(|n| *n == w).map(|i| (i + 2).to_string());
+    kept.to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty() && *w != "the" && *w != "and")
+        .map(|w| numeral(w).unwrap_or_else(|| w.to_owned()))
+        .collect()
+}
+
+/// A title without its subtitle (what follows ` - `), if it has one.
+fn main_title(title: &str) -> Option<&str> {
+    title.split_once(" - ").map(|(main, _)| main)
+}
+
+/// A libretro name, and it as [`normal`] compares it, whole and without its subtitle.
+#[derive(Debug, Clone)]
+struct Name {
+    name: String,
+    normal: String,
+    main: Option<String>,
+}
+
+impl Name {
+    fn new(name: &str) -> Name {
+        Name { name: name.to_owned(), normal: normal(name), main: main_title(name).map(normal) }
+    }
 }
 
 /// libretro's name for `title`: the same name (its characters libretro can't have in a file name as
-/// `_`), else the release whose name is the same once [`normal`]: USA, then World, then Europe, then
-/// any other, a prototype or demo last.
-fn best_match<'a>(title: &str, names: &'a [String]) -> Option<&'a str> {
-    let exact: String = title.chars().map(|c| if "&*/:`<>?\\|\"".contains(c) { '_' } else { c }).collect();
-    if let Some(n) = names.iter().find(|n| **n == exact) {
-        return Some(n);
+/// `_`); else of the releases whose name is the same once [`normal`] (or failing that, where one game
+/// alone fits, the same but for libretro's subtitle): USA, then World, then Europe, then any other, a
+/// prototype or demo last.
+fn best_match<'a>(title: &str, names: &'a [Name]) -> Option<&'a str> {
+    let exact = thumbnail_name(title);
+    if let Some(n) = names.iter().find(|n| n.name == exact) {
+        return Some(&n.name);
     }
     let wanted = normal(title);
     if wanted.is_empty() {
         return None;
     }
-    let rank = |n: &str| {
+    let rank = |n: &&Name| {
+        let n = &n.name;
         let unfinished = ["(Beta", "(Proto", "(Demo", "(Sample", "(Pirate", "(Unl"].iter().any(|t| n.contains(t));
         let region = ["(USA", "(World", "(Europe"].iter().position(|r| n.contains(r)).unwrap_or(3);
         (unfinished, region, n.len())
     };
-    names.iter().filter(|n| normal(n) == wanted).min_by_key(|n| rank(n)).map(String::as_str)
+    let best = |found: Vec<&'a Name>| found.into_iter().min_by_key(rank).map(|n| n.name.as_str());
+    let same: Vec<&Name> = names.iter().filter(|n| n.normal == wanted).collect();
+    if !same.is_empty() {
+        return best(same);
+    }
+    // libretro's with a subtitle the title doesn't have, and only one game it can be.
+    let loose: Vec<&Name> = names.iter().filter(|n| n.main.as_ref() == Some(&wanted)).collect();
+    let games: std::collections::HashSet<&str> = loose.iter().map(|n| n.normal.as_str()).collect();
+    if games.len() == 1 { best(loose) } else { None }
 }
 
 /// A title and the year at its end in brackets, if any: "Cosmos (1980)".
@@ -387,11 +620,12 @@ fn entities(text: &str) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
 
-    fn names(list: &[&str]) -> Vec<String> {
-        list.iter().map(|s| (*s).to_owned()).collect()
+    fn names(list: &[&str]) -> Vec<Name> {
+        list.iter().map(|s| Name::new(s)).collect()
     }
 
     #[test]
@@ -417,6 +651,88 @@ mod tests {
         assert_eq!(best_match("super metroid", &list), Some("Super Metroid (Japan, USA) (En,Ja)"));
         assert_eq!(best_match("Zelda", &list), None, "nothing loosely");
         assert_eq!(best_match("(USA)", &list), None);
+        let list = names(&[
+            "Mega Man 7 (USA)",
+            "Musya - The Classic Japanese Tale of Horror (USA)",
+            "Street Fighter II (USA)",
+            "Final Fantasy - Mystic Quest (USA)",
+            "Final Fantasy II (USA)",
+            "Final Fantasy III (USA)",
+            "Super Mario World (USA)",
+            "Super Mario World 2 - Yoshi's Island (USA)",
+        ]);
+        assert_eq!(best_match("Mega Man VII (U)", &list), Some("Mega Man 7 (USA)"), "a numeral as a number");
+        assert_eq!(best_match("Musya (U) [!]", &list), Some("Musya - The Classic Japanese Tale of Horror (USA)"), "its subtitle left out");
+        assert_eq!(best_match("Street Fighter II - The World Warrior (U) [!]", &list), None, "a subtitle of its own: maybe another game");
+        assert_eq!(best_match("Final Fantasy (U)", &list), Some("Final Fantasy - Mystic Quest (USA)"), "the one game it can be");
+        assert_eq!(best_match("Rocky and Bullwinkle", &names(&["Rocky & Bullwinkle (USA)"])), Some("Rocky & Bullwinkle (USA)"), "and, &");
+        assert_eq!(best_match("Star Ocean # SNES", &names(&["Star Ocean (Japan)"])), Some("Star Ocean (Japan)"), "a translation's tail");
+        assert_eq!(best_match("Super Mario World 2 (U)", &list), Some("Super Mario World 2 - Yoshi's Island (USA)"));
+        let two = names(&["Toys - Let the Toy Wars Begin! (USA)", "Toys - Something Else (USA)"]);
+        assert_eq!(best_match("Toys", &two), None, "two games it could be: neither");
+    }
+
+    #[test]
+    fn what_shelf_shows_comes_first() {
+        let wanted = |id: &str| Wanted { id: id.into(), key: id.into(), title: id.into(), file: None, how: How::SteamGridDb, art: false };
+        let queue = Queue(Arc::new(Mutex::new(["a", "b", "c", "d"].map(wanted).into_iter().collect())));
+        queue.first(&["c".into(), "x".into(), "b".into()]);
+        let order: Vec<String> = std::iter::from_fn(|| queue.next()).map(|w| w.id.to_string()).collect();
+        assert_eq!(order, ["c", "b", "a", "d"]);
+    }
+
+    #[test]
+    fn checksums_and_databases() {
+        assert_eq!(crc32(b"123456789"), 0xCBF4_3926);
+        // A zip of two files (stored), made by hand: its directory's checksum of the larger.
+        let mut zip = Vec::new();
+        let mut directory = Vec::new();
+        for (name, data) in [("a.txt", &b"hi"[..]), ("game.sfc", &b"123456789"[..])] {
+            let offset = zip.len() as u32;
+            let crc = crc32(data);
+            let header = |sig: u32, extra: &[u8]| {
+                let mut h = sig.to_le_bytes().to_vec();
+                h.extend_from_slice(extra);
+                h
+            };
+            let mut local = header(0x0403_4b50, &[20, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+            local.extend_from_slice(&crc.to_le_bytes());
+            local.extend_from_slice(&(data.len() as u32).to_le_bytes());
+            local.extend_from_slice(&(data.len() as u32).to_le_bytes());
+            local.extend_from_slice(&(name.len() as u16).to_le_bytes());
+            local.extend_from_slice(&[0, 0]);
+            local.extend_from_slice(name.as_bytes());
+            local.extend_from_slice(data);
+            zip.extend_from_slice(&local);
+            let mut central = header(0x0201_4b50, &[20, 0, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+            central.extend_from_slice(&crc.to_le_bytes());
+            central.extend_from_slice(&(data.len() as u32).to_le_bytes());
+            central.extend_from_slice(&(data.len() as u32).to_le_bytes());
+            central.extend_from_slice(&(name.len() as u16).to_le_bytes());
+            central.extend_from_slice(&[0; 12]);
+            central.extend_from_slice(&offset.to_le_bytes());
+            central.extend_from_slice(name.as_bytes());
+            directory.extend_from_slice(&central);
+        }
+        let start = zip.len() as u32;
+        zip.extend_from_slice(&directory);
+        zip.extend_from_slice(&0x0605_4b50u32.to_le_bytes());
+        zip.extend_from_slice(&[0, 0, 0, 0, 2, 0, 2, 0]);
+        zip.extend_from_slice(&(directory.len() as u32).to_le_bytes());
+        zip.extend_from_slice(&start.to_le_bytes());
+        zip.extend_from_slice(&[0, 0]);
+        assert_eq!(zip_crc(&zip, 0), Some(0xCBF4_3926));
+        let tail = zip.get(10..).unwrap().to_vec();
+        assert_eq!(zip_crc(&tail, 10), Some(0xCBF4_3926), "its end only");
+        assert_eq!(zip_crc(b"not a zip", 0), None);
+
+        let dat = "clrmamepro (\n\tname \"x\"\n)\n\ngame (\n\tname \"Legend of Zelda, The (USA)\"\n\trom ( name \"z.sfc\" size 1 crc 777E4BC0 md5 00 )\n)\n\ngame (\n\tcomment \"Ys (USA)\"\n\tdeveloper \"Falcom\"\n\trom ( crc 0000000A )\n)\n";
+        let games = dat_games(dat);
+        assert_eq!(games.len(), 2);
+        assert_eq!(games[0].0, 0x777E_4BC0);
+        assert_eq!(games[0].1.get("name").map(String::as_str), Some("Legend of Zelda, The (USA)"));
+        assert_eq!(games[1].1.get("developer").map(String::as_str), Some("Falcom"));
+        assert_eq!(thumbnail_name("Battletoads & Double Dragon (USA)"), "Battletoads _ Double Dragon (USA)");
     }
 
     #[test]
