@@ -2,9 +2,10 @@
 //! ([`Instance::App`], as systemd lists them); all their windows are tabs on the app's one workspace
 //! (sway places a launch's first window there, the sway side moves later ones by their scope). A tap on
 //! an app starts it when it isn't running and shows its workspace when it is (its tabs switch its windows).
-//! A long press closes the instance whose tab is in view (its windows, politely, as their
-//! close buttons would); on the game tile it quits the game. A "+" on running apps that allow several
-//! starts another instance, a tab of the same workspace. A new instance (or game) is shown when its first
+//! A long press on a running app opens its menu: Open another (an app that allows several: another
+//! instance, a tab of the same workspace), Close (with several instances: Close active, the one whose
+//! tab is in view, and Close all), closing their windows politely, as their close buttons would.
+//! On a game's tile the menu has Quit. A new instance (or game) is shown when its first
 //! window appears, not before, also if the user has gone elsewhere meanwhile; a newer start takes its
 //! place. A program whose windows are all on the bottom screen: a tap shows them there.
 
@@ -14,6 +15,13 @@ use crate::id::DockId;
 use crate::instance::Instance;
 use crate::session::Pending;
 use crate::windows::Window;
+
+/// The menu a long press on a dock tile opened: an app's (by position), a running game's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DockMenu {
+    App(u16),
+    Game(u16),
+}
 
 /// A program on the dock: an app (its instances) or a running game.
 #[derive(Debug, Clone, Copy)]
@@ -75,25 +83,64 @@ impl State {
         Some(self.show_program_down(down))
     }
 
-    /// A tap or long press on a dock tile.
+    /// The menu a long press on a dock tile opened, if one is.
+    pub fn dock_menu(&self) -> Option<DockMenu> {
+        self.bottom.dock_menu
+    }
+
+    /// How many instances dock app `i` runs.
+    pub fn app_instances(&self, i: usize) -> usize {
+        self.instances(i).count()
+    }
+
+    /// A tap on a dock tile, a long press (a running app's or game's menu), or a choice in the menu
+    /// (which then closes).
     pub(crate) fn on_dock(&mut self, id: DockId, long: bool) -> Vec<Effect> {
-        match id {
-            DockId::App(i) if !long && let Some(effects) = self.tap_program(Program::App(usize::from(i))) => effects,
-            DockId::GameTile(i) if !long && let Some(effects) = self.tap_program(Program::Game(usize::from(i))) => effects,
-            DockId::App(i) => self.tap_app(usize::from(i), long),
-            DockId::GameTile(i) => self.tap_game(usize::from(i), long),
-            DockId::StartGame => vec![Effect::Window(WindowCommand::ShowShelf)],
-            DockId::NewInstance(i) => self.new_instance(usize::from(i)),
+        let menu = self.bottom.dock_menu;
+        match (id, menu) {
+            (DockId::App(i), _) if long => {
+                if self.app_running(usize::from(i)) {
+                    self.bottom.dock_menu = Some(DockMenu::App(i));
+                }
+                return vec![];
+            }
+            (DockId::GameTile(i), _) if long => {
+                self.bottom.dock_menu = Some(DockMenu::Game(i));
+                return vec![];
+            }
+            (DockId::App(_) | DockId::GameTile(_) | DockId::StartGame, _) => {}
+            (choice, _) => {
+                self.bottom.dock_menu = None;
+                return match (choice, menu) {
+                    (DockId::OpenAnother, Some(DockMenu::App(i))) => self.new_instance(usize::from(i)),
+                    (DockId::CloseActive, Some(DockMenu::App(i))) => self.close_tab(usize::from(i)),
+                    (DockId::CloseAll, Some(DockMenu::App(i))) => self.close_all(usize::from(i)),
+                    (DockId::Quit, Some(DockMenu::Game(i))) => match self.session.games.get(usize::from(i)).map(|g| g.id.clone()) {
+                        Some(id) => self.quit_game(&id),
+                        None => vec![],
+                    },
+                    _ => vec![],
+                };
+            }
+        }
+        let program = match id {
+            DockId::App(i) => Program::App(usize::from(i)),
+            DockId::GameTile(i) => Program::Game(usize::from(i)),
+            _ => return vec![Effect::Window(WindowCommand::ShowShelf)],
+        };
+        if let Some(effects) = self.tap_program(program) {
+            return effects;
+        }
+        match program {
+            Program::App(i) => self.tap_app(i),
+            Program::Game(i) => self.tap_game(i),
         }
     }
 
-    fn tap_app(&mut self, i: usize, long: bool) -> Vec<Effect> {
+    fn tap_app(&mut self, i: usize) -> Vec<Effect> {
         let Some(key) = self.app_key(i) else {
             return vec![];
         };
-        if long {
-            return self.close_tab(i);
-        }
         if self.instances(i).next().is_none() {
             // Started and not listed yet: wait for it.
             if self.app_running(i) {
@@ -104,12 +151,16 @@ impl State {
         vec![Effect::Window(WindowCommand::Focus(Instance::app_workspace(key)))]
     }
 
-    /// A long press on a running app: the instance whose tab is in view (in front, else shown), else its
-    /// latest, closed: its windows, politely.
+    /// The menu's Close (Close active): the instance whose tab is in view on the top screen (in front, else
+    /// shown), else (nothing of the app on top) on the bottom screen, else its latest, closed: its windows
+    /// on both screens, politely.
     fn close_tab(&self, i: usize) -> Vec<Effect> {
-        let mine = |w: &&Window| !w.down && self.is_instance(i, &w.workspace);
         let windows = &self.session.windows;
-        let unit = windows.iter().filter(mine).find(|w| w.focused).or_else(|| windows.iter().filter(mine).find(|w| w.visible)).and_then(|w| w.unit.clone());
+        let top = |w: &&Window| !w.down && self.is_instance(i, &w.workspace);
+        let below = |w: &&Window| w.down && self.program_has(Program::App(i), w);
+        let active = windows.iter().filter(top).find(|w| w.focused).or_else(|| windows.iter().filter(top).find(|w| w.visible));
+        let active = active.or_else(|| windows.iter().find(top).is_none().then(|| windows.iter().filter(below).find(|w| w.visible)).flatten());
+        let unit = active.and_then(|w| w.unit.clone());
         let unit = unit.or_else(|| self.instances(i).max_by_key(|u| u.order()).and_then(Instance::unit));
         let Some(unit) = unit else {
             return vec![];
@@ -118,7 +169,14 @@ impl State {
         if closing.is_empty() { vec![] } else { vec![Effect::Window(WindowCommand::Close(closing))] }
     }
 
-    /// Whether an app shows a "+": it allows several instances and runs.
+    /// The menu's Close all: every instance's windows, politely.
+    fn close_all(&self, i: usize) -> Vec<Effect> {
+        let units: Vec<String> = self.instances(i).filter_map(Instance::unit).collect();
+        let closing: Vec<i64> = self.session.windows.iter().filter(|w| w.unit.as_ref().is_some_and(|u| units.contains(u))).map(|w| w.id).collect();
+        if closing.is_empty() { vec![] } else { vec![Effect::Window(WindowCommand::Close(closing))] }
+    }
+
+    /// Whether an app's menu offers another instance: it allows several and runs.
     pub fn offers_new(&self, i: usize) -> bool {
         self.apps.list.get(i).is_some_and(|a| a.multiple && !a.command.is_empty()) && self.app_running(i)
     }
@@ -143,15 +201,11 @@ impl State {
         vec![Effect::RunApp { instance, command }]
     }
 
-    /// A running game's tile: a tap shows it, a long press quits it.
-    fn tap_game(&mut self, i: usize, long: bool) -> Vec<Effect> {
+    /// A running game's tile: a tap shows it.
+    fn tap_game(&mut self, i: usize) -> Vec<Effect> {
         let Some(g) = self.session.games.get(i) else {
             return vec![];
         };
-        if long {
-            let id = g.id.clone();
-            return self.quit_game(&id);
-        }
         vec![Effect::Window(WindowCommand::Focus(g.instance.name()))]
     }
 }
@@ -190,7 +244,10 @@ mod tests {
         assert_eq!(s.apply(Event::Windows(vec![shelf(), of(10, &t1, false)])).1, vec![focus(&t1)]);
         // "+": a second, a tab of the same workspace, shown when its own window is there.
         assert!(s.offers_new(1) && !s.offers_new(0), "Steam allows one");
-        assert_eq!(tap(&mut s, Id::Dock(DockId::NewInstance(TERMINAL))), run(t2.clone()));
+        assert_eq!(long(&mut s, app.clone()), vec![], "its menu");
+        assert_eq!(s.dock_menu(), Some(DockMenu::App(TERMINAL)));
+        assert_eq!(tap(&mut s, Id::Dock(DockId::OpenAnother)), run(t2.clone()));
+        assert_eq!(s.dock_menu(), None, "a choice closes it");
         s.apply(Event::Units(vec![t1.clone(), t2.clone()]));
         assert_eq!(s.apply(Event::Windows(vec![shelf(), of(10, &t1, false)])).1, vec![], "the first's window isn't the second's");
         assert_eq!(s.apply(Event::Windows(vec![of(10, &t1, false), of(12, &t2, false), of(13, &t2, true)])).1, vec![focus(&t2)]);
@@ -198,8 +255,22 @@ mod tests {
         assert_eq!(tap(&mut s, app.clone()), vec![focus(&t1)]);
         s.apply(Event::Windows(vec![of(10, &t1, false), Window { visible: true, ..of(12, &t2, false) }, of(13, &t2, false), win(20, "firefox", "1", true)]));
         assert_eq!(tap(&mut s, app.clone()), vec![focus(&t1)]);
-        // A long press closes the instance whose tab is in view: its windows.
-        assert_eq!(long(&mut s, app), vec![Effect::Window(WindowCommand::Close(vec![12, 13]))]);
+        // Its menu: Close active closes the instance whose tab is in view (its windows); Close all, every
+        // instance's.
+        assert_eq!(s.app_instances(1), 2);
+        long(&mut s, app.clone());
+        assert_eq!(tap(&mut s, Id::Dock(DockId::CloseActive)), vec![Effect::Window(WindowCommand::Close(vec![12, 13]))]);
+        long(&mut s, app.clone());
+        assert_eq!(tap(&mut s, Id::Dock(DockId::CloseAll)), vec![Effect::Window(WindowCommand::Close(vec![10, 12, 13]))]);
+        // All its windows on the bottom screen: active is the tab in view there.
+        let down = |id, visible| Window { down: true, visible, ..of(id, &t2, false) };
+        s.apply(Event::Windows(vec![win(20, "firefox", "1", true), Window { down: true, visible: false, ..of(10, &t1, false) }, down(12, true)]));
+        long(&mut s, app.clone());
+        assert_eq!(tap(&mut s, Id::Dock(DockId::CloseActive)), vec![Effect::Window(WindowCommand::Close(vec![12]))]);
+        // Back, or another tab: closed without a choice.
+        long(&mut s, app);
+        tap(&mut s, Id::Dock(DockId::Back));
+        assert_eq!(s.dock_menu(), None);
     }
 
     #[test]
@@ -228,7 +299,7 @@ mod tests {
     }
 
     #[test]
-    fn a_game_tile_goes_to_its_game_and_quits_it() {
+    fn a_game_tile_goes_to_its_game_and_its_menu_quits_it() {
         let mut s = state();
         let tile = Id::Dock(DockId::GameTile(0));
         assert_eq!(tap(&mut s, tile.clone()), vec![], "no game");
@@ -238,6 +309,7 @@ mod tests {
         s.apply(Event::Units(vec![game.clone()]));
         assert_eq!(s.apply(Event::Windows(vec![win(5, "retroarch", &game.name(), false)])).1, vec![focus(&game)], "shown when its window appears");
         assert_eq!(tap(&mut s, tile.clone()), vec![focus(&game)]);
-        assert_eq!(long(&mut s, tile), vec![Effect::QuitGame { windows: vec![5], units: vec![game] }]);
+        assert_eq!(long(&mut s, tile), vec![], "its menu");
+        assert_eq!(tap(&mut s, Id::Dock(DockId::Quit)), vec![Effect::QuitGame { windows: vec![5], units: vec![game] }]);
     }
 }

@@ -112,9 +112,9 @@ ctl tap app $TERMINAL
 until_ '[ -n "$(units app-terminal)" ] && [ "$(front)" = "$TS" ]' 5
 check "tap Terminal: an instance (scope), its window on the app's workspace, shown when it is there" '[ -n "$(units app-terminal)" ] && [ "$(ws_of foot)" = "$TS" ] && [ "$(front)" = "$TS" ]'
 
-ctl tap plus $TERMINAL
+ctl long app $TERMINAL; ctl tap dock-menu open-another
 until_ '[ "$(units app-terminal | wc -l)" = 2 ] && [ "$(count_on "$TS" foot)" = 2 ]' 5
-check "+: a second instance, a tab of the same workspace, in front" '[ "$(units app-terminal | wc -l)" = 2 ] && [ "$(count_on "$TS" foot)" = 2 ] && [ "$(front)" = "$TS" ]'
+check "its menu, Open another: a second instance, a tab of the same workspace, in front" '[ "$(units app-terminal | wc -l)" = 2 ] && [ "$(count_on "$TS" foot)" = 2 ] && [ "$(front)" = "$TS" ]'
 before=$(focused_id)
 ctl tap app $TERMINAL
 check_soon "tap Terminal while it is in front: it stays as it is" '[ "$(focused_id)" = "$before" ] && [ "$(front)" = "$TS" ]'
@@ -165,11 +165,11 @@ check "a second game kept beside the first: both run, each on its workspace, the
     '[ "$(units game | wc -l)" = 2 ] && [ "$(ws_of zetagame)" != "$G1" ] && [ "$(ws_of testgame)" = "$G1" ] && [ "$(front)" = "$(ws_of zetagame)" ]'
 ctl tap game 0
 check_soon "the dock's first game tile shows the first game" '[ "$(front)" = "$G1" ]'
-ctl long game 1
+ctl long game 1; ctl tap dock-menu quit
 until_ '[ "$(units game | wc -l)" = 1 ]' 10
-ctl long game 0
+ctl long game 0; ctl tap dock-menu quit
 until_ '[ -z "$(units game)" ]' 10
-check "long press on each game: closed, their scopes killed after 5 s" '[ -z "$(units game)" ]'
+check "each game's menu, Quit: closed, their scopes killed after 5 s" '[ -z "$(units game)" ]'
 check "  and the emptied workspace stays in front" '[ "$(front)" = "$G1" ]'
 plays() { [ -f "$T/pegasus/stats.db" ] && sqlite3 "$T/pegasus/stats.db" "select count(*) from plays" 2> /dev/null || echo 0; }
 until_ '[ "$(plays)" -ge 2 ]' 5
@@ -184,9 +184,9 @@ def walk(c):
         for d in c.get(k, []): walk(d)
 walk(json.load(sys.stdin))"); grep -o 'clamshell-app-[^/]*\.scope' "/proc/$pid/cgroup" 2> /dev/null | sed 's/\.scope$//'; }
 ctl tap app $TERMINAL; until_ '[ "$(front)" = "$TS" ]' 5; FRONT=$(focused_scope)
-ctl long app $TERMINAL
+ctl long app $TERMINAL; ctl tap dock-menu close-active
 until_ '[ "$(units app-terminal | wc -l)" = 1 ]' 5
-check "long press on Terminal: closes the instance whose tab is in view" '[ -n "$FRONT" ] && [ "$(units app-terminal | wc -l)" = 1 ] && ! units app-terminal | grep -qx "$FRONT"'
+check "its menu, Close active: closes the instance whose tab is in view" '[ -n "$FRONT" ] && [ "$(units app-terminal | wc -l)" = 1 ] && ! units app-terminal | grep -qx "$FRONT"'
 
 kill "$(program_pid)"; until_ '[ -z "$(program_pid)" ]' 5; start_program
 until_ '[ -n "$(program_pid)" ] && [ "$(front)" = clamshell-shelf ]' 10

@@ -98,6 +98,8 @@ pub struct Bottom {
     pub(crate) woken: bool,
     /// What the bottom screen shows (ClamShell's view or a window moved down), and whether it is off.
     pub(crate) screen: crate::bottom_screen::BottomScreen,
+    /// The menu a long press on a dock tile opened, if one is.
+    pub(crate) dock_menu: Option<crate::DockMenu>,
     /// The time tab's region open (in [`crate::time::REGIONS`]), if one is.
     pub(crate) time_region: Option<u8>,
     /// What a key just did (a level, a screenshot), shown under the bar for a moment.

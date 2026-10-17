@@ -171,7 +171,16 @@ fn km(id: KeymapId) -> Result<Id, ParseError> {
 /// What a tap or a long press (`tap TARGET`, `long TARGET`) can be on.
 pub const TARGETS: &[Form<Id>] = &[
     form("app N", "the dock's app N (by position in launcher.json)", |a| Ok(Id::Dock(DockId::App(number(arg(a, 0))?)))),
-    form("plus N", "another instance of app N", |a| Ok(Id::Dock(DockId::NewInstance(number(arg(a, 0))?)))),
+    form("dock-menu ACTION", "a dock tile's menu (after a long press): open-another, close-active, close-all, quit, back", |a| {
+        Ok(Id::Dock(match arg(a, 0) {
+            "open-another" => DockId::OpenAnother,
+            "close-active" => DockId::CloseActive,
+            "close-all" => DockId::CloseAll,
+            "quit" => DockId::Quit,
+            "back" => DockId::Back,
+            other => return Err(name_err(other)),
+        }))
+    }),
     form("game", "the dock's first game tile", |_| Ok(Id::Dock(DockId::GameTile(0)))),
     form("game N", "the dock's game tile N", |a| Ok(Id::Dock(DockId::GameTile(number(arg(a, 0))?)))),
     form("start-game", "the dock's start tile", |_| Ok(Id::Dock(DockId::StartGame))),
@@ -442,7 +451,7 @@ mod tests {
     fn taps_and_long_presses() {
         assert_eq!(parse("tap app 1"), Ok(activate(Id::Dock(DockId::App(1)))));
         assert_eq!(parse("long app 0"), Ok(vec![PointerEvent::LongPress(Id::Dock(DockId::App(0))).into()]));
-        assert_eq!(parse("tap plus 2"), Ok(activate(Id::Dock(DockId::NewInstance(2)))));
+        assert_eq!(parse("tap dock-menu open-another"), Ok(activate(Id::Dock(DockId::OpenAnother))));
         assert_eq!(parse("tap game"), Ok(activate(Id::Dock(DockId::GameTile(0)))));
         assert_eq!(parse("long game 1"), Ok(vec![PointerEvent::LongPress(Id::Dock(DockId::GameTile(1))).into()]));
         assert_eq!(parse("tap start-game"), Ok(activate(Id::Dock(DockId::StartGame))));

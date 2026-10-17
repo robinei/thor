@@ -1,20 +1,19 @@
 //! The dock: the running games first (the game, the one last in front, marked), or while none runs a
 //! "Start game" tile that goes to shelf (so the apps keep their places unless several games run); then
 //! the apps from launcher.json, as a grid of tiles on black, each an icon over its name. A tap starts an
-//! app or goes to it (again: its next instance), or shows a game; a long press closes the instance it is
-//! on, or quits the game; a "+" in the corner of a running app that allows several starts another.
-//! Running shows as colour: app icons in full colour (drawn icons green), idle ones grey and dim; "1/3"
-//! when it has several instances, the one shown first. What is wrong with the file, if anything, shows at
-//! the bottom.
+//! app or goes to it, or shows a game; a long press on a running one opens its menu (Open another, Close
+//! or Close active and Close all; a game's Quit) in the dock's place. Running shows as colour: app icons
+//! in full colour (drawn icons green), idle ones grey and dim. What is wrong with the file, if anything,
+//! shows at the bottom.
 
 use clamshell_core::apps::App;
-use clamshell_core::{DockId, Game, Id};
+use clamshell_core::{DockId, DockMenu, Game, Id};
 
 use crate::draw::{Align, Keep, Rect};
 use crate::icons::Icon;
 use crate::toolkit::Frame;
-use crate::toolkit::style::{self, Look, Text, Tone};
-use crate::toolkit::widgets::{self, CAPTION_Y, TileFace, TileShape};
+use crate::toolkit::style::{self, Text, Tone};
+use crate::toolkit::widgets::{self, CAPTION_Y, HeaderRight, TileFace, TileShape};
 
 /// The grid: at least this many rows, so a few apps keep tile-sized tiles.
 const COLUMNS: usize = 4;
@@ -28,9 +27,6 @@ const TILE: TileShape = TileShape { icon: 0.42, icon_y: 0.1, cut: Some(8.0) };
 const ART_Y: f32 = 0.6;
 const ART_ROOM: f32 = 0.03;
 const ART_RADIUS: f32 = 4.0;
-/// The "+" button's tap area (about 6 mm on the Thor) and the drawn "+", of a tile's height.
-const PLUS: f32 = 0.45;
-const PLUS_ICON: f32 = 0.17;
 /// An idle app's icon image: grey at this brightness.
 const IDLE: f32 = 0.55;
 
@@ -43,6 +39,9 @@ fn running_tone(running: bool) -> Tone {
 }
 
 pub(super) fn draw(f: &mut Frame) {
+    if let Some(menu) = f.s.dock_menu() {
+        return draw_menu(f, menu);
+    }
     let body = f.body();
     let s = f.s;
     let pad = f.pad();
@@ -95,8 +94,7 @@ fn game_tile(f: &mut Frame, r: Rect, i: usize, game: Option<&Game>, marked: bool
 }
 
 fn app_tile(f: &mut Frame, r: Rect, i: usize, app: &App) {
-    let s = f.s;
-    let running = s.app_running(i);
+    let running = f.s.app_running(i);
     let face = face(&app.name);
     widgets::tile(f, Id::Dock(DockId::App(i as u16)), r, &TILE, face, |f, r| {
         let square = TILE.square(r);
@@ -130,14 +128,33 @@ fn app_tile(f: &mut Frame, r: Rect, i: usize, app: &App) {
             }
         }
     });
-    // "+": another instance, a button of its own in the top left corner (drawn after the tile, so a tap
-    // there is its).
-    if s.offers_new(i) {
-        let side = r.h * PLUS;
-        let plus = Rect::new(r.x, r.y, side, side * 0.8);
-        f.button(Id::Dock(DockId::NewInstance(i as u16)), plus, Look { fill: None, ..Look::CARD }, |f| {
-            // Green: it starts something.
-            f.c.icon(Icon::Plus, plus.square_center(r.h * PLUS_ICON), Tone::Go);
-        });
-    }
+}
+
+/// A running app's or game's menu, from a long press on its tile: Open another (an app that allows
+/// several), Close (with several instances: Close active, the one whose tab is in view, and Close all);
+/// a game's Quit. The back arrow returns to the dock.
+fn draw_menu(f: &mut Frame, menu: DockMenu) {
+    let s = f.s;
+    let (title, items) = match menu {
+        DockMenu::App(i) => {
+            let i = usize::from(i);
+            let name = s.apps().list.get(i).map_or("", |a| a.name.as_str());
+            let several = s.app_instances(i) > 1;
+            let items: Vec<(Id, &str, Tone)> = [
+                s.offers_new(i).then_some((Id::Dock(DockId::OpenAnother), "Open another", Tone::Fn)),
+                Some((Id::Dock(DockId::CloseActive), if several { "Close active" } else { "Close" }, Tone::Accent)),
+                several.then_some((Id::Dock(DockId::CloseAll), "Close all", Tone::Accent)),
+            ]
+            .into_iter()
+            .flatten()
+            .collect();
+            (name, items)
+        }
+        DockMenu::Game(i) => {
+            let title = s.session().games().get(usize::from(i)).and_then(|g| s.game(&g.id)).map_or("Game", |g| g.title.as_str());
+            (title, vec![(Id::Dock(DockId::Quit), "Quit", Tone::Accent)])
+        }
+    };
+    let area = widgets::header(f, Some(Id::Dock(DockId::Back)), title, false, HeaderRight::None);
+    widgets::menu(f, area, &items);
 }

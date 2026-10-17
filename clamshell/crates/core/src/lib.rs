@@ -68,6 +68,7 @@ pub use session::{Pending, Session};
 pub use shelf::{Cursor, Shelf};
 pub use sys::{Status, Sys, TouchpadProblem};
 pub use tab::{Bottom, Tab};
+pub use tasks::DockMenu;
 pub use time::{TimeRow, TimeZones};
 
 pub use clamshell_library::{Collection, Game, Launch, Library};
@@ -697,6 +698,7 @@ impl State {
         }
         self.saves.resume.touch(self.unix_secs);
         self.bottom.tab = tab;
+        self.bottom.dock_menu = None;
         self.levels.leave();
         let watch = |tab: Tab, on| tab.watch().map(|w| Effect::Watch(w, on));
         watch(before, false).into_iter().chain(watch(tab, true)).collect()

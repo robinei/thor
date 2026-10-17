@@ -34,8 +34,6 @@ pub enum Icon {
     Gpu,
     Env,
     Reset,
-    /// Another instance.
-    Plus,
     // Dock apps.
     Shelf,
     Gamepad,
@@ -290,10 +288,6 @@ pub fn draw(c: &mut Canvas, icon: Icon, r: Rect, color: Color) {
             p.line(&[(11.5, 15.5), (17.5, 15.5)], LINE);
         }
         Icon::Reset => reset(p),
-        Icon::Plus => {
-            p.line(&[(12.0, 4.0), (12.0, 20.0)], 3.2);
-            p.line(&[(4.0, 12.0), (20.0, 12.0)], 3.2);
-        }
         Icon::Shelf => shelf(p),
         Icon::Gamepad => gamepad(p),
         Icon::Browser => {
@@ -568,7 +562,6 @@ mod tests {
             Icon::Gpu,
             Icon::Env,
             Icon::Reset,
-            Icon::Plus,
             Icon::Shelf,
             Icon::Gamepad,
             Icon::Browser,
@@ -606,7 +599,7 @@ mod tests {
         for icon in &all {
             seen.insert(variant(*icon));
         }
-        assert_eq!(seen.len(), 46, "a variant is missing from the list");
+        assert_eq!(seen.len(), 45, "a variant is missing from the list");
         all
     }
 
@@ -630,7 +623,6 @@ mod tests {
             Icon::Gpu => 15,
             Icon::Env => 16,
             Icon::Reset => 17,
-            Icon::Plus => 18,
             Icon::Shelf => 19,
             Icon::Gamepad => 20,
             Icon::Browser => 21,

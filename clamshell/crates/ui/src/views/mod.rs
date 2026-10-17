@@ -86,7 +86,6 @@ mod tests {
     /// Two targets may overlap only when one is drawn over the other on purpose: the dock's "+" over its
     /// app's tile.
     fn stacked(a: &Id, b: &Id) -> bool {
-        use clamshell_core::DockId;
         // A list's area lies under its rows.
         if matches!(a, Id::List(_)) || matches!(b, Id::List(_)) {
             return true;
@@ -106,11 +105,7 @@ mod tests {
         use clamshell_core::keymap::MouseButton;
         let button = |id: &Id| matches!(id, Id::Keymap(clamshell_core::KeymapId::Target(Target::Mouse(MouseButton::Left | MouseButton::Right))));
         let wheel = |id: &Id| matches!(id, Id::Keymap(clamshell_core::KeymapId::Target(Target::Mouse(MouseButton::Middle) | Target::Wheel(_))));
-        click(a, b)
-            || (button(a) && wheel(b))
-            || (wheel(a) && button(b))
-            || click(b, a)
-            || matches!((a, b), (Id::Dock(DockId::App(i)), Id::Dock(DockId::NewInstance(j))) | (Id::Dock(DockId::NewInstance(j)), Id::Dock(DockId::App(i))) if i == j)
+        click(a, b) || (button(a) && wheel(b)) || (wheel(a) && button(b)) || click(b, a)
     }
 
     fn overlap(a: Rect, b: Rect) -> bool {

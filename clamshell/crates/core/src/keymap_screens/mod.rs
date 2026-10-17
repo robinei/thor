@@ -184,6 +184,9 @@ impl State {
         if self.bottom.editor().is_some() {
             return Some(crate::Id::Editor(crate::EditorId::Cancel));
         }
+        if self.bottom.dock_menu.is_some() && self.bottom.tab == crate::Tab::Dock {
+            return Some(crate::Id::Dock(crate::DockId::Back));
+        }
         self.keymaps_shown().map(|_| crate::Id::Keymap(KeymapId::Back))
     }
 

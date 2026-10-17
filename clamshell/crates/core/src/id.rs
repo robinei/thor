@@ -75,8 +75,13 @@ pub enum DockId {
     GameTile(u16),
     /// The first tile while no game runs: to shelf, to start one.
     StartGame,
-    /// The "+" on a running app that allows several instances: another one.
-    NewInstance(u16),
+    /// The menu a long press opens (see [`crate::DockMenu`]): another instance of the app, closing the
+    /// active one (its tab in view) or all of them, quitting the game, back to the dock.
+    OpenAnother,
+    CloseActive,
+    CloseAll,
+    Quit,
+    Back,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
