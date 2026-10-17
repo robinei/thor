@@ -198,6 +198,17 @@ impl State {
         vec![]
     }
 
+    /// A window of the program in front on the top screen that is on the bottom screen, hidden by
+    /// ClamShell's view (the bar then offers to show them). By the windows' scopes, which our programs run
+    /// in (no allocation: the bar asks every frame).
+    pub fn hidden_down(&self) -> Option<i64> {
+        if self.bottom_shows_windows() {
+            return None;
+        }
+        let front = self.session.windows.iter().find(|w| w.focused && !w.down)?.unit.as_deref().filter(|u| Instance::is_ours(u))?;
+        self.windows_down().find(|w| w.unit.as_deref() == Some(front)).map(|w| w.id)
+    }
+
     /// A tap on a program whose windows are all on the bottom screen: shown there, its first tab in view.
     pub(crate) fn show_program_down(&mut self, window: i64) -> Vec<Effect> {
         self.bottom.screen.windows = true;
@@ -340,6 +351,27 @@ mod tests {
         assert!(s.bottom_shows_windows(), "the other tab");
         let fx = key(&mut s, DeviceKey::WindowUp);
         assert!(fx.contains(&Effect::Window(WindowCommand::Up { window: 2, to: Some(Instance::Game { secs: 99, n: 1 }) })), "{fx:?}");
+    }
+
+    #[test]
+    fn the_front_programs_windows_hidden_below_are_offered_and_shown() {
+        let mut s = emulator();
+        key(&mut s, DeviceKey::WindowDown);
+        s.apply(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]));
+        assert_eq!(s.hidden_down(), None, "shown");
+        key(&mut s, DeviceKey::BottomView);
+        assert_eq!(s.hidden_down(), Some(2), "ClamShell's view over them");
+        let fx = s.apply(Event::Pointer(crate::PointerEvent::Activate(crate::Id::BottomWindows))).1;
+        assert_eq!(fx, vec![Effect::Window(WindowCommand::ShowDown(2))]);
+        assert!(s.bottom_shows_windows());
+        // Another program in front: not its windows.
+        key(&mut s, DeviceKey::BottomView);
+        s.apply(Event::Windows(vec![
+            win(1, GAME, "Top", false, false),
+            win(2, GAME, "Bottom", false, true),
+            win(3, "clamshell-app-x-1-0.scope", "x", true, false),
+        ]));
+        assert_eq!(s.hidden_down(), None);
     }
 
     #[test]

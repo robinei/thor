@@ -51,6 +51,9 @@ pub enum Id {
     Wake,
     /// The time tab's way back from a region's zones to the regions.
     TimeRegions,
+    /// The bar's button for the front program's windows on the bottom screen, hidden by ClamShell's view:
+    /// they are shown.
+    BottomWindows,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

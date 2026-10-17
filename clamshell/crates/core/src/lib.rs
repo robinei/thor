@@ -510,6 +510,10 @@ impl State {
                 };
                 (Dirty::BOTTOM, effects)
             }
+            Id::BottomWindows => match self.hidden_down() {
+                Some(window) => (Dirty::BOTH, self.show_program_down(window)),
+                None => (Dirty::NONE, vec![]),
+            },
             Id::TimeRegions => {
                 self.time_back();
                 (Dirty::BOTTOM, vec![])

@@ -12,6 +12,9 @@ use crate::draw::{Canvas, Rect};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Icon {
     Apps,
+    /// The front program's windows on the bottom screen, hidden by ClamShell's view: the two screens, a
+    /// window on the lower one.
+    Windows,
     /// The pad mouse toggle: a mouse.
     Mouse,
     /// Game settings: three sliders.
@@ -309,6 +312,11 @@ pub fn draw(c: &mut Canvas, icon: Icon, r: Rect, color: Color) {
             p.frame((2.5, 4.5, 19.0, 15.0), 2.5, LINE);
             p.shape(&[(10.0, 8.5), (16.0, 12.0), (10.0, 15.5)], LINE);
         }
+        Icon::Windows => {
+            p.frame((4.0, 2.5, 16.0, 8.5), 1.5, LINE);
+            p.frame((4.0, 13.0, 16.0, 8.5), 1.5, LINE);
+            p.line(&[(4.5, 16.0), (19.5, 16.0)], LINE);
+        }
         Icon::Mouse => {
             p.frame((6.0, 3.0, 12.0, 18.0), 6.0, LINE);
             p.line(&[(12.0, 3.5), (12.0, 9.5)], LINE);
@@ -592,12 +600,13 @@ mod tests {
             Icon::Phone,
             Icon::Off,
             Icon::Layers,
+            Icon::Windows,
         ];
         let mut seen = std::collections::HashSet::new();
         for icon in &all {
             seen.insert(variant(*icon));
         }
-        assert_eq!(seen.len(), 45, "a variant is missing from the list");
+        assert_eq!(seen.len(), 46, "a variant is missing from the list");
         all
     }
 
@@ -649,6 +658,7 @@ mod tests {
             Icon::Moon => 43,
             Icon::Off => 44,
             Icon::Layers => 45,
+            Icon::Windows => 46,
         }
     }
 

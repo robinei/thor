@@ -35,8 +35,9 @@ DROP_IN = "$XDG_RUNTIME_DIR/systemd/user/clamshell.service.d/thor-checks.conf"
 # The bar's icons, in the bottom screen's pixels (their centres; the burn-in orbit moves them a few
 # pixels).
 BAR_Y = 45
-ICONS = {"settings": 55, "dock": 157, "keyboard": 260, "touchpad": 363, "sysinfo": 466, "volume": 568,
-         "brightness": 671, "bluetooth": 774, "wifi": 877, "battery": 975, "clock": 1090, "pad-mouse": 1188}
+ICONS = {"settings": 51, "dock": 145, "keyboard": 238, "touchpad": 332, "sysinfo": 425, "volume": 518,
+         "brightness": 612, "bluetooth": 706, "wifi": 800, "battery": 893, "clock": 996, "pad-mouse": 1097,
+         "windows-below": 1190}
 # A list's first row (Wi-Fi's networks, Bluetooth's devices), and a row's height.
 FIRST_ROW_Y = 240
 ROW_H = 103

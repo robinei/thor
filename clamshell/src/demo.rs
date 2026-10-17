@@ -43,6 +43,23 @@ pub fn running() -> Vec<Event> {
     ]
 }
 
+/// [`running`]'s windows, the terminal in front with a second window moved to the bottom screen.
+pub fn window_below() -> Vec<Event> {
+    let window = |id: i64, unit: &str, workspace: &str, focused: bool, down: bool| Window {
+        id,
+        app_id: "foot".into(),
+        focused,
+        unit: Some(unit.into()),
+        workspace: workspace.into(),
+        down,
+        ..Window::default()
+    };
+    vec![Event::Windows(vec![
+        window(8, "clamshell-app-terminal-1-1.scope", "clamshell-app-terminal-1-1", true, false),
+        window(10, "clamshell-app-terminal-1-1.scope", &Instance::Bottom.name(), false, true),
+    ])]
+}
+
 /// Four networks in range, one connected.
 pub fn wifi() -> Wifi {
     Wifi {

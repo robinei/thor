@@ -350,7 +350,11 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
         ),
         group(
             vec![],
-            vec![shot("launcher.png", Bottom, vec![tab(Tab::Dock), PointerEvent::HideFocus.into()]), shot("launcher-running.png", Bottom, demo::running())],
+            vec![
+                shot("launcher.png", Bottom, vec![tab(Tab::Dock), PointerEvent::HideFocus.into()]),
+                shot("launcher-running.png", Bottom, demo::running()),
+                shot("bar-window-below.png", Bottom, demo::window_below()),
+            ],
         ),
         group(
             vec![],

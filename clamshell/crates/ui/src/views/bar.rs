@@ -1,7 +1,9 @@
 //! The bar along the top of the second screen: a button per tab, the open one lit; volume and
 //! brightness, near the middle, where a slider has room on both sides of the finger; Bluetooth, Wi-Fi and
 //! the battery (tabs too, that carry their status), all spread evenly; then, past a faint line, the clock
-//! (the time tab's button) and the pad mouse toggle, which is a switch rather than a tab.
+//! (the time tab's button), the pad mouse toggle, which is a switch rather than a tab, and at the end the
+//! front program's windows on this screen when ClamShell's view hides them (a tap shows them; its room is
+//! kept without them, so nothing moves).
 //!
 //! While a finger is held on volume or brightness (or slides off it sideways), a slider is drawn over
 //! the bar (the bar stays visible under it): a track whose current level sits under the finger, and the
@@ -89,7 +91,11 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> Rect {
         let side = (bar_h * ICON).min(r.w * 0.8);
         f.button(id, r, Look::ICON, |f| f.c.icon(icon, r.square_center(side), tone));
     };
-    // On the right: the pad mouse, the clock, and the line before them.
+    // On the right: the hidden windows' button, the pad mouse, the clock, and the line before them.
+    let windows = bar.take_right(bar_h * SLOT);
+    if f.s.hidden_down().is_some() {
+        icon_button(f, Id::BottomWindows, windows, Icon::Windows, Tone::Fn);
+    }
     let mouse = bar.take_right(bar_h * SLOT);
     let tone = if f.s.pad().mouse_on() { Tone::Accent } else { Tone::Dim };
     icon_button(f, Id::PadMouse, mouse, Icon::Mouse, tone);
