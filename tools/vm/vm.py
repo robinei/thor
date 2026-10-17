@@ -197,6 +197,7 @@ def session_files():
         (f"/home/{USER}/.config/systemd/user/clamshell.service", service()),
         # (Where mako looks, also when D-Bus starts it for a notification.)
         (f"/home/{USER}/.config/mako/config", (REPO / "clamshell/mako/config").read_text()),
+        (f"/home/{USER}/.config/foot/foot.ini", (REPO / "clamshell/foot/foot.ini").read_text()),
     ]
 
 

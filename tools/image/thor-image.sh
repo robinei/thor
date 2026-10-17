@@ -184,7 +184,7 @@ arch-chroot "$ROOT" systemctl enable thor-firstboot > /dev/null
 
 say "the session (sway, ClamShell)"
 H=$ROOT/home/$USER_NAME
-mkdir -p "$H/.config/sway" "$H/.config/mako" "$H/.config/systemd/user" "$H/.local/bin"
+mkdir -p "$H/.config/sway" "$H/.config/mako" "$H/.config/foot" "$H/.config/systemd/user" "$H/.local/bin"
 install -m 755 "$PROGRAM" "$H/.local/bin/clamshell"
 # The outputs are written at each session start, as ROCKNIX does (its autostart/common/111-sway-init): the
 # panels are natively portrait, and the kernel says how to turn them (fbcon's rotate, from the panel's
@@ -207,6 +207,7 @@ echo '[ "$(tty)" = /dev/tty1 ] && "$HOME/.local/bin/thor-outputs" && exec sway >
 C=/home/$USER_NAME/.local/bin/clamshell
 install -m 644 "$(dirname "$0")/../../clamshell/sway/clamshell.conf" "$H/.config/sway/clamshell.conf"
 install -m 644 "$(dirname "$0")/../../clamshell/mako/config" "$H/.config/mako/config"
+install -m 644 "$(dirname "$0")/../../clamshell/foot/foot.ini" "$H/.config/foot/foot.ini"
 cat > "$H/.config/sway/config" <<CONFIG
 # The Thor: DSI-2 the main (top) screen, DSI-1 the second (bottom) screen (as ROCKNIX and Kettle have them).
 # The machine is here (outputs, inputs, keys, starting ClamShell); how a ClamShell session behaves

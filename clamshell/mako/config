@@ -1,13 +1,15 @@
 # Notifications (mako, started by each machine's sway config): on the main screen, over a fullscreen
 # game (the overlay layer: sway hides the top layer under fullscreen windows), in ClamShell's look:
-# black, its font at the tabs' size, the summary in the bright text and the body grey, no lines. A tap
+# black, its font at the tabs' size, the summary in the bright text and the body grey, a faint edge
+# (so a notification shows on a black screen too). A tap
 # dismisses one. Urgent ones (the battery at 5 %) stay until dismissed, the summary in the accent colour.
 layer=overlay
 anchor=top-center
 font=Noto Sans 26
 background-color=#000000
 text-color=#c8c8d0
-border-size=0
+border-size=2
+border-color=#34343c
 padding=24,40
 margin=24
 width=1000
