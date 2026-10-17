@@ -3,8 +3,8 @@
 
 use std::path::Path;
 
-use clamshell_core::apps::SHELF_APP_ID;
 use clamshell_core::instance::{Instance, STEAM_APP_PREFIX};
+use clamshell_core::windows::SHELF_APP_ID;
 
 use super::ipc::Error;
 
@@ -130,8 +130,8 @@ mod tests {
         );
         assert_eq!(show_down(7, Some("DSI-2")), r#"[con_id=7] focus; focus output "DSI-2""#);
         assert_eq!(
-            up(7, Some("clamshell-game-1-0"), Some("DSI-2")),
-            r#"[con_id=7] unmark clamshell-down-7; workspace "clamshell-game-1-0" output "DSI-2"; [con_id=7] move container to workspace "clamshell-game-1-0"; [con_id=7] focus"#
+            up(7, Some("clamshell-run-zelda_1"), Some("DSI-2")),
+            r#"[con_id=7] unmark clamshell-down-7; workspace "clamshell-run-zelda_1" output "DSI-2"; [con_id=7] move container to workspace "clamshell-run-zelda_1"; [con_id=7] focus"#
         );
         assert_eq!(up(7, None, Some("DSI-2")), r#"[con_id=7] unmark clamshell-down-7; [con_id=7] move container to output "DSI-2"; [con_id=7] focus"#);
         assert_eq!(power("DSI-1", false), r#"output "DSI-1" power off"#);

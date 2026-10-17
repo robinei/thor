@@ -1,8 +1,6 @@
-//! Programs: what settings, keymaps of their own and launches are about, a game of the library or a dock
-//! app, alike. Each is known by an id: a game's own, or a dock app's key after `app:`. The program in
-//! force is the one most recently in front (it stays while shelf or a window of no program is): its
-//! settings are in force, its keymap is the pad's, its pad mouse setting decides the pad mouse. Once it
-//! no longer runs, or (a game) is no longer the game, the game (if any) takes its place.
+//! The program in force: the running entry most recently in front (it stays while shelf or a window of
+//! none of ours is, as long as it runs; once it doesn't, the entry started last that still runs). Its
+//! settings are in force, its keymap is the pad's, its pad mouse setting decides the pad mouse.
 
 use std::sync::Arc;
 
@@ -10,15 +8,7 @@ use crate::State;
 use crate::effect::Effect;
 use crate::windows::Window;
 
-/// What comes before a dock app's key in its program id.
-const APP_PREFIX: &str = "app:";
-
-/// A dock app's program id: `app:<key>`.
-pub fn app_program(key: &str) -> Arc<str> {
-    format!("{APP_PREFIX}{key}").into()
-}
-
-/// A program as the settings panel shows it: its id and its name.
+/// A program as the settings panel shows it: its entry's id and name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Program<'a> {
     pub id: Arc<str>,
@@ -26,29 +16,14 @@ pub struct Program<'a> {
 }
 
 impl State {
-    /// The program a window belongs to: its running game's, or its dock app's.
+    /// The running entry a window belongs to, by its id.
     pub(crate) fn program_of(&self, w: &Window) -> Option<Arc<str>> {
-        if let Some(g) = self.session.game_of(w) {
-            return Some(g.id.clone());
-        }
-        let key = w.instance()?.app_key().map(str::to_owned)?;
-        self.apps.list.iter().any(|a| a.key() == key).then(|| app_program(&key))
+        self.session.running_of(w).map(|r| r.id.clone())
     }
 
-    /// A program by its id, with its name: a game of the library, a dock app.
+    /// An entry by its id, with its name.
     pub fn program(&self, id: &Arc<str>) -> Option<Program<'_>> {
-        if let Some(key) = id.strip_prefix(APP_PREFIX) {
-            return self.apps.list.iter().find(|a| a.key() == key).map(|a| Program { id: id.clone(), title: &a.name });
-        }
         self.game(id).map(|g| Program { id: id.clone(), title: &g.title })
-    }
-
-    /// Whether a program runs: a game, a dock app (any instance).
-    fn program_runs(&self, id: &str) -> bool {
-        match id.strip_prefix(APP_PREFIX) {
-            Some(key) => self.session.units.iter().any(|u| u.app_key() == Some(key)),
-            None => self.session.running_game(id).is_some(),
-        }
     }
 
     /// The program in force (see the module's doc), if any.
@@ -56,14 +31,14 @@ impl State {
         self.session.program.as_ref()
     }
 
-    /// After any event: the program in force follows the one in front (or, gone, the game running); its
+    /// After any event: the program in force follows the one in front (or, gone, the latest running); its
     /// settings applied when it changed. Whether it changed.
     pub(crate) fn follow_program(&mut self) -> (bool, Vec<Effect>) {
-        let front = self.session.windows.iter().find(|w| w.focused && !w.down).and_then(|w| self.program_of(w));
-        let is_app = |p: &str| p.starts_with(APP_PREFIX);
-        let kept = self.session.program.clone().filter(|p| self.program_runs(p) && (is_app(p) || self.session.current.as_ref() == Some(p)));
-        let program = front.or(kept).or_else(|| self.session.current.clone());
-        if program == self.session.program {
+        let session = &self.session;
+        let front = session.windows.iter().find(|w| w.focused && !w.down).and_then(|w| self.program_of(w));
+        let kept = session.program.clone().filter(|p| session.running(p).is_some());
+        let program = front.or(kept).or_else(|| session.running.last().map(|r| r.id.clone()));
+        if program == session.program {
             return (false, vec![]);
         }
         self.session.program = program.clone();

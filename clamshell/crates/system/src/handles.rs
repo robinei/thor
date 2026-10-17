@@ -80,12 +80,6 @@ impl Handles {
                     log::warn!("recording the play of {game}: {e}");
                 }
             }
-            Effect::RunApp { instance, command, program, settings, env } => {
-                // MangoHud's first, so the app's own variables can still override it (as a game's launch).
-                let mut app_env = self.tuning.apply(settings, Some(program)).map(|config| crate::tuning::mangohud_env(&config)).unwrap_or_default();
-                app_env.extend(env.iter().cloned());
-                launcher::run_app(&self.jobs, instance, command, app_env, self.scope);
-            }
             Effect::Window(command) => self.window(command),
             Effect::Sound(sound) => self.sound.send(sound.clone()),
             Effect::Brightness { level, shares } => self.brightness.send(brightness::Command { level: *level, shares: shares.clone() }),
@@ -100,19 +94,8 @@ impl Handles {
                 log::info!("effect: {effect:?}");
                 self.bluetooth.send(bluetooth::Request::Do(command.clone()));
             }
-            Effect::EndApp { key, force } => launcher::end_app(key, *force),
-            Effect::QuitGame { windows, units, steam } => {
-                log::info!("quitting the game: windows {windows:?}, scopes {units:?}, Steam app {steam:?}");
-                if let Some(sway) = &self.sway {
-                    windows.iter().for_each(|id| sway.send(sway::Command::Close(*id)));
-                }
-                launcher::end_later(units.iter().filter_map(Instance::unit).collect(), *steam);
-            }
-            Effect::KillGame { units, steam } => {
-                log::info!("force killing the game: scopes {units:?}, Steam app {steam:?}");
-                let units: Vec<String> = units.iter().filter_map(Instance::unit).collect();
-                launcher::kill_now(&units, *steam);
-            }
+            Effect::EndRun { key, force } => launcher::end_run(key, *force),
+            Effect::EndSteam { appid } => launcher::end_steam(*appid),
             Effect::Screenshot => self.system.send(crate::device::Command::Screenshot),
             Effect::Sleep => self.system.send(crate::device::Command::Sleep),
             Effect::SetTimeZone(zone) => self.system.send(crate::device::Command::SetTimeZone(zone.clone())),
@@ -146,7 +129,7 @@ impl Handles {
         match command {
             WindowCommand::ShowShelf => sway.send(sway::Command::Workspace(Instance::Shelf.name())),
             WindowCommand::Focus(name) => sway.send(sway::Command::Workspace(name.clone())),
-            WindowCommand::Move { windows, to } => sway.send(sway::Command::Move { windows: windows.clone(), workspace: to.name() }),
+            WindowCommand::Move { windows, to } => sway.send(sway::Command::Move { windows: windows.clone(), workspace: to.clone() }),
             WindowCommand::Close(ids) => ids.iter().for_each(|id| sway.send(sway::Command::Close(*id))),
             WindowCommand::Down(id) => sway.send(sway::Command::Down(*id)),
             WindowCommand::Up { window, to } => sway.send(sway::Command::Up { window: *window, workspace: to.as_ref().map(Instance::workspace) }),
@@ -163,6 +146,7 @@ impl Handles {
             Save::Brightness(text) => (self.paths.brightness.clone(), text),
             Save::Keymaps(text) => (self.paths.keymaps(), text),
             Save::WindowRules(text) => (self.paths.window_rules(), text),
+            Save::Dock(text) => (self.paths.dock(), text),
             Save::Favourites(ids) => {
                 if let Some(dir) = &self.paths.state_dir
                     && let Err(e) = favorites::write(dir, ids.iter().map(String::as_str))

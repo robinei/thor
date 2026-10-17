@@ -29,8 +29,6 @@ use crate::{Closed, Sink, command, sys, units};
 const GAME_START: Duration = Duration::from_secs(30);
 /// How long Steam may take to start a game (it may need to start or update first).
 const STEAM_START: Duration = Duration::from_secs(120);
-/// How long a game asked to quit has before what is left of it is killed.
-const QUIT_GRACE: Duration = Duration::from_secs(5);
 
 pub struct Request {
     pub game: Arc<str>,
@@ -199,7 +197,7 @@ fn start_program(config: &Config, request: &Request, argv: Vec<String>, workdir:
     let job = Job {
         unit: request.instance.name(),
         workspace: request.instance.workspace(),
-        slice: None,
+        slice: request.instance.slice(),
         argv,
         env: request.env.clone(),
         workdir,
@@ -248,26 +246,11 @@ fn steam_launchers(marker: &str) -> Vec<u32> {
         .collect()
 }
 
-/// Starts a dock app's command as a new instance (its scope and workspace): under sway, shown once its
-/// window is there; elsewhere just started (and reaped whenever it ends: systemd's list says whether it
-/// runs).
-pub fn run_app(jobs: &Runner, instance: &Instance, command: &[String], env: Vec<(String, String)>, scope: bool) {
-    let name = instance.name();
-    log::info!("running {command:?} as {name}");
-    let slice = instance.app_key().map(Instance::app_slice);
-    let job = Job { unit: name.clone(), workspace: instance.workspace(), slice, argv: command.to_vec(), env, workdir: None, scope };
-    match jobs.start(&job) {
-        Ok(Started::Sway) => {}
-        Ok(Started::Child(child)) => job::reap(child),
-        Err(e) => log::warn!("{name}: {e}"),
-    }
-}
-
-/// Ends dock app `key`'s slice, all its instances: stopped (systemd asks its processes to end, then
-/// kills what is left after its timeout), or with `force` killed at once. On a thread of its own
-/// (stopping waits for them).
-pub fn end_app(key: &str, force: bool) {
-    let slice = Instance::app_slice(key);
+/// Ends an entry's slice, all its launches: stopped (systemd asks its processes to end, then kills what
+/// is left after its timeout), or with `force` killed at once. On a thread of its own (stopping waits
+/// for them).
+pub fn end_run(key: &str, force: bool) {
+    let slice = Instance::slice_of(key);
     let ended = worker::detached("end", move || {
         log::info!("{slice}: {}", if force { "force kill" } else { "stop" });
         if force {
@@ -281,38 +264,18 @@ pub fn end_app(key: &str, force: bool) {
     }
 }
 
-/// After a polite close: kills what is left of a game in a few seconds, if it is still there: its scopes
-/// (a game we started), or the processes under Steam's launcher for its app id (a game Steam started:
-/// Proton's helpers too, which no window belongs to).
-pub fn end_later(units: Vec<String>, steam: Option<u32>) {
-    if units.is_empty() && steam.is_none() {
+/// Ends a game Steam runs (in Steam's scope, not ours): Steam's launcher for its app id and every process
+/// under it (Proton's helpers too, which no window belongs to), killed.
+pub fn end_steam(appid: u32) {
+    let launchers = steam_launchers(&format!("AppId={appid}"));
+    let tree = with_descendants(&launchers, &parents());
+    if tree.is_empty() {
         return;
     }
-    let ended = worker::detached("quit", move || {
-        thread::sleep(QUIT_GRACE);
-        kill_now(&units, steam);
-    });
-    if let Err(e) = ended {
-        log::warn!("quit: {e}");
-    }
-}
-
-/// Kills a game at once: its scopes, or Steam's launcher for its app id and every process under it.
-pub fn kill_now(units: &[String], steam: Option<u32>) {
-    for unit in units {
-        if command::succeeds("systemctl", &["--user", "is-active", "--quiet", unit]) {
-            log::info!("{unit} still runs: killing it");
-            command::run("systemctl", &["--user", "kill", "--signal=SIGKILL", unit]);
-        }
-    }
-    let launchers = steam.map(|appid| steam_launchers(&format!("AppId={appid}"))).unwrap_or_default();
-    let tree = with_descendants(&launchers, &parents());
-    if !tree.is_empty() {
-        log::info!("killing processes {tree:?}");
-        let args: Vec<String> = std::iter::once("-KILL".to_owned()).chain(tree.iter().map(u32::to_string)).collect();
-        let args: Vec<&str> = args.iter().map(String::as_str).collect();
-        command::run("kill", &args);
-    }
+    log::info!("Steam app {appid}: killing processes {tree:?}");
+    let args: Vec<String> = std::iter::once("-KILL".to_owned()).chain(tree.iter().map(u32::to_string)).collect();
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    command::run("kill", &args);
 }
 
 /// Every process's parent, from /proc/<pid>/stat (its fourth field, after the name in parentheses).
@@ -369,7 +332,7 @@ mod tests {
         let launcher = spawn(config(Some(db.clone())), tx).unwrap();
         let id: Arc<str> = script.to_string_lossy().into();
         let launch = Launch::Command(LaunchSpec { command: "\"{file.path}\"".into(), workdir: String::new(), basedir: dir.clone() });
-        let instance = Instance::Game { secs: u64::from(std::process::id()), n: 0 };
+        let instance = Instance::Run { key: "test_1".into(), secs: u64::from(std::process::id()), n: 0 };
         launcher.send(Request { game: id.clone(), instance, launch, file: Some(script.clone()), env: vec![] });
         drop(launcher);
 
@@ -386,7 +349,7 @@ mod tests {
         let (tx, events) = mpsc::channel();
         let launcher = spawn(config(None), tx).unwrap();
         let launch = Launch::Command(LaunchSpec { command: "/nonexistent/game".into(), workdir: String::new(), basedir: "/".into() });
-        let instance = Instance::Game { secs: u64::from(std::process::id()), n: 1 };
+        let instance = Instance::Run { key: "test_1".into(), secs: u64::from(std::process::id()), n: 1 };
         launcher.send(Request { game: "x".into(), instance, launch, file: Some("/tmp".into()), env: vec![] });
         drop(launcher);
         assert_eq!(events.iter().collect::<Vec<_>>(), vec![Event::Game(GameEvent::LaunchFailed("x".into()))]);

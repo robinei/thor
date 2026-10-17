@@ -31,6 +31,8 @@ pub enum ListId {
     Layers,
     /// The time tab's regions, or a region's zones.
     Time,
+    /// The dock: its rows of tiles ([`crate::dock::DOCK_COLUMNS`] a row).
+    Dock,
 }
 
 /// Which part of a row a target is: the row itself, or one of its controls.
@@ -46,9 +48,9 @@ pub enum RowPart {
 }
 
 impl ListId {
-    pub const COUNT: usize = 8;
+    pub const COUNT: usize = 9;
     pub const ALL: [ListId; ListId::COUNT] =
-        [ListId::Shelf, ListId::Wifi, ListId::Bluetooth, ListId::Streams, ListId::Backlights, ListId::Keymaps, ListId::Layers, ListId::Time];
+        [ListId::Shelf, ListId::Wifi, ListId::Bluetooth, ListId::Streams, ListId::Backlights, ListId::Keymaps, ListId::Layers, ListId::Time, ListId::Dock];
 
     pub fn index(self) -> usize {
         self as usize
@@ -59,10 +61,11 @@ impl ListId {
         Id::Row { list: self, i, part: RowPart::Main }
     }
 
-    /// The list and row a target is in, if it is a row's.
+    /// The list and row a target is in, if it is a row's (a dock tile's: its row of tiles).
     pub fn of(id: &Id) -> Option<(ListId, usize)> {
         match id {
             Id::Row { list, i, .. } => Some((*list, usize::from(*i))),
+            Id::Dock(crate::DockId::Entry(i)) => Some((ListId::Dock, usize::from(*i) / crate::dock::DOCK_COLUMNS)),
             _ => None,
         }
     }
@@ -260,6 +263,7 @@ impl State {
             ListId::Keymaps => RowsOf::Count(self.keymap_rows_len()),
             ListId::Layers => RowsOf::Count(self.layer_rows()),
             ListId::Time => RowsOf::Count(self.time_rows()),
+            ListId::Dock => RowsOf::Count(self.dock.items().len().div_ceil(crate::dock::DOCK_COLUMNS)),
         }
     }
 
@@ -272,6 +276,8 @@ impl State {
             ListId::Keymaps => self.on_keymap_row(i, part, long),
             ListId::Layers => self.on_layer_row(i, part, long),
             ListId::Time => self.on_time_row(i),
+            // (Its tiles are targets of their own.)
+            ListId::Dock => vec![],
             // (A shelf game's row is its game's target; a backlight's row is only its level.)
             ListId::Shelf | ListId::Backlights => vec![],
         }

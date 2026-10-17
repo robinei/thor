@@ -32,8 +32,6 @@ const ART_H: f32 = 0.78;
 const TITLE: f32 = 0.05;
 const DETAIL: f32 = 0.03;
 const DESCRIPTION: f32 = 0.028;
-/// The choice's buttons' height, of the screen's height.
-const BUTTON: f32 = 0.075;
 
 /// Draws shelf over `screen`; returns how many list rows fit (the state keeps the selection within
 /// them).
@@ -80,7 +78,7 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
         let thumb_h = r.h * THUMB;
         let thumb = Rect::new(r.x + pad * 0.4, r.y + (r.h - thumb_h) / 2.0, thumb_h * BOX_ASPECT, thumb_h);
         f.button(Id::Shelf(ShelfId::Game(game.id.clone())), r, look, |f| {
-            widgets::art(f.c, f.images, game, thumb, THUMB_RADIUS, Align::Center);
+            widgets::art(f.c, f.images, game, thumb, THUMB_RADIUS, Align::Center, false);
             let tx = thumb.x + thumb.w + pad * 0.6;
             let title = Rect::new(tx, r.y, r.x + r.w - tx - pad * 0.3, r.h);
             f.c.text_fit(title, row_h * ROW_TEXT, Tone::high_if(selected), &game.title, Keep::Start);
@@ -96,7 +94,7 @@ fn selected(f: &mut Frame, game: &Game, screen: Rect, list: Rect, pad: f32) {
     let h = screen.h;
     let art_h = list.h * ART_H;
     let box_rect = Rect::new(screen.w * LIST_W + pad, list.y, art_h * BOX_ASPECT, art_h);
-    widgets::art(f.c, f.images, game, box_rect, RADIUS_L, Align::Start);
+    widgets::art(f.c, f.images, game, box_rect, RADIUS_L, Align::Start, false);
     let tx = box_rect.x + box_rect.w + pad * 1.2;
     let text_w = screen.w - pad - tx;
     let mut col = Column::new(Rect::new(tx, list.y, text_w, list.h));
@@ -104,17 +102,10 @@ fn selected(f: &mut Frame, game: &Game, screen: Rect, list: Rect, pad: f32) {
     let detail = h * DETAIL;
     col.skip(f.c.wrap(span(&col), h * TITLE, Tone::High, &game.title, 3) + pad * 0.4);
 
-    // What playing it does now: show it (it runs), or with another game running, the choice: keep that
-    // one running, or close it; then whether it is a favourite. Each of these on a line of its own.
-    let mut choices = None;
+    // Whether it runs (A shows it), then whether it is a favourite, each on a line of its own.
     let mut mx = tx;
-    if s.session().running_game(&game.id).is_some() {
+    if s.session().running(&game.id).is_some() {
         mx += f.c.text(mx, col.y(), detail, Tone::Go, "Running · A to show it") + pad;
-    } else if let Some(other) = s.current_game().and_then(|id| s.game(id)) {
-        let text = Fmt::<160>::of(format_args!("{} is running. Start this and", other.title));
-        col.skip(f.c.wrap(span(&col), detail, Tone::Normal, &text, 2) + pad * 0.4);
-        choices = Some(Rect::new(tx, col.y(), text_w, h * BUTTON));
-        col.skip(h * BUTTON + pad * 0.6);
     }
     if mx > tx {
         col.skip(detail * WRAP_LINE + pad * 0.2);
@@ -150,19 +141,6 @@ fn selected(f: &mut Frame, game: &Game, screen: Rect, list: Rect, pad: f32) {
     let lines = ((list.y + list.h - top) / (size * WRAP_LINE)).floor().max(0.0) as usize;
     if !text.is_empty() && lines > 0 {
         f.c.wrap(Span { x: tx, y: top, w: text_w }, size, Tone::Normal, text, lines.min(12));
-    }
-
-    // The choice's buttons (targets, drawn after the text): keep the running game, or close it.
-    if let Some(row) = choices {
-        let look = Look::CARD;
-        let keep = row.cell(2, 1, pad * 0.5, 0);
-        f.button(Id::Shelf(ShelfId::StartKeep), keep, look, |f| {
-            f.c.text_in(keep, detail, Tone::High, "keep it running", Align::Center);
-        });
-        let close = row.cell(2, 1, pad * 0.5, 1);
-        f.button(Id::Shelf(ShelfId::StartClose), close, look, |f| {
-            f.c.text_in(close, detail, Tone::High, "close it", Align::Center);
-        });
     }
 }
 

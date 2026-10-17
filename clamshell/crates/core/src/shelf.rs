@@ -279,8 +279,8 @@ mod tests {
         s.apply(ShelfEvent::CollectionStep(1).into());
         assert_eq!(s.shelf().current(), 1);
         assert_eq!(s.shelf().cursor().index, 0);
-        s.apply(ShelfEvent::CollectionStep(1).into());
-        assert_eq!(s.shelf().current(), 0, "wraps around");
+        s.apply(ShelfEvent::CollectionStep(2).into());
+        assert_eq!(s.shelf().current(), 0, "wraps around (past Apps)");
         assert_eq!(s.shelf().cursor().index, 2);
     }
 

@@ -1,5 +1,5 @@
-//! Our instances as systemd sees them: the user manager's scopes named `clamshell-app-*` and
-//! `clamshell-game-*` (D-Bus, org.freedesktop.systemd1), listed at start and again whenever it signals a
+//! Our launches as systemd sees them: the user manager's scopes named `clamshell-run-*` (D-Bus,
+//! org.freedesktop.systemd1), listed at start and again whenever it signals a
 //! unit of ours coming, starting or going. This is the truth for what runs: a scope lives as long as any
 //! of its processes, whatever its windows do, and survives a restart of ClamShell.
 
@@ -17,7 +17,7 @@ use zbus::zvariant::OwnedObjectPath;
 use crate::worker::{self, Changed, Ended, Service, lost_on};
 use crate::{Closed, Sink, dbus};
 
-const PATTERNS: [&str; 2] = ["clamshell-app-*.scope", "clamshell-game-*.scope"];
+const PATTERNS: [&str; 1] = ["clamshell-run-*.scope"];
 
 /// How long to wait before trying the user manager again.
 const RETRY: Duration = Duration::from_secs(5);
@@ -182,7 +182,7 @@ mod live {
     #[allow(clippy::unwrap_used)]
     fn a_scope_comes_and_goes() {
         let manager = manager(&Connection::session().unwrap()).unwrap();
-        let instance = Instance::App { key: "unittest".into(), secs: u64::from(std::process::id()), n: 0 };
+        let instance = Instance::Run { key: "unittest".into(), secs: u64::from(std::process::id()), n: 0 };
         let name = instance.name();
         let mut child =
             Command::new("systemd-run").args(["--user", "--scope", "--quiet", "--collect", &format!("--unit={name}"), "--", "sleep", "1"]).spawn().unwrap();
@@ -194,6 +194,6 @@ mod live {
         wait(&instance.unit().unwrap(), Duration::from_secs(1)).unwrap();
         child.wait().unwrap();
         assert!(!list(&manager).unwrap().contains(&instance));
-        assert!(wait("clamshell-app-never-0-0.scope", Duration::from_millis(300)).is_err());
+        assert!(wait("clamshell-run-never-0-0.scope", Duration::from_millis(300)).is_err());
     }
 }

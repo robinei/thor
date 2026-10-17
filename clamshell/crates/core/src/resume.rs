@@ -93,7 +93,7 @@ mod tests {
             Some(Effect::Save(Save::Resume(text))) => text.clone(),
             other => format!("{other:?}"),
         };
-        assert_eq!(text, "More\n@mode\tsysinfo\nGames\tff6\nMore\tff6\n");
+        assert_eq!(text, "More\n@mode\tsysinfo\nGames\tff6\nMore\tff6\nApps\tdesktop:steam\n");
         let mut fresh = State::new(Init { resume: Some(text), ..init() });
         assert_eq!(fresh.shelf().collection().map(|c| c.name.as_str()), Some("More"));
         fresh.apply(ShelfEvent::CollectionStep(-1).into());

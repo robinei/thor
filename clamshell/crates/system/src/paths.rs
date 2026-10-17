@@ -15,8 +15,6 @@ pub struct Paths {
     pub resume: Option<PathBuf>,
     /// The screens' brightness as it was left (the level and each screen's share), next to `resume`.
     pub brightness: Option<PathBuf>,
-    /// The dock's apps (~/.config/clamshell/launcher.json).
-    pub launcher: Option<PathBuf>,
     /// Launches handed to sway's exec ($XDG_RUNTIME_DIR/clamshell/jobs, see [`crate::job`]).
     pub jobs: PathBuf,
     /// MangoHud's config files and frame logs, in RAM ($XDG_RUNTIME_DIR/clamshell/mangohud).
@@ -73,7 +71,6 @@ impl Paths {
         Paths {
             brightness: resume.as_ref().and_then(|f| f.parent()).map(|d| d.join("brightness")),
             resume,
-            launcher: config.map(|c| c.join("clamshell/launcher.json")),
             jobs: base.runtime.clone().unwrap_or_else(std::env::temp_dir).join("clamshell/jobs"),
             mangohud: base.runtime.clone().unwrap_or_else(|| PathBuf::from("/tmp")).join("clamshell/mangohud"),
             runtime: base.runtime.clone(),
@@ -102,6 +99,11 @@ impl Paths {
         self.state_dir.as_ref().map(|d| d.join("window-rules.txt"))
     }
 
+    /// The dock's pinned entries, in order.
+    pub fn dock(&self) -> Option<PathBuf> {
+        self.state_dir.as_ref().map(|d| d.join("dock.txt"))
+    }
+
     /// Whether there is a systemd user session to put apps and games in scopes of.
     pub fn has_user_systemd(&self) -> bool {
         self.runtime.as_deref().is_some_and(|d| d.join("systemd/private").exists())
@@ -128,7 +130,6 @@ mod tests {
         assert_eq!(paths.state_dir.as_deref(), Some(Path::new("/h/.local/share/clamshell")), "no Pegasus config dir");
         assert_eq!(paths.resume.as_deref(), Some(Path::new("/s/clamshell/last")));
         assert_eq!(paths.brightness.as_deref(), Some(Path::new("/s/clamshell/brightness")));
-        assert_eq!(paths.launcher.as_deref(), Some(Path::new("/h/.config/clamshell/launcher.json")));
         assert_eq!((paths.jobs.as_path(), paths.mangohud.as_path()), (Path::new("/run/u/clamshell/jobs"), Path::new("/run/u/clamshell/mangohud")));
         assert_eq!(paths.stats_db().as_deref(), Some(Path::new("/h/.local/share/clamshell/stats.db")));
     }

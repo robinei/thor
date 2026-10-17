@@ -9,8 +9,6 @@ pub enum Command {
     /// `--run FILE`: become a launched job's program (sway's exec starts us this way; see
     /// clamshell_system::job).
     RunJob(PathBuf),
-    /// `--launcher-example`: print an example launcher.json, to start one from.
-    LauncherExample,
     /// `--mangohud-env`: print the environment that makes a game (started by hand) report its frame rate
     /// here.
     MangohudEnv,
@@ -23,7 +21,7 @@ pub enum Command {
     Ctl(Vec<String>),
 }
 
-pub const USAGE: &str = "usage: clamshell [ctl COMMAND... | --snapshot DIR | --library | --launcher-example | --mangohud-env | --run FILE]";
+pub const USAGE: &str = "usage: clamshell [ctl COMMAND... | --snapshot DIR | --library | --mangohud-env | --run FILE]";
 
 /// The command the arguments (without the program's name) ask for.
 pub fn parse(args: &[String]) -> Option<Command> {
@@ -31,7 +29,6 @@ pub fn parse(args: &[String]) -> Option<Command> {
         [] => Command::Run,
         [flag, file] if flag == "--run" => Command::RunJob(file.into()),
         [flag, dir] if flag == "--snapshot" => Command::Snapshot(dir.into()),
-        [flag] if flag == "--launcher-example" => Command::LauncherExample,
         [flag] if flag == "--mangohud-env" => Command::MangohudEnv,
         [flag] if flag == "--library" => Command::Library,
         [ctl, rest @ ..] if ctl == "ctl" && !rest.is_empty() => Command::Ctl(rest.to_vec()),

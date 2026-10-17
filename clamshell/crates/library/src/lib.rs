@@ -35,6 +35,8 @@ pub struct Game {
     /// Stable id: the game file's path, or `steam:<appid>`. Focus, settings and play time are keyed by
     /// it. Shared, so the UI can put it in a frame's targets without allocating.
     pub id: Arc<str>,
+    /// The id made fit for unit and workspace names (see [`key_of`]): what its launches are named by.
+    pub key: String,
     pub title: String,
     /// What it sorts by (Pegasus order).
     pub sort_key: Vec<(u8, char)>,
@@ -64,6 +66,7 @@ impl Game {
     pub fn new(id: &str, title: &str) -> Self {
         Game {
             id: id.into(),
+            key: key_of(id),
             title: title.into(),
             sort_key: sort::key(title),
             color: color_of(id),
@@ -83,6 +86,22 @@ impl Game {
             favourite: false,
         }
     }
+}
+
+/// An entry's key, from its id: what its launches' units and its workspace are named by. Letters, digits
+/// and `_` only (no `-`, which separates the parts of those names): the id's last part (its file's name
+/// without the extension, or after `:`), lowercase, at most 16 characters, then `_` and 6 hex digits of a
+/// hash of the whole id, so ids alike stay apart.
+pub fn key_of(id: &str) -> String {
+    let last = id.rsplit(['/', ':']).next().unwrap_or(id);
+    let stem = last.rsplit_once('.').map_or(last, |(stem, _)| stem);
+    let mut slug: String = stem.chars().map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '_' }).take(16).collect();
+    let trimmed = slug.trim_matches('_').len();
+    if trimmed == 0 {
+        slug = "entry".into();
+    }
+    let h = id.bytes().fold(0x811c_9dc5u32, |h, b| (h ^ u32::from(b)).wrapping_mul(0x0100_0193));
+    format!("{}_{:06x}", slug.trim_matches('_'), h & 0x00ff_ffff)
 }
 
 /// A muted colour from a hash of `id`, stable across runs.
@@ -180,9 +199,17 @@ pub fn demo_games() -> Vec<Game> {
 
 /// Two demo collections of the demo games, for development and snapshots.
 pub fn demo_library() -> Library {
-    let games = demo_games();
+    let mut games = demo_games();
     let n = games.len();
-    Library { collections: vec![Collection::new("Games", (0..n).collect()), Collection::new("More", vec![3, 1])], games }
+    // A few installed apps, as desktop files give them.
+    let apps = [("desktop:steam", "Steam", "steam"), ("desktop:foot", "Terminal", "foot"), ("desktop:firefox", "Firefox", "firefox")];
+    games.extend(apps.iter().map(|(id, title, program)| Game { launch: Launch::Program(vec![(*program).into()]), tool: true, ..Game::new(id, title) }));
+    let collections = vec![
+        Collection::new("Games", (0..n).collect()),
+        Collection::new("More", vec![3, 1]),
+        Collection { tools: true, ..Collection::new("Apps", (n..n + apps.len()).collect()) },
+    ];
+    Library { collections, games }
 }
 
 #[cfg(test)]

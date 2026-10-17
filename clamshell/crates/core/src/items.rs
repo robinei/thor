@@ -23,7 +23,7 @@ impl State {
         let at = |i: &u16| usize::from(*i);
         match id {
             Id::Row { list, i, .. } => self.rows(*list).key(at(i)),
-            Id::Dock(DockId::GameTile(i)) => self.session.games().get(at(i)).map(|g| ItemKey::Name(g.instance.name())),
+            Id::Dock(DockId::Entry(i)) => self.dock.items().get(at(i)).map(|e| ItemKey::Name(e.id.to_string())),
             Id::Shelf(ShelfId::Collection(i)) => self.shelf.library().collections.get(at(i)).map(|c| ItemKey::Name(c.name.clone())),
             Id::Audio(AudioId::Output(i)) => self.levels.audio().outputs.get(at(i)).map(|o| ItemKey::Number(o.id)),
             _ => None,
@@ -35,9 +35,7 @@ impl State {
         let index = |p: Option<usize>| p.and_then(|p| u16::try_from(p).ok());
         match (id, key) {
             (Id::Row { list, part, .. }, key) => index(self.rows(*list).find(key)).map(|i| Id::Row { list: *list, i, part: *part }),
-            (Id::Dock(DockId::GameTile(_)), ItemKey::Name(n)) => {
-                index(self.session.games().iter().position(|x| x.instance.is(n))).map(|i| Id::Dock(DockId::GameTile(i)))
-            }
+            (Id::Dock(DockId::Entry(_)), ItemKey::Name(n)) => index(self.dock.items().iter().position(|e| *e.id == **n)).map(|i| Id::Dock(DockId::Entry(i))),
             (Id::Shelf(ShelfId::Collection(_)), ItemKey::Name(n)) => {
                 index(self.shelf.library().collections.iter().position(|x| x.name == *n)).map(|i| Id::Shelf(ShelfId::Collection(i)))
             }

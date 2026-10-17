@@ -12,7 +12,7 @@ use clamshell_core::levels::Level;
 use clamshell_core::settings::Setting;
 use clamshell_core::slider::Control;
 use clamshell_core::{
-    Apps, EditorId, Event, GameEvent, Id, Init, KeymapId, LevelEvent, Library, ListEvent, ListId, PointerEvent, Reading, Scope, SettingsId, ShelfEvent,
+    Dock, EditorId, Event, GameEvent, Id, Init, KeymapId, LevelEvent, Library, ListEvent, ListId, PointerEvent, Reading, Scope, SettingsId, ShelfEvent,
     ShelfId, Slide, State, Status, Tab, Target,
 };
 use clamshell_ui::Screen;
@@ -60,14 +60,10 @@ impl From<ParseError> for Error {
     }
 }
 
-/// The state snapshots start from: a library, the example launcher.json's apps (their desktop files
-/// from this machine's data dirs), nothing remembered.
+/// The state snapshots start from: a library, its apps pinned to the dock, nothing else remembered.
 pub fn state(library: Library) -> State {
-    state_with(library, clamshell_system::desktop::from_text(crate::LAUNCHER_EXAMPLE))
-}
-
-fn state_with(library: Library, apps: Apps) -> State {
-    State::new(Init { library, apps, keymaps: clamshell_core::keymap::Keymaps::initial(), ..Init::default() })
+    let dock = Dock::load("desktop:steam\ndesktop:foot\ndesktop:firefox\n");
+    State::new(Init { library, dock, keymaps: clamshell_core::keymap::Keymaps::initial(), ..Init::default() })
 }
 
 fn tap(id: Id) -> Event {
@@ -354,7 +350,7 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 shot("launcher.png", Bottom, vec![tab(Tab::Dock), PointerEvent::HideFocus.into()]),
                 shot("launcher-running.png", Bottom, demo::running()),
                 shot("bar-window-below.png", Bottom, demo::window_below()),
-                shot("dock-menu.png", Bottom, vec![demo::running().remove(2), PointerEvent::LongPress(Id::Dock(clamshell_core::DockId::App(1))).into()]),
+                shot("dock-menu.png", Bottom, vec![demo::running().remove(2), PointerEvent::LongPress(Id::Dock(clamshell_core::DockId::Entry(1))).into()]),
             ],
         ),
         group(
@@ -469,17 +465,6 @@ mod tests {
         bytes.iter().fold(0xcbf2_9ce4_8422_2325, |h, &b| (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3))
     }
 
-    /// The example apps with desktop files of their own (no icons), so what is drawn doesn't depend on
-    /// what this machine has installed.
-    fn apps(dir: &Path) -> Apps {
-        let apps = dir.join("applications");
-        std::fs::create_dir_all(&apps).unwrap();
-        for (id, name) in [("steam", "Steam"), ("firefox", "Firefox")] {
-            std::fs::write(apps.join(format!("{id}.desktop")), format!("[Desktop Entry]\nName={name}\nExec={id}\n")).unwrap();
-        }
-        clamshell_system::desktop::from_text_in(crate::LAUNCHER_EXAMPLE, &[dir.to_path_buf()])
-    }
-
     /// The snapshots, drawn and hashed, against the reference hashes. After a change meant to change what
     /// is drawn (look at the files: `clamshell --snapshot DIR`), write the new hashes with
     /// `CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots`.
@@ -488,8 +473,7 @@ mod tests {
         let base = std::env::temp_dir().join(format!("clamshell-snapshots-{}", std::process::id()));
         let dir = base.join("shots");
         std::fs::create_dir_all(&dir).unwrap();
-        let apps = apps(&base.join("data"));
-        render(&|| state_with(clamshell_library::demo_library(), apps.clone()), FIXED_NOW, &dir).unwrap();
+        render(&|| state(clamshell_library::demo_library()), FIXED_NOW, &dir).unwrap();
         let mut hashes = BTreeMap::new();
         for entry in std::fs::read_dir(&dir).unwrap().flatten() {
             hashes.insert(entry.file_name().to_string_lossy().into_owned(), format!("{:016x}", hash(&std::fs::read(entry.path()).unwrap())));

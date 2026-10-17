@@ -1,0 +1,284 @@
+//! The dock: the entries pinned there, in the user's order (saved in `dock.txt`), and those running,
+//! added at the end as they start and gone again when they stop (unless pinned). A pinned entry not
+//! running shows dimmed; a tap starts it. A tap on a running one shows its workspace (all its windows on
+//! the bottom screen: shows them there). A long press opens its menu: Open another (another launch,
+//! another tab), Close window (the one in view), Pin or Unpin, Move (the D-pad moves it, A or B ends),
+//! Quit and Force kill; a stopped one's: Unpin and Move.
+
+use std::fmt::Write;
+use std::sync::Arc;
+
+use crate::State;
+use crate::effect::{Effect, Save, WindowCommand};
+use crate::id::DockId;
+use crate::keymap::Dir;
+use crate::windows::{SHELF_APP_ID, Window};
+
+/// The dock's tiles in a row.
+pub const DOCK_COLUMNS: usize = 4;
+
+/// The dock file's first line: its format and version.
+pub const DOCK_FORMAT: &str = "# ClamShell dock, format 1";
+
+/// An entry on the dock.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DockItem {
+    pub id: Arc<str>,
+    pub pinned: bool,
+}
+
+/// The dock's entries, and what its menu or move mode is about.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Dock {
+    items: Vec<DockItem>,
+    /// The entry whose menu is open.
+    pub(crate) menu: Option<Arc<str>>,
+    /// The entry being moved (the D-pad moves it).
+    pub(crate) moving: Option<Arc<str>>,
+}
+
+impl Dock {
+    /// The pinned entries, an id a line after the format's line (lines it doesn't understand skipped).
+    pub fn load(text: &str) -> Dock {
+        let items = text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).map(|id| DockItem { id: id.into(), pinned: true }).collect();
+        Dock { items, ..Dock::default() }
+    }
+
+    /// As saved: the pinned entries, in order.
+    pub fn text(&self) -> String {
+        let mut text = format!("{DOCK_FORMAT}\n");
+        for item in self.items.iter().filter(|i| i.pinned) {
+            let _ = writeln!(text, "{}", item.id);
+        }
+        text
+    }
+
+    pub fn items(&self) -> &[DockItem] {
+        &self.items
+    }
+
+    /// The entry whose menu is open.
+    pub fn menu(&self) -> Option<&Arc<str>> {
+        self.menu.as_ref()
+    }
+
+    /// The entry being moved.
+    pub fn moving(&self) -> Option<&Arc<str>> {
+        self.moving.as_ref()
+    }
+
+    fn position(&self, id: &str) -> Option<usize> {
+        self.items.iter().position(|i| &*i.id == id)
+    }
+}
+
+impl State {
+    pub fn dock(&self) -> &Dock {
+        &self.dock
+    }
+
+    /// After anything that may start or stop an entry: those running and not on the dock added at its
+    /// end; those stopped and not pinned (nor being moved) gone. Whether it changed.
+    pub(crate) fn follow_dock(&mut self) -> bool {
+        let before = self.dock.items.len();
+        let session = &self.session;
+        let moving = self.dock.moving.clone();
+        self.dock.items.retain(|i| i.pinned || session.running(&i.id).is_some() || moving.as_ref() == Some(&i.id));
+        let removed = before != self.dock.items.len();
+        let new: Vec<Arc<str>> = session.running.iter().filter(|r| self.dock.position(&r.id).is_none()).map(|r| r.id.clone()).collect();
+        let added = !new.is_empty();
+        self.dock.items.extend(new.into_iter().map(|id| DockItem { id, pinned: false }));
+        removed || added
+    }
+
+    /// An entry's window in view: in front on the top screen, else shown there, else (nothing of it on
+    /// top) shown on the bottom screen. For the menu's Close window.
+    pub fn entry_window(&self, id: &str) -> Option<i64> {
+        let session = &self.session;
+        let mine = |w: &&Window| session.running_of(w).is_some_and(|r| &*r.id == id);
+        let windows = &session.windows;
+        let top = |w: &&Window| !w.down && mine(w);
+        let below = |w: &&Window| w.down && mine(w);
+        let on_top = windows.iter().filter(top).find(|w| w.focused).or_else(|| windows.iter().filter(top).find(|w| w.visible));
+        let shown = on_top.or_else(|| windows.iter().find(top).is_none().then(|| windows.iter().filter(below).find(|w| w.visible)).flatten());
+        shown.map(|w| w.id)
+    }
+
+    /// A tap or long press on a dock tile, a choice in its menu (which then closes), or a step in move
+    /// mode.
+    pub(crate) fn on_dock(&mut self, id: DockId, long: bool) -> Vec<Effect> {
+        match id {
+            DockId::Entry(i) => {
+                let Some(entry) = self.dock.items.get(usize::from(i)).map(|item| item.id.clone()) else {
+                    return vec![];
+                };
+                if long {
+                    self.dock.menu = Some(entry);
+                    return vec![];
+                }
+                self.tap_entry(entry)
+            }
+            DockId::Step(dir) => self.step(dir),
+            DockId::Done => {
+                self.dock.moving = None;
+                self.follow_dock();
+                vec![]
+            }
+            choice => {
+                let Some(entry) = self.dock.menu.take() else {
+                    return vec![];
+                };
+                self.menu_choice(choice, entry)
+            }
+        }
+    }
+
+    /// A tap on a dock entry: a stopped one starts; a running one is shown (all its windows on the bottom
+    /// screen: shown there).
+    fn tap_entry(&mut self, entry: Arc<str>) -> Vec<Effect> {
+        let session = &self.session;
+        let Some(r) = session.running(&entry) else {
+            return self.play(entry);
+        };
+        let mine = |w: &&Window| session.running_of(w).is_some_and(|o| o.id == r.id);
+        if !session.windows.iter().filter(mine).any(|w| !w.down)
+            && let Some(down) = session.windows.iter().filter(mine).find(|w| w.down)
+        {
+            return self.show_program_down(down.id);
+        }
+        vec![Effect::Window(WindowCommand::Focus(r.workspace()))]
+    }
+
+    fn menu_choice(&mut self, choice: DockId, entry: Arc<str>) -> Vec<Effect> {
+        match choice {
+            DockId::OpenAnother => self.launch(entry),
+            DockId::CloseWindow => self.entry_window(&entry).map(|w| vec![Effect::Window(WindowCommand::Close(vec![w]))]).unwrap_or_default(),
+            DockId::Pin => {
+                if let Some(i) = self.dock.position(&entry)
+                    && let Some(item) = self.dock.items.get_mut(i)
+                {
+                    item.pinned = !item.pinned;
+                }
+                self.follow_dock();
+                vec![Effect::Save(Save::Dock(self.dock.text()))]
+            }
+            DockId::Move => {
+                self.dock.moving = Some(entry);
+                vec![]
+            }
+            DockId::Quit => self.quit(&entry),
+            DockId::ForceKill => self.force_kill(&entry),
+            _ => vec![],
+        }
+    }
+
+    /// Move mode: the entry one place along (left, right) or a row (up, down); the order saved.
+    fn step(&mut self, dir: Dir) -> Vec<Effect> {
+        let Some(at) = self.dock.moving.as_ref().and_then(|id| self.dock.position(id)) else {
+            return vec![];
+        };
+        let last = self.dock.items.len().saturating_sub(1);
+        let to = match dir {
+            Dir::Left => at.saturating_sub(1),
+            Dir::Right => (at + 1).min(last),
+            Dir::Up => at.saturating_sub(DOCK_COLUMNS),
+            Dir::Down => (at + DOCK_COLUMNS).min(last),
+        };
+        if to == at {
+            return vec![];
+        }
+        let item = self.dock.items.remove(at);
+        self.dock.items.insert(to, item);
+        vec![Effect::Save(Save::Dock(self.dock.text()))]
+    }
+
+    /// Home with B, let go at once: the window in front on the top screen closes, politely (not shelf's).
+    pub(crate) fn close_front_window(&self) -> Vec<Effect> {
+        match self.session.windows.iter().find(|w| w.focused && !w.down && w.app_id != SHELF_APP_ID) {
+            Some(w) => vec![Effect::Window(WindowCommand::Close(vec![w.id]))],
+            None => vec![],
+        }
+    }
+
+    /// Home with B, held: the entry in front quits, as its menu's Quit would; any other window just
+    /// closes.
+    pub(crate) fn quit_front(&mut self) -> Vec<Effect> {
+        let Some(w) = self.session.windows.iter().find(|w| w.focused && !w.down && w.app_id != SHELF_APP_ID) else {
+            return vec![];
+        };
+        match self.session.running_of(w).map(|r| r.id.clone()) {
+            Some(entry) => self.quit(&entry),
+            None => vec![Effect::Window(WindowCommand::Close(vec![w.id]))],
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use crate::testkit::*;
+    use crate::*;
+
+    fn entry(s: &State, i: usize) -> Option<&str> {
+        s.dock().items().get(i).map(|item| &*item.id)
+    }
+
+    fn dock(i: u16) -> Id {
+        Id::Dock(DockId::Entry(i))
+    }
+
+    #[test]
+    fn running_entries_join_the_dock_pinned_ones_stay() {
+        let mut s = state();
+        let zelda = launch(&mut s, "zelda-lttp");
+        assert_eq!(entry(&s, 0), Some("zelda-lttp"), "running: on the dock");
+        // A tap shows it; its menu pins it.
+        assert_eq!(tap(&mut s, dock(0)), vec![focus(&zelda)]);
+        long(&mut s, dock(0));
+        assert_eq!(s.dock().menu.as_deref(), Some("zelda-lttp"));
+        let fx = tap(&mut s, Id::Dock(DockId::Pin));
+        assert!(matches!(fx.as_slice(), [Effect::Save(Save::Dock(t))] if t.ends_with("\nzelda-lttp\n")), "{fx:?}");
+        // It stops: still there (pinned), a tap starts it.
+        played(&mut s, "zelda-lttp");
+        assert_eq!(entry(&s, 0), Some("zelda-lttp"));
+        assert!(tap(&mut s, dock(0)).iter().any(|e| matches!(e, Effect::Launch { .. })));
+        // Unpinned while stopped: gone.
+        s.apply(GameEvent::LaunchFailed("zelda-lttp".into()).into());
+        long(&mut s, dock(0));
+        tap(&mut s, Id::Dock(DockId::Pin));
+        assert_eq!(entry(&s, 0), None);
+    }
+
+    #[test]
+    fn move_mode_reorders_by_the_dpad_and_saves_the_pins() {
+        let mut s = State::new(Init { dock: dock::Dock::load("# ClamShell dock, format 1\nzelda-lttp\nff6\n"), ..init() });
+        assert_eq!((entry(&s, 0), entry(&s, 1)), (Some("zelda-lttp"), Some("ff6")));
+        long(&mut s, dock(0));
+        tap(&mut s, Id::Dock(DockId::Move));
+        let fx = tap(&mut s, Id::Dock(DockId::Step(keymap::Dir::Right)));
+        assert!(matches!(fx.as_slice(), [Effect::Save(Save::Dock(t))] if t.ends_with("ff6\nzelda-lttp\n")), "{fx:?}");
+        assert_eq!(tap(&mut s, Id::Dock(DockId::Step(keymap::Dir::Right))), vec![], "at the end");
+        tap(&mut s, Id::Dock(DockId::Done));
+        assert_eq!(s.dock().moving, None);
+    }
+
+    #[test]
+    fn the_menu_opens_another_closes_a_window_quits_and_force_kills() {
+        let mut s = state();
+        let zelda = launch(&mut s, "zelda-lttp");
+        let w = Window { unit: zelda.unit(), visible: true, ..win(5, "zelda3", &zelda.workspace(), true) };
+        s.apply(Event::Windows(vec![w]));
+        let key = clamshell_library::key_of("zelda-lttp");
+        long(&mut s, dock(0));
+        assert!(tap(&mut s, Id::Dock(DockId::OpenAnother)).iter().any(|e| matches!(e, Effect::Launch { .. })), "another launch");
+        long(&mut s, dock(0));
+        assert_eq!(tap(&mut s, Id::Dock(DockId::CloseWindow)), vec![Effect::Window(WindowCommand::Close(vec![5]))]);
+        long(&mut s, dock(0));
+        assert_eq!(tap(&mut s, Id::Dock(DockId::Quit)), vec![Effect::Window(WindowCommand::Close(vec![5]))]);
+        long(&mut s, dock(0));
+        assert_eq!(tap(&mut s, Id::Dock(DockId::ForceKill)), vec![Effect::EndRun { key, force: true }]);
+        // Home with B: the window in front closes; held, its entry quits.
+        assert_eq!(s.apply(Event::Device(hardware::DeviceKey::CloseWindow)).1, vec![Effect::Window(WindowCommand::Close(vec![5]))]);
+        assert_eq!(s.apply(Event::Device(hardware::DeviceKey::Quit)).1, vec![Effect::Window(WindowCommand::Close(vec![5]))]);
+    }
+}

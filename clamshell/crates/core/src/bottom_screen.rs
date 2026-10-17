@@ -18,30 +18,23 @@ use crate::hardware::NoticeKind;
 use crate::instance::Instance;
 use crate::windows::Window;
 
-/// Whose window a rule is about: a game's (by its id in the library) or a dock app's (by its key).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Owner {
-    Game(Arc<str>),
-    App(String),
-}
-
-/// A window that goes to the bottom screen when its program opens it: the program's, with this app id
-/// and title.
+/// A window that goes to the bottom screen when its entry opens it: the entry's (by its id), with this
+/// app id and title.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WindowRule {
-    pub owner: Owner,
+    pub owner: Arc<str>,
     pub app_id: String,
     pub title: String,
 }
 
 impl WindowRule {
-    fn matches(&self, owner: &Owner, w: &Window) -> bool {
-        self.owner == *owner && self.app_id == w.app_id && self.title == w.title
+    fn matches(&self, owner: &str, w: &Window) -> bool {
+        &*self.owner == owner && self.app_id == w.app_id && self.title == w.title
     }
 }
 
 /// The window rules file's first line: its format and version.
-pub const WINDOW_RULES_FORMAT: &str = "# ClamShell window rules, format 1";
+pub const WINDOW_RULES_FORMAT: &str = "# ClamShell window rules, format 2";
 
 /// The rules: which programs' windows go to the bottom screen.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -54,16 +47,12 @@ impl WindowRules {
         &self.list
     }
 
-    /// As text: the format's line, then a rule per line, tab-separated: `bottom`, `game` and its id or
-    /// `app` and its key, the app id, the title.
+    /// As text: the format's line, then a rule per line, tab-separated: `bottom`, the entry's id, the app
+    /// id, the title.
     pub fn text(&self) -> String {
         let mut text = format!("{WINDOW_RULES_FORMAT}\n");
         for r in &self.list {
-            let (kind, name) = match &r.owner {
-                Owner::Game(id) => ("game", id.as_ref()),
-                Owner::App(key) => ("app", key.as_str()),
-            };
-            let _ = writeln!(text, "bottom\t{kind}\t{name}\t{}\t{}", r.app_id, r.title);
+            let _ = writeln!(text, "bottom\t{}\t{}\t{}", r.owner, r.app_id, r.title);
         }
         text
     }
@@ -74,16 +63,11 @@ impl WindowRules {
             .lines()
             .filter(|l| !l.starts_with('#'))
             .filter_map(|line| {
-                let mut f = line.splitn(5, '\t');
-                let (Some("bottom"), Some(kind), Some(name), Some(app_id), Some(title)) = (f.next(), f.next(), f.next(), f.next(), f.next()) else {
+                let mut f = line.splitn(4, '\t');
+                let (Some("bottom"), Some(owner), Some(app_id), Some(title)) = (f.next(), f.next(), f.next(), f.next()) else {
                     return None;
                 };
-                let owner = match kind {
-                    "game" => Owner::Game(name.into()),
-                    "app" => Owner::App(name.to_owned()),
-                    _ => return None,
-                };
-                Some(WindowRule { owner, app_id: app_id.to_owned(), title: title.to_owned() })
+                Some(WindowRule { owner: owner.into(), app_id: app_id.to_owned(), title: title.to_owned() })
             })
             .collect();
         WindowRules { list }
@@ -99,13 +83,13 @@ impl WindowRules {
     }
 
     /// Forgets the rules a window of `owner`'s matches; whether there were any.
-    fn forget(&mut self, owner: &Owner, w: &Window) -> bool {
+    fn forget(&mut self, owner: &str, w: &Window) -> bool {
         let before = self.list.len();
         self.list.retain(|r| !r.matches(owner, w));
         self.list.len() != before
     }
 
-    fn wants(&self, owner: &Owner, w: &Window) -> bool {
+    fn wants(&self, owner: &str, w: &Window) -> bool {
         self.list.iter().any(|r| r.matches(owner, w))
     }
 }
@@ -135,13 +119,9 @@ impl State {
         self.bottom.screen.off
     }
 
-    /// Whose a window is, for a rule: the game's it belongs to, or the dock app's.
-    fn owner(&self, w: &Window) -> Option<Owner> {
-        match w.instance()? {
-            Instance::App { key, .. } => Some(Owner::App(key)),
-            instance @ Instance::Game { .. } => self.session.games.iter().find(|g| g.instance == instance).map(|g| Owner::Game(g.id.clone())),
-            _ => None,
-        }
+    /// Whose a window is, for a rule: the running entry's it belongs to.
+    fn owner(&self, w: &Window) -> Option<Arc<str>> {
+        self.session.running_of(w).map(|r| r.id.clone())
     }
 
     /// Home+Down: the window in front on the top screen to the bottom screen, shown there, and
@@ -247,8 +227,8 @@ impl State {
 mod tests {
     use super::*;
     use crate::Event;
-    use crate::game::{Origin, RunningGame};
     use crate::hardware::DeviceKey;
+    use crate::running::{Origin, Running};
     use crate::testkit::state;
 
     fn win(id: i64, unit: &str, title: &str, focused: bool, down: bool) -> Window {
@@ -259,22 +239,26 @@ mod tests {
             title: title.into(),
             focused,
             unit: Some(unit.into()),
-            workspace: if down { Instance::Bottom.name() } else { unit.trim_end_matches(".scope").into() },
+            workspace: if down { Instance::Bottom.name() } else { Instance::from_unit(unit).map_or_else(String::new, |i| i.workspace()) },
             down,
         }
     }
 
-    const GAME: &str = "clamshell-game-99-1.scope";
+    const GAME: &str = "clamshell-run-melonds_1-99-1.scope";
+
+    /// The emulator's launch.
+    fn emu() -> Instance {
+        Instance::Run { key: "melonds_1".into(), secs: 99, n: 1 }
+    }
+
+    fn running(id: &str, key: &str) -> Running {
+        Running { id: id.into(), key: key.into(), origin: Origin::Ours { appid: None }, start: 0, launches: 1, adopted: false }
+    }
 
     /// A game running (shelf's), with a top window and a second window, the second in front.
     fn emulator() -> State {
         let mut s = state();
-        s.session.games.push(RunningGame {
-            id: "melonds".into(),
-            instance: Instance::Game { secs: 99, n: 1 },
-            origin: Origin::Shelf { appid: None },
-            start: 0,
-        });
+        s.session.running.push(running("melonds", "melonds_1"));
         s.apply(Event::Windows(vec![win(1, GAME, "Top", false, false), win(2, GAME, "Bottom", true, false)]));
         s
     }
@@ -290,7 +274,7 @@ mod tests {
         assert!(!s.bottom_shows_windows());
         let fx = key(&mut s, DeviceKey::WindowDown);
         assert_eq!(fx[0], Effect::Window(WindowCommand::Down(2)));
-        assert!(matches!(&fx[1], Effect::Save(Save::WindowRules(t)) if t.ends_with("bottom\tgame\tmelonds\temu\tBottom\n")), "{fx:?}");
+        assert!(matches!(&fx[1], Effect::Save(Save::WindowRules(t)) if t.ends_with("bottom\tmelonds\temu\tBottom\n")), "{fx:?}");
         assert_eq!(s.bottom().notice().map(|n| &n.what), Some(&NoticeKind::BottomRule(true)));
         // sway reports it down: shown there.
         s.apply(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]));
@@ -303,7 +287,7 @@ mod tests {
         assert!(s.bottom_shows_windows());
         // Up: back to its workspace, the rule forgotten, ClamShell's view below.
         let fx = key(&mut s, DeviceKey::WindowUp);
-        assert_eq!(fx[0], Effect::Window(WindowCommand::Up { window: 2, to: Some(Instance::Game { secs: 99, n: 1 }) }));
+        assert_eq!(fx[0], Effect::Window(WindowCommand::Up { window: 2, to: Some(emu()) }));
         assert!(matches!(&fx[1], Effect::Save(Save::WindowRules(t)) if t == &format!("{WINDOW_RULES_FORMAT}\n")), "{fx:?}");
         s.apply(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, false)]));
         assert!(!s.bottom_shows_windows(), "none down: ClamShell's view");
@@ -319,20 +303,15 @@ mod tests {
         let mut s = state();
         s.window_rules = WindowRules::load(&rules.text());
         assert_eq!(s.window_rules, rules, "read back as written");
-        s.session.games.push(RunningGame {
-            id: "melonds".into(),
-            instance: Instance::Game { secs: 99, n: 1 },
-            origin: Origin::Shelf { appid: None },
-            start: 0,
-        });
+        s.session.running.push(running("melonds", "melonds_1"));
         let fx = s.apply(Event::Windows(vec![win(5, GAME, "Top", true, false), win(6, GAME, "Bottom", false, false)])).1;
         assert!(fx.contains(&Effect::Window(WindowCommand::Down(6))), "{fx:?}");
         assert!(!fx.contains(&Effect::Window(WindowCommand::Down(5))));
         let fx = s.apply(Event::Windows(vec![win(5, GAME, "Top", true, false), win(6, GAME, "Bottom", false, false)])).1;
         assert!(!fx.contains(&Effect::Window(WindowCommand::Down(6))), "asked once");
         // Another game's window of that title: not its rule.
-        s.session.games.push(RunningGame { id: "other".into(), instance: Instance::Game { secs: 5, n: 2 }, origin: Origin::Shelf { appid: None }, start: 0 });
-        let fx = s.apply(Event::Windows(vec![win(7, "clamshell-game-5-2.scope", "Bottom", false, false)])).1;
+        s.session.running.push(running("other", "other_2"));
+        let fx = s.apply(Event::Windows(vec![win(7, "clamshell-run-other_2-5-2.scope", "Bottom", false, false)])).1;
         assert!(!fx.iter().any(|e| matches!(e, Effect::Window(WindowCommand::Down(_)))), "{fx:?}");
     }
 
@@ -345,11 +324,11 @@ mod tests {
         let hidden = |w: Window| Window { visible: false, ..w };
         s.apply(Event::Windows(vec![win(1, GAME, "Top", false, true), hidden(win(2, GAME, "Bottom", false, true))]));
         let fx = key(&mut s, DeviceKey::WindowUp);
-        assert!(fx.contains(&Effect::Window(WindowCommand::Up { window: 1, to: Some(Instance::Game { secs: 99, n: 1 }) })), "the tab in view: {fx:?}");
+        assert!(fx.contains(&Effect::Window(WindowCommand::Up { window: 1, to: Some(emu()) })), "the tab in view: {fx:?}");
         s.apply(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]));
         assert!(s.bottom_shows_windows(), "the other tab");
         let fx = key(&mut s, DeviceKey::WindowUp);
-        assert!(fx.contains(&Effect::Window(WindowCommand::Up { window: 2, to: Some(Instance::Game { secs: 99, n: 1 }) })), "{fx:?}");
+        assert!(fx.contains(&Effect::Window(WindowCommand::Up { window: 2, to: Some(emu()) })), "{fx:?}");
     }
 
     #[test]
@@ -368,7 +347,7 @@ mod tests {
         s.apply(Event::Windows(vec![
             win(1, GAME, "Top", false, false),
             win(2, GAME, "Bottom", false, true),
-            win(3, "clamshell-app-x-1-0.scope", "x", true, false),
+            win(3, "clamshell-run-x_1-1-0.scope", "x", true, false),
         ]));
         assert_eq!(s.hidden_down(), None);
     }
@@ -386,7 +365,7 @@ mod tests {
 
     #[test]
     fn rules_files_skip_what_they_dont_understand() {
-        let rules = WindowRules::load("# a comment\nbottom\tgame\tx\temu\tBottom screen\nbottom\tpet\tx\ta\tb\nnonsense\n");
+        let rules = WindowRules::load("# a comment\nbottom\tx\temu\tBottom screen\nbottom\tx\ta\nnonsense\n");
         assert_eq!(rules.list().len(), 1);
         assert_eq!(rules.list()[0].title, "Bottom screen");
     }

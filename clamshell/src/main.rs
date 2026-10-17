@@ -20,27 +20,14 @@ use clamshell_core::bottom_screen::WindowRules;
 use clamshell_core::keymap::Keymaps;
 use clamshell_core::levels::Brightness;
 use clamshell_core::settings::Settings;
-use clamshell_core::{Init, Library, State};
+use clamshell_core::{Dock, Init, Library, State};
 use clamshell_system::library::{self, Sources};
 use clamshell_system::paths::Paths;
-use clamshell_system::{Handles, desktop, job, tuning};
+use clamshell_system::{Handles, job, tuning};
 use clamshell_ui::Config;
 
 use cli::Command;
 use config::Env;
-
-/// An example launcher.json: the defaults and a few more (an app without an icon shows its initial).
-pub const LAUNCHER_EXAMPLE: &str = r#"{
-  "apps": [
-    { "desktop": "steam" },
-    { "name": "Terminal", "icon": "terminal", "command": ["foot"], "multiple": true },
-    { "desktop": "firefox" },
-    { "name": "Files", "icon": "files", "command": ["thunar"], "multiple": true },
-    { "name": "Music", "icon": "music", "command": ["foot", "ncmpcpp"] },
-    { "name": "Kodi", "command": ["kodi"] }
-  ]
-}
-"#;
 
 fn main() -> ExitCode {
     // zbus logs its handshake as info: only its warnings.
@@ -68,10 +55,6 @@ fn main() -> ExitCode {
         Command::RunJob(file) => {
             log::error!("{}: {}", file.display(), job::run(&file));
             ExitCode::FAILURE
-        }
-        Command::LauncherExample => {
-            print!("{LAUNCHER_EXAMPLE}");
-            ExitCode::SUCCESS
         }
         Command::MangohudEnv => match tuning::mangohud_config(&paths.mangohud, "default", 0, 0) {
             Ok(config) => {
@@ -166,8 +149,8 @@ fn run(env: &Env, paths: Paths, sources: &Sources) -> ExitCode {
         window_rules: load_window_rules(&paths),
         // The screens' brightness as it was left: the level and each screen's share.
         brightness: read(paths.brightness.as_deref()).map_or_else(Brightness::default, |t| Brightness::from_text(&t)),
-        // The dock's apps (without launcher.json: Steam and a terminal).
-        apps: desktop::load_apps(paths.launcher.as_deref()),
+        // The dock's pinned entries, in order.
+        dock: read(paths.dock().as_deref()).map_or_else(Dock::default, |t| Dock::load(&t)),
         // Where shelf and the second screen were last time.
         resume: read(paths.resume.as_deref()),
         start_tab: env.start_tab,

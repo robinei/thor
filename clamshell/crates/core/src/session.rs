@@ -1,37 +1,21 @@
-//! What runs and what is in front: the games, the dock apps' instances (systemd's scopes), the
-//! compositor's windows, and what was started and hasn't shown up yet. The rules for games are in
-//! [`crate::game`], for the dock's apps in [`crate::tasks`].
+//! What runs and what is in front: the running entries (see [`crate::running`]), our scopes as systemd
+//! lists them, the compositor's windows, and the launch to show once its first window appears.
 
 use std::sync::Arc;
 
-use crate::apps::SHELF_APP_ID;
 use crate::effect::{Effect, WindowCommand};
-use crate::game::{Front, Launching, Queued, RunningGame};
 use crate::instance::Instance;
-use crate::windows::Window;
-
-/// Seconds an instance may take to show up in systemd's list before its start counts as failed.
-const STARTING_FOR: u64 = 15;
-
-/// Something started that hasn't shown up yet: its instance, and when it was asked for (epoch seconds).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Pending {
-    pub instance: Instance,
-    pub since: u64,
-}
+use crate::running::{Front, Launching, Running};
+use crate::windows::{SHELF_APP_ID, Window};
 
 #[derive(Debug, Default)]
 pub struct Session {
-    /// The games that run, in the order they started.
-    pub(crate) games: Vec<RunningGame>,
-    /// The game: of the games running, the one most recently in front (its settings are in force).
-    pub(crate) current: Option<Arc<str>>,
-    /// The program in force (see [`crate::program`]): a game's id, or a dock app's (`app:<key>`).
+    /// The entries that run, in the order they started.
+    pub(crate) running: Vec<Running>,
+    /// The program in force (see [`crate::program`]): an entry's id.
     pub(crate) program: Option<Arc<str>>,
     /// Launches asked for that haven't started.
     pub(crate) launching: Vec<Launching>,
-    /// The game to start once the one closed for it has ended.
-    pub(crate) queued: Option<Queued>,
     /// The compositor's windows.
     pub(crate) windows: Vec<Window>,
     /// Windows sent to the bottom screen by a rule (each once; dropped when it closes).
@@ -40,26 +24,29 @@ pub struct Session {
     pub(crate) units: Vec<Instance>,
     /// Workspaces by when they were last in front, most recent first.
     pub(crate) recent: Vec<String>,
-    /// Dock app instances started and not yet listed by systemd, so a second tap doesn't start another;
-    /// dropped once listed, or after a while if the start failed.
-    pub(crate) pending: Vec<Pending>,
-    /// The instance to show when its first window appears: the instance or game just started.
+    /// The launch to show when its first window appears.
     pub(crate) pending_show: Option<Instance>,
-    /// Dock apps quitting (by key): their windows asked to close; once none is left, their slice is
-    /// stopped (then true) if it still runs.
-    pub(crate) quitting: Vec<(String, bool)>,
+    /// Entries quitting: their windows asked to close; once none is left, ended (then true) if they still
+    /// run.
+    pub(crate) quitting: Vec<(Arc<str>, bool)>,
     /// Numbers new instances' names (with the time, unique across restarts).
     pub(crate) next_instance: u64,
 }
 
 impl Session {
-    pub fn games(&self) -> &[RunningGame] {
-        &self.games
+    /// The entries that run, in the order they started.
+    pub fn running_entries(&self) -> &[Running] {
+        &self.running
     }
 
-    /// The game: of the games running, the one most recently in front.
-    pub fn current_game(&self) -> Option<&Arc<str>> {
-        self.current.as_ref()
+    /// A running entry, by its id.
+    pub fn running(&self, id: &str) -> Option<&Running> {
+        self.running.iter().find(|r| &*r.id == id)
+    }
+
+    /// The program in force: an entry's id.
+    pub fn program(&self) -> Option<&Arc<str>> {
+        self.program.as_ref()
     }
 
     pub fn windows(&self) -> &[Window] {
@@ -70,25 +57,22 @@ impl Session {
         &self.units
     }
 
-    /// What is in front, from the compositor's focused window; without one, the game if one runs, else
-    /// shelf.
+    /// What is in front on the main screen: shelf, a running entry's window, or another.
     pub fn front(&self) -> Front {
-        match self.windows.iter().find(|w| w.focused) {
+        match self.windows.iter().find(|w| w.focused && !w.down) {
             Some(w) if w.app_id == SHELF_APP_ID => Front::Shelf,
-            Some(w) if w.of_game() || self.game_of(w).is_some() => Front::Game,
-            Some(_) => Front::App,
-            None if self.current.is_some() => Front::Game,
+            Some(w) if self.running_of(w).is_some() => Front::Program,
+            Some(_) => Front::Other,
+            None if self.program.is_some() => Front::Program,
             None => Front::Shelf,
         }
     }
 
-    /// The running game a window belongs to: on its workspace, or Steam's window of it.
-    pub fn game_of(&self, w: &Window) -> Option<&RunningGame> {
-        self.games.iter().find(|g| g.instance.is(&w.workspace) || g.appid().is_some_and(|id| w.steam_id() == Some(id)))
-    }
-
-    pub fn running_game(&self, id: &str) -> Option<&RunningGame> {
-        self.games.iter().find(|g| &*g.id == id)
+    /// The running entry a window belongs to: by its scope (moved down too), its workspace, or Steam's
+    /// window of it.
+    pub fn running_of(&self, w: &Window) -> Option<&Running> {
+        let key = w.unit.as_deref().and_then(Instance::key_of).or_else(|| Instance::key_of(&w.workspace));
+        self.running.iter().find(|r| key == Some(r.key.as_str()) || r.appid().is_some_and(|id| w.steam_id() == Some(id)))
     }
 
     /// The start time and counter for a new instance's name.
@@ -110,21 +94,16 @@ impl Session {
 
     pub(crate) fn set_units(&mut self, units: Vec<Instance>) {
         self.units = units;
-        let units = &self.units;
-        self.pending.retain(|p| !units.contains(&p.instance));
     }
 
-    /// Starts systemd never listed failed: forgotten.
-    pub(crate) fn forget_failed_starts(&mut self, now: u64) {
-        self.pending.retain(|p| now < p.since + STARTING_FOR);
-    }
-
-    /// The instance or game just started, once its first window is there: show it.
+    /// The launch just started, once its own first window is there (the entry's workspace may have its
+    /// other launches' already; a Steam game's has no scope of ours: any of its windows): its workspace
+    /// shown.
     pub(crate) fn show_pending(&mut self) -> Vec<Effect> {
-        // (An app's: its own window, as its workspace may have its other instances' already.)
         let arrived = self.pending_show.as_ref().is_some_and(|i| {
-            let unit = i.app_key().and(i.unit());
-            self.windows.iter().any(|w| i.on(&w.workspace) && (unit.is_none() || w.unit == unit))
+            let unit = i.unit();
+            let steam = self.running.iter().find(|r| Some(r.key.as_str()) == i.key()).and_then(Running::appid);
+            self.windows.iter().any(|w| i.on(&w.workspace) && (steam.is_some() || w.unit == unit))
         });
         match self.pending_show.take() {
             Some(instance) if arrived => vec![Effect::Window(WindowCommand::Focus(instance.workspace()))],

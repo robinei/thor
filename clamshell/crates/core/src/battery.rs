@@ -49,14 +49,13 @@ pub struct Battery {
 }
 
 impl State {
-    /// A spender's name: the app or game its scope belongs to, the program's name, or "System".
+    /// A spender's name: the entry its scope is a launch of, the program's name, or "System".
     pub fn spender_name<'a>(&'a self, spender: &'a Spender) -> &'a str {
         match &spender.group {
-            Group::Instance(Instance::App { key, .. }) => self.apps.list.iter().find(|a| a.key() == key).map_or(key.as_str(), |a| a.name.as_str()),
-            // The game whose scope it is.
             Group::Instance(instance) => {
-                let game = self.session.games().iter().find(|g| g.instance == *instance);
-                game.and_then(|r| self.game(&r.id)).map_or("Game", |g| g.title.as_str())
+                let key = instance.key();
+                let entry = self.shelf.library().games.iter().find(|g| Some(g.key.as_str()) == key);
+                entry.map_or_else(|| key.unwrap_or("?"), |g| g.title.as_str())
             }
             Group::Process(name) => name,
             Group::System => "System",
@@ -80,17 +79,14 @@ mod tests {
         s.apply(Event::Tick { unix_secs: 1792010377 });
         let first = s.shelf().selected().cloned().unwrap_or_default();
         let zelda = launch(&mut s, &first);
-        // A second game in front: each scope keeps its own game's name.
-        tap(&mut s, game("ff6"));
-        tap(&mut s, Id::Shelf(ShelfId::StartKeep));
+        // Each scope keeps its own entry's name.
+        let ff6 = launch(&mut s, "ff6");
         s.apply(GameEvent::Started("ff6".into()).into());
-        assert_eq!(s.current_game().map(|g| &**g), Some("ff6"));
-        let terminal = s.apps().list.iter().find(|a| a.multiple).map(|a| a.key().to_owned()).unwrap_or_default();
-        let app = Instance::App { key: terminal, secs: 1792010377, n: 0 };
-        assert_eq!(s.spender_name(&spender(Group::Instance(app))), "Terminal");
+        let terminal = Instance::Run { key: clamshell_library::key_of("desktop:foot"), secs: 1, n: 9 };
+        assert_eq!(s.spender_name(&spender(Group::Instance(terminal))), "Terminal");
         let title = |id: &str| s.game(id).map(|g| g.title.clone()).unwrap_or_default();
         assert_eq!(s.spender_name(&spender(Group::Instance(zelda))), title(&first));
-        assert_eq!(s.spender_name(&spender(Group::Instance(Instance::Game { secs: 1792010377, n: 1 }))), title("ff6"));
+        assert_eq!(s.spender_name(&spender(Group::Instance(ff6))), title("ff6"));
         assert_eq!(s.spender_name(&spender(Group::Process("firefox".into()))), "firefox");
         assert_eq!(s.spender_name(&spender(Group::System)), "System");
     }

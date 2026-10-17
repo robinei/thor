@@ -52,13 +52,6 @@ pub fn load(sources: &Sources) -> Library {
             games.extend(steam);
         }
     }
-    let apps = crate::desktop::entries(&sources.data_dirs);
-    if !apps.is_empty() {
-        // The installed apps: tools (Recent leaves them out).
-        let first = games.len();
-        collections.push(Collection { summary: "Installed apps".into(), tools: true, ..Collection::new("Apps", (first..first + apps.len()).collect()) });
-        games.extend(apps);
-    }
     for c in &mut collections {
         c.games.sort_by(|&a, &b| {
             let key = |i: usize| games.get(i).map(|g| (&g.sort_key, &g.title));
@@ -66,6 +59,14 @@ pub fn load(sources: &Sources) -> Library {
         });
     }
     collections.sort_by(|a, b| a.sort_key.cmp(&b.sort_key).then(a.name.cmp(&b.name)));
+    // The installed apps, after the games' collections: tools (Recent leaves them out).
+    let mut apps = crate::desktop::entries(&sources.data_dirs);
+    if !apps.is_empty() {
+        apps.sort_by(|a, b| a.sort_key.cmp(&b.sort_key).then(a.title.cmp(&b.title)));
+        let first = games.len();
+        collections.push(Collection { summary: "Installed apps".into(), tools: true, ..Collection::new("Apps", (first..first + apps.len()).collect()) });
+        games.extend(apps);
+    }
     if let Some(dir) = sources.state_dir.as_deref() {
         let plays = stats::read(&dir.join("stats.db"));
         let favourites = favorites::read(dir);

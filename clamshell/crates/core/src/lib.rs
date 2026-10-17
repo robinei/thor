@@ -3,18 +3,17 @@
 //! events, so all of this is unit-testable.
 //!
 //! The state is grouped by what it is about: shelf ([`Shelf`]), the second screen ([`Bottom`]), what runs
-//! and is in front ([`Session`]), the dock's apps ([`Apps`]), volume and brightness ([`Levels`]), the
+//! and is in front ([`Session`]), the dock ([`Dock`]), volume and brightness ([`Levels`]), the
 //! radios ([`Radios`]), the controller ([`Pad`]), focus and presses ([`Pointer`]), and the system's
 //! readings ([`Sys`]). Each owns its own rules; what involves two of them is [`State`]'s.
 
-pub mod apps;
 pub mod battery;
 pub mod bluetooth;
 pub mod bottom_screen;
+pub mod dock;
 pub mod editor;
 mod effect;
 mod event;
-mod game;
 pub mod hardware;
 mod id;
 pub mod idle;
@@ -32,6 +31,7 @@ mod pointer;
 pub mod program;
 mod radios;
 mod resume;
+mod running;
 pub mod scroll;
 mod session;
 pub mod settings;
@@ -39,24 +39,20 @@ mod shelf;
 pub mod slider;
 mod sys;
 mod tab;
-mod tasks;
 pub mod time;
 pub mod touch;
 pub mod wifi;
 pub mod windows;
-
-use std::sync::Arc;
 
 use keyboard::{Key, Keyboard};
 use resume::{SAVE_AFTER, Saves};
 use settings::{Setting, Settings};
 use slider::Control;
 
-pub use apps::Apps;
+pub use dock::{Dock, DockItem};
 pub use editor::{Editor, count_env, parse_env};
 pub use effect::{Dirty, Effect, Save, Watch, WindowCommand};
 pub use event::{Event, GameEvent, LevelEvent, PointerEvent, Reading, ShelfEvent, Slide};
-pub use game::{Front, Launching, Origin, Queued, RunningGame};
 pub use id::{AudioId, BtId, DockId, EditorId, Hold, Id, KeymapId, SettingsId, ShelfId, Target, WifiId};
 pub use instance::Instance;
 pub use levels::{Brightness, Level, Levels, Sound};
@@ -65,12 +61,12 @@ pub use panel::{Scope, TileOrigin};
 pub use pointer::Pointer;
 pub use program::Program;
 pub use radios::{RadioStatus, Radios};
+pub use running::{Front, Launching, Origin, Running};
 pub use scroll::{ListEvent, ListId, Lists, RowPart, Scroll};
-pub use session::{Pending, Session};
+pub use session::Session;
 pub use shelf::{Cursor, Shelf};
 pub use sys::{Status, Sys, TouchpadProblem};
 pub use tab::{Bottom, Tab};
-pub use tasks::DockMenu;
 pub use time::{TimeRow, TimeZones};
 
 pub use clamshell_library::{Collection, Game, Launch, Library};
@@ -115,7 +111,8 @@ pub struct Init {
     pub keymaps: keymap::Keymaps,
     /// The screens' brightness as it was left.
     pub brightness: Brightness,
-    pub apps: Apps,
+    /// The dock's pinned entries, in order.
+    pub dock: Dock,
     /// Where shelf and the second screen were (see [`State::resume_text`]).
     pub resume: Option<String>,
     /// The tab to start in instead (a development option).
@@ -133,7 +130,7 @@ pub struct State {
     shelf: Shelf,
     bottom: Bottom,
     session: Session,
-    apps: Apps,
+    dock: Dock,
     levels: Levels,
     radios: Radios,
     pad: Pad,
@@ -169,7 +166,7 @@ impl State {
             keymaps: init.keymaps,
             window_rules: init.window_rules,
             levels: Levels::new(init.brightness),
-            apps: init.apps,
+            dock: init.dock,
             device_session: init.device_session,
             ..State::default()
         };
@@ -199,10 +196,6 @@ impl State {
 
     pub fn session(&self) -> &Session {
         &self.session
-    }
-
-    pub fn apps(&self) -> &Apps {
-        &self.apps
     }
 
     pub fn levels(&self) -> &Levels {
@@ -245,11 +238,6 @@ impl State {
     /// A game of the library, by its id.
     pub fn game(&self, id: &str) -> Option<&Game> {
         self.shelf.game(id)
-    }
-
-    /// The game: of the games running, the one most recently in front.
-    pub fn current_game(&self) -> Option<&Arc<str>> {
-        self.session.current_game()
     }
 
     /// Whether the pad, on ClamShell's screens, may go to shelf's (shelf is in front and nothing else
@@ -310,14 +298,17 @@ impl State {
             Event::Game(e) => self.on_game(e),
             Event::Windows(windows) => {
                 self.session.set_windows(windows);
-                let mut effects = self.follow_games();
+                let mut effects = self.follow_steam();
                 effects.extend(self.follow_window_rules());
                 effects.extend(self.session.show_pending());
                 effects.extend(self.follow_quitting());
+                self.follow_dock();
                 (Dirty::BOTH, effects)
             }
             Event::Units(units) => {
                 self.session.set_units(units);
+                self.follow_units();
+                self.follow_dock();
                 (Dirty::BOTTOM, self.follow_quitting())
             }
             Event::Start => {
@@ -375,7 +366,6 @@ impl State {
         if self.unix_secs == 0 {
             self.idle.resumed(unix_secs);
         }
-        self.session.forget_failed_starts(unix_secs);
         self.unix_secs = unix_secs;
         let mut effects = vec![];
         if self.saves.resume.due(unix_secs, SAVE_AFTER) {
@@ -482,7 +472,6 @@ impl State {
         self.pointer.focus = Some(id.clone());
         match id {
             Id::Shelf(id) => (Dirty::BOTH, self.on_shelf(id)),
-            Id::Dock(DockId::StartGame) => (Dirty::NONE, self.on_dock(DockId::StartGame, long)),
             Id::Dock(id) => (Dirty::BOTTOM, self.on_dock(id, long)),
             Id::Settings(id @ (SettingsId::Tile(_) | SettingsId::Reset)) => (Dirty::BOTH, self.on_settings(id, long)),
             Id::Settings(id) => (Dirty::BOTTOM, self.on_settings(id, long)),
@@ -568,8 +557,6 @@ impl State {
                 Some(game) => self.play(game),
                 None => vec![],
             },
-            ShelfId::StartKeep => self.start_beside(false),
-            ShelfId::StartClose => self.start_beside(true),
         }
     }
 
@@ -614,19 +601,17 @@ impl State {
 
     fn on_game(&mut self, event: GameEvent) -> (Dirty, Vec<Effect>) {
         match event {
-            GameEvent::Started(game) => {
-                self.game_started(game);
-                (Dirty::BOTH, vec![])
-            }
-            GameEvent::Played { game, start, duration } => (Dirty::BOTH, self.game_played(&game, start, duration)),
+            GameEvent::Started(game) => self.started(game),
+            GameEvent::Played { game, start, duration } => self.played(&game, start, duration),
+            // (A launch that never started: nothing runs one less, but it is no longer starting.)
             GameEvent::LaunchFailed(game) => {
-                self.session.launching.retain(|l| l.game != game);
-                if self.session.running_game(&game).is_some() {
-                    return (Dirty::BOTH, self.game_gone(&game));
+                if let Some(i) = self.session.launching.iter().position(|l| l.game == game) {
+                    self.session.launching.remove(i);
                 }
-                (Dirty::BOTH, vec![])
             }
         }
+        self.follow_dock();
+        (Dirty::BOTH, self.follow_quitting())
     }
 
     /// The volume tab's buttons.
@@ -702,19 +687,19 @@ impl State {
         }
         self.saves.resume.touch(self.unix_secs);
         self.bottom.tab = tab;
-        self.bottom.dock_menu = None;
+        self.dock.menu = None;
+        self.dock.moving = None;
         self.levels.leave();
         let watch = |tab: Tab, on| tab.watch().map(|w| Effect::Watch(w, on));
         watch(before, false).into_iter().chain(watch(tab, true)).collect()
     }
 
-    /// An app's text field wants typing (or is done): the keyboard comes up, and goes back to the tab it
-    /// came up from when the field is done, unless the user chose a tab meanwhile. Not for a game (SDL
-    /// asks for text input whether or not it needs it); the keyboard is a tap away there.
+    /// A text field wants typing (or is done): the keyboard comes up, and goes back to the tab it came up
+    /// from when the field is done, unless the user chose a tab meanwhile.
     fn text_input(&mut self, active: bool) -> Vec<Effect> {
         if active {
             // (Not over an open editor: what is typed there would be lost.)
-            if self.bottom.tab == Tab::Keyboard || self.session.front() == Front::Game || self.bottom.editor().is_some() {
+            if self.bottom.tab == Tab::Keyboard || self.bottom.editor().is_some() {
                 return vec![];
             }
             self.bottom.raised_from = Some(self.bottom.tab);
@@ -726,17 +711,17 @@ impl State {
         }
     }
 
-    /// The home button: from anything to shelf; from shelf back to what was in front before it (the
-    /// game, an app's instance), or without that history (no compositor's word) to the running game.
+    /// The home button: from anything to shelf; from shelf back to what was in front before it, or
+    /// without that history (no compositor's word) to the program in force.
     fn home(&mut self) -> Vec<Effect> {
         let session = &self.session;
         let front = session.windows.iter().find(|w| w.focused);
-        let shelf_in_front = front.is_none_or(|w| w.app_id == apps::SHELF_APP_ID);
+        let shelf_in_front = front.is_none_or(|w| w.app_id == windows::SHELF_APP_ID);
         if !shelf_in_front {
             return vec![Effect::Window(WindowCommand::ShowShelf)];
         }
         let before = session.recent.iter().find(|ws| !Instance::Shelf.is(ws)).cloned();
-        let game = session.current.as_deref().and_then(|id| session.running_game(id)).map(|g| g.instance.name());
+        let game = session.program.as_deref().and_then(|id| session.running(id)).map(Running::workspace);
         match before.or(game) {
             Some(workspace) => vec![Effect::Window(WindowCommand::Focus(workspace))],
             None => vec![],
@@ -835,28 +820,28 @@ mod tests {
     #[test]
     fn home_goes_to_shelf_and_back_to_what_was_in_front() {
         let mut s = state();
-        let shelf = |focused| win(1, apps::SHELF_APP_ID, &Instance::Shelf.name(), focused);
-        let landing = Instance::Landing.name();
+        let shelf = |focused| win(1, windows::SHELF_APP_ID, &Instance::Shelf.name(), focused);
+        let zelda = Instance::workspace_of(&clamshell_library::key_of("zelda-lttp"));
         let home = |s: &mut State| s.apply(Event::Home).1;
         assert_eq!(home(&mut s), vec![], "nothing before shelf: it stays");
         s.apply(GameEvent::Started("zelda-lttp".into()).into());
-        assert_eq!(home(&mut s), vec![focus(&Instance::Landing)], "no history: the game");
+        assert_eq!(home(&mut s), vec![Effect::Window(WindowCommand::Focus(zelda.clone()))], "no history: the program in force");
         // A terminal in front, then shelf: home goes back to the terminal.
-        let terminal = "clamshell-app-terminal-1-0";
+        let terminal = "clamshell-run-foot_1";
         s.apply(Event::Windows(vec![shelf(false), win(2, "foot", terminal, true)]));
         assert_eq!(home(&mut s), vec![Effect::Window(WindowCommand::ShowShelf)]);
         s.apply(Event::Windows(vec![shelf(true), win(2, "foot", terminal, false)]));
         assert_eq!(home(&mut s), vec![Effect::Window(WindowCommand::Focus(terminal.into()))]);
         // The terminal closed: back to the game, which was in front before.
-        s.apply(Event::Windows(vec![shelf(false), win(3, "retroarch", &landing, true)]));
-        s.apply(Event::Windows(vec![shelf(true), win(3, "retroarch", &landing, false)]));
-        assert_eq!(home(&mut s), vec![focus(&Instance::Landing)]);
+        s.apply(Event::Windows(vec![shelf(false), win(3, "retroarch", &zelda, true)]));
+        s.apply(Event::Windows(vec![shelf(true), win(3, "retroarch", &zelda, false)]));
+        assert_eq!(home(&mut s), vec![Effect::Window(WindowCommand::Focus(zelda))]);
     }
 
     #[test]
     fn home_goes_back_to_a_workspace_that_isnt_ours() {
         let mut s = state();
-        let shelf = |focused| win(1, apps::SHELF_APP_ID, &Instance::Shelf.name(), focused);
+        let shelf = |focused| win(1, windows::SHELF_APP_ID, &Instance::Shelf.name(), focused);
         s.apply(Event::Windows(vec![shelf(false), foot()]));
         s.apply(Event::Windows(vec![shelf(true), Window { focused: false, ..foot() }]));
         assert_eq!(s.apply(Event::Home).1, vec![Effect::Window(WindowCommand::Focus("1".into()))]);

@@ -230,9 +230,21 @@ pub(crate) fn tile(f: &mut Frame, id: Id, r: Rect, shape: &TileShape, face: Tile
     });
 }
 
-/// The game's box art fitted into `r` (centred across it; down it as `align` says, `Start` at the top),
-/// or a placeholder in its colour while there is none.
-pub(crate) fn art(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect, radius: f32, align: Align) {
+/// An image drawn grey (an entry not running, on the dock): at this brightness.
+const GREY: f32 = 0.55;
+
+/// A colour as an image is drawn grey: its luminance at [`GREY`]'s brightness.
+fn greyed(color: u32) -> u32 {
+    let channel = |shift: u32| ((color >> shift) & 0xff) as f32;
+    let luma = (0.3 * channel(16) + 0.59 * channel(8) + 0.11 * channel(0)) * GREY;
+    let v = luma.round().clamp(0.0, 255.0) as u32;
+    (v << 16) | (v << 8) | v
+}
+
+/// An entry's picture in `r`: its box art fitted in (centred across it; down it as `align` says, `Start`
+/// at the top), else its icon (square, in the middle), else a placeholder in its colour while there is
+/// neither; `grey` for one shown stopped.
+pub(crate) fn art(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect, radius: f32, align: Align, grey: bool) {
     let scale = c.scale();
     let (pw, ph) = ((r.w * scale).round() as u32, (r.h * scale).round() as u32);
     match game.box_front.as_deref().and_then(|path| images.get(&game.id, path, pw, ph)) {
@@ -243,7 +255,11 @@ pub(crate) fn art(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect, rad
                 Align::Center => r.y + (r.h - ih) / 2.0,
                 Align::End => r.y + r.h - ih,
             };
-            c.image(img, r.x + (r.w - iw) / 2.0, y);
+            if grey {
+                c.image_grey(img, r.x + (r.w - iw) / 2.0, y, GREY);
+            } else {
+                c.image(img, r.x + (r.w - iw) / 2.0, y);
+            }
         }
         // An app's icon, square in the middle, where it has no box art.
         None => match game.icon.as_deref().and_then(|path| {
@@ -252,9 +268,14 @@ pub(crate) fn art(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect, rad
         }) {
             Some(img) => {
                 let (iw, ih) = (img.width() as f32 / scale, img.height() as f32 / scale);
-                c.image(img, r.x + (r.w - iw) / 2.0, r.y + (r.h - ih) / 2.0);
+                let (x, y) = (r.x + (r.w - iw) / 2.0, r.y + (r.h - ih) / 2.0);
+                if grey {
+                    c.image_grey(img, x, y, GREY);
+                } else {
+                    c.image(img, x, y);
+                }
             }
-            None => c.rounded(r, radius, Rgb(game.color)),
+            None => c.rounded(r, radius, Rgb(if grey { greyed(game.color) } else { game.color })),
         },
     }
 }

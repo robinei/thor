@@ -15,50 +15,40 @@ pub const STATUS: Status = Status { battery: Some(72), charging: true, wifi: Som
 /// Low battery, no Wi-Fi, muted.
 pub const STATUS_LOW: Status = Status { battery: Some(9), charging: false, wifi: None, volume: Some(40), muted: true, brightness: None };
 
+/// A launch of entry `id` (the `n`th thing started).
+fn run(id: &str, n: u64) -> Instance {
+    Instance::Run { key: clamshell_library::key_of(id), secs: 1, n }
+}
+
+/// A window of a launch, on its entry's workspace (`down`: moved to the bottom screen).
+fn window_of(id: i64, app_id: &str, launch: &Instance, focused: bool, down: bool) -> Window {
+    let workspace = if down { Instance::Bottom.name() } else { launch.workspace() };
+    Window { id, app_id: app_id.into(), focused, unit: launch.unit(), workspace, down, ..Window::default() }
+}
+
 /// The game running, two terminals and a browser, and their windows (the second terminal's in front).
 pub fn running() -> Vec<Event> {
-    let window = |id: i64, app_id: &str, unit: &str, focused: bool| Window {
-        id,
-        app_id: app_id.into(),
-        title: String::new(),
-        focused,
-        unit: Some(unit.into()),
-        // (The game's on the landing workspace: Steam's, not moved yet.)
-        workspace: Instance::from_unit(unit).map_or_else(String::new, |i| i.workspace()).replace("clamshell-game-1-0", &Instance::Landing.name()),
-        ..Window::default()
-    };
+    let (game, t1, t2, web) = (run("zelda-lttp", 0), run("desktop:foot", 1), run("desktop:foot", 2), run("desktop:firefox", 3));
+    let started = |id: &str| Event::Game(GameEvent::Started(id.into()));
     vec![
-        Event::Game(GameEvent::Started("zelda-lttp".into())),
-        Event::Units(
-            ["clamshell-game-1-0", "clamshell-app-terminal-1-0", "clamshell-app-terminal-1-1", "clamshell-app-firefox-1-2"]
-                .into_iter()
-                .filter_map(Instance::parse)
-                .collect(),
-        ),
+        started("zelda-lttp"),
+        started("desktop:foot"),
+        started("desktop:foot"),
+        started("desktop:firefox"),
+        Event::Units(vec![game.clone(), t1.clone(), t2.clone(), web.clone()]),
         Event::Windows(vec![
-            window(5, "retroarch", "clamshell-game-1-0.scope", false),
-            window(7, "foot", "clamshell-app-terminal-1-0.scope", false),
-            window(8, "foot", "clamshell-app-terminal-1-1.scope", true),
-            window(9, "firefox", "clamshell-app-firefox-1-2.scope", false),
+            window_of(5, "retroarch", &game, false, false),
+            window_of(7, "foot", &t1, false, false),
+            window_of(8, "foot", &t2, true, false),
+            window_of(9, "firefox", &web, false, false),
         ]),
     ]
 }
 
 /// [`running`]'s windows, the terminal in front with a second window moved to the bottom screen.
 pub fn window_below() -> Vec<Event> {
-    let window = |id: i64, unit: &str, workspace: &str, focused: bool, down: bool| Window {
-        id,
-        app_id: "foot".into(),
-        focused,
-        unit: Some(unit.into()),
-        workspace: workspace.into(),
-        down,
-        ..Window::default()
-    };
-    vec![Event::Windows(vec![
-        window(8, "clamshell-app-terminal-1-1.scope", "clamshell-app-terminal", true, false),
-        window(10, "clamshell-app-terminal-1-1.scope", &Instance::Bottom.name(), false, true),
-    ])]
+    let t2 = run("desktop:foot", 2);
+    vec![Event::Windows(vec![window_of(8, "foot", &t2, true, false), window_of(10, "foot", &t2, false, true)])]
 }
 
 /// Four networks in range, one connected.
@@ -154,9 +144,9 @@ pub fn battery(now: u64) -> Vec<Event> {
         .collect();
     let spender = |group: Group, cpu: f32, gpu: f32| Spender { group, cpu, gpu };
     let spenders = vec![
-        spender(Group::Instance(Instance::Game { secs: 1_760_000_000, n: 0 }), 0.31, 0.62),
+        spender(Group::Instance(run("zelda-lttp", 0)), 0.31, 0.62),
         spender(Group::Process("firefox".into()), 0.08, 0.03),
-        spender(Group::Instance(Instance::App { key: "terminal".into(), secs: 1_760_000_000, n: 1 }), 0.02, 0.0),
+        spender(Group::Instance(run("desktop:foot", 1)), 0.02, 0.0),
         spender(Group::System, 0.03, 0.0),
         spender(Group::Process("clamshell".into()), 0.01, 0.0),
     ];

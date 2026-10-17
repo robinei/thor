@@ -40,34 +40,18 @@ pub enum Effect {
     Key(Stroke),
     /// Where the controller's input goes now.
     PadRoute(PadRoute),
-    /// Start a dock app's command as a new instance (its scope and workspace), with its program's
-    /// settings and extra environment, as a game's launch.
-    RunApp {
-        instance: Instance,
-        command: Vec<String>,
-        program: Arc<str>,
-        settings: Values,
-        env: Vec<(String, String)>,
-    },
     /// The compositor: show, close or move windows.
     Window(WindowCommand),
-    /// Quit the game: close its windows, then end what is left of it in a few seconds: its scopes (a game
-    /// shelf started), or (a game Steam started, which runs in Steam's scope) the processes under Steam's
-    /// launcher for its app id (`steam`), which every process of the game descends from.
-    QuitGame {
-        windows: Vec<i64>,
-        units: Vec<Instance>,
-        steam: Option<u32>,
-    },
-    /// Force kill the game at once: its scopes, or the processes under Steam's launcher for it.
-    KillGame {
-        units: Vec<Instance>,
-        steam: Option<u32>,
-    },
-    /// End dock app `key`'s slice (all its instances): stopped (`force`: killed at once).
-    EndApp {
+    /// End an entry's slice (all its launches): stopped (systemd asks its processes to end, then kills
+    /// what is left after its timeout), or with `force` killed at once.
+    EndRun {
         key: String,
         force: bool,
+    },
+    /// End a game Steam runs (in Steam's scope, not ours): every process under Steam's launcher for its
+    /// app id, killed.
+    EndSteam {
+        appid: u32,
     },
     /// Record a play that ClamShell didn't start (a game Steam started): in stats.db.
     RecordPlay {
@@ -143,17 +127,19 @@ pub enum Save {
     Brightness(String),
     /// The window rules (see [`crate::bottom_screen::WindowRules::text`]).
     WindowRules(String),
+    /// The dock's pinned entries (see [`crate::dock::Dock::text`]).
+    Dock(String),
 }
 
 /// What the compositor is asked to do.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WindowCommand {
-    /// Show this workspace: a dock app instance's, a game's, or (Home going back) whatever was in front.
+    /// Show this workspace: an entry's, or (Home going back) whatever was in front.
     Focus(String),
-    /// Ask these windows to close (as their own close buttons would): an instance's.
+    /// Ask these windows to close (as their own close buttons would).
     Close(Vec<i64>),
-    /// Move these windows to this instance's workspace (a Steam game's, from where they landed).
-    Move { windows: Vec<i64>, to: Instance },
+    /// Move these windows to this workspace (a Steam game's, from where they landed, to its entry's).
+    Move { windows: Vec<i64>, to: String },
     /// Bring shelf's window to the front.
     ShowShelf,
     /// A window to the bottom screen (marked there, so it stays), shown there; the top screen keeps the

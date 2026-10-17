@@ -5,7 +5,10 @@
 //! Games are the same: each running game shelf started has a scope and a workspace of that name; a game
 //! Steam starts gets a workspace of its own too (its windows are moved there from where they land).
 
-use crate::instance::{self, Instance, STEAM_APP_PREFIX};
+use crate::instance::{self, Instance};
+
+/// Shelf's window's app id (its own Wayland surface on the main screen).
+pub const SHELF_APP_ID: &str = "clamshell.top";
 
 /// An open window (from sway's tree).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -27,14 +30,9 @@ pub struct Window {
 }
 
 impl Window {
-    /// The dock app instance or game it belongs to: its scope's, if we started it.
+    /// The launch it belongs to: its scope's, if we started it.
     pub fn instance(&self) -> Option<Instance> {
         self.unit.as_deref().and_then(Instance::from_unit)
-    }
-
-    /// The game's: started by our launcher, or a Steam game's (`steam_app_<id>`).
-    pub fn of_game(&self) -> bool {
-        self.unit.as_deref().is_some_and(Instance::is_game_unit) || self.app_id.starts_with(STEAM_APP_PREFIX)
     }
 
     /// Steam's id of the game it is a window of (`steam_app_<id>`).
@@ -42,10 +40,10 @@ impl Window {
         instance::steam_app_id(&self.app_id)
     }
 
-    /// The workspace it belongs on: its instance's or game's (one we started), shelf's, or none (left
-    /// where it is; Steam's games are placed by the program, which knows which game they are).
+    /// What it belongs on the workspace of: its launch (one we started), shelf, or none (left where it
+    /// is; Steam's games are placed by the state, which knows which entry they are).
     pub fn home(&self) -> Option<Instance> {
-        self.instance().or_else(|| (self.app_id == crate::apps::SHELF_APP_ID).then_some(Instance::Shelf))
+        self.instance().or_else(|| (self.app_id == SHELF_APP_ID).then_some(Instance::Shelf))
     }
 }
 
@@ -56,17 +54,15 @@ mod tests {
     #[test]
     fn windows_know_their_instance_and_home() {
         let w = |unit: Option<&str>, app_id: &str| Window { unit: unit.map(Into::into), app_id: app_id.into(), ..Window::default() };
-        let terminal = Instance::App { key: "terminal".into(), secs: 1234, n: 7 };
-        let foot = w(Some("clamshell-app-terminal-1234-7.scope"), "foot");
+        let terminal = Instance::Run { key: "foot_1".into(), secs: 1234, n: 7 };
+        let foot = w(Some("clamshell-run-foot_1-1234-7.scope"), "foot");
         assert_eq!(foot.instance(), Some(terminal.clone()));
         assert_eq!(foot.home(), Some(terminal.clone()));
         // Firefox started from that terminal: the terminal's.
-        assert_eq!(w(Some("clamshell-app-terminal-1234-7.scope"), "firefox").home(), Some(terminal));
-        assert_eq!(w(Some("clamshell-game-99-1.scope"), "retroarch").home(), Some(Instance::Game { secs: 99, n: 1 }));
-        assert!(w(Some("clamshell-game-99-1.scope"), "retroarch").of_game());
+        assert_eq!(w(Some("clamshell-run-foot_1-1234-7.scope"), "firefox").home(), Some(terminal));
         assert_eq!(w(Some("app-steam.scope"), "steam_app_620").home(), None, "Steam's: placed by the program");
         assert_eq!(w(Some("app-steam.scope"), "steam_app_620").steam_id(), Some(620));
         assert_eq!(w(Some("app-steam.scope"), "steam").home(), None, "not ours: left alone");
-        assert_eq!(w(Some("clamshell.service"), crate::apps::SHELF_APP_ID).home(), Some(Instance::Shelf));
+        assert_eq!(w(Some("clamshell.service"), SHELF_APP_ID).home(), Some(Instance::Shelf));
     }
 }

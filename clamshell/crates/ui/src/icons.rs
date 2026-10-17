@@ -34,13 +34,7 @@ pub enum Icon {
     Gpu,
     Env,
     Reset,
-    // Dock apps.
-    Shelf,
     Gamepad,
-    Browser,
-    Files,
-    Music,
-    Video,
     Keyboard,
     Touchpad,
     Sysinfo,
@@ -155,21 +149,6 @@ impl Icon {
             Kind::Mouse => Icon::Mouse,
             Kind::Phone => Icon::Phone,
             Kind::Computer | Kind::Other => Icon::Bluetooth { connected: false },
-        }
-    }
-
-    /// A dock app's drawn icon, by the name launcher.json gives (`None`: the app has none drawn).
-    pub fn for_app(name: &str) -> Option<Icon> {
-        match name {
-            "shelf" => Some(Icon::Shelf),
-            "gamepad" => Some(Icon::Gamepad),
-            "terminal" => Some(Icon::Env),
-            "browser" => Some(Icon::Browser),
-            "files" => Some(Icon::Files),
-            "music" => Some(Icon::Music),
-            "video" => Some(Icon::Video),
-            "settings" => Some(Icon::Sliders),
-            _ => None,
         }
     }
 }
@@ -288,24 +267,7 @@ pub fn draw(c: &mut Canvas, icon: Icon, r: Rect, color: Color) {
             p.line(&[(11.5, 15.5), (17.5, 15.5)], LINE);
         }
         Icon::Reset => reset(p),
-        Icon::Shelf => shelf(p),
         Icon::Gamepad => gamepad(p),
-        Icon::Browser => {
-            p.frame((2.5, 2.5, 19.0, 19.0), 9.5, LINE);
-            p.frame((8.0, 2.5, 8.0, 19.0), 4.0, 1.4);
-            p.line(&[(3.0, 9.0), (21.0, 9.0)], 1.4);
-            p.line(&[(3.0, 15.0), (21.0, 15.0)], 1.4);
-        }
-        Icon::Files => p.shape(&[(2.5, 6.0), (2.5, 19.5), (21.5, 19.5), (21.5, 8.0), (11.5, 8.0), (9.5, 5.0), (3.5, 5.0)], LINE),
-        Icon::Music => {
-            p.line(&[(9.0, 17.5), (9.0, 4.0), (20.0, 2.5), (20.0, 15.5)], LINE);
-            p.dot(6.5, 17.5, 2.8);
-            p.dot(17.5, 15.5, 2.8);
-        }
-        Icon::Video => {
-            p.frame((2.5, 4.5, 19.0, 15.0), 2.5, LINE);
-            p.shape(&[(10.0, 8.5), (16.0, 12.0), (10.0, 15.5)], LINE);
-        }
         Icon::Windows => {
             p.frame((4.0, 2.5, 16.0, 8.5), 1.5, LINE);
             p.frame((4.0, 13.0, 16.0, 8.5), 1.5, LINE);
@@ -456,14 +418,6 @@ fn reset(p: &mut Pen) {
     p.line(&[(11.5, 3.5), (16.0, 6.1), (13.0, 10.0)], LINE);
 }
 
-fn shelf(p: &mut Pen) {
-    for (x, top) in [(4.0, 5.0), (8.5, 7.0), (13.0, 4.0)] {
-        p.frame((x, top, 3.5, 17.0 - top), 0.8, 1.5);
-    }
-    p.line(&[(17.5, 7.5), (21.0, 16.5)], 3.2);
-    p.line(&[(2.0, 21.0), (22.0, 21.0)], LINE);
-}
-
 fn gamepad(p: &mut Pen) {
     let body = [(6.5, 7.0), (17.5, 7.0), (21.0, 15.0), (19.5, 18.5), (16.0, 17.0), (14.0, 14.5), (10.0, 14.5), (8.0, 17.0), (4.5, 18.5), (3.0, 15.0)];
     p.shape(&body, LINE);
@@ -562,12 +516,7 @@ mod tests {
             Icon::Gpu,
             Icon::Env,
             Icon::Reset,
-            Icon::Shelf,
             Icon::Gamepad,
-            Icon::Browser,
-            Icon::Files,
-            Icon::Music,
-            Icon::Video,
             Icon::Keyboard,
             Icon::Touchpad,
             Icon::Sysinfo,
@@ -599,7 +548,7 @@ mod tests {
         for icon in &all {
             seen.insert(variant(*icon));
         }
-        assert_eq!(seen.len(), 45, "a variant is missing from the list");
+        assert_eq!(seen.len(), 40, "a variant is missing from the list");
         all
     }
 
@@ -623,12 +572,7 @@ mod tests {
             Icon::Gpu => 15,
             Icon::Env => 16,
             Icon::Reset => 17,
-            Icon::Shelf => 19,
             Icon::Gamepad => 20,
-            Icon::Browser => 21,
-            Icon::Files => 22,
-            Icon::Music => 23,
-            Icon::Video => 24,
             Icon::Keyboard => 25,
             Icon::Touchpad => 26,
             Icon::Sysinfo => 27,
@@ -673,7 +617,5 @@ mod tests {
         assert_eq!(Icon::wifi(None), Icon::Wifi { bars: None });
         assert_eq!(Icon::battery(44, false), Icon::Battery { tenths: 4, charging: false });
         assert_eq!(Icon::battery(100, true), Icon::Battery { tenths: 10, charging: true });
-        assert_eq!(Icon::for_app("terminal"), Some(Icon::Env));
-        assert_eq!(Icon::for_app("unknown"), None);
     }
 }

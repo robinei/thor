@@ -168,9 +168,9 @@ mod tests {
     fn a_job_round_trips_and_runs_in_its_scope() {
         let dir = std::env::temp_dir().join(format!("clamshell-jobs-{}", std::process::id()));
         let job = Job {
-            unit: format!("clamshell-app-jobtest-{}-0", std::process::id()),
-            workspace: "clamshell-app-jobtest".into(),
-            slice: Some("clamshell-app-jobtest.slice".into()),
+            unit: format!("clamshell-run-jobtest-{}-0", std::process::id()),
+            workspace: "clamshell-run-jobtest".into(),
+            slice: Some("clamshell-run-jobtest.slice".into()),
             argv: vec!["prog".into(), "a b,c;d".into()],
             env: vec![("K".into(), "v".into())],
             workdir: Some("/tmp".into()),
@@ -185,7 +185,7 @@ mod tests {
         assert_eq!(cmd.get_program(), "systemd-run");
         assert_eq!(args.last(), Some(&"a b,c;d"), "arguments untouched");
         assert!(args.contains(&format!("--unit={}", job.unit).as_str()));
-        assert!(args.contains(&"--slice=clamshell-app-jobtest.slice"), "in its slice: {args:?}");
+        assert!(args.contains(&"--slice=clamshell-run-jobtest.slice"), "in its slice: {args:?}");
     }
 
     #[test]

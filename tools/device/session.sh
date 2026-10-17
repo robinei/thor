@@ -1,8 +1,9 @@
 #!/bin/bash
 # The Thor's session, from this repository, into a home directory: ClamShell (the program given), sway's
-# config and the outputs script, ClamShell's service, mako's and foot's configs, the dock's apps, and the
-# login that starts sway on tty1. thor-image.sh writes it into the image; maintenance writes it again on the
-# device after pulling (then: systemctl --user daemon-reload, and ClamShell restarted).
+# config and the outputs script, ClamShell's service, mako's and foot's configs, the Maintenance app's
+# desktop file, the dock's first pins (only where there are none yet), and the login that starts sway on
+# tty1. thor-image.sh writes it into the image; maintenance writes it again on the device after pulling
+# (then: systemctl --user daemon-reload, and ClamShell restarted).
 #
 #   session.sh HOME_DIR FINAL_HOME PROGRAM
 #
@@ -12,7 +13,8 @@ set -euo pipefail
 H=$1 FINAL=$2 PROGRAM=$3
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
 C=$FINAL/.local/bin/clamshell
-mkdir -p "$H/.config/sway" "$H/.config/mako" "$H/.config/foot" "$H/.config/clamshell" "$H/.config/systemd/user" "$H/.local/bin"
+mkdir -p "$H/.config/sway" "$H/.config/mako" "$H/.config/foot" "$H/.config/systemd/user" "$H/.local/bin" \
+    "$H/.local/share/applications" "$H/.local/share/clamshell"
 # (A running ClamShell keeps its file: replace it rather than write into it.)
 install -m 755 "$PROGRAM" "$H/.local/bin/clamshell.new"
 mv "$H/.local/bin/clamshell.new" "$H/.local/bin/clamshell"
@@ -74,12 +76,17 @@ Restart=on-failure
 RestartSec=2
 EOF
 
-# The dock: Steam, a terminal, and maintenance (Claude Code's pass over the system, tools/device/maintain,
-# in a terminal).
-cat > "$H/.config/clamshell/launcher.json" <<EOF
-{ "apps": [
-    { "desktop": "steam" },
-    { "desktop": "foot", "multiple": true },
-    { "name": "Maintenance", "icon": "settings", "command": ["foot", "--app-id=maintenance", "$FINAL/thor/tools/device/maintain"] }
-] }
+# Maintenance (Claude Code's pass over the system, tools/device/maintain, in a terminal): an installed app,
+# in shelf's Apps like any other.
+cat > "$H/.local/share/applications/thor-maintenance.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Maintenance
+Exec=foot --app-id=maintenance $FINAL/thor/tools/device/maintain
+Icon=utilities-terminal
 EOF
+
+# The dock's first pins: Steam, the terminal, Maintenance (the user's own, once there are any, are kept).
+if [ ! -e "$H/.local/share/clamshell/dock.txt" ]; then
+    printf '# ClamShell dock, format 1\ndesktop:steam\ndesktop:foot\ndesktop:thor-maintenance\n' > "$H/.local/share/clamshell/dock.txt"
+fi

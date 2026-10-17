@@ -99,13 +99,13 @@ mod tests {
         let mut asked = Vec::new();
         let mut unit = |pid| {
             asked.push(pid);
-            (pid == 100).then(|| "clamshell-app-terminal-1-0.scope".to_owned())
+            (pid == 100).then(|| "clamshell-run-foot_1-1-0.scope".to_owned())
         };
         let w = windows(&tree, &mut unit);
         assert_eq!(asked, vec![100, 200]);
         assert_eq!(w.len(), 2);
         assert_eq!((w[0].workspace.as_str(), w[1].workspace.as_str()), ("3", "3"));
-        assert_eq!((w[0].id, w[0].app_id.as_str(), w[0].focused, w[0].unit.as_deref()), (7, "foot", true, Some("clamshell-app-terminal-1-0.scope")));
+        assert_eq!((w[0].id, w[0].app_id.as_str(), w[0].focused, w[0].unit.as_deref()), (7, "foot", true, Some("clamshell-run-foot_1-1-0.scope")));
         assert_eq!((w[1].app_id.as_str(), w[1].title.as_str(), w[1].unit.as_deref()), ("steam_app_620", "Portal 2", None));
     }
 
@@ -115,21 +115,21 @@ mod tests {
 
     #[test]
     fn windows_of_our_instances_go_home_once() {
-        // (An app's instances share its workspace.)
-        let late = window(4, "late", Some("clamshell-app-spawner-1-0.scope"), "1");
-        let home = window(5, "first", Some("clamshell-app-spawner-1-0.scope"), "clamshell-app-spawner");
-        let second = window(7, "second", Some("clamshell-app-spawner-1-1.scope"), "clamshell-app-spawner");
+        // (An entry's launches share its workspace.)
+        let late = window(4, "late", Some("clamshell-run-spawner_1-1-0.scope"), "1");
+        let home = window(5, "first", Some("clamshell-run-spawner_1-1-0.scope"), "clamshell-run-spawner_1");
+        let second = window(7, "second", Some("clamshell-run-spawner_1-1-1.scope"), "clamshell-run-spawner_1");
         let stray = window(6, "foot", None, "1");
         let mut tried = HashSet::new();
         let asked = reconcile(&[late.clone(), home, second, stray], Some("DSI-2"), &mut tried);
-        assert_eq!(asked, vec![r#"workspace "clamshell-app-spawner" output "DSI-2"; [con_id=4] move container to workspace "clamshell-app-spawner""#]);
+        assert_eq!(asked, vec![r#"workspace "clamshell-run-spawner_1" output "DSI-2"; [con_id=4] move container to workspace "clamshell-run-spawner_1""#]);
         assert!(reconcile(&[late], Some("DSI-2"), &mut tried).is_empty(), "not asked again");
     }
 
     #[test]
     fn windows_moved_down_stay_and_strays_on_the_bottom_screen_go_up() {
         let bottom = Instance::Bottom.name();
-        let ours = "clamshell-game-1-0.scope";
+        let ours = "clamshell-run-zelda_1-1-0.scope";
         let down = Window { down: true, ..window(4, "emu", Some(ours), &bottom) };
         let stray = window(5, "foot", None, &bottom);
         let mut tried = HashSet::new();
@@ -149,7 +149,7 @@ mod tests {
 
     #[test]
     fn shelf_is_shown_when_its_window_goes_home() {
-        let shelf = window(1, clamshell_core::apps::SHELF_APP_ID, None, "1");
+        let shelf = window(1, clamshell_core::windows::SHELF_APP_ID, None, "1");
         let mut tried = HashSet::new();
         let asked = reconcile(&[shelf], None, &mut tried);
         assert_eq!(asked, vec![r#"[con_id=1] move container to workspace "clamshell-shelf"; workspace "clamshell-shelf""#.to_owned()]);

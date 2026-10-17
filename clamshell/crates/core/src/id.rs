@@ -62,26 +62,24 @@ pub enum ShelfId {
     /// A collection, by position.
     Collection(u16),
     Launch,
-    /// The choice when starting a game while another runs: keep that one running, or close it.
-    StartKeep,
-    StartClose,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DockId {
-    /// An app, by position.
-    App(u16),
-    /// A running game's tile, by position among the running games.
-    GameTile(u16),
-    /// The first tile while no game runs: to shelf, to start one.
-    StartGame,
-    /// The menu a long press opens (see [`crate::DockMenu`]): another instance of the app, its window in
-    /// view closed, the app or game quit or force killed, back to the dock.
+    /// An entry on the dock, by position.
+    Entry(u16),
+    /// The menu a long press opens (see [`crate::dock`]): another launch, the window in view closed,
+    /// pinned or unpinned, moved, quit, force killed, back to the dock.
     OpenAnother,
     CloseWindow,
+    Pin,
+    Move,
     Quit,
     ForceKill,
     Back,
+    /// Move mode: the entry one place (or row) along; done.
+    Step(crate::keymap::Dir),
+    Done,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

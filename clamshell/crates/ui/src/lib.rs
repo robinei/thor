@@ -473,6 +473,23 @@ impl App {
     /// View moves focus to the other screen with shelf in front; else it moves the pad between the second
     /// screen and what else wants it (the pad mouse, typing; the pad thread sends View from there too).
     fn pad(&mut self, input: PadInput) {
+        // Moving a dock entry: the D-pad moves it, A or B ends it.
+        if self.state.dock().moving().is_some() && self.state.bottom().tab() == clamshell_core::Tab::Dock {
+            let step = |dir| Some(clamshell_core::DockId::Step(dir));
+            use clamshell_core::keymap::Dir as Step;
+            let id = match input {
+                PadInput::Up => step(Step::Up),
+                PadInput::Down => step(Step::Down),
+                PadInput::Left => step(Step::Left),
+                PadInput::Right => step(Step::Right),
+                PadInput::A(true) | PadInput::B => Some(clamshell_core::DockId::Done),
+                _ => None,
+            };
+            if let Some(id) = id {
+                self.handle(PointerEvent::Activate(Id::Dock(id)).into());
+            }
+            return;
+        }
         let dir = match input {
             PadInput::Up => Some(Dir::Up),
             PadInput::Down => Some(Dir::Down),

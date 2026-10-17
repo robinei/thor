@@ -96,17 +96,17 @@ fn warm_frames_do_not_allocate() {
         ),
         (
             "dock, an app running",
-            vec![Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Dock))), Event::Pointer(PointerEvent::Activate(Id::Dock(DockId::App(1))))],
+            vec![Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Dock))), Event::Pointer(PointerEvent::Activate(Id::Dock(DockId::Entry(1))))],
         ),
         (
             "dock, a game and windows",
             vec![
                 tap(Id::Tab(Tab::Dock)),
                 Event::Game(GameEvent::Started("zelda-lttp".into())),
-                Event::Units(["clamshell-game-1-0", "clamshell-app-terminal-1-0"].into_iter().filter_map(Instance::parse).collect()),
+                Event::Units(["clamshell-run-zelda_1-1-0", "clamshell-run-foot_1-1-0"].into_iter().filter_map(Instance::parse).collect()),
                 Event::Windows(vec![
-                    window(5, "retroarch", Some("clamshell-game-1-0.scope"), false),
-                    window(7, "foot", Some("clamshell-app-terminal-1-0.scope"), true),
+                    window(5, "retroarch", Some("clamshell-run-zelda_1-1-0.scope"), false),
+                    window(7, "foot", Some("clamshell-run-foot_1-1-0.scope"), true),
                     window(8, "foot", None, false),
                 ]),
             ],

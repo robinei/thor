@@ -172,23 +172,31 @@ fn km(id: KeymapId) -> Result<Id, ParseError> {
 
 /// What a tap or a long press (`tap TARGET`, `long TARGET`) can be on.
 pub const TARGETS: &[Form<Id>] = &[
-    form("app N", "the dock's app N (by position in launcher.json)", |a| Ok(Id::Dock(DockId::App(number(arg(a, 0))?)))),
-    form("dock-menu ACTION", "a dock tile's menu (after a long press): open-another, close-window, quit, force-kill, back", |a| {
+    form("dock N", "the dock's entry N (by position)", |a| Ok(Id::Dock(DockId::Entry(number(arg(a, 0))?)))),
+    form("dock-menu ACTION", "a dock entry's menu (after a long press): open-another, close-window, pin, move, quit, force-kill, back", |a| {
         Ok(Id::Dock(match arg(a, 0) {
             "open-another" => DockId::OpenAnother,
             "close-window" => DockId::CloseWindow,
+            "pin" => DockId::Pin,
+            "move" => DockId::Move,
             "quit" => DockId::Quit,
             "force-kill" => DockId::ForceKill,
             "back" => DockId::Back,
             other => return Err(name_err(other)),
         }))
     }),
-    form("game", "the dock's first game tile", |_| Ok(Id::Dock(DockId::GameTile(0)))),
-    form("game N", "the dock's game tile N", |a| Ok(Id::Dock(DockId::GameTile(number(arg(a, 0))?)))),
-    form("start-game", "the dock's start tile", |_| Ok(Id::Dock(DockId::StartGame))),
+    form("dock-step DIR", "moving a dock entry: one place (left, right) or row (up, down) along", |a| {
+        Ok(Id::Dock(DockId::Step(match arg(a, 0) {
+            "left" => clamshell_core::keymap::Dir::Left,
+            "right" => clamshell_core::keymap::Dir::Right,
+            "up" => clamshell_core::keymap::Dir::Up,
+            "down" => clamshell_core::keymap::Dir::Down,
+            other => return Err(name_err(other)),
+        })))
+    }),
+    form("dock-done", "moving a dock entry: done", |_| Ok(Id::Dock(DockId::Done))),
     form("launch", "shelf's launch", |_| Ok(Id::Shelf(ShelfId::Launch))),
-    form("keep", "shelf's keep (another game running)", |_| Ok(Id::Shelf(ShelfId::StartKeep))),
-    form("close", "shelf's close (another game running)", |_| Ok(Id::Shelf(ShelfId::StartClose))),
+    form("collection N", "shelf's collection tab N", |a| Ok(Id::Shelf(ShelfId::Collection(number(arg(a, 0))?)))),
     form("network N", "Wi-Fi's network row N", |a| Ok(ListId::Wifi.row(number(arg(a, 0))?))),
     form("wifi-power", "Wi-Fi's switch", |_| Ok(Id::Wifi(WifiId::Power))),
     form("device N", "Bluetooth's device row N", |a| Ok(ListId::Bluetooth.row(number(arg(a, 0))?))),
@@ -451,15 +459,12 @@ mod tests {
 
     #[test]
     fn taps_and_long_presses() {
-        assert_eq!(parse("tap app 1"), Ok(activate(Id::Dock(DockId::App(1)))));
-        assert_eq!(parse("long app 0"), Ok(vec![PointerEvent::LongPress(Id::Dock(DockId::App(0))).into()]));
+        assert_eq!(parse("tap dock 1"), Ok(activate(Id::Dock(DockId::Entry(1)))));
+        assert_eq!(parse("long dock 0"), Ok(vec![PointerEvent::LongPress(Id::Dock(DockId::Entry(0))).into()]));
         assert_eq!(parse("tap dock-menu open-another"), Ok(activate(Id::Dock(DockId::OpenAnother))));
-        assert_eq!(parse("tap game"), Ok(activate(Id::Dock(DockId::GameTile(0)))));
-        assert_eq!(parse("long game 1"), Ok(vec![PointerEvent::LongPress(Id::Dock(DockId::GameTile(1))).into()]));
-        assert_eq!(parse("tap start-game"), Ok(activate(Id::Dock(DockId::StartGame))));
+        assert_eq!(parse("tap dock-step right"), Ok(activate(Id::Dock(DockId::Step(clamshell_core::keymap::Dir::Right)))));
         assert_eq!(parse("tap launch"), Ok(activate(Id::Shelf(ShelfId::Launch))));
-        assert_eq!(parse("tap keep"), Ok(activate(Id::Shelf(ShelfId::StartKeep))));
-        assert_eq!(parse("tap close"), Ok(activate(Id::Shelf(ShelfId::StartClose))));
+        assert_eq!(parse("tap collection 1"), Ok(activate(Id::Shelf(ShelfId::Collection(1)))));
         assert_eq!(parse("tap network 2"), Ok(activate(ListId::Wifi.row(2))));
         assert_eq!(parse("long network 0"), Ok(vec![PointerEvent::LongPress(ListId::Wifi.row(0)).into()]));
         assert_eq!(parse("tap wifi-power"), Ok(activate(Id::Wifi(WifiId::Power))));
@@ -467,8 +472,8 @@ mod tests {
         assert_eq!(parse("tap bluetooth-power"), Ok(activate(Id::Bluetooth(BtId::Power))));
         assert_eq!(parse("tap pad-mouse"), Ok(activate(Id::PadMouse)));
         assert_eq!(parse("tap save"), Ok(activate(Id::Editor(EditorId::Save))));
-        assert_eq!(parse("poke app 1"), Err(ParseError::Unknown));
-        assert_eq!(parse("tap app x"), Err(ParseError::Number("x".into())));
+        assert_eq!(parse("poke dock 1"), Err(ParseError::Unknown));
+        assert_eq!(parse("tap dock x"), Err(ParseError::Number("x".into())));
         assert_eq!(parse("tap nothing"), Err(ParseError::Unknown));
     }
 

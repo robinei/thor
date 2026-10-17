@@ -8,11 +8,11 @@
 //! neither the devices nor the compositor can be heard, nothing goes idle.
 //!
 //! Sleep is only where the program may (the device's own session: never a desktop that runs ClamShell
-//! for testing), and never while a game is in front: the screens go off, the game keeps running.
+//! for testing). A program in front doesn't hold it off; one that should (a video player) asks the
+//! compositor to keep the screen on.
 
 use crate::State;
 use crate::effect::Effect;
-use crate::game::Front;
 use crate::settings::{Setting, Values};
 
 /// The compositor reports no input after this many seconds without any.
@@ -160,8 +160,9 @@ impl State {
     /// Idle as things are now: the stage moves on (dim, screens off, sleep) or back (any input), with
     /// what the screens need for it.
     pub(crate) fn follow_idle(&mut self) -> Vec<Effect> {
-        // Sleep only in the device's own session, and not while a game is in front.
-        let may_sleep = self.device_session && self.session.front() != Front::Game;
+        // Sleep only in the device's own session (a program in front doesn't hold it off; one playing a
+        // video asks the compositor to keep the screen on).
+        let may_sleep = self.device_session;
         let policy = Policy::of(&self.settings.global, may_sleep);
         let now = self.unix_secs;
         let wanted = self.idle.wanted(now, policy);

@@ -238,6 +238,7 @@ def setup(bluetooth):
     script = f"""set -e
 mkdir -p {CHECKS_DIR}/pegasus {CHECKS_DIR}/games {BACKLIGHT} {STATE}
 echo {CHECKS_DIR}/games > {CHECKS_DIR}/pegasus/game_dirs.txt
+printf '# ClamShell dock, format 1\\ndesktop:foot\\n' > {CHECKS_DIR}/pegasus/dock.txt
 cat > {CHECKS_DIR}/games/metadata.pegasus.txt <<'EOF'
 {LIBRARY}EOF
 touch {CHECKS_DIR}/games/test.game {CHECKS_DIR}/games/zeta.game {" ".join(f"{CHECKS_DIR}/games/zulu{i:02}.game" for i in range(1, 15))}
@@ -596,8 +597,8 @@ class Checks:
 
     def _terminal_with_keyboard(self):
         since = now()
-        control("tap app 1")  # Terminal (foot), the default dock's second app
-        if not until(lambda: front().startswith("clamshell-app-terminal"), 8):
+        control("tap dock 0")  # foot, pinned by the setup
+        if not until(lambda: front().startswith("clamshell-run-foot_"), 8):
             return self.check("an app in front (Terminal)", False, f"front {front()!r}")
         self.icon("keyboard")
         return self.check("pad with an app in front and the keyboard tab: typing",

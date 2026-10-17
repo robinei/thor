@@ -5,10 +5,10 @@
 use crate::State;
 use crate::editor::{Done, Editor, Purpose};
 use crate::effect::{Effect, Save};
-use crate::game::Front;
 use crate::id::{EditorId, SettingsId};
 use crate::keyboard::Stroke;
 use crate::program::Program;
+use crate::running::Front;
 use crate::settings::{Setting, Values};
 
 /// What the settings panel edits: the global settings, or the game in context's overrides.
@@ -40,9 +40,11 @@ impl State {
     /// selection, or none (a window of no program: the panel edits the defaults).
     pub fn context(&self) -> Option<Program<'_>> {
         let id = match self.session.front() {
-            Front::Game => self.session.current.clone(),
+            Front::Program => {
+                self.session.windows.iter().find(|w| w.focused && !w.down).and_then(|w| self.program_of(w)).or_else(|| self.session.program.clone())
+            }
             Front::Shelf => self.shelf.selected().cloned(),
-            Front::App => self.session.windows.iter().find(|w| w.focused).and_then(|w| self.program_of(w)),
+            Front::Other => None,
         }?;
         self.program(&id)
     }

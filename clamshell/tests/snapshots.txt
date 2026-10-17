@@ -1,11 +1,11 @@
 # FNV-1a hashes of the `clamshell --snapshot` files (src/snapshot.rs). After a change meant to change
 # what is drawn: CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots
-bar-window-below.png bea9ea60936b9a16
-battery.png f4de365da6e0e4b2
+bar-window-below.png e8cfc5f37224adff
+battery.png babc4f26bd423f2c
 bluetooth.png 8ac4d748d2344897
 bottom.png 57d3fde57d380a20
 brightness.png 06cf456a49e809af
-dock-menu.png 2e82ab116097cb42
+dock-menu.png ba7afa02ffcbc633
 keyboard-back.png f887ae676a094b92
 keyboard-caps.png 6b3bf4b0b0147020
 keyboard-fn.png 02b0c0115efcb11a
@@ -45,23 +45,23 @@ keymap-replace.png 3f05718ca1239c39
 keymap-save.png 483dfe272d818b5d
 keymaps-chosen.png 0df3d7803ec02de3
 keymaps.png 148bd9af2f52dcdc
-launcher-running.png ba7f133f355e29e5
-launcher.png d46e1368beb6c6a2
+launcher-running.png 526d6525ed97fd91
+launcher.png b14056e23652c849
 settings-env.png f3f113036a186287
 settings-global.png 885e5e60aaed6ec1
 settings-running.png 3af16282bd308521
 settings.png 54223a5000885ebe
-slider.png 714747c7b51e5250
+slider.png cb038e92dcc170a8
 status-low.png 9b54c9d98c929be5
 sysinfo.png bcc1def10231fa16
 time-europe.png 50b43e8f1f5b99e0
 time.png 1bcd3c27629745f5
-top-back.png a32a2fab862c039e
-top-played.png 3ac367c25bed5050
-top-switch.png b1c2ef62206a7e2f
-top-tab2-down.png 4b3f2160408e0221
-top-tab2.png 09d5a531471835b4
-top.png 7b4397816f2a6f41
+top-back.png 443e0ce2e5bbbd7c
+top-played.png e72ca6a7f8a1eee9
+top-switch.png 702e76bc59000dc3
+top-tab2-down.png 7a0713473340fe0b
+top-tab2.png d09f9662a9b2de57
+top.png ce7e912973d10b69
 touchpad.png 20804212f8293222
 volume.png 9bad3817a7a8ff51
 wifi-crowded.png 7eddbdbbf91f2459

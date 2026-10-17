@@ -1,7 +1,7 @@
 #!/bin/sh
 # The dock under sway, end to end: runs a headless sway (two outputs, the Thor's screens at half
 # size; nothing shows on the desktop, and it needs no display or input devices), ClamShell
-# inside it with a test library and test apps, drives it through its control pipe (CLAMSHELL_CONTROL: the
+# inside it with a test library, test apps (desktop files) pinned to its dock, drives it through its control pipe (CLAMSHELL_CONTROL: the
 # taps and long presses a user would make), and checks sway's window tree and systemd's units. Leaves
 # nothing behind: its instances are stopped and sway is closed at the end. Needs sway, foot, sqlite3 and
 # a release build.
@@ -22,15 +22,14 @@ until_() { n=0; while ! eval "$1"; do n=$((n + 1)); [ $n -ge $(( $2 * 10 )) ] &&
 check_soon() { until_ "$2" "${3:-5}"; check "$1" "$2"; }
 
 # --- the test environment
-mkdir -p "$T/config/clamshell" "$T/pegasus" "$T/games" "$T/state"
-cat > "$T/config/clamshell/launcher.json" <<'EOF'
-{ "apps": [
-  { "name": "Terminal", "icon": "terminal", "command": ["foot", "sleep", "300"], "multiple": true },
-  { "name": "Slow", "command": ["sh", "-c", "sleep 3; exec foot --app-id=slow sleep 300"] },
-  { "name": "Spawner", "command": ["sh", "-c", "foot --app-id=first sleep 300 & sleep 2; foot --app-id=late sleep 300 & wait"] },
-  { "name": "Detached", "command": ["sh", "-c", "exec env -u XDG_ACTIVATION_TOKEN -u DESKTOP_STARTUP_ID setsid -f foot --app-id=detached sleep 300; sleep 300"] }
-] }
-EOF
+mkdir -p "$T/config" "$T/pegasus" "$T/games" "$T/state" "$T/data/applications" "$T/none"
+# The test apps, installed (desktop files), pinned to the dock in this order.
+app() { printf '[Desktop Entry]\nType=Application\nName=%s\nExec=%s\n' "$2" "$3" > "$T/data/applications/$1.desktop"; }
+app terminal Terminal 'foot sleep 300'
+app slow Slow 'sh -c "sleep 3; exec foot --app-id=slow sleep 300"'
+app spawner Spawner 'sh -c "foot --app-id=first sleep 300 & sleep 2; foot --app-id=late sleep 300 & wait"'
+app detached Detached 'sh -c "exec env -u XDG_ACTIVATION_TOKEN -u DESKTOP_STARTUP_ID setsid -f foot --app-id=detached sleep 300; sleep 300"'
+printf '# ClamShell dock, format 1\ndesktop:terminal\ndesktop:slow\ndesktop:spawner\ndesktop:detached\n' > "$T/pegasus/dock.txt"
 echo "$T/games" > "$T/pegasus/game_dirs.txt"
 cat > "$T/games/metadata.pegasus.txt" <<'EOF'
 collection: Test
@@ -71,9 +70,10 @@ def walk(n, ws=''):
         for c in n.get(k, []): walk(c, ws)
 walk(json.load(sys.stdin))"; }
 output_of() { json get_workspaces "import json,sys; print(next((w['output'] for w in json.load(sys.stdin) if w['name'] == '$1'), ''))"; }
-units() { systemctl --user list-units "clamshell-$1*.scope" --plain --no-legend | awk '{print $1}' | sed 's/\.scope$//'; }
-# A dock app's workspace: all its instances' windows, as tabs.
-space() { echo "clamshell-app-$1"; }
+# Our launches' scopes of an entry, by its key's start (its key: its name, then a hash).
+units() { systemctl --user list-units "clamshell-run-$1_*.scope" --plain --no-legend | awk '{print $1}' | sed 's/\.scope$//'; }
+# An entry's workspace (all its launches' windows, as tabs), once it exists.
+space() { json get_workspaces "import json,sys; print(next((w['name'] for w in json.load(sys.stdin) if w['name'].startswith('clamshell-run-$1_')), ''))"; }
 # How many windows with this app id are on a workspace; the focused window's id.
 count_on() { json get_tree "
 import json,sys
@@ -95,10 +95,10 @@ walk(json.load(sys.stdin))"; }
 # A tap or long press, as the program's control pipe takes them.
 ctl() { echo "$*" > "$T/control"; sleep 0.3; }
 start_program() {
-    msg exec "env CLAMSHELL_TEST=$T CLAMSHELL_CONTROL=$T/control CLAMSHELL_STEAM=off CLAMSHELL_PEGASUS_CONFIG=$T/pegasus XDG_CONFIG_HOME=$T/config XDG_STATE_HOME=$T/state CLAMSHELL_BOTTOM_OUTPUT=HEADLESS-2 CLAMSHELL_START_MODE=dock $BIN >> $T/program.log 2>&1"
+    msg exec "env CLAMSHELL_TEST=$T CLAMSHELL_CONTROL=$T/control CLAMSHELL_STEAM=off CLAMSHELL_PEGASUS_CONFIG=$T/pegasus XDG_CONFIG_HOME=$T/config XDG_STATE_HOME=$T/state XDG_DATA_HOME=$T/data XDG_DATA_DIRS=$T/none CLAMSHELL_BOTTOM_OUTPUT=HEADLESS-2 CLAMSHELL_START_MODE=dock $BIN >> $T/program.log 2>&1"
 }
 program_pid() { for p in $(pgrep -x clamshell); do { tr '\0' '\n' < "/proc/$p/environ"; } 2>/dev/null | grep -qx "CLAMSHELL_TEST=$T" && echo "$p"; done; }
-# The launcher's apps, by position in launcher.json.
+# The test apps, by position on the dock (their pins).
 TERMINAL=0; SLOW=1; SPAWNER=2; DETACHED=3
 
 echo "nested sway: $SOCK"
@@ -107,24 +107,23 @@ until_ '[ "$(ws_of clamshell.top)" = clamshell-shelf ]' 10
 check "start: shelf on its workspace, in front" '[ "$(ws_of clamshell.top)" = clamshell-shelf ] && [ "$(front)" = clamshell-shelf ]'
 check_soon "start: the second screen is a layer surface on HEADLESS-2" 'grep -q "layer surface on HEADLESS-2" "$T/program.log"'
 
-TS=$(space terminal)
-ctl tap app $TERMINAL
-until_ '[ -n "$(units app-terminal)" ] && [ "$(front)" = "$TS" ]' 5
-check "tap Terminal: an instance (scope), its window on the app's workspace, shown when it is there" '[ -n "$(units app-terminal)" ] && [ "$(ws_of foot)" = "$TS" ] && [ "$(front)" = "$TS" ]'
+ctl tap dock $TERMINAL
+until_ '[ -n "$(units terminal)" ] && [ "$(front)" = "$(space terminal)" ]' 5
+check "tap Terminal: a launch (scope), its window on the entry's workspace, shown when it is there" '[ -n "$(units terminal)" ] && [ "$(ws_of foot)" = "$(space terminal)" ] && [ "$(front)" = "$(space terminal)" ]'
 
-ctl long app $TERMINAL; ctl tap dock-menu open-another
-until_ '[ "$(units app-terminal | wc -l)" = 2 ] && [ "$(count_on "$TS" foot)" = 2 ]' 5
-check "its menu, Open another: a second instance, a tab of the same workspace, in front" '[ "$(units app-terminal | wc -l)" = 2 ] && [ "$(count_on "$TS" foot)" = 2 ] && [ "$(front)" = "$TS" ]'
+ctl long dock $TERMINAL; ctl tap dock-menu open-another
+until_ '[ "$(units terminal | wc -l)" = 2 ] && [ "$(count_on "$(space terminal)" foot)" = 2 ]' 5
+check "its menu, Open another: a second launch, a tab of the same workspace, in front" '[ "$(units terminal | wc -l)" = 2 ] && [ "$(count_on "$(space terminal)" foot)" = 2 ] && [ "$(front)" = "$(space terminal)" ]'
 before=$(focused_id)
-ctl tap app $TERMINAL
-check_soon "tap Terminal while it is in front: it stays as it is" '[ "$(focused_id)" = "$before" ] && [ "$(front)" = "$TS" ]'
-check "our workspaces are on the main screen" '[ "$(output_of "$TS")" = HEADLESS-1 ]'
+ctl tap dock $TERMINAL
+check_soon "tap Terminal while it is in front: it stays as it is" '[ "$(focused_id)" = "$before" ] && [ "$(front)" = "$(space terminal)" ]'
+check "our workspaces are on the main screen" '[ "$(output_of "$(space terminal)")" = HEADLESS-1 ]'
 
-ctl tap app $SLOW; sleep 0.5; msg 'workspace clamshell-shelf'; sleep 1
+ctl tap dock $SLOW; sleep 0.5; msg 'workspace clamshell-shelf'; sleep 1
 check "a slow app: its empty workspace isn't shown meanwhile" '[ "$(front)" = clamshell-shelf ]'
 check_soon "a slow app: its window on its workspace, brought to the front" '[ "$(ws_of slow)" = "$(space slow)" ] && [ "$(front)" = "$(space slow)" ]' 8
 
-ctl tap app $SPAWNER
+ctl tap dock $SPAWNER
 check_soon "a later window of a launch: on the app's workspace" '[ -n "$(ws_of late)" ] && [ "$(ws_of first)" = "$(space spawner)" ] && [ "$(ws_of late)" = "$(space spawner)" ]' 8
 
 # The bottom screen: the spawner's windows moved down (Home+Down) and up again (Home+Up).
@@ -135,19 +134,19 @@ msg "[app_id=\"^late$\"] focus"; sleep 0.3
 ctl window down
 check_soon "Home+Down: the window in front to the bottom screen; the main screen keeps the keyboard" \
     '[ "$(output_of "$(ws_of late)")" = HEADLESS-2 ] && [ "$(ws_of first)" = "$SP" ] && [ "$(focused_output)" = HEADLESS-1 ]'
-check "  remembered for its program" 'grep -q "^bottom	app	spawner	late	" "$RULES"'
+check "  remembered for its entry" 'grep -q "^bottom	desktop:spawner	late	" "$RULES"'
 msg "[app_id=\"^first$\"] focus"; sleep 0.3
 ctl window down
 check_soon "  its last window down too: its workspace stays in front, empty" '[ "$(output_of "$(ws_of first)")" = HEADLESS-2 ] && [ "$(front)" = "$SP" ]'
 ctl window up; sleep 0.3; ctl window up
 check_soon "Home+Up, twice: both back on their workspace, the rules forgotten" '[ "$(ws_of late)" = "$SP" ] && [ "$(ws_of first)" = "$SP" ] && ! grep -q "^bottom" "$RULES"'
 
-ctl long app $SPAWNER; ctl tap dock-menu quit
-check_soon "its menu, Quit: its windows closed, then its slice gone" '[ -z "$(units app-spawner)" ] && [ -z "$(ws_of first)" ] && [ -z "$(ws_of late)" ]' 10
-check "  it ran in its slice" 'grep -q "clamshell-app-spawner.slice" "$T/program.log"'
+ctl long dock $SPAWNER; ctl tap dock-menu quit
+check_soon "its menu, Quit: its windows closed, then its slice gone" '[ -z "$(units spawner)" ] && [ -z "$(ws_of first)" ] && [ -z "$(ws_of late)" ]' 10
+check "  it ran in its slice" 'grep -q "clamshell-run-spawner_[0-9a-f]*.slice" "$T/program.log"'
 
-ctl tap app $DETACHED
-check_soon "a window sway can't trace (detached, no token): on its app's workspace, by its scope" '[ -n "$(ws_of detached)" ] && [ "$(ws_of detached)" = "$(space detached)" ]' 8
+ctl tap dock $DETACHED
+check_soon "a window sway can't trace (detached, no token): on its entry's workspace, by its scope" '[ -n "$(ws_of detached)" ] && [ "$(ws_of detached)" = "$(space detached)" ]' 8
 
 msg 'focus output HEADLESS-2'; sleep 0.3; msg exec "foot --app-id=stray sleep 300"
 check_soon "a window opening on the second screen goes to the main screen" '[ -n "$(ws_of stray)" ] && [ "$(output_of "$(ws_of stray)")" = HEADLESS-1 ]'
@@ -158,22 +157,25 @@ until_ '[ -n "$(ws_of steam_app_42)" ]' 5
 check "a Steam game's window goes to the game's workspace" '[ "$(ws_of steam_app_42)" = clamshell-game ]'
 msg '[app_id="^steam_app_42$"] kill'; until_ '[ -z "$(ws_of steam_app_42)" ]' 5
 
-msg 'workspace clamshell-shelf'; until_ '[ "$(front)" = clamshell-shelf ]' 5; ctl tap launch
-until_ '[ -n "$(units game)" ] && [ -n "$(ws_of testgame)" ] && [ "$(front)" = "$(units game | head -1)" ]' 8
-G1=$(units game | head -1)
+# (Shelf's collections: Test, then Apps.)
+msg 'workspace clamshell-shelf'; until_ '[ "$(front)" = clamshell-shelf ]' 5; ctl tap collection 0; ctl tap launch
+games() { units test; units zeta; }
+until_ '[ -n "$(units test)" ] && [ -n "$(ws_of testgame)" ] && [ "$(front)" = "$(space test)" ]' 8
+G1=$(space test)
 check "a game from shelf: on its own workspace, in front" '[ -n "$G1" ] && [ "$(ws_of testgame)" = "$G1" ] && [ "$(front)" = "$G1" ]'
-# A second game while it runs: shelf offers to keep the first running.
-msg 'workspace clamshell-shelf'; until_ '[ "$(front)" = clamshell-shelf ]' 5; ctl list 1; ctl tap launch; sleep 0.3; ctl tap keep
-until_ '[ "$(units game | wc -l)" = 2 ] && [ -n "$(ws_of zetagame)" ] && [ "$(front)" = "$(ws_of zetagame)" ]' 8
-check "a second game kept beside the first: both run, each on its workspace, the new one in front" \
-    '[ "$(units game | wc -l)" = 2 ] && [ "$(ws_of zetagame)" != "$G1" ] && [ "$(ws_of testgame)" = "$G1" ] && [ "$(front)" = "$(ws_of zetagame)" ]'
-ctl tap game 0
-check_soon "the dock's first game tile shows the first game" '[ "$(front)" = "$G1" ]'
-ctl long game 1; ctl tap dock-menu quit
-until_ '[ "$(units game | wc -l)" = 1 ]' 10
-ctl long game 0; ctl tap dock-menu quit
-until_ '[ -z "$(units game)" ]' 10
-check "each game's menu, Quit: closed, their scopes killed after 5 s" '[ -z "$(units game)" ]'
+# A second game while it runs: it starts beside it.
+msg 'workspace clamshell-shelf'; until_ '[ "$(front)" = clamshell-shelf ]' 5; ctl list 1; ctl tap launch
+until_ '[ "$(games | wc -l)" = 2 ] && [ -n "$(ws_of zetagame)" ] && [ "$(front)" = "$(ws_of zetagame)" ]' 8
+check "a second game beside the first: both run, each on its workspace, the new one in front" \
+    '[ "$(games | wc -l)" = 2 ] && [ "$(ws_of zetagame)" != "$G1" ] && [ "$(ws_of testgame)" = "$G1" ] && [ "$(front)" = "$(ws_of zetagame)" ]'
+# (The dock: the four pinned apps, then the games as they started.)
+ctl tap dock 4
+check_soon "the dock's tile of the first game shows it" '[ "$(front)" = "$G1" ]'
+ctl long dock 5; ctl tap dock-menu quit
+until_ '[ "$(games | wc -l)" = 1 ]' 10
+ctl long dock 4; ctl tap dock-menu quit
+until_ '[ -z "$(games)" ]' 10
+check "each game's menu, Quit: its windows closed, then its slice stopped" '[ -z "$(games)" ]'
 check "  and the emptied workspace stays in front" '[ "$(front)" = "$G1" ]'
 plays() { [ -f "$T/pegasus/stats.db" ] && sqlite3 "$T/pegasus/stats.db" "select count(*) from plays" 2> /dev/null || echo 0; }
 until_ '[ "$(plays)" -ge 2 ]' 5
@@ -186,18 +188,18 @@ def walk(c):
     if c.get('focused'): print(c.get('pid', '')); sys.exit()
     for k in ('nodes', 'floating_nodes'):
         for d in c.get(k, []): walk(d)
-walk(json.load(sys.stdin))"); grep -o 'clamshell-app-[^/]*\.scope' "/proc/$pid/cgroup" 2> /dev/null | sed 's/\.scope$//'; }
-ctl tap app $TERMINAL; until_ '[ "$(front)" = "$TS" ]' 5; FRONT=$(focused_scope)
-ctl long app $TERMINAL; ctl tap dock-menu close-window
-until_ '[ "$(units app-terminal | wc -l)" = 1 ]' 5
-check "its menu, Close window: the window in view closed (its terminal ends with it)" '[ -n "$FRONT" ] && [ "$(units app-terminal | wc -l)" = 1 ] && ! units app-terminal | grep -qx "$FRONT"'
+walk(json.load(sys.stdin))"); grep -o 'clamshell-run-[^/]*\.scope' "/proc/$pid/cgroup" 2> /dev/null | sed 's/\.scope$//'; }
+ctl tap dock $TERMINAL; until_ '[ "$(front)" = "$(space terminal)" ]' 5; FRONT=$(focused_scope)
+ctl long dock $TERMINAL; ctl tap dock-menu close-window
+until_ '[ "$(units terminal | wc -l)" = 1 ]' 5
+check "its menu, Close window: the window in view closed (its terminal ends with it)" '[ -n "$FRONT" ] && [ "$(units terminal | wc -l)" = 1 ] && ! units terminal | grep -qx "$FRONT"'
 
 kill "$(program_pid)"; until_ '[ -z "$(program_pid)" ]' 5; start_program
 until_ '[ -n "$(program_pid)" ] && [ "$(front)" = clamshell-shelf ]' 10
 check "restart: shelf in front again" '[ "$(front)" = clamshell-shelf ] && [ "$(ws_of clamshell.top)" = clamshell-shelf ]'
-check "restart: the instances still run" '[ -n "$(units app-detached)" ] && [ -n "$(units app-terminal)" ]'
-ctl tap app $TERMINAL
-check_soon "restart: a tap shows the running app's workspace" '[ "$(front)" = "$TS" ]'
+check "restart: the launches still run" '[ -n "$(units detached)" ] && [ -n "$(units terminal)" ]'
+ctl tap dock $TERMINAL
+check_soon "restart: a tap shows the running entry's workspace (found by its scopes)" '[ "$(front)" = "$(space terminal)" ]'
 
 # --- clean up: the program, this test's scopes, sway
 kill "$(program_pid)" 2> /dev/null

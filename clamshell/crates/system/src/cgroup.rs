@@ -20,8 +20,8 @@ mod tests {
 
     #[test]
     fn the_innermost_unit() {
-        let cgroup = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/clamshell-app-terminal-17-0.scope\n";
-        assert_eq!(parse_unit(cgroup), Some("clamshell-app-terminal-17-0.scope"));
+        let cgroup = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/clamshell-run-foot_1-17-0.scope\n";
+        assert_eq!(parse_unit(cgroup), Some("clamshell-run-foot_1-17-0.scope"));
         assert_eq!(parse_unit("0::/system.slice/foo.service/sub\n"), Some("foo.service"), "a sub-cgroup of a unit");
         assert_eq!(parse_unit("0::/\n"), None);
         assert_eq!(parse_unit("1:name=systemd:/x.scope\n"), None, "cgroup v1 only");
