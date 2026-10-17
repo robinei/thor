@@ -18,6 +18,9 @@
 //! - The desktop files' games: a cover from SteamGridDB, by name; needs `keys.steamgriddb`.
 //!
 //! Art beside an entry's file comes first: what is fetched never replaces it.
+//!
+//! libretro's lists (a system's thumbnails, its database's files) are kept in ~/.cache/clamshell/libretro
+//! and fetched again after [`LISTS_KEPT`]; an older copy serves while a fetch fails.
 
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
@@ -34,6 +37,9 @@ use crate::{Sink, worker};
 
 /// Fetches at once.
 const THREADS: usize = 4;
+/// How long a libretro list kept on disk is used before it is fetched again.
+pub const LISTS_KEPT: std::time::Duration = std::time::Duration::from_secs(30 * 86_400);
+
 /// A miss (nothing found) is tried again after this long (seconds).
 pub const RETRY_MISS: u64 = 30 * 86_400;
 
@@ -228,6 +234,14 @@ impl Shared {
         Meta { duration, shot, ..Meta::default() }
     }
 
+    /// One of libretro's lists (`name` in the lists' folder, next to the art cache), from `url`: kept on
+    /// disk (see [`kept`]).
+    fn list(&self, name: &str, url: &str) -> Option<String> {
+        let dir = self.art.with_file_name("libretro");
+        let file = dir.join(name.replace('/', "_"));
+        kept(&file, LISTS_KEPT, || get(url, &[])).map(|b| String::from_utf8_lossy(&b).into_owned())
+    }
+
     /// The image at `url` into the art cache as `<key>-<what>.<its extension>`.
     fn image(&self, w: &Wanted, what: &str, url: &str) -> Option<PathBuf> {
         let file = self.art.join(format!("{}-{what}.{}", w.key, extension(url)));
@@ -270,7 +284,7 @@ impl Shared {
         }
         let dat = |dir: &str| {
             let url = format!("{DATABASE}/{dir}/{}.dat", encode(system));
-            get(&url, &[]).map(|b| String::from_utf8_lossy(&b).into_owned()).unwrap_or_default()
+            self.list(&format!("{dir} - {system}.dat"), &url).unwrap_or_default()
         };
         let mut d = Database::default();
         for (crc, fields) in dat_games(&dat("no-intro")) {
@@ -301,7 +315,7 @@ impl Shared {
         if let Some(l) = listings.get(&id) {
             return l.clone();
         }
-        let page = get(&format!("{LIBRETRO}/{}/{kind}/", encode(system)), &[]).map(|b| String::from_utf8_lossy(&b).into_owned());
+        let page = self.list(&format!("{kind} - {system}.html"), &format!("{LIBRETRO}/{}/{kind}/", encode(system)));
         let names = page.map(|p| Arc::new(hrefs(&p).filter_map(|h| h.strip_suffix(".png").map(Name::new)).collect::<Vec<_>>()));
         if names.is_none() {
             log::warn!("meta: libretro has no {id}");
@@ -497,6 +511,30 @@ fn get_json(url: &str, headers: &[&str]) -> Option<Value> {
     serde_json::from_slice(&get(url, headers)?).ok()
 }
 
+/// `file`'s contents if it is younger than `max_age`; else `fetch`ed and kept in it (written whole, then
+/// renamed into place), or (the fetch failing) its older contents, if any.
+fn kept(file: &Path, max_age: std::time::Duration, fetch: impl FnOnce() -> Option<Vec<u8>>) -> Option<Vec<u8>> {
+    let age = std::fs::metadata(file).and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok());
+    if age.is_some_and(|a| a < max_age)
+        && let Ok(kept) = std::fs::read(file)
+    {
+        return Some(kept);
+    }
+    match fetch().filter(|b| !b.is_empty()) {
+        Some(body) => {
+            if let Some(dir) = file.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            let part = file.with_extension("part");
+            if let Err(e) = std::fs::write(&part, &body).and_then(|()| std::fs::rename(&part, file)) {
+                log::warn!("meta: {}: {e}", file.display());
+            }
+            Some(body)
+        }
+        None => std::fs::read(file).ok(),
+    }
+}
+
 /// `url` into `file` (written whole, then renamed into place); whether it worked.
 fn download(url: &str, headers: &[&str], file: &Path) -> bool {
     let Some(body) = get(url, headers).filter(|b| !b.is_empty()) else {
@@ -658,7 +696,7 @@ fn entities(text: &str) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 mod tests {
     use super::*;
 
@@ -719,6 +757,21 @@ mod tests {
         queue.first(&["c".into(), "x".into(), "b".into()]);
         let order: Vec<String> = std::iter::from_fn(|| queue.next()).map(|w| w.id.to_string()).collect();
         assert_eq!(order, ["c", "b", "a", "d"]);
+    }
+
+    #[test]
+    fn lists_are_kept_fetched_again_when_old_and_used_old_when_offline() {
+        let dir = std::env::temp_dir().join(format!("clamshell-lists-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let file = dir.join("Named_Boxarts - Nintendo - SNES.html");
+        let day = std::time::Duration::from_secs(86_400);
+        assert_eq!(kept(&file, day, || None), None, "nothing kept, nothing fetched");
+        assert_eq!(kept(&file, day, || Some(b"one".to_vec())).as_deref(), Some(&b"one"[..]));
+        assert_eq!(kept(&file, day, || panic!("not fetched again")).as_deref(), Some(&b"one"[..]), "kept");
+        let now = std::time::Duration::ZERO;
+        assert_eq!(kept(&file, now, || Some(b"two".to_vec())).as_deref(), Some(&b"two"[..]), "old: fetched again");
+        assert_eq!(kept(&file, now, || None).as_deref(), Some(&b"two"[..]), "the fetch failing: the old one");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
