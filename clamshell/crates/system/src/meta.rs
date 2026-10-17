@@ -13,7 +13,8 @@
 //!   subtitle of the title's own isn't left out: "Front Mission - Gun Hazard" is another game than
 //!   "Front Mission".)
 //! - A content dir's films or series (`"tmdb:movie"`, `"tmdb:tv"`): poster, backdrop, overview and year
-//!   from TMDB, by title (a `(1980)` at its end the year); needs `keys.tmdb` in library.json.
+//!   from TMDB, by title (a `(1980)` at its end the year, tried first: a series may be dated from another
+//!   year than its pilot's); needs `keys.tmdb` in library.json.
 //! - Steam's games: the store's description, developer, year and first screenshot (no key).
 //! - The desktop files' games: a cover from SteamGridDB, by name; needs `keys.steamgriddb`.
 //!
@@ -332,15 +333,19 @@ impl Shared {
         let (title, year) = title_and_year(&w.title);
         // A read access token (a JWT) goes in a header; an API key in the query.
         let bearer = key.starts_with("eyJ").then(|| format!("Authorization: Bearer {key}"));
-        let mut url = format!("https://api.themoviedb.org/3/search/{kind}?include_adult=false&query={}", encode(title));
-        if let Some(y) = year {
-            url.push_str(&format!("&{}={y}", if kind == "tv" { "first_air_date_year" } else { "year" }));
-        }
-        if bearer.is_none() {
-            url.push_str(&format!("&api_key={}", encode(key)));
-        }
         let headers: Vec<&str> = bearer.iter().map(String::as_str).collect();
-        let Some(hit) = get_json(&url, &headers).and_then(|v| v.get("results")?.get(0).cloned()) else {
+        let search = |year: Option<u16>| {
+            let mut url = format!("https://api.themoviedb.org/3/search/{kind}?include_adult=false&query={}", encode(title));
+            if let Some(y) = year {
+                url.push_str(&format!("&{}={y}", if kind == "tv" { "first_air_date_year" } else { "year" }));
+            }
+            if bearer.is_none() {
+                url.push_str(&format!("&api_key={}", encode(key)));
+            }
+            get_json(&url, &headers).and_then(|v| v.get("results")?.get(0).cloned())
+        };
+        // By the title's year first; else (TMDB may date a series from another year than its pilot's) any.
+        let Some(hit) = search(year).or_else(|| year.and_then(|_| search(None))) else {
             return Meta::default();
         };
         let path = |field: &str| hit.get(field).and_then(Value::as_str).filter(|p| !p.is_empty()).map(str::to_owned);
