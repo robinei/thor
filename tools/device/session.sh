@@ -102,6 +102,12 @@ if [ ! -e "$H/.config/retroarch/retroarch.cfg" ]; then
     install -m 644 "$REPO/clamshell/retroarch/retroarch.cfg" "$H/.config/retroarch/retroarch.cfg"
     install -m 644 "$REPO/clamshell/retroarch/autoconfig/Microsoft X-Box 360 pad.cfg" "$H/.config/retroarch/autoconfig/"
 fi
+# Its menu's look (XMB in ClamShell's colours; clamshell/retroarch/xmb-theme.py), unless it is there: from
+# RetroArch's assets in the root this home is in (the image's, or /).
+ROOT=${H%"$FINAL"}
+if [ ! -e "$H/.config/retroarch/clamshell-assets" ] && [ -d "$ROOT/usr/share/retroarch/assets/xmb" ]; then
+    python3 "$REPO/clamshell/retroarch/xmb-theme.py" "$H/.config/retroarch/clamshell-assets" "$ROOT/usr/share/retroarch/assets"
+fi
 
 # The dock's first pins, in ClamShell's database before it has one: Steam, the terminal, Maintenance
 # (once the database is there, the user's pins are kept). The dock's table as ClamShell makes it; ClamShell
