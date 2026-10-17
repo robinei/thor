@@ -203,18 +203,18 @@ pub fn load(sources: &Sources) -> Loaded {
     let apps = extend(&mut games, apps);
     add(&mut collections, APPS, Some("apps"), apps);
     collections.retain(|c| !c.games.is_empty());
-    // ClamShell's own tools, last.
-    let first = games.len();
-    for (id, title, tool, summary) in TOOLS {
-        games.push(Game { launch: Launch::Tool(tool.into()), tool: true, summary: summary.into(), ..Game::new(id, title) });
-    }
-    collections.push(Collection::with_icon("Tools", "tools", (first..games.len()).collect()));
     for c in &mut collections {
         c.games.sort_by(|&a, &b| {
             let key = |i: usize| games.get(i).map(|g| (&g.sort_key, &g.title));
             key(a).cmp(&key(b))
         });
     }
+    // ClamShell's own tools, last, in their order.
+    let first = games.len();
+    for (id, title, tool, summary) in TOOLS {
+        games.push(Game { launch: Launch::Tool(tool.into()), tool: true, summary: summary.into(), ..Game::new(id, title) });
+    }
+    collections.push(Collection::with_icon("Tools", "tools", (first..games.len()).collect()));
     let mut metas = std::collections::HashMap::new();
     let mut durations = std::collections::HashMap::new();
     if let Some(db) = sources.db.as_deref().and_then(|f| crate::store::Store::open(f).map_err(|e| log::warn!("library: {}: {e}", f.display())).ok()) {

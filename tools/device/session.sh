@@ -1,8 +1,8 @@
 #!/bin/bash
 # The Thor's session, from this repository, into a home directory: ClamShell (the program given), sway's
 # config and the outputs script, ClamShell's service, mako's and foot's configs, the Maintenance app's
-# desktop file, the dock's first pins (only where there are none yet), and the login that starts sway on
-# tty1. thor-image.sh writes it into the image; maintenance writes it again on the device after pulling
+# desktop file, the dock's first pins and the starter library.json (each only where there is none yet:
+# the user's are kept) with the folders it names, and the login that starts sway on tty1. thor-image.sh writes it into the image; maintenance writes it again on the device after pulling
 # (then: systemctl --user daemon-reload, and ClamShell restarted).
 #
 #   session.sh HOME_DIR FINAL_HOME PROGRAM
@@ -85,6 +85,15 @@ Name=Maintenance
 Exec=foot --app-id=maintenance $FINAL/thor/tools/device/maintain
 Icon=utilities-terminal
 EOF
+
+# The starter library (tools/device/library.json: a Games tab with a folder per system, each with its
+# RetroArch core; Films and TV played by mpv), unless there is one; and the folders it reads.
+mkdir -p "$H/.config/clamshell"
+if [ ! -e "$H/.config/clamshell/library.json" ]; then
+    install -m 644 "$REPO/tools/device/library.json" "$H/.config/clamshell/library.json"
+fi
+for d in nes snes n64 gb gba nds md psx dc; do mkdir -p "$H/Games/$d"; done
+mkdir -p "$H/Videos/Films" "$H/Videos/TV"
 
 # The dock's first pins, in ClamShell's database before it has one: Steam, the terminal, Maintenance
 # (once the database is there, the user's pins are kept). The dock's table as ClamShell makes it; ClamShell

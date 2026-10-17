@@ -272,16 +272,17 @@ impl Library {
         }
     }
 
-    /// What a group's Continue plays: of the entries in it (all the way down, in order), the one played
-    /// last unless it was watched, then the one after it; the first if none was played; none when the
-    /// last was watched to the end.
+    /// What a group's Continue plays: of the videos in it (mpv's, all the way down, in order), the one
+    /// played last unless it was watched, then the one after it; the first if none was played; none when
+    /// the last was watched to the end, or it holds no videos (a folder of games).
     pub fn to_continue(&self, group: usize) -> Option<usize> {
         let mut leaves = Vec::new();
         let mut stack: Vec<usize> = self.games.get(group)?.items.iter().rev().copied().collect();
         while let Some(i) = stack.pop() {
             match self.games.get(i) {
                 Some(g) if g.is_group() => stack.extend(g.items.iter().rev()),
-                Some(_) => leaves.push(i),
+                Some(g) if g.mpv_file().is_some() => leaves.push(i),
+                Some(_) => {}
                 None => {}
             }
         }
@@ -453,6 +454,9 @@ mod tests {
         lib.games[e10].plays.add(9000, 2700);
         assert_eq!(lib.to_continue(tv), Some(s2e1));
         assert_eq!(lib.to_continue(s1), None, "the season watched");
+        let games = lib.collections.iter().find(|c| c.name == "Games").unwrap().games.clone();
+        lib.games.push(Game { items: games, ..Game::new("folder:Games/All", "All") });
+        assert_eq!(lib.to_continue(lib.games.len() - 1), None, "games: no Continue");
     }
 
     #[test]
