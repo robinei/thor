@@ -72,13 +72,16 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
     rows
 }
 
-/// An open group's header over the list: a back arrow and the group's title; a tap goes back out.
+/// An open group's header over the list: a back arrow and the groups open, outermost first ("Handhelds ›
+/// GBA"; cut at the start where it doesn't fit); a tap goes back out.
 fn group_header(f: &mut Frame, group: &Game, r: Rect, pad: f32) {
+    let s = f.s;
     f.button(Id::Shelf(ShelfId::Up), r, Look::ICON, |f| {
         let arrow = Rect::new(r.x, r.y, r.h, r.h);
         f.c.icon(Icon::ArrowLeft, arrow.square_center(r.h * 0.4), Tone::Normal);
         let title = Rect::new(r.x + r.h + pad * 0.2, r.y, r.w - r.h - pad * 0.2, r.h);
-        f.c.text_fit(title, r.h * ROW_TEXT * 1.15, Tone::High, &group.title, Keep::Start);
+        let path = Fmt::<192>::of(format_args!("{}", Groups { s, game: group, own: true, between: " › " }));
+        f.c.text_fit(title, r.h * ROW_TEXT * 1.15, Tone::High, &path, Keep::End);
     });
 }
 
@@ -109,10 +112,14 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
         let thumb = Rect::new(r.x + pad * 0.4, r.y + (r.h - thumb_h) / 2.0, thumb_h * BOX_ASPECT, thumb_h);
         f.button(Id::Shelf(ShelfId::Game(game.id.clone())), r, look, |f| {
             widgets::art(f.c, f.images, game, thumb, THUMB_RADIUS, Align::Center, false);
-            // Its marks at the row's right end, right to left: on the dock, a favourite.
+            // Its marks at the row's right end, right to left: a folder's chevron, on the dock, a favourite.
             let mark = r.h * MARK;
             let mut right = r.x + r.w - pad * 0.5;
-            let marks = [(s.dock().is_pinned(&game.id), Icon::for_tab(Tab::Dock), Tone::Normal), (game.favourite, Icon::Star, Tone::Accent)];
+            let marks = [
+                (game.is_group(), Icon::Chevron, Tone::Normal),
+                (s.dock().is_pinned(&game.id), Icon::for_tab(Tab::Dock), Tone::Normal),
+                (game.favourite, Icon::Star, Tone::Accent),
+            ];
             for (on, icon, mark_tone) in marks {
                 if on {
                     right -= mark;
@@ -148,12 +155,18 @@ fn selected(f: &mut Frame, game: &Game, screen: Rect, list: Rect, pad: f32) {
 
     // The groups it is in (a series, a season); who made it and when.
     if game.parent.is_some() {
-        let groups = Fmt::<192>::of(format_args!("{}", Groups(s, game)));
+        let groups = Fmt::<192>::of(format_args!("{}", Groups { s, game, own: false, between: " · " }));
         col.skip(f.c.wrap(span(&col), detail, Tone::Normal, &groups, 2) + pad * 0.4);
     }
     let maker = Fmt::<128>::of(format_args!("{}", Maker(game)));
     if !maker.is_empty() {
         col.skip(f.c.wrap(span(&col), detail, Tone::Dim, &maker, 2) + pad * 0.4);
+    }
+
+    // A folder: what is in it, and that A opens it.
+    if game.is_group() {
+        let inside = Fmt::<64>::of(format_args!("{}", Inside(s, game)));
+        col.skip(f.c.wrap(span(&col), detail, Tone::Normal, &inside, 2) + pad * 0.4);
     }
 
     // Whether it runs (A shows it), then whether it is a favourite, each on a line of its own.
@@ -211,6 +224,25 @@ fn selected(f: &mut Frame, game: &Game, screen: Rect, list: Rect, pad: f32) {
     }
 }
 
+/// What a folder holds and how it opens: "2 folders · 3 entries · A to open", "24 entries · A to open".
+struct Inside<'a>(&'a State, &'a Game);
+
+impl Display for Inside<'_> {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let games = &self.0.shelf().library().games;
+        let folders = self.1.items.iter().filter(|&&i| games.get(i).is_some_and(Game::is_group)).count();
+        let entries = self.1.items.len() - folders;
+        let plural = |n: usize| if n == 1 { "" } else { "s" };
+        if folders > 0 {
+            write!(f, "{folders} folder{} · ", plural(folders))?;
+        }
+        if entries > 0 || folders == 0 {
+            write!(f, "{entries} entr{} · ", if entries == 1 { "y" } else { "ies" })?;
+        }
+        f.write_str("A to open")
+    }
+}
+
 /// Who made an entry and when: "Supergiant Games · 2020", either alone, or nothing.
 struct Maker<'a>(&'a Game);
 
@@ -226,15 +258,21 @@ impl Display for Maker<'_> {
     }
 }
 
-/// The groups an entry is in, outermost first: "Cosmos · Season 1".
-struct Groups<'a>(&'a State, &'a Game);
+/// The groups an entry is in, outermost first, `between` between them: "Cosmos · Season 1"; with its own
+/// title last if `own`.
+struct Groups<'a> {
+    s: &'a State,
+    game: &'a Game,
+    own: bool,
+    between: &'a str,
+}
 
 impl Display for Groups<'_> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let games = &self.0.shelf().library().games;
+        let games = &self.s.shelf().library().games;
         // (At most a few levels: walked from the entry up, written from the top down.)
         let mut chain = [None; 8];
-        let mut at = self.1.parent;
+        let mut at = self.game.parent;
         let mut n = 0;
         while let (Some(i), Some(slot)) = (at, chain.get_mut(n)) {
             *slot = Some(i);
@@ -243,9 +281,15 @@ impl Display for Groups<'_> {
         }
         for (k, i) in chain.iter().take(n).rev().flatten().enumerate() {
             if k > 0 {
-                f.write_str(" · ")?;
+                f.write_str(self.between)?;
             }
             f.write_str(games.get(*i).map_or("", |g| g.title.as_str()))?;
+        }
+        if self.own {
+            if n > 0 {
+                f.write_str(self.between)?;
+            }
+            f.write_str(&self.game.title)?;
         }
         Ok(())
     }

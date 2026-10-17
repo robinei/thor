@@ -82,6 +82,8 @@ pub enum Icon {
     Music,
     Star,
     Clock,
+    /// A folder in shelf's list: a chevron, it opens.
+    Chevron,
 }
 
 impl Icon {
@@ -356,6 +358,7 @@ pub fn draw(c: &mut Canvas, icon: Icon, r: Rect, color: Color) {
         Icon::ArrowDown => arrow(p, [(12.0, 5.0), (12.0, 19.0)], [(6.0, 13.0), (12.0, 19.0), (18.0, 13.0)]),
         Icon::ArrowLeft => arrow(p, [(19.0, 12.0), (5.0, 12.0)], [(11.0, 6.0), (5.0, 12.0), (11.0, 18.0)]),
         Icon::ArrowRight => arrow(p, [(5.0, 12.0), (19.0, 12.0)], [(13.0, 6.0), (19.0, 12.0), (13.0, 18.0)]),
+        Icon::Chevron => p.line(&[(9.0, 5.0), (16.0, 12.0), (9.0, 19.0)], 2.2),
         Icon::Battery { tenths, charging } => battery(p, tenths, charging),
         Icon::Wifi { bars } => wifi(p, bars),
         Icon::Volume { waves, muted } => volume(p, waves, muted),
@@ -597,12 +600,13 @@ mod tests {
             Icon::Music,
             Icon::Star,
             Icon::Clock,
+            Icon::Chevron,
         ];
         let mut seen = std::collections::HashSet::new();
         for icon in &all {
             seen.insert(variant(*icon));
         }
-        assert_eq!(seen.len(), 45, "a variant is missing from the list");
+        assert_eq!(seen.len(), 46, "a variant is missing from the list");
         all
     }
 
@@ -654,6 +658,7 @@ mod tests {
             Icon::Music => 49,
             Icon::Star => 50,
             Icon::Clock => 51,
+            Icon::Chevron => 52,
         }
     }
 
