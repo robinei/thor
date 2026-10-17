@@ -114,8 +114,8 @@ impl State {
         };
         let (secs, n) = self.session.new_name(self.unix_secs);
         let instance = Instance::Run { key, secs, n };
-        let settings = self.settings.of(&game);
-        let env = self.settings.env_of(&game);
+        let settings = self.settings_of(&game);
+        let env = self.env_of(&game);
         self.session.launching.push(Launching { game: game.clone(), instance: instance.clone(), appid });
         // Shown once its first window appears.
         self.session.pending_show = Some(instance.clone());

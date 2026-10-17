@@ -33,7 +33,28 @@ pub enum TileOrigin {
 impl State {
     /// The settings in force: the program in force's (see [`crate::program`]), else the global ones.
     pub fn in_force(&self) -> Values {
-        self.session.program.as_ref().map_or(self.settings.global, |id| self.settings.of(id))
+        self.session.program.as_ref().map_or(self.settings.global, |id| self.settings_of(id))
+    }
+
+    /// The folders entry `id` is in (outermost first), whose settings it inherits.
+    fn folders_of(&self, id: &str) -> Vec<std::sync::Arc<str>> {
+        let library = self.shelf.library();
+        let Some(i) = library.games.iter().position(|g| &*g.id == id) else {
+            return Vec::new();
+        };
+        library.groups_of(i).iter().filter_map(|&g| library.games.get(g)).map(|g| g.id.clone()).collect()
+    }
+
+    /// The settings entry `id` runs with: the global ones, its folders' overrides, its own.
+    pub fn settings_of(&self, id: &str) -> Values {
+        let folders = self.folders_of(id);
+        self.settings.of_in(id, &folders.iter().map(|f| &**f).collect::<Vec<_>>())
+    }
+
+    /// The environment entry `id` gets: the global variables, its folders', its own.
+    pub fn env_of(&self, id: &str) -> Vec<(String, String)> {
+        let folders = self.folders_of(id);
+        self.settings.env_in(id, &folders.iter().map(|f| &**f).collect::<Vec<_>>())
     }
 
     /// The program the settings panel is about, by what is in front: the entry whose window is in front,
@@ -64,7 +85,7 @@ impl State {
     /// The value a tile shows and steps from: the game's effective one, or the global one.
     pub fn tile_value(&self, setting: Setting) -> u16 {
         match self.editing() {
-            Some(g) if !setting.global_only() => self.settings.of(&g.id).get(setting),
+            Some(g) if !setting.global_only() => self.settings_of(&g.id).get(setting),
             _ => self.settings.global.get(setting),
         }
     }
@@ -200,6 +221,23 @@ mod tests {
 
     fn state_with(settings: &settings::Settings) -> State {
         State::new(Init { settings: settings.clone(), ..init() })
+    }
+
+    #[test]
+    fn an_entry_takes_its_folders_settings() {
+        let mut settings = settings::Settings::default();
+        settings.set(Some(&"tv:Cosmos".into()), Setting::FpsCap, Some(30));
+        settings.set(Some(&"tv:Cosmos/Season 1".into()), Setting::Power, Some(0));
+        settings.set_env(Some("tv:Cosmos".into()), "MPV=1");
+        let mut s = state_with(&settings);
+        let episode: std::sync::Arc<str> = "tv:Cosmos/Season 1/2. One Voice in the Cosmic Fugue.mkv".into();
+        let fx = s.launch(episode.clone());
+        let launch = fx.iter().find_map(|e| match e {
+            Effect::Launch { settings, env, .. } => Some((settings.get(Setting::FpsCap), settings.get(Setting::Power), env.clone())),
+            _ => None,
+        });
+        assert_eq!(launch, Some((30, 0, vec![("MPV".to_owned(), "1".to_owned())])), "the series', the season's");
+        assert_eq!(s.settings_of("tv:Cosmos/Season 2").get(Setting::Power), 1, "not the other season's");
     }
 
     #[test]
