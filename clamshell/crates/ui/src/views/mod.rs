@@ -139,20 +139,20 @@ mod tests {
         };
         let screens: Vec<(&str, Vec<Event>)> = vec![
             ("picker", vec![tap(Id::Tab(Tab::Settings)), tap(Id::Settings(SettingsId::Tile(Setting::Keymap)))]),
-            ("menu", vec![Event::Pointer(PointerEvent::LongPress(ListId::Keymaps.row(1)))]),
+            ("menu", vec![Event::Pointer(PointerEvent::LongPress(ListId::Keymaps.row(2)))]),
             ("name", vec![km(KeymapId::Rename)]),
             (
                 "delete",
                 vec![
                     tap(Id::Editor(clamshell_core::EditorId::Cancel)),
                     km(KeymapId::Back),
-                    tap(ListId::Keymaps.row(1)),
+                    tap(ListId::Keymaps.row(2)),
                     tap(Id::Settings(SettingsId::Tile(Setting::Keymap))),
-                    Event::Pointer(PointerEvent::LongPress(ListId::Keymaps.row(1))),
+                    Event::Pointer(PointerEvent::LongPress(ListId::Keymaps.row(2))),
                     km(KeymapId::Delete),
                 ],
             ),
-            ("edit", vec![km(KeymapId::Back), tap(Id::Row { list: ListId::Keymaps, i: 1, part: clamshell_core::RowPart::Edit })]),
+            ("edit", vec![km(KeymapId::Back), tap(Id::Row { list: ListId::Keymaps, i: 2, part: clamshell_core::RowPart::Edit })]),
             ("edit, a button selected", vec![km(KeymapId::Input(Input::Button(Button::A)))]),
             ("the mouse", vec![km(KeymapId::Target(Target::MouseParts))]),
             ("capture", [vec![km(KeymapId::Back)], pick(Input::Trigger(Side::Left)), vec![km(KeymapId::Target(Target::Key))]].concat()),

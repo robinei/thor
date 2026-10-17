@@ -129,7 +129,14 @@ impl Keymaps {
     pub fn text(&self) -> String {
         let mut text = format!("{KEYMAPS_FORMAT}\n");
         for k in &self.list {
-            let _ = writeln!(text, "keymap {} {}", k.id, k.name);
+            match &k.owner {
+                Some(game) => {
+                    let _ = writeln!(text, "keymap {}\ngame {game}", k.id);
+                }
+                None => {
+                    let _ = writeln!(text, "keymap {} {}", k.id, k.name);
+                }
+            }
             for l in &k.layers {
                 if l.id != Layer::BASE {
                     let _ = writeln!(text, "layer {} {}", l.id.0, l.name);
@@ -174,6 +181,12 @@ impl Keymaps {
                     }
                     Err(_) => None,
                 };
+                continue;
+            }
+            if let Some(game) = line.strip_prefix("game ") {
+                if let Some(keymap) = keymaps.list.last_mut() {
+                    keymap.owner = Some(game.trim().into());
+                }
                 continue;
             }
             if line == "once" {

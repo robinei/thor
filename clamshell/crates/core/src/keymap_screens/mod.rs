@@ -1,6 +1,8 @@
-//! The keymaps' screens on the second screen, over the settings tab: the picker (Default, then the
-//! keymaps with how many games use each, and New), a keymap's menu (Edit, Rename, Duplicate, Delete,
-//! deleting one in use after a confirmation), and the edit screen: the pad's inputs in one layer of the
+//! The keymaps' screens on the second screen, over the settings tab: the picker (for a game: its own
+//! keymap, or the row that makes one from the keymap in force; then Default, then the named keymaps
+//! with how many games use each, and New), a keymap's menu (Edit, Rename, Duplicate, Delete, deleting one
+//! in use after a confirmation; a game's own, which stays while another is chosen: Edit, Save as,
+//! Delete), and the edit screen: the pad's inputs in one layer of the
 //! keymap ([`EditView`]; the layer button opens the list of layers: show one, add one, a long press for
 //! rename, clear and delete); an input chosen by touch or by pressing it on the pad, which listens
 //! meanwhile, is selected into a panel with the ways to remap it that fit its kind ([`ways`]) and its
@@ -14,10 +16,9 @@ use crate::State;
 use crate::editor::{Editor, KeymapName, Purpose};
 use crate::effect::{Effect, Save};
 use crate::id::{KeymapId, Target};
-use crate::items::ItemKey;
 use crate::keyboard::{Key, Stroke};
 use crate::keymap::{Actuation, Binding, Chord, Input, Keymap, Keymaps, Kind, Layer, Output, PadOut, Param, as_on_the_pad};
-use crate::scroll::{RowPart, Rows};
+use crate::scroll::RowPart;
 use crate::settings::Setting;
 use crate::slider::{Control, Slider};
 
@@ -129,24 +130,13 @@ pub struct EditView {
     pub slider: Option<Slider>,
 }
 
-/// The picker's rows: Default, then the keymaps (found again by id).
-impl Rows for Keymaps {
-    fn len(&self) -> usize {
-        self.list().len() + 1
-    }
-
-    fn key(&self, i: usize) -> Option<ItemKey> {
-        let id = if i == 0 { 0 } else { self.list().get(i - 1)?.id };
-        Some(ItemKey::Number(u32::from(id)))
-    }
-
-    fn find(&self, key: &ItemKey) -> Option<usize> {
-        match key {
-            ItemKey::Number(0) => Some(0),
-            ItemKey::Number(id) => self.list().iter().position(|k| u32::from(k.id) == *id).map(|i| i + 1),
-            ItemKey::Name(_) => None,
-        }
-    }
+/// A row of the picker.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PickerRow<'a> {
+    /// The game's own keymap; none: the row that makes it.
+    Own(Option<&'a Keymap>),
+    Default,
+    Named(&'a Keymap),
 }
 
 /// Who uses a keymap: all games (it is their default), and how many games of their own.
@@ -197,12 +187,29 @@ impl State {
         self.bottom.editor().is_none() && self.keymaps_shown().is_some_and(Screen::listens)
     }
 
-    /// The picker's row `i`: Default (0), or a keymap.
-    pub fn keymap_row(&self, i: usize) -> Option<Option<&Keymap>> {
-        match i {
-            0 => Some(None),
-            i => self.keymaps.list().get(i - 1).map(Some),
-        }
+    /// The picker's rows: for a game, its own keymap (or the row making one), then Default and the named
+    /// keymaps.
+    fn keymap_rows(&self) -> impl Iterator<Item = PickerRow<'_>> {
+        let own = self.editing().map(|g| PickerRow::Own(self.keymaps.own_of(&g.id)));
+        own.into_iter().chain([PickerRow::Default]).chain(self.keymaps.named().map(PickerRow::Named))
+    }
+
+    pub(crate) fn keymap_rows_len(&self) -> usize {
+        self.keymap_rows().count()
+    }
+
+    pub fn keymap_row(&self, i: usize) -> Option<PickerRow<'_>> {
+        self.keymap_rows().nth(i)
+    }
+
+    /// Whether keymap `id` is a game's own.
+    pub fn keymap_is_own(&self, id: u16) -> bool {
+        self.keymaps.get(id).is_some_and(|k| k.owner.is_some())
+    }
+
+    /// Whether the panel edits a game without a keymap of its own (which it can make).
+    pub fn keymap_can_make_own(&self) -> bool {
+        self.editing().is_some_and(|g| self.keymaps.own_of(&g.id).is_none())
     }
 
     /// The keymap the settings panel's scope uses (0: Default).
@@ -212,7 +219,11 @@ impl State {
 
     /// A keymap's name, "Default" for none (or one that is gone).
     pub fn keymap_name(&self, id: u16) -> &str {
-        self.keymaps.get(id).map_or("Default", |k| k.name.as_str())
+        match self.keymaps.get(id) {
+            Some(k) if k.owner.is_some() => "Own keymap",
+            Some(k) => k.name.as_str(),
+            None => "Default",
+        }
     }
 
     /// Who uses keymap `id`.
@@ -244,27 +255,46 @@ impl State {
     }
 
     /// A row of the picker: a tap chooses it for the scope being edited (and closes the picker), a long
-    /// press opens a keymap's menu; its Edit button its edit screen.
+    /// press opens a keymap's menu; its Edit button its edit screen. The game's row without its own keymap
+    /// makes it.
     pub(crate) fn on_keymap_row(&mut self, i: usize, part: RowPart, long: bool) -> Vec<Effect> {
-        let Some(row) = self.keymap_row(i) else {
-            return vec![];
+        let (id, keymap) = match self.keymap_row(i) {
+            None => return vec![],
+            Some(PickerRow::Own(None)) => return self.make_own(self.keymap_chosen()),
+            Some(PickerRow::Default) => (0, false),
+            Some(PickerRow::Own(Some(k)) | PickerRow::Named(k)) => (k.id, true),
         };
-        let id = row.map_or(0, |k| k.id);
-        match (part, long, row) {
-            (RowPart::Edit, _, Some(_)) => {
+        match (part, long) {
+            (RowPart::Edit, _) if keymap => {
                 self.open_edit(id);
                 vec![]
             }
-            (_, true, Some(_)) => {
+            (_, true) if keymap => {
                 self.bottom.keymaps = Some(Screen::Menu(id));
                 vec![]
             }
-            (_, false, _) => {
+            (_, false) => {
                 self.bottom.keymaps = None;
                 self.change(Setting::Keymap, Some(id))
             }
             _ => vec![],
         }
+    }
+
+    /// The game the panel edits (without one) gets its own keymap, a copy of keymap `from`, chosen there;
+    /// its edit screen opens.
+    fn make_own(&mut self, from: u16) -> Vec<Effect> {
+        if !self.keymap_can_make_own() {
+            return vec![];
+        }
+        let Some(game) = self.editing().map(|g| g.id.clone()) else {
+            return vec![];
+        };
+        let own = self.keymaps.make_own(from, &game);
+        let mut effects = self.change(Setting::Keymap, Some(own));
+        self.open_edit(own);
+        effects.push(self.save_keymaps());
+        effects
     }
 
     /// The keymaps' screens' buttons.
@@ -295,6 +325,11 @@ impl State {
                 self.name_keymap(KeymapName::Duplicate(k), name);
                 vec![]
             }
+            (KeymapId::Share, Screen::Menu(k)) => {
+                self.name_keymap(KeymapName::Share(k), String::new());
+                vec![]
+            }
+            (KeymapId::MakeOwn, Screen::Edit(k)) => self.make_own(k),
             (KeymapId::Delete, Screen::Menu(k)) if self.keymap_users(k).any() => {
                 self.bottom.keymaps = Some(Screen::Delete(k));
                 vec![]
@@ -508,6 +543,10 @@ impl State {
             }
             KeymapName::Duplicate(id) => {
                 self.keymaps.duplicate(id, name);
+                self.bottom.keymaps = Some(Screen::List);
+            }
+            KeymapName::Share(id) => {
+                self.keymaps.share(id, name);
                 self.bottom.keymaps = Some(Screen::List);
             }
             KeymapName::NewLayer(id, for_input) => {

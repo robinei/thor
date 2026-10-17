@@ -102,6 +102,11 @@ pub enum KeymapId {
     Delete,
     /// Deleting a keymap games use, after all.
     ConfirmDelete,
+    /// A game's own keymap made from the one in force there (the picker's row, the edit screen's action
+    /// while a shared keymap is edited).
+    MakeOwn,
+    /// A game's own keymap's menu: name it, which shares it.
+    Share,
     /// An input on the edit screen: a tap selects it (its panel), a tap on the selected one opens the way
     /// it is mapped now; a long press sets it back (in the layer shown). While a control is being picked,
     /// the one picked.

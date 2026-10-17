@@ -192,7 +192,11 @@ pub const TARGETS: &[Form<Id>] = &[
     form("save", "the editor's save", |_| Ok(Id::Editor(EditorId::Save))),
     form("key NAME", "an on-screen key: a character, space, ctrl, alt, shift, fn, enter, esc, backspace, tab", |a| key(key_named(arg(a, 0))?)),
     // The keymaps' screens.
-    form("keymap N", "the keymap picker's row N (0 Default, then the keymaps; a long press: its menu)", |a| Ok(ListId::Keymaps.row(number(arg(a, 0))?))),
+    form(
+        "keymap N",
+        "the keymap picker's row N (for a game 0 its own keymap or Make own, then Default, then the named keymaps; else 0 Default; a long press: its menu)",
+        |a| Ok(ListId::Keymaps.row(number(arg(a, 0))?)),
+    ),
     form("keymap-edit N", "row N's Edit", |a| Ok(Id::Row { list: ListId::Keymaps, i: number(arg(a, 0))?, part: RowPart::Edit })),
     form("keymap-new", "the picker's New", |_| km(KeymapId::New)),
     form("keymap-back", "back one keymap screen (picking: Cancel)", |_| km(KeymapId::Back)),

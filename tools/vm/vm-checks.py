@@ -706,10 +706,11 @@ class Checks:
         press("y")  # picks the pad's Y for X
         control("tap keymap-back")
         text = sh(f"cat {keymaps_file}")
-        # (Its id and its row in the picker: other checks may have made keymaps before.)
+        # (Its id and its row in the picker, after the game's own keymap's row and Default: other checks may
+        # have made keymaps before.)
         ids = [line.split()[1] for line in text.splitlines() if line.startswith("keymap ")]
         ident = next((line.split()[1] for line in text.splitlines() if line.startswith("keymap ") and line.endswith(" Check")), "?")
-        row = ids.index(ident) + 1 if ident in ids else 0
+        row = ids.index(ident) + 2 if ident in ids else 1
         control(f"tap keymap {row}")
         saved = (f"keymap {ident} Check" in text and "a = key ctrl+x" in text and "rstick = pointer" in text
                  and "gyro = pointer hold=lb" in text and "x = pad y" in text)
@@ -754,7 +755,7 @@ class Checks:
             control(line)
         # Default for the game again: everything as on the pad.
         since = now()
-        for line in ["tab settings", "tap setting keymap", "tap keymap 0"]:
+        for line in ["tab settings", "tap setting keymap", "tap keymap 1"]:
             control(line)
         self.check("  Default chosen, sent to the pad", logged(since, "pad: keymap 0 (Default)", 3), journal(since)[-300:])
         out = capture(both, 2, lambda: press("a", 150))
@@ -776,7 +777,8 @@ class Checks:
                      "tap keymap-back"]:
             control(line)
         text = sh(f"cat {keymaps_file}")
-        rows = text.count("keymap ")
+        # (The last keymap's row: after the game's own keymap's row and Default.)
+        rows = text.count("keymap ") + 1
         layers = "a = key ctrl+x\nback = layer 1\nlayer 1 held\na = key ctrl+y\n" in text
         if not self.check("  A to Ctrl+X, and to Ctrl+Y while Back is held, saved", layers, text):
             return
@@ -837,7 +839,7 @@ class Checks:
                      "tap map-from y", "tap map-to key", "tap key t", "tap toggle", "tap keymap-back"]:
             control(line)
         text = sh(f"cat {keymaps_file}")
-        rows = text.count("keymap ")
+        rows = text.count("keymap ") + 1
         saved = "a = key x\n" in text and "y = key t toggle\n" in text and "a hold = key e\n" in text and "b double = key z\n" in text
         if not self.check("  A: X, held E; B twice: Z; Y: T toggled; saved", saved, text):
             return

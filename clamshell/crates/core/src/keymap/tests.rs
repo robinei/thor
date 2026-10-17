@@ -75,6 +75,18 @@ fn keymaps_round_trip_as_text() {
 }
 
 #[test]
+fn a_games_own_keymap_round_trips() {
+    let mut maps = Keymaps::initial();
+    let game: std::sync::Arc<str> = "zelda-lttp".into();
+    let own = maps.make_own(1, &game);
+    assert_eq!(maps.get(own).map(|k| (k.name.as_str(), k.bindings().len())), Some(("", 4)), "a copy of Nintendo layout");
+    assert!(body(&maps.text()).contains(&format!("keymap {own}\ngame zelda-lttp\na = pad b\n")), "{}", maps.text());
+    assert_eq!(Keymaps::load(&maps.text()), maps);
+    assert_eq!(maps.named().count(), 1, "not among the named");
+    assert_eq!(maps.own_of("zelda-lttp").map(|k| k.id), Some(own));
+}
+
+#[test]
 fn lines_not_understood_are_skipped() {
     let text = "# a comment\nkeymap 3 Turbo\na = key x turbo=10\nb = warp 9\nzz = pad a\nlstick = key x\ngyro = pointer hold=up\nx = pad x hold=a\nlayer x\ny = pad a\nlayer 0\nlt = trigger right\nkeymap 0 bad\nkeymap x bad\nkeymap 3 again\n";
     let maps = Keymaps::load(text);

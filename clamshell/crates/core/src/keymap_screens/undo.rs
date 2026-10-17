@@ -14,7 +14,7 @@ pub(super) const UNDO_MAX: usize = 50;
 
 impl State {
     /// The keymaps saved; a change to the keymap being edited is a step Undo goes back over.
-    pub(super) fn save_keymaps(&mut self) -> Effect {
+    pub(crate) fn save_keymaps(&mut self) -> Effect {
         let undo = &mut self.bottom.keymap_undo;
         if let Some(last) = undo.last.as_ref()
             && let Some(now) = self.keymaps.get(last.id)

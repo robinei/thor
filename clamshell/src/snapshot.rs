@@ -212,7 +212,7 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                     [tab(Tab::Settings)]
                         .into_iter()
                         .chain(taps(Setting::FpsCap, 4))
-                        .chain([keymap_tile(), tap(ListId::Keymaps.row(1))])
+                        .chain([keymap_tile(), tap(ListId::Keymaps.row(2))])
                         .chain(taps(Setting::Hud, 1))
                         .collect(),
                 ),
@@ -318,18 +318,30 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
             [vec![ff6(), ff6()], fps_keymap()?, vec![km(KeymapId::Back)]].concat(),
             vec![
                 shot("keymaps.png", Bottom, vec![]),
-                shot("keymap-menu.png", Bottom, vec![PointerEvent::LongPress(ListId::Keymaps.row(2)).into()]),
+                shot("keymap-menu.png", Bottom, vec![PointerEvent::LongPress(ListId::Keymaps.row(3)).into()]),
                 shot(
                     "keymap-delete.png",
                     Bottom,
                     vec![
                         km(KeymapId::Back),
-                        tap(ListId::Keymaps.row(2)),
+                        tap(ListId::Keymaps.row(3)),
                         keymap_tile(),
-                        PointerEvent::LongPress(ListId::Keymaps.row(2)).into(),
+                        PointerEvent::LongPress(ListId::Keymaps.row(3)).into(),
                         km(KeymapId::Delete),
                     ],
                 ),
+            ],
+        ),
+        // A game's own keymap: made from FPS (chosen for it), its menu, kept while FPS is chosen again; FPS's
+        // edit screen, used by games.
+        group(
+            [vec![ff6(), ff6()], fps_keymap()?, vec![km(KeymapId::Back), tap(ListId::Keymaps.row(3)), keymap_tile()]].concat(),
+            vec![
+                shot("keymaps-chosen.png", Bottom, vec![]),
+                shot("keymap-edit-shared.png", Bottom, vec![tap(Id::Row { list: ListId::Keymaps, i: 3, part: clamshell_core::RowPart::Edit })]),
+                shot("keymap-own.png", Bottom, vec![km(KeymapId::MakeOwn), km(KeymapId::Back)]),
+                shot("keymap-own-menu.png", Bottom, vec![PointerEvent::LongPress(ListId::Keymaps.row(0)).into()]),
+                shot("keymap-own-kept.png", Bottom, vec![km(KeymapId::Back), tap(ListId::Keymaps.row(3)), keymap_tile()]),
             ],
         ),
         group(

@@ -1,6 +1,6 @@
 //! The keymaps' screens, over the settings tab (see `core`'s `keymap_screens`): the picker (a scrolled list:
-//! Default, then the keymaps, each with who uses it and an Edit button; New), a keymap's menu, deleting
-//! one in use, the edit screen (one layer of the keymap, named at the top right, a button to the list of
+//! for a game its own keymap, or Make own keymap; Default, then the named keymaps, each with who uses it
+//! and an Edit button; New), a keymap's menu, deleting one in use, the edit screen (one layer of the keymap, named at the top right, a button to the list of
 //! layers; Close at the top left; the pad's controls drawn in two clusters at the sides, as they sit
 //! beside the screen, each the layer changes with a label; between the label columns, the whole height, a
 //! panel for the selected input: the ways to remap it as icons, its parameters), the layers' lists and a
@@ -15,7 +15,7 @@ use std::fmt::Write;
 use clamshell_core::keymap::{
     Actuation, Binding, Button, Change, Chord, Dir, Input, Keymap, Kind, Layer, MouseButton, Output, PadOut, Param, Side, change, params_of,
 };
-use clamshell_core::keymap_screens::{EditView, Screen, holds, picked, way_of, ways};
+use clamshell_core::keymap_screens::{EditView, PickerRow, Screen, holds, picked, way_of, ways};
 use clamshell_core::slider::{Control, Slider};
 use clamshell_core::{Id, KeymapId, ListId, RowPart, Scope, Target};
 
@@ -124,18 +124,18 @@ fn list(f: &mut Frame) {
         let Some(row) = s.keymap_row(i) else {
             continue;
         };
-        let id = row.map_or(0, |k| k.id);
-        // (A keymap that is gone counts as Default.)
-        let mine = id == chosen || (id == 0 && s.keymaps().get(chosen).is_none());
-        let who = if row.is_some() { users(f, id) } else { Fmt::of(format_args!("As on the pad")) };
         let at = |part| Id::Row { list: ListId::Keymaps, i: i as u16, part };
-        let item = ListRow {
-            label: row.map_or("Default", |k| k.name.as_str()),
-            tone: Tone::high_if(mine),
-            mark: mine,
-            note: &who,
-            edit: if row.is_some() { EditCell::Edit(at(RowPart::Edit)) } else { EditCell::Empty },
+        let (id, label, note) = match row {
+            PickerRow::Own(Some(k)) => (Some(k.id), "Own keymap", Fmt::<48>::of(format_args!("This game only"))),
+            PickerRow::Own(None) => (None, "Make own keymap", Fmt::of(format_args!("From {}", s.keymap_name(chosen)))),
+            PickerRow::Default => (Some(0), "Default", Fmt::of(format_args!("As on the pad"))),
+            PickerRow::Named(k) => (Some(k.id), k.name.as_str(), users(f, k.id)),
         };
+        // (A keymap that is gone counts as Default.)
+        let mine = id == Some(chosen) || (id == Some(0) && s.keymaps().get(chosen).is_none());
+        let tone = if id.is_none() { Tone::Fn } else { Tone::high_if(mine) };
+        let edit = if id.is_some_and(|id| id != 0) { EditCell::Edit(at(RowPart::Edit)) } else { EditCell::Empty };
+        let item = ListRow { label, tone, mark: mine, note: &note, edit };
         widgets::list_row(f, at(RowPart::Main), rows.row(i), list.pad, list.size, item);
     }
     list.end(f, rows);
@@ -145,6 +145,11 @@ fn menu(f: &mut Frame, id: u16) {
     let name = f.s.keymap_name(id);
     let area = header(f, name, HeaderRight::None);
     let k = |id| Id::Keymap(id);
+    // A game's own: named, it becomes a shared one.
+    if f.s.keymap_is_own(id) {
+        let items = [(k(KeymapId::Edit), "Edit", Tone::Fn), (k(KeymapId::Share), "Save as…", Tone::Fn), (k(KeymapId::Delete), "Delete", Tone::Accent)];
+        return widgets::menu(f, area, &items);
+    }
     let items = [
         (k(KeymapId::Edit), "Edit", Tone::Fn),
         (k(KeymapId::Rename), "Rename", Tone::Fn),

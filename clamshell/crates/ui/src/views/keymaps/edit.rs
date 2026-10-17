@@ -372,12 +372,50 @@ pub(super) fn edit(f: &mut Frame, id: u16, picking: Option<Picking>) {
         f.c.text_in(Rect::new(r.x - r.w * 0.6 - w, r.y, w, r.h), size, fixed, "Home", Align::Start);
     }
 
-    // The panel: the whole strip between the label columns.
+    // The panel: the whole strip between the label columns, above who uses a named keymap (its edits
+    // reach them all) and, for a game, Make own.
     let margin = (strip.w * 0.04).min(size);
-    let panel_r = Rect::new(strip.x + margin, strip.y, (strip.w - 2.0 * margin).max(1.0), strip.h);
+    let mut panel_r = Rect::new(strip.x + margin, strip.y, (strip.w - 2.0 * margin).max(1.0), strip.h);
+    if picking.is_none() && !s.keymap_is_own(id) && s.keymap_users(id).any() {
+        let small = f.text(Text::Small) * PANEL_TEXT;
+        let row = panel_r.take_bottom(small * LINE * 1.6);
+        // (Wider than the panel: the label columns are free at the bottom, between Home and Back.)
+        shared_line(f, Rect::new(strip.x - lw * 0.9, row.y, strip.w + lw * 1.8, row.h), id, small);
+    }
     match picking {
         Some(p) => picking_panel(f, panel_r, id, p),
         None => panel(f, panel_r, id, keymap, view),
+    }
+}
+
+/// Who uses a named keymap being edited ("Used by all games, 2 games"), and for a game without its own
+/// keymap "Make own" (a copy for the game alone, edited from then on).
+fn shared_line(f: &mut Frame, mut row: Rect, id: u16, size: f32) {
+    let who = super::users(f, id);
+    let text = Fmt::<64>::of(format_args!("Used by {}", Lower(who.as_str())));
+    let label = if f.s.keymap_can_make_own() { "Make own" } else { "" };
+    // Centred together: the text, then the action.
+    let gap = size;
+    let action_w = if label.is_empty() { 0.0 } else { f.c.text_width(size, label) + gap };
+    let w = (f.c.text_width(size, &text) + action_w).min(row.w);
+    row = Rect::new(row.x + (row.w - w) / 2.0, row.y, w, row.h);
+    if !label.is_empty() {
+        let action = row.take_right(action_w);
+        f.text_button(Id::Keymap(KeymapId::MakeOwn), action, size, Tone::Fn, label, Align::End);
+    }
+    f.c.text_fit(row, size, Tone::Dim, &text, Keep::Start);
+}
+
+/// Text with its first letter in lower case ("All games" after "Used by").
+struct Lower<'a>(&'a str);
+
+impl std::fmt::Display for Lower<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let mut chars = self.0.chars();
+        if let Some(c) = chars.next() {
+            f.write_char(c.to_ascii_lowercase())?;
+        }
+        f.write_str(chars.as_str())
     }
 }
 

@@ -257,7 +257,7 @@ impl State {
             ListId::Bluetooth => RowsOf::Of(&self.radios.bluetooth),
             ListId::Streams => RowsOf::Of(self.levels.audio()),
             ListId::Backlights => RowsOf::Of(self.levels.backlight_rows()),
-            ListId::Keymaps => RowsOf::Of(&self.keymaps),
+            ListId::Keymaps => RowsOf::Count(self.keymap_rows_len()),
             ListId::Layers => RowsOf::Count(self.layer_rows()),
             ListId::Time => RowsOf::Count(self.time_rows()),
         }

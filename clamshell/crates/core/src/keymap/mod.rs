@@ -1,5 +1,8 @@
-//! Keymaps: named remappings of the controller, shared between games (a game's or all games' setting,
-//! [`crate::settings::Setting::Keymap`], is a keymap's id; 0 is Default, no remapping). Each maps some of
+//! Keymaps: remappings of the controller (a game's or all games' setting,
+//! [`crate::settings::Setting::Keymap`], is a keymap's id; 0 is Default, no remapping). A keymap is
+//! named, and shared by the games that choose it, or a game's own: unnamed, offered to that game alone
+//! (kept while another is chosen, until deleted), made from the keymap in force there; naming it makes it
+//! a shared one. Each maps some of
 //! the pad's inputs ([`Input`]) to something else ([`Output`]); an input without a binding does what it
 //! does on the pad. What an input may map to depends on its kind ([`Kind`]): a button to a pad button, a
 //! key chord, a mouse button or a wheel step; a stick to a stick, the mouse pointer, four keys or the
@@ -14,7 +17,8 @@
 //! on (turbo) or stay on from one actuation to the next (toggle).
 //!
 //! Saved in `keymaps.txt` (next to `game-settings.txt`), its first line naming the format and its version
-//! ([`KEYMAPS_FORMAT`]; a change to the format bumps it, so loading can tell older files): a `keymap ID NAME` line starts a keymap, then a
+//! ([`KEYMAPS_FORMAT`]; a change to the format bumps it, so loading can tell older files): a `keymap ID NAME` line starts a keymap (a
+//! game's own: `keymap ID`, then `game GAME`), then a
 //! line per binding, `INPUT [hold|double] = OUTPUT [option=value ...] [toggle]`; a `layer N NAME` line
 //! starts layer N's bindings (Base's come first), a `once` line after it making it Once. Lines it doesn't understand are skipped, and so are the
 //! bindings of a layer it doesn't know, so later features can add their own.
@@ -38,7 +42,7 @@ pub const DEFAULT_SPEED: u8 = 50;
 /// A trigger mapped to a button acts past this (percent of its travel, 1 to 100).
 pub const DEFAULT_THRESHOLD: u8 = 50;
 /// The keymaps file's first line: its format and version (a comment to the parser).
-pub const KEYMAPS_FORMAT: &str = "# ClamShell keymaps, format 1";
+pub const KEYMAPS_FORMAT: &str = "# ClamShell keymaps, format 2";
 /// A trigger's full pull acts past this (percent of its travel) unless set otherwise.
 pub const FULL_PULL: u8 = 95;
 /// A press held this long is a hold (hundredths of a second, 20 to 100).
@@ -280,12 +284,16 @@ struct LayerOf {
     once: bool,
 }
 
-/// A named set of bindings in layers ([`Layer`]: Base, and those added), each actuation's ([`Actuation`]).
+/// A set of bindings in layers ([`Layer`]: Base, and those added), each actuation's ([`Actuation`]): named,
+/// or a game's own.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Keymap {
     /// Its number, kept across renames (0 is Default, which no keymap has).
     pub id: u16,
+    /// Empty for a game's own.
     pub name: String,
+    /// The game whose own it is (by id); none: a named one, which any game may choose.
+    pub owner: Option<std::sync::Arc<str>>,
     /// Base first, then the others in the order added.
     layers: Vec<LayerOf>,
 }
@@ -301,7 +309,12 @@ static NO_BINDINGS: Bindings = Bindings { press: Vec::new(), hold: Vec::new(), d
 
 impl Keymap {
     pub fn new(id: u16, name: &str) -> Keymap {
-        Keymap { id, name: name.to_owned(), layers: vec![LayerOf { id: Layer::BASE, name: "Base".into(), bindings: Bindings::default(), once: false }] }
+        Keymap {
+            id,
+            name: name.to_owned(),
+            owner: None,
+            layers: vec![LayerOf { id: Layer::BASE, name: "Base".into(), bindings: Bindings::default(), once: false }],
+        }
     }
 
     /// Base's bindings (a press's).
@@ -533,6 +546,34 @@ impl Keymaps {
 
     pub fn get_mut(&mut self, id: u16) -> Option<&mut Keymap> {
         self.list.iter_mut().find(|k| k.id == id)
+    }
+
+    /// The named keymaps (those any game may choose).
+    pub fn named(&self) -> impl Iterator<Item = &Keymap> {
+        self.list.iter().filter(|k| k.owner.is_none())
+    }
+
+    /// `game`'s own keymap, if it has one.
+    pub fn own_of(&self, game: &str) -> Option<&Keymap> {
+        self.list.iter().find(|k| k.owner.as_deref() == Some(game))
+    }
+
+    /// `game`'s own keymap made, a copy of keymap `from` (Default, or one gone: empty); its id.
+    pub fn make_own(&mut self, from: u16, game: &std::sync::Arc<str>) -> u16 {
+        let id = self.list.iter().map(|k| k.id).max().unwrap_or(0).saturating_add(1);
+        let mut own = Keymap::new(id, "");
+        own.owner = Some(game.clone());
+        if let Some(from) = self.get(from) {
+            own.layers = from.layers.clone();
+        }
+        self.list.push(own);
+        id
+    }
+
+    /// A game's own keymap named, which makes it a shared one (the game keeps it); whether it was there.
+    pub fn share(&mut self, id: u16, name: &str) -> bool {
+        let name = self.unique_name(name);
+        self.get_mut(id).map(|k| (k.owner, k.name) = (None, name)).is_some()
     }
 
     /// A name no keymap has: `name`, else with a number after it.
