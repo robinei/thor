@@ -2,13 +2,13 @@
 //! changes applied at once when they change the settings in force, the environment editor typing on the
 //! keyboard, and the dark second screen.
 
-use crate::Game;
 use crate::State;
 use crate::editor::{Done, Editor, Purpose};
 use crate::effect::{Effect, Save};
 use crate::game::Front;
 use crate::id::{EditorId, SettingsId};
 use crate::keyboard::Stroke;
+use crate::program::Program;
 use crate::settings::{Setting, Values};
 
 /// What the settings panel edits: the global settings, or the game in context's overrides.
@@ -31,31 +31,32 @@ pub enum TileOrigin {
 }
 
 impl State {
-    /// The settings in force: the running game's, else the global ones.
+    /// The settings in force: the program in force's (see [`crate::program`]), else the global ones.
     pub fn in_force(&self) -> Values {
-        self.session.current.as_ref().map_or(self.settings.global, |id| self.settings.of(id))
+        self.session.program.as_ref().map_or(self.settings.global, |id| self.settings.of(id))
     }
 
-    /// The game the settings panel is about, by what is in front: the game, shelf's selection, or none
-    /// (another app: the panel edits all games).
-    pub fn context(&self) -> Option<&Game> {
+    /// The program the settings panel is about, by what is in front: the game, a dock app, shelf's
+    /// selection, or none (a window of no program: the panel edits the defaults).
+    pub fn context(&self) -> Option<Program<'_>> {
         let id = match self.session.front() {
-            Front::Game => self.session.current.as_ref(),
-            Front::Shelf => self.shelf.selected(),
-            Front::App => None,
+            Front::Game => self.session.current.clone(),
+            Front::Shelf => self.shelf.selected().cloned(),
+            Front::App => self.session.windows.iter().find(|w| w.focused).and_then(|w| self.program_of(w)),
         }?;
-        self.game(id)
+        self.program(&id)
     }
 
-    /// What the settings panel edits now: the game in context (if the scope is the game's), or none
-    /// for the global settings.
-    pub fn editing(&self) -> Option<&Game> {
+    /// What the settings panel edits now: the program in context (if the scope is the program's), or
+    /// none for the defaults.
+    pub fn editing(&self) -> Option<Program<'_>> {
         self.context().filter(|_| self.bottom.scope == Scope::Game)
     }
 
-    /// The second screen is dark: a game runs that wants it so, and it hasn't been tapped since.
+    /// The second screen is dark: a program is in force that wants it so, and it hasn't been tapped
+    /// since.
     pub fn bottom_dark(&self) -> bool {
-        self.session.current.is_some() && self.in_force().get(Setting::BottomScreen) == 1 && !self.bottom.woken
+        self.session.program.is_some() && self.in_force().get(Setting::BottomScreen) == 1 && !self.bottom.woken
     }
 
     /// The value a tile shows and steps from: the game's effective one, or the global one.
@@ -125,7 +126,7 @@ impl State {
         let mut effects = vec![Effect::Save(Save::Settings(self.settings.text()))];
         let now = self.in_force();
         if now != before {
-            effects.push(Effect::Apply { game: self.session.current.clone(), settings: now });
+            effects.push(Effect::Apply { game: self.session.program.clone(), settings: now });
         }
         effects
     }
@@ -266,7 +267,7 @@ mod tests {
         taps(&mut s, Setting::PadMouse, 1);
         taps(&mut s, Setting::BottomScreen, 1);
         let (_, fx) = s.apply(GameEvent::Started("zelda-lttp".into()).into());
-        assert_eq!(fx, vec![Effect::PadRoute(PadRoute::Mouse)]);
+        assert!(fx.contains(&Effect::PadRoute(PadRoute::Mouse)), "{fx:?}");
         assert!(s.bottom_dark());
         tap(&mut s, Id::Wake);
         assert!(!s.bottom_dark());

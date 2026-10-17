@@ -1,14 +1,14 @@
-//! Where the controller's input goes. Something claims the pad by what is in front: shelf, the game, or
-//! typing into an app while the keyboard tab is open; the pad mouse, while on, claims it over all of
-//! them. The second screen gets it when nothing claims it, and View moves it there (and back) from the
+//! Where the controller's input goes. Something claims the pad by what is in front: shelf, or the program
+//! (a game or an app, alike: as a game's pad, through its keymap), or typing into an app while the
+//! keyboard tab is open; the pad mouse, while on, claims it over all of them. The second screen gets it when nothing claims it, and View moves it there (and back) from the
 //! pad mouse or typing; a game keeps it (View is the game's button there). When the claimant changes,
 //! the pad goes to the new one, except that a pad in use on the second screen (its focus ring showing)
 //! with nothing claiming it before stays there (the keyboard coming up under it is typed on with the
 //! pad).
 //!
-//! The pad mouse is the user's switch, or follows the game in front (its Setting::PadMouse): turned on
-//! for a game that wants it, off again when another (or none) is in front, unless the user switched it
-//! meanwhile.
+//! The pad mouse is the user's switch, or follows the program in force (its Setting::PadMouse): turned
+//! on for a program that wants it, off again when another (or none) is in force, unless the user
+//! switched it meanwhile.
 
 use crate::game::Front;
 use crate::tab::Tab;
@@ -111,7 +111,7 @@ impl Pad {
             (Front::Shelf, _) => Some(Claimant::Shelf),
             (Front::Game, _) => Some(Claimant::Game),
             (Front::App, Tab::Keyboard) => Some(Claimant::Typing),
-            (Front::App, _) => None,
+            (Front::App, _) => Some(Claimant::Game),
         }
     }
 
@@ -205,13 +205,17 @@ mod tests {
     }
 
     #[test]
-    fn the_pad_goes_to_shelf_the_game_or_typing_by_what_is_in_front() {
+    fn the_pad_goes_to_shelf_the_program_or_typing_by_what_is_in_front() {
         let mut s = state();
         let window = |app_id: &str, unit: Option<&str>| Window { unit: unit.map(Into::into), workspace: String::new(), ..win(1, app_id, "", true) };
         assert_eq!(route(&mut s, Event::Tick { unix_secs: 1 }), PadRoute::Ui, "nothing known, no game: shelf");
         assert_eq!(route(&mut s, GameEvent::Started("zelda-lttp".into()).into()), PadRoute::Game, "a game runs: in front");
         assert_eq!(route(&mut s, Event::Windows(vec![window(apps::SHELF_APP_ID, None)])), PadRoute::Ui, "shelf in front");
-        assert_eq!(route(&mut s, Event::Windows(vec![window("foot", Some("clamshell-app-terminal-1-0.scope"))])), PadRoute::Ui, "an app: the second screen");
+        assert_eq!(
+            route(&mut s, Event::Windows(vec![window("foot", Some("clamshell-app-terminal-1-0.scope"))])),
+            PadRoute::Game,
+            "an app: its pad, as a game's"
+        );
         assert_eq!(route(&mut s, PointerEvent::Activate(Id::Tab(Tab::Keyboard)).into()), PadRoute::Keys, "an app and the keyboard: typing");
         assert_eq!(route(&mut s, Event::Windows(vec![window("retroarch", Some("clamshell-game-1-0.scope"))])), PadRoute::Game);
         let (_, fx) = s.apply(Event::Windows(vec![window(apps::SHELF_APP_ID, None)]));
@@ -231,12 +235,13 @@ mod tests {
         assert_eq!(tap(&mut s, Id::PadMouse), vec![Effect::PadRoute(PadRoute::Mouse)]);
         assert_eq!(s.apply(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Ui)]);
         assert_eq!(s.apply(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Mouse)]);
-        // Nothing else wants it: View does nothing, the pad stays on the second screen.
+        // The pad mouse off, another tab: the app in front has it, as a game would (View is its button).
         tap(&mut s, Id::PadMouse);
         tap(&mut s, Id::Tab(Tab::Dock));
-        assert_eq!(s.pad().route(), PadRoute::Ui);
+        assert_eq!(s.pad().route(), PadRoute::Game);
         assert_eq!(s.apply(Event::PadSwitch).1, vec![]);
-        // Used there, it stays when the keyboard comes up under it.
+        // Shelf in front, the pad used on the second screen: it stays when the keyboard comes up under it.
+        s.apply(Event::Windows(vec![win(2, apps::SHELF_APP_ID, &Instance::Shelf.name(), true)]));
         s.apply(PointerEvent::Focus(Id::Tab(Tab::Dock)).into());
         tap(&mut s, Id::Tab(Tab::Keyboard));
         assert_eq!(s.pad().route(), PadRoute::Ui);

@@ -40,10 +40,14 @@ pub enum Effect {
     Key(Stroke),
     /// Where the controller's input goes now.
     PadRoute(PadRoute),
-    /// Start a dock app's command as a new instance (its scope and workspace).
+    /// Start a dock app's command as a new instance (its scope and workspace), with its program's
+    /// settings and extra environment, as a game's launch.
     RunApp {
         instance: Instance,
         command: Vec<String>,
+        program: Arc<str>,
+        settings: Values,
+        env: Vec<(String, String)>,
     },
     /// The compositor: show, close or move windows.
     Window(WindowCommand),

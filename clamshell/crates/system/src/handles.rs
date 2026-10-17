@@ -80,7 +80,12 @@ impl Handles {
                     log::warn!("recording the play of {game}: {e}");
                 }
             }
-            Effect::RunApp { instance, command } => launcher::run_app(&self.jobs, instance, command, self.scope),
+            Effect::RunApp { instance, command, program, settings, env } => {
+                // MangoHud's first, so the app's own variables can still override it (as a game's launch).
+                let mut app_env = self.tuning.apply(settings, Some(program)).map(|config| crate::tuning::mangohud_env(&config)).unwrap_or_default();
+                app_env.extend(env.iter().cloned());
+                launcher::run_app(&self.jobs, instance, command, app_env, self.scope);
+            }
             Effect::Window(command) => self.window(command),
             Effect::Sound(sound) => self.sound.send(sound.clone()),
             Effect::Brightness { level, shares } => self.brightness.send(brightness::Command { level: *level, shares: shares.clone() }),

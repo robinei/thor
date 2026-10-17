@@ -127,8 +127,8 @@ enum Listing {
 fn list(f: &mut Frame, listing: Listing) {
     let s = f.s;
     let scope = match (s.bottom().scope(), s.editing()) {
-        (Scope::Game, Some(game)) => game.title.as_str(),
-        _ => "all games",
+        (Scope::Game, Some(game)) => game.title,
+        _ => "all",
     };
     let (area, hint) = match listing {
         Listing::Load => (header(f, "Load into own keymap", HeaderRight::None), "Its bindings replace the own keymap's (Undo goes back)"),

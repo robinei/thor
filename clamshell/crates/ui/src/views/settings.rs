@@ -73,14 +73,14 @@ pub(super) fn draw(f: &mut Frame) {
     let mut grid = style::content(body);
     let bar = grid.take_top(f.body().h * TABS_H);
 
-    // Tabs: All games, then the game in context; a note on the right.
+    // Tabs: All (the defaults), then the program in context; a note on the right.
     let inner = pad * 0.8;
-    let tabs = [(Scope::Global, Some("All games")), (Scope::Game, context.map(|g| g.title.as_str()))];
+    let tabs = [(Scope::Global, Some("All")), (Scope::Game, context.as_ref().map(|g| g.title))];
     let items = tabs.into_iter().filter_map(|(scope, name)| Some((Id::Settings(SettingsId::Scope(scope)), name?, (scope == Scope::Global) == game.is_none())));
     let tabs_area = Rect::new(bar.x - inner, bar.y, bar.w + inner, bar.h);
     let tabs_end = widgets::tabs(f, tabs_area, f.text(Text::Heading), inner, bar.w * TAB_MAX, items);
-    let running = context.is_some_and(|g| s.current_game() == Some(&g.id));
-    let note = match (game, running) {
+    let running = context.as_ref().is_some_and(|g| s.program_in_force() == Some(&g.id));
+    let note = match (game.is_some().then_some(()), running) {
         (Some(_), true) => "applies now",
         (Some(_), false) => "applies at launch",
         (None, _) => "defaults",
@@ -112,7 +112,7 @@ struct Face {
 }
 
 fn face(s: &State, tile: Tile) -> Face {
-    let game = s.editing().map(|g| &g.id);
+    let game = s.editing().map(|g| g.id);
     match tile {
         Tile::Setting(setting) => {
             let value = s.tile_value(setting);
@@ -135,13 +135,13 @@ fn face(s: &State, tile: Tile) -> Face {
             }
         }
         Tile::Env => {
-            let count = clamshell_core::count_env(s.settings().env_text(game.map(|g| &**g)));
+            let count = clamshell_core::count_env(s.settings().env_text(game.as_deref()));
             let impact = if count > 0 { Impact::Changes } else { Impact::Stock };
             let origin = if game.is_some() && count > 0 { TileOrigin::Own } else { TileOrigin::Global };
             Face { id: Id::Settings(SettingsId::Env), icon: Icon::Env, value: Fmt::of(format_args!("{}", Variables(count))), impact, origin, active: true }
         }
         Tile::Reset => {
-            let any = game.is_some_and(|g| s.settings().has_own(g));
+            let any = game.as_ref().is_some_and(|g| s.settings().has_own(g));
             let value = Fmt::of(format_args!("{}", if any { "Reset" } else { "Nothing to reset" }));
             Face { id: Id::Settings(SettingsId::Reset), icon: Icon::Reset, value, impact: Impact::Stock, origin: TileOrigin::Global, active: any }
         }

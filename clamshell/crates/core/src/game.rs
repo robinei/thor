@@ -198,8 +198,7 @@ impl State {
     }
 
     /// A game no longer runs (it ended, or its launch failed). If it was the game, the most recently
-    /// shown of the others is now (its settings applied), or none is and the global settings apply
-    /// again.
+    /// shown of the others is now, or none is (the program in force follows: see [`crate::program`]).
     pub(crate) fn game_gone(&mut self, game: &str) -> Vec<Effect> {
         let session = &mut self.session;
         session.games.retain(|g| &*g.id != game);
@@ -207,14 +206,8 @@ impl State {
             return self.queued_launch(game);
         }
         let next = session.recent.iter().find_map(|ws| session.games.iter().find(|g| g.instance.is(ws))).or_else(|| session.games.last()).map(|g| g.id.clone());
-        session.current = next.clone();
-        let apply = match next {
-            Some(id) => Effect::Apply { settings: self.settings.of(&id), game: Some(id) },
-            None => Effect::Apply { game: None, settings: self.settings.global },
-        };
-        let mut effects = vec![apply];
-        effects.extend(self.queued_launch(game));
-        effects
+        session.current = next;
+        self.queued_launch(game)
     }
 
     /// After the windows changed: a game shown becomes the game (its settings applied); a Steam game's
@@ -268,8 +261,7 @@ impl State {
         if let Some(id) = shown
             && session.current.as_ref() != Some(&id)
         {
-            self.session.current = Some(id.clone());
-            effects.push(Effect::Apply { game: Some(id.clone()), settings: self.settings.of(&id) });
+            self.session.current = Some(id);
         }
         effects
     }
@@ -324,7 +316,7 @@ mod tests {
         // ff6 ends: zelda is the game again, its settings applied.
         let fx = played(&mut s, "ff6");
         assert_eq!(s.current_game().map(|g| &**g), Some("zelda-lttp"));
-        assert!(matches!(fx.first(), Some(Effect::Apply { game: Some(g), .. }) if &**g == "zelda-lttp"));
+        assert!(fx.iter().any(|e| matches!(e, Effect::Apply { game: Some(g), .. } if &**g == "zelda-lttp")), "{fx:?}");
         // Close it: zelda quits, then ff6 starts.
         tap(&mut s, game("ff6"));
         let fx = tap(&mut s, Id::Shelf(ShelfId::StartClose));
@@ -356,9 +348,12 @@ mod tests {
         tap(&mut s, Id::Shelf(ShelfId::StartKeep));
         s.apply(GameEvent::Started("ff6".into()).into());
         let ff6 = s.session().running_game("ff6").unwrap().instance.name();
-        let (_, fx) = s.apply(Event::Windows(vec![win(1, "zelda3", &zelda, true), win(2, "ff6", &ff6, false)]));
+        s.apply(Event::Windows(vec![win(1, "zelda3", &zelda, true), win(2, "ff6", &ff6, false)]));
         assert_eq!(s.current_game().map(|g| &**g), Some("zelda-lttp"));
-        assert!(fx.iter().any(|e| matches!(e, Effect::Apply { game: Some(g), .. } if &**g == "zelda-lttp")), "{fx:?}");
+        assert_eq!(s.program_in_force().map(|g| &**g), Some("zelda-lttp"), "its settings in force (since it started)");
+        // The other shown: its settings applied.
+        let (_, fx) = s.apply(Event::Windows(vec![win(1, "zelda3", &zelda, false), win(2, "ff6", &ff6, true)]));
+        assert!(fx.iter().any(|e| matches!(e, Effect::Apply { game: Some(g), .. } if &**g == "ff6")), "{fx:?}");
         assert_eq!(s.session().front(), Front::Game);
     }
 
@@ -399,10 +394,16 @@ mod tests {
         let mut s = state();
         s.apply(GameEvent::Started("zelda-lttp".into()).into());
         tap(&mut s, game("ff6"));
-        assert_eq!(s.context().map(|g| &*g.id), Some("zelda-lttp"), "the game in front");
+        let id = |s: &State| s.context().map(|g| g.id.to_string());
+        assert_eq!(id(&s).as_deref(), Some("zelda-lttp"), "the game in front");
         s.apply(Event::Windows(vec![win(1, apps::SHELF_APP_ID, &Instance::Shelf.name(), true)]));
-        assert_eq!(s.context().map(|g| &*g.id), Some("ff6"), "shelf in front: its selection");
-        s.apply(Event::Windows(vec![win(2, "foot", "clamshell-app-terminal-1-0", true)]));
-        assert_eq!(s.context(), None, "an app in front: all games");
+        assert_eq!(id(&s).as_deref(), Some("ff6"), "shelf in front: its selection");
+        // A dock app in front: it (by its scope); a window of no program: the defaults.
+        let terminal = Instance::App { key: "terminal".into(), secs: 1, n: 0 };
+        s.apply(Event::Windows(vec![Window { unit: terminal.unit(), ..win(2, "foot", &terminal.workspace(), true) }]));
+        assert_eq!(id(&s).as_deref(), Some("app:terminal"));
+        assert_eq!(s.context().map(|g| g.title), Some("Terminal"));
+        s.apply(Event::Windows(vec![win(3, "foot", "1", true)]));
+        assert_eq!(s.context(), None, "a window of no program: the defaults");
     }
 }

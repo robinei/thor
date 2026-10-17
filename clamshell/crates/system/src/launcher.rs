@@ -246,11 +246,11 @@ fn steam_launchers(marker: &str) -> Vec<u32> {
 /// Starts a dock app's command as a new instance (its scope and workspace): under sway, shown once its
 /// window is there; elsewhere just started (and reaped whenever it ends: systemd's list says whether it
 /// runs).
-pub fn run_app(jobs: &Runner, instance: &Instance, command: &[String], scope: bool) {
+pub fn run_app(jobs: &Runner, instance: &Instance, command: &[String], env: Vec<(String, String)>, scope: bool) {
     let name = instance.name();
     log::info!("running {command:?} as {name}");
     let slice = instance.app_key().map(Instance::app_slice);
-    let job = Job { unit: name.clone(), workspace: instance.workspace(), slice, argv: command.to_vec(), env: vec![], workdir: None, scope };
+    let job = Job { unit: name.clone(), workspace: instance.workspace(), slice, argv: command.to_vec(), env, workdir: None, scope };
     match jobs.start(&job) {
         Ok(Started::Sway) => {}
         Ok(Started::Child(child)) => job::reap(child),

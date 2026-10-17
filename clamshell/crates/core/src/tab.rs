@@ -174,7 +174,8 @@ mod tests {
         let (dirty, fx) = s.apply(Event::TextInput(true));
         assert_eq!(s.bottom().tab(), Tab::Keyboard);
         assert_eq!((dirty, fx), (Dirty::BOTH, vec![Effect::Watch(Watch::Touchpad, false), Effect::PadRoute(PadRoute::Keys)]));
-        assert_eq!(s.apply(Event::TextInput(false)).1, vec![Effect::Watch(Watch::Touchpad, true), Effect::PadRoute(PadRoute::Ui)]);
+        // (The app in front has the pad again, as a game would.)
+        assert_eq!(s.apply(Event::TextInput(false)).1, vec![Effect::Watch(Watch::Touchpad, true), Effect::PadRoute(PadRoute::Game)]);
         assert_eq!(s.bottom().tab(), Tab::Touchpad, "back where it came from");
     }
 

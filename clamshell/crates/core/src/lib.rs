@@ -29,6 +29,7 @@ mod names;
 mod pad;
 mod panel;
 mod pointer;
+pub mod program;
 mod radios;
 mod resume;
 pub mod scroll;
@@ -62,6 +63,7 @@ pub use levels::{Brightness, Level, Levels, Sound};
 pub use pad::{Claimant, Pad, PadInput, PadMouse, PadRoute};
 pub use panel::{Scope, TileOrigin};
 pub use pointer::Pointer;
+pub use program::Program;
 pub use radios::{RadioStatus, Radios};
 pub use scroll::{ListEvent, ListId, Lists, RowPart, Scroll};
 pub use session::{Pending, Session};
@@ -260,10 +262,11 @@ impl State {
     /// itself, what follows from it everywhere: the pad mouse follows the game in front, the pad goes
     /// where it is wanted, and idle moves on (or back).
     pub fn apply(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
-        let game = self.session.current.clone();
         let (mut dirty, mut effects) = self.apply_event(event);
         effects.extend(self.follow_idle());
-        if self.session.current != game && self.follow_pad_mouse() {
+        let (changed, applied) = self.follow_program();
+        effects.extend(applied);
+        if changed && self.follow_pad_mouse() {
             dirty = Dirty::BOTH;
         }
         effects.extend(self.follow_keymap(false));
@@ -277,10 +280,10 @@ impl State {
         (dirty, effects)
     }
 
-    /// The game in front changed: the pad mouse on if it wants it (Setting::PadMouse), off again if it
-    /// was the game's. Whether it changed.
+    /// The program in force changed: the pad mouse on if it wants it (Setting::PadMouse), off again if it
+    /// was the program's. Whether it changed.
     fn follow_pad_mouse(&mut self) -> bool {
-        let wanted = self.session.current.is_some() && self.in_force().get(Setting::PadMouse) == 1;
+        let wanted = self.session.program.is_some() && self.in_force().get(Setting::PadMouse) == 1;
         self.pad.follow_game(wanted)
     }
 
@@ -345,7 +348,7 @@ impl State {
             // Sleep may have reset what the settings set (frequency caps, cores): again.
             Event::Resumed => {
                 self.idle.resumed(self.unix_secs);
-                (Dirty::NONE, vec![Effect::Apply { game: self.session.current.clone(), settings: self.in_force() }])
+                (Dirty::NONE, vec![Effect::Apply { game: self.session.program.clone(), settings: self.in_force() }])
             }
             Event::Idle(event) => {
                 self.idle.heard(event, self.unix_secs);

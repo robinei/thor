@@ -26,6 +26,8 @@ pub struct Session {
     pub(crate) games: Vec<RunningGame>,
     /// The game: of the games running, the one most recently in front (its settings are in force).
     pub(crate) current: Option<Arc<str>>,
+    /// The program in force (see [`crate::program`]): a game's id, or a dock app's (`app:<key>`).
+    pub(crate) program: Option<Arc<str>>,
     /// Launches asked for that haven't started.
     pub(crate) launching: Vec<Launching>,
     /// The game to start once the one closed for it has ended.

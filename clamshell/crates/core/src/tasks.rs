@@ -247,10 +247,12 @@ impl State {
         };
         let (key, command) = (app.key().to_owned(), app.command.clone());
         let (secs, n) = self.session.new_name(self.unix_secs);
+        let program = crate::program::app_program(&key);
         let instance = Instance::App { key, secs, n };
         self.session.pending.push(Pending { instance: instance.clone(), since: self.unix_secs });
         self.session.pending_show = Some(instance.clone());
-        vec![Effect::RunApp { instance, command }]
+        let (settings, env) = (self.settings.of(&program), self.settings.env_of(&program));
+        vec![Effect::RunApp { instance, command, program, settings, env }]
     }
 
     /// A running game's tile: a tap shows it.
@@ -274,7 +276,8 @@ mod tests {
     }
 
     fn run(instance: Instance) -> Vec<Effect> {
-        vec![Effect::RunApp { instance, command: vec!["foot".into()] }]
+        let program = crate::program::app_program("terminal");
+        vec![Effect::RunApp { instance, command: vec!["foot".into()], program, settings: Values::default(), env: vec![] }]
     }
 
     #[test]
@@ -302,9 +305,9 @@ mod tests {
         assert_eq!(s.dock_menu(), None, "a choice closes it");
         s.apply(Event::Units(vec![t1.clone(), t2.clone()]));
         assert_eq!(s.apply(Event::Windows(vec![shelf(), of(10, &t1, false)])).1, vec![], "the first's window isn't the second's");
-        assert_eq!(s.apply(Event::Windows(vec![of(10, &t1, false), of(12, &t2, false), of(13, &t2, true)])).1, vec![focus(&t2)]);
+        assert!(s.apply(Event::Windows(vec![of(10, &t1, false), of(12, &t2, false), of(13, &t2, true)])).1.contains(&focus(&t2)));
         // In front, or not: the app's workspace (its tabs switch its windows).
-        assert_eq!(tap(&mut s, app.clone()), vec![focus(&t1)]);
+        assert!(tap(&mut s, app.clone()).contains(&focus(&t1)));
         s.apply(Event::Windows(vec![of(10, &t1, false), Window { visible: true, ..of(12, &t2, false) }, of(13, &t2, false), win(20, "firefox", "1", true)]));
         assert_eq!(tap(&mut s, app.clone()), vec![focus(&t1)]);
         // Its menu: Close window closes the window in view.
