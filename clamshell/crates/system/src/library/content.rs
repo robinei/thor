@@ -18,9 +18,12 @@
 //!   patterns are entries and the folders with any are groups (a series' seasons, their episodes).
 //! - Ids: `<id>:<path in dir>`, so moving the whole dir (a new `dir`) keeps them; renaming or moving
 //!   inside it doesn't.
-//! - Titles: the name at the top of `dir`, an episode's file name, without the extension (a file's).
+//! - Titles: the name at the top of `dir`, an episode's file name, without the extension (a file's). In a
+//!   season's folder (`Season 2`, `S02`, `Series 2`; `Specials` for season 0), a file named for an
+//!   episode of that season (`017 S02E18 Title`) is titled by its number there: `18. Title` (`1–2.` for a
+//!   double one).
 //! - Box art: `<name>.jpg` (or .jpeg, .png, .webp) beside a file, or `poster`, `cover` or `folder` in a
-//!   folder; else the group's.
+//!   folder (any case: `Cover.jpg`); else the group's.
 //! - `icon`: the tab's icon; sources in the same tab need it once.
 //! - `group`: a folder in the tab for the source's entries (`SNES`, or `Handhelds/GBA` for one in
 //!   another), so one tab can hold folders each with its own launch command; sources naming the same
@@ -189,12 +192,14 @@ fn group(folder: &Path, dir: &Path, source: &str, items: &[String], launch: &Lau
     let color = own.color;
     games.push(own);
     let listing = listing(folder);
+    let season = season_of(&name);
     let mut members = Vec::new();
     for (_, path) in listing.iter().filter(|(n, p)| p.is_dir() && !n.starts_with('.')) {
         if let Some(g) = group(path, dir, source, items, launch, Some(index), games) {
             members.push(g);
         }
     }
+    let mut files = Vec::new();
     for (file, path) in listing.iter().filter(|(_, p)| p.is_file()) {
         if !items.iter().any(|p| !hidden(file, p) && pattern::matches(p, file)) {
             continue;
@@ -206,10 +211,16 @@ fn group(folder: &Path, dir: &Path, source: &str, items: &[String], launch: &Lau
             color,
             launch: launch.of(path),
             file: Some(path.clone()),
-            ..Game::new(&id(path), &untagged(&stem(file)))
+            ..Game::new(&id(path), &season.and_then(|n| episode_title(&stem(file), n)).unwrap_or_else(|| untagged(&stem(file))))
         });
-        members.push(games.len() - 1);
+        files.push(games.len() - 1);
     }
+    // The files by their titles (an episode's number, where it has one), after the folders.
+    files.sort_by(|&a, &b| {
+        let key = |i: usize| games.get(i).map(|g| (&g.sort_key, &g.title));
+        key(a).cmp(&key(b))
+    });
+    members.extend(files);
     if members.is_empty() {
         games.truncate(index);
         return None;
@@ -239,7 +250,67 @@ fn art_beside(file: &Path) -> Option<PathBuf> {
 }
 
 pub(crate) fn folder_art(folder: &Path) -> Option<PathBuf> {
-    FOLDER_ART.iter().flat_map(|name| IMAGES.iter().map(move |ext| folder.join(format!("{name}.{ext}")))).find(|p| p.is_file())
+    // (By name in any case: `Cover.jpg` too.)
+    let files: Vec<(String, PathBuf)> =
+        fs::read_dir(folder).map(|d| d.flatten().filter_map(|e| Some((e.file_name().to_str()?.to_lowercase(), e.path()))).collect()).unwrap_or_default();
+    FOLDER_ART
+        .iter()
+        .flat_map(|name| IMAGES.iter().map(move |ext| format!("{name}.{ext}")))
+        .find_map(|wanted| files.iter().find(|(n, p)| *n == wanted && p.is_file()).map(|(_, p)| p.clone()))
+}
+
+/// The season a folder is, by its name: `Season 2`, `S02`, `Series 2`; `Specials` is season 0.
+fn season_of(folder: &str) -> Option<u32> {
+    let name = folder.trim().to_lowercase();
+    if name == "specials" {
+        return Some(0);
+    }
+    let number = ["season", "series", "s"].iter().find_map(|w| name.strip_prefix(w))?;
+    number.trim().parse().ok()
+}
+
+/// An episode's title in season `season`'s folder, from its file name: `017 S01E18 Title` (season 1) is
+/// `18. Title`, `S05E01E02 Title` is `1–2. Title`; none if the name has no episode of that season.
+fn episode_title(stem: &str, season: u32) -> Option<String> {
+    let chars: Vec<char> = stem.chars().collect();
+    let digits = |from: usize| -> (u32, usize) {
+        let end = (from..chars.len()).find(|&i| !chars.get(i).is_some_and(char::is_ascii_digit)).unwrap_or(chars.len());
+        (chars.get(from..end).unwrap_or(&[]).iter().collect::<String>().parse().unwrap_or(u32::MAX), end)
+    };
+    for at in 0..chars.len() {
+        if !matches!(chars.get(at), Some('S' | 's')) || at > 0 && chars.get(at - 1).is_some_and(|c| c.is_alphanumeric()) {
+            continue;
+        }
+        let (s, after_s) = digits(at + 1);
+        if after_s == at + 1 || !matches!(chars.get(after_s), Some('E' | 'e')) {
+            continue;
+        }
+        let (first, mut end) = digits(after_s + 1);
+        if end == after_s + 1 || s != season {
+            continue;
+        }
+        // A double episode: E01E02, E01-E02, E01-02.
+        let mut last = first;
+        let next = if chars.get(end) == Some(&'-') { end + 1 } else { end };
+        let next = if matches!(chars.get(next), Some('E' | 'e')) {
+            next + 1
+        } else if next > end {
+            next
+        } else {
+            usize::MAX
+        };
+        if next != usize::MAX {
+            let (n, e) = digits(next);
+            if e > next && n > first {
+                (last, end) = (n, e);
+            }
+        }
+        let rest: String = chars.get(end..).unwrap_or(&[]).iter().collect();
+        let rest = untagged(rest.trim_start_matches([' ', '-', '.', '_']).trim());
+        let number = if last > first { format!("{first}–{last}") } else { first.to_string() };
+        return Some(if rest.is_empty() { format!("{number}.") } else { format!("{number}. {rest}") });
+    }
+    None
 }
 
 /// A file name without its extension.
@@ -381,6 +452,35 @@ mod tests {
         assert_eq!(episode.box_front, Some(root.join("Show/poster.jpg")), "the series' art");
         assert_eq!(episode.parent, Some(show.items[0]));
         assert!(games[tops[0]].is_group(), "a film's folder too");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn episodes_in_their_seasons_folder_are_titled_by_their_number() {
+        assert_eq!((season_of("Season 2"), season_of("S02"), season_of("Series 10"), season_of("Specials")), (Some(2), Some(2), Some(10), Some(0)));
+        assert_eq!((season_of("Extras"), season_of("Sxx")), (None, None));
+        assert_eq!(episode_title("017 S01E18 A Voice in the Wilderness (Part 1)", 1).as_deref(), Some("18. A Voice in the Wilderness (Part 1)"));
+        assert_eq!(episode_title("S01E01 Killeroo", 1).as_deref(), Some("1. Killeroo"));
+        assert_eq!(episode_title("001 S00E01 The Gathering", 0).as_deref(), Some("1. The Gathering"));
+        assert_eq!(episode_title("Show.S05E01E02.Double.Trouble", 5).as_deref(), Some("1–2. Double.Trouble"));
+        assert_eq!(episode_title("S03E07-08 Two Parter", 3).as_deref(), Some("7–8. Two Parter"));
+        assert_eq!(episode_title("S02E03 Wrong season", 1), None, "another season's: as named");
+        assert_eq!(episode_title("Sunset Boulevard", 1), None);
+        let root = std::env::temp_dir().join(format!("clamshell-seasons-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        touch(&root, &["Show/Cover.jpg", "Show/Season 1/017 S01E18 Part (Part 1).mkv", "Show/Season 1/S01E02 Two.mkv", "Show/Specials/001 S00E01 Pilot.mkv"]);
+        let s = Source {
+            dir: root.to_string_lossy().into_owned(),
+            ..source(r#"{ "tab": "TV", "id": "tv", "dir": "", "match": ["*/"], "items": ["*.mkv"], "launch": ["mpv", "{path}"] }"#)
+        };
+        let mut games = Vec::new();
+        let tops = scan(&s, None, &mut games);
+        let show = &games[tops[0]];
+        assert_eq!(show.box_front, Some(root.join("Show/Cover.jpg")), "Cover.jpg");
+        let titles = |ids: &[usize]| ids.iter().map(|&i| games[i].title.clone()).collect::<Vec<_>>();
+        assert_eq!(titles(&show.items), ["Season 1", "Specials"]);
+        assert_eq!(titles(&games[show.items[0]].items), ["2. Two", "18. Part (Part 1)"], "by number");
+        assert_eq!(titles(&games[show.items[1]].items), ["1. Pilot"]);
         let _ = fs::remove_dir_all(&root);
     }
 
