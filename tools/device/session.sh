@@ -95,6 +95,12 @@ fi
 for d in nes snes n64 gb gba nds md psx dc; do mkdir -p "$H/Games/$d"; done
 mkdir -p "$H/Videos/Films" "$H/Videos/TV"
 
+# mpv's config for the top screen and the pad (clamshell/mpv), unless there is one.
+mkdir -p "$H/.config/mpv"
+if [ ! -e "$H/.config/mpv/mpv.conf" ]; then
+    install -m 644 "$REPO/clamshell/mpv/mpv.conf" "$REPO/clamshell/mpv/input.conf" "$H/.config/mpv/"
+fi
+
 # RetroArch's config (clamshell/retroarch: the GPD's, its menu on L3+R3) and the Xbox 360 pad's profile
 # (ClamShell's virtual pad is one), unless there is one.
 mkdir -p "$H/.config/retroarch/autoconfig"
