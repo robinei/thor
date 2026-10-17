@@ -60,7 +60,7 @@ BOTTOM = (1240, 1080)
 KERNEL_VIDEO = f"video=Virtual-1:{TOP[0]}x{TOP[1]}@60 video=Virtual-2:{BOTTOM[0]}x{BOTTOM[1]}@60e"
 # Packages the session needs.
 PACKAGES = [
-    "sway", "foot", "xorg-xwayland", "mesa", "pipewire", "pipewire-pulse", "wireplumber",
+    "sway", "mako", "foot", "xorg-xwayland", "mesa", "pipewire", "pipewire-pulse", "wireplumber",
     "sqlite", "grim", "python", "libinput-tools", "evtest", "iw", "noto-fonts",
     # Wi-Fi as on the device (NetworkManager), and test networks to join (hostapd on simulated radios).
     "networkmanager", "polkit", "hostapd", "dnsmasq",
@@ -163,6 +163,7 @@ input "1575:1:QEMU_QEMU_USB_Tablet" map_to_output Virtual-2
 input "1575:3:QEMU_Virtio_MultiTouch" map_to_output Virtual-2
 input type:touch map_to_output Virtual-2
 # The environment first, then the program (two execs would run at once).
+exec mako
 exec systemctl --user import-environment WAYLAND_DISPLAY SWAYSOCK XDG_CURRENT_DESKTOP && systemctl --user restart clamshell.service
 """
 
@@ -194,6 +195,8 @@ def session_files():
         (f"/home/{USER}/.bash_profile", BASH_PROFILE),
         (f"/home/{USER}/.config/sway/config", SWAY_CONFIG),
         (f"/home/{USER}/.config/systemd/user/clamshell.service", service()),
+        # (Where mako looks, also when D-Bus starts it for a notification.)
+        (f"/home/{USER}/.config/mako/config", (REPO / "clamshell/mako/config").read_text()),
     ]
 
 

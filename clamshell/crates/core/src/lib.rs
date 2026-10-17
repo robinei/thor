@@ -291,8 +291,10 @@ impl State {
         match event {
             Event::Tick { unix_secs } => self.tick(unix_secs),
             Event::Reading(reading) => {
+                let status = matches!(reading, Reading::Status(_));
                 let dirty = self.on_reading(reading);
-                (if self.follow_lists() { Dirty::BOTTOM } else { dirty }, vec![])
+                let effects = if status { self.sys.battery_warning().into_iter().collect() } else { vec![] };
+                (if self.follow_lists() { Dirty::BOTTOM } else { dirty }, effects)
             }
             Event::List(e) => (if self.on_list(e) { e.list().screens() } else { Dirty::NONE }, vec![]),
             Event::Pointer(e) => self.on_pointer(e),

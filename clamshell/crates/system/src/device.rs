@@ -1,6 +1,7 @@
 //! The device as a whole: a screenshot of both screens (grim, through the compositor's screen capture),
-//! and sleep through logind: suspend-then-hibernate where the system can (a swap file to hibernate to),
-//! else suspend. Waking is noticed by the clock thread (see [`crate::sleep`]).
+//! sleep through logind (suspend-then-hibernate where the system can, a swap file to hibernate to, else
+//! suspend; waking is noticed by the clock thread, see [`crate::sleep`]), and notifications through the
+//! session's notification daemon (mako, on the main screen).
 
 use std::io;
 use std::path::PathBuf;
@@ -11,10 +12,11 @@ use clamshell_core::Event;
 use crate::worker::Worker;
 use crate::{Sink, command, dbus};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     Screenshot,
     Sleep,
+    Notify { summary: String, body: String, urgent: bool },
 }
 
 #[zbus::proxy(
@@ -32,6 +34,8 @@ trait Manager {
 /// Screenshots go to `screenshots` (a folder, made if needed).
 pub fn spawn(screenshots: Option<PathBuf>, sink: impl Sink) -> io::Result<Worker<Command>> {
     Worker::spawn("system", move |commands| {
+        // Our last notification, which the next replaces (a lower battery's warning the earlier one's).
+        let mut shown = 0;
         for command in commands {
             match command {
                 Command::Screenshot => {
@@ -41,6 +45,10 @@ pub fn spawn(screenshots: Option<PathBuf>, sink: impl Sink) -> io::Result<Worker
                     }
                 }
                 Command::Sleep => sleep(),
+                Command::Notify { summary, body, urgent } => match notify(shown, &summary, &body, urgent) {
+                    Ok(id) => shown = id,
+                    Err(e) => log::warn!("notification \"{summary}\": {e}"),
+                },
             }
         }
     })
@@ -92,6 +100,24 @@ fn sleep() {
     if let Err(e) = slept {
         log::warn!("sleep: {e}");
     }
+}
+
+/// A notification through the session bus' notification daemon, replacing `replaces` (0: none); its id.
+fn notify(replaces: u32, summary: &str, body: &str, urgent: bool) -> zbus::Result<u32> {
+    use std::collections::HashMap;
+    use zbus::zvariant::Value;
+    let conn = zbus::blocking::Connection::session()?;
+    // Urgency: 1 normal, 2 critical (stays until dismissed). Timeout -1: the daemon's own.
+    let hints = HashMap::from([("urgency", Value::U8(if urgent { 2 } else { 1 }))]);
+    let actions: Vec<&str> = Vec::new();
+    let reply = conn.call_method(
+        Some("org.freedesktop.Notifications"),
+        "/org/freedesktop/Notifications",
+        Some("org.freedesktop.Notifications"),
+        "Notify",
+        &("ClamShell", replaces, "", summary, body, actions, hints, -1i32),
+    )?;
+    reply.body().deserialize()
 }
 
 #[cfg(test)]

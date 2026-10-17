@@ -31,8 +31,8 @@ LOCALE=${THOR_LOCALE:-en_US.UTF-8}
 # fits. Made on the card's first boot, not here (it would make the image 16 GB bigger to write).
 SWAP_GIB=16
 # The device's packages: the base system, network, the session, the GPU (Freedreno/Turnip), sound,
-# screenshots (grim), growing the root on first boot (growpart, which uses sgdisk for GPT).
-PACKAGES=(base sudo mkinitcpio networkmanager polkit upower bluez openssh sway foot xorg-xwayland mesa vulkan-freedreno
+# notifications (mako), screenshots (grim), growing the root on first boot (growpart, which uses sgdisk for GPT).
+PACKAGES=(base sudo mkinitcpio networkmanager polkit upower bluez openssh sway mako foot xorg-xwayland mesa vulkan-freedreno
           pipewire pipewire-pulse wireplumber alsa-ucm-conf noto-fonts sqlite python less vim grim cloud-guest-utils gptfdisk)
 # The kernel command line: ROCKNIX's tuning for SM8550, our root. The first boot adds resume= and
 # resume_offset= (the swap file's place) to both copies of it: /KERNEL's and the loader entry's.
@@ -184,7 +184,7 @@ arch-chroot "$ROOT" systemctl enable thor-firstboot > /dev/null
 
 say "the session (sway, ClamShell)"
 H=$ROOT/home/$USER_NAME
-mkdir -p "$H/.config/sway" "$H/.config/systemd/user" "$H/.local/bin"
+mkdir -p "$H/.config/sway" "$H/.config/mako" "$H/.config/systemd/user" "$H/.local/bin"
 install -m 755 "$PROGRAM" "$H/.local/bin/clamshell"
 # The outputs are written at each session start, as ROCKNIX does (its autostart/common/111-sway-init): the
 # panels are natively portrait, and the kernel says how to turn them (fbcon's rotate, from the panel's
@@ -206,6 +206,7 @@ chmod 755 "$H/.local/bin/thor-outputs"
 echo '[ "$(tty)" = /dev/tty1 ] && "$HOME/.local/bin/thor-outputs" && exec sway > "$HOME/sway.log" 2>&1' > "$H/.bash_profile"
 C=/home/$USER_NAME/.local/bin/clamshell
 install -m 644 "$(dirname "$0")/../../clamshell/sway/clamshell.conf" "$H/.config/sway/clamshell.conf"
+install -m 644 "$(dirname "$0")/../../clamshell/mako/config" "$H/.config/mako/config"
 cat > "$H/.config/sway/config" <<CONFIG
 # The Thor: DSI-2 the main (top) screen, DSI-1 the second (bottom) screen (as ROCKNIX and Kettle have them).
 # The machine is here (outputs, inputs, keys, starting ClamShell); how a ClamShell session behaves
@@ -216,6 +217,8 @@ include ~/.config/sway/clamshell.conf
 # A keyboard's Print key: a screenshot through ClamShell (clamshell ctl writes to its control pipe). The
 # Thor's volume and brightness keys ClamShell reads itself from evdev (CLAMSHELL_SESSION=device).
 bindsym --locked Print exec $C ctl screenshot
+# Notifications (ClamShell's low battery warning, apps'), on the main screen: ~/.config/mako/config.
+exec mako
 exec systemctl --user import-environment WAYLAND_DISPLAY SWAYSOCK XDG_CURRENT_DESKTOP && systemctl --user restart clamshell.service
 CONFIG
 cat > "$H/.config/systemd/user/clamshell.service" <<EOF

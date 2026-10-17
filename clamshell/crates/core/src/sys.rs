@@ -4,7 +4,12 @@
 //! them.
 
 use crate::battery::Battery;
+use crate::effect::Effect;
 use crate::metrics::{History, Metrics};
+
+/// Battery levels (while not charging) at which a notification warns over whatever runs, once each until
+/// it charges; UPower hibernates the device at 3 % (the image's UPower.conf).
+const WARN_AT: [u8; 2] = [10, 5];
 
 /// The system's status as system threads read it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -40,9 +45,27 @@ pub struct Sys {
     pub battery: Battery,
     /// Why touchpad mode doesn't work, if it doesn't.
     pub touchpad_problem: Option<TouchpadProblem>,
+    /// The lowest of [`WARN_AT`] warned about since the battery last charged.
+    warned: Option<u8>,
 }
 
 impl Sys {
+    /// After a status reading: a warning when the battery has fallen to one of [`WARN_AT`] (the lower one
+    /// marked urgent).
+    pub(crate) fn battery_warning(&mut self) -> Option<Effect> {
+        let Status { battery: Some(level), charging: false, .. } = self.status else {
+            self.warned = None;
+            return None;
+        };
+        let at = WARN_AT.into_iter().filter(|&t| level <= t).min()?;
+        if self.warned.is_some_and(|w| w <= at) {
+            return None;
+        }
+        self.warned = Some(at);
+        let summary = format!("Battery at {level} %");
+        Some(Effect::Notify { summary, body: "Plug in the charger: at 3 % the device hibernates.".to_owned(), urgent: at == WARN_AT[1] })
+    }
+
     /// A metrics reading; the frame rate comes separately (see [`Sys::frames`]) and is kept.
     pub(crate) fn read_metrics(&mut self, mut m: Metrics) {
         m.fps = self.metrics.fps;

@@ -104,6 +104,9 @@ impl Handles {
             }
             Effect::Screenshot => self.system.send(crate::device::Command::Screenshot),
             Effect::Sleep => self.system.send(crate::device::Command::Sleep),
+            Effect::Notify { summary, body, urgent } => {
+                self.system.send(crate::device::Command::Notify { summary: summary.clone(), body: body.clone(), urgent: *urgent })
+            }
             // (The UI handles quitting and the screens' power: they are its Wayland business.)
             Effect::Quit | Effect::Screens(_) => {}
         }

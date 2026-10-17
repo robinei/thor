@@ -76,6 +76,13 @@ pub enum Effect {
     Sleep,
     /// Both screens to a file; the result comes back as [`crate::Event::Screenshot`].
     Screenshot,
+    /// A desktop notification (on the main screen, over a game: the notification daemon's), urgent ones
+    /// staying until dismissed.
+    Notify {
+        summary: String,
+        body: String,
+        urgent: bool,
+    },
     /// Calibrate the gyro from its next second (the device held still); the result comes back as
     /// [`crate::Event::GyroCalibrated`].
     CalibrateGyro,
