@@ -46,29 +46,12 @@ fn collect(node: &Node, output: &str, workspace: &str, unit: &mut impl FnMut(u32
     }
 }
 
-/// The workspace in front if it is one of ours (an instance's, the game's) and empty: what was on it has
-/// closed.
-pub fn emptied(tree: &Node) -> Option<&str> {
-    fn has_focus(node: &Node) -> bool {
-        node.focused || node.children().any(has_focus)
-    }
-    fn in_front(node: &Node) -> Option<&Node> {
-        if node.kind == "workspace" {
-            return Some(node).filter(|ws| has_focus(ws));
-        }
-        node.children().find_map(in_front)
-    }
-    let ws = in_front(tree)?;
-    let name = ws.name.as_deref()?;
-    (ws.children().next().is_none() && Instance::is_ours(name) && !Instance::Shelf.is(name)).then_some(name)
-}
-
 /// What to ask sway after a change of windows: each window of one of our instances that isn't on its
 /// instance's workspace moved there (asked once per window and workspace, `tried`: a window sway won't
-/// move isn't asked again at its every event), shelf's window shown when it is moved home (as the
-/// program starts), and shelf shown when an emptied workspace of ours is in front. `top`: the main
-/// screen's output.
-pub fn reconcile(windows: &[Window], emptied: Option<&str>, top: Option<&str>, tried: &mut HashSet<(i64, String)>) -> Vec<String> {
+/// move isn't asked again at its every event), and shelf's window shown when it is moved home (as the
+/// program starts). A workspace in front that empties (its last window closed or moved down) stays, black:
+/// Home or the dock goes on from there. `top`: the main screen's output.
+pub fn reconcile(windows: &[Window], top: Option<&str>, tried: &mut HashSet<(i64, String)>) -> Vec<String> {
     let mut out = Vec::new();
     let bottom = Instance::Bottom.name();
     for w in windows {
@@ -97,10 +80,6 @@ pub fn reconcile(windows: &[Window], emptied: Option<&str>, top: Option<&str>, t
             command.push_str(&commands::show(&name, top));
         }
         out.push(command);
-    }
-    if let Some(name) = emptied {
-        log::debug!("sway: {name} emptied: showing shelf");
-        out.push(commands::show(&Instance::Shelf.name(), top));
     }
     out
 }
@@ -135,19 +114,6 @@ mod tests {
         assert_eq!((w[1].app_id.as_str(), w[1].title.as_str(), w[1].unit.as_deref()), ("steam_app_620", "Portal 2", None));
     }
 
-    #[test]
-    fn an_emptied_workspace_of_ours_in_front_is_noticed() {
-        let tree = |name: &str, focused_ws: bool, windows: &str| -> Node {
-            tree(&format!(
-                r#"{{"type": "root", "nodes": [{{"type": "output", "nodes": [{{"type": "workspace", "name": "{name}", "focused": {focused_ws}, "nodes": [{windows}]}}]}}]}}"#
-            ))
-        };
-        assert_eq!(emptied(&tree("clamshell-game", true, "")), Some("clamshell-game"));
-        assert_eq!(emptied(&tree("clamshell-game", false, r#"{"type": "con", "focused": true}"#)), None, "not empty");
-        assert_eq!(emptied(&tree("3", true, "")), None, "not ours");
-        assert_eq!(emptied(&tree(&Instance::Shelf.name(), true, "")), None);
-    }
-
     fn window(id: i64, app_id: &str, unit: Option<&str>, workspace: &str) -> Window {
         Window { id, app_id: app_id.into(), unit: unit.map(Into::into), workspace: workspace.into(), ..Window::default() }
     }
@@ -160,9 +126,9 @@ mod tests {
         let second = window(7, "second", Some("clamshell-app-spawner-1-1.scope"), "clamshell-app-spawner");
         let stray = window(6, "foot", None, "1");
         let mut tried = HashSet::new();
-        let asked = reconcile(&[late.clone(), home, second, stray], None, Some("DSI-2"), &mut tried);
+        let asked = reconcile(&[late.clone(), home, second, stray], Some("DSI-2"), &mut tried);
         assert_eq!(asked, vec![r#"workspace "clamshell-app-spawner" output "DSI-2"; [con_id=4] move container to workspace "clamshell-app-spawner""#]);
-        assert!(reconcile(&[late], None, Some("DSI-2"), &mut tried).is_empty(), "not asked again");
+        assert!(reconcile(&[late], Some("DSI-2"), &mut tried).is_empty(), "not asked again");
     }
 
     #[test]
@@ -172,7 +138,7 @@ mod tests {
         let down = Window { down: true, ..window(4, "emu", Some(ours), &bottom) };
         let stray = window(5, "foot", None, &bottom);
         let mut tried = HashSet::new();
-        let asked = reconcile(&[down, stray], None, Some("DSI-2"), &mut tried);
+        let asked = reconcile(&[down, stray], Some("DSI-2"), &mut tried);
         assert_eq!(asked, vec![r#"[con_id=5] move container to output "DSI-2", focus"#], "the marked one left down");
     }
 
@@ -187,16 +153,10 @@ mod tests {
     }
 
     #[test]
-    fn shelf_is_shown_when_its_window_goes_home_or_a_workspace_empties() {
+    fn shelf_is_shown_when_its_window_goes_home() {
         let shelf = window(1, clamshell_core::apps::SHELF_APP_ID, None, "1");
         let mut tried = HashSet::new();
-        let asked = reconcile(&[shelf], Some("clamshell-game"), None, &mut tried);
-        assert_eq!(
-            asked,
-            vec![
-                r#"[con_id=1] move container to workspace "clamshell-shelf"; workspace "clamshell-shelf""#.to_owned(),
-                r#"workspace "clamshell-shelf""#.to_owned(),
-            ]
-        );
+        let asked = reconcile(&[shelf], None, &mut tried);
+        assert_eq!(asked, vec![r#"[con_id=1] move container to workspace "clamshell-shelf"; workspace "clamshell-shelf""#.to_owned()]);
     }
 }

@@ -8,7 +8,7 @@
 //! - Later windows of a launch (sway only places the first) are moved to their instance's workspace (its
 //!   app's, or its game's) by the systemd scope of their process: the kernel's record of which launch
 //!   they come from.
-//! - The window list after every window event; an emptied workspace of ours in front shows shelf.
+//! - The window list after every window event. A workspace in front that empties stays, black.
 //!
 //! Without sway there is no window list (other compositors offer no common way).
 
@@ -186,7 +186,7 @@ impl<S: Sink> Service for Windows<S> {
             let list = windows::windows(&tree, &mut |pid| units.entry(pid).or_insert_with(|| cgroup::unit_of(pid)).clone());
             let top = self.top.get(&mut c.queries);
             let mut moved = false;
-            for command in windows::reconcile(&list, windows::emptied(&tree), top.as_deref(), &mut self.tried) {
+            for command in windows::reconcile(&list, top.as_deref(), &mut self.tried) {
                 moved |= c.queries.command(&command).is_ok();
             }
             if !moved {

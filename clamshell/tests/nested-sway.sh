@@ -138,7 +138,7 @@ check_soon "Home+Down: the window in front to the bottom screen; the main screen
 check "  remembered for its program" 'grep -q "^bottom	app	spawner	late	" "$RULES"'
 msg "[app_id=\"^first$\"] focus"; sleep 0.3
 ctl window down
-check_soon "  its last window down too: its workspace empty, shelf in front" '[ "$(output_of "$(ws_of first)")" = HEADLESS-2 ] && [ "$(front)" = clamshell-shelf ]'
+check_soon "  its last window down too: its workspace stays in front, empty" '[ "$(output_of "$(ws_of first)")" = HEADLESS-2 ] && [ "$(front)" = "$SP" ]'
 ctl window up; sleep 0.3; ctl window up
 check_soon "Home+Up, twice: both back on their workspace, the rules forgotten" '[ "$(ws_of late)" = "$SP" ] && [ "$(ws_of first)" = "$SP" ] && ! grep -q "^bottom" "$RULES"'
 
@@ -170,7 +170,7 @@ until_ '[ "$(units game | wc -l)" = 1 ]' 10
 ctl long game 0
 until_ '[ -z "$(units game)" ]' 10
 check "long press on each game: closed, their scopes killed after 5 s" '[ -z "$(units game)" ]'
-check "  and back to shelf" '[ "$(front)" = clamshell-shelf ]'
+check "  and the emptied workspace stays in front" '[ "$(front)" = "$G1" ]'
 plays() { [ -f "$T/pegasus/stats.db" ] && sqlite3 "$T/pegasus/stats.db" "select count(*) from plays" 2> /dev/null || echo 0; }
 until_ '[ "$(plays)" -ge 2 ]' 5
 check "  and both plays recorded" '[ "$(plays)" -ge 2 ]'
