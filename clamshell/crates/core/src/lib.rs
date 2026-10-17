@@ -791,7 +791,7 @@ pub(crate) mod testkit {
 
     /// Showing `instance`'s workspace.
     pub fn focus(instance: &Instance) -> Effect {
-        Effect::Window(WindowCommand::Focus(instance.name()))
+        Effect::Window(WindowCommand::Focus(instance.workspace()))
     }
 
     /// Launches `game` from shelf and has it start; returns its instance.

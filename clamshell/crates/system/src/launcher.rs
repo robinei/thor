@@ -193,6 +193,7 @@ fn start_command(config: &Config, request: &Request, spec: &LaunchSpec, file: &P
     let c = spec.resolve(file).ok_or(Error::EmptyCommand)?;
     let job = Job {
         unit: request.instance.name(),
+        workspace: request.instance.workspace(),
         argv: std::iter::once(c.program.to_string_lossy().into_owned()).chain(c.args.iter().cloned()).collect(),
         env: request.env.clone(),
         workdir: Some(c.workdir.clone()),
@@ -238,7 +239,7 @@ fn steam_running(marker: &str) -> bool {
 pub fn run_app(jobs: &Runner, instance: &Instance, command: &[String], scope: bool) {
     let name = instance.name();
     log::info!("running {command:?} as {name}");
-    let job = Job { unit: name.clone(), argv: command.to_vec(), env: vec![], workdir: None, scope };
+    let job = Job { unit: name.clone(), workspace: instance.workspace(), argv: command.to_vec(), env: vec![], workdir: None, scope };
     match jobs.start(&job) {
         Ok(Started::Sway) => {}
         Ok(Started::Child(child)) => job::reap(child),

@@ -13,7 +13,6 @@ use clamshell_core::{DockId, Game, Id};
 use crate::draw::{Align, Keep, Rect};
 use crate::icons::Icon;
 use crate::toolkit::Frame;
-use crate::toolkit::format::{Fmt, Position};
 use crate::toolkit::style::{self, Look, Text, Tone};
 use crate::toolkit::widgets::{self, CAPTION_Y, TileFace, TileShape};
 
@@ -36,7 +35,7 @@ const PLUS_ICON: f32 = 0.17;
 const IDLE: f32 = 0.55;
 
 fn face(caption: &str) -> TileFace<'_> {
-    TileFace { caption, caption_tone: Tone::Normal, dot: None, note: "", count: "" }
+    TileFace { caption, caption_tone: Tone::Normal, dot: None, note: "" }
 }
 
 fn running_tone(running: bool) -> Tone {
@@ -83,9 +82,7 @@ fn start_tile(f: &mut Frame, r: Rect) {
 /// `marked` (the game in front of several) with a dot.
 fn game_tile(f: &mut Frame, r: Rect, i: usize, game: Option<&Game>, marked: bool) {
     let caption = game.map_or("Game", |g| g.title.as_str());
-    let (at, count) = f.s.dock_position(DockId::GameTile(i as u16));
-    let position = Fmt::<16>::of(format_args!("{}", Position(at, count)));
-    let face = TileFace { dot: marked.then_some(Tone::Go), count: &position, ..face(caption) };
+    let face = TileFace { dot: marked.then_some(Tone::Go), ..face(caption) };
     widgets::tile(f, Id::Dock(DockId::GameTile(i as u16)), r, &TILE, face, |f, r| {
         let Some(game) = game else {
             f.c.icon(Icon::Gamepad, TILE.square(r), Tone::Go);
@@ -99,10 +96,8 @@ fn game_tile(f: &mut Frame, r: Rect, i: usize, game: Option<&Game>, marked: bool
 
 fn app_tile(f: &mut Frame, r: Rect, i: usize, app: &App) {
     let s = f.s;
-    let (at, count) = s.dock_position(DockId::App(i as u16));
     let running = s.app_running(i);
-    let position = Fmt::<16>::of(format_args!("{}", Position(at, count)));
-    let face = TileFace { count: &position, ..face(&app.name) };
+    let face = face(&app.name);
     widgets::tile(f, Id::Dock(DockId::App(i as u16)), r, &TILE, face, |f, r| {
         let square = TILE.square(r);
         let scale = f.c.scale();

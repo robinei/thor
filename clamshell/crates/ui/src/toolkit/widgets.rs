@@ -198,14 +198,12 @@ pub(crate) struct TileFace<'a> {
     pub caption_tone: Tone,
     pub dot: Option<Tone>,
     pub note: &'a str,
-    pub count: &'a str,
 }
 
-/// The caption's size and top, of the tile's height; the corner texts' sizes.
+/// The caption's size and top, of the tile's height; the corner note's size.
 const CAPTION: f32 = 0.15;
 pub(crate) const CAPTION_Y: f32 = 0.62;
 const NOTE: f32 = 0.09;
-const COUNT: f32 = 0.11;
 
 /// A tile of a grid (settings, the dock): no background, `picture` (given the tile) over the caption.
 pub(crate) fn tile(f: &mut Frame, id: Id, r: Rect, shape: &TileShape, face: TileFace, picture: impl FnOnce(&mut Frame, Rect)) {
@@ -228,11 +226,6 @@ pub(crate) fn tile(f: &mut Frame, id: Id, r: Rect, shape: &TileShape, face: Tile
         }
         if !face.note.is_empty() {
             f.c.text(r.x + r.h * 0.07, r.y + r.h * 0.05, r.h * NOTE, Tone::Dim, face.note);
-        }
-        if !face.count.is_empty() {
-            let size = r.h * COUNT;
-            let w = f.c.text_width(size, face.count);
-            f.c.text(r.x + r.w - w - r.h * 0.06, r.y + r.h * 0.05, size, Tone::Normal, face.count);
         }
     });
 }

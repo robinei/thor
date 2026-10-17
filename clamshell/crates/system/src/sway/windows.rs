@@ -84,10 +84,10 @@ pub fn reconcile(windows: &[Window], emptied: Option<&str>, top: Option<&str>, t
             }
             continue;
         }
-        let Some(home) = w.home().filter(|h| !h.is(&w.workspace)) else {
+        let Some(home) = w.home().filter(|h| !h.on(&w.workspace)) else {
             continue;
         };
-        let name = home.name();
+        let name = home.workspace();
         if !tried.insert((w.id, name.clone())) {
             continue;
         }
@@ -154,12 +154,14 @@ mod tests {
 
     #[test]
     fn windows_of_our_instances_go_home_once() {
+        // (An app's instances share its workspace.)
         let late = window(4, "late", Some("clamshell-app-spawner-1-0.scope"), "1");
-        let home = window(5, "first", Some("clamshell-app-spawner-1-0.scope"), "clamshell-app-spawner-1-0");
+        let home = window(5, "first", Some("clamshell-app-spawner-1-0.scope"), "clamshell-app-spawner");
+        let second = window(7, "second", Some("clamshell-app-spawner-1-1.scope"), "clamshell-app-spawner");
         let stray = window(6, "foot", None, "1");
         let mut tried = HashSet::new();
-        let asked = reconcile(&[late.clone(), home, stray], None, Some("DSI-2"), &mut tried);
-        assert_eq!(asked, vec![r#"workspace "clamshell-app-spawner-1-0" output "DSI-2"; [con_id=4] move container to workspace "clamshell-app-spawner-1-0""#]);
+        let asked = reconcile(&[late.clone(), home, second, stray], None, Some("DSI-2"), &mut tried);
+        assert_eq!(asked, vec![r#"workspace "clamshell-app-spawner" output "DSI-2"; [con_id=4] move container to workspace "clamshell-app-spawner""#]);
         assert!(reconcile(&[late], None, Some("DSI-2"), &mut tried).is_empty(), "not asked again");
     }
 

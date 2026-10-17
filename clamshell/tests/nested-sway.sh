@@ -72,6 +72,26 @@ def walk(n, ws=''):
 walk(json.load(sys.stdin))"; }
 output_of() { json get_workspaces "import json,sys; print(next((w['output'] for w in json.load(sys.stdin) if w['name'] == '$1'), ''))"; }
 units() { systemctl --user list-units "clamshell-$1*" --plain --no-legend | awk '{print $1}' | sed 's/\.scope$//'; }
+# A dock app's workspace: all its instances' windows, as tabs.
+space() { echo "clamshell-app-$1"; }
+# How many windows with this app id are on a workspace; the focused window's id.
+count_on() { json get_tree "
+import json,sys
+n=0
+def walk(c, ws=''):
+    global n
+    if c.get('type') == 'workspace': ws = c['name']
+    if ws == '$1' and c.get('app_id') == '$2': n += 1
+    for k in ('nodes', 'floating_nodes'):
+        for d in c.get(k, []): walk(d, ws)
+walk(json.load(sys.stdin)); print(n)"; }
+focused_id() { json get_tree "
+import json,sys
+def walk(c):
+    if c.get('focused'): print(c['id']); sys.exit()
+    for k in ('nodes', 'floating_nodes'):
+        for d in c.get(k, []): walk(d)
+walk(json.load(sys.stdin))"; }
 # A tap or long press, as the program's control pipe takes them.
 ctl() { echo "$*" > "$T/control"; sleep 0.3; }
 start_program() {
@@ -87,28 +107,28 @@ until_ '[ "$(ws_of clamshell.top)" = clamshell-shelf ]' 10
 check "start: shelf on its workspace, in front" '[ "$(ws_of clamshell.top)" = clamshell-shelf ] && [ "$(front)" = clamshell-shelf ]'
 check_soon "start: the second screen is a layer surface on HEADLESS-2" 'grep -q "layer surface on HEADLESS-2" "$T/program.log"'
 
+TS=$(space terminal)
 ctl tap app $TERMINAL
-until_ '[ -n "$(units app-terminal)" ] && [ "$(front)" = "$(units app-terminal | head -1)" ]' 5
-T1=$(units app-terminal | head -1)
-check "tap Terminal: an instance (scope), shown when its window is there" '[ -n "$T1" ] && [ "$(ws_of foot)" = "$T1" ] && [ "$(front)" = "$T1" ]'
+until_ '[ -n "$(units app-terminal)" ] && [ "$(front)" = "$TS" ]' 5
+check "tap Terminal: an instance (scope), its window on the app's workspace, shown when it is there" '[ -n "$(units app-terminal)" ] && [ "$(ws_of foot)" = "$TS" ] && [ "$(front)" = "$TS" ]'
 
 ctl tap plus $TERMINAL
-until_ '[ "$(units app-terminal | wc -l)" = 2 ] && [ "$(front)" != "$T1" ]' 5
-T2=$(front)
-check "+: a second instance, in front" '[ "$(units app-terminal | wc -l)" = 2 ] && [ "$T2" != "$T1" ] && [ "${T2#clamshell-app-terminal-}" != "$T2" ]'
+until_ '[ "$(units app-terminal | wc -l)" = 2 ] && [ "$(count_on "$TS" foot)" = 2 ]' 5
+check "+: a second instance, a tab of the same workspace, in front" '[ "$(units app-terminal | wc -l)" = 2 ] && [ "$(count_on "$TS" foot)" = 2 ] && [ "$(front)" = "$TS" ]'
+before=$(focused_id)
 ctl tap app $TERMINAL
-check_soon "tap Terminal while one is in front: the next" '[ "$(front)" = "$T1" ]'
-check "our workspaces are on the main screen" '[ "$(output_of "$T1")" = HEADLESS-1 ] && [ "$(output_of "$T2")" = HEADLESS-1 ]'
+check_soon "tap Terminal while it is in front: it stays as it is" '[ "$(focused_id)" = "$before" ] && [ "$(front)" = "$TS" ]'
+check "our workspaces are on the main screen" '[ "$(output_of "$TS")" = HEADLESS-1 ]'
 
 ctl tap app $SLOW; sleep 0.5; msg 'workspace clamshell-shelf'; sleep 1
 check "a slow app: its empty workspace isn't shown meanwhile" '[ "$(front)" = clamshell-shelf ]'
-check_soon "a slow app: its window on its workspace, brought to the front" '[ "$(ws_of slow)" = "$(units app-slow)" ] && [ "$(front)" = "$(units app-slow)" ]' 8
+check_soon "a slow app: its window on its workspace, brought to the front" '[ "$(ws_of slow)" = "$(space slow)" ] && [ "$(front)" = "$(space slow)" ]' 8
 
 ctl tap app $SPAWNER
-check_soon "a later window of a launch: on the launch's workspace" '[ -n "$(ws_of late)" ] && [ "$(ws_of first)" = "$(units app-spawner)" ] && [ "$(ws_of late)" = "$(units app-spawner)" ]' 8
+check_soon "a later window of a launch: on the app's workspace" '[ -n "$(ws_of late)" ] && [ "$(ws_of first)" = "$(space spawner)" ] && [ "$(ws_of late)" = "$(space spawner)" ]' 8
 
 # The bottom screen: the spawner's windows moved down (Home+Down) and up again (Home+Up).
-SP=$(units app-spawner)
+SP=$(space spawner)
 RULES="$T/pegasus/window-rules.txt"
 focused_output() { json get_outputs "import json,sys; print(next((o['name'] for o in json.load(sys.stdin) if o['focused']), ''))"; }
 msg "[app_id=\"^late$\"] focus"; sleep 0.3
@@ -120,11 +140,10 @@ msg "[app_id=\"^first$\"] focus"; sleep 0.3
 ctl window down
 check_soon "  its last window down too: its workspace empty, shelf in front" '[ "$(output_of "$(ws_of first)")" = HEADLESS-2 ] && [ "$(front)" = clamshell-shelf ]'
 ctl window up; sleep 0.3; ctl window up
-sleep 1; echo "DBG late=$(ws_of late) first=$(ws_of first) SP=$SP"; echo "DBG rules:"; cat "$RULES"; grep -iE "sway:|bottom|window" "$T/program.log" | tail -8
 check_soon "Home+Up, twice: both back on their workspace, the rules forgotten" '[ "$(ws_of late)" = "$SP" ] && [ "$(ws_of first)" = "$SP" ] && ! grep -q "^bottom" "$RULES"'
 
 ctl tap app $DETACHED
-check_soon "a window sway can't trace (detached, no token): on its instance's workspace, by its scope" '[ -n "$(ws_of detached)" ] && [ "$(ws_of detached)" = "$(units app-detached)" ]' 8
+check_soon "a window sway can't trace (detached, no token): on its app's workspace, by its scope" '[ -n "$(ws_of detached)" ] && [ "$(ws_of detached)" = "$(space detached)" ]' 8
 
 msg 'focus output HEADLESS-2'; sleep 0.3; msg exec "foot --app-id=stray sleep 300"
 check_soon "a window opening on the second screen goes to the main screen" '[ -n "$(ws_of stray)" ] && [ "$(output_of "$(ws_of stray)")" = HEADLESS-1 ]'
@@ -156,17 +175,25 @@ plays() { [ -f "$T/pegasus/stats.db" ] && sqlite3 "$T/pegasus/stats.db" "select 
 until_ '[ "$(plays)" -ge 2 ]' 5
 check "  and both plays recorded" '[ "$(plays)" -ge 2 ]'
 
-ctl tap app $TERMINAL; until_ 'front | grep -q "^clamshell-app-terminal-"' 5; FRONT=$(front)
+# The scope of the focused window's process (the instance whose tab is in view).
+focused_scope() { pid=$(json get_tree "
+import json,sys
+def walk(c):
+    if c.get('focused'): print(c.get('pid', '')); sys.exit()
+    for k in ('nodes', 'floating_nodes'):
+        for d in c.get(k, []): walk(d)
+walk(json.load(sys.stdin))"); grep -o 'clamshell-app-[^/]*\.scope' "/proc/$pid/cgroup" 2> /dev/null | sed 's/\.scope$//'; }
+ctl tap app $TERMINAL; until_ '[ "$(front)" = "$TS" ]' 5; FRONT=$(focused_scope)
 ctl long app $TERMINAL
 until_ '[ "$(units app-terminal | wc -l)" = 1 ]' 5
-check "long press on Terminal: closes the instance it is on" '[ "$(units app-terminal | wc -l)" = 1 ] && ! units app-terminal | grep -qx "$FRONT"'
+check "long press on Terminal: closes the instance whose tab is in view" '[ -n "$FRONT" ] && [ "$(units app-terminal | wc -l)" = 1 ] && ! units app-terminal | grep -qx "$FRONT"'
 
 kill "$(program_pid)"; until_ '[ -z "$(program_pid)" ]' 5; start_program
 until_ '[ -n "$(program_pid)" ] && [ "$(front)" = clamshell-shelf ]' 10
 check "restart: shelf in front again" '[ "$(front)" = clamshell-shelf ] && [ "$(ws_of clamshell.top)" = clamshell-shelf ]'
 check "restart: the instances still run" '[ -n "$(units app-spawner)" ] && [ -n "$(units app-detached)" ] && [ -n "$(units app-terminal)" ]'
 ctl tap app $TERMINAL
-check_soon "restart: a tap finds the running instance" '[ "$(front)" = "$(units app-terminal)" ]'
+check_soon "restart: a tap shows the running app's workspace" '[ "$(front)" = "$TS" ]'
 
 # --- clean up: the program, this test's scopes, sway
 kill "$(program_pid)" 2> /dev/null

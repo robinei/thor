@@ -23,7 +23,8 @@ pub fn running() -> Vec<Event> {
         title: String::new(),
         focused,
         unit: Some(unit.into()),
-        workspace: unit.trim_end_matches(".scope").replace("clamshell-game-1-0", &Instance::Landing.name()),
+        // (The game's on the landing workspace: Steam's, not moved yet.)
+        workspace: Instance::from_unit(unit).map_or_else(String::new, |i| i.workspace()).replace("clamshell-game-1-0", &Instance::Landing.name()),
         ..Window::default()
     };
     vec![
@@ -55,7 +56,7 @@ pub fn window_below() -> Vec<Event> {
         ..Window::default()
     };
     vec![Event::Windows(vec![
-        window(8, "clamshell-app-terminal-1-1.scope", "clamshell-app-terminal-1-1", true, false),
+        window(8, "clamshell-app-terminal-1-1.scope", "clamshell-app-terminal", true, false),
         window(10, "clamshell-app-terminal-1-1.scope", &Instance::Bottom.name(), false, true),
     ])]
 }

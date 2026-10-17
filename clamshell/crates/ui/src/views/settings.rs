@@ -161,7 +161,6 @@ fn draw_tile(f: &mut Frame, r: Rect, tile: Tile) {
         caption_tone: if face.active && face.origin != TileOrigin::Inherited { Tone::Normal } else { Tone::Dim },
         dot: (face.origin == TileOrigin::Own).then_some(Tone::Normal),
         note: if later { "later" } else { "" },
-        count: "",
     };
     // No background: the grid's alignment is the structure; pressed still lights it.
     widgets::tile(f, face.id.clone(), r, &TILE, tile_face, |f, r| {

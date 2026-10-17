@@ -116,9 +116,13 @@ impl Session {
 
     /// The instance or game just started, once its first window is there: show it.
     pub(crate) fn show_pending(&mut self) -> Vec<Effect> {
-        let arrived = self.pending_show.as_ref().is_some_and(|i| self.windows.iter().any(|w| i.is(&w.workspace)));
+        // (An app's: its own window, as its workspace may have its other instances' already.)
+        let arrived = self.pending_show.as_ref().is_some_and(|i| {
+            let unit = i.app_key().and(i.unit());
+            self.windows.iter().any(|w| i.on(&w.workspace) && (unit.is_none() || w.unit == unit))
+        });
         match self.pending_show.take() {
-            Some(instance) if arrived => vec![Effect::Window(WindowCommand::Focus(instance.name()))],
+            Some(instance) if arrived => vec![Effect::Window(WindowCommand::Focus(instance.workspace()))],
             other => {
                 self.pending_show = other;
                 vec![]

@@ -5,8 +5,9 @@
 //! - sway's own rules, set when we connect: shelf's window and Steam's games (`steam_app_…`) go to their
 //!   workspaces, those are kept on the main screen, and a window that opens on the second screen's
 //!   workspace (behind the launcher) goes to the main screen.
-//! - Later windows of a launch (sway only places the first) are moved to their instance's workspace by
-//!   the systemd scope of their process: the kernel's record of which launch they come from.
+//! - Later windows of a launch (sway only places the first) are moved to their instance's workspace (its
+//!   app's, or its game's) by the systemd scope of their process: the kernel's record of which launch
+//!   they come from.
 //! - The window list after every window event; an emptied workspace of ours in front shows shelf.
 //!
 //! Without sway there is no window list (other compositors offer no common way).
@@ -56,8 +57,6 @@ pub enum Command {
     ShowDown(i64),
     /// The bottom screen's output on or off.
     Power(bool),
-    /// Show a window (focus it).
-    FocusWindow(i64),
 }
 
 /// The main screen's output: the first active one that isn't the second screen's. Kept by the window
@@ -122,7 +121,6 @@ fn carry_out(socket: &Path, top: &TopOutput, exe: &Path, command: &Command) -> R
         Command::Up { window, workspace } => commands::up(*window, workspace.as_deref(), top),
         Command::ShowDown(id) => commands::show_down(*id, top),
         Command::Power(on) => commands::power(&bottom, *on),
-        Command::FocusWindow(id) => format!("[con_id={id}] focus"),
     };
     if let Some(error) = ipc::refused(&ipc.command(&text)?) {
         log::debug!("sway: {text}: {error}");

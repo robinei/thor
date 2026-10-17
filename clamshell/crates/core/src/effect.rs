@@ -148,8 +148,6 @@ pub enum WindowCommand {
     ShowDown(i64),
     /// The bottom screen's output on or off.
     BottomPower(bool),
-    /// Show this window (a program's next one on the top screen).
-    FocusWindow(i64),
 }
 
 /// Which screens need a new frame after an event.

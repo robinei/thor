@@ -161,16 +161,6 @@ impl Display for Variables {
     }
 }
 
-/// Which of several windows is shown first, "2/3"; nothing for one.
-pub struct Position(pub usize, pub usize);
-
-impl Display for Position {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let Position(at, count) = *self;
-        if count > 1 { write!(f, "{}/{count}", at.max(1)) } else { Ok(()) }
-    }
-}
-
 /// Minutes as hours and minutes: "3 h 10 min".
 pub struct Duration(pub u32);
 
@@ -234,8 +224,6 @@ mod tests {
         assert_eq!(show(Variables(0)), "No variables");
         assert_eq!(show(Variables(1)), "1 variable");
         assert_eq!(show(Variables(2)), "2 variables");
-        assert_eq!(show(Position(0, 3)), "1/3");
-        assert_eq!(show(Position(1, 1)), "");
         assert_eq!(show(Duration(190)), "3 h 10 min");
         assert_eq!(show(HoursMinutes(125)), "2:05");
     }

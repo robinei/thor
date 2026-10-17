@@ -1,6 +1,7 @@
 //! The compositor's windows, as the dock and the games need them. A dock app instance is a systemd scope
-//! we started, with a workspace of the same name (see [`Instance`]): every window of its processes (a
-//! second window, a program started from its terminal) belongs there, and sway arranges them within it.
+//! we started, its windows on its app's workspace (see [`Instance`]): every window of its processes (a
+//! second window, a program started from its terminal) belongs there, a tab beside the app's other
+//! instances' windows.
 //! Games are the same: each running game shelf started has a scope and a workspace of that name; a game
 //! Steam starts gets a workspace of its own too (its windows are moved there from where they land).
 

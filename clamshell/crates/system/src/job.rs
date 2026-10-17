@@ -1,5 +1,6 @@
 //! Starting a program as an instance of ours (an app or a game), in its systemd scope: under sway,
-//! through sway's `exec`, aimed at the instance's workspace, so its first window opens there; elsewhere
+//! through sway's `exec`, aimed at the instance's workspace (its app's, or its game's), so its first
+//! window opens there; elsewhere
 //! as a child process.
 //!
 //! A launch is handed to sway's `exec` without its arguments going through sway's command parser (which
@@ -20,8 +21,10 @@ use crate::worker::{self, Worker};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Job {
-    /// The scope's name (without `.scope`), also the instance's workspace.
+    /// The scope's name (without `.scope`).
     pub unit: String,
+    /// The workspace its first window opens on (under sway).
+    pub workspace: String,
     /// Program and arguments.
     pub argv: Vec<String>,
     /// Extra environment.
@@ -136,7 +139,7 @@ impl Runner {
     pub fn start(&self, job: &Job) -> Result<Started, Error> {
         if let Some(sway) = &self.sway {
             let path = write(&self.jobs, job)?;
-            sway.try_send(sway::Command::Launch { workspace: job.unit.clone(), job: path }).map_err(|_| Error::SwayGone)?;
+            sway.try_send(sway::Command::Launch { workspace: job.workspace.clone(), job: path }).map_err(|_| Error::SwayGone)?;
             return Ok(Started::Sway);
         }
         let mut cmd = command(job).ok_or(Error::EmptyCommand)?;
@@ -160,6 +163,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("clamshell-jobs-{}", std::process::id()));
         let job = Job {
             unit: format!("clamshell-app-jobtest-{}-0", std::process::id()),
+            workspace: "clamshell-app-jobtest".into(),
             argv: vec!["prog".into(), "a b,c;d".into()],
             env: vec![("K".into(), "v".into())],
             workdir: Some("/tmp".into()),
@@ -179,7 +183,7 @@ mod tests {
     #[test]
     fn without_sway_a_job_is_a_child() {
         let runner = Runner { jobs: std::env::temp_dir(), sway: None };
-        let job = Job { unit: "u".into(), argv: vec!["true".into()], env: vec![], workdir: None, scope: false };
+        let job = Job { unit: "u".into(), workspace: "u".into(), argv: vec!["true".into()], env: vec![], workdir: None, scope: false };
         let started = runner.start(&job).unwrap();
         assert!(matches!(started, Started::Child(_)));
         if let Started::Child(mut child) = started {

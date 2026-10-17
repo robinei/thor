@@ -1,6 +1,7 @@
 //! The names ClamShell gives sway workspaces and systemd scopes. A dock app instance is a scope we
-//! started (`clamshell-app-<key>-<secs>-<n>.scope`) with a workspace of the same name; a game shelf
-//! started likewise (`clamshell-game-<secs>-<n>`); a game Steam started has a workspace only
+//! started (`clamshell-app-<key>-<secs>-<n>.scope`); all of an app's instances' windows are on the app's
+//! workspace (`clamshell-app-<key>`), as its tabs. A game shelf started has a scope and a workspace of the
+//! same name (`clamshell-game-<secs>-<n>`); a game Steam started has a workspace only
 //! (`clamshell-game-steam-<appid>`), its windows (`steam_app_<appid>`) moved there from the landing
 //! workspace (`clamshell-game`) where a sway rule puts them. Shelf's window has `clamshell-shelf`, the
 //! second screen `clamshell-bottom`. `<secs>-<n>` is the start time and a counter, so names are unique
@@ -38,8 +39,17 @@ enum Name<'a> {
     Shelf,
     Bottom,
     Landing,
-    App { key: &'a str, secs: u64, n: u64 },
-    Game { secs: u64, n: u64 },
+    App {
+        key: &'a str,
+        secs: u64,
+        n: u64,
+    },
+    /// An app's workspace.
+    AppSpace(&'a str),
+    Game {
+        secs: u64,
+        n: u64,
+    },
     Steam(u32),
 }
 
@@ -53,6 +63,10 @@ impl<'a> Name<'a> {
             _ => {}
         }
         if let Some(rest) = rest.strip_prefix("app-") {
+            // (A key has no '-': an app's workspace is its key alone.)
+            if !rest.is_empty() && !rest.contains('-') {
+                return Some(Name::AppSpace(rest));
+            }
             let mut parts = rest.rsplitn(3, '-');
             let n = parts.next()?.parse().ok()?;
             let secs = parts.next()?.parse().ok()?;
@@ -69,9 +83,11 @@ impl<'a> Name<'a> {
 }
 
 impl Instance {
-    /// The instance `name` (a workspace's or a scope's, without `.scope`) stands for, if it is ours.
+    /// The instance `name` (a workspace's or a scope's, without `.scope`) stands for, if it is ours (an
+    /// app's workspace is none: its instances share it).
     pub fn parse(name: &str) -> Option<Instance> {
         Some(match Name::parse(name)? {
+            Name::AppSpace(_) => return None,
             Name::Shelf => Instance::Shelf,
             Name::Bottom => Instance::Bottom,
             Name::Landing => Instance::Landing,
@@ -91,12 +107,17 @@ impl Instance {
         unit.strip_suffix(SCOPE).and_then(Name::parse).is_some_and(|n| matches!(n, Name::Game { .. }))
     }
 
-    /// The key of the dock app whose instance `name` is (without allocating).
+    /// The key of the dock app whose instance or workspace `name` is (without allocating).
     pub fn app_key_of(name: &str) -> Option<&str> {
         match Name::parse(name)? {
-            Name::App { key, .. } => Some(key),
+            Name::App { key, .. } | Name::AppSpace(key) => Some(key),
             _ => None,
         }
+    }
+
+    /// Dock app `key`'s workspace, its instances' windows' tabs.
+    pub fn app_workspace(key: &str) -> String {
+        format!("{PREFIX}app-{key}")
     }
 
     /// The order of the instance named `name` (see [`Instance::order`]), without allocating.
@@ -112,9 +133,25 @@ impl Instance {
         name.starts_with(PREFIX)
     }
 
-    /// Its workspace's name (and its scope's, without `.scope`).
+    /// Its name: its scope's (without `.scope`), and but for an app's instance its workspace's.
     pub fn name(&self) -> String {
         self.to_string()
+    }
+
+    /// The workspace its windows are on: its app's for an app's instance, else its own name's.
+    pub fn workspace(&self) -> String {
+        match self {
+            Instance::App { key, .. } => Instance::app_workspace(key),
+            _ => self.name(),
+        }
+    }
+
+    /// Whether workspace `name` is the one its windows are on, compared without allocating.
+    pub fn on(&self, name: &str) -> bool {
+        match self {
+            Instance::App { key, .. } => name.strip_prefix(PREFIX).and_then(|r| r.strip_prefix("app-")) == Some(key.as_str()),
+            _ => self.is(name),
+        }
     }
 
     /// Its scope's unit name, for the apps and games we start in one.
@@ -216,6 +253,11 @@ mod tests {
         assert_eq!(Instance::from_unit("clamshell-shelf.scope"), None);
         assert!(Instance::is_game_unit("clamshell-game-5-0.scope") && !Instance::is_game_unit("clamshell-app-x-5-0.scope"));
         assert!(Instance::App { key: "x".into(), secs: 5, n: 10 }.order() > Instance::App { key: "x".into(), secs: 5, n: 9 }.order());
+        let app = Instance::App { key: "terminal".into(), secs: 1, n: 0 };
+        assert_eq!(app.workspace(), "clamshell-app-terminal");
+        assert!(app.on("clamshell-app-terminal") && !app.on(&app.name()) && !app.on("clamshell-app-terminal2"));
+        assert_eq!(Instance::parse("clamshell-app-terminal"), None, "an app's workspace is no instance");
+        assert_eq!(Instance::app_key_of("clamshell-app-terminal"), Some("terminal"));
         assert_eq!(steam_app_id("steam_app_620"), Some(620));
         assert_eq!("clamshell-shelf".parse(), Ok(Instance::Shelf));
     }
