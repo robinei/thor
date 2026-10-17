@@ -103,6 +103,8 @@ pub struct Node {
     pub focused: bool,
     /// Marks on it (ours: [`super::commands::DOWN_MARK`] on a window moved to the bottom screen).
     pub marks: Vec<String>,
+    /// A window's: in view (the tab shown, on a workspace shown); none for other nodes.
+    pub visible: Option<bool>,
     pub nodes: Vec<Node>,
     pub floating_nodes: Vec<Node>,
 }

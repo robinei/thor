@@ -23,6 +23,8 @@ pub struct Window {
     pub output: String,
     /// Moved to the bottom screen by us (sway's mark on it): left there.
     pub down: bool,
+    /// In view: the tab its workspace shows, on a workspace shown.
+    pub visible: bool,
 }
 
 impl Window {

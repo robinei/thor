@@ -1,8 +1,9 @@
 //! The bottom screen shared with programs' windows (a dual-screen emulator's second screen). Home+Down
 //! moves the window shown on the top screen down (sway marks it, so it stays), Home+Up the one shown
-//! below back up; Home+Select rotates what the bottom screen shows among ClamShell's view and the windows
-//! down there (nothing to rotate without one); Home+Start turns the bottom screen off and on. None of it
-//! takes the keyboard from the window in front on the top screen.
+//! below back up. The windows down there are tabs of one workspace (a tap on a tab shows it); Home+Select
+//! switches the bottom screen between ClamShell's view and them (nothing without one); Home+Start turns
+//! the bottom screen off and on. None of it takes the keyboard from the window in front on the top
+//! screen.
 //!
 //! Moving a game's or a dock app's window down is remembered as a rule ([`WindowRule`]: the program, the
 //! window's app id and title): the next time it opens a window like it, the window goes down by itself.
@@ -112,8 +113,8 @@ impl WindowRules {
 /// What the bottom screen shows, besides being on or off.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct BottomScreen {
-    /// A window moved down, shown over ClamShell's view (none: ClamShell's view).
-    pub(crate) shows: Option<i64>,
+    /// The windows moved down (the tab sway shows), over ClamShell's view; else ClamShell's view.
+    pub(crate) windows: bool,
     /// Turned off with Home+Start.
     pub(crate) off: bool,
 }
@@ -124,9 +125,9 @@ impl State {
         self.session.windows.iter().filter(|w| w.down)
     }
 
-    /// The window the bottom screen shows instead of ClamShell's view, if any.
-    pub fn bottom_window(&self) -> Option<i64> {
-        self.bottom.screen.shows.filter(|id| self.windows_down().any(|w| w.id == *id))
+    /// Whether the bottom screen shows the windows moved there instead of ClamShell's view.
+    pub fn bottom_shows_windows(&self) -> bool {
+        self.bottom.screen.windows && self.windows_down().next().is_some()
     }
 
     /// Whether the bottom screen is turned off.
@@ -161,7 +162,7 @@ impl State {
 
     /// A window moved down and shown there (the bottom screen on again if it was off).
     fn show_down(&mut self, id: i64) -> Vec<Effect> {
-        self.bottom.screen.shows = Some(id);
+        self.bottom.screen.windows = true;
         let mut effects = vec![Effect::Window(WindowCommand::Down(id))];
         if std::mem::take(&mut self.bottom.screen.off) {
             effects.push(Effect::Window(WindowCommand::BottomPower(true)));
@@ -169,18 +170,16 @@ impl State {
         effects
     }
 
-    /// Home+Up: the window the bottom screen shows back to its place on the top screen, and its rule
-    /// forgotten. The bottom screen shows the next window down, or ClamShell's view.
+    /// Home+Up: the window the bottom screen shows (its tab in view) back to its place on the top screen,
+    /// and its rule forgotten. The bottom screen shows the next tab, or ClamShell's view after the last.
     pub(crate) fn window_up(&mut self) -> Vec<Effect> {
-        let Some(w) = self.bottom_window().and_then(|id| self.session.windows.iter().find(|w| w.id == id)).cloned() else {
+        if !self.bottom_shows_windows() {
+            return vec![];
+        }
+        let Some(w) = self.windows_down().find(|w| w.visible).or_else(|| self.windows_down().next()).cloned() else {
             return vec![];
         };
         let mut effects = vec![Effect::Window(WindowCommand::Up { window: w.id, to: w.home() })];
-        let next = self.windows_down().map(|d| d.id).find(|id| *id != w.id);
-        self.bottom.screen.shows = next;
-        if let Some(next) = self.bottom.screen.shows {
-            effects.push(Effect::Window(WindowCommand::ShowDown(next)));
-        }
         if let Some(owner) = self.owner(&w)
             && self.window_rules.forget(&owner, &w)
         {
@@ -190,20 +189,19 @@ impl State {
         effects
     }
 
-    /// Home+Select: the bottom screen shows the next of ClamShell's view and the windows down there;
-    /// nothing without a window down.
-    pub(crate) fn rotate_bottom(&mut self) -> Vec<Effect> {
-        let down: Vec<i64> = self.windows_down().map(|w| w.id).collect();
-        if down.is_empty() {
-            return vec![];
+    /// Home+Select: the bottom screen shows the windows moved there, or ClamShell's view again; nothing
+    /// without a window down.
+    pub(crate) fn toggle_bottom_view(&mut self) -> Vec<Effect> {
+        if self.windows_down().next().is_some() {
+            self.bottom.screen.windows = !self.bottom.screen.windows;
         }
-        // ClamShell's view, then each window down, round.
-        let at = self.bottom_window().and_then(|id| down.iter().position(|d| *d == id)).map_or(0, |i| i + 1);
-        self.bottom.screen.shows = down.get(at).copied();
-        match self.bottom.screen.shows {
-            Some(id) => vec![Effect::Window(WindowCommand::ShowDown(id))],
-            None => vec![],
-        }
+        vec![]
+    }
+
+    /// A tap on a program whose windows are all on the bottom screen: shown there, its first tab in view.
+    pub(crate) fn show_program_down(&mut self, window: i64) -> Vec<Effect> {
+        self.bottom.screen.windows = true;
+        vec![Effect::Window(WindowCommand::ShowDown(window))]
     }
 
     /// Home+Start: the bottom screen off, or on again.
@@ -212,8 +210,7 @@ impl State {
         vec![Effect::Window(WindowCommand::BottomPower(!self.bottom.screen.off))]
     }
 
-    /// After the windows changed: a window whose program has a rule for it goes down (once); what the
-    /// bottom screen shows is let go of when that window is gone.
+    /// After the windows changed: a window whose program has a rule for it goes down (once).
     pub(crate) fn follow_window_rules(&mut self) -> Vec<Effect> {
         let mut effects = Vec::new();
         let wanted: Vec<i64> = self
@@ -230,10 +227,6 @@ impl State {
         }
         let open: Vec<i64> = self.session.windows.iter().map(|w| w.id).collect();
         self.session.sent_down.retain(|id| open.contains(id));
-        if self.bottom.screen.shows.is_some_and(|id| !open.contains(&id)) {
-            let next = self.windows_down().map(|w| w.id).next();
-            self.bottom.screen.shows = next;
-        }
         effects
     }
 }
@@ -250,6 +243,7 @@ mod tests {
     fn win(id: i64, unit: &str, title: &str, focused: bool, down: bool) -> Window {
         Window {
             id,
+            visible: true,
             app_id: "emu".into(),
             title: title.into(),
             focused,
@@ -282,24 +276,27 @@ mod tests {
     #[test]
     fn a_window_moved_down_is_shown_there_and_remembered() {
         let mut s = emulator();
-        assert_eq!(key(&mut s, DeviceKey::BottomNext), vec![], "nothing down: nothing to rotate");
+        assert_eq!(key(&mut s, DeviceKey::BottomView), vec![], "nothing down: nothing to switch to");
+        assert!(!s.bottom_shows_windows());
         let fx = key(&mut s, DeviceKey::WindowDown);
         assert_eq!(fx[0], Effect::Window(WindowCommand::Down(2)));
         assert!(matches!(&fx[1], Effect::Save(Save::WindowRules(t)) if t.ends_with("bottom\tgame\tmelonds\temu\tBottom\n")), "{fx:?}");
         assert_eq!(s.bottom().notice().map(|n| &n.what), Some(&NoticeKind::BottomRule(true)));
         // sway reports it down: shown there.
         s.apply(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]));
-        assert_eq!(s.bottom_window(), Some(2));
-        // Rotating: ClamShell's view, then the window again.
-        assert_eq!(key(&mut s, DeviceKey::BottomNext), vec![]);
-        assert_eq!(s.bottom_window(), None);
-        assert_eq!(key(&mut s, DeviceKey::BottomNext), vec![Effect::Window(WindowCommand::ShowDown(2))]);
-        assert_eq!(s.bottom_window(), Some(2));
+        assert!(s.bottom_shows_windows());
+        // Home+Select: ClamShell's view (Home+Up then does nothing), then the windows again.
+        key(&mut s, DeviceKey::BottomView);
+        assert!(!s.bottom_shows_windows());
+        assert_eq!(key(&mut s, DeviceKey::WindowUp), vec![]);
+        key(&mut s, DeviceKey::BottomView);
+        assert!(s.bottom_shows_windows());
         // Up: back to its workspace, the rule forgotten, ClamShell's view below.
         let fx = key(&mut s, DeviceKey::WindowUp);
         assert_eq!(fx[0], Effect::Window(WindowCommand::Up { window: 2, to: Some(Instance::Game { secs: 99, n: 1 }) }));
         assert!(matches!(&fx[1], Effect::Save(Save::WindowRules(t)) if t == &format!("{WINDOW_RULES_FORMAT}\n")), "{fx:?}");
-        assert_eq!(s.bottom_window(), None);
+        s.apply(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, false)]));
+        assert!(!s.bottom_shows_windows(), "none down: ClamShell's view");
     }
 
     #[test]
@@ -330,17 +327,17 @@ mod tests {
     }
 
     #[test]
-    fn two_windows_down_come_back_up_one_after_the_other() {
+    fn two_windows_down_are_tabs_and_the_one_in_view_comes_back_up() {
         let mut s = emulator();
         key(&mut s, DeviceKey::WindowDown);
         s.apply(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]));
         key(&mut s, DeviceKey::WindowDown);
-        s.apply(Event::Windows(vec![win(1, GAME, "Top", false, true), win(2, GAME, "Bottom", false, true)]));
-        assert_eq!(s.bottom_window(), Some(1), "the last moved down is shown");
+        let hidden = |w: Window| Window { visible: false, ..w };
+        s.apply(Event::Windows(vec![win(1, GAME, "Top", false, true), hidden(win(2, GAME, "Bottom", false, true))]));
         let fx = key(&mut s, DeviceKey::WindowUp);
-        assert!(fx.contains(&Effect::Window(WindowCommand::Up { window: 1, to: Some(Instance::Game { secs: 99, n: 1 }) })), "{fx:?}");
-        assert_eq!(s.bottom_window(), Some(2), "then the other");
+        assert!(fx.contains(&Effect::Window(WindowCommand::Up { window: 1, to: Some(Instance::Game { secs: 99, n: 1 }) })), "the tab in view: {fx:?}");
         s.apply(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]));
+        assert!(s.bottom_shows_windows(), "the other tab");
         let fx = key(&mut s, DeviceKey::WindowUp);
         assert!(fx.contains(&Effect::Window(WindowCommand::Up { window: 2, to: Some(Instance::Game { secs: 99, n: 1 }) })), "{fx:?}");
     }

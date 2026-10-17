@@ -38,6 +38,7 @@ fn collect(node: &Node, output: &str, workspace: &str, unit: &mut impl FnMut(u32
             workspace: workspace.to_owned(),
             output: output.to_owned(),
             down: node.marks.iter().any(|m| m.starts_with(commands::DOWN_MARK)),
+            visible: node.visible.unwrap_or(false),
         });
     }
     for child in node.children() {

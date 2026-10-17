@@ -4,7 +4,10 @@
 //! scope). A tap on an app starts it when it isn't running, shows its most recent instance when it is,
 //! and goes on to its next instance when one of its own is in front. A long press closes the instance it
 //! is on (its windows, politely, as their close buttons would); on the game tile it quits the game. A "+"
-//! on running apps that allow several starts another instance. A new instance (or game) is shown when its
+//! on running apps that allow several starts another instance. A program's several windows are tabs of
+//! its workspace: a tap with it in front shows its next tab, after the last its next instance (an app's;
+//! the first tab again with one). A program whose windows are all on the bottom screen: a tap shows them
+//! there. A new instance (or game) is shown when its
 //! first window appears, not before (its empty workspace never is), also if the user has gone elsewhere
 //! meanwhile; a newer start takes its place.
 
@@ -99,7 +102,7 @@ impl State {
     }
 
     /// The workspace a window belongs to: the one it is on, or (moved down) its scope's, which has the
-    /// same name. Borrowed (for drawing).
+    /// same name.
     fn place(w: &Window) -> &str {
         match (&w.unit, w.down) {
             (Some(unit), true) => unit.trim_end_matches(".scope"),
@@ -116,56 +119,38 @@ impl State {
         }
     }
 
-    /// A program's windows on the top screen (`down`: moved to the bottom one), with their order: by
-    /// instance, then as the compositor lists them. No allocation (for drawing).
-    fn program_windows(&self, p: Program, down: bool) -> impl Iterator<Item = ((u64, u64, usize), &Window)> {
-        self.session.windows.iter().enumerate().filter(move |(_, w)| w.down == down && self.program_has(p, w)).map(|(at, w)| {
-            let (secs, n) = Instance::parse_order(Self::place(w));
-            ((secs, n, at), w)
-        })
+    /// Which of app `i`'s instances a tile is on, of how many (a game's tile: none). No allocation (for
+    /// drawing).
+    pub fn dock_position(&self, id: DockId) -> (usize, usize) {
+        match id {
+            DockId::App(i) => self.instance_position(usize::from(i)),
+            DockId::GameTile(_) | DockId::StartGame | DockId::NewInstance(_) => (0, 0),
+        }
     }
 
-    /// Which of a dock program's windows on the top screen its tile is on, of how many (position from 1,
-    /// count): the one in front if it is the program's, else the first of the instance the tile is on.
-    /// An app with no window listed yet counts its instances. No allocation (for drawing).
-    pub fn dock_position(&self, id: DockId) -> (usize, usize) {
-        let p = match id {
-            DockId::App(i) => Program::App(usize::from(i)),
-            DockId::GameTile(i) => Program::Game(usize::from(i)),
-            DockId::StartGame | DockId::NewInstance(_) => return (0, 0),
-        };
-        let count = self.program_windows(p, false).count();
-        if count == 0 {
-            return match p {
-                Program::App(i) => self.instance_position(i),
-                Program::Game(_) => (0, 0),
+    /// A tap on a dock program: in front with another tab after the one shown, that tab (a game's, or an
+    /// app's with one instance: the first after the last). With all its windows on the bottom screen, they
+    /// are shown there. None: neither (the tile's usual tap).
+    fn tap_program(&mut self, p: Program) -> Option<Vec<Effect>> {
+        let windows = &self.session.windows;
+        if let Some(front) = windows.iter().find(|w| w.focused && !w.down && self.program_has(p, w)) {
+            let tabs: Vec<i64> = windows.iter().filter(|w| !w.down && w.workspace == front.workspace).map(|w| w.id).collect();
+            let at = tabs.iter().position(|id| *id == front.id).unwrap_or(0);
+            let wraps = match p {
+                Program::App(i) => self.instances(i).count() <= 1,
+                Program::Game(_) => true,
+            };
+            return match tabs.get(at + 1).or(tabs.first().filter(|_| wraps && tabs.len() > 1)) {
+                Some(next) => Some(vec![Effect::Window(WindowCommand::FocusWindow(*next))]),
+                None if wraps => Some(vec![]),
+                None => None,
             };
         }
-        let focused = self.program_windows(p, false).find(|(_, w)| w.focused).map(|(k, _)| k);
-        let current = focused.or_else(|| self.program_windows(p, false).map(|(k, _)| k).min());
-        (current.map_or(0, |c| self.program_windows(p, false).filter(|(k, _)| *k <= c).count()), count)
-    }
-
-    /// A tap on a dock program: with its window in front, its next window on the top screen; with none
-    /// on the top screen and some moved down, the bottom screen shows its next one. None: neither (the
-    /// tile's usual tap).
-    fn tap_program(&mut self, p: Program) -> Option<Vec<Effect>> {
-        let mut top: Vec<((u64, u64, usize), i64, bool)> = self.program_windows(p, false).map(|(k, w)| (k, w.id, w.focused)).collect();
-        top.sort();
-        if let Some(at) = top.iter().position(|t| t.2) {
-            let next = top.get((at + 1) % top.len()).map(|t| t.1).filter(|_| top.len() > 1);
-            return Some(next.map(|id| vec![Effect::Window(WindowCommand::FocusWindow(id))]).unwrap_or_default());
-        }
-        if !top.is_empty() {
+        if windows.iter().any(|w| !w.down && self.program_has(p, w)) {
             return None;
         }
-        let mut down: Vec<((u64, u64, usize), i64)> = self.program_windows(p, true).map(|(k, w)| (k, w.id)).collect();
-        down.sort();
-        let shown = self.bottom_window();
-        let at = shown.and_then(|id| down.iter().position(|d| d.1 == id)).map_or(0, |i| i + 1);
-        let next = down.get(at % down.len().max(1)).map(|d| d.1)?;
-        self.bottom.screen.shows = Some(next);
-        Some(vec![Effect::Window(WindowCommand::ShowDown(next))])
+        let down = windows.iter().find(|w| w.down && self.program_has(p, w))?.id;
+        Some(self.show_program_down(down))
     }
 
     /// A tap or long press on a dock tile.
@@ -287,8 +272,12 @@ mod tests {
         assert_eq!(tap(&mut s, Id::Dock(DockId::NewInstance(TERMINAL))), run(t2.clone()));
         s.apply(Event::Units(vec![t1.clone(), t2.clone()]));
         s.apply(Event::Windows(vec![win(10, "foot", &w1, false), win(12, "foot", &w2, false), win(13, "mpv", &w2, true)]));
-        assert_eq!(s.dock_position(DockId::App(TERMINAL)), (3, 3), "on window 3 of 3: the windows count, by instance");
-        assert_eq!(tap(&mut s, app.clone()), vec![Effect::Window(WindowCommand::FocusWindow(10))], "the next window, wrapping");
+        assert_eq!(s.dock_position(DockId::App(TERMINAL)), (2, 2), "on instance 2 of 2");
+        // In front, on its second's last tab: the next instance.
+        assert_eq!(tap(&mut s, app.clone()), vec![focus(&t1)]);
+        // On its first tab of two: the next tab.
+        s.apply(Event::Windows(vec![win(10, "foot", &w1, false), win(12, "foot", &w2, true), win(13, "mpv", &w2, false)]));
+        assert_eq!(tap(&mut s, app.clone()), vec![Effect::Window(WindowCommand::FocusWindow(13))]);
         // Something else in front: back to the instance last in front.
         s.apply(Event::Windows(vec![win(10, "foot", &w1, false), win(12, "foot", &w2, false), win(13, "mpv", &w2, false), win(20, "firefox", "1", true)]));
         assert_eq!(tap(&mut s, app.clone()), vec![focus(&t2)]);
@@ -304,14 +293,12 @@ mod tests {
         let w1 = t1.name();
         s.apply(Event::Units(vec![t1.clone()]));
         let down = |id| Window { down: true, unit: Some(format!("{w1}.scope")), ..win(id, "foot", &Instance::Bottom.name(), false) };
-        // Both its windows down, shelf in front: a tap shows one on the bottom screen, the next tap the
-        // other.
+        // Both its windows down, ClamShell's view below, shelf in front: a tap shows them there.
         s.apply(Event::Windows(vec![win(1, apps::SHELF_APP_ID, &Instance::Shelf.name(), true), down(10), down(11)]));
+        assert!(!s.bottom_shows_windows());
         let app = Id::Dock(DockId::App(TERMINAL));
-        assert_eq!(tap(&mut s, app.clone()), vec![Effect::Window(WindowCommand::ShowDown(10))]);
-        assert_eq!(s.bottom_window(), Some(10));
-        assert_eq!(tap(&mut s, app), vec![Effect::Window(WindowCommand::ShowDown(11))]);
-        assert_eq!(s.dock_position(DockId::App(TERMINAL)), (1, 1), "none on top: counted by instance");
+        assert_eq!(tap(&mut s, app), vec![Effect::Window(WindowCommand::ShowDown(10))]);
+        assert!(s.bottom_shows_windows());
     }
 
     #[test]

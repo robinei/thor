@@ -139,7 +139,7 @@ pub const COMMANDS: &[Form<Vec<Event>>] = &[
     form("brightness up", "the brightness key", |_| device(DeviceKey::BrightnessUp)),
     form("brightness down", "the brightness key", |_| device(DeviceKey::BrightnessDown)),
     form("screenshot", "the screenshot key", |_| device(DeviceKey::Screenshot)),
-    form("bottom next", "Home+Select: the bottom screen shows the next of ClamShell's view and the windows moved there", |_| device(DeviceKey::BottomNext)),
+    form("bottom view", "Home+Select: the bottom screen shows ClamShell's view or the windows moved there", |_| device(DeviceKey::BottomView)),
     form("bottom power", "Home+Start: the bottom screen off, or on", |_| device(DeviceKey::BottomPower)),
     form("window down", "Home+Down: the window in front to the bottom screen (remembered for its program)", |_| device(DeviceKey::WindowDown)),
     form("window up", "Home+Up: the bottom screen's window back up (forgotten)", |_| device(DeviceKey::WindowUp)),

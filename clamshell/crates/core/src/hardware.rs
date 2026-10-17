@@ -17,7 +17,7 @@ pub enum DeviceKey {
     /// Both screens to a file (the pad's Home with RB, a keyboard's Print).
     Screenshot,
     /// The bottom screen shows the next of ClamShell's view and the windows moved there (Home+Select).
-    BottomNext,
+    BottomView,
     /// The bottom screen off, or on again (Home+Start).
     BottomPower,
     /// The window in front on the top screen to the bottom screen (Home+Down).
@@ -61,7 +61,7 @@ impl State {
                 return self.levels.toggle_mute();
             }
             DeviceKey::Screenshot => return vec![Effect::Screenshot],
-            DeviceKey::BottomNext => return self.rotate_bottom(),
+            DeviceKey::BottomView => return self.toggle_bottom_view(),
             DeviceKey::BottomPower => return self.toggle_bottom_power(),
             DeviceKey::WindowDown => return self.window_down(),
             DeviceKey::WindowUp => return self.window_up(),

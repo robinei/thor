@@ -156,7 +156,7 @@ fn away(route: PadRoute) -> bool {
 /// The D-pad as a hat (most controllers) is in [`PadRouter::event`]; as buttons, here.
 const SYSTEM: [(KeyCode, DeviceKey); 5] = [
     (KeyCode::BTN_TR, DeviceKey::Screenshot),
-    (KeyCode::BTN_SELECT, DeviceKey::BottomNext),
+    (KeyCode::BTN_SELECT, DeviceKey::BottomView),
     (KeyCode::BTN_START, DeviceKey::BottomPower),
     (KeyCode::BTN_DPAD_UP, DeviceKey::WindowUp),
     (KeyCode::BTN_DPAD_DOWN, DeviceKey::WindowDown),
@@ -535,7 +535,7 @@ mod tests {
         let device = |k| Event::Device(k);
         assert_eq!(
             out.events,
-            vec![device(DeviceKey::BottomNext), device(DeviceKey::BottomPower), device(DeviceKey::WindowDown), device(DeviceKey::WindowUp)],
+            vec![device(DeviceKey::BottomView), device(DeviceKey::BottomPower), device(DeviceKey::WindowDown), device(DeviceKey::WindowUp)],
             "not Home as well"
         );
         let dpad = |pad: &[Raw]| pad.iter().any(|e| e.as_key().is_some_and(|(k, _)| matches!(k, KeyCode::BTN_DPAD_UP | KeyCode::BTN_DPAD_DOWN)));

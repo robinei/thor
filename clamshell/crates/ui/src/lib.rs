@@ -364,7 +364,7 @@ impl App {
         let mut rows_changed = None;
         let mut lists = Vec::new();
         // ClamShell's bottom view behind a window moved to the bottom screen while that is shown.
-        let behind = self.state.bottom_window().is_some();
+        let behind = self.state.bottom_shows_windows();
         if let Some(view) = self.views.iter_mut().find(|(s, _)| *s == Screen::Bottom).and_then(|(_, v)| v.as_mut()) {
             view.set_behind(behind);
         }
