@@ -14,10 +14,15 @@ pub const REPEAT_AFTER: Duration = Duration::from_millis(350);
 pub const REPEAT_EVERY: Duration = Duration::from_millis(90);
 /// The left stick counts as a direction past this (of full).
 const STICK_DIRECTION: f32 = 0.6;
+/// A trigger counts as pulled past this (of full).
+const TRIGGER_PULLED: f32 = 0.5;
 
 #[derive(Debug)]
 pub struct Navigator {
     stick_range: Range,
+    trigger_range: Range,
+    /// The left and right triggers pulled.
+    pulled: (bool, bool),
     hat: (i32, i32),
     stick: (f32, f32),
     held: Option<PadInput>,
@@ -25,8 +30,18 @@ pub struct Navigator {
 }
 
 impl Navigator {
-    pub fn new(stick_range: Range) -> Self {
-        Navigator { stick_range, hat: (0, 0), stick: (0.0, 0.0), held: None, next: None }
+    pub fn new(stick_range: Range, trigger_range: Range) -> Self {
+        Navigator { stick_range, trigger_range, pulled: (false, false), hat: (0, 0), stick: (0.0, 0.0), held: None, next: None }
+    }
+
+    /// A trigger's value: `Trigger` as it is pulled past [`TRIGGER_PULLED`] (not again until let go).
+    fn trigger(&mut self, right: bool, v: i32, out: &mut Out) {
+        let pulled = self.trigger_range.unit(v) >= TRIGGER_PULLED;
+        let was = if right { &mut self.pulled.1 } else { &mut self.pulled.0 };
+        if pulled && !*was {
+            out.events.push(Event::Pad(PadInput::Trigger(if right { 1 } else { -1 })));
+        }
+        *was = pulled;
     }
 
     /// The direction held now: the D-pad's, else the stick's (its larger axis).
@@ -52,6 +67,8 @@ impl Navigator {
             (KeyCode::BTN_WEST, _) => Some(PadInput::X),
             (KeyCode::BTN_TL, _) => Some(PadInput::Shoulder(-1)),
             (KeyCode::BTN_TR, _) => Some(PadInput::Shoulder(1)),
+            (KeyCode::BTN_TL2, _) => Some(PadInput::Trigger(-1)),
+            (KeyCode::BTN_TR2, _) => Some(PadInput::Trigger(1)),
             (KeyCode::BTN_SELECT, _) => Some(PadInput::Switch),
             _ => None,
         }
@@ -65,6 +82,8 @@ impl Mapping for Navigator {
             (Some((AbsoluteAxisCode::ABS_HAT0Y, v)), _) => self.hat.1 = v.signum(),
             (Some((AbsoluteAxisCode::ABS_X, v)), _) => self.stick.0 = self.stick_range.centered(v),
             (Some((AbsoluteAxisCode::ABS_Y, v)), _) => self.stick.1 = self.stick_range.centered(v),
+            (Some((AbsoluteAxisCode::ABS_Z, v)), _) => self.trigger(false, v, out),
+            (Some((AbsoluteAxisCode::ABS_RZ, v)), _) => self.trigger(true, v, out),
             (_, Some((key, press))) => out.events.extend(Navigator::button(key, press).map(Event::Pad)),
             _ => {}
         }
@@ -92,7 +111,7 @@ impl Mapping for Navigator {
 
     /// Nothing is held down outside ClamShell: only the directions are forgotten.
     fn release(&mut self, _: &mut Out) {
-        *self = Navigator::new(self.stick_range);
+        *self = Navigator::new(self.stick_range, self.trigger_range);
     }
 }
 
@@ -102,7 +121,7 @@ mod tests {
 
     #[test]
     fn repeats_held_directions_and_passes_buttons() {
-        let mut nav = Navigator::new(Range::STICK);
+        let mut nav = Navigator::new(Range::STICK, Range { min: 0, max: 255 });
         let t0 = Instant::now();
         let mut out = Out::default();
         let pad = |inputs: &[PadInput]| inputs.iter().map(|&i| Event::Pad(i)).collect::<Vec<_>>();
@@ -132,5 +151,11 @@ mod tests {
             nav.event(Raw::key(code, press), t0, &mut out);
         }
         assert_eq!(out.events, pad(&[PadInput::Right, PadInput::A(true), PadInput::A(false), PadInput::B, PadInput::Switch, PadInput::Shoulder(1)]));
+        // A trigger pulled past half: once, until let go.
+        out.events.clear();
+        for v in [100, 200, 250, 30, 220] {
+            nav.event(Raw::abs(AbsoluteAxisCode::ABS_RZ, v), t0, &mut out);
+        }
+        assert_eq!(out.events, pad(&[PadInput::Trigger(1), PadInput::Trigger(1)]));
     }
 }

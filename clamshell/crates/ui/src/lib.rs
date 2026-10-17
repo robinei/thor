@@ -469,7 +469,8 @@ impl App {
     }
 
     /// The pad on ClamShell's screens (see `focus`): directions move focus, A acts on the focused
-    /// target, B goes back (see `focus::back`), Y toggles the favourite, X the pin on the dock, the shoulders step collections or tabs.
+    /// target, B goes back (see `focus::back`), Y toggles the favourite, X the pin on the dock, the shoulders
+    /// page through shelf (or step the second screen's tabs), the triggers go to shelf's first or last entry.
     /// View moves focus to the other screen with shelf in front; else it moves the pad between the second
     /// screen and what else wants it (the pad mouse, typing; the pad thread sends View from there too).
     fn pad(&mut self, input: PadInput) {
@@ -514,6 +515,7 @@ impl App {
                 }
             }
             PadInput::Shoulder(step) => self.handle_all(focus::shoulder(&self.state, &self.views, step)),
+            PadInput::Trigger(step) => self.handle_all(focus::trigger(&self.state, &self.views, step)),
             PadInput::Switch if self.state.pad_on_top() => {
                 let event = focus::switch_screen(&self.state, &self.views, &mut self.focus_memory);
                 self.handle_all(event);

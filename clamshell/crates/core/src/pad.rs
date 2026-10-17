@@ -47,8 +47,11 @@ pub enum PadInput {
     Y,
     /// X: the selected entry pinned to the dock, or unpinned.
     X,
-    /// The shoulder buttons: the previous or next collection (shelf) or tab (the second screen).
+    /// The shoulder buttons (L1, R1): a page up or down (shelf), the previous or next tab (the second
+    /// screen).
     Shoulder(i32),
+    /// The triggers (L2, R2) pulled past half: to the first or last entry (shelf).
+    Trigger(i32),
     /// View/Select: focus to the other screen.
     Switch,
     /// The Back button (the keymaps' layer key in a game): back one screen (see

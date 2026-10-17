@@ -93,7 +93,7 @@ pub(crate) fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, 
     // In shelf's list: up and down move through the games (scrolling), left and right switch
     // collections; down past the last game goes on to the second screen.
     if scope == PadScope::ShelfList {
-        let len = s.shelf().collection().map_or(0, |c| c.games.len());
+        let len = s.shelf().list().len();
         let at_end = s.shelf().cursor().index + 1 >= len;
         let step = match dir {
             Dir::Up => Some(ShelfEvent::ListStep(-1)),
@@ -168,8 +168,10 @@ pub(crate) fn press(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>) -> 
 /// The shoulders: shelf's collections while the focus is on the main screen, else the bar's tabs, left
 /// to right (opened and focused).
 pub(crate) fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
+    // Shelf: a page (the rows on screen).
     if s.pad_on_top() && focus_screen(s, d) == Screen::Top {
-        return vec![ShelfEvent::CollectionStep(step).into()];
+        let page = i32::try_from(s.shelf().rows()).unwrap_or(1).max(1);
+        return vec![ShelfEvent::ListStep(step * page).into()];
     }
     let tabs = Tab::ALL;
     let at = tabs.iter().position(|t| *t == s.bottom().tab()).unwrap_or(0) as i32;
@@ -178,6 +180,15 @@ pub(crate) fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
         Some(&tab) => vec![PointerEvent::Activate(Id::Tab(tab)).into(), PointerEvent::Focus(Id::Tab(tab)).into()],
         None => vec![],
     }
+}
+
+/// L2, R2: shelf's first or last entry.
+pub(crate) fn trigger(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
+    if s.pad_on_top() && focus_screen(s, d) == Screen::Top {
+        let len = i32::try_from(s.shelf().list().len()).unwrap_or(i32::MAX);
+        return vec![ShelfEvent::ListStep(step * len).into()];
+    }
+    vec![]
 }
 
 /// B: cancels the editor, if one is open, else goes back one of the keymaps' screens, else (shelf in
@@ -198,9 +209,9 @@ pub(crate) fn back(s: &State) -> Option<Event> {
 }
 
 /// On a desktop, keys stand in for the pad: arrows move focus, Enter/Space is A (press, hold), Tab is
-/// View, Backspace B, Q and E the shoulders, F is Y, P is X. (Not on the device: there what reaches shelf's
+/// View, Backspace B, Q and E the shoulders, Home and End the triggers, F is Y, P is X. (Not on the device: there what reaches shelf's
 /// window is typing.)
-const DESKTOP_KEYS: [(Keysym, PadInput); 13] = [
+const DESKTOP_KEYS: [(Keysym, PadInput); 15] = [
     (Keysym::Left, PadInput::Left),
     (Keysym::Right, PadInput::Right),
     (Keysym::Up, PadInput::Up),
@@ -210,6 +221,8 @@ const DESKTOP_KEYS: [(Keysym, PadInput); 13] = [
     (Keysym::space, PadInput::A(true)),
     (Keysym::f, PadInput::Y),
     (Keysym::p, PadInput::X),
+    (Keysym::Home, PadInput::Trigger(-1)),
+    (Keysym::End, PadInput::Trigger(1)),
     (Keysym::Tab, PadInput::Switch),
     (Keysym::BackSpace, PadInput::B),
     (Keysym::q, PadInput::Shoulder(-1)),
@@ -330,7 +343,7 @@ mod tests {
     }
 
     #[test]
-    fn the_shoulders_step_the_tabs_from_the_second_screen() {
+    fn the_shoulders_step_the_tabs_from_the_second_screen_and_page_through_shelf() {
         let mut s = state();
         let d = drawn(&s);
         focus(&mut s, Id::Tab(Tab::Sysinfo));
@@ -340,7 +353,10 @@ mod tests {
         assert_eq!(shoulder(&s, &d, 1), vec![PointerEvent::Activate(Id::Tab(next)).into(), PointerEvent::Focus(Id::Tab(next)).into()]);
         let g = game(&s, 0);
         focus(&mut s, g);
-        assert_eq!(shoulder(&s, &d, -1), vec![ShelfEvent::CollectionStep(-1).into()]);
+        let page = s.shelf().rows() as i32;
+        assert_eq!(shoulder(&s, &d, -1), vec![ShelfEvent::ListStep(-page).into()], "in shelf: a page");
+        let len = s.shelf().list().len() as i32;
+        assert_eq!(trigger(&s, &d, 1), vec![ShelfEvent::ListStep(len).into()], "the last entry");
     }
 
     #[test]
