@@ -110,9 +110,28 @@ impl State {
         let Some(g) = session.running_game(id) else {
             return vec![];
         };
+        let (windows, units, steam) = self.game_parts(g);
+        vec![Effect::QuitGame { windows, units, steam }]
+    }
+
+    /// The dock's Force kill on a game: its scopes, or (Steam's) the processes under Steam's launcher for
+    /// it, killed at once.
+    pub(crate) fn kill_game(&self, id: &str) -> Vec<Effect> {
+        let Some(g) = self.session.running_game(id) else {
+            return vec![];
+        };
+        let (_, units, steam) = self.game_parts(g);
+        vec![Effect::KillGame { units, steam }]
+    }
+
+    /// A running game's windows, its scopes (one shelf started), and its Steam app id when it has no scope
+    /// of ours (Steam's: it runs in Steam's).
+    fn game_parts(&self, g: &RunningGame) -> (Vec<i64>, Vec<Instance>, Option<u32>) {
+        let session = &self.session;
         let windows = session.windows.iter().filter(|w| session.game_of(w).is_some_and(|o| o.id == g.id)).map(|w| w.id).collect();
-        let units = session.units.iter().filter(|u| **u == g.instance).cloned().collect();
-        vec![Effect::QuitGame { windows, units }]
+        let units: Vec<Instance> = session.units.iter().filter(|u| **u == g.instance).cloned().collect();
+        let steam = if units.is_empty() { g.appid() } else { None };
+        (windows, units, steam)
     }
 
     /// `ended` has ended: the game queued to start once it had, if any.

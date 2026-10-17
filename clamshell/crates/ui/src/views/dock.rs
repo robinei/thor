@@ -2,7 +2,7 @@
 //! "Start game" tile that goes to shelf (so the apps keep their places unless several games run); then
 //! the apps from launcher.json, as a grid of tiles on black, each an icon over its name. A tap starts an
 //! app or goes to it, or shows a game; a long press on a running one opens its menu (Open another, Close
-//! or Close active and Close all; a game's Quit) in the dock's place. Running shows as colour: app icons
+//! window, Quit, Force kill; a game's Quit and Force kill) in the dock's place. Running shows as colour: app icons
 //! in full colour (drawn icons green), idle ones grey and dim. What is wrong with the file, if anything,
 //! shows at the bottom.
 
@@ -131,19 +131,19 @@ fn app_tile(f: &mut Frame, r: Rect, i: usize, app: &App) {
 }
 
 /// A running app's or game's menu, from a long press on its tile: Open another (an app that allows
-/// several), Close (with several instances: Close active, the one whose tab is in view, and Close all);
-/// a game's Quit. The back arrow returns to the dock.
+/// several), Close window (the one in view, if it has one), Quit, Force kill; a game's Quit and Force
+/// kill. The back arrow returns to the dock.
 fn draw_menu(f: &mut Frame, menu: DockMenu) {
     let s = f.s;
     let (title, items) = match menu {
         DockMenu::App(i) => {
             let i = usize::from(i);
             let name = s.apps().list.get(i).map_or("", |a| a.name.as_str());
-            let several = s.app_instances(i) > 1;
             let items: Vec<(Id, &str, Tone)> = [
                 s.offers_new(i).then_some((Id::Dock(DockId::OpenAnother), "Open another", Tone::Fn)),
-                Some((Id::Dock(DockId::CloseActive), if several { "Close active" } else { "Close" }, Tone::Accent)),
-                several.then_some((Id::Dock(DockId::CloseAll), "Close all", Tone::Accent)),
+                s.app_window(i).map(|_| (Id::Dock(DockId::CloseWindow), "Close window", Tone::Fn)),
+                Some((Id::Dock(DockId::Quit), "Quit", Tone::Accent)),
+                Some((Id::Dock(DockId::ForceKill), "Force kill", Tone::Accent)),
             ]
             .into_iter()
             .flatten()
@@ -152,7 +152,7 @@ fn draw_menu(f: &mut Frame, menu: DockMenu) {
         }
         DockMenu::Game(i) => {
             let title = s.session().games().get(usize::from(i)).and_then(|g| s.game(&g.id)).map_or("Game", |g| g.title.as_str());
-            (title, vec![(Id::Dock(DockId::Quit), "Quit", Tone::Accent)])
+            (title, vec![(Id::Dock(DockId::Quit), "Quit", Tone::Accent), (Id::Dock(DockId::ForceKill), "Force kill", Tone::Accent)])
         }
     };
     let area = widgets::header(f, Some(Id::Dock(DockId::Back)), title, false, HeaderRight::None);

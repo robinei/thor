@@ -194,6 +194,7 @@ fn start_command(config: &Config, request: &Request, spec: &LaunchSpec, file: &P
     let job = Job {
         unit: request.instance.name(),
         workspace: request.instance.workspace(),
+        slice: None,
         argv: std::iter::once(c.program.to_string_lossy().into_owned()).chain(c.args.iter().cloned()).collect(),
         env: request.env.clone(),
         workdir: Some(c.workdir.clone()),
@@ -225,12 +226,21 @@ fn start_steam(env: &[(String, String)], appid: u32) -> Result<Running, Error> {
 
 /// Whether Steam's launcher for an app (`... SteamLaunch AppId=<id> ...`) is running.
 fn steam_running(marker: &str) -> bool {
-    sys::processes().any(|(_, dir)| {
-        std::fs::read(dir.join("cmdline")).is_ok_and(|c| {
-            let mut args = c.split(|&b| b == 0);
-            args.any(|a| a == b"SteamLaunch") && c.split(|&b| b == 0).any(|a| a == marker.as_bytes())
+    !steam_launchers(marker).is_empty()
+}
+
+/// The processes of Steam's launcher for an app (`... SteamLaunch AppId=<id> ...`: `marker`), which the
+/// game's processes descend from.
+fn steam_launchers(marker: &str) -> Vec<u32> {
+    sys::processes()
+        .filter(|(_, dir)| {
+            std::fs::read(dir.join("cmdline")).is_ok_and(|c| {
+                let mut args = c.split(|&b| b == 0);
+                args.any(|a| a == b"SteamLaunch") && c.split(|&b| b == 0).any(|a| a == marker.as_bytes())
+            })
         })
-    })
+        .map(|(pid, _)| pid)
+        .collect()
 }
 
 /// Starts a dock app's command as a new instance (its scope and workspace): under sway, shown once its
@@ -239,7 +249,8 @@ fn steam_running(marker: &str) -> bool {
 pub fn run_app(jobs: &Runner, instance: &Instance, command: &[String], scope: bool) {
     let name = instance.name();
     log::info!("running {command:?} as {name}");
-    let job = Job { unit: name.clone(), workspace: instance.workspace(), argv: command.to_vec(), env: vec![], workdir: None, scope };
+    let slice = instance.app_key().map(Instance::app_slice);
+    let job = Job { unit: name.clone(), workspace: instance.workspace(), slice, argv: command.to_vec(), env: vec![], workdir: None, scope };
     match jobs.start(&job) {
         Ok(Started::Sway) => {}
         Ok(Started::Child(child)) => job::reap(child),
@@ -247,13 +258,17 @@ pub fn run_app(jobs: &Runner, instance: &Instance, command: &[String], scope: bo
     }
 }
 
-/// Ends these scopes (app instances without a window): systemd asks their processes to end, then kills
-/// what is left after its timeout. On a thread of its own (stopping waits for them).
-pub fn end_now(units: Vec<String>) {
+/// Ends dock app `key`'s slice, all its instances: stopped (systemd asks its processes to end, then
+/// kills what is left after its timeout), or with `force` killed at once. On a thread of its own
+/// (stopping waits for them).
+pub fn end_app(key: &str, force: bool) {
+    let slice = Instance::app_slice(key);
     let ended = worker::detached("end", move || {
-        for unit in units {
-            log::info!("{unit}: no window, ending its scope");
-            command::run("systemctl", &["--user", "stop", &unit]);
+        log::info!("{slice}: {}", if force { "force kill" } else { "stop" });
+        if force {
+            command::run("systemctl", &["--user", "kill", "--signal=SIGKILL", &slice]);
+        } else {
+            command::run("systemctl", &["--user", "stop", &slice]);
         }
     });
     if let Err(e) = ended {
@@ -261,29 +276,73 @@ pub fn end_now(units: Vec<String>) {
     }
 }
 
-/// After a polite close: kills what is left of these scopes (the game's) if they are still there in a
-/// few seconds.
-pub fn end_later(units: Vec<String>) {
-    if units.is_empty() {
+/// After a polite close: kills what is left of a game in a few seconds, if it is still there: its scopes
+/// (a game we started), or the processes under Steam's launcher for its app id (a game Steam started:
+/// Proton's helpers too, which no window belongs to).
+pub fn end_later(units: Vec<String>, steam: Option<u32>) {
+    if units.is_empty() && steam.is_none() {
         return;
     }
     let ended = worker::detached("quit", move || {
         thread::sleep(QUIT_GRACE);
-        for unit in units {
-            if command::succeeds("systemctl", &["--user", "is-active", "--quiet", &unit]) {
-                log::info!("{unit} still runs: killing it");
-                command::run("systemctl", &["--user", "kill", "--signal=SIGKILL", &unit]);
-            }
-        }
+        kill_now(&units, steam);
     });
     if let Err(e) = ended {
         log::warn!("quit: {e}");
     }
 }
 
+/// Kills a game at once: its scopes, or Steam's launcher for its app id and every process under it.
+pub fn kill_now(units: &[String], steam: Option<u32>) {
+    for unit in units {
+        if command::succeeds("systemctl", &["--user", "is-active", "--quiet", unit]) {
+            log::info!("{unit} still runs: killing it");
+            command::run("systemctl", &["--user", "kill", "--signal=SIGKILL", unit]);
+        }
+    }
+    let launchers = steam.map(|appid| steam_launchers(&format!("AppId={appid}"))).unwrap_or_default();
+    let tree = with_descendants(&launchers, &parents());
+    if !tree.is_empty() {
+        log::info!("killing processes {tree:?}");
+        let args: Vec<String> = std::iter::once("-KILL".to_owned()).chain(tree.iter().map(u32::to_string)).collect();
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        command::run("kill", &args);
+    }
+}
+
+/// Every process's parent, from /proc/<pid>/stat (its fourth field, after the name in parentheses).
+fn parents() -> Vec<(u32, u32)> {
+    crate::sys::processes()
+        .filter_map(|(pid, dir)| {
+            let stat = crate::sys::text(dir.join("stat"))?;
+            let ppid = stat.rsplit_once(')')?.1.split_whitespace().nth(1)?.parse().ok()?;
+            Some((pid, ppid))
+        })
+        .collect()
+}
+
+/// `pids` and all their descendants, by `parents` (pid, parent).
+fn with_descendants(pids: &[u32], parents: &[(u32, u32)]) -> Vec<u32> {
+    let mut out: Vec<u32> = pids.to_vec();
+    let mut at = 0;
+    while let Some(&pid) = out.get(at) {
+        out.extend(parents.iter().filter(|(child, parent)| *parent == pid && !out.contains(child)).map(|(child, _)| *child).collect::<Vec<_>>());
+        at += 1;
+    }
+    out
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
+    #[test]
+    fn a_process_tree_is_its_pids_and_their_descendants() {
+        let parents = [(10, 1), (11, 10), (12, 11), (13, 10), (20, 1), (21, 20)];
+        let mut tree = super::with_descendants(&[10], &parents);
+        tree.sort_unstable();
+        assert_eq!(tree, vec![10, 11, 12, 13], "not 20's");
+    }
+
     use super::*;
     use std::sync::mpsc;
 

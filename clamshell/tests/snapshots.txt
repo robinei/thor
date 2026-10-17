@@ -5,7 +5,7 @@ battery.png f4de365da6e0e4b2
 bluetooth.png 8ac4d748d2344897
 bottom.png 57d3fde57d380a20
 brightness.png 06cf456a49e809af
-dock-menu.png c041c6d07b0f113c
+dock-menu.png 2e82ab116097cb42
 keyboard-back.png f887ae676a094b92
 keyboard-caps.png 6b3bf4b0b0147020
 keyboard-fn.png 02b0c0115efcb11a

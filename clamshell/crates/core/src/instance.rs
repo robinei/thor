@@ -1,6 +1,7 @@
 //! The names ClamShell gives sway workspaces and systemd scopes. A dock app instance is a scope we
-//! started (`clamshell-app-<key>-<secs>-<n>.scope`); all of an app's instances' windows are on the app's
-//! workspace (`clamshell-app-<key>`), as its tabs. A game shelf started has a scope and a workspace of the
+//! started (`clamshell-app-<key>-<secs>-<n>.scope`), in the app's slice (`clamshell-app-<key>.slice`,
+//! which Quit and Force kill end); all of an app's instances' windows are on the app's workspace
+//! (`clamshell-app-<key>`), as its tabs. A game shelf started has a scope and a workspace of the
 //! same name (`clamshell-game-<secs>-<n>`); a game Steam started has a workspace only
 //! (`clamshell-game-steam-<appid>`), its windows (`steam_app_<appid>`) moved there from the landing
 //! workspace (`clamshell-game`) where a sway rule puts them. Shelf's window has `clamshell-shelf`, the
@@ -118,6 +119,11 @@ impl Instance {
     /// Dock app `key`'s workspace, its instances' windows' tabs.
     pub fn app_workspace(key: &str) -> String {
         format!("{PREFIX}app-{key}")
+    }
+
+    /// Dock app `key`'s slice, its instances' scopes (all its processes).
+    pub fn app_slice(key: &str) -> String {
+        format!("{PREFIX}app-{key}.slice")
     }
 
     /// Whether `name` is one of ours (a workspace or scope ClamShell names, known kind or not).

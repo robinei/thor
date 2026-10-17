@@ -3,10 +3,10 @@
 //! (sway places a launch's first window there, the sway side moves later ones by their scope). A tap on
 //! an app starts it when it isn't running and shows its workspace when it is (its tabs switch its windows).
 //! A long press on a running app opens its menu: Open another (an app that allows several: another
-//! instance, a tab of the same workspace), Close (with several instances: Close active, the one whose
-//! tab is in view, and Close all), closing their windows politely, as their close buttons would; an
-//! instance without a window (a program left running in the background) has its scope ended. On a game's
-//! tile the menu has Quit. A new instance (or game) is shown when its first
+//! instance, a tab of the same workspace), Close window (the one in view, politely, as its close button
+//! would), Quit (all its windows asked to close, then, once none is left, its slice stopped: so a "save
+//! changes?" window keeps it until answered) and Force kill (its slice killed at once). On a game's tile
+//! the menu has Quit and Force kill. A new instance (or game) is shown when its first
 //! window appears, not before, also if the user has gone elsewhere meanwhile; a newer start takes its
 //! place. A program whose windows are all on the bottom screen: a tap shows them there.
 
@@ -89,9 +89,15 @@ impl State {
         self.bottom.dock_menu
     }
 
-    /// How many instances dock app `i` runs.
-    pub fn app_instances(&self, i: usize) -> usize {
-        self.instances(i).count()
+    /// Dock app `i`'s window in view: in front on the top screen, else shown there, else (nothing of it on
+    /// top) shown on the bottom screen. For the menu's Close window.
+    pub fn app_window(&self, i: usize) -> Option<i64> {
+        let windows = &self.session.windows;
+        let top = |w: &&Window| !w.down && self.is_instance(i, &w.workspace);
+        let below = |w: &&Window| w.down && self.program_has(Program::App(i), w);
+        let on_top = windows.iter().filter(top).find(|w| w.focused).or_else(|| windows.iter().filter(top).find(|w| w.visible));
+        let shown = on_top.or_else(|| windows.iter().find(top).is_none().then(|| windows.iter().filter(below).find(|w| w.visible)).flatten());
+        shown.map(|w| w.id)
     }
 
     /// A tap on a dock tile, a long press (a running app's or game's menu), or a choice in the menu
@@ -114,10 +120,14 @@ impl State {
                 self.bottom.dock_menu = None;
                 return match (choice, menu) {
                     (DockId::OpenAnother, Some(DockMenu::App(i))) => self.new_instance(usize::from(i)),
-                    (DockId::CloseActive, Some(DockMenu::App(i))) => self.close_tab(usize::from(i)),
-                    (DockId::CloseAll, Some(DockMenu::App(i))) => self.close_all(usize::from(i)),
-                    (DockId::Quit, Some(DockMenu::Game(i))) => match self.session.games.get(usize::from(i)).map(|g| g.id.clone()) {
-                        Some(id) => self.quit_game(&id),
+                    (DockId::CloseWindow, Some(DockMenu::App(i))) => {
+                        self.app_window(usize::from(i)).map(|id| vec![Effect::Window(WindowCommand::Close(vec![id]))]).unwrap_or_default()
+                    }
+                    (DockId::Quit, Some(DockMenu::App(i))) => self.quit_app(usize::from(i)),
+                    (DockId::ForceKill, Some(DockMenu::App(i))) => self.force_kill_app(usize::from(i)),
+                    (DockId::Quit | DockId::ForceKill, Some(DockMenu::Game(i))) => match self.session.games.get(usize::from(i)).map(|g| g.id.clone()) {
+                        Some(id) if choice == DockId::Quit => self.quit_game(&id),
+                        Some(id) => self.kill_game(&id),
                         None => vec![],
                     },
                     _ => vec![],
@@ -152,36 +162,45 @@ impl State {
         vec![Effect::Window(WindowCommand::Focus(Instance::app_workspace(key)))]
     }
 
-    /// The menu's Close (Close active): the instance whose tab is in view on the top screen (in front, else
-    /// shown), else (nothing of the app on top) on the bottom screen, else its latest, closed: its windows
-    /// on both screens, politely.
-    fn close_tab(&self, i: usize) -> Vec<Effect> {
-        let windows = &self.session.windows;
-        let top = |w: &&Window| !w.down && self.is_instance(i, &w.workspace);
-        let below = |w: &&Window| w.down && self.program_has(Program::App(i), w);
-        let active = windows.iter().filter(top).find(|w| w.focused).or_else(|| windows.iter().filter(top).find(|w| w.visible));
-        let active = active.or_else(|| windows.iter().find(top).is_none().then(|| windows.iter().filter(below).find(|w| w.visible)).flatten());
-        let instance = active.and_then(Window::instance).or_else(|| self.instances(i).max_by_key(|u| u.order()).cloned());
-        self.close(instance.into_iter().collect())
+    /// The menu's Quit: all the app's windows asked to close; its slice is stopped once none is left (see
+    /// [`State::follow_quitting`]), at once if it has none.
+    fn quit_app(&mut self, i: usize) -> Vec<Effect> {
+        let Some(key) = self.app_key(i).map(str::to_owned) else {
+            return vec![];
+        };
+        let windows: Vec<i64> = self.session.windows.iter().filter(|w| self.program_has(Program::App(i), w)).map(|w| w.id).collect();
+        self.session.quitting.retain(|(k, _)| *k != key);
+        self.session.quitting.push((key, false));
+        let mut effects = if windows.is_empty() { vec![] } else { vec![Effect::Window(WindowCommand::Close(windows))] };
+        effects.extend(self.follow_quitting());
+        effects
     }
 
-    /// The menu's Close all: every instance.
-    fn close_all(&self, i: usize) -> Vec<Effect> {
-        self.close(self.instances(i).cloned().collect())
+    /// The menu's Force kill: the app's slice killed at once.
+    fn force_kill_app(&mut self, i: usize) -> Vec<Effect> {
+        let Some(key) = self.app_key(i).map(str::to_owned) else {
+            return vec![];
+        };
+        self.session.quitting.retain(|(k, _)| *k != key);
+        vec![Effect::EndApp { key, force: true }]
     }
 
-    /// App instances closed: their windows, politely; the scopes of those without one ended.
-    fn close(&self, instances: Vec<Instance>) -> Vec<Effect> {
-        let of = |w: &Window, instance: &Instance| w.unit.is_some() && w.unit == instance.unit();
-        let windows: Vec<i64> = self.session.windows.iter().filter(|w| instances.iter().any(|i| of(w, i))).map(|w| w.id).collect();
-        let windowless: Vec<Instance> = instances.into_iter().filter(|i| !self.session.windows.iter().any(|w| of(w, i))).collect();
+    /// Apps quitting: one whose windows are all gone while it still runs has its slice stopped (once); one
+    /// that no longer runs is done.
+    pub(crate) fn follow_quitting(&mut self) -> Vec<Effect> {
         let mut effects = vec![];
-        if !windows.is_empty() {
-            effects.push(Effect::Window(WindowCommand::Close(windows)));
+        let mut quitting = std::mem::take(&mut self.session.quitting);
+        let session = &self.session;
+        let runs = |key: &str| session.units.iter().any(|u| u.app_key() == Some(key));
+        let has_window = |key: &str| session.windows.iter().any(|w| w.instance().is_some_and(|i| i.app_key() == Some(key)));
+        quitting.retain(|(key, _)| runs(key));
+        for (key, stopped) in &mut quitting {
+            if !*stopped && !has_window(key) {
+                *stopped = true;
+                effects.push(Effect::EndApp { key: key.clone(), force: false });
+            }
         }
-        if !windowless.is_empty() {
-            effects.push(Effect::EndScopes(windowless));
-        }
+        self.session.quitting = quitting;
         effects
     }
 
@@ -264,22 +283,27 @@ mod tests {
         assert_eq!(tap(&mut s, app.clone()), vec![focus(&t1)]);
         s.apply(Event::Windows(vec![of(10, &t1, false), Window { visible: true, ..of(12, &t2, false) }, of(13, &t2, false), win(20, "firefox", "1", true)]));
         assert_eq!(tap(&mut s, app.clone()), vec![focus(&t1)]);
-        // Its menu: Close active closes the instance whose tab is in view (its windows); Close all, every
-        // instance's.
-        assert_eq!(s.app_instances(1), 2);
+        // Its menu: Close window closes the window in view.
         long(&mut s, app.clone());
-        assert_eq!(tap(&mut s, Id::Dock(DockId::CloseActive)), vec![Effect::Window(WindowCommand::Close(vec![12, 13]))]);
-        long(&mut s, app.clone());
-        assert_eq!(tap(&mut s, Id::Dock(DockId::CloseAll)), vec![Effect::Window(WindowCommand::Close(vec![10, 12, 13]))]);
-        // All its windows on the bottom screen: active is the tab in view there.
+        assert_eq!(tap(&mut s, Id::Dock(DockId::CloseWindow)), vec![Effect::Window(WindowCommand::Close(vec![12]))]);
+        // All its windows on the bottom screen: the one in view there.
         let down = |id, visible| Window { down: true, visible, ..of(id, &t2, false) };
         s.apply(Event::Windows(vec![win(20, "firefox", "1", true), Window { down: true, visible: false, ..of(10, &t1, false) }, down(12, true)]));
+        assert_eq!(s.app_window(1), Some(12));
+        // Quit: its windows asked to close; once none is left (and it still runs), its slice stopped, once.
         long(&mut s, app.clone());
-        assert_eq!(tap(&mut s, Id::Dock(DockId::CloseActive)), vec![Effect::Window(WindowCommand::Close(vec![12]))]);
-        // Instances without a window (left running in the background): their scopes ended.
-        s.apply(Event::Windows(vec![win(20, "firefox", "1", true)]));
+        assert_eq!(tap(&mut s, Id::Dock(DockId::Quit)), vec![Effect::Window(WindowCommand::Close(vec![10, 12]))]);
+        let fx = s.apply(Event::Windows(vec![win(20, "firefox", "1", true), down(12, true)])).1;
+        assert!(!fx.iter().any(|e| matches!(e, Effect::EndApp { .. })), "a window left (a save dialog): waits");
+        let fx = s.apply(Event::Windows(vec![win(20, "firefox", "1", true)])).1;
+        assert!(fx.contains(&Effect::EndApp { key: "terminal".into(), force: false }), "{fx:?}");
+        assert!(!s.apply(Event::Windows(vec![win(20, "firefox", "1", true)])).1.iter().any(|e| matches!(e, Effect::EndApp { .. })), "once");
+        s.apply(Event::Units(vec![]));
+        assert!(s.session.quitting.is_empty(), "done when it no longer runs");
+        // Force kill: its slice killed at once.
+        s.apply(Event::Units(vec![t1.clone()]));
         long(&mut s, app.clone());
-        assert_eq!(tap(&mut s, Id::Dock(DockId::CloseAll)), vec![Effect::EndScopes(vec![t1.clone(), t2.clone()])]);
+        assert_eq!(tap(&mut s, Id::Dock(DockId::ForceKill)), vec![Effect::EndApp { key: "terminal".into(), force: true }]);
         // Back, or another tab: closed without a choice.
         long(&mut s, app);
         tap(&mut s, Id::Dock(DockId::Back));
@@ -322,7 +346,9 @@ mod tests {
         s.apply(Event::Units(vec![game.clone()]));
         assert_eq!(s.apply(Event::Windows(vec![win(5, "retroarch", &game.name(), false)])).1, vec![focus(&game)], "shown when its window appears");
         assert_eq!(tap(&mut s, tile.clone()), vec![focus(&game)]);
-        assert_eq!(long(&mut s, tile), vec![], "its menu");
-        assert_eq!(tap(&mut s, Id::Dock(DockId::Quit)), vec![Effect::QuitGame { windows: vec![5], units: vec![game] }]);
+        assert_eq!(long(&mut s, tile.clone()), vec![], "its menu");
+        assert_eq!(tap(&mut s, Id::Dock(DockId::Quit)), vec![Effect::QuitGame { windows: vec![5], units: vec![game.clone()], steam: None }]);
+        long(&mut s, tile);
+        assert_eq!(tap(&mut s, Id::Dock(DockId::ForceKill)), vec![Effect::KillGame { units: vec![game], steam: None }]);
     }
 }

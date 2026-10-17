@@ -95,13 +95,18 @@ impl Handles {
                 log::info!("effect: {effect:?}");
                 self.bluetooth.send(bluetooth::Request::Do(command.clone()));
             }
-            Effect::EndScopes(instances) => launcher::end_now(instances.iter().filter_map(Instance::unit).collect()),
-            Effect::QuitGame { windows, units } => {
-                log::info!("quitting the game: windows {windows:?}, scopes {units:?}");
+            Effect::EndApp { key, force } => launcher::end_app(key, *force),
+            Effect::QuitGame { windows, units, steam } => {
+                log::info!("quitting the game: windows {windows:?}, scopes {units:?}, Steam app {steam:?}");
                 if let Some(sway) = &self.sway {
                     windows.iter().for_each(|id| sway.send(sway::Command::Close(*id)));
                 }
-                launcher::end_later(units.iter().filter_map(Instance::unit).collect());
+                launcher::end_later(units.iter().filter_map(Instance::unit).collect(), *steam);
+            }
+            Effect::KillGame { units, steam } => {
+                log::info!("force killing the game: scopes {units:?}, Steam app {steam:?}");
+                let units: Vec<String> = units.iter().filter_map(Instance::unit).collect();
+                launcher::kill_now(&units, *steam);
             }
             Effect::Screenshot => self.system.send(crate::device::Command::Screenshot),
             Effect::Sleep => self.system.send(crate::device::Command::Sleep),

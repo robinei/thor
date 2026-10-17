@@ -47,14 +47,24 @@ pub enum Effect {
     },
     /// The compositor: show, close or move windows.
     Window(WindowCommand),
-    /// Quit the game: close its windows, then end its scopes (ours only) if it doesn't go.
+    /// Quit the game: close its windows, then end what is left of it in a few seconds: its scopes (a game
+    /// shelf started), or (a game Steam started, which runs in Steam's scope) the processes under Steam's
+    /// launcher for its app id (`steam`), which every process of the game descends from.
     QuitGame {
         windows: Vec<i64>,
         units: Vec<Instance>,
+        steam: Option<u32>,
     },
-    /// End these app instances' scopes (they have no window to close): systemd asks their processes to
-    /// end.
-    EndScopes(Vec<Instance>),
+    /// Force kill the game at once: its scopes, or the processes under Steam's launcher for it.
+    KillGame {
+        units: Vec<Instance>,
+        steam: Option<u32>,
+    },
+    /// End dock app `key`'s slice (all its instances): stopped (`force`: killed at once).
+    EndApp {
+        key: String,
+        force: bool,
+    },
     /// Record a play that ClamShell didn't start (a game Steam started): in stats.db.
     RecordPlay {
         game: Arc<str>,

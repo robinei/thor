@@ -310,11 +310,12 @@ impl State {
                 let mut effects = self.follow_games();
                 effects.extend(self.follow_window_rules());
                 effects.extend(self.session.show_pending());
+                effects.extend(self.follow_quitting());
                 (Dirty::BOTH, effects)
             }
             Event::Units(units) => {
                 self.session.set_units(units);
-                (Dirty::BOTTOM, vec![])
+                (Dirty::BOTTOM, self.follow_quitting())
             }
             Event::Start => {
                 let mut effects: Vec<Effect> = self.bottom.tab.watch().map(|w| Effect::Watch(w, true)).into_iter().collect();

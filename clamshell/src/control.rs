@@ -171,12 +171,12 @@ fn km(id: KeymapId) -> Result<Id, ParseError> {
 /// What a tap or a long press (`tap TARGET`, `long TARGET`) can be on.
 pub const TARGETS: &[Form<Id>] = &[
     form("app N", "the dock's app N (by position in launcher.json)", |a| Ok(Id::Dock(DockId::App(number(arg(a, 0))?)))),
-    form("dock-menu ACTION", "a dock tile's menu (after a long press): open-another, close-active, close-all, quit, back", |a| {
+    form("dock-menu ACTION", "a dock tile's menu (after a long press): open-another, close-window, quit, force-kill, back", |a| {
         Ok(Id::Dock(match arg(a, 0) {
             "open-another" => DockId::OpenAnother,
-            "close-active" => DockId::CloseActive,
-            "close-all" => DockId::CloseAll,
+            "close-window" => DockId::CloseWindow,
             "quit" => DockId::Quit,
+            "force-kill" => DockId::ForceKill,
             "back" => DockId::Back,
             other => return Err(name_err(other)),
         }))

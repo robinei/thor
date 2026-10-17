@@ -43,6 +43,9 @@ pub struct Session {
     pub(crate) pending: Vec<Pending>,
     /// The instance to show when its first window appears: the instance or game just started.
     pub(crate) pending_show: Option<Instance>,
+    /// Dock apps quitting (by key): their windows asked to close; once none is left, their slice is
+    /// stopped (then true) if it still runs.
+    pub(crate) quitting: Vec<(String, bool)>,
     /// Numbers new instances' names (with the time, unique across restarts).
     pub(crate) next_instance: u64,
 }

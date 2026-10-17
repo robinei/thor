@@ -71,7 +71,7 @@ def walk(n, ws=''):
         for c in n.get(k, []): walk(c, ws)
 walk(json.load(sys.stdin))"; }
 output_of() { json get_workspaces "import json,sys; print(next((w['output'] for w in json.load(sys.stdin) if w['name'] == '$1'), ''))"; }
-units() { systemctl --user list-units "clamshell-$1*" --plain --no-legend | awk '{print $1}' | sed 's/\.scope$//'; }
+units() { systemctl --user list-units "clamshell-$1*.scope" --plain --no-legend | awk '{print $1}' | sed 's/\.scope$//'; }
 # A dock app's workspace: all its instances' windows, as tabs.
 space() { echo "clamshell-app-$1"; }
 # How many windows with this app id are on a workspace; the focused window's id.
@@ -142,6 +142,10 @@ check_soon "  its last window down too: its workspace stays in front, empty" '[ 
 ctl window up; sleep 0.3; ctl window up
 check_soon "Home+Up, twice: both back on their workspace, the rules forgotten" '[ "$(ws_of late)" = "$SP" ] && [ "$(ws_of first)" = "$SP" ] && ! grep -q "^bottom" "$RULES"'
 
+ctl long app $SPAWNER; ctl tap dock-menu quit
+check_soon "its menu, Quit: its windows closed, then its slice gone" '[ -z "$(units app-spawner)" ] && [ -z "$(ws_of first)" ] && [ -z "$(ws_of late)" ]' 10
+check "  it ran in its slice" 'grep -q "clamshell-app-spawner.slice" "$T/program.log"'
+
 ctl tap app $DETACHED
 check_soon "a window sway can't trace (detached, no token): on its app's workspace, by its scope" '[ -n "$(ws_of detached)" ] && [ "$(ws_of detached)" = "$(space detached)" ]' 8
 
@@ -184,14 +188,14 @@ def walk(c):
         for d in c.get(k, []): walk(d)
 walk(json.load(sys.stdin))"); grep -o 'clamshell-app-[^/]*\.scope' "/proc/$pid/cgroup" 2> /dev/null | sed 's/\.scope$//'; }
 ctl tap app $TERMINAL; until_ '[ "$(front)" = "$TS" ]' 5; FRONT=$(focused_scope)
-ctl long app $TERMINAL; ctl tap dock-menu close-active
+ctl long app $TERMINAL; ctl tap dock-menu close-window
 until_ '[ "$(units app-terminal | wc -l)" = 1 ]' 5
-check "its menu, Close active: closes the instance whose tab is in view" '[ -n "$FRONT" ] && [ "$(units app-terminal | wc -l)" = 1 ] && ! units app-terminal | grep -qx "$FRONT"'
+check "its menu, Close window: the window in view closed (its terminal ends with it)" '[ -n "$FRONT" ] && [ "$(units app-terminal | wc -l)" = 1 ] && ! units app-terminal | grep -qx "$FRONT"'
 
 kill "$(program_pid)"; until_ '[ -z "$(program_pid)" ]' 5; start_program
 until_ '[ -n "$(program_pid)" ] && [ "$(front)" = clamshell-shelf ]' 10
 check "restart: shelf in front again" '[ "$(front)" = clamshell-shelf ] && [ "$(ws_of clamshell.top)" = clamshell-shelf ]'
-check "restart: the instances still run" '[ -n "$(units app-spawner)" ] && [ -n "$(units app-detached)" ] && [ -n "$(units app-terminal)" ]'
+check "restart: the instances still run" '[ -n "$(units app-detached)" ] && [ -n "$(units app-terminal)" ]'
 ctl tap app $TERMINAL
 check_soon "restart: a tap shows the running app's workspace" '[ "$(front)" = "$TS" ]'
 

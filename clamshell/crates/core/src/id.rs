@@ -75,12 +75,12 @@ pub enum DockId {
     GameTile(u16),
     /// The first tile while no game runs: to shelf, to start one.
     StartGame,
-    /// The menu a long press opens (see [`crate::DockMenu`]): another instance of the app, closing the
-    /// active one (its tab in view) or all of them, quitting the game, back to the dock.
+    /// The menu a long press opens (see [`crate::DockMenu`]): another instance of the app, its window in
+    /// view closed, the app or game quit or force killed, back to the dock.
     OpenAnother,
-    CloseActive,
-    CloseAll,
+    CloseWindow,
     Quit,
+    ForceKill,
     Back,
 }
 

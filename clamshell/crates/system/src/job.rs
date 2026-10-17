@@ -25,6 +25,8 @@ pub struct Job {
     pub unit: String,
     /// The workspace its first window opens on (under sway).
     pub workspace: String,
+    /// The slice its scope goes in (a dock app's: all its instances'), if any.
+    pub slice: Option<String>,
     /// Program and arguments.
     pub argv: Vec<String>,
     /// Extra environment.
@@ -73,12 +75,16 @@ pub fn write(dir: &Path, job: &Job) -> Result<PathBuf, Error> {
     Ok(path)
 }
 
-/// `program` with `args`, in a systemd scope named `unit` (`--user`, collected when it ends) when
-/// `scope`, else as it is.
-fn scoped(scope: bool, unit: &str, program: impl AsRef<std::ffi::OsStr>, args: &[impl AsRef<std::ffi::OsStr>]) -> Command {
+/// `program` with `args`, in a systemd scope named `unit` (`--user`, collected when it ends; in `slice`,
+/// if given) when `scope`, else as it is.
+fn scoped(scope: bool, unit: &str, slice: Option<&str>, program: impl AsRef<std::ffi::OsStr>, args: &[impl AsRef<std::ffi::OsStr>]) -> Command {
     let mut cmd = if scope {
         let mut cmd = Command::new("systemd-run");
-        cmd.args(["--user", "--scope", "--quiet", "--collect", &format!("--unit={unit}"), "--"]).arg(program);
+        cmd.args(["--user", "--scope", "--quiet", "--collect", &format!("--unit={unit}")]);
+        if let Some(slice) = slice {
+            cmd.arg(format!("--slice={slice}"));
+        }
+        cmd.arg("--").arg(program);
         cmd
     } else {
         Command::new(program)
@@ -90,7 +96,7 @@ fn scoped(scope: bool, unit: &str, program: impl AsRef<std::ffi::OsStr>, args: &
 /// The command a job runs as: in its workdir, else in HOME.
 pub fn command(job: &Job) -> Option<Command> {
     let (program, args) = job.argv.split_first()?;
-    let mut cmd = scoped(job.scope, &job.unit, program, args);
+    let mut cmd = scoped(job.scope, &job.unit, job.slice.as_deref(), program, args);
     match &job.workdir {
         Some(dir) => cmd.current_dir(dir),
         None => cmd.current_dir(std::env::var_os("HOME").map_or_else(|| PathBuf::from("/"), PathBuf::from)),
@@ -164,6 +170,7 @@ mod tests {
         let job = Job {
             unit: format!("clamshell-app-jobtest-{}-0", std::process::id()),
             workspace: "clamshell-app-jobtest".into(),
+            slice: Some("clamshell-app-jobtest.slice".into()),
             argv: vec!["prog".into(), "a b,c;d".into()],
             env: vec![("K".into(), "v".into())],
             workdir: Some("/tmp".into()),
@@ -178,12 +185,13 @@ mod tests {
         assert_eq!(cmd.get_program(), "systemd-run");
         assert_eq!(args.last(), Some(&"a b,c;d"), "arguments untouched");
         assert!(args.contains(&format!("--unit={}", job.unit).as_str()));
+        assert!(args.contains(&"--slice=clamshell-app-jobtest.slice"), "in its slice: {args:?}");
     }
 
     #[test]
     fn without_sway_a_job_is_a_child() {
         let runner = Runner { jobs: std::env::temp_dir(), sway: None };
-        let job = Job { unit: "u".into(), workspace: "u".into(), argv: vec!["true".into()], env: vec![], workdir: None, scope: false };
+        let job = Job { unit: "u".into(), workspace: "u".into(), slice: None, argv: vec!["true".into()], env: vec![], workdir: None, scope: false };
         let started = runner.start(&job).unwrap();
         assert!(matches!(started, Started::Child(_)));
         if let Started::Child(mut child) = started {
