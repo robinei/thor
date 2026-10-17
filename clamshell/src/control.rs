@@ -143,6 +143,8 @@ pub const COMMANDS: &[Form<Vec<Event>>] = &[
     form("bottom power", "Home+Start: the bottom screen off, or on", |_| device(DeviceKey::BottomPower)),
     form("window down", "Home+Down: the window in front to the bottom screen (remembered for its program)", |_| device(DeviceKey::WindowDown)),
     form("window up", "Home+Up: the bottom screen's window back up (forgotten)", |_| device(DeviceKey::WindowUp)),
+    form("window close", "Home+B: the window in front closes", |_| device(DeviceKey::CloseWindow)),
+    form("window quit", "Home+B held: the program in front quits (as its dock menu's Quit)", |_| device(DeviceKey::Quit)),
     form("home", "the Home button", |_| Ok(vec![Event::Home])),
     form("list N", "shelf's selection moved by N", |a| Ok(vec![ShelfEvent::ListStep(number(arg(a, 0))?).into()])),
     form("tab NAME", "a tab opened (dock, wifi, keyboard, ...)", |a| {

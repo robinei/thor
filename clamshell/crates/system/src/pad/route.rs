@@ -162,6 +162,9 @@ const SYSTEM: [(KeyCode, DeviceKey); 5] = [
     (KeyCode::BTN_DPAD_DOWN, DeviceKey::WindowDown),
 ];
 
+/// Home with B: let go before this, the window in front closes; held this long, its program quits.
+const QUIT_HOLD: std::time::Duration = std::time::Duration::from_millis(800);
+
 /// The home button.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Home {
@@ -177,6 +180,7 @@ enum Home {
 
 /// Routes the pad's events. The home button is ClamShell's: on its own it is [`Event::Home`] (on
 /// release, so it can start a combination); held with a button of [`SYSTEM`], that shortcut; held, then
+/// B, the window in front closed (let go at once) or its program quit (held); held, then
 /// the Thor's Back button with a game in front, the game's Guide button (Steam's overlay;
 /// buttons pressed meanwhile go to the game, for Steam's chords) while both are held. Held with any other
 /// button, that button goes where it would, and letting Home go isn't Home. Back on its own:
@@ -189,6 +193,9 @@ pub struct PadRouter {
     taken: Vec<KeyCode>,
     /// The D-pad's up or down taken by a Home shortcut: its events are ClamShell's until it is centred.
     hat_taken: bool,
+    /// Home with B pressed: when holding it quits the program in front (let go before: its window
+    /// closes).
+    closing: Option<Instant>,
     mouse: PadMouse,
     navigator: Navigator,
     typing: Typing,
@@ -214,6 +221,7 @@ impl PadRouter {
             home: Home::Up,
             taken: Vec::new(),
             hat_taken: false,
+            closing: None,
             mouse: PadMouse::new(ranges),
             navigator: Navigator::new(ranges.stick),
             typing: Typing,
@@ -331,6 +339,9 @@ impl PadRouter {
             Some((code, press)) if self.taken.contains(&code) => {
                 if press == Press::Up {
                     self.taken.retain(|&k| k != code);
+                    if code == KeyCode::BTN_EAST && self.closing.take().is_some() {
+                        out.events.push(Event::Device(DeviceKey::CloseWindow));
+                    }
                     if is_back_key(code) && self.home == Home::Guide {
                         self.guide(false, out);
                         self.home = Home::Held { combined: true };
@@ -360,6 +371,13 @@ impl PadRouter {
                     self.hat_taken = true;
                     out.events.push(Event::Device(if value < 0 { DeviceKey::WindowUp } else { DeviceKey::WindowDown }));
                 }
+                return;
+            }
+            // Home with B: Close window when let go soon, Quit once held (see the tick).
+            Some((KeyCode::BTN_EAST, Press::Down)) if held => {
+                self.home = Home::Held { combined: true };
+                self.taken.push(KeyCode::BTN_EAST);
+                self.closing = Some(now + QUIT_HOLD);
                 return;
             }
             Some((code, Press::Down)) if held && let Some(&(_, shortcut)) = SYSTEM.iter().find(|(k, _)| *k == code) => {
@@ -407,11 +425,20 @@ impl PadRouter {
         }
     }
 
-    /// Ticks the mapping in force; when to tick next, if needed.
+    /// Ticks the mapping in force, and Home with B held long enough (its program quits); when to tick
+    /// next, if needed.
     pub fn tick(&mut self, now: Instant, out: &mut Out) -> Option<Instant> {
-        match self.mapping(self.route) {
+        if self.closing.is_some_and(|at| now >= at) {
+            self.closing = None;
+            out.events.push(Event::Device(DeviceKey::Quit));
+        }
+        let next = match self.mapping(self.route) {
             Some(m) => m.tick(now, out),
             None => self.remap.tick(now, &self.snapshot, out),
+        };
+        match (next, self.closing) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
         }
     }
 
@@ -554,6 +581,29 @@ mod tests {
         r.event(hat(1), now, &mut out);
         r.event(Raw::REPORT, now, &mut out);
         assert!(out.pad.contains(&key(KeyCode::BTN_DPAD_DOWN, Press::Down)), "{:?}", out.pad);
+    }
+
+    #[test]
+    fn home_with_b_closes_the_window_held_quits_and_the_game_sees_no_b() {
+        let (mut r, mut out) = router(PadRoute::Game);
+        let now = Instant::now();
+        let b = |out: &Out| out.pad.iter().any(|e| e.as_key().is_some_and(|(k, _)| k == KeyCode::BTN_EAST));
+        // Let go soon: Close window.
+        r.event(key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
+        r.event(key(KeyCode::BTN_EAST, Press::Down), now, &mut out);
+        assert_eq!(r.tick(now, &mut out), Some(now + QUIT_HOLD), "ticked at the hold's end");
+        r.event(key(KeyCode::BTN_EAST, Press::Up), now + QUIT_HOLD / 2, &mut out);
+        r.event(key(KeyCode::BTN_MODE, Press::Up), now + QUIT_HOLD / 2, &mut out);
+        assert_eq!(out.events, vec![Event::Device(DeviceKey::CloseWindow)], "not Home as well");
+        // Held: Quit once the hold is reached; letting go then is nothing more.
+        out.events.clear();
+        r.event(key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
+        r.event(key(KeyCode::BTN_EAST, Press::Down), now, &mut out);
+        r.tick(now + QUIT_HOLD, &mut out);
+        r.event(key(KeyCode::BTN_EAST, Press::Up), now + QUIT_HOLD * 2, &mut out);
+        r.event(key(KeyCode::BTN_MODE, Press::Up), now + QUIT_HOLD * 2, &mut out);
+        assert_eq!(out.events, vec![Event::Device(DeviceKey::Quit)]);
+        assert!(!b(&out), "the game saw no B: {:?}", out.pad);
     }
 
     #[test]

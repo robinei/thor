@@ -18,6 +18,10 @@ pub enum DeviceKey {
     Screenshot,
     /// The bottom screen shows the next of ClamShell's view and the windows moved there (Home+Select).
     BottomView,
+    /// Home with B, let go at once: the window in front closes.
+    CloseWindow,
+    /// Home with B, held: the program in front quits.
+    Quit,
     /// The bottom screen off, or on again (Home+Start).
     BottomPower,
     /// The window in front on the top screen to the bottom screen (Home+Down).
@@ -62,6 +66,8 @@ impl State {
             }
             DeviceKey::Screenshot => return vec![Effect::Screenshot],
             DeviceKey::BottomView => return self.toggle_bottom_view(),
+            DeviceKey::CloseWindow => return self.close_front_window(),
+            DeviceKey::Quit => return self.quit_front(),
             DeviceKey::BottomPower => return self.toggle_bottom_power(),
             DeviceKey::WindowDown => return self.window_down(),
             DeviceKey::WindowUp => return self.window_up(),

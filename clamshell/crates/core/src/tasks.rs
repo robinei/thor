@@ -176,6 +176,30 @@ impl State {
         effects
     }
 
+    /// Home with B, let go at once: the window in front on the top screen closes, politely (not shelf's).
+    pub(crate) fn close_front_window(&self) -> Vec<Effect> {
+        match self.session.windows.iter().find(|w| w.focused && !w.down && w.app_id != crate::apps::SHELF_APP_ID) {
+            Some(w) => vec![Effect::Window(WindowCommand::Close(vec![w.id]))],
+            None => vec![],
+        }
+    }
+
+    /// Home with B, held: the program in front quits, as its menu's Quit would: a game, a dock app; any
+    /// other window just closes.
+    pub(crate) fn quit_front(&mut self) -> Vec<Effect> {
+        let Some(w) = self.session.windows.iter().find(|w| w.focused && !w.down && w.app_id != crate::apps::SHELF_APP_ID) else {
+            return vec![];
+        };
+        if let Some(game) = self.session.game_of(w).map(|g| g.id.clone()) {
+            return self.quit_game(&game);
+        }
+        let key = w.instance().and_then(|i| i.app_key().map(str::to_owned));
+        match key.and_then(|k| self.apps.list.iter().position(|a| a.key() == k)) {
+            Some(i) => self.quit_app(i),
+            None => vec![Effect::Window(WindowCommand::Close(vec![w.id]))],
+        }
+    }
+
     /// The menu's Force kill: the app's slice killed at once.
     fn force_kill_app(&mut self, i: usize) -> Vec<Effect> {
         let Some(key) = self.app_key(i).map(str::to_owned) else {
@@ -304,6 +328,13 @@ mod tests {
         s.apply(Event::Units(vec![t1.clone()]));
         long(&mut s, app.clone());
         assert_eq!(tap(&mut s, Id::Dock(DockId::ForceKill)), vec![Effect::EndApp { key: "terminal".into(), force: true }]);
+        // Home with B: the window in front closes; held, its program quits.
+        s.apply(Event::Units(vec![t1.clone()]));
+        s.apply(Event::Windows(vec![of(10, &t1, true)]));
+        assert_eq!(s.apply(Event::Device(crate::hardware::DeviceKey::CloseWindow)).1, vec![Effect::Window(WindowCommand::Close(vec![10]))]);
+        let fx = s.apply(Event::Device(crate::hardware::DeviceKey::Quit)).1;
+        assert_eq!(fx, vec![Effect::Window(WindowCommand::Close(vec![10]))], "its windows asked to close first");
+        assert!(s.session.quitting.iter().any(|(k, _)| k == "terminal"));
         // Back, or another tab: closed without a choice.
         long(&mut s, app);
         tap(&mut s, Id::Dock(DockId::Back));
