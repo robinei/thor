@@ -12,7 +12,7 @@ devices, ClamShell as a user service started by sway, and this repository shared
   tools/vm/vm.py build          build ClamShell in the machine (aarch64: there is no host build)
   tools/vm/vm.py restart        restart ClamShell in the machine (after a build)
   tools/vm/vm.py wake           wake the machine from sleep
-  tools/vm/vm.py sync           write this script's session files (sway config, service) into the machine
+  tools/vm/vm.py sync           write this script's session and system files (sway config, service, rules) into the machine
   tools/vm/vm.py touch tap|hold|down|move|up|slide ...   the bottom screen's touchscreen, in its pixels
   tools/vm/vm.py pointer X Y [--head 0|1] [--click left]  the absolute pointer on a screen
   tools/vm/vm.py key a shift+b ret                        keys (QEMU's names)
@@ -210,6 +210,8 @@ def system_files():
         ("/etc/modprobe.d/thor-vm.conf", "options mac80211_hwsim radios=3\n"),
         ("/etc/udev/rules.d/70-thor-vm.rules",
          'KERNEL=="uinput", GROUP="input", MODE="0660"\n'),
+        # The time tab sets the time zone (as on the device).
+        ("/etc/polkit-1/rules.d/50-thor.rules", (REPO / "tools/device/polkit/50-thor.rules").read_text()),
         # NetworkManager has the device's radio only: the wired link (ssh) stays as it is, the access
         # points' radios are hostapd's.
         ("/etc/NetworkManager/conf.d/thor-vm.conf",
@@ -599,6 +601,10 @@ sudo poweroff"""
 def sync(_args):
     for path, content in session_files():
         subprocess.run(ssh_args(["mkdir -p $(dirname " + path + ") && cat > " + path]), input=content, text=True, check=True)
+        print(f"wrote {path}")
+    for path, content in system_files():
+        subprocess.run(ssh_args(["sudo mkdir -p $(dirname " + path + ") && sudo tee " + path + " > /dev/null"]), input=content, text=True,
+                       check=True)
         print(f"wrote {path}")
     reload = "systemctl --user daemon-reload; SWAYSOCK=$(ls /run/user/$(id -u)/sway-ipc.*.sock) swaymsg reload"
     subprocess.run(ssh_args([reload]), check=False)

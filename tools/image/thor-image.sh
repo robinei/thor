@@ -31,9 +31,12 @@ LOCALE=${THOR_LOCALE:-en_US.UTF-8}
 # fits. Made on the card's first boot, not here (it would make the image 16 GB bigger to write).
 SWAP_GIB=16
 # The device's packages: the base system, network, the session, the GPU (Freedreno/Turnip), sound,
-# notifications (mako), screenshots (grim), growing the root on first boot (growpart, which uses sgdisk for GPT).
+# notifications (mako), screenshots (grim), growing the root on first boot (growpart, which uses sgdisk for GPT),
+# and what maintenance on the device needs: git (this repository, in ~/thor), Rust and a C toolchain to
+# build ClamShell, pacman-contrib (checkupdates, pacdiff).
 PACKAGES=(base sudo mkinitcpio networkmanager polkit upower bluez openssh sway mako foot xorg-xwayland mesa vulkan-freedreno
-          pipewire pipewire-pulse wireplumber alsa-ucm-conf noto-fonts sqlite python less vim grim cloud-guest-utils gptfdisk)
+          pipewire pipewire-pulse wireplumber alsa-ucm-conf noto-fonts sqlite python less vim grim cloud-guest-utils gptfdisk
+          git rust base-devel pacman-contrib)
 # The kernel command line: ROCKNIX's tuning for SM8550, our root. The first boot adds resume= and
 # resume_offset= (the swap file's place) to both copies of it: /KERNEL's and the loader entry's.
 CMDLINE="root=LABEL=THOR_ROOT rw rootwait console=tty0 allow_mismatched_32bit_el0 fw_devlink.strict=1 pcie_ports=compat irqaffinity=0-2 cgroup.memory=nokmem,nosocket nosoftlockup usbcore.interrupt_interval_override=045e:028e:2"
@@ -41,7 +44,7 @@ CMDLINE="root=LABEL=THOR_ROOT rw rootwait console=tty0 allow_mismatched_32bit_el
 say() { echo "== $*"; }
 
 say "tools"
-pacman -S --noconfirm --needed arch-install-scripts squashfs-tools dosfstools gptfdisk > /dev/null
+pacman -S --noconfirm --needed arch-install-scripts squashfs-tools dosfstools gptfdisk git > /dev/null
 
 say "ROCKNIX's system (modules, firmware, audio profiles)"
 # A failed run may have left its mounts.
@@ -78,8 +81,13 @@ cp -a "$MODULES" "$ROOT/usr/lib/modules/"
 cp -a "$WORK/system/usr/lib/kernel-overlays/base/lib/firmware/." "$ROOT/usr/lib/firmware/"
 arch-chroot "$ROOT" depmod "$KVER"
 
-say "ROCKNIX's audio profiles (over alsa-ucm-conf's: an update of that package undoes them)"
+say "ROCKNIX's audio profiles (over alsa-ucm-conf's; a copy kept, which a pacman hook puts back after an update of it)"
 cp -a "$WORK/system/usr/share/alsa/ucm2/." "$ROOT/usr/share/alsa/ucm2/"
+mkdir -p "$ROOT/usr/local/share/thor"
+cp -a "$WORK/system/usr/share/alsa/ucm2" "$ROOT/usr/local/share/thor/ucm2"
+# Which ROCKNIX release the kernel, modules, firmware and profiles are from (maintenance compares it with
+# the latest).
+basename "$(dirname "$(realpath "$ROCKNIX")")" > "$ROOT/usr/local/share/thor/rocknix-release"
 
 say "system setup"
 echo thor > "$ROOT/etc/hostname"
@@ -118,11 +126,16 @@ sed -i -e 's/^CriticalPowerAction=.*/CriticalPowerAction=Hibernate/' -e 's/^Perc
 # The card's first boot (thor-firstboot.service, once): grow the root partition (the last one) and its
 # filesystem to the card; make the swap file /swapfile ($SWAP_GIB GiB, if the card leaves 8 GiB free beside
 # it; else no hibernate, suspend only); then add resume=LABEL=THOR_ROOT and resume_offset= (the file's first
-# block, known only once it exists) to both kernel command lines on the FAT partition: the loader entry's
-# options line, and /KERNEL's, repacked with bootimg.py (copied into the image for this). The resume
+# block, known only once it exists) to the loader entry's options line, and thor-boot puts that command
+# line into /KERNEL too (thor-boot: tools/device/thor-boot, with bootimg.py copied into the image). The resume
 # settings take effect from the next boot; hibernating works in the first session already (systemd-sleep
 # tells the kernel where the swap file is before hibernating).
 install -D -m 644 "$(dirname "$0")/bootimg.py" "$ROOT/usr/local/lib/thor/bootimg.py"
+# thor-boot, and the pacman hooks that run it (and put ROCKNIX's audio profiles back) after updates.
+install -D -m 755 "$(dirname "$0")/../device/thor-boot" "$ROOT/usr/local/bin/thor-boot"
+install -D -m 644 -t "$ROOT/etc/pacman.d/hooks" "$(dirname "$0")"/../device/hooks/*.hook
+# The session's user may set the time zone (ClamShell's time tab).
+install -D -m 644 "$(dirname "$0")/../device/polkit/50-thor.rules" "$ROOT/etc/polkit-1/rules.d/50-thor.rules"
 { printf '#!/bin/bash\n# Written by thor-image.sh.\nBASE_CMDLINE=%q\nSWAP_GIB=%s\n' "$CMDLINE" "$SWAP_GIB"; cat <<'SCRIPT'
 # The card's first boot (thor-firstboot.service): grow the root to the card, make the swap file for
 # hibernating, put its place on both kernel command lines.
@@ -151,16 +164,12 @@ fi
 if [ -e /swapfile ]; then
     # The file's first block (ext4 blocks and pages are both 4 KiB here, so it is the offset in pages).
     offset=$(filefrag -v /swapfile | awk '$1 == "0:" { sub(/\.\.$/, "", $4); print $4 }')
-    cmdline="$BASE_CMDLINE resume=LABEL=THOR_ROOT resume_offset=$offset"
     case $disk in *[0-9]) esp=${disk}p1 ;; *) esp=${disk}1 ;; esac
     mkdir -p /run/thor-esp
     mount "$esp" /run/thor-esp
-    sed -i "s|^options .*|options $cmdline|" /run/thor-esp/loader/entries/thor.conf
-    python3 /usr/local/lib/thor/bootimg.py repack /run/thor-esp/KERNEL --ramdisk /run/thor-esp/initramfs-thor.img \
-        --cmdline "$cmdline" -o /run/thor-esp/KERNEL.new
-    mv /run/thor-esp/KERNEL.new /run/thor-esp/KERNEL
+    sed -i "s|^options .*|options $BASE_CMDLINE resume=LABEL=THOR_ROOT resume_offset=$offset|" /run/thor-esp/loader/entries/thor.conf
     umount /run/thor-esp
-    echo "command lines (loader entry, /KERNEL): $cmdline"
+    thor-boot
 fi
 touch /var/lib/thor-firstboot
 SCRIPT
@@ -182,65 +191,15 @@ WantedBy=multi-user.target
 EOF
 arch-chroot "$ROOT" systemctl enable thor-firstboot > /dev/null
 
-say "the session (sway, ClamShell)"
+say "the session (sway, ClamShell; tools/device/session.sh) and this repository in ~/thor"
 H=$ROOT/home/$USER_NAME
-mkdir -p "$H/.config/sway" "$H/.config/mako" "$H/.config/foot" "$H/.config/systemd/user" "$H/.local/bin"
-install -m 755 "$PROGRAM" "$H/.local/bin/clamshell"
-# The outputs are written at each session start, as ROCKNIX does (its autostart/common/111-sway-init): the
-# panels are natively portrait, and the kernel says how to turn them (fbcon's rotate, from the panel's
-# orientation in the device tree). Unverified: that the bottom panel wants the same angle as the top.
-cat > "$H/.local/bin/thor-outputs" <<'SCRIPT'
-#!/bin/sh
-case "$(cat /sys/class/graphics/fbcon/rotate 2> /dev/null)" in
-    1) angle=90 ;; 2) angle=180 ;; 3) angle=270 ;; *) angle=0 ;;
-esac
-cat > "$HOME/.config/sway/outputs" <<EOF
-# Written by thor-outputs at session start (fbcon rotate: $angle).
-output DSI-2 transform $angle position 0 0
-output DSI-1 transform $angle
-input "0:0:top_touchscreen" map_to_output DSI-2
-input "0:0:bottom_touchscreen" map_to_output DSI-1
-EOF
-SCRIPT
-chmod 755 "$H/.local/bin/thor-outputs"
-echo '[ "$(tty)" = /dev/tty1 ] && "$HOME/.local/bin/thor-outputs" && exec sway > "$HOME/sway.log" 2>&1' > "$H/.bash_profile"
-C=/home/$USER_NAME/.local/bin/clamshell
-install -m 644 "$(dirname "$0")/../../clamshell/sway/clamshell.conf" "$H/.config/sway/clamshell.conf"
-install -m 644 "$(dirname "$0")/../../clamshell/mako/config" "$H/.config/mako/config"
-install -m 644 "$(dirname "$0")/../../clamshell/foot/foot.ini" "$H/.config/foot/foot.ini"
-cat > "$H/.config/sway/config" <<CONFIG
-# The Thor: DSI-2 the main (top) screen, DSI-1 the second (bottom) screen (as ROCKNIX and Kettle have them).
-# The machine is here (outputs, inputs, keys, starting ClamShell); how a ClamShell session behaves
-# (borders, focus, tabs) is clamshell.conf, from the repository. sway's default config, with its key
-# bindings, isn't read: this one replaces it.
-include ~/.config/sway/outputs
-include ~/.config/sway/clamshell.conf
-# A keyboard's Print key: a screenshot through ClamShell (clamshell ctl writes to its control pipe). The
-# Thor's volume and brightness keys ClamShell reads itself from evdev (CLAMSHELL_SESSION=device).
-bindsym --locked Print exec $C ctl screenshot
-# Notifications (ClamShell's low battery warning, apps'), on the main screen: ~/.config/mako/config.
-exec mako
-exec systemctl --user import-environment WAYLAND_DISPLAY SWAYSOCK XDG_CURRENT_DESKTOP && systemctl --user restart clamshell.service
-CONFIG
-cat > "$H/.config/systemd/user/clamshell.service" <<EOF
-[Unit]
-Description=ClamShell
-After=graphical-session.target
-
-[Service]
-# The control pipe: sway's key bindings (clamshell ctl) write to it.
-ExecStartPre=-/usr/bin/mkfifo %t/clamshell-control
-ExecStart=$C
-Environment=CLAMSHELL_CONTROL=%t/clamshell-control
-# ClamShell is the device's session: it puts the device to sleep when idle (dim, screens off, then sleep
-# through logind) and takes the hardware keys (volume, brightness). Desktop runs leave this unset.
-Environment=CLAMSHELL_SESSION=device
-Environment=CLAMSHELL_BOTTOM_OUTPUT=DSI-1
-# Touchpad mode takes the bottom screen's touchscreen (the Thor has two).
-Environment=CLAMSHELL_TOUCHSCREEN=bottom_touchscreen
-Restart=on-failure
-RestartSec=2
-EOF
+bash "$(dirname "$0")/../device/session.sh" "$H" "/home/$USER_NAME" "$PROGRAM"
+# This repository as committed, for maintenance on the device (tools/device/maintain), its origin the
+# GitHub one (pushing from the device needs its key added there).
+git -c safe.directory="*" clone -q "$(dirname "$0")/../.." "$H/thor"
+git -C "$H/thor" remote set-url origin git@github.com:robinei/thor.git
+mkdir -p "$H/.local/share/thor"
+git -C "$H/thor" rev-parse HEAD > "$H/.local/share/thor/session-commit"
 arch-chroot "$ROOT" chown -R "$USER_NAME:$USER_NAME" "/home/$USER_NAME"
 chmod 600 "$H/.ssh/authorized_keys"
 
@@ -276,21 +235,12 @@ FILES=()
 HOOKS=(base udev modconf block thor-root-wait resume filesystems fsck)
 COMPRESSION=zstd
 EOF
-arch-chroot "$ROOT" mkinitcpio -k "$KVER" -c /etc/mkinitcpio-thor.conf -g /boot/initramfs-thor.img > "$WORK/mkinitcpio.log" 2>&1 \
-    || { tail -20 "$WORK/mkinitcpio.log"; exit 1; }
-
-say "boot image: ROCKNIX's kernel and device trees, our initramfs and command line"
+say "boot: ROCKNIX's kernel (/KERNEL for their ABL; split into files for systemd-boot), the loader entry"
 mkdir -p "$WORK/boot"; mount "${DEVICE}1" "$WORK/boot"
-python3 "$(dirname "$0")/bootimg.py" repack "$ROCKNIX/KERNEL" --ramdisk "$ROOT/boot/initramfs-thor.img" \
-    --cmdline "$CMDLINE" -o "$WORK/boot/KERNEL"
-python3 "$(dirname "$0")/bootimg.py" info "$WORK/boot/KERNEL"
-
-say "UEFI boot (stock U-Boot): systemd-boot, the kernel, our initramfs, the Thor's device tree"
+cp "$ROCKNIX/KERNEL" "$WORK/boot/KERNEL"
 mkdir -p "$WORK/boot/EFI/BOOT" "$WORK/boot/loader/entries" "$WORK/boot/dtbs"
-cp "$ROOT/usr/lib/systemd/boot/efi/systemd-bootaa64.efi" "$WORK/boot/EFI/BOOT/BOOTAA64.EFI"
 python3 "$(dirname "$0")/bootimg.py" split "$ROCKNIX/KERNEL" --model "AYN Thor" \
     --kernel "$WORK/boot/Image" --dtb "$WORK/boot/dtbs/qcs8550-ayn-thor.dtb"
-cp "$ROOT/boot/initramfs-thor.img" "$WORK/boot/"
 printf 'default thor.conf\ntimeout 3\n' > "$WORK/boot/loader/loader.conf"
 cat > "$WORK/boot/loader/entries/thor.conf" <<ENTRY
 title   Arch Linux ARM (Thor)
@@ -299,6 +249,12 @@ initrd  /initramfs-thor.img
 devicetree /dtbs/qcs8550-ayn-thor.dtb
 options $CMDLINE
 ENTRY
+umount "$WORK/boot"
+
+say "boot: our initramfs and command line into both, systemd-boot (thor-boot, as the device does it after updates)"
+arch-chroot "$ROOT" thor-boot
+mkdir -p "$WORK/boot"; mount -o ro "${DEVICE}1" "$WORK/boot"
+python3 "$(dirname "$0")/bootimg.py" info "$WORK/boot/KERNEL"
 umount "$WORK/boot"
 
 say "done: $(du -sh "$ROOT" --exclude=proc 2> /dev/null | cut -f1) on the root partition"

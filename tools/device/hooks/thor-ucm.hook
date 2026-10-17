@@ -1,0 +1,12 @@
+# ROCKNIX's audio profiles (the Thor's, kept in /usr/local/share/thor/ucm2 by thor-image.sh) over
+# alsa-ucm-conf's, which an update of that package would otherwise undo.
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = alsa-ucm-conf
+
+[Action]
+Description = Putting ROCKNIX's audio profiles back over alsa-ucm-conf's...
+When = PostTransaction
+Exec = /usr/bin/cp -a /usr/local/share/thor/ucm2/. /usr/share/alsa/ucm2/

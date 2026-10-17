@@ -45,13 +45,14 @@ What goes in, and from where:
 |---|---|
 | Bootloader | not in the image: stock U-Boot (UEFI), else ROCKNIX's ABL flashed once (see below) |
 | UEFI boot, on the same FAT partition (an EFI system partition) | systemd-boot as `EFI/BOOT/BOOTAA64.EFI`, ROCKNIX's kernel as `/Image` (decompressed), the Thor's device tree as `/dtbs/qcs8550-ayn-thor.dtb`, our initramfs, a loader entry with our command line; split out by `tools/image/bootimg.py split` |
-| `/KERNEL` on FAT `ROCKNIX` (GPT name `system`, legacy-boot attribute, at 16 MiB) | ROCKNIX's kernel and device trees, unchanged; our initramfs (mkinitcpio: base udev modconf block thor-root-wait resume filesystems fsck, no autodetect) and command line (`root=LABEL=THOR_ROOT rw` + ROCKNIX's SM8550 parameters; the first boot adds `resume=`, `resume_offset=`), repacked by `tools/image/bootimg.py` |
+| `/KERNEL` on FAT `ROCKNIX` (GPT name `system`, legacy-boot attribute, at 16 MiB) | ROCKNIX's kernel and device trees, unchanged; our initramfs (mkinitcpio: base udev modconf block thor-root-wait resume filesystems fsck, no autodetect) and command line (`root=LABEL=THOR_ROOT rw` + ROCKNIX's SM8550 parameters; the first boot adds `resume=`, `resume_offset=`), put into both boot ways by `thor-boot` (`tools/device/thor-boot`, repacking with `tools/image/bootimg.py`), as the image is built and again on the device after updates |
 | Kernel modules, firmware | ROCKNIX's `SYSTEM` (same release), incl. Qualcomm firmware: for this device only, not for sharing |
-| Root: ext4 `THOR_ROOT` | `pacstrap` from Arch Linux ARM's mirrors (unpinned): base, sudo, mkinitcpio, NetworkManager, OpenSSH, sway, foot, Xwayland, Mesa + `vulkan-freedreno`, PipeWire, Noto, SQLite, Python, vim, grim, growpart (`cloud-guest-utils`), gptfdisk |
+| Root: ext4 `THOR_ROOT` | `pacstrap` from Arch Linux ARM's mirrors (unpinned): base, sudo, mkinitcpio, NetworkManager, OpenSSH, sway, mako, foot, Xwayland, Mesa + `vulkan-freedreno`, PipeWire, Noto, SQLite, Python, vim, grim, growpart (`cloud-guest-utils`), gptfdisk; for maintenance on the device git, Rust, base-devel, pacman-contrib |
 | System | time zone (`THOR_TIMEZONE`, else the build machine's `/etc/localtime`, else UTC), locale (`THOR_LOCALE`, default `en_US.UTF-8`), systemd-timesyncd, NetworkManager, sshd, Bluetooth |
-| Session | user `thor` (groups wheel, video, input, audio; passwordless sudo, my ssh key), tty1 autologin into sway, sway config (DSI-2 top, DSI-1 bottom, ROCKNIX's output lines if found; Print: `clamshell ctl screenshot`), ClamShell built natively for aarch64 as a user service (control pipe `$XDG_RUNTIME_DIR/clamshell-control`, `CLAMSHELL_SESSION=device`: it puts the device to sleep when idle and reads the volume and brightness keys itself), uinput rule |
+| Session | user `thor` (groups wheel, video, input, audio; passwordless sudo, my ssh key), tty1 autologin into sway; the session's files from `tools/device/session.sh` (also run by maintenance): sway config (DSI-2 top, DSI-1 bottom, ROCKNIX's output lines; Print: `clamshell ctl screenshot`; `clamshell/sway/clamshell.conf` included), mako's and foot's configs, the dock's apps; ClamShell built natively for aarch64 as a user service (control pipe `$XDG_RUNTIME_DIR/clamshell-control`, `CLAMSHELL_SESSION=device`: it puts the device to sleep when idle and reads the volume and brightness keys itself), uinput rule |
+| Maintenance | this repository cloned to `~/thor` (origin `git@github.com:robinei/thor.git`); the dock's Maintenance app runs `tools/device/maintain`: Claude Code with `/maintain` (`.claude/commands/maintain.md`). pacman hooks: `thor-boot` after updates of systemd, mkinitcpio, kmod, util-linux, zstd; ROCKNIX's audio profiles put back after alsa-ucm-conf's (a copy in `/usr/local/share/thor/ucm2`). The ROCKNIX release in `/usr/local/share/thor/rocknix-release` |
 | Sleep | logind: power button and lid do `sleep` = suspend-then-hibernate, else suspend (`SleepOperation=`); long press powers off. `HibernateDelaySec=30min`. UPower: hibernate at 3 % (power off if it can't) |
-| First boot (`thor-firstboot.service`, once) | grows partition 2 and its ext4 to the card (growpart, resize2fs); makes `/swapfile`, 16 GiB (the RAM; only if 8 GiB stay free beside it), in fstab; then writes `resume=LABEL=THOR_ROOT resume_offset=<first block>` onto both command lines: the loader entry's options and `/KERNEL` (repacked on the device with `/usr/local/lib/thor/bootimg.py`). Resume works from the second boot on |
+| First boot (`thor-firstboot.service`, once) | grows partition 2 and its ext4 to the card (growpart, resize2fs); makes `/swapfile`, 16 GiB (the RAM; only if 8 GiB stay free beside it), in fstab; then writes `resume=LABEL=THOR_ROOT resume_offset=<first block>` into the loader entry's options and runs `thor-boot`, which puts that command line into `/KERNEL` too. Resume works from the second boot on |
 
 Built once (2026-10-14, ROCKNIX 20261001, kernel 7.2.0): `~/.cache/thor-vm/aarch64/thor-sd.img`, 12 GB
 (2.5 GB used). Checked from the host and in the build machine: GPT with partition 1 an EFI system
@@ -78,8 +79,8 @@ Known issues and risks, to check first:
    passes our initramfs as the only one... unless the built-in one still unpacks first: same question).
 2. Early storage: settled. sdhci-msm is built into ROCKNIX's kernel (its messages are in the Image), as
    are ext4 and f2fs.
-3. Audio: ROCKNIX's UCM profiles are copied over `alsa-ucm-conf`'s, so an update of that package undoes
-   them; under UEFI the card is named `ayn-AYNOdin2` (ROCKNIX has a profile for that name too).
+3. Audio: ROCKNIX's UCM profiles are copied over `alsa-ucm-conf`'s (a pacman hook puts them back after
+   an update of that package); under UEFI the card is named `ayn-AYNOdin2` (ROCKNIX has a profile for that name too).
 4. Rotation: the bottom panel gets fbcon's angle as well; unverified that it wants the same. Touch may
    still need Kettle's calibration matrix.
 5. Gamepad: the kernel driver comes with ROCKNIX's modules; its userspace mapping (Thorch, Kettle:
@@ -127,6 +128,9 @@ Known issues and risks, to check first:
    (`swaymsg -t get_inputs`, `evtest`), the gamepad's device and buttons, sound devices, Wi-Fi.
 6. Boot our image from SD. If it doesn't come up, the known issues above are the suspects, in order.
    Serial console: none known; a USB keyboard and the screen, or ssh over USB Ethernet.
+7. Maintenance: install Claude Code (`curl -fsSL https://claude.ai/install.sh | bash`) and log in; make
+   the device's ssh key (`ssh-keygen -t ed25519`) and add it to the GitHub repository (a deploy key with
+   write access); then a first `/maintain` from the dock's Maintenance app.
 
 ## Testing our system on the device
 
