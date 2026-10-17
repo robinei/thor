@@ -6,8 +6,9 @@
 //!     { "tab": "Games", "icon": "gamepad", "id": "snes", "dir": "~/Games/snes", "match": ["*.sfc", "*.smc"],
 //!       "launch": ["retroarch", "-L", "/usr/lib/libretro/snes9x_libretro.so", "{path}"] },
 //!     { "tab": "TV", "icon": "tv", "id": "tv", "dir": "~/TV", "match": ["*/"], "items": ["*.mkv", "*.mp4"],
-//!       "launch": ["mpv", "--fs", "{path}"] }
-//! ] }
+//!       "launch": ["mpv", "--fs", "{path}"], "metadata": "tmdb:tv" }
+//! ],
+//!   "keys": { "tmdb": "...", "steamgriddb": "..." } }
 //! ```
 //!
 //! - `match`: patterns (see clamshell-library's `pattern`) against paths in `dir`. An entry per name at the
@@ -21,6 +22,8 @@
 //! - Box art: `<name>.jpg` (or .jpeg, .png, .webp) beside a file, or `poster`, `cover` or `folder` in a
 //!   folder; else the group's.
 //! - `icon`: the tab's icon; sources in the same tab need it once.
+//! - `metadata`: where to fetch covers, screenshots and the rest for its entries (`libretro:<system>`,
+//!   `tmdb:movie`, `tmdb:tv`); `keys`: the services' keys (see [`crate::meta`]).
 //!
 //! `~/` at the start of `dir` or of a launch argument is the home dir. A source whose dir is missing is
 //! skipped; so is a file that doesn't parse (logged).
@@ -38,6 +41,8 @@ use serde::Deserialize;
 pub struct Config {
     #[serde(default)]
     pub sources: Vec<Source>,
+    #[serde(default)]
+    pub keys: crate::meta::Keys,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -53,6 +58,8 @@ pub struct Source {
     #[serde(default)]
     pub items: Vec<String>,
     pub launch: Vec<String>,
+    #[serde(default)]
+    pub metadata: Option<String>,
 }
 
 /// The config at `file`; none if it is missing or doesn't parse (logged).

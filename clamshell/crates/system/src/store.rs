@@ -16,6 +16,9 @@
 //! - `places(collection, path)`: shelf's place in each collection, a JSON list of ids (the open groups,
 //!   then the selected entry).
 //! - `shares(backlight, share)`: each screen's share of the brightness.
+//! - `meta(id, source, fetched, cover, shot, summary, year, developer)`: what was fetched about an entry
+//!   (see [`crate::meta`]), from where (`source`) and when (`fetched`, seconds since the epoch); a row
+//!   with nothing in it is a miss.
 //! - `kv(key, value)`: `collection` and `tab` (where shelf and the second screen were), `brightness`
 //!   (the level), `keymaps` (present once the keymaps were saved: without it, the initial ones).
 
@@ -29,7 +32,7 @@ use clamshell_core::keymap::{Keymap, Keymaps};
 use clamshell_core::levels::Brightness;
 use clamshell_core::settings::{Setting, Settings};
 use clamshell_core::{Dock, Resume};
-use clamshell_library::Plays;
+use clamshell_library::{Meta, Plays};
 use rusqlite::{Connection, OptionalExtension, params};
 
 pub use rusqlite::Error;
@@ -45,8 +48,18 @@ CREATE TABLE IF NOT EXISTS window_rules (position INTEGER PRIMARY KEY, entry TEX
 CREATE TABLE IF NOT EXISTS dock (position INTEGER PRIMARY KEY, id TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS places (collection TEXT PRIMARY KEY, path TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS shares (backlight TEXT PRIMARY KEY, share INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS meta (id TEXT PRIMARY KEY, source TEXT NOT NULL, fetched INTEGER NOT NULL, cover TEXT, shot TEXT,
+    summary TEXT NOT NULL, year INTEGER, developer TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 ";
+
+/// What was fetched about an entry, from where (as [`crate::meta::How::source`] says) and when.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Fetched {
+    pub source: String,
+    pub at: u64,
+    pub meta: Meta,
+}
 
 /// The entry the global settings and environment are kept under.
 const GLOBAL: &str = "";
@@ -263,6 +276,33 @@ impl Store {
         tx.commit()
     }
 
+    /// What was fetched about each entry: from where, when, and what.
+    pub fn metas(&self) -> Result<HashMap<String, Fetched>, Error> {
+        let mut stmt = self.db.prepare("SELECT id, source, fetched, cover, shot, summary, year, developer FROM meta")?;
+        let rows = stmt.query_map([], |r| {
+            let path = |i| r.get::<_, Option<String>>(i).map(|p| p.map(std::path::PathBuf::from));
+            let meta = Meta {
+                cover: path(3)?,
+                shot: path(4)?,
+                summary: r.get(5)?,
+                year: r.get::<_, Option<i64>>(6)?.and_then(|y| u16::try_from(y).ok()),
+                developer: r.get(7)?,
+            };
+            Ok((r.get::<_, String>(0)?, Fetched { source: r.get(1)?, at: u64::try_from(r.get::<_, i64>(2)?).unwrap_or(0), meta }))
+        })?;
+        rows.collect()
+    }
+
+    /// What was fetched about `id` (nothing: a miss), from `source`, at `at`.
+    pub fn save_meta(&self, id: &str, source: &str, at: u64, meta: &Meta) -> Result<(), Error> {
+        let path = |p: &Option<std::path::PathBuf>| p.as_ref().map(|p| p.to_string_lossy().into_owned());
+        self.db.execute(
+            "INSERT OR REPLACE INTO meta (id, source, fetched, cover, shot, summary, year, developer) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![id, source, i64::try_from(at).unwrap_or(i64::MAX), path(&meta.cover), path(&meta.shot), meta.summary, meta.year, meta.developer],
+        )?;
+        Ok(())
+    }
+
     fn get(&self, key: &str) -> Result<Option<String>, Error> {
         self.db.query_row("SELECT value FROM kv WHERE key = ?1", [key], |r| r.get(0)).optional()
     }
@@ -329,6 +369,13 @@ mod tests {
         let brightness = Brightness { level: Some(40), shares: vec![Share { backlight: "bottom".into(), share: 70 }] };
         db.save_brightness(&brightness).unwrap();
         assert_eq!(db.brightness().unwrap(), brightness);
+
+        let meta = Meta { cover: Some("/c/x-cover.png".into()), year: Some(1994), summary: "S".into(), ..Meta::default() };
+        db.save_meta("x", "libretro:SNES", 5, &meta).unwrap();
+        db.save_meta("y", "steam:1", 6, &Meta::default()).unwrap();
+        let metas = db.metas().unwrap();
+        assert_eq!(metas.get("x"), Some(&Fetched { source: "libretro:SNES".into(), at: 5, meta }));
+        assert_eq!(metas.get("y").map(|f| &f.meta), Some(&Meta::default()), "a miss");
 
         // Another connection (the launcher's) sees the same.
         let other = Store::open(&dir.join("clamshell.db")).unwrap();

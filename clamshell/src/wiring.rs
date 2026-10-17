@@ -9,6 +9,7 @@ use clamshell_core::touch::TouchLayout;
 use clamshell_system::brightness::Backlights;
 use clamshell_system::job::Runner;
 use clamshell_system::keyboard::VirtualKeyboard;
+use clamshell_system::meta;
 use clamshell_system::paths::Paths;
 use clamshell_system::store::Store;
 use clamshell_system::tuning::Tuning;
@@ -50,14 +51,18 @@ fn detached(name: &str, result: io::Result<()>) {
 }
 
 /// Starts every system thread, sending to `sender`, and applies the global settings (in force until a
-/// game brings its own). `layout`: the touch layout the UI keeps up to date.
-pub fn start(env: &Env, paths: &Paths, layout: Arc<Mutex<TouchLayout>>, global: &Values, sender: EventSender) -> Handles {
+/// game brings its own). `layout`: the touch layout the UI keeps up to date; `fetch`: the library's
+/// metadata to fetch.
+pub fn start(env: &Env, paths: &Paths, layout: Arc<Mutex<TouchLayout>>, global: &Values, fetch: Option<meta::Fetch>, sender: EventSender) -> Handles {
     let sink = UiSink(sender);
     let backlights = Backlights::new(env.backlights.clone());
     let scope = paths.has_user_systemd();
     detached("clock", clock::spawn(sink.clone()));
     detached("status", status::spawn(backlights.clone(), sink.clone()));
     detached("metrics", metrics::spawn(sink.clone()));
+    if let Some(fetch) = fetch {
+        detached("meta", meta::spawn(fetch, sink.clone()));
+    }
     detached("frames", frames::spawn(paths.mangohud.clone(), sink.clone()));
     let touchpad =
         started("touchpad", touchpad::spawn(touchpad::Config { device: env.touchscreen.clone(), px_per_mm: BOTTOM_PX_PER_MM }, layout, sink.clone()));

@@ -271,6 +271,15 @@ impl Shelf {
         self.sync()
     }
 
+    /// What was fetched about entry `id` (see [`Library::apply_meta`]). Whether it is there.
+    pub(crate) fn apply_meta(&mut self, id: &str, meta: &crate::Meta) -> bool {
+        let Some(i) = self.library.games.iter().position(|g| &*g.id == id) else {
+            return false;
+        };
+        self.library.apply_meta(i, meta);
+        true
+    }
+
     /// The selected entry in or out of the favourites, if there is one: whether the selection changed.
     pub(crate) fn toggle_favourite(&mut self) -> Option<bool> {
         let id = self.selected.clone()?;

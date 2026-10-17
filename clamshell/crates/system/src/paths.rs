@@ -10,6 +10,8 @@ pub struct Paths {
     pub library: Option<PathBuf>,
     /// ClamShell's database (see [`crate::store`]): ~/.local/share/clamshell.
     pub state_dir: Option<PathBuf>,
+    /// Fetched covers and screenshots (see [`crate::meta`]): ~/.cache/clamshell/art.
+    pub art: Option<PathBuf>,
     /// Launches handed to sway's exec ($XDG_RUNTIME_DIR/clamshell/jobs, see [`crate::job`]).
     pub jobs: PathBuf,
     /// MangoHud's config files and frame logs, in RAM ($XDG_RUNTIME_DIR/clamshell/mangohud).
@@ -28,6 +30,7 @@ pub struct Base {
     pub home: Option<PathBuf>,
     pub config_home: Option<PathBuf>,
     pub data_home: Option<PathBuf>,
+    pub cache_home: Option<PathBuf>,
     pub runtime: Option<PathBuf>,
 }
 
@@ -35,7 +38,13 @@ impl Base {
     /// HOME and the XDG base directories from the environment.
     pub fn from_env() -> Base {
         let var = |name: &str| std::env::var_os(name).map(PathBuf::from);
-        Base { home: var("HOME"), config_home: var("XDG_CONFIG_HOME"), data_home: var("XDG_DATA_HOME"), runtime: var("XDG_RUNTIME_DIR") }
+        Base {
+            home: var("HOME"),
+            config_home: var("XDG_CONFIG_HOME"),
+            data_home: var("XDG_DATA_HOME"),
+            cache_home: var("XDG_CACHE_HOME"),
+            runtime: var("XDG_RUNTIME_DIR"),
+        }
     }
 
     /// An XDG directory, else its default under HOME.
@@ -50,6 +59,7 @@ impl Paths {
         let config = base.xdg(base.config_home.as_ref(), ".config");
         let data = base.xdg(base.data_home.as_ref(), ".local/share");
         let state_dir = data.map(|d| d.join("clamshell"));
+        let art = base.xdg(base.cache_home.as_ref(), ".cache").map(|c| c.join("clamshell/art"));
         Paths {
             jobs: base.runtime.clone().unwrap_or_else(std::env::temp_dir).join("clamshell/jobs"),
             mangohud: base.runtime.clone().unwrap_or_else(|| PathBuf::from("/tmp")).join("clamshell/mangohud"),
@@ -58,6 +68,7 @@ impl Paths {
             screenshots: base.home.as_ref().map(|h| h.join("Pictures/Screenshots")),
             library: config.map(|c| c.join("clamshell/library.json")),
             state_dir,
+            art,
         }
     }
 
@@ -92,6 +103,7 @@ mod tests {
         assert_eq!(paths.state_dir.as_deref(), Some(Path::new("/h/.local/share/clamshell")));
         assert_eq!((paths.jobs.as_path(), paths.mangohud.as_path()), (Path::new("/run/u/clamshell/jobs"), Path::new("/run/u/clamshell/mangohud")));
         assert_eq!(paths.db().as_deref(), Some(Path::new("/h/.local/share/clamshell/clamshell.db")));
+        assert_eq!(paths.art.as_deref(), Some(Path::new("/h/.cache/clamshell/art")));
         assert_eq!(Paths::new(&Base::default()).state_dir, None, "no HOME, no XDG dirs");
     }
 }

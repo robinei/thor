@@ -70,7 +70,7 @@ pub use sys::{Status, Sys, TouchpadProblem};
 pub use tab::{Bottom, Tab};
 pub use time::{TimeRow, TimeZones};
 
-pub use clamshell_library::{Collection, Game, Launch, Library};
+pub use clamshell_library::{Collection, Game, Launch, Library, Meta};
 
 /// A game's power profile: how fast CPU and GPU may run (frequency caps; the Thor has no TDP setting).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -306,6 +306,7 @@ impl State {
                 self.follow_dock();
                 (Dirty::BOTH, effects)
             }
+            Event::Meta { id, meta } => (if self.shelf.apply_meta(&id, &meta) { Dirty::BOTH } else { Dirty::NONE }, vec![]),
             Event::Units(units) => {
                 self.session.set_units(units);
                 self.follow_units();

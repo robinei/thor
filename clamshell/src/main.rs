@@ -18,6 +18,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use clamshell_core::keymap::Keymaps;
 use clamshell_core::{Init, Library, State};
 use clamshell_system::library::{self, Sources};
+use clamshell_system::meta;
 use clamshell_system::paths::Paths;
 use clamshell_system::store::Store;
 use clamshell_system::{Handles, job, tuning};
@@ -66,12 +67,45 @@ fn main() -> ExitCode {
             }
         },
         Command::Library => {
-            print_library(State::new(Init { library: load_library(&sources), ..Init::default() }).shelf().library());
+            print_library(State::new(Init { library: load_library(&sources).library, ..Init::default() }).shelf().library());
+            ExitCode::SUCCESS
+        }
+        Command::FetchMetadata => {
+            let loaded = library::load(&sources);
+            let (Some(art), Some(db)) = (paths.art.clone(), paths.db()) else {
+                log::error!("no home dir: nowhere to keep it");
+                return ExitCode::FAILURE;
+            };
+            let titles: std::collections::HashMap<_, _> = loaded.library.games.iter().map(|g| (g.id.clone(), g.title.clone())).collect();
+            println!("fetching for {} entries", loaded.wanted.len());
+            let (tx, rx) = std::sync::mpsc::channel();
+            if let Err(e) = meta::spawn(meta::Fetch { wanted: loaded.wanted, keys: loaded.keys, art, db }, tx) {
+                log::error!("{e}");
+                return ExitCode::FAILURE;
+            }
+            // (The threads' senders go when they are done: the channel ends.)
+            for event in rx {
+                if let clamshell_core::Event::Meta { id, meta } = event {
+                    let has = |b: bool, what: &'static str| if b { what } else { "" };
+                    let found = [
+                        has(meta.cover.is_some(), "cover"),
+                        has(meta.shot.is_some(), "screenshot"),
+                        has(!meta.summary.is_empty(), "summary"),
+                        has(meta.year.is_some(), "year"),
+                        has(!meta.developer.is_empty(), "developer"),
+                    ];
+                    println!(
+                        "{}: {}",
+                        titles.get(&id).map_or(&*id, String::as_str),
+                        found.iter().filter(|f| !f.is_empty()).copied().collect::<Vec<_>>().join(", ")
+                    );
+                }
+            }
             ExitCode::SUCCESS
         }
         Command::Snapshot(dir) => {
             // The demo games unless asked for the real library.
-            let library = if env.snapshot_real_library { load_library(&sources) } else { clamshell_library::demo_library() };
+            let library = if env.snapshot_real_library { load_library(&sources).library } else { clamshell_library::demo_library() };
             let now = if env.snapshot_now { SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() } else { snapshot::FIXED_NOW };
             match snapshot::render(&|| snapshot::state(library.clone()), now, &dir) {
                 Ok(()) => ExitCode::SUCCESS,
@@ -125,9 +159,9 @@ fn saved(paths: &Paths) -> Init {
 }
 
 /// The library: library.json's content dirs, Steam, the desktop files; the demo library if it is empty.
-fn load_library(sources: &Sources) -> Library {
-    let library = library::load(sources);
-    if library.collections.is_empty() { clamshell_library::demo_library() } else { library }
+fn load_library(sources: &Sources) -> library::Loaded {
+    let loaded = library::load(sources);
+    if loaded.library.collections.is_empty() { library::Loaded { library: clamshell_library::demo_library(), ..library::Loaded::default() } } else { loaded }
 }
 
 fn print_library(library: &Library) {
@@ -158,8 +192,14 @@ fn print_entry(library: &Library, i: usize, depth: usize) {
 
 /// The session: the state from what was saved, the UI, and the system threads.
 fn run(env: &Env, paths: Paths, sources: &Sources) -> ExitCode {
+    let loaded = load_library(sources);
+    // Metadata to fetch once the threads run (with somewhere to keep it).
+    let fetch = match (paths.art.clone(), paths.db()) {
+        (Some(art), Some(db)) => Some(meta::Fetch { wanted: loaded.wanted, keys: loaded.keys, art, db }),
+        _ => None,
+    };
     let state = State::new(Init {
-        library: load_library(sources),
+        library: loaded.library,
         start_tab: env.start_tab,
         pad_mouse: env.pad_mouse,
         device_session: env.device_session,
@@ -182,7 +222,7 @@ fn run(env: &Env, paths: Paths, sources: &Sources) -> ExitCode {
     let result = clamshell_ui::run(
         state,
         config,
-        move |sender| *started.borrow_mut() = Some(wiring::start(env, &paths, layout, &global, sender)),
+        move |sender| *started.borrow_mut() = Some(wiring::start(env, &paths, layout, &global, fetch, sender)),
         move |effect| {
             if let Some(handles) = handles.borrow_mut().as_mut() {
                 handles.dispatch(effect);

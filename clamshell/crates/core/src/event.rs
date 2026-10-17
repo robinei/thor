@@ -43,6 +43,11 @@ pub enum Event {
     Windows(Vec<Window>),
     /// Our running scopes (dock app instances and games shelf started), after any change.
     Units(Vec<Instance>),
+    /// What was fetched about an entry (its cover, a screenshot, ...): the metadata thread.
+    Meta {
+        id: Arc<str>,
+        meta: crate::Meta,
+    },
     /// The UI is up: what the state in force needs at start (the tab's watch, the screens' brightness,
     /// where the pad goes).
     Start,

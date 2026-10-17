@@ -32,6 +32,9 @@ const ART_H: f32 = 0.78;
 /// Details text sizes, of the screen's height.
 const TITLE: f32 = 0.05;
 const DETAIL: f32 = 0.03;
+const SUMMARY: f32 = 0.028;
+/// A screenshot's height at most, of the list's height (it is as wide as the details, 16:9).
+const SHOT_H: f32 = 0.45;
 
 /// Draws shelf over `screen`; returns how many list rows fit (the state keeps the selection within
 /// them).
@@ -110,7 +113,8 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
 }
 
 /// The selected entry right of the `list`, as high as it: large art, then beside it the title, the
-/// groups it is in, what playing it does now, whether it is a favourite, and the play time.
+/// groups it is in, who made it and when, what playing it does now, whether it is a favourite, the play
+/// time, what it is about (as much as fits), and a screenshot at the bottom.
 fn selected(f: &mut Frame, game: &Game, screen: Rect, list: Rect, pad: f32) {
     let s = f.s;
     let h = screen.h;
@@ -124,10 +128,14 @@ fn selected(f: &mut Frame, game: &Game, screen: Rect, list: Rect, pad: f32) {
     let detail = h * DETAIL;
     col.skip(f.c.wrap(span(&col), h * TITLE, Tone::High, &game.title, 3) + pad * 0.4);
 
-    // The groups it is in (a series, a season).
+    // The groups it is in (a series, a season); who made it and when.
     if game.parent.is_some() {
         let groups = Fmt::<192>::of(format_args!("{}", Groups(s, game)));
         col.skip(f.c.wrap(span(&col), detail, Tone::Normal, &groups, 2) + pad * 0.4);
+    }
+    let maker = Fmt::<128>::of(format_args!("{}", Maker(game)));
+    if !maker.is_empty() {
+        col.skip(f.c.wrap(span(&col), detail, Tone::Dim, &maker, 2) + pad * 0.4);
     }
 
     // Whether it runs (A shows it), then whether it is a favourite, each on a line of its own.
@@ -151,7 +159,34 @@ fn selected(f: &mut Frame, game: &Game, screen: Rect, list: Rect, pad: f32) {
     if plays.count > 0 {
         let days = s.unix_secs().saturating_sub(plays.last) / 86_400;
         let played = Fmt::<64>::of(format_args!("{}{}", PlayTime(plays.seconds), DaysAgo(days)));
-        f.c.wrap(span(&col), detail, Tone::Dim, &played, 2);
+        col.skip(f.c.wrap(span(&col), detail, Tone::Dim, &played, 2) + pad * 0.4);
+    }
+
+    // A screenshot at the bottom; what it is about in as many lines as fit above it.
+    let shot_h = if game.shot.is_some() { (text_w * 9.0 / 16.0).min(list.h * SHOT_H) } else { 0.0 };
+    let bottom = list.y + list.h - if shot_h > 0.0 { shot_h + pad } else { 0.0 };
+    let (top, size) = (col.y() + pad * 0.2, h * SUMMARY);
+    let lines = ((bottom - top) / (size * WRAP_LINE)).floor().max(0.0) as usize;
+    if !game.summary.is_empty() && lines > 0 {
+        f.c.wrap(Span { x: tx, y: top, w: text_w }, size, Tone::Normal, &game.summary, lines.min(12));
+    }
+    if shot_h > 0.0 {
+        widgets::shot(f.c, f.images, game, Rect::new(tx, list.y + list.h - shot_h, text_w, shot_h));
+    }
+}
+
+/// Who made an entry and when: "Supergiant Games · 2020", either alone, or nothing.
+struct Maker<'a>(&'a Game);
+
+impl Display for Maker<'_> {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let game = self.0;
+        match (game.developer.as_str(), game.year) {
+            ("", Some(y)) => write!(f, "{y}"),
+            ("", None) => Ok(()),
+            (d, Some(y)) => write!(f, "{d} · {y}"),
+            (d, None) => f.write_str(d),
+        }
     }
 }
 

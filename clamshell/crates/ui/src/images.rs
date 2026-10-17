@@ -13,12 +13,22 @@ use tiny_skia::{IntSize, Pixmap};
 /// Bytes of decoded images kept before the ones not drawn lately are dropped.
 const BUDGET: usize = 96 << 20;
 
-/// An image at one size: the game's id and the box it is fitted into, in pixels.
+/// An image at one size: the entry's id, which of its images, and the box it is fitted into, in pixels.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Key {
     pub id: Arc<str>,
+    pub slot: Slot,
     pub w: u32,
     pub h: u32,
+}
+
+/// Which of an entry's images.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Slot {
+    /// Its box art, or an app's icon.
+    Art,
+    /// A screenshot.
+    Shot,
 }
 
 /// A request for the worker.
@@ -51,9 +61,9 @@ impl Images {
         Images { cache: HashMap::new(), pending: HashSet::new(), worker: None, frame: 0 }
     }
 
-    /// The image of `id` fitted into `w`x`h` pixels, if loaded; asks for it if not.
-    pub fn get(&mut self, id: &Arc<str>, path: &Path, w: u32, h: u32) -> Option<&Pixmap> {
-        let key = Key { id: id.clone(), w, h };
+    /// The image of `id` in `slot` fitted into `w`x`h` pixels, if loaded; asks for it if not.
+    pub fn get(&mut self, id: &Arc<str>, slot: Slot, path: &Path, w: u32, h: u32) -> Option<&Pixmap> {
+        let key = Key { id: id.clone(), slot, w, h };
         if !self.cache.contains_key(&key) {
             match &self.worker {
                 Some(worker) => {
@@ -170,8 +180,8 @@ mod tests {
         let (tx, rx) = std::sync::mpsc::channel();
         let mut images = Images::new(tx);
         let id: Arc<str> = "game".into();
-        assert!(images.get(&id, Path::new("/x.png"), 10, 10).is_none());
-        assert!(images.get(&id, Path::new("/x.png"), 10, 10).is_none());
+        assert!(images.get(&id, Slot::Art, Path::new("/x.png"), 10, 10).is_none());
+        assert!(images.get(&id, Slot::Art, Path::new("/x.png"), 10, 10).is_none());
         assert_eq!(rx.try_iter().count(), 1);
     }
 }

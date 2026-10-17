@@ -50,6 +50,12 @@ pub struct Game {
     pub box_front: Option<PathBuf>,
     /// An icon (an app's), drawn where there is no box art.
     pub icon: Option<PathBuf>,
+    /// Fetched (see [`Meta`]): a screenshot (a film's backdrop), what it is about, the year it came out,
+    /// who made it.
+    pub shot: Option<PathBuf>,
+    pub summary: String,
+    pub year: Option<u16>,
+    pub developer: String,
     /// An app, not a game or a film: Recent leaves it out.
     pub tool: bool,
     /// A group's entries (a series' seasons, a season's episodes), as indices into [`Library::games`], in
@@ -73,6 +79,10 @@ impl Game {
             launch: Launch::None,
             box_front: None,
             icon: None,
+            shot: None,
+            summary: String::new(),
+            year: None,
+            developer: String::new(),
             tool: false,
             items: Vec::new(),
             parent: None,
@@ -85,6 +95,17 @@ impl Game {
     pub fn is_group(&self) -> bool {
         !self.items.is_empty()
     }
+}
+
+/// What was fetched about an entry (clamshell-system's `meta`): its cover, a screenshot, what it is
+/// about, the year it came out, who made it; each if found.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Meta {
+    pub cover: Option<PathBuf>,
+    pub shot: Option<PathBuf>,
+    pub summary: String,
+    pub year: Option<u16>,
+    pub developer: String,
 }
 
 /// An entry's key, from its id: what its launches' units and its workspace are named by. Letters, digits
@@ -170,6 +191,38 @@ impl Library {
         self.games.iter().filter(|g| g.favourite).map(|g| &*g.id)
     }
 
+    /// What was fetched about entry `i`: its cover where it has no art of its own (and so the entries in
+    /// it without art: a series' episodes), and the rest.
+    pub fn apply_meta(&mut self, i: usize, meta: &Meta) {
+        let Some(g) = self.games.get_mut(i) else {
+            return;
+        };
+        if let Some(cover) = meta.cover.as_ref().filter(|_| g.box_front.is_none()) {
+            g.box_front = Some(cover.clone());
+            let mut inside = g.items.clone();
+            while let Some(j) = inside.pop() {
+                if let Some(item) = self.games.get_mut(j).filter(|item| item.box_front.is_none()) {
+                    item.box_front = Some(cover.clone());
+                    inside.extend(item.items.iter().copied());
+                }
+            }
+        }
+        if let Some(g) = self.games.get_mut(i) {
+            if meta.shot.is_some() {
+                g.shot.clone_from(&meta.shot);
+            }
+            if !meta.summary.is_empty() {
+                g.summary.clone_from(&meta.summary);
+            }
+            if meta.year.is_some() {
+                g.year = meta.year;
+            }
+            if !meta.developer.is_empty() {
+                g.developer.clone_from(&meta.developer);
+            }
+        }
+    }
+
     /// The groups entry `i` is in, outermost first.
     pub fn groups_of(&self, i: usize) -> Vec<usize> {
         let mut groups = Vec::new();
@@ -197,7 +250,17 @@ pub fn demo_games() -> Vec<Game> {
         ("celeste", "Celeste", 0x8050b0),
     ]
     .into_iter()
-    .map(|(id, title, color)| Game { color, ..Game::new(id, title) })
+    .map(|(id, title, color)| match id {
+        // As fetched metadata gives it.
+        "zelda-lttp" => Game {
+            color,
+            developer: "Nintendo".into(),
+            year: Some(1991),
+            summary: "Link sets out across Hyrule and the Dark World to free the descendants of the Seven Sages from the wizard Agahnim.".into(),
+            ..Game::new(id, title)
+        },
+        _ => Game { color, ..Game::new(id, title) },
+    })
     .collect()
 }
 
@@ -274,6 +337,20 @@ mod tests {
         assert_eq!(lib.games[episode].title, "10. The Edge of Forever");
         assert_eq!(lib.groups_of(episode), vec![tv.games[0], season]);
         assert!(!lib.games[episode].is_group());
+    }
+
+    #[test]
+    fn a_series_cover_reaches_its_episodes_but_not_over_their_own() {
+        let mut lib = demo_library();
+        let tv = lib.collections.iter().find(|c| c.name == "TV").unwrap().games[0];
+        let season = lib.games[tv].items[0];
+        let (first, second) = (lib.games[season].items[0], lib.games[season].items[1]);
+        lib.games[second].box_front = Some("own.jpg".into());
+        let meta = Meta { cover: Some("poster.jpg".into()), summary: "Space.".into(), year: Some(1980), ..Meta::default() };
+        lib.apply_meta(tv, &meta);
+        assert_eq!(lib.games[first].box_front.as_deref(), Some(std::path::Path::new("poster.jpg")));
+        assert_eq!(lib.games[second].box_front.as_deref(), Some(std::path::Path::new("own.jpg")));
+        assert_eq!((lib.games[tv].summary.as_str(), lib.games[tv].year), ("Space.", Some(1980)));
     }
 
     #[test]

@@ -10,7 +10,7 @@ use super::style::{self, Look, SURFACE_HI, Text, Tone};
 use super::{Frame, Track};
 use crate::draw::{Align, Canvas, Column, Keep, LINE, Rect, Rgb};
 use crate::icons::Icon;
-use crate::images::Images;
+use crate::images::{Images, Slot};
 
 /// A row of tabs from `area.x`, `area.h` high: each its icon (if it has one) and label (cut to `max`
 /// wide) with `inner` space on both sides; the current one bright with an amber line under it. Tabs that
@@ -247,13 +247,23 @@ fn greyed(color: u32) -> u32 {
     (v << 16) | (v << 8) | v
 }
 
+/// An entry's screenshot fitted into `r`, at its bottom left, if it has one and it has loaded; nothing
+/// meanwhile.
+pub(crate) fn shot(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect) {
+    let scale = c.scale();
+    let (pw, ph) = ((r.w * scale).round() as u32, (r.h * scale).round() as u32);
+    if let Some(img) = game.shot.as_deref().and_then(|path| images.get(&game.id, Slot::Shot, path, pw, ph)) {
+        c.image(img, r.x, r.y + r.h - img.height() as f32 / scale);
+    }
+}
+
 /// An entry's picture in `r`: its box art fitted in (centred across it; down it as `align` says, `Start`
 /// at the top), else its icon (square, in the middle), else a placeholder in its colour while there is
 /// neither; `grey` for one shown stopped.
 pub(crate) fn art(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect, radius: f32, align: Align, grey: bool) {
     let scale = c.scale();
     let (pw, ph) = ((r.w * scale).round() as u32, (r.h * scale).round() as u32);
-    match game.box_front.as_deref().and_then(|path| images.get(&game.id, path, pw, ph)) {
+    match game.box_front.as_deref().and_then(|path| images.get(&game.id, Slot::Art, path, pw, ph)) {
         Some(img) => {
             let (iw, ih) = (img.width() as f32 / scale, img.height() as f32 / scale);
             let y = match align {
@@ -270,7 +280,7 @@ pub(crate) fn art(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect, rad
         // An app's icon, square in the middle, where it has no box art.
         None => match game.icon.as_deref().and_then(|path| {
             let side = (r.w.min(r.h) * 0.8 * scale).round() as u32;
-            images.get(&game.id, path, side, side)
+            images.get(&game.id, Slot::Art, path, side, side)
         }) {
             Some(img) => {
                 let (iw, ih) = (img.width() as f32 / scale, img.height() as f32 / scale);

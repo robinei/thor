@@ -20,6 +20,7 @@ pub mod job;
 pub mod keyboard;
 pub mod launcher;
 pub mod library;
+pub mod meta;
 pub mod metrics;
 pub mod mixer;
 pub mod pad;

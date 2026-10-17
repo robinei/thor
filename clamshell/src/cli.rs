@@ -14,6 +14,10 @@ pub enum Command {
     MangohudEnv,
     /// `--library`: print the tabs and entries found (library.json's content dirs, Steam, desktop files).
     Library,
+    /// `--fetch-metadata`: fetch what the library wants (covers, screenshots, ...; see
+    /// clamshell_system::meta) without the UI, printing what was found; a running ClamShell shows it from
+    /// its next start.
+    FetchMetadata,
     /// `--snapshot DIR`: draw both screens at the Thor's size into PNG files, no Wayland needed.
     Snapshot(PathBuf),
     /// `ctl COMMAND...`: send a command to the running ClamShell (`volume up`, `screenshot`, ...; see
@@ -21,7 +25,7 @@ pub enum Command {
     Ctl(Vec<String>),
 }
 
-pub const USAGE: &str = "usage: clamshell [ctl COMMAND... | --snapshot DIR | --library | --mangohud-env | --run FILE]";
+pub const USAGE: &str = "usage: clamshell [ctl COMMAND... | --snapshot DIR | --library | --fetch-metadata | --mangohud-env | --run FILE]";
 
 /// The command the arguments (without the program's name) ask for.
 pub fn parse(args: &[String]) -> Option<Command> {
@@ -31,6 +35,7 @@ pub fn parse(args: &[String]) -> Option<Command> {
         [flag, dir] if flag == "--snapshot" => Command::Snapshot(dir.into()),
         [flag] if flag == "--mangohud-env" => Command::MangohudEnv,
         [flag] if flag == "--library" => Command::Library,
+        [flag] if flag == "--fetch-metadata" => Command::FetchMetadata,
         [ctl, rest @ ..] if ctl == "ctl" && !rest.is_empty() => Command::Ctl(rest.to_vec()),
         _ => return None,
     })
@@ -50,6 +55,7 @@ mod tests {
         assert_eq!(parse(&args("--snapshot /tmp/s")), Some(Command::Snapshot("/tmp/s".into())));
         assert_eq!(parse(&args("--run /run/j.json")), Some(Command::RunJob("/run/j.json".into())));
         assert_eq!(parse(&args("--library")), Some(Command::Library));
+        assert_eq!(parse(&args("--fetch-metadata")), Some(Command::FetchMetadata));
         assert_eq!(parse(&args("--snapshot")), None, "without its dir");
         assert_eq!(parse(&args("--frobnicate")), None);
         assert_eq!(parse(&args("ctl volume up")), Some(Command::Ctl(vec!["volume".into(), "up".into()])));
