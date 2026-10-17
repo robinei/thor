@@ -215,6 +215,8 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                         ShelfEvent::ListStep(2).into(),
                     ],
                 ),
+                // Recent: the episode played, its series and season before its title.
+                shot("top-recent.png", Top, vec![tap(Id::Shelf(ShelfId::Collection(0)))]),
             ],
         ),
         group(vec![], vec![shot("bottom.png", Bottom, vec![])]),

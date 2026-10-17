@@ -60,6 +60,7 @@ top-back.png b45c4665585b0d97
 top-folder.png 05e5acd1c503ba37
 top-group.png c129df67e925c653
 top-played.png a148629732b7caaf
+top-recent.png f6762e49eed7b3e5
 top-switch.png 67aa85ef2b60a33a
 top-tab2-down.png b30cc949b764edae
 top-tab2.png 9e650dd92b7f3500

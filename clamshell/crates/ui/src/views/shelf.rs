@@ -144,7 +144,15 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
             }
             let tx = thumb.x + thumb.w + pad * 0.6;
             let title = Rect::new(tx, r.y, right - tx - pad * 0.3, r.h);
-            f.c.text_fit(title, row_h * ROW_TEXT, tone, &game.title, Keep::Start);
+            // Away from its folder (Recent, Favourites): the folders it is in before its title.
+            let open = s.shelf().group().map(|g| &g.id);
+            let in_view = game.parent.and_then(|p| s.shelf().library().games.get(p)).is_none_or(|p| Some(&p.id) == open);
+            if in_view {
+                f.c.text_fit(title, row_h * ROW_TEXT, tone, &game.title, Keep::Start);
+            } else {
+                let path = Fmt::<256>::of(format_args!("{}", Groups { s, game, own: true, between: " · " }));
+                f.c.text_fit(title, row_h * ROW_TEXT, tone, &path, Keep::Start);
+            }
         });
     }
     scrolled.end(f, list.x + list.w - 3.0);
