@@ -21,6 +21,9 @@ pub struct Sources {
     pub steam: Option<PathBuf>,
     /// Where play time (stats.db) and favourites (favorites.txt) are kept.
     pub state_dir: Option<PathBuf>,
+    /// The XDG data dirs, the installed apps' desktop files in their `applications` (see
+    /// [`crate::desktop`]).
+    pub data_dirs: Vec<PathBuf>,
 }
 
 impl Sources {
@@ -30,6 +33,7 @@ impl Sources {
             pegasus_config: paths.pegasus_config.clone(),
             steam: home.filter(|_| steam).and_then(steam::default_root),
             state_dir: paths.state_dir.clone(),
+            data_dirs: crate::desktop::data_dirs(),
         }
     }
 }
@@ -47,6 +51,13 @@ pub fn load(sources: &Sources) -> Library {
             collections.push(Collection { summary: "Installed Steam games".into(), ..Collection::new("Steam", (first..first + steam.len()).collect()) });
             games.extend(steam);
         }
+    }
+    let apps = crate::desktop::entries(&sources.data_dirs);
+    if !apps.is_empty() {
+        // The installed apps: tools (Recent leaves them out).
+        let first = games.len();
+        collections.push(Collection { summary: "Installed apps".into(), tools: true, ..Collection::new("Apps", (first..first + apps.len()).collect()) });
+        games.extend(apps);
     }
     for c in &mut collections {
         c.games.sort_by(|&a, &b| {

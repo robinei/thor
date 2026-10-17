@@ -25,6 +25,8 @@ pub enum Launch {
     Command(LaunchSpec),
     /// Through Steam.
     Steam { appid: u32 },
+    /// A program with its arguments, no file (an installed app's, from its desktop file).
+    Program(Vec<String>),
 }
 
 /// One game as the rest of the program sees it.
@@ -41,6 +43,8 @@ pub struct Game {
     pub file: Option<PathBuf>,
     pub launch: Launch,
     pub box_front: Option<PathBuf>,
+    /// An icon (an app's), drawn where there is no box art.
+    pub icon: Option<PathBuf>,
     pub developers: Vec<String>,
     pub publishers: Vec<String>,
     pub genres: Vec<String>,
@@ -66,6 +70,7 @@ impl Game {
             file: None,
             launch: Launch::None,
             box_front: None,
+            icon: None,
             developers: Vec::new(),
             publishers: Vec::new(),
             genres: Vec::new(),

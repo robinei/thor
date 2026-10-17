@@ -1,6 +1,6 @@
-//! The dock's apps: their file (launcher.json, see [`clamshell_core::apps`]), and desktop files: an app
-//! named by its desktop id gets its name, command and icon from `<data dir>/applications/<id>.desktop`
-//! (the XDG data dirs), its icon from the icon themes.
+//! Desktop files: the installed apps, as library entries (shelf's Apps: every app desktop file in
+//! `<data dir>/applications` of the XDG data dirs, the user's first, not hidden), each with its name,
+//! command and icon (from the icon themes); and the dock's apps from launcher.json, named by desktop id.
 
 use std::fmt;
 use std::fs;
@@ -84,6 +84,44 @@ struct Entry {
     name: String,
     exec: String,
     icon: String,
+    kind: String,
+    /// NoDisplay or Hidden: not to be shown in menus.
+    hidden: bool,
+}
+
+/// The installed apps as library entries (id `desktop:<id>`), by desktop file: the first of an id in
+/// `dirs` (the user's dir first), applications with a command that aren't hidden.
+pub fn entries(dirs: &[PathBuf]) -> Vec<clamshell_library::Game> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for dir in dirs {
+        let mut files: Vec<PathBuf> = fs::read_dir(dir.join("applications")).map(|d| d.flatten().map(|e| e.path()).collect()).unwrap_or_default();
+        files.sort();
+        for path in files {
+            let Some(id) = path.file_name().and_then(|n| n.to_str()).and_then(|n| n.strip_suffix(".desktop")).map(str::to_owned) else {
+                continue;
+            };
+            // (A user's file hides the system's of the same id, whatever it says.)
+            if !seen.insert(id.clone()) {
+                continue;
+            }
+            let Ok(text) = fs::read_to_string(&path) else {
+                continue;
+            };
+            let entry = parse(&text);
+            let argv = exec_args(&entry.exec);
+            if entry.hidden || entry.kind != "Application" || argv.is_empty() {
+                continue;
+            }
+            let title = if entry.name.is_empty() { id.clone() } else { entry.name.clone() };
+            let mut game = clamshell_library::Game::new(&format!("desktop:{id}"), &title);
+            game.launch = clamshell_library::Launch::Program(argv);
+            game.icon = (!entry.icon.is_empty()).then(|| find_icon(&entry.icon, dirs)).flatten();
+            game.tool = true;
+            out.push(game);
+        }
+    }
+    out
 }
 
 fn parse(text: &str) -> Entry {
@@ -103,6 +141,8 @@ fn parse(text: &str) -> Entry {
             "Name" => entry.name = value,
             "Exec" => entry.exec = value,
             "Icon" => entry.icon = value,
+            "Type" => entry.kind = value,
+            "NoDisplay" | "Hidden" if value == "true" => entry.hidden = true,
             _ => {}
         }
     }
@@ -210,6 +250,25 @@ pub fn find_icon(name: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn installed_apps_are_entries_the_users_first_hidden_ones_left_out() {
+        let base = std::env::temp_dir().join(format!("clamshell-desktop-entries-{}", std::process::id()));
+        let (user, system) = (base.join("user"), base.join("system"));
+        let write = |dir: &Path, id: &str, text: &str| {
+            fs::create_dir_all(dir.join("applications")).unwrap();
+            fs::write(dir.join("applications").join(format!("{id}.desktop")), text).unwrap();
+        };
+        write(&system, "firefox", "[Desktop Entry]\nType=Application\nName=Firefox\nExec=firefox %u\n");
+        write(&user, "firefox", "[Desktop Entry]\nType=Application\nName=My Firefox\nExec=firefox --private %u\n");
+        write(&system, "helper", "[Desktop Entry]\nType=Application\nName=Helper\nExec=helper\nNoDisplay=true\n");
+        write(&system, "link", "[Desktop Entry]\nType=Link\nName=Link\nURL=x\n");
+        let entries = entries(&[user.clone(), system.clone()]);
+        let [firefox] = entries.as_slice() else { unreachable!("{entries:?}") };
+        assert_eq!((&*firefox.id, firefox.title.as_str()), ("desktop:firefox", "My Firefox"));
+        assert_eq!(firefox.launch, clamshell_library::Launch::Program(vec!["firefox".into(), "--private".into()]));
+        let _ = fs::remove_dir_all(&base);
+    }
 
     #[test]
     fn exec_lines_become_arguments() {

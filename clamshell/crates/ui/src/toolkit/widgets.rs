@@ -245,7 +245,17 @@ pub(crate) fn art(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect, rad
             };
             c.image(img, r.x + (r.w - iw) / 2.0, y);
         }
-        None => c.rounded(r, radius, Rgb(game.color)),
+        // An app's icon, square in the middle, where it has no box art.
+        None => match game.icon.as_deref().and_then(|path| {
+            let side = (r.w.min(r.h) * 0.8 * scale).round() as u32;
+            images.get(&game.id, path, side, side)
+        }) {
+            Some(img) => {
+                let (iw, ih) = (img.width() as f32 / scale, img.height() as f32 / scale);
+                c.image(img, r.x + (r.w - iw) / 2.0, r.y + (r.h - ih) / 2.0);
+            }
+            None => c.rounded(r, radius, Rgb(game.color)),
+        },
     }
 }
 

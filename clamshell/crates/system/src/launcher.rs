@@ -12,14 +12,13 @@
 use std::fmt;
 use std::io;
 use std::os::unix::process::CommandExt;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use clamshell_core::{Event, GameEvent, Instance, Launch};
-use clamshell_library::LaunchSpec;
 
 use crate::job::{self, Job, Runner, Started};
 use crate::library::stats;
@@ -183,21 +182,27 @@ fn play(config: &Config, request: &Request, sink: &impl Sink) -> Result<(), Clos
 /// Starts the game a request is for.
 fn start(config: &Config, request: &Request) -> Result<Running, Error> {
     match &request.launch {
-        Launch::Command(spec) => start_command(config, request, spec, request.file.as_deref().ok_or(Error::NoFile)?),
+        Launch::Command(spec) => {
+            let c = spec.resolve(request.file.as_deref().ok_or(Error::NoFile)?).ok_or(Error::EmptyCommand)?;
+            let argv = std::iter::once(c.program.to_string_lossy().into_owned()).chain(c.args.iter().cloned()).collect();
+            start_program(config, request, argv, Some(c.workdir))
+        }
+        Launch::Program(argv) if argv.is_empty() => Err(Error::EmptyCommand),
+        Launch::Program(argv) => start_program(config, request, argv.clone(), None),
         Launch::Steam { appid } => start_steam(&request.env, *appid),
         Launch::None => Err(Error::NoCommand),
     }
 }
 
-fn start_command(config: &Config, request: &Request, spec: &LaunchSpec, file: &Path) -> Result<Running, Error> {
-    let c = spec.resolve(file).ok_or(Error::EmptyCommand)?;
+/// Starts `argv` in `workdir` (else the home dir) as the request's instance.
+fn start_program(config: &Config, request: &Request, argv: Vec<String>, workdir: Option<PathBuf>) -> Result<Running, Error> {
     let job = Job {
         unit: request.instance.name(),
         workspace: request.instance.workspace(),
         slice: None,
-        argv: std::iter::once(c.program.to_string_lossy().into_owned()).chain(c.args.iter().cloned()).collect(),
+        argv,
         env: request.env.clone(),
-        workdir: Some(c.workdir.clone()),
+        workdir,
         scope: config.scope,
     };
     // Through sway only in a scope: the scope is how the game is followed then.
@@ -344,6 +349,7 @@ mod tests {
     }
 
     use super::*;
+    use clamshell_library::LaunchSpec;
     use std::sync::mpsc;
 
     fn config(stats_db: Option<PathBuf>) -> Config {
