@@ -76,7 +76,8 @@ pub(super) fn draw(f: &mut Frame) {
     // Tabs: All (the defaults), then the program in context; a note on the right.
     let inner = pad * 0.8;
     let tabs = [(Scope::Global, Some("All")), (Scope::Game, context.as_ref().map(|g| g.title))];
-    let items = tabs.into_iter().filter_map(|(scope, name)| Some((Id::Settings(SettingsId::Scope(scope)), name?, (scope == Scope::Global) == game.is_none())));
+    let items =
+        tabs.into_iter().filter_map(|(scope, name)| Some((Id::Settings(SettingsId::Scope(scope)), None, name?, (scope == Scope::Global) == game.is_none())));
     let tabs_area = Rect::new(bar.x - inner, bar.y, bar.w + inner, bar.h);
     let tabs_end = widgets::tabs(f, tabs_area, f.text(Text::Heading), inner, bar.w * TAB_MAX, items);
     let running = context.as_ref().is_some_and(|g| s.program_in_force() == Some(&g.id));

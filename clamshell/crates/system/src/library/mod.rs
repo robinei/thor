@@ -1,22 +1,24 @@
-//! The game library from disk: Pegasus' game dirs, installed Steam games, play time and favourites. The
-//! model and the files' syntax are clamshell-library's.
+//! The library from disk: library.json's content dirs (see [`content`]), installed Steam games, the
+//! desktop files' games and apps, play time and favourites. The model is clamshell-library's.
 
+pub mod content;
 pub mod favorites;
-pub mod pegasus;
 pub mod stats;
 pub mod steam;
 
 use std::path::PathBuf;
 
-use clamshell_library::{Collection, Library};
+use clamshell_library::{Collection, Game, Library};
 
 use crate::paths::Paths;
 
 /// Where to read from; `None` skips a source.
 #[derive(Debug, Clone, Default)]
 pub struct Sources {
-    /// Pegasus' config dir, for `game_dirs.txt`.
-    pub pegasus_config: Option<PathBuf>,
+    /// library.json.
+    pub config: Option<PathBuf>,
+    /// The home dir, for `~/` in library.json.
+    pub home: Option<PathBuf>,
     /// Steam's data dir.
     pub steam: Option<PathBuf>,
     /// Where play time (stats.db) and favourites (favorites.txt) are kept.
@@ -30,7 +32,8 @@ impl Sources {
     /// ClamShell's paths, and Steam's data dir under `home` unless `steam` is off.
     pub fn new(paths: &Paths, home: Option<&std::path::Path>, steam: bool) -> Sources {
         Sources {
-            pegasus_config: paths.pegasus_config.clone(),
+            config: paths.library.clone(),
+            home: home.map(std::path::Path::to_path_buf),
             steam: home.filter(|_| steam).and_then(steam::default_root),
             state_dir: paths.state_dir.clone(),
             data_dirs: crate::desktop::data_dirs(),
@@ -38,34 +41,55 @@ impl Sources {
     }
 }
 
-/// Reads every source: Pegasus collections, then one "Steam" collection; collections sorted by name,
-/// games in each by title; then each game's plays and whether it is a favourite.
+/// The tab Steam's games and the desktop files' games go in, and the desktop files' apps.
+const GAMES: &str = "Games";
+const APPS: &str = "Apps";
+
+/// Reads every source into tabs: library.json's, in the order the sources first name them, then Games
+/// and Apps unless named already (each left out while empty); entries in each by title. Then each
+/// entry's plays and whether it is a favourite.
 pub fn load(sources: &Sources) -> Library {
-    let dirs = sources.pegasus_config.as_deref().map(pegasus::read_game_dirs).unwrap_or_default();
-    let (mut collections, mut games) = pegasus::scan(&dirs);
-    if let Some(root) = sources.steam.as_deref() {
-        let steam = steam::games(root);
-        if !steam.is_empty() {
-            // After Pegasus' games.
-            let first = games.len();
-            collections.push(Collection { summary: "Installed Steam games".into(), ..Collection::new("Steam", (first..first + steam.len()).collect()) });
-            games.extend(steam);
+    let config = sources.config.as_deref().map(content::read_config).unwrap_or_default();
+    let mut games: Vec<Game> = Vec::new();
+    let mut collections: Vec<Collection> = Vec::new();
+    let add = |collections: &mut Vec<Collection>, tab: &str, icon: Option<&str>, entries: Vec<usize>| {
+        let c = match collections.iter().position(|c| c.name == tab) {
+            Some(i) => collections.get_mut(i),
+            None => {
+                collections.push(Collection::new(tab, Vec::new()));
+                collections.last_mut()
+            }
+        };
+        if let Some(c) = c {
+            if c.icon.is_none() {
+                c.icon = icon.map(str::to_owned);
+            }
+            c.games.extend(entries);
         }
+    };
+    for source in &config.sources {
+        let entries = content::scan(source, sources.home.as_deref(), &mut games);
+        add(&mut collections, &source.tab, source.icon.as_deref(), entries);
     }
+    let extend = |games: &mut Vec<Game>, more: Vec<Game>| {
+        let first = games.len();
+        games.extend(more);
+        (first..games.len()).collect::<Vec<_>>()
+    };
+    let steam = sources.steam.as_deref().map(steam::games).unwrap_or_default();
+    let steam = extend(&mut games, steam);
+    add(&mut collections, GAMES, Some("gamepad"), steam);
+    let (apps, desktop_games): (Vec<Game>, Vec<Game>) = crate::desktop::entries(&sources.data_dirs).into_iter().partition(|g| g.tool);
+    let desktop_games = extend(&mut games, desktop_games);
+    add(&mut collections, GAMES, Some("gamepad"), desktop_games);
+    let apps = extend(&mut games, apps);
+    add(&mut collections, APPS, Some("apps"), apps);
+    collections.retain(|c| !c.games.is_empty());
     for c in &mut collections {
         c.games.sort_by(|&a, &b| {
             let key = |i: usize| games.get(i).map(|g| (&g.sort_key, &g.title));
             key(a).cmp(&key(b))
         });
-    }
-    collections.sort_by(|a, b| a.sort_key.cmp(&b.sort_key).then(a.name.cmp(&b.name)));
-    // The installed apps, after the games' collections: tools (Recent leaves them out).
-    let mut apps = crate::desktop::entries(&sources.data_dirs);
-    if !apps.is_empty() {
-        apps.sort_by(|a, b| a.sort_key.cmp(&b.sort_key).then(a.title.cmp(&b.title)));
-        let first = games.len();
-        collections.push(Collection { summary: "Installed apps".into(), tools: true, ..Collection::new("Apps", (first..first + apps.len()).collect()) });
-        games.extend(apps);
     }
     if let Some(dir) = sources.state_dir.as_deref() {
         let plays = stats::read(&dir.join("stats.db"));

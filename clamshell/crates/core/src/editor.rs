@@ -71,13 +71,44 @@ impl Editor {
     }
 }
 
-/// `KEY=value` words (quotes as in launch commands) as variables.
+/// `KEY=value` words (see [`words`]) as variables.
 pub fn parse_env(text: &str) -> Vec<(String, String)> {
-    clamshell_library::launch::tokenize(text)
-        .into_iter()
-        .filter_map(|word| word.split_once('=').map(|(k, v)| (k.to_owned(), v.to_owned())))
-        .filter(|(k, _)| !k.is_empty())
-        .collect()
+    words(text).into_iter().filter_map(|word| word.split_once('=').map(|(k, v)| (k.to_owned(), v.to_owned()))).filter(|(k, _)| !k.is_empty()).collect()
+}
+
+/// The words of `text`: whitespace separates; a word starting with `'` or `"` runs to the next same quote
+/// (quotes removed); quotes inside an unquoted word are literal; words are trimmed.
+fn words(text: &str) -> Vec<String> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut words = Vec::new();
+    let mut i = 0;
+    while let Some(&c) = chars.get(i) {
+        if c.is_whitespace() {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        if c == '\'' || c == '"' {
+            i += 1;
+            while chars.get(i).is_some_and(|&d| d != c) {
+                i += 1;
+            }
+            // Past the closing quote, if there is one.
+            let end = (i + 1).min(chars.len());
+            let word: String = chars.get(start..end).unwrap_or(&[]).iter().collect();
+            let closed = word.len() > 1 && word.ends_with(c);
+            let inner = if closed { word.get(1..word.len() - 1).unwrap_or("") } else { word.get(1..).unwrap_or("") };
+            words.push(inner.trim().to_owned());
+            i = end;
+        } else {
+            while chars.get(i).is_some_and(|d| !d.is_whitespace()) {
+                i += 1;
+            }
+            let word: String = chars.get(start..i).unwrap_or(&[]).iter().collect();
+            words.push(word.trim().to_owned());
+        }
+    }
+    words
 }
 
 /// How many variables `parse_env` finds in `text`, without allocating (for drawing).

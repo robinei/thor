@@ -1,6 +1,9 @@
-//! Desktop files: the installed apps, as library entries (shelf's Apps: every app desktop file in
+//! Desktop files: the installed apps and games, as library entries (every app desktop file in
 //! `<data dir>/applications` of the XDG data dirs, the user's first, not hidden), each with its name,
-//! command and icon (from the icon themes).
+//! command, working dir and icon (from the icon themes). Its categories say which: `Game` is a game
+//! (shelf's Games), unless also `Emulator` (an emulator is started for a game: an app); anything else is
+//! an app (Apps). Steam's shortcuts to its games (`steam://rungameid/`) are left out: Steam's own
+//! library has them.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -20,12 +23,16 @@ struct Entry {
     exec: String,
     icon: String,
     kind: String,
+    /// The working dir (`Path`).
+    path: String,
+    categories: String,
     /// NoDisplay or Hidden: not to be shown in menus.
     hidden: bool,
 }
 
-/// The installed apps as library entries (id `desktop:<id>`), by desktop file: the first of an id in
-/// `dirs` (the user's dir first), applications with a command that aren't hidden.
+/// The installed apps and games as library entries (id `desktop:<id>`; an app a tool), by desktop file:
+/// the first of an id in `dirs` (the user's dir first), applications with a command that aren't hidden
+/// (nor Steam's game shortcuts).
 pub fn entries(dirs: &[PathBuf]) -> Vec<clamshell_library::Game> {
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
@@ -45,14 +52,15 @@ pub fn entries(dirs: &[PathBuf]) -> Vec<clamshell_library::Game> {
             };
             let entry = parse(&text);
             let argv = exec_args(&entry.exec);
-            if entry.hidden || entry.kind != "Application" || argv.is_empty() {
+            if entry.hidden || entry.kind != "Application" || argv.is_empty() || entry.exec.contains("steam://rungameid/") {
                 continue;
             }
+            let category = |c: &str| entry.categories.split(';').any(|x| x == c);
             let title = if entry.name.is_empty() { id.clone() } else { entry.name.clone() };
             let mut game = clamshell_library::Game::new(&format!("desktop:{id}"), &title);
-            game.launch = clamshell_library::Launch::Program(argv);
+            game.launch = clamshell_library::Launch::Program { argv, workdir: (!entry.path.is_empty()).then(|| PathBuf::from(&entry.path)) };
             game.icon = (!entry.icon.is_empty()).then(|| find_icon(&entry.icon, dirs)).flatten();
-            game.tool = true;
+            game.tool = !category("Game") || category("Emulator");
             out.push(game);
         }
     }
@@ -77,6 +85,8 @@ fn parse(text: &str) -> Entry {
             "Exec" => entry.exec = value,
             "Icon" => entry.icon = value,
             "Type" => entry.kind = value,
+            "Path" => entry.path = value,
+            "Categories" => entry.categories = value,
             "NoDisplay" | "Hidden" if value == "true" => entry.hidden = true,
             _ => {}
         }
@@ -156,12 +166,12 @@ pub fn find_icon(name: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
 
     #[test]
-    fn installed_apps_are_entries_the_users_first_hidden_ones_left_out() {
+    fn installed_apps_and_games_are_entries_the_users_first_hidden_ones_left_out() {
         let base = std::env::temp_dir().join(format!("clamshell-desktop-entries-{}", std::process::id()));
         let (user, system) = (base.join("user"), base.join("system"));
         let write = |dir: &Path, id: &str, text: &str| {
@@ -172,10 +182,22 @@ mod tests {
         write(&user, "firefox", "[Desktop Entry]\nType=Application\nName=My Firefox\nExec=firefox --private %u\n");
         write(&system, "helper", "[Desktop Entry]\nType=Application\nName=Helper\nExec=helper\nNoDisplay=true\n");
         write(&system, "link", "[Desktop Entry]\nType=Link\nName=Link\nURL=x\n");
+        write(&system, "celeste", "[Desktop Entry]\nType=Application\nName=Celeste\nExec=Celeste\nPath=/opt/celeste\nCategories=Game;ActionGame;\n");
+        write(&system, "retroarch", "[Desktop Entry]\nType=Application\nName=RetroArch\nExec=retroarch\nCategories=Game;Emulator;\n");
+        write(&user, "steam_9", "[Desktop Entry]\nType=Application\nName=Nine\nExec=steam steam://rungameid/9\nCategories=Game;\n");
         let entries = entries(&[user.clone(), system.clone()]);
-        let [firefox] = entries.as_slice() else { unreachable!("{entries:?}") };
-        assert_eq!((&*firefox.id, firefox.title.as_str()), ("desktop:firefox", "My Firefox"));
-        assert_eq!(firefox.launch, clamshell_library::Launch::Program(vec!["firefox".into(), "--private".into()]));
+        let found: Vec<(&str, &str, bool)> = entries.iter().map(|g| (&*g.id, g.title.as_str(), g.tool)).collect();
+        assert_eq!(
+            found,
+            vec![("desktop:firefox", "My Firefox", true), ("desktop:celeste", "Celeste", false), ("desktop:retroarch", "RetroArch", true)],
+            "a game a game, an emulator an app; Steam's shortcuts left out"
+        );
+        let launch = |argv: &[&str], workdir: Option<&str>| clamshell_library::Launch::Program {
+            argv: argv.iter().map(|a| (*a).to_owned()).collect(),
+            workdir: workdir.map(PathBuf::from),
+        };
+        assert_eq!(entries[0].launch, launch(&["firefox", "--private"], None));
+        assert_eq!(entries[1].launch, launch(&["Celeste"], Some("/opt/celeste")));
         let _ = fs::remove_dir_all(&base);
     }
 

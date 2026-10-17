@@ -538,9 +538,10 @@ impl State {
     fn on_shelf(&mut self, id: ShelfId) -> Vec<Effect> {
         match id {
             ShelfId::Game(game) => {
-                // Activating the selected game again plays it (starts, resumes, or switches to it).
+                // Activating the selected entry again opens it (a group) or plays it (starts it, or
+                // switches to it).
                 if self.shelf.selected() == Some(&game) {
-                    return self.play(game);
+                    return self.activate_selected();
                 }
                 if self.shelf.select(&game) {
                     self.saves.resume.touch(self.unix_secs);
@@ -553,14 +554,29 @@ impl State {
                 }
                 vec![]
             }
-            ShelfId::Launch => match self.shelf.selected().cloned() {
-                Some(game) => self.play(game),
-                None => vec![],
-            },
+            ShelfId::Launch => self.activate_selected(),
+            ShelfId::Up => {
+                if self.shelf.up() {
+                    self.moved_collection();
+                }
+                vec![]
+            }
         }
     }
 
-    /// Shelf went to another collection: the place is saved, and a focus in shelf's list follows.
+    /// Shelf's action on its selected entry: a group opens, anything else plays.
+    fn activate_selected(&mut self) -> Vec<Effect> {
+        if self.shelf.open() {
+            self.moved_collection();
+            return vec![];
+        }
+        match self.shelf.selected().cloned() {
+            Some(game) => self.play(game),
+            None => vec![],
+        }
+    }
+
+    /// Shelf went to another collection or list: the place is saved, and a focus in shelf's list follows.
     fn moved_collection(&mut self) {
         self.saves.resume.touch(self.unix_secs);
         if matches!(self.pointer.focus, Some(Id::Shelf(ShelfId::Game(_) | ShelfId::Collection(_)))) {

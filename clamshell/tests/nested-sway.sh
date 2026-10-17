@@ -22,26 +22,22 @@ until_() { n=0; while ! eval "$1"; do n=$((n + 1)); [ $n -ge $(( $2 * 10 )) ] &&
 check_soon() { until_ "$2" "${3:-5}"; check "$1" "$2"; }
 
 # --- the test environment
-mkdir -p "$T/config" "$T/pegasus" "$T/games" "$T/state" "$T/data/applications" "$T/none"
+mkdir -p "$T/config/clamshell" "$T/games" "$T/state" "$T/data/applications" "$T/data/clamshell" "$T/none"
 # The test apps, installed (desktop files), pinned to the dock in this order.
 app() { printf '[Desktop Entry]\nType=Application\nName=%s\nExec=%s\n' "$2" "$3" > "$T/data/applications/$1.desktop"; }
 app terminal Terminal 'foot sleep 300'
 app slow Slow 'sh -c "sleep 3; exec foot --app-id=slow sleep 300"'
 app spawner Spawner 'sh -c "foot --app-id=first sleep 300 & sleep 2; foot --app-id=late sleep 300 & wait"'
 app detached Detached 'sh -c "exec env -u XDG_ACTIVATION_TOKEN -u DESKTOP_STARTUP_ID setsid -f foot --app-id=detached sleep 300; sleep 300"'
-printf '# ClamShell dock, format 1\ndesktop:terminal\ndesktop:slow\ndesktop:spawner\ndesktop:detached\n' > "$T/pegasus/dock.txt"
-echo "$T/games" > "$T/pegasus/game_dirs.txt"
-cat > "$T/games/metadata.pegasus.txt" <<'EOF'
-collection: Test
-extension: game
-launch: sh -c "foot --app-id=testgame sleep 300 & sleep 300"
-
-game: Test Game
-file: test.game
-
-game: Zeta Game
-file: zeta.game
-launch: sh -c "foot --app-id=zetagame sleep 300 & sleep 300"
+printf '# ClamShell dock, format 1\ndesktop:terminal\ndesktop:slow\ndesktop:spawner\ndesktop:detached\n' > "$T/data/clamshell/dock.txt"
+# Two test games in a content dir, a tab of their own (Test, before Apps); each starts a window of its own.
+cat > "$T/config/clamshell/library.json" <<EOF
+{ "sources": [
+  { "tab": "Test", "id": "test", "dir": "$T/games", "match": ["test.game"],
+    "launch": ["sh", "-c", "foot --app-id=testgame sleep 300 & sleep 300"] },
+  { "tab": "Test", "id": "test", "dir": "$T/games", "match": ["zeta.game"],
+    "launch": ["sh", "-c", "foot --app-id=zetagame sleep 300 & sleep 300"] }
+] }
 EOF
 touch "$T/games/test.game" "$T/games/zeta.game"
 # The outputs, and how a ClamShell session behaves (as on the device).
@@ -95,7 +91,7 @@ walk(json.load(sys.stdin))"; }
 # A tap or long press, as the program's control pipe takes them.
 ctl() { echo "$*" > "$T/control"; sleep 0.3; }
 start_program() {
-    msg exec "env CLAMSHELL_TEST=$T CLAMSHELL_CONTROL=$T/control CLAMSHELL_STEAM=off CLAMSHELL_PEGASUS_CONFIG=$T/pegasus XDG_CONFIG_HOME=$T/config XDG_STATE_HOME=$T/state XDG_DATA_HOME=$T/data XDG_DATA_DIRS=$T/none CLAMSHELL_BOTTOM_OUTPUT=HEADLESS-2 CLAMSHELL_START_MODE=dock $BIN >> $T/program.log 2>&1"
+    msg exec "env CLAMSHELL_TEST=$T CLAMSHELL_CONTROL=$T/control CLAMSHELL_STEAM=off XDG_CONFIG_HOME=$T/config XDG_STATE_HOME=$T/state XDG_DATA_HOME=$T/data XDG_DATA_DIRS=$T/none CLAMSHELL_BOTTOM_OUTPUT=HEADLESS-2 CLAMSHELL_START_MODE=dock $BIN >> $T/program.log 2>&1"
 }
 program_pid() { for p in $(pgrep -x clamshell); do { tr '\0' '\n' < "/proc/$p/environ"; } 2>/dev/null | grep -qx "CLAMSHELL_TEST=$T" && echo "$p"; done; }
 # The test apps, by position on the dock (their pins).
@@ -128,7 +124,7 @@ check_soon "a later window of a launch: on the app's workspace" '[ -n "$(ws_of l
 
 # The bottom screen: the spawner's windows moved down (Home+Down) and up again (Home+Up).
 SP=$(space spawner)
-RULES="$T/pegasus/window-rules.txt"
+RULES="$T/data/clamshell/window-rules.txt"
 focused_output() { json get_outputs "import json,sys; print(next((o['name'] for o in json.load(sys.stdin) if o['focused']), ''))"; }
 msg "[app_id=\"^late$\"] focus"; sleep 0.3
 ctl window down
@@ -177,7 +173,7 @@ ctl long dock 4; ctl tap dock-menu quit
 until_ '[ -z "$(games)" ]' 10
 check "each game's menu, Quit: its windows closed, then its slice stopped" '[ -z "$(games)" ]'
 check "  and the emptied workspace stays in front" '[ "$(front)" = "$G1" ]'
-plays() { [ -f "$T/pegasus/stats.db" ] && sqlite3 "$T/pegasus/stats.db" "select count(*) from plays" 2> /dev/null || echo 0; }
+plays() { [ -f "$T/data/clamshell/stats.db" ] && sqlite3 "$T/data/clamshell/stats.db" "select count(*) from plays" 2> /dev/null || echo 0; }
 until_ '[ "$(plays)" -ge 2 ]' 5
 check "  and both plays recorded" '[ "$(plays)" -ge 2 ]'
 

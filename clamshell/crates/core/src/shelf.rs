@@ -1,44 +1,58 @@
-//! Shelf's navigation: the collections, each with its own cursor over its games, kept in range and on
-//! screen; and changes to the library (plays, favourites) that keep the collection and selection. The
-//! methods say whether the selection changed; the state saves the place and moves the focus around them.
+//! Shelf's navigation: the collections, each with its own place: the groups opened in it (a series, then
+//! a season) and a cursor over each level's list, kept in range and on screen; and changes to the
+//! library (plays, favourites) that keep the collection and selection. The methods say whether the
+//! selection changed; the state saves the place and moves the focus around them.
 
 use std::sync::Arc;
 
 use crate::scroll::{Rows, Scroll};
 use crate::{Collection, Game, Library};
 
-/// A collection's place in its list: the selected game's position, and the rows scrolled past (whole
-/// rows at rest; fractions while a finger drags the list).
+/// A list's place: the selected entry's position, and the rows scrolled past (whole rows at rest;
+/// fractions while a finger drags the list).
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Cursor {
     pub index: usize,
     pub top: f32,
 }
 
-/// A collection's place as kept: the selected game's position and the list's scroll.
+/// A list's place as kept: the selected entry's position and the list's scroll.
 #[derive(Debug, Clone, Default)]
 struct Place {
     index: usize,
     scroll: Scroll,
 }
 
+/// A collection's place: the groups opened, outermost first, and the place in each level's list (the
+/// collection's, then each open group's).
+#[derive(Debug, Clone)]
+struct Nav {
+    open: Vec<usize>,
+    places: Vec<Place>,
+}
+
+impl Default for Nav {
+    fn default() -> Nav {
+        Nav { open: Vec::new(), places: vec![Place::default()] }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct Shelf {
     library: Library,
-    /// The current collection, and each collection's cursor.
+    /// The current collection, and each collection's place.
     current: usize,
-    cursors: Vec<Place>,
+    navs: Vec<Nav>,
     /// List rows on screen (reported by the UI).
     rows: usize,
-    /// Id of the selected game (shelf's list on top, its settings below): the current collection's
-    /// cursor's.
+    /// Id of the selected entry (shelf's list on top, its settings below): the current list's cursor's.
     selected: Option<Arc<str>>,
 }
 
 impl Shelf {
     pub(crate) fn new(library: Library) -> Shelf {
-        let cursors = vec![Place::default(); library.collections.len()];
-        let mut shelf = Shelf { library, cursors, rows: 1, ..Shelf::default() };
+        let navs = vec![Nav::default(); library.collections.len()];
+        let mut shelf = Shelf { library, navs, rows: 1, ..Shelf::default() };
         shelf.sync();
         shelf
     }
@@ -64,71 +78,152 @@ impl Shelf {
         self.library.collections.get(self.current)
     }
 
-    pub fn cursor(&self) -> Cursor {
-        self.cursors.get(self.current).map_or_else(Cursor::default, |p| Cursor { index: p.index, top: p.scroll.offset() })
+    /// The group open in the current collection (the innermost), if any.
+    pub fn group(&self) -> Option<&Game> {
+        let g = *self.navs.get(self.current)?.open.last()?;
+        self.library.games.get(g)
     }
 
-    /// The current collection's scroll.
+    /// The current list's place.
+    fn place(&self) -> Option<&Place> {
+        self.navs.get(self.current).and_then(|n| n.places.last())
+    }
+
+    fn place_mut(&mut self) -> Option<&mut Place> {
+        self.navs.get_mut(self.current).and_then(|n| n.places.last_mut())
+    }
+
+    pub fn cursor(&self) -> Cursor {
+        self.place().map_or_else(Cursor::default, |p| Cursor { index: p.index, top: p.scroll.offset() })
+    }
+
+    /// The current list's scroll.
     pub(crate) fn scroll(&self) -> &Scroll {
-        self.cursors.get(self.current).map_or(&crate::scroll::EMPTY, |p| &p.scroll)
+        self.place().map_or(&crate::scroll::EMPTY, |p| &p.scroll)
     }
 
     pub(crate) fn scroll_mut(&mut self) -> Option<&mut Scroll> {
-        self.cursors.get_mut(self.current).map(|p| &mut p.scroll)
+        self.place_mut().map(|p| &mut p.scroll)
     }
 
-    /// A game by its id.
+    /// An entry by its id.
     pub fn game(&self, id: &str) -> Option<&Game> {
         self.library.games.iter().find(|g| &*g.id == id)
     }
 
-    /// The game at `position` in the current collection.
+    /// Collection `c`'s list as its place has it: the innermost open group's entries, else its own.
+    fn list_of(&self, c: usize) -> &[usize] {
+        match self.navs.get(c).and_then(|n| n.open.last()) {
+            Some(&g) => self.library.games.get(g).map_or(&[], |g| g.items.as_slice()),
+            None => self.library.collections.get(c).map_or(&[], |c| c.games.as_slice()),
+        }
+    }
+
+    /// The current list: the current collection's, or its open group's.
+    pub fn list(&self) -> &[usize] {
+        self.list_of(self.current)
+    }
+
+    /// The entry at `position` in the current list.
     pub fn game_at(&self, position: usize) -> Option<&Game> {
-        let index = *self.collection()?.games.get(position)?;
-        self.library.games.get(index)
+        self.library.games.get(*self.list().get(position)?)
     }
 
     pub fn selected_game(&self) -> Option<&Game> {
         self.game_at(self.cursor().index)
     }
 
-    /// Where `game` is in the current collection.
-    fn position(&self, game: &str) -> Option<usize> {
-        self.collection()?.games.iter().position(|&i| self.library.games.get(i).is_some_and(|g| &*g.id == game))
+    /// Where `game` is in collection `c`'s list.
+    fn position_in(&self, c: usize, game: &str) -> Option<usize> {
+        self.list_of(c).iter().position(|&i| self.library.games.get(i).is_some_and(|g| &*g.id == game))
     }
 
     /// Keeps the cursor in range and on screen, and `selected` in step with it. Whether the selection
     /// changed.
     pub(crate) fn sync(&mut self) -> bool {
         let before = self.selected.clone();
-        let len = self.collection().map_or(0, |c| c.games.len());
+        let len = self.list().len();
         let rows = self.rows.max(1) as f32;
-        if let Some(c) = self.cursors.get_mut(self.current) {
-            c.index = c.index.min(len.saturating_sub(1));
-            c.scroll.set_visible(rows, len);
-            c.scroll.show(c.index, len);
+        if let Some(p) = self.place_mut() {
+            p.index = p.index.min(len.saturating_sub(1));
+            p.scroll.set_visible(rows, len);
+            p.scroll.show(p.index, len);
         }
         self.selected = self.selected_game().map(|g| g.id.clone());
         self.selected != before
     }
 
-    /// Moves the cursor by `step` games (clamped at the ends). Whether the selection changed.
+    /// Moves the cursor by `step` entries (clamped at the ends). Whether the selection changed.
     pub(crate) fn step(&mut self, step: i32) -> bool {
-        let len = self.collection().map_or(0, |c| c.games.len());
-        if let Some(c) = self.cursors.get_mut(self.current) {
-            let target = c.index as i64 + i64::from(step);
-            c.index = target.clamp(0, len.saturating_sub(1) as i64) as usize;
+        let len = self.list().len();
+        if let Some(p) = self.place_mut() {
+            let target = p.index as i64 + i64::from(step);
+            p.index = target.clamp(0, len.saturating_sub(1) as i64) as usize;
         }
         self.sync()
     }
 
-    /// Selects `game` in the current collection, if it is there. Whether the selection changed.
+    /// Selects `game` in the current list, if it is there. Whether the selection changed.
     pub(crate) fn select(&mut self, game: &str) -> bool {
-        let position = self.position(game);
-        if let (Some(p), Some(c)) = (position, self.cursors.get_mut(self.current)) {
-            c.index = p;
+        let position = self.position_in(self.current, game);
+        if let (Some(i), Some(p)) = (position, self.place_mut()) {
+            p.index = i;
         }
         self.sync()
+    }
+
+    /// Opens the selected entry if it is a group (its list shown, from its first entry). Whether it did.
+    pub(crate) fn open(&mut self) -> bool {
+        let Some(&g) = self.list().get(self.cursor().index) else {
+            return false;
+        };
+        if !self.library.games.get(g).is_some_and(Game::is_group) {
+            return false;
+        }
+        if let Some(n) = self.navs.get_mut(self.current) {
+            n.open.push(g);
+            n.places.push(Place::default());
+        }
+        self.sync();
+        true
+    }
+
+    /// Closes the open group (back to the list it is in, it selected). Whether there was one.
+    pub(crate) fn up(&mut self) -> bool {
+        let Some(n) = self.navs.get_mut(self.current).filter(|n| !n.open.is_empty()) else {
+            return false;
+        };
+        n.open.pop();
+        n.places.pop();
+        self.sync();
+        true
+    }
+
+    /// Shows `group` open: in the current collection if it has the group's outermost group, else the
+    /// first that does. Whether it is there.
+    pub(crate) fn reveal(&mut self, group: &str) -> bool {
+        let Some(g) = self.library.games.iter().position(|x| &*x.id == group) else {
+            return false;
+        };
+        let mut path = self.library.groups_of(g);
+        path.push(g);
+        let Some(&root) = path.first() else {
+            return false;
+        };
+        let has = |c: &Collection| c.games.contains(&root);
+        let Some(c) = self.collection().filter(|c| has(c)).map(|_| self.current).or_else(|| self.library.collections.iter().position(has)) else {
+            return false;
+        };
+        self.current = c;
+        if let Some(n) = self.navs.get_mut(c) {
+            *n = Nav::default();
+        }
+        for id in path.iter().filter_map(|&i| self.library.games.get(i)).map(|g| g.id.clone()).collect::<Vec<_>>() {
+            self.select(&id);
+            self.open();
+        }
+        self.sync();
+        true
     }
 
     /// Makes collection `i` the current one, if there is one there (whether there was).
@@ -159,27 +254,24 @@ impl Shelf {
     }
 
     /// Changes the library (favourites, plays) keeping the current collection, each one's place and the
-    /// selected game, all by name, since derived collections may come or go. Whether the selection
+    /// selected entry, all by name, since derived collections may come or go. Whether the selection
     /// changed.
     pub(crate) fn relayout(&mut self, change: impl FnOnce(&mut Library)) -> bool {
         let names: Vec<String> = self.library.collections.iter().map(|c| c.name.clone()).collect();
         let current_name = names.get(self.current).cloned();
         let selected = self.selected.clone();
         change(&mut self.library);
-        let old = std::mem::take(&mut self.cursors);
-        self.cursors =
+        let old = std::mem::take(&mut self.navs);
+        self.navs =
             self.library.collections.iter().map(|c| names.iter().position(|n| *n == c.name).and_then(|i| old.get(i).cloned()).unwrap_or_default()).collect();
         self.current = current_name.and_then(|n| self.library.collections.iter().position(|c| c.name == n)).unwrap_or(0);
         if let Some(id) = selected {
-            let position = self.position(&id);
-            if let (Some(p), Some(c)) = (position, self.cursors.get_mut(self.current)) {
-                c.index = p;
-            }
+            self.select(&id);
         }
         self.sync()
     }
 
-    /// The selected game in or out of the favourites, if there is one: whether the selection changed.
+    /// The selected entry in or out of the favourites, if there is one: whether the selection changed.
     pub(crate) fn toggle_favourite(&mut self) -> Option<bool> {
         let id = self.selected.clone()?;
         Some(self.relayout(|lib| {
@@ -200,28 +292,47 @@ impl Shelf {
         })
     }
 
-    /// Each collection's name and its selected game's id, tab-separated, a line each.
+    /// Each collection's name, its open groups' ids and its selected entry's id, tab-separated, a line
+    /// each.
     pub(crate) fn selections(&self, text: &mut String) {
-        for (i, c) in self.library.collections.iter().enumerate() {
-            let index = self.cursors.get(i).map_or(0, |p| p.index);
-            if let Some(g) = c.games.get(index).and_then(|&g| self.library.games.get(g)) {
-                text.push_str(&c.name);
+        for (c, coll) in self.library.collections.iter().enumerate() {
+            let Some(nav) = self.navs.get(c) else {
+                continue;
+            };
+            let index = nav.places.last().map_or(0, |p| p.index);
+            let Some(g) = self.list_of(c).get(index).and_then(|&g| self.library.games.get(g)) else {
+                continue;
+            };
+            text.push_str(&coll.name);
+            for group in nav.open.iter().filter_map(|&o| self.library.games.get(o)) {
                 text.push('\t');
-                text.push_str(&g.id);
-                text.push('\n');
+                text.push_str(&group.id);
             }
+            text.push('\t');
+            text.push_str(&g.id);
+            text.push('\n');
         }
     }
 
-    /// Selects `game` in the collection named `name` (either may be gone: then nothing).
-    pub(crate) fn restore_selection(&mut self, name: &str, game: &str) {
-        let Some(i) = self.library.collections.iter().position(|c| c.name == name) else {
+    /// Opens the groups `ids` names but the last, then selects the last, in the collection named `name`
+    /// (any may be gone: then it stops there).
+    pub(crate) fn restore_selection(&mut self, name: &str, ids: &[&str]) {
+        let Some(c) = self.library.collections.iter().position(|c| c.name == name) else {
             return;
         };
-        let position = self.library.collections.get(i).and_then(|c| c.games.iter().position(|&g| self.library.games.get(g).is_some_and(|g| &*g.id == game)));
-        if let (Some(p), Some(cursor)) = (position, self.cursors.get_mut(i)) {
-            cursor.index = p;
+        let current = std::mem::replace(&mut self.current, c);
+        for (i, id) in ids.iter().enumerate() {
+            let Some(p) = self.position_in(c, id) else {
+                break;
+            };
+            if let Some(place) = self.place_mut() {
+                place.index = p;
+            }
+            if i + 1 < ids.len() && !self.open() {
+                break;
+            }
         }
+        self.current = current;
     }
 
     /// Makes the collection named `name` the current one, if there is one.
@@ -233,14 +344,16 @@ impl Shelf {
     }
 }
 
-/// The current collection's games as a list's rows (its place is kept by position, per collection).
+/// The current list's entries as a list's rows (its place is kept by position, per collection and
+/// group).
 impl Rows for Shelf {
     fn len(&self) -> usize {
-        self.collection().map_or(0, |c| c.games.len())
+        self.list().len()
     }
 }
 
 #[cfg(test)]
+#[allow(clippy::indexing_slicing)]
 mod tests {
     use crate::testkit::*;
     use crate::*;
@@ -279,8 +392,8 @@ mod tests {
         s.apply(ShelfEvent::CollectionStep(1).into());
         assert_eq!(s.shelf().current(), 1);
         assert_eq!(s.shelf().cursor().index, 0);
-        s.apply(ShelfEvent::CollectionStep(2).into());
-        assert_eq!(s.shelf().current(), 0, "wraps around (past Apps)");
+        s.apply(ShelfEvent::CollectionStep(3).into());
+        assert_eq!(s.shelf().current(), 0, "wraps around (past TV and Apps)");
         assert_eq!(s.shelf().cursor().index, 2);
     }
 
@@ -297,12 +410,44 @@ mod tests {
     }
 
     #[test]
+    fn a_group_opens_and_back_goes_out_to_it() {
+        let mut s = state();
+        tap(&mut s, Id::Shelf(ShelfId::Collection(2)));
+        assert_eq!(tap(&mut s, game("tv:Cosmos")), vec![], "selected already: opened, nothing launched");
+        assert_eq!(s.shelf().group().map(|g| g.title.as_str()), Some("Cosmos"));
+        let titles = |s: &State| s.shelf().list().iter().map(|&i| s.shelf().library().games[i].title.clone()).collect::<Vec<_>>();
+        assert_eq!(titles(&s), vec!["Season 1", "Season 2"]);
+        s.apply(ShelfEvent::ListStep(1).into());
+        tap(&mut s, Id::Shelf(ShelfId::Launch));
+        assert_eq!(titles(&s), vec!["1. Standing Up in the Milky Way"]);
+        let fx = tap(&mut s, Id::Shelf(ShelfId::Launch));
+        assert!(fx.iter().any(|e| matches!(e, Effect::Launch { game, .. } if game.ends_with("Milky Way.mkv"))), "an episode plays: {fx:?}");
+        tap(&mut s, Id::Shelf(ShelfId::Up));
+        assert_eq!(s.shelf().selected().map(|g| &**g), Some("tv:Cosmos/Season 2"), "back where it was");
+        tap(&mut s, Id::Shelf(ShelfId::Up));
+        assert_eq!(s.shelf().group(), None);
+        assert_eq!(s.shelf().selected().map(|g| &**g), Some("tv:Cosmos"));
+        assert!(!tap(&mut s, Id::Shelf(ShelfId::Up)).iter().any(|_| true) && s.shelf().group().is_none(), "nothing to go out of");
+    }
+
+    #[test]
+    fn a_group_started_from_elsewhere_opens_in_shelf() {
+        let mut s = state();
+        let fx = s.launch("tv:Cosmos/Season 1".into());
+        assert_eq!(fx, vec![Effect::Window(WindowCommand::ShowShelf)]);
+        assert_eq!(s.shelf().collection().map(|c| c.name.as_str()), Some("TV"));
+        assert_eq!(s.shelf().group().map(|g| &*g.id), Some("tv:Cosmos/Season 1"));
+        assert_eq!(s.shelf().selected().map(|g| &**g), Some("tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv"));
+        assert!(s.session().launching.is_empty(), "nothing started");
+    }
+
+    #[test]
     fn selecting_then_activating_again_launches() {
         let mut s = state();
         assert!(tap(&mut s, game("ff6")).is_empty());
         let fx = tap(&mut s, game("ff6"));
         assert!(
-            fx.iter().any(|e| matches!(e, Effect::Launch { game, settings, env, launch: Launch::None, file: None, .. } if &**game == "ff6" && *settings == Values::default() && env.is_empty())),
+            fx.iter().any(|e| matches!(e, Effect::Launch { game, settings, env, launch: Launch::None, .. } if &**game == "ff6" && *settings == Values::default() && env.is_empty())),
             "{fx:?}"
         );
     }

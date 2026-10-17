@@ -76,6 +76,12 @@ pub enum Icon {
     Off,
     /// Layers: three sheets stacked.
     Layers,
+    // Shelf's tabs (library.json names them: see [`Icon::named`]).
+    Film,
+    Tv,
+    Music,
+    Star,
+    Clock,
 }
 
 impl Icon {
@@ -95,6 +101,21 @@ impl Icon {
             // (Its button is the clock.)
             Tab::Time => Icon::Gauge,
         }
+    }
+
+    /// A shelf tab's icon, by the name library.json gives (`gamepad`, `apps`, `film`, `tv`, `music`,
+    /// `star`, `clock`); none for another.
+    pub fn named(name: &str) -> Option<Icon> {
+        Some(match name {
+            "gamepad" => Icon::Gamepad,
+            "apps" => Icon::Apps,
+            "film" => Icon::Film,
+            "tv" => Icon::Tv,
+            "music" => Icon::Music,
+            "star" => Icon::Star,
+            "clock" => Icon::Clock,
+            _ => return None,
+        })
     }
 
     /// A volume (0-100): a wave per third.
@@ -281,6 +302,34 @@ pub fn draw(c: &mut Canvas, icon: Icon, r: Rect, color: Color) {
             for (x, y) in [(4.0, 4.0), (13.0, 4.0), (4.0, 13.0), (13.0, 13.0)] {
                 p.frame((x, y, 7.0, 7.0), 1.5, LINE);
             }
+        }
+        Icon::Film => {
+            p.frame((3.0, 4.0, 18.0, 16.0), 1.5, LINE);
+            p.line(&[(7.5, 4.0), (7.5, 20.0)], LINE);
+            p.line(&[(16.5, 4.0), (16.5, 20.0)], LINE);
+            for y in [9.5, 14.5] {
+                p.line(&[(3.0, y), (7.5, y)], LINE);
+                p.line(&[(16.5, y), (21.0, y)], LINE);
+            }
+        }
+        Icon::Tv => {
+            p.frame((2.5, 7.0, 19.0, 13.0), 2.0, LINE);
+            p.line(&[(8.0, 2.5), (12.0, 7.0), (16.0, 2.5)], LINE);
+        }
+        Icon::Music => {
+            p.line(&[(9.0, 18.0), (9.0, 5.0), (19.5, 3.0), (19.5, 16.0)], LINE);
+            p.dot(6.5, 18.0, 2.6);
+            p.dot(17.0, 16.0, 2.6);
+        }
+        Icon::Star => {
+            p.shape(&[(12.0, 2.8), (14.5, 9.3), (21.5, 9.7), (16.1, 14.1), (17.9, 20.9), (12.0, 17.1), (6.1, 20.9), (7.9, 14.1), (2.5, 9.7), (9.5, 9.3)], LINE)
+        }
+        Icon::Clock => {
+            for quarter in 0..4 {
+                let from = quarter as f32 * 90.0;
+                p.arc((12.0, 12.0), 9.0, (from, from + 90.0), LINE);
+            }
+            p.line(&[(12.0, 6.5), (12.0, 12.0), (15.5, 14.5)], LINE);
         }
         Icon::Keyboard => keyboard(p),
         Icon::Touchpad => {
@@ -543,12 +592,17 @@ mod tests {
             Icon::Off,
             Icon::Layers,
             Icon::Windows,
+            Icon::Film,
+            Icon::Tv,
+            Icon::Music,
+            Icon::Star,
+            Icon::Clock,
         ];
         let mut seen = std::collections::HashSet::new();
         for icon in &all {
             seen.insert(variant(*icon));
         }
-        assert_eq!(seen.len(), 40, "a variant is missing from the list");
+        assert_eq!(seen.len(), 45, "a variant is missing from the list");
         all
     }
 
@@ -595,6 +649,11 @@ mod tests {
             Icon::Off => 44,
             Icon::Layers => 45,
             Icon::Windows => 46,
+            Icon::Film => 47,
+            Icon::Tv => 48,
+            Icon::Music => 49,
+            Icon::Star => 50,
+            Icon::Clock => 51,
         }
     }
 

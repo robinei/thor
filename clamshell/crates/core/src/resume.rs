@@ -1,5 +1,5 @@
-//! Coming back to the same place after a restart: shelf's current collection and each collection's
-//! selected game, and the second screen's tab, saved as text; and the screens' brightness. Both are
+//! Coming back to the same place after a restart: shelf's current collection and each collection's open
+//! groups and selected entry, and the second screen's tab, saved as text; and the screens' brightness. Both are
 //! written once changes have stopped for a moment.
 
 use crate::State;
@@ -41,8 +41,8 @@ pub(crate) struct Saves {
 
 impl State {
     /// Where shelf and the second screen are, to come back to: shelf's current collection's name, the
-    /// second screen's tab (`@mode`, the file's name for it), then each collection's name and selected
-    /// game's id, tab-separated.
+    /// second screen's tab (`@mode`, the file's name for it), then each collection's name, open groups'
+    /// ids and selected entry's id, tab-separated.
     pub fn resume_text(&self) -> String {
         let mut text = self.shelf.collection().map(|c| c.name.clone()).unwrap_or_default();
         text.push('\n');
@@ -59,7 +59,10 @@ impl State {
         let mut lines = text.lines();
         let current = lines.next().unwrap_or("");
         for line in lines {
-            let Some((name, id)) = line.split_once('\t') else {
+            let mut fields = line.split('\t');
+            let name = fields.next().unwrap_or("");
+            let ids: Vec<&str> = fields.collect();
+            let Some(&id) = ids.first() else {
                 continue;
             };
             if name == "@mode" {
@@ -70,7 +73,7 @@ impl State {
                 }
                 continue;
             }
-            self.shelf.restore_selection(name, id);
+            self.shelf.restore_selection(name, &ids);
         }
         self.shelf.restore_current(current);
     }
@@ -93,11 +96,25 @@ mod tests {
             Some(Effect::Save(Save::Resume(text))) => text.clone(),
             other => format!("{other:?}"),
         };
-        assert_eq!(text, "More\n@mode\tsysinfo\nGames\tff6\nMore\tff6\nApps\tdesktop:steam\n");
+        assert_eq!(text, "More\n@mode\tsysinfo\nGames\tff6\nMore\tff6\nTV\ttv:Cosmos\nApps\tdesktop:steam\n");
         let mut fresh = State::new(Init { resume: Some(text), ..init() });
         assert_eq!(fresh.shelf().collection().map(|c| c.name.as_str()), Some("More"));
         fresh.apply(ShelfEvent::CollectionStep(-1).into());
         assert_eq!(fresh.shelf().selected().map(|g| &**g), Some("ff6"));
+    }
+
+    #[test]
+    fn open_groups_are_restored() {
+        let mut s = state();
+        tap(&mut s, Id::Shelf(ShelfId::Collection(2)));
+        tap(&mut s, Id::Shelf(ShelfId::Launch));
+        tap(&mut s, Id::Shelf(ShelfId::Launch));
+        s.apply(ShelfEvent::ListStep(2).into());
+        let text = s.resume_text();
+        assert!(text.contains("TV\ttv:Cosmos\ttv:Cosmos/Season 1\ttv:Cosmos/Season 1/10. The Edge of Forever.mkv\n"), "{text}");
+        let fresh = State::new(Init { resume: Some(text), ..init() });
+        assert_eq!(fresh.shelf().group().map(|g| g.title.as_str()), Some("Season 1"));
+        assert_eq!(fresh.shelf().selected().map(|g| &**g), Some("tv:Cosmos/Season 1/10. The Edge of Forever.mkv"));
     }
 
     #[test]

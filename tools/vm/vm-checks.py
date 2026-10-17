@@ -30,6 +30,9 @@ vm = importlib.import_module("vm")
 HOME = f"/home/{vm.USER}"
 CHECKS_DIR = f"{HOME}/.cache/thor-checks"
 STATE = f"{CHECKS_DIR}/state/clamshell"
+# ClamShell's library config, and its state (play time, favourites, settings, keymaps, the dock).
+CONFIG = f"{CHECKS_DIR}/config/clamshell"
+DATA = f"{CHECKS_DIR}/data/clamshell"
 BACKLIGHT = f"{CHECKS_DIR}/backlight/panel"
 DROP_IN = "$XDG_RUNTIME_DIR/systemd/user/clamshell.service.d/thor-checks.conf"
 # The bar's icons, in the bottom screen's pixels (their centres; the burn-in orbit moves them a few
@@ -220,39 +223,33 @@ def plug_pad():
 
 # --- the test environment
 
-LIBRARY = """collection: Test
-extension: game
-launch: sh -c "foot --app-id=testgame sleep 300 & sleep 300"
-
-game: Test Game
-file: test.game
-
-game: Zeta Game
-file: zeta.game
-""" + "".join(f"\ngame: Zulu {i:02}\nfile: zulu{i:02}.game\n" for i in range(1, 15))
+# Test games: test.game, zeta.game, zulu01.game to zulu14.game, all in the Test tab, each a foot window.
+LIBRARY = f"""{{ "sources": [
+  {{ "tab": "Test", "id": "test", "dir": "{CHECKS_DIR}/games", "match": ["*.game"],
+    "launch": ["sh", "-c", "foot --app-id=testgame sleep 300 & sleep 300"] }}
+] }}
+"""
 
 
 def setup(bluetooth):
     print("setting up: test library, fake backlight, null sink, ClamShell's test environment")
     since = now()
     script = f"""set -e
-mkdir -p {CHECKS_DIR}/pegasus {CHECKS_DIR}/games {BACKLIGHT} {STATE}
-echo {CHECKS_DIR}/games > {CHECKS_DIR}/pegasus/game_dirs.txt
-printf '# ClamShell dock, format 1\\ndesktop:foot\\n' > {CHECKS_DIR}/pegasus/dock.txt
-cat > {CHECKS_DIR}/games/metadata.pegasus.txt <<'EOF'
+mkdir -p {CONFIG} {DATA} {CHECKS_DIR}/games {BACKLIGHT} {STATE}
+printf '# ClamShell dock, format 1\\ndesktop:foot\\n' > {DATA}/dock.txt
+cat > {CONFIG}/library.json <<'EOF'
 {LIBRARY}EOF
 touch {CHECKS_DIR}/games/test.game {CHECKS_DIR}/games/zeta.game {" ".join(f"{CHECKS_DIR}/games/zulu{i:02}.game" for i in range(1, 15))}
 echo 100 > {BACKLIGHT}/max_brightness; echo 50 > {BACKLIGHT}/brightness
-rm -f {STATE}/last {STATE}/brightness {CHECKS_DIR}/pegasus/stats.db* {CHECKS_DIR}/pegasus/favorites.txt \\
-    {CHECKS_DIR}/pegasus/keymaps.txt {CHECKS_DIR}/pegasus/game-settings.txt
+rm -f {STATE}/last {STATE}/brightness {DATA}/stats.db* {DATA}/favorites.txt {DATA}/keymaps.txt {DATA}/game-settings.txt
 mkdir -p $(dirname {DROP_IN})
-printf '%s\\n' '[Service]' 'Environment=CLAMSHELL_PEGASUS_CONFIG={CHECKS_DIR}/pegasus' \\
+printf '%s\\n' '[Service]' 'Environment=XDG_CONFIG_HOME={CHECKS_DIR}/config' 'Environment=XDG_DATA_HOME={CHECKS_DIR}/data' \\
     'Environment=CLAMSHELL_BACKLIGHTS={CHECKS_DIR}/backlight' 'Environment=XDG_STATE_HOME={CHECKS_DIR}/state' > {DROP_IN}
 wpctl status | grep -q thor-checks-sink || wpctl status | grep -q 'Test sink' || pw-cli create-node adapter \\
     '{{ factory.name=support.null-audio-sink node.name=thor-checks-sink node.description="Test sink" media.class=Audio/Sink object.linger=true audio.position=[FL FR] }}' > /dev/null 2>&1
 sleep 0.5
 wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.5 2>/dev/null
-systemctl --user stop 'clamshell-game*' 'clamshell-app*' 2>/dev/null || true
+systemctl --user stop 'clamshell-run-*' 2>/dev/null || true
 systemctl --user daemon-reload
 systemctl --user restart clamshell
 """
@@ -269,7 +266,7 @@ systemctl --user restart clamshell
 
 def teardown():
     subprocess.run([sys.executable, str(Path(vm.__file__)), "pad", "unplug"], capture_output=True)
-    sh(f"rm -f {DROP_IN}; systemctl --user stop 'clamshell-game*' 'clamshell-app*' 2>/dev/null; "
+    sh(f"rm -f {DROP_IN}; systemctl --user stop 'clamshell-run-*' 2>/dev/null; "
        "systemctl --user daemon-reload; systemctl --user restart clamshell")
 
 
@@ -314,7 +311,7 @@ class Checks:
         """A known start: no fingers down, no game or app, shelf in front, the dock tab, the pad mouse
         off."""
         self.i.lift_all()
-        sh("systemctl --user stop 'clamshell-game*' 'clamshell-app*' 2>/dev/null || true")
+        sh("systemctl --user stop 'clamshell-run-*' 2>/dev/null || true")
         until(lambda: front() == "clamshell-shelf", 5)
         if self.route() == "Mouse":
             self.icon("pad-mouse")
@@ -512,7 +509,7 @@ class Checks:
         self.i.pointer(x, SHELF_FIRST_Y, "down")
         time.sleep(0.05)
         self.i.pointer(x, SHELF_FIRST_Y, "up")
-        # Rows: Test Game, Zeta Game, Zulu 01, Zulu 02 ...: three down, the first row is Zulu 02.
+        # Rows: test, zeta, zulu01, zulu02 ...: three down, the first row is zulu02.
         self.check("  a drag scrolls the list (whole rows) and a click selects the game under it",
                    until(lambda: (selection() or "").endswith("zulu02.game"), 5), f"selection {selection()!r}")
 
@@ -692,7 +689,7 @@ class Checks:
         it, read from the virtual devices; then Default."""
         if not self.check("keymaps: the fake pad grabbed", plug_pad()):
             return
-        keymaps_file = f"{CHECKS_DIR}/pegasus/keymaps.txt"
+        keymaps_file = f"{DATA}/keymaps.txt"
         self.check("  the first start made the Nintendo layout", "keymap 1 Nintendo layout" in sh(f"cat {keymaps_file}"),
                    sh(f"cat {keymaps_file}"))
         since = now()
@@ -718,8 +715,8 @@ class Checks:
                  and "gyro = pointer hold=lb" in text and "x = pad y" in text)
         self.check("  A to Ctrl+X, the right stick and the gyro (while LB) to the pointer, X to Y picked by pressing it, saved",
                    saved, text)
-        chosen = until(lambda: f"keymap={ident}" in sh(f"cat {CHECKS_DIR}/pegasus/game-settings.txt 2>/dev/null"), 3)
-        self.check("  chosen for the selected game", chosen, sh(f"cat {CHECKS_DIR}/pegasus/game-settings.txt 2>/dev/null"))
+        chosen = until(lambda: f"keymap={ident}" in sh(f"cat {DATA}/game-settings.txt 2>/dev/null"), 3)
+        self.check("  chosen for the selected game", chosen, sh(f"cat {DATA}/game-settings.txt 2>/dev/null"))
         since = now()
         control("tap launch")
         launched = until(lambda: bool(units("game")) and front() not in ("", "clamshell-shelf"), 10)
@@ -771,7 +768,7 @@ class Checks:
         A, and Back let go while A is held, read from the virtual keyboard; then the layer made Once."""
         if not self.check("keymap layers: the fake pad grabbed", plug_pad()):
             return
-        keymaps_file = f"{CHECKS_DIR}/pegasus/keymaps.txt"
+        keymaps_file = f"{DATA}/keymaps.txt"
         for line in ["tab settings", "scope game", "tap setting keymap", "tap keymap-new", "type Layers", "tap save",
                      "tap map-from a", "tap map-to key", "tap key ctrl", "tap key x",
                      "tap keymap-layers", "tap new-layer", "type held", "tap save", "tap map-from a", "tap map-to key", "tap key ctrl",
@@ -834,7 +831,7 @@ class Checks:
         made through the screens; in a game, read from the virtual keyboard."""
         if not self.check("keymap actuations: the fake pad grabbed", plug_pad()):
             return
-        keymaps_file = f"{CHECKS_DIR}/pegasus/keymaps.txt"
+        keymaps_file = f"{DATA}/keymaps.txt"
         for line in ["tab settings", "scope game", "tap setting keymap", "tap keymap-new", "type Acts", "tap save",
                      "tap map-from a", "tap map-to key", "tap key x", "tap keymap-act hold", "tap map-to key", "tap key e",
                      "tap map-from b", "tap keymap-act double", "tap map-to key", "tap key z",

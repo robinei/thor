@@ -5,11 +5,11 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Paths {
-    /// Pegasus' config dir, with `game_dirs.txt`: ~/.config/pegasus-frontend unless given.
-    pub pegasus_config: Option<PathBuf>,
-    /// Play time (stats.db), favourites (favorites.txt), the games' settings (game-settings.txt) and the
-    /// keymaps (keymaps.txt):
-    /// Pegasus' config dir if it exists (shared with Pegasus), else ~/.local/share/clamshell.
+    /// The library's content dirs (~/.config/clamshell/library.json, see
+    /// [`crate::library::content`]).
+    pub library: Option<PathBuf>,
+    /// Play time (stats.db), favourites (favorites.txt), the entries' settings (game-settings.txt), the
+    /// keymaps (keymaps.txt), the dock and the window rules: ~/.local/share/clamshell.
     pub state_dir: Option<PathBuf>,
     /// Where shelf and the second screen were (~/.local/state/clamshell/last).
     pub resume: Option<PathBuf>,
@@ -57,16 +57,12 @@ impl Base {
 }
 
 impl Paths {
-    /// The paths for `base`; `pegasus_config` instead of Pegasus' usual config dir (tests).
-    pub fn new(base: &Base, pegasus_config: Option<PathBuf>) -> Paths {
+    /// The paths for `base`.
+    pub fn new(base: &Base) -> Paths {
         let config = base.xdg(base.config_home.as_ref(), ".config");
         let data = base.xdg(base.data_home.as_ref(), ".local/share");
         let state = base.xdg(base.state_home.as_ref(), ".local/state");
-        let pegasus_config = pegasus_config.or_else(|| config.as_ref().map(|c| c.join("pegasus-frontend")));
-        let state_dir = match &pegasus_config {
-            Some(p) if p.is_dir() => Some(p.clone()),
-            _ => data.map(|d| d.join("clamshell")),
-        };
+        let state_dir = data.map(|d| d.join("clamshell"));
         let resume = state.map(|d| d.join("clamshell/last"));
         Paths {
             brightness: resume.as_ref().and_then(|f| f.parent()).map(|d| d.join("brightness")),
@@ -76,7 +72,7 @@ impl Paths {
             runtime: base.runtime.clone(),
             control: base.runtime.as_ref().map(|r| r.join("clamshell-control")),
             screenshots: base.home.as_ref().map(|h| h.join("Pictures/Screenshots")),
-            pegasus_config,
+            library: config.map(|c| c.join("clamshell/library.json")),
             state_dir,
         }
     }
@@ -125,20 +121,13 @@ mod tests {
     #[test]
     fn xdg_dirs_or_their_defaults_under_home() {
         let base = Base { home: Some("/h".into()), state_home: Some("/s".into()), runtime: Some("/run/u".into()), ..Base::default() };
-        let paths = Paths::new(&base, None);
-        assert_eq!(paths.pegasus_config.as_deref(), Some(Path::new("/h/.config/pegasus-frontend")));
-        assert_eq!(paths.state_dir.as_deref(), Some(Path::new("/h/.local/share/clamshell")), "no Pegasus config dir");
+        let paths = Paths::new(&base);
+        assert_eq!(paths.library.as_deref(), Some(Path::new("/h/.config/clamshell/library.json")));
+        assert_eq!(paths.state_dir.as_deref(), Some(Path::new("/h/.local/share/clamshell")));
         assert_eq!(paths.resume.as_deref(), Some(Path::new("/s/clamshell/last")));
         assert_eq!(paths.brightness.as_deref(), Some(Path::new("/s/clamshell/brightness")));
         assert_eq!((paths.jobs.as_path(), paths.mangohud.as_path()), (Path::new("/run/u/clamshell/jobs"), Path::new("/run/u/clamshell/mangohud")));
         assert_eq!(paths.stats_db().as_deref(), Some(Path::new("/h/.local/share/clamshell/stats.db")));
-    }
-
-    #[test]
-    fn an_existing_pegasus_config_dir_holds_the_state() {
-        let dir = std::env::temp_dir();
-        let paths = Paths::new(&Base::default(), Some(dir.clone()));
-        assert_eq!(paths.state_dir, Some(dir));
-        assert_eq!(Paths::new(&Base::default(), None).state_dir, None, "no HOME, no XDG dirs");
+        assert_eq!(Paths::new(&Base::default()).state_dir, None, "no HOME, no XDG dirs");
     }
 }

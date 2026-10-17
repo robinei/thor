@@ -1,7 +1,5 @@
-//! Play time in Pegasus' `stats.db` (docs/pegasus-format.md in the GPD repo, 5): one row per play
-//! (start in seconds since the epoch, duration in seconds) under the game file's path. Same schema and
-//! statements as Pegasus, so both read each other's history. Steam games are stored as `steam:<appid>`
-//! (Pegasus skips paths it doesn't know).
+//! Play time in `stats.db`: one row per play (start in seconds since the epoch, duration in seconds)
+//! under the entry's id (the schema Pegasus Frontend uses).
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -31,7 +29,7 @@ pub fn read(db: &Path) -> HashMap<String, Plays> {
     out
 }
 
-/// Adds one play, creating the tables (Pegasus' exact schema) if they are missing.
+/// Adds one play, creating the tables if they are missing.
 pub fn record(db: &Path, path: &str, start: u64, duration: u64) -> rusqlite::Result<()> {
     let mut c = Connection::open(db)?;
     let tx = c.transaction()?;
@@ -68,7 +66,7 @@ mod tests {
         let plays = read(&db);
         assert_eq!(plays.get("/g/pc/diablo.sh"), Some(&Plays { count: 2, seconds: 90, last: 5030 }));
         assert_eq!(plays.get("steam:1245620").map(|p| p.count), Some(1));
-        // Pegasus' schema, byte for byte.
+        // Pegasus Frontend's schema.
         let c = Connection::open(&db).unwrap();
         let sql: String = c.query_row("SELECT sql FROM sqlite_master WHERE name='plays'", [], |r| r.get(0)).unwrap();
         assert_eq!(

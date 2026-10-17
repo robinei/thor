@@ -53,19 +53,13 @@ impl Handles {
                 }
                 None => log::info!("effect: {effect:?} (no virtual keyboard)"),
             },
-            Effect::Launch { game, instance, launch, file, settings, env } => {
+            Effect::Launch { game, instance, launch, settings, env } => {
                 log::info!("launching {game}");
                 // MangoHud's first, so a game's own variables can still override it.
                 let mut game_env = self.tuning.apply(settings, Some(game)).map(|config| crate::tuning::mangohud_env(&config)).unwrap_or_default();
                 game_env.extend(env.iter().cloned());
                 // Its own workspace, shown when its first window appears (the state asks for that).
-                self.launcher.send(launcher::Request {
-                    game: game.clone(),
-                    instance: instance.clone(),
-                    launch: launch.clone(),
-                    file: file.clone(),
-                    env: game_env,
-                });
+                self.launcher.send(launcher::Request { game: game.clone(), instance: instance.clone(), launch: launch.clone(), env: game_env });
             }
             Effect::Apply { game, settings } => {
                 self.tuning.apply(settings, game.as_deref());

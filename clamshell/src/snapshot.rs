@@ -197,6 +197,22 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 shot("top-switch.png", Top, vec![ff6(), ff6()]),
             ],
         ),
+        // A series open in shelf: its first season's episodes, the first played. (Shelf's rows as a frame
+        // would have reported them before the taps.)
+        group(
+            vec![ShelfEvent::Rows(8).into()],
+            vec![shot(
+                "top-group.png",
+                Top,
+                vec![
+                    tap(Id::Shelf(ShelfId::Collection(2))),
+                    tap(Id::Shelf(ShelfId::Launch)),
+                    tap(Id::Shelf(ShelfId::Launch)),
+                    GameEvent::Played { game: "tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv".into(), start: 1_759_900_000, duration: 3600 }.into(),
+                    ShelfEvent::ListStep(2).into(),
+                ],
+            )],
+        ),
         group(vec![], vec![shot("bottom.png", Bottom, vec![])]),
         // The settings, a game running.
         group(

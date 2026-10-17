@@ -62,6 +62,8 @@ pub enum ShelfId {
     /// A collection, by position.
     Collection(u16),
     Launch,
+    /// Out of the open group (back to the list it is in).
+    Up,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

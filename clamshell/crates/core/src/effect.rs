@@ -23,7 +23,6 @@ pub enum Effect {
         settings: Values,
         env: Vec<(String, String)>,
         launch: Launch,
-        file: Option<std::path::PathBuf>,
     },
     /// The settings in force changed: the running game's (`game`), or the global ones while none runs
     /// (also when a game ends). Apply them now.

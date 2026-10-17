@@ -1,13 +1,14 @@
-//! shelf on the main screen: collections as tabs along the top; the current one's games as a list with
-//! box art thumbnails on the left, scrolled to keep the selection on screen; the selected game's large
-//! box art and details on the right. Images come from the image cache (placeholders in the game's
-//! colour until they arrive).
+//! shelf on the main screen: collections as tabs along the top (icon and name); the current list (the
+//! collection's entries, or its open group's under a header that goes back) with box art thumbnails on
+//! the left, scrolled to keep the selection on screen; the selected entry's large box art and details on
+//! the right. Images come from the image cache (placeholders in the entry's colour until they arrive).
 
 use std::fmt::{self, Display, Formatter};
 
-use clamshell_core::{Game, Id, ListId, ShelfId};
+use clamshell_core::{Game, Id, ListId, ShelfId, State};
 
 use crate::draw::{Align, Column, Keep, Rect, Span, WRAP_LINE};
+use crate::icons::Icon;
 use crate::toolkit::format::{DaysAgo, Fmt, PlayTime};
 use crate::toolkit::scroll::Scrolled;
 use crate::toolkit::style::{self, Look, RADIUS_L, SURFACE_HI, Tone};
@@ -31,7 +32,6 @@ const ART_H: f32 = 0.78;
 /// Details text sizes, of the screen's height.
 const TITLE: f32 = 0.05;
 const DETAIL: f32 = 0.03;
-const DESCRIPTION: f32 = 0.028;
 
 /// Draws shelf over `screen`; returns how many list rows fit (the state keeps the selection within
 /// them).
@@ -41,26 +41,40 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
     // (The second screen's padding rule, of this screen's height; at least 4 pixels.)
     let pad = style::pad(h).max(4.0);
 
-    // Tabs: the collections' names.
+    // Tabs: the collections' icons and names.
     let tabs_h = h * TABS_H;
     let collections = s.shelf().library().collections.iter().enumerate();
-    let items = collections.map(|(i, coll)| (Id::Shelf(ShelfId::Collection(i as u16)), coll.name.as_str(), i == s.shelf().current()));
+    let items = collections.map(|(i, coll)| {
+        let icon = coll.icon.as_deref().and_then(Icon::named);
+        (Id::Shelf(ShelfId::Collection(i as u16)), icon, coll.name.as_str(), i == s.shelf().current())
+    });
     widgets::tabs(f, Rect::new(pad, 0.0, w - 2.0 * pad, tabs_h), h * TAB_TEXT, pad * 0.8, f32::INFINITY, items);
 
-    // The list, filling the height below the tabs exactly with whole rows.
-    let list = Rect::new(pad, tabs_h + pad * 0.5, w * LIST_W - pad, h - tabs_h - pad * 1.5);
+    // The list, filling the height below the tabs (and an open group's header) exactly with whole rows.
+    let mut list = Rect::new(pad, tabs_h + pad * 0.5, w * LIST_W - pad, h - tabs_h - pad * 1.5);
+    if let Some(group) = s.shelf().group() {
+        let header = list.take_top(h * ROW_H);
+        group_header(f, group, header, pad);
+    }
     let rows = ((list.h / (h * ROW_H)).floor() as usize).max(1);
-    let Some(coll) = s.shelf().collection() else {
-        return rows;
-    };
-    list_rows(f, list, rows, coll.games.len(), pad);
+    list_rows(f, list, rows, s.shelf().list().len(), pad);
     if let Some(game) = s.shelf().selected_game() {
         selected(f, game, screen, list, pad);
     }
     rows
 }
 
-/// The list (`len` games, `rows` on screen), scrolled as the cursor says, the selection on a background;
+/// An open group's header over the list: a back arrow and the group's title; a tap goes back out.
+fn group_header(f: &mut Frame, group: &Game, r: Rect, pad: f32) {
+    f.button(Id::Shelf(ShelfId::Up), r, Look::ICON, |f| {
+        let arrow = Rect::new(r.x, r.y, r.h, r.h);
+        f.c.icon(Icon::ArrowLeft, arrow.square_center(r.h * 0.4), Tone::Normal);
+        let title = Rect::new(r.x + r.h + pad * 0.2, r.y, r.w - r.h - pad * 0.2, r.h);
+        f.c.text_fit(title, r.h * ROW_TEXT * 1.15, Tone::High, &group.title, Keep::Start);
+    });
+}
+
+/// The list (`len` entries, `rows` on screen), scrolled as the cursor says, the selection on a background;
 /// where in the list: a thin bar along its right edge, when it doesn't all fit.
 fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
     let s = f.s;
@@ -74,6 +88,14 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
         let at = scrolled.row(position);
         let r = Rect::new(at.x, at.y, list.w - pad * 0.6, row_h - 2.0);
         let selected = position == cursor.index;
+        // An episode (an entry of a group) played already: dimmer.
+        let tone = if selected {
+            Tone::High
+        } else if game.parent.is_some() && game.plays.count > 0 {
+            Tone::Dim
+        } else {
+            Tone::Normal
+        };
         let look = Look { fill: selected.then_some(SURFACE_HI), ..Look::CARD };
         let thumb_h = r.h * THUMB;
         let thumb = Rect::new(r.x + pad * 0.4, r.y + (r.h - thumb_h) / 2.0, thumb_h * BOX_ASPECT, thumb_h);
@@ -81,14 +103,14 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
             widgets::art(f.c, f.images, game, thumb, THUMB_RADIUS, Align::Center, false);
             let tx = thumb.x + thumb.w + pad * 0.6;
             let title = Rect::new(tx, r.y, r.x + r.w - tx - pad * 0.3, r.h);
-            f.c.text_fit(title, row_h * ROW_TEXT, Tone::high_if(selected), &game.title, Keep::Start);
+            f.c.text_fit(title, row_h * ROW_TEXT, tone, &game.title, Keep::Start);
         });
     }
     scrolled.end(f, list.x + list.w - 3.0);
 }
 
-/// The selected game right of the `list`, as high as it: large art, then beside it the title, what
-/// playing it does now, whether it is a favourite, the details and as much of the description as fits.
+/// The selected entry right of the `list`, as high as it: large art, then beside it the title, the
+/// groups it is in, what playing it does now, whether it is a favourite, and the play time.
 fn selected(f: &mut Frame, game: &Game, screen: Rect, list: Rect, pad: f32) {
     let s = f.s;
     let h = screen.h;
@@ -101,6 +123,12 @@ fn selected(f: &mut Frame, game: &Game, screen: Rect, list: Rect, pad: f32) {
     let span = |col: &Column| Span { x: tx, y: col.y(), w: text_w };
     let detail = h * DETAIL;
     col.skip(f.c.wrap(span(&col), h * TITLE, Tone::High, &game.title, 3) + pad * 0.4);
+
+    // The groups it is in (a series, a season).
+    if game.parent.is_some() {
+        let groups = Fmt::<192>::of(format_args!("{}", Groups(s, game)));
+        col.skip(f.c.wrap(span(&col), detail, Tone::Normal, &groups, 2) + pad * 0.4);
+    }
 
     // Whether it runs (A shows it), then whether it is a favourite, each on a line of its own.
     let mut mx = tx;
@@ -118,57 +146,35 @@ fn selected(f: &mut Frame, game: &Game, screen: Rect, list: Rect, pad: f32) {
         col.skip(detail * WRAP_LINE + pad * 0.4);
     }
 
-    // The details: who made it and when, the genres, the players, the play time.
-    let maker = Fmt::<128>::of(format_args!("{}", Maker(game)));
-    let genres = Fmt::<128>::of(format_args!("{}", Genres(&game.genres)));
-    let players = if game.players > 1 { Fmt::<32>::of(format_args!("Up to {} players", game.players)) } else { Fmt::new() };
+    // The play time.
     let plays = game.plays;
-    let played = if plays.count > 0 {
+    if plays.count > 0 {
         let days = s.unix_secs().saturating_sub(plays.last) / 86_400;
-        Fmt::<64>::of(format_args!("{}{}", PlayTime(plays.seconds), DaysAgo(days)))
-    } else {
-        Fmt::new()
-    };
-    for line in [&*maker, &*genres, &*players, &*played] {
-        if !line.is_empty() {
-            col.skip(f.c.wrap(span(&col), detail, Tone::Dim, line, 2) + pad * 0.2);
-        }
-    }
-
-    // As many lines of the description as fit above the list's bottom.
-    let text = if game.description.is_empty() { &game.summary } else { &game.description };
-    let (top, size) = (col.y() + pad * 0.6, h * DESCRIPTION);
-    let lines = ((list.y + list.h - top) / (size * WRAP_LINE)).floor().max(0.0) as usize;
-    if !text.is_empty() && lines > 0 {
-        f.c.wrap(Span { x: tx, y: top, w: text_w }, size, Tone::Normal, text, lines.min(12));
+        let played = Fmt::<64>::of(format_args!("{}{}", PlayTime(plays.seconds), DaysAgo(days)));
+        f.c.wrap(span(&col), detail, Tone::Dim, &played, 2);
     }
 }
 
-/// Who made a game and when: "Nintendo · 1991", either alone, or nothing.
-struct Maker<'a>(&'a Game);
+/// The groups an entry is in, outermost first: "Cosmos · Season 1".
+struct Groups<'a>(&'a State, &'a Game);
 
-impl Display for Maker<'_> {
+impl Display for Groups<'_> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let game = self.0;
-        match (game.developers.first().or(game.publishers.first()), game.release) {
-            (Some(m), Some((y, _, _))) => write!(f, "{m} · {y}"),
-            (Some(m), None) => f.write_str(m),
-            (None, Some((y, _, _))) => write!(f, "{y}"),
-            (None, None) => Ok(()),
+        let games = &self.0.shelf().library().games;
+        // (At most a few levels: walked from the entry up, written from the top down.)
+        let mut chain = [None; 8];
+        let mut at = self.1.parent;
+        let mut n = 0;
+        while let (Some(i), Some(slot)) = (at, chain.get_mut(n)) {
+            *slot = Some(i);
+            n += 1;
+            at = games.get(i).and_then(|g| g.parent);
         }
-    }
-}
-
-/// The genres, separated by commas.
-struct Genres<'a>(&'a [String]);
-
-impl Display for Genres<'_> {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        for (i, genre) in self.0.iter().enumerate() {
-            if i > 0 {
-                f.write_str(", ")?;
+        for (k, i) in chain.iter().take(n).rev().flatten().enumerate() {
+            if k > 0 {
+                f.write_str(" · ")?;
             }
-            f.write_str(genre)?;
+            f.write_str(games.get(*i).map_or("", |g| g.title.as_str()))?;
         }
         Ok(())
     }

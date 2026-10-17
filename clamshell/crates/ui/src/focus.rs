@@ -180,7 +180,8 @@ pub(crate) fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
     }
 }
 
-/// B: cancels the editor, if one is open, else goes back one of the keymaps' screens.
+/// B: cancels the editor, if one is open, else goes back one of the keymaps' screens, else (shelf in
+/// focus) out of shelf's open group.
 pub(crate) fn back(s: &State) -> Option<Event> {
     if s.bottom().editor().is_some() {
         return Some(PointerEvent::Activate(Id::Editor(EditorId::Cancel)).into());
@@ -188,7 +189,12 @@ pub(crate) fn back(s: &State) -> Option<Event> {
     if s.bottom().tab() == Tab::Time && s.time_region().is_some() {
         return Some(PointerEvent::Activate(Id::TimeRegions).into());
     }
-    s.keymap_screen().map(|_| PointerEvent::Activate(Id::Keymap(clamshell_core::KeymapId::Back)).into())
+    if s.keymap_screen().is_some() {
+        return Some(PointerEvent::Activate(Id::Keymap(clamshell_core::KeymapId::Back)).into());
+    }
+    // In shelf, out of the open group.
+    let in_shelf = matches!(s.pointer().focus(), Some(Id::Shelf(_)));
+    (in_shelf && s.shelf().group().is_some()).then(|| PointerEvent::Activate(Id::Shelf(ShelfId::Up)).into())
 }
 
 /// On a desktop, keys stand in for the pad: arrows move focus, Enter/Space is A (press, hold), Tab is

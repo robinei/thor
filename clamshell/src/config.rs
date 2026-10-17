@@ -19,8 +19,6 @@ pub struct Env {
     /// CLAMSHELL_TOUCHSCREEN: the second screen's touchscreen, likewise (default: the first direct-touch
     /// multitouch device).
     pub touchscreen: DeviceSpec,
-    /// CLAMSHELL_PEGASUS_CONFIG: another Pegasus config dir (tests).
-    pub pegasus_config: Option<PathBuf>,
     /// CLAMSHELL_STEAM=off: without Steam's games (tests).
     pub steam: bool,
     /// CLAMSHELL_START_MODE: start in this tab (touchpad, keyboard, dock, ...; development). What it
@@ -58,7 +56,6 @@ impl Env {
             bottom_panel: flag("CLAMSHELL_BOTTOM_PANEL", "1"),
             gamepad: DeviceSpec::parse(var("CLAMSHELL_GAMEPAD").as_deref()),
             touchscreen: DeviceSpec::parse(var("CLAMSHELL_TOUCHSCREEN").as_deref()),
-            pegasus_config: path("CLAMSHELL_PEGASUS_CONFIG"),
             steam: !flag("CLAMSHELL_STEAM", "off"),
             start_tab: var("CLAMSHELL_START_MODE").and_then(|t| Tab::from_name(&t)),
             pad_mouse: flag("CLAMSHELL_PAD_MOUSE", "1"),

@@ -1,13 +1,13 @@
-//! Starting games and knowing when they end, and starting the dock's apps. Each game runs on a thread
-//! of its own, so games run side by side.
+//! Starting entries (games, apps, films) and knowing when they end. Each launch runs on a thread of its
+//! own, so they run side by side.
 //!
-//! - A Pegasus launch command is resolved as Pegasus does (library's `launch`) and run in its own systemd
-//!   scope where there is a user session (`systemd-run --user --scope`), so restarting ClamShell
-//!   doesn't end the game; the thread waits for it.
+//! - A program (its arguments filled in by the library) runs in its own systemd scope where there is a
+//!   user session (`systemd-run --user --scope`), so restarting ClamShell doesn't end it; the thread
+//!   waits for it.
 //! - A Steam game is started with `steam -applaunch <id>`; it counts as running while Steam's launcher
 //!   process for that app id (`reaper SteamLaunch AppId=<id>`) exists.
 //!
-//! Every play is added to stats.db (Pegasus' format) and reported, with its start and duration.
+//! Every play is added to stats.db and reported, with its start and duration.
 
 use std::fmt;
 use std::io;
@@ -35,7 +35,6 @@ pub struct Request {
     /// Its scope and workspace, from the state.
     pub instance: Instance,
     pub launch: Launch,
-    pub file: Option<PathBuf>,
     /// The game's environment (its MangoHud config, its own variables).
     pub env: Vec<(String, String)>,
 }
@@ -56,7 +55,6 @@ pub enum Error {
     Io(io::Error),
     Job(job::Error),
     Units(units::Error),
-    NoFile,
     NoCommand,
     /// The instance has no scope to follow the game by (only apps' and games' instances have one).
     NoScope,
@@ -70,7 +68,6 @@ impl fmt::Display for Error {
             Error::Io(e) => write!(f, "{e}"),
             Error::Job(e) => write!(f, "{e}"),
             Error::Units(e) => write!(f, "{e}"),
-            Error::NoFile => write!(f, "no file to launch"),
             Error::NoCommand => write!(f, "no launch command"),
             Error::NoScope => write!(f, "the instance has no scope"),
             Error::EmptyCommand => write!(f, "empty launch command"),
@@ -180,13 +177,8 @@ fn play(config: &Config, request: &Request, sink: &impl Sink) -> Result<(), Clos
 /// Starts the game a request is for.
 fn start(config: &Config, request: &Request) -> Result<Running, Error> {
     match &request.launch {
-        Launch::Command(spec) => {
-            let c = spec.resolve(request.file.as_deref().ok_or(Error::NoFile)?).ok_or(Error::EmptyCommand)?;
-            let argv = std::iter::once(c.program.to_string_lossy().into_owned()).chain(c.args.iter().cloned()).collect();
-            start_program(config, request, argv, Some(c.workdir))
-        }
-        Launch::Program(argv) if argv.is_empty() => Err(Error::EmptyCommand),
-        Launch::Program(argv) => start_program(config, request, argv.clone(), None),
+        Launch::Program { argv, .. } if argv.is_empty() => Err(Error::EmptyCommand),
+        Launch::Program { argv, workdir } => start_program(config, request, argv.clone(), workdir.clone()),
         Launch::Steam { appid } => start_steam(&request.env, *appid),
         Launch::None => Err(Error::NoCommand),
     }
@@ -312,7 +304,6 @@ mod tests {
     }
 
     use super::*;
-    use clamshell_library::LaunchSpec;
     use std::sync::mpsc;
 
     fn config(stats_db: Option<PathBuf>) -> Config {
@@ -331,9 +322,9 @@ mod tests {
         let (tx, events) = mpsc::channel();
         let launcher = spawn(config(Some(db.clone())), tx).unwrap();
         let id: Arc<str> = script.to_string_lossy().into();
-        let launch = Launch::Command(LaunchSpec { command: "\"{file.path}\"".into(), workdir: String::new(), basedir: dir.clone() });
+        let launch = Launch::Program { argv: vec![script.to_string_lossy().into()], workdir: Some(dir.clone()) };
         let instance = Instance::Run { key: "test_1".into(), secs: u64::from(std::process::id()), n: 0 };
-        launcher.send(Request { game: id.clone(), instance, launch, file: Some(script.clone()), env: vec![] });
+        launcher.send(Request { game: id.clone(), instance, launch, env: vec![] });
         drop(launcher);
 
         let events: Vec<Event> = events.iter().collect();
@@ -348,9 +339,9 @@ mod tests {
     fn a_missing_program_fails_cleanly() {
         let (tx, events) = mpsc::channel();
         let launcher = spawn(config(None), tx).unwrap();
-        let launch = Launch::Command(LaunchSpec { command: "/nonexistent/game".into(), workdir: String::new(), basedir: "/".into() });
+        let launch = Launch::program(vec!["/nonexistent/game".into()]);
         let instance = Instance::Run { key: "test_1".into(), secs: u64::from(std::process::id()), n: 1 };
-        launcher.send(Request { game: "x".into(), instance, launch, file: Some("/tmp".into()), env: vec![] });
+        launcher.send(Request { game: "x".into(), instance, launch, env: vec![] });
         drop(launcher);
         assert_eq!(events.iter().collect::<Vec<_>>(), vec![Event::Game(GameEvent::LaunchFailed("x".into()))]);
     }

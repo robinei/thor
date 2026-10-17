@@ -12,7 +12,7 @@ pub enum Command {
     /// `--mangohud-env`: print the environment that makes a game (started by hand) report its frame rate
     /// here.
     MangohudEnv,
-    /// `--library`: print the collections and games found (Pegasus game dirs and Steam).
+    /// `--library`: print the tabs and entries found (library.json's content dirs, Steam, desktop files).
     Library,
     /// `--snapshot DIR`: draw both screens at the Thor's size into PNG files, no Wayland needed.
     Snapshot(PathBuf),

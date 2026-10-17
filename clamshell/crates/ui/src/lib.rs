@@ -469,7 +469,7 @@ impl App {
     }
 
     /// The pad on ClamShell's screens (see `focus`): directions move focus, A acts on the focused
-    /// target, B cancels the editor, Y toggles the favourite, the shoulders step collections or tabs.
+    /// target, B goes back (see `focus::back`), Y toggles the favourite, the shoulders step collections or tabs.
     /// View moves focus to the other screen with shelf in front; else it moves the pad between the second
     /// screen and what else wants it (the pad mouse, typing; the pad thread sends View from there too).
     fn pad(&mut self, input: PadInput) {

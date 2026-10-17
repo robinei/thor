@@ -1,5 +1,5 @@
-//! A game's play history as Pegasus keeps it in `stats.db` (docs/pegasus-format.md in the GPD repo, 5),
-//! summed up. Reading and writing the database is clamshell-system's (`library::stats`).
+//! An entry's play history (`stats.db`), summed up. Reading and writing the database is
+//! clamshell-system's (`library::stats`).
 
 /// A game's plays: how many, how long in all (seconds), and when the last one ended (epoch seconds).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

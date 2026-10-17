@@ -196,6 +196,7 @@ pub const TARGETS: &[Form<Id>] = &[
     }),
     form("dock-done", "moving a dock entry: done", |_| Ok(Id::Dock(DockId::Done))),
     form("launch", "shelf's launch", |_| Ok(Id::Shelf(ShelfId::Launch))),
+    form("up", "out of shelf's open group", |_| Ok(Id::Shelf(ShelfId::Up))),
     form("collection N", "shelf's collection tab N", |a| Ok(Id::Shelf(ShelfId::Collection(number(arg(a, 0))?)))),
     form("network N", "Wi-Fi's network row N", |a| Ok(ListId::Wifi.row(number(arg(a, 0))?))),
     form("wifi-power", "Wi-Fi's switch", |_| Ok(Id::Wifi(WifiId::Power))),
@@ -465,6 +466,7 @@ mod tests {
         assert_eq!(parse("tap dock-step right"), Ok(activate(Id::Dock(DockId::Step(clamshell_core::keymap::Dir::Right)))));
         assert_eq!(parse("tap launch"), Ok(activate(Id::Shelf(ShelfId::Launch))));
         assert_eq!(parse("tap collection 1"), Ok(activate(Id::Shelf(ShelfId::Collection(1)))));
+        assert_eq!(parse("tap up"), Ok(activate(Id::Shelf(ShelfId::Up))));
         assert_eq!(parse("tap network 2"), Ok(activate(ListId::Wifi.row(2))));
         assert_eq!(parse("long network 0"), Ok(vec![PointerEvent::LongPress(ListId::Wifi.row(0)).into()]));
         assert_eq!(parse("tap wifi-power"), Ok(activate(Id::Wifi(WifiId::Power))));

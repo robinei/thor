@@ -1,11 +1,9 @@
-//! The game library's model: games, collections and how they sort, and the parts of Pegasus
-//! Frontend's format (the one shelf used on the GPD, docs/pegasus-format.md in the GPD repo) and Steam's
-//! files that need no disk. No I/O and no dependencies: scanning the game dirs and Steam's folders,
-//! play time (stats.db) and favourites (favorites.txt) are clamshell-system's (`library`).
+//! The library's model: entries (games, apps, movies, groups of them such as a series' seasons and
+//! episodes), the tabs they are in and how they sort, and the parts of Steam's files and of name patterns
+//! that need no disk. No I/O and no dependencies: scanning (library.json's content dirs, Steam, desktop
+//! files), play time and favourites are clamshell-system's (`library`).
 
-pub mod launch;
-pub mod metafile;
-pub mod pegasus;
+pub mod pattern;
 pub mod plays;
 pub mod sort;
 pub mod steam;
@@ -13,50 +11,52 @@ pub mod steam;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-pub use launch::LaunchSpec;
 pub use plays::Plays;
 
-/// How a game starts.
+/// How an entry starts.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum Launch {
+    /// Nothing to start (a group: it opens in shelf).
     #[default]
     None,
-    /// A Pegasus launch command.
-    Command(LaunchSpec),
     /// Through Steam.
     Steam { appid: u32 },
-    /// A program with its arguments, no file (an installed app's, from its desktop file).
-    Program(Vec<String>),
+    /// A program with its arguments (filled in already), in `workdir` (else the home dir).
+    Program { argv: Vec<String>, workdir: Option<PathBuf> },
 }
 
-/// One game as the rest of the program sees it.
+impl Launch {
+    /// A program with these arguments, in the home dir.
+    pub fn program(argv: Vec<String>) -> Launch {
+        Launch::Program { argv, workdir: None }
+    }
+}
+
+/// One entry as the rest of the program sees it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Game {
-    /// Stable id: the game file's path, or `steam:<appid>`. Focus, settings and play time are keyed by
-    /// it. Shared, so the UI can put it in a frame's targets without allocating.
+    /// Stable id: `<source id>:<path in the source's dir>`, `steam:<appid>` or `desktop:<file id>`. Focus,
+    /// settings and play time are keyed by it. Shared, so the UI can put it in a frame's targets without
+    /// allocating.
     pub id: Arc<str>,
     /// The id made fit for unit and workspace names (see [`key_of`]): what its launches are named by.
     pub key: String,
     pub title: String,
-    /// What it sorts by (Pegasus order).
+    /// What it sorts by (see [`sort`]).
     pub sort_key: Vec<(u8, char)>,
     /// Stand-in for box art while there is none or it is loading: 0xRRGGBB, from the id.
     pub color: u32,
-    pub file: Option<PathBuf>,
     pub launch: Launch,
     pub box_front: Option<PathBuf>,
     /// An icon (an app's), drawn where there is no box art.
     pub icon: Option<PathBuf>,
-    pub developers: Vec<String>,
-    pub publishers: Vec<String>,
-    pub genres: Vec<String>,
-    pub players: u8,
-    /// Year, month, day.
-    pub release: Option<(u16, u8, u8)>,
-    pub summary: String,
-    pub description: String,
-    /// A tool (Utilities), not a game.
+    /// An app, not a game or a film: Recent leaves it out.
     pub tool: bool,
+    /// A group's entries (a series' seasons, a season's episodes), as indices into [`Library::games`], in
+    /// order; empty for anything else.
+    pub items: Vec<usize>,
+    /// The group it is in, if any.
+    pub parent: Option<usize>,
     /// Play history (stats.db) and favourite (favorites.txt).
     pub plays: Plays,
     pub favourite: bool,
@@ -70,21 +70,20 @@ impl Game {
             title: title.into(),
             sort_key: sort::key(title),
             color: color_of(id),
-            file: None,
             launch: Launch::None,
             box_front: None,
             icon: None,
-            developers: Vec::new(),
-            publishers: Vec::new(),
-            genres: Vec::new(),
-            players: 1,
-            release: None,
-            summary: String::new(),
-            description: String::new(),
             tool: false,
+            items: Vec::new(),
+            parent: None,
             plays: Plays::default(),
             favourite: false,
         }
+    }
+
+    /// Whether it is a group (it opens rather than starts).
+    pub fn is_group(&self) -> bool {
+        !self.items.is_empty()
     }
 }
 
@@ -111,34 +110,28 @@ fn color_of(id: &str) -> u32 {
     (channel(16) << 16) | (channel(8) << 8) | channel(0)
 }
 
-/// A tab in shelf: a Pegasus collection, or the installed Steam games.
+/// A tab in shelf: library.json's sources' tab, Games (also Steam's and the desktop files' games), Apps,
+/// or Recent and Favourites.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Collection {
     pub name: String,
-    /// Lowercase short name (Pegasus `shortname`, used for logos).
-    pub short_name: String,
-    pub sort_key: Vec<(u8, char)>,
-    pub summary: String,
-    /// Utilities: tools, not games.
-    pub tools: bool,
+    /// Its icon's name (the UI's: `gamepad`, `film`, ...), if it has one.
+    pub icon: Option<String>,
     /// Recent or Favourites: made from the others, rebuilt when plays or favourites change.
     pub derived: bool,
-    /// Its games, as indices into [`Library::games`], in title order.
+    /// Its entries (groups at their top), as indices into [`Library::games`], in title order.
     pub games: Vec<usize>,
 }
 
 impl Collection {
-    /// A collection of these games named `name` (its short name the name lowercased), without a summary.
+    /// A collection of these entries named `name`, without an icon.
     pub fn new(name: &str, games: Vec<usize>) -> Collection {
-        Collection {
-            name: name.into(),
-            short_name: name.to_lowercase(),
-            sort_key: sort::key(name),
-            summary: String::new(),
-            tools: false,
-            derived: false,
-            games,
-        }
+        Collection { name: name.into(), icon: None, derived: false, games }
+    }
+
+    /// The same, with the icon named `icon`.
+    pub fn with_icon(name: &str, icon: &str, games: Vec<usize>) -> Collection {
+        Collection { icon: Some(icon.into()), ..Collection::new(name, games) }
     }
 }
 
@@ -149,7 +142,7 @@ pub struct Library {
 }
 
 impl Library {
-    /// Rebuilds Recent (the last games played, tools left out) and Favourites in front of the other
+    /// Rebuilds Recent (the last entries played, apps left out) and Favourites in front of the other
     /// collections; either is left out while empty.
     pub fn rebuild_derived(&mut self) {
         self.collections.retain(|c| !c.derived);
@@ -161,24 +154,35 @@ impl Library {
             let key = |i: usize| self.games.get(i).map(|g| (&g.sort_key, &g.title));
             key(a).cmp(&key(b))
         });
-        let derived = |name: &str, games: Vec<usize>| Collection { derived: true, ..Collection::new(name, games) };
+        let derived = |name: &str, icon: &str, games: Vec<usize>| Collection { derived: true, ..Collection::with_icon(name, icon, games) };
         let mut front = Vec::new();
         if !recent.is_empty() {
-            front.push(derived("Recent", recent));
+            front.push(derived("Recent", "clock", recent));
         }
         if !favourites.is_empty() {
-            front.push(derived("Favourites", favourites));
+            front.push(derived("Favourites", "star", favourites));
         }
         self.collections.splice(0..0, front);
     }
 
-    /// The ids of the favourite games (for favorites.txt).
+    /// The ids of the favourite entries (for favorites.txt).
     pub fn favourite_ids(&self) -> impl Iterator<Item = &str> {
         self.games.iter().filter(|g| g.favourite).map(|g| &*g.id)
     }
+
+    /// The groups entry `i` is in, outermost first.
+    pub fn groups_of(&self, i: usize) -> Vec<usize> {
+        let mut groups = Vec::new();
+        let mut at = self.games.get(i).and_then(|g| g.parent);
+        while let Some(g) = at {
+            groups.insert(0, g);
+            at = self.games.get(g).and_then(|g| g.parent);
+        }
+        groups
+    }
 }
 
-/// Games in the Recent tab.
+/// Entries in the Recent tab.
 const RECENT: usize = 20;
 
 /// Placeholder games for development and snapshots.
@@ -197,23 +201,48 @@ pub fn demo_games() -> Vec<Game> {
     .collect()
 }
 
-/// Two demo collections of the demo games, for development and snapshots.
+/// The demo games in two collections, a few installed apps, and a series (two seasons of episodes),
+/// for development and snapshots.
 pub fn demo_library() -> Library {
     let mut games = demo_games();
     let n = games.len();
     // A few installed apps, as desktop files give them.
     let apps = [("desktop:steam", "Steam", "steam"), ("desktop:foot", "Terminal", "foot"), ("desktop:firefox", "Firefox", "firefox")];
-    games.extend(apps.iter().map(|(id, title, program)| Game { launch: Launch::Program(vec![(*program).into()]), tool: true, ..Game::new(id, title) }));
+    games.extend(apps.iter().map(|(id, title, program)| Game { launch: Launch::program(vec![(*program).into()]), tool: true, ..Game::new(id, title) }));
+    let series = games.len();
+    games.push(Game { color: 0x305a78, ..Game::new("tv:Cosmos", "Cosmos") });
+    let seasons: [(&str, &[&str]); 2] = [
+        ("Season 1", &["1. The Shores of the Cosmic Ocean", "2. One Voice in the Cosmic Fugue", "10. The Edge of Forever"]),
+        ("Season 2", &["1. Standing Up in the Milky Way"]),
+    ];
+    for (season, episodes) in seasons {
+        let s = games.len();
+        let id = format!("tv:Cosmos/{season}");
+        games.push(Game { parent: Some(series), color: 0x305a78, ..Game::new(&id, season) });
+        for episode in episodes {
+            let e = games.len();
+            let file = format!("{id}/{episode}.mkv");
+            let argv = vec!["mpv".into(), format!("/videos/{}", file.trim_start_matches("tv:"))];
+            games.push(Game { parent: Some(s), color: 0x305a78, launch: Launch::program(argv), ..Game::new(&file, episode) });
+            if let Some(season) = games.get_mut(s) {
+                season.items.push(e);
+            }
+        }
+        if let Some(g) = games.get_mut(series) {
+            g.items.push(s);
+        }
+    }
     let collections = vec![
-        Collection::new("Games", (0..n).collect()),
+        Collection::with_icon("Games", "gamepad", (0..n).collect()),
         Collection::new("More", vec![3, 1]),
-        Collection { tools: true, ..Collection::new("Apps", (n..n + apps.len()).collect()) },
+        Collection::with_icon("TV", "tv", vec![series]),
+        Collection::with_icon("Apps", "apps", (n..n + apps.len()).collect()),
     ];
     Library { collections, games }
 }
 
 #[cfg(test)]
-#[allow(clippy::indexing_slicing)]
+#[allow(clippy::indexing_slicing, clippy::unwrap_used)]
 mod tests {
     use super::*;
 
@@ -232,6 +261,19 @@ mod tests {
         lib.games[1].favourite = false;
         lib.rebuild_derived();
         assert_eq!(lib.collections.len(), 2, "an empty Favourites goes");
+    }
+
+    #[test]
+    fn a_series_is_a_group_of_seasons_of_episodes() {
+        let lib = demo_library();
+        let tv = lib.collections.iter().find(|c| c.name == "TV").unwrap();
+        let series = &lib.games[tv.games[0]];
+        assert!(series.is_group());
+        let season = series.items[0];
+        let episode = lib.games[season].items[2];
+        assert_eq!(lib.games[episode].title, "10. The Edge of Forever");
+        assert_eq!(lib.groups_of(episode), vec![tv.games[0], season]);
+        assert!(!lib.games[episode].is_group());
     }
 
     #[test]

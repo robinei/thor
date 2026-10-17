@@ -79,6 +79,7 @@ pub struct Launching {
 impl State {
     /// Shelf's action on its selected entry, or a tap on a stopped dock entry: show it if it runs, else
     /// start it.
+    /// A group isn't started: it is shown open in shelf.
     pub(crate) fn play(&mut self, game: Arc<str>) -> Vec<Effect> {
         if let Some(r) = self.session.running(&game) {
             return vec![Effect::Window(WindowCommand::Focus(r.workspace()))];
@@ -89,6 +90,13 @@ impl State {
     /// Launches `game` (again, if it runs: another tab), unless a launch of it is starting; one Steam runs
     /// is shown instead (Steam doesn't start a game twice).
     pub(crate) fn launch(&mut self, game: Arc<str>) -> Vec<Effect> {
+        if self.shelf.game(&game).is_some_and(crate::Game::is_group) {
+            if !self.shelf.reveal(&game) {
+                return vec![];
+            }
+            self.moved_collection();
+            return vec![Effect::Window(WindowCommand::ShowShelf)];
+        }
         let session = &self.session;
         if session.launching.iter().any(|l| l.game == game) {
             return vec![];
@@ -99,7 +107,7 @@ impl State {
         let Some(g) = self.shelf.game(&game) else {
             return vec![];
         };
-        let (launch, file, key) = (g.launch.clone(), g.file.clone(), g.key.clone());
+        let (launch, key) = (g.launch.clone(), g.key.clone());
         let appid = match launch {
             Launch::Steam { appid } => Some(appid),
             _ => None,
@@ -111,7 +119,7 @@ impl State {
         self.session.launching.push(Launching { game: game.clone(), instance: instance.clone(), appid });
         // Shown once its first window appears.
         self.session.pending_show = Some(instance.clone());
-        vec![Effect::Save(Save::Resume(self.resume_text())), Effect::Launch { game, instance, settings, env, launch, file }]
+        vec![Effect::Save(Save::Resume(self.resume_text())), Effect::Launch { game, instance, settings, env, launch }]
     }
 
     /// A launch has started (or a Steam game Steam started is seen): the entry runs (one launch more), and

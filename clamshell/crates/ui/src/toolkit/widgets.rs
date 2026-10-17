@@ -12,22 +12,28 @@ use crate::draw::{Align, Canvas, Column, Keep, LINE, Rect, Rgb};
 use crate::icons::Icon;
 use crate::images::Images;
 
-/// A row of tabs from `area.x`, `area.h` high: each its label (cut to `max` wide) with `inner` space on
-/// both sides; the current one bright with an amber line under it. Tabs that would pass the area's right
-/// edge are left out. Returns where a next one would start.
-pub(crate) fn tabs<'a>(f: &mut Frame, area: Rect, size: f32, inner: f32, max: f32, items: impl IntoIterator<Item = (Id, &'a str, bool)>) -> f32 {
+/// A row of tabs from `area.x`, `area.h` high: each its icon (if it has one) and label (cut to `max`
+/// wide) with `inner` space on both sides; the current one bright with an amber line under it. Tabs that
+/// would pass the area's right edge are left out. Returns where a next one would start.
+pub(crate) fn tabs<'a>(f: &mut Frame, area: Rect, size: f32, inner: f32, max: f32, items: impl IntoIterator<Item = (Id, Option<Icon>, &'a str, bool)>) -> f32 {
     let mut x = area.x;
-    for (id, name, current) in items {
+    // An icon: about the label's capitals high, a space after it.
+    let (icon_w, gap) = (size * 1.1, size * 0.35);
+    for (id, icon, name, current) in items {
+        let lead = if icon.is_some() { icon_w + gap } else { 0.0 };
         let text_w = f.c.text_width(size, name).min(max);
-        let r = Rect::new(x, area.y, text_w + 2.0 * inner, area.h);
+        let r = Rect::new(x, area.y, lead + text_w + 2.0 * inner, area.h);
         if r.x + r.w > area.x + area.w {
             break;
         }
         f.button(id, r, Look::TAB, |f| {
             let tone = if current { Tone::High } else { Tone::Dim };
-            f.c.text_fit(Rect::new(r.x + inner, r.y, text_w + 0.5, r.h), size, tone, name, Keep::Start);
+            if let Some(icon) = icon {
+                f.c.icon(icon, Rect::new(r.x + inner, r.y + (r.h - icon_w) / 2.0, icon_w, icon_w), tone);
+            }
+            f.c.text_fit(Rect::new(r.x + inner + lead, r.y, text_w + 0.5, r.h), size, tone, name, Keep::Start);
             if current {
-                f.c.fill(Rect::new(r.x + inner, r.y + r.h - 4.0, text_w, 2.0), Tone::Accent);
+                f.c.fill(Rect::new(r.x + inner, r.y + r.h - 4.0, lead + text_w, 2.0), Tone::Accent);
             }
         });
         x += r.w;

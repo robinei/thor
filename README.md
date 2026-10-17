@@ -17,11 +17,29 @@ on-screen keyboard), and the games' settings and keymaps. Rust, a Cargo workspac
 |---|---|
 | `crates/core` | the state and its rules: events in, dirty screens and effects out; no I/O |
 | `crates/system` | threads that watch the system and send events, and carry out effects (sway, systemd, NetworkManager, BlueZ, evdev/uinput, sysfs); the game library from disk |
-| `crates/library` | the game library's model and the parts of Pegasus' and Steam's formats that need no disk |
+| `crates/library` | the library's model (entries, groups, tabs), sorting, name patterns, and the parts of Steam's formats that need no disk |
 | `crates/ui` | Wayland, CPU drawing (tiny-skia, fontdue), the views, pad navigation; the font built in (Noto Sans, SIL Open Font License 1.1: `crates/ui/fonts/OFL.txt`) |
 | `src/` | the program around them: the command line, the environment, the threads, the control pipe, the snapshots |
 
 No panics by construction: `unwrap`, `expect`, `panic!` and slice indexing are denied outside tests.
+
+## The library
+
+Shelf's tabs come from `~/.config/clamshell/library.json` (content dirs: emulated games, films, series),
+installed Steam games, and desktop files (`Categories=Game` in Games, the rest in Apps). A source names its
+tab, a dir, name patterns, and the command that starts an entry, `{path}` in it the entry's file or folder:
+
+```json
+{ "sources": [
+    { "tab": "Games", "icon": "gamepad", "id": "snes", "dir": "~/Games/snes", "match": ["*.sfc", "*.smc"],
+      "launch": ["retroarch", "-L", "/usr/lib/libretro/snes9x_libretro.so", "{path}"] },
+    { "tab": "TV", "icon": "tv", "id": "tv", "dir": "~/TV", "match": ["*/"], "items": ["*.mkv", "*.mp4"],
+      "launch": ["mpv", "--fs", "--save-position-on-quit", "{path}"] }
+] }
+```
+
+`items` makes each matched folder a group that opens in shelf (a series, its seasons, their episodes).
+The rules (ids, titles, art, icons): `crates/system/src/library/content.rs`.
 
 ## Running
 

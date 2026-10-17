@@ -38,7 +38,7 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     };
     let env = Env::from_env();
-    let paths = Paths::new(&env.base, env.pegasus_config.clone());
+    let paths = Paths::new(&env.base);
     let sources = Sources::new(&paths, env.base.home.as_deref(), env.steam);
     match command {
         Command::Ctl(words) if words == ["help"] => {
@@ -121,7 +121,7 @@ fn load_keymaps(paths: &Paths) -> Keymaps {
     }
 }
 
-/// The library: Pegasus game dirs and Steam; the demo games if it is empty.
+/// The library: library.json's content dirs, Steam, the desktop files; the demo library if it is empty.
 fn load_library(sources: &Sources) -> Library {
     let library = library::load(sources);
     if library.collections.is_empty() { clamshell_library::demo_library() } else { library }
@@ -129,11 +129,27 @@ fn load_library(sources: &Sources) -> Library {
 
 fn print_library(library: &Library) {
     for c in &library.collections {
-        println!("{} ({}, {} games){}", c.name, c.short_name, c.games.len(), if c.tools { " tools" } else { "" });
-        for g in c.games.iter().filter_map(|&i| library.games.get(i)) {
-            let art = if g.box_front.is_some() { "art" } else { "no art" };
-            println!("  {}  [{art}] {:?}", g.title, g.launch);
+        println!("{} ({}, {} entries)", c.name, c.icon.as_deref().unwrap_or("no icon"), c.games.len());
+        for &i in &c.games {
+            print_entry(library, i, 1);
         }
+    }
+}
+
+/// An entry, `depth` deep, and a group's entries under it.
+fn print_entry(library: &Library, i: usize, depth: usize) {
+    let Some(g) = library.games.get(i) else {
+        return;
+    };
+    let indent = "  ".repeat(depth);
+    if g.is_group() {
+        println!("{indent}{}  ({})", g.title, g.id);
+        for &item in &g.items {
+            print_entry(library, item, depth + 1);
+        }
+    } else {
+        let art = if g.box_front.is_some() { "art" } else { "no art" };
+        println!("{indent}{}  ({}) [{art}] {:?}", g.title, g.id, g.launch);
     }
 }
 
