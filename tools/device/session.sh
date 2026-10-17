@@ -95,6 +95,14 @@ fi
 for d in nes snes n64 gb gba nds md psx dc; do mkdir -p "$H/Games/$d"; done
 mkdir -p "$H/Videos/Films" "$H/Videos/TV"
 
+# RetroArch's config (clamshell/retroarch: the GPD's, its menu on L3+R3) and the Xbox 360 pad's profile
+# (ClamShell's virtual pad is one), unless there is one.
+mkdir -p "$H/.config/retroarch/autoconfig"
+if [ ! -e "$H/.config/retroarch/retroarch.cfg" ]; then
+    install -m 644 "$REPO/clamshell/retroarch/retroarch.cfg" "$H/.config/retroarch/retroarch.cfg"
+    install -m 644 "$REPO/clamshell/retroarch/autoconfig/Microsoft X-Box 360 pad.cfg" "$H/.config/retroarch/autoconfig/"
+fi
+
 # The dock's first pins, in ClamShell's database before it has one: Steam, the terminal, Maintenance
 # (once the database is there, the user's pins are kept). The dock's table as ClamShell makes it; ClamShell
 # adds the rest. (sqlite3: the sqlite package, on the machine building the image.)

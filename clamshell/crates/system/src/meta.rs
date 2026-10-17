@@ -58,7 +58,8 @@ pub enum How {
     Steam(u32),
     /// SteamGridDB, by name.
     SteamGridDb,
-    /// A video's length, ffprobe's (kept apart from the rest: see [`crate::store`]).
+    /// A video's length (ffprobe's) and a frame of it (ffmpeg's, a quarter in): kept apart from the rest
+    /// (see [`crate::store`]).
     Duration,
 }
 
@@ -168,7 +169,7 @@ pub fn spawn(fetch: Fetch, queue: &Queue, sink: impl Sink + Clone) -> std::io::R
             while let Some(w) = queue.next() {
                 let meta = shared.fetch(&w);
                 let saved = match (&store, &w.how) {
-                    (Some(store), How::Duration) => store.save_duration(&w.id, meta.duration),
+                    (Some(store), How::Duration) => store.save_probe(&w.id, meta.duration, meta.shot.as_deref()),
                     (Some(store), _) => store.save_meta(&w.id, &w.how.source(), now(), &meta),
                     (None, _) => Ok(()),
                 };
@@ -210,10 +211,21 @@ impl Shared {
             How::Tmdb(kind) => self.tmdb(w, kind),
             How::Steam(appid) => self.steam(w, *appid),
             How::SteamGridDb => self.steamgriddb(w),
-            How::Duration => Meta { duration: w.file.as_deref().and_then(crate::mpv::duration), ..Meta::default() },
+            How::Duration => self.probe(w),
         };
         log::debug!("meta: {}: {}", w.id, if meta == Meta::default() { "nothing found" } else { "found" });
         meta
+    }
+
+    /// A video's length, and a frame a quarter in as its screenshot.
+    fn probe(&self, w: &Wanted) -> Meta {
+        let Some(file) = w.file.as_deref() else {
+            return Meta::default();
+        };
+        let duration = crate::mpv::duration(file);
+        let out = self.art.join(format!("{}-frame.jpg", w.key));
+        let shot = duration.filter(|d| crate::mpv::frame(file, d / 4, &out)).map(|_| out);
+        Meta { duration, shot, ..Meta::default() }
     }
 
     /// The image at `url` into the art cache as `<key>-<what>.<its extension>`.
@@ -267,8 +279,8 @@ impl Shared {
             }
         }
         for (crc, fields) in dat_games(&dat("developer")) {
-            if let Some(dev) = fields.get("developer") {
-                d.developers.insert(crc, dev.clone());
+            if let Some(dev) = fields.get("developer").map(|d| developer(d)).filter(|d| !d.is_empty()) {
+                d.developers.insert(crc, dev);
             }
         }
         for (crc, fields) in dat_games(&dat("releaseyear")) {
@@ -635,6 +647,11 @@ fn year_in(text: &str) -> Option<u16> {
     text.split(|c: char| !c.is_ascii_digit()).find(|w| w.len() == 4).and_then(|w| w.parse().ok())
 }
 
+/// A developer as libretro's database gives it, its "???" (unknown) parts left out.
+fn developer(text: &str) -> String {
+    text.split_whitespace().filter(|w| !w.chars().all(|c| c == '?')).collect::<Vec<_>>().join(" ")
+}
+
 /// HTML's common entities undone (Steam's texts have them).
 fn entities(text: &str) -> String {
     text.replace("&quot;", "\"").replace("&#39;", "'").replace("&apos;", "'").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
@@ -756,6 +773,7 @@ mod tests {
         assert_eq!(games[0].1.get("name").map(String::as_str), Some("Legend of Zelda, The (USA)"));
         assert_eq!(games[1].1.get("developer").map(String::as_str), Some("Falcom"));
         assert_eq!(thumbnail_name("Battletoads & Double Dragon (USA)"), "Battletoads _ Double Dragon (USA)");
+        assert_eq!((developer("Nintendo ???"), developer("???")), ("Nintendo".to_owned(), String::new()));
     }
 
     #[test]

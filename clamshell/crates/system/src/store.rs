@@ -19,7 +19,8 @@
 //! - `meta(id, source, fetched, cover, shot, summary, year, developer)`: what was fetched about an entry
 //!   (see [`crate::meta`]), from where (`source`) and when (`fetched`, seconds since the epoch); a row
 //!   with nothing in it is a miss.
-//! - `durations(id, seconds)`: a video's length (ffprobe's; none: it couldn't tell).
+//! - `probes(id, seconds, frame)`: a video's length (ffprobe's; none: it couldn't tell) and a frame of it
+//!   (an image in the art cache).
 //! - `kv(key, value)`: `collection` and `tab` (where shelf and the second screen were), `brightness`
 //!   (the level), `keymaps` (present once the keymaps were saved: without it, the initial ones).
 
@@ -51,9 +52,16 @@ CREATE TABLE IF NOT EXISTS places (collection TEXT PRIMARY KEY, path TEXT NOT NU
 CREATE TABLE IF NOT EXISTS shares (backlight TEXT PRIMARY KEY, share INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS meta (id TEXT PRIMARY KEY, source TEXT NOT NULL, fetched INTEGER NOT NULL, cover TEXT, shot TEXT,
     summary TEXT NOT NULL, year INTEGER, developer TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS durations (id TEXT PRIMARY KEY, seconds INTEGER);
+CREATE TABLE IF NOT EXISTS probes (id TEXT PRIMARY KEY, seconds INTEGER, frame TEXT);
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 ";
+
+/// A video's length and a frame of it, as read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Probe {
+    pub seconds: Option<u32>,
+    pub frame: Option<std::path::PathBuf>,
+}
 
 /// What was fetched about an entry, from where (as [`crate::meta::How::source`] says) and when.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -306,15 +314,19 @@ impl Store {
         Ok(())
     }
 
-    /// The videos' lengths read (none: ffprobe couldn't tell), by id.
-    pub fn durations(&self) -> Result<HashMap<String, Option<u32>>, Error> {
-        let mut stmt = self.db.prepare("SELECT id, seconds FROM durations")?;
-        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<i64>>(1)?.and_then(|s| u32::try_from(s).ok()))))?;
+    /// The videos' lengths (none: ffprobe couldn't tell) and frames, by id.
+    pub fn probes(&self) -> Result<HashMap<String, Probe>, Error> {
+        let mut stmt = self.db.prepare("SELECT id, seconds, frame FROM probes")?;
+        let rows = stmt.query_map([], |r| {
+            let seconds = r.get::<_, Option<i64>>(1)?.and_then(|s| u32::try_from(s).ok());
+            Ok((r.get::<_, String>(0)?, Probe { seconds, frame: r.get::<_, Option<String>>(2)?.map(std::path::PathBuf::from) }))
+        })?;
         rows.collect()
     }
 
-    pub fn save_duration(&self, id: &str, seconds: Option<u32>) -> Result<(), Error> {
-        self.db.execute("INSERT OR REPLACE INTO durations (id, seconds) VALUES (?1, ?2)", params![id, seconds])?;
+    pub fn save_probe(&self, id: &str, seconds: Option<u32>, frame: Option<&Path>) -> Result<(), Error> {
+        let frame = frame.map(|f| f.to_string_lossy().into_owned());
+        self.db.execute("INSERT OR REPLACE INTO probes (id, seconds, frame) VALUES (?1, ?2, ?3)", params![id, seconds, frame])?;
         Ok(())
     }
 
@@ -397,10 +409,11 @@ mod tests {
         assert_eq!(metas.get("x"), Some(&Fetched { source: "libretro:SNES".into(), at: 5, meta }));
         assert_eq!(metas.get("y").map(|f| &f.meta), Some(&Meta::default()), "a miss");
         assert_eq!(db.forget_misses().unwrap(), 1);
-        db.save_duration("ep", Some(2700)).unwrap();
-        db.save_duration("odd", None).unwrap();
-        let durations = db.durations().unwrap();
-        assert_eq!((durations.get("ep"), durations.get("odd")), (Some(&Some(2700)), Some(&None)));
+        db.save_probe("ep", Some(2700), Some(Path::new("/c/ep-frame.jpg"))).unwrap();
+        db.save_probe("odd", None, None).unwrap();
+        let probes = db.probes().unwrap();
+        assert_eq!(probes.get("ep"), Some(&Probe { seconds: Some(2700), frame: Some("/c/ep-frame.jpg".into()) }));
+        assert_eq!(probes.get("odd").map(|p| p.seconds), Some(None));
         assert!(!db.metas().unwrap().contains_key("y") && db.metas().unwrap().contains_key("x"));
 
         // Another connection (the launcher's) sees the same.

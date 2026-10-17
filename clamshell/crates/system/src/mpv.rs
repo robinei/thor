@@ -3,7 +3,8 @@
 //! of the video's path, or of its file name alone with `ignore-path-in-watch-later-config`; the line
 //! `start=<seconds>` is the place. A video watched to its end has none. Both names are looked for (the
 //! path's first), in the folder mpv.conf names (`watch-later-dir`) and in mpv's own
-//! (~/.local/state/mpv/watch_later, older ~/.config/mpv/watch_later). The length is ffprobe's.
+//! (~/.local/state/mpv/watch_later, older ~/.config/mpv/watch_later). The length is ffprobe's; a frame
+//! to show for it, ffmpeg's.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -53,6 +54,25 @@ pub fn duration(file: &Path) -> Option<u32> {
         .ok()?;
     let seconds: f64 = String::from_utf8_lossy(&out.stdout).trim().parse().ok()?;
     (seconds > 0.0).then_some(seconds.round() as u32)
+}
+
+/// A frame of `file` at `at` seconds, 640 pixels wide, into `out` (JPEG; written whole, then renamed into
+/// place); whether it worked.
+pub fn frame(file: &Path, at: u32, out: &Path) -> bool {
+    if let Some(dir) = out.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let part = out.with_extension("part.jpg");
+    let ok = Command::new("ffmpeg")
+        .args(["-v", "quiet", "-y", "-ss", &at.to_string(), "-i"])
+        .arg(file)
+        .args(["-frames:v", "1", "-vf", "scale=640:-2", "-q:v", "4"])
+        .arg(&part)
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success());
+    ok && std::fs::rename(&part, out).is_ok()
 }
 
 /// MD5 of `data` as 32 capital hex digits (as mpv names its watch_later files).

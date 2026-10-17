@@ -251,7 +251,9 @@ fn selected(f: &mut Frame, game: &Game, screen: Rect, list: Rect, pad: f32) {
 
     // A screenshot: under a landscape box, as wide; else at the bottom of the text. What it is about in as
     // many lines as fit above that.
-    let shot = match (game.shot.is_some(), landscape) {
+    // (Its screenshot as its picture already: not twice.)
+    let shot_is_cover = game.box_front.is_none() && game.icon.is_none();
+    let shot = match (game.shot.is_some() && !shot_is_cover, landscape) {
         (false, _) => None,
         (true, true) => {
             let y = cover.y + cover.h + pad;

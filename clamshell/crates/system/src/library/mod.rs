@@ -102,6 +102,16 @@ const TOOLS: [(&str, &str, &str, &str); 2] = [
     ("tool:refetch", "Fetch missing art again", "refetch", "Tries again for the entries whose covers and details weren't found, then rescans."),
 ];
 
+/// The first frame (a video's, in order, all the way down) in folder `i`.
+fn first_frame(library: &Library, i: usize) -> Option<PathBuf> {
+    let g = library.games.get(i)?;
+    g.items.iter().find_map(|&item| match library.games.get(item) {
+        Some(e) if e.is_group() => first_frame(library, item),
+        Some(e) => e.shot.clone().filter(|_| e.mpv_file().is_some()),
+        None => None,
+    })
+}
+
 /// The library, and what to fetch for it.
 #[derive(Debug, Default)]
 pub struct Loaded {
@@ -216,13 +226,13 @@ pub fn load(sources: &Sources) -> Loaded {
     }
     collections.push(Collection::with_icon("Tools", "tools", (first..games.len()).collect()));
     let mut metas = std::collections::HashMap::new();
-    let mut durations = std::collections::HashMap::new();
+    let mut probes = std::collections::HashMap::new();
     if let Some(db) = sources.db.as_deref().and_then(|f| crate::store::Store::open(f).map_err(|e| log::warn!("library: {}: {e}", f.display())).ok()) {
         metas = db.metas().unwrap_or_else(|e| {
             log::warn!("library: metadata: {e}");
             Default::default()
         });
-        durations = db.durations().unwrap_or_else(|e| {
+        probes = db.probes().unwrap_or_else(|e| {
             log::warn!("library: lengths: {e}");
             Default::default()
         });
@@ -263,17 +273,32 @@ pub fn load(sources: &Sources) -> Loaded {
             library.apply_meta(i, &f.meta);
         }
     }
-    // mpv's videos: where mpv left each, and its length (read once, then kept).
-    for (i, g) in library.games.iter_mut().enumerate() {
+    // mpv's videos: where mpv left each, its length and a frame of it (read once, then kept).
+    for g in &mut library.games {
         let Some(file) = g.mpv_file().map(std::path::Path::to_path_buf) else {
             continue;
         };
         g.position = crate::mpv::position(&sources.watch_later, &file);
-        match durations.get(&*g.id) {
-            Some(d) => g.duration = *d,
+        let probe = probes.get(&*g.id).filter(|p| p.frame.as_ref().is_none_or(|f| f.exists()));
+        match probe {
+            Some(p) => {
+                g.duration = p.seconds;
+                if g.shot.is_none() {
+                    g.shot.clone_from(&p.frame);
+                }
+            }
             None => wanted.push(Wanted { id: g.id.clone(), key: g.key.clone(), title: g.title.clone(), file: Some(file), how: How::Duration, art: true }),
         }
-        let _ = i;
+    }
+    // A folder of videos without art: the frame of its first video that has one.
+    for i in 0..library.games.len() {
+        let bare = library.games.get(i).is_some_and(|g| g.is_group() && g.box_front.is_none() && g.shot.is_none());
+        if bare
+            && let Some(frame) = first_frame(&library, i)
+            && let Some(g) = library.games.get_mut(i)
+        {
+            g.shot = Some(frame);
+        }
     }
     library.rebuild_derived();
     Loaded { library, wanted, keys: config.keys }

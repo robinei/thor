@@ -181,7 +181,13 @@ fn group(folder: &Path, dir: &Path, source: &str, items: &[String], launch: &Lau
     let name = folder.file_name()?.to_string_lossy().into_owned();
     let index = games.len();
     let art = art(folder, dir).or_else(|| parent.and_then(|p| games.get(p)).and_then(|g| g.box_front.clone()));
-    games.push(Game { parent, box_front: art.clone(), ..Game::new(&id(folder), &name) });
+    // (A folder's entries in its outermost folder's colour: one colour for a series while it has no art.)
+    let mut own = Game { parent, box_front: art.clone(), ..Game::new(&id(folder), &name) };
+    if let Some(p) = parent.and_then(|p| games.get(p)) {
+        own.color = p.color;
+    }
+    let color = own.color;
+    games.push(own);
     let listing = listing(folder);
     let mut members = Vec::new();
     for (_, path) in listing.iter().filter(|(n, p)| p.is_dir() && !n.starts_with('.')) {
@@ -194,7 +200,14 @@ fn group(folder: &Path, dir: &Path, source: &str, items: &[String], launch: &Lau
             continue;
         }
         let box_front = art_beside(path).or_else(|| art.clone());
-        games.push(Game { parent: Some(index), box_front, launch: launch.of(path), file: Some(path.clone()), ..Game::new(&id(path), &untagged(&stem(file))) });
+        games.push(Game {
+            parent: Some(index),
+            box_front,
+            color,
+            launch: launch.of(path),
+            file: Some(path.clone()),
+            ..Game::new(&id(path), &untagged(&stem(file)))
+        });
         members.push(games.len() - 1);
     }
     if members.is_empty() {
@@ -234,19 +247,61 @@ fn stem(name: &str) -> String {
     name.rsplit_once('.').map_or(name, |(stem, _)| stem).to_owned()
 }
 
-/// A title without the tags at its end (`(U) [!]`, `(USA) (Rev 1)`, a translation's ` # SNES`); a year in
-/// brackets stays (a film's: `Cosmos (1980)`).
+/// A title without the dump tags at its end (`(U) [!]`, `(USA) (Rev 1)`, `(Japan, USA) (En,Ja)`, a
+/// translation's ` # SNES`); words in brackets stay (`(Part 1)`), and so does a year (`Cosmos (1980)`).
 fn untagged(title: &str) -> String {
     let mut t = title.split_once(" # ").map_or(title, |(t, _)| t).trim_end();
     while let Some(open) = t.strip_suffix([')', ']']).and_then(|rest| rest.rfind(['(', '['])) {
+        let square = t.ends_with(']');
         let tag = t.get(open + 1..t.len() - 1).unwrap_or("");
         let rest = t.get(..open).unwrap_or("").trim_end();
-        if rest.is_empty() || (tag.len() == 4 && tag.bytes().all(|b| b.is_ascii_digit())) {
+        if rest.is_empty() || !(square || dump_tag(tag)) {
             break;
         }
         t = rest;
     }
     t.to_owned()
+}
+
+/// Whether a bracketed tag is a ROM dump's (a region, languages, a revision, a stage): `U`, `JU`, `M5`,
+/// `V1.1`, `USA`, `Japan, USA`, `En,Ja`, `Rev 1`, `Beta`, `Unl`, `Hack`.
+fn dump_tag(tag: &str) -> bool {
+    const WORDS: [&str; 26] = [
+        "usa",
+        "europe",
+        "japan",
+        "world",
+        "asia",
+        "korea",
+        "brazil",
+        "germany",
+        "france",
+        "spain",
+        "italy",
+        "australia",
+        "canada",
+        "china",
+        "rev",
+        "beta",
+        "proto",
+        "prototype",
+        "demo",
+        "sample",
+        "unl",
+        "hack",
+        "pirate",
+        "virtual console",
+        "en",
+        "ja",
+    ];
+    let short_code = tag.len() <= 5
+        && tag.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '.' || c == '-')
+        && tag.chars().any(|c| c.is_ascii_uppercase());
+    let words = tag.split([',', '+']).map(str::trim).all(|w| {
+        let w = w.to_ascii_lowercase();
+        WORDS.iter().any(|k| w == *k || w.starts_with(&format!("{k} "))) || (w.len() == 2 && w.chars().all(|c| c.is_ascii_alphabetic()))
+    });
+    short_code || words
 }
 
 /// `~/...` against `home`.
@@ -337,6 +392,11 @@ mod tests {
         assert_eq!(untagged("Cosmos (1980)"), "Cosmos (1980)");
         assert_eq!(untagged("(Untitled)"), "(Untitled)");
         assert_eq!(untagged("1. Silence"), "1. Silence");
+        assert_eq!(untagged("017 S01E18 A Voice in the Wilderness (Part 1)"), "017 S01E18 A Voice in the Wilderness (Part 1)");
+        assert_eq!(untagged("Super Battletank - War in the Gulf (U) (V1.1) [!]"), "Super Battletank - War in the Gulf");
+        assert_eq!(untagged("Street Fighter II (USA) (Rev 1)"), "Street Fighter II");
+        assert_eq!(untagged("Power Drive (U) (Beta) (M5)"), "Power Drive");
+        assert_eq!(untagged("Doom (Final)"), "Doom (Final)");
     }
 
     #[test]

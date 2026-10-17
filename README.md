@@ -59,6 +59,8 @@ was, brightness) is in one SQLite database, `~/.local/share/clamshell/clamshell.
     cargo run                         # two windows at half the Thor's size: top and bottom
     cargo run -- --snapshot DIR       # every screen as PNG files at the Thor's size, no Wayland
     cargo run -- ctl help             # the control pipe's commands (a running ClamShell takes them)
+    tools/nested-session.sh           # as on the device: a nested sway in two windows (the Thor's screens
+                                      # at their size), ClamShell in it with this desktop's library
 
 In shelf, Y makes the selected entry a favourite (the Favourites tab) or not, and X pins it to the dock
 or unpins it; a pinned folder (a series) opens in shelf from the dock.
