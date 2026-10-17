@@ -23,7 +23,8 @@
 //!   episode of that season (`017 S02E18 Title`) is titled by its number there: `18. Title` (`1–2.` for a
 //!   double one).
 //! - Box art: `<name>.jpg` (or .jpeg, .png, .webp) beside a file, or `poster`, `cover` or `folder` in a
-//!   folder (any case: `Cover.jpg`); else the group's.
+//!   folder (any case: `Cover.jpg`); else the group's, but for a video mpv plays (its frame is its
+//!   picture).
 //! - `icon`: the tab's icon; sources in the same tab need it once.
 //! - `group`: a folder in the tab for the source's entries (`SNES`, or `Handhelds/GBA` for one in
 //!   another), so one tab can hold folders each with its own launch command; sources naming the same
@@ -204,7 +205,9 @@ fn group(folder: &Path, dir: &Path, source: &str, items: &[String], launch: &Lau
         if !items.iter().any(|p| !hidden(file, p) && pattern::matches(p, file)) {
             continue;
         }
-        let box_front = art_beside(path).or_else(|| art.clone());
+        // (A video keeps its own picture, its frame: not its folder's art.)
+        let video = Game { launch: launch.of(path), file: Some(path.clone()), ..Game::new("", "") }.mpv_file().is_some();
+        let box_front = art_beside(path).or_else(|| art.clone().filter(|_| !video));
         games.push(Game {
             parent: Some(index),
             box_front,
@@ -449,7 +452,8 @@ mod tests {
         assert_eq!(titles(&season.items), vec!["2. Two", "10. Ten"]);
         let episode = &games[season.items[1]];
         assert_eq!(&*episode.id, "tv:Show/Season 1/10. Ten.mkv");
-        assert_eq!(episode.box_front, Some(root.join("Show/poster.jpg")), "the series' art");
+        assert_eq!(season.box_front, Some(root.join("Show/poster.jpg")), "the series' art");
+        assert_eq!(episode.box_front, None, "a video: its frame, not the series' art");
         assert_eq!(episode.parent, Some(show.items[0]));
         assert!(games[tops[0]].is_group(), "a film's folder too");
         let _ = fs::remove_dir_all(&root);

@@ -238,7 +238,7 @@ impl Library {
     }
 
     /// What was fetched about entry `i`: its cover where it has no art of its own (and so the entries in
-    /// it without art: a series' episodes), and the rest.
+    /// it without art, but videos: an episode's frame is its picture), and the rest.
     pub fn apply_meta(&mut self, i: usize, meta: &Meta) {
         let Some(g) = self.games.get_mut(i) else {
             return;
@@ -247,7 +247,7 @@ impl Library {
             g.box_front = Some(cover.clone());
             let mut inside = g.items.clone();
             while let Some(j) = inside.pop() {
-                if let Some(item) = self.games.get_mut(j).filter(|item| item.box_front.is_none()) {
+                if let Some(item) = self.games.get_mut(j).filter(|item| item.box_front.is_none() && item.mpv_file().is_none()) {
                     item.box_front = Some(cover.clone());
                     inside.extend(item.items.iter().copied());
                 }
@@ -417,7 +417,7 @@ mod tests {
     }
 
     #[test]
-    fn a_series_cover_reaches_its_episodes_but_not_over_their_own() {
+    fn a_series_cover_reaches_its_seasons_but_not_its_videos() {
         let mut lib = demo_library();
         let tv = lib.collections.iter().find(|c| c.name == "TV").unwrap().games[0];
         let season = lib.games[tv].items[0];
@@ -425,7 +425,8 @@ mod tests {
         lib.games[second].box_front = Some("own.jpg".into());
         let meta = Meta { cover: Some("poster.jpg".into()), summary: "Space.".into(), year: Some(1980), ..Meta::default() };
         lib.apply_meta(tv, &meta);
-        assert_eq!(lib.games[first].box_front.as_deref(), Some(std::path::Path::new("poster.jpg")));
+        assert_eq!(lib.games[season].box_front.as_deref(), Some(std::path::Path::new("poster.jpg")), "a season");
+        assert_eq!(lib.games[first].box_front, None, "an episode: its frame is its picture");
         assert_eq!(lib.games[second].box_front.as_deref(), Some(std::path::Path::new("own.jpg")));
         assert_eq!((lib.games[tv].summary.as_str(), lib.games[tv].year), ("Space.", Some(1980)));
     }
