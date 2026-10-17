@@ -8,7 +8,7 @@ system (NetworkManager, BlueZ, PipeWire, a fake backlight), screenshots.
     tools/vm/vm.py run --headless &          (the machine running; ClamShell built on the host)
     tools/vm/vm-checks.py [CHECK ...]        (all of them by default; --list names them)
 
-For the checks ClamShell runs with a test library (a game that opens foot), a fake backlight and its own
+For the checks ClamShell runs with a test library (a game that opens an empty mpv window), a fake backlight and its own
 state directory (a runtime drop-in for its service, removed at the end), PipeWire gets a null sink (the
 machine has no audio device), and Bluetooth is set up (tools/vm/vm.py bluetooth). The exit status is the
 number of failed checks. Standard library only.
@@ -256,10 +256,10 @@ def plug_pad():
 
 # --- the test environment
 
-# Test games: test.game, zeta.game, zulu01.game to zulu14.game, all in the Test tab, each a foot window.
+# Test games: test.game, zeta.game, zulu01.game to zulu14.game, all in the Test tab, each an empty mpv window (not foot: it asks for text input, which brings up the keyboard).
 LIBRARY = f"""{{ "sources": [
   {{ "tab": "Test", "id": "test", "dir": "{CHECKS_DIR}/games", "match": ["*.game"],
-    "launch": ["sh", "-c", "foot --app-id=testgame sleep 300 & sleep 300"] }}
+    "launch": ["mpv", "--idle", "--force-window", "--vo=wlshm", "--no-terminal", "--wayland-app-id=testgame"] }}
 ] }}
 """
 
