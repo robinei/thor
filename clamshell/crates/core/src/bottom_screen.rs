@@ -260,7 +260,6 @@ mod tests {
             focused,
             unit: Some(unit.into()),
             workspace: if down { Instance::Bottom.name() } else { unit.trim_end_matches(".scope").into() },
-            output: if down { "DSI-1".into() } else { "DSI-2".into() },
             down,
         }
     }

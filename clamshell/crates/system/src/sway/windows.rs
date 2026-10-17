@@ -13,15 +13,11 @@ use super::ipc::Node;
 /// systemd unit.
 pub fn windows(tree: &Node, unit: &mut impl FnMut(u32) -> Option<String>) -> Vec<Window> {
     let mut out = Vec::new();
-    collect(tree, "", "", unit, &mut out);
+    collect(tree, "", unit, &mut out);
     out
 }
 
-fn collect(node: &Node, output: &str, workspace: &str, unit: &mut impl FnMut(u32) -> Option<String>, out: &mut Vec<Window>) {
-    let output = match node.kind.as_str() {
-        "output" => node.name.as_deref().unwrap_or(""),
-        _ => output,
-    };
+fn collect(node: &Node, workspace: &str, unit: &mut impl FnMut(u32) -> Option<String>, out: &mut Vec<Window>) {
     let workspace = match node.kind.as_str() {
         "workspace" => node.name.as_deref().unwrap_or(""),
         _ => workspace,
@@ -36,13 +32,12 @@ fn collect(node: &Node, output: &str, workspace: &str, unit: &mut impl FnMut(u32
             focused: node.focused,
             unit: unit(pid),
             workspace: workspace.to_owned(),
-            output: output.to_owned(),
             down: node.marks.iter().any(|m| m.starts_with(commands::DOWN_MARK)),
             visible: node.visible.unwrap_or(false),
         });
     }
     for child in node.children() {
-        collect(child, output, workspace, unit, out);
+        collect(child, workspace, unit, out);
     }
 }
 
@@ -143,13 +138,13 @@ mod tests {
     }
 
     #[test]
-    fn the_tree_says_which_output_a_window_is_on_and_whether_it_is_down() {
+    fn the_tree_says_whether_a_window_is_down() {
         let tree = tree(
             r#"{"type": "root", "nodes": [{"type": "output", "name": "DSI-1", "nodes": [{"type": "workspace", "name": "clamshell-bottom",
                 "nodes": [{"type": "con", "id": 7, "pid": 100, "app_id": "emu", "marks": ["clamshell-down-7"], "nodes": []}]}]}]}"#,
         );
         let w = windows(&tree, &mut |_| None);
-        assert_eq!((w[0].output.as_str(), w[0].down), ("DSI-1", true));
+        assert!(w[0].down);
     }
 
     #[test]

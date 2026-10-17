@@ -120,14 +120,6 @@ impl Instance {
         format!("{PREFIX}app-{key}")
     }
 
-    /// The order of the instance named `name` (see [`Instance::order`]), without allocating.
-    pub fn parse_order(name: &str) -> (u64, u64) {
-        match Name::parse(name) {
-            Some(Name::App { secs, n, .. } | Name::Game { secs, n }) => (secs, n),
-            _ => (0, 0),
-        }
-    }
-
     /// Whether `name` is one of ours (a workspace or scope ClamShell names, known kind or not).
     pub fn is_ours(name: &str) -> bool {
         name.starts_with(PREFIX)
