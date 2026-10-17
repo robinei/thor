@@ -147,6 +147,8 @@ pub const COMMANDS: &[Form<Vec<Event>>] = &[
     form("window quit", "Home+B held: the program in front quits (as its dock menu's Quit)", |_| device(DeviceKey::Quit)),
     form("home", "the Home button", |_| Ok(vec![Event::Home])),
     form("list N", "shelf's selection moved by N", |a| Ok(vec![ShelfEvent::ListStep(number(arg(a, 0))?).into()])),
+    form("pin", "shelf's selected entry pinned to the dock, or unpinned (the pad's X)", |_| Ok(vec![ShelfEvent::TogglePin.into()])),
+    form("favourite", "shelf's selected entry a favourite, or not (the pad's Y)", |_| Ok(vec![ShelfEvent::ToggleFavourite.into()])),
     form("tab NAME", "a tab opened (dock, wifi, keyboard, ...)", |a| {
         let name = arg(a, 0);
         Ok(vec![PointerEvent::Activate(Id::Tab(Tab::from_name(name).ok_or_else(|| name_err(name))?)).into()])

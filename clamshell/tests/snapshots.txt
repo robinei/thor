@@ -58,7 +58,7 @@ time-europe.png 50b43e8f1f5b99e0
 time.png 1bcd3c27629745f5
 top-back.png da33af6763794394
 top-group.png bb0ed560ad66f15a
-top-played.png 1f4f23bb640cc986
+top-played.png c1510180324a6c6f
 top-switch.png aba45f6207eb89b3
 top-tab2-down.png e7dfb52b79735292
 top-tab2.png 5682872d58977913

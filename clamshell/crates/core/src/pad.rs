@@ -43,8 +43,10 @@ pub enum PadInput {
     A(bool),
     /// B: cancels the editor.
     B,
-    /// Y: the selected game in or out of the favourites.
+    /// Y: the selected entry in or out of the favourites.
     Y,
+    /// X: the selected entry pinned to the dock, or unpinned.
+    X,
     /// The shoulder buttons: the previous or next collection (shelf) or tab (the second screen).
     Shoulder(i32),
     /// View/Select: focus to the other screen.

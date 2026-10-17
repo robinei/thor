@@ -191,6 +191,7 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                     vec![
                         GameEvent::Played { game: "zelda-lttp".into(), start: 1_759_900_000, duration: 4 * 3600 + 1260 }.into(),
                         ShelfEvent::ToggleFavourite.into(),
+                        ShelfEvent::TogglePin.into(),
                         GameEvent::Started("zelda-lttp".into()).into(),
                     ],
                 ),

@@ -58,8 +58,11 @@ was, brightness) is in one SQLite database, `~/.local/share/clamshell/clamshell.
     cargo run -- --snapshot DIR       # every screen as PNG files at the Thor's size, no Wayland
     cargo run -- ctl help             # the control pipe's commands (a running ClamShell takes them)
 
+In shelf, Y makes the selected entry a favourite (the Favourites tab) or not, and X pins it to the dock
+or unpins it; a pinned folder (a series) opens in shelf from the dock.
+
 On a desktop, keys stand in for the pad: arrows move the focus, Enter is A, Backspace B, Tab View, Q and
-E the shoulders.
+E the shoulders, F is Y, P is X.
 
 ## Checking
 

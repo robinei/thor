@@ -469,7 +469,7 @@ impl App {
     }
 
     /// The pad on ClamShell's screens (see `focus`): directions move focus, A acts on the focused
-    /// target, B goes back (see `focus::back`), Y toggles the favourite, the shoulders step collections or tabs.
+    /// target, B goes back (see `focus::back`), Y toggles the favourite, X the pin on the dock, the shoulders step collections or tabs.
     /// View moves focus to the other screen with shelf in front; else it moves the pad between the second
     /// screen and what else wants it (the pad mouse, typing; the pad thread sends View from there too).
     fn pad(&mut self, input: PadInput) {
@@ -506,6 +506,7 @@ impl App {
             PadInput::A(false) => self.up(Source::PadA, End::Release),
             PadInput::B => self.handle_all(focus::back(&self.state)),
             PadInput::Y => self.handle(ShelfEvent::ToggleFavourite.into()),
+            PadInput::X => self.handle(ShelfEvent::TogglePin.into()),
             // The Back button: what the screen has for back (the edit screen's other layer).
             PadInput::Back => {
                 if let Some(id) = self.state.pad_back() {

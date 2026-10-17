@@ -627,6 +627,10 @@ impl State {
                 (Dirty::BOTH, vec![])
             }
             ShelfEvent::Rows(rows) => (if self.shelf.set_rows(rows) { Dirty::BOTH } else { Dirty::NONE }, vec![]),
+            ShelfEvent::TogglePin => match self.shelf.selected().cloned() {
+                Some(id) => (Dirty::BOTH, self.toggle_pin(id)),
+                None => (Dirty::NONE, vec![]),
+            },
             ShelfEvent::ToggleFavourite => match self.shelf.toggle_favourite() {
                 Some(moved) => {
                     if moved {

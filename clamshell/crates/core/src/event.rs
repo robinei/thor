@@ -152,8 +152,10 @@ pub enum ShelfEvent {
     CollectionStep(i32),
     /// How many list rows shelf shows (from the layout), so the selection stays on screen.
     Rows(usize),
-    /// The pad's Y (desktop: F): the selected game in or out of the favourites.
+    /// The pad's Y (desktop: F): the selected entry in or out of the favourites.
     ToggleFavourite,
+    /// The pad's X (desktop: P): the selected entry pinned to the dock, or unpinned.
+    TogglePin,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

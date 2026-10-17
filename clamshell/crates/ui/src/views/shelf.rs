@@ -35,6 +35,9 @@ const DETAIL: f32 = 0.03;
 const SUMMARY: f32 = 0.028;
 /// A screenshot's height at most, of the list's height (it is as wide as the details, 16:9).
 const SHOT_H: f32 = 0.45;
+/// The box art's width at most, of the room right of the list: a portrait one is as high as it may be
+/// within it; a landscape one this wide, the screenshot under it.
+const COVER_W: f32 = 0.55;
 
 /// Draws shelf over `screen`; returns how many list rows fit (the state keeps the selection within
 /// them).
@@ -112,16 +115,18 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
     scrolled.end(f, list.x + list.w - 3.0);
 }
 
-/// The selected entry right of the `list`, as high as it: large art, then beside it the title, the
-/// groups it is in, who made it and when, what playing it does now, whether it is a favourite, the play
-/// time, what it is about (as much as fits), and a screenshot at the bottom.
+/// The selected entry right of the `list`, as high as it: large box art, then beside it the title, the
+/// groups it is in, who made it and when, what playing it does now, whether it is a favourite and on the
+/// dock, the play time, what it is about (as much as fits), and a screenshot: at the bottom of the text,
+/// or under a landscape box (as wide as it).
 fn selected(f: &mut Frame, game: &Game, screen: Rect, list: Rect, pad: f32) {
     let s = f.s;
     let h = screen.h;
-    let art_h = list.h * ART_H;
-    let box_rect = Rect::new(screen.w * LIST_W + pad, list.y, art_h * BOX_ASPECT, art_h);
-    widgets::art(f.c, f.images, game, box_rect, RADIUS_L, Align::Start, false);
-    let tx = box_rect.x + box_rect.w + pad * 1.2;
+    let x0 = screen.w * LIST_W + pad;
+    let room = Rect::new(x0, list.y, (screen.w - pad - x0) * COVER_W, list.h * ART_H);
+    let cover = widgets::cover(f.c, f.images, game, room, RADIUS_L, BOX_ASPECT);
+    let landscape = cover.w > cover.h;
+    let tx = if landscape { room.x + room.w } else { cover.x + cover.w } + pad * 1.2;
     let text_w = screen.w - pad - tx;
     let mut col = Column::new(Rect::new(tx, list.y, text_w, list.h));
     let span = |col: &Column| Span { x: tx, y: col.y(), w: text_w };
@@ -148,7 +153,10 @@ fn selected(f: &mut Frame, game: &Game, screen: Rect, list: Rect, pad: f32) {
         mx = tx;
     }
     if game.favourite {
-        mx += f.c.text(mx, col.y(), detail, Tone::Accent, "Favourite");
+        mx += f.c.text(mx, col.y(), detail, Tone::Accent, "Favourite") + pad;
+    }
+    if s.dock().is_pinned(&game.id) {
+        mx += f.c.text(mx, col.y(), detail, Tone::Dim, "On the dock");
     }
     if mx > tx {
         col.skip(detail * WRAP_LINE + pad * 0.4);
@@ -162,16 +170,31 @@ fn selected(f: &mut Frame, game: &Game, screen: Rect, list: Rect, pad: f32) {
         col.skip(f.c.wrap(span(&col), detail, Tone::Dim, &played, 2) + pad * 0.4);
     }
 
-    // A screenshot at the bottom; what it is about in as many lines as fit above it.
-    let shot_h = if game.shot.is_some() { (text_w * 9.0 / 16.0).min(list.h * SHOT_H) } else { 0.0 };
-    let bottom = list.y + list.h - if shot_h > 0.0 { shot_h + pad } else { 0.0 };
+    // A screenshot: under a landscape box, as wide; else at the bottom of the text. What it is about in as
+    // many lines as fit above that.
+    let shot = match (game.shot.is_some(), landscape) {
+        (false, _) => None,
+        (true, true) => {
+            let y = cover.y + cover.h + pad;
+            // (4:3 room: a console's screenshots fill the width; a wider one fits in it.)
+            Some(Rect::new(room.x, y, room.w, (room.w * 3.0 / 4.0).min(list.y + list.h - y)))
+        }
+        (true, false) => {
+            let shot_h = (text_w * 9.0 / 16.0).min(list.h * SHOT_H);
+            Some(Rect::new(tx, list.y + list.h - shot_h, text_w, shot_h))
+        }
+    };
+    let bottom = match shot {
+        Some(r) if !landscape => r.y - pad,
+        _ => list.y + list.h,
+    };
     let (top, size) = (col.y() + pad * 0.2, h * SUMMARY);
     let lines = ((bottom - top) / (size * WRAP_LINE)).floor().max(0.0) as usize;
     if !game.summary.is_empty() && lines > 0 {
         f.c.wrap(Span { x: tx, y: top, w: text_w }, size, Tone::Normal, &game.summary, lines.min(12));
     }
-    if shot_h > 0.0 {
-        widgets::shot(f.c, f.images, game, Rect::new(tx, list.y + list.h - shot_h, text_w, shot_h));
+    if let Some(r) = shot.filter(|r| r.h > pad) {
+        widgets::shot(f.c, f.images, game, r);
     }
 }
 

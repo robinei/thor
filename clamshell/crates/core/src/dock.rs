@@ -58,6 +58,11 @@ impl Dock {
         self.moving.as_ref()
     }
 
+    /// Whether `id` is pinned.
+    pub fn is_pinned(&self, id: &str) -> bool {
+        self.items.iter().any(|i| i.pinned && &*i.id == id)
+    }
+
     fn position(&self, id: &str) -> Option<usize> {
         self.items.iter().position(|i| &*i.id == id)
     }
@@ -144,15 +149,7 @@ impl State {
         match choice {
             DockId::OpenAnother => self.launch(entry),
             DockId::CloseWindow => self.entry_window(&entry).map(|w| vec![Effect::Window(WindowCommand::Close(vec![w]))]).unwrap_or_default(),
-            DockId::Pin => {
-                if let Some(i) = self.dock.position(&entry)
-                    && let Some(item) = self.dock.items.get_mut(i)
-                {
-                    item.pinned = !item.pinned;
-                }
-                self.follow_dock();
-                vec![Effect::Save(Save::Dock(self.dock.pinned_ids()))]
-            }
+            DockId::Pin => self.toggle_pin(entry),
             DockId::Move => {
                 self.dock.moving = Some(entry);
                 vec![]
@@ -161,6 +158,17 @@ impl State {
             DockId::ForceKill => self.force_kill(&entry),
             _ => vec![],
         }
+    }
+
+    /// Pins `entry` to the dock (at the end, if it isn't there), or unpins it (gone, unless it runs); the
+    /// pins saved.
+    pub(crate) fn toggle_pin(&mut self, entry: Arc<str>) -> Vec<Effect> {
+        match self.dock.position(&entry).and_then(|i| self.dock.items.get_mut(i)) {
+            Some(item) => item.pinned = !item.pinned,
+            None => self.dock.items.push(DockItem { id: entry, pinned: true }),
+        }
+        self.follow_dock();
+        vec![Effect::Save(Save::Dock(self.dock.pinned_ids()))]
     }
 
     /// Move mode: the entry one place along (left, right) or a row (up, down); the order saved.
@@ -237,6 +245,24 @@ mod tests {
         s.apply(GameEvent::LaunchFailed("zelda-lttp".into()).into());
         long(&mut s, dock(0));
         tap(&mut s, Id::Dock(DockId::Pin));
+        assert_eq!(entry(&s, 0), None);
+    }
+
+    #[test]
+    fn shelf_pins_and_unpins_any_entry_a_series_too() {
+        let mut s = state();
+        tap(&mut s, Id::Shelf(ShelfId::Collection(2)));
+        let fx = s.apply(ShelfEvent::TogglePin.into()).1;
+        assert!(matches!(fx.as_slice(), [Effect::Save(Save::Dock(ids))] if ids.iter().map(|i| &**i).eq(["tv:Cosmos"])), "{fx:?}");
+        assert_eq!(entry(&s, 0), Some("tv:Cosmos"));
+        assert!(s.dock().is_pinned("tv:Cosmos"));
+        // A tap on it opens it in shelf.
+        tap(&mut s, Id::Shelf(ShelfId::Collection(0)));
+        assert_eq!(tap(&mut s, dock(0)), vec![Effect::Window(WindowCommand::ShowShelf)]);
+        assert_eq!(s.shelf().group().map(|g| &*g.id), Some("tv:Cosmos"));
+        // Unpinned from shelf: gone (it doesn't run).
+        tap(&mut s, Id::Shelf(ShelfId::Up));
+        s.apply(ShelfEvent::TogglePin.into());
         assert_eq!(entry(&s, 0), None);
     }
 
