@@ -5,7 +5,7 @@
 
 use std::fmt::{self, Display, Formatter};
 
-use clamshell_core::{Game, Id, ListId, ShelfId, State};
+use clamshell_core::{Game, Id, ListId, ShelfId, State, Tab};
 
 use crate::draw::{Align, Column, Keep, Rect, Span, WRAP_LINE};
 use crate::icons::Icon;
@@ -24,6 +24,8 @@ const ROW_H: f32 = 0.085;
 /// Title size and thumbnail height, of a row's height; thumbnails are portrait boxes.
 const ROW_TEXT: f32 = 0.36;
 const THUMB: f32 = 0.82;
+/// A row's marks (favourite, on the dock): their size, of a row's height.
+const MARK: f32 = 0.3;
 const BOX_ASPECT: f32 = 2.0 / 3.0;
 /// A thumbnail placeholder's corner radius.
 const THUMB_RADIUS: f32 = 3.0;
@@ -107,8 +109,19 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
         let thumb = Rect::new(r.x + pad * 0.4, r.y + (r.h - thumb_h) / 2.0, thumb_h * BOX_ASPECT, thumb_h);
         f.button(Id::Shelf(ShelfId::Game(game.id.clone())), r, look, |f| {
             widgets::art(f.c, f.images, game, thumb, THUMB_RADIUS, Align::Center, false);
+            // Its marks at the row's right end, right to left: on the dock, a favourite.
+            let mark = r.h * MARK;
+            let mut right = r.x + r.w - pad * 0.5;
+            let marks = [(s.dock().is_pinned(&game.id), Icon::for_tab(Tab::Dock), Tone::Normal), (game.favourite, Icon::Star, Tone::Accent)];
+            for (on, icon, mark_tone) in marks {
+                if on {
+                    right -= mark;
+                    f.c.icon(icon, Rect::new(right, r.y + (r.h - mark) / 2.0, mark, mark), mark_tone);
+                    right -= pad * 0.4;
+                }
+            }
             let tx = thumb.x + thumb.w + pad * 0.6;
-            let title = Rect::new(tx, r.y, r.x + r.w - tx - pad * 0.3, r.h);
+            let title = Rect::new(tx, r.y, right - tx - pad * 0.3, r.h);
             f.c.text_fit(title, row_h * ROW_TEXT, tone, &game.title, Keep::Start);
         });
     }
