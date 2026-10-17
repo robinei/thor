@@ -107,6 +107,8 @@ pub enum KeymapId {
     MakeOwn,
     /// A game's own keymap's menu: name it, which shares it.
     Share,
+    /// A game's own keymap's menu: the keymaps to load into it.
+    LoadFrom,
     /// An input on the edit screen: a tap selects it (its panel), a tap on the selected one opens the way
     /// it is mapped now; a long press sets it back (in the layer shown). While a control is being picked,
     /// the one picked.

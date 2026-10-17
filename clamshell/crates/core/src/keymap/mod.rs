@@ -570,6 +570,13 @@ impl Keymaps {
         id
     }
 
+    /// Keymap `to`'s bindings and layers replaced by a copy of keymap `from`'s (Default, or one gone:
+    /// none); whether `to` is there.
+    pub fn copy_into(&mut self, to: u16, from: u16) -> bool {
+        let layers = self.get(from).map_or_else(|| Keymap::new(0, "").layers, |k| k.layers.clone());
+        self.get_mut(to).map(|k| k.layers = layers).is_some()
+    }
+
     /// A game's own keymap named, which makes it a shared one (the game keeps it); whether it was there.
     pub fn share(&mut self, id: u16, name: &str) -> bool {
         let name = self.unique_name(name);

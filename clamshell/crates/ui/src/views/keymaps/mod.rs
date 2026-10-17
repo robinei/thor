@@ -1,6 +1,7 @@
 //! The keymaps' screens, over the settings tab (see `core`'s `keymap_screens`): the picker (a scrolled list:
 //! for a game its own keymap, or Make own keymap; Default, then the named keymaps, each with who uses it
-//! and an Edit button; New), a keymap's menu, deleting one in use, the edit screen (one layer of the keymap, named at the top right, a button to the list of
+//! and an Edit button; New), a keymap's menu, deleting one in use, the keymaps to load into a game's own
+//! (the picker's rows without the own one, Edit and the mark), the edit screen (one layer of the keymap, named at the top right, a button to the list of
 //! layers; Close at the top left; the pad's controls drawn in two clusters at the sides, as they sit
 //! beside the screen, each the layer changes with a label; between the label columns, the whole height, a
 //! panel for the selected input: the ways to remap it as icons, its parameters), the layers' lists and a
@@ -48,7 +49,8 @@ const BUTTON_H: f32 = 0.085;
 
 pub(super) fn draw(f: &mut Frame, screen: Screen) {
     match screen {
-        Screen::List => list(f),
+        Screen::List => list(f, None),
+        Screen::Load(own) => list(f, Some(own)),
         Screen::Menu(id) => menu(f, id),
         Screen::Delete(id) => delete(f, id),
         Screen::Edit(id) => edit(f, id, None),
@@ -107,17 +109,25 @@ fn users(f: &Frame, id: u16) -> Fmt<48> {
     }
 }
 
-/// The picker.
-fn list(f: &mut Frame) {
+/// The picker; or, `loading` into a game's own keymap, the keymaps to copy into it.
+fn list(f: &mut Frame, loading: Option<u16>) {
     let s = f.s;
     let scope = match (s.bottom().scope(), s.editing()) {
         (Scope::Game, Some(game)) => game.title.as_str(),
         _ => "all games",
     };
-    let title = Fmt::<128>::of(format_args!("Keymap for {scope}"));
-    let area = header(f, &title, HeaderRight::Action(Id::Keymap(KeymapId::New), "New"));
+    let area = match loading {
+        Some(_) => header(f, "Load into own keymap", HeaderRight::None),
+        None => {
+            let title = Fmt::<128>::of(format_args!("Keymap for {scope}"));
+            header(f, &title, HeaderRight::Action(Id::Keymap(KeymapId::New), "New"))
+        }
+    };
     let list = ListArea::new(f, area, f.body().h * ROW_H);
-    list.hint(f, "Long press a keymap to rename, duplicate or delete it");
+    list.hint(
+        f,
+        if loading.is_some() { "Its bindings replace the own keymap's (Undo goes back)" } else { "Long press a keymap to rename, duplicate or delete it" },
+    );
     let chosen = s.keymap_chosen();
     let rows = list.scrolled(f, ListId::Keymaps, s.list_len(ListId::Keymaps));
     for i in rows.shown() {
@@ -132,9 +142,13 @@ fn list(f: &mut Frame) {
             PickerRow::Named(k) => (Some(k.id), k.name.as_str(), users(f, k.id)),
         };
         // (A keymap that is gone counts as Default.)
-        let mine = id == Some(chosen) || (id == Some(0) && s.keymaps().get(chosen).is_none());
+        let mine = loading.is_none() && (id == Some(chosen) || (id == Some(0) && s.keymaps().get(chosen).is_none()));
         let tone = if id.is_none() { Tone::Fn } else { Tone::high_if(mine) };
-        let edit = if id.is_some_and(|id| id != 0) { EditCell::Edit(at(RowPart::Edit)) } else { EditCell::Empty };
+        let edit = match id {
+            _ if loading.is_some() => EditCell::None,
+            Some(id) if id != 0 => EditCell::Edit(at(RowPart::Edit)),
+            _ => EditCell::Empty,
+        };
         let item = ListRow { label, tone, mark: mine, note: &note, edit };
         widgets::list_row(f, at(RowPart::Main), rows.row(i), list.pad, list.size, item);
     }
@@ -147,7 +161,12 @@ fn menu(f: &mut Frame, id: u16) {
     let k = |id| Id::Keymap(id);
     // A game's own: named, it becomes a shared one.
     if f.s.keymap_is_own(id) {
-        let items = [(k(KeymapId::Edit), "Edit", Tone::Fn), (k(KeymapId::Share), "Save as…", Tone::Fn), (k(KeymapId::Delete), "Delete", Tone::Accent)];
+        let items = [
+            (k(KeymapId::Edit), "Edit", Tone::Fn),
+            (k(KeymapId::LoadFrom), "Load from…", Tone::Fn),
+            (k(KeymapId::Share), "Save as…", Tone::Fn),
+            (k(KeymapId::Delete), "Delete", Tone::Accent),
+        ];
         return widgets::menu(f, area, &items);
     }
     let items = [

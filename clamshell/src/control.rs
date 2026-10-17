@@ -200,16 +200,19 @@ pub const TARGETS: &[Form<Id>] = &[
     form("keymap-edit N", "row N's Edit", |a| Ok(Id::Row { list: ListId::Keymaps, i: number(arg(a, 0))?, part: RowPart::Edit })),
     form("keymap-new", "the picker's New", |_| km(KeymapId::New)),
     form("keymap-back", "back one keymap screen (picking: Cancel)", |_| km(KeymapId::Back)),
-    form("keymap-menu ACTION", "a keymap's menu: edit, rename, duplicate, delete", |a| {
+    form("keymap-menu ACTION", "a keymap's menu: edit, rename, duplicate, delete; a game's own: load, save-as", |a| {
         km(match arg(a, 0) {
             "edit" => KeymapId::Edit,
             "rename" => KeymapId::Rename,
             "duplicate" => KeymapId::Duplicate,
             "delete" => KeymapId::Delete,
+            "load" => KeymapId::LoadFrom,
+            "save-as" => KeymapId::Share,
             other => return Err(name_err(other)),
         })
     }),
     form("keymap-delete", "deleting confirmed", |_| km(KeymapId::ConfirmDelete)),
+    form("keymap-make-own", "the edit screen's Make own (a game's own keymap, a copy)", |_| km(KeymapId::MakeOwn)),
     form("keymap-undo", "the edit screen's Undo", |_| km(KeymapId::Undo)),
     form("map-from INPUT", "an input selected (as in keymaps.txt: a, lb, up, lstick, rstick-up, lt, gyro; a long press sets it back)", |a| {
         km(KeymapId::Input(input_named(arg(a, 0))?))

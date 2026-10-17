@@ -30,11 +30,12 @@ keymap-layer-list.png 9ccdd43a88182aa1
 keymap-layer-menu.png 1736176c901eb490
 keymap-layer-picker.png 49cd6eb9a518440f
 keymap-layers.png 7d9ff2a255b2ed83
+keymap-load.png 683c31db0eddb633
 keymap-menu.png 53100b6c9c9ba94e
 keymap-mouse.png 2c80237a9c283983
 keymap-name.png 6e385cf92a1e47c2
 keymap-own-kept.png 2949c71d526f9232
-keymap-own-menu.png 66e0d7e60e949597
+keymap-own-menu.png 0a514447850eacb8
 keymap-own.png 9449e6c2610f8db2
 keymap-pick.png 780c2f743632ba07
 keymaps-chosen.png f8a5ff8935f505ba

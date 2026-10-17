@@ -644,3 +644,26 @@ fn a_games_own_keymap_saved_as_a_named_one_is_shared() {
     // With its own, no second one.
     assert!(!s.keymap_can_make_own());
 }
+
+#[test]
+fn a_named_keymap_is_loaded_into_a_games_own_and_undo_goes_back() {
+    let mut s = State::new(Init { keymaps: Keymaps::initial(), ..init() });
+    picker(&mut s);
+    tap(&mut s, row(1));
+    picker(&mut s);
+    tap(&mut s, row(0));
+    let own = s.keymaps().own_of("zelda-lttp").unwrap().id;
+    assert_eq!(s.keymaps().get(own).unwrap().bindings().len(), 0, "from Default: empty");
+    keymap(&mut s, KeymapId::Back);
+    long(&mut s, row(0));
+    keymap(&mut s, KeymapId::LoadFrom);
+    assert_eq!(s.keymap_screen(), Some(Screen::Load(own)));
+    assert_eq!((s.keymap_row(0), s.list_len(ListId::Keymaps)), (Some(PickerRow::Default), 2), "Default, Nintendo layout");
+    let fx = tap(&mut s, row(1));
+    assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Keymaps(_)))), "{fx:?}");
+    assert_eq!(s.keymap_screen(), Some(Screen::Edit(own)));
+    assert_eq!(s.keymaps().get(own).unwrap().bindings().len(), 4, "Nintendo layout's");
+    assert_eq!(s.keymaps().get(1).unwrap().bindings().len(), 4, "left as it was");
+    keymap(&mut s, KeymapId::Undo);
+    assert_eq!(s.keymaps().get(own).unwrap().bindings().len(), 0, "undone");
+}
