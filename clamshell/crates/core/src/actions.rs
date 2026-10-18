@@ -151,4 +151,18 @@ mod tests {
         assert!(fx.iter().any(|e| matches!(e, Effect::Launch { .. })), "{fx:?}");
         s.apply(Event::Tick { unix_secs: 1 });
     }
+
+    #[test]
+    fn a_held_on_the_selected_entry_takes_the_pad_to_its_actions() {
+        use crate::PointerEvent;
+        let mut s = state();
+        let g = Id::Shelf(ShelfId::Game(s.shelf().selected().cloned().unwrap_or_else(|| "?".into())));
+        // By touch (no focus shown): nothing.
+        s.apply(PointerEvent::LongPress(g.clone()).into());
+        assert_eq!(s.pointer().focus(), Some(&g));
+        // With the pad: its first action.
+        s.apply(PointerEvent::Focus(g.clone()).into());
+        s.apply(PointerEvent::LongPress(g).into());
+        assert_eq!(s.pointer().focus(), Some(&Id::Shelf(ShelfId::Launch)));
+    }
 }

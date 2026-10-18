@@ -225,6 +225,10 @@ pub(crate) fn back(s: &State) -> Option<Event> {
     if s.keymap_screen().is_some() {
         return Some(PointerEvent::Activate(Id::Keymap(clamshell_core::KeymapId::Back)).into());
     }
+    // On shelf's actions (A held took the pad there): back to the entry in the list.
+    if matches!(s.pointer().focus(), Some(Id::Shelf(id)) if !matches!(id, ShelfId::Game(_) | ShelfId::Collection(_) | ShelfId::Up)) {
+        return default_focus(s, Screen::Top).map(|id| PointerEvent::Focus(id).into());
+    }
     // In shelf: what is typed to find an entry cleared, else out of the open group.
     let in_shelf = matches!(s.pointer().focus(), Some(Id::Shelf(_)));
     if in_shelf && !s.shelf().filter().is_empty() {
@@ -384,6 +388,14 @@ mod tests {
         assert_eq!(shoulder(&s, &d, -1), vec![ShelfEvent::ListStep(-page).into()], "in shelf: a page");
         let len = s.shelf().list().len() as i32;
         assert_eq!(trigger(&s, &d, 1), vec![ShelfEvent::ListStep(len).into()], "the last entry");
+    }
+
+    #[test]
+    fn b_on_shelfs_actions_goes_back_to_the_entry() {
+        let mut s = state();
+        focus(&mut s, Id::Shelf(ShelfId::Launch));
+        let g = game(&s, s.shelf().cursor().index);
+        assert_eq!(back(&s), Some(PointerEvent::Focus(g).into()));
     }
 
     #[test]

@@ -565,6 +565,14 @@ impl State {
         };
         self.pointer.focus = Some(id.clone());
         match id {
+            // Held on the selected entry with the pad (its focus showing): the pad to its actions, the
+            // first focused (up and down go through them, A does one, B goes back to the list).
+            Id::Shelf(ShelfId::Game(game)) if long && self.pointer.show_focus && self.shelf.selected() == Some(&game) => {
+                if let Some(first) = self.actions().as_slice().first() {
+                    self.pointer.focus = Some(Id::Shelf(first.id()));
+                }
+                (Dirty::BOTH, vec![])
+            }
             Id::Shelf(id) => (Dirty::BOTH, self.on_shelf(id)),
             Id::Dock(id) => (Dirty::BOTTOM, self.on_dock(id, long)),
             Id::Settings(id @ (SettingsId::Tile(_) | SettingsId::Reset)) => (Dirty::BOTH, self.on_settings(id, long)),
