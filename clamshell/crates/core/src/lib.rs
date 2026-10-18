@@ -559,10 +559,12 @@ impl State {
             Id::Control(_) | Id::Level(_) | Id::List(_) => (Dirty::NONE, vec![]),
             Id::Key(pos) => {
                 let stroke = self.keyboard.press(pos, long);
-                // Into the editor while it is open, else to the focused app.
+                // Into the editor while it is open; with shelf in front, to finding an entry; else to the
+                // focused app.
                 let effects = match stroke {
                     Some(stroke) if self.bottom.editor().is_some() => self.edit(stroke),
                     Some(stroke) if self.capturing() => self.captured(State::chord(stroke)),
+                    Some(stroke) if self.session.front() == running::Front::Shelf => return (Dirty::BOTH, self.find(stroke)),
                     Some(stroke) => vec![Effect::Key(stroke)],
                     None => vec![],
                 };
@@ -686,7 +688,33 @@ impl State {
             ShelfEvent::Continue => (Dirty::BOTH, self.act(actions::Shortcut::Start)),
             ShelfEvent::ToggleFavourite => (Dirty::BOTH, self.act(actions::Shortcut::Y)),
             ShelfEvent::TogglePin => (Dirty::BOTH, self.act(actions::Shortcut::X)),
+            ShelfEvent::ClearFilter => {
+                if self.shelf.set_filter(String::new()) {
+                    self.moved_collection();
+                }
+                (Dirty::BOTH, vec![])
+            }
         }
+    }
+
+    /// A key typed with shelf in front: a character narrows the current list to the titles starting with
+    /// what is typed, Backspace takes the last one back, Esc clears it, Enter opens or plays the selected
+    /// entry.
+    fn find(&mut self, stroke: keyboard::Stroke) -> Vec<Effect> {
+        let mut filter = self.shelf.filter().to_owned();
+        match stroke.key {
+            Key::Char(c) if !stroke.ctrl && !stroke.alt && !stroke.logo => filter.push(if stroke.shift { keyboard::shifted(c) } else { c }),
+            Key::Named(keyboard::Named::Backspace) => {
+                filter.pop();
+            }
+            Key::Named(keyboard::Named::Esc) => filter.clear(),
+            Key::Named(keyboard::Named::Enter) => return self.activate_selected(),
+            _ => return vec![],
+        }
+        if self.shelf.set_filter(filter) {
+            self.moved_collection();
+        }
+        vec![]
     }
 
     /// The selected entry in or out of the favourites, saved.

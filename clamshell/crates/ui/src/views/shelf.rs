@@ -81,6 +81,18 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
         let header = list.take_top(h * ROW_H);
         group_header(f, group, header, pad);
     }
+    // What is typed to find an entry by (the bottom screen's keyboard), over the list.
+    let filter = s.shelf().filter();
+    if !filter.is_empty() {
+        let line = list.take_top(h * ROW_H * 0.7);
+        let size = line.h * ROW_TEXT * 1.15;
+        let text = Fmt::<96>::of(format_args!("{filter}…"));
+        f.c.text_fit(Rect::new(line.x + pad * 0.4, line.y, line.w - pad, line.h), size, Tone::Accent, &text, Keep::End);
+        if s.shelf().list().is_empty() {
+            let none = Fmt::<128>::of(format_args!("No title starts with \u{201c}{filter}\u{201d}"));
+            f.c.text_fit(Rect::new(list.x + pad * 0.4, list.y, list.w - pad, h * ROW_H), size, Tone::Dim, &none, Keep::Start);
+        }
+    }
     let rows = ((list.h / (h * ROW_H)).floor() as usize).max(1);
     list_rows(f, list, rows, s.shelf().list().len(), pad);
     // The selected entry; in an empty browsed folder, the folder (its actions: paste, a new folder).

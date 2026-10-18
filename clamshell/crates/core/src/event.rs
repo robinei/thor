@@ -159,6 +159,8 @@ pub enum ShelfEvent {
     Rows(usize),
     /// The pad's Y (desktop: F): the selected entry in or out of the favourites.
     ToggleFavourite,
+    /// What is typed to find an entry by cleared (B, while there is some).
+    ClearFilter,
     /// The pad's X (desktop: P): the selected entry pinned to the dock, or unpinned.
     TogglePin,
     /// The pad's Start (desktop: C): the selected folder's next video played (a series' episode).

@@ -203,8 +203,11 @@ pub(crate) fn back(s: &State) -> Option<Event> {
     if s.keymap_screen().is_some() {
         return Some(PointerEvent::Activate(Id::Keymap(clamshell_core::KeymapId::Back)).into());
     }
-    // In shelf, out of the open group.
+    // In shelf: what is typed to find an entry cleared, else out of the open group.
     let in_shelf = matches!(s.pointer().focus(), Some(Id::Shelf(_)));
+    if in_shelf && !s.shelf().filter().is_empty() {
+        return Some(clamshell_core::ShelfEvent::ClearFilter.into());
+    }
     (in_shelf && s.shelf().group().is_some()).then(|| PointerEvent::Activate(Id::Shelf(ShelfId::Up)).into())
 }
 

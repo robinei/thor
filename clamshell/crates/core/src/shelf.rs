@@ -16,11 +16,14 @@ pub struct Cursor {
     pub top: f32,
 }
 
-/// A list's place as kept: the selected entry's position and the list's scroll.
+/// A list's place as kept: the selected entry's position and the list's scroll; what is typed to find an
+/// entry by, and the entries whose titles start with it (the list shown while it isn't empty).
 #[derive(Debug, Clone, Default)]
 struct Place {
     index: usize,
     scroll: Scroll,
+    filter: String,
+    found: Vec<usize>,
 }
 
 /// A collection's place: the groups opened, outermost first, and the place in each level's list (the
@@ -120,11 +123,58 @@ impl Shelf {
         self.library.games.iter().find(|g| g.browsed.is_none() && !g.is_group() && g.file.as_ref() == Some(file)).map(|g| g.id.clone())
     }
 
-    /// Collection `c`'s list as its place has it: the innermost open group's entries, else its own.
+    /// Collection `c`'s list as its place has it: the innermost open group's entries, else its own; those
+    /// found by what is typed, while something is.
     fn list_of(&self, c: usize) -> &[usize] {
+        match self.navs.get(c).and_then(|n| n.places.last()).filter(|p| !p.filter.is_empty()) {
+            Some(p) => &p.found,
+            None => self.whole_list_of(c),
+        }
+    }
+
+    /// Collection `c`'s list as its place has it, all of it (what is typed aside).
+    fn whole_list_of(&self, c: usize) -> &[usize] {
         match self.navs.get(c).and_then(|n| n.open.last()) {
             Some(&g) => self.library.games.get(g).map_or(&[], |g| g.items.as_slice()),
             None => self.library.collections.get(c).map_or(&[], |c| c.games.as_slice()),
+        }
+    }
+
+    /// What is typed to find an entry in the current list by (empty: nothing).
+    pub fn filter(&self) -> &str {
+        self.place().map_or("", |p| p.filter.as_str())
+    }
+
+    /// What is typed in the current list now `filter`: its entries whose titles start with it (any case),
+    /// the first selected. Whether the selection changed.
+    pub(crate) fn set_filter(&mut self, filter: String) -> bool {
+        let found = self.found(self.current, &filter);
+        if let Some(p) = self.place_mut() {
+            p.filter = filter;
+            p.found = found;
+            p.index = 0;
+        }
+        self.sync()
+    }
+
+    /// The entries of collection `c`'s whole list whose titles start with `filter` (any case).
+    fn found(&self, c: usize, filter: &str) -> Vec<usize> {
+        let filter = filter.to_lowercase();
+        let games = &self.library.games;
+        self.whole_list_of(c).iter().copied().filter(|&i| games.get(i).is_some_and(|g| g.title.to_lowercase().starts_with(&filter))).collect()
+    }
+
+    /// Every list's entries found again by what is typed in it (the library changed under them).
+    fn refind(&mut self) {
+        for c in 0..self.navs.len() {
+            let filter = self.navs.get(c).and_then(|n| n.places.last()).map(|p| p.filter.clone()).unwrap_or_default();
+            if filter.is_empty() {
+                continue;
+            }
+            let found = self.found(c, &filter);
+            if let Some(p) = self.navs.get_mut(c).and_then(|n| n.places.last_mut()) {
+                p.found = found;
+            }
         }
     }
 
@@ -297,9 +347,11 @@ impl Shelf {
         let selected = self.selected.clone();
         change(&mut self.library);
         let old = std::mem::take(&mut self.navs);
+        // (Derived collections come and go: what is typed in each found again below.)
         self.navs =
             self.library.collections.iter().map(|c| names.iter().position(|n| *n == c.name).and_then(|i| old.get(i).cloned()).unwrap_or_default()).collect();
         self.current = current_name.and_then(|n| self.library.collections.iter().position(|c| c.name == n)).unwrap_or(0);
+        self.refind();
         if let Some(id) = selected {
             self.select(&id);
         }
@@ -344,6 +396,7 @@ impl Shelf {
         let library = &self.library;
         self.listings.retain(|(id, _)| library.games.iter().any(|g| g.id == *id));
         self.close_gone();
+        self.refind();
         if let Some(id) = &before {
             self.select(&id.clone());
         }
@@ -517,6 +570,34 @@ mod tests {
         assert!(s.shelf().library().collections.iter().any(|c| c.name == "Favourites" && c.games == vec![2]));
         assert_eq!(s.shelf().collection().map(|c| c.name.clone()), name, "the collection stays");
         assert_eq!(s.shelf().selected().map(|g| &**g), Some("mk-ds"), "so does the selection");
+    }
+
+    #[test]
+    fn typing_with_shelf_in_front_finds_entries_by_their_titles_start() {
+        use crate::keyboard::find;
+        let mut s = state();
+        tap(&mut s, Id::Tab(crate::Tab::Keyboard));
+        let key = |s: &mut State, k| find(k).map(|pos| tap(s, Id::Key(pos))).unwrap_or_default();
+        let titles = |s: &State| s.shelf().list().iter().filter_map(|&i| s.shelf().library().games.get(i)).map(|g| g.title.clone()).collect::<Vec<_>>();
+        assert!(key(&mut s, Key::Char('m')).is_empty(), "not sent to an app: shelf is in front");
+        assert_eq!(titles(&s), ["Metroid: Zero Mission", "Mario Kart DS"]);
+        key(&mut s, Key::Char('a'));
+        assert_eq!(titles(&s), ["Mario Kart DS"], "any case: Ma");
+        assert_eq!(s.shelf().selected().map(|g| &**g), Some("mk-ds"));
+        // Into a folder and out: each list its own.
+        key(&mut s, Key::Named(crate::keyboard::Named::Backspace));
+        assert_eq!(titles(&s).len(), 2);
+        s.apply(ShelfEvent::ClearFilter.into());
+        assert_eq!(s.shelf().filter(), "");
+        assert_eq!(titles(&s).len(), 7);
+        tap(&mut s, Id::Shelf(ShelfId::Collection(2)));
+        key(&mut s, Key::Char('c'));
+        assert_eq!(titles(&s), ["Cosmos"]);
+        let fx = key(&mut s, Key::Named(crate::keyboard::Named::Enter));
+        assert!(fx.is_empty() && s.shelf().group().is_some(), "Enter: opened");
+        assert_eq!(s.shelf().filter(), "", "the folder's own list");
+        tap(&mut s, Id::Shelf(ShelfId::Up));
+        assert_eq!(s.shelf().filter(), "c", "the series' list as it was left");
     }
 
     #[test]

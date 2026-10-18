@@ -479,6 +479,8 @@ mod tests {
     #[test]
     fn an_editor_stays_with_its_tab() {
         let mut s = state();
+        // (An app in front: the keyboard types into it.)
+        s.apply(Event::Windows(vec![foot()]));
         tap(&mut s, Id::Tab(Tab::Settings));
         tap(&mut s, Id::Settings(SettingsId::Env));
         let key = |s: &mut State, k| tap(s, Id::Key(find(k).unwrap()));
