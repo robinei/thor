@@ -34,6 +34,15 @@
 //!   name without `.desktop`, a Steam game's its app id. `{ "name": "Battle.net", "tab": "Apps" }`,
 //!   `{ "id": "net.lutris.*", "tab": "Games", "group": "Launchers" }`, `{ "id": "*uninstall*", "hide": true }`;
 //!   for Steam `{ "name": "Dark Souls*", "group": "Steam/Souls" }`, `{ "group": "Steam" }`.
+//! - `browse`: dirs listed as they are opened, not scanned (no metadata, not in Recent), each the folder
+//!   `group` (its last part) in `tab`; their files open by the first source whose `match` or `items`
+//!   (their last part) fits the name, any case, else `xdg-open`; `trash`: the Trash's `files` dir.
+//!   `{ "tab": "Files", "group": "Home", "dir": "~" }`, `{ "tab": "Files", "group": "Trash", "dir":
+//!   "${XDG_DATA_HOME:-~/.local/share}/Trash/files", "trash": true }`.
+//! - `removable`: rules for the removable filesystems mounted (udisks2's, under `/run/media/$USER`),
+//!   browsed as `browse`'s dirs: the first matching one (by `label`, `uuid`, `fs`: globs, any case) puts
+//!   one in `tab` as the folder `group` (`{label}` in it its label, else its UUID), or hides it; without
+//!   one, Files, `{label}`. `{ "label": "SD*", "tab": "Files", "group": "SD card" }`.
 //! - `group`: a folder in the tab for the source's entries (`SNES`, or `Handhelds/GBA` for one in
 //!   another), so one tab can hold folders each with its own launch command; sources naming the same
 //!   folder share it. The folder's art: `poster`, `cover` or `folder` in the source's dir.
@@ -67,6 +76,59 @@ pub struct Config {
     /// Where Steam's installed games go (the first rule matching one; without one, Games).
     #[serde(default)]
     pub steam: Vec<Rule>,
+    /// Dirs browsed (listed as they are opened) rather than scanned.
+    #[serde(default)]
+    pub browse: Vec<BrowseRoot>,
+    /// Where mounted removable filesystems go (the first rule matching one; without one, Files, a folder
+    /// named by its label).
+    #[serde(default)]
+    pub removable: Vec<MountRule>,
+}
+
+/// A dir browsed: a folder `group` in `tab` (its last part the dir's own folder: `Home`, `Places/Root`),
+/// listed when it is opened; `trash`: it is the Trash's `files` dir (its entries restored, deleted).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BrowseRoot {
+    pub tab: String,
+    pub group: String,
+    #[serde(default)]
+    pub icon: Option<String>,
+    pub dir: String,
+    #[serde(default)]
+    pub trash: bool,
+}
+
+/// A rule for mounted removable filesystems: those matching all of its `label`, `uuid` and `fs` (globs,
+/// any case) go in `tab` (with `icon`) as the folder `group` (`{label}` in it their label, or their UUID
+/// without one), or are left out (`hide`).
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MountRule {
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub uuid: Option<String>,
+    #[serde(default)]
+    pub fs: Option<String>,
+    #[serde(default)]
+    pub tab: Option<String>,
+    #[serde(default)]
+    pub group: Option<String>,
+    #[serde(default)]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub hide: bool,
+}
+
+impl MountRule {
+    /// Whether it matches a filesystem with this label, UUID and type.
+    pub fn matches(&self, label: &str, uuid: &str, fs: &str) -> bool {
+        let glob = |pattern: &str, value: &str| pattern::matches(&pattern.to_lowercase(), &value.to_lowercase());
+        self.label.as_deref().is_none_or(|p| glob(p, label))
+            && self.uuid.as_deref().is_none_or(|p| glob(p, uuid))
+            && self.fs.as_deref().is_none_or(|p| glob(p, fs))
+    }
 }
 
 /// A rule for desktop files' entries or Steam's games: those matching all of its `id`, `name` and
@@ -430,10 +492,11 @@ fn dump_tag(tag: &str) -> bool {
     short_code || words
 }
 
-/// `~/...` against `home`.
+/// `~` and `~/...` against `home`.
 pub(crate) fn expand(path: &str, home: Option<&Path>) -> PathBuf {
     match (path.strip_prefix("~/"), home) {
         (Some(rest), Some(home)) => home.join(rest),
+        (None, Some(home)) if path == "~" => home.to_path_buf(),
         _ => PathBuf::from(path),
     }
 }
@@ -622,6 +685,7 @@ mod tests {
         assert!(problem.is_some_and(|p| p.starts_with("library.json: missing field")), "said");
         let _ = fs::remove_file(&file);
         assert_eq!(expand("~/Games", Some(Path::new("/h"))), PathBuf::from("/h/Games"));
+        assert_eq!(expand("~", Some(Path::new("/h"))), PathBuf::from("/h"));
     }
 
     #[test]

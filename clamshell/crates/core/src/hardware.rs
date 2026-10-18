@@ -50,6 +50,8 @@ pub enum NoticeKind {
     Gyro(Option<bool>),
     /// A window moved down is remembered for its program (true), or moved up and forgotten (false).
     BottomRule(bool),
+    /// A file operation ended: what was done, or what went wrong.
+    Files(Result<String, String>),
 }
 
 impl State {

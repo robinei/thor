@@ -69,6 +69,8 @@ pub enum ShelfId {
     Pin,
     /// A folder's next video played (see [`crate::Library::to_continue`]).
     Continue,
+    /// A browsed entry's file action, or the folder open's (see [`crate::files`]).
+    File(crate::files::FileAction),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

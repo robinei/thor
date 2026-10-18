@@ -128,10 +128,7 @@ impl State {
     pub(crate) fn on_editor(&mut self, id: EditorId) -> Vec<Effect> {
         match id {
             EditorId::Save => self.save_editor(),
-            EditorId::Cancel => {
-                self.bottom.close_editor();
-                vec![]
-            }
+            EditorId::Cancel => self.cancel_editor(),
         }
     }
 
@@ -165,11 +162,16 @@ impl State {
     pub(crate) fn edit(&mut self, stroke: Stroke) -> Vec<Effect> {
         match self.bottom.editor_mut().and_then(|e| e.key(stroke)) {
             Some(Done::Save) => self.save_editor(),
-            Some(Done::Cancel) => {
-                self.bottom.close_editor();
-                vec![]
-            }
+            Some(Done::Cancel) => self.cancel_editor(),
             None => vec![],
+        }
+    }
+
+    /// The editor's Cancel: closed (a file's name: back to the tab the keyboard came up from).
+    fn cancel_editor(&mut self) -> Vec<Effect> {
+        match self.bottom.close_editor().map(|e| e.purpose) {
+            Some(Purpose::FileName(_)) => self.file_name_cancelled(),
+            _ => vec![],
         }
     }
 
@@ -185,6 +187,7 @@ impl State {
             }
             Purpose::Password { ssid } => self.join(ssid, Some(editor.text)),
             Purpose::KeymapName(action) => self.named_keymap(action, &editor.text),
+            Purpose::FileName(purpose) => self.file_named(purpose, &editor.text),
         }
     }
 

@@ -53,6 +53,9 @@ include ~/.config/sway/clamshell.conf
 bindsym --locked Print exec $C ctl screenshot
 # Notifications (ClamShell's low battery warning, apps'), on the main screen: ~/.config/mako/config.
 exec mako
+# Removable storage (an SD card, a USB stick) mounted as it is put in, under /run/media/\$USER: ClamShell's
+# Files tab shows it (and sources on it come back).
+exec udiskie --automount --no-notify --no-tray --no-file-manager
 exec systemctl --user import-environment WAYLAND_DISPLAY SWAYSOCK XDG_CURRENT_DESKTOP && systemctl --user restart clamshell.service
 CONFIG
 

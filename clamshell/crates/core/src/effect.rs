@@ -54,6 +54,10 @@ pub enum Effect {
     EndSteam {
         appid: u32,
     },
+    /// List this browsed folder now, and again whenever it changes (none: watch nothing).
+    Browse(Option<crate::files::Browse>),
+    /// A file operation (the files thread).
+    Files(crate::files::FileOp),
     /// One of ClamShell's own tools (the Tools tab): `rescan` (the library read again), `refetch` (what
     /// metadata wasn't found tried again, then a rescan).
     Tool(String),

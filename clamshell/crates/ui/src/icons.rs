@@ -86,6 +86,12 @@ pub enum Icon {
     Chevron,
     /// The Tools tab: a wrench.
     Wrench,
+    /// Browsed entries without a picture: a folder, a file (a sheet with a corner folded), the Trash (a
+    /// bin), a removable filesystem (a memory card).
+    Folder,
+    File,
+    Trash,
+    Card,
 }
 
 impl Icon {
@@ -108,7 +114,7 @@ impl Icon {
     }
 
     /// A shelf tab's icon, by the name library.json gives (`gamepad`, `apps`, `film`, `tv`, `music`,
-    /// `star`, `clock`, `tools`); none for another.
+    /// `star`, `clock`, `tools`, `folder`); none for another.
     pub fn named(name: &str) -> Option<Icon> {
         Some(match name {
             "gamepad" => Icon::Gamepad,
@@ -119,6 +125,7 @@ impl Icon {
             "star" => Icon::Star,
             "clock" => Icon::Clock,
             "tools" => Icon::Wrench,
+            "folder" => Icon::Folder,
             _ => return None,
         })
     }
@@ -362,6 +369,22 @@ pub fn draw(c: &mut Canvas, icon: Icon, r: Rect, color: Color) {
         Icon::ArrowLeft => arrow(p, [(19.0, 12.0), (5.0, 12.0)], [(11.0, 6.0), (5.0, 12.0), (11.0, 18.0)]),
         Icon::ArrowRight => arrow(p, [(5.0, 12.0), (19.0, 12.0)], [(13.0, 6.0), (19.0, 12.0), (13.0, 18.0)]),
         Icon::Chevron => p.line(&[(9.0, 5.0), (16.0, 12.0), (9.0, 19.0)], 2.2),
+        Icon::Folder => p.shape(&[(3.0, 5.5), (9.5, 5.5), (11.5, 8.0), (21.0, 8.0), (21.0, 19.0), (3.0, 19.0)], LINE),
+        Icon::File => {
+            p.shape(&[(6.0, 3.0), (14.0, 3.0), (19.0, 8.0), (19.0, 21.0), (6.0, 21.0)], LINE);
+            p.line(&[(14.0, 3.0), (14.0, 8.0), (19.0, 8.0)], LINE);
+        }
+        Icon::Trash => {
+            p.line(&[(4.0, 6.5), (20.0, 6.5)], LINE);
+            p.line(&[(9.5, 6.5), (9.5, 3.5), (14.5, 3.5), (14.5, 6.5)], LINE);
+            p.line(&[(6.0, 6.5), (7.0, 20.5), (17.0, 20.5), (18.0, 6.5)], LINE);
+        }
+        Icon::Card => {
+            p.shape(&[(8.0, 3.0), (18.0, 3.0), (18.0, 21.0), (6.0, 21.0), (6.0, 5.0)], LINE);
+            for x in [10.0, 13.0, 16.0] {
+                p.line(&[(x, 3.0), (x, 7.0)], 1.6);
+            }
+        }
         Icon::Wrench => {
             p.line(&[(4.5, 19.5), (13.0, 11.0)], 2.6);
             p.arc((16.0, 8.0), 4.5, (-135.0, 135.0), LINE);
@@ -609,12 +632,16 @@ mod tests {
             Icon::Clock,
             Icon::Chevron,
             Icon::Wrench,
+            Icon::Folder,
+            Icon::File,
+            Icon::Trash,
+            Icon::Card,
         ];
         let mut seen = std::collections::HashSet::new();
         for icon in &all {
             seen.insert(variant(*icon));
         }
-        assert_eq!(seen.len(), 47, "a variant is missing from the list");
+        assert_eq!(seen.len(), 51, "a variant is missing from the list");
         all
     }
 
@@ -668,6 +695,10 @@ mod tests {
             Icon::Clock => 51,
             Icon::Chevron => 52,
             Icon::Wrench => 53,
+            Icon::Folder => 54,
+            Icon::File => 55,
+            Icon::Trash => 56,
+            Icon::Card => 57,
         }
     }
 

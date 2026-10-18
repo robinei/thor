@@ -200,6 +200,22 @@ pub const TARGETS: &[Form<Id>] = &[
     form("launch", "shelf's launch", |_| Ok(Id::Shelf(ShelfId::Launch))),
     form("up", "out of shelf's open group", |_| Ok(Id::Shelf(ShelfId::Up))),
     form("collection N", "shelf's collection tab N", |a| Ok(Id::Shelf(ShelfId::Collection(number(arg(a, 0))?)))),
+    form("file ACTION", "a browsed entry's file action: copy, cut, rename, trash, restore, delete, empty-trash, eject, paste, new-folder", |a| {
+        use clamshell_core::files::FileAction;
+        Ok(Id::Shelf(ShelfId::File(match arg(a, 0) {
+            "copy" => FileAction::Copy,
+            "cut" => FileAction::Cut,
+            "rename" => FileAction::Rename,
+            "trash" => FileAction::Trash,
+            "restore" => FileAction::Restore,
+            "delete" => FileAction::Delete,
+            "empty-trash" => FileAction::EmptyTrash,
+            "eject" => FileAction::Eject,
+            "paste" => FileAction::Paste,
+            "new-folder" => FileAction::NewFolder,
+            other => return Err(name_err(other)),
+        })))
+    }),
     form("network N", "Wi-Fi's network row N", |a| Ok(ListId::Wifi.row(number(arg(a, 0))?))),
     form("wifi-power", "Wi-Fi's switch", |_| Ok(Id::Wifi(WifiId::Power))),
     form("device N", "Bluetooth's device row N", |a| Ok(ListId::Bluetooth.row(number(arg(a, 0))?))),
@@ -469,6 +485,7 @@ mod tests {
         assert_eq!(parse("tap launch"), Ok(activate(Id::Shelf(ShelfId::Launch))));
         assert_eq!(parse("tap collection 1"), Ok(activate(Id::Shelf(ShelfId::Collection(1)))));
         assert_eq!(parse("tap up"), Ok(activate(Id::Shelf(ShelfId::Up))));
+        assert_eq!(parse("tap file new-folder"), Ok(activate(Id::Shelf(ShelfId::File(clamshell_core::files::FileAction::NewFolder)))));
         assert_eq!(parse("tap network 2"), Ok(activate(ListId::Wifi.row(2))));
         assert_eq!(parse("long network 0"), Ok(vec![PointerEvent::LongPress(ListId::Wifi.row(0)).into()]));
         assert_eq!(parse("tap wifi-power"), Ok(activate(Id::Wifi(WifiId::Power))));

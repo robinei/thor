@@ -328,9 +328,28 @@ pub(crate) fn art(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect, rad
                     c.image(img, x, y);
                 }
             }
-            None => c.rounded(r, radius, Rgb(if grey { greyed(game.color) } else { game.color })),
+            // A browsed entry: what it is (a folder, a file, the Trash, a memory card).
+            None => match browsed_icon(game) {
+                Some(icon) => {
+                    let side = r.w.min(r.h) * 0.7;
+                    c.icon(icon, Rect::new(r.x + (r.w - side) / 2.0, r.y + (r.h - side) / 2.0, side, side), if grey { Tone::Dim } else { Tone::Normal });
+                }
+                None => c.rounded(r, radius, Rgb(if grey { greyed(game.color) } else { game.color })),
+            },
         },
     }
+}
+
+/// A browsed entry's icon, drawn where it has no picture.
+pub(crate) fn browsed_icon(game: &Game) -> Option<Icon> {
+    use clamshell_core::BrowseKind;
+    let b = game.browsed.as_ref()?;
+    Some(match (&b.kind, b.folder) {
+        (BrowseKind::Trash, _) => Icon::Trash,
+        (BrowseKind::Removable(_), _) => Icon::Card,
+        (_, true) => Icon::Folder,
+        (_, false) => Icon::File,
+    })
 }
 
 /// A screen's header band, of the body's height; a menu's and a list's text buttons, and a menu's width,
@@ -485,8 +504,11 @@ pub(crate) fn key_action(f: &mut Frame, id: Id, r: Rect, key: &str, label: &str,
         let size = d * 0.55;
         let ring_w = d.max(f.c.text_width(size, key) + d * 0.6);
         let ring = Rect::new(r.x, r.y + (r.h - d) / 2.0, ring_w, d);
-        f.c.outline(ring, d / 2.0, 1.5, Tone::Dim);
-        centred_text(f, ring, size, Tone::Normal, key);
+        // (No button: the label where the others' are.)
+        if !key.is_empty() {
+            f.c.outline(ring, d / 2.0, 1.5, Tone::Dim);
+            centred_text(f, ring, size, Tone::Normal, key);
+        }
         let x = ring.x + ring_w + pad * 0.5;
         f.c.text_fit(Rect::new(x, r.y, r.x + r.w - x, r.h), r.h * 0.62, tone, label, Keep::Start);
     });

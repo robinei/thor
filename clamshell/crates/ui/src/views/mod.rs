@@ -25,6 +25,8 @@ mod touchpad;
 mod wifi;
 
 use clamshell_core::Tab;
+use clamshell_core::editor::Purpose;
+use clamshell_core::files::FileName;
 
 use crate::draw::Rect;
 use crate::toolkit::Frame;
@@ -51,7 +53,12 @@ pub fn bottom(f: &mut Frame, screen: Rect) {
     f.body = body;
     match f.s.bottom().tab() {
         Tab::Settings => settings::draw(f),
-        Tab::Keyboard => keyboard::draw(f, body),
+        // A browsed file's name being typed: the editor over the keyboard.
+        Tab::Keyboard => match f.s.bottom().editor().map(|e| &e.purpose) {
+            Some(Purpose::FileName(FileName::Rename(_))) => editor::draw(f, "New name", "Rename"),
+            Some(Purpose::FileName(FileName::NewFolder(_))) => editor::draw(f, "New folder's name", "Make"),
+            _ => keyboard::draw(f, body),
+        },
         Tab::Dock => dock::draw(f),
         Tab::Touchpad => touchpad::draw(f),
         Tab::Sysinfo => sysinfo::draw(f),

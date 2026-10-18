@@ -8,6 +8,7 @@ pub mod plays;
 pub mod sort;
 pub mod steam;
 
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -76,6 +77,38 @@ pub struct Game {
     /// Play history and favourite (from the database).
     pub plays: Plays,
     pub favourite: bool,
+    /// A file or folder of a browsed dir (see [`Browsed`]); none for the rest.
+    pub browsed: Option<Browsed>,
+}
+
+/// A file or folder of a browsed dir (library.json's `browse`, removable storage): not scanned, but listed
+/// when its folder is opened (its entries' ids its own, `/`, their names); it has the file actions instead
+/// of a game's (no favourite, no pin, not in Recent).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Browsed {
+    /// A folder (it opens), not a file.
+    pub folder: bool,
+    /// A folder whose entries are in (its `items`), from a listing.
+    pub listed: bool,
+    pub kind: BrowseKind,
+    /// A file's size (bytes), and when it was last changed (seconds since the epoch; 0: not known).
+    pub size: Option<u64>,
+    pub modified: u64,
+}
+
+/// What a browsed entry is besides a file or folder.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum BrowseKind {
+    #[default]
+    Plain,
+    /// A dir library.json's `browse` names.
+    Root,
+    /// A removable filesystem's top (its device, to eject).
+    Removable(String),
+    /// The Trash (its `files` dir).
+    Trash,
+    /// At the top of the Trash: it can be restored.
+    Trashed,
 }
 
 impl Game {
@@ -102,12 +135,18 @@ impl Game {
             parent: None,
             plays: Plays::default(),
             favourite: false,
+            browsed: None,
         }
     }
 
-    /// Whether it is a group (it opens rather than starts).
+    /// Whether it is a group (it opens rather than starts): one with entries, or a browsed folder.
     pub fn is_group(&self) -> bool {
-        !self.items.is_empty()
+        !self.items.is_empty() || self.browsed.as_ref().is_some_and(|b| b.folder)
+    }
+
+    /// A browsed folder: its dir, listed when it is opened.
+    pub fn browsed_dir(&self) -> Option<&std::path::Path> {
+        self.file.as_deref().filter(|_| self.browsed.as_ref().is_some_and(|b| b.folder))
     }
 
     /// Its file, if mpv plays it (its launch command's program is mpv): where mpv keeps its place.
@@ -208,6 +247,8 @@ pub struct Library {
     /// The id prefixes (`<source id>:`) of sources whose dir is missing (an SD card not in): their
     /// entries are away, not gone.
     pub away: Vec<String>,
+    /// Places in `games` free for the next listing's entries (a listing's entries gone, and theirs).
+    pub free: Vec<usize>,
 }
 
 impl Library {
@@ -222,10 +263,11 @@ impl Library {
     /// collections; either is left out while empty.
     pub fn rebuild_derived(&mut self) {
         self.collections.retain(|c| !c.derived);
-        let mut recent: Vec<usize> = (0..self.games.len()).filter(|&i| self.games.get(i).is_some_and(|g| g.plays.count > 0 && !g.tool)).collect();
+        let mut recent: Vec<usize> =
+            (0..self.games.len()).filter(|&i| self.games.get(i).is_some_and(|g| g.plays.count > 0 && !g.tool && g.browsed.is_none())).collect();
         recent.sort_by_key(|&i| std::cmp::Reverse(self.games.get(i).map_or(0, |g| g.plays.last)));
         recent.truncate(RECENT);
-        let mut favourites: Vec<usize> = (0..self.games.len()).filter(|&i| self.games.get(i).is_some_and(|g| g.favourite)).collect();
+        let mut favourites: Vec<usize> = (0..self.games.len()).filter(|&i| self.games.get(i).is_some_and(|g| g.favourite && g.browsed.is_none())).collect();
         favourites.sort_by(|&a, &b| {
             let key = |i: usize| self.games.get(i).map(|g| (&g.sort_key, &g.title));
             key(a).cmp(&key(b))
@@ -303,6 +345,66 @@ impl Library {
         };
         let last = *leaves.get(at)?;
         if self.games.get(last).is_some_and(Game::watched) { leaves.get(at + 1).copied() } else { Some(last) }
+    }
+
+    /// Folder `folder`'s listing (browsed: see [`Browsed`]): `entries`, in order, its entries. One there
+    /// before (by id) keeps its place in `games` and its own listing; those gone, and everything in them,
+    /// leave theirs free. At the top of the Trash, an entry is [`BrowseKind::Trashed`].
+    pub fn set_listing(&mut self, folder: usize, entries: Vec<Game>) {
+        let Some(f) = self.games.get(folder) else {
+            return;
+        };
+        let trash = f.browsed.as_ref().is_some_and(|b| b.kind == BrowseKind::Trash);
+        let old: HashMap<Arc<str>, usize> = f.items.iter().filter_map(|&i| Some((self.games.get(i)?.id.clone(), i))).collect();
+        if let Some(b) = self.games.get_mut(folder).and_then(|f| f.browsed.as_mut()) {
+            b.listed = true;
+        }
+        // (Those gone first, so their places go to the new ones.)
+        let ids: HashSet<&Arc<str>> = entries.iter().map(|e| &e.id).collect();
+        let mut gone: Vec<usize> = old.iter().filter(|(id, _)| !ids.contains(id)).map(|(_, &i)| i).collect();
+        while let Some(i) = gone.pop() {
+            if let Some(g) = self.games.get_mut(i) {
+                gone.append(&mut g.items);
+                *g = Game::new("", "");
+            }
+            self.free.push(i);
+        }
+        let mut items = Vec::with_capacity(entries.len());
+        for mut e in entries {
+            e.parent = Some(folder);
+            if trash && let Some(b) = e.browsed.as_mut() {
+                b.kind = BrowseKind::Trashed;
+            }
+            let i = match old.get(&e.id).copied() {
+                Some(i) => {
+                    if let Some(g) = self.games.get_mut(i) {
+                        // (Its own listing, as it was.)
+                        e.items = std::mem::take(&mut g.items);
+                        if let (Some(b), Some(was)) = (e.browsed.as_mut(), g.browsed.as_ref()) {
+                            b.listed = was.listed;
+                        }
+                        *g = e;
+                    }
+                    i
+                }
+                None => match self.free.pop() {
+                    Some(i) => {
+                        if let Some(g) = self.games.get_mut(i) {
+                            *g = e;
+                        }
+                        i
+                    }
+                    None => {
+                        self.games.push(e);
+                        self.games.len() - 1
+                    }
+                },
+            };
+            items.push(i);
+        }
+        if let Some(f) = self.games.get_mut(folder) {
+            f.items = items;
+        }
     }
 
     /// The groups entry `i` is in, outermost first.
@@ -471,6 +573,45 @@ mod tests {
         let games = lib.collections.iter().find(|c| c.name == "Games").unwrap().games.clone();
         lib.games.push(Game { items: games, ..Game::new("folder:Games/All", "All") });
         assert_eq!(lib.to_continue(lib.games.len() - 1), None, "games: no Continue");
+    }
+
+    fn browsed(id: &str, folder: bool) -> Game {
+        Game { browsed: Some(Browsed { folder, ..Browsed::default() }), ..Game::new(id, id.rsplit('/').next().unwrap()) }
+    }
+
+    #[test]
+    fn listings_keep_places_and_free_what_went() {
+        let mut lib = Library { games: vec![browsed("browse:Home", true)], ..Library::default() };
+        assert!(lib.games[0].is_group(), "a folder opens before it is listed");
+        lib.set_listing(0, vec![browsed("browse:Home/a", true), browsed("browse:Home/b.txt", false)]);
+        assert!(lib.games[0].browsed.as_ref().unwrap().listed);
+        assert_eq!(lib.games[0].items, vec![1, 2]);
+        assert_eq!(lib.games[1].parent, Some(0));
+        lib.set_listing(1, vec![browsed("browse:Home/a/x", false)]);
+        // Listed again: a stays where it was, with its own listing; b went, its place free for c.
+        lib.set_listing(0, vec![browsed("browse:Home/a", true), browsed("browse:Home/c", false)]);
+        assert_eq!(lib.games[0].items, vec![1, 2]);
+        assert_eq!(&*lib.games[2].id, "browse:Home/c", "b's place");
+        assert_eq!(lib.games[1].items, vec![3], "a's listing kept");
+        assert!(lib.games[1].browsed.as_ref().unwrap().listed);
+        // a went, and x in it.
+        lib.set_listing(0, vec![browsed("browse:Home/c", false)]);
+        assert_eq!(lib.games[0].items, vec![2]);
+        let mut free = lib.free.clone();
+        free.sort_unstable();
+        assert_eq!(free, vec![1, 3]);
+        assert!(!lib.has("browse:Home/a/x"));
+    }
+
+    #[test]
+    fn the_trashs_top_entries_can_be_restored() {
+        let mut trash = browsed("browse:Trash", true);
+        trash.browsed.as_mut().unwrap().kind = BrowseKind::Trash;
+        let mut lib = Library { games: vec![trash], ..Library::default() };
+        lib.set_listing(0, vec![browsed("browse:Trash/old", true)]);
+        assert_eq!(lib.games[1].browsed.as_ref().unwrap().kind, BrowseKind::Trashed);
+        lib.set_listing(1, vec![browsed("browse:Trash/old/in", false)]);
+        assert_eq!(lib.games[2].browsed.as_ref().unwrap().kind, BrowseKind::Plain, "only the top");
     }
 
     #[test]

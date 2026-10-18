@@ -90,6 +90,12 @@ fn screenshot(dir: Option<&PathBuf>) -> Result<String, String> {
 
 /// A UTC timestamp for file names: 20261015-103205.
 fn timestamp(secs: u64) -> String {
+    let (year, month, day, h, m, s) = civil(secs);
+    format!("{year:04}{month:02}{day:02}-{h:02}{m:02}{s:02}")
+}
+
+/// Seconds since the epoch as a UTC date and time: year, month, day, hour, minute, second.
+pub(crate) fn civil(secs: u64) -> (i64, i64, i64, u64, u64, u64) {
     let (days, rest) = (secs / 86_400, secs % 86_400);
     // Days since 1970-01-01 to a civil date (Howard Hinnant's algorithm).
     let z = days as i64 + 719_468;
@@ -101,7 +107,7 @@ fn timestamp(secs: u64) -> String {
     let day = doy - (153 * mp + 2) / 5 + 1;
     let month = if mp < 10 { mp + 3 } else { mp - 9 };
     let year = yoe + era * 400 + i64::from(month <= 2);
-    format!("{year:04}{month:02}{day:02}-{:02}{:02}{:02}", rest / 3600, rest % 3600 / 60, rest % 60)
+    (year, month, day, rest / 3600, rest % 3600 / 60, rest % 60)
 }
 
 /// Sleep: suspend, then hibernate after a while (logind's HibernateDelaySec) if it can, else suspend.

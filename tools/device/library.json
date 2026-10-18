@@ -1,6 +1,12 @@
 {
   "keys": {},
   "steam": [{ "group": "Steam" }],
+  "browse": [
+    { "tab": "Files", "icon": "folder", "group": "Home", "dir": "~" },
+    { "tab": "Files", "group": "Root", "dir": "/" },
+    { "tab": "Files", "group": "Trash", "dir": "${XDG_DATA_HOME:-~/.local/share}/Trash/files", "trash": true }
+  ],
+  "removable": [{ "tab": "Files", "group": "{label}" }],
   "desktop": [
     { "id": "steam", "tab": "Apps" },
     { "id": "net.lutris.*", "tab": "Apps" },

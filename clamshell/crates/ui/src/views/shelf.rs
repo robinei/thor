@@ -9,7 +9,7 @@ use clamshell_core::{Game, Id, ListId, ShelfId, State, Tab};
 
 use crate::draw::{Align, Column, Keep, Rect, Span, WRAP_LINE};
 use crate::icons::Icon;
-use crate::toolkit::format::{DaysAgo, Fmt, PlayTime};
+use crate::toolkit::format::{Bytes, DaysAgo, Fmt, PlayTime};
 use crate::toolkit::scroll::Scrolled;
 use crate::toolkit::style::{self, Look, RADIUS_L, SURFACE_HI, Tone};
 use crate::toolkit::{Frame, widgets};
@@ -83,7 +83,8 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
     }
     let rows = ((list.h / (h * ROW_H)).floor() as usize).max(1);
     list_rows(f, list, rows, s.shelf().list().len(), pad);
-    if let Some(game) = s.shelf().selected_game() {
+    // The selected entry; in an empty browsed folder, the folder (its actions: paste, a new folder).
+    if let Some((game, _)) = s.file_target().filter(|(g, selected)| *selected || g.browsed.is_some()) {
         selected(f, game, screen, list, pad);
     }
     rows
@@ -195,8 +196,15 @@ fn selected(f: &mut Frame, game: &Game, screen: Rect, list: Rect, pad: f32) {
         col.skip(f.c.wrap(span(&col), detail, Tone::Dim, &maker, 2) + pad * 0.4);
     }
 
-    // A folder: what is in it.
-    if game.is_group() {
+    // A browsed file: how big, when it was changed.
+    if let Some(b) = game.browsed.as_ref().filter(|b| !b.folder && b.modified > 0) {
+        let days = s.unix_secs().saturating_sub(b.modified) / 86_400;
+        let facts = Fmt::<64>::of(format_args!("{}{}", Bytes(b.size.unwrap_or(0)), DaysAgo(days)));
+        col.skip(f.c.wrap(span(&col), detail, Tone::Dim, &facts, 1) + pad * 0.4);
+    }
+
+    // A folder: what is in it (not a browsed one: what is known of it may be old).
+    if game.is_group() && game.browsed.is_none() {
         let inside = Fmt::<64>::of(format_args!("{}", Inside(s, game)));
         col.skip(f.c.wrap(span(&col), detail, Tone::Normal, &inside, 2) + pad * 0.4);
     }
@@ -217,7 +225,12 @@ fn selected(f: &mut Frame, game: &Game, screen: Rect, list: Rect, pad: f32) {
     }
 
     // What A does, whether it is a favourite (Y) and on the dock (X): each a row to tap, with its button.
+    // A browsed entry: its file actions instead (Y copies, X pastes).
     let action_h = detail * ACTION;
+    if game.browsed.is_some() {
+        file_actions(f, game, Rect::new(tx, col.y(), text_w, list.y + list.h - col.y()), action_h, pad);
+        return;
+    }
     let running = s.session().running(&game.id).is_some();
     let tool = matches!(game.launch, clamshell_core::Launch::Tool(_));
     let play = match (game.is_group(), running) {
@@ -279,6 +292,46 @@ fn selected(f: &mut Frame, game: &Game, screen: Rect, list: Rect, pad: f32) {
     }
     if let Some(r) = shot.filter(|r| r.h > pad) {
         widgets::shot(f.c, f.images, game, r);
+    }
+}
+
+/// A browsed entry's actions, as rows from the top of `r`: A opens it (when it is the selected entry), then
+/// its file actions (Delete and Empty Trash asking to be pressed again); a paste under way, how far.
+fn file_actions(f: &mut Frame, game: &Game, r: Rect, action_h: f32, pad: f32) {
+    use clamshell_core::files::FileAction;
+    let s = f.s;
+    let mut y = r.y;
+    let w = r.w.min(action_h * 14.0);
+    if s.shelf().selected().is_some_and(|id| *id == game.id) {
+        let label = if s.session().running(&game.id).is_some() { ("Running · show it", Tone::Go) } else { ("Open", Tone::Normal) };
+        widgets::key_action(f, Id::Shelf(ShelfId::Launch), Rect::new(r.x, y, w, action_h), "A", label.0, label.1);
+        y += action_h + pad * 0.15;
+    }
+    for action in s.file_actions() {
+        let key = match action {
+            FileAction::Copy => "Y",
+            FileAction::Paste => "X",
+            _ => "",
+        };
+        let armed = s.file_armed(action);
+        let label = match (action, s.files().clip.as_ref()) {
+            _ if armed => Fmt::<160>::of(format_args!("{} · press again", action.label())),
+            (FileAction::Paste, Some(clip)) => Fmt::of(format_args!("Paste · {}", clip.name)),
+            (FileAction::Copy | FileAction::Cut, Some(clip)) if Some(&clip.path) == game.file.as_ref() && (action == FileAction::Cut) == clip.cut => {
+                Fmt::of(format_args!("{} · {}", action.label(), if clip.cut { "cut" } else { "copied" }))
+            }
+            _ => Fmt::of(format_args!("{}", action.label())),
+        };
+        let tone = if armed || action.confirms() { Tone::Accent } else { Tone::Normal };
+        widgets::key_action(f, Id::Shelf(ShelfId::File(action)), Rect::new(r.x, y, w, action_h), key, &label, tone);
+        y += action_h + pad * 0.15;
+    }
+    if let Some((what, fraction)) = &s.files().busy {
+        y += pad * 0.3;
+        let size = action_h * 0.62;
+        f.c.text_fit(Rect::new(r.x, y, r.w, size * 1.4), size, Tone::Normal, what, Keep::Start);
+        y += size * 1.6;
+        widgets::progress(f.c, Rect::new(r.x, y, w, (size * 0.22).max(3.0)), *fraction);
     }
 }
 

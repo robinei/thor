@@ -47,6 +47,9 @@ pub struct Shelf {
     rows: usize,
     /// Id of the selected entry (shelf's list on top, its settings below): the current list's cursor's.
     selected: Option<Arc<str>>,
+    /// Browsed folders' listings by folder, in the order they came (a folder's before those of the
+    /// folders in it): applied again to the library read again.
+    listings: Vec<(Arc<str>, Vec<Game>)>,
 }
 
 impl Shelf {
@@ -297,21 +300,66 @@ impl Shelf {
         self.sync()
     }
 
-    /// The library read again: each collection's place kept by name and ids (the scroll from the top).
-    /// Whether the selection changed.
+    /// The library read again: the browsed folders' listings in it again (those still there), each
+    /// collection's place kept by name and ids (the scroll from the top). Whether the selection changed.
     pub(crate) fn reload(&mut self, library: Library) -> bool {
         let before = self.selected.clone();
         let places = self.places();
         let current = self.collection().map(|c| c.name.clone());
         let rows = self.rows;
+        let listings = std::mem::take(&mut self.listings);
         *self = Shelf::new(library);
         self.rows = rows;
+        for (folder, entries) in listings {
+            if let Some(f) = self.library.games.iter().position(|g| g.id == folder) {
+                self.library.set_listing(f, entries.clone());
+                self.listings.push((folder, entries));
+            }
+        }
         for (name, ids) in &places {
             let ids: Vec<&str> = ids.iter().map(String::as_str).collect();
             self.restore_selection(name, &ids);
         }
         self.restore_current(current.as_deref().unwrap_or(""));
         self.selected != before
+    }
+
+    /// Browsed folder `folder`'s entries now (see [`Library::set_listing`]): the selected entry kept by
+    /// id, the groups open that went closed. Whether the selection changed.
+    pub(crate) fn listed(&mut self, folder: Arc<str>, entries: Vec<Game>) -> bool {
+        let Some(f) = self.library.games.iter().position(|g| g.id == folder) else {
+            return false;
+        };
+        let before = self.selected.clone();
+        self.listings.retain(|(id, _)| *id != folder);
+        self.listings.push((folder, entries.clone()));
+        self.library.set_listing(f, entries);
+        // (The listings of folders gone with it.)
+        let library = &self.library;
+        self.listings.retain(|(id, _)| library.games.iter().any(|g| g.id == *id));
+        self.close_gone();
+        if let Some(id) = &before {
+            self.select(&id.clone());
+        }
+        self.sync();
+        self.selected != before
+    }
+
+    /// Each collection's groups open, as far as each is still in the one before (or the collection).
+    fn close_gone(&mut self) {
+        for (c, nav) in self.navs.iter_mut().enumerate() {
+            let mut list = self.library.collections.get(c).map_or(&[][..], |c| c.games.as_slice());
+            let mut keep = 0;
+            for &g in &nav.open {
+                if !list.contains(&g) || !self.library.games.get(g).is_some_and(Game::is_group) {
+                    break;
+                }
+                keep += 1;
+                list = self.library.games.get(g).map_or(&[], |g| g.items.as_slice());
+            }
+            nav.open.truncate(keep);
+            nav.places.truncate(keep + 1);
+        }
     }
 
     /// Where mpv left a video (none: at its end), at `now`.

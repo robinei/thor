@@ -14,6 +14,7 @@ pub mod dock;
 pub mod editor;
 mod effect;
 mod event;
+pub mod files;
 pub mod hardware;
 mod id;
 pub mod idle;
@@ -70,7 +71,7 @@ pub use sys::{Status, Sys, TouchpadProblem};
 pub use tab::{Bottom, Tab};
 pub use time::{TimeRow, TimeZones};
 
-pub use clamshell_library::{Collection, Game, Launch, Library, Meta};
+pub use clamshell_library::{BrowseKind, Browsed, Collection, Game, Launch, Library, Meta};
 
 /// A game's power profile: how fast CPU and GPU may run (frequency caps; the Thor has no TDP setting).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -156,6 +157,8 @@ pub struct State {
     shown: Option<(usize, Option<usize>, usize, usize, usize)>,
     /// Pins of entries gone were dropped at start: saved once the UI is up.
     pins_dropped: bool,
+    /// The file actions' clipboard and confirmation, the folder browsed (see [`files`]).
+    files: files::Files,
 }
 
 /// Replaces `slot` with `value`; whether that changed it.
@@ -261,6 +264,7 @@ impl State {
     pub fn apply(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
         let (mut dirty, mut effects) = self.apply_event(event);
         effects.extend(self.follow_shown());
+        effects.extend(self.follow_browse());
         effects.extend(self.follow_idle());
         let (changed, applied) = self.follow_program();
         effects.extend(applied);
@@ -343,6 +347,7 @@ impl State {
                 self.shown = None;
                 (Dirty::BOTH, effects)
             }
+            Event::Files(e) => (Dirty::BOTH, self.on_files(e)),
             Event::Fetching(on) => {
                 self.fetching = on;
                 self.shown = None;
@@ -604,6 +609,7 @@ impl State {
             ShelfId::Favourite => self.on_shelf_event(ShelfEvent::ToggleFavourite).1,
             ShelfId::Pin => self.on_shelf_event(ShelfEvent::TogglePin).1,
             ShelfId::Continue => self.continue_selected(),
+            ShelfId::File(action) => self.on_file(action),
             ShelfId::Up => {
                 if self.shelf.up() {
                     self.moved_collection();
@@ -661,6 +667,9 @@ impl State {
             }
             ShelfEvent::Rows(rows) => (if self.shelf.set_rows(rows) { Dirty::BOTH } else { Dirty::NONE }, vec![]),
             ShelfEvent::Continue => (Dirty::BOTH, self.continue_selected()),
+            // A browsed entry has no favourite or pin: Y copies it, X pastes.
+            ShelfEvent::ToggleFavourite if self.file_target().is_some_and(|(g, _)| g.browsed.is_some()) => (Dirty::BOTH, self.on_file(files::FileAction::Copy)),
+            ShelfEvent::TogglePin if self.file_target().is_some_and(|(g, _)| g.browsed.is_some()) => (Dirty::BOTH, self.on_file(files::FileAction::Paste)),
             ShelfEvent::TogglePin => match self.shelf.selected().cloned() {
                 Some(id) => (Dirty::BOTH, self.toggle_pin(id)),
                 None => (Dirty::NONE, vec![]),
@@ -842,6 +851,11 @@ pub(crate) mod testkit {
 
     pub fn state() -> State {
         State::new(init())
+    }
+
+    /// A test state with this library.
+    pub fn state_with(library: Library) -> State {
+        State::new(Init { library, ..Init::default() })
     }
 
     pub fn win(id: i64, app_id: &str, workspace: &str, focused: bool) -> Window {

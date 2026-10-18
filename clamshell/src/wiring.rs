@@ -129,6 +129,8 @@ pub fn start(
     let mixer = started("mixer", mixer::spawn(backlights.clone(), sink.clone()));
     let bluetooth = started("bluetooth", bluetooth::spawn(sink.clone()));
     let system = started("system", clamshell_system::device::spawn(paths.screenshots.clone(), sink.clone()));
+    let browse = started("browse", clamshell_system::files::spawn_browse(sources.config.clone(), sources.home.clone(), sink.clone()));
+    let files = started("files", clamshell_system::files::spawn_ops(sources.home.clone(), sink.clone()));
     let wifi = started("wifi", wifi::spawn(sink));
     let tuning = Tuning { hardware: started("tuning", tuning::spawn()), pad: pad.clone(), mangohud: paths.mangohud.clone() };
     tuning.apply(global, None);
@@ -153,6 +155,8 @@ pub fn start(
         system,
         brightness: started("brightness", brightness::spawn(backlights)),
         tuning,
+        browse,
+        files,
         // The on-screen keyboard types through a virtual keyboard (US positions).
         keyboard: VirtualKeyboard::new().map_err(|e| log::error!("virtual keyboard: {e}")).ok(),
     }

@@ -1,5 +1,5 @@
 //! The editor: a line of text typed on the on-screen keyboard (Enter saves, Esc cancels), for a game's
-//! environment, a Wi-Fi password or a keymap's name; and environment variables as text, `KEY=value` words.
+//! environment, a Wi-Fi password, a keymap's name or a file's; and environment variables as text, `KEY=value` words.
 
 use std::sync::Arc;
 
@@ -18,6 +18,7 @@ impl Editor {
         match self.purpose {
             Purpose::Password { .. } => crate::Tab::Wifi,
             Purpose::Env { .. } | Purpose::KeymapName(_) => crate::Tab::Settings,
+            Purpose::FileName(_) => crate::Tab::Keyboard,
         }
     }
 }
@@ -30,6 +31,8 @@ pub enum Purpose {
     Password { ssid: String },
     /// A keymap's name.
     KeymapName(KeymapName),
+    /// A browsed file's or folder's name (see [`crate::files`]).
+    FileName(crate::files::FileName),
 }
 
 /// What a keymap's name is for.

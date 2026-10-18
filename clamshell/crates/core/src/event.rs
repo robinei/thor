@@ -50,6 +50,9 @@ pub enum Event {
     },
     /// The library read again (the Tools tab's rescan).
     Library(Box<crate::Library>),
+    /// Browsed folders listed, file operations under way or done, removable storage come or gone (the
+    /// files thread).
+    Files(crate::files::FilesEvent),
     /// The metadata thread started fetching (shelf's view is fetched first meanwhile), or is done.
     Fetching(bool),
     /// The UI is up: what the state in force needs at start (the tab's watch, the screens' brightness,

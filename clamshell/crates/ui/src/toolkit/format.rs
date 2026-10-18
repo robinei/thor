@@ -148,6 +148,26 @@ impl Display for DaysAgo {
     }
 }
 
+/// A file's size: "512 B", "3.4 kB", "1.2 GB" (powers of 1000).
+pub struct Bytes(pub u64);
+
+impl Display for Bytes {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let units = ["kB", "MB", "GB", "TB"];
+        let mut value = self.0 as f64;
+        if value < 1000.0 {
+            return write!(f, "{} B", self.0);
+        }
+        for unit in units {
+            value /= 1000.0;
+            if value < 1000.0 || unit == "TB" {
+                return if value < 10.0 { write!(f, "{value:.1} {unit}") } else { write!(f, "{value:.0} {unit}") };
+            }
+        }
+        Ok(())
+    }
+}
+
 /// How many environment variables: "No variables", "1 variable", "3 variables".
 pub struct Variables(pub usize);
 
@@ -221,6 +241,10 @@ mod tests {
         assert_eq!(show(DaysAgo(0)), " · today");
         assert_eq!(show(DaysAgo(1)), " · yesterday");
         assert_eq!(show(DaysAgo(3)), " · 3 days ago");
+        assert_eq!(show(Bytes(512)), "512 B");
+        assert_eq!(show(Bytes(3_400)), "3.4 kB");
+        assert_eq!(show(Bytes(1_234_000_000)), "1.2 GB");
+        assert_eq!(show(Bytes(25_000_000)), "25 MB");
         assert_eq!(show(Variables(0)), "No variables");
         assert_eq!(show(Variables(1)), "1 variable");
         assert_eq!(show(Variables(2)), "2 variables");

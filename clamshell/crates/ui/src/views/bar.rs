@@ -138,7 +138,7 @@ pub(super) fn draw_slider_over(f: &mut Frame, screen: Rect, bar_h: f32) {
 /// A notice on a card below the bar, in the middle: a level a key changed (its icon and number), or
 /// the screenshot's outcome.
 fn draw_notice(f: &mut Frame, what: &NoticeKind, w: f32, bar_h: f32) {
-    let (icon, text): (Option<Icon>, Fmt<32>) = match what {
+    let (icon, text): (Option<Icon>, Fmt<96>) = match what {
         NoticeKind::Level(control) => {
             let level = f.s.levels().control(*control);
             let icon = level_icon(f, *control, level.unwrap_or(0));
@@ -156,6 +156,8 @@ fn draw_notice(f: &mut Frame, what: &NoticeKind, w: f32, bar_h: f32) {
         NoticeKind::Gyro(Some(false)) => (None, Fmt::of(format_args!("Moved: gyro not calibrated"))),
         NoticeKind::BottomRule(true) => (None, Fmt::of(format_args!("On the bottom screen from now on"))),
         NoticeKind::BottomRule(false) => (None, Fmt::of(format_args!("Back on top from now on"))),
+        NoticeKind::Files(Ok(done)) => (None, Fmt::of(format_args!("{done}"))),
+        NoticeKind::Files(Err(e)) => (None, Fmt::of(format_args!("{e}"))),
     };
     let x = (w - widgets::card_width(f, bar_h, icon.is_some(), &text)) / 2.0;
     widgets::card(f, x, bar_h * 1.3, bar_h, icon, &text);

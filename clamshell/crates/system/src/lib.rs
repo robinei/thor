@@ -13,6 +13,7 @@ pub mod dbus;
 pub mod desktop;
 pub mod device;
 pub mod drm;
+pub mod files;
 pub mod frames;
 pub mod handles;
 pub mod input;

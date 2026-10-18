@@ -8,7 +8,7 @@ pub mod steam;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use clamshell_library::{Collection, Game, Launch, Library, Meta};
+use clamshell_library::{BrowseKind, Browsed, Collection, Game, Launch, Library, Meta};
 
 use crate::meta::{How, Keys, RETRY_MISS, Wanted};
 
@@ -102,10 +102,21 @@ const TOOLS: [(&str, &str, &str, &str); 2] = [
     ("tool:refetch", "Fetch missing art again", "refetch", "Tries again for the entries whose covers and details weren't found, then rescans."),
 ];
 
-/// The order of a tab's or a folder's entries: folders first, then by title.
+/// The order of a tab's or a folder's entries: folders first, then by title; browsed dirs' own folders
+/// after the other folders, as library.json and the mounts have them.
 fn list_order(games: &[Game], a: usize, b: usize) -> std::cmp::Ordering {
-    let key = |i: usize| games.get(i).map(|g| (!g.is_group(), &g.sort_key, &g.title));
+    let key = |i: usize| {
+        games.get(i).map(|g| match g.browsed.as_ref().map(|b| &b.kind) {
+            Some(BrowseKind::Root | BrowseKind::Trash | BrowseKind::Removable(_)) => (false, true, None),
+            _ => (!g.is_group(), false, Some((&g.sort_key, &g.title))),
+        })
+    };
     key(a).cmp(&key(b))
+}
+
+/// A browsed dir's own folder.
+fn browsed_root(id: &str, dir: PathBuf, kind: BrowseKind) -> Game {
+    Game { file: Some(dir), browsed: Some(Browsed { folder: true, kind, ..Browsed::default() }), ..Game::new(id, "") }
 }
 
 /// The first frame (a video's, in order, all the way down) in folder `i`.
@@ -193,6 +204,50 @@ pub fn load(sources: &Sources) -> Loaded {
             None => entries,
         };
         add(&mut collections, &source.tab, source.icon.as_deref(), entries);
+    }
+    // Browsed dirs (library.json's, then the removable filesystems mounted): each a folder, listed when
+    // it is opened.
+    let mut roots: Vec<(String, Option<String>, String, Game)> = Vec::new();
+    for root in &config.browse {
+        let group = root.group.trim_matches('/');
+        let dir = match content::expand_dir(&root.dir, sources.home.as_deref()) {
+            Ok(dir) if dir.is_dir() || root.trash => dir,
+            Ok(dir) => {
+                problems.push(format!("{group}: no folder {}", dir.display()));
+                continue;
+            }
+            Err(name) => {
+                problems.push(format!("{group}: ${name} isn't set"));
+                continue;
+            }
+        };
+        // (The Trash's folder may not be made yet.)
+        if root.trash {
+            let _ = std::fs::create_dir_all(&dir);
+        }
+        let kind = if root.trash { BrowseKind::Trash } else { BrowseKind::Root };
+        let id = format!("browse:{}/{group}", root.tab);
+        roots.push((root.tab.clone(), root.icon.clone(), group.to_owned(), browsed_root(&id, dir, kind)));
+    }
+    for m in crate::files::media_mounts() {
+        let rule = config.removable.iter().find(|r| r.matches(&m.label, &m.uuid, &m.fs));
+        if rule.is_some_and(|r| r.hide) {
+            continue;
+        }
+        let tab = rule.and_then(|r| r.tab.clone()).unwrap_or_else(|| "Files".to_owned());
+        let name = if m.label.is_empty() { &m.uuid } else { &m.label };
+        let group = rule.and_then(|r| r.group.as_deref()).unwrap_or("{label}").replace("{label}", name).trim_matches('/').to_owned();
+        let id = format!("browse:media/{}", if m.uuid.is_empty() { &m.device } else { &m.uuid });
+        roots.push((tab, rule.and_then(|r| r.icon.clone()), group, browsed_root(&id, m.dir, BrowseKind::Removable(m.device))));
+    }
+    for (tab, icon, group, mut root) in roots {
+        let (path, name) = group.rsplit_once('/').unwrap_or(("", &group));
+        name.clone_into(&mut root.title);
+        root.sort_key = clamshell_library::sort::key(name);
+        games.push(root);
+        let i = vec![games.len() - 1];
+        let top = if path.is_empty() { i } else { into_folder(&mut games, &mut folders, &tab, path, Path::new(""), &i).into_iter().collect() };
+        add(&mut collections, &tab, Some(icon.as_deref().unwrap_or("folder")), top);
     }
     let extend = |games: &mut Vec<Game>, more: Vec<Game>| {
         let first = games.len();
@@ -286,7 +341,7 @@ pub fn load(sources: &Sources) -> Loaded {
             g.favourite = favourites.contains(&*g.id);
         }
     }
-    let mut library = Library { collections, games, problems, away };
+    let mut library = Library { collections, games, problems, away, ..Library::default() };
     // What was fetched before, where its images are still there; what to fetch.
     let now = crate::meta::now();
     let mut wanted = Vec::new();
