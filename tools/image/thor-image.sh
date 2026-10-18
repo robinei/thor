@@ -37,7 +37,7 @@ SWAP_GIB=16
 # build ClamShell, pacman-contrib (checkupdates, pacdiff).
 PACKAGES=(base sudo mkinitcpio networkmanager polkit upower bluez openssh sway mako foot xorg-xwayland mesa vulkan-freedreno
           pipewire pipewire-pulse wireplumber alsa-ucm-conf noto-fonts sqlite python less vim grim cloud-guest-utils gptfdisk
-          retroarch retroarch-assets-xmb python-pillow libretro-core-info libretro-nestopia libretro-snes9x libretro-mupen64plus-next libretro-gambatte
+          retroarch retroarch-assets-xmb retroarch-assets-glui python-pillow libretro-core-info libretro-nestopia libretro-snes9x libretro-mupen64plus-next libretro-gambatte
           libretro-mgba libretro-melonds libretro-genesis-plus-gx libretro-pcsx-rearmed libretro-flycast mpv ffmpeg
           git rust base-devel pacman-contrib)
 # The kernel command line: ROCKNIX's tuning for SM8550, our root. The first boot adds resume= and
