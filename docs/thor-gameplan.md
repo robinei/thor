@@ -250,6 +250,21 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
 - [ ] The launcher under real use: tools/vm/vm.py's checks again, on the device.
 - [ ] FEX for x86 games (32-bit Windows games are the open question).
 
+## Ideas to try once the device is here
+
+Held back until real use shows whether they are worth what they cost.
+
+- The bar reserved on the bottom screen. The second screen is one layer surface, behind the windows moved
+  there while they show, in front otherwise. Split into two, the bar (anchored to the top, always above
+  windows) and the tab below it, the bar could claim its height as an exclusive zone, so windows moved
+  down tile below it and the bar stays usable: its moved-down-windows button then acts like a tab (shows
+  them; another tab brings ClamShell's view back), as Home+Select does. A toggle (Home+Y: still free),
+  since it takes some 80 of the 1080 lines from what is below (a dual-screen emulator's second screen
+  wants all of them). Costs: the slider that comes up over the tab while one slides on the bar would
+  belong to the tab's surface, which then has to be in front while sliding; pointing's positions on the
+  tab's surface offset by the bar's height. Worth it if, with windows below, reaching for the bar (or
+  Home+Select) turns out to happen often.
+
 ## References
 
 - ROCKNIX's Thor page (the Boot Mode note): <https://rocknix.org/devices/ayn/thor-sm8550/>
