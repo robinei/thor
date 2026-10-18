@@ -259,7 +259,7 @@ mod tests {
     fn the_wifi_tab_watches_while_open() {
         let mut s = state();
         tap(&mut s, Id::Tab(Tab::Keyboard));
-        assert_eq!(tap(&mut s, Id::Tab(Tab::Wifi)), vec![Effect::Watch(Watch::Wifi, true)]);
+        assert_eq!(tap(&mut s, Id::Tab(Tab::Wifi)), vec![Effect::Watch(Watch::Keyboard, false), Effect::Watch(Watch::Wifi, true)]);
         assert_eq!(tap(&mut s, Id::Tab(Tab::Wifi)), vec![], "a tab: a second tap stays");
         assert_eq!(tap(&mut s, Id::Tab(Tab::Touchpad)), vec![Effect::Watch(Watch::Wifi, false), Effect::Watch(Watch::Touchpad, true)]);
         assert_eq!(s.bottom().tab(), Tab::Touchpad);

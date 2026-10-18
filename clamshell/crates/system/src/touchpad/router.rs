@@ -12,7 +12,7 @@ use crate::input::{Press, Range, Raw, Rect};
 /// Slots (fingers) tracked.
 pub const SLOTS: usize = 10;
 /// BTN_TOOL_FINGER, _DOUBLETAP, _TRIPLETAP, _QUADTAP: how many fingers are on the touchpad.
-const TOOLS: [KeyCode; 4] = [KeyCode::BTN_TOOL_FINGER, KeyCode::BTN_TOOL_DOUBLETAP, KeyCode::BTN_TOOL_TRIPLETAP, KeyCode::BTN_TOOL_QUADTAP];
+pub const TOOLS: [KeyCode; 4] = [KeyCode::BTN_TOOL_FINGER, KeyCode::BTN_TOOL_DOUBLETAP, KeyCode::BTN_TOOL_TRIPLETAP, KeyCode::BTN_TOOL_QUADTAP];
 
 /// A finger on a UI target.
 #[derive(Debug, Clone, PartialEq)]
@@ -200,20 +200,8 @@ impl Router {
         }
         // BTN_TOUCH and the tool key for the number of touchpad fingers; ABS_X/Y follow the first one.
         let fingers = self.touches.iter().filter(|t| t.owner == Some(Owner::Pad)).count();
-        if fingers != self.fingers {
-            let press = |down: bool| if down { Press::Down } else { Press::Up };
-            if (fingers > 0) != (self.fingers > 0) {
-                out.pad.push(Raw::key(KeyCode::BTN_TOUCH, press(fingers > 0)));
-            }
-            let tool = |n: usize| n.checked_sub(1).and_then(|i| TOOLS.get(i.min(TOOLS.len() - 1)).copied());
-            if let Some(code) = tool(self.fingers) {
-                out.pad.push(Raw::key(code, Press::Up));
-            }
-            if let Some(code) = tool(fingers) {
-                out.pad.push(Raw::key(code, Press::Down));
-            }
-            self.fingers = fingers;
-        }
+        finger_keys(self.fingers, fingers, &mut out.pad);
+        self.fingers = fingers;
         let first = self.touches.iter().find(|t| t.owner == Some(Owner::Pad)).map(|t| self.to_pad(t.x, t.y, layout));
         if let Some((x, y)) = first
             && self.first != first
@@ -225,6 +213,24 @@ impl Router {
         if out.pad.len() > forwarded {
             out.pad.push(Raw::REPORT);
         }
+    }
+}
+
+/// BTN_TOUCH and the tool key for `fingers` fingers on the touchpad, `before` before.
+pub fn finger_keys(before: usize, fingers: usize, out: &mut Vec<Raw>) {
+    if fingers == before {
+        return;
+    }
+    let press = |down: bool| if down { Press::Down } else { Press::Up };
+    if (fingers > 0) != (before > 0) {
+        out.push(Raw::key(KeyCode::BTN_TOUCH, press(fingers > 0)));
+    }
+    let tool = |n: usize| n.checked_sub(1).and_then(|i| TOOLS.get(i.min(TOOLS.len() - 1)).copied());
+    if let Some(code) = tool(before) {
+        out.push(Raw::key(code, Press::Up));
+    }
+    if let Some(code) = tool(fingers) {
+        out.push(Raw::key(code, Press::Down));
     }
 }
 

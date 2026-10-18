@@ -388,9 +388,32 @@ impl State {
             }
             Event::Pad(_) => (Dirty::NONE, vec![]),
             Event::TextInput(active) => {
-                let before = self.bottom.tab;
+                let (before, pointing) = (self.bottom.tab, self.keyboard.pointing);
+                // (A field taking focus: typing is back.)
+                self.keyboard.pointing &= !active;
                 let effects = self.text_input(active);
-                (if self.bottom.tab == before { Dirty::NONE } else { Dirty::BOTH }, effects)
+                let dirty = if self.bottom.tab != before {
+                    Dirty::BOTH
+                } else if self.keyboard.pointing != pointing {
+                    Dirty::BOTTOM
+                } else {
+                    Dirty::NONE
+                };
+                (dirty, effects)
+            }
+            Event::Pointing(pointing) => {
+                let before = self.keyboard.pointing;
+                let effects = match pointing {
+                    crate::touch::Pointing::Contact(contact) => {
+                        self.keyboard.pointing = true;
+                        vec![Effect::Touchpad(contact)]
+                    }
+                    crate::touch::Pointing::Idle => {
+                        self.keyboard.pointing = false;
+                        vec![]
+                    }
+                };
+                (if self.keyboard.pointing == before { Dirty::NONE } else { Dirty::BOTTOM }, effects)
             }
             // Sleep may have reset what the settings set (frequency caps, cores): again.
             // Sleep may have reset what the settings set (frequency caps, cores): again.

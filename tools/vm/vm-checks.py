@@ -584,6 +584,33 @@ class Checks:
                    until(lambda: tab() == "dock") and logged(since, "touchpad mode off"), f"tab {tab()!r}")
         self.check("  the touchscreen let go", not grabbed(touchscreen))
 
+    # the keyboard's pointing
+
+    def keyboard_points(self):
+        # (An app in front: with shelf there, what is typed finds entries instead.)
+        if not self._terminal_with_keyboard():
+            return
+        if not self.check("  its touchpad ready", until(lambda: bool(device("clamshell touchpad")), 3)):
+            return
+        virtual, keyboard = device("clamshell touchpad"), device("clamshell keyboard")
+
+        def slide_then_tap():
+            self.i.touch.slide(0, 300, PAD_Y, 900, PAD_Y, 20, 1.0)
+            self.i.touch.up(0)
+            time.sleep(0.3)
+            self.i.tap(600, PAD_Y)
+        # (libinput's own context taps as sway's does when told to.)
+        out = capture(f"sudo libinput debug-events --enable-tap --device {virtual}", 4, slide_then_tap)
+        motion = out.count("POINTER_MOTION")
+        self.check("  a finger sliding over the keys moves the pointer", motion > 3, f"{motion} motion events; {out.strip()[-300:]!r}")
+        self.check("  a tap while it points clicks", "POINTER_BUTTON" in out, out.strip()[-300:])
+        inputs = json.loads(sh("swaymsg -t get_inputs") or "[]")
+        tap = [d.get("libinput", {}).get("tap") for d in inputs if d.get("name") == "clamshell touchpad"]
+        self.check("  sway taps on it", tap == ["enabled"], f"tap {tap}")
+        time.sleep(1.5)
+        typed = capture(f"evtest {keyboard}", 2, lambda: self.i.tap(600, PAD_Y))
+        self.check("  a moment later a tap types again", "(EV_KEY)" in typed and "value 1" in typed, typed.strip()[-300:])
+
     # the pad
 
     def pad_shelf(self):
@@ -979,7 +1006,7 @@ class Checks:
         self.check("  a long press forgets it", forgot and "Paired: yes" not in sh(f"bluetoothctl info {address}"))
 
 
-CHECKS = ["shelf_scroll", "bar_tap", "time_zone", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad",
+CHECKS = ["shelf_scroll", "bar_tap", "time_zone", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad", "keyboard_points",
           "pad_shelf", "pad_view", "pad_mouse", "pad_typing", "pad_held_key", "pad_unplug", "pad_guide", "keymaps", "keymap_layers",
           "keymap_actuations", "rumble", "bluetooth"]
 

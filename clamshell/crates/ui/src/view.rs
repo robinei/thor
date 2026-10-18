@@ -228,6 +228,13 @@ impl Drawn for Screens<Option<View>> {
 
 /// Tells the touchpad tab's input side where things are, in screen pixels: the area below the bar is
 /// the touchpad; the bar's targets stay taps. No allocation once the region list has grown.
+/// The second screen's size (pixels), for the keyboard's touchpad.
+pub(crate) fn publish_screen(touch: &Mutex<TouchLayout>, screen: (f32, f32)) {
+    if let Ok(mut layout) = touch.lock() {
+        layout.screen = screen;
+    }
+}
+
 pub(crate) fn publish(touch: &Mutex<TouchLayout>, targets: &[Target], area: Rect, origin_x: f32, scale: f32, screen: (f32, f32)) {
     let Ok(mut layout) = touch.lock() else {
         return;

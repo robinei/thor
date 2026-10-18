@@ -2,6 +2,7 @@
 //! system thread (readings of the system, the compositor's windows, systemd's scopes, games starting and
 //! ending), grouped by what they are about.
 
+use crate::touch::Pointing;
 use std::sync::Arc;
 
 use crate::battery::Battery;
@@ -69,6 +70,8 @@ pub enum Event {
     Listened(crate::keymap::Input),
     /// A text field of the app in front wants typing (true), or no longer does (the Wayland side).
     TextInput(bool),
+    /// The keyboard points (see [`crate::keyboard`]).
+    Pointing(Pointing),
     /// The system woke from sleep.
     Resumed,
     /// What the input sources say about input (for idle).
@@ -189,4 +192,4 @@ macro_rules! into_event {
     };
 }
 
-into_event!(ListEvent => List, Reading => Reading, PointerEvent => Pointer, Slide => Slide, LevelEvent => Level, ShelfEvent => Shelf, GameEvent => Game);
+into_event!(ListEvent => List, Reading => Reading, PointerEvent => Pointer, Slide => Slide, LevelEvent => Level, ShelfEvent => Shelf, GameEvent => Game, Pointing => Pointing);

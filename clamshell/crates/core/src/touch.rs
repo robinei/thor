@@ -1,6 +1,9 @@
 //! What the input side needs to know about the second screen's layout in touchpad mode: where the
 //! touchpad area is, and which regions stay the UI's (the bar), in the screen's pixels. The UI updates it
 //! with every frame of the second screen; the touchpad thread reads it at each touch-down.
+//!
+//! And the keyboard's pointing (see [`crate::keyboard`]): fingers that moved on the keyboard, as the UI
+//! hands them to the same virtual touchpad.
 
 use crate::Id;
 
@@ -44,4 +47,31 @@ impl TouchLayout {
     pub fn layout_x(&self, x: f32) -> f32 {
         x / self.scale.max(1.0) - self.origin_x
     }
+}
+
+/// Fingers (slots) a touchpad tracks.
+pub const SLOTS: i32 = 10;
+
+/// A finger pointing on the keyboard: its slot (one per finger), what it did, and where (screen pixels).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Contact {
+    pub slot: u8,
+    pub phase: ContactPhase,
+    pub x: i32,
+    pub y: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContactPhase {
+    Down,
+    Move,
+    Up,
+}
+
+/// The keyboard's pointing: a finger's contact (pointing starts, or goes on), or the fingers idle long
+/// enough that typing is back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pointing {
+    Contact(Contact),
+    Idle,
 }

@@ -374,6 +374,11 @@ impl App {
             };
             match view.draw(&mut self.pool, &mut self.fonts, &self.state, &mut self.images, &self.qh) {
                 Ok(rendered) => {
+                    // (The second screen's size, for the keyboard's touchpad.)
+                    if screen == Screen::Bottom {
+                        let scale = view.scale.max(1) as f32;
+                        view::publish_screen(&self.touch_layout, (view.size.0 as f32 * scale, view.size.1 as f32 * scale));
+                    }
                     if let Some(area) = rendered.out.touchpad_area {
                         let scale = view.scale.max(1) as f32;
                         let screen_px = (view.size.0 as f32 * scale, view.size.1 as f32 * scale);
@@ -406,6 +411,14 @@ impl App {
                         self.loop_handle.remove(token);
                     }
                 }
+                // (In the second screen's pixels; a finger's slot from its touch id.)
+                Action::Point(Source::Touch(id), phase, (x, y)) => {
+                    let scale = self.views.bottom.as_ref().map_or(1, |v| v.scale.max(1)) as f32;
+                    let slot = id.rem_euclid(clamshell_core::touch::SLOTS) as u8;
+                    let contact = clamshell_core::touch::Contact { slot, phase, x: (x * scale).round() as i32, y: (y * scale).round() as i32 };
+                    self.handle(clamshell_core::touch::Pointing::Contact(contact).into());
+                }
+                Action::Point(..) => {}
             }
         }
     }
@@ -438,7 +451,12 @@ impl App {
         let Some(target) = view.picture.targets.iter().rev().find(|t| t.rect.contains(x as f32, y as f32)).cloned() else {
             return;
         };
-        let actions = self.input.touch(source, &target, (x as f32, y as f32), std::time::Instant::now());
+        let now = std::time::Instant::now();
+        let actions = match (&target.id, source) {
+            // (A finger on the keyboard while it points points too.)
+            (Id::Key(_), Source::Touch(_)) if self.state.keyboard().pointing => self.input.point(source, &target, (x as f32, y as f32), now),
+            _ => self.input.touch(source, &target, (x as f32, y as f32), now),
+        };
         self.run_actions(actions);
     }
 

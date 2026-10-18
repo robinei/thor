@@ -7,13 +7,17 @@
 //! a slide (held there briefly, or moved sideways): the slider comes up under it and follows it. A finger
 //! on a level row sets it where it is, and follows it. A finger on a scrolled list that moves up or down
 //! past [`DRAG_START`] drags the list instead (the row under it is let go without a tap); let go while
-//! moving, the list flings on, slowing down, until it stops or reaches an end. Positions are in the
-//! surface's logical pixels; the target's track says what they mean.
+//! moving, the list flings on, slowing down, until it stops or reaches an end. A finger on a key that
+//! moves past [`POINT_START`] points (see clamshell-core's `keyboard`): it and the other fingers tapping
+//! keys are let go without typing and become the touchpad's, as are fingers that come down on keys while
+//! it points, until none has been on it for [`POINT_IDLE`]. Positions are in the surface's logical
+//! pixels; the target's track says what they mean.
 
 use std::time::{Duration, Instant};
 
 use clamshell_core::levels::Level;
 use clamshell_core::slider::{Control, SLIDE_AFTER, SLIDE_MOVE};
+use clamshell_core::touch::{ContactPhase, Pointing};
 use clamshell_core::{Event, Hold, Id, LevelEvent, ListEvent, PadRoute, PointerEvent, Slide, State};
 
 use crate::fling::{FLING_EVERY, Fling, Trail};
@@ -22,6 +26,11 @@ use crate::toolkit::{Target, Track};
 
 /// A finger on a list moved this far up or down (logical pixels) drags the list.
 pub(crate) const DRAG_START: f32 = 12.0;
+
+/// A finger on a key moved this far (logical pixels) points.
+pub(crate) const POINT_START: f32 = 24.0;
+/// The keyboard points until no finger has pointed for this long.
+pub(crate) const POINT_IDLE: Duration = Duration::from_millis(1000);
 
 /// A press held this long is a hold: keys start repeating, modifiers lock.
 pub(crate) const LONG_PRESS: Duration = Duration::from_millis(450);
@@ -44,6 +53,8 @@ pub(crate) enum Timer {
     Slide,
     /// A fling's next step.
     Fling,
+    /// The keyboard's pointing goes idle (see [`POINT_IDLE`]).
+    Pointing,
 }
 
 /// What the caller does.
@@ -55,6 +66,9 @@ pub(crate) enum Action {
     Arm(Source, Timer, Duration),
     /// Stops the source's timer, if it runs.
     Disarm(Source, Timer),
+    /// A finger pointing on the keyboard: down, moved or up at this position (the caller makes it a
+    /// contact for the virtual touchpad).
+    Point(Source, ContactPhase, (f32, f32)),
 }
 
 /// How a press ends: let go (a tap acts), or cancelled (the touch was taken away, the pad left).
@@ -80,6 +94,8 @@ enum Gesture {
     LevelDrag { level: Level, track: Track },
     /// Dragging a list: `y` where the finger was last.
     Dragging { list: InList, y: f32 },
+    /// Pointing on the keyboard: the touchpad's.
+    Pointing,
 }
 
 /// A press in progress, on the target it started on: where it came down, and the list the target is
@@ -88,14 +104,20 @@ enum Gesture {
 struct Press {
     id: Id,
     gesture: Gesture,
-    down_y: f32,
+    down: (f32, f32),
+    at: (f32, f32),
     list: Option<InList>,
     trail: Trail,
 }
 
 impl Press {
-    fn new(id: Id, gesture: Gesture, y: f32, list: Option<InList>, now: Instant) -> Press {
-        Press { id, gesture, down_y: y, list, trail: Trail::new(now, y) }
+    fn new(id: Id, gesture: Gesture, at: (f32, f32), list: Option<InList>, now: Instant) -> Press {
+        Press { id, gesture, down: at, at, list, trail: Trail::new(now, at.1) }
+    }
+
+    /// A key tapped, not held: it may still point.
+    fn may_point(&self) -> bool {
+        self.gesture == Gesture::Tap && matches!(self.id, Id::Key(_))
     }
 }
 
@@ -105,6 +127,8 @@ pub(crate) struct Input {
     presses: Vec<(Source, Press)>,
     /// A list moving on after a drag, on the timer of the source that dragged it.
     fling: Option<(Source, Fling)>,
+    /// The keyboard's pointing going idle, on the timer of the finger that pointed last.
+    idle: Option<Source>,
 }
 
 impl Input {
@@ -126,7 +150,7 @@ impl Input {
         if self.pressed(source) {
             return vec![];
         }
-        self.presses.push((source, Press::new(id.clone(), Gesture::Tap, 0.0, None, now)));
+        self.presses.push((source, Press::new(id.clone(), Gesture::Tap, (0.0, 0.0), None, now)));
         vec![Action::Emit(PointerEvent::Down(id).into()), Action::Arm(source, Timer::Hold, LONG_PRESS)]
     }
 
@@ -146,7 +170,7 @@ impl Input {
             _ => Gesture::Tap,
         };
         let id = target.id.clone();
-        self.presses.push((source, Press::new(id.clone(), gesture, y, target.list, now)));
+        self.presses.push((source, Press::new(id.clone(), gesture, (x, y), target.list, now)));
         actions.extend([Action::Emit(PointerEvent::HideFocus.into()), Action::Emit(PointerEvent::Down(id).into())]);
         match gesture {
             // A keymap parameter's row has nothing to tap: it slides at once, from where the finger came
@@ -162,6 +186,31 @@ impl Input {
             }
             Gesture::LevelDrag { level, track } => actions.push(Action::Emit(LevelEvent::Set(level, track.value_at(x)).into())),
             _ => actions.push(Action::Arm(source, Timer::Hold, LONG_PRESS)),
+        }
+        actions
+    }
+
+    /// A finger comes down on `target` (a key) while the keyboard points: it points too.
+    pub fn point(&mut self, source: Source, target: &Target, at: (f32, f32), now: Instant) -> Vec<Action> {
+        if self.pressed(source) {
+            return vec![];
+        }
+        let mut actions = self.stop_fling();
+        actions.extend(self.idle.take().map(|s| Action::Disarm(s, Timer::Pointing)));
+        self.presses.push((source, Press::new(target.id.clone(), Gesture::Pointing, at, None, now)));
+        actions.push(Action::Point(source, ContactPhase::Down, at));
+        actions
+    }
+
+    /// Fingers tapping keys point (one moved far enough): each let go without typing, and down on the
+    /// touchpad where it is.
+    fn start_pointing(&mut self) -> Vec<Action> {
+        let mut actions: Vec<Action> = self.idle.take().map(|s| Action::Disarm(s, Timer::Pointing)).into_iter().collect();
+        for (source, press) in self.presses.iter_mut().filter(|(_, p)| p.may_point()) {
+            press.gesture = Gesture::Pointing;
+            actions.push(Action::Disarm(*source, Timer::Hold));
+            actions.push(Action::Emit(PointerEvent::Up(press.id.clone()).into()));
+            actions.push(Action::Point(*source, ContactPhase::Down, press.at));
         }
         actions
     }
@@ -187,11 +236,15 @@ impl Input {
             return vec![];
         };
         press.trail.follow(now, y);
+        press.at = (x, y);
+        if press.may_point() && (x - press.down.0).hypot(y - press.down.1) >= POINT_START {
+            return self.start_pointing();
+        }
         if let (Gesture::Tap, Some(list)) = (press.gesture, press.list)
-            && (y - press.down_y).abs() >= DRAG_START
+            && (y - press.down.1).abs() >= DRAG_START
         {
             press.gesture = Gesture::Dragging { list, y };
-            let rows = -(y - press.down_y) / list.row_h;
+            let rows = -(y - press.down.1) / list.row_h;
             return vec![
                 Action::Disarm(source, Timer::Hold),
                 Action::Emit(PointerEvent::Up(press.id.clone()).into()),
@@ -215,6 +268,7 @@ impl Input {
             }
             Gesture::Sliding { track } => vec![Action::Emit(Slide::To { x: track.along(x) }.into())],
             Gesture::LevelDrag { level, track } => vec![Action::Emit(LevelEvent::Set(*level, track.value_at(x)).into())],
+            Gesture::Pointing => vec![Action::Point(source, ContactPhase::Move, (x, y))],
             Gesture::Tap | Gesture::Held => vec![],
         }
     }
@@ -225,19 +279,24 @@ impl Input {
         if timer == Timer::Fling {
             return self.fling_step(state, now);
         }
+        if timer == Timer::Pointing {
+            self.idle = None;
+            let pointing = self.presses.iter().any(|(_, p)| p.gesture == Gesture::Pointing);
+            return if pointing { vec![] } else { vec![Action::Emit(Pointing::Idle.into())] };
+        }
         let Some(press) = self.get(source) else {
             return vec![];
         };
         let mut actions = vec![];
         match timer {
             Timer::Slide => return Self::start_slide(press),
-            Timer::Fling => return actions,
+            Timer::Fling | Timer::Pointing => return actions,
             // (The slide's timer is the shorter: this comes first only if that one couldn't run.)
             Timer::Hold if matches!(press.gesture, Gesture::PendingSlide { .. }) => {
                 actions.push(Action::Disarm(source, Timer::Slide));
                 actions.extend(Self::start_slide(press));
             }
-            Timer::Hold if matches!(press.gesture, Gesture::LevelDrag { .. } | Gesture::Dragging { .. }) => return actions,
+            Timer::Hold if matches!(press.gesture, Gesture::LevelDrag { .. } | Gesture::Dragging { .. } | Gesture::Pointing) => return actions,
             Timer::Hold => {}
         }
         if press.gesture == Gesture::Tap {
@@ -276,6 +335,15 @@ impl Input {
         };
         let (_, press) = self.presses.remove(at);
         let mut actions = vec![Action::Disarm(source, Timer::Hold)];
+        // (The key was let go when it began pointing.) The last finger off: idle after a while.
+        if press.gesture == Gesture::Pointing {
+            actions.push(Action::Point(source, ContactPhase::Up, press.at));
+            if !self.presses.iter().any(|(_, p)| p.gesture == Gesture::Pointing) {
+                self.idle = Some(source);
+                actions.push(Action::Arm(source, Timer::Pointing, POINT_IDLE));
+            }
+            return actions;
+        }
         if let Gesture::Dragging { list, .. } = press.gesture {
             // (The row was let go when the drag began.)
             if let Some(fling) = Fling::after_drag(list, &press.trail, end == End::Release, state, now) {
@@ -294,7 +362,7 @@ impl Input {
                 true
             }
             Gesture::Tap | Gesture::LevelDrag { .. } => true,
-            Gesture::Held | Gesture::Dragging { .. } => false,
+            Gesture::Held | Gesture::Dragging { .. } | Gesture::Pointing => false,
         };
         if activates && end == End::Release {
             actions.push(Action::Emit(PointerEvent::Activate(press.id.clone()).into()));
@@ -591,5 +659,44 @@ mod tests {
         let cancelled = input.cancel_touches(&blank());
         assert!(!events(&cancelled).iter().any(|e| matches!(e, Event::Pointer(PointerEvent::Activate(_)))));
         assert!(input.pressed(Source::Mouse) && !input.pressed(Source::Touch(1)) && !input.pressed(Source::Touch(2)));
+    }
+
+    fn points(actions: &[Action]) -> Vec<(Source, ContactPhase)> {
+        actions.iter().filter_map(|a| if let Action::Point(s, phase, _) = a { Some((*s, *phase)) } else { None }).collect()
+    }
+
+    #[test]
+    fn a_finger_moving_on_a_key_points_and_takes_the_other_tapping_fingers_along() {
+        let state = blank();
+        let mut input = Input::default();
+        let (a, ctrl, held) = (Source::Touch(1), Source::Touch(2), Source::Touch(3));
+        let key_at = |k| target(Id::Key(keyboard::find(k).unwrap_or(KeyPos { row: 0, col: 0 })), None);
+        // A little jitter still types.
+        input.touch(a, &key_at(Key::Char('a')), (10.0, 10.0), t0());
+        assert!(input.moved(a, (10.0 + POINT_START - 1.0, 10.0), t0()).is_empty());
+        assert!(events(&input.up(a, End::Release, &state, t0())).contains(&PointerEvent::Activate(key()).into()));
+        // Ctrl tapping, a key held (repeating), a finger moving: Ctrl and the mover point, the held key stays.
+        input.touch(ctrl, &key_at(Key::Mod(keyboard::Modifier::Ctrl)), (0.0, 50.0), t0());
+        input.touch(held, &key_at(Key::Named(keyboard::Named::Backspace)), (90.0, 30.0), t0());
+        input.timer(held, Timer::Hold, &state, t0());
+        input.touch(a, &key_at(Key::Char('a')), (10.0, 10.0), t0());
+        let moved = input.moved(a, (10.0, 10.0 + POINT_START), t0());
+        assert_eq!(points(&moved).len(), 2, "{moved:?}");
+        assert!(points(&moved).iter().all(|(s, phase)| *s != held && *phase == ContactPhase::Down));
+        assert!(!events(&moved).iter().any(|e| matches!(e, Event::Pointer(PointerEvent::Activate(_)))), "let go without typing");
+        assert_eq!(points(&input.moved(a, (20.0, 40.0), t0())), vec![(a, ContactPhase::Move)]);
+        assert!(points(&input.moved(held, (0.0, 0.0), t0())).is_empty(), "held: a key wherever it goes");
+        // Lifted: the last pointing finger off arms the idle.
+        let up = input.up(ctrl, End::Release, &state, t0());
+        assert_eq!((points(&up), up.iter().any(|a| matches!(a, Action::Arm(_, Timer::Pointing, _)))), (vec![(ctrl, ContactPhase::Up)], false));
+        let up = input.up(a, End::Release, &state, t0());
+        assert!(up.contains(&Action::Arm(a, Timer::Pointing, POINT_IDLE)) && events(&up).is_empty(), "{up:?}");
+        // A finger down meanwhile points at once and stops the idle.
+        let b = Source::Touch(4);
+        let again = input.point(b, &key_at(Key::Char('q')), (5.0, 5.0), t0());
+        assert!(again.contains(&Action::Disarm(a, Timer::Pointing)) && points(&again) == vec![(b, ContactPhase::Down)], "{again:?}");
+        let up = input.up(b, End::Release, &state, t0());
+        assert!(up.contains(&Action::Arm(b, Timer::Pointing, POINT_IDLE)));
+        assert_eq!(events(&input.timer(b, Timer::Pointing, &state, t0())), vec![Pointing::Idle.into()], "idle: typing is back");
     }
 }

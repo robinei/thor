@@ -7,9 +7,13 @@
 //! libinput then does what it does for a laptop touchpad: pointer motion with acceleration, tap to
 //! click, two-finger scroll, gestures, palm detection, all configurable with `input` lines. Our part is
 //! only this forwarding.
+//!
+//! While the keyboard is shown, the same kind of virtual touchpad, the size of the second screen, takes
+//! the fingers pointing on it ([`pointing`]: the UI hands them over; the touchscreen isn't grabbed).
 
 mod bar;
 mod device;
+mod pointing;
 mod router;
 
 use std::fmt;
@@ -34,11 +38,14 @@ const LAYOUT_WAIT: Duration = Duration::from_secs(3);
 /// The longest the thread waits for touches before looking at its commands (how long an Off waits).
 const COMMANDS_EVERY: Duration = Duration::from_millis(100);
 
-/// Starting and stopping touchpad mode (from ClamShell's mode changes).
+/// Starting and stopping touchpad mode (from ClamShell's mode changes); the keyboard's touchpad ready
+/// or not, and its fingers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command {
     On,
     Off,
+    Pointing(bool),
+    Contact(clamshell_core::touch::Contact),
 }
 
 #[derive(Debug, Clone)]
@@ -89,7 +96,7 @@ fn problem(e: &Error) -> TouchpadProblem {
 /// bar's targets are, kept up to date by the UI.
 pub fn spawn(config: Config, layout: Arc<Mutex<TouchLayout>>, sink: impl Sink) -> io::Result<Worker<Command>> {
     Worker::spawn("touchpad", move |commands| {
-        let _ = TouchpadMode { config, layout, sink, gesture: BarGesture::default() }.serve(&commands);
+        let _ = TouchpadMode { config, layout, sink, gesture: BarGesture::default(), keyboard: None, fingers: pointing::Fingers::default() }.serve(&commands);
     })
 }
 
@@ -98,6 +105,9 @@ struct TouchpadMode<S> {
     layout: Arc<Mutex<TouchLayout>>,
     sink: S,
     gesture: BarGesture,
+    /// The keyboard's touchpad, and its size (pixels), while the keyboard is shown.
+    keyboard: Option<(evdev::uinput::VirtualDevice, (i32, i32))>,
+    fingers: pointing::Fingers,
 }
 
 /// The touchpad area (pixels), once the UI has laid it out (at start it may not have yet).
@@ -111,6 +121,14 @@ impl<S: Sink> TouchpadMode<S> {
         loop {
             match worker::next(commands, None) {
                 Next::Command(Command::On) => {}
+                Next::Command(Command::Pointing(on)) => {
+                    self.keyboard_pad(on);
+                    continue;
+                }
+                Next::Command(Command::Contact(contact)) => {
+                    self.contact(contact);
+                    continue;
+                }
                 Next::Command(Command::Off) | Next::Elapsed => continue,
                 Next::Disconnected => return Ok(()),
             }
@@ -128,6 +146,37 @@ impl<S: Sink> TouchpadMode<S> {
                 self.sink.send(event)?;
             }
             log::info!("touchpad mode off");
+        }
+    }
+
+    /// The keyboard's touchpad made (ahead of its fingers: libinput takes a moment to see a new device),
+    /// the size of the second screen once the UI has drawn it; or let go.
+    fn keyboard_pad(&mut self, on: bool) {
+        self.fingers = pointing::Fingers::default();
+        self.keyboard = None;
+        if !on {
+            return;
+        }
+        let Some((w, h)) = self.layout.lock().ok().map(|l| l.screen).filter(|(w, h)| *w >= 1.0 && *h >= 1.0) else {
+            return;
+        };
+        match device::virtual_touchpad(Rect::from_corners((0.0, 0.0, w, h)), self.config.px_per_mm) {
+            Ok(pad) => self.keyboard = Some((pad, (w as i32, h as i32))),
+            Err(e) => log::warn!("the keyboard's touchpad: {e}"),
+        }
+    }
+
+    /// A finger pointing on the keyboard, to its touchpad (made now if it couldn't be before).
+    fn contact(&mut self, contact: clamshell_core::touch::Contact) {
+        if self.keyboard.is_none() {
+            self.keyboard_pad(true);
+        }
+        let Some((pad, size)) = self.keyboard.as_mut() else {
+            return;
+        };
+        let batch: Vec<evdev::InputEvent> = self.fingers.contact(contact, *size).into_iter().map(Into::into).collect();
+        if let Err(e) = pad.emit(&batch) {
+            log::warn!("the keyboard's touchpad: {e}");
         }
     }
 

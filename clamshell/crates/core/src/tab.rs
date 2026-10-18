@@ -48,13 +48,14 @@ impl Tab {
     pub fn watch(self) -> Option<Watch> {
         match self {
             Tab::Touchpad => Some(Watch::Touchpad),
+            Tab::Keyboard => Some(Watch::Keyboard),
             Tab::Volume => Some(Watch::Audio),
             Tab::Brightness => Some(Watch::Backlights),
             Tab::Wifi => Some(Watch::Wifi),
             Tab::Bluetooth => Some(Watch::Bluetooth),
             Tab::Battery => Some(Watch::Battery),
             Tab::Time => Some(Watch::Time),
-            Tab::Settings | Tab::Dock | Tab::Keyboard | Tab::Sysinfo => None,
+            Tab::Settings | Tab::Dock | Tab::Sysinfo => None,
         }
     }
 
@@ -160,7 +161,7 @@ mod tests {
         let touchpad = |on| Effect::Watch(Watch::Touchpad, on);
         assert_eq!(tap(&mut s, Id::Tab(Tab::Wifi)), vec![touchpad(false), wifi(true)], "the old tab's off first");
         assert_eq!(tap(&mut s, Id::Tab(Tab::Touchpad)), vec![wifi(false), touchpad(true)]);
-        assert_eq!(tap(&mut s, Id::Tab(Tab::Keyboard)), vec![touchpad(false)]);
+        assert_eq!(tap(&mut s, Id::Tab(Tab::Keyboard)), vec![touchpad(false), Effect::Watch(Watch::Keyboard, true)], "its own touchpad");
         assert_eq!(tap(&mut s, Id::Tab(Tab::Keyboard)), vec![]);
     }
 
@@ -171,9 +172,13 @@ mod tests {
         s.apply(Event::Windows(vec![foot()]));
         let (dirty, fx) = s.apply(Event::TextInput(true));
         assert_eq!(s.bottom().tab(), Tab::Keyboard);
-        assert_eq!((dirty, fx), (Dirty::BOTH, vec![Effect::Watch(Watch::Touchpad, false), Effect::PadRoute(PadRoute::Keys)]));
+        assert_eq!(
+            (dirty, fx),
+            (Dirty::BOTH, vec![Effect::Watch(Watch::Touchpad, false), Effect::Watch(Watch::Keyboard, true), Effect::PadRoute(PadRoute::Keys)])
+        );
         // (The app in front has the pad again, as a game would.)
-        assert_eq!(s.apply(Event::TextInput(false)).1, vec![Effect::Watch(Watch::Touchpad, true), Effect::PadRoute(PadRoute::Game)]);
+        let back = vec![Effect::Watch(Watch::Keyboard, false), Effect::Watch(Watch::Touchpad, true), Effect::PadRoute(PadRoute::Game)];
+        assert_eq!(s.apply(Event::TextInput(false)).1, back);
         assert_eq!(s.bottom().tab(), Tab::Touchpad, "back where it came from");
     }
 
