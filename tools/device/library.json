@@ -13,17 +13,17 @@
     { "id": "*heroicgameslauncher*", "tab": "Apps" }
   ],
   "runners": [
-    { "name": "NES", "scan": [{ "id": "nes", "dir": "~/Games/nes", "tab": "Games", "icon": "gamepad", "group": "NES", "match": ["*.nes", "*.zip"] }] },
-    { "name": "SNES", "scan": [{ "id": "snes", "dir": "~/Games/snes", "tab": "Games", "group": "SNES", "match": ["*.sfc", "*.smc", "*.zip"] }] },
-    { "name": "Nintendo 64", "scan": [{ "id": "n64", "dir": "~/Games/n64", "tab": "Games", "group": "Nintendo 64", "match": ["*.z64", "*.n64", "*.v64", "*.zip"] }] },
-    { "name": "Game Boy", "scan": [{ "id": "gb", "dir": "~/Games/gb", "tab": "Games", "group": "Game Boy", "match": ["*.gb", "*.gbc", "*.zip"] }] },
-    { "name": "Game Boy Advance", "scan": [{ "id": "gba", "dir": "~/Games/gba", "tab": "Games", "group": "Game Boy Advance", "match": ["*.gba", "*.zip"] }] },
-    { "name": "Nintendo DS", "scan": [{ "id": "nds", "dir": "~/Games/nds", "tab": "Games", "group": "Nintendo DS", "match": ["*.nds", "*.zip"] }] },
-    { "name": "Mega Drive", "scan": [{ "id": "md", "dir": "~/Games/md", "tab": "Games", "group": "Mega Drive", "match": ["*.md", "*.gen", "*.bin", "*.zip"] }] },
-    { "name": "PlayStation", "scan": [{ "id": "psx", "dir": "~/Games/psx", "tab": "Games", "group": "PlayStation",
+    { "id": "nes", "scan": [{ "id": "nes", "dir": "~/Games/nes", "tab": "Games", "icon": "gamepad", "group": "NES", "match": ["*.nes", "*.zip"] }] },
+    { "id": "snes", "scan": [{ "id": "snes", "dir": "~/Games/snes", "tab": "Games", "group": "SNES", "match": ["*.sfc", "*.smc", "*.zip"] }] },
+    { "id": "n64", "scan": [{ "id": "n64", "dir": "~/Games/n64", "tab": "Games", "group": "Nintendo 64", "match": ["*.z64", "*.n64", "*.v64", "*.zip"] }] },
+    { "id": "gb", "scan": [{ "id": "gb", "dir": "~/Games/gb", "tab": "Games", "group": "Game Boy", "match": ["*.gb", "*.gbc", "*.zip"] }] },
+    { "id": "gba", "scan": [{ "id": "gba", "dir": "~/Games/gba", "tab": "Games", "group": "Game Boy Advance", "match": ["*.gba", "*.zip"] }] },
+    { "id": "nds", "scan": [{ "id": "nds", "dir": "~/Games/nds", "tab": "Games", "group": "Nintendo DS", "match": ["*.nds", "*.zip"] }] },
+    { "id": "md", "scan": [{ "id": "md", "dir": "~/Games/md", "tab": "Games", "group": "Mega Drive", "match": ["*.md", "*.gen", "*.bin", "*.zip"] }] },
+    { "id": "psx", "scan": [{ "id": "psx", "dir": "~/Games/psx", "tab": "Games", "group": "PlayStation",
       "match": ["*.m3u", "*.chd", "*.cue", "*/*.m3u", "*/*.chd", "*/*.cue"] }] },
-    { "name": "Dreamcast", "scan": [{ "id": "dc", "dir": "~/Games/dc", "tab": "Games", "group": "Dreamcast", "match": ["*.chd", "*.gdi", "*.cdi", "*/*.gdi"] }] },
-    { "name": "Video", "scan": [
+    { "id": "dc", "scan": [{ "id": "dc", "dir": "~/Games/dc", "tab": "Games", "group": "Dreamcast", "match": ["*.chd", "*.gdi", "*.cdi", "*/*.gdi"] }] },
+    { "id": "video", "scan": [
       { "id": "films", "dir": "~/Videos/Films", "tab": "Films", "icon": "film", "match": ["*.mkv", "*.mp4", "*.avi", "*.webm", "*/*.mkv", "*/*.mp4", "*/*.avi", "*/*.webm"],
         "metadata": "tmdb:movie" },
       { "id": "tv", "dir": "~/Videos/TV", "tab": "TV", "icon": "tv", "match": ["*/"], "items": ["*.mkv", "*.mp4", "*.avi", "*.webm"], "metadata": "tmdb:tv" }

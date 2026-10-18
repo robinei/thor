@@ -17,8 +17,9 @@ levels: All, the runner, the content.
 
 An ordered list; the first runner whose patterns match a file's name opens it. A runner has:
 
-- `name`: shown as its settings tab's title; its settings are kept by it (renaming one starts its settings
-  afresh).
+- `id`: what its settings, environment and own keymap are kept by, never shown (without one: its name in
+  lowercase, spaces as `-`).
+- `name`: its settings tab's title; it can change without losing the settings.
 - `match`: the file names it opens, one name each (`*.sfc`; any case).
 - `launch`: the command, `{path}` the file.
 - Its settings, keymap and environment (see Settings).
@@ -29,16 +30,17 @@ An ordered list; the first runner whose patterns match a file's name opens it. A
 
 ```json
 "runners": [
-  { "name": "SNES", "scan": [{ "id": "snes", "dir": "~/Games/snes", "tab": "Games", "group": "SNES", "match": ["*.sfc", "*.smc", "*.zip"] }] },
-  { "name": "Video", "scan": [{ "id": "tv", "dir": "~/TV", "tab": "TV", "match": ["*/"], "items": ["*.mkv"], "metadata": "tmdb:tv" }] },
-  { "name": "Text", "match": ["*.txt", "*.md", "*.log"], "launch": ["kate", "{path}"] }
+  { "id": "snes", "scan": [{ "id": "snes", "dir": "~/Games/snes", "tab": "Games", "group": "SNES", "match": ["*.sfc", "*.smc", "*.zip"] }] },
+  { "id": "video", "scan": [{ "id": "tv", "dir": "~/TV", "tab": "TV", "match": ["*/"], "items": ["*.mkv"], "metadata": "tmdb:tv" }] },
+  { "id": "text", "name": "Kate", "match": ["*.txt", "*.md", "*.log"], "launch": ["kate", "{path}"] }
 ]
 ```
 
 ClamShell's own runners come after library.json's, those whose program (and core) is installed: one per
 RetroArch system; Video and Music (mpv); Images (imv); PDF (zathura); Text (`less` in foot); last, Other
-files, `xdg-open` for any name. A runner in library.json named as one of ClamShell's takes what it leaves
-out (patterns, command, metadata) from it and takes its place: `{ "name": "SNES", "scan": [...] }` scans
+files, `xdg-open` for any name. Their ids: `nes`, `snes`, `n64`, `gb`, `gba`, `nds`, `md`, `psx`, `dc`,
+`video`, `music`, `images`, `pdf`, `text`, `other`. A runner in library.json with one of those ids takes
+what it leaves out (name, patterns, command, metadata, keymap) from it and takes its place: `{ "id": "snes", "scan": [...] }` scans
 with ClamShell's SNES. A scan's own patterns (the SNES scan's `*.zip`) find entries in its dir but open
 nothing elsewhere: a `.zip` in the Files tab is Other files'.
 

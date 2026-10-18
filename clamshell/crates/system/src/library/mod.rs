@@ -170,7 +170,7 @@ pub fn load(sources: &Sources) -> Loaded {
     let mut folders: HashMap<(String, String), usize> = HashMap::new();
     let (runners, runner_problems) = runners::in_force(&config.runners);
     problems.extend(runner_problems);
-    let runner_keymaps = runners.iter().filter_map(|r| Some((clamshell_library::runner_key(&r.name), r.keymap.clone()?))).collect();
+    let runner_keymaps = runners.iter().filter_map(|r| Some((clamshell_library::runner_key(&r.id), r.keymap.clone()?))).collect();
     for source in runners.iter().flat_map(runners::Runner::sources) {
         let source = &source;
         let dir = match content::expand_dir(&source.dir, sources.home.as_deref()) {
@@ -186,7 +186,7 @@ pub fn load(sources: &Sources) -> Loaded {
         }
         let first = games.len();
         let entries = content::scan(source, sources.home.as_deref(), &mut games);
-        let runner = clamshell_library::runner_key(&source.runner);
+        let runner = clamshell_library::RunnerOf::new(&source.runner, &source.runner_name);
         for g in games.get_mut(first..).into_iter().flatten() {
             g.runner = Some(runner.clone());
         }

@@ -173,6 +173,9 @@ fn print_library(library: &Library) {
             print_entry(library, i, 1);
         }
     }
+    for problem in &library.problems {
+        println!("problem: {problem}");
+    }
 }
 
 /// An entry, `depth` deep, and a group's entries under it.

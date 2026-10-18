@@ -4,12 +4,12 @@
 //!
 //! ```json
 //! { "runners": [
-//!     { "name": "SNES", "scan": [{ "id": "snes", "dir": "~/Games/snes", "tab": "Games", "icon": "gamepad", "group": "SNES",
+//!     { "id": "snes", "scan": [{ "id": "snes", "dir": "~/Games/snes", "tab": "Games", "icon": "gamepad", "group": "SNES",
 //!       "match": ["*.sfc", "*.smc", "*.zip"] }] },
-//!     { "name": "Video", "scan": [
+//!     { "id": "video", "scan": [
 //!       { "id": "films", "dir": "~/Films", "tab": "Films", "icon": "film", "match": ["*.mkv", "*/*.mkv"], "metadata": "tmdb:movie" },
 //!       { "id": "tv", "dir": "~/TV", "tab": "TV", "icon": "tv", "match": ["*/"], "items": ["*.mkv", "*.mp4"], "metadata": "tmdb:tv" }] },
-//!     { "name": "Text", "match": ["*.txt", "*.md"], "launch": ["kate", "{path}"] }
+//!     { "id": "text", "name": "Kate", "match": ["*.txt", "*.md"], "launch": ["kate", "{path}"] }
 //! ],
 //!   "keys": { "tmdb": "...", "steamgriddb": "..." } }
 //! ```
@@ -173,9 +173,11 @@ impl Rule {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Source {
-    /// The runner's name.
+    /// The runner's id and name.
     #[serde(default)]
     pub runner: String,
+    #[serde(default)]
+    pub runner_name: String,
     pub tab: String,
     /// The folder in the tab its entries go in (`SNES`; `Handhelds/GBA` one in another); none: the tab
     /// itself.

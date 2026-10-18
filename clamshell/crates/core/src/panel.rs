@@ -42,7 +42,7 @@ impl State {
 
     /// The level entry `id` takes its settings from before its own: its runner's, if it has one.
     fn runner_of(&self, id: &str) -> Option<&str> {
-        self.game(id).and_then(|g| g.runner.as_deref())
+        self.game(id).and_then(|g| g.runner.as_ref()).map(|r| &*r.key)
     }
 
     /// The settings entry (or level) `id` runs with: the global ones, its runner's, its own.
@@ -68,9 +68,9 @@ impl State {
         let Some((item, g)) = self.context().and_then(|item| Some((item.clone(), self.game(&item.id)?))) else {
             return [None, None];
         };
-        match (&g.runner, g.runner_name()) {
-            (Some(key), Some(name)) => {
-                let runner = Some((Scope::Runner, Program { id: key.clone(), title: name }));
+        match &g.runner {
+            Some(r) => {
+                let runner = Some((Scope::Runner, Program { id: r.key.clone(), title: &r.name }));
                 let own = (g.browsed.is_none() && !g.is_group()).then_some((Scope::Content, item));
                 [runner, own]
             }
@@ -290,12 +290,12 @@ mod tests {
     fn an_entry_takes_its_runners_settings_not_its_folders() {
         let mut library = clamshell_library::demo_library();
         for g in library.games.iter_mut().filter(|g| g.id.starts_with("tv:")) {
-            g.runner = Some(runner_key("Video"));
+            g.runner = Some(clamshell_library::RunnerOf::new("video", "Video"));
         }
         let mut settings = settings::Settings::default();
-        settings.set(Some(&runner_key("Video")), Setting::FpsCap, Some(30));
+        settings.set(Some(&runner_key("video")), Setting::FpsCap, Some(30));
         settings.set(Some(&"tv:Cosmos".into()), Setting::Power, Some(0));
-        settings.set_env(Some(runner_key("Video")), "MPV=1");
+        settings.set_env(Some(runner_key("video")), "MPV=1");
         let mut s = State::new(Init { library, settings, ..init() });
         let episode: std::sync::Arc<str> = "tv:Cosmos/Season 1/2. One Voice in the Cosmic Fugue.mkv".into();
         let fx = s.launch(episode.clone());
@@ -310,7 +310,7 @@ mod tests {
     fn the_panel_offers_the_items_levels() {
         let mut library = clamshell_library::demo_library();
         for g in library.games.iter_mut().filter(|g| g.id.starts_with("tv:")) {
-            g.runner = Some(runner_key("Video"));
+            g.runner = Some(clamshell_library::RunnerOf::new("video", "Video"));
         }
         let mut s = State::new(Init { library, ..init() });
         let levels = |s: &State| s.setting_levels().into_iter().flatten().map(|(scope, l)| (scope, l.title.to_owned())).collect::<Vec<_>>();
@@ -323,24 +323,24 @@ mod tests {
         assert_eq!(levels(&s), [(Scope::Runner, "Video".to_owned()), (Scope::Content, title.clone())]);
         assert_eq!(s.editing().map(|p| p.title), Some(title.as_str()), "its own by default");
         scope(&mut s, Scope::Runner);
-        assert_eq!(s.editing().map(|p| p.id), Some(runner_key("Video")));
+        assert_eq!(s.editing().map(|p| p.id), Some(runner_key("video")));
         taps(&mut s, Setting::Power, 1);
-        assert_eq!(s.settings().overrides_of("runner:Video").get(Setting::Power), Some(2), "kept by the runner");
+        assert_eq!(s.settings().overrides_of("runner:video").get(Setting::Power), Some(2), "kept by the runner");
         assert_eq!(s.settings_of("tv:Cosmos/Season 2/1. Standing Up in the Milky Way.mkv").get(Setting::Power), 2, "every video's");
     }
 
     #[test]
     fn a_runner_gets_its_keymap_once() {
         let mut library = clamshell_library::demo_library();
-        library.runner_keymaps = vec![(runner_key("Text"), "viewer".into())];
+        library.runner_keymaps = vec![(runner_key("text"), "viewer".into())];
         let mut s = State::new(Init { library, ..init() });
         let fx = s.apply(Event::Start).1;
         assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Keymaps(_)))), "{fx:?}");
-        let own = s.keymaps().own_of("runner:Text").map(|k| k.id);
+        let own = s.keymaps().own_of("runner:text").map(|k| k.id);
         assert!(own.is_some());
-        assert_eq!(s.settings().overrides_of("runner:Text").get(Setting::Keymap), own);
+        assert_eq!(s.settings().overrides_of("runner:text").get(Setting::Keymap), own);
         // Default chosen for it instead: left so, also when the library is read again.
-        s.settings.set(Some(&runner_key("Text")), Setting::Keymap, Some(0));
+        s.settings.set(Some(&runner_key("text")), Setting::Keymap, Some(0));
         let fx = s.apply(Event::Library(Box::new(s.shelf().library().clone()))).1;
         assert!(!fx.iter().any(|e| matches!(e, Effect::Save(Save::Keymaps(_)))));
     }

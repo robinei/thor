@@ -72,7 +72,7 @@ pub use sys::{Status, Sys, TouchpadProblem};
 pub use tab::{Bottom, Tab};
 pub use time::{TimeRow, TimeZones};
 
-pub use clamshell_library::{BrowseKind, Browsed, Collection, Game, Launch, Library, Meta, runner_key};
+pub use clamshell_library::{BrowseKind, Browsed, Collection, Game, Launch, Library, Meta, RunnerOf, runner_key};
 
 /// A game's power profile: how fast CPU and GPU may run (frequency caps; the Thor has no TDP setting).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
