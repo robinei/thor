@@ -50,7 +50,7 @@
     { "type": "dir", "id": "dc", "dir": "~/Games/dc", "place": "@dc", "runner": "dc", "match": ["*.chd", "*.gdi", "*.cdi", "*/*.gdi"], "metadata": "libretro:Sega - Dreamcast" },
     { "type": "dir", "id": "films", "dir": "~/Videos/Films", "place": "@films", "match": ["*.mkv", "*.mp4", "*.avi", "*.webm", "*/*.mkv", "*/*.mp4", "*/*.avi", "*/*.webm"], "metadata": "tmdb:movie" },
     { "type": "dir", "id": "tv", "dir": "~/Videos/TV", "place": "@tv", "match": ["*/"], "items": ["*.mkv", "*.mp4", "*.avi", "*.webm"], "metadata": "tmdb:tv" },
-    { "type": "steam", "place": "@steam" },
+    { "type": "steam", "place": "@steam", "metadata": "steam" },
     { "type": "desktop", "id": "steam", "place": "@apps" },
     { "type": "desktop", "id": "net.lutris.*", "place": "@apps" },
     { "type": "desktop", "id": "*heroicgameslauncher*", "place": "@apps" },

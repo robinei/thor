@@ -35,7 +35,8 @@ Shelf comes from `~/.config/clamshell/library.json`, and nothing is there but wh
   names it opens and its command (`{path}` the file); a `desktop` and a `steam` runner open desktop files
   and Steam's games, by their own commands.
 - `sources`: where entries come from, and where they go: `dir` (a dir scanned: what is an entry, its
-  metadata, the runner that opens its entries if not by their names), `browse` (a dir listed as it is
+  metadata, the runner that opens its entries if not by their names; `on` a removable filesystem, for
+  ROMs on an SD card), `browse` (a dir listed as it is
   opened: the Files tab), `desktop` and `steam` (the installed apps and games: each taken by the first
   source of its type that matches it),
   `removable` (SD cards and USB sticks as they are mounted).

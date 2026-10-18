@@ -48,13 +48,15 @@
 //!   there: `18. Title` (`1–2.` for a double one). Box art: `<name>.jpg` (or .jpeg, .png, .webp) beside a
 //!   file, or `poster`, `cover` or `folder` in a folder (any case: `Cover.jpg`); else the group's, but for
 //!   a video mpv plays (its frame is its picture). A folder's art: its place's picture, else `poster`,
-//!   `cover` or `folder` in the scan's dir.
+//!   `cover` or `folder` in the scan's dir. `on`: the removable filesystem `dir` is in (see [`On`]),
+//!   `dir` then a path in it; the source is away while none matching is mounted.
 //! - `browse`: a dir listed as it is opened, not scanned (no metadata, not in Recent), its own folder at
 //!   its `place` (its last part the folder's title); `trash`: the Trash's `files` dir.
 //! - `desktop`, `steam`: the desktop files' apps and games, Steam's installed games (opened by a runner of
 //!   that type). Each source of the type takes, in order, those left that it matches (see [`Rule`]: by
 //!   id, name, a desktop file's categories; globs, any case; none: all), putting them at its `place`, or
-//!   leaving them out (`hide`); what none takes is left out. A desktop file's id is its name without
+//!   leaving them out (`hide`); what none takes is left out. `runner`: the runner of the type that opens
+//!   them (else the first); `metadata`: `steamgriddb`, a Steam source's `steam`. A desktop file's id is its name without
 //!   `.desktop`, a Steam game's its app id. `{ "type": "desktop", "id": "net.lutris.*", "place": "@apps" }`,
 //!   `{ "type": "desktop", "categories": "Game", "place": "@games" }`, `{ "type": "desktop", "id":
 //!   "*uninstall*", "hide": true }`, `{ "type": "desktop", "place": "@apps" }` (the rest).
@@ -182,17 +184,15 @@ pub struct MountRule {
 impl MountRule {
     /// Whether it matches a filesystem with this label, UUID and type.
     pub fn matches(&self, label: &str, uuid: &str, fs: &str) -> bool {
-        let glob = |pattern: &str, value: &str| pattern::matches(&pattern.to_lowercase(), &value.to_lowercase());
-        self.label.as_deref().is_none_or(|p| glob(p, label))
-            && self.uuid.as_deref().is_none_or(|p| glob(p, uuid))
-            && self.fs.as_deref().is_none_or(|p| glob(p, fs))
+        On { label: self.label.clone(), uuid: self.uuid.clone(), fs: self.fs.clone() }.matches(label, uuid, fs)
     }
 }
 
 /// A desktop or Steam source: the desktop files' entries or Steam's games (those left) matching all of
 /// its `id`, `name` and `categories` (globs, any case; `categories` matches if any of an entry's does;
 /// Steam's games have none; none: all) go at `place` (a tab, or a folder in one: `@games/Launchers`), or
-/// are left out (`hide`).
+/// are left out (`hide`); `runner` (an id; else the first runner of the type) opens them, `metadata`
+/// (`steamgriddb`; a Steam source's `steam`, its store) is where their covers and details come from.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Rule {
@@ -206,6 +206,10 @@ pub struct Rule {
     pub place: Option<String>,
     #[serde(default)]
     pub hide: bool,
+    #[serde(default)]
+    pub runner: Option<String>,
+    #[serde(default)]
+    pub metadata: Option<String>,
 }
 
 impl Rule {
@@ -237,6 +241,32 @@ pub struct Scan {
     pub metadata: Option<String>,
     #[serde(default)]
     pub runner: Option<String>,
+    /// The removable filesystem `dir` is on (the first mounted matching this): then `dir` is a path in it
+    /// (`roms/snes`), and the source is away while none is mounted.
+    #[serde(default)]
+    pub on: Option<On>,
+}
+
+/// A removable filesystem, by its `label`, `uuid` and `fs` (globs, any case; none: any).
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct On {
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub uuid: Option<String>,
+    #[serde(default)]
+    pub fs: Option<String>,
+}
+
+impl On {
+    /// Whether it matches a filesystem with this label, UUID and type.
+    pub fn matches(&self, label: &str, uuid: &str, fs: &str) -> bool {
+        let glob = |pattern: &str, value: &str| pattern::matches(&pattern.to_lowercase(), &value.to_lowercase());
+        self.label.as_deref().is_none_or(|p| glob(p, label))
+            && self.uuid.as_deref().is_none_or(|p| glob(p, uuid))
+            && self.fs.as_deref().is_none_or(|p| glob(p, fs))
+    }
 }
 
 /// How a scanned file opens: its command and its runner, if a runner opens it.

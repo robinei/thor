@@ -71,8 +71,12 @@ pub enum How {
 }
 
 impl How {
-    /// From library.json's `metadata` field: `libretro:<system>`, `tmdb:movie` or `tmdb:tv`.
+    /// From library.json's `metadata` field: `libretro:<system>`, `tmdb:movie`, `tmdb:tv`, `steamgriddb`
+    /// (`steam`, a Steam game's store page, is by its app id: see the library).
     pub fn parse(field: &str) -> Option<How> {
+        if field == "steamgriddb" {
+            return Some(How::SteamGridDb);
+        }
         match field.split_once(':')? {
             ("libretro", system) if !system.is_empty() => Some(How::Libretro(system.to_owned())),
             ("tmdb", kind @ ("movie" | "tv")) => Some(How::Tmdb(kind.to_owned())),

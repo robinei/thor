@@ -1,9 +1,15 @@
-# Runners, places and settings
+# Library: places, runners, sources
 
-Everything shelf starts is content opened by a runner: `Zelda.sfc` by SNES (RetroArch with snes9x),
+Everything shelf starts is an item opened by a runner: `Zelda.sfc` by SNES (RetroArch with snes9x),
 `Alien.mkv` by Video (mpv), `README.md` by Text, Spotify by Desktop (its desktop file's command), Hades by
-Steam. library.json says how things open (runners) and where they show (places); settings come in three
-levels: All, the runner, the item.
+Steam. library.json declares three things, and ClamShell shows nothing it doesn't declare:
+
+- `places`: where things show (tabs, folders in them), their icons and pictures.
+- `runners`: how things open.
+- `sources`: where items come from, and which place they go to.
+
+Settings come in three levels: All, the runner, the item. The format in full, with every field:
+`clamshell/crates/system/src/library/content.rs`; a whole library: `tools/device/library.json`.
 
 | Item | Content | Runner |
 |---|---|---|
@@ -27,7 +33,7 @@ The first runner whose patterns match a file's name opens it. A runner has:
 - `keymap`: a keymap of ClamShell's it comes with; `item_settings` (on unless `false`): whether its items
   have settings of their own.
 
-A runner says nothing about where things are or show: that is the scans' (and the other places', below).
+A runner says nothing about where things are or show: that is the sources' and places' (below).
 
 ```json
 "runners": [
@@ -51,8 +57,9 @@ not. A file that is a scanned entry's opens as that entry.
 Two types of runner find their items themselves, each item with its own command: `"type": "desktop"` the
 desktop files' apps and games (and a `.desktop` file opened from the Files tab, by its `Exec`), `"type":
 "steam"` Steam's installed games (by app id). They take a name, a keymap, `item_settings`, but no command.
-Without one, those items can't be opened. Where their items show is the `desktop` and `steam` sources'
-(below).
+A desktop or Steam source is opened by the runner of its type it names (`runner`), else the first; there
+may be several (one for desktop games, one for apps, each with its own settings). Where their items show is
+the `desktop` and `steam` sources' (below).
 
 ## Places and sources: where things show
 
@@ -73,17 +80,21 @@ folder's id). Nothing has a place or an icon of ClamShell's choosing.
   `libretro:<system>`, `tmdb:movie`, `tmdb:tv`) and, optionally, `runner`: the runner that opens all its
   entries (else each opens by the runner its file's name matches). The SNES scan names SNES, since its
   `*.zip` files would be Other files' by their name; the TV scan names none, its episodes Video's by
-  theirs. Several may fill one place (SNES on the card and on an SD card).
+  theirs. Several may fill one place (SNES on internal storage and on an SD card). `on`: the removable
+  filesystem its `dir` is on (`{ "label": "SD*" }`; `dir` then a path in it, `roms/snes`): while none
+  matching is mounted the source is away (its entries' plays and settings kept), and it comes back when
+  one is (a mount reads the library again).
 - `browse`: a dir listed as it is opened (see files-tab.md), its own folder at its place.
 - `desktop`, `steam`, `removable`: the desktop files' apps and games, Steam's installed games, the
   removable filesystems mounted (browsed). The sources of a type take their entries in turn: each, in
   order, the ones still left that it matches (desktop and Steam by id, name, a desktop file's categories;
   removable by `label`, `uuid`, `fs`; a source matching nothing in particular takes all that are left),
   putting them at its `place` or leaving them out (`hide`). An entry is in one place at most, the first
-  matching source's; what none takes is left out. What used to be ClamShell's choice (games in Games, the
-  rest in Apps) is three sources in the starter library.json: `{ "type": "desktop", "categories":
-  "Emulator", "place": "@apps" }`, `{ "type": "desktop", "categories": "Game", "place": "@games" }`,
-  `{ "type": "desktop", "place": "@apps" }`.
+  matching source's; what none takes is left out. A desktop or Steam source names its `runner` (else the
+  first of its type) and its `metadata` (`steamgriddb`, which needs `keys.steamgriddb`; a Steam source's
+  `steam`, the store; none: nothing fetched). Games in Games and the rest in Apps is three sources in the
+  starter library.json: `{ "type": "desktop", "categories": "Emulator", "place": "@apps" }`,
+  `{ "type": "desktop", "categories": "Game", "place": "@games" }`, `{ "type": "desktop", "place": "@apps" }`.
 
 A source decides nothing about opening: that is the runners'.
 
@@ -138,13 +149,3 @@ it all, windows or not. What gets out is what a program has another manager star
 instance already running elsewhere, Steam's games (in Steam's scope; followed by their windows). A file's
 launch that hands over and ends runs on by its windows (see files-tab.md); Quit closes them, Force kill
 can't reach them. On the Thor nothing in the image starts that way.
-
-## Order of work
-
-1. Runners replace sources: the format, the built-in runners, the Other files catch-all; files opened
-   by the same matching everywhere.
-2. Running items keep their title and picture.
-3. Settings in three levels (folders dropped), the page's tabs named by the runner.
-4. Keymap slots per level; the built-in runners' keymaps.
-5. Actions from runner, content, place and identity.
-6. The image: imv, zathura and its PDF backend.
