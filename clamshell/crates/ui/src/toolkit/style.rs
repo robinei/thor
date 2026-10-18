@@ -28,6 +28,8 @@ pub enum Tone {
     Accent,
     /// Running, on, saving power; and what starts something.
     Go,
+    /// What takes something away (the keyboard's Backspace).
+    Stop,
     /// The keyboard's Fn layer; settings that change how a game looks or plays; what a keymap remaps; and
     /// actions: text that does something when tapped (no fill, no border; white while pressed, and for
     /// the current option of a choice).
@@ -42,6 +44,7 @@ impl Tone {
             Tone::High => 0xc8c8d0,
             Tone::Accent => 0xe0a040,
             Tone::Go => 0x45a866,
+            Tone::Stop => 0xc45a5a,
             Tone::Fn => 0x5f82b8,
         })
     }

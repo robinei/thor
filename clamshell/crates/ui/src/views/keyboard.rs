@@ -1,7 +1,7 @@
 //! The keyboard tab: the PC-style layout from `core`, as black cells without gaps. Each key shows its main
 //! function, with its Shift character small above and its Fn function small below (in blue); the active
 //! layer's function takes the middle, also while a modifier is only held. Modifiers that are on (armed or
-//! held) are amber; Caps Lock has a light in its corner.
+//! held) are amber; Caps Lock has a light in its corner. Backspace is red, Enter amber.
 
 use clamshell_core::Id;
 use clamshell_core::keyboard::{self, Key, KeyPos, Keyboard, LAYOUT, Modifier, Named, Slot};
@@ -114,6 +114,8 @@ fn draw_key(c: &mut Canvas, kb: &Keyboard, slot: &Slot, r: Rect) {
     let face = face(kb, slot);
     let mut tone = match face.main.key {
         Key::Char(_) => Tone::Normal,
+        Key::Named(Named::Backspace) => Tone::Stop,
+        Key::Named(Named::Enter) => Tone::Accent,
         _ if fn_on && slot.fn_key.is_some() => Tone::Fn,
         Key::Mod(Modifier::Fn) => Tone::Fn,
         _ => Tone::Dim,
