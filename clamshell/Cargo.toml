@@ -57,3 +57,8 @@ workspace = true
 
 [profile.release]
 lto = "thin"
+
+# Dependencies optimised in dev and test builds too (built once, then cached): drawing and PNG encoding
+# (tiny-skia, png, fontdue) are most of what the snapshot test and a debug ClamShell spend their time in.
+[profile.dev.package."*"]
+opt-level = 3

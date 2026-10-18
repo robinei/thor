@@ -42,7 +42,10 @@ fn size(screen: Screen) -> (u32, u32) {
 pub enum Error {
     /// A key the scenario presses isn't on the keyboard.
     Keyboard(ParseError),
-    Render(String, clamshell_ui::Error),
+    /// A file couldn't be drawn (why).
+    Render(String, String),
+    /// A group's thread panicked.
+    Panicked,
 }
 
 impl fmt::Display for Error {
@@ -50,6 +53,7 @@ impl fmt::Display for Error {
         match self {
             Error::Keyboard(e) => write!(f, "the scenario's keys: {e}"),
             Error::Render(file, e) => write!(f, "{file}: {e}"),
+            Error::Panicked => write!(f, "a group's drawing panicked"),
         }
     }
 }
@@ -459,26 +463,34 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
 
 /// Draws the scenario into `dir`, each group from a fresh state (`fresh`), each file written as its
 /// shot comes.
-pub fn render(fresh: &dyn Fn() -> State, now: u64, dir: &Path) -> Result<(), Error> {
-    for Group { start, shots } in shots(now)? {
-        let mut state = fresh();
-        state.apply(Event::Tick { unix_secs: now });
-        state.apply(Event::Reading(Reading::Status(demo::STATUS)));
-        for event in start {
+pub fn render(fresh: &(dyn Fn() -> State + Sync), now: u64, dir: &Path) -> Result<(), Error> {
+    // (The groups are independent: each on a thread of its own; within one, shot after shot.)
+    let groups = shots(now)?;
+    let results: Vec<Result<(), Error>> = std::thread::scope(|scope| {
+        let threads: Vec<_> = groups.into_iter().map(|group| scope.spawn(move || render_group(fresh(), group, now, dir))).collect();
+        threads.into_iter().map(|t| t.join().unwrap_or(Err(Error::Panicked))).collect()
+    });
+    results.into_iter().collect()
+}
+
+/// One group's shots, in order, from `state`.
+fn render_group(mut state: State, Group { start, shots }: Group, now: u64, dir: &Path) -> Result<(), Error> {
+    state.apply(Event::Tick { unix_secs: now });
+    state.apply(Event::Reading(Reading::Status(demo::STATUS)));
+    for event in start {
+        state.apply(event);
+    }
+    for Shot { name, screen, before } in shots {
+        for event in before {
             state.apply(event);
         }
-        for Shot { name, screen, before } in shots {
-            for event in before {
-                state.apply(event);
-            }
-            let path = dir.join(name);
-            // What a live frame reports (shelf's rows, the lists' rows) keeps the selections on screen.
-            let events = clamshell_ui::snapshot(&state, screen, size(screen), 1, &path).map_err(|e| Error::Render(path.display().to_string(), e))?;
-            for event in events {
-                state.apply(event);
-            }
-            log::info!("wrote {}", path.display());
+        let path = dir.join(name);
+        // What a live frame reports (shelf's rows, the lists' rows) keeps the selections on screen.
+        let events = clamshell_ui::snapshot(&state, screen, size(screen), 1, &path).map_err(|e| Error::Render(path.display().to_string(), e.to_string()))?;
+        for event in events {
+            state.apply(event);
         }
+        log::info!("wrote {}", path.display());
     }
     Ok(())
 }

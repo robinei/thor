@@ -290,12 +290,11 @@ fn actions(f: &mut Frame, game: &Game, r: Rect, action_h: f32, pad: f32) -> f32 
     let mut y = r.y;
     // (A row as wide as fourteen of the details' text size; Continue's, naming the next video, as the details.)
     let w = r.w.min(action_h / ACTION * 14.0);
-    let shortcut = |key| s.shortcut(key);
-    // (The pad on the actions themselves: no shortcuts on them; A and B said below.)
+    let shortcut = |key| s.button_of(key);
+    // (The pad on the actions themselves: their shortcuts off, faded; A and B said below.)
     let in_actions = s.in_actions();
     for &action in s.actions().as_slice() {
         let key = match action {
-            _ if in_actions => "",
             Action::Open => "A",
             _ if shortcut(Shortcut::Start) == Some(action) => "Start",
             _ if shortcut(Shortcut::Y) == Some(action) => "Y",
@@ -348,7 +347,7 @@ fn actions(f: &mut Frame, game: &Game, r: Rect, action_h: f32, pad: f32) -> f32 
             }
         };
         let row_w = if action == Action::Continue { r.w } else { w };
-        widgets::key_action(f, Id::Shelf(action.id()), Rect::new(r.x, y, row_w, action_h), key, &label, tone);
+        widgets::key_action(f, Id::Shelf(action.id()), Rect::new(r.x, y, row_w, action_h), key, &label, tone, in_actions);
         y += action_h + pad * 0.15;
     }
     if let Some((what, fraction)) = &s.files().busy {

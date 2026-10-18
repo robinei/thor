@@ -109,11 +109,16 @@ impl State {
     }
 
     /// The action a pad button stands for: Start Continue, Y Favourite (else Copy), X Pin (else Paste);
-    /// none while the pad is on the actions themselves.
+    /// none while the pad is on the actions themselves (see [`State::button_of`]).
     pub fn shortcut(&self, key: Shortcut) -> Option<Action> {
         if self.in_actions() {
             return None;
         }
+        self.button_of(key)
+    }
+
+    /// The action pad button `key` is the shortcut of, the pad on the actions or not (their badges).
+    pub fn button_of(&self, key: Shortcut) -> Option<Action> {
         let wanted: &[Action] = match key {
             Shortcut::Y => &[Action::Favourite, Action::File(FileAction::Copy)],
             Shortcut::X => &[Action::Pin, Action::File(FileAction::Paste)],
