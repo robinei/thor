@@ -38,9 +38,9 @@ cat > "$T/config/clamshell/library.json" <<EOF
 { "runners": [
   { "type": "desktop", "name": "Desktop", "match": ["*.desktop"] },
   { "name": "Test", "match": ["test.game"], "launch": ["sh", "-c", "foot --app-id=testgame sleep 300 & sleep 300"],
-    "scan": [{ "id": "test", "dir": "$T/games", "tab": "Test" }] },
+    "scan": [{ "id": "test", "dir": "$T/games", "place": "Test" }] },
   { "name": "Zeta", "match": ["zeta.game"], "launch": ["sh", "-c", "foot --app-id=zetagame sleep 300 & sleep 300"],
-    "scan": [{ "id": "test", "dir": "$T/games", "tab": "Test" }] }
+    "scan": [{ "id": "test", "dir": "$T/games", "place": "Test" }] }
 ] }
 EOF
 touch "$T/games/test.game" "$T/games/zeta.game"

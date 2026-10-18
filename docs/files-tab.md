@@ -8,26 +8,26 @@ listed again whenever it changes while it is open.
 
 ```json
 { "browse": [
-    { "tab": "Files", "icon": "folder", "group": "Home", "dir": "~" },
-    { "tab": "Files", "group": "Root", "dir": "/" },
-    { "tab": "Files", "group": "Trash", "dir": "${XDG_DATA_HOME:-~/.local/share}/Trash/files", "trash": true }
+    { "place": "Files/Home", "dir": "~" },
+    { "place": "Files/Root", "dir": "/" },
+    { "place": "Files/Trash", "dir": "${XDG_DATA_HOME:-~/.local/share}/Trash/files", "trash": true }
   ],
   "removable": [
-    { "label": "SD*", "tab": "Files", "group": "SD card" },
-    { "fs": "vfat", "tab": "Files", "group": "USB/{label}" },
+    { "label": "SD*", "place": "Files/SD card" },
+    { "fs": "vfat", "place": "Files/USB/{label}" },
     { "uuid": "1234-ABCD", "hide": true },
-    { "tab": "Files", "group": "{label}" }
+    { "place": "Files/{label}" }
   ] }
 ```
 
-- `browse`: an entry per dir. `group` is the dir's own folder in `tab` (its last part; `Places/Root` puts
-  it in a folder `Places`). Nothing in it is scanned, fetched or counted beforehand.
-- `dir` (here and in `sources`): `~` and `~/` at the start; `$VAR`, `${VAR}`, `${VAR:-default}` anywhere
+- `browse`: an entry per dir, its own folder at `place` (its last part the folder's title; `Files/Places/Root`
+  puts it in a folder `Places`). Nothing in it is scanned, fetched or counted beforehand.
+- `dir` (here and in scans): `~` and `~/` at the start; `$VAR`, `${VAR}`, `${VAR:-default}` anywhere
   (the default itself expanded). An unset variable without a default skips the entry, shown as a problem.
 - `removable`: rules, as `desktop` and `steam`, for the removable filesystems mounted under `/run/media`
   (udisks2's mounts; udiskie mounts what is put in). Matchers `label`, `uuid`, `fs` (globs, any case); the
-  first rule matching a filesystem puts it in `tab` as the folder `group` (`{label}` in it replaced by its
-  label, else its UUID), or hides it. Without a rule: `Files`, `{label}`. A mount or unmount reads the
+  first rule matching a filesystem puts it at `place` as its folder (`{label}` in it replaced by its label,
+  else its UUID), or hides it. Without a rule: `Files/{label}`. A mount or unmount reads the
   library again, so its folder comes and goes, and sources on it come back.
 - Browsed dirs' folders come after the tab's other folders, in the order library.json and the mounts give
   them.

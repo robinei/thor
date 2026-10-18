@@ -37,24 +37,24 @@ Text (`less`), last Other files (`xdg-open`).
 { "runners": [
     { "type": "desktop", "id": "desktop", "name": "Desktop", "match": ["*.desktop"] },
     { "id": "snes", "name": "SNES", "match": ["*.sfc", "*.smc"], "launch": ["retroarch", "-L", "/usr/lib/libretro/snes9x_libretro.so", "{path}"],
-      "scan": [{ "id": "snes", "dir": "~/Games/snes", "tab": "Games", "icon": "gamepad", "group": "SNES", "match": ["*.sfc", "*.smc", "*.zip"] }] },
+      "scan": [{ "id": "snes", "dir": "~/Games/snes", "place": "Games/SNES", "match": ["*.sfc", "*.smc", "*.zip"] }] },
     { "id": "video", "name": "Video", "match": ["*.mkv", "*.mp4"], "launch": ["mpv", "{path}"],
-      "scan": [{ "id": "tv", "dir": "~/TV", "tab": "TV", "icon": "tv", "match": ["*/"], "items": ["*.mkv", "*.mp4"], "metadata": "tmdb:tv" }] }
+      "scan": [{ "id": "tv", "dir": "~/TV", "place": "TV", "match": ["*/"], "items": ["*.mkv", "*.mp4"], "metadata": "tmdb:tv" }] }
 ] }
 ```
 
 A scan's `match` (paths in its dir, a part per folder level: `*/*.cue`) says what is an entry, else the
 runner's patterns; `items` makes each matched folder a group that opens in shelf (a series, its seasons,
-their episodes); `group` puts its entries in a folder of the tab (`"SNES"`, or `"Handhelds/GBA"` for one in
-another). A file opened from the Files tab opens by the first runner whose patterns match its name. The
+their episodes); `place` is where its entries go: a tab, or a folder in one (`"Games/SNES"`,
+`"Games/Handhelds/GBA"`). `tabs` lists the tabs' order and icons (`{ "name": "Games", "icon": "gamepad" }`). A file opened from the Files tab opens by the first runner whose patterns match its name. The
 design: `docs/runners.md`.
 
 Desktop files' apps and games go in Games (`Categories=Game`) or Apps unless `desktop` rules say otherwise:
 the first rule matching an entry's desktop id, name or categories (globs, any case) puts it in a tab or
-hides it (`group` puts it in a folder of the tab, as a scan's does), e.g.
-`{ "id": "net.lutris.*", "tab": "Games", "group": "Launchers" }`, `{ "name": "*Uninstall*", "hide": true }`. Steam's installed games go
+hides it (its `place`, as a scan's), e.g.
+`{ "id": "net.lutris.*", "place": "Games/Launchers" }`, `{ "name": "*Uninstall*", "hide": true }`. Steam's installed games go
 in Games unless `steam` rules say otherwise, matched by name or app id (`id`) the same way:
-`"steam": [{ "name": "Dark Souls*", "group": "Steam/Souls" }, { "group": "Steam" }]`. In every list,
+`"steam": [{ "name": "Dark Souls*", "place": "Games/Steam/Souls" }, { "place": "Games/Steam" }]`. In every list,
 folders come first.
 The rules (ids, titles, art, icons): `crates/system/src/library/content.rs`.
 

@@ -27,7 +27,7 @@ The first runner whose patterns match a file's name opens it. A runner has:
 - `keymap`: a keymap of ClamShell's it comes with; `item_settings` (on unless `false`): whether its items
   have settings of their own.
 - `scan`, optionally: dirs whose matching entries go in the library, each with an `id` (entries' ids
-  are `<id>:<path in dir>`), `dir`, `tab`, `group`, `icon` (the tab's), its own `match` and `items` for
+  are `<id>:<path in dir>`), `dir`, `place` (a tab, or a folder in one: `Games/SNES`), its own `match` and `items` for
   the dir's layout (else the runner's patterns) and `metadata` (else the runner's). One runner may scan
   several dirs (Video: films and series).
 
@@ -37,7 +37,7 @@ The first runner whose patterns match a file's name opens it. A runner has:
   { "type": "steam", "id": "steam", "name": "Steam" },
   { "id": "snes", "name": "SNES", "match": ["*.sfc", "*.smc"], "launch": ["retroarch", "-f", "-L", "/usr/lib/libretro/snes9x_libretro.so", "{path}"],
     "metadata": "libretro:Nintendo - Super Nintendo Entertainment System",
-    "scan": [{ "id": "snes", "dir": "~/Games/snes", "tab": "Games", "group": "SNES", "match": ["*.sfc", "*.smc", "*.zip"] }] },
+    "scan": [{ "id": "snes", "dir": "~/Games/snes", "place": "Games/SNES", "match": ["*.sfc", "*.smc", "*.zip"] }] },
   { "id": "text", "name": "Text", "match": ["*.txt", "*.md"], "launch": ["foot", "less", "{path}"], "keymap": "viewer" },
   { "id": "other", "name": "Other files", "match": ["*"], "launch": ["xdg-open", "{path}"] }
 ]

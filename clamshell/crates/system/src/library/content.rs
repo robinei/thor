@@ -7,10 +7,10 @@
 //!     { "type": "desktop", "id": "desktop", "name": "Desktop", "match": ["*.desktop"] },
 //!     { "type": "steam", "id": "steam", "name": "Steam" },
 //!     { "id": "snes", "name": "SNES", "match": ["*.sfc", "*.smc"], "launch": ["retroarch", "-L", "/usr/lib/libretro/snes9x_libretro.so", "{path}"],
-//!       "scan": [{ "id": "snes", "dir": "~/Games/snes", "tab": "Games", "icon": "gamepad", "group": "SNES", "match": ["*.sfc", "*.zip"] }] },
+//!       "scan": [{ "id": "snes", "dir": "~/Games/snes", "place": "Games/SNES", "match": ["*.sfc", "*.zip"] }] },
 //!     { "id": "video", "name": "Video", "match": ["*.mkv"], "launch": ["mpv", "{path}"], "scan": [
-//!       { "id": "films", "dir": "~/Films", "tab": "Films", "icon": "film", "match": ["*.mkv", "*/*.mkv"], "metadata": "tmdb:movie" },
-//!       { "id": "tv", "dir": "~/TV", "tab": "TV", "icon": "tv", "match": ["*/"], "items": ["*.mkv", "*.mp4"], "metadata": "tmdb:tv" }] },
+//!       { "id": "films", "dir": "~/Films", "place": "Films", "match": ["*.mkv", "*/*.mkv"], "metadata": "tmdb:movie" },
+//!       { "id": "tv", "dir": "~/TV", "place": "TV", "match": ["*/"], "items": ["*.mkv", "*.mp4"], "metadata": "tmdb:tv" }] },
 //!     { "id": "other", "name": "Other files", "match": ["*"], "launch": ["xdg-open", "{path}"] }
 //! ],
 //!   "keys": { "tmdb": "...", "steamgriddb": "..." } }
@@ -31,30 +31,31 @@
 //! - Box art: `<name>.jpg` (or .jpeg, .png, .webp) beside a file, or `poster`, `cover` or `folder` in a
 //!   folder (any case: `Cover.jpg`); else the group's, but for a video mpv plays (its frame is its
 //!   picture).
-//! - `icon`: the tab's icon; scans in the same tab need it once.
-//! - `group`: a folder in the tab for the scan's entries (`SNES`, or `Handhelds/GBA` for one in
-//!   another), so one tab can hold folders of different runners; scans naming the same folder share it.
-//!   The folder's art: `poster`, `cover` or `folder` in the scan's dir.
+//! - `place`: where its entries go, a tab, or a folder in one (`Games/SNES`, `Games/Handhelds/GBA`: see
+//!   [`place`]), so one tab can hold folders of different runners; scans (and rules) naming the same folder
+//!   share it. The folder's art: `poster`, `cover` or `folder` in the scan's dir.
 //! - `metadata`: where to fetch covers, screenshots and the rest for its entries (`libretro:<system>`,
 //!   `tmdb:movie`, `tmdb:tv`; else the runner's); `keys`: the services' keys (see [`crate::meta`]).
 //!
 //! The rest:
+//! - `tabs`: the tabs' order and icons (`{ "name": "Games", "icon": "gamepad" }`); tabs not listed come
+//!   after, as first named, without an icon (Games and Apps with theirs).
 //! - `desktop`, `steam`: rules (see [`Rule`]) for the desktop files' apps and games, and for Steam's
-//!   installed games (there with a runner of type `desktop`, `steam`): the first one matching an entry (by its id, its name, and a desktop file's
-//!   categories: globs, any case) puts it in a tab (`group`: in a folder of it), or hides it; a rule
+//!   installed games (there with a runner of type `desktop`, `steam`): the first one matching an entry (by
+//!   its id, its name, and a desktop file's categories: globs, any case) puts it at its `place`, or hides it; a rule
 //!   matching nothing in particular takes the rest. Without one, a desktop file's game (`Categories=Game`,
 //!   not `Emulator`) goes in Games, its app in Apps; a Steam game in Games. A desktop file's id is its
-//!   name without `.desktop`, a Steam game's its app id. `{ "name": "Battle.net", "tab": "Apps" }`,
-//!   `{ "id": "net.lutris.*", "tab": "Games", "group": "Launchers" }`, `{ "id": "*uninstall*", "hide": true }`;
-//!   for Steam `{ "name": "Dark Souls*", "group": "Steam/Souls" }`, `{ "group": "Steam" }`.
-//! - `browse`: dirs listed as they are opened, not scanned (no metadata, not in Recent), each the folder
-//!   `group` (its last part) in `tab`; their files open by the runners; `trash`: the Trash's `files`
-//!   dir. `{ "tab": "Files", "group": "Home", "dir": "~" }`, `{ "tab": "Files", "group": "Trash", "dir":
+//!   name without `.desktop`, a Steam game's its app id. `{ "name": "Battle.net", "place": "Apps" }`,
+//!   `{ "id": "net.lutris.*", "place": "Games/Launchers" }`, `{ "id": "*uninstall*", "hide": true }`; for
+//!   Steam `{ "name": "Dark Souls*", "place": "Games/Steam/Souls" }`, `{ "place": "Games/Steam" }`.
+//! - `browse`: dirs listed as they are opened, not scanned (no metadata, not in Recent), each its own
+//!   folder at its `place` (its last part the folder's title); their files open by the runners; `trash`:
+//!   the Trash's `files` dir. `{ "place": "Files/Home", "dir": "~" }`, `{ "place": "Files/Trash", "dir":
 //!   "${XDG_DATA_HOME:-~/.local/share}/Trash/files", "trash": true }`.
 //! - `removable`: rules for the removable filesystems mounted (udisks2's, under `/run/media/$USER`),
 //!   browsed as `browse`'s dirs: the first matching one (by `label`, `uuid`, `fs`: globs, any case) puts
-//!   one in `tab` as the folder `group` (`{label}` in it its label, else its UUID), or hides it; without
-//!   one, Files, `{label}`. `{ "label": "SD*", "tab": "Files", "group": "SD card" }`.
+//!   one at its `place` as its folder (`{label}` in it its label, else its UUID), or hides it; without one,
+//!   `Files/{label}`. `{ "label": "SD*", "place": "Files/SD card" }`.
 //!
 //! `~` and `~/` at the start of `dir` or of a launch argument is the home dir; in `dir`, `$VAR`, `${VAR}`
 //! and `${VAR:-default}` are environment variables (`${XDG_DATA_HOME:-~/.local/share}/roms`). A scan whose
@@ -72,12 +73,15 @@ use serde::Deserialize;
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
+    /// The tabs' icons and order (those not listed after, without an icon; Games and Apps with theirs).
+    #[serde(default)]
+    pub tabs: Vec<Tab>,
     #[serde(default)]
     pub runners: Vec<super::runners::Runner>,
     #[serde(default)]
     pub keys: crate::meta::Keys,
     /// Where the desktop files' apps and games go (the first rule matching one; without one, Games for a
-    /// game, Apps for the rest).
+    /// game, Apps for the rest: see [`place`]).
     #[serde(default)]
     pub desktop: Vec<Rule>,
     /// Where Steam's installed games go (the first rule matching one; without one, Games).
@@ -86,29 +90,35 @@ pub struct Config {
     /// Dirs browsed (listed as they are opened) rather than scanned.
     #[serde(default)]
     pub browse: Vec<BrowseRoot>,
-    /// Where mounted removable filesystems go (the first rule matching one; without one, Files, a folder
-    /// named by its label).
+    /// Where mounted removable filesystems go (the first rule matching one; without one, `Files/{label}`).
     #[serde(default)]
     pub removable: Vec<MountRule>,
 }
 
-/// A dir browsed: a folder `group` in `tab` (its last part the dir's own folder: `Home`, `Places/Root`),
-/// listed when it is opened; `trash`: it is the Trash's `files` dir (its entries restored, deleted).
+/// A tab: its name and its icon's (the UI's: `gamepad`, `film`, ...).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Tab {
+    pub name: String,
+    #[serde(default)]
+    pub icon: Option<String>,
+}
+
+/// A dir browsed: its own folder at `place` (its last part the folder's title: `Files/Home`,
+/// `Files/Places/Root`), listed when it is opened; `trash`: it is the Trash's `files` dir (its entries
+/// restored, deleted).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BrowseRoot {
-    pub tab: String,
-    pub group: String,
-    #[serde(default)]
-    pub icon: Option<String>,
+    pub place: String,
     pub dir: String,
     #[serde(default)]
     pub trash: bool,
 }
 
 /// A rule for mounted removable filesystems: those matching all of its `label`, `uuid` and `fs` (globs,
-/// any case) go in `tab` (with `icon`) as the folder `group` (`{label}` in it their label, or their UUID
-/// without one), or are left out (`hide`).
+/// any case) go at `place` as their folder (its last part the folder's title; `{label}` in it their label,
+/// or their UUID without one), or are left out (`hide`).
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MountRule {
@@ -119,11 +129,7 @@ pub struct MountRule {
     #[serde(default)]
     pub fs: Option<String>,
     #[serde(default)]
-    pub tab: Option<String>,
-    #[serde(default)]
-    pub group: Option<String>,
-    #[serde(default)]
-    pub icon: Option<String>,
+    pub place: Option<String>,
     #[serde(default)]
     pub hide: bool,
 }
@@ -140,7 +146,7 @@ impl MountRule {
 
 /// A rule for desktop files' entries or Steam's games: those matching all of its `id`, `name` and
 /// `categories` (globs, any case; `categories` matches if any of an entry's does; Steam's games have
-/// none) go in `tab` (with `icon`; in its folder `group`, if given), or are left out (`hide`).
+/// none) go at `place` (a tab, or a folder in one: `Games/Launchers`), or are left out (`hide`).
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Rule {
@@ -151,12 +157,7 @@ pub struct Rule {
     #[serde(default)]
     pub categories: Option<String>,
     #[serde(default)]
-    pub tab: Option<String>,
-    /// A folder in the tab (as a source's `group`: `Launchers`, `Tools/Wine`).
-    #[serde(default)]
-    pub group: Option<String>,
-    #[serde(default)]
-    pub icon: Option<String>,
+    pub place: Option<String>,
     #[serde(default)]
     pub hide: bool,
 }
@@ -180,13 +181,8 @@ pub struct Source {
     pub runner: String,
     #[serde(default)]
     pub runner_name: String,
-    pub tab: String,
-    /// The folder in the tab its entries go in (`SNES`; `Handhelds/GBA` one in another); none: the tab
-    /// itself.
-    #[serde(default)]
-    pub group: Option<String>,
-    #[serde(default)]
-    pub icon: Option<String>,
+    /// Where its entries go: a tab (`Games`), or a folder in one (`Games/SNES`, `Games/Handhelds/GBA`).
+    pub place: String,
     pub id: String,
     pub dir: String,
     #[serde(rename = "match")]
@@ -196,6 +192,16 @@ pub struct Source {
     pub launch: Vec<String>,
     #[serde(default)]
     pub metadata: Option<String>,
+}
+
+/// A place's tab and the path of folders in it (none: the tab's top): `Games/Handhelds/GBA` is Games and
+/// `Handhelds/GBA`; slashes at its ends and spaces around its parts don't count.
+pub fn place(place: &str) -> (&str, &str) {
+    let place = place.trim().trim_matches('/');
+    match place.split_once('/') {
+        Some((tab, path)) => (tab.trim(), path.trim().trim_matches('/')),
+        None => (place, ""),
+    }
 }
 
 /// The config at `file`; none if it is missing, or if it doesn't parse (then what is wrong with it).
@@ -597,7 +603,7 @@ mod tests {
             &root,
             &["Zelda.sfc", "Zelda.png", "Mario.smc", "notes.txt", ".hidden.sfc", "FF7/FF7.m3u", "FF7/FF7 (Disc 1).cue", "FF7/cover.jpg", "Empty/readme"],
         );
-        let s = source(r#"{ "tab": "Games", "id": "g", "dir": "~/x", "match": ["*.sfc", "*.smc", "*/*.m3u", "*/*.cue"], "launch": ["emu", "{path}"] }"#);
+        let s = source(r#"{ "place": "Games", "id": "g", "dir": "~/x", "match": ["*.sfc", "*.smc", "*/*.m3u", "*/*.cue"], "launch": ["emu", "{path}"] }"#);
         let mut games = Vec::new();
         let s = Source { dir: root.to_string_lossy().into_owned(), ..s };
         let tops = scan(&s, None, &mut games);
@@ -626,7 +632,7 @@ mod tests {
                 "Film/Film.mkv",
             ],
         );
-        let s = source(r#"{ "tab": "TV", "id": "tv", "dir": "", "match": ["*/"], "items": ["*.mkv"], "launch": ["mpv", "{path}"] }"#);
+        let s = source(r#"{ "place": "TV", "id": "tv", "dir": "", "match": ["*/"], "items": ["*.mkv"], "launch": ["mpv", "{path}"] }"#);
         let s = Source { dir: root.to_string_lossy().into_owned(), ..s };
         let mut games = Vec::new();
         let tops = scan(&s, None, &mut games);
@@ -661,7 +667,7 @@ mod tests {
         touch(&root, &["Show/Cover.jpg", "Show/Season 1/017 S01E18 Part (Part 1).mkv", "Show/Season 1/S01E02 Two.mkv", "Show/Specials/001 S00E01 Pilot.mkv"]);
         let s = Source {
             dir: root.to_string_lossy().into_owned(),
-            ..source(r#"{ "tab": "TV", "id": "tv", "dir": "", "match": ["*/"], "items": ["*.mkv"], "launch": ["mpv", "{path}"] }"#)
+            ..source(r#"{ "place": "TV", "id": "tv", "dir": "", "match": ["*/"], "items": ["*.mkv"], "launch": ["mpv", "{path}"] }"#)
         };
         let mut games = Vec::new();
         let tops = scan(&s, None, &mut games);
@@ -692,13 +698,20 @@ mod tests {
     #[test]
     fn a_config_that_doesnt_parse_is_none() {
         let file = std::env::temp_dir().join(format!("clamshell-library-{}.json", std::process::id()));
-        fs::write(&file, r#"{ "runners": [ { "name": "Games", "scan": [{ "tab": "Games" }] } ] }"#).unwrap();
+        fs::write(&file, r#"{ "runners": [ { "name": "Games", "scan": [{ "place": "Games" }] } ] }"#).unwrap();
         let (config, problem) = read_config(&file);
         assert!(config.runners.is_empty());
         assert!(problem.is_some_and(|p| p.starts_with("library.json: missing field")), "said");
         let _ = fs::remove_file(&file);
         assert_eq!(expand("~/Games", Some(Path::new("/h"))), PathBuf::from("/h/Games"));
         assert_eq!(expand("~", Some(Path::new("/h"))), PathBuf::from("/h"));
+    }
+
+    #[test]
+    fn a_place_is_a_tab_and_a_path_in_it() {
+        assert_eq!(place("Games/Handhelds/GBA"), ("Games", "Handhelds/GBA"));
+        assert_eq!(place(" /Games/ "), ("Games", ""));
+        assert_eq!(place("Files/ Home /"), ("Files", "Home"));
     }
 
     #[test]

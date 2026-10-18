@@ -60,7 +60,7 @@ pub enum Kind {
 }
 
 /// A dir a runner's entries are found in (see [`super::content`] for how): `id` names them (`<id>:<path
-/// in dir>`), `tab` and `group` say where they show; `match` (paths in `dir`, a part per folder level:
+/// in dir>`), `place` says where they show (a tab, or a folder in one: `Games/SNES`); `match` (paths in `dir`, a part per folder level:
 /// `*/*.cue`) and `items` (a matched folder's own entries) say what is an entry (else the runner's
 /// patterns).
 #[derive(Debug, Clone, Deserialize)]
@@ -68,12 +68,7 @@ pub enum Kind {
 pub struct Scan {
     pub id: String,
     pub dir: String,
-    pub tab: String,
-    #[serde(default)]
-    pub group: Option<String>,
-    /// The tab's icon.
-    #[serde(default)]
-    pub icon: Option<String>,
+    pub place: String,
     #[serde(default, rename = "match")]
     pub patterns: Vec<String>,
     #[serde(default)]
@@ -90,9 +85,7 @@ impl Runner {
             .map(|s| Source {
                 runner: self.id.clone(),
                 runner_name: self.name.clone(),
-                tab: s.tab.clone(),
-                group: s.group.clone(),
-                icon: s.icon.clone(),
+                place: s.place.clone(),
                 id: s.id.clone(),
                 dir: s.dir.clone(),
                 patterns: if s.patterns.is_empty() { self.patterns.clone() } else { s.patterns.clone() },
@@ -166,7 +159,7 @@ mod tests {
     fn runners_are_library_jsons_checked() {
         let config: Vec<Runner> = serde_json::from_str(
             r#"[{ "id": "snes", "name": "SNES", "match": ["*.sfc"], "launch": ["retroarch", "{path}"],
-                  "scan": [{ "id": "snes", "dir": "~/snes", "tab": "Games", "group": "SNES", "match": ["*.zip", "*.sfc"], "metadata": "libretro:x" }] },
+                  "scan": [{ "id": "snes", "dir": "~/snes", "place": "Games/SNES", "match": ["*.zip", "*.sfc"], "metadata": "libretro:x" }] },
                 { "name": "Text Viewer", "match": ["*.txt"], "launch": ["kate", "{path}"] },
                 { "type": "desktop", "id": "desktop", "name": "Apps", "match": ["*.desktop"] },
                 { "name": "Broken" },

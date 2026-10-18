@@ -261,7 +261,7 @@ LIBRARY = f"""{{ "runners": [
   {{ "type": "desktop", "name": "Desktop", "match": ["*.desktop"] }},
   {{ "name": "Test game", "match": ["*.game"],
     "launch": ["mpv", "--idle", "--force-window", "--vo=wlshm", "--no-terminal", "--wayland-app-id=testgame"],
-    "scan": [{{ "id": "test", "dir": "{CHECKS_DIR}/games", "tab": "Test" }}] }}
+    "scan": [{{ "id": "test", "dir": "{CHECKS_DIR}/games", "place": "Test" }}] }}
 ] }}
 """
 
