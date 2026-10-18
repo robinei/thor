@@ -7,11 +7,11 @@
 //! a slide (held there briefly, or moved sideways): the slider comes up under it and follows it. A finger
 //! on a level row sets it where it is, and follows it. A finger on a scrolled list that moves up or down
 //! past [`DRAG_START`] drags the list instead (the row under it is let go without a tap); let go while
-//! moving, the list flings on, slowing down, until it stops or reaches an end. A finger on a key that
-//! moves past [`POINT_START`] points (see clamshell-core's `keyboard`): it and the other fingers tapping
-//! keys are let go without typing and become the touchpad's, as are fingers that come down on keys while
-//! it points, until none has been on it for [`POINT_IDLE`]. Positions are in the surface's logical
-//! pixels; the target's track says what they mean.
+//! moving, the list flings on, slowing down, until it stops or reaches an end. Last, a finger that would
+//! still tap on the second screen ([`points`]) and moves past [`POINT_START`] points (see clamshell-core's
+//! `touch`): it and the other fingers tapping there are let go without a tap and become the touchpad's,
+//! as are fingers that come down there while it points, until none has been on it for [`POINT_IDLE`].
+//! Positions are in the surface's logical pixels; the target's track says what they mean.
 
 use std::time::{Duration, Instant};
 
@@ -55,6 +55,12 @@ pub(crate) enum Timer {
     Fling,
     /// The keyboard's pointing goes idle (see [`POINT_IDLE`]).
     Pointing,
+}
+
+/// Whether a finger on `id` may point: on the second screen below the bar (not shelf's, on the main
+/// screen, where a finger is where it means; not the bar's, nor the dark screen's).
+pub(crate) fn points(id: &Id) -> bool {
+    !matches!(id, Id::Shelf(_) | Id::Tab(_) | Id::Control(_) | Id::PadMouse | Id::BottomWindows | Id::Wake)
 }
 
 /// What the caller does.
@@ -115,9 +121,9 @@ impl Press {
         Press { id, gesture, down: at, at, list, trail: Trail::new(now, at.1) }
     }
 
-    /// A key tapped, not held: it may still point.
-    fn may_point(&self) -> bool {
-        self.gesture == Gesture::Tap && matches!(self.id, Id::Key(_))
+    /// A finger that would still tap where pointing is: it may point.
+    fn may_point(&self, source: Source) -> bool {
+        matches!(source, Source::Touch(_)) && self.gesture == Gesture::Tap && points(&self.id)
     }
 }
 
@@ -206,7 +212,7 @@ impl Input {
     /// touchpad where it is.
     fn start_pointing(&mut self) -> Vec<Action> {
         let mut actions: Vec<Action> = self.idle.take().map(|s| Action::Disarm(s, Timer::Pointing)).into_iter().collect();
-        for (source, press) in self.presses.iter_mut().filter(|(_, p)| p.may_point()) {
+        for (source, press) in self.presses.iter_mut().filter(|(s, p)| p.may_point(*s)) {
             press.gesture = Gesture::Pointing;
             actions.push(Action::Disarm(*source, Timer::Hold));
             actions.push(Action::Emit(PointerEvent::Up(press.id.clone()).into()));
@@ -237,9 +243,6 @@ impl Input {
         };
         press.trail.follow(now, y);
         press.at = (x, y);
-        if press.may_point() && (x - press.down.0).hypot(y - press.down.1) >= POINT_START {
-            return self.start_pointing();
-        }
         if let (Gesture::Tap, Some(list)) = (press.gesture, press.list)
             && (y - press.down.1).abs() >= DRAG_START
         {
@@ -250,6 +253,10 @@ impl Input {
                 Action::Emit(PointerEvent::Up(press.id.clone()).into()),
                 Action::Emit(ListEvent::Scroll(list.list, rows).into()),
             ];
+        }
+        // (Last: what moves of its own took the motion first.)
+        if press.may_point(source) && (x - press.down.0).hypot(y - press.down.1) >= POINT_START {
+            return self.start_pointing();
         }
         match &mut press.gesture {
             Gesture::Dragging { list, y: last } => {
@@ -698,5 +705,34 @@ mod tests {
         let up = input.up(b, End::Release, &state, t0());
         assert!(up.contains(&Action::Arm(b, Timer::Pointing, POINT_IDLE)));
         assert_eq!(events(&input.timer(b, Timer::Pointing, &state, t0())), vec![Pointing::Idle.into()], "idle: typing is back");
+    }
+
+    #[test]
+    fn on_a_list_up_and_down_scrolls_and_only_sideways_points() {
+        let state = networks(20);
+        let mut input = Input::default();
+        let (t, finger) = (t0(), Source::Touch(1));
+        let wifi = row(ListId::Wifi, 2);
+        // Diagonal: the list takes it (12 up) before pointing could (24 along).
+        input.touch(finger, &wifi, (5.0, 300.0), t);
+        let moved = input.moved(finger, (5.0 + 20.0, 300.0 - DRAG_START), t);
+        assert!(points(&moved).is_empty() && events(&moved).iter().any(|e| matches!(e, Event::List(ListEvent::Scroll(..)))), "{moved:?}");
+        assert!(points(&input.moved(finger, (5.0 + 60.0, 300.0 - DRAG_START), t)).is_empty(), "dragging: a list's");
+        input.up(finger, End::Release, &state, t);
+        // Sideways: it points.
+        input.touch(finger, &wifi, (5.0, 300.0), t);
+        let moved = input.moved(finger, (5.0 + POINT_START, 300.0 - DRAG_START + 1.0), t);
+        assert_eq!(points(&moved), vec![(finger, ContactPhase::Down)]);
+        input.up(finger, End::Release, &state, t);
+        // Nowhere on shelf (the main screen), nor by the mouse.
+        let game = target(Id::Shelf(clamshell_core::ShelfId::Game("g".into())), None);
+        input.touch(Source::Touch(2), &game, (0.0, 0.0), t);
+        assert!(points(&input.moved(Source::Touch(2), (100.0, 0.0), t)).is_empty());
+        input.touch(Source::Mouse, &tab_free(), (0.0, 0.0), t);
+        assert!(points(&input.moved(Source::Mouse, (100.0, 0.0), t)).is_empty());
+    }
+
+    fn tab_free() -> Target {
+        target(Id::Blank, None)
     }
 }

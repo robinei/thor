@@ -102,11 +102,18 @@ pub struct Bottom {
     pub(crate) time_region: Option<u8>,
     /// What a key just did (a level, a screenshot), shown under the bar for a moment.
     pub(crate) notice: Option<crate::hardware::Notice>,
+    /// The area below the bar points (see [`crate::touch`]).
+    pub(crate) pointing: bool,
 }
 
 impl Bottom {
     pub fn tab(&self) -> Tab {
         self.tab
+    }
+
+    /// Whether the area below the bar points (see [`crate::touch`]).
+    pub fn pointing(&self) -> bool {
+        self.pointing
     }
 
     /// The editor open in the tab shown, if any.

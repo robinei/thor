@@ -41,6 +41,9 @@ pub fn top(f: &mut Frame, screen: Rect) {
 
 /// The second screen: the bar, the open tab below it, and the slider over both while one moves; or,
 /// while a game wants it dark, nothing.
+/// How much of the area below the bar the black over it hides while it points.
+const POINTING_FADE: f32 = 0.7;
+
 pub fn bottom(f: &mut Frame, screen: Rect) {
     f.body = screen;
     f.c.fill(screen, BG);
@@ -68,6 +71,10 @@ pub fn bottom(f: &mut Frame, screen: Rect) {
         Tab::Volume => levels::draw_volume(f),
         Tab::Brightness => levels::draw_brightness(f),
         Tab::Time => time::draw(f),
+    }
+    // (Pointing: the area below the bar is a touchpad, what is in it faded.)
+    if f.s.bottom().pointing() {
+        f.c.fill(body, crate::draw::Rgb(0).alpha(POINTING_FADE));
     }
     bar::draw_slider_over(f, screen, body.y);
     f.out.touchpad_area = Some(body);

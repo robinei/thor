@@ -2,8 +2,14 @@
 //! touchpad area is, and which regions stay the UI's (the bar), in the screen's pixels. The UI updates it
 //! with every frame of the second screen; the touchpad thread reads it at each touch-down.
 //!
-//! And the keyboard's pointing (see [`crate::keyboard`]): fingers that moved on the keyboard, as the UI
-//! hands them to the same virtual touchpad.
+//! And pointing: the second screen below the bar is a touchpad too, without touchpad mode. A finger that
+//! would tap (a key, a button, a row, nothing) and moves far enough points instead (what it was on let go
+//! without a tap), handed with the other fingers then tapping to the virtual touchpad, so libinput moves
+//! the pointer, taps to click, scrolls with two fingers. What moves of its own takes the motion first: a
+//! slider sideways, a list up and down (so on a list only a sideways move points), a held key nowhere.
+//! While it points the area below the bar fades, and fingers that come down on it point too, until none
+//! has been on it a moment or a text field takes focus. The UI decides which fingers point (its input
+//! machine); the state keeps whether it points.
 
 use crate::Id;
 
@@ -74,4 +80,24 @@ pub enum ContactPhase {
 pub enum Pointing {
     Contact(Contact),
     Idle,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Effect, Event};
+
+    #[test]
+    fn it_points_until_idle_or_a_text_field_takes_focus() {
+        let mut s = crate::testkit::state();
+        let contact = Contact { slot: 1, phase: ContactPhase::Down, x: 10, y: 20 };
+        let (dirty, fx) = s.apply(Pointing::Contact(contact).into());
+        assert!(s.bottom().pointing() && dirty.bottom);
+        assert_eq!(fx, vec![Effect::Touchpad(contact)]);
+        s.apply(Pointing::Idle.into());
+        assert!(!s.bottom().pointing());
+        s.apply(Pointing::Contact(contact).into());
+        s.apply(Event::TextInput(true));
+        assert!(!s.bottom().pointing(), "a field took focus: typing");
+    }
 }

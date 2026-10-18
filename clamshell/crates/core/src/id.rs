@@ -49,6 +49,9 @@ pub enum Id {
     List(crate::scroll::ListId),
     /// The dark second screen (while a game runs): a tap anywhere lights it.
     Wake,
+    /// The second screen below the bar where there is nothing: a tap does nothing, a finger moving
+    /// points (see [`crate::touch`]).
+    Blank,
     /// The time tab's way back from a region's zones to the regions.
     TimeRegions,
     /// The bar's button for the front program's windows on the bottom screen, hidden by ClamShell's view:

@@ -388,13 +388,13 @@ impl State {
             }
             Event::Pad(_) => (Dirty::NONE, vec![]),
             Event::TextInput(active) => {
-                let (before, pointing) = (self.bottom.tab, self.keyboard.pointing);
+                let (before, pointing) = (self.bottom.tab, self.bottom.pointing);
                 // (A field taking focus: typing is back.)
-                self.keyboard.pointing &= !active;
+                self.bottom.pointing &= !active;
                 let effects = self.text_input(active);
                 let dirty = if self.bottom.tab != before {
                     Dirty::BOTH
-                } else if self.keyboard.pointing != pointing {
+                } else if self.bottom.pointing != pointing {
                     Dirty::BOTTOM
                 } else {
                     Dirty::NONE
@@ -402,18 +402,18 @@ impl State {
                 (dirty, effects)
             }
             Event::Pointing(pointing) => {
-                let before = self.keyboard.pointing;
+                let before = self.bottom.pointing;
                 let effects = match pointing {
                     crate::touch::Pointing::Contact(contact) => {
-                        self.keyboard.pointing = true;
+                        self.bottom.pointing = true;
                         vec![Effect::Touchpad(contact)]
                     }
                     crate::touch::Pointing::Idle => {
-                        self.keyboard.pointing = false;
+                        self.bottom.pointing = false;
                         vec![]
                     }
                 };
-                (if self.keyboard.pointing == before { Dirty::NONE } else { Dirty::BOTTOM }, effects)
+                (if self.bottom.pointing == before { Dirty::NONE } else { Dirty::BOTTOM }, effects)
             }
             // Sleep may have reset what the settings set (frequency caps, cores): again.
             // Sleep may have reset what the settings set (frequency caps, cores): again.
@@ -580,7 +580,7 @@ impl State {
                 };
                 (Dirty::BOTH, self.choose_tab(tab))
             }
-            Id::Control(_) | Id::Level(_) | Id::List(_) => (Dirty::NONE, vec![]),
+            Id::Control(_) | Id::Level(_) | Id::List(_) | Id::Blank => (Dirty::NONE, vec![]),
             Id::Key(pos) => {
                 let stroke = self.keyboard.press(pos, long);
                 // Into the editor while it is open; with shelf in front, to finding an entry; else to the

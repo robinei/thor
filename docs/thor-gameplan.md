@@ -141,8 +141,8 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
 
 - [ ] Screens: both on, right size, orientation and position; layer surface on DSI-1.
 - [ ] Touch: the bottom screen's touch on DSI-1 (sway's `map_to_output`); the Touchpad tab grabs it;
-      two fingers on the bar at once (one sliding, one tapping); on the keyboard tab, a finger sliding
-      over the keys points (the keyboard fades; taps click, two fingers scroll) and typing comes back a
+      two fingers on the bar at once (one sliding, one tapping); below the bar, a finger sliding
+      over anything points (on a list only sideways; it fades; taps click, two fingers scroll) and typing comes back a
       second after (or when a text field takes focus): how it feels, the threshold (`POINT_START`).
 - [ ] Gamepad: evdev events; our virtual pad and pad mouse; per-game keymaps (a key chord, the pointer
       from a stick) and deadzone; the back buttons' key codes (ClamShell takes BTN_TRIGGER_HAPPY1-4 and

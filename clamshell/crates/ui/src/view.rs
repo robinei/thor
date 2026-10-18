@@ -57,6 +57,8 @@ pub(crate) struct View {
     pub(crate) frame_pending: bool,
     /// The last frame: its picture and what can be tapped or focused in it.
     pub(crate) picture: Picture,
+    /// The second screen's area below the bar in the last frame (logical pixels).
+    pub(crate) body: Option<Rect>,
     /// shm buffers, reused once the compositor releases them (two in turn, a third if it holds both).
     buffers: Vec<Buffer>,
     /// A layer surface's place: behind the windows, or over them (see [`View::set_behind`]).
@@ -75,6 +77,7 @@ impl View {
             dirty: true,
             frame_pending: false,
             picture: Picture::default(),
+            body: None,
             buffers: Vec::new(),
             behind: false,
         }
@@ -228,13 +231,6 @@ impl Drawn for Screens<Option<View>> {
 
 /// Tells the touchpad tab's input side where things are, in screen pixels: the area below the bar is
 /// the touchpad; the bar's targets stay taps. No allocation once the region list has grown.
-/// The second screen's size (pixels), for the keyboard's touchpad.
-pub(crate) fn publish_screen(touch: &Mutex<TouchLayout>, screen: (f32, f32)) {
-    if let Ok(mut layout) = touch.lock() {
-        layout.screen = screen;
-    }
-}
-
 pub(crate) fn publish(touch: &Mutex<TouchLayout>, targets: &[Target], area: Rect, origin_x: f32, scale: f32, screen: (f32, f32)) {
     let Ok(mut layout) = touch.lock() else {
         return;

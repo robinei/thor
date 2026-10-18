@@ -1,12 +1,6 @@
 //! The on-screen keyboard: a PC-style layout (US) with an Fn layer, modifiers that a tap arms for the
 //! next key or that act while held (as on a real keyboard, with another finger typing), and Caps Lock.
 //! Keys are identified by their position, so the same key keeps its id on both layers.
-//!
-//! The keyboard is a touchpad too: a finger on a key that moves far enough points instead (the key let go
-//! without typing), handed with the other fingers then on keys to the virtual touchpad, so libinput
-//! moves the pointer, taps to click, scrolls with two fingers. While it points the keyboard fades, and
-//! fingers that come down on it point too, until they have been off it a moment or a text field takes
-//! focus. A held key (repeating, a modifier held long) stays a key wherever it moves.
 
 /// What a key does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -228,8 +222,6 @@ pub struct Keyboard {
     pub logo: Latch,
     pub fn_layer: Latch,
     pub caps: bool,
-    /// The keyboard points (see the module's doc).
-    pub pointing: bool,
 }
 
 impl Keyboard {
@@ -360,22 +352,6 @@ mod tests {
 
     fn tap(kb: &mut Keyboard, key: Key) -> Option<Stroke> {
         kb.press(pos(key), false)
-    }
-
-    #[test]
-    fn the_keyboard_points_until_idle_or_a_text_field_takes_focus() {
-        use crate::touch::{Contact, ContactPhase, Pointing};
-        use crate::{Effect, Event};
-        let mut s = crate::testkit::state();
-        let contact = Contact { slot: 1, phase: ContactPhase::Down, x: 10, y: 20 };
-        let (dirty, fx) = s.apply(Pointing::Contact(contact).into());
-        assert!(s.keyboard().pointing && dirty.bottom);
-        assert_eq!(fx, vec![Effect::Touchpad(contact)]);
-        s.apply(Pointing::Idle.into());
-        assert!(!s.keyboard().pointing);
-        s.apply(Pointing::Contact(contact).into());
-        s.apply(Event::TextInput(true));
-        assert!(!s.keyboard().pointing, "a field took focus: typing");
     }
 
     #[test]

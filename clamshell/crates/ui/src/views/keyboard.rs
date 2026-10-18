@@ -1,12 +1,12 @@
 //! The keyboard tab: the PC-style layout from `core`, as black cells without gaps. Each key shows its main
 //! function, with its Shift character small above and its Fn function small below (in blue); the active
 //! layer's function takes the middle, also while a modifier is only held. Modifiers that are on (armed or
-//! held) are amber; Caps Lock has a light in its corner. While it points (a touchpad), it fades.
+//! held) are amber; Caps Lock has a light in its corner.
 
 use clamshell_core::Id;
 use clamshell_core::keyboard::{self, Key, KeyPos, Keyboard, LAYOUT, Modifier, Named, Slot};
 
-use crate::draw::{Align, Canvas, Rect, Rgb};
+use crate::draw::{Align, Canvas, Rect};
 use crate::icons::Icon;
 use crate::toolkit::Frame;
 use crate::toolkit::style::{Look, Tone};
@@ -31,8 +31,6 @@ const LED_AT: f32 = 0.2;
 const SIDE: f32 = 0.08;
 /// How strongly Caps Lock's glow shows.
 const GLOW_ALPHA: f32 = 0.18;
-/// How much of the keyboard the black over it hides while it points.
-const POINTING_FADE: f32 = 0.7;
 
 /// Each key's position, slot and cell: rows split `body` evenly; each row fills the width, its keys
 /// sharing it by their widths.
@@ -60,9 +58,6 @@ pub(super) fn draw(f: &mut Frame, body: Rect) {
     // The cell is also the tap area: a touch between labels goes to the nearer key.
     for (pos, slot, cell) in cells(body) {
         f.button(Id::Key(pos), cell, Look::KEY, |f| draw_key(f.c, kb, slot, cell));
-    }
-    if kb.pointing {
-        f.c.fill(body, Rgb(0).alpha(POINTING_FADE));
     }
 }
 
