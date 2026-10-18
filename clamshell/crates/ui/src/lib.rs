@@ -239,6 +239,8 @@ struct App {
     input: Input,
     /// The presses' running timers.
     timers: HashMap<(Source, input::Timer), RegistrationToken>,
+    /// The compositor's event times as instants (when a finger moved, not when it was handled).
+    clock: input::EventClock,
     /// Fingers pointing in the touch frame being handled: sent on together once it is.
     contacts: Vec<clamshell_core::touch::Contact>,
     /// Where the pad's focus was on each screen, for View switching back to it.
@@ -283,6 +285,7 @@ impl App {
             input: Input::default(),
             timers: HashMap::new(),
             contacts: Vec::new(),
+            clock: input::EventClock::default(),
             focus_memory: Screens::default(),
             desktop_keys: true,
             text_input: text_input::TextInput::bind(globals, qh),
@@ -449,7 +452,7 @@ impl App {
 
     /// A finger or button comes down at `position` on `surface`: a press on the topmost (last drawn)
     /// target there, so a button on a tile (the dock's "+") wins over the tile.
-    fn press_at(&mut self, source: Source, surface: &WlSurface, (x, y): (f64, f64)) {
+    fn press_at(&mut self, source: Source, surface: &WlSurface, (x, y): (f64, f64), time: u32) {
         let Some(view) = self.view_mut(surface) else {
             return;
         };
@@ -462,7 +465,7 @@ impl App {
         else {
             return;
         };
-        let now = std::time::Instant::now();
+        let now = self.clock.at(time);
         let actions = match source {
             // (While it points, a finger there points too.)
             Source::Touch(_) if self.state.bottom().pointing() && bottom && input::points(&target.id) => {
@@ -484,13 +487,20 @@ impl App {
         }
     }
 
-    fn moved(&mut self, source: Source, (x, y): (f64, f64)) {
-        let actions = self.input.moved(source, (x as f32, y as f32), std::time::Instant::now());
+    /// When an input event with the compositor's `time` happened.
+    fn at(&mut self, time: u32) -> std::time::Instant {
+        self.clock.at(time)
+    }
+
+    fn moved(&mut self, source: Source, (x, y): (f64, f64), time: u32) {
+        let now = self.clock.at(time);
+        let actions = self.input.moved(source, (x as f32, y as f32), now);
         self.run_actions(actions);
     }
 
-    fn up(&mut self, source: Source, end: End) {
-        let actions = self.input.up(source, end, &self.state, std::time::Instant::now());
+    /// A press ends at `now` (a finger's or the mouse's: [`App::at`] its event time).
+    fn up(&mut self, source: Source, end: End, now: std::time::Instant) {
+        let actions = self.input.up(source, end, &self.state, now);
         self.run_actions(actions);
     }
 
@@ -536,7 +546,7 @@ impl App {
         }
         match input {
             PadInput::A(true) => self.press_focus(Source::PadA),
-            PadInput::A(false) => self.up(Source::PadA, End::Release),
+            PadInput::A(false) => self.up(Source::PadA, End::Release, std::time::Instant::now()),
             PadInput::B => self.handle_all(focus::back(&self.state)),
             PadInput::Y | PadInput::X | PadInput::Start => self.handle_all(focus::shortcut(&self.state, &self.views, input)),
             // The Back button: what the screen has for back (the edit screen's other layer).
@@ -587,7 +597,7 @@ impl App {
         }
         match focus::desktop_key(sym) {
             Some(PadInput::A(_)) if down => self.press_focus(Source::Enter),
-            Some(PadInput::A(_)) => self.up(Source::Enter, End::Release),
+            Some(PadInput::A(_)) => self.up(Source::Enter, End::Release, std::time::Instant::now()),
             Some(input) if down => self.pad(input),
             _ => {}
         }

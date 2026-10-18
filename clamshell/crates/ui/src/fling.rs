@@ -23,17 +23,28 @@ const WINDOW: Duration = Duration::from_millis(100);
 const SETTLE_RATE: f32 = 14.0;
 const SETTLED: f32 = 0.01;
 
-/// A finger's last positions along y, newest first.
+/// Positions in a trail are at least this far apart (the newest aside), so a speed is never measured
+/// over a moment: events come in bursts.
+const SAMPLE_EVERY: Duration = Duration::from_millis(10);
+
+/// A finger's last positions along y, newest first, [`SAMPLE_EVERY`] apart.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct Trail([Option<(Instant, f32)>; 4]);
+pub(crate) struct Trail([Option<(Instant, f32)>; 8]);
 
 impl Trail {
     pub fn new(now: Instant, y: f32) -> Trail {
-        Trail([Some((now, y)), None, None, None])
+        let mut trail = Trail([None; 8]);
+        trail.0[0] = Some((now, y));
+        trail
     }
 
+    /// The finger at `y` at `now`: a new position, or (too soon after the one before the newest) the
+    /// newest moved here.
     pub fn follow(&mut self, now: Instant, y: f32) {
-        self.0.rotate_right(1);
+        let soon = self.0[1].is_some_and(|(t, _)| now.duration_since(t) < SAMPLE_EVERY);
+        if !soon {
+            self.0.rotate_right(1);
+        }
         self.0[0] = Some((now, y));
     }
 
@@ -105,5 +116,26 @@ impl Fling {
                 if left.abs() <= SETTLED || !state.list_can_scroll(list, left) { (left, false) } else { (left * (SETTLE_RATE * dt).min(1.0), true) }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_burst_of_positions_is_not_a_speed() {
+        let t = Instant::now();
+        let ms = |n: u64| t + Duration::from_millis(n);
+        // A steady 1000 px/s, then a burst of events handled all at once 1 ms apart (the same motion).
+        let mut trail = Trail::new(t, 0.0);
+        for n in 1..=5 {
+            trail.follow(ms(n * 10), n as f32 * 10.0);
+        }
+        for n in 1..=4 {
+            trail.follow(ms(50 + n), 50.0 + n as f32);
+        }
+        let speed = trail.speed(ms(54));
+        assert!((800.0..1200.0).contains(&speed), "{speed}");
     }
 }

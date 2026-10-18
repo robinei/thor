@@ -169,9 +169,12 @@ impl PointerHandler for App {
     fn pointer_frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_pointer::WlPointer, events: &[PointerEvent]) {
         for event in events {
             match event.kind {
-                PointerEventKind::Press { .. } => self.press_at(Source::Mouse, &event.surface, event.position),
-                PointerEventKind::Motion { .. } => self.moved(Source::Mouse, event.position),
-                PointerEventKind::Release { .. } => self.up(Source::Mouse, End::Release),
+                PointerEventKind::Press { time, .. } => self.press_at(Source::Mouse, &event.surface, event.position, time),
+                PointerEventKind::Motion { time } => self.moved(Source::Mouse, event.position, time),
+                PointerEventKind::Release { time, .. } => {
+                    let now = self.at(time);
+                    self.up(Source::Mouse, End::Release, now);
+                }
                 // The wheel over the main screen scrolls shelf's list, a game per notch; over a list on the
                 // second screen, a row per notch.
                 PointerEventKind::Axis { vertical, .. } => {
@@ -193,16 +196,17 @@ impl PointerHandler for App {
 }
 
 impl TouchHandler for App {
-    fn down(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, _: u32, _: u32, surface: WlSurface, id: i32, position: (f64, f64)) {
-        self.press_at(Source::Touch(id), &surface, position);
+    fn down(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, _: u32, time: u32, surface: WlSurface, id: i32, position: (f64, f64)) {
+        self.press_at(Source::Touch(id), &surface, position, time);
     }
 
-    fn up(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, _: u32, _: u32, id: i32) {
-        self.up(Source::Touch(id), End::Release);
+    fn up(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, _: u32, time: u32, id: i32) {
+        let now = self.at(time);
+        self.up(Source::Touch(id), End::Release, now);
     }
 
-    fn motion(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, _: u32, id: i32, position: (f64, f64)) {
-        self.moved(Source::Touch(id), position);
+    fn motion(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, time: u32, id: i32, position: (f64, f64)) {
+        self.moved(Source::Touch(id), position, time);
     }
 
     fn shape(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, _: i32, _: f64, _: f64) {}

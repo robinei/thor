@@ -44,6 +44,29 @@ pub(crate) const LONG_PRESS: Duration = Duration::from_millis(450);
 /// Key repeat interval while held (25 per second).
 pub(crate) const REPEAT: Duration = Duration::from_millis(40);
 
+/// The compositor's event times (milliseconds, its monotonic clock) as instants: by the earliest base
+/// seen, since an event handled late only looks later. So a batch of events handled at once keeps the
+/// times they happened at (a fling's speed).
+#[derive(Debug, Default)]
+pub(crate) struct EventClock {
+    base: Option<(Instant, u32)>,
+}
+
+impl EventClock {
+    pub fn at(&mut self, ms: u32) -> Instant {
+        let now = Instant::now();
+        if let Some((base, base_ms)) = self.base {
+            let at = base + Duration::from_millis(u64::from(ms.wrapping_sub(base_ms)));
+            if at <= now {
+                return at;
+            }
+        }
+        // (The first, or this one came sooner than the base says: the base was handled late.)
+        self.base = Some((now, ms));
+        now
+    }
+}
+
 /// Where a press comes from: each touch point, the mouse, the pad's A, or Enter (on a desktop).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum Source {
@@ -788,5 +811,15 @@ mod tests {
         input.touch(finger, &tab(), (95.0, 5.0), t);
         input.moved(finger, (100.0 + TOUCH_SLACK - 1.0, 5.0), t);
         assert!(events(&input.up(finger, End::Release, &state, t)).contains(&PointerEvent::Activate(Id::Tab(Tab::Wifi)).into()));
+    }
+
+    #[test]
+    fn event_times_keep_the_spacing_they_happened_with() {
+        let mut clock = EventClock::default();
+        let first = clock.at(1000);
+        // Handled later, all at once: still 8 ms apart.
+        std::thread::sleep(Duration::from_millis(20));
+        let second = clock.at(1008);
+        assert_eq!(second.duration_since(first), Duration::from_millis(8));
     }
 }
