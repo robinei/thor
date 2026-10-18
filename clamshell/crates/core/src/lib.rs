@@ -380,6 +380,7 @@ impl State {
                 effects.push(Effect::PadRoute(self.pad.route()));
                 effects.extend(self.follow_runner_keymaps());
                 effects.extend(self.follow_keymap(true));
+                effects.push(self.down_rules_effect());
                 (Dirty::BOTH, effects)
             }
             // On a screen that listens, Home leaves it (it is never an input).

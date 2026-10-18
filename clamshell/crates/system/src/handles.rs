@@ -171,6 +171,7 @@ impl Handles {
             WindowCommand::Up { window, to } => sway.send(sway::Command::Up { window: *window, workspace: to.as_ref().map(Instance::workspace) }),
             WindowCommand::ShowDown(id) => sway.send(sway::Command::ShowDown(*id)),
             WindowCommand::BottomPower(on) => sway.send(sway::Command::Power(*on)),
+            WindowCommand::DownRules(rules) => sway.send(sway::Command::DownRules(rules.clone())),
         }
     }
 

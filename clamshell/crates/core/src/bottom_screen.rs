@@ -5,9 +5,13 @@
 //! the bottom screen off and on. None of it takes the keyboard from the window in front on the top
 //! screen.
 //!
-//! Moving a game's or a dock app's window down is remembered as a rule ([`WindowRule`]: the program, the
-//! window's app id and title): the next time it opens a window like it, the window goes down by itself.
-//! Moving it up forgets the rule. The rules are saved.
+//! Moving a game's or a dock app's window down is remembered as a rule ([`WindowRule`]: the program and
+//! the window's app id; its title too only when the program has another window of that app id open, as a
+//! dual-screen emulator does, since titles change with what a window shows): the next time it opens a
+//! window like it, the window goes down by itself. Moving it up forgets the rule. The rules are saved, and
+//! given to sway ([`WindowCommand::DownRules`]), which places a matching window on the bottom screen as
+//! it opens, before it is drawn; ClamShell then marks it as one moved down (and moves it there itself if
+//! sway's rule didn't: by app id and title alone, sway can't tell whose a window is).
 
 use std::sync::Arc;
 
@@ -18,17 +22,36 @@ use crate::instance::Instance;
 use crate::windows::Window;
 
 /// A window that goes to the bottom screen when its entry opens it: the entry's (by its id), with this
-/// app id and title.
+/// app id and, if said, this title.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WindowRule {
     pub owner: Arc<str>,
     pub app_id: String,
-    pub title: String,
+    pub title: Option<String>,
 }
 
 impl WindowRule {
     fn matches(&self, owner: &str, w: &Window) -> bool {
-        &*self.owner == owner && self.app_id == w.app_id && self.title == w.title
+        &*self.owner == owner && self.down_rule().matches(w)
+    }
+
+    /// What sway can match a window by: its app id and title (not whose it is).
+    pub fn down_rule(&self) -> DownRule {
+        DownRule { app_id: self.app_id.clone(), title: self.title.clone() }
+    }
+}
+
+/// A window that goes to the bottom screen as it opens, as sway matches it: by app id, and title if
+/// said.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct DownRule {
+    pub app_id: String,
+    pub title: Option<String>,
+}
+
+impl DownRule {
+    pub fn matches(&self, w: &Window) -> bool {
+        self.app_id == w.app_id && self.title.as_ref().is_none_or(|t| *t == w.title)
     }
 }
 
@@ -66,6 +89,17 @@ impl WindowRules {
 
     fn wants(&self, owner: &str, w: &Window) -> bool {
         self.list.iter().any(|r| r.matches(owner, w))
+    }
+
+    /// For sway: what the rules match, each once.
+    pub fn down_rules(&self) -> Vec<DownRule> {
+        let mut out: Vec<DownRule> = Vec::new();
+        for rule in self.list.iter().map(WindowRule::down_rule) {
+            if !out.contains(&rule) {
+                out.push(rule);
+            }
+        }
+        out
     }
 }
 
@@ -106,11 +140,15 @@ impl State {
             return vec![];
         };
         let mut effects = self.show_down(w.id);
+        // (Its title only to tell it from another window of its program with its app id.)
+        let others = self.session.windows.iter().any(|o| o.id != w.id && o.app_id == w.app_id && o.unit == w.unit);
+        let title = others.then(|| w.title.clone());
         if let Some(owner) = self.owner(&w)
-            && self.window_rules.add(WindowRule { owner, app_id: w.app_id.clone(), title: w.title.clone() })
+            && self.window_rules.add(WindowRule { owner, app_id: w.app_id.clone(), title })
         {
             self.notify(NoticeKind::BottomRule(true));
             effects.push(Effect::Save(Save::WindowRules(self.window_rules.clone())));
+            effects.push(self.down_rules_effect());
         }
         effects
     }
@@ -140,8 +178,14 @@ impl State {
         {
             self.notify(NoticeKind::BottomRule(false));
             effects.push(Effect::Save(Save::WindowRules(self.window_rules.clone())));
+            effects.push(self.down_rules_effect());
         }
         effects
+    }
+
+    /// The rules as sway is to place windows by them.
+    pub(crate) fn down_rules_effect(&self) -> Effect {
+        Effect::Window(WindowCommand::DownRules(self.window_rules.down_rules()))
     }
 
     /// Home+Select: the bottom screen shows the windows moved there, or ClamShell's view again; nothing
@@ -243,14 +287,28 @@ mod tests {
     }
 
     #[test]
+    fn a_programs_only_window_is_remembered_by_its_app_id_alone() {
+        let mut s = state();
+        s.session.running.push(running("melonds", "melonds_1"));
+        s.apply(Event::Windows(vec![win(2, GAME, "Page one", true, false)]));
+        let fx = key(&mut s, DeviceKey::WindowDown);
+        let rule = WindowRule { owner: "melonds".into(), app_id: "emu".into(), title: None };
+        assert!(matches!(&fx[1], Effect::Save(Save::WindowRules(r)) if r.list() == [rule.clone()]), "{fx:?}");
+        // Another title next time (a page, a command): still its.
+        assert!(rule.matches("melonds", &win(3, GAME, "Page two", true, false)));
+    }
+
+    #[test]
     fn a_window_moved_down_is_shown_there_and_remembered() {
         let mut s = emulator();
         assert_eq!(key(&mut s, DeviceKey::BottomView), vec![], "nothing down: nothing to switch to");
         assert!(!s.bottom_shows_windows());
         let fx = key(&mut s, DeviceKey::WindowDown);
         assert_eq!(fx[0], Effect::Window(WindowCommand::Down(2)));
-        let rule = WindowRule { owner: "melonds".into(), app_id: "emu".into(), title: "Bottom".into() };
+        // (Its title too: the emulator has another window of its app id.)
+        let rule = WindowRule { owner: "melonds".into(), app_id: "emu".into(), title: Some("Bottom".into()) };
         assert!(matches!(&fx[1], Effect::Save(Save::WindowRules(r)) if r.list() == [rule.clone()]), "{fx:?}");
+        assert_eq!(fx[2], Effect::Window(WindowCommand::DownRules(vec![rule.down_rule()])), "for sway");
         assert_eq!(s.bottom().notice().map(|n| &n.what), Some(&NoticeKind::BottomRule(true)));
         // sway reports it down: shown there.
         s.apply(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]));

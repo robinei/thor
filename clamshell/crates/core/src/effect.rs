@@ -164,6 +164,8 @@ pub enum WindowCommand {
     ShowDown(i64),
     /// The bottom screen's output on or off.
     BottomPower(bool),
+    /// The windows that go to the bottom screen as they open (all of them: the rules in force).
+    DownRules(Vec<crate::bottom_screen::DownRule>),
 }
 
 /// Which screens need a new frame after an event.

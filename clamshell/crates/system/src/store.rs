@@ -11,7 +11,7 @@
 //! - `favourites(id)`.
 //! - `settings(entry, name, value)`, `env(entry, text)`: the global ones under the entry `''`.
 //! - `keymaps(position, keymap)`: a keymap as JSON (clamshell-core's `Keymap`, through serde).
-//! - `window_rules(position, entry, app_id, title)`.
+//! - `window_rules(position, entry, app_id, title)` (no title: empty).
 //! - `dock(position, id)`: the pinned entries.
 //! - `places(collection, path)`: shelf's place in each collection, a JSON list of ids (the open groups,
 //!   then the selected entry).
@@ -205,7 +205,9 @@ impl Store {
 
     pub fn window_rules(&self) -> Result<WindowRules, Error> {
         let mut stmt = self.db.prepare("SELECT entry, app_id, title FROM window_rules ORDER BY position")?;
-        let rules = stmt.query_map([], |r| Ok(WindowRule { owner: r.get::<_, String>(0)?.into(), app_id: r.get(1)?, title: r.get(2)? }))?;
+        let rules = stmt.query_map([], |r| {
+            Ok(WindowRule { owner: r.get::<_, String>(0)?.into(), app_id: r.get(1)?, title: Some(r.get::<_, String>(2)?).filter(|t| !t.is_empty()) })
+        })?;
         Ok(WindowRules::from_list(rules.collect::<Result<_, _>>()?))
     }
 
@@ -213,7 +215,10 @@ impl Store {
         let tx = self.db.transaction()?;
         tx.execute("DELETE FROM window_rules", [])?;
         for (i, r) in (0i64..).zip(rules.list()) {
-            tx.execute("INSERT INTO window_rules (position, entry, app_id, title) VALUES (?1, ?2, ?3, ?4)", params![i, &*r.owner, r.app_id, r.title])?;
+            tx.execute(
+                "INSERT INTO window_rules (position, entry, app_id, title) VALUES (?1, ?2, ?3, ?4)",
+                params![i, &*r.owner, r.app_id, r.title.as_deref().unwrap_or("")],
+            )?;
         }
         tx.commit()
     }
@@ -387,7 +392,10 @@ mod tests {
         db.save_keymaps(&Keymaps::default()).unwrap();
         assert_eq!(db.keymaps().unwrap(), Some(Keymaps::default()), "none left: none, not the initial ones");
 
-        let rules = WindowRules::from_list(vec![WindowRule { owner: zelda.clone(), app_id: "emu".into(), title: "Bottom".into() }]);
+        let rules = WindowRules::from_list(vec![
+            WindowRule { owner: zelda.clone(), app_id: "emu".into(), title: Some("Bottom".into()) },
+            WindowRule { owner: zelda.clone(), app_id: "emu2".into(), title: None },
+        ]);
         db.save_window_rules(&rules).unwrap();
         assert_eq!(db.window_rules().unwrap(), rules);
 

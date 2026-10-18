@@ -3,6 +3,7 @@
 
 use std::path::Path;
 
+use clamshell_core::bottom_screen::DownRule;
 use clamshell_core::instance::{Instance, STEAM_APP_PREFIX};
 use clamshell_core::windows::SHELF_APP_ID;
 
@@ -72,6 +73,41 @@ pub fn to_top(window: i64, top: Option<&str>) -> String {
     top.map_or_else(String::new, |top| format!("[con_id={window}] move container to output \"{top}\", focus"))
 }
 
+/// What a down rule's switch is set to while it is off: no output has the name, so its move fails and the
+/// window stays where it opened.
+const DOWN_OFF: &str = "clamshell-down-off";
+
+/// A down rule's switch (a sway variable): by what it matches, so defining it again (sway restarted, or
+/// ClamShell) reuses the same one.
+fn down_switch(rule: &DownRule) -> String {
+    let text = format!("{}\0{}", rule.app_id, rule.title.as_deref().unwrap_or("\0"));
+    let hash = text.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3));
+    format!("$clamshell_down_{hash:016x}")
+}
+
+/// A pattern matching `text` exactly (PCRE's `\Q...\E`, in a sway string); none for text sway's quoting
+/// can't carry (a backslash).
+fn literal(text: &str) -> Option<String> {
+    (!text.contains('\\')).then(|| format!("^\\Q{}\\E$", text.replace('"', "\\\"")))
+}
+
+/// A down rule defined in sway: its switch off, and the rule that moves a matching window, as it opens
+/// (before it is drawn), to the output its switch names. None if it can't be said in sway's terms.
+pub fn define_down_rule(rule: &DownRule) -> Option<String> {
+    let app_id = literal(&rule.app_id)?;
+    let title = match &rule.title {
+        Some(t) => format!(" title=\"{}\"", literal(t)?),
+        None => String::new(),
+    };
+    let switch = down_switch(rule);
+    Some(format!("set {switch} {DOWN_OFF}; for_window [app_id=\"{app_id}\"{title}] move container to output ${switch}"))
+}
+
+/// A defined down rule switched on (its windows to the `bottom` output) or off.
+pub fn switch_down_rule(rule: &DownRule, on: bool, bottom: &str) -> String {
+    format!("set {} {}", down_switch(rule), if on { bottom } else { DOWN_OFF })
+}
+
 /// The bottom screen's output on or off.
 pub fn power(bottom: &str, on: bool) -> String {
     format!("output \"{bottom}\" power {}", if on { "on" } else { "off" })
@@ -110,6 +146,20 @@ pub fn rules(top: Option<&str>, bottom: &str) -> Vec<String> {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn down_rules_are_switched_by_a_variable_and_match_literally() {
+        let rule = DownRule { app_id: "fo.t".into(), title: Some(r#"a "b""#.into()) };
+        let define = define_down_rule(&rule).unwrap();
+        let switch = down_switch(&rule);
+        assert_eq!(
+            define,
+            format!(r#"set {switch} clamshell-down-off; for_window [app_id="^\Qfo.t\E$" title="^\Qa \"b\"\E$"] move container to output ${switch}"#)
+        );
+        assert_eq!(switch_down_rule(&rule, true, "DSI-1"), format!("set {switch} DSI-1"));
+        assert_eq!(down_switch(&rule), down_switch(&rule.clone()), "the same rule, the same switch");
+        assert!(define_down_rule(&DownRule { app_id: r"a\b".into(), title: None }).is_none(), "a backslash: none");
+    }
 
     #[test]
     fn launches_go_through_sways_exec_for_their_workspace() {

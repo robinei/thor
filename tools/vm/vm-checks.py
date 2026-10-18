@@ -594,6 +594,46 @@ class Checks:
         self.icon("dock")
         self.check("  a finger on the bar still taps the bar (the dock opens)", until(lambda: tab() == "dock"), f"tab {tab()!r}")
 
+    # windows remembered for the bottom screen
+
+    def window_rules(self):
+        def where():
+            """foot's windows: their workspace and whether they're marked down."""
+            tree = json.loads(sh("swaymsg -t get_tree") or "{}")
+            out = []
+
+            def walk(n, ws=""):
+                ws = n.get("name", ws) if n.get("type") == "workspace" else ws
+                if n.get("app_id") == "foot":
+                    out.append((ws, any(m.startswith("clamshell-down") for m in n.get("marks", []))))
+                for c in n.get("nodes", []) + n.get("floating_nodes", []):
+                    walk(c, ws)
+            walk(tree)
+            return out
+
+        def reopen():
+            sh("swaymsg '[app_id=foot] kill' >/dev/null 2>&1 || true")
+            # (Its launch ended too: a tap on a running entry shows it rather than starting it.)
+            until(lambda: not where() and not units("run-"), 8)
+            control("tap dock 0")  # foot, pinned by the setup
+            until(lambda: bool(where()), 8)
+            time.sleep(1)
+            return where()
+
+        control("tap dock 0")
+        if not self.check("bottom screen: foot open", until(lambda: bool(where()), 8), where()):
+            return
+        control("window down")
+        self.check("  moved down, marked", until(lambda: where() == [("clamshell-bottom", True)], 5), where())
+        down = reopen()
+        self.check("  remembered: opened again, straight on the bottom screen (sway's rule), and kept there",
+                   down == [("clamshell-bottom", True)], down)
+        control("window up")
+        until(lambda: where() and where()[0][0] != "clamshell-bottom", 5)
+        up = reopen()
+        self.check("  moved up, forgotten: opened again on top", bool(up) and up[0][0] != "clamshell-bottom", up)
+        sh("swaymsg '[app_id=foot] kill' >/dev/null 2>&1 || true")
+
     # the keyboard's pointing
 
     def keyboard_points(self):
@@ -1016,7 +1056,7 @@ class Checks:
         self.check("  a long press forgets it", forgot and "Paired: yes" not in sh(f"bluetoothctl info {address}"))
 
 
-CHECKS = ["shelf_scroll", "bar_tap", "time_zone", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad", "keyboard_points",
+CHECKS = ["shelf_scroll", "bar_tap", "time_zone", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad", "keyboard_points", "window_rules",
           "pad_shelf", "pad_view", "pad_mouse", "pad_typing", "pad_held_key", "pad_unplug", "pad_guide", "keymaps", "keymap_layers",
           "keymap_actuations", "rumble", "bluetooth"]
 

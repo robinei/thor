@@ -9,6 +9,10 @@
 //!   app's, or its game's) by the systemd scope of their process: the kernel's record of which launch
 //!   they come from.
 //! - The window list after every window event. A workspace in front that empties stays, black.
+//! - The windows remembered for the bottom screen ([`Command::DownRules`]): a rule each in sway, which
+//!   moves a matching window there as it opens (before it is drawn), switched on and off by a variable
+//!   (sway can't drop a rule): defined when we connect and when a new one comes, switched to the rules in
+//!   force. A window they put there is left there (ClamShell marks it as one moved down).
 //!
 //! Without sway there is no window list (other compositors offer no common way).
 
@@ -25,6 +29,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use clamshell_core::Event;
+use clamshell_core::bottom_screen::DownRule;
 
 use crate::worker::{self, Ended, Service, Worker, lost_on};
 use crate::{Closed, Sink, cgroup};
@@ -57,6 +62,50 @@ pub enum Command {
     ShowDown(i64),
     /// The bottom screen's output on or off.
     Power(bool),
+    /// The windows that go to the bottom screen as they open: all the rules in force.
+    DownRules(Vec<DownRule>),
+}
+
+/// The down rules: those in force, and those defined in sway (switched off when no longer in force).
+/// Shared by the command thread (new rules) and the window thread (sway connected again: defined anew).
+#[derive(Clone, Default)]
+struct DownRules(Arc<Mutex<(Vec<DownRule>, Vec<DownRule>)>>);
+
+impl DownRules {
+    /// Rules in force from now on (`Some`), or as they were; defined where they aren't, every one
+    /// switched; `fresh`: sway has none defined (connected anew).
+    fn apply(&self, ipc: &mut Ipc, wanted: Option<Vec<DownRule>>, fresh: bool, bottom: &str) -> Result<(), Error> {
+        let mut guard = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        let (wanted_now, defined) = &mut *guard;
+        if let Some(rules) = wanted {
+            *wanted_now = rules;
+        }
+        if fresh {
+            defined.clear();
+        }
+        let mut text = Vec::new();
+        for rule in wanted_now.iter() {
+            if !defined.contains(rule) {
+                match commands::define_down_rule(rule) {
+                    Some(define) => text.push(define),
+                    None => log::info!("sway: no rule for {rule:?} (sway can't match it): moved down after it opens"),
+                }
+                defined.push(rule.clone());
+            }
+        }
+        text.extend(defined.iter().map(|r| commands::switch_down_rule(r, wanted_now.contains(r), bottom)));
+        if !text.is_empty()
+            && let Some(error) = ipc::refused(&ipc.command(&text.join("; "))?)
+        {
+            log::debug!("sway: down rules: {error}");
+        }
+        Ok(())
+    }
+
+    /// The rules in force.
+    fn wanted(&self) -> Vec<DownRule> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner).0.clone()
+    }
 }
 
 /// The main screen's output: the first active one that isn't the second screen's. Kept by the window
@@ -94,14 +143,25 @@ pub fn spawn(socket: Option<PathBuf>, bottom: String, sink: impl Sink) -> io::Re
     let exe = std::env::current_exe()?;
     let commands_socket = socket.clone();
     let commands_top = top.clone();
+    let down = DownRules::default();
+    let commands_down = down.clone();
     let worker = Worker::spawn("sway commands", move |commands: Receiver<Command>| {
         for command in commands {
+            if let Command::DownRules(rules) = &command {
+                let applied = Ipc::connect(&commands_socket)
+                    .map_err(Error::from)
+                    .and_then(|mut ipc| commands_down.apply(&mut ipc, Some(rules.clone()), false, &commands_top.bottom));
+                if let Err(e) = applied {
+                    log::warn!("sway: down rules: {e}");
+                }
+                continue;
+            }
             if let Err(e) = carry_out(&commands_socket, &commands_top, &exe, &command) {
                 log::warn!("sway: {command:?}: {e}");
             }
         }
     })?;
-    let mut windows = Windows { socket, top, sink, units: HashMap::new(), tried: HashSet::new() };
+    let mut windows = Windows { socket, top, down, sink, units: HashMap::new(), tried: HashSet::new() };
     worker::detached("sway windows", move || worker::supervise_alone(&mut windows, RETRY))?;
     Ok(Some(worker))
 }
@@ -121,6 +181,7 @@ fn carry_out(socket: &Path, top: &TopOutput, exe: &Path, command: &Command) -> R
         Command::Up { window, workspace } => commands::up(*window, workspace.as_deref(), top),
         Command::ShowDown(id) => commands::show_down(*id, top),
         Command::Power(on) => commands::power(&bottom, *on),
+        Command::DownRules(_) => return Ok(()),
     };
     if let Some(error) = ipc::refused(&ipc.command(&text)?) {
         log::debug!("sway: {text}: {error}");
@@ -132,6 +193,7 @@ fn carry_out(socket: &Path, top: &TopOutput, exe: &Path, command: &Command) -> R
 struct Windows<S> {
     socket: PathBuf,
     top: TopOutput,
+    down: DownRules,
     sink: S,
     /// Each window's unit, by process (a process's unit never changes).
     units: HashMap<u32, Option<String>>,
@@ -171,6 +233,10 @@ impl<S: Sink> Service for Windows<S> {
                 log::debug!("sway: {rule}: {error}");
             }
         }
+        // (A new connection may be a new sway, without them.)
+        if let Err(e) = self.down.apply(&mut queries, None, true, &self.top.bottom) {
+            log::warn!("sway: down rules: {e}");
+        }
         Ok(Connected { events, queries })
     }
 
@@ -186,7 +252,7 @@ impl<S: Sink> Service for Windows<S> {
             let list = windows::windows(&tree, &mut |pid| units.entry(pid).or_insert_with(|| cgroup::unit_of(pid)).clone());
             let top = self.top.get(&mut c.queries);
             let mut moved = false;
-            for command in windows::reconcile(&list, top.as_deref(), &mut self.tried) {
+            for command in windows::reconcile(&list, top.as_deref(), &self.down.wanted(), &mut self.tried) {
                 moved |= c.queries.command(&command).is_ok();
             }
             if !moved {

@@ -3,6 +3,7 @@
 
 use std::collections::HashSet;
 
+use clamshell_core::bottom_screen::DownRule;
 use clamshell_core::instance::Instance;
 use clamshell_core::windows::Window;
 
@@ -41,17 +42,17 @@ fn collect(node: &Node, workspace: &str, unit: &mut impl FnMut(u32) -> Option<St
     }
 }
 
-/// What to ask sway after a change of windows: each window of one of our instances that isn't on its
+/// What to ask sway after a change of windows (`down`: the down rules in force): each window of one of our instances that isn't on its
 /// instance's workspace moved there (asked once per window and workspace, `tried`: a window sway won't
 /// move isn't asked again at its every event), and shelf's window shown when it is moved home (as the
 /// program starts). A workspace in front that empties (its last window closed or moved down) stays, black:
 /// Home or the dock goes on from there. `top`: the main screen's output.
-pub fn reconcile(windows: &[Window], top: Option<&str>, tried: &mut HashSet<(i64, String)>) -> Vec<String> {
+pub fn reconcile(windows: &[Window], top: Option<&str>, down: &[DownRule], tried: &mut HashSet<(i64, String)>) -> Vec<String> {
     let mut out = Vec::new();
     let bottom = Instance::Bottom.name();
     for w in windows {
-        // Moved to the bottom screen by us: left there.
-        if w.down {
+        // Moved to the bottom screen by us, or by a down rule as it opened: left there.
+        if w.down || (w.workspace == bottom && down.iter().any(|r| r.matches(w))) {
             continue;
         }
         // Landed on the bottom screen by itself (a tap there focuses its output): to its home, or the
@@ -121,9 +122,9 @@ mod tests {
         let second = window(7, "second", Some("clamshell-run-spawner_1-1-1.scope"), "clamshell-run-spawner_1");
         let stray = window(6, "foot", None, "1");
         let mut tried = HashSet::new();
-        let asked = reconcile(&[late.clone(), home, second, stray], Some("DSI-2"), &mut tried);
+        let asked = reconcile(&[late.clone(), home, second, stray], Some("DSI-2"), &[], &mut tried);
         assert_eq!(asked, vec![r#"workspace "clamshell-run-spawner_1" output "DSI-2"; [con_id=4] move container to workspace "clamshell-run-spawner_1""#]);
-        assert!(reconcile(&[late], Some("DSI-2"), &mut tried).is_empty(), "not asked again");
+        assert!(reconcile(&[late], Some("DSI-2"), &[], &mut tried).is_empty(), "not asked again");
     }
 
     #[test]
@@ -133,8 +134,19 @@ mod tests {
         let down = Window { down: true, ..window(4, "emu", Some(ours), &bottom) };
         let stray = window(5, "foot", None, &bottom);
         let mut tried = HashSet::new();
-        let asked = reconcile(&[down, stray], Some("DSI-2"), &mut tried);
+        let asked = reconcile(&[down, stray], Some("DSI-2"), &[], &mut tried);
         assert_eq!(asked, vec![r#"[con_id=5] move container to output "DSI-2", focus"#], "the marked one left down");
+    }
+
+    #[test]
+    fn a_window_a_down_rule_put_on_the_bottom_screen_stays_there() {
+        let bottom = Instance::Bottom.name();
+        let ours = "clamshell-run-zelda_1-1-0.scope";
+        let placed = window(4, "emu", Some(ours), &bottom);
+        let rule = DownRule { app_id: "emu".into(), title: None };
+        let mut tried = HashSet::new();
+        assert!(reconcile(std::slice::from_ref(&placed), Some("DSI-2"), &[rule], &mut tried).is_empty(), "left for ClamShell to mark");
+        assert_eq!(reconcile(&[placed], Some("DSI-2"), &[], &mut tried).len(), 1, "without the rule: home");
     }
 
     #[test]
@@ -151,7 +163,7 @@ mod tests {
     fn shelf_is_shown_when_its_window_goes_home() {
         let shelf = window(1, clamshell_core::windows::SHELF_APP_ID, None, "1");
         let mut tried = HashSet::new();
-        let asked = reconcile(&[shelf], None, &mut tried);
+        let asked = reconcile(&[shelf], None, &[], &mut tried);
         assert_eq!(asked, vec![r#"[con_id=1] move container to workspace "clamshell-shelf"; workspace "clamshell-shelf""#.to_owned()]);
     }
 }
