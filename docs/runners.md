@@ -54,31 +54,36 @@ desktop files' apps and games (and a `.desktop` file opened from the Files tab, 
 Without one, those items aren't in the library. Where their items show is the `desktop` and `steam` rules'
 (Places).
 
-## Places: where things show
-
-Where an item shows, and what can be done to it there:
-
-- `scans`: dirs whose entries go in the library, each with an `id` (entries' ids are `<id>:<path in
-  dir>`), `dir`, `place`, its `match` and `items` for the dir's layout, `metadata` (where its entries'
-  covers and details come from: `libretro:<system>`, `tmdb:movie`, `tmdb:tv`) and, optionally, `runner`:
-  the runner that opens all its entries (else each opens by the runner its file's name matches). The
-  SNES scan names SNES, since its `*.zip` files would be Other files' by their name; the TV scan names
-  none, its episodes Video's by theirs. Several scans may fill one place (SNES on the card and on an SD
-  card). `{ "id": "snes", "dir": "~/Games/snes", "place": "@snes", "runner": "snes", "match": ["*.sfc",
-  "*.zip"], "metadata": "libretro:Nintendo - Super Nintendo Entertainment System" }`.
-- `browse`: dirs listed as they are opened (see files-tab.md), each its own folder at its place.
-- The rules for desktop files (`desktop`), Steam's games (`steam`) and removable storage (`removable`):
-  the first matching one puts an item at its place, or hides it.
+## Places and sources: where things show
 
 `places` declares places: an `id` (`"place": "@snes"` elsewhere, `"@snes/RPG"` a folder in it; the folder's
-id is `place:snes`, so pins, favourites and where a tab was outlive a new path), the `path`, an `icon` and a
-folder's `picture`. A tab has only an icon, one of the UI's (`gamepad`): something in it is always selected.
-A folder's icon (an image file, or one of the UI's) is what its row shows; its picture is what the details
-show large when it is selected (a console, in a system's folder). The declared tabs come in that order.
-A place not declared still works as a path (`folder:Games/SNES` its folder's id).
+id is `place:snes`, so pins, favourites and where a tab was outlive a new path), the `path` (a tab, then
+folders in it), an `icon` and a folder's `picture`. A tab has only an icon, one of the UI's (`gamepad`):
+something in it is always selected. A folder's icon (an image file, or one of the UI's) is what its row
+shows; its picture is what the details show large when it is selected (a console, in a system's folder).
+`"recent": false` keeps what is in a place (and its folders, unless they say) out of Recent: apps.
+ClamShell's own tabs are places of a `type`: `recent`, `favourites`, `tools` (their path their name). The
+declared tabs come in that order; a place not declared still works as a path (`folder:Games/SNES` its
+folder's id). Nothing has a place or an icon of ClamShell's choosing.
 
-They stay separate lists: their matchers differ (a desktop file's categories, a Steam app id, a
-filesystem's label). A place decides nothing about opening.
+`sources` says where entries come from and where they go, each by `type`:
+
+- `dir`: a dir scanned, with an `id` (entries' ids are `<id>:<path in dir>`), `dir`, `place`, its `match`
+  and `items` for the dir's layout, `metadata` (where its entries' covers and details come from:
+  `libretro:<system>`, `tmdb:movie`, `tmdb:tv`) and, optionally, `runner`: the runner that opens all its
+  entries (else each opens by the runner its file's name matches). The SNES scan names SNES, since its
+  `*.zip` files would be Other files' by their name; the TV scan names none, its episodes Video's by
+  theirs. Several may fill one place (SNES on the card and on an SD card).
+- `browse`: a dir listed as it is opened (see files-tab.md), its own folder at its place.
+- `desktop`, `steam`: the desktop files' apps and games, Steam's installed games, each at the place of
+  the first of the source's `rules` matching it (by id, name, a desktop file's categories), else at the
+  source's `place`; a rule may `hide`. What used to be ClamShell's choice (games in Games, the rest in
+  Apps) is two rules in the starter library.json: `{ "categories": "Emulator", "place": "@apps" }`,
+  `{ "categories": "Game", "place": "@games" }`, the source's place `@apps`.
+- `removable`: the removable filesystems mounted, browsed, by `label`, `uuid`, `fs` rules, else at its
+  `place` (`@files/{label}`).
+
+A source decides nothing about opening: that is the runners'.
 
 ## Settings
 

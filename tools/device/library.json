@@ -1,10 +1,13 @@
 {
   "places": [
+    { "id": "recent", "path": "Recent", "type": "recent", "icon": "clock" },
+    { "id": "favourites", "path": "Favourites", "type": "favourites", "icon": "star" },
     { "id": "games", "path": "Games", "icon": "gamepad" },
     { "id": "films", "path": "Films", "icon": "film" },
     { "id": "tv", "path": "TV", "icon": "tv" },
     { "id": "files", "path": "Files", "icon": "folder" },
-    { "id": "apps", "path": "Apps", "icon": "apps" },
+    { "id": "apps", "path": "Apps", "icon": "apps", "recent": false },
+    { "id": "tools", "path": "Tools", "type": "tools", "icon": "tools" },
     { "id": "nes", "path": "Games/NES" },
     { "id": "snes", "path": "Games/SNES" },
     { "id": "n64", "path": "Games/Nintendo 64" },
@@ -16,7 +19,6 @@
     { "id": "dc", "path": "Games/Dreamcast" },
     { "id": "steam", "path": "Games/Steam" }
   ],
-  "keys": {},
   "runners": [
     { "type": "desktop", "id": "desktop", "name": "Desktop", "match": ["*.desktop"] },
     { "type": "steam", "id": "steam", "name": "Steam" },
@@ -36,33 +38,29 @@
     { "id": "text", "name": "Text", "match": ["*.txt", "*.md", "*.log", "*.nfo", "*.json", "*.toml", "*.yaml", "*.yml", "*.ini", "*.conf", "*.cfg", "*.csv", "*.xml", "*.sh", "*.py", "*.rs", "*.c", "*.h"], "launch": ["foot", "less", "{path}"], "keymap": "viewer" },
     { "id": "other", "name": "Other files", "match": ["*"], "launch": ["xdg-open", "{path}"] }
   ],
-  "scans": [
-    { "id": "nes", "dir": "~/Games/nes", "place": "@nes", "runner": "nes", "match": ["*.nes", "*.zip"], "metadata": "libretro:Nintendo - Nintendo Entertainment System" },
-    { "id": "snes", "dir": "~/Games/snes", "place": "@snes", "runner": "snes", "match": ["*.sfc", "*.smc", "*.zip"], "metadata": "libretro:Nintendo - Super Nintendo Entertainment System" },
-    { "id": "n64", "dir": "~/Games/n64", "place": "@n64", "runner": "n64", "match": ["*.z64", "*.n64", "*.v64", "*.zip"], "metadata": "libretro:Nintendo - Nintendo 64" },
-    { "id": "gb", "dir": "~/Games/gb", "place": "@gb", "runner": "gb", "match": ["*.gb", "*.gbc", "*.zip"], "metadata": "libretro:Nintendo - Game Boy Color" },
-    { "id": "gba", "dir": "~/Games/gba", "place": "@gba", "runner": "gba", "match": ["*.gba", "*.zip"], "metadata": "libretro:Nintendo - Game Boy Advance" },
-    { "id": "nds", "dir": "~/Games/nds", "place": "@nds", "runner": "nds", "match": ["*.nds", "*.zip"], "metadata": "libretro:Nintendo - Nintendo DS" },
-    { "id": "md", "dir": "~/Games/md", "place": "@md", "runner": "md", "match": ["*.md", "*.gen", "*.bin", "*.zip"], "metadata": "libretro:Sega - Mega Drive - Genesis" },
-    { "id": "psx", "dir": "~/Games/psx", "place": "@psx", "runner": "psx", "match": ["*.m3u", "*.chd", "*.cue", "*/*.m3u", "*/*.chd", "*/*.cue"], "metadata": "libretro:Sony - PlayStation" },
-    { "id": "dc", "dir": "~/Games/dc", "place": "@dc", "runner": "dc", "match": ["*.chd", "*.gdi", "*.cdi", "*/*.gdi"], "metadata": "libretro:Sega - Dreamcast" },
-    { "id": "films", "dir": "~/Videos/Films", "place": "@films", "match": ["*.mkv", "*.mp4", "*.avi", "*.webm", "*/*.mkv", "*/*.mp4", "*/*.avi", "*/*.webm"], "metadata": "tmdb:movie" },
-    { "id": "tv", "dir": "~/Videos/TV", "place": "@tv", "match": ["*/"], "items": ["*.mkv", "*.mp4", "*.avi", "*.webm"], "metadata": "tmdb:tv" }
+  "sources": [
+    { "type": "dir", "id": "nes", "dir": "~/Games/nes", "place": "@nes", "runner": "nes", "match": ["*.nes", "*.zip"], "metadata": "libretro:Nintendo - Nintendo Entertainment System" },
+    { "type": "dir", "id": "snes", "dir": "~/Games/snes", "place": "@snes", "runner": "snes", "match": ["*.sfc", "*.smc", "*.zip"], "metadata": "libretro:Nintendo - Super Nintendo Entertainment System" },
+    { "type": "dir", "id": "n64", "dir": "~/Games/n64", "place": "@n64", "runner": "n64", "match": ["*.z64", "*.n64", "*.v64", "*.zip"], "metadata": "libretro:Nintendo - Nintendo 64" },
+    { "type": "dir", "id": "gb", "dir": "~/Games/gb", "place": "@gb", "runner": "gb", "match": ["*.gb", "*.gbc", "*.zip"], "metadata": "libretro:Nintendo - Game Boy Color" },
+    { "type": "dir", "id": "gba", "dir": "~/Games/gba", "place": "@gba", "runner": "gba", "match": ["*.gba", "*.zip"], "metadata": "libretro:Nintendo - Game Boy Advance" },
+    { "type": "dir", "id": "nds", "dir": "~/Games/nds", "place": "@nds", "runner": "nds", "match": ["*.nds", "*.zip"], "metadata": "libretro:Nintendo - Nintendo DS" },
+    { "type": "dir", "id": "md", "dir": "~/Games/md", "place": "@md", "runner": "md", "match": ["*.md", "*.gen", "*.bin", "*.zip"], "metadata": "libretro:Sega - Mega Drive - Genesis" },
+    { "type": "dir", "id": "psx", "dir": "~/Games/psx", "place": "@psx", "runner": "psx", "match": ["*.m3u", "*.chd", "*.cue", "*/*.m3u", "*/*.chd", "*/*.cue"], "metadata": "libretro:Sony - PlayStation" },
+    { "type": "dir", "id": "dc", "dir": "~/Games/dc", "place": "@dc", "runner": "dc", "match": ["*.chd", "*.gdi", "*.cdi", "*/*.gdi"], "metadata": "libretro:Sega - Dreamcast" },
+    { "type": "dir", "id": "films", "dir": "~/Videos/Films", "place": "@films", "match": ["*.mkv", "*.mp4", "*.avi", "*.webm", "*/*.mkv", "*/*.mp4", "*/*.avi", "*/*.webm"], "metadata": "tmdb:movie" },
+    { "type": "dir", "id": "tv", "dir": "~/Videos/TV", "place": "@tv", "match": ["*/"], "items": ["*.mkv", "*.mp4", "*.avi", "*.webm"], "metadata": "tmdb:tv" },
+    { "type": "steam", "place": "@steam" },
+    { "type": "desktop", "place": "@apps", "rules": [
+        { "id": "steam", "place": "@apps" },
+        { "id": "net.lutris.*", "place": "@apps" },
+        { "id": "*heroicgameslauncher*", "place": "@apps" },
+        { "categories": "Emulator", "place": "@apps" },
+        { "categories": "Game", "place": "@games" } ] },
+    { "type": "browse", "place": "@files/Home", "dir": "~" },
+    { "type": "browse", "place": "@files/Root", "dir": "/" },
+    { "type": "browse", "place": "@files/Trash", "dir": "${XDG_DATA_HOME:-~/.local/share}/Trash/files", "trash": true },
+    { "type": "removable", "place": "@files/{label}" }
   ],
-  "steam": [
-    { "place": "@steam" }
-  ],
-  "desktop": [
-    { "id": "steam", "place": "@apps" },
-    { "id": "net.lutris.*", "place": "@apps" },
-    { "id": "*heroicgameslauncher*", "place": "@apps" }
-  ],
-  "browse": [
-    { "place": "@files/Home", "dir": "~" },
-    { "place": "@files/Root", "dir": "/" },
-    { "place": "@files/Trash", "dir": "${XDG_DATA_HOME:-~/.local/share}/Trash/files", "trash": true }
-  ],
-  "removable": [
-    { "place": "@files/{label}" }
-  ]
+  "keys": {}
 }

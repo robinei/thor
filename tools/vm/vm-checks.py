@@ -257,12 +257,23 @@ def plug_pad():
 # --- the test environment
 
 # Test games: test.game, zeta.game, zulu01.game to zulu14.game, all in the Test tab, each an empty mpv window (not foot: it asks for text input, which brings up the keyboard).
-LIBRARY = f"""{{ "runners": [
+LIBRARY = f"""{{ "places": [
+  {{ "id": "recent", "path": "Recent", "type": "recent", "icon": "clock" }},
+  {{ "id": "favourites", "path": "Favourites", "type": "favourites", "icon": "star" }},
+  {{ "id": "test", "path": "Test" }},
+  {{ "id": "games", "path": "Games", "icon": "gamepad" }},
+  {{ "id": "apps", "path": "Apps", "icon": "apps", "recent": false }},
+  {{ "id": "tools", "path": "Tools", "type": "tools", "icon": "tools" }}
+],
+  "runners": [
   {{ "type": "desktop", "name": "Desktop", "match": ["*.desktop"] }},
   {{ "name": "Test game", "match": ["*.game"],
     "launch": ["mpv", "--idle", "--force-window", "--vo=wlshm", "--no-terminal", "--wayland-app-id=testgame"] }}
 ],
-  "scans": [{{ "id": "test", "dir": "{CHECKS_DIR}/games", "place": "Test", "match": ["*.game"] }}] }}
+  "sources": [
+  {{ "type": "dir", "id": "test", "dir": "{CHECKS_DIR}/games", "place": "@test", "match": ["*.game"] }},
+  {{ "type": "desktop", "place": "@apps", "rules": [{{ "categories": "Emulator", "place": "@apps" }}, {{ "categories": "Game", "place": "@games" }}] }}
+] }}
 """
 
 

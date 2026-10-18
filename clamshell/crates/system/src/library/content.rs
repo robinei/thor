@@ -1,75 +1,68 @@
-//! library.json: the places declared, the runners (how things open: see [`super::runners`]), the scans
-//! (dirs whose entries go in the library), where the desktop files' and Steam's entries go, the dirs
-//! browsed, the removable filesystems, the services' keys.
+//! library.json: the places declared, the runners (how things open: see [`super::runners`]), the sources
+//! (where entries come from, and where they go), the services' keys. Nothing is ClamShell's but what it
+//! declares: a tab, a runner, a source left out isn't there.
 //!
 //! ```json
-//! { "runners": [
+//! { "places": [
+//!     { "id": "recent", "path": "Recent", "type": "recent", "icon": "clock" },
+//!     { "id": "games", "path": "Games", "icon": "gamepad" },
+//!     { "id": "apps", "path": "Apps", "icon": "apps", "recent": false },
+//!     { "id": "tools", "path": "Tools", "type": "tools", "icon": "tools" },
+//!     { "id": "snes", "path": "Games/SNES", "icon": "snes-icon.png", "picture": "snes.png" }
+//!   ],
+//!   "runners": [
 //!     { "type": "desktop", "id": "desktop", "name": "Desktop", "match": ["*.desktop"] },
-//!     { "type": "steam", "id": "steam", "name": "Steam" },
 //!     { "id": "snes", "name": "SNES", "match": ["*.sfc", "*.smc"], "launch": ["retroarch", "-L", "/usr/lib/libretro/snes9x_libretro.so", "{path}"] },
-//!     { "id": "video", "name": "Video", "match": ["*.mkv"], "launch": ["mpv", "{path}"] },
 //!     { "id": "other", "name": "Other files", "match": ["*"], "launch": ["xdg-open", "{path}"] }
 //!   ],
-//!   "scans": [
-//!     { "id": "snes", "dir": "~/Games/snes", "place": "Games/SNES", "runner": "snes", "match": ["*.sfc", "*.zip"], "metadata": "libretro:..." },
-//!     { "id": "films", "dir": "~/Films", "place": "Films", "match": ["*.mkv", "*/*.mkv"], "metadata": "tmdb:movie" },
-//!     { "id": "tv", "dir": "~/TV", "place": "TV", "match": ["*/"], "items": ["*.mkv", "*.mp4"], "metadata": "tmdb:tv" }
+//!   "sources": [
+//!     { "type": "dir", "id": "snes", "dir": "~/Games/snes", "place": "@snes", "runner": "snes", "match": ["*.sfc", "*.zip"], "metadata": "libretro:..." },
+//!     { "type": "desktop", "place": "@apps", "rules": [{ "categories": "Game", "place": "@games" }] },
+//!     { "type": "browse", "dir": "~", "place": "@files/Home" }
 //!   ],
 //!   "keys": { "tmdb": "...", "steamgriddb": "..." } }
 //! ```
 //!
-//! A scan (see [`Scan`]):
-//! - `runner`: the runner (by id) that opens its entries; else each opens by the runner its file's name
-//!   matches (a group: as its first entry).
-//! - `match`: patterns (see clamshell-library's `pattern`) against paths in `dir` (else its runner's).
-//!   An entry per name at the top of `dir`: a file, or a folder (matched itself, `*/`, or by a file in it,
-//!   `*/*.cue`); where several files of a folder match, the first pattern wins, then the first name.
-//! - `items`: a matched folder is a group: in it and every folder under it, the files matching these
-//!   patterns are entries and the folders with any are groups (a series' seasons, their episodes).
-//! - Ids: `<id>:<path in dir>`, so moving the whole dir (a new `dir`) keeps them; renaming or moving
-//!   inside it doesn't.
-//! - Titles: the name at the top of `dir`, an episode's file name, without the extension (a file's). In a
-//!   season's folder (`Season 2`, `S02`, `Series 2`; `Specials` for season 0), a file named for an
-//!   episode of that season (`017 S02E18 Title`) is titled by its number there: `18. Title` (`1–2.` for a
-//!   double one).
-//! - Box art: `<name>.jpg` (or .jpeg, .png, .webp) beside a file, or `poster`, `cover` or `folder` in a
-//!   folder (any case: `Cover.jpg`); else the group's, but for a video mpv plays (its frame is its
-//!   picture).
-//! - `place`: where its entries go, a tab, or a folder in one (`Games/SNES`, `Games/Handhelds/GBA`: see
-//!   [`place`]; `@snes`, `@snes/RPG`: a declared place's), so one tab can hold folders of different runners;
-//!   scans (and rules) naming the same folder share it. The folder's art: a declared place's picture, else
-//!   `poster`, `cover` or `folder` in the scan's dir.
-//! - `metadata`: where to fetch covers, screenshots and the rest for its entries (`libretro:<system>`,
-//!   `tmdb:movie`, `tmdb:tv`); `keys`: the services' keys (see [`crate::meta`]).
+//! `places` (see [`Place`]): an `id` to refer to a place by (`"place": "@snes"`, `"@snes/RPG"` a folder in
+//! it; its folder's id `place:snes`, which outlives a new path), its `path` (a tab, then folders in it: see
+//! [`place`]; a place not declared works as a path too), an `icon` (a tab's one of the UI's by name; a
+//! folder's also an image file, shown in its row), a folder's `picture` (shown large when it is selected),
+//! `recent: false` (what is in it isn't in Recent: apps), `type` for ClamShell's own tabs (`recent`,
+//! `favourites`, `tools`: its path their name). The tabs come in the order declared (those not declared
+//! after, as first named).
 //!
-//! The rest:
-//! - `places`: places declared (see [`Place`]): an `id` to refer to them by (`"place": "@snes"`; their
-//!   folder's id `place:snes`, which outlives a new path), their `path`, an `icon` (a tab's one of the UI's
-//!   by name; a folder's also an image file, shown in its row) and a folder's `picture` (shown large when
-//!   it is selected). `{ "id": "games", "path": "Games", "icon": "gamepad" }`, `{ "id": "snes", "path":
-//!   "Games/SNES", "icon": "snes-icon.png", "picture": "snes.png" }`. Tabs come in the order declared
-//!   (those not declared after, as first named, without an icon; Games and Apps with theirs).
-//! - `desktop`, `steam`: rules (see [`Rule`]) for the desktop files' apps and games, and for Steam's
-//!   installed games (there with a runner of type `desktop`, `steam`): the first one matching an entry (by
-//!   its id, its name, and a desktop file's categories: globs, any case) puts it at its `place`, or hides it; a rule
-//!   matching nothing in particular takes the rest. Without one, a desktop file's game (`Categories=Game`,
-//!   not `Emulator`) goes in Games, its app in Apps; a Steam game in Games. A desktop file's id is its
-//!   name without `.desktop`, a Steam game's its app id. `{ "name": "Battle.net", "place": "Apps" }`,
-//!   `{ "id": "net.lutris.*", "place": "Games/Launchers" }`, `{ "id": "*uninstall*", "hide": true }`; for
-//!   Steam `{ "name": "Dark Souls*", "place": "Games/Steam/Souls" }`, `{ "place": "Games/Steam" }`.
-//! - `browse`: dirs listed as they are opened, not scanned (no metadata, not in Recent), each its own
-//!   folder at its `place` (its last part the folder's title); their files open by the runners; `trash`:
-//!   the Trash's `files` dir. `{ "place": "Files/Home", "dir": "~" }`, `{ "place": "Files/Trash", "dir":
-//!   "${XDG_DATA_HOME:-~/.local/share}/Trash/files", "trash": true }`.
-//! - `removable`: rules for the removable filesystems mounted (udisks2's, under `/run/media/$USER`),
-//!   browsed as `browse`'s dirs: the first matching one (by `label`, `uuid`, `fs`: globs, any case) puts
-//!   one at its `place` as its folder (`{label}` in it its label, else its UUID), or hides it; without one,
-//!   `Files/{label}`. `{ "label": "SD*", "place": "Files/SD card" }`.
+//! `sources` (see [`Source`]), by `type`:
+//! - `dir` (see [`Scan`]): a dir scanned. `runner` (an id) opens its entries, else each opens by the runner
+//!   its file's name matches (a group as its first entry). `match`: patterns (see clamshell-library's
+//!   `pattern`) against paths in `dir` (else its runner's); an entry per name at the top of `dir`: a file,
+//!   or a folder (matched itself, `*/`, or by a file in it, `*/*.cue`); where several files of a folder
+//!   match, the first pattern wins, then the first name. `items`: a matched folder is a group: in it and
+//!   every folder under it, the files matching these patterns are entries and the folders with any are
+//!   groups (a series' seasons, their episodes). `metadata`: where its entries' covers, screenshots and the
+//!   rest come from (`libretro:<system>`, `tmdb:movie`, `tmdb:tv`; `keys`: the services' keys, see
+//!   [`crate::meta`]). Ids: `<id>:<path in dir>`, so moving the whole dir (a new `dir`) keeps them;
+//!   renaming or moving inside it doesn't. Titles: the name at the top of `dir`, an episode's file name,
+//!   without the extension (a file's); in a season's folder (`Season 2`, `S02`, `Series 2`; `Specials` for
+//!   season 0), a file named for an episode of that season (`017 S02E18 Title`) is titled by its number
+//!   there: `18. Title` (`1–2.` for a double one). Box art: `<name>.jpg` (or .jpeg, .png, .webp) beside a
+//!   file, or `poster`, `cover` or `folder` in a folder (any case: `Cover.jpg`); else the group's, but for
+//!   a video mpv plays (its frame is its picture). A folder's art: its place's picture, else `poster`,
+//!   `cover` or `folder` in the scan's dir.
+//! - `browse`: a dir listed as it is opened, not scanned (no metadata, not in Recent), its own folder at
+//!   its `place` (its last part the folder's title); `trash`: the Trash's `files` dir.
+//! - `desktop`, `steam`: the desktop files' apps and games, Steam's installed games (opened by a runner of
+//!   that type), at the place of the first of their `rules` (see [`Rule`]) matching one (by its id, its
+//!   name, a desktop file's categories: globs, any case), else at the source's `place`, or hidden. A desktop
+//!   file's id is its name without `.desktop`, a Steam game's its app id. `{ "id": "net.lutris.*", "place":
+//!   "@apps" }`, `{ "categories": "Game", "place": "@games" }`, `{ "id": "*uninstall*", "hide": true }`.
+//! - `removable`: the removable filesystems mounted (udisks2's, under `/run/media/$USER`), browsed as
+//!   `browse`'s dirs, at the place of the first of its rules (see [`MountRule`]: by `label`, `uuid`, `fs`)
+//!   matching one, else at its `place` (`{label}` in it the filesystem's label, else its UUID).
 //!
 //! `~` and `~/` at the start of `dir` or of a launch argument is the home dir; in `dir`, `$VAR`, `${VAR}`
-//! and `${VAR:-default}` are environment variables (`${XDG_DATA_HOME:-~/.local/share}/roms`). A scan whose
-//! dir is missing is skipped, as one naming a variable unset without a default (shown); so is a file that
-//! doesn't parse (logged).
+//! and `${VAR:-default}` are environment variables (`${XDG_DATA_HOME:-~/.local/share}/roms`). A source
+//! whose dir is missing is skipped, as one naming a variable unset without a default (shown); so is a file
+//! that doesn't parse (logged).
 
 use std::collections::HashSet;
 use std::fs;
@@ -82,36 +75,50 @@ use serde::Deserialize;
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
-    /// Places declared: their ids (to refer to as `@id`), icons and pictures; the tabs' order.
+    /// Places declared: their ids (to refer to as `@id`), icons and pictures; the tabs' order; ClamShell's
+    /// own tabs.
     #[serde(default)]
     pub places: Vec<Place>,
     #[serde(default)]
     pub runners: Vec<super::runners::Runner>,
-    /// Dirs whose entries go in the library.
+    /// Where entries come from, and where they go.
     #[serde(default)]
-    pub scans: Vec<Scan>,
+    pub sources: Vec<Source>,
     #[serde(default)]
     pub keys: crate::meta::Keys,
-    /// Where the desktop files' apps and games go (the first rule matching one; without one, Games for a
-    /// game, Apps for the rest: see [`place`]).
+}
+
+/// Where entries come from (`type`), and where they go: a dir scanned (`dir`), one browsed (`browse`), the
+/// desktop files' apps and games (`desktop`), Steam's installed games (`steam`), the removable
+/// filesystems mounted (`removable`). The last three put their entries at the place of the first of their
+/// `rules` matching one, else at their own `place`; without either, an entry is left out.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum Source {
+    Dir(Scan),
+    Browse(BrowseRoot),
+    Desktop(Placing<Rule>),
+    Steam(Placing<Rule>),
+    Removable(Placing<MountRule>),
+}
+
+/// A source's place for its entries, and its rules (the first matching one's place, or `hide`).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Placing<R> {
     #[serde(default)]
-    pub desktop: Vec<Rule>,
-    /// Where Steam's installed games go (the first rule matching one; without one, Games).
-    #[serde(default)]
-    pub steam: Vec<Rule>,
-    /// Dirs browsed (listed as they are opened) rather than scanned.
-    #[serde(default)]
-    pub browse: Vec<BrowseRoot>,
-    /// Where mounted removable filesystems go (the first rule matching one; without one, `Files/{label}`).
-    #[serde(default)]
-    pub removable: Vec<MountRule>,
+    pub place: Option<String>,
+    #[serde(default = "Vec::new")]
+    pub rules: Vec<R>,
 }
 
 /// A place declared: its `id` (`"place": "@snes"`, `"@snes/RPG"` elsewhere; its folder's id, `place:snes`,
 /// which outlives a new path), its `path` (`Games/SNES`; one part: a tab), its `icon` (one of the UI's by
 /// name, `gamepad`; a folder's also an image file, its row's) and a folder's `picture` (an image file,
 /// shown large when it is selected; a tab has none: something in it is always selected). Image files: `~/`
-/// the home dir, else from library.json's dir.
+/// the home dir, else from library.json's dir. `recent: false`: what is in it (and in its folders, unless
+/// they say) isn't in Recent (apps). `type`: one of ClamShell's own tabs (`recent`, `favourites`,
+/// `tools`), its path its name.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Place {
@@ -121,6 +128,21 @@ pub struct Place {
     pub icon: Option<String>,
     #[serde(default)]
     pub picture: Option<String>,
+    #[serde(default)]
+    pub recent: Option<bool>,
+    #[serde(default, rename = "type")]
+    pub kind: Option<OwnTab>,
+}
+
+/// One of ClamShell's own tabs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OwnTab {
+    /// The entries played last (not those in a place with `recent: false`).
+    Recent,
+    Favourites,
+    /// ClamShell's own tools (rescanning the library, fetching what is missing again).
+    Tools,
 }
 
 /// `place` with a declared place's id (`@snes`, `@snes/RPG`) as its path; Err: an id not declared.
@@ -730,7 +752,7 @@ mod tests {
     #[test]
     fn a_config_that_doesnt_parse_is_none() {
         let file = std::env::temp_dir().join(format!("clamshell-library-{}.json", std::process::id()));
-        fs::write(&file, r#"{ "scans": [{ "place": "Games" }] }"#).unwrap();
+        fs::write(&file, r#"{ "sources": [{ "type": "dir", "place": "Games" }] }"#).unwrap();
         let (config, problem) = read_config(&file);
         assert!(config.runners.is_empty());
         assert!(problem.is_some_and(|p| p.starts_with("library.json: missing field")), "said");

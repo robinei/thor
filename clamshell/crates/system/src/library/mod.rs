@@ -47,10 +47,6 @@ impl Sources {
     }
 }
 
-/// The tab Steam's games and the desktop files' games go in, and the desktop files' apps.
-const GAMES: &str = "Games";
-const APPS: &str = "Apps";
-
 /// The folders made in the tabs, by tab and path; library.json's places (their ids, icons, pictures),
 /// image files in them from `config_dir` (`~/` the home dir).
 struct Folders<'a> {
@@ -217,7 +213,11 @@ pub fn load(sources: &Sources) -> Loaded {
     let (runners, runner_problems) = runners::in_force(&config.runners);
     problems.extend(runner_problems);
     let runner_keymaps = runners.iter().filter_map(|r| Some((clamshell_library::runner_key(&r.id), r.keymap.clone()?))).collect();
-    for source in &config.scans {
+    let of = |pick: fn(&content::Source) -> Option<&content::Scan>| config.sources.iter().filter_map(pick);
+    for source in of(|s| match s {
+        content::Source::Dir(scan) => Some(scan),
+        _ => None,
+    }) {
         // The runner it names opens all its entries (its patterns theirs, unless it has its own); else
         // each its file's name's.
         let named = match source.runner.as_deref().map(|id| runners.iter().find(|r| r.id == id).ok_or(id)) {
@@ -287,7 +287,11 @@ pub fn load(sources: &Sources) -> Loaded {
     // Browsed dirs (library.json's, then the removable filesystems mounted): each a folder, listed when
     // it is opened.
     let mut roots: Vec<(String, Game)> = Vec::new();
-    for root in &config.browse {
+    let browsed = config.sources.iter().filter_map(|s| match s {
+        content::Source::Browse(root) => Some(root),
+        _ => None,
+    });
+    for root in browsed {
         let place = match resolve(&root.place) {
             Ok(place) => place.trim().trim_matches('/').to_owned(),
             Err(e) => {
@@ -314,13 +318,20 @@ pub fn load(sources: &Sources) -> Loaded {
         let kind = if root.trash { BrowseKind::Trash } else { BrowseKind::Root };
         roots.push((place.to_owned(), browsed_root(&format!("browse:{place}"), dir, kind)));
     }
-    for m in crate::files::media_mounts() {
-        let rule = config.removable.iter().find(|r| r.matches(&m.label, &m.uuid, &m.fs));
+    let removable = config.sources.iter().find_map(|s| match s {
+        content::Source::Removable(placing) => Some(placing),
+        _ => None,
+    });
+    for (m, placing) in removable.map(|p| crate::files::media_mounts().into_iter().map(move |m| (m, p))).into_iter().flatten() {
+        let rule = placing.rules.iter().find(|r| r.matches(&m.label, &m.uuid, &m.fs));
         if rule.is_some_and(|r| r.hide) {
             continue;
         }
         let name = if m.label.is_empty() { &m.uuid } else { &m.label };
-        let place = match resolve(rule.and_then(|r| r.place.as_deref()).unwrap_or("Files/{label}")) {
+        let Some(place) = rule.and_then(|r| r.place.as_deref()).or(placing.place.as_deref()) else {
+            continue;
+        };
+        let place = match resolve(place) {
             Ok(place) => place.replace("{label}", name),
             Err(e) => {
                 problems.push(e);
@@ -350,45 +361,53 @@ pub fn load(sources: &Sources) -> Loaded {
         games.extend(more);
         (first..games.len()).collect::<Vec<_>>()
     };
-    // Steam's installed games and the desktop files' apps and games: where library.json's rules put them,
-    // else Games for a game and Apps for an app (the games first, then the apps, each tab made where it is
-    // first named).
+    // Steam's installed games and the desktop files' apps and games, where their sources' rules (else
+    // their own place) put them; without either, left out. (The games first, then the apps.)
     let mut placed: Vec<(String, Game)> = Vec::new();
     let mut rule_problems: Vec<String> = Vec::new();
-    let mut place = |rules: &[content::Rule], id: &str, name: &str, categories: &[String], game: Game| {
-        let rule = rules.iter().find(|r| r.matches(id, name, categories));
+    let mut place = |placing: &content::Placing<content::Rule>, id: &str, name: &str, categories: &[String], game: Game| {
+        let rule = placing.rules.iter().find(|r| r.matches(id, name, categories));
         if rule.is_some_and(|r| r.hide) {
             return;
         }
-        let default = if game.tool { APPS } else { GAMES };
-        let place = match rule.and_then(|r| r.place.as_deref()).map(resolve) {
-            Some(Ok(place)) => place,
-            Some(Err(e)) => {
-                rule_problems.push(e);
-                return;
-            }
-            None => default.to_owned(),
-        };
-        // (In Apps: an app, which Recent leaves out; anywhere else, played like a game.)
-        let game = Game { tool: content::place(&place).0 == APPS, ..game };
-        placed.push((place, game));
+        match rule.and_then(|r| r.place.as_deref()).or(placing.place.as_deref()).map(resolve) {
+            Some(Ok(place)) => placed.push((place, game)),
+            Some(Err(e)) => rule_problems.push(e),
+            None => {}
+        }
     };
-    // (Each by its runner of that type: without one, none.)
+    // (Each opened by its runner of that type: a source without one is a problem.)
+    let source = |want: fn(&content::Source) -> Option<&content::Placing<content::Rule>>| config.sources.iter().find_map(want);
+    let steam_source = source(|s| match s {
+        content::Source::Steam(p) => Some(p),
+        _ => None,
+    });
+    let desktop_source = source(|s| match s {
+        content::Source::Desktop(p) => Some(p),
+        _ => None,
+    });
     let steam_runner = runners::of_kind(&runners, runners::Kind::Steam).map(runners::Runner::of);
     let desktop_runner = runners::of_kind(&runners, runners::Kind::Desktop).map(runners::Runner::of);
-    let steam_games = sources.steam.as_deref().filter(|_| steam_runner.is_some()).map(steam::games).unwrap_or_default();
-    for mut game in steam_games {
-        game.runner.clone_from(&steam_runner);
-        let appid = match game.launch {
-            Launch::Steam { appid } => appid.to_string(),
-            _ => String::new(),
-        };
-        place(&config.steam, &appid, &game.title.clone(), &[], game);
+    for (wanted, runner, what) in [(steam_source.is_some(), &steam_runner, "steam"), (desktop_source.is_some(), &desktop_runner, "desktop")] {
+        if wanted && runner.is_none() {
+            problems.push(format!("a {what} source needs a runner of type {what} to open its entries"));
+        }
     }
-    let desktop_files = if desktop_runner.is_some() { crate::desktop::entries(&sources.data_dirs) } else { Vec::new() };
-    for mut d in desktop_files {
-        d.game.runner.clone_from(&desktop_runner);
-        place(&config.desktop, &d.id, &d.name, &d.categories, d.game);
+    if let (Some(placing), Some(_)) = (steam_source, &steam_runner) {
+        for mut game in sources.steam.as_deref().map(steam::games).unwrap_or_default() {
+            game.runner.clone_from(&steam_runner);
+            let appid = match game.launch {
+                Launch::Steam { appid } => appid.to_string(),
+                _ => String::new(),
+            };
+            place(placing, &appid, &game.title.clone(), &[], game);
+        }
+    }
+    if let (Some(placing), Some(_)) = (desktop_source, &desktop_runner) {
+        for mut d in crate::desktop::entries(&sources.data_dirs) {
+            d.game.runner.clone_from(&desktop_runner);
+            place(placing, &d.id, &d.name, &d.categories, d.game);
+        }
     }
     rule_problems.sort();
     rule_problems.dedup();
@@ -419,26 +438,46 @@ pub fn load(sources: &Sources) -> Loaded {
         }
     }
     collections.retain(|c| !c.games.is_empty());
-    // The tabs in the order library.json's places declare them (the rest after, as first named), with
-    // their icons (Games and Apps with theirs unless it says).
-    let tab = |c: &Collection| config.places.iter().position(|p| p.path.trim().trim_matches('/') == c.name);
-    collections.sort_by_key(|c| tab(c).unwrap_or(usize::MAX));
-    for c in &mut collections {
-        c.icon = tab(c).and_then(|i| config.places.get(i)).and_then(|p| p.icon.clone()).or_else(|| match c.name.as_str() {
-            GAMES => Some("gamepad".to_owned()),
-            APPS => Some("apps".to_owned()),
-            _ => None,
-        });
-    }
     for c in &mut collections {
         c.games.sort_by(|&a, &b| list_order(&games, a, b));
     }
-    // ClamShell's own tools, last, in their order.
-    let first = games.len();
-    for (id, title, tool, summary) in TOOLS {
-        games.push(Game { launch: Launch::Tool(tool.into()), tool: true, summary: summary.into(), ..Game::new(id, title) });
+    // What is in Recent: not what is in a place (or a folder of one) saying `recent: false`.
+    let tab_place = |name: &str| config.places.iter().find(|p| p.path.trim().trim_matches('/') == name);
+    for c in &collections {
+        let recent = tab_place(&c.name).and_then(|p| p.recent).unwrap_or(true);
+        let mut stack: Vec<(usize, bool)> = c.games.iter().map(|&i| (i, recent)).collect();
+        while let Some((i, inherited)) = stack.pop() {
+            let declared = games.get(i).and_then(|g| g.id.strip_prefix("place:")).and_then(|id| config.places.iter().find(|p| p.id == id));
+            let recent = declared.and_then(|p| p.recent).unwrap_or(inherited);
+            if let Some(g) = games.get_mut(i) {
+                g.tool = !recent;
+                stack.extend(g.items.iter().map(|&item| (item, recent)));
+            }
+        }
     }
-    collections.push(Collection::with_icon("Tools", "tools", (first..games.len()).collect()));
+    // ClamShell's own tools, as library.json's places declare their tab.
+    let own = |kind: content::OwnTab| {
+        config
+            .places
+            .iter()
+            .find(|p| p.kind == Some(kind))
+            .map(|p| clamshell_library::OwnTab { name: p.path.trim().trim_matches('/').to_owned(), icon: p.icon.clone() })
+    };
+    if let Some(tab) = own(content::OwnTab::Tools) {
+        let first = games.len();
+        for (id, title, tool, summary) in TOOLS {
+            games.push(Game { launch: Launch::Tool(tool.into()), tool: true, summary: summary.into(), ..Game::new(id, title) });
+        }
+        collections.push(Collection { icon: tab.icon, ..Collection::new(&tab.name, (first..games.len()).collect()) });
+    }
+    // The tabs' icons, and their order (Recent's and Favourites' too), as the places declare them.
+    for c in &mut collections {
+        if let Some(p) = tab_place(&c.name) {
+            c.icon.clone_from(&p.icon);
+        }
+    }
+    let order: Vec<String> = config.places.iter().map(|p| p.path.trim().trim_matches('/')).filter(|p| !p.contains('/')).map(str::to_owned).collect();
+    let (recent, favourites) = (own(content::OwnTab::Recent), own(content::OwnTab::Favourites));
     let mut metas = std::collections::HashMap::new();
     let mut probes = std::collections::HashMap::new();
     if let Some(db) = sources.db.as_deref().and_then(|f| crate::store::Store::open(f).map_err(|e| log::warn!("library: {}: {e}", f.display())).ok()) {
@@ -465,7 +504,7 @@ pub fn load(sources: &Sources) -> Loaded {
             g.favourite = favourites.contains(&*g.id);
         }
     }
-    let mut library = Library { collections, games, problems, away, runner_keymaps, ..Library::default() };
+    let mut library = Library { collections, games, problems, away, runner_keymaps, order, recent, favourites, ..Library::default() };
     // What was fetched before, where its images are still there; what to fetch.
     let now = crate::meta::now();
     let mut wanted = Vec::new();
@@ -536,10 +575,11 @@ mod tests {
         std::fs::write(steam.join("steamapps/appmanifest_20.acf"), manifest(20, "Zork")).unwrap();
         std::fs::create_dir_all(root.join("snes")).unwrap();
         std::fs::write(root.join("snes/Mario.sfc"), "").unwrap();
-        let config = |steam_group: &str| {
+        // (The Steam source's place, or its rules.)
+        let config = |steam: &str| {
             format!(
-                r#"{{ {steam_group} "runners": [{{ "name": "Test SNES", "match": ["*.sfc"], "launch": ["retroarch", "{{path}}"] }}, {{ "type": "steam", "id": "steam", "name": "Steam" }}],
-                    "scans": [{{ "place": "Games/SNES", "id": "snes", "dir": "{}" , "match": ["*.sfc"] }}] }}"#,
+                r#"{{ "runners": [{{ "name": "Test SNES", "match": ["*.sfc"], "launch": ["retroarch", "{{path}}"] }}, {{ "type": "steam", "id": "steam", "name": "Steam" }}],
+                    "sources": [{{ "type": "dir", "place": "Games/SNES", "id": "snes", "dir": "{}" , "match": ["*.sfc"] }}, {{ "type": "steam", {steam} }}] }}"#,
                 root.join("snes").display()
             )
         };
@@ -549,10 +589,10 @@ mod tests {
             let tab = lib.collections.iter().find(|c| c.name == "Games").unwrap();
             tab.games.iter().map(|&i| lib.games[i].title.clone()).collect::<Vec<_>>()
         };
-        assert_eq!(games_tab(&config("")), ["SNES", "Arma", "Zork"], "the folder first, before Arma");
-        assert_eq!(games_tab(&config(r#""steam": [{ "place": "Games/Steam" }],"#)), ["SNES", "Steam"], "Steam's games in their folder");
-        // By name or app id, into folders, or hidden; the rest by the rule matching anything.
-        let rules = r#""steam": [{ "name": "z*", "place": "Games/Steam/Text" }, { "id": "10", "hide": true }, { "place": "Games/Steam" }],"#;
+        assert_eq!(games_tab(&config(r#""place": "Games""#)), ["SNES", "Arma", "Zork"], "the folder first, before Arma");
+        assert_eq!(games_tab(&config(r#""place": "Games/Steam""#)), ["SNES", "Steam"], "Steam's games in their folder");
+        // By name or app id, into folders, or hidden; the rest at the source's place.
+        let rules = r#""place": "Games/Steam", "rules": [{ "name": "z*", "place": "Games/Steam/Text" }, { "id": "10", "hide": true }]"#;
         std::fs::write(steam.join("steamapps/appmanifest_30.acf"), manifest(30, "Celeste")).unwrap();
         std::fs::write(root.join("library.json"), config(rules)).unwrap();
         let lib = load(&Sources { config: Some(root.join("library.json")), steam: Some(steam.clone()), ..Sources::default() }).library;
@@ -585,11 +625,12 @@ mod tests {
         write("lutris", "Lutris", "Game;");
         write("uninstall-foo", "Uninstall Foo", "Utility;");
         write("foot", "Foot", "System;");
-        let config = r#"{ "runners": [{ "type": "desktop", "name": "Desktop" }], "desktop": [
+        let config = r#"{ "places": [{ "id": "apps", "path": "Apps", "recent": false }],
+          "runners": [{ "type": "desktop", "name": "Desktop" }], "sources": [{ "type": "desktop", "place": "@apps", "rules": [
             { "id": "lutris", "place": "Launchers" },
             { "id": "celeste", "place": "Games/Platformers" },
             { "name": "uninstall*", "hide": true }
-        ] }"#;
+        ] }] }"#;
         std::fs::write(root.join("library.json"), config).unwrap();
         let lib = load(&Sources { config: Some(root.join("library.json")), data_dirs: vec![root.join("data")], ..Sources::default() }).library;
         let tab = |name: &str| lib.collections.iter().find(|c| c.name == name).map(|c| c.games.iter().map(|&i| lib.games[i].title.clone()).collect::<Vec<_>>());
@@ -597,7 +638,9 @@ mod tests {
         let folder = lib.games.iter().find(|g| g.title == "Platformers").unwrap();
         assert_eq!(folder.items.iter().map(|&i| lib.games[i].title.as_str()).collect::<Vec<_>>(), ["Celeste"]);
         assert_eq!(tab("Launchers"), Some(vec!["Lutris".to_owned()]));
-        assert_eq!(tab("Apps"), Some(vec!["Foot".to_owned()]), "Uninstall Foo hidden");
+        assert_eq!(tab("Apps"), Some(vec!["Foot".to_owned()]), "Uninstall Foo hidden; the rest at the source's place");
+        let entry = |title: &str| lib.games.iter().find(|g| g.title == title).unwrap();
+        assert!(entry("Foot").tool && !entry("Celeste").tool, "Apps says recent: false");
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -618,7 +661,7 @@ mod tests {
             };
             (
                 format!(r#"{{ "name": "Test {id}", "match": ["{pattern}"], "launch": ["{emulator}", "{{path}}"] }}"#),
-                format!(r#"{{ "place": "{place}", "id": "{id}", "dir": "{}/{id}", "match": ["{pattern}"] }}"#, root.display()),
+                format!(r#"{{ "type": "dir", "place": "{place}", "id": "{id}", "dir": "{}/{id}", "match": ["{pattern}"] }}"#, root.display()),
             )
         };
         let (snes, gba, pc) = (source("SNES", "snes", "*.sfc", "snes9x"), source("@gba", "gba", "*.gba", "mgba"), source("", "pc", "*.sh", "sh"));
@@ -626,15 +669,16 @@ mod tests {
         let pc_scan = pc.1.replace(r#""match""#, r#""runner": "test-pc", "match""#);
         let config = format!(
             r#"{{ "places": [{{ "id": "other", "path": "Other", "icon": "star" }}, {{ "id": "games", "path": "Games", "icon": "film" }},
-                {{ "id": "gba", "path": "Games/Handhelds/GBA", "icon": "gba.png", "picture": "~/gba-large.png" }}],
-              "runners": [ {}, {}, {} ], "scans": [ {}, {}, {} ] }}"#,
+                {{ "id": "gba", "path": "Games/Handhelds/GBA", "icon": "gba.png", "picture": "~/gba-large.png" }},
+                {{ "id": "tools", "path": "Mine", "type": "tools", "icon": "tools" }}],
+              "runners": [ {}, {}, {} ], "sources": [ {}, {}, {} ] }}"#,
             snes.0, gba.0, pc.0, snes.1, gba.1, pc_scan
         );
         std::fs::write(root.join("library.json"), config).unwrap();
         let lib = load(&Sources { config: Some(root.join("library.json")), ..Sources::default() }).library;
         // (The test's emulators aren't installed: only that is wrong.)
         assert!(lib.problems.iter().all(|p| p.ends_with("isn't installed")), "{:?}", lib.problems);
-        assert_eq!(lib.collections.last().map(|c| c.name.as_str()), Some("Tools"));
+        assert_eq!(lib.collections.last().map(|c| c.name.as_str()), Some("Mine"), "ClamShell's tools, named and placed as declared");
         assert_eq!((lib.collections[0].name.as_str(), lib.collections[0].icon.as_deref()), ("Games", Some("film")), "listed: its icon; Other has nothing");
         let games = |ids: &[usize]| ids.iter().map(|&i| lib.games[i].title.clone()).collect::<Vec<_>>();
         let tab = lib.collections.iter().find(|c| c.name == "Games").unwrap();

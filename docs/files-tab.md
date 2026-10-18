@@ -7,28 +7,26 @@ listed again whenever it changes while it is open.
 ## library.json
 
 ```json
-{ "browse": [
-    { "place": "Files/Home", "dir": "~" },
-    { "place": "Files/Root", "dir": "/" },
-    { "place": "Files/Trash", "dir": "${XDG_DATA_HOME:-~/.local/share}/Trash/files", "trash": true }
-  ],
-  "removable": [
-    { "label": "SD*", "place": "Files/SD card" },
-    { "fs": "vfat", "place": "Files/USB/{label}" },
-    { "uuid": "1234-ABCD", "hide": true },
-    { "place": "Files/{label}" }
-  ] }
+"sources": [
+  { "type": "browse", "place": "@files/Home", "dir": "~" },
+  { "type": "browse", "place": "@files/Root", "dir": "/" },
+  { "type": "browse", "place": "@files/Trash", "dir": "${XDG_DATA_HOME:-~/.local/share}/Trash/files", "trash": true },
+  { "type": "removable", "place": "@files/{label}", "rules": [
+      { "label": "SD*", "place": "@files/SD card" },
+      { "fs": "vfat", "place": "@files/USB/{label}" },
+      { "uuid": "1234-ABCD", "hide": true } ] }
+]
 ```
 
-- `browse`: an entry per dir, its own folder at `place` (its last part the folder's title; `Files/Places/Root`
+- `browse`: a source per dir, its own folder at `place` (its last part the folder's title; `Files/Places/Root`
   puts it in a folder `Places`). Nothing in it is scanned, fetched or counted beforehand.
 - `dir` (here and in scans): `~` and `~/` at the start; `$VAR`, `${VAR}`, `${VAR:-default}` anywhere
   (the default itself expanded). An unset variable without a default skips the entry, shown as a problem.
-- `removable`: rules, as `desktop` and `steam`, for the removable filesystems mounted under `/run/media`
-  (udisks2's mounts; udiskie mounts what is put in). Matchers `label`, `uuid`, `fs` (globs, any case); the
-  first rule matching a filesystem puts it at `place` as its folder (`{label}` in it replaced by its label,
-  else its UUID), or hides it. Without a rule: `Files/{label}`. A mount or unmount reads the
-  library again, so its folder comes and goes, and sources on it come back.
+- `removable`: the removable filesystems mounted under `/run/media` (udisks2's mounts; udiskie mounts what
+  is put in), each at the place of the first of its rules matching it (`label`, `uuid`, `fs`: globs, any
+  case; `{label}` in a place replaced by its label, else its UUID), else at the source's `place`; a rule
+  may hide one. Without a removable source, none shows. A mount or unmount reads the library again, so a
+  folder comes and goes, and scans on it come back.
 - Browsed dirs' folders come after the tab's other folders, in the order library.json and the mounts give
   them.
 

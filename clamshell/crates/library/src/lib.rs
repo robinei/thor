@@ -282,6 +282,18 @@ pub struct Library {
     /// Runners (by key) that come with a keymap of ClamShell's (its name: see clamshell-core's
     /// `keymap::preset`), their own until one is chosen for them.
     pub runner_keymaps: Vec<(Arc<str>, String)>,
+    /// The tabs' order, by name (those not in it after, as they are); and Recent and Favourites, as
+    /// library.json declares them (each only if declared).
+    pub order: Vec<String>,
+    pub recent: Option<OwnTab>,
+    pub favourites: Option<OwnTab>,
+}
+
+/// One of ClamShell's own tabs as declared: its name and icon.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OwnTab {
+    pub name: String,
+    pub icon: Option<String>,
 }
 
 impl Library {
@@ -292,8 +304,8 @@ impl Library {
 }
 
 impl Library {
-    /// Rebuilds Recent (the last entries played, apps left out) and Favourites in front of the other
-    /// collections; either is left out while empty.
+    /// Rebuilds Recent (the last entries played, apps left out) and Favourites, where declared, the tabs
+    /// in their order; either is left out while empty.
     pub fn rebuild_derived(&mut self) {
         self.collections.retain(|c| !c.derived);
         let mut recent: Vec<usize> =
@@ -305,15 +317,15 @@ impl Library {
             let key = |i: usize| self.games.get(i).map(|g| (&g.sort_key, &g.title));
             key(a).cmp(&key(b))
         });
-        let derived = |name: &str, icon: &str, games: Vec<usize>| Collection { derived: true, ..Collection::with_icon(name, icon, games) };
-        let mut front = Vec::new();
-        if !recent.is_empty() {
-            front.push(derived("Recent", "clock", recent));
+        let derived = |tab: &OwnTab, games: Vec<usize>| Collection { name: tab.name.clone(), icon: tab.icon.clone(), derived: true, games };
+        for (tab, games) in [(&self.recent, recent), (&self.favourites, favourites)] {
+            if let Some(tab) = tab.as_ref().filter(|_| !games.is_empty()) {
+                let c = derived(tab, games);
+                self.collections.push(c);
+            }
         }
-        if !favourites.is_empty() {
-            front.push(derived("Favourites", "star", favourites));
-        }
-        self.collections.splice(0..0, front);
+        let order = &self.order;
+        self.collections.sort_by_key(|c| order.iter().position(|n| *n == c.name).unwrap_or(usize::MAX));
     }
 
     /// The ids of the favourite entries (as saved).
@@ -522,7 +534,15 @@ pub fn demo_library() -> Library {
         Collection::with_icon("TV", "tv", vec![series]),
         Collection::with_icon("Apps", "apps", (n..n + apps.len()).collect()),
     ];
-    Library { collections, games, ..Library::default() }
+    let own = |name: &str, icon: &str| Some(OwnTab { name: name.into(), icon: Some(icon.into()) });
+    Library {
+        collections,
+        games,
+        order: vec!["Recent".into(), "Favourites".into()],
+        recent: own("Recent", "clock"),
+        favourites: own("Favourites", "star"),
+        ..Library::default()
+    }
 }
 
 #[cfg(test)]

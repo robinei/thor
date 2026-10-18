@@ -25,44 +25,46 @@ No panics by construction: `unwrap`, `expect`, `panic!` and slice indexing are d
 
 ## The library
 
-Shelf's tabs come from `~/.config/clamshell/library.json`. Everything opens by a runner declared there: an
-id (its settings are kept by it), a name (shown), the file names it opens, its command (`{path}` the
-file). Scans put the files of a dir in the library, at a place (a tab, maybe a folder of it). Two types find their
-items themselves: `desktop` the desktop files' apps and games (`Categories=Game` in Games, the rest in
-Apps), `steam` Steam's installed games. The starter library.json (`tools/device/library.json`) declares
-them all: Desktop, Steam, one per RetroArch system, Video and Music (mpv), Images (imv), PDF (zathura),
-Text (`less`), last Other files (`xdg-open`).
+Shelf comes from `~/.config/clamshell/library.json`, and nothing is there but what it declares:
+
+- `places`: the tabs (in their order, with their icons; Recent, Favourites and Tools are places of a
+  `type`) and folders in them, each with an id to refer to it by (`"@snes"`), and a folder's icon (its
+  row's) and picture (shown large when it is selected). `"recent": false` keeps what is in a place out of
+  Recent (apps).
+- `runners`: how things open, each with an id (its settings are kept by it), a name (shown), the file
+  names it opens and its command (`{path}` the file); a `desktop` and a `steam` runner open desktop files
+  and Steam's games, by their own commands.
+- `sources`: where entries come from, and where they go: `dir` (a dir scanned: what is an entry, its
+  metadata, the runner that opens its entries if not by their names), `browse` (a dir listed as it is
+  opened: the Files tab), `desktop` and `steam` (the installed apps and games, placed by rules),
+  `removable` (SD cards and USB sticks as they are mounted).
 
 ```json
-{ "runners": [
+{ "places": [
+    { "id": "recent", "path": "Recent", "type": "recent", "icon": "clock" },
+    { "id": "games", "path": "Games", "icon": "gamepad" },
+    { "id": "apps", "path": "Apps", "icon": "apps", "recent": false },
+    { "id": "snes", "path": "Games/SNES", "icon": "snes-icon.png", "picture": "snes.png" }
+  ],
+  "runners": [
     { "type": "desktop", "id": "desktop", "name": "Desktop", "match": ["*.desktop"] },
     { "id": "snes", "name": "SNES", "match": ["*.sfc", "*.smc"], "launch": ["retroarch", "-L", "/usr/lib/libretro/snes9x_libretro.so", "{path}"] },
     { "id": "video", "name": "Video", "match": ["*.mkv", "*.mp4"], "launch": ["mpv", "{path}"] }
   ],
-  "scans": [
-    { "id": "snes", "dir": "~/Games/snes", "place": "Games/SNES", "runner": "snes", "match": ["*.sfc", "*.smc", "*.zip"],
+  "sources": [
+    { "type": "dir", "id": "snes", "dir": "~/Games/snes", "place": "@snes", "runner": "snes", "match": ["*.sfc", "*.smc", "*.zip"],
       "metadata": "libretro:Nintendo - Super Nintendo Entertainment System" },
-    { "id": "tv", "dir": "~/TV", "place": "TV", "match": ["*/"], "items": ["*.mkv", "*.mp4"], "metadata": "tmdb:tv" }
+    { "type": "dir", "id": "tv", "dir": "~/TV", "place": "TV", "match": ["*/"], "items": ["*.mkv", "*.mp4"], "metadata": "tmdb:tv" },
+    { "type": "desktop", "place": "@apps", "rules": [{ "categories": "Game", "place": "@games" }, { "name": "*Uninstall*", "hide": true }] }
 ] }
 ```
 
-A scan's `match` (paths in its dir, a part per folder level: `*/*.cue`) says what is an entry (else its
-runner's patterns); its entries open by the runner it names (`runner`: the SNES scan's `.zip` files), else
-each by the runner its file's name matches (the series' episodes: Video); `items` makes each matched folder a group that opens in shelf (a series, its seasons,
-their episodes); `place` is where its entries go: a tab, or a folder in one (`"Games/SNES"`,
-`"Games/Handhelds/GBA"`), or a declared place by its id (`"@snes"`). `places` declares them: their id, path,
-icon (a tab's: one of the UI's; a folder's: also an image, its row's) and a folder's picture (shown large
-when it is selected): `{ "id": "snes", "path": "Games/SNES", "icon": "snes-icon.png", "picture": "snes.png" }`.
-The declared tabs come in that order. A file opened from the Files tab opens by the first runner whose patterns match its name. The
-design: `docs/runners.md`.
-
-Desktop files' apps and games go in Games (`Categories=Game`) or Apps unless `desktop` rules say otherwise:
-the first rule matching an entry's desktop id, name or categories (globs, any case) puts it in a tab or
-hides it (its `place`, as a scan's), e.g.
-`{ "id": "net.lutris.*", "place": "Games/Launchers" }`, `{ "name": "*Uninstall*", "hide": true }`. Steam's installed games go
-in Games unless `steam` rules say otherwise, matched by name or app id (`id`) the same way:
-`"steam": [{ "name": "Dark Souls*", "place": "Games/Steam/Souls" }, { "place": "Games/Steam" }]`. In every list,
-folders come first.
+The starter library.json (`tools/device/library.json`) declares ClamShell's set: Recent, Favourites,
+Games, Films, TV, Files, Apps, Tools; a runner per RetroArch system, Video and Music (mpv), Images (imv),
+PDF (zathura), Text (`less`), last Other files (`xdg-open`); a scan per system and for films and series,
+Steam, the desktop files, Home, Root, the Trash and removable storage. In every list, folders come first.
+A file opened from the Files tab opens by the first runner whose patterns match its name. The design:
+`docs/runners.md`.
 The rules (ids, titles, art, icons): `crates/system/src/library/content.rs`.
 
 Covers, screenshots, descriptions, developers and years are fetched in the background after start

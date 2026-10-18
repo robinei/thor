@@ -35,12 +35,22 @@ sqlite3 "$DB" "CREATE TABLE dock (position INTEGER PRIMARY KEY, id TEXT NOT NULL
   INSERT INTO dock VALUES (0, 'desktop:terminal'), (1, 'desktop:slow'), (2, 'desktop:spawner'), (3, 'desktop:detached');"
 # Two test games in a content dir, a tab of their own (Test, before Apps); each starts a window of its own.
 cat > "$T/config/clamshell/library.json" <<EOF
-{ "runners": [
+{ "places": [
+  { "id": "recent", "path": "Recent", "type": "recent", "icon": "clock" },
+  { "id": "test", "path": "Test" },
+  { "id": "games", "path": "Games", "icon": "gamepad" },
+  { "id": "apps", "path": "Apps", "icon": "apps", "recent": false },
+  { "id": "tools", "path": "Tools", "type": "tools", "icon": "tools" }
+],
+  "runners": [
   { "type": "desktop", "name": "Desktop", "match": ["*.desktop"] },
   { "name": "Test", "match": ["test.game"], "launch": ["sh", "-c", "foot --app-id=testgame sleep 300 & sleep 300"] },
   { "name": "Zeta", "match": ["zeta.game"], "launch": ["sh", "-c", "foot --app-id=zetagame sleep 300 & sleep 300"] }
 ],
-  "scans": [{ "id": "test", "dir": "$T/games", "place": "Test", "match": ["*.game"] }] }
+  "sources": [
+  { "type": "dir", "id": "test", "dir": "$T/games", "place": "@test", "match": ["*.game"] },
+  { "type": "desktop", "place": "@apps", "rules": [{ "categories": "Emulator", "place": "@apps" }, { "categories": "Game", "place": "@games" }] }
+] }
 EOF
 touch "$T/games/test.game" "$T/games/zeta.game"
 # The outputs, and how a ClamShell session behaves (as on the device).
