@@ -313,7 +313,8 @@ impl State {
     /// Where the pad goes, as things are now; the new route, if it changed.
     fn reconcile_pad(&mut self) -> Option<PadRoute> {
         let listening = self.listening();
-        self.pad.reconcile(self.session.front(), self.bottom.tab, self.pointer.show_focus, listening)
+        let moving = self.dock.moving.is_some() && self.bottom.tab == Tab::Dock;
+        self.pad.reconcile(self.session.front(), self.bottom.tab, self.pointer.show_focus, listening, moving)
     }
 
     fn apply_event(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
