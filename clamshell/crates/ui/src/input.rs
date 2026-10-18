@@ -8,7 +8,8 @@
 //! on a level row sets it where it is, and follows it. A finger on a scrolled list that moves up or down
 //! past [`DRAG_START`] drags the list instead (the row under it is let go without a tap); let go while
 //! moving, the list flings on, slowing down, until it stops or reaches an end. Last, a finger that would
-//! still tap on the second screen ([`points`]) and moves past [`POINT_START`] points (see clamshell-core's
+//! still tap on the second screen ([`points`]) and moves past [`POINT_START`] ([`BLANK_POINT_START`] on
+//! nothing, where there is no tap to keep) points (see clamshell-core's
 //! `touch`): it and the other fingers tapping there are let go without a tap and become the touchpad's,
 //! as are fingers that come down there while it points, until none has been on it for [`POINT_IDLE`].
 //! Positions are in the surface's logical pixels; the target's track says what they mean.
@@ -27,8 +28,10 @@ use crate::toolkit::{Target, Track};
 /// A finger on a list moved this far up or down (logical pixels) drags the list.
 pub(crate) const DRAG_START: f32 = 12.0;
 
-/// A finger on a key moved this far (logical pixels) points.
+/// A finger that would tap moved this far (logical pixels) points.
 pub(crate) const POINT_START: f32 = 24.0;
+/// A finger on nothing (no tap to keep) moved this far points: just past a still finger's jitter.
+pub(crate) const BLANK_POINT_START: f32 = 4.0;
 /// The keyboard points until no finger has pointed for this long.
 pub(crate) const POINT_IDLE: Duration = Duration::from_millis(1000);
 
@@ -255,7 +258,8 @@ impl Input {
             ];
         }
         // (Last: what moves of its own took the motion first.)
-        if press.may_point(source) && (x - press.down.0).hypot(y - press.down.1) >= POINT_START {
+        let start = if press.id == Id::Blank { BLANK_POINT_START } else { POINT_START };
+        if press.may_point(source) && (x - press.down.0).hypot(y - press.down.1) >= start {
             return self.start_pointing();
         }
         match &mut press.gesture {
@@ -730,6 +734,21 @@ mod tests {
         assert!(points(&input.moved(Source::Touch(2), (100.0, 0.0), t)).is_empty());
         input.touch(Source::Mouse, &tab_free(), (0.0, 0.0), t);
         assert!(points(&input.moved(Source::Mouse, (100.0, 0.0), t)).is_empty());
+    }
+
+    #[test]
+    fn on_nothing_a_finger_points_as_soon_as_it_moves() {
+        let state = blank();
+        let mut input = Input::default();
+        let (t, finger) = (t0(), Source::Touch(1));
+        input.touch(finger, &tab_free(), (50.0, 50.0), t);
+        assert!(points(&input.moved(finger, (50.0 + BLANK_POINT_START - 1.0, 50.0), t)).is_empty(), "jitter");
+        assert_eq!(points(&input.moved(finger, (50.0 + BLANK_POINT_START, 50.0), t)), vec![(finger, ContactPhase::Down)]);
+        input.up(finger, End::Release, &state, t);
+        // A key keeps its tap that long.
+        let key_at = target(key(), None);
+        input.touch(finger, &key_at, (50.0, 50.0), t);
+        assert!(points(&input.moved(finger, (50.0 + BLANK_POINT_START, 50.0), t)).is_empty());
     }
 
     fn tab_free() -> Target {
