@@ -2,7 +2,7 @@
 //! added at the end as they start and gone again when they stop (unless pinned). A pinned entry not
 //! running shows dimmed; a tap starts it. A tap on a running one shows its workspace (all its windows on
 //! the bottom screen: shows them there). A long press opens its menu: Open another (another launch,
-//! another tab), Close window (the one in view), Pin or Unpin, Move (the D-pad moves it, A or B ends),
+//! another tab; an app's only, see [`crate::Game::another`]), Close window (the one in view), Pin or Unpin, Move (the D-pad moves it, A or B ends),
 //! Quit and Force kill; a stopped one's: Unpin and Move.
 
 use std::sync::Arc;
@@ -147,7 +147,8 @@ impl State {
 
     fn menu_choice(&mut self, choice: DockId, entry: Arc<str>) -> Vec<Effect> {
         match choice {
-            DockId::OpenAnother => self.launch(entry),
+            DockId::OpenAnother if self.opens_another(&entry) => self.launch(entry),
+            DockId::OpenAnother => vec![],
             DockId::CloseWindow => self.entry_window(&entry).map(|w| vec![Effect::Window(WindowCommand::Close(vec![w]))]).unwrap_or_default(),
             DockId::Pin => self.toggle_pin(entry),
             DockId::Move => {
@@ -317,7 +318,7 @@ mod tests {
         s.apply(Event::Windows(vec![w]));
         let key = clamshell_library::key_of("zelda-lttp");
         long(&mut s, dock(0));
-        assert!(tap(&mut s, Id::Dock(DockId::OpenAnother)).iter().any(|e| matches!(e, Effect::Launch { .. })), "another launch");
+        assert!(!s.opens_another("zelda-lttp") && tap(&mut s, Id::Dock(DockId::OpenAnother)).is_empty(), "a game: not another");
         long(&mut s, dock(0));
         assert_eq!(tap(&mut s, Id::Dock(DockId::CloseWindow)), vec![Effect::Window(WindowCommand::Close(vec![5]))]);
         long(&mut s, dock(0));

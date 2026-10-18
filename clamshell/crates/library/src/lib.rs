@@ -73,6 +73,10 @@ pub struct Game {
     pub position_at: u64,
     /// An app, not a game or a film: Recent leaves it out.
     pub tool: bool,
+    /// Another launch of it while it runs makes sense (the dock menu's Open another): an app from a
+    /// desktop file, which opens a window of its own each time, unless its file says it has one main
+    /// window (`SingleMainWindow`). Not a game, nor a file opened.
+    pub another: bool,
     /// A group's entries (a series' seasons, a season's episodes), as indices into [`Library::games`], in
     /// order; empty for anything else.
     pub items: Vec<usize>,
@@ -143,6 +147,7 @@ impl Game {
             duration: None,
             position_at: 0,
             tool: false,
+            another: false,
             items: Vec::new(),
             parent: None,
             plays: Plays::default(),

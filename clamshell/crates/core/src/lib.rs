@@ -250,6 +250,12 @@ impl State {
     }
 
     /// A game of the library, by its id; one that runs and left it (its file deleted), as it was.
+    /// Whether the dock menu offers Open another for `id`: it runs, and another launch of it makes sense
+    /// (see [`Game::another`]).
+    pub fn opens_another(&self, id: &str) -> bool {
+        self.session.running(id).is_some() && self.game(id).is_some_and(|g| g.another)
+    }
+
     pub fn game(&self, id: &str) -> Option<&Game> {
         self.shelf.game(id).or_else(|| self.session.running(id).and_then(|r| r.entry.as_deref()))
     }

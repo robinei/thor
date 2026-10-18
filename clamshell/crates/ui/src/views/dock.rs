@@ -89,7 +89,7 @@ fn draw_menu(f: &mut Frame, entry: &std::sync::Arc<str>) {
     let pinned = s.dock().items().iter().any(|i| i.id == *entry && i.pinned);
     let item = |id, label, tone| Some((Id::Dock(id), label, tone));
     let items: Vec<(Id, &str, Tone)> = [
-        if running { item(DockId::OpenAnother, "Open another", Tone::Fn) } else { None },
+        if s.opens_another(entry) { item(DockId::OpenAnother, "Open another", Tone::Fn) } else { None },
         if running && s.entry_window(entry).is_some() { item(DockId::CloseWindow, "Close window", Tone::Fn) } else { None },
         item(DockId::Pin, if pinned { "Unpin" } else { "Pin" }, Tone::Fn),
         item(DockId::Move, "Move", Tone::Fn),
