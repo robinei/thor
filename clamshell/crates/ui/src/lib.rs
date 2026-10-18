@@ -233,6 +233,10 @@ struct App {
     fonts: DrawCache,
     keyboard: Option<wl_keyboard::WlKeyboard>,
     pointer: Option<wl_pointer::WlPointer>,
+    /// The compositor's cursor shapes, and our pointer's (the arrow over our surfaces: without it sway
+    /// shows none there).
+    cursor_shapes: Option<smithay_client_toolkit::seat::pointer::cursor_shape::CursorShapeManager>,
+    pub(crate) cursor: Option<smithay_client_toolkit::reexports::protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::WpCursorShapeDeviceV1>,
     touch: Option<wl_touch::WlTouch>,
     touch_layout: Arc<Mutex<TouchLayout>>,
     images: images::Images,
@@ -279,6 +283,8 @@ impl App {
             fonts: DrawCache::load(),
             keyboard: None,
             pointer: None,
+            cursor_shapes: smithay_client_toolkit::seat::pointer::cursor_shape::CursorShapeManager::bind(globals, qh).ok(),
+            cursor: None,
             touch: None,
             touch_layout: config.touch_layout.clone(),
             images,

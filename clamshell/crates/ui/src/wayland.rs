@@ -110,6 +110,7 @@ impl SeatHandler for App {
             }
             Capability::Pointer if self.pointer.is_none() => {
                 self.pointer = self.seat_state.get_pointer(qh, &seat).map_err(|e| log::warn!("pointer: {e}")).ok();
+                self.cursor = self.pointer.as_ref().zip(self.cursor_shapes.as_ref()).map(|(p, shapes)| shapes.get_shape_device(p, qh));
             }
             Capability::Touch if self.touch.is_none() => {
                 self.touch = self.seat_state.get_touch(qh, &seat).map_err(|e| log::warn!("touch: {e}")).ok();
@@ -126,6 +127,9 @@ impl SeatHandler for App {
                 }
             }
             Capability::Pointer => {
+                if let Some(c) = self.cursor.take() {
+                    c.destroy();
+                }
                 if let Some(p) = self.pointer.take() {
                     p.release();
                 }
@@ -169,6 +173,15 @@ impl PointerHandler for App {
     fn pointer_frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_pointer::WlPointer, events: &[PointerEvent]) {
         for event in events {
             match event.kind {
+                // Over our surfaces, the arrow.
+                PointerEventKind::Enter { serial } => {
+                    if let Some(cursor) = &self.cursor {
+                        cursor.set_shape(
+                            serial,
+                            smithay_client_toolkit::reexports::protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::Shape::Default,
+                        );
+                    }
+                }
                 PointerEventKind::Press { time, .. } => self.press_at(Source::Mouse, &event.surface, event.position, time),
                 PointerEventKind::Motion { time } => self.moved(Source::Mouse, event.position, time),
                 PointerEventKind::Release { time, .. } => {
