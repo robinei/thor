@@ -37,11 +37,10 @@ sqlite3 "$DB" "CREATE TABLE dock (position INTEGER PRIMARY KEY, id TEXT NOT NULL
 cat > "$T/config/clamshell/library.json" <<EOF
 { "runners": [
   { "type": "desktop", "name": "Desktop", "match": ["*.desktop"] },
-  { "name": "Test", "match": ["test.game"], "launch": ["sh", "-c", "foot --app-id=testgame sleep 300 & sleep 300"],
-    "scan": [{ "id": "test", "dir": "$T/games", "place": "Test" }] },
-  { "name": "Zeta", "match": ["zeta.game"], "launch": ["sh", "-c", "foot --app-id=zetagame sleep 300 & sleep 300"],
-    "scan": [{ "id": "test", "dir": "$T/games", "place": "Test" }] }
-] }
+  { "name": "Test", "match": ["test.game"], "launch": ["sh", "-c", "foot --app-id=testgame sleep 300 & sleep 300"] },
+  { "name": "Zeta", "match": ["zeta.game"], "launch": ["sh", "-c", "foot --app-id=zetagame sleep 300 & sleep 300"] }
+],
+  "scans": [{ "id": "test", "dir": "$T/games", "place": "Test", "match": ["*.game"] }] }
 EOF
 touch "$T/games/test.game" "$T/games/zeta.game"
 # The outputs, and how a ClamShell session behaves (as on the device).

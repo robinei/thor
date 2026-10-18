@@ -1,6 +1,6 @@
 //! Runners: how things open (see docs/runners.md), library.json's `runners`, every one declared there
 //! (nothing is opened by a runner it doesn't list). A file opens with the first runner one of whose
-//! patterns its name matches; a runner's `scan`s put what they find in the library, opened by it. Two
+//! patterns its name matches (a scan's entries too, unless the scan names its runner). Two
 //! types of runner find their items themselves, each item with its own command: `"type": "desktop"` the
 //! desktop files' apps and games (and a `.desktop` file opened), `"type": "steam"` Steam's installed games;
 //! without one, those aren't in the library.
@@ -8,10 +8,10 @@
 //! A runner's `id` keeps its settings, environment and own keymap (its `name` is only shown, and may
 //! change); without one, its name in lowercase, spaces as `-`.
 
-use clamshell_library::pattern;
-use serde::Deserialize;
+use std::path::Path;
 
-use super::content::Source;
+use clamshell_library::{Launch, pattern};
+use serde::Deserialize;
 
 /// A runner, as library.json gives it.
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -32,13 +32,6 @@ pub struct Runner {
     /// The command, `{path}` the file.
     #[serde(default)]
     pub launch: Vec<String>,
-    /// Where its entries' covers and details come from (`libretro:<system>`, `tmdb:movie`, `tmdb:tv`), for
-    /// a scan without its own.
-    #[serde(default)]
-    pub metadata: Option<String>,
-    /// Dirs whose entries go in the library.
-    #[serde(default)]
-    pub scan: Vec<Scan>,
     /// A keymap of ClamShell's it comes with (`viewer`: the D-pad, A, B and the shoulders as keys), its own
     /// until one is chosen for it.
     #[serde(default)]
@@ -59,41 +52,19 @@ pub enum Kind {
     Steam,
 }
 
-/// A dir a runner's entries are found in (see [`super::content`] for how): `id` names them (`<id>:<path
-/// in dir>`), `place` says where they show (a tab, or a folder in one: `Games/SNES`); `match` (paths in `dir`, a part per folder level:
-/// `*/*.cue`) and `items` (a matched folder's own entries) say what is an entry (else the runner's
-/// patterns).
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Scan {
-    pub id: String,
-    pub dir: String,
-    pub place: String,
-    #[serde(default, rename = "match")]
-    pub patterns: Vec<String>,
-    #[serde(default)]
-    pub items: Vec<String>,
-    #[serde(default)]
-    pub metadata: Option<String>,
-}
-
 impl Runner {
-    /// Its scans, each with what it takes from the runner.
-    pub fn sources(&self) -> Vec<Source> {
-        self.scan
-            .iter()
-            .map(|s| Source {
-                runner: self.id.clone(),
-                runner_name: self.name.clone(),
-                place: s.place.clone(),
-                id: s.id.clone(),
-                dir: s.dir.clone(),
-                patterns: if s.patterns.is_empty() { self.patterns.clone() } else { s.patterns.clone() },
-                items: s.items.clone(),
-                launch: self.launch.clone(),
-                metadata: s.metadata.clone().or_else(|| self.metadata.clone()),
-            })
-            .collect()
+    /// Its command for file `path` (`{path}` it, `~/` the home dir), in the file's folder: a desktop
+    /// file's its own, nothing for a Steam runner.
+    pub fn command(&self, path: &Path, home: Option<&Path>) -> Launch {
+        match self.kind {
+            Some(Kind::Desktop) => crate::desktop::command(path).unwrap_or_default(),
+            Some(Kind::Steam) => Launch::None,
+            None => {
+                let p = path.to_string_lossy();
+                let argv = self.launch.iter().map(|a| super::content::expand(a, home).to_string_lossy().replace("{path}", &p)).collect();
+                Launch::Program { argv, workdir: path.parent().map(Path::to_path_buf) }
+            }
+        }
     }
 
     /// The runner that opens an entry of it, as the entry keeps it.
@@ -145,6 +116,12 @@ pub fn opener<'a>(runners: &'a [Runner], name: &str) -> Option<&'a Runner> {
     runners.iter().find(|p| p.opens(name))
 }
 
+/// File `path` opened by the first of `runners` that opens its name: its command and runner.
+pub fn open(runners: &[Runner], path: &Path, home: Option<&Path>) -> Option<(Launch, clamshell_library::RunnerOf)> {
+    let runner = opener(runners, &path.file_name()?.to_string_lossy())?;
+    Some((runner.command(path, home), runner.of()))
+}
+
 /// The runner of a type, if there is one.
 pub fn of_kind(runners: &[Runner], kind: Kind) -> Option<&Runner> {
     runners.iter().find(|r| r.kind == Some(kind))
@@ -158,8 +135,7 @@ mod tests {
     #[test]
     fn runners_are_library_jsons_checked() {
         let config: Vec<Runner> = serde_json::from_str(
-            r#"[{ "id": "snes", "name": "SNES", "match": ["*.sfc"], "launch": ["retroarch", "{path}"],
-                  "scan": [{ "id": "snes", "dir": "~/snes", "place": "Games/SNES", "match": ["*.zip", "*.sfc"], "metadata": "libretro:x" }] },
+            r#"[{ "id": "snes", "name": "SNES", "match": ["*.sfc"], "launch": ["retroarch", "{path}"] },
                 { "name": "Text Viewer", "match": ["*.txt"], "launch": ["kate", "{path}"] },
                 { "type": "desktop", "id": "desktop", "name": "Apps", "match": ["*.desktop"] },
                 { "name": "Broken" },
@@ -170,10 +146,13 @@ mod tests {
         let ids: Vec<&str> = runners.iter().map(|r| r.id.as_str()).collect();
         assert_eq!(ids, ["snes", "text-viewer", "desktop", "other-files"], "Broken left out");
         assert_eq!(problems, ["Text Viewer: kate isn't installed", "Broken: no launch command"]);
-        let sources = runners[0].sources();
-        assert_eq!(sources[0].patterns, ["*.zip", "*.sfc"], "the scan's own patterns");
         assert_eq!(opener(&runners, "Zelda.SFC").map(|r| r.id.as_str()), Some("snes"));
-        assert_eq!(opener(&runners, "game.zip").map(|r| r.id.as_str()), Some("other-files"), "a scan's patterns open nothing");
+        assert_eq!(opener(&runners, "game.zip").map(|r| r.id.as_str()), Some("other-files"));
+        let (launch, runner) = open(&runners, Path::new("/g/Zelda.sfc"), None).unwrap();
+        assert_eq!(
+            (launch, &*runner.key),
+            (Launch::Program { argv: vec!["retroarch".into(), "/g/Zelda.sfc".into()], workdir: Some("/g".into()) }, "runner:snes")
+        );
         assert_eq!(opener(&runners, "app.desktop").map(|r| r.kind), Some(Some(Kind::Desktop)));
         assert!(of_kind(&runners, Kind::Steam).is_none(), "no Steam runner: no Steam games");
     }

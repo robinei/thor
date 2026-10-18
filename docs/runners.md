@@ -26,18 +26,14 @@ The first runner whose patterns match a file's name opens it. A runner has:
 - `launch`: the command, `{path}` the file.
 - `keymap`: a keymap of ClamShell's it comes with; `item_settings` (on unless `false`): whether its items
   have settings of their own.
-- `scan`, optionally: dirs whose matching entries go in the library, each with an `id` (entries' ids
-  are `<id>:<path in dir>`), `dir`, `place` (a tab, or a folder in one: `Games/SNES`), its own `match` and `items` for
-  the dir's layout (else the runner's patterns) and `metadata` (else the runner's). One runner may scan
-  several dirs (Video: films and series).
+
+A runner says nothing about where things are or show: that is the scans' (and the other places', below).
 
 ```json
 "runners": [
   { "type": "desktop", "id": "desktop", "name": "Desktop", "match": ["*.desktop"] },
   { "type": "steam", "id": "steam", "name": "Steam" },
-  { "id": "snes", "name": "SNES", "match": ["*.sfc", "*.smc"], "launch": ["retroarch", "-f", "-L", "/usr/lib/libretro/snes9x_libretro.so", "{path}"],
-    "metadata": "libretro:Nintendo - Super Nintendo Entertainment System",
-    "scan": [{ "id": "snes", "dir": "~/Games/snes", "place": "Games/SNES", "match": ["*.sfc", "*.smc", "*.zip"] }] },
+  { "id": "snes", "name": "SNES", "match": ["*.sfc", "*.smc"], "launch": ["retroarch", "-f", "-L", "/usr/lib/libretro/snes9x_libretro.so", "{path}"] },
   { "id": "text", "name": "Text", "match": ["*.txt", "*.md"], "launch": ["foot", "less", "{path}"], "keymap": "viewer" },
   { "id": "other", "name": "Other files", "match": ["*"], "launch": ["xdg-open", "{path}"] }
 ]
@@ -49,9 +45,8 @@ Boy Advance, Nintendo DS, Mega Drive, PlayStation, Dreamcast), Video and Music (
 (zathura), Text (`less` in foot), last Other files (`xdg-open`, any name). A runner whose program isn't on
 the PATH is shown as a problem (it stays: the program may come).
 
-A scan's own patterns (the SNES scan's `*.zip`) find entries in its dir but open nothing elsewhere: a
-`.zip` in the Files tab is Other files'. A file is opened the same way wherever it is: a `.sfc` opened from
-the Files tab is SNES's, scanned or not. A file that is a scanned entry's opens as that entry.
+A file is opened the same way wherever it is: a `.sfc` opened from the Files tab is SNES's, scanned or
+not. A file that is a scanned entry's opens as that entry.
 
 Two types of runner find their items themselves, each item with its own command: `"type": "desktop"` the
 desktop files' apps and games (and a `.desktop` file opened from the Files tab, by its `Exec`), `"type":
@@ -63,7 +58,14 @@ Without one, those items aren't in the library. Where their items show is the `d
 
 Where an item shows, and what can be done to it there:
 
-- A runner's `scan`: its entries at its `place`, a path: the tab, then folders in it (`Games/SNES`).
+- `scans`: dirs whose entries go in the library, each with an `id` (entries' ids are `<id>:<path in
+  dir>`), `dir`, `place`, its `match` and `items` for the dir's layout, `metadata` (where its entries'
+  covers and details come from: `libretro:<system>`, `tmdb:movie`, `tmdb:tv`) and, optionally, `runner`:
+  the runner that opens all its entries (else each opens by the runner its file's name matches). The
+  SNES scan names SNES, since its `*.zip` files would be Other files' by their name; the TV scan names
+  none, its episodes Video's by theirs. Several scans may fill one place (SNES on the card and on an SD
+  card). `{ "id": "snes", "dir": "~/Games/snes", "place": "@snes", "runner": "snes", "match": ["*.sfc",
+  "*.zip"], "metadata": "libretro:Nintendo - Super Nintendo Entertainment System" }`.
 - `browse`: dirs listed as they are opened (see files-tab.md), each its own folder at its place.
 - The rules for desktop files (`desktop`), Steam's games (`steam`) and removable storage (`removable`):
   the first matching one puts an item at its place, or hides it.

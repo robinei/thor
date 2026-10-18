@@ -27,7 +27,7 @@ No panics by construction: `unwrap`, `expect`, `panic!` and slice indexing are d
 
 Shelf's tabs come from `~/.config/clamshell/library.json`. Everything opens by a runner declared there: an
 id (its settings are kept by it), a name (shown), the file names it opens, its command (`{path}` the
-file), and dirs it scans into the library (each into a tab, maybe a folder of it). Two types find their
+file). Scans put the files of a dir in the library, at a place (a tab, maybe a folder of it). Two types find their
 items themselves: `desktop` the desktop files' apps and games (`Categories=Game` in Games, the rest in
 Apps), `steam` Steam's installed games. The starter library.json (`tools/device/library.json`) declares
 them all: Desktop, Steam, one per RetroArch system, Video and Music (mpv), Images (imv), PDF (zathura),
@@ -36,15 +36,19 @@ Text (`less`), last Other files (`xdg-open`).
 ```json
 { "runners": [
     { "type": "desktop", "id": "desktop", "name": "Desktop", "match": ["*.desktop"] },
-    { "id": "snes", "name": "SNES", "match": ["*.sfc", "*.smc"], "launch": ["retroarch", "-L", "/usr/lib/libretro/snes9x_libretro.so", "{path}"],
-      "scan": [{ "id": "snes", "dir": "~/Games/snes", "place": "Games/SNES", "match": ["*.sfc", "*.smc", "*.zip"] }] },
-    { "id": "video", "name": "Video", "match": ["*.mkv", "*.mp4"], "launch": ["mpv", "{path}"],
-      "scan": [{ "id": "tv", "dir": "~/TV", "place": "TV", "match": ["*/"], "items": ["*.mkv", "*.mp4"], "metadata": "tmdb:tv" }] }
+    { "id": "snes", "name": "SNES", "match": ["*.sfc", "*.smc"], "launch": ["retroarch", "-L", "/usr/lib/libretro/snes9x_libretro.so", "{path}"] },
+    { "id": "video", "name": "Video", "match": ["*.mkv", "*.mp4"], "launch": ["mpv", "{path}"] }
+  ],
+  "scans": [
+    { "id": "snes", "dir": "~/Games/snes", "place": "Games/SNES", "runner": "snes", "match": ["*.sfc", "*.smc", "*.zip"],
+      "metadata": "libretro:Nintendo - Super Nintendo Entertainment System" },
+    { "id": "tv", "dir": "~/TV", "place": "TV", "match": ["*/"], "items": ["*.mkv", "*.mp4"], "metadata": "tmdb:tv" }
 ] }
 ```
 
-A scan's `match` (paths in its dir, a part per folder level: `*/*.cue`) says what is an entry, else the
-runner's patterns; `items` makes each matched folder a group that opens in shelf (a series, its seasons,
+A scan's `match` (paths in its dir, a part per folder level: `*/*.cue`) says what is an entry (else its
+runner's patterns); its entries open by the runner it names (`runner`: the SNES scan's `.zip` files), else
+each by the runner its file's name matches (the series' episodes: Video); `items` makes each matched folder a group that opens in shelf (a series, its seasons,
 their episodes); `place` is where its entries go: a tab, or a folder in one (`"Games/SNES"`,
 `"Games/Handhelds/GBA"`), or a declared place by its id (`"@snes"`). `places` declares them: their id, path,
 icon (a tab's: one of the UI's; a folder's: also an image, its row's) and a folder's picture (shown large
@@ -62,7 +66,7 @@ folders come first.
 The rules (ids, titles, art, icons): `crates/system/src/library/content.rs`.
 
 Covers, screenshots, descriptions, developers and years are fetched in the background after start
-(`clamshell --fetch-metadata` does it without the UI): a scan's or runner's `"metadata": "libretro:<system>"`
+(`clamshell --fetch-metadata` does it without the UI): a scan's `"metadata": "libretro:<system>"`
 (libretro's thumbnails and database, by the file's checksum or by name), `"tmdb:movie"` or `"tmdb:tv"` (needs `"keys": { "tmdb": ... }`); Steam's
 games from the store; the desktop files' games from SteamGridDB (needs `keys.steamgriddb`). Art beside a
 file wins. libretro's lists are kept in `~/.cache/clamshell/libretro` for 30 days. The rules:

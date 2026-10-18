@@ -1,23 +1,27 @@
-//! library.json: the runners (how things open, and the dirs they scan into the library: see
-//! [`super::runners`]), where the desktop files' and Steam's entries go, the dirs browsed, the removable
-//! filesystems, the services' keys.
+//! library.json: the places declared, the runners (how things open: see [`super::runners`]), the scans
+//! (dirs whose entries go in the library), where the desktop files' and Steam's entries go, the dirs
+//! browsed, the removable filesystems, the services' keys.
 //!
 //! ```json
 //! { "runners": [
 //!     { "type": "desktop", "id": "desktop", "name": "Desktop", "match": ["*.desktop"] },
 //!     { "type": "steam", "id": "steam", "name": "Steam" },
-//!     { "id": "snes", "name": "SNES", "match": ["*.sfc", "*.smc"], "launch": ["retroarch", "-L", "/usr/lib/libretro/snes9x_libretro.so", "{path}"],
-//!       "scan": [{ "id": "snes", "dir": "~/Games/snes", "place": "Games/SNES", "match": ["*.sfc", "*.zip"] }] },
-//!     { "id": "video", "name": "Video", "match": ["*.mkv"], "launch": ["mpv", "{path}"], "scan": [
-//!       { "id": "films", "dir": "~/Films", "place": "Films", "match": ["*.mkv", "*/*.mkv"], "metadata": "tmdb:movie" },
-//!       { "id": "tv", "dir": "~/TV", "place": "TV", "match": ["*/"], "items": ["*.mkv", "*.mp4"], "metadata": "tmdb:tv" }] },
+//!     { "id": "snes", "name": "SNES", "match": ["*.sfc", "*.smc"], "launch": ["retroarch", "-L", "/usr/lib/libretro/snes9x_libretro.so", "{path}"] },
+//!     { "id": "video", "name": "Video", "match": ["*.mkv"], "launch": ["mpv", "{path}"] },
 //!     { "id": "other", "name": "Other files", "match": ["*"], "launch": ["xdg-open", "{path}"] }
-//! ],
+//!   ],
+//!   "scans": [
+//!     { "id": "snes", "dir": "~/Games/snes", "place": "Games/SNES", "runner": "snes", "match": ["*.sfc", "*.zip"], "metadata": "libretro:..." },
+//!     { "id": "films", "dir": "~/Films", "place": "Films", "match": ["*.mkv", "*/*.mkv"], "metadata": "tmdb:movie" },
+//!     { "id": "tv", "dir": "~/TV", "place": "TV", "match": ["*/"], "items": ["*.mkv", "*.mp4"], "metadata": "tmdb:tv" }
+//!   ],
 //!   "keys": { "tmdb": "...", "steamgriddb": "..." } }
 //! ```
 //!
-//! A scan (see [`super::runners::Scan`]):
-//! - `match`: patterns (see clamshell-library's `pattern`) against paths in `dir` (else the runner's).
+//! A scan (see [`Scan`]):
+//! - `runner`: the runner (by id) that opens its entries; else each opens by the runner its file's name
+//!   matches (a group: as its first entry).
+//! - `match`: patterns (see clamshell-library's `pattern`) against paths in `dir` (else its runner's).
 //!   An entry per name at the top of `dir`: a file, or a folder (matched itself, `*/`, or by a file in it,
 //!   `*/*.cue`); where several files of a folder match, the first pattern wins, then the first name.
 //! - `items`: a matched folder is a group: in it and every folder under it, the files matching these
@@ -36,7 +40,7 @@
 //!   scans (and rules) naming the same folder share it. The folder's art: a declared place's picture, else
 //!   `poster`, `cover` or `folder` in the scan's dir.
 //! - `metadata`: where to fetch covers, screenshots and the rest for its entries (`libretro:<system>`,
-//!   `tmdb:movie`, `tmdb:tv`; else the runner's); `keys`: the services' keys (see [`crate::meta`]).
+//!   `tmdb:movie`, `tmdb:tv`); `keys`: the services' keys (see [`crate::meta`]).
 //!
 //! The rest:
 //! - `places`: places declared (see [`Place`]): an `id` to refer to them by (`"place": "@snes"`; their
@@ -83,6 +87,9 @@ pub struct Config {
     pub places: Vec<Place>,
     #[serde(default)]
     pub runners: Vec<super::runners::Runner>,
+    /// Dirs whose entries go in the library.
+    #[serde(default)]
+    pub scans: Vec<Scan>,
     #[serde(default)]
     pub keys: crate::meta::Keys,
     /// Where the desktop files' apps and games go (the first rule matching one; without one, Games for a
@@ -194,27 +201,29 @@ impl Rule {
     }
 }
 
-/// A runner's scan, with what it takes from the runner (see [`super::runners::Runner::sources`]).
+/// A dir whose entries go in the library: `id` names them (`<id>:<path in dir>`), `place` says where they
+/// show, `match` (paths in `dir`, a part per folder level: `*/*.cue`) and `items` (a matched folder's own
+/// entries) say what is an entry, `metadata` where their covers and details come from; `runner` (an id)
+/// opens them all, else each opens by the runner its file's name matches (see [`super::runners`]).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Source {
-    /// The runner's id and name.
-    #[serde(default)]
-    pub runner: String,
-    #[serde(default)]
-    pub runner_name: String,
-    /// Where its entries go: a tab (`Games`), or a folder in one (`Games/SNES`, `Games/Handhelds/GBA`).
-    pub place: String,
+pub struct Scan {
     pub id: String,
     pub dir: String,
-    #[serde(rename = "match")]
+    /// Where its entries go: a tab (`Games`), or a folder in one (`Games/SNES`, `@snes`).
+    pub place: String,
+    #[serde(default, rename = "match")]
     pub patterns: Vec<String>,
     #[serde(default)]
     pub items: Vec<String>,
-    pub launch: Vec<String>,
     #[serde(default)]
     pub metadata: Option<String>,
+    #[serde(default)]
+    pub runner: Option<String>,
 }
+
+/// How a scanned file opens: its command and its runner, if a runner opens it.
+pub type Open<'a> = dyn Fn(&Path) -> Option<(Launch, clamshell_library::RunnerOf)> + 'a;
 
 /// A place's tab and the path of folders in it (none: the tab's top): `Games/Handhelds/GBA` is Games and
 /// `Handhelds/GBA`; slashes at its ends and spaces around its parts don't count.
@@ -240,9 +249,9 @@ pub fn read_config(file: &Path) -> (Config, Option<String>) {
     }
 }
 
-/// A source's entries: appended to `games` (groups before their items), the indices of its top-level
-/// ones returned.
-pub fn scan(source: &Source, home: Option<&Path>, games: &mut Vec<Game>) -> Vec<usize> {
+/// A scan's entries: appended to `games` (groups before their items, each file opened as `open` says, a
+/// group by its first entry's runner), the indices of its top-level ones returned.
+pub fn scan(source: &Scan, home: Option<&Path>, games: &mut Vec<Game>, open: &Open) -> Vec<usize> {
     let Ok(dir) = expand_dir(&source.dir, home) else {
         return Vec::new();
     };
@@ -264,19 +273,19 @@ pub fn scan(source: &Source, home: Option<&Path>, games: &mut Vec<Game>) -> Vec<
             }
         }
     }
-    let launch = Launcher { args: source.launch.iter().map(|a| expand(a, home).to_string_lossy().into_owned()).collect() };
     let mut tops = Vec::new();
     for (top, path) in found {
         let title = untagged(&if path.is_file() && path.parent() == Some(dir.as_path()) { stem(&top) } else { top.clone() });
         let id = format!("{}:{}", source.id, path.strip_prefix(&dir).unwrap_or(&path).to_string_lossy());
         let art = art(&path, &dir);
         let index = if path.is_dir() && !source.items.is_empty() {
-            match group(&path, &dir, &source.id, &source.items, &launch, None, games) {
+            match group(&path, &dir, &source.id, &source.items, open, None, games) {
                 Some(g) => g,
                 None => continue,
             }
         } else {
-            games.push(Game { launch: launch.of(&path), file: Some(path.clone()), ..Game::new(&id, &title) });
+            let (launch, runner) = opened(open, &path);
+            games.push(Game { launch, runner, file: Some(path.clone()), ..Game::new(&id, &title) });
             games.len() - 1
         };
         if let Some(g) = games.get_mut(index) {
@@ -289,18 +298,9 @@ pub fn scan(source: &Source, home: Option<&Path>, games: &mut Vec<Game>) -> Vec<
     tops
 }
 
-/// The launch command with `{path}` to fill in.
-struct Launcher {
-    args: Vec<String>,
-}
-
-impl Launcher {
-    /// The command for `path`, in its folder.
-    fn of(&self, path: &Path) -> Launch {
-        let p = path.to_string_lossy();
-        let argv = self.args.iter().map(|a| a.replace("{path}", &p)).collect();
-        Launch::Program { argv, workdir: path.parent().map(Path::to_path_buf) }
-    }
+/// `path`'s command and runner as `open` says; nothing (and none) if no runner opens it.
+fn opened(open: &Open, path: &Path) -> (Launch, Option<clamshell_library::RunnerOf>) {
+    open(path).map_or((Launch::None, None), |(launch, runner)| (launch, Some(runner)))
 }
 
 /// The paths under `dir` that `parts` match, a part per level (the last a folder if `folders`, else a
@@ -335,7 +335,7 @@ fn listing(dir: &Path) -> Vec<(String, PathBuf)> {
 
 /// The group of `folder` (in `dir`, the source's): its subfolders with entries first, then its files
 /// matching `items`; added to `games` with its items, its index returned. None if nothing in it matches.
-fn group(folder: &Path, dir: &Path, source: &str, items: &[String], launch: &Launcher, parent: Option<usize>, games: &mut Vec<Game>) -> Option<usize> {
+fn group(folder: &Path, dir: &Path, source: &str, items: &[String], open: &Open, parent: Option<usize>, games: &mut Vec<Game>) -> Option<usize> {
     let id = |path: &Path| format!("{source}:{}", path.strip_prefix(dir).unwrap_or(path).to_string_lossy());
     let name = folder.file_name()?.to_string_lossy().into_owned();
     let index = games.len();
@@ -351,7 +351,7 @@ fn group(folder: &Path, dir: &Path, source: &str, items: &[String], launch: &Lau
     let season = season_of(&name);
     let mut members = Vec::new();
     for (_, path) in listing.iter().filter(|(n, p)| p.is_dir() && !n.starts_with('.')) {
-        if let Some(g) = group(path, dir, source, items, launch, Some(index), games) {
+        if let Some(g) = group(path, dir, source, items, open, Some(index), games) {
             members.push(g);
         }
     }
@@ -361,13 +361,15 @@ fn group(folder: &Path, dir: &Path, source: &str, items: &[String], launch: &Lau
             continue;
         }
         // (A video keeps its own picture, its frame: not its folder's art.)
-        let video = Game { launch: launch.of(path), file: Some(path.clone()), ..Game::new("", "") }.mpv_file().is_some();
+        let (launch, runner) = opened(open, path);
+        let video = Game { launch: launch.clone(), file: Some(path.clone()), ..Game::new("", "") }.mpv_file().is_some();
         let box_front = art_beside(path).or_else(|| art.clone().filter(|_| !video));
         games.push(Game {
             parent: Some(index),
             box_front,
             color,
-            launch: launch.of(path),
+            launch,
+            runner,
             file: Some(path.clone()),
             ..Game::new(&id(path), &season.and_then(|n| episode_title(&stem(file), n)).unwrap_or_else(|| untagged(&stem(file))))
         });
@@ -383,8 +385,11 @@ fn group(folder: &Path, dir: &Path, source: &str, items: &[String], launch: &Lau
         games.truncate(index);
         return None;
     }
+    // (Its runner: its first entry's.)
+    let runner = members.iter().find_map(|&m| games.get(m).and_then(|g| g.runner.clone()));
     if let Some(g) = games.get_mut(index) {
         g.items = members;
+        g.runner = runner;
     }
     Some(index)
 }
@@ -613,8 +618,16 @@ mod tests {
         }
     }
 
-    fn source(json: &str) -> Source {
+    fn source(json: &str) -> Scan {
         serde_json::from_str(json).unwrap()
+    }
+
+    /// Opens every file with `program`.
+    fn by(program: &str) -> impl Fn(&Path) -> Option<(Launch, clamshell_library::RunnerOf)> + '_ {
+        move |path: &Path| {
+            let launch = Launch::Program { argv: vec![program.into(), path.to_string_lossy().into()], workdir: path.parent().map(Path::to_path_buf) };
+            Some((launch, clamshell_library::RunnerOf::new(program, program, true)))
+        }
     }
 
     #[test]
@@ -625,10 +638,10 @@ mod tests {
             &root,
             &["Zelda.sfc", "Zelda.png", "Mario.smc", "notes.txt", ".hidden.sfc", "FF7/FF7.m3u", "FF7/FF7 (Disc 1).cue", "FF7/cover.jpg", "Empty/readme"],
         );
-        let s = source(r#"{ "place": "Games", "id": "g", "dir": "~/x", "match": ["*.sfc", "*.smc", "*/*.m3u", "*/*.cue"], "launch": ["emu", "{path}"] }"#);
+        let s = source(r#"{ "place": "Games", "id": "g", "dir": "~/x", "match": ["*.sfc", "*.smc", "*/*.m3u", "*/*.cue"] }"#);
         let mut games = Vec::new();
-        let s = Source { dir: root.to_string_lossy().into_owned(), ..s };
-        let tops = scan(&s, None, &mut games);
+        let s = Scan { dir: root.to_string_lossy().into_owned(), ..s };
+        let tops = scan(&s, None, &mut games, &by("emu"));
         let found: Vec<(&str, &str)> = tops.iter().map(|&i| (&*games[i].id, games[i].title.as_str())).collect();
         assert_eq!(found, vec![("g:Zelda.sfc", "Zelda"), ("g:Mario.smc", "Mario"), ("g:FF7/FF7.m3u", "FF7")]);
         assert_eq!(games[0].box_front, Some(root.join("Zelda.png")));
@@ -654,10 +667,10 @@ mod tests {
                 "Film/Film.mkv",
             ],
         );
-        let s = source(r#"{ "place": "TV", "id": "tv", "dir": "", "match": ["*/"], "items": ["*.mkv"], "launch": ["mpv", "{path}"] }"#);
-        let s = Source { dir: root.to_string_lossy().into_owned(), ..s };
+        let s = source(r#"{ "place": "TV", "id": "tv", "dir": "", "match": ["*/"], "items": ["*.mkv"] }"#);
+        let s = Scan { dir: root.to_string_lossy().into_owned(), ..s };
         let mut games = Vec::new();
-        let tops = scan(&s, None, &mut games);
+        let tops = scan(&s, None, &mut games, &by("mpv"));
         let titles = |ids: &[usize]| ids.iter().map(|&i| games[i].title.clone()).collect::<Vec<_>>();
         assert_eq!(titles(&tops), vec!["Film", "Show"]);
         let show = &games[tops[1]];
@@ -687,12 +700,9 @@ mod tests {
         let root = std::env::temp_dir().join(format!("clamshell-seasons-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         touch(&root, &["Show/Cover.jpg", "Show/Season 1/017 S01E18 Part (Part 1).mkv", "Show/Season 1/S01E02 Two.mkv", "Show/Specials/001 S00E01 Pilot.mkv"]);
-        let s = Source {
-            dir: root.to_string_lossy().into_owned(),
-            ..source(r#"{ "place": "TV", "id": "tv", "dir": "", "match": ["*/"], "items": ["*.mkv"], "launch": ["mpv", "{path}"] }"#)
-        };
+        let s = Scan { dir: root.to_string_lossy().into_owned(), ..source(r#"{ "place": "TV", "id": "tv", "dir": "", "match": ["*/"], "items": ["*.mkv"] }"#) };
         let mut games = Vec::new();
-        let tops = scan(&s, None, &mut games);
+        let tops = scan(&s, None, &mut games, &by("mpv"));
         let show = &games[tops[0]];
         assert_eq!(show.box_front, Some(root.join("Show/Cover.jpg")), "Cover.jpg");
         let titles = |ids: &[usize]| ids.iter().map(|&i| games[i].title.clone()).collect::<Vec<_>>();
@@ -720,7 +730,7 @@ mod tests {
     #[test]
     fn a_config_that_doesnt_parse_is_none() {
         let file = std::env::temp_dir().join(format!("clamshell-library-{}.json", std::process::id()));
-        fs::write(&file, r#"{ "runners": [ { "name": "Games", "scan": [{ "place": "Games" }] } ] }"#).unwrap();
+        fs::write(&file, r#"{ "scans": [{ "place": "Games" }] }"#).unwrap();
         let (config, problem) = read_config(&file);
         assert!(config.runners.is_empty());
         assert!(problem.is_some_and(|p| p.starts_with("library.json: missing field")), "said");

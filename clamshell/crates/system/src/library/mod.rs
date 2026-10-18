@@ -217,8 +217,27 @@ pub fn load(sources: &Sources) -> Loaded {
     let (runners, runner_problems) = runners::in_force(&config.runners);
     problems.extend(runner_problems);
     let runner_keymaps = runners.iter().filter_map(|r| Some((clamshell_library::runner_key(&r.id), r.keymap.clone()?))).collect();
-    for source in runners.iter().flat_map(runners::Runner::sources) {
-        let source = &source;
+    for source in &config.scans {
+        // The runner it names opens all its entries (its patterns theirs, unless it has its own); else
+        // each its file's name's.
+        let named = match source.runner.as_deref().map(|id| runners.iter().find(|r| r.id == id).ok_or(id)) {
+            Some(Err(id)) => {
+                problems.push(format!("{}: no runner {id}", source.id));
+                continue;
+            }
+            Some(Ok(r)) => Some(r),
+            None => None,
+        };
+        let patterns = match named {
+            Some(r) if source.patterns.is_empty() => r.patterns.clone(),
+            _ => source.patterns.clone(),
+        };
+        let source = &content::Scan { patterns, ..source.clone() };
+        let home = sources.home.as_deref();
+        let open = |path: &Path| match named {
+            Some(r) => Some((r.command(path, home), r.of())),
+            None => runners::open(&runners, path, home),
+        };
         let dir = match content::expand_dir(&source.dir, sources.home.as_deref()) {
             Ok(dir) => dir,
             Err(name) => {
@@ -230,15 +249,7 @@ pub fn load(sources: &Sources) -> Loaded {
             problems.push(format!("{}: no folder {}", source.id, dir.display()));
             away.push(format!("{}:", source.id));
         }
-        let first = games.len();
-        let entries = content::scan(source, sources.home.as_deref(), &mut games);
-        let runner = runners
-            .iter()
-            .find(|r| r.id == source.runner)
-            .map_or_else(|| clamshell_library::RunnerOf::new(&source.runner, &source.runner_name, true), runners::Runner::of);
-        for g in games.get_mut(first..).into_iter().flatten() {
-            g.runner = Some(runner.clone());
-        }
+        let entries = content::scan(source, home, &mut games, &open);
         let how = source.metadata.as_deref().and_then(|m| {
             How::parse(m).or_else(|| {
                 problems.push(format!("{}: metadata \"{m}\" isn't libretro:<system>, tmdb:movie or tmdb:tv", source.id));
@@ -527,7 +538,8 @@ mod tests {
         std::fs::write(root.join("snes/Mario.sfc"), "").unwrap();
         let config = |steam_group: &str| {
             format!(
-                r#"{{ {steam_group} "runners": [{{ "name": "Test SNES", "match": ["*.sfc"], "launch": ["retroarch", "{{path}}"], "scan": [{{ "place": "Games/SNES", "id": "snes", "dir": "{}" }}] }}, {{ "type": "steam", "id": "steam", "name": "Steam" }}] }}"#,
+                r#"{{ {steam_group} "runners": [{{ "name": "Test SNES", "match": ["*.sfc"], "launch": ["retroarch", "{{path}}"] }}, {{ "type": "steam", "id": "steam", "name": "Steam" }}],
+                    "scans": [{{ "place": "Games/SNES", "id": "snes", "dir": "{}" , "match": ["*.sfc"] }}] }}"#,
                 root.join("snes").display()
             )
         };
@@ -604,18 +616,19 @@ mod tests {
                 g if g.starts_with('@') => g.to_owned(),
                 g => format!("Games/{g}"),
             };
-            format!(
-                r#"{{ "name": "Test {id}", "match": ["{pattern}"], "launch": ["{emulator}", "{{path}}"], "scan": [{{ "place": "{place}", "id": "{id}", "dir": "{}/{id}" }}] }}"#,
-                root.display()
+            (
+                format!(r#"{{ "name": "Test {id}", "match": ["{pattern}"], "launch": ["{emulator}", "{{path}}"] }}"#),
+                format!(r#"{{ "place": "{place}", "id": "{id}", "dir": "{}/{id}", "match": ["{pattern}"] }}"#, root.display()),
             )
         };
+        let (snes, gba, pc) = (source("SNES", "snes", "*.sfc", "snes9x"), source("@gba", "gba", "*.gba", "mgba"), source("", "pc", "*.sh", "sh"));
+        // (The PC scan names its runner; the others' files open by their names.)
+        let pc_scan = pc.1.replace(r#""match""#, r#""runner": "test-pc", "match""#);
         let config = format!(
             r#"{{ "places": [{{ "id": "other", "path": "Other", "icon": "star" }}, {{ "id": "games", "path": "Games", "icon": "film" }},
                 {{ "id": "gba", "path": "Games/Handhelds/GBA", "icon": "gba.png", "picture": "~/gba-large.png" }}],
-              "runners": [ {}, {}, {} ] }}"#,
-            source("SNES", "snes", "*.sfc", "snes9x"),
-            source("@gba", "gba", "*.gba", "mgba"),
-            source("", "pc", "*.sh", "sh")
+              "runners": [ {}, {}, {} ], "scans": [ {}, {}, {} ] }}"#,
+            snes.0, gba.0, pc.0, snes.1, gba.1, pc_scan
         );
         std::fs::write(root.join("library.json"), config).unwrap();
         let lib = load(&Sources { config: Some(root.join("library.json")), ..Sources::default() }).library;

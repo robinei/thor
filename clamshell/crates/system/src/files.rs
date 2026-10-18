@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use clamshell_core::files::{Browse, FileOp, FilesEvent};
-use clamshell_core::{Browsed, Event, Game, Launch};
+use clamshell_core::{Browsed, Event, Game};
 use rustix::fs::inotify;
 
 use crate::Sink;
@@ -118,14 +118,9 @@ pub fn list(dir: &Path, folder: &str, runners: &[Runner], home: Option<&Path>) -
             let size = meta.as_ref().filter(|m| m.is_file()).map(fs::Metadata::len);
             let modified = meta.and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs());
             let mut game = Game::new(&format!("{folder}/{name}"), &name);
-            if let Some(runner) = runners::opener(runners, &name).filter(|_| !is_dir) {
-                // (A desktop file: its own command.)
-                game.launch = match runner.kind {
-                    Some(runners::Kind::Desktop) => crate::desktop::command(&path).unwrap_or_default(),
-                    Some(runners::Kind::Steam) => Launch::None,
-                    None => launch(runner, &path, home),
-                };
-                game.runner = Some(runner.of());
+            if let Some((launch, runner)) = runners::open(runners, &path, home).filter(|_| !is_dir) {
+                game.launch = launch;
+                game.runner = Some(runner);
             }
             match (is_dir, picture(&name)) {
                 (false, true) => game.box_front = Some(path.clone()),
@@ -145,13 +140,6 @@ pub fn list(dir: &Path, folder: &str, runners: &[Runner], home: Option<&Path>) -
 fn picture(name: &str) -> bool {
     let lower = name.to_lowercase();
     [".jpg", ".jpeg", ".png", ".webp"].iter().any(|ext| lower.ends_with(ext))
-}
-
-/// `runner`'s command for `path` (`{path}` the file, `~/` the home dir), in the file's folder.
-fn launch(runner: &Runner, path: &Path, home: Option<&Path>) -> Launch {
-    let p = path.to_string_lossy();
-    let argv = runner.launch.iter().map(|a| content::expand(a, home).to_string_lossy().replace("{path}", &p)).collect();
-    Launch::Program { argv, workdir: path.parent().map(Path::to_path_buf) }
 }
 
 /// A removable filesystem mounted: its device, where, its type, label and UUID (empty if none).
@@ -569,7 +557,7 @@ mod tests {
         assert_eq!(&*games[0].id, "browse:Files/Home/Zelda");
         assert!(games[0].is_group());
         let argv = |g: &Game| match &g.launch {
-            Launch::Program { argv, .. } => argv.clone(),
+            clamshell_core::Launch::Program { argv, .. } => argv.clone(),
             _ => vec![],
         };
         assert_eq!(argv(&games[1])[0], "retroarch", "by the runner's pattern, any case");
