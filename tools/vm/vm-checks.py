@@ -258,6 +258,7 @@ def plug_pad():
 
 # Test games: test.game, zeta.game, zulu01.game to zulu14.game, all in the Test tab, each an empty mpv window (not foot: it asks for text input, which brings up the keyboard).
 LIBRARY = f"""{{ "runners": [
+  {{ "type": "desktop", "name": "Desktop", "match": ["*.desktop"] }},
   {{ "name": "Test game", "match": ["*.game"],
     "launch": ["mpv", "--idle", "--force-window", "--vo=wlshm", "--no-terminal", "--wayland-app-id=testgame"],
     "scan": [{{ "id": "test", "dir": "{CHECKS_DIR}/games", "tab": "Test" }}] }}

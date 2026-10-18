@@ -25,22 +25,21 @@ No panics by construction: `unwrap`, `expect`, `panic!` and slice indexing are d
 
 ## The library
 
-Shelf's tabs come from `~/.config/clamshell/library.json`, installed Steam games, and desktop files
-(`Categories=Game` in Games, the rest in Apps). Everything opens by a runner: a name, the file names it
-opens, its command (`{path}` the file), and dirs it scans into the library (each into a tab, maybe a folder
-of it). ClamShell has its own runners (one per RetroArch system with its core installed, Video and Music in
-mpv, Images in imv, PDF in zathura, Text in `less`, and last Other files with `xdg-open`; Desktop and Steam
-for the desktop files' apps and Steam's games, each by its own command). A runner's `id`
-keeps its settings (its `name` is only shown); one in library.json with the id of one of ClamShell's
-(`snes`, `video`, `text`: see `docs/runners.md`) takes what it leaves out from it:
+Shelf's tabs come from `~/.config/clamshell/library.json`. Everything opens by a runner declared there: an
+id (its settings are kept by it), a name (shown), the file names it opens, its command (`{path}` the
+file), and dirs it scans into the library (each into a tab, maybe a folder of it). Two types find their
+items themselves: `desktop` the desktop files' apps and games (`Categories=Game` in Games, the rest in
+Apps), `steam` Steam's installed games. The starter library.json (`tools/device/library.json`) declares
+them all: Desktop, Steam, one per RetroArch system, Video and Music (mpv), Images (imv), PDF (zathura),
+Text (`less`), last Other files (`xdg-open`).
 
 ```json
 { "runners": [
-    { "id": "snes", "scan": [{ "id": "snes", "dir": "~/Games/snes", "tab": "Games", "icon": "gamepad", "group": "SNES",
-      "match": ["*.sfc", "*.smc", "*.zip"] }] },
-    { "id": "video", "scan": [{ "id": "tv", "dir": "~/TV", "tab": "TV", "icon": "tv", "match": ["*/"], "items": ["*.mkv", "*.mp4"],
-      "metadata": "tmdb:tv" }] },
-    { "id": "text", "name": "Kate", "match": ["*.txt", "*.md"], "launch": ["kate", "{path}"] }
+    { "type": "desktop", "id": "desktop", "name": "Desktop", "match": ["*.desktop"] },
+    { "id": "snes", "name": "SNES", "match": ["*.sfc", "*.smc"], "launch": ["retroarch", "-L", "/usr/lib/libretro/snes9x_libretro.so", "{path}"],
+      "scan": [{ "id": "snes", "dir": "~/Games/snes", "tab": "Games", "icon": "gamepad", "group": "SNES", "match": ["*.sfc", "*.smc", "*.zip"] }] },
+    { "id": "video", "name": "Video", "match": ["*.mkv", "*.mp4"], "launch": ["mpv", "{path}"],
+      "scan": [{ "id": "tv", "dir": "~/TV", "tab": "TV", "icon": "tv", "match": ["*/"], "items": ["*.mkv", "*.mp4"], "metadata": "tmdb:tv" }] }
 ] }
 ```
 
@@ -60,8 +59,7 @@ folders come first.
 The rules (ids, titles, art, icons): `crates/system/src/library/content.rs`.
 
 Covers, screenshots, descriptions, developers and years are fetched in the background after start
-(`clamshell --fetch-metadata` does it without the UI): a scan's or runner's `"metadata": "libretro:<system>"` (ClamShell's
-RetroArch runners have theirs)
+(`clamshell --fetch-metadata` does it without the UI): a scan's or runner's `"metadata": "libretro:<system>"`
 (libretro's thumbnails and database, by the file's checksum or by name), `"tmdb:movie"` or `"tmdb:tv"` (needs `"keys": { "tmdb": ... }`); Steam's
 games from the store; the desktop files' games from SteamGridDB (needs `keys.steamgriddb`). Art beside a
 file wins. libretro's lists are kept in `~/.cache/clamshell/libretro` for 30 days. The rules:

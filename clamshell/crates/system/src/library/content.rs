@@ -4,12 +4,14 @@
 //!
 //! ```json
 //! { "runners": [
-//!     { "id": "snes", "scan": [{ "id": "snes", "dir": "~/Games/snes", "tab": "Games", "icon": "gamepad", "group": "SNES",
-//!       "match": ["*.sfc", "*.smc", "*.zip"] }] },
-//!     { "id": "video", "scan": [
+//!     { "type": "desktop", "id": "desktop", "name": "Desktop", "match": ["*.desktop"] },
+//!     { "type": "steam", "id": "steam", "name": "Steam" },
+//!     { "id": "snes", "name": "SNES", "match": ["*.sfc", "*.smc"], "launch": ["retroarch", "-L", "/usr/lib/libretro/snes9x_libretro.so", "{path}"],
+//!       "scan": [{ "id": "snes", "dir": "~/Games/snes", "tab": "Games", "icon": "gamepad", "group": "SNES", "match": ["*.sfc", "*.zip"] }] },
+//!     { "id": "video", "name": "Video", "match": ["*.mkv"], "launch": ["mpv", "{path}"], "scan": [
 //!       { "id": "films", "dir": "~/Films", "tab": "Films", "icon": "film", "match": ["*.mkv", "*/*.mkv"], "metadata": "tmdb:movie" },
 //!       { "id": "tv", "dir": "~/TV", "tab": "TV", "icon": "tv", "match": ["*/"], "items": ["*.mkv", "*.mp4"], "metadata": "tmdb:tv" }] },
-//!     { "id": "text", "name": "Kate", "match": ["*.txt", "*.md"], "launch": ["kate", "{path}"] }
+//!     { "id": "other", "name": "Other files", "match": ["*"], "launch": ["xdg-open", "{path}"] }
 //! ],
 //!   "keys": { "tmdb": "...", "steamgriddb": "..." } }
 //! ```
@@ -38,7 +40,7 @@
 //!
 //! The rest:
 //! - `desktop`, `steam`: rules (see [`Rule`]) for the desktop files' apps and games, and for Steam's
-//!   installed games: the first one matching an entry (by its id, its name, and a desktop file's
+//!   installed games (there with a runner of type `desktop`, `steam`): the first one matching an entry (by its id, its name, and a desktop file's
 //!   categories: globs, any case) puts it in a tab (`group`: in a folder of it), or hides it; a rule
 //!   matching nothing in particular takes the rest. Without one, a desktop file's game (`Categories=Game`,
 //!   not `Emulator`) goes in Games, its app in Apps; a Steam game in Games. A desktop file's id is its

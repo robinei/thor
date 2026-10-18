@@ -284,10 +284,11 @@ pub fn load(sources: &Sources) -> Loaded {
         let group = rule.and_then(|r| r.group.clone()).map(|g| g.trim_matches('/').to_owned()).filter(|g| !g.is_empty());
         placed.push((tab, icon, group, game));
     };
-    // (Their runners: Steam and Desktop.)
-    let runner_of = |id: &str| runners.iter().find(|r| r.id == id).map(runners::Runner::of);
-    let (steam_runner, desktop_runner) = (runner_of("steam"), runner_of("desktop"));
-    for mut game in sources.steam.as_deref().map(steam::games).unwrap_or_default() {
+    // (Each by its runner of that type: without one, none.)
+    let steam_runner = runners::of_kind(&runners, runners::Kind::Steam).map(runners::Runner::of);
+    let desktop_runner = runners::of_kind(&runners, runners::Kind::Desktop).map(runners::Runner::of);
+    let steam_games = sources.steam.as_deref().filter(|_| steam_runner.is_some()).map(steam::games).unwrap_or_default();
+    for mut game in steam_games {
         game.runner.clone_from(&steam_runner);
         let appid = match game.launch {
             Launch::Steam { appid } => appid.to_string(),
@@ -295,7 +296,8 @@ pub fn load(sources: &Sources) -> Loaded {
         };
         place(&config.steam, &appid, &game.title.clone(), &[], game);
     }
-    for mut d in crate::desktop::entries(&sources.data_dirs) {
+    let desktop_files = if desktop_runner.is_some() { crate::desktop::entries(&sources.data_dirs) } else { Vec::new() };
+    for mut d in desktop_files {
         d.game.runner.clone_from(&desktop_runner);
         place(&config.desktop, &d.id, &d.name, &d.categories, d.game);
     }
@@ -432,7 +434,7 @@ mod tests {
         std::fs::write(root.join("snes/Mario.sfc"), "").unwrap();
         let config = |steam_group: &str| {
             format!(
-                r#"{{ {steam_group} "runners": [{{ "name": "Test SNES", "match": ["*.sfc"], "launch": ["retroarch", "{{path}}"], "scan": [{{ "tab": "Games", "group": "SNES", "id": "snes", "dir": "{}" }}] }}] }}"#,
+                r#"{{ {steam_group} "runners": [{{ "name": "Test SNES", "match": ["*.sfc"], "launch": ["retroarch", "{{path}}"], "scan": [{{ "tab": "Games", "group": "SNES", "id": "snes", "dir": "{}" }}] }}, {{ "type": "steam", "id": "steam", "name": "Steam" }}] }}"#,
                 root.join("snes").display()
             )
         };
@@ -478,7 +480,7 @@ mod tests {
         write("lutris", "Lutris", "Game;");
         write("uninstall-foo", "Uninstall Foo", "Utility;");
         write("foot", "Foot", "System;");
-        let config = r#"{ "desktop": [
+        let config = r#"{ "runners": [{ "type": "desktop", "name": "Desktop" }], "desktop": [
             { "id": "lutris", "tab": "Launchers", "icon": "apps" },
             { "id": "celeste", "tab": "Games", "group": "Platformers" },
             { "name": "uninstall*", "hide": true }
@@ -518,7 +520,8 @@ mod tests {
         );
         std::fs::write(root.join("library.json"), config).unwrap();
         let lib = load(&Sources { config: Some(root.join("library.json")), ..Sources::default() }).library;
-        assert!(lib.problems.is_empty(), "{:?}", lib.problems);
+        // (The test's emulators aren't installed: only that is wrong.)
+        assert!(lib.problems.iter().all(|p| p.ends_with("isn't installed")), "{:?}", lib.problems);
         assert_eq!(lib.collections.last().map(|c| c.name.as_str()), Some("Tools"));
         let games = |ids: &[usize]| ids.iter().map(|&i| lib.games[i].title.clone()).collect::<Vec<_>>();
         let tab = lib.collections.iter().find(|c| c.name == "Games").unwrap();

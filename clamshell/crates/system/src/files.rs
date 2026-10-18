@@ -120,9 +120,10 @@ pub fn list(dir: &Path, folder: &str, runners: &[Runner], home: Option<&Path>) -
             let mut game = Game::new(&format!("{folder}/{name}"), &name);
             if let Some(runner) = runners::opener(runners, &name).filter(|_| !is_dir) {
                 // (A desktop file: its own command.)
-                game.launch = match runner.own_commands() {
-                    true => crate::desktop::command(&path).unwrap_or_default(),
-                    false => launch(runner, &path, home),
+                game.launch = match runner.kind {
+                    Some(runners::Kind::Desktop) => crate::desktop::command(&path).unwrap_or_default(),
+                    Some(runners::Kind::Steam) => Launch::None,
+                    None => launch(runner, &path, home),
                 };
                 game.runner = Some(runner.of());
             }
@@ -553,8 +554,13 @@ mod tests {
             fs::write(dir.join(f), "x").unwrap();
         }
         fs::write(dir.join("tool.desktop"), "[Desktop Entry]\nType=Application\nName=Tool\nExec=tool --open %U\n").unwrap();
-        let config: Vec<Runner> = serde_json::from_str(r#"[{ "name": "SNES", "match": ["*.sfc"], "launch": ["retroarch", "{path}"] }]"#).unwrap();
-        let (runners, _) = runners::all(&config, runners::builtin(&|p| p == "xdg-open", &|_| false));
+        let config: Vec<Runner> = serde_json::from_str(
+            r#"[{ "name": "SNES", "match": ["*.sfc"], "launch": ["retroarch", "{path}"] },
+                { "type": "desktop", "name": "Desktop", "match": ["*.desktop"] },
+                { "name": "Other files", "match": ["*"], "launch": ["xdg-open", "{path}"] }]"#,
+        )
+        .unwrap();
+        let (runners, _) = runners::checked(&config, &|_| true);
         let games = list(&dir, "browse:Files/Home", &runners, None);
         let names: Vec<&str> = games.iter().map(|g| g.title.as_str()).collect();
         assert_eq!(names, ["Zelda", "a.SFC", "b.txt", "cover.png", "tool.desktop"]);

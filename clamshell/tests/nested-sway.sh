@@ -36,6 +36,7 @@ sqlite3 "$DB" "CREATE TABLE dock (position INTEGER PRIMARY KEY, id TEXT NOT NULL
 # Two test games in a content dir, a tab of their own (Test, before Apps); each starts a window of its own.
 cat > "$T/config/clamshell/library.json" <<EOF
 { "runners": [
+  { "type": "desktop", "name": "Desktop", "match": ["*.desktop"] },
   { "name": "Test", "match": ["test.game"], "launch": ["sh", "-c", "foot --app-id=testgame sleep 300 & sleep 300"],
     "scan": [{ "id": "test", "dir": "$T/games", "tab": "Test" }] },
   { "name": "Zeta", "match": ["zeta.game"], "launch": ["sh", "-c", "foot --app-id=zetagame sleep 300 & sleep 300"],

@@ -15,44 +15,49 @@ levels: All, the runner, the item.
 
 ## Runners: how things open
 
-An ordered list; the first runner whose patterns match a file's name opens it. A runner has:
+An ordered list in library.json, every runner declared there: nothing opens by a runner it doesn't list.
+The first runner whose patterns match a file's name opens it. A runner has:
 
 - `id`: what its settings, environment and own keymap are kept by, never shown (without one: its name in
   lowercase, spaces as `-`).
 - `name`: its settings tab's title; it can change without losing the settings.
+- `type`, for the two that find their items themselves (below); else:
 - `match`: the file names it opens, one name each (`*.sfc`; any case).
 - `launch`: the command, `{path}` the file.
-- Its settings, keymap and environment (see Settings); `keymap`: a keymap of ClamShell's it comes with;
-  `item_settings` (on unless `false`): whether its items have settings of their own.
+- `keymap`: a keymap of ClamShell's it comes with; `item_settings` (on unless `false`): whether its items
+  have settings of their own.
 - `scan`, optionally: dirs whose matching entries go in the library, each with an `id` (entries' ids
   are `<id>:<path in dir>`), `dir`, `tab`, `group`, `icon` (the tab's), its own `match` and `items` for
-  the dir's layout (else the runner's patterns) and `metadata` (else the runner's). What used to be
-  sources are runners that scan; one runner may scan several dirs (Video: films and series).
+  the dir's layout (else the runner's patterns) and `metadata` (else the runner's). One runner may scan
+  several dirs (Video: films and series).
 
 ```json
 "runners": [
-  { "id": "snes", "scan": [{ "id": "snes", "dir": "~/Games/snes", "tab": "Games", "group": "SNES", "match": ["*.sfc", "*.smc", "*.zip"] }] },
-  { "id": "video", "scan": [{ "id": "tv", "dir": "~/TV", "tab": "TV", "match": ["*/"], "items": ["*.mkv"], "metadata": "tmdb:tv" }] },
-  { "id": "text", "name": "Kate", "match": ["*.txt", "*.md", "*.log"], "launch": ["kate", "{path}"] }
+  { "type": "desktop", "id": "desktop", "name": "Desktop", "match": ["*.desktop"] },
+  { "type": "steam", "id": "steam", "name": "Steam" },
+  { "id": "snes", "name": "SNES", "match": ["*.sfc", "*.smc"], "launch": ["retroarch", "-f", "-L", "/usr/lib/libretro/snes9x_libretro.so", "{path}"],
+    "metadata": "libretro:Nintendo - Super Nintendo Entertainment System",
+    "scan": [{ "id": "snes", "dir": "~/Games/snes", "tab": "Games", "group": "SNES", "match": ["*.sfc", "*.smc", "*.zip"] }] },
+  { "id": "text", "name": "Text", "match": ["*.txt", "*.md"], "launch": ["foot", "less", "{path}"], "keymap": "viewer" },
+  { "id": "other", "name": "Other files", "match": ["*"], "launch": ["xdg-open", "{path}"] }
 ]
 ```
 
-ClamShell's own runners come after library.json's, those whose program (and core) is installed: Desktop
-and Steam (see below); one per RetroArch system; Video and Music (mpv); Images (imv); PDF (zathura); Text
-(`less` in foot); last, Other files, `xdg-open` for any name. Their ids: `desktop`, `steam`, `nes`, `snes`,
-`n64`, `gb`, `gba`, `nds`, `md`, `psx`, `dc`, `video`, `music`, `images`, `pdf`, `text`, `other`. A runner in library.json with one of those ids takes
-what it leaves out (name, patterns, command, metadata, keymap) from it and takes its place: `{ "id": "snes", "scan": [...] }` scans
-with ClamShell's SNES. A scan's own patterns (the SNES scan's `*.zip`) find entries in its dir but open
-nothing elsewhere: a `.zip` in the Files tab is Other files'.
+The starter library.json (`tools/device/library.json`, installed on the device where there is none)
+declares ClamShell's set: Desktop, Steam, one per RetroArch system (NES, SNES, Nintendo 64, Game Boy, Game
+Boy Advance, Nintendo DS, Mega Drive, PlayStation, Dreamcast), Video and Music (mpv), Images (imv), PDF
+(zathura), Text (`less` in foot), last Other files (`xdg-open`, any name). A runner whose program isn't on
+the PATH is shown as a problem (it stays: the program may come).
 
-A file is opened the same way wherever it is: a `.sfc` opened from the Files tab is SNES's, scanned or not.
-A file that is a scanned entry's opens as that entry.
+A scan's own patterns (the SNES scan's `*.zip`) find entries in its dir but open nothing elsewhere: a
+`.zip` in the Files tab is Other files'. A file is opened the same way wherever it is: a `.sfc` opened from
+the Files tab is SNES's, scanned or not. A file that is a scanned entry's opens as that entry.
 
-Desktop and Steam find their items themselves, and each item brings its own command: Desktop the desktop
-files' apps and games (and a `.desktop` file opened from the Files tab, by its `Exec`), Steam Steam's
-installed games (by app id). Their ids are what marks them; library.json can give them a name, a keymap,
-`item_settings` (`{ "id": "desktop", "name": "Apps", "keymap": ... }`), but not a command. Where their items
-show is the `desktop` and `steam` rules' (Places).
+Two types of runner find their items themselves, each item with its own command: `"type": "desktop"` the
+desktop files' apps and games (and a `.desktop` file opened from the Files tab, by its `Exec`), `"type":
+"steam"` Steam's installed games (by app id). They take a name, a keymap, `item_settings`, but no command.
+Without one, those items aren't in the library. Where their items show is the `desktop` and `steam` rules'
+(Places).
 
 ## Places: where things show
 

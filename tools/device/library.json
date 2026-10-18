@@ -1,32 +1,60 @@
 {
   "keys": {},
-  "steam": [{ "group": "Steam" }],
-  "browse": [
-    { "tab": "Files", "icon": "folder", "group": "Home", "dir": "~" },
-    { "tab": "Files", "group": "Root", "dir": "/" },
-    { "tab": "Files", "group": "Trash", "dir": "${XDG_DATA_HOME:-~/.local/share}/Trash/files", "trash": true }
+  "runners": [
+    { "type": "desktop", "id": "desktop", "name": "Desktop", "match": ["*.desktop"] },
+    { "type": "steam", "id": "steam", "name": "Steam" },
+    { "id": "nes", "name": "NES", "match": ["*.nes"], "launch": ["retroarch", "-f", "-L", "/usr/lib/libretro/nestopia_libretro.so", "{path}"],
+      "metadata": "libretro:Nintendo - Nintendo Entertainment System",
+      "scan": [{ "id": "nes", "dir": "~/Games/nes", "tab": "Games", "icon": "gamepad", "group": "NES", "match": ["*.nes", "*.zip"] }] },
+    { "id": "snes", "name": "SNES", "match": ["*.sfc", "*.smc"], "launch": ["retroarch", "-f", "-L", "/usr/lib/libretro/snes9x_libretro.so", "{path}"],
+      "metadata": "libretro:Nintendo - Super Nintendo Entertainment System",
+      "scan": [{ "id": "snes", "dir": "~/Games/snes", "tab": "Games", "group": "SNES", "match": ["*.sfc", "*.smc", "*.zip"] }] },
+    { "id": "n64", "name": "Nintendo 64", "match": ["*.z64", "*.n64", "*.v64"], "launch": ["retroarch", "-f", "-L", "/usr/lib/libretro/mupen64plus_next_libretro.so", "{path}"],
+      "metadata": "libretro:Nintendo - Nintendo 64",
+      "scan": [{ "id": "n64", "dir": "~/Games/n64", "tab": "Games", "group": "Nintendo 64", "match": ["*.z64", "*.n64", "*.v64", "*.zip"] }] },
+    { "id": "gb", "name": "Game Boy", "match": ["*.gb", "*.gbc"], "launch": ["retroarch", "-f", "-L", "/usr/lib/libretro/gambatte_libretro.so", "{path}"],
+      "metadata": "libretro:Nintendo - Game Boy Color",
+      "scan": [{ "id": "gb", "dir": "~/Games/gb", "tab": "Games", "group": "Game Boy", "match": ["*.gb", "*.gbc", "*.zip"] }] },
+    { "id": "gba", "name": "Game Boy Advance", "match": ["*.gba"], "launch": ["retroarch", "-f", "-L", "/usr/lib/libretro/mgba_libretro.so", "{path}"],
+      "metadata": "libretro:Nintendo - Game Boy Advance",
+      "scan": [{ "id": "gba", "dir": "~/Games/gba", "tab": "Games", "group": "Game Boy Advance", "match": ["*.gba", "*.zip"] }] },
+    { "id": "nds", "name": "Nintendo DS", "match": ["*.nds"], "launch": ["retroarch", "-f", "-L", "/usr/lib/libretro/melonds_libretro.so", "{path}"],
+      "metadata": "libretro:Nintendo - Nintendo DS",
+      "scan": [{ "id": "nds", "dir": "~/Games/nds", "tab": "Games", "group": "Nintendo DS", "match": ["*.nds", "*.zip"] }] },
+    { "id": "md", "name": "Mega Drive", "match": ["*.md", "*.gen", "*.smd"], "launch": ["retroarch", "-f", "-L", "/usr/lib/libretro/genesis_plus_gx_libretro.so", "{path}"],
+      "metadata": "libretro:Sega - Mega Drive - Genesis",
+      "scan": [{ "id": "md", "dir": "~/Games/md", "tab": "Games", "group": "Mega Drive", "match": ["*.md", "*.gen", "*.bin", "*.zip"] }] },
+    { "id": "psx", "name": "PlayStation", "match": ["*.cue", "*.chd", "*.m3u", "*.pbp"], "launch": ["retroarch", "-f", "-L", "/usr/lib/libretro/pcsx_rearmed_libretro.so", "{path}"],
+      "metadata": "libretro:Sony - PlayStation",
+      "scan": [{ "id": "psx", "dir": "~/Games/psx", "tab": "Games", "group": "PlayStation", "match": ["*.m3u", "*.chd", "*.cue", "*/*.m3u", "*/*.chd", "*/*.cue"] }] },
+    { "id": "dc", "name": "Dreamcast", "match": ["*.gdi", "*.cdi"], "launch": ["retroarch", "-f", "-L", "/usr/lib/libretro/flycast_libretro.so", "{path}"],
+      "metadata": "libretro:Sega - Dreamcast",
+      "scan": [{ "id": "dc", "dir": "~/Games/dc", "tab": "Games", "group": "Dreamcast", "match": ["*.chd", "*.gdi", "*.cdi", "*/*.gdi"] }] },
+    { "id": "video", "name": "Video", "match": ["*.mkv", "*.mp4", "*.m4v", "*.avi", "*.webm", "*.mov", "*.mpg", "*.mpeg", "*.ts", "*.wmv", "*.flv"], "launch": ["mpv", "{path}"],
+      "scan": [
+        { "id": "films", "dir": "~/Videos/Films", "tab": "Films", "icon": "film", "match": ["*.mkv", "*.mp4", "*.avi", "*.webm", "*/*.mkv", "*/*.mp4", "*/*.avi", "*/*.webm"], "metadata": "tmdb:movie" },
+        { "id": "tv", "dir": "~/Videos/TV", "tab": "TV", "icon": "tv", "match": ["*/"], "items": ["*.mkv", "*.mp4", "*.avi", "*.webm"], "metadata": "tmdb:tv" }
+      ] },
+    { "id": "music", "name": "Music", "match": ["*.mp3", "*.flac", "*.ogg", "*.opus", "*.m4a", "*.wav", "*.aac"], "launch": ["mpv", "--force-window=immediate", "{path}"] },
+    { "id": "images", "name": "Images", "match": ["*.jpg", "*.jpeg", "*.png", "*.webp", "*.gif", "*.bmp", "*.tif", "*.tiff", "*.svg"], "launch": ["imv", "{path}"], "keymap": "viewer" },
+    { "id": "pdf", "name": "PDF", "match": ["*.pdf", "*.epub", "*.djvu"], "launch": ["zathura", "{path}"], "keymap": "viewer" },
+    { "id": "text", "name": "Text", "match": ["*.txt", "*.md", "*.log", "*.nfo", "*.json", "*.toml", "*.yaml", "*.yml", "*.ini", "*.conf", "*.cfg", "*.csv", "*.xml", "*.sh", "*.py", "*.rs", "*.c", "*.h"], "launch": ["foot", "less", "{path}"], "keymap": "viewer" },
+    { "id": "other", "name": "Other files", "match": ["*"], "launch": ["xdg-open", "{path}"] }
   ],
-  "removable": [{ "tab": "Files", "group": "{label}" }],
+  "steam": [
+    { "group": "Steam" }
+  ],
   "desktop": [
     { "id": "steam", "tab": "Apps" },
     { "id": "net.lutris.*", "tab": "Apps" },
     { "id": "*heroicgameslauncher*", "tab": "Apps" }
   ],
-  "runners": [
-    { "id": "nes", "scan": [{ "id": "nes", "dir": "~/Games/nes", "tab": "Games", "icon": "gamepad", "group": "NES", "match": ["*.nes", "*.zip"] }] },
-    { "id": "snes", "scan": [{ "id": "snes", "dir": "~/Games/snes", "tab": "Games", "group": "SNES", "match": ["*.sfc", "*.smc", "*.zip"] }] },
-    { "id": "n64", "scan": [{ "id": "n64", "dir": "~/Games/n64", "tab": "Games", "group": "Nintendo 64", "match": ["*.z64", "*.n64", "*.v64", "*.zip"] }] },
-    { "id": "gb", "scan": [{ "id": "gb", "dir": "~/Games/gb", "tab": "Games", "group": "Game Boy", "match": ["*.gb", "*.gbc", "*.zip"] }] },
-    { "id": "gba", "scan": [{ "id": "gba", "dir": "~/Games/gba", "tab": "Games", "group": "Game Boy Advance", "match": ["*.gba", "*.zip"] }] },
-    { "id": "nds", "scan": [{ "id": "nds", "dir": "~/Games/nds", "tab": "Games", "group": "Nintendo DS", "match": ["*.nds", "*.zip"] }] },
-    { "id": "md", "scan": [{ "id": "md", "dir": "~/Games/md", "tab": "Games", "group": "Mega Drive", "match": ["*.md", "*.gen", "*.bin", "*.zip"] }] },
-    { "id": "psx", "scan": [{ "id": "psx", "dir": "~/Games/psx", "tab": "Games", "group": "PlayStation",
-      "match": ["*.m3u", "*.chd", "*.cue", "*/*.m3u", "*/*.chd", "*/*.cue"] }] },
-    { "id": "dc", "scan": [{ "id": "dc", "dir": "~/Games/dc", "tab": "Games", "group": "Dreamcast", "match": ["*.chd", "*.gdi", "*.cdi", "*/*.gdi"] }] },
-    { "id": "video", "scan": [
-      { "id": "films", "dir": "~/Videos/Films", "tab": "Films", "icon": "film", "match": ["*.mkv", "*.mp4", "*.avi", "*.webm", "*/*.mkv", "*/*.mp4", "*/*.avi", "*/*.webm"],
-        "metadata": "tmdb:movie" },
-      { "id": "tv", "dir": "~/Videos/TV", "tab": "TV", "icon": "tv", "match": ["*/"], "items": ["*.mkv", "*.mp4", "*.avi", "*.webm"], "metadata": "tmdb:tv" }
-    ] }
+  "browse": [
+    { "tab": "Files", "icon": "folder", "group": "Home", "dir": "~" },
+    { "tab": "Files", "group": "Root", "dir": "/" },
+    { "tab": "Files", "group": "Trash", "dir": "${XDG_DATA_HOME:-~/.local/share}/Trash/files", "trash": true }
+  ],
+  "removable": [
+    { "tab": "Files", "group": "{label}" }
   ]
 }
