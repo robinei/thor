@@ -320,11 +320,13 @@ impl State {
             Event::Shelf(e) => self.on_shelf_event(e),
             Event::Game(e) => self.on_game(e),
             Event::Windows(windows) => {
+                let was = self.session.windows.iter().find(|w| w.focused && !w.down).map(|w| w.workspace.clone());
                 self.session.set_windows(windows);
                 let mut effects = self.follow_steam();
                 effects.extend(self.follow_window_rules());
                 effects.extend(self.session.show_pending());
                 effects.extend(self.follow_quitting());
+                effects.extend(self.follow_closed(was));
                 self.follow_dock();
                 (Dirty::BOTH, effects)
             }
@@ -789,6 +791,22 @@ impl State {
         }
     }
 
+    /// After the windows changed: the window in front (`was`, its workspace) closed, nothing of its
+    /// workspace left (sway leaves the empty workspace in front): back to what was in front before it,
+    /// shelf at the bottom of that.
+    fn follow_closed(&self, was: Option<String>) -> Vec<Effect> {
+        let windows = &self.session.windows;
+        let Some(was) = was else { return vec![] };
+        if windows.iter().any(|w| w.focused || w.workspace == was) {
+            return vec![];
+        }
+        let shown = |ws: &String| windows.iter().any(|w| w.workspace == *ws && !w.down);
+        match self.session.recent.iter().find(|ws| shown(ws)) {
+            Some(ws) if !Instance::Shelf.is(ws) => vec![Effect::Window(WindowCommand::Focus(ws.clone()))],
+            _ => vec![Effect::Window(WindowCommand::ShowShelf)],
+        }
+    }
+
     /// The home button: from anything to shelf; from shelf back to what was in front before it, or
     /// without that history (no compositor's word) to the program in force.
     fn home(&mut self) -> Vec<Effect> {
@@ -927,6 +945,30 @@ mod tests {
         s.apply(Event::Windows(vec![shelf(false), win(3, "retroarch", &zelda, true)]));
         s.apply(Event::Windows(vec![shelf(true), win(3, "retroarch", &zelda, false)]));
         assert_eq!(home(&mut s), vec![Effect::Window(WindowCommand::Focus(zelda))]);
+    }
+
+    #[test]
+    fn a_closed_window_goes_back_to_what_was_in_front_before_it_shelf_last() {
+        let mut s = state();
+        let shelf = |focused| win(1, windows::SHELF_APP_ID, &Instance::Shelf.name(), focused);
+        let (zelda, terminal) = ("clamshell-run-zelda-1".to_owned(), "clamshell-run-foot-2".to_owned());
+        let window = |fx: Vec<Effect>| fx.into_iter().filter(|e| matches!(e, Effect::Window(_))).collect::<Vec<_>>();
+        // Shelf, then the terminal, then the game in front.
+        s.apply(Event::Windows(vec![shelf(true)]));
+        s.apply(Event::Windows(vec![shelf(false), win(2, "foot", &terminal, true)]));
+        s.apply(Event::Windows(vec![shelf(false), win(2, "foot", &terminal, false), win(3, "retroarch", &zelda, true)]));
+        // The game quits: the terminal, in front before it.
+        let (_, fx) = s.apply(Event::Windows(vec![shelf(false), win(2, "foot", &terminal, false)]));
+        assert_eq!(window(fx), vec![Effect::Window(WindowCommand::Focus(terminal.clone()))]);
+        s.apply(Event::Windows(vec![shelf(false), win(2, "foot", &terminal, true)]));
+        // The terminal quits: shelf.
+        let (_, fx) = s.apply(Event::Windows(vec![shelf(false)]));
+        assert_eq!(window(fx), vec![Effect::Window(WindowCommand::ShowShelf)]);
+        // A program's own second window closing, or a new workspace before its window: nothing.
+        s.apply(Event::Windows(vec![shelf(false), win(3, "retroarch", &zelda, true), win(4, "retroarch", &zelda, false)]));
+        assert_eq!(window(s.apply(Event::Windows(vec![shelf(false), win(4, "retroarch", &zelda, true)])).1), vec![]);
+        s.apply(Event::Windows(vec![shelf(true), win(4, "retroarch", &zelda, false)]));
+        assert_eq!(window(s.apply(Event::Windows(vec![shelf(false), win(4, "retroarch", &zelda, false)])).1), vec![], "shelf's window is still there");
     }
 
     #[test]
