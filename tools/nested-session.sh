@@ -6,13 +6,13 @@
 # Enter A, Backspace B, F Y, P X, C Start, Q and E the shoulders, Home and End the triggers, Tab View),
 # F12 the Home button and F11 the pad to the second screen and back (with a game in front too, where
 # View is the game's), whatever is in front.
-# Closing either window ends it. Needs a release build (cargo build --release in clamshell/).
+# Closing either window ends it. Builds ClamShell first (the fast profile: optimised, built in seconds).
 #
 #   tools/nested-session.sh
 set -eu
 REPO=$(cd "$(dirname "$0")/.." && pwd)
-BIN=$REPO/clamshell/target/release/clamshell
-[ -x "$BIN" ] || { echo "no $BIN: cargo build --release in clamshell/"; exit 1; }
+BIN=$REPO/clamshell/target/fast/clamshell
+(cd "$REPO/clamshell" && cargo build --profile fast --quiet) || exit 1
 CONF=$(mktemp "${XDG_RUNTIME_DIR:-/tmp}/clamshell-nested.XXXXXX.conf")
 trap 'rm -f "$CONF"' EXIT
 cat > "$CONF" <<EOF

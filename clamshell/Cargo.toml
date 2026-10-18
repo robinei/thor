@@ -58,6 +58,14 @@ workspace = true
 [profile.release]
 lto = "thin"
 
+# For trying a change on a desktop (tools/nested-session.sh): optimised as release, without its link-time
+# optimisation and in parallel pieces, incrementally, so a change builds in seconds.
+[profile.fast]
+inherits = "release"
+lto = false
+codegen-units = 256
+incremental = true
+
 # Dependencies optimised in dev and test builds too (built once, then cached): drawing and PNG encoding
 # (tiny-skia, png, fontdue) are most of what the snapshot test and a debug ClamShell spend their time in.
 [profile.dev.package."*"]
