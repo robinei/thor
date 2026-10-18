@@ -78,6 +78,9 @@ pub(crate) fn render(
     let Some(pixmap) = picture.pixmap.as_mut() else {
         return Err(format!("can't allocate a {w}x{h} pixmap").into());
     };
+    // Black, all of it: the views paint on black (no background of their own), and what reached into the
+    // burn-in margin last frame (a focus ring at the edge) goes too.
+    pixmap.fill(crate::toolkit::style::BG.into());
     let scale = at.scale.max(1);
     let ((lw, lh), offset) = inset((w, h), scale, at.drift);
     let mut out = {

@@ -30,23 +30,20 @@ use clamshell_core::files::FileName;
 
 use crate::draw::Rect;
 use crate::toolkit::Frame;
-use crate::toolkit::style::BG;
 
-/// The main screen: shelf, over all of `screen`.
+/// How much of the area below the bar the black over it hides while it points.
+const POINTING_FADE: f32 = 0.7;
+
+/// The main screen: shelf, over all of `screen` (the frame starts black: see `render`).
 pub fn top(f: &mut Frame, screen: Rect) {
     f.body = screen;
-    f.c.fill(screen, BG);
     f.out.list_rows = Some(shelf::draw(f, screen));
 }
 
 /// The second screen: the bar, the open tab below it, and the slider over both while one moves; or,
-/// while a game wants it dark, nothing.
-/// How much of the area below the bar the black over it hides while it points.
-const POINTING_FADE: f32 = 0.7;
-
+/// while a game wants it dark, nothing (the frame starts black: see `render`).
 pub fn bottom(f: &mut Frame, screen: Rect) {
     f.body = screen;
-    f.c.fill(screen, BG);
     if f.s.bottom_dark() {
         dark::draw(f, screen);
         f.out.touchpad_area = Some(screen);
