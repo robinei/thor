@@ -1,6 +1,5 @@
 //! Pad navigation: moving focus by direction between the targets of both screens, as if the bottom screen
-//! were directly below the top one. By lines, as on a TV: the nearest line of targets that way (by their
-//! edges, so a wide row and a small button in one line are alike), then the one in it nearest across.
+//! were directly below the top one (see [`step`]).
 
 use clamshell_core::Id;
 
@@ -24,44 +23,40 @@ pub struct NavTarget {
     pub id: Id,
 }
 
-/// Targets whose near edges are within this of the nearest one's (normalized) are in its line.
-const LINE: f32 = 0.01;
+/// How much more the distance the way it goes weighs than the distance across (squared, as Android's
+/// focus finder has it).
+const ALONG: f32 = 13.0;
 
-/// The target to focus after moving `dir` from `current`: in the nearest line of targets beyond it that
-/// way, the one nearest across (overlapping it is nearest; then by centres). Up and down may cross to the
-/// other screen; left and right stay on the current one. With no current focus (or a focused item no
-/// longer drawn), the first target.
+/// The target to focus after moving `dir` from `current`: of those beyond it that way, the nearest by
+/// the gap the way it goes (between their edges: 0 for one alongside) weighted far over the offset
+/// across (between their centres). So the next in a row wins over one alongside but far across, and a
+/// small control just past an edge over a wide row further on. Up and down may cross to the other
+/// screen; left and right stay on the current one. With no current focus (or a focused item no longer
+/// drawn), the first target.
 pub fn step(targets: &[NavTarget], current: Option<&Id>, dir: Dir) -> Option<Id> {
     let Some(from) = current.and_then(|id| targets.iter().find(|t| &t.id == id)) else {
         return targets.first().map(|t| t.id.clone());
     };
     let f = from.rect;
     let (fx, fy) = f.center();
-    // Along: the gap from its far edge to the target's near edge (0 if they overlap); across: the gap
-    // between their spans across, and between their centres.
-    let gap = |a0: f32, a1: f32, b0: f32, b1: f32| (b0 - a1).max(a0 - b1).max(0.0);
-    let candidates: Vec<(f32, f32, f32, &NavTarget)> = targets
+    targets
         .iter()
         .filter(|t| t.id != from.id)
         .filter(|t| matches!(dir, Dir::Up | Dir::Down) || t.screen == from.screen)
         .filter_map(|t| {
             let r = t.rect;
             let (cx, cy) = r.center();
-            let (beyond, along, across, centres) = match dir {
-                Dir::Down => (cy > fy + 1e-4, (r.y - f.bottom()).max(0.0), gap(f.x, f.right(), r.x, r.right()), (cx - fx).abs()),
-                Dir::Up => (cy < fy - 1e-4, (f.y - r.bottom()).max(0.0), gap(f.x, f.right(), r.x, r.right()), (cx - fx).abs()),
-                Dir::Right => (cx > fx + 1e-4, (r.x - f.right()).max(0.0), gap(f.y, f.bottom(), r.y, r.bottom()), (cy - fy).abs()),
-                Dir::Left => (cx < fx - 1e-4, (f.x - r.right()).max(0.0), gap(f.y, f.bottom(), r.y, r.bottom()), (cy - fy).abs()),
+            let (beyond, along, across) = match dir {
+                Dir::Down => (cy > fy + 1e-4, r.y - f.bottom(), cx - fx),
+                Dir::Up => (cy < fy - 1e-4, f.y - r.bottom(), cx - fx),
+                Dir::Right => (cx > fx + 1e-4, r.x - f.right(), cy - fy),
+                Dir::Left => (cx < fx - 1e-4, f.x - r.right(), cy - fy),
             };
-            beyond.then_some((along, across, centres, t))
+            let along = along.max(0.0);
+            beyond.then_some((ALONG * along * along + across * across, t))
         })
-        .collect();
-    let nearest = candidates.iter().map(|c| c.0).fold(f32::INFINITY, f32::min);
-    candidates
-        .iter()
-        .filter(|c| c.0 <= nearest + LINE)
-        .min_by(|a, b| a.1.total_cmp(&b.1).then(a.2.total_cmp(&b.2)))
-        .map(|c| c.3.id.clone())
+        .min_by(|a, b| a.0.total_cmp(&b.0))
+        .map(|(_, t)| t.id.clone())
         .or_else(|| Some(from.id.clone()))
 }
 
@@ -108,5 +103,20 @@ mod tests {
     #[test]
     fn lost_focus_goes_to_the_first_target() {
         assert_eq!(step(&layout(), Some(&Id::Shelf(ShelfId::Launch)), Dir::Down), Some(Id::Shelf(ShelfId::Game("a".into()))));
+    }
+
+    #[test]
+    fn right_goes_to_the_next_in_the_row_not_one_alongside_far_above() {
+        use clamshell_core::DockId;
+        let r = |x: f32, y: f32, w: f32, h: f32, id: Id| NavTarget { screen: Screen::Bottom, rect: Rect::new(x, y, w, h), id };
+        let l = vec![
+            // The bar: tabs along the top, one just right of the dock icon's left edge.
+            r(0.10, 1.0, 0.08, 0.07, Id::Tab(Tab::Settings)),
+            r(0.18, 1.0, 0.08, 0.07, Id::Tab(Tab::Dock)),
+            // The dock's icons, in a row well below.
+            r(0.05, 1.4, 0.12, 0.15, Id::Dock(DockId::Entry(0))),
+            r(0.19, 1.4, 0.12, 0.15, Id::Dock(DockId::Entry(1))),
+        ];
+        assert_eq!(step(&l, Some(&Id::Dock(DockId::Entry(0))), Dir::Right), Some(Id::Dock(DockId::Entry(1))));
     }
 }
