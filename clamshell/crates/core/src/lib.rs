@@ -14,6 +14,7 @@ pub mod bottom_screen;
 pub mod dock;
 pub mod editor;
 mod effect;
+pub mod enqueue;
 mod event;
 pub mod files;
 pub mod hardware;
@@ -627,6 +628,7 @@ impl State {
                 None => vec![],
             },
             ShelfId::Continue => self.continue_selected(),
+            ShelfId::Enqueue => self.enqueue_selected(),
             ShelfId::File(action) => self.on_file(action),
             ShelfId::Up => {
                 if self.shelf.up() {

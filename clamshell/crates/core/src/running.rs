@@ -108,10 +108,15 @@ impl State {
     /// Launches `game` (again, if it runs: another tab), unless a launch of it is starting; one Steam runs
     /// is shown instead (Steam doesn't start a game twice).
     pub(crate) fn launch(&mut self, game: Arc<str>) -> Vec<Effect> {
+        self.launch_with(game, None)
+    }
+
+    /// Launches `game` as [`State::launch`] does, by `command` if given (then a group too) instead of its own.
+    pub(crate) fn launch_with(&mut self, game: Arc<str>, command: Option<Launch>) -> Vec<Effect> {
         if let Some(Launch::Tool(tool)) = self.shelf.game(&game).map(|g| &g.launch) {
             return vec![Effect::Tool(tool.clone())];
         }
-        if self.shelf.game(&game).is_some_and(crate::Game::is_group) {
+        if command.is_none() && self.shelf.game(&game).is_some_and(crate::Game::is_group) {
             if !self.shelf.reveal(&game) {
                 return vec![];
             }
@@ -128,7 +133,8 @@ impl State {
         let Some(g) = self.shelf.game(&game) else {
             return vec![];
         };
-        let (launch, key, watch) = (g.launch.clone(), g.key.clone(), g.mpv_file().map(std::path::Path::to_path_buf));
+        let watch = g.mpv_file().map(std::path::Path::to_path_buf).filter(|_| command.is_none());
+        let (launch, key) = (command.unwrap_or_else(|| g.launch.clone()), g.key.clone());
         let appid = match launch {
             Launch::Steam { appid } => Some(appid),
             _ => None,

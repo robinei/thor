@@ -54,6 +54,11 @@ pub enum Effect {
     EndSteam {
         appid: u32,
     },
+    /// Write these lines to the control socket of entry `key`'s launch (see [`crate::enqueue`]).
+    Enqueue {
+        key: String,
+        lines: Vec<String>,
+    },
     /// List this browsed folder now, and again whenever it changes (none: watch nothing).
     Browse(Option<crate::files::Browse>),
     /// A file operation (the files thread).

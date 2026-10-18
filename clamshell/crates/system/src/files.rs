@@ -136,6 +136,9 @@ pub fn list(dir: &Path, folder: &str, runners: &[Runner], home: Option<&Path>, h
                 game.launch = launch;
                 game.runner = Some(runner);
             }
+            if is_dir {
+                (game.runner, game.playlist) = enqueued(&path, runners);
+            }
             // (Its picture as a scanned entry's would be; else what it is.)
             game.box_front = content::picture_of(&path);
             if game.box_front.is_none() {
@@ -149,6 +152,35 @@ pub fn list(dir: &Path, folder: &str, runners: &[Runner], home: Option<&Path>, h
     games.sort_by(|a, b| (!a.is_group(), &a.sort_key, &a.title).cmp(&(!b.is_group(), &b.sort_key, &b.title)));
     games
 }
+
+/// What enqueueing folder `dir` (not listed) is by: the runner that enqueues its first file one can
+/// enqueue, and its playlist (an `.m3u` in it), from a look at its first names.
+fn enqueued(dir: &Path, runners: &[Runner]) -> (Option<clamshell_library::RunnerOf>, Option<PathBuf>) {
+    let (mut runner, mut playlist) = (None, None);
+    let Ok(read) = fs::read_dir(dir) else {
+        return (None, None);
+    };
+    for e in read.flatten().take(PEEK) {
+        let name = e.file_name().to_string_lossy().to_lowercase();
+        if name.starts_with('.') {
+            continue;
+        }
+        if playlist.is_none() && (name.ends_with(".m3u") || name.ends_with(".m3u8")) {
+            playlist = Some(e.path());
+        }
+        if runner.is_none() {
+            runner = runners::opener(runners, &name).filter(|r| r.enqueue.is_some()).map(Runner::of);
+        }
+        if runner.is_some() && playlist.is_some() {
+            break;
+        }
+    }
+    let playlist = playlist.filter(|_| runner.is_some());
+    (runner, playlist)
+}
+
+/// How many names of a folder [`enqueued`] looks at.
+const PEEK: usize = 256;
 
 /// The videos (mpv's) among `entries`: their lengths and frames as the database has them (read before,
 /// here or as scanned entries'); those it hasn't, to read.

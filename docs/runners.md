@@ -29,9 +29,12 @@ The first runner whose patterns match a file's name opens it. A runner has:
 - `name`: its settings tab's title; it can change without losing the settings.
 - `type`, for the two that find their items themselves (below); else:
 - `match`: the file names it opens, one name each (`*.sfc`; any case).
-- `launch`: the command, `{path}` the file.
+- `launch`: the command, `{path}` the file (`{paths}`, an argument of its own: all the files, when it is
+  started with several; `{socket}`: a control socket's path, its entry's).
 - `keymap`: a keymap of ClamShell's it comes with; `item_settings` (on unless `false`): whether its items
   have settings of their own.
+- `enqueue`: what to write to the control socket to add a file to a launch while it runs (`{path}` the
+  file, as a JSON string's contents); its items then have Enqueue (below). It needs `{socket}` in `launch`.
 
 A runner says nothing about where things are or show: that is the sources' and places' (below).
 
@@ -126,12 +129,27 @@ runner's settings brings ClamShell's back at the next start.
 
 The details pane's rows each come from one of three things:
 
-- The runner: A opens (Play, Open, Run). The content: Continue (a folder of videos).
+- The runner: A opens (Play, Open, Run); Enqueue, if it declares `enqueue`. The content: Continue (a
+  folder of videos).
 - The place: browsed dirs have the file actions (Copy, Cut, Paste, Rename, Move to Trash, New folder);
   the Trash Restore and Delete, its folder Empty Trash; a removable filesystem's folder Eject. A scan's
   entries have none (the scan owns those files).
 - A stable identity: Favourite and Pin, for items whose id outlives a rescan (scanned entries, desktop
   apps, Steam games), not browsed files.
+
+### Enqueue
+
+Enqueue adds what the details show to what its runner plays: the launch of that runner most recently in
+front gets it by its control socket (a notice says to what); with none running, it is launched with it. A
+file is itself; a folder its playlist (an `.m3u` or `.m3u8` in it, so nothing is queued twice), else its
+files of that runner all the way down, in list order; a Files tab folder not opened yet goes as the
+folder (the player reads it), and has Enqueue if one of its first files is of such a runner. In the Files tab, the entries selected, in the order
+they were picked. A folder launched this way is its own dock tile; a file alone opens as A opens it. The
+starter library.json's Video and Music:
+
+```json
+{ "id": "music", "name": "Music", "match": ["*.mp3", "*.flac"], "launch": ["mpv", "--input-ipc-server={socket}", "--force-window=immediate", "{paths}"], "enqueue": "{\"command\": [\"loadfile\", \"{path}\", \"append-play\"]}" }
+```
 
 ## The dock
 

@@ -1,5 +1,6 @@
 //! What can be done to what shelf's details show (see docs/runners.md), each from one source: opening
-//! from its runner (A), Continue from its content (a folder of videos: Start), the file actions from its
+//! from its runner (A) and Enqueue (a runner that takes more while it plays), Continue from its content (a
+//! folder of videos: Start), the file actions from its
 //! place (a browsed dir: see [`crate::files`]), Favourite (Y) and Pin (X) from an identity that outlives a
 //! rescan (not a browsed file's). Where the identity's are missing, Y and X take the place's Copy and
 //! Paste, Start its Select. The details draw these rows in order; the pad's buttons act on them.
@@ -12,6 +13,7 @@ use crate::{Effect, ShelfId, State};
 pub enum Action {
     Open,
     Continue,
+    Enqueue,
     Favourite,
     Pin,
     File(FileAction),
@@ -62,6 +64,7 @@ impl Action {
         match self {
             Action::Open => ShelfId::Launch,
             Action::Continue => ShelfId::Continue,
+            Action::Enqueue => ShelfId::Enqueue,
             Action::Favourite => ShelfId::Favourite,
             Action::Pin => ShelfId::Pin,
             Action::File(a) => ShelfId::File(a),
@@ -82,6 +85,9 @@ impl State {
         let next = self.shelf.selected_index().filter(|_| selected && game.is_group()).and_then(|g| self.shelf.library().to_continue(g));
         if next.is_some() {
             actions.push(Action::Continue);
+        }
+        if selected && game.runner.as_ref().is_some_and(|r| r.enqueue.is_some()) {
+            actions.push(Action::Enqueue);
         }
         if selected && game.browsed.is_none() {
             actions.push(Action::Favourite);
@@ -116,6 +122,7 @@ impl State {
         match action {
             Action::Open => self.activate_selected(),
             Action::Continue => self.continue_selected(),
+            Action::Enqueue => self.enqueue_selected(),
             Action::Favourite => self.toggle_favourite(),
             Action::Pin => match self.shelf.selected().cloned() {
                 Some(id) => self.toggle_pin(id),

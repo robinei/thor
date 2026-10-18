@@ -83,6 +83,8 @@ pub struct Game {
     pub favourite: bool,
     /// A file or folder of a browsed dir (see [`Browsed`]); none for the rest.
     pub browsed: Option<Browsed>,
+    /// A folder's playlist (an `.m3u` in it): what enqueueing the folder enqueues, not its entries.
+    pub playlist: Option<PathBuf>,
     /// The runner that opens it (library.json's or ClamShell's): a scanned entry's (and a folder of them),
     /// a browsed file's, Desktop for a desktop file's app or game, Steam for Steam's games. None for
     /// ClamShell's own tools.
@@ -132,6 +134,7 @@ impl Game {
             box_front: None,
             icon: None,
             glyph: None,
+            playlist: None,
             shot: None,
             summary: String::new(),
             year: None,
@@ -190,17 +193,35 @@ pub fn runner_key(id: &str) -> Arc<str> {
 }
 
 /// An entry's runner: its key ([`runner_key`] of its id, which outlives a new name), its name (shown),
-/// and whether its entries have settings of their own (else only the runner's).
+/// whether its entries have settings of their own (else only the runner's); its command (`{path}`,
+/// `{paths}`, `{socket}` in it to fill in) and what to write to a launch's control socket to add a file
+/// to it (`{path}` in it the file, as a JSON string's contents), if it can take more while it runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunnerOf {
     pub key: Arc<str>,
     pub name: Arc<str>,
     pub item_settings: bool,
+    pub command: Arc<[String]>,
+    pub enqueue: Option<Arc<str>>,
 }
 
 impl RunnerOf {
     pub fn new(id: &str, name: &str, item_settings: bool) -> RunnerOf {
-        RunnerOf { key: runner_key(id), name: name.into(), item_settings }
+        RunnerOf { key: runner_key(id), name: name.into(), item_settings, command: Arc::new([]), enqueue: None }
+    }
+
+    /// Its command for `files` (several where it takes `{paths}`, else the first), in the first's folder;
+    /// `{socket}` left for the launcher.
+    pub fn command_for(&self, files: &[PathBuf]) -> Launch {
+        let path = |p: &PathBuf| p.to_string_lossy().into_owned();
+        let mut argv = Vec::new();
+        for arg in self.command.iter() {
+            match arg.as_str() {
+                "{paths}" => argv.extend(files.iter().map(path)),
+                _ => argv.push(arg.replace("{path}", &files.first().map(path).unwrap_or_default())),
+            }
+        }
+        Launch::Program { argv, workdir: files.first().and_then(|f| f.parent()).map(std::path::Path::to_path_buf) }
     }
 }
 
@@ -452,6 +473,37 @@ impl Library {
         }
     }
 
+    /// The files enqueueing entry `i` enqueues, in order: a file itself; a folder's playlist if it has one
+    /// (a browsed one's `.m3u` entry too), else its entries opened by runner `key` all the way down, in
+    /// list order; a browsed folder not listed yet, itself (the player reads it).
+    pub fn queue_files(&self, i: usize, key: &str) -> Vec<PathBuf> {
+        let Some(g) = self.games.get(i) else {
+            return Vec::new();
+        };
+        if !g.is_group() {
+            return g.file.clone().into_iter().collect();
+        }
+        let m3u =
+            |g: &Game| g.file.as_ref().filter(|f| f.extension().is_some_and(|e| e.eq_ignore_ascii_case("m3u") || e.eq_ignore_ascii_case("m3u8"))).cloned();
+        let playlist = g.playlist.clone().or_else(|| g.items.iter().filter_map(|&e| self.games.get(e)).find_map(m3u));
+        if let Some(playlist) = playlist {
+            return vec![playlist];
+        }
+        if g.browsed.as_ref().is_some_and(|b| !b.listed) {
+            return g.file.clone().into_iter().collect();
+        }
+        let mut files = Vec::new();
+        let mut stack: Vec<usize> = g.items.iter().rev().copied().collect();
+        while let Some(e) = stack.pop() {
+            match self.games.get(e) {
+                Some(e) if e.is_group() => stack.extend(e.items.iter().rev()),
+                Some(e) if e.runner.as_ref().is_some_and(|r| &*r.key == key) => files.extend(e.file.clone()),
+                _ => {}
+            }
+        }
+        files
+    }
+
     /// The groups entry `i` is in, outermost first.
     pub fn groups_of(&self, i: usize) -> Vec<usize> {
         let mut groups = Vec::new();
@@ -549,6 +601,26 @@ pub fn demo_library() -> Library {
 #[allow(clippy::indexing_slicing, clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_folder_queues_its_playlist_else_its_files_of_the_runner() {
+        let music = RunnerOf::new("music", "Music", true);
+        let file =
+            |id: &str, runner: Option<&RunnerOf>| Game { file: Some(format!("/m/{id}").into()), runner: runner.cloned(), parent: Some(0), ..Game::new(id, id) };
+        let mut games = vec![
+            Game { items: vec![1, 2, 3], ..Game::new("album", "Album") },
+            file("b.mp3", Some(&music)),
+            file("cover.jpg", None),
+            Game { items: vec![4], parent: Some(0), ..Game::new("cd2", "CD 2") },
+            Game { parent: Some(3), ..file("c.flac", Some(&music)) },
+        ];
+        let mut library = Library { games: games.clone(), ..Library::default() };
+        assert_eq!(library.queue_files(0, &music.key), [PathBuf::from("/m/b.mp3"), "/m/c.flac".into()], "down into CD 2, no cover");
+        assert_eq!(library.queue_files(1, &music.key), [PathBuf::from("/m/b.mp3")]);
+        games[0].playlist = Some("/m/album.m3u".into());
+        library.games = games;
+        assert_eq!(library.queue_files(0, &music.key), [PathBuf::from("/m/album.m3u")], "its playlist instead");
+    }
 
     #[test]
     fn recent_and_favourites_come_first() {

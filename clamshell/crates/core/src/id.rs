@@ -69,6 +69,8 @@ pub enum ShelfId {
     Pin,
     /// A folder's next video played (see [`crate::Library::to_continue`]).
     Continue,
+    /// The selected entry (or the entries selected) added to what its runner plays (see [`crate::enqueue`]).
+    Enqueue,
     /// A browsed entry's file action, or the folder open's (see [`crate::files`]).
     File(crate::files::FileAction),
 }

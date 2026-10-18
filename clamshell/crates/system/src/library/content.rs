@@ -432,11 +432,13 @@ fn group(folder: &Path, dir: &Path, source: &str, items: &[String], open: &Open,
         games.truncate(index);
         return None;
     }
-    // (Its runner: its first entry's.)
+    // (Its runner: its first entry's. Its playlist: an `.m3u` in it, enqueued instead of its entries.)
     let runner = members.iter().find_map(|&m| games.get(m).and_then(|g| g.runner.clone()));
+    let playlist = listing.iter().find(|(n, p)| p.is_file() && [".m3u", ".m3u8"].iter().any(|e| n.to_lowercase().ends_with(e))).map(|(_, p)| p.clone());
     if let Some(g) = games.get_mut(index) {
         g.items = members;
         g.runner = runner;
+        g.playlist = playlist;
     }
     Some(index)
 }

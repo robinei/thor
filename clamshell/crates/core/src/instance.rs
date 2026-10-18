@@ -53,6 +53,12 @@ impl Instance {
         Instance::parse(unit.strip_suffix(SCOPE)?).filter(|i| matches!(i, Instance::Run { .. }))
     }
 
+    /// The control socket's file name (in the runtime dir) of entry `key`'s launches: a command's
+    /// `{socket}`.
+    pub fn socket_of(key: &str) -> String {
+        format!("{RUN}{key}.sock")
+    }
+
     /// The entry key in `name`: a launch's scope (with or without `.scope`), or an entry's workspace
     /// (without allocating).
     pub fn key_of(name: &str) -> Option<&str> {

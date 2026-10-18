@@ -158,6 +158,8 @@ fn draw_notice(f: &mut Frame, what: &NoticeKind, w: f32, bar_h: f32) {
         NoticeKind::BottomRule(false) => (None, Fmt::of(format_args!("Back on top from now on"))),
         NoticeKind::Files(Ok(done)) => (None, Fmt::of(format_args!("{done}"))),
         NoticeKind::Files(Err(e)) => (None, Fmt::of(format_args!("{e}"))),
+        NoticeKind::Enqueued(1, to) => (None, Fmt::of(format_args!("Added to {to}"))),
+        NoticeKind::Enqueued(n, to) => (None, Fmt::of(format_args!("{n} added to {to}"))),
     };
     let x = (w - widgets::card_width(f, bar_h, icon.is_some(), &text)) / 2.0;
     widgets::card(f, x, bar_h * 1.3, bar_h, icon, &text);

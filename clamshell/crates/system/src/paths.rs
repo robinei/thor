@@ -18,6 +18,8 @@ pub struct Paths {
     pub jobs: PathBuf,
     /// MangoHud's config files and frame logs, in RAM ($XDG_RUNTIME_DIR/clamshell/mangohud).
     pub mangohud: PathBuf,
+    /// Launches' control sockets, a command's `{socket}` ($XDG_RUNTIME_DIR/clamshell/sockets).
+    pub sockets: PathBuf,
     /// $XDG_RUNTIME_DIR, where systemd's user manager has its socket.
     pub runtime: Option<PathBuf>,
     /// The control pipe `clamshell ctl` writes to ($XDG_RUNTIME_DIR/clamshell-control).
@@ -68,6 +70,7 @@ impl Paths {
         Paths {
             jobs: base.runtime.clone().unwrap_or_else(std::env::temp_dir).join("clamshell/jobs"),
             mangohud: base.runtime.clone().unwrap_or_else(|| PathBuf::from("/tmp")).join("clamshell/mangohud"),
+            sockets: base.runtime.clone().unwrap_or_else(std::env::temp_dir).join("clamshell/sockets"),
             runtime: base.runtime.clone(),
             control: base.runtime.as_ref().map(|r| r.join("clamshell-control")),
             screenshots: base.home.as_ref().map(|h| h.join("Pictures/Screenshots")),
@@ -76,6 +79,11 @@ impl Paths {
             art,
             watch_later,
         }
+    }
+
+    /// The control socket of entry `key`'s launches (see [`clamshell_core::enqueue`]).
+    pub fn socket(&self, key: &str) -> PathBuf {
+        self.sockets.join(clamshell_core::instance::Instance::socket_of(key))
     }
 
     /// ClamShell's database (see [`crate::store`]).

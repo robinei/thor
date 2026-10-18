@@ -52,6 +52,8 @@ pub enum NoticeKind {
     BottomRule(bool),
     /// A file operation ended: what was done, or what went wrong.
     Files(Result<String, String>),
+    /// Entries enqueued: how many, and to what (the running entry's title).
+    Enqueued(usize, String),
 }
 
 impl State {

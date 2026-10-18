@@ -52,6 +52,8 @@ pub struct Config {
     /// How jobs start: under sway, through it (see [`crate::sway`]), so the game's window opens on the
     /// game's workspace.
     pub jobs: Runner,
+    /// Where launches' control sockets go (a command's `{socket}`).
+    pub sockets: PathBuf,
 }
 
 #[derive(Debug)]
@@ -194,6 +196,15 @@ fn start(config: &Config, request: &Request) -> Result<Running, Error> {
 
 /// Starts `argv` in `workdir` (else the home dir) as the request's instance.
 fn start_program(config: &Config, request: &Request, argv: Vec<String>, workdir: Option<PathBuf>) -> Result<Running, Error> {
+    // (`{socket}`: its entry's control socket, see clamshell_core::enqueue.)
+    let argv = match &request.instance {
+        Instance::Run { key, .. } if argv.iter().any(|a| a.contains("{socket}")) => {
+            std::fs::create_dir_all(&config.sockets)?;
+            let socket = config.sockets.join(Instance::socket_of(key));
+            argv.iter().map(|a| a.replace("{socket}", &socket.to_string_lossy())).collect()
+        }
+        _ => argv,
+    };
     let job = Job {
         unit: request.instance.name(),
         workspace: request.instance.workspace(),
@@ -315,7 +326,7 @@ mod tests {
     use std::sync::mpsc;
 
     fn config(db: Option<PathBuf>) -> Config {
-        Config { db, scope: false, watch_later: Vec::new(), jobs: Runner { jobs: std::env::temp_dir(), sway: None } }
+        Config { db, scope: false, watch_later: Vec::new(), jobs: Runner { jobs: std::env::temp_dir(), sway: None }, sockets: std::env::temp_dir() }
     }
 
     #[test]

@@ -101,6 +101,17 @@ impl Handles {
                 }
             }
             Effect::Window(command) => self.window(command),
+            Effect::Enqueue { key, lines } => {
+                log::info!("effect: {effect:?}");
+                let socket = self.paths.socket(key);
+                let lines = lines.clone();
+                // (Off the main thread: a player slow to read waits nothing here.)
+                std::thread::spawn(move || {
+                    if let Err(e) = enqueue(&socket, &lines) {
+                        log::warn!("enqueue to {}: {e}", socket.display());
+                    }
+                });
+            }
             Effect::Browse(browse) => {
                 log::info!("effect: {effect:?}");
                 self.browse.send(browse.clone());
@@ -181,4 +192,25 @@ impl Handles {
             log::warn!("store: {e}");
         }
     }
+}
+
+/// `lines` written to the control socket at `socket`, each its own line, then as many lines read back
+/// (or none, for a while), so the player reads them all before the connection closes.
+fn enqueue(socket: &std::path::Path, lines: &[String]) -> std::io::Result<()> {
+    use std::io::{BufRead, Write};
+    let mut stream = std::os::unix::net::UnixStream::connect(socket)?;
+    stream.set_write_timeout(Some(std::time::Duration::from_secs(2)))?;
+    stream.set_read_timeout(Some(std::time::Duration::from_secs(2)))?;
+    for line in lines {
+        stream.write_all(line.as_bytes())?;
+        stream.write_all(b"\n")?;
+    }
+    // (mpv answers each command, and drops those it hasn't read when the client goes.)
+    let mut replies = std::io::BufReader::new(stream).lines();
+    for _ in lines {
+        if !matches!(replies.next(), Some(Ok(_))) {
+            break;
+        }
+    }
+    Ok(())
 }

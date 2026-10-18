@@ -315,6 +315,8 @@ fn actions(f: &mut Frame, game: &Game, r: Rect, action_h: f32, pad: f32) -> f32 
                     None => (Fmt::of(format_args!("Play")), Tone::Go),
                 }
             }
+            Action::Enqueue if !s.files().selected.is_empty() => (Fmt::of(format_args!("Enqueue · {} selected", s.files().selected.len())), Tone::Normal),
+            Action::Enqueue => (Fmt::of(format_args!("Enqueue")), Tone::Normal),
             Action::Favourite if game.favourite => (Fmt::of(format_args!("Favourite")), Tone::Accent),
             Action::Favourite => (Fmt::of(format_args!("Not a favourite")), Tone::Dim),
             Action::Pin if s.dock().is_pinned(&game.id) => (Fmt::of(format_args!("On the dock")), Tone::Normal),

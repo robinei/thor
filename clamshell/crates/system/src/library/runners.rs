@@ -40,6 +40,10 @@ pub struct Runner {
     /// the runner's. On unless said (a browsed file or a folder has none either way).
     #[serde(default)]
     pub item_settings: Option<bool>,
+    /// What to write to a launch's control socket (its command's `{socket}`) to add a file to it while
+    /// it runs (`{path}` in it the file, as a JSON string's contents): its entries can be enqueued.
+    #[serde(default)]
+    pub enqueue: Option<String>,
 }
 
 /// A runner that finds its items itself, each with its own command.
@@ -59,17 +63,23 @@ impl Runner {
         match self.kind {
             Some(Kind::Desktop) => crate::desktop::command(path).unwrap_or_default(),
             Some(Kind::Steam) => Launch::None,
-            None => {
-                let p = path.to_string_lossy();
-                let argv = self.launch.iter().map(|a| super::content::expand(a, home).to_string_lossy().replace("{path}", &p)).collect();
-                Launch::Program { argv, workdir: path.parent().map(Path::to_path_buf) }
-            }
+            None => clamshell_library::RunnerOf { command: self.template(home).into(), ..clamshell_library::RunnerOf::new(&self.id, &self.name, true) }
+                .command_for(&[path.to_path_buf()]),
         }
     }
 
     /// The runner that opens an entry of it, as the entry keeps it.
     pub fn of(&self) -> clamshell_library::RunnerOf {
-        clamshell_library::RunnerOf::new(&self.id, &self.name, self.item_settings.unwrap_or(true))
+        clamshell_library::RunnerOf {
+            command: self.template(None).into(),
+            enqueue: self.enqueue.as_deref().map(Into::into),
+            ..clamshell_library::RunnerOf::new(&self.id, &self.name, self.item_settings.unwrap_or(true))
+        }
+    }
+
+    /// Its command with `~/` against `home` (or as it is), `{path}`, `{paths}` and `{socket}` left in.
+    fn template(&self, home: Option<&Path>) -> Vec<String> {
+        self.launch.iter().map(|a| super::content::expand(a, home).to_string_lossy().into_owned()).collect()
     }
 
     /// Whether it opens a file named `name`.
@@ -91,6 +101,10 @@ pub fn checked(config: &[Runner], installed: &dyn Fn(&str) -> bool) -> (Vec<Runn
         match (id.is_empty(), r.kind, r.launch.first()) {
             (true, _, _) => problems.push(format!("a runner without an id or a name: {}", r.launch.join(" "))),
             (false, None, None) => problems.push(format!("{name}: no launch command")),
+            (false, None, Some(_)) if r.enqueue.is_some() && !r.launch.iter().any(|a| a.contains("{socket}")) => {
+                problems.push(format!("{name}: enqueue needs {{socket}} in its launch command"));
+                runners.push(Runner { id, name, enqueue: None, ..r.clone() });
+            }
             (false, None, Some(program)) if !program.contains('/') && !installed(program) => {
                 problems.push(format!("{name}: {program} isn't installed"));
                 runners.push(Runner { id, name, ..r.clone() });
@@ -155,5 +169,20 @@ mod tests {
         );
         assert_eq!(opener(&runners, "app.desktop").map(|r| r.kind), Some(Some(Kind::Desktop)));
         assert!(of_kind(&runners, Kind::Steam).is_none(), "no Steam runner: no Steam games");
+    }
+
+    #[test]
+    fn enqueue_needs_a_socket_to_write_to() {
+        let config: Vec<Runner> = serde_json::from_str(
+            r#"[{ "name": "Music", "match": ["*.mp3"], "launch": ["mpv", "{paths}"], "enqueue": "loadfile {path}" },
+                { "name": "Video", "match": ["*.mkv"], "launch": ["mpv", "--input-ipc-server={socket}", "{paths}"], "enqueue": "loadfile {path}" }]"#,
+        )
+        .unwrap();
+        let (runners, problems) = checked(&config, &|_| true);
+        assert_eq!(problems, ["Music: enqueue needs {socket} in its launch command"]);
+        assert_eq!(runners.iter().map(|r| r.of().enqueue.is_some()).collect::<Vec<_>>(), [false, true], "Music kept, without it");
+        let (launch, _) = open(&runners, Path::new("/v/a.mkv"), None).unwrap();
+        let argv = ["mpv", "--input-ipc-server={socket}", "/v/a.mkv"].map(String::from).to_vec();
+        assert_eq!(launch, Launch::Program { argv, workdir: Some("/v".into()) }, "{{paths}}: the one file; {{socket}} the launcher's");
     }
 }

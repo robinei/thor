@@ -200,6 +200,7 @@ pub const TARGETS: &[Form<Id>] = &[
     }),
     form("dock-done", "moving a dock entry: done", |_| Ok(Id::Dock(DockId::Done))),
     form("launch", "shelf's launch", |_| Ok(Id::Shelf(ShelfId::Launch))),
+    form("enqueue", "shelf's Enqueue (added to what its runner plays, else played)", |_| Ok(Id::Shelf(ShelfId::Enqueue))),
     form("up", "out of shelf's open group", |_| Ok(Id::Shelf(ShelfId::Up))),
     form("collection N", "shelf's collection tab N", |a| Ok(Id::Shelf(ShelfId::Collection(number(arg(a, 0))?)))),
     form(

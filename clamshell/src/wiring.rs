@@ -120,7 +120,10 @@ pub fn start(
     let jobs = Runner { jobs: paths.jobs.clone(), sway: sway.clone() };
     let launcher = started(
         "launcher",
-        launcher::spawn(launcher::Config { db: paths.db(), scope, watch_later: paths.watch_later.clone(), jobs: jobs.clone() }, sink.clone()),
+        launcher::spawn(
+            launcher::Config { db: paths.db(), scope, watch_later: paths.watch_later.clone(), jobs: jobs.clone(), sockets: paths.sockets.clone() },
+            sink.clone(),
+        ),
     );
     // The controller, grabbed for good with a virtual Xbox pad for games.
     let pad_taken = pad::Taken::default();
