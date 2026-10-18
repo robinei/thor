@@ -114,7 +114,7 @@ impl Icon {
     }
 
     /// A shelf tab's icon, by the name library.json gives (`gamepad`, `apps`, `film`, `tv`, `music`,
-    /// `star`, `clock`, `tools`, `folder`); none for another.
+    /// `star`, `clock`, `tools`, `folder`, `file`, `trash`, `card`); none for another.
     pub fn named(name: &str) -> Option<Icon> {
         Some(match name {
             "gamepad" => Icon::Gamepad,
@@ -126,6 +126,9 @@ impl Icon {
             "clock" => Icon::Clock,
             "tools" => Icon::Wrench,
             "folder" => Icon::Folder,
+            "file" => Icon::File,
+            "trash" => Icon::Trash,
+            "card" => Icon::Card,
             _ => return None,
         })
     }

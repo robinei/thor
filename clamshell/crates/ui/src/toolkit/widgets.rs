@@ -295,8 +295,7 @@ pub(crate) fn shot(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect) {
 }
 
 /// An entry's picture in `r`: its box art fitted in (centred across it; down it as `align` says, `Start`
-/// at the top), else its icon (square, in the middle), else a placeholder in its colour while there is
-/// neither; `grey` for one shown stopped.
+/// at the top), else its icon (see [`icon`]); `grey` for one shown stopped.
 pub(crate) fn art(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect, radius: f32, align: Align, grey: bool) {
     let scale = c.scale();
     let (pw, ph) = ((r.w * scale).round() as u32, (r.h * scale).round() as u32);
@@ -314,42 +313,42 @@ pub(crate) fn art(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect, rad
                 c.image(img, r.x + (r.w - iw) / 2.0, y);
             }
         }
-        // An app's icon, square in the middle, where it has no box art.
-        None => match game.icon.as_deref().and_then(|path| {
-            let side = (r.w.min(r.h) * 0.8 * scale).round() as u32;
-            images.get(&game.id, Slot::Art, path, side, side)
-        }) {
-            Some(img) => {
-                let (iw, ih) = (img.width() as f32 / scale, img.height() as f32 / scale);
-                let (x, y) = (r.x + (r.w - iw) / 2.0, r.y + (r.h - ih) / 2.0);
-                if grey {
-                    c.image_grey(img, x, y, GREY);
-                } else {
-                    c.image(img, x, y);
-                }
-            }
-            // A browsed entry: what it is (a folder, a file, the Trash, a memory card).
-            None => match browsed_icon(game) {
-                Some(icon) => {
-                    let side = r.w.min(r.h) * 0.7;
-                    c.icon(icon, Rect::new(r.x + (r.w - side) / 2.0, r.y + (r.h - side) / 2.0, side, side), if grey { Tone::Dim } else { Tone::Normal });
-                }
-                None => c.rounded(r, radius, Rgb(if grey { greyed(game.color) } else { game.color })),
-            },
-        },
+        None => icon(c, images, game, r, radius, grey),
     }
 }
 
-/// A browsed entry's icon, drawn where it has no picture.
-pub(crate) fn browsed_icon(game: &Game) -> Option<Icon> {
-    use clamshell_core::BrowseKind;
-    let b = game.browsed.as_ref()?;
-    Some(match (&b.kind, b.folder) {
-        (BrowseKind::Trash, _) => Icon::Trash,
-        (BrowseKind::Removable(_), _) => Icon::Card,
-        (_, true) => Icon::Folder,
-        (_, false) => Icon::File,
-    })
+/// A list row's picture in `r`: a folder's icon where it has one (its picture is for the details), else
+/// its art.
+pub(crate) fn thumb(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect, radius: f32, grey: bool) {
+    if game.is_group() && (game.icon.is_some() || game.glyph.is_some()) {
+        icon(c, images, game, r, radius, grey);
+    } else {
+        art(c, images, game, r, radius, Align::Center, grey);
+    }
+}
+
+/// An entry's icon in `r`, square in the middle: its image (an app's, a folder's), else one of the UI's by
+/// name (a browsed entry's: a folder, a file), else a placeholder in its colour.
+pub(crate) fn icon(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect, radius: f32, grey: bool) {
+    let scale = c.scale();
+    let side = (r.w.min(r.h) * 0.8 * scale).round() as u32;
+    if let Some(img) = game.icon.as_deref().and_then(|path| images.get(&game.id, Slot::Icon, path, side, side)) {
+        let (iw, ih) = (img.width() as f32 / scale, img.height() as f32 / scale);
+        let (x, y) = (r.x + (r.w - iw) / 2.0, r.y + (r.h - ih) / 2.0);
+        if grey {
+            c.image_grey(img, x, y, GREY);
+        } else {
+            c.image(img, x, y);
+        }
+        return;
+    }
+    match game.glyph.as_deref().and_then(Icon::named) {
+        Some(glyph) => {
+            let side = r.w.min(r.h) * 0.7;
+            c.icon(glyph, Rect::new(r.x + (r.w - side) / 2.0, r.y + (r.h - side) / 2.0, side, side), if grey { Tone::Dim } else { Tone::Normal });
+        }
+        None => c.rounded(r, radius, Rgb(if grey { greyed(game.color) } else { game.color })),
+    }
 }
 
 /// A screen's header band, of the body's height; a menu's and a list's text buttons, and a menu's width,

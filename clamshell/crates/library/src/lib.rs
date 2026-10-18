@@ -53,8 +53,12 @@ pub struct Game {
     /// Its file or folder in its content dir (none for Steam's games and desktop files).
     pub file: Option<PathBuf>,
     pub box_front: Option<PathBuf>,
-    /// An icon (an app's), drawn where there is no box art.
+    /// An icon (an app's; a folder's small picture, its row's), drawn where there is no box art (a
+    /// folder's row: before it).
     pub icon: Option<PathBuf>,
+    /// One of the UI's own icons by name (`folder`, `file`, `gamepad`), drawn where there is no picture
+    /// (a browsed entry's; a folder's from library.json's places).
+    pub glyph: Option<Arc<str>>,
     /// Fetched (see [`Meta`]): a screenshot (a film's backdrop), what it is about, the year it came out,
     /// who made it.
     pub shot: Option<PathBuf>,
@@ -127,6 +131,7 @@ impl Game {
             file: None,
             box_front: None,
             icon: None,
+            glyph: None,
             shot: None,
             summary: String::new(),
             year: None,

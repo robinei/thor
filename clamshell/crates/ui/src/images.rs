@@ -25,8 +25,10 @@ pub struct Key {
 /// Which of an entry's images.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Slot {
-    /// Its box art, or an app's icon.
+    /// Its box art.
     Art,
+    /// Its icon (an app's, a folder's).
+    Icon,
     /// A screenshot.
     Shot,
 }

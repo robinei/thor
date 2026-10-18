@@ -32,14 +32,19 @@
 //!   folder (any case: `Cover.jpg`); else the group's, but for a video mpv plays (its frame is its
 //!   picture).
 //! - `place`: where its entries go, a tab, or a folder in one (`Games/SNES`, `Games/Handhelds/GBA`: see
-//!   [`place`]), so one tab can hold folders of different runners; scans (and rules) naming the same folder
-//!   share it. The folder's art: `poster`, `cover` or `folder` in the scan's dir.
+//!   [`place`]; `@snes`, `@snes/RPG`: a declared place's), so one tab can hold folders of different runners;
+//!   scans (and rules) naming the same folder share it. The folder's art: a declared place's picture, else
+//!   `poster`, `cover` or `folder` in the scan's dir.
 //! - `metadata`: where to fetch covers, screenshots and the rest for its entries (`libretro:<system>`,
 //!   `tmdb:movie`, `tmdb:tv`; else the runner's); `keys`: the services' keys (see [`crate::meta`]).
 //!
 //! The rest:
-//! - `tabs`: the tabs' order and icons (`{ "name": "Games", "icon": "gamepad" }`); tabs not listed come
-//!   after, as first named, without an icon (Games and Apps with theirs).
+//! - `places`: places declared (see [`Place`]): an `id` to refer to them by (`"place": "@snes"`; their
+//!   folder's id `place:snes`, which outlives a new path), their `path`, an `icon` (a tab's one of the UI's
+//!   by name; a folder's also an image file, shown in its row) and a folder's `picture` (shown large when
+//!   it is selected). `{ "id": "games", "path": "Games", "icon": "gamepad" }`, `{ "id": "snes", "path":
+//!   "Games/SNES", "icon": "snes-icon.png", "picture": "snes.png" }`. Tabs come in the order declared
+//!   (those not declared after, as first named, without an icon; Games and Apps with theirs).
 //! - `desktop`, `steam`: rules (see [`Rule`]) for the desktop files' apps and games, and for Steam's
 //!   installed games (there with a runner of type `desktop`, `steam`): the first one matching an entry (by
 //!   its id, its name, and a desktop file's categories: globs, any case) puts it at its `place`, or hides it; a rule
@@ -73,9 +78,9 @@ use serde::Deserialize;
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
-    /// The tabs' icons and order (those not listed after, without an icon; Games and Apps with theirs).
+    /// Places declared: their ids (to refer to as `@id`), icons and pictures; the tabs' order.
     #[serde(default)]
-    pub tabs: Vec<Tab>,
+    pub places: Vec<Place>,
     #[serde(default)]
     pub runners: Vec<super::runners::Runner>,
     #[serde(default)]
@@ -95,13 +100,30 @@ pub struct Config {
     pub removable: Vec<MountRule>,
 }
 
-/// A tab: its name and its icon's (the UI's: `gamepad`, `film`, ...).
+/// A place declared: its `id` (`"place": "@snes"`, `"@snes/RPG"` elsewhere; its folder's id, `place:snes`,
+/// which outlives a new path), its `path` (`Games/SNES`; one part: a tab), its `icon` (one of the UI's by
+/// name, `gamepad`; a folder's also an image file, its row's) and a folder's `picture` (an image file,
+/// shown large when it is selected; a tab has none: something in it is always selected). Image files: `~/`
+/// the home dir, else from library.json's dir.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Tab {
-    pub name: String,
+pub struct Place {
+    pub id: String,
+    pub path: String,
     #[serde(default)]
     pub icon: Option<String>,
+    #[serde(default)]
+    pub picture: Option<String>,
+}
+
+/// `place` with a declared place's id (`@snes`, `@snes/RPG`) as its path; Err: an id not declared.
+pub fn resolve(place: &str, places: &[Place]) -> Result<String, String> {
+    let Some(reference) = place.trim().strip_prefix('@') else {
+        return Ok(place.to_owned());
+    };
+    let (id, rest) = reference.split_once('/').unwrap_or((reference, ""));
+    let declared = places.iter().find(|p| p.id == id).ok_or_else(|| format!("{place}: no place {id} declared"))?;
+    Ok(if rest.is_empty() { declared.path.clone() } else { format!("{}/{rest}", declared.path.trim_end_matches('/')) })
 }
 
 /// A dir browsed: its own folder at `place` (its last part the folder's title: `Files/Home`,
@@ -705,6 +727,15 @@ mod tests {
         let _ = fs::remove_file(&file);
         assert_eq!(expand("~/Games", Some(Path::new("/h"))), PathBuf::from("/h/Games"));
         assert_eq!(expand("~", Some(Path::new("/h"))), PathBuf::from("/h"));
+    }
+
+    #[test]
+    fn places_are_referred_to_by_id() {
+        let places: Vec<Place> = serde_json::from_str(r#"[{ "id": "snes", "path": "Games/SNES" }]"#).unwrap();
+        assert_eq!(resolve("@snes", &places).unwrap(), "Games/SNES");
+        assert_eq!(resolve("@snes/RPG", &places).unwrap(), "Games/SNES/RPG");
+        assert_eq!(resolve("Games/GBA", &places).unwrap(), "Games/GBA", "a path as it is");
+        assert!(resolve("@gba", &places).is_err());
     }
 
     #[test]

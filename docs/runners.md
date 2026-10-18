@@ -63,10 +63,17 @@ Without one, those items aren't in the library. Where their items show is the `d
 
 Where an item shows, and what can be done to it there:
 
-- A runner's `scan`: its entries in its tab and group.
-- `browse`: dirs listed as they are opened (see files-tab.md).
+- A runner's `scan`: its entries at its `place`, a path: the tab, then folders in it (`Games/SNES`).
+- `browse`: dirs listed as they are opened (see files-tab.md), each its own folder at its place.
 - The rules for desktop files (`desktop`), Steam's games (`steam`) and removable storage (`removable`):
-  the first matching one puts an item in a tab and group, or hides it.
+  the first matching one puts an item at its place, or hides it.
+
+`places` declares places: an `id` (`"place": "@snes"` elsewhere, `"@snes/RPG"` a folder in it; the folder's
+id is `place:snes`, so pins, favourites and where a tab was outlive a new path), the `path`, an `icon` and a
+folder's `picture`. A tab has only an icon, one of the UI's (`gamepad`): something in it is always selected.
+A folder's icon (an image file, or one of the UI's) is what its row shows; its picture is what the details
+show large when it is selected (a console, in a system's folder). The declared tabs come in that order.
+A place not declared still works as a path (`folder:Games/SNES` its folder's id).
 
 They stay separate lists: their matchers differ (a desktop file's categories, a Steam app id, a
 filesystem's label). A place decides nothing about opening.

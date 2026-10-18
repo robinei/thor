@@ -1,10 +1,20 @@
 {
-  "tabs": [
-    { "name": "Games", "icon": "gamepad" },
-    { "name": "Films", "icon": "film" },
-    { "name": "TV", "icon": "tv" },
-    { "name": "Files", "icon": "folder" },
-    { "name": "Apps", "icon": "apps" }
+  "places": [
+    { "id": "games", "path": "Games", "icon": "gamepad" },
+    { "id": "films", "path": "Films", "icon": "film" },
+    { "id": "tv", "path": "TV", "icon": "tv" },
+    { "id": "files", "path": "Files", "icon": "folder" },
+    { "id": "apps", "path": "Apps", "icon": "apps" },
+    { "id": "nes", "path": "Games/NES" },
+    { "id": "snes", "path": "Games/SNES" },
+    { "id": "n64", "path": "Games/Nintendo 64" },
+    { "id": "gb", "path": "Games/Game Boy" },
+    { "id": "gba", "path": "Games/Game Boy Advance" },
+    { "id": "nds", "path": "Games/Nintendo DS" },
+    { "id": "md", "path": "Games/Mega Drive" },
+    { "id": "psx", "path": "Games/PlayStation" },
+    { "id": "dc", "path": "Games/Dreamcast" },
+    { "id": "steam", "path": "Games/Steam" }
   ],
   "keys": {},
   "runners": [
@@ -12,35 +22,35 @@
     { "type": "steam", "id": "steam", "name": "Steam" },
     { "id": "nes", "name": "NES", "match": ["*.nes"], "launch": ["retroarch", "-f", "-L", "/usr/lib/libretro/nestopia_libretro.so", "{path}"],
       "metadata": "libretro:Nintendo - Nintendo Entertainment System",
-      "scan": [{ "id": "nes", "dir": "~/Games/nes", "place": "Games/NES", "match": ["*.nes", "*.zip"] }] },
+      "scan": [{ "id": "nes", "dir": "~/Games/nes", "place": "@nes", "match": ["*.nes", "*.zip"] }] },
     { "id": "snes", "name": "SNES", "match": ["*.sfc", "*.smc"], "launch": ["retroarch", "-f", "-L", "/usr/lib/libretro/snes9x_libretro.so", "{path}"],
       "metadata": "libretro:Nintendo - Super Nintendo Entertainment System",
-      "scan": [{ "id": "snes", "dir": "~/Games/snes", "place": "Games/SNES", "match": ["*.sfc", "*.smc", "*.zip"] }] },
+      "scan": [{ "id": "snes", "dir": "~/Games/snes", "place": "@snes", "match": ["*.sfc", "*.smc", "*.zip"] }] },
     { "id": "n64", "name": "Nintendo 64", "match": ["*.z64", "*.n64", "*.v64"], "launch": ["retroarch", "-f", "-L", "/usr/lib/libretro/mupen64plus_next_libretro.so", "{path}"],
       "metadata": "libretro:Nintendo - Nintendo 64",
-      "scan": [{ "id": "n64", "dir": "~/Games/n64", "place": "Games/Nintendo 64", "match": ["*.z64", "*.n64", "*.v64", "*.zip"] }] },
+      "scan": [{ "id": "n64", "dir": "~/Games/n64", "place": "@n64", "match": ["*.z64", "*.n64", "*.v64", "*.zip"] }] },
     { "id": "gb", "name": "Game Boy", "match": ["*.gb", "*.gbc"], "launch": ["retroarch", "-f", "-L", "/usr/lib/libretro/gambatte_libretro.so", "{path}"],
       "metadata": "libretro:Nintendo - Game Boy Color",
-      "scan": [{ "id": "gb", "dir": "~/Games/gb", "place": "Games/Game Boy", "match": ["*.gb", "*.gbc", "*.zip"] }] },
+      "scan": [{ "id": "gb", "dir": "~/Games/gb", "place": "@gb", "match": ["*.gb", "*.gbc", "*.zip"] }] },
     { "id": "gba", "name": "Game Boy Advance", "match": ["*.gba"], "launch": ["retroarch", "-f", "-L", "/usr/lib/libretro/mgba_libretro.so", "{path}"],
       "metadata": "libretro:Nintendo - Game Boy Advance",
-      "scan": [{ "id": "gba", "dir": "~/Games/gba", "place": "Games/Game Boy Advance", "match": ["*.gba", "*.zip"] }] },
+      "scan": [{ "id": "gba", "dir": "~/Games/gba", "place": "@gba", "match": ["*.gba", "*.zip"] }] },
     { "id": "nds", "name": "Nintendo DS", "match": ["*.nds"], "launch": ["retroarch", "-f", "-L", "/usr/lib/libretro/melonds_libretro.so", "{path}"],
       "metadata": "libretro:Nintendo - Nintendo DS",
-      "scan": [{ "id": "nds", "dir": "~/Games/nds", "place": "Games/Nintendo DS", "match": ["*.nds", "*.zip"] }] },
+      "scan": [{ "id": "nds", "dir": "~/Games/nds", "place": "@nds", "match": ["*.nds", "*.zip"] }] },
     { "id": "md", "name": "Mega Drive", "match": ["*.md", "*.gen", "*.smd"], "launch": ["retroarch", "-f", "-L", "/usr/lib/libretro/genesis_plus_gx_libretro.so", "{path}"],
       "metadata": "libretro:Sega - Mega Drive - Genesis",
-      "scan": [{ "id": "md", "dir": "~/Games/md", "place": "Games/Mega Drive", "match": ["*.md", "*.gen", "*.bin", "*.zip"] }] },
+      "scan": [{ "id": "md", "dir": "~/Games/md", "place": "@md", "match": ["*.md", "*.gen", "*.bin", "*.zip"] }] },
     { "id": "psx", "name": "PlayStation", "match": ["*.cue", "*.chd", "*.m3u", "*.pbp"], "launch": ["retroarch", "-f", "-L", "/usr/lib/libretro/pcsx_rearmed_libretro.so", "{path}"],
       "metadata": "libretro:Sony - PlayStation",
-      "scan": [{ "id": "psx", "dir": "~/Games/psx", "place": "Games/PlayStation", "match": ["*.m3u", "*.chd", "*.cue", "*/*.m3u", "*/*.chd", "*/*.cue"] }] },
+      "scan": [{ "id": "psx", "dir": "~/Games/psx", "place": "@psx", "match": ["*.m3u", "*.chd", "*.cue", "*/*.m3u", "*/*.chd", "*/*.cue"] }] },
     { "id": "dc", "name": "Dreamcast", "match": ["*.gdi", "*.cdi"], "launch": ["retroarch", "-f", "-L", "/usr/lib/libretro/flycast_libretro.so", "{path}"],
       "metadata": "libretro:Sega - Dreamcast",
-      "scan": [{ "id": "dc", "dir": "~/Games/dc", "place": "Games/Dreamcast", "match": ["*.chd", "*.gdi", "*.cdi", "*/*.gdi"] }] },
+      "scan": [{ "id": "dc", "dir": "~/Games/dc", "place": "@dc", "match": ["*.chd", "*.gdi", "*.cdi", "*/*.gdi"] }] },
     { "id": "video", "name": "Video", "match": ["*.mkv", "*.mp4", "*.m4v", "*.avi", "*.webm", "*.mov", "*.mpg", "*.mpeg", "*.ts", "*.wmv", "*.flv"], "launch": ["mpv", "{path}"],
       "scan": [
-        { "id": "films", "dir": "~/Videos/Films", "place": "Films", "match": ["*.mkv", "*.mp4", "*.avi", "*.webm", "*/*.mkv", "*/*.mp4", "*/*.avi", "*/*.webm"], "metadata": "tmdb:movie" },
-        { "id": "tv", "dir": "~/Videos/TV", "place": "TV", "match": ["*/"], "items": ["*.mkv", "*.mp4", "*.avi", "*.webm"], "metadata": "tmdb:tv" }
+        { "id": "films", "dir": "~/Videos/Films", "place": "@films", "match": ["*.mkv", "*.mp4", "*.avi", "*.webm", "*/*.mkv", "*/*.mp4", "*/*.avi", "*/*.webm"], "metadata": "tmdb:movie" },
+        { "id": "tv", "dir": "~/Videos/TV", "place": "@tv", "match": ["*/"], "items": ["*.mkv", "*.mp4", "*.avi", "*.webm"], "metadata": "tmdb:tv" }
       ] },
     { "id": "music", "name": "Music", "match": ["*.mp3", "*.flac", "*.ogg", "*.opus", "*.m4a", "*.wav", "*.aac"], "launch": ["mpv", "--force-window=immediate", "{path}"] },
     { "id": "images", "name": "Images", "match": ["*.jpg", "*.jpeg", "*.png", "*.webp", "*.gif", "*.bmp", "*.tif", "*.tiff", "*.svg"], "launch": ["imv", "{path}"], "keymap": "viewer" },
@@ -49,19 +59,19 @@
     { "id": "other", "name": "Other files", "match": ["*"], "launch": ["xdg-open", "{path}"] }
   ],
   "steam": [
-    { "place": "Games/Steam" }
+    { "place": "@steam" }
   ],
   "desktop": [
-    { "id": "steam", "place": "Apps" },
-    { "id": "net.lutris.*", "place": "Apps" },
-    { "id": "*heroicgameslauncher*", "place": "Apps" }
+    { "id": "steam", "place": "@apps" },
+    { "id": "net.lutris.*", "place": "@apps" },
+    { "id": "*heroicgameslauncher*", "place": "@apps" }
   ],
   "browse": [
-    { "place": "Files/Home", "dir": "~" },
-    { "place": "Files/Root", "dir": "/" },
-    { "place": "Files/Trash", "dir": "${XDG_DATA_HOME:-~/.local/share}/Trash/files", "trash": true }
+    { "place": "@files/Home", "dir": "~" },
+    { "place": "@files/Root", "dir": "/" },
+    { "place": "@files/Trash", "dir": "${XDG_DATA_HOME:-~/.local/share}/Trash/files", "trash": true }
   ],
   "removable": [
-    { "place": "Files/{label}" }
+    { "place": "@files/{label}" }
   ]
 }

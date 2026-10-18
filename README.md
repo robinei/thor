@@ -46,7 +46,10 @@ Text (`less`), last Other files (`xdg-open`).
 A scan's `match` (paths in its dir, a part per folder level: `*/*.cue`) says what is an entry, else the
 runner's patterns; `items` makes each matched folder a group that opens in shelf (a series, its seasons,
 their episodes); `place` is where its entries go: a tab, or a folder in one (`"Games/SNES"`,
-`"Games/Handhelds/GBA"`). `tabs` lists the tabs' order and icons (`{ "name": "Games", "icon": "gamepad" }`). A file opened from the Files tab opens by the first runner whose patterns match its name. The
+`"Games/Handhelds/GBA"`), or a declared place by its id (`"@snes"`). `places` declares them: their id, path,
+icon (a tab's: one of the UI's; a folder's: also an image, its row's) and a folder's picture (shown large
+when it is selected): `{ "id": "snes", "path": "Games/SNES", "icon": "snes-icon.png", "picture": "snes.png" }`.
+The declared tabs come in that order. A file opened from the Files tab opens by the first runner whose patterns match its name. The
 design: `docs/runners.md`.
 
 Desktop files' apps and games go in Games (`Categories=Game`) or Apps unless `desktop` rules say otherwise:

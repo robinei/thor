@@ -7,7 +7,7 @@ use std::fmt::{self, Display, Formatter};
 
 use clamshell_core::{Game, Id, ListId, ShelfId, State, Tab};
 
-use crate::draw::{Align, Column, Keep, Rect, Span, WRAP_LINE};
+use crate::draw::{Column, Keep, Rect, Span, WRAP_LINE};
 use crate::icons::Icon;
 use crate::toolkit::format::{Bytes, DaysAgo, Fmt, PlayTime};
 use crate::toolkit::scroll::Scrolled;
@@ -131,7 +131,7 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
         let aspect = if widgets::wide_picture(game) { WIDE_ASPECT } else { BOX_ASPECT };
         let thumb = Rect::new(r.x + pad * 0.4, r.y + (r.h - thumb_h) / 2.0, thumb_h * aspect, thumb_h);
         f.button(Id::Shelf(ShelfId::Game(game.id.clone())), r, look, |f| {
-            widgets::art(f.c, f.images, game, thumb, THUMB_RADIUS, Align::Center, false);
+            widgets::thumb(f.c, f.images, game, thumb, THUMB_RADIUS, false);
             // Its marks at the row's right end, right to left: a folder's chevron, on the dock, a favourite.
             let mark = r.h * MARK;
             let mut right = r.x + r.w - pad * 0.5;

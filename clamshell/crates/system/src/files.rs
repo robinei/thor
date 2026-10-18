@@ -127,8 +127,10 @@ pub fn list(dir: &Path, folder: &str, runners: &[Runner], home: Option<&Path>) -
                 };
                 game.runner = Some(runner.of());
             }
-            if !is_dir && picture(&name) {
-                game.box_front = Some(path.clone());
+            match (is_dir, picture(&name)) {
+                (false, true) => game.box_front = Some(path.clone()),
+                (false, false) => game.glyph = Some("file".into()),
+                (true, _) => game.glyph = Some("folder".into()),
             }
             game.file = Some(path);
             game.browsed = Some(Browsed { folder: is_dir, size, modified, ..Browsed::default() });
