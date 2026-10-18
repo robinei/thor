@@ -7,6 +7,7 @@
 //! radios ([`Radios`]), the controller ([`Pad`]), focus and presses ([`Pointer`]), and the system's
 //! readings ([`Sys`]). Each owns its own rules; what involves two of them is [`State`]'s.
 
+pub mod actions;
 pub mod battery;
 pub mod bluetooth;
 pub mod bottom_screen;
@@ -618,8 +619,11 @@ impl State {
                 vec![]
             }
             ShelfId::Launch => self.activate_selected(),
-            ShelfId::Favourite => self.on_shelf_event(ShelfEvent::ToggleFavourite).1,
-            ShelfId::Pin => self.on_shelf_event(ShelfEvent::TogglePin).1,
+            ShelfId::Favourite => self.toggle_favourite(),
+            ShelfId::Pin => match self.shelf.selected().cloned() {
+                Some(id) => self.toggle_pin(id),
+                None => vec![],
+            },
             ShelfId::Continue => self.continue_selected(),
             ShelfId::File(action) => self.on_file(action),
             ShelfId::Up => {
@@ -678,25 +682,23 @@ impl State {
                 (Dirty::BOTH, vec![])
             }
             ShelfEvent::Rows(rows) => (if self.shelf.set_rows(rows) { Dirty::BOTH } else { Dirty::NONE }, vec![]),
-            ShelfEvent::Continue => (Dirty::BOTH, self.continue_selected()),
-            // A browsed entry has no favourite or pin: Y copies it, X pastes.
-            ShelfEvent::ToggleFavourite if self.file_target().is_some_and(|(g, _)| g.browsed.is_some()) => (Dirty::BOTH, self.on_file(files::FileAction::Copy)),
-            ShelfEvent::TogglePin if self.file_target().is_some_and(|(g, _)| g.browsed.is_some()) => (Dirty::BOTH, self.on_file(files::FileAction::Paste)),
-            ShelfEvent::TogglePin => match self.shelf.selected().cloned() {
-                Some(id) => (Dirty::BOTH, self.toggle_pin(id)),
-                None => (Dirty::NONE, vec![]),
-            },
-            ShelfEvent::ToggleFavourite => match self.shelf.toggle_favourite() {
-                Some(moved) => {
-                    if moved {
-                        self.saves.resume.touch(self.unix_secs);
-                    }
-                    let ids = self.shelf.library().favourite_ids().map(str::to_owned).collect();
-                    (Dirty::BOTH, vec![Effect::Save(Save::Favourites(ids))])
-                }
-                None => (Dirty::NONE, vec![]),
-            },
+            // The details' actions on the pad's buttons (see [`actions`]).
+            ShelfEvent::Continue => (Dirty::BOTH, self.act(actions::Shortcut::Start)),
+            ShelfEvent::ToggleFavourite => (Dirty::BOTH, self.act(actions::Shortcut::Y)),
+            ShelfEvent::TogglePin => (Dirty::BOTH, self.act(actions::Shortcut::X)),
         }
+    }
+
+    /// The selected entry in or out of the favourites, saved.
+    pub(crate) fn toggle_favourite(&mut self) -> Vec<Effect> {
+        let Some(moved) = self.shelf.toggle_favourite() else {
+            return vec![];
+        };
+        if moved {
+            self.saves.resume.touch(self.unix_secs);
+        }
+        let ids = self.shelf.library().favourite_ids().map(str::to_owned).collect();
+        vec![Effect::Save(Save::Favourites(ids))]
     }
 
     fn on_game(&mut self, event: GameEvent) -> (Dirty, Vec<Effect>) {

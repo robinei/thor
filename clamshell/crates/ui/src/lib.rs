@@ -469,7 +469,8 @@ impl App {
     }
 
     /// The pad on ClamShell's screens (see `focus`): directions move focus, A acts on the focused
-    /// target, B goes back (see `focus::back`), Y toggles the favourite, X the pin on the dock, the shoulders
+    /// target, B goes back (see `focus::back`), Y, X and Start the details' actions on them (a favourite,
+    /// on the dock, Continue; a browsed file's Copy and Paste: see clamshell-core's `actions`), the shoulders
     /// page through shelf (or step the second screen's tabs), the triggers go to shelf's first or last entry.
     /// View moves focus to the other screen with shelf in front; else it moves the pad between the second
     /// screen and what else wants it (the pad mouse, typing; the pad thread sends View from there too).

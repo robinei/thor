@@ -224,38 +224,10 @@ fn selected(f: &mut Frame, game: &Game, screen: Rect, list: Rect, pad: f32) {
         col.skip(f.c.wrap(span(&col), detail, Tone::Dim, "Watched", 1) + pad * 0.4);
     }
 
-    // What A does, whether it is a favourite (Y) and on the dock (X): each a row to tap, with its button.
-    // A browsed entry: its file actions instead (Y copies, X pastes).
+    // Its actions (see clamshell-core's `actions`): each a row to tap, with its button.
     let action_h = detail * ACTION;
-    if game.browsed.is_some() {
-        file_actions(f, game, Rect::new(tx, col.y(), text_w, list.y + list.h - col.y()), action_h, pad);
-        return;
-    }
-    let running = s.session().running(&game.id).is_some();
-    let tool = matches!(game.launch, clamshell_core::Launch::Tool(_));
-    let play = match (game.is_group(), running) {
-        (true, _) => ("Open", Tone::Normal),
-        (false, _) if tool => ("Run", Tone::Normal),
-        (false, true) => ("Running · show it", Tone::Go),
-        (false, false) => ("Play", Tone::Normal),
-    };
-    let favourite = if game.favourite { ("Favourite", Tone::Accent) } else { ("Not a favourite", Tone::Dim) };
-    let pinned = if s.dock().is_pinned(&game.id) { ("On the dock", Tone::Normal) } else { ("Not on the dock", Tone::Dim) };
-    // A folder of videos with one to play next (a series): Start plays it (where in it is mpv's).
-    let next = s.shelf().library().games.iter().position(|g| g.id == game.id).filter(|_| game.is_group()).and_then(|g| s.shelf().library().to_continue(g));
-    let next = next.and_then(|i| s.shelf().library().games.get(i));
-    let continuing = next.map(|n| Fmt::<192>::of(format_args!("Play · {}", Within(s, n, game))));
-    for (id, key, (label, tone)) in [(ShelfId::Launch, "A", play), (ShelfId::Favourite, "Y", favourite), (ShelfId::Pin, "X", pinned)] {
-        let after_play = id == ShelfId::Launch;
-        let r = Rect::new(tx, col.y(), text_w.min(detail * 14.0), action_h);
-        widgets::key_action(f, Id::Shelf(id), r, key, label, tone);
-        col.skip(action_h + pad * 0.15);
-        if after_play && let Some(label) = &continuing {
-            let r = Rect::new(tx, col.y(), text_w, action_h);
-            widgets::key_action(f, Id::Shelf(ShelfId::Continue), r, "Start", label, Tone::Go);
-            col.skip(action_h + pad * 0.15);
-        }
-    }
+    let rows = actions(f, game, Rect::new(tx, col.y(), text_w, list.y + list.h - col.y()), action_h, pad);
+    col.skip(rows);
     col.skip(pad * 0.3);
 
     // The play time.
@@ -295,35 +267,61 @@ fn selected(f: &mut Frame, game: &Game, screen: Rect, list: Rect, pad: f32) {
     }
 }
 
-/// A browsed entry's actions, as rows from the top of `r`: A opens it (when it is the selected entry), then
-/// its file actions (Delete and Empty Trash asking to be pressed again); a paste under way, how far.
-fn file_actions(f: &mut Frame, game: &Game, r: Rect, action_h: f32, pad: f32) {
+/// The details' actions, as rows from the top of `r`, each with its pad button: A opens (plays, shows
+/// it running), Start continues a folder of videos, Y and X a favourite and on the dock (a browsed file's:
+/// Copy and Paste), the file actions (Delete and Empty Trash asking to be pressed again); a paste under
+/// way, how far. Their height.
+fn actions(f: &mut Frame, game: &Game, r: Rect, action_h: f32, pad: f32) -> f32 {
+    use clamshell_core::actions::{Action, Shortcut};
     use clamshell_core::files::FileAction;
     let s = f.s;
     let mut y = r.y;
-    let w = r.w.min(action_h * 14.0);
-    if s.shelf().selected().is_some_and(|id| *id == game.id) {
-        let label = if s.session().running(&game.id).is_some() { ("Running · show it", Tone::Go) } else { ("Open", Tone::Normal) };
-        widgets::key_action(f, Id::Shelf(ShelfId::Launch), Rect::new(r.x, y, w, action_h), "A", label.0, label.1);
-        y += action_h + pad * 0.15;
-    }
-    for action in s.file_actions() {
+    // (A row as wide as fourteen of the details' text size; Continue's, naming the next video, as the details.)
+    let w = r.w.min(action_h / ACTION * 14.0);
+    let shortcut = |key| s.shortcut(key);
+    for &action in s.actions().as_slice() {
         let key = match action {
-            FileAction::Copy => "Y",
-            FileAction::Paste => "X",
+            Action::Open => "A",
+            _ if shortcut(Shortcut::Start) == Some(action) => "Start",
+            _ if shortcut(Shortcut::Y) == Some(action) => "Y",
+            _ if shortcut(Shortcut::X) == Some(action) => "X",
             _ => "",
         };
-        let armed = s.file_armed(action);
-        let label = match (action, s.files().clip.as_ref()) {
-            _ if armed => Fmt::<160>::of(format_args!("{} · press again", action.label())),
-            (FileAction::Paste, Some(clip)) => Fmt::of(format_args!("Paste · {}", clip.name)),
-            (FileAction::Copy | FileAction::Cut, Some(clip)) if Some(&clip.path) == game.file.as_ref() && (action == FileAction::Cut) == clip.cut => {
-                Fmt::of(format_args!("{} · {}", action.label(), if clip.cut { "cut" } else { "copied" }))
+        let running = s.session().running(&game.id).is_some();
+        let (label, tone) = match action {
+            Action::Open if game.is_group() => (Fmt::<192>::of(format_args!("Open")), Tone::Normal),
+            Action::Open if running => (Fmt::of(format_args!("Running · show it")), Tone::Go),
+            Action::Open if matches!(game.launch, clamshell_core::Launch::Tool(_)) => (Fmt::of(format_args!("Run")), Tone::Normal),
+            Action::Open if game.browsed.is_some() => (Fmt::of(format_args!("Open")), Tone::Normal),
+            Action::Open => (Fmt::of(format_args!("Play")), Tone::Normal),
+            Action::Continue => {
+                // (Where in it is mpv's.)
+                let library = s.shelf().library();
+                let next = library.games.iter().position(|g| g.id == game.id).and_then(|g| library.to_continue(g)).and_then(|i| library.games.get(i));
+                match next {
+                    Some(n) => (Fmt::of(format_args!("Play · {}", Within(s, n, game))), Tone::Go),
+                    None => (Fmt::of(format_args!("Play")), Tone::Go),
+                }
             }
-            _ => Fmt::of(format_args!("{}", action.label())),
+            Action::Favourite if game.favourite => (Fmt::of(format_args!("Favourite")), Tone::Accent),
+            Action::Favourite => (Fmt::of(format_args!("Not a favourite")), Tone::Dim),
+            Action::Pin if s.dock().is_pinned(&game.id) => (Fmt::of(format_args!("On the dock")), Tone::Normal),
+            Action::Pin => (Fmt::of(format_args!("Not on the dock")), Tone::Dim),
+            Action::File(a) if s.file_armed(a) => (Fmt::of(format_args!("{} · press again", a.label())), Tone::Accent),
+            Action::File(a) => {
+                let clip = s.files().clip.as_ref();
+                let label = match (a, clip) {
+                    (FileAction::Paste, Some(clip)) => Fmt::of(format_args!("Paste · {}", clip.name)),
+                    (FileAction::Copy | FileAction::Cut, Some(clip)) if Some(&clip.path) == game.file.as_ref() && (a == FileAction::Cut) == clip.cut => {
+                        Fmt::of(format_args!("{} · {}", a.label(), if clip.cut { "cut" } else { "copied" }))
+                    }
+                    _ => Fmt::of(format_args!("{}", a.label())),
+                };
+                (label, if a.confirms() { Tone::Accent } else { Tone::Normal })
+            }
         };
-        let tone = if armed || action.confirms() { Tone::Accent } else { Tone::Normal };
-        widgets::key_action(f, Id::Shelf(ShelfId::File(action)), Rect::new(r.x, y, w, action_h), key, &label, tone);
+        let row_w = if action == Action::Continue { r.w } else { w };
+        widgets::key_action(f, Id::Shelf(action.id()), Rect::new(r.x, y, row_w, action_h), key, &label, tone);
         y += action_h + pad * 0.15;
     }
     if let Some((what, fraction)) = &s.files().busy {
@@ -332,7 +330,9 @@ fn file_actions(f: &mut Frame, game: &Game, r: Rect, action_h: f32, pad: f32) {
         f.c.text_fit(Rect::new(r.x, y, r.w, size * 1.4), size, Tone::Normal, what, Keep::Start);
         y += size * 1.6;
         widgets::progress(f.c, Rect::new(r.x, y, w, (size * 0.22).max(3.0)), *fraction);
+        y += size;
     }
+    y - r.y
 }
 
 /// How far into a video, of its length, if both are known.
