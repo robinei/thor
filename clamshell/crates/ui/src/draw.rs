@@ -681,6 +681,31 @@ impl<'a> Canvas<'a> {
         self.cache.glyph(ch, px).map_or(0.0, |(m, _)| m.advance_width) / self.scale
     }
 
+    /// Draws one line of text with its ink (what its glyphs cover, not their advance and the line's
+    /// height) centred in `r`: a letter in a badge looks centred whatever its shape.
+    pub fn text_ink_centred(&mut self, r: Rect, size: f32, color: impl Into<Color>, text: &str) {
+        let px = size * self.scale;
+        let ascent = self.cache.ascent(px);
+        // The ink's box, in pixels from the text's left and top.
+        let (mut pen, mut ink) = (0.0, None::<(f32, f32, f32, f32)>);
+        for ch in text.chars() {
+            let Some((m, _)) = self.cache.glyph(ch, px) else {
+                return;
+            };
+            if m.width > 0 && m.height > 0 {
+                let (x0, y0) = (pen + m.xmin as f32, ascent - m.height as f32 - m.ymin as f32);
+                let (x1, y1) = (x0 + m.width as f32, y0 + m.height as f32);
+                ink = Some(ink.map_or((x0, y0, x1, y1), |(a, b, c, d)| (a.min(x0), b.min(y0), c.max(x1), d.max(y1))));
+            }
+            pen += m.advance_width;
+        }
+        let Some((x0, y0, x1, y1)) = ink else {
+            return;
+        };
+        let (cx, cy) = ((x0 + x1) / 2.0 / self.scale, (y0 + y1) / 2.0 / self.scale);
+        self.text(r.x + r.w / 2.0 - cx, r.y + r.h / 2.0 - cy, size, color, text);
+    }
+
     pub fn text_width(&mut self, size: f32, text: &str) -> f32 {
         let px = size * self.scale;
         let mut width = 0.0;

@@ -512,7 +512,7 @@ pub(crate) fn key_action(f: &mut Frame, id: Id, r: Rect, key: &str, label: &str,
         // (No button: the label where the others' are.)
         if !key.is_empty() {
             f.c.outline(ring, d / 2.0, 1.5, Tone::Dim);
-            centred_text(f, ring, size, Tone::Normal, key);
+            f.c.text_ink_centred(ring, size, Tone::Normal, key);
         }
         let x = ring.x + ring_w + pad * 0.5;
         f.c.text_fit(Rect::new(x, r.y, r.x + r.w - x, r.h), r.h * 0.62, tone, label, Keep::Start);
