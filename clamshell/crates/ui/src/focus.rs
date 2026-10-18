@@ -5,6 +5,7 @@
 //! Where the pad may go ([`PadScope`]): with shelf in front, both screens, and in shelf's list up and
 //! down step through the games; with anything else in front, only the second screen.
 
+use clamshell_core::keyboard;
 use clamshell_core::levels::Level;
 use clamshell_core::{EditorId, Event, Id, LevelEvent, ListId, PadInput, PointerEvent, ShelfEvent, ShelfId, State, Tab};
 use smithay_client_toolkit::seat::keyboard::Keysym;
@@ -191,6 +192,26 @@ pub(crate) fn trigger(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
     vec![]
 }
 
+/// Y, X, Start: the details' actions (see clamshell-core's `actions`: a favourite, on the dock,
+/// Continue; a browsed file's Copy, Paste, Select), while the pad is on shelf. On the second screen with
+/// the keyboard open (typing with the pad), X is Backspace; elsewhere nothing.
+pub(crate) fn shortcut(s: &State, d: &impl Drawn, button: PadInput) -> Vec<Event> {
+    let event = match button {
+        PadInput::Y => ShelfEvent::ToggleFavourite,
+        PadInput::X => ShelfEvent::TogglePin,
+        PadInput::Start => ShelfEvent::Continue,
+        _ => return vec![],
+    };
+    if s.pad_on_top() && focus_screen(s, d) == Screen::Top {
+        return vec![event.into()];
+    }
+    let backspace = keyboard::find(keyboard::Key::Named(keyboard::Named::Backspace));
+    match (button, backspace) {
+        (PadInput::X, Some(pos)) if s.bottom().tab() == Tab::Keyboard => vec![PointerEvent::Activate(Id::Key(pos)).into()],
+        _ => vec![],
+    }
+}
+
 /// B: cancels the editor, if one is open, else goes back one of the keymaps' screens, else (shelf in
 /// focus) out of shelf's open group.
 pub(crate) fn back(s: &State) -> Option<Event> {
@@ -361,6 +382,24 @@ mod tests {
         assert_eq!(shoulder(&s, &d, -1), vec![ShelfEvent::ListStep(-page).into()], "in shelf: a page");
         let len = s.shelf().list().len() as i32;
         assert_eq!(trigger(&s, &d, 1), vec![ShelfEvent::ListStep(len).into()], "the last entry");
+    }
+
+    #[test]
+    fn y_x_and_start_act_on_shelf_only_while_the_pad_is_there() {
+        let mut s = state();
+        let d = drawn(&s);
+        let g = game(&s, 0);
+        focus(&mut s, g);
+        assert_eq!(shortcut(&s, &d, PadInput::Y), vec![ShelfEvent::ToggleFavourite.into()]);
+        focus(&mut s, Id::Tab(Tab::Sysinfo));
+        assert_eq!(shortcut(&s, &d, PadInput::Y), vec![], "the second screen: not shelf's");
+        assert_eq!(shortcut(&s, &d, PadInput::X), vec![]);
+        // Typing with the pad: X is Backspace.
+        s.apply(PointerEvent::Activate(Id::Tab(Tab::Keyboard)).into());
+        focus(&mut s, Id::Tab(Tab::Sysinfo));
+        let backspace = keyboard::find(keyboard::Key::Named(keyboard::Named::Backspace)).map(Id::Key);
+        assert_eq!(shortcut(&s, &d, PadInput::X), backspace.map(|b| PointerEvent::Activate(b).into()).into_iter().collect::<Vec<_>>());
+        assert_eq!(shortcut(&s, &d, PadInput::Y), vec![]);
     }
 
     #[test]

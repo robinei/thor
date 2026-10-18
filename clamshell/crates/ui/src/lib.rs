@@ -500,8 +500,8 @@ impl App {
     }
 
     /// The pad on ClamShell's screens (see `focus`): directions move focus, A acts on the focused
-    /// target, B goes back (see `focus::back`), Y, X and Start the details' actions on them (a favourite,
-    /// on the dock, Continue; a browsed file's Copy and Paste: see clamshell-core's `actions`), the shoulders
+    /// target, B goes back (see `focus::back`), Y, X and Start shelf's details' actions while the pad
+    /// is on shelf (see `focus::shortcut`; X is Backspace on the keyboard), the shoulders
     /// page through shelf (or step the second screen's tabs), the triggers go to shelf's first or last entry.
     /// View moves focus to the other screen with shelf in front; else it moves the pad between the second
     /// screen and what else wants it (the pad mouse, typing; the pad thread sends View from there too).
@@ -538,9 +538,7 @@ impl App {
             PadInput::A(true) => self.press_focus(Source::PadA),
             PadInput::A(false) => self.up(Source::PadA, End::Release),
             PadInput::B => self.handle_all(focus::back(&self.state)),
-            PadInput::Y => self.handle(ShelfEvent::ToggleFavourite.into()),
-            PadInput::X => self.handle(ShelfEvent::TogglePin.into()),
-            PadInput::Start => self.handle(ShelfEvent::Continue.into()),
+            PadInput::Y | PadInput::X | PadInput::Start => self.handle_all(focus::shortcut(&self.state, &self.views, input)),
             // The Back button: what the screen has for back (the edit screen's other layer).
             PadInput::Back => {
                 if let Some(id) = self.state.pad_back() {
