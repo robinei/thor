@@ -247,7 +247,10 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 shot(
                     "settings.png",
                     Bottom,
-                    vec![GameEvent::Played { game: "zelda-lttp".into(), start: now, duration: 60 }.into(), tap(Id::Settings(SettingsId::Scope(Scope::Game)))],
+                    vec![
+                        GameEvent::Played { game: "zelda-lttp".into(), start: now, duration: 60 }.into(),
+                        tap(Id::Settings(SettingsId::Scope(Scope::Content))),
+                    ],
                 ),
                 shot(
                     "settings-env.png",

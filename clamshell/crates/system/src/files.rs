@@ -120,7 +120,7 @@ pub fn list(dir: &Path, folder: &str, runners: &[Runner], home: Option<&Path>) -
             let mut game = Game::new(&format!("{folder}/{name}"), &name);
             if let Some(runner) = runners::opener(runners, &name).filter(|_| !is_dir) {
                 game.launch = launch(runner, &path, home);
-                game.runner = Some(runner.name.as_str().into());
+                game.runner = Some(clamshell_library::runner_key(&runner.name));
             }
             if !is_dir && picture(&name) {
                 game.box_front = Some(path.clone());
@@ -560,7 +560,7 @@ mod tests {
             _ => vec![],
         };
         assert_eq!(argv(&games[1])[0], "retroarch", "by the runner's pattern, any case");
-        assert_eq!(games[1].runner.as_deref(), Some("SNES"));
+        assert_eq!(games[1].runner_name(), Some("SNES"));
         assert_eq!(argv(&games[2])[0], "xdg-open");
         assert_eq!(games[3].box_front.as_deref(), Some(dir.join("cover.png").as_path()), "a picture is its own art");
         assert_eq!(games[2].browsed.as_ref().unwrap().size, Some(1));

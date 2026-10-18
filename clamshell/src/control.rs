@@ -221,7 +221,8 @@ pub const TARGETS: &[Form<Id>] = &[
     form("device N", "Bluetooth's device row N", |a| Ok(ListId::Bluetooth.row(number(arg(a, 0))?))),
     form("bluetooth-power", "Bluetooth's switch", |_| Ok(Id::Bluetooth(BtId::Power))),
     form("pad-mouse", "the bar's pad mouse switch", |_| Ok(Id::PadMouse)),
-    form("scope game", "the settings' game tab", |_| Ok(Id::Settings(SettingsId::Scope(Scope::Game)))),
+    form("scope game", "the settings' item's own tab (a game's, a film's)", |_| Ok(Id::Settings(SettingsId::Scope(Scope::Content)))),
+    form("scope runner", "the settings' runner's tab (an app's own)", |_| Ok(Id::Settings(SettingsId::Scope(Scope::Runner)))),
     form("scope all", "the settings' all games tab", |_| Ok(Id::Settings(SettingsId::Scope(Scope::Global)))),
     form("setting KEY", "a settings tile by its key (power, fps, keymap, ...)", |a| {
         let key = arg(a, 0);

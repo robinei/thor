@@ -276,15 +276,16 @@ pub struct Settings {
 }
 
 impl Settings {
-    /// The settings `game` runs with, outside any folder: the global ones and its overrides.
+    /// The settings `game` (an entry, or a level: a runner's key) runs with alone: the global ones and its
+    /// overrides.
     pub fn of(&self, game: &str) -> Values {
         self.of_in(game, &[])
     }
 
-    /// The settings `game` runs with, in `folders` (outermost first): the global ones, each folder's
-    /// overrides over them, then its own.
-    pub fn of_in(&self, game: &str, folders: &[&str]) -> Values {
-        let inherited = folders.iter().fold(self.global, |values, f| self.overrides_of(f).over(&values));
+    /// The settings `game` runs with below `levels` (its runner's: see [`crate::runner_key`]): the global
+    /// ones, each level's overrides over them, then its own.
+    pub fn of_in(&self, game: &str, levels: &[&str]) -> Values {
+        let inherited = levels.iter().fold(self.global, |values, f| self.overrides_of(f).over(&values));
         self.overrides_of(game).over(&inherited)
     }
 
@@ -330,16 +331,16 @@ impl Settings {
         }
     }
 
-    /// The environment a game gets, outside any folder: the global variables, then its own.
+    /// The environment a game gets alone: the global variables, then its own.
     pub fn env_of(&self, game: &str) -> Vec<(String, String)> {
         self.env_in(game, &[])
     }
 
-    /// The environment a game in `folders` (outermost first) gets: the global variables, each folder's,
-    /// then its own (later ones win).
-    pub fn env_in(&self, game: &str, folders: &[&str]) -> Vec<(String, String)> {
+    /// The environment a game below `levels` gets: the global variables, each level's, then its own
+    /// (later ones win).
+    pub fn env_in(&self, game: &str, levels: &[&str]) -> Vec<(String, String)> {
         let mut vars = parse_env(&self.global_env);
-        for f in folders {
+        for f in levels {
             vars.extend(parse_env(self.env_text(Some(f))));
         }
         vars.extend(parse_env(self.env_text(Some(game))));
@@ -403,15 +404,15 @@ mod tests {
         assert_eq!(s.global.get(Setting::ChargeLimit), 80, "global-only settings go global");
         assert_eq!(s.env_of("ff6"), vec![("A".to_owned(), "1".to_owned())]);
         assert!(Setting::FpsCap.accepts(40) && !Setting::FpsCap.accepts(33) && Setting::Keymap.accepts(7));
-        // In folders: the outer one's, the inner one's over it, its own over both.
-        s.set(Some(&"folder:SNES".into()), Setting::FpsCap, Some(30));
-        s.set(Some(&"folder:SNES".into()), Setting::Keymap, Some(2));
-        s.set(Some(&"folder:SNES/RPG".into()), Setting::Keymap, Some(3));
-        let ff6 = s.of_in("ff6", &["folder:SNES", "folder:SNES/RPG"]);
+        // Below levels: the first one's, the next one's over it, its own over both.
+        s.set(Some(&"runner:SNES".into()), Setting::FpsCap, Some(30));
+        s.set(Some(&"runner:SNES".into()), Setting::Keymap, Some(2));
+        s.set(Some(&"runner:SNES RPG".into()), Setting::Keymap, Some(3));
+        let ff6 = s.of_in("ff6", &["runner:SNES", "runner:SNES RPG"]);
         assert_eq!((ff6.get(Setting::FpsCap), ff6.get(Setting::Keymap)), (30, 3));
-        s.set_env(Some("folder:SNES".into()), "A=2 B=1");
+        s.set_env(Some("runner:SNES".into()), "A=2 B=1");
         let vars = |list: &[(&str, &str)]| list.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect::<Vec<_>>();
-        assert_eq!(s.env_in("ff6", &["folder:SNES"]), vars(&[("A", "2"), ("B", "1"), ("A", "1")]), "the folder's, then its own");
+        assert_eq!(s.env_in("ff6", &["runner:SNES"]), vars(&[("A", "2"), ("B", "1"), ("A", "1")]), "the level's, then its own");
         s.reset("zelda");
         assert!(!s.has_own("zelda"));
         assert_eq!(s.of("zelda"), s.global);

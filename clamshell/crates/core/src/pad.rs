@@ -190,7 +190,7 @@ mod tests {
     fn the_pad_mouse_follows_the_game_in_front_unless_switched_by_hand() {
         let mut s = state();
         tap(&mut s, game("zelda-lttp"));
-        tap(&mut s, Id::Settings(SettingsId::Scope(Scope::Game)));
+        tap(&mut s, Id::Settings(SettingsId::Scope(Scope::Content)));
         tap(&mut s, Id::Settings(SettingsId::Tile(Setting::PadMouse)));
         s.apply(GameEvent::Started("zelda-lttp".into()).into());
         assert_eq!(s.pad().mouse(), PadMouse::ByGame, "the game wants it");

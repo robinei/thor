@@ -185,7 +185,7 @@ pub fn load(sources: &Sources) -> Loaded {
         }
         let first = games.len();
         let entries = content::scan(source, sources.home.as_deref(), &mut games);
-        let runner: std::sync::Arc<str> = source.runner.as_str().into();
+        let runner = clamshell_library::runner_key(&source.runner);
         for g in games.get_mut(first..).into_iter().flatten() {
             g.runner = Some(runner.clone());
         }

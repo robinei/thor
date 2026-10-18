@@ -1,4 +1,5 @@
-//! The settings panel's rules: which game it is about (by what is in front) and which scope it edits,
+//! The settings panel's rules: which item it is about (by what is in front) and which level it edits
+//! (All; the item's runner, an app's or a Steam game's itself; the item, content a runner opens),
 //! changes applied at once when they change the settings in force, the environment editor typing on the
 //! keyboard, and the dark second screen.
 
@@ -11,12 +12,15 @@ use crate::program::Program;
 use crate::running::Front;
 use crate::settings::{Setting, Values};
 
-/// What the settings panel edits: the global settings, or the game in context's overrides.
+/// What the settings panel edits: the global settings (All), the runner of the item in context (an
+/// app or a Steam game is its own), or the item itself (content: a ROM, a film; not a browsed file or a
+/// folder). Content where the item has no level of its own edits its runner's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Scope {
-    #[default]
-    Game,
     Global,
+    Runner,
+    #[default]
+    Content,
 }
 
 /// Where a settings tile's value comes from.
@@ -36,44 +40,79 @@ impl State {
         self.session.program.as_ref().map_or(self.settings.global, |id| self.settings_of(id))
     }
 
-    /// The folders entry `id` is in (outermost first), whose settings it inherits.
-    fn folders_of(&self, id: &str) -> Vec<std::sync::Arc<str>> {
-        let library = self.shelf.library();
-        let Some(i) = library.games.iter().position(|g| &*g.id == id) else {
-            return Vec::new();
-        };
-        library.groups_of(i).iter().filter_map(|&g| library.games.get(g)).map(|g| g.id.clone()).collect()
+    /// The level entry `id` takes its settings from before its own: its runner's, if it has one.
+    fn runner_of(&self, id: &str) -> Option<&str> {
+        self.game(id).and_then(|g| g.runner.as_deref())
     }
 
-    /// The settings entry `id` runs with: the global ones, its folders' overrides, its own.
+    /// The settings entry (or level) `id` runs with: the global ones, its runner's, its own.
     pub fn settings_of(&self, id: &str) -> Values {
-        let folders = self.folders_of(id);
-        self.settings.of_in(id, &folders.iter().map(|f| &**f).collect::<Vec<_>>())
+        match self.runner_of(id) {
+            Some(runner) => self.settings.of_in(id, &[runner]),
+            None => self.settings.of_in(id, &[]),
+        }
     }
 
-    /// The environment entry `id` gets: the global variables, its folders', its own.
+    /// The environment entry `id` gets: the global variables, its runner's, its own.
     pub fn env_of(&self, id: &str) -> Vec<(String, String)> {
-        let folders = self.folders_of(id);
-        self.settings.env_in(id, &folders.iter().map(|f| &**f).collect::<Vec<_>>())
+        match self.runner_of(id) {
+            Some(runner) => self.settings.env_in(id, &[runner]),
+            None => self.settings.env_in(id, &[]),
+        }
     }
 
-    /// The program the settings panel is about, by what is in front: the entry whose window is in front,
-    /// shelf's selection, or none (a window of no program: the panel edits the defaults).
+    /// The levels below All the settings panel offers for the item in context, with their titles: its
+    /// runner's and its own (`All | SNES | Zelda`); an app's or a Steam game's only its own, as its runner
+    /// (`All | Spotify`); a browsed file's or a folder's only its runner's (`All | Text`).
+    pub fn setting_levels(&self) -> [Option<(Scope, Program<'_>)>; 2] {
+        let Some((item, g)) = self.context().and_then(|item| Some((item.clone(), self.game(&item.id)?))) else {
+            return [None, None];
+        };
+        match (&g.runner, g.runner_name()) {
+            (Some(key), Some(name)) => {
+                let runner = Some((Scope::Runner, Program { id: key.clone(), title: name }));
+                let own = (g.browsed.is_none() && !g.is_group()).then_some((Scope::Content, item));
+                [runner, own]
+            }
+            _ => [Some((Scope::Runner, item)), None],
+        }
+    }
+
+    /// The item the settings panel is about, by what is in front: the entry whose window is in front,
+    /// shelf's selection (a browsed file that is a library entry's: that entry), or none (a window of no
+    /// program: the panel edits the defaults).
     pub fn context(&self) -> Option<Program<'_>> {
         let id = match self.session.front() {
             Front::Program => {
                 self.session.windows.iter().find(|w| w.focused && !w.down).and_then(|w| self.program_of(w)).or_else(|| self.session.program.clone())
             }
-            Front::Shelf => self.shelf.selected().cloned(),
+            Front::Shelf => self.shelf.selected().cloned().map(|id| self.shelf.entry_of_file(&id).unwrap_or(id)),
             Front::Other => None,
         }?;
         self.program(&id)
     }
 
-    /// What the settings panel edits now: the program in context (if the scope is the program's), or
-    /// none for the defaults.
+    /// What the settings panel edits now: the level of the scope chosen (Content where the item has none
+    /// of its own: its runner's), or none for All.
     pub fn editing(&self) -> Option<Program<'_>> {
-        self.context().filter(|_| self.bottom.scope == Scope::Game)
+        if self.bottom.scope == Scope::Global {
+            return None;
+        }
+        let [runner, own] = self.setting_levels();
+        let chosen = |l: &Option<(Scope, Program<'_>)>| l.as_ref().is_some_and(|(scope, _)| *scope == self.bottom.scope);
+        match (chosen(&runner), own) {
+            (true, _) => runner.map(|(_, p)| p),
+            (false, Some((_, p))) => Some(p),
+            (false, None) => runner.map(|(_, p)| p),
+        }
+    }
+
+    /// The scope the settings panel shows chosen: the one chosen, or the level that stands in for it.
+    pub fn scope_shown(&self) -> Scope {
+        match self.editing() {
+            None => Scope::Global,
+            Some(p) => self.setting_levels().into_iter().flatten().find(|(_, l)| l.id == p.id).map_or(Scope::Global, |(scope, _)| scope),
+        }
     }
 
     /// The second screen is dark: a program is in force that wants it so, and it hasn't been tapped
@@ -208,6 +247,7 @@ mod tests {
     use crate::settings::{self, Setting};
     use crate::testkit::*;
     use crate::*;
+    use clamshell_library::runner_key;
 
     /// Taps a tile `n` times.
     fn taps(s: &mut State, setting: Setting, n: usize) -> Vec<Effect> {
@@ -227,20 +267,46 @@ mod tests {
     }
 
     #[test]
-    fn an_entry_takes_its_folders_settings() {
+    fn an_entry_takes_its_runners_settings_not_its_folders() {
+        let mut library = clamshell_library::demo_library();
+        for g in library.games.iter_mut().filter(|g| g.id.starts_with("tv:")) {
+            g.runner = Some(runner_key("Video"));
+        }
         let mut settings = settings::Settings::default();
-        settings.set(Some(&"tv:Cosmos".into()), Setting::FpsCap, Some(30));
-        settings.set(Some(&"tv:Cosmos/Season 1".into()), Setting::Power, Some(0));
-        settings.set_env(Some("tv:Cosmos".into()), "MPV=1");
-        let mut s = state_with(&settings);
+        settings.set(Some(&runner_key("Video")), Setting::FpsCap, Some(30));
+        settings.set(Some(&"tv:Cosmos".into()), Setting::Power, Some(0));
+        settings.set_env(Some(runner_key("Video")), "MPV=1");
+        let mut s = State::new(Init { library, settings, ..init() });
         let episode: std::sync::Arc<str> = "tv:Cosmos/Season 1/2. One Voice in the Cosmic Fugue.mkv".into();
         let fx = s.launch(episode.clone());
         let launch = fx.iter().find_map(|e| match e {
             Effect::Launch { settings, env, .. } => Some((settings.get(Setting::FpsCap), settings.get(Setting::Power), env.clone())),
             _ => None,
         });
-        assert_eq!(launch, Some((30, 0, vec![("MPV".to_owned(), "1".to_owned())])), "the series', the season's");
-        assert_eq!(s.settings_of("tv:Cosmos/Season 2").get(Setting::Power), 1, "not the other season's");
+        assert_eq!(launch, Some((30, 1, vec![("MPV".to_owned(), "1".to_owned())])), "the runner's, not the series folder's");
+    }
+
+    #[test]
+    fn the_panel_offers_the_items_levels() {
+        let mut library = clamshell_library::demo_library();
+        for g in library.games.iter_mut().filter(|g| g.id.starts_with("tv:")) {
+            g.runner = Some(runner_key("Video"));
+        }
+        let mut s = State::new(Init { library, ..init() });
+        let levels = |s: &State| s.setting_levels().into_iter().flatten().map(|(scope, l)| (scope, l.title.to_owned())).collect::<Vec<_>>();
+        assert_eq!(levels(&s), [(Scope::Runner, "A Link to the Past".to_owned())], "a game with no runner: its own, as its runner");
+        tap(&mut s, Id::Shelf(ShelfId::Collection(2)));
+        assert_eq!(levels(&s), [(Scope::Runner, "Video".to_owned())], "a series: its runner's only");
+        tap(&mut s, Id::Shelf(ShelfId::Launch));
+        tap(&mut s, Id::Shelf(ShelfId::Launch));
+        let title = "1. The Shores of the Cosmic Ocean".to_owned();
+        assert_eq!(levels(&s), [(Scope::Runner, "Video".to_owned()), (Scope::Content, title.clone())]);
+        assert_eq!(s.editing().map(|p| p.title), Some(title.as_str()), "its own by default");
+        scope(&mut s, Scope::Runner);
+        assert_eq!(s.editing().map(|p| p.id), Some(runner_key("Video")));
+        taps(&mut s, Setting::Power, 1);
+        assert_eq!(s.settings().overrides_of("runner:Video").get(Setting::Power), Some(2), "kept by the runner");
+        assert_eq!(s.settings_of("tv:Cosmos/Season 2/1. Standing Up in the Milky Way.mkv").get(Setting::Power), 2, "every video's");
     }
 
     #[test]
@@ -248,7 +314,7 @@ mod tests {
         let mut s = state();
         scope(&mut s, Scope::Global);
         taps(&mut s, Setting::FpsCap, 4); // 30, 40, 45, 60
-        scope(&mut s, Scope::Game);
+        scope(&mut s, Scope::Content);
         let fx = taps(&mut s, Setting::Power, 1); // Balanced -> Performance
         let Some(Effect::Save(Save::Settings(saved))) = fx.first() else {
             unreachable!("{fx:?}");

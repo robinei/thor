@@ -79,8 +79,9 @@ pub struct Game {
     pub favourite: bool,
     /// A file or folder of a browsed dir (see [`Browsed`]); none for the rest.
     pub browsed: Option<Browsed>,
-    /// The runner that opens it (library.json's or ClamShell's, by name), for content: a scanned entry
-    /// (and a folder of them), a browsed file. None for an app or a Steam game (it is its own runner).
+    /// The runner that opens it (library.json's or ClamShell's), by its key ([`runner_key`]: its settings
+    /// are kept by it), for content: a scanned entry (and a folder of them), a browsed file. None for an app
+    /// or a Steam game (it is its own runner).
     pub runner: Option<Arc<str>>,
 }
 
@@ -148,6 +149,11 @@ impl Game {
         !self.items.is_empty() || self.browsed.as_ref().is_some_and(|b| b.folder)
     }
 
+    /// Its runner's name (see [`Game::runner`]).
+    pub fn runner_name(&self) -> Option<&str> {
+        self.runner.as_deref().map(|k| k.strip_prefix(RUNNER).unwrap_or(k))
+    }
+
     /// A browsed folder: its dir, listed when it is opened.
     pub fn browsed_dir(&self) -> Option<&std::path::Path> {
         self.file.as_deref().filter(|_| self.browsed.as_ref().is_some_and(|b| b.folder))
@@ -177,6 +183,13 @@ impl Game {
         }
     }
 }
+
+/// The key of runner `name`: its settings, environment and own keymap are kept by it (`runner:SNES`).
+pub fn runner_key(name: &str) -> Arc<str> {
+    format!("{RUNNER}{name}").into()
+}
+
+const RUNNER: &str = "runner:";
 
 /// How far into a video counts as watched (the credits left).
 pub const DONE: f64 = 0.9;
