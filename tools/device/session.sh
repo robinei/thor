@@ -101,12 +101,12 @@ if [ ! -e "$H/.config/mpv/mpv.conf" ]; then
     install -m 644 "$REPO/clamshell/mpv/mpv.conf" "$REPO/clamshell/mpv/input.conf" "$H/.config/mpv/"
 fi
 
-# RetroArch's config (clamshell/retroarch: the GPD's, its menu on L3+R3) and the Xbox 360 pad's profile
-# (ClamShell's virtual pad is one), unless there is one.
+# RetroArch's config (clamshell/retroarch: the GPD's, its pads through SDL, its hotkeys on AYN) and the
+# profile of ClamShell's virtual pad (an Xbox 360 controller, through SDL), unless there is one.
 mkdir -p "$H/.config/retroarch/autoconfig"
 if [ ! -e "$H/.config/retroarch/retroarch.cfg" ]; then
     install -m 644 "$REPO/clamshell/retroarch/retroarch.cfg" "$H/.config/retroarch/retroarch.cfg"
-    install -m 644 "$REPO/clamshell/retroarch/autoconfig/Microsoft X-Box 360 pad.cfg" "$H/.config/retroarch/autoconfig/"
+    install -m 644 "$REPO/clamshell/retroarch/autoconfig/Xbox 360 Controller (SDL).cfg" "$H/.config/retroarch/autoconfig/"
 fi
 # Its menu's look (XMB in ClamShell's colours; clamshell/retroarch/xmb-theme.py), unless it is there: from
 # RetroArch's assets in the root this home is in (the image's, or /).

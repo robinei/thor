@@ -27,6 +27,7 @@ mod typing;
 use std::io;
 use std::os::fd::{AsFd, BorrowedFd};
 use std::sync::mpsc::{Receiver, TryRecvError};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use clamshell_core::PadRoute;
@@ -61,12 +62,34 @@ pub enum Command {
 
 lost_on!(io::Error);
 
+/// The grabbed controller's USB ids (vendor, product), for what is launched: SDL programs are told to
+/// ignore it (`SDL_GAMECONTROLLER_IGNORE_DEVICES`, as Steam does), so they take the virtual pad, not the
+/// controller (grabbed: silent to them). mpv opens one controller only, the first it finds.
+#[derive(Debug, Clone, Default)]
+pub struct Taken(Arc<Mutex<Option<(u16, u16)>>>);
+
+impl Taken {
+    fn set(&self, ids: (u16, u16)) {
+        if let Ok(mut taken) = self.0.lock() {
+            *taken = Some(ids);
+        }
+    }
+
+    /// A launch's variable for it, if a controller was grabbed (and it isn't the virtual pad's ids:
+    /// ignoring those would hide the virtual pad too).
+    pub fn env(&self) -> Option<(String, String)> {
+        let (vendor, product) = (*self.0.lock().ok()?)?;
+        ((vendor, product) != device::VIRTUAL_IDS).then(|| ("SDL_GAMECONTROLLER_IGNORE_DEVICES".to_owned(), format!("0x{vendor:04x}/0x{product:04x}")))
+    }
+}
+
 /// Owns the controller whenever one is connected (`spec`: CLAMSHELL_GAMEPAD), looking again every second
-/// when there is none.
-pub fn spawn(spec: DeviceSpec, sink: impl Sink) -> io::Result<Worker<Command>> {
+/// when there is none; its ids in `taken`.
+pub fn spawn(spec: DeviceSpec, taken: Taken, sink: impl Sink) -> io::Result<Worker<Command>> {
     Worker::spawn("pad", move |commands| {
         let mut pad = PadThread {
             spec,
+            taken,
             sink,
             route: PadRoute::default(),
             keymap: Keymap::default(),
@@ -82,6 +105,7 @@ pub fn spawn(spec: DeviceSpec, sink: impl Sink) -> io::Result<Worker<Command>> {
 /// What the pad thread keeps across the controller's comings and goings.
 struct PadThread<S> {
     spec: DeviceSpec,
+    taken: Taken,
     sink: S,
     route: PadRoute,
     keymap: Keymap,
@@ -162,6 +186,8 @@ impl<S: Sink> Service for PadThread<S> {
         // (Games wait for their rumble uploads to be answered, controller or not.)
         self.serve_effects(Instant::now());
         let mut real = device::find(&self.spec)?;
+        let id = real.input_id();
+        self.taken.set((id.vendor(), id.product()));
         let caps = Capabilities::of(&real)?;
         let (ranges, snapshot) = (caps.ranges(), caps.snapshot());
         if self.devices.as_ref().is_none_or(|v| v.made_for != caps) {

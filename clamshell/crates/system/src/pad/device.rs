@@ -13,6 +13,8 @@ use crate::input::device::{self, DeviceSpec};
 use crate::input::{Press, Range, Raw, keyset};
 
 pub const VIRTUAL_PAD: &str = "clamshell pad (Xbox 360)";
+/// The virtual pad's USB ids: a wired Xbox 360 controller's.
+pub const VIRTUAL_IDS: (u16, u16) = (0x045e, 0x028e);
 const VIRTUAL_MOUSE: &str = "clamshell pad mouse";
 
 /// The configured controller, or the first device with gamepad buttons and two sticks (not our own).
@@ -148,7 +150,7 @@ fn virtual_pad(caps: &Capabilities) -> io::Result<VirtualDevice> {
     let ff: AttributeSet<FFEffectCode> = [FFEffectCode::FF_RUMBLE].into_iter().collect();
     let mut builder = VirtualDevice::builder()?
         .name(VIRTUAL_PAD)
-        .input_id(InputId::new(BusType::BUS_USB, 0x045e, 0x028e, 0x0110))
+        .input_id(InputId::new(BusType::BUS_USB, VIRTUAL_IDS.0, VIRTUAL_IDS.1, 0x0110))
         .with_ff(&ff)?
         .with_ff_effects_max(super::rumble::EFFECTS_MAX);
     let keys: Vec<KeyCode> = pad_keys(caps).collect();

@@ -123,7 +123,8 @@ pub fn start(
         launcher::spawn(launcher::Config { db: paths.db(), scope, watch_later: paths.watch_later.clone(), jobs: jobs.clone() }, sink.clone()),
     );
     // The controller, grabbed for good with a virtual Xbox pad for games.
-    let pad = started("pad", pad::spawn(env.gamepad.clone(), sink.clone()));
+    let pad_taken = pad::Taken::default();
+    let pad = started("pad", pad::spawn(env.gamepad.clone(), pad_taken.clone(), sink.clone()));
     let battery = started("battery", battery::spawn(sink.clone()));
     let mixer = started("mixer", mixer::spawn(backlights.clone(), sink.clone()));
     let bluetooth = started("bluetooth", bluetooth::spawn(sink.clone()));
@@ -144,6 +145,7 @@ pub fn start(
         bluetooth,
         battery,
         pad,
+        pad_taken,
         launcher,
         sway,
         jobs,
