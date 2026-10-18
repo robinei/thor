@@ -183,7 +183,8 @@ enum Home {
 /// B, the window in front closed (let go at once) or its program quit (held); held, then
 /// the Thor's Back button with a game in front, the game's Guide button (Steam's overlay;
 /// buttons pressed meanwhile go to the game, for Steam's chords) while both are held. Held with any other
-/// button, that button goes where it would, and letting Home go isn't Home. Back on its own:
+/// button, that button is Home's too (the game sees neither it nor its release), and letting Home go
+/// isn't Home. Back on its own:
 /// an input of the keymap in the game ([`remap`]), back ([`PadInput::Back`]) on ClamShell's screens.
 /// With the pad mouse or typing, View is ClamShell's too (to move the pad to the second screen).
 pub struct PadRouter {
@@ -386,7 +387,17 @@ impl PadRouter {
                 out.events.push(Event::Device(shortcut));
                 return;
             }
-            Some((_, Press::Down)) if held => self.home = Home::Held { combined: true },
+            // Any other button with Home held: Home's too, the game sees neither it nor its release.
+            Some((code, Press::Down)) if held => {
+                self.home = Home::Held { combined: true };
+                self.taken.push(code);
+                return;
+            }
+            // (The D-pad's left and right too.)
+            None if held && raw.as_abs().is_some_and(|(axis, v)| axis == AbsoluteAxisCode::ABS_HAT0X && v != 0) => {
+                self.home = Home::Held { combined: true };
+                return;
+            }
             _ => {}
         }
         self.snapshot.update(raw);
@@ -663,8 +674,16 @@ mod tests {
         r.event(key(KeyCode::BTN_MODE, Press::Down), t0, &mut out);
         r.event(key(KeyCode::BTN_SOUTH, Press::Down), t0, &mut out);
         r.event(key(KeyCode::BTN_MODE, Press::Up), t0, &mut out);
+        r.event(key(KeyCode::BTN_SOUTH, Press::Up), t0, &mut out);
         assert!(out.events.is_empty(), "not Home");
-        assert_eq!(held(&out.pad), vec![KeyCode::BTN_SOUTH], "A goes to the game as usual");
+        assert!(
+            held(&out.pad).is_empty() && !out.pad.iter().any(|e| e.as_key().is_some_and(|(k, _)| k == KeyCode::BTN_SOUTH)),
+            "A, pressed with Home held, never reaches the game: {:?}",
+            out.pad
+        );
+        // Pressed again after: the game's.
+        r.event(key(KeyCode::BTN_SOUTH, Press::Down), t0, &mut out);
+        assert_eq!(held(&out.pad), vec![KeyCode::BTN_SOUTH]);
         // Away from the game, Home then Back is neither Guide nor Home.
         let (mut r, mut out) = router(PadRoute::Ui);
         out.pad.clear();
