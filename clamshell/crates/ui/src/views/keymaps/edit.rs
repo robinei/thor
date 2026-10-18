@@ -379,8 +379,12 @@ pub(super) fn edit(f: &mut Frame, id: u16, picking: Option<Picking>) {
     if picking.is_none() {
         let small = f.text(Text::Small) * PANEL_TEXT;
         let row = panel_r.take_bottom(small * LINE * 1.6);
-        // (Wider than the panel: the label columns are free at the bottom, between Home and Back.)
-        keymap_line(f, Rect::new(strip.x - lw * 0.9, row.y, strip.w + lw * 1.8, row.h), id, small);
+        // (Wider than the panel into the label columns while their labels end above it: those of AYN
+        // and Back, the controls beside it, reach down to it when they are mapped.)
+        // (Both sides alike, so it stays centred.)
+        let free = |column: &Labels| column.iter().all(|c| c.top + c.height(line) <= row.y);
+        let into = if free(&left) && free(&right) { lw * 0.9 } else { 0.0 };
+        keymap_line(f, Rect::new(strip.x - into, row.y, strip.w + 2.0 * into, row.h), id, small);
     }
     match picking {
         Some(p) => picking_panel(f, panel_r, id, p),

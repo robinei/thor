@@ -15,13 +15,13 @@ keyboard.png 703a328f4fa8020b
 keymap-capture.png d00a0c796de3b645
 keymap-delete.png 93b7d88eeeb6d59b
 keymap-edit-back.png 19f8e65efbae49ad
-keymap-edit-gyro-accel.png 197c58dc68727c14
-keymap-edit-gyro.png 456d6d61af337d41
+keymap-edit-gyro-accel.png 7d9966397154c1ad
+keymap-edit-gyro.png da159a41914a8c48
 keymap-edit-hold.png ec78ce8e7e7848a5
-keymap-edit-layer-key.png de484bece9624181
+keymap-edit-layer-key.png 0fee1416c1fa66cb
 keymap-edit-new.png e22cfab87f734312
 keymap-edit-own.png cc82a52e657e17d7
-keymap-edit-rstick.png 164f16dac1aca99d
+keymap-edit-rstick.png 34937fb97639ab24
 keymap-edit-shared.png 29c356bb89e0f6cd
 keymap-edit-slider.png 93b3da9d8d2edcae
 keymap-edit-stick.png 6d72852a8fc77f78
