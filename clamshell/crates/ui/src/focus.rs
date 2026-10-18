@@ -178,7 +178,8 @@ pub(crate) fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
     let at = tabs.iter().position(|t| *t == s.bottom().tab()).unwrap_or(0) as i32;
     let next = (at + step).rem_euclid(tabs.len() as i32) as usize;
     match tabs.get(next) {
-        Some(&tab) => vec![PointerEvent::Activate(Id::Tab(tab)).into(), PointerEvent::Focus(Id::Tab(tab)).into()],
+        // (The focus on its icon, whose target volume's and brightness's are their controls.)
+        Some(&tab) => vec![PointerEvent::Activate(Id::Tab(tab)).into(), PointerEvent::Focus(crate::views::bar::tab_target(tab)).into()],
         None => vec![],
     }
 }
@@ -375,7 +376,8 @@ mod tests {
         let open = s.bottom().tab();
         let at = Tab::ALL.iter().position(|t| *t == open).unwrap_or(0);
         let next = Tab::ALL[(at + 1) % Tab::ALL.len()];
-        assert_eq!(shoulder(&s, &d, 1), vec![PointerEvent::Activate(Id::Tab(next)).into(), PointerEvent::Focus(Id::Tab(next)).into()]);
+        let icon = crate::views::bar::tab_target(next);
+        assert_eq!(shoulder(&s, &d, 1), vec![PointerEvent::Activate(Id::Tab(next)).into(), PointerEvent::Focus(icon).into()], "its icon in the bar focused");
         let g = game(&s, 0);
         focus(&mut s, g);
         let page = s.shelf().rows() as i32;

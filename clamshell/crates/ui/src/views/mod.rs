@@ -7,7 +7,7 @@
 //! margin (see `render`). Sizes are fractions of the screen or of the element they sit in, named per
 //! module unless they are shared (then in `style`).
 
-mod bar;
+pub(crate) mod bar;
 mod battery;
 mod bluetooth;
 mod dark;
@@ -366,6 +366,50 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    /// Down from a tab's icon in the bar reaches what is right below it in the tab, a control at the
+    /// header's end too (Wi-Fi's switch, the volume's slider), not the first list row past it.
+    #[test]
+    fn down_from_the_bar_reaches_the_tabs_first_line() {
+        use crate::nav::{Dir, NavTarget, step};
+        use clamshell_core::levels::{Audio, Level, Stream};
+        use clamshell_core::wifi::{Network, Wifi};
+        use clamshell_core::{ListId, WifiId};
+        let mut cache = DrawCache::load();
+        let (w, h) = (1240u32, 1080u32);
+        for (tab, first, second) in [
+            (Tab::Wifi, Id::Wifi(WifiId::Power), ListId::Wifi.row(0)),
+            (Tab::Volume, Id::Level(Level::Volume), Id::Row { list: ListId::Streams, i: 0, part: clamshell_core::scroll::RowPart::Level }),
+        ] {
+            let mut state = demo();
+            let networks = (0..4).map(|i| Network { ssid: format!("net {i}"), ..Network::default() }).collect();
+            state.apply(Event::Reading(Reading::Wifi(Wifi { device: true, enabled: true, networks, ..Wifi::default() })));
+            let streams = (0..3).map(|i| Stream { id: i, app: format!("app {i}"), title: String::new(), volume: 50, muted: false }).collect();
+            state.apply(Event::Reading(Reading::Audio(Audio { outputs: vec![], streams })));
+            state.apply(Event::Pointer(clamshell_core::PointerEvent::Activate(Id::Tab(tab))));
+            let mut pixmap = Pixmap::new(w, h).expect("pixmap");
+            let mut targets = Vec::new();
+            {
+                let mut canvas = Canvas::new(&mut pixmap, 1.0, &mut cache);
+                let (mut images, mut scratch) = (Images::synchronous(), Scratch::default());
+                let mut f = Frame::new(&mut canvas, &state, &mut images, &mut scratch, &mut targets);
+                bottom(&mut f, Rect::new(0.0, 0.0, w as f32, h as f32));
+                f.finish();
+            }
+            let all: Vec<NavTarget> = targets
+                .iter()
+                .filter(|t| !matches!(t.id, Id::List(_)))
+                .map(|t| NavTarget {
+                    screen: crate::screens::Screen::Bottom,
+                    rect: Rect::new(t.rect.x / w as f32, 1.0 + t.rect.y / h as f32, t.rect.w / w as f32, t.rect.h / h as f32),
+                    id: t.id.clone(),
+                })
+                .collect();
+            let down = step(&all, Some(&bar::tab_target(tab)), Dir::Down);
+            assert_eq!(down.as_ref(), Some(&first), "{tab:?}");
+            assert_eq!(step(&all, down.as_ref(), Dir::Down).as_ref(), Some(&second), "{tab:?}: then the list");
         }
     }
 }

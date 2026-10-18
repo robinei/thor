@@ -37,6 +37,16 @@ const LOW_BATTERY: u8 = 15;
 
 /// A tab's button in the bar: its id (volume and brightness are controls, which open their tab on a
 /// tap), its icon (with its level or status), and its tone: lit while open, dim without a reading.
+/// The bar's target for `tab`'s icon: volume and brightness are their controls (a tap opens the tab, a
+/// slide sets the level), the rest the tab.
+pub(crate) fn tab_target(tab: Tab) -> Id {
+    match tab {
+        Tab::Volume => Id::Control(Control::Volume),
+        Tab::Brightness => Id::Control(Control::Brightness),
+        tab => Id::Tab(tab),
+    }
+}
+
 fn tab_button(s: &State, tab: Tab) -> (Id, Icon, Tone) {
     let open = s.bottom().tab() == tab;
     let lit = |reading: bool| {
@@ -51,9 +61,9 @@ fn tab_button(s: &State, tab: Tab) -> (Id, Icon, Tone) {
     match tab {
         Tab::Volume => {
             let volume = s.levels().control(Control::Volume);
-            (Id::Control(Control::Volume), Icon::volume(volume.unwrap_or(0), s.levels().muted()), lit(volume.is_some()))
+            (tab_target(tab), Icon::volume(volume.unwrap_or(0), s.levels().muted()), lit(volume.is_some()))
         }
-        Tab::Brightness => (Id::Control(Control::Brightness), Icon::Brightness, lit(s.levels().control(Control::Brightness).is_some())),
+        Tab::Brightness => (tab_target(tab), Icon::Brightness, lit(s.levels().control(Control::Brightness).is_some())),
         Tab::Bluetooth => {
             let bt = &s.radios().bluetooth;
             let connected = bt.connected() > 0;
