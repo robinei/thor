@@ -170,6 +170,7 @@ pub fn load(sources: &Sources) -> Loaded {
     let mut folders: HashMap<(String, String), usize> = HashMap::new();
     let (runners, runner_problems) = runners::in_force(&config.runners);
     problems.extend(runner_problems);
+    let runner_keymaps = runners.iter().filter_map(|r| Some((clamshell_library::runner_key(&r.name), r.keymap.clone()?))).collect();
     for source in runners.iter().flat_map(runners::Runner::sources) {
         let source = &source;
         let dir = match content::expand_dir(&source.dir, sources.home.as_deref()) {
@@ -350,7 +351,7 @@ pub fn load(sources: &Sources) -> Loaded {
             g.favourite = favourites.contains(&*g.id);
         }
     }
-    let mut library = Library { collections, games, problems, away, ..Library::default() };
+    let mut library = Library { collections, games, problems, away, runner_keymaps, ..Library::default() };
     // What was fetched before, where its images are still there; what to fetch.
     let now = crate::meta::now();
     let mut wanted = Vec::new();

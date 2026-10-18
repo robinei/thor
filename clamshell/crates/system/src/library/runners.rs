@@ -34,6 +34,10 @@ pub struct Runner {
     /// Dirs whose entries go in the library.
     #[serde(default)]
     pub scan: Vec<Scan>,
+    /// A keymap of ClamShell's it comes with (`viewer`: the D-pad, A, B and the shoulders as keys), its own
+    /// until one is chosen for it.
+    #[serde(default)]
+    pub keymap: Option<String>,
 }
 
 /// A dir a runner's entries are found in (see [`super::content`] for how): `id` names them (`<id>:<path
@@ -102,21 +106,45 @@ const SYSTEMS: [(&str, &str, &[&str], &str); 9] = [
     ("Dreamcast", "flycast", &["*.gdi", "*.cdi"], "Sega - Dreamcast"),
 ];
 
-/// ClamShell's other runners: name, command, patterns.
-const OTHERS: [(&str, &[&str], &[&str]); 6] = [
-    ("Video", &["mpv", "{path}"], &["*.mkv", "*.mp4", "*.m4v", "*.avi", "*.webm", "*.mov", "*.mpg", "*.mpeg", "*.ts", "*.wmv", "*.flv"]),
-    ("Music", &["mpv", "--force-window=immediate", "{path}"], &["*.mp3", "*.flac", "*.ogg", "*.opus", "*.m4a", "*.wav", "*.aac"]),
-    ("Images", &["imv", "{path}"], &["*.jpg", "*.jpeg", "*.png", "*.webp", "*.gif", "*.bmp", "*.tif", "*.tiff", "*.svg"]),
-    ("PDF", &["zathura", "{path}"], &["*.pdf", "*.epub", "*.djvu"]),
-    (
-        "Text",
-        &["foot", "less", "{path}"],
-        &[
+/// One of ClamShell's other runners.
+struct Builtin {
+    name: &'static str,
+    launch: &'static [&'static str],
+    patterns: &'static [&'static str],
+    keymap: Option<&'static str>,
+}
+
+/// ClamShell's other runners, in order.
+const OTHERS: [Builtin; 6] = [
+    Builtin {
+        name: "Video",
+        launch: &["mpv", "{path}"],
+        patterns: &["*.mkv", "*.mp4", "*.m4v", "*.avi", "*.webm", "*.mov", "*.mpg", "*.mpeg", "*.ts", "*.wmv", "*.flv"],
+        keymap: None,
+    },
+    Builtin {
+        name: "Music",
+        launch: &["mpv", "--force-window=immediate", "{path}"],
+        patterns: &["*.mp3", "*.flac", "*.ogg", "*.opus", "*.m4a", "*.wav", "*.aac"],
+        keymap: None,
+    },
+    Builtin {
+        name: "Images",
+        launch: &["imv", "{path}"],
+        patterns: &["*.jpg", "*.jpeg", "*.png", "*.webp", "*.gif", "*.bmp", "*.tif", "*.tiff", "*.svg"],
+        keymap: Some("viewer"),
+    },
+    Builtin { name: "PDF", launch: &["zathura", "{path}"], patterns: &["*.pdf", "*.epub", "*.djvu"], keymap: Some("viewer") },
+    Builtin {
+        name: "Text",
+        launch: &["foot", "less", "{path}"],
+        patterns: &[
             "*.txt", "*.md", "*.log", "*.nfo", "*.json", "*.toml", "*.yaml", "*.yml", "*.ini", "*.conf", "*.cfg", "*.csv", "*.xml", "*.sh", "*.py", "*.rs",
             "*.c", "*.h",
         ],
-    ),
-    ("Other files", &["xdg-open", "{path}"], &["*"]),
+        keymap: Some("viewer"),
+    },
+    Builtin { name: "Other files", launch: &["xdg-open", "{path}"], patterns: &["*"], keymap: None },
 ];
 
 /// ClamShell's own runners, those whose program (and core) is installed, in order (Other files last).
@@ -134,14 +162,15 @@ pub fn builtin(installed: &dyn Fn(&str) -> bool, core: &dyn Fn(&Path) -> bool) -
                     patterns: strings(patterns),
                     launch,
                     metadata: Some(format!("libretro:{database}")),
-                    scan: Vec::new(),
+                    ..Runner::default()
                 });
             }
         }
     }
-    for (name, launch, patterns) in OTHERS {
-        if launch.first().is_some_and(|p| installed(p)) {
-            runners.push(Runner { name: name.into(), patterns: strings(patterns), launch: strings(launch), ..Runner::default() });
+    for b in OTHERS {
+        if b.launch.first().is_some_and(|p| installed(p)) {
+            let keymap = b.keymap.map(str::to_owned);
+            runners.push(Runner { name: b.name.into(), patterns: strings(b.patterns), launch: strings(b.launch), keymap, ..Runner::default() });
         }
     }
     runners
@@ -165,6 +194,7 @@ pub fn all(config: &[Runner], builtin: Vec<Runner>) -> (Vec<Runner>, Vec<String>
                 launch: if p.launch.is_empty() { b.launch.clone() } else { p.launch.clone() },
                 metadata: p.metadata.clone().or_else(|| b.metadata.clone()),
                 scan: p.scan.clone(),
+                keymap: p.keymap.clone().or_else(|| b.keymap.clone()),
             },
             None => p.clone(),
         })

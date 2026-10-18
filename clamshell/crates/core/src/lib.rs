@@ -342,7 +342,7 @@ impl State {
                 if self.shelf.reload(*library) {
                     self.moved_collection();
                 }
-                let mut effects = vec![];
+                let mut effects = self.follow_runner_keymaps();
                 if self.drop_gone_pins() {
                     effects.push(Effect::Save(Save::Dock(self.dock.pinned_ids())));
                 }
@@ -369,6 +369,7 @@ impl State {
                 }
                 effects.extend(self.levels.brightness_effect());
                 effects.push(Effect::PadRoute(self.pad.route()));
+                effects.extend(self.follow_runner_keymaps());
                 effects.extend(self.follow_keymap(true));
                 (Dirty::BOTH, effects)
             }

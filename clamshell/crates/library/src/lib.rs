@@ -266,6 +266,9 @@ pub struct Library {
     pub away: Vec<String>,
     /// Places in `games` free for the next listing's entries (a listing's entries gone, and theirs).
     pub free: Vec<usize>,
+    /// Runners (by key) that come with a keymap of ClamShell's (its name: see clamshell-core's
+    /// `keymap::preset`), their own until one is chosen for them.
+    pub runner_keymaps: Vec<(Arc<str>, String)>,
 }
 
 impl Library {

@@ -78,6 +78,26 @@ impl State {
         }
     }
 
+    /// Runners that come with a keymap of ClamShell's (see [`crate::Library::runner_keymaps`]) and have
+    /// no keymap chosen and none of their own: that keymap made their own and chosen, saved.
+    pub(crate) fn follow_runner_keymaps(&mut self) -> Vec<Effect> {
+        let library = self.shelf.library();
+        let wanting: Vec<(std::sync::Arc<str>, crate::keymap::Keymap)> = library
+            .runner_keymaps
+            .iter()
+            .filter(|(key, _)| self.settings.overrides_of(key).get(Setting::Keymap).is_none() && self.keymaps.own_of(key).is_none())
+            .filter_map(|(key, name)| Some((key.clone(), crate::keymap::preset(name)?)))
+            .collect();
+        if wanting.is_empty() {
+            return vec![];
+        }
+        for (key, preset) in &wanting {
+            let id = self.keymaps.make_own_from(preset, key);
+            self.settings.set(Some(key), Setting::Keymap, Some(id));
+        }
+        vec![Effect::Save(Save::Keymaps(self.keymaps.clone())), Effect::Save(Save::Settings(self.settings.clone()))]
+    }
+
     /// The item the settings panel is about, by what is in front: the entry whose window is in front,
     /// shelf's selection (a browsed file that is a library entry's: that entry), or none (a window of no
     /// program: the panel edits the defaults).
@@ -307,6 +327,22 @@ mod tests {
         taps(&mut s, Setting::Power, 1);
         assert_eq!(s.settings().overrides_of("runner:Video").get(Setting::Power), Some(2), "kept by the runner");
         assert_eq!(s.settings_of("tv:Cosmos/Season 2/1. Standing Up in the Milky Way.mkv").get(Setting::Power), 2, "every video's");
+    }
+
+    #[test]
+    fn a_runner_gets_its_keymap_once() {
+        let mut library = clamshell_library::demo_library();
+        library.runner_keymaps = vec![(runner_key("Text"), "viewer".into())];
+        let mut s = State::new(Init { library, ..init() });
+        let fx = s.apply(Event::Start).1;
+        assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Keymaps(_)))), "{fx:?}");
+        let own = s.keymaps().own_of("runner:Text").map(|k| k.id);
+        assert!(own.is_some());
+        assert_eq!(s.settings().overrides_of("runner:Text").get(Setting::Keymap), own);
+        // Default chosen for it instead: left so, also when the library is read again.
+        s.settings.set(Some(&runner_key("Text")), Setting::Keymap, Some(0));
+        let fx = s.apply(Event::Library(Box::new(s.shelf().library().clone()))).1;
+        assert!(!fx.iter().any(|e| matches!(e, Effect::Save(Save::Keymaps(_)))));
     }
 
     #[test]

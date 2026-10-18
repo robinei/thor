@@ -552,6 +552,15 @@ impl Keymaps {
         id
     }
 
+    /// `owner`'s own keymap made with `preset`'s bindings (see [`preset`]); its id.
+    pub fn make_own_from(&mut self, preset: &Keymap, owner: &std::sync::Arc<str>) -> u16 {
+        let id = self.make_own(0, owner);
+        if let Some(own) = self.get_mut(id) {
+            own.layers = preset.layers.clone();
+        }
+        id
+    }
+
     /// Keymap `to`'s bindings and layers replaced by a copy of keymap `from`'s (Default, or one gone:
     /// none); whether `to` is there.
     pub fn copy_into(&mut self, to: u16, from: u16) -> bool {
@@ -600,6 +609,27 @@ impl Keymaps {
         let before = self.list.len();
         self.list.retain(|k| k.id != id);
         self.list.len() != before
+    }
+}
+
+/// ClamShell's own keymaps for its runners, by name: `viewer` (Text, PDF, Images: programs that read the
+/// keyboard, not the pad): the D-pad the arrow keys, A Space (on a page), B `q` (quit), the shoulders Page
+/// Up and Page Down.
+pub fn preset(name: &str) -> Option<Keymap> {
+    let key = |k: Key| Binding::to(Output::Key(Chord::of(k)));
+    match name {
+        "viewer" => {
+            let mut k = Keymap::new(0, "");
+            for (dir, named) in [(Dir::Up, Named::Up), (Dir::Down, Named::Down), (Dir::Left, Named::Left), (Dir::Right, Named::Right)] {
+                k.set(Input::Dpad(dir), Some(key(Key::Named(named))));
+            }
+            k.set(Input::Button(Button::A), Some(key(Key::Char(' '))));
+            k.set(Input::Button(Button::B), Some(key(Key::Char('q'))));
+            k.set(Input::Button(Button::LB), Some(key(Key::Named(Named::PageUp))));
+            k.set(Input::Button(Button::RB), Some(key(Key::Named(Named::PageDown))));
+            Some(k)
+        }
+        _ => None,
     }
 }
 

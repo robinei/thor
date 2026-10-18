@@ -72,14 +72,16 @@ folder is where things show, not how they run.
 
 ### Keymaps
 
-Each level has a keymap slot: Inherit (the level above's; the default), Own (a keymap kept at that
-level, edited in place), or a named keymap. Named keymaps are only for sharing one keymap between runners
-or items.
+Each level has a keymap slot, the Keymap setting: Inherit (the level above's; the default), Own (a keymap
+kept at that level, edited in place), or a named keymap. Named keymaps are only for sharing one keymap
+between runners or items.
 
-ClamShell's runners come with their own keymaps filled in: Text, PDF and Images with B to quit and the
-D-pad to scroll. The one named keymap ClamShell ships is RetroArch (its hotkeys, B to its menu), which
-every system's runner uses; a system that needs another (Nintendo 64's C buttons on the right stick) has
-its own.
+A runner can come with a keymap of ClamShell's (`"keymap": "viewer"`), made its own the first time it is
+seen without a keymap chosen and without one of its own: ClamShell's Text, PDF and Images have `viewer`
+(the D-pad the arrow keys, A Space, B `q` to quit, the shoulders Page Up and Page Down), since `less`,
+zathura and imv read the keyboard, not the pad. RetroArch and mpv read the pad themselves: Default suits
+them, so ClamShell ships no keymap for them. Choosing another keymap for a runner keeps it; resetting the
+runner's settings brings ClamShell's back at the next start.
 
 ## Actions
 
@@ -115,6 +117,6 @@ can't reach them. On the Thor nothing in the image starts that way.
    by the same matching everywhere.
 2. Running items keep their title and picture.
 3. Settings in three levels (folders dropped), the page's tabs named by the runner.
-4. Keymap slots per level; the built-in runners' keymaps; RetroArch's named one.
+4. Keymap slots per level; the built-in runners' keymaps.
 5. Actions from runner, content, place and identity.
 6. The image: imv, zathura and its PDF backend.
