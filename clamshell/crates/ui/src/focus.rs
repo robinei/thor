@@ -158,8 +158,9 @@ pub(crate) fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, 
             Screen::Top => 0.0,
             Screen::Bottom => 1.0,
         };
-        // (A list's area is for fingers: the pad goes to its rows.)
-        all.extend(d.targets(screen).iter().filter(|t| !matches!(t.id, Id::List(_))).map(|t| NavTarget {
+        // (A list's area is for fingers: the pad goes to its rows. Shelf's actions only by A held.)
+        let actions = |id: &Id| matches!(id, Id::Shelf(s) if !matches!(s, ShelfId::Game(_) | ShelfId::Collection(_) | ShelfId::Up));
+        all.extend(d.targets(screen).iter().filter(|t| !matches!(t.id, Id::List(_)) && !actions(&t.id)).map(|t| NavTarget {
             screen,
             rect: Rect::new(t.rect.x / w, y0 + t.rect.y / h, t.rect.w / w, t.rect.h / h),
             id: t.id.clone(),
@@ -431,6 +432,21 @@ mod tests {
         assert_eq!(shoulder(&s, &d, 1), vec![]);
         assert_eq!(shortcut(&s, &d, PadInput::Y), vec![ShelfEvent::ToggleFavourite.into()], "sent, but the state has no shortcut there");
         assert_eq!(s.shortcut(clamshell_core::actions::Shortcut::Y), None);
+    }
+
+    #[test]
+    fn the_pad_reaches_shelfs_actions_only_by_a_held() {
+        let mut s = state();
+        let mut d = drawn(&s);
+        // Its actions right beside and below the last game shown.
+        d.0.top.extend([t(60.0, 20.0, Id::Shelf(ShelfId::Launch)), t(60.0, 35.0, Id::Shelf(ShelfId::Favourite))]);
+        let last = game(&s, 1);
+        focus(&mut s, last.clone());
+        let memory = Screens::default();
+        for dir in [Dir::Down, Dir::Right] {
+            let to = navigate(&s, &d, &memory, dir);
+            assert!(!matches!(&to, Some(Event::Pointer(PointerEvent::Focus(Id::Shelf(ShelfId::Launch | ShelfId::Favourite))))), "{dir:?}: {to:?}");
+        }
     }
 
     #[test]
