@@ -514,8 +514,8 @@ pub(crate) fn key_hint(f: &mut Frame, r: Rect, key: &str, label: &str) -> f32 {
     key_label(f, r, key, label, Tone::Dim, false)
 }
 
-/// How strongly a faded badge's ring shows.
-const FADED_RING: f32 = 0.35;
+/// How strongly a faded badge (its ring and letter) shows.
+const FADED: f32 = 0.35;
 
 /// The badge (a ring with the button's name; none without one: the label where the others' are; faded
 /// while the button doesn't do it) and the label after it; their width.
@@ -526,7 +526,8 @@ fn key_label(f: &mut Frame, r: Rect, key: &str, label: &str, tone: Tone, faded: 
     let ring_w = d.max(f.c.text_width(size, key) + d * 0.6);
     let ring = Rect::new(r.x, r.y + (r.h - d) / 2.0, ring_w, d);
     if !key.is_empty() {
-        let (ring_color, letter) = if faded { (Tone::Dim.rgb().alpha(FADED_RING), Tone::Dim) } else { (Tone::Dim.color(), Tone::Normal) };
+        let (ring_color, letter) =
+            if faded { (Tone::Dim.rgb().alpha(FADED), Tone::Normal.rgb().alpha(FADED)) } else { (Tone::Dim.color(), Tone::Normal.color()) };
         f.c.outline(ring, d / 2.0, 1.5, ring_color);
         f.c.text_ink_centred(ring, size, letter, key);
     }
