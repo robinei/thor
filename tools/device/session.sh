@@ -21,6 +21,7 @@ mv "$H/.local/bin/clamshell.new" "$H/.local/bin/clamshell"
 install -m 644 "$REPO/clamshell/sway/clamshell.conf" "$H/.config/sway/clamshell.conf"
 install -m 644 "$REPO/clamshell/mako/config" "$H/.config/mako/config"
 install -m 644 "$REPO/clamshell/foot/foot.ini" "$H/.config/foot/foot.ini"
+install -m 755 "$REPO/clamshell/android/clamshell-android" "$H/.local/bin/clamshell-android"
 
 # The outputs are written at each session start, as ROCKNIX does (its autostart/common/111-sway-init): the
 # panels are natively portrait, and the kernel says how to turn them (fbcon's rotate, from the panel's

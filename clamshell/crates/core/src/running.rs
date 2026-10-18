@@ -193,10 +193,11 @@ impl State {
     }
 
     /// A launch of `game` ended (or couldn't start): it no longer runs once none does; a browsed file's
-    /// soon after it started runs on by its windows (see [`Origin::Handed`]).
+    /// or a desktop app's soon after it started runs on by its windows (see [`Origin::Handed`]: an app
+    /// handing over to an instance of it already running, or to a container, Waydroid's).
     pub(crate) fn ended(&mut self, game: &str) {
         self.session.launching.retain(|l| &*l.game != game || l.appid.is_some());
-        let browsed = self.shelf.game(game).is_some_and(|g| g.browsed.is_some());
+        let browsed = self.shelf.game(game).is_some_and(|g| g.browsed.is_some()) || desktop_id(game).is_some();
         let now = self.unix_secs;
         let session = &mut self.session;
         if let Some(r) = session.running.iter_mut().find(|r| &*r.id == game) {
@@ -239,13 +240,28 @@ impl State {
             .filter(|w| !known.contains(&w.id) && w.home().is_none() && w.steam_id().is_none() && !w.down && session.running_of(w).is_none())
             .map(|w| w.id)
             .collect();
-        let waiting = session.running.iter().filter(|r| matches!(r.origin, Origin::Handed { until, seen: false } if now <= until)).max_by_key(|r| r.start);
         let mut effects = Vec::new();
-        let mut taken = None;
-        if let Some(r) = waiting.filter(|_| !stray.is_empty()) {
-            effects.push(Effect::Window(WindowCommand::Move { windows: stray, to: r.workspace() }));
+        let mut taken = Vec::new();
+        // A window whose app id is a running desktop app's (its desktop file's name, as Waydroid's apps
+        // and many others have it) is that app's, whenever it comes.
+        let mut rest = Vec::new();
+        for id in stray {
+            let app_id = session.windows.iter().find(|w| w.id == id).map(|w| w.app_id.as_str()).unwrap_or("");
+            match session.running.iter().find(|r| desktop_id(&r.id) == Some(app_id)) {
+                Some(r) => {
+                    effects.push(Effect::Window(WindowCommand::Move { windows: vec![id], to: r.workspace() }));
+                    effects.push(Effect::Window(WindowCommand::Focus(r.workspace())));
+                    taken.push(r.id.clone());
+                }
+                None => rest.push(id),
+            }
+        }
+        // Else to the latest launch still waiting for one.
+        let waiting = session.running.iter().filter(|r| matches!(r.origin, Origin::Handed { until, seen: false } if now <= until)).max_by_key(|r| r.start);
+        if let Some(r) = waiting.filter(|_| !rest.is_empty()) {
+            effects.push(Effect::Window(WindowCommand::Move { windows: rest, to: r.workspace() }));
             effects.push(Effect::Window(WindowCommand::Focus(r.workspace())));
-            taken = Some(r.id.clone());
+            taken.push(r.id.clone());
         }
         // Those with windows on their workspace (a window just taken is still where it came up).
         let windows = &self.session.windows;
@@ -253,7 +269,7 @@ impl State {
             .session
             .running
             .iter()
-            .filter(|r| taken.as_ref() == Some(&r.id) || windows.iter().any(|w| Instance::key_of(&w.workspace) == Some(r.key.as_str())))
+            .filter(|r| taken.contains(&r.id) || windows.iter().any(|w| Instance::key_of(&w.workspace) == Some(r.key.as_str())))
             .map(|r| r.id.clone())
             .collect();
         self.session.running.retain_mut(|r| match &mut r.origin {
@@ -418,6 +434,12 @@ impl State {
         }
         effects
     }
+}
+
+/// A desktop app's desktop file name, by its entry's id (`desktop:<name>`): what its windows' app id
+/// usually is.
+fn desktop_id(entry: &str) -> Option<&str> {
+    entry.strip_prefix("desktop:")
 }
 
 #[cfg(test)]
@@ -597,6 +619,32 @@ mod tests {
         s.apply(Event::Tick { unix_secs: 201 + HANDOFF });
         assert!(s.session().running("browse:Home/notes.md").is_none());
         assert!(s.dock().items().is_empty(), "off the dock");
+    }
+
+    #[test]
+    fn a_desktop_apps_window_is_its_by_its_app_id() {
+        let mut s = state();
+        s.apply(Event::Tick { unix_secs: 100 });
+        let shelf = win(1, windows::SHELF_APP_ID, &Instance::Shelf.name(), true);
+        s.apply(Event::Windows(vec![shelf.clone()]));
+        let fx = s.launch("desktop:firefox".into());
+        let firefox = fx.iter().find_map(|e| match e {
+            Effect::Launch { instance, .. } => Some(instance.clone()),
+            _ => None,
+        });
+        let firefox = firefox.unwrap();
+        s.apply(GameEvent::Started("desktop:firefox".into()).into());
+        // Its launch handed the app over (to Waydroid's container, or to one already running) and ended.
+        s.apply(GameEvent::Played { game: "desktop:firefox".into(), start: 100, duration: 1 }.into());
+        assert!(s.session().running("desktop:firefox").is_some(), "waits for its window");
+        let app = win(6, "firefox", &Instance::Shelf.name(), false);
+        let (_, fx) = s.apply(Event::Windows(vec![shelf.clone(), app.clone()]));
+        assert!(fx.contains(&Effect::Window(WindowCommand::Move { windows: vec![6], to: firefox.workspace() })), "{fx:?}");
+        s.apply(Event::Windows(vec![shelf.clone(), Window { workspace: firefox.workspace(), ..app }]));
+        s.apply(Event::Tick { unix_secs: 101 + HANDOFF });
+        assert!(s.session().running("desktop:firefox").is_some(), "runs while its window is open");
+        s.apply(Event::Windows(vec![shelf]));
+        assert!(s.session().running("desktop:firefox").is_none(), "its window closed: ended");
     }
 
     #[test]

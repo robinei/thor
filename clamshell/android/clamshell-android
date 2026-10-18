@@ -1,0 +1,41 @@
+#!/bin/sh
+# Starts an Android app (Waydroid's, by its desktop file's name: `clamshell-android waydroid.<package>`)
+# full-screen in a window of its own, as ClamShell's Android runner launches them. `waydroid app launch`
+# opens apps as Android's floating windows, phone-sized in the middle of the window sway gives them; adb's
+# shell starts them full-screen instead, without root.
+#
+# Waydroid shows no app windows until `waydroid.active_apps` names one, which only its own launch sets: a
+# new session's first launch goes through it once with the launcher (which is never shown in a window).
+#
+# The Waydroid session and adb's server run as units of their own, not in the app's launch: quitting an
+# app leaves Android running. Without adb, Waydroid's own launch. Setup: docs/android.md.
+set -u
+pkg=${1#waydroid.}
+
+running() { waydroid status 2> /dev/null | grep -q '^Session:[[:space:]]*RUNNING'; }
+if ! running; then
+    # (On ClamShell's display: the user manager's may be another's, a desktop's around a nested session.)
+    systemd-run --user --quiet --collect --unit=waydroid-session -E WAYLAND_DISPLAY -E XDG_RUNTIME_DIR \
+        waydroid session start 2> /dev/null
+    i=0
+    while ! running && [ $i -lt 60 ]; do sleep 1; i=$((i + 1)); done
+fi
+
+command -v adb > /dev/null || exec waydroid app launch "$pkg"
+dev=$(waydroid status | sed -n 's/^IP address:[[:space:]]*//p'):5555
+systemd-run --user --quiet --collect --unit=clamshell-adb adb -a nodaemon server 2> /dev/null
+i=0
+while ! ss -ltn 2> /dev/null | grep -q ':5037 ' && [ $i -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+adb connect "$dev" > /dev/null 2>&1
+android() { adb -s "$dev" shell "$@" 2> /dev/null | tr -d '\r'; }
+i=0
+while [ "$(android getprop sys.boot_completed)" != 1 ] && [ $i -lt 90 ]; do sleep 1; i=$((i + 1)); done
+
+case $(android getprop waydroid.active_apps) in
+    '' | none | Waydroid) waydroid app launch com.android.launcher3 ;;
+esac
+activity=$(android cmd package resolve-activity --brief -c android.intent.category.LAUNCHER "$pkg" | tail -1)
+case $activity in
+    */*) android am start --windowingMode 1 -n "$activity" > /dev/null ;;
+    *) exec waydroid app launch "$pkg" ;;
+esac

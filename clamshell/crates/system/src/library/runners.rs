@@ -29,7 +29,9 @@ pub struct Runner {
     /// The file names it opens (one name each: `*.sfc`; any case).
     #[serde(default, rename = "match")]
     pub patterns: Vec<String>,
-    /// The command, `{path}` the file.
+    /// The command, `{path}` the file. A desktop runner's, if it has one, replaces its entries' own
+    /// (their desktop file's): `{id}` the desktop file's name, `{exec}` its command (as arguments of
+    /// their own): to wrap it, or launch otherwise (Waydroid's apps full-screen).
     #[serde(default)]
     pub launch: Vec<String>,
     /// A keymap of ClamShell's it comes with (`viewer`: the D-pad, A, B and the shoulders as keys), its own
@@ -80,6 +82,26 @@ impl Runner {
     /// Its command with `~/` against `home` (or as it is), `{path}`, `{paths}` and `{socket}` left in.
     fn template(&self, home: Option<&Path>) -> Vec<String> {
         self.launch.iter().map(|a| super::content::expand(a, home).to_string_lossy().into_owned()).collect()
+    }
+
+    /// A desktop entry's command as this runner launches it (desktop file `id`, its own command
+    /// `exec`; `~/` the home dir): its `launch` filled in, if it has one; else none (the entry's own).
+    pub fn wrap(&self, id: &str, exec: &Launch, home: Option<&Path>) -> Option<Launch> {
+        if self.kind != Some(Kind::Desktop) || self.launch.is_empty() {
+            return None;
+        }
+        let (own, workdir) = match exec {
+            Launch::Program { argv, workdir } => (argv.as_slice(), workdir.clone()),
+            _ => (&[][..], None),
+        };
+        let mut argv = Vec::new();
+        for arg in self.template(home) {
+            match arg.as_str() {
+                "{exec}" => argv.extend(own.iter().cloned()),
+                _ => argv.push(arg.replace("{id}", id)),
+            }
+        }
+        Some(Launch::Program { argv, workdir })
     }
 
     /// Whether it opens a file named `name`.
@@ -169,6 +191,21 @@ mod tests {
         );
         assert_eq!(opener(&runners, "app.desktop").map(|r| r.kind), Some(Some(Kind::Desktop)));
         assert!(of_kind(&runners, Kind::Steam).is_none(), "no Steam runner: no Steam games");
+    }
+
+    #[test]
+    fn a_desktop_runners_launch_wraps_its_entries_commands() {
+        let runner = |launch: &[&str]| Runner { kind: Some(Kind::Desktop), launch: launch.iter().map(|a| (*a).to_owned()).collect(), ..Runner::default() };
+        let exec = Launch::Program { argv: vec!["waydroid".into(), "app".into(), "launch".into(), "org.x".into()], workdir: None };
+        let args = |l: Option<Launch>| match l {
+            Some(Launch::Program { argv, .. }) => argv,
+            _ => vec![],
+        };
+        assert_eq!(args(runner(&["clamshell-android", "{id}"]).wrap("waydroid.org.x", &exec, None)), ["clamshell-android", "waydroid.org.x"]);
+        assert_eq!(args(runner(&["gamemoderun", "{exec}"]).wrap("x", &exec, None)), ["gamemoderun", "waydroid", "app", "launch", "org.x"]);
+        assert!(runner(&[]).wrap("x", &exec, None).is_none(), "none: the entry's own");
+        let home = Path::new("/home/thor");
+        assert_eq!(args(runner(&["~/.local/bin/a", "{id}"]).wrap("x", &exec, Some(home))), ["/home/thor/.local/bin/a", "x"], "~/ the home dir");
     }
 
     #[test]

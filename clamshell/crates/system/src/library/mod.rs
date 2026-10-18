@@ -456,6 +456,10 @@ impl Builder<'_> {
                 continue;
             };
             game.runner = Some(runner.of());
+            // (A desktop runner's own command, if it has one, instead of the desktop file's.)
+            if let Some(launch) = game.id.strip_prefix("desktop:").and_then(|id| runner.wrap(id, &game.launch, self.sources.home.as_deref())) {
+                game.launch = launch;
+            }
             let how = match (rule.metadata.as_deref(), &game.launch) {
                 (Some("steam"), Launch::Steam { appid }) => Some(How::Steam(*appid)),
                 (metadata, _) => self.how(&game.id, metadata),

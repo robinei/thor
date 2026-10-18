@@ -21,6 +21,7 @@
   ],
   "runners": [
     { "type": "desktop", "id": "desktop", "name": "Desktop", "match": ["*.desktop"] },
+    { "type": "desktop", "id": "android", "name": "Android", "launch": ["~/.local/bin/clamshell-android", "{id}"] },
     { "type": "steam", "id": "steam", "name": "Steam" },
     { "id": "nes", "name": "NES", "match": ["*.nes"], "launch": ["retroarch", "-f", "-L", "/usr/lib/libretro/nestopia_libretro.so", "{path}"] },
     { "id": "snes", "name": "SNES", "match": ["*.sfc", "*.smc"], "launch": ["retroarch", "-f", "-L", "/usr/lib/libretro/snes9x_libretro.so", "{path}"] },
@@ -51,6 +52,8 @@
     { "type": "dir", "id": "films", "dir": "~/Videos/Films", "place": "@films", "match": ["*.mkv", "*.mp4", "*.avi", "*.webm", "*/*.mkv", "*/*.mp4", "*/*.avi", "*/*.webm"], "metadata": "tmdb:movie" },
     { "type": "dir", "id": "tv", "dir": "~/Videos/TV", "place": "@tv", "match": ["*/"], "items": ["*.mkv", "*.mp4", "*.avi", "*.webm"], "metadata": "tmdb:tv" },
     { "type": "steam", "place": "@steam", "metadata": "steam" },
+    { "type": "desktop", "id": "Waydroid", "hide": true },
+    { "type": "desktop", "id": "waydroid.*", "place": "@apps", "runner": "android" },
     { "type": "desktop", "id": "steam", "place": "@apps" },
     { "type": "desktop", "id": "net.lutris.*", "place": "@apps" },
     { "type": "desktop", "id": "*heroicgameslauncher*", "place": "@apps" },
