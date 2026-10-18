@@ -136,6 +136,8 @@ impl Handles {
             Effect::Screenshot => self.system.send(crate::device::Command::Screenshot),
             Effect::Sleep => self.system.send(crate::device::Command::Sleep),
             Effect::SetTimeZone(zone) => self.system.send(crate::device::Command::SetTimeZone(zone.clone())),
+            Effect::SetNtp(on) => self.system.send(crate::device::Command::SetNtp(*on)),
+            Effect::StepClock(field, by) => self.system.send(crate::device::Command::StepClock(*field, *by)),
             Effect::Notify { summary, body, urgent } => {
                 self.system.send(crate::device::Command::Notify { summary: summary.clone(), body: body.clone(), urgent: *urgent })
             }
@@ -186,6 +188,7 @@ impl Handles {
             Save::Favourites(ids) => store.save_favourites(ids),
             Save::Resume(r) => store.save_resume(r),
             Save::Brightness(b) => store.save_brightness(b),
+            Save::TwelveHour(on) => store.save_twelve_hour(*on),
             Save::WindowRules(r) => store.save_window_rules(r),
             Save::Dock(ids) => store.save_dock(ids),
         };

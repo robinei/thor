@@ -54,8 +54,10 @@ settings.png becfe636e5580638
 slider.png 60f8652ce52bd759
 status-low.png 8fd48a0400d603bc
 sysinfo.png 474c131f5b78ffff
+time-by-hand.png a677c8f5d82d67ab
 time-europe.png edec0693e5b8f0f4
-time.png a867bd5b3af45c93
+time-zones.png 58411bd2679dcabb
+time.png 3099bb169c682a80
 top-actions.png 153ec8c429cbfd5e
 top-back.png 6d2e9824fb46b035
 top-folder.png e2ff5d57166bd438

@@ -267,6 +267,16 @@ impl Store {
         tx.commit()
     }
 
+    /// Whether clocks show 12 hours (`clock`: "12h"; else, or unsaved, 24).
+    pub fn twelve_hour(&self) -> Result<bool, Error> {
+        Ok(self.get("clock")?.as_deref() == Some("12h"))
+    }
+
+    pub fn save_twelve_hour(&mut self, on: bool) -> Result<(), Error> {
+        self.db.execute("INSERT OR REPLACE INTO kv (key, value) VALUES ('clock', ?1)", [if on { "12h" } else { "24h" }])?;
+        Ok(())
+    }
+
     pub fn brightness(&self) -> Result<Brightness, Error> {
         let mut b = Brightness { level: self.get("brightness")?.and_then(|l| l.parse::<u8>().ok()).map(|l| l.min(100)), shares: Vec::new() };
         let mut stmt = self.db.prepare("SELECT backlight, share FROM shares")?;

@@ -1,8 +1,9 @@
 //! The device as a whole: a screenshot of both screens (grim, through the compositor's screen capture),
 //! sleep through logind (suspend-then-hibernate where the system can, a swap file to hibernate to, else
 //! suspend; waking is noticed by the clock thread, see [`crate::sleep`]), and notifications through the
-//! session's notification daemon (mako, on the main screen); the time zone through timedated
-//! (`timedatectl`: setting it needs polkit's permission, which the image gives the session's user).
+//! session's notification daemon (mako, on the main screen); the time zone, whether the network sets
+//! the clock (NTP) and the clock itself through timedated (`timedatectl`: setting them needs polkit's
+//! permission, which the image gives the session's user).
 
 use std::io;
 use std::path::PathBuf;
@@ -25,6 +26,10 @@ pub enum Command {
     /// Read the time zone and the ones to choose from.
     ReadTime,
     SetTimeZone(String),
+    /// The network sets the clock (NTP), or not.
+    SetNtp(bool),
+    /// The clock a step of a field on (or back), in local time.
+    StepClock(clamshell_core::ClockField, i8),
 }
 
 #[zbus::proxy(
@@ -61,6 +66,20 @@ pub fn spawn(screenshots: Option<PathBuf>, sink: impl Sink) -> io::Result<Worker
                 Command::SetTimeZone(zone) => {
                     let error = set_time_zone(&zone).err();
                     if sink.send(Event::Reading(Reading::Time(read_time(error)))).is_err() {
+                        return;
+                    }
+                }
+                Command::SetNtp(on) => {
+                    let error = timedatectl(&["set-ntp", if on { "true" } else { "false" }]).err();
+                    if sink.send(Event::Reading(Reading::Time(read_time(error)))).is_err() {
+                        return;
+                    }
+                }
+                Command::StepClock(field, by) => {
+                    let error = step_clock(field, by).err();
+                    // (The clock moved: the time now, then the reading.)
+                    let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
+                    if sink.send(Event::Tick { unix_secs: now }).is_err() || sink.send(Event::Reading(Reading::Time(read_time(error)))).is_err() {
                         return;
                     }
                 }
@@ -133,23 +152,51 @@ fn read_time(error: Option<String>) -> TimeZones {
     let current = text(&["show", "--property=Timezone", "--value"]).map(|z| z.trim().to_owned()).filter(|z| !z.is_empty());
     let zones: Vec<String> = text(&["list-timezones"]).map(|list| list.lines().map(str::to_owned).collect()).unwrap_or_default();
     let error = error.or_else(|| (current.is_none() || zones.is_empty()).then(|| "Couldn't read the time zone (timedatectl)".to_owned()));
-    TimeZones { current, zones, error }
+    // "CanNTP=yes", "NTP=no", "NTPSynchronized=no".
+    let sync = text(&["show", "--property=CanNTP", "--property=NTP", "--property=NTPSynchronized"]).unwrap_or_default();
+    let yes = |key: &str| sync.lines().any(|l| l.strip_prefix(key).and_then(|v| v.strip_prefix('=')) == Some("yes"));
+    let ntp = yes("CanNTP").then(|| yes("NTP"));
+    TimeZones { current, zones, ntp, synced: yes("NTPSynchronized"), error }
 }
 
-/// Sets the system's time zone; what timedatectl said, if it failed (polkit refusing, an unknown zone).
-fn set_time_zone(zone: &str) -> Result<(), String> {
+/// timedatectl with `args`, without asking for a password (polkit allows the session's user); what it
+/// said, if it failed.
+fn timedatectl(args: &[&str]) -> Result<(), String> {
     let out = std::process::Command::new("timedatectl")
-        .args(["--no-ask-password", "set-timezone", zone])
+        .arg("--no-ask-password")
+        .args(args)
         .stdin(std::process::Stdio::null())
         .output()
         .map_err(|e| format!("timedatectl: {e}"))?;
     if out.status.success() {
-        log::info!("time zone: {zone}");
+        log::info!("timedatectl {}", args.join(" "));
         return Ok(());
     }
     let said = String::from_utf8_lossy(&out.stderr).trim().to_owned();
-    log::warn!("time zone {zone}: {said}");
-    Err(format!("Couldn't set {zone}: {said}"))
+    log::warn!("timedatectl {}: {said}", args.join(" "));
+    Err(format!("Couldn't: {said}"))
+}
+
+/// The clock a step of `field` on (`by` 1) or back (-1), as the local time has it (a month on from the
+/// 31st: the month's last day), set by timedated.
+fn step_clock(field: clamshell_core::ClockField, by: i8) -> Result<(), String> {
+    use clamshell_core::ClockField;
+    let now = jiff::Zoned::now();
+    let by = i64::from(by);
+    let span = match field {
+        ClockField::Minute => jiff::Span::new().minutes(by),
+        ClockField::Hour => jiff::Span::new().hours(by),
+        ClockField::Day => jiff::Span::new().days(by),
+        ClockField::Month => jiff::Span::new().months(by),
+        ClockField::Year => jiff::Span::new().years(by),
+    };
+    let then = now.checked_add(span).map_err(|e| format!("Couldn't: {e}"))?;
+    timedatectl(&["set-time", &then.strftime("%Y-%m-%d %H:%M:%S").to_string()])
+}
+
+/// Sets the system's time zone; what timedatectl said, if it failed (polkit refusing, an unknown zone).
+fn set_time_zone(zone: &str) -> Result<(), String> {
+    timedatectl(&["set-timezone", zone])
 }
 
 /// A notification through the session bus' notification daemon, replacing `replaces` (0: none); its id.

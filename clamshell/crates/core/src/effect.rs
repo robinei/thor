@@ -96,6 +96,11 @@ pub enum Effect {
     Screenshot,
     /// Set the system's time zone (tzdata's name); the time zones are read again after.
     SetTimeZone(String),
+    /// The system's clock set by the network (NTP), or not; read again after.
+    SetNtp(bool),
+    /// The system's clock moved by a step of one of its fields, as the local time has it (a month on
+    /// from the 31st: the month's last day); read again after.
+    StepClock(crate::time::ClockField, i8),
     /// A desktop notification (on the main screen, over a game: the notification daemon's), urgent ones
     /// staying until dismissed.
     Notify {
@@ -142,6 +147,8 @@ pub enum Save {
     WindowRules(crate::bottom_screen::WindowRules),
     /// The dock's pinned entries' ids, in order.
     Dock(Vec<std::sync::Arc<str>>),
+    /// Clocks on a 12-hour dial, or 24-hour.
+    TwelveHour(bool),
 }
 
 /// What the compositor is asked to do.

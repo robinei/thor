@@ -13,7 +13,7 @@ use clamshell_core::settings::Setting;
 use clamshell_core::slider::Control;
 use clamshell_core::{
     Dock, EditorId, Event, GameEvent, Id, Init, KeymapId, LevelEvent, Library, ListEvent, ListId, PointerEvent, Reading, Scope, SettingsId, ShelfEvent,
-    ShelfId, Slide, State, Status, Tab, Target,
+    ShelfId, Slide, State, Status, Tab, Target, TimeId,
 };
 use clamshell_ui::Screen;
 
@@ -405,8 +405,22 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
             vec![],
             vec![
                 shot("time.png", Bottom, vec![tab(Tab::Time), Reading::Time(demo::time_zones()).into()]),
+                shot("time-zones.png", Bottom, vec![PointerEvent::Activate(Id::Time(TimeId::Zone)).into()]),
                 shot("time-europe.png", Bottom, vec![PointerEvent::Activate(ListId::Time.row(7)).into()]),
             ],
+        ),
+        // The clock set by hand, on a 12-hour dial.
+        group(
+            vec![],
+            vec![shot(
+                "time-by-hand.png",
+                Bottom,
+                vec![
+                    tab(Tab::Time),
+                    Reading::Time(clamshell_core::TimeZones { ntp: Some(false), ..demo::time_zones() }).into(),
+                    PointerEvent::Activate(Id::Time(TimeId::TwelveHour)).into(),
+                ],
+            )],
         ),
         group(vec![], vec![shot("bluetooth.png", Bottom, vec![tab(Tab::Bluetooth), Reading::Bluetooth(demo::bluetooth()).into()])]),
         group(

@@ -71,7 +71,7 @@ pub use session::Session;
 pub use shelf::{Cursor, Shelf};
 pub use sys::{Status, Sys};
 pub use tab::{Bottom, Tab};
-pub use time::{TimeRow, TimeZones};
+pub use time::{ClockField, TimeId, TimePage, TimeRow, TimeZones};
 
 pub use clamshell_library::{BrowseKind, Browsed, Collection, Game, Launch, Library, Meta, RunnerOf, runner_key};
 
@@ -127,6 +127,8 @@ pub struct Init {
     pub device_session: bool,
     /// Which programs' windows go to the bottom screen.
     pub window_rules: bottom_screen::WindowRules,
+    /// Clocks on a 12-hour dial (else 24-hour).
+    pub twelve_hour: bool,
 }
 
 #[derive(Debug, Default)]
@@ -153,6 +155,11 @@ pub struct State {
     device_session: bool,
     /// Which programs' windows go to the bottom screen.
     window_rules: bottom_screen::WindowRules,
+    /// Clocks on a 12-hour dial (see [`crate::time`]).
+    pub(crate) twelve_hour: bool,
+    /// The clock was just stepped by hand: the next time read is a jump, not time gone by (idle starts
+    /// from it).
+    pub(crate) clock_stepped: bool,
     /// Metadata is being fetched; what shelf showed when it was last asked for first (see
     /// [`State::follow_shown`]).
     fetching: bool,
@@ -177,6 +184,7 @@ impl State {
             settings: init.settings,
             keymaps: init.keymaps,
             window_rules: init.window_rules,
+            twelve_hour: init.twelve_hour,
             levels: Levels::new(init.brightness),
             dock: init.dock,
             device_session: init.device_session,
@@ -449,6 +457,10 @@ impl State {
     /// The clock: once a minute the bar's clock and both screens' burn-in orbit step; starts systemd
     /// never listed are forgotten; what changed is saved once changes have stopped for a moment.
     fn tick(&mut self, unix_secs: u64) -> (Dirty, Vec<Effect>) {
+        // (A clock stepped by hand moved: no input missed meanwhile.)
+        if std::mem::take(&mut self.clock_stepped) {
+            self.idle.own_input(unix_secs);
+        }
         let minute_changed = unix_secs / 60 != self.unix_secs / 60;
         // The clock's first word: what idle heard before it was dated 0, as if decades ago. Count from now.
         if self.unix_secs == 0 {
@@ -613,10 +625,7 @@ impl State {
                 Some(window) => (Dirty::BOTH, self.show_program_down(window)),
                 None => (Dirty::NONE, vec![]),
             },
-            Id::TimeRegions => {
-                self.time_back();
-                (Dirty::BOTTOM, vec![])
-            }
+            Id::Time(id) => self.on_time(id),
             Id::PadMouse => {
                 self.pad.toggle_mouse();
                 (Dirty::BOTTOM, vec![])
@@ -857,6 +866,8 @@ impl State {
         self.dock.menu = None;
         self.dock.moving = None;
         self.levels.leave();
+        // (The time tab opens on its main page again.)
+        self.bottom.time_page = TimePage::Main;
         let watch = |tab: Tab, on| tab.watch().map(|w| Effect::Watch(w, on));
         watch(before, false).into_iter().chain(watch(tab, true)).collect()
     }

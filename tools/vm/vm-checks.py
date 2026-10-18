@@ -379,29 +379,51 @@ class Checks:
         self.check("bar: a tap on the dock opens it", until(lambda: tab() == "dock"), f"tab {tab()!r}")
 
     def time_zone(self):
-        """The clock opens the time tab; a region, then a zone in it, sets the system's time zone (the
-        session's user may: the polkit rule); back returns to the regions. The zone is put back after."""
-        before = sh("timedatectl show --property=Timezone --value").strip()
+        """The clock opens the time tab, on its main page; the time zone's row shows the regions, a region
+        then a zone in it sets the system's time zone (the session's user may: the polkit rule) and goes
+        back to the main page; back from a region goes to the regions. Then Set automatically off, the
+        hour stepped up and down, and on again. Put back after."""
+        zone = lambda: sh("timedatectl show --property=Timezone --value").strip()
+        ntp = lambda: sh("timedatectl show --property=NTP --value").strip()
+        before, ntp_before = zone(), ntp()
         since = now()
         self.icon("clock")
         self.check("time: a tap on the clock opens the time tab", until(lambda: tab() == "time") and logged(since, "Watch(Time, true)", 2),
                    f"tab {tab()!r}")
         # The regions: Africa, America, Antarctica, Arctic, Asia (the fifth), ...; Asia's first zone.
+        control("tap time-zone")
+        time.sleep(0.5)
         self.i.tap(300, TIME_FIRST_Y + 4 * ROW_H)
         time.sleep(0.5)
         since = now()
         self.i.tap(300, TIME_FIRST_Y)
-        zone = lambda: sh("timedatectl show --property=Timezone --value").strip()
-        self.check("  Asia, then its first zone, sets it", until(lambda: zone().startswith("Asia/")) and logged(since, "time zone: Asia/", 2),
+        self.check("  the time zone's row, Asia, then its first zone, sets it", until(lambda: zone().startswith("Asia/")) and logged(since, "set-timezone Asia/", 2),
                    f"time zone {zone()!r}")
-        self.i.tap(*TIME_BACK)
+        # From a region's zones, back to the regions: Africa's first zone.
+        control("tap time-zone")
         time.sleep(0.5)
-        since = now()
-        # Back at the regions: the last row, UTC, is out of sight; Africa's first zone instead.
+        self.i.tap(300, TIME_FIRST_Y + 4 * ROW_H)
+        time.sleep(0.5)
+        control("tap time-back")
+        time.sleep(0.5)
         self.i.tap(300, TIME_FIRST_Y)
         time.sleep(0.5)
         self.i.tap(300, TIME_FIRST_Y)
         self.check("  back to the regions, then Africa's first zone", until(lambda: zone().startswith("Africa/")), f"time zone {zone()!r}")
+        # Set automatically off: the clock by hand, an hour on and back.
+        if ntp() == "yes":
+            control("tap time-ntp")
+        self.check("  Set automatically off", until(lambda: ntp() == "no", 5), f"NTP {ntp()!r}")
+        clock = lambda: int(sh("date +%s").strip() or "0")
+        start = clock()
+        control("tap time-step hour up")
+        moved = until(lambda: clock() - start >= 3500, 5)
+        self.check("  the hour stepped up sets the clock an hour on", moved, f"{clock() - start} s on")
+        control("tap time-step hour down")
+        self.check("  and down, back", until(lambda: abs(clock() - start) < 120, 5), f"{clock() - start} s on")
+        if ntp_before == "yes":
+            control("tap time-ntp")
+            self.check("  Set automatically on again", until(lambda: ntp() == "yes", 5), f"NTP {ntp()!r}")
         sh(f"sudo timedatectl set-timezone {shlex.quote(before)}")
         self.icon("dock")
 

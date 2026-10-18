@@ -185,7 +185,7 @@ pub fn time_zones() -> clamshell_core::TimeZones {
         "Pacific/Auckland",
         "UTC",
     ];
-    clamshell_core::TimeZones { current: Some("Europe/Oslo".into()), zones: zones.map(String::from).to_vec(), error: None }
+    clamshell_core::TimeZones { current: Some("Europe/Oslo".into()), zones: zones.map(String::from).to_vec(), ntp: Some(true), synced: true, error: None }
 }
 
 /// A minute of made-up readings, then the sysinfo tab.

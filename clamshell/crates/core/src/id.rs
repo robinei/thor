@@ -52,8 +52,8 @@ pub enum Id {
     /// The second screen below the bar where there is nothing: a tap does nothing, a finger moving
     /// points (see [`crate::touch`]).
     Blank,
-    /// The time tab's way back from a region's zones to the regions.
-    TimeRegions,
+    /// The time tab's (see [`crate::time`]).
+    Time(crate::time::TimeId),
     /// The bar's button for the front program's windows on the bottom screen, hidden by ClamShell's view:
     /// they are shown.
     BottomWindows,

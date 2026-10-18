@@ -1,7 +1,9 @@
-// The session's user (thor) sets the time zone from ClamShell's time tab without a password prompt (there
-// is no polkit agent to ask). Installed in /etc/polkit-1/rules.d by thor-image.sh, and in the VM.
+// The session's user (thor) sets the time zone, whether the network sets the clock, and the clock itself
+// from ClamShell's time tab without a password prompt (there is no polkit agent to ask). Installed in
+// /etc/polkit-1/rules.d by thor-image.sh, and in the VM.
 polkit.addRule(function (action, subject) {
-    if (action.id == "org.freedesktop.timedate1.set-timezone" && subject.user == "thor") {
+    var time = ["org.freedesktop.timedate1.set-timezone", "org.freedesktop.timedate1.set-ntp", "org.freedesktop.timedate1.set-time"];
+    if (time.indexOf(action.id) >= 0 && subject.user == "thor") {
         return polkit.Result.YES;
     }
 });

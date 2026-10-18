@@ -8,7 +8,6 @@ use std::fmt;
 use std::io::BufRead;
 use std::path::PathBuf;
 
-use clamshell_core::Scope;
 use clamshell_core::hardware::DeviceKey;
 use clamshell_core::keyboard::{self, Key, Modifier, Named};
 use clamshell_core::keymap::{Actuation, Dir, Input, Layer, MouseButton, PadOut, Param, Side};
@@ -19,6 +18,7 @@ use clamshell_core::{
     BtId, DockId, EditorId, Event, Id, KeymapId, LevelEvent, ListId, PadInput, PointerEvent, RowPart, SettingsId, ShelfEvent, ShelfId, Slide, Tab, Target,
     WifiId,
 };
+use clamshell_core::{ClockField, Scope, TimeId};
 use clamshell_system::{Sink, worker};
 
 /// The layout width a slide's positions are on (the second screen at half size).
@@ -227,6 +227,26 @@ pub const TARGETS: &[Form<Id>] = &[
     ),
     form("network N", "Wi-Fi's network row N", |a| Ok(ListId::Wifi.row(number(arg(a, 0))?))),
     form("wifi-power", "Wi-Fi's switch", |_| Ok(Id::Wifi(WifiId::Power))),
+    form("time-zone", "the time tab's time zone row (the regions)", |_| Ok(Id::Time(TimeId::Zone))),
+    form("time-back", "the time tab's way back (a region's zones to the regions, those to its main page)", |_| Ok(Id::Time(TimeId::Back))),
+    form("time-ntp", "the time tab's Set automatically switch", |_| Ok(Id::Time(TimeId::Ntp))),
+    form("time-12h", "the time tab's 24-hour clock switch", |_| Ok(Id::Time(TimeId::TwelveHour))),
+    form("time-step FIELD DIR", "the time tab's arrow of a field (day, month, year, hour, minute), up or down", |a| {
+        let field = match arg(a, 0) {
+            "day" => ClockField::Day,
+            "month" => ClockField::Month,
+            "year" => ClockField::Year,
+            "hour" => ClockField::Hour,
+            "minute" => ClockField::Minute,
+            other => return Err(name_err(other)),
+        };
+        let up = match arg(a, 1) {
+            "up" => true,
+            "down" => false,
+            other => return Err(name_err(other)),
+        };
+        Ok(Id::Time(TimeId::Step(field, up)))
+    }),
     form("device N", "Bluetooth's device row N", |a| Ok(ListId::Bluetooth.row(number(arg(a, 0))?))),
     form("bluetooth-power", "Bluetooth's switch", |_| Ok(Id::Bluetooth(BtId::Power))),
     form("pad-mouse", "the bar's pad mouse switch", |_| Ok(Id::PadMouse)),

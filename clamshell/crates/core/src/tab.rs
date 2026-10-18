@@ -96,8 +96,8 @@ pub struct Bottom {
     pub(crate) woken: bool,
     /// What the bottom screen shows (ClamShell's view or a window moved down), and whether it is off.
     pub(crate) screen: crate::bottom_screen::BottomScreen,
-    /// The time tab's region open (in [`crate::time::REGIONS`]), if one is.
-    pub(crate) time_region: Option<u8>,
+    /// What the time tab shows: its main page, the regions, or a region's zones.
+    pub(crate) time_page: crate::time::TimePage,
     /// What a key just did (a level, a screenshot), shown under the bar for a moment.
     pub(crate) notice: Option<crate::hardware::Notice>,
     /// The area below the bar points (see [`crate::touch`]).

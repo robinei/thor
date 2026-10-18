@@ -376,6 +376,7 @@ dependencies = [
  "clamshell-core",
  "clamshell-library",
  "evdev",
+ "jiff",
  "log",
  "rusqlite",
  "rustix",

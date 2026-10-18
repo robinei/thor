@@ -247,6 +247,8 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       hibernate at 3 %. After a resume: ClamShell logs "woke from sleep" and "settings applied", and both
       screens redraw. In the x86 VM the image is written and found, but the resumed machine
       sometimes resets at once, or QEMU's ACPI S4 wakes the hibernating kernel; one resume went through.
+- [ ] Time tab: the time zone set from the regions; "Set automatically" off and on (timesyncd); with it
+      off, the date and time stepped (the bar's clock follows at once); 24-hour clock off and on.
 - [ ] The launcher under real use: tools/vm/vm.py's checks again, on the device.
 - [ ] FEX for x86 games (32-bit Windows games are the open question).
 

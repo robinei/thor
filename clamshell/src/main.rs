@@ -152,6 +152,7 @@ fn saved(paths: &Paths) -> Init {
         keymaps,
         window_rules: or_default("window rules", store.window_rules()),
         brightness: or_default("brightness", store.brightness()),
+        twelve_hour: or_default("clock", store.twelve_hour()),
         dock: or_default("dock", store.dock()),
         resume: or_default("resume", store.resume()),
         ..Init::default()
