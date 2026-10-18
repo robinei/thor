@@ -31,6 +31,8 @@
 //!   tab, or hides it; without one, a game (`Categories=Game`, not `Emulator`) goes in Games, the rest in
 //!   Apps; `group` puts it in a folder of the tab. `{ "name": "Battle.net", "tab": "Apps" }`,
 //!   `{ "id": "net.lutris.*", "tab": "Games", "group": "Launchers" }`, `{ "id": "*uninstall*", "hide": true }`.
+//! - `steam`: `{ "group": "Steam" }` puts Steam's installed games in a folder of Games, as a source's
+//!   `group` does; without it they are at Games' top.
 //! - `group`: a folder in the tab for the source's entries (`SNES`, or `Handhelds/GBA` for one in
 //!   another), so one tab can hold folders each with its own launch command; sources naming the same
 //!   folder share it. The folder's art: `poster`, `cover` or `folder` in the source's dir.
@@ -59,6 +61,17 @@ pub struct Config {
     /// game, Apps for the rest).
     #[serde(default)]
     pub desktop: Vec<DesktopRule>,
+    /// Steam's installed games: in a folder of Games (`group`), or at its top.
+    #[serde(default)]
+    pub steam: SteamConfig,
+}
+
+/// Where Steam's games go: `{ "group": "Steam" }`, a folder of Games (as a source's `group`).
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SteamConfig {
+    #[serde(default)]
+    pub group: Option<String>,
 }
 
 /// A rule for desktop files: those matching all of its `id`, `name` and `categories` (globs, any case;

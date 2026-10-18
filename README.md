@@ -45,7 +45,9 @@ another), so one Games tab can hold a folder per system, each with its own launc
 Desktop files' apps and games go in Games (`Categories=Game`) or Apps unless `desktop` rules say otherwise:
 the first rule matching an entry's desktop id, name or categories (globs, any case) puts it in a tab or
 hides it (`group` puts it in a folder of the tab, as a source's does), e.g.
-`{ "id": "net.lutris.*", "tab": "Games", "group": "Launchers" }`, `{ "name": "*Uninstall*", "hide": true }`.
+`{ "id": "net.lutris.*", "tab": "Games", "group": "Launchers" }`, `{ "name": "*Uninstall*", "hide": true }`. Steam's installed games go
+at the top of Games, or in a folder of it with `"steam": { "group": "Steam" }`. In every list, folders come
+first.
 The rules (ids, titles, art, icons): `crates/system/src/library/content.rs`.
 
 Covers, screenshots, descriptions, developers and years are fetched in the background after start

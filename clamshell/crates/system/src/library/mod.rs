@@ -102,6 +102,12 @@ const TOOLS: [(&str, &str, &str, &str); 2] = [
     ("tool:refetch", "Fetch missing art again", "refetch", "Tries again for the entries whose covers and details weren't found, then rescans."),
 ];
 
+/// The order of a tab's or a folder's entries: folders first, then by title.
+fn list_order(games: &[Game], a: usize, b: usize) -> std::cmp::Ordering {
+    let key = |i: usize| games.get(i).map(|g| (!g.is_group(), &g.sort_key, &g.title));
+    key(a).cmp(&key(b))
+}
+
 /// The first frame (a video's, in order, all the way down) in folder `i`.
 fn first_frame(library: &Library, i: usize) -> Option<PathBuf> {
     let g = library.games.get(i)?;
@@ -197,6 +203,10 @@ pub fn load(sources: &Sources) -> Loaded {
             hows.push((i, How::Steam(*appid)));
         }
     }
+    let steam = match config.steam.group.as_deref().map(|g| g.trim_matches('/')).filter(|g| !g.is_empty()) {
+        Some(path) => into_folder(&mut games, &mut folders, GAMES, path, Path::new(""), &steam).into_iter().collect(),
+        None => steam,
+    };
     add(&mut collections, GAMES, Some("gamepad"), steam);
     // The desktop files' apps and games: where library.json's rules put them, else Games for a game and
     // Apps for the rest (the games first, then the apps, each tab made where it is first named).
@@ -228,23 +238,17 @@ pub fn load(sources: &Sources) -> Loaded {
         };
         add(&mut collections, &tab, icon.as_deref(), i);
     }
-    // A folder's entries (from its sources, and its folders) by title.
+    // A folder's entries (from its sources, and its folders) in list order.
     for &f in folders.values() {
         let mut items = games.get(f).map(|g| g.items.clone()).unwrap_or_default();
-        items.sort_by(|&a, &b| {
-            let key = |i: usize| games.get(i).map(|g| (&g.sort_key, &g.title));
-            key(a).cmp(&key(b))
-        });
+        items.sort_by(|&a, &b| list_order(&games, a, b));
         if let Some(g) = games.get_mut(f) {
             g.items = items;
         }
     }
     collections.retain(|c| !c.games.is_empty());
     for c in &mut collections {
-        c.games.sort_by(|&a, &b| {
-            let key = |i: usize| games.get(i).map(|g| (&g.sort_key, &g.title));
-            key(a).cmp(&key(b))
-        });
+        c.games.sort_by(|&a, &b| list_order(&games, a, b));
     }
     // ClamShell's own tools, last, in their order.
     let first = games.len();
@@ -338,6 +342,35 @@ mod tests {
     use super::*;
 
     #[test]
+    fn folders_come_first_and_steam_can_have_its_own() {
+        let root = std::env::temp_dir().join(format!("clamshell-steam-group-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let steam = root.join("steam");
+        std::fs::create_dir_all(steam.join("steamapps")).unwrap();
+        std::fs::write(steam.join("steamapps/libraryfolders.vdf"), format!("\"libraryfolders\" {{ \"0\" {{ \"path\" \"{}\" }} }}", steam.display())).unwrap();
+        let manifest = |id: u32, name: &str| format!("\"AppState\" {{ \"appid\" \"{id}\" \"name\" \"{name}\" \"StateFlags\" \"4\" }}");
+        std::fs::write(steam.join("steamapps/appmanifest_10.acf"), manifest(10, "Arma")).unwrap();
+        std::fs::write(steam.join("steamapps/appmanifest_20.acf"), manifest(20, "Zork")).unwrap();
+        std::fs::create_dir_all(root.join("snes")).unwrap();
+        std::fs::write(root.join("snes/Mario.sfc"), "").unwrap();
+        let config = |steam_group: &str| {
+            format!(
+                r#"{{ {steam_group} "sources": [{{ "tab": "Games", "group": "SNES", "id": "snes", "dir": "{}", "match": ["*.sfc"], "launch": ["retroarch", "{{path}}"] }}] }}"#,
+                root.join("snes").display()
+            )
+        };
+        let games_tab = |json: &str| {
+            std::fs::write(root.join("library.json"), json).unwrap();
+            let lib = load(&Sources { config: Some(root.join("library.json")), steam: Some(steam.clone()), ..Sources::default() }).library;
+            let tab = lib.collections.iter().find(|c| c.name == "Games").unwrap();
+            tab.games.iter().map(|&i| lib.games[i].title.clone()).collect::<Vec<_>>()
+        };
+        assert_eq!(games_tab(&config("")), ["SNES", "Arma", "Zork"], "the folder first, before Arma");
+        assert_eq!(games_tab(&config(r#""steam": { "group": "Steam" },"#)), ["SNES", "Steam"], "Steam's games in their folder");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn desktop_rules_move_or_hide_entries() {
         let rule = |json: &str| serde_json::from_str::<content::DesktopRule>(json).unwrap();
         let cats = |c: &[&str]| c.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
@@ -402,18 +435,18 @@ mod tests {
         assert_eq!(lib.collections.last().map(|c| c.name.as_str()), Some("Tools"));
         let games = |ids: &[usize]| ids.iter().map(|&i| lib.games[i].title.clone()).collect::<Vec<_>>();
         let tab = lib.collections.iter().find(|c| c.name == "Games").unwrap();
-        assert_eq!(games(&tab.games), ["Doom", "Handhelds", "SNES"]);
-        let snes = &lib.games[tab.games[2]];
+        assert_eq!(games(&tab.games), ["Handhelds", "SNES", "Doom"], "folders first");
+        let snes = &lib.games[tab.games[1]];
         assert_eq!(games(&snes.items), ["Mario", "Zelda"]);
         assert_eq!(snes.box_front, Some(root.join("snes/cover.png")), "its source's dir's art");
         let zelda = &lib.games[snes.items[1]];
         assert!(matches!(&zelda.launch, Launch::Program { argv, .. } if argv[0] == "snes9x"));
         assert_eq!(&*zelda.id, "snes:Zelda.sfc", "ids as without the folder");
-        let handhelds = &lib.games[tab.games[1]];
+        let handhelds = &lib.games[tab.games[0]];
         let gba = &lib.games[handhelds.items[0]];
         assert_eq!((gba.title.as_str(), games(&gba.items)), ("GBA", vec!["Metroid".to_owned()]));
         assert!(matches!(&lib.games[gba.items[0]].launch, Launch::Program { argv, .. } if argv[0] == "mgba"));
-        assert_eq!(lib.groups_of(gba.items[0]), [tab.games[1], handhelds.items[0]]);
+        assert_eq!(lib.groups_of(gba.items[0]), [tab.games[0], handhelds.items[0]]);
         let _ = std::fs::remove_dir_all(&root);
     }
 }
