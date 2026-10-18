@@ -6,13 +6,13 @@ bluetooth.png ca86ea1f69427d89
 bottom.png 99b9ca29f5805933
 brightness.png 62ac992942d0f2a1
 dock-menu.png 0bcc01b7e2297560
-keyboard-back.png a9f7e1a5e83f70b9
-keyboard-caps.png def223ab4516d23d
+keyboard-back.png e97a7cecbba40e2c
+keyboard-caps.png 7f30ffac03cd8682
 keyboard-fn.png c08618e0f316c83d
-keyboard-mods.png edb39d1afc8ed5ea
-keyboard-pressed.png 6e2d215bac052491
-keyboard.png d4482b1fb0ee12e2
-keymap-capture.png ff447f1cad1f3c0a
+keyboard-mods.png b7c059190830c503
+keyboard-pressed.png 37a601c0d42b96e1
+keyboard.png 703a328f4fa8020b
+keymap-capture.png d00a0c796de3b645
 keymap-delete.png 93b7d88eeeb6d59b
 keymap-edit-back.png 57e1c2329eb96089
 keymap-edit-gyro-accel.png d10ba429c1ffbd84
@@ -36,7 +36,7 @@ keymap-layers.png a76003cbc01b9b55
 keymap-load.png 1af04b2660c10e8b
 keymap-menu.png 37e24e36f9c8540a
 keymap-mouse.png 67c363d86372b1ba
-keymap-name.png 1ae337085b79e3bd
+keymap-name.png 8482289e34a9ea1c
 keymap-own-kept.png 27e9be5365a89b9f
 keymap-own-menu.png 40f3fcfed20eb696
 keymap-own.png 51719398be5298dd
@@ -47,7 +47,7 @@ keymaps-chosen.png 7d4ceba84dae003a
 keymaps.png f133c53f67c0912d
 launcher-running.png 2fec735a95f28a78
 launcher.png ff7c584c3e7c8f0f
-settings-env.png d178e6d16d1252ba
+settings-env.png 817534091cbf35d0
 settings-global.png 9dacc721ecbc2033
 settings-running.png ed96b711a89b3da9
 settings.png becfe636e5580638

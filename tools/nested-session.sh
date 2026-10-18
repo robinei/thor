@@ -11,6 +11,9 @@
 #   tools/nested-session.sh
 set -eu
 REPO=$(cd "$(dirname "$0")/.." && pwd)
+# (The user's login shell for what ClamShell starts, foot's shell: not whatever SHELL started this.)
+SHELL=$(getent passwd "$(id -un)" | cut -d: -f7)
+export SHELL
 BIN=$REPO/clamshell/target/fast/clamshell
 (cd "$REPO/clamshell" && cargo build --profile fast --quiet) || exit 1
 CONF=$(mktemp "${XDG_RUNTIME_DIR:-/tmp}/clamshell-nested.XXXXXX.conf")

@@ -44,7 +44,8 @@ impl Tone {
             Tone::High => 0xc8c8d0,
             Tone::Accent => 0xe0a040,
             Tone::Go => 0x45a866,
-            Tone::Stop => 0xc45a5a,
+            // (The terminal's red, foot.ini's.)
+            Tone::Stop => 0xc0605a,
             Tone::Fn => 0x5f82b8,
         })
     }
