@@ -196,41 +196,42 @@ pub fn load(sources: &Sources) -> Loaded {
         games.extend(more);
         (first..games.len()).collect::<Vec<_>>()
     };
-    let steam = sources.steam.as_deref().map(steam::games).unwrap_or_default();
-    let steam = extend(&mut games, steam);
-    for &i in &steam {
-        if let Some(Launch::Steam { appid }) = games.get(i).map(|g| &g.launch) {
-            hows.push((i, How::Steam(*appid)));
-        }
-    }
-    let steam = match config.steam.group.as_deref().map(|g| g.trim_matches('/')).filter(|g| !g.is_empty()) {
-        Some(path) => into_folder(&mut games, &mut folders, GAMES, path, Path::new(""), &steam).into_iter().collect(),
-        None => steam,
-    };
-    add(&mut collections, GAMES, Some("gamepad"), steam);
-    // The desktop files' apps and games: where library.json's rules put them, else Games for a game and
-    // Apps for the rest (the games first, then the apps, each tab made where it is first named).
+    // Steam's installed games and the desktop files' apps and games: where library.json's rules put them,
+    // else Games for a game and Apps for an app (the games first, then the apps, each tab made where it is
+    // first named).
     let mut placed: Vec<(String, Option<String>, Option<String>, Game)> = Vec::new();
-    for d in crate::desktop::entries(&sources.data_dirs) {
-        let rule = config.desktop.iter().find(|r| r.matches(&d.id, &d.name, &d.categories));
+    let mut place = |rules: &[content::Rule], id: &str, name: &str, categories: &[String], game: Game| {
+        let rule = rules.iter().find(|r| r.matches(id, name, categories));
         if rule.is_some_and(|r| r.hide) {
-            continue;
+            return;
         }
-        let default = if d.game.tool { APPS } else { GAMES };
+        let default = if game.tool { APPS } else { GAMES };
         let tab = rule.and_then(|r| r.tab.clone()).unwrap_or_else(|| default.to_owned());
-        let icon = rule.and_then(|r| r.icon.clone()).or_else(|| (tab == default).then(|| if d.game.tool { "apps" } else { "gamepad" }.to_owned()));
+        let icon = rule.and_then(|r| r.icon.clone()).or_else(|| (tab == default).then(|| if game.tool { "apps" } else { "gamepad" }.to_owned()));
         // (In Apps: an app, which Recent leaves out; anywhere else, played like a game.)
-        let game = Game { tool: tab == APPS, ..d.game };
+        let game = Game { tool: tab == APPS, ..game };
         let group = rule.and_then(|r| r.group.clone()).map(|g| g.trim_matches('/').to_owned()).filter(|g| !g.is_empty());
         placed.push((tab, icon, group, game));
+    };
+    for game in sources.steam.as_deref().map(steam::games).unwrap_or_default() {
+        let appid = match game.launch {
+            Launch::Steam { appid } => appid.to_string(),
+            _ => String::new(),
+        };
+        place(&config.steam, &appid, &game.title.clone(), &[], game);
+    }
+    for d in crate::desktop::entries(&sources.data_dirs) {
+        place(&config.desktop, &d.id, &d.name, &d.categories, d.game);
     }
     placed.sort_by_key(|(_, _, _, g)| g.tool);
     for (tab, icon, group, game) in placed {
-        let tool = game.tool;
+        let how = match game.launch {
+            Launch::Steam { appid } => Some(How::Steam(appid)),
+            _ if config.keys.steamgriddb.is_some() && !game.tool => Some(How::SteamGridDb),
+            _ => None,
+        };
         let i = extend(&mut games, vec![game]);
-        if config.keys.steamgriddb.is_some() && !tool {
-            hows.extend(i.iter().map(|&i| (i, How::SteamGridDb)));
-        }
+        hows.extend(how.into_iter().flat_map(|how| i.iter().map(move |&i| (i, how.clone()))));
         // In a folder of the tab (as a source's `group`), or at its top.
         let i = match group {
             Some(path) => into_folder(&mut games, &mut folders, &tab, &path, Path::new(""), &i).into_iter().collect(),
@@ -366,13 +367,22 @@ mod tests {
             tab.games.iter().map(|&i| lib.games[i].title.clone()).collect::<Vec<_>>()
         };
         assert_eq!(games_tab(&config("")), ["SNES", "Arma", "Zork"], "the folder first, before Arma");
-        assert_eq!(games_tab(&config(r#""steam": { "group": "Steam" },"#)), ["SNES", "Steam"], "Steam's games in their folder");
+        assert_eq!(games_tab(&config(r#""steam": [{ "group": "Steam" }],"#)), ["SNES", "Steam"], "Steam's games in their folder");
+        // By name or app id, into folders, or hidden; the rest by the rule matching anything.
+        let rules = r#""steam": [{ "name": "z*", "group": "Steam/Text" }, { "id": "10", "hide": true }, { "group": "Steam" }],"#;
+        std::fs::write(steam.join("steamapps/appmanifest_30.acf"), manifest(30, "Celeste")).unwrap();
+        std::fs::write(root.join("library.json"), config(rules)).unwrap();
+        let lib = load(&Sources { config: Some(root.join("library.json")), steam: Some(steam.clone()), ..Sources::default() }).library;
+        let titles = |ids: &[usize]| ids.iter().map(|&i| lib.games[i].title.clone()).collect::<Vec<_>>();
+        let folder = |title: &str| lib.games.iter().find(|g| g.title == title).unwrap();
+        assert_eq!(titles(&folder("Steam").items), ["Text", "Celeste"], "Arma hidden");
+        assert_eq!(titles(&folder("Text").items), ["Zork"]);
         let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
     fn desktop_rules_move_or_hide_entries() {
-        let rule = |json: &str| serde_json::from_str::<content::DesktopRule>(json).unwrap();
+        let rule = |json: &str| serde_json::from_str::<content::Rule>(json).unwrap();
         let cats = |c: &[&str]| c.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
         assert!(rule(r#"{ "name": "battle.NET", "tab": "Apps" }"#).matches("net.lutris.battlenet-1", "Battle.net", &cats(&["Game"])), "any case");
         assert!(rule(r#"{ "id": "*lutris*" }"#).matches("net.lutris.Lutris", "Lutris", &[]));

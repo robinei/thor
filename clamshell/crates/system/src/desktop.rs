@@ -17,7 +17,7 @@ pub fn data_dirs() -> Vec<PathBuf> {
 }
 
 /// An installed app or game: its entry, and what library.json's desktop rules match it by (see
-/// [`crate::library::content::DesktopRule`]).
+/// [`crate::library::content::Rule`]).
 #[derive(Debug, Clone)]
 pub struct Desktop {
     /// The desktop file's id (its name without `.desktop`).

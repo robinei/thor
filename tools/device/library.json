@@ -1,6 +1,6 @@
 {
   "keys": {},
-  "steam": { "group": "Steam" },
+  "steam": [{ "group": "Steam" }],
   "desktop": [
     { "id": "steam", "tab": "Apps" },
     { "id": "net.lutris.*", "tab": "Apps" },

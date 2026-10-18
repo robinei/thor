@@ -26,13 +26,14 @@
 //!   folder (any case: `Cover.jpg`); else the group's, but for a video mpv plays (its frame is its
 //!   picture).
 //! - `icon`: the tab's icon; sources in the same tab need it once.
-//! - `desktop`: rules for the desktop files' apps and games (see [`DesktopRule`]): the first one
-//!   matching an entry (by its desktop file's id, its name, its categories: globs, any case) puts it in a
-//!   tab, or hides it; without one, a game (`Categories=Game`, not `Emulator`) goes in Games, the rest in
-//!   Apps; `group` puts it in a folder of the tab. `{ "name": "Battle.net", "tab": "Apps" }`,
-//!   `{ "id": "net.lutris.*", "tab": "Games", "group": "Launchers" }`, `{ "id": "*uninstall*", "hide": true }`.
-//! - `steam`: `{ "group": "Steam" }` puts Steam's installed games in a folder of Games, as a source's
-//!   `group` does; without it they are at Games' top.
+//! - `desktop`, `steam`: rules (see [`Rule`]) for the desktop files' apps and games, and for Steam's
+//!   installed games: the first one matching an entry (by its id, its name, and a desktop file's
+//!   categories: globs, any case) puts it in a tab (`group`: in a folder of it), or hides it; a rule
+//!   matching nothing in particular takes the rest. Without one, a desktop file's game (`Categories=Game`,
+//!   not `Emulator`) goes in Games, its app in Apps; a Steam game in Games. A desktop file's id is its
+//!   name without `.desktop`, a Steam game's its app id. `{ "name": "Battle.net", "tab": "Apps" }`,
+//!   `{ "id": "net.lutris.*", "tab": "Games", "group": "Launchers" }`, `{ "id": "*uninstall*", "hide": true }`;
+//!   for Steam `{ "name": "Dark Souls*", "group": "Steam/Souls" }`, `{ "group": "Steam" }`.
 //! - `group`: a folder in the tab for the source's entries (`SNES`, or `Handhelds/GBA` for one in
 //!   another), so one tab can hold folders each with its own launch command; sources naming the same
 //!   folder share it. The folder's art: `poster`, `cover` or `folder` in the source's dir.
@@ -60,26 +61,18 @@ pub struct Config {
     /// Where the desktop files' apps and games go (the first rule matching one; without one, Games for a
     /// game, Apps for the rest).
     #[serde(default)]
-    pub desktop: Vec<DesktopRule>,
-    /// Steam's installed games: in a folder of Games (`group`), or at its top.
+    pub desktop: Vec<Rule>,
+    /// Where Steam's installed games go (the first rule matching one; without one, Games).
     #[serde(default)]
-    pub steam: SteamConfig,
+    pub steam: Vec<Rule>,
 }
 
-/// Where Steam's games go: `{ "group": "Steam" }`, a folder of Games (as a source's `group`).
+/// A rule for desktop files' entries or Steam's games: those matching all of its `id`, `name` and
+/// `categories` (globs, any case; `categories` matches if any of an entry's does; Steam's games have
+/// none) go in `tab` (with `icon`; in its folder `group`, if given), or are left out (`hide`).
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct SteamConfig {
-    #[serde(default)]
-    pub group: Option<String>,
-}
-
-/// A rule for desktop files: those matching all of its `id`, `name` and `categories` (globs, any case;
-/// `categories` matches if any of an entry's does) go in `tab` (with `icon`; in its folder `group`, if
-/// given), or are left out (`hide`).
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct DesktopRule {
+pub struct Rule {
     #[serde(default)]
     pub id: Option<String>,
     #[serde(default)]
@@ -97,8 +90,8 @@ pub struct DesktopRule {
     pub hide: bool,
 }
 
-impl DesktopRule {
-    /// Whether it matches a desktop file with this id, name and categories.
+impl Rule {
+    /// Whether it matches an entry with this id, name and categories.
     pub fn matches(&self, id: &str, name: &str, categories: &[String]) -> bool {
         let glob = |pattern: &str, value: &str| pattern::matches(&pattern.to_lowercase(), &value.to_lowercase());
         self.id.as_deref().is_none_or(|p| glob(p, id))
