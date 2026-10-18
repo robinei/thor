@@ -5,11 +5,14 @@
 links point at /usr/share/retroarch/assets either way.
 
 - The system's assets (/usr/share/retroarch/assets) linked in, so everything else finds its files.
-- XMB's custom icon theme (xmb_theme 6): its monochrome icons in ClamShell's amber, settings' icons in its
-  blue, those that end or remove something in red; their shapes (alpha) kept.
-- GLUI's (MaterialUI's) icons the same way, and its font Noto Sans, as ClamShell's. Not the menu in use
-  (XMB's is truly black; GLUI's darkest calm theme is grey), kept to switch to: in retroarch.cfg
-  menu_driver "glui", materialui_menu_color_theme "22" (Gray Dark), materialui_show_nav_bar "false".
+- XMB's monochrome icons in ClamShell's amber, settings' icons in its blue, those that end or remove
+  something in red; their shapes (alpha) kept. XMB shows them as its custom theme (xmb_theme 6, a link to
+  them), Ozone as its icons (on Linux it takes XMB's monochrome set).
+- GLUI's (MaterialUI's) icons the same way, its font Noto Sans, as ClamShell's. Not the
+  menu in use (XMB's is truly black; their darkest calm themes are grey), kept to switch to, in
+  retroarch.cfg: GLUI with menu_driver "glui", materialui_menu_color_theme "22" (Gray Dark),
+  materialui_show_nav_bar "false"; Ozone with menu_driver "ozone", ozone_menu_color_theme "10" (Gray
+  Dark), ozone_header_separator "0", ozone_font "/usr/share/fonts/noto/NotoSans-Regular.ttf".
 - black.png, XMB's wallpaper: the background black, not its gradient.
 
 Run again after a RetroArch update brings new icons. Needs Pillow (python-pillow).
@@ -18,6 +21,7 @@ Run again after a RetroArch update brings new icons. Needs Pillow (python-pillow
 """
 
 import os
+import shutil
 import sys
 
 from PIL import Image
@@ -69,10 +73,20 @@ def main():
             os.makedirs(f"{out}/{name}", exist_ok=True)
         else:
             link(f"{SYSTEM}/{name}", f"{out}/{name}")
-    # XMB: the system's themes linked, ours as its custom one.
+    # XMB: its monochrome set ours (its font and readme linked), the custom theme that set, the other themes
+    # linked. (Older runs: monochrome a link, custom a copy.)
+    for name in ("monochrome", "custom"):
+        if os.path.islink(f"{out}/xmb/{name}") == (name == "monochrome"):
+            shutil.rmtree(f"{out}/xmb/{name}", ignore_errors=True) if name == "custom" else os.remove(f"{out}/xmb/{name}")
     for name in os.listdir(f"{system}/xmb"):
-        link(f"{SYSTEM}/xmb/{name}", f"{out}/xmb/{name}")
-    tint(f"{system}/xmb/monochrome/png", f"{out}/xmb/custom/png")
+        if name != "monochrome":
+            link(f"{SYSTEM}/xmb/{name}", f"{out}/xmb/{name}")
+    os.makedirs(f"{out}/xmb/monochrome", exist_ok=True)
+    for name in os.listdir(f"{system}/xmb/monochrome"):
+        if name != "png":
+            link(f"{SYSTEM}/xmb/monochrome/{name}", f"{out}/xmb/monochrome/{name}")
+    tint(f"{system}/xmb/monochrome/png", f"{out}/xmb/monochrome/png")
+    link("monochrome", f"{out}/xmb/custom")
     # GLUI: its icons ours, its font Noto Sans, the rest linked.
     if os.path.isdir(f"{system}/glui"):
         for name in os.listdir(f"{system}/glui"):
