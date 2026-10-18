@@ -317,13 +317,19 @@ pub(crate) fn art(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect, rad
     }
 }
 
-/// A list row's picture in `r`: a folder's icon where it has one (its picture is for the details), else
-/// its art.
+/// A list row's picture in `r` (a square): a folder's icon where it has one (its picture is for the
+/// details), else its picture (box art, a video's frame) cropped to fill `r`, its middle kept; else its
+/// icon.
 pub(crate) fn thumb(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect, radius: f32, grey: bool) {
     if game.is_group() && (game.icon.is_some() || game.glyph.is_some()) {
-        icon(c, images, game, r, radius, grey);
-    } else {
-        art(c, images, game, r, radius, Align::Center, grey);
+        return icon(c, images, game, r, radius, grey);
+    }
+    let scale = c.scale();
+    let (pw, ph) = ((r.w * scale).round() as u32, (r.h * scale).round() as u32);
+    match picture(game).and_then(|(path, _)| images.get(&game.id, Slot::Thumb, path, pw, ph)) {
+        Some(img) if grey => c.image_grey(img, r.x, r.y, GREY),
+        Some(img) => c.image(img, r.x, r.y),
+        None => icon(c, images, game, r, radius, grey),
     }
 }
 

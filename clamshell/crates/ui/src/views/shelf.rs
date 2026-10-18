@@ -27,8 +27,8 @@ const THUMB: f32 = 0.82;
 /// A row's marks (favourite, on the dock): their size, of a row's height.
 const MARK: f32 = 0.3;
 const BOX_ASPECT: f32 = 2.0 / 3.0;
-/// A video's frame as a thumbnail: 16:9.
-const WIDE_ASPECT: f32 = 16.0 / 9.0;
+/// A row's picture: a square (box art and a video's frame cropped to fill it).
+const ROW_ASPECT: f32 = 1.0;
 /// A thumbnail placeholder's corner radius.
 const THUMB_RADIUS: f32 = 3.0;
 /// The large art's height, of the list's height.
@@ -138,9 +138,9 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
             Tone::Normal
         };
         let look = Look { fill: selected.then_some(SURFACE_HI), ..Look::CARD };
-        // (Every row's picture in a slot of one size, 16:9, a video's frame filling it: the titles in line.)
+        // (Every row's picture in a square, cropped to fill it: the titles in line.)
         let thumb_h = r.h * THUMB;
-        let thumb = Rect::new(r.x + pad * 0.4, r.y + (r.h - thumb_h) / 2.0, thumb_h * WIDE_ASPECT, thumb_h);
+        let thumb = Rect::new(r.x + pad * 0.4, r.y + (r.h - thumb_h) / 2.0, thumb_h * ROW_ASPECT, thumb_h);
         f.button(Id::Shelf(ShelfId::Game(game.id.clone())), r, look, |f| {
             widgets::thumb(f.c, f.images, game, thumb, THUMB_RADIUS, false);
             // Its marks at the row's right end, right to left: a folder's chevron, on the dock, a favourite.
