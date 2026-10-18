@@ -11,10 +11,10 @@ listed again whenever it changes while it is open.
   { "type": "browse", "place": "@files/Home", "dir": "~" },
   { "type": "browse", "place": "@files/Root", "dir": "/" },
   { "type": "browse", "place": "@files/Trash", "dir": "${XDG_DATA_HOME:-~/.local/share}/Trash/files", "trash": true },
-  { "type": "removable", "place": "@files/{label}", "rules": [
-      { "label": "SD*", "place": "@files/SD card" },
-      { "fs": "vfat", "place": "@files/USB/{label}" },
-      { "uuid": "1234-ABCD", "hide": true } ] }
+  { "type": "removable", "label": "SD*", "place": "@files/SD card" },
+  { "type": "removable", "fs": "vfat", "place": "@files/USB/{label}" },
+  { "type": "removable", "uuid": "1234-ABCD", "hide": true },
+  { "type": "removable", "place": "@files/{label}" }
 ]
 ```
 
@@ -23,9 +23,9 @@ listed again whenever it changes while it is open.
 - `dir` (here and in scans): `~` and `~/` at the start; `$VAR`, `${VAR}`, `${VAR:-default}` anywhere
   (the default itself expanded). An unset variable without a default skips the entry, shown as a problem.
 - `removable`: the removable filesystems mounted under `/run/media` (udisks2's mounts; udiskie mounts what
-  is put in), each at the place of the first of its rules matching it (`label`, `uuid`, `fs`: globs, any
-  case; `{label}` in a place replaced by its label, else its UUID), else at the source's `place`; a rule
-  may hide one. Without a removable source, none shows. A mount or unmount reads the library again, so a
+  is put in), each taken by the first removable source matching it (`label`, `uuid`, `fs`: globs, any
+  case; none: all) and put at its `place` (`{label}` in it replaced by its label, else its UUID), or left
+  out (`hide`). One no source takes, or without a removable source, doesn't show. A mount or unmount reads the library again, so a
   folder comes and goes, and scans on it come back.
 - Browsed dirs' folders come after the tab's other folders, in the order library.json and the mounts give
   them.

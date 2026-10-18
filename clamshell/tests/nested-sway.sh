@@ -49,7 +49,9 @@ cat > "$T/config/clamshell/library.json" <<EOF
 ],
   "sources": [
   { "type": "dir", "id": "test", "dir": "$T/games", "place": "@test", "match": ["*.game"] },
-  { "type": "desktop", "place": "@apps", "rules": [{ "categories": "Emulator", "place": "@apps" }, { "categories": "Game", "place": "@games" }] }
+  { "type": "desktop", "categories": "Emulator", "place": "@apps" },
+  { "type": "desktop", "categories": "Game", "place": "@games" },
+  { "type": "desktop", "place": "@apps" }
 ] }
 EOF
 touch "$T/games/test.game" "$T/games/zeta.game"

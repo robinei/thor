@@ -17,7 +17,8 @@
 //!   ],
 //!   "sources": [
 //!     { "type": "dir", "id": "snes", "dir": "~/Games/snes", "place": "@snes", "runner": "snes", "match": ["*.sfc", "*.zip"], "metadata": "libretro:..." },
-//!     { "type": "desktop", "place": "@apps", "rules": [{ "categories": "Game", "place": "@games" }] },
+//!     { "type": "desktop", "categories": "Game", "place": "@games" },
+//!     { "type": "desktop", "place": "@apps" },
 //!     { "type": "browse", "dir": "~", "place": "@files/Home" }
 //!   ],
 //!   "keys": { "tmdb": "...", "steamgriddb": "..." } }
@@ -51,13 +52,15 @@
 //! - `browse`: a dir listed as it is opened, not scanned (no metadata, not in Recent), its own folder at
 //!   its `place` (its last part the folder's title); `trash`: the Trash's `files` dir.
 //! - `desktop`, `steam`: the desktop files' apps and games, Steam's installed games (opened by a runner of
-//!   that type), at the place of the first of their `rules` (see [`Rule`]) matching one (by its id, its
-//!   name, a desktop file's categories: globs, any case), else at the source's `place`, or hidden. A desktop
-//!   file's id is its name without `.desktop`, a Steam game's its app id. `{ "id": "net.lutris.*", "place":
-//!   "@apps" }`, `{ "categories": "Game", "place": "@games" }`, `{ "id": "*uninstall*", "hide": true }`.
+//!   that type). Each source of the type takes, in order, those left that it matches (see [`Rule`]: by
+//!   id, name, a desktop file's categories; globs, any case; none: all), putting them at its `place`, or
+//!   leaving them out (`hide`); what none takes is left out. A desktop file's id is its name without
+//!   `.desktop`, a Steam game's its app id. `{ "type": "desktop", "id": "net.lutris.*", "place": "@apps" }`,
+//!   `{ "type": "desktop", "categories": "Game", "place": "@games" }`, `{ "type": "desktop", "id":
+//!   "*uninstall*", "hide": true }`, `{ "type": "desktop", "place": "@apps" }` (the rest).
 //! - `removable`: the removable filesystems mounted (udisks2's, under `/run/media/$USER`), browsed as
-//!   `browse`'s dirs, at the place of the first of its rules (see [`MountRule`]: by `label`, `uuid`, `fs`)
-//!   matching one, else at its `place` (`{label}` in it the filesystem's label, else its UUID).
+//!   `browse`'s dirs, taken the same way (see [`MountRule`]: by `label`, `uuid`, `fs`), each at its source's
+//!   `place` (`{label}` in it the filesystem's label, else its UUID).
 //!
 //! `~` and `~/` at the start of `dir` or of a launch argument is the home dir; in `dir`, `$VAR`, `${VAR}`
 //! and `${VAR:-default}` are environment variables (`${XDG_DATA_HOME:-~/.local/share}/roms`). A source
@@ -90,26 +93,17 @@ pub struct Config {
 
 /// Where entries come from (`type`), and where they go: a dir scanned (`dir`), one browsed (`browse`), the
 /// desktop files' apps and games (`desktop`), Steam's installed games (`steam`), the removable
-/// filesystems mounted (`removable`). The last three put their entries at the place of the first of their
-/// `rules` matching one, else at their own `place`; without either, an entry is left out.
+/// filesystems mounted (`removable`). Of the last three, the sources of a type take their entries in
+/// turn: each the ones left that it matches (see [`Rule`], [`MountRule`]), putting them at its place or
+/// leaving them out (`hide`); what none takes is left out.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum Source {
     Dir(Scan),
     Browse(BrowseRoot),
-    Desktop(Placing<Rule>),
-    Steam(Placing<Rule>),
-    Removable(Placing<MountRule>),
-}
-
-/// A source's place for its entries, and its rules (the first matching one's place, or `hide`).
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Placing<R> {
-    #[serde(default)]
-    pub place: Option<String>,
-    #[serde(default = "Vec::new")]
-    pub rules: Vec<R>,
+    Desktop(Rule),
+    Steam(Rule),
+    Removable(MountRule),
 }
 
 /// A place declared: its `id` (`"place": "@snes"`, `"@snes/RPG"` elsewhere; its folder's id, `place:snes`,
@@ -167,9 +161,9 @@ pub struct BrowseRoot {
     pub trash: bool,
 }
 
-/// A rule for mounted removable filesystems: those matching all of its `label`, `uuid` and `fs` (globs,
-/// any case) go at `place` as their folder (its last part the folder's title; `{label}` in it their label,
-/// or their UUID without one), or are left out (`hide`).
+/// A removable source: the mounted removable filesystems (those left) matching all of its `label`,
+/// `uuid` and `fs` (globs, any case; none: all) go at `place` as their folder (its last part the folder's
+/// title; `{label}` in it their label, or their UUID without one), or are left out (`hide`).
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MountRule {
@@ -195,9 +189,10 @@ impl MountRule {
     }
 }
 
-/// A rule for desktop files' entries or Steam's games: those matching all of its `id`, `name` and
-/// `categories` (globs, any case; `categories` matches if any of an entry's does; Steam's games have
-/// none) go at `place` (a tab, or a folder in one: `Games/Launchers`), or are left out (`hide`).
+/// A desktop or Steam source: the desktop files' entries or Steam's games (those left) matching all of
+/// its `id`, `name` and `categories` (globs, any case; `categories` matches if any of an entry's does;
+/// Steam's games have none; none: all) go at `place` (a tab, or a folder in one: `@games/Launchers`), or
+/// are left out (`hide`).
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Rule {

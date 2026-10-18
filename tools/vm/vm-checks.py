@@ -272,7 +272,9 @@ LIBRARY = f"""{{ "places": [
 ],
   "sources": [
   {{ "type": "dir", "id": "test", "dir": "{CHECKS_DIR}/games", "place": "@test", "match": ["*.game"] }},
-  {{ "type": "desktop", "place": "@apps", "rules": [{{ "categories": "Emulator", "place": "@apps" }}, {{ "categories": "Game", "place": "@games" }}] }}
+  {{ "type": "desktop", "categories": "Emulator", "place": "@apps" }},
+  {{ "type": "desktop", "categories": "Game", "place": "@games" }},
+  {{ "type": "desktop", "place": "@apps" }}
 ] }}
 """
 

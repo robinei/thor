@@ -51,8 +51,8 @@ not. A file that is a scanned entry's opens as that entry.
 Two types of runner find their items themselves, each item with its own command: `"type": "desktop"` the
 desktop files' apps and games (and a `.desktop` file opened from the Files tab, by its `Exec`), `"type":
 "steam"` Steam's installed games (by app id). They take a name, a keymap, `item_settings`, but no command.
-Without one, those items aren't in the library. Where their items show is the `desktop` and `steam` rules'
-(Places).
+Without one, those items can't be opened. Where their items show is the `desktop` and `steam` sources'
+(below).
 
 ## Places and sources: where things show
 
@@ -75,13 +75,15 @@ folder's id). Nothing has a place or an icon of ClamShell's choosing.
   `*.zip` files would be Other files' by their name; the TV scan names none, its episodes Video's by
   theirs. Several may fill one place (SNES on the card and on an SD card).
 - `browse`: a dir listed as it is opened (see files-tab.md), its own folder at its place.
-- `desktop`, `steam`: the desktop files' apps and games, Steam's installed games, each at the place of
-  the first of the source's `rules` matching it (by id, name, a desktop file's categories), else at the
-  source's `place`; a rule may `hide`. What used to be ClamShell's choice (games in Games, the rest in
-  Apps) is two rules in the starter library.json: `{ "categories": "Emulator", "place": "@apps" }`,
-  `{ "categories": "Game", "place": "@games" }`, the source's place `@apps`.
-- `removable`: the removable filesystems mounted, browsed, by `label`, `uuid`, `fs` rules, else at its
-  `place` (`@files/{label}`).
+- `desktop`, `steam`, `removable`: the desktop files' apps and games, Steam's installed games, the
+  removable filesystems mounted (browsed). The sources of a type take their entries in turn: each, in
+  order, the ones still left that it matches (desktop and Steam by id, name, a desktop file's categories;
+  removable by `label`, `uuid`, `fs`; a source matching nothing in particular takes all that are left),
+  putting them at its `place` or leaving them out (`hide`). An entry is in one place at most, the first
+  matching source's; what none takes is left out. What used to be ClamShell's choice (games in Games, the
+  rest in Apps) is three sources in the starter library.json: `{ "type": "desktop", "categories":
+  "Emulator", "place": "@apps" }`, `{ "type": "desktop", "categories": "Game", "place": "@games" }`,
+  `{ "type": "desktop", "place": "@apps" }`.
 
 A source decides nothing about opening: that is the runners'.
 

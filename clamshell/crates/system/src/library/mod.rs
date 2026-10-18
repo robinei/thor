@@ -318,17 +318,22 @@ pub fn load(sources: &Sources) -> Loaded {
         let kind = if root.trash { BrowseKind::Trash } else { BrowseKind::Root };
         roots.push((place.to_owned(), browsed_root(&format!("browse:{place}"), dir, kind)));
     }
-    let removable = config.sources.iter().find_map(|s| match s {
-        content::Source::Removable(placing) => Some(placing),
-        _ => None,
-    });
-    for (m, placing) in removable.map(|p| crate::files::media_mounts().into_iter().map(move |m| (m, p))).into_iter().flatten() {
-        let rule = placing.rules.iter().find(|r| r.matches(&m.label, &m.uuid, &m.fs));
-        if rule.is_some_and(|r| r.hide) {
+    // (Each mount the first removable source matching it takes.)
+    let removable: Vec<&content::MountRule> = config
+        .sources
+        .iter()
+        .filter_map(|s| match s {
+            content::Source::Removable(rule) => Some(rule),
+            _ => None,
+        })
+        .collect();
+    let mounts = if removable.is_empty() { Vec::new() } else { crate::files::media_mounts() };
+    for m in mounts {
+        let Some(rule) = removable.iter().find(|r| r.matches(&m.label, &m.uuid, &m.fs)) else {
             continue;
-        }
+        };
         let name = if m.label.is_empty() { &m.uuid } else { &m.label };
-        let Some(place) = rule.and_then(|r| r.place.as_deref()).or(placing.place.as_deref()) else {
+        let Some(place) = rule.place.as_deref().filter(|_| !rule.hide) else {
             continue;
         };
         let place = match resolve(place) {
@@ -361,31 +366,32 @@ pub fn load(sources: &Sources) -> Loaded {
         games.extend(more);
         (first..games.len()).collect::<Vec<_>>()
     };
-    // Steam's installed games and the desktop files' apps and games, where their sources' rules (else
-    // their own place) put them; without either, left out. (The games first, then the apps.)
+    // Steam's installed games and the desktop files' apps and games, each where the first source of its
+    // type matching it puts it (or left out: `hide`, or none matching). (The games first, then the apps.)
     let mut placed: Vec<(String, Game)> = Vec::new();
     let mut rule_problems: Vec<String> = Vec::new();
-    let mut place = |placing: &content::Placing<content::Rule>, id: &str, name: &str, categories: &[String], game: Game| {
-        let rule = placing.rules.iter().find(|r| r.matches(id, name, categories));
-        if rule.is_some_and(|r| r.hide) {
+    let mut place = |rules: &[&content::Rule], id: &str, name: &str, categories: &[String], game: Game| {
+        let Some(rule) = rules.iter().find(|r| r.matches(id, name, categories)) else {
             return;
-        }
-        match rule.and_then(|r| r.place.as_deref()).or(placing.place.as_deref()).map(resolve) {
+        };
+        match rule.place.as_deref().filter(|_| !rule.hide).map(resolve) {
             Some(Ok(place)) => placed.push((place, game)),
             Some(Err(e)) => rule_problems.push(e),
             None => {}
         }
     };
-    // (Each opened by its runner of that type: a source without one is a problem.)
-    let source = |want: fn(&content::Source) -> Option<&content::Placing<content::Rule>>| config.sources.iter().find_map(want);
-    let steam_source = source(|s| match s {
-        content::Source::Steam(p) => Some(p),
+    // (Each opened by its runner of that type: sources without one are a problem.)
+    let of_type = |want: fn(&content::Source) -> Option<&content::Rule>| config.sources.iter().filter_map(want).collect::<Vec<_>>();
+    let steam_sources = of_type(|s| match s {
+        content::Source::Steam(r) => Some(r),
         _ => None,
     });
-    let desktop_source = source(|s| match s {
-        content::Source::Desktop(p) => Some(p),
+    let desktop_sources = of_type(|s| match s {
+        content::Source::Desktop(r) => Some(r),
         _ => None,
     });
+    let (steam_source, desktop_source) =
+        ((!steam_sources.is_empty()).then_some(&steam_sources[..]), (!desktop_sources.is_empty()).then_some(&desktop_sources[..]));
     let steam_runner = runners::of_kind(&runners, runners::Kind::Steam).map(runners::Runner::of);
     let desktop_runner = runners::of_kind(&runners, runners::Kind::Desktop).map(runners::Runner::of);
     for (wanted, runner, what) in [(steam_source.is_some(), &steam_runner, "steam"), (desktop_source.is_some(), &desktop_runner, "desktop")] {
@@ -575,11 +581,11 @@ mod tests {
         std::fs::write(steam.join("steamapps/appmanifest_20.acf"), manifest(20, "Zork")).unwrap();
         std::fs::create_dir_all(root.join("snes")).unwrap();
         std::fs::write(root.join("snes/Mario.sfc"), "").unwrap();
-        // (The Steam source's place, or its rules.)
+        // (The Steam sources.)
         let config = |steam: &str| {
             format!(
                 r#"{{ "runners": [{{ "name": "Test SNES", "match": ["*.sfc"], "launch": ["retroarch", "{{path}}"] }}, {{ "type": "steam", "id": "steam", "name": "Steam" }}],
-                    "sources": [{{ "type": "dir", "place": "Games/SNES", "id": "snes", "dir": "{}" , "match": ["*.sfc"] }}, {{ "type": "steam", {steam} }}] }}"#,
+                    "sources": [{{ "type": "dir", "place": "Games/SNES", "id": "snes", "dir": "{}" , "match": ["*.sfc"] }}, {steam}] }}"#,
                 root.join("snes").display()
             )
         };
@@ -589,10 +595,12 @@ mod tests {
             let tab = lib.collections.iter().find(|c| c.name == "Games").unwrap();
             tab.games.iter().map(|&i| lib.games[i].title.clone()).collect::<Vec<_>>()
         };
-        assert_eq!(games_tab(&config(r#""place": "Games""#)), ["SNES", "Arma", "Zork"], "the folder first, before Arma");
-        assert_eq!(games_tab(&config(r#""place": "Games/Steam""#)), ["SNES", "Steam"], "Steam's games in their folder");
-        // By name or app id, into folders, or hidden; the rest at the source's place.
-        let rules = r#""place": "Games/Steam", "rules": [{ "name": "z*", "place": "Games/Steam/Text" }, { "id": "10", "hide": true }]"#;
+        assert_eq!(games_tab(&config(r#"{ "type": "steam", "place": "Games" }"#)), ["SNES", "Arma", "Zork"], "the folder first, before Arma");
+        assert_eq!(games_tab(&config(r#"{ "type": "steam", "place": "Games/Steam" }"#)), ["SNES", "Steam"], "Steam's games in their folder");
+        // By name or app id, into folders, or hidden; the rest by the source matching anything; each taken by
+        // the first matching it (Zork by z*, not by the last).
+        let rules = r#"{ "type": "steam", "name": "z*", "place": "Games/Steam/Text" }, { "type": "steam", "id": "10", "hide": true },
+                       { "type": "steam", "place": "Games/Steam" }"#;
         std::fs::write(steam.join("steamapps/appmanifest_30.acf"), manifest(30, "Celeste")).unwrap();
         std::fs::write(root.join("library.json"), config(rules)).unwrap();
         let lib = load(&Sources { config: Some(root.join("library.json")), steam: Some(steam.clone()), ..Sources::default() }).library;
@@ -626,11 +634,12 @@ mod tests {
         write("uninstall-foo", "Uninstall Foo", "Utility;");
         write("foot", "Foot", "System;");
         let config = r#"{ "places": [{ "id": "apps", "path": "Apps", "recent": false }],
-          "runners": [{ "type": "desktop", "name": "Desktop" }], "sources": [{ "type": "desktop", "place": "@apps", "rules": [
-            { "id": "lutris", "place": "Launchers" },
-            { "id": "celeste", "place": "Games/Platformers" },
-            { "name": "uninstall*", "hide": true }
-        ] }] }"#;
+          "runners": [{ "type": "desktop", "name": "Desktop" }], "sources": [
+            { "type": "desktop", "id": "lutris", "place": "Launchers" },
+            { "type": "desktop", "id": "celeste", "place": "Games/Platformers" },
+            { "type": "desktop", "name": "uninstall*", "hide": true },
+            { "type": "desktop", "place": "@apps" }
+        ] }"#;
         std::fs::write(root.join("library.json"), config).unwrap();
         let lib = load(&Sources { config: Some(root.join("library.json")), data_dirs: vec![root.join("data")], ..Sources::default() }).library;
         let tab = |name: &str| lib.collections.iter().find(|c| c.name == name).map(|c| c.games.iter().map(|&i| lib.games[i].title.clone()).collect::<Vec<_>>());
@@ -638,7 +647,7 @@ mod tests {
         let folder = lib.games.iter().find(|g| g.title == "Platformers").unwrap();
         assert_eq!(folder.items.iter().map(|&i| lib.games[i].title.as_str()).collect::<Vec<_>>(), ["Celeste"]);
         assert_eq!(tab("Launchers"), Some(vec!["Lutris".to_owned()]));
-        assert_eq!(tab("Apps"), Some(vec!["Foot".to_owned()]), "Uninstall Foo hidden; the rest at the source's place");
+        assert_eq!(tab("Apps"), Some(vec!["Foot".to_owned()]), "Uninstall Foo hidden; the rest taken by the last");
         let entry = |title: &str| lib.games.iter().find(|g| g.title == title).unwrap();
         assert!(entry("Foot").tool && !entry("Celeste").tool, "Apps says recent: false");
         let _ = std::fs::remove_dir_all(&root);

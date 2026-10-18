@@ -36,7 +36,8 @@ Shelf comes from `~/.config/clamshell/library.json`, and nothing is there but wh
   and Steam's games, by their own commands.
 - `sources`: where entries come from, and where they go: `dir` (a dir scanned: what is an entry, its
   metadata, the runner that opens its entries if not by their names), `browse` (a dir listed as it is
-  opened: the Files tab), `desktop` and `steam` (the installed apps and games, placed by rules),
+  opened: the Files tab), `desktop` and `steam` (the installed apps and games: each taken by the first
+  source of its type that matches it),
   `removable` (SD cards and USB sticks as they are mounted).
 
 ```json
@@ -55,7 +56,9 @@ Shelf comes from `~/.config/clamshell/library.json`, and nothing is there but wh
     { "type": "dir", "id": "snes", "dir": "~/Games/snes", "place": "@snes", "runner": "snes", "match": ["*.sfc", "*.smc", "*.zip"],
       "metadata": "libretro:Nintendo - Super Nintendo Entertainment System" },
     { "type": "dir", "id": "tv", "dir": "~/TV", "place": "TV", "match": ["*/"], "items": ["*.mkv", "*.mp4"], "metadata": "tmdb:tv" },
-    { "type": "desktop", "place": "@apps", "rules": [{ "categories": "Game", "place": "@games" }, { "name": "*Uninstall*", "hide": true }] }
+    { "type": "desktop", "name": "*Uninstall*", "hide": true },
+    { "type": "desktop", "categories": "Game", "place": "@games" },
+    { "type": "desktop", "place": "@apps" }
 ] }
 ```
 
