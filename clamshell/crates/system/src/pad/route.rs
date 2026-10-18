@@ -536,7 +536,9 @@ mod tests {
         r.set_route(PadRoute::Keys, &mut out);
         assert!(out.pad.is_empty(), "still away");
         r.set_route(PadRoute::Game, &mut out);
-        assert_eq!(out.pad, vec![key(KeyCode::BTN_TL, Press::Down), axis(1000), rz, Raw::REPORT], "as it is");
+        let hat = |axis| Raw::abs(axis, 0);
+        let (hx, hy) = (hat(AbsoluteAxisCode::ABS_HAT0X), hat(AbsoluteAxisCode::ABS_HAT0Y));
+        assert_eq!(out.pad, vec![key(KeyCode::BTN_TL, Press::Down), axis(1000), rz, hx, hy, Raw::REPORT], "as it is (the D-pad's hat too)");
     }
 
     #[test]
@@ -565,7 +567,8 @@ mod tests {
             vec![device(DeviceKey::BottomView), device(DeviceKey::BottomPower), device(DeviceKey::WindowDown), device(DeviceKey::WindowUp)],
             "not Home as well"
         );
-        let dpad = |pad: &[Raw]| pad.iter().any(|e| e.as_key().is_some_and(|(k, _)| matches!(k, KeyCode::BTN_DPAD_UP | KeyCode::BTN_DPAD_DOWN)));
+        // (The game's pad has the D-pad as a hat.)
+        let dpad = |pad: &[Raw]| pad.iter().any(|e| *e == Raw::abs(AbsoluteAxisCode::ABS_HAT0Y, 1) || *e == Raw::abs(AbsoluteAxisCode::ABS_HAT0Y, -1));
         assert!(!dpad(&out.pad), "the game saw no D-pad: {:?}", out.pad);
         // Home let go while the D-pad is still down: the rest of that press is ClamShell's too.
         out.events.clear();
@@ -580,7 +583,7 @@ mod tests {
         // Without Home, the D-pad is the game's.
         r.event(hat(1), now, &mut out);
         r.event(Raw::REPORT, now, &mut out);
-        assert!(out.pad.contains(&key(KeyCode::BTN_DPAD_DOWN, Press::Down)), "{:?}", out.pad);
+        assert!(out.pad.contains(&Raw::abs(AbsoluteAxisCode::ABS_HAT0Y, 1)), "{:?}", out.pad);
     }
 
     #[test]

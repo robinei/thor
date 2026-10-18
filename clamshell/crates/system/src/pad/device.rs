@@ -119,7 +119,7 @@ pub struct VirtualDevices {
 impl VirtualDevices {
     pub fn new(caps: Capabilities) -> io::Result<VirtualDevices> {
         let mut neutral: Vec<Raw> = pad_keys(&caps).map(|k| Raw::key(k, Press::Up)).collect();
-        neutral.extend(caps.axes.iter().map(|(code, a)| Raw::abs(*code, rest(a))));
+        neutral.extend(pad_axes(&caps).iter().map(|(code, a)| Raw::abs(*code, rest(a))));
         neutral.push(Raw::REPORT);
         Ok(VirtualDevices { pad: virtual_pad(&caps)?, mouse: virtual_mouse()?, made_for: caps, neutral })
     }
@@ -136,11 +136,27 @@ pub fn emit(device: &mut VirtualDevice, events: &[Raw]) -> io::Result<()> {
     device.emit(&events)
 }
 
-/// The real pad's keys the virtual one has: all but Back (an input of keymaps, nothing as on the pad),
-/// and Guide (the AYN button as on the pad; home's with Back) though the controller has none.
+/// The D-pad's buttons, on controllers that have it as buttons.
+const DPAD_KEYS: [KeyCode; 4] = [KeyCode::BTN_DPAD_UP, KeyCode::BTN_DPAD_DOWN, KeyCode::BTN_DPAD_LEFT, KeyCode::BTN_DPAD_RIGHT];
+
+/// The real pad's keys the virtual one has: all but Back (an input of keymaps, nothing as on the pad)
+/// and the D-pad's buttons (its D-pad is a hat, as an Xbox 360 pad's: SDL takes a pad with both for one
+/// whose D-pad is its buttons, and finds none); and Guide (the AYN button as on the pad; home's with
+/// Back) though the controller has none.
 fn pad_keys(caps: &Capabilities) -> impl Iterator<Item = KeyCode> + '_ {
     let guide = (!caps.keys.contains(&KeyCode::BTN_MODE)).then_some(KeyCode::BTN_MODE);
-    caps.keys.iter().copied().filter(|&k| !is_back_key(k)).chain(guide)
+    caps.keys.iter().copied().filter(|&k| !is_back_key(k) && !DPAD_KEYS.contains(&k)).chain(guide)
+}
+
+/// The real pad's axes the virtual one has: all, and the D-pad's hat though the controller has none.
+fn pad_axes(caps: &Capabilities) -> Vec<(AbsoluteAxisCode, AbsInfo)> {
+    let mut axes = caps.axes.clone();
+    for hat in [AbsoluteAxisCode::ABS_HAT0X, AbsoluteAxisCode::ABS_HAT0Y] {
+        if !axes.iter().any(|(code, _)| *code == hat) {
+            axes.push((hat, AbsInfo::new(0, -1, 1, 0, 0, 0)));
+        }
+    }
+    axes
 }
 
 /// A pad with the real one's buttons and axes, identified as a wired Xbox 360 controller so SDL, Wine
@@ -157,7 +173,7 @@ fn virtual_pad(caps: &Capabilities) -> io::Result<VirtualDevice> {
     if !keys.is_empty() {
         builder = builder.with_keys(&keyset(&keys))?;
     }
-    for &(code, info) in &caps.axes {
+    for (code, info) in pad_axes(caps) {
         builder = builder.with_absolute_axis(&UinputAbsSetup::new(code, info))?;
     }
     let pad = builder.build()?;

@@ -1000,17 +1000,9 @@ impl Remap {
             w.pad_axes.push((axis, value));
         }
         let [up, down, left, right] = dpad;
-        // The D-pad: a hat if the pad has one, else buttons.
-        if snap.value(AbsoluteAxisCode::ABS_HAT0X).is_some() {
-            w.pad_axes.push((AbsoluteAxisCode::ABS_HAT0X, i32::from(right) - i32::from(left)));
-            w.pad_axes.push((AbsoluteAxisCode::ABS_HAT0Y, i32::from(down) - i32::from(up)));
-        } else {
-            for (d, on) in [(Dir::Up, up), (Dir::Down, down), (Dir::Left, left), (Dir::Right, right)] {
-                if on {
-                    w.pad_keys.push(dpad_code(d));
-                }
-            }
-        }
+        // The D-pad: the game's pad's hat (it has one, as an Xbox 360 pad, whatever the controller has).
+        w.pad_axes.push((AbsoluteAxisCode::ABS_HAT0X, i32::from(right) - i32::from(left)));
+        w.pad_axes.push((AbsoluteAxisCode::ABS_HAT0Y, i32::from(down) - i32::from(up)));
         w.pad_keys.sort_by_key(|k| k.0);
         w.pad_keys.dedup();
         w.keys.dedup();
