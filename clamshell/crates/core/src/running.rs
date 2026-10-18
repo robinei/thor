@@ -62,6 +62,9 @@ pub struct Running {
     pub(crate) launches: u32,
     /// Found running by its scopes (started before ClamShell was): it runs while systemd lists them.
     pub(crate) adopted: bool,
+    /// Its entry as it was when it started: the dock shows it by this if it leaves the library while it
+    /// runs (its file renamed or deleted).
+    pub entry: Option<Box<crate::Game>>,
 }
 
 impl Running {
@@ -152,7 +155,8 @@ impl State {
             Some(r) => r.launches += 1,
             None => {
                 let key = self.shelf.game(&game).map_or_else(|| clamshell_library::key_of(&game), |g| g.key.clone());
-                session.running.push(Running { id: game, key, origin: Origin::Ours { appid }, start: self.unix_secs, launches: 1, adopted: false });
+                let entry = self.shelf.game(&game).cloned().map(Box::new);
+                session.running.push(Running { id: game, key, origin: Origin::Ours { appid }, start: self.unix_secs, launches: 1, adopted: false, entry });
             }
         }
         self.bottom.woken = false;
@@ -189,13 +193,14 @@ impl State {
         if let Some(i) = self.session.launching.iter().position(|l| l.game == game) {
             self.session.launching.remove(i);
         }
-        let Some(key) = self.shelf.game(&game).filter(|g| g.browsed.is_some()).map(|g| g.key.clone()) else {
+        let Some(entry) = self.shelf.game(&game).filter(|g| g.browsed.is_some()).cloned() else {
             return;
         };
+        let key = entry.key.clone();
         if self.session.running(&game).is_none() {
             let now = self.unix_secs;
             let origin = Origin::Handed { until: now + HANDOFF, seen: false };
-            self.session.running.push(Running { id: game, key, origin, start: now, launches: 0, adopted: false });
+            self.session.running.push(Running { id: game, key, origin, start: now, launches: 0, adopted: false, entry: Some(Box::new(entry)) });
         }
     }
 
@@ -258,7 +263,16 @@ impl State {
             };
             let launches = u32::try_from(units.iter().filter(|u| u.key() == Some(key)).count()).unwrap_or(u32::MAX);
             let start = self.unix_secs;
-            session.running.push(Running { id: g.id.clone(), key: key.to_owned(), origin: Origin::Ours { appid: None }, start, launches, adopted: true });
+            let entry = Some(Box::new(g.clone()));
+            session.running.push(Running {
+                id: g.id.clone(),
+                key: key.to_owned(),
+                origin: Origin::Ours { appid: None },
+                start,
+                launches,
+                adopted: true,
+                entry,
+            });
         }
     }
 
@@ -359,7 +373,8 @@ impl State {
         });
         if let Some((game, key, appid)) = new {
             let start = self.unix_secs;
-            self.session.running.push(Running { id: game, key: key.clone(), origin: Origin::Steam(appid), start, launches: 0, adopted: false });
+            let entry = self.shelf.game(&game).cloned().map(Box::new);
+            self.session.running.push(Running { id: game, key: key.clone(), origin: Origin::Steam(appid), start, launches: 0, adopted: false, entry });
             self.session.pending_show = Some(Instance::Run { key, secs: start, n: 0 });
             self.bottom.woken = false;
         }
@@ -543,6 +558,11 @@ mod tests {
         s.apply(Event::Tick { unix_secs: 200 });
         assert!(s.session().running("browse:Home/notes.md").is_some(), "runs while its window is open");
         assert_eq!(s.app_showing("browse:Home/notes.md").map(|g| &*g.id), Some("desktop:foot"), "its picture: the app's");
+        // Its file gone from the library meanwhile: still shown by what it was.
+        s.apply(Event::Library(Box::new(clamshell_library::demo_library())));
+        assert!(s.shelf().game("browse:Home/notes.md").is_none());
+        assert_eq!(s.game("browse:Home/notes.md").map(|g| g.title.as_str()), Some("/h/notes.md"));
+        s.apply(Event::Library(Box::new(files().shelf().library().clone())));
         s.apply(Event::Windows(vec![shelf.clone(), other.clone()]));
         assert!(s.session().running("browse:Home/notes.md").is_none(), "its window closed: ended");
         // Another that never shows a window: gone after a while.

@@ -247,9 +247,9 @@ impl State {
         self.unix_secs
     }
 
-    /// A game of the library, by its id.
+    /// A game of the library, by its id; one that runs and left it (its file deleted), as it was.
     pub fn game(&self, id: &str) -> Option<&Game> {
-        self.shelf.game(id)
+        self.shelf.game(id).or_else(|| self.session.running(id).and_then(|r| r.entry.as_deref()))
     }
 
     /// Whether the pad, on ClamShell's screens, may go to shelf's (shelf is in front and nothing else
