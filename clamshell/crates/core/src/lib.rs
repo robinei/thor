@@ -69,7 +69,7 @@ pub use running::{Front, Launching, Origin, Running};
 pub use scroll::{ListEvent, ListId, Lists, RowPart, Scroll};
 pub use session::Session;
 pub use shelf::{Cursor, Shelf};
-pub use sys::{Status, Sys, TouchpadProblem};
+pub use sys::{Status, Sys};
 pub use tab::{Bottom, Tab};
 pub use time::{TimeRow, TimeZones};
 
@@ -404,9 +404,9 @@ impl State {
             Event::Pointing(pointing) => {
                 let before = self.bottom.pointing;
                 let effects = match pointing {
-                    crate::touch::Pointing::Contact(contact) => {
+                    crate::touch::Pointing::Contacts(contacts) => {
                         self.bottom.pointing = true;
-                        vec![Effect::Touchpad(contact)]
+                        vec![Effect::Touchpad(contacts)]
                     }
                     crate::touch::Pointing::Idle => {
                         self.bottom.pointing = false;
@@ -492,7 +492,6 @@ impl State {
             Reading::Battery(battery) => replace(&mut self.sys.battery, battery),
             Reading::Audio(audio) => self.levels.read_audio(audio),
             Reading::Backlights(backlights) => self.levels.read_backlights(backlights),
-            Reading::TouchpadProblem(problem) => replace(&mut self.sys.touchpad_problem, problem),
             Reading::Time(time) => replace(&mut self.sys.time, time),
         };
         if changed && shown { Dirty::BOTTOM } else { Dirty::NONE }
@@ -509,7 +508,7 @@ impl State {
     }
 
     fn on_pointer(&mut self, event: PointerEvent) -> (Dirty, Vec<Effect>) {
-        // Input that reached ClamShell itself (the compositor may not see it: touchpad mode's bar).
+        // Input that reached ClamShell itself (the pad driving the screens).
         self.idle.own_input(self.unix_secs);
         match event {
             PointerEvent::Focus(id) => {

@@ -2,8 +2,8 @@
 //! brings them back. Times are global settings ([`Setting::ScreenOff`], [`Setting::Sleep`]).
 //!
 //! Input is read from the input devices themselves (a system thread reads every one, without taking it
-//! away from anyone), plus what reaches ClamShell another way (the bar under a finger in touchpad mode,
-//! the pad driving the screens). The compositor's word is an extra where it gives it (the standard
+//! away from anyone), plus what reaches ClamShell another way (the pad driving the
+//! screens). The compositor's word is an extra where it gives it (the standard
 //! Wayland idle protocol): an app that asks it to keep the screen on, a video player, holds idle off. If
 //! neither the devices nor the compositor can be heard, nothing goes idle.
 //!

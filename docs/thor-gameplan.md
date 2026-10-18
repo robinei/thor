@@ -70,7 +70,7 @@ What ROCKNIX's system showed (used by the build):
   transform from `/sys/class/graphics/fbcon/rotate` (1/2/3: 90/180/270), and for the Thor the
   touchscreens `0:0:top_touchscreen` on DSI-2 and `0:0:bottom_touchscreen` on DSI-1 (bottom one's events
   off unless something shows there). Our image does the same (`~/.local/bin/thor-outputs`, rotating both
-  panels by fbcon's angle) and sets `CLAMSHELL_TOUCHSCREEN=bottom_touchscreen` for touchpad mode.
+  panels by fbcon's angle).
 
 Known issues and risks, to check first:
 
@@ -140,10 +140,11 @@ Known issues and risks, to check first:
 Each subsystem, then hibernate with each in use (hibernate matters more to me than suspend).
 
 - [ ] Screens: both on, right size, orientation and position; layer surface on DSI-1.
-- [ ] Touch: the bottom screen's touch on DSI-1 (sway's `map_to_output`); the Touchpad tab grabs it;
-      two fingers on the bar at once (one sliding, one tapping); below the bar, a finger sliding
-      over anything points (on a list only sideways; it fades; taps click, two fingers scroll) and typing comes back a
-      second after (or when a text field takes focus): how it feels, the threshold (`POINT_START`).
+- [ ] Touch: the bottom screen's touch on DSI-1 (sway's `map_to_output`); two fingers on the bar at
+      once (one sliding, one tapping); below the bar, a finger sliding over anything points (on a list
+      only sideways; it fades; taps click, two fingers scroll) and taps act again a second after (or
+      when a text field takes focus); the Touchpad tab points at once: how it feels, the threshold
+      (`POINT_START`).
 - [ ] Gamepad: evdev events; our virtual pad and pad mouse; per-game keymaps (a key chord, the pointer
       from a stick) and deadzone; the back buttons' key codes (ClamShell takes BTN_TRIGGER_HAPPY1-4 and
       BTN_GRIPL/R/L2/R2 as L4, R4, L5, R5); unplugging

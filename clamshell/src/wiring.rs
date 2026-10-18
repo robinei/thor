@@ -102,8 +102,7 @@ pub fn start(
     }
     let rescan = rescanner(sources.clone(), paths.clone(), fetching.clone(), sink.clone());
     detached("frames", frames::spawn(paths.mangohud.clone(), sink.clone()));
-    let touchpad =
-        started("touchpad", touchpad::spawn(touchpad::Config { device: env.touchscreen.clone(), px_per_mm: BOTTOM_PX_PER_MM }, layout, sink.clone()));
+    let touchpad = started("touchpad", touchpad::spawn(touchpad::Config { px_per_mm: BOTTOM_PX_PER_MM }, layout));
     // Commands (`clamshell ctl`, tests) come through a pipe.
     if let Some(path) = env.control.as_ref().or(paths.control.as_ref()) {
         control::spawn(path.clone(), sink.clone());

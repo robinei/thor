@@ -72,8 +72,8 @@ pub fn bottom(f: &mut Frame, screen: Rect) {
         Tab::Brightness => levels::draw_brightness(f),
         Tab::Time => time::draw(f),
     }
-    // (Pointing: the area below the bar is a touchpad, what is in it faded.)
-    if f.s.bottom().pointing() {
+    // (Pointing: the area below the bar is a touchpad, what is in it faded; the touchpad tab is nothing else.)
+    if f.s.bottom().pointing() && f.s.bottom().tab() != Tab::Touchpad {
         f.c.fill(body, crate::draw::Rgb(0).alpha(POINTING_FADE));
     }
     bar::draw_slider_over(f, screen, body.y);

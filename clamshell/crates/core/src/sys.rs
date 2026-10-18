@@ -27,15 +27,6 @@ pub struct Status {
     pub brightness: Option<u8>,
 }
 
-/// Why touchpad mode doesn't work.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TouchpadProblem {
-    /// There is no touchscreen (or not the one asked for).
-    NoTouchscreen,
-    /// The touchscreen couldn't be taken over (the error).
-    Failed(String),
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct Sys {
     /// The last status reading, as read (the levels shown are [`crate::levels::Levels`]').
@@ -43,8 +34,6 @@ pub struct Sys {
     pub metrics: Metrics,
     pub history: History,
     pub battery: Battery,
-    /// Why touchpad mode doesn't work, if it doesn't.
-    pub touchpad_problem: Option<TouchpadProblem>,
     /// The time zone and the ones to choose from, as last read.
     pub time: crate::time::TimeZones,
     /// The lowest of [`WARN_AT`] warned about since the battery last charged.
@@ -98,11 +87,7 @@ mod tests {
     #[test]
     fn a_tabs_readings_redraw_only_while_it_is_open() {
         let mut s = state();
-        let problem = || Reading::TouchpadProblem(Some(TouchpadProblem::NoTouchscreen));
-        assert_eq!(read(&mut s, problem()), Dirty::NONE, "kept, not shown");
-        assert_eq!(s.sys().touchpad_problem, Some(TouchpadProblem::NoTouchscreen));
         tap(&mut s, Id::Tab(Tab::Touchpad));
-        assert_eq!(read(&mut s, Reading::TouchpadProblem(None)), Dirty::BOTTOM);
         assert_eq!(read(&mut s, Reading::Metrics(metrics::Metrics::default())), Dirty::NONE, "sysinfo isn't open");
         tap(&mut s, Id::Tab(Tab::Sysinfo));
         assert_eq!(read(&mut s, Reading::Frames { fps: Some(60.0), frame_ms: Some(16.7) }), Dirty::BOTTOM);

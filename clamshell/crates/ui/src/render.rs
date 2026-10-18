@@ -6,8 +6,8 @@
 //! - Surface pixels: logical pixels of the surface (what Wayland reports for touch and the pointer).
 //!   Layout units moved by the burn-in offset; targets are moved into these once the frame is drawn.
 //! - Buffer pixels: surface pixels times the scale (what the pixmap has).
-//! - Screen pixels: the touchscreen's, for the touchpad thread (`TouchLayout`): buffer pixels of the
-//!   second screen, which fills its output.
+//! - Screen pixels: the touchscreen's, for the virtual touchpad: buffer pixels of the second screen,
+//!   which fills its output.
 
 use clamshell_core::State;
 use tiny_skia::Pixmap;
@@ -61,14 +61,6 @@ pub(crate) struct Picture {
     pub scratch: Scratch,
 }
 
-/// What a frame reports, with where its layout starts in the surface (the burn-in offset, in surface
-/// pixels).
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct Rendered {
-    pub out: FrameOut,
-    pub origin: (f32, f32),
-}
-
 /// Draws `screen` for `state` into `picture` (sized to `at` first), and moves its targets and the
 /// touchpad area into surface pixels.
 pub(crate) fn render(
@@ -78,7 +70,7 @@ pub(crate) fn render(
     state: &State,
     fonts: &mut DrawCache,
     images: &mut Images,
-) -> Result<Rendered, Error> {
+) -> Result<FrameOut, Error> {
     let (w, h) = at.size_px;
     if picture.pixmap.as_ref().map(|p| (p.width(), p.height())) != Some((w, h)) {
         picture.pixmap = Pixmap::new(w, h);
@@ -110,7 +102,7 @@ pub(crate) fn render(
         }
     }
     out.touchpad_area = out.touchpad_area.map(|r| r.shifted(sx, sy));
-    Ok(Rendered { out, origin: (sx, sy) })
+    Ok(out)
 }
 
 #[cfg(test)]

@@ -73,8 +73,6 @@ Environment=CLAMSHELL_CONTROL=%t/clamshell-control
 # through logind) and takes the hardware keys (volume, brightness). Desktop runs leave this unset.
 Environment=CLAMSHELL_SESSION=device
 Environment=CLAMSHELL_BOTTOM_OUTPUT=DSI-1
-# Touchpad mode takes the bottom screen's touchscreen (the Thor has two).
-Environment=CLAMSHELL_TOUCHSCREEN=bottom_touchscreen
 Restart=on-failure
 RestartSec=2
 EOF

@@ -4,7 +4,7 @@
 //! resting stick's jitter isn't input). And, in the device's own session, the device's hardware keys:
 //! volume, mute and brightness on small button devices (gpio-keys, a headset's buttons), never on a
 //! full keyboard, whose keys are the desktop's business. Devices that come and go are picked up within
-//! [`RESCAN_EVERY`]. Grabbed devices (the controller, the touchscreen in touchpad mode) say nothing here;
+//! [`RESCAN_EVERY`]. Grabbed devices (the controller) say nothing here;
 //! their input reaches the state through their own paths and the virtual devices they feed.
 
 use std::collections::HashMap;

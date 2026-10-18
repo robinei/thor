@@ -48,8 +48,7 @@ pub struct Slider {
 }
 
 /// A finger held this long on volume or brightness brings up the slider (a shorter touch is a tap, which
-/// opens the tab); moving sideways this far (layout units) brings it up at once. For touch and the mouse,
-/// in the UI and in touchpad mode alike.
+/// opens the tab); moving sideways this far (layout units) brings it up at once. For touch and the mouse.
 pub const SLIDE_AFTER: std::time::Duration = std::time::Duration::from_millis(200);
 pub const SLIDE_MOVE: f32 = 8.0;
 

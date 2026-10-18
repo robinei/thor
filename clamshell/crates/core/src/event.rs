@@ -16,7 +16,7 @@ use crate::metrics::Metrics;
 use crate::pad::PadInput;
 use crate::scroll::ListEvent;
 use crate::slider::Control;
-use crate::sys::{Status, TouchpadProblem};
+use crate::sys::Status;
 use crate::wifi::Wifi;
 use crate::windows::Window;
 
@@ -106,8 +106,6 @@ pub enum Reading {
     Audio(Audio),
     /// The backlights' names (while the brightness tab is open).
     Backlights(Vec<String>),
-    /// Touchpad mode works, or why it doesn't.
-    TouchpadProblem(Option<TouchpadProblem>),
     /// The time zone and the ones to choose from (while the time tab is open, and after setting one).
     Time(crate::time::TimeZones),
 }

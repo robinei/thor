@@ -16,9 +16,6 @@ pub struct Env {
     /// CLAMSHELL_GAMEPAD: the controller, its /dev/input path or part of its name (default: the first
     /// gamepad).
     pub gamepad: DeviceSpec,
-    /// CLAMSHELL_TOUCHSCREEN: the second screen's touchscreen, likewise (default: the first direct-touch
-    /// multitouch device).
-    pub touchscreen: DeviceSpec,
     /// CLAMSHELL_STEAM=off: without Steam's games (tests).
     pub steam: bool,
     /// CLAMSHELL_START_MODE: start in this tab (touchpad, keyboard, dock, ...; development). What it
@@ -55,7 +52,6 @@ impl Env {
             bottom_output: var("CLAMSHELL_BOTTOM_OUTPUT").unwrap_or_else(|| "DSI-1".into()),
             bottom_panel: flag("CLAMSHELL_BOTTOM_PANEL", "1"),
             gamepad: DeviceSpec::parse(var("CLAMSHELL_GAMEPAD").as_deref()),
-            touchscreen: DeviceSpec::parse(var("CLAMSHELL_TOUCHSCREEN").as_deref()),
             steam: !flag("CLAMSHELL_STEAM", "off"),
             start_tab: var("CLAMSHELL_START_MODE").and_then(|t| Tab::from_name(&t)),
             pad_mouse: flag("CLAMSHELL_PAD_MOUSE", "1"),

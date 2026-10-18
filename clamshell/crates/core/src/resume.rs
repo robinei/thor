@@ -62,7 +62,7 @@ impl State {
 
     /// Goes back to the place `resume` saved (collections and entries that are gone are skipped).
     pub(crate) fn restore(&mut self, resume: &Resume) {
-        // Any tab but the touchpad (it grabs the touchscreen: only on request). What a tab watches starts
+        // Any tab but the touchpad (any touch there points: only on request). What a tab watches starts
         // with Event::Start.
         if let Some(tab) = Tab::from_name(&resume.tab).filter(|t| *t != Tab::Touchpad) {
             self.bottom.tab = tab;

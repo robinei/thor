@@ -50,7 +50,7 @@ SHELF_X, SHELF_FIRST_Y, SHELF_ROW_H = 300, 150, 94.6
 # The time tab: its list's first row, and its header's back arrow.
 TIME_FIRST_Y = 252
 TIME_BACK = (83, 135)
-# Below the bar: the touchpad's area in touchpad mode.
+# Below the bar: where a finger points (the touchpad tab: at once).
 PAD_Y = 600
 
 PRELUDE = ("export SWAYSOCK=$(ls /run/user/$(id -u)/sway-ipc.*.sock 2>/dev/null | head -1) WAYLAND_DISPLAY=wayland-1; "
@@ -564,25 +564,35 @@ class Checks:
     # the touchpad tab
 
     def touchpad(self):
-        since = now()
         self.icon("touchpad")
-        on = logged(since, "touchpad mode on")
-        touchscreen = device("QEMU Virtio MultiTouch")
-        self.check("touchpad tab: touchpad mode on, the touchscreen grabbed", on and grabbed(touchscreen),
-                   f"logged {on}, {touchscreen} grabbed {grabbed(touchscreen)}")
         virtual = device("clamshell touchpad")
-        if not self.check("  a virtual touchpad", bool(virtual)):
+        if not self.check("touchpad tab: the virtual touchpad", until(lambda: tab() == "touchpad") and bool(virtual), f"tab {tab()!r}"):
             return
-        out = capture(f"sudo libinput debug-events --device {virtual}", 3,
-                      lambda: self.i.touch.slide(0, 300, PAD_Y, 900, PAD_Y, 20, 1.0) or self.i.touch.up(0))
+
+        def tap_then_slide():
+            self.i.tap(600, PAD_Y)
+            time.sleep(0.5)
+            self.i.touch.slide(0, 300, PAD_Y, 900, PAD_Y, 20, 1.0)
+            self.i.touch.up(0)
+        out = capture(f"sudo libinput debug-events --enable-tap --device {virtual}", 4, tap_then_slide)
+        self.check("  a tap below the bar clicks at once", "POINTER_BUTTON" in out, out.strip()[-300:])
         motion = out.count("POINTER_MOTION")
-        self.check("  a finger below the bar moves the pointer (libinput: pointer motion)", motion > 3,
-                   f"{motion} motion events; {out.strip()[-300:]!r}")
-        since = now()
+        self.check("  a finger below the bar moves the pointer", motion > 3, f"{motion} motion events; {out.strip()[-300:]!r}")
+        self.check("  the touchscreen isn't grabbed", not grabbed(device("QEMU Virtio MultiTouch")))
+
+        def two_fingers_up():
+            self.i.touch.down(0, 500, PAD_Y + 200)
+            self.i.touch.down(1, 700, PAD_Y + 200)
+            for step in range(1, 21):
+                time.sleep(0.04)
+                self.i.touch.move(0, 500, PAD_Y + 200 - step * 15)
+                self.i.touch.move(1, 700, PAD_Y + 200 - step * 15)
+            self.i.touch.up(0)
+            self.i.touch.up(1)
+        out = capture(f"sudo libinput debug-events --enable-tap --device {virtual}", 4, two_fingers_up)
+        self.check("  two fingers moving together scroll", "POINTER_SCROLL_FINGER" in out, out.strip()[-300:])
         self.icon("dock")
-        self.check("  a finger on the bar still taps the bar (the dock opens, touchpad mode off)",
-                   until(lambda: tab() == "dock") and logged(since, "touchpad mode off"), f"tab {tab()!r}")
-        self.check("  the touchscreen let go", not grabbed(touchscreen))
+        self.check("  a finger on the bar still taps the bar (the dock opens)", until(lambda: tab() == "dock"), f"tab {tab()!r}")
 
     # the keyboard's pointing
 

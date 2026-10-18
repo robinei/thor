@@ -1,58 +1,18 @@
-//! What the input side needs to know about the second screen's layout in touchpad mode: where the
-//! touchpad area is, and which regions stay the UI's (the bar), in the screen's pixels. The UI updates it
-//! with every frame of the second screen; the touchpad thread reads it at each touch-down.
-//!
-//! And pointing: the second screen below the bar is a touchpad too, without touchpad mode. A finger that
-//! would tap (a key, a button, a row, nothing) and moves far enough points instead (what it was on let go
-//! without a tap), handed with the other fingers then tapping to the virtual touchpad, so libinput moves
-//! the pointer, taps to click, scrolls with two fingers. What moves of its own takes the motion first: a
-//! slider sideways, a list up and down (so on a list only a sideways move points), a held key nowhere.
-//! While it points the area below the bar fades, and fingers that come down on it point too, until none
-//! has been on it a moment or a text field takes focus. The UI decides which fingers point (its input
+//! Pointing: the second screen below the bar is a touchpad. A finger that would tap (a key, a button, a
+//! row, nothing) and moves far enough points instead (what it was on let go without a tap), handed with
+//! the other fingers then tapping to a virtual touchpad, so libinput moves the pointer, taps to click,
+//! scrolls with two fingers, drags. What moves of its own takes the motion first: a slider sideways, a
+//! list up and down (so on a list only a sideways move points), a held key nowhere. While it points the
+//! area below the bar fades, and fingers that come down on it point too, until none has been on it a
+//! moment or a text field takes focus. The touchpad tab is that area with nothing in it, always
+//! pointing: every finger below the bar points at once. The UI decides which fingers point (its input
 //! machine); the state keeps whether it points.
 
-use crate::Id;
-
-/// A rectangle in screen pixels that belongs to a UI target.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Region {
-    pub x0: f32,
-    pub y0: f32,
-    pub x1: f32,
-    pub y1: f32,
-    pub id: Id,
-}
-
-impl Region {
-    pub fn contains(&self, x: f32, y: f32) -> bool {
-        x >= self.x0 && x < self.x1 && y >= self.y0 && y < self.y1
-    }
-}
-
+/// What the virtual touchpad needs of the second screen's layout: its size in pixels (the touchscreen
+/// covers it). The UI updates it with every frame of the second screen.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct TouchLayout {
-    /// The second screen's size in pixels (the touchscreen covers it).
     pub screen: (f32, f32),
-    /// Pixels per layout unit, where the layout starts on screen (in layout units), and its width: so
-    /// a position on the bar's sliders can be given in the layout's units.
-    pub scale: f32,
-    pub origin_x: f32,
-    pub width: f32,
-    /// The touchpad area: x0, y0, x1, y1 in screen pixels.
-    pub pad: (f32, f32, f32, f32),
-    /// Targets that stay the UI's in touchpad mode.
-    pub regions: Vec<Region>,
-}
-
-impl TouchLayout {
-    pub fn region_at(&self, x: f32, y: f32) -> Option<&Id> {
-        self.regions.iter().find(|r| r.contains(x, y)).map(|r| &r.id)
-    }
-
-    /// A horizontal screen position (pixels) in layout units.
-    pub fn layout_x(&self, x: f32) -> f32 {
-        x / self.scale.max(1.0) - self.origin_x
-    }
 }
 
 /// Fingers (slots) a touchpad tracks.
@@ -74,11 +34,11 @@ pub enum ContactPhase {
     Up,
 }
 
-/// The keyboard's pointing: a finger's contact (pointing starts, or goes on), or the fingers idle long
-/// enough that typing is back.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Pointing: the fingers' contacts in one touch frame (pointing starts, or goes on), or the fingers idle
+/// long enough that taps act again.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Pointing {
-    Contact(Contact),
+    Contacts(Vec<Contact>),
     Idle,
 }
 
@@ -91,12 +51,12 @@ mod tests {
     fn it_points_until_idle_or_a_text_field_takes_focus() {
         let mut s = crate::testkit::state();
         let contact = Contact { slot: 1, phase: ContactPhase::Down, x: 10, y: 20 };
-        let (dirty, fx) = s.apply(Pointing::Contact(contact).into());
+        let (dirty, fx) = s.apply(Pointing::Contacts(vec![contact]).into());
         assert!(s.bottom().pointing() && dirty.bottom);
-        assert_eq!(fx, vec![Effect::Touchpad(contact)]);
+        assert_eq!(fx, vec![Effect::Touchpad(vec![contact])]);
         s.apply(Pointing::Idle.into());
         assert!(!s.bottom().pointing());
-        s.apply(Pointing::Contact(contact).into());
+        s.apply(Pointing::Contacts(vec![contact]).into());
         s.apply(Event::TextInput(true));
         assert!(!s.bottom().pointing(), "a field took focus: typing");
     }

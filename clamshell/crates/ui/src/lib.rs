@@ -199,7 +199,7 @@ pub fn snapshot(state: &State, screen: Screen, size: (u32, u32), scale: u32, pat
     let at = Placement { size_px: (size.0 * scale, size.1 * scale), scale, drift: (0, 0) };
     let rendered = render::render(&mut picture, at, screen, state, &mut DrawCache::load(), &mut images::Images::synchronous())?;
     picture.pixmap.ok_or("no picture")?.save_png(path)?;
-    Ok(frame_events(state, &rendered.out))
+    Ok(frame_events(state, &rendered))
 }
 
 /// What a frame says about the lists it drew that the state doesn't know yet: how many rows each
@@ -239,6 +239,8 @@ struct App {
     input: Input,
     /// The presses' running timers.
     timers: HashMap<(Source, input::Timer), RegistrationToken>,
+    /// Fingers pointing in the touch frame being handled: sent on together once it is.
+    contacts: Vec<clamshell_core::touch::Contact>,
     /// Where the pad's focus was on each screen, for View switching back to it.
     focus_memory: Screens<Option<Id>>,
     /// Keys stand in for the pad (a desktop; not on the device, where keys reaching shelf are typing).
@@ -280,6 +282,7 @@ impl App {
             images,
             input: Input::default(),
             timers: HashMap::new(),
+            contacts: Vec::new(),
             focus_memory: Screens::default(),
             desktop_keys: true,
             text_input: text_input::TextInput::bind(globals, qh),
@@ -374,14 +377,13 @@ impl App {
             };
             match view.draw(&mut self.pool, &mut self.fonts, &self.state, &mut self.images, &self.qh) {
                 Ok(rendered) => {
-                    view.body = rendered.out.touchpad_area;
-                    if let Some(area) = rendered.out.touchpad_area {
+                    view.body = rendered.touchpad_area;
+                    if screen == Screen::Bottom {
                         let scale = view.scale.max(1) as f32;
-                        let screen_px = (view.size.0 as f32 * scale, view.size.1 as f32 * scale);
-                        view::publish(&self.touch_layout, &view.picture.targets, area, rendered.origin.0, scale, screen_px);
+                        view::publish(&self.touch_layout, (view.size.0 as f32 * scale, view.size.1 as f32 * scale));
                     }
-                    rows_changed = rows_changed.or(rendered.out.list_rows.filter(|&rows| rows != self.state.shelf().rows()));
-                    lists.extend(list_changes(&self.state, &rendered.out));
+                    rows_changed = rows_changed.or(rendered.list_rows.filter(|&rows| rows != self.state.shelf().rows()));
+                    lists.extend(list_changes(&self.state, &rendered));
                 }
                 Err(e) => {
                     log::warn!("drawing {screen:?}: {e}");
@@ -412,7 +414,14 @@ impl App {
                     let scale = self.views.bottom.as_ref().map_or(1, |v| v.scale.max(1)) as f32;
                     let slot = id.rem_euclid(clamshell_core::touch::SLOTS) as u8;
                     let contact = clamshell_core::touch::Contact { slot, phase, x: (x * scale).round() as i32, y: (y * scale).round() as i32 };
-                    self.handle(clamshell_core::touch::Pointing::Contact(contact).into());
+                    // (A touch frame's events come in one go: once they are handled, its contacts as one.)
+                    if self.contacts.is_empty() {
+                        self.loop_handle.insert_idle(|app| {
+                            let contacts = std::mem::take(&mut app.contacts);
+                            app.handle(clamshell_core::touch::Pointing::Contacts(contacts).into());
+                        });
+                    }
+                    self.contacts.push(contact);
                 }
                 Action::Point(..) => {}
             }

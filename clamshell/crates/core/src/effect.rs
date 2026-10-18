@@ -39,8 +39,8 @@ pub enum Effect {
     Save(Save),
     /// A key press for the focused app (virtual keyboard).
     Key(Stroke),
-    /// A finger pointing on the keyboard, for the virtual touchpad.
-    Touchpad(crate::touch::Contact),
+    /// Fingers pointing (one touch frame's), for the virtual touchpad.
+    Touchpad(Vec<crate::touch::Contact>),
     /// Where the controller's input goes now.
     PadRoute(PadRoute),
     /// The compositor: show, close or move windows.
@@ -112,8 +112,6 @@ pub enum Effect {
 /// What a tab watches while it is open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Watch {
-    /// Touchpad mode: the input side grabs the touchscreen.
-    Touchpad,
     /// The outputs and the apps playing.
     Audio,
     /// The backlights.

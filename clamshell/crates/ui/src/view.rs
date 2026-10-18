@@ -3,8 +3,8 @@
 
 use std::sync::Mutex;
 
-use clamshell_core::touch::{Region, TouchLayout};
-use clamshell_core::{Id, State};
+use clamshell_core::State;
+use clamshell_core::touch::TouchLayout;
 use smithay_client_toolkit::{
     compositor::{CompositorState, FrameCallbackData},
     reexports::client::{
@@ -25,9 +25,9 @@ use smithay_client_toolkit::{
 use crate::draw::{DrawCache, Rect};
 use crate::focus::Drawn;
 use crate::images::Images;
-use crate::render::{self, Picture, Placement, Rendered};
+use crate::render::{self, Picture, Placement};
 use crate::screens::{Screen, Screens};
-use crate::toolkit::Target;
+use crate::toolkit::{FrameOut, Target};
 use crate::{App, Error};
 
 pub(crate) enum Shell {
@@ -161,7 +161,7 @@ impl View {
         state: &State,
         images: &mut Images,
         qh: &QueueHandle<App>,
-    ) -> Result<Rendered, Error> {
+    ) -> Result<FrameOut, Error> {
         let at = self.placement(state.unix_secs());
         let rendered = render::render(&mut self.picture, at, self.screen, state, fonts, images)?;
         if self.present(pool, qh)? {
@@ -229,20 +229,9 @@ impl Drawn for Screens<Option<View>> {
     }
 }
 
-/// Tells the touchpad tab's input side where things are, in screen pixels: the area below the bar is
-/// the touchpad; the bar's targets stay taps. No allocation once the region list has grown.
-pub(crate) fn publish(touch: &Mutex<TouchLayout>, targets: &[Target], area: Rect, origin_x: f32, scale: f32, screen: (f32, f32)) {
-    let Ok(mut layout) = touch.lock() else {
-        return;
-    };
-    layout.screen = screen;
-    layout.scale = scale;
-    layout.origin_x = origin_x;
-    layout.width = area.w;
-    layout.pad = (area.x * scale, area.y * scale, (area.x + area.w) * scale, (area.y + area.h) * scale);
-    layout.regions.clear();
-    for t in targets.iter().filter(|t| matches!(t.id, Id::Tab(_) | Id::PadMouse | Id::Control(_))) {
-        let r = t.rect;
-        layout.regions.push(Region { x0: r.x * scale, y0: r.y * scale, x1: (r.x + r.w) * scale, y1: (r.y + r.h) * scale, id: t.id.clone() });
+/// Tells the virtual touchpad the second screen's size (pixels).
+pub(crate) fn publish(touch: &Mutex<TouchLayout>, screen: (f32, f32)) {
+    if let Ok(mut layout) = touch.lock() {
+        layout.screen = screen;
     }
 }

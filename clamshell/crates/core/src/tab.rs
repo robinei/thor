@@ -44,17 +44,16 @@ names!(Tab {
 });
 
 impl Tab {
-    /// What the tab watches while open (the system read for it); the touchpad grabs the touchscreen.
+    /// What the tab watches while open (the system read for it).
     pub fn watch(self) -> Option<Watch> {
         match self {
-            Tab::Touchpad => Some(Watch::Touchpad),
             Tab::Volume => Some(Watch::Audio),
             Tab::Brightness => Some(Watch::Backlights),
             Tab::Wifi => Some(Watch::Wifi),
             Tab::Bluetooth => Some(Watch::Bluetooth),
             Tab::Battery => Some(Watch::Battery),
             Tab::Time => Some(Watch::Time),
-            Tab::Settings | Tab::Dock | Tab::Keyboard | Tab::Sysinfo => None,
+            Tab::Settings | Tab::Dock | Tab::Keyboard | Tab::Touchpad | Tab::Sysinfo => None,
         }
     }
 
@@ -69,7 +68,6 @@ impl Tab {
             Reading::Battery(_) => self == Tab::Battery,
             Reading::Audio(_) => self == Tab::Volume,
             Reading::Backlights(_) => self == Tab::Brightness,
-            Reading::TouchpadProblem(_) => self == Tab::Touchpad,
             // (The clock shows it too.)
             Reading::Time(_) => true,
         }
@@ -111,9 +109,9 @@ impl Bottom {
         self.tab
     }
 
-    /// Whether the area below the bar points (see [`crate::touch`]).
+    /// Whether the area below the bar points (see [`crate::touch`]): always in the touchpad tab.
     pub fn pointing(&self) -> bool {
-        self.pointing
+        self.pointing || self.tab == Tab::Touchpad
     }
 
     /// The editor open in the tab shown, if any.
@@ -160,15 +158,16 @@ mod tests {
     use crate::*;
 
     #[test]
-    fn the_touchpad_tab_takes_the_touchscreen_while_open() {
+    fn the_touchpad_tab_always_points() {
         let mut s = state();
-        assert_eq!(tap(&mut s, Id::Tab(Tab::Touchpad)), vec![Effect::Watch(Watch::Touchpad, true)]);
+        assert_eq!(tap(&mut s, Id::Tab(Tab::Touchpad)), vec![], "nothing to watch");
+        assert!(s.bottom().pointing());
+        s.apply(crate::touch::Pointing::Idle.into());
+        assert!(s.bottom().pointing(), "idle or not");
         let wifi = |on| Effect::Watch(Watch::Wifi, on);
-        let touchpad = |on| Effect::Watch(Watch::Touchpad, on);
-        assert_eq!(tap(&mut s, Id::Tab(Tab::Wifi)), vec![touchpad(false), wifi(true)], "the old tab's off first");
-        assert_eq!(tap(&mut s, Id::Tab(Tab::Touchpad)), vec![wifi(false), touchpad(true)]);
-        assert_eq!(tap(&mut s, Id::Tab(Tab::Keyboard)), vec![touchpad(false)]);
-        assert_eq!(tap(&mut s, Id::Tab(Tab::Keyboard)), vec![]);
+        assert_eq!(tap(&mut s, Id::Tab(Tab::Wifi)), vec![wifi(true)]);
+        assert!(!s.bottom().pointing());
+        assert_eq!(tap(&mut s, Id::Tab(Tab::Touchpad)), vec![wifi(false)], "the old tab's off");
     }
 
     #[test]
@@ -178,9 +177,9 @@ mod tests {
         s.apply(Event::Windows(vec![foot()]));
         let (dirty, fx) = s.apply(Event::TextInput(true));
         assert_eq!(s.bottom().tab(), Tab::Keyboard);
-        assert_eq!((dirty, fx), (Dirty::BOTH, vec![Effect::Watch(Watch::Touchpad, false), Effect::PadRoute(PadRoute::Keys)]));
+        assert_eq!((dirty, fx), (Dirty::BOTH, vec![Effect::PadRoute(PadRoute::Keys)]));
         // (The app in front has the pad again, as a game would.)
-        let back = vec![Effect::Watch(Watch::Touchpad, true), Effect::PadRoute(PadRoute::Game)];
+        let back = vec![Effect::PadRoute(PadRoute::Game)];
         assert_eq!(s.apply(Event::TextInput(false)).1, back);
         assert_eq!(s.bottom().tab(), Tab::Touchpad, "back where it came from");
     }

@@ -56,7 +56,7 @@ impl Track {
 pub struct FrameOut {
     /// How many rows shelf's list shows (the main screen): the state keeps the selection within them.
     pub list_rows: Option<usize>,
-    /// The area below the bar (the second screen), which is the touchpad in the touchpad tab.
+    /// The area below the bar (the second screen): where a finger may point (see clamshell-core's `touch`).
     pub touchpad_area: Option<Rect>,
     /// How many rows each scrolled list drawn shows (by [`ListId::index`]): the state keeps the lists'
     /// offsets and the pad's focus within them.

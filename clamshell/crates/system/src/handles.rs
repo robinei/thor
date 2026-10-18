@@ -57,7 +57,7 @@ impl Handles {
                 log::info!("effect: {effect:?}");
                 self.pad.send(pad::Command::Route(*route));
             }
-            Effect::Touchpad(contact) => self.touchpad.send(touchpad::Command::Contact(*contact)),
+            Effect::Touchpad(contacts) => self.touchpad.send(touchpad::Command::Contacts(contacts.clone())),
             Effect::Key(stroke) => match self.keyboard.as_mut() {
                 Some(kb) => {
                     if let Err(e) = kb.stroke(stroke) {
@@ -147,7 +147,6 @@ impl Handles {
     /// Starts or stops reading what a tab shows.
     fn watch(&self, watch: Watch, on: bool) {
         match watch {
-            Watch::Touchpad => self.touchpad.send(if on { touchpad::Command::On } else { touchpad::Command::Off }),
             Watch::Audio => self.mixer.send(mixer::Command::Audio(on)),
             Watch::Backlights => self.mixer.send(mixer::Command::Backlights(on)),
             Watch::Wifi => self.wifi.send(wifi::Request::Watch(on)),
