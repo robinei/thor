@@ -442,8 +442,9 @@ pub(super) fn control(f: &mut Frame, input: Input, p: Part, tone: Tone, selected
     }
     f.button_in(id, p.target, shown, look, |f| {
         let (cx, cy) = shown.center();
+        // (Centred by its ink: a letter in a round button looks centred whatever its shape.)
         let name = |f: &mut Frame, t: &str, r: Rect, size: f32| {
-            f.c.text_in(r, size, tone, t, Align::Center);
+            f.c.text_ink_centred(r, size, tone, t);
         };
         match input {
             Input::Trigger(s) => {
