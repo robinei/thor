@@ -201,23 +201,34 @@ impl State {
         vec![Effect::Save(Save::Dock(self.dock.pinned_ids()))]
     }
 
-    /// Home with B, let go at once: the window in front on the top screen closes, politely (not shelf's).
+    /// The window Home with B acts on: the one in front on the top screen (not shelf's); with none
+    /// there, the one in view on the bottom screen while it shows the windows moved there.
+    fn home_b_window(&self) -> Option<&Window> {
+        let windows = &self.session.windows;
+        windows
+            .iter()
+            .find(|w| w.focused && !w.down && w.app_id != SHELF_APP_ID)
+            .or_else(|| self.bottom_shows_windows().then(|| windows.iter().filter(|w| w.down).max_by_key(|w| w.visible)).flatten())
+    }
+
+    /// Home with B, let go at once: that window (see [`State::home_b_window`]) closes, politely.
     pub(crate) fn close_front_window(&self) -> Vec<Effect> {
-        match self.session.windows.iter().find(|w| w.focused && !w.down && w.app_id != SHELF_APP_ID) {
+        match self.home_b_window() {
             Some(w) => vec![Effect::Window(WindowCommand::Close(vec![w.id]))],
             None => vec![],
         }
     }
 
-    /// Home with B, held: the entry in front quits, as its menu's Quit would; any other window just
+    /// Home with B, held: that window's entry quits, as its menu's Quit would; any other window just
     /// closes.
     pub(crate) fn quit_front(&mut self) -> Vec<Effect> {
-        let Some(w) = self.session.windows.iter().find(|w| w.focused && !w.down && w.app_id != SHELF_APP_ID) else {
+        let Some(w) = self.home_b_window() else {
             return vec![];
         };
-        match self.session.running_of(w).map(|r| r.id.clone()) {
+        let (id, entry) = (w.id, self.session.running_of(w).map(|r| r.id.clone()));
+        match entry {
             Some(entry) => self.quit(&entry),
-            None => vec![Effect::Window(WindowCommand::Close(vec![w.id]))],
+            None => vec![Effect::Window(WindowCommand::Close(vec![id]))],
         }
     }
 }
@@ -328,5 +339,20 @@ mod tests {
         // Home with B: the window in front closes; held, its entry quits.
         assert_eq!(s.apply(Event::Device(hardware::DeviceKey::CloseWindow)).1, vec![Effect::Window(WindowCommand::Close(vec![5]))]);
         assert_eq!(s.apply(Event::Device(hardware::DeviceKey::Quit)).1, vec![Effect::Window(WindowCommand::Close(vec![5]))]);
+    }
+
+    #[test]
+    fn home_b_closes_the_bottom_screens_window_with_none_in_front_above() {
+        use crate::hardware::DeviceKey;
+        let mut s = state();
+        let shelf = |focused| win(1, windows::SHELF_APP_ID, &Instance::Shelf.name(), focused);
+        s.apply(Event::Windows(vec![shelf(false), foot()]));
+        s.apply(Event::Device(DeviceKey::WindowDown));
+        s.apply(Event::Windows(vec![shelf(true), Window { down: true, visible: true, focused: false, ..foot() }]));
+        assert!(s.bottom_shows_windows());
+        assert_eq!(s.apply(Event::Device(DeviceKey::CloseWindow)).1, vec![Effect::Window(WindowCommand::Close(vec![foot().id]))]);
+        // ClamShell's view down there instead: nothing to close.
+        s.apply(Event::Device(DeviceKey::BottomView));
+        assert_eq!(s.apply(Event::Device(DeviceKey::CloseWindow)).1, vec![]);
     }
 }
