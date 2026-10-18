@@ -157,7 +157,13 @@ pub fn load(sources: &Sources) -> Loaded {
     // The sources' folders in their tabs, by tab and path.
     let mut folders: HashMap<(String, String), usize> = HashMap::new();
     for source in &config.sources {
-        let dir = content::expand(&source.dir, sources.home.as_deref());
+        let dir = match content::expand_dir(&source.dir, sources.home.as_deref()) {
+            Ok(dir) => dir,
+            Err(name) => {
+                problems.push(format!("{}: ${name} isn't set", source.id));
+                continue;
+            }
+        };
         if !dir.is_dir() {
             problems.push(format!("{}: no folder {}", source.id, dir.display()));
             away.push(format!("{}:", source.id));
@@ -183,10 +189,7 @@ pub fn load(sources: &Sources) -> Loaded {
             hows.extend(entries.iter().copied().filter(fits).map(|i| (i, how.clone())));
         }
         let entries = match source.group.as_deref().map(|g| g.trim_matches('/')).filter(|g| !g.is_empty() && !entries.is_empty()) {
-            Some(path) => {
-                let dir = content::expand(&source.dir, sources.home.as_deref());
-                into_folder(&mut games, &mut folders, &source.tab, path, &dir, &entries).into_iter().collect()
-            }
+            Some(path) => into_folder(&mut games, &mut folders, &source.tab, path, &dir, &entries).into_iter().collect(),
             None => entries,
         };
         add(&mut collections, &source.tab, source.icon.as_deref(), entries);

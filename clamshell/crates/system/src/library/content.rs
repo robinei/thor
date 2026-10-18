@@ -40,8 +40,10 @@
 //! - `metadata`: where to fetch covers, screenshots and the rest for its entries (`libretro:<system>`,
 //!   `tmdb:movie`, `tmdb:tv`); `keys`: the services' keys (see [`crate::meta`]).
 //!
-//! `~/` at the start of `dir` or of a launch argument is the home dir. A source whose dir is missing is
-//! skipped; so is a file that doesn't parse (logged).
+//! `~/` at the start of `dir` or of a launch argument is the home dir; in `dir`, `$VAR`, `${VAR}` and
+//! `${VAR:-default}` are environment variables (`${XDG_DATA_HOME:-~/.local/share}/roms`). A source whose dir
+//! is missing is skipped, as one naming a variable unset without a default (shown); so is a file that
+//! doesn't parse (logged).
 
 use std::collections::HashSet;
 use std::fs;
@@ -138,7 +140,9 @@ pub fn read_config(file: &Path) -> (Config, Option<String>) {
 /// A source's entries: appended to `games` (groups before their items), the indices of its top-level
 /// ones returned.
 pub fn scan(source: &Source, home: Option<&Path>, games: &mut Vec<Game>) -> Vec<usize> {
-    let dir = expand(&source.dir, home);
+    let Ok(dir) = expand_dir(&source.dir, home) else {
+        return Vec::new();
+    };
     if !dir.is_dir() {
         log::info!("library: {}: no dir {}", source.id, dir.display());
         return Vec::new();
@@ -434,6 +438,64 @@ pub(crate) fn expand(path: &str, home: Option<&Path>) -> PathBuf {
     }
 }
 
+/// A dir as library.json gives it: its environment variables (see [`expand_vars`]), then `~/`. Err: a
+/// variable without a value or a default (its name).
+pub(crate) fn expand_dir(dir: &str, home: Option<&Path>) -> Result<PathBuf, String> {
+    expand_vars(dir, &|name| std::env::var(name).ok()).map(|d| expand(&d, home))
+}
+
+/// `$NAME`, `${NAME}` and `${NAME:-default}` (the default when it is unset or empty; expanded itself) in
+/// `text`, by `lookup`; a `$` before anything else is itself. Err: a variable without a value or a default
+/// (its name).
+pub(crate) fn expand_vars(text: &str, lookup: &dyn Fn(&str) -> Option<String>) -> Result<String, String> {
+    let name_len =
+        |s: &str| s.char_indices().find(|&(i, c)| !(c == '_' || c.is_ascii_alphabetic() || (i > 0 && c.is_ascii_digit()))).map_or(s.len(), |(i, _)| i);
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(at) = rest.find('$') {
+        out.push_str(rest.get(..at).unwrap_or(""));
+        let after = rest.get(at + 1..).unwrap_or("");
+        if let Some(inner) = after.strip_prefix('{') {
+            // To the matching brace (a default may hold `${...}` itself).
+            let mut depth = 1;
+            let end = inner.char_indices().find(|&(_, c)| {
+                depth += match c {
+                    '{' => 1,
+                    '}' => -1,
+                    _ => 0,
+                };
+                depth == 0
+            });
+            let Some((end, _)) = end else {
+                out.push_str(rest.get(at..).unwrap_or(""));
+                return Ok(out);
+            };
+            let body = inner.get(..end).unwrap_or("");
+            let (name, default) = match body.split_once(":-") {
+                Some((name, default)) => (name, Some(default)),
+                None => (body, None),
+            };
+            match (lookup(name).filter(|v| !v.is_empty()), default) {
+                (Some(value), _) => out.push_str(&value),
+                (None, Some(default)) => out.push_str(&expand_vars(default, lookup)?),
+                (None, None) => return Err(name.to_owned()),
+            }
+            rest = inner.get(end + 1..).unwrap_or("");
+        } else {
+            let len = name_len(after);
+            if len == 0 {
+                out.push('$');
+            } else {
+                let name = after.get(..len).unwrap_or("");
+                out.push_str(&lookup(name).ok_or_else(|| name.to_owned())?);
+            }
+            rest = after.get(len..).unwrap_or("");
+        }
+    }
+    out.push_str(rest);
+    Ok(out)
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
@@ -560,5 +622,21 @@ mod tests {
         assert!(problem.is_some_and(|p| p.starts_with("library.json: missing field")), "said");
         let _ = fs::remove_file(&file);
         assert_eq!(expand("~/Games", Some(Path::new("/h"))), PathBuf::from("/h/Games"));
+    }
+
+    #[test]
+    fn dirs_take_environment_variables() {
+        let env = |name: &str| match name {
+            "XDG_DATA_HOME" => Some("/d".to_owned()),
+            "EMPTY" => Some(String::new()),
+            _ => None,
+        };
+        assert_eq!(expand_vars("$XDG_DATA_HOME/Trash", &env).unwrap(), "/d/Trash");
+        assert_eq!(expand_vars("${XDG_DATA_HOME}x", &env).unwrap(), "/dx");
+        assert_eq!(expand_vars("${NOPE:-~/.local/share}/Trash", &env).unwrap(), "~/.local/share/Trash");
+        assert_eq!(expand_vars("${EMPTY:-${XDG_DATA_HOME}}/a", &env).unwrap(), "/d/a", "empty: the default, itself expanded");
+        assert_eq!(expand_vars("a$ b$1", &env).unwrap(), "a$ b$1", "not a name: itself");
+        assert_eq!(expand_vars("$NOPE/x", &env), Err("NOPE".to_owned()));
+        assert_eq!(expand_vars("${NOPE}", &env), Err("NOPE".to_owned()));
     }
 }
