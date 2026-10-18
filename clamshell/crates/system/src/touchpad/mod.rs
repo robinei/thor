@@ -3,13 +3,14 @@
 //! While on, the touchscreen is grabbed (sway sees none of its touches). Each finger is decided at
 //! touch-down ([`router`]): one that starts on a region the UI keeps (the bar) is a press on that target
 //! (moving, on the volume or brightness slider: [`bar`]); any other is copied, multitouch events as they
-//! come, to a virtual touchpad the size of the area below the bar (made again when that changes). sway's
+//! come, to a virtual touchpad the size of the second screen, in its pixels. sway's
 //! libinput then does what it does for a laptop touchpad: pointer motion with acceleration, tap to
 //! click, two-finger scroll, gestures, palm detection, all configurable with `input` lines. Our part is
 //! only this forwarding.
 //!
-//! While the keyboard is shown, the same kind of virtual touchpad, the size of the second screen, takes
-//! the fingers pointing on it ([`pointing`]: the UI hands them over; the touchscreen isn't grabbed).
+//! The keyboard's fingers pointing go to the same touchpad ([`pointing`]: the UI hands them over; the
+//! touchscreen isn't grabbed). It is made once the UI has drawn the second screen, and kept: ready before
+//! any finger. Whichever of the two ends lifts the fingers it left on it.
 
 mod bar;
 mod device;
@@ -38,13 +39,11 @@ const LAYOUT_WAIT: Duration = Duration::from_secs(3);
 /// The longest the thread waits for touches before looking at its commands (how long an Off waits).
 const COMMANDS_EVERY: Duration = Duration::from_millis(100);
 
-/// Starting and stopping touchpad mode (from ClamShell's mode changes); the keyboard's touchpad ready
-/// or not, and its fingers.
+/// Starting and stopping touchpad mode (from ClamShell's mode changes); the keyboard's fingers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command {
     On,
     Off,
-    Pointing(bool),
     Contact(clamshell_core::touch::Contact),
 }
 
@@ -92,11 +91,11 @@ fn problem(e: &Error) -> TouchpadProblem {
     }
 }
 
-/// Runs touchpad mode whenever `On` arrives, until `Off`. `layout`: where the touchpad area and the
-/// bar's targets are, kept up to date by the UI.
+/// Runs touchpad mode whenever `On` arrives, until `Off`, and the keyboard's pointing between. `layout`:
+/// the second screen's size, where the touchpad area and the bar's targets are, kept up to date by the UI.
 pub fn spawn(config: Config, layout: Arc<Mutex<TouchLayout>>, sink: impl Sink) -> io::Result<Worker<Command>> {
     Worker::spawn("touchpad", move |commands| {
-        let _ = TouchpadMode { config, layout, sink, gesture: BarGesture::default(), keyboard: None, fingers: pointing::Fingers::default() }.serve(&commands);
+        let _ = TouchpadMode { config, layout, sink, gesture: BarGesture::default(), pad: None, fingers: pointing::Fingers::default() }.serve(&commands);
     })
 }
 
@@ -105,9 +104,16 @@ struct TouchpadMode<S> {
     layout: Arc<Mutex<TouchLayout>>,
     sink: S,
     gesture: BarGesture,
-    /// The keyboard's touchpad, and its size (pixels), while the keyboard is shown.
-    keyboard: Option<(evdev::uinput::VirtualDevice, (i32, i32))>,
+    /// The virtual touchpad, once the second screen's size is known.
+    pad: Option<Pad>,
+    /// The keyboard's fingers pointing.
     fingers: pointing::Fingers,
+}
+
+/// The virtual touchpad: the second screen's size, in its pixels.
+struct Pad {
+    device: evdev::uinput::VirtualDevice,
+    size: (i32, i32),
 }
 
 /// The touchpad area (pixels), once the UI has laid it out (at start it may not have yet).
@@ -115,24 +121,34 @@ fn pad_area(layout: &Mutex<TouchLayout>) -> Option<Rect> {
     layout.lock().ok().map(|l| Rect::from_corners(l.pad)).filter(|area| !area.is_empty())
 }
 
+/// The second screen's size (pixels), once the UI has drawn it.
+fn screen(layout: &Mutex<TouchLayout>) -> Option<(i32, i32)> {
+    layout.lock().ok().map(|l| (l.screen.0 as i32, l.screen.1 as i32)).filter(|(w, h)| *w > 0 && *h > 0)
+}
+
 impl<S: Sink> TouchpadMode<S> {
-    /// Runs touchpad mode each time it is turned on, until the commands or the UI go.
+    /// Runs touchpad mode each time it is turned on, and the keyboard's fingers meanwhile, until the
+    /// commands or the UI go.
     fn serve(&mut self, commands: &Receiver<Command>) -> Result<(), Closed> {
         loop {
-            match worker::next(commands, None) {
+            // (Until the touchpad is made, looking for the screen's size now and then.)
+            let wait = self.pad.is_none().then_some(COMMANDS_EVERY);
+            let next = worker::next(commands, wait);
+            self.make_pad();
+            match next {
                 Next::Command(Command::On) => {}
-                Next::Command(Command::Pointing(on)) => {
-                    self.keyboard_pad(on);
-                    continue;
-                }
                 Next::Command(Command::Contact(contact)) => {
-                    self.contact(contact);
+                    let events = self.fingers.contact(contact, self.pad.as_ref().map_or((0, 0), |p| p.size));
+                    self.emit(events);
                     continue;
                 }
                 Next::Command(Command::Off) | Next::Elapsed => continue,
                 Next::Disconnected => return Ok(()),
             }
             log::info!("touchpad mode on");
+            // (The keyboard's fingers, if any are left down, are done.)
+            let lifted = self.fingers.lift();
+            self.emit(lifted);
             let result = match self.run(commands) {
                 Ok(()) => Ok(()),
                 Err(Ended::Closed) => return Err(Closed),
@@ -149,46 +165,39 @@ impl<S: Sink> TouchpadMode<S> {
         }
     }
 
-    /// The keyboard's touchpad made (ahead of its fingers: libinput takes a moment to see a new device),
-    /// the size of the second screen once the UI has drawn it; or let go.
-    fn keyboard_pad(&mut self, on: bool) {
-        self.fingers = pointing::Fingers::default();
-        self.keyboard = None;
-        if !on {
-            return;
-        }
-        let Some((w, h)) = self.layout.lock().ok().map(|l| l.screen).filter(|(w, h)| *w >= 1.0 && *h >= 1.0) else {
+    /// The touchpad made the second screen's size, ahead of any finger (libinput takes a moment to see
+    /// a new device); made again if that size changed while no finger is on it.
+    fn make_pad(&mut self) {
+        let Some(size) = screen(&self.layout).filter(|size| self.pad.as_ref().is_none_or(|p| p.size != *size)) else {
             return;
         };
-        match device::virtual_touchpad(Rect::from_corners((0.0, 0.0, w, h)), self.config.px_per_mm) {
-            Ok(pad) => self.keyboard = Some((pad, (w as i32, h as i32))),
-            Err(e) => log::warn!("the keyboard's touchpad: {e}"),
+        if self.pad.is_some() && self.fingers.any() {
+            return;
+        }
+        let area = Rect::from_corners((0.0, 0.0, size.0 as f32, size.1 as f32));
+        match device::virtual_touchpad(area, self.config.px_per_mm) {
+            Ok(device) => self.pad = Some(Pad { device, size }),
+            Err(e) => log::warn!("the virtual touchpad: {e}"),
         }
     }
 
-    /// A finger pointing on the keyboard, to its touchpad (made now if it couldn't be before).
-    fn contact(&mut self, contact: clamshell_core::touch::Contact) {
-        if self.keyboard.is_none() {
-            self.keyboard_pad(true);
-        }
-        let Some((pad, size)) = self.keyboard.as_mut() else {
+    /// Events for the touchpad (none without one).
+    fn emit(&mut self, events: Vec<crate::input::Raw>) {
+        let Some(pad) = self.pad.as_mut().filter(|_| !events.is_empty()) else {
             return;
         };
-        let batch: Vec<evdev::InputEvent> = self.fingers.contact(contact, *size).into_iter().map(Into::into).collect();
-        if let Err(e) = pad.emit(&batch) {
-            log::warn!("the keyboard's touchpad: {e}");
+        let batch: Vec<evdev::InputEvent> = events.into_iter().map(Into::into).collect();
+        if let Err(e) = pad.device.emit(&batch) {
+            log::warn!("the virtual touchpad: {e}");
         }
     }
 
-    /// Runs touchpad mode until `Off` (or the commands go).
+    /// Runs touchpad mode until `Off` (or the commands go); its fingers lifted then.
     fn run(&mut self, commands: &Receiver<Command>) -> Result<(), Ended<Error>> {
         let device = device::find(&self.config.device)?;
         let axes = device::axes(&device)?;
         let waited = Instant::now();
-        let mut area = loop {
-            if let Some(area) = pad_area(&self.layout) {
-                break area;
-            }
+        while pad_area(&self.layout).is_none() || self.pad.is_none() {
             if waited.elapsed() > LAYOUT_WAIT {
                 return Err(Ended::Lost(Error::NotLaidOut));
             }
@@ -196,23 +205,22 @@ impl<S: Sink> TouchpadMode<S> {
                 return Ok(());
             }
             thread::sleep(Duration::from_millis(20));
-        };
-        let mut touchpad = device::virtual_touchpad(area, self.config.px_per_mm)?;
+            self.make_pad();
+        }
         let mut grabbed = Grabbed::new(device)?;
         self.sink.send(Reading::TouchpadProblem(None).into())?;
         let mut router = Router::new(axes);
+        let result = self.route(commands, &mut grabbed, &mut router);
+        self.emit(router.lift());
+        result
+    }
+
+    /// The touchscreen's fingers to the bar or the touchpad, until `Off`.
+    fn route(&mut self, commands: &Receiver<Command>, grabbed: &mut Grabbed, router: &mut Router) -> Result<(), Ended<Error>> {
         let (mut raws, mut routed, mut events) = (Vec::new(), Routed::default(), Vec::<Event>::new());
         loop {
             if matches!(commands.try_recv(), Ok(Command::Off) | Err(TryRecvError::Disconnected)) {
                 return Ok(());
-            }
-            // The area changed (a new layout): a touchpad its new size, between touches.
-            if let Some(now) = pad_area(&self.layout).filter(|now| *now != area)
-                && !router.pad_fingers()
-            {
-                log::info!("touchpad mode: the area changed, the touchpad follows");
-                touchpad = device::virtual_touchpad(now, self.config.px_per_mm)?;
-                area = now;
             }
             // Wakes for touches at once.
             grabbed.wait(COMMANDS_EVERY)?;
@@ -231,10 +239,8 @@ impl<S: Sink> TouchpadMode<S> {
             for event in events.drain(..) {
                 self.sink.send(event)?;
             }
-            if !routed.pad.is_empty() {
-                let batch: Vec<evdev::InputEvent> = routed.pad.drain(..).map(Into::into).collect();
-                touchpad.emit(&batch)?;
-            }
+            let pad = std::mem::take(&mut routed.pad);
+            self.emit(pad);
         }
     }
 }

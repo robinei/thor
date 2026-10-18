@@ -7,7 +7,7 @@ use clamshell_core::Id;
 use clamshell_core::touch::TouchLayout;
 use evdev::{AbsoluteAxisCode, EventType, KeyCode};
 
-use crate::input::{Press, Range, Raw, Rect};
+use crate::input::{Press, Range, Raw};
 
 /// Slots (fingers) tracked.
 pub const SLOTS: usize = 10;
@@ -90,20 +90,32 @@ impl Router {
         Router { axes, slot: 0, touches: vec![Touch::default(); SLOTS], order: Vec::with_capacity(SLOTS), fingers: 0, first: None }
     }
 
-    /// Whether a finger is on the touchpad part.
-    pub fn pad_fingers(&self) -> bool {
-        self.fingers > 0
-    }
-
     fn to_screen(&self, x: i32, y: i32, layout: &TouchLayout) -> (f32, f32) {
         (self.axes.x.fraction(x) * layout.screen.0, self.axes.y.fraction(y) * layout.screen.1)
     }
 
-    /// A raw position as touchpad coordinates: screen pixels from the pad area's corner, inside it.
+    /// A raw position as touchpad coordinates: the screen's pixels.
     fn to_pad(&self, x: i32, y: i32, layout: &TouchLayout) -> (i32, i32) {
         let (sx, sy) = self.to_screen(x, y, layout);
-        let (px, py) = Rect::from_corners(layout.pad).inside(sx, sy);
-        (px.round() as i32, py.round() as i32)
+        (sx.round() as i32, sy.round() as i32)
+    }
+
+    /// Every touchpad finger lifted (touchpad mode ends with fingers down).
+    pub fn lift(&mut self) -> Vec<Raw> {
+        let mut out = Vec::new();
+        for (slot, t) in self.touches.iter_mut().enumerate() {
+            if t.owner == Some(Owner::Pad) {
+                out.push(Raw::abs(AbsoluteAxisCode::ABS_MT_SLOT, slot as i32));
+                out.push(Raw::abs(AbsoluteAxisCode::ABS_MT_TRACKING_ID, -1));
+            }
+            *t = Touch::default();
+        }
+        finger_keys(self.fingers, 0, &mut out);
+        (self.fingers, self.first) = (0, None);
+        if !out.is_empty() {
+            out.push(Raw::REPORT);
+        }
+        out
     }
 
     /// Feeds one raw event; a SYN_REPORT completes the frame and adds what it becomes to `out`.
@@ -284,9 +296,9 @@ mod tests {
     }
 
     #[test]
-    fn a_touch_on_the_pad_is_forwarded_in_pad_coordinates() {
+    fn a_touch_on_the_pad_is_forwarded_in_screen_pixels() {
         let (mut r, l) = setup();
-        // Raw (500, 500) is screen (500, 400), pad (500, 300).
+        // Raw (500, 500) is screen (500, 400).
         let down = frame(&mut r, &l, &[(SLOT, 0), (ID, 7), (X, 500), (Y, 500)]);
         assert_eq!(
             down.pad,
@@ -294,11 +306,11 @@ mod tests {
                 Raw::abs(SLOT, 0),
                 Raw::abs(ID, 7),
                 Raw::abs(X, 500),
-                Raw::abs(Y, 300),
+                Raw::abs(Y, 400),
                 key(KeyCode::BTN_TOUCH, true),
                 key(TOOLS[0], true),
                 Raw::abs(AbsoluteAxisCode::ABS_X, 500),
-                Raw::abs(AbsoluteAxisCode::ABS_Y, 300),
+                Raw::abs(AbsoluteAxisCode::ABS_Y, 400),
                 Raw::REPORT,
             ]
         );
@@ -327,11 +339,19 @@ mod tests {
                 Raw::abs(SLOT, 0),
                 Raw::abs(X, 510),
                 Raw::abs(SLOT, 1),
-                Raw::abs(Y, 388),
+                Raw::abs(Y, 488),
                 Raw::abs(AbsoluteAxisCode::ABS_X, 510),
-                Raw::abs(AbsoluteAxisCode::ABS_Y, 300),
+                Raw::abs(AbsoluteAxisCode::ABS_Y, 400),
                 Raw::REPORT
             ]
         );
+    }
+
+    #[test]
+    fn touchpad_mode_ending_lifts_its_fingers_not_the_bars() {
+        let (mut r, l) = setup();
+        frame(&mut r, &l, &[(SLOT, 0), (ID, 1), (X, 500), (Y, 500), (SLOT, 2), (ID, 3), (X, 10), (Y, 10)]);
+        assert_eq!(r.lift(), vec![Raw::abs(SLOT, 0), Raw::abs(ID, -1), key(KeyCode::BTN_TOUCH, false), key(TOOLS[0], false), Raw::REPORT]);
+        assert!(r.lift().is_empty(), "none left");
     }
 }

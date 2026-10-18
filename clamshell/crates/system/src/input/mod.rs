@@ -148,11 +148,6 @@ impl Rect {
     pub fn height(&self) -> f32 {
         self.y1 - self.y0
     }
-
-    /// A screen position as a position inside the area, from its corner (outside: at its edge).
-    pub fn inside(&self, x: f32, y: f32) -> (f32, f32) {
-        (x.clamp(self.x0, self.x1) - self.x0, y.clamp(self.y0, self.y1) - self.y0)
-    }
 }
 
 /// The D-pad (a hat axis: -1, 0 or 1) as arrow keys: the key of its direction down, the other up, and
@@ -204,7 +199,6 @@ mod tests {
     #[test]
     fn rects() {
         let r = Rect::from_corners((0.0, 100.0, 1000.0, 800.0));
-        assert_eq!(r.inside(500.0, 50.0), (500.0, 0.0));
         assert!(!r.is_empty() && Rect::default().is_empty());
     }
 }

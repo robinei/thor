@@ -148,7 +148,6 @@ impl Handles {
     fn watch(&self, watch: Watch, on: bool) {
         match watch {
             Watch::Touchpad => self.touchpad.send(if on { touchpad::Command::On } else { touchpad::Command::Off }),
-            Watch::Keyboard => self.touchpad.send(touchpad::Command::Pointing(on)),
             Watch::Audio => self.mixer.send(mixer::Command::Audio(on)),
             Watch::Backlights => self.mixer.send(mixer::Command::Backlights(on)),
             Watch::Wifi => self.wifi.send(wifi::Request::Watch(on)),

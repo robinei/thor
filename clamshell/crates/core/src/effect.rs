@@ -114,8 +114,6 @@ pub enum Effect {
 pub enum Watch {
     /// Touchpad mode: the input side grabs the touchscreen.
     Touchpad,
-    /// The keyboard: its virtual touchpad ready for pointing.
-    Keyboard,
     /// The outputs and the apps playing.
     Audio,
     /// The backlights.

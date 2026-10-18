@@ -15,6 +15,28 @@ pub struct Fingers {
 }
 
 impl Fingers {
+    /// Whether a finger is down.
+    pub fn any(&self) -> bool {
+        self.count() > 0
+    }
+
+    /// Every finger lifted (touchpad mode starts with fingers down).
+    pub fn lift(&mut self) -> Vec<Raw> {
+        let before = self.count();
+        let mut out = Vec::new();
+        for (slot, down) in self.down.iter_mut().enumerate() {
+            if down.take().is_some() {
+                out.push(Raw::abs(AbsoluteAxisCode::ABS_MT_SLOT, slot as i32));
+                out.push(Raw::abs(AbsoluteAxisCode::ABS_MT_TRACKING_ID, -1));
+            }
+        }
+        finger_keys(before, 0, &mut out);
+        if !out.is_empty() {
+            out.push(Raw::REPORT);
+        }
+        out
+    }
+
     fn count(&self) -> usize {
         self.down.iter().flatten().count()
     }
