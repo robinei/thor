@@ -902,8 +902,10 @@ impl State {
         if !shelf_in_front {
             return vec![Effect::Window(WindowCommand::ShowShelf)];
         }
-        let before = session.recent.iter().find(|ws| !Instance::Shelf.is(ws)).cloned();
-        let game = session.program.as_deref().and_then(|id| session.running(id)).map(Running::workspace);
+        // (Only where a window shows on the main screen: one moved down leaves its workspace empty.)
+        let shown = |ws: &String| session.windows.iter().any(|w| w.workspace == *ws && !w.down);
+        let before = session.recent.iter().find(|ws| !Instance::Shelf.is(ws) && shown(ws)).cloned();
+        let game = session.program.as_deref().and_then(|id| session.running(id)).map(Running::workspace).filter(shown);
         match before.or(game) {
             Some(workspace) => vec![Effect::Window(WindowCommand::Focus(workspace))],
             None => vec![],
@@ -1025,6 +1027,8 @@ mod tests {
         let home = |s: &mut State| s.apply(Event::Home).1;
         assert_eq!(home(&mut s), vec![], "nothing before shelf: it stays");
         s.apply(GameEvent::Started("zelda-lttp".into()).into());
+        assert_eq!(home(&mut s), vec![], "the program in force, no window of it yet: shelf stays");
+        s.apply(Event::Windows(vec![shelf(true), win(3, "retroarch", &zelda, false)]));
         assert_eq!(home(&mut s), vec![Effect::Window(WindowCommand::Focus(zelda.clone()))], "no history: the program in force");
         // A terminal in front, then shelf: home goes back to the terminal.
         let terminal = "clamshell-run-foot_1";
@@ -1060,6 +1064,17 @@ mod tests {
         assert_eq!(window(s.apply(Event::Windows(vec![shelf(false), win(4, "retroarch", &zelda, true)])).1), vec![]);
         s.apply(Event::Windows(vec![shelf(true), win(4, "retroarch", &zelda, false)]));
         assert_eq!(window(s.apply(Event::Windows(vec![shelf(false), win(4, "retroarch", &zelda, false)])).1), vec![], "shelf's window is still there");
+    }
+
+    #[test]
+    fn home_doesnt_go_back_to_a_workspace_whose_window_moved_down() {
+        let mut s = state();
+        let shelf = |focused| win(1, windows::SHELF_APP_ID, &Instance::Shelf.name(), focused);
+        let terminal = "clamshell-run-foot_1";
+        s.apply(Event::Windows(vec![shelf(false), win(2, "foot", terminal, true)]));
+        // Its window moved to the bottom screen, shelf in front: nothing to go back to on the main screen.
+        s.apply(Event::Windows(vec![shelf(true), Window { down: true, ..win(2, "foot", terminal, false) }]));
+        assert_eq!(s.apply(Event::Home).1, vec![]);
     }
 
     #[test]
