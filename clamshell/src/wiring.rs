@@ -129,7 +129,17 @@ pub fn start(
     let mixer = started("mixer", mixer::spawn(backlights.clone(), sink.clone()));
     let bluetooth = started("bluetooth", bluetooth::spawn(sink.clone()));
     let system = started("system", clamshell_system::device::spawn(paths.screenshots.clone(), sink.clone()));
-    let browse = started("browse", clamshell_system::files::spawn_browse(sources.config.clone(), sources.home.clone(), sink.clone()));
+    // (Browsed videos' lengths and frames read as scanned ones' are, by the metadata threads.)
+    let probe: Box<dyn Fn(Vec<meta::Wanted>) + Send> = {
+        let (queue, sink, art, db) = (fetching.clone(), sink.clone(), paths.art.clone(), paths.db());
+        Box::new(move |wanted| {
+            if let (Some(art), Some(db)) = (art.clone(), db.clone()) {
+                detached("meta", meta::spawn(meta::Fetch { wanted, keys: meta::Keys::default(), art, db }, &queue, sink.clone()));
+            }
+        })
+    };
+    let browsing = clamshell_system::files::Browsing { config: sources.config.clone(), home: sources.home.clone(), db: paths.db(), probe };
+    let browse = started("browse", clamshell_system::files::spawn_browse(browsing, sink.clone()));
     let files = started("files", clamshell_system::files::spawn_ops(sources.home.clone(), sink.clone()));
     let wifi = started("wifi", wifi::spawn(sink));
     let tuning = Tuning { hardware: started("tuning", tuning::spawn()), pad: pad.clone(), mangohud: paths.mangohud.clone() };

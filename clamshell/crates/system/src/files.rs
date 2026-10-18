@@ -28,9 +28,19 @@ const PROGRESS: Duration = Duration::from_millis(250);
 /// Where udisks2 mounts removable filesystems.
 const MEDIA: &str = "/run/media/";
 
-/// The browse thread: lists (and watches) the folder each command names; reads library.json at `config`
-/// for how files open.
-pub fn spawn_browse(config: Option<PathBuf>, home: Option<PathBuf>, sink: impl Sink) -> io::Result<Worker<Option<Browse>>> {
+/// Where a browse thread reads and what it does with videos: library.json (how files open), the home dir
+/// (`~/`), the database (videos' lengths and frames, as for scanned ones), and how to have those not
+/// read yet read (in the background: they come as metadata).
+pub struct Browsing {
+    pub config: Option<PathBuf>,
+    pub home: Option<PathBuf>,
+    pub db: Option<PathBuf>,
+    pub probe: Box<dyn Fn(Vec<crate::meta::Wanted>) + Send>,
+}
+
+/// The browse thread: lists (and watches) the folder each command names (see [`Browsing`]).
+pub fn spawn_browse(browsing: Browsing, sink: impl Sink) -> io::Result<Worker<Option<Browse>>> {
+    let Browsing { config, home, db, probe } = browsing;
     Worker::spawn("browse", move |commands| {
         let notify = inotify::init(inotify::CreateFlags::NONBLOCK | inotify::CreateFlags::CLOEXEC).map_err(|e| log::warn!("browse: inotify: {e}")).ok();
         let flags = inotify::WatchFlags::CREATE
@@ -46,7 +56,11 @@ pub fn spawn_browse(config: Option<PathBuf>, home: Option<PathBuf>, sink: impl S
         let list = |b: &Browse| {
             let config = config.as_deref().map(content::read_config).unwrap_or_default().0;
             let (runners, _) = runners::in_force(&config.runners);
-            let entries = list(&b.dir, &b.folder, &runners, home.as_deref());
+            let mut entries = list(&b.dir, &b.folder, &runners, home.as_deref(), b.hidden);
+            let wanted = known_videos(&mut entries, db.as_deref());
+            if !wanted.is_empty() {
+                probe(wanted);
+            }
             sink.send(Event::Files(FilesEvent::Listed { folder: b.folder.clone(), entries }))
         };
         loop {
@@ -101,16 +115,16 @@ fn changed(fd: &rustix::fd::OwnedFd) -> bool {
 }
 
 /// The entries of `dir` (folder `folder`'s: their ids it, `/`, their names), folders first, then by
-/// name; hidden ones (`.name`) left out. A picture is its own art; a file opens by the first of
+/// name; hidden ones (`.name`) only if `hidden`. A picture is its own art; a file opens by the first of
 /// `runners` that opens its name (`~/` in its command against `home`).
-pub fn list(dir: &Path, folder: &str, runners: &[Runner], home: Option<&Path>) -> Vec<Game> {
+pub fn list(dir: &Path, folder: &str, runners: &[Runner], home: Option<&Path>, hidden: bool) -> Vec<Game> {
     let Ok(read) = fs::read_dir(dir) else {
         return Vec::new();
     };
     let mut games: Vec<Game> = read
         .flatten()
         .filter_map(|e| {
-            let name = e.file_name().into_string().ok().filter(|n| !n.starts_with('.'))?;
+            let name = e.file_name().into_string().ok().filter(|n| hidden || !n.starts_with('.'))?;
             let path = e.path();
             // (Through a link: what it points at.)
             let meta = fs::metadata(&path).ok();
@@ -122,10 +136,10 @@ pub fn list(dir: &Path, folder: &str, runners: &[Runner], home: Option<&Path>) -
                 game.launch = launch;
                 game.runner = Some(runner);
             }
-            match (is_dir, picture(&name)) {
-                (false, true) => game.box_front = Some(path.clone()),
-                (false, false) => game.glyph = Some("file".into()),
-                (true, _) => game.glyph = Some("folder".into()),
+            // (Its picture as a scanned entry's would be; else what it is.)
+            game.box_front = content::picture_of(&path);
+            if game.box_front.is_none() {
+                game.glyph = Some(if is_dir { "folder" } else { "file" }.into());
             }
             game.file = Some(path);
             game.browsed = Some(Browsed { folder: is_dir, size, modified, ..Browsed::default() });
@@ -136,10 +150,39 @@ pub fn list(dir: &Path, folder: &str, runners: &[Runner], home: Option<&Path>) -
     games
 }
 
-/// Whether a file is a picture the image cache reads (its own art).
-fn picture(name: &str) -> bool {
-    let lower = name.to_lowercase();
-    [".jpg", ".jpeg", ".png", ".webp"].iter().any(|ext| lower.ends_with(ext))
+/// The videos (mpv's) among `entries`: their lengths and frames as the database has them (read before,
+/// here or as scanned entries'); those it hasn't, to read.
+fn known_videos(entries: &mut [Game], db: Option<&Path>) -> Vec<crate::meta::Wanted> {
+    if !entries.iter().any(|g| g.mpv_file().is_some()) {
+        return Vec::new();
+    }
+    let probes = db.and_then(|f| crate::store::Store::open(f).ok()).and_then(|s| s.probes().ok()).unwrap_or_default();
+    let mut wanted = Vec::new();
+    for g in entries.iter_mut() {
+        let Some(file) = g.mpv_file().map(Path::to_path_buf) else {
+            continue;
+        };
+        match probes.get(&*g.id).filter(|p| p.frame.as_ref().is_none_or(|f| f.exists())) {
+            Some(p) => {
+                g.duration = p.seconds;
+                g.shot.clone_from(&p.frame);
+                // (A video's frame is its picture, not the file glyph.)
+                g.glyph = None;
+            }
+            None => {
+                g.glyph = None;
+                wanted.push(crate::meta::Wanted {
+                    id: g.id.clone(),
+                    key: g.key.clone(),
+                    title: g.title.clone(),
+                    file: Some(file),
+                    how: crate::meta::How::Duration,
+                    art: true,
+                });
+            }
+        }
+    }
+    wanted
 }
 
 /// A removable filesystem mounted: its device, where, its type, label and UUID (empty if none).
@@ -551,7 +594,7 @@ mod tests {
         )
         .unwrap();
         let (runners, _) = runners::checked(&config, &|_| true);
-        let games = list(&dir, "browse:Files/Home", &runners, None);
+        let games = list(&dir, "browse:Files/Home", &runners, None, false);
         let names: Vec<&str> = games.iter().map(|g| g.title.as_str()).collect();
         assert_eq!(names, ["Zelda", "a.SFC", "b.txt", "cover.png", "tool.desktop"]);
         assert_eq!(&*games[0].id, "browse:Files/Home/Zelda");
@@ -566,7 +609,16 @@ mod tests {
         assert_eq!(games[3].box_front.as_deref(), Some(dir.join("cover.png").as_path()), "a picture is its own art");
         assert_eq!(games[2].browsed.as_ref().unwrap().size, Some(1));
         assert_eq!(argv(&games[4]), ["tool", "--open"], "a desktop file: its own command");
-        assert_eq!(games[4].runner.as_ref().map(|r| &*r.name), Some("Desktop"));
+        // Pictures as a scan's: a folder's cover in it, a file's beside it, an image itself; else its glyph.
+        fs::write(dir.join("Zelda/cover.jpg"), "x").unwrap();
+        fs::write(dir.join("b.jpg"), "x").unwrap();
+        let games = list(&dir, "browse:Files/Home", &runners, None, false);
+        let by = |name: &str| games.iter().find(|g| g.title == name).unwrap();
+        assert_eq!(by("Zelda").box_front.as_deref(), Some(dir.join("Zelda/cover.jpg").as_path()));
+        assert_eq!(by("b.txt").box_front.as_deref(), Some(dir.join("b.jpg").as_path()), "beside it");
+        assert_eq!(by("b.jpg").box_front.as_deref(), Some(dir.join("b.jpg").as_path()), "itself");
+        assert_eq!((by("a.SFC").box_front.as_ref(), by("a.SFC").glyph.as_deref()), (None, Some("file")));
+        assert_eq!(by("tool.desktop").runner.as_ref().map(|r| &*r.name), Some("Desktop"));
         let _ = fs::remove_dir_all(&dir);
     }
 

@@ -2,7 +2,7 @@
 //! from its runner (A), Continue from its content (a folder of videos: Start), the file actions from its
 //! place (a browsed dir: see [`crate::files`]), Favourite (Y) and Pin (X) from an identity that outlives a
 //! rescan (not a browsed file's). Where the identity's are missing, Y and X take the place's Copy and
-//! Paste. The details draw these rows in order; the pad's buttons act on them.
+//! Paste, Start its Select. The details draw these rows in order; the pad's buttons act on them.
 
 use crate::files::FileAction;
 use crate::{Effect, ShelfId, State};
@@ -98,7 +98,7 @@ impl State {
         let wanted: &[Action] = match key {
             Shortcut::Y => &[Action::Favourite, Action::File(FileAction::Copy)],
             Shortcut::X => &[Action::Pin, Action::File(FileAction::Paste)],
-            Shortcut::Start => &[Action::Continue],
+            Shortcut::Start => &[Action::Continue, Action::File(FileAction::Select)],
         };
         let actions = self.actions();
         wanted.iter().copied().find(|a| actions.contains(a))

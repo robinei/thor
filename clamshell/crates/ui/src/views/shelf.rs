@@ -138,10 +138,9 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
             Tone::Normal
         };
         let look = Look { fill: selected.then_some(SURFACE_HI), ..Look::CARD };
+        // (Every row's picture in a slot of one size, 16:9, a video's frame filling it: the titles in line.)
         let thumb_h = r.h * THUMB;
-        // (A video's frame as its picture: a landscape thumbnail.)
-        let aspect = if widgets::wide_picture(game) { WIDE_ASPECT } else { BOX_ASPECT };
-        let thumb = Rect::new(r.x + pad * 0.4, r.y + (r.h - thumb_h) / 2.0, thumb_h * aspect, thumb_h);
+        let thumb = Rect::new(r.x + pad * 0.4, r.y + (r.h - thumb_h) / 2.0, thumb_h * WIDE_ASPECT, thumb_h);
         f.button(Id::Shelf(ShelfId::Game(game.id.clone())), r, look, |f| {
             widgets::thumb(f.c, f.images, game, thumb, THUMB_RADIUS, false);
             // Its marks at the row's right end, right to left: a folder's chevron, on the dock, a favourite.
@@ -149,6 +148,7 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
             let mut right = r.x + r.w - pad * 0.5;
             let marks = [
                 (game.is_group(), Icon::Chevron, Tone::Normal),
+                (s.files().selected.contains(&game.id), Icon::Check, Tone::Accent),
                 (s.dock().is_pinned(&game.id), Icon::for_tab(Tab::Dock), Tone::Normal),
                 (game.favourite, Icon::Star, Tone::Accent),
             ];
@@ -321,10 +321,20 @@ fn actions(f: &mut Frame, game: &Game, r: Rect, action_h: f32, pad: f32) -> f32 
             Action::Pin => (Fmt::of(format_args!("Not on the dock")), Tone::Dim),
             Action::File(a) if s.file_armed(a) => (Fmt::of(format_args!("{} · press again", a.label())), Tone::Accent),
             Action::File(a) => {
-                let clip = s.files().clip.as_ref();
+                let files = s.files();
+                let clip = files.clip.as_ref();
+                let selected = files.selected.len();
                 let label = match (a, clip) {
-                    (FileAction::Paste, Some(clip)) => Fmt::of(format_args!("Paste · {}", clip.name)),
-                    (FileAction::Copy | FileAction::Cut, Some(clip)) if Some(&clip.path) == game.file.as_ref() && (a == FileAction::Cut) == clip.cut => {
+                    (FileAction::Paste, Some(clip)) if clip.entries.len() > 1 => Fmt::of(format_args!("Paste · {} entries", clip.entries.len())),
+                    (FileAction::Paste, Some(clip)) => Fmt::of(format_args!("Paste · {}", clip.entries.first().map_or("", |(_, n)| n.as_str()))),
+                    (FileAction::Select, _) if files.selected.contains(&game.id) => Fmt::of(format_args!("Selected · {selected}")),
+                    (FileAction::ShowHidden, _) => Fmt::of(format_args!("{} hidden files", if files.hidden { "Hide" } else { "Show" })),
+                    (FileAction::Copy | FileAction::Cut | FileAction::Trash | FileAction::Restore | FileAction::Delete, _) if selected > 0 => {
+                        Fmt::of(format_args!("{} · {selected} selected", a.label()))
+                    }
+                    (FileAction::Copy | FileAction::Cut, Some(clip))
+                        if clip.entries.iter().any(|(p, _)| Some(p) == game.file.as_ref()) && (a == FileAction::Cut) == clip.cut =>
+                    {
                         Fmt::of(format_args!("{} · {}", a.label(), if clip.cut { "cut" } else { "copied" }))
                     }
                     _ => Fmt::of(format_args!("{}", a.label())),

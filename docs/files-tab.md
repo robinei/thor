@@ -35,8 +35,13 @@ listed again whenever it changes while it is open.
 A browsed entry is a library entry like the rest (the same rows, details, focus and navigation), marked
 as browsed: its id is its folder's id, `/`, its name; it has no metadata, isn't in Recent, and can't be a
 favourite or pinned (those are kept by id across rescans, which a listing isn't). Hidden names (`.name`)
-are left out. A picture (`.jpg`, `.png`, `.webp`) is its own thumbnail; the rest show a folder or file
-icon. The details show a file's size and age.
+are left out unless "Show hidden files" (a folder's action) says otherwise. Its picture is what a scanned
+entry's would be: a folder's `poster`, `cover` or `folder` image, a file's `<name>.jpg` beside it, an image
+itself, a video's frame (read once in the background, kept with the scanned videos' frames); else a folder
+or file icon. The details show a file's size and age.
+
+Typing on the bottom screen's keyboard with shelf in front narrows the list to the names starting with
+what is typed, here as in every tab.
 
 A file that is a library entry's (a ROM, a film the sources scanned) opens as that entry: its plays,
 Recent, where mpv left it. Any other file opens with the first `sources` entry whose `match` or `items`
@@ -57,7 +62,10 @@ or reach with the D-pad, Y and X as shortcuts.
 
 - A: Open.
 - Y: Copy. Cut. Rename (the on-screen keyboard's editor). Move to Trash.
-- X: Paste into the open folder (shown while something is copied or cut). New folder.
+- Start: Select. While entries are selected (a tick on their rows), Copy, Cut, Move to Trash, Restore and
+  Delete act on all of them; the selection is used up by one of them, and dropped on leaving the folder.
+- X: Paste into the open folder (shown while something is copied or cut). New folder. Show (or hide)
+  hidden files.
 - In the Trash: Restore, Delete. On the Trash's folder: Empty Trash. On a removable filesystem's folder:
   Eject (`udisksctl unmount`, then `power-off` where the device allows it).
 - In an empty folder the details show the folder itself, with Paste and New folder.
@@ -86,6 +94,4 @@ Files tab shows the home Trash only).
 
 ## Not done
 
-- Selecting several entries at once.
 - Removable filesystems' own Trash folders in the Files tab.
-- Showing hidden files.

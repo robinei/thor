@@ -448,10 +448,17 @@ const FOLDER_ART: [&str; 3] = ["poster", "cover", "folder"];
 
 /// An entry's art: a folder's own; a file's beside it, else its folder's (one inside the source's `dir`).
 fn art(path: &Path, dir: &Path) -> Option<PathBuf> {
+    picture_of(path).or_else(|| path.parent().filter(|p| *p != dir && p.starts_with(dir) && path.is_file()).and_then(folder_art))
+}
+
+/// A file's or folder's own picture, wherever it is (scanned or browsed): a folder's `poster`, `cover` or
+/// `folder` image in it; a file's `<name>.<image>` beside it, else the file itself if it is an image.
+pub fn picture_of(path: &Path) -> Option<PathBuf> {
     if path.is_dir() {
         return folder_art(path);
     }
-    art_beside(path).or_else(|| path.parent().filter(|p| *p != dir && p.starts_with(dir)).and_then(folder_art))
+    let image = path.extension().and_then(|e| e.to_str()).is_some_and(|e| IMAGES.contains(&e.to_lowercase().as_str()));
+    art_beside(path).filter(|p| p != path).or_else(|| image.then(|| path.to_path_buf()))
 }
 
 /// `<name>.<image>` beside a file.

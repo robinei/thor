@@ -153,7 +153,9 @@ pub const COMMANDS: &[Form<Vec<Event>>] = &[
         let name = arg(a, 0);
         Ok(vec![PointerEvent::Activate(Id::Tab(Tab::from_name(name).ok_or_else(|| name_err(name))?)).into()])
     }),
-    form("pad BUTTON", "the pad on ClamShell's screens: up, down, left, right, a (pressed and let go), b, y, lb, rb, switch, back", |a| pad(arg(a, 0))),
+    form("pad BUTTON", "the pad on ClamShell's screens: up, down, left, right, a (pressed and let go), b, x, y, start, lb, rb, switch, back", |a| {
+        pad(arg(a, 0))
+    }),
     form("listen INPUT", "an input as the pad sends it while it listens (a keymap's edit screen)", |a| Ok(vec![Event::Listened(input_named(arg(a, 0))?)])),
     form("lift SLIDER", "a held slider let go", |a| Ok(vec![Slide::End.into(), PointerEvent::Up(Id::Control(control(arg(a, 0))?)).into()])),
     form(
@@ -200,22 +202,28 @@ pub const TARGETS: &[Form<Id>] = &[
     form("launch", "shelf's launch", |_| Ok(Id::Shelf(ShelfId::Launch))),
     form("up", "out of shelf's open group", |_| Ok(Id::Shelf(ShelfId::Up))),
     form("collection N", "shelf's collection tab N", |a| Ok(Id::Shelf(ShelfId::Collection(number(arg(a, 0))?)))),
-    form("file ACTION", "a browsed entry's file action: copy, cut, rename, trash, restore, delete, empty-trash, eject, paste, new-folder", |a| {
-        use clamshell_core::files::FileAction;
-        Ok(Id::Shelf(ShelfId::File(match arg(a, 0) {
-            "copy" => FileAction::Copy,
-            "cut" => FileAction::Cut,
-            "rename" => FileAction::Rename,
-            "trash" => FileAction::Trash,
-            "restore" => FileAction::Restore,
-            "delete" => FileAction::Delete,
-            "empty-trash" => FileAction::EmptyTrash,
-            "eject" => FileAction::Eject,
-            "paste" => FileAction::Paste,
-            "new-folder" => FileAction::NewFolder,
-            other => return Err(name_err(other)),
-        })))
-    }),
+    form(
+        "file ACTION",
+        "a browsed entry's file action: copy, cut, rename, trash, restore, delete, empty-trash, eject, select, paste, new-folder, show-hidden",
+        |a| {
+            use clamshell_core::files::FileAction;
+            Ok(Id::Shelf(ShelfId::File(match arg(a, 0) {
+                "copy" => FileAction::Copy,
+                "cut" => FileAction::Cut,
+                "rename" => FileAction::Rename,
+                "trash" => FileAction::Trash,
+                "restore" => FileAction::Restore,
+                "delete" => FileAction::Delete,
+                "empty-trash" => FileAction::EmptyTrash,
+                "eject" => FileAction::Eject,
+                "paste" => FileAction::Paste,
+                "new-folder" => FileAction::NewFolder,
+                "select" => FileAction::Select,
+                "show-hidden" => FileAction::ShowHidden,
+                other => return Err(name_err(other)),
+            })))
+        },
+    ),
     form("network N", "Wi-Fi's network row N", |a| Ok(ListId::Wifi.row(number(arg(a, 0))?))),
     form("wifi-power", "Wi-Fi's switch", |_| Ok(Id::Wifi(WifiId::Power))),
     form("device N", "Bluetooth's device row N", |a| Ok(ListId::Bluetooth.row(number(arg(a, 0))?))),
@@ -343,6 +351,8 @@ fn pad(button: &str) -> Result<Vec<Event>, ParseError> {
         "a" => vec![Event::Pad(PadInput::A(true)), Event::Pad(PadInput::A(false))],
         "b" => input(PadInput::B),
         "y" => input(PadInput::Y),
+        "x" => input(PadInput::X),
+        "start" => input(PadInput::Start),
         "lb" => input(PadInput::Shoulder(-1)),
         "rb" => input(PadInput::Shoulder(1)),
         "switch" => input(PadInput::Switch),
@@ -561,7 +571,8 @@ mod tests {
         assert_eq!(parse("pad a"), Ok(vec![Event::Pad(PadInput::A(true)), Event::Pad(PadInput::A(false))]));
         assert_eq!(parse("pad lb"), Ok(vec![Event::Pad(PadInput::Shoulder(-1))]));
         assert_eq!(parse("pad switch"), Ok(vec![Event::Pad(PadInput::Switch)]));
-        assert_eq!(parse("pad x"), Err(ParseError::Name("x".into())));
+        assert_eq!(parse("pad start"), Ok(vec![Event::Pad(PadInput::Start)]));
+        assert_eq!(parse("pad z"), Err(ParseError::Name("z".into())));
     }
 
     #[test]

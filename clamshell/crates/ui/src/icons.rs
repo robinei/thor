@@ -92,6 +92,8 @@ pub enum Icon {
     File,
     Trash,
     Card,
+    /// An entry selected (the Files tab): a tick.
+    Check,
 }
 
 impl Icon {
@@ -372,6 +374,7 @@ pub fn draw(c: &mut Canvas, icon: Icon, r: Rect, color: Color) {
         Icon::ArrowLeft => arrow(p, [(19.0, 12.0), (5.0, 12.0)], [(11.0, 6.0), (5.0, 12.0), (11.0, 18.0)]),
         Icon::ArrowRight => arrow(p, [(5.0, 12.0), (19.0, 12.0)], [(13.0, 6.0), (19.0, 12.0), (13.0, 18.0)]),
         Icon::Chevron => p.line(&[(9.0, 5.0), (16.0, 12.0), (9.0, 19.0)], 2.2),
+        Icon::Check => p.line(&[(4.5, 12.5), (9.5, 17.5), (19.5, 6.5)], 2.4),
         Icon::Folder => p.shape(&[(3.0, 5.5), (9.5, 5.5), (11.5, 8.0), (21.0, 8.0), (21.0, 19.0), (3.0, 19.0)], LINE),
         Icon::File => {
             p.shape(&[(6.0, 3.0), (14.0, 3.0), (19.0, 8.0), (19.0, 21.0), (6.0, 21.0)], LINE);
@@ -639,12 +642,13 @@ mod tests {
             Icon::File,
             Icon::Trash,
             Icon::Card,
+            Icon::Check,
         ];
         let mut seen = std::collections::HashSet::new();
         for icon in &all {
             seen.insert(variant(*icon));
         }
-        assert_eq!(seen.len(), 51, "a variant is missing from the list");
+        assert_eq!(seen.len(), 52, "a variant is missing from the list");
         all
     }
 
@@ -702,6 +706,7 @@ mod tests {
             Icon::File => 55,
             Icon::Trash => 56,
             Icon::Card => 57,
+            Icon::Check => 58,
         }
     }
 
