@@ -161,7 +161,9 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
 - [ ] Gamepad buttons the keymap edit screen draws but can't remap yet: which codes the AYN button under
       the screen and the two small buttons beside it send (`evtest`), and from which device; the
       bottom-left round one should be Home (BTN_MODE). Also confirm the face buttons' codes by their printed letters (B: BTN_SOUTH, A:
-      BTN_EAST, X: BTN_NORTH, Y: BTN_WEST) and that there are no back buttons. Then they can become
+      BTN_EAST, X: BTN_NORTH, Y: BTN_WEST: by place, as ClamShell reads them; an xpad controller's,
+      by letter, are swapped as they come in) and that games see them as expected through the virtual
+      pad (written by letter, as an Xbox 360 pad's), and that there are no back buttons. Then they can become
       inputs of their own in the keymap (`core::keymap::Button`) and the edit screen (`views/pad.rs`).
 - [ ] Gyro: what the Thor's IMU is (an IIO device, or evdev from the gamepad driver?), its axes, signs and
       units. ClamShell reads an evdev motion sensor (INPUT_PROP_ACCELEROMETER, ABS_RX/RY/RZ, resolution in

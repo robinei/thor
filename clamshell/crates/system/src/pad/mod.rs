@@ -127,6 +127,8 @@ struct Controller {
     ayn: Option<AynKey>,
     /// Its motors, if it has force feedback.
     rumble: Option<Rumble>,
+    /// Its X and Y codes are by letter (xpad's), not by place: swapped as they come in.
+    letters: bool,
 }
 
 impl<S: Sink> PadThread<S> {
@@ -163,6 +165,8 @@ impl<S: Sink> PadThread<S> {
             return Err(Ended::Lost(io::Error::other("no virtual devices")));
         };
         if !out.pad.is_empty() {
+            // (Games read it as an Xbox 360 pad: X and Y by letter.)
+            device::swap_xy(&mut out.pad);
             device::emit(&mut devices.pad, &out.pad)?;
             out.pad.clear();
         }
@@ -204,7 +208,11 @@ impl<S: Sink> Service for PadThread<S> {
         let grabbed = Grabbed::new(real)?;
         log::info!("pad: {} grabbed; games see the virtual pad", grabbed.device().name().unwrap_or("controller"));
         let motion = EvdevMotion::find(&name, &phys).map(|m| Box::new(m) as Box<dyn MotionSource>);
-        Ok(Controller { grabbed, ranges, snapshot, motion, ayn: AynKey::find(), rumble })
+        let letters = device::letter_codes(&name, &phys);
+        if letters {
+            log::info!("pad: its X and Y codes are by letter (xpad): read by place");
+        }
+        Ok(Controller { grabbed, ranges, snapshot, motion, ayn: AynKey::find(), rumble, letters })
     }
 
     /// Routes the controller's events until it is gone (or the program is).
@@ -268,7 +276,7 @@ fn wait(pad: &Grabbed, motion: Option<&dyn MotionSource>, ayn: Option<&AynKey>, 
 impl<S: Sink> PadThread<S> {
     /// Routes the controller's (and the gyro's) events until it is gone (or the program is).
     fn route_events(&mut self, c: &mut Controller, router: &mut PadRouter, out: &mut Out, commands: &Receiver<Command>) -> Result<(), Ended<io::Error>> {
-        let Controller { grabbed, motion, ayn, rumble, .. } = c;
+        let Controller { grabbed, motion, ayn, rumble, letters, .. } = c;
         let mut raws = Vec::new();
         let mut samples: Vec<Sample> = Vec::new();
         let mut wake = None;
@@ -285,7 +293,11 @@ impl<S: Sink> PadThread<S> {
             let wait_for = wake.map_or(COMMANDS_EVERY, |at: Instant| at.saturating_duration_since(Instant::now())).min(COMMANDS_EVERY);
             let virtual_pad = self.devices.as_ref().map(|d| d.pad.as_fd());
             wait(grabbed, motion.as_deref(), ayn.as_ref(), virtual_pad, wait_for)?;
+            let from = raws.len();
             grabbed.fetch(&mut raws)?;
+            if *letters {
+                device::swap_xy(raws.get_mut(from..).unwrap_or_default());
+            }
             if let Some(a) = ayn.as_mut()
                 && let Err(e) = a.fetch(&mut raws)
             {

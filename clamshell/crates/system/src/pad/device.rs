@@ -130,6 +130,34 @@ impl VirtualDevices {
     }
 }
 
+/// Whether the controller (by its name and physical path) is driven by xpad, which names its face buttons'
+/// codes by their letters (its X, on the left, sends BTN_X: the code Linux calls BTN_NORTH) rather than by
+/// their place, as Linux has it (BTN_WEST the left one, BTN_NORTH the top one) and ClamShell does.
+pub fn letter_codes(name: &str, phys: &str) -> bool {
+    let Ok(inputs) = std::fs::read_dir("/sys/class/input") else {
+        return false;
+    };
+    let read = |p: std::path::PathBuf| std::fs::read_to_string(p).map(|s| s.trim().to_owned()).unwrap_or_default();
+    inputs.flatten().map(|e| e.path().join("device")).any(|dev| {
+        read(dev.join("name")) == name
+            && read(dev.join("phys")) == phys
+            && std::fs::read_link(dev.join("device/driver")).is_ok_and(|d| d.file_name().is_some_and(|n| n == "xpad"))
+    })
+}
+
+/// X and Y between the two conventions (the same swap either way): in, a [`letter_codes`] controller's
+/// events to ClamShell's; out, ClamShell's to the virtual pad's, which games read as an Xbox 360 pad's
+/// (xpad's: by letter).
+pub fn swap_xy(events: &mut [Raw]) {
+    for e in events.iter_mut().filter(|e| e.kind == evdev::EventType::KEY) {
+        if e.code == KeyCode::BTN_NORTH.0 {
+            e.code = KeyCode::BTN_WEST.0;
+        } else if e.code == KeyCode::BTN_WEST.0 {
+            e.code = KeyCode::BTN_NORTH.0;
+        }
+    }
+}
+
 /// Emits events on a virtual device.
 pub fn emit(device: &mut VirtualDevice, events: &[Raw]) -> io::Result<()> {
     let events: Vec<InputEvent> = events.iter().map(|&r| r.into()).collect();
@@ -194,4 +222,21 @@ fn virtual_mouse() -> io::Result<VirtualDevice> {
     .into_iter()
     .collect();
     VirtualDevice::builder()?.name(VIRTUAL_MOUSE).with_keys(&keyset(&mouse_device_keys()))?.with_relative_axes(&rel)?.build()
+}
+
+#[cfg(test)]
+mod letter_tests {
+    use super::*;
+    use crate::input::Press;
+
+    #[test]
+    fn x_and_y_swap_between_letters_and_places() {
+        let mut events =
+            [Raw::key(KeyCode::BTN_NORTH, Press::Down), Raw::key(KeyCode::BTN_WEST, Press::Up), Raw::key(KeyCode::BTN_SOUTH, Press::Down), Raw::REPORT];
+        swap_xy(&mut events);
+        assert_eq!(
+            events,
+            [Raw::key(KeyCode::BTN_WEST, Press::Down), Raw::key(KeyCode::BTN_NORTH, Press::Up), Raw::key(KeyCode::BTN_SOUTH, Press::Down), Raw::REPORT]
+        );
+    }
 }
