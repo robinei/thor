@@ -114,6 +114,12 @@ impl Shelf {
         self.library.games.iter().find(|g| &*g.id == id)
     }
 
+    /// The library entry (not browsed) of browsed file `id`'s file, if there is one.
+    pub(crate) fn entry_of_file(&self, id: &str) -> Option<Arc<str>> {
+        let file = self.game(id).filter(|g| g.browsed.as_ref().is_some_and(|b| !b.folder))?.file.as_ref()?;
+        self.library.games.iter().find(|g| g.browsed.is_none() && !g.is_group() && g.file.as_ref() == Some(file)).map(|g| g.id.clone())
+    }
+
     /// Collection `c`'s list as its place has it: the innermost open group's entries, else its own.
     fn list_of(&self, c: usize) -> &[usize] {
         match self.navs.get(c).and_then(|n| n.open.last()) {

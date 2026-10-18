@@ -69,12 +69,14 @@ fn entry_tile(f: &mut Frame, r: Rect, i: usize, id: &std::sync::Arc<str>, severa
     let moving = s.dock().moving() == Some(id);
     let caption_tone = if moving { Tone::Accent } else { Tone::Normal };
     let face = TileFace { caption: &game.title, caption_tone, dot: in_force.then_some(Tone::Go), note: "" };
+    // A file's: the picture of the app showing it, if its window says which.
+    let picture = s.app_showing(id).unwrap_or(game);
     widgets::tile(f, Id::Dock(DockId::Entry(i as u16)), r, &TILE, face, |f, r| {
         // Above the caption: portrait box art, or a square icon.
         let h = r.h * (CAPTION_Y - ART_TOP - ART_ROOM);
-        let w = if game.box_front.is_some() { h * 2.0 / 3.0 } else { h };
+        let w = if picture.box_front.is_some() { h * 2.0 / 3.0 } else { h };
         let art = Rect::new(r.x + (r.w - w) / 2.0, r.y + r.h * ART_TOP, w, h);
-        widgets::art(f.c, f.images, game, art, ART_RADIUS, crate::draw::Align::Center, !running);
+        widgets::art(f.c, f.images, picture, art, ART_RADIUS, crate::draw::Align::Center, !running);
     });
 }
 

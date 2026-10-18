@@ -325,12 +325,15 @@ impl State {
             Event::Game(e) => self.on_game(e),
             Event::Windows(windows) => {
                 let was = self.session.windows.iter().find(|w| w.focused && !w.down).map(|w| w.workspace.clone());
+                let known: Vec<i64> = self.session.windows.iter().map(|w| w.id).collect();
                 self.session.set_windows(windows);
+                let handed = self.follow_handed(&known);
                 let mut effects = self.follow_steam();
                 effects.extend(self.follow_window_rules());
                 effects.extend(self.session.show_pending());
                 effects.extend(self.follow_quitting());
                 effects.extend(self.follow_closed(was));
+                effects.extend(handed);
                 self.follow_dock();
                 (Dirty::BOTH, effects)
             }
@@ -426,9 +429,17 @@ impl State {
             effects.push(Effect::Save(Save::Brightness(self.levels.brightness().clone())));
         }
         let notice_gone = self.expire_notice(unix_secs);
+        // (A file's launch that waited for its window in vain: off the dock.)
+        let known: Vec<i64> = self.session.windows.iter().map(|w| w.id).collect();
+        let before = self.session.running.len();
+        effects.extend(self.follow_handed(&known));
+        let ended = self.session.running.len() != before;
+        if ended {
+            self.follow_dock();
+        }
         let dirty = if minute_changed {
             Dirty::BOTH
-        } else if notice_gone {
+        } else if notice_gone || ended {
             Dirty::BOTTOM
         } else {
             Dirty::NONE
@@ -693,11 +704,7 @@ impl State {
             GameEvent::Played { game, start, duration } => self.played(&game, start, duration),
             GameEvent::Position { game, position } => self.shelf.set_position(&game, position, self.unix_secs),
             // (A launch that never started: nothing runs one less, but it is no longer starting.)
-            GameEvent::LaunchFailed(game) => {
-                if let Some(i) = self.session.launching.iter().position(|l| l.game == game) {
-                    self.session.launching.remove(i);
-                }
-            }
+            GameEvent::LaunchFailed(game) => self.launch_failed(game),
         }
         self.follow_dock();
         (Dirty::BOTH, self.follow_quitting())

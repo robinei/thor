@@ -4,6 +4,11 @@
 //! `steam_app_<id>` window of a library entry) isn't in a scope of ours: it runs in Steam's, its windows
 //! moved to its entry's workspace from where they land, and it has ended when its last window has.
 //!
+//! A file opened from the Files tab (a browsed entry) whose launch hands it to a program not ours and ends
+//! (`xdg-open` to an app's own instance, D-Bus activation) runs on by its windows: a new window of no launch
+//! of ours appearing within [`HANDOFF`] is moved to its workspace, and it has ended when that window has
+//! closed (or when none came).
+//!
 //! In shelf, activating a running entry shows it, a stopped one starts. Quit asks an entry's windows to
 //! close and, once none is left and it still runs, ends it: its slice stopped, or (Steam's) the processes
 //! under Steam's launcher for it; Force kill ends it at once. What is in front (shelf, a running entry,
@@ -35,7 +40,14 @@ pub enum Origin {
     Ours { appid: Option<u32> },
     /// Steam, by its id: its play ends, and is recorded here, when its last window closes.
     Steam(u32),
+    /// Ours, but what we started handed over to a program not ours and ended: it runs by its windows,
+    /// taking a new stray window until `until` (epoch seconds), ending once it has had windows (`seen`)
+    /// and has none, or none came.
+    Handed { until: u64, seen: bool },
 }
+
+/// How long a launch that handed over waits for its window (seconds).
+pub const HANDOFF: u64 = 15;
 
 /// An entry that runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,6 +70,7 @@ impl Running {
         match self.origin {
             Origin::Ours { appid } => appid,
             Origin::Steam(appid) => Some(appid),
+            Origin::Handed { .. } => None,
         }
     }
 
@@ -81,6 +94,8 @@ impl State {
     /// start it.
     /// A group isn't started: it is shown open in shelf.
     pub(crate) fn play(&mut self, game: Arc<str>) -> Vec<Effect> {
+        // A browsed file that is a library entry too: as that entry.
+        let game = self.shelf.entry_of_file(&game).unwrap_or(game);
         if let Some(r) = self.session.running(&game) {
             return vec![Effect::Window(WindowCommand::Focus(r.workspace()))];
         }
@@ -151,13 +166,78 @@ impl State {
         self.ended(game);
     }
 
-    /// A launch of `game` ended (or couldn't start): it no longer runs once none does.
+    /// A launch of `game` ended (or couldn't start): it no longer runs once none does; a browsed file's
+    /// soon after it started runs on by its windows (see [`Origin::Handed`]).
     pub(crate) fn ended(&mut self, game: &str) {
         self.session.launching.retain(|l| &*l.game != game || l.appid.is_some());
-        if let Some(r) = self.session.running.iter_mut().find(|r| &*r.id == game) {
+        let browsed = self.shelf.game(game).is_some_and(|g| g.browsed.is_some());
+        let now = self.unix_secs;
+        let session = &mut self.session;
+        if let Some(r) = session.running.iter_mut().find(|r| &*r.id == game) {
             r.launches = r.launches.saturating_sub(1);
+            if r.launches == 0 && browsed && matches!(r.origin, Origin::Ours { .. }) && now.saturating_sub(r.start) <= HANDOFF {
+                let seen = session.windows.iter().any(|w| Instance::key_of(&w.workspace) == Some(r.key.as_str()));
+                r.origin = Origin::Handed { until: r.start + HANDOFF, seen };
+            }
         }
-        self.session.running.retain(|r| r.launches > 0 || matches!(r.origin, Origin::Steam(_)));
+        session.running.retain(|r| r.launches > 0 || matches!(r.origin, Origin::Steam(_) | Origin::Handed { .. }));
+    }
+
+    /// A launch that never started (its scope was gone before it was seen): a browsed file's waits for
+    /// its window (see [`Origin::Handed`]).
+    pub(crate) fn launch_failed(&mut self, game: Arc<str>) {
+        if let Some(i) = self.session.launching.iter().position(|l| l.game == game) {
+            self.session.launching.remove(i);
+        }
+        let Some(key) = self.shelf.game(&game).filter(|g| g.browsed.is_some()).map(|g| g.key.clone()) else {
+            return;
+        };
+        if self.session.running(&game).is_none() {
+            let now = self.unix_secs;
+            let origin = Origin::Handed { until: now + HANDOFF, seen: false };
+            self.session.running.push(Running { id: game, key, origin, start: now, launches: 0, adopted: false });
+        }
+    }
+
+    /// After the windows changed, and every second: a new window of no launch of ours (not shelf's, not
+    /// a Steam game's, on no running entry's workspace) goes to the latest entry waiting for one (see
+    /// [`Origin::Handed`]), shown; those that had windows and have none, or waited in vain, have ended.
+    /// `known`: the windows there before.
+    pub(crate) fn follow_handed(&mut self, known: &[i64]) -> Vec<Effect> {
+        let now = self.unix_secs;
+        let session = &self.session;
+        let stray: Vec<i64> = session
+            .windows
+            .iter()
+            .filter(|w| !known.contains(&w.id) && w.home().is_none() && w.steam_id().is_none() && !w.down && session.running_of(w).is_none())
+            .map(|w| w.id)
+            .collect();
+        let waiting = session.running.iter().filter(|r| matches!(r.origin, Origin::Handed { until, seen: false } if now <= until)).max_by_key(|r| r.start);
+        let mut effects = Vec::new();
+        let mut taken = None;
+        if let Some(r) = waiting.filter(|_| !stray.is_empty()) {
+            effects.push(Effect::Window(WindowCommand::Move { windows: stray, to: r.workspace() }));
+            effects.push(Effect::Window(WindowCommand::Focus(r.workspace())));
+            taken = Some(r.id.clone());
+        }
+        // Those with windows on their workspace (a window just taken is still where it came up).
+        let windows = &self.session.windows;
+        let with: Vec<Arc<str>> = self
+            .session
+            .running
+            .iter()
+            .filter(|r| taken.as_ref() == Some(&r.id) || windows.iter().any(|w| Instance::key_of(&w.workspace) == Some(r.key.as_str())))
+            .map(|r| r.id.clone())
+            .collect();
+        self.session.running.retain_mut(|r| match &mut r.origin {
+            Origin::Handed { until, seen } => {
+                let has = with.contains(&r.id);
+                *seen |= has;
+                r.launches > 0 || if *seen { has } else { now <= *until }
+            }
+            _ => true,
+        });
+        effects
     }
 
     /// After systemd's list of our scopes changed: an entry with scopes listed that isn't known to run
@@ -180,6 +260,23 @@ impl State {
             let start = self.unix_secs;
             session.running.push(Running { id: g.id.clone(), key: key.to_owned(), origin: Origin::Ours { appid: None }, start, launches, adopted: true });
         }
+    }
+
+    /// The app whose window shows browsed file `id` (running): the desktop file named as the window's
+    /// app id says (`org.kde.kate`: `desktop:org.kde.kate`; any case), else the one whose program it is.
+    /// For its picture only: the file runs as itself.
+    pub fn app_showing(&self, id: &str) -> Option<&crate::Game> {
+        self.shelf.game(id).filter(|g| g.browsed.is_some())?;
+        let session = &self.session;
+        let window = session.windows.iter().find(|w| session.running_of(w).is_some_and(|r| &*r.id == id))?;
+        let app = window.app_id.to_lowercase();
+        let games = &self.shelf.library().games;
+        let program = |g: &&crate::Game| match &g.launch {
+            Launch::Program { argv, .. } => argv.first().and_then(|p| p.rsplit('/').next()).is_some_and(|p| p.to_lowercase() == app),
+            _ => false,
+        };
+        let named = |g: &&crate::Game| g.id.strip_prefix("desktop:").is_some_and(|d| d.to_lowercase() == app);
+        games.iter().find(named).or_else(|| games.iter().filter(|g| g.id.starts_with("desktop:")).find(program))
     }
 
     /// The windows of a running entry (moved to the bottom screen too).
@@ -289,6 +386,7 @@ impl State {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
+    use crate::running::HANDOFF;
     use crate::testkit::*;
     use crate::*;
 
@@ -390,6 +488,71 @@ mod tests {
         let fx = s.apply(Event::Windows(vec![])).1;
         assert!(!fx.iter().any(|e| matches!(e, Effect::RecordPlay { .. })), "{fx:?}");
         assert!(s.session().running("ff6").is_some());
+    }
+
+    /// A Files tab with a file of its own and one that is a library entry's (zelda's).
+    fn files() -> State {
+        let mut library = clamshell_library::demo_library();
+        if let Some(zelda) = library.games.first_mut() {
+            zelda.file = Some("/roms/zelda.sfc".into());
+        }
+        let browsed = |id: &str, file: &str| crate::Game {
+            file: Some(file.into()),
+            launch: Launch::program(vec!["xdg-open".into(), file.into()]),
+            browsed: Some(crate::Browsed::default()),
+            ..crate::Game::new(id, file)
+        };
+        let n = library.games.len();
+        library.games.push(browsed("browse:Home/notes.md", "/h/notes.md"));
+        library.games.push(browsed("browse:Home/zelda.sfc", "/roms/zelda.sfc"));
+        library.collections.insert(0, crate::Collection::new("Files", vec![n, n + 1]));
+        crate::testkit::state_with(library)
+    }
+
+    #[test]
+    fn a_file_that_is_a_library_entry_opens_as_it() {
+        let mut s = files();
+        s.apply(ShelfEvent::ListStep(1).into());
+        let fx = tap(&mut s, Id::Shelf(ShelfId::Launch));
+        assert!(launches(&fx, "zelda-lttp"), "{fx:?}");
+    }
+
+    #[test]
+    fn a_file_handed_to_another_program_runs_by_its_window() {
+        let mut s = files();
+        s.apply(Event::Tick { unix_secs: 100 });
+        let shelf = win(1, windows::SHELF_APP_ID, &Instance::Shelf.name(), true);
+        let other = win(5, "steam", "3", false);
+        s.apply(Event::Windows(vec![shelf.clone(), other.clone()]));
+        let fx = tap(&mut s, Id::Shelf(ShelfId::Launch));
+        let ws = fx.iter().find_map(|e| match e {
+            Effect::Launch { instance, .. } => Some(instance.workspace()),
+            _ => None,
+        });
+        let ws = ws.unwrap_or_default();
+        assert!(!ws.is_empty(), "{fx:?}");
+        // xdg-open ended before its scope was seen; the app's window comes up on shelf's workspace.
+        s.apply(GameEvent::LaunchFailed("browse:Home/notes.md".into()).into());
+        assert!(s.session().running("browse:Home/notes.md").is_some(), "waits for its window");
+        // (The demo's Terminal: its desktop file is foot's.)
+        let app = win(6, "foot", &Instance::Shelf.name(), true);
+        let (_, fx) = s.apply(Event::Windows(vec![shelf.clone(), other.clone(), app.clone()]));
+        assert!(fx.contains(&Effect::Window(WindowCommand::Move { windows: vec![6], to: ws.clone() })), "only the new one: {fx:?}");
+        assert!(fx.contains(&Effect::Window(WindowCommand::Focus(ws.clone()))));
+        s.apply(Event::Windows(vec![shelf.clone(), other.clone(), Window { workspace: ws, ..app }]));
+        s.apply(Event::Tick { unix_secs: 200 });
+        assert!(s.session().running("browse:Home/notes.md").is_some(), "runs while its window is open");
+        assert_eq!(s.app_showing("browse:Home/notes.md").map(|g| &*g.id), Some("desktop:foot"), "its picture: the app's");
+        s.apply(Event::Windows(vec![shelf.clone(), other.clone()]));
+        assert!(s.session().running("browse:Home/notes.md").is_none(), "its window closed: ended");
+        // Another that never shows a window: gone after a while.
+        tap(&mut s, Id::Shelf(ShelfId::Launch));
+        s.apply(GameEvent::LaunchFailed("browse:Home/notes.md".into()).into());
+        s.apply(Event::Tick { unix_secs: 200 + HANDOFF });
+        assert!(s.session().running("browse:Home/notes.md").is_some());
+        s.apply(Event::Tick { unix_secs: 201 + HANDOFF });
+        assert!(s.session().running("browse:Home/notes.md").is_none());
+        assert!(s.dock().items().is_empty(), "off the dock");
     }
 
     #[test]
