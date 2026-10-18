@@ -1,19 +1,23 @@
-//! Content dirs, as library.json lists them: each source a dir, name patterns for what in it is an entry,
-//! the command that starts one (`{path}` in it the entry's file or folder), and the tab it goes in.
+//! library.json: the runners (how things open, and the dirs they scan into the library: see
+//! [`super::runners`]), where the desktop files' and Steam's entries go, the dirs browsed, the removable
+//! filesystems, the services' keys.
 //!
 //! ```json
-//! { "sources": [
-//!     { "tab": "Games", "icon": "gamepad", "id": "snes", "dir": "~/Games/snes", "match": ["*.sfc", "*.smc"],
-//!       "launch": ["retroarch", "-L", "/usr/lib/libretro/snes9x_libretro.so", "{path}"] },
-//!     { "tab": "TV", "icon": "tv", "id": "tv", "dir": "~/TV", "match": ["*/"], "items": ["*.mkv", "*.mp4"],
-//!       "launch": ["mpv", "--fs", "{path}"], "metadata": "tmdb:tv" }
+//! { "runners": [
+//!     { "name": "SNES", "scan": [{ "id": "snes", "dir": "~/Games/snes", "tab": "Games", "icon": "gamepad", "group": "SNES",
+//!       "match": ["*.sfc", "*.smc", "*.zip"] }] },
+//!     { "name": "Video", "scan": [
+//!       { "id": "films", "dir": "~/Films", "tab": "Films", "icon": "film", "match": ["*.mkv", "*/*.mkv"], "metadata": "tmdb:movie" },
+//!       { "id": "tv", "dir": "~/TV", "tab": "TV", "icon": "tv", "match": ["*/"], "items": ["*.mkv", "*.mp4"], "metadata": "tmdb:tv" }] },
+//!     { "name": "Text", "match": ["*.txt", "*.md"], "launch": ["kate", "{path}"] }
 //! ],
 //!   "keys": { "tmdb": "...", "steamgriddb": "..." } }
 //! ```
 //!
-//! - `match`: patterns (see clamshell-library's `pattern`) against paths in `dir`. An entry per name at the
-//!   top of `dir`: a file, or a folder (matched itself, `*/`, or by a file in it, `*/*.cue`); where several
-//!   files of a folder match, the first pattern wins, then the first name.
+//! A scan (see [`super::runners::Scan`]):
+//! - `match`: patterns (see clamshell-library's `pattern`) against paths in `dir` (else the runner's).
+//!   An entry per name at the top of `dir`: a file, or a folder (matched itself, `*/`, or by a file in it,
+//!   `*/*.cue`); where several files of a folder match, the first pattern wins, then the first name.
 //! - `items`: a matched folder is a group: in it and every folder under it, the files matching these
 //!   patterns are entries and the folders with any are groups (a series' seasons, their episodes).
 //! - Ids: `<id>:<path in dir>`, so moving the whole dir (a new `dir`) keeps them; renaming or moving
@@ -25,7 +29,14 @@
 //! - Box art: `<name>.jpg` (or .jpeg, .png, .webp) beside a file, or `poster`, `cover` or `folder` in a
 //!   folder (any case: `Cover.jpg`); else the group's, but for a video mpv plays (its frame is its
 //!   picture).
-//! - `icon`: the tab's icon; sources in the same tab need it once.
+//! - `icon`: the tab's icon; scans in the same tab need it once.
+//! - `group`: a folder in the tab for the scan's entries (`SNES`, or `Handhelds/GBA` for one in
+//!   another), so one tab can hold folders of different runners; scans naming the same folder share it.
+//!   The folder's art: `poster`, `cover` or `folder` in the scan's dir.
+//! - `metadata`: where to fetch covers, screenshots and the rest for its entries (`libretro:<system>`,
+//!   `tmdb:movie`, `tmdb:tv`; else the runner's); `keys`: the services' keys (see [`crate::meta`]).
+//!
+//! The rest:
 //! - `desktop`, `steam`: rules (see [`Rule`]) for the desktop files' apps and games, and for Steam's
 //!   installed games: the first one matching an entry (by its id, its name, and a desktop file's
 //!   categories: globs, any case) puts it in a tab (`group`: in a folder of it), or hides it; a rule
@@ -35,23 +46,17 @@
 //!   `{ "id": "net.lutris.*", "tab": "Games", "group": "Launchers" }`, `{ "id": "*uninstall*", "hide": true }`;
 //!   for Steam `{ "name": "Dark Souls*", "group": "Steam/Souls" }`, `{ "group": "Steam" }`.
 //! - `browse`: dirs listed as they are opened, not scanned (no metadata, not in Recent), each the folder
-//!   `group` (its last part) in `tab`; their files open by the first source whose `match` or `items`
-//!   (their last part) fits the name, any case, else `xdg-open`; `trash`: the Trash's `files` dir.
-//!   `{ "tab": "Files", "group": "Home", "dir": "~" }`, `{ "tab": "Files", "group": "Trash", "dir":
+//!   `group` (its last part) in `tab`; their files open by the runners; `trash`: the Trash's `files`
+//!   dir. `{ "tab": "Files", "group": "Home", "dir": "~" }`, `{ "tab": "Files", "group": "Trash", "dir":
 //!   "${XDG_DATA_HOME:-~/.local/share}/Trash/files", "trash": true }`.
 //! - `removable`: rules for the removable filesystems mounted (udisks2's, under `/run/media/$USER`),
 //!   browsed as `browse`'s dirs: the first matching one (by `label`, `uuid`, `fs`: globs, any case) puts
 //!   one in `tab` as the folder `group` (`{label}` in it its label, else its UUID), or hides it; without
 //!   one, Files, `{label}`. `{ "label": "SD*", "tab": "Files", "group": "SD card" }`.
-//! - `group`: a folder in the tab for the source's entries (`SNES`, or `Handhelds/GBA` for one in
-//!   another), so one tab can hold folders each with its own launch command; sources naming the same
-//!   folder share it. The folder's art: `poster`, `cover` or `folder` in the source's dir.
-//! - `metadata`: where to fetch covers, screenshots and the rest for its entries (`libretro:<system>`,
-//!   `tmdb:movie`, `tmdb:tv`); `keys`: the services' keys (see [`crate::meta`]).
 //!
-//! `~/` at the start of `dir` or of a launch argument is the home dir; in `dir`, `$VAR`, `${VAR}` and
-//! `${VAR:-default}` are environment variables (`${XDG_DATA_HOME:-~/.local/share}/roms`). A source whose dir
-//! is missing is skipped, as one naming a variable unset without a default (shown); so is a file that
+//! `~` and `~/` at the start of `dir` or of a launch argument is the home dir; in `dir`, `$VAR`, `${VAR}`
+//! and `${VAR:-default}` are environment variables (`${XDG_DATA_HOME:-~/.local/share}/roms`). A scan whose
+//! dir is missing is skipped, as one naming a variable unset without a default (shown); so is a file that
 //! doesn't parse (logged).
 
 use std::collections::HashSet;
@@ -66,7 +71,7 @@ use serde::Deserialize;
 #[serde(deny_unknown_fields)]
 pub struct Config {
     #[serde(default)]
-    pub sources: Vec<Source>,
+    pub runners: Vec<super::runners::Runner>,
     #[serde(default)]
     pub keys: crate::meta::Keys,
     /// Where the desktop files' apps and games go (the first rule matching one; without one, Games for a
@@ -164,9 +169,13 @@ impl Rule {
     }
 }
 
+/// A runner's scan, with what it takes from the runner (see [`super::runners::Runner::sources`]).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Source {
+    /// The runner's name.
+    #[serde(default)]
+    pub runner: String,
     pub tab: String,
     /// The folder in the tab its entries go in (`SNES`; `Handhelds/GBA` one in another); none: the tab
     /// itself.
@@ -679,9 +688,9 @@ mod tests {
     #[test]
     fn a_config_that_doesnt_parse_is_none() {
         let file = std::env::temp_dir().join(format!("clamshell-library-{}.json", std::process::id()));
-        fs::write(&file, r#"{ "sources": [ { "tab": "Games" } ] }"#).unwrap();
+        fs::write(&file, r#"{ "runners": [ { "name": "Games", "scan": [{ "tab": "Games" }] } ] }"#).unwrap();
         let (config, problem) = read_config(&file);
-        assert!(config.sources.is_empty());
+        assert!(config.runners.is_empty());
         assert!(problem.is_some_and(|p| p.starts_with("library.json: missing field")), "said");
         let _ = fs::remove_file(&file);
         assert_eq!(expand("~/Games", Some(Path::new("/h"))), PathBuf::from("/h/Games"));

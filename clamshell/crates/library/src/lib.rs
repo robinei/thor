@@ -79,6 +79,9 @@ pub struct Game {
     pub favourite: bool,
     /// A file or folder of a browsed dir (see [`Browsed`]); none for the rest.
     pub browsed: Option<Browsed>,
+    /// The runner that opens it (library.json's or ClamShell's, by name), for content: a scanned entry
+    /// (and a folder of them), a browsed file. None for an app or a Steam game (it is its own runner).
+    pub runner: Option<Arc<str>>,
 }
 
 /// A file or folder of a browsed dir (library.json's `browse`, removable storage): not scanned, but listed
@@ -136,6 +139,7 @@ impl Game {
             plays: Plays::default(),
             favourite: false,
             browsed: None,
+            runner: None,
         }
     }
 

@@ -14,11 +14,11 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use clamshell_core::files::{Browse, FileOp, FilesEvent};
 use clamshell_core::{Browsed, Event, Game, Launch};
-use clamshell_library::pattern;
 use rustix::fs::inotify;
 
 use crate::Sink;
-use crate::library::content::{self, Config};
+use crate::library::content;
+use crate::library::runners::{self, Runner};
 use crate::worker::{self, Next, Worker};
 
 /// How often the browse thread looks at what changed (the folder's inotify events, the mounts).
@@ -44,8 +44,9 @@ pub fn spawn_browse(config: Option<PathBuf>, home: Option<PathBuf>, sink: impl S
         let mut open: Option<(Browse, Option<i32>)> = None;
         let mut mounts = media_mounts();
         let list = |b: &Browse| {
-            let opener = Opener::new(&config.as_deref().map(content::read_config).unwrap_or_default().0, home.as_deref());
-            let entries = list(&b.dir, &b.folder, &opener);
+            let config = config.as_deref().map(content::read_config).unwrap_or_default().0;
+            let (runners, _) = runners::in_force(&config.runners);
+            let entries = list(&b.dir, &b.folder, &runners, home.as_deref());
             sink.send(Event::Files(FilesEvent::Listed { folder: b.folder.clone(), entries }))
         };
         loop {
@@ -100,8 +101,9 @@ fn changed(fd: &rustix::fd::OwnedFd) -> bool {
 }
 
 /// The entries of `dir` (folder `folder`'s: their ids it, `/`, their names), folders first, then by
-/// name; hidden ones (`.name`) left out. A picture is its own art; a file opens by `opener`.
-pub fn list(dir: &Path, folder: &str, opener: &Opener) -> Vec<Game> {
+/// name; hidden ones (`.name`) left out. A picture is its own art; a file opens by the first of
+/// `runners` that opens its name (`~/` in its command against `home`).
+pub fn list(dir: &Path, folder: &str, runners: &[Runner], home: Option<&Path>) -> Vec<Game> {
     let Ok(read) = fs::read_dir(dir) else {
         return Vec::new();
     };
@@ -116,11 +118,12 @@ pub fn list(dir: &Path, folder: &str, opener: &Opener) -> Vec<Game> {
             let size = meta.as_ref().filter(|m| m.is_file()).map(fs::Metadata::len);
             let modified = meta.and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs());
             let mut game = Game::new(&format!("{folder}/{name}"), &name);
-            if !is_dir {
-                game.launch = opener.launch(&name, &path);
-                if picture(&name) {
-                    game.box_front = Some(path.clone());
-                }
+            if let Some(runner) = runners::opener(runners, &name).filter(|_| !is_dir) {
+                game.launch = launch(runner, &path, home);
+                game.runner = Some(runner.name.as_str().into());
+            }
+            if !is_dir && picture(&name) {
+                game.box_front = Some(path.clone());
             }
             game.file = Some(path);
             game.browsed = Some(Browsed { folder: is_dir, size, modified, ..Browsed::default() });
@@ -137,36 +140,11 @@ fn picture(name: &str) -> bool {
     [".jpg", ".jpeg", ".png", ".webp"].iter().any(|ext| lower.ends_with(ext))
 }
 
-/// How browsed files open: by the first source whose `match` or `items` (their last part, any case)
-/// fits the name, with its launch command; else `xdg-open`.
-#[derive(Debug, Default)]
-pub struct Opener {
-    rules: Vec<(Vec<String>, Vec<String>)>,
-}
-
-impl Opener {
-    pub fn new(config: &Config, home: Option<&Path>) -> Opener {
-        let rules = config
-            .sources
-            .iter()
-            .map(|s| {
-                let patterns =
-                    s.patterns.iter().chain(&s.items).filter(|p| !p.ends_with('/')).filter_map(|p| p.rsplit('/').next()).map(str::to_lowercase).collect();
-                (patterns, s.launch.iter().map(|a| content::expand(a, home).to_string_lossy().into_owned()).collect())
-            })
-            .collect();
-        Opener { rules }
-    }
-
-    pub fn launch(&self, name: &str, path: &Path) -> Launch {
-        let lower = name.to_lowercase();
-        let p = path.to_string_lossy();
-        let argv = match self.rules.iter().find(|(patterns, _)| patterns.iter().any(|pat| pattern::matches(pat, &lower))) {
-            Some((_, args)) => args.iter().map(|a| a.replace("{path}", &p)).collect(),
-            None => vec!["xdg-open".to_owned(), p.into_owned()],
-        };
-        Launch::Program { argv, workdir: path.parent().map(Path::to_path_buf) }
-    }
+/// `runner`'s command for `path` (`{path}` the file, `~/` the home dir), in the file's folder.
+fn launch(runner: &Runner, path: &Path, home: Option<&Path>) -> Launch {
+    let p = path.to_string_lossy();
+    let argv = runner.launch.iter().map(|a| content::expand(a, home).to_string_lossy().replace("{path}", &p)).collect();
+    Launch::Program { argv, workdir: path.parent().map(Path::to_path_buf) }
 }
 
 /// A removable filesystem mounted: its device, where, its type, label and UUID (empty if none).
@@ -570,10 +548,9 @@ mod tests {
         for f in ["a.SFC", "b.txt", ".hidden", "cover.png"] {
             fs::write(dir.join(f), "x").unwrap();
         }
-        let config: Config =
-            serde_json::from_str(r#"{ "sources": [{ "tab": "Games", "id": "snes", "dir": "/x", "match": ["*.sfc"], "launch": ["retroarch", "{path}"] }] }"#)
-                .unwrap();
-        let games = list(&dir, "browse:Files/Home", &Opener::new(&config, None));
+        let config: Vec<Runner> = serde_json::from_str(r#"[{ "name": "SNES", "match": ["*.sfc"], "launch": ["retroarch", "{path}"] }]"#).unwrap();
+        let (runners, _) = runners::all(&config, runners::builtin(&|p| p == "xdg-open", &|_| false));
+        let games = list(&dir, "browse:Files/Home", &runners, None);
         let names: Vec<&str> = games.iter().map(|g| g.title.as_str()).collect();
         assert_eq!(names, ["Zelda", "a.SFC", "b.txt", "cover.png"]);
         assert_eq!(&*games[0].id, "browse:Files/Home/Zelda");
@@ -582,7 +559,8 @@ mod tests {
             Launch::Program { argv, .. } => argv.clone(),
             _ => vec![],
         };
-        assert_eq!(argv(&games[1])[0], "retroarch", "by the source's pattern, any case");
+        assert_eq!(argv(&games[1])[0], "retroarch", "by the runner's pattern, any case");
+        assert_eq!(games[1].runner.as_deref(), Some("SNES"));
         assert_eq!(argv(&games[2])[0], "xdg-open");
         assert_eq!(games[3].box_front.as_deref(), Some(dir.join("cover.png").as_path()), "a picture is its own art");
         assert_eq!(games[2].browsed.as_ref().unwrap().size, Some(1));

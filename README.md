@@ -25,26 +25,32 @@ No panics by construction: `unwrap`, `expect`, `panic!` and slice indexing are d
 
 ## The library
 
-Shelf's tabs come from `~/.config/clamshell/library.json` (content dirs: emulated games, films, series),
-installed Steam games, and desktop files (`Categories=Game` in Games, the rest in Apps). A source names its
-tab, a dir, name patterns, and the command that starts an entry, `{path}` in it the entry's file or folder:
+Shelf's tabs come from `~/.config/clamshell/library.json`, installed Steam games, and desktop files
+(`Categories=Game` in Games, the rest in Apps). Everything opens by a runner: a name, the file names it
+opens, its command (`{path}` the file), and dirs it scans into the library (each into a tab, maybe a folder
+of it). ClamShell has its own runners (one per RetroArch system with its core installed, Video and Music in
+mpv, Images in imv, PDF in zathura, Text in `less`, and last Other files with `xdg-open`); a runner in
+library.json named as one of them takes what it leaves out from it:
 
 ```json
-{ "sources": [
-    { "tab": "Games", "icon": "gamepad", "id": "snes", "dir": "~/Games/snes", "match": ["*.sfc", "*.smc"],
-      "launch": ["retroarch", "-L", "/usr/lib/libretro/snes9x_libretro.so", "{path}"] },
-    { "tab": "TV", "icon": "tv", "id": "tv", "dir": "~/TV", "match": ["*/"], "items": ["*.mkv", "*.mp4"],
-      "launch": ["mpv", "--fs", "--save-position-on-quit", "{path}"] }
+{ "runners": [
+    { "name": "SNES", "scan": [{ "id": "snes", "dir": "~/Games/snes", "tab": "Games", "icon": "gamepad", "group": "SNES",
+      "match": ["*.sfc", "*.smc", "*.zip"] }] },
+    { "name": "Video", "scan": [{ "id": "tv", "dir": "~/TV", "tab": "TV", "icon": "tv", "match": ["*/"], "items": ["*.mkv", "*.mp4"],
+      "metadata": "tmdb:tv" }] },
+    { "name": "Text", "match": ["*.txt", "*.md"], "launch": ["kate", "{path}"] }
 ] }
 ```
 
-`items` makes each matched folder a group that opens in shelf (a series, its seasons, their episodes).
-`group` puts a source's entries in a folder of its tab (`"group": "SNES"`, or `"Handhelds/GBA"` for one in
-another), so one Games tab can hold a folder per system, each with its own launch command.
+A scan's `match` (paths in its dir, a part per folder level: `*/*.cue`) says what is an entry, else the
+runner's patterns; `items` makes each matched folder a group that opens in shelf (a series, its seasons,
+their episodes); `group` puts its entries in a folder of the tab (`"SNES"`, or `"Handhelds/GBA"` for one in
+another). A file opened from the Files tab opens by the first runner whose patterns match its name. The
+design: `docs/runners.md`.
 
 Desktop files' apps and games go in Games (`Categories=Game`) or Apps unless `desktop` rules say otherwise:
 the first rule matching an entry's desktop id, name or categories (globs, any case) puts it in a tab or
-hides it (`group` puts it in a folder of the tab, as a source's does), e.g.
+hides it (`group` puts it in a folder of the tab, as a scan's does), e.g.
 `{ "id": "net.lutris.*", "tab": "Games", "group": "Launchers" }`, `{ "name": "*Uninstall*", "hide": true }`. Steam's installed games go
 in Games unless `steam` rules say otherwise, matched by name or app id (`id`) the same way:
 `"steam": [{ "name": "Dark Souls*", "group": "Steam/Souls" }, { "group": "Steam" }]`. In every list,
@@ -52,7 +58,8 @@ folders come first.
 The rules (ids, titles, art, icons): `crates/system/src/library/content.rs`.
 
 Covers, screenshots, descriptions, developers and years are fetched in the background after start
-(`clamshell --fetch-metadata` does it without the UI): a source's `"metadata": "libretro:<system>"`
+(`clamshell --fetch-metadata` does it without the UI): a scan's or runner's `"metadata": "libretro:<system>"` (ClamShell's
+RetroArch runners have theirs)
 (libretro's thumbnails and database, by the file's checksum or by name), `"tmdb:movie"` or `"tmdb:tv"` (needs `"keys": { "tmdb": ... }`); Steam's
 games from the store; the desktop files' games from SteamGridDB (needs `keys.steamgriddb`). Art beside a
 file wins. libretro's lists are kept in `~/.cache/clamshell/libretro` for 30 days. The rules:

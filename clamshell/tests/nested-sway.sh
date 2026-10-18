@@ -35,11 +35,11 @@ sqlite3 "$DB" "CREATE TABLE dock (position INTEGER PRIMARY KEY, id TEXT NOT NULL
   INSERT INTO dock VALUES (0, 'desktop:terminal'), (1, 'desktop:slow'), (2, 'desktop:spawner'), (3, 'desktop:detached');"
 # Two test games in a content dir, a tab of their own (Test, before Apps); each starts a window of its own.
 cat > "$T/config/clamshell/library.json" <<EOF
-{ "sources": [
-  { "tab": "Test", "id": "test", "dir": "$T/games", "match": ["test.game"],
-    "launch": ["sh", "-c", "foot --app-id=testgame sleep 300 & sleep 300"] },
-  { "tab": "Test", "id": "test", "dir": "$T/games", "match": ["zeta.game"],
-    "launch": ["sh", "-c", "foot --app-id=zetagame sleep 300 & sleep 300"] }
+{ "runners": [
+  { "name": "Test", "match": ["test.game"], "launch": ["sh", "-c", "foot --app-id=testgame sleep 300 & sleep 300"],
+    "scan": [{ "id": "test", "dir": "$T/games", "tab": "Test" }] },
+  { "name": "Zeta", "match": ["zeta.game"], "launch": ["sh", "-c", "foot --app-id=zetagame sleep 300 & sleep 300"],
+    "scan": [{ "id": "test", "dir": "$T/games", "tab": "Test" }] }
 ] }
 EOF
 touch "$T/games/test.game" "$T/games/zeta.game"

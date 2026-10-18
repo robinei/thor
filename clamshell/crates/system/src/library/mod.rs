@@ -3,6 +3,7 @@
 //! clamshell-library's.
 
 pub mod content;
+pub mod runners;
 pub mod steam;
 
 use std::collections::HashMap;
@@ -167,7 +168,10 @@ pub fn load(sources: &Sources) -> Loaded {
     let mut hows: Vec<(usize, How)> = Vec::new();
     // The sources' folders in their tabs, by tab and path.
     let mut folders: HashMap<(String, String), usize> = HashMap::new();
-    for source in &config.sources {
+    let (runners, runner_problems) = runners::in_force(&config.runners);
+    problems.extend(runner_problems);
+    for source in runners.iter().flat_map(runners::Runner::sources) {
+        let source = &source;
         let dir = match content::expand_dir(&source.dir, sources.home.as_deref()) {
             Ok(dir) => dir,
             Err(name) => {
@@ -179,7 +183,12 @@ pub fn load(sources: &Sources) -> Loaded {
             problems.push(format!("{}: no folder {}", source.id, dir.display()));
             away.push(format!("{}:", source.id));
         }
+        let first = games.len();
         let entries = content::scan(source, sources.home.as_deref(), &mut games);
+        let runner: std::sync::Arc<str> = source.runner.as_str().into();
+        for g in games.get_mut(first..).into_iter().flatten() {
+            g.runner = Some(runner.clone());
+        }
         let how = source.metadata.as_deref().and_then(|m| {
             How::parse(m).or_else(|| {
                 problems.push(format!("{}: metadata \"{m}\" isn't libretro:<system>, tmdb:movie or tmdb:tv", source.id));
@@ -414,7 +423,7 @@ mod tests {
         std::fs::write(root.join("snes/Mario.sfc"), "").unwrap();
         let config = |steam_group: &str| {
             format!(
-                r#"{{ {steam_group} "sources": [{{ "tab": "Games", "group": "SNES", "id": "snes", "dir": "{}", "match": ["*.sfc"], "launch": ["retroarch", "{{path}}"] }}] }}"#,
+                r#"{{ {steam_group} "runners": [{{ "name": "Test SNES", "match": ["*.sfc"], "launch": ["retroarch", "{{path}}"], "scan": [{{ "tab": "Games", "group": "SNES", "id": "snes", "dir": "{}" }}] }}] }}"#,
                 root.join("snes").display()
             )
         };
@@ -476,7 +485,7 @@ mod tests {
     }
 
     #[test]
-    fn sources_fill_folders_in_a_tab_each_with_its_own_launch() {
+    fn runners_fill_folders_in_a_tab_each_with_its_own_launch() {
         let root = std::env::temp_dir().join(format!("clamshell-folders-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         for f in ["snes/Zelda.sfc", "snes/Mario.sfc", "snes/cover.png", "gba/Metroid.gba", "pc/Doom.sh"] {
@@ -487,12 +496,12 @@ mod tests {
         let source = |group: &str, id: &str, pattern: &str, emulator: &str| {
             let group = if group.is_empty() { String::new() } else { format!(r#""group": "{group}","#) };
             format!(
-                r#"{{ "tab": "Games", {group} "id": "{id}", "dir": "{}/{id}", "match": ["{pattern}"], "launch": ["{emulator}", "{{path}}"] }}"#,
+                r#"{{ "name": "Test {id}", "match": ["{pattern}"], "launch": ["{emulator}", "{{path}}"], "scan": [{{ "tab": "Games", {group} "id": "{id}", "dir": "{}/{id}" }}] }}"#,
                 root.display()
             )
         };
         let config = format!(
-            r#"{{ "sources": [ {}, {}, {} ] }}"#,
+            r#"{{ "runners": [ {}, {}, {} ] }}"#,
             source("SNES", "snes", "*.sfc", "snes9x"),
             source("Handhelds/GBA", "gba", "*.gba", "mgba"),
             source("", "pc", "*.sh", "sh")
