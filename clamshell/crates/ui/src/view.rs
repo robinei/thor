@@ -136,6 +136,9 @@ impl View {
             && self.behind != behind
         {
             layer.set_layer(if behind { Layer::Background } else { Layer::Overlay });
+            // (Now, not with the next frame: behind a window the surface gets no frame callbacks, so a
+            // frame may never come to carry it.)
+            layer.wl_surface().commit();
             self.behind = behind;
             self.dirty = true;
         }
