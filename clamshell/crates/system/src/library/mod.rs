@@ -186,7 +186,10 @@ pub fn load(sources: &Sources) -> Loaded {
         }
         let first = games.len();
         let entries = content::scan(source, sources.home.as_deref(), &mut games);
-        let runner = clamshell_library::RunnerOf::new(&source.runner, &source.runner_name);
+        let runner = runners
+            .iter()
+            .find(|r| r.id == source.runner)
+            .map_or_else(|| clamshell_library::RunnerOf::new(&source.runner, &source.runner_name, true), runners::Runner::of);
         for g in games.get_mut(first..).into_iter().flatten() {
             g.runner = Some(runner.clone());
         }
@@ -281,14 +284,19 @@ pub fn load(sources: &Sources) -> Loaded {
         let group = rule.and_then(|r| r.group.clone()).map(|g| g.trim_matches('/').to_owned()).filter(|g| !g.is_empty());
         placed.push((tab, icon, group, game));
     };
-    for game in sources.steam.as_deref().map(steam::games).unwrap_or_default() {
+    // (Their runners: Steam and Desktop.)
+    let runner_of = |id: &str| runners.iter().find(|r| r.id == id).map(runners::Runner::of);
+    let (steam_runner, desktop_runner) = (runner_of("steam"), runner_of("desktop"));
+    for mut game in sources.steam.as_deref().map(steam::games).unwrap_or_default() {
+        game.runner.clone_from(&steam_runner);
         let appid = match game.launch {
             Launch::Steam { appid } => appid.to_string(),
             _ => String::new(),
         };
         place(&config.steam, &appid, &game.title.clone(), &[], game);
     }
-    for d in crate::desktop::entries(&sources.data_dirs) {
+    for mut d in crate::desktop::entries(&sources.data_dirs) {
+        d.game.runner.clone_from(&desktop_runner);
         place(&config.desktop, &d.id, &d.name, &d.categories, d.game);
     }
     placed.sort_by_key(|(_, _, _, g)| g.tool);
@@ -445,6 +453,7 @@ mod tests {
         let folder = |title: &str| lib.games.iter().find(|g| g.title == title).unwrap();
         assert_eq!(titles(&folder("Steam").items), ["Text", "Celeste"], "Arma hidden");
         assert_eq!(titles(&folder("Text").items), ["Zork"]);
+        assert_eq!(folder("Zork").runner.as_ref().map(|r| &*r.key), Some("runner:steam"), "Steam's games: Steam's");
         let _ = std::fs::remove_dir_all(&root);
     }
 

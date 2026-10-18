@@ -119,7 +119,11 @@ pub fn list(dir: &Path, folder: &str, runners: &[Runner], home: Option<&Path>) -
             let modified = meta.and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs());
             let mut game = Game::new(&format!("{folder}/{name}"), &name);
             if let Some(runner) = runners::opener(runners, &name).filter(|_| !is_dir) {
-                game.launch = launch(runner, &path, home);
+                // (A desktop file: its own command.)
+                game.launch = match runner.own_commands() {
+                    true => crate::desktop::command(&path).unwrap_or_default(),
+                    false => launch(runner, &path, home),
+                };
                 game.runner = Some(runner.of());
             }
             if !is_dir && picture(&name) {
@@ -548,11 +552,12 @@ mod tests {
         for f in ["a.SFC", "b.txt", ".hidden", "cover.png"] {
             fs::write(dir.join(f), "x").unwrap();
         }
+        fs::write(dir.join("tool.desktop"), "[Desktop Entry]\nType=Application\nName=Tool\nExec=tool --open %U\n").unwrap();
         let config: Vec<Runner> = serde_json::from_str(r#"[{ "name": "SNES", "match": ["*.sfc"], "launch": ["retroarch", "{path}"] }]"#).unwrap();
         let (runners, _) = runners::all(&config, runners::builtin(&|p| p == "xdg-open", &|_| false));
         let games = list(&dir, "browse:Files/Home", &runners, None);
         let names: Vec<&str> = games.iter().map(|g| g.title.as_str()).collect();
-        assert_eq!(names, ["Zelda", "a.SFC", "b.txt", "cover.png"]);
+        assert_eq!(names, ["Zelda", "a.SFC", "b.txt", "cover.png", "tool.desktop"]);
         assert_eq!(&*games[0].id, "browse:Files/Home/Zelda");
         assert!(games[0].is_group());
         let argv = |g: &Game| match &g.launch {
@@ -564,6 +569,8 @@ mod tests {
         assert_eq!(argv(&games[2])[0], "xdg-open");
         assert_eq!(games[3].box_front.as_deref(), Some(dir.join("cover.png").as_path()), "a picture is its own art");
         assert_eq!(games[2].browsed.as_ref().unwrap().size, Some(1));
+        assert_eq!(argv(&games[4]), ["tool", "--open"], "a desktop file: its own command");
+        assert_eq!(games[4].runner.as_ref().map(|r| &*r.name), Some("Desktop"));
         let _ = fs::remove_dir_all(&dir);
     }
 

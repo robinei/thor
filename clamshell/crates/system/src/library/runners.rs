@@ -1,6 +1,8 @@
 //! Runners: how things open (see docs/runners.md). library.json's `runners`, then ClamShell's own
-//! (those whose program is installed): one per RetroArch system with its core installed, Video and Music
-//! (mpv), Images (imv), PDF (zathura), Text (`less` in foot), and last Other files (`xdg-open`, any name).
+//! (those whose program is installed): Desktop (the desktop files' apps and games, and a `.desktop` file
+//! opened, each by its own command), Steam (its installed games, by Steam), one per RetroArch system with
+//! its core installed, Video and Music (mpv), Images (imv), PDF (zathura), Text (`less` in foot), and last
+//! Other files (`xdg-open`, any name).
 //! A file opens with the first runner one of whose patterns its name matches; a runner's `scan`s put
 //! what they find in the library, opened by it.
 //!
@@ -44,7 +46,15 @@ pub struct Runner {
     /// until one is chosen for it.
     #[serde(default)]
     pub keymap: Option<String>,
+    /// Whether its entries have settings of their own (a settings tab), beside the runner's; else only
+    /// the runner's. On unless said (a browsed file or a folder has none either way).
+    #[serde(default)]
+    pub item_settings: Option<bool>,
 }
+
+/// ClamShell's runners whose entries bring their own command (a desktop file's, a Steam app id): ClamShell
+/// finds them itself.
+pub const OWN_COMMANDS: [&str; 2] = ["desktop", "steam"];
 
 /// A dir a runner's entries are found in (see [`super::content`] for how): `id` names them (`<id>:<path
 /// in dir>`), `tab` and `group` say where they show; `match` (paths in `dir`, a part per folder level:
@@ -92,7 +102,12 @@ impl Runner {
 
     /// The runner that opens an entry of it, as the entry keeps it.
     pub fn of(&self) -> clamshell_library::RunnerOf {
-        clamshell_library::RunnerOf::new(&self.id, &self.name)
+        clamshell_library::RunnerOf::new(&self.id, &self.name, self.item_settings.unwrap_or(true))
+    }
+
+    /// Whether its entries bring their own command (see [`OWN_COMMANDS`]).
+    pub fn own_commands(&self) -> bool {
+        OWN_COMMANDS.contains(&self.id.as_str())
     }
 
     /// Whether it opens a file named `name`.
@@ -177,7 +192,10 @@ const OTHERS: [Builtin; 6] = [
 /// `installed`: whether a program is on the PATH; `core`: whether a core's file is there.
 pub fn builtin(installed: &dyn Fn(&str) -> bool, core: &dyn Fn(&Path) -> bool) -> Vec<Runner> {
     let strings = |items: &[&str]| items.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
-    let mut runners = Vec::new();
+    let mut runners = vec![
+        Runner { id: "desktop".into(), name: "Desktop".into(), patterns: strings(&["*.desktop"]), ..Runner::default() },
+        Runner { id: "steam".into(), name: "Steam".into(), ..Runner::default() },
+    ];
     if installed("retroarch") {
         for sys in SYSTEMS {
             let file = Path::new(CORES).join(format!("{}_libretro.so", sys.core));
@@ -237,20 +255,21 @@ pub fn all(config: &[Runner], builtin: Vec<Runner>) -> (Vec<Runner>, Vec<String>
                 metadata: p.metadata.clone().or_else(|| b.and_then(|b| b.metadata.clone())),
                 scan: p.scan.clone(),
                 keymap: p.keymap.clone().or_else(|| b.and_then(|b| b.keymap.clone())),
+                item_settings: p.item_settings.or_else(|| b.and_then(|b| b.item_settings)),
             }
         })
         .collect();
     for p in runners.iter().filter(|p| p.id.is_empty()) {
         problems.push(format!("a runner without an id or a name: {}", p.launch.join(" ")));
     }
-    let known = |id: &str| SYSTEMS.iter().any(|s| s.id == id) || OTHERS.iter().any(|b| b.id == id);
-    for p in runners.iter().filter(|p| !p.id.is_empty() && p.launch.is_empty()) {
+    let known = |id: &str| SYSTEMS.iter().any(|s| s.id == id) || OTHERS.iter().any(|b| b.id == id) || OWN_COMMANDS.contains(&id);
+    for p in runners.iter().filter(|p| !p.id.is_empty() && p.launch.is_empty() && !p.own_commands()) {
         match known(&p.id) {
             true => problems.push(format!("{}: ClamShell's runner {} isn't here (its program or core isn't installed)", p.name, p.id)),
             false => problems.push(format!("{}: no launch command (and ClamShell has no runner {})", p.name, p.id)),
         }
     }
-    runners.retain(|p| !p.id.is_empty() && !p.launch.is_empty());
+    runners.retain(|p| !p.id.is_empty() && (!p.launch.is_empty() || p.own_commands()));
     runners.extend(builtin.into_iter().filter(|b| !config.iter().any(|p| p.id == b.id)));
     (runners, problems)
 }
@@ -277,11 +296,11 @@ mod tests {
     #[test]
     fn clamshells_runners_are_those_installed() {
         let all_there = builtin(&|_| true, &|_| true);
-        assert_eq!(names(&all_there).first(), Some(&"NES"));
+        assert_eq!(names(&all_there)[..3], ["Desktop", "Steam", "NES"]);
         assert_eq!(names(&all_there).last(), Some(&"Other files"));
         let some = builtin(&|p| p == "retroarch" || p == "mpv", &|f| f.to_string_lossy().contains("snes9x"));
-        assert_eq!(names(&some), ["SNES", "Video", "Music"]);
-        assert_eq!(some[0].metadata.as_deref(), Some("libretro:Nintendo - Super Nintendo Entertainment System"));
+        assert_eq!(names(&some), ["Desktop", "Steam", "SNES", "Video", "Music"]);
+        assert_eq!(some[2].metadata.as_deref(), Some("libretro:Nintendo - Super Nintendo Entertainment System"));
     }
 
     #[test]

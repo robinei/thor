@@ -79,6 +79,13 @@ pub fn entries(dirs: &[PathBuf]) -> Vec<Desktop> {
     out
 }
 
+/// The command of the desktop file at `path` (an app's, opened from the Files tab), if it has one.
+pub fn command(path: &Path) -> Option<clamshell_library::Launch> {
+    let entry = parse(&fs::read_to_string(path).ok()?);
+    let argv = exec_args(&entry.exec);
+    (!argv.is_empty()).then(|| clamshell_library::Launch::Program { argv, workdir: (!entry.path.is_empty()).then(|| PathBuf::from(&entry.path)) })
+}
+
 fn parse(text: &str) -> Entry {
     let mut entry = Entry::default();
     let mut in_entry = false;

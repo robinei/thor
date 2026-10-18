@@ -29,7 +29,8 @@ Shelf's tabs come from `~/.config/clamshell/library.json`, installed Steam games
 (`Categories=Game` in Games, the rest in Apps). Everything opens by a runner: a name, the file names it
 opens, its command (`{path}` the file), and dirs it scans into the library (each into a tab, maybe a folder
 of it). ClamShell has its own runners (one per RetroArch system with its core installed, Video and Music in
-mpv, Images in imv, PDF in zathura, Text in `less`, and last Other files with `xdg-open`). A runner's `id`
+mpv, Images in imv, PDF in zathura, Text in `less`, and last Other files with `xdg-open`; Desktop and Steam
+for the desktop files' apps and Steam's games, each by its own command). A runner's `id`
 keeps its settings (its `name` is only shown); one in library.json with the id of one of ClamShell's
 (`snes`, `video`, `text`: see `docs/runners.md`) takes what it leaves out from it:
 

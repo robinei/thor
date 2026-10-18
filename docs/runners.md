@@ -1,17 +1,17 @@
 # Runners, places and settings
 
 Everything shelf starts is content opened by a runner: `Zelda.sfc` by SNES (RetroArch with snes9x),
-`Alien.mkv` by mpv, `README.md` by Text. A desktop app or a Steam game is a runner with no content of its
-own. library.json says how things open (runners) and where they show (places); settings come in three
-levels: All, the runner, the content.
+`Alien.mkv` by Video (mpv), `README.md` by Text, Spotify by Desktop (its desktop file's command), Hades by
+Steam. library.json says how things open (runners) and where they show (places); settings come in three
+levels: All, the runner, the item.
 
 | Item | Content | Runner |
 |---|---|---|
 | A SNES game | `Zelda.sfc` | SNES |
 | A film | `Alien.mkv` | Video (mpv) |
 | A file in the Files tab | `README.md` | Text |
-| A desktop app | none | the app (Spotify) |
-| A Steam game | none | the game |
+| A desktop app | Spotify (its desktop file) | Desktop |
+| A Steam game | Hades (its app id) | Steam |
 
 ## Runners: how things open
 
@@ -22,7 +22,8 @@ An ordered list; the first runner whose patterns match a file's name opens it. A
 - `name`: its settings tab's title; it can change without losing the settings.
 - `match`: the file names it opens, one name each (`*.sfc`; any case).
 - `launch`: the command, `{path}` the file.
-- Its settings, keymap and environment (see Settings).
+- Its settings, keymap and environment (see Settings); `keymap`: a keymap of ClamShell's it comes with;
+  `item_settings` (on unless `false`): whether its items have settings of their own.
 - `scan`, optionally: dirs whose matching entries go in the library, each with an `id` (entries' ids
   are `<id>:<path in dir>`), `dir`, `tab`, `group`, `icon` (the tab's), its own `match` and `items` for
   the dir's layout (else the runner's patterns) and `metadata` (else the runner's). What used to be
@@ -36,10 +37,10 @@ An ordered list; the first runner whose patterns match a file's name opens it. A
 ]
 ```
 
-ClamShell's own runners come after library.json's, those whose program (and core) is installed: one per
-RetroArch system; Video and Music (mpv); Images (imv); PDF (zathura); Text (`less` in foot); last, Other
-files, `xdg-open` for any name. Their ids: `nes`, `snes`, `n64`, `gb`, `gba`, `nds`, `md`, `psx`, `dc`,
-`video`, `music`, `images`, `pdf`, `text`, `other`. A runner in library.json with one of those ids takes
+ClamShell's own runners come after library.json's, those whose program (and core) is installed: Desktop
+and Steam (see below); one per RetroArch system; Video and Music (mpv); Images (imv); PDF (zathura); Text
+(`less` in foot); last, Other files, `xdg-open` for any name. Their ids: `desktop`, `steam`, `nes`, `snes`,
+`n64`, `gb`, `gba`, `nds`, `md`, `psx`, `dc`, `video`, `music`, `images`, `pdf`, `text`, `other`. A runner in library.json with one of those ids takes
 what it leaves out (name, patterns, command, metadata, keymap) from it and takes its place: `{ "id": "snes", "scan": [...] }` scans
 with ClamShell's SNES. A scan's own patterns (the SNES scan's `*.zip`) find entries in its dir but open
 nothing elsewhere: a `.zip` in the Files tab is Other files'.
@@ -47,8 +48,11 @@ nothing elsewhere: a `.zip` in the Files tab is Other files'.
 A file is opened the same way wherever it is: a `.sfc` opened from the Files tab is SNES's, scanned or not.
 A file that is a scanned entry's opens as that entry.
 
-Each desktop file is a runner of its own (its name, its command); so is each Steam game. Neither has
-content.
+Desktop and Steam find their items themselves, and each item brings its own command: Desktop the desktop
+files' apps and games (and a `.desktop` file opened from the Files tab, by its `Exec`), Steam Steam's
+installed games (by app id). Their ids are what marks them; library.json can give them a name, a keymap,
+`item_settings` (`{ "id": "desktop", "name": "Apps", "keymap": ... }`), but not a command. Where their items
+show is the `desktop` and `steam` rules' (Places).
 
 ## Places: where things show
 
@@ -64,10 +68,11 @@ filesystem's label). A place decides nothing about opening.
 
 ## Settings
 
-Three levels, each overriding the one before: All, the runner, the content. The settings page has a tab
-for each the item has: `All | SNES | A Link to the Past`; `All | Spotify` for an app or a Steam game (no
-content); `All | Text` for a file from the Files tab (its own settings would be tied to a file that can be
-renamed or deleted at any time). A file that is a library entry opens as that entry, with its tabs.
+Three levels, each overriding the one before: All, the runner, the item. The settings page has a tab for
+each the item has: `All | SNES | A Link to the Past`, `All | Desktop | Spotify`, `All | Steam | Hades`; only
+`All | Text` for a file from the Files tab (its own settings would be tied to a file that can be renamed or
+deleted at any time), for a folder, and for an item of a runner with `"item_settings": false`. A file that
+is a library entry opens as that entry, with its tabs.
 
 Folders are not a level. What folder settings were for (a system's games alike) is the runner's; a
 folder is where things show, not how they run.

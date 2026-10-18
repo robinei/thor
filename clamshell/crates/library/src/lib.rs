@@ -79,8 +79,9 @@ pub struct Game {
     pub favourite: bool,
     /// A file or folder of a browsed dir (see [`Browsed`]); none for the rest.
     pub browsed: Option<Browsed>,
-    /// The runner that opens it (library.json's or ClamShell's), for content: a scanned entry (and a folder
-    /// of them), a browsed file. None for an app or a Steam game (it is its own runner).
+    /// The runner that opens it (library.json's or ClamShell's): a scanned entry's (and a folder of them),
+    /// a browsed file's, Desktop for a desktop file's app or game, Steam for Steam's games. None for
+    /// ClamShell's own tools.
     pub runner: Option<RunnerOf>,
 }
 
@@ -183,16 +184,18 @@ pub fn runner_key(id: &str) -> Arc<str> {
     format!("runner:{id}").into()
 }
 
-/// An entry's runner: its key ([`runner_key`] of its id, which outlives a new name) and its name (shown).
+/// An entry's runner: its key ([`runner_key`] of its id, which outlives a new name), its name (shown),
+/// and whether its entries have settings of their own (else only the runner's).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunnerOf {
     pub key: Arc<str>,
     pub name: Arc<str>,
+    pub item_settings: bool,
 }
 
 impl RunnerOf {
-    pub fn new(id: &str, name: &str) -> RunnerOf {
-        RunnerOf { key: runner_key(id), name: name.into() }
+    pub fn new(id: &str, name: &str, item_settings: bool) -> RunnerOf {
+        RunnerOf { key: runner_key(id), name: name.into(), item_settings }
     }
 }
 

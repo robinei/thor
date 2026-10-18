@@ -1,5 +1,5 @@
 //! The settings panel's rules: which item it is about (by what is in front) and which level it edits
-//! (All; the item's runner, an app's or a Steam game's itself; the item, content a runner opens),
+//! (All; the item's runner, Desktop for an app, Steam for a Steam game; the item itself),
 //! changes applied at once when they change the settings in force, the environment editor typing on the
 //! keyboard, and the dark second screen.
 
@@ -12,9 +12,9 @@ use crate::program::Program;
 use crate::running::Front;
 use crate::settings::{Setting, Values};
 
-/// What the settings panel edits: the global settings (All), the runner of the item in context (an
-/// app or a Steam game is its own), or the item itself (content: a ROM, a film; not a browsed file or a
-/// folder). Content where the item has no level of its own edits its runner's.
+/// What the settings panel edits: the global settings (All), the runner of the item in context, or the
+/// item itself (a game, an app, a film; not a browsed file or a folder, nor an item of a runner without
+/// item settings). Content where the item has no level of its own edits its runner's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Scope {
     Global,
@@ -62,8 +62,9 @@ impl State {
     }
 
     /// The levels below All the settings panel offers for the item in context, with their titles: its
-    /// runner's and its own (`All | SNES | Zelda`); an app's or a Steam game's only its own, as its runner
-    /// (`All | Spotify`); a browsed file's or a folder's only its runner's (`All | Text`).
+    /// runner's and its own (`All | SNES | Zelda`, `All | Desktop | Spotify`); only its runner's for a
+    /// browsed file, a folder, or a runner's item without item settings (`All | Text`); only its own for
+    /// one without a runner (ClamShell's tools).
     pub fn setting_levels(&self) -> [Option<(Scope, Program<'_>)>; 2] {
         let Some((item, g)) = self.context().and_then(|item| Some((item.clone(), self.game(&item.id)?))) else {
             return [None, None];
@@ -71,7 +72,7 @@ impl State {
         match &g.runner {
             Some(r) => {
                 let runner = Some((Scope::Runner, Program { id: r.key.clone(), title: &r.name }));
-                let own = (g.browsed.is_none() && !g.is_group()).then_some((Scope::Content, item));
+                let own = (r.item_settings && g.browsed.is_none() && !g.is_group()).then_some((Scope::Content, item));
                 [runner, own]
             }
             _ => [Some((Scope::Runner, item)), None],
@@ -290,7 +291,7 @@ mod tests {
     fn an_entry_takes_its_runners_settings_not_its_folders() {
         let mut library = clamshell_library::demo_library();
         for g in library.games.iter_mut().filter(|g| g.id.starts_with("tv:")) {
-            g.runner = Some(clamshell_library::RunnerOf::new("video", "Video"));
+            g.runner = Some(clamshell_library::RunnerOf::new("video", "Video", true));
         }
         let mut settings = settings::Settings::default();
         settings.set(Some(&runner_key("video")), Setting::FpsCap, Some(30));
@@ -310,7 +311,7 @@ mod tests {
     fn the_panel_offers_the_items_levels() {
         let mut library = clamshell_library::demo_library();
         for g in library.games.iter_mut().filter(|g| g.id.starts_with("tv:")) {
-            g.runner = Some(clamshell_library::RunnerOf::new("video", "Video"));
+            g.runner = Some(clamshell_library::RunnerOf::new("video", "Video", true));
         }
         let mut s = State::new(Init { library, ..init() });
         let levels = |s: &State| s.setting_levels().into_iter().flatten().map(|(scope, l)| (scope, l.title.to_owned())).collect::<Vec<_>>();
@@ -327,6 +328,18 @@ mod tests {
         taps(&mut s, Setting::Power, 1);
         assert_eq!(s.settings().overrides_of("runner:video").get(Setting::Power), Some(2), "kept by the runner");
         assert_eq!(s.settings_of("tv:Cosmos/Season 2/1. Standing Up in the Milky Way.mkv").get(Setting::Power), 2, "every video's");
+    }
+
+    #[test]
+    fn a_runner_can_leave_its_items_without_settings_of_their_own() {
+        let mut library = clamshell_library::demo_library();
+        for g in library.games.iter_mut() {
+            g.runner = Some(clamshell_library::RunnerOf::new("snes", "SNES", false));
+        }
+        let s = State::new(Init { library, ..init() });
+        let levels = s.setting_levels().into_iter().flatten().map(|(scope, l)| (scope, l.title)).collect::<Vec<_>>();
+        assert_eq!(levels, [(Scope::Runner, "SNES")]);
+        assert_eq!(s.editing().map(|p| p.id), Some(runner_key("snes")), "the item's tab: its runner's");
     }
 
     #[test]
