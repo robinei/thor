@@ -196,6 +196,16 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                     ],
                 ),
                 shot("top-switch.png", Top, vec![ff6(), ff6()]),
+                // A held on the selected entry with the pad: on its actions, A and B said at the bottom.
+                shot(
+                    "top-actions.png",
+                    Top,
+                    vec![
+                        ff6(),
+                        Event::Pointer(PointerEvent::Focus(Id::Shelf(ShelfId::Game("ff6".into())))),
+                        Event::Pointer(PointerEvent::LongPress(Id::Shelf(ShelfId::Game("ff6".into())))),
+                    ],
+                ),
             ],
         ),
         // A series selected in shelf, then open: its first season's episodes, the first played. (Shelf's rows as a frame

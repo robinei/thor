@@ -90,6 +90,25 @@ pub(crate) fn switch_screen(s: &State, d: &impl Drawn, memory: &mut Screens<Opti
 /// Pad-style focus movement over the screens' targets (as if the second screen were right below the
 /// main one).
 pub(crate) fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, dir: Dir) -> Option<Event> {
+    // On shelf's actions (A held): up and down through them only.
+    if s.in_actions() {
+        let actions: Vec<Id> = s.actions().as_slice().iter().map(|a| Id::Shelf(a.id())).collect();
+        let (w, h) = d.size(Screen::Top);
+        let rows: Vec<NavTarget> = d
+            .targets(Screen::Top)
+            .iter()
+            .filter(|t| actions.contains(&t.id))
+            .map(|t| NavTarget {
+                screen: Screen::Top,
+                rect: Rect::new(t.rect.x / w.max(1.0), t.rect.y / h.max(1.0), t.rect.w / w.max(1.0), t.rect.h / h.max(1.0)),
+                id: t.id.clone(),
+            })
+            .collect();
+        return match dir {
+            Dir::Up | Dir::Down => nav::step(&rows, s.pointer().focus(), dir).map(|id| PointerEvent::Focus(id).into()),
+            Dir::Left | Dir::Right => None,
+        };
+    }
     let scope = scope(s);
     // In shelf's list: up and down move through the games (scrolling), left and right switch
     // collections; down past the last game goes on to the second screen.
@@ -169,6 +188,10 @@ pub(crate) fn press(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>) -> 
 /// The shoulders: shelf's collections while the focus is on the main screen, else the bar's tabs, left
 /// to right (opened and focused).
 pub(crate) fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
+    // (On shelf's actions: shelf stays where it is.)
+    if s.in_actions() {
+        return vec![];
+    }
     // Shelf: a page (the rows on screen).
     if s.pad_on_top() && focus_screen(s, d) == Screen::Top {
         let page = i32::try_from(s.shelf().rows()).unwrap_or(1).max(1);
@@ -186,6 +209,9 @@ pub(crate) fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
 
 /// L2, R2: shelf's first or last entry.
 pub(crate) fn trigger(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
+    if s.in_actions() {
+        return vec![];
+    }
     if s.pad_on_top() && focus_screen(s, d) == Screen::Top {
         let len = i32::try_from(s.shelf().list().len()).unwrap_or(i32::MAX);
         return vec![ShelfEvent::ListStep(step * len).into()];
@@ -388,6 +414,23 @@ mod tests {
         assert_eq!(shoulder(&s, &d, -1), vec![ShelfEvent::ListStep(-page).into()], "in shelf: a page");
         let len = s.shelf().list().len() as i32;
         assert_eq!(trigger(&s, &d, 1), vec![ShelfEvent::ListStep(len).into()], "the last entry");
+    }
+
+    #[test]
+    fn on_shelfs_actions_the_pad_stays_on_them() {
+        let mut s = state();
+        let mut d = drawn(&s);
+        d.0.top.extend([t(60.0, 0.0, Id::Shelf(ShelfId::Launch)), t(60.0, 15.0, Id::Shelf(ShelfId::Favourite)), t(60.0, 30.0, Id::Shelf(ShelfId::Pin))]);
+        focus(&mut s, Id::Shelf(ShelfId::Launch));
+        assert!(s.in_actions());
+        let memory = Screens::default();
+        assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(PointerEvent::Focus(Id::Shelf(ShelfId::Favourite)).into()));
+        assert_eq!(navigate(&s, &d, &memory, Dir::Left), None, "not out to the list");
+        focus(&mut s, Id::Shelf(ShelfId::Pin));
+        assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(PointerEvent::Focus(Id::Shelf(ShelfId::Pin)).into()), "not down to the second screen");
+        assert_eq!(shoulder(&s, &d, 1), vec![]);
+        assert_eq!(shortcut(&s, &d, PadInput::Y), vec![ShelfEvent::ToggleFavourite.into()], "sent, but the state has no shortcut there");
+        assert_eq!(s.shortcut(clamshell_core::actions::Shortcut::Y), None);
     }
 
     #[test]

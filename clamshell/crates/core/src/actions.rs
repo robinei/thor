@@ -3,7 +3,8 @@
 //! folder of videos: Start), the file actions from its
 //! place (a browsed dir: see [`crate::files`]), Favourite (Y) and Pin (X) from an identity that outlives a
 //! rescan (not a browsed file's). Where the identity's are missing, Y and X take the place's Copy and
-//! Paste, Start its Select. The details draw these rows in order; the pad's buttons act on them.
+//! Paste, Start its Select. The details draw these rows in order; the pad's buttons act on them. Holding A
+//! on the selected entry takes the pad to the rows themselves (see [`State::in_actions`]).
 
 use crate::files::FileAction;
 use crate::{Effect, ShelfId, State};
@@ -99,8 +100,20 @@ impl State {
         actions
     }
 
-    /// The action a pad button stands for: Start Continue, Y Favourite (else Copy), X Pin (else Paste).
+    /// Whether the pad is on the details' actions (A held on the selected entry took it there): a mode
+    /// of its own, the face buttons' shortcuts off, the focus kept to the actions, A confirms and B goes
+    /// back.
+    pub fn in_actions(&self) -> bool {
+        let pointer = self.pointer();
+        pointer.show_focus() && self.actions().as_slice().iter().any(|a| pointer.focus() == Some(&crate::Id::Shelf(a.id())))
+    }
+
+    /// The action a pad button stands for: Start Continue, Y Favourite (else Copy), X Pin (else Paste);
+    /// none while the pad is on the actions themselves.
     pub fn shortcut(&self, key: Shortcut) -> Option<Action> {
+        if self.in_actions() {
+            return None;
+        }
         let wanted: &[Action] = match key {
             Shortcut::Y => &[Action::Favourite, Action::File(FileAction::Copy)],
             Shortcut::X => &[Action::Pin, Action::File(FileAction::Paste)],

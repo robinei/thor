@@ -503,20 +503,32 @@ pub(crate) fn value_row(f: &mut Frame, row: Rect, size: f32, label: &str, value:
 /// An action and the pad button that does it, a target filling `r`: the button's name in a ring (a pill
 /// for a longer one), then the label (in `tone`).
 pub(crate) fn key_action(f: &mut Frame, id: Id, r: Rect, key: &str, label: &str, tone: Tone) {
-    let pad = f.pad();
     f.button(id, r, Look::ICON, |f| {
-        let d = r.h * 0.78;
-        let size = d * 0.55;
-        let ring_w = d.max(f.c.text_width(size, key) + d * 0.6);
-        let ring = Rect::new(r.x, r.y + (r.h - d) / 2.0, ring_w, d);
-        // (No button: the label where the others' are.)
-        if !key.is_empty() {
-            f.c.outline(ring, d / 2.0, 1.5, Tone::Dim);
-            f.c.text_ink_centred(ring, size, Tone::Normal, key);
-        }
-        let x = ring.x + ring_w + pad * 0.5;
-        f.c.text_fit(Rect::new(x, r.y, r.x + r.w - x, r.h), r.h * 0.62, tone, label, Keep::Start);
+        key_label(f, r, key, label, tone);
     });
+}
+
+/// A button's badge and what it does, as [`key_action`] draws them, but nothing to tap: a hint. Returns
+/// its width.
+pub(crate) fn key_hint(f: &mut Frame, r: Rect, key: &str, label: &str) -> f32 {
+    key_label(f, r, key, label, Tone::Dim)
+}
+
+/// The badge (a ring with the button's name; none without one: the label where the others' are) and
+/// the label after it; their width.
+fn key_label(f: &mut Frame, r: Rect, key: &str, label: &str, tone: Tone) -> f32 {
+    let pad = f.pad();
+    let d = r.h * 0.78;
+    let size = d * 0.55;
+    let ring_w = d.max(f.c.text_width(size, key) + d * 0.6);
+    let ring = Rect::new(r.x, r.y + (r.h - d) / 2.0, ring_w, d);
+    if !key.is_empty() {
+        f.c.outline(ring, d / 2.0, 1.5, Tone::Dim);
+        f.c.text_ink_centred(ring, size, Tone::Normal, key);
+    }
+    let x = ring.x + ring_w + pad * 0.5;
+    let drawn = f.c.text_fit(Rect::new(x, r.y, r.x + r.w - x, r.h), r.h * 0.62, tone, label, Keep::Start);
+    x + drawn - r.x
 }
 
 /// Text centred in `r` (cut to fit).

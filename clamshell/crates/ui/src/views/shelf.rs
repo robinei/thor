@@ -291,8 +291,11 @@ fn actions(f: &mut Frame, game: &Game, r: Rect, action_h: f32, pad: f32) -> f32 
     // (A row as wide as fourteen of the details' text size; Continue's, naming the next video, as the details.)
     let w = r.w.min(action_h / ACTION * 14.0);
     let shortcut = |key| s.shortcut(key);
+    // (The pad on the actions themselves: no shortcuts on them; A and B said below.)
+    let in_actions = s.in_actions();
     for &action in s.actions().as_slice() {
         let key = match action {
+            _ if in_actions => "",
             Action::Open => "A",
             _ if shortcut(Shortcut::Start) == Some(action) => "Start",
             _ if shortcut(Shortcut::Y) == Some(action) => "Y",
@@ -355,6 +358,13 @@ fn actions(f: &mut Frame, game: &Game, r: Rect, action_h: f32, pad: f32) -> f32 
         y += size * 1.6;
         widgets::progress(f.c, Rect::new(r.x, y, w, (size * 0.22).max(3.0)), *fraction);
         y += size;
+    }
+    // The pad on them: what its buttons do now, at the bottom (the details' text gives way).
+    if in_actions {
+        let line = Rect::new(r.x, r.y + r.h - action_h, w, action_h);
+        let confirm = widgets::key_hint(f, line, "A", "Confirm");
+        widgets::key_hint(f, Rect::new(line.x + confirm + pad, line.y, line.w - confirm - pad, line.h), "B", "Back");
+        return r.h;
     }
     y - r.y
 }

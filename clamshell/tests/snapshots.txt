@@ -56,6 +56,7 @@ status-low.png 8fd48a0400d603bc
 sysinfo.png 474c131f5b78ffff
 time-europe.png edec0693e5b8f0f4
 time.png a867bd5b3af45c93
+top-actions.png 49910a1e0e15129c
 top-back.png 6d2e9824fb46b035
 top-folder.png e2ff5d57166bd438
 top-group.png 422a14377e72ed5e
