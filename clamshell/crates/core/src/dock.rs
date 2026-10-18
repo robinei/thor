@@ -142,7 +142,7 @@ impl State {
         {
             return self.show_program_down(down.id);
         }
-        vec![Effect::Window(WindowCommand::Focus(r.workspace()))]
+        self.show_running(&entry)
     }
 
     fn menu_choice(&mut self, choice: DockId, entry: Arc<str>) -> Vec<Effect> {
@@ -240,7 +240,11 @@ mod tests {
         let mut s = state();
         let zelda = launch(&mut s, "zelda-lttp");
         assert_eq!(entry(&s, 0), Some("zelda-lttp"), "running: on the dock");
-        // A tap shows it; its menu pins it.
+        // A tap without a window of it to show: what is in front stays, a notice says so.
+        assert_eq!(tap(&mut s, dock(0)), vec![]);
+        assert!(s.bottom().notice().is_some());
+        // With one, a tap shows it; its menu pins it.
+        s.apply(Event::Windows(vec![win(3, "zelda3", &zelda.workspace(), false)]));
         assert_eq!(tap(&mut s, dock(0)), vec![focus(&zelda)]);
         long(&mut s, dock(0));
         assert_eq!(s.dock().menu.as_deref(), Some("zelda-lttp"));

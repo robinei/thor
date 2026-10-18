@@ -99,10 +99,26 @@ impl State {
     pub(crate) fn play(&mut self, game: Arc<str>) -> Vec<Effect> {
         // A browsed file that is a library entry too: as that entry.
         let game = self.shelf.entry_of_file(&game).unwrap_or(game);
-        if let Some(r) = self.session.running(&game) {
-            return vec![Effect::Window(WindowCommand::Focus(r.workspace()))];
+        if self.session.running(&game).is_some() {
+            return self.show_running(&game);
         }
         self.launch(game)
+    }
+
+    /// Running entry `id` shown: its workspace, if a window of it is there to see; else what is in front
+    /// stays, and a notice says it has none (it runs without one, hasn't shown one yet, or lost its
+    /// display: its dock menu's Quit ends it). Never an empty screen.
+    pub(crate) fn show_running(&mut self, id: &str) -> Vec<Effect> {
+        let session = &self.session;
+        let Some(r) = session.running(id) else {
+            return vec![];
+        };
+        if session.windows.iter().any(|w| session.running_of(w).is_some_and(|o| o.id == r.id)) {
+            return vec![Effect::Window(WindowCommand::Focus(r.workspace()))];
+        }
+        let title = r.entry.as_ref().map_or_else(|| id.to_owned(), |g| g.title.clone());
+        self.notify(crate::hardware::NoticeKind::NoWindow(title));
+        vec![]
     }
 
     /// Launches `game` (again, if it runs: another tab), unless a launch of it is starting; one Steam runs
@@ -127,8 +143,8 @@ impl State {
         if session.launching.iter().any(|l| l.game == game) {
             return vec![];
         }
-        if let Some(r) = session.running(&game).filter(|r| r.appid().is_some()) {
-            return vec![Effect::Window(WindowCommand::Focus(r.workspace()))];
+        if session.running(&game).is_some_and(|r| r.appid().is_some()) {
+            return self.show_running(&game);
         }
         let Some(g) = self.shelf.game(&game) else {
             return vec![];
@@ -436,6 +452,8 @@ mod tests {
         assert!(!launches(&tap(&mut s, Id::Shelf(ShelfId::Launch)), &first), "not twice while starting");
         s.apply(GameEvent::Started(first.clone()).into());
         let workspace = Instance::workspace_of(&key(&first));
+        assert_eq!(tap(&mut s, Id::Shelf(ShelfId::Launch)), vec![], "running, no window yet: nothing to show");
+        s.apply(Event::Windows(vec![win(3, "game", &workspace, false)]));
         assert_eq!(tap(&mut s, Id::Shelf(ShelfId::Launch)), vec![Effect::Window(WindowCommand::Focus(workspace))], "running: shown");
         // Another launch (the dock's Open another): it runs twice, until both end.
         assert!(launches(&s.launch(first.clone()), &first));
@@ -587,6 +605,7 @@ mod tests {
         let foot = Instance::Run { key: key("desktop:foot"), secs: 1, n: 0 };
         s.apply(Event::Units(vec![foot.clone()]));
         assert!(s.session().running("desktop:foot").is_some(), "adopted");
+        s.apply(Event::Windows(vec![win(4, "foot", &foot.workspace(), false)]));
         assert_eq!(tap(&mut s, Id::Dock(DockId::Entry(0))), vec![Effect::Window(WindowCommand::Focus(foot.workspace()))], "on the dock, shown");
         s.apply(Event::Units(vec![]));
         assert!(s.session().running("desktop:foot").is_none(), "its scopes gone: ended");

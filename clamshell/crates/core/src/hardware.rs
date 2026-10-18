@@ -54,6 +54,8 @@ pub enum NoticeKind {
     Files(Result<String, String>),
     /// Entries enqueued: how many, and to what (the running entry's title).
     Enqueued(usize, String),
+    /// A running entry asked for has no window to show (its title).
+    NoWindow(String),
 }
 
 impl State {
