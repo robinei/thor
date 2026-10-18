@@ -2,7 +2,7 @@
 //! pure state machine: it is told what happens (down, moved, up, a timer fired) and answers with what to
 //! do: events for the state, and timers to arm or disarm (the caller runs them on its event loop).
 //!
-//! A press is a tap (it acts on release) until its hold timer fires: then it is held (keys repeat, the
+//! A press is a tap (it acts on release, if that is still on its target) until its hold timer fires: then it is held (keys repeat, the
 //! rest get one long press) and the release only lifts it. A finger on volume or brightness may become
 //! a slide (held there briefly, or moved sideways): the slider comes up under it and follows it. A finger
 //! on a level row sets it where it is, and follows it. A finger on a scrolled list that moves up or down
@@ -21,6 +21,7 @@ use clamshell_core::slider::{Control, SLIDE_AFTER, SLIDE_MOVE};
 use clamshell_core::touch::{ContactPhase, Pointing};
 use clamshell_core::{Event, Hold, Id, LevelEvent, ListEvent, PadRoute, PointerEvent, Slide, State};
 
+use crate::draw::Rect;
 use crate::fling::{FLING_EVERY, Fling, Trail};
 use crate::toolkit::scroll::InList;
 use crate::toolkit::{Target, Track};
@@ -32,6 +33,9 @@ pub(crate) const DRAG_START: f32 = 12.0;
 pub(crate) const POINT_START: f32 = 24.0;
 /// A finger on nothing (no tap to keep) moved this far points: just past a still finger's jitter.
 pub(crate) const BLANK_POINT_START: f32 = 4.0;
+/// How far off its target (logical pixels) a finger may lift and still tap it.
+pub(crate) const TOUCH_SLACK: f32 = 12.0;
+
 /// The keyboard points until no finger has pointed for this long.
 pub(crate) const POINT_IDLE: Duration = Duration::from_millis(1000);
 
@@ -112,6 +116,8 @@ enum Gesture {
 #[derive(Debug, Clone, PartialEq)]
 struct Press {
     id: Id,
+    /// Where the target is (a finger's or the mouse's; none for the pad's A and Enter).
+    rect: Option<Rect>,
     gesture: Gesture,
     down: (f32, f32),
     at: (f32, f32),
@@ -120,8 +126,15 @@ struct Press {
 }
 
 impl Press {
-    fn new(id: Id, gesture: Gesture, at: (f32, f32), list: Option<InList>, now: Instant) -> Press {
-        Press { id, gesture, down: at, at, list, trail: Trail::new(now, at.1) }
+    fn new(id: Id, rect: Option<Rect>, gesture: Gesture, at: (f32, f32), list: Option<InList>, now: Instant) -> Press {
+        Press { id, rect, gesture, down: at, at, list, trail: Trail::new(now, at.1) }
+    }
+
+    /// Whether it is (still) on its target: the mouse exactly, a finger within [`TOUCH_SLACK`] of it (a
+    /// finger rolls a little off a key as it lifts).
+    fn on_target(&self, source: Source) -> bool {
+        let slack = if matches!(source, Source::Touch(_)) { TOUCH_SLACK } else { 0.0 };
+        self.rect.is_none_or(|r| Rect::new(r.x - slack, r.y - slack, r.w + 2.0 * slack, r.h + 2.0 * slack).contains(self.at.0, self.at.1))
     }
 
     /// A finger that would still tap where pointing is: it may point.
@@ -159,7 +172,7 @@ impl Input {
         if self.pressed(source) {
             return vec![];
         }
-        self.presses.push((source, Press::new(id.clone(), Gesture::Tap, (0.0, 0.0), None, now)));
+        self.presses.push((source, Press::new(id.clone(), None, Gesture::Tap, (0.0, 0.0), None, now)));
         vec![Action::Emit(PointerEvent::Down(id).into()), Action::Arm(source, Timer::Hold, LONG_PRESS)]
     }
 
@@ -179,7 +192,7 @@ impl Input {
             _ => Gesture::Tap,
         };
         let id = target.id.clone();
-        self.presses.push((source, Press::new(id.clone(), gesture, (x, y), target.list, now)));
+        self.presses.push((source, Press::new(id.clone(), Some(target.rect), gesture, (x, y), target.list, now)));
         actions.extend([Action::Emit(PointerEvent::HideFocus.into()), Action::Emit(PointerEvent::Down(id).into())]);
         match gesture {
             // A keymap parameter's row has nothing to tap: it slides at once, from where the finger came
@@ -206,7 +219,7 @@ impl Input {
         }
         let mut actions = self.stop_fling();
         actions.extend(self.idle.take().map(|s| Action::Disarm(s, Timer::Pointing)));
-        self.presses.push((source, Press::new(target.id.clone(), Gesture::Pointing, at, None, now)));
+        self.presses.push((source, Press::new(target.id.clone(), Some(target.rect), Gesture::Pointing, at, None, now)));
         actions.push(Action::Point(source, ContactPhase::Down, at));
         actions
     }
@@ -372,7 +385,9 @@ impl Input {
                 actions.push(Action::Disarm(source, Timer::Slide));
                 true
             }
-            Gesture::Tap | Gesture::LevelDrag { .. } => true,
+            // (A tap let go off its target is no tap.)
+            Gesture::Tap => press.on_target(source),
+            Gesture::LevelDrag { .. } => true,
             Gesture::Held | Gesture::Dragging { .. } | Gesture::Pointing => false,
         };
         if activates && end == End::Release {
@@ -400,7 +415,6 @@ impl Input {
 #[allow(clippy::indexing_slicing)]
 mod tests {
     use super::*;
-    use crate::draw::Rect;
     use clamshell_core::keyboard::{self, Key, KeyPos};
     use clamshell_core::{Init, ListId, Tab};
 
@@ -470,7 +484,7 @@ mod tests {
 
     fn row(list: ListId, i: u16) -> Target {
         let id = list.row(i);
-        Target { rect: Rect::new(0.0, 0.0, 100.0, 50.0), id, track: None, list: Some(InList { list, row_h: 50.0 }) }
+        Target { rect: Rect::new(0.0, 0.0, 100.0, 1000.0), id, track: None, list: Some(InList { list, row_h: 50.0 }) }
     }
 
     /// Applies what the actions emit to `s`; whether a timer was armed again.
@@ -753,5 +767,26 @@ mod tests {
 
     fn tab_free() -> Target {
         target(Id::Blank, None)
+    }
+
+    #[test]
+    fn a_tap_let_go_off_its_target_does_nothing() {
+        let state = blank();
+        let mut input = Input::default();
+        let t = t0();
+        input.touch(Source::Mouse, &tab(), (5.0, 5.0), t);
+        input.moved(Source::Mouse, (150.0, 5.0), t);
+        let up = input.up(Source::Mouse, End::Release, &state, t);
+        assert_eq!(events(&up), vec![PointerEvent::Up(Id::Tab(Tab::Wifi)).into()], "off it: no tap");
+        input.touch(Source::Mouse, &tab(), (5.0, 5.0), t);
+        input.moved(Source::Mouse, (150.0, 5.0), t);
+        input.moved(Source::Mouse, (50.0, 5.0), t);
+        let up = input.up(Source::Mouse, End::Release, &state, t);
+        assert!(events(&up).contains(&PointerEvent::Activate(Id::Tab(Tab::Wifi)).into()), "back on it: a tap");
+        // A finger may lift a little off it.
+        let finger = Source::Touch(1);
+        input.touch(finger, &tab(), (95.0, 5.0), t);
+        input.moved(finger, (100.0 + TOUCH_SLACK - 1.0, 5.0), t);
+        assert!(events(&input.up(finger, End::Release, &state, t)).contains(&PointerEvent::Activate(Id::Tab(Tab::Wifi)).into()));
     }
 }
