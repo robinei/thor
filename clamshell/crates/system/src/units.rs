@@ -45,6 +45,7 @@ trait Manager {
     fn get_unit(&self, name: &str) -> zbus::Result<OwnedObjectPath>;
     fn stop_unit(&self, name: &str, mode: &str) -> zbus::Result<OwnedObjectPath>;
     fn freeze_unit(&self, name: &str) -> zbus::Result<()>;
+    fn kill_unit(&self, name: &str, whom: &str, signal: i32) -> zbus::Result<()>;
     fn thaw_unit(&self, name: &str) -> zbus::Result<()>;
     fn attach_processes_to_unit(&self, name: &str, subcgroup: &str, pids: &[u32]) -> zbus::Result<()>;
     fn start_transient_unit(
@@ -109,6 +110,26 @@ lost_on!(Error: zbus::Error);
 
 fn manager(conn: &Connection) -> zbus::Result<ManagerProxy<'static>> {
     dbus::default_proxy(conn)
+}
+
+/// The session bus, connected once for every one-off unit operation (each connection has threads of its
+/// own); connected again after a call failed.
+static BUS: std::sync::Mutex<Option<Connection>> = std::sync::Mutex::new(None);
+
+/// `call` on the user manager, over the shared connection.
+fn with_manager<T>(call: impl FnOnce(&ManagerProxy) -> Result<T, Error>) -> Result<T, Error> {
+    let conn = {
+        let mut bus = BUS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        match bus.as_ref() {
+            Some(c) => c.clone(),
+            None => bus.insert(Connection::session()?).clone(),
+        }
+    };
+    let result = manager(&conn).map_err(Error::from).and_then(|m| call(&m));
+    if result.is_err() {
+        *BUS.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    }
+    result
 }
 
 /// Our scopes that run (dock app instances and games), in the order of their names; those orphaned by a
@@ -238,26 +259,42 @@ fn loaded(manager: &ManagerProxy, name: &str) -> bool {
 /// too.
 pub fn adopt(unit: &str, slice: Option<&str>, pids: &[u32]) -> Result<(), Error> {
     use zbus::zvariant::Value;
-    let manager = manager(&Connection::session()?)?;
-    if loaded(&manager, unit) {
-        manager.attach_processes_to_unit(unit, "", pids)?;
-        return Ok(());
-    }
-    // (Delegated: a user manager moves processes into a unit later only if it is.)
-    let mut properties = vec![("PIDs", Value::from(pids.to_vec())), ("CollectMode", Value::from("inactive-or-failed")), ("Delegate", Value::from(true))];
-    if let Some(slice) = slice {
-        properties.push(("Slice", Value::from(slice)));
-    }
-    manager.start_transient_unit(unit, "fail", &properties, &[])?;
-    Ok(())
+    with_manager(|manager| {
+        if loaded(manager, unit) {
+            manager.attach_processes_to_unit(unit, "", pids)?;
+            return Ok(());
+        }
+        // (Delegated: a user manager moves processes into a unit later only if it is.)
+        let mut properties = vec![("PIDs", Value::from(pids.to_vec())), ("CollectMode", Value::from("inactive-or-failed")), ("Delegate", Value::from(true))];
+        if let Some(slice) = slice {
+            properties.push(("Slice", Value::from(slice)));
+        }
+        manager.start_transient_unit(unit, "fail", &properties, &[])?;
+        Ok(())
+    })
 }
 
 /// Thaws a launch's slice before it starts (one left frozen: systemd starts no scope in it).
 pub fn thaw_slice(slice: &str) {
-    match Connection::session().map_err(Error::from).and_then(|c| Ok(manager(&c)?)) {
-        Ok(manager) => thaw_now(&manager, slice),
-        Err(e) => log::debug!("thawing {slice}: {e}"),
+    if let Err(e) = with_manager(|m| {
+        thaw_now(m, slice);
+        Ok(())
+    }) {
+        log::debug!("thawing {slice}: {e}");
     }
+}
+
+/// Ends unit `unit` (an entry's slice: all its launches): stopped (systemd asks its processes to end,
+/// then kills what is left after its timeout), or with `force` killed at once.
+pub fn end(unit: &str, force: bool) -> Result<(), Error> {
+    const SIGKILL: i32 = 9;
+    with_manager(|m| {
+        match force {
+            true => m.kill_unit(unit, "all", SIGKILL)?,
+            false => drop(m.stop_unit(unit, "replace")?),
+        }
+        Ok(())
+    })
 }
 
 /// Thaws a unit, if it is there and frozen (otherwise systemd does nothing).
@@ -269,60 +306,80 @@ fn thaw_now(manager: &ManagerProxy, unit: &str) {
     }
 }
 
-/// Freezes a unit (a slice: every scope in it), or thaws it, on a thread of its own: the cgroup freezer,
-/// which stops its processes where they are, without their knowing. A freeze waits while the slice works
-/// without drawing ([`working_without_drawing`]: loading, compiling shaders, which the user switched away
-/// to wait for); a later request for the unit (shown again: thawed) ends the wait.
+/// Freezes a unit (a slice: every scope in it), or thaws it: the cgroup freezer, which stops its
+/// processes where they are, without their knowing. Done by the freezer thread, one unit after another,
+/// each unit's latest request only (thaws first). A freeze waits while the slice works without drawing
+/// ([`working_without_drawing`]: loading, compiling shaders, which the user switched away to wait for);
+/// a later request for the unit (shown again: thawed) ends the wait.
 pub fn freeze(unit: String, frozen: bool) {
-    let ticket = {
-        let mut requests = REQUESTS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        let n = requests.entry(unit.clone()).or_default();
-        *n += 1;
-        *n
-    };
-    let latest = move |unit: &str| REQUESTS.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(unit).copied() == Some(ticket);
-    let done = worker::detached("freeze", move || {
-        let result = Connection::session().map_err(Error::from).and_then(|c| Ok(manager(&c)?)).and_then(|m| {
-            if frozen {
-                let mut said = false;
-                while working_without_drawing(&m, &unit) {
-                    if !said {
-                        log::info!("{unit} works without drawing (loading?): frozen once it doesn't");
-                        said = true;
-                    }
-                    if !latest(&unit) {
-                        return Ok(false);
-                    }
-                }
-                // (The last look and the freeze as one: a thaw asked meanwhile comes after it.)
-                let _applying = APPLYING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-                if !latest(&unit) {
-                    return Ok(false);
-                }
-                m.freeze_unit(&unit)?;
-            } else {
-                let _applying = APPLYING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-                m.thaw_unit(&unit)?;
-            }
-            Ok(true)
-        });
-        match result {
-            Ok(true) => log::info!("{} {unit}", if frozen { "froze" } else { "thawed" }),
-            Ok(false) => log::info!("{unit}: not frozen (asked otherwise since)"),
-            Err(e) => log::warn!("{} {unit}: {e}", if frozen { "freezing" } else { "thawing" }),
-        }
+    static FREEZER: std::sync::OnceLock<Option<std::sync::mpsc::Sender<(String, bool)>>> = std::sync::OnceLock::new();
+    let sender = FREEZER.get_or_init(|| {
+        let (send, receive) = std::sync::mpsc::channel();
+        worker::detached("freezer", move || freezer(&receive)).map_err(|e| log::warn!("freezer: {e}")).ok().map(|()| send)
     });
-    if let Err(e) = done {
-        log::warn!("freeze: {e}");
+    if sender.as_ref().is_none_or(|s| s.send((unit, frozen)).is_err()) {
+        log::warn!("freezer: gone");
     }
 }
 
-/// Each unit's latest freeze or thaw request, by number: a freeze waiting goes ahead only if it is still
-/// the latest.
-static REQUESTS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, u64>>> = std::sync::LazyLock::new(Default::default);
-
-/// Held while a freeze or thaw is asked of systemd.
-static APPLYING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+/// The freezer thread: the requests waiting, each unit's latest, carried out until none is left.
+fn freezer(requests: &std::sync::mpsc::Receiver<(String, bool)>) {
+    let mut waiting: Vec<(String, bool)> = Vec::new();
+    // (Those a freeze waits for, said once each.)
+    let mut said: Vec<String> = Vec::new();
+    let take = |waiting: &mut Vec<(String, bool)>, (unit, frozen): (String, bool)| {
+        waiting.retain(|(u, _)| *u != unit);
+        waiting.push((unit, frozen));
+    };
+    loop {
+        if waiting.is_empty() {
+            match requests.recv() {
+                Ok(r) => take(&mut waiting, r),
+                Err(_) => return,
+            }
+        }
+        while let Ok(r) = requests.try_recv() {
+            take(&mut waiting, r);
+        }
+        // Thaws at once.
+        for (unit, _) in waiting.iter().filter(|(_, frozen)| !frozen) {
+            match with_manager(|m| Ok(m.thaw_unit(unit)?)) {
+                Ok(()) => log::info!("thawed {unit}"),
+                Err(e) => log::warn!("thawing {unit}: {e}"),
+            }
+            said.retain(|u| u != unit);
+        }
+        waiting.retain(|(_, frozen)| *frozen);
+        // A freeze: once its slice doesn't work without drawing (looked at for a while), unless asked
+        // otherwise meanwhile.
+        let Some((unit, _)) = waiting.first().cloned() else {
+            continue;
+        };
+        let busy = with_manager(|m| Ok(working_without_drawing(m, &unit))).unwrap_or(false);
+        while let Ok(r) = requests.try_recv() {
+            take(&mut waiting, r);
+        }
+        if !waiting.iter().any(|(u, frozen)| *u == unit && *frozen) {
+            log::info!("{unit}: not frozen (asked otherwise since)");
+            continue;
+        }
+        // (Busy: looked at again after the others; with none else waiting, at once.)
+        if busy {
+            if !said.contains(&unit) {
+                log::info!("{unit} works without drawing (loading?): frozen once it doesn't");
+                said.push(unit.clone());
+            }
+            waiting.rotate_left(1);
+            continue;
+        }
+        waiting.retain(|(u, _)| *u != unit);
+        said.retain(|u| *u != unit);
+        match with_manager(|m| Ok(m.freeze_unit(&unit)?)) {
+            Ok(()) => log::info!("froze {unit}"),
+            Err(e) => log::warn!("freezing {unit}: {e}"),
+        }
+    }
+}
 
 /// Above this CPU (cores) with the GPU below [`DRAWING_GPU`] (of its time), a slice works without
 /// drawing.
@@ -380,9 +437,8 @@ fn gpu_ns(dir: &std::path::Path) -> u64 {
 
 /// Waits for a scope to appear, within `appear`.
 pub fn appear(unit: &str, appear: Duration) -> Result<(), Error> {
-    let manager = manager(&Connection::session()?)?;
     let asked = Instant::now();
-    while !loaded(&manager, unit) {
+    while !with_manager(|m| Ok(loaded(m, unit)))? {
         if asked.elapsed() > appear {
             return Err(Error::DidNotStart(unit.to_owned()));
         }
@@ -393,8 +449,7 @@ pub fn appear(unit: &str, appear: Duration) -> Result<(), Error> {
 
 /// Waits for a scope to end. Checks once a second: for when a launch ended, a second is exact enough.
 pub fn wait(unit: &str) -> Result<(), Error> {
-    let manager = manager(&Connection::session()?)?;
-    while loaded(&manager, unit) {
+    while with_manager(|m| Ok(loaded(m, unit)))? {
         thread::sleep(Duration::from_secs(1));
     }
     Ok(())

@@ -46,14 +46,50 @@ pub enum Setting {
     ScreenOff,
     /// The device sleeps after this many minutes without input; 0: never (global only).
     Sleep,
-    /// What a program does while none of its windows is shown (see [`crate::background`]): 0 it runs,
-    /// 1 it is paused (frozen), 2 it ends once its last window has closed; [`GAMES_PAUSED`] (the
-    /// default) 1 for a game, else 0 (see [`crate::State::background_of`]).
+    /// What a program does while none of its windows is shown: see [`InBackground`].
     Background,
 }
 
-/// [`Setting::Background`]'s value by which games are paused and the rest run.
-pub const GAMES_PAUSED: u16 = 3;
+/// [`Setting::Background`]'s values (see [`crate::background`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InBackground {
+    Runs,
+    /// Paused (frozen) once hidden for the grace.
+    Pauses,
+    /// Ended once its last window has closed.
+    Quits,
+    /// The default: Pauses for a game, else Runs (see [`crate::State::background_of`]).
+    PausesGames,
+}
+
+impl InBackground {
+    pub const fn value(self) -> u16 {
+        match self {
+            InBackground::Runs => 0,
+            InBackground::Pauses => 1,
+            InBackground::Quits => 2,
+            InBackground::PausesGames => 3,
+        }
+    }
+
+    pub fn of(value: u16) -> InBackground {
+        match value {
+            1 => InBackground::Pauses,
+            2 => InBackground::Quits,
+            3 => InBackground::PausesGames,
+            _ => InBackground::Runs,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            InBackground::Runs => "Runs hidden",
+            InBackground::Pauses => "Pauses hidden",
+            InBackground::Quits => "Quits closed",
+            InBackground::PausesGames => "Pauses games",
+        }
+    }
+}
 
 pub const COUNT: usize = 17;
 
@@ -104,7 +140,9 @@ impl Setting {
     pub fn choices(self) -> &'static [u16] {
         match self {
             Setting::Power | Setting::Hud | Setting::Fan => &[0, 1, 2],
-            Setting::Background => &[GAMES_PAUSED, 0, 1, 2],
+            Setting::Background => {
+                &const { [InBackground::PausesGames.value(), InBackground::Runs.value(), InBackground::Pauses.value(), InBackground::Quits.value()] }
+            }
             Setting::FpsCap => &[0, 30, 40, 45, 60, 90, 120],
             Setting::Refresh => &[0, 60, 90, 120],
             Setting::Upscale | Setting::Rumble => &[0, 1, 2, 3],
@@ -125,7 +163,7 @@ impl Setting {
             Setting::ChargeLimit => 100,
             Setting::ScreenOff => 5,
             Setting::Sleep => 15,
-            Setting::Background => GAMES_PAUSED,
+            Setting::Background => InBackground::PausesGames.value(),
             _ => 0,
         }
     }
@@ -205,10 +243,7 @@ impl Setting {
             (Setting::ChargeLimit, 100) => "Charge full",
             (Setting::ScreenOff, 0) => "Always on",
             (Setting::Sleep, 0) => "No sleep",
-            (Setting::Background, GAMES_PAUSED) => "Pauses games",
-            (Setting::Background, 0) => "Runs hidden",
-            (Setting::Background, 1) => "Pauses hidden",
-            (Setting::Background, _) => "Quits closed",
+            (Setting::Background, v) => InBackground::of(v).label(),
             // Numbers: the value with its unit.
             (Setting::FpsCap, v) => return number(buf, "", v, " fps"),
             (Setting::Refresh, v) => return number(buf, "", v, " Hz"),
@@ -239,6 +274,25 @@ impl Default for Values {
 impl Values {
     pub fn get(&self, s: Setting) -> u16 {
         self.0.get(s.index()).copied().unwrap_or_else(|| s.default_value())
+    }
+
+    /// The settings that are a choice of two, or of named values, by what they mean.
+    pub fn background(&self) -> InBackground {
+        InBackground::of(self.get(Setting::Background))
+    }
+
+    /// The bottom screen dark while a game is in force.
+    pub fn bottom_dark(&self) -> bool {
+        self.get(Setting::BottomScreen) == 1
+    }
+
+    pub fn pad_mouse(&self) -> bool {
+        self.get(Setting::PadMouse) == 1
+    }
+
+    /// All cores on (else the big ones off).
+    pub fn big_cores(&self) -> bool {
+        self.get(Setting::BigCores) != 0
     }
 
     pub fn set(&mut self, s: Setting, value: u16) {

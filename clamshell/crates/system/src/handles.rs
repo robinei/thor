@@ -90,11 +90,7 @@ impl Handles {
             Effect::CalibrateGyro => self.tuning.calibrate_gyro(),
             Effect::Save(save) => self.save(save),
             Effect::FetchFirst(ids) => self.fetching.first(ids),
-            Effect::Tool(tool) => match tool.as_str() {
-                "rescan" => (self.rescan)(false),
-                "refetch" => (self.rescan)(true),
-                other => log::warn!("no tool {other}"),
-            },
+            Effect::Tool(tool) => (self.rescan)(*tool == clamshell_library::Tool::Refetch),
             Effect::RecordPlay { game, start, duration } => {
                 if let Some(store) = &self.store
                     && let Err(e) = store.add_play(game, *start, *duration)

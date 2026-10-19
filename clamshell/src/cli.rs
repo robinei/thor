@@ -34,7 +34,18 @@ pub enum Command {
     Ctl(Vec<String>),
 }
 
-pub const USAGE: &str = "usage: clamshell [ctl COMMAND... | --snapshot DIR | --library | --tray | --clipboard get|set | --wayland-filter | --fetch-metadata | --mangohud-env | --run FILE]";
+pub const USAGE: &str = "usage: clamshell [ctl COMMAND...]
+  ctl COMMAND...       drive the running ClamShell (`clamshell ctl help` lists the commands)
+used by ClamShell itself:
+  --run FILE           a launch's job, through sway's exec
+  --wayland-filter     Waydroid's Wayland filter
+  --clipboard get|set  the clipboard's text (Waydroid's clipboard sharing)
+for development:
+  --snapshot DIR       both screens' views drawn into DIR
+  --library            the library as it reads, written out
+  --tray               the tray icons there are, written out
+  --fetch-metadata     the missing covers and details fetched
+  --mangohud-env       the environment that has a game started by hand report its frame rate";
 
 /// The command the arguments (without the program's name) ask for.
 pub fn parse(args: &[String]) -> Option<Command> {

@@ -196,7 +196,7 @@ mod tests {
         let mut s = state();
         tap(&mut s, game("zelda-lttp"));
         tap(&mut s, Id::Settings(SettingsId::Scope(Scope::Content)));
-        tap(&mut s, Id::Settings(SettingsId::Tile(Setting::PadMouse)));
+        tap(&mut s, Id::Settings(SettingsId::Tile(crate::settings::Setting::PadMouse)));
         s.apply(GameEvent::Started("zelda-lttp".into()).into());
         assert_eq!(s.pad().mouse(), PadMouse::ByGame, "the game wants it");
         // Off and on again by hand: the user's now, it stays when the game ends.

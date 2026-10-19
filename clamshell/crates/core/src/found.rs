@@ -36,7 +36,6 @@ impl State {
     pub(crate) fn follow_found_windows(&mut self, taken: &[i64]) -> Vec<Effect> {
         let now = self.unix_secs;
         let session = &self.session;
-        let games = &self.shelf.library().games;
         // (Not a starting launch's: a Steam game found running, its launch to come.)
         let starting = |w: &Window| session.launching.iter().any(|l| l.app_id.as_deref() == Some(w.app_id.as_str()));
         let service = |w: &Window| w.unit.as_deref().is_some_and(|u| u.ends_with(".service"));
@@ -55,48 +54,47 @@ impl State {
             if app_id.is_none() && !own {
                 continue;
             }
-            let named = format!("desktop:{}", w.app_id).to_lowercase();
-            let game = match games.iter().find(|g| g.id.to_lowercase() == named) {
-                Some(g) => g.clone(),
-                None => {
-                    let name = app_id.as_deref().map_or_else(|| pid.to_string(), str::to_owned);
-                    let title = if w.app_id.is_empty() { &w.title } else { &w.app_id };
-                    Game { tool: true, ..Game::new(&format!("{PREFIX}{name}"), title) }
-                }
-            };
+            let game = self.found_entry(&w.app_id, || {
+                let name = app_id.as_deref().map_or_else(|| pid.to_string(), str::to_owned);
+                let title = if w.app_id.is_empty() { &w.title } else { &w.app_id };
+                Game { tool: true, ..Game::new(&format!("{PREFIX}{name}"), title) }
+            });
             if session.running(&game.id).is_some() {
                 continue;
             }
-            new.push(Running {
-                id: game.id.clone(),
-                key: game.key.clone(),
-                origin: Origin::Found,
-                app_id,
-                pid: own.then_some(pid),
-                tray: None,
-                start: now,
-                launches: 0,
-                seen: true,
-                entry: Some(Box::new(game)),
-            });
+            new.push(Running { app_id, seen: true, ..Running::of(&game, Origin::Found { pid: own.then_some(pid), tray: None }, now) });
         }
-        // Their windows to their workspaces, shown there if one was in front; each moved into a scope of
-        // ours.
+        self.start_found(new, taken)
+    }
+
+    /// The entry a program found by `name` (its window's app id, its tray icon's id) runs as: the
+    /// library's desktop entry of that name (any case), else one of its own, made by `own`.
+    pub(crate) fn found_entry(&self, name: &str, own: impl FnOnce() -> Game) -> Game {
+        let named = format!("desktop:{name}").to_lowercase();
+        self.shelf.library().games.iter().find(|g| g.id.to_lowercase() == named).cloned().unwrap_or_else(own)
+    }
+
+    /// Entries just found (by windows or tray icons) run: their windows (but `taken`) to their
+    /// workspaces, shown there if one was in front; an own entry's picture looked up by its app id; each
+    /// moved into a scope of ours (in the device's session).
+    pub(crate) fn start_found(&mut self, new: Vec<Running>, taken: &[i64]) -> Vec<Effect> {
+        let session = &self.session;
         let mut effects = Vec::new();
         for r in &new {
             let mine: Vec<&Window> = session.windows.iter().filter(|w| !taken.contains(&w.id) && (r.owns(w) || r.fathered(w))).collect();
-            effects.push(Effect::Window(WindowCommand::Move { windows: mine.iter().map(|w| w.id).collect(), to: r.workspace() }));
+            if !mine.is_empty() {
+                effects.push(Effect::Window(WindowCommand::Move { windows: mine.iter().map(|w| w.id).collect(), to: r.workspace() }));
+            }
             if mine.iter().any(|w| w.focused) {
                 effects.push(Effect::Window(WindowCommand::Focus(r.workspace())));
             }
-        }
-        // (One of its own: its picture looked up by its app id.)
-        for r in new.iter().filter(|r| r.id.starts_with(PREFIX)) {
-            if let Some(app_id) = &r.app_id {
+            if r.id.starts_with(PREFIX)
+                && let Some(app_id) = &r.app_id
+            {
                 effects.push(Effect::FindIcon { entry: r.id.clone(), app_id: app_id.to_string() });
             }
         }
-        let adopt: Vec<(String, u32)> = new.iter().filter_map(|r| Some((r.key.clone(), r.pid?))).filter(|_| self.device_session).collect();
+        let adopt: Vec<(String, u32)> = new.iter().filter_map(|r| Some((r.key.clone(), r.pid()?))).filter(|_| self.device_session).collect();
         self.session.running.extend(new);
         for (key, pid) in adopt {
             effects.push(self.adopt(&key, pid));
@@ -127,7 +125,7 @@ mod tests {
         let thing = window(5, "org.x.Thing", 500, "app-thing.scope", true);
         let (_, fx) = s.apply(Event::Windows(vec![thing.clone(), window(6, "org.x.Thing", 500, "app-thing.scope", false)]));
         let r = s.session().running("window:org.x.Thing").unwrap();
-        assert_eq!((r.origin, r.pid, r.app_id.as_deref()), (Origin::Found, Some(500), Some("org.x.Thing")));
+        assert_eq!((r.found(), r.pid(), r.app_id.as_deref()), (true, Some(500), Some("org.x.Thing")));
         let ws = r.workspace();
         assert!(fx.contains(&Effect::Window(WindowCommand::Move { windows: vec![5, 6], to: ws.clone() })), "{fx:?}");
         assert!(fx.contains(&Effect::Window(WindowCommand::Focus(ws))), "it was in front: {fx:?}");
@@ -187,7 +185,7 @@ mod tests {
         // Another program's window, of the same process (Waydroid's session: an app the library hasn't).
         let (_, fx) = s.apply(Event::Windows(vec![mine.clone(), window(6, "org.other", 700, "waydroid-session.scope", true)]));
         let r = s.session().running("window:org.other").unwrap();
-        assert_eq!(r.pid, None, "not its own process");
+        assert_eq!(r.pid(), None, "not its own process");
         assert!(!fx.iter().any(|e| matches!(e, Effect::Adopt { .. })), "{fx:?}");
         // Quit: its windows closed, and that is all.
         let id: Arc<str> = "window:org.other".into();

@@ -9,7 +9,7 @@ pub mod steam;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use clamshell_library::{BrowseKind, Browsed, Collection, Game, Launch, Library, Meta};
+use clamshell_library::{BrowseKind, Browsed, Collection, Game, Launch, Library, Meta, Tool};
 
 use crate::meta::{How, Keys, RETRY_MISS, Wanted};
 
@@ -124,14 +124,14 @@ impl Folders<'_> {
 }
 
 /// The Tools tab's entries: id, title, the tool, what it does.
-const TOOLS: [(&str, &str, &str, &str); 2] = [
+const TOOLS: [(&str, &str, Tool, &str); 2] = [
     (
         "tool:rescan",
         "Rescan library",
-        "rescan",
+        Tool::Rescan,
         "Reads library.json, its folders, Steam and the desktop files again, then fetches the covers and details still missing.",
     ),
-    ("tool:refetch", "Fetch missing art again", "refetch", "Tries again for the entries whose covers and details weren't found, then rescans."),
+    ("tool:refetch", "Fetch missing art again", Tool::Refetch, "Tries again for the entries whose covers and details weren't found, then rescans."),
 ];
 
 /// The order of a tab's or a folder's entries: folders first, then by title; browsed dirs' own folders
@@ -544,7 +544,7 @@ impl Builder<'_> {
         };
         let first = self.games.len();
         for (id, title, tool, summary) in TOOLS {
-            self.games.push(Game { launch: Launch::Tool(tool.into()), tool: true, summary: summary.into(), ..Game::new(id, title) });
+            self.games.push(Game { launch: Launch::Tool(tool), tool: true, summary: summary.into(), ..Game::new(id, title) });
         }
         self.collections.push(Collection { icon: tab.icon, ..Collection::new(&tab.name, (first..self.games.len()).collect()) });
     }

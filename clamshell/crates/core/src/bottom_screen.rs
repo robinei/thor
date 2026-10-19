@@ -116,6 +116,12 @@ pub struct BottomScreen {
 const DIM_AFTER: u64 = 60;
 
 impl State {
+    /// The second screen is dark: a program is in force that wants it so, and it hasn't been tapped
+    /// since.
+    pub fn bottom_dark(&self) -> bool {
+        self.session.program.is_some() && self.in_force().bottom_dark() && !self.bottom.woken
+    }
+
     /// Whether the second screen is drawn dimmed: ClamShell's view on it (not windows moved there, which
     /// are watched without touching), untouched and the pad's focus not on it for [`DIM_AFTER`]. A game
     /// played with the pad on the main screen keeps the device awake, while nobody looks below: the OLED
@@ -299,7 +305,7 @@ mod tests {
     }
 
     fn running(id: &str, key: &str) -> Running {
-        Running { id: id.into(), key: key.into(), origin: Origin::Ours, app_id: None, pid: None, tray: None, start: 0, launches: 1, seen: false, entry: None }
+        Running { id: id.into(), key: key.into(), origin: Origin::Ours, app_id: None, start: 0, launches: 1, seen: false, entry: None }
     }
 
     /// A game running (shelf's), with a top window and a second window, the second in front.

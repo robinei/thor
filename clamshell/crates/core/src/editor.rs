@@ -1,8 +1,12 @@
 //! The editor: a line of text typed on the on-screen keyboard (Enter saves, Esc cancels), for a game's
 //! environment, a Wi-Fi password, a keymap's name or a file's; and environment variables as text, `KEY=value` words.
+//! Its keys, Save and Cancel, and the clipboard pasted into it, are the state's here; what a saved text
+//! does is its purpose's (the settings, Wi-Fi, keymaps, files).
 
 use std::sync::Arc;
 
+use crate::effect::{Effect, Save};
+use crate::id::EditorId;
 use crate::keyboard::{self, Key, Named, Stroke};
 
 /// What the editor edits, and the text so far.
@@ -154,6 +158,60 @@ pub fn count_env(text: &str) -> usize {
         }
     }
     count
+}
+
+impl crate::State {
+    /// The editor's buttons.
+    pub(crate) fn on_editor(&mut self, id: EditorId) -> Vec<Effect> {
+        match id {
+            EditorId::Save => self.save_editor(),
+            EditorId::Cancel => self.cancel_editor(),
+        }
+    }
+
+    /// The clipboard's text into the open editor (Ctrl+V, or a right click), if there is one.
+    pub(crate) fn paste(&mut self) {
+        if let (Some(text), Some(editor)) = (self.clipboard.clone(), self.bottom.editor_mut()) {
+            editor.paste(&text);
+        }
+    }
+
+    /// A key from the on-screen keyboard while the editor is open: Ctrl+V pastes the clipboard's text.
+    pub(crate) fn edit(&mut self, stroke: Stroke) -> Vec<Effect> {
+        if stroke.ctrl && !stroke.alt && stroke.key == crate::keyboard::Key::Char('v') {
+            self.paste();
+            return vec![];
+        }
+        match self.bottom.editor_mut().and_then(|e| e.key(stroke)) {
+            Some(Done::Save) => self.save_editor(),
+            Some(Done::Cancel) => self.cancel_editor(),
+            None => vec![],
+        }
+    }
+
+    /// The editor's Cancel: closed (a file's name: back to the tab the keyboard came up from).
+    fn cancel_editor(&mut self) -> Vec<Effect> {
+        match self.bottom.close_editor().map(|e| e.purpose) {
+            Some(Purpose::FileName(_)) => self.file_name_cancelled(),
+            _ => vec![],
+        }
+    }
+
+    /// The editor's Save: the environment saved, or the network joined with the password.
+    fn save_editor(&mut self) -> Vec<Effect> {
+        let Some(editor) = self.bottom.close_editor() else {
+            return vec![];
+        };
+        match editor.purpose {
+            Purpose::Env { game } => {
+                self.settings.set_env(game, &editor.text);
+                vec![Effect::Save(Save::Settings(self.settings.clone()))]
+            }
+            Purpose::Password { ssid } => self.join(ssid, Some(editor.text)),
+            Purpose::KeymapName(action) => self.named_keymap(action, &editor.text),
+            Purpose::FileName(purpose) => self.file_named(purpose, &editor.text),
+        }
+    }
 }
 
 #[cfg(test)]

@@ -32,14 +32,33 @@ pub struct Session {
     /// The workspace whose window in front closed, leaving it empty, and when (see
     /// [`Session::show_reopened`]).
     pub(crate) closed_front: Option<(String, u64)>,
-    /// Entries quitting: their windows asked to close; once none is left, ended (then true) if they still
-    /// run; and their runner's stop, for one that ends with its windows (known by its app id).
-    pub(crate) quitting: Vec<(Arc<str>, bool, Option<Effect>)>,
+    /// Entries quitting (see [`Quitting`]).
+    pub(crate) quitting: Vec<Quitting>,
     /// Numbers new instances' names (with the time, unique across restarts).
     pub(crate) next_instance: u64,
+    /// systemd has listed our scopes (once: what runs is known).
+    pub(crate) units_known: bool,
+    /// What the last [`crate::State::reconcile`] saw: the windows' ids, and the workspace in front on the
+    /// main screen (to tell new windows, and the one in front closing).
+    pub(crate) followed_windows: Vec<i64>,
+    pub(crate) followed_front: Option<String>,
+}
+
+/// An entry quitting: its windows asked to close; once none is left, ended (then `ended`) if it still
+/// runs; and its runner's stop, for one that ends with its windows (known by its app id).
+#[derive(Debug, Clone)]
+pub(crate) struct Quitting {
+    pub(crate) game: Arc<str>,
+    pub(crate) ended: bool,
+    pub(crate) stop: Option<Effect>,
 }
 
 impl Session {
+    /// Whether entry `id` is quitting.
+    pub(crate) fn is_quitting(&self, id: &str) -> bool {
+        self.quitting.iter().any(|q| &*q.game == id)
+    }
+
     /// The entries that run, in the order they started.
     pub fn running_entries(&self) -> &[Running] {
         &self.running
@@ -111,6 +130,7 @@ impl Session {
 
     pub(crate) fn set_units(&mut self, units: Vec<Instance>) {
         self.units = units;
+        self.units_known = true;
     }
 
     /// A window on the workspace whose window in front closed, within [`REOPEN_SECS`] (a program that

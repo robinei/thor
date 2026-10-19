@@ -39,14 +39,16 @@ pub enum Front {
 }
 
 /// How a running entry runs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Origin {
     /// By its launches: the launcher thread says when each has ended.
     Ours,
     /// A program not started by ClamShell, found by its tray icon (see [`crate::tray`]) or a window of it
     /// (see [`crate::found`]): it runs while the icon is there, or a window of it is open; until it is
-    /// moved into a scope of ours (then it runs as [`Origin::Ours`]).
-    Found,
+    /// moved into a scope of ours (then it runs as [`Origin::Ours`]). `pid`: its own process (the tray
+    /// icon's, or its window's: windows of it, or of a process it started, are the entry's), none if
+    /// it runs in another program's; `tray`: the icon's key, if it has one.
+    Found { pid: Option<u32>, tray: Option<Arc<str>> },
     /// By its windows, since `since` (epoch seconds): started by another program, or its launches ended
     /// while it ran on in a program not ours. It ends once it has had windows ([`Running::seen`]) and has
     /// none, or none came by `until`; its play from `since` recorded then. Its windows: those with its app
@@ -66,10 +68,6 @@ pub struct Running {
     pub origin: Origin,
     /// The app id its windows have, if it runs in another program's processes (see [`app_id_of`]).
     pub app_id: Option<Arc<str>>,
-    /// Found by a tray icon: the icon's process (windows of it, or of a process it started, are the
-    /// entry's) and the icon's key.
-    pub pid: Option<u32>,
-    pub tray: Option<Arc<str>>,
     /// When it first started (epoch seconds).
     pub start: u64,
     /// Its launches the launcher still follows (ours: see [`State::follow_ours`]).
@@ -83,6 +81,32 @@ pub struct Running {
 }
 
 impl Running {
+    /// Entry `game` running as `origin` since `start` (no launch followed, no window seen yet).
+    pub(crate) fn of(game: &Game, origin: Origin, start: u64) -> Running {
+        let entry = Some(Box::new(game.clone()));
+        Running { id: game.id.clone(), key: game.key.clone(), origin, app_id: None, start, launches: 0, seen: false, entry }
+    }
+
+    /// Found: its own process, if it has one (see [`Origin::Found`]).
+    pub fn pid(&self) -> Option<u32> {
+        match self.origin {
+            Origin::Found { pid, .. } => pid,
+            _ => None,
+        }
+    }
+
+    /// Found by a tray icon: the icon's key.
+    pub fn tray(&self) -> Option<&Arc<str>> {
+        match &self.origin {
+            Origin::Found { tray, .. } => tray.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub fn found(&self) -> bool {
+        matches!(self.origin, Origin::Found { .. })
+    }
+
     /// Whether `w` is one of its windows by its app id.
     pub fn owns(&self, w: &crate::windows::Window) -> bool {
         self.app_id.as_deref() == Some(w.app_id.as_str())
@@ -90,13 +114,13 @@ impl Running {
 
     /// Whether `w` is one of its windows by its process: the tray icon's, or one it started.
     pub fn fathered(&self, w: &crate::windows::Window) -> bool {
-        self.pid.is_some_and(|pid| w.pids.contains(&pid))
+        self.pid().is_some_and(|pid| w.pids.contains(&pid))
     }
 
     /// Whether its windows are found otherwise than by its scope (by app id, or by process), and so are
     /// moved to its workspace wherever they open.
     pub fn outside(&self) -> bool {
-        self.app_id.is_some() || self.pid.is_some()
+        self.app_id.is_some() || self.pid().is_some()
     }
 
     /// Its workspace's name.
@@ -169,7 +193,7 @@ impl State {
     /// Launches `game` as [`State::launch`] does, by `command` if given (then a group too) instead of its own.
     pub(crate) fn launch_with(&mut self, game: Arc<str>, command: Option<Launch>) -> Vec<Effect> {
         if let Some(Launch::Tool(tool)) = self.shelf.game(&game).map(|g| &g.launch) {
-            return vec![Effect::Tool(tool.clone())];
+            return vec![Effect::Tool(*tool)];
         }
         if command.is_none() && self.shelf.game(&game).is_some_and(crate::Game::is_group) {
             if !self.shelf.reveal(&game) {
@@ -219,10 +243,11 @@ impl State {
                 r.origin = Origin::Ours;
             }
             None => {
-                let key = self.shelf.game(&game).map_or_else(|| clamshell_library::key_of(&game), |g| g.key.clone());
-                let entry = self.shelf.game(&game).cloned().map(Box::new);
                 let start = self.unix_secs;
-                session.running.push(Running { id: game, key, origin: Origin::Ours, app_id, pid: None, tray: None, start, launches: 1, seen: false, entry });
+                // (An entry gone from the library meanwhile: by its id alone.)
+                let entry = self.shelf.game(&game).cloned().unwrap_or_else(|| Game::new(&game, &game));
+                let entry = Running { app_id, launches: 1, ..Running::of(&entry, Origin::Ours, start) };
+                session.running.push(Running { entry: entry.entry.filter(|_| self.shelf.game(&game).is_some()), ..entry });
             }
         }
         self.bottom.woken = false;
@@ -290,14 +315,17 @@ impl State {
             None => None,
         };
         let Some(entry) = self.shelf.game(&game).filter(|g| g.browsed.is_some() || app_id.is_some()).cloned() else {
+            // (Nothing to wait for: it didn't start, and says so.)
+            let title = self.shelf.game(&game).map_or_else(|| game.to_string(), |g| g.title.clone());
+            if self.session.running(&game).is_none() {
+                self.notify(crate::hardware::NoticeKind::NotStarted(title));
+            }
             return;
         };
-        let key = entry.key.clone();
         if self.session.running(&game).is_none() {
             let now = self.unix_secs;
             let origin = Origin::Windows { since: now, until: now + HANDOFF };
-            let entry = Some(Box::new(entry));
-            self.session.running.push(Running { id: game, key, origin, app_id, pid: None, tray: None, start: now, launches: 0, seen: false, entry });
+            self.session.running.push(Running { app_id, ..Running::of(&entry, origin, now) });
         }
     }
 
@@ -329,21 +357,8 @@ impl State {
         }
         let (steam, new): (Vec<&Game>, Vec<&Game>) = new.into_iter().partition(|g| matches!(g.launch, Launch::Steam { .. }));
         let steam: Vec<Arc<str>> = steam.into_iter().map(|g| g.id.clone()).collect();
-        let new: Vec<Running> = new
-            .into_iter()
-            .map(|g| Running {
-                id: g.id.clone(),
-                key: g.key.clone(),
-                origin: Origin::Windows { since: now, until: now },
-                app_id: app_id_of(g),
-                pid: None,
-                tray: None,
-                start: now,
-                launches: 0,
-                seen: true,
-                entry: Some(Box::new(g.clone())),
-            })
-            .collect();
+        let new: Vec<Running> =
+            new.into_iter().map(|g| Running { app_id: app_id_of(g), seen: true, ..Running::of(g, Origin::Windows { since: now, until: now }, now) }).collect();
         if let Some(r) = new.last() {
             self.session.pending_show = Some(Instance::Run { key: r.key.clone(), secs: now, n: 0 });
             self.bottom.woken = false;
@@ -400,7 +415,7 @@ impl State {
             let has = with.contains(&r.id);
             r.seen |= has;
             match r.origin {
-                Origin::Found => r.tray.as_ref().is_some_and(|k| icons.contains(k)) || has,
+                Origin::Found { ref tray, .. } => tray.as_ref().is_some_and(|k| icons.contains(k)) || has,
                 Origin::Windows { since, until } => {
                     let runs = r.launches > 0 || if r.seen { has } else { now <= until };
                     if !runs && r.seen {
@@ -432,12 +447,11 @@ impl State {
         let now = self.unix_secs;
         let session = &mut self.session;
         let units = &session.units;
-        for r in session.running.iter_mut().filter(|r| r.origin == Origin::Found) {
+        for r in session.running.iter_mut().filter(|r| r.found()) {
             if units.iter().any(|u| u.key() == Some(r.key.as_str())) {
-                r.origin = Origin::Ours;
                 // (Its windows are its scope's now: not every window of that app id or process, which
                 // would keep another one of the program, started later, to it.)
-                r.pid = None;
+                r.origin = Origin::Ours;
                 r.app_id = None;
             }
         }
@@ -456,19 +470,7 @@ impl State {
                 _ => None,
             });
             let start = first.min().unwrap_or(now);
-            let entry = Some(Box::new(g.clone()));
-            session.running.push(Running {
-                id: g.id.clone(),
-                key: key.to_owned(),
-                origin: Origin::Ours,
-                app_id: app_id_of(g),
-                pid: None,
-                tray: None,
-                start,
-                launches: 0,
-                seen: false,
-                entry,
-            });
+            session.running.push(Running { app_id: app_id_of(g), ..Running::of(g, Origin::Ours, start) });
         }
         self.follow_ours()
     }
@@ -504,8 +506,8 @@ impl State {
         let thawed = self.thaw(game);
         let windows = self.windows_of(game);
         let stop = self.stop_of(game);
-        self.session.quitting.retain(|(g, ..)| g != game);
-        self.session.quitting.push((game.clone(), false, stop));
+        self.session.quitting.retain(|q| q.game != *game);
+        self.session.quitting.push(crate::session::Quitting { game: game.clone(), ended: false, stop });
         let mut effects: Vec<Effect> = thawed.into_iter().collect();
         if !windows.is_empty() {
             effects.push(Effect::Window(WindowCommand::Close(windows)));
@@ -516,7 +518,7 @@ impl State {
 
     /// Force kill: the entry ended at once.
     pub(crate) fn force_kill(&mut self, game: &str) -> Vec<Effect> {
-        self.session.quitting.retain(|(g, ..)| &**g != game);
+        self.session.quitting.retain(|q| &*q.game != game);
         let thawed = self.thaw(game);
         thawed.into_iter().chain(self.end(game, true)).collect()
     }
@@ -529,8 +531,8 @@ impl State {
         };
         // (Found, not moved into a scope of ours: its process, if it is its own; in a desktop's session
         // the desktop's, not ended.)
-        if r.origin == Origin::Found {
-            return match r.pid.filter(|_| self.device_session) {
+        if r.found() {
+            return match r.pid().filter(|_| self.device_session) {
                 Some(pid) => vec![Effect::EndProcesses { pids: vec![pid], force }],
                 None => vec![],
             };
@@ -552,17 +554,17 @@ impl State {
     pub(crate) fn follow_quitting(&mut self) -> Vec<Effect> {
         let mut quitting = std::mem::take(&mut self.session.quitting);
         let mut effects = vec![];
-        quitting.retain_mut(|(game, ended, stop)| {
-            let runs = self.session.running(game).is_some();
-            if !runs && !*ended {
-                effects.extend(stop.take());
+        quitting.retain_mut(|q| {
+            let runs = self.session.running(&q.game).is_some();
+            if !runs && !q.ended {
+                effects.extend(q.stop.take());
             }
             runs
         });
-        for (game, ended, _) in &mut quitting {
-            if !*ended && self.windows_of(game).is_empty() {
-                *ended = true;
-                effects.extend(self.end(game, false));
+        for q in &mut quitting {
+            if !q.ended && self.windows_of(&q.game).is_empty() {
+                q.ended = true;
+                effects.extend(self.end(&q.game, false));
             }
         }
         self.session.quitting = quitting;
@@ -689,7 +691,7 @@ mod tests {
         let mut s = steam_ff6();
         launch(&mut s, "ff6");
         let ff6 = s.session().running("ff6").unwrap();
-        assert_eq!((ff6.origin, ff6.app_id.as_deref()), (Origin::Ours, Some("steam_app_620")));
+        assert_eq!((ff6.origin.clone(), ff6.app_id.as_deref()), (Origin::Ours, Some("steam_app_620")));
         let landing = Instance::Landing.name();
         let fx = s.apply(Event::Windows(vec![win(7, "steam_app_620", &landing, true)])).1;
         let ff6 = Instance::workspace_of(&key("ff6"));

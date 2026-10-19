@@ -1,13 +1,11 @@
 //! The settings panel's rules: which item it is about (by what is in front) and which level it edits
 //! (All; the item's runner, Desktop for an app, Steam for a Steam game; the item itself),
-//! changes applied at once when they change the settings in force, the environment editor typing on the
-//! keyboard, and the dark second screen.
+//! changes applied at once when they change the settings in force, the environment editor opened.
 
 use crate::State;
-use crate::editor::{Done, Editor, Purpose};
+use crate::editor::{Editor, Purpose};
 use crate::effect::{Effect, Save};
-use crate::id::{EditorId, SettingsId};
-use crate::keyboard::Stroke;
+use crate::id::SettingsId;
 use crate::program::Program;
 use crate::running::Front;
 use crate::settings::{Setting, Values};
@@ -55,10 +53,12 @@ impl State {
 
     /// What entry (or level) `id` does while hidden ([`Setting::Background`]): Pauses games (the
     /// default) said for it, paused if it is a game (see [`State::is_games`]), else run.
-    pub fn background_of(&self, id: &str) -> u16 {
-        match self.settings_of(id).get(Setting::Background) {
-            crate::settings::GAMES_PAUSED => u16::from(self.is_games(id)),
-            v => v,
+    pub fn background_of(&self, id: &str) -> crate::settings::InBackground {
+        use crate::settings::InBackground;
+        match self.settings_of(id).background() {
+            InBackground::PausesGames if self.is_games(id) => InBackground::Pauses,
+            InBackground::PausesGames => InBackground::Runs,
+            b => b,
         }
     }
 
@@ -164,12 +164,6 @@ impl State {
         }
     }
 
-    /// The second screen is dark: a program is in force that wants it so, and it hasn't been tapped
-    /// since.
-    pub fn bottom_dark(&self) -> bool {
-        self.session.program.is_some() && self.in_force().get(Setting::BottomScreen) == 1 && !self.bottom.woken
-    }
-
     /// The value a tile shows and steps from: the game's effective one, or the global one.
     pub fn tile_value(&self, setting: Setting) -> u16 {
         match self.editing() {
@@ -212,14 +206,6 @@ impl State {
         }
     }
 
-    /// The editor's buttons.
-    pub(crate) fn on_editor(&mut self, id: EditorId) -> Vec<Effect> {
-        match id {
-            EditorId::Save => self.save_editor(),
-            EditorId::Cancel => self.cancel_editor(),
-        }
-    }
-
     /// Changes `setting` where the panel edits (the game's overrides, or the global settings): to
     /// `value`, or back to the default (none). Saved, and applied at once if the settings in force
     /// changed.
@@ -244,50 +230,6 @@ impl State {
         let game = self.editing().map(|g| g.id.clone());
         let text = self.settings.env_text(game.as_deref()).to_owned();
         self.bottom.open_editor(Editor { purpose: Purpose::Env { game }, text });
-    }
-
-    /// The clipboard's text into the open editor (Ctrl+V, or a right click), if there is one.
-    pub(crate) fn paste(&mut self) {
-        if let (Some(text), Some(editor)) = (self.clipboard.clone(), self.bottom.editor_mut()) {
-            editor.paste(&text);
-        }
-    }
-
-    /// A key from the on-screen keyboard while the editor is open: Ctrl+V pastes the clipboard's text.
-    pub(crate) fn edit(&mut self, stroke: Stroke) -> Vec<Effect> {
-        if stroke.ctrl && !stroke.alt && stroke.key == crate::keyboard::Key::Char('v') {
-            self.paste();
-            return vec![];
-        }
-        match self.bottom.editor_mut().and_then(|e| e.key(stroke)) {
-            Some(Done::Save) => self.save_editor(),
-            Some(Done::Cancel) => self.cancel_editor(),
-            None => vec![],
-        }
-    }
-
-    /// The editor's Cancel: closed (a file's name: back to the tab the keyboard came up from).
-    fn cancel_editor(&mut self) -> Vec<Effect> {
-        match self.bottom.close_editor().map(|e| e.purpose) {
-            Some(Purpose::FileName(_)) => self.file_name_cancelled(),
-            _ => vec![],
-        }
-    }
-
-    /// The editor's Save: the environment saved, or the network joined with the password.
-    fn save_editor(&mut self) -> Vec<Effect> {
-        let Some(editor) = self.bottom.close_editor() else {
-            return vec![];
-        };
-        match editor.purpose {
-            Purpose::Env { game } => {
-                self.settings.set_env(game, &editor.text);
-                vec![Effect::Save(Save::Settings(self.settings.clone()))]
-            }
-            Purpose::Password { ssid } => self.join(ssid, Some(editor.text)),
-            Purpose::KeymapName(action) => self.named_keymap(action, &editor.text),
-            Purpose::FileName(purpose) => self.file_named(purpose, &editor.text),
-        }
     }
 
     /// Drops the edited game's overrides and environment.

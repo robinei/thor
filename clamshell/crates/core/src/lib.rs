@@ -54,7 +54,7 @@ pub mod windows;
 use keyboard::{Key, Keyboard};
 pub use resume::Resume;
 use resume::{SAVE_AFTER, Saves};
-use settings::{Setting, Settings};
+use settings::Settings;
 use slider::Control;
 
 pub use dock::{Dock, DockItem};
@@ -302,7 +302,15 @@ impl State {
     /// itself, what follows from it everywhere: the pad mouse follows the game in front, the pad goes
     /// where it is wanted, and idle moves on (or back).
     pub fn apply(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
+        let session_input = matches!(event, Event::Tick { .. } | Event::Windows(_) | Event::Units(_) | Event::Tray(_) | Event::Game(_) | Event::Library(_));
         let (mut dirty, mut effects) = self.apply_event(event);
+        if session_input {
+            let (changed, reconciled) = self.reconcile();
+            effects.extend(reconciled);
+            if changed {
+                dirty = dirty.or(Dirty::BOTTOM);
+            }
+        }
         if self.follow_bottom_dim() {
             dirty = dirty.or(Dirty::BOTTOM);
         }
@@ -326,6 +334,46 @@ impl State {
         (dirty, effects)
     }
 
+    /// After any change of what the session follows (the windows, systemd's scopes, the tray, the
+    /// launcher's word, the library) and every second: everything that follows from it, in this order
+    /// (each step reads what the ones before settled):
+    ///
+    /// 1. systemd's scopes: entries found running, found ones promoted to launches, ours ended
+    ///    ([`State::follow_units`]); the first time, the entries to start with ClamShell started;
+    /// 2. the windows: entries started or ended by them, windows moved to their entries, programs found
+    ///    by them ([`State::follow_windows`]; `known`: the windows the last pass saw); rules sending
+    ///    windows down;
+    /// 3. In the background: entries paused, thawed or ended by their setting (reads 1 and 2);
+    /// 4. what is shown: a launch's first window, a workspace whose window came back, the one in front
+    ///    closed (back to what was before);
+    /// 5. entries quitting ended once their windows are gone (reads 1–3);
+    /// 6. the dock: running entries on it, ended ones off.
+    ///
+    /// Each step does nothing when nothing changed for it. Whether the running entries changed.
+    fn reconcile(&mut self) -> (bool, Vec<Effect>) {
+        let before: Vec<std::sync::Arc<str>> = self.session.running.iter().map(|r| r.id.clone()).collect();
+        let known = std::mem::take(&mut self.session.followed_windows);
+        let was = self.session.followed_front.take();
+        let mut effects = self.follow_units();
+        if self.session.units_known {
+            effects.extend(self.start_autostart());
+        }
+        let by_windows = self.follow_windows(&known);
+        effects.extend(self.follow_window_rules());
+        effects.extend(self.follow_background());
+        effects.extend(self.session.show_pending());
+        effects.extend(self.session.show_reopened(self.unix_secs));
+        effects.extend(self.follow_quitting());
+        effects.extend(self.follow_closed(was));
+        // (After the one in front closing: a window just taken by a browsed file is shown over it.)
+        effects.extend(by_windows);
+        let docked = self.follow_dock();
+        self.session.followed_windows = self.session.windows.iter().map(|w| w.id).collect();
+        self.session.followed_front = self.session.windows.iter().find(|w| w.focused && !w.down).map(|w| w.workspace.clone());
+        let after = self.session.running.iter().map(|r| &r.id);
+        (docked || !after.eq(before.iter()), effects)
+    }
+
     /// While metadata is fetched, what shelf shows changed: its entries' metadata first.
     fn follow_shown(&mut self) -> Option<Effect> {
         if !self.fetching {
@@ -342,7 +390,7 @@ impl State {
     /// The program in force changed: the pad mouse on if it wants it (Setting::PadMouse), off again if it
     /// was the program's. Whether it changed.
     fn follow_pad_mouse(&mut self) -> bool {
-        let wanted = self.session.program.is_some() && self.in_force().get(Setting::PadMouse) == 1;
+        let wanted = self.session.program.is_some() && self.in_force().pad_mouse();
         self.pad.follow_game(wanted)
     }
 
@@ -378,19 +426,8 @@ impl State {
             Event::Shelf(e) => self.on_shelf_event(e),
             Event::Game(e) => self.on_game(e),
             Event::Windows(windows) => {
-                let was = self.session.windows.iter().find(|w| w.focused && !w.down).map(|w| w.workspace.clone());
-                let known: Vec<i64> = self.session.windows.iter().map(|w| w.id).collect();
                 self.session.set_windows(windows);
-                let handed = self.follow_windows(&known);
-                let mut effects = self.follow_window_rules();
-                effects.extend(self.follow_background());
-                effects.extend(self.session.show_pending());
-                effects.extend(self.session.show_reopened(self.unix_secs));
-                effects.extend(self.follow_quitting());
-                effects.extend(self.follow_closed(was));
-                effects.extend(handed);
-                self.follow_dock();
-                (Dirty::BOTH, effects)
+                (Dirty::BOTH, vec![])
             }
             Event::Meta { id, meta } => (if self.shelf.apply_meta(&id, &meta) { Dirty::BOTH } else { Dirty::NONE }, vec![]),
             Event::Library(library) => {
@@ -403,7 +440,6 @@ impl State {
                 if self.drop_gone_pins() {
                     effects.push(Effect::Save(Save::Dock(self.dock.pinned_ids())));
                 }
-                self.follow_dock();
                 self.shown = None;
                 (Dirty::BOTH, effects)
             }
@@ -413,23 +449,13 @@ impl State {
                 self.shown = None;
                 (Dirty::NONE, vec![])
             }
-            Event::Tray(items) => {
-                let Some(mut effects) = self.set_tray(items) else {
-                    return (Dirty::NONE, vec![]);
-                };
-                let known: Vec<i64> = self.session.windows.iter().map(|w| w.id).collect();
-                effects.extend(self.follow_windows(&known));
-                effects.extend(self.session.show_pending());
-                self.follow_dock();
-                (Dirty::BOTH, effects)
-            }
+            Event::Tray(items) => match self.set_tray(items) {
+                Some(effects) => (Dirty::BOTH, effects),
+                None => (Dirty::NONE, vec![]),
+            },
             Event::Units(units) => {
                 self.session.set_units(units);
-                let mut effects = self.follow_units();
-                effects.extend(self.start_autostart());
-                self.follow_dock();
-                effects.extend(self.follow_quitting());
-                (Dirty::BOTTOM, effects)
+                (Dirty::BOTTOM, vec![])
             }
             Event::Start => {
                 // (The open tab's watch from now: see follow_watch.)
@@ -538,18 +564,11 @@ impl State {
             effects.push(Effect::Save(Save::Brightness(self.levels.brightness().clone())));
         }
         let notice_gone = self.expire_notice(unix_secs);
-        // (A file's launch that waited for its window in vain: off the dock.)
-        let known: Vec<i64> = self.session.windows.iter().map(|w| w.id).collect();
-        let before = self.session.running.len();
-        effects.extend(self.follow_windows(&known));
-        effects.extend(self.follow_background());
-        let ended = self.session.running.len() != before;
-        if ended {
-            self.follow_dock();
-        }
+        // (Timed steps of the session, a file's launch waiting for its window in vain, In the
+        // background's grace: in the reconcile that follows every tick.)
         let dirty = if minute_changed {
             Dirty::BOTH
-        } else if notice_gone || ended {
+        } else if notice_gone {
             Dirty::BOTTOM
         } else {
             Dirty::NONE
@@ -849,11 +868,11 @@ impl State {
     }
 
     fn on_game(&mut self, event: GameEvent) -> (Dirty, Vec<Effect>) {
-        let mut effects = match event {
+        let effects = match event {
             // (Its window may be there already, before its start was told: the rules for its windows.)
             GameEvent::Started(game) => {
                 self.started(game);
-                self.follow_window_rules()
+                vec![]
             }
             GameEvent::Ended(game) => self.ended(&game),
             GameEvent::Position { game, position } => {
@@ -866,8 +885,6 @@ impl State {
                 vec![]
             }
         };
-        self.follow_dock();
-        effects.extend(self.follow_quitting());
         (Dirty::BOTH, effects)
     }
 
@@ -1107,6 +1124,84 @@ pub(crate) mod testkit {
 mod tests {
     use crate::testkit::*;
     use crate::*;
+
+    /// Every order of `events`.
+    fn orders(events: &[Event]) -> Vec<Vec<Event>> {
+        if events.len() <= 1 {
+            return vec![events.to_vec()];
+        }
+        let mut all = Vec::new();
+        for i in 0..events.len() {
+            let mut rest = events.to_vec();
+            let first = rest.remove(i);
+            for mut order in orders(&rest) {
+                order.insert(0, first.clone());
+                all.push(order);
+            }
+        }
+        all
+    }
+
+    /// The session's inputs coming in any order (the launcher's word, systemd's list, the compositor's
+    /// windows: separate threads) end in the same state: the reconcile after each reads what is there,
+    /// not which came last.
+    #[test]
+    fn a_launchs_start_and_end_come_to_the_same_in_any_order() {
+        let shape = |s: &State| {
+            let running: Vec<(String, bool)> = s.session().running_entries().iter().map(|r| (r.id.to_string(), r.origin == running::Origin::Ours)).collect();
+            let dock: Vec<String> = s.dock().items().iter().map(|i| i.id.to_string()).collect();
+            (running, dock)
+        };
+        let mut shapes = Vec::new();
+        let mut plays = Vec::new();
+        let start_end = |s: &mut State| {
+            s.apply(Event::Tick { unix_secs: 1000 });
+            let fx = tap(s, game("zelda-lttp"));
+            let fx: Vec<Effect> = fx.into_iter().chain(tap(s, game("zelda-lttp"))).collect();
+            fx.iter().find_map(|e| match e {
+                Effect::Launch { instance, .. } => Some(instance.clone()),
+                _ => None,
+            })
+        };
+        // (No launch: the shapes below say so.)
+        let probe = start_end(&mut state()).unwrap_or(Instance::Shelf);
+        let window = Window { unit: probe.unit(), visible: true, ..win(5, "zelda3", &probe.workspace(), true) };
+        let starts = [Event::Game(GameEvent::Started("zelda-lttp".into())), Event::Units(vec![probe.clone()]), Event::Windows(vec![window])];
+        let ends = [Event::Game(GameEvent::Ended("zelda-lttp".into())), Event::Units(vec![]), Event::Windows(vec![])];
+        for start in orders(&starts) {
+            for end in orders(&ends) {
+                let mut s = state();
+                start_end(&mut s);
+                for e in start.clone() {
+                    s.apply(e);
+                }
+                let started = shape(&s);
+                let mut recorded = 0;
+                for e in end.clone() {
+                    recorded += s.apply(e).1.iter().filter(|e| matches!(e, Effect::RecordPlay { .. })).count();
+                }
+                s.apply(Event::Tick { unix_secs: 1001 });
+                shapes.push((started, shape(&s)));
+                plays.push(recorded);
+            }
+        }
+        assert!(shapes.windows(2).all(|w| w.first() == w.last()), "{shapes:#?}");
+        let first = shapes.first().cloned().unwrap_or_default();
+        assert_eq!(first.0.0, vec![("zelda-lttp".to_owned(), true)], "running as a launch of ours");
+        assert!(first.1.0.is_empty(), "ended");
+        assert!(plays.iter().all(|&n| n == 1), "one play recorded each time: {plays:?}");
+    }
+
+    #[test]
+    fn a_launch_that_didnt_start_says_so() {
+        let mut s = state();
+        tap(&mut s, game("zelda-lttp"));
+        tap(&mut s, game("zelda-lttp"));
+        s.apply(Event::Game(GameEvent::LaunchFailed("zelda-lttp".into())));
+        let notice = s.bottom().notice().map(|n| n.what.clone());
+        assert!(matches!(&notice, Some(hardware::NoticeKind::NotStarted(t)) if t == "A Link to the Past"), "{notice:?}");
+        assert!(s.session().running("zelda-lttp").is_none());
+    }
 
     #[test]
     fn starts_with_first_game_selected_and_focused() {

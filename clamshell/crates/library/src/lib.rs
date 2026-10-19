@@ -24,8 +24,18 @@ pub enum Launch {
     Steam { appid: u32 },
     /// A program with its arguments (filled in already), in `workdir` (else the home dir).
     Program { argv: Vec<String>, workdir: Option<PathBuf> },
-    /// One of ClamShell's own tools (the Tools tab), by name.
-    Tool(String),
+    /// One of ClamShell's own tools (the Tools tab).
+    Tool(Tool),
+}
+
+/// ClamShell's own tools.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tool {
+    /// The library read again (library.json, its folders, Steam, the desktop files), then the missing
+    /// covers and details fetched.
+    Rescan,
+    /// The entries whose covers and details weren't found tried again, then a rescan.
+    Refetch,
 }
 
 impl Launch {

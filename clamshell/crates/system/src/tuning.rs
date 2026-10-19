@@ -125,7 +125,7 @@ fn apply_hardware(v: &Values, quiet: &mut Quiet) {
     let policies = policies();
     // Cores first, so the caps reach the policies that stay online.
     let clusters: Vec<(u64, Vec<u32>)> = policies.iter().map(|(_, _, max, cpus)| (*max, cpus.clone())).collect();
-    let off = if v.get(Setting::BigCores) == 0 { big_cpus(&clusters) } else { vec![] };
+    let off = if !v.big_cores() { big_cpus(&clusters) } else { vec![] };
     for (_, cpus) in &clusters {
         for &cpu in cpus.iter().filter(|&&c| c != 0) {
             let online = Path::new("/sys/devices/system/cpu").join(format!("cpu{cpu}/online"));

@@ -56,6 +56,8 @@ pub enum NoticeKind {
     Enqueued(usize, String),
     /// A running entry asked for has no window to show (its title).
     NoWindow(String),
+    /// A launch didn't start (its entry's title; why is in the log).
+    NotStarted(String),
 }
 
 impl State {

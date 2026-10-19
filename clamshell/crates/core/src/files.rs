@@ -389,7 +389,7 @@ impl State {
                 vec![]
             }
             // (Removable storage's groups, and sources on it, come and go with the library read again.)
-            FilesEvent::Mounts => vec![Effect::Tool("rescan".into())],
+            FilesEvent::Mounts => vec![Effect::Tool(clamshell_library::Tool::Rescan)],
         }
     }
 

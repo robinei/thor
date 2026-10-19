@@ -331,10 +331,8 @@ pub fn end_run(key: &str, force: bool) {
     let slice = Instance::slice_of(key);
     let ended = worker::detached("end", move || {
         log::info!("{slice}: {}", if force { "force kill" } else { "stop" });
-        if force {
-            command::run("systemctl", &["--user", "kill", "--signal=SIGKILL", &slice]);
-        } else {
-            command::run("systemctl", &["--user", "stop", &slice]);
+        if let Err(e) = crate::units::end(&slice, force) {
+            log::warn!("{slice}: {e}");
         }
     });
     if let Err(e) = ended {

@@ -80,57 +80,41 @@ impl State {
             return vec![];
         }
         let now = self.unix_secs;
-        let games = &self.shelf.library().games;
         let mut new = Vec::new();
         for t in &self.tray {
             let ours = t.unit.as_deref().and_then(Instance::from_unit).is_some();
             let Some(pid) = t.pid.filter(|_| !ours) else {
                 continue;
             };
-            if self.session.running.iter().any(|r| r.tray.as_deref() == Some(&*t.key)) {
+            if self.session.running.iter().any(|r| r.tray().is_some_and(|k| *k == t.key)) {
                 continue;
             }
-            let named = format!("desktop:{}", t.id).to_lowercase();
-            let game = match games.iter().find(|g| g.id.to_lowercase() == named) {
-                Some(g) => g.clone(),
-                None => {
-                    let title = if t.title.is_empty() { &t.id } else { &t.title };
-                    // (Named by the icon's own id, the same each time the program runs, so a pin or a
-                    // setting stays its; its D-Bus name, if it has none.)
-                    let name = if t.id.is_empty() { &*t.key } else { t.id.as_str() };
-                    Game { icon: t.icon.clone(), tool: true, ..Game::new(&format!("{PREFIX}{name}"), title) }
-                }
-            };
-            // (Its entry runs already, found otherwise: its icon is that one's.)
-            if let Some(r) = self.session.running.iter_mut().find(|r| r.id == game.id) {
-                r.tray = Some(t.key.clone());
-                r.pid = r.pid.or(Some(pid));
-                continue;
-            }
-            new.push(Running {
-                id: game.id.clone(),
-                key: game.key.clone(),
-                origin: Origin::Found,
-                app_id: None,
-                pid: Some(pid),
-                tray: Some(t.key.clone()),
-                start: now,
-                launches: 0,
-                seen: false,
-                entry: Some(Box::new(game)),
+            let game = self.found_entry(&t.id, || {
+                let title = if t.title.is_empty() { &t.id } else { &t.title };
+                // (Named by the icon's own id, the same each time the program runs, so a pin or a
+                // setting stays its; its D-Bus name, if it has none.)
+                let name = if t.id.is_empty() { &*t.key } else { t.id.as_str() };
+                Game { icon: t.icon.clone(), tool: true, ..Game::new(&format!("{PREFIX}{name}"), title) }
             });
+            // (Its entry runs already: found otherwise (by a window), its icon is that one's; a launch of
+            // ours, its own.)
+            if let Some(r) = self.session.running.iter_mut().find(|r| r.id == game.id) {
+                if let Origin::Found { pid: found_pid, tray } = &mut r.origin {
+                    *tray = Some(t.key.clone());
+                    *found_pid = found_pid.or(Some(pid));
+                }
+                continue;
+            }
+            new.push(Running::of(&game, Origin::Found { pid: Some(pid), tray: Some(t.key.clone()) }, now));
         }
-        // Each moved into a scope of ours.
-        let adopt: Vec<(String, u32)> = new.iter().filter_map(|r| Some((r.key.clone(), r.pid?))).collect();
-        self.session.running.extend(new);
-        adopt.into_iter().map(|(key, pid)| self.adopt(&key, pid)).collect()
+        self.start_found(new, &[])
     }
 
     /// The tray icon of a running entry, if it has one: its scope's process's, or the one it was found by.
     pub fn tray_of(&self, entry: &str) -> Option<&TrayItem> {
         let r = self.session.running(entry)?;
         let in_scope = |t: &&TrayItem| t.unit.as_deref().and_then(Instance::from_unit).is_some_and(|i| i.key() == Some(r.key.as_str()));
-        self.tray.iter().find(|t| r.tray.as_deref() == Some(&*t.key) || in_scope(t))
+        self.tray.iter().find(|t| r.tray().is_some_and(|k| *k == t.key) || in_scope(t))
     }
 
     /// The menu page open (the entry's tray icon, and the entries of the submenu open), if one is.
@@ -219,7 +203,7 @@ mod tests {
             "{fx:?}"
         );
         let r = s.session().running("desktop:firefox").unwrap();
-        assert_eq!((r.origin, r.pid), (Origin::Found, Some(77)));
+        assert_eq!((r.found(), r.pid()), (true, Some(77)));
         let ws = r.workspace();
         assert!(s.dock().items().iter().any(|i| &*i.id == "desktop:firefox"), "on the dock");
         // No window: a tap asks it to show itself; its window, opening on shelf's workspace (its process a
@@ -261,7 +245,7 @@ mod tests {
         let (_, fx) = s.apply(Event::Tray(vec![zelda_icon.clone(), firefox_icon]));
         let instance = fx.iter().find_map(|e| if let Effect::Adopt { instance, .. } = e { Some(instance.clone()) } else { None }).unwrap();
         s.apply(Event::Units(vec![zelda.clone(), instance.clone()]));
-        assert_eq!(s.session().running("desktop:firefox").map(|r| (r.origin, r.pid)), Some((Origin::Ours, None)));
+        assert_eq!(s.session().running("desktop:firefox").map(|r| (r.origin.clone(), r.pid())), Some((Origin::Ours, None)));
         assert_eq!(s.force_kill("desktop:firefox"), vec![Effect::EndRun { key: clamshell_library::key_of("desktop:firefox"), force: true }]);
         s.apply(Event::Units(vec![zelda]));
         assert!(s.session().running("desktop:firefox").is_none(), "its scope gone");
