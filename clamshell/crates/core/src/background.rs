@@ -39,8 +39,6 @@ pub(crate) struct Background {
     pub(crate) paused: Vec<String>,
     /// Entries whose windows are all hidden, and since when (epoch seconds).
     pub(crate) hidden: Vec<(Arc<str>, u64)>,
-    /// Entries that have had a window (Quits closed waits for one).
-    pub(crate) windowed: Vec<Arc<str>>,
     /// The runners whose entries are paused together (from the library), those paused, and those whose
     /// entries are all hidden, since when.
     pub(crate) runners: Vec<RunnerOf>,
@@ -65,10 +63,7 @@ impl State {
         for r in session.running.iter().filter(|r| r.origin == Origin::Ours && r.pid.is_none()) {
             let mine: Vec<&crate::windows::Window> = session.windows.iter().filter(|w| session.running_of(w).is_some_and(|o| o.id == r.id)).collect();
             let shown = mine.iter().any(|w| w.visible);
-            let had = self.background.windowed.contains(&r.id) || !mine.is_empty();
-            if had {
-                kept.windowed.push(r.id.clone());
-            }
+            let had = r.seen || !mine.is_empty();
             let paused = self.background.paused.contains(&r.key);
             let setting = self.settings_of(&r.id).get(Setting::Background);
             // (One quitting isn't paused: frozen, it couldn't end. Nor one without a window: none hidden,
@@ -121,11 +116,7 @@ impl State {
             let session = &self.session;
             let of_runner = |r: &crate::running::Running| r.entry.as_ref().and_then(|g| g.runner.as_ref()).is_some_and(|o| o.key == runner.key);
             let shown = session.windows.iter().filter(|w| w.visible).any(|w| session.running_of(w).is_some_and(of_runner));
-            let starting = session.running.iter().filter(|r| of_runner(r)).any(|r| match r.origin {
-                Origin::Ours => !self.background.windowed.contains(&r.id),
-                Origin::Windows { seen, .. } => !seen,
-                Origin::Tray => false,
-            });
+            let starting = session.running.iter().filter(|r| of_runner(r)).any(|r| r.origin != Origin::Tray && !r.seen);
             let shown = shown || starting;
             let paused = self.background.runners_paused.contains(&runner.key);
             let bg = &mut self.background;

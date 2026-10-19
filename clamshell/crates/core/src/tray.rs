@@ -112,6 +112,7 @@ impl State {
                 tray: Some(t.key.clone()),
                 start: now,
                 launches: 0,
+                seen: false,
                 entry: Some(Box::new(game)),
             });
         }

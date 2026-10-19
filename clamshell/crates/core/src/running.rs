@@ -47,10 +47,10 @@ pub enum Origin {
     /// icon is there, or a window of it is open.
     Tray,
     /// By its windows, since `since` (epoch seconds): started by another program, or its launches ended
-    /// while it ran on in a program not ours. It ends once it has had windows (`seen`) and has none, or
-    /// none came by `until`; its play from `since` recorded then. Its windows: those with its app id, else
-    /// (a browsed file's) a new window of no launch of ours, taken until `until`.
-    Windows { since: u64, until: u64, seen: bool },
+    /// while it ran on in a program not ours. It ends once it has had windows ([`Running::seen`]) and has
+    /// none, or none came by `until`; its play from `since` recorded then. Its windows: those with its app
+    /// id, else (a browsed file's) a new window of no launch of ours, taken until `until`.
+    Windows { since: u64, until: u64 },
 }
 
 /// How long a launch that handed over waits for its window (seconds).
@@ -73,6 +73,9 @@ pub struct Running {
     pub start: u64,
     /// Its launches the launcher still follows (ours: see [`State::follow_ours`]).
     pub(crate) launches: u32,
+    /// A window of it has been there (since it started, or since it went on by its windows): before, it
+    /// is starting.
+    pub(crate) seen: bool,
     /// Its entry as it was when it started: the dock shows it by this if it leaves the library while it
     /// runs (its file renamed or deleted).
     pub entry: Option<Box<crate::Game>>,
@@ -226,7 +229,7 @@ impl State {
                 let key = self.shelf.game(&game).map_or_else(|| clamshell_library::key_of(&game), |g| g.key.clone());
                 let entry = self.shelf.game(&game).cloned().map(Box::new);
                 let start = self.unix_secs;
-                session.running.push(Running { id: game, key, origin: Origin::Ours, app_id, pid: None, tray: None, start, launches: 1, entry });
+                session.running.push(Running { id: game, key, origin: Origin::Ours, app_id, pid: None, tray: None, start, launches: 1, seen: false, entry });
             }
         }
         self.bottom.woken = false;
@@ -259,16 +262,17 @@ impl State {
             let soon = now.saturating_sub(r.start) <= HANDOFF;
             let browsed = self.shelf.game(&r.id).is_some_and(|g| g.browsed.is_some());
             if r.app_id.is_some() && (has || soon) {
-                handed.push((r.id.clone(), Origin::Windows { since: now, until: now + HANDOFF, seen: has }));
+                handed.push((r.id.clone(), Origin::Windows { since: now, until: now + HANDOFF }, has));
             } else if browsed && soon {
-                handed.push((r.id.clone(), Origin::Windows { since: now, until: r.start + HANDOFF, seen: has }));
+                handed.push((r.id.clone(), Origin::Windows { since: now, until: r.start + HANDOFF }, has));
             } else {
                 ended.push((r.id.clone(), r.start));
             }
         }
-        for (id, origin) in handed {
+        for (id, origin, has) in handed {
             if let Some(r) = self.session.running.iter_mut().find(|r| r.id == id) {
                 r.origin = origin;
+                r.seen = has;
             }
         }
         self.session.running.retain(|r| !ended.iter().any(|(id, _)| *id == r.id));
@@ -298,9 +302,9 @@ impl State {
         let key = entry.key.clone();
         if self.session.running(&game).is_none() {
             let now = self.unix_secs;
-            let origin = Origin::Windows { since: now, until: now + HANDOFF, seen: false };
+            let origin = Origin::Windows { since: now, until: now + HANDOFF };
             let entry = Some(Box::new(entry));
-            self.session.running.push(Running { id: game, key, origin, app_id, pid: None, tray: None, start: now, launches: 0, entry });
+            self.session.running.push(Running { id: game, key, origin, app_id, pid: None, tray: None, start: now, launches: 0, seen: false, entry });
         }
     }
 
@@ -331,12 +335,13 @@ impl State {
             .map(|g| Running {
                 id: g.id.clone(),
                 key: g.key.clone(),
-                origin: Origin::Windows { since: now, until: now, seen: true },
+                origin: Origin::Windows { since: now, until: now },
                 app_id: app_id_of(g),
                 pid: None,
                 tray: None,
                 start: now,
                 launches: 0,
+                seen: true,
                 entry: Some(Box::new(g.clone())),
             })
             .collect();
@@ -366,7 +371,7 @@ impl State {
         let waiting = session
             .running
             .iter()
-            .filter(|r| r.app_id.is_none() && matches!(r.origin, Origin::Windows { until, seen: false, .. } if now <= until))
+            .filter(|r| r.app_id.is_none() && !r.seen && matches!(r.origin, Origin::Windows { until, .. } if now <= until))
             .max_by_key(|r| r.start);
         let mut taken = None;
         if let Some(r) = waiting.filter(|_| !stray.is_empty()) {
@@ -389,18 +394,20 @@ impl State {
             .collect();
         let mut ended = Vec::new();
         let icons: Vec<Arc<str>> = self.tray.iter().map(|t| t.key.clone()).collect();
-        self.session.running.retain_mut(|r| match &mut r.origin {
-            Origin::Tray => r.tray.as_ref().is_some_and(|k| icons.contains(k)) || with.contains(&r.id),
-            Origin::Windows { since, until, seen } => {
-                let has = with.contains(&r.id);
-                *seen |= has;
-                let runs = r.launches > 0 || if *seen { has } else { now <= *until };
-                if !runs && *seen {
-                    ended.push((r.id.clone(), *since));
+        self.session.running.retain_mut(|r| {
+            let has = with.contains(&r.id);
+            r.seen |= has;
+            match r.origin {
+                Origin::Tray => r.tray.as_ref().is_some_and(|k| icons.contains(k)) || has,
+                Origin::Windows { since, until } => {
+                    let runs = r.launches > 0 || if r.seen { has } else { now <= until };
+                    if !runs && r.seen {
+                        ended.push((r.id.clone(), since));
+                    }
+                    runs
                 }
-                runs
+                Origin::Ours => true,
             }
-            Origin::Ours => true,
         });
         for (game, start) in ended {
             effects.push(self.record_play(game, start));
@@ -447,6 +454,7 @@ impl State {
                 tray: None,
                 start,
                 launches: 0,
+                seen: false,
                 entry,
             });
         }
