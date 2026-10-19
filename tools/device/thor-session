@@ -1,0 +1,54 @@
+#!/bin/sh
+# The session on the first console, as the login's profile starts it (once `uwsm check may-start`, which
+# looks at the login shell itself, says it may): sway through uwsm. Unless it can't
+# go on, then the console stays, saying why:
+#
+# - the session failed: it ended 3 times within 2 minutes (sway or uwsm dying as they start), so it isn't
+#   started again (a reboot starts the count anew, as does waiting 2 minutes);
+# - ClamShell failed: systemd gave up restarting it, and clamshell-failed.service ran this with
+#   `--clamshell-failed`: why written for the console, and the session stopped.
+#
+# Exit status: 0 once a session ran and ended (the profile logs out: the console's autologin starts a
+# new one), 1 when the console is to stay (said why).
+set -u
+state="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/clamshell"
+mkdir -p "$state"
+failed="$state/session-failed"
+
+if [ "${1:-}" = --clamshell-failed ]; then
+    {
+        echo "ClamShell failed again and again, and systemd stopped restarting it ($(date '+%H:%M:%S')). Its last words:"
+        journalctl --user -u clamshell.service -n 15 -o cat --no-pager
+    } > "$failed"
+    uwsm stop
+    exit 0
+fi
+
+help() {
+    echo
+    echo "exit: try again.  The whole journal: journalctl --user -b.  ssh works as ever."
+}
+
+if [ -e "$failed" ]; then
+    cat "$failed"
+    rm -f "$failed"
+    help
+    exit 1
+fi
+
+# The session's starts in the last 2 minutes, this one's included.
+now=$(date +%s)
+recent=$({ cat "$state/session-starts" 2> /dev/null; echo "$now"; } | awk -v now="$now" 'now - $1 < 120')
+printf '%s\n' "$recent" > "$state/session-starts"
+if [ "$(printf '%s\n' "$recent" | wc -l)" -gt 3 ]; then
+    echo "The session ended 3 times within 2 minutes: not started again. sway's last words:"
+    journalctl --user -n 15 -o cat --no-pager -u 'wayland-wm@*' -u 'wayland-wm-env@*' 
+    help
+    exit 1
+fi
+
+if command -v thor-outputs > /dev/null; then
+    thor-outputs
+fi
+uwsm start -- sway
+exit 0

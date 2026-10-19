@@ -179,10 +179,20 @@ exec exec uwsm finalize
 """
 
 BASH_PROFILE = """\
-# The session: sway on the first console, as a systemd unit, through uwsm (as on the device).
+# The session on the first console: sway through uwsm, by the repository's thor-session (as on the
+# device: logged out once it has run, the console staying with why when it can't go on).
 if [ "$(tty)" = /dev/tty1 ] && uwsm check may-start; then
-    exec uwsm start -- sway
+    /mnt/thor/tools/device/thor-session && exit
 fi
+"""
+
+CLAMSHELL_FAILED = """\
+[Unit]
+Description=ClamShell failed: the session ends, the console says why
+
+[Service]
+Type=oneshot
+ExecStart=/mnt/thor/tools/device/thor-session --clamshell-failed
 """
 
 # No GPU acceleration in the machine: sway draws with the pixman renderer (uwsm's environment for the
@@ -213,6 +223,9 @@ def service():
 Description=ClamShell
 PartOf=graphical-session.target
 After=graphical-session.target
+StartLimitIntervalSec=60
+StartLimitBurst=4
+OnFailure=clamshell-failed.service
 
 [Service]
 Slice=session-graphical.slice
@@ -235,6 +248,7 @@ def session_files():
         (f"/home/{USER}/.config/sway/config", SWAY_CONFIG),
         (f"/home/{USER}/.config/systemd/user/clamshell.service", service()),
         (f"/home/{USER}/.config/systemd/user/mako.service", MAKO_SERVICE),
+        (f"/home/{USER}/.config/systemd/user/clamshell-failed.service", CLAMSHELL_FAILED),
         (f"/home/{USER}/.config/systemd/user/graphical-session.target.d/thor-vm.conf", SESSION_WANTS),
         (f"/home/{USER}/.config/uwsm/env", UWSM_ENV),
         # (Where mako looks, also when D-Bus starts it for a notification.)
@@ -889,7 +903,8 @@ def bluetooth(_args):
 
 
 def restart(_args):
-    run(ssh_args(["systemctl", "--user", "restart", "clamshell.service"]))
+    # (Its starts counted from here: a deliberate restart isn't a failure, see thor-session.)
+    run(ssh_args(["sh", "-c", "systemctl --user reset-failed clamshell.service; systemctl --user restart clamshell.service"]))
 
 
 def reset(_args):

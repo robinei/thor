@@ -311,7 +311,7 @@ sleep 0.5
 wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.5 2>/dev/null
 systemctl --user stop 'clamshell-run-*' 'app-graphical-clamshell-run-*' 2>/dev/null || true
 systemctl --user daemon-reload
-systemctl --user restart clamshell
+systemctl --user reset-failed clamshell; systemctl --user restart clamshell
 """
     sh("bash -s", input=script, check=True)
     if bluetooth:
@@ -327,7 +327,7 @@ systemctl --user restart clamshell
 def teardown():
     subprocess.run([sys.executable, str(Path(vm.__file__)), "pad", "unplug"], capture_output=True)
     sh(f"rm -f {DROP_IN}; systemctl --user stop 'clamshell-run-*' 'app-graphical-clamshell-run-*' 2>/dev/null; "
-       "systemctl --user daemon-reload; systemctl --user restart clamshell")
+       "systemctl --user daemon-reload; systemctl --user reset-failed clamshell; systemctl --user restart clamshell")
 
 
 # --- the checks

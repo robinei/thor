@@ -6,7 +6,8 @@
 # through uwsm (a systemd unit, graphical-session.target reached once its environment is in; ClamShell,
 # mako and udiskie are user services of that target, launches in its app slice; all stopped, games
 # first, when the session ends). thor-image.sh writes it into the image; maintenance writes it again on the device after pulling
-# (then: systemctl --user daemon-reload, and ClamShell restarted).
+# (then: systemctl --user daemon-reload, and ClamShell restarted: reset-failed first, so that a deliberate
+# restart isn't counted as a failure; see thor-session).
 #
 #   session.sh HOME_DIR FINAL_HOME PROGRAM
 #
@@ -44,12 +45,13 @@ input "0:0:bottom_touchscreen" map_to_output DSI-1
 EOF
 SCRIPT
 chmod 755 "$H/.local/bin/thor-outputs"
+install -m 755 "$REPO/tools/device/thor-session" "$H/.local/bin/thor-session"
 cat > "$H/.bash_profile" <<'PROFILE'
-# The session on the first console: sway, as a systemd unit, through uwsm (its log in the journal:
-# journalctl --user -u 'wayland-wm@*').
+# The session on the first console: sway through uwsm (thor-session); once it has run and ended, logged
+# out, so that the console's autologin starts a new one. When it can't go on (it keeps failing, or
+# ClamShell does), the console stays, saying why.
 if [ "$(tty)" = /dev/tty1 ] && uwsm check may-start; then
-    "$HOME/.local/bin/thor-outputs"
-    exec uwsm start -- sway
+    "$HOME/.local/bin/thor-session" && exit
 fi
 PROFILE
 
@@ -74,6 +76,9 @@ Description=ClamShell
 # Started once the session is up, stopped with it.
 PartOf=graphical-session.target
 After=graphical-session.target
+StartLimitIntervalSec=60
+StartLimitBurst=4
+OnFailure=clamshell-failed.service
 
 [Service]
 # Up once its screens are drawn; its main loop says it turns, and one that stops for 30 s (hung) is
@@ -89,6 +94,8 @@ Environment=CLAMSHELL_CONTROL=%t/clamshell-control
 # through logind) and takes the hardware keys (volume, brightness). Desktop runs leave this unset.
 Environment=CLAMSHELL_SESSION=device
 Environment=CLAMSHELL_BOTTOM_OUTPUT=DSI-1
+# Restarted when it fails; failing 4 times within a minute, given up: then the session ends and the
+# console says why (clamshell-failed.service, thor-session).
 Restart=on-failure
 RestartSec=2
 # (With the session's own: uwsm's slice for what must stay responsive.)
@@ -96,6 +103,16 @@ Slice=session-graphical.slice
 
 [Install]
 WantedBy=graphical-session.target
+EOF
+
+# ClamShell given up on (see clamshell.service): the session stopped, why said on the console.
+cat > "$H/.config/systemd/user/clamshell-failed.service" <<EOF
+[Unit]
+Description=ClamShell failed: the session ends, the console says why
+
+[Service]
+Type=oneshot
+ExecStart=$FINAL/.local/bin/thor-session --clamshell-failed
 EOF
 
 # Notifications (ClamShell's low battery warning, apps'), on the main screen: ~/.config/mako/config.
