@@ -44,6 +44,7 @@ mod sys;
 mod tab;
 pub mod time;
 pub mod touch;
+pub mod tray;
 pub mod wifi;
 pub mod windows;
 
@@ -137,6 +138,9 @@ pub struct State {
     bottom: Bottom,
     session: Session,
     dock: Dock,
+    /// Programs' tray icons, and the dock tiles of those that are no entry's (see [`tray`]).
+    tray: Vec<tray::TrayItem>,
+    tray_tiles: Vec<Game>,
     levels: Levels,
     radios: Radios,
     pad: Pad,
@@ -265,7 +269,7 @@ impl State {
     }
 
     pub fn game(&self, id: &str) -> Option<&Game> {
-        self.shelf.game(id).or_else(|| self.session.running(id).and_then(|r| r.entry.as_deref()))
+        self.shelf.game(id).or_else(|| self.session.running(id).and_then(|r| r.entry.as_deref())).or_else(|| self.tray_tile(id))
     }
 
     /// Whether the pad, on ClamShell's screens, may go to shelf's (shelf is in front and nothing else
@@ -360,6 +364,7 @@ impl State {
                 }
                 let mut effects = self.follow_runner_keymaps();
                 effects.push(self.land_rules());
+                self.follow_tray_tiles();
                 if self.drop_gone_pins() {
                     effects.push(Effect::Save(Save::Dock(self.dock.pinned_ids())));
                 }
@@ -373,6 +378,7 @@ impl State {
                 self.shown = None;
                 (Dirty::NONE, vec![])
             }
+            Event::Tray(items) => (if self.set_tray(items) { Dirty::BOTTOM } else { Dirty::NONE }, vec![]),
             Event::Units(units) => {
                 self.session.set_units(units);
                 self.follow_units();

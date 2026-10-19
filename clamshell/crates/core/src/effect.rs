@@ -58,6 +58,8 @@ pub enum Effect {
     },
     /// Run this command (a runner's `stop`, for an entry that runs in another program's processes).
     Stop(Vec<String>),
+    /// Ask the tray thread: a program shown, its menu's entry clicked, its process ended.
+    Tray(crate::tray::TrayCommand),
     /// Write these lines to the control socket of entry `key`'s launch (see [`crate::enqueue`]).
     Enqueue {
         key: String,

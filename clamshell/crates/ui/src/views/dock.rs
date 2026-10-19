@@ -3,15 +3,18 @@
 //! running entry in colour (the program in force marked by a dot when several run), a stopped one grey.
 //! A tap starts it or shows it; a long press opens its menu in the dock's place: Open another, Close
 //! window, Pin or Unpin, Move, Quit, Force kill (a stopped one: Unpin, Move). While one moves, it is
-//! named in the accent colour and the D-pad moves it.
+//! named in the accent colour and the D-pad moves it. A tile with a tray icon (see `core`'s `tray`) has a
+//! mark in its top left corner, three bars, which opens its program's menu in the same place (Menu in
+//! its long-press menu too).
 
 use clamshell_core::dock::DOCK_COLUMNS;
+use clamshell_core::tray::TrayEntry;
 use clamshell_core::{DockId, Id, ListId};
 
 use crate::draw::{Keep, Rect};
 use crate::toolkit::Frame;
 use crate::toolkit::scroll::Scrolled;
-use crate::toolkit::style::{self, Text, Tone};
+use crate::toolkit::style::{self, Look, Text, Tone};
 use crate::toolkit::widgets::{self, CAPTION_Y, HeaderRight, TileFace, TileShape};
 
 /// The grid: at least this many rows fill the area, so a few entries keep tile-sized tiles.
@@ -23,6 +26,9 @@ const TILE: TileShape = TileShape { icon: 0.42, icon_y: 0.1, cut: Some(8.0) };
 const ART_TOP: f32 = 0.06;
 const ART_ROOM: f32 = 0.03;
 const ART_RADIUS: f32 = 4.0;
+/// The tray mark's target (a square in the tile's top left corner) and its bars, of the tile's height.
+const MARK_TARGET: f32 = 0.3;
+const MARK_W: f32 = 0.11;
 
 pub(super) fn draw(f: &mut Frame) {
     if let Some(entry) = f.s.dock().menu().cloned() {
@@ -64,7 +70,7 @@ fn entry_tile(f: &mut Frame, r: Rect, i: usize, id: &std::sync::Arc<str>, severa
     let Some(game) = s.game(id) else {
         return;
     };
-    let running = s.session().running(id).is_some();
+    let running = s.runs(id);
     let in_force = several && s.program_in_force() == Some(id);
     let moving = s.dock().moving() == Some(id);
     let caption_tone = if moving { Tone::Accent } else { Tone::Normal };
@@ -78,20 +84,44 @@ fn entry_tile(f: &mut Frame, r: Rect, i: usize, id: &std::sync::Arc<str>, severa
         let art = Rect::new(r.x + (r.w - w) / 2.0, r.y + r.h * ART_TOP, w, h);
         widgets::art(f.c, f.images, picture, art, ART_RADIUS, crate::draw::Align::Center, !running);
     });
+    if s.tray_of(id).is_some() {
+        tray_mark(f, r, i);
+    }
+}
+
+/// A tile's tray mark: three bars in its top left corner, a target of its own over the tile's.
+fn tray_mark(f: &mut Frame, tile: Rect, i: usize) {
+    let target = Rect::new(tile.x, tile.y, tile.h * MARK_TARGET, tile.h * MARK_TARGET);
+    let w = tile.h * MARK_W;
+    let shown = target.centered(w * 1.6, w * 1.6);
+    f.button_in(Id::Dock(DockId::Tray(i as u16)), target, shown, Look::ICON, |f| {
+        let bar = (w * 0.14).max(1.5);
+        for k in 0..3 {
+            let y = shown.y + shown.h * 0.3 + k as f32 * w * 0.3 - bar / 2.0;
+            f.c.fill(Rect::new(shown.x + (shown.w - w) / 2.0, y, w, bar), Tone::Normal);
+        }
+    });
 }
 
 /// An entry's menu, from a long press on its tile: running, Open another, Close window (if it has one),
-/// Pin or Unpin, Move, Quit, Force kill; stopped, Unpin and Move. The back arrow returns to the dock.
+/// Menu (if it has a tray icon), Pin or Unpin, Move, Quit, Force kill; stopped, Unpin and Move. The back
+/// arrow returns to the dock. Its tray menu instead, if that is open.
 fn draw_menu(f: &mut Frame, entry: &std::sync::Arc<str>) {
     let s = f.s;
+    if let Some((tray, entries)) = s.tray_page().filter(|_| s.dock().tray_open()) {
+        return draw_tray_menu(f, &tray.title, entries);
+    }
     let title = s.game(entry).map_or("", |g| g.title.as_str());
-    let running = s.session().running(entry).is_some();
+    let running = s.runs(entry);
     let pinned = s.dock().items().iter().any(|i| i.id == *entry && i.pinned);
+    // (A tray icon's own tile isn't an entry of the library: it can't be pinned.)
+    let pinnable = s.shelf().library().has(entry);
     let item = |id, label, tone| Some((Id::Dock(id), label, tone));
     let items: Vec<(Id, &str, Tone)> = [
         if s.opens_another(entry) { item(DockId::OpenAnother, "Open another", Tone::Fn) } else { None },
         if running && s.entry_window(entry).is_some() { item(DockId::CloseWindow, "Close window", Tone::Fn) } else { None },
-        item(DockId::Pin, if pinned { "Unpin" } else { "Pin" }, Tone::Fn),
+        if s.tray_of(entry).is_some() { item(DockId::TrayMenu, "Menu", Tone::Fn) } else { None },
+        if pinnable { item(DockId::Pin, if pinned { "Unpin" } else { "Pin" }, Tone::Fn) } else { None },
         item(DockId::Move, "Move", Tone::Fn),
         if running { item(DockId::Quit, "Quit", Tone::Accent) } else { None },
         if running { item(DockId::ForceKill, "Force kill", Tone::Accent) } else { None },
@@ -99,6 +129,26 @@ fn draw_menu(f: &mut Frame, entry: &std::sync::Arc<str>) {
     .into_iter()
     .flatten()
     .collect();
+    let area = widgets::header(f, Some(Id::Dock(DockId::Back)), title, false, HeaderRight::None);
+    widgets::menu(f, area, &items);
+}
+
+/// A program's tray menu (or a submenu of it): its entries (a disabled one dim, a checked one after a
+/// dot, a submenu's ending in `›`), in columns as they fit. The back arrow: up a submenu, else the dock.
+fn draw_tray_menu(f: &mut Frame, title: &str, entries: &[TrayEntry]) {
+    let labels: Vec<String> = entries
+        .iter()
+        .map(|e| {
+            let mark = if e.checked == Some(true) { "• " } else { "" };
+            let more = if e.children.is_empty() { "" } else { " ›" };
+            format!("{mark}{}{more}", e.label)
+        })
+        .collect();
+    let items: Vec<(Id, &str, Tone)> = entries
+        .iter()
+        .zip(&labels)
+        .map(|(e, label)| (Id::Dock(DockId::TrayEntry(e.id)), label.as_str(), if e.enabled { Tone::Fn } else { Tone::Dim }))
+        .collect();
     let area = widgets::header(f, Some(Id::Dock(DockId::Back)), title, false, HeaderRight::None);
     widgets::menu(f, area, &items);
 }

@@ -3,7 +3,8 @@
 //! running shows dimmed; a tap starts it. A tap on a running one shows its workspace (all its windows on
 //! the bottom screen: shows them there). A long press opens its menu: Open another (another launch,
 //! another tab; an app's only, see [`crate::Game::another`]), Close window (the one in view), Pin or Unpin, Move (the D-pad moves it, A or B ends),
-//! Quit and Force kill; a stopped one's: Unpin and Move.
+//! Quit and Force kill; a stopped one's: Unpin and Move. An entry with a tray icon (see [`crate::tray`])
+//! runs, and has Menu: its program's own menu, as a page of the same kind (a submenu another).
 
 use std::sync::Arc;
 
@@ -31,6 +32,8 @@ pub struct Dock {
     pub(crate) menu: Option<Arc<str>>,
     /// The entry being moved (the D-pad moves it).
     pub(crate) moving: Option<Arc<str>>,
+    /// The menu's entry's tray menu open instead of its own: the submenus open in it (none: the top).
+    pub(crate) tray: Option<Vec<i32>>,
 }
 
 impl Dock {
@@ -53,6 +56,11 @@ impl Dock {
         self.menu.as_ref()
     }
 
+    /// Whether the menu shows its entry's tray menu (see [`crate::tray`]).
+    pub fn tray_open(&self) -> bool {
+        self.tray.is_some()
+    }
+
     /// The entry being moved.
     pub fn moving(&self) -> Option<&Arc<str>> {
         self.moving.as_ref()
@@ -73,15 +81,24 @@ impl State {
         &self.dock
     }
 
-    /// After anything that may start or stop an entry: those running and not on the dock added at its
-    /// end; those stopped and not pinned (nor being moved) gone. Whether it changed.
+    /// Whether a dock entry runs: as ClamShell's, or by its tray icon.
+    pub fn runs(&self, id: &str) -> bool {
+        self.session.running(id).is_some() || self.tray_of(id).is_some()
+    }
+
+    /// After anything that may start or stop an entry: those running (tray icons' own tiles too) and not
+    /// on the dock added at its end; those stopped and not pinned (nor being moved) gone. Whether it
+    /// changed.
     pub(crate) fn follow_dock(&mut self) -> bool {
         let before = self.dock.items.len();
-        let session = &self.session;
         let moving = self.dock.moving.clone();
-        self.dock.items.retain(|i| i.pinned || session.running(&i.id).is_some() || moving.as_ref() == Some(&i.id));
+        let keep: Vec<bool> = self.dock.items.iter().map(|i| i.pinned || self.runs(&i.id) || moving.as_ref() == Some(&i.id)).collect();
+        let mut keep = keep.into_iter();
+        self.dock.items.retain(|_| keep.next().unwrap_or(true));
         let removed = before != self.dock.items.len();
-        let new: Vec<Arc<str>> = session.running.iter().filter(|r| self.dock.position(&r.id).is_none()).map(|r| r.id.clone()).collect();
+        let session = &self.session;
+        let mut new: Vec<Arc<str>> = session.running.iter().filter(|r| self.dock.position(&r.id).is_none()).map(|r| r.id.clone()).collect();
+        new.extend(self.tray_tile_ids().into_iter().filter(|id| self.dock.position(id).is_none()));
         let added = !new.is_empty();
         self.dock.items.extend(new.into_iter().map(|id| DockItem { id, pinned: false }));
         removed || added
@@ -110,9 +127,31 @@ impl State {
                 };
                 if long {
                     self.dock.menu = Some(entry);
+                    self.dock.tray = None;
                     return vec![];
                 }
                 self.tap_entry(entry)
+            }
+            DockId::Tray(i) => {
+                if let Some(entry) = self.dock.items.get(usize::from(i)).map(|item| item.id.clone()) {
+                    self.dock.menu = Some(entry);
+                    self.dock.tray = Some(vec![]);
+                }
+                vec![]
+            }
+            DockId::TrayMenu => {
+                if self.dock.menu.is_some() {
+                    self.dock.tray = Some(vec![]);
+                }
+                vec![]
+            }
+            DockId::TrayEntry(id) => self.tray_choice(id),
+            // Back in a submenu: the menu above it.
+            DockId::Back if self.dock.tray.as_ref().is_some_and(|path| !path.is_empty()) => {
+                if let Some(path) = &mut self.dock.tray {
+                    path.pop();
+                }
+                vec![]
             }
             DockId::Step(dir) => self.step(dir),
             DockId::Done => {
@@ -121,6 +160,7 @@ impl State {
                 vec![]
             }
             choice => {
+                self.dock.tray = None;
                 let Some(entry) = self.dock.menu.take() else {
                     return vec![];
                 };
@@ -134,6 +174,10 @@ impl State {
     fn tap_entry(&mut self, entry: Arc<str>) -> Vec<Effect> {
         let session = &self.session;
         let Some(r) = session.running(&entry) else {
+            // (Its program runs, not as ours: shown by itself.)
+            if let Some(show) = self.activate_tray(&entry) {
+                return vec![show];
+            }
             return self.play(entry);
         };
         let mine = |w: &&Window| session.running_of(w).is_some_and(|o| o.id == r.id);
@@ -155,6 +199,8 @@ impl State {
                 self.dock.moving = Some(entry);
                 vec![]
             }
+            DockId::Quit if self.session.running(&entry).is_none() => self.end_tray(&entry, false),
+            DockId::ForceKill if self.session.running(&entry).is_none() => self.end_tray(&entry, true),
             DockId::Quit => self.quit(&entry),
             DockId::ForceKill => self.force_kill(&entry),
             _ => vec![],

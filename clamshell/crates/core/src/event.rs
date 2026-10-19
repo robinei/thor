@@ -44,6 +44,8 @@ pub enum Event {
     Windows(Vec<Window>),
     /// Our running scopes (dock app instances and games shelf started), after any change.
     Units(Vec<Instance>),
+    /// Programs' tray icons and their menus, after any change (the tray thread).
+    Tray(Vec<crate::tray::TrayItem>),
     /// What was fetched about an entry (its cover, a screenshot, ...): the metadata thread.
     Meta {
         id: Arc<str>,

@@ -91,6 +91,12 @@ pub enum DockId {
     Quit,
     ForceKill,
     Back,
+    /// The corner mark of the tile at this position: its program's tray menu (see [`crate::tray`]).
+    Tray(u16),
+    /// Its long-press menu's Menu: the same.
+    TrayMenu,
+    /// An entry of that menu, by its id there.
+    TrayEntry(i32),
     /// Move mode: the entry one place (or row) along; done.
     Step(crate::keymap::Dir),
     Done,

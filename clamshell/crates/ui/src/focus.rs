@@ -7,7 +7,7 @@
 
 use clamshell_core::keyboard;
 use clamshell_core::levels::Level;
-use clamshell_core::{EditorId, Event, Id, LevelEvent, ListId, PadInput, PointerEvent, ShelfEvent, ShelfId, State, Tab};
+use clamshell_core::{DockId, EditorId, Event, Id, LevelEvent, ListId, PadInput, PointerEvent, ShelfEvent, ShelfId, State, Tab};
 use smithay_client_toolkit::seat::keyboard::Keysym;
 
 use crate::draw::Rect;
@@ -158,9 +158,11 @@ pub(crate) fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, 
             Screen::Top => 0.0,
             Screen::Bottom => 1.0,
         };
-        // (A list's area is for fingers: the pad goes to its rows. Shelf's actions only by A held.)
+        // (A list's area is for fingers: the pad goes to its rows. Shelf's actions only by A held. A dock
+        // tile's tray mark is for fingers too: the pad has the tile's long-press menu's Menu.)
         let actions = |id: &Id| matches!(id, Id::Shelf(s) if !matches!(s, ShelfId::Game(_) | ShelfId::Collection(_) | ShelfId::Up));
-        all.extend(d.targets(screen).iter().filter(|t| !matches!(t.id, Id::List(_)) && !actions(&t.id)).map(|t| NavTarget {
+        let fingers = |id: &Id| matches!(id, Id::List(_) | Id::Dock(DockId::Tray(_)));
+        all.extend(d.targets(screen).iter().filter(|t| !fingers(&t.id) && !actions(&t.id)).map(|t| NavTarget {
             screen,
             rect: Rect::new(t.rect.x / w, y0 + t.rect.y / h, t.rect.w / w, t.rect.h / h),
             id: t.id.clone(),

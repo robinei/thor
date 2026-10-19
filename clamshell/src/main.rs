@@ -70,6 +70,19 @@ fn main() -> ExitCode {
             print_library(State::new(Init { library: load_library(&sources).library, ..Init::default() }).shelf().library());
             ExitCode::SUCCESS
         }
+        Command::Tray => match clamshell_system::tray::read_now() {
+            Ok(items) => {
+                for item in items {
+                    println!("{} ({}) pid {:?} unit {:?} icon {:?}", item.title, item.id, item.pid, item.unit, item.icon);
+                    print_tray_menu(&item.menu, 1);
+                }
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("tray: {e}");
+                ExitCode::FAILURE
+            }
+        },
         Command::FetchMetadata => {
             let loaded = library::load(&sources);
             let (Some(art), Some(db)) = (paths.art.clone(), paths.db()) else {
@@ -242,5 +255,19 @@ fn run(env: &Env, paths: Paths, sources: &Sources) -> ExitCode {
             log::error!("{e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+/// A tray menu's entries, indented by depth (`--tray`).
+fn print_tray_menu(entries: &[clamshell_core::tray::TrayEntry], depth: usize) {
+    for e in entries {
+        let state = match (e.enabled, e.checked) {
+            (false, _) => " (disabled)",
+            (true, Some(true)) => " (on)",
+            (true, Some(false)) => " (off)",
+            (true, None) => "",
+        };
+        println!("{}{} [{}]{state}", "  ".repeat(depth), e.label, e.id);
+        print_tray_menu(&e.children, depth + 1);
     }
 }

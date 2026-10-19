@@ -34,6 +34,7 @@ pub mod store;
 pub mod sway;
 pub mod sys;
 pub mod touchpad;
+pub mod tray;
 pub mod tuning;
 pub mod units;
 pub mod wifi;

@@ -177,9 +177,14 @@ fn km(id: KeymapId) -> Result<Id, ParseError> {
 /// What a tap or a long press (`tap TARGET`, `long TARGET`) can be on.
 pub const TARGETS: &[Form<Id>] = &[
     form("dock N", "the dock's entry N (by position)", |a| Ok(Id::Dock(DockId::Entry(number(arg(a, 0))?)))),
-    form("dock-menu ACTION", "a dock entry's menu (after a long press): open-another, close-window, pin, move, quit, force-kill, back", |a| {
+    form("dock-tray N", "the tray mark of the dock's entry N: its program's menu", |a| Ok(Id::Dock(DockId::Tray(number(arg(a, 0))?)))),
+    form("tray-entry ID", "an entry of a program's tray menu, by its id there (clamshell --tray lists them)", |a| {
+        Ok(Id::Dock(DockId::TrayEntry(number(arg(a, 0))?)))
+    }),
+    form("dock-menu ACTION", "a dock entry's menu (after a long press): open-another, close-window, menu, pin, move, quit, force-kill, back", |a| {
         Ok(Id::Dock(match arg(a, 0) {
             "open-another" => DockId::OpenAnother,
+            "menu" => DockId::TrayMenu,
             "close-window" => DockId::CloseWindow,
             "pin" => DockId::Pin,
             "move" => DockId::Move,
@@ -513,6 +518,8 @@ mod tests {
         assert_eq!(parse("tap dock 1"), Ok(activate(Id::Dock(DockId::Entry(1)))));
         assert_eq!(parse("long dock 0"), Ok(vec![PointerEvent::LongPress(Id::Dock(DockId::Entry(0))).into()]));
         assert_eq!(parse("tap dock-menu open-another"), Ok(activate(Id::Dock(DockId::OpenAnother))));
+        assert_eq!(parse("tap dock-tray 2"), Ok(activate(Id::Dock(DockId::Tray(2)))));
+        assert_eq!(parse("tap tray-entry 6"), Ok(activate(Id::Dock(DockId::TrayEntry(6)))));
         assert_eq!(parse("tap dock-step right"), Ok(activate(Id::Dock(DockId::Step(clamshell_core::keymap::Dir::Right)))));
         assert_eq!(parse("tap launch"), Ok(activate(Id::Shelf(ShelfId::Launch))));
         assert_eq!(parse("tap collection 1"), Ok(activate(Id::Shelf(ShelfId::Collection(1)))));

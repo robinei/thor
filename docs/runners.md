@@ -164,6 +164,16 @@ the settings tab. An item running shows again rather than starting twice; each f
 tile and workspace. A running item keeps the title and picture it had at its launch, so its tile stays if
 its file is renamed or deleted meanwhile.
 
+Programs' tray icons (StatusNotifierItem over D-Bus: Steam's, and any other program's) are on the dock
+too. ClamShell is the session's tray watcher where nothing else is (the Thor), else reads the one there (a
+desktop around the nested session). An icon is the running entry's whose scope its process is in, else
+the dock entry of the desktop file named as its id (`desktop:steam`), else a tile of its own with the
+library's picture for that name. A tile with one runs, and has a mark in its top left corner (three bars)
+that opens the program's menu; the long-press menu has it as Menu. A tap on a tile whose program has no
+window of ours asks the program to show itself (Steam started silently). Quit and Force kill of a program
+ClamShell didn't start end the icon's process (SIGTERM, SIGKILL). `clamshell --tray` lists the icons and
+their menus; `cargo run -p clamshell-system --example fake_tray` is a program with one, for testing.
+
 ## Launches
 
 Each launch is a systemd scope in its item's slice: whatever it starts stays in it (forking and

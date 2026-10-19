@@ -26,6 +26,7 @@ pub struct Handles {
     pub mixer: Worker<mixer::Command>,
     pub wifi: Worker<wifi::Request>,
     pub bluetooth: Worker<bluetooth::Request>,
+    pub tray: Worker<clamshell_core::tray::TrayCommand>,
     pub battery: Worker<battery::Command>,
     pub pad: Worker<pad::Command>,
     /// The controller the pad thread grabbed: SDL programs launched are told to ignore it.
@@ -134,6 +135,7 @@ impl Handles {
             Effect::EndRun { key, force } => launcher::end_run(key, *force),
             Effect::EndSteam { appid } => launcher::end_steam(*appid),
             Effect::Stop(argv) => launcher::stop(argv),
+            Effect::Tray(command) => self.tray.send(command.clone()),
             Effect::Screenshot => self.system.send(crate::device::Command::Screenshot),
             Effect::Sleep => self.system.send(crate::device::Command::Sleep),
             Effect::SetTimeZone(zone) => self.system.send(crate::device::Command::SetTimeZone(zone.clone())),

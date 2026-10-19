@@ -136,6 +136,10 @@ impl State {
         if session.windows.iter().any(|w| session.running_of(w).is_some_and(|o| o.id == r.id)) {
             return vec![Effect::Window(WindowCommand::Focus(r.workspace()))];
         }
+        // (No window, but a tray icon: the program asked to show itself, Steam started silently.)
+        if let Some(show) = self.activate_tray(id) {
+            return vec![show];
+        }
         let title = r.entry.as_ref().map_or_else(|| id.to_owned(), |g| g.title.clone());
         self.notify(crate::hardware::NoticeKind::NoWindow(title));
         vec![]
