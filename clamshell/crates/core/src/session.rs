@@ -87,6 +87,11 @@ impl Session {
             .or_else(|| by_key(Instance::key_of(&w.workspace)))
     }
 
+    /// The windows of running entry `id` (moved to the bottom screen too).
+    pub fn windows_of<'a>(&'a self, id: &'a str) -> impl Iterator<Item = &'a Window> + 'a {
+        self.windows.iter().filter(move |w| self.running_of(w).is_some_and(|r| &*r.id == id))
+    }
+
     /// The start time and counter for a new instance's name.
     pub(crate) fn new_name(&mut self, now: u64) -> (u64, u64) {
         let n = self.next_instance;

@@ -99,12 +99,9 @@ impl State {
     /// top) shown on the bottom screen. For the menu's Close window.
     pub fn entry_window(&self, id: &str) -> Option<i64> {
         let session = &self.session;
-        let mine = |w: &&Window| session.running_of(w).is_some_and(|r| &*r.id == id);
-        let windows = &session.windows;
-        let top = |w: &&Window| !w.down && mine(w);
-        let below = |w: &&Window| w.down && mine(w);
-        let on_top = windows.iter().filter(top).find(|w| w.focused).or_else(|| windows.iter().filter(top).find(|w| w.visible));
-        let shown = on_top.or_else(|| windows.iter().find(top).is_none().then(|| windows.iter().filter(below).find(|w| w.visible)).flatten());
+        let mine = || session.windows_of(id);
+        let on_top = mine().filter(|w| !w.down).find(|w| w.focused).or_else(|| mine().filter(|w| !w.down).find(|w| w.visible));
+        let shown = on_top.or_else(|| mine().all(|w| w.down).then(|| mine().filter(|w| w.down).find(|w| w.visible)).flatten());
         shown.map(|w| w.id)
     }
 
@@ -163,17 +160,15 @@ impl State {
     /// A tap on a dock entry: a stopped one starts; a running one is shown (all its windows on the bottom
     /// screen: shown there).
     fn tap_entry(&mut self, entry: Arc<str>) -> Vec<Effect> {
-        let session = &self.session;
-        let Some(r) = session.running(&entry) else {
+        if self.session.running(&entry).is_none() {
             return self.play(entry);
-        };
-        let mine = |w: &&Window| session.running_of(w).is_some_and(|o| o.id == r.id);
-        if !session.windows.iter().filter(mine).any(|w| !w.down)
-            && let Some(down) = session.windows.iter().filter(mine).find(|w| w.down)
-        {
-            return self.show_program_down(down.id);
         }
-        self.show_running(&entry)
+        let below = |w: &&Window| w.down;
+        let down = self.session.windows_of(&entry).all(|w| w.down).then(|| self.session.windows_of(&entry).find(below).map(|w| w.id)).flatten();
+        match down {
+            Some(window) => self.show_program_down(window),
+            None => self.show_running(&entry),
+        }
     }
 
     fn menu_choice(&mut self, choice: DockId, entry: Arc<str>) -> Vec<Effect> {

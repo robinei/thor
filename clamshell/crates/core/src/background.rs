@@ -103,7 +103,7 @@ impl State {
         let keys: Vec<Arc<str>> = ours.iter().map(|r| Arc::from(r.key.as_str())).collect();
         self.background.entries.keep(&keys);
         for (r, key) in ours.into_iter().zip(&keys) {
-            let mine: Vec<&crate::windows::Window> = session.windows.iter().filter(|w| session.running_of(w).is_some_and(|o| o.id == r.id)).collect();
+            let mine: Vec<&crate::windows::Window> = session.windows_of(&r.id).collect();
             let shown = mine.iter().any(|w| w.visible);
             let setting = self.settings_of(&r.id).get(Setting::Background);
             // (One quitting isn't paused: frozen, it couldn't end. Nor one without a window: none hidden,

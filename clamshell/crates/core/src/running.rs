@@ -152,7 +152,7 @@ impl State {
         let Some(r) = session.running(id) else {
             return vec![];
         };
-        if session.windows.iter().any(|w| session.running_of(w).is_some_and(|o| o.id == r.id)) {
+        if session.windows_of(&r.id).next().is_some() {
             let focus = Effect::Window(WindowCommand::Focus(r.workspace()));
             // (Paused, or its runner: thawed first, so it draws as it is shown.)
             let resumed = self.resume_runner_of(id);
@@ -258,7 +258,7 @@ impl State {
             if session.units.iter().any(|u| u.key() == Some(r.key.as_str())) {
                 continue;
             }
-            let has = session.windows.iter().any(|w| session.running_of(w).is_some_and(|o| o.id == r.id));
+            let has = session.windows_of(&r.id).next().is_some();
             let soon = now.saturating_sub(r.start) <= HANDOFF;
             let browsed = self.shelf.game(&r.id).is_some_and(|g| g.browsed.is_some());
             if r.app_id.is_some() && (has || soon) {
@@ -353,9 +353,7 @@ impl State {
         // Windows found by app id or by process to their entry's workspace.
         let session = &self.session;
         for r in session.running.iter().filter(|r| r.outside()) {
-            let mine = |w: &&crate::windows::Window| session.running_of(w).is_some_and(|o| o.id == r.id);
-            let away: Vec<i64> =
-                session.windows.iter().filter(mine).filter(|w| !w.down && Instance::key_of(&w.workspace) != Some(&r.key)).map(|w| w.id).collect();
+            let away: Vec<i64> = session.windows_of(&r.id).filter(|w| !w.down && Instance::key_of(&w.workspace) != Some(&r.key)).map(|w| w.id).collect();
             if !away.is_empty() {
                 effects.push(Effect::Window(WindowCommand::Move { windows: away, to: r.workspace() }));
             }
@@ -386,12 +384,8 @@ impl State {
             }
         }
         // Those with windows (a window just taken is still where it came up).
-        let with: Vec<Arc<str>> = session
-            .running
-            .iter()
-            .filter(|r| taken.as_ref() == Some(&r.id) || session.windows.iter().any(|w| session.running_of(w).is_some_and(|o| o.id == r.id)))
-            .map(|r| r.id.clone())
-            .collect();
+        let with: Vec<Arc<str>> =
+            session.running.iter().filter(|r| taken.as_ref() == Some(&r.id) || session.windows_of(&r.id).next().is_some()).map(|r| r.id.clone()).collect();
         let mut ended = Vec::new();
         let icons: Vec<Arc<str>> = self.tray.iter().map(|t| t.key.clone()).collect();
         self.session.running.retain_mut(|r| {
@@ -467,7 +461,7 @@ impl State {
     pub fn app_showing(&self, id: &str) -> Option<&crate::Game> {
         self.shelf.game(id).filter(|g| g.browsed.is_some())?;
         let session = &self.session;
-        let window = session.windows.iter().find(|w| session.running_of(w).is_some_and(|r| &*r.id == id))?;
+        let window = session.windows_of(id).next()?;
         let app = window.app_id.to_lowercase();
         let games = &self.shelf.library().games;
         let program = |g: &&crate::Game| match &g.launch {
@@ -481,7 +475,7 @@ impl State {
     /// The windows of a running entry (moved to the bottom screen too).
     pub(crate) fn windows_of(&self, game: &str) -> Vec<i64> {
         let session = &self.session;
-        session.windows.iter().filter(|w| session.running_of(w).is_some_and(|r| &*r.id == game)).map(|w| w.id).collect()
+        session.windows_of(game).map(|w| w.id).collect()
     }
 
     /// Quit: the entry's windows asked to close; once none is left (a "save changes?" window keeps it
