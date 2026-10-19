@@ -196,6 +196,7 @@ impl Handles {
             Save::TwelveHour(on) => store.save_twelve_hour(*on),
             Save::WindowRules(r) => store.save_window_rules(r),
             Save::Dock(ids) => store.save_dock(ids),
+            Save::Autostart(ids) => store.save_autostart(ids),
         };
         if let Err(e) = saved {
             log::warn!("store: {e}");

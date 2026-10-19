@@ -8,6 +8,7 @@
 //! readings ([`Sys`]). Each owns its own rules; what involves two of them is [`State`]'s.
 
 pub mod actions;
+pub mod autostart;
 pub mod background;
 pub mod battery;
 pub mod bluetooth;
@@ -119,6 +120,8 @@ pub struct Init {
     pub brightness: Brightness,
     /// The dock's pinned entries, in order.
     pub dock: Dock,
+    /// The entries started with ClamShell (see [`autostart`]).
+    pub autostart: Vec<std::sync::Arc<str>>,
     /// Where shelf and the second screen were.
     pub resume: Option<Resume>,
     /// The tab to start in instead (a development option).
@@ -143,6 +146,9 @@ pub struct State {
     tray: Vec<tray::TrayItem>,
     /// Programs paused or ended while hidden (see [`background`]).
     background: background::Background,
+    /// The entries started with ClamShell, and whether they have been (see [`autostart`]).
+    autostart: Vec<std::sync::Arc<str>>,
+    autostarted: bool,
     levels: Levels,
     radios: Radios,
     pad: Pad,
@@ -193,6 +199,7 @@ impl State {
             twelve_hour: init.twelve_hour,
             levels: Levels::new(init.brightness),
             dock: init.dock,
+            autostart: init.autostart,
             device_session: init.device_session,
             ..State::default()
         };
@@ -393,8 +400,10 @@ impl State {
             Event::Units(units) => {
                 self.session.set_units(units);
                 self.follow_units();
+                let mut effects = self.start_autostart();
                 self.follow_dock();
-                (Dirty::BOTTOM, self.follow_quitting())
+                effects.extend(self.follow_quitting());
+                (Dirty::BOTTOM, effects)
             }
             Event::Start => {
                 let mut effects: Vec<Effect> = self.bottom.tab.watch().map(|w| Effect::Watch(w, true)).into_iter().collect();

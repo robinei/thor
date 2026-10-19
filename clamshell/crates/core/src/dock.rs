@@ -182,6 +182,7 @@ impl State {
             DockId::OpenAnother => vec![],
             DockId::CloseWindow => self.entry_window(&entry).map(|w| vec![Effect::Window(WindowCommand::Close(vec![w]))]).unwrap_or_default(),
             DockId::Pin => self.toggle_pin(entry),
+            DockId::Autostart => self.toggle_autostart(entry),
             DockId::Move => {
                 self.dock.moving = Some(entry);
                 vec![]

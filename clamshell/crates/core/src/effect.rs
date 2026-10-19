@@ -156,6 +156,8 @@ pub enum Save {
     WindowRules(crate::bottom_screen::WindowRules),
     /// The dock's pinned entries' ids, in order.
     Dock(Vec<std::sync::Arc<str>>),
+    /// The entries started with ClamShell (see [`crate::autostart`]).
+    Autostart(Vec<std::sync::Arc<str>>),
     /// Clocks on a 12-hour dial, or 24-hour.
     TwelveHour(bool),
 }

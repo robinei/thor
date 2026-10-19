@@ -13,6 +13,7 @@
 //! - `keymaps(position, keymap)`: a keymap as JSON (clamshell-core's `Keymap`, through serde).
 //! - `window_rules(position, entry, app_id, title)` (no title: empty).
 //! - `dock(position, id)`: the pinned entries.
+//! - `autostart(id)`: the entries started with ClamShell.
 //! - `places(collection, path)`: shelf's place in each collection, a JSON list of ids (the open groups,
 //!   then the selected entry).
 //! - `shares(backlight, share)`: each screen's share of the brightness.
@@ -48,6 +49,7 @@ CREATE TABLE IF NOT EXISTS env (entry TEXT PRIMARY KEY, text TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS keymaps (position INTEGER PRIMARY KEY, keymap TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS window_rules (position INTEGER PRIMARY KEY, entry TEXT NOT NULL, app_id TEXT NOT NULL, title TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS dock (position INTEGER PRIMARY KEY, id TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS autostart (id TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS places (collection TEXT PRIMARY KEY, path TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS shares (backlight TEXT PRIMARY KEY, share INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS meta (id TEXT PRIMARY KEY, source TEXT NOT NULL, fetched INTEGER NOT NULL, cover TEXT, shot TEXT,
@@ -235,6 +237,21 @@ impl Store {
         tx.execute("DELETE FROM dock", [])?;
         for (i, id) in (0i64..).zip(ids) {
             tx.execute("INSERT INTO dock (position, id) VALUES (?1, ?2)", params![i, &**id])?;
+        }
+        tx.commit()
+    }
+
+    /// The entries started with ClamShell.
+    pub fn autostart(&self) -> Result<Vec<Arc<str>>, Error> {
+        let mut stmt = self.db.prepare("SELECT id FROM autostart ORDER BY id")?;
+        stmt.query_map([], |r| Ok(Arc::from(r.get::<_, String>(0)?)))?.collect()
+    }
+
+    pub fn save_autostart(&mut self, ids: &[Arc<str>]) -> Result<(), Error> {
+        let tx = self.db.transaction()?;
+        tx.execute("DELETE FROM autostart", [])?;
+        for id in ids {
+            tx.execute("INSERT OR IGNORE INTO autostart (id) VALUES (?1)", [&**id])?;
         }
         tx.commit()
     }

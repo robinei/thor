@@ -95,6 +95,8 @@ pub enum DockId {
     Tray(u16),
     /// Its long-press menu's Menu: the same.
     TrayMenu,
+    /// Its long-press menu's Start with ClamShell, or Don't (see [`crate::autostart`]).
+    Autostart,
     /// An entry of that menu, by its id there.
     TrayEntry(i32),
     /// Move mode: the entry one place (or row) along; done.

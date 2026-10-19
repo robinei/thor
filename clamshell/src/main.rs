@@ -167,6 +167,7 @@ fn saved(paths: &Paths) -> Init {
         brightness: or_default("brightness", store.brightness()),
         twelve_hour: or_default("clock", store.twelve_hour()),
         dock: or_default("dock", store.dock()),
+        autostart: or_default("autostart", store.autostart()),
         resume: or_default("resume", store.resume()),
         ..Init::default()
     }

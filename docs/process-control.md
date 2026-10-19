@@ -183,5 +183,8 @@ on the Thor (Freedreno, FEX).
   frozen once no window of it has been shown for 3 s; thawed when shown, and before Quit, Force kill or
   being shown), Quits closed (ended once it has had a window and has none left). Only launches of
   ClamShell's have a slice to freeze or stop; programs found by their windows or tray icons run on.
+- Start with ClamShell, in an entry's dock menu (saved): once ClamShell knows what runs (systemd's
+  first list of its scopes), each such entry that doesn't run is launched on its own workspace, not
+  shown. What a restarted ClamShell finds running isn't started twice.
 - The Android runner's adb server is ClamShell's own, on a port of its own (5039), not whatever server
   is on adb's usual port.

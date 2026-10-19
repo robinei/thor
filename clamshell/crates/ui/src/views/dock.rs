@@ -104,7 +104,8 @@ fn tray_mark(f: &mut Frame, tile: Rect, i: usize) {
 }
 
 /// An entry's menu, from a long press on its tile: running, Open another, Close window (if it has one),
-/// Menu (if it has a tray icon), Pin or Unpin, Move, Quit, Force kill; stopped, Unpin and Move. The back
+/// Menu (if it has a tray icon), Pin or Unpin, Start with ClamShell (or Don't), Move, Quit, Force kill;
+/// stopped, those but the first and the last two. The back
 /// arrow returns to the dock. Its tray menu instead, if that is open.
 fn draw_menu(f: &mut Frame, entry: &std::sync::Arc<str>) {
     let s = f.s;
@@ -122,6 +123,11 @@ fn draw_menu(f: &mut Frame, entry: &std::sync::Arc<str>) {
         if running && s.entry_window(entry).is_some() { item(DockId::CloseWindow, "Close window", Tone::Fn) } else { None },
         if s.tray_of(entry).is_some() { item(DockId::TrayMenu, "Menu", Tone::Fn) } else { None },
         if pinnable { item(DockId::Pin, if pinned { "Unpin" } else { "Pin" }, Tone::Fn) } else { None },
+        if pinnable {
+            item(DockId::Autostart, if s.autostarts(entry) { "Don't start with ClamShell" } else { "Start with ClamShell" }, Tone::Fn)
+        } else {
+            None
+        },
         item(DockId::Move, "Move", Tone::Fn),
         if running { item(DockId::Quit, "Quit", Tone::Accent) } else { None },
         if running { item(DockId::ForceKill, "Force kill", Tone::Accent) } else { None },

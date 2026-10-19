@@ -181,10 +181,11 @@ pub const TARGETS: &[Form<Id>] = &[
     form("tray-entry ID", "an entry of a program's tray menu, by its id there (clamshell --tray lists them)", |a| {
         Ok(Id::Dock(DockId::TrayEntry(number(arg(a, 0))?)))
     }),
-    form("dock-menu ACTION", "a dock entry's menu (after a long press): open-another, close-window, menu, pin, move, quit, force-kill, back", |a| {
+    form("dock-menu ACTION", "a dock entry's menu (after a long press): open-another, close-window, menu, pin, autostart, move, quit, force-kill, back", |a| {
         Ok(Id::Dock(match arg(a, 0) {
             "open-another" => DockId::OpenAnother,
             "menu" => DockId::TrayMenu,
+            "autostart" => DockId::Autostart,
             "close-window" => DockId::CloseWindow,
             "pin" => DockId::Pin,
             "move" => DockId::Move,
