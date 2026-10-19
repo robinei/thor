@@ -275,7 +275,9 @@ pub const TARGETS: &[Form<Id>] = &[
         let key = arg(a, 0);
         Ok(Id::Settings(SettingsId::Tile(Setting::from_name(key).ok_or_else(|| name_err(key))?)))
     }),
+    form("env", "the settings' variables tile: its editor", |_| Ok(Id::Settings(SettingsId::Env))),
     form("save", "the editor's save", |_| Ok(Id::Editor(EditorId::Save))),
+    form("paste", "the editor's Paste (the clipboard's text)", |_| Ok(Id::Editor(EditorId::Paste))),
     form("key NAME", "an on-screen key: a character, space, ctrl, alt, shift, fn, enter, esc, backspace, tab", |a| key(key_named(arg(a, 0))?)),
     // The keymaps' screens.
     form(

@@ -173,5 +173,5 @@ pub(super) fn capture(f: &mut Frame, input: Input, keys: Option<(usize, [Chord; 
     if !held.is_empty() {
         let _ = write!(text, "{}+", OutputLabel(Output::Key(held)));
     }
-    editor::field(f, &title, &text, (Id::Keymap(KeymapId::Back), "Cancel"), (Id::Keymap(KeymapId::Done), "Done"));
+    editor::field(f, &title, &text, &[(Id::Keymap(KeymapId::Back), "Cancel", Tone::Fn), (Id::Keymap(KeymapId::Done), "Done", Tone::Fn)]);
 }

@@ -93,6 +93,9 @@ pub enum Event {
 pub enum Reading {
     /// Battery, Wi-Fi signal, volume, brightness (when they change).
     Status(Status),
+    /// The text on the clipboard (as it changes; none: something else, or nothing), for ClamShell's own
+    /// fields' Paste.
+    Clipboard(Option<Arc<str>>),
     /// CPU, GPU, memory, temperatures, power (once a second).
     Metrics(Metrics),
     /// A running game's frame rate and frame time in ms (MangoHud), or none.

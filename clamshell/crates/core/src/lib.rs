@@ -186,6 +186,9 @@ pub struct State {
     pins_dropped: bool,
     /// The file actions' clipboard and confirmation, the folder browsed (see [`files`]).
     files: files::Files,
+    /// The text on the system's clipboard, for the editor's Paste (files copied in the Files tab are its
+    /// own, above).
+    clipboard: Option<std::sync::Arc<str>>,
 }
 
 /// Replaces `slot` with `value`; whether that changed it.
@@ -538,6 +541,7 @@ impl State {
         let shown = self.bottom.tab.shows(&reading);
         let changed = match reading {
             Reading::Status(status) => self.read_status(status),
+            Reading::Clipboard(text) => replace(&mut self.clipboard, text),
             // (The graphs move on with every reading.)
             Reading::Metrics(metrics) => {
                 self.sys.read_metrics(metrics);

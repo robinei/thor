@@ -7,6 +7,7 @@ pub mod battery;
 pub mod bluetooth;
 pub mod brightness;
 pub mod cgroup;
+pub mod clipboard;
 pub mod clock;
 pub mod command;
 pub mod dbus;

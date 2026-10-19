@@ -63,6 +63,8 @@ impl Tab {
     pub fn shows(self, reading: &Reading) -> bool {
         match reading {
             Reading::Status(_) | Reading::Bluetooth(_) => true,
+            // (An editor's Paste, in any tab that has one.)
+            Reading::Clipboard(_) => true,
             Reading::Metrics(_) => matches!(self, Tab::Sysinfo | Tab::Battery),
             Reading::Frames { .. } => self == Tab::Sysinfo,
             Reading::Wifi(_) => self == Tab::Wifi,

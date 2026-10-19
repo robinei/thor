@@ -382,6 +382,8 @@ dependencies = [
  "rustix",
  "serde",
  "serde_json",
+ "wayland-client",
+ "wayland-protocols",
  "zbus",
 ]
 

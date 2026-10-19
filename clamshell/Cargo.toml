@@ -13,12 +13,14 @@ clamshell-system = { path = "crates/system" }
 clamshell-library = { path = "crates/library" }
 clamshell-ui = { path = "crates/ui" }
 smithay-client-toolkit = "0.21"
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client", "staging"] }
 fontdue = "0.9"
 jiff = "0.2"
 evdev = "0.13"
 rusqlite = "0.40"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
-rustix = { version = "1", features = ["event", "fs", "time", "param", "process", "net"] }
+rustix = { version = "1", features = ["event", "fs", "time", "param", "process", "net", "pipe"] }
 tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd", "png-format"] }
 log = "0.4"
 serde = { version = "1", features = ["derive", "rc"] }

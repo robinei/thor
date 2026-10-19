@@ -54,8 +54,11 @@ if ! running; then
             bound="clamshell-wayland-filter-$WAYLAND_DISPLAY.service"
         fi
     fi
+    # The clipboard shared with Android through ClamShell's (a stand-in for the pyclip Waydroid imports,
+    # installed beside ClamShell's data: see pyclip.py).
     systemd-run --user --quiet --collect --unit=waydroid-session ${bound:+-p BindsTo="$bound" -p After="$bound"} \
-        -E WAYLAND_DISPLAY="$display" -E XDG_RUNTIME_DIR waydroid session start 2> /dev/null
+        -E WAYLAND_DISPLAY="$display" -E XDG_RUNTIME_DIR -E CLAMSHELL="$(command -v "$filter")" \
+        -E PYTHONPATH="${XDG_DATA_HOME:-$HOME/.local/share}/clamshell/python" waydroid session start 2> /dev/null
     i=0
     while ! running && [ $i -lt 60 ]; do sleep 1; i=$((i + 1)); done
 fi
@@ -64,7 +67,9 @@ if ! command -v adb > /dev/null; then
     [ -n "$stop" ] && exit 1
     exec waydroid app launch "$pkg"
 fi
-dev=$(waydroid status | sed -n 's/^IP address:[[:space:]]*//p'):5555
+# Android's address (UNKNOWN until its network is up, some seconds into its start: read again below).
+address() { dev=$(waydroid status | sed -n 's/^IP address:[[:space:]]*//p'):5555; }
+address
 export ANDROID_ADB_SERVER_PORT=5039
 systemd-run --user --quiet --collect --unit=clamshell-adb -E ANDROID_ADB_SERVER_PORT adb -a nodaemon server 2> /dev/null
 i=0
@@ -73,7 +78,10 @@ android() { adb -s "$dev" shell "$@" 2> /dev/null | tr -d '\r'; }
 # (Connected again until it answers: Android's network comes up some seconds into its start.)
 i=0
 while [ "$(android getprop sys.boot_completed)" != 1 ] && [ $i -lt 90 ]; do
-    adb connect "$dev" > /dev/null 2>&1
+    case $dev in
+        [0-9]*) adb connect "$dev" > /dev/null 2>&1 ;;
+        *) address ;;
+    esac
     sleep 1
     i=$((i + 1))
 done

@@ -80,6 +80,28 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
+        Command::ClipboardGet => match clamshell_system::clipboard::get() {
+            Ok(text) => {
+                print!("{}", text.unwrap_or_default());
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("clipboard: {e}");
+                ExitCode::FAILURE
+            }
+        },
+        Command::ClipboardSet => {
+            let mut text = String::new();
+            let result =
+                std::io::Read::read_to_string(&mut std::io::stdin(), &mut text).map_err(|e| e.to_string()).and_then(|_| clamshell_system::clipboard::set(text));
+            match result {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("clipboard: {e}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
         Command::Tray => match clamshell_system::tray::read_now() {
             Ok(items) => {
                 for item in items {

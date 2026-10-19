@@ -212,9 +212,20 @@ impl State {
         }
     }
 
+    /// Whether there is text on the clipboard to paste.
+    pub fn can_paste(&self) -> bool {
+        self.clipboard.as_deref().is_some_and(|t| !t.trim().is_empty())
+    }
+
     /// The editor's buttons.
     pub(crate) fn on_editor(&mut self, id: EditorId) -> Vec<Effect> {
         match id {
+            EditorId::Paste => {
+                if let (Some(text), Some(editor)) = (self.clipboard.clone(), self.bottom.editor_mut()) {
+                    editor.paste(&text);
+                }
+                vec![]
+            }
             EditorId::Save => self.save_editor(),
             EditorId::Cancel => self.cancel_editor(),
         }
@@ -471,6 +482,20 @@ mod tests {
         assert_eq!(empty.bottom().tab(), Tab::Settings, "always available");
         taps(&mut empty, Setting::FpsCap, 2);
         assert_eq!(empty.settings().global.get(Setting::FpsCap), 40);
+    }
+
+    #[test]
+    fn the_editor_pastes_the_clipboards_text_as_a_line() {
+        let mut s = state();
+        tap(&mut s, Id::Tab(Tab::Settings));
+        tap(&mut s, Id::Settings(SettingsId::Env));
+        assert!(!s.can_paste(), "nothing on the clipboard");
+        tap(&mut s, Id::Editor(EditorId::Paste));
+        assert_eq!(s.bottom().editor().map(|e| e.text.as_str()), Some(""));
+        s.apply(Event::Reading(Reading::Clipboard(Some("A=1\nB=2\n".into()))));
+        assert!(s.can_paste());
+        tap(&mut s, Id::Editor(EditorId::Paste));
+        assert_eq!(s.bottom().editor().map(|e| e.text.as_str()), Some("A=1 B=2"), "its line breaks spaces, its end trimmed");
     }
 
     #[test]

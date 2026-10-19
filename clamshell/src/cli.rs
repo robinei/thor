@@ -16,6 +16,10 @@ pub enum Command {
     Library,
     /// `--tray`: print the tray icons there are, and their menus (see clamshell_system::tray).
     Tray,
+    /// `--clipboard get`: the clipboard's text, written out; `--clipboard set`: the clipboard set to what is
+    /// read in (see clamshell_system::clipboard).
+    ClipboardGet,
+    ClipboardSet,
     /// `--wayland-filter`: a Wayland proxy for Waydroid beside the compositor's socket (see
     /// clamshell_system::wayland_filter).
     WaylandFilter,
@@ -30,8 +34,7 @@ pub enum Command {
     Ctl(Vec<String>),
 }
 
-pub const USAGE: &str =
-    "usage: clamshell [ctl COMMAND... | --snapshot DIR | --library | --tray | --wayland-filter | --fetch-metadata | --mangohud-env | --run FILE]";
+pub const USAGE: &str = "usage: clamshell [ctl COMMAND... | --snapshot DIR | --library | --tray | --clipboard get|set | --wayland-filter | --fetch-metadata | --mangohud-env | --run FILE]";
 
 /// The command the arguments (without the program's name) ask for.
 pub fn parse(args: &[String]) -> Option<Command> {
@@ -43,6 +46,8 @@ pub fn parse(args: &[String]) -> Option<Command> {
         [flag] if flag == "--library" => Command::Library,
         [flag] if flag == "--tray" => Command::Tray,
         [flag] if flag == "--wayland-filter" => Command::WaylandFilter,
+        [flag, what] if flag == "--clipboard" && what == "get" => Command::ClipboardGet,
+        [flag, what] if flag == "--clipboard" && what == "set" => Command::ClipboardSet,
         [flag] if flag == "--fetch-metadata" => Command::FetchMetadata,
         [ctl, rest @ ..] if ctl == "ctl" && !rest.is_empty() => Command::Ctl(rest.to_vec()),
         _ => return None,

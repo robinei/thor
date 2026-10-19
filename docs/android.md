@@ -47,6 +47,12 @@ source.)
 
 ## Typing
 
+The clipboard is shared both ways: Waydroid's session imports `pyclip` for it, and the script starts the
+session with a stand-in of ClamShell's on its Python path (`clamshell/android/pyclip.py`, installed in
+`~/.local/share/clamshell/python`), which reads and sets the clipboard through ClamShell (`clamshell
+--clipboard get|set`), so no other package is needed. Tried: text copied on the host pasted into
+F-Droid's search field, and text copied there read on the host.
+
 Android sees a hardware keyboard (Waydroid's Wayland keyboard), so ClamShell's keyboard types into
 Android apps and Android's own on-screen keyboard is turned off (`show_ime_with_hard_keyboard 0`, below).
 Waydroid has no text-input protocol, so a text field getting focus doesn't raise ClamShell's keyboard:

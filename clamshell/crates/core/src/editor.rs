@@ -57,6 +57,12 @@ pub enum Done {
 }
 
 impl Editor {
+    /// Adds `text` (a line: its line breaks as spaces, its ends trimmed of them).
+    pub fn paste(&mut self, text: &str) {
+        let line: String = text.trim_matches(['\n', '\r']).chars().map(|c| if c == '\n' || c == '\r' { ' ' } else { c }).collect();
+        self.text.push_str(&line);
+    }
+
     /// Types `stroke`: a character or Backspace; Enter saves, Esc cancels.
     pub fn key(&mut self, stroke: Stroke) -> Option<Done> {
         match stroke.key {
