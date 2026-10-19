@@ -147,7 +147,7 @@ impl State {
             let session = &self.session;
             let of_runner = |r: &crate::running::Running| r.entry.as_ref().and_then(|g| g.runner.as_ref()).is_some_and(|o| o.key == runner.key);
             let shown = session.windows.iter().filter(|w| w.visible).any(|w| session.running_of(w).is_some_and(of_runner));
-            let starting = session.running.iter().filter(|r| of_runner(r)).any(|r| r.origin != Origin::Tray && !r.seen);
+            let starting = session.running.iter().filter(|r| of_runner(r)).any(|r| r.origin != Origin::Found && !r.seen);
             match self.background.runner_pauses.follow(&runner.key, !pauses || shown || starting, now) {
                 Some(true) => effects.push(Effect::RunnerCommand(runner.pause.to_vec())),
                 Some(false) => effects.push(Effect::RunnerCommand(runner.resume.to_vec())),

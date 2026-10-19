@@ -199,8 +199,14 @@ Still to try: a game with online play, and all of it on the Thor (Freedreno, FEX
   thawed when ClamShell starts and before a launch into it: systemd starts no scope in a frozen slice. Only launches of
   ClamShell's have a slice to freeze or stop (Steam's games and tray programs are moved into one);
   Android's apps are paused by their runner; a file opened in an app's running instance runs on.
-- A program found by its tray icon (device's session): its process and those it started moved into a
-  scope of ours in its entry's slice (a user manager allows it from any scope not a service's; one a
+- Anything with a window is on the dock: a window no entry has makes its program an entry found by it
+  (the library's desktop entry named as its app id, else one of its own, `window:<app id>`), its
+  windows on its workspace, shown if one was in front. Not a window a systemd service opened (a portal's
+  file chooser, the password prompt): it belongs to the program that asked for it. In the device's
+  session its process is moved into a scope of ours as below, unless it also has another entry's
+  windows (a browser showing a file from the Files tab): then Quit closes its windows, and that is all.
+- A program found by its tray icon or its window (device's session): its process and those it started
+  moved into a scope of ours in its entry's slice (a user manager allows it from any scope not a service's; one a
   service runs stays, as the service would lose it), so it is paused, quit and killed by its slice as
   any launch.
 - ClamShell needs a systemd user manager: every launch runs in a scope of its own. A launch's entry

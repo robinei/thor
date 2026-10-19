@@ -1,7 +1,7 @@
 //! Programs' tray icons (StatusNotifierItem, over D-Bus) and their menus, as the system reads them. An
 //! icon is a running entry's: the one whose scope its process is in (started by ClamShell); else, in the
 //! device's session (in a desktop's the program is the desktop's), the program runs as an entry found by
-//! its icon ([`Origin::Tray`]): the library's desktop entry named as
+//! its icon ([`Origin::Found`]): the library's desktop entry named as
 //! the icon's id (`desktop:steam` for Steam's `steam`), else one of its own (`tray:<key>`, its picture
 //! the icon). Its process (and those it started) is moved into a scope of ours, as a launch of the
 //! entry's: once systemd lists that, it runs as one ([`Origin::Ours`]), paused and ended by its slice
@@ -107,7 +107,7 @@ impl State {
             new.push(Running {
                 id: game.id.clone(),
                 key: game.key.clone(),
-                origin: Origin::Tray,
+                origin: Origin::Found,
                 app_id: None,
                 pid: Some(pid),
                 tray: Some(t.key.clone()),
@@ -118,15 +118,9 @@ impl State {
             });
         }
         // Each moved into a scope of ours.
-        let mut effects = Vec::new();
-        for r in &new {
-            let (secs, n) = self.session.new_name(now);
-            if let Some(pid) = r.pid {
-                effects.push(Effect::Adopt { instance: Instance::Run { key: r.key.clone(), secs, n }, pid });
-            }
-        }
+        let adopt: Vec<(String, u32)> = new.iter().filter_map(|r| Some((r.key.clone(), r.pid?))).collect();
         self.session.running.extend(new);
-        effects
+        adopt.into_iter().map(|(key, pid)| self.adopt(&key, pid)).collect()
     }
 
     /// The tray icon of a running entry, if it has one: its scope's process's, or the one it was found by.
@@ -222,7 +216,7 @@ mod tests {
             "{fx:?}"
         );
         let r = s.session().running("desktop:firefox").unwrap();
-        assert_eq!((r.origin, r.pid), (Origin::Tray, Some(77)));
+        assert_eq!((r.origin, r.pid), (Origin::Found, Some(77)));
         let ws = r.workspace();
         assert!(s.dock().items().iter().any(|i| &*i.id == "desktop:firefox"), "on the dock");
         // No window: a tap asks it to show itself; its window, opening on shelf's workspace (its process a

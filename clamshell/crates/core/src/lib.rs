@@ -19,6 +19,7 @@ mod effect;
 pub mod enqueue;
 mod event;
 pub mod files;
+mod found;
 pub mod hardware;
 mod id;
 pub mod idle;

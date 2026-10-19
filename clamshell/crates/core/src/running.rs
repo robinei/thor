@@ -43,9 +43,10 @@ pub enum Front {
 pub enum Origin {
     /// By its launches: the launcher thread says when each has ended.
     Ours,
-    /// Found by its tray icon (a program not started by ClamShell, see [`crate::tray`]): it runs while the
-    /// icon is there, or a window of it is open.
-    Tray,
+    /// A program not started by ClamShell, found by its tray icon (see [`crate::tray`]) or a window of it
+    /// (see [`crate::found`]): it runs while the icon is there, or a window of it is open; until it is
+    /// moved into a scope of ours (then it runs as [`Origin::Ours`]).
+    Found,
     /// By its windows, since `since` (epoch seconds): started by another program, or its launches ended
     /// while it ran on in a program not ours. It ends once it has had windows ([`Running::seen`]) and has
     /// none, or none came by `until`; its play from `since` recorded then. Its windows: those with its app
@@ -307,6 +308,7 @@ impl State {
     ///   it is paused and ended as any launch);
     /// - a running entry's windows found by app id go to its workspace;
     /// - a new window of no launch of ours goes to the latest browsed file waiting for one, shown;
+    /// - one still no entry's makes its program an entry found by it (see [`crate::found`]);
     /// - one left on the landing workspace that is no entry's goes to the main screen;
     /// - an entry running by its windows that had windows and has none, or waited in vain, has ended.
     pub(crate) fn follow_windows(&mut self, known: &[i64]) -> Vec<Effect> {
@@ -377,6 +379,10 @@ impl State {
             effects.push(Effect::Window(WindowCommand::Focus(r.workspace())));
             taken = Some(r.id.clone());
         }
+        // Still no entry's: their programs' (see [`crate::found`]).
+        let given: Vec<i64> = if taken.is_some() { stray } else { Vec::new() };
+        effects.extend(self.follow_found_windows(&given));
+        let session = &self.session;
         // Left on the landing workspace (its entry gone from the library since its rule was given).
         // (Not one whose entry's launch is starting: a Steam game found running, see above.)
         let starting = |w: &crate::windows::Window| session.launching.iter().any(|l| l.app_id.as_deref() == Some(w.app_id.as_str()));
@@ -394,7 +400,7 @@ impl State {
             let has = with.contains(&r.id);
             r.seen |= has;
             match r.origin {
-                Origin::Tray => r.tray.as_ref().is_some_and(|k| icons.contains(k)) || has,
+                Origin::Found => r.tray.as_ref().is_some_and(|k| icons.contains(k)) || has,
                 Origin::Windows { since, until } => {
                     let runs = r.launches > 0 || if r.seen { has } else { now <= until };
                     if !runs && r.seen {
@@ -426,7 +432,7 @@ impl State {
         let now = self.unix_secs;
         let session = &mut self.session;
         let units = &session.units;
-        for r in session.running.iter_mut().filter(|r| r.origin == Origin::Tray) {
+        for r in session.running.iter_mut().filter(|r| r.origin == Origin::Found) {
             if units.iter().any(|u| u.key() == Some(r.key.as_str())) {
                 r.origin = Origin::Ours;
                 // (Its windows are its scope's now.)
@@ -519,9 +525,13 @@ impl State {
         let Some(r) = self.session.running(game) else {
             return vec![];
         };
-        // (Found by its tray icon: its process.)
-        if let (Origin::Tray, Some(pid)) = (r.origin, r.pid) {
-            return vec![Effect::EndProcesses { pids: vec![pid], force }];
+        // (Found, not moved into a scope of ours: its process, if it is its own; in a desktop's session
+        // the desktop's, not ended.)
+        if r.origin == Origin::Found {
+            return match r.pid.filter(|_| self.device_session) {
+                Some(pid) => vec![Effect::EndProcesses { pids: vec![pid], force }],
+                None => vec![],
+            };
         }
         let mut effects = vec![Effect::EndRun { key: r.key.clone(), force }];
         effects.extend(self.stop_of(game));
