@@ -180,7 +180,7 @@ mod tests {
         let zelda = launch(&mut s, &first);
         // Each scope keeps its own entry's name.
         let ff6 = launch(&mut s, "ff6");
-        s.apply(LaunchEvent::Started("ff6".into()).into());
+        crate::testkit::start(&mut s, "ff6");
         let terminal = Instance::Run { key: clamshell_library::key_of("desktop:foot"), secs: 1, n: 9 };
         assert_eq!(s.spender_name(&spender(Group::Instance(terminal))), "Terminal");
         let title = |id: &str| s.game(id).map(|g| g.title.clone()).unwrap_or_default();
@@ -224,8 +224,8 @@ mod tests {
         let mut s = state_with(library);
         let ws = Instance::workspace_of(&clamshell_library::key_of("desktop:firefox"));
         s.launch("desktop:firefox".into());
-        s.apply(LaunchEvent::Started("desktop:firefox".into()).into());
-        s.apply(LaunchEvent::Ended("desktop:firefox".into()).into());
+        crate::testkit::start(&mut s, "desktop:firefox");
+        crate::testkit::end(&mut s, "desktop:firefox");
         s.apply(Event::Windows(vec![win(6, "firefox", &ws, true)]));
         assert!(!s.opens_another("desktop:firefox"), "a launch would show the one it runs");
         // Its processes (another program's, Android's): its cost, its row named and ended as the entry.

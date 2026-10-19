@@ -547,14 +547,6 @@ pub fn appear(unit: &str, appear: Duration) -> Result<(), Error> {
     Ok(())
 }
 
-/// Waits for a scope to end. Checks once a second: for when a launch ended, a second is exact enough.
-pub fn wait(unit: &str) -> Result<(), Error> {
-    while with_manager(|m| Ok(loaded(m, unit)))? {
-        thread::sleep(Duration::from_secs(1));
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod live {
     use super::*;
@@ -607,9 +599,13 @@ mod live {
         }
         let unit = instance.unit().unwrap();
         appear(&unit, Duration::from_secs(1)).unwrap();
-        wait(&unit).unwrap();
         child.wait().unwrap();
-        assert!(!list(&manager).unwrap().contains(&instance));
+        // (Gone from the list once its process has ended.)
+        let start = Instant::now();
+        while list(&manager).unwrap().contains(&instance) {
+            assert!(start.elapsed() < Duration::from_secs(5), "gone");
+            thread::sleep(Duration::from_millis(50));
+        }
         assert!(appear("clamshell-run-never-0-0.scope", Duration::from_millis(300)).is_err());
     }
 

@@ -61,7 +61,7 @@ fn the_picker_chooses_a_keymap_for_the_scope_edited() {
     assert_eq!(s.settings().overrides_of("zelda-lttp").get(Setting::Keymap), Some(1));
     assert_eq!(s.keymap_users(1), Users { all_games: false, games: 1 });
     // Running, it reaches the pad (once).
-    let fx = s.apply(LaunchEvent::Started("zelda-lttp".into()).into()).1;
+    let fx = crate::testkit::start(&mut s, "zelda-lttp").1;
     assert_eq!(sent(&fx).map(|k| k.name.as_str()), Some("Nintendo layout"));
     assert_eq!(sent(&s.apply(Event::Tick { unix_secs: 5 }).1), None);
     // Default for it, and the pad gets an empty keymap.
@@ -263,7 +263,7 @@ fn the_keymap_screens_stay_with_their_tab_and_listen_only_in_view() {
     assert!(fx.contains(&Effect::PadRoute(PadRoute::Listen)), "{fx:?}");
     assert_eq!((s.keymap_screen(), s.keymap_edit().selected), (Some(Screen::Edit(1)), Some(Input::Button(Button::LB))));
     // A game in front keeps the pad.
-    s.apply(LaunchEvent::Started("zelda-lttp".into()).into());
+    crate::testkit::start(&mut s, "zelda-lttp");
     assert_eq!(s.pad().route(), PadRoute::Game);
     s.apply(Event::Listened(Input::Button(Button::A)));
     assert_eq!(s.keymap_screen(), Some(Screen::Edit(1)), "not listening: nothing");

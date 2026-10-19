@@ -23,8 +23,6 @@ pub enum Effect {
         settings: Values,
         env: Vec<(String, String)>,
         launch: Launch,
-        /// A video mpv plays: its file (its place read again when it ends).
-        watch: Option<std::path::PathBuf>,
     },
     /// The settings in force changed: the running game's (`game`), or the global ones while none runs
     /// (also when a game ends). Apply them now.
@@ -99,7 +97,13 @@ pub enum Effect {
     Tool(clamshell_library::Tool),
     /// What shelf shows (the selected entry first): fetch their metadata before the rest.
     FetchFirst(Vec<Arc<str>>),
-    /// Record a play that ClamShell didn't start (a game Steam started), in the database.
+    /// Where mpv left video `file` (entry `game`'s), read as its play ended (then
+    /// [`crate::LaunchEvent::Position`]).
+    ReadPosition {
+        game: Arc<str>,
+        file: std::path::PathBuf,
+    },
+    /// A play, recorded in the database.
     RecordPlay {
         game: Arc<str>,
         start: u64,

@@ -54,6 +54,11 @@ pub(crate) struct Quitting {
 }
 
 impl Session {
+    /// Whether systemd lists a scope of the entry with `key`.
+    pub(crate) fn has_units(&self, key: &str) -> bool {
+        self.units.iter().any(|u| u.key() == Some(key))
+    }
+
     /// Whether entry `id` is quitting.
     pub(crate) fn is_quitting(&self, id: &str) -> bool {
         self.quitting.iter().any(|q| &*q.game == id)

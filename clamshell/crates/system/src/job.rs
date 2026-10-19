@@ -76,7 +76,8 @@ pub fn write(dir: &Path, job: &Job) -> Result<PathBuf, Error> {
 /// if given).
 fn scoped(unit: &str, slice: Option<&str>, program: impl AsRef<std::ffi::OsStr>, args: &[impl AsRef<std::ffi::OsStr>]) -> Command {
     let mut cmd = Command::new("systemd-run");
-    cmd.args(["--user", "--scope", "--quiet", "--collect", &format!("--unit={unit}")]);
+    // (Delegated: what is in it may move processes into it, a Steam game's follower Steam's launcher.)
+    cmd.args(["--user", "--scope", "--quiet", "--collect", "--property=Delegate=yes", &format!("--unit={unit}")]);
     if let Some(slice) = slice {
         cmd.arg(format!("--slice={slice}"));
     }

@@ -184,14 +184,10 @@ pub enum ShelfEvent {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LaunchEvent {
-    /// The launcher started a game.
-    Started(Arc<str>),
-    /// The launcher is done with a launch of it: it ended (whether the entry still runs is the state's
-    /// to say, by its scopes and its windows).
-    Ended(Arc<str>),
-    /// It couldn't be started.
+    /// It couldn't be started (its scope never came). Whether a launch runs, and when it ends, systemd's
+    /// list of our scopes says ([`crate::Event::Units`]).
     LaunchFailed(Arc<str>),
-    /// A video mpv played ended: where mpv left it (none: at its end).
+    /// A video mpv played ended: where mpv left it (none: at its end; see [`crate::Effect::ReadPosition`]).
     Position { game: Arc<str>, position: Option<u32> },
 }
 

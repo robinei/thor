@@ -658,12 +658,12 @@ mod tests {
         s.apply(LaunchEvent::Position { game: "tv:Cosmos/Season 1/2. One Voice in the Cosmic Fugue.mkv".into(), position: None }.into());
         let fx = tap(&mut s, Id::Shelf(ShelfId::Continue));
         assert_eq!(launched(&fx).as_deref(), Some(first), "none watched: the first");
-        s.apply(LaunchEvent::Started(first.into()).into());
+        crate::testkit::start(&mut s, first);
         s.apply(LaunchEvent::Position { game: first.into(), position: Some(600) }.into());
         played(&mut s, first);
         let fx = s.apply(ShelfEvent::Continue.into()).1;
         assert_eq!(launched(&fx).as_deref(), Some(first), "left early: it again");
-        s.apply(LaunchEvent::Started(first.into()).into());
+        crate::testkit::start(&mut s, first);
         s.apply(LaunchEvent::Position { game: first.into(), position: None }.into());
         played(&mut s, first);
         let fx = s.apply(ShelfEvent::Continue.into()).1;

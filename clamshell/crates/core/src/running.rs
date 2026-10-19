@@ -70,8 +70,6 @@ pub struct Running {
     pub app_id: Option<Arc<str>>,
     /// When it first started (epoch seconds).
     pub start: u64,
-    /// Its launches the launcher still follows (ours: see [`State::follow_ours`]).
-    pub(crate) launches: u32,
     /// A window of it has been there (since it started, or since it went on by its windows): before, it
     /// is starting.
     pub(crate) seen: bool,
@@ -84,7 +82,7 @@ impl Running {
     /// Entry `game` running as `origin` since `start` (no launch followed, no window seen yet).
     pub(crate) fn of(game: &Entry, origin: Origin, start: u64) -> Running {
         let entry = Some(Box::new(game.clone()));
-        Running { id: game.id.clone(), key: game.key.clone(), origin, app_id: None, start, launches: 0, seen: false, entry }
+        Running { id: game.id.clone(), key: game.key.clone(), origin, app_id: None, start, seen: false, entry }
     }
 
     /// Found: its own process, if it has one (see [`Origin::Found`]).
@@ -218,7 +216,6 @@ impl State {
         let Some(g) = self.shelf.game(&game) else {
             return vec![];
         };
-        let watch = g.mpv_file().map(std::path::Path::to_path_buf).filter(|_| command.is_none());
         let app_id = app_id_of(g).filter(|_| command.is_none());
         let (launch, key) = (command.unwrap_or_else(|| g.launch.clone()), g.key.clone());
         let (secs, n) = self.session.new_name(self.unix_secs);
@@ -231,56 +228,23 @@ impl State {
         // Shown once its first window appears.
         self.session.pending_show = Some(instance.clone());
         let mut effects: Vec<Effect> = resumed.into_iter().collect();
-        effects.extend([Effect::Save(Save::Resume(self.resume())), Effect::Launch { game, instance, settings, env, launch, watch }]);
+        effects.extend([Effect::Save(Save::Resume(self.resume())), Effect::Launch { game, instance, settings, env, launch }]);
         effects
     }
 
-    /// A launch has started: the entry runs (one launch more), and the second screen lights up again for
-    /// it to darken.
-    pub(crate) fn started(&mut self, game: Arc<str>) {
-        let session = &mut self.session;
-        let app_id = match session.launching.iter().position(|l| l.game == game) {
-            Some(i) => session.launching.remove(i).app_id,
-            None => None,
-        };
-        match session.running.iter_mut().find(|r| r.id == game) {
-            Some(r) => {
-                r.launches += 1;
-                r.origin = Origin::Ours;
-            }
-            None => {
-                let start = self.unix_secs;
-                // (An entry gone from the library meanwhile: by its id alone.)
-                let entry = self.shelf.game(&game).cloned().unwrap_or_else(|| Entry::new(&game, &game));
-                let entry = Running { app_id, launches: 1, ..Running::of(&entry, Origin::Ours, start) };
-                session.running.push(Running { entry: entry.entry.filter(|_| self.shelf.game(&game).is_some()), ..entry });
-            }
-        }
-        self.bottom.woken = false;
-    }
-
-    /// The launcher is done with a launch of `game`: one launch less (see [`State::follow_ours`]).
-    pub(crate) fn ended(&mut self, game: &str) -> Vec<Effect> {
-        self.session.launching.retain(|l| &*l.game != game || l.app_id.is_some());
-        if let Some(r) = self.session.running.iter_mut().find(|r| &*r.id == game) {
-            r.launches = r.launches.saturating_sub(1);
-        }
-        self.follow_ours()
-    }
-
-    /// Our launches' entries run while the launcher follows a launch of theirs or systemd lists a scope
-    /// of theirs (a Steam game's between Steam's setup and the game: the launcher's; one started by a
-    /// ClamShell before this one: its scopes). Once neither, one known by its app id whose windows are
-    /// open or may still come, or a browsed file's soon after it started, runs on by its windows (see
-    /// [`Origin::Windows`]); the rest have ended, their play recorded.
+    /// Our launches' entries run while systemd lists a scope of theirs (a Steam game's holds its follower
+    /// between Steam's setup and the game; one started by a ClamShell before this one: its scopes). Once
+    /// none, one known by its app id whose windows are open or may still come, or a browsed file's soon
+    /// after it started, runs on by its windows (see [`Origin::Windows`]); the rest have ended, their
+    /// play recorded.
     pub(crate) fn follow_ours(&mut self) -> Vec<Effect> {
         let now = self.unix_secs;
         let session = &self.session;
         let mut ended = Vec::new();
         let mut handed = Vec::new();
         let mut unstarted = Vec::new();
-        for r in session.running.iter().filter(|r| r.origin == Origin::Ours && r.launches == 0) {
-            if session.units.iter().any(|u| u.key() == Some(r.key.as_str())) {
+        for r in session.running.iter().filter(|r| r.origin == Origin::Ours) {
+            if session.has_units(&r.key) {
                 continue;
             }
             let has = session.windows_of(&r.id).next().is_some();
@@ -308,17 +272,20 @@ impl State {
             }
         }
         self.session.running.retain(|r| !ended.iter().any(|(id, _)| *id == r.id));
-        ended.into_iter().map(|(game, start)| self.record_play(game, start)).collect()
+        ended.into_iter().flat_map(|(game, start)| self.record_play(game, start)).collect()
     }
 
     /// A play of `game` from `start` until now: counted, and recorded.
-    fn record_play(&mut self, game: Arc<str>, start: u64) -> Effect {
+    /// (A video's: where mpv left it read, mpv having written it as it quit.)
+    fn record_play(&mut self, game: Arc<str>, start: u64) -> Vec<Effect> {
         let now = self.unix_secs;
         let duration = now.saturating_sub(start);
         if self.shelf.add_play(&game, start, duration) {
             self.saves.resume.touch(now);
         }
-        Effect::RecordPlay { game, start, duration }
+        let file = self.shelf.game(&game).and_then(|g| g.mpv_file()).map(std::path::Path::to_path_buf);
+        let position = file.map(|file| Effect::ReadPosition { game: game.clone(), file });
+        [Effect::RecordPlay { game, start, duration }].into_iter().chain(position).collect()
     }
 
     /// A launch that never started (its scope was gone before it was seen): a browsed file's, or one known
@@ -425,13 +392,15 @@ impl State {
             session.running.iter().filter(|r| taken.as_ref() == Some(&r.id) || session.windows_of(&r.id).next().is_some()).map(|r| r.id.clone()).collect();
         let mut ended = Vec::new();
         let icons: Vec<Arc<str>> = self.tray.iter().map(|t| t.key.clone()).collect();
+        // (Those with a scope listed: a launch of theirs runs.)
+        let launched: Vec<String> = session.running.iter().filter(|r| session.has_units(&r.key)).map(|r| r.key.clone()).collect();
         self.session.running.retain_mut(|r| {
             let has = with.contains(&r.id);
             r.seen |= has;
             match r.origin {
                 Origin::Found { ref tray, .. } => tray.as_ref().is_some_and(|k| icons.contains(k)) || has,
                 Origin::Windows { since, until } => {
-                    let runs = r.launches > 0 || if r.seen { has } else { now <= until };
+                    let runs = launched.contains(&r.key) || if r.seen { has } else { now <= until };
                     if !runs && r.seen {
                         ended.push((r.id.clone(), since));
                     }
@@ -441,7 +410,7 @@ impl State {
             }
         });
         for (game, start) in ended {
-            effects.push(self.record_play(game, start));
+            effects.extend(self.record_play(game, start));
         }
         effects
     }
@@ -459,6 +428,28 @@ impl State {
     /// those whose launches have ended (see [`State::follow_ours`]).
     pub(crate) fn follow_units(&mut self) -> Vec<Effect> {
         let now = self.unix_secs;
+        // Launches whose scope is there: their entries run (as launches of ours: one handed over to its
+        // windows, launched again, too), the second screen lit for them to darken.
+        let session = &mut self.session;
+        let started: Vec<Launching> = {
+            let units = &session.units;
+            let (started, waiting) = std::mem::take(&mut session.launching).into_iter().partition(|l| units.contains(&l.instance));
+            session.launching = waiting;
+            started
+        };
+        for l in started {
+            match self.session.running.iter_mut().find(|r| r.id == l.game) {
+                Some(r) => r.origin = Origin::Ours,
+                None => {
+                    // (An entry gone from the library meanwhile: by its id alone.)
+                    let known = self.shelf.game(&l.game).cloned();
+                    let entry = known.clone().unwrap_or_else(|| Entry::new(&l.game, &l.game));
+                    let r = Running { app_id: l.app_id, ..Running::of(&entry, Origin::Ours, now) };
+                    self.session.running.push(Running { entry: r.entry.filter(|_| known.is_some()), ..r });
+                }
+            }
+            self.bottom.woken = false;
+        }
         let session = &mut self.session;
         let units = &session.units;
         for r in session.running.iter_mut().filter(|r| r.found()) {
@@ -617,18 +608,20 @@ mod tests {
         assert!(launches(&fx, &first));
         assert!(!launches(&tap(&mut s, Id::Shelf(ShelfId::Launch)), &first), "not twice while starting");
         s.apply(Event::Tick { unix_secs: 1000 });
-        s.apply(LaunchEvent::Started(first.clone()).into());
+        crate::testkit::start(&mut s, &first);
         let workspace = Instance::workspace_of(&key(&first));
         assert_eq!(tap(&mut s, Id::Shelf(ShelfId::Launch)), vec![], "running, no window yet: nothing to show");
         s.apply(Event::Windows(vec![win(3, "game", &workspace, false)]));
         assert_eq!(tap(&mut s, Id::Shelf(ShelfId::Launch)), vec![Effect::Window(WindowCommand::Focus(workspace))], "running: shown");
         // Another launch (the dock's Open another): it runs twice, until both end.
         assert!(launches(&s.launch(first.clone()), &first));
-        s.apply(LaunchEvent::Started(first.clone()).into());
-        s.apply(LaunchEvent::Ended(first.clone()).into());
+        crate::testkit::start(&mut s, &first);
+        // (The first one's scope gone, the second's listed.)
+        let second: Vec<Instance> = s.session.units.iter().skip(1).cloned().collect();
+        s.apply(Event::Units(second));
         assert!(s.session().running(&first).is_some(), "the other still runs");
         s.apply(Event::Tick { unix_secs: 1660 });
-        let (_, fx) = s.apply(LaunchEvent::Ended(first.clone()).into());
+        let (_, fx) = crate::testkit::end(&mut s, &first);
         assert!(s.session().running(&first).is_none());
         assert!(fx.contains(&Effect::RecordPlay { game: first.clone(), start: 1000, duration: 660 }), "{fx:?}");
         let g = s.game(&first).unwrap();
@@ -644,7 +637,7 @@ mod tests {
         assert_eq!(zelda, Instance::Run { key: key("zelda-lttp"), secs: 100, n: 0 });
         tap(&mut s, game("ff6"));
         assert!(launches(&tap(&mut s, Id::Shelf(ShelfId::Launch)), "ff6"), "no choice: it starts");
-        s.apply(LaunchEvent::Started("ff6".into()).into());
+        crate::testkit::start(&mut s, "ff6");
         assert_eq!(s.session().running_entries().len(), 2);
     }
 
@@ -677,7 +670,7 @@ mod tests {
         assert!(launches(&fx, "ff6"), "{fx:?}");
         assert!(!fx.iter().any(|e| matches!(e, Effect::Window(WindowCommand::Up { window: 7, .. }))), "{fx:?}");
         assert!(!launches(&s.apply(Event::Windows(windows)).1, "ff6"), "once");
-        s.apply(LaunchEvent::Started("ff6".into()).into());
+        crate::testkit::start(&mut s, "ff6");
         assert_eq!(s.session().running_entries().len(), 2, "the other keeps running");
         let (_, fx) = s.apply(Event::Windows(vec![win(1, "zelda3", &zelda, false), win(7, "steam_app_620", &landing, true)]));
         let ff6 = Instance::workspace_of(&key("ff6"));
@@ -686,7 +679,7 @@ mod tests {
         assert_eq!(s.force_kill("ff6"), vec![Effect::EndRun { key: key("ff6"), force: true }]);
         s.apply(Event::Tick { unix_secs: 1600 });
         s.apply(Event::Windows(vec![win(1, "zelda3", &zelda, true)]));
-        let (_, fx) = s.apply(LaunchEvent::Ended("ff6".into()).into());
+        let (_, fx) = crate::testkit::end(&mut s, "ff6");
         assert!(fx.contains(&Effect::RecordPlay { game: "ff6".into(), start: 1000, duration: 600 }), "{fx:?}");
         assert!(s.session().running("ff6").is_none());
         // A Steam game the library doesn't have isn't one.
@@ -813,9 +806,9 @@ mod tests {
         let ws = Instance::workspace_of(&key("desktop:firefox"));
         assert!(matches!(&s.land_rules(), Effect::Window(WindowCommand::LandRules(ids)) if ids.iter().any(|i| &**i == "firefox")), "its windows land");
         assert!(launches(&s.launch("desktop:firefox".into()), "desktop:firefox"));
-        s.apply(LaunchEvent::Started("desktop:firefox".into()).into());
+        crate::testkit::start(&mut s, "desktop:firefox");
         // Its launch handed the app over (to the Waydroid session) and ended.
-        s.apply(LaunchEvent::Ended("desktop:firefox".into()).into());
+        crate::testkit::end(&mut s, "desktop:firefox");
         assert!(s.session().running("desktop:firefox").is_some(), "waits for its window");
         let app = win(6, "firefox", &landing, false);
         let (_, fx) = s.apply(Event::Windows(vec![shelf.clone(), app.clone()]));
@@ -850,8 +843,8 @@ mod tests {
         // Another runner's: ended with its launch.
         let mut s = state();
         s.launch("desktop:firefox".into());
-        s.apply(LaunchEvent::Started("desktop:firefox".into()).into());
-        s.apply(LaunchEvent::Ended("desktop:firefox".into()).into());
+        crate::testkit::start(&mut s, "desktop:firefox");
+        crate::testkit::end(&mut s, "desktop:firefox");
         assert!(s.session().running("desktop:firefox").is_none());
     }
 
@@ -871,22 +864,25 @@ mod tests {
     }
 
     #[test]
-    fn a_launch_runs_while_the_launcher_follows_it_or_a_scope_of_it_is_listed() {
+    fn a_launch_runs_while_a_scope_of_it_is_listed() {
         let mut s = state();
         s.apply(Event::Tick { unix_secs: 100 });
-        let zelda = launch(&mut s, "zelda-lttp");
-        // Its scope gone while the launcher still follows it (Steam between its setup and the game): runs.
+        let fx = tap(&mut s, game("zelda-lttp"));
+        let fx: Vec<Effect> = fx.into_iter().chain(tap(&mut s, game("zelda-lttp"))).collect();
+        let zelda = fx.iter().find_map(|e| match e {
+            Effect::Launch { instance, .. } => Some(instance.clone()),
+            _ => None,
+        });
+        let zelda = zelda.unwrap();
+        assert!(s.session().running("zelda-lttp").is_none(), "asked for, its scope not there yet: starting");
+        // Its scope listed: it runs; listed no longer: it has ended, its play recorded once.
         s.apply(Event::Units(vec![zelda.clone()]));
-        s.apply(Event::Units(vec![]));
-        assert!(s.session().running("zelda-lttp").is_some(), "the launcher follows it");
-        // The launcher done, its scope listed again: runs, until that is gone too.
-        s.apply(Event::Units(vec![zelda.clone()]));
-        assert!(played(&mut s, "zelda-lttp").is_empty());
-        assert!(s.session().running("zelda-lttp").is_some(), "its scope is listed");
+        assert!(s.session().running("zelda-lttp").is_some());
         s.apply(Event::Tick { unix_secs: 400 });
         let (_, fx) = s.apply(Event::Units(vec![]));
         assert!(s.session().running("zelda-lttp").is_none());
         assert!(fx.contains(&Effect::RecordPlay { game: "zelda-lttp".into(), start: 100, duration: 300 }), "once: {fx:?}");
+        assert!(!s.apply(Event::Units(vec![])).1.iter().any(|e| matches!(e, Effect::RecordPlay { .. })), "once");
     }
 
     #[test]

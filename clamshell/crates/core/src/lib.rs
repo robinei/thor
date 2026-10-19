@@ -875,12 +875,6 @@ impl State {
 
     fn on_game(&mut self, event: LaunchEvent) -> (Dirty, Vec<Effect>) {
         let effects = match event {
-            // (Its window may be there already, before its start was told: the rules for its windows.)
-            LaunchEvent::Started(game) => {
-                self.started(game);
-                vec![]
-            }
-            LaunchEvent::Ended(game) => self.ended(&game),
             LaunchEvent::Position { game, position } => {
                 self.shelf.set_position(&game, position, self.unix_secs);
                 vec![]
@@ -1064,6 +1058,23 @@ pub(crate) mod testkit {
 
     use crate::*;
 
+    /// Entry `id`'s launch starts, as systemd tells it: its scope listed with the others (the launch's
+    /// asked for, else one of the entry's, as a ClamShell before this one started).
+    pub fn start(s: &mut State, id: &str) -> (Dirty, Vec<Effect>) {
+        let key = s.game(id).map_or_else(|| clamshell_library::key_of(id), |g| g.key.clone());
+        let launch = s.session.launching.iter().find(|l| &*l.game == id).map(|l| l.instance.clone());
+        let mut units = s.session.units.clone();
+        units.push(launch.unwrap_or(Instance::Run { key, secs: s.unix_secs, n: 99 }));
+        s.apply(Event::Units(units))
+    }
+
+    /// Entry `id`'s launches end, as systemd tells it: its scopes no longer listed.
+    pub fn end(s: &mut State, id: &str) -> (Dirty, Vec<Effect>) {
+        let key = s.game(id).map_or_else(|| clamshell_library::key_of(id), |g| g.key.clone());
+        let units = s.session.units.iter().filter(|u| u.key() != Some(key.as_str())).cloned().collect();
+        s.apply(Event::Units(units))
+    }
+
     /// What a test state starts from: the demo library, nothing else.
     pub fn init() -> Init {
         Init { library: clamshell_library::demo_library(), ..Init::default() }
@@ -1109,9 +1120,9 @@ pub(crate) mod testkit {
         s.apply(reading.into()).0
     }
 
-    /// The launcher done with `game`'s launch (it ended).
+    /// `game`'s launches ended (their scopes gone).
     pub fn played(s: &mut State, game: &str) -> Vec<Effect> {
-        s.apply(LaunchEvent::Ended(game.into()).into()).1
+        crate::testkit::end(s, game).1
     }
 
     /// Showing `instance`'s workspace.
@@ -1128,7 +1139,7 @@ pub(crate) mod testkit {
             Effect::Launch { instance, .. } => Some(instance.clone()),
             _ => None,
         });
-        s.apply(LaunchEvent::Started(id.into()).into());
+        crate::testkit::start(s, id);
         instance.unwrap()
     }
 }
@@ -1155,8 +1166,8 @@ mod tests {
         all
     }
 
-    /// The session's inputs coming in any order (the launcher's word, systemd's list, the compositor's
-    /// windows: separate threads) end in the same state: the reconcile after each reads what is there,
+    /// The session's inputs coming in any order (systemd's list, the compositor's windows: separate
+    /// threads) end in the same state: the reconcile after each reads what is there,
     /// not which came last.
     #[test]
     fn a_launchs_start_and_end_come_to_the_same_in_any_order() {
@@ -1179,8 +1190,8 @@ mod tests {
         // (No launch: the shapes below say so.)
         let probe = start_end(&mut state()).unwrap_or(Instance::Shelf);
         let window = Window { unit: probe.unit(), visible: true, ..win(5, "zelda3", &probe.workspace(), true) };
-        let starts = [Event::Launch(LaunchEvent::Started("zelda-lttp".into())), Event::Units(vec![probe.clone()]), Event::Windows(vec![window])];
-        let ends = [Event::Launch(LaunchEvent::Ended("zelda-lttp".into())), Event::Units(vec![]), Event::Windows(vec![])];
+        let starts = [Event::Units(vec![probe.clone()]), Event::Windows(vec![window])];
+        let ends = [Event::Units(vec![]), Event::Windows(vec![])];
         for start in orders(&starts) {
             for end in orders(&ends) {
                 let mut s = state();
@@ -1233,14 +1244,14 @@ mod tests {
         let notice = |s: &State| s.bottom().notice().map(|n| n.what.clone());
         let mut s = state();
         launch(&mut s, "zelda-lttp");
-        s.apply(Event::Launch(LaunchEvent::Ended("zelda-lttp".into())));
+        crate::testkit::end(&mut s, "zelda-lttp");
         assert!(matches!(notice(&s), Some(hardware::NoticeKind::NotStarted(_))), "{:?}", notice(&s));
         // One that showed a window and ended: nothing said.
         let mut s = state();
         let zelda = launch(&mut s, "zelda-lttp");
         s.apply(Event::Windows(vec![Window { unit: zelda.unit(), visible: true, ..win(5, "zelda3", &zelda.workspace(), true) }]));
         s.apply(Event::Windows(vec![]));
-        s.apply(Event::Launch(LaunchEvent::Ended("zelda-lttp".into())));
+        crate::testkit::end(&mut s, "zelda-lttp");
         assert!(!matches!(notice(&s), Some(hardware::NoticeKind::NotStarted(_))), "{:?}", notice(&s));
     }
 
@@ -1288,7 +1299,7 @@ mod tests {
         let zelda = Instance::workspace_of(&clamshell_library::key_of("zelda-lttp"));
         let home = |s: &mut State| s.apply(Event::Home).1;
         assert_eq!(home(&mut s), vec![], "nothing before shelf: it stays");
-        s.apply(LaunchEvent::Started("zelda-lttp".into()).into());
+        crate::testkit::start(&mut s, "zelda-lttp");
         assert_eq!(home(&mut s), vec![], "the program in force, no window of it yet: shelf stays");
         s.apply(Event::Windows(vec![shelf(true), win(3, "retroarch", &zelda, false)]));
         assert_eq!(home(&mut s), vec![Effect::Window(WindowCommand::Focus(zelda.clone()))], "no history: the program in force");

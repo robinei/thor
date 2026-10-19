@@ -12,8 +12,8 @@ use clamshell_core::levels::Level;
 use clamshell_core::settings::Setting;
 use clamshell_core::slider::Control;
 use clamshell_core::{
-    Dock, EditorId, Event, Id, Init, KeymapId, LaunchEvent, LevelEvent, Library, ListEvent, ListId, PointerEvent, Reading, Scope, SettingsId, ShelfEvent,
-    ShelfId, Slide, State, Status, Tab, Target, TimeId,
+    Dock, EditorId, Event, Id, Init, KeymapId, LevelEvent, Library, ListEvent, ListId, PointerEvent, Reading, Scope, SettingsId, ShelfEvent, ShelfId, Slide,
+    State, Status, Tab, Target, TimeId,
 };
 use clamshell_ui::Screen;
 
@@ -78,10 +78,10 @@ fn a_play(game: &str, start: u64, duration: u64, now: u64) -> Vec<Event> {
     let window = clamshell_core::windows::Window { id: 900, app_id: "game".into(), workspace, visible: true, ..clamshell_core::windows::Window::default() };
     vec![
         Event::Tick { unix_secs: start },
-        LaunchEvent::Started(game.into()).into(),
+        Event::Units(vec![clamshell_core::Instance::Run { key: clamshell_library::key_of(game), secs: start, n: 0 }]),
         Event::Windows(vec![window]),
         Event::Tick { unix_secs: start + duration },
-        LaunchEvent::Ended(game.into()).into(),
+        Event::Units(vec![]),
         Event::Windows(vec![]),
         Event::Tick { unix_secs: now },
     ]
@@ -211,7 +211,7 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                     Top,
                     a_play("zelda-lttp", 1_759_900_000, 4 * 3600 + 1260, now)
                         .into_iter()
-                        .chain([ShelfEvent::ToggleFavourite.into(), ShelfEvent::TogglePin.into(), LaunchEvent::Started("zelda-lttp".into()).into()])
+                        .chain([ShelfEvent::ToggleFavourite.into(), ShelfEvent::TogglePin.into(), Event::Units(vec![demo::run("zelda-lttp", 0)])])
                         .collect(),
                 ),
                 shot("top-switch.png", Top, vec![ff6(), ff6()]),
@@ -399,7 +399,7 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 shot("launcher.png", Bottom, vec![tab(Tab::Dock), PointerEvent::HideFocus.into()]),
                 shot("launcher-running.png", Bottom, demo::running()),
                 shot("bar-window-below.png", Bottom, demo::window_below()),
-                shot("dock-menu.png", Bottom, vec![demo::running().remove(2), PointerEvent::LongPress(Id::Dock(clamshell_core::DockId::Entry(1))).into()]),
+                shot("dock-menu.png", Bottom, vec![demo::running().remove(0), PointerEvent::LongPress(Id::Dock(clamshell_core::DockId::Entry(1))).into()]),
             ],
         ),
         group(

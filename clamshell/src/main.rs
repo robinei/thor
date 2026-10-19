@@ -50,6 +50,10 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
+        Command::FollowSteam(appid) => {
+            clamshell_system::launcher::follow_steam(appid);
+            ExitCode::SUCCESS
+        }
         Command::RunJob(file) => {
             log::error!("{}: {}", file.display(), job::run(&file));
             ExitCode::FAILURE

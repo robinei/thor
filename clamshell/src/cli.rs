@@ -9,6 +9,9 @@ pub enum Command {
     /// `--run FILE`: become a launched job's program (sway's exec starts us this way; see
     /// clamshell_system::job).
     RunJob(PathBuf),
+    /// `--follow-steam <id>`: in a Steam game's launch scope, Steam's launcher for it moved in as long as
+    /// it runs (see clamshell-system's `launcher`).
+    FollowSteam(u32),
     /// `--mangohud-env`: print the environment that makes a game (started by hand) report its frame rate
     /// here.
     MangohudEnv,
@@ -38,6 +41,7 @@ pub const USAGE: &str = "usage: clamshell [ctl COMMAND...]
   ctl COMMAND...       drive the running ClamShell (`clamshell ctl help` lists the commands)
 used by ClamShell itself:
   --run FILE           a launch's job, through sway's exec
+  --follow-steam ID    a Steam game's follower, in its launch's scope
   --wayland-filter     Waydroid's Wayland filter
   --clipboard get|set  the clipboard's text (Waydroid's clipboard sharing)
 for development:
@@ -52,6 +56,7 @@ pub fn parse(args: &[String]) -> Option<Command> {
     Some(match args {
         [] => Command::Run,
         [flag, file] if flag == "--run" => Command::RunJob(file.into()),
+        [flag, appid] if flag == "--follow-steam" => Command::FollowSteam(appid.parse().ok()?),
         [flag, dir] if flag == "--snapshot" => Command::Snapshot(dir.into()),
         [flag] if flag == "--mangohud-env" => Command::MangohudEnv,
         [flag] if flag == "--library" => Command::Library,
@@ -78,6 +83,7 @@ mod tests {
         assert_eq!(parse(&args("")), Some(Command::Run));
         assert_eq!(parse(&args("--snapshot /tmp/s")), Some(Command::Snapshot("/tmp/s".into())));
         assert_eq!(parse(&args("--run /run/j.json")), Some(Command::RunJob("/run/j.json".into())));
+        assert_eq!(parse(&args("--follow-steam 620")), Some(Command::FollowSteam(620)));
         assert_eq!(parse(&args("--library")), Some(Command::Library));
         assert_eq!(parse(&args("--tray")), Some(Command::Tray));
         assert_eq!(parse(&args("--fetch-metadata")), Some(Command::FetchMetadata));

@@ -83,7 +83,7 @@ fn line(runner: &RunnerOf, file: &std::path::Path) -> Option<String> {
 mod tests {
     use super::*;
     use crate::testkit::{state_with, tap};
-    use crate::{Collection, Entry, Event, Id, Launch, LaunchEvent, Library, ShelfId};
+    use crate::{Collection, Entry, Id, Launch, Library, ShelfId};
 
     fn music() -> RunnerOf {
         RunnerOf {
@@ -116,7 +116,7 @@ mod tests {
         });
         let argv = ["mpv", "--input-ipc-server={socket}", "/m/Album/a.mp3", "/m/Album/b.mp3"].map(String::from).to_vec();
         assert_eq!(launch, Some(("album".into(), Launch::Program { argv, workdir: Some("/m/Album".into()) })), "the album's songs: {fx:?}");
-        s.apply(Event::Launch(LaunchEvent::Started("album".into())));
+        crate::testkit::start(&mut s, "album");
         tap(&mut s, Id::Shelf(ShelfId::Game("single".into())));
         let fx = tap(&mut s, Id::Shelf(ShelfId::Enqueue));
         let key = s.session().running("album").unwrap().key.clone();

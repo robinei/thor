@@ -346,8 +346,8 @@ mod tests {
         s.apply(Event::Tick { unix_secs: 1000 });
         s.apply(Event::Idle(IdleEvent::Watching(true)));
         s.launch("desktop:firefox".into());
-        s.apply(crate::LaunchEvent::Started("desktop:firefox".into()).into());
-        s.apply(crate::LaunchEvent::Ended("desktop:firefox".into()).into());
+        crate::testkit::start(&mut s, "desktop:firefox");
+        crate::testkit::end(&mut s, "desktop:firefox");
         let ws = Instance::workspace_of(&clamshell_library::key_of("desktop:firefox"));
         s.apply(Event::Windows(vec![Window { visible: true, ..crate::testkit::win(6, "firefox", &ws, true) }]));
         let ask = Effect::AskAwake(vec!["awake".into()]);

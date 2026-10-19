@@ -388,7 +388,7 @@ mod tests {
     #[test]
     fn a_running_game_takes_changes_at_once() {
         let mut s = state();
-        s.apply(LaunchEvent::Started("zelda-lttp".into()).into());
+        crate::testkit::start(&mut s, "zelda-lttp");
         tap(&mut s, game("ff6"));
         // The running game is the context, not the selection.
         let fx = taps(&mut s, Setting::FpsCap, 1);
@@ -407,7 +407,7 @@ mod tests {
         let mut s = state();
         taps(&mut s, Setting::PadMouse, 1);
         taps(&mut s, Setting::BottomScreen, 1);
-        let (_, fx) = s.apply(LaunchEvent::Started("zelda-lttp".into()).into());
+        let (_, fx) = crate::testkit::start(&mut s, "zelda-lttp");
         assert!(fx.contains(&Effect::PadRoute(PadRoute::Mouse)), "{fx:?}");
         assert!(s.bottom_dark());
         tap(&mut s, Id::Wake);

@@ -51,20 +51,24 @@ What runs is shown and controlled as entries (the dock's): one per program, each
 
 - A launch of ClamShell's runs in a scope of its own (`systemd-run --user --scope`, through sway's exec
   so its first window opens on the entry's workspace; restarting ClamShell doesn't end it), in its
-  entry's slice; an entry may run several (another tab each). An entry runs while the launcher follows a
-  launch of it or systemd lists a scope of it; once neither, it has ended and its play is recorded, from
-  its start to then (launches side by side are one play). A ClamShell started later finds the launches
-  that run by their scopes, and records their play from the start time in the scopes' names.
+  entry's slice; an entry may run several (another tab each). An entry runs while systemd lists a scope
+  of it, from the user manager's signals: its launch's scope appearing starts it, the last one gone ends
+  it, its play recorded from its start to then (launches side by side are one play; a video's place read
+  then, as mpv left it). The launcher only starts launches, and says so of one whose scope never came. A
+  ClamShell started later finds the launches that run by their scopes, and records their play from the
+  start time in the scopes' names.
 - A launch that hands its app over to a program already running (the Android runner's, to the Waydroid
   session) and ends: the entry runs on by its windows, found by their app id (`waydroid.<package>`),
   until the last one closes (or none came within 15 s).
 - A Steam game: Steam starts it under its launcher process (`reaper SteamLaunch AppId=<id>`, in Steam's
-  scope). The launch moves that launcher and what it started into its own scope, and keeps moving any
-  later one for the game as long as it runs (a fresh Steam runs Proton's install scripts first under one
-  launcher, then the game under another); it follows the game while a launcher for it runs, or did within
-  10 s. A game started from Steam's own window is found by its window (`steam_app_<id>`; the app id says
-  whose it is, though the process is in Steam's scope), which makes it a launch: the launcher finds it
-  running and moves it in the same way. Steam's Running state and its Stop are unaffected: Steam goes
+  scope). The launch's own scope holds a follower (`clamshell --follow-steam <id>`): it moves that
+  launcher and what it started into the scope, and any later one for the game (a fresh Steam runs
+  Proton's install scripts first under one launcher, then the game under another), as long as one runs
+  or did within 10 s (the first within 2 minutes: Steam may start or update first); then it ends, and
+  the scope with the game's last process. So the scope, and the entry, last as long as the game, also
+  across a ClamShell restarted. A game started from Steam's own window is found by its window
+  (`steam_app_<id>`; the app id says whose it is, though the process is in Steam's scope), which makes it
+  a launch: its follower finds it running and moves it in the same way. Steam's Running state and its Stop are unaffected: Steam goes
   by its launcher process, not its cgroup.
 - A program ClamShell didn't start is found by its tray icon, or by a window no entry has; anything with
   a window is on the dock. Its entry: the library's desktop entry named as the icon's id or the window's

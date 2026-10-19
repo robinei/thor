@@ -108,7 +108,7 @@ impl State {
 mod tests {
     use super::*;
     use crate::testkit::*;
-    use crate::{Event, Init, LaunchEvent};
+    use crate::{Event, Init};
 
     /// A window of process `pid` (its parent: 1), in `unit`.
     fn window(id: i64, app_id: &str, pid: u32, unit: &str, focused: bool) -> Window {
@@ -185,8 +185,8 @@ mod tests {
         firefox.runner = Some(clamshell_library::RunnerOf { handover: true, ..clamshell_library::RunnerOf::new("android", "Android", true) });
         let mut s = State::new(Init { library, device_session: true, ..init() });
         s.launch("desktop:firefox".into());
-        s.apply(LaunchEvent::Started("desktop:firefox".into()).into());
-        s.apply(LaunchEvent::Ended("desktop:firefox".into()).into());
+        crate::testkit::start(&mut s, "desktop:firefox");
+        crate::testkit::end(&mut s, "desktop:firefox");
         let mine = window(5, "firefox", 700, "waydroid-session.scope", false);
         s.apply(Event::Windows(vec![mine.clone()]));
         // Another program's window, of the same process (Waydroid's session: an app the library hasn't).

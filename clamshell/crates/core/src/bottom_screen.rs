@@ -305,13 +305,14 @@ mod tests {
     }
 
     fn running(id: &str, key: &str) -> Running {
-        Running { id: id.into(), key: key.into(), origin: Origin::Ours, app_id: None, start: 0, launches: 1, seen: false, entry: None }
+        Running { id: id.into(), key: key.into(), origin: Origin::Ours, app_id: None, start: 0, seen: false, entry: None }
     }
 
     /// A game running (shelf's), with a top window and a second window, the second in front.
     fn emulator() -> State {
         let mut s = state();
         s.session.running.push(running("melonds", "melonds_1"));
+        s.session.units.push(emu());
         s.apply(Event::Windows(vec![win(1, GAME, "Top", false, false), win(2, GAME, "Bottom", true, false)]));
         s
     }
@@ -324,6 +325,7 @@ mod tests {
     fn a_programs_only_window_is_remembered_by_its_app_id_alone() {
         let mut s = state();
         s.session.running.push(running("melonds", "melonds_1"));
+        s.session.units.push(emu());
         s.apply(Event::Windows(vec![win(2, GAME, "Page one", true, false)]));
         let fx = key(&mut s, DeviceKey::WindowDown);
         let rule = WindowRule { owner: "melonds".into(), app_id: "emu".into(), title: None };
@@ -371,24 +373,26 @@ mod tests {
         let mut s = state();
         s.window_rules = WindowRules::from_list(rules.list().to_vec());
         s.session.running.push(running("melonds", "melonds_1"));
+        s.session.units.push(emu());
         let fx = s.apply(Event::Windows(vec![win(5, GAME, "Top", true, false), win(6, GAME, "Bottom", false, false)])).1;
         assert!(fx.contains(&Effect::Window(WindowCommand::Down(6))), "{fx:?}");
         assert!(!fx.contains(&Effect::Window(WindowCommand::Down(5))));
         let fx = s.apply(Event::Windows(vec![win(5, GAME, "Top", true, false), win(6, GAME, "Bottom", false, false)])).1;
         assert!(!fx.contains(&Effect::Window(WindowCommand::Down(6))), "asked once");
-        // Its window there before its start was told (the launcher tells it once the scope is there):
-        // sent down as the start comes.
+        // Its window there before its scope is listed: sent down as the scope comes.
         let mut s = state();
         s.window_rules = WindowRules::from_list(rules.list().to_vec());
         let fx = s.apply(Event::Windows(vec![win(8, GAME, "Bottom", true, false)])).1;
         assert!(!fx.iter().any(|e| matches!(e, Effect::Window(WindowCommand::Down(_)))), "no entry yet: {fx:?}");
-        s.session.running.push(Running { launches: 0, ..running("melonds", "melonds_1") });
-        let fx = s.apply(crate::LaunchEvent::Started("melonds".into()).into()).1;
+        s.session.running.push(running("melonds", "melonds_1"));
+        s.session.units.push(emu());
+        let fx = s.apply(Event::Units(vec![emu()])).1;
         assert!(fx.contains(&Effect::Window(WindowCommand::Down(8))), "{fx:?}");
         let mut s = emulator();
         key(&mut s, DeviceKey::WindowDown);
         // Another game's window of that title: not its rule.
         s.session.running.push(running("other", "other_2"));
+        s.session.units.push(Instance::Run { key: "other_2".into(), secs: 5, n: 2 });
         let fx = s.apply(Event::Windows(vec![win(7, "clamshell-run-other_2-5-2.scope", "Bottom", false, false)])).1;
         assert!(!fx.iter().any(|e| matches!(e, Effect::Window(WindowCommand::Down(_)))), "{fx:?}");
     }

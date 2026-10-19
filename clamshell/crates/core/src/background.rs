@@ -242,11 +242,11 @@ impl State {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::Event;
     use crate::effect::WindowCommand;
     use crate::settings::Setting;
     use crate::testkit::*;
     use crate::windows::Window;
-    use crate::{Event, LaunchEvent};
 
     fn freeze(key: &str, frozen: bool) -> Effect {
         Effect::Freeze { slice: Instance::slice_of(key), frozen }
@@ -312,11 +312,11 @@ mod tests {
         // Launched: resumed first.
         let fx = s.launch("desktop:firefox".into());
         assert_eq!(fx.first(), Some(&resume), "{fx:?}");
-        s.apply(LaunchEvent::Started("desktop:firefox".into()).into());
+        crate::testkit::start(&mut s, "desktop:firefox");
         // Starting (its launch, then handed over, no window yet): not paused.
         let t = 101 + 2 * GRACE;
         assert!(!s.apply(Event::Tick { unix_secs: t }).1.contains(&pause), "its launch runs");
-        s.apply(LaunchEvent::Ended("desktop:firefox".into()).into());
+        crate::testkit::end(&mut s, "desktop:firefox");
         assert!(!s.apply(Event::Tick { unix_secs: t + GRACE }).1.contains(&pause), "handed over, waiting for its window");
         // Shown: not paused; hidden for the grace: paused.
         let ws = Instance::workspace_of(&clamshell_library::key_of("desktop:firefox"));
@@ -384,7 +384,7 @@ mod tests {
         let zelda = launch(&mut s, "zelda-lttp");
         let fx = s.launch("desktop:foot".into());
         let foot = fx.iter().find_map(|e| if let Effect::Launch { instance, .. } = e { Some(instance.clone()) } else { None }).unwrap();
-        s.apply(LaunchEvent::Started("desktop:foot".into()).into());
+        crate::testkit::start(&mut s, "desktop:foot");
         let key = zelda.key().unwrap().to_owned();
         let windows = vec![
             Window { unit: zelda.unit(), ..win(3, "zelda3", &zelda.workspace(), false) },
@@ -417,6 +417,6 @@ mod tests {
         let zelda = launch(&mut s, "zelda-lttp");
         s.apply(Event::Windows(vec![Window { unit: zelda.unit(), ..win(3, "zelda3", &zelda.workspace(), true) }]));
         assert!(!s.apply(Event::Windows(vec![])).1.iter().any(|e| matches!(e, Effect::EndRun { .. })));
-        s.apply(LaunchEvent::Ended("zelda-lttp".into()).into());
+        crate::testkit::end(&mut s, "zelda-lttp");
     }
 }
