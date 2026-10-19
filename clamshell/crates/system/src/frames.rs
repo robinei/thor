@@ -11,18 +11,21 @@
 
 use std::fs;
 use std::io::{self, Read, Seek, SeekFrom};
+use std::mem::MaybeUninit;
+use std::os::fd::OwnedFd;
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, SystemTime};
 
 use clamshell_core::{Event, Reading};
+use rustix::event::{PollFd, PollFlags, Timespec};
+use rustix::fs::inotify;
 
 use crate::worker::{self, Changed};
 use crate::{Closed, Sink};
 
-/// How often we look (MangoHud logs every 500 ms, tuning::mangohud_config).
-const LOG_INTERVAL_MS: u64 = 500;
-/// A log not written for this long belongs to a game that has ended.
+/// A log not written for this long belongs to a game that has ended (MangoHud logs every 500 ms,
+/// tuning::mangohud_config): while one is followed, looked at this often for that.
 const STALE: Duration = Duration::from_secs(3);
 /// Ended games' logs are removed after this.
 const KEEP: Duration = Duration::from_secs(600);
@@ -66,15 +69,24 @@ pub fn spawn(dir: PathBuf, sink: impl Sink) -> io::Result<()> {
     })
 }
 
-/// Sends the latest frame rate whenever it changes, until the UI is gone.
+/// Sends the latest frame rate whenever it changes, until the UI is gone. Asleep until the folder
+/// changes (a log written), and while a log is followed at most [`STALE`] (to see its game has ended).
 fn follow(dir: &Path, sink: &impl Sink) -> Result<(), Closed> {
+    let notify = inotify::init(inotify::CreateFlags::NONBLOCK | inotify::CreateFlags::CLOEXEC).map_err(|e| log::warn!("frames: inotify: {e}")).ok();
+    let flags = inotify::WatchFlags::CREATE | inotify::WatchFlags::MODIFY | inotify::WatchFlags::MOVED_TO;
+    let notify = notify.filter(|fd| inotify::add_watch(fd, dir, flags).map_err(|e| log::warn!("frames: {}: {e}", dir.display())).is_ok());
     // The log followed: its path, how far it has been read, and its columns.
     let mut current: Option<(PathBuf, u64, Tail)> = None;
     let mut last = None;
     // No frame rate to begin with: the state has none either.
     let mut sent = Changed::starting(None);
     loop {
-        thread::sleep(Duration::from_millis(LOG_INTERVAL_MS));
+        let timeout = (current.is_some() || last.is_some()).then_some(STALE);
+        match notify.as_ref() {
+            Some(fd) => wait(fd, timeout),
+            // (Without inotify: looked at twice a second.)
+            None => thread::sleep(Duration::from_millis(500)),
+        }
         let newest = newest_fresh_log(dir);
         if newest.as_ref() != current.as_ref().map(|(p, _, _)| p) {
             current = newest.map(|p| (p, 0, Tail::default()));
@@ -89,6 +101,16 @@ fn follow(dir: &Path, sink: &impl Sink) -> Result<(), Closed> {
             sink.send(Event::Reading(Reading::Frames { fps: reading.map(|r| r.0), frame_ms: reading.map(|r| r.1) }))?;
         }
     }
+}
+
+/// Waits for the folder's inotify events (all read), up to `timeout` if given.
+fn wait(fd: &OwnedFd, timeout: Option<Duration>) {
+    let timeout = timeout.map(|t| Timespec { tv_sec: i64::try_from(t.as_secs()).unwrap_or(i64::MAX), tv_nsec: i64::from(t.subsec_nanos()) });
+    let mut fds = [PollFd::new(fd, PollFlags::IN)];
+    let _ = rustix::event::poll(&mut fds, timeout.as_ref());
+    let mut buf = [MaybeUninit::uninit(); 4096];
+    let mut reader = inotify::Reader::new(fd, &mut buf);
+    while reader.next().is_ok() {}
 }
 
 /// The most recently written CSV in `dir`, if it is still being written; removes old ones.

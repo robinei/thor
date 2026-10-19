@@ -3,8 +3,8 @@
 //! while there is some): keys, buttons, relative motion, and absolute axes that moved a real distance (a
 //! resting stick's jitter isn't input). And, in the device's own session, the device's hardware keys:
 //! volume, mute and brightness on small button devices (gpio-keys, a headset's buttons), never on a
-//! full keyboard, whose keys are the desktop's business. Devices that come and go are picked up within
-//! [`RESCAN_EVERY`]. Grabbed devices (the controller) say nothing here;
+//! full keyboard, whose keys are the desktop's business. Devices that come and go are picked up as
+//! /dev/input changes (inotify; without it, within [`RESCAN_EVERY`]). Grabbed devices (the controller) say nothing here;
 //! their input reaches the state through their own paths and the virtual devices they feed.
 
 use std::collections::HashMap;
@@ -17,7 +17,10 @@ use clamshell_core::hardware::DeviceKey;
 use clamshell_core::idle::IdleEvent;
 use evdev::raw_stream::RawDevice;
 use evdev::{AbsoluteAxisCode, EventType, KeyCode, PropType};
+use std::os::fd::OwnedFd;
+
 use rustix::event::{PollFd, PollFlags, Timespec};
+use rustix::fs::inotify;
 
 use super::{Press, Range, Raw};
 use crate::worker;
@@ -25,7 +28,7 @@ use crate::{Closed, Sink};
 
 /// Input is reported at most this often.
 const ACTIVITY_EVERY: Duration = Duration::from_secs(3);
-/// New devices are looked for this often.
+/// New devices are looked for this often, without inotify.
 const RESCAN_EVERY: Duration = Duration::from_secs(5);
 /// An absolute axis counts as input once it has moved this far (of its range) since it last counted.
 const ABS_MOVE: f32 = 0.05;
@@ -117,8 +120,13 @@ fn watch(take_keys: bool, sink: &impl Sink) -> Result<(), Closed> {
     let mut reported: Option<Instant> = None;
     let mut watching = None;
     let mut raws = Vec::new();
+    // (A device's node comes, then udev gives it its permissions: both say look again.)
+    let notify = inotify::init(inotify::CreateFlags::NONBLOCK | inotify::CreateFlags::CLOEXEC)
+        .ok()
+        .filter(|fd| inotify::add_watch(fd, "/dev/input", inotify::WatchFlags::CREATE | inotify::WatchFlags::ATTRIB | inotify::WatchFlags::MOVED_TO).is_ok());
+    let mut look = true;
     loop {
-        if scanned.is_none_or(|t| t.elapsed() >= RESCAN_EVERY) {
+        if look || (notify.is_none() && scanned.is_none_or(|t| t.elapsed() >= RESCAN_EVERY)) {
             scanned = Some(Instant::now());
             for (path, device) in evdev::raw_stream::enumerate() {
                 if !devices.iter().any(|d| d.path == path)
@@ -138,7 +146,7 @@ fn watch(take_keys: bool, sink: &impl Sink) -> Result<(), Closed> {
                 sink.send(Event::Idle(IdleEvent::Watching(now)))?;
             }
         }
-        wait(&devices, RESCAN_EVERY);
+        look = wait(&devices, notify.as_ref());
         let mut input = false;
         let mut keys = Vec::new();
         devices.retain_mut(|d| {
@@ -167,15 +175,28 @@ fn watch(take_keys: bool, sink: &impl Sink) -> Result<(), Closed> {
     }
 }
 
-/// Waits until a device has events, at most `timeout`.
-fn wait(devices: &[Watched], timeout: Duration) {
+/// Waits until a device has events or /dev/input changed (`notify`; without it, at most
+/// [`RESCAN_EVERY`]); whether to look for devices again.
+fn wait(devices: &[Watched], notify: Option<&OwnedFd>) -> bool {
     let mut fds: Vec<PollFd> = devices.iter().map(|d| PollFd::new(&d.device, PollFlags::IN)).collect();
-    let timeout = Timespec { tv_sec: timeout.as_secs() as i64, tv_nsec: i64::from(timeout.subsec_nanos()) };
-    if fds.is_empty() {
-        std::thread::sleep(Duration::from_secs(timeout.tv_sec as u64));
-        return;
+    let Some(notify) = notify else {
+        let timeout = Timespec { tv_sec: RESCAN_EVERY.as_secs() as i64, tv_nsec: 0 };
+        if fds.is_empty() {
+            std::thread::sleep(RESCAN_EVERY);
+        } else {
+            let _ = rustix::event::poll(&mut fds, Some(&timeout));
+        }
+        return false;
+    };
+    fds.push(PollFd::new(notify, PollFlags::IN));
+    let _ = rustix::event::poll(&mut fds, None);
+    let changed = fds.last().is_some_and(|f| f.revents().contains(PollFlags::IN));
+    if changed {
+        let mut buf = [std::mem::MaybeUninit::uninit(); 4096];
+        let mut reader = inotify::Reader::new(notify, &mut buf);
+        while reader.next().is_ok() {}
     }
-    let _ = rustix::event::poll(&mut fds, Some(&timeout));
+    changed
 }
 
 #[cfg(test)]

@@ -1,5 +1,6 @@
 //! What every system thread is made of. A thread is spawned with its command channel made inside
-//! ([`Worker::spawn`]); it waits for the next command or for its period ([`next`]); it sends a reading
+//! ([`Worker::spawn`]); it waits for the next command or for its period ([`next`]), or, if it waits on
+//! files (a device, inotify), for those and its [`Bell`] together, which its commands ring; it sends a reading
 //! only when it changed ([`Changed`]); a thread that talks to a service (a bus, a socket, a device)
 //! connects, runs while the service is up, and is supervised: tried again every `retry` while the
 //! service is down ([`supervise`]).
@@ -15,6 +16,7 @@
 use std::convert::Infallible;
 use std::fmt::Display;
 use std::io;
+use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -28,11 +30,41 @@ pub struct Worker<C> {
     name: &'static str,
     tx: Option<Sender<C>>,
     gone: Arc<AtomicBool>,
+    bell: Option<Bell>,
 }
 
 impl<C> Clone for Worker<C> {
     fn clone(&self) -> Self {
-        Worker { name: self.name, tx: self.tx.clone(), gone: self.gone.clone() }
+        Worker { name: self.name, tx: self.tx.clone(), gone: self.gone.clone(), bell: self.bell.clone() }
+    }
+}
+
+/// A thread's bell: an eventfd that its commands ring as they are sent, for a thread that waits on
+/// files (poll) and so can't wait on its channel too. It waits on the bell's fd with its own, and when
+/// woken clears it and takes its commands (try_recv): without the bell it would have to wake now and
+/// then to look.
+#[derive(Clone)]
+pub struct Bell(Arc<OwnedFd>);
+
+impl Bell {
+    pub fn new() -> io::Result<Bell> {
+        let fd = rustix::event::eventfd(0, rustix::event::EventfdFlags::CLOEXEC | rustix::event::EventfdFlags::NONBLOCK)?;
+        Ok(Bell(Arc::new(fd)))
+    }
+
+    /// The fd to wait on (readable once rung).
+    pub fn fd(&self) -> BorrowedFd<'_> {
+        self.0.as_fd()
+    }
+
+    pub fn ring(&self) {
+        let _ = rustix::io::write(&*self.0, &1u64.to_ne_bytes());
+    }
+
+    /// Unrung (however often it was): what rang it is in the channel, or the ringer's to say.
+    pub fn clear(&self) {
+        let mut count = [0u8; 8];
+        let _ = rustix::io::read(&*self.0, &mut count);
     }
 }
 
@@ -46,14 +78,24 @@ impl<C: Send + 'static> Worker<C> {
     pub fn spawn(name: &'static str, body: impl FnOnce(Receiver<C>) + Send + 'static) -> io::Result<Worker<C>> {
         let (tx, rx) = mpsc::channel();
         thread::Builder::new().name(name.into()).spawn(move || body(rx))?;
-        Ok(Worker { name, tx: Some(tx), gone: Arc::default() })
+        Ok(Worker { name, tx: Some(tx), gone: Arc::default(), bell: None })
+    }
+
+    /// As [`Worker::spawn`], for a thread that waits on files: `body` also has the [`Bell`] its commands
+    /// ring.
+    pub fn spawn_belled(name: &'static str, body: impl FnOnce(Receiver<C>, Bell) + Send + 'static) -> io::Result<Worker<C>> {
+        let bell = Bell::new()?;
+        let (tx, rx) = mpsc::channel();
+        let theirs = bell.clone();
+        thread::Builder::new().name(name.into()).spawn(move || body(rx, theirs))?;
+        Ok(Worker { name, tx: Some(tx), gone: Arc::default(), bell: Some(bell) })
     }
 }
 
 impl<C> Worker<C> {
     /// Stands in for a thread that couldn't be started: commands go nowhere (logged once).
     pub fn gone(name: &'static str) -> Worker<C> {
-        Worker { name, tx: None, gone: Arc::default() }
+        Worker { name, tx: None, gone: Arc::default(), bell: None }
     }
 
     /// Sends a command; if the thread has ended, says so in the log (once).
@@ -65,6 +107,9 @@ impl<C> Worker<C> {
     pub fn try_send(&self, command: C) -> Result<(), Gone> {
         let sent = self.tx.as_ref().is_some_and(|tx| tx.send(command).is_ok());
         if sent {
+            if let Some(bell) = &self.bell {
+                bell.ring();
+            }
             return Ok(());
         }
         if !self.gone.swap(true, Ordering::Relaxed) {

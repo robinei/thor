@@ -35,7 +35,7 @@ use clamshell_core::keymap::Keymap;
 use rustix::event::{PollFd, PollFlags, Timespec};
 
 use crate::input::device::{DeviceSpec, Grabbed};
-use crate::worker::{self, Ended, Service, Worker, lost_on};
+use crate::worker::{self, Bell, Ended, Service, Worker, lost_on};
 use crate::{Closed, Sink};
 use device::{AynKey, Capabilities, VirtualDevices};
 use motion::{EvdevMotion, MotionSource, Sample};
@@ -44,10 +44,10 @@ use rumble::{Buzz, Effects, Rumble};
 
 pub use route::{Mapping, PadSnapshot};
 
-/// How often a missing controller is looked for.
-const RETRY: Duration = Duration::from_secs(1);
-/// The longest the thread waits for the controller before looking at its commands.
-const COMMANDS_EVERY: Duration = Duration::from_millis(100);
+/// How often a missing controller is looked for: besides whenever /dev/input changes (a device plugged
+/// in, [`Command::Look`]), every second if that can't be watched.
+const RETRY: Duration = Duration::from_secs(30);
+const RETRY_UNWATCHED: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
@@ -58,6 +58,9 @@ pub enum Command {
     CalibrateGyro,
     /// The Rumble setting in force: 0 off, 1 low, 2 mid, 3 full.
     Rumble(u16),
+    /// /dev/input changed: a missing controller is looked for again (the supervisor tries again after
+    /// any command).
+    Look,
 }
 
 lost_on!(io::Error);
@@ -86,8 +89,11 @@ impl Taken {
 /// Owns the controller whenever one is connected (`spec`: CLAMSHELL_GAMEPAD), looking again every second
 /// when there is none; its ids in `taken`.
 pub fn spawn(spec: DeviceSpec, taken: Taken, sink: impl Sink) -> io::Result<Worker<Command>> {
-    Worker::spawn("pad", move |commands| {
+    let watched = devices_watch();
+    let retry = if watched.is_some() { RETRY } else { RETRY_UNWATCHED };
+    let worker = Worker::spawn_belled("pad", move |commands, bell| {
         let mut pad = PadThread {
+            bell,
             spec,
             taken,
             sink,
@@ -98,12 +104,41 @@ pub fn spawn(spec: DeviceSpec, taken: Taken, sink: impl Sink) -> io::Result<Work
             rumble_setting: 3,
             buzz: None,
         };
-        worker::supervise(&mut pad, &commands, RETRY);
-    })
+        worker::supervise(&mut pad, &commands, retry);
+    })?;
+    if let Some(notify) = watched {
+        let pad = worker.clone();
+        worker::detached("pad devices", move || {
+            let mut fds = [PollFd::new(&notify, PollFlags::IN)];
+            loop {
+                match rustix::event::poll(&mut fds, None) {
+                    Ok(_) | Err(rustix::io::Errno::INTR) => {}
+                    Err(e) => return log::warn!("pad devices: {e}"),
+                }
+                let mut buf = [std::mem::MaybeUninit::uninit(); 4096];
+                let mut reader = rustix::fs::inotify::Reader::new(&notify, &mut buf);
+                while reader.next().is_ok() {}
+                if pad.try_send(Command::Look).is_err() {
+                    return;
+                }
+            }
+        })?;
+    }
+    Ok(worker)
+}
+
+/// An inotify watch of /dev/input: a device's node coming, and udev giving it its permissions.
+fn devices_watch() -> Option<rustix::fd::OwnedFd> {
+    use rustix::fs::inotify;
+    let fd = inotify::init(inotify::CreateFlags::CLOEXEC | inotify::CreateFlags::NONBLOCK).ok()?;
+    inotify::add_watch(&fd, "/dev/input", inotify::WatchFlags::CREATE | inotify::WatchFlags::ATTRIB | inotify::WatchFlags::MOVED_TO).ok()?;
+    Some(fd)
 }
 
 /// What the pad thread keeps across the controller's comings and goings.
 struct PadThread<S> {
+    /// Rung by its commands: waited on with the controller.
+    bell: Bell,
     spec: DeviceSpec,
     taken: Taken,
     sink: S,
@@ -153,6 +188,8 @@ impl<S: Sink> PadThread<S> {
                 // (No controller: no gyro to calibrate.)
                 None => log::info!("pad: no controller to calibrate the gyro of"),
             },
+            // (Looking is the supervisor's, after the command; with a controller, nothing to do.)
+            Command::Look => {}
         }
     }
 
@@ -253,11 +290,18 @@ impl<S: Sink> Service for PadThread<S> {
     }
 }
 
-/// Waits up to `timeout` for the controller's, the gyro's, the AYN button's or the virtual pad's (rumble)
-/// events.
-fn wait(pad: &Grabbed, motion: Option<&dyn MotionSource>, ayn: Option<&AynKey>, virtual_pad: Option<BorrowedFd>, timeout: Duration) -> io::Result<()> {
-    let timeout = Timespec { tv_sec: i64::try_from(timeout.as_secs()).unwrap_or(i64::MAX), tv_nsec: i64::from(timeout.subsec_nanos()) };
-    let mut fds = vec![PollFd::new(pad.device(), PollFlags::IN)];
+/// Waits (up to `timeout`, if given) for the controller's, the gyro's, the AYN button's or the virtual
+/// pad's (rumble) events, or a command (the bell).
+fn wait(
+    pad: &Grabbed,
+    motion: Option<&dyn MotionSource>,
+    ayn: Option<&AynKey>,
+    virtual_pad: Option<BorrowedFd>,
+    bell: &Bell,
+    timeout: Option<Duration>,
+) -> io::Result<()> {
+    let timeout = timeout.map(|t| Timespec { tv_sec: i64::try_from(t.as_secs()).unwrap_or(i64::MAX), tv_nsec: i64::from(t.subsec_nanos()) });
+    let mut fds = vec![PollFd::new(pad.device(), PollFlags::IN), PollFd::from_borrowed_fd(bell.fd(), PollFlags::IN)];
     if let Some(m) = motion {
         fds.push(PollFd::from_borrowed_fd(m.fd(), PollFlags::IN));
     }
@@ -267,8 +311,11 @@ fn wait(pad: &Grabbed, motion: Option<&dyn MotionSource>, ayn: Option<&AynKey>, 
     if let Some(v) = virtual_pad {
         fds.push(PollFd::from_borrowed_fd(v, PollFlags::IN));
     }
-    match rustix::event::poll(&mut fds, Some(&timeout)) {
-        Ok(_) | Err(rustix::io::Errno::INTR) => Ok(()),
+    match rustix::event::poll(&mut fds, timeout.as_ref()) {
+        Ok(_) | Err(rustix::io::Errno::INTR) => {
+            bell.clear();
+            Ok(())
+        }
         Err(e) => Err(e.into()),
     }
 }
@@ -289,10 +336,10 @@ impl<S: Sink> PadThread<S> {
                 }
             }
             self.emit(out)?;
-            // Wake for events, when the mapping wants a tick, and now and then for commands.
-            let wait_for = wake.map_or(COMMANDS_EVERY, |at: Instant| at.saturating_duration_since(Instant::now())).min(COMMANDS_EVERY);
+            // Wake for events, commands, and when the mapping wants a tick.
+            let wait_for = wake.map(|at: Instant| at.saturating_duration_since(Instant::now()));
             let virtual_pad = self.devices.as_ref().map(|d| d.pad.as_fd());
-            wait(grabbed, motion.as_deref(), ayn.as_ref(), virtual_pad, wait_for)?;
+            wait(grabbed, motion.as_deref(), ayn.as_ref(), virtual_pad, &self.bell, wait_for)?;
             let from = raws.len();
             grabbed.fetch(&mut raws)?;
             if *letters {

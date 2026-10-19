@@ -10,6 +10,7 @@ use std::io::{self, Read, Write};
 use std::mem::MaybeUninit;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::TryRecvError;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use clamshell_core::files::{Browse, FileOp, FilesEvent};
@@ -19,10 +20,8 @@ use rustix::fs::inotify;
 use crate::Sink;
 use crate::library::content;
 use crate::library::runners::{self, Runner};
-use crate::worker::{self, Next, Worker};
+use crate::worker::{Bell, Worker};
 
-/// How often the browse thread looks at what changed (the folder's inotify events, the mounts).
-const POLL: Duration = Duration::from_millis(400);
 /// A paste's progress, at most this often.
 const PROGRESS: Duration = Duration::from_millis(250);
 /// Where udisks2 mounts removable filesystems.
@@ -41,7 +40,7 @@ pub struct Browsing {
 /// The browse thread: lists (and watches) the folder each command names (see [`Browsing`]).
 pub fn spawn_browse(browsing: Browsing, sink: impl Sink) -> io::Result<Worker<Option<Browse>>> {
     let Browsing { config, home, db, probe } = browsing;
-    Worker::spawn("browse", move |commands| {
+    Worker::spawn_belled("browse", move |commands, bell| {
         let notify = inotify::init(inotify::CreateFlags::NONBLOCK | inotify::CreateFlags::CLOEXEC).map_err(|e| log::warn!("browse: inotify: {e}")).ok();
         let flags = inotify::WatchFlags::CREATE
             | inotify::WatchFlags::DELETE
@@ -53,6 +52,8 @@ pub fn spawn_browse(browsing: Browsing, sink: impl Sink) -> io::Result<Worker<Op
             | inotify::WatchFlags::MOVE_SELF;
         let mut open: Option<(Browse, Option<i32>)> = None;
         let mut mounts = media_mounts();
+        // (The kernel marks the mount table read through this file when it changes: POLLPRI.)
+        let mount_table = fs::File::open("/proc/self/mounts").map_err(|e| log::warn!("browse: mounts: {e}")).ok();
         let list = |b: &Browse| {
             let config = config.as_deref().map(content::read_config).unwrap_or_default().0;
             let (runners, _) = runners::in_force(&config.runners);
@@ -64,8 +65,11 @@ pub fn spawn_browse(browsing: Browsing, sink: impl Sink) -> io::Result<Worker<Op
             sink.send(Event::Files(FilesEvent::Listed { folder: b.folder.clone(), entries }))
         };
         loop {
-            match worker::next(&commands, Some(POLL)) {
-                Next::Command(browse) => {
+            // Asleep until a command, the folder or the mounts change.
+            let (folder_changed, mounts_changed) = wait(&bell, notify.as_ref(), mount_table.as_ref());
+            // (A command and a change may come together: the change is looked at too.)
+            match commands.try_recv() {
+                Ok(browse) => {
                     if let (Some(fd), Some((_, Some(wd)))) = (notify.as_ref(), open.take()) {
                         let _ = inotify::remove_watch(fd, wd);
                     }
@@ -81,26 +85,53 @@ pub fn spawn_browse(browsing: Browsing, sink: impl Sink) -> io::Result<Worker<Op
                         return;
                     }
                     open = Some((b, wd));
+                    // (Another command may be waiting: the bell was cleared for all of them.)
+                    bell.ring();
                 }
-                Next::Elapsed => {
-                    if let (Some(fd), Some((b, _))) = (notify.as_ref(), open.as_ref())
+                Err(TryRecvError::Empty) => {
+                    if folder_changed
+                        && let (Some(fd), Some((b, _))) = (notify.as_ref(), open.as_ref())
                         && changed(fd)
                         && list(b).is_err()
                     {
                         return;
                     }
-                    let now = media_mounts();
-                    if now != mounts {
-                        mounts = now;
-                        if sink.send(Event::Files(FilesEvent::Mounts)).is_err() {
-                            return;
-                        }
+                }
+                Err(TryRecvError::Disconnected) => return,
+            }
+            if mounts_changed {
+                let now = media_mounts();
+                if now != mounts {
+                    mounts = now;
+                    if sink.send(Event::Files(FilesEvent::Mounts)).is_err() {
+                        return;
                     }
                 }
-                Next::Disconnected => return,
             }
         }
     })
+}
+
+/// Waits for the browse thread's bell, the folder's inotify events or a change of the mounts; which of
+/// the last two came.
+fn wait(bell: &Bell, notify: Option<&rustix::fd::OwnedFd>, mounts: Option<&fs::File>) -> (bool, bool) {
+    use rustix::event::{PollFd, PollFlags};
+    let mut fds = vec![PollFd::from_borrowed_fd(bell.fd(), PollFlags::IN)];
+    let folder = notify.map(|fd| {
+        fds.push(PollFd::new(fd, PollFlags::IN));
+        fds.len() - 1
+    });
+    let table = mounts.map(|f| {
+        fds.push(PollFd::new(f, PollFlags::PRI));
+        fds.len() - 1
+    });
+    if rustix::event::poll(&mut fds, None).is_err() {
+        // (Interrupted: looked at as if anything changed.)
+        return (true, true);
+    }
+    bell.clear();
+    let came = |i: Option<usize>, what: PollFlags| i.and_then(|i| fds.get(i)).is_some_and(|f| f.revents().intersects(what));
+    (came(folder, PollFlags::IN), came(table, PollFlags::PRI | PollFlags::ERR))
 }
 
 /// Whether inotify has events (all read).

@@ -134,6 +134,27 @@ What it showed:
 7. After some days of use: whether anything the dock doesn't show was wanted, or anything it shows
    wasn't.
 
+## ClamShell's own wakeups
+
+Measured in the VM, idle, shelf in front, per thread over 20 s (voluntary context switches): about 40 a
+second at first. Threads that wait on files (a device, inotify) couldn't also wait on their command
+channel, so they woke on a timer to look at it; and devices and mounts were looked for on timers.
+Now a worker that waits on files has a bell (an eventfd its commands ring, `worker::Bell`), mounts are
+watched through /proc/self/mounts (POLLPRI) and devices through inotify on /dev/input:
+
+| Thread | Before | Now |
+|---|---|---|
+| pad (no controller) | 10/s (a rescan every second) | none; a controller plugged in is grabbed in about 0.1 s |
+| browse | 2.5/s, 0.5 ms CPU/s (mounts and the folder every 400 ms) | none |
+| frames (MangoHud's logs) | 2/s | none without a game |
+| input watch | 2/s (a rescan every 5 s) | none |
+| tray | 4/s | its signals only |
+
+Left: the main thread (2/s, the events it is sent: the clock's tick and the metrics, each every
+second); metrics (1/s, about 1.5 ms of CPU each: the graphs' history is kept whether or not they are
+shown, and the GPU's load walks every process's DRM clients); zbus' executor threads (the `blocking`
+crate: about 8 wakeups a second between them, no CPU, idle threads waking every 500 ms).
+
 ## Done
 
 - The modes above: in a desktop's session ClamShell adopts nothing it didn't start (its tray programs

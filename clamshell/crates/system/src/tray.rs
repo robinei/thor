@@ -13,7 +13,7 @@ use std::fmt;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::Receiver;
+use std::sync::mpsc::{Receiver, TryRecvError};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -25,7 +25,7 @@ use zbus::names::BusName;
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
 
-use crate::worker::{self, Changed, Ended, Next, Service, Worker, lost_on};
+use crate::worker::{self, Bell, Changed, Ended, Service, Worker, lost_on};
 use crate::{Closed, Sink, cgroup, command};
 
 const WATCHER: &str = "org.kde.StatusNotifierWatcher";
@@ -36,8 +36,8 @@ const MENU: &str = "com.canonical.dbusmenu";
 
 /// How long to wait before trying the bus again.
 const RETRY: Duration = Duration::from_secs(5);
-/// How often signals that came are looked at: a burst of them (a menu rebuilt) is one read.
-const SETTLE: Duration = Duration::from_millis(250);
+/// How long after a signal the icons are read: a burst of them (a menu rebuilt) is one read.
+const SETTLE: Duration = Duration::from_millis(100);
 
 #[derive(Debug)]
 pub enum Error {
@@ -70,11 +70,31 @@ lost_on!(Error: zbus::Error, zbus::fdo::Error);
 
 /// Sends [`Event::Tray`] at start and after every change; carries out [`TrayCommand`]s.
 pub fn spawn(sink: impl Sink) -> io::Result<Worker<TrayCommand>> {
-    Worker::spawn("tray", move |commands| worker::supervise(&mut Tray { sink }, &commands, RETRY))
+    Worker::spawn_belled("tray", move |commands, bell| worker::supervise(&mut Tray { sink, bell }, &commands, RETRY))
 }
 
 struct Tray<S> {
     sink: S,
+    bell: Bell,
+}
+
+/// That the icons are to be read again: marked by signals and registrations, which ring the thread's
+/// bell.
+#[derive(Clone)]
+struct Dirty {
+    flag: Arc<AtomicBool>,
+    bell: Bell,
+}
+
+impl Dirty {
+    fn mark(&self) {
+        self.flag.store(true, Ordering::Relaxed);
+        self.bell.ring();
+    }
+
+    fn take(&self) -> bool {
+        self.flag.swap(false, Ordering::Relaxed)
+    }
 }
 
 /// A connection to the session bus: the icons registered (ours, if we are the watcher; else read from
@@ -82,7 +102,7 @@ struct Tray<S> {
 struct Session {
     conn: Connection,
     ours: Option<Arc<Mutex<Vec<String>>>>,
-    dirty: Arc<AtomicBool>,
+    dirty: Dirty,
     /// Each icon's menu's object path, by the icon's key (for clicks).
     menus: HashMap<String, OwnedObjectPath>,
 }
@@ -95,7 +115,7 @@ impl<S: Sink> Service for Tray<S> {
 
     fn connect(&mut self) -> Result<Session, Error> {
         let conn = Connection::session()?;
-        let dirty = Arc::new(AtomicBool::new(true));
+        let dirty = Dirty { flag: Arc::new(AtomicBool::new(true)), bell: self.bell.clone() };
         let ours = serve_watcher(&conn, &dirty)?;
         follow_signals(&conn, &dirty)?;
         Ok(Session { conn, ours, dirty, menus: HashMap::new() })
@@ -104,7 +124,9 @@ impl<S: Sink> Service for Tray<S> {
     fn run_while_up(&mut self, mut s: Session, commands: &Receiver<TrayCommand>) -> Result<(), Ended<Error>> {
         let mut last = Changed::default();
         loop {
-            if s.dirty.swap(false, Ordering::Relaxed) {
+            if s.dirty.take() {
+                std::thread::sleep(SETTLE);
+                s.dirty.take();
                 let (items, menus) = read(&s.conn, &registered(&s)?);
                 s.menus = menus;
                 if let Some(items) = last.offer(items) {
@@ -113,15 +135,21 @@ impl<S: Sink> Service for Tray<S> {
                     self.sink.send(Event::Tray(items))?;
                 }
             }
-            match worker::next(commands, Some(SETTLE)) {
-                Next::Command(command) => {
-                    if let Err(e) = carry_out(&s, &command) {
-                        log::warn!("tray: {command:?}: {e}");
+            loop {
+                match commands.try_recv() {
+                    Ok(command) => {
+                        if let Err(e) = carry_out(&s, &command) {
+                            log::warn!("tray: {command:?}: {e}");
+                        }
                     }
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => return Ok(()),
                 }
-                Next::Elapsed => {}
-                Next::Disconnected => return Ok(()),
             }
+            // Asleep until a command or a signal.
+            let mut fds = [rustix::event::PollFd::from_borrowed_fd(self.bell.fd(), rustix::event::PollFlags::IN)];
+            let _ = rustix::event::poll(&mut fds, None);
+            self.bell.clear();
         }
     }
 
@@ -137,7 +165,7 @@ impl<S: Sink> Service for Tray<S> {
 /// The watcher, served where no one else is.
 struct Watcher {
     items: Arc<Mutex<Vec<String>>>,
-    dirty: Arc<AtomicBool>,
+    dirty: Dirty,
 }
 
 #[zbus::interface(name = "org.kde.StatusNotifierWatcher")]
@@ -158,7 +186,7 @@ impl Watcher {
                 items.push(key.clone());
             }
         }
-        self.dirty.store(true, Ordering::Relaxed);
+        self.dirty.mark();
         let _ = Self::status_notifier_item_registered(&emitter, &key).await;
     }
 
@@ -191,7 +219,7 @@ impl Watcher {
 }
 
 /// Serves the watcher, if no one else does: the icons registered with it; none if another has the name.
-fn serve_watcher(conn: &Connection, dirty: &Arc<AtomicBool>) -> Result<Option<Arc<Mutex<Vec<String>>>>, Error> {
+fn serve_watcher(conn: &Connection, dirty: &Dirty) -> Result<Option<Arc<Mutex<Vec<String>>>>, Error> {
     let items = Arc::new(Mutex::new(Vec::new()));
     conn.object_server().at(WATCHER_PATH, Watcher { items: items.clone(), dirty: dirty.clone() })?;
     match conn.request_name_with_flags(WATCHER, zbus::fdo::RequestNameFlags::DoNotQueue.into()) {
@@ -213,7 +241,7 @@ fn serve_watcher(conn: &Connection, dirty: &Arc<AtomicBool>) -> Result<Option<Ar
 
 /// Marks the icons to be read again at any signal of the watcher, an icon, a menu, or a name's owner
 /// changing (a program gone), on a thread of its own.
-fn follow_signals(conn: &Connection, dirty: &Arc<AtomicBool>) -> Result<(), Error> {
+fn follow_signals(conn: &Connection, dirty: &Dirty) -> Result<(), Error> {
     let dbus = DBusProxy::new(conn)?;
     for interface in [WATCHER, ITEM, MENU] {
         dbus.add_match_rule(zbus::MatchRule::builder().msg_type(zbus::message::Type::Signal).interface(interface)?.build())?;
@@ -226,7 +254,7 @@ fn follow_signals(conn: &Connection, dirty: &Arc<AtomicBool>) -> Result<(), Erro
     worker::detached("tray signals", move || {
         for message in messages.flatten() {
             if message.message_type() == zbus::message::Type::Signal {
-                dirty.store(true, Ordering::Relaxed);
+                dirty.mark();
             }
         }
     })
