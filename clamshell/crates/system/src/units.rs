@@ -42,6 +42,13 @@ trait Manager {
     fn list_units_by_patterns(&self, states: &[&str], patterns: &[&str]) -> zbus::Result<Vec<UnitRow>>;
     fn get_unit(&self, name: &str) -> zbus::Result<OwnedObjectPath>;
     fn stop_unit(&self, name: &str, mode: &str) -> zbus::Result<OwnedObjectPath>;
+    fn start_transient_unit(
+        &self,
+        name: &str,
+        mode: &str,
+        properties: &[(&str, zbus::zvariant::Value<'_>)],
+        aux: &[(&str, Vec<(&str, zbus::zvariant::Value<'_>)>)],
+    ) -> zbus::Result<OwnedObjectPath>;
 }
 
 #[zbus::proxy(interface = "org.freedesktop.systemd1.Scope", default_service = "org.freedesktop.systemd1", gen_async = false)]
@@ -178,6 +185,20 @@ fn unit_of_signal(message: &zbus::Message) -> Option<String> {
 /// Whether the user manager has this unit loaded (`name` with its suffix).
 fn loaded(manager: &ManagerProxy, name: &str) -> bool {
     manager.get_unit(name).is_ok()
+}
+
+/// Moves running processes into a new scope `unit` (in `slice`, if given), as a launch's own: for a
+/// program another program started (a Steam game, under Steam's launcher), so that it is counted,
+/// frozen and ended as the launch, apart from its starter. What they start later is in it too.
+pub fn adopt(unit: &str, slice: Option<&str>, pids: &[u32]) -> Result<(), Error> {
+    use zbus::zvariant::Value;
+    let manager = manager(&Connection::session()?)?;
+    let mut properties = vec![("PIDs", Value::from(pids.to_vec())), ("CollectMode", Value::from("inactive-or-failed"))];
+    if let Some(slice) = slice {
+        properties.push(("Slice", Value::from(slice)));
+    }
+    manager.start_transient_unit(unit, "fail", &properties, &[])?;
+    Ok(())
 }
 
 /// Waits for a scope to appear (within `appear`) and then to end. Checks once a second: for a game's

@@ -7,7 +7,9 @@
 //! - A Steam game is started with `steam -silent -applaunch <id>`: given to Steam if it runs; else Steam
 //!   is started with it as a launch of Steam's desktop entry (its scope, so it is on the dock and outlives
 //!   ClamShell; ClamShell finds it by its scope), without the game's environment (Steam's own would be
-//!   it, for every game it starts); it counts as running while Steam's launcher
+//!   it, for every game it starts). Once Steam's launcher for it runs, it and what it started are moved
+//!   into the launch's own scope (as any launch's, in the entry's slice): the game is counted, frozen and
+//!   ended apart from Steam; it counts as running while Steam's launcher
 //!   process for that app id (`reaper SteamLaunch AppId=<id>`) exists.
 //!
 //! Every play is added to the database (see [`crate::store`]) and reported, with its start and duration.
@@ -192,7 +194,7 @@ fn start(config: &Config, request: &Request) -> Result<Running, Error> {
     match &request.launch {
         Launch::Program { argv, .. } if argv.is_empty() => Err(Error::EmptyCommand),
         Launch::Program { argv, workdir } => start_program(config, request, argv.clone(), workdir.clone()),
-        Launch::Steam { appid } => start_steam(config, &request.env, *appid),
+        Launch::Steam { appid } => start_steam(config, request, *appid),
         Launch::None | Launch::Tool(_) => Err(Error::NoCommand),
     }
 }
@@ -225,7 +227,8 @@ fn start_program(config: &Config, request: &Request, argv: Vec<String>, workdir:
     })
 }
 
-fn start_steam(config: &Config, env: &[(String, String)], appid: u32) -> Result<Running, Error> {
+fn start_steam(config: &Config, request: &Request, appid: u32) -> Result<Running, Error> {
+    let env = &request.env;
     // (`-silent`: if Steam isn't running, it starts without its window, only the game showing.)
     let argv: Vec<String> = ["steam", "-silent", "-applaunch", &appid.to_string()].map(String::from).to_vec();
     if config.scope && !steam_client_running() {
@@ -248,6 +251,16 @@ fn start_steam(config: &Config, env: &[(String, String)], appid: u32) -> Result<
             return Err(Error::SteamDidNotStart);
         }
         thread::sleep(Duration::from_secs(1));
+    }
+    // The game in the launch's own scope, out of Steam's (see the module's doc).
+    if config.scope
+        && let Some(unit) = request.instance.unit()
+    {
+        let pids = with_descendants(&steam_launchers(&marker), &parents());
+        match crate::units::adopt(&unit, request.instance.slice().as_deref(), &pids) {
+            Ok(()) => log::info!("launcher: Steam app {appid} in {unit} ({} processes)", pids.len()),
+            Err(e) => log::warn!("launcher: Steam app {appid}: its own scope: {e}"),
+        }
     }
     Ok(Running::Steam(marker))
 }

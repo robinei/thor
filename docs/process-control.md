@@ -155,9 +155,24 @@ second); metrics (1/s, about 1.5 ms of CPU each: the graphs' history is kept whe
 shown, and the GPU's load walks every process's DRM clients); zbus' executor threads (the `blocking`
 crate: about 8 wakeups a second between them, no CPU, idle threads waking every 500 ms).
 
+## Tried on the desktop (AMD GPU, PipeWire, Steam)
+
+- A Steam game (Super Meat Boy, native) moved into a scope of its own while it ran (its launcher,
+  `reaper`, and its processes, by AttachProcesses' kin: a transient scope given their PIDs): Steam didn't
+  notice, and recorded the game's end as usual when the scope was stopped.
+- Frozen (systemctl freeze, the cgroup freezer) for 10 s: frozen in 37 ms, thawed in 5 ms; its sound
+  stream stayed open (not corked: PipeWire gets nothing meanwhile); the game went on after, drawing.
+- ClamShell launching it (the nested session, Steam already running): the game ran in the launch's own
+  scope, in the entry's slice; stopping that scope ended it, Steam recording the end.
+
+Still to try: a Proton game, an emulator, a game with online play, long freezes (minutes), and all of it
+on the Thor (Freedreno, FEX).
+
 ## Done
 
 - The modes above: in a desktop's session ClamShell adopts nothing it didn't start (its tray programs
   stay the desktop's; an icon of ClamShell's own launch still gives its entry a menu).
+- A Steam game ClamShell launches runs in the launch's own scope (moved there once Steam's launcher for
+  it runs): counted, frozen and ended apart from Steam.
 - The Android runner's adb server is ClamShell's own, on a port of its own (5039), not whatever server
   is on adb's usual port.
