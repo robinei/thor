@@ -2,7 +2,7 @@
 //! icon is a running entry's: the one whose scope its process is in (started by ClamShell); else, in the
 //! device's session (in a desktop's the program is the desktop's), the program runs as an entry found by
 //! its icon ([`Origin::Found`]): the library's desktop entry named as
-//! the icon's id (`desktop:steam` for Steam's `steam`), else one of its own (`tray:<key>`, its picture
+//! the icon's id (`desktop:steam` for Steam's `steam`), else one of its own (`tray:<id>`, its picture
 //! the icon). Its process (and those it started) is moved into a scope of ours, as a launch of the
 //! entry's: once systemd lists that, it runs as one ([`Origin::Ours`]), paused and ended by its slice
 //! (not one a systemd service runs: that stays the service's, its process signalled). Like any running entry it is on the dock with a workspace of its own: its windows (those of
@@ -95,7 +95,10 @@ impl State {
                 Some(g) => g.clone(),
                 None => {
                     let title = if t.title.is_empty() { &t.id } else { &t.title };
-                    Game { icon: t.icon.clone(), tool: true, ..Game::new(&format!("{PREFIX}{}", t.key), title) }
+                    // (Named by the icon's own id, the same each time the program runs, so a pin or a
+                    // setting stays its; its D-Bus name, if it has none.)
+                    let name = if t.id.is_empty() { &*t.key } else { t.id.as_str() };
+                    Game { icon: t.icon.clone(), tool: true, ..Game::new(&format!("{PREFIX}{name}"), title) }
                 }
             };
             // (Its entry runs already, found otherwise: its icon is that one's.)
@@ -252,8 +255,8 @@ mod tests {
         assert!(s.session().running("desktop:firefox").is_none());
         // One the library has no desktop file for: an entry of its own, named as the icon.
         s.apply(Event::Tray(vec![zelda_icon.clone(), item(":1.7/c", "thing", None)]));
-        assert_eq!(s.game("tray::1.7/c").map(|g| g.title.as_str()), Some("thing"));
-        assert!(s.dock().items().iter().any(|i| &*i.id == "tray::1.7/c"));
+        assert_eq!(s.game("tray:thing").map(|g| g.title.as_str()), Some("thing"), "named by its id, the same each run");
+        assert!(s.dock().items().iter().any(|i| &*i.id == "tray:thing"));
         // Moved into a scope of ours (systemd lists it): a launch, ended by its slice and when that ends.
         let (_, fx) = s.apply(Event::Tray(vec![zelda_icon.clone(), firefox_icon]));
         let instance = fx.iter().find_map(|e| if let Effect::Adopt { instance, .. } = e { Some(instance.clone()) } else { None }).unwrap();
