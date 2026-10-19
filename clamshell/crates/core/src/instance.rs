@@ -83,10 +83,11 @@ impl Instance {
     }
 
     /// Whether unit `unit` is a systemd service a program runs in as the service's (a portal, the polkit
-    /// agent: its windows and processes the service's, not moved): not the compositor's unit under uwsm
-    /// (`wayland-wm@sway.service`), where what sway's config starts runs until it is moved out.
+    /// agent: its windows and processes the service's, not moved): not sway's own unit (the device's under
+    /// uwsm, `wayland-wm@sway.service`; the desktop's nested one, `clamshell-nested-sway.service`), where
+    /// what sway's config starts runs until it is moved out.
     pub fn is_service(unit: &str) -> bool {
-        unit.ends_with(".service") && !unit.starts_with("wayland-wm@")
+        unit.ends_with(".service") && !unit.starts_with("wayland-wm@") && unit != "clamshell-nested-sway.service"
     }
 
     /// Whether `name` is one of ours (a workspace or scope ClamShell names, known kind or not).

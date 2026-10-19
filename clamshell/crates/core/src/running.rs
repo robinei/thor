@@ -534,10 +534,9 @@ impl State {
         let Some(r) = self.session.running(game) else {
             return vec![];
         };
-        // (Found, not moved into a scope of ours: its process, if it is its own; in a desktop's session
-        // the desktop's, not ended.)
+        // (Found, not moved into a scope of ours: its process, if it is its own.)
         if r.found() {
-            return match r.pid().filter(|_| self.device_session) {
+            return match r.pid() {
                 Some(pid) => vec![Effect::EndProcesses { pids: vec![pid], force }],
                 None => vec![],
             };

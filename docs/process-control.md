@@ -20,8 +20,12 @@ FreezeUnit and ThawUnit).
 ## Modes
 
 - Device session (`CLAMSHELL_SESSION=device`): ClamShell is the session and manages everything it can.
-- Guest (nested in a desktop's session): ClamShell manages what it started. The desktop's programs (its
-  tray icons, windows it didn't start) are shown on the dock at most, never moved or ended.
+- Guest (nested in a desktop's session, `tools/nested-session.sh`): as on the device, sway and ClamShell
+  are user units (`clamshell-nested-sway.service`, and `clamshell-nested.service` bound to it), and
+  stopping sway's unit stops what ClamShell launched (its slices, after sway). A window in ClamShell's
+  sway is that session's, so it is found and its program adopted as on the device. What stays the
+  device's own: the tray (on a desktop its icons are the desktop's programs': shown, never moved or
+  ended), sleep, and the hardware keys.
 
 ClamShell needs a systemd user manager: every launch runs in a scope of its own.
 

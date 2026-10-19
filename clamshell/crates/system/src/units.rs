@@ -1,11 +1,9 @@
 //! Our launches as systemd sees them: the user manager's scopes named `clamshell-run-*` (D-Bus,
 //! org.freedesktop.systemd1), listed at start and again whenever it signals a
 //! unit of ours coming, starting or going. This is the truth for what runs: a scope lives as long as any
-//! of its processes, whatever its windows do, and survives a restart of ClamShell.
-//!
-//! But not one of sway: a scope whose processes were started under a sway that is gone (its socket no
-//! longer there) can never show a window again. It is stopped (as Quit would: asked to end first) and
-//! not listed.
+//! of its processes, whatever its windows do, and survives a restart of ClamShell. A session's sway
+//! ending stops them all (the device's uwsm, the desktop's nested sway's unit: their slices are stopped
+//! after it).
 
 use std::convert::Infallible;
 use std::fmt;
@@ -130,42 +128,12 @@ fn with_manager<T>(call: impl FnOnce(&ManagerProxy) -> Result<T, Error>) -> Resu
     result
 }
 
-/// Our scopes that run (dock app instances and games), in the order of their names; those orphaned by a
-/// sway gone stopped instead (see the module's doc).
+/// Our scopes that run (dock app instances and games), in the order of their names.
 fn list(manager: &ManagerProxy) -> zbus::Result<Vec<Instance>> {
     let rows = manager.list_units_by_patterns(&[], &PATTERNS)?;
-    let mut names = Vec::new();
-    for row in rows.into_iter().filter(|row| !matches!(row.3.as_str(), "inactive" | "failed")) {
-        let group = ScopeProxy::builder(manager.inner().connection()).path(row.6.clone())?.build()?.control_group().unwrap_or_default();
-        if !group.is_empty() && orphaned(std::path::Path::new("/sys/fs/cgroup"), &group, std::path::Path::new("/proc")) {
-            log::warn!("{}: its sway is gone (it can show no window): stopped", row.0);
-            // (Thawed first, if it was suspended: frozen, it couldn't end.)
-            let unit = UnitProxy::builder(manager.inner().connection()).path(row.6.clone()).and_then(|b| b.build());
-            if let Ok(slice) = unit.and_then(|u| u.slice()) {
-                thaw_now(manager, &slice);
-            }
-            if let Err(e) = manager.stop_unit(&row.0, "replace") {
-                log::warn!("stopping {}: {e}", row.0);
-            }
-            continue;
-        }
-        names.push(row.0);
-    }
+    let mut names: Vec<String> = rows.into_iter().filter(|row| !matches!(row.3.as_str(), "inactive" | "failed")).map(|row| row.0).collect();
     names.sort();
     Ok(names.iter().filter_map(|n| Instance::from_unit(n)).collect())
-}
-
-/// Whether the scope in cgroup `group` (under `cgroups`) was started under a sway that is gone: its first
-/// process's SWAYSOCK (read under `proc`) is set and no longer there. Without one (not started under
-/// sway), or unreadable: not.
-fn orphaned(cgroups: &std::path::Path, group: &str, proc: &std::path::Path) -> bool {
-    let procs = std::fs::read_to_string(cgroups.join(group.trim_start_matches('/')).join("cgroup.procs")).unwrap_or_default();
-    let Some(pid) = procs.lines().next().filter(|p| !p.is_empty()) else {
-        return false;
-    };
-    let environ = std::fs::read(proc.join(pid).join("environ")).unwrap_or_default();
-    let sock = environ.split(|b| *b == 0).find_map(|v| v.strip_prefix(b"SWAYSOCK=")).map(|v| std::path::PathBuf::from(String::from_utf8_lossy(v).into_owned()));
-    sock.is_some_and(|s| !s.exists())
 }
 
 /// Sends [`Event::Units`] at start and after every change of our scopes; connects again if the bus goes.
@@ -551,25 +519,6 @@ pub fn appear(unit: &str, appear: Duration) -> Result<(), Error> {
 mod live {
     use super::*;
     use std::process::Command;
-
-    #[test]
-    #[allow(clippy::unwrap_used)]
-    fn a_scope_of_a_sway_gone_is_orphaned() {
-        let dir = std::env::temp_dir().join(format!("clamshell-orphans-{}", std::process::id()));
-        let (group, live) = (dir.join("cg/run.scope"), dir.join("sway.sock"));
-        std::fs::create_dir_all(&group).unwrap();
-        std::fs::write(&live, "").unwrap();
-        let scope = |pid: &str, environ: &str| {
-            std::fs::write(group.join("cgroup.procs"), format!("{pid}\n")).unwrap();
-            std::fs::create_dir_all(dir.join("proc").join(pid)).unwrap();
-            std::fs::write(dir.join("proc").join(pid).join("environ"), environ.replace('|', "\0")).unwrap();
-            orphaned(&dir.join("cg"), "/run.scope", &dir.join("proc"))
-        };
-        assert!(scope("7", &format!("HOME=/h|SWAYSOCK={}|", dir.join("gone.sock").display())), "its sway gone");
-        assert!(!scope("8", &format!("SWAYSOCK={}|", live.display())), "its sway there");
-        assert!(!scope("9", "HOME=/h|"), "not under sway");
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
 
     /// With a user session (a desktop): lists our scopes; nothing is changed (run by hand: `--ignored
     /// --nocapture`).

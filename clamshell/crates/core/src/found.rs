@@ -4,11 +4,11 @@
 //! (`window:<app id>`, its picture looked up by the app id in the icon themes, else the UI's app glyph); its windows (those with its app id, or of its process) go to its workspace,
 //! shown there if one was in front.
 //!
-//! In the device's session its process (and those it started) is moved into a scope of ours, as a
-//! launch of the entry's ([`State::adopt`]): then it is paused, quit and killed by its slice. Not a
-//! process that also has another entry's windows (a browser showing a file opened from the Files tab):
-//! Quit closes its windows, and that is all. In a desktop's session (a guest there) nothing is moved or
-//! ended.
+//! Its process (and those it started) is moved into a scope of ours, as a launch of the entry's
+//! ([`State::adopt`]): then it is paused, quit and killed by its slice. Not a process that also has
+//! another entry's windows (a browser showing a file opened from the Files tab): Quit closes its windows,
+//! and that is all. Also nested in a desktop's session: a window in ClamShell's sway is that session's
+//! (a desktop's own programs show theirs on the desktop, not there).
 //!
 //! A window a systemd service opened (a portal's file chooser, the password prompt) is none: it belongs
 //! to the program that asked for it, and is gone in seconds.
@@ -76,7 +76,7 @@ impl State {
 
     /// Entries just found (by windows or tray icons) run: their windows (but `taken`) to their
     /// workspaces, shown there if one was in front; an own entry's picture looked up by its app id; each
-    /// moved into a scope of ours (in the device's session).
+    /// moved into a scope of ours.
     pub(crate) fn start_found(&mut self, new: Vec<Running>, taken: &[i64]) -> Vec<Effect> {
         let session = &self.session;
         let mut effects = Vec::new();
@@ -94,7 +94,7 @@ impl State {
                 effects.push(Effect::FindIcon { entry: r.id.clone(), app_id: app_id.to_string() });
             }
         }
-        let adopt: Vec<(String, u32)> = new.iter().filter_map(|r| Some((r.key.clone(), r.pid()?))).filter(|_| self.device_session).collect();
+        let adopt: Vec<(String, u32)> = new.iter().filter_map(|r| Some((r.key.clone(), r.pid()?))).collect();
         self.session.running.extend(new);
         for (key, pid) in adopt {
             effects.push(self.adopt(&key, pid));
@@ -123,6 +123,7 @@ mod tests {
     fn what_sways_config_starts_under_uwsm_is_no_service() {
         assert!(Instance::is_service("xdg-desktop-portal-gtk.service"));
         assert!(!Instance::is_service("wayland-wm@sway.service"), "the compositor's unit: moved out of");
+        assert!(!Instance::is_service("clamshell-nested-sway.service"), "the desktop's nested sway's too");
         assert!(!Instance::is_service("session-2.scope"));
     }
 
@@ -203,11 +204,11 @@ mod tests {
     }
 
     #[test]
-    fn a_guest_moves_and_ends_none_of_the_desktops_programs() {
+    fn nested_in_a_desktop_a_window_found_is_adopted_too() {
+        // (A guest: a window in ClamShell's own sway is that session's, as on the device.)
         let mut s = state();
         let (_, fx) = s.apply(Event::Windows(vec![window(5, "org.x.Thing", 500, "app-thing.scope", true)]));
-        assert!(s.session().running("window:org.x.Thing").is_some(), "on the dock all the same");
-        assert!(!fx.iter().any(|e| matches!(e, Effect::Adopt { .. })), "{fx:?}");
-        assert_eq!(s.force_kill("window:org.x.Thing"), vec![]);
+        assert!(s.session().running("window:org.x.Thing").is_some(), "on the dock");
+        assert!(fx.iter().any(|e| matches!(e, Effect::Adopt { pid: 500, .. })), "{fx:?}");
     }
 }
