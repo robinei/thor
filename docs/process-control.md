@@ -134,7 +134,9 @@ What it showed:
 7. After some days of use: whether anything the dock doesn't show was wanted, or anything it shows
    wasn't.
 
-## Proposed
+## Done
 
-- The modes above: in a desktop's session ClamShell adopts nothing it didn't start. Not built yet:
-  today the nested session adopts the desktop's tray programs.
+- The modes above: in a desktop's session ClamShell adopts nothing it didn't start (its tray programs
+  stay the desktop's; an icon of ClamShell's own launch still gives its entry a menu).
+- The Android runner's adb server is ClamShell's own, on a port of its own (5039), not whatever server
+  is on adb's usual port.

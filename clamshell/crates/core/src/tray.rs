@@ -1,6 +1,7 @@
 //! Programs' tray icons (StatusNotifierItem, over D-Bus) and their menus, as the system reads them. An
-//! icon is a running entry's: the one whose scope its process is in (started by ClamShell); else the
-//! program runs as an entry found by its icon ([`Origin::Tray`]): the library's desktop entry named as
+//! icon is a running entry's: the one whose scope its process is in (started by ClamShell); else, in the
+//! device's session (in a desktop's the program is the desktop's), the program runs as an entry found by
+//! its icon ([`Origin::Tray`]): the library's desktop entry named as
 //! the icon's id (`desktop:steam` for Steam's `steam`), else one of its own (`tray:<key>`, its picture
 //! the icon). Like any running entry it is on the dock with a workspace of its own: its windows (those of
 //! the icon's process and of the processes it started) go there, wherever they open. A tap shows them,
@@ -73,8 +74,12 @@ impl State {
     }
 
     /// Entries found by tray icons: one for each icon of a program not started by ClamShell (its process
-    /// in no scope of ours) that isn't one's already.
+    /// in no scope of ours) that isn't one's already. Only in the device's session: in a desktop's, its
+    /// programs are the desktop's (ClamShell a guest there, managing what it started).
     pub(crate) fn follow_tray(&mut self) {
+        if !self.device_session {
+            return;
+        }
         let now = self.unix_secs;
         let games = &self.shelf.library().games;
         let mut new = Vec::new();
@@ -189,7 +194,7 @@ mod tests {
 
     #[test]
     fn a_program_with_a_tray_icon_runs_with_its_windows_on_its_workspace() {
-        let mut s = state();
+        let mut s = State::new(crate::Init { device_session: true, ..init() });
         let shelf = win(1, windows::SHELF_APP_ID, &Instance::Shelf.name(), true);
         s.apply(Event::Windows(vec![shelf.clone()]));
         // A running entry's (its process in the entry's scope): its menu.
@@ -239,5 +244,14 @@ mod tests {
         s.apply(Event::Tray(vec![zelda_icon, item(":1.7/c", "thing", None)]));
         assert_eq!(s.game("tray::1.7/c").map(|g| g.title.as_str()), Some("thing"));
         assert!(s.dock().items().iter().any(|i| &*i.id == "tray::1.7/c"));
+    }
+
+    #[test]
+    fn a_guest_in_a_desktops_session_adopts_none_of_its_programs() {
+        let mut s = state();
+        let zelda = launch(&mut s, "zelda-lttp");
+        s.apply(Event::Tray(vec![item(":1.5/a", "zelda3", zelda.unit().as_deref()), item(":1.9/b", "firefox", None)]));
+        assert!(s.session().running("desktop:firefox").is_none(), "the desktop's");
+        assert!(s.tray_of("zelda-lttp").is_some(), "its own launch's icon: its menu");
     }
 }
