@@ -435,8 +435,10 @@ impl State {
         for r in session.running.iter_mut().filter(|r| r.origin == Origin::Found) {
             if units.iter().any(|u| u.key() == Some(r.key.as_str())) {
                 r.origin = Origin::Ours;
-                // (Its windows are its scope's now.)
+                // (Its windows are its scope's now: not every window of that app id or process, which
+                // would keep another one of the program, started later, to it.)
                 r.pid = None;
+                r.app_id = None;
             }
         }
         for unit in units {

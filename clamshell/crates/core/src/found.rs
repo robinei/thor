@@ -137,6 +137,25 @@ mod tests {
     }
 
     #[test]
+    fn a_window_of_another_process_after_its_entry_closed_is_found_anew() {
+        let mut s = device();
+        let adopted = |fx: &[Effect]| fx.iter().find_map(|e| if let Effect::Adopt { instance, pid } = e { Some((instance.clone(), *pid)) } else { None });
+        let (_, fx) = s.apply(Event::Windows(vec![window(5, "foot", 500, "app-foot.scope", true)]));
+        let (instance, _) = adopted(&fx).unwrap();
+        s.apply(Event::Units(vec![instance.clone()]));
+        // Moved: its window's unit is ours now. Closed: its scope still listed a moment.
+        s.apply(Event::Windows(vec![Window { unit: instance.unit(), ..window(5, "foot", 500, "app-foot.scope", true) }]));
+        s.apply(Event::Windows(vec![]));
+        // Another foot (another process) before systemd's list says the scope is gone.
+        let other = window(6, "foot", 600, "session-3.scope", true);
+        let (_, fx) = s.apply(Event::Windows(vec![other.clone()]));
+        let (_, more) = s.apply(Event::Units(vec![]));
+        let (_, again) = s.apply(Event::Windows(vec![other]));
+        let all: Vec<Effect> = fx.into_iter().chain(more).chain(again).collect();
+        assert_eq!(adopted(&all).map(|(_, pid)| pid), Some(600), "{all:?}");
+    }
+
+    #[test]
     fn a_services_window_is_no_entry() {
         let mut s = device();
         let (_, fx) = s.apply(Event::Windows(vec![window(5, "xdg-desktop-portal-gtk", 300, "xdg-desktop-portal-gtk.service", true)]));
