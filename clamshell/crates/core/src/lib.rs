@@ -829,9 +829,10 @@ impl State {
 
     fn on_game(&mut self, event: GameEvent) -> (Dirty, Vec<Effect>) {
         let mut effects = match event {
+            // (Its window may be there already, before its start was told: the rules for its windows.)
             GameEvent::Started(game) => {
                 self.started(game);
-                vec![]
+                self.follow_window_rules()
             }
             GameEvent::Ended(game) => self.ended(&game),
             GameEvent::Position { game, position } => {

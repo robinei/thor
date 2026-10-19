@@ -343,6 +343,17 @@ mod tests {
         assert!(!fx.contains(&Effect::Window(WindowCommand::Down(5))));
         let fx = s.apply(Event::Windows(vec![win(5, GAME, "Top", true, false), win(6, GAME, "Bottom", false, false)])).1;
         assert!(!fx.contains(&Effect::Window(WindowCommand::Down(6))), "asked once");
+        // Its window there before its start was told (the launcher tells it once the scope is there):
+        // sent down as the start comes.
+        let mut s = state();
+        s.window_rules = WindowRules::from_list(rules.list().to_vec());
+        let fx = s.apply(Event::Windows(vec![win(8, GAME, "Bottom", true, false)])).1;
+        assert!(!fx.iter().any(|e| matches!(e, Effect::Window(WindowCommand::Down(_)))), "no entry yet: {fx:?}");
+        s.session.running.push(Running { launches: 0, ..running("melonds", "melonds_1") });
+        let fx = s.apply(crate::GameEvent::Started("melonds".into()).into()).1;
+        assert!(fx.contains(&Effect::Window(WindowCommand::Down(8))), "{fx:?}");
+        let mut s = emulator();
+        key(&mut s, DeviceKey::WindowDown);
         // Another game's window of that title: not its rule.
         s.session.running.push(running("other", "other_2"));
         let fx = s.apply(Event::Windows(vec![win(7, "clamshell-run-other_2-5-2.scope", "Bottom", false, false)])).1;
