@@ -504,6 +504,10 @@ fn render_group(mut state: State, Group { start, shots }: Group, now: u64, dir: 
     for event in start {
         state.apply(event);
     }
+    // (What the setting up said, "Starting …" for its launches, gone: the clock past the notice, and
+    // back.)
+    state.apply(Event::Tick { unix_secs: now + 5 });
+    state.apply(Event::Tick { unix_secs: now });
     for Shot { name, screen, before } in shots {
         for event in before {
             state.apply(event);

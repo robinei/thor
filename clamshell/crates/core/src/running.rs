@@ -58,8 +58,6 @@ pub enum Origin {
 
 /// How long a launch that handed over waits for its window (seconds).
 pub const HANDOFF: u64 = 15;
-/// A launch without a window this long after it started says it is starting (seconds).
-pub const STARTING_AFTER: u64 = 3;
 
 /// An entry that runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -77,8 +75,6 @@ pub struct Running {
     /// A window of it has been there (since it started, or since it went on by its windows): before, it
     /// is starting.
     pub(crate) seen: bool,
-    /// Its slow start said (see [`STARTING_AFTER`]).
-    pub(crate) starting_said: bool,
     /// Its entry as it was when it started: the dock shows it by this if it leaves the library while it
     /// runs (its file renamed or deleted).
     pub entry: Option<Box<crate::Entry>>,
@@ -88,7 +84,7 @@ impl Running {
     /// Entry `game` running as `origin` since `start` (no launch followed, no window seen yet).
     pub(crate) fn of(game: &Entry, origin: Origin, start: u64) -> Running {
         let entry = Some(Box::new(game.clone()));
-        Running { id: game.id.clone(), key: game.key.clone(), origin, app_id: None, start, launches: 0, seen: false, starting_said: false, entry }
+        Running { id: game.id.clone(), key: game.key.clone(), origin, app_id: None, start, launches: 0, seen: false, entry }
     }
 
     /// Found: its own process, if it has one (see [`Origin::Found`]).
@@ -162,7 +158,13 @@ impl State {
         if self.session.running(&game).is_some() {
             return self.show_running(&game);
         }
-        self.launch(game)
+        let title = self.shelf.game(&game).map(|g| g.title.clone());
+        let effects = self.launch(game);
+        // (Said at once: a start may take a while, Android's first, a Steam game's, Proton's setup.)
+        if let Some(title) = title.filter(|_| effects.iter().any(|e| matches!(e, Effect::Launch { .. }))) {
+            self.notify(crate::hardware::NoticeKind::Starting(title));
+        }
+        effects
     }
 
     /// Running entry `id` shown: its workspace, if a window of it is there to see; else what is in front

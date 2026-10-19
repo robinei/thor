@@ -58,7 +58,7 @@ pub enum NoticeKind {
     NoWindow(String),
     /// A launch didn't start (its entry's title; why is in the log).
     NotStarted(String),
-    /// A launch has no window yet a few seconds on (its entry's title): it is starting.
+    /// A launch asked for (its entry's title): it is starting.
     Starting(String),
     /// The library read anew has problems (the first, and how many: all are listed on the Tools tab's
     /// Rescan library).
