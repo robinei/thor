@@ -49,7 +49,13 @@ pub enum IdleEvent {
     /// The app shown keeps the screen on in a way the compositor doesn't hear (Android's), as its
     /// runner answered when asked: as input.
     KeptAwake,
+    /// Sleep was due, but the machine was busy (something downloading, building): not slept; asked
+    /// again after [`SLEEP_RETRY`].
+    Busy,
 }
+
+/// How long sleep waits after the machine was found busy.
+const SLEEP_RETRY: u64 = 300;
 
 /// The compositor's word, where it gives one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -73,6 +79,8 @@ pub struct Idle {
     woke_at: Option<u64>,
     /// The start of the idle time a runner was last asked about (once each).
     asked_for: Option<u64>,
+    /// No sleep before this (epoch seconds): the machine was busy when it was due.
+    sleep_not_before: u64,
 }
 
 /// What the idle times are, and whether sleeping is allowed now.
@@ -106,6 +114,7 @@ impl Idle {
             IdleEvent::DeviceInput | IdleEvent::KeptAwake => self.last_input = now,
             IdleEvent::CompositorQuiet => self.compositor = Compositor::QuietSince(now.saturating_sub(NOTIFY_AFTER)),
             IdleEvent::CompositorInput => self.compositor = Compositor::Busy,
+            IdleEvent::Busy => self.sleep_not_before = now + SLEEP_RETRY,
         }
     }
 
@@ -159,7 +168,7 @@ impl Idle {
         let Some(t) = self.idle_for(now) else {
             return Stage::Awake;
         };
-        if policy.may_sleep && policy.sleep.is_some_and(|sleep| t >= sleep) {
+        if policy.may_sleep && policy.sleep.is_some_and(|sleep| t >= sleep) && now >= self.sleep_not_before {
             return Stage::Asleep;
         }
         match policy.screen_off {
@@ -354,6 +363,21 @@ mod tests {
         s.apply(Event::Tick { unix_secs: 1000 });
         s.apply(Event::Idle(IdleEvent::Watching(true)));
         assert!(!s.apply(Event::Tick { unix_secs: 1260 }).1.contains(&ask));
+    }
+
+    #[test]
+    fn a_busy_machine_sleeps_later() {
+        use crate::Event;
+        let mut s = State::new(crate::Init { device_session: true, ..crate::testkit::init() });
+        s.apply(Event::Tick { unix_secs: 1000 });
+        s.apply(Event::Idle(IdleEvent::Watching(true)));
+        assert!(s.apply(Event::Tick { unix_secs: 1900 }).1.contains(&Effect::Sleep));
+        // Busy (a download): not slept; the screens stay off; asked again after the retry.
+        let fx = s.apply(Event::Idle(IdleEvent::Busy)).1;
+        assert!(!fx.contains(&Effect::Screens(true)), "{fx:?}");
+        assert_eq!(s.idle().stage(), Stage::Off);
+        assert!(!s.apply(Event::Tick { unix_secs: 1900 + SLEEP_RETRY - 1 }).1.contains(&Effect::Sleep));
+        assert!(s.apply(Event::Tick { unix_secs: 1900 + SLEEP_RETRY }).1.contains(&Effect::Sleep));
     }
 
     #[test]

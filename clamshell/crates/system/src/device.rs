@@ -75,7 +75,16 @@ pub fn spawn(screenshots: Option<PathBuf>, sink: impl Sink) -> io::Result<Worker
                         return;
                     }
                 }
-                Command::Sleep => sleep(),
+                // (Busy: something works on that the user left it to, a download, a build.)
+                Command::Sleep => match busy() {
+                    Some(why) => {
+                        log::info!("sleep: not now, {why}");
+                        if sink.send(Event::Idle(clamshell_core::idle::IdleEvent::Busy)).is_err() {
+                            return;
+                        }
+                    }
+                    None => sleep(),
+                },
                 Command::AskAwake(argv) => {
                     if awake(&argv) && sink.send(Event::Idle(clamshell_core::idle::IdleEvent::KeptAwake)).is_err() {
                         return;
@@ -153,6 +162,53 @@ pub(crate) fn civil(secs: u64) -> (i64, i64, i64, u64, u64, u64) {
 }
 
 /// Sleep: suspend, then hibernate after a while (logind's HibernateDelaySec) if it can, else suspend.
+/// Above this much CPU (cores) for the user's processes, or this many bytes a second on the network, the
+/// machine is busy: not put to sleep.
+const BUSY_CPU: f64 = 0.3;
+const BUSY_NET: f64 = 100_000.0;
+
+/// Whether the machine is busy now (looked at for a few seconds): the user's processes' CPU (the user
+/// manager's cgroup, all of them: ClamShell's launches, Steam), or the network's traffic; why.
+fn busy() -> Option<String> {
+    let user = user_cgroup();
+    let cpu = || {
+        user.as_ref()
+            .and_then(|d| crate::sys::text(d.join("cpu.stat")))
+            .and_then(|s| s.lines().find_map(|l| l.strip_prefix("usage_usec ")?.trim().parse::<u64>().ok()))
+    };
+    let net = || {
+        let text = crate::sys::text("/proc/net/dev").unwrap_or_default();
+        // (Each interface but loopback: received bytes, the 1st number, and sent, the 9th.)
+        text.lines()
+            .skip(2)
+            .filter_map(|l| l.split_once(':'))
+            .filter(|(name, _)| name.trim() != "lo")
+            .map(|(_, v)| {
+                let n: Vec<u64> = v.split_whitespace().filter_map(|x| x.parse().ok()).collect();
+                n.first().copied().unwrap_or(0) + n.get(8).copied().unwrap_or(0)
+            })
+            .sum::<u64>()
+    };
+    let (cpu0, net0, t0) = (cpu(), net(), std::time::Instant::now());
+    std::thread::sleep(std::time::Duration::from_secs(3));
+    let (cpu1, net1) = (cpu(), net());
+    let secs = t0.elapsed().as_secs_f64();
+    let cores = cpu0.zip(cpu1).map_or(0.0, |(a, b)| b.saturating_sub(a) as f64 / 1e6 / secs);
+    let rate = net1.saturating_sub(net0) as f64 / secs;
+    if cores > BUSY_CPU {
+        return Some(format!("{cores:.1} cores in use"));
+    }
+    (rate > BUSY_NET).then(|| format!("{:.0} kB/s on the network", rate / 1000.0))
+}
+
+/// The user manager's cgroup (user@<uid>.service): the cgroup ClamShell runs in, up to it.
+fn user_cgroup() -> Option<PathBuf> {
+    let own = crate::sys::text("/proc/self/cgroup")?;
+    let path = own.lines().find_map(|l| l.strip_prefix("0::"))?;
+    let end = path.find(".service/").map(|i| i + ".service".len())?;
+    Some(PathBuf::from("/sys/fs/cgroup").join(path.get(..end)?.trim_start_matches('/')))
+}
+
 fn sleep() {
     let slept = dbus::system(None).and_then(|conn| {
         let logind = dbus::default_proxy::<ManagerProxy>(&conn)?;
@@ -249,5 +305,16 @@ mod tests {
         assert_eq!(timestamp(0), "19700101-000000");
         assert_eq!(timestamp(1_792_060_325), "20261015-103205");
         assert_eq!(timestamp(951_782_400), "20000229-000000", "a leap day");
+    }
+}
+
+#[cfg(test)]
+mod live {
+    /// On a desktop: whether the machine is busy now, and the cgroup looked at (run by hand: `--ignored
+    /// --nocapture`).
+    #[test]
+    #[ignore]
+    fn busy_now() {
+        println!("{:?}: {:?}", super::user_cgroup(), super::busy());
     }
 }
