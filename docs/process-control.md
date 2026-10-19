@@ -194,7 +194,7 @@ on the Thor (Freedreno, FEX).
 - Android in the background: its apps share one container, frozen and thawed whole through Waydroid's
   container service (no root), by the Android runner's `pause` and `resume`; Pauses hidden set for the
   runner freezes it once none of its apps has been shown for the grace. Android also suspends itself once
-  its display is off (Waydroid then freezes the container). Open: a hidden Waydroid window is lost (see
-  android.md).
+  its display is off (Waydroid then freezes the container). Its windows are kept as they are hidden and shown by
+  ClamShell's Wayland filter (see android.md).
 - The Android runner's adb server is ClamShell's own, on a port of its own (5039), not whatever server
   is on adb's usual port.
