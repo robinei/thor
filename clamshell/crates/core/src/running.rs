@@ -82,14 +82,6 @@ pub struct Running {
 }
 
 impl Running {
-    /// Steam's id, if Steam runs it.
-    pub fn steam_appid(&self) -> Option<u32> {
-        match self.entry.as_deref().map(|g| &g.launch) {
-            Some(Launch::Steam { appid }) => Some(*appid),
-            _ => None,
-        }
-    }
-
     /// Whether `w` is one of its windows by its app id.
     pub fn owns(&self, w: &crate::windows::Window) -> bool {
         self.app_id.as_deref() == Some(w.app_id.as_str())
@@ -310,7 +302,9 @@ impl State {
 
     /// After the windows changed, and every second (`known`: the windows there before):
     /// - a window with the app id of a library entry that doesn't run starts it, shown (see
-    ///   [`app_id_of`]: a game started in Steam, an Android app opened by another);
+    ///   [`app_id_of`]: an Android app opened by another, running by its windows; a game started in
+    ///   Steam, as a launch of it: the launcher finds it running and moves it into the launch's scope, so
+    ///   it is paused and ended as any launch);
     /// - a running entry's windows found by app id go to its workspace;
     /// - a new window of no launch of ours goes to the latest browsed file waiting for one, shown;
     /// - one left on the landing workspace that is no entry's goes to the main screen;
@@ -318,10 +312,11 @@ impl State {
     pub(crate) fn follow_windows(&mut self, known: &[i64]) -> Vec<Effect> {
         let now = self.unix_secs;
         let mut effects = Vec::new();
-        // Started elsewhere.
+        // Started elsewhere. (A window's app id says whose it is before its scope does: a game Steam
+        // started is in Steam's scope.)
         let session = &self.session;
         let mut new: Vec<&Game> = Vec::new();
-        for w in session.windows.iter().filter(|w| session.running_of(w).is_none()) {
+        for w in session.windows.iter().filter(|w| !session.running.iter().any(|r| r.owns(w))) {
             let games = &self.shelf.library().games;
             let Some(g) = games.iter().find(|g| app_id_of(g).as_deref() == Some(w.app_id.as_str())) else {
                 continue;
@@ -330,6 +325,8 @@ impl State {
                 new.push(g);
             }
         }
+        let (steam, new): (Vec<&Game>, Vec<&Game>) = new.into_iter().partition(|g| matches!(g.launch, Launch::Steam { .. }));
+        let steam: Vec<Arc<str>> = steam.into_iter().map(|g| g.id.clone()).collect();
         let new: Vec<Running> = new
             .into_iter()
             .map(|g| Running {
@@ -350,6 +347,9 @@ impl State {
             self.bottom.woken = false;
         }
         self.session.running.extend(new);
+        for game in steam {
+            effects.extend(self.launch(game));
+        }
         // Windows found by app id or by process to their entry's workspace.
         let session = &self.session;
         for r in session.running.iter().filter(|r| r.outside()) {
@@ -378,8 +378,10 @@ impl State {
             taken = Some(r.id.clone());
         }
         // Left on the landing workspace (its entry gone from the library since its rule was given).
+        // (Not one whose entry's launch is starting: a Steam game found running, see above.)
+        let starting = |w: &crate::windows::Window| session.launching.iter().any(|l| l.app_id.as_deref() == Some(w.app_id.as_str()));
         if taken.is_none() {
-            for w in session.windows.iter().filter(|w| w.workspace == landing && session.running_of(w).is_none()) {
+            for w in session.windows.iter().filter(|w| w.workspace == landing && session.running_of(w).is_none() && !starting(w)) {
                 effects.push(Effect::Window(WindowCommand::Up { window: w.id, to: None }));
             }
         }
@@ -503,8 +505,8 @@ impl State {
         thawed.into_iter().chain(self.end(game, true)).collect()
     }
 
-    /// Ending a running entry: its slice stopped (`force`: killed), or (Steam's) the processes under
-    /// Steam's launcher for it killed; and its runner's `stop` command run (`{id}` its app id).
+    /// Ending a running entry: its slice stopped (`force`: killed; a Steam game's too, moved into its
+    /// launch's scope), and its runner's `stop` command run (`{id}` its app id).
     fn end(&self, game: &str, force: bool) -> Vec<Effect> {
         let Some(r) = self.session.running(game) else {
             return vec![];
@@ -513,10 +515,7 @@ impl State {
         if let (Origin::Tray, Some(pid)) = (r.origin, r.pid) {
             return vec![Effect::EndProcesses { pids: vec![pid], force }];
         }
-        let mut effects = vec![match r.steam_appid() {
-            Some(appid) => Effect::EndSteam { appid },
-            None => Effect::EndRun { key: r.key.clone(), force },
-        }];
+        let mut effects = vec![Effect::EndRun { key: r.key.clone(), force }];
         effects.extend(self.stop_of(game));
         effects
     }
@@ -630,23 +629,39 @@ mod tests {
     }
 
     #[test]
-    fn a_game_steam_started_runs_beside_and_ends_with_its_windows() {
+    fn a_game_steam_started_is_followed_as_a_launch_beside_the_others() {
         let mut s = steam_ff6();
         s.apply(Event::Tick { unix_secs: 1000 });
         let zelda = launch(&mut s, "zelda-lttp").workspace();
         let landing = Instance::Landing.name();
-        let (_, fx) = s.apply(Event::Windows(vec![win(1, "zelda3", &zelda, false), win(7, "steam_app_620", &landing, true)]));
+        let windows = vec![win(1, "zelda3", &zelda, false), win(7, "steam_app_620", &landing, true)];
+        let (_, fx) = s.apply(Event::Windows(windows.clone()));
+        // Found by its window: launched (the launcher finds it running and moves it into the launch's
+        // scope), its window left where it is meanwhile.
+        assert!(launches(&fx, "ff6"), "{fx:?}");
+        assert!(!fx.iter().any(|e| matches!(e, Effect::Window(WindowCommand::Up { window: 7, .. }))), "{fx:?}");
+        assert!(!launches(&s.apply(Event::Windows(windows)).1, "ff6"), "once");
+        s.apply(GameEvent::Started("ff6".into()).into());
         assert_eq!(s.session().running_entries().len(), 2, "the other keeps running");
+        let (_, fx) = s.apply(Event::Windows(vec![win(1, "zelda3", &zelda, false), win(7, "steam_app_620", &landing, true)]));
         let ff6 = Instance::workspace_of(&key("ff6"));
         assert!(fx.contains(&Effect::Window(WindowCommand::Move { windows: vec![7], to: ff6 })), "{fx:?}");
-        assert_eq!(s.force_kill("ff6"), vec![Effect::EndSteam { appid: 620 }], "its processes, under Steam's launcher");
+        // Ended as any launch: its slice.
+        assert_eq!(s.force_kill("ff6"), vec![Effect::EndRun { key: key("ff6"), force: true }]);
         s.apply(Event::Tick { unix_secs: 1600 });
-        let (_, fx) = s.apply(Event::Windows(vec![win(1, "zelda3", &zelda, true)]));
-        assert_eq!(fx.first(), Some(&Effect::RecordPlay { game: "ff6".into(), start: 1000, duration: 600 }));
+        s.apply(Event::Windows(vec![win(1, "zelda3", &zelda, true)]));
+        let (_, fx) = s.apply(GameEvent::Ended("ff6".into()).into());
+        assert!(fx.contains(&Effect::RecordPlay { game: "ff6".into(), start: 1000, duration: 600 }), "{fx:?}");
         assert!(s.session().running("ff6").is_none());
         // A Steam game the library doesn't have isn't one.
-        s.apply(Event::Windows(vec![win(1, "zelda3", &zelda, false), win(9, "steam_app_1", &landing, true)]));
+        let (_, fx) = s.apply(Event::Windows(vec![win(1, "zelda3", &zelda, false), win(9, "steam_app_1", &landing, true)]));
+        assert!(!fx.iter().any(|e| matches!(e, Effect::Launch { .. })), "{fx:?}");
         assert_eq!(s.session().running_entries().len(), 1, "zelda only");
+        // Started by a Steam of ours: in Steam's scope, but the app id says whose it is.
+        let steam = Instance::Run { key: key("desktop:steam"), secs: 1, n: 0 };
+        let in_steam = Window { unit: steam.unit(), ..win(8, "steam_app_620", &steam.workspace(), true) };
+        let (_, fx) = s.apply(Event::Windows(vec![win(1, "zelda3", &zelda, false), in_steam]));
+        assert!(launches(&fx, "ff6"), "{fx:?}");
     }
 
     #[test]

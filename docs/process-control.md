@@ -185,7 +185,10 @@ Still to try: a game with online play, and all of it on the Thor (Freedreno, FEX
 - A Steam game ClamShell launches runs in the launch's own scope (moved there once Steam's launcher for
   it runs, and any later one for it as long as it runs: a fresh Steam may run Proton's install scripts
   first, under a launcher of their own, then the game): counted, frozen and ended apart from Steam. It
-  counts as ended once no launcher of Steam's for it has run for 10 s. Steam's Stop and its Running
+  counts as ended once no launcher of Steam's for it has run for 10 s. A game started in Steam itself is
+  the same: its window (its app id says whose it is, though it is in Steam's scope) makes it a launch,
+  which finds it running and moves it in, so it too is paused and ended as any launch (its slice);
+  nothing is Steam's own way any more. Steam's Stop and its Running
   state work as before (Steam finds the game by its launcher process, not by its cgroup).
 - In the background, a setting (All, a runner, an item): Runs hidden (default), Pauses hidden (its slice
   frozen once it has windows and none has been shown for 3 s; thawed when shown, before Quit, Force kill

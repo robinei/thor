@@ -132,7 +132,6 @@ impl Handles {
                 self.bluetooth.send(bluetooth::Request::Do(command.clone()));
             }
             Effect::EndRun { key, force } => launcher::end_run(key, *force),
-            Effect::EndSteam { appid } => launcher::end_steam(*appid),
             Effect::RunnerCommand(argv) => launcher::runner_command(argv),
             Effect::EndProcesses { pids, force } => launcher::end_processes(pids, *force),
             Effect::Freeze { slice, frozen } => crate::units::freeze(slice.clone(), *frozen),

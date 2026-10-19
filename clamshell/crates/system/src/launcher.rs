@@ -10,7 +10,8 @@
 //!   into the launch's own scope (as any launch's, in the entry's slice), and so is any later one for it
 //!   (Steam may run a setup first, then the game): the game is counted, frozen and ended apart from
 //!   Steam; it counts as running while Steam's launcher process for that app id (`reaper SteamLaunch
-//!   AppId=<id>`) exists, or did within [`STEAM_GAP`].
+//!   AppId=<id>`) exists, or did within [`STEAM_GAP`]. A game started in Steam itself is launched by the
+//!   state when its window comes: found running, it is followed the same way, not started.
 //!
 //! Each launch's start, its end (or that it couldn't start) is reported; whether its entry still runs, and
 //! its play, are the state's (by the entry's scopes too: see `clamshell_core::running`).
@@ -242,6 +243,28 @@ fn start_program(config: &Config, request: &Request, argv: Vec<String>, workdir:
 }
 
 fn start_steam(config: &Config, request: &Request, appid: u32) -> Result<Running, Error> {
+    let marker = format!("AppId={appid}");
+    // Started in Steam (found by its window): followed as it is.
+    if steam_running(&marker) {
+        log::info!("launcher: Steam's {marker} runs: following it");
+    } else {
+        ask_steam(config, request, appid)?;
+        let asked = Instant::now();
+        while !steam_running(&marker) {
+            if asked.elapsed() > STEAM_START {
+                return Err(Error::SteamDidNotStart);
+            }
+            thread::sleep(Duration::from_secs(1));
+        }
+    }
+    // The game in the launch's own scope, out of Steam's (see the module's doc), as long as it runs.
+    let (unit, slice) = (request.instance.unit().ok_or(Error::NoScope)?, request.instance.slice());
+    gather(&marker, &unit, slice.as_deref(), &steam_launchers(&marker));
+    Ok(Running::Steam { marker, unit, slice })
+}
+
+/// Asks Steam to start a game: Steam started for it if it isn't running.
+fn ask_steam(config: &Config, request: &Request, appid: u32) -> Result<(), Error> {
     let env = &request.env;
     // (`-silent`: if Steam isn't running, it starts without its window, only the game showing.)
     let argv: Vec<String> = ["steam", "-silent", "-applaunch", &appid.to_string()].map(String::from).to_vec();
@@ -257,18 +280,7 @@ fn start_steam(config: &Config, request: &Request, appid: u32) -> Result<Running
         steam.args(argv.iter().skip(1)).envs(env.iter().map(|(k, v)| (k, v))).stdin(Stdio::null()).process_group(0);
         job::reap(steam.spawn()?);
     }
-    let marker = format!("AppId={appid}");
-    let asked = Instant::now();
-    while !steam_running(&marker) {
-        if asked.elapsed() > STEAM_START {
-            return Err(Error::SteamDidNotStart);
-        }
-        thread::sleep(Duration::from_secs(1));
-    }
-    // The game in the launch's own scope, out of Steam's (see the module's doc), as long as it runs.
-    let (unit, slice) = (request.instance.unit().ok_or(Error::NoScope)?, request.instance.slice());
-    gather(&marker, &unit, slice.as_deref(), &steam_launchers(&marker));
-    Ok(Running::Steam { marker, unit, slice })
+    Ok(())
 }
 
 /// Steam's launchers for a game (`launchers`, `marker` in their command line) and what they started,
@@ -328,20 +340,6 @@ pub fn end_run(key: &str, force: bool) {
     if let Err(e) = ended {
         log::warn!("end: {e}");
     }
-}
-
-/// Ends a game Steam runs (in Steam's scope, not ours): Steam's launcher for its app id and every process
-/// under it (Proton's helpers too, which no window belongs to), killed.
-pub fn end_steam(appid: u32) {
-    let launchers = steam_launchers(&format!("AppId={appid}"));
-    let tree = with_descendants(&launchers, &parents());
-    if tree.is_empty() {
-        return;
-    }
-    log::info!("Steam app {appid}: killing processes {tree:?}");
-    let args: Vec<String> = std::iter::once("-KILL".to_owned()).chain(tree.iter().map(u32::to_string)).collect();
-    let args: Vec<&str> = args.iter().map(String::as_str).collect();
-    command::run("kill", &args);
 }
 
 /// Processes asked to end (SIGTERM), or killed: a program not started by ClamShell.

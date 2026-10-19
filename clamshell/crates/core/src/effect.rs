@@ -51,11 +51,6 @@ pub enum Effect {
         key: String,
         force: bool,
     },
-    /// End a game Steam runs (in Steam's scope, not ours): every process under Steam's launcher for its
-    /// app id, killed.
-    EndSteam {
-        appid: u32,
-    },
     /// A runner's command: its `stop`, for an entry that runs in another program's processes; its
     /// `pause` or `resume` (see [`crate::background`]).
     RunnerCommand(Vec<String>),
