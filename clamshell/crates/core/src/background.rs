@@ -32,18 +32,63 @@ use crate::settings::Setting;
 /// quickly doesn't pause it.
 pub const GRACE: u64 = 3;
 
-/// What the session keeps for it.
+/// What the session keeps for it: entries' slices (by key) and runners (by their key), each paused once
+/// out of use for the grace.
 #[derive(Debug, Default)]
 pub(crate) struct Background {
-    /// Entries frozen, by key.
-    pub(crate) paused: Vec<String>,
-    /// Entries whose windows are all hidden, and since when (epoch seconds).
-    pub(crate) hidden: Vec<(Arc<str>, u64)>,
-    /// The runners whose entries are paused together (from the library), those paused, and those whose
-    /// entries are all hidden, since when.
+    pub(crate) entries: Pauses,
+    /// The runners whose entries are paused together (from the library).
     pub(crate) runners: Vec<RunnerOf>,
-    pub(crate) runners_paused: Vec<Arc<str>>,
-    pub(crate) runners_hidden: Vec<(Arc<str>, u64)>,
+    pub(crate) runner_pauses: Pauses,
+}
+
+/// Things paused while out of use (an entry's slice, a runner's container): since when each has been out
+/// of use, and those paused.
+#[derive(Debug, Default)]
+pub(crate) struct Pauses {
+    unused: Vec<(Arc<str>, u64)>,
+    paused: Vec<Arc<str>>,
+}
+
+impl Pauses {
+    /// `key`, in use now or not: `Some(true)`: to be paused (out of use for the grace); `Some(false)`: to
+    /// be resumed (paused, in use again).
+    fn follow(&mut self, key: &Arc<str>, in_use: bool, now: u64) -> Option<bool> {
+        if in_use {
+            return self.resume(key).then_some(false);
+        }
+        let since = match self.unused.iter().find(|(k, _)| k == key) {
+            Some((_, t)) => *t,
+            None => {
+                self.unused.push((key.clone(), now));
+                now
+            }
+        };
+        if self.paused.contains(key) || now.saturating_sub(since) < GRACE {
+            return None;
+        }
+        self.paused.push(key.clone());
+        Some(true)
+    }
+
+    /// `key` in use: whether it was paused (it is to be resumed). Paused again only once out of use for
+    /// the grace anew.
+    fn resume(&mut self, key: &str) -> bool {
+        self.unused.retain(|(k, _)| &**k != key);
+        let was = self.paused.iter().any(|k| &**k == key);
+        self.paused.retain(|k| &**k != key);
+        was
+    }
+
+    fn is_paused(&self, key: &str) -> bool {
+        self.paused.iter().any(|k| &**k == key)
+    }
+
+    /// Only these keys followed (the others' entries ended: forgotten, not resumed).
+    fn keep(&mut self, keys: &[Arc<str>]) {
+        self.unused.retain(|(k, _)| keys.contains(k));
+        self.paused.retain(|k| keys.contains(k));
+    }
 }
 
 impl State {
@@ -53,39 +98,26 @@ impl State {
         let mut effects = Vec::new();
         let mut end = Vec::new();
         let session = &self.session;
-        let mut kept = Background {
-            runners: std::mem::take(&mut self.background.runners),
-            runners_paused: std::mem::take(&mut self.background.runners_paused),
-            runners_hidden: std::mem::take(&mut self.background.runners_hidden),
-            ..Background::default()
-        };
         // (Launches of ours: a Steam game's too, in its launch's own scope since it started.)
-        for r in session.running.iter().filter(|r| r.origin == Origin::Ours && r.pid.is_none()) {
+        let ours: Vec<&crate::running::Running> = session.running.iter().filter(|r| r.origin == Origin::Ours && r.pid.is_none()).collect();
+        let keys: Vec<Arc<str>> = ours.iter().map(|r| Arc::from(r.key.as_str())).collect();
+        self.background.entries.keep(&keys);
+        for (r, key) in ours.into_iter().zip(&keys) {
             let mine: Vec<&crate::windows::Window> = session.windows.iter().filter(|w| session.running_of(w).is_some_and(|o| o.id == r.id)).collect();
             let shown = mine.iter().any(|w| w.visible);
-            let had = r.seen || !mine.is_empty();
-            let paused = self.background.paused.contains(&r.key);
             let setting = self.settings_of(&r.id).get(Setting::Background);
             // (One quitting isn't paused: frozen, it couldn't end. Nor one without a window: none hidden,
             // it is starting, between windows, or ending, Steam's Stop for one.)
             let quitting = session.quitting.iter().any(|(g, ..)| *g == r.id);
-            match setting {
-                1 if !shown && !mine.is_empty() && !quitting => {
-                    let since = self.background.hidden.iter().find(|(id, _)| *id == r.id).map_or(now, |(_, t)| *t);
-                    kept.hidden.push((r.id.clone(), since));
-                    if paused || now.saturating_sub(since) >= GRACE {
-                        if !paused {
-                            effects.push(Effect::Freeze { slice: Instance::slice_of(&r.key), frozen: true });
-                        }
-                        kept.paused.push(r.key.clone());
-                    }
-                }
-                _ if paused => effects.push(Effect::Freeze { slice: Instance::slice_of(&r.key), frozen: false }),
-                2 if had && mine.is_empty() && !quitting => end.push(r.id.clone()),
-                _ => {}
+            let hidden = setting == 1 && !shown && !mine.is_empty() && !quitting;
+            if let Some(frozen) = self.background.entries.follow(key, !hidden, now) {
+                effects.push(Effect::Freeze { slice: Instance::slice_of(key), frozen });
+            }
+            // (Quits closed: once it has had a window and has none left.)
+            if setting == 2 && r.seen && mine.is_empty() && !quitting {
+                end.push(r.id.clone());
             }
         }
-        self.background = kept;
         for id in end {
             effects.extend(self.quit(&id));
         }
@@ -110,59 +142,37 @@ impl State {
     fn follow_runner_pauses(&mut self) -> Vec<Effect> {
         let now = self.unix_secs;
         let mut effects = Vec::new();
-        let runners = self.background.runners.clone();
-        for runner in &runners {
+        for runner in &self.background.runners {
             let pauses = self.settings.of_in(&runner.key, &[]).get(Setting::Background) == 1;
             let session = &self.session;
             let of_runner = |r: &crate::running::Running| r.entry.as_ref().and_then(|g| g.runner.as_ref()).is_some_and(|o| o.key == runner.key);
             let shown = session.windows.iter().filter(|w| w.visible).any(|w| session.running_of(w).is_some_and(of_runner));
             let starting = session.running.iter().filter(|r| of_runner(r)).any(|r| r.origin != Origin::Tray && !r.seen);
-            let shown = shown || starting;
-            let paused = self.background.runners_paused.contains(&runner.key);
-            let bg = &mut self.background;
-            if pauses && !shown {
-                let since = bg.runners_hidden.iter().find(|(k, _)| *k == runner.key).map_or(now, |(_, t)| *t);
-                bg.runners_hidden.retain(|(k, _)| *k != runner.key);
-                bg.runners_hidden.push((runner.key.clone(), since));
-                if !paused && now.saturating_sub(since) >= GRACE {
-                    bg.runners_paused.push(runner.key.clone());
-                    effects.push(Effect::RunnerCommand(runner.pause.to_vec()));
-                }
-            } else {
-                bg.runners_hidden.retain(|(k, _)| *k != runner.key);
-                if paused {
-                    bg.runners_paused.retain(|k| *k != runner.key);
-                    effects.push(Effect::RunnerCommand(runner.resume.to_vec()));
-                }
+            match self.background.runner_pauses.follow(&runner.key, !pauses || shown || starting, now) {
+                Some(true) => effects.push(Effect::RunnerCommand(runner.pause.to_vec())),
+                Some(false) => effects.push(Effect::RunnerCommand(runner.resume.to_vec())),
+                None => {}
             }
         }
         effects
     }
 
-    /// Before an entry of a paused runner is launched or shown: the runner resumed (paused again only
-    /// once hidden for the grace anew).
+    /// Before an entry of a paused runner is launched or shown: the runner resumed.
     pub(crate) fn resume_runner_of(&mut self, id: &str) -> Option<Effect> {
         let runner = self.game(id)?.runner.as_ref()?;
-        let at = self.background.runners_paused.iter().position(|k| *k == runner.key)?;
         let resume = runner.resume.to_vec();
-        let key = self.background.runners_paused.remove(at);
-        self.background.runners_hidden.retain(|(k, _)| *k != key);
-        Some(Effect::RunnerCommand(resume))
+        self.background.runner_pauses.resume(&runner.key.clone()).then_some(Effect::RunnerCommand(resume))
     }
 
-    /// An entry thawed before it is asked anything (closed, ended, shown), if it is paused; it isn't
-    /// paused again until hidden for [`GRACE`] anew.
+    /// An entry thawed before it is asked anything (closed, ended, shown), if it is paused.
     pub(crate) fn thaw(&mut self, id: &str) -> Option<Effect> {
         let key = self.session.running(id)?.key.clone();
-        let at = self.background.paused.iter().position(|k| *k == key)?;
-        self.background.paused.remove(at);
-        self.background.hidden.retain(|(e, _)| &**e != id);
-        Some(Effect::Freeze { slice: Instance::slice_of(&key), frozen: false })
+        self.background.entries.resume(&key).then(|| Effect::Freeze { slice: Instance::slice_of(&key), frozen: false })
     }
 
     /// Whether an entry is paused (frozen while hidden).
     pub fn paused(&self, id: &str) -> bool {
-        self.session.running(id).is_some_and(|r| self.background.paused.contains(&r.key))
+        self.session.running(id).is_some_and(|r| self.background.entries.is_paused(&r.key))
     }
 }
 
