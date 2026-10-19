@@ -12,7 +12,9 @@ What is ours rather than Arch's (see `tools/image/thor-image.sh`, which builds t
 `docs/thor-gameplan.md`, "Our image"):
 - The kernel, its modules and most firmware are ROCKNIX's SM8550 release (no Arch kernel package is
   installed): `/usr/lib/modules/<version>`, `/usr/lib/firmware`, the release named in
-  `/usr/local/share/thor/rocknix-release`.
+  `/usr/local/share/thor/rocknix-release`. If `/usr/local/share/thor/kernel` exists, the kernel and its
+  modules are instead our build of ROCKNIX's kernel with binder (`tools/image/thor-kernel.sh`, built on
+  a PC; the file says from what); the firmware is still ROCKNIX's.
 - Our initramfs (`/etc/mkinitcpio-thor.conf`) and the two ways the card boots, both on its FAT partition:
   systemd-boot with the kernel as files (`/Image`, `/dtbs/`, `/initramfs-thor.img`, the command line in
   `/loader/entries/thor.conf`), and `/KERNEL`, an Android boot image for ROCKNIX's ABL. `thor-boot`
@@ -55,13 +57,16 @@ What is ours rather than Arch's (see `tools/image/thor-image.sh`, which builds t
    `ROCKNIX-SM8550.aarch64-*.tar`). Say what is newer (their changelog for SM8550 and the Thor); don't
    update unless the user asks. Updating, with the user: download and check the sha256, unpack
    `target/KERNEL` and `target/SYSTEM`, and do what `thor-image.sh` does for them (its "ROCKNIX's system",
-   "ROCKNIX's modules and firmware", "ROCKNIX's audio profiles" and boot image steps): the new modules in
+   "the kernel's modules, ROCKNIX's firmware", "ROCKNIX's audio profiles" and boot image steps): the new modules in
    `/usr/lib/modules` (the old directory removed, so there is one), firmware, the profiles (into
    `/usr/share/alsa/ucm2` and `/usr/local/share/thor/ucm2`), `bootimg.py split` for `/Image` and the
    device tree, `/KERNEL` replaced by the new release's, then `thor-boot` (which puts our initramfs and
    command line into it), and the release name recorded. Keep the old files on the FAT partition
    (`KERNEL.old`, `Image.old`) until the user has booted the new kernel and checked screens, sound, Wi-Fi
-   and sleep.
+   and sleep. With our kernel (`/usr/local/share/thor/kernel`), take only the firmware and profiles from
+   the release and keep the kernel, modules and `/KERNEL`: putting in ROCKNIX's kernel would drop binder
+   (Waydroid). A newer kernel of ours is built on a PC (`tools/image/thor-kernel.sh` with
+   `ROCKNIX_TAG`) and copied over.
 
 6. **pacnew/pacsave.** `pacdiff -o`. For each, diff against the live file, merge sensibly (keep our
    changes, such as `CriticalPowerAction=Hibernate` in `/etc/UPower/UPower.conf`; take upstream's new

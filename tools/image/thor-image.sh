@@ -1,8 +1,8 @@
 #!/bin/bash
 # Builds an SD card image for the AYN Thor, best effort, inside the aarch64 machine (tools/vm/vm.py
 # --arch aarch64 thor-image runs it as root there): Arch Linux ARM from its mirrors, ROCKNIX's SM8550
-# kernel (with the Thor's device tree and out-of-tree drivers), its modules and firmware, our initramfs
-# and session, in ROCKNIX's SD layout so their ABL boots it.
+# kernel (with the Thor's device tree and their patches' drivers; or our build of it, THOR_KERNEL below), its
+# modules and firmware, our initramfs and session, in ROCKNIX's SD layout so their ABL boots it.
 #
 #   thor-image.sh DEVICE ROCKNIX_TARGET PROGRAM SSH_KEY
 #
@@ -18,9 +18,12 @@
 # the card and makes the swap file for hibernating (thor-firstboot, below).
 #
 # Environment: THOR_TIMEZONE (default: this machine's /etc/localtime, else UTC), THOR_LOCALE (default
-# en_US.UTF-8). Through sudo: sudo THOR_TIMEZONE=Europe/Oslo bash thor-image.sh ...
+# en_US.UTF-8), THOR_KERNEL (a kernel built by tools/image/thor-kernel.sh, its output directory: then the
+# image has that kernel, its device trees and modules, in both boot ways, instead of ROCKNIX's; the
+# firmware and the rest stay ROCKNIX's). Through sudo: sudo THOR_TIMEZONE=Europe/Oslo bash thor-image.sh ...
 set -euo pipefail
 DEVICE=$1 ROCKNIX=$2 PROGRAM=$3 SSH_KEY=$4
+KERNEL=${THOR_KERNEL:-}
 USER_NAME=thor
 WORK=/var/tmp/thor-image
 ROOT=$WORK/root
@@ -58,10 +61,15 @@ rm -rf "$WORK"; mkdir -p "$WORK"
 # (usr/lib/kernel-overlays/base/lib/{modules,firmware}), the rest of the firmware in usr/lib/firmware, and
 # its ALSA UCM profiles (AYN/Thor, conf.d/sm8550) in usr/share/alsa/ucm2.
 unsquashfs -q -d "$WORK/system" "$ROCKNIX/SYSTEM" usr/lib/kernel-overlays usr/lib/firmware usr/share/alsa/ucm2 > /dev/null
-MODULES=$(find "$WORK/system/usr/lib/kernel-overlays" -maxdepth 4 -type d -path '*/lib/modules/*' -name '[0-9]*' | head -1)
-[ -n "$MODULES" ] || { echo "no kernel modules in ROCKNIX's SYSTEM"; exit 1; }
+if [ -n "$KERNEL" ]; then
+    MODULES=$KERNEL/lib/modules/$(cat "$KERNEL/release")
+    [ -d "$MODULES" ] && [ -f "$KERNEL/Image" ] || { echo "no kernel build in $KERNEL (tools/image/thor-kernel.sh)"; exit 1; }
+else
+    MODULES=$(find "$WORK/system/usr/lib/kernel-overlays" -maxdepth 4 -type d -path '*/lib/modules/*' -name '[0-9]*' | head -1)
+    [ -n "$MODULES" ] || { echo "no kernel modules in ROCKNIX's SYSTEM"; exit 1; }
+fi
 KVER=$(basename "$MODULES")
-say "  kernel $KVER"
+say "  kernel $KVER${KERNEL:+ (ours: $(cat "$KERNEL/source"))}"
 
 say "partitions"
 sgdisk -Z "$DEVICE" > /dev/null
@@ -77,7 +85,7 @@ pacstrap -K "$ROOT" "${PACKAGES[@]}" > "$WORK/pacstrap.log"
 # pacstrap's keyring setup leaves a gpg-agent running in the new root, which keeps it mounted.
 gpgconf --homedir "$ROOT/etc/pacman.d/gnupg" --kill all 2> /dev/null || true
 
-say "ROCKNIX's modules and firmware"
+say "the kernel's modules, ROCKNIX's firmware"
 mkdir -p "$ROOT/usr/lib/modules" "$ROOT/usr/lib/firmware"
 cp -a "$MODULES" "$ROOT/usr/lib/modules/"
 # (usr/lib/firmware may be a link into the overlay: then the overlay's is all of it.)
@@ -92,6 +100,8 @@ cp -a "$WORK/system/usr/share/alsa/ucm2" "$ROOT/usr/local/share/thor/ucm2"
 # Which ROCKNIX release the kernel, modules, firmware and profiles are from (maintenance compares it with
 # the latest).
 basename "$(dirname "$(realpath "$ROCKNIX")")" > "$ROOT/usr/local/share/thor/rocknix-release"
+# With our kernel: what it was built from (maintenance keeps it over ROCKNIX's).
+[ -z "$KERNEL" ] || cp "$KERNEL/source" "$ROOT/usr/local/share/thor/kernel"
 
 say "system setup"
 echo thor > "$ROOT/etc/hostname"
@@ -239,11 +249,18 @@ FILES=()
 HOOKS=(base udev modconf block thor-root-wait resume filesystems fsck)
 COMPRESSION=zstd
 EOF
-say "boot: ROCKNIX's kernel (/KERNEL for their ABL; split into files for systemd-boot), the loader entry"
+say "boot: the kernel (/KERNEL for ROCKNIX's ABL; split into files for systemd-boot), the loader entry"
 mkdir -p "$WORK/boot"; mount "${DEVICE}1" "$WORK/boot"
-cp "$ROCKNIX/KERNEL" "$WORK/boot/KERNEL"
+if [ -n "$KERNEL" ]; then
+    # Ours in ROCKNIX's boot image (its addresses and page size): the kernel blob made as their build makes
+    # it, the gzip'd Image with all the device trees appended (the ABL picks the Thor's).
+    { gzip -c "$KERNEL/Image"; cat "$KERNEL"/dtbs/*.dtb; } > "$WORK/kernel.gz"
+    python3 "$(dirname "$0")/bootimg.py" repack "$ROCKNIX/KERNEL" --kernel "$WORK/kernel.gz" -o "$WORK/boot/KERNEL"
+else
+    cp "$ROCKNIX/KERNEL" "$WORK/boot/KERNEL"
+fi
 mkdir -p "$WORK/boot/EFI/BOOT" "$WORK/boot/loader/entries" "$WORK/boot/dtbs"
-python3 "$(dirname "$0")/bootimg.py" split "$ROCKNIX/KERNEL" --model "AYN Thor" \
+python3 "$(dirname "$0")/bootimg.py" split "$WORK/boot/KERNEL" --model "AYN Thor" \
     --kernel "$WORK/boot/Image" --dtb "$WORK/boot/dtbs/qcs8550-ayn-thor.dtb"
 printf 'default thor.conf\ntimeout 3\n' > "$WORK/boot/loader/loader.conf"
 cat > "$WORK/boot/loader/entries/thor.conf" <<ENTRY

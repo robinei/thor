@@ -21,7 +21,8 @@ devices, ClamShell as a user service started by sway, and this repository shared
   tools/vm/vm.py reset          throw the machine away (the download stays)
   tools/vm/vm.py --arch aarch64 thor-image   build an SD card image for the real Thor (best effort): Arch
                              Linux ARM with ROCKNIX's SM8550 kernel, modules and firmware, our initramfs and
-                             session, in ROCKNIX's SD layout for its ABL (tools/image/thor-image.sh, in the machine)
+                             session, in ROCKNIX's SD layout for its ABL (tools/image/thor-image.sh, in the machine);
+                             THOR_KERNEL=~/.cache/thor-vm/kernel: our kernel build (tools/image/thor-kernel.sh) instead
 
 --arch x86_64 (the default): Arch's cloud image, provisioned by cloud-init, with KVM: fast; it runs the
 host's build from the shared repository. --arch aarch64: Arch Linux ARM's root filesystem made into a disk
@@ -577,6 +578,13 @@ def thor_image(args):
     if not A.provisioned.exists():
         sys.exit("the aarch64 machine isn't provisioned yet: tools/vm/vm.py --arch aarch64 run (once)")
     target = rocknix()
+    # Our kernel build instead of ROCKNIX's (tools/image/thor-kernel.sh's output, in the cache the machine mounts).
+    kernel = ""
+    if os.environ.get("THOR_KERNEL"):
+        path = Path(os.environ["THOR_KERNEL"]).expanduser().resolve()
+        if not path.is_relative_to(CACHE.resolve()) or not (path / "Image").exists():
+            sys.exit(f"THOR_KERNEL: no kernel build in {path} (it must be in {CACHE}: tools/image/thor-kernel.sh)")
+        kernel = f"THOR_KERNEL=/mnt/cache/{path.relative_to(CACHE.resolve())} "
     sd = A.state / "thor-sd.img"
     sd.unlink(missing_ok=True)
     with open(sd, "wb") as f:
@@ -592,7 +600,7 @@ def thor_image(args):
 sudo mkdir -p /mnt/cache
 mountpoint -q /mnt/cache || sudo mount -t 9p -o trans=virtio,version=9p2000.L,ro cache /mnt/cache
 cd /mnt/thor/clamshell && CARGO_TARGET_DIR=$HOME/target cargo build --release --locked
-sudo THOR_TIMEZONE={zone} bash /mnt/thor/tools/image/thor-image.sh /dev/vdb /mnt/cache/{target.relative_to(CACHE)} $HOME/target/release/clamshell '{ssh_key()}'
+sudo THOR_TIMEZONE={zone} {kernel}bash /mnt/thor/tools/image/thor-image.sh /dev/vdb /mnt/cache/{target.relative_to(CACHE)} $HOME/target/release/clamshell '{ssh_key()}'
 sudo poweroff"""
     result = subprocess.run(ssh_args([inside]))
     machine.join(timeout=120)

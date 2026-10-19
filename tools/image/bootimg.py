@@ -4,7 +4,10 @@ then the kernel, the ramdisk and an optional second stage, each padded to the pa
 of ROCKNIX's is a gzip'd arm64 Image with the device trees appended (the ABL picks the matching one).
 
   bootimg.py info IMAGE
-  bootimg.py repack IMAGE --ramdisk FILE --cmdline "..." -o OUT     (same kernel, addresses and page size)
+  bootimg.py repack IMAGE [--kernel FILE] [--ramdisk FILE] [--cmdline "..."] -o OUT
+      the same image with what is given replaced (addresses, page size and the rest kept); --kernel takes a
+      kernel blob as the ABL wants it (gzip'd Image with the device trees appended: thor-image.sh makes one
+      from our own kernel build)
   bootimg.py split IMAGE --kernel OUT --dtb OUT --model "AYN Thor"
       the kernel, decompressed (an EFI program, if built with the EFI stub), and the device tree whose
       model is this, as files: for booting the same kernel through UEFI (systemd-boot, GRUB)
@@ -106,8 +109,9 @@ def main():
     p.add_argument("--model", required=True)
     p = sub.add_parser("repack")
     p.add_argument("image")
-    p.add_argument("--ramdisk", required=True)
-    p.add_argument("--cmdline", required=True)
+    p.add_argument("--kernel")
+    p.add_argument("--ramdisk")
+    p.add_argument("--cmdline")
     p.add_argument("-o", "--output", required=True)
     args = parser.parse_args()
     image = read(args.image)
@@ -124,8 +128,12 @@ def main():
         print(f"page size: {image['page']}; kernel at {image['kernel_addr']:#x}, ramdisk at {image['ramdisk_addr']:#x}")
         print(f"cmdline: {image['cmdline']}")
         return
-    image["ramdisk"] = open(args.ramdisk, "rb").read()
-    image["cmdline"] = args.cmdline
+    if args.kernel:
+        image["kernel"] = open(args.kernel, "rb").read()
+    if args.ramdisk:
+        image["ramdisk"] = open(args.ramdisk, "rb").read()
+    if args.cmdline is not None:
+        image["cmdline"] = args.cmdline
     write(image, args.output)
 
 

@@ -44,9 +44,10 @@ What goes in, and from where:
 | Part | Source |
 |---|---|
 | Bootloader | not in the image: stock U-Boot (UEFI), else ROCKNIX's ABL flashed once (see below) |
-| UEFI boot, on the same FAT partition (an EFI system partition) | systemd-boot as `EFI/BOOT/BOOTAA64.EFI`, ROCKNIX's kernel as `/Image` (decompressed), the Thor's device tree as `/dtbs/qcs8550-ayn-thor.dtb`, our initramfs, a loader entry with our command line; split out by `tools/image/bootimg.py split` |
-| `/KERNEL` on FAT `ROCKNIX` (GPT name `system`, legacy-boot attribute, at 16 MiB) | ROCKNIX's kernel and device trees, unchanged; our initramfs (mkinitcpio: base udev modconf block thor-root-wait resume filesystems fsck, no autodetect) and command line (`root=LABEL=THOR_ROOT rw` + ROCKNIX's SM8550 parameters; the first boot adds `resume=`, `resume_offset=`), put into both boot ways by `thor-boot` (`tools/device/thor-boot`, repacking with `tools/image/bootimg.py`), as the image is built and again on the device after updates |
-| Kernel modules, firmware | ROCKNIX's `SYSTEM` (same release), incl. Qualcomm firmware: for this device only, not for sharing |
+| Kernel | ROCKNIX's prebuilt one (`KERNEL` of the release); or, with `THOR_KERNEL=~/.cache/thor-vm/kernel`, our build of the same kernel with binder (`tools/image/thor-kernel.sh`, see "A kernel with binder" below): its Image, device trees and modules replace ROCKNIX's in both boot ways and `/usr/lib/modules`, recorded in `/usr/local/share/thor/kernel` |
+| UEFI boot, on the same FAT partition (an EFI system partition) | systemd-boot as `EFI/BOOT/BOOTAA64.EFI`, the kernel as `/Image` (decompressed), the Thor's device tree as `/dtbs/qcs8550-ayn-thor.dtb`, our initramfs, a loader entry with our command line; split out by `tools/image/bootimg.py split` |
+| `/KERNEL` on FAT `ROCKNIX` (GPT name `system`, legacy-boot attribute, at 16 MiB) | ROCKNIX's kernel and device trees, unchanged (ours: the gzip'd Image and the 14 device trees, put into ROCKNIX's boot image by `bootimg.py repack --kernel`); our initramfs (mkinitcpio: base udev modconf block thor-root-wait resume filesystems fsck, no autodetect) and command line (`root=LABEL=THOR_ROOT rw` + ROCKNIX's SM8550 parameters; the first boot adds `resume=`, `resume_offset=`), put into both boot ways by `thor-boot` (`tools/device/thor-boot`, repacking with `tools/image/bootimg.py`), as the image is built and again on the device after updates |
+| Kernel modules, firmware | ROCKNIX's `SYSTEM` (same release), incl. Qualcomm firmware: for this device only, not for sharing; modules ours with `THOR_KERNEL` |
 | Root: ext4 `THOR_ROOT` | `pacstrap` from Arch Linux ARM's mirrors (unpinned): base, sudo, mkinitcpio, NetworkManager, OpenSSH, sway, mako, foot, Xwayland, Mesa + `vulkan-freedreno`, PipeWire, Noto, SQLite, Python, vim, grim, growpart (`cloud-guest-utils`), gptfdisk; RetroArch with cores for NES, SNES, N64, Game Boy, GBA, DS, Mega Drive, PlayStation and Dreamcast and XMB's assets (its menu in ClamShell's colours: `clamshell/retroarch/menu-theme.py`, needing Pillow), mpv, ffmpeg; for maintenance on the device git, Rust, base-devel, pacman-contrib |
 | System | time zone (`THOR_TIMEZONE`, else the build machine's `/etc/localtime`, else UTC), locale (`THOR_LOCALE`, default `en_US.UTF-8`), systemd-timesyncd, NetworkManager, sshd, Bluetooth |
 | Session | user `thor` (groups wheel, video, input, audio; passwordless sudo, my ssh key), tty1 autologin into sway; the session's files from `tools/device/session.sh` (also run by maintenance): sway config (DSI-2 top, DSI-1 bottom, ROCKNIX's output lines; Print: `clamshell ctl screenshot`; `clamshell/sway/clamshell.conf` included), mako's and foot's configs, the Maintenance app's desktop file, the dock's first pins (Steam, foot, Maintenance), the starter `library.json` (`tools/device/library.json`: Games with a folder per system in `~/Games/<system>`, Films and TV in `~/Videos`) unless there is one; ClamShell built natively for aarch64 as a user service (control pipe `$XDG_RUNTIME_DIR/clamshell-control`, `CLAMSHELL_SESSION=device`: it puts the device to sleep when idle and reads the volume and brightness keys itself), uinput rule |
@@ -77,6 +78,7 @@ Known issues and risks, to check first:
 1. Our ramdisk is meant to be unpacked over the kernel's built-in initramfs, so our `/init` wins. If not,
    ROCKNIX's init runs, looks for its own `SYSTEM`, and the boot fails (ABL path only; the UEFI path
    passes our initramfs as the only one... unless the built-in one still unpacks first: same question).
+   Our own kernel build (`THOR_KERNEL`) has no built-in initramfs, so there it doesn't arise.
 2. Early storage: settled. sdhci-msm is built into ROCKNIX's kernel (its messages are in the Image), as
    are ext4 and f2fs.
 3. Audio: ROCKNIX's UCM profiles are copied over `alsa-ucm-conf`'s (a pacman hook puts them back after
@@ -105,11 +107,31 @@ Known issues and risks, to check first:
 - [x] Build the image and check it (done 2026-10-14; see above).
 - [x] Settle 2: sdhci-msm is built in (checked 2026-10-14, strings in the Image; f2fs too).
 - [ ] Rebuild nearer the time: a newer ROCKNIX release, current packages.
-- [ ] A kernel with binder, for Android (Waydroid): ROCKNIX's SM8550 config has
-      `# CONFIG_ANDROID_BINDER_IPC is not set` (checked 2026-10-19, its `next` branch). The option is
-      built-in only, so our own build of ROCKNIX's kernel sources and config with `ANDROID_BINDER_IPC`
-      and `ANDROID_BINDERFS` on (an out-of-tree binder module would need their exact build tree, which
-      the release doesn't ship). Or a kernel from Thorch or Pocknix, if theirs has it.
+- [x] A kernel with binder, for Android (Waydroid): ROCKNIX's SM8550 config has
+      `# CONFIG_ANDROID_BINDER_IPC is not set` (checked 2026-10-19, its `next` branch and tag 20261001),
+      and the option is built-in only. Done 2026-10-19: `tools/image/thor-kernel.sh` builds ROCKNIX's
+      kernel from their git tag (default 20261001) on the PC with LLVM (3 minutes on 24 threads):
+      Linux 7.2 from kernel.org, their 65 patches in their build's order (4 `mainline` and 6 `7.2` of
+      the project, 55 of SM8550: panels, the Thor's RSInput gamepad and haptics, audio, GPU, fan),
+      their device tree sources and the 14 SM8550 device trees of `config.xml`, their device config
+      with their build's changes (CIFS and iSCSI off, wireless-regdb's `regulatory.db` built in). No
+      out-of-tree modules (SM8550 has none). Ours: binder and binderfs on with no boot-time devices
+      (`ANDROID_BINDER_DEVICES=""`; Waydroid makes them in binderfs), DMA-BUF heaps on
+      (`/dev/dma_heap/system`, which Waydroid passes to Android's allocators), release `7.2.0-thor`, no
+      built-in initramfs. Waydroid needs nothing more: no ashmem (without `/dev/ashmem` it sets
+      `sys.use_memfd=true`), and PSI, namespaces, cgroups, veth, bridge and nftables NAT/masquerade
+      (waydroid-net.sh's nft rules) are in ROCKNIX's config. Needs `bc` on the PC (the build computes the timer
+      constants and the OIDs' encodings with it; built 2026-10-19 with a stand-in for those two, checked
+      against their known values).
+      Build it, then the image with it: `tools/image/thor-kernel.sh` (into `~/.cache/thor-vm/kernel`),
+      `THOR_KERNEL=~/.cache/thor-vm/kernel tools/vm/vm.py --arch aarch64 thor-image`.
+      Checked on the PC: the config matches ROCKNIX's embedded one except for binder, DMA-BUF heaps,
+      hostname, initramfs, release and compiler-dependent options (clang turns on BTI and the 32-bit
+      vDSO); the same 275 modules; the Thor's device tree byte-identical to the one in ROCKNIX's
+      `/KERNEL`; `/KERNEL` repacked with our kernel by `bootimg.py repack --kernel`, and split back to the
+      same Image and device tree. Not done: an SD image with it (thor-image.sh's `THOR_KERNEL` path not
+      run end to end). Unverified until the device: that it boots at all (a clang build of a kernel
+      ROCKNIX only builds with GCC), and the rest as for ROCKNIX's kernel; binderfs and Waydroid on it.
 - [ ] Find out what the stock Linux boot mode is (U-Boot? AYN's own ABL?), what it reads (`/KERNEL`, or
       `extlinux.conf` and files), and from which firmware version it ships; ask on the Discord.
 - [ ] Read ROCKNIX's ABL scripts and README (flash, backup, restore) and the Thorch and Pocknix install
