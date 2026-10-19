@@ -142,11 +142,11 @@ impl State {
         match &spender.group {
             Group::Instance(instance) => {
                 let key = instance.key();
-                let entry = self.shelf.library().games.iter().find(|g| Some(g.key.as_str()) == key);
+                let entry = self.shelf.library().entries.iter().find(|g| Some(g.key.as_str()) == key);
                 entry.map_or_else(|| key.unwrap_or("?"), |g| g.title.as_str())
             }
             Group::App(app) => {
-                let entry = self.shelf.library().games.iter().find(|g| g.id.strip_prefix("desktop:") == Some(app.as_str()));
+                let entry = self.shelf.library().entries.iter().find(|g| g.id.strip_prefix("desktop:") == Some(app.as_str()));
                 entry.map_or(app.as_str(), |g| g.title.as_str())
             }
             Group::Process(name) => name,
@@ -180,7 +180,7 @@ mod tests {
         let zelda = launch(&mut s, &first);
         // Each scope keeps its own entry's name.
         let ff6 = launch(&mut s, "ff6");
-        s.apply(GameEvent::Started("ff6".into()).into());
+        s.apply(LaunchEvent::Started("ff6".into()).into());
         let terminal = Instance::Run { key: clamshell_library::key_of("desktop:foot"), secs: 1, n: 9 };
         assert_eq!(s.spender_name(&spender(Group::Instance(terminal))), "Terminal");
         let title = |id: &str| s.game(id).map(|g| g.title.clone()).unwrap_or_default();
@@ -218,14 +218,14 @@ mod tests {
     #[test]
     fn an_app_handed_over_is_known_by_its_app_id_and_edited_without_what_it_cant_get() {
         let mut library = clamshell_library::demo_library();
-        let firefox = library.games.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap();
+        let firefox = library.entries.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap();
         firefox.another = true;
         firefox.runner = Some(clamshell_library::RunnerOf { handover: true, ..clamshell_library::RunnerOf::new("android", "Android", true) });
         let mut s = state_with(library);
         let ws = Instance::workspace_of(&clamshell_library::key_of("desktop:firefox"));
         s.launch("desktop:firefox".into());
-        s.apply(GameEvent::Started("desktop:firefox".into()).into());
-        s.apply(GameEvent::Ended("desktop:firefox".into()).into());
+        s.apply(LaunchEvent::Started("desktop:firefox".into()).into());
+        s.apply(LaunchEvent::Ended("desktop:firefox".into()).into());
         s.apply(Event::Windows(vec![win(6, "firefox", &ws, true)]));
         assert!(!s.opens_another("desktop:firefox"), "a launch would show the one it runs");
         // Its processes (another program's, Android's): its cost, its row named and ended as the entry.

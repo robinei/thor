@@ -19,7 +19,7 @@ use crate::effect::{Effect, WindowCommand};
 use crate::instance::Instance;
 use crate::running::{Origin, Running};
 use crate::windows::Window;
-use crate::{Game, State};
+use crate::{Entry, State};
 
 const PREFIX: &str = "window:";
 
@@ -57,7 +57,7 @@ impl State {
             let game = self.found_entry(&w.app_id, || {
                 let name = app_id.as_deref().map_or_else(|| pid.to_string(), str::to_owned);
                 let title = if w.app_id.is_empty() { &w.title } else { &w.app_id };
-                Game { tool: true, ..Game::new(&format!("{PREFIX}{name}"), title) }
+                Entry { app: true, ..Entry::new(&format!("{PREFIX}{name}"), title) }
             });
             if session.running(&game.id).is_some() {
                 continue;
@@ -69,9 +69,9 @@ impl State {
 
     /// The entry a program found by `name` (its window's app id, its tray icon's id) runs as: the
     /// library's desktop entry of that name (any case), else one of its own, made by `own`.
-    pub(crate) fn found_entry(&self, name: &str, own: impl FnOnce() -> Game) -> Game {
+    pub(crate) fn found_entry(&self, name: &str, own: impl FnOnce() -> Entry) -> Entry {
         let named = format!("desktop:{name}").to_lowercase();
-        self.shelf.library().games.iter().find(|g| g.id.to_lowercase() == named).cloned().unwrap_or_else(own)
+        self.shelf.library().entries.iter().find(|g| g.id.to_lowercase() == named).cloned().unwrap_or_else(own)
     }
 
     /// Entries just found (by windows or tray icons) run: their windows (but `taken`) to their
@@ -108,7 +108,7 @@ impl State {
 mod tests {
     use super::*;
     use crate::testkit::*;
-    use crate::{Event, GameEvent, Init};
+    use crate::{Event, Init, LaunchEvent};
 
     /// A window of process `pid` (its parent: 1), in `unit`.
     fn window(id: i64, app_id: &str, pid: u32, unit: &str, focused: bool) -> Window {
@@ -174,12 +174,12 @@ mod tests {
     #[test]
     fn a_process_with_another_entrys_windows_is_not_moved() {
         let mut library = clamshell_library::demo_library();
-        let firefox = library.games.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap();
+        let firefox = library.entries.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap();
         firefox.runner = Some(clamshell_library::RunnerOf { handover: true, ..clamshell_library::RunnerOf::new("android", "Android", true) });
         let mut s = State::new(Init { library, device_session: true, ..init() });
         s.launch("desktop:firefox".into());
-        s.apply(GameEvent::Started("desktop:firefox".into()).into());
-        s.apply(GameEvent::Ended("desktop:firefox".into()).into());
+        s.apply(LaunchEvent::Started("desktop:firefox".into()).into());
+        s.apply(LaunchEvent::Ended("desktop:firefox".into()).into());
         let mine = window(5, "firefox", 700, "waydroid-session.scope", false);
         s.apply(Event::Windows(vec![mine.clone()]));
         // Another program's window, of the same process (Waydroid's session: an app the library hasn't).

@@ -26,7 +26,7 @@ use clamshell_library::Launch;
 
 use crate::effect::{Effect, Save, WindowCommand};
 use crate::instance::{Instance, STEAM_APP_PREFIX};
-use crate::{Game, State};
+use crate::{Entry, State};
 
 /// What is in front on the main screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,12 +81,12 @@ pub struct Running {
     pub(crate) starting_said: bool,
     /// Its entry as it was when it started: the dock shows it by this if it leaves the library while it
     /// runs (its file renamed or deleted).
-    pub entry: Option<Box<crate::Game>>,
+    pub entry: Option<Box<crate::Entry>>,
 }
 
 impl Running {
     /// Entry `game` running as `origin` since `start` (no launch followed, no window seen yet).
-    pub(crate) fn of(game: &Game, origin: Origin, start: u64) -> Running {
+    pub(crate) fn of(game: &Entry, origin: Origin, start: u64) -> Running {
         let entry = Some(Box::new(game.clone()));
         Running { id: game.id.clone(), key: game.key.clone(), origin, app_id: None, start, launches: 0, seen: false, starting_said: false, entry }
     }
@@ -145,7 +145,7 @@ pub struct Launching {
 /// The app id an entry's windows have when it runs in another program's processes, by which they are
 /// its wherever they open: Steam's games' `steam_app_<id>`, a desktop file's name for an entry whose
 /// runner hands its apps over (Waydroid's). None for the rest, which run in scopes of ours.
-pub fn app_id_of(g: &Game) -> Option<Arc<str>> {
+pub fn app_id_of(g: &Entry) -> Option<Arc<str>> {
     match &g.launch {
         Launch::Steam { appid } => Some(format!("{STEAM_APP_PREFIX}{appid}").into()),
         _ => g.id.strip_prefix("desktop:").filter(|_| g.runner.as_ref().is_some_and(|r| r.handover)).map(Into::into),
@@ -199,7 +199,7 @@ impl State {
         if let Some(Launch::Tool(tool)) = self.shelf.game(&game).map(|g| &g.launch) {
             return vec![Effect::Tool(*tool)];
         }
-        if command.is_none() && self.shelf.game(&game).is_some_and(crate::Game::is_group) {
+        if command.is_none() && self.shelf.game(&game).is_some_and(crate::Entry::is_group) {
             if !self.shelf.reveal(&game) {
                 return vec![];
             }
@@ -249,7 +249,7 @@ impl State {
             None => {
                 let start = self.unix_secs;
                 // (An entry gone from the library meanwhile: by its id alone.)
-                let entry = self.shelf.game(&game).cloned().unwrap_or_else(|| Game::new(&game, &game));
+                let entry = self.shelf.game(&game).cloned().unwrap_or_else(|| Entry::new(&game, &game));
                 let entry = Running { app_id, launches: 1, ..Running::of(&entry, Origin::Ours, start) };
                 session.running.push(Running { entry: entry.entry.filter(|_| self.shelf.game(&game).is_some()), ..entry });
             }
@@ -357,9 +357,9 @@ impl State {
         // Started elsewhere. (A window's app id says whose it is before its scope does: a game Steam
         // started is in Steam's scope.)
         let session = &self.session;
-        let mut new: Vec<&Game> = Vec::new();
+        let mut new: Vec<&Entry> = Vec::new();
         for w in session.windows.iter().filter(|w| !session.running.iter().any(|r| r.owns(w))) {
-            let games = &self.shelf.library().games;
+            let games = &self.shelf.library().entries;
             let Some(g) = games.iter().find(|g| app_id_of(g).as_deref() == Some(w.app_id.as_str())) else {
                 continue;
             };
@@ -367,7 +367,7 @@ impl State {
                 new.push(g);
             }
         }
-        let (steam, new): (Vec<&Game>, Vec<&Game>) = new.into_iter().partition(|g| matches!(g.launch, Launch::Steam { .. }));
+        let (steam, new): (Vec<&Entry>, Vec<&Entry>) = new.into_iter().partition(|g| matches!(g.launch, Launch::Steam { .. }));
         let steam: Vec<Arc<str>> = steam.into_iter().map(|g| g.id.clone()).collect();
         let new: Vec<Running> =
             new.into_iter().map(|g| Running { app_id: app_id_of(g), seen: true, ..Running::of(g, Origin::Windows { since: now, until: now }, now) }).collect();
@@ -447,7 +447,7 @@ impl State {
     /// The app ids of the library's entries known by them, for sway's rules: their windows land on a
     /// workspace of their own, to be moved to their entry's (see [`State::follow_windows`]).
     pub(crate) fn land_rules(&self) -> Effect {
-        let ids = self.shelf.library().games.iter().filter_map(app_id_of).collect();
+        let ids = self.shelf.library().entries.iter().filter_map(app_id_of).collect();
         Effect::Window(WindowCommand::LandRules(ids))
     }
 
@@ -474,7 +474,7 @@ impl State {
             if session.running.iter().any(|r| r.key == key) || session.launching.iter().any(|l| l.instance.key() == Some(key)) {
                 continue;
             }
-            let Some(g) = self.shelf.library().games.iter().find(|g| g.key == key) else {
+            let Some(g) = self.shelf.library().entries.iter().find(|g| g.key == key) else {
                 continue;
             };
             let first = units.iter().filter_map(|u| match u {
@@ -490,17 +490,17 @@ impl State {
     /// The app whose window shows browsed file `id` (running): the desktop file named as the window's
     /// app id says (`org.kde.kate`: `desktop:org.kde.kate`; any case), else the one whose program it is.
     /// For its picture only: the file runs as itself.
-    pub fn app_showing(&self, id: &str) -> Option<&crate::Game> {
+    pub fn app_showing(&self, id: &str) -> Option<&crate::Entry> {
         self.shelf.game(id).filter(|g| g.browsed.is_some())?;
         let session = &self.session;
         let window = session.windows_of(id).next()?;
         let app = window.app_id.to_lowercase();
-        let games = &self.shelf.library().games;
-        let program = |g: &&crate::Game| match &g.launch {
+        let games = &self.shelf.library().entries;
+        let program = |g: &&crate::Entry| match &g.launch {
             Launch::Program { argv, .. } => argv.first().and_then(|p| p.rsplit('/').next()).is_some_and(|p| p.to_lowercase() == app),
             _ => false,
         };
-        let named = |g: &&crate::Game| g.id.strip_prefix("desktop:").is_some_and(|d| d.to_lowercase() == app);
+        let named = |g: &&crate::Entry| g.id.strip_prefix("desktop:").is_some_and(|d| d.to_lowercase() == app);
         games.iter().find(named).or_else(|| games.iter().filter(|g| g.id.starts_with("desktop:")).find(program))
     }
 
@@ -597,7 +597,7 @@ mod tests {
 
     fn steam_ff6() -> State {
         let mut library = clamshell_library::demo_library();
-        if let Some(g) = library.games.iter_mut().find(|g| &*g.id == "ff6") {
+        if let Some(g) = library.entries.iter_mut().find(|g| &*g.id == "ff6") {
             g.launch = Launch::Steam { appid: 620 };
         }
         State::new(Init { library, ..init() })
@@ -615,18 +615,18 @@ mod tests {
         assert!(launches(&fx, &first));
         assert!(!launches(&tap(&mut s, Id::Shelf(ShelfId::Launch)), &first), "not twice while starting");
         s.apply(Event::Tick { unix_secs: 1000 });
-        s.apply(GameEvent::Started(first.clone()).into());
+        s.apply(LaunchEvent::Started(first.clone()).into());
         let workspace = Instance::workspace_of(&key(&first));
         assert_eq!(tap(&mut s, Id::Shelf(ShelfId::Launch)), vec![], "running, no window yet: nothing to show");
         s.apply(Event::Windows(vec![win(3, "game", &workspace, false)]));
         assert_eq!(tap(&mut s, Id::Shelf(ShelfId::Launch)), vec![Effect::Window(WindowCommand::Focus(workspace))], "running: shown");
         // Another launch (the dock's Open another): it runs twice, until both end.
         assert!(launches(&s.launch(first.clone()), &first));
-        s.apply(GameEvent::Started(first.clone()).into());
-        s.apply(GameEvent::Ended(first.clone()).into());
+        s.apply(LaunchEvent::Started(first.clone()).into());
+        s.apply(LaunchEvent::Ended(first.clone()).into());
         assert!(s.session().running(&first).is_some(), "the other still runs");
         s.apply(Event::Tick { unix_secs: 1660 });
-        let (_, fx) = s.apply(GameEvent::Ended(first.clone()).into());
+        let (_, fx) = s.apply(LaunchEvent::Ended(first.clone()).into());
         assert!(s.session().running(&first).is_none());
         assert!(fx.contains(&Effect::RecordPlay { game: first.clone(), start: 1000, duration: 660 }), "{fx:?}");
         let g = s.game(&first).unwrap();
@@ -642,7 +642,7 @@ mod tests {
         assert_eq!(zelda, Instance::Run { key: key("zelda-lttp"), secs: 100, n: 0 });
         tap(&mut s, game("ff6"));
         assert!(launches(&tap(&mut s, Id::Shelf(ShelfId::Launch)), "ff6"), "no choice: it starts");
-        s.apply(GameEvent::Started("ff6".into()).into());
+        s.apply(LaunchEvent::Started("ff6".into()).into());
         assert_eq!(s.session().running_entries().len(), 2);
     }
 
@@ -675,7 +675,7 @@ mod tests {
         assert!(launches(&fx, "ff6"), "{fx:?}");
         assert!(!fx.iter().any(|e| matches!(e, Effect::Window(WindowCommand::Up { window: 7, .. }))), "{fx:?}");
         assert!(!launches(&s.apply(Event::Windows(windows)).1, "ff6"), "once");
-        s.apply(GameEvent::Started("ff6".into()).into());
+        s.apply(LaunchEvent::Started("ff6".into()).into());
         assert_eq!(s.session().running_entries().len(), 2, "the other keeps running");
         let (_, fx) = s.apply(Event::Windows(vec![win(1, "zelda3", &zelda, false), win(7, "steam_app_620", &landing, true)]));
         let ff6 = Instance::workspace_of(&key("ff6"));
@@ -684,7 +684,7 @@ mod tests {
         assert_eq!(s.force_kill("ff6"), vec![Effect::EndRun { key: key("ff6"), force: true }]);
         s.apply(Event::Tick { unix_secs: 1600 });
         s.apply(Event::Windows(vec![win(1, "zelda3", &zelda, true)]));
-        let (_, fx) = s.apply(GameEvent::Ended("ff6".into()).into());
+        let (_, fx) = s.apply(LaunchEvent::Ended("ff6".into()).into());
         assert!(fx.contains(&Effect::RecordPlay { game: "ff6".into(), start: 1000, duration: 600 }), "{fx:?}");
         assert!(s.session().running("ff6").is_none());
         // A Steam game the library doesn't have isn't one.
@@ -730,18 +730,18 @@ mod tests {
     /// A Files tab with a file of its own and one that is a library entry's (zelda's).
     fn files() -> State {
         let mut library = clamshell_library::demo_library();
-        if let Some(zelda) = library.games.first_mut() {
+        if let Some(zelda) = library.entries.first_mut() {
             zelda.file = Some("/roms/zelda.sfc".into());
         }
-        let browsed = |id: &str, file: &str| crate::Game {
+        let browsed = |id: &str, file: &str| crate::Entry {
             file: Some(file.into()),
             launch: Launch::program(vec!["xdg-open".into(), file.into()]),
             browsed: Some(crate::Browsed::default()),
-            ..crate::Game::new(id, file)
+            ..crate::Entry::new(id, file)
         };
-        let n = library.games.len();
-        library.games.push(browsed("browse:Home/notes.md", "/h/notes.md"));
-        library.games.push(browsed("browse:Home/zelda.sfc", "/roms/zelda.sfc"));
+        let n = library.entries.len();
+        library.entries.push(browsed("browse:Home/notes.md", "/h/notes.md"));
+        library.entries.push(browsed("browse:Home/zelda.sfc", "/roms/zelda.sfc"));
         library.collections.insert(0, crate::Collection::new("Files", vec![n, n + 1]));
         crate::testkit::state_with(library)
     }
@@ -769,7 +769,7 @@ mod tests {
         let ws = ws.unwrap_or_default();
         assert!(!ws.is_empty(), "{fx:?}");
         // xdg-open ended before its scope was seen; the app's window comes up on shelf's workspace.
-        s.apply(GameEvent::LaunchFailed("browse:Home/notes.md".into()).into());
+        s.apply(LaunchEvent::LaunchFailed("browse:Home/notes.md".into()).into());
         assert!(s.session().running("browse:Home/notes.md").is_some(), "waits for its window");
         // (The demo's Terminal: its desktop file is foot's.)
         let app = win(6, "foot", &Instance::Shelf.name(), true);
@@ -789,7 +789,7 @@ mod tests {
         assert!(s.session().running("browse:Home/notes.md").is_none(), "its window closed: ended");
         // Another that never shows a window: gone after a while.
         tap(&mut s, Id::Shelf(ShelfId::Launch));
-        s.apply(GameEvent::LaunchFailed("browse:Home/notes.md".into()).into());
+        s.apply(LaunchEvent::LaunchFailed("browse:Home/notes.md".into()).into());
         s.apply(Event::Tick { unix_secs: 200 + HANDOFF });
         assert!(s.session().running("browse:Home/notes.md").is_some());
         s.apply(Event::Tick { unix_secs: 201 + HANDOFF });
@@ -800,7 +800,7 @@ mod tests {
     #[test]
     fn an_app_handed_over_runs_by_its_window_found_by_its_app_id() {
         let mut library = clamshell_library::demo_library();
-        let firefox = library.games.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap();
+        let firefox = library.entries.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap();
         let stop = vec!["stop".to_owned(), "{id}".to_owned()].into();
         firefox.runner = Some(clamshell_library::RunnerOf { handover: true, stop, ..clamshell_library::RunnerOf::new("android", "Android", true) });
         let mut s = State::new(Init { library, ..init() });
@@ -811,9 +811,9 @@ mod tests {
         let ws = Instance::workspace_of(&key("desktop:firefox"));
         assert!(matches!(&s.land_rules(), Effect::Window(WindowCommand::LandRules(ids)) if ids.iter().any(|i| &**i == "firefox")), "its windows land");
         assert!(launches(&s.launch("desktop:firefox".into()), "desktop:firefox"));
-        s.apply(GameEvent::Started("desktop:firefox".into()).into());
+        s.apply(LaunchEvent::Started("desktop:firefox".into()).into());
         // Its launch handed the app over (to the Waydroid session) and ended.
-        s.apply(GameEvent::Ended("desktop:firefox".into()).into());
+        s.apply(LaunchEvent::Ended("desktop:firefox".into()).into());
         assert!(s.session().running("desktop:firefox").is_some(), "waits for its window");
         let app = win(6, "firefox", &landing, false);
         let (_, fx) = s.apply(Event::Windows(vec![shelf.clone(), app.clone()]));
@@ -848,8 +848,8 @@ mod tests {
         // Another runner's: ended with its launch.
         let mut s = state();
         s.launch("desktop:firefox".into());
-        s.apply(GameEvent::Started("desktop:firefox".into()).into());
-        s.apply(GameEvent::Ended("desktop:firefox".into()).into());
+        s.apply(LaunchEvent::Started("desktop:firefox".into()).into());
+        s.apply(LaunchEvent::Ended("desktop:firefox".into()).into());
         assert!(s.session().running("desktop:firefox").is_none());
     }
 

@@ -3,7 +3,7 @@
 //! status row (a network, a device), a tile (an icon over a caption), a game's box art, and centred
 //! text.
 
-use clamshell_core::{Game, Id};
+use clamshell_core::{Entry, Id};
 
 use super::scroll::Scrolled;
 use super::style::{self, Look, SURFACE_HI, Text, Tone};
@@ -248,7 +248,7 @@ fn greyed(color: u32) -> u32 {
 }
 
 /// An entry's picture: its box art; without art or an icon, its screenshot (a video's frame).
-pub(crate) fn picture(game: &Game) -> Option<(&std::path::Path, Slot)> {
+pub(crate) fn picture(game: &Entry) -> Option<(&std::path::Path, Slot)> {
     match (&game.box_front, &game.icon, &game.shot) {
         (Some(art), _, _) => Some((art, Slot::Art)),
         (None, None, Some(shot)) => Some((shot, Slot::Shot)),
@@ -257,14 +257,14 @@ pub(crate) fn picture(game: &Game) -> Option<(&std::path::Path, Slot)> {
 }
 
 /// Whether an entry's picture is its screenshot (a video's frame: landscape).
-pub(crate) fn wide_picture(game: &Game) -> bool {
+pub(crate) fn wide_picture(game: &Entry) -> bool {
     matches!(picture(game), Some((_, Slot::Shot)))
 }
 
 /// An entry's box art as large as fits in `r` (portrait or landscape), at its top left; without art or an
 /// icon, its screenshot (a video's frame) instead; where it has none of them (or it hasn't loaded), the
 /// placeholder (or an app's icon) in a portrait box as high as `r`. The rectangle drawn.
-pub(crate) fn cover(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect, radius: f32, portrait: f32) -> Rect {
+pub(crate) fn cover(c: &mut Canvas, images: &mut Images, game: &Entry, r: Rect, radius: f32, portrait: f32) -> Rect {
     let scale = c.scale();
     let (pw, ph) = ((r.w * scale).round() as u32, (r.h * scale).round() as u32);
     if let Some(img) = picture(game).and_then(|(path, slot)| images.get(&game.id, slot, path, pw, ph)) {
@@ -286,7 +286,7 @@ pub(crate) fn progress(c: &mut Canvas, r: Rect, fraction: f32) {
 
 /// An entry's screenshot fitted into `r`, at its bottom left, if it has one and it has loaded; nothing
 /// meanwhile.
-pub(crate) fn shot(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect) {
+pub(crate) fn shot(c: &mut Canvas, images: &mut Images, game: &Entry, r: Rect) {
     let scale = c.scale();
     let (pw, ph) = ((r.w * scale).round() as u32, (r.h * scale).round() as u32);
     if let Some(img) = game.shot.as_deref().and_then(|path| images.get(&game.id, Slot::Shot, path, pw, ph)) {
@@ -296,7 +296,7 @@ pub(crate) fn shot(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect) {
 
 /// An entry's picture in `r`: its box art fitted in (centred across it; down it as `align` says, `Start`
 /// at the top), else its icon (see [`icon`]); `grey` for one shown stopped.
-pub(crate) fn art(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect, radius: f32, align: Align, grey: bool) {
+pub(crate) fn art(c: &mut Canvas, images: &mut Images, game: &Entry, r: Rect, radius: f32, align: Align, grey: bool) {
     let scale = c.scale();
     let (pw, ph) = ((r.w * scale).round() as u32, (r.h * scale).round() as u32);
     match picture(game).and_then(|(path, slot)| images.get(&game.id, slot, path, pw, ph)) {
@@ -320,7 +320,7 @@ pub(crate) fn art(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect, rad
 /// A list row's picture in `r` (a square): a folder's icon where it has one (its picture is for the
 /// details), else its picture (box art, a video's frame) cropped to fill `r`, its middle kept; else its
 /// icon.
-pub(crate) fn thumb(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect, radius: f32, grey: bool) {
+pub(crate) fn thumb(c: &mut Canvas, images: &mut Images, game: &Entry, r: Rect, radius: f32, grey: bool) {
     if game.is_group() && (game.icon.is_some() || game.glyph.is_some()) {
         return icon(c, images, game, r, radius, grey);
     }
@@ -336,7 +336,7 @@ pub(crate) fn thumb(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect, r
 /// An entry's icon in `r`, square in the middle: its image (an app's, a folder's), else one of the UI's by
 /// name (a browsed entry's: a folder, a file), else for an app the UI's app glyph, else (a game) a
 /// placeholder in its colour.
-pub(crate) fn icon(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect, radius: f32, grey: bool) {
+pub(crate) fn icon(c: &mut Canvas, images: &mut Images, game: &Entry, r: Rect, radius: f32, grey: bool) {
     let scale = c.scale();
     let side = (r.w.min(r.h) * 0.8 * scale).round() as u32;
     if let Some(img) = game.icon.as_deref().and_then(|path| images.get(&game.id, Slot::Icon, path, side, side)) {
@@ -349,7 +349,7 @@ pub(crate) fn icon(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect, ra
         }
         return;
     }
-    match game.glyph.as_deref().and_then(Icon::named).or(game.tool.then_some(Icon::App)) {
+    match game.glyph.as_deref().and_then(Icon::named).or(game.app.then_some(Icon::App)) {
         Some(glyph) => {
             let side = r.w.min(r.h) * 0.7;
             c.icon(glyph, Rect::new(r.x + (r.w - side) / 2.0, r.y + (r.h - side) / 2.0, side, side), if grey { Tone::Dim } else { Tone::Normal });

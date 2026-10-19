@@ -5,7 +5,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
 use clamshell_core::keyboard::{self, Key, Modifier};
-use clamshell_core::{DockId, EditorId, Event, GameEvent, Id, Init, Instance, PointerEvent, Reading, SettingsId, Slide, State, Tab};
+use clamshell_core::{DockId, EditorId, Event, Id, Init, Instance, LaunchEvent, PointerEvent, Reading, SettingsId, Slide, State, Tab};
 
 use crate::Screen;
 use crate::draw::DrawCache;
@@ -102,7 +102,7 @@ fn warm_frames_do_not_allocate() {
             "dock, a game and windows",
             vec![
                 tap(Id::Tab(Tab::Dock)),
-                Event::Game(GameEvent::Started("zelda-lttp".into())),
+                Event::Launch(LaunchEvent::Started("zelda-lttp".into())),
                 Event::Units(["clamshell-run-zelda_1-1-0", "clamshell-run-foot_1-1-0"].into_iter().filter_map(Instance::parse).collect()),
                 Event::Windows(vec![
                     window(5, "retroarch", Some("clamshell-run-zelda_1-1-0.scope"), false),
@@ -264,7 +264,10 @@ fn warm_frames_do_not_allocate() {
         ("brightness", vec![Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Brightness))), Event::Reading(Reading::Backlights(vec!["panel".into()]))]),
         (
             "dark while a game runs",
-            vec![Event::Game(GameEvent::Started("zelda-lttp".into())), tap(Id::Settings(SettingsId::Tile(clamshell_core::settings::Setting::BottomScreen)))],
+            vec![
+                Event::Launch(LaunchEvent::Started("zelda-lttp".into())),
+                tap(Id::Settings(SettingsId::Tile(clamshell_core::settings::Setting::BottomScreen))),
+            ],
         ),
         ("keyboard", vec![Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Keyboard)))]),
         ("keyboard, Fn", vec![tap(Id::Tab(Tab::Keyboard)), key(Key::Mod(Modifier::Fn))]),

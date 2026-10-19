@@ -197,7 +197,7 @@ mod tests {
         tap(&mut s, game("zelda-lttp"));
         tap(&mut s, Id::Settings(SettingsId::Scope(Scope::Content)));
         tap(&mut s, Id::Settings(SettingsId::Tile(crate::settings::Setting::PadMouse)));
-        s.apply(GameEvent::Started("zelda-lttp".into()).into());
+        s.apply(LaunchEvent::Started("zelda-lttp".into()).into());
         assert_eq!(s.pad().mouse(), PadMouse::ByGame, "the game wants it");
         // Off and on again by hand: the user's now, it stays when the game ends.
         tap(&mut s, Id::PadMouse);
@@ -220,7 +220,7 @@ mod tests {
         let mut s = state();
         let window = |app_id: &str, unit: Option<&str>| Window { unit: unit.map(Into::into), workspace: String::new(), ..win(1, app_id, "", true) };
         assert_eq!(route(&mut s, Event::Tick { unix_secs: 1 }), PadRoute::Ui, "nothing known, no game: shelf");
-        assert_eq!(route(&mut s, GameEvent::Started("zelda-lttp".into()).into()), PadRoute::Game, "a game runs: in front");
+        assert_eq!(route(&mut s, LaunchEvent::Started("zelda-lttp".into()).into()), PadRoute::Game, "a game runs: in front");
         assert_eq!(route(&mut s, Event::Windows(vec![window(windows::SHELF_APP_ID, None)])), PadRoute::Ui, "shelf in front");
         assert_eq!(route(&mut s, Event::Windows(vec![window("foot", Some("clamshell-run-foot_1-1-0.scope"))])), PadRoute::Game, "an app: its pad, as a game's");
         assert_eq!(route(&mut s, PointerEvent::Activate(Id::Tab(Tab::Keyboard)).into()), PadRoute::Keys, "an app and the keyboard: typing");
@@ -262,7 +262,7 @@ mod tests {
         let mut s = state();
         s.apply(PointerEvent::Focus(game("zelda-lttp")).into());
         assert!(s.pointer().show_focus());
-        let (dirty, _) = s.apply(GameEvent::Started("zelda-lttp".into()).into());
+        let (dirty, _) = s.apply(LaunchEvent::Started("zelda-lttp".into()).into());
         assert_eq!((dirty, s.pointer().show_focus()), (Dirty::BOTH, false));
     }
 

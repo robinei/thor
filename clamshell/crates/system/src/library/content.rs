@@ -74,7 +74,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use clamshell_library::pattern::{self, hidden};
-use clamshell_library::{Game, Launch, sort};
+use clamshell_library::{Entry, Launch, sort};
 use serde::Deserialize;
 
 #[derive(Debug, Default, Deserialize)]
@@ -298,7 +298,7 @@ pub fn read_config(file: &Path) -> (Config, Option<String>) {
 
 /// A scan's entries: appended to `games` (groups before their items, each file opened as `open` says, a
 /// group by its first entry's runner), the indices of its top-level ones returned.
-pub fn scan(source: &Scan, home: Option<&Path>, games: &mut Vec<Game>, open: &Open) -> Vec<usize> {
+pub fn scan(source: &Scan, home: Option<&Path>, games: &mut Vec<Entry>, open: &Open) -> Vec<usize> {
     let Ok(dir) = expand_dir(&source.dir, home) else {
         return Vec::new();
     };
@@ -332,7 +332,7 @@ pub fn scan(source: &Scan, home: Option<&Path>, games: &mut Vec<Game>, open: &Op
             }
         } else {
             let (launch, runner) = opened(open, &path);
-            games.push(Game { launch, runner, file: Some(path.clone()), ..Game::new(&id, &title) });
+            games.push(Entry { launch, runner, file: Some(path.clone()), ..Entry::new(&id, &title) });
             games.len() - 1
         };
         if let Some(g) = games.get_mut(index) {
@@ -382,13 +382,13 @@ fn listing(dir: &Path) -> Vec<(String, PathBuf)> {
 
 /// The group of `folder` (in `dir`, the source's): its subfolders with entries first, then its files
 /// matching `items`; added to `games` with its items, its index returned. None if nothing in it matches.
-fn group(folder: &Path, dir: &Path, source: &str, items: &[String], open: &Open, parent: Option<usize>, games: &mut Vec<Game>) -> Option<usize> {
+fn group(folder: &Path, dir: &Path, source: &str, items: &[String], open: &Open, parent: Option<usize>, games: &mut Vec<Entry>) -> Option<usize> {
     let id = |path: &Path| format!("{source}:{}", path.strip_prefix(dir).unwrap_or(path).to_string_lossy());
     let name = folder.file_name()?.to_string_lossy().into_owned();
     let index = games.len();
     let art = art(folder, dir).or_else(|| parent.and_then(|p| games.get(p)).and_then(|g| g.box_front.clone()));
     // (A folder's entries in its outermost folder's colour: one colour for a series while it has no art.)
-    let mut own = Game { parent, box_front: art.clone(), ..Game::new(&id(folder), &name) };
+    let mut own = Entry { parent, box_front: art.clone(), ..Entry::new(&id(folder), &name) };
     if let Some(p) = parent.and_then(|p| games.get(p)) {
         own.color = p.color;
     }
@@ -409,16 +409,16 @@ fn group(folder: &Path, dir: &Path, source: &str, items: &[String], open: &Open,
         }
         // (A video keeps its own picture, its frame: not its folder's art.)
         let (launch, runner) = opened(open, path);
-        let video = Game { launch: launch.clone(), file: Some(path.clone()), ..Game::new("", "") }.mpv_file().is_some();
+        let video = Entry { launch: launch.clone(), file: Some(path.clone()), ..Entry::new("", "") }.mpv_file().is_some();
         let box_front = art_beside(path).or_else(|| art.clone().filter(|_| !video));
-        games.push(Game {
+        games.push(Entry {
             parent: Some(index),
             box_front,
             color,
             launch,
             runner,
             file: Some(path.clone()),
-            ..Game::new(&id(path), &season.and_then(|n| episode_title(&stem(file), n)).unwrap_or_else(|| untagged(&stem(file))))
+            ..Entry::new(&id(path), &season.and_then(|n| episode_title(&stem(file), n)).unwrap_or_else(|| untagged(&stem(file))))
         });
         files.push(games.len() - 1);
     }

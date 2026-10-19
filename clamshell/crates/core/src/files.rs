@@ -12,7 +12,7 @@ use clamshell_library::BrowseKind;
 use crate::editor::{Editor, Purpose};
 use crate::effect::Effect;
 use crate::hardware::NoticeKind;
-use crate::{Game, State, Tab};
+use crate::{Entry, State, Tab};
 
 /// What can be done to a browsed entry, or in the folder open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -118,7 +118,7 @@ pub struct Browse {
 #[derive(Debug, Clone, PartialEq)]
 pub enum FilesEvent {
     /// Folder `folder`'s entries now, in order (see [`crate::Library::set_listing`]).
-    Listed { folder: Arc<str>, entries: Vec<Game> },
+    Listed { folder: Arc<str>, entries: Vec<Entry> },
     /// A paste under way: what (`Copying Film.mkv`), how far (of its bytes).
     Busy { what: String, fraction: f32 },
     /// An operation ended: what was done, or what went wrong.
@@ -175,7 +175,7 @@ impl State {
 
     /// What the details show the actions of: the selected entry, or with none (an empty folder) the
     /// folder open; and whether it is the selected one.
-    pub fn file_target(&self) -> Option<(&Game, bool)> {
+    pub fn file_target(&self) -> Option<(&Entry, bool)> {
         match self.shelf.selected_game() {
             Some(g) => Some((g, true)),
             None => self.shelf.group().map(|g| (g, false)),
@@ -192,14 +192,14 @@ impl State {
 
     /// The runner archive `game` opens in (Open in): its library entry's (a ROM's zip a scan has), else
     /// the one its name matches.
-    pub fn opened_in<'a>(&'a self, game: &'a Game) -> Option<&'a clamshell_library::RunnerOf> {
+    pub fn opened_in<'a>(&'a self, game: &'a Entry) -> Option<&'a clamshell_library::RunnerOf> {
         let entry = self.shelf.entry_of_file(&game.id).and_then(|id| self.shelf.game(&id));
         entry.and_then(|e| e.runner.as_ref()).or(game.runner.as_ref())
     }
 
     /// Whether entry `game` is in a folder nothing can be changed in (an archive's).
-    fn in_locked(&self, game: &Game) -> bool {
-        let parent = game.parent.and_then(|p| self.shelf.library().games.get(p));
+    fn in_locked(&self, game: &Entry) -> bool {
+        let parent = game.parent.and_then(|p| self.shelf.library().entries.get(p));
         parent.and_then(|p| p.browsed.as_ref()).is_some_and(|b| b.locked)
     }
 
@@ -247,7 +247,7 @@ impl State {
     /// What a file action acts on: the entries selected while there are any, else the one the details
     /// show; their files and names.
     fn file_targets(&self) -> Vec<(PathBuf, String)> {
-        let entry = |g: &Game| Some((g.file.clone()?, g.title.clone()));
+        let entry = |g: &Entry| Some((g.file.clone()?, g.title.clone()));
         if self.files.selected.is_empty() {
             return self.file_target().and_then(|(g, _)| entry(g)).into_iter().collect();
         }
@@ -439,10 +439,10 @@ mod tests {
     use crate::testkit::{state_with, tap};
     use crate::{Browsed, Collection, Event, Id, Library, ShelfEvent, ShelfId};
 
-    fn entry(id: &str, folder: bool, kind: BrowseKind) -> Game {
+    fn entry(id: &str, folder: bool, kind: BrowseKind) -> Entry {
         let name = id.rsplit('/').next().unwrap();
         let path = format!("/{}", id.strip_prefix("browse:").unwrap());
-        Game { file: Some(path.into()), browsed: Some(Browsed { folder, kind, ..Browsed::default() }), ..Game::new(id, name) }
+        Entry { file: Some(path.into()), browsed: Some(Browsed { folder, kind, ..Browsed::default() }), ..Entry::new(id, name) }
     }
 
     /// A Files tab: Home and the Trash.
@@ -450,7 +450,7 @@ mod tests {
         let mut trash = entry("browse:Trash", true, BrowseKind::Trash);
         trash.file = Some("/t/files".into());
         let games = vec![entry("browse:Home", true, BrowseKind::Root), trash];
-        state_with(Library { collections: vec![Collection::new("Files", vec![0, 1])], games, ..Library::default() })
+        state_with(Library { collections: vec![Collection::new("Files", vec![0, 1])], entries: games, ..Library::default() })
     }
 
     /// The folder listed and watched, of `fx`.
@@ -499,7 +499,7 @@ mod tests {
         assert_eq!(extracted_name("noext"), "noext");
     }
 
-    fn listed(s: &mut State, folder: &str, entries: Vec<Game>) {
+    fn listed(s: &mut State, folder: &str, entries: Vec<Entry>) {
         s.apply(Event::Files(FilesEvent::Listed { folder: folder.into(), entries }));
     }
 

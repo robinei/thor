@@ -390,7 +390,7 @@ mod tests {
         assert_eq!(scope(&s), PadScope::ShelfList);
         assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(ShelfEvent::ListStep(1).into()));
         assert_eq!(navigate(&s, &d, &memory, Dir::Right), Some(ShelfEvent::CollectionStep(1).into()));
-        let len = s.shelf().collection().map_or(0, |c| c.games.len());
+        let len = s.shelf().collection().map_or(0, |c| c.entries.len());
         s.apply(ShelfEvent::ListStep(len as i32).into());
         let last = game(&s, len - 1);
         focus(&mut s, last.clone());

@@ -43,7 +43,7 @@ pub enum Event {
     /// The pad in shelf, and shelf's layout.
     Shelf(ShelfEvent),
     /// A game shelf started began, ended, or couldn't start (the launcher thread).
-    Game(GameEvent),
+    Launch(LaunchEvent),
     /// The compositor's windows, after any change.
     Windows(Vec<Window>),
     /// Our running scopes (dock app instances and games shelf started), after any change.
@@ -183,7 +183,7 @@ pub enum ShelfEvent {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum GameEvent {
+pub enum LaunchEvent {
     /// The launcher started a game.
     Started(Arc<str>),
     /// The launcher is done with a launch of it: it ended (whether the entry still runs is the state's
@@ -205,4 +205,4 @@ macro_rules! into_event {
     };
 }
 
-into_event!(ListEvent => List, Reading => Reading, PointerEvent => Pointer, Slide => Slide, LevelEvent => Level, ShelfEvent => Shelf, GameEvent => Game, Pointing => Pointing);
+into_event!(ListEvent => List, Reading => Reading, PointerEvent => Pointer, Slide => Slide, LevelEvent => Level, ShelfEvent => Shelf, LaunchEvent => Launch, Pointing => Pointing);

@@ -121,7 +121,7 @@ fn main() -> ExitCode {
                 log::error!("no home dir: nowhere to keep it");
                 return ExitCode::FAILURE;
             };
-            let titles: std::collections::HashMap<_, _> = loaded.library.games.iter().map(|g| (g.id.clone(), g.title.clone())).collect();
+            let titles: std::collections::HashMap<_, _> = loaded.library.entries.iter().map(|g| (g.id.clone(), g.title.clone())).collect();
             println!("fetching for {} entries", loaded.wanted.len());
             let (tx, rx) = std::sync::mpsc::channel();
             if let Err(e) = meta::spawn(meta::Fetch { wanted: loaded.wanted, keys: loaded.keys, art, db }, &meta::Queue::default(), tx) {
@@ -209,14 +209,14 @@ fn saved(paths: &Paths) -> Init {
 fn load_library(sources: &Sources) -> library::Loaded {
     let loaded = library::load(sources);
     // (Nothing but the Tools tab: the demo games.)
-    let empty = loaded.library.games.iter().all(|g| matches!(g.launch, clamshell_library::Launch::Tool(_)));
+    let empty = loaded.library.entries.iter().all(|g| matches!(g.launch, clamshell_library::Launch::Tool(_)));
     if empty { library::Loaded { library: clamshell_library::demo_library(), ..library::Loaded::default() } } else { loaded }
 }
 
 fn print_library(library: &Library) {
     for c in &library.collections {
-        println!("{} ({}, {} entries)", c.name, c.icon.as_deref().unwrap_or("no icon"), c.games.len());
-        for &i in &c.games {
+        println!("{} ({}, {} entries)", c.name, c.icon.as_deref().unwrap_or("no icon"), c.entries.len());
+        for &i in &c.entries {
             print_entry(library, i, 1);
         }
     }
@@ -227,7 +227,7 @@ fn print_library(library: &Library) {
 
 /// An entry, `depth` deep, and a group's entries under it.
 fn print_entry(library: &Library, i: usize, depth: usize) {
-    let Some(g) = library.games.get(i) else {
+    let Some(g) = library.entries.get(i) else {
         return;
     };
     let indent = "  ".repeat(depth);

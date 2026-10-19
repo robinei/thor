@@ -47,7 +47,7 @@ impl Launch {
 
 /// One entry as the rest of the program sees it.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Game {
+pub struct Entry {
     /// Stable id: `<source id>:<path in the source's dir>`, `steam:<appid>` or `desktop:<file id>`. Focus,
     /// settings and play time are keyed by it. Shared, so the UI can put it in a frame's targets without
     /// allocating.
@@ -82,12 +82,12 @@ pub struct Game {
     /// When mpv kept that place (seconds since the epoch): it was watched then, maybe outside ClamShell.
     pub position_at: u64,
     /// An app, not a game or a film: Recent leaves it out.
-    pub tool: bool,
+    pub app: bool,
     /// Another launch of it while it runs makes sense (the dock menu's Open another): an app from a
     /// desktop file, which opens a window of its own each time, unless its file says it has one main
     /// window (`SingleMainWindow`). Not a game, nor a file opened.
     pub another: bool,
-    /// A group's entries (a series' seasons, a season's episodes), as indices into [`Library::games`], in
+    /// A group's entries (a series' seasons, a season's episodes), as indices into [`Library::entries`], in
     /// order; empty for anything else.
     pub items: Vec<usize>,
     /// The group it is in, if any.
@@ -140,9 +140,9 @@ pub enum BrowseKind {
     Trashed,
 }
 
-impl Game {
+impl Entry {
     pub fn new(id: &str, title: &str) -> Self {
-        Game {
+        Entry {
             id: id.into(),
             key: key_of(id),
             title: title.into(),
@@ -161,7 +161,7 @@ impl Game {
             position: None,
             duration: None,
             position_at: 0,
-            tool: false,
+            app: false,
             another: false,
             items: Vec::new(),
             parent: None,
@@ -315,14 +315,14 @@ pub struct Collection {
     pub icon: Option<String>,
     /// Recent or Favourites: made from the others, rebuilt when plays or favourites change.
     pub derived: bool,
-    /// Its entries (groups at their top), as indices into [`Library::games`], in title order.
-    pub games: Vec<usize>,
+    /// Its entries (groups at their top), as indices into [`Library::entries`], in title order.
+    pub entries: Vec<usize>,
 }
 
 impl Collection {
     /// A collection of these entries named `name`, without an icon.
-    pub fn new(name: &str, games: Vec<usize>) -> Collection {
-        Collection { name: name.into(), icon: None, derived: false, games }
+    pub fn new(name: &str, entries: Vec<usize>) -> Collection {
+        Collection { name: name.into(), icon: None, derived: false, entries }
     }
 
     /// The same, with the icon named `icon`.
@@ -334,13 +334,13 @@ impl Collection {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Library {
     pub collections: Vec<Collection>,
-    pub games: Vec<Game>,
+    pub entries: Vec<Entry>,
     /// What was wrong reading it (library.json's mistakes, a source's missing dir), to show.
     pub problems: Vec<String>,
     /// The id prefixes (`<source id>:`) of sources whose dir is missing (an SD card not in): their
     /// entries are away, not gone.
     pub away: Vec<String>,
-    /// Places in `games` free for the next listing's entries (a listing's entries gone, and theirs).
+    /// Places in `entries` free for the next listing's entries (a listing's entries gone, and theirs).
     pub free: Vec<usize>,
     /// Runners (by key) that come with a keymap of ClamShell's (its name: see clamshell-core's
     /// `keymap::preset`), their own until one is chosen for them.
@@ -362,7 +362,7 @@ pub struct OwnTab {
 impl Library {
     /// Whether entry `id` is in it, or its source is away.
     pub fn has(&self, id: &str) -> bool {
-        self.games.iter().any(|g| &*g.id == id) || self.away.iter().any(|p| id.starts_with(p.as_str()))
+        self.entries.iter().any(|g| &*g.id == id) || self.away.iter().any(|p| id.starts_with(p.as_str()))
     }
 }
 
@@ -372,15 +372,15 @@ impl Library {
     pub fn rebuild_derived(&mut self) {
         self.collections.retain(|c| !c.derived);
         let mut recent: Vec<usize> =
-            (0..self.games.len()).filter(|&i| self.games.get(i).is_some_and(|g| g.plays.count > 0 && !g.tool && g.browsed.is_none())).collect();
-        recent.sort_by_key(|&i| std::cmp::Reverse(self.games.get(i).map_or(0, |g| g.plays.last)));
+            (0..self.entries.len()).filter(|&i| self.entries.get(i).is_some_and(|g| g.plays.count > 0 && !g.app && g.browsed.is_none())).collect();
+        recent.sort_by_key(|&i| std::cmp::Reverse(self.entries.get(i).map_or(0, |g| g.plays.last)));
         recent.truncate(RECENT);
-        let mut favourites: Vec<usize> = (0..self.games.len()).filter(|&i| self.games.get(i).is_some_and(|g| g.favourite && g.browsed.is_none())).collect();
+        let mut favourites: Vec<usize> = (0..self.entries.len()).filter(|&i| self.entries.get(i).is_some_and(|g| g.favourite && g.browsed.is_none())).collect();
         favourites.sort_by(|&a, &b| {
-            let key = |i: usize| self.games.get(i).map(|g| (&g.sort_key, &g.title));
+            let key = |i: usize| self.entries.get(i).map(|g| (&g.sort_key, &g.title));
             key(a).cmp(&key(b))
         });
-        let derived = |tab: &OwnTab, games: Vec<usize>| Collection { name: tab.name.clone(), icon: tab.icon.clone(), derived: true, games };
+        let derived = |tab: &OwnTab, entries: Vec<usize>| Collection { name: tab.name.clone(), icon: tab.icon.clone(), derived: true, entries };
         for (tab, games) in [(&self.recent, recent), (&self.favourites, favourites)] {
             if let Some(tab) = tab.as_ref().filter(|_| !games.is_empty()) {
                 let c = derived(tab, games);
@@ -393,26 +393,26 @@ impl Library {
 
     /// The ids of the favourite entries (as saved).
     pub fn favourite_ids(&self) -> impl Iterator<Item = &str> {
-        self.games.iter().filter(|g| g.favourite).map(|g| &*g.id)
+        self.entries.iter().filter(|g| g.favourite).map(|g| &*g.id)
     }
 
     /// What was fetched about entry `i`: its cover where it has no art of its own (and so the entries in
     /// it without art, but videos: an episode's frame is its picture), and the rest.
     pub fn apply_meta(&mut self, i: usize, meta: &Meta) {
-        let Some(g) = self.games.get_mut(i) else {
+        let Some(g) = self.entries.get_mut(i) else {
             return;
         };
         if let Some(cover) = meta.cover.as_ref().filter(|_| g.box_front.is_none()) {
             g.box_front = Some(cover.clone());
             let mut inside = g.items.clone();
             while let Some(j) = inside.pop() {
-                if let Some(item) = self.games.get_mut(j).filter(|item| item.box_front.is_none() && item.mpv_file().is_none()) {
+                if let Some(item) = self.entries.get_mut(j).filter(|item| item.box_front.is_none() && item.mpv_file().is_none()) {
                     item.box_front = Some(cover.clone());
                     inside.extend(item.items.iter().copied());
                 }
             }
         }
-        if let Some(g) = self.games.get_mut(i) {
+        if let Some(g) = self.entries.get_mut(i) {
             if meta.shot.is_some() {
                 g.shot.clone_from(&meta.shot);
             }
@@ -432,48 +432,48 @@ impl Library {
     }
 
     /// What a group's Continue plays: of the videos in it (mpv's, all the way down, in order), the one
-    /// played or watched last (see [`Game::last_watched`]) unless it was watched to its end, then the one after it; the first if none was played; none when
+    /// played or watched last (see [`Entry::last_watched`]) unless it was watched to its end, then the one after it; the first if none was played; none when
     /// the last was watched to the end, or it holds no videos (a folder of games).
     pub fn to_continue(&self, group: usize) -> Option<usize> {
         let mut leaves = Vec::new();
-        let mut stack: Vec<usize> = self.games.get(group)?.items.iter().rev().copied().collect();
+        let mut stack: Vec<usize> = self.entries.get(group)?.items.iter().rev().copied().collect();
         while let Some(i) = stack.pop() {
-            match self.games.get(i) {
+            match self.entries.get(i) {
                 Some(g) if g.is_group() => stack.extend(g.items.iter().rev()),
                 Some(g) if g.mpv_file().is_some() => leaves.push(i),
                 Some(_) => {}
                 None => {}
             }
         }
-        let played = |i: &usize| self.games.get(*i).is_some_and(|g| g.plays.count > 0 || g.position.is_some());
+        let played = |i: &usize| self.entries.get(*i).is_some_and(|g| g.plays.count > 0 || g.position.is_some());
         let Some(at) =
-            leaves.iter().enumerate().filter(|(_, i)| played(i)).max_by_key(|(_, i)| self.games.get(**i).map_or(0, Game::last_watched)).map(|(n, _)| n)
+            leaves.iter().enumerate().filter(|(_, i)| played(i)).max_by_key(|(_, i)| self.entries.get(**i).map_or(0, Entry::last_watched)).map(|(n, _)| n)
         else {
             return leaves.first().copied();
         };
         let last = *leaves.get(at)?;
-        if self.games.get(last).is_some_and(Game::watched) { leaves.get(at + 1).copied() } else { Some(last) }
+        if self.entries.get(last).is_some_and(Entry::watched) { leaves.get(at + 1).copied() } else { Some(last) }
     }
 
     /// Folder `folder`'s listing (browsed: see [`Browsed`]): `entries`, in order, its entries. One there
-    /// before (by id) keeps its place in `games` and its own listing; those gone, and everything in them,
+    /// before (by id) keeps its place in `entries` and its own listing; those gone, and everything in them,
     /// leave theirs free. At the top of the Trash, an entry is [`BrowseKind::Trashed`].
-    pub fn set_listing(&mut self, folder: usize, entries: Vec<Game>) {
-        let Some(f) = self.games.get(folder) else {
+    pub fn set_listing(&mut self, folder: usize, entries: Vec<Entry>) {
+        let Some(f) = self.entries.get(folder) else {
             return;
         };
         let trash = f.browsed.as_ref().is_some_and(|b| b.kind == BrowseKind::Trash);
-        let old: HashMap<Arc<str>, usize> = f.items.iter().filter_map(|&i| Some((self.games.get(i)?.id.clone(), i))).collect();
-        if let Some(b) = self.games.get_mut(folder).and_then(|f| f.browsed.as_mut()) {
+        let old: HashMap<Arc<str>, usize> = f.items.iter().filter_map(|&i| Some((self.entries.get(i)?.id.clone(), i))).collect();
+        if let Some(b) = self.entries.get_mut(folder).and_then(|f| f.browsed.as_mut()) {
             b.listed = true;
         }
         // (Those gone first, so their places go to the new ones.)
         let ids: HashSet<&Arc<str>> = entries.iter().map(|e| &e.id).collect();
         let mut gone: Vec<usize> = old.iter().filter(|(id, _)| !ids.contains(id)).map(|(_, &i)| i).collect();
         while let Some(i) = gone.pop() {
-            if let Some(g) = self.games.get_mut(i) {
+            if let Some(g) = self.entries.get_mut(i) {
                 gone.append(&mut g.items);
-                *g = Game::new("", "");
+                *g = Entry::new("", "");
             }
             self.free.push(i);
         }
@@ -485,7 +485,7 @@ impl Library {
             }
             let i = match old.get(&e.id).copied() {
                 Some(i) => {
-                    if let Some(g) = self.games.get_mut(i) {
+                    if let Some(g) = self.entries.get_mut(i) {
                         // (Its own listing, as it was.)
                         e.items = std::mem::take(&mut g.items);
                         if let (Some(b), Some(was)) = (e.browsed.as_mut(), g.browsed.as_ref()) {
@@ -497,20 +497,20 @@ impl Library {
                 }
                 None => match self.free.pop() {
                     Some(i) => {
-                        if let Some(g) = self.games.get_mut(i) {
+                        if let Some(g) = self.entries.get_mut(i) {
                             *g = e;
                         }
                         i
                     }
                     None => {
-                        self.games.push(e);
-                        self.games.len() - 1
+                        self.entries.push(e);
+                        self.entries.len() - 1
                     }
                 },
             };
             items.push(i);
         }
-        if let Some(f) = self.games.get_mut(folder) {
+        if let Some(f) = self.entries.get_mut(folder) {
             f.items = items;
         }
     }
@@ -519,15 +519,15 @@ impl Library {
     /// (a browsed one's `.m3u` entry too), else its entries opened by runner `key` all the way down, in
     /// list order; a browsed folder not listed yet, itself (the player reads it).
     pub fn queue_files(&self, i: usize, key: &str) -> Vec<PathBuf> {
-        let Some(g) = self.games.get(i) else {
+        let Some(g) = self.entries.get(i) else {
             return Vec::new();
         };
         if !g.is_group() {
             return g.file.clone().into_iter().collect();
         }
         let m3u =
-            |g: &Game| g.file.as_ref().filter(|f| f.extension().is_some_and(|e| e.eq_ignore_ascii_case("m3u") || e.eq_ignore_ascii_case("m3u8"))).cloned();
-        let playlist = g.playlist.clone().or_else(|| g.items.iter().filter_map(|&e| self.games.get(e)).find_map(m3u));
+            |g: &Entry| g.file.as_ref().filter(|f| f.extension().is_some_and(|e| e.eq_ignore_ascii_case("m3u") || e.eq_ignore_ascii_case("m3u8"))).cloned();
+        let playlist = g.playlist.clone().or_else(|| g.items.iter().filter_map(|&e| self.entries.get(e)).find_map(m3u));
         if let Some(playlist) = playlist {
             return vec![playlist];
         }
@@ -537,7 +537,7 @@ impl Library {
         let mut files = Vec::new();
         let mut stack: Vec<usize> = g.items.iter().rev().copied().collect();
         while let Some(e) = stack.pop() {
-            match self.games.get(e) {
+            match self.entries.get(e) {
                 Some(e) if e.is_group() => stack.extend(e.items.iter().rev()),
                 Some(e) if e.runner.as_ref().is_some_and(|r| &*r.key == key) => files.extend(e.file.clone()),
                 _ => {}
@@ -549,10 +549,10 @@ impl Library {
     /// The groups entry `i` is in, outermost first.
     pub fn groups_of(&self, i: usize) -> Vec<usize> {
         let mut groups = Vec::new();
-        let mut at = self.games.get(i).and_then(|g| g.parent);
+        let mut at = self.entries.get(i).and_then(|g| g.parent);
         while let Some(g) = at {
             groups.insert(0, g);
-            at = self.games.get(g).and_then(|g| g.parent);
+            at = self.entries.get(g).and_then(|g| g.parent);
         }
         groups
     }
@@ -562,7 +562,7 @@ impl Library {
 const RECENT: usize = 20;
 
 /// Placeholder games for development and snapshots.
-pub fn demo_games() -> Vec<Game> {
+pub fn demo_games() -> Vec<Entry> {
     [
         ("zelda-lttp", "A Link to the Past", 0x3f8f4f),
         ("metroid-zm", "Metroid: Zero Mission", 0xb0503a),
@@ -575,14 +575,14 @@ pub fn demo_games() -> Vec<Game> {
     .into_iter()
     .map(|(id, title, color)| match id {
         // As fetched metadata gives it.
-        "zelda-lttp" => Game {
+        "zelda-lttp" => Entry {
             color,
             developer: "Nintendo".into(),
             year: Some(1991),
             summary: "Link sets out across Hyrule and the Dark World to free the descendants of the Seven Sages from the wizard Agahnim.".into(),
-            ..Game::new(id, title)
+            ..Entry::new(id, title)
         },
-        _ => Game { color, ..Game::new(id, title) },
+        _ => Entry { color, ..Entry::new(id, title) },
     })
     .collect()
 }
@@ -594,9 +594,9 @@ pub fn demo_library() -> Library {
     let n = games.len();
     // A few installed apps, as desktop files give them.
     let apps = [("desktop:steam", "Steam", "steam"), ("desktop:foot", "Terminal", "foot"), ("desktop:firefox", "Firefox", "firefox")];
-    games.extend(apps.iter().map(|(id, title, program)| Game { launch: Launch::program(vec![(*program).into()]), tool: true, ..Game::new(id, title) }));
+    games.extend(apps.iter().map(|(id, title, program)| Entry { launch: Launch::program(vec![(*program).into()]), app: true, ..Entry::new(id, title) }));
     let series = games.len();
-    games.push(Game { color: 0x305a78, ..Game::new("tv:Cosmos", "Cosmos") });
+    games.push(Entry { color: 0x305a78, ..Entry::new("tv:Cosmos", "Cosmos") });
     let seasons: [(&str, &[&str]); 2] = [
         ("Season 1", &["1. The Shores of the Cosmic Ocean", "2. One Voice in the Cosmic Fugue", "10. The Edge of Forever"]),
         ("Season 2", &["1. Standing Up in the Milky Way"]),
@@ -604,7 +604,7 @@ pub fn demo_library() -> Library {
     for (season, episodes) in seasons {
         let s = games.len();
         let id = format!("tv:Cosmos/{season}");
-        games.push(Game { parent: Some(series), color: 0x305a78, ..Game::new(&id, season) });
+        games.push(Entry { parent: Some(series), color: 0x305a78, ..Entry::new(&id, season) });
         for episode in episodes {
             let e = games.len();
             let file = format!("{id}/{episode}.mkv");
@@ -613,7 +613,15 @@ pub fn demo_library() -> Library {
             // (The second episode left halfway.)
             let position = episode.starts_with("2.").then_some(1500);
             let launch = Launch::program(argv);
-            games.push(Game { parent: Some(s), color: 0x305a78, launch, file: Some(path.into()), duration: Some(2640), position, ..Game::new(&file, episode) });
+            games.push(Entry {
+                parent: Some(s),
+                color: 0x305a78,
+                launch,
+                file: Some(path.into()),
+                duration: Some(2640),
+                position,
+                ..Entry::new(&file, episode)
+            });
             if let Some(season) = games.get_mut(s) {
                 season.items.push(e);
             }
@@ -631,7 +639,7 @@ pub fn demo_library() -> Library {
     let own = |name: &str, icon: &str| Some(OwnTab { name: name.into(), icon: Some(icon.into()) });
     Library {
         collections,
-        games,
+        entries: games,
         order: vec!["Recent".into(), "Favourites".into()],
         recent: own("Recent", "clock"),
         favourites: own("Favourites", "star"),
@@ -647,20 +655,24 @@ mod tests {
     #[test]
     fn a_folder_queues_its_playlist_else_its_files_of_the_runner() {
         let music = RunnerOf::new("music", "Music", true);
-        let file =
-            |id: &str, runner: Option<&RunnerOf>| Game { file: Some(format!("/m/{id}").into()), runner: runner.cloned(), parent: Some(0), ..Game::new(id, id) };
+        let file = |id: &str, runner: Option<&RunnerOf>| Entry {
+            file: Some(format!("/m/{id}").into()),
+            runner: runner.cloned(),
+            parent: Some(0),
+            ..Entry::new(id, id)
+        };
         let mut games = vec![
-            Game { items: vec![1, 2, 3], ..Game::new("album", "Album") },
+            Entry { items: vec![1, 2, 3], ..Entry::new("album", "Album") },
             file("b.mp3", Some(&music)),
             file("cover.jpg", None),
-            Game { items: vec![4], parent: Some(0), ..Game::new("cd2", "CD 2") },
-            Game { parent: Some(3), ..file("c.flac", Some(&music)) },
+            Entry { items: vec![4], parent: Some(0), ..Entry::new("cd2", "CD 2") },
+            Entry { parent: Some(3), ..file("c.flac", Some(&music)) },
         ];
-        let mut library = Library { games: games.clone(), ..Library::default() };
+        let mut library = Library { entries: games.clone(), ..Library::default() };
         assert_eq!(library.queue_files(0, &music.key), [PathBuf::from("/m/b.mp3"), "/m/c.flac".into()], "down into CD 2, no cover");
         assert_eq!(library.queue_files(1, &music.key), [PathBuf::from("/m/b.mp3")]);
         games[0].playlist = Some("/m/album.m3u".into());
-        library.games = games;
+        library.entries = games;
         assert_eq!(library.queue_files(0, &music.key), [PathBuf::from("/m/album.m3u")], "its playlist instead");
     }
 
@@ -668,15 +680,15 @@ mod tests {
     fn recent_and_favourites_come_first() {
         let mut lib = demo_library();
         lib.collections.retain(|c| c.name == "Games");
-        lib.games[2].plays.add(100, 10);
-        lib.games[4].plays.add(500, 10);
-        lib.games[1].favourite = true;
+        lib.entries[2].plays.add(100, 10);
+        lib.entries[4].plays.add(500, 10);
+        lib.entries[1].favourite = true;
         lib.rebuild_derived();
         let names: Vec<&str> = lib.collections.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, vec!["Recent", "Favourites", "Games"]);
-        assert_eq!(lib.collections[0].games, vec![4, 2], "most recent first");
-        assert_eq!(lib.collections[1].games, vec![1]);
-        lib.games[1].favourite = false;
+        assert_eq!(lib.collections[0].entries, vec![4, 2], "most recent first");
+        assert_eq!(lib.collections[1].entries, vec![1]);
+        lib.entries[1].favourite = false;
         lib.rebuild_derived();
         assert_eq!(lib.collections.len(), 2, "an empty Favourites goes");
     }
@@ -685,85 +697,85 @@ mod tests {
     fn a_series_is_a_group_of_seasons_of_episodes() {
         let lib = demo_library();
         let tv = lib.collections.iter().find(|c| c.name == "TV").unwrap();
-        let series = &lib.games[tv.games[0]];
+        let series = &lib.entries[tv.entries[0]];
         assert!(series.is_group());
         let season = series.items[0];
-        let episode = lib.games[season].items[2];
-        assert_eq!(lib.games[episode].title, "10. The Edge of Forever");
-        assert_eq!(lib.groups_of(episode), vec![tv.games[0], season]);
-        assert!(!lib.games[episode].is_group());
+        let episode = lib.entries[season].items[2];
+        assert_eq!(lib.entries[episode].title, "10. The Edge of Forever");
+        assert_eq!(lib.groups_of(episode), vec![tv.entries[0], season]);
+        assert!(!lib.entries[episode].is_group());
     }
 
     #[test]
     fn a_series_cover_reaches_its_seasons_but_not_its_videos() {
         let mut lib = demo_library();
-        let tv = lib.collections.iter().find(|c| c.name == "TV").unwrap().games[0];
-        let season = lib.games[tv].items[0];
-        let (first, second) = (lib.games[season].items[0], lib.games[season].items[1]);
-        lib.games[second].box_front = Some("own.jpg".into());
+        let tv = lib.collections.iter().find(|c| c.name == "TV").unwrap().entries[0];
+        let season = lib.entries[tv].items[0];
+        let (first, second) = (lib.entries[season].items[0], lib.entries[season].items[1]);
+        lib.entries[second].box_front = Some("own.jpg".into());
         let meta = Meta { cover: Some("poster.jpg".into()), summary: "Space.".into(), year: Some(1980), ..Meta::default() };
         lib.apply_meta(tv, &meta);
-        assert_eq!(lib.games[season].box_front.as_deref(), Some(std::path::Path::new("poster.jpg")), "a season");
-        assert_eq!(lib.games[first].box_front, None, "an episode: its frame is its picture");
-        assert_eq!(lib.games[second].box_front.as_deref(), Some(std::path::Path::new("own.jpg")));
-        assert_eq!((lib.games[tv].summary.as_str(), lib.games[tv].year), ("Space.", Some(1980)));
+        assert_eq!(lib.entries[season].box_front.as_deref(), Some(std::path::Path::new("poster.jpg")), "a season");
+        assert_eq!(lib.entries[first].box_front, None, "an episode: its frame is its picture");
+        assert_eq!(lib.entries[second].box_front.as_deref(), Some(std::path::Path::new("own.jpg")));
+        assert_eq!((lib.entries[tv].summary.as_str(), lib.entries[tv].year), ("Space.", Some(1980)));
     }
 
     #[test]
     fn continue_goes_on_from_the_episode_played_last() {
         let mut lib = demo_library();
-        let tv = lib.collections.iter().find(|c| c.name == "TV").unwrap().games[0];
-        let s1 = lib.games[tv].items[0];
-        let s2 = lib.games[tv].items[1];
-        let (e1, e2, e10) = (lib.games[s1].items[0], lib.games[s1].items[1], lib.games[s1].items[2]);
-        let s2e1 = lib.games[s2].items[0];
-        lib.games[e2].position = None;
+        let tv = lib.collections.iter().find(|c| c.name == "TV").unwrap().entries[0];
+        let s1 = lib.entries[tv].items[0];
+        let s2 = lib.entries[tv].items[1];
+        let (e1, e2, e10) = (lib.entries[s1].items[0], lib.entries[s1].items[1], lib.entries[s1].items[2]);
+        let s2e1 = lib.entries[s2].items[0];
+        lib.entries[e2].position = None;
         assert_eq!(lib.to_continue(tv), Some(e1), "none played: the first");
         // The first watched to the end (mpv kept no place): the next.
-        lib.games[e1].plays.add(100, 2700);
+        lib.entries[e1].plays.add(100, 2700);
         assert_eq!(lib.to_continue(tv), Some(e2));
         // The second left halfway: it again.
-        lib.games[e2].plays.add(5000, 600);
-        lib.games[e2].position = Some(1200);
-        lib.games[e2].duration = Some(2700);
+        lib.entries[e2].plays.add(5000, 600);
+        lib.entries[e2].position = Some(1200);
+        lib.entries[e2].duration = Some(2700);
         assert_eq!(lib.to_continue(tv), Some(e2));
         // Quit in its credits: watched, so the one after (across seasons too).
-        lib.games[e2].position = Some(2600);
+        lib.entries[e2].position = Some(2600);
         assert_eq!(lib.to_continue(tv), Some(e10));
-        lib.games[e10].plays.add(9000, 2700);
+        lib.entries[e10].plays.add(9000, 2700);
         assert_eq!(lib.to_continue(tv), Some(s2e1));
         assert_eq!(lib.to_continue(s1), None, "the season watched");
         // Places mpv kept outside ClamShell: the one kept last wins over plays before it.
-        lib.games[e1].position = Some(100);
-        lib.games[e1].position_at = 20_000;
+        lib.entries[e1].position = Some(100);
+        lib.entries[e1].position_at = 20_000;
         assert_eq!(lib.to_continue(tv), Some(e1), "watched last, in mpv");
-        let games = lib.collections.iter().find(|c| c.name == "Games").unwrap().games.clone();
-        lib.games.push(Game { items: games, ..Game::new("folder:Games/All", "All") });
-        assert_eq!(lib.to_continue(lib.games.len() - 1), None, "games: no Continue");
+        let games = lib.collections.iter().find(|c| c.name == "Games").unwrap().entries.clone();
+        lib.entries.push(Entry { items: games, ..Entry::new("folder:Games/All", "All") });
+        assert_eq!(lib.to_continue(lib.entries.len() - 1), None, "games: no Continue");
     }
 
-    fn browsed(id: &str, folder: bool) -> Game {
-        Game { browsed: Some(Browsed { folder, ..Browsed::default() }), ..Game::new(id, id.rsplit('/').next().unwrap()) }
+    fn browsed(id: &str, folder: bool) -> Entry {
+        Entry { browsed: Some(Browsed { folder, ..Browsed::default() }), ..Entry::new(id, id.rsplit('/').next().unwrap()) }
     }
 
     #[test]
     fn listings_keep_places_and_free_what_went() {
-        let mut lib = Library { games: vec![browsed("browse:Home", true)], ..Library::default() };
-        assert!(lib.games[0].is_group(), "a folder opens before it is listed");
+        let mut lib = Library { entries: vec![browsed("browse:Home", true)], ..Library::default() };
+        assert!(lib.entries[0].is_group(), "a folder opens before it is listed");
         lib.set_listing(0, vec![browsed("browse:Home/a", true), browsed("browse:Home/b.txt", false)]);
-        assert!(lib.games[0].browsed.as_ref().unwrap().listed);
-        assert_eq!(lib.games[0].items, vec![1, 2]);
-        assert_eq!(lib.games[1].parent, Some(0));
+        assert!(lib.entries[0].browsed.as_ref().unwrap().listed);
+        assert_eq!(lib.entries[0].items, vec![1, 2]);
+        assert_eq!(lib.entries[1].parent, Some(0));
         lib.set_listing(1, vec![browsed("browse:Home/a/x", false)]);
         // Listed again: a stays where it was, with its own listing; b went, its place free for c.
         lib.set_listing(0, vec![browsed("browse:Home/a", true), browsed("browse:Home/c", false)]);
-        assert_eq!(lib.games[0].items, vec![1, 2]);
-        assert_eq!(&*lib.games[2].id, "browse:Home/c", "b's place");
-        assert_eq!(lib.games[1].items, vec![3], "a's listing kept");
-        assert!(lib.games[1].browsed.as_ref().unwrap().listed);
+        assert_eq!(lib.entries[0].items, vec![1, 2]);
+        assert_eq!(&*lib.entries[2].id, "browse:Home/c", "b's place");
+        assert_eq!(lib.entries[1].items, vec![3], "a's listing kept");
+        assert!(lib.entries[1].browsed.as_ref().unwrap().listed);
         // a went, and x in it.
         lib.set_listing(0, vec![browsed("browse:Home/c", false)]);
-        assert_eq!(lib.games[0].items, vec![2]);
+        assert_eq!(lib.entries[0].items, vec![2]);
         let mut free = lib.free.clone();
         free.sort_unstable();
         assert_eq!(free, vec![1, 3]);
@@ -774,11 +786,11 @@ mod tests {
     fn the_trashs_top_entries_can_be_restored() {
         let mut trash = browsed("browse:Trash", true);
         trash.browsed.as_mut().unwrap().kind = BrowseKind::Trash;
-        let mut lib = Library { games: vec![trash], ..Library::default() };
+        let mut lib = Library { entries: vec![trash], ..Library::default() };
         lib.set_listing(0, vec![browsed("browse:Trash/old", true)]);
-        assert_eq!(lib.games[1].browsed.as_ref().unwrap().kind, BrowseKind::Trashed);
+        assert_eq!(lib.entries[1].browsed.as_ref().unwrap().kind, BrowseKind::Trashed);
         lib.set_listing(1, vec![browsed("browse:Trash/old/in", false)]);
-        assert_eq!(lib.games[2].browsed.as_ref().unwrap().kind, BrowseKind::Plain, "only the top");
+        assert_eq!(lib.entries[2].browsed.as_ref().unwrap().kind, BrowseKind::Plain, "only the top");
     }
 
     #[test]

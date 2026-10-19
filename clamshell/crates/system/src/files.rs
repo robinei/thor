@@ -15,7 +15,7 @@ use std::sync::mpsc::TryRecvError;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use clamshell_core::files::{Browse, BrowseCommand, FileOp, FilesEvent};
-use clamshell_core::{Browsed, Event, Game};
+use clamshell_core::{Browsed, Entry, Event};
 use rustix::fs::inotify;
 
 use crate::Sink;
@@ -171,11 +171,11 @@ fn changed(fd: &rustix::fd::OwnedFd) -> bool {
 /// The entries of `dir` (folder `folder`'s: their ids it, `/`, their names), folders first, then by
 /// name; hidden ones (`.name`) only if `hidden`. A picture is its own art; a file opens by the first of
 /// `runners` that opens its name (`~/` in its command against `home`).
-pub fn list(dir: &Path, folder: &str, runners: &[Runner], home: Option<&Path>, hidden: bool) -> Vec<Game> {
+pub fn list(dir: &Path, folder: &str, runners: &[Runner], home: Option<&Path>, hidden: bool) -> Vec<Entry> {
     let Ok(read) = fs::read_dir(dir) else {
         return Vec::new();
     };
-    let mut games: Vec<Game> = read
+    let mut games: Vec<Entry> = read
         .flatten()
         .filter_map(|e| {
             let name = e.file_name().into_string().ok().filter(|n| hidden || !n.starts_with('.'))?;
@@ -185,7 +185,7 @@ pub fn list(dir: &Path, folder: &str, runners: &[Runner], home: Option<&Path>, h
             let is_dir = meta.as_ref().is_some_and(fs::Metadata::is_dir);
             let size = meta.as_ref().filter(|m| m.is_file()).map(fs::Metadata::len);
             let modified = meta.and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs());
-            let mut game = Game::new(&format!("{folder}/{name}"), &name);
+            let mut game = Entry::new(&format!("{folder}/{name}"), &name);
             // (An archive: browsed as a folder, through its mount; a runner that opens it kept, for
             // Open in.)
             let archive = !is_dir && crate::archives::is_archive(&name);
@@ -253,7 +253,7 @@ const PEEK: usize = 256;
 
 /// The videos (mpv's) among `entries`: their lengths and frames as the database has them (read before,
 /// here or as scanned entries'); those it hasn't, to read.
-fn known_videos(entries: &mut [Game], store: Option<&crate::store::Store>) -> Vec<crate::meta::Wanted> {
+fn known_videos(entries: &mut [Entry], store: Option<&crate::store::Store>) -> Vec<crate::meta::Wanted> {
     if !entries.iter().any(|g| g.mpv_file().is_some()) {
         return Vec::new();
     }
@@ -755,7 +755,7 @@ mod tests {
         assert_eq!(names, ["Zelda", "a.SFC", "b.txt", "cover.png", "tool.desktop"]);
         assert_eq!(&*games[0].id, "browse:Files/Home/Zelda");
         assert!(games[0].is_group());
-        let argv = |g: &Game| match &g.launch {
+        let argv = |g: &Entry| match &g.launch {
             clamshell_core::Launch::Program { argv, .. } => argv.clone(),
             _ => vec![],
         };

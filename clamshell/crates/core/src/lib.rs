@@ -60,7 +60,7 @@ use slider::Control;
 pub use dock::{Dock, DockItem};
 pub use editor::{Editor, count_env, parse_env};
 pub use effect::{Dirty, Effect, Save, Watch, WindowCommand};
-pub use event::{Event, GameEvent, LevelEvent, PointerEvent, Reading, ShelfEvent, Slide};
+pub use event::{Event, LaunchEvent, LevelEvent, PointerEvent, Reading, ShelfEvent, Slide};
 pub use id::{AudioId, BtId, DockId, EditorId, Hold, Id, KeymapId, SettingsId, ShelfId, Target, WifiId};
 pub use instance::Instance;
 pub use levels::{Brightness, Level, Levels, Sound};
@@ -77,7 +77,7 @@ pub use sys::{Status, Sys};
 pub use tab::{Bottom, Tab};
 pub use time::{ClockField, TimeId, TimePage, TimeRow, TimeZones};
 
-pub use clamshell_library::{BrowseKind, Browsed, Collection, Game, Launch, Library, Meta, RunnerOf, runner_key};
+pub use clamshell_library::{BrowseKind, Browsed, Collection, Entry, Launch, Library, Meta, RunnerOf, runner_key};
 
 /// A game's power profile: how fast CPU and GPU may run (frequency caps; the Thor has no TDP setting).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -284,13 +284,13 @@ impl State {
 
     /// A game of the library, by its id; one that runs and left it (its file deleted), as it was.
     /// Whether the dock menu offers Open another for `id`: it runs, and another launch of it makes sense
-    /// (see [`Game::another`]).
+    /// (see [`crate::Entry::another`]).
     pub fn opens_another(&self, id: &str) -> bool {
         // (Not one handed over to another program, Android's: a launch shows the one it runs.)
         self.session.running(id).is_some() && self.game(id).is_some_and(|g| g.another && !g.runner.as_ref().is_some_and(|r| r.handover))
     }
 
-    pub fn game(&self, id: &str) -> Option<&Game> {
+    pub fn game(&self, id: &str) -> Option<&Entry> {
         self.shelf.game(id).or_else(|| self.session.running(id).and_then(|r| r.entry.as_deref()))
     }
 
@@ -304,7 +304,7 @@ impl State {
     /// itself, what follows from it everywhere: the pad mouse follows the game in front, the pad goes
     /// where it is wanted, and idle moves on (or back).
     pub fn apply(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
-        let session_input = matches!(event, Event::Tick { .. } | Event::Windows(_) | Event::Units(_) | Event::Tray(_) | Event::Game(_) | Event::Library(_));
+        let session_input = matches!(event, Event::Tick { .. } | Event::Windows(_) | Event::Units(_) | Event::Tray(_) | Event::Launch(_) | Event::Library(_));
         let (mut dirty, mut effects) = self.apply_event(event);
         if session_input {
             let (changed, reconciled) = self.reconcile();
@@ -426,7 +426,7 @@ impl State {
             Event::Slide(slide) => self.on_slide(slide),
             Event::Level(e) => self.on_level(e),
             Event::Shelf(e) => self.on_shelf_event(e),
-            Event::Game(e) => self.on_game(e),
+            Event::Launch(e) => self.on_game(e),
             Event::Windows(windows) => {
                 self.session.set_windows(windows);
                 (Dirty::BOTH, vec![])
@@ -796,7 +796,7 @@ impl State {
     /// The selected group's Continue (see [`Library::to_continue`]): that entry played.
     fn continue_selected(&mut self) -> Vec<Effect> {
         let next = self.shelf.selected_index().and_then(|g| self.shelf.library().to_continue(g));
-        match next.and_then(|i| self.shelf.library().games.get(i)).map(|g| g.id.clone()) {
+        match next.and_then(|i| self.shelf.library().entries.get(i)).map(|g| g.id.clone()) {
             Some(id) => self.play(id),
             None => vec![],
         }
@@ -885,20 +885,20 @@ impl State {
         vec![Effect::Save(Save::Favourites(ids))]
     }
 
-    fn on_game(&mut self, event: GameEvent) -> (Dirty, Vec<Effect>) {
+    fn on_game(&mut self, event: LaunchEvent) -> (Dirty, Vec<Effect>) {
         let effects = match event {
             // (Its window may be there already, before its start was told: the rules for its windows.)
-            GameEvent::Started(game) => {
+            LaunchEvent::Started(game) => {
                 self.started(game);
                 vec![]
             }
-            GameEvent::Ended(game) => self.ended(&game),
-            GameEvent::Position { game, position } => {
+            LaunchEvent::Ended(game) => self.ended(&game),
+            LaunchEvent::Position { game, position } => {
                 self.shelf.set_position(&game, position, self.unix_secs);
                 vec![]
             }
             // (A launch that never started: nothing runs one less, but it is no longer starting.)
-            GameEvent::LaunchFailed(game) => {
+            LaunchEvent::LaunchFailed(game) => {
                 self.launch_failed(game);
                 vec![]
             }
@@ -1123,7 +1123,7 @@ pub(crate) mod testkit {
 
     /// The launcher done with `game`'s launch (it ended).
     pub fn played(s: &mut State, game: &str) -> Vec<Effect> {
-        s.apply(GameEvent::Ended(game.into()).into()).1
+        s.apply(LaunchEvent::Ended(game.into()).into()).1
     }
 
     /// Showing `instance`'s workspace.
@@ -1140,7 +1140,7 @@ pub(crate) mod testkit {
             Effect::Launch { instance, .. } => Some(instance.clone()),
             _ => None,
         });
-        s.apply(GameEvent::Started(id.into()).into());
+        s.apply(LaunchEvent::Started(id.into()).into());
         instance.unwrap()
     }
 }
@@ -1191,8 +1191,8 @@ mod tests {
         // (No launch: the shapes below say so.)
         let probe = start_end(&mut state()).unwrap_or(Instance::Shelf);
         let window = Window { unit: probe.unit(), visible: true, ..win(5, "zelda3", &probe.workspace(), true) };
-        let starts = [Event::Game(GameEvent::Started("zelda-lttp".into())), Event::Units(vec![probe.clone()]), Event::Windows(vec![window])];
-        let ends = [Event::Game(GameEvent::Ended("zelda-lttp".into())), Event::Units(vec![]), Event::Windows(vec![])];
+        let starts = [Event::Launch(LaunchEvent::Started("zelda-lttp".into())), Event::Units(vec![probe.clone()]), Event::Windows(vec![window])];
+        let ends = [Event::Launch(LaunchEvent::Ended("zelda-lttp".into())), Event::Units(vec![]), Event::Windows(vec![])];
         for start in orders(&starts) {
             for end in orders(&ends) {
                 let mut s = state();
@@ -1253,14 +1253,14 @@ mod tests {
         let notice = |s: &State| s.bottom().notice().map(|n| n.what.clone());
         let mut s = state();
         launch(&mut s, "zelda-lttp");
-        s.apply(Event::Game(GameEvent::Ended("zelda-lttp".into())));
+        s.apply(Event::Launch(LaunchEvent::Ended("zelda-lttp".into())));
         assert!(matches!(notice(&s), Some(hardware::NoticeKind::NotStarted(_))), "{:?}", notice(&s));
         // One that showed a window and ended: nothing said.
         let mut s = state();
         let zelda = launch(&mut s, "zelda-lttp");
         s.apply(Event::Windows(vec![Window { unit: zelda.unit(), visible: true, ..win(5, "zelda3", &zelda.workspace(), true) }]));
         s.apply(Event::Windows(vec![]));
-        s.apply(Event::Game(GameEvent::Ended("zelda-lttp".into())));
+        s.apply(Event::Launch(LaunchEvent::Ended("zelda-lttp".into())));
         assert!(!matches!(notice(&s), Some(hardware::NoticeKind::NotStarted(_))), "{:?}", notice(&s));
     }
 
@@ -1269,7 +1269,7 @@ mod tests {
         let mut s = state();
         tap(&mut s, game("zelda-lttp"));
         tap(&mut s, game("zelda-lttp"));
-        s.apply(Event::Game(GameEvent::LaunchFailed("zelda-lttp".into())));
+        s.apply(Event::Launch(LaunchEvent::LaunchFailed("zelda-lttp".into())));
         let notice = s.bottom().notice().map(|n| n.what.clone());
         assert!(matches!(&notice, Some(hardware::NoticeKind::NotStarted(t)) if t == "A Link to the Past"), "{notice:?}");
         assert!(s.session().running("zelda-lttp").is_none());
@@ -1308,7 +1308,7 @@ mod tests {
         let zelda = Instance::workspace_of(&clamshell_library::key_of("zelda-lttp"));
         let home = |s: &mut State| s.apply(Event::Home).1;
         assert_eq!(home(&mut s), vec![], "nothing before shelf: it stays");
-        s.apply(GameEvent::Started("zelda-lttp".into()).into());
+        s.apply(LaunchEvent::Started("zelda-lttp".into()).into());
         assert_eq!(home(&mut s), vec![], "the program in force, no window of it yet: shelf stays");
         s.apply(Event::Windows(vec![shelf(true), win(3, "retroarch", &zelda, false)]));
         assert_eq!(home(&mut s), vec![Effect::Window(WindowCommand::Focus(zelda.clone()))], "no history: the program in force");

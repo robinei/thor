@@ -34,7 +34,7 @@ impl State {
             return vec![];
         };
         let library = self.shelf.library();
-        let index_of = |id: &str| library.games.iter().position(|g| &*g.id == id);
+        let index_of = |id: &str| library.entries.iter().position(|g| &*g.id == id);
         // (The selection, in the order picked, while there is one; the folder open is what plays them.)
         let (entry, ids): (Arc<str>, Vec<Arc<str>>) = match self.shelf.group().filter(|_| !self.files.selected.is_empty()) {
             Some(folder) => (folder.id.clone(), self.files.selected.clone()),
@@ -83,7 +83,7 @@ fn line(runner: &RunnerOf, file: &std::path::Path) -> Option<String> {
 mod tests {
     use super::*;
     use crate::testkit::{state_with, tap};
-    use crate::{Collection, Event, Game, GameEvent, Id, Launch, Library, ShelfId};
+    use crate::{Collection, Entry, Event, Id, Launch, LaunchEvent, Library, ShelfId};
 
     fn music() -> RunnerOf {
         RunnerOf {
@@ -95,13 +95,13 @@ mod tests {
 
     /// Music: an album of two songs, and a song alone.
     fn music_state() -> State {
-        let song = |id: &str, file: &str| Game { file: Some(file.into()), runner: Some(music()), ..Game::new(id, id) };
-        let album = Game { items: vec![1, 2], ..Game::new("album", "Album") };
+        let song = |id: &str, file: &str| Entry { file: Some(file.into()), runner: Some(music()), ..Entry::new(id, id) };
+        let album = Entry { items: vec![1, 2], ..Entry::new("album", "Album") };
         let (mut a, mut b) = (song("a", "/m/Album/a.mp3"), song("b", "/m/Album/b.mp3"));
         (a.parent, b.parent) = (Some(0), Some(0));
-        let album = Game { runner: Some(music()), ..album };
+        let album = Entry { runner: Some(music()), ..album };
         let games = vec![album, a, b, song("single", "/m/single.mp3")];
-        state_with(Library { collections: vec![Collection::new("Music", vec![0, 3])], games, ..Library::default() })
+        state_with(Library { collections: vec![Collection::new("Music", vec![0, 3])], entries: games, ..Library::default() })
     }
 
     #[test]
@@ -116,7 +116,7 @@ mod tests {
         });
         let argv = ["mpv", "--input-ipc-server={socket}", "/m/Album/a.mp3", "/m/Album/b.mp3"].map(String::from).to_vec();
         assert_eq!(launch, Some(("album".into(), Launch::Program { argv, workdir: Some("/m/Album".into()) })), "the album's songs: {fx:?}");
-        s.apply(Event::Game(GameEvent::Started("album".into())));
+        s.apply(Event::Launch(LaunchEvent::Started("album".into())));
         tap(&mut s, Id::Shelf(ShelfId::Game("single".into())));
         let fx = tap(&mut s, Id::Shelf(ShelfId::Enqueue));
         let key = s.session().running("album").unwrap().key.clone();

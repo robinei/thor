@@ -6,7 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use clamshell_library::steam::{self, parse_vdf};
-use clamshell_library::{Game, Launch};
+use clamshell_library::{Entry, Launch};
 
 /// Steam's data folder under `home`, if Steam is installed.
 pub fn default_root(home: &Path) -> Option<PathBuf> {
@@ -14,7 +14,7 @@ pub fn default_root(home: &Path) -> Option<PathBuf> {
 }
 
 /// The installed games of every Steam library folder.
-pub fn games(root: &Path) -> Vec<Game> {
+pub fn games(root: &Path) -> Vec<Entry> {
     let mut libraries = vec![root.to_path_buf()];
     if let Ok(text) = fs::read_to_string(root.join("steamapps/libraryfolders.vdf")) {
         for path in steam::library_folders(&parse_vdf(&text)) {
@@ -39,7 +39,7 @@ pub fn games(root: &Path) -> Vec<Game> {
                 continue;
             };
             if let Some((appid, name)) = steam::manifest(&parse_vdf(&text)) {
-                let mut game = Game::new(&format!("steam:{appid}"), name);
+                let mut game = Entry::new(&format!("steam:{appid}"), name);
                 game.launch = Launch::Steam { appid };
                 game.box_front = art(&root.join("appcache/librarycache"), appid);
                 games.push(game);

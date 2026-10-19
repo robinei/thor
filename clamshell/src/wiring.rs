@@ -66,7 +66,7 @@ fn rescanner(sources: Sources, paths: Paths, queue: meta::Queue, sink: UiSink) -
                     log::warn!("rescan: forgetting the misses: {e}");
                 }
                 let loaded = library::load(&sources);
-                log::info!("rescan: {} entries", loaded.library.games.len());
+                log::info!("rescan: {} entries", loaded.library.entries.len());
                 if sink.send(clamshell_core::Event::Library(Box::new(loaded.library))).is_err() {
                     return;
                 }

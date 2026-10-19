@@ -156,7 +156,7 @@ impl State {
     /// The runners whose entries are paused together: those of the library's entries with a `pause`.
     pub(crate) fn follow_pausable_runners(&mut self) {
         let mut runners: Vec<RunnerOf> = Vec::new();
-        for r in self.shelf.library().games.iter().filter_map(|g| g.runner.as_ref()).filter(|r| !r.pause.is_empty()) {
+        for r in self.shelf.library().entries.iter().filter_map(|g| g.runner.as_ref()).filter(|r| !r.pause.is_empty()) {
             if !runners.iter().any(|o| o.key == r.key) {
                 runners.push(r.clone());
             }
@@ -246,7 +246,7 @@ mod tests {
     use crate::settings::Setting;
     use crate::testkit::*;
     use crate::windows::Window;
-    use crate::{Event, GameEvent};
+    use crate::{Event, LaunchEvent};
 
     fn freeze(key: &str, frozen: bool) -> Effect {
         Effect::Freeze { slice: Instance::slice_of(key), frozen }
@@ -300,7 +300,7 @@ mod tests {
             ..clamshell_library::RunnerOf::new("android", "Android", true)
         };
         let mut library = clamshell_library::demo_library();
-        library.games.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap().runner = Some(runner.clone());
+        library.entries.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap().runner = Some(runner.clone());
         let mut s = State::new(crate::Init { library, ..init() });
         s.settings.set(Some(&runner.key), Setting::Background, Some(1));
         let (pause, resume) = (Effect::RunnerCommand(vec!["pause".into()]), Effect::RunnerCommand(vec!["resume".into()]));
@@ -312,11 +312,11 @@ mod tests {
         // Launched: resumed first.
         let fx = s.launch("desktop:firefox".into());
         assert_eq!(fx.first(), Some(&resume), "{fx:?}");
-        s.apply(GameEvent::Started("desktop:firefox".into()).into());
+        s.apply(LaunchEvent::Started("desktop:firefox".into()).into());
         // Starting (its launch, then handed over, no window yet): not paused.
         let t = 101 + 2 * GRACE;
         assert!(!s.apply(Event::Tick { unix_secs: t }).1.contains(&pause), "its launch runs");
-        s.apply(GameEvent::Ended("desktop:firefox".into()).into());
+        s.apply(LaunchEvent::Ended("desktop:firefox".into()).into());
         assert!(!s.apply(Event::Tick { unix_secs: t + GRACE }).1.contains(&pause), "handed over, waiting for its window");
         // Shown: not paused; hidden for the grace: paused.
         let ws = Instance::workspace_of(&clamshell_library::key_of("desktop:firefox"));
@@ -384,7 +384,7 @@ mod tests {
         let zelda = launch(&mut s, "zelda-lttp");
         let fx = s.launch("desktop:foot".into());
         let foot = fx.iter().find_map(|e| if let Effect::Launch { instance, .. } = e { Some(instance.clone()) } else { None }).unwrap();
-        s.apply(GameEvent::Started("desktop:foot".into()).into());
+        s.apply(LaunchEvent::Started("desktop:foot".into()).into());
         let key = zelda.key().unwrap().to_owned();
         let windows = vec![
             Window { unit: zelda.unit(), ..win(3, "zelda3", &zelda.workspace(), false) },
@@ -417,6 +417,6 @@ mod tests {
         let zelda = launch(&mut s, "zelda-lttp");
         s.apply(Event::Windows(vec![Window { unit: zelda.unit(), ..win(3, "zelda3", &zelda.workspace(), true) }]));
         assert!(!s.apply(Event::Windows(vec![])).1.iter().any(|e| matches!(e, Effect::EndRun { .. })));
-        s.apply(GameEvent::Ended("zelda-lttp".into()).into());
+        s.apply(LaunchEvent::Ended("zelda-lttp".into()).into());
     }
 }

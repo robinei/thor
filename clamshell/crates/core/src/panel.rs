@@ -66,11 +66,11 @@ impl State {
     /// `id` a runner's all of whose entries are: games are paused when hidden by default (consoles do
     /// the same; one that minds, online play, is set to run).
     pub fn is_games(&self, id: &str) -> bool {
-        let game = |g: &crate::Game| !g.tool && g.browsed.is_none() && g.mpv_file().is_none() && !g.is_group();
+        let game = |g: &crate::Entry| !g.app && g.browsed.is_none() && g.mpv_file().is_none() && !g.is_group();
         if let Some(g) = self.game(id) {
             return game(g);
         }
-        let mut of_runner = self.shelf.library().games.iter().filter(|g| g.runner.as_ref().is_some_and(|r| &*r.key == id)).peekable();
+        let mut of_runner = self.shelf.library().entries.iter().filter(|g| g.runner.as_ref().is_some_and(|r| &*r.key == id)).peekable();
         of_runner.peek().is_some() && of_runner.all(game)
     }
 
@@ -271,7 +271,7 @@ mod tests {
     #[test]
     fn an_entry_takes_its_runners_settings_not_its_folders() {
         let mut library = clamshell_library::demo_library();
-        for g in library.games.iter_mut().filter(|g| g.id.starts_with("tv:")) {
+        for g in library.entries.iter_mut().filter(|g| g.id.starts_with("tv:")) {
             g.runner = Some(clamshell_library::RunnerOf::new("video", "Video", true));
         }
         let mut settings = settings::Settings::default();
@@ -291,7 +291,7 @@ mod tests {
     #[test]
     fn the_panel_offers_the_items_levels() {
         let mut library = clamshell_library::demo_library();
-        for g in library.games.iter_mut().filter(|g| g.id.starts_with("tv:")) {
+        for g in library.entries.iter_mut().filter(|g| g.id.starts_with("tv:")) {
             g.runner = Some(clamshell_library::RunnerOf::new("video", "Video", true));
         }
         let mut s = State::new(Init { library, ..init() });
@@ -314,7 +314,7 @@ mod tests {
     #[test]
     fn a_runner_can_leave_its_items_without_settings_of_their_own() {
         let mut library = clamshell_library::demo_library();
-        for g in library.games.iter_mut() {
+        for g in library.entries.iter_mut() {
             g.runner = Some(clamshell_library::RunnerOf::new("snes", "SNES", false));
         }
         let s = State::new(Init { library, ..init() });
@@ -388,7 +388,7 @@ mod tests {
     #[test]
     fn a_running_game_takes_changes_at_once() {
         let mut s = state();
-        s.apply(GameEvent::Started("zelda-lttp".into()).into());
+        s.apply(LaunchEvent::Started("zelda-lttp".into()).into());
         tap(&mut s, game("ff6"));
         // The running game is the context, not the selection.
         let fx = taps(&mut s, Setting::FpsCap, 1);
@@ -407,7 +407,7 @@ mod tests {
         let mut s = state();
         taps(&mut s, Setting::PadMouse, 1);
         taps(&mut s, Setting::BottomScreen, 1);
-        let (_, fx) = s.apply(GameEvent::Started("zelda-lttp".into()).into());
+        let (_, fx) = s.apply(LaunchEvent::Started("zelda-lttp".into()).into());
         assert!(fx.contains(&Effect::PadRoute(PadRoute::Mouse)), "{fx:?}");
         assert!(s.bottom_dark());
         tap(&mut s, Id::Wake);

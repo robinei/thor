@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use crate::scroll::{Rows, Scroll};
-use crate::{Collection, Game, Library};
+use crate::{Collection, Entry, Library};
 
 /// A list's place: the selected entry's position, and the rows scrolled past (whole rows at rest;
 /// fractions while a finger drags the list).
@@ -52,7 +52,7 @@ pub struct Shelf {
     selected: Option<Arc<str>>,
     /// Browsed folders' listings by folder, in the order they came (a folder's before those of the
     /// folders in it): applied again to the library read again.
-    listings: Vec<(Arc<str>, Vec<Game>)>,
+    listings: Vec<(Arc<str>, Vec<Entry>)>,
 }
 
 impl Shelf {
@@ -85,9 +85,9 @@ impl Shelf {
     }
 
     /// The group open in the current collection (the innermost), if any.
-    pub fn group(&self) -> Option<&Game> {
+    pub fn group(&self) -> Option<&Entry> {
         let g = *self.navs.get(self.current)?.open.last()?;
-        self.library.games.get(g)
+        self.library.entries.get(g)
     }
 
     /// The current list's place.
@@ -113,15 +113,15 @@ impl Shelf {
     }
 
     /// An entry by its id.
-    pub fn game(&self, id: &str) -> Option<&Game> {
-        self.library.games.iter().find(|g| &*g.id == id)
+    pub fn game(&self, id: &str) -> Option<&Entry> {
+        self.library.entries.iter().find(|g| &*g.id == id)
     }
 
     /// The library entry (not browsed) of browsed file `id`'s file, if there is one.
     pub(crate) fn entry_of_file(&self, id: &str) -> Option<Arc<str>> {
         // (An archive, though browsed as a folder: a ROM's zip is a file of the library's.)
         let file = self.game(id).filter(|g| g.browsed.as_ref().is_some_and(|b| !b.folder || b.archive))?.file.as_ref()?;
-        self.library.games.iter().find(|g| g.browsed.is_none() && !g.is_group() && g.file.as_ref() == Some(file)).map(|g| g.id.clone())
+        self.library.entries.iter().find(|g| g.browsed.is_none() && !g.is_group() && g.file.as_ref() == Some(file)).map(|g| g.id.clone())
     }
 
     /// Collection `c`'s list as its place has it: the innermost open group's entries, else its own; those
@@ -136,8 +136,8 @@ impl Shelf {
     /// Collection `c`'s list as its place has it, all of it (what is typed aside).
     fn whole_list_of(&self, c: usize) -> &[usize] {
         match self.navs.get(c).and_then(|n| n.open.last()) {
-            Some(&g) => self.library.games.get(g).map_or(&[], |g| g.items.as_slice()),
-            None => self.library.collections.get(c).map_or(&[], |c| c.games.as_slice()),
+            Some(&g) => self.library.entries.get(g).map_or(&[], |g| g.items.as_slice()),
+            None => self.library.collections.get(c).map_or(&[], |c| c.entries.as_slice()),
         }
     }
 
@@ -161,7 +161,7 @@ impl Shelf {
     /// The entries of collection `c`'s whole list whose titles start with `filter` (any case).
     fn found(&self, c: usize, filter: &str) -> Vec<usize> {
         let filter = filter.to_lowercase();
-        let games = &self.library.games;
+        let games = &self.library.entries;
         self.whole_list_of(c).iter().copied().filter(|&i| games.get(i).is_some_and(|g| g.title.to_lowercase().starts_with(&filter))).collect()
     }
 
@@ -185,8 +185,8 @@ impl Shelf {
     }
 
     /// The entry at `position` in the current list.
-    pub fn game_at(&self, position: usize) -> Option<&Game> {
-        self.library.games.get(*self.list().get(position)?)
+    pub fn game_at(&self, position: usize) -> Option<&Entry> {
+        self.library.entries.get(*self.list().get(position)?)
     }
 
     /// The selected entry's index in the library.
@@ -194,13 +194,13 @@ impl Shelf {
         self.list().get(self.cursor().index).copied()
     }
 
-    pub fn selected_game(&self) -> Option<&Game> {
+    pub fn selected_game(&self) -> Option<&Entry> {
         self.game_at(self.cursor().index)
     }
 
     /// Where `game` is in collection `c`'s list.
     fn position_in(&self, c: usize, game: &str) -> Option<usize> {
-        self.list_of(c).iter().position(|&i| self.library.games.get(i).is_some_and(|g| &*g.id == game))
+        self.list_of(c).iter().position(|&i| self.library.entries.get(i).is_some_and(|g| &*g.id == game))
     }
 
     /// Keeps the cursor in range and on screen, and `selected` in step with it. Whether the selection
@@ -255,7 +255,7 @@ impl Shelf {
             indices.extend(self.library.groups_of(g));
             indices.push(g);
         }
-        indices.iter().filter_map(|&i| self.library.games.get(i)).map(|g| g.id.clone()).collect()
+        indices.iter().filter_map(|&i| self.library.entries.get(i)).map(|g| g.id.clone()).collect()
     }
 
     /// Opens the selected entry if it is a group (its list shown, from its first entry). Whether it did.
@@ -263,7 +263,7 @@ impl Shelf {
         let Some(&g) = self.list().get(self.cursor().index) else {
             return false;
         };
-        if !self.library.games.get(g).is_some_and(Game::is_group) {
+        if !self.library.entries.get(g).is_some_and(Entry::is_group) {
             return false;
         }
         if let Some(n) = self.navs.get_mut(self.current) {
@@ -288,7 +288,7 @@ impl Shelf {
     /// Shows `group` open: in the current collection if it has the group's outermost group, else the
     /// first that does. Whether it is there.
     pub(crate) fn reveal(&mut self, group: &str) -> bool {
-        let Some(g) = self.library.games.iter().position(|x| &*x.id == group) else {
+        let Some(g) = self.library.entries.iter().position(|x| &*x.id == group) else {
             return false;
         };
         let mut path = self.library.groups_of(g);
@@ -296,7 +296,7 @@ impl Shelf {
         let Some(&root) = path.first() else {
             return false;
         };
-        let has = |c: &Collection| c.games.contains(&root);
+        let has = |c: &Collection| c.entries.contains(&root);
         let Some(c) = self.collection().filter(|c| has(c)).map(|_| self.current).or_else(|| self.library.collections.iter().position(has)) else {
             return false;
         };
@@ -304,7 +304,7 @@ impl Shelf {
         if let Some(n) = self.navs.get_mut(c) {
             *n = Nav::default();
         }
-        for id in path.iter().filter_map(|&i| self.library.games.get(i)).map(|g| g.id.clone()).collect::<Vec<_>>() {
+        for id in path.iter().filter_map(|&i| self.library.entries.get(i)).map(|g| g.id.clone()).collect::<Vec<_>>() {
             self.select(&id);
             self.open();
         }
@@ -370,7 +370,7 @@ impl Shelf {
         *self = Shelf::new(library);
         self.rows = rows;
         for (folder, entries) in listings {
-            if let Some(f) = self.library.games.iter().position(|g| g.id == folder) {
+            if let Some(f) = self.library.entries.iter().position(|g| g.id == folder) {
                 self.library.set_listing(f, entries.clone());
                 self.listings.push((folder, entries));
             }
@@ -385,8 +385,8 @@ impl Shelf {
 
     /// Browsed folder `folder`'s entries now (see [`Library::set_listing`]): the selected entry kept by
     /// id, the groups open that went closed. Whether the selection changed.
-    pub(crate) fn listed(&mut self, folder: Arc<str>, entries: Vec<Game>) -> bool {
-        let Some(f) = self.library.games.iter().position(|g| g.id == folder) else {
+    pub(crate) fn listed(&mut self, folder: Arc<str>, entries: Vec<Entry>) -> bool {
+        let Some(f) = self.library.entries.iter().position(|g| g.id == folder) else {
             return false;
         };
         let before = self.selected.clone();
@@ -395,7 +395,7 @@ impl Shelf {
         self.library.set_listing(f, entries);
         // (The listings of folders gone with it.)
         let library = &self.library;
-        self.listings.retain(|(id, _)| library.games.iter().any(|g| g.id == *id));
+        self.listings.retain(|(id, _)| library.entries.iter().any(|g| g.id == *id));
         self.close_gone();
         self.refind();
         if let Some(id) = &before {
@@ -408,14 +408,14 @@ impl Shelf {
     /// Each collection's groups open, as far as each is still in the one before (or the collection).
     fn close_gone(&mut self) {
         for (c, nav) in self.navs.iter_mut().enumerate() {
-            let mut list = self.library.collections.get(c).map_or(&[][..], |c| c.games.as_slice());
+            let mut list = self.library.collections.get(c).map_or(&[][..], |c| c.entries.as_slice());
             let mut keep = 0;
             for &g in &nav.open {
-                if !list.contains(&g) || !self.library.games.get(g).is_some_and(Game::is_group) {
+                if !list.contains(&g) || !self.library.entries.get(g).is_some_and(Entry::is_group) {
                     break;
                 }
                 keep += 1;
-                list = self.library.games.get(g).map_or(&[], |g| g.items.as_slice());
+                list = self.library.entries.get(g).map_or(&[], |g| g.items.as_slice());
             }
             nav.open.truncate(keep);
             nav.places.truncate(keep + 1);
@@ -424,7 +424,7 @@ impl Shelf {
 
     /// Where mpv left a video (none: at its end), at `now`.
     pub(crate) fn set_position(&mut self, id: &str, position: Option<u32>, now: u64) {
-        if let Some(g) = self.library.games.iter_mut().find(|g| &*g.id == id) {
+        if let Some(g) = self.library.entries.iter_mut().find(|g| &*g.id == id) {
             g.position = position;
             g.position_at = now;
         }
@@ -432,7 +432,7 @@ impl Shelf {
 
     /// What was fetched about entry `id` (see [`Library::apply_meta`]). Whether it is there.
     pub(crate) fn apply_meta(&mut self, id: &str, meta: &crate::Meta) -> bool {
-        let Some(i) = self.library.games.iter().position(|g| &*g.id == id) else {
+        let Some(i) = self.library.entries.iter().position(|g| &*g.id == id) else {
             return false;
         };
         self.library.apply_meta(i, meta);
@@ -443,7 +443,7 @@ impl Shelf {
     pub(crate) fn toggle_favourite(&mut self) -> Option<bool> {
         let id = self.selected.clone()?;
         Some(self.relayout(|lib| {
-            if let Some(g) = lib.games.iter_mut().find(|g| g.id == id) {
+            if let Some(g) = lib.entries.iter_mut().find(|g| g.id == id) {
                 g.favourite = !g.favourite;
             }
             lib.rebuild_derived();
@@ -453,7 +453,7 @@ impl Shelf {
     /// A play of `game` counted (it ended). Whether the selection changed.
     pub(crate) fn add_play(&mut self, game: &str, start: u64, duration: u64) -> bool {
         self.relayout(|lib| {
-            if let Some(g) = lib.games.iter_mut().find(|g| &*g.id == game) {
+            if let Some(g) = lib.entries.iter_mut().find(|g| &*g.id == game) {
                 g.plays.add(start, duration);
             }
             lib.rebuild_derived();
@@ -468,10 +468,10 @@ impl Shelf {
                 continue;
             };
             let index = nav.places.last().map_or(0, |p| p.index);
-            let Some(g) = self.list_of(c).get(index).and_then(|&g| self.library.games.get(g)) else {
+            let Some(g) = self.list_of(c).get(index).and_then(|&g| self.library.entries.get(g)) else {
                 continue;
             };
-            let mut ids: Vec<String> = nav.open.iter().filter_map(|&o| self.library.games.get(o)).map(|g| g.id.to_string()).collect();
+            let mut ids: Vec<String> = nav.open.iter().filter_map(|&o| self.library.entries.get(o)).map(|g| g.id.to_string()).collect();
             ids.push(g.id.to_string());
             places.push((coll.name.clone(), ids));
         }
@@ -568,7 +568,7 @@ mod tests {
         let name = s.shelf().collection().map(|c| c.name.clone());
         let (_, fx) = s.apply(ShelfEvent::ToggleFavourite.into());
         assert_eq!(fx, vec![Effect::Save(Save::Favourites(vec!["mk-ds".into()]))]);
-        assert!(s.shelf().library().collections.iter().any(|c| c.name == "Favourites" && c.games == vec![2]));
+        assert!(s.shelf().library().collections.iter().any(|c| c.name == "Favourites" && c.entries == vec![2]));
         assert_eq!(s.shelf().collection().map(|c| c.name.clone()), name, "the collection stays");
         assert_eq!(s.shelf().selected().map(|g| &**g), Some("mk-ds"), "so does the selection");
     }
@@ -579,7 +579,7 @@ mod tests {
         let mut s = state();
         tap(&mut s, Id::Tab(crate::Tab::Keyboard));
         let key = |s: &mut State, k| find(k).map(|pos| tap(s, Id::Key(pos))).unwrap_or_default();
-        let titles = |s: &State| s.shelf().list().iter().filter_map(|&i| s.shelf().library().games.get(i)).map(|g| g.title.clone()).collect::<Vec<_>>();
+        let titles = |s: &State| s.shelf().list().iter().filter_map(|&i| s.shelf().library().entries.get(i)).map(|g| g.title.clone()).collect::<Vec<_>>();
         assert!(key(&mut s, Key::Char('m')).is_empty(), "not sent to an app: shelf is in front");
         assert_eq!(titles(&s), ["Metroid: Zero Mission", "Mario Kart DS"]);
         key(&mut s, Key::Char('a'));
@@ -607,7 +607,7 @@ mod tests {
         tap(&mut s, Id::Shelf(ShelfId::Collection(2)));
         assert_eq!(tap(&mut s, game("tv:Cosmos")), vec![], "selected already: opened, nothing launched");
         assert_eq!(s.shelf().group().map(|g| g.title.as_str()), Some("Cosmos"));
-        let titles = |s: &State| s.shelf().list().iter().map(|&i| s.shelf().library().games[i].title.clone()).collect::<Vec<_>>();
+        let titles = |s: &State| s.shelf().list().iter().map(|&i| s.shelf().library().entries[i].title.clone()).collect::<Vec<_>>();
         assert_eq!(titles(&s), vec!["Season 1", "Season 2"]);
         s.apply(ShelfEvent::ListStep(1).into());
         tap(&mut s, Id::Shelf(ShelfId::Launch));
@@ -655,16 +655,16 @@ mod tests {
             })
         };
         // (The demo's second episode is under way: not here.)
-        s.apply(GameEvent::Position { game: "tv:Cosmos/Season 1/2. One Voice in the Cosmic Fugue.mkv".into(), position: None }.into());
+        s.apply(LaunchEvent::Position { game: "tv:Cosmos/Season 1/2. One Voice in the Cosmic Fugue.mkv".into(), position: None }.into());
         let fx = tap(&mut s, Id::Shelf(ShelfId::Continue));
         assert_eq!(launched(&fx).as_deref(), Some(first), "none watched: the first");
-        s.apply(GameEvent::Started(first.into()).into());
-        s.apply(GameEvent::Position { game: first.into(), position: Some(600) }.into());
+        s.apply(LaunchEvent::Started(first.into()).into());
+        s.apply(LaunchEvent::Position { game: first.into(), position: Some(600) }.into());
         played(&mut s, first);
         let fx = s.apply(ShelfEvent::Continue.into()).1;
         assert_eq!(launched(&fx).as_deref(), Some(first), "left early: it again");
-        s.apply(GameEvent::Started(first.into()).into());
-        s.apply(GameEvent::Position { game: first.into(), position: None }.into());
+        s.apply(LaunchEvent::Started(first.into()).into());
+        s.apply(LaunchEvent::Position { game: first.into(), position: None }.into());
         played(&mut s, first);
         let fx = s.apply(ShelfEvent::Continue.into()).1;
         assert_eq!(launched(&fx).as_deref(), Some("tv:Cosmos/Season 1/2. One Voice in the Cosmic Fugue.mkv"), "watched to its end: the next");

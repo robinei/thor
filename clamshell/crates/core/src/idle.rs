@@ -339,15 +339,15 @@ mod tests {
             ..clamshell_library::RunnerOf::new("android", "Android", true)
         };
         let mut library = clamshell_library::demo_library();
-        if let Some(g) = library.games.iter_mut().find(|g| &*g.id == "desktop:firefox") {
+        if let Some(g) = library.entries.iter_mut().find(|g| &*g.id == "desktop:firefox") {
             g.runner = Some(runner);
         }
         let mut s = State::new(crate::Init { library, ..crate::testkit::init() });
         s.apply(Event::Tick { unix_secs: 1000 });
         s.apply(Event::Idle(IdleEvent::Watching(true)));
         s.launch("desktop:firefox".into());
-        s.apply(crate::GameEvent::Started("desktop:firefox".into()).into());
-        s.apply(crate::GameEvent::Ended("desktop:firefox".into()).into());
+        s.apply(crate::LaunchEvent::Started("desktop:firefox".into()).into());
+        s.apply(crate::LaunchEvent::Ended("desktop:firefox".into()).into());
         let ws = Instance::workspace_of(&clamshell_library::key_of("desktop:firefox"));
         s.apply(Event::Windows(vec![Window { visible: true, ..crate::testkit::win(6, "firefox", &ws, true) }]));
         let ask = Effect::AskAwake(vec!["awake".into()]);

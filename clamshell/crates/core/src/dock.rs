@@ -2,7 +2,7 @@
 //! added at the end as they start and gone again when they stop (unless pinned). A pinned entry not
 //! running shows dimmed; a tap starts it. A tap on a running one shows its workspace (all its windows on
 //! the bottom screen: shows them there). A long press opens its menu: Open another (another launch,
-//! another tab; an app's only, see [`crate::Game::another`]), Close window (the one in view), Pin or Unpin, Move (the D-pad moves it, A or B ends),
+//! another tab; an app's only, see [`crate::Entry::another`]), Close window (the one in view), Pin or Unpin, Move (the D-pad moves it, A or B ends),
 //! Quit and Force kill; a stopped one's: Unpin and Move. A running entry with a tray icon (see
 //! [`crate::tray`]) has Menu: its program's own menu, as a page of the same kind (a submenu another).
 
@@ -303,7 +303,7 @@ mod tests {
         assert_eq!(entry(&s, 0), Some("zelda-lttp"));
         assert!(tap(&mut s, dock(0)).iter().any(|e| matches!(e, Effect::Launch { .. })));
         // Unpinned while stopped: gone.
-        s.apply(GameEvent::LaunchFailed("zelda-lttp".into()).into());
+        s.apply(LaunchEvent::LaunchFailed("zelda-lttp".into()).into());
         long(&mut s, dock(0));
         tap(&mut s, Id::Dock(DockId::Pin));
         assert_eq!(entry(&s, 0), None);
@@ -338,8 +338,8 @@ mod tests {
         assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Dock(ids)) if ids.len() == 2)), "saved: {fx:?}");
         // A rescan without ff6: dropped then too.
         let mut library = clamshell_library::demo_library();
-        library.games.retain(|g| &*g.id != "ff6");
-        library.collections.iter_mut().for_each(|c| c.games.clear());
+        library.entries.retain(|g| &*g.id != "ff6");
+        library.collections.iter_mut().for_each(|c| c.entries.clear());
         let fx = s.apply(Event::Library(Box::new(library))).1;
         assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Dock(ids)) if ids.is_empty())), "{fx:?}");
     }

@@ -25,7 +25,7 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use clamshell_core::{Event, GameEvent, Instance, Launch};
+use clamshell_core::{Event, Instance, Launch, LaunchEvent};
 
 use crate::job::{self, Job, Runner, Started};
 use crate::worker::{self, Worker};
@@ -173,31 +173,31 @@ fn play(config: &Config, request: &Request, sink: &impl Sink) -> Result<(), Clos
     let game = &request.game;
     let failed = |e: Error| {
         log::warn!("launcher: {game}: {e}");
-        GameEvent::LaunchFailed(game.clone())
+        LaunchEvent::LaunchFailed(game.clone())
     };
     let event = match start(config, request) {
         Err(e) => failed(e),
         Ok(running) => {
             let started = Instant::now();
-            sink.send(GameEvent::Started(game.clone()).into())?;
+            sink.send(LaunchEvent::Started(game.clone()).into())?;
             match running.wait() {
                 // (Not followed to its end: ended as far as the launcher goes; its scope, if any, says.)
                 Err(e) => {
                     log::warn!("launcher: {game}: {e}");
-                    GameEvent::Ended(game.clone())
+                    LaunchEvent::Ended(game.clone())
                 }
                 Ok(()) => {
                     log::info!("launcher: {game} ran {} s", started.elapsed().as_secs());
                     if let Some(file) = &request.watch {
                         let position = crate::mpv::position(&config.watch_later, file).map(|(s, _)| s);
-                        sink.send(Event::Game(GameEvent::Position { game: game.clone(), position }))?;
+                        sink.send(Event::Launch(LaunchEvent::Position { game: game.clone(), position }))?;
                     }
-                    GameEvent::Ended(game.clone())
+                    LaunchEvent::Ended(game.clone())
                 }
             }
         }
     };
-    sink.send(Event::Game(event))
+    sink.send(Event::Launch(event))
 }
 
 /// Starts the game a request is for.
@@ -456,7 +456,7 @@ mod tests {
         drop(launcher);
 
         let events: Vec<Event> = events.iter().collect();
-        assert_eq!(events, vec![Event::Game(GameEvent::Started(id.clone())), Event::Game(GameEvent::Ended(id))]);
+        assert_eq!(events, vec![Event::Launch(LaunchEvent::Started(id.clone())), Event::Launch(LaunchEvent::Ended(id))]);
         assert_eq!(std::fs::read_to_string(dir.join("ran-in")).unwrap().trim(), dir.to_string_lossy(), "in its own dir");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -468,7 +468,7 @@ mod tests {
         let instance = Instance::Run { key: "test_1".into(), secs: u64::from(std::process::id()), n: 1 };
         launcher.send(Request { game: "x".into(), instance, launch: Launch::program(vec![]), watch: None, env: vec![] });
         drop(launcher);
-        assert_eq!(events.iter().collect::<Vec<_>>(), vec![Event::Game(GameEvent::LaunchFailed("x".into()))]);
+        assert_eq!(events.iter().collect::<Vec<_>>(), vec![Event::Launch(LaunchEvent::LaunchFailed("x".into()))]);
     }
 }
 

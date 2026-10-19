@@ -383,7 +383,7 @@ mod tests {
         let fx = s.apply(Event::Windows(vec![win(8, GAME, "Bottom", true, false)])).1;
         assert!(!fx.iter().any(|e| matches!(e, Effect::Window(WindowCommand::Down(_)))), "no entry yet: {fx:?}");
         s.session.running.push(Running { launches: 0, ..running("melonds", "melonds_1") });
-        let fx = s.apply(crate::GameEvent::Started("melonds".into()).into()).1;
+        let fx = s.apply(crate::LaunchEvent::Started("melonds".into()).into()).1;
         assert!(fx.contains(&Effect::Window(WindowCommand::Down(8))), "{fx:?}");
         let mut s = emulator();
         key(&mut s, DeviceKey::WindowDown);

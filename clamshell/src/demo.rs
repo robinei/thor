@@ -7,7 +7,7 @@ use clamshell_core::levels::{Audio, Output, Stream};
 use clamshell_core::metrics::Metrics;
 use clamshell_core::wifi::{Network, Wifi};
 use clamshell_core::windows::Window;
-use clamshell_core::{Event, GameEvent, Id, Instance, PointerEvent, Reading, Status, Tab};
+use clamshell_core::{Event, Id, Instance, LaunchEvent, PointerEvent, Reading, Status, Tab};
 
 /// Every bar icon shows.
 pub const STATUS: Status = Status { battery: Some(72), charging: true, wifi: Some(80), volume: Some(60), muted: false, brightness: Some(70) };
@@ -29,7 +29,7 @@ fn window_of(id: i64, app_id: &str, launch: &Instance, focused: bool, down: bool
 /// The game running, two terminals and a browser, and their windows (the second terminal's in front).
 pub fn running() -> Vec<Event> {
     let (game, t1, t2, web) = (run("zelda-lttp", 0), run("desktop:foot", 1), run("desktop:foot", 2), run("desktop:firefox", 3));
-    let started = |id: &str| Event::Game(GameEvent::Started(id.into()));
+    let started = |id: &str| Event::Launch(LaunchEvent::Started(id.into()));
     vec![
         started("zelda-lttp"),
         started("desktop:foot"),
@@ -152,7 +152,7 @@ pub fn battery(now: u64) -> Vec<Event> {
         spender(Group::Process("steam".into()), 0.0, 0.0, 720),
     ];
     vec![
-        Event::Game(GameEvent::Started("zelda-lttp".into())),
+        Event::Launch(LaunchEvent::Started("zelda-lttp".into())),
         Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Battery))),
         Event::Reading(Reading::Battery(Battery { history, spenders, has_history: true })),
         Event::Reading(Reading::Status(Status { battery: Some(41), charging: false, ..STATUS })),

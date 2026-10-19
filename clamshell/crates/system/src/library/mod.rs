@@ -9,7 +9,7 @@ pub mod steam;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use clamshell_library::{BrowseKind, Browsed, Collection, Game, Launch, Library, Meta, Tool};
+use clamshell_library::{BrowseKind, Browsed, Collection, Entry, Launch, Library, Meta, Tool};
 
 use crate::meta::{How, Keys, RETRY_MISS, Wanted};
 
@@ -60,7 +60,7 @@ impl Folders<'_> {
     /// Puts `entries` (a scan's, from `dir`) in the folder at `path` in `tab` (`A/B`: B in A), made where it
     /// isn't there yet (its art from a place declared there, else from `dir`); the folder at the top of the
     /// tab if it is new (to add to it).
-    fn put(&mut self, games: &mut Vec<Game>, tab: &str, path: &str, dir: &Path, entries: &[usize]) -> Option<usize> {
+    fn put(&mut self, games: &mut Vec<Entry>, tab: &str, path: &str, dir: &Path, entries: &[usize]) -> Option<usize> {
         let mut new_top = None;
         let mut parent: Option<usize> = None;
         let mut at = String::new();
@@ -73,7 +73,7 @@ impl Folders<'_> {
                 Some(&f) => f,
                 None => {
                     let f = games.len();
-                    games.push(Game { parent, ..self.folder(tab, &at, part) });
+                    games.push(Entry { parent, ..self.folder(tab, &at, part) });
                     self.made.insert((tab.to_owned(), at.clone()), f);
                     match parent.and_then(|p| games.get_mut(p)) {
                         Some(p) => p.items.push(f),
@@ -101,17 +101,17 @@ impl Folders<'_> {
 
     /// A new folder at `at` in `tab`, titled `title`: a place declared there gives its id (`place:<id>`),
     /// icon and picture; else its id is its path (`folder:<tab>/<at>`).
-    fn folder(&self, tab: &str, at: &str, title: &str) -> Game {
+    fn folder(&self, tab: &str, at: &str, title: &str) -> Entry {
         let path = format!("{tab}/{at}");
         let Some(place) = self.places.iter().find(|p| p.path.trim().trim_matches('/') == path) else {
-            return Game::new(&format!("folder:{path}"), title);
+            return Entry::new(&format!("folder:{path}"), title);
         };
         let file = |f: &str| match (f.strip_prefix("~/"), self.home, self.config_dir) {
             (Some(rest), Some(home), _) => home.join(rest),
             (None, _, Some(dir)) if !f.starts_with('/') => dir.join(f),
             _ => PathBuf::from(f),
         };
-        let mut g = Game::new(&format!("place:{}", place.id), title);
+        let mut g = Entry::new(&format!("place:{}", place.id), title);
         g.box_front = place.picture.as_deref().map(file);
         match place.icon.as_deref() {
             // (An image file, or one of the UI's icons by name.)
@@ -149,7 +149,7 @@ const TOOLS: [(&str, &str, Tool, &str); 2] = [
 
 /// The order of a tab's or a folder's entries: folders first, then by title; browsed dirs' own folders
 /// after the other folders, as library.json and the mounts have them.
-fn list_order(games: &[Game], a: usize, b: usize) -> std::cmp::Ordering {
+fn list_order(games: &[Entry], a: usize, b: usize) -> std::cmp::Ordering {
     let key = |i: usize| {
         games.get(i).map(|g| match g.browsed.as_ref().map(|b| &b.kind) {
             Some(BrowseKind::Root | BrowseKind::Trash | BrowseKind::Removable(_)) => (false, true, None),
@@ -160,19 +160,19 @@ fn list_order(games: &[Game], a: usize, b: usize) -> std::cmp::Ordering {
 }
 
 /// A browsed dir's own folder.
-fn browsed_root(id: &str, dir: PathBuf, kind: BrowseKind) -> Game {
+fn browsed_root(id: &str, dir: PathBuf, kind: BrowseKind) -> Entry {
     let glyph = match kind {
         BrowseKind::Trash => "trash",
         BrowseKind::Removable(_) => "card",
         _ => "folder",
     };
-    Game { file: Some(dir), browsed: Some(Browsed { folder: true, kind, ..Browsed::default() }), glyph: Some(glyph.into()), ..Game::new(id, "") }
+    Entry { file: Some(dir), browsed: Some(Browsed { folder: true, kind, ..Browsed::default() }), glyph: Some(glyph.into()), ..Entry::new(id, "") }
 }
 
 /// The first frame (a video's, in order, all the way down) in folder `i`.
 fn first_frame(library: &Library, i: usize) -> Option<PathBuf> {
-    let g = library.games.get(i)?;
-    g.items.iter().find_map(|&item| match library.games.get(item) {
+    let g = library.entries.get(i)?;
+    g.items.iter().find_map(|&item| match library.entries.get(item) {
         Some(e) if e.is_group() => first_frame(library, item),
         Some(e) => e.shot.clone().filter(|_| e.mpv_file().is_some()),
         None => None,
@@ -231,7 +231,7 @@ pub fn load(sources: &Sources) -> Loaded {
     let order: Vec<String> = config.places.iter().map(|p| p.path.trim().trim_matches('/')).filter(|p| !p.contains('/')).map(str::to_owned).collect();
     let (recent, favourites) = (b.own(content::OwnTab::Recent), b.own(content::OwnTab::Favourites));
     let Builder { games, collections, hows, problems, away, .. } = b;
-    let mut library = Library { collections, games, problems, away, runner_keymaps, order, recent, favourites, ..Library::default() };
+    let mut library = Library { collections, entries: games, problems, away, runner_keymaps, order, recent, favourites, ..Library::default() };
     let wanted = known(&mut library, hows, sources);
     library.rebuild_derived();
     Loaded { library, wanted, keys: config.keys }
@@ -243,7 +243,7 @@ struct Builder<'a> {
     config: &'a content::Config,
     runners: &'a [runners::Runner],
     sources: &'a Sources,
-    games: Vec<Game>,
+    games: Vec<Entry>,
     collections: Vec<Collection>,
     folders: Folders<'a>,
     hows: Vec<(usize, How)>,
@@ -283,7 +283,7 @@ impl Builder<'_> {
             }
         };
         if let Some(c) = c {
-            c.games.extend(entries);
+            c.entries.extend(entries);
         }
     }
 
@@ -403,7 +403,7 @@ impl Builder<'_> {
     }
 
     /// A browsed dir's folder at `place`: its last part the folder's title, the rest where it is.
-    fn browsed_root(&mut self, place: &str, mut root: Game) {
+    fn browsed_root(&mut self, place: &str, mut root: Entry) {
         let (tab, path) = content::place(place);
         if path.is_empty() {
             return self.problems.push(format!("{place}: a browsed dir's place needs a tab and its folder's title (Files/Home)"));
@@ -431,7 +431,7 @@ impl Builder<'_> {
             content::Source::Desktop(r) => Some(r),
             _ => None,
         });
-        let mut placed: Vec<(&content::Rule, Game)> = Vec::new();
+        let mut placed: Vec<(&content::Rule, Entry)> = Vec::new();
         // (Its problems once each.)
         let first_problem = self.problems.len();
         if !steam.is_empty() {
@@ -452,7 +452,7 @@ impl Builder<'_> {
                 }
             }
         }
-        placed.sort_by_key(|(_, g)| g.tool);
+        placed.sort_by_key(|(_, g)| g.app);
         for (rule, mut game) in placed {
             let Some(place) = rule.place.as_deref().filter(|_| !rule.hide) else {
                 continue;
@@ -507,10 +507,10 @@ impl Builder<'_> {
                 g.items = items;
             }
         }
-        self.collections.retain(|c| !c.games.is_empty());
+        self.collections.retain(|c| !c.entries.is_empty());
         let games = &self.games;
         for c in &mut self.collections {
-            c.games.sort_by(|&a, &b| list_order(games, a, b));
+            c.entries.sort_by(|&a, &b| list_order(games, a, b));
         }
     }
 
@@ -533,12 +533,12 @@ impl Builder<'_> {
                 continue;
             };
             coll.icon = icon;
-            let mut stack: Vec<(usize, bool)> = coll.games.iter().map(|&i| (i, recent)).collect();
+            let mut stack: Vec<(usize, bool)> = coll.entries.iter().map(|&i| (i, recent)).collect();
             while let Some((i, inherited)) = stack.pop() {
                 let declared = self.games.get(i).and_then(|g| g.id.strip_prefix("place:")).and_then(|id| places.iter().find(|p| p.id == id));
                 let recent = declared.and_then(|p| p.recent).unwrap_or(inherited);
                 if let Some(g) = self.games.get_mut(i) {
-                    g.tool = !recent;
+                    g.app = !recent;
                     stack.extend(g.items.iter().map(|&item| (item, recent)));
                 }
             }
@@ -576,7 +576,7 @@ impl Builder<'_> {
                     summary.push_str(p);
                 }
             }
-            self.games.push(Game { launch: Launch::Tool(tool), tool: true, summary, ..Game::new(id, title) });
+            self.games.push(Entry { launch: Launch::Tool(tool), app: true, summary, ..Entry::new(id, title) });
         }
         self.collections.push(Collection { icon: tab.icon, ..Collection::new(&tab.name, (first..self.games.len()).collect()) });
     }
@@ -610,7 +610,7 @@ fn known(library: &mut Library, hows: Vec<(usize, How)>, sources: &Sources) -> V
             log::warn!("library: favourites: {e}");
             Default::default()
         });
-        for g in &mut library.games {
+        for g in &mut library.entries {
             if let Some(p) = plays.get(&*g.id) {
                 g.plays = *p;
             }
@@ -620,7 +620,7 @@ fn known(library: &mut Library, hows: Vec<(usize, How)>, sources: &Sources) -> V
     let now = crate::meta::now();
     let mut wanted = Vec::new();
     for (i, how) in hows {
-        let Some(g) = library.games.get(i) else {
+        let Some(g) = library.entries.get(i) else {
             continue;
         };
         let fetched = metas.get(&*g.id);
@@ -638,7 +638,7 @@ fn known(library: &mut Library, hows: Vec<(usize, How)>, sources: &Sources) -> V
         }
     }
     // mpv's videos: where mpv left each, its length and a frame of it (read once, then kept).
-    for g in &mut library.games {
+    for g in &mut library.entries {
         let Some(file) = g.mpv_file().map(std::path::Path::to_path_buf) else {
             continue;
         };
@@ -656,11 +656,11 @@ fn known(library: &mut Library, hows: Vec<(usize, How)>, sources: &Sources) -> V
         }
     }
     // A folder of videos without art: the frame of its first video that has one.
-    for i in 0..library.games.len() {
-        let bare = library.games.get(i).is_some_and(|g| g.is_group() && g.box_front.is_none() && g.shot.is_none());
+    for i in 0..library.entries.len() {
+        let bare = library.entries.get(i).is_some_and(|g| g.is_group() && g.box_front.is_none() && g.shot.is_none());
         if bare
             && let Some(frame) = first_frame(library, i)
-            && let Some(g) = library.games.get_mut(i)
+            && let Some(g) = library.entries.get_mut(i)
         {
             g.shot = Some(frame);
         }
@@ -697,7 +697,7 @@ mod tests {
             std::fs::write(root.join("library.json"), json).unwrap();
             let lib = load(&Sources { config: Some(root.join("library.json")), steam: Some(steam.clone()), ..Sources::default() }).library;
             let tab = lib.collections.iter().find(|c| c.name == "Games").unwrap();
-            tab.games.iter().map(|&i| lib.games[i].title.clone()).collect::<Vec<_>>()
+            tab.entries.iter().map(|&i| lib.entries[i].title.clone()).collect::<Vec<_>>()
         };
         assert_eq!(games_tab(&config(r#"{ "type": "steam", "place": "Games" }"#)), ["SNES", "Arma", "Zork"], "the folder first, before Arma");
         assert_eq!(games_tab(&config(r#"{ "type": "steam", "place": "Games/Steam" }"#)), ["SNES", "Steam"], "Steam's games in their folder");
@@ -708,8 +708,8 @@ mod tests {
         std::fs::write(steam.join("steamapps/appmanifest_30.acf"), manifest(30, "Celeste")).unwrap();
         std::fs::write(root.join("library.json"), config(rules)).unwrap();
         let lib = load(&Sources { config: Some(root.join("library.json")), steam: Some(steam.clone()), ..Sources::default() }).library;
-        let titles = |ids: &[usize]| ids.iter().map(|&i| lib.games[i].title.clone()).collect::<Vec<_>>();
-        let folder = |title: &str| lib.games.iter().find(|g| g.title == title).unwrap();
+        let titles = |ids: &[usize]| ids.iter().map(|&i| lib.entries[i].title.clone()).collect::<Vec<_>>();
+        let folder = |title: &str| lib.entries.iter().find(|g| g.title == title).unwrap();
         assert_eq!(titles(&folder("Steam").items), ["Text", "Celeste"], "Arma hidden");
         assert_eq!(titles(&folder("Text").items), ["Zork"]);
         assert_eq!(folder("Zork").runner.as_ref().map(|r| &*r.key), Some("runner:steam"), "Steam's games: Steam's");
@@ -740,7 +740,7 @@ mod tests {
         let loaded =
             load(&Sources { config: Some(root.join("library.json")), data_dirs: vec![root.join("data")], steam: Some(steam.clone()), ..Sources::default() });
         let lib = &loaded.library;
-        let runner = |title: &str| lib.games.iter().find(|g| g.title == title).and_then(|g| g.runner.as_ref()).map(|r| r.key.to_string());
+        let runner = |title: &str| lib.entries.iter().find(|g| g.title == title).and_then(|g| g.runner.as_ref()).map(|r| r.key.to_string());
         assert_eq!(runner("Celeste").as_deref(), Some("runner:desktop-games"), "the runner it names");
         assert_eq!(runner("Foot").as_deref(), Some("runner:apps"), "else the first of its type");
         assert!(lib.problems.iter().any(|p| p.ends_with("steamgriddb needs keys.steamgriddb")), "{:?}", lib.problems);
@@ -780,14 +780,15 @@ mod tests {
         ] }"#;
         std::fs::write(root.join("library.json"), config).unwrap();
         let lib = load(&Sources { config: Some(root.join("library.json")), data_dirs: vec![root.join("data")], ..Sources::default() }).library;
-        let tab = |name: &str| lib.collections.iter().find(|c| c.name == name).map(|c| c.games.iter().map(|&i| lib.games[i].title.clone()).collect::<Vec<_>>());
+        let tab =
+            |name: &str| lib.collections.iter().find(|c| c.name == name).map(|c| c.entries.iter().map(|&i| lib.entries[i].title.clone()).collect::<Vec<_>>());
         assert_eq!(tab("Games"), Some(vec!["Platformers".to_owned()]), "in its folder");
-        let folder = lib.games.iter().find(|g| g.title == "Platformers").unwrap();
-        assert_eq!(folder.items.iter().map(|&i| lib.games[i].title.as_str()).collect::<Vec<_>>(), ["Celeste"]);
+        let folder = lib.entries.iter().find(|g| g.title == "Platformers").unwrap();
+        assert_eq!(folder.items.iter().map(|&i| lib.entries[i].title.as_str()).collect::<Vec<_>>(), ["Celeste"]);
         assert_eq!(tab("Launchers"), Some(vec!["Lutris".to_owned()]));
         assert_eq!(tab("Apps"), Some(vec!["Foot".to_owned()]), "Uninstall Foo hidden; the rest taken by the last");
-        let entry = |title: &str| lib.games.iter().find(|g| g.title == title).unwrap();
-        assert!(entry("Foot").tool && !entry("Celeste").tool, "Apps says recent: false");
+        let entry = |title: &str| lib.entries.iter().find(|g| g.title == title).unwrap();
+        assert!(entry("Foot").app && !entry("Celeste").app, "Apps says recent: false");
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -827,23 +828,23 @@ mod tests {
         assert!(lib.problems.iter().all(|p| p.ends_with("isn't installed")), "{:?}", lib.problems);
         assert_eq!(lib.collections.last().map(|c| c.name.as_str()), Some("Mine"), "ClamShell's tools, named and placed as declared");
         assert_eq!((lib.collections[0].name.as_str(), lib.collections[0].icon.as_deref()), ("Games", Some("film")), "listed: its icon; Other has nothing");
-        let games = |ids: &[usize]| ids.iter().map(|&i| lib.games[i].title.clone()).collect::<Vec<_>>();
+        let games = |ids: &[usize]| ids.iter().map(|&i| lib.entries[i].title.clone()).collect::<Vec<_>>();
         let tab = lib.collections.iter().find(|c| c.name == "Games").unwrap();
-        assert_eq!(games(&tab.games), ["Handhelds", "SNES", "Doom"], "folders first");
-        let snes = &lib.games[tab.games[1]];
+        assert_eq!(games(&tab.entries), ["Handhelds", "SNES", "Doom"], "folders first");
+        let snes = &lib.entries[tab.entries[1]];
         assert_eq!(games(&snes.items), ["Mario", "Zelda"]);
         assert_eq!(snes.box_front, Some(root.join("snes/cover.png")), "its source's dir's art");
-        let zelda = &lib.games[snes.items[1]];
+        let zelda = &lib.entries[snes.items[1]];
         assert!(matches!(&zelda.launch, Launch::Program { argv, .. } if argv[0] == "snes9x"));
         assert_eq!(&*zelda.id, "snes:Zelda.sfc", "ids as without the folder");
-        let handhelds = &lib.games[tab.games[0]];
-        let gba = &lib.games[handhelds.items[0]];
+        let handhelds = &lib.entries[tab.entries[0]];
+        let gba = &lib.entries[handhelds.items[0]];
         assert_eq!((gba.title.as_str(), games(&gba.items)), ("GBA", vec!["Metroid".to_owned()]));
         assert_eq!(&*gba.id, "place:gba", "a declared place's id");
         assert_eq!(gba.icon.as_deref(), Some(root.join("gba.png").as_path()), "its icon, from library.json's dir");
         assert_eq!(handhelds.id.as_ref(), "folder:Games/Handhelds", "one not declared: its path");
-        assert!(matches!(&lib.games[gba.items[0]].launch, Launch::Program { argv, .. } if argv[0] == "mgba"));
-        assert_eq!(lib.groups_of(gba.items[0]), [tab.games[0], handhelds.items[0]]);
+        assert!(matches!(&lib.entries[gba.items[0]].launch, Launch::Program { argv, .. } if argv[0] == "mgba"));
+        assert_eq!(lib.groups_of(gba.items[0]), [tab.entries[0], handhelds.items[0]]);
         let _ = std::fs::remove_dir_all(&root);
     }
 }

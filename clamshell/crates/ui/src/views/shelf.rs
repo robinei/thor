@@ -5,7 +5,7 @@
 
 use std::fmt::{self, Display, Formatter};
 
-use clamshell_core::{Game, Id, ListId, ShelfId, State, Tab};
+use clamshell_core::{Entry, Id, ListId, ShelfId, State, Tab};
 
 use crate::draw::{Column, Keep, Rect, Span, WRAP_LINE};
 use crate::icons::Icon;
@@ -104,7 +104,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
 
 /// An open group's header over the list: a back arrow and the groups open, outermost first ("Handhelds ›
 /// GBA"; cut at the start where it doesn't fit); a tap goes back out.
-fn group_header(f: &mut Frame, group: &Game, r: Rect, pad: f32) {
+fn group_header(f: &mut Frame, group: &Entry, r: Rect, pad: f32) {
     let s = f.s;
     f.button(Id::Shelf(ShelfId::Up), r, Look::ICON, |f| {
         let arrow = Rect::new(r.x, r.y, r.h, r.h);
@@ -166,7 +166,7 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
             let title = Rect::new(tx, r.y, right - tx - pad * 0.3, r.h);
             // Away from its folder (Recent, Favourites): the folders it is in before its title.
             let open = s.shelf().group().map(|g| &g.id);
-            let in_view = game.parent.and_then(|p| s.shelf().library().games.get(p)).is_none_or(|p| Some(&p.id) == open);
+            let in_view = game.parent.and_then(|p| s.shelf().library().entries.get(p)).is_none_or(|p| Some(&p.id) == open);
             if in_view {
                 f.c.text_fit(title, row_h * ROW_TEXT, tone, &game.title, Keep::Start);
             } else {
@@ -187,7 +187,7 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
 /// groups it is in, who made it and when, what playing it does now, whether it is a favourite and on the
 /// dock, the play time, what it is about (as much as fits), and a screenshot: at the bottom of the text,
 /// or under a landscape box (as wide as it).
-fn selected(f: &mut Frame, game: &Game, screen: Rect, list: Rect, pad: f32) {
+fn selected(f: &mut Frame, game: &Entry, screen: Rect, list: Rect, pad: f32) {
     let s = f.s;
     let h = screen.h;
     let x0 = screen.w * LIST_W + pad;
@@ -286,7 +286,7 @@ fn selected(f: &mut Frame, game: &Game, screen: Rect, list: Rect, pad: f32) {
 /// it running), Start continues a folder of videos, Y and X a favourite and on the dock (a browsed file's:
 /// Copy and Paste), the file actions (Delete and Empty Trash asking to be pressed again); a paste under
 /// way, how far. Their height.
-fn actions(f: &mut Frame, game: &Game, r: Rect, action_h: f32, pad: f32) -> f32 {
+fn actions(f: &mut Frame, game: &Entry, r: Rect, action_h: f32, pad: f32) -> f32 {
     use clamshell_core::actions::{Action, Shortcut};
     use clamshell_core::files::FileAction;
     let s = f.s;
@@ -314,7 +314,7 @@ fn actions(f: &mut Frame, game: &Game, r: Rect, action_h: f32, pad: f32) -> f32 
             Action::Continue => {
                 // (Where in it is mpv's.)
                 let library = s.shelf().library();
-                let next = library.games.iter().position(|g| g.id == game.id).and_then(|g| library.to_continue(g)).and_then(|i| library.games.get(i));
+                let next = library.entries.iter().position(|g| g.id == game.id).and_then(|g| library.to_continue(g)).and_then(|i| library.entries.get(i));
                 match next {
                     Some(n) => (Fmt::of(format_args!("Play · {}", Within(s, n, game))), Tone::Go),
                     None => (Fmt::of(format_args!("Play")), Tone::Go),
@@ -373,7 +373,7 @@ fn actions(f: &mut Frame, game: &Game, r: Rect, action_h: f32, pad: f32) -> f32 
 }
 
 /// How far into a video, of its length, if both are known.
-fn watched_fraction(game: &Game) -> Option<f32> {
+fn watched_fraction(game: &Entry) -> Option<f32> {
     let (at, length) = (game.position?, game.duration?);
     (length > 0).then(|| at as f32 / length as f32)
 }
@@ -392,11 +392,11 @@ impl Display for Minutes {
 
 /// An entry as seen from a folder it is in: the folders between, then its title ("Season 1 · 2. One
 /// Voice").
-struct Within<'a>(&'a State, &'a Game, &'a Game);
+struct Within<'a>(&'a State, &'a Entry, &'a Entry);
 
 impl Display for Within<'_> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let games = &self.0.shelf().library().games;
+        let games = &self.0.shelf().library().entries;
         // (The folders from the entry up to the folder, written from the top down.)
         let mut chain = [None; 8];
         let mut at = self.1.parent;
@@ -417,12 +417,12 @@ impl Display for Within<'_> {
 }
 
 /// What a folder holds: "2 folders · 3 entries", "24 entries".
-struct Inside<'a>(&'a State, &'a Game);
+struct Inside<'a>(&'a State, &'a Entry);
 
 impl Display for Inside<'_> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let games = &self.0.shelf().library().games;
-        let folders = self.1.items.iter().filter(|&&i| games.get(i).is_some_and(Game::is_group)).count();
+        let games = &self.0.shelf().library().entries;
+        let folders = self.1.items.iter().filter(|&&i| games.get(i).is_some_and(Entry::is_group)).count();
         let entries = self.1.items.len() - folders;
         let plural = |n: usize| if n == 1 { "" } else { "s" };
         if folders > 0 {
@@ -437,7 +437,7 @@ impl Display for Inside<'_> {
 }
 
 /// Who made an entry and when: "Supergiant Games · 2020", either alone, or nothing.
-struct Maker<'a>(&'a Game);
+struct Maker<'a>(&'a Entry);
 
 impl Display for Maker<'_> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
@@ -455,14 +455,14 @@ impl Display for Maker<'_> {
 /// title last if `own`.
 struct Groups<'a> {
     s: &'a State,
-    game: &'a Game,
+    game: &'a Entry,
     own: bool,
     between: &'a str,
 }
 
 impl Display for Groups<'_> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let games = &self.s.shelf().library().games;
+        let games = &self.s.shelf().library().entries;
         // (At most a few levels: walked from the entry up, written from the top down.)
         let mut chain = [None; 8];
         let mut at = self.game.parent;

@@ -214,7 +214,7 @@ mod tests {
     #[test]
     fn any_program_asking_for_text_brings_up_the_keyboard() {
         let mut s = state();
-        s.apply(GameEvent::Started("zelda-lttp".into()).into());
+        s.apply(LaunchEvent::Started("zelda-lttp".into()).into());
         s.apply(Event::TextInput(true));
         assert_eq!(s.bottom().tab(), Tab::Keyboard, "a game too");
     }

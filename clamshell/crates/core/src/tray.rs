@@ -17,7 +17,7 @@ use std::sync::Arc;
 use crate::effect::Effect;
 use crate::instance::Instance;
 use crate::running::{Origin, Running};
-use crate::{Game, State};
+use crate::{Entry, State};
 
 /// A tray icon.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -94,7 +94,7 @@ impl State {
                 // (Named by the icon's own id, the same each time the program runs, so a pin or a
                 // setting stays its; its D-Bus name, if it has none.)
                 let name = if t.id.is_empty() { &*t.key } else { t.id.as_str() };
-                Game { icon: t.icon.clone(), tool: true, ..Game::new(&format!("{PREFIX}{name}"), title) }
+                Entry { icon: t.icon.clone(), app: true, ..Entry::new(&format!("{PREFIX}{name}"), title) }
             });
             // (Its entry runs already: found otherwise (by a window), its icon is that one's; a launch of
             // ours, its own.)
