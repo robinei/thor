@@ -105,6 +105,11 @@ Known issues and risks, to check first:
 - [x] Build the image and check it (done 2026-10-14; see above).
 - [x] Settle 2: sdhci-msm is built in (checked 2026-10-14, strings in the Image; f2fs too).
 - [ ] Rebuild nearer the time: a newer ROCKNIX release, current packages.
+- [ ] A kernel with binder, for Android (Waydroid): ROCKNIX's SM8550 config has
+      `# CONFIG_ANDROID_BINDER_IPC is not set` (checked 2026-10-19, its `next` branch). The option is
+      built-in only, so our own build of ROCKNIX's kernel sources and config with `ANDROID_BINDER_IPC`
+      and `ANDROID_BINDERFS` on (an out-of-tree binder module would need their exact build tree, which
+      the release doesn't ship). Or a kernel from Thorch or Pocknix, if theirs has it.
 - [ ] Find out what the stock Linux boot mode is (U-Boot? AYN's own ABL?), what it reads (`/KERNEL`, or
       `extlinux.conf` and files), and from which firmware version it ships; ask on the Discord.
 - [ ] Read ROCKNIX's ABL scripts and README (flash, backup, restore) and the Thorch and Pocknix install
