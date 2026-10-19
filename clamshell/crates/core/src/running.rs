@@ -276,6 +276,7 @@ impl State {
         let session = &self.session;
         let mut ended = Vec::new();
         let mut handed = Vec::new();
+        let mut unstarted = Vec::new();
         for r in session.running.iter().filter(|r| r.origin == Origin::Ours && r.launches == 0) {
             if session.units.iter().any(|u| u.key() == Some(r.key.as_str())) {
                 continue;
@@ -289,7 +290,14 @@ impl State {
                 handed.push((r.id.clone(), Origin::Windows { since: now, until: r.start + HANDOFF }, has));
             } else {
                 ended.push((r.id.clone(), r.start));
+                // (Ended without ever a window, not quit: it didn't start, a Steam game that never came.)
+                if !r.seen && !session.is_quitting(&r.id) {
+                    unstarted.push(r.entry.as_ref().map_or_else(|| r.id.to_string(), |g| g.title.clone()));
+                }
             }
+        }
+        for title in unstarted {
+            self.notify(crate::hardware::NoticeKind::NotStarted(title));
         }
         for (id, origin, has) in handed {
             if let Some(r) = self.session.running.iter_mut().find(|r| r.id == id) {

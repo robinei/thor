@@ -1240,6 +1240,22 @@ mod tests {
     }
 
     #[test]
+    fn a_launch_that_ends_without_a_window_didnt_start() {
+        let notice = |s: &State| s.bottom().notice().map(|n| n.what.clone());
+        let mut s = state();
+        launch(&mut s, "zelda-lttp");
+        s.apply(Event::Game(GameEvent::Ended("zelda-lttp".into())));
+        assert!(matches!(notice(&s), Some(hardware::NoticeKind::NotStarted(_))), "{:?}", notice(&s));
+        // One that showed a window and ended: nothing said.
+        let mut s = state();
+        let zelda = launch(&mut s, "zelda-lttp");
+        s.apply(Event::Windows(vec![Window { unit: zelda.unit(), visible: true, ..win(5, "zelda3", &zelda.workspace(), true) }]));
+        s.apply(Event::Windows(vec![]));
+        s.apply(Event::Game(GameEvent::Ended("zelda-lttp".into())));
+        assert!(!matches!(notice(&s), Some(hardware::NoticeKind::NotStarted(_))), "{:?}", notice(&s));
+    }
+
+    #[test]
     fn a_launch_that_didnt_start_says_so() {
         let mut s = state();
         tap(&mut s, game("zelda-lttp"));
