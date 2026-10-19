@@ -76,18 +76,42 @@ sudo waydroid init                      # Android's image, without Google's apps
 sudo systemctl enable --now waydroid-container
 ```
 
-The rest runs where ClamShell's display is (on the desktop, in a terminal started from the nested
-session's shelf), with the session running (`waydroid session start &`, until "Android with user 0 is
-ready"):
+Waydroid's network is a bridge (`waydroid0`) with its own DHCP and DNS (dnsmasq) on the host: a kernel
+updated since the last boot has no bridge module (reboot), and a firewall must let them through, or
+Android gets no address (`waydroid status`: UNKNOWN) and adb can't reach it. On the desktop both ufw and
+the nftables service's own table (`/etc/nftables.conf`) drop what isn't allowed, so both needed it:
 
 ```sh
+# ufw
+sudo ufw allow in on waydroid0 to any port 67 proto udp
+sudo ufw allow in on waydroid0 to any port 53
+sudo ufw route allow in on waydroid0
+sudo ufw route allow out on waydroid0
+```
+
+```
+# /etc/nftables.conf, in table inet filter (then `sudo nft -f /etc/nftables.conf`)
+chain input:   iifname "waydroid0" udp dport { 53, 67 } accept
+               iifname "waydroid0" tcp dport 53 accept
+chain forward: iifname "waydroid0" accept
+               oifname "waydroid0" ct state { established, related } accept
+```
+
+The rest runs where ClamShell's display is (on the desktop, in a terminal started from the nested
+session's shelf), with the session running (`waydroid session start &`, until "Android with user 0 is
+ready"). Android without a window shown suspends at once (Waydroid freezes the container): thaw it
+first, and turn that off, so that what pauses Android is ClamShell's In the background:
+
+```sh
+busctl call id.waydro.Container /ContainerManager id.waydro.ContainerManager Unfreeze
+waydroid prop set persist.waydroid.suspend false
 # One window per app.
 waydroid prop set persist.waydroid.multi_windows true
-# adb's key allowed in Android (adb makes it at its first start).
+# adb's key allowed in Android (adb makes it at its first start). (Piped in: lxc-attach takes its
+# standard input and output for root, a file redirected there too.)
 adb start-server
-sudo lxc-attach -P /var/lib/waydroid/lxc -n waydroid --clear-env -- /system/bin/sh -c \
-    'cat >> /data/misc/adb/adb_keys; chmod 640 /data/misc/adb/adb_keys; chown system:shell /data/misc/adb/adb_keys' \
-    < ~/.android/adbkey.pub
+cat ~/.android/adbkey.pub | sudo lxc-attach -P /var/lib/waydroid/lxc -n waydroid --clear-env -- /system/bin/sh -c \
+    'cat >> /data/misc/adb/adb_keys; chmod 640 /data/misc/adb/adb_keys; chown system:shell /data/misc/adb/adb_keys' | cat
 adb connect "$(waydroid status | sed -n 's/^IP address:[[:space:]]*//p'):5555"
 # Android's on-screen keyboard off with a hardware keyboard; no notification pop-ups over apps.
 adb shell settings put secure show_ime_with_hard_keyboard 0
