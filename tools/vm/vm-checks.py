@@ -355,11 +355,11 @@ class Checks:
             self.i.hold(ICONS[name], BAR_Y, seconds)
 
     def open_tab(self, name):
-        """A tab open, by a tap on its icon (and the dock first if it is open already: a tap on the open
-        tab's icon may do something else)."""
+        """A tab open, through the control pipe (not a tap on its icon, at a place that moves with the
+        bar's layout: the checks of the bar's taps tap it)."""
         if tab() == name:
             return True
-        self.icon(name)
+        control(f"tab {name}")
         return until(lambda: tab() == name, 5)
 
     def route(self):

@@ -322,8 +322,46 @@ pub fn freeze(unit: String, frozen: bool) {
     }
 }
 
-/// The freezer thread: the requests waiting, each unit's latest, carried out until none is left.
+/// What the freezer does to units: systemd's, or a test's.
+trait Freezer {
+    fn thaw(&mut self, unit: &str);
+    fn freeze(&mut self, unit: &str);
+    /// Whether the unit works without drawing (looked at for a while: see [`working_without_drawing`]).
+    fn busy(&mut self, unit: &str) -> bool;
+}
+
+/// The user manager's units.
+struct Systemd;
+
+impl Freezer for Systemd {
+    fn thaw(&mut self, unit: &str) {
+        match with_manager(|m| Ok(m.thaw_unit(unit)?)) {
+            Ok(()) => log::info!("thawed {unit}"),
+            Err(e) => log::warn!("thawing {unit}: {e}"),
+        }
+    }
+
+    fn freeze(&mut self, unit: &str) {
+        match with_manager(|m| Ok(m.freeze_unit(unit)?)) {
+            Ok(()) => log::info!("froze {unit}"),
+            Err(e) => log::warn!("freezing {unit}: {e}"),
+        }
+    }
+
+    fn busy(&mut self, unit: &str) -> bool {
+        with_manager(|m| Ok(working_without_drawing(m, unit))).unwrap_or(false)
+    }
+}
+
+/// The freezer thread: carried out by systemd (see [`follow_requests`]).
 fn freezer(requests: &std::sync::mpsc::Receiver<(String, bool)>) {
+    follow_requests(requests, &mut Systemd);
+}
+
+/// The requests waiting, each unit's latest, carried out by `units` until none is left: thaws at once; a
+/// freeze once its unit isn't busy, unless asked otherwise meanwhile (a busy one looked at again after
+/// the others). Returns when the requests' sender is gone.
+fn follow_requests(requests: &std::sync::mpsc::Receiver<(String, bool)>, units: &mut impl Freezer) {
     let mut waiting: Vec<(String, bool)> = Vec::new();
     // (Those a freeze waits for, said once each.)
     let mut said: Vec<String> = Vec::new();
@@ -341,21 +379,15 @@ fn freezer(requests: &std::sync::mpsc::Receiver<(String, bool)>) {
         while let Ok(r) = requests.try_recv() {
             take(&mut waiting, r);
         }
-        // Thaws at once.
         for (unit, _) in waiting.iter().filter(|(_, frozen)| !frozen) {
-            match with_manager(|m| Ok(m.thaw_unit(unit)?)) {
-                Ok(()) => log::info!("thawed {unit}"),
-                Err(e) => log::warn!("thawing {unit}: {e}"),
-            }
+            units.thaw(unit);
             said.retain(|u| u != unit);
         }
         waiting.retain(|(_, frozen)| *frozen);
-        // A freeze: once its slice doesn't work without drawing (looked at for a while), unless asked
-        // otherwise meanwhile.
         let Some((unit, _)) = waiting.first().cloned() else {
             continue;
         };
-        let busy = with_manager(|m| Ok(working_without_drawing(m, &unit))).unwrap_or(false);
+        let busy = units.busy(&unit);
         while let Ok(r) = requests.try_recv() {
             take(&mut waiting, r);
         }
@@ -363,7 +395,6 @@ fn freezer(requests: &std::sync::mpsc::Receiver<(String, bool)>) {
             log::info!("{unit}: not frozen (asked otherwise since)");
             continue;
         }
-        // (Busy: looked at again after the others; with none else waiting, at once.)
         if busy {
             if !said.contains(&unit) {
                 log::info!("{unit} works without drawing (loading?): frozen once it doesn't");
@@ -374,10 +405,80 @@ fn freezer(requests: &std::sync::mpsc::Receiver<(String, bool)>) {
         }
         waiting.retain(|(u, _)| *u != unit);
         said.retain(|u| *u != unit);
-        match with_manager(|m| Ok(m.freeze_unit(&unit)?)) {
-            Ok(()) => log::info!("froze {unit}"),
-            Err(e) => log::warn!("freezing {unit}: {e}"),
+        units.freeze(&unit);
+    }
+}
+
+#[cfg(test)]
+mod freezer_tests {
+    use super::*;
+    use std::sync::mpsc::{Sender, channel};
+
+    /// Units in a test: what was done to them, in order; busy ones stay busy for as many looks as given,
+    /// and a look may let more requests in (as the 2 s look would).
+    #[derive(Default)]
+    struct Fake {
+        done: Vec<String>,
+        busy: Vec<(String, u32)>,
+        during_look: Vec<(String, bool)>,
+        send: Option<Sender<(String, bool)>>,
+    }
+
+    impl Freezer for Fake {
+        fn thaw(&mut self, unit: &str) {
+            self.done.push(format!("thaw {unit}"));
         }
+        fn freeze(&mut self, unit: &str) {
+            self.done.push(format!("freeze {unit}"));
+        }
+        fn busy(&mut self, unit: &str) -> bool {
+            // (Sent once, then the sender dropped: the loop ends when the requests are done.)
+            if let Some(send) = self.send.take() {
+                for r in self.during_look.drain(..) {
+                    let _ = send.send(r);
+                }
+            }
+            match self.busy.iter_mut().find(|(u, _)| u == unit) {
+                Some((_, n)) if *n > 0 => {
+                    *n -= 1;
+                    true
+                }
+                _ => false,
+            }
+        }
+    }
+
+    fn run(requests: &[(&str, bool)], mut fake: Fake) -> Vec<String> {
+        let (send, receive) = channel();
+        for (u, f) in requests {
+            let _ = send.send(((*u).to_owned(), *f));
+        }
+        // (Kept by the fake only to send more during a look; else dropped: the loop ends when the requests
+        // are done.)
+        if fake.during_look.is_empty() {
+            drop(send);
+        } else {
+            fake.send = Some(send);
+        }
+        follow_requests(&receive, &mut fake);
+        fake.done
+    }
+
+    #[test]
+    fn each_units_latest_request_thaws_first() {
+        // a: freeze then thaw: only the thaw; b: frozen.
+        let done = run(&[("a", true), ("b", true), ("a", false)], Fake::default());
+        assert_eq!(done, ["thaw a", "freeze b"]);
+    }
+
+    #[test]
+    fn a_busy_unit_waits_and_a_thaw_meanwhile_cancels_its_freeze() {
+        // a busy for two looks, b not: b frozen first, then a.
+        let fake = Fake { busy: vec![("a".into(), 2)], ..Fake::default() };
+        assert_eq!(run(&[("a", true), ("b", true)], fake), ["freeze b", "freeze a"]);
+        // a busy, and shown during the look (thawed): never frozen.
+        let fake = Fake { busy: vec![("a".into(), 1)], during_look: vec![("a".into(), false)], ..Fake::default() };
+        assert_eq!(run(&[("a", true)], fake), ["thaw a"]);
     }
 }
 
