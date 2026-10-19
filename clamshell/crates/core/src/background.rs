@@ -12,10 +12,17 @@
 //! Only entries ClamShell launched have a slice of their own: those found by their windows or by a tray
 //! icon run in another program's processes, and run on as they are. A paused entry is thawed before
 //! anything is asked of it: Quit (its windows asked to close), Force kill, shown.
+//!
+//! A runner whose entries share one container (Waydroid's: Android's apps) has commands to pause it
+//! all and resume it (its `pause`, `resume`). Set for the runner to Pauses hidden, the container is
+//! paused once none of its entries has been shown for [`GRACE`] seconds (none running, too), and resumed
+//! as one is shown or launched.
 
 use std::sync::Arc;
 
 use crate::State;
+use clamshell_library::RunnerOf;
+
 use crate::effect::Effect;
 use crate::instance::Instance;
 use crate::running::Origin;
@@ -34,6 +41,11 @@ pub(crate) struct Background {
     pub(crate) hidden: Vec<(Arc<str>, u64)>,
     /// Entries that have had a window (Quits closed waits for one).
     pub(crate) windowed: Vec<Arc<str>>,
+    /// The runners whose entries are paused together (from the library), those paused, and those whose
+    /// entries are all hidden, since when.
+    pub(crate) runners: Vec<RunnerOf>,
+    pub(crate) runners_paused: Vec<Arc<str>>,
+    pub(crate) runners_hidden: Vec<(Arc<str>, u64)>,
 }
 
 impl State {
@@ -43,7 +55,12 @@ impl State {
         let mut effects = Vec::new();
         let mut end = Vec::new();
         let session = &self.session;
-        let mut kept = Background::default();
+        let mut kept = Background {
+            runners: std::mem::take(&mut self.background.runners),
+            runners_paused: std::mem::take(&mut self.background.runners_paused),
+            runners_hidden: std::mem::take(&mut self.background.runners_hidden),
+            ..Background::default()
+        };
         // (Launches of ours: a Steam game's too, in its launch's own scope since it started.)
         for r in session.running.iter().filter(|r| r.origin == Origin::Ours && r.pid.is_none()) {
             let mine: Vec<&crate::windows::Window> = session.windows.iter().filter(|w| session.running_of(w).is_some_and(|o| o.id == r.id)).collect();
@@ -74,7 +91,62 @@ impl State {
         for id in end {
             effects.extend(self.quit(&id));
         }
+        effects.extend(self.follow_runner_pauses());
         effects
+    }
+
+    /// The runners whose entries are paused together: those of the library's entries with a `pause`.
+    pub(crate) fn follow_pausable_runners(&mut self) {
+        let mut runners: Vec<RunnerOf> = Vec::new();
+        for r in self.shelf.library().games.iter().filter_map(|g| g.runner.as_ref()).filter(|r| !r.pause.is_empty()) {
+            if !runners.iter().any(|o| o.key == r.key) {
+                runners.push(r.clone());
+            }
+        }
+        self.background.runners = runners;
+    }
+
+    /// Each runner paused together: paused once none of its entries has been shown for the grace (set to
+    /// Pauses hidden), resumed as one is shown (or its setting changed).
+    fn follow_runner_pauses(&mut self) -> Vec<Effect> {
+        let now = self.unix_secs;
+        let mut effects = Vec::new();
+        let runners = self.background.runners.clone();
+        for runner in &runners {
+            let pauses = self.settings.of_in(&runner.key, &[]).get(Setting::Background) == 1;
+            let session = &self.session;
+            let of_runner = |r: &crate::running::Running| r.entry.as_ref().and_then(|g| g.runner.as_ref()).is_some_and(|o| o.key == runner.key);
+            let shown = session.windows.iter().filter(|w| w.visible).any(|w| session.running_of(w).is_some_and(of_runner));
+            let paused = self.background.runners_paused.contains(&runner.key);
+            let bg = &mut self.background;
+            if pauses && !shown {
+                let since = bg.runners_hidden.iter().find(|(k, _)| *k == runner.key).map_or(now, |(_, t)| *t);
+                bg.runners_hidden.retain(|(k, _)| *k != runner.key);
+                bg.runners_hidden.push((runner.key.clone(), since));
+                if !paused && now.saturating_sub(since) >= GRACE {
+                    bg.runners_paused.push(runner.key.clone());
+                    effects.push(Effect::Stop(runner.pause.to_vec()));
+                }
+            } else {
+                bg.runners_hidden.retain(|(k, _)| *k != runner.key);
+                if paused {
+                    bg.runners_paused.retain(|k| *k != runner.key);
+                    effects.push(Effect::Stop(runner.resume.to_vec()));
+                }
+            }
+        }
+        effects
+    }
+
+    /// Before an entry of a paused runner is launched or shown: the runner resumed (paused again only
+    /// once hidden for the grace anew).
+    pub(crate) fn resume_runner_of(&mut self, id: &str) -> Option<Effect> {
+        let runner = self.game(id)?.runner.as_ref()?;
+        let at = self.background.runners_paused.iter().position(|k| *k == runner.key)?;
+        let resume = runner.resume.to_vec();
+        let key = self.background.runners_paused.remove(at);
+        self.background.runners_hidden.retain(|(k, _)| *k != key);
+        Some(Effect::Stop(resume))
     }
 
     /// An entry thawed before it is asked anything (closed, ended, shown), if it is paused; it isn't
@@ -137,6 +209,39 @@ mod tests {
         assert!(s.paused("zelda-lttp"));
         let id: Arc<str> = "zelda-lttp".into();
         assert_eq!(s.quit(&id), vec![freeze(&key, false), Effect::Window(WindowCommand::Close(vec![3]))]);
+    }
+
+    #[test]
+    fn a_runner_paused_together_pauses_when_none_is_shown_and_resumes_to_launch() {
+        let runner = clamshell_library::RunnerOf {
+            handover: true,
+            pause: vec!["pause".to_owned()].into(),
+            resume: vec!["resume".to_owned()].into(),
+            ..clamshell_library::RunnerOf::new("android", "Android", true)
+        };
+        let mut library = clamshell_library::demo_library();
+        library.games.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap().runner = Some(runner.clone());
+        let mut s = State::new(crate::Init { library, ..init() });
+        s.settings.set(Some(&runner.key), Setting::Background, Some(1));
+        let (pause, resume) = (Effect::Stop(vec!["pause".into()]), Effect::Stop(vec!["resume".into()]));
+        // Nothing of it running: paused after the grace.
+        s.apply(Event::Tick { unix_secs: 100 });
+        assert!(!s.apply(Event::Tick { unix_secs: 102 }).1.contains(&pause));
+        assert!(s.apply(Event::Tick { unix_secs: 103 }).1.contains(&pause));
+        assert!(!s.apply(Event::Tick { unix_secs: 104 }).1.contains(&pause), "once");
+        // Launched: resumed first.
+        let fx = s.launch("desktop:firefox".into());
+        assert_eq!(fx.first(), Some(&resume), "{fx:?}");
+        s.apply(GameEvent::Started("desktop:firefox".into()).into());
+        // Shown: not paused; hidden for the grace: paused.
+        let ws = Instance::workspace_of(&clamshell_library::key_of("desktop:firefox"));
+        let window = |visible| Window { visible, ..win(6, "firefox", &ws, visible) };
+        assert!(!s.apply(Event::Windows(vec![window(true)])).1.contains(&pause));
+        assert!(!s.apply(Event::Tick { unix_secs: 110 }).1.contains(&pause));
+        s.apply(Event::Windows(vec![window(false)]));
+        assert!(s.apply(Event::Tick { unix_secs: 113 }).1.contains(&pause));
+        // Shown again: resumed.
+        assert!(s.apply(Event::Windows(vec![window(true)])).1.contains(&resume));
     }
 
     #[test]

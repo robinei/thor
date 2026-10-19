@@ -40,7 +40,23 @@ Android apps and Android's own on-screen keyboard is turned off (`show_ime_with_
 Waydroid has no text-input protocol, so a text field getting focus doesn't raise ClamShell's keyboard:
 open it from the bar.
 
+## In the background
+
+Android's apps share one container, so they are paused together: the Android runner's `pause` and
+`resume` (the script's `--pause`, `--resume`: Waydroid's container service freezes and thaws the
+container's cgroup, no root needed). With In the background set to Pauses hidden for the Android runner,
+Android is frozen once none of its apps has been shown for 3 s (none running too), and thawed as one is
+shown or launched; a launch thaws it first in any case. Android also sleeps by itself: once its display
+is off, it asks to suspend and Waydroid freezes the container (`persist.waydroid.suspend`).
+
 ## Not solved
+
+- A hidden window is lost (the VM, software rendering; the desktop not tried yet): once an app's
+  window has been on a workspace not shown (shelf in front, another program), Waydroid drops it, and it
+  doesn't come back when shown, nor when the app is launched again, while Android keeps the task
+  (visible, fullscreen). Waydroid's own floating launch does the same. ClamShell then counts the app as
+  ended. Not understood yet: Waydroid removes a window whose task has no layer in a frame, so Android
+  stops drawing the task once its window is hidden. Next: Android's log (logcat) while it happens.
 
 - Android draws its own caption on each window (back, minimise, maximise, close). Waydroid has no option
   to turn it off (waydroid/waydroid#2204).

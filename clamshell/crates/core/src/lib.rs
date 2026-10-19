@@ -210,6 +210,7 @@ impl State {
         }
         // (Saved once the UI is up.)
         s.pins_dropped = s.drop_gone_pins();
+        s.follow_pausable_runners();
         s.pointer.focus = s.shelf.selected().cloned().map(|g| Id::Shelf(ShelfId::Game(g)));
         if let Some(tab) = init.start_tab {
             s.bottom.tab = tab;
@@ -374,6 +375,7 @@ impl State {
                 if self.shelf.reload(*library) {
                     self.moved_collection();
                 }
+                self.follow_pausable_runners();
                 let mut effects = self.follow_runner_keymaps();
                 effects.push(self.land_rules());
                 if self.drop_gone_pins() {

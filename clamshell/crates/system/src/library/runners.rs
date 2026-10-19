@@ -55,6 +55,12 @@ pub struct Runner {
     /// windows are closed), `{id}` its windows' app id.
     #[serde(default)]
     pub stop: Vec<String>,
+    /// For a runner whose entries share one container (Waydroid's): the commands that pause it all
+    /// (In the background: Pauses hidden, set for the runner) and resume it.
+    #[serde(default)]
+    pub pause: Vec<String>,
+    #[serde(default)]
+    pub resume: Vec<String>,
 }
 
 /// A runner that finds its items itself, each with its own command.
@@ -85,7 +91,9 @@ impl Runner {
             command: self.template(home).into(),
             enqueue: self.enqueue.as_deref().map(Into::into),
             handover: self.handover,
-            stop: self.stop.iter().map(|a| super::content::expand(a, home).to_string_lossy().into_owned()).collect(),
+            stop: expanded(&self.stop, home),
+            pause: expanded(&self.pause, home),
+            resume: expanded(&self.resume, home),
             ..clamshell_library::RunnerOf::new(&self.id, &self.name, self.item_settings.unwrap_or(true))
         }
     }
@@ -120,6 +128,11 @@ impl Runner {
         let name = name.to_lowercase();
         self.patterns.iter().any(|p| pattern::matches(&p.to_lowercase(), &name))
     }
+}
+
+/// A command with `~/` against `home` (or as it is).
+fn expanded(args: &[String], home: Option<&Path>) -> std::sync::Arc<[String]> {
+    args.iter().map(|a| super::content::expand(a, home).to_string_lossy().into_owned()).collect()
 }
 
 /// library.json's runners, each with its id (else its name's) and its name (else its id); what is wrong

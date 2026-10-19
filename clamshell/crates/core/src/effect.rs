@@ -56,7 +56,8 @@ pub enum Effect {
     EndSteam {
         appid: u32,
     },
-    /// Run this command (a runner's `stop`, for an entry that runs in another program's processes).
+    /// Run this command (a runner's `stop`, for an entry that runs in another program's processes; its
+    /// `pause` or `resume`, see [`crate::background`]).
     Stop(Vec<String>),
     /// An entry's slice (all its launches' processes) frozen, or thawed (see [`crate::background`]).
     Freeze {

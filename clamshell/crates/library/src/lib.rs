@@ -212,11 +212,25 @@ pub struct RunnerOf {
     pub enqueue: Option<Arc<str>>,
     pub handover: bool,
     pub stop: Arc<[String]>,
+    /// Commands that pause and resume all its entries together (they share one container: Waydroid's);
+    /// empty: none.
+    pub pause: Arc<[String]>,
+    pub resume: Arc<[String]>,
 }
 
 impl RunnerOf {
     pub fn new(id: &str, name: &str, item_settings: bool) -> RunnerOf {
-        RunnerOf { key: runner_key(id), name: name.into(), item_settings, command: Arc::new([]), enqueue: None, handover: false, stop: Arc::new([]) }
+        RunnerOf {
+            key: runner_key(id),
+            name: name.into(),
+            item_settings,
+            command: Arc::new([]),
+            enqueue: None,
+            handover: false,
+            stop: Arc::new([]),
+            pause: Arc::new([]),
+            resume: Arc::new([]),
+        }
     }
 
     /// Its command for `files` (several where it takes `{paths}`, else the first), in the first's folder;

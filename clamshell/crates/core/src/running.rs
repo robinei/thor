@@ -153,8 +153,9 @@ impl State {
         };
         if session.windows.iter().any(|w| session.running_of(w).is_some_and(|o| o.id == r.id)) {
             let focus = Effect::Window(WindowCommand::Focus(r.workspace()));
-            // (Paused: thawed first, so it draws as it is shown.)
-            return self.thaw(id).into_iter().chain([focus]).collect();
+            // (Paused, or its runner: thawed first, so it draws as it is shown.)
+            let resumed = self.resume_runner_of(id);
+            return self.thaw(id).into_iter().chain(resumed).chain([focus]).collect();
         }
         let title = r.entry.as_ref().map_or_else(|| id.to_owned(), |g| g.title.clone());
         // (No window, but a tray icon: the program asked to show itself, Steam started silently.)
@@ -200,10 +201,14 @@ impl State {
         let instance = Instance::Run { key, secs, n };
         let settings = self.settings_of(&game);
         let env = self.env_of(&game);
+        // (Its runner paused, its container with it: resumed first.)
+        let resumed = self.resume_runner_of(&game);
         self.session.launching.push(Launching { game: game.clone(), instance: instance.clone(), app_id });
         // Shown once its first window appears.
         self.session.pending_show = Some(instance.clone());
-        vec![Effect::Save(Save::Resume(self.resume())), Effect::Launch { game, instance, settings, env, launch, watch }]
+        let mut effects: Vec<Effect> = resumed.into_iter().collect();
+        effects.extend([Effect::Save(Save::Resume(self.resume())), Effect::Launch { game, instance, settings, env, launch, watch }]);
+        effects
     }
 
     /// A launch has started: the entry runs (one launch more), and the second screen lights up again for

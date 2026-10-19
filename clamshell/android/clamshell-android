@@ -13,7 +13,17 @@
 # docs/android.md.
 #
 # `clamshell-android --stop waydroid.<package>`: the app stopped (ClamShell's Force kill).
+# `clamshell-android --pause`, `--resume`: Android frozen, or thawed (the container's cgroup, through
+# Waydroid's container service: no root needed); ClamShell's In the background, set for the runner.
+# A launch thaws it first.
 set -u
+container() {
+    busctl call id.waydro.Container /ContainerManager id.waydro.ContainerManager "$1" > /dev/null 2>&1
+}
+case "${1:-}" in
+    --pause) container Freeze; exit ;;
+    --resume) container Unfreeze; exit ;;
+esac
 stop=
 if [ "${1:-}" = --stop ]; then
     stop=1
@@ -23,6 +33,7 @@ pkg=${1#waydroid.}
 
 running() { waydroid status 2> /dev/null | grep -q '^Session:[[:space:]]*RUNNING'; }
 [ -n "$stop" ] && ! running && exit 0
+running && container Unfreeze
 if ! running; then
     # (On ClamShell's display: the user manager's may be another's, a desktop's around a nested session.)
     systemd-run --user --quiet --collect --unit=waydroid-session -E WAYLAND_DISPLAY -E XDG_RUNTIME_DIR \
