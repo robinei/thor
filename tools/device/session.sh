@@ -76,6 +76,11 @@ PartOf=graphical-session.target
 After=graphical-session.target
 
 [Service]
+# Up once its screens are drawn; its main loop says it turns, and one that stops for 30 s (hung) is
+# restarted: what it launched runs on in its scopes.
+Type=notify
+NotifyAccess=main
+WatchdogSec=30
 # The control pipe: sway's key bindings (clamshell ctl) write to it.
 ExecStartPre=-/usr/bin/mkfifo %t/clamshell-control
 ExecStart=$C

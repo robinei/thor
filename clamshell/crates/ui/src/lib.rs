@@ -20,6 +20,7 @@ pub mod nav;
 #[cfg(test)]
 #[allow(unsafe_code, clippy::unwrap_used, clippy::expect_used)]
 mod no_alloc;
+mod notify;
 mod render;
 mod screens;
 mod text_input;
@@ -127,9 +128,12 @@ pub fn run(state: State, config: Config, start: impl FnOnce(EventSender), on_eff
     // What the state in force needs now that everything runs (the tab's watch, brightness, the pad).
     app.handle(Event::Start);
 
+    // (systemd told it is up once the screens are drawn, and that the loop turns: see notify.)
+    let mut notifier = notify::Notifier::new();
     while !app.exit {
         event_loop.dispatch(None, &mut app)?;
         app.redraw_dirty();
+        notifier.turned();
     }
     Ok(())
 }
