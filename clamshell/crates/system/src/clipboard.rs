@@ -7,6 +7,11 @@
 //!   it can still be pasted. Something else copied (an image) forgets it.
 //! - Copied to the primary selection too, so what a middle click pastes (Foot's right click: see its
 //!   config) is the last text copied or selected, wherever.
+//! - Written to the user's runtime directory too: a ClamShell started again (an update, a crash) offers
+//!   it, if the clipboard is empty then (a tmpfs only the user can read, gone at a reboot).
+//! - A password manager's copy (marked `x-kde-passwordManagerHint`) is as one that isn't text: not
+//!   kept, written or pasted into ClamShell's fields, and what was kept is forgotten. The manager
+//!   clears it itself.
 //! - Sent to the state ([`Reading::Clipboard`]) for ClamShell's own fields' Ctrl+V.
 //! - `clamshell --clipboard get|set` ([`get`], [`set`]): the clipboard's text written out, or set from
 //!   what is read in (Waydroid's clipboard sharing, through a stand-in for its `pyclip`).
@@ -36,19 +41,45 @@ use crate::{Sink, worker};
 const TEXT: [&str; 5] = ["text/plain;charset=utf-8", "UTF8_STRING", "text/plain", "TEXT", "STRING"];
 /// The most text kept (bytes): more is left to the program that copied it.
 const MOST: usize = 1 << 20;
+/// The type a password manager's copy is marked with (as KDE's clipboard and others honour it).
+const SECRET: &str = "x-kde-passwordManagerHint";
 /// How long `--clipboard set` waits for its text to be taken (ClamShell keeps it then).
 const SET_WAIT: Duration = Duration::from_secs(5);
 
+/// Where the text kept is written too, so that a ClamShell started again (an update, a crash) offers
+/// it: the user's runtime directory, theirs alone and gone at a reboot.
+fn saved() -> Option<std::path::PathBuf> {
+    std::env::var_os("XDG_RUNTIME_DIR").map(|d| std::path::PathBuf::from(d).join("clamshell/clipboard"))
+}
+
 /// Keeps the clipboard (see the module's doc), on a thread of its own, as long as the compositor is there.
+/// It starts from the text a ClamShell before kept, offered if the clipboard is empty.
 pub fn spawn(sink: impl Sink + Clone + 'static) -> io::Result<()> {
     worker::detached("clipboard", move || {
+        let before = saved().and_then(|path| std::fs::read_to_string(path).ok()).filter(|t| t.len() <= MOST);
+        if before.is_some() {
+            let _ = sink.send(Event::Reading(Reading::Clipboard(before.as_deref().map(Arc::from))));
+        }
         // (Told from the reading threads.)
         let sink = Mutex::new(sink);
         let on_read = move |text: Option<String>| {
+            if let Some(path) = saved() {
+                let written = match &text {
+                    Some(t) => path.parent().map_or(Ok(()), std::fs::create_dir_all).and_then(|()| {
+                        use std::os::unix::fs::OpenOptionsExt;
+                        let mut file = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&path)?;
+                        file.write_all(t.as_bytes())
+                    }),
+                    None => std::fs::remove_file(&path).or(Ok(())),
+                };
+                if let Err(e) = written {
+                    log::debug!("clipboard: {}: {e}", path.display());
+                }
+            }
             let sink = sink.lock().unwrap_or_else(PoisonError::into_inner);
             let _ = sink.send(Event::Reading(Reading::Clipboard(text.map(Arc::from))));
         };
-        let kept = Arc::new(Kept { text: Mutex::new(None), on_read: Box::new(on_read) });
+        let kept = Arc::new(Kept { text: Mutex::new(before), on_read: Box::new(on_read) });
         match Keeper::connect(Mode::Keep { kept, own: None }) {
             Ok((mut keeper, mut queue)) => {
                 log::info!("clipboard: kept by ClamShell");
@@ -133,9 +164,14 @@ impl Keeper {
         Ok((Keeper { conn, manager, device, offers: Vec::new(), mode }, queue))
     }
 
-    /// The best text type `offer` has, if any.
+    /// The best text type `offer` has, if any; none for a secret (a password manager's copy, marked
+    /// `x-kde-passwordManagerHint`: it clears the clipboard itself after a while, which keeping it would
+    /// undo, and it is never to be written down).
     fn text_type(&self, offer: &ExtDataControlOfferV1) -> Option<&'static str> {
         let types = &self.offers.iter().find(|(o, _)| o == offer)?.1;
+        if types.iter().any(|t| t == SECRET) {
+            return None;
+        }
         TEXT.into_iter().find(|t| types.iter().any(|x| x == t))
     }
 
