@@ -8,7 +8,8 @@ system (NetworkManager, BlueZ, PipeWire, a fake backlight), screenshots.
     tools/vm/vm.py run --headless &          (the machine running; ClamShell built on the host)
     tools/vm/vm-checks.py [CHECK ...]        (all of them by default; --list names them)
 
-For the checks ClamShell runs with a test library (a game that opens an empty mpv window), a fake backlight and its own
+For the checks ClamShell runs as the device's session (CLAMSHELL_SESSION=device: it adopts programs
+it didn't start), with a test library (a game that opens an empty mpv window), a fake backlight and its own
 state directory (a runtime drop-in for its service, removed at the end), PipeWire gets a null sink (the
 machine has no audio device), and Bluetooth is set up (tools/vm/vm.py bluetooth). The exit status is the
 number of failed checks. Standard library only.
@@ -256,7 +257,7 @@ def plug_pad():
 
 # --- the test environment
 
-# Test games: test.game, zeta.game, zulu01.game to zulu14.game, all in the Test tab, each an empty mpv window (not foot: it asks for text input, which brings up the keyboard).
+# Test games: test.game, zeta.game, zulu01.game to zulu14.game, all in the Test tab, each an empty mpv window (not foot: it asks for text input, which brings up the keyboard). Started through env: ClamShell takes a file mpv starts for a film, not a game.
 LIBRARY = f"""{{ "places": [
   {{ "id": "recent", "path": "Recent", "type": "recent", "icon": "clock" }},
   {{ "id": "favourites", "path": "Favourites", "type": "favourites", "icon": "star" }},
@@ -268,7 +269,7 @@ LIBRARY = f"""{{ "places": [
   "runners": [
   {{ "type": "desktop", "name": "Desktop", "match": ["*.desktop"] }},
   {{ "name": "Test game", "match": ["*.game"],
-    "launch": ["mpv", "--idle", "--force-window", "--vo=wlshm", "--no-terminal", "--wayland-app-id=testgame"] }}
+    "launch": ["env", "mpv", "--idle", "--force-window", "--vo=wlshm", "--no-terminal", "--wayland-app-id=testgame"] }}
 ],
   "sources": [
   {{ "type": "dir", "id": "test", "dir": "{CHECKS_DIR}/games", "place": "@test", "match": ["*.game"] }},
@@ -294,7 +295,7 @@ touch {CHECKS_DIR}/games/test.game {CHECKS_DIR}/games/zeta.game {" ".join(f"{CHE
 echo 100 > {BACKLIGHT}/max_brightness; echo 50 > {BACKLIGHT}/brightness
 mkdir -p $(dirname {DROP_IN})
 printf '%s\\n' '[Service]' 'Environment=XDG_CONFIG_HOME={CHECKS_DIR}/config' 'Environment=XDG_DATA_HOME={CHECKS_DIR}/data' \\
-    'Environment=CLAMSHELL_BACKLIGHTS={CHECKS_DIR}/backlight' > {DROP_IN}
+    'Environment=CLAMSHELL_BACKLIGHTS={CHECKS_DIR}/backlight' 'Environment=CLAMSHELL_SESSION=device' > {DROP_IN}
 wpctl status | grep -q thor-checks-sink || wpctl status | grep -q 'Test sink' || pw-cli create-node adapter \\
     '{{ factory.name=support.null-audio-sink node.name=thor-checks-sink node.description="Test sink" media.class=Audio/Sink object.linger=true audio.position=[FL FR] }}' > /dev/null 2>&1
 sleep 0.5
@@ -1053,6 +1054,102 @@ class Checks:
                    "rumble 40000 20000" in said and said.strip().endswith("rumble stop"), said)
         press("home")
 
+    # process control
+
+    def _launch_test_game(self):
+        """The Test tab's first game (test.game, an idle mpv window) launched from shelf; its workspace,
+        once in front (none if it didn't come)."""
+        # (Its collection's place depends on which are shown: Recent and Favourites only with entries.)
+        for collection in range(4):
+            control(f"tap collection {collection}")
+            control("list -1000")
+            if until(lambda: (selection() or "").endswith("test.game"), 2):
+                break
+        control("tap launch")
+        if not until(lambda: front().startswith("clamshell-run-"), 10):
+            self.check("process control: the test game launched, in front", False, f"front {front()!r}, units {units('run-')}")
+            return None
+        return front()
+
+    def launch_and_quit(self):
+        plays = lambda: int((query("SELECT count(*) FROM plays") or [["0"]])[0][0])
+        scopes = lambda: [u for u in units("run-") if u.endswith(".scope")]
+        before = plays()
+        if not self._launch_test_game():
+            return
+        self.check("process control: a game launched from shelf runs in a scope of its own, in front", bool(scopes()), f"units {units('run-')}")
+        time.sleep(2)
+        control("window quit")
+        self.check("  Quit ends it (its scope gone)", until(lambda: not scopes(), 10), f"units {units('run-')}")
+        self.check("  one play recorded", until(lambda: plays() == before + 1, 5), f"plays {before} -> {plays()}")
+
+    def pause_hidden(self):
+        """A game, with no setting (Pauses games, the default): frozen once hidden for the grace (10 s,
+        then a 2 s look at whether it works without drawing), thawed when shown again."""
+        game = self._launch_test_game()
+        if not game:
+            return
+        slice_ = f"{game}.slice"
+        state = lambda: sh(f"systemctl --user show {slice_} -p FreezerState --value").strip()
+        time.sleep(1)
+        control("home")
+        self.check("pause: a game behind shelf is frozen after the grace", until(lambda: state() == "frozen", 20), f"{slice_}: {state()!r}")
+        control("home")
+        self.check("  thawed when shown again", until(lambda: state() == "running" and front() == game, 5), f"{state()!r}, front {front()!r}")
+        control("window quit")
+        until(lambda: not [u for u in units("run-") if u.endswith(".scope")], 10)
+
+    def _foot_outside(self, how):
+        """foot started outside ClamShell (`how`: a command starting it): whether it came in front on its
+        entry's workspace, and a reader of its process's cgroup."""
+        sh("swaymsg '[app_id=foot] kill' >/dev/null 2>&1 || true")
+        # (Gone, its entry ended, shelf in front: a window opening on an entry's workspace is that entry's.)
+        until(lambda: not sh("pgrep -x foot || true").strip() and not [u for u in units("run-foot") if u.endswith(".scope")]
+              and front() == "clamshell-shelf", 10)
+        sh(how)
+        on = until(lambda: front().startswith("clamshell-run-foot_"), 10)
+        pid = sh("pgrep -n -x foot || true").strip()
+        return on, lambda: sh(f"cat /proc/{pid}/cgroup 2>/dev/null").strip() if pid else ""
+
+    def found_window(self):
+        """A window started outside ClamShell: its entry's (foot's desktop file), on its workspace, in
+        front, its process moved into a scope of ours: from a desktop's app scope (as a launcher starts
+        one), and from the login session's (sway's exec)."""
+        adopt = lambda since: [line for line in journal(since).splitlines() if "adopt" in line][-3:]
+        since = now()
+        on, cgroup = self._foot_outside("setsid -f systemd-run --user --scope --quiet --collect --unit=app-thor-checks-foot.scope foot >/dev/null 2>&1")
+        self.check("found: a window started outside ClamShell (an app scope) is its entry's, on its workspace, in front", on, f"front {front()!r}")
+        self.check("  its process moved into a scope of ours", until(lambda: "clamshell-run-foot_" in cgroup(), 5), f"{cgroup()!r}; {adopt(since)}")
+        since = now()
+        on, cgroup = self._foot_outside("swaymsg 'exec foot' >/dev/null")
+        self.check("  one started by sway's exec (the login session's scope) too, on its workspace, in front", on, f"front {front()!r}")
+        self.check("  its process moved into a scope of ours", until(lambda: "clamshell-run-foot_" in cgroup(), 5), f"{cgroup()!r}; {adopt(since)}")
+        sh("swaymsg '[app_id=foot] kill' >/dev/null 2>&1 || true")
+
+    def tray_program(self):
+        """A program with a tray icon, started outside ClamShell (an app scope): an entry found by it, its
+        process moved into a scope of ours."""
+        if "ok" not in sh("python3 -c 'import gi; print(\"ok\")' 2>/dev/null"):
+            return self.check("tray: python-gobject in the machine (vm.py's packages)", False, "not installed")
+        since = now()
+        sh("setsid -f systemd-run --user --scope --quiet --collect --unit=app-thor-checks-tray.scope python3 -c "
+           f"{shlex.quote(TRAY_ITEM)} >/dev/null 2>&1")
+        # (The pattern can't match this command itself.)
+        pid = lambda: sh("pgrep -n -f 'thor-checks-tray-ite[m]' || true").strip()
+        cgroup = lambda: sh(f"cat /proc/{pid()}/cgroup 2>/dev/null").strip() if pid() else ""
+        self.check("tray: a program's icon registered", logged(since, "Tray test", 10), journal(since).strip()[-300:])
+        self.check("  its process moved into a scope of ours", until(lambda: "clamshell-run-" in cgroup(), 8),
+                   f"{cgroup()!r}; {[line for line in journal(since).splitlines() if 'adopt' in line][-3:]}")
+        sh("pkill -f thor-checks-tray-item || true")
+
+    def clipboard(self):
+        """Text set by a program that then quits is still on the clipboard (ClamShell offers it)."""
+        program = vm.A.program
+        self.check("clipboard: kept by ClamShell", "clipboard: kept by ClamShell" in journal(self.started), "")
+        sh(f"printf kept-by-clamshell | timeout 10 {program} --clipboard set")
+        got = sh(f"timeout 5 {program} --clipboard get").strip()
+        self.check("  a text set by a program that quit can still be pasted", got == "kept-by-clamshell", f"got {got!r}")
+
     # Bluetooth
 
     def bluetooth(self):
@@ -1078,9 +1175,26 @@ class Checks:
         self.check("  a long press forgets it", forgot and "Paired: yes" not in sh(f"bluetoothctl info {address}"))
 
 
+# The tray check's program: a StatusNotifierItem (named in its first line, to be found by).
+TRAY_ITEM = """# thor-checks-tray-item
+from gi.repository import Gio, GLib
+XML = ('<node><interface name="org.kde.StatusNotifierItem">'
+       '<property name="Id" type="s" access="read"/><property name="Title" type="s" access="read"/>'
+       '<property name="Status" type="s" access="read"/><property name="IconName" type="s" access="read"/>'
+       '<property name="Category" type="s" access="read"/></interface></node>')
+PROPS = {"Id": "thor-checks-tray", "Title": "Tray test", "Status": "Active", "IconName": "folder", "Category": "ApplicationStatus"}
+bus = Gio.bus_get_sync(Gio.BusType.SESSION)
+info = Gio.DBusNodeInfo.new_for_xml(XML).interfaces[0]
+bus.register_object("/StatusNotifierItem", info, None, lambda c, s, p, i, prop: GLib.Variant("s", PROPS[prop]), None)
+bus.call_sync("org.kde.StatusNotifierWatcher", "/StatusNotifierWatcher", "org.kde.StatusNotifierWatcher",
+              "RegisterStatusNotifierItem", GLib.Variant("(s)", (bus.get_unique_name(),)), None, 0, -1, None)
+GLib.MainLoop().run()
+"""
+
 CHECKS = ["shelf_scroll", "bar_tap", "time_zone", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad", "keyboard_points", "window_rules",
           "pad_shelf", "pad_view", "pad_mouse", "pad_typing", "pad_held_key", "pad_unplug", "pad_guide", "keymaps", "keymap_layers",
-          "keymap_actuations", "rumble", "bluetooth"]
+          "keymap_actuations", "rumble", "launch_and_quit", "pause_hidden", "found_window", "tray_program", "clipboard",
+          "bluetooth"]
 
 
 def main():

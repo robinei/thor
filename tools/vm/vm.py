@@ -70,6 +70,8 @@ PACKAGES = [
     "networkmanager", "polkit", "hostapd", "dnsmasq",
     # The battery's history, and Bluetooth's service (the machine has no adapter), as on the device.
     "upower", "bluez",
+    # The checks' stand-in tray program (a StatusNotifierItem, in Python).
+    "python-gobject",
 ]
 # The simulated radios: wlan0 the device's, wlan1 and wlan2 access points (see TEST_AP).
 TEST_NETWORKS = "ThorTest (WPA2, password thortest123) and ThorOpen (open)"
