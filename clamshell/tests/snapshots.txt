@@ -36,7 +36,7 @@ keymap-layers.png a76003cbc01b9b55
 keymap-load.png 1af04b2660c10e8b
 keymap-menu.png 37e24e36f9c8540a
 keymap-mouse.png 67c363d86372b1ba
-keymap-name.png 1ad106a6b6d72a5a
+keymap-name.png 8482289e34a9ea1c
 keymap-own-kept.png 27e9be5365a89b9f
 keymap-own-menu.png 40f3fcfed20eb696
 keymap-own.png 51719398be5298dd
@@ -47,7 +47,7 @@ keymaps-chosen.png 7d4ceba84dae003a
 keymaps.png f133c53f67c0912d
 launcher-running.png 2fec735a95f28a78
 launcher.png ff7c584c3e7c8f0f
-settings-env.png 3b2760dde0159b6d
+settings-env.png 817534091cbf35d0
 settings-global.png 29ecaa48be4fd6ae
 settings-running.png 97189a42ad883547
 settings.png fcf1170608f21e52

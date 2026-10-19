@@ -212,20 +212,9 @@ impl State {
         }
     }
 
-    /// Whether there is text on the clipboard to paste.
-    pub fn can_paste(&self) -> bool {
-        self.clipboard.as_deref().is_some_and(|t| !t.trim().is_empty())
-    }
-
     /// The editor's buttons.
     pub(crate) fn on_editor(&mut self, id: EditorId) -> Vec<Effect> {
         match id {
-            EditorId::Paste => {
-                if let (Some(text), Some(editor)) = (self.clipboard.clone(), self.bottom.editor_mut()) {
-                    editor.paste(&text);
-                }
-                vec![]
-            }
             EditorId::Save => self.save_editor(),
             EditorId::Cancel => self.cancel_editor(),
         }
@@ -257,8 +246,19 @@ impl State {
         self.bottom.open_editor(Editor { purpose: Purpose::Env { game }, text });
     }
 
-    /// A key from the on-screen keyboard while the editor is open.
+    /// The clipboard's text into the open editor (Ctrl+V, or a right click), if there is one.
+    pub(crate) fn paste(&mut self) {
+        if let (Some(text), Some(editor)) = (self.clipboard.clone(), self.bottom.editor_mut()) {
+            editor.paste(&text);
+        }
+    }
+
+    /// A key from the on-screen keyboard while the editor is open: Ctrl+V pastes the clipboard's text.
     pub(crate) fn edit(&mut self, stroke: Stroke) -> Vec<Effect> {
+        if stroke.ctrl && !stroke.alt && stroke.key == crate::keyboard::Key::Char('v') {
+            self.paste();
+            return vec![];
+        }
         match self.bottom.editor_mut().and_then(|e| e.key(stroke)) {
             Some(Done::Save) => self.save_editor(),
             Some(Done::Cancel) => self.cancel_editor(),
@@ -489,13 +489,19 @@ mod tests {
         let mut s = state();
         tap(&mut s, Id::Tab(Tab::Settings));
         tap(&mut s, Id::Settings(SettingsId::Env));
-        assert!(!s.can_paste(), "nothing on the clipboard");
-        tap(&mut s, Id::Editor(EditorId::Paste));
-        assert_eq!(s.bottom().editor().map(|e| e.text.as_str()), Some(""));
+        let key = |s: &mut State, k| tap(s, Id::Key(find(k).unwrap()));
+        let ctrl_v = |s: &mut State| {
+            key(s, Key::Mod(crate::keyboard::Modifier::Ctrl));
+            key(s, Key::Char('v'))
+        };
+        ctrl_v(&mut s);
+        assert_eq!(s.bottom().editor().map(|e| e.text.as_str()), Some(""), "nothing on the clipboard");
         s.apply(Event::Reading(Reading::Clipboard(Some("A=1\nB=2\n".into()))));
-        assert!(s.can_paste());
-        tap(&mut s, Id::Editor(EditorId::Paste));
+        ctrl_v(&mut s);
         assert_eq!(s.bottom().editor().map(|e| e.text.as_str()), Some("A=1 B=2"), "its line breaks spaces, its end trimmed");
+        // A right click the same.
+        s.apply(Event::Paste);
+        assert_eq!(s.bottom().editor().map(|e| e.text.as_str()), Some("A=1 B=2A=1 B=2"));
     }
 
     #[test]

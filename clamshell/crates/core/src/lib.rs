@@ -186,7 +186,7 @@ pub struct State {
     pins_dropped: bool,
     /// The file actions' clipboard and confirmation, the folder browsed (see [`files`]).
     files: files::Files,
-    /// The text on the system's clipboard, for the editor's Paste (files copied in the Files tab are its
+    /// The text on the system's clipboard, for the editor's Ctrl+V (files copied in the Files tab are its
     /// own, above).
     clipboard: Option<std::sync::Arc<str>>,
 }
@@ -484,6 +484,10 @@ impl State {
                 (Dirty::NONE, vec![])
             }
             Event::Device(key) => (Dirty::BOTTOM, self.on_device_key(key)),
+            Event::Paste => {
+                self.paste();
+                (Dirty::BOTTOM, vec![])
+            }
             Event::Screenshot(result) => {
                 self.on_screenshot(result);
                 (Dirty::BOTTOM, vec![])

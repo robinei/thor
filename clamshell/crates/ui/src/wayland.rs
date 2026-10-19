@@ -169,6 +169,9 @@ impl KeyboardHandler for App {
     fn update_modifiers(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, _: Modifiers, _: RawModifiers, _: u32) {}
 }
 
+/// The mouse's right button (evdev's code).
+const BTN_RIGHT: u32 = 0x111;
+
 impl PointerHandler for App {
     fn pointer_frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_pointer::WlPointer, events: &[PointerEvent]) {
         for event in events {
@@ -181,6 +184,10 @@ impl PointerHandler for App {
                             smithay_client_toolkit::reexports::protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::Shape::Default,
                         );
                     }
+                }
+                // A right click on the second screen pastes into the field open there (as Ctrl+V).
+                PointerEventKind::Press { button: BTN_RIGHT, .. } if self.views.top.as_ref().is_none_or(|v| v.shell.surface() != &event.surface) => {
+                    self.handle(Event::Paste);
                 }
                 PointerEventKind::Press { time, .. } => self.press_at(Source::Mouse, &event.surface, event.position, time),
                 PointerEventKind::Motion { time } => self.moved(Source::Mouse, event.position, time),

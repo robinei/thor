@@ -7,7 +7,7 @@
 //!   it can still be pasted. Something else copied (an image) forgets it.
 //! - Copied to the primary selection too, so what a middle click pastes (Foot's right click: see its
 //!   config) is the last text copied or selected, wherever.
-//! - Sent to the state ([`Reading::Clipboard`]) for ClamShell's own fields' Paste.
+//! - Sent to the state ([`Reading::Clipboard`]) for ClamShell's own fields' Ctrl+V.
 //! - `clamshell --clipboard get|set` ([`get`], [`set`]): the clipboard's text written out, or set from
 //!   what is read in (Waydroid's clipboard sharing, through a stand-in for its `pyclip`).
 //!

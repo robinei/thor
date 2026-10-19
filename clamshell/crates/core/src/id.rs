@@ -210,8 +210,6 @@ pub enum Target {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EditorId {
-    /// The clipboard's text added to the field.
-    Paste,
     Save,
     Cancel,
 }

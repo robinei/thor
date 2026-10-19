@@ -30,6 +30,8 @@ pub enum Event {
     Reading(Reading),
     /// Touch, the mouse or the pad on a target.
     Pointer(PointerEvent),
+    /// A right click on the second screen: the clipboard's text into the open field (as Ctrl+V).
+    Paste,
     /// A finger on volume or brightness in the bar, sliding.
     Slide(Slide),
     /// A level row set by the finger, or stepped by the pad.
@@ -94,7 +96,7 @@ pub enum Reading {
     /// Battery, Wi-Fi signal, volume, brightness (when they change).
     Status(Status),
     /// The text on the clipboard (as it changes; none: something else, or nothing), for ClamShell's own
-    /// fields' Paste.
+    /// fields' Ctrl+V.
     Clipboard(Option<Arc<str>>),
     /// CPU, GPU, memory, temperatures, power (once a second).
     Metrics(Metrics),
