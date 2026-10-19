@@ -175,6 +175,7 @@ impl Icon {
             Setting::ChargeLimit => Icon::Battery { tenths: 8, charging: true },
             Setting::ScreenOff => Icon::ScreenOff,
             Setting::Sleep => Icon::Moon,
+            Setting::Background => Icon::Windows,
         }
     }
 

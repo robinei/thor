@@ -168,11 +168,20 @@ crate: about 8 wakeups a second between them, no CPU, idle threads waking every 
 Still to try: a Proton game, an emulator, a game with online play, long freezes (minutes), and all of it
 on the Thor (Freedreno, FEX).
 
+- RetroArch (snes9x) frozen for 10 s the same way: alive after, its sound stream open, drawing on.
+- In the background, live in the nested session: the SNES runner set to Pauses hidden, a game launched,
+  hidden behind shelf (Home): its slice frozen after the grace, thawed as it was shown again (it went
+  on), and Quit ended it.
+
 ## Done
 
 - The modes above: in a desktop's session ClamShell adopts nothing it didn't start (its tray programs
   stay the desktop's; an icon of ClamShell's own launch still gives its entry a menu).
 - A Steam game ClamShell launches runs in the launch's own scope (moved there once Steam's launcher for
   it runs): counted, frozen and ended apart from Steam.
+- In the background, a setting (All, a runner, an item): Runs hidden (default), Pauses hidden (its slice
+  frozen once no window of it has been shown for 3 s; thawed when shown, and before Quit, Force kill or
+  being shown), Quits closed (ended once it has had a window and has none left). Only launches of
+  ClamShell's have a slice to freeze or stop; programs found by their windows or tray icons run on.
 - The Android runner's adb server is ClamShell's own, on a port of its own (5039), not whatever server
   is on adb's usual port.

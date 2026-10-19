@@ -46,9 +46,12 @@ pub enum Setting {
     ScreenOff,
     /// The device sleeps after this many minutes without input; 0: never (global only).
     Sleep,
+    /// What a program does while none of its windows is shown (see [`crate::background`]): 0 it runs,
+    /// 1 it is paused (frozen), 2 it ends once its last window has closed.
+    Background,
 }
 
-pub const COUNT: usize = 16;
+pub const COUNT: usize = 17;
 
 /// What a value does, for the tile's colour: nothing (the stock value), saves power or eases the load,
 /// costs power, or changes how the game looks or plays.
@@ -78,6 +81,7 @@ names!(Setting {
     ChargeLimit: "charge";
     ScreenOff: "screenoff";
     Sleep: "sleep";
+    Background: "background";
 });
 
 const _: () = assert!(Setting::ALL.len() == COUNT, "every setting in the list");
@@ -95,7 +99,7 @@ impl Setting {
     /// The values a tap steps through, in order.
     pub fn choices(self) -> &'static [u16] {
         match self {
-            Setting::Power | Setting::Hud | Setting::Fan => &[0, 1, 2],
+            Setting::Power | Setting::Hud | Setting::Fan | Setting::Background => &[0, 1, 2],
             Setting::FpsCap => &[0, 30, 40, 45, 60, 90, 120],
             Setting::Refresh => &[0, 60, 90, 120],
             Setting::Upscale | Setting::Rumble => &[0, 1, 2, 3],
@@ -189,6 +193,9 @@ impl Setting {
             (Setting::ChargeLimit, 100) => "Charge full",
             (Setting::ScreenOff, 0) => "Always on",
             (Setting::Sleep, 0) => "No sleep",
+            (Setting::Background, 0) => "Runs hidden",
+            (Setting::Background, 1) => "Pauses hidden",
+            (Setting::Background, _) => "Quits closed",
             // Numbers: the value with its unit.
             (Setting::FpsCap, v) => return number(buf, "", v, " fps"),
             (Setting::Refresh, v) => return number(buf, "", v, " Hz"),

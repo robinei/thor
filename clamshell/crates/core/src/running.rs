@@ -152,7 +152,9 @@ impl State {
             return vec![];
         };
         if session.windows.iter().any(|w| session.running_of(w).is_some_and(|o| o.id == r.id)) {
-            return vec![Effect::Window(WindowCommand::Focus(r.workspace()))];
+            let focus = Effect::Window(WindowCommand::Focus(r.workspace()));
+            // (Paused: thawed first, so it draws as it is shown.)
+            return self.thaw(id).into_iter().chain([focus]).collect();
         }
         let title = r.entry.as_ref().map_or_else(|| id.to_owned(), |g| g.title.clone());
         // (No window, but a tray icon: the program asked to show itself, Steam started silently.)
@@ -457,10 +459,15 @@ impl State {
     /// Quit: the entry's windows asked to close; once none is left (a "save changes?" window keeps it
     /// until answered) it is ended if it still runs (see [`State::follow_quitting`]).
     pub(crate) fn quit(&mut self, game: &Arc<str>) -> Vec<Effect> {
+        // (Paused: thawed, to answer its windows' closing.)
+        let thawed = self.thaw(game);
         let windows = self.windows_of(game);
         self.session.quitting.retain(|(g, _)| g != game);
         self.session.quitting.push((game.clone(), false));
-        let mut effects = if windows.is_empty() { vec![] } else { vec![Effect::Window(WindowCommand::Close(windows))] };
+        let mut effects: Vec<Effect> = thawed.into_iter().collect();
+        if !windows.is_empty() {
+            effects.push(Effect::Window(WindowCommand::Close(windows)));
+        }
         effects.extend(self.follow_quitting());
         effects
     }
@@ -468,7 +475,8 @@ impl State {
     /// Force kill: the entry ended at once.
     pub(crate) fn force_kill(&mut self, game: &str) -> Vec<Effect> {
         self.session.quitting.retain(|(g, _)| &**g != game);
-        self.end(game, true)
+        let thawed = self.thaw(game);
+        thawed.into_iter().chain(self.end(game, true)).collect()
     }
 
     /// Ending a running entry: its slice stopped (`force`: killed), or (Steam's) the processes under

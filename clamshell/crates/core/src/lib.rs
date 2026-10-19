@@ -8,6 +8,7 @@
 //! readings ([`Sys`]). Each owns its own rules; what involves two of them is [`State`]'s.
 
 pub mod actions;
+pub mod background;
 pub mod battery;
 pub mod bluetooth;
 pub mod bottom_screen;
@@ -140,6 +141,8 @@ pub struct State {
     dock: Dock,
     /// Programs' tray icons (see [`tray`]).
     tray: Vec<tray::TrayItem>,
+    /// Programs paused or ended while hidden (see [`background`]).
+    background: background::Background,
     levels: Levels,
     radios: Radios,
     pad: Pad,
@@ -349,6 +352,7 @@ impl State {
                 self.session.set_windows(windows);
                 let handed = self.follow_windows(&known);
                 let mut effects = self.follow_window_rules();
+                effects.extend(self.follow_background());
                 effects.extend(self.session.show_pending());
                 effects.extend(self.follow_quitting());
                 effects.extend(self.follow_closed(was));
@@ -492,6 +496,7 @@ impl State {
         let known: Vec<i64> = self.session.windows.iter().map(|w| w.id).collect();
         let before = self.session.running.len();
         effects.extend(self.follow_windows(&known));
+        effects.extend(self.follow_background());
         let ended = self.session.running.len() != before;
         if ended {
             self.follow_dock();

@@ -42,6 +42,8 @@ trait Manager {
     fn list_units_by_patterns(&self, states: &[&str], patterns: &[&str]) -> zbus::Result<Vec<UnitRow>>;
     fn get_unit(&self, name: &str) -> zbus::Result<OwnedObjectPath>;
     fn stop_unit(&self, name: &str, mode: &str) -> zbus::Result<OwnedObjectPath>;
+    fn freeze_unit(&self, name: &str) -> zbus::Result<()>;
+    fn thaw_unit(&self, name: &str) -> zbus::Result<()>;
     fn start_transient_unit(
         &self,
         name: &str,
@@ -199,6 +201,24 @@ pub fn adopt(unit: &str, slice: Option<&str>, pids: &[u32]) -> Result<(), Error>
     }
     manager.start_transient_unit(unit, "fail", &properties, &[])?;
     Ok(())
+}
+
+/// Freezes a unit (a slice: every scope in it), or thaws it, on a thread of its own: the cgroup freezer,
+/// which stops its processes where they are, without their knowing.
+pub fn freeze(unit: String, frozen: bool) {
+    let done = worker::detached("freeze", move || {
+        let result = Connection::session()
+            .map_err(Error::from)
+            .and_then(|c| Ok(manager(&c)?))
+            .and_then(|m| if frozen { m.freeze_unit(&unit) } else { m.thaw_unit(&unit) }.map_err(Error::from));
+        match result {
+            Ok(()) => log::info!("{} {unit}", if frozen { "froze" } else { "thawed" }),
+            Err(e) => log::warn!("{} {unit}: {e}", if frozen { "freezing" } else { "thawing" }),
+        }
+    });
+    if let Err(e) = done {
+        log::warn!("freeze: {e}");
+    }
 }
 
 /// Waits for a scope to appear (within `appear`) and then to end. Checks once a second: for a game's
