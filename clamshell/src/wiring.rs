@@ -131,6 +131,7 @@ pub fn start(
     let bluetooth = started("bluetooth", bluetooth::spawn(sink.clone()));
     let tray = started("tray", clamshell_system::tray::spawn(sink.clone()));
     detached("clipboard", clamshell_system::clipboard::spawn(sink.clone()));
+    let icons = started("icons", clamshell_system::icons::spawn(sink.clone()));
     let system = started("system", clamshell_system::device::spawn(paths.screenshots.clone(), sink.clone()));
     // (Browsed videos' lengths and frames read as scanned ones' are, by the metadata threads.)
     let probe: Box<dyn Fn(Vec<meta::Wanted>) + Send> = {
@@ -159,6 +160,7 @@ pub fn start(
         bluetooth,
         tray,
         metrics,
+        icons,
         battery,
         pad,
         pad_taken,

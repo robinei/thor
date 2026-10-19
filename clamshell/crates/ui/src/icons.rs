@@ -94,6 +94,9 @@ pub enum Icon {
     Card,
     /// An entry selected (the Files tab): a tick.
     Check,
+    /// An app with no picture of its own (a program found by its window, with no desktop file): a
+    /// window.
+    App,
 }
 
 impl Icon {
@@ -376,6 +379,10 @@ pub fn draw(c: &mut Canvas, icon: Icon, r: Rect, color: Color) {
         Icon::ArrowRight => arrow(p, [(5.0, 12.0), (19.0, 12.0)], [(13.0, 6.0), (19.0, 12.0), (13.0, 18.0)]),
         Icon::Chevron => p.line(&[(9.0, 5.0), (16.0, 12.0), (9.0, 19.0)], 2.2),
         Icon::Check => p.line(&[(4.5, 12.5), (9.5, 17.5), (19.5, 6.5)], 2.4),
+        Icon::App => {
+            p.frame((3.0, 4.0, 18.0, 16.0), 2.5, LINE);
+            p.line(&[(3.5, 8.5), (20.5, 8.5)], LINE);
+        }
         Icon::Folder => p.shape(&[(3.0, 5.5), (9.5, 5.5), (11.5, 8.0), (21.0, 8.0), (21.0, 19.0), (3.0, 19.0)], LINE),
         Icon::File => {
             p.shape(&[(6.0, 3.0), (14.0, 3.0), (19.0, 8.0), (19.0, 21.0), (6.0, 21.0)], LINE);
@@ -644,12 +651,13 @@ mod tests {
             Icon::Trash,
             Icon::Card,
             Icon::Check,
+            Icon::App,
         ];
         let mut seen = std::collections::HashSet::new();
         for icon in &all {
             seen.insert(variant(*icon));
         }
-        assert_eq!(seen.len(), 52, "a variant is missing from the list");
+        assert_eq!(seen.len(), 53, "a variant is missing from the list");
         all
     }
 
@@ -708,6 +716,7 @@ mod tests {
             Icon::Trash => 56,
             Icon::Card => 57,
             Icon::Check => 58,
+            Icon::App => 59,
         }
     }
 

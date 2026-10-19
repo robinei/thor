@@ -97,6 +97,8 @@ pub enum Event {
 pub enum Reading {
     /// Battery, Wi-Fi signal, volume, brightness (when they change).
     Status(Status),
+    /// The picture found for an entry found by its window (see [`crate::Effect::FindIcon`]).
+    Icon { entry: Arc<str>, path: std::path::PathBuf },
     /// The text on the clipboard (as it changes; none: something else, or nothing), for ClamShell's own
     /// fields' Ctrl+V.
     Clipboard(Option<Arc<str>>),

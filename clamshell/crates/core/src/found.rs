@@ -1,7 +1,7 @@
 //! Programs ClamShell didn't start, found by a window of theirs that is no entry's (or by a tray icon:
 //! see [`crate::tray`]): anything with a window is on the dock. Each runs as an entry
 //! ([`Origin::Found`]): the library's desktop entry named as the window's app id, else one of its own
-//! (`window:<app id>`); its windows (those with its app id, or of its process) go to its workspace,
+//! (`window:<app id>`, its picture looked up by the app id in the icon themes, else the UI's app glyph); its windows (those with its app id, or of its process) go to its workspace,
 //! shown there if one was in front.
 //!
 //! In the device's session its process (and those it started) is moved into a scope of ours, as a
@@ -90,6 +90,12 @@ impl State {
                 effects.push(Effect::Window(WindowCommand::Focus(r.workspace())));
             }
         }
+        // (One of its own: its picture looked up by its app id.)
+        for r in new.iter().filter(|r| r.id.starts_with(PREFIX)) {
+            if let Some(app_id) = &r.app_id {
+                effects.push(Effect::FindIcon { entry: r.id.clone(), app_id: app_id.to_string() });
+            }
+        }
         let adopt: Vec<(String, u32)> = new.iter().filter_map(|r| Some((r.key.clone(), r.pid?))).filter(|_| self.device_session).collect();
         self.session.running.extend(new);
         for (key, pid) in adopt {
@@ -127,6 +133,10 @@ mod tests {
         assert!(fx.contains(&Effect::Window(WindowCommand::Focus(ws))), "it was in front: {fx:?}");
         assert!(fx.iter().any(|e| matches!(e, Effect::Adopt { pid: 500, .. })), "{fx:?}");
         assert!(s.dock().items().iter().any(|i| &*i.id == "window:org.x.Thing"), "on the dock");
+        // Its picture: looked up by its app id; found, it is the entry's.
+        assert!(fx.contains(&Effect::FindIcon { entry: "window:org.x.Thing".into(), app_id: "org.x.Thing".into() }), "{fx:?}");
+        s.apply(Event::Reading(crate::Reading::Icon { entry: "window:org.x.Thing".into(), path: "/icons/thing.svg".into() }));
+        assert_eq!(s.game("window:org.x.Thing").and_then(|g| g.icon.clone()), Some("/icons/thing.svg".into()));
         // Not moved yet (the system didn't): its process ended; its windows gone, it has ended.
         assert_eq!(s.force_kill("window:org.x.Thing"), vec![Effect::EndProcesses { pids: vec![500], force: true }]);
         s.apply(Event::Windows(vec![]));

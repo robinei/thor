@@ -59,6 +59,12 @@ pub enum Effect {
         slice: String,
         frozen: bool,
     },
+    /// A picture for entry `entry` (found by its window, no desktop file): its app id looked up in the
+    /// icon themes (see [`crate::Reading::Icon`]).
+    FindIcon {
+        entry: Arc<str>,
+        app_id: String,
+    },
     /// A program not started by ClamShell (found by its tray icon): its process and those it started
     /// moved into `instance`'s scope (in its entry's slice), as a launch of the entry's; not one a systemd
     /// service runs (it is the service's).

@@ -17,6 +17,7 @@ pub mod drm;
 pub mod files;
 pub mod frames;
 pub mod handles;
+pub mod icons;
 pub mod input;
 pub mod job;
 pub mod keyboard;

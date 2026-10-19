@@ -26,6 +26,7 @@ pub struct Handles {
     pub bluetooth: Worker<bluetooth::Request>,
     pub tray: Worker<clamshell_core::tray::TrayCommand>,
     pub metrics: Worker<bool>,
+    pub icons: Worker<(std::sync::Arc<str>, String)>,
     pub battery: Worker<battery::Command>,
     pub pad: Worker<pad::Command>,
     /// The controller the pad thread grabbed: SDL programs launched are told to ignore it.
@@ -134,6 +135,7 @@ impl Handles {
             Effect::EndRun { key, force } => launcher::end_run(key, *force),
             Effect::RunnerCommand(argv) => launcher::runner_command(argv),
             Effect::Adopt { instance, pid } => launcher::adopt(instance.clone(), *pid),
+            Effect::FindIcon { entry, app_id } => self.icons.send((entry.clone(), app_id.clone())),
             Effect::EndProcesses { pids, force } => launcher::end_processes(pids, *force),
             Effect::Freeze { slice, frozen } => crate::units::freeze(slice.clone(), *frozen),
             Effect::Tray(command) => self.tray.send(command.clone()),

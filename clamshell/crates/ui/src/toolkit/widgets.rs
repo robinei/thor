@@ -334,7 +334,8 @@ pub(crate) fn thumb(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect, r
 }
 
 /// An entry's icon in `r`, square in the middle: its image (an app's, a folder's), else one of the UI's by
-/// name (a browsed entry's: a folder, a file), else a placeholder in its colour.
+/// name (a browsed entry's: a folder, a file), else for an app the UI's app glyph, else (a game) a
+/// placeholder in its colour.
 pub(crate) fn icon(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect, radius: f32, grey: bool) {
     let scale = c.scale();
     let side = (r.w.min(r.h) * 0.8 * scale).round() as u32;
@@ -348,7 +349,7 @@ pub(crate) fn icon(c: &mut Canvas, images: &mut Images, game: &Game, r: Rect, ra
         }
         return;
     }
-    match game.glyph.as_deref().and_then(Icon::named) {
+    match game.glyph.as_deref().and_then(Icon::named).or(game.tool.then_some(Icon::App)) {
         Some(glyph) => {
             let side = r.w.min(r.h) * 0.7;
             c.icon(glyph, Rect::new(r.x + (r.w - side) / 2.0, r.y + (r.h - side) / 2.0, side, side), if grey { Tone::Dim } else { Tone::Normal });

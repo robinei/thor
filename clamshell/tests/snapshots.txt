@@ -1,6 +1,6 @@
 # FNV-1a hashes of the `clamshell --snapshot` files (src/snapshot.rs). After a change meant to change
 # what is drawn: CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots
-bar-window-below.png 46c68655003057c9
+bar-window-below.png 554b9fb5d3a065d0
 battery.png 81abc37e4d200f9b
 bluetooth.png ca86ea1f69427d89
 bottom.png 99b9ca29f5805933
@@ -45,13 +45,13 @@ keymap-replace.png 9db12f1fb02fcce5
 keymap-save.png 609f9a233b58b4e0
 keymaps-chosen.png 7d4ceba84dae003a
 keymaps.png f133c53f67c0912d
-launcher-running.png 2fec735a95f28a78
-launcher.png ff7c584c3e7c8f0f
+launcher-running.png 37ff62f1d95cb255
+launcher.png 09bfd1fbf7e33dd9
 settings-env.png 817534091cbf35d0
 settings-global.png 29ecaa48be4fd6ae
 settings-running.png 97189a42ad883547
 settings.png fcf1170608f21e52
-slider.png 60f8652ce52bd759
+slider.png 4a04ed3a493415dd
 status-low.png 50c4d49e9ef9dc7c
 sysinfo.png 474c131f5b78ffff
 time-by-hand.png a677c8f5d82d67ab

@@ -65,6 +65,8 @@ impl Tab {
             Reading::Status(_) | Reading::Bluetooth(_) => true,
             // (An editor's Paste, in any tab that has one.)
             Reading::Clipboard(_) => true,
+            // (The dock's.)
+            Reading::Icon { .. } => true,
             Reading::Metrics(_) => matches!(self, Tab::Sysinfo | Tab::Battery),
             Reading::Frames { .. } => self == Tab::Sysinfo,
             Reading::Wifi(_) => self == Tab::Wifi,

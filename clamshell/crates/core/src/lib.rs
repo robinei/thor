@@ -559,6 +559,10 @@ impl State {
         let changed = match reading {
             Reading::Status(status) => self.read_status(status),
             Reading::Clipboard(text) => replace(&mut self.clipboard, text),
+            Reading::Icon { entry, path } => {
+                let running = self.session.running.iter_mut().find(|r| r.id == entry);
+                running.and_then(|r| r.entry.as_mut()).is_some_and(|g| replace(&mut g.icon, Some(path)))
+            }
             // (The graphs move on with every reading.)
             Reading::Metrics(metrics) => {
                 self.sys.read_metrics(metrics);
