@@ -81,12 +81,21 @@ def until(condition, seconds=5.0, every=0.2):
 # --- what ClamShell does
 
 def now():
-    """The machine's clock, to read the journal from."""
-    return sh("date +%s.%N").strip()
+    """Where the user's journal is now, to read it from: its cursor (not the clock, which the time check
+    steps an hour and NTP may move: lines stamped in the future would be read again by every check after;
+    the clock only if the journal has no cursor yet)."""
+    out = sh("journalctl --user -n 1 --show-cursor -o cat --no-pager")
+    cursor = next((l.split("cursor: ", 1)[1].strip() for l in out.splitlines() if l.startswith("-- cursor: ")), "")
+    return cursor or sh("date +%s.%N").strip()
+
+
+def after(since):
+    """journalctl's arguments for the lines after `since` (see `now`)."""
+    return f"--after-cursor {shlex.quote(since)}" if since.startswith("s=") else f"--since @{since}"
 
 
 def journal(since):
-    return sh(f"journalctl --user -u clamshell --since @{since} -o cat --no-pager")
+    return sh(f"journalctl --user -u clamshell {after(since)} -o cat --no-pager")
 
 
 def logged(since, text, seconds=5.0):
@@ -549,7 +558,8 @@ class Checks:
             expected = order[2] if len(order) > 2 else None
             self.check("  a drag scrolls the list and a tap after it acts on the row under it", joined and expected and
                        line.endswith(f"join {expected}"), f"joined {line!r}, expected {expected!r} of {order}")
-            self.check("  the drag itself joined nothing", journal(since).count("wifi: join ") == 1, journal(since)[-300:])
+            joins = [l for l in journal(since).splitlines() if "wifi: join " in l]
+            self.check("  the drag itself joined nothing", len(joins) == 1, "\n".join(joins))
         finally:
             sh("sudo systemctl stop thor-extra-ap; sudo systemctl reset-failed thor-extra-ap 2>/dev/null; "
                f"for c in {' '.join(extras)}; do sudo nmcli connection delete $c > /dev/null 2>&1; done; "
@@ -974,7 +984,7 @@ class Checks:
                    "press a", "sleep 150", "release a", seconds=3.0)
         self.check("  Once: Back tapped, then A twice: Ctrl+Y, then Ctrl+X",
                    got == ["KEY_LEFTCTRL1", "KEY_Y1", "KEY_Y0", "KEY_LEFTCTRL0", "KEY_LEFTCTRL1", "KEY_X1", "KEY_X0", "KEY_LEFTCTRL0"], f"{got}")
-        said = sh(f"journalctl --user -u {vm.FAKE_PAD_UNIT} --since @{since} -o cat --no-pager | grep rumble || true")
+        said = sh(f"journalctl --user -u {vm.FAKE_PAD_UNIT} {after(since)} -o cat --no-pager | grep rumble || true")
         self.check("  a buzz as it is armed, another as it goes off", "rumble 0 40000" in said and "rumble 30000 0" in said, said)
         self.check("  the game stays in front", front() == game, f"front {front()!r}")
         press("home")
@@ -1048,7 +1058,7 @@ class Checks:
         since = now()
         ran = sh(f"python3 -c {shlex.quote(game)} {virtual} && echo played").strip()
         time.sleep(0.5)
-        said = sh(f"journalctl --user -u {vm.FAKE_PAD_UNIT} --since @{since} -o cat --no-pager | grep rumble || true")
+        said = sh(f"journalctl --user -u {vm.FAKE_PAD_UNIT} {after(since)} -o cat --no-pager | grep rumble || true")
         self.check("  the game's effect uploaded and played on the virtual pad", ran.endswith("played"), ran)
         self.check("  the controller rumbles at the game's strengths, then stops",
                    "rumble 40000 20000" in said and said.strip().endswith("rumble stop"), said)

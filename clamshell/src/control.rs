@@ -3,6 +3,8 @@
 //! presses would make. The commands and the targets a tap or a long press can be on are the rows of
 //! [`COMMANDS`] and [`TARGETS`]: each its words (placeholders in capitals), what it does, and what it
 //! makes; `clamshell ctl help` lists them.
+//!
+//! Any process of the user can write to it (mode 0600): see docs/security.md.
 
 use std::fmt;
 use std::io::BufRead;

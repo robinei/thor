@@ -167,8 +167,8 @@ fn apply_hardware(v: &Values, quiet: &mut Quiet) {
 /// place, which MangoHud picks up live.
 pub fn mangohud_config(dir: &Path, game: &str, fps_cap: u16, hud: u16) -> io::Result<PathBuf> {
     fs::create_dir_all(dir)?;
-    let hash = game.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3));
-    let path = dir.join(format!("game-{hash:016x}.conf"));
+    // (Named by the entry's key, as its scopes, workspace and art are.)
+    let path = dir.join(format!("{}.conf", clamshell_library::key_of(game)));
     let overlay = match hud {
         0 => "alpha=0\nbackground_alpha=0\n",
         1 => "fps_only\n",
