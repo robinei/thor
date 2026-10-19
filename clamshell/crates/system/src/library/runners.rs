@@ -61,6 +61,10 @@ pub struct Runner {
     pub pause: Vec<String>,
     #[serde(default)]
     pub resume: Vec<String>,
+    /// A command that succeeds while the runner's app shown keeps the screen on, which the compositor
+    /// doesn't hear (Android's keep-screen-on: a video, the camera); asked before the screens dim.
+    #[serde(default)]
+    pub awake: Vec<String>,
 }
 
 /// A runner that finds its items itself, each with its own command.
@@ -94,6 +98,7 @@ impl Runner {
             stop: expanded(&self.stop, home),
             pause: expanded(&self.pause, home),
             resume: expanded(&self.resume, home),
+            awake: expanded(&self.awake, home),
             ..clamshell_library::RunnerOf::new(&self.id, &self.name, self.item_settings.unwrap_or(true))
         }
     }

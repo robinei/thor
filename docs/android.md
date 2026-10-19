@@ -109,6 +109,12 @@ it first in any case. Android's own sleep (it asks to suspend once no window of 
 freezes the container: `persist.waydroid.suspend`) is turned off at setup, so that ClamShell's setting
 decides.
 
+An app that keeps the screen on (a video playing, the camera) does so inside Android, where the
+compositor doesn't hear it: Android holds a screen wake lock. While an Android app is shown, 10 s before
+the screens would dim ClamShell runs the runner's `awake` (the script's `--awake`: `dumpsys power` lists
+a `SCREEN_BRIGHT_WAKE_LOCK`); if it succeeds that counts as input. Tried with the camera app open (yes)
+and Calculator (no).
+
 ## Not solved
 
 - Android draws its own caption on each window (back, minimise, maximise, close), and Waydroid has no

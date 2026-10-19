@@ -216,6 +216,9 @@ pub struct RunnerOf {
     /// empty: none.
     pub pause: Arc<[String]>,
     pub resume: Arc<[String]>,
+    /// A command that succeeds while its shown app keeps the screen on in a way the compositor doesn't
+    /// hear (Android's: a video, the camera); empty: none.
+    pub awake: Arc<[String]>,
 }
 
 impl RunnerOf {
@@ -230,6 +233,7 @@ impl RunnerOf {
             stop: Arc::new([]),
             pause: Arc::new([]),
             resume: Arc::new([]),
+            awake: Arc::new([]),
         }
     }
 

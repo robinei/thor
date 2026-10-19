@@ -140,6 +140,7 @@ impl Handles {
             Effect::Freeze { slice, frozen } => crate::units::freeze(slice.clone(), *frozen),
             Effect::Tray(command) => self.tray.send(command.clone()),
             Effect::Screenshot => self.system.send(crate::device::Command::Screenshot),
+            Effect::AskAwake(argv) => self.system.send(crate::device::Command::AskAwake(argv.clone())),
             Effect::Sleep => self.system.send(crate::device::Command::Sleep),
             Effect::SetTimeZone(zone) => self.system.send(crate::device::Command::SetTimeZone(zone.clone())),
             Effect::SetNtp(on) => self.system.send(crate::device::Command::SetNtp(*on)),

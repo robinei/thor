@@ -16,6 +16,9 @@
 # `clamshell-android --pause`, `--resume`: Android frozen, or thawed (the container's cgroup, through
 # Waydroid's container service: no root needed); ClamShell's In the background, set for the runner.
 # A launch thaws it first.
+# `clamshell-android --awake`: succeeds while Android keeps the screen on (an app's window asks to: a
+# video playing, the camera; Android holds a screen wake lock then), which the compositor doesn't hear;
+# ClamShell asks before the screens dim while an Android app is shown.
 set -u
 container() {
     busctl call id.waydro.Container /ContainerManager id.waydro.ContainerManager "$1" > /dev/null 2>&1
@@ -32,6 +35,12 @@ fi
 pkg=${1#waydroid.}
 
 running() { waydroid status 2> /dev/null | grep -q '^Session:[[:space:]]*RUNNING'; }
+if [ "${1:-}" = --awake ]; then
+    running || exit 1
+    dev=$(waydroid status | sed -n 's/^IP address:[[:space:]]*//p'):5555
+    ANDROID_ADB_SERVER_PORT=5039 adb -s "$dev" shell dumpsys power 2> /dev/null | grep -qE 'SCREEN_(BRIGHT|DIM)_WAKE_LOCK|FULL_WAKE_LOCK'
+    exit
+fi
 [ -n "$stop" ] && ! running && exit 0
 running && container Unfreeze
 if ! running; then

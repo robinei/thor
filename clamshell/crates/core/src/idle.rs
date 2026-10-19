@@ -19,6 +19,8 @@ use crate::settings::{Setting, Values};
 pub const NOTIFY_AFTER: u64 = 10;
 /// The screens dim this long before they go off.
 const DIM_BEFORE: u64 = 30;
+/// A runner whose app is shown is asked whether it keeps the screen on this long before they dim.
+const ASK_BEFORE: u64 = 10;
 /// Presses that end within this long after the screens came back are taken as the wake-up, not as
 /// presses (a tap on a dark screen shouldn't do anything but light it).
 const WAKE_GRACE: u64 = 1;
@@ -44,6 +46,9 @@ pub enum IdleEvent {
     CompositorQuiet,
     /// The compositor sees input again (or an app asks it to keep the screen on).
     CompositorInput,
+    /// The app shown keeps the screen on in a way the compositor doesn't hear (Android's), as its
+    /// runner answered when asked: as input.
+    KeptAwake,
 }
 
 /// The compositor's word, where it gives one.
@@ -66,6 +71,8 @@ pub struct Idle {
     stage: Stage,
     /// When the screens last came back from off.
     woke_at: Option<u64>,
+    /// The start of the idle time a runner was last asked about (once each).
+    asked_for: Option<u64>,
 }
 
 /// What the idle times are, and whether sleeping is allowed now.
@@ -96,7 +103,7 @@ impl Idle {
                 self.watching = on;
                 self.last_input = now;
             }
-            IdleEvent::DeviceInput => self.last_input = now,
+            IdleEvent::DeviceInput | IdleEvent::KeptAwake => self.last_input = now,
             IdleEvent::CompositorQuiet => self.compositor = Compositor::QuietSince(now.saturating_sub(NOTIFY_AFTER)),
             IdleEvent::CompositorInput => self.compositor = Compositor::Busy,
         }
@@ -115,15 +122,36 @@ impl Idle {
         }
     }
 
+    /// Since when there has been no input; none while there is (the compositor busy) or if no source
+    /// can tell.
+    fn since(&self) -> Option<u64> {
+        match self.compositor {
+            Compositor::Busy => None,
+            Compositor::QuietSince(t) => Some(t.max(self.last_input)),
+            Compositor::Silent if self.watching => Some(self.last_input),
+            Compositor::Silent => None,
+        }
+    }
+
     /// How long there has been no input at `now`; none if no source can tell.
     fn idle_for(&self, now: u64) -> Option<u64> {
-        let since = match self.compositor {
-            Compositor::Busy => return Some(0),
-            Compositor::QuietSince(t) => t.max(self.last_input),
-            Compositor::Silent if self.watching => self.last_input,
-            Compositor::Silent => return None,
+        if self.compositor == Compositor::Busy {
+            return Some(0);
+        }
+        Some(now.saturating_sub(self.since()?))
+    }
+
+    /// Whether to ask the shown app's runner if it keeps the screen on: [`ASK_BEFORE`] the screens dim,
+    /// once for this idle time.
+    pub(crate) fn ask_awake(&mut self, now: u64, policy: Policy) -> bool {
+        let (Some(since), Some(off)) = (self.since(), policy.screen_off) else {
+            return false;
         };
-        Some(now.saturating_sub(since))
+        let due = self.stage == Stage::Awake && now.saturating_sub(since) + DIM_BEFORE + ASK_BEFORE >= off && self.asked_for != Some(since);
+        if due {
+            self.asked_for = Some(since);
+        }
+        due
     }
 
     /// The stage `policy` wants at `now`.
@@ -165,12 +193,18 @@ impl State {
         let may_sleep = self.device_session;
         let policy = Policy::of(&self.settings.global, may_sleep);
         let now = self.unix_secs;
+        let mut effects = vec![];
+        // (An app shown that keeps the screen on without the compositor hearing it: Android's.)
+        if let Some(awake) = self.awake_command()
+            && self.idle.ask_awake(now, policy)
+        {
+            effects.push(Effect::AskAwake(awake.to_vec()));
+        }
         let wanted = self.idle.wanted(now, policy);
         if wanted == self.idle.stage() {
-            return vec![];
+            return effects;
         }
         let was = self.idle.set(wanted, now);
-        let mut effects = vec![];
         // Brightness: down while dimmed or darker, back when awake.
         if (was >= Stage::Dimmed) != (wanted >= Stage::Dimmed) {
             effects.extend(if wanted >= Stage::Dimmed { self.levels.dimmed_effect() } else { self.levels.undimmed_effect() });
@@ -182,6 +216,17 @@ impl State {
             effects.push(Effect::Sleep);
         }
         effects
+    }
+}
+
+impl State {
+    /// The `awake` command of the runner of a window shown, if it has one.
+    fn awake_command(&self) -> Option<std::sync::Arc<[String]>> {
+        let session = &self.session;
+        session.windows.iter().filter(|w| w.visible).find_map(|w| {
+            let runner = session.running_of(w)?.entry.as_ref()?.runner.as_ref()?;
+            (!runner.awake.is_empty()).then(|| runner.awake.clone())
+        })
     }
 }
 
@@ -268,6 +313,47 @@ mod tests {
         s.apply(Event::Tick { unix_secs: 1000 });
         s.apply(Event::Idle(IdleEvent::Watching(true)));
         assert!(s.apply(Event::Tick { unix_secs: 1900 }).1.contains(&Effect::Sleep));
+    }
+
+    #[test]
+    fn an_app_shown_that_keeps_the_screen_on_its_own_way_is_asked_before_dimming() {
+        use crate::Event;
+        use crate::instance::Instance;
+        use crate::windows::Window;
+        let runner = clamshell_library::RunnerOf {
+            handover: true,
+            awake: vec!["awake".to_owned()].into(),
+            ..clamshell_library::RunnerOf::new("android", "Android", true)
+        };
+        let mut library = clamshell_library::demo_library();
+        if let Some(g) = library.games.iter_mut().find(|g| &*g.id == "desktop:firefox") {
+            g.runner = Some(runner);
+        }
+        let mut s = State::new(crate::Init { library, ..crate::testkit::init() });
+        s.apply(Event::Tick { unix_secs: 1000 });
+        s.apply(Event::Idle(IdleEvent::Watching(true)));
+        s.launch("desktop:firefox".into());
+        s.apply(crate::GameEvent::Started("desktop:firefox".into()).into());
+        s.apply(crate::GameEvent::Ended("desktop:firefox".into()).into());
+        let ws = Instance::workspace_of(&clamshell_library::key_of("desktop:firefox"));
+        s.apply(Event::Windows(vec![Window { visible: true, ..crate::testkit::win(6, "firefox", &ws, true) }]));
+        let ask = Effect::AskAwake(vec!["awake".into()]);
+        // Asked 10 s before the screens dim (5 minutes off, dimmed 30 s before), once.
+        assert!(!s.apply(Event::Tick { unix_secs: 1259 }).1.contains(&ask));
+        assert!(s.apply(Event::Tick { unix_secs: 1260 }).1.contains(&ask));
+        assert!(!s.apply(Event::Tick { unix_secs: 1261 }).1.contains(&ask), "once");
+        // It keeps the screen on: as input, not dimmed; asked again as the next dimming nears.
+        s.apply(Event::Idle(IdleEvent::KeptAwake));
+        s.apply(Event::Tick { unix_secs: 1280 });
+        assert_eq!(s.idle().stage(), Stage::Awake);
+        assert!(s.apply(Event::Tick { unix_secs: 1261 + 260 }).1.contains(&ask));
+        // No answer: dimmed as usual. Not shown: not asked.
+        s.apply(Event::Tick { unix_secs: 1261 + 270 });
+        assert_eq!(s.idle().stage(), Stage::Dimmed);
+        let mut s = crate::testkit::state();
+        s.apply(Event::Tick { unix_secs: 1000 });
+        s.apply(Event::Idle(IdleEvent::Watching(true)));
+        assert!(!s.apply(Event::Tick { unix_secs: 1260 }).1.contains(&ask));
     }
 
     #[test]

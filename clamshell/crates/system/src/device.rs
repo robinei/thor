@@ -30,6 +30,8 @@ pub enum Command {
     SetNtp(bool),
     /// The clock a step of a field on (or back), in local time.
     StepClock(clamshell_core::ClockField, i8),
+    /// A runner's `awake` command run: if it succeeds, the shown app keeps the screen on.
+    AskAwake(Vec<String>),
 }
 
 #[zbus::proxy(
@@ -42,6 +44,22 @@ trait Manager {
     fn can_suspend_then_hibernate(&self) -> zbus::Result<String>;
     fn suspend_then_hibernate(&self, interactive: bool) -> zbus::Result<()>;
     fn suspend(&self, interactive: bool) -> zbus::Result<()>;
+}
+
+/// Whether `argv` succeeds (within a few seconds).
+fn awake(argv: &[String]) -> bool {
+    let Some((program, args)) = argv.split_first() else {
+        return false;
+    };
+    let mut timed = vec!["10".to_owned(), program.clone()];
+    timed.extend(args.iter().cloned());
+    std::process::Command::new("timeout")
+        .args(&timed)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
 }
 
 /// Screenshots go to `screenshots` (a folder, made if needed).
@@ -58,6 +76,11 @@ pub fn spawn(screenshots: Option<PathBuf>, sink: impl Sink) -> io::Result<Worker
                     }
                 }
                 Command::Sleep => sleep(),
+                Command::AskAwake(argv) => {
+                    if awake(&argv) && sink.send(Event::Idle(clamshell_core::idle::IdleEvent::KeptAwake)).is_err() {
+                        return;
+                    }
+                }
                 Command::ReadTime => {
                     if sink.send(Event::Reading(Reading::Time(read_time(None)))).is_err() {
                         return;

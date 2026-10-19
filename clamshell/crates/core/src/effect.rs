@@ -54,6 +54,9 @@ pub enum Effect {
     /// A runner's command: its `stop`, for an entry that runs in another program's processes; its
     /// `pause` or `resume` (see [`crate::background`]).
     RunnerCommand(Vec<String>),
+    /// A runner's `awake` command: whether its app shown keeps the screen on (then
+    /// [`crate::idle::IdleEvent::KeptAwake`]).
+    AskAwake(Vec<String>),
     /// An entry's slice (all its launches' processes) frozen, or thawed (see [`crate::background`]).
     Freeze {
         slice: String,
