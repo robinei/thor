@@ -398,11 +398,11 @@ impl State {
                 (Dirty::NONE, vec![])
             }
             Event::Tray(items) => {
-                if !self.set_tray(items) {
+                let Some(mut effects) = self.set_tray(items) else {
                     return (Dirty::NONE, vec![]);
-                }
+                };
                 let known: Vec<i64> = self.session.windows.iter().map(|w| w.id).collect();
-                let mut effects = self.follow_windows(&known);
+                effects.extend(self.follow_windows(&known));
                 effects.extend(self.session.show_pending());
                 self.follow_dock();
                 (Dirty::BOTH, effects)

@@ -342,6 +342,31 @@ pub fn end_run(key: &str, force: bool) {
     }
 }
 
+/// A program not started by ClamShell (found by its tray icon): its process and those it started moved
+/// into `instance`'s scope (in its entry's slice), on a thread of its own. Not one a systemd service runs
+/// (moved out, the service would lose it), nor one in a scope of ours already.
+pub fn adopt(instance: Instance, pid: u32) {
+    let done = worker::detached("adopt", move || {
+        let Some(unit) = instance.unit() else {
+            return;
+        };
+        let cgroup = sys::text(format!("/proc/{pid}/cgroup")).unwrap_or_default();
+        let group = cgroup.trim_end().rsplit('/').next().unwrap_or_default();
+        if group.ends_with(".service") || Instance::from_unit(group).is_some() {
+            log::info!("adopt: process {pid} stays in {group}");
+            return;
+        }
+        let pids = with_descendants(&[pid], &parents());
+        match units::adopt(&unit, instance.slice().as_deref(), &pids) {
+            Ok(()) => log::info!("adopt: process {pid} from {group} in {unit} ({} processes)", pids.len()),
+            Err(e) => log::warn!("adopt: process {pid}: {e}"),
+        }
+    });
+    if let Err(e) = done {
+        log::warn!("adopt: {e}");
+    }
+}
+
 /// Processes asked to end (SIGTERM), or killed: a program not started by ClamShell.
 pub fn end_processes(pids: &[u32], force: bool) {
     log::info!("{} processes {pids:?}", if force { "killing" } else { "ending" });
@@ -437,5 +462,60 @@ mod tests {
         launcher.send(Request { game: "x".into(), instance, launch: Launch::program(vec![]), watch: None, env: vec![] });
         drop(launcher);
         assert_eq!(events.iter().collect::<Vec<_>>(), vec![Event::Game(GameEvent::LaunchFailed("x".into()))]);
+    }
+}
+
+#[cfg(test)]
+mod live {
+    use super::*;
+
+    fn group_of(pid: u32) -> String {
+        sys::text(format!("/proc/{pid}/cgroup")).unwrap_or_default().trim_end().rsplit('/').next().unwrap_or_default().to_owned()
+    }
+
+    fn wait_for(what: impl Fn() -> bool) -> bool {
+        let start = Instant::now();
+        while !what() {
+            if start.elapsed() > Duration::from_secs(5) {
+                return false;
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+        true
+    }
+
+    /// A program in a scope not ours (a desktop's app scope) is moved into one of ours, with what it
+    /// started; one a service runs stays (run by hand: `--ignored`).
+    #[test]
+    #[ignore]
+    #[allow(clippy::unwrap_used)]
+    fn a_program_is_adopted_unless_a_service_runs_it() {
+        let id = std::process::id();
+        let mut child = Command::new("systemd-run")
+            .args(["--user", "--scope", "--quiet", "--collect", &format!("--unit=app-adopttest-{id}"), "sh", "-c", "sleep 30 & wait"])
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        // (The scope's process: systemd-run runs the shell as itself.)
+        assert!(wait_for(|| group_of(pid).starts_with("app-adopttest")), "{}", group_of(pid));
+        assert!(wait_for(|| with_descendants(&[pid], &parents()).len() == 2), "its sleep");
+        let instance = Instance::Run { key: format!("adopttest_{id}"), secs: u64::from(id), n: 0 };
+        adopt(instance.clone(), pid);
+        let unit = instance.unit().unwrap();
+        assert!(wait_for(|| with_descendants(&[pid], &parents()).iter().all(|p| group_of(*p) == unit)), "moved, the sleep too");
+        let _ = Command::new("systemctl").args(["--user", "stop", &instance.slice().unwrap()]).status();
+        let _ = child.wait();
+        // A service's: stays.
+        let service = format!("adopttest-{id}");
+        Command::new("systemd-run").args(["--user", "--quiet", "--collect", &format!("--unit={service}"), "sleep", "30"]).status().unwrap();
+        let pid: u32 = String::from_utf8(Command::new("systemctl").args(["--user", "show", "-p", "MainPID", "--value", &service]).output().unwrap().stdout)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        adopt(Instance::Run { key: format!("adopttest_{id}"), secs: u64::from(id), n: 1 }, pid);
+        thread::sleep(Duration::from_secs(1));
+        assert_eq!(group_of(pid), format!("{service}.service"));
+        let _ = Command::new("systemctl").args(["--user", "stop", &service]).status();
     }
 }

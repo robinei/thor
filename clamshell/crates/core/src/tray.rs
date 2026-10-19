@@ -3,7 +3,9 @@
 //! device's session (in a desktop's the program is the desktop's), the program runs as an entry found by
 //! its icon ([`Origin::Tray`]): the library's desktop entry named as
 //! the icon's id (`desktop:steam` for Steam's `steam`), else one of its own (`tray:<key>`, its picture
-//! the icon). Like any running entry it is on the dock with a workspace of its own: its windows (those of
+//! the icon). Its process (and those it started) is moved into a scope of ours, as a launch of the
+//! entry's: once systemd lists that, it runs as one ([`Origin::Ours`]), paused and ended by its slice
+//! (not one a systemd service runs: that stays the service's, its process signalled). Like any running entry it is on the dock with a workspace of its own: its windows (those of
 //! the icon's process and of the processes it started) go there, wherever they open. A tap shows them,
 //! or (none open) asks the program to show itself, its window then shown there; the tile's corner mark
 //! opens the program's menu, and so does Menu in its long-press menu. Quit closes its windows, then asks
@@ -62,21 +64,20 @@ const PREFIX: &str = "tray:";
 impl State {
     /// The tray icons, after any change: programs not started by ClamShell run as entries found by
     /// them, and end with them (or with their last window, if one is still open).
-    pub(crate) fn set_tray(&mut self, items: Vec<TrayItem>) -> bool {
+    pub(crate) fn set_tray(&mut self, items: Vec<TrayItem>) -> Option<Vec<Effect>> {
         if self.tray == items {
-            return false;
+            return None;
         }
         self.tray = items;
-        self.follow_tray();
-        true
+        Some(self.follow_tray())
     }
 
     /// Entries found by tray icons: one for each icon of a program not started by ClamShell (its process
     /// in no scope of ours) that isn't one's already. Only in the device's session: in a desktop's, its
     /// programs are the desktop's (ClamShell a guest there, managing what it started).
-    pub(crate) fn follow_tray(&mut self) {
+    pub(crate) fn follow_tray(&mut self) -> Vec<Effect> {
         if !self.device_session {
-            return;
+            return vec![];
         }
         let now = self.unix_secs;
         let games = &self.shelf.library().games;
@@ -116,7 +117,16 @@ impl State {
                 entry: Some(Box::new(game)),
             });
         }
+        // Each moved into a scope of ours.
+        let mut effects = Vec::new();
+        for r in &new {
+            let (secs, n) = self.session.new_name(now);
+            if let Some(pid) = r.pid {
+                effects.push(Effect::Adopt { instance: Instance::Run { key: r.key.clone(), secs, n }, pid });
+            }
+        }
         self.session.running.extend(new);
+        effects
     }
 
     /// The tray icon of a running entry, if it has one: its scope's process's, or the one it was found by.
@@ -205,7 +215,12 @@ mod tests {
         assert_eq!(s.session().running_entries().len(), 1);
         // A program not started by ClamShell (Firefox's desktop file named as its id): it runs as that entry.
         let firefox_icon = item(":1.9/b", "firefox", None);
-        s.apply(Event::Tray(vec![zelda_icon.clone(), firefox_icon.clone()]));
+        let (_, fx) = s.apply(Event::Tray(vec![zelda_icon.clone(), firefox_icon.clone()]));
+        assert!(
+            fx.iter()
+                .any(|e| matches!(e, Effect::Adopt { pid: 77, instance } if instance.key() == Some(clamshell_library::key_of("desktop:firefox").as_str()))),
+            "{fx:?}"
+        );
         let r = s.session().running("desktop:firefox").unwrap();
         assert_eq!((r.origin, r.pid), (Origin::Tray, Some(77)));
         let ws = r.workspace();
@@ -242,9 +257,17 @@ mod tests {
         s.apply(Event::Tray(vec![zelda_icon.clone()]));
         assert!(s.session().running("desktop:firefox").is_none());
         // One the library has no desktop file for: an entry of its own, named as the icon.
-        s.apply(Event::Tray(vec![zelda_icon, item(":1.7/c", "thing", None)]));
+        s.apply(Event::Tray(vec![zelda_icon.clone(), item(":1.7/c", "thing", None)]));
         assert_eq!(s.game("tray::1.7/c").map(|g| g.title.as_str()), Some("thing"));
         assert!(s.dock().items().iter().any(|i| &*i.id == "tray::1.7/c"));
+        // Moved into a scope of ours (systemd lists it): a launch, ended by its slice and when that ends.
+        let (_, fx) = s.apply(Event::Tray(vec![zelda_icon.clone(), firefox_icon]));
+        let instance = fx.iter().find_map(|e| if let Effect::Adopt { instance, .. } = e { Some(instance.clone()) } else { None }).unwrap();
+        s.apply(Event::Units(vec![zelda.clone(), instance.clone()]));
+        assert_eq!(s.session().running("desktop:firefox").map(|r| (r.origin, r.pid)), Some((Origin::Ours, None)));
+        assert_eq!(s.force_kill("desktop:firefox"), vec![Effect::EndRun { key: clamshell_library::key_of("desktop:firefox"), force: true }]);
+        s.apply(Event::Units(vec![zelda]));
+        assert!(s.session().running("desktop:firefox").is_none(), "its scope gone");
     }
 
     #[test]

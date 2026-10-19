@@ -59,8 +59,15 @@ pub enum Effect {
         slice: String,
         frozen: bool,
     },
+    /// A program not started by ClamShell (found by its tray icon): its process and those it started
+    /// moved into `instance`'s scope (in its entry's slice), as a launch of the entry's; not one a systemd
+    /// service runs (it is the service's).
+    Adopt {
+        instance: Instance,
+        pid: u32,
+    },
     /// Processes asked to end (SIGTERM), or killed: a program not started by ClamShell (found by its tray
-    /// icon, or in the battery tab's list).
+    /// icon and not moved into a scope of ours, or in the battery tab's list).
     EndProcesses {
         pids: Vec<u32>,
         force: bool,

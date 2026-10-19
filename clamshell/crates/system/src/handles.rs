@@ -133,6 +133,7 @@ impl Handles {
             }
             Effect::EndRun { key, force } => launcher::end_run(key, *force),
             Effect::RunnerCommand(argv) => launcher::runner_command(argv),
+            Effect::Adopt { instance, pid } => launcher::adopt(instance.clone(), *pid),
             Effect::EndProcesses { pids, force } => launcher::end_processes(pids, *force),
             Effect::Freeze { slice, frozen } => crate::units::freeze(slice.clone(), *frozen),
             Effect::Tray(command) => self.tray.send(command.clone()),

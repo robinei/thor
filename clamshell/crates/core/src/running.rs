@@ -420,11 +420,19 @@ impl State {
 
     /// After systemd's list of our scopes changed: an entry with scopes listed that isn't known to run
     /// (started by a ClamShell before this one) runs, since its first scope started (the time in its
-    /// name); then those whose launches have ended (see [`State::follow_ours`]).
+    /// name); one found by its tray icon whose process is in a scope of ours now runs as a launch; then
+    /// those whose launches have ended (see [`State::follow_ours`]).
     pub(crate) fn follow_units(&mut self) -> Vec<Effect> {
         let now = self.unix_secs;
         let session = &mut self.session;
         let units = &session.units;
+        for r in session.running.iter_mut().filter(|r| r.origin == Origin::Tray) {
+            if units.iter().any(|u| u.key() == Some(r.key.as_str())) {
+                r.origin = Origin::Ours;
+                // (Its windows are its scope's now.)
+                r.pid = None;
+            }
+        }
         for unit in units {
             let Some(key) = unit.key() else {
                 continue;

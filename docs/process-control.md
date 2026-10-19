@@ -56,8 +56,9 @@ config, the user manager (D-Bus activation, units started by scripts), a program
   manages its apps itself (background limits, standby buckets, battery optimisation); ClamShell can only
   ask it, through adb (`am force-stop`, `cmd appops`, `am set-standby-bucket`), or freeze or stop the
   whole container.
-- Programs found by their tray icon (started outside ClamShell): their processes, by process id; the
-  same signals, no cgroup of their own.
+- Programs found by their tray icon (started outside ClamShell): moved into a scope of ours in the
+  device's session (below), then as any launch; one a systemd service runs stays the service's, its
+  process signalled.
 
 ## What the user sees
 
@@ -196,7 +197,12 @@ Still to try: a game with online play, and all of it on the Thor (Freedreno, FEX
   otherwise not end; not paused while quitting), Quits closed (ended once it has had a window and has
   none left). A slice left frozen (by a ClamShell before, which a new one doesn't know paused it) is
   thawed when ClamShell starts and before a launch into it: systemd starts no scope in a frozen slice. Only launches of
-  ClamShell's have a slice to freeze or stop; programs found by their windows or tray icons run on.
+  ClamShell's have a slice to freeze or stop (Steam's games and tray programs are moved into one);
+  Android's apps are paused by their runner; a file opened in an app's running instance runs on.
+- A program found by its tray icon (device's session): its process and those it started moved into a
+  scope of ours in its entry's slice (a user manager allows it from any scope not a service's; one a
+  service runs stays, as the service would lose it), so it is paused, quit and killed by its slice as
+  any launch.
 - ClamShell needs a systemd user manager: every launch runs in a scope of its own. A launch's entry
   runs while the launcher follows a launch of it or systemd lists a scope of it, and has ended once
   neither (then its play is recorded, from its start to then; launches of it side by side are one
