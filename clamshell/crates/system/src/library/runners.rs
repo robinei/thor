@@ -133,6 +133,12 @@ impl Runner {
         let name = name.to_lowercase();
         self.patterns.iter().any(|p| pattern::matches(&p.to_lowercase(), &name))
     }
+
+    /// Whether it opens file name `name` by a pattern of its own, not one for any file (`*`).
+    pub fn opens_as_its_own(&self, name: &str) -> bool {
+        let name = name.to_lowercase();
+        self.patterns.iter().filter(|p| p.as_str() != "*").any(|p| pattern::matches(&p.to_lowercase(), &name))
+    }
 }
 
 /// A command with `~/` against `home` (or as it is).

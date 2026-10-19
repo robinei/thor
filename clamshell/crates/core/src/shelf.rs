@@ -119,7 +119,8 @@ impl Shelf {
 
     /// The library entry (not browsed) of browsed file `id`'s file, if there is one.
     pub(crate) fn entry_of_file(&self, id: &str) -> Option<Arc<str>> {
-        let file = self.game(id).filter(|g| g.browsed.as_ref().is_some_and(|b| !b.folder))?.file.as_ref()?;
+        // (An archive, though browsed as a folder: a ROM's zip is a file of the library's.)
+        let file = self.game(id).filter(|g| g.browsed.as_ref().is_some_and(|b| !b.folder || b.archive))?.file.as_ref()?;
         self.library.games.iter().find(|g| g.browsed.is_none() && !g.is_group() && g.file.as_ref() == Some(file)).map(|g| g.id.clone())
     }
 

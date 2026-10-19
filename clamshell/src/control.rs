@@ -228,7 +228,7 @@ pub const TARGETS: &[Form<Id>] = &[
     form("collection N", "shelf's collection tab N", |a| Ok(Id::Shelf(ShelfId::Collection(number(arg(a, 0))?)))),
     form(
         "file ACTION",
-        "a browsed entry's file action: copy, cut, rename, trash, restore, delete, empty-trash, eject, select, paste, new-folder, show-hidden",
+        "a browsed entry's file action: copy, cut, rename, trash, restore, delete, empty-trash, eject, select, paste, new-folder, show-hidden, extract, open-in",
         |a| {
             use clamshell_core::files::FileAction;
             Ok(Id::Shelf(ShelfId::File(match arg(a, 0) {
@@ -244,6 +244,8 @@ pub const TARGETS: &[Form<Id>] = &[
                 "new-folder" => FileAction::NewFolder,
                 "select" => FileAction::Select,
                 "show-hidden" => FileAction::ShowHidden,
+                "extract" => FileAction::Extract,
+                "open-in" => FileAction::OpenIn,
                 other => return Err(name_err(other)),
             })))
         },

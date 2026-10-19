@@ -32,6 +32,10 @@ pub enum FileAction {
     NewFolder,
     /// Hidden files (`.name`) shown, or not.
     ShowHidden,
+    /// An archive's entries extracted into a folder beside it (its name typed).
+    Extract,
+    /// An archive opened by the runner its name matches (a ROM's zip), not browsed.
+    OpenIn,
 }
 
 impl FileAction {
@@ -49,6 +53,8 @@ impl FileAction {
             FileAction::Paste => "Paste",
             FileAction::NewFolder => "New folder",
             FileAction::ShowHidden => "Hidden files",
+            FileAction::Extract => "Extract",
+            FileAction::OpenIn => "Open in",
         }
     }
 
@@ -83,10 +89,24 @@ pub enum FileOp {
     EmptyTrash(PathBuf),
     /// A removable filesystem's device unmounted.
     Eject(String),
+    /// Archive `archive`'s entries extracted into a new folder `name` beside it (" (2)" if taken).
+    Extract {
+        archive: PathBuf,
+        name: String,
+    },
 }
 
-/// A folder to list and watch: its entry's id (the entries' ids are it, `/`, their names), its dir, and
-/// whether hidden files (`.name`) are listed.
+/// What the browse thread is told: the folder to list and watch (none: no more), or the files in use
+/// (the folder open's, those copied, those running launches opened), which keep the archives they are
+/// in mounted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BrowseCommand {
+    Open(Option<Browse>),
+    InUse(Vec<PathBuf>),
+}
+
+/// A folder to list and watch: its entry's id (the entries' ids are it, `/`, their names), its dir (an
+/// archive's: the archive, mounted to be listed), and whether hidden files (`.name`) are listed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Browse {
     pub folder: Arc<str>,
@@ -118,6 +138,8 @@ pub struct Files {
     pub busy: Option<(String, f32)>,
     pub hidden: bool,
     pub(crate) browsing: Option<(Arc<str>, bool)>,
+    /// The files in use last told (see [`BrowseCommand::InUse`]).
+    pub(crate) in_use: Vec<PathBuf>,
 }
 
 /// Entries copied (or cut), to paste: their files and names.
@@ -132,6 +154,18 @@ pub struct Clip {
 pub enum FileName {
     Rename(PathBuf),
     NewFolder(PathBuf),
+    /// The folder an archive's entries go into, beside it.
+    Extract(PathBuf),
+}
+
+/// An archive's name without its extensions (`Game.tar.gz`: `Game`): the folder it is extracted into.
+pub fn extracted_name(name: &str) -> &str {
+    let lower = name.to_lowercase();
+    let two = [".tar.gz", ".tar.xz", ".tar.zst", ".tar.bz2", ".tar.lz4"];
+    match two.iter().find(|e| lower.ends_with(*e)) {
+        Some(e) => name.get(..name.len() - e.len()).unwrap_or(name),
+        None => name.rsplit_once('.').map_or(name, |(stem, _)| if stem.is_empty() { name } else { stem }),
+    }
 }
 
 impl State {
@@ -148,11 +182,25 @@ impl State {
         }
     }
 
-    /// The folder open, if it is browsed and things may be put in it (not the Trash).
+    /// The folder open, if it is browsed and things may be put in it (not the Trash, nor one that is
+    /// locked: an archive's).
     fn open_dir(&self) -> Option<PathBuf> {
         let g = self.shelf.group()?;
-        let kind = &g.browsed.as_ref()?.kind;
-        (!matches!(kind, BrowseKind::Trash | BrowseKind::Trashed)).then(|| g.browsed_dir().map(PathBuf::from)).flatten()
+        let b = g.browsed.as_ref()?;
+        (!matches!(b.kind, BrowseKind::Trash | BrowseKind::Trashed) && !b.locked).then(|| g.browsed_dir().map(PathBuf::from)).flatten()
+    }
+
+    /// The runner archive `game` opens in (Open in): its library entry's (a ROM's zip a scan has), else
+    /// the one its name matches.
+    pub fn opened_in<'a>(&'a self, game: &'a Game) -> Option<&'a clamshell_library::RunnerOf> {
+        let entry = self.shelf.entry_of_file(&game.id).and_then(|id| self.shelf.game(&id));
+        entry.and_then(|e| e.runner.as_ref()).or(game.runner.as_ref())
+    }
+
+    /// Whether entry `game` is in a folder nothing can be changed in (an archive's).
+    fn in_locked(&self, game: &Game) -> bool {
+        let parent = game.parent.and_then(|p| self.shelf.library().games.get(p));
+        parent.and_then(|p| p.browsed.as_ref()).is_some_and(|b| b.locked)
     }
 
     /// The file actions of what the details show (see [`State::file_target`]), from its place: its own if
@@ -166,13 +214,21 @@ impl State {
         let Some(b) = game.browsed.as_ref() else {
             return actions;
         };
+        let locked = self.in_locked(game);
         let own: &[FileAction] = match (&b.kind, selected) {
             (_, false) | (BrowseKind::Root, true) => &[],
+            // (In an archive: only copied out.)
+            (BrowseKind::Plain, true) if locked => &[Copy, Select],
+            (BrowseKind::Plain, true) if b.archive => &[Copy, Cut, Extract, Rename, Trash, Select],
             (BrowseKind::Plain, true) => &[Copy, Cut, Rename, Trash, Select],
             (BrowseKind::Trashed, true) => &[Restore, Delete, Select],
             (BrowseKind::Removable(_), true) => &[Eject],
             (BrowseKind::Trash, true) => &[EmptyTrash],
         };
+        // (An archive a runner opens: a ROM's zip.)
+        if selected && b.archive && self.opened_in(game).is_some() {
+            actions.push(crate::actions::Action::File(OpenIn));
+        }
         for &a in own {
             actions.push(crate::actions::Action::File(a));
         }
@@ -263,6 +319,11 @@ impl State {
                 };
                 return self.name_file(FileName::NewFolder(dir), String::new());
             }
+            (FileAction::OpenIn, _) => return self.play(id),
+            (FileAction::Extract, Some(path)) => {
+                let name = extracted_name(&name).to_owned();
+                return self.name_file(FileName::Extract(path), name);
+            }
             (FileAction::Eject, _) => match kind {
                 Some(BrowseKind::Removable(device)) => FileOp::Eject(device),
                 _ => return vec![],
@@ -297,6 +358,7 @@ impl State {
         effects.push(Effect::Files(match purpose {
             FileName::Rename(path) => FileOp::Rename { path, name: name.to_owned() },
             FileName::NewFolder(dir) => FileOp::NewFolder { dir, name: name.to_owned() },
+            FileName::Extract(archive) => FileOp::Extract { archive, name: name.to_owned() },
         }));
         effects
     }
@@ -332,8 +394,24 @@ impl State {
     }
 
     /// After every event: the browsed folder open listed and watched when it became the open one (none:
-    /// the watch dropped); an armed action dropped once the details show something else.
-    pub(crate) fn follow_browse(&mut self) -> Option<Effect> {
+    /// the watch dropped); the files in use told when they change; an armed action dropped once the
+    /// details show something else.
+    pub(crate) fn follow_browse(&mut self) -> Vec<Effect> {
+        let mut effects: Vec<Effect> = self.follow_open_folder().into_iter().collect();
+        // (The folder open's, what is copied (to be pasted), and what running launches opened: the
+        // archives they are in stay mounted.)
+        let open = self.shelf.group().and_then(|g| g.browsed_dir()).map(PathBuf::from);
+        let copied = self.files.clip.iter().flat_map(|c| c.entries.iter().map(|(p, _)| p.clone()));
+        let running = self.session.running.iter().filter_map(|r| r.entry.as_ref()?.file.clone());
+        let in_use: Vec<PathBuf> = open.into_iter().chain(copied).chain(running).collect();
+        if in_use != self.files.in_use {
+            self.files.in_use = in_use.clone();
+            effects.push(Effect::FilesInUse(in_use));
+        }
+        effects
+    }
+
+    fn follow_open_folder(&mut self) -> Option<Effect> {
         if let Some((_, id)) = &self.files.armed
             && self.file_target().is_none_or(|(g, _)| g.id != *id)
         {
@@ -375,6 +453,52 @@ mod tests {
         state_with(Library { collections: vec![Collection::new("Files", vec![0, 1])], games, ..Library::default() })
     }
 
+    /// The folder listed and watched, of `fx`.
+    fn browses(fx: Vec<Effect>) -> Vec<Effect> {
+        fx.into_iter().filter(|e| matches!(e, Effect::Browse(_))).collect()
+    }
+
+    #[test]
+    fn an_archive_is_a_folder_its_entries_only_copied_out() {
+        let mut s = files_state();
+        tap(&mut s, Id::Shelf(ShelfId::Launch));
+        let mut zip = entry("browse:Home/game.tar.gz", true, BrowseKind::Plain);
+        if let Some(b) = zip.browsed.as_mut() {
+            (b.archive, b.locked) = (true, true);
+        }
+        zip.runner = Some(clamshell_library::RunnerOf::new("snes", "SNES", true));
+        listed(&mut s, "browse:Home", vec![zip]);
+        let acts = s.file_actions();
+        for a in [FileAction::OpenIn, FileAction::Extract, FileAction::Rename, FileAction::Trash] {
+            assert!(acts.contains(&crate::actions::Action::File(a)), "{a:?}: {acts:?}");
+        }
+        // Extract: its name typed, without the extensions.
+        tap(&mut s, Id::Shelf(ShelfId::File(FileAction::Extract)));
+        assert_eq!(s.bottom().editor().map(|e| e.text.as_str()), Some("game"));
+        let fx = tap(&mut s, Id::Editor(crate::EditorId::Save));
+        assert!(fx.contains(&Effect::Files(FileOp::Extract { archive: "/Home/game.tar.gz".into(), name: "game".into() })), "{fx:?}");
+        // Opened: browsed as a folder (the archive itself the dir), and in use while open.
+        let fx = tap(&mut s, Id::Shelf(ShelfId::Launch));
+        assert!(fx.contains(&Effect::FilesInUse(vec!["/Home/game.tar.gz".into()])), "{fx:?}");
+        listed(&mut s, "browse:Home/game.tar.gz", vec![entry("browse:Home/game.tar.gz/a.sfc", false, BrowseKind::Plain)]);
+        // Inside: only copied out; nothing pasted in or made.
+        let acts = s.file_actions();
+        assert!(acts.contains(&crate::actions::Action::File(FileAction::Copy)));
+        for a in [FileAction::Cut, FileAction::Rename, FileAction::Trash, FileAction::NewFolder] {
+            assert!(!acts.contains(&crate::actions::Action::File(a)), "{a:?}");
+        }
+        // Left: no longer in use.
+        let fx = tap(&mut s, Id::Shelf(ShelfId::Up));
+        assert!(fx.contains(&Effect::FilesInUse(vec!["/Home".into()])), "{fx:?}");
+    }
+
+    #[test]
+    fn an_archives_folder_is_named_without_its_extensions() {
+        assert_eq!(extracted_name("Game.tar.gz"), "Game");
+        assert_eq!(extracted_name("Game (USA).zip"), "Game (USA)");
+        assert_eq!(extracted_name("noext"), "noext");
+    }
+
     fn listed(s: &mut State, folder: &str, entries: Vec<Game>) {
         s.apply(Event::Files(FilesEvent::Listed { folder: folder.into(), entries }));
     }
@@ -382,19 +506,19 @@ mod tests {
     #[test]
     fn the_folder_open_is_listed_and_watched_while_open() {
         let mut s = files_state();
-        let (_, fx) = s.apply(Event::Pointer(crate::PointerEvent::Activate(Id::Shelf(ShelfId::Launch))));
+        let fx = browses(s.apply(Event::Pointer(crate::PointerEvent::Activate(Id::Shelf(ShelfId::Launch)))).1);
         assert_eq!(fx, vec![Effect::Browse(Some(Browse { folder: "browse:Home".into(), dir: "/Home".into(), hidden: false }))]);
         assert!(s.shelf().list().is_empty(), "nothing in it until listed");
         listed(&mut s, "browse:Home", vec![entry("browse:Home/Films", true, BrowseKind::Plain), entry("browse:Home/a.txt", false, BrowseKind::Plain)]);
         assert_eq!(s.shelf().list().len(), 2);
         assert_eq!(s.shelf().selected().map(|g| &**g), Some("browse:Home/Films"));
         // Into Films (listed and watched instead), back out (Home again).
-        let fx = tap(&mut s, Id::Shelf(ShelfId::Launch));
+        let fx = browses(tap(&mut s, Id::Shelf(ShelfId::Launch)));
         assert_eq!(fx, vec![Effect::Browse(Some(Browse { folder: "browse:Home/Films".into(), dir: "/Home/Films".into(), hidden: false }))]);
-        let fx = tap(&mut s, Id::Shelf(ShelfId::Up));
+        let fx = browses(tap(&mut s, Id::Shelf(ShelfId::Up)));
         assert!(matches!(fx.as_slice(), [Effect::Browse(Some(b))] if &*b.folder == "browse:Home"));
         assert_eq!(s.shelf().selected().map(|g| &**g), Some("browse:Home/Films"), "where it was");
-        let fx = tap(&mut s, Id::Shelf(ShelfId::Up));
+        let fx = browses(tap(&mut s, Id::Shelf(ShelfId::Up)));
         assert_eq!(fx, vec![Effect::Browse(None)], "out of the folders: no watch");
     }
 

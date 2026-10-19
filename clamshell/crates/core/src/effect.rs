@@ -90,6 +90,8 @@ pub enum Effect {
     },
     /// List this browsed folder now, and again whenever it changes (none: watch nothing).
     Browse(Option<crate::files::Browse>),
+    /// The files in use (see [`crate::files::BrowseCommand::InUse`]).
+    FilesInUse(Vec<std::path::PathBuf>),
     /// A file operation (the files thread).
     Files(crate::files::FileOp),
     /// One of ClamShell's own tools (the Tools tab): `rescan` (the library read again), `refetch` (what

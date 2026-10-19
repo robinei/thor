@@ -55,6 +55,36 @@ workspace (never left on shelf's), and it ends when that window closes (or when 
 shows the picture of the app whose window it is (the desktop file named by the window's app id, or whose
 program it is), for display only.
 
+## Archives
+
+A zip, 7z, rar or tar (`.tar`, `.tar.gz`/`.tgz`, `.tar.xz`, `.tar.zst`, `.tar.bz2`, `.tar.lz4`) in a
+browsed folder is a folder (a box icon): opened, it is mounted read-only with ratarmount (FUSE) under
+`$XDG_RUNTIME_DIR/clamshell/archives`, and its entries are that mount's, files like any others. A file
+in it opens by the usual rules, from the mount: a `.cue` finds its `.bin` files, an `.m3u` its discs.
+Inside an archive nothing can be changed: an entry has Copy and Select; Paste somewhere else copies it
+out. (The same goes for any folder that isn't writable: Cut, Rename, Move to Trash, Paste and New folder
+are offered only where they can be done.)
+
+- ratarmount runs in a scope of its own (`clamshell-archive-…`), so a ClamShell restarted doesn't take
+  the mount down; its indexes are kept in `~/.cache/clamshell/archive-index`, not beside the archive.
+  Opening one takes about 0.35 s here (a zip, a 7z, a tar.gz of 3 MB); a big compressed tar is read
+  through once for its index.
+- It stays mounted while it is needed: the folder open is it or in it, an entry of it is copied (to be
+  pasted), or a running launch opened a file in it. Then it is unmounted, lazily (a program with a file of
+  it still open reads on). Mounts left by a ClamShell before are unmounted at start.
+- Random access in a solid 7z or a rar is slow (a read may decompress from the start of a block): a game
+  that reads a big disc image packed so is better extracted.
+- One that can't be mounted (damaged, a password) opens empty, with a notice saying why.
+
+On the archive's own row:
+
+- Extract: the on-screen keyboard's editor, "Extract to", prefilled with the archive's name without its
+  extensions (`Game.tar.gz`: `Game`); a folder of that name made beside it (" (2)" if taken) and the
+  archive extracted into it with bsdtar, its progress from how far bsdtar has read the archive.
+- Open in *runner*: when the archive is a library entry's (a ROM's zip a scan has: it opens as that
+  entry, with its plays) or a runner matches its name by a pattern of its own (not the `*` of Other
+  files). Otherwise A only opens the folder.
+
 ## Actions
 
 The details pane has the entry's file actions instead of a game's (Favourite, Pin, Continue): rows to tap

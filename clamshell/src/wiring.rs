@@ -142,7 +142,13 @@ pub fn start(
             }
         })
     };
-    let browsing = clamshell_system::files::Browsing { config: sources.config.clone(), home: sources.home.clone(), db: paths.db(), probe };
+    let browsing = clamshell_system::files::Browsing {
+        config: sources.config.clone(),
+        home: sources.home.clone(),
+        db: paths.db(),
+        probe,
+        cache: paths.art.as_deref().and_then(std::path::Path::parent).map(std::path::PathBuf::from),
+    };
     let browse = started("browse", clamshell_system::files::spawn_browse(browsing, sink.clone()));
     let files = started("files", clamshell_system::files::spawn_ops(sources.home.clone(), sink.clone()));
     let wifi = started("wifi", wifi::spawn(sink));

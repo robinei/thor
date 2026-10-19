@@ -333,6 +333,7 @@ fn actions(f: &mut Frame, game: &Game, r: Rect, action_h: f32, pad: f32) -> f32 
                     (FileAction::Paste, Some(clip)) => Fmt::of(format_args!("Paste · {}", clip.entries.first().map_or("", |(_, n)| n.as_str()))),
                     (FileAction::Select, _) if files.selected.contains(&game.id) => Fmt::of(format_args!("Selected · {selected}")),
                     (FileAction::ShowHidden, _) => Fmt::of(format_args!("{} hidden files", if files.hidden { "Hide" } else { "Show" })),
+                    (FileAction::OpenIn, _) => Fmt::of(format_args!("Open in {}", s.opened_in(game).map_or("", |r| &*r.name))),
                     (FileAction::Copy | FileAction::Cut | FileAction::Trash | FileAction::Restore | FileAction::Delete, _) if selected > 0 => {
                         Fmt::of(format_args!("{} · {selected} selected", a.label()))
                     }

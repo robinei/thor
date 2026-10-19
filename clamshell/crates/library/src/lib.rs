@@ -104,6 +104,11 @@ pub struct Browsed {
     pub folder: bool,
     /// A folder whose entries are in (its `items`), from a listing.
     pub listed: bool,
+    /// An archive (a zip, 7z, rar, tar), browsed as a folder: its entries are those of its mount, read
+    /// only.
+    pub archive: bool,
+    /// A folder nothing in it can be changed in (not writable: an archive's, the system's).
+    pub locked: bool,
     pub kind: BrowseKind,
     /// A file's size (bytes), and when it was last changed (seconds since the epoch; 0: not known).
     pub size: Option<u64>,

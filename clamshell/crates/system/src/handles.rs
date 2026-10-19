@@ -41,7 +41,7 @@ pub struct Handles {
     /// Screenshots and sleep.
     pub system: Worker<crate::device::Command>,
     /// Lists (and watches) the browsed folder open; does the file operations.
-    pub browse: Worker<Option<clamshell_core::files::Browse>>,
+    pub browse: Worker<clamshell_core::files::BrowseCommand>,
     pub files: Worker<clamshell_core::files::FileOp>,
     /// The on-screen keyboard types through it; `None` if it couldn't be made.
     pub keyboard: Option<VirtualKeyboard>,
@@ -116,8 +116,9 @@ impl Handles {
             }
             Effect::Browse(browse) => {
                 log::info!("effect: {effect:?}");
-                self.browse.send(browse.clone());
+                self.browse.send(clamshell_core::files::BrowseCommand::Open(browse.clone()));
             }
+            Effect::FilesInUse(files) => self.browse.send(clamshell_core::files::BrowseCommand::InUse(files.clone())),
             Effect::Files(op) => self.files.send(op.clone()),
             Effect::Sound(sound) => self.sound.send(sound.clone()),
             Effect::Brightness { level, shares } => self.brightness.send(brightness::Command { level: *level, shares: shares.clone() }),

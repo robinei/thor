@@ -60,6 +60,7 @@ pub fn bottom(f: &mut Frame, screen: Rect) {
         Tab::Keyboard => match f.s.bottom().editor().map(|e| &e.purpose) {
             Some(Purpose::FileName(FileName::Rename(_))) => editor::draw(f, "New name", "Rename"),
             Some(Purpose::FileName(FileName::NewFolder(_))) => editor::draw(f, "New folder's name", "Make"),
+            Some(Purpose::FileName(FileName::Extract(_))) => editor::draw(f, "Extract to", "Extract"),
             _ => keyboard::draw(f, body),
         },
         Tab::Dock => dock::draw(f),

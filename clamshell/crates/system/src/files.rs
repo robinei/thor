@@ -3,7 +3,8 @@
 //! mounted and unmounted (udisks2's, under `/run/media`). The files thread does the operations one after
 //! another: rename, new folder, paste (a copy, or a move; across filesystems a copy then a delete, with
 //! its progress), the Trash (freedesktop's: the home Trash, or a filesystem's own `.Trash-<uid>`), delete,
-//! eject (`udisksctl`).
+//! eject (`udisksctl`), extract (`bsdtar`, its progress read from how far it has read the archive).
+//! An archive is browsed as a folder through its mount (see [`crate::archives`]).
 
 use std::fs;
 use std::io::{self, Read, Write};
@@ -13,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::TryRecvError;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use clamshell_core::files::{Browse, FileOp, FilesEvent};
+use clamshell_core::files::{Browse, BrowseCommand, FileOp, FilesEvent};
 use clamshell_core::{Browsed, Event, Game};
 use rustix::fs::inotify;
 
@@ -35,12 +36,16 @@ pub struct Browsing {
     pub home: Option<PathBuf>,
     pub db: Option<PathBuf>,
     pub probe: Box<dyn Fn(Vec<crate::meta::Wanted>) + Send>,
+    /// Where archives' indexes are kept (see [`crate::archives`]).
+    pub cache: Option<PathBuf>,
 }
 
 /// The browse thread: lists (and watches) the folder each command names (see [`Browsing`]).
-pub fn spawn_browse(browsing: Browsing, sink: impl Sink) -> io::Result<Worker<Option<Browse>>> {
-    let Browsing { config, home, db, probe } = browsing;
+pub fn spawn_browse(browsing: Browsing, sink: impl Sink) -> io::Result<Worker<BrowseCommand>> {
+    let Browsing { config, home, db, probe, cache } = browsing;
     Worker::spawn_belled("browse", move |commands, bell| {
+        let mut archives = crate::archives::Mounts::new(cache);
+        let mut in_use: Vec<PathBuf> = Vec::new();
         let notify = inotify::init(inotify::CreateFlags::NONBLOCK | inotify::CreateFlags::CLOEXEC).map_err(|e| log::warn!("browse: inotify: {e}")).ok();
         let flags = inotify::WatchFlags::CREATE
             | inotify::WatchFlags::DELETE
@@ -50,14 +55,16 @@ pub fn spawn_browse(browsing: Browsing, sink: impl Sink) -> io::Result<Worker<Op
             | inotify::WatchFlags::ATTRIB
             | inotify::WatchFlags::DELETE_SELF
             | inotify::WatchFlags::MOVE_SELF;
-        let mut open: Option<(Browse, Option<i32>)> = None;
+        // (The folder open, the dir listed for it, its watch.)
+        let mut open: Option<(Browse, PathBuf, Option<i32>)> = None;
         let mut mounts = media_mounts();
         // (The kernel marks the mount table read through this file when it changes: POLLPRI.)
         let mount_table = fs::File::open("/proc/self/mounts").map_err(|e| log::warn!("browse: mounts: {e}")).ok();
-        let list = |b: &Browse| {
+        // (An archive's: its mount's.)
+        let list = |b: &Browse, dir: &Path| {
             let config = config.as_deref().map(content::read_config).unwrap_or_default().0;
             let (runners, _) = runners::in_force(&config.runners);
-            let mut entries = list(&b.dir, &b.folder, &runners, home.as_deref(), b.hidden);
+            let mut entries = list(dir, &b.folder, &runners, home.as_deref(), b.hidden);
             let wanted = known_videos(&mut entries, db.as_deref());
             if !wanted.is_empty() {
                 probe(wanted);
@@ -69,30 +76,44 @@ pub fn spawn_browse(browsing: Browsing, sink: impl Sink) -> io::Result<Worker<Op
             let (folder_changed, mounts_changed) = wait(&bell, notify.as_ref(), mount_table.as_ref());
             // (A command and a change may come together: the change is looked at too.)
             match commands.try_recv() {
-                Ok(browse) => {
-                    if let (Some(fd), Some((_, Some(wd)))) = (notify.as_ref(), open.take()) {
+                Ok(BrowseCommand::InUse(files)) => {
+                    in_use = files;
+                    let open_dir = open.as_ref().map(|(b, ..)| b.dir.as_path());
+                    archives.keep(&in_use.iter().map(PathBuf::as_path).chain(open_dir).collect::<Vec<_>>());
+                    bell.ring();
+                }
+                Ok(BrowseCommand::Open(browse)) => {
+                    if let (Some(fd), Some((_, _, Some(wd)))) = (notify.as_ref(), open.take()) {
                         let _ = inotify::remove_watch(fd, wd);
                     }
                     if let Some(fd) = notify.as_ref() {
                         changed(fd);
                     }
-                    let browse: Option<Browse> = browse;
                     let Some(b) = browse else { continue };
+                    // (An archive: mounted, its mount listed; one that can't be, empty, and why told.)
+                    let dir = match b.dir.is_file() {
+                        true => archives.mount(&b.dir).unwrap_or_else(|e| {
+                            let _ = sink.send(Event::Files(FilesEvent::Done(Err(e))));
+                            PathBuf::new()
+                        }),
+                        false => b.dir.clone(),
+                    };
                     let wd = notify
                         .as_ref()
-                        .and_then(|fd| inotify::add_watch(fd, b.dir.as_path(), flags).map_err(|e| log::debug!("browse: {}: {e}", b.dir.display())).ok());
-                    if list(&b).is_err() {
+                        .and_then(|fd| inotify::add_watch(fd, dir.as_path(), flags).map_err(|e| log::debug!("browse: {}: {e}", dir.display())).ok());
+                    if list(&b, &dir).is_err() {
                         return;
                     }
-                    open = Some((b, wd));
+                    archives.keep(&in_use.iter().map(PathBuf::as_path).chain([b.dir.as_path()]).collect::<Vec<_>>());
+                    open = Some((b, dir, wd));
                     // (Another command may be waiting: the bell was cleared for all of them.)
                     bell.ring();
                 }
                 Err(TryRecvError::Empty) => {
                     if folder_changed
-                        && let (Some(fd), Some((b, _))) = (notify.as_ref(), open.as_ref())
+                        && let (Some(fd), Some((b, dir, _))) = (notify.as_ref(), open.as_ref())
                         && changed(fd)
-                        && list(b).is_err()
+                        && list(b, dir).is_err()
                     {
                         return;
                     }
@@ -163,7 +184,12 @@ pub fn list(dir: &Path, folder: &str, runners: &[Runner], home: Option<&Path>, h
             let size = meta.as_ref().filter(|m| m.is_file()).map(fs::Metadata::len);
             let modified = meta.and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs());
             let mut game = Game::new(&format!("{folder}/{name}"), &name);
-            if let Some((launch, runner)) = runners::open(runners, &path, home).filter(|_| !is_dir) {
+            // (An archive: browsed as a folder, through its mount; a runner that opens it kept, for
+            // Open in.)
+            let archive = !is_dir && crate::archives::is_archive(&name);
+            // (An archive's: only a runner whose own files it is, a ROM's zip; not one for any file.)
+            let opener = runners::open(runners, &path, home).filter(|_| !is_dir);
+            if let Some((launch, runner)) = opener.filter(|_| !archive || runners.iter().find(|r| r.opens(&name)).is_some_and(|r| r.opens_as_its_own(&name))) {
                 game.launch = launch;
                 game.runner = Some(runner);
             }
@@ -173,10 +199,20 @@ pub fn list(dir: &Path, folder: &str, runners: &[Runner], home: Option<&Path>, h
             // (Its picture as a scanned entry's would be; else what it is.)
             game.box_front = content::picture_of(&path);
             if game.box_front.is_none() {
-                game.glyph = Some(if is_dir { "folder" } else { "file" }.into());
+                game.glyph = Some(
+                    if is_dir {
+                        "folder"
+                    } else if archive {
+                        "archive"
+                    } else {
+                        "file"
+                    }
+                    .into(),
+                );
             }
+            let locked = archive || (is_dir && rustix::fs::access(&path, rustix::fs::Access::WRITE_OK).is_err());
             game.file = Some(path);
-            game.browsed = Some(Browsed { folder: is_dir, size, modified, ..Browsed::default() });
+            game.browsed = Some(Browsed { folder: is_dir || archive, archive, locked, size, modified, ..Browsed::default() });
             Some(game)
         })
         .collect();
@@ -349,6 +385,7 @@ fn run(op: &FileOp, home: Option<&Path>, sink: &impl Sink) -> Result<String, Str
             Ok(format!("Made {name}"))
         }
         FileOp::Paste { path, into, cut } => paste(path, into, *cut, sink),
+        FileOp::Extract { archive, name } => extract(archive, name, sink),
         FileOp::Trash(path) => {
             trash(path, home)?;
             Ok(format!("Moved {} to the Trash", name_of(path)))
@@ -442,6 +479,60 @@ fn paste(path: &Path, into: &Path, cut: bool, sink: &impl Sink) -> Result<String
         return Ok(format!("Moved {name}"));
     }
     Ok(format!("Copied {name}"))
+}
+
+/// Archive `archive`'s entries extracted (bsdtar) into a new folder `name` beside it (" (2)" if taken);
+/// its progress, how far bsdtar has read the archive, sent.
+fn extract(archive: &Path, name: &str, sink: &impl Sink) -> Result<String, String> {
+    let what = name_of(archive);
+    let into = free_name(archive.parent().unwrap_or(Path::new("/")), name);
+    fs::create_dir(&into).map_err(|e| failed("Making", &into, &e))?;
+    let child = std::process::Command::new("bsdtar")
+        .arg("-xf")
+        .arg(archive)
+        .arg("-C")
+        .arg(&into)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn();
+    let mut child = child.map_err(|e| {
+        let _ = fs::remove_dir(&into);
+        format!("Extracting {what}: bsdtar: {e}")
+    })?;
+    let total = archive.metadata().map_or(1, |m| m.len().max(1));
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Ok(status),
+            Ok(None) => {}
+            Err(e) => break Err(e),
+        }
+        if let Some(read) = read_so_far(child.id(), archive) {
+            let fraction = (read as f64 / total as f64) as f32;
+            let _ = sink.send(Event::Files(FilesEvent::Busy { what: format!("Extracting {what}"), fraction }));
+        }
+        std::thread::sleep(PROGRESS);
+    };
+    let mut said = String::new();
+    if let Some(mut e) = child.stderr.take() {
+        let _ = e.read_to_string(&mut said);
+    }
+    match status {
+        Ok(s) if s.success() => Ok(format!("Extracted {what} into {}", name_of(&into))),
+        result => {
+            let _ = remove(&into);
+            let why = said.lines().rev().find(|l| !l.trim().is_empty()).map(str::trim).map(str::to_owned);
+            Err(format!("Extracting {what}: {}", why.unwrap_or_else(|| result.map_or_else(|e| e.to_string(), |s| s.to_string()))))
+        }
+    }
+}
+
+/// How far process `pid` has read `file` (its open file's offset), if it has it open.
+fn read_so_far(pid: u32, file: &Path) -> Option<u64> {
+    let fds = PathBuf::from(format!("/proc/{pid}/fd"));
+    let fd = fs::read_dir(&fds).ok()?.flatten().find(|e| fs::read_link(e.path()).is_ok_and(|t| t == file))?;
+    let info = fs::read_to_string(PathBuf::from(format!("/proc/{pid}/fdinfo")).join(fd.file_name())).ok()?;
+    info.lines().find_map(|l| l.strip_prefix("pos:")).and_then(|p| p.trim().parse().ok())
 }
 
 /// The bytes of the files in `path`, all the way down.
