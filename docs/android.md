@@ -96,14 +96,16 @@ Android's apps share one container, so they are paused together: the Android run
 container's cgroup, no root needed). With In the background set to Pauses hidden for the Android runner,
 Android is frozen once none of its apps has been shown for 3 s (none running too) and none is starting
 (launched, no window yet: it would never draw one), and thawed as one is shown or launched; a launch thaws
-it first in any case. Android also sleeps by itself: once its display
-is off, it asks to suspend and Waydroid freezes the container (`persist.waydroid.suspend`).
+it first in any case. Android's own sleep (it asks to suspend once no window of it is shown, and Waydroid
+freezes the container: `persist.waydroid.suspend`) is turned off at setup, so that ClamShell's setting
+decides.
 
 ## Not solved
 
-
-- Android draws its own caption on each window (back, minimise, maximise, close). Waydroid has no option
-  to turn it off (waydroid/waydroid#2204).
+- Android draws its own caption on each window (back, minimise, maximise, close), and Waydroid has no
+  option to turn it off (waydroid/waydroid#2204): the Wayland filter keeps it out of sight (above).
+- GPU time per app: Android's processes are other users', their DRM counters unreadable without root;
+  Android's own GPU accounting needs a kernel event Mesa's drivers don't emit.
 - Rendering needs Mesa's drivers (Intel, AMD; the Thor's Freedreno untested). The NVIDIA driver and VMs
   without virgl need software rendering (below).
 
