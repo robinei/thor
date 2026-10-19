@@ -16,7 +16,7 @@
 use std::sync::Arc;
 
 use crate::State;
-use crate::effect::{Effect, Save, WindowCommand};
+use crate::effect::{Dirty, Effect, Save, WindowCommand};
 use crate::hardware::NoticeKind;
 use crate::instance::Instance;
 use crate::windows::Window;
@@ -112,7 +112,34 @@ pub struct BottomScreen {
     pub(crate) off: bool,
 }
 
+/// How long the second screen goes untouched, the pad's focus not on it, before it dims.
+const DIM_AFTER: u64 = 60;
+
 impl State {
+    /// Whether the second screen is drawn dimmed: ClamShell's view on it (not windows moved there, which
+    /// are watched without touching), untouched and the pad's focus not on it for [`DIM_AFTER`]. A game
+    /// played with the pad on the main screen keeps the device awake, while nobody looks below: the OLED
+    /// spared. A touch on it, or the pad's focus coming to it, brings it back.
+    pub fn bottom_dimmed(&self) -> bool {
+        self.bottom.used_at != 0 && !self.bottom_shows_windows() && self.unix_secs.saturating_sub(self.bottom.used_at) >= DIM_AFTER
+    }
+
+    /// The second screen in use: lit (redrawn, if it was dimmed).
+    pub(crate) fn bottom_used(&mut self) -> Dirty {
+        self.bottom.used_at = self.unix_secs;
+        if self.follow_bottom_dim() { Dirty::BOTTOM } else { Dirty::NONE }
+    }
+
+    /// After any event: whether the second screen's dimming changed (to redraw it). Its time counts from
+    /// the first clock reading.
+    pub(crate) fn follow_bottom_dim(&mut self) -> bool {
+        if self.bottom.used_at == 0 {
+            self.bottom.used_at = self.unix_secs;
+        }
+        let dimmed = self.bottom_dimmed();
+        std::mem::replace(&mut self.bottom.dimmed, dimmed) != dimmed
+    }
+
     /// The windows moved to the bottom screen, in the compositor's order.
     pub fn windows_down(&self) -> impl Iterator<Item = &Window> {
         self.session.windows.iter().filter(|w| w.down)
@@ -395,6 +422,33 @@ mod tests {
             win(3, "clamshell-run-x_1-1-0.scope", "x", true, false),
         ]));
         assert_eq!(s.hidden_down(), None);
+    }
+
+    #[test]
+    fn the_bottom_screen_dims_untouched_and_lights_when_used() {
+        let mut s = state();
+        s.apply(Event::Tick { unix_secs: 1000 });
+        s.apply(Event::Tick { unix_secs: 1000 + DIM_AFTER - 1 });
+        assert!(!s.bottom_dimmed());
+        let (dirty, _) = s.apply(Event::Tick { unix_secs: 1000 + DIM_AFTER });
+        assert!(s.bottom_dimmed() && dirty.bottom, "untouched a while: dimmed, redrawn");
+        // A touch on it: lit.
+        let (dirty, _) = s.apply(Event::BottomTouched);
+        assert!(!s.bottom_dimmed() && dirty.bottom);
+        // The pad's focus coming to one of its targets: lit too; shelf's targets (the main screen) not.
+        s.apply(Event::Tick { unix_secs: 1000 + 3 * DIM_AFTER });
+        assert!(s.bottom_dimmed());
+        s.apply(Event::Pointer(crate::PointerEvent::Focus(crate::Id::Shelf(crate::ShelfId::Launch))));
+        assert!(s.bottom_dimmed(), "the main screen's");
+        s.apply(Event::Pointer(crate::PointerEvent::Focus(crate::Id::Tab(crate::Tab::Dock))));
+        assert!(!s.bottom_dimmed());
+        // Windows moved there: watched without touching, never dimmed.
+        let mut s = emulator();
+        key(&mut s, DeviceKey::WindowDown);
+        s.apply(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]));
+        s.apply(Event::Tick { unix_secs: 5000 });
+        s.apply(Event::Tick { unix_secs: 5000 + 2 * DIM_AFTER });
+        assert!(s.bottom_shows_windows() && !s.bottom_dimmed());
     }
 
     #[test]

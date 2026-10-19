@@ -33,6 +33,9 @@ use crate::toolkit::Frame;
 
 /// How much of the area below the bar the black over it hides while it points.
 const POINTING_FADE: f32 = 0.7;
+/// How much the black over the second screen hides while it is dimmed (a third left, as the screens'
+/// brightness is when idle dims them).
+const BOTTOM_DIM: f32 = 2.0 / 3.0;
 
 /// The main screen: shelf, over all of `screen` (the frame starts black: see `render`).
 pub fn top(f: &mut Frame, screen: Rect) {
@@ -75,6 +78,10 @@ pub fn bottom(f: &mut Frame, screen: Rect) {
     }
     bar::draw_slider_over(f, screen, body.y);
     f.out.touchpad_area = Some(body);
+    // (Untouched a while, the pad elsewhere: dimmed, as the screens are before they go off.)
+    if f.s.bottom_dimmed() {
+        f.c.fill(screen, crate::draw::Rgb(0).alpha(BOTTOM_DIM));
+    }
 }
 
 #[cfg(test)]

@@ -303,6 +303,9 @@ impl State {
     /// where it is wanted, and idle moves on (or back).
     pub fn apply(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
         let (mut dirty, mut effects) = self.apply_event(event);
+        if self.follow_bottom_dim() {
+            dirty = dirty.or(Dirty::BOTTOM);
+        }
         effects.extend(self.follow_shown());
         effects.extend(self.follow_browse());
         effects.extend(self.follow_idle());
@@ -360,7 +363,16 @@ impl State {
                 (if self.follow_lists() { Dirty::BOTTOM } else { dirty }, effects)
             }
             Event::List(e) => (if self.on_list(e) { e.list().screens() } else { Dirty::NONE }, vec![]),
-            Event::Pointer(e) => self.on_pointer(e),
+            Event::Pointer(e) => {
+                // (The pad's focus, or a press, on the second screen's targets: it is in use.)
+                let used = match &e {
+                    PointerEvent::Focus(id) | PointerEvent::Activate(id) | PointerEvent::LongPress(id) | PointerEvent::Down(id) => id.screen() == Dirty::BOTTOM,
+                    _ => false,
+                };
+                let lit = if used { self.bottom_used() } else { Dirty::NONE };
+                let (dirty, effects) = self.on_pointer(e);
+                (dirty.or(lit), effects)
+            }
             Event::Slide(slide) => self.on_slide(slide),
             Event::Level(e) => self.on_level(e),
             Event::Shelf(e) => self.on_shelf_event(e),
@@ -484,6 +496,7 @@ impl State {
                 (Dirty::NONE, vec![])
             }
             Event::Device(key) => (Dirty::BOTTOM, self.on_device_key(key)),
+            Event::BottomTouched => (self.bottom_used(), vec![]),
             Event::Paste => {
                 self.paste();
                 (Dirty::BOTTOM, vec![])

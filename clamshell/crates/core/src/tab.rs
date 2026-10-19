@@ -81,6 +81,10 @@ impl Tab {
 #[derive(Debug, Clone, Default)]
 pub struct Bottom {
     pub(crate) tab: Tab,
+    /// When the second screen was last touched, or the pad's focus was on it (epoch seconds; 0: not
+    /// yet), and whether it is drawn dimmed (see [`crate::State::bottom_dimmed`]).
+    pub(crate) used_at: u64,
+    pub(crate) dimmed: bool,
     /// The tab the keyboard was brought up from by an app's text field: back there when the field is
     /// done, unless the user chose a tab meanwhile.
     pub(crate) raised_from: Option<Tab>,

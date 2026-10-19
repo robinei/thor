@@ -32,6 +32,8 @@ pub enum Event {
     Pointer(PointerEvent),
     /// A right click on the second screen: the clipboard's text into the open field (as Ctrl+V).
     Paste,
+    /// A finger or the mouse came down on the second screen (see [`crate::State::bottom_dimmed`]).
+    BottomTouched,
     /// A finger on volume or brightness in the bar, sliding.
     Slide(Slide),
     /// A level row set by the finger, or stepped by the pad.

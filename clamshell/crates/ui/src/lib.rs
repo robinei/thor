@@ -465,6 +465,12 @@ impl App {
         let found = view.picture.targets.iter().rev().find(|t| t.rect.contains(x as f32, y as f32)).cloned();
         // (Nothing there, below the second screen's bar: the blank, which may point.)
         let bottom = view.screen == Screen::Bottom;
+        if bottom {
+            self.handle(Event::BottomTouched);
+        }
+        let Some(view) = self.view_mut(surface) else {
+            return;
+        };
         let below_bar = bottom && view.body.is_some_and(|b| b.contains(x as f32, y as f32));
         let Some(target) =
             found.or_else(|| below_bar.then(|| crate::toolkit::Target { rect: crate::draw::Rect::default(), id: Id::Blank, track: None, list: None }))
