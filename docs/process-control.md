@@ -186,5 +186,10 @@ on the Thor (Freedreno, FEX).
 - Start with ClamShell, in an entry's dock menu (saved): once ClamShell knows what runs (systemd's
   first list of its scopes), each such entry that doesn't run is launched on its own workspace, not
   shown. What a restarted ClamShell finds running isn't started twice.
+- The battery tab's list of what is using the machine: CPU, GPU and resident memory per group (an entry's
+  launches, another program by name, the system); idle groups holding 100 MB or more listed too. A row
+  of a program that isn't the session's own (ClamShell, sway and what its config starts, PipeWire, the
+  bus) opens a menu: Quit and Force kill (an entry as from the dock; another program's processes
+  signalled). An entry's dock menu shows what it costs.
 - The Android runner's adb server is ClamShell's own, on a port of its own (5039), not whatever server
   is on adb's usual port.

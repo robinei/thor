@@ -171,6 +171,8 @@ struct Counters {
     cpu: u64,
     /// Memory resident (bytes).
     memory: u64,
+    /// Not the session's own (see [`endable`]).
+    endable: bool,
     /// GPU time in ns per DRM client id.
     gpu: HashMap<u64, u64>,
 }
@@ -206,8 +208,9 @@ impl Sampler {
                         s.gpu += gpu;
                         s.memory += now.memory;
                         s.pids.push(*pid);
+                        s.endable &= now.endable;
                     }
-                    None => spenders.push(Spender { group: now.group.clone(), cpu, gpu, memory: now.memory, pids: vec![*pid] }),
+                    None => spenders.push(Spender { group: now.group.clone(), cpu, gpu, memory: now.memory, pids: vec![*pid], endable: now.endable }),
                 }
             }
         }
@@ -241,9 +244,25 @@ fn read_processes() -> HashMap<u32, Counters> {
             (None, false) => Group::System,
         };
         let gpu = if mine { drm::clients(&dir) } else { HashMap::new() };
-        out.insert(pid, Counters { group, cpu, gpu, memory: resident(&dir) });
+        let endable = !matches!(group, Group::System) && endable(pid, &dir);
+        out.insert(pid, Counters { group, cpu, gpu, memory: resident(&dir), endable });
     }
     out
+}
+
+/// Whether a process may be ended from the battery tab: not ClamShell itself, nor the session's own
+/// (the login session's scope: sway and what its config starts; the user manager's own scope; ClamShell's
+/// service; the session's services: PipeWire, the bus).
+fn endable(pid: u32, dir: &std::path::Path) -> bool {
+    if pid == std::process::id() {
+        return false;
+    }
+    let cgroup = sys::text(dir.join("cgroup")).unwrap_or_default();
+    let own = |path: &str| {
+        let unit = path.rsplit('/').next().unwrap_or("");
+        path.contains("/session.slice/") || (unit.starts_with("session-") && unit.ends_with(".scope")) || unit == "init.scope" || unit == "clamshell.service"
+    };
+    !cgroup.lines().any(|line| own(line.trim()))
 }
 
 /// A process's resident memory (bytes): `/proc/<pid>/statm`'s second field, in pages.

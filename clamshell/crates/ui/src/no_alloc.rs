@@ -216,6 +216,7 @@ fn warm_frames_do_not_allocate() {
                             gpu: 0.1,
                             memory: 300 << 20,
                             pids: vec![],
+                            endable: true,
                         },
                         clamshell_core::battery::Spender {
                             group: clamshell_core::battery::Group::System,
@@ -223,6 +224,7 @@ fn warm_frames_do_not_allocate() {
                             gpu: 0.0,
                             memory: 600 << 20,
                             pids: vec![],
+                            endable: false,
                         },
                     ],
                     has_history: true,

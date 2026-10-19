@@ -84,10 +84,11 @@ pub(super) fn draw(f: &mut Frame) {
                 f.c.rounded(Rect::new(track.x, track.y, (track.w * share).max(track.h), track.h), track.h / 2.0, Tone::Normal);
             }
         };
-        // (The system's isn't anyone's to end.)
-        match p.group {
-            Group::System => row(f),
-            _ => f.button(Id::Battery(BatteryId::Spender(i as u16)), r, Look::ROW, row),
+        // (The system's and the session's own aren't to be ended from here.)
+        if p.endable {
+            f.button(Id::Battery(BatteryId::Spender(i as u16)), r, Look::ROW, row);
+        } else {
+            row(f);
         }
     }
 }

@@ -26,6 +26,9 @@ pub struct Spender {
     pub memory: u64,
     /// Its processes (another program's: what its Quit and Force kill end).
     pub pids: Vec<u32>,
+    /// It may be ended from the list: not the session's own (ClamShell, sway and what its config starts,
+    /// PipeWire, the bus), nor the system.
+    pub endable: bool,
 }
 
 impl Spender {
@@ -76,7 +79,7 @@ impl State {
     pub(crate) fn on_battery(&mut self, id: BatteryId) -> Vec<Effect> {
         match id {
             BatteryId::Spender(i) => {
-                self.spender_menu = self.sys.battery.spenders.get(usize::from(i)).map(|s| s.group.clone()).filter(|g| *g != Group::System);
+                self.spender_menu = self.sys.battery.spenders.get(usize::from(i)).filter(|s| s.endable).map(|s| s.group.clone());
                 vec![]
             }
             BatteryId::Back => {
@@ -140,7 +143,8 @@ mod tests {
     use crate::*;
 
     fn spender(group: Group) -> Spender {
-        Spender { group, cpu: 0.1, gpu: 0.0, memory: 0, pids: vec![] }
+        let endable = group != Group::System;
+        Spender { group, cpu: 0.1, gpu: 0.0, memory: 0, pids: vec![], endable }
     }
 
     #[test]
@@ -177,8 +181,12 @@ mod tests {
         // An entry: as from the dock (no window: ended at once).
         tap(&mut s, Id::Battery(BatteryId::Spender(0)));
         assert_eq!(tap(&mut s, Id::Battery(BatteryId::Quit)), vec![Effect::EndRun { key: zelda.key().unwrap().to_owned(), force: false }]);
-        // The system's: no menu.
+        // The system's, or the session's own: no menu.
         tap(&mut s, Id::Battery(BatteryId::Spender(2)));
+        assert_eq!(s.spender_menu(), None);
+        let sway = Spender { endable: false, ..spender(Group::Process("sway".into())) };
+        s.apply(Event::Reading(Reading::Battery(Battery { spenders: vec![sway], ..Battery::default() })));
+        tap(&mut s, Id::Battery(BatteryId::Spender(0)));
         assert_eq!(s.spender_menu(), None);
     }
 
