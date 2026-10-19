@@ -276,7 +276,7 @@ mod tests {
         s.apply(Event::Units(vec![foot_entry]));
         long(&mut s, Id::Dock(crate::DockId::Entry(0)));
         let (_, fx) = s.apply(PointerEvent::Activate(Id::Dock(crate::DockId::Move)).into());
-        assert_eq!(fx, vec![Effect::PadRoute(PadRoute::Ui)], "moving: the D-pad's");
+        assert_eq!(fx, vec![Effect::Watch(crate::effect::Watch::Battery, false), Effect::PadRoute(PadRoute::Ui)], "moving: the D-pad's");
         let (_, fx) = s.apply(PointerEvent::Activate(Id::Dock(crate::DockId::Done)).into());
         assert_eq!(fx, vec![Effect::PadRoute(PadRoute::Game)], "done: the game's again");
     }

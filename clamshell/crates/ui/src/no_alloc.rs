@@ -210,8 +210,20 @@ fn warm_frames_do_not_allocate() {
                         .map(|i| clamshell_core::battery::Charge { at: 1_699_950_000 + i * 900, level: (90 - i) as u8, charging: i > 40 })
                         .collect(),
                     spenders: vec![
-                        clamshell_core::battery::Spender { group: clamshell_core::battery::Group::Process("firefox".into()), cpu: 0.2, gpu: 0.1 },
-                        clamshell_core::battery::Spender { group: clamshell_core::battery::Group::System, cpu: 0.05, gpu: 0.0 },
+                        clamshell_core::battery::Spender {
+                            group: clamshell_core::battery::Group::Process("firefox".into()),
+                            cpu: 0.2,
+                            gpu: 0.1,
+                            memory: 300 << 20,
+                            pids: vec![],
+                        },
+                        clamshell_core::battery::Spender {
+                            group: clamshell_core::battery::Group::System,
+                            cpu: 0.05,
+                            gpu: 0.0,
+                            memory: 600 << 20,
+                            pids: vec![],
+                        },
                     ],
                     has_history: true,
                 })),

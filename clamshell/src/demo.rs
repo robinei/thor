@@ -142,13 +142,14 @@ pub fn battery(now: u64) -> Vec<Event> {
             Charge { at: now - 24 * 3600 + i * 900, level: level as u8, charging }
         })
         .collect();
-    let spender = |group: Group, cpu: f32, gpu: f32| Spender { group, cpu, gpu };
+    let spender = |group: Group, cpu: f32, gpu: f32, mb: u64| Spender { group, cpu, gpu, memory: mb << 20, pids: vec![] };
     let spenders = vec![
-        spender(Group::Instance(run("zelda-lttp", 0)), 0.31, 0.62),
-        spender(Group::Process("firefox".into()), 0.08, 0.03),
-        spender(Group::Instance(run("desktop:foot", 1)), 0.02, 0.0),
-        spender(Group::System, 0.03, 0.0),
-        spender(Group::Process("clamshell".into()), 0.01, 0.0),
+        spender(Group::Instance(run("zelda-lttp", 0)), 0.31, 0.62, 480),
+        spender(Group::Process("firefox".into()), 0.08, 0.03, 1350),
+        spender(Group::Instance(run("desktop:foot", 1)), 0.02, 0.0, 42),
+        spender(Group::System, 0.03, 0.0, 610),
+        spender(Group::Process("clamshell".into()), 0.01, 0.0, 85),
+        spender(Group::Process("steam".into()), 0.0, 0.0, 720),
     ];
     vec![
         Event::Game(GameEvent::Started("zelda-lttp".into())),

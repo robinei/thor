@@ -324,6 +324,14 @@ pub fn end_steam(appid: u32) {
     command::run("kill", &args);
 }
 
+/// Processes asked to end (SIGTERM), or killed: a program not started by ClamShell.
+pub fn end_processes(pids: &[u32], force: bool) {
+    log::info!("{} processes {pids:?}", if force { "killing" } else { "ending" });
+    let mut args = vec![if force { "-KILL".to_owned() } else { "-TERM".to_owned() }];
+    args.extend(pids.iter().map(u32::to_string));
+    command::run("kill", &args.iter().map(String::as_str).collect::<Vec<_>>());
+}
+
 /// Ends an entry that runs in another program's processes by its runner's `stop` command (Waydroid's
 /// apps: Android stops them), not waited for.
 pub fn stop(argv: &[String]) {

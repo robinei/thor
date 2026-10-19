@@ -54,6 +54,8 @@ pub enum Id {
     Blank,
     /// The time tab's (see [`crate::time`]).
     Time(crate::time::TimeId),
+    /// The battery tab's list of what is using the machine (see [`crate::battery`]).
+    Battery(crate::battery::BatteryId),
     /// The bar's button for the front program's windows on the bottom screen, hidden by ClamShell's view:
     /// they are shown.
     BottomWindows,

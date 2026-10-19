@@ -63,7 +63,13 @@ pub enum Effect {
         slice: String,
         frozen: bool,
     },
-    /// Ask the tray thread: a program shown, its menu's entry clicked, its process ended.
+    /// Processes asked to end (SIGTERM), or killed: a program not started by ClamShell (found by its tray
+    /// icon, or in the battery tab's list).
+    EndProcesses {
+        pids: Vec<u32>,
+        force: bool,
+    },
+    /// Ask the tray thread: a program shown, or its menu's entry clicked.
     Tray(crate::tray::TrayCommand),
     /// Write these lines to the control socket of entry `key`'s launch (see [`crate::enqueue`]).
     Enqueue {

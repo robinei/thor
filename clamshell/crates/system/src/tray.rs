@@ -5,8 +5,7 @@
 //! again after any signal of the watcher, an icon, a menu or the bus (a program gone): each one's title,
 //! process (and its systemd unit: whose it is), icon file and menu, sent as [`Event::Tray`].
 //!
-//! Commands: an icon activated (the program shows itself), a menu entry clicked, the icon's process
-//! asked to end or killed.
+//! Commands: an icon activated (the program shows itself), a menu entry clicked.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -26,7 +25,7 @@ use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
 
 use crate::worker::{self, Bell, Changed, Ended, Service, Worker, lost_on};
-use crate::{Closed, Sink, cgroup, command};
+use crate::{Closed, Sink, cgroup};
 
 const WATCHER: &str = "org.kde.StatusNotifierWatcher";
 const WATCHER_PATH: &str = "/StatusNotifierWatcher";
@@ -153,11 +152,7 @@ impl<S: Sink> Service for Tray<S> {
         }
     }
 
-    fn command_while_down(&mut self, command: TrayCommand) -> Result<(), Closed> {
-        // (Ending a process needs no bus.)
-        if let TrayCommand::End { pid, force } = command {
-            end(pid, force);
-        }
+    fn command_while_down(&mut self, _: TrayCommand) -> Result<(), Closed> {
         Ok(())
     }
 }
@@ -423,15 +418,8 @@ fn carry_out(s: &Session, command: &TrayCommand) -> Result<(), Error> {
             let menu = zbus::blocking::Proxy::new(&s.conn, name.to_owned(), menu.clone(), MENU)?;
             menu.call_noreply("Event", &(*id, "clicked", Value::I32(0), 0u32))?;
         }
-        TrayCommand::End { pid, force } => end(*pid, *force),
     }
     Ok(())
-}
-
-/// A tray icon's process asked to end (SIGTERM), or killed.
-fn end(pid: u32, force: bool) {
-    log::info!("tray: {} process {pid}", if force { "killing" } else { "ending" });
-    command::run("kill", &[if force { "-KILL" } else { "-TERM" }, &pid.to_string()]);
 }
 
 /// The tray icons there are now, read once (`clamshell --tray`): as the watcher there has them.

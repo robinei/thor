@@ -1,8 +1,9 @@
 //! The battery tab's readings, while it is open: the charge over the last day from UPower (system bus;
 //! it records the battery's level as it changes), and what is using the machine now: CPU time per process
 //! (`/proc/<pid>/stat`) and GPU time per DRM client (see [`crate::drm`]; only our user's processes are
-//! readable), grouped by our scopes (an app instance, the game), else by program name for our user's
-//! processes, else as the system. Sampled every two seconds, sent as [`Reading::Battery`].
+//! readable), and the memory each has resident, grouped by our scopes (an app instance, the game), else by
+//! program name for our user's processes, else as the system. Sampled every two seconds, sent as
+//! [`Reading::Battery`]: those doing work, the busiest first, then those idle that hold much memory.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -25,9 +26,11 @@ const HISTORY_EVERY: Duration = Duration::from_secs(60);
 /// The history's span and how many points to ask for.
 const HISTORY_SPAN: u32 = 24 * 3600;
 const HISTORY_POINTS: u32 = 240;
-/// Spenders sent at most, and the least share of the machine that still counts.
+/// Spenders sent at most, and the least share of the machine that still counts; an idle one still
+/// counts with this much memory resident.
 const MOST: usize = 12;
 const LEAST: f32 = 0.002;
+const MUCH_MEMORY: u64 = 100 << 20;
 
 /// UPower's device type for a battery (UpDeviceKind).
 const UPOWER_BATTERY: u32 = 2;
@@ -166,6 +169,8 @@ struct Counters {
     group: Group,
     /// CPU time in clock ticks.
     cpu: u64,
+    /// Memory resident (bytes).
+    memory: u64,
     /// GPU time in ns per DRM client id.
     gpu: HashMap<u64, u64>,
 }
@@ -187,22 +192,22 @@ impl Sampler {
             let ticks = rustix::param::clock_ticks_per_second() as f32;
             let cores = thread::available_parallelism().map_or(1, |n| n.get()) as f32;
             for (pid, now) in &current {
-                // Processes that started since the last reading count from the next one.
-                let Some(before) = self.last.get(pid) else {
-                    continue;
+                // (Processes that started since the last reading do work from the next one.)
+                let (cpu, gpu) = match self.last.get(pid) {
+                    Some(before) => {
+                        let gpu_ns: u64 = now.gpu.iter().map(|(client, ns)| ns.saturating_sub(before.gpu.get(client).copied().unwrap_or(*ns))).sum();
+                        (now.cpu.saturating_sub(before.cpu) as f32 / ticks / seconds / cores, gpu_ns as f32 / 1e9 / seconds)
+                    }
+                    None => (0.0, 0.0),
                 };
-                let cpu = now.cpu.saturating_sub(before.cpu) as f32 / ticks / seconds / cores;
-                let gpu_ns: u64 = now.gpu.iter().map(|(client, ns)| ns.saturating_sub(before.gpu.get(client).copied().unwrap_or(*ns))).sum();
-                let gpu = gpu_ns as f32 / 1e9 / seconds;
-                if cpu <= 0.0 && gpu <= 0.0 {
-                    continue;
-                }
                 match spenders.iter_mut().find(|s| s.group == now.group) {
                     Some(s) => {
                         s.cpu += cpu;
                         s.gpu += gpu;
+                        s.memory += now.memory;
+                        s.pids.push(*pid);
                     }
-                    None => spenders.push(Spender { group: now.group.clone(), cpu, gpu }),
+                    None => spenders.push(Spender { group: now.group.clone(), cpu, gpu, memory: now.memory, pids: vec![*pid] }),
                 }
             }
         }
@@ -210,8 +215,10 @@ impl Sampler {
             s.cpu = s.cpu.min(1.0);
             s.gpu = s.gpu.min(1.0);
         }
-        spenders.retain(|s| s.load() >= LEAST);
-        spenders.sort_by(|a, b| b.load().total_cmp(&a.load()));
+        spenders.retain(|s| s.load() >= LEAST || s.memory >= MUCH_MEMORY);
+        // The busy by their work, then the idle by their memory.
+        let busy = |s: &Spender| s.load() >= LEAST;
+        spenders.sort_by(|a, b| busy(b).cmp(&busy(a)).then(b.load().total_cmp(&a.load())).then(b.memory.cmp(&a.memory)));
         spenders.truncate(MOST);
         self.last = current;
         self.at = Some(now);
@@ -234,9 +241,15 @@ fn read_processes() -> HashMap<u32, Counters> {
             (None, false) => Group::System,
         };
         let gpu = if mine { drm::clients(&dir) } else { HashMap::new() };
-        out.insert(pid, Counters { group, cpu, gpu });
+        out.insert(pid, Counters { group, cpu, gpu, memory: resident(&dir) });
     }
     out
+}
+
+/// A process's resident memory (bytes): `/proc/<pid>/statm`'s second field, in pages.
+fn resident(dir: &std::path::Path) -> u64 {
+    let pages: u64 = sys::text(dir.join("statm")).and_then(|t| t.split_whitespace().nth(1)?.parse().ok()).unwrap_or(0);
+    pages * rustix::param::page_size() as u64
 }
 
 /// `/proc/<pid>/stat`: the process name and its user and system CPU time (clock ticks).

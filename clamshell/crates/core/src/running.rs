@@ -487,7 +487,7 @@ impl State {
         };
         // (Found by its tray icon: its process.)
         if let (Origin::Tray, Some(pid)) = (r.origin, r.pid) {
-            return vec![Effect::Tray(crate::tray::TrayCommand::End { pid, force })];
+            return vec![Effect::EndProcesses { pids: vec![pid], force }];
         }
         let mut effects = vec![match r.steam_appid() {
             Some(appid) => Effect::EndSteam { appid },

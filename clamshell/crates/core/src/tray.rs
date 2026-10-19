@@ -54,8 +54,6 @@ pub enum TrayCommand {
     Activate(Arc<str>),
     /// An entry of its menu chosen.
     Click { item: Arc<str>, id: i32 },
-    /// Its process asked to end (SIGTERM), or killed.
-    End { pid: u32, force: bool },
 }
 
 /// The id of an entry found by a tray icon the library has no desktop file for.
@@ -229,14 +227,15 @@ mod tests {
         assert_eq!(s.tray_page().map(|(_, e)| e[0].label.as_str()), Some("Zelda"));
         tap_dock(&mut s, DockId::Back);
         assert_eq!(s.tray_page().map(|(_, e)| e.len()), Some(3));
-        assert_eq!(tap_dock(&mut s, DockId::TrayEntry(4)), vec![Effect::Tray(TrayCommand::Click { item: ":1.9/b".into(), id: 4 })]);
+        let closed = Effect::Watch(crate::effect::Watch::Battery, false);
+        assert_eq!(tap_dock(&mut s, DockId::TrayEntry(4)), vec![Effect::Tray(TrayCommand::Click { item: ":1.9/b".into(), id: 4 }), closed]);
         assert!(s.dock().menu().is_none());
         // Quit: its windows closed, then its process asked to end. Force kill: killed.
         let id: Arc<str> = "desktop:firefox".into();
         assert_eq!(s.quit(&id), vec![Effect::Window(WindowCommand::Close(vec![6]))]);
         let (_, fx) = s.apply(Event::Windows(vec![shelf.clone()]));
-        assert!(fx.contains(&Effect::Tray(TrayCommand::End { pid: 77, force: false })), "{fx:?}");
-        assert_eq!(s.force_kill("desktop:firefox"), vec![Effect::Tray(TrayCommand::End { pid: 77, force: true })]);
+        assert!(fx.contains(&Effect::EndProcesses { pids: vec![77], force: false }), "{fx:?}");
+        assert_eq!(s.force_kill("desktop:firefox"), vec![Effect::EndProcesses { pids: vec![77], force: true }]);
         // Its icon gone (and no window): ended.
         s.apply(Event::Tray(vec![zelda_icon.clone()]));
         assert!(s.session().running("desktop:firefox").is_none());

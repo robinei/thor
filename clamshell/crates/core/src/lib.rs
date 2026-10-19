@@ -144,6 +144,8 @@ pub struct State {
     dock: Dock,
     /// Programs' tray icons (see [`tray`]).
     tray: Vec<tray::TrayItem>,
+    /// The battery tab's row whose menu is open (see [`battery`]).
+    spender_menu: Option<battery::Group>,
     /// Programs paused or ended while hidden (see [`background`]).
     background: background::Background,
     /// The entries started with ClamShell, and whether they have been (see [`autostart`]).
@@ -653,6 +655,7 @@ impl State {
                 None => (Dirty::NONE, vec![]),
             },
             Id::Time(id) => self.on_time(id),
+            Id::Battery(id) => (Dirty::BOTTOM, self.on_battery(id)),
             Id::PadMouse => {
                 self.pad.toggle_mouse();
                 (Dirty::BOTTOM, vec![])

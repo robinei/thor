@@ -111,6 +111,17 @@ impl State {
     /// A tap or long press on a dock tile, a choice in its menu (which then closes), or a step in move
     /// mode.
     pub(crate) fn on_dock(&mut self, id: DockId, long: bool) -> Vec<Effect> {
+        let was_open = self.dock.menu.is_some();
+        let mut effects = self.dock_action(id, long);
+        // (While a menu is open, what its entry costs is read: the battery tab's readings.)
+        let open = self.dock.menu.is_some();
+        if open != was_open && self.bottom.tab != crate::Tab::Battery {
+            effects.push(Effect::Watch(crate::effect::Watch::Battery, open));
+        }
+        effects
+    }
+
+    fn dock_action(&mut self, id: DockId, long: bool) -> Vec<Effect> {
         match id {
             DockId::Entry(i) => {
                 let Some(entry) = self.dock.items.get(usize::from(i)).map(|item| item.id.clone()) else {
@@ -271,6 +282,11 @@ mod tests {
     use crate::testkit::*;
     use crate::*;
 
+    /// A menu closing: what its entry costs is no longer read.
+    fn closed() -> Effect {
+        Effect::Watch(crate::effect::Watch::Battery, false)
+    }
+
     fn entry(s: &State, i: usize) -> Option<&str> {
         s.dock().items().get(i).map(|item| &*item.id)
     }
@@ -293,7 +309,8 @@ mod tests {
         long(&mut s, dock(0));
         assert_eq!(s.dock().menu.as_deref(), Some("zelda-lttp"));
         let fx = tap(&mut s, Id::Dock(DockId::Pin));
-        assert!(matches!(fx.as_slice(), [Effect::Save(Save::Dock(ids))] if ids.last().is_some_and(|i| &**i == "zelda-lttp")), "{fx:?}");
+        assert!(matches!(fx.as_slice(), [Effect::Save(Save::Dock(ids)), _] if ids.last().is_some_and(|i| &**i == "zelda-lttp")), "{fx:?}");
+        assert_eq!(fx.last(), Some(&closed()));
         // It stops: still there (pinned), a tap starts it.
         played(&mut s, "zelda-lttp");
         assert_eq!(entry(&s, 0), Some("zelda-lttp"));
@@ -361,13 +378,13 @@ mod tests {
         s.apply(Event::Windows(vec![w]));
         let key = clamshell_library::key_of("zelda-lttp");
         long(&mut s, dock(0));
-        assert!(!s.opens_another("zelda-lttp") && tap(&mut s, Id::Dock(DockId::OpenAnother)).is_empty(), "a game: not another");
+        assert!(!s.opens_another("zelda-lttp") && tap(&mut s, Id::Dock(DockId::OpenAnother)) == vec![closed()], "a game: not another");
         long(&mut s, dock(0));
-        assert_eq!(tap(&mut s, Id::Dock(DockId::CloseWindow)), vec![Effect::Window(WindowCommand::Close(vec![5]))]);
+        assert_eq!(tap(&mut s, Id::Dock(DockId::CloseWindow)), vec![Effect::Window(WindowCommand::Close(vec![5])), closed()]);
         long(&mut s, dock(0));
-        assert_eq!(tap(&mut s, Id::Dock(DockId::Quit)), vec![Effect::Window(WindowCommand::Close(vec![5]))]);
+        assert_eq!(tap(&mut s, Id::Dock(DockId::Quit)), vec![Effect::Window(WindowCommand::Close(vec![5])), closed()]);
         long(&mut s, dock(0));
-        assert_eq!(tap(&mut s, Id::Dock(DockId::ForceKill)), vec![Effect::EndRun { key, force: true }]);
+        assert_eq!(tap(&mut s, Id::Dock(DockId::ForceKill)), vec![Effect::EndRun { key, force: true }, closed()]);
         // Home with B: the window in front closes; held, its entry quits.
         assert_eq!(s.apply(Event::Device(hardware::DeviceKey::CloseWindow)).1, vec![Effect::Window(WindowCommand::Close(vec![5]))]);
         assert_eq!(s.apply(Event::Device(hardware::DeviceKey::Quit)).1, vec![Effect::Window(WindowCommand::Close(vec![5]))]);

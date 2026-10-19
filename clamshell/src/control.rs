@@ -195,6 +195,18 @@ pub const TARGETS: &[Form<Id>] = &[
             other => return Err(name_err(other)),
         }))
     }),
+    form("spender N", "the battery tab's row N of what is using the machine: its menu", |a| {
+        Ok(Id::Battery(clamshell_core::battery::BatteryId::Spender(number(arg(a, 0))?)))
+    }),
+    form("spender-menu ACTION", "a battery tab row's menu: quit, force-kill, back", |a| {
+        use clamshell_core::battery::BatteryId;
+        Ok(Id::Battery(match arg(a, 0) {
+            "quit" => BatteryId::Quit,
+            "force-kill" => BatteryId::ForceKill,
+            "back" => BatteryId::Back,
+            other => return Err(name_err(other)),
+        }))
+    }),
     form("dock-step DIR", "moving a dock entry: one place (left, right) or row (up, down) along", |a| {
         Ok(Id::Dock(DockId::Step(match arg(a, 0) {
             "left" => clamshell_core::keymap::Dir::Left,

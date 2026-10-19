@@ -2,16 +2,20 @@
 //! battery's settings (the charge limit, when the screens go off and the device sleeps without input),
 //! drawn and stepped as in the settings grid; the charge over the last day (UPower's history; charging in
 //! green); then what is using the
-//! machine now, the busiest first, as many as fit: each a bar of its share of the work and its CPU and GPU.
-//! The battery reports only its total drain, so programs are ranked by work, not watts.
+//! machine now, the busiest first, then those idle that hold much memory, as many as fit: each a bar of
+//! its share of the work, its CPU, GPU and memory. The battery reports only its total drain, so programs
+//! are ranked by work, not watts. A row (not the system's) opens its menu in the tab's place: Quit, Force
+//! kill.
 
-use clamshell_core::State;
+use clamshell_core::battery::{BatteryId, Group};
 use clamshell_core::settings::Setting;
+use clamshell_core::{Id, State};
 
 use crate::draw::{Align, Keep, LINE, Rect};
 use crate::toolkit::Frame;
-use crate::toolkit::format::{Duration, Fmt, Share};
-use crate::toolkit::style::{self, SURFACE, SURFACE_HI, Tone};
+use crate::toolkit::format::{Bytes, Duration, Fmt, Share};
+use crate::toolkit::style::{self, Look, SURFACE, SURFACE_HI, Tone};
+use crate::toolkit::widgets::{self, HeaderRight};
 
 /// The top row's height, the level's and the other text's sizes, of the area's height. (The text is
 /// a little smaller than other tabs' body text, for the figures to fit.)
@@ -35,6 +39,9 @@ const SMALL: f32 = 0.85;
 const SPAN: f32 = 24.0 * 3600.0;
 
 pub(super) fn draw(f: &mut Frame) {
+    if let Some(group) = f.s.spender_menu().cloned() {
+        return spender_menu(f, &group);
+    }
     let body = f.body();
     let s = f.s;
     let pad = f.pad();
@@ -59,23 +66,40 @@ pub(super) fn draw(f: &mut Frame) {
     }
     let total: f32 = spenders.iter().map(|p| p.load()).sum::<f32>().max(f32::EPSILON);
     // The figures' column, as wide as the widest they can be, so the bars line up.
-    let figures_x = list.x + list.w - f.c.text_width(size * SMALL, "CPU 100% · GPU 100%");
+    let figures_x = list.x + list.w - f.c.text_width(size * SMALL, "CPU 100% · GPU 100% · 999 MB");
     for (i, p) in spenders.iter().enumerate().take(rows) {
         let r = Rect::new(list.x, list.y + i as f32 * row_h, list.w, row_h);
-        let name_w = r.w * NAME_W;
-        f.c.text_fit(Rect::new(r.x, r.y, name_w - pad, r.h), size, Tone::Normal, s.spender_name(p), Keep::Start);
-        let figures = Fmt::<64>::of(format_args!("CPU {} · GPU {}", Share(p.cpu), Share(p.gpu)));
-        let figures_w = f.c.text_width(size * SMALL, &figures);
-        // Smaller, on the name's line.
-        let ty = r.y + (r.h - size * LINE) / 2.0;
-        f.c.text(r.x + r.w - figures_w, ty + size * 0.1, size * SMALL, Tone::Dim, &figures);
-        let track = Rect::new(r.x + name_w, r.y + r.h * 0.42, figures_x - pad - r.x - name_w, r.h * 0.16);
-        f.c.rounded(track, track.h / 2.0, SURFACE);
-        let share = (p.load() / total).clamp(0.0, 1.0);
-        if share > 0.0 {
-            f.c.rounded(Rect::new(track.x, track.y, (track.w * share).max(track.h), track.h), track.h / 2.0, Tone::Normal);
+        let row = |f: &mut Frame| {
+            let name_w = r.w * NAME_W;
+            f.c.text_fit(Rect::new(r.x, r.y, name_w - pad, r.h), size, Tone::Normal, s.spender_name(p), Keep::Start);
+            let figures = Fmt::<64>::of(format_args!("CPU {} · GPU {} · {}", Share(p.cpu), Share(p.gpu), Bytes(p.memory)));
+            let figures_w = f.c.text_width(size * SMALL, &figures);
+            // Smaller, on the name's line.
+            let ty = r.y + (r.h - size * LINE) / 2.0;
+            f.c.text(r.x + r.w - figures_w, ty + size * 0.1, size * SMALL, Tone::Dim, &figures);
+            let track = Rect::new(r.x + name_w, r.y + r.h * 0.42, figures_x - pad - r.x - name_w, r.h * 0.16);
+            f.c.rounded(track, track.h / 2.0, SURFACE);
+            let share = (p.load() / total).clamp(0.0, 1.0);
+            if share > 0.0 {
+                f.c.rounded(Rect::new(track.x, track.y, (track.w * share).max(track.h), track.h), track.h / 2.0, Tone::Normal);
+            }
+        };
+        // (The system's isn't anyone's to end.)
+        match p.group {
+            Group::System => row(f),
+            _ => f.button(Id::Battery(BatteryId::Spender(i as u16)), r, Look::ROW, row),
         }
     }
+}
+
+/// A row's menu, from a tap on it: Quit and Force kill what it is (an entry as from the dock; another
+/// program, its processes). The back arrow returns to the tab.
+fn spender_menu(f: &mut Frame, group: &Group) {
+    let s = f.s;
+    let name = s.sys().battery.spenders.iter().find(|p| p.group == *group).map_or("", |p| s.spender_name(p));
+    let area = widgets::header(f, Some(Id::Battery(BatteryId::Back)), name, false, HeaderRight::None);
+    let items = [(Id::Battery(BatteryId::Quit), "Quit", Tone::Accent), (Id::Battery(BatteryId::ForceKill), "Force kill", Tone::Accent)];
+    widgets::menu(f, area, &items);
 }
 
 /// The level with the state (and drain) and the time left under it, and the settings tiles on the
