@@ -51,12 +51,14 @@ is off, it asks to suspend and Waydroid freezes the container (`persist.waydroid
 
 ## Not solved
 
-- A hidden window is lost (the VM, software rendering; the desktop not tried yet): once an app's
-  window has been on a workspace not shown (shelf in front, another program), Waydroid drops it, and it
-  doesn't come back when shown, nor when the app is launched again, while Android keeps the task
-  (visible, fullscreen). Waydroid's own floating launch does the same. ClamShell then counts the app as
-  ended. Not understood yet: Waydroid removes a window whose task has no layer in a frame, so Android
-  stops drawing the task once its window is hidden. Next: Android's log (logcat) while it happens.
+- A hidden window is lost until Android draws again. Sway configures a window as it is hidden and shown
+  (xdg_toplevel's suspended state); Waydroid answers every configure with a display hotplug
+  (`xdg_toplevel_handle_configure` calls `do_hotplug` whatever the size), which clears its windows;
+  a window comes back only with the app's next frame. A static app (Calculator) draws none: its window
+  stays gone, ClamShell counts it as ended, and launching it again doesn't bring it back (Android keeps
+  the task, visible). A density change (`wm density`, then reset) makes Android redraw, and the window
+  comes back. To do: Waydroid to hotplug only when the size changed; meanwhile ClamShell making Android
+  redraw when an Android app is shown.
 
 - Android draws its own caption on each window (back, minimise, maximise, close). Waydroid has no option
   to turn it off (waydroid/waydroid#2204).
