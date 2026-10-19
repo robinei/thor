@@ -103,6 +103,13 @@ case $density in
     *) echo $(((57 * density + 106) / 213)) > "$XDG_RUNTIME_DIR/clamshell/android-caption" ;;
 esac
 
+# No on-screen keyboard of Android's: its keyboard stays hidden beside the hardware one Android sees
+# (Waydroid's Wayland keyboard, ClamShell's keys), but Waydroid still makes its window, empty, which
+# took the screen and the focus as a text field got focus. Fields take keys without one.
+for ime in $(android ime list -s); do
+    android ime disable "$ime" > /dev/null
+done
+
 case $(android getprop waydroid.active_apps) in
     '' | none | Waydroid) waydroid app launch com.android.launcher3 ;;
 esac

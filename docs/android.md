@@ -54,7 +54,10 @@ session with a stand-in of ClamShell's on its Python path (`clamshell/android/py
 F-Droid's search field, and text copied there read on the host.
 
 Android sees a hardware keyboard (Waydroid's Wayland keyboard), so ClamShell's keyboard types into
-Android apps and Android's own on-screen keyboard is turned off (`show_ime_with_hard_keyboard 0`, below).
+Android apps. Android's own on-screen keyboard is disabled (`ime disable`, by the script after Android
+has started): hidden beside a hardware keyboard it showed nothing, but Waydroid still made a window for
+it, empty, which took the screen and the focus (tabbed beside the app) whenever a text field got focus.
+Fields take keys without one (tried: F-Droid's search field).
 Waydroid has no text-input protocol, so a text field getting focus doesn't raise ClamShell's keyboard:
 open it from the bar.
 
@@ -163,8 +166,7 @@ adb start-server
 cat ~/.android/adbkey.pub | sudo lxc-attach -P /var/lib/waydroid/lxc -n waydroid --clear-env -- /system/bin/sh -c \
     'cat >> /data/misc/adb/adb_keys; chmod 640 /data/misc/adb/adb_keys; chown system:shell /data/misc/adb/adb_keys' | cat
 adb connect "$(waydroid status | sed -n 's/^IP address:[[:space:]]*//p'):5555"
-# Android's on-screen keyboard off with a hardware keyboard; no notification pop-ups over apps.
-adb shell settings put secure show_ime_with_hard_keyboard 0
+# No notification pop-ups over apps. (Android's on-screen keyboard is disabled by the script.)
 adb shell settings put global heads_up_notifications_enabled 0
 waydroid session stop
 ```
