@@ -674,12 +674,9 @@ mod tests {
         let mut s = state();
         assert!(tap(&mut s, game("ff6")).is_empty());
         let fx = tap(&mut s, game("ff6"));
-        // (A game: paused when hidden, unless set otherwise.)
-        let mut defaults = Values::default();
-        defaults.set(crate::Setting::Background, 1);
         assert!(
             fx.iter().any(
-                |e| matches!(e, Effect::Launch { game, settings, env, launch: Launch::None, .. } if &**game == "ff6" && *settings == defaults && env.is_empty())
+                |e| matches!(e, Effect::Launch { game, settings, env, launch: Launch::None, .. } if &**game == "ff6" && *settings == Values::default() && env.is_empty())
             ),
             "{fx:?}"
         );

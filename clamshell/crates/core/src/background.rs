@@ -26,7 +26,6 @@ use clamshell_library::RunnerOf;
 use crate::effect::Effect;
 use crate::instance::Instance;
 use crate::running::Origin;
-use crate::settings::Setting;
 
 /// How long a program's windows are all hidden before it is paused (seconds): switching away and back
 /// quickly doesn't pause it.
@@ -105,7 +104,7 @@ impl State {
         for (r, key) in ours.into_iter().zip(&keys) {
             let mine: Vec<&crate::windows::Window> = session.windows_of(&r.id).collect();
             let shown = mine.iter().any(|w| w.visible);
-            let setting = self.settings_of(&r.id).get(Setting::Background);
+            let setting = self.background_of(&r.id);
             // (One quitting isn't paused: frozen, it couldn't end. Nor one without a window: none hidden,
             // it is starting, between windows, or ending, Steam's Stop for one.)
             let quitting = session.quitting.iter().any(|(g, ..)| *g == r.id);
@@ -143,7 +142,7 @@ impl State {
         let now = self.unix_secs;
         let mut effects = Vec::new();
         for runner in &self.background.runners {
-            let pauses = self.settings.of_in(&runner.key, &[]).get(Setting::Background) == 1;
+            let pauses = self.background_of(&runner.key) == 1;
             let session = &self.session;
             let of_runner = |r: &crate::running::Running| r.entry.as_ref().and_then(|g| g.runner.as_ref()).is_some_and(|o| o.key == runner.key);
             let shown = session.windows.iter().filter(|w| w.visible).any(|w| session.running_of(w).is_some_and(of_runner));
@@ -181,6 +180,7 @@ impl State {
 mod tests {
     use super::*;
     use crate::effect::WindowCommand;
+    use crate::settings::Setting;
     use crate::testkit::*;
     use crate::windows::Window;
     use crate::{Event, GameEvent};
@@ -281,6 +281,29 @@ mod tests {
         assert!(s.apply(Event::Windows(vec![])).1.contains(&freeze(&key, false)));
         s.apply(Event::Tick { unix_secs: 100 + 3 * GRACE });
         assert!(!s.paused("zelda-lttp"), "no window: none hidden");
+    }
+
+    #[test]
+    fn games_pause_by_default_apps_run_and_all_says_so_for_both() {
+        let mut s = state();
+        let zelda = launch(&mut s, "zelda-lttp");
+        let fx = s.launch("desktop:foot".into());
+        let foot = fx.iter().find_map(|e| if let Effect::Launch { instance, .. } = e { Some(instance.clone()) } else { None }).unwrap();
+        s.apply(GameEvent::Started("desktop:foot".into()).into());
+        let key = zelda.key().unwrap().to_owned();
+        let windows = vec![
+            Window { unit: zelda.unit(), ..win(3, "zelda3", &zelda.workspace(), false) },
+            Window { unit: foot.unit(), ..win(4, "foot", &foot.workspace(), false) },
+        ];
+        s.apply(Event::Tick { unix_secs: 100 });
+        s.apply(Event::Windows(windows));
+        let fx = s.apply(Event::Tick { unix_secs: 100 + GRACE }).1;
+        assert!(fx.contains(&freeze(&key, true)), "a game: {fx:?}");
+        assert!(!fx.contains(&freeze(foot.key().unwrap(), true)), "an app: {fx:?}");
+        // All set to run: the game runs too.
+        s.settings.set(None, Setting::Background, Some(0));
+        assert!(s.apply(Event::Tick { unix_secs: 101 + GRACE }).1.contains(&freeze(&key, false)));
+        assert_eq!(s.background_of("zelda-lttp"), 0);
     }
 
     #[test]

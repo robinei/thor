@@ -45,22 +45,26 @@ impl State {
         self.game(id).and_then(|g| g.runner.as_ref()).map(|r| &*r.key)
     }
 
-    /// The settings entry (or level) `id` runs with: the global ones (a game's paused when hidden, see
-    /// [`State::is_games`]), its runner's, its own.
+    /// The settings entry (or level) `id` runs with: the global ones, its runner's, its own.
     pub fn settings_of(&self, id: &str) -> Values {
-        let mut base = self.settings.global;
-        if self.is_games(id) {
-            base.set(Setting::Background, 1);
-        }
         match self.runner_of(id) {
-            Some(runner) => self.settings.of_over(base, id, &[runner]),
-            None => self.settings.of_over(base, id, &[]),
+            Some(runner) => self.settings.of_in(id, &[runner]),
+            None => self.settings.of_in(id, &[]),
+        }
+    }
+
+    /// What entry (or level) `id` does while hidden ([`Setting::Background`]): Pauses games (the
+    /// default) said for it, paused if it is a game (see [`State::is_games`]), else run.
+    pub fn background_of(&self, id: &str) -> u16 {
+        match self.settings_of(id).get(Setting::Background) {
+            crate::settings::GAMES_PAUSED => u16::from(self.is_games(id)),
+            v => v,
         }
     }
 
     /// Whether entry `id` is a game (not an app, a game launcher, a film, a file or a group), or level
-    /// `id` a runner's all of whose entries are: games are paused when hidden unless set otherwise
-    /// (consoles do the same; one that minds, online play, is set to run).
+    /// `id` a runner's all of whose entries are: games are paused when hidden by default (consoles do
+    /// the same; one that minds, online play, is set to run).
     pub fn is_games(&self, id: &str) -> bool {
         let game = |g: &crate::Game| !g.tool && g.browsed.is_none() && g.mpv_file().is_none() && !g.is_group();
         if let Some(g) = self.game(id) {

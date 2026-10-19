@@ -47,9 +47,13 @@ pub enum Setting {
     /// The device sleeps after this many minutes without input; 0: never (global only).
     Sleep,
     /// What a program does while none of its windows is shown (see [`crate::background`]): 0 it runs,
-    /// 1 it is paused (frozen), 2 it ends once its last window has closed.
+    /// 1 it is paused (frozen), 2 it ends once its last window has closed; [`GAMES_PAUSED`] (the
+    /// default) 1 for a game, else 0 (see [`crate::State::background_of`]).
     Background,
 }
+
+/// [`Setting::Background`]'s value by which games are paused and the rest run.
+pub const GAMES_PAUSED: u16 = 3;
 
 pub const COUNT: usize = 17;
 
@@ -99,7 +103,8 @@ impl Setting {
     /// The values a tap steps through, in order.
     pub fn choices(self) -> &'static [u16] {
         match self {
-            Setting::Power | Setting::Hud | Setting::Fan | Setting::Background => &[0, 1, 2],
+            Setting::Power | Setting::Hud | Setting::Fan => &[0, 1, 2],
+            Setting::Background => &[GAMES_PAUSED, 0, 1, 2],
             Setting::FpsCap => &[0, 30, 40, 45, 60, 90, 120],
             Setting::Refresh => &[0, 60, 90, 120],
             Setting::Upscale | Setting::Rumble => &[0, 1, 2, 3],
@@ -120,6 +125,7 @@ impl Setting {
             Setting::ChargeLimit => 100,
             Setting::ScreenOff => 5,
             Setting::Sleep => 15,
+            Setting::Background => GAMES_PAUSED,
             _ => 0,
         }
     }
@@ -146,7 +152,7 @@ impl Setting {
             return Impact::Stock;
         }
         match (self, value) {
-            (Setting::Power, 2) | (Setting::Refresh, 120) | (Setting::Fan, 2) => Impact::Costs,
+            (Setting::Power, 2) | (Setting::Refresh, 120) | (Setting::Fan, 2) | (Setting::Background, 0) => Impact::Costs,
             (Setting::CpuMax | Setting::GpuMax, 100) => Impact::Costs,
             // Never, or later than by default, costs power; sooner saves it.
             (Setting::ScreenOff | Setting::Sleep, v) if v == 0 || v > self.default_value() => Impact::Costs,
@@ -199,6 +205,7 @@ impl Setting {
             (Setting::ChargeLimit, 100) => "Charge full",
             (Setting::ScreenOff, 0) => "Always on",
             (Setting::Sleep, 0) => "No sleep",
+            (Setting::Background, GAMES_PAUSED) => "Pauses games",
             (Setting::Background, 0) => "Runs hidden",
             (Setting::Background, 1) => "Pauses hidden",
             (Setting::Background, _) => "Quits closed",
@@ -298,12 +305,7 @@ impl Settings {
     /// The settings `game` runs with below `levels` (its runner's: see [`crate::runner_key`]): the global
     /// ones, each level's overrides over them, then its own.
     pub fn of_in(&self, game: &str, levels: &[&str]) -> Values {
-        self.of_over(self.global, game, levels)
-    }
-
-    /// The same, over `base` instead of the global values.
-    pub fn of_over(&self, base: Values, game: &str, levels: &[&str]) -> Values {
-        let inherited = levels.iter().fold(base, |values, f| self.overrides_of(f).over(&values));
+        let inherited = levels.iter().fold(self.global, |values, f| self.overrides_of(f).over(&values));
         self.overrides_of(game).over(&inherited)
     }
 

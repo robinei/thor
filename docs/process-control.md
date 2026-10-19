@@ -191,15 +191,17 @@ Still to try: a game with online play, and all of it on the Thor (Freedreno, FEX
   which finds it running and moves it in, so it too is paused and ended as any launch (its slice);
   nothing is Steam's own way any more. Steam's Stop and its Running
   state work as before (Steam finds the game by its launcher process, not by its cgroup).
-- In the background, a setting (All, a runner, an item): Runs hidden (the default for apps), Pauses hidden (the default for games:
-  its slice frozen once it has windows and none has been shown for 10 s; thawed when shown, before Quit, Force kill
+- In the background, a setting (All, a runner, an item): Pauses games (the default: Pauses hidden for a
+  game, Runs hidden for the rest), Runs hidden, Pauses hidden (its slice frozen once it has windows and
+  none has been shown for 10 s; thawed when shown, before Quit, Force kill
   or being shown, and when its windows are gone: one closed from outside, as Steam's Stop does, could
   otherwise not end; not paused while quitting), Quits closed (ended once it has had a window and has
   none left). A slice left frozen (by a ClamShell before, which a new one doesn't know paused it) is
   thawed when ClamShell starts and before a launch into it: systemd starts no scope in a frozen slice. Only launches of
   ClamShell's have a slice to freeze or stop (Steam's games and tray programs are moved into one);
   Android's apps are paused by their runner; a file opened in an app's running instance runs on.
-- Games are paused when hidden unless set otherwise, as consoles do: an entry that is a game (not an
+- Games are paused when hidden by default, as consoles do (Pauses games, resolved per entry after the
+  levels, so All set to Runs hidden runs games too): an entry that is a game (not an
   app, a film, a file; a desktop file in the Game category unless it is a game launcher or a tool for
   games: also an emulator, package manager, network program or utility, or one of a short list by id:
   Heroic, Faugus, itch, GOverlay and the like), and a runner's level all of whose entries are games.
