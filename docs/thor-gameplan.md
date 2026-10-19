@@ -144,6 +144,13 @@ Known issues and risks, to check first:
 
 Each subsystem, then hibernate with each in use (hibernate matters more to me than suspend).
 
+- [ ] Games paused when hidden (the default): a few native games and Proton games (FEX) frozen for
+      minutes behind shelf, then shown: drawing, sound, the controller; any that jumps ahead or stalls
+      after (its frame time step); whether a game hidden behind shelf still draws (then it is frozen
+      after the grace) or stops (low CPU and GPU); whether loading and shader compiling are told from
+      drawing (half a core, the GPU under 5 % on Freedreno); a frozen game's memory going to zram.
+- [ ] An online game frozen behind shelf: whether it is dropped (then it is set to run).
+
 - [ ] Screens: both on, right size, orientation and position; layer surface on DSI-1.
 - [ ] Touch: the bottom screen's touch on DSI-1 (sway's `map_to_output`); two fingers on the bar at
       once (one sliding, one tapping); below the bar, a finger sliding over anything points (on a list
