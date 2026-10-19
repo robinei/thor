@@ -348,6 +348,10 @@ pub fn adopt(instance: Instance, pid: u32) {
         let Some(unit) = instance.unit() else {
             return;
         };
+        if !sys::same_process(pid) {
+            log::info!("adopt: process {pid} is gone (another has its id)");
+            return;
+        }
         let cgroup = sys::text(format!("/proc/{pid}/cgroup")).unwrap_or_default();
         let group = cgroup.trim_end().rsplit('/').next().unwrap_or_default();
         if group.ends_with(".service") || Instance::from_unit(group).is_some() {
@@ -367,6 +371,11 @@ pub fn adopt(instance: Instance, pid: u32) {
 
 /// Processes asked to end (SIGTERM), or killed: a program not started by ClamShell.
 pub fn end_processes(pids: &[u32], force: bool) {
+    // (Only those still the processes seen: a process gone may have left its id to another.)
+    let pids: Vec<u32> = pids.iter().copied().filter(|&p| sys::same_process(p)).collect();
+    if pids.is_empty() {
+        return;
+    }
     log::info!("{} processes {pids:?}", if force { "killing" } else { "ending" });
     let mut args = vec![if force { "-KILL".to_owned() } else { "-TERM".to_owned() }];
     args.extend(pids.iter().map(u32::to_string));

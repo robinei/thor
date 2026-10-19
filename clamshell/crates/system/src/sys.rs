@@ -27,6 +27,36 @@ pub fn processes() -> impl Iterator<Item = (u32, PathBuf)> {
     fs::read_dir("/proc").into_iter().flatten().flatten().filter_map(|e| Some((e.file_name().to_str()?.parse().ok()?, e.path())))
 }
 
+/// When process `pid` started (clock ticks after boot: /proc/<pid>/stat's 22nd field); none if it is
+/// gone. With its id, it tells the process from a later one given the same id.
+pub fn start_time(pid: u32) -> Option<u64> {
+    let stat = text(format!("/proc/{pid}/stat"))?;
+    // (The fields after the name in parentheses, which may hold anything: the state is the 3rd.)
+    stat.rsplit_once(')')?.1.split_whitespace().nth(22 - 3)?.parse().ok()
+}
+
+/// The windows' and tray icons' processes as last seen (their start times): what ClamShell acts on by a process id
+/// (adopting it, ending it) is checked to be the same process still.
+static SEEN: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<u32, u64>>> = std::sync::LazyLock::new(Default::default);
+
+/// Process `pid` seen (a window's, a tray icon's): its start time, remembered.
+pub fn saw(pid: u32) -> Option<u64> {
+    let start = start_time(pid)?;
+    let mut seen = SEEN.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    // (Bounded: those of windows long gone forgotten now and then.)
+    if seen.len() > 1024 {
+        seen.clear();
+    }
+    seen.insert(pid, start);
+    Some(start)
+}
+
+/// Whether process `pid` is the one last seen with that id (one never seen: as far as is known, yes).
+pub fn same_process(pid: u32) -> bool {
+    let known = SEEN.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(&pid).copied();
+    known.is_none_or(|start| start_time(pid) == Some(start))
+}
+
 /// A process, then its parent, and so on up to (not including) pid 1; as far as /proc says.
 pub fn lineage(pid: u32) -> Vec<u32> {
     let mut out = Vec::new();
@@ -90,5 +120,22 @@ mod tests {
     #[test]
     fn this_process_is_listed() {
         assert!(processes().any(|(pid, _)| pid == std::process::id()));
+    }
+}
+
+#[cfg(test)]
+mod process_tests {
+    use super::*;
+
+    #[test]
+    fn a_process_is_known_by_its_id_and_start() {
+        let me = std::process::id();
+        assert!(start_time(me).is_some());
+        assert_eq!(saw(me), start_time(me));
+        assert!(same_process(me));
+        // Another start under the same id: not the same.
+        SEEN.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(me, 1);
+        assert!(!same_process(me));
+        assert!(same_process(u32::MAX - 1), "never seen: as far as is known");
     }
 }

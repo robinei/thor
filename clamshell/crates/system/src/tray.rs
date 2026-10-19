@@ -304,6 +304,10 @@ fn read_item(conn: &Connection, key: &str, dirs: &[PathBuf]) -> Result<(TrayItem
     let all = props.get_all(ITEM.try_into().map_err(zbus::Error::from)?)?;
     let text = |k: &str| all.get(k).and_then(|v| String::try_from(v.try_clone().ok()?).ok()).unwrap_or_default();
     let pid = DBusProxy::new(conn)?.get_connection_unix_process_id(BusName::try_from(name).map_err(zbus::Error::from)?).ok();
+    // (Remembered as it is now: what is done to it later by its id is checked to be it still.)
+    if let Some(pid) = pid {
+        crate::sys::saw(pid);
+    }
     let menu = all.get("Menu").and_then(|v| OwnedObjectPath::try_from(v.try_clone().ok()?).ok()).filter(|p| p.as_str() != "/");
     let entries = menu.as_ref().map(|m| read_menu(conn, name, m)).unwrap_or_default();
     let icon_name = text("IconName");

@@ -44,8 +44,8 @@ pub use ipc::Error;
 
 /// How long to wait before trying sway again.
 const RETRY: Duration = Duration::from_secs(2);
-/// Units remembered per process, at most (process ids are reused, so the cache is emptied now and then).
-const UNITS_KEPT: usize = 256;
+/// Processes' ancestries remembered, at most (by id and start time; emptied now and then).
+const LINEAGES_KEPT: usize = 256;
 
 lost_on!(Error: io::Error, serde_json::Error);
 
@@ -220,7 +220,7 @@ pub fn spawn(socket: Option<PathBuf>, bottom: String, sink: impl Sink) -> io::Re
             }
         }
     })?;
-    let mut windows = Windows { socket, top, down, land, sink, units: HashMap::new(), tried: HashSet::new() };
+    let mut windows = Windows { socket, top, down, land, sink, lineages: HashMap::new(), tried: HashSet::new() };
     worker::detached("sway windows", move || worker::supervise_alone(&mut windows, RETRY))?;
     Ok(Some(worker))
 }
@@ -256,7 +256,7 @@ struct Windows<S> {
     land: LandRules,
     sink: S,
     /// Each window's unit, by process (a process's unit never changes).
-    units: HashMap<u32, (Option<String>, Vec<u32>)>,
+    lineages: HashMap<(u32, Option<u64>), Vec<u32>>,
     /// Moves asked for, so a window sway won't move isn't asked again (and again, by its events).
     tried: HashSet<(i64, String)>,
 }
@@ -308,11 +308,16 @@ impl<S: Sink> Service for Windows<S> {
     fn run_while_up(&mut self, mut c: Connected, _: &Receiver<Infallible>) -> Result<(), Ended<Error>> {
         loop {
             let tree = c.queries.tree()?;
-            if self.units.len() > UNITS_KEPT {
-                self.units.clear();
+            if self.lineages.len() > LINEAGES_KEPT {
+                self.lineages.clear();
             }
-            let units = &mut self.units;
-            let list = windows::windows(&tree, &mut |pid| units.entry(pid).or_insert_with(|| (cgroup::unit_of(pid), crate::sys::lineage(pid))).clone());
+            // (A process's unit read each time: adopted, it changes; its ancestry kept, by its id and when
+            // it started, so a later process with the same id isn't taken for it.)
+            let lineages = &mut self.lineages;
+            let list = windows::windows(&tree, &mut |pid| {
+                let start = crate::sys::saw(pid);
+                (cgroup::unit_of(pid), lineages.entry((pid, start)).or_insert_with(|| crate::sys::lineage(pid)).clone())
+            });
             let top = self.top.get(&mut c.queries);
             let mut moved = false;
             for command in windows::reconcile(&list, top.as_deref(), &self.down.wanted(), &self.land.wanted(), &mut self.tried) {
