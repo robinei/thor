@@ -166,13 +166,17 @@ its file is renamed or deleted meanwhile.
 
 Programs' tray icons (StatusNotifierItem over D-Bus: Steam's, and any other program's) are on the dock
 too. ClamShell is the session's tray watcher where nothing else is (the Thor), else reads the one there (a
-desktop around the nested session). An icon is the running entry's whose scope its process is in, else
-the dock entry of the desktop file named as its id (`desktop:steam`), else a tile of its own with the
-library's picture for that name. A tile with one runs, and has a mark in its top left corner (three bars)
-that opens the program's menu; the long-press menu has it as Menu. A tap on a tile whose program has no
-window of ours asks the program to show itself (Steam started silently). Quit and Force kill of a program
-ClamShell didn't start end the icon's process (SIGTERM, SIGKILL). `clamshell --tray` lists the icons and
-their menus; `cargo run -p clamshell-system --example fake_tray` is a program with one, for testing.
+desktop around the nested session). An icon is the running entry's whose scope its process is in. A
+program ClamShell didn't start runs as an entry found by its icon: the desktop file named as the icon's
+id (`desktop:steam`), else one of its own named as the icon. Like any running entry it has its workspace:
+its windows (those of the icon's process, and of processes it started) are moved there wherever they
+open. A tile with an icon has a mark in its top left corner (three bars) that opens the program's menu;
+the long-press menu has it as Menu. A tap shows the program's windows, or (none open) asks it to show
+itself (Steam started silently), its window shown on its workspace. Quit closes its windows, then asks
+the icon's process to end (SIGTERM); Force kill kills it. A window's entry is found by its app id first
+(a Steam game's, though it runs in Steam's scope), then its scope, its process, its workspace.
+`clamshell --tray` lists the icons and their menus; `cargo run -p clamshell-system --example fake_tray`
+is a program with one, for testing (activated, it opens a terminal).
 
 ## Launches
 

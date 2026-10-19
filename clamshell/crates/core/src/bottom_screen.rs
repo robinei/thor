@@ -260,6 +260,7 @@ mod tests {
             unit: Some(unit.into()),
             workspace: if down { Instance::Bottom.name() } else { Instance::from_unit(unit).map_or_else(String::new, |i| i.workspace()) },
             down,
+            pids: vec![],
         }
     }
 
@@ -271,7 +272,18 @@ mod tests {
     }
 
     fn running(id: &str, key: &str) -> Running {
-        Running { id: id.into(), key: key.into(), origin: Origin::Ours, app_id: None, start: 0, launches: 1, adopted: false, entry: None }
+        Running {
+            id: id.into(),
+            key: key.into(),
+            origin: Origin::Ours,
+            app_id: None,
+            pid: None,
+            tray: None,
+            start: 0,
+            launches: 1,
+            adopted: false,
+            entry: None,
+        }
     }
 
     /// A game running (shelf's), with a top window and a second window, the second in front.

@@ -70,7 +70,7 @@ fn entry_tile(f: &mut Frame, r: Rect, i: usize, id: &std::sync::Arc<str>, severa
     let Some(game) = s.game(id) else {
         return;
     };
-    let running = s.runs(id);
+    let running = s.session().running(id).is_some();
     let in_force = several && s.program_in_force() == Some(id);
     let moving = s.dock().moving() == Some(id);
     let caption_tone = if moving { Tone::Accent } else { Tone::Normal };
@@ -112,7 +112,7 @@ fn draw_menu(f: &mut Frame, entry: &std::sync::Arc<str>) {
         return draw_tray_menu(f, &tray.title, entries);
     }
     let title = s.game(entry).map_or("", |g| g.title.as_str());
-    let running = s.runs(entry);
+    let running = s.session().running(entry).is_some();
     let pinned = s.dock().items().iter().any(|i| i.id == *entry && i.pinned);
     // (A tray icon's own tile isn't an entry of the library: it can't be pinned.)
     let pinnable = s.shelf().library().has(entry);

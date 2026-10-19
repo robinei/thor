@@ -22,6 +22,9 @@ pub struct Window {
     pub focused: bool,
     /// The systemd unit its process runs in.
     pub unit: Option<String>,
+    /// Its process, then that one's parent, and so on (pid 1 left out): a program found by its tray
+    /// icon's process has the windows of that process and of the processes it started.
+    pub pids: Vec<u32>,
     /// The workspace it is on.
     pub workspace: String,
     /// Moved to the bottom screen by us (sway's mark on it): left there.

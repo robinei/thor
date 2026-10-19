@@ -43,6 +43,9 @@ pub enum Front {
 pub enum Origin {
     /// By its launches: the launcher thread says when each has ended.
     Ours,
+    /// Found by its tray icon (a program not started by ClamShell, see [`crate::tray`]): it runs while the
+    /// icon is there, or a window of it is open.
+    Tray,
     /// By its windows, since `since` (epoch seconds): started by another program, or its launches ended
     /// while it ran on in a program not ours. It ends once it has had windows (`seen`) and has none, or
     /// none came by `until`; its play from `since` recorded then. Its windows: those with its app id, else
@@ -62,6 +65,10 @@ pub struct Running {
     pub origin: Origin,
     /// The app id its windows have, if it runs in another program's processes (see [`app_id_of`]).
     pub app_id: Option<Arc<str>>,
+    /// Found by a tray icon: the icon's process (windows of it, or of a process it started, are the
+    /// entry's) and the icon's key.
+    pub pid: Option<u32>,
+    pub tray: Option<Arc<str>>,
     /// When it first started (epoch seconds).
     pub start: u64,
     /// Its launches that run (ours: each ends on its own).
@@ -82,9 +89,20 @@ impl Running {
         }
     }
 
-    /// Whether `w` is one of its windows: by its app id (its workspace's are told by the session).
+    /// Whether `w` is one of its windows by its app id.
     pub fn owns(&self, w: &crate::windows::Window) -> bool {
         self.app_id.as_deref() == Some(w.app_id.as_str())
+    }
+
+    /// Whether `w` is one of its windows by its process: the tray icon's, or one it started.
+    pub fn fathered(&self, w: &crate::windows::Window) -> bool {
+        self.pid.is_some_and(|pid| w.pids.contains(&pid))
+    }
+
+    /// Whether its windows are found otherwise than by its scope (by app id, or by process), and so are
+    /// moved to its workspace wherever they open.
+    pub fn outside(&self) -> bool {
+        self.app_id.is_some() || self.pid.is_some()
     }
 
     /// Its workspace's name.
@@ -136,11 +154,11 @@ impl State {
         if session.windows.iter().any(|w| session.running_of(w).is_some_and(|o| o.id == r.id)) {
             return vec![Effect::Window(WindowCommand::Focus(r.workspace()))];
         }
+        let title = r.entry.as_ref().map_or_else(|| id.to_owned(), |g| g.title.clone());
         // (No window, but a tray icon: the program asked to show itself, Steam started silently.)
         if let Some(show) = self.activate_tray(id) {
             return vec![show];
         }
-        let title = r.entry.as_ref().map_or_else(|| id.to_owned(), |g| g.title.clone());
         self.notify(crate::hardware::NoticeKind::NoWindow(title));
         vec![]
     }
@@ -203,7 +221,7 @@ impl State {
                 let key = self.shelf.game(&game).map_or_else(|| clamshell_library::key_of(&game), |g| g.key.clone());
                 let entry = self.shelf.game(&game).cloned().map(Box::new);
                 let start = self.unix_secs;
-                session.running.push(Running { id: game, key, origin: Origin::Ours, app_id, start, launches: 1, adopted: false, entry });
+                session.running.push(Running { id: game, key, origin: Origin::Ours, app_id, pid: None, tray: None, start, launches: 1, adopted: false, entry });
             }
         }
         self.bottom.woken = false;
@@ -259,7 +277,7 @@ impl State {
             let now = self.unix_secs;
             let origin = Origin::Windows { since: now, until: now + HANDOFF, seen: false };
             let entry = Some(Box::new(entry));
-            self.session.running.push(Running { id: game, key, origin, app_id, start: now, launches: 0, adopted: false, entry });
+            self.session.running.push(Running { id: game, key, origin, app_id, pid: None, tray: None, start: now, launches: 0, adopted: false, entry });
         }
     }
 
@@ -292,6 +310,8 @@ impl State {
                 key: g.key.clone(),
                 origin: Origin::Windows { since: now, until: now, seen: true },
                 app_id: app_id_of(g),
+                pid: None,
+                tray: None,
                 start: now,
                 launches: 0,
                 adopted: false,
@@ -303,11 +323,12 @@ impl State {
             self.bottom.woken = false;
         }
         self.session.running.extend(new);
-        // Windows found by app id to their entry's workspace.
+        // Windows found by app id or by process to their entry's workspace.
         let session = &self.session;
-        for r in session.running.iter().filter(|r| r.app_id.is_some()) {
+        for r in session.running.iter().filter(|r| r.outside()) {
+            let mine = |w: &&crate::windows::Window| session.running_of(w).is_some_and(|o| o.id == r.id);
             let away: Vec<i64> =
-                session.windows.iter().filter(|w| r.owns(w) && !w.down && Instance::key_of(&w.workspace) != Some(&r.key)).map(|w| w.id).collect();
+                session.windows.iter().filter(mine).filter(|w| !w.down && Instance::key_of(&w.workspace) != Some(&r.key)).map(|w| w.id).collect();
             if !away.is_empty() {
                 effects.push(Effect::Window(WindowCommand::Move { windows: away, to: r.workspace() }));
             }
@@ -345,7 +366,9 @@ impl State {
             .map(|r| r.id.clone())
             .collect();
         let mut ended = Vec::new();
+        let icons: Vec<Arc<str>> = self.tray.iter().map(|t| t.key.clone()).collect();
         self.session.running.retain_mut(|r| match &mut r.origin {
+            Origin::Tray => r.tray.as_ref().is_some_and(|k| icons.contains(k)) || with.contains(&r.id),
             Origin::Windows { since, until, seen } => {
                 let has = with.contains(&r.id);
                 *seen |= has;
@@ -398,6 +421,8 @@ impl State {
                 key: key.to_owned(),
                 origin: Origin::Ours,
                 app_id: app_id_of(g),
+                pid: None,
+                tray: None,
                 start,
                 launches,
                 adopted: true,
@@ -452,6 +477,10 @@ impl State {
         let Some(r) = self.session.running(game) else {
             return vec![];
         };
+        // (Found by its tray icon: its process.)
+        if let (Origin::Tray, Some(pid)) = (r.origin, r.pid) {
+            return vec![Effect::Tray(crate::tray::TrayCommand::End { pid, force })];
+        }
         let mut effects = vec![match r.steam_appid() {
             Some(appid) => Effect::EndSteam { appid },
             None => Effect::EndRun { key: r.key.clone(), force },
@@ -588,6 +617,20 @@ mod tests {
         let fx = s.apply(Event::Windows(vec![])).1;
         assert!(!fx.iter().any(|e| matches!(e, Effect::RecordPlay { .. })), "{fx:?}");
         assert!(s.session().running("ff6").is_some());
+    }
+
+    #[test]
+    fn a_steam_games_window_is_the_games_though_it_runs_in_steams_scope() {
+        let mut s = steam_ff6();
+        let steam = Instance::Run { key: key("desktop:steam"), secs: 1, n: 0 };
+        s.apply(Event::Units(vec![steam.clone()]));
+        launch(&mut s, "ff6");
+        let landing = Instance::Landing.name();
+        let window = Window { unit: steam.unit(), ..win(7, "steam_app_620", &landing, true) };
+        let fx = s.apply(Event::Windows(vec![window.clone()])).1;
+        let ff6 = Instance::workspace_of(&key("ff6"));
+        assert!(fx.contains(&Effect::Window(WindowCommand::Move { windows: vec![7], to: ff6 })), "the game's, not Steam's: {fx:?}");
+        assert_eq!(s.session().running_of(&window).map(|r| &*r.id), Some("ff6"));
     }
 
     /// A Files tab with a file of its own and one that is a library entry's (zelda's).

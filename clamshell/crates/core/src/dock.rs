@@ -3,8 +3,8 @@
 //! running shows dimmed; a tap starts it. A tap on a running one shows its workspace (all its windows on
 //! the bottom screen: shows them there). A long press opens its menu: Open another (another launch,
 //! another tab; an app's only, see [`crate::Game::another`]), Close window (the one in view), Pin or Unpin, Move (the D-pad moves it, A or B ends),
-//! Quit and Force kill; a stopped one's: Unpin and Move. An entry with a tray icon (see [`crate::tray`])
-//! runs, and has Menu: its program's own menu, as a page of the same kind (a submenu another).
+//! Quit and Force kill; a stopped one's: Unpin and Move. A running entry with a tray icon (see
+//! [`crate::tray`]) has Menu: its program's own menu, as a page of the same kind (a submenu another).
 
 use std::sync::Arc;
 
@@ -81,24 +81,15 @@ impl State {
         &self.dock
     }
 
-    /// Whether a dock entry runs: as ClamShell's, or by its tray icon.
-    pub fn runs(&self, id: &str) -> bool {
-        self.session.running(id).is_some() || self.tray_of(id).is_some()
-    }
-
-    /// After anything that may start or stop an entry: those running (tray icons' own tiles too) and not
-    /// on the dock added at its end; those stopped and not pinned (nor being moved) gone. Whether it
-    /// changed.
+    /// After anything that may start or stop an entry: those running and not on the dock added at its
+    /// end; those stopped and not pinned (nor being moved) gone. Whether it changed.
     pub(crate) fn follow_dock(&mut self) -> bool {
         let before = self.dock.items.len();
-        let moving = self.dock.moving.clone();
-        let keep: Vec<bool> = self.dock.items.iter().map(|i| i.pinned || self.runs(&i.id) || moving.as_ref() == Some(&i.id)).collect();
-        let mut keep = keep.into_iter();
-        self.dock.items.retain(|_| keep.next().unwrap_or(true));
-        let removed = before != self.dock.items.len();
         let session = &self.session;
-        let mut new: Vec<Arc<str>> = session.running.iter().filter(|r| self.dock.position(&r.id).is_none()).map(|r| r.id.clone()).collect();
-        new.extend(self.tray_tile_ids().into_iter().filter(|id| self.dock.position(id).is_none()));
+        let moving = self.dock.moving.clone();
+        self.dock.items.retain(|i| i.pinned || session.running(&i.id).is_some() || moving.as_ref() == Some(&i.id));
+        let removed = before != self.dock.items.len();
+        let new: Vec<Arc<str>> = session.running.iter().filter(|r| self.dock.position(&r.id).is_none()).map(|r| r.id.clone()).collect();
         let added = !new.is_empty();
         self.dock.items.extend(new.into_iter().map(|id| DockItem { id, pinned: false }));
         removed || added
@@ -174,10 +165,6 @@ impl State {
     fn tap_entry(&mut self, entry: Arc<str>) -> Vec<Effect> {
         let session = &self.session;
         let Some(r) = session.running(&entry) else {
-            // (Its program runs, not as ours: shown by itself.)
-            if let Some(show) = self.activate_tray(&entry) {
-                return vec![show];
-            }
             return self.play(entry);
         };
         let mine = |w: &&Window| session.running_of(w).is_some_and(|o| o.id == r.id);
@@ -199,8 +186,6 @@ impl State {
                 self.dock.moving = Some(entry);
                 vec![]
             }
-            DockId::Quit if self.session.running(&entry).is_none() => self.end_tray(&entry, false),
-            DockId::ForceKill if self.session.running(&entry).is_none() => self.end_tray(&entry, true),
             DockId::Quit => self.quit(&entry),
             DockId::ForceKill => self.force_kill(&entry),
             _ => vec![],

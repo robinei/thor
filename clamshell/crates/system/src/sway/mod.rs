@@ -150,6 +150,11 @@ impl LandRules {
         }
         Ok(())
     }
+
+    /// The app ids wanted.
+    fn wanted(&self) -> Vec<Arc<str>> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner).0.clone()
+    }
 }
 
 /// The main screen's output: the first active one that isn't the second screen's. Kept by the window
@@ -251,7 +256,7 @@ struct Windows<S> {
     land: LandRules,
     sink: S,
     /// Each window's unit, by process (a process's unit never changes).
-    units: HashMap<u32, Option<String>>,
+    units: HashMap<u32, (Option<String>, Vec<u32>)>,
     /// Moves asked for, so a window sway won't move isn't asked again (and again, by its events).
     tried: HashSet<(i64, String)>,
 }
@@ -307,10 +312,10 @@ impl<S: Sink> Service for Windows<S> {
                 self.units.clear();
             }
             let units = &mut self.units;
-            let list = windows::windows(&tree, &mut |pid| units.entry(pid).or_insert_with(|| cgroup::unit_of(pid)).clone());
+            let list = windows::windows(&tree, &mut |pid| units.entry(pid).or_insert_with(|| (cgroup::unit_of(pid), crate::sys::lineage(pid))).clone());
             let top = self.top.get(&mut c.queries);
             let mut moved = false;
-            for command in windows::reconcile(&list, top.as_deref(), &self.down.wanted(), &mut self.tried) {
+            for command in windows::reconcile(&list, top.as_deref(), &self.down.wanted(), &self.land.wanted(), &mut self.tried) {
                 moved |= c.queries.command(&command).is_ok();
             }
             if !moved {

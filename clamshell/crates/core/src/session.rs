@@ -68,11 +68,17 @@ impl Session {
         }
     }
 
-    /// The running entry a window belongs to: by its scope (moved down too), its workspace, or its app id
-    /// (see [`crate::running::app_id_of`]).
+    /// The running entry a window belongs to, by the first that says: its app id (see
+    /// [`crate::running::app_id_of`]: a Steam game's, though it runs in Steam's scope), its scope (moved
+    /// down too), its process (a program found by its tray icon), its workspace.
     pub fn running_of(&self, w: &Window) -> Option<&Running> {
-        let key = w.unit.as_deref().and_then(Instance::key_of).or_else(|| Instance::key_of(&w.workspace));
-        self.running.iter().find(|r| key == Some(r.key.as_str()) || r.owns(w))
+        let by_key = |k: Option<&str>| self.running.iter().find(|r| k == Some(r.key.as_str()));
+        self.running
+            .iter()
+            .find(|r| r.owns(w))
+            .or_else(|| by_key(w.unit.as_deref().and_then(Instance::key_of)))
+            .or_else(|| self.running.iter().find(|r| r.fathered(w)))
+            .or_else(|| by_key(Instance::key_of(&w.workspace)))
     }
 
     /// The start time and counter for a new instance's name.
@@ -102,7 +108,7 @@ impl Session {
     pub(crate) fn show_pending(&mut self) -> Vec<Effect> {
         let arrived = self.pending_show.as_ref().is_some_and(|i| {
             let unit = i.unit();
-            let outside = self.running.iter().find(|r| Some(r.key.as_str()) == i.key()).is_some_and(|r| r.app_id.is_some());
+            let outside = self.running.iter().find(|r| Some(r.key.as_str()) == i.key()).is_some_and(Running::outside);
             self.windows.iter().any(|w| i.on(&w.workspace) && (outside || w.unit == unit))
         });
         match self.pending_show.take() {

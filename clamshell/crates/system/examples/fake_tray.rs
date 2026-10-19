@@ -1,6 +1,7 @@
 //! Development: a fake program with a tray icon (StatusNotifierItem and its dbusmenu menu), for testing
 //! ClamShell's tray without one. It registers with the watcher (ClamShell, in the device's session) and
-//! says on standard output what it is asked: `activate`, `clicked ID`. Its menu: Open (1), a submenu
+//! says on standard output what it is asked: `activate`, `clicked ID`. Activated, it opens a window: a
+//! terminal (foot) as a process of its own, as a program's window would be. Its menu: Open (1), a submenu
 //! Recent (2) with First (3) and Second (4), Disabled (5, greyed), Exit (6, which ends it).
 //!
 //!     cargo run -p clamshell-system --example fake_tray
@@ -19,6 +20,10 @@ struct Item;
 impl Item {
     fn activate(&self, _x: i32, _y: i32) {
         println!("activate");
+        match std::process::Command::new("foot").arg("--title=Fake Tray").spawn() {
+            Ok(child) => drop(std::thread::spawn(move || drop(child.wait_with_output()))),
+            Err(e) => println!("no window: {e}"),
+        }
     }
 
     #[zbus(property)]

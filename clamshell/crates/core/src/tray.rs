@@ -1,17 +1,19 @@
-//! Programs' tray icons (StatusNotifierItem, over D-Bus) and their menus, as the system reads them, on
-//! the dock. Each is someone's ([`State::tray_owner`]): the running entry whose scope its process is in;
-//! else the dock entry of the desktop file named as its id (`desktop:steam` for Steam's `steam`, started
-//! outside ClamShell); else a dock tile of its own (`tray:<key>`, its picture the library's desktop entry
-//! of that name, if there is one, else its own icon). A tile with one runs: a tap shows its windows, or
-//! (none of ours) asks the program to show itself; its corner mark opens the program's menu, and so
-//! does Menu in its long-press menu. Quit and Force kill of a program not started by ClamShell end the
-//! icon's process (asked, then killed).
+//! Programs' tray icons (StatusNotifierItem, over D-Bus) and their menus, as the system reads them. An
+//! icon is a running entry's: the one whose scope its process is in (started by ClamShell); else the
+//! program runs as an entry found by its icon ([`Origin::Tray`]): the library's desktop entry named as
+//! the icon's id (`desktop:steam` for Steam's `steam`), else one of its own (`tray:<key>`, its picture
+//! the icon). Like any running entry it is on the dock with a workspace of its own: its windows (those of
+//! the icon's process and of the processes it started) go there, wherever they open. A tap shows them,
+//! or (none open) asks the program to show itself, its window then shown there; the tile's corner mark
+//! opens the program's menu, and so does Menu in its long-press menu. Quit closes its windows, then asks
+//! the icon's process to end; Force kill kills it.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::effect::Effect;
 use crate::instance::Instance;
+use crate::running::{Origin, Running};
 use crate::{Game, State};
 
 /// A tray icon.
@@ -55,71 +57,70 @@ pub enum TrayCommand {
     End { pid: u32, force: bool },
 }
 
-/// The id of a tray icon's own dock tile.
-const TILE_PREFIX: &str = "tray:";
+/// The id of an entry found by a tray icon the library has no desktop file for.
+const PREFIX: &str = "tray:";
 
 impl State {
-    /// The tray icons, after any change.
+    /// The tray icons, after any change: programs not started by ClamShell run as entries found by
+    /// them, and end with them (or with their last window, if one is still open).
     pub(crate) fn set_tray(&mut self, items: Vec<TrayItem>) -> bool {
         if self.tray == items {
             return false;
         }
         self.tray = items;
-        self.follow_tray_tiles();
-        self.follow_dock();
+        self.follow_tray();
         true
     }
 
-    /// Whose tray icon `t` is (see the module's doc).
-    pub fn tray_owner(&self, t: &TrayItem) -> Arc<str> {
-        let key = t.unit.as_deref().and_then(Instance::from_unit).and_then(|i| i.key().map(str::to_owned));
-        if let Some(r) = key.and_then(|k| self.session.running.iter().find(|r| r.key == k)) {
-            return r.id.clone();
-        }
-        let named = format!("desktop:{}", t.id).to_lowercase();
-        if let Some(item) = self.dock.items().iter().find(|i| i.id.to_lowercase() == named) {
-            return item.id.clone();
-        }
-        format!("{TILE_PREFIX}{}", t.key).into()
-    }
-
-    /// The tray icon of a dock entry, if it has one.
-    pub fn tray_of(&self, entry: &str) -> Option<&TrayItem> {
-        self.tray.iter().find(|t| &*self.tray_owner(t) == entry)
-    }
-
-    /// The tiles of tray icons that are no entry's, as entries (see the module's doc): made again
-    /// whenever the icons or the library change.
-    pub(crate) fn follow_tray_tiles(&mut self) {
+    /// Entries found by tray icons: one for each icon of a program not started by ClamShell (its process
+    /// in no scope of ours) that isn't one's already.
+    pub(crate) fn follow_tray(&mut self) {
+        let now = self.unix_secs;
         let games = &self.shelf.library().games;
-        let tiles = self
-            .tray
-            .iter()
-            .filter_map(|t| {
-                let owner = self.tray_owner(t);
-                owner.starts_with(TILE_PREFIX).then(|| {
-                    let named = format!("desktop:{}", t.id).to_lowercase();
-                    let app = games.iter().find(|g| g.id.to_lowercase() == named);
-                    let title = app.map_or_else(|| t.title.clone(), |g| g.title.clone());
-                    Game {
-                        icon: app.and_then(|g| g.icon.clone()).or_else(|| t.icon.clone()),
-                        tool: true,
-                        ..Game::new(&owner, if title.is_empty() { &t.id } else { &title })
-                    }
-                })
-            })
-            .collect();
-        self.tray_tiles = tiles;
+        let mut new = Vec::new();
+        for t in &self.tray {
+            let ours = t.unit.as_deref().and_then(Instance::from_unit).is_some();
+            let Some(pid) = t.pid.filter(|_| !ours) else {
+                continue;
+            };
+            if self.session.running.iter().any(|r| r.tray.as_deref() == Some(&*t.key)) {
+                continue;
+            }
+            let named = format!("desktop:{}", t.id).to_lowercase();
+            let game = match games.iter().find(|g| g.id.to_lowercase() == named) {
+                Some(g) => g.clone(),
+                None => {
+                    let title = if t.title.is_empty() { &t.id } else { &t.title };
+                    Game { icon: t.icon.clone(), tool: true, ..Game::new(&format!("{PREFIX}{}", t.key), title) }
+                }
+            };
+            // (Its entry runs already, found otherwise: its icon is that one's.)
+            if let Some(r) = self.session.running.iter_mut().find(|r| r.id == game.id) {
+                r.tray = Some(t.key.clone());
+                r.pid = r.pid.or(Some(pid));
+                continue;
+            }
+            new.push(Running {
+                id: game.id.clone(),
+                key: game.key.clone(),
+                origin: Origin::Tray,
+                app_id: None,
+                pid: Some(pid),
+                tray: Some(t.key.clone()),
+                start: now,
+                launches: 0,
+                adopted: false,
+                entry: Some(Box::new(game)),
+            });
+        }
+        self.session.running.extend(new);
     }
 
-    /// The tiles of tray icons that are no entry's (see [`State::follow_tray_tiles`]).
-    pub(crate) fn tray_tile(&self, id: &str) -> Option<&Game> {
-        self.tray_tiles.iter().find(|g| &*g.id == id)
-    }
-
-    /// The ids of tray icons' own tiles, for the dock.
-    pub(crate) fn tray_tile_ids(&self) -> Vec<Arc<str>> {
-        self.tray_tiles.iter().map(|g| g.id.clone()).collect()
+    /// The tray icon of a running entry, if it has one: its scope's process's, or the one it was found by.
+    pub fn tray_of(&self, entry: &str) -> Option<&TrayItem> {
+        let r = self.session.running(entry)?;
+        let in_scope = |t: &&TrayItem| t.unit.as_deref().and_then(Instance::from_unit).is_some_and(|i| i.key() == Some(r.key.as_str()));
+        self.tray.iter().find(|t| r.tray.as_deref() == Some(&*t.key) || in_scope(t))
     }
 
     /// The menu page open (the entry's tray icon, and the entries of the submenu open), if one is.
@@ -154,16 +155,13 @@ impl State {
         vec![click]
     }
 
-    /// A tap on a dock entry whose program shows no window of ours, with a tray icon: the program asked
-    /// to show itself.
-    pub(crate) fn activate_tray(&self, entry: &str) -> Option<Effect> {
-        self.tray_of(entry).map(|t| Effect::Tray(TrayCommand::Activate(t.key.clone())))
-    }
-
-    /// Quit or Force kill of an entry that doesn't run as ClamShell's but has a tray icon: its process
-    /// asked to end, or killed.
-    pub(crate) fn end_tray(&self, entry: &str, force: bool) -> Vec<Effect> {
-        self.tray_of(entry).and_then(|t| t.pid).map(|pid| Effect::Tray(TrayCommand::End { pid, force })).into_iter().collect()
+    /// Showing a running entry with no window open, with a tray icon: the program asked to show itself,
+    /// and its window shown when it comes (on the entry's workspace, moved there if it opens elsewhere).
+    pub(crate) fn activate_tray(&mut self, entry: &str) -> Option<Effect> {
+        let key = self.tray_of(entry)?.key.clone();
+        let r = self.session.running(entry)?;
+        self.session.pending_show = Some(Instance::Run { key: r.key.clone(), secs: self.unix_secs, n: 0 });
+        Some(Effect::Tray(TrayCommand::Activate(key)))
     }
 }
 
@@ -173,7 +171,8 @@ mod tests {
     use super::*;
     use crate::id::{DockId, Id};
     use crate::testkit::*;
-    use crate::{Event, PointerEvent};
+    use crate::windows::{self, Window};
+    use crate::{Event, WindowCommand};
 
     fn entry(id: i32, label: &str, children: Vec<TrayEntry>) -> TrayEntry {
         TrayEntry { id, label: label.into(), enabled: true, checked: None, children }
@@ -189,25 +188,35 @@ mod tests {
     }
 
     #[test]
-    fn a_tray_icon_is_its_programs_entry_or_a_tile_of_its_own() {
+    fn a_program_with_a_tray_icon_runs_with_its_windows_on_its_workspace() {
         let mut s = state();
-        // A running entry's (its process in the entry's scope): its menu, no tile of its own.
+        let shelf = win(1, windows::SHELF_APP_ID, &Instance::Shelf.name(), true);
+        s.apply(Event::Windows(vec![shelf.clone()]));
+        // A running entry's (its process in the entry's scope): its menu.
         let zelda = launch(&mut s, "zelda-lttp");
-        s.apply(Event::Tray(vec![item(":1.5/a", "zelda3", zelda.unit().as_deref())]));
+        let zelda_icon = item(":1.5/a", "zelda3", zelda.unit().as_deref());
+        s.apply(Event::Tray(vec![zelda_icon.clone()]));
         assert_eq!(s.tray_of("zelda-lttp").map(|t| &*t.key), Some(":1.5/a"));
-        assert_eq!(s.dock().items().len(), 1);
-        // A program not started by ClamShell (Firefox's desktop file named as its id): a tile of its own,
-        // the library's picture and title.
-        s.apply(Event::Tray(vec![item(":1.5/a", "zelda3", zelda.unit().as_deref()), item(":1.9/b", "firefox", None)]));
-        let tile: Arc<str> = "tray::1.9/b".into();
-        assert_eq!(s.dock().items().last().map(|i| i.id.clone()), Some(tile.clone()));
-        assert_eq!(s.game(&tile).map(|g| g.title.as_str()), Some("Firefox"));
-        assert!(s.runs(&tile));
-        // A tap: the program shows itself. Quit and Force kill: its process.
-        let at = s.dock().items().iter().position(|i| i.id == tile).unwrap() as u16;
+        assert_eq!(s.session().running_entries().len(), 1);
+        // A program not started by ClamShell (Firefox's desktop file named as its id): it runs as that entry.
+        let firefox_icon = item(":1.9/b", "firefox", None);
+        s.apply(Event::Tray(vec![zelda_icon.clone(), firefox_icon.clone()]));
+        let r = s.session().running("desktop:firefox").unwrap();
+        assert_eq!((r.origin, r.pid), (Origin::Tray, Some(77)));
+        let ws = r.workspace();
+        assert!(s.dock().items().iter().any(|i| &*i.id == "desktop:firefox"), "on the dock");
+        // No window: a tap asks it to show itself; its window, opening on shelf's workspace (its process a
+        // child of the icon's), goes to its own, and is shown there.
+        let at = s.dock().items().iter().position(|i| &*i.id == "desktop:firefox").unwrap() as u16;
         assert_eq!(tap_dock(&mut s, DockId::Entry(at)), vec![Effect::Tray(TrayCommand::Activate(":1.9/b".into()))]);
-        s.apply(PointerEvent::LongPress(Id::Dock(DockId::Entry(at))).into());
-        assert_eq!(tap_dock(&mut s, DockId::Quit), vec![Effect::Tray(TrayCommand::End { pid: 77, force: false })]);
+        let window = Window { pids: vec![900, 77], ..win(6, "firefox", &Instance::Shelf.name(), true) };
+        let (_, fx) = s.apply(Event::Windows(vec![shelf.clone(), window.clone()]));
+        assert!(fx.contains(&Effect::Window(WindowCommand::Move { windows: vec![6], to: ws.clone() })), "{fx:?}");
+        let moved = Window { workspace: ws.clone(), ..window };
+        let (_, fx) = s.apply(Event::Windows(vec![shelf.clone(), moved.clone()]));
+        assert!(fx.contains(&Effect::Window(WindowCommand::Focus(ws.clone()))), "{fx:?}");
+        // With its window open, a tap shows it.
+        assert_eq!(tap_dock(&mut s, DockId::Entry(at)), vec![Effect::Window(WindowCommand::Focus(ws.clone()))]);
         // Its corner mark: its menu; a submenu opens, Back goes up, an entry is clicked and it closes.
         tap_dock(&mut s, DockId::Tray(at));
         assert_eq!(s.tray_page().map(|(_, e)| e.len()), Some(3));
@@ -217,13 +226,18 @@ mod tests {
         assert_eq!(s.tray_page().map(|(_, e)| e.len()), Some(3));
         assert_eq!(tap_dock(&mut s, DockId::TrayEntry(4)), vec![Effect::Tray(TrayCommand::Click { item: ":1.9/b".into(), id: 4 })]);
         assert!(s.dock().menu().is_none());
-        // Gone: its tile too.
-        s.apply(Event::Tray(vec![]));
-        assert!(!s.dock().items().iter().any(|i| i.id == tile));
-        // On the dock as itself (pinned): the icon is that entry's, no tile of its own.
-        s.toggle_pin("desktop:firefox".into());
-        s.apply(Event::Tray(vec![item(":1.9/b", "firefox", None)]));
-        assert!(s.tray_of("desktop:firefox").is_some() && s.runs("desktop:firefox"));
-        assert!(!s.dock().items().iter().any(|i| i.id == tile));
+        // Quit: its windows closed, then its process asked to end. Force kill: killed.
+        let id: Arc<str> = "desktop:firefox".into();
+        assert_eq!(s.quit(&id), vec![Effect::Window(WindowCommand::Close(vec![6]))]);
+        let (_, fx) = s.apply(Event::Windows(vec![shelf.clone()]));
+        assert!(fx.contains(&Effect::Tray(TrayCommand::End { pid: 77, force: false })), "{fx:?}");
+        assert_eq!(s.force_kill("desktop:firefox"), vec![Effect::Tray(TrayCommand::End { pid: 77, force: true })]);
+        // Its icon gone (and no window): ended.
+        s.apply(Event::Tray(vec![zelda_icon.clone()]));
+        assert!(s.session().running("desktop:firefox").is_none());
+        // One the library has no desktop file for: an entry of its own, named as the icon.
+        s.apply(Event::Tray(vec![zelda_icon, item(":1.7/c", "thing", None)]));
+        assert_eq!(s.game("tray::1.7/c").map(|g| g.title.as_str()), Some("thing"));
+        assert!(s.dock().items().iter().any(|i| &*i.id == "tray::1.7/c"));
     }
 }

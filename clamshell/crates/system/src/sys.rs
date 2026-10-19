@@ -27,6 +27,25 @@ pub fn processes() -> impl Iterator<Item = (u32, PathBuf)> {
     fs::read_dir("/proc").into_iter().flatten().flatten().filter_map(|e| Some((e.file_name().to_str()?.parse().ok()?, e.path())))
 }
 
+/// A process, then its parent, and so on up to (not including) pid 1; as far as /proc says.
+pub fn lineage(pid: u32) -> Vec<u32> {
+    let mut out = Vec::new();
+    let mut at = pid;
+    // (A bound: /proc read as it changes can't loop forever.)
+    while at > 1 && out.len() < 64 {
+        out.push(at);
+        let Some(stat) = text(format!("/proc/{at}/stat")) else {
+            break;
+        };
+        // (Its fourth field, after the name in parentheses, which may hold anything.)
+        let Some(parent) = stat.rsplit_once(')').and_then(|(_, rest)| rest.split_whitespace().nth(1)?.parse().ok()) else {
+            break;
+        };
+        at = parent;
+    }
+    out
+}
+
 const POWER_SUPPLY: &str = "/sys/class/power_supply";
 
 /// The battery that powers the system: the first power supply of type Battery that isn't a device's
