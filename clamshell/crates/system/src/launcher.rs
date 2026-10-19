@@ -8,9 +8,10 @@
 //!   is started with it as a launch of Steam's desktop entry (its scope, so it is on the dock and outlives
 //!   ClamShell; ClamShell finds it by its scope), without the game's environment (Steam's own would be
 //!   it, for every game it starts). Once Steam's launcher for it runs, it and what it started are moved
-//!   into the launch's own scope (as any launch's, in the entry's slice): the game is counted, frozen and
-//!   ended apart from Steam; it counts as running while Steam's launcher
-//!   process for that app id (`reaper SteamLaunch AppId=<id>`) exists.
+//!   into the launch's own scope (as any launch's, in the entry's slice), and so is any later one for it
+//!   (Steam may run a setup first, then the game): the game is counted, frozen and ended apart from
+//!   Steam; it counts as running while Steam's launcher process for that app id (`reaper SteamLaunch
+//!   AppId=<id>`) exists, or did within [`STEAM_GAP`].
 //!
 //! Every play is added to the database (see [`crate::store`]) and reported, with its start and duration.
 
@@ -34,6 +35,9 @@ use crate::{Closed, Sink, command, sys, units};
 const GAME_START: Duration = Duration::from_secs(30);
 /// How long Steam may take to start a game (it may need to start or update first).
 const STEAM_START: Duration = Duration::from_secs(120);
+/// How long a Steam game counts as running with no launcher of Steam's for it: Steam may run a setup
+/// first (Proton's install scripts, in a fresh Steam), then the game, under launchers of their own.
+const STEAM_GAP: Duration = Duration::from_secs(10);
 
 pub struct Request {
     pub game: Arc<str>,
@@ -134,8 +138,12 @@ enum Running {
     /// Started by sway: it runs while its scope does.
     Scope(String),
     Child(Child),
-    /// Steam's launcher for it runs (this marker in its command line).
-    Steam(String),
+    /// Steam's launcher for it runs (this marker in its command line); the launch's own scope and slice
+    /// its processes are moved to, if any.
+    Steam {
+        marker: String,
+        scope: Option<(String, Option<String>)>,
+    },
 }
 
 impl Running {
@@ -144,11 +152,20 @@ impl Running {
         match self {
             Running::Scope(unit) => Ok(units::wait(&unit, GAME_START)?),
             Running::Child(mut child) => child.wait().map(drop).map_err(Error::from),
-            Running::Steam(marker) => {
-                while steam_running(&marker) {
+            Running::Steam { marker, scope } => {
+                let mut seen = Instant::now();
+                loop {
+                    let launchers = steam_launchers(&marker);
+                    if !launchers.is_empty() {
+                        seen = Instant::now();
+                        if let Some((unit, slice)) = &scope {
+                            gather(&marker, unit, slice.as_deref(), &launchers);
+                        }
+                    } else if seen.elapsed() > STEAM_GAP {
+                        return Ok(());
+                    }
                     thread::sleep(Duration::from_secs(2));
                 }
-                Ok(())
             }
         }
     }
@@ -191,6 +208,11 @@ fn play(config: &Config, request: &Request, sink: &impl Sink) -> Result<(), Clos
 
 /// Starts the game a request is for.
 fn start(config: &Config, request: &Request) -> Result<Running, Error> {
+    if config.scope
+        && let Some(slice) = request.instance.slice()
+    {
+        units::thaw_slice(&slice);
+    }
     match &request.launch {
         Launch::Program { argv, .. } if argv.is_empty() => Err(Error::EmptyCommand),
         Launch::Program { argv, workdir } => start_program(config, request, argv.clone(), workdir.clone()),
@@ -258,17 +280,26 @@ fn start_steam(config: &Config, request: &Request, appid: u32) -> Result<Running
         }
         thread::sleep(Duration::from_secs(1));
     }
-    // The game in the launch's own scope, out of Steam's (see the module's doc).
-    if config.scope
-        && let Some(unit) = request.instance.unit()
-    {
-        let pids = with_descendants(&steam_launchers(&marker), &parents());
-        match crate::units::adopt(&unit, request.instance.slice().as_deref(), &pids) {
-            Ok(()) => log::info!("launcher: Steam app {appid} in {unit} ({} processes)", pids.len()),
-            Err(e) => log::warn!("launcher: Steam app {appid}: its own scope: {e}"),
-        }
+    // The game in the launch's own scope, out of Steam's (see the module's doc), as long as it runs.
+    let scope = request.instance.unit().filter(|_| config.scope).map(|unit| (unit, request.instance.slice()));
+    if let Some((unit, slice)) = &scope {
+        gather(&marker, unit, slice.as_deref(), &steam_launchers(&marker));
     }
-    Ok(Running::Steam(marker))
+    Ok(Running::Steam { marker, scope })
+}
+
+/// Steam's launchers for a game (`launchers`, `marker` in their command line) and what they started,
+/// those not yet in the launch's scope `unit`: moved there.
+fn gather(marker: &str, unit: &str, slice: Option<&str>, launchers: &[u32]) {
+    let outside = |pid: &u32| !sys::text(format!("/proc/{pid}/cgroup")).is_some_and(|c| c.trim_end().ends_with(&format!("/{unit}")));
+    let pids: Vec<u32> = with_descendants(launchers, &parents()).into_iter().filter(outside).collect();
+    if pids.is_empty() {
+        return;
+    }
+    match crate::units::adopt(unit, slice, &pids) {
+        Ok(()) => log::info!("launcher: Steam's {marker} in {unit} ({} processes)", pids.len()),
+        Err(e) => log::warn!("launcher: Steam's {marker}: its own scope: {e}"),
+    }
 }
 
 /// Steam's desktop entry, whose launches Steam started for a game is one of.

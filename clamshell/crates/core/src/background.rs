@@ -71,8 +71,11 @@ impl State {
             }
             let paused = self.background.paused.contains(&r.key);
             let setting = self.settings_of(&r.id).get(Setting::Background);
+            // (One quitting isn't paused: frozen, it couldn't end. Nor one without a window: none hidden,
+            // it is starting, between windows, or ending, Steam's Stop for one.)
+            let quitting = session.quitting.iter().any(|(g, ..)| *g == r.id);
             match setting {
-                1 if !shown && had => {
+                1 if !shown && !mine.is_empty() && !quitting => {
                     let since = self.background.hidden.iter().find(|(id, _)| *id == r.id).map_or(now, |(_, t)| *t);
                     kept.hidden.push((r.id.clone(), since));
                     if paused || now.saturating_sub(since) >= GRACE {
@@ -83,7 +86,7 @@ impl State {
                     }
                 }
                 _ if paused => effects.push(Effect::Freeze { slice: Instance::slice_of(&r.key), frozen: false }),
-                2 if had && mine.is_empty() && !self.session.quitting.iter().any(|(g, ..)| *g == r.id) => end.push(r.id.clone()),
+                2 if had && mine.is_empty() && !quitting => end.push(r.id.clone()),
                 _ => {}
             }
         }
@@ -216,6 +219,10 @@ mod tests {
         assert!(s.paused("zelda-lttp"));
         let id: Arc<str> = "zelda-lttp".into();
         assert_eq!(s.quit(&id), vec![freeze(&key, false), Effect::Window(WindowCommand::Close(vec![3]))]);
+        // Its window gone, it ends: not paused meanwhile, though hidden.
+        s.apply(Event::Windows(vec![]));
+        s.apply(Event::Tick { unix_secs: 130 });
+        assert!(!s.paused("zelda-lttp"), "quitting");
     }
 
     #[test]
@@ -253,6 +260,23 @@ mod tests {
         assert!(s.apply(Event::Tick { unix_secs: 113 }).1.contains(&pause));
         // Shown again: resumed.
         assert!(s.apply(Event::Windows(vec![window(true)])).1.contains(&resume));
+    }
+
+    #[test]
+    fn one_paused_whose_windows_go_is_thawed_to_end() {
+        let mut s = state();
+        let zelda = launch(&mut s, "zelda-lttp");
+        let key = zelda.key().unwrap().to_owned();
+        s.settings.set(Some(&"zelda-lttp".into()), Setting::Background, Some(1));
+        let window = |visible| Window { unit: zelda.unit(), visible, ..win(3, "zelda3", &zelda.workspace(), visible) };
+        s.apply(Event::Tick { unix_secs: 100 });
+        s.apply(Event::Windows(vec![window(false)]));
+        s.apply(Event::Tick { unix_secs: 103 });
+        assert!(s.paused("zelda-lttp"));
+        // Its window closed from outside (Steam's Stop): thawed, to end; not paused again.
+        assert!(s.apply(Event::Windows(vec![])).1.contains(&freeze(&key, false)));
+        s.apply(Event::Tick { unix_secs: 110 });
+        assert!(!s.paused("zelda-lttp"), "no window: none hidden");
     }
 
     #[test]

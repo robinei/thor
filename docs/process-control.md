@@ -167,23 +167,32 @@ crate: about 8 wakeups a second between them, no CPU, idle threads waking every 
 - ClamShell launching it (the nested session, Steam already running): the game ran in the launch's own
   scope, in the entry's slice; stopping that scope ended it, Steam recording the end.
 
-Still to try: a Proton game, an emulator, a game with online play, long freezes (minutes), and all of it
-on the Thor (Freedreno, FEX).
+Still to try: a game with online play, and all of it on the Thor (Freedreno, FEX).
 
 - RetroArch (snes9x) frozen for 10 s the same way: alive after, its sound stream open, drawing on.
 - In the background, live in the nested session: the SNES runner set to Pauses hidden, a game launched,
   hidden behind shelf (Home): its slice frozen after the grace, thawed as it was shown again (it went
   on), and Quit ended it.
+- A Proton game (the Resident Evil 6 benchmark, Proton Experimental) on the desktop, in the nested
+  session: frozen 2 minutes behind shelf, no CPU used meanwhile, drawing on once shown. Stopped from
+  Steam's own Stop while frozen behind Steam's window: Steam closed its window, ClamShell thawed it, it
+  ended within 2 s and Steam showed it stopped.
 
 ## Done
 
 - The modes above: in a desktop's session ClamShell adopts nothing it didn't start (its tray programs
   stay the desktop's; an icon of ClamShell's own launch still gives its entry a menu).
 - A Steam game ClamShell launches runs in the launch's own scope (moved there once Steam's launcher for
-  it runs): counted, frozen and ended apart from Steam.
+  it runs, and any later one for it as long as it runs: a fresh Steam may run Proton's install scripts
+  first, under a launcher of their own, then the game): counted, frozen and ended apart from Steam. It
+  counts as ended once no launcher of Steam's for it has run for 10 s. Steam's Stop and its Running
+  state work as before (Steam finds the game by its launcher process, not by its cgroup).
 - In the background, a setting (All, a runner, an item): Runs hidden (default), Pauses hidden (its slice
-  frozen once no window of it has been shown for 3 s; thawed when shown, and before Quit, Force kill or
-  being shown), Quits closed (ended once it has had a window and has none left). Only launches of
+  frozen once it has windows and none has been shown for 3 s; thawed when shown, before Quit, Force kill
+  or being shown, and when its windows are gone: one closed from outside, as Steam's Stop does, could
+  otherwise not end; not paused while quitting), Quits closed (ended once it has had a window and has
+  none left). A slice left frozen (by a ClamShell before, which a new one doesn't know paused it) is
+  thawed when ClamShell starts and before a launch into it: systemd starts no scope in a frozen slice. Only launches of
   ClamShell's have a slice to freeze or stop; programs found by their windows or tray icons run on.
 - Start with ClamShell, in an entry's dock menu (saved): once ClamShell knows what runs (systemd's
   first list of its scopes), each such entry that doesn't run is launched on its own workspace, not

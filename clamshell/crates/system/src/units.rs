@@ -44,6 +44,7 @@ trait Manager {
     fn stop_unit(&self, name: &str, mode: &str) -> zbus::Result<OwnedObjectPath>;
     fn freeze_unit(&self, name: &str) -> zbus::Result<()>;
     fn thaw_unit(&self, name: &str) -> zbus::Result<()>;
+    fn attach_processes_to_unit(&self, name: &str, subcgroup: &str, pids: &[u32]) -> zbus::Result<()>;
     fn start_transient_unit(
         &self,
         name: &str,
@@ -125,12 +126,16 @@ fn orphaned(cgroups: &std::path::Path, group: &str, proc: &std::path::Path) -> b
 }
 
 /// Sends [`Event::Units`] at start and after every change of our scopes; connects again if the bus goes.
+/// At start, our slices are thawed: one a ClamShell before this one froze would stay frozen, this one
+/// not knowing it paused it (one hidden is frozen again after the grace).
 pub fn spawn(sink: impl Sink) -> io::Result<()> {
-    worker::detached("units", move || worker::supervise_alone(&mut Units { sink }, RETRY))
+    worker::detached("units", move || worker::supervise_alone(&mut Units { sink, thawed: false }, RETRY))
 }
 
 struct Units<S> {
     sink: S,
+    /// Our slices have been thawed (once, at start).
+    thawed: bool,
 }
 
 impl<S: Sink> Service for Units<S> {
@@ -142,6 +147,12 @@ impl<S: Sink> Service for Units<S> {
     fn connect(&mut self) -> Result<ManagerProxy<'static>, Error> {
         let manager = manager(&Connection::session()?)?;
         manager.subscribe()?;
+        if !std::mem::replace(&mut self.thawed, true) {
+            let slices = manager.list_units_by_patterns(&[], &["clamshell-run-*.slice"])?;
+            for (name, ..) in slices {
+                thaw_now(&manager, &name);
+            }
+        }
         Ok(manager)
     }
 
@@ -189,18 +200,41 @@ fn loaded(manager: &ManagerProxy, name: &str) -> bool {
     manager.get_unit(name).is_ok()
 }
 
-/// Moves running processes into a new scope `unit` (in `slice`, if given), as a launch's own: for a
-/// program another program started (a Steam game, under Steam's launcher), so that it is counted,
-/// frozen and ended as the launch, apart from its starter. What they start later is in it too.
+/// Moves running processes into scope `unit`, a new one (in `slice`, if given) unless it is there, as a
+/// launch's own: for a program another program started (a Steam game, under Steam's launcher), so that
+/// it is counted, frozen and ended as the launch, apart from its starter. What they start later is in it
+/// too.
 pub fn adopt(unit: &str, slice: Option<&str>, pids: &[u32]) -> Result<(), Error> {
     use zbus::zvariant::Value;
     let manager = manager(&Connection::session()?)?;
-    let mut properties = vec![("PIDs", Value::from(pids.to_vec())), ("CollectMode", Value::from("inactive-or-failed"))];
+    if loaded(&manager, unit) {
+        manager.attach_processes_to_unit(unit, "", pids)?;
+        return Ok(());
+    }
+    // (Delegated: a user manager moves processes into a unit later only if it is.)
+    let mut properties = vec![("PIDs", Value::from(pids.to_vec())), ("CollectMode", Value::from("inactive-or-failed")), ("Delegate", Value::from(true))];
     if let Some(slice) = slice {
         properties.push(("Slice", Value::from(slice)));
     }
     manager.start_transient_unit(unit, "fail", &properties, &[])?;
     Ok(())
+}
+
+/// Thaws a launch's slice before it starts (one left frozen: systemd starts no scope in it).
+pub fn thaw_slice(slice: &str) {
+    match Connection::session().map_err(Error::from).and_then(|c| Ok(manager(&c)?)) {
+        Ok(manager) => thaw_now(&manager, slice),
+        Err(e) => log::debug!("thawing {slice}: {e}"),
+    }
+}
+
+/// Thaws a unit, if it is there and frozen (otherwise systemd does nothing).
+fn thaw_now(manager: &ManagerProxy, unit: &str) {
+    if loaded(manager, unit)
+        && let Err(e) = manager.thaw_unit(unit)
+    {
+        log::debug!("thawing {unit}: {e}");
+    }
 }
 
 /// Freezes a unit (a slice: every scope in it), or thaws it, on a thread of its own: the cgroup freezer,
