@@ -298,7 +298,12 @@ impl Settings {
     /// The settings `game` runs with below `levels` (its runner's: see [`crate::runner_key`]): the global
     /// ones, each level's overrides over them, then its own.
     pub fn of_in(&self, game: &str, levels: &[&str]) -> Values {
-        let inherited = levels.iter().fold(self.global, |values, f| self.overrides_of(f).over(&values));
+        self.of_over(self.global, game, levels)
+    }
+
+    /// The same, over `base` instead of the global values.
+    pub fn of_over(&self, base: Values, game: &str, levels: &[&str]) -> Values {
+        let inherited = levels.iter().fold(base, |values, f| self.overrides_of(f).over(&values));
         self.overrides_of(game).over(&inherited)
     }
 

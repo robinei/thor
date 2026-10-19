@@ -191,14 +191,23 @@ Still to try: a game with online play, and all of it on the Thor (Freedreno, FEX
   which finds it running and moves it in, so it too is paused and ended as any launch (its slice);
   nothing is Steam's own way any more. Steam's Stop and its Running
   state work as before (Steam finds the game by its launcher process, not by its cgroup).
-- In the background, a setting (All, a runner, an item): Runs hidden (default), Pauses hidden (its slice
-  frozen once it has windows and none has been shown for 3 s; thawed when shown, before Quit, Force kill
+- In the background, a setting (All, a runner, an item): Runs hidden (the default for apps), Pauses hidden (the default for games:
+  its slice frozen once it has windows and none has been shown for 10 s; thawed when shown, before Quit, Force kill
   or being shown, and when its windows are gone: one closed from outside, as Steam's Stop does, could
   otherwise not end; not paused while quitting), Quits closed (ended once it has had a window and has
   none left). A slice left frozen (by a ClamShell before, which a new one doesn't know paused it) is
   thawed when ClamShell starts and before a launch into it: systemd starts no scope in a frozen slice. Only launches of
   ClamShell's have a slice to freeze or stop (Steam's games and tray programs are moved into one);
   Android's apps are paused by their runner; a file opened in an app's running instance runs on.
+- Games are paused when hidden unless set otherwise, as consoles do: an entry that is a game (not an
+  app, a film, a file; a desktop file in the Game category unless it is a game launcher or a tool for
+  games: also an emulator, package manager, network program or utility, or one of a short list by id:
+  Heroic, Faugus, itch, GOverlay and the like), and a runner's level all of whose entries are games.
+  One that minds (online play) is set to run, per game or runner. A freeze waits while the slice works
+  without drawing (over 0.5 of a core, the GPU under 5 %, looked at for 2 s at a time: loading,
+  compiling shaders, which the user switched away to wait for); a game hidden but drawing on uses the
+  GPU and is frozen. Tried: the Resident Evil 6 benchmark, no setting, frozen 12 s after Home (the grace
+  and the look), thawed when shown; a busy loop's slice not frozen while it ran, frozen once it didn't.
 - Anything with a window is on the dock: a window no entry has makes its program an entry found by it
   (the library's desktop entry named as its app id, else one of its own, `window:<app id>`), its
   windows on its workspace, shown if one was in front. Not a window a systemd service opened (a portal's

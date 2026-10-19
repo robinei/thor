@@ -94,7 +94,7 @@ Its cost, measured on the desktop with an app drawing at 50 fps: 0.1 % of a core
 Android's apps share one container, so they are paused together: the Android runner's `pause` and
 `resume` (the script's `--pause`, `--resume`: Waydroid's container service freezes and thaws the
 container's cgroup, no root needed). With In the background set to Pauses hidden for the Android runner,
-Android is frozen once none of its apps has been shown for 3 s (none running too) and none is starting
+Android is frozen once none of its apps has been shown for 10 s (none running too) and none is starting
 (launched, no window yet: it would never draw one), and thawed as one is shown or launched; a launch thaws
 it first in any case. Android's own sleep (it asks to suspend once no window of it is shown, and Waydroid
 freezes the container: `persist.waydroid.suspend`) is turned off at setup, so that ClamShell's setting

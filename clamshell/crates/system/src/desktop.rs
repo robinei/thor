@@ -43,6 +43,23 @@ struct Entry {
     single_window: bool,
 }
 
+/// Desktop files in the Game category alone that are no game: game launchers and tools for games (by
+/// id). Others are told by a category no game is in (Steam's Network, Lutris' PackageManager).
+const NOT_GAMES: &[&str] = &[
+    "com.heroicgameslauncher.hgl",
+    "heroic",
+    "io.github.Faugus.faugus-launcher",
+    "faugus-launcher",
+    "io.itch.itch",
+    "itch",
+    "io.github.sharkwouter.Minigalaxy",
+    "org.prismlauncher.PrismLauncher",
+    "io.github.benjamimgois.goverlay",
+    "net.davidotek.pupgui2",
+    "com.vysp3r.ProtonPlus",
+    "page.kramo.Cartridges",
+];
+
 /// The installed apps and games as library entries (id `desktop:<id>`; an app a tool), by desktop file:
 /// the first of an id in `dirs` (the user's dir first), applications with a command that aren't hidden
 /// (nor Steam's game shortcuts).
@@ -73,7 +90,10 @@ pub fn entries(dirs: &[PathBuf]) -> Vec<Desktop> {
             let mut game = clamshell_library::Game::new(&format!("desktop:{id}"), &title);
             game.launch = clamshell_library::Launch::Program { argv, workdir: (!entry.path.is_empty()).then(|| PathBuf::from(&entry.path)) };
             game.icon = (!entry.icon.is_empty()).then(|| find_icon(&entry.icon, dirs)).flatten();
-            game.tool = !category("Game") || category("Emulator");
+            // (A game launcher or a tool for games is no game: its games are entries of their own.)
+            let no_game =
+                NOT_GAMES.iter().any(|n| n.eq_ignore_ascii_case(&id)) || ["Emulator", "PackageManager", "Network", "Utility"].iter().any(|c| category(c));
+            game.tool = !category("Game") || no_game;
             // (A game's desktop file starts a game: once is enough.)
             game.another = game.tool && !entry.single_window;
             let categories = entry.categories.split(';').filter(|c| !c.is_empty()).map(str::to_owned).collect();

@@ -61,6 +61,13 @@ trait Scope {
     fn control_group(&self) -> zbus::Result<String>;
 }
 
+#[zbus::proxy(interface = "org.freedesktop.systemd1.Slice", default_service = "org.freedesktop.systemd1", gen_async = false)]
+trait Slice {
+    /// Its cgroup, under /sys/fs/cgroup.
+    #[zbus(property)]
+    fn control_group(&self) -> zbus::Result<String>;
+}
+
 #[derive(Debug)]
 pub enum Error {
     Bus(zbus::Error),
@@ -238,21 +245,112 @@ fn thaw_now(manager: &ManagerProxy, unit: &str) {
 }
 
 /// Freezes a unit (a slice: every scope in it), or thaws it, on a thread of its own: the cgroup freezer,
-/// which stops its processes where they are, without their knowing.
+/// which stops its processes where they are, without their knowing. A freeze waits while the slice works
+/// without drawing ([`working_without_drawing`]: loading, compiling shaders, which the user switched away
+/// to wait for); a later request for the unit (shown again: thawed) ends the wait.
 pub fn freeze(unit: String, frozen: bool) {
+    let ticket = {
+        let mut requests = REQUESTS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let n = requests.entry(unit.clone()).or_default();
+        *n += 1;
+        *n
+    };
+    let latest = move |unit: &str| REQUESTS.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(unit).copied() == Some(ticket);
     let done = worker::detached("freeze", move || {
-        let result = Connection::session()
-            .map_err(Error::from)
-            .and_then(|c| Ok(manager(&c)?))
-            .and_then(|m| if frozen { m.freeze_unit(&unit) } else { m.thaw_unit(&unit) }.map_err(Error::from));
+        let result = Connection::session().map_err(Error::from).and_then(|c| Ok(manager(&c)?)).and_then(|m| {
+            if frozen {
+                let mut said = false;
+                while working_without_drawing(&m, &unit) {
+                    if !said {
+                        log::info!("{unit} works without drawing (loading?): frozen once it doesn't");
+                        said = true;
+                    }
+                    if !latest(&unit) {
+                        return Ok(false);
+                    }
+                }
+                // (The last look and the freeze as one: a thaw asked meanwhile comes after it.)
+                let _applying = APPLYING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                if !latest(&unit) {
+                    return Ok(false);
+                }
+                m.freeze_unit(&unit)?;
+            } else {
+                let _applying = APPLYING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                m.thaw_unit(&unit)?;
+            }
+            Ok(true)
+        });
         match result {
-            Ok(()) => log::info!("{} {unit}", if frozen { "froze" } else { "thawed" }),
+            Ok(true) => log::info!("{} {unit}", if frozen { "froze" } else { "thawed" }),
+            Ok(false) => log::info!("{unit}: not frozen (asked otherwise since)"),
             Err(e) => log::warn!("{} {unit}: {e}", if frozen { "freezing" } else { "thawing" }),
         }
     });
     if let Err(e) = done {
         log::warn!("freeze: {e}");
     }
+}
+
+/// Each unit's latest freeze or thaw request, by number: a freeze waiting goes ahead only if it is still
+/// the latest.
+static REQUESTS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, u64>>> = std::sync::LazyLock::new(Default::default);
+
+/// Held while a freeze or thaw is asked of systemd.
+static APPLYING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Above this CPU (cores) with the GPU below [`DRAWING_GPU`] (of its time), a slice works without
+/// drawing.
+const BUSY_CPU: f64 = 0.5;
+const DRAWING_GPU: f64 = 0.05;
+/// How long a slice is watched for that.
+const WATCH: Duration = Duration::from_secs(2);
+
+/// Whether slice `unit` works without drawing, over [`WATCH`]: much CPU, the GPU (its processes' DRM
+/// clients) nearly idle; a game hidden but drawing on uses the GPU. Unreadable: not.
+fn working_without_drawing(manager: &ManagerProxy, unit: &str) -> bool {
+    let group = manager
+        .get_unit(unit)
+        .ok()
+        .and_then(|path| SliceProxy::builder(manager.inner().connection()).path(path).ok()?.build().ok()?.control_group().ok())
+        .filter(|g| !g.is_empty());
+    let Some(group) = group else {
+        thread::sleep(WATCH);
+        return false;
+    };
+    let dir = std::path::PathBuf::from("/sys/fs/cgroup").join(group.trim_start_matches('/'));
+    let sample = || (cpu_usec(&dir), gpu_ns(&dir), Instant::now());
+    let (cpu0, gpu0, t0) = sample();
+    thread::sleep(WATCH);
+    let (cpu1, gpu1, t1) = sample();
+    let (Some(cpu0), Some(cpu1)) = (cpu0, cpu1) else {
+        return false;
+    };
+    let wall = t1.duration_since(t0).as_secs_f64();
+    let cpu = cpu1.saturating_sub(cpu0) as f64 / 1e6 / wall;
+    let gpu = gpu1.saturating_sub(gpu0) as f64 / 1e9 / wall;
+    cpu > BUSY_CPU && gpu < DRAWING_GPU
+}
+
+/// A cgroup's CPU time so far (microseconds).
+fn cpu_usec(dir: &std::path::Path) -> Option<u64> {
+    let stat = crate::sys::text(dir.join("cpu.stat"))?;
+    stat.lines().find_map(|l| l.strip_prefix("usage_usec ")).and_then(|v| v.trim().parse().ok())
+}
+
+/// The GPU time so far of a cgroup's processes (its subgroups' too), each DRM client once.
+fn gpu_ns(dir: &std::path::Path) -> u64 {
+    let mut clients = std::collections::HashMap::new();
+    let mut dirs = vec![dir.to_path_buf()];
+    while let Some(d) = dirs.pop() {
+        for pid in crate::sys::text(d.join("cgroup.procs")).unwrap_or_default().lines() {
+            clients.extend(crate::drm::clients(&std::path::Path::new("/proc").join(pid)));
+        }
+        if let Ok(entries) = std::fs::read_dir(&d) {
+            dirs.extend(entries.flatten().filter(|e| e.file_type().is_ok_and(|t| t.is_dir())).map(|e| e.path()));
+        }
+    }
+    clients.values().sum()
 }
 
 /// Waits for a scope to appear, within `appear`.
@@ -333,5 +431,42 @@ mod live {
         child.wait().unwrap();
         assert!(!list(&manager).unwrap().contains(&instance));
         assert!(appear("clamshell-run-never-0-0.scope", Duration::from_millis(300)).is_err());
+    }
+
+    /// A slice working without drawing (a busy loop, no GPU) isn't frozen while it does; once idle, it is
+    /// (run by hand: `--ignored`).
+    #[test]
+    #[ignore]
+    #[allow(clippy::unwrap_used)]
+    fn a_freeze_waits_while_the_slice_works_without_drawing() {
+        let id = std::process::id();
+        let slice = format!("clamshell-run-busytest_{id}.slice");
+        let state = || {
+            let out = Command::new("systemctl").args(["--user", "show", "-p", "FreezerState", "--value", &slice]).output().unwrap();
+            String::from_utf8(out.stdout).unwrap().trim().to_owned()
+        };
+        let busy = format!("busytest-{id}-busy");
+        let mut looping = Command::new("systemd-run")
+            .args(["--user", "--quiet", "--collect", "--scope", &format!("--slice={slice}"), &format!("--unit={busy}"), "sh", "-c", "while :; do :; done"])
+            .spawn()
+            .unwrap();
+        thread::sleep(Duration::from_secs(1));
+        freeze(slice.clone(), true);
+        thread::sleep(Duration::from_secs(6));
+        assert_eq!(state(), "running", "busy without drawing: not yet");
+        // Idle (the loop gone, a sleep left): frozen.
+        let _ = Command::new("systemctl").args(["--user", "stop", &format!("{busy}.scope")]).status();
+        let _ = looping.wait();
+        let mut sleeping = Command::new("systemd-run")
+            .args(["--user", "--quiet", "--collect", "--scope", &format!("--slice={slice}"), &format!("--unit=busytest-{id}-idle"), "sleep", "30"])
+            .spawn()
+            .unwrap();
+        thread::sleep(Duration::from_secs(5));
+        assert_eq!(state(), "frozen");
+        freeze(slice.clone(), false);
+        thread::sleep(Duration::from_secs(1));
+        assert_eq!(state(), "running");
+        let _ = Command::new("systemctl").args(["--user", "stop", &slice]).status();
+        let _ = sleeping.wait();
     }
 }
