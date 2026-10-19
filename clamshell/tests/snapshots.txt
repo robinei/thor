@@ -58,13 +58,13 @@ time-by-hand.png a677c8f5d82d67ab
 time-europe.png edec0693e5b8f0f4
 time-zones.png 58411bd2679dcabb
 time.png 3099bb169c682a80
-top-actions.png 153ec8c429cbfd5e
+top-actions.png f693f0e4d589648d
 top-back.png 6d2e9824fb46b035
 top-folder.png e2ff5d57166bd438
 top-group.png 422a14377e72ed5e
-top-played.png efecb04307300e71
+top-played.png 78a2f436ac7da8ad
 top-recent.png dc82bf8a9bfe7f28
-top-switch.png 8455f35ab253a9e3
+top-switch.png 61b1ba2f477bf8f6
 top-tab2-down.png e0f13dbc850131bd
 top-tab2.png fa85f7196b3440a1
 top.png fadb7e2bfabb0a73

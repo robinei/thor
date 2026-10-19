@@ -172,6 +172,11 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       after the grace) or stops (low CPU and GPU); whether loading and shader compiling are told from
       drawing (half a core, the GPU under 5 % on Freedreno); a frozen game's memory going to zram.
 - [ ] An online game frozen behind shelf: whether it is dropped (then it is set to run).
+- [ ] Sleep while busy: an idle session (sway, PipeWire, ClamShell, Steam in its tray, Waydroid up)
+      stays under the busy thresholds (the user's processes 0.3 core, the network 100 kB/s), so it
+      sleeps; a Steam download keeps it awake (`sleep: not now` in the journal).
+- [ ] A second controller paired over Bluetooth while the Thor's own pad is grabbed: what ClamShell
+      does with it (`CLAMSHELL_GAMEPAD`), and whether games get it as a second player.
 
 - [ ] Screens: both on, right size, orientation and position; layer surface on DSI-1.
 - [ ] Touch: the bottom screen's touch on DSI-1 (sway's `map_to_output`); two fingers on the bar at

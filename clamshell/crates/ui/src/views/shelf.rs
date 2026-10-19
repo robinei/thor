@@ -24,7 +24,7 @@ const ROW_H: f32 = 0.085;
 /// Title size and thumbnail height, of a row's height; thumbnails are portrait boxes.
 const ROW_TEXT: f32 = 0.36;
 const THUMB: f32 = 0.82;
-/// A row's marks (favourite, on the dock): their size, of a row's height.
+/// A row's marks (favourite, on the dock, running): their size, of a row's height.
 const MARK: f32 = 0.3;
 const BOX_ASPECT: f32 = 2.0 / 3.0;
 /// A row's picture: a square (box art and a video's frame cropped to fill it).
@@ -143,11 +143,14 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
         let thumb = Rect::new(r.x + pad * 0.4, r.y + (r.h - thumb_h) / 2.0, thumb_h * ROW_ASPECT, thumb_h);
         f.button(Id::Shelf(ShelfId::Game(game.id.clone())), r, look, |f| {
             widgets::thumb(f.c, f.images, game, thumb, THUMB_RADIUS, false);
-            // Its marks at the row's right end, right to left: a folder's chevron, on the dock, a favourite.
+            // Its marks at the row's right end, right to left: a folder's chevron, running (dim while
+            // paused), on the dock, a favourite.
             let mark = r.h * MARK;
             let mut right = r.x + r.w - pad * 0.5;
+            let paused = s.paused(&game.id) || s.suspended(&game.id);
             let marks = [
                 (game.is_group(), Icon::Chevron, Tone::Normal),
+                (s.session().running(&game.id).is_some(), Icon::Dot, if paused { Tone::Dim } else { Tone::Go }),
                 (s.files().selected.contains(&game.id), Icon::Check, Tone::Accent),
                 (s.dock().is_pinned(&game.id), Icon::for_tab(Tab::Dock), Tone::Normal),
                 (game.favourite, Icon::Star, Tone::Accent),

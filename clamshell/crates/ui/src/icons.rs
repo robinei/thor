@@ -99,6 +99,8 @@ pub enum Icon {
     App,
     /// A browsed archive (a zip, 7z, rar, tar): a box.
     Archive,
+    /// An entry that runs (shelf's row mark): a dot.
+    Dot,
 }
 
 impl Icon {
@@ -382,6 +384,7 @@ pub fn draw(c: &mut Canvas, icon: Icon, r: Rect, color: Color) {
         Icon::ArrowRight => arrow(p, [(5.0, 12.0), (19.0, 12.0)], [(13.0, 6.0), (19.0, 12.0), (13.0, 18.0)]),
         Icon::Chevron => p.line(&[(9.0, 5.0), (16.0, 12.0), (9.0, 19.0)], 2.2),
         Icon::Check => p.line(&[(4.5, 12.5), (9.5, 17.5), (19.5, 6.5)], 2.4),
+        Icon::Dot => p.dot(12.0, 12.0, 4.5),
         Icon::Archive => {
             p.frame((3.5, 4.0, 17.0, 5.0), 1.0, LINE);
             p.frame((4.5, 9.0, 15.0, 11.5), 1.0, LINE);
@@ -661,12 +664,13 @@ mod tests {
             Icon::Check,
             Icon::App,
             Icon::Archive,
+            Icon::Dot,
         ];
         let mut seen = std::collections::HashSet::new();
         for icon in &all {
             seen.insert(variant(*icon));
         }
-        assert_eq!(seen.len(), 54, "a variant is missing from the list");
+        assert_eq!(seen.len(), 55, "a variant is missing from the list");
         all
     }
 
@@ -727,6 +731,7 @@ mod tests {
             Icon::Check => 58,
             Icon::App => 59,
             Icon::Archive => 60,
+            Icon::Dot => 61,
         }
     }
 
