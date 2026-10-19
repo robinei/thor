@@ -62,7 +62,8 @@ desktop files' apps and games (and a `.desktop` file opened from the Files tab, 
 "steam"` Steam's installed games (by app id). They take a name, a keymap, `item_settings`, but no command;
 except that a desktop runner may have one, replacing its entries' own: `{id}` the desktop file's name,
 `{exec}` its command (as arguments of their own). The starter's Android runner launches Waydroid's apps
-by it (see android.md).
+by it (see android.md). A desktop runner's `handover` (off unless said): its launches hand their app over
+to something running outside them and end, and its entries run on by their windows (below).
 A desktop or Steam source is opened by the runner of its type it names (`runner`), else the first; there
 may be several (one for desktop games, one for apps, each with its own settings). Where their items show is
 the `desktop` and `steam` sources' (below).
@@ -168,6 +169,6 @@ Each launch is a systemd scope in its item's slice: whatever it starts stays in 
 detaching don't leave a cgroup), so Quit (the windows closed, then the slice stopped) and Force kill reach
 it all, windows or not. What gets out is what a program has another manager start: D-Bus activation, an
 instance already running elsewhere, Steam's games (in Steam's scope; followed by their windows). A file's
-launch that hands over and ends runs on by its windows (see files-tab.md); so does a desktop app's, its
-windows found by their app id (its desktop file's name: Waydroid's apps, whose windows are the
-container's); Quit closes them, Force kill can't reach them. On the Thor nothing in the image starts that way.
+launch that hands over and ends runs on by its windows (see files-tab.md); so does the launch of an entry
+whose runner has `handover`, its windows found by their app id (its desktop file's name: Waydroid's apps,
+whose windows are the Waydroid session's); Quit closes them, Force kill can't reach them. On the Thor nothing in the image starts that way.

@@ -3,7 +3,8 @@
 Waydroid runs Android (LineageOS 20, Android 13) in a container on the host's kernel, its apps drawn as
 Wayland windows: one window per app in its multi-window mode. Each app has a desktop file
 (`~/.local/share/applications/waydroid.<package>.desktop`), so ClamShell lists them as desktop apps, and
-their windows' app id is the desktop file's name (`waydroid.<package>`), so a launch finds its window.
+their windows' app id is the desktop file's name (`waydroid.<package>`). The windows are the Waydroid
+session's, not the launch's: the runner's `handover` has ClamShell find them by that app id.
 
 The starter library.json opens them with the Android runner, `clamshell/android/clamshell-android`:
 
@@ -18,7 +19,7 @@ Quit closes the window, which ends the app's Android task (its process stays cac
 
 ```json
 "runners": [
-  { "type": "desktop", "id": "android", "name": "Android", "launch": ["~/.local/bin/clamshell-android", "{id}"] }
+  { "type": "desktop", "id": "android", "name": "Android", "launch": ["~/.local/bin/clamshell-android", "{id}"], "handover": true }
 ],
 "sources": [
   { "type": "desktop", "id": "Waydroid", "hide": true },

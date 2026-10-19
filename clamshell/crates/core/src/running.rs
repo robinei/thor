@@ -192,12 +192,12 @@ impl State {
         self.ended(game);
     }
 
-    /// A launch of `game` ended (or couldn't start): it no longer runs once none does; a browsed file's
-    /// or a desktop app's soon after it started runs on by its windows (see [`Origin::Handed`]: an app
-    /// handing over to an instance of it already running, or to a container, Waydroid's).
+    /// A launch of `game` ended (or couldn't start): it no longer runs once none does; a browsed file's,
+    /// or one whose runner hands its app over, soon after it started runs on by its windows (see
+    /// [`Origin::Handed`]).
     pub(crate) fn ended(&mut self, game: &str) {
         self.session.launching.retain(|l| &*l.game != game || l.appid.is_some());
-        let browsed = self.shelf.game(game).is_some_and(|g| g.browsed.is_some()) || desktop_id(game).is_some();
+        let browsed = self.shelf.game(game).is_some_and(|g| g.browsed.is_some()) || self.hands_over(game);
         let now = self.unix_secs;
         let session = &mut self.session;
         if let Some(r) = session.running.iter_mut().find(|r| &*r.id == game) {
@@ -208,6 +208,11 @@ impl State {
             }
         }
         session.running.retain(|r| r.launches > 0 || matches!(r.origin, Origin::Steam(_) | Origin::Handed { .. }));
+    }
+
+    /// Whether `game`'s runner hands its app over (see [`Origin::Handed`]).
+    fn hands_over(&self, game: &str) -> bool {
+        self.game(game).and_then(|g| g.runner.as_ref()).is_some_and(|r| r.handover)
     }
 
     /// A launch that never started (its scope was gone before it was seen): a browsed file's waits for
@@ -242,12 +247,12 @@ impl State {
             .collect();
         let mut effects = Vec::new();
         let mut taken = Vec::new();
-        // A window whose app id is a running desktop app's (its desktop file's name, as Waydroid's apps
-        // and many others have it) is that app's, whenever it comes.
+        // A window whose app id is the desktop file's name of a running entry whose runner hands its app
+        // over is that entry's, whenever it comes.
         let mut rest = Vec::new();
         for id in stray {
             let app_id = session.windows.iter().find(|w| w.id == id).map(|w| w.app_id.as_str()).unwrap_or("");
-            match session.running.iter().find(|r| desktop_id(&r.id) == Some(app_id)) {
+            match session.running.iter().find(|r| r.id.strip_prefix("desktop:") == Some(app_id) && self.hands_over(&r.id)) {
                 Some(r) => {
                     effects.push(Effect::Window(WindowCommand::Move { windows: vec![id], to: r.workspace() }));
                     effects.push(Effect::Window(WindowCommand::Focus(r.workspace())));
@@ -436,12 +441,6 @@ impl State {
     }
 }
 
-/// A desktop app's desktop file name, by its entry's id (`desktop:<name>`): what its windows' app id
-/// usually is.
-fn desktop_id(entry: &str) -> Option<&str> {
-    entry.strip_prefix("desktop:")
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
@@ -622,8 +621,11 @@ mod tests {
     }
 
     #[test]
-    fn a_desktop_apps_window_is_its_by_its_app_id() {
-        let mut s = state();
+    fn an_app_handed_over_runs_by_its_window_found_by_its_app_id() {
+        let mut library = clamshell_library::demo_library();
+        let firefox = library.games.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap();
+        firefox.runner = Some(clamshell_library::RunnerOf { handover: true, ..clamshell_library::RunnerOf::new("android", "Android", true) });
+        let mut s = State::new(Init { library, ..init() });
         s.apply(Event::Tick { unix_secs: 100 });
         let shelf = win(1, windows::SHELF_APP_ID, &Instance::Shelf.name(), true);
         s.apply(Event::Windows(vec![shelf.clone()]));
@@ -634,7 +636,7 @@ mod tests {
         });
         let firefox = firefox.unwrap();
         s.apply(GameEvent::Started("desktop:firefox".into()).into());
-        // Its launch handed the app over (to Waydroid's container, or to one already running) and ended.
+        // Its launch handed the app over (to the Waydroid session) and ended.
         s.apply(GameEvent::Played { game: "desktop:firefox".into(), start: 100, duration: 1 }.into());
         assert!(s.session().running("desktop:firefox").is_some(), "waits for its window");
         let app = win(6, "firefox", &Instance::Shelf.name(), false);
@@ -645,6 +647,12 @@ mod tests {
         assert!(s.session().running("desktop:firefox").is_some(), "runs while its window is open");
         s.apply(Event::Windows(vec![shelf]));
         assert!(s.session().running("desktop:firefox").is_none(), "its window closed: ended");
+        // Another runner's: ended with its launch.
+        let mut s = state();
+        s.launch("desktop:firefox".into());
+        s.apply(GameEvent::Started("desktop:firefox".into()).into());
+        s.apply(GameEvent::Played { game: "desktop:firefox".into(), start: 0, duration: 1 }.into());
+        assert!(s.session().running("desktop:firefox").is_none());
     }
 
     #[test]

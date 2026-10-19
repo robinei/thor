@@ -31,7 +31,7 @@ pub struct Runner {
     pub patterns: Vec<String>,
     /// The command, `{path}` the file. A desktop runner's, if it has one, replaces its entries' own
     /// (their desktop file's): `{id}` the desktop file's name, `{exec}` its command (as arguments of
-    /// their own): to wrap it, or launch otherwise (Waydroid's apps full-screen).
+    /// their own): to wrap it, or launch otherwise (the Android runner's script, docs/android.md).
     #[serde(default)]
     pub launch: Vec<String>,
     /// A keymap of ClamShell's it comes with (`viewer`: the D-pad, A, B and the shoulders as keys), its own
@@ -46,6 +46,11 @@ pub struct Runner {
     /// it runs (`{path}` in it the file, as a JSON string's contents): its entries can be enqueued.
     #[serde(default)]
     pub enqueue: Option<String>,
+    /// Whether its launches hand their app over to something running outside them and end (a desktop
+    /// runner's: Waydroid's apps, whose windows are the Waydroid session's): its entries run on by their
+    /// windows, found by their app id (the desktop file's name).
+    #[serde(default)]
+    pub handover: bool,
 }
 
 /// A runner that finds its items itself, each with its own command.
@@ -75,6 +80,7 @@ impl Runner {
         clamshell_library::RunnerOf {
             command: self.template(None).into(),
             enqueue: self.enqueue.as_deref().map(Into::into),
+            handover: self.handover,
             ..clamshell_library::RunnerOf::new(&self.id, &self.name, self.item_settings.unwrap_or(true))
         }
     }
