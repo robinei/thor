@@ -45,6 +45,8 @@ pub fn spawn_browse(browsing: Browsing, sink: impl Sink) -> io::Result<Worker<Br
     let Browsing { config, home, db, probe, cache } = browsing;
     Worker::spawn_belled("browse", move |commands, bell| {
         let mut archives = crate::archives::Mounts::new(cache);
+        // (Opened once: the videos' lengths and frames read from it at each listing with videos.)
+        let store = db.as_deref().and_then(|f| crate::store::Store::open(f).map_err(|e| log::warn!("browse: {e}")).ok());
         let mut in_use: Vec<PathBuf> = Vec::new();
         let notify = inotify::init(inotify::CreateFlags::NONBLOCK | inotify::CreateFlags::CLOEXEC).map_err(|e| log::warn!("browse: inotify: {e}")).ok();
         let flags = inotify::WatchFlags::CREATE
@@ -65,7 +67,7 @@ pub fn spawn_browse(browsing: Browsing, sink: impl Sink) -> io::Result<Worker<Br
             let config = config.as_deref().map(content::read_config).unwrap_or_default().0;
             let (runners, _) = runners::in_force(&config.runners);
             let mut entries = list(dir, &b.folder, &runners, home.as_deref(), b.hidden);
-            let wanted = known_videos(&mut entries, db.as_deref());
+            let wanted = known_videos(&mut entries, store.as_ref());
             if !wanted.is_empty() {
                 probe(wanted);
             }
@@ -251,11 +253,11 @@ const PEEK: usize = 256;
 
 /// The videos (mpv's) among `entries`: their lengths and frames as the database has them (read before,
 /// here or as scanned entries'); those it hasn't, to read.
-fn known_videos(entries: &mut [Game], db: Option<&Path>) -> Vec<crate::meta::Wanted> {
+fn known_videos(entries: &mut [Game], store: Option<&crate::store::Store>) -> Vec<crate::meta::Wanted> {
     if !entries.iter().any(|g| g.mpv_file().is_some()) {
         return Vec::new();
     }
-    let probes = db.and_then(|f| crate::store::Store::open(f).ok()).and_then(|s| s.probes().ok()).unwrap_or_default();
+    let probes = store.and_then(|s| s.probes().ok()).unwrap_or_default();
     let mut wanted = Vec::new();
     for g in entries.iter_mut() {
         let Some(file) = g.mpv_file().map(Path::to_path_buf) else {
