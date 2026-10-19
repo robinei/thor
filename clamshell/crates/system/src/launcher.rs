@@ -4,7 +4,7 @@
 //! - A program (its arguments filled in by the library) runs in its own systemd scope where there is a
 //!   user session (`systemd-run --user --scope`), so restarting ClamShell doesn't end it; the thread
 //!   waits for it.
-//! - A Steam game is started with `steam -applaunch <id>`; it counts as running while Steam's launcher
+//! - A Steam game is started with `steam -silent -applaunch <id>`; it counts as running while Steam's launcher
 //!   process for that app id (`reaper SteamLaunch AppId=<id>`) exists.
 //!
 //! Every play is added to the database (see [`crate::store`]) and reported, with its start and duration.
@@ -224,7 +224,8 @@ fn start_program(config: &Config, request: &Request, argv: Vec<String>, workdir:
 
 fn start_steam(env: &[(String, String)], appid: u32) -> Result<Running, Error> {
     let mut steam = Command::new("steam");
-    steam.args(["-applaunch", &appid.to_string()]).envs(env.iter().map(|(k, v)| (k, v))).stdin(Stdio::null()).process_group(0);
+    // (`-silent`: if Steam isn't running, it starts without its window, only the game showing.)
+    steam.args(["-silent", "-applaunch", &appid.to_string()]).envs(env.iter().map(|(k, v)| (k, v))).stdin(Stdio::null()).process_group(0);
     // If Steam wasn't running, this process becomes Steam itself: reaped whenever it ends.
     job::reap(steam.spawn()?);
     let marker = format!("AppId={appid}");
