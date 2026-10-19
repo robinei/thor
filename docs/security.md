@@ -35,7 +35,7 @@ process a systemd service runs is never moved.
 ## Archives
 
 An archive opened in the Files tab is mounted with ratarmount (FUSE; Python's and libarchive's parsers)
-as the user, in a scope of its own, read-only; its index is kept in `~/.cache/clamshell/archive-index`
+as the user, in a service of its own, read-only; its index is kept in `~/.cache/clamshell/archive-index`
 (see files-tab.md). A damaged or hostile archive can make ratarmount fail or hang: it fails the folder's
 listing with a notice, or leaves a scope to end; it can't change the archive or anything else.
 
