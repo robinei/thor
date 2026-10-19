@@ -443,7 +443,7 @@ mod tests {
     #[test]
     fn the_volume_tab_watches_and_sets_levels() {
         let mut s = state();
-        assert_eq!(tap(&mut s, Id::Tab(Tab::Volume)), vec![Effect::Watch(Watch::Audio, true)]);
+        assert_eq!(tap(&mut s, Id::Tab(Tab::Volume)), vec![Effect::Watch(Watch::Metrics, false), Effect::Watch(Watch::Audio, true)]);
         read(&mut s, Reading::Audio(audio()));
         read(&mut s, Reading::Status(Status { volume: Some(40), muted: true, ..Status::default() }));
         assert_eq!(set(&mut s, Level::Volume, 70), vec![Effect::Sound(Sound::Mute(false)), Effect::Sound(Sound::Volume(70))]);

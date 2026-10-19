@@ -95,7 +95,7 @@ pub fn start(
     let scope = paths.has_user_systemd();
     detached("clock", clock::spawn(sink.clone()));
     detached("status", status::spawn(backlights.clone(), sink.clone()));
-    detached("metrics", metrics::spawn(sink.clone()));
+    let metrics = started("metrics", metrics::spawn(sink.clone()));
     let fetching = meta::Queue::default();
     if let Some(fetch) = fetch {
         detached("meta", meta::spawn(fetch, &fetching, sink.clone()));
@@ -159,6 +159,7 @@ pub fn start(
         wifi,
         bluetooth,
         tray,
+        metrics,
         battery,
         pad,
         pad_taken,

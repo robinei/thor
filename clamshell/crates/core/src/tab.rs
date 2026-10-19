@@ -53,7 +53,8 @@ impl Tab {
             Tab::Bluetooth => Some(Watch::Bluetooth),
             Tab::Battery => Some(Watch::Battery),
             Tab::Time => Some(Watch::Time),
-            Tab::Settings | Tab::Dock | Tab::Keyboard | Tab::Touchpad | Tab::Sysinfo => None,
+            Tab::Sysinfo => Some(Watch::Metrics),
+            Tab::Settings | Tab::Dock | Tab::Keyboard | Tab::Touchpad => None,
         }
     }
 
@@ -160,7 +161,7 @@ mod tests {
     #[test]
     fn the_touchpad_tab_always_points() {
         let mut s = state();
-        assert_eq!(tap(&mut s, Id::Tab(Tab::Touchpad)), vec![], "nothing to watch");
+        assert_eq!(tap(&mut s, Id::Tab(Tab::Touchpad)), vec![Effect::Watch(Watch::Metrics, false)], "nothing to watch");
         assert!(s.bottom().pointing());
         s.apply(crate::touch::Pointing::Idle.into());
         assert!(s.bottom().pointing(), "idle or not");

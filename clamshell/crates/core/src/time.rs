@@ -293,8 +293,8 @@ mod tests {
 
     #[test]
     fn the_tab_reads_the_time_zone_while_open() {
-        let mut s = State::new(Init::default());
+        let mut s = crate::testkit::state();
         let (_, effects) = s.apply(Event::Pointer(crate::PointerEvent::Activate(Id::Tab(Tab::Time))));
-        assert_eq!(effects, vec![Effect::Watch(crate::Watch::Time, true)]);
+        assert_eq!(effects, vec![Effect::Watch(crate::Watch::Metrics, false), Effect::Watch(crate::Watch::Time, true)]);
     }
 }

@@ -257,11 +257,12 @@ mod tests {
         s.apply(Event::Idle(IdleEvent::Watching(true)));
         // Defaults: screens off after 5 minutes, sleep after 15.
         assert_eq!(brightness(&s.apply(Event::Tick { unix_secs: 1270 }).1), Some(20), "dimmed to a third");
-        assert_eq!(s.apply(Event::Tick { unix_secs: 1300 }).1, vec![Effect::Screens(false)]);
+        assert_eq!(s.apply(Event::Tick { unix_secs: 1300 }).1, vec![Effect::Screens(false), Effect::Watch(crate::Watch::Metrics, false)]);
         assert!(!s.apply(Event::Tick { unix_secs: 1900 }).1.contains(&Effect::Sleep), "not the device's session");
         // Input: the screens come back, at their brightness; the press that woke them does nothing.
         let fx = s.apply(Event::Idle(IdleEvent::DeviceInput));
         assert!(fx.1.contains(&Effect::Screens(true)) && brightness(&fx.1) == Some(60), "{fx:?}");
+        assert!(fx.1.contains(&Effect::Watch(crate::Watch::Metrics, true)), "watched again: {fx:?}");
         // In the device's session it sleeps.
         let mut s = State::new(crate::Init { device_session: true, ..crate::testkit::init() });
         s.apply(Event::Tick { unix_secs: 1000 });

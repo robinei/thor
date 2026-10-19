@@ -144,6 +144,9 @@ pub struct State {
     dock: Dock,
     /// Programs' tray icons (see [`tray`]).
     tray: Vec<tray::TrayItem>,
+    /// The UI is up (its Start), and the watch in force (see [`State::follow_watch`]).
+    ui_up: bool,
+    watching: Option<Watch>,
     /// The battery tab's row whose menu is open (see [`battery`]).
     spender_menu: Option<battery::Group>,
     /// Programs paused or ended while hidden (see [`background`]).
@@ -298,6 +301,7 @@ impl State {
         effects.extend(self.follow_shown());
         effects.extend(self.follow_browse());
         effects.extend(self.follow_idle());
+        effects.extend(self.follow_watch());
         let (changed, applied) = self.follow_program();
         effects.extend(applied);
         if changed && self.follow_pad_mouse() {
@@ -410,7 +414,9 @@ impl State {
                 (Dirty::BOTTOM, effects)
             }
             Event::Start => {
-                let mut effects: Vec<Effect> = self.bottom.tab.watch().map(|w| Effect::Watch(w, true)).into_iter().collect();
+                // (The open tab's watch from now: see follow_watch.)
+                self.ui_up = true;
+                let mut effects: Vec<Effect> = Vec::new();
                 if std::mem::take(&mut self.pins_dropped) {
                     effects.push(Effect::Save(Save::Dock(self.dock.pinned_ids())));
                 }
@@ -885,12 +891,11 @@ impl State {
         self.set_tab(tab)
     }
 
-    /// Changes the second screen's tab. The touchpad and the watches (Wi-Fi, Bluetooth, battery,
-    /// audio, backlights) start and stop with their tabs; a level being set ends. What the tab left had
+    /// Changes the second screen's tab (its watch follows: see [`State::follow_watch`]); a level being
+    /// set ends. What the tab left had
     /// open (an editor, the keymaps' screens) stays for coming back to.
     fn set_tab(&mut self, tab: Tab) -> Vec<Effect> {
-        let before = self.bottom.tab;
-        if tab == before {
+        if tab == self.bottom.tab {
             return vec![];
         }
         self.saves.resume.touch(self.unix_secs);
@@ -900,8 +905,24 @@ impl State {
         self.levels.leave();
         // (The time tab opens on its main page again.)
         self.bottom.time_page = TimePage::Main;
-        let watch = |tab: Tab, on| tab.watch().map(|w| Effect::Watch(w, on));
-        watch(before, false).into_iter().chain(watch(tab, true)).collect()
+        vec![]
+    }
+
+    /// What the second screen watches: the open tab's (the dock's, with an entry's menu open: what the
+    /// entry costs, the battery tab's readings), while it can be seen (ClamShell's view on the bottom
+    /// screen, that on, the screens on) and the UI is up. Its watch started and stopped as that changes.
+    fn follow_watch(&mut self) -> Vec<Effect> {
+        let seen = self.ui_up && !self.bottom_shows_windows() && !self.bottom_off() && self.idle.stage() < idle::Stage::Off;
+        let tab = match self.bottom.tab {
+            Tab::Dock if self.dock.menu.is_some() => Some(Watch::Battery),
+            tab => tab.watch(),
+        };
+        let wanted = tab.filter(|_| seen);
+        if wanted == self.watching {
+            return vec![];
+        }
+        let was = std::mem::replace(&mut self.watching, wanted);
+        was.map(|w| Effect::Watch(w, false)).into_iter().chain(wanted.map(|w| Effect::Watch(w, true))).collect()
     }
 
     /// A text field wants typing (or is done): the keyboard comes up, and goes back to the tab it came up
@@ -972,13 +993,17 @@ pub(crate) mod testkit {
         Init { library: clamshell_library::demo_library(), ..Init::default() }
     }
 
+    /// (Up, as after the UI's Start: its watches in force.)
     pub fn state() -> State {
-        State::new(init())
+        state_with(init().library)
     }
 
     /// A test state with this library.
     pub fn state_with(library: Library) -> State {
-        State::new(Init { library, ..Init::default() })
+        let mut s = State::new(Init { library, ..Init::default() });
+        s.ui_up = true;
+        let _ = s.follow_watch();
+        s
     }
 
     pub fn win(id: i64, app_id: &str, workspace: &str, focused: bool) -> Window {

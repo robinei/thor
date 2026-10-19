@@ -145,6 +145,8 @@ pub enum Watch {
     Battery,
     /// The time zone and the ones to choose from.
     Time,
+    /// The system's metrics (read more often while shown).
+    Metrics,
 }
 
 /// What ClamShell keeps (in its database): each saved whole.

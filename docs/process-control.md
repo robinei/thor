@@ -150,9 +150,11 @@ watched through /proc/self/mounts (POLLPRI) and devices through inotify on /dev/
 | input watch | 2/s (a rescan every 5 s) | none |
 | tray | 4/s | its signals only |
 
-Left: the main thread (2/s, the events it is sent: the clock's tick and the metrics, each every
-second); metrics (1/s, about 1.5 ms of CPU each: the graphs' history is kept whether or not they are
-shown, and the GPU's load walks every process's DRM clients); zbus' executor threads (the `blocking`
+Left: the main thread (the events it is sent: the clock's tick every second, the metrics); metrics
+(about 1.5 ms of CPU a reading, the GPU's load walking every process's DRM clients: every second while
+the sysinfo or battery tab can be seen (open, ClamShell's view on the bottom screen, the screens on),
+every five seconds otherwise, the graphs' history kept, coarser. Every tab's watch (Wi-Fi, Bluetooth,
+audio, time) stops the same way while its tab can't be seen); zbus' executor threads (the `blocking`
 crate: about 8 wakeups a second between them, no CPU, idle threads waking every 500 ms).
 
 ## Tried on the desktop (AMD GPU, PipeWire, Steam)

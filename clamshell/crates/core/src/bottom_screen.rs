@@ -385,7 +385,7 @@ mod tests {
         key(&mut s, DeviceKey::BottomView);
         assert_eq!(s.hidden_down(), Some(2), "ClamShell's view over them");
         let fx = s.apply(Event::Pointer(crate::PointerEvent::Activate(crate::Id::BottomWindows))).1;
-        assert_eq!(fx, vec![Effect::Window(WindowCommand::ShowDown(2))]);
+        assert_eq!(fx, vec![Effect::Window(WindowCommand::ShowDown(2)), Effect::Watch(crate::Watch::Metrics, false)], "its view not seen: not watched");
         assert!(s.bottom_shows_windows());
         // Another program in front: not its windows.
         key(&mut s, DeviceKey::BottomView);
@@ -400,7 +400,8 @@ mod tests {
     #[test]
     fn the_bottom_screen_turns_off_and_on() {
         let mut s = emulator();
-        assert_eq!(key(&mut s, DeviceKey::BottomPower), vec![Effect::Window(WindowCommand::BottomPower(false))]);
+        let off = vec![Effect::Window(WindowCommand::BottomPower(false)), Effect::Watch(crate::Watch::Metrics, false)];
+        assert_eq!(key(&mut s, DeviceKey::BottomPower), off, "nothing seen: not watched");
         assert!(s.bottom_off());
         // A window moved down turns it on again.
         let fx = key(&mut s, DeviceKey::WindowDown);

@@ -111,17 +111,6 @@ impl State {
     /// A tap or long press on a dock tile, a choice in its menu (which then closes), or a step in move
     /// mode.
     pub(crate) fn on_dock(&mut self, id: DockId, long: bool) -> Vec<Effect> {
-        let was_open = self.dock.menu.is_some();
-        let mut effects = self.dock_action(id, long);
-        // (While a menu is open, what its entry costs is read: the battery tab's readings.)
-        let open = self.dock.menu.is_some();
-        if open != was_open && self.bottom.tab != crate::Tab::Battery {
-            effects.push(Effect::Watch(crate::effect::Watch::Battery, open));
-        }
-        effects
-    }
-
-    fn dock_action(&mut self, id: DockId, long: bool) -> Vec<Effect> {
         match id {
             DockId::Entry(i) => {
                 let Some(entry) = self.dock.items.get(usize::from(i)).map(|item| item.id.clone()) else {
@@ -298,6 +287,7 @@ mod tests {
     #[test]
     fn running_entries_join_the_dock_pinned_ones_stay() {
         let mut s = state();
+        tap(&mut s, Id::Tab(crate::Tab::Dock));
         let zelda = launch(&mut s, "zelda-lttp");
         assert_eq!(entry(&s, 0), Some("zelda-lttp"), "running: on the dock");
         // A tap without a window of it to show: what is in front stays, a notice says so.
@@ -373,6 +363,7 @@ mod tests {
     #[test]
     fn the_menu_opens_another_closes_a_window_quits_and_force_kills() {
         let mut s = state();
+        tap(&mut s, Id::Tab(crate::Tab::Dock));
         let zelda = launch(&mut s, "zelda-lttp");
         let w = Window { unit: zelda.unit(), visible: true, ..win(5, "zelda3", &zelda.workspace(), true) };
         s.apply(Event::Windows(vec![w]));

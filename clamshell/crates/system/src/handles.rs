@@ -27,6 +27,7 @@ pub struct Handles {
     pub wifi: Worker<wifi::Request>,
     pub bluetooth: Worker<bluetooth::Request>,
     pub tray: Worker<clamshell_core::tray::TrayCommand>,
+    pub metrics: Worker<bool>,
     pub battery: Worker<battery::Command>,
     pub pad: Worker<pad::Command>,
     /// The controller the pad thread grabbed: SDL programs launched are told to ignore it.
@@ -158,7 +159,12 @@ impl Handles {
             Watch::Backlights => self.mixer.send(mixer::Command::Backlights(on)),
             Watch::Wifi => self.wifi.send(wifi::Request::Watch(on)),
             Watch::Bluetooth => self.bluetooth.send(bluetooth::Request::Watch(on)),
-            Watch::Battery => self.battery.send(if on { battery::Command::Start } else { battery::Command::Stop }),
+            // (The battery tab shows the metrics too.)
+            Watch::Battery => {
+                self.battery.send(if on { battery::Command::Start } else { battery::Command::Stop });
+                self.metrics.send(on);
+            }
+            Watch::Metrics => self.metrics.send(on),
             // (Read once as the tab opens: it changes only by the tab.)
             Watch::Time if on => self.system.send(crate::device::Command::ReadTime),
             Watch::Time => {}

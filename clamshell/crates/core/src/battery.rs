@@ -193,7 +193,7 @@ mod tests {
     #[test]
     fn the_battery_tab_watches_while_open() {
         let mut s = state();
-        assert_eq!(tap(&mut s, Id::Tab(Tab::Battery)), vec![Effect::Watch(Watch::Battery, true)]);
+        assert_eq!(tap(&mut s, Id::Tab(Tab::Battery)), vec![Effect::Watch(Watch::Metrics, false), Effect::Watch(Watch::Battery, true)]);
         assert_eq!(tap(&mut s, Id::Tab(Tab::Wifi)), vec![Effect::Watch(Watch::Battery, false), Effect::Watch(Watch::Wifi, true)]);
     }
 }

@@ -1,4 +1,6 @@
-//! Reads the system's metrics for the sysinfo mode once a second: CPU load (total and per core) and
+//! Reads the system's metrics for the sysinfo mode once a second while they can be seen (the sysinfo or
+//! battery tab open, ClamShell's view on the bottom screen, the screens on), every five seconds otherwise
+//! (the graphs' history kept, coarser): CPU load (total and per core) and
 //! frequency, GPU load and frequency, temperatures, memory, battery power. Every source is optional:
 //! what a machine lacks stays `None`. Sources: /proc/stat, /proc/meminfo, cpufreq, hwmon and thermal
 //! zones, amdgpu (desktop) or devfreq (Adreno on the Thor), the battery's power supply.
@@ -7,28 +9,39 @@
 //! DRM client over the second (see [`crate::drm`]).
 
 use std::io;
-use std::thread;
+use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
 use clamshell_core::metrics::{MAX_CORES, Metrics};
 use clamshell_core::{Event, Reading};
 
+use crate::worker::{Next, Worker};
 use crate::{Closed, Sink, drm, sys, worker};
 
-const EVERY: Duration = Duration::from_secs(1);
+/// How often the metrics are read while they can be seen, and otherwise: the graphs keep their history,
+/// coarser, at less cost.
+const SHOWN_EVERY: Duration = Duration::from_secs(1);
+const HIDDEN_EVERY: Duration = Duration::from_secs(5);
 
-pub fn spawn(sink: impl Sink) -> io::Result<()> {
-    worker::detached("metrics", move || {
-        let _ = follow(&sink);
+/// The metrics thread; its commands: whether the metrics can be seen (read at once as they can).
+pub fn spawn(sink: impl Sink) -> io::Result<Worker<bool>> {
+    Worker::spawn("metrics", move |commands| {
+        let _ = follow(&sink, &commands);
     })
 }
 
-/// Reads and sends the metrics every second, until the UI is gone.
-fn follow(sink: &impl Sink) -> Result<(), Closed> {
+/// Reads and sends the metrics every second while seen, every five seconds otherwise, until the UI is
+/// gone.
+fn follow(sink: &impl Sink, commands: &Receiver<bool>) -> Result<(), Closed> {
     let mut previous = read_cpu_times();
     let mut gpu_previous = drm::total_ns().map(|t| (t, Instant::now()));
+    let mut shown = false;
     loop {
-        thread::sleep(EVERY);
+        match worker::next(commands, Some(if shown { SHOWN_EVERY } else { HIDDEN_EVERY })) {
+            Next::Command(now_shown) => shown = now_shown,
+            Next::Elapsed => {}
+            Next::Disconnected => return Ok(()),
+        }
         let now = read_cpu_times();
         let mut m = read(&previous, &now);
         // No busy file: GPU time used by all clients over the time elapsed.
