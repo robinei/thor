@@ -73,6 +73,14 @@ if [ -n "$stop" ]; then
     exit
 fi
 
+# The caption's height for the Wayland filter, which puts it out of sight: 57 pixels at a density of 213
+# (measured), in proportion at Android's density (an override's, if one is set).
+density=$(android wm density | sed -n 's/^.* density: //p' | tail -1)
+case $density in
+    '' | *[!0-9]*) ;;
+    *) echo $(((57 * density + 106) / 213)) > "$XDG_RUNTIME_DIR/clamshell/android-caption" ;;
+esac
+
 case $(android getprop waydroid.active_apps) in
     '' | none | Waydroid) waydroid app launch com.android.launcher3 ;;
 esac

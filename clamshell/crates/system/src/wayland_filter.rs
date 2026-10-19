@@ -1,108 +1,259 @@
 //! A Wayland proxy for Waydroid (`clamshell --wayland-filter`): it listens on a socket of its own beside
 //! the compositor's (`<display>-android`), and passes each client's connection through to the
-//! compositor, messages and file descriptors alike, but for one kind of event: an `xdg_toplevel.configure`
-//! of the size the window already has.
+//! compositor, messages and file descriptors alike, but for what it changes for Android's windows:
 //!
-//! Waydroid answers every toplevel configure with a display hotplug, which clears its windows; a window is
-//! drawn again only with its app's next frame, and an app at rest draws none. Sway configures a window as
-//! it is hidden, shown, focused or unfocused (its `suspended` and `activated` states), its size unchanged,
-//! so an Android app's window was lost whenever it went out of sight or lost focus. Without those
-//! configures (Waydroid ignores the states anyway) its windows stay. A resize still reaches it.
+//! - A toplevel configure of the size the window already has is dropped. Waydroid answers every one
+//!   with a display hotplug, which clears its windows; a window is drawn again only with its app's next
+//!   frame, and an app at rest draws none. Sway configures a window as it is hidden, shown, focused or
+//!   unfocused (`suspended`, `activated`), its size unchanged: an Android app's window was lost whenever
+//!   it went out of sight or lost focus. A resize still reaches Waydroid.
+//! - Android's caption (its back, minimise, maximise and close buttons, drawn into the window along its
+//!   top) is put out of sight: Android is told a window that much taller, and the compositor a window
+//!   that starts below it (its window geometry), so the app's own area fills the window, unscaled. Its
+//!   height, in pixels at Android's density, is in `android-caption` in ClamShell's runtime dir (the
+//!   Android script writes it; none: shown).
+//! - The app's frame rate is measured (its window's commits) and written as MangoHud logs its own (a
+//!   CSV row every half second, fps and frame time, in ClamShell's MangoHud folder, as
+//!   `android-<app>.csv`): ClamShell reads it as a game's.
 //!
-//! The proxy reads only what it must to know which objects are toplevels: the registry (`get_registry`),
-//! `xdg_wm_base` (bound), its `xdg_surface`s, their toplevels; ids are forgotten as the compositor deletes
-//! them (`wl_display.delete_id`).
+//! No frame rate cap: Waydroid paces Android by a vsync of its own, its period fixed as its session starts
+//! (from the outputs' refresh), not by the compositor's frame callbacks.
+//!
+//! The proxy reads only what it must: the registry (`get_registry`), `xdg_wm_base` (bound), its
+//! `xdg_surface`s and their `wl_surface`s, their toplevels (app id, size, activated); ids are forgotten as
+//! the compositor deletes them (`wl_display.delete_id`).
 
 use std::collections::{HashMap, HashSet};
-use std::io::{self, IoSlice, IoSliceMut};
+use std::fs::{File, OpenOptions};
+use std::io::{self, IoSlice, IoSliceMut, Write};
 use std::mem::MaybeUninit;
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
+use std::time::{Duration, Instant};
 
 use rustix::net::{RecvAncillaryBuffer, RecvAncillaryMessage, RecvFlags, SendAncillaryBuffer, SendAncillaryMessage, SendFlags};
 
-/// The display object's id, and the opcodes read: its `get_registry` request and `delete_id` event; the
-/// registry's `bind`; `xdg_wm_base.get_xdg_surface`; `xdg_surface.get_toplevel`; `xdg_toplevel.configure`.
+/// The display object's id, and the opcodes read.
 const DISPLAY: u32 = 1;
+/// wl_display: `get_registry` (request), `delete_id` (event).
 const GET_REGISTRY: u16 = 1;
 const DELETE_ID: u16 = 1;
+/// wl_registry: `bind`.
 const BIND: u16 = 0;
+/// xdg_wm_base: `get_xdg_surface`.
 const GET_XDG_SURFACE: u16 = 2;
+/// xdg_surface: `get_toplevel`, `set_window_geometry`.
 const GET_TOPLEVEL: u16 = 1;
+const SET_WINDOW_GEOMETRY: u16 = 3;
+/// xdg_toplevel: `set_app_id` (request), `configure` (event; its `activated` state).
+const SET_APP_ID: u16 = 3;
 const CONFIGURE: u16 = 0;
+const ACTIVATED: u32 = 4;
+/// wl_surface: `commit`.
+const COMMIT: u16 = 6;
 
 /// File descriptors a message may carry at most (libwayland's).
 const MAX_FDS: usize = 28;
+/// How often a frame rate row is written, and how often the settings' files are read again.
+const ROW_EVERY: Duration = Duration::from_millis(500);
+const SETTINGS_EVERY: Duration = Duration::from_secs(1);
+
+/// What to do with a message.
+#[derive(Debug, PartialEq, Eq)]
+enum Pass {
+    Keep,
+    Drop,
+    /// Passed on changed (whole: header and arguments).
+    Replace(Vec<u8>),
+}
+
+/// The settings ClamShell gives the proxy (see the module's doc), read again at most every second.
+#[derive(Debug, Default)]
+pub struct Settings {
+    dir: Option<PathBuf>,
+    read: Option<Instant>,
+    /// The caption's height (pixels; 0: shown).
+    caption: i32,
+}
+
+impl Settings {
+    fn refresh(&mut self, now: Instant) {
+        let Some(dir) = &self.dir else {
+            return;
+        };
+        if self.read.is_some_and(|t| now.duration_since(t) < SETTINGS_EVERY) {
+            return;
+        }
+        self.read = Some(now);
+        self.caption = std::fs::read_to_string(dir.join("android-caption")).unwrap_or_default().trim().parse().unwrap_or(0);
+    }
+}
+
+/// A toplevel the proxy follows.
+#[derive(Debug)]
+struct Toplevel {
+    xdg_surface: u32,
+    surface: u32,
+    app_id: String,
+    /// The size of the last configure passed on (none yet: the first goes), as the compositor gave it.
+    size: Option<(i32, i32)>,
+    active: bool,
+    /// Commits since `since`.
+    commits: u32,
+    since: Option<Instant>,
+}
 
 /// What the proxy knows of a connection's objects.
 #[derive(Debug, Default)]
 pub struct Objects {
     registries: HashSet<u32>,
     wm_bases: HashSet<u32>,
-    xdg_surfaces: HashSet<u32>,
-    /// Each toplevel, and the size of the last configure passed on (none yet: the first goes).
-    toplevels: HashMap<u32, Option<(i32, i32)>>,
+    /// Each xdg_surface's wl_surface.
+    xdg_surfaces: HashMap<u32, u32>,
+    toplevels: HashMap<u32, Toplevel>,
+    settings: Settings,
 }
 
 impl Objects {
-    /// A request from the client: the objects it makes that the proxy follows.
-    fn request(&mut self, object: u32, opcode: u16, args: &[u8]) {
+    pub fn new(settings_dir: Option<PathBuf>) -> Objects {
+        Objects { settings: Settings { dir: settings_dir, ..Settings::default() }, ..Objects::default() }
+    }
+
+    fn toplevel_of_xdg_surface(&self, xdg_surface: u32) -> Option<u32> {
+        self.toplevels.iter().find(|(_, t)| t.xdg_surface == xdg_surface).map(|(id, _)| *id)
+    }
+
+    fn toplevel_of_surface(&self, surface: u32) -> Option<u32> {
+        self.toplevels.iter().find(|(_, t)| t.surface == surface).map(|(id, _)| *id)
+    }
+
+    /// A request from the client: the objects it makes that the proxy follows; a window geometry moved
+    /// below the caption.
+    fn request(&mut self, object: u32, opcode: u16, args: &[u8], now: Instant) -> Pass {
         let word = |i: usize| args.get(i * 4..i * 4 + 4).and_then(|b| b.try_into().ok()).map(u32::from_ne_bytes);
+        if self.registries.contains(&object) && opcode == BIND {
+            // name, interface (a string: its length, then its bytes padded to 4), version, id.
+            let len = word(1).unwrap_or(0) as usize;
+            let after = 8 + len.div_ceil(4) * 4;
+            let id = args.get(after + 4..after + 8).and_then(|b| b.try_into().ok()).map(u32::from_ne_bytes);
+            if args.get(8..8 + len.saturating_sub(1)) == Some(b"xdg_wm_base") {
+                self.wm_bases.extend(id);
+            }
+            return Pass::Keep;
+        }
         match opcode {
             GET_REGISTRY if object == DISPLAY => self.registries.extend(word(0)),
-            BIND if self.registries.contains(&object) => {
-                // name, interface (a string: its length, then its bytes padded to 4), version, id.
-                let Some(len) = word(1).map(|l| l as usize) else {
-                    return;
-                };
-                let interface = args.get(8..8 + len.saturating_sub(1)).unwrap_or_default();
-                let after = 8 + len.div_ceil(4) * 4;
-                let id = args.get(after + 4..after + 8).and_then(|b| b.try_into().ok()).map(u32::from_ne_bytes);
-                if interface == b"xdg_wm_base" {
-                    self.wm_bases.extend(id);
+            GET_XDG_SURFACE if self.wm_bases.contains(&object) => {
+                if let (Some(id), Some(surface)) = (word(0), word(1)) {
+                    self.xdg_surfaces.insert(id, surface);
                 }
             }
-            GET_XDG_SURFACE if self.wm_bases.contains(&object) => self.xdg_surfaces.extend(word(0)),
-            GET_TOPLEVEL if self.xdg_surfaces.contains(&object) => {
+            GET_TOPLEVEL if self.xdg_surfaces.contains_key(&object) => {
+                let surface = self.xdg_surfaces.get(&object).copied().unwrap_or(0);
                 if let Some(id) = word(0) {
-                    self.toplevels.insert(id, None);
+                    let t = Toplevel { xdg_surface: object, surface, app_id: String::new(), size: None, active: false, commits: 0, since: None };
+                    self.toplevels.insert(id, t);
+                }
+            }
+            SET_WINDOW_GEOMETRY if self.xdg_surfaces.contains_key(&object) && self.toplevel_of_xdg_surface(object).is_some() => {
+                self.settings.refresh(now);
+                let caption = self.settings.caption;
+                let int = |i: usize| word(i).map(|w| w as i32);
+                if let (Some(x), Some(y), Some(w), Some(h)) = (int(0), int(1), int(2), int(3))
+                    && caption > 0
+                    && h > caption
+                {
+                    return Pass::Replace(message(object, opcode, &ints(&[x, y + caption, w, h - caption])));
+                }
+            }
+            SET_APP_ID if self.toplevels.contains_key(&object) => {
+                let len = word(0).unwrap_or(0) as usize;
+                let app_id = args.get(4..4 + len.saturating_sub(1)).map(|b| String::from_utf8_lossy(b).into_owned()).unwrap_or_default();
+                if let Some(t) = self.toplevels.get_mut(&object) {
+                    t.app_id = app_id;
+                }
+            }
+            COMMIT => {
+                if let Some(t) = self.toplevel_of_surface(object).and_then(|id| self.toplevels.get_mut(&id)) {
+                    t.commits += 1;
+                    t.since.get_or_insert(now);
                 }
             }
             _ => {}
         }
+        Pass::Keep
     }
 
-    /// An event from the compositor: whether it is passed on (not a toplevel configure of the size it
-    /// had); ids deleted forgotten.
-    fn event(&mut self, object: u32, opcode: u16, args: &[u8]) -> bool {
+    /// An event from the compositor: a configure of the size the window had dropped, another made taller
+    /// by the caption; ids deleted forgotten.
+    fn event(&mut self, object: u32, opcode: u16, args: &[u8], now: Instant) -> Pass {
         let int = |i: usize| args.get(i * 4..i * 4 + 4).and_then(|b| b.try_into().ok()).map(i32::from_ne_bytes);
         if object == DISPLAY && opcode == DELETE_ID {
-            if let Some(id) = int(0).map(|i| i as u32) {
-                self.registries.remove(&id);
-                self.wm_bases.remove(&id);
-                self.xdg_surfaces.remove(&id);
-                self.toplevels.remove(&id);
-            }
-            return true;
+            let Some(id) = int(0).map(|i| i as u32) else {
+                return Pass::Keep;
+            };
+            self.registries.remove(&id);
+            self.wm_bases.remove(&id);
+            self.xdg_surfaces.remove(&id);
+            self.toplevels.remove(&id);
+            return Pass::Keep;
         }
         if opcode != CONFIGURE {
-            return true;
+            return Pass::Keep;
         }
-        let Some(last) = self.toplevels.get_mut(&object) else {
-            return true;
+        let Some(t) = self.toplevels.get_mut(&object) else {
+            return Pass::Keep;
         };
         let (Some(w), Some(h)) = (int(0), int(1)) else {
-            return true;
+            return Pass::Keep;
         };
-        if *last == Some((w, h)) {
-            return false;
+        // The states: an array (its length in bytes, then u32s).
+        let states_len = int(2).unwrap_or(0) as usize;
+        let states = args.get(12..12 + states_len).unwrap_or_default();
+        t.active = states.chunks_exact(4).any(|s| s.try_into().ok().map(u32::from_ne_bytes) == Some(ACTIVATED));
+        if t.size == Some((w, h)) {
+            return Pass::Drop;
         }
-        *last = Some((w, h));
-        true
+        t.size = Some((w, h));
+        self.settings.refresh(now);
+        let caption = self.settings.caption;
+        if caption > 0 && h > 0 {
+            let mut changed = args.to_vec();
+            changed.splice(4..8, (h + caption).to_ne_bytes());
+            return Pass::Replace(message(object, opcode, &changed));
+        }
+        Pass::Keep
     }
+
+    /// The active toplevel's frame rate, once half a second has passed since it was last told: its app id
+    /// and its commits a second.
+    fn frame_rate(&mut self, now: Instant) -> Option<(String, f32)> {
+        let t = self.toplevels.values_mut().find(|t| t.active && !t.app_id.is_empty())?;
+        let since = t.since?;
+        let elapsed = now.duration_since(since);
+        if elapsed < ROW_EVERY {
+            return None;
+        }
+        let fps = t.commits as f32 / elapsed.as_secs_f32();
+        t.commits = 0;
+        t.since = Some(now);
+        Some((t.app_id.clone(), fps))
+    }
+}
+
+/// A message: its object, its opcode and its arguments, with its header.
+fn message(object: u32, opcode: u16, args: &[u8]) -> Vec<u8> {
+    let mut m = object.to_ne_bytes().to_vec();
+    m.extend((((args.len() + 8) as u32) << 16 | u32::from(opcode)).to_ne_bytes());
+    m.extend_from_slice(args);
+    m
+}
+
+fn ints(values: &[i32]) -> Vec<u8> {
+    values.iter().flat_map(|v| v.to_ne_bytes()).collect()
 }
 
 /// The whole messages at the start of `buf`: each `(object, opcode, args)`, and how many bytes they take
@@ -123,8 +274,9 @@ fn messages(buf: &[u8]) -> (Vec<(u32, u16, std::ops::Range<usize>)>, usize) {
 }
 
 /// Listens on `<display>-android` beside the compositor's socket (`$XDG_RUNTIME_DIR`, `$WAYLAND_DISPLAY`)
-/// and passes each connection through; returns only if it can't listen.
-pub fn run() -> io::Result<()> {
+/// and passes each connection through; `settings`: ClamShell's runtime dir (its `android-*` files),
+/// `frames`: its MangoHud folder. Returns only if it can't listen.
+pub fn run(settings: PathBuf, frames: PathBuf) -> io::Result<()> {
     let runtime = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).ok_or_else(|| io::Error::other("no XDG_RUNTIME_DIR"))?;
     let display = std::env::var("WAYLAND_DISPLAY").map_err(|_| io::Error::other("no WAYLAND_DISPLAY"))?;
     let upstream = runtime.join(&display);
@@ -134,7 +286,7 @@ pub fn run() -> io::Result<()> {
     log::info!("wayland filter: {} for {}", path.display(), upstream.display());
     for client in listener.incoming() {
         match client {
-            Ok(client) => connect(client, &upstream),
+            Ok(client) => connect(client, &upstream, &settings, &frames),
             Err(e) => log::warn!("wayland filter: {e}"),
         }
     }
@@ -142,7 +294,7 @@ pub fn run() -> io::Result<()> {
 }
 
 /// A client connected: its connection to the compositor, and a thread each way.
-fn connect(client: UnixStream, upstream: &Path) {
+fn connect(client: UnixStream, upstream: &Path, settings: &Path, frames: &Path) {
     let server = match UnixStream::connect(upstream) {
         Ok(s) => s,
         Err(e) => {
@@ -150,28 +302,62 @@ fn connect(client: UnixStream, upstream: &Path) {
             return;
         }
     };
-    let objects = Arc::new(Mutex::new(Objects::default()));
+    let objects = Arc::new(Mutex::new(Objects::new(Some(settings.to_path_buf()))));
     let ends = (client.try_clone(), server.try_clone());
     let (Ok(client2), Ok(server2)) = ends else {
         return;
     };
-    let requests = objects.clone();
+    let (requests, rates) = (objects.clone(), objects.clone());
+    let mut log = FrameLog { dir: frames.to_path_buf(), files: HashMap::new() };
     let _ = thread::Builder::new().name("wayland filter".into()).spawn(move || {
-        relay(&client, &server, |o, op, args| {
-            requests.lock().unwrap_or_else(PoisonError::into_inner).request(o, op, args);
-            true
-        });
+        relay(
+            &client,
+            &server,
+            |o, op, args, now| requests.lock().unwrap_or_else(PoisonError::into_inner).request(o, op, args, now),
+            |now| {
+                if let Some((app, fps)) = rates.lock().unwrap_or_else(PoisonError::into_inner).frame_rate(now) {
+                    log.row(&app, fps);
+                }
+            },
+        );
     });
     let _ = thread::Builder::new().name("wayland filter".into()).spawn(move || {
-        relay(&server2, &client2, |o, op, args| objects.lock().unwrap_or_else(PoisonError::into_inner).event(o, op, args));
+        relay(&server2, &client2, |o, op, args, now| objects.lock().unwrap_or_else(PoisonError::into_inner).event(o, op, args, now), |_| {});
     });
 }
 
-/// Passes messages from `from` to `to`, those `keep` says, with the file descriptors that come with
-/// them, until either end closes (then both are shut).
-fn relay(from: &UnixStream, to: &UnixStream, mut keep: impl FnMut(u32, u16, &[u8]) -> bool) {
+/// The frame rate logs, MangoHud's way (see the module's doc): a file per app, its header first.
+struct FrameLog {
+    dir: PathBuf,
+    files: HashMap<String, File>,
+}
+
+impl FrameLog {
+    fn row(&mut self, app: &str, fps: f32) {
+        let name = format!("android-{}.csv", app.replace(['/', ' '], "_"));
+        if !self.files.contains_key(&name) {
+            let _ = std::fs::create_dir_all(&self.dir);
+            match OpenOptions::new().create(true).truncate(true).write(true).open(self.dir.join(&name)) {
+                Ok(mut f) => {
+                    let _ = f.write_all(b"fps,frametime\n");
+                    self.files.insert(name.clone(), f);
+                }
+                Err(e) => return log::debug!("wayland filter: {name}: {e}"),
+            }
+        }
+        if let Some(f) = self.files.get_mut(&name) {
+            let frame_ms = if fps > 0.0 { 1000.0 / fps } else { 0.0 };
+            let _ = writeln!(f, "{fps:.1},{frame_ms:.2}");
+        }
+    }
+}
+
+/// Passes messages from `from` to `to` as `pass` says, with the file descriptors that come with them,
+/// until either end closes (then both are shut); `after` is called after each read.
+fn relay(from: &UnixStream, to: &UnixStream, mut pass: impl FnMut(u32, u16, &[u8], Instant) -> Pass, mut after: impl FnMut(Instant)) {
     let mut buf: Vec<u8> = Vec::new();
     let mut chunk = vec![0u8; 16384];
+    let mut out = Vec::new();
     loop {
         let mut space = [MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(MAX_FDS))];
         let mut ancillary = RecvAncillaryBuffer::new(&mut space);
@@ -179,24 +365,28 @@ fn relay(from: &UnixStream, to: &UnixStream, mut keep: impl FnMut(u32, u16, &[u8
             Ok(r) if r.bytes > 0 => r.bytes,
             Ok(_) | Err(_) => break,
         };
-        let mut fds: Vec<OwnedFd> = Vec::new();
+        let mut received: Vec<OwnedFd> = Vec::new();
         for message in ancillary.drain() {
-            if let RecvAncillaryMessage::ScmRights(received) = message {
-                fds.extend(received);
+            if let RecvAncillaryMessage::ScmRights(fds) = message {
+                received.extend(fds);
             }
         }
+        let now = Instant::now();
         buf.extend_from_slice(chunk.get(..n).unwrap_or_default());
         let (found, used) = messages(&buf);
-        let mut out = Vec::with_capacity(used);
+        out.clear();
         for (object, opcode, args) in found {
-            let message = buf.get(args.start - 8..args.end).unwrap_or_default();
-            if keep(object, opcode, buf.get(args).unwrap_or_default()) {
-                out.extend_from_slice(message);
+            let whole = buf.get(args.start - 8..args.end).unwrap_or_default();
+            match pass(object, opcode, buf.get(args).unwrap_or_default(), now) {
+                Pass::Keep => out.extend_from_slice(whole),
+                Pass::Drop => {}
+                Pass::Replace(m) => out.extend(m),
             }
         }
         buf.drain(..used);
+        after(now);
         // (The descriptors go with the bytes they came with: the receiver takes them in order, by message.)
-        if send(to, &out, &fds).is_err() {
+        if (!out.is_empty() || !received.is_empty()) && send(to, &out, &received).is_err() {
             break;
         }
     }
@@ -231,50 +421,88 @@ fn send(to: &UnixStream, bytes: &[u8], fds: &[OwnedFd]) -> io::Result<()> {
 mod tests {
     use super::*;
 
-    fn message(object: u32, opcode: u16, args: &[u8]) -> Vec<u8> {
-        let mut m = object.to_ne_bytes().to_vec();
-        m.extend((((args.len() + 8) as u32) << 16 | u32::from(opcode)).to_ne_bytes());
-        m.extend_from_slice(args);
-        m
-    }
-
     fn words(ws: &[u32]) -> Vec<u8> {
         ws.iter().flat_map(|w| w.to_ne_bytes()).collect()
     }
 
+    fn string(s: &str) -> Vec<u8> {
+        let len = s.len() + 1;
+        let mut out = words(&[len as u32]);
+        out.extend(s.as_bytes());
+        out.resize(4 + len.div_ceil(4) * 4, 0);
+        out
+    }
+
     /// The registry's bind of `interface` as id `id`.
     fn bind(interface: &str, id: u32) -> Vec<u8> {
-        let len = interface.len() + 1;
-        let mut args = words(&[7, len as u32]);
-        args.extend(interface.as_bytes());
-        args.resize(8 + len.div_ceil(4) * 4, 0);
+        let mut args = words(&[7]);
+        args.extend(string(interface));
         args.extend(words(&[5, id]));
         args
     }
 
+    fn configure(w: i32, h: i32, states: &[u32]) -> Vec<u8> {
+        let mut args = ints(&[w, h, (states.len() * 4) as i32]);
+        args.extend(words(states));
+        args
+    }
+
+    /// Objects with a toplevel 11 (xdg_surface 10, wl_surface 9) of app `org.x`.
+    fn objects(caption: i32) -> Objects {
+        let mut o = Objects::default();
+        o.settings.caption = caption;
+        let now = Instant::now();
+        o.request(DISPLAY, GET_REGISTRY, &words(&[2]), now);
+        o.request(2, BIND, &bind("wl_compositor", 3), now);
+        o.request(2, BIND, &bind("xdg_wm_base", 4), now);
+        o.request(4, GET_XDG_SURFACE, &words(&[10, 9]), now);
+        o.request(10, GET_TOPLEVEL, &words(&[11]), now);
+        o.request(11, SET_APP_ID, &string("org.x"), now);
+        o
+    }
+
     #[test]
     fn a_toplevel_configure_of_the_size_it_had_is_dropped() {
-        let mut o = Objects::default();
-        o.request(DISPLAY, GET_REGISTRY, &words(&[2]));
-        o.request(2, BIND, &bind("wl_compositor", 3));
-        o.request(2, BIND, &bind("xdg_wm_base", 4));
-        o.request(4, GET_XDG_SURFACE, &words(&[10, 9]));
-        o.request(10, GET_TOPLEVEL, &words(&[11]));
-        let configure = |w: i32, h: i32, states: &[u32]| {
-            let mut args = words(&[w as u32, h as u32, (states.len() * 4) as u32]);
-            args.extend(words(states));
-            args
-        };
-        assert!(o.event(11, CONFIGURE, &configure(1920, 1080, &[4])), "the first");
-        assert!(!o.event(11, CONFIGURE, &configure(1920, 1080, &[])), "unfocused: the same size");
-        assert!(!o.event(11, CONFIGURE, &configure(1920, 1080, &[9])), "suspended");
-        assert!(o.event(11, CONFIGURE, &configure(1240, 1080, &[])), "resized");
-        assert!(o.event(10, CONFIGURE, &words(&[77])), "xdg_surface's configure (acked): always");
-        assert!(o.event(3, CONFIGURE, &configure(1, 1, &[])), "another object's opcode 0");
+        let mut o = objects(0);
+        let now = Instant::now();
+        assert_eq!(o.event(11, CONFIGURE, &configure(1920, 1080, &[ACTIVATED]), now), Pass::Keep, "the first");
+        assert_eq!(o.event(11, CONFIGURE, &configure(1920, 1080, &[]), now), Pass::Drop, "unfocused: the same size");
+        assert_eq!(o.event(11, CONFIGURE, &configure(1240, 1080, &[]), now), Pass::Keep, "resized");
+        assert_eq!(o.event(10, CONFIGURE, &words(&[77]), now), Pass::Keep, "xdg_surface's configure (acked): always");
         // Deleted, its id reused for something else: forgotten.
-        assert!(o.event(DISPLAY, DELETE_ID, &words(&[11])));
-        assert!(o.event(11, CONFIGURE, &configure(1240, 1080, &[])));
+        assert_eq!(o.event(DISPLAY, DELETE_ID, &words(&[11]), now), Pass::Keep);
+        assert_eq!(o.event(11, CONFIGURE, &configure(1240, 1080, &[]), now), Pass::Keep);
         assert!(o.toplevels.is_empty());
+    }
+
+    #[test]
+    fn the_caption_is_out_of_sight_the_app_unscaled() {
+        let mut o = objects(57);
+        let now = Instant::now();
+        // Android told a window the caption taller; the compositor, a window that starts below it.
+        let fx = o.event(11, CONFIGURE, &configure(1920, 1080, &[ACTIVATED]), now);
+        assert_eq!(fx, Pass::Replace(message(11, CONFIGURE, &configure(1920, 1137, &[ACTIVATED]))));
+        assert_eq!(o.event(11, CONFIGURE, &configure(1920, 1080, &[]), now), Pass::Drop, "the same size still, as the compositor gave it");
+        let geometry = o.request(10, SET_WINDOW_GEOMETRY, &ints(&[0, 0, 1920, 1137]), now);
+        assert_eq!(geometry, Pass::Replace(message(10, SET_WINDOW_GEOMETRY, &ints(&[0, 57, 1920, 1080]))));
+    }
+
+    #[test]
+    fn the_active_windows_commits_are_its_frame_rate() {
+        let mut o = objects(0);
+        let t0 = Instant::now();
+        o.event(11, CONFIGURE, &configure(1920, 1080, &[ACTIVATED]), t0);
+        for i in 0..30 {
+            o.request(9, COMMIT, &[], t0 + Duration::from_millis(i * 20));
+        }
+        assert_eq!(o.frame_rate(t0 + Duration::from_millis(100)), None, "not half a second yet");
+        let (app, fps) = o.frame_rate(t0 + Duration::from_millis(600)).unwrap();
+        assert_eq!(app, "org.x");
+        assert!((fps - 50.0).abs() < 1.0, "{fps}");
+        // Not active: none.
+        o.event(11, CONFIGURE, &configure(1920, 1080, &[]), t0);
+        o.request(9, COMMIT, &[], t0 + Duration::from_millis(700));
+        assert_eq!(o.frame_rate(t0 + Duration::from_millis(1300)), None);
     }
 
     #[test]
@@ -296,13 +524,8 @@ mod tests {
         let objects = Arc::new(Mutex::new(Objects::default()));
         let (o1, o2) = (objects.clone(), objects.clone());
         let (cf, sn) = (client_far.try_clone().unwrap(), server_near.try_clone().unwrap());
-        thread::spawn(move || {
-            relay(&cf, &sn, |o, op, a| {
-                o1.lock().unwrap().request(o, op, a);
-                true
-            })
-        });
-        thread::spawn(move || relay(&server_near, &client_far, |o, op, a| o2.lock().unwrap().event(o, op, a)));
+        thread::spawn(move || relay(&cf, &sn, |o, op, a, t| o1.lock().unwrap().request(o, op, a, t), |_| {}));
+        thread::spawn(move || relay(&server_near, &client_far, |o, op, a, t| o2.lock().unwrap().event(o, op, a, t), |_| {}));
         // The client makes a toplevel, sending an fd along.
         let mut requests = message(DISPLAY, GET_REGISTRY, &words(&[2]));
         requests.extend(message(2, BIND, &bind("xdg_wm_base", 4)));
@@ -318,15 +541,12 @@ mod tests {
         let fds: usize = ancillary.drain().map(|m| if let RecvAncillaryMessage::ScmRights(f) = m { f.count() } else { 0 }).sum();
         assert_eq!(fds, 1, "the fd passed on");
         // The compositor configures it twice the same, then a resize: two reach the client.
-        let configure = |w: u32| message(11, CONFIGURE, &words(&[w, 1080, 0]));
-        let mut events = configure(1920);
-        events.extend(configure(1920));
-        events.extend(configure(1240));
+        let events: Vec<u8> = [1920, 1920, 1240].iter().flat_map(|w| message(11, CONFIGURE, &configure(*w, 1080, &[]))).collect();
         (&server_far).write_all(&events).unwrap();
-        let mut received = vec![0u8; configure(1).len() * 2];
+        let one = message(11, CONFIGURE, &configure(1, 1080, &[])).len();
+        let mut received = vec![0u8; one * 2];
         (&client_near).read_exact(&mut received).unwrap();
-        let mut expected = configure(1920);
-        expected.extend(configure(1240));
+        let expected: Vec<u8> = [1920, 1240].iter().flat_map(|w| message(11, CONFIGURE, &configure(*w, 1080, &[]))).collect();
         assert_eq!(received, expected);
     }
 }

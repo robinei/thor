@@ -70,7 +70,10 @@ fn main() -> ExitCode {
             print_library(State::new(Init { library: load_library(&sources).library, ..Init::default() }).shelf().library());
             ExitCode::SUCCESS
         }
-        Command::WaylandFilter => match clamshell_system::wayland_filter::run() {
+        Command::WaylandFilter => match clamshell_system::wayland_filter::run(
+            paths.mangohud.parent().map_or_else(|| paths.mangohud.clone(), std::path::Path::to_path_buf),
+            paths.mangohud.clone(),
+        ) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
                 eprintln!("wayland filter: {e}");

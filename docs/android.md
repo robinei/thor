@@ -54,6 +54,24 @@ beside the compositor's (`<display>-android`) that passes everything through but
 the size the window already has. A resize still reaches Waydroid. (The fix belongs in Waydroid: a
 hotplug only when the size changed.)
 
+It does two more things for Android's windows:
+
+- Android's caption (back, minimise, maximise, close, drawn into the window along its top) is out of
+  sight: Android is told a window the caption's height taller, and the compositor a window that starts
+  below it (its window geometry), so the app's own area fills the window, unscaled; the app lays itself
+  out below the caption, so nothing of it is under it. Its height is in `android-caption` in ClamShell's
+  runtime dir: the script writes it once Android has started, 57 pixels at a density of 213 (measured) in
+  proportion. Back: the pad's B (Escape). A new geometry is the compositor's from the app's next frame.
+- The app's frame rate (its window's commits, the window in front) is written as MangoHud logs it
+  (`android-<app id>.csv` in ClamShell's MangoHud folder, a row every half second), which ClamShell
+  reads as it does a game's.
+
+No frame rate cap: Waydroid paces Android by a vsync of its own, its period fixed when the session starts
+(from the outputs' refresh), not by the compositor's frame callbacks. A cap would be all of Android's, set
+as the session starts.
+
+Its cost, measured on the desktop with an app drawing at 50 fps: 0.1 % of a core, 6 MB.
+
 ## In the background
 
 Android's apps share one container, so they are paused together: the Android runner's `pause` and
