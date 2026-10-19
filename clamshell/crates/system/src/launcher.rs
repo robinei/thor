@@ -4,7 +4,10 @@
 //! - A program (its arguments filled in by the library) runs in its own systemd scope where there is a
 //!   user session (`systemd-run --user --scope`), so restarting ClamShell doesn't end it; the thread
 //!   waits for it.
-//! - A Steam game is started with `steam -silent -applaunch <id>`; it counts as running while Steam's launcher
+//! - A Steam game is started with `steam -silent -applaunch <id>`: given to Steam if it runs; else Steam
+//!   is started with it as a launch of Steam's desktop entry (its scope, so it is on the dock and outlives
+//!   ClamShell; ClamShell finds it by its scope), without the game's environment (Steam's own would be
+//!   it, for every game it starts); it counts as running while Steam's launcher
 //!   process for that app id (`reaper SteamLaunch AppId=<id>`) exists.
 //!
 //! Every play is added to the database (see [`crate::store`]) and reported, with its start and duration.
@@ -189,7 +192,7 @@ fn start(config: &Config, request: &Request) -> Result<Running, Error> {
     match &request.launch {
         Launch::Program { argv, .. } if argv.is_empty() => Err(Error::EmptyCommand),
         Launch::Program { argv, workdir } => start_program(config, request, argv.clone(), workdir.clone()),
-        Launch::Steam { appid } => start_steam(&request.env, *appid),
+        Launch::Steam { appid } => start_steam(config, &request.env, *appid),
         Launch::None | Launch::Tool(_) => Err(Error::NoCommand),
     }
 }
@@ -222,12 +225,22 @@ fn start_program(config: &Config, request: &Request, argv: Vec<String>, workdir:
     })
 }
 
-fn start_steam(env: &[(String, String)], appid: u32) -> Result<Running, Error> {
-    let mut steam = Command::new("steam");
+fn start_steam(config: &Config, env: &[(String, String)], appid: u32) -> Result<Running, Error> {
     // (`-silent`: if Steam isn't running, it starts without its window, only the game showing.)
-    steam.args(["-silent", "-applaunch", &appid.to_string()]).envs(env.iter().map(|(k, v)| (k, v))).stdin(Stdio::null()).process_group(0);
-    // If Steam wasn't running, this process becomes Steam itself: reaped whenever it ends.
-    job::reap(steam.spawn()?);
+    let argv: Vec<String> = ["steam", "-silent", "-applaunch", &appid.to_string()].map(String::from).to_vec();
+    if config.scope && !steam_client_running() {
+        let instance = Instance::Run { key: clamshell_library::key_of(STEAM_ENTRY), secs: now(), n: 0 };
+        let job = Job { unit: instance.name(), workspace: instance.workspace(), slice: instance.slice(), argv, env: vec![], workdir: None, scope: true };
+        log::info!("launcher: Steam isn't running: starting it in {}", job.unit);
+        if let Started::Child(child) = config.jobs.without_sway().start(&job)? {
+            job::reap(child);
+        }
+    } else {
+        let mut steam = Command::new("steam");
+        steam.args(argv.iter().skip(1)).envs(env.iter().map(|(k, v)| (k, v))).stdin(Stdio::null()).process_group(0);
+        // (Without a scope, if Steam wasn't running, this process becomes Steam itself.)
+        job::reap(steam.spawn()?);
+    }
     let marker = format!("AppId={appid}");
     let asked = Instant::now();
     while !steam_running(&marker) {
@@ -237,6 +250,14 @@ fn start_steam(env: &[(String, String)], appid: u32) -> Result<Running, Error> {
         thread::sleep(Duration::from_secs(1));
     }
     Ok(Running::Steam(marker))
+}
+
+/// Steam's desktop entry, whose launches Steam started for a game is one of.
+const STEAM_ENTRY: &str = "desktop:steam";
+
+/// Whether Steam's client (or its starter script) runs.
+fn steam_client_running() -> bool {
+    sys::processes().any(|(_, dir)| sys::text(dir.join("comm")).is_some_and(|c| c.trim() == "steam"))
 }
 
 /// Whether Steam's launcher for an app (`... SteamLaunch AppId=<id> ...`) is running.
