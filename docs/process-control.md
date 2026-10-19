@@ -1,139 +1,132 @@
 # Process control: what runs, and who decides
 
-A design note, not a description of what is built. It records the aim, what starts processes on the
-Thor, the mechanisms available for each kind of process, and what has to be measured on the device
-before any policy is chosen.
+How ClamShell keeps track of what runs on the Thor, and what it does with it: starting, pausing and
+ending programs, and showing what they cost. Then what was measured and tried, and what is still open.
 
 ## Aim
 
-On the Thor, ClamShell is the session, not a launcher on top of one. Whatever it can manage it should:
-what starts, what keeps running, what is paused, what is ended. That control is only worth handing to
-the user if it is
+On the Thor ClamShell is the session, not a launcher on top of one. What it can manage it does: what
+starts, what keeps running, what is paused, what is ended. That control is worth handing to the user only
+if it is
 
 - complete: nothing the user would count as a program runs without ClamShell knowing it and showing it;
-- reliable: Quit and Force kill end it, and a rule such as "not in the background" holds.
+- reliable: Quit and Force kill end it, and a rule such as "pause in the background" holds.
 
-Linux programs, unlike Android apps, don't take part in this: none of them expects to be paused or
-ended by the system and none saves its state when asked. What ClamShell can do to a program is
-cooperative (close its windows, SIGTERM) or blunt (SIGKILL), and one thing is transparent: freezing it
-(the cgroup freezer).
+Linux programs, unlike Android apps, take no part in this: none expects to be paused or ended by the
+system, none saves its state when asked. What ClamShell can do to a program is cooperative (close its
+windows, SIGTERM), blunt (SIGKILL), or transparent: freezing it (the cgroup freezer, systemd's
+FreezeUnit and ThawUnit).
 
 ## Modes
 
-- Device session (`CLAMSHELL_SESSION=device`): ClamShell owns the session and manages everything it
-  can.
-- Guest (nested in a desktop's session): ClamShell manages only what it started. The desktop's
-  programs (its tray icons, its services) are the desktop's: shown at most, never adopted or ended.
+- Device session (`CLAMSHELL_SESSION=device`): ClamShell is the session and manages everything it can.
+- Guest (nested in a desktop's session): ClamShell manages what it started. The desktop's programs (its
+  tray icons, windows it didn't start) are shown on the dock at most, never moved or ended.
 
-Each control decides by the mode rather than by special cases.
+ClamShell needs a systemd user manager: every launch runs in a scope of its own.
 
-## What starts processes
+## Who started what, and what ClamShell does with it
 
-| Source | Examples | Where they run | ClamShell's |
+| Started by | Examples | Where it runs | ClamShell |
 |---|---|---|---|
-| System services | NetworkManager, bluetoothd, sshd, waydroid-container | `system.slice` | No: the device's plumbing |
-| User services | PipeWire, WirePlumber, portals, D-Bus activated services | `user@.service/session.slice`, `app.slice` | No |
-| The login session | sway, and what sway's config starts: mako, udiskie | `session-N.scope` | No: plumbing |
-| ClamShell's launches | apps, emulators, files opened, Steam (when a game starts it) | `clamshell-run-<key>.slice`, a scope per launch | Yes |
-| Launchers inside launches | Steam's games, Lutris', a terminal's commands | the launcher's scope | Partly: counted as the launcher |
-| Android | Waydroid's apps | `lxc.payload.waydroid`, outside both | No: Android's own |
+| ClamShell | apps, games, emulators, files opened, Steam | a scope per launch, in the entry's slice (`clamshell-run-<key>.slice`) | its own |
+| Steam | its games, whether ClamShell or Steam's window started them | moved from Steam's scope into the game's own | its own, once moved |
+| Anything else, a program with a window or a tray icon | a program from sway's config, another program's child, a desktop launcher's | moved from its scope (an app scope, the login session's) into one of the entry's | its own, once moved (device session) |
+| A systemd service | portals, the polkit agent, PipeWire, D-Bus activated services | its service | not touched: its windows are no entries |
+| The login session | sway, mako, udiskie | `session-N.scope` | the session's own: shown in the battery tab, not endable |
+| Android | Waydroid's apps | the container (`lxc.payload.waydroid`) | paused and stopped through the Android runner |
+| The system | NetworkManager, bluetoothd, sshd, the Waydroid container service | `system.slice` | not touched |
 
-Everything that escapes ClamShell's scopes today does so by being started by something else: sway's
-config, the user manager (D-Bus activation, units started by scripts), a program already running
-(`xdg-open` handing over), or Android.
+## Entries and how long they run
 
-## Mechanisms, per kind of process
+What runs is shown and controlled as entries (the dock's): one per program, each with a workspace.
 
-- Native programs in ClamShell's scopes: everything systemd offers a unit. Stop (ends the slice), kill,
-  freeze and thaw (FreezeUnit, ThawUnit), CPU weight and quota, memory limits, IO weight; and the
-  accounting (memory.current, cpu.stat) to show what each costs.
-- Launchers' children: a Steam game runs in Steam's scope (since Steam is a ClamShell launch), so it is
-  counted, frozen or stopped together with Steam. systemd can move running processes into a unit of
-  their own (AttachProcessesToUnit, for the user manager's scopes): a game Steam starts could get its own
-  scope, found by Steam's launcher process (`reaper SteamLaunch AppId=<id>`), which ClamShell already
-  watches. Not tried.
-- Android: the container's processes are in a cgroup of their own outside systemd's trees. Android
-  manages its apps itself (background limits, standby buckets, battery optimisation); ClamShell can only
-  ask it, through adb (`am force-stop`, `cmd appops`, `am set-standby-bucket`), or freeze or stop the
-  whole container.
-- Programs found by their tray icon (started outside ClamShell): moved into a scope of ours in the
-  device's session (below), then as any launch; one a systemd service runs stays the service's, its
-  process signalled.
+- A launch of ClamShell's runs in a scope of its own (`systemd-run --user --scope`, through sway's exec
+  so its first window opens on the entry's workspace; restarting ClamShell doesn't end it), in its
+  entry's slice; an entry may run several (another tab each). An entry runs while the launcher follows a
+  launch of it or systemd lists a scope of it; once neither, it has ended and its play is recorded, from
+  its start to then (launches side by side are one play). A ClamShell started later finds the launches
+  that run by their scopes, and records their play from the start time in the scopes' names.
+- A launch that hands its app over to a program already running (the Android runner's, to the Waydroid
+  session) and ends: the entry runs on by its windows, found by their app id (`waydroid.<package>`),
+  until the last one closes (or none came within 15 s).
+- A Steam game: Steam starts it under its launcher process (`reaper SteamLaunch AppId=<id>`, in Steam's
+  scope). The launch moves that launcher and what it started into its own scope, and keeps moving any
+  later one for the game as long as it runs (a fresh Steam runs Proton's install scripts first under one
+  launcher, then the game under another); it follows the game while a launcher for it runs, or did within
+  10 s. A game started from Steam's own window is found by its window (`steam_app_<id>`; the app id says
+  whose it is, though the process is in Steam's scope), which makes it a launch: the launcher finds it
+  running and moves it in the same way. Steam's Running state and its Stop are unaffected: Steam goes
+  by its launcher process, not its cgroup.
+- A program ClamShell didn't start is found by its tray icon, or by a window no entry has; anything with
+  a window is on the dock. Its entry: the library's desktop entry named as the icon's id or the window's
+  app id, else one of its own (`tray:…`, `window:<app id>`). Its windows go to its workspace (shown if
+  one was in front). In the device session its process and those it started are moved into a scope of
+  the entry's (systemd's StartTransientUnit with their PIDs, or AttachProcessesToUnit into one there
+  already: the scopes are delegated, which a user manager requires for that); once systemd lists it, the
+  entry is a launch like any other, its windows found by the scope. Not moved: a process a systemd
+  service runs (the service would lose it), or one that also has another entry's windows (a browser
+  showing a file opened from the Files tab: moving it would take the other's windows too); such an entry
+  runs while its icon or a window is there, and Quit only closes its windows. A window a systemd service
+  opened (a portal's file chooser, the polkit password prompt) is no entry: it belongs to the program that
+  asked for it, and is gone in seconds.
+
+## Ending
+
+| Entry | Quit | Force kill |
+|---|---|---|
+| A launch (and anything moved into a scope of ours) | its windows asked to close (a "save changes?" window keeps it until answered); then, if it still runs, its slice stopped (SIGTERM, SIGKILL after systemd's timeout) | its slice killed |
+| Handed over (Android) | its windows closed; the runner's `stop` once they are gone (`am force-stop`, its tasks removed) | the runner's `stop` at once |
+| Found, not moved | its windows closed; then its process asked to end (SIGTERM), in the device session | its process killed (device session) |
+| Found, sharing a process | its windows closed | nothing |
+
+An entry is thawed before anything is asked of it (closed, quit, killed, shown).
+
+## In the background
+
+A setting with the settings' levels (All, a runner, an item): what an entry does while none of its
+windows is shown.
+
+- Pauses games (the default): Pauses hidden for a game, Runs hidden for the rest. A game is an entry that
+  is no app, film, file or group: a desktop file in the Game category is an app if it is also an
+  emulator, package manager, network program or utility (Steam, Lutris, Bottles), or one of a short list
+  of launchers and game tools that say only Game (Heroic, Faugus, itch, GOverlay and the like); their
+  games are entries of their own. Resolved per entry after the levels, so All set to Runs hidden runs
+  games too. As consoles do; one that minds (online play) is set to run.
+- Runs hidden.
+- Pauses hidden: its slice frozen once it has windows and none has been shown for 10 s; thawed when one
+  is shown, or before it is shown, closed, quit or killed. Not while it is quitting (frozen, it couldn't
+  end), nor once its windows are gone (closed from outside, as Steam's Stop does: thawed, to end). A
+  freeze waits while the slice works without drawing (over half a core, its processes' GPU under 5 %,
+  looked at for 2 s at a time): loading or compiling shaders, which the user switched away to wait for;
+  a game hidden but drawing on uses the GPU and is frozen. Showing it again cancels a waiting freeze.
+- Quits closed: ended once it has had a window and has none left.
+
+A slice left frozen (by a ClamShell before this one, which doesn't know it paused it) is thawed at
+start, and before a launch into it: systemd starts no scope in a frozen slice.
+
+Android's apps share one container, so the Android runner is paused as a whole (its `pause` and `resume`,
+Waydroid's container service freezing and thawing the container, no root): set to Pauses hidden, once
+none of its apps has been shown, or is starting, for the grace. Android's own suspend is turned off at
+setup, so that this setting decides. Its windows survive being hidden through ClamShell's Wayland
+filter (see android.md).
+
+## Start with ClamShell
+
+In an entry's dock menu (saved): once ClamShell knows what runs (systemd's first list of its scopes),
+each such entry that doesn't run is launched on its own workspace, not shown. What a restarted ClamShell
+finds running isn't started twice.
 
 ## What the user sees
 
-The dock lists every running entry: anything ClamShell runs is visible there and can be quit. On
-Android a program may only run in the background with a notification saying so (a foreground
-service); the dock plays that part here. Whether that is enough control, or whether rules are wanted
-on top of it, is for use to show.
-
-## Possible controls (none decided)
-
-- Starts with ClamShell, per entry: Steam silently at session start (no cold start before the first
-  game), the Waydroid session.
-- In the background, per entry (the settings' levels: All, runner, item):
-  - Ends: its scope stopped when its last window closes (Steam closing its window would end it);
-  - Runs: as now;
-  - Pauses: frozen while not in front, thawed when shown. A console's suspended games: switching
-    between several is instant, and a paused one costs no CPU. "In front" needs defining with two
-    screens (a program on the bottom screen is visible) and with sound (music playing in the background).
-- The rest of what runs: a Tools page listing what is in no entry (user services, the login session's
-  processes, Android), with what each costs, and Quit and Force kill where that is safe.
-
-## A session as the VM runs it
-
-`tools/inventory.sh [SECONDS]` (read-only, on the device or in the VM): the running units, and per
-cgroup its memory now and its CPU time over the window (30 s). In the VM (4 GiB, no GPU), idle, shelf in front:
-
-| Cgroup | Memory MiB | CPU ms / 30 s | Processes |
-|---|---|---|---|
-| clamshell.service | 89 | 134 | 1 |
-| system.slice/systemd-journald | 33 | 0 | 1 |
-| system.slice/waydroid-container | 30 | 0 | 1 |
-| session-2.scope (sway, mako, a stray adb server) | 19 | 0 | 3 |
-| NetworkManager | 14 | 1 | 1 |
-| pipewire, pipewire-pulse, wireplumber | 16 | 11 | 3 |
-| everything else | under 10 each | 0 to 3 | |
-
-Machine: 653 MiB used of 3.9 GiB.
-
-With the Waydroid session up and Calculator open:
-
-| Cgroup | Memory MiB | CPU ms / 30 s | Processes |
-|---|---|---|---|
-| lxc.payload.waydroid (Android) | 2631 | 69 | 89 |
-| clamshell.service | 79 | 175 | 1 |
-| session-2.scope | 59 | 4 | 3 |
-| waydroid-container | 37 | 0 | 2 |
-| waydroid-session.service | 21 | 0 | 1 |
-
-Machine: 1855 MiB used. The container's 2.6 GiB counts the page cache charged to it, not only Android's
-own memory.
-
-What it showed:
-
-- An adb server started by hand during testing sat in sway's login session, listed nowhere: and
-  ClamShell's Android runner used it, because the adb service unit it starts found the port taken and
-  ended. One stray process, unseen, and the managed path quietly depending on it.
-- ClamShell itself idles at about 5 ms of CPU a second (shelf in front, nothing changing). Worth finding
-  out what wakes it, on the device.
-- Android is a few hundred megabytes of its own at least, and nearly 90 processes, while one small app
-  is open.
-
-## To find out on the Thor
-
-1. The same inventory in a normal session: with Steam, with the Waydroid session, with a game; memory,
-   CPU, and wakeups (powertop) per cgroup.
-2. Idle power with and without Steam and Waydroid running.
-3. Freezing a game's scope and thawing it: two or three native games and an emulator, with Turnip and
-   PipeWire. Sound during and after, the GPU after, the controller, online games' connections, how long
-   thawing takes.
-4. Steam with a game frozen, or moved into a scope of its own: whether it notices, times out, or loses
-   the game (play time, cloud sync at exit).
-5. Waydroid in the background: what Android keeps running, and freezing the container as a whole.
-6. ClamShell's own wakeups when idle.
-7. After some days of use: whether anything the dock doesn't show was wanted, or anything it shows
-   wasn't.
+- The dock: every running entry, with its tray menu if it has one, Quit and Force kill, and what it
+  costs now (memory, CPU, GPU).
+- The battery tab's list of what is using the machine: CPU, GPU and resident memory per group (an
+  entry's launches; an Android app, by its package, from the container's processes; Android's own
+  processes; another program by name; the system), idle groups holding 100 MB or more too. A row of a
+  program that isn't the session's own (ClamShell, sway and what its config starts, PipeWire, the bus)
+  has Quit and Force kill. The GPU time of another user's processes (Android's, the system's) can't be
+  read: a dash.
 
 ## ClamShell's own wakeups
 
@@ -152,91 +145,50 @@ watched through /proc/self/mounts (POLLPRI) and devices through inotify on /dev/
 | tray | 4/s | its signals only |
 
 Left: the main thread (the events it is sent: the clock's tick every second, the metrics); metrics
-(about 1.5 ms of CPU a reading, the GPU's load walking every process's DRM clients: every second while
+(about 1.5 ms of CPU a reading, the GPU's load walking every process's DRM clients): every second while
 the sysinfo or battery tab can be seen (open, ClamShell's view on the bottom screen, the screens on),
 every five seconds otherwise, the graphs' history kept, coarser. Every tab's watch (Wi-Fi, Bluetooth,
-audio, time) stops the same way while its tab can't be seen); zbus' executor threads (the `blocking`
-crate: about 8 wakeups a second between them, no CPU, idle threads waking every 500 ms).
+audio, time) stops the same way while its tab can't be seen. zbus' executor threads (the `blocking`
+crate): about 8 wakeups a second between them, no CPU, idle threads waking every 500 ms.
 
-## Tried on the desktop (AMD GPU, PipeWire, Steam)
+## Measured and tried
 
-- A Steam game (Super Meat Boy, native) moved into a scope of its own while it ran (its launcher,
-  `reaper`, and its processes, by AttachProcesses' kin: a transient scope given their PIDs): Steam didn't
-  notice, and recorded the game's end as usual when the scope was stopped.
-- Frozen (systemctl freeze, the cgroup freezer) for 10 s: frozen in 37 ms, thawed in 5 ms; its sound
-  stream stayed open (not corked: PipeWire gets nothing meanwhile); the game went on after, drawing.
-- ClamShell launching it (the nested session, Steam already running): the game ran in the launch's own
-  scope, in the entry's slice; stopping that scope ended it, Steam recording the end.
+`tools/inventory.sh [SECONDS]` (read-only, on the device or in the VM): the running units, and per
+cgroup its memory now and its CPU time over the window (30 s). In the VM (4 GiB, no GPU), idle, shelf
+in front, the machine used 653 MiB of 3.9 GiB: ClamShell 89 MiB and 134 ms of CPU in 30 s, journald 33
+MiB, the Waydroid container service 30 MiB, the login session (sway, mako) 19 MiB, PipeWire's three 16
+MiB, the rest under 10 MiB each. With the Waydroid session up and Calculator open: 1855 MiB used, the
+container 2.6 GiB (counting the page cache charged to it) in 89 processes. That inventory also found an
+adb server started by hand, in sway's login session, listed nowhere, which ClamShell's Android runner
+quietly depended on: since then the runner's adb server is its own, on a port of its own (5039).
 
-Still to try: a game with online play, and all of it on the Thor (Freedreno, FEX).
+On the desktop (AMD GPU, PipeWire, Steam), in the nested session:
 
-- RetroArch (snes9x) frozen for 10 s the same way: alive after, its sound stream open, drawing on.
-- In the background, live in the nested session: the SNES runner set to Pauses hidden, a game launched,
-  hidden behind shelf (Home): its slice frozen after the grace, thawed as it was shown again (it went
-  on), and Quit ended it.
-- A Proton game (the Resident Evil 6 benchmark, Proton Experimental) on the desktop, in the nested
-  session: frozen 2 minutes behind shelf, no CPU used meanwhile, drawing on once shown. Stopped from
-  Steam's own Stop while frozen behind Steam's window: Steam closed its window, ClamShell thawed it, it
-  ended within 2 s and Steam showed it stopped.
+- Frozen with systemctl for 10 s, a native Steam game (Super Meat Boy) froze in 37 ms and thawed in
+  5 ms; its sound stream stayed open; it went on drawing. RetroArch (snes9x) the same.
+- The Resident Evil 6 benchmark (Proton Experimental): all its processes in its own scope, also with
+  Steam freshly started (its install scripts first); frozen 2 minutes behind shelf with no CPU used,
+  drawing on once shown; with no setting (Pauses games) frozen 12 s after Home; stopped from Steam's own
+  Stop while frozen behind Steam's window (Steam closed its window, ClamShell thawed it, it ended within
+  2 s, Steam showed it stopped); started from Steam's window, moved into its own scope and ended by Quit.
+- A program started through sway, not ClamShell (foot): on the dock, on its workspace, in front.
 
-## Done
+In the VM, as the device's session (`tools/vm/vm-checks.py`, the process control checks): a game
+launched from shelf runs in a scope of its own and Quit ends it with one play recorded; a game behind
+shelf is frozen after the grace and thawed when shown; foot started from an app scope and from sway's
+exec (the login session's scope) is found and moved into a scope of ours; a tray program (a Python
+StatusNotifierItem) is moved too; the clipboard's text outlives the program that set it.
 
-- The modes above: in a desktop's session ClamShell adopts nothing it didn't start (its tray programs
-  stay the desktop's; an icon of ClamShell's own launch still gives its entry a menu).
-- A Steam game ClamShell launches runs in the launch's own scope (moved there once Steam's launcher for
-  it runs, and any later one for it as long as it runs: a fresh Steam may run Proton's install scripts
-  first, under a launcher of their own, then the game): counted, frozen and ended apart from Steam. It
-  counts as ended once no launcher of Steam's for it has run for 10 s. A game started in Steam itself is
-  the same: its window (its app id says whose it is, though it is in Steam's scope) makes it a launch,
-  which finds it running and moves it in, so it too is paused and ended as any launch (its slice);
-  nothing is Steam's own way any more. Steam's Stop and its Running
-  state work as before (Steam finds the game by its launcher process, not by its cgroup).
-- In the background, a setting (All, a runner, an item): Pauses games (the default: Pauses hidden for a
-  game, Runs hidden for the rest), Runs hidden, Pauses hidden (its slice frozen once it has windows and
-  none has been shown for 10 s; thawed when shown, before Quit, Force kill
-  or being shown, and when its windows are gone: one closed from outside, as Steam's Stop does, could
-  otherwise not end; not paused while quitting), Quits closed (ended once it has had a window and has
-  none left). A slice left frozen (by a ClamShell before, which a new one doesn't know paused it) is
-  thawed when ClamShell starts and before a launch into it: systemd starts no scope in a frozen slice. Only launches of
-  ClamShell's have a slice to freeze or stop (Steam's games and tray programs are moved into one);
-  Android's apps are paused by their runner; a file opened in an app's running instance runs on.
-- Games are paused when hidden by default, as consoles do (Pauses games, resolved per entry after the
-  levels, so All set to Runs hidden runs games too): an entry that is a game (not an
-  app, a film, a file; a desktop file in the Game category unless it is a game launcher or a tool for
-  games: also an emulator, package manager, network program or utility, or one of a short list by id:
-  Heroic, Faugus, itch, GOverlay and the like), and a runner's level all of whose entries are games.
-  One that minds (online play) is set to run, per game or runner. A freeze waits while the slice works
-  without drawing (over 0.5 of a core, the GPU under 5 %, looked at for 2 s at a time: loading,
-  compiling shaders, which the user switched away to wait for); a game hidden but drawing on uses the
-  GPU and is frozen. Tried: the Resident Evil 6 benchmark, no setting, frozen 12 s after Home (the grace
-  and the look), thawed when shown; a busy loop's slice not frozen while it ran, frozen once it didn't.
-- Anything with a window is on the dock: a window no entry has makes its program an entry found by it
-  (the library's desktop entry named as its app id, else one of its own, `window:<app id>`), its
-  windows on its workspace, shown if one was in front. Not a window a systemd service opened (a portal's
-  file chooser, the password prompt): it belongs to the program that asked for it. In the device's
-  session its process is moved into a scope of ours as below, unless it also has another entry's
-  windows (a browser showing a file from the Files tab): then Quit closes its windows, and that is all.
-- A program found by its tray icon or its window (device's session): its process and those it started
-  moved into a scope of ours in its entry's slice (a user manager allows it from any scope not a service's; one a
-  service runs stays, as the service would lose it), so it is paused, quit and killed by its slice as
-  any launch.
-- ClamShell needs a systemd user manager: every launch runs in a scope of its own. A launch's entry
-  runs while the launcher follows a launch of it or systemd lists a scope of it, and has ended once
-  neither (then its play is recorded, from its start to then; launches of it side by side are one
-  play). One found running when ClamShell starts (a ClamShell before started it) is the same, from the
-  start time in its scope's name.
-- Start with ClamShell, in an entry's dock menu (saved): once ClamShell knows what runs (systemd's
-  first list of its scopes), each such entry that doesn't run is launched on its own workspace, not
-  shown. What a restarted ClamShell finds running isn't started twice.
-- The battery tab's list of what is using the machine: CPU, GPU and resident memory per group (an entry's
-  launches, another program by name, the system); idle groups holding 100 MB or more listed too. A row
-  of a program that isn't the session's own (ClamShell, sway and what its config starts, PipeWire, the
-  bus) opens a menu: Quit and Force kill (an entry as from the dock; another program's processes
-  signalled). An entry's dock menu shows what it costs.
-- Android in the background: its apps share one container, frozen and thawed whole through Waydroid's
-  container service (no root), by the Android runner's `pause` and `resume`; Pauses hidden set for the
-  runner freezes it once none of its apps has been shown for the grace (Android's own suspend is turned
-  off at setup, so that this setting decides). Its windows are kept as they are hidden and shown by
-  ClamShell's Wayland filter (see android.md).
-- The Android runner's adb server is ClamShell's own, on a port of its own (5039), not whatever server
-  is on adb's usual port.
+## Open
+
+On the Thor (see thor-gameplan.md's device checks):
+
+1. The inventory in a normal session (with Steam, with the Waydroid session, with a game): memory,
+   CPU, and wakeups (powertop) per cgroup; idle power with and without Steam and Waydroid.
+2. Freezing on Freedreno and through FEX: native and Proton games frozen for minutes, sound, the
+   controller, the GPU after; whether a game hidden behind shelf still draws; whether the thresholds tell
+   loading and shader compiling from drawing; a frozen game's memory going to zram.
+3. A game with online play frozen: whether it is dropped (then it is set to run).
+4. ClamShell's own wakeups when idle.
+5. After some days of use: whether anything the dock doesn't show was wanted, or anything it shows
+   wasn't.
