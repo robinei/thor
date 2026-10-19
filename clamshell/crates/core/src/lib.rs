@@ -148,6 +148,8 @@ pub struct State {
     /// The UI is up (its Start), and the watch in force (see [`State::follow_watch`]).
     ui_up: bool,
     watching: Option<Watch>,
+    /// The screens are off: the bar's status isn't watched (see [`Watch::Status`]).
+    status_unwatched: bool,
     /// The battery tab's row whose menu is open (see [`battery`]).
     spender_menu: Option<battery::Group>,
     /// Programs paused or ended while hidden (see [`background`]).
@@ -988,6 +990,12 @@ impl State {
     /// entry costs, the battery tab's readings), while it can be seen (ClamShell's view on the bottom
     /// screen, that on, the screens on) and the UI is up. Its watch started and stopped as that changes.
     fn follow_watch(&mut self) -> Vec<Effect> {
+        let mut effects = Vec::new();
+        // (The bar's status: while the screens are on.)
+        let screens_off = self.idle.stage() >= idle::Stage::Off;
+        if screens_off != std::mem::replace(&mut self.status_unwatched, screens_off) {
+            effects.push(Effect::Watch(Watch::Status, !screens_off));
+        }
         let seen = self.ui_up && !self.bottom_shows_windows() && !self.bottom_off() && self.idle.stage() < idle::Stage::Off;
         let tab = match self.bottom.tab {
             Tab::Dock if self.dock.menu.is_some() => Some(Watch::Battery),
@@ -995,10 +1003,11 @@ impl State {
         };
         let wanted = tab.filter(|_| seen);
         if wanted == self.watching {
-            return vec![];
+            return effects;
         }
         let was = std::mem::replace(&mut self.watching, wanted);
-        was.map(|w| Effect::Watch(w, false)).into_iter().chain(wanted.map(|w| Effect::Watch(w, true))).collect()
+        effects.extend(was.map(|w| Effect::Watch(w, false)).into_iter().chain(wanted.map(|w| Effect::Watch(w, true))));
+        effects
     }
 
     /// A text field wants typing (or is done): the keyboard comes up, and goes back to the tab it came up

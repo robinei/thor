@@ -26,6 +26,8 @@ pub struct Handles {
     pub bluetooth: Worker<bluetooth::Request>,
     pub tray: Worker<clamshell_core::tray::TrayCommand>,
     pub metrics: Worker<bool>,
+    /// The bar's status, read often while the screens are on.
+    pub status: Worker<bool>,
     pub icons: Worker<(std::sync::Arc<str>, String)>,
     pub battery: Worker<battery::Command>,
     pub pad: Worker<pad::Command>,
@@ -163,6 +165,7 @@ impl Handles {
                 self.metrics.send(on);
             }
             Watch::Metrics => self.metrics.send(on),
+            Watch::Status => self.status.send(on),
             // (Read once as the tab opens: it changes only by the tab.)
             Watch::Time if on => self.system.send(crate::device::Command::ReadTime),
             Watch::Time => {}

@@ -1,33 +1,49 @@
-//! The bar's status: battery, Wi-Fi signal, volume and brightness, read every few seconds and sent when
-//! they change.
+//! The bar's status: battery, Wi-Fi signal, volume and brightness, read every few seconds while the
+//! screens are on and sent when they change; while they are off, only the battery, once a minute (for
+//! its warnings), without starting `wpctl`.
 
 use std::io;
-use std::thread;
+use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::Duration;
 
 use clamshell_core::{Event, Reading, Status};
 
 use crate::brightness::Backlights;
-use crate::worker::{self, Changed};
+use crate::worker::{Changed, Worker};
 use crate::{Closed, Sink, command, mixer, sys};
 
 /// How often the status is read: battery and Wi-Fi change slowly; a volume changed elsewhere (not with
 /// ClamShell's own controls, which show it at once) shows within this.
 const EVERY: Duration = Duration::from_secs(5);
+/// How often only the battery is read while the screens are off.
+const UNSEEN_EVERY: Duration = Duration::from_secs(60);
 
-pub fn spawn(backlights: Backlights, sink: impl Sink) -> io::Result<()> {
-    worker::detached("status", move || {
-        let _ = follow(&backlights, &sink);
+/// The status thread; its commands: whether the screens are on (see [`clamshell_core::Watch::Status`]).
+pub fn spawn(backlights: Backlights, sink: impl Sink) -> io::Result<Worker<bool>> {
+    Worker::spawn("status", move |seen| {
+        let _ = follow(&backlights, &sink, &seen);
     })
 }
 
-fn follow(backlights: &Backlights, sink: &impl Sink) -> Result<(), Closed> {
+fn follow(backlights: &Backlights, sink: &impl Sink, commands: &Receiver<bool>) -> Result<(), Closed> {
     let mut last = Changed::default();
+    let mut seen = true;
+    // (Unseen: the rest as last read, the battery read anew.)
+    let mut status = read(backlights);
     loop {
-        if let Some(status) = last.offer(read(backlights)) {
-            sink.send(Event::Reading(Reading::Status(status)))?;
+        if seen {
+            status = read(backlights);
+        } else {
+            (status.battery, status.charging) = read_battery().unwrap_or((None, false));
         }
-        thread::sleep(EVERY);
+        if let Some(changed) = last.offer(status) {
+            sink.send(Event::Reading(Reading::Status(changed)))?;
+        }
+        match commands.recv_timeout(if seen { EVERY } else { UNSEEN_EVERY }) {
+            Ok(on) => seen = on,
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => return Ok(()),
+        }
     }
 }
 

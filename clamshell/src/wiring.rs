@@ -96,7 +96,7 @@ pub fn start(
         log::error!("no systemd user manager: ClamShell needs one to run apps and games (in scopes of their own)");
     }
     detached("clock", clock::spawn(sink.clone()));
-    detached("status", status::spawn(backlights.clone(), sink.clone()));
+    let status = started("status", status::spawn(backlights.clone(), sink.clone()));
     let metrics = started("metrics", metrics::spawn(sink.clone()));
     let fetching = meta::Queue::default();
     if let Some(fetch) = fetch {
@@ -166,6 +166,7 @@ pub fn start(
         bluetooth,
         tray,
         metrics,
+        status,
         icons,
         battery,
         pad,

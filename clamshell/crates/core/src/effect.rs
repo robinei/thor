@@ -160,6 +160,9 @@ pub enum Watch {
     Time,
     /// The system's metrics (read more often while shown).
     Metrics,
+    /// The bar's status (battery, Wi-Fi, volume): watched while the screens are on, then only the
+    /// battery now and then.
+    Status,
 }
 
 /// What ClamShell keeps (in its database): each saved whole.
