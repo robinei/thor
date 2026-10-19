@@ -462,13 +462,15 @@ impl State {
     }
 
     /// Quit: the entry's windows asked to close; once none is left (a "save changes?" window keeps it
-    /// until answered) it is ended if it still runs (see [`State::follow_quitting`]).
+    /// until answered) it is ended if it still runs, or its runner's stop run if it ended with them (see
+    /// [`State::follow_quitting`]).
     pub(crate) fn quit(&mut self, game: &Arc<str>) -> Vec<Effect> {
         // (Paused: thawed, to answer its windows' closing.)
         let thawed = self.thaw(game);
         let windows = self.windows_of(game);
-        self.session.quitting.retain(|(g, _)| g != game);
-        self.session.quitting.push((game.clone(), false));
+        let stop = self.stop_of(game);
+        self.session.quitting.retain(|(g, ..)| g != game);
+        self.session.quitting.push((game.clone(), false, stop));
         let mut effects: Vec<Effect> = thawed.into_iter().collect();
         if !windows.is_empty() {
             effects.push(Effect::Window(WindowCommand::Close(windows)));
@@ -479,7 +481,7 @@ impl State {
 
     /// Force kill: the entry ended at once.
     pub(crate) fn force_kill(&mut self, game: &str) -> Vec<Effect> {
-        self.session.quitting.retain(|(g, _)| &**g != game);
+        self.session.quitting.retain(|(g, ..)| &**g != game);
         let thawed = self.thaw(game);
         thawed.into_iter().chain(self.end(game, true)).collect()
     }
@@ -498,20 +500,30 @@ impl State {
             Some(appid) => Effect::EndSteam { appid },
             None => Effect::EndRun { key: r.key.clone(), force },
         }];
-        let stop = self.game(game).and_then(|g| g.runner.as_ref()).map(|o| &o.stop).filter(|s| !s.is_empty());
-        if let (Some(stop), Some(app_id)) = (stop, &r.app_id) {
-            effects.push(Effect::Stop(stop.iter().map(|a| a.replace("{id}", app_id)).collect()));
-        }
+        effects.extend(self.stop_of(game));
         effects
     }
 
+    /// The runner's `stop` command for a running entry known by its app id (`{id}` that).
+    fn stop_of(&self, game: &str) -> Option<Effect> {
+        let app_id = self.session.running(game)?.app_id.as_ref()?;
+        let stop = self.game(game)?.runner.as_ref().map(|o| &o.stop).filter(|s| !s.is_empty())?;
+        Some(Effect::RunnerCommand(stop.iter().map(|a| a.replace("{id}", app_id)).collect()))
+    }
+
     /// Entries quitting: one whose windows are all gone while it still runs is ended (once); one that no
-    /// longer runs is done.
+    /// longer runs is done, its runner's stop run if it ended with its windows before that.
     pub(crate) fn follow_quitting(&mut self) -> Vec<Effect> {
         let mut quitting = std::mem::take(&mut self.session.quitting);
-        quitting.retain(|(game, _)| self.session.running(game).is_some());
         let mut effects = vec![];
-        for (game, ended) in &mut quitting {
+        quitting.retain_mut(|(game, ended, stop)| {
+            let runs = self.session.running(game).is_some();
+            if !runs && !*ended {
+                effects.extend(stop.take());
+            }
+            runs
+        });
+        for (game, ended, _) in &mut quitting {
             if !*ended && self.windows_of(game).is_empty() {
                 *ended = true;
                 effects.extend(self.end(game, false));
@@ -743,7 +755,7 @@ mod tests {
         s.apply(Event::Tick { unix_secs: 400 });
         assert!(s.session().running("desktop:firefox").is_some(), "runs while its window is open");
         let fx = s.force_kill("desktop:firefox");
-        assert!(fx.contains(&Effect::Stop(vec!["stop".into(), "firefox".into()])), "its runner's stop: {fx:?}");
+        assert!(fx.contains(&Effect::RunnerCommand(vec!["stop".into(), "firefox".into()])), "its runner's stop: {fx:?}");
         let (_, fx) = s.apply(Event::Windows(vec![shelf.clone()]));
         assert!(s.session().running("desktop:firefox").is_none(), "its window closed: ended");
         assert!(fx.contains(&Effect::RecordPlay { game: "desktop:firefox".into(), start: 100, duration: 300 }), "played until then: {fx:?}");
@@ -751,8 +763,16 @@ mod tests {
         let (_, fx) = s.apply(Event::Windows(vec![shelf.clone(), app]));
         assert!(s.session().running("desktop:firefox").is_some());
         assert!(fx.contains(&Effect::Window(WindowCommand::Move { windows: vec![6], to: ws.clone() })), "{fx:?}");
-        let (_, fx) = s.apply(Event::Windows(vec![shelf.clone(), Window { focused: true, ..moved }]));
+        let (_, fx) = s.apply(Event::Windows(vec![shelf.clone(), Window { focused: true, ..moved.clone() }]));
         assert!(fx.contains(&Effect::Window(WindowCommand::Focus(ws))), "{fx:?}");
+        // Quit: its window closed; it ends with it, its runner's stop run then (once).
+        let stop = Effect::RunnerCommand(vec!["stop".into(), "firefox".into()]);
+        let fx = s.quit(&"desktop:firefox".into());
+        assert!(fx.contains(&Effect::Window(WindowCommand::Close(vec![6]))) && !fx.contains(&stop), "{fx:?}");
+        let (_, fx) = s.apply(Event::Windows(vec![shelf.clone()]));
+        assert!(fx.contains(&stop), "{fx:?}");
+        assert!(!s.apply(Event::Windows(vec![shelf.clone()])).1.contains(&stop), "once");
+        s.apply(Event::Windows(vec![shelf.clone(), moved]));
         // A landed window that is no entry's (its rule outlived it): to the main screen.
         let (_, fx) = s.apply(Event::Windows(vec![shelf.clone(), win(9, "gone", &landing, false)]));
         assert!(fx.contains(&Effect::Window(WindowCommand::Up { window: 9, to: None })), "{fx:?}");

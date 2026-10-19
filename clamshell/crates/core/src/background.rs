@@ -83,7 +83,7 @@ impl State {
                     }
                 }
                 _ if paused => effects.push(Effect::Freeze { slice: Instance::slice_of(&r.key), frozen: false }),
-                2 if had && mine.is_empty() && !self.session.quitting.iter().any(|(g, _)| *g == r.id) => end.push(r.id.clone()),
+                2 if had && mine.is_empty() && !self.session.quitting.iter().any(|(g, ..)| *g == r.id) => end.push(r.id.clone()),
                 _ => {}
             }
         }
@@ -107,7 +107,8 @@ impl State {
     }
 
     /// Each runner paused together: paused once none of its entries has been shown for the grace (set to
-    /// Pauses hidden), resumed as one is shown (or its setting changed).
+    /// Pauses hidden), none starting either (launched, no window yet: it would never draw one); resumed
+    /// as one is shown (or its setting changed).
     fn follow_runner_pauses(&mut self) -> Vec<Effect> {
         let now = self.unix_secs;
         let mut effects = Vec::new();
@@ -117,6 +118,12 @@ impl State {
             let session = &self.session;
             let of_runner = |r: &crate::running::Running| r.entry.as_ref().and_then(|g| g.runner.as_ref()).is_some_and(|o| o.key == runner.key);
             let shown = session.windows.iter().filter(|w| w.visible).any(|w| session.running_of(w).is_some_and(of_runner));
+            let starting = session.running.iter().filter(|r| of_runner(r)).any(|r| match r.origin {
+                Origin::Ours => !self.background.windowed.contains(&r.id),
+                Origin::Windows { seen, .. } => !seen,
+                Origin::Tray => false,
+            });
+            let shown = shown || starting;
             let paused = self.background.runners_paused.contains(&runner.key);
             let bg = &mut self.background;
             if pauses && !shown {
@@ -125,13 +132,13 @@ impl State {
                 bg.runners_hidden.push((runner.key.clone(), since));
                 if !paused && now.saturating_sub(since) >= GRACE {
                     bg.runners_paused.push(runner.key.clone());
-                    effects.push(Effect::Stop(runner.pause.to_vec()));
+                    effects.push(Effect::RunnerCommand(runner.pause.to_vec()));
                 }
             } else {
                 bg.runners_hidden.retain(|(k, _)| *k != runner.key);
                 if paused {
                     bg.runners_paused.retain(|k| *k != runner.key);
-                    effects.push(Effect::Stop(runner.resume.to_vec()));
+                    effects.push(Effect::RunnerCommand(runner.resume.to_vec()));
                 }
             }
         }
@@ -146,7 +153,7 @@ impl State {
         let resume = runner.resume.to_vec();
         let key = self.background.runners_paused.remove(at);
         self.background.runners_hidden.retain(|(k, _)| *k != key);
-        Some(Effect::Stop(resume))
+        Some(Effect::RunnerCommand(resume))
     }
 
     /// An entry thawed before it is asked anything (closed, ended, shown), if it is paused; it isn't
@@ -223,7 +230,7 @@ mod tests {
         library.games.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap().runner = Some(runner.clone());
         let mut s = State::new(crate::Init { library, ..init() });
         s.settings.set(Some(&runner.key), Setting::Background, Some(1));
-        let (pause, resume) = (Effect::Stop(vec!["pause".into()]), Effect::Stop(vec!["resume".into()]));
+        let (pause, resume) = (Effect::RunnerCommand(vec!["pause".into()]), Effect::RunnerCommand(vec!["resume".into()]));
         // Nothing of it running: paused after the grace.
         s.apply(Event::Tick { unix_secs: 100 });
         assert!(!s.apply(Event::Tick { unix_secs: 102 }).1.contains(&pause));
@@ -233,6 +240,10 @@ mod tests {
         let fx = s.launch("desktop:firefox".into());
         assert_eq!(fx.first(), Some(&resume), "{fx:?}");
         s.apply(GameEvent::Started("desktop:firefox".into()).into());
+        // Starting (its launch, then handed over, no window yet): not paused.
+        assert!(!s.apply(Event::Tick { unix_secs: 107 }).1.contains(&pause), "its launch runs");
+        s.apply(GameEvent::Played { game: "desktop:firefox".into(), start: 104, duration: 3 }.into());
+        assert!(!s.apply(Event::Tick { unix_secs: 109 }).1.contains(&pause), "handed over, waiting for its window");
         // Shown: not paused; hidden for the grace: paused.
         let ws = Instance::workspace_of(&clamshell_library::key_of("desktop:firefox"));
         let window = |visible| Window { visible, ..win(6, "firefox", &ws, visible) };

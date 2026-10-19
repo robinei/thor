@@ -135,7 +135,7 @@ impl Handles {
             }
             Effect::EndRun { key, force } => launcher::end_run(key, *force),
             Effect::EndSteam { appid } => launcher::end_steam(*appid),
-            Effect::Stop(argv) => launcher::stop(argv),
+            Effect::RunnerCommand(argv) => launcher::runner_command(argv),
             Effect::EndProcesses { pids, force } => launcher::end_processes(pids, *force),
             Effect::Freeze { slice, frozen } => crate::units::freeze(slice.clone(), *frozen),
             Effect::Tray(command) => self.tray.send(command.clone()),

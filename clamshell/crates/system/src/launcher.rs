@@ -338,16 +338,16 @@ pub fn end_processes(pids: &[u32], force: bool) {
     command::run("kill", &args.iter().map(String::as_str).collect::<Vec<_>>());
 }
 
-/// Ends an entry that runs in another program's processes by its runner's `stop` command (Waydroid's
-/// apps: Android stops them), not waited for.
-pub fn stop(argv: &[String]) {
+/// Runs a runner's command (its `stop`, `pause` or `resume`: Waydroid's, Android stopping an app or
+/// frozen), not waited for.
+pub fn runner_command(argv: &[String]) {
     let Some((program, args)) = argv.split_first() else {
         return;
     };
-    log::info!("stop: {}", argv.join(" "));
+    log::info!("runner command: {}", argv.join(" "));
     match Command::new(program).args(args).stdin(Stdio::null()).process_group(0).spawn() {
         Ok(child) => job::reap(child),
-        Err(e) => log::warn!("stop: {program}: {e}"),
+        Err(e) => log::warn!("runner command: {program}: {e}"),
     }
 }
 

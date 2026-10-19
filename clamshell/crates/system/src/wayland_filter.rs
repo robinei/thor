@@ -30,7 +30,7 @@ use std::mem::MaybeUninit;
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -293,7 +293,9 @@ pub fn run(settings: PathBuf, frames: PathBuf) -> io::Result<()> {
     Ok(())
 }
 
-/// A client connected: its connection to the compositor, and a thread each way.
+/// A client connected: its connection to the compositor, and a thread each way. If the compositor ends
+/// it (gone, or the client dropped), the filter ends: Waydroid can't go on without its display (Android's
+/// system crashes when it next draws), and its session is bound to the filter's (see the Android script).
 fn connect(client: UnixStream, upstream: &Path, settings: &Path, frames: &Path) {
     let server = match UnixStream::connect(upstream) {
         Ok(s) => s,
@@ -309,6 +311,15 @@ fn connect(client: UnixStream, upstream: &Path, settings: &Path, frames: &Path) 
     };
     let (requests, rates) = (objects.clone(), objects.clone());
     let mut log = FrameLog { dir: frames.to_path_buf(), files: HashMap::new() };
+    // Which end closed first (true: the compositor's).
+    let first: Arc<OnceLock<bool>> = Arc::default();
+    let first2 = first.clone();
+    let end = move |first: &OnceLock<bool>, compositor: bool| {
+        if *first.get_or_init(|| compositor) {
+            log::info!("wayland filter: the compositor closed a connection: ending");
+            std::process::exit(0);
+        }
+    };
     let _ = thread::Builder::new().name("wayland filter".into()).spawn(move || {
         relay(
             &client,
@@ -319,10 +330,17 @@ fn connect(client: UnixStream, upstream: &Path, settings: &Path, frames: &Path) 
                     log.row(&app, fps);
                 }
             },
+            |client_closed| end(&first, !client_closed),
         );
     });
     let _ = thread::Builder::new().name("wayland filter".into()).spawn(move || {
-        relay(&server2, &client2, |o, op, args, now| objects.lock().unwrap_or_else(PoisonError::into_inner).event(o, op, args, now), |_| {});
+        relay(
+            &server2,
+            &client2,
+            |o, op, args, now| objects.lock().unwrap_or_else(PoisonError::into_inner).event(o, op, args, now),
+            |_| {},
+            |compositor_closed| end(&first2, compositor_closed),
+        );
     });
 }
 
@@ -353,17 +371,24 @@ impl FrameLog {
 }
 
 /// Passes messages from `from` to `to` as `pass` says, with the file descriptors that come with them,
-/// until either end closes (then both are shut); `after` is called after each read.
-fn relay(from: &UnixStream, to: &UnixStream, mut pass: impl FnMut(u32, u16, &[u8], Instant) -> Pass, mut after: impl FnMut(Instant)) {
+/// until either end closes (then both are shut); `after` is called after each read, `closed` with which
+/// end closed (`from`: true) before both are shut.
+fn relay(
+    from: &UnixStream,
+    to: &UnixStream,
+    mut pass: impl FnMut(u32, u16, &[u8], Instant) -> Pass,
+    mut after: impl FnMut(Instant),
+    closed: impl FnOnce(bool),
+) {
     let mut buf: Vec<u8> = Vec::new();
     let mut chunk = vec![0u8; 16384];
     let mut out = Vec::new();
-    loop {
+    let from_closed = loop {
         let mut space = [MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(MAX_FDS))];
         let mut ancillary = RecvAncillaryBuffer::new(&mut space);
         let n = match rustix::net::recvmsg(from, &mut [IoSliceMut::new(&mut chunk)], &mut ancillary, RecvFlags::CMSG_CLOEXEC) {
             Ok(r) if r.bytes > 0 => r.bytes,
-            Ok(_) | Err(_) => break,
+            Ok(_) | Err(_) => break true,
         };
         let mut received: Vec<OwnedFd> = Vec::new();
         for message in ancillary.drain() {
@@ -387,9 +412,10 @@ fn relay(from: &UnixStream, to: &UnixStream, mut pass: impl FnMut(u32, u16, &[u8
         after(now);
         // (The descriptors go with the bytes they came with: the receiver takes them in order, by message.)
         if (!out.is_empty() || !received.is_empty()) && send(to, &out, &received).is_err() {
-            break;
+            break false;
         }
-    }
+    };
+    closed(from_closed);
     let _ = from.shutdown(std::net::Shutdown::Both);
     let _ = to.shutdown(std::net::Shutdown::Both);
 }
@@ -524,8 +550,8 @@ mod tests {
         let objects = Arc::new(Mutex::new(Objects::default()));
         let (o1, o2) = (objects.clone(), objects.clone());
         let (cf, sn) = (client_far.try_clone().unwrap(), server_near.try_clone().unwrap());
-        thread::spawn(move || relay(&cf, &sn, |o, op, a, t| o1.lock().unwrap().request(o, op, a, t), |_| {}));
-        thread::spawn(move || relay(&server_near, &client_far, |o, op, a, t| o2.lock().unwrap().event(o, op, a, t), |_| {}));
+        thread::spawn(move || relay(&cf, &sn, |o, op, a, t| o1.lock().unwrap().request(o, op, a, t), |_| {}, |_| {}));
+        thread::spawn(move || relay(&server_near, &client_far, |o, op, a, t| o2.lock().unwrap().event(o, op, a, t), |_| {}, |_| {}));
         // The client makes a toplevel, sending an fd along.
         let mut requests = message(DISPLAY, GET_REGISTRY, &words(&[2]));
         requests.extend(message(2, BIND, &bind("xdg_wm_base", 4)));

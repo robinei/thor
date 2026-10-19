@@ -33,8 +33,8 @@ pub struct Session {
     /// [`Session::show_reopened`]).
     pub(crate) closed_front: Option<(String, u64)>,
     /// Entries quitting: their windows asked to close; once none is left, ended (then true) if they still
-    /// run.
-    pub(crate) quitting: Vec<(Arc<str>, bool)>,
+    /// run; and their runner's stop, for one that ends with its windows (known by its app id).
+    pub(crate) quitting: Vec<(Arc<str>, bool, Option<Effect>)>,
     /// Numbers new instances' names (with the time, unique across restarts).
     pub(crate) next_instance: u64,
 }

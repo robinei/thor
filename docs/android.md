@@ -9,15 +9,20 @@ Steam's games (see runners.md: Launches). An app opened by another Android app i
 
 The starter library.json opens them with the Android runner, `clamshell/android/clamshell-android`:
 
-- Starts the Waydroid session if it isn't running (a user unit, `waydroid-session`; it stays up when
-  apps quit). The first launch after a session start takes about 20 s, Android's boot; later ones about 1 s.
+- Starts the Waydroid session if it isn't running (a user unit, `waydroid-session`, bound to the Wayland
+  filter's unit, see below; it stays up when apps quit). The first launch after a session start takes
+  12–20 s, Android's boot; later ones about 1 s. On a cold start Waydroid opens the app's window, closes it
+  and opens another; ClamShell shows a window that comes on the workspace whose window in front closed
+  within 2 s.
 - Starts the app full-screen through adb (a user unit, `clamshell-adb`), as Android's shell user. Waydroid's
   own launch opens apps as Android's floating windows, phone-sized in the middle of the window.
 - Waydroid shows no app windows until `waydroid.active_apps` names an app, and only Waydroid's own launch
   sets it: a session's first launch runs it once with the launcher, which Waydroid never shows.
 
-Quit closes the window, which ends the app's Android task (its process stays cached, as Android does).
-Force kill runs the runner's `stop`: the script's `--stop`, Android's `am force-stop`.
+Quit closes the window, then runs the runner's `stop` once it is gone (the entry ends with its window);
+Force kill runs the `stop` at once. The `stop` is the script's `--stop`: Android's `am force-stop`, and
+the app's tasks removed (`am stack remove`): a task can outlive the app with another app's activity on
+top, Android's permission prompt, and its window with it.
 
 ```json
 "runners": [
@@ -54,6 +59,11 @@ beside the compositor's (`<display>-android`) that passes everything through but
 the size the window already has. A resize still reaches Waydroid. (The fix belongs in Waydroid: a
 hotplug only when the size changed.)
 
+If the compositor ends a connection (it quit, or dropped Waydroid), the filter ends, and the Waydroid
+session with it (bound to the filter's unit): Waydroid can't go on without its display. Tried: with sway
+restarted under a running Android, Android's system crashed when it next drew (`system_server` restarted)
+and its network didn't come back.
+
 It does two more things for Android's windows:
 
 - Android's caption (back, minimise, maximise, close, drawn into the window along its top) is out of
@@ -77,8 +87,9 @@ Its cost, measured on the desktop with an app drawing at 50 fps: 0.1 % of a core
 Android's apps share one container, so they are paused together: the Android runner's `pause` and
 `resume` (the script's `--pause`, `--resume`: Waydroid's container service freezes and thaws the
 container's cgroup, no root needed). With In the background set to Pauses hidden for the Android runner,
-Android is frozen once none of its apps has been shown for 3 s (none running too), and thawed as one is
-shown or launched; a launch thaws it first in any case. Android also sleeps by itself: once its display
+Android is frozen once none of its apps has been shown for 3 s (none running too) and none is starting
+(launched, no window yet: it would never draw one), and thawed as one is shown or launched; a launch thaws
+it first in any case. Android also sleeps by itself: once its display
 is off, it asks to suspend and Waydroid freezes the container (`persist.waydroid.suspend`).
 
 ## Not solved
