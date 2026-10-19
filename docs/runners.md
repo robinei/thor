@@ -63,7 +63,8 @@ desktop files' apps and games (and a `.desktop` file opened from the Files tab, 
 except that a desktop runner may have one, replacing its entries' own: `{id}` the desktop file's name,
 `{exec}` its command (as arguments of their own). The starter's Android runner launches Waydroid's apps
 by it (see android.md). A desktop runner's `handover` (off unless said): its launches hand their app over
-to something running outside them and end, and its entries run on by their windows (below).
+to something running outside them and end, and its entries are known by their windows' app id (below);
+its `stop`, the command that ends one (`{id}` the app id).
 A desktop or Steam source is opened by the runner of its type it names (`runner`), else the first; there
 may be several (one for desktop games, one for apps, each with its own settings). Where their items show is
 the `desktop` and `steam` sources' (below).
@@ -168,7 +169,18 @@ its file is renamed or deleted meanwhile.
 Each launch is a systemd scope in its item's slice: whatever it starts stays in it (forking and
 detaching don't leave a cgroup), so Quit (the windows closed, then the slice stopped) and Force kill reach
 it all, windows or not. What gets out is what a program has another manager start: D-Bus activation, an
-instance already running elsewhere, Steam's games (in Steam's scope; followed by their windows). A file's
-launch that hands over and ends runs on by its windows (see files-tab.md); so does the launch of an entry
-whose runner has `handover`, its windows found by their app id (its desktop file's name: Waydroid's apps,
-whose windows are the Waydroid session's); Quit closes them, Force kill can't reach them. On the Thor nothing in the image starts that way.
+instance already running elsewhere. A file's launch that hands over and ends runs on by its windows (see
+files-tab.md); Quit closes them, Force kill can't reach them. On the Thor nothing in the image starts that
+way.
+
+Two kinds of entry run in another program's processes on purpose, and are known by their windows' app id:
+Steam's games (`steam_app_<id>`, in Steam's scope) and the entries of a runner with `handover` (their
+desktop file's name: Waydroid's apps, in the Waydroid session). Alike for both:
+
+- Their windows open on a landing workspace (a sway rule per app id, for the library's entries) and are
+  moved to their entry's; one opening while the entry doesn't run (a game started in Steam, an Android
+  app opened by another) starts it, shown.
+- Such an entry runs once: launching it again shows it.
+- It runs on by its windows after its launch ends, until the last closes; its play counts until then.
+- Force kill ends Steam's launcher for a game and the processes under it, and runs a `handover` runner's
+  `stop`. Quit closes the windows (Android ends the app's task).

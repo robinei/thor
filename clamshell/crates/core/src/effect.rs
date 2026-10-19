@@ -56,6 +56,8 @@ pub enum Effect {
     EndSteam {
         appid: u32,
     },
+    /// Run this command (a runner's `stop`, for an entry that runs in another program's processes).
+    Stop(Vec<String>),
     /// Write these lines to the control socket of entry `key`'s launch (see [`crate::enqueue`]).
     Enqueue {
         key: String,
@@ -158,7 +160,7 @@ pub enum WindowCommand {
     Focus(String),
     /// Ask these windows to close (as their own close buttons would).
     Close(Vec<i64>),
-    /// Move these windows to this workspace (a Steam game's, from where they landed, to its entry's).
+    /// Move these windows to this workspace (an entry's known by app id, from where they landed).
     Move { windows: Vec<i64>, to: String },
     /// Bring shelf's window to the front.
     ShowShelf,
@@ -173,6 +175,9 @@ pub enum WindowCommand {
     BottomPower(bool),
     /// The windows that go to the bottom screen as they open (all of them: the rules in force).
     DownRules(Vec<crate::bottom_screen::DownRule>),
+    /// The app ids whose windows land on the landing workspace as they open (all of them), to be moved
+    /// to their entry's (see [`crate::running::app_id_of`]).
+    LandRules(Vec<std::sync::Arc<str>>),
 }
 
 /// Which screens need a new frame after an event.

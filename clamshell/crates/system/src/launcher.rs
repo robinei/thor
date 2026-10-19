@@ -289,6 +289,19 @@ pub fn end_steam(appid: u32) {
     command::run("kill", &args);
 }
 
+/// Ends an entry that runs in another program's processes by its runner's `stop` command (Waydroid's
+/// apps: Android stops them), not waited for.
+pub fn stop(argv: &[String]) {
+    let Some((program, args)) = argv.split_first() else {
+        return;
+    };
+    log::info!("stop: {}", argv.join(" "));
+    match Command::new(program).args(args).stdin(Stdio::null()).process_group(0).spawn() {
+        Ok(child) => job::reap(child),
+        Err(e) => log::warn!("stop: {program}: {e}"),
+    }
+}
+
 /// Every process's parent, from /proc/<pid>/stat (its fourth field, after the name in parentheses).
 fn parents() -> Vec<(u32, u32)> {
     crate::sys::processes()

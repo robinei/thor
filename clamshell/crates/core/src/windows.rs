@@ -2,10 +2,11 @@
 //! we started, its windows on its app's workspace (see [`Instance`]): every window of its processes (a
 //! second window, a program started from its terminal) belongs there, a tab beside the app's other
 //! instances' windows.
-//! Games are the same: each running game shelf started has a scope and a workspace of that name; a game
-//! Steam starts gets a workspace of its own too (its windows are moved there from where they land).
+//! Games are the same: each running game shelf started has a scope and a workspace of that name; an entry
+//! that runs in another program's processes (Steam's games, Waydroid's apps) gets a workspace of its own
+//! too, its windows found by their app id (see [`crate::running`]).
 
-use crate::instance::{self, Instance};
+use crate::instance::Instance;
 
 /// Shelf's window's app id (its own Wayland surface on the main screen).
 pub const SHELF_APP_ID: &str = "clamshell.top";
@@ -35,13 +36,8 @@ impl Window {
         self.unit.as_deref().and_then(Instance::from_unit)
     }
 
-    /// Steam's id of the game it is a window of (`steam_app_<id>`).
-    pub fn steam_id(&self) -> Option<u32> {
-        instance::steam_app_id(&self.app_id)
-    }
-
     /// What it belongs on the workspace of: its launch (one we started), shelf, or none (left where it
-    /// is; Steam's games are placed by the state, which knows which entry they are).
+    /// is; Steam's games and the like are placed by the state, which knows which entry they are).
     pub fn home(&self) -> Option<Instance> {
         self.instance().or_else(|| (self.app_id == SHELF_APP_ID).then_some(Instance::Shelf))
     }
@@ -61,7 +57,6 @@ mod tests {
         // Firefox started from that terminal: the terminal's.
         assert_eq!(w(Some("clamshell-run-foot_1-1234-7.scope"), "firefox").home(), Some(terminal));
         assert_eq!(w(Some("app-steam.scope"), "steam_app_620").home(), None, "Steam's: placed by the program");
-        assert_eq!(w(Some("app-steam.scope"), "steam_app_620").steam_id(), Some(620));
         assert_eq!(w(Some("app-steam.scope"), "steam").home(), None, "not ours: left alone");
         assert_eq!(w(Some("clamshell.service"), SHELF_APP_ID).home(), Some(Instance::Shelf));
     }

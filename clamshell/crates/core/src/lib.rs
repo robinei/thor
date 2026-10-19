@@ -344,9 +344,8 @@ impl State {
                 let was = self.session.windows.iter().find(|w| w.focused && !w.down).map(|w| w.workspace.clone());
                 let known: Vec<i64> = self.session.windows.iter().map(|w| w.id).collect();
                 self.session.set_windows(windows);
-                let handed = self.follow_handed(&known);
-                let mut effects = self.follow_steam();
-                effects.extend(self.follow_window_rules());
+                let handed = self.follow_windows(&known);
+                let mut effects = self.follow_window_rules();
                 effects.extend(self.session.show_pending());
                 effects.extend(self.follow_quitting());
                 effects.extend(self.follow_closed(was));
@@ -360,6 +359,7 @@ impl State {
                     self.moved_collection();
                 }
                 let mut effects = self.follow_runner_keymaps();
+                effects.push(self.land_rules());
                 if self.drop_gone_pins() {
                     effects.push(Effect::Save(Save::Dock(self.dock.pinned_ids())));
                 }
@@ -478,7 +478,7 @@ impl State {
         // (A file's launch that waited for its window in vain: off the dock.)
         let known: Vec<i64> = self.session.windows.iter().map(|w| w.id).collect();
         let before = self.session.running.len();
-        effects.extend(self.follow_handed(&known));
+        effects.extend(self.follow_windows(&known));
         let ended = self.session.running.len() != before;
         if ended {
             self.follow_dock();

@@ -51,6 +51,10 @@ pub struct Runner {
     /// windows, found by their app id (the desktop file's name).
     #[serde(default)]
     pub handover: bool,
+    /// For a runner that hands its apps over: the command that ends one (Force kill, and Quit once its
+    /// windows are closed), `{id}` its windows' app id.
+    #[serde(default)]
+    pub stop: Vec<String>,
 }
 
 /// A runner that finds its items itself, each with its own command.
@@ -75,12 +79,13 @@ impl Runner {
         }
     }
 
-    /// The runner that opens an entry of it, as the entry keeps it.
-    pub fn of(&self) -> clamshell_library::RunnerOf {
+    /// The runner that opens an entry of it, as the entry keeps it (`~/` the home dir in its commands).
+    pub fn of(&self, home: Option<&Path>) -> clamshell_library::RunnerOf {
         clamshell_library::RunnerOf {
-            command: self.template(None).into(),
+            command: self.template(home).into(),
             enqueue: self.enqueue.as_deref().map(Into::into),
             handover: self.handover,
+            stop: self.stop.iter().map(|a| super::content::expand(a, home).to_string_lossy().into_owned()).collect(),
             ..clamshell_library::RunnerOf::new(&self.id, &self.name, self.item_settings.unwrap_or(true))
         }
     }
@@ -161,7 +166,7 @@ pub fn opener<'a>(runners: &'a [Runner], name: &str) -> Option<&'a Runner> {
 /// File `path` opened by the first of `runners` that opens its name: its command and runner.
 pub fn open(runners: &[Runner], path: &Path, home: Option<&Path>) -> Option<(Launch, clamshell_library::RunnerOf)> {
     let runner = opener(runners, &path.file_name()?.to_string_lossy())?;
-    Some((runner.command(path, home), runner.of()))
+    Some((runner.command(path, home), runner.of(home)))
 }
 
 /// The runner of a type, if there is one.
@@ -223,7 +228,7 @@ mod tests {
         .unwrap();
         let (runners, problems) = checked(&config, &|_| true);
         assert_eq!(problems, ["Music: enqueue needs {socket} in its launch command"]);
-        assert_eq!(runners.iter().map(|r| r.of().enqueue.is_some()).collect::<Vec<_>>(), [false, true], "Music kept, without it");
+        assert_eq!(runners.iter().map(|r| r.of(None).enqueue.is_some()).collect::<Vec<_>>(), [false, true], "Music kept, without it");
         let (launch, _) = open(&runners, Path::new("/v/a.mkv"), None).unwrap();
         let argv = ["mpv", "--input-ipc-server={socket}", "/v/a.mkv"].map(String::from).to_vec();
         assert_eq!(launch, Launch::Program { argv, workdir: Some("/v".into()) }, "{{paths}}: the one file; {{socket}} the launcher's");

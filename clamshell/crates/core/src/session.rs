@@ -68,11 +68,11 @@ impl Session {
         }
     }
 
-    /// The running entry a window belongs to: by its scope (moved down too), its workspace, or Steam's
-    /// window of it.
+    /// The running entry a window belongs to: by its scope (moved down too), its workspace, or its app id
+    /// (see [`crate::running::app_id_of`]).
     pub fn running_of(&self, w: &Window) -> Option<&Running> {
         let key = w.unit.as_deref().and_then(Instance::key_of).or_else(|| Instance::key_of(&w.workspace));
-        self.running.iter().find(|r| key == Some(r.key.as_str()) || r.appid().is_some_and(|id| w.steam_id() == Some(id)))
+        self.running.iter().find(|r| key == Some(r.key.as_str()) || r.owns(w))
     }
 
     /// The start time and counter for a new instance's name.
@@ -97,13 +97,13 @@ impl Session {
     }
 
     /// The launch just started, once its own first window is there (the entry's workspace may have its
-    /// other launches' already; a Steam game's has no scope of ours: any of its windows): its workspace
-    /// shown.
+    /// other launches' already; one known by its app id has no scope of ours: any of its windows): its
+    /// workspace shown.
     pub(crate) fn show_pending(&mut self) -> Vec<Effect> {
         let arrived = self.pending_show.as_ref().is_some_and(|i| {
             let unit = i.unit();
-            let steam = self.running.iter().find(|r| Some(r.key.as_str()) == i.key()).and_then(Running::appid);
-            self.windows.iter().any(|w| i.on(&w.workspace) && (steam.is_some() || w.unit == unit))
+            let outside = self.running.iter().find(|r| Some(r.key.as_str()) == i.key()).is_some_and(|r| r.app_id.is_some());
+            self.windows.iter().any(|w| i.on(&w.workspace) && (outside || w.unit == unit))
         });
         match self.pending_show.take() {
             Some(instance) if arrived => vec![Effect::Window(WindowCommand::Focus(instance.workspace()))],

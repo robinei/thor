@@ -306,7 +306,7 @@ impl Builder<'_> {
             _ => source.patterns.clone(),
         };
         let open = |path: &Path| match named {
-            Some(r) => Some((r.command(path, home), r.of())),
+            Some(r) => Some((r.command(path, home), r.of(home))),
             None => runners::open(runners, path, home),
         };
         // Its dir: on a removable filesystem (away while none matching is mounted), or as it says.
@@ -455,7 +455,7 @@ impl Builder<'_> {
                 self.problems.push(format!("a {what} source needs a runner of type {what} to open its entries{named}"));
                 continue;
             };
-            game.runner = Some(runner.of());
+            game.runner = Some(runner.of(self.sources.home.as_deref()));
             // (A desktop runner's own command, if it has one, instead of the desktop file's.)
             if let Some(launch) = game.id.strip_prefix("desktop:").and_then(|id| runner.wrap(id, &game.launch, self.sources.home.as_deref())) {
                 game.launch = launch;

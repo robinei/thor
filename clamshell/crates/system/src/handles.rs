@@ -133,6 +133,7 @@ impl Handles {
             }
             Effect::EndRun { key, force } => launcher::end_run(key, *force),
             Effect::EndSteam { appid } => launcher::end_steam(*appid),
+            Effect::Stop(argv) => launcher::stop(argv),
             Effect::Screenshot => self.system.send(crate::device::Command::Screenshot),
             Effect::Sleep => self.system.send(crate::device::Command::Sleep),
             Effect::SetTimeZone(zone) => self.system.send(crate::device::Command::SetTimeZone(zone.clone())),
@@ -174,6 +175,7 @@ impl Handles {
             WindowCommand::ShowDown(id) => sway.send(sway::Command::ShowDown(*id)),
             WindowCommand::BottomPower(on) => sway.send(sway::Command::Power(*on)),
             WindowCommand::DownRules(rules) => sway.send(sway::Command::DownRules(rules.clone())),
+            WindowCommand::LandRules(ids) => sway.send(sway::Command::LandRules(ids.clone())),
         }
     }
 

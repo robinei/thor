@@ -16,11 +16,11 @@ use crate::running::Running;
 use crate::{Effect, State};
 
 impl State {
-    /// The running entry of runner `key` most recently in front (a launch of ours, not Steam's).
+    /// The running entry of runner `key` most recently in front (in a scope of ours: not known by app id).
     pub fn enqueue_target(&self, key: &str) -> Option<&Running> {
         let session = &self.session;
         let runner_of = |r: &Running| r.entry.as_ref().and_then(|g| g.runner.as_ref()).is_some_and(|o| &*o.key == key);
-        let candidates = session.running.iter().filter(|r| r.appid().is_none() && runner_of(r));
+        let candidates = session.running.iter().filter(|r| r.app_id.is_none() && runner_of(r));
         // (Never in front: after those that were, the last started first.)
         candidates.rev().min_by_key(|r| session.recent.iter().position(|w| *w == r.workspace()).unwrap_or(usize::MAX))
     }

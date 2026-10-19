@@ -2,9 +2,10 @@
 //! game, an app: alike) is a scope we started (`clamshell-run-<key>-<secs>-<n>.scope`) in the entry's
 //! slice (`clamshell-run-<key>.slice`, which Quit and Force kill end); all the entry's windows are on its
 //! workspace (`clamshell-run-<key>`), as tabs. `<key>` is the entry's ([`clamshell_library::key_of`]:
-//! letters, digits and `_`). A game Steam runs isn't in a scope of ours (it runs in Steam's), but its
-//! windows go to its entry's workspace too. Shelf's window has `clamshell-shelf`, the second screen
-//! `clamshell-bottom`; Steam's game windows land on `clamshell-game` (a sway rule puts them there).
+//! letters, digits and `_`). An entry that runs in another program's processes (a game in Steam's, an
+//! Android app in Waydroid's) isn't in a scope of ours, but its windows go to its entry's workspace too.
+//! Shelf's window has `clamshell-shelf`, the second screen `clamshell-bottom`; those entries' windows land
+//! on `clamshell-game` (sway rules by their app ids put them there).
 //! `<secs>-<n>` is the start time and a counter, so names are unique across restarts and sort in the
 //! order things were started.
 
@@ -25,7 +26,7 @@ pub enum Instance {
     Shelf,
     /// The second screen.
     Bottom,
-    /// Where Steam's game windows land before they are moved to their entry's workspace.
+    /// Where the windows of entries known by app id land before they are moved to their entry's workspace.
     Landing,
     /// A launch of an entry: its key, the start time, a counter.
     Run { key: String, secs: u64, n: u64 },
@@ -138,11 +139,6 @@ impl Instance {
     }
 }
 
-/// Steam's id of the game a window with this app id belongs to (`steam_app_<id>`).
-pub fn steam_app_id(app_id: &str) -> Option<u32> {
-    app_id.strip_prefix(STEAM_APP_PREFIX).and_then(|n| n.parse().ok())
-}
-
 /// What is left of a name to compare against, as [`Instance::is`] writes the instance's name piece
 /// by piece; `None` once a piece didn't match.
 struct Rest<'a>(Option<&'a str>);
@@ -202,7 +198,6 @@ mod tests {
         assert_eq!(Instance::from_unit("clamshell-shelf.scope"), None);
         assert_eq!(Instance::parse("1"), None);
         assert!(Instance::Run { key: "x".into(), secs: 5, n: 10 }.order() > Instance::Run { key: "x".into(), secs: 5, n: 9 }.order());
-        assert_eq!(steam_app_id("steam_app_620"), Some(620));
         assert_eq!("clamshell-shelf".parse(), Ok(Instance::Shelf));
     }
 }

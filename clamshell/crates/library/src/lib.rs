@@ -201,7 +201,8 @@ pub fn runner_key(id: &str) -> Arc<str> {
 /// whether its entries have settings of their own (else only the runner's); its command (`{path}`,
 /// `{paths}`, `{socket}` in it to fill in) and what to write to a launch's control socket to add a file
 /// to it (`{path}` in it the file, as a JSON string's contents), if it can take more while it runs;
-/// whether its launches hand their app over (see the system crate's `Runner::handover`).
+/// whether its launches hand their app over (see the system crate's `Runner::handover`) and the command
+/// that ends one (`{id}` its windows' app id; empty: none).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunnerOf {
     pub key: Arc<str>,
@@ -210,11 +211,12 @@ pub struct RunnerOf {
     pub command: Arc<[String]>,
     pub enqueue: Option<Arc<str>>,
     pub handover: bool,
+    pub stop: Arc<[String]>,
 }
 
 impl RunnerOf {
     pub fn new(id: &str, name: &str, item_settings: bool) -> RunnerOf {
-        RunnerOf { key: runner_key(id), name: name.into(), item_settings, command: Arc::new([]), enqueue: None, handover: false }
+        RunnerOf { key: runner_key(id), name: name.into(), item_settings, command: Arc::new([]), enqueue: None, handover: false, stop: Arc::new([]) }
     }
 
     /// Its command for `files` (several where it takes `{paths}`, else the first), in the first's folder;

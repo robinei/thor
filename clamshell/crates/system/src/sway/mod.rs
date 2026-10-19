@@ -2,9 +2,14 @@
 //!
 //! - Launches go through sway's `exec`, aimed at their workspace: sway places the launch's first window
 //!   there itself, before it is shown, even after we have switched back (the workspace isn't shown first).
-//! - sway's own rules, set when we connect: shelf's window and Steam's games (`steam_app_…`) go to their
-//!   workspaces, those are kept on the main screen, and a window that opens on the second screen's
-//!   workspace (behind the launcher) goes to the main screen.
+//! - sway's own rules, set when we connect: shelf's window goes to its workspace, kept on the main
+//!   screen, and a window that opens on the second screen's workspace (behind the launcher) goes to the
+//!   main screen.
+//! - The app ids of entries that run in another program's processes ([`Command::LandRules`]: Steam's
+//!   games, Waydroid's apps): a rule each, defined when we connect and when a new one comes, which puts
+//!   their windows on the landing workspace as they open; ClamShell moves them to their entry's. sway
+//!   can't drop a rule: one whose entry is gone lands its windows there still, and ClamShell sends them
+//!   to the main screen.
 //! - Later windows of a launch (sway only places the first) are moved to their instance's workspace (its
 //!   app's, or its game's) by the systemd scope of their process: the kernel's record of which launch
 //!   they come from.
@@ -64,6 +69,8 @@ pub enum Command {
     Power(bool),
     /// The windows that go to the bottom screen as they open: all the rules in force.
     DownRules(Vec<DownRule>),
+    /// The app ids whose windows land on the landing workspace as they open: all of them.
+    LandRules(Vec<Arc<str>>),
 }
 
 /// The down rules: those in force, and those defined in sway (switched off when no longer in force).
@@ -108,6 +115,43 @@ impl DownRules {
     }
 }
 
+/// The landing rules: the app ids wanted, and those defined in sway. Shared as [`DownRules`] are.
+#[derive(Clone, Default)]
+struct LandRules(Arc<Mutex<Landing>>);
+
+/// The app ids wanted, and those defined in sway.
+type Landing = (Vec<Arc<str>>, HashSet<Arc<str>>);
+
+impl LandRules {
+    /// App ids wanted from now on (`Some`), or as they were; defined where they aren't; `fresh`: sway has
+    /// none defined (connected anew).
+    fn apply(&self, ipc: &mut Ipc, wanted: Option<Vec<Arc<str>>>, fresh: bool) -> Result<(), Error> {
+        let mut guard = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        let (wanted_now, defined) = &mut *guard;
+        if let Some(ids) = wanted {
+            *wanted_now = ids;
+        }
+        if fresh {
+            defined.clear();
+        }
+        let mut text = Vec::new();
+        for id in wanted_now.iter() {
+            if defined.insert(id.clone()) {
+                match commands::define_land_rule(id) {
+                    Some(define) => text.push(define),
+                    None => log::info!("sway: no landing rule for {id} (sway can't match it)"),
+                }
+            }
+        }
+        if !text.is_empty()
+            && let Some(error) = ipc::refused(&ipc.command(&text.join("; "))?)
+        {
+            log::debug!("sway: landing rules: {error}");
+        }
+        Ok(())
+    }
+}
+
 /// The main screen's output: the first active one that isn't the second screen's. Kept by the window
 /// thread (read when it connects and at every output event), used by the command thread.
 #[derive(Clone)]
@@ -143,16 +187,26 @@ pub fn spawn(socket: Option<PathBuf>, bottom: String, sink: impl Sink) -> io::Re
     let exe = std::env::current_exe()?;
     let commands_socket = socket.clone();
     let commands_top = top.clone();
-    let down = DownRules::default();
-    let commands_down = down.clone();
+    let (down, land) = (DownRules::default(), LandRules::default());
+    let (commands_down, commands_land) = (down.clone(), land.clone());
     let worker = Worker::spawn("sway commands", move |commands: Receiver<Command>| {
         for command in commands {
-            if let Command::DownRules(rules) = &command {
-                let applied = Ipc::connect(&commands_socket)
-                    .map_err(Error::from)
-                    .and_then(|mut ipc| commands_down.apply(&mut ipc, Some(rules.clone()), false, &commands_top.bottom));
+            let rules = match &command {
+                Command::DownRules(rules) => Some((
+                    "down",
+                    Ipc::connect(&commands_socket)
+                        .map_err(Error::from)
+                        .and_then(|mut ipc| commands_down.apply(&mut ipc, Some(rules.clone()), false, &commands_top.bottom)),
+                )),
+                Command::LandRules(ids) => Some((
+                    "landing",
+                    Ipc::connect(&commands_socket).map_err(Error::from).and_then(|mut ipc| commands_land.apply(&mut ipc, Some(ids.clone()), false)),
+                )),
+                _ => None,
+            };
+            if let Some((what, applied)) = rules {
                 if let Err(e) = applied {
-                    log::warn!("sway: down rules: {e}");
+                    log::warn!("sway: {what} rules: {e}");
                 }
                 continue;
             }
@@ -161,7 +215,7 @@ pub fn spawn(socket: Option<PathBuf>, bottom: String, sink: impl Sink) -> io::Re
             }
         }
     })?;
-    let mut windows = Windows { socket, top, down, sink, units: HashMap::new(), tried: HashSet::new() };
+    let mut windows = Windows { socket, top, down, land, sink, units: HashMap::new(), tried: HashSet::new() };
     worker::detached("sway windows", move || worker::supervise_alone(&mut windows, RETRY))?;
     Ok(Some(worker))
 }
@@ -181,7 +235,7 @@ fn carry_out(socket: &Path, top: &TopOutput, exe: &Path, command: &Command) -> R
         Command::Up { window, workspace } => commands::up(*window, workspace.as_deref(), top),
         Command::ShowDown(id) => commands::show_down(*id, top),
         Command::Power(on) => commands::power(&bottom, *on),
-        Command::DownRules(_) => return Ok(()),
+        Command::DownRules(_) | Command::LandRules(_) => return Ok(()),
     };
     if let Some(error) = ipc::refused(&ipc.command(&text)?) {
         log::debug!("sway: {text}: {error}");
@@ -194,6 +248,7 @@ struct Windows<S> {
     socket: PathBuf,
     top: TopOutput,
     down: DownRules,
+    land: LandRules,
     sink: S,
     /// Each window's unit, by process (a process's unit never changes).
     units: HashMap<u32, Option<String>>,
@@ -236,6 +291,9 @@ impl<S: Sink> Service for Windows<S> {
         // (A new connection may be a new sway, without them.)
         if let Err(e) = self.down.apply(&mut queries, None, true, &self.top.bottom) {
             log::warn!("sway: down rules: {e}");
+        }
+        if let Err(e) = self.land.apply(&mut queries, None, true) {
+            log::warn!("sway: landing rules: {e}");
         }
         Ok(Connected { events, queries })
     }

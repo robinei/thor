@@ -9,10 +9,18 @@
 #
 # The Waydroid session and adb's server run as units of their own, not in the app's launch: quitting an
 # app leaves Android running. Without adb, Waydroid's own launch. Setup: docs/android.md.
+#
+# `clamshell-android --stop waydroid.<package>`: the app stopped (ClamShell's Force kill).
 set -u
+stop=
+if [ "${1:-}" = --stop ]; then
+    stop=1
+    shift
+fi
 pkg=${1#waydroid.}
 
 running() { waydroid status 2> /dev/null | grep -q '^Session:[[:space:]]*RUNNING'; }
+[ -n "$stop" ] && ! running && exit 0
 if ! running; then
     # (On ClamShell's display: the user manager's may be another's, a desktop's around a nested session.)
     systemd-run --user --quiet --collect --unit=waydroid-session -E WAYLAND_DISPLAY -E XDG_RUNTIME_DIR \
@@ -21,7 +29,10 @@ if ! running; then
     while ! running && [ $i -lt 60 ]; do sleep 1; i=$((i + 1)); done
 fi
 
-command -v adb > /dev/null || exec waydroid app launch "$pkg"
+if ! command -v adb > /dev/null; then
+    [ -n "$stop" ] && exit 1
+    exec waydroid app launch "$pkg"
+fi
 dev=$(waydroid status | sed -n 's/^IP address:[[:space:]]*//p'):5555
 systemd-run --user --quiet --collect --unit=clamshell-adb adb -a nodaemon server 2> /dev/null
 i=0
@@ -30,6 +41,10 @@ adb connect "$dev" > /dev/null 2>&1
 android() { adb -s "$dev" shell "$@" 2> /dev/null | tr -d '\r'; }
 i=0
 while [ "$(android getprop sys.boot_completed)" != 1 ] && [ $i -lt 90 ]; do sleep 1; i=$((i + 1)); done
+if [ -n "$stop" ]; then
+    android am force-stop "$pkg"
+    exit
+fi
 
 case $(android getprop waydroid.active_apps) in
     '' | none | Waydroid) waydroid app launch com.android.launcher3 ;;

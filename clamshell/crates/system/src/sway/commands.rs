@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use clamshell_core::bottom_screen::DownRule;
-use clamshell_core::instance::{Instance, STEAM_APP_PREFIX};
+use clamshell_core::instance::Instance;
 use clamshell_core::windows::SHELF_APP_ID;
 
 use super::ipc::Error;
@@ -108,6 +108,17 @@ pub fn switch_down_rule(rule: &DownRule, on: bool, bottom: &str) -> String {
     format!("set {} {}", down_switch(rule), if on { bottom } else { DOWN_OFF })
 }
 
+/// The landing rules for windows with app id `app_id` (as it is, or an X11 window's class): they open on
+/// the landing workspace, from which ClamShell moves them to their entry's. None if sway's quoting can't
+/// carry it.
+pub fn define_land_rule(app_id: &str) -> Option<String> {
+    let id = literal(app_id)?;
+    let landing = Instance::Landing.name();
+    Some(format!(
+        "for_window [app_id=\"{id}\"] move container to workspace \"{landing}\"; for_window [class=\"{id}\"] move container to workspace \"{landing}\""
+    ))
+}
+
 /// The bottom screen's output on or off.
 pub fn power(bottom: &str, on: bool) -> String {
     format!("output \"{bottom}\" power {}", if on { "on" } else { "off" })
@@ -127,11 +138,7 @@ pub fn rules(top: Option<&str>, bottom: &str) -> Vec<String> {
     let (shelf, landing) = (Instance::Shelf.name(), Instance::Landing.name());
     // The second screen's workspace: windows opening there go to the main screen.
     let second = Instance::Bottom.name();
-    let mut rules = vec![
-        format!("for_window [app_id=\"^{SHELF_APP_ID}$\"] move container to workspace \"{shelf}\""),
-        format!("for_window [app_id=\"^{STEAM_APP_PREFIX}\"] move container to workspace \"{landing}\""),
-        format!("for_window [class=\"^{STEAM_APP_PREFIX}\"] move container to workspace \"{landing}\""),
-    ];
+    let mut rules = vec![format!("for_window [app_id=\"^{SHELF_APP_ID}$\"] move container to workspace \"{shelf}\"")];
     if let Some(top) = top {
         rules.push(format!("{}{}", pin(&shelf, Some(top)), pin(&landing, Some(top)).trim_end_matches("; ")));
         // (A window landing there by itself goes to the main screen: see `windows::reconcile`, which knows
@@ -167,7 +174,10 @@ mod tests {
         assert_eq!(text, r#"workspace "w" output "DSI-2"; workspace "w"; exec "/usr/bin/clamshell" --run "/run/j.json"; workspace back_and_forth"#);
         assert!(launch("w", Path::new("/a\"b"), Path::new("/x"), None).is_err());
         let rules = rules(Some("DSI-2"), "DSI-1");
-        assert!(rules.iter().any(|r| r.contains("for_window [class=\"^steam_app_\"]")));
+        assert_eq!(
+            define_land_rule("steam_app_620").unwrap(),
+            r#"for_window [app_id="^\Qsteam_app_620\E$"] move container to workspace "clamshell-game"; for_window [class="^\Qsteam_app_620\E$"] move container to workspace "clamshell-game""#
+        );
         assert!(rules.iter().any(|r| r.starts_with(r#"workspace "clamshell-bottom" output "DSI-1""#)), "the bottom screen's workspace there");
         assert!(!rules.iter().any(|r| r.contains("for_window [workspace=\"^clamshell-bottom")), "no rule sends windows off it (reconciling does)");
     }
