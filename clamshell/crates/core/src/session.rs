@@ -8,6 +8,9 @@ use crate::instance::Instance;
 use crate::running::{Front, Launching, Running};
 use crate::windows::{SHELF_APP_ID, Window};
 
+/// How long after the window in front closed a new one on its workspace is shown again (seconds).
+const REOPEN_SECS: u64 = 2;
+
 #[derive(Debug, Default)]
 pub struct Session {
     /// The entries that run, in the order they started.
@@ -26,6 +29,9 @@ pub struct Session {
     pub(crate) recent: Vec<String>,
     /// The launch to show when its first window appears.
     pub(crate) pending_show: Option<Instance>,
+    /// The workspace whose window in front closed, leaving it empty, and when (see
+    /// [`Session::show_reopened`]).
+    pub(crate) closed_front: Option<(String, u64)>,
     /// Entries quitting: their windows asked to close; once none is left, ended (then true) if they still
     /// run.
     pub(crate) quitting: Vec<(Arc<str>, bool)>,
@@ -100,6 +106,22 @@ impl Session {
 
     pub(crate) fn set_units(&mut self, units: Vec<Instance>) {
         self.units = units;
+    }
+
+    /// A window on the workspace whose window in front closed, within [`REOPEN_SECS`] (a program that
+    /// replaces its first window: a splash's, Waydroid's on a cold start): that workspace shown again.
+    pub(crate) fn show_reopened(&mut self, now: u64) -> Vec<Effect> {
+        let Some((ws, at)) = self.closed_front.take() else {
+            return vec![];
+        };
+        if now > at + REOPEN_SECS {
+            return vec![];
+        }
+        if self.windows.iter().any(|w| w.workspace == ws && !w.down) {
+            return vec![Effect::Window(WindowCommand::Focus(ws))];
+        }
+        self.closed_front = Some((ws, at));
+        vec![]
     }
 
     /// The launch just started, once its own first window is there (the entry's workspace may have its

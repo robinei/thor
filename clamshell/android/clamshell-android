@@ -70,6 +70,11 @@ i=0
 while [ "$(android getprop sys.boot_completed)" != 1 ] && [ $i -lt 90 ]; do sleep 1; i=$((i + 1)); done
 if [ -n "$stop" ]; then
     android am force-stop "$pkg"
+    # Its tasks too: one can outlive it with another app's activity on top (Android's permission
+    # prompt), its window with it.
+    for task in $(android am stack list | awk -v pkg="$pkg/" '/^RootTask id=/ { sub("id=", "", $2); root = $2 } index($2, pkg) == 1 { print root }'); do
+        android am stack remove "$task"
+    done
     exit
 fi
 

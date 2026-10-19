@@ -368,6 +368,7 @@ impl State {
                 let mut effects = self.follow_window_rules();
                 effects.extend(self.follow_background());
                 effects.extend(self.session.show_pending());
+                effects.extend(self.session.show_reopened(self.unix_secs));
                 effects.extend(self.follow_quitting());
                 effects.extend(self.follow_closed(was));
                 effects.extend(handed);
@@ -944,18 +945,21 @@ impl State {
 
     /// After the windows changed: the window in front (`was`, its workspace) closed, nothing of its
     /// workspace left (sway leaves the empty workspace in front): back to what was in front before it,
-    /// shelf at the bottom of that.
-    fn follow_closed(&self, was: Option<String>) -> Vec<Effect> {
+    /// shelf at the bottom of that; the workspace remembered for a window soon after (see
+    /// [`session::Session::show_reopened`]).
+    fn follow_closed(&mut self, was: Option<String>) -> Vec<Effect> {
         let windows = &self.session.windows;
         let Some(was) = was else { return vec![] };
         if windows.iter().any(|w| w.focused || w.workspace == was) {
             return vec![];
         }
         let shown = |ws: &String| windows.iter().any(|w| w.workspace == *ws && !w.down);
-        match self.session.recent.iter().find(|ws| shown(ws)) {
+        let effects = match self.session.recent.iter().find(|ws| shown(ws)) {
             Some(ws) if !Instance::Shelf.is(ws) => vec![Effect::Window(WindowCommand::Focus(ws.clone()))],
             _ => vec![Effect::Window(WindowCommand::ShowShelf)],
-        }
+        };
+        self.session.closed_front = Some((was, self.unix_secs));
+        effects
     }
 
     /// The home button: from anything to shelf; from shelf back to what was in front before it, or
@@ -1133,6 +1137,26 @@ mod tests {
         assert_eq!(window(s.apply(Event::Windows(vec![shelf(false), win(4, "retroarch", &zelda, true)])).1), vec![]);
         s.apply(Event::Windows(vec![shelf(true), win(4, "retroarch", &zelda, false)]));
         assert_eq!(window(s.apply(Event::Windows(vec![shelf(false), win(4, "retroarch", &zelda, false)])).1), vec![], "shelf's window is still there");
+    }
+
+    #[test]
+    fn a_window_in_front_replaced_at_once_is_shown_again() {
+        let mut s = state();
+        let shelf = |focused| win(1, windows::SHELF_APP_ID, &Instance::Shelf.name(), focused);
+        let app = "clamshell-run-fdroid-1".to_owned();
+        let window = |fx: Vec<Effect>| fx.into_iter().filter(|e| matches!(e, Effect::Window(_))).collect::<Vec<_>>();
+        s.apply(Event::Tick { unix_secs: 100 });
+        s.apply(Event::Windows(vec![shelf(false), win(2, "waydroid.org.fdroid.fdroid", &app, true)]));
+        // Its window closes (shelf), another comes on its workspace (moved there, not in front): shown.
+        assert_eq!(window(s.apply(Event::Windows(vec![shelf(false)])).1), vec![Effect::Window(WindowCommand::ShowShelf)]);
+        let (_, fx) = s.apply(Event::Windows(vec![shelf(true), win(3, "waydroid.org.fdroid.fdroid", &app, false)]));
+        assert_eq!(window(fx), vec![Effect::Window(WindowCommand::Focus(app.clone()))]);
+        // Later: not.
+        s.apply(Event::Windows(vec![shelf(false), win(3, "waydroid.org.fdroid.fdroid", &app, true)]));
+        s.apply(Event::Windows(vec![shelf(false)]));
+        s.apply(Event::Tick { unix_secs: 103 });
+        let (_, fx) = s.apply(Event::Windows(vec![shelf(true), win(4, "waydroid.org.fdroid.fdroid", &app, false)]));
+        assert_eq!(window(fx), vec![], "too late: it stays behind");
     }
 
     #[test]
