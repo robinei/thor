@@ -37,6 +37,7 @@ pub mod touchpad;
 pub mod tray;
 pub mod tuning;
 pub mod units;
+pub mod wayland_filter;
 pub mod wifi;
 pub mod worker;
 

@@ -40,6 +40,20 @@ Android apps and Android's own on-screen keyboard is turned off (`show_ime_with_
 Waydroid has no text-input protocol, so a text field getting focus doesn't raise ClamShell's keyboard:
 open it from the bar.
 
+## Windows kept: the Wayland filter
+
+Waydroid answers every `xdg_toplevel.configure` with a display hotplug (`xdg_toplevel_handle_configure`
+calls `do_hotplug` whatever the size), which clears its windows; it draws a window again only with its
+app's next frame, and an app at rest draws none. Sway configures a window as it is hidden, shown,
+focused or unfocused, its size unchanged: an Android app's window was lost whenever it went out of
+sight or lost focus, and didn't come back (Android keeping the task).
+
+So Waydroid connects through ClamShell's Wayland filter (`clamshell --wayland-filter`, its own unit
+`clamshell-wayland-filter-<display>`, started by the script before the session): a proxy on a socket
+beside the compositor's (`<display>-android`) that passes everything through but a toplevel configure of
+the size the window already has. A resize still reaches Waydroid. (The fix belongs in Waydroid: a
+hotplug only when the size changed.)
+
 ## In the background
 
 Android's apps share one container, so they are paused together: the Android runner's `pause` and
@@ -51,14 +65,6 @@ is off, it asks to suspend and Waydroid freezes the container (`persist.waydroid
 
 ## Not solved
 
-- A hidden window is lost until Android draws again. Sway configures a window as it is hidden and shown
-  (xdg_toplevel's suspended state); Waydroid answers every configure with a display hotplug
-  (`xdg_toplevel_handle_configure` calls `do_hotplug` whatever the size), which clears its windows;
-  a window comes back only with the app's next frame. A static app (Calculator) draws none: its window
-  stays gone, ClamShell counts it as ended, and launching it again doesn't bring it back (Android keeps
-  the task, visible). A density change (`wm density`, then reset) makes Android redraw, and the window
-  comes back. To do: Waydroid to hotplug only when the size changed; meanwhile ClamShell making Android
-  redraw when an Android app is shown.
 
 - Android draws its own caption on each window (back, minimise, maximise, close). Waydroid has no option
   to turn it off (waydroid/waydroid#2204).

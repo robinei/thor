@@ -16,6 +16,9 @@ pub enum Command {
     Library,
     /// `--tray`: print the tray icons there are, and their menus (see clamshell_system::tray).
     Tray,
+    /// `--wayland-filter`: a Wayland proxy for Waydroid beside the compositor's socket (see
+    /// clamshell_system::wayland_filter).
+    WaylandFilter,
     /// `--fetch-metadata`: fetch what the library wants (covers, screenshots, ...; see
     /// clamshell_system::meta) without the UI, printing what was found; a running ClamShell shows it from
     /// its next start.
@@ -27,7 +30,8 @@ pub enum Command {
     Ctl(Vec<String>),
 }
 
-pub const USAGE: &str = "usage: clamshell [ctl COMMAND... | --snapshot DIR | --library | --tray | --fetch-metadata | --mangohud-env | --run FILE]";
+pub const USAGE: &str =
+    "usage: clamshell [ctl COMMAND... | --snapshot DIR | --library | --tray | --wayland-filter | --fetch-metadata | --mangohud-env | --run FILE]";
 
 /// The command the arguments (without the program's name) ask for.
 pub fn parse(args: &[String]) -> Option<Command> {
@@ -38,6 +42,7 @@ pub fn parse(args: &[String]) -> Option<Command> {
         [flag] if flag == "--mangohud-env" => Command::MangohudEnv,
         [flag] if flag == "--library" => Command::Library,
         [flag] if flag == "--tray" => Command::Tray,
+        [flag] if flag == "--wayland-filter" => Command::WaylandFilter,
         [flag] if flag == "--fetch-metadata" => Command::FetchMetadata,
         [ctl, rest @ ..] if ctl == "ctl" && !rest.is_empty() => Command::Ctl(rest.to_vec()),
         _ => return None,

@@ -35,8 +35,21 @@ running() { waydroid status 2> /dev/null | grep -q '^Session:[[:space:]]*RUNNING
 [ -n "$stop" ] && ! running && exit 0
 running && container Unfreeze
 if ! running; then
-    # (On ClamShell's display: the user manager's may be another's, a desktop's around a nested session.)
-    systemd-run --user --quiet --collect --unit=waydroid-session -E WAYLAND_DISPLAY -E XDG_RUNTIME_DIR \
+    # Waydroid on ClamShell's Wayland filter (`clamshell --wayland-filter`, ClamShell's own program as its
+    # launches have it: CLAMSHELL), not the compositor's socket itself: Waydroid would lose an app's window
+    # whenever the compositor configures it (hidden, shown, focused); the filter keeps those configures
+    # from it. (On ClamShell's display: the user manager's may be another's, a desktop's around a nested
+    # session.)
+    display=$WAYLAND_DISPLAY
+    filter=${CLAMSHELL:-clamshell}
+    if command -v "$filter" > /dev/null; then
+        systemd-run --user --quiet --collect --unit="clamshell-wayland-filter-$WAYLAND_DISPLAY" \
+            -E WAYLAND_DISPLAY -E XDG_RUNTIME_DIR "$filter" --wayland-filter 2> /dev/null
+        i=0
+        while [ ! -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY-android" ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+        [ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY-android" ] && display=$WAYLAND_DISPLAY-android
+    fi
+    systemd-run --user --quiet --collect --unit=waydroid-session -E WAYLAND_DISPLAY="$display" -E XDG_RUNTIME_DIR \
         waydroid session start 2> /dev/null
     i=0
     while ! running && [ $i -lt 60 ]; do sleep 1; i=$((i + 1)); done

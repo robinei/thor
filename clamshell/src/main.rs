@@ -70,6 +70,13 @@ fn main() -> ExitCode {
             print_library(State::new(Init { library: load_library(&sources).library, ..Init::default() }).shelf().library());
             ExitCode::SUCCESS
         }
+        Command::WaylandFilter => match clamshell_system::wayland_filter::run() {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("wayland filter: {e}");
+                ExitCode::FAILURE
+            }
+        },
         Command::Tray => match clamshell_system::tray::read_now() {
             Ok(items) => {
                 for item in items {

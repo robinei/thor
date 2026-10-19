@@ -210,12 +210,18 @@ fn start_program(config: &Config, request: &Request, argv: Vec<String>, workdir:
         }
         _ => argv,
     };
+    // (`CLAMSHELL`: this program, for what a runner's script asks of it: the Android runner's Wayland
+    // filter.)
+    let mut env = request.env.clone();
+    if let Ok(exe) = std::env::current_exe() {
+        env.push(("CLAMSHELL".to_owned(), exe.to_string_lossy().into_owned()));
+    }
     let job = Job {
         unit: request.instance.name(),
         workspace: request.instance.workspace(),
         slice: request.instance.slice(),
         argv,
-        env: request.env.clone(),
+        env,
         workdir,
         scope: config.scope,
     };
