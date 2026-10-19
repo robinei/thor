@@ -13,7 +13,7 @@ use clamshell_core::{DockId, Id, ListId};
 
 use crate::draw::{Keep, Rect};
 use crate::toolkit::Frame;
-use crate::toolkit::format::{Bytes, Fmt, Share};
+use crate::toolkit::format::{Bytes, Fmt, MaybeShare, Share};
 use crate::toolkit::scroll::Scrolled;
 use crate::toolkit::style::{self, Look, Text, Tone};
 use crate::toolkit::widgets::{self, CAPTION_Y, HeaderRight, TileFace, TileShape};
@@ -141,7 +141,7 @@ fn draw_menu(f: &mut Frame, entry: &std::sync::Arc<str>) {
     if let Some((cpu, gpu, memory)) = s.cost_of(entry) {
         let size = f.text(Text::Small);
         let line = area.take_top(size * 2.0);
-        let cost = Fmt::<64>::of(format_args!("{} · CPU {} · GPU {}", Bytes(memory), Share(cpu), Share(gpu)));
+        let cost = Fmt::<64>::of(format_args!("{} · CPU {} · GPU {}", Bytes(memory), Share(cpu), MaybeShare(gpu)));
         f.c.text_fit(line.top_line(size), size, Tone::Dim, &cost, Keep::Start);
     }
     widgets::menu(f, area, &items);

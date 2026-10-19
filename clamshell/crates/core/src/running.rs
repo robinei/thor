@@ -405,11 +405,21 @@ impl State {
     }
 
     /// After systemd's list of our scopes changed: an entry with scopes listed that isn't known to run
-    /// (started before ClamShell was) runs, adopted; one adopted whose scopes are all gone has ended.
-    pub(crate) fn follow_units(&mut self) {
+    /// (started before ClamShell was) runs, adopted, since its first scope started (the time in its
+    /// name); one adopted whose scopes are all gone has ended, its play recorded (the ClamShell that
+    /// launched it didn't see it end).
+    pub(crate) fn follow_units(&mut self) -> Vec<Effect> {
+        let now = self.unix_secs;
         let session = &mut self.session;
         let units = &session.units;
-        session.running.retain(|r| !r.adopted || units.iter().any(|u| u.key() == Some(r.key.as_str())));
+        let mut ended = Vec::new();
+        session.running.retain(|r| {
+            let runs = !r.adopted || units.iter().any(|u| u.key() == Some(r.key.as_str()));
+            if !runs {
+                ended.push((r.id.clone(), r.start));
+            }
+            runs
+        });
         for unit in units {
             let Some(key) = unit.key() else {
                 continue;
@@ -421,7 +431,11 @@ impl State {
                 continue;
             };
             let launches = u32::try_from(units.iter().filter(|u| u.key() == Some(key)).count()).unwrap_or(u32::MAX);
-            let start = self.unix_secs;
+            let first = units.iter().filter_map(|u| match u {
+                Instance::Run { key: k, secs, .. } if k == key => Some(*secs),
+                _ => None,
+            });
+            let start = first.min().unwrap_or(now);
             let entry = Some(Box::new(g.clone()));
             session.running.push(Running {
                 id: g.id.clone(),
@@ -436,6 +450,15 @@ impl State {
                 entry,
             });
         }
+        let mut effects = Vec::new();
+        for (game, start) in ended {
+            let duration = now.saturating_sub(start);
+            effects.push(Effect::RecordPlay { game: game.clone(), start, duration });
+            if self.shelf.add_play(&game, start, duration) {
+                self.saves.resume.touch(now);
+            }
+        }
+        effects
     }
 
     /// The app whose window shows browsed file `id` (running): the desktop file named as the window's
@@ -787,13 +810,16 @@ mod tests {
     #[test]
     fn entries_started_before_clamshell_are_found_by_their_scopes() {
         let mut s = state();
-        let foot = Instance::Run { key: key("desktop:foot"), secs: 1, n: 0 };
+        s.apply(Event::Tick { unix_secs: 1000 });
+        let foot = Instance::Run { key: key("desktop:foot"), secs: 400, n: 0 };
         s.apply(Event::Units(vec![foot.clone()]));
         assert!(s.session().running("desktop:foot").is_some(), "adopted");
         s.apply(Event::Windows(vec![win(4, "foot", &foot.workspace(), false)]));
         assert_eq!(tap(&mut s, Id::Dock(DockId::Entry(0))), vec![Effect::Window(WindowCommand::Focus(foot.workspace()))], "on the dock, shown");
-        s.apply(Event::Units(vec![]));
+        s.apply(Event::Tick { unix_secs: 1300 });
+        let (_, fx) = s.apply(Event::Units(vec![]));
         assert!(s.session().running("desktop:foot").is_none(), "its scopes gone: ended");
+        assert!(fx.contains(&Effect::RecordPlay { game: "desktop:foot".into(), start: 400, duration: 900 }), "played since its launch: {fx:?}");
     }
 
     #[test]

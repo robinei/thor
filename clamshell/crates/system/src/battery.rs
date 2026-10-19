@@ -1,8 +1,9 @@
 //! The battery tab's readings, while it is open: the charge over the last day from UPower (system bus;
 //! it records the battery's level as it changes), and what is using the machine now: CPU time per process
 //! (`/proc/<pid>/stat`) and GPU time per DRM client (see [`crate::drm`]; only our user's processes are
-//! readable), and the memory each has resident, grouped by our scopes (an app instance, the game), else by
-//! program name for our user's processes, else as the system. Sampled every two seconds, sent as
+//! readable), and the memory each has resident, grouped by our scopes (an app instance, the game), else
+//! (Waydroid's container) by Android app, else by program name for our user's processes, else as the
+//! system. Sampled every two seconds, sent as
 //! [`Reading::Battery`]: those doing work, the busiest first, then those idle that hold much memory.
 
 use std::collections::HashMap;
@@ -238,10 +239,11 @@ fn read_processes() -> HashMap<u32, Counters> {
         };
         let mine = std::fs::metadata(&dir).is_ok_and(|m| m.uid() == me);
         let scope = cgroup::unit_of(pid).and_then(|unit| Instance::from_unit(&unit));
-        let group = match (scope, mine) {
-            (Some(instance), _) => Group::Instance(instance),
-            (None, true) => Group::Process(comm),
-            (None, false) => Group::System,
+        let group = match (scope, android(&dir), mine) {
+            (Some(instance), ..) => Group::Instance(instance),
+            (None, Some(group), _) => group,
+            (None, None, true) => Group::Process(comm),
+            (None, None, false) => Group::System,
         };
         let gpu = if mine { drm::clients(&dir) } else { HashMap::new() };
         let endable = !matches!(group, Group::System) && endable(pid, &dir);
@@ -266,6 +268,23 @@ fn endable(pid: u32, dir: &std::path::Path) -> bool {
 }
 
 /// A process's resident memory (bytes): `/proc/<pid>/statm`'s second field, in pages.
+/// A process of Waydroid's container (its LXC payload cgroup): an app's (Android names an app's
+/// processes after its package, `<package>[:<name>]`), by the app id Waydroid gives its windows
+/// (`waydroid.<package>`), else Android's own.
+fn android(dir: &std::path::Path) -> Option<Group> {
+    if !sys::text(dir.join("cgroup"))?.contains("/lxc.payload.waydroid") {
+        return None;
+    }
+    Some(android_group(&std::fs::read(dir.join("cmdline")).unwrap_or_default()))
+}
+
+fn android_group(cmdline: &[u8]) -> Group {
+    let first = cmdline.split(|&b| b == 0).next().unwrap_or_default();
+    let name = String::from_utf8_lossy(first);
+    let package = name.split(':').next().unwrap_or_default();
+    if package.contains('.') && !package.contains('/') { Group::App(format!("waydroid.{package}")) } else { Group::Process("Android".to_owned()) }
+}
+
 fn resident(dir: &std::path::Path) -> u64 {
     let pages: u64 = sys::text(dir.join("statm")).and_then(|t| t.split_whitespace().nth(1)?.parse().ok()).unwrap_or(0);
     pages * rustix::param::page_size() as u64
@@ -292,6 +311,15 @@ mod tests {
     fn process_counters() {
         let stat = "1234 (Web Content) S 1 2 3 4 5 6 7 8 9 10 250 50 0 0 20 0 1 0";
         assert_eq!(parse_stat(stat), Some(("Web Content".into(), 300)));
+    }
+
+    #[test]
+    fn androids_processes_by_app() {
+        let app = |p: &str| Group::App(p.to_owned());
+        assert_eq!(android_group(b"org.fdroid.fdroid\0"), app("waydroid.org.fdroid.fdroid"));
+        assert_eq!(android_group(b"org.fdroid.fdroid:remote\0"), app("waydroid.org.fdroid.fdroid"), "its other processes");
+        assert_eq!(android_group(b"system_server\0"), Group::Process("Android".into()));
+        assert_eq!(android_group(b"/system/bin/surfaceflinger\0"), Group::Process("Android".into()));
     }
 
     #[test]

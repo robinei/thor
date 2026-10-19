@@ -13,7 +13,7 @@ use clamshell_core::{Id, State};
 
 use crate::draw::{Align, Keep, LINE, Rect};
 use crate::toolkit::Frame;
-use crate::toolkit::format::{Bytes, Duration, Fmt, Share};
+use crate::toolkit::format::{Bytes, Duration, Fmt, MaybeShare, Share};
 use crate::toolkit::style::{self, Look, SURFACE, SURFACE_HI, Tone};
 use crate::toolkit::widgets::{self, HeaderRight};
 
@@ -72,7 +72,7 @@ pub(super) fn draw(f: &mut Frame) {
         let row = |f: &mut Frame| {
             let name_w = r.w * NAME_W;
             f.c.text_fit(Rect::new(r.x, r.y, name_w - pad, r.h), size, Tone::Normal, s.spender_name(p), Keep::Start);
-            let figures = Fmt::<64>::of(format_args!("CPU {} · GPU {} · {}", Share(p.cpu), Share(p.gpu), Bytes(p.memory)));
+            let figures = Fmt::<64>::of(format_args!("CPU {} · GPU {} · {}", Share(p.cpu), MaybeShare(p.group.gpu_known().then_some(p.gpu)), Bytes(p.memory)));
             let figures_w = f.c.text_width(size * SMALL, &figures);
             // Smaller, on the name's line.
             let ty = r.y + (r.h - size * LINE) / 2.0;

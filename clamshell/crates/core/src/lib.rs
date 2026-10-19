@@ -280,7 +280,8 @@ impl State {
     /// Whether the dock menu offers Open another for `id`: it runs, and another launch of it makes sense
     /// (see [`Game::another`]).
     pub fn opens_another(&self, id: &str) -> bool {
-        self.session.running(id).is_some() && self.game(id).is_some_and(|g| g.another)
+        // (Not one handed over to another program, Android's: a launch shows the one it runs.)
+        self.session.running(id).is_some() && self.game(id).is_some_and(|g| g.another && !g.runner.as_ref().is_some_and(|r| r.handover))
     }
 
     pub fn game(&self, id: &str) -> Option<&Game> {
@@ -408,8 +409,8 @@ impl State {
             }
             Event::Units(units) => {
                 self.session.set_units(units);
-                self.follow_units();
-                let mut effects = self.start_autostart();
+                let mut effects = self.follow_units();
+                effects.extend(self.start_autostart());
                 self.follow_dock();
                 effects.extend(self.follow_quitting());
                 (Dirty::BOTTOM, effects)

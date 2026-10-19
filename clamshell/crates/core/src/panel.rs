@@ -128,6 +128,13 @@ impl State {
         }
     }
 
+    /// Whether the settings panel edits a runner whose launches hand their app over to another program
+    /// (Android's: Waydroid's session runs them), or an item of it: what works through the launch's
+    /// process (see [`Setting::through_launch`], and the environment) has no effect on it.
+    pub fn handed_over(&self) -> bool {
+        self.editing().is_some() && self.context().and_then(|item| self.game(&item.id)).and_then(|g| g.runner.as_ref()).is_some_and(|r| r.handover)
+    }
+
     /// The scope the settings panel shows chosen: the one chosen, or the level that stands in for it.
     pub fn scope_shown(&self) -> Scope {
         match self.editing() {

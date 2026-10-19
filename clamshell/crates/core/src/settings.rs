@@ -129,6 +129,12 @@ impl Setting {
         !matches!(self, Setting::Upscale | Setting::Fan)
     }
 
+    /// Whether it works through the launch's own process (MangoHud's cap and HUD): an app the launch
+    /// hands over to another program (see [`crate::State::handed_over`]) doesn't get it.
+    pub fn through_launch(self) -> bool {
+        matches!(self, Setting::FpsCap | Setting::Hud)
+    }
+
     /// Only for all games (not per game).
     pub fn global_only(self) -> bool {
         matches!(self, Setting::ChargeLimit | Setting::ScreenOff | Setting::Sleep)

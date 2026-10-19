@@ -85,6 +85,18 @@ impl Display for Share {
     }
 }
 
+/// A share that may be unknown (unreadable): a dash then.
+pub struct MaybeShare(pub Option<f32>);
+
+impl Display for MaybeShare {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self.0 {
+            Some(share) => Share(share).fmt(f),
+            None => f.write_str("–"),
+        }
+    }
+}
+
 /// A clock frequency in MHz: "3.7 GHz", "680 MHz", or "clock unknown".
 pub struct Frequency(pub Option<u32>);
 

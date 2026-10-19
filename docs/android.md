@@ -19,6 +19,13 @@ The starter library.json opens them with the Android runner, `clamshell/android/
 - Waydroid shows no app windows until `waydroid.active_apps` names an app, and only Waydroid's own launch
   sets it: a session's first launch runs it once with the launcher, which Waydroid never shows.
 
+The dock menu has no Open another for them (a launch shows the app that runs). Its cost line, and the
+battery tab's row, are the app's own processes in Waydroid's container (Android names them after the
+package): their CPU and memory; their GPU time is another user's, unreadable, so a dash. The rest of
+the container's processes are one row, Android. In the settings, the Android runner's tab and its apps'
+dim the FPS cap, the HUD and the variables ("no effect"): they work through the launch's own process,
+which hands the app over and ends.
+
 Quit closes the window, then runs the runner's `stop` once it is gone (the entry ends with its window);
 Force kill runs the `stop` at once. The `stop` is the script's `--stop`: Android's `am force-stop`, and
 the app's tasks removed (`am stack remove`): a task can outlive the app with another app's activity on

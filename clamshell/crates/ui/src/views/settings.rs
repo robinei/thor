@@ -104,7 +104,7 @@ pub(super) fn draw(f: &mut Frame) {
 
 /// How a tile looks: its icon, its value, what the value does (the icon's colour), where it comes from
 /// (the game's own choice: a dot; following the default on a game's tab: dimmed value), and whether it
-/// does anything yet.
+/// does anything (dimmed, with a note why not: not yet, or not for what is edited).
 struct Face {
     id: Id,
     icon: Icon,
@@ -112,6 +112,18 @@ struct Face {
     impact: Impact,
     origin: TileOrigin,
     active: bool,
+    note: &'static str,
+}
+
+/// A tile's note when it does nothing: not yet (`later`), or not for what is edited (`no_effect`).
+fn note(later: bool, no_effect: bool) -> &'static str {
+    if later {
+        "later"
+    } else if no_effect {
+        "no effect"
+    } else {
+        ""
+    }
 }
 
 fn face(s: &State, tile: Tile) -> Face {
@@ -134,19 +146,22 @@ fn face(s: &State, tile: Tile) -> Face {
                 value: text,
                 impact: setting.impact(value),
                 origin: s.tile_origin(setting),
-                active: setting.active(),
+                active: setting.active() && !(setting.through_launch() && s.handed_over()),
+                note: note(!setting.active(), setting.through_launch() && s.handed_over()),
             }
         }
         Tile::Env => {
             let count = clamshell_core::count_env(s.settings().env_text(game.as_deref()));
             let impact = if count > 0 { Impact::Changes } else { Impact::Stock };
             let origin = if game.is_some() && count > 0 { TileOrigin::Own } else { TileOrigin::Global };
-            Face { id: Id::Settings(SettingsId::Env), icon: Icon::Env, value: Fmt::of(format_args!("{}", Variables(count))), impact, origin, active: true }
+            let value = Fmt::of(format_args!("{}", Variables(count)));
+            let off = s.handed_over();
+            Face { id: Id::Settings(SettingsId::Env), icon: Icon::Env, value, impact, origin, active: !off, note: note(false, off) }
         }
         Tile::Reset => {
             let any = game.as_ref().is_some_and(|g| s.settings().has_own(g));
             let value = Fmt::of(format_args!("{}", if any { "Reset" } else { "Nothing to reset" }));
-            Face { id: Id::Settings(SettingsId::Reset), icon: Icon::Reset, value, impact: Impact::Stock, origin: TileOrigin::Global, active: any }
+            Face { id: Id::Settings(SettingsId::Reset), icon: Icon::Reset, value, impact: Impact::Stock, origin: TileOrigin::Global, active: any, note: "" }
         }
     }
 }
@@ -158,12 +173,11 @@ pub(super) fn setting_tile(f: &mut Frame, r: Rect, setting: Setting) {
 
 fn draw_tile(f: &mut Frame, r: Rect, tile: Tile) {
     let face = face(f.s, tile);
-    let later = !face.active && !matches!(tile, Tile::Reset);
     let tile_face = TileFace {
         caption: &face.value,
         caption_tone: if face.active && face.origin != TileOrigin::Inherited { Tone::Normal } else { Tone::Dim },
         dot: (face.origin == TileOrigin::Own).then_some(Tone::Normal),
-        note: if later { "later" } else { "" },
+        note: face.note,
     };
     // No background: the grid's alignment is the structure; pressed still lights it.
     widgets::tile(f, face.id.clone(), r, &TILE, tile_face, |f, r| {
