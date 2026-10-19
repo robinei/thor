@@ -123,6 +123,19 @@ impl Folders<'_> {
     }
 }
 
+/// The programs ClamShell runs itself (not a runner's: those are the runners' problems), and what goes
+/// without each.
+const NEEDED: [(&str, &str); 8] = [
+    ("systemd-run", "nothing can be launched"),
+    ("ratarmount", "archives can't be browsed"),
+    ("fusermount3", "archives can't be browsed"),
+    ("bsdtar", "archives can't be extracted"),
+    ("grim", "no screenshots"),
+    ("udisksctl", "removable storage can't be ejected"),
+    ("wpctl", "no volume in the bar"),
+    ("curl", "no covers or details fetched"),
+];
+
 /// The Tools tab's entries: id, title, the tool, what it does.
 const TOOLS: [(&str, &str, Tool, &str); 2] = [
     (
@@ -210,6 +223,7 @@ pub fn load(sources: &Sources) -> Loaded {
     }
     b.removable();
     b.installed();
+    b.needed();
     b.order();
     b.mark_recent();
     b.tools();
@@ -537,14 +551,32 @@ impl Builder<'_> {
         Some(clamshell_library::OwnTab { name: p.path.trim().trim_matches('/').to_owned(), icon: p.icon.clone() })
     }
 
-    /// ClamShell's own tools, in their tab if a place declares it.
+    /// The programs ClamShell runs itself that aren't installed: a problem each (what goes without).
+    fn needed(&mut self) {
+        for (program, for_what) in NEEDED {
+            if !runners::on_path(program) {
+                self.problems.push(format!("{program} isn't installed: {for_what}"));
+            }
+        }
+    }
+
+    /// ClamShell's own tools, in their tab if a place declares it. The rescan's details list what is
+    /// wrong with the library (as read now).
     fn tools(&mut self) {
         let Some(tab) = self.own(content::OwnTab::Tools) else {
             return;
         };
         let first = self.games.len();
         for (id, title, tool, summary) in TOOLS {
-            self.games.push(Game { launch: Launch::Tool(tool), tool: true, summary: summary.into(), ..Game::new(id, title) });
+            let mut summary = summary.to_owned();
+            if tool == Tool::Rescan && !self.problems.is_empty() {
+                summary.push_str("\n\nWhat is wrong now:");
+                for p in &self.problems {
+                    summary.push_str("\n· ");
+                    summary.push_str(p);
+                }
+            }
+            self.games.push(Game { launch: Launch::Tool(tool), tool: true, summary, ..Game::new(id, title) });
         }
         self.collections.push(Collection { icon: tab.icon, ..Collection::new(&tab.name, (first..self.games.len()).collect()) });
     }

@@ -431,6 +431,12 @@ impl State {
             }
             Event::Meta { id, meta } => (if self.shelf.apply_meta(&id, &meta) { Dirty::BOTH } else { Dirty::NONE }, vec![]),
             Event::Library(library) => {
+                // (Problems the library didn't have before: said once.)
+                let problems = &library.problems;
+                if !problems.is_empty() && *problems != self.shelf.library().problems {
+                    let first = problems.first().cloned().unwrap_or_default();
+                    self.notify(hardware::NoticeKind::Problems(first, problems.len()));
+                }
                 if self.shelf.reload(*library) {
                     self.moved_collection();
                 }
@@ -1190,6 +1196,22 @@ mod tests {
         assert_eq!(first.0.0, vec![("zelda-lttp".to_owned(), true)], "running as a launch of ours");
         assert!(first.1.0.is_empty(), "ended");
         assert!(plays.iter().all(|&n| n == 1), "one play recorded each time: {plays:?}");
+    }
+
+    #[test]
+    fn new_library_problems_are_said_once() {
+        let mut s = state();
+        let with = |problems: &[&str]| {
+            let mut library = clamshell_library::demo_library();
+            library.problems = problems.iter().map(|p| (*p).to_owned()).collect();
+            Event::Library(Box::new(library))
+        };
+        let notice = |s: &State| s.bottom().notice().map(|n| n.what.clone());
+        s.apply(with(&["grim isn't installed: no screenshots", "x: no launch command"]));
+        assert_eq!(notice(&s), Some(hardware::NoticeKind::Problems("grim isn't installed: no screenshots".into(), 2)));
+        s.apply(Event::Tick { unix_secs: 10_000 });
+        s.apply(with(&["grim isn't installed: no screenshots", "x: no launch command"]));
+        assert_eq!(notice(&s), None, "the same again: not said");
     }
 
     #[test]

@@ -172,6 +172,8 @@ fn draw_notice(f: &mut Frame, what: &NoticeKind, w: f32, bar_h: f32) {
         NoticeKind::Enqueued(n, to) => (None, Fmt::of(format_args!("{n} added to {to}"))),
         NoticeKind::NoWindow(title) => (None, Fmt::of(format_args!("{title} has no window"))),
         NoticeKind::NotStarted(title) => (None, Fmt::of(format_args!("{title} didn't start"))),
+        NoticeKind::Problems(first, 1) => (None, Fmt::of(format_args!("{first}"))),
+        NoticeKind::Problems(_, n) => (None, Fmt::of(format_args!("{n} problems: see Tools, Rescan library"))),
     };
     let x = (w - widgets::card_width(f, bar_h, icon.is_some(), &text)) / 2.0;
     widgets::card(f, x, bar_h * 1.3, bar_h, icon, &text);

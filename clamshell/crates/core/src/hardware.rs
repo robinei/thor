@@ -58,6 +58,9 @@ pub enum NoticeKind {
     NoWindow(String),
     /// A launch didn't start (its entry's title; why is in the log).
     NotStarted(String),
+    /// The library read anew has problems (the first, and how many: all are listed on the Tools tab's
+    /// Rescan library).
+    Problems(String, usize),
 }
 
 impl State {
