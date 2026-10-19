@@ -164,10 +164,11 @@ impl View {
         state: &State,
         images: &mut Images,
         qh: &QueueHandle<App>,
+        rgba: bool,
     ) -> Result<FrameOut, Error> {
         let at = self.placement(state.unix_secs());
         let rendered = render::render(&mut self.picture, at, self.screen, state, fonts, images)?;
-        if self.present(pool, qh)? {
+        if self.present(pool, qh, rgba)? {
             self.dirty = false;
             self.frame_pending = true;
         }
@@ -175,13 +176,14 @@ impl View {
     }
 
     /// Copies the picture into a free buffer and commits it, asking for a frame callback. False when no
-    /// buffer is free.
-    fn present(&mut self, pool: &mut SlotPool, qh: &QueueHandle<App>) -> Result<bool, Error> {
+    /// buffer is free. `rgba`: the compositor takes ABGR8888 (tiny-skia's byte order).
+    fn present(&mut self, pool: &mut SlotPool, qh: &QueueHandle<App>, rgba: bool) -> Result<bool, Error> {
         let Some(pixmap) = self.picture.pixmap.as_ref() else {
             return Ok(false);
         };
         let (w, h) = (i32::try_from(pixmap.width())?, i32::try_from(pixmap.height())?);
-        let Some(index) = free_buffer(&mut self.buffers, pool, w, h)? else {
+        let format = if rgba { wl_shm::Format::Abgr8888 } else { wl_shm::Format::Argb8888 };
+        let Some(index) = free_buffer(&mut self.buffers, pool, w, h, format)? else {
             return Ok(false);
         };
         let Some(buffer) = self.buffers.get(index) else {
@@ -190,11 +192,17 @@ impl View {
         let Some(bytes) = buffer.canvas(pool) else {
             return Err("buffer busy".into());
         };
-        // tiny-skia is RGBA in memory, ARGB8888 is BGRA (little-endian); both premultiplied. sway also
-        // takes ABGR8888 (RGBA in memory), which would save this copy; KWin doesn't.
-        for (dst, src) in bytes.chunks_exact_mut(4).zip(pixmap.data().chunks_exact(4)) {
-            if let ([b, g, r, a], [sr, sg, sb, sa]) = (dst, src) {
-                (*b, *g, *r, *a) = (*sb, *sg, *sr, *sa);
+        // tiny-skia is RGBA in memory (premultiplied): ABGR8888 as it is (sway takes it); else ARGB8888,
+        // BGRA in memory (little-endian), every pixel's red and blue swapped (KWin's nested session).
+        if rgba {
+            if let Some(dst) = bytes.get_mut(..pixmap.data().len()) {
+                dst.copy_from_slice(pixmap.data());
+            }
+        } else {
+            for (dst, src) in bytes.chunks_exact_mut(4).zip(pixmap.data().chunks_exact(4)) {
+                if let ([b, g, r, a], [sr, sg, sb, sa]) = (dst, src) {
+                    (*b, *g, *r, *a) = (*sb, *sg, *sr, *sa);
+                }
             }
         }
         let surface = self.shell.surface();
@@ -209,7 +217,7 @@ impl View {
 
 /// A `w` x `h` buffer the compositor isn't reading: one kept, or a new one if fewer than three are kept;
 /// `None` when all three are busy.
-fn free_buffer(buffers: &mut Vec<Buffer>, pool: &mut SlotPool, w: i32, h: i32) -> Result<Option<usize>, Error> {
+fn free_buffer(buffers: &mut Vec<Buffer>, pool: &mut SlotPool, w: i32, h: i32, format: wl_shm::Format) -> Result<Option<usize>, Error> {
     buffers.retain(|b| b.height() == h && b.stride() == w * 4);
     if let Some(i) = buffers.iter().position(|b| b.canvas(pool).is_some()) {
         return Ok(Some(i));
@@ -217,7 +225,7 @@ fn free_buffer(buffers: &mut Vec<Buffer>, pool: &mut SlotPool, w: i32, h: i32) -
     if buffers.len() >= 3 {
         return Ok(None);
     }
-    let (buffer, _) = pool.create_buffer(w, h, w * 4, wl_shm::Format::Argb8888)?;
+    let (buffer, _) = pool.create_buffer(w, h, w * 4, format)?;
     buffers.push(buffer);
     Ok(Some(buffers.len() - 1))
 }

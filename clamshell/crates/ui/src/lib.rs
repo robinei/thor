@@ -380,11 +380,13 @@ impl App {
         if let Some(view) = self.views.iter_mut().find(|(s, _)| *s == Screen::Bottom).and_then(|(_, v)| v.as_mut()) {
             view.set_behind(behind);
         }
+        // (The compositor takes tiny-skia's own byte order: copied as it is.)
+        let rgba = self.shm.formats().contains(&smithay_client_toolkit::reexports::client::protocol::wl_shm::Format::Abgr8888);
         for (screen, view) in self.views.iter_mut() {
             let Some(view) = view.as_mut().filter(|v| v.due()) else {
                 continue;
             };
-            match view.draw(&mut self.pool, &mut self.fonts, &self.state, &mut self.images, &self.qh) {
+            match view.draw(&mut self.pool, &mut self.fonts, &self.state, &mut self.images, &self.qh, rgba) {
                 Ok(rendered) => {
                     view.body = rendered.touchpad_area;
                     if screen == Screen::Bottom {
