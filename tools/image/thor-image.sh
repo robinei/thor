@@ -33,7 +33,7 @@ LOCALE=${THOR_LOCALE:-en_US.UTF-8}
 # The swap file for hibernating, in GiB: as much as the RAM (16 GB), so a hibernate with everything in use
 # fits. Made on the card's first boot, not here (it would make the image 16 GB bigger to write).
 SWAP_GIB=16
-# The device's packages: the base system, network, the session, the GPU (Freedreno/Turnip), sound,
+# The device's packages: the base system, network, the session (sway through uwsm), the GPU (Freedreno/Turnip), sound,
 # notifications (mako), screenshots (grim), growing the root on first boot (growpart, which uses sgdisk for GPT),
 # what the starter library plays (RetroArch and its cores, mpv; ffmpeg's ffprobe for videos' lengths),
 # removable storage mounted as it is put in (udisks2, udiskie; exFAT's tools for SD cards), archives
@@ -44,7 +44,7 @@ PACKAGES=(base sudo mkinitcpio networkmanager polkit upower bluez openssh sway m
           pipewire pipewire-pulse wireplumber alsa-ucm-conf noto-fonts sqlite python less vim grim cloud-guest-utils gptfdisk
           retroarch retroarch-assets-xmb retroarch-assets-glui retroarch-assets-ozone python-pillow libretro-core-info libretro-nestopia libretro-snes9x libretro-mupen64plus-next libretro-gambatte
           libretro-mgba libretro-melonds libretro-genesis-plus-gx libretro-pcsx-rearmed libretro-flycast mpv ffmpeg
-          udisks2 udiskie exfatprogs ratarmount imv zathura zathura-pdf-mupdf xdg-utils git rust base-devel pacman-contrib)
+          udisks2 udiskie exfatprogs ratarmount uwsm imv zathura zathura-pdf-mupdf xdg-utils git rust base-devel pacman-contrib)
 # The kernel command line: ROCKNIX's tuning for SM8550, our root. The first boot adds resume= and
 # resume_offset= (the swap file's place) to both copies of it: /KERNEL's and the loader entry's.
 CMDLINE="root=LABEL=THOR_ROOT rw rootwait console=tty0 allow_mismatched_32bit_el0 fw_devlink.strict=1 pcie_ports=compat irqaffinity=0-2 cgroup.memory=nokmem,nosocket nosoftlockup usbcore.interrupt_interval_override=045e:028e:2"

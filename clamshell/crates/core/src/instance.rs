@@ -1,6 +1,6 @@
 //! The names ClamShell gives sway workspaces, systemd scopes and slices. A launch of a library entry (a
 //! game, an app: alike) is a scope we started (`clamshell-run-<key>-<secs>-<n>.scope`) in the entry's
-//! slice (`clamshell-run-<key>.slice`, which Quit and Force kill end); all the entry's windows are on its
+//! slice (`app-graphical-clamshell-run-<key>.slice`, in the session's app slice; Quit and Force kill end it); all the entry's windows are on its
 //! workspace (`clamshell-run-<key>`), as tabs. `<key>` is the entry's ([`clamshell_library::key_of`]:
 //! letters, digits and `_`). An entry that runs in another program's processes (a game in Steam's, an
 //! Android app in Waydroid's) isn't in a scope of ours, but its windows go to its entry's workspace too.
@@ -15,6 +15,9 @@ use std::str::FromStr;
 /// Every name of ours starts with this.
 const PREFIX: &str = "clamshell-";
 const RUN: &str = "clamshell-run-";
+/// An entry's slice: in the session's slice for apps (uwsm's `app-graphical.slice`, stopped before the
+/// compositor as the session ends), named by its key.
+pub const SLICE_PREFIX: &str = "app-graphical-clamshell-run-";
 const SCOPE: &str = ".scope";
 /// Steam's app id for a game's windows: `steam_app_<id>`.
 pub const STEAM_APP_PREFIX: &str = "steam_app_";
@@ -76,7 +79,14 @@ impl Instance {
 
     /// The slice of the entry with `key`: its launches' scopes (all its processes).
     pub fn slice_of(key: &str) -> String {
-        format!("{RUN}{key}.slice")
+        format!("{SLICE_PREFIX}{key}.slice")
+    }
+
+    /// Whether unit `unit` is a systemd service a program runs in as the service's (a portal, the polkit
+    /// agent: its windows and processes the service's, not moved): not the compositor's unit under uwsm
+    /// (`wayland-wm@sway.service`), where what sway's config starts runs until it is moved out.
+    pub fn is_service(unit: &str) -> bool {
+        unit.ends_with(".service") && !unit.starts_with("wayland-wm@")
     }
 
     /// Whether `name` is one of ours (a workspace or scope ClamShell names, known kind or not).
@@ -186,7 +196,7 @@ mod tests {
         }
         assert_eq!(run.name(), "clamshell-run-zelda_3fa2b1-1234-7");
         assert_eq!(run.unit().as_deref(), Some("clamshell-run-zelda_3fa2b1-1234-7.scope"));
-        assert_eq!(run.slice().as_deref(), Some("clamshell-run-zelda_3fa2b1.slice"));
+        assert_eq!(run.slice().as_deref(), Some("app-graphical-clamshell-run-zelda_3fa2b1.slice"));
         assert_eq!(run.workspace(), "clamshell-run-zelda_3fa2b1");
         assert!(run.on("clamshell-run-zelda_3fa2b1") && !run.on(&run.name()) && !run.on("clamshell-run-zelda_3fa2b12"));
         assert_eq!(Instance::parse("clamshell-run-zelda_3fa2b1"), None, "an entry's workspace is no instance");

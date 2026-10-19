@@ -25,15 +25,23 @@ FreezeUnit and ThawUnit).
 
 ClamShell needs a systemd user manager: every launch runs in a scope of its own.
 
+On the device the session is sway through uwsm (`uwsm start -- sway` from the console's login): sway
+runs as `wayland-wm@sway.service`; uwsm reaches `graphical-session.target` once sway has put its
+environment in the user manager's (`uwsm finalize` in sway's config); ClamShell, mako and udiskie are
+user services of that target, in uwsm's `session-graphical.slice`, started once it is reached and
+stopped with it. As the session ends (sway exits or crashes, `uwsm stop`), uwsm stops the app slices
+first, so every launch (in `app-graphical.slice`) ends before sway does; then the console's autologin
+starts a new session.
+
 ## Who started what, and what ClamShell does with it
 
 | Started by | Examples | Where it runs | ClamShell |
 |---|---|---|---|
-| ClamShell | apps, games, emulators, files opened, Steam | a scope per launch, in the entry's slice (`clamshell-run-<key>.slice`) | its own |
+| ClamShell | apps, games, emulators, files opened, Steam | a scope per launch, in the entry's slice (`app-graphical-clamshell-run-<key>.slice`, in uwsm's app slice) | its own |
 | Steam | its games, whether ClamShell or Steam's window started them | moved from Steam's scope into the game's own | its own, once moved |
-| Anything else, a program with a window or a tray icon | a program from sway's config, another program's child, a desktop launcher's | moved from its scope (an app scope, the login session's) into one of the entry's | its own, once moved (device session) |
+| Anything else, a program with a window or a tray icon | a program from sway's config, another program's child, a desktop launcher's | moved from its scope or unit (an app scope, sway's own unit under uwsm, a login session's) into one of the entry's | its own, once moved (device session) |
 | A systemd service | portals, the polkit agent, PipeWire, D-Bus activated services | its service | not touched: its windows are no entries |
-| The login session | sway, mako, udiskie | `session-N.scope` | the session's own: shown in the battery tab, not endable |
+| The session | sway, ClamShell, mako, udiskie | under uwsm, units in `session.slice` (in a desktop's session, its login scope) | the session's own: shown in the battery tab, not endable |
 | Android | Waydroid's apps | the container (`lxc.payload.waydroid`) | paused and stopped through the Android runner |
 | The system | NetworkManager, bluetoothd, sshd, the Waydroid container service | `system.slice` | not touched |
 
@@ -183,7 +191,7 @@ On the desktop (AMD GPU, PipeWire, Steam), in the nested session:
 In the VM, as the device's session (`tools/vm/vm-checks.py`, the process control checks): a game
 launched from shelf runs in a scope of its own and Quit ends it with one play recorded; a game behind
 shelf is frozen after the grace and thawed when shown; foot started from an app scope and from sway's
-exec (the login session's scope) is found and moved into a scope of ours; a tray program (a Python
+exec (sway's unit under uwsm; the login session's scope before) is found and moved into a scope of ours; a tray program (a Python
 StatusNotifierItem) is moved too; the clipboard's text outlives the program that set it.
 
 ## Open

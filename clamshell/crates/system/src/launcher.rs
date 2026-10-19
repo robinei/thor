@@ -354,7 +354,7 @@ pub fn adopt(instance: Instance, pid: u32) {
         }
         let cgroup = sys::text(format!("/proc/{pid}/cgroup")).unwrap_or_default();
         let group = cgroup.trim_end().rsplit('/').next().unwrap_or_default();
-        if group.ends_with(".service") || Instance::from_unit(group).is_some() {
+        if Instance::is_service(group) || Instance::from_unit(group).is_some() {
             log::info!("adopt: process {pid} stays in {group}");
             return;
         }

@@ -38,7 +38,7 @@ impl State {
         let session = &self.session;
         // (Not a starting launch's: a Steam game found running, its launch to come.)
         let starting = |w: &Window| session.launching.iter().any(|l| l.app_id.as_deref() == Some(w.app_id.as_str()));
-        let service = |w: &Window| w.unit.as_deref().is_some_and(|u| u.ends_with(".service"));
+        let service = |w: &Window| w.unit.as_deref().is_some_and(Instance::is_service);
         let mut new: Vec<Running> = Vec::new();
         for w in session.windows.iter().filter(|w| !taken.contains(&w.id) && w.home().is_none() && session.running_of(w).is_none()) {
             let Some(&pid) = w.pids.first().filter(|_| !starting(w) && !service(w)) else {
@@ -117,6 +117,13 @@ mod tests {
 
     fn device() -> State {
         State::new(Init { device_session: true, ..init() })
+    }
+
+    #[test]
+    fn what_sways_config_starts_under_uwsm_is_no_service() {
+        assert!(Instance::is_service("xdg-desktop-portal-gtk.service"));
+        assert!(!Instance::is_service("wayland-wm@sway.service"), "the compositor's unit: moved out of");
+        assert!(!Instance::is_service("session-2.scope"));
     }
 
     #[test]

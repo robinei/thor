@@ -22,8 +22,6 @@ use crate::worker::{self, Changed, Ended, Service, lost_on};
 use crate::{Closed, Sink, dbus};
 
 const PATTERNS: [&str; 1] = ["clamshell-run-*.scope"];
-/// Our slices' names before their keys.
-const RUN_PREFIX: &str = "clamshell-run-";
 
 /// How long to wait before trying the user manager again.
 const RETRY: Duration = Duration::from_secs(5);
@@ -195,12 +193,13 @@ impl<S: Sink> Service for Units<S> {
         let manager = manager(&Connection::session()?)?;
         manager.subscribe()?;
         if !std::mem::replace(&mut self.looked, true) {
-            let slices = manager.list_units_by_patterns(&[], &["clamshell-run-*.slice"])?;
+            let slices = manager.list_units_by_patterns(&[], &[&format!("{}*.slice", clamshell_core::instance::SLICE_PREFIX)])?;
             let frozen = slices.into_iter().filter(|row| {
                 let unit = UnitProxy::builder(manager.inner().connection()).path(row.6.clone()).and_then(|b| b.build());
                 unit.and_then(|u| u.freezer_state()).is_ok_and(|s| s == "frozen")
             });
-            self.frozen = Some(frozen.filter_map(|row| Some(row.0.strip_prefix(RUN_PREFIX)?.strip_suffix(".slice")?.into())).collect());
+            self.frozen =
+                Some(frozen.filter_map(|row| Some(row.0.strip_prefix(clamshell_core::instance::SLICE_PREFIX)?.strip_suffix(".slice")?.into())).collect());
         }
         Ok(manager)
     }
@@ -621,7 +620,7 @@ mod live {
     #[allow(clippy::unwrap_used)]
     fn a_freeze_waits_while_the_slice_works_without_drawing() {
         let id = std::process::id();
-        let slice = format!("clamshell-run-busytest_{id}.slice");
+        let slice = format!("{}busytest_{id}.slice", clamshell_core::instance::SLICE_PREFIX);
         let state = || {
             let out = Command::new("systemctl").args(["--user", "show", "-p", "FreezerState", "--value", &slice]).output().unwrap();
             String::from_utf8(out.stdout).unwrap().trim().to_owned()

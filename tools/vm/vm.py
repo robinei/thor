@@ -75,6 +75,8 @@ PACKAGES = [
     # Archives browsed (FUSE) and removable storage ejected, as on the device (a missing one is a
     # library problem).
     "ratarmount", "udisks2",
+    # The session through uwsm, as on the device.
+    "uwsm",
 ]
 # The simulated radios: wlan0 the device's, wlan1 and wlan2 access points (see TEST_AP).
 TEST_NETWORKS = "ThorTest (WPA2, password thortest123) and ThorOpen (open)"
@@ -171,24 +173,49 @@ input "1575:1:QEMU_QEMU_USB_Tablet" map_to_output Virtual-2
 # The touchscreen is the second screen's (it is also a pointer, for single touches).
 input "1575:3:QEMU_Virtio_MultiTouch" map_to_output Virtual-2
 input type:touch map_to_output Virtual-2
-# The environment first, then the program (two execs would run at once).
-exec mako
-exec systemctl --user import-environment WAYLAND_DISPLAY SWAYSOCK XDG_CURRENT_DESKTOP && systemctl --user restart clamshell.service
+# ClamShell and mako are user services of graphical-session.target, which uwsm reaches once sway is up
+# and has put its environment in the user manager's: this (as on the device).
+exec exec uwsm finalize
 """
 
 BASH_PROFILE = """\
-# The session: sway on the first console. No GPU acceleration in the machine: the pixman renderer.
-[ "$(tty)" = /dev/tty1 ] && WLR_RENDERER=pixman exec sway > "$HOME/sway.log" 2>&1
+# The session: sway on the first console, as a systemd unit, through uwsm (as on the device).
+if [ "$(tty)" = /dev/tty1 ] && uwsm check may-start; then
+    exec uwsm start -- sway
+fi
 """
+
+# No GPU acceleration in the machine: sway draws with the pixman renderer (uwsm's environment for the
+# session).
+UWSM_ENV = "export WLR_RENDERER=pixman\n"
+
+MAKO_SERVICE = """\
+[Unit]
+Description=mako, the notifications
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=dbus
+BusName=org.freedesktop.Notifications
+ExecStart=/usr/bin/mako
+Restart=on-failure
+Slice=session-graphical.slice
+"""
+
+# ClamShell and mako wanted by the session's target (a drop-in: these are written as files).
+SESSION_WANTS = "[Unit]\nWants=clamshell.service mako.service\n"
 
 
 def service():
     return f"""\
 [Unit]
 Description=ClamShell
+PartOf=graphical-session.target
 After=graphical-session.target
 
 [Service]
+Slice=session-graphical.slice
 # Tests drive it through this pipe (tools/vm/vm.py ssh -- 'echo mode wifi > $XDG_RUNTIME_DIR/clamshell-control').
 ExecStartPre=-/usr/bin/mkfifo %t/clamshell-control
 ExecStart={A.program}
@@ -204,6 +231,9 @@ def session_files():
         (f"/home/{USER}/.bash_profile", BASH_PROFILE),
         (f"/home/{USER}/.config/sway/config", SWAY_CONFIG),
         (f"/home/{USER}/.config/systemd/user/clamshell.service", service()),
+        (f"/home/{USER}/.config/systemd/user/mako.service", MAKO_SERVICE),
+        (f"/home/{USER}/.config/systemd/user/graphical-session.target.d/thor-vm.conf", SESSION_WANTS),
+        (f"/home/{USER}/.config/uwsm/env", UWSM_ENV),
         # (Where mako looks, also when D-Bus starts it for a notification.)
         (f"/home/{USER}/.config/mako/config", (REPO / "clamshell/mako/config").read_text()),
         (f"/home/{USER}/.config/foot/foot.ini", (REPO / "clamshell/foot/foot.ini").read_text()),

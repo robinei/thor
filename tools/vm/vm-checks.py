@@ -309,7 +309,7 @@ wpctl status | grep -q thor-checks-sink || wpctl status | grep -q 'Test sink' ||
     '{{ factory.name=support.null-audio-sink node.name=thor-checks-sink node.description="Test sink" media.class=Audio/Sink object.linger=true audio.position=[FL FR] }}' > /dev/null 2>&1
 sleep 0.5
 wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.5 2>/dev/null
-systemctl --user stop 'clamshell-run-*' 2>/dev/null || true
+systemctl --user stop 'clamshell-run-*' 'app-graphical-clamshell-run-*' 2>/dev/null || true
 systemctl --user daemon-reload
 systemctl --user restart clamshell
 """
@@ -326,7 +326,7 @@ systemctl --user restart clamshell
 
 def teardown():
     subprocess.run([sys.executable, str(Path(vm.__file__)), "pad", "unplug"], capture_output=True)
-    sh(f"rm -f {DROP_IN}; systemctl --user stop 'clamshell-run-*' 2>/dev/null; "
+    sh(f"rm -f {DROP_IN}; systemctl --user stop 'clamshell-run-*' 'app-graphical-clamshell-run-*' 2>/dev/null; "
        "systemctl --user daemon-reload; systemctl --user restart clamshell")
 
 
@@ -371,7 +371,7 @@ class Checks:
         """A known start: no fingers down, no game or app, shelf in front, the dock tab, the pad mouse
         off."""
         self.i.lift_all()
-        sh("systemctl --user stop 'clamshell-run-*' 2>/dev/null || true")
+        sh("systemctl --user stop 'clamshell-run-*' 'app-graphical-clamshell-run-*' 2>/dev/null || true")
         until(lambda: front() == "clamshell-shelf", 5)
         if self.route() == "Mouse":
             self.icon("pad-mouse")
@@ -1099,7 +1099,7 @@ class Checks:
         game = self._launch_test_game()
         if not game:
             return
-        slice_ = f"{game}.slice"
+        slice_ = f"app-graphical-{game}.slice"
         state = lambda: sh(f"systemctl --user show {slice_} -p FreezerState --value").strip()
         time.sleep(1)
         control("home")
@@ -1132,7 +1132,7 @@ class Checks:
         self.check("  its process moved into a scope of ours", until(lambda: "clamshell-run-foot_" in cgroup(), 5), f"{cgroup()!r}; {adopt(since)}")
         since = now()
         on, cgroup = self._foot_outside("swaymsg 'exec foot' >/dev/null")
-        self.check("  one started by sway's exec (the login session's scope) too, on its workspace, in front", on, f"front {front()!r}")
+        self.check("  one started by sway's exec (sway's own unit under uwsm) too, on its workspace, in front", on, f"front {front()!r}")
         self.check("  its process moved into a scope of ours", until(lambda: "clamshell-run-foot_" in cgroup(), 5), f"{cgroup()!r}; {adopt(since)}")
         sh("swaymsg '[app_id=foot] kill' >/dev/null 2>&1 || true")
 
