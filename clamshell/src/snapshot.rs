@@ -73,11 +73,16 @@ pub fn state(library: Library) -> State {
 /// A play of `game` from `start` for `duration` seconds, as the launcher reports one, the clock at `now`
 /// again after.
 fn a_play(game: &str, start: u64, duration: u64, now: u64) -> Vec<Event> {
+    // (Its window there while it plays, as a game's is.)
+    let workspace = clamshell_core::Instance::workspace_of(&clamshell_library::key_of(game));
+    let window = clamshell_core::windows::Window { id: 900, app_id: "game".into(), workspace, visible: true, ..clamshell_core::windows::Window::default() };
     vec![
         Event::Tick { unix_secs: start },
         GameEvent::Started(game.into()).into(),
+        Event::Windows(vec![window]),
         Event::Tick { unix_secs: start + duration },
         GameEvent::Ended(game.into()).into(),
+        Event::Windows(vec![]),
         Event::Tick { unix_secs: now },
     ]
 }

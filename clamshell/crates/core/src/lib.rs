@@ -570,11 +570,21 @@ impl State {
             effects.push(Effect::Save(Save::Brightness(self.levels.brightness().clone())));
         }
         let notice_gone = self.expire_notice(unix_secs);
+        // (A slow start said once: Android's first, a Steam game's, Proton's setup.)
+        let slow = self.session.running.iter_mut().find(|r| r.launches > 0 && !r.seen && !r.starting_said && unix_secs >= r.start + running::STARTING_AFTER);
+        let slow = slow.map(|r| {
+            r.starting_said = true;
+            r.entry.as_ref().map_or_else(|| r.id.to_string(), |g| g.title.clone())
+        });
+        let starting = slow.is_some();
+        if let Some(title) = slow {
+            self.notify(hardware::NoticeKind::Starting(title));
+        }
         // (Timed steps of the session, a file's launch waiting for its window in vain, In the
         // background's grace: in the reconcile that follows every tick.)
         let dirty = if minute_changed {
             Dirty::BOTH
-        } else if notice_gone {
+        } else if notice_gone || starting {
             Dirty::BOTTOM
         } else {
             Dirty::NONE
@@ -1212,6 +1222,21 @@ mod tests {
         s.apply(Event::Tick { unix_secs: 10_000 });
         s.apply(with(&["grim isn't installed: no screenshots", "x: no launch command"]));
         assert_eq!(notice(&s), None, "the same again: not said");
+    }
+
+    #[test]
+    fn a_slow_start_is_said_once() {
+        let mut s = state();
+        s.apply(Event::Tick { unix_secs: 1000 });
+        launch(&mut s, "zelda-lttp");
+        let starting = |s: &State| matches!(s.bottom().notice().map(|n| &n.what), Some(hardware::NoticeKind::Starting(_)));
+        s.apply(Event::Tick { unix_secs: 1000 + running::STARTING_AFTER - 1 });
+        assert!(!starting(&s));
+        s.apply(Event::Tick { unix_secs: 1000 + running::STARTING_AFTER });
+        assert!(starting(&s), "no window after a few seconds");
+        s.apply(Event::Tick { unix_secs: 1100 });
+        s.apply(Event::Tick { unix_secs: 1101 });
+        assert!(!starting(&s), "once");
     }
 
     #[test]

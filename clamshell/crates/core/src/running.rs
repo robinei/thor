@@ -58,6 +58,8 @@ pub enum Origin {
 
 /// How long a launch that handed over waits for its window (seconds).
 pub const HANDOFF: u64 = 15;
+/// A launch without a window this long after it started says it is starting (seconds).
+pub const STARTING_AFTER: u64 = 3;
 
 /// An entry that runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -75,6 +77,8 @@ pub struct Running {
     /// A window of it has been there (since it started, or since it went on by its windows): before, it
     /// is starting.
     pub(crate) seen: bool,
+    /// Its slow start said (see [`STARTING_AFTER`]).
+    pub(crate) starting_said: bool,
     /// Its entry as it was when it started: the dock shows it by this if it leaves the library while it
     /// runs (its file renamed or deleted).
     pub entry: Option<Box<crate::Game>>,
@@ -84,7 +88,7 @@ impl Running {
     /// Entry `game` running as `origin` since `start` (no launch followed, no window seen yet).
     pub(crate) fn of(game: &Game, origin: Origin, start: u64) -> Running {
         let entry = Some(Box::new(game.clone()));
-        Running { id: game.id.clone(), key: game.key.clone(), origin, app_id: None, start, launches: 0, seen: false, entry }
+        Running { id: game.id.clone(), key: game.key.clone(), origin, app_id: None, start, launches: 0, seen: false, starting_said: false, entry }
     }
 
     /// Found: its own process, if it has one (see [`Origin::Found`]).
