@@ -225,7 +225,7 @@ mod tests {
         let ws = Instance::workspace_of(&clamshell_library::key_of("desktop:firefox"));
         s.launch("desktop:firefox".into());
         s.apply(GameEvent::Started("desktop:firefox".into()).into());
-        s.apply(GameEvent::Played { game: "desktop:firefox".into(), start: 0, duration: 1 }.into());
+        s.apply(GameEvent::Ended("desktop:firefox".into()).into());
         s.apply(Event::Windows(vec![win(6, "firefox", &ws, true)]));
         assert!(!s.opens_another("desktop:firefox"), "a launch would show the one it runs");
         // Its processes (another program's, Android's): its cost, its row named and ended as the entry.

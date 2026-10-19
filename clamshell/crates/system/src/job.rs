@@ -1,7 +1,6 @@
-//! Starting a program as an instance of ours (an app or a game), in its systemd scope: under sway,
-//! through sway's `exec`, aimed at the instance's workspace (its app's, or its game's), so its first
-//! window opens there; elsewhere
-//! as a child process.
+//! Starting a program as an instance of ours (an app or a game), in its systemd scope (ClamShell needs a
+//! systemd user manager): under sway, through sway's `exec`, aimed at the instance's workspace (its app's,
+//! or its game's), so its first window opens there; elsewhere as a child process.
 //!
 //! A launch is handed to sway's `exec` without its arguments going through sway's command parser (which
 //! splits at ';' and ','): the job is written to a file, sway runs `clamshell --run <file>`, and that reads
@@ -32,8 +31,6 @@ pub struct Job {
     /// Extra environment.
     pub env: Vec<(String, String)>,
     pub workdir: Option<PathBuf>,
-    /// In a systemd scope (where there is a user session).
-    pub scope: bool,
 }
 
 #[derive(Debug)]
@@ -76,27 +73,21 @@ pub fn write(dir: &Path, job: &Job) -> Result<PathBuf, Error> {
 }
 
 /// `program` with `args`, in a systemd scope named `unit` (`--user`, collected when it ends; in `slice`,
-/// if given) when `scope`, else as it is.
-fn scoped(scope: bool, unit: &str, slice: Option<&str>, program: impl AsRef<std::ffi::OsStr>, args: &[impl AsRef<std::ffi::OsStr>]) -> Command {
-    let mut cmd = if scope {
-        let mut cmd = Command::new("systemd-run");
-        cmd.args(["--user", "--scope", "--quiet", "--collect", &format!("--unit={unit}")]);
-        if let Some(slice) = slice {
-            cmd.arg(format!("--slice={slice}"));
-        }
-        cmd.arg("--").arg(program);
-        cmd
-    } else {
-        Command::new(program)
-    };
-    cmd.args(args);
+/// if given).
+fn scoped(unit: &str, slice: Option<&str>, program: impl AsRef<std::ffi::OsStr>, args: &[impl AsRef<std::ffi::OsStr>]) -> Command {
+    let mut cmd = Command::new("systemd-run");
+    cmd.args(["--user", "--scope", "--quiet", "--collect", &format!("--unit={unit}")]);
+    if let Some(slice) = slice {
+        cmd.arg(format!("--slice={slice}"));
+    }
+    cmd.arg("--").arg(program).args(args);
     cmd
 }
 
 /// The command a job runs as: in its workdir, else in HOME.
 pub fn command(job: &Job) -> Option<Command> {
     let (program, args) = job.argv.split_first()?;
-    let mut cmd = scoped(job.scope, &job.unit, job.slice.as_deref(), program, args);
+    let mut cmd = scoped(&job.unit, job.slice.as_deref(), program, args);
     match &job.workdir {
         Some(dir) => cmd.current_dir(dir),
         None => cmd.current_dir(std::env::var_os("HOME").map_or_else(|| PathBuf::from("/"), PathBuf::from)),
@@ -174,7 +165,6 @@ mod tests {
             argv: vec!["prog".into(), "a b,c;d".into()],
             env: vec![("K".into(), "v".into())],
             workdir: Some("/tmp".into()),
-            scope: true,
         };
         let path = write(&dir, &job).unwrap();
         let back: Job = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
@@ -189,15 +179,19 @@ mod tests {
     }
 
     #[test]
-    fn without_sway_a_job_is_a_child() {
+    fn without_sway_a_job_is_a_child_in_its_scope() {
         let runner = Runner { jobs: std::env::temp_dir(), sway: None };
-        let job = Job { unit: "u".into(), workspace: "u".into(), slice: None, argv: vec!["true".into()], env: vec![], workdir: None, scope: false };
-        let started = runner.start(&job).unwrap();
-        assert!(matches!(started, Started::Child(_)));
-        if let Started::Child(mut child) = started {
-            assert!(child.wait().unwrap().success());
-        }
-        let empty = Job { argv: vec![], ..job };
+        let unit = format!("clamshell-run-jobtest-{}-1", std::process::id());
+        let job = Job { unit, workspace: "u".into(), slice: None, argv: vec!["true".into()], env: vec![], workdir: None };
+        let empty = Job { argv: vec![], ..job.clone() };
         assert!(matches!(runner.start(&empty), Err(Error::EmptyCommand)));
+        // (Only where there is a user manager to start the scope.)
+        if std::env::var_os("XDG_RUNTIME_DIR").is_some_and(|d| std::path::Path::new(&d).join("systemd/private").exists()) {
+            let started = runner.start(&job).unwrap();
+            assert!(matches!(&started, Started::Child(_)));
+            if let Started::Child(mut child) = started {
+                assert!(child.wait().unwrap().success());
+            }
+        }
     }
 }

@@ -92,7 +92,9 @@ pub fn start(
 ) -> Handles {
     let sink = UiSink(sender);
     let backlights = Backlights::new(env.backlights.clone());
-    let scope = paths.has_user_systemd();
+    if !paths.has_user_systemd() {
+        log::error!("no systemd user manager: ClamShell needs one to run apps and games (in scopes of their own)");
+    }
     detached("clock", clock::spawn(sink.clone()));
     detached("status", status::spawn(backlights.clone(), sink.clone()));
     let metrics = started("metrics", metrics::spawn(sink.clone()));
@@ -119,10 +121,7 @@ pub fn start(
     let jobs = Runner { jobs: paths.jobs.clone(), sway: sway.clone() };
     let launcher = started(
         "launcher",
-        launcher::spawn(
-            launcher::Config { db: paths.db(), scope, watch_later: paths.watch_later.clone(), jobs: jobs.clone(), sockets: paths.sockets.clone() },
-            sink.clone(),
-        ),
+        launcher::spawn(launcher::Config { watch_later: paths.watch_later.clone(), jobs: jobs.clone(), sockets: paths.sockets.clone() }, sink.clone()),
     );
     // The controller, grabbed for good with a virtual Xbox pad for games.
     let pad_taken = pad::Taken::default();
@@ -153,7 +152,6 @@ pub fn start(
         store,
         fetching,
         rescan,
-        scope,
         touchpad,
         mixer,
         wifi,

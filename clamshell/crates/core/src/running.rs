@@ -71,10 +71,8 @@ pub struct Running {
     pub tray: Option<Arc<str>>,
     /// When it first started (epoch seconds).
     pub start: u64,
-    /// Its launches that run (ours: each ends on its own).
+    /// Its launches the launcher still follows (ours: see [`State::follow_ours`]).
     pub(crate) launches: u32,
-    /// Found running by its scopes (started before ClamShell was): it runs while systemd lists them.
-    pub(crate) adopted: bool,
     /// Its entry as it was when it started: the dock shows it by this if it leaves the library while it
     /// runs (its file renamed or deleted).
     pub entry: Option<Box<crate::Game>>,
@@ -228,45 +226,63 @@ impl State {
                 let key = self.shelf.game(&game).map_or_else(|| clamshell_library::key_of(&game), |g| g.key.clone());
                 let entry = self.shelf.game(&game).cloned().map(Box::new);
                 let start = self.unix_secs;
-                session.running.push(Running { id: game, key, origin: Origin::Ours, app_id, pid: None, tray: None, start, launches: 1, adopted: false, entry });
+                session.running.push(Running { id: game, key, origin: Origin::Ours, app_id, pid: None, tray: None, start, launches: 1, entry });
             }
         }
         self.bottom.woken = false;
     }
 
-    /// A launch ended after `duration` seconds from `start`: its play counted, one launch less.
-    pub(crate) fn played(&mut self, game: &str, start: u64, duration: u64) {
-        if self.shelf.add_play(game, start, duration) {
-            self.saves.resume.touch(self.unix_secs);
+    /// The launcher is done with a launch of `game`: one launch less (see [`State::follow_ours`]).
+    pub(crate) fn ended(&mut self, game: &str) -> Vec<Effect> {
+        self.session.launching.retain(|l| &*l.game != game || l.app_id.is_some());
+        if let Some(r) = self.session.running.iter_mut().find(|r| &*r.id == game) {
+            r.launches = r.launches.saturating_sub(1);
         }
-        self.ended(game);
+        self.follow_ours()
     }
 
-    /// A launch of `game` ended (or couldn't start): it no longer runs once none does, unless it runs on
-    /// by its windows (see [`Origin::Windows`]): one known by its app id whose windows are open or may
-    /// still come, a browsed file's soon after it started.
-    pub(crate) fn ended(&mut self, game: &str) {
-        self.session.launching.retain(|l| &*l.game != game || l.app_id.is_some());
-        let browsed = self.shelf.game(game).is_some_and(|g| g.browsed.is_some());
+    /// Our launches' entries run while the launcher follows a launch of theirs or systemd lists a scope
+    /// of theirs (a Steam game's between Steam's setup and the game: the launcher's; one started by a
+    /// ClamShell before this one: its scopes). Once neither, one known by its app id whose windows are
+    /// open or may still come, or a browsed file's soon after it started, runs on by its windows (see
+    /// [`Origin::Windows`]); the rest have ended, their play recorded.
+    pub(crate) fn follow_ours(&mut self) -> Vec<Effect> {
         let now = self.unix_secs;
-        let session = &mut self.session;
-        let Some(i) = session.running.iter().position(|r| &*r.id == game) else {
-            return;
-        };
-        let has = session.windows.iter().any(|w| session.running_of(w).is_some_and(|o| &*o.id == game));
-        let Some(r) = session.running.get_mut(i) else {
-            return;
-        };
-        r.launches = r.launches.saturating_sub(1);
-        if r.launches == 0 && r.origin == Origin::Ours {
+        let session = &self.session;
+        let mut ended = Vec::new();
+        let mut handed = Vec::new();
+        for r in session.running.iter().filter(|r| r.origin == Origin::Ours && r.launches == 0) {
+            if session.units.iter().any(|u| u.key() == Some(r.key.as_str())) {
+                continue;
+            }
+            let has = session.windows.iter().any(|w| session.running_of(w).is_some_and(|o| o.id == r.id));
             let soon = now.saturating_sub(r.start) <= HANDOFF;
+            let browsed = self.shelf.game(&r.id).is_some_and(|g| g.browsed.is_some());
             if r.app_id.is_some() && (has || soon) {
-                r.origin = Origin::Windows { since: now, until: now + HANDOFF, seen: has };
+                handed.push((r.id.clone(), Origin::Windows { since: now, until: now + HANDOFF, seen: has }));
             } else if browsed && soon {
-                r.origin = Origin::Windows { since: now, until: r.start + HANDOFF, seen: has };
+                handed.push((r.id.clone(), Origin::Windows { since: now, until: r.start + HANDOFF, seen: has }));
+            } else {
+                ended.push((r.id.clone(), r.start));
             }
         }
-        session.running.retain(|r| r.launches > 0 || matches!(r.origin, Origin::Windows { .. }));
+        for (id, origin) in handed {
+            if let Some(r) = self.session.running.iter_mut().find(|r| r.id == id) {
+                r.origin = origin;
+            }
+        }
+        self.session.running.retain(|r| !ended.iter().any(|(id, _)| *id == r.id));
+        ended.into_iter().map(|(game, start)| self.record_play(game, start)).collect()
+    }
+
+    /// A play of `game` from `start` until now: counted, and recorded.
+    fn record_play(&mut self, game: Arc<str>, start: u64) -> Effect {
+        let now = self.unix_secs;
+        let duration = now.saturating_sub(start);
+        if self.shelf.add_play(&game, start, duration) {
+            self.saves.resume.touch(now);
+        }
+        Effect::RecordPlay { game, start, duration }
     }
 
     /// A launch that never started (its scope was gone before it was seen): a browsed file's, or one known
@@ -284,7 +300,7 @@ impl State {
             let now = self.unix_secs;
             let origin = Origin::Windows { since: now, until: now + HANDOFF, seen: false };
             let entry = Some(Box::new(entry));
-            self.session.running.push(Running { id: game, key, origin, app_id, pid: None, tray: None, start: now, launches: 0, adopted: false, entry });
+            self.session.running.push(Running { id: game, key, origin, app_id, pid: None, tray: None, start: now, launches: 0, entry });
         }
     }
 
@@ -321,7 +337,6 @@ impl State {
                 tray: None,
                 start: now,
                 launches: 0,
-                adopted: false,
                 entry: Some(Box::new(g.clone())),
             })
             .collect();
@@ -388,11 +403,7 @@ impl State {
             Origin::Ours => true,
         });
         for (game, start) in ended {
-            let duration = now.saturating_sub(start);
-            effects.push(Effect::RecordPlay { game: game.clone(), start, duration });
-            if self.shelf.add_play(&game, start, duration) {
-                self.saves.resume.touch(now);
-            }
+            effects.push(self.record_play(game, start));
         }
         effects
     }
@@ -405,21 +416,12 @@ impl State {
     }
 
     /// After systemd's list of our scopes changed: an entry with scopes listed that isn't known to run
-    /// (started before ClamShell was) runs, adopted, since its first scope started (the time in its
-    /// name); one adopted whose scopes are all gone has ended, its play recorded (the ClamShell that
-    /// launched it didn't see it end).
+    /// (started by a ClamShell before this one) runs, since its first scope started (the time in its
+    /// name); then those whose launches have ended (see [`State::follow_ours`]).
     pub(crate) fn follow_units(&mut self) -> Vec<Effect> {
         let now = self.unix_secs;
         let session = &mut self.session;
         let units = &session.units;
-        let mut ended = Vec::new();
-        session.running.retain(|r| {
-            let runs = !r.adopted || units.iter().any(|u| u.key() == Some(r.key.as_str()));
-            if !runs {
-                ended.push((r.id.clone(), r.start));
-            }
-            runs
-        });
         for unit in units {
             let Some(key) = unit.key() else {
                 continue;
@@ -430,7 +432,6 @@ impl State {
             let Some(g) = self.shelf.library().games.iter().find(|g| g.key == key) else {
                 continue;
             };
-            let launches = u32::try_from(units.iter().filter(|u| u.key() == Some(key)).count()).unwrap_or(u32::MAX);
             let first = units.iter().filter_map(|u| match u {
                 Instance::Run { key: k, secs, .. } if k == key => Some(*secs),
                 _ => None,
@@ -445,20 +446,11 @@ impl State {
                 pid: None,
                 tray: None,
                 start,
-                launches,
-                adopted: true,
+                launches: 0,
                 entry,
             });
         }
-        let mut effects = Vec::new();
-        for (game, start) in ended {
-            let duration = now.saturating_sub(start);
-            effects.push(Effect::RecordPlay { game: game.clone(), start, duration });
-            if self.shelf.add_play(&game, start, duration) {
-                self.saves.resume.touch(now);
-            }
-        }
-        effects
+        self.follow_ours()
     }
 
     /// The app whose window shows browsed file `id` (running): the desktop file named as the window's
@@ -587,6 +579,7 @@ mod tests {
         let fx = tap(&mut s, Id::Shelf(ShelfId::Launch));
         assert!(launches(&fx, &first));
         assert!(!launches(&tap(&mut s, Id::Shelf(ShelfId::Launch)), &first), "not twice while starting");
+        s.apply(Event::Tick { unix_secs: 1000 });
         s.apply(GameEvent::Started(first.clone()).into());
         let workspace = Instance::workspace_of(&key(&first));
         assert_eq!(tap(&mut s, Id::Shelf(ShelfId::Launch)), vec![], "running, no window yet: nothing to show");
@@ -595,12 +588,14 @@ mod tests {
         // Another launch (the dock's Open another): it runs twice, until both end.
         assert!(launches(&s.launch(first.clone()), &first));
         s.apply(GameEvent::Started(first.clone()).into());
-        s.apply(GameEvent::Played { game: first.clone(), start: 1000, duration: 600 }.into());
+        s.apply(GameEvent::Ended(first.clone()).into());
         assert!(s.session().running(&first).is_some(), "the other still runs");
-        s.apply(GameEvent::Played { game: first.clone(), start: 1000, duration: 60 }.into());
+        s.apply(Event::Tick { unix_secs: 1660 });
+        let (_, fx) = s.apply(GameEvent::Ended(first.clone()).into());
         assert!(s.session().running(&first).is_none());
+        assert!(fx.contains(&Effect::RecordPlay { game: first.clone(), start: 1000, duration: 660 }), "{fx:?}");
         let g = s.game(&first).unwrap();
-        assert_eq!((g.plays.count, g.plays.seconds), (2, 660));
+        assert_eq!((g.plays.count, g.plays.seconds), (1, 660), "one play: from its first start to its last end");
         assert!(s.shelf().library().collections.iter().any(|c| c.name == "Recent"));
     }
 
@@ -767,7 +762,7 @@ mod tests {
         assert!(launches(&s.launch("desktop:firefox".into()), "desktop:firefox"));
         s.apply(GameEvent::Started("desktop:firefox".into()).into());
         // Its launch handed the app over (to the Waydroid session) and ended.
-        s.apply(GameEvent::Played { game: "desktop:firefox".into(), start: 100, duration: 1 }.into());
+        s.apply(GameEvent::Ended("desktop:firefox".into()).into());
         assert!(s.session().running("desktop:firefox").is_some(), "waits for its window");
         let app = win(6, "firefox", &landing, false);
         let (_, fx) = s.apply(Event::Windows(vec![shelf.clone(), app.clone()]));
@@ -803,7 +798,7 @@ mod tests {
         let mut s = state();
         s.launch("desktop:firefox".into());
         s.apply(GameEvent::Started("desktop:firefox".into()).into());
-        s.apply(GameEvent::Played { game: "desktop:firefox".into(), start: 0, duration: 1 }.into());
+        s.apply(GameEvent::Ended("desktop:firefox".into()).into());
         assert!(s.session().running("desktop:firefox").is_none());
     }
 
@@ -820,6 +815,25 @@ mod tests {
         let (_, fx) = s.apply(Event::Units(vec![]));
         assert!(s.session().running("desktop:foot").is_none(), "its scopes gone: ended");
         assert!(fx.contains(&Effect::RecordPlay { game: "desktop:foot".into(), start: 400, duration: 900 }), "played since its launch: {fx:?}");
+    }
+
+    #[test]
+    fn a_launch_runs_while_the_launcher_follows_it_or_a_scope_of_it_is_listed() {
+        let mut s = state();
+        s.apply(Event::Tick { unix_secs: 100 });
+        let zelda = launch(&mut s, "zelda-lttp");
+        // Its scope gone while the launcher still follows it (Steam between its setup and the game): runs.
+        s.apply(Event::Units(vec![zelda.clone()]));
+        s.apply(Event::Units(vec![]));
+        assert!(s.session().running("zelda-lttp").is_some(), "the launcher follows it");
+        // The launcher done, its scope listed again: runs, until that is gone too.
+        s.apply(Event::Units(vec![zelda.clone()]));
+        assert!(played(&mut s, "zelda-lttp").is_empty());
+        assert!(s.session().running("zelda-lttp").is_some(), "its scope is listed");
+        s.apply(Event::Tick { unix_secs: 400 });
+        let (_, fx) = s.apply(Event::Units(vec![]));
+        assert!(s.session().running("zelda-lttp").is_none());
+        assert!(fx.contains(&Effect::RecordPlay { game: "zelda-lttp".into(), start: 100, duration: 300 }), "once: {fx:?}");
     }
 
     #[test]

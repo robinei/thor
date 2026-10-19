@@ -194,8 +194,11 @@ Still to try: a game with online play, and all of it on the Thor (Freedreno, FEX
   none left). A slice left frozen (by a ClamShell before, which a new one doesn't know paused it) is
   thawed when ClamShell starts and before a launch into it: systemd starts no scope in a frozen slice. Only launches of
   ClamShell's have a slice to freeze or stop; programs found by their windows or tray icons run on.
-- A launch found running when ClamShell starts (started by a ClamShell before) has its play recorded
-  when its scopes are gone, from the start time in its scope's name.
+- ClamShell needs a systemd user manager: every launch runs in a scope of its own. A launch's entry
+  runs while the launcher follows a launch of it or systemd lists a scope of it, and has ended once
+  neither (then its play is recorded, from its start to then; launches of it side by side are one
+  play). One found running when ClamShell starts (a ClamShell before started it) is the same, from the
+  start time in its scope's name.
 - Start with ClamShell, in an entry's dock menu (saved): once ClamShell knows what runs (systemd's
   first list of its scopes), each such entry that doesn't run is launched on its own workspace, not
   shown. What a restarted ClamShell finds running isn't started twice.

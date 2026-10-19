@@ -424,7 +424,7 @@ mod tests {
         assert!(!taps(&mut s, Setting::FpsCap, 1).iter().any(|e| matches!(e, Effect::Apply { .. })), "its own cap stays: nothing to apply");
         let fx = taps(&mut s, Setting::Power, 1);
         assert!(fx.iter().any(|e| matches!(e, Effect::Apply { settings, .. } if settings.get(Setting::Power) == 2)));
-        let fx = played(&mut s, "zelda-lttp");
+        let fx: Vec<Effect> = played(&mut s, "zelda-lttp").into_iter().filter(|e| !matches!(e, Effect::RecordPlay { .. })).collect();
         assert_eq!(fx, vec![Effect::Apply { game: None, settings: s.settings().global }, Effect::PadRoute(PadRoute::Ui)], "and the pad back to shelf");
     }
 

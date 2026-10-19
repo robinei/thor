@@ -70,6 +70,18 @@ pub fn state(library: Library) -> State {
     State::new(Init { library, dock, keymaps: clamshell_core::keymap::Keymaps::initial(), ..Init::default() })
 }
 
+/// A play of `game` from `start` for `duration` seconds, as the launcher reports one, the clock at `now`
+/// again after.
+fn a_play(game: &str, start: u64, duration: u64, now: u64) -> Vec<Event> {
+    vec![
+        Event::Tick { unix_secs: start },
+        GameEvent::Started(game.into()).into(),
+        Event::Tick { unix_secs: start + duration },
+        GameEvent::Ended(game.into()).into(),
+        Event::Tick { unix_secs: now },
+    ]
+}
+
 fn tap(id: Id) -> Event {
     PointerEvent::Activate(id).into()
 }
@@ -192,12 +204,10 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 shot(
                     "top-played.png",
                     Top,
-                    vec![
-                        GameEvent::Played { game: "zelda-lttp".into(), start: 1_759_900_000, duration: 4 * 3600 + 1260 }.into(),
-                        ShelfEvent::ToggleFavourite.into(),
-                        ShelfEvent::TogglePin.into(),
-                        GameEvent::Started("zelda-lttp".into()).into(),
-                    ],
+                    a_play("zelda-lttp", 1_759_900_000, 4 * 3600 + 1260, now)
+                        .into_iter()
+                        .chain([ShelfEvent::ToggleFavourite.into(), ShelfEvent::TogglePin.into(), GameEvent::Started("zelda-lttp".into()).into()])
+                        .collect(),
                 ),
                 shot("top-switch.png", Top, vec![ff6(), ff6()]),
                 // A held on the selected entry with the pad: on its actions, A and B said at the bottom.
@@ -221,13 +231,11 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 shot(
                     "top-group.png",
                     Top,
-                    vec![
-                        tap(Id::Shelf(ShelfId::Launch)),
-                        tap(Id::Shelf(ShelfId::Launch)),
-                        GameEvent::Played { game: "tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv".into(), start: 1_759_900_000, duration: 3600 }
-                            .into(),
-                        ShelfEvent::ListStep(2).into(),
-                    ],
+                    [tap(Id::Shelf(ShelfId::Launch)), tap(Id::Shelf(ShelfId::Launch))]
+                        .into_iter()
+                        .chain(a_play("tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv", 1_759_900_000, 3600, now))
+                        .chain([ShelfEvent::ListStep(2).into()])
+                        .collect(),
                 ),
                 // Recent: the episode played, its series and season before its title.
                 shot("top-recent.png", Top, vec![tap(Id::Shelf(ShelfId::Collection(0)))]),
@@ -261,10 +269,7 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 shot(
                     "settings.png",
                     Bottom,
-                    vec![
-                        GameEvent::Played { game: "zelda-lttp".into(), start: now, duration: 60 }.into(),
-                        tap(Id::Settings(SettingsId::Scope(Scope::Content))),
-                    ],
+                    a_play("zelda-lttp", now - 60, 60, now).into_iter().chain([tap(Id::Settings(SettingsId::Scope(Scope::Content)))]).collect(),
                 ),
                 shot(
                     "settings-env.png",

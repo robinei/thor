@@ -255,9 +255,8 @@ pub fn freeze(unit: String, frozen: bool) {
     }
 }
 
-/// Waits for a scope to appear (within `appear`) and then to end. Checks once a second: for a game's
-/// play time, a second is exact enough.
-pub fn wait(unit: &str, appear: Duration) -> Result<(), Error> {
+/// Waits for a scope to appear, within `appear`.
+pub fn appear(unit: &str, appear: Duration) -> Result<(), Error> {
     let manager = manager(&Connection::session()?)?;
     let asked = Instant::now();
     while !loaded(&manager, unit) {
@@ -266,6 +265,12 @@ pub fn wait(unit: &str, appear: Duration) -> Result<(), Error> {
         }
         thread::sleep(Duration::from_millis(200));
     }
+    Ok(())
+}
+
+/// Waits for a scope to end. Checks once a second: for when a launch ended, a second is exact enough.
+pub fn wait(unit: &str) -> Result<(), Error> {
+    let manager = manager(&Connection::session()?)?;
     while loaded(&manager, unit) {
         thread::sleep(Duration::from_secs(1));
     }
@@ -322,9 +327,11 @@ mod live {
             assert!(start.elapsed() < Duration::from_secs(5), "listed");
             thread::sleep(Duration::from_millis(50));
         }
-        wait(&instance.unit().unwrap(), Duration::from_secs(1)).unwrap();
+        let unit = instance.unit().unwrap();
+        appear(&unit, Duration::from_secs(1)).unwrap();
+        wait(&unit).unwrap();
         child.wait().unwrap();
         assert!(!list(&manager).unwrap().contains(&instance));
-        assert!(wait("clamshell-run-never-0-0.scope", Duration::from_millis(300)).is_err());
+        assert!(appear("clamshell-run-never-0-0.scope", Duration::from_millis(300)).is_err());
     }
 }

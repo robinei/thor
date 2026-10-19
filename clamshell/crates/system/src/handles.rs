@@ -20,8 +20,6 @@ pub struct Handles {
     /// Reads the library again (and fetches what it wants), on a thread; `true`: the metadata misses
     /// forgotten first.
     pub rescan: Box<dyn Fn(bool)>,
-    /// Apps and games run in systemd scopes (there is a user session).
-    pub scope: bool,
     pub touchpad: Worker<touchpad::Command>,
     pub mixer: Worker<mixer::Command>,
     pub wifi: Worker<wifi::Request>,

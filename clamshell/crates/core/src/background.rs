@@ -249,7 +249,7 @@ mod tests {
         s.apply(GameEvent::Started("desktop:firefox".into()).into());
         // Starting (its launch, then handed over, no window yet): not paused.
         assert!(!s.apply(Event::Tick { unix_secs: 107 }).1.contains(&pause), "its launch runs");
-        s.apply(GameEvent::Played { game: "desktop:firefox".into(), start: 104, duration: 3 }.into());
+        s.apply(GameEvent::Ended("desktop:firefox".into()).into());
         assert!(!s.apply(Event::Tick { unix_secs: 109 }).1.contains(&pause), "handed over, waiting for its window");
         // Shown: not paused; hidden for the grace: paused.
         let ws = Instance::workspace_of(&clamshell_library::key_of("desktop:firefox"));
@@ -295,6 +295,6 @@ mod tests {
         let zelda = launch(&mut s, "zelda-lttp");
         s.apply(Event::Windows(vec![Window { unit: zelda.unit(), ..win(3, "zelda3", &zelda.workspace(), true) }]));
         assert!(!s.apply(Event::Windows(vec![])).1.iter().any(|e| matches!(e, Effect::EndRun { .. })));
-        s.apply(GameEvent::Played { game: "zelda-lttp".into(), start: 0, duration: 1 }.into());
+        s.apply(GameEvent::Ended("zelda-lttp".into()).into());
     }
 }

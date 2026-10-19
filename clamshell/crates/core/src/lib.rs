@@ -819,15 +819,25 @@ impl State {
     }
 
     fn on_game(&mut self, event: GameEvent) -> (Dirty, Vec<Effect>) {
-        match event {
-            GameEvent::Started(game) => self.started(game),
-            GameEvent::Played { game, start, duration } => self.played(&game, start, duration),
-            GameEvent::Position { game, position } => self.shelf.set_position(&game, position, self.unix_secs),
+        let mut effects = match event {
+            GameEvent::Started(game) => {
+                self.started(game);
+                vec![]
+            }
+            GameEvent::Ended(game) => self.ended(&game),
+            GameEvent::Position { game, position } => {
+                self.shelf.set_position(&game, position, self.unix_secs);
+                vec![]
+            }
             // (A launch that never started: nothing runs one less, but it is no longer starting.)
-            GameEvent::LaunchFailed(game) => self.launch_failed(game),
-        }
+            GameEvent::LaunchFailed(game) => {
+                self.launch_failed(game);
+                vec![]
+            }
+        };
         self.follow_dock();
-        (Dirty::BOTH, self.follow_quitting())
+        effects.extend(self.follow_quitting());
+        (Dirty::BOTH, effects)
     }
 
     /// The volume tab's buttons.
@@ -1038,9 +1048,9 @@ pub(crate) mod testkit {
         s.apply(reading.into()).0
     }
 
-    /// `game` ended (a short play).
+    /// The launcher done with `game`'s launch (it ended).
     pub fn played(s: &mut State, game: &str) -> Vec<Effect> {
-        s.apply(GameEvent::Played { game: game.into(), start: 0, duration: 1 }.into()).1
+        s.apply(GameEvent::Ended(game.into()).into()).1
     }
 
     /// Showing `instance`'s workspace.

@@ -174,8 +174,9 @@ pub enum ShelfEvent {
 pub enum GameEvent {
     /// The launcher started a game.
     Started(Arc<str>),
-    /// It ended (start in epoch seconds, duration in seconds).
-    Played { game: Arc<str>, start: u64, duration: u64 },
+    /// The launcher is done with a launch of it: it ended (whether the entry still runs is the state's
+    /// to say, by its scopes and its windows).
+    Ended(Arc<str>),
     /// It couldn't be started.
     LaunchFailed(Arc<str>),
     /// A video mpv played ended: where mpv left it (none: at its end).
