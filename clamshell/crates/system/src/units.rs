@@ -22,6 +22,8 @@ use crate::worker::{self, Changed, Ended, Service, lost_on};
 use crate::{Closed, Sink, dbus};
 
 const PATTERNS: [&str; 1] = ["clamshell-run-*.scope"];
+/// Our slices' names before their keys.
+const RUN_PREFIX: &str = "clamshell-run-";
 
 /// How long to wait before trying the user manager again.
 const RETRY: Duration = Duration::from_secs(5);
@@ -59,6 +61,16 @@ trait Scope {
     /// Its cgroup, under /sys/fs/cgroup.
     #[zbus(property)]
     fn control_group(&self) -> zbus::Result<String>;
+}
+
+#[zbus::proxy(interface = "org.freedesktop.systemd1.Unit", default_service = "org.freedesktop.systemd1", gen_async = false)]
+trait Unit {
+    /// `running`, `frozen`, `freezing` or `thawing`.
+    #[zbus(property)]
+    fn freezer_state(&self) -> zbus::Result<String>;
+    /// The slice it is in.
+    #[zbus(property)]
+    fn slice(&self) -> zbus::Result<String>;
 }
 
 #[zbus::proxy(interface = "org.freedesktop.systemd1.Slice", default_service = "org.freedesktop.systemd1", gen_async = false)]
@@ -108,6 +120,11 @@ fn list(manager: &ManagerProxy) -> zbus::Result<Vec<Instance>> {
         let group = ScopeProxy::builder(manager.inner().connection()).path(row.6.clone())?.build()?.control_group().unwrap_or_default();
         if !group.is_empty() && orphaned(std::path::Path::new("/sys/fs/cgroup"), &group, std::path::Path::new("/proc")) {
             log::warn!("{}: its sway is gone (it can show no window): stopped", row.0);
+            // (Thawed first, if it was suspended: frozen, it couldn't end.)
+            let unit = UnitProxy::builder(manager.inner().connection()).path(row.6.clone()).and_then(|b| b.build());
+            if let Ok(slice) = unit.and_then(|u| u.slice()) {
+                thaw_now(manager, &slice);
+            }
             if let Err(e) = manager.stop_unit(&row.0, "replace") {
                 log::warn!("stopping {}: {e}", row.0);
             }
@@ -133,16 +150,18 @@ fn orphaned(cgroups: &std::path::Path, group: &str, proc: &std::path::Path) -> b
 }
 
 /// Sends [`Event::Units`] at start and after every change of our scopes; connects again if the bus goes.
-/// At start, our slices are thawed: one a ClamShell before this one froze would stay frozen, this one
-/// not knowing it paused it (one hidden is frozen again after the grace).
+/// At start, after the first, [`Event::Frozen`]: our slices found frozen (by a ClamShell before this
+/// one: suspended, or paused hidden), held as suspended.
 pub fn spawn(sink: impl Sink) -> io::Result<()> {
-    worker::detached("units", move || worker::supervise_alone(&mut Units { sink, thawed: false }, RETRY))
+    worker::detached("units", move || worker::supervise_alone(&mut Units { sink, frozen: None, looked: false }, RETRY))
 }
 
 struct Units<S> {
     sink: S,
-    /// Our slices have been thawed (once, at start).
-    thawed: bool,
+    /// Our slices found frozen, to be told after the first list.
+    frozen: Option<Vec<std::sync::Arc<str>>>,
+    /// They have been looked for (once, at start).
+    looked: bool,
 }
 
 impl<S: Sink> Service for Units<S> {
@@ -154,11 +173,13 @@ impl<S: Sink> Service for Units<S> {
     fn connect(&mut self) -> Result<ManagerProxy<'static>, Error> {
         let manager = manager(&Connection::session()?)?;
         manager.subscribe()?;
-        if !std::mem::replace(&mut self.thawed, true) {
+        if !std::mem::replace(&mut self.looked, true) {
             let slices = manager.list_units_by_patterns(&[], &["clamshell-run-*.slice"])?;
-            for (name, ..) in slices {
-                thaw_now(&manager, &name);
-            }
+            let frozen = slices.into_iter().filter(|row| {
+                let unit = UnitProxy::builder(manager.inner().connection()).path(row.6.clone()).and_then(|b| b.build());
+                unit.and_then(|u| u.freezer_state()).is_ok_and(|s| s == "frozen")
+            });
+            self.frozen = Some(frozen.filter_map(|row| Some(row.0.strip_prefix(RUN_PREFIX)?.strip_suffix(".slice")?.into())).collect());
         }
         Ok(manager)
     }
@@ -169,6 +190,10 @@ impl<S: Sink> Service for Units<S> {
         let mut last = Changed::default();
         if let Some(units) = last.offer(list(&manager)?) {
             self.sink.send(Event::Units(units))?;
+        }
+        if let Some(frozen) = self.frozen.take().filter(|f| !f.is_empty()) {
+            log::info!("found frozen (held as suspended): {frozen:?}");
+            self.sink.send(Event::Frozen(frozen))?;
         }
         for message in signals {
             let Some(name) = unit_of_signal(&message) else {

@@ -181,20 +181,25 @@ pub const TARGETS: &[Form<Id>] = &[
     form("tray-entry ID", "an entry of a program's tray menu, by its id there (clamshell --tray lists them)", |a| {
         Ok(Id::Dock(DockId::TrayEntry(number(arg(a, 0))?)))
     }),
-    form("dock-menu ACTION", "a dock entry's menu (after a long press): open-another, close-window, menu, pin, autostart, move, quit, force-kill, back", |a| {
-        Ok(Id::Dock(match arg(a, 0) {
-            "open-another" => DockId::OpenAnother,
-            "menu" => DockId::TrayMenu,
-            "autostart" => DockId::Autostart,
-            "close-window" => DockId::CloseWindow,
-            "pin" => DockId::Pin,
-            "move" => DockId::Move,
-            "quit" => DockId::Quit,
-            "force-kill" => DockId::ForceKill,
-            "back" => DockId::Back,
-            other => return Err(name_err(other)),
-        }))
-    }),
+    form(
+        "dock-menu ACTION",
+        "a dock entry's menu (after a long press): open-another, close-window, menu, pin, autostart, move, suspend (or resume), quit, force-kill, back",
+        |a| {
+            Ok(Id::Dock(match arg(a, 0) {
+                "open-another" => DockId::OpenAnother,
+                "menu" => DockId::TrayMenu,
+                "autostart" => DockId::Autostart,
+                "suspend" | "resume" => DockId::Suspend,
+                "close-window" => DockId::CloseWindow,
+                "pin" => DockId::Pin,
+                "move" => DockId::Move,
+                "quit" => DockId::Quit,
+                "force-kill" => DockId::ForceKill,
+                "back" => DockId::Back,
+                other => return Err(name_err(other)),
+            }))
+        },
+    ),
     form("spender N", "the battery tab's row N of what is using the machine: its menu", |a| {
         Ok(Id::Battery(clamshell_core::battery::BatteryId::Spender(number(arg(a, 0))?)))
     }),

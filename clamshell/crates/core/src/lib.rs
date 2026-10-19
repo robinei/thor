@@ -497,6 +497,10 @@ impl State {
             }
             Event::Device(key) => (Dirty::BOTTOM, self.on_device_key(key)),
             Event::BottomTouched => (self.bottom_used(), vec![]),
+            Event::Frozen(keys) => {
+                self.found_frozen(keys);
+                (Dirty::BOTTOM, vec![])
+            }
             Event::Paste => {
                 self.paste();
                 (Dirty::BOTTOM, vec![])

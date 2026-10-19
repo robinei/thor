@@ -13,6 +13,11 @@
 //! icon run in another program's processes, and run on as they are. A paused entry is thawed before
 //! anything is asked of it: Quit (its windows asked to close), Force kill, shown.
 //!
+//! Suspend (an entry's dock menu): its slice frozen now, whatever its setting, its windows hidden; it
+//! stays frozen until shown (Resume in its menu, or a tap on its tile), quit or killed. A ClamShell
+//! started again leaves our slices as it finds them: one found frozen (suspended, or paused hidden by
+//! the one before) is held as suspended ([`crate::Event::Frozen`]).
+//!
 //! A runner whose entries share one container (Waydroid's: Android's apps) has commands to pause it
 //! all and resume it (its `pause`, `resume`). Set for the runner to Pauses hidden, the container is
 //! paused once none of its entries has been shown for [`GRACE`] seconds (none running, too), and resumed
@@ -36,6 +41,8 @@ pub const GRACE: u64 = 10;
 #[derive(Debug, Default)]
 pub(crate) struct Background {
     pub(crate) entries: Pauses,
+    /// The entries' slices suspended (by key): frozen until shown.
+    pub(crate) suspended: Vec<Arc<str>>,
     /// The runners whose entries are paused together (from the library).
     pub(crate) runners: Vec<RunnerOf>,
     pub(crate) runner_pauses: Pauses,
@@ -79,6 +86,15 @@ impl Pauses {
         was
     }
 
+    /// `key` paused now (suspended): whether it wasn't (it is to be frozen).
+    fn hold(&mut self, key: &Arc<str>) -> bool {
+        let was = self.is_paused(key);
+        if !was {
+            self.paused.push(key.clone());
+        }
+        !was
+    }
+
     fn is_paused(&self, key: &str) -> bool {
         self.paused.iter().any(|k| &**k == key)
     }
@@ -101,6 +117,7 @@ impl State {
         let ours: Vec<&crate::running::Running> = session.running.iter().filter(|r| r.origin == Origin::Ours && r.pid.is_none()).collect();
         let keys: Vec<Arc<str>> = ours.iter().map(|r| Arc::from(r.key.as_str())).collect();
         self.background.entries.keep(&keys);
+        self.background.suspended.retain(|k| keys.contains(k));
         for (r, key) in ours.into_iter().zip(&keys) {
             let mine: Vec<&crate::windows::Window> = session.windows_of(&r.id).collect();
             let shown = mine.iter().any(|w| w.visible);
@@ -109,6 +126,16 @@ impl State {
             // it is starting, between windows, or ending, Steam's Stop for one.)
             let quitting = session.quitting.iter().any(|(g, ..)| *g == r.id);
             let hidden = setting == 1 && !shown && !mine.is_empty() && !quitting;
+            // (Suspended: frozen until shown.)
+            if self.background.suspended.contains(key) {
+                if !shown {
+                    if self.background.entries.hold(key) {
+                        effects.push(Effect::Freeze { slice: Instance::slice_of(key), frozen: true });
+                    }
+                    continue;
+                }
+                self.background.suspended.retain(|k| k != key);
+            }
             if let Some(frozen) = self.background.entries.follow(key, !hidden, now) {
                 effects.push(Effect::Freeze { slice: Instance::slice_of(key), frozen });
             }
@@ -166,7 +193,46 @@ impl State {
     /// An entry thawed before it is asked anything (closed, ended, shown), if it is paused.
     pub(crate) fn thaw(&mut self, id: &str) -> Option<Effect> {
         let key = self.session.running(id)?.key.clone();
+        self.background.suspended.retain(|k| **k != *key);
         self.background.entries.resume(&key).then(|| Effect::Freeze { slice: Instance::slice_of(&key), frozen: false })
+    }
+
+    /// Whether entry `id` can be suspended: it runs in a slice of ours, and isn't suspended.
+    pub fn suspendable(&self, id: &str) -> bool {
+        self.session.running(id).is_some_and(|r| r.origin == Origin::Ours && r.pid.is_none() && !self.suspended(id))
+    }
+
+    pub fn suspended(&self, id: &str) -> bool {
+        self.session.running(id).is_some_and(|r| self.background.suspended.iter().any(|k| **k == *r.key))
+    }
+
+    /// Entry `id` suspended: frozen now (see the module's doc), its windows hidden if one is shown.
+    pub(crate) fn suspend(&mut self, id: &str) -> Vec<Effect> {
+        if !self.suspendable(id) {
+            return vec![];
+        }
+        let Some(key) = self.session.running(id).map(|r| Arc::<str>::from(r.key.as_str())) else {
+            return vec![];
+        };
+        self.background.suspended.push(key.clone());
+        let mut effects = vec![];
+        if self.session.windows_of(id).any(|w| w.visible) {
+            effects.push(Effect::Window(crate::effect::WindowCommand::ShowShelf));
+        }
+        if self.background.entries.hold(&key) {
+            effects.push(Effect::Freeze { slice: Instance::slice_of(&key), frozen: true });
+        }
+        effects
+    }
+
+    /// Our slices found frozen at start (by key): held as suspended, frozen as they are.
+    pub(crate) fn found_frozen(&mut self, keys: Vec<Arc<str>>) {
+        for key in keys {
+            self.background.entries.hold(&key);
+            if !self.background.suspended.contains(&key) {
+                self.background.suspended.push(key);
+            }
+        }
     }
 
     /// Whether an entry is paused (frozen while hidden).
@@ -264,6 +330,38 @@ mod tests {
         assert!(s.apply(Event::Tick { unix_secs: t + 2 * GRACE + 1 }).1.contains(&pause));
         // Shown again: resumed.
         assert!(s.apply(Event::Windows(vec![window(true)])).1.contains(&resume));
+    }
+
+    #[test]
+    fn a_suspended_entry_stays_frozen_until_shown() {
+        let mut s = state();
+        let zelda = launch(&mut s, "zelda-lttp");
+        let key = zelda.key().unwrap().to_owned();
+        // Runs hidden (zelda isn't a game here, or set so): only Suspend pauses it.
+        s.settings.set(Some(&"zelda-lttp".into()), Setting::Background, Some(0));
+        let window = |visible| Window { unit: zelda.unit(), visible, ..win(3, "zelda3", &zelda.workspace(), visible) };
+        s.apply(Event::Tick { unix_secs: 100 });
+        s.apply(Event::Windows(vec![window(true)]));
+        assert!(s.suspendable("zelda-lttp"));
+        let fx = s.suspend("zelda-lttp");
+        assert!(fx.contains(&freeze(&key, true)) && fx.contains(&Effect::Window(crate::effect::WindowCommand::ShowShelf)), "{fx:?}");
+        assert!(s.suspended("zelda-lttp") && !s.suspendable("zelda-lttp"));
+        // Hidden: stays frozen, not frozen twice.
+        s.apply(Event::Windows(vec![window(false)]));
+        assert!(!s.apply(Event::Tick { unix_secs: 100 + 3 * GRACE }).1.contains(&freeze(&key, true)));
+        assert!(s.paused("zelda-lttp"));
+        // Resume (its menu): shown, thawed.
+        let fx = s.show_running("zelda-lttp");
+        assert!(fx.contains(&freeze(&key, false)) && !s.suspended("zelda-lttp"), "{fx:?}");
+        s.apply(Event::Tick { unix_secs: 100 + 4 * GRACE });
+        assert!(!s.paused("zelda-lttp"), "runs hidden again");
+        // A ClamShell started again finds its slice frozen: held as suspended, not frozen again.
+        let fx = s.apply(Event::Frozen(vec![key.as_str().into()])).1;
+        assert!(!fx.contains(&freeze(&key, true)) && s.suspended("zelda-lttp") && s.paused("zelda-lttp"));
+        assert!(!s.apply(Event::Tick { unix_secs: 100 + 6 * GRACE }).1.contains(&freeze(&key, false)), "stays frozen");
+        // Quit: thawed, to end, and no longer suspended.
+        assert!(s.quit(&"zelda-lttp".into()).contains(&freeze(&key, false)));
+        assert!(!s.suspended("zelda-lttp"));
     }
 
     #[test]

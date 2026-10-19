@@ -75,7 +75,8 @@ fn entry_tile(f: &mut Frame, r: Rect, i: usize, id: &std::sync::Arc<str>, severa
     let in_force = several && s.program_in_force() == Some(id);
     let moving = s.dock().moving() == Some(id);
     let caption_tone = if moving { Tone::Accent } else { Tone::Normal };
-    let face = TileFace { caption: &game.title, caption_tone, dot: in_force.then_some(Tone::Go), note: "" };
+    let note = if s.suspended(id) { "Suspended" } else { "" };
+    let face = TileFace { caption: &game.title, caption_tone, dot: in_force.then_some(Tone::Go), note };
     // A file's: the picture of the app showing it, if its window says which.
     let picture = s.app_showing(id).unwrap_or(game);
     widgets::tile(f, Id::Dock(DockId::Entry(i as u16)), r, &TILE, face, |f, r| {
@@ -105,7 +106,8 @@ fn tray_mark(f: &mut Frame, tile: Rect, i: usize) {
 }
 
 /// An entry's menu, from a long press on its tile: running, Open another, Close window (if it has one),
-/// Menu (if it has a tray icon), Pin or Unpin, Start with ClamShell (or Don't), Move, Quit, Force kill;
+/// Menu (if it has a tray icon), Pin or Unpin, Start with ClamShell (or Don't), Move, Suspend (or
+/// Resume: shown), Quit, Force kill;
 /// stopped, those but the first and the last two. The back
 /// arrow returns to the dock. Its tray menu instead, if that is open.
 fn draw_menu(f: &mut Frame, entry: &std::sync::Arc<str>) {
@@ -130,6 +132,13 @@ fn draw_menu(f: &mut Frame, entry: &std::sync::Arc<str>) {
             None
         },
         item(DockId::Move, "Move", Tone::Fn),
+        if s.suspended(entry) {
+            item(DockId::Suspend, "Resume", Tone::Fn)
+        } else if s.suspendable(entry) {
+            item(DockId::Suspend, "Suspend", Tone::Fn)
+        } else {
+            None
+        },
         if running { item(DockId::Quit, "Quit", Tone::Accent) } else { None },
         if running { item(DockId::ForceKill, "Force kill", Tone::Accent) } else { None },
     ]

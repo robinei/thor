@@ -48,6 +48,9 @@ pub enum Event {
     Windows(Vec<Window>),
     /// Our running scopes (dock app instances and games shelf started), after any change.
     Units(Vec<Instance>),
+    /// Our slices found frozen at start (their keys), after the first [`Event::Units`]: held as
+    /// suspended (see [`crate::background`]).
+    Frozen(Vec<std::sync::Arc<str>>),
     /// Programs' tray icons and their menus, after any change (the tray thread).
     Tray(Vec<crate::tray::TrayItem>),
     /// What was fetched about an entry (its cover, a screenshot, ...): the metadata thread.

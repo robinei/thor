@@ -99,6 +99,8 @@ pub enum DockId {
     TrayMenu,
     /// Its long-press menu's Start with ClamShell, or Don't (see [`crate::autostart`]).
     Autostart,
+    /// Its long-press menu's Suspend, or Resume (see [`crate::background`]).
+    Suspend,
     /// An entry of that menu, by its id there.
     TrayEntry(i32),
     /// Move mode: the entry one place (or row) along; done.

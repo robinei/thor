@@ -102,8 +102,15 @@ windows is shown.
   a game hidden but drawing on uses the GPU and is frozen. Showing it again cancels a waiting freeze.
 - Quits closed: ended once it has had a window and has none left.
 
-A slice left frozen (by a ClamShell before this one, which doesn't know it paused it) is thawed at
-start, and before a launch into it: systemd starts no scope in a frozen slice.
+Suspend (an entry's dock menu, for one in a slice of ours): its slice frozen now, whatever its setting,
+its windows hidden; the tile says Suspended. It stays frozen until shown (Resume in its menu, or a tap
+on its tile), quit or killed.
+
+A ClamShell started again (an update, a crash) leaves our slices as it finds them: one found frozen
+(suspended, or paused hidden by the one before) is held as suspended, so a suspended game stays so. A
+slice is thawed before a launch into it (systemd starts no scope in a frozen slice), and a scope whose
+sway is gone has its slice thawed before it is stopped. Tried in the nested session: Foot suspended,
+ClamShell restarted in the same sway, still frozen, resumed with its window.
 
 Android's apps share one container, so the Android runner is paused as a whole (its `pause` and `resume`,
 Waydroid's container service freezing and thawing the container, no root): set to Pauses hidden, once
