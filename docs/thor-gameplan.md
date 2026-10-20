@@ -6,15 +6,30 @@ Android kept. Written 2026-10-14, before having the device; everything here is u
 
 ## How the boot works
 
-- **Stock: U-Boot with UEFI.** Kettle Linux's Thor notes: the Thor ships with U-Boot offering UEFI; they
-  boot GRUB as an EFI program, which loads the device tree `qcs8550-ayn-thor.dtb`; SD card boot works
-  through U-Boot's EFI. (ROCKNIX's Thor page agrees there is a stock way: its ABL steps "are only required
-  if your device doesn't have a fastboot menu to switch the Boot Mode".) Verify on the device that ours
-  has it (day one, step 2) before flashing anything.
-- **Else ROCKNIX's ABL** (`3rdparty/bootloader/rocknix_abl/abl_signed-SM8550.elf` in their release, with
-  backup, flash and restore scripts): finds a FAT partition labelled `ROCKNIX` on internal storage, SD or
-  USB and boots its `/KERNEL`; volume up at power-on picks the target, Android included. ROCKNIX's own
-  SM8550 build uses this (`BOOTLOADER="qcom-abl"`).
+- **Stock: AYN's U-Boot with UEFI** (Kettle Linux's BOOT.md, BOOTLOADER.md and THOR.md, from the ABL
+  disassembled and a Thor booted). The fastboot menu (hold Power and Volume down) has a default-boot
+  switch, Android or **Loader**; Loader starts AYN's U-Boot (`loader_a`/`loader_b`, an Android boot image
+  holding it), whose environment is `bootcmd=bootefi bootmgr` (AYNTechnologies/u-boot, branch
+  `ayn-sm8550`, `board/qualcomm/ayn.env`): it boots `\EFI\BOOT\BOOTAA64.EFI`, from the SD card or internal
+  storage (which first: not documented). No `/KERNEL`, no extlinux. U-Boot's own device tree is the Odin
+  2's (its SMBIOS says "AYN Odin 2"), so the EFI program must load the Thor's: ours is systemd-boot with
+  a `devicetree` line (Kettle uses GRUB). **The switch needs an unlocked bootloader**: locked, the menu
+  says "Unlocked bootloader required", and unlocking erases Android's data. Which firmware has it isn't
+  known (Kettle: "mentioned once, for firmware 355"; one report of a menu with Android/UEFI instead,
+  as on the Odin 3). Verify on the device (day one, step 2) before flashing anything.
+- **Else ROCKNIX's ABL** v1.2 (in 20261001: `rocknix_abl/` on the image's FAT partition, with
+  `backup_abl.sh`, `flash_abl.sh`, `restore_backup_abl.sh`: plain `dd` of `abl_a` and `abl_b` to and from
+  `/sdcard/rocknix_abl/`, run as root through AYN Android's "Run Script as Root", Settings → Handheld
+  Settings → Advanced). It finds the boot partition on internal storage, SD or USB; per Kettle (citing
+  ROCKNIX's developers, unverified) it boots `\EFI\BOOT\BOOTAA64.EFI` when there is one and `/KERNEL` only
+  without: our image has both, so it would go the EFI way under either bootloader. Its menu (hold Volume
+  down at power-on): Boot mode Linux, Boot source SD card, and **Device model: AYN Thor**, which it needs
+  before it boots anything (`no match found for DTB!` otherwise). The way back: `restore_backup_abl.sh`,
+  or `fastboot flash abl_a`/`abl_b` with the backups; an ABL broken past fastboot needs EDL, and there is
+  no public EDL package for the Thor. **ROCKNIX's own updates and its install to internal storage
+  re-flash both ABL slots** (`updateabl`), even over stock: boot ROCKNIX from SD only, never update or
+  install it. Its `next` moved to OpenABL (OpenHandheldCollective/OpenABL v1.1, 2026-10-19; it also boots
+  `BOOTAA64.EFI`, BLS, UKIs, extlinux and `/KERNEL`), so its next release will flash OpenABL instead.
 - `/KERNEL` (ROCKNIX 20261001) is an Android boot image, header version 0, page size 2048: a gzip'd arm64
   `Image` with 14 device trees appended (AYN Thor, Odin 2 / Mini / Portal, gamepad nodes; the ABL picks
   the matching one), the initramfs built into the kernel (the ramdisk is 5 bytes), and the command line
@@ -83,8 +98,12 @@ Known issues and risks, to check first:
    are ext4 and f2fs.
 3. Audio: ROCKNIX's UCM profiles are copied over `alsa-ucm-conf`'s (a pacman hook puts them back after
    an update of that package); under UEFI the card is named `ayn-AYNOdin2` (ROCKNIX has a profile for that name too).
-4. Rotation: the bottom panel gets fbcon's angle as well; unverified that it wants the same. Touch may
-   still need Kettle's calibration matrix.
+4. Rotation: the bottom panel gets fbcon's angle as well; unverified that it wants the same. ROCKNIX
+   fixed a sideways bottom screen after 20261001 (PR #3507: "Sway doesn't apply a transform to an output
+   that is powered off"): check that the bottom's transform holds when it is turned off and on. Touch: the
+   image has ROCKNIX's calibration matrix for both panels and its hwdb entry marking the touchscreens as
+   not keyboards (they report `BTN_TOUCH`, which made wlroots count a keyboard in the seat). The top panel
+   runs at 118.6 Hz uncalibrated (ROCKNIX PR #3489, after 20261001).
 5. Gamepad: the kernel driver comes with ROCKNIX's modules; its userspace mapping (Thorch, Kettle:
    InputPlumber maps) doesn't. Check what evdev reports before relying on it.
 6. Device trees: Thorch insists on exactly one Thor device tree in `/KERNEL`; we keep ROCKNIX's 14 (as
@@ -135,25 +154,40 @@ Known issues and risks, to check first:
       same Image and device tree. Not done: an SD image with it (thor-image.sh's `THOR_KERNEL` path not
       run end to end). Unverified until the device: that it boots at all (a clang build of a kernel
       ROCKNIX only builds with GCC), and the rest as for ROCKNIX's kernel; binderfs and Waydroid on it.
-- [ ] Find out what the stock Linux boot mode is (U-Boot? AYN's own ABL?), what it reads (`/KERNEL`, or
-      `extlinux.conf` and files), and from which firmware version it ships; ask on the Discord.
-- [ ] Read ROCKNIX's ABL scripts and README (flash, backup, restore) and the Thorch and Pocknix install
-      notes; write down the exact flashing steps and the way back to stock.
-- [ ] Have a fast SD card (A2/U3; the Thor's slot runs SDR104) and a USB-C keyboard and Ethernet adapter.
-- [ ] Download a known-good image to compare against when ours fails: ROCKNIX SM8550, Pocknix
-      (`pocknix-sm8550-*-sd.img.zst`) or Thorch.
+- [x] Find out what the stock Linux boot mode is. Done 2026-10-20 (see "How the boot works"): AYN's U-Boot
+      through the fastboot menu's Loader switch, booting `BOOTAA64.EFI`; it needs an unlocked bootloader;
+      which firmware has it is still unknown.
+- [x] ROCKNIX's ABL steps and the way back, Thorch's and Pocknix's notes. Done 2026-10-20 (see "How the
+      boot works"). Thorch and Pocknix don't flash an ABL: both expect ROCKNIX's already installed
+      (Pocknix: v1.1.7 or newer; its Thor support not yet run on hardware).
+- [ ] An SD card and a USB-C keyboard and Ethernet adapter. The slot runs at High Speed, not SDR104 (ROCKNIX's
+      device tree masks SDR50/SDR104; Kettle measured about 13 MB/s), so a fast card buys little: any
+      decent A1/A2 card. At that speed a hibernate image of a few GB takes minutes to write, and games
+      load slowly from SD: worth a look at what the SDR104 node Kettle lists would take. USB-C is
+      dual-role and the kernel has hub, HID and USB Ethernet drivers; a hub with both on a Thor isn't
+      reported anywhere. Without a keyboard: ROCKNIX's USB network gadget (169.254.170.2) on the
+      known-good image. No serial console is known.
+- [x] A known-good image to compare against: ROCKNIX 20261001's SD image, downloaded and checked
+      (`~/.cache/thor-vm/rocknix/ROCKNIX-SM8550.aarch64-20261001.img.gz`, sha256
+      `2314561e75bc8dbbc91a7dd5aac719d49ed98d07428d8d0967797a79c0b3b16f`). Pocknix v0.4.0 for comparison if
+      needed (10 GB: https://pocknix.shuuri.net/images/pocknix-sm8550-20260912-sd.img.zst, sha256
+      `c67f3697511a46a04e7e70663b6055c45c00b688462ea0fce2dad3999ac9ba47`).
 
 ## Day one, in order
 
 1. Boot Android, update its firmware, note the versions (Android build, bootloader). Charge.
-2. **Check for a stock Linux boot mode before flashing anything**: enter the fastboot menu (power and
-   volume) and look for a Boot Mode switch (Android / Linux), or anything naming U-Boot. Note exactly what
-   it offers and where it boots from. If it's there, skip step 4: no ROCKNIX ABL.
+2. **Check for a stock Linux boot mode before flashing anything**: enter the fastboot menu (hold Power and
+   Volume down) and look for the default-boot switch (Android / Loader, or Android / UEFI). Note exactly
+   what it offers, and whether the bootloader is locked (it says "Unlocked bootloader required"). If the
+   switch works, skip step 4: no ROCKNIX ABL. If it needs unlocking, weigh that (it erases Android's data)
+   against flashing ROCKNIX's ABL, which doesn't.
 3. Back up first anyway: the stock ABL (ROCKNIX's `backup_abl.sh`) and anything else the install notes
    call out, copied off the device.
-4. Only without a stock Linux mode: flash ROCKNIX's ABL (`flash_abl.sh`, as root in Android). Check that
-   Android still boots (volume up at power-on, Android).
-5. Boot a known-good image (ROCKNIX or Pocknix) from SD: proves the ABL, the SD slot and the screens.
+4. Only without a stock Linux mode: flash ROCKNIX's ABL (`flash_abl.sh`, as root in Android: "Run Script
+   as Root"). Check that Android still boots. In its menu (hold Volume down at power-on): Boot mode Linux,
+   Boot source SD card, Device model AYN Thor.
+5. Boot a known-good image (ROCKNIX 20261001, downloaded) from SD: proves the bootloader, the SD slot and
+   the screens. Don't update ROCKNIX or install it to internal storage (it re-flashes the ABL).
    Note what ROCKNIX's session shows for outputs (`swaymsg -t get_outputs`), inputs
    (`swaymsg -t get_inputs`, `evtest`), the gamepad's device and buttons, sound devices, Wi-Fi.
 6. Boot our image from SD. If it doesn't come up, the known issues above are the suspects, in order.
@@ -249,7 +283,8 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
 - [ ] Rumble: a game's rumble on the controller's motors at each Rumble setting; the keymap's buzzes (a
       layer armed or toggled on, and off: `Buzz` in `pad/rumble.rs`, 40 ms at 40000 on the light motor,
       30000 on the heavy one) felt, and not confused with a game's.
-- [ ] Drawing cost: how long a full redraw of each screen takes on the device's CPU (tiny-skia, no GPU)
+- [ ] Drawing cost: how long a full redraw of each screen takes on the device's CPU (our own drawing, no
+      GPU; on a 5900X 0.6 ms for the top screen, 0.2-0.35 ms for the bottom)
       and what the second screen costs in power while a game runs (a slider held, a list flung, the
       keymap edit screen with its labels).
 - [ ] GPU: Freedreno (sway) and Turnip (`vkcube`, a game); MangoHud frame rate in sysinfo.
@@ -313,7 +348,13 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       have `resume=` and `resume_offset=` (`cat /proc/cmdline` on the second boot, under each boot path),
       `journalctl -u thor-firstboot`. Time (timesyncd, `timedatectl`) and locale (`locale`).
 - [ ] Screenshot: Print on a USB keyboard (`clamshell ctl screenshot`, grim).
-- [ ] Suspend (ROCKNIX's deep suspend, ~3 s resume) and hibernate: `systemctl hibernate`, then resume
+- [ ] Suspend and hibernate. Expect suspend to fail at first: ROCKNIX 20261001 turns SM8550's sleep off
+      ("Sleep is currently broken": its `030-suspend_mode` quirk, power key ignored, a fake suspend
+      instead), and its deep suspend is still an open PR (#3126, updated 2026-10-18: ~3 s resume, wake on
+      the power key and the lid, 4-5 %/h on an Odin 2; with a PCIe fix "without which 7.2 never wakes up
+      again", a 54 s freeze on the Thor put down to UFS idle, and the gamepad's fixes after resume). Our
+      kernel is 20261001's, without it: if sleep fails, rebuild with #3126's patches. Kettle reports
+      s2idle passing 5 `systemctl suspend` cycles on a Thor with its own kernel. Then hibernate: `systemctl hibernate`, then resume
       (from the ABL path and the UEFI path); every subsystem after resume (sound, Wi-Fi, Bluetooth, GPU,
       both screens and touch, gamepad); lid closed for over 30 minutes ends in hibernate; UPower's
       hibernate at 3 %. After a resume: ClamShell logs "woke from sleep" and "settings applied", and both
