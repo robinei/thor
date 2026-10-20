@@ -30,7 +30,8 @@ install -D -m 644 "$REPO/clamshell/android/pyclip.py" "$H/.local/share/clamshell
 
 # The outputs are written at each session start, as ROCKNIX does (its autostart/common/111-sway-init): the
 # panels are natively portrait, and the kernel says how to turn them (fbcon's rotate, from the panel's
-# orientation in the device tree). Unverified: that the bottom panel wants the same angle as the top.
+# orientation in the device tree; the command line sets it too, as Thorch's does). Both panels take the
+# same angle (Thorch and Armada turn both the same way).
 cat > "$H/.local/bin/thor-outputs" <<'SCRIPT'
 #!/bin/sh
 case "$(cat /sys/class/graphics/fbcon/rotate 2> /dev/null)" in

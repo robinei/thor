@@ -20,9 +20,10 @@ devices, ClamShell as a user service started by sway, and this repository shared
   tools/vm/vm.py bluetooth      two virtual Bluetooth controllers and a test device in the machine (x86_64)
   tools/vm/vm.py reset          throw the machine away (the download stays)
   tools/vm/vm.py --arch aarch64 thor-image   build an SD card image for the real Thor (best effort): Arch
-                             Linux ARM with ROCKNIX's SM8550 kernel, modules and firmware, our initramfs and
-                             session, in ROCKNIX's SD layout for its ABL (tools/image/thor-image.sh, in the machine);
-                             THOR_KERNEL=~/.cache/thor-vm/kernel: our kernel build (tools/image/thor-kernel.sh) instead
+                             Linux ARM with ROCKNIX's firmware, our initramfs and session, in ROCKNIX's SD layout
+                             for its ABL or OpenABL (tools/image/thor-image.sh, in the machine); the kernel ROCKNIX's
+                             prebuilt one, or with THOR_KERNEL=~/.cache/thor-vm/kernel Armada's as
+                             tools/image/thor-kernel.sh builds it
 
 --arch x86_64 (the default): Arch's cloud image, provisioned by cloud-init, with KVM: fast; it runs the
 host's build from the shared repository. --arch aarch64: Arch Linux ARM's root filesystem made into a disk
@@ -604,11 +605,19 @@ ROCKNIX_RELEASES = "https://api.github.com/repos/ROCKNIX/distribution/releases/l
 
 
 def rocknix():
-    """ROCKNIX's latest SM8550 release, checked, with its KERNEL and SYSTEM unpacked; returns that target dir."""
-    release = json.load(urllib.request.urlopen(ROCKNIX_RELEASES))
+    """ROCKNIX's latest SM8550 release, checked, with its KERNEL and SYSTEM unpacked; returns that target dir.
+    Without GitHub's API (offline, or its rate limit), the newest one unpacked before."""
+    folder = CACHE / "rocknix"
+    try:
+        release = json.load(urllib.request.urlopen(ROCKNIX_RELEASES))
+    except OSError as e:
+        unpacked = sorted(folder.glob("ROCKNIX-SM8550.aarch64-*/target/SYSTEM"))
+        if not unpacked:
+            sys.exit(f"ROCKNIX's releases: {e}")
+        print(f"ROCKNIX's releases: {e}; using {unpacked[-1].parent.parent.name}, unpacked before")
+        return unpacked[-1].parent
     assets = {a["name"]: a["browser_download_url"] for a in release["assets"]}
     name = next(n for n in assets if n.startswith("ROCKNIX-SM8550.aarch64-") and n.endswith(".tar"))
-    folder = CACHE / "rocknix"
     folder.mkdir(parents=True, exist_ok=True)
     tar = folder / name
     target = folder / name.removesuffix(".tar") / "target"
@@ -630,13 +639,16 @@ def thor_image(args):
     if not A.provisioned.exists():
         sys.exit("the aarch64 machine isn't provisioned yet: tools/vm/vm.py --arch aarch64 run (once)")
     target = rocknix()
-    # Our kernel build instead of ROCKNIX's (tools/image/thor-kernel.sh's output, in the cache the machine mounts).
+    # Our kernel build (Armada's: tools/image/thor-kernel.sh's output, in the cache the machine mounts) instead of ROCKNIX's.
     kernel = ""
     if os.environ.get("THOR_KERNEL"):
         path = Path(os.environ["THOR_KERNEL"]).expanduser().resolve()
         if not path.is_relative_to(CACHE.resolve()) or not (path / "Image").exists():
             sys.exit(f"THOR_KERNEL: no kernel build in {path} (it must be in {CACHE}: tools/image/thor-kernel.sh)")
         kernel = f"THOR_KERNEL=/mnt/cache/{path.relative_to(CACHE.resolve())} "
+    # (A machine already up would be built in, without this image attached: it would go into the old file.)
+    if subprocess.run(ssh_args(["true"], quiet=True), capture_output=True).returncode == 0:
+        sys.exit("the aarch64 machine is running: stop it first (tools/vm/vm.py --arch aarch64 ssh sudo poweroff)")
     sd = A.state / "thor-sd.img"
     sd.unlink(missing_ok=True)
     with open(sd, "wb") as f:
@@ -648,12 +660,13 @@ def thor_image(args):
         time.sleep(5)
     # The image gets this computer's time zone (the build machine's own would be UTC).
     zone = os.path.realpath("/etc/localtime").split("/zoneinfo/")[-1] if os.path.exists("/etc/localtime") else "UTC"
+    # (Powered off however the build ends, so a failed one leaves no machine behind.)
     inside = f"""set -e
+trap 'sudo poweroff' EXIT
 sudo mkdir -p /mnt/cache
 mountpoint -q /mnt/cache || sudo mount -t 9p -o trans=virtio,version=9p2000.L,ro cache /mnt/cache
 cd /mnt/thor/clamshell && CARGO_TARGET_DIR=$HOME/target cargo build --release --locked
-sudo THOR_TIMEZONE={zone} {kernel}bash /mnt/thor/tools/image/thor-image.sh /dev/vdb /mnt/cache/{target.relative_to(CACHE)} $HOME/target/release/clamshell '{ssh_key()}'
-sudo poweroff"""
+sudo THOR_TIMEZONE={zone} {kernel}bash /mnt/thor/tools/image/thor-image.sh /dev/vdb /mnt/cache/{target.relative_to(CACHE)} $HOME/target/release/clamshell '{ssh_key()}'"""
     result = subprocess.run(ssh_args([inside]))
     machine.join(timeout=120)
     if result.returncode not in (0, 255):

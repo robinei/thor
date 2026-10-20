@@ -17,7 +17,21 @@ Android kept. Written 2026-10-14, before having the device; everything here is u
   says "Unlocked bootloader required", and unlocking erases Android's data. Which firmware has it isn't
   known (Kettle: "mentioned once, for firmware 355"; one report of a menu with Android/UEFI instead,
   as on the Odin 3). Verify on the device (day one, step 2) before flashing anything.
-- **Else ROCKNIX's ABL** v1.2 (in 20261001: `rocknix_abl/` on the image's FAT partition, with
+- **Else OpenABL** (github.com/OpenHandheldCollective/OpenABL, v1.1 of 2026-10-19; where ROCKNIX's `next` and
+  the community are moving; downloaded: `~/.cache/thor-vm/openabl/abl_signed-SM8550.elf`, sha256
+  `cd97748bbd1c5dc994b8a73a05e88955297f4c88384e3ca4028d043fc1b16848`). Qualcomm's ABL with a menu and
+  standard Linux boot: from internal storage, SD or USB it tries `Boot####` options, then Boot Loader
+  Specification entries (`\loader\entries\*.conf`, ours: `thor.conf`, its `devicetree` line taking
+  precedence) and UKIs, then extlinux, then `\EFI\BOOT\BOOTAA64.EFI`, then an Android boot image
+  (`/KERNEL`): all of our image's ways. Device model from the `.dtb` files in `\dtbs` (ours has the
+  Thor's); display rotation, boot source, a verbose log on screen, EDL, device info in its menu; fastboot
+  and Android (with verified boot) as before; settings in UEFI variables. Flashed to `abl_a` and `abl_b`:
+  `fastboot flash` (unlocked), or as ROCKNIX's scripts do from Android ("Run Script as Root", `dd`; ROCKNIX's
+  `next` ships an `openabl/` folder with the same three scripts). Linux reaches its UEFI variables (bootctl,
+  boot counting, BootNext) only with its kernel patch adding SM8550 to qcom_scm's QSEECOM allowlist
+  (`Linux/0001-firmware-qcom-scm-allow-QSEECOM-on-OpenABL-s-platforms.patch`, tested on SM6115 only): ours
+  to add once the Thor boots with it.
+- **Or ROCKNIX's ABL** v1.2 (in 20261001: `rocknix_abl/` on the image's FAT partition, with
   `backup_abl.sh`, `flash_abl.sh`, `restore_backup_abl.sh`: plain `dd` of `abl_a` and `abl_b` to and from
   `/sdcard/rocknix_abl/`, run as root through AYN Android's "Run Script as Root", Settings → Handheld
   Settings → Advanced). It finds the boot partition on internal storage, SD or USB; per Kettle (citing
@@ -59,7 +73,7 @@ What goes in, and from where:
 | Part | Source |
 |---|---|
 | Bootloader | not in the image: stock U-Boot (UEFI), else ROCKNIX's ABL flashed once (see below) |
-| Kernel | ROCKNIX's prebuilt one (`KERNEL` of the release); or, with `THOR_KERNEL=~/.cache/thor-vm/kernel`, our build of the same kernel with binder (`tools/image/thor-kernel.sh`, see "A kernel with binder" below): its Image, device trees and modules replace ROCKNIX's in both boot ways and `/usr/lib/modules`, recorded in `/usr/local/share/thor/kernel` |
+| Kernel | Armada's, as `tools/image/thor-kernel.sh` builds it (`THOR_KERNEL=~/.cache/thor-vm/kernel`; Linux 7.2.6 with their 222 patches at commit 5643b1ab5156, 2026-10-20; binder in their config): its Image, SM8550 device trees and modules in both boot ways and `/usr/lib/modules`, recorded in `/usr/local/share/thor/kernel`. Without `THOR_KERNEL`, ROCKNIX's prebuilt one (`KERNEL` of the release) |
 | UEFI boot, on the same FAT partition (an EFI system partition) | systemd-boot as `EFI/BOOT/BOOTAA64.EFI`, the kernel as `/Image` (decompressed), the Thor's device tree as `/dtbs/qcs8550-ayn-thor.dtb`, our initramfs, a loader entry with our command line; split out by `tools/image/bootimg.py split` |
 | `/KERNEL` on FAT `ROCKNIX` (GPT name `system`, legacy-boot attribute, at 16 MiB) | ROCKNIX's kernel and device trees, unchanged (ours: the gzip'd Image and the 14 device trees, put into ROCKNIX's boot image by `bootimg.py repack --kernel`); our initramfs (mkinitcpio: base udev modconf block thor-root-wait resume filesystems fsck, no autodetect) and command line (`root=LABEL=THOR_ROOT rw` + ROCKNIX's SM8550 parameters; the first boot adds `resume=`, `resume_offset=`), put into both boot ways by `thor-boot` (`tools/device/thor-boot`, repacking with `tools/image/bootimg.py`), as the image is built and again on the device after updates |
 | Kernel modules, firmware | ROCKNIX's `SYSTEM` (same release), incl. Qualcomm firmware: for this device only, not for sharing; modules ours with `THOR_KERNEL` |
@@ -129,7 +143,8 @@ Known issues and risks, to check first:
 - [x] Build the image and check it (done 2026-10-14; see above).
 - [x] Settle 2: sdhci-msm is built in (checked 2026-10-14, strings in the Image; f2fs too).
 - [ ] Rebuild nearer the time: a newer ROCKNIX release, current packages.
-- [x] A kernel with binder, for Android (Waydroid): ROCKNIX's SM8550 config has
+- [x] A kernel with binder, for Android (Waydroid). Since 2026-10-20 `thor-kernel.sh` builds Armada's kernel
+      instead (binder is in their config); what follows is the ROCKNIX build it replaced. ROCKNIX's SM8550 config has
       `# CONFIG_ANDROID_BINDER_IPC is not set` (checked 2026-10-19, its `next` branch and tag 20261001),
       and the option is built-in only. Done 2026-10-19: `tools/image/thor-kernel.sh` builds ROCKNIX's
       kernel from their git tag (default 20261001) on the PC with LLVM (3 minutes on 24 threads):
@@ -173,6 +188,51 @@ Known issues and risks, to check first:
       needed (10 GB: https://pocknix.shuuri.net/images/pocknix-sm8550-20260912-sd.img.zst, sha256
       `c67f3697511a46a04e7e70663b6055c45c00b688462ea0fce2dad3999ac9ba47`).
 
+### What Thorch and Armada do that we don't (read 2026-10-20)
+
+Thorch (github.com/thorch-os/thorch) is stale: kernel 7.1.2 and ROCKNIX `next` of July; its move to 7.2
+was closed unmerged. Armada (github.com/armada-os/armada) is active: its own Linux 7.2.6 with about 190
+patches, each with its source in `packages/kernel/PATCHES.md`; Thor sleep power 0.77 → 0.46 W at the USB
+input (commit 431bf57). Both run both panels at the same rotation, which settles that question.
+
+For our image (small):
+- [x] Pin s2idle: `MemorySleepMode=s2idle` in our sleep.conf.d (both projects ended up there; Thorch:
+      `thorch-bsp/payload/etc/systemd/sleep.conf.d/50-thorch-native-suspend.conf`). Without it the kernel
+      picks deep where firmware offers it.
+- [x] `fbcon=rotate:1` on the command line, as Thorch requires: `thor-outputs` turns both outputs by
+      fbcon's rotate, which is 0 if the kernel doesn't set it. Keep `/KERNEL`'s command line under 512
+      bytes (Armada: the ABL may not read past that).
+- [x] USB controller autosuspend (`power/control=auto` on the DWC3 device), so it doesn't hold a DDR vote
+      while idle (Thorch `99-thorch-sm8550-usb-autosuspend.rules`, Armada `60-armada-usb-autosuspend.rules`).
+- [ ] Backlight names for the Brightness tab: top `ae96000.dsi.0`, bottom `ae94000.dsi.0` (not Kettle's
+      "bottom-panel").
+
+Our kernel is Armada's (decided 2026-10-20: the furthest community work, our own patches on top once we
+have the device): `tools/image/thor-kernel.sh` builds their latest (`ARMADA_REF`, default `main`; the
+commit is recorded in the build's `source`), with our config lines and `tools/image/kernel/series` (empty
+for now). So these come with it: the gamepad across sleep (`0508`, `0515`, `1005`–`1007`, `0534`), rumble's
+fixes (`1003`, `1004`), the s2idle stack (`0523`–`0526`, `0512`, `0522`, `0566`, `0204`, `0504` instead of
+ROCKNIX's IPCC change), the wake sources (lid on opening only, volume up not), PCIe WAKE#, the codec's rails
+in s2idle, and the charge current limit (`0903`: 0 runs the device from the charger, for bypass).
+Candidates for our own patches, once tried on the device:
+- [ ] The stick range: `axis-range = <1024>` on the gamepad node (Thorch's `dts-patches/0007`). Armada's
+      Thor device tree doesn't set it (they calibrate from userspace, through rsinput's module
+      parameters); without either, games see about 73 % of the sticks' travel.
+- [ ] OpenABL's QSEECOM allowlist patch, if we boot through OpenABL (UEFI variables from Linux).
+Not in it (userspace, Armada's): `system-sleep/50-armada-powerbutton-suspend` (no wake by the power key
+with the lid closed) and `40-armada-wake-ledger` (what woke it, logged).
+
+To know:
+- Hibernate: nobody has tried it on the Thor (Thorch sets `AllowHibernation=no`, Armada masks it).
+- The AYN key is `KEY_F24` from its own device (`gpio-keys-ayn`), not the gamepad: ClamShell has to read
+  that device for Home. Back is `BTN_BACK` on the gamepad.
+- Open on Armada: the bottom touchscreen keeping a contact after fingers lift (#757, a candidate patch,
+  untested); charging at about 4 W against Android's 27 W (#89).
+- SDR104: Thorch tried it and reverted ("unstable UHS modes"); Armada lifts the mask but keeps a 37.5 MHz
+  clock cap. An experiment, not a fix.
+- The full notes: Armada's per-patch sources, Thorch's sleep history; the HDR experiment can take
+  Armada's ICNA3520 profile (colorimetry and 650 nits peak, its gamescope script `ayn.icna3520.oled.lua`).
+
 ## Day one, in order
 
 1. Boot Android, update its firmware, note the versions (Android build, bootloader). Charge.
@@ -182,10 +242,16 @@ Known issues and risks, to check first:
    switch works, skip step 4: no ROCKNIX ABL. If it needs unlocking, weigh that (it erases Android's data)
    against flashing ROCKNIX's ABL, which doesn't.
 3. Back up first anyway: the stock ABL (ROCKNIX's `backup_abl.sh`) and anything else the install notes
-   call out, copied off the device.
-4. Only without a stock Linux mode: flash ROCKNIX's ABL (`flash_abl.sh`, as root in Android: "Run Script
-   as Root"). Check that Android still boots. In its menu (hold Volume down at power-on): Boot mode Linux,
-   Boot source SD card, Device model AYN Thor.
+   call out, copied off the device. AYN's own images, linked in the AYN Discord's #thor-general-faq ("Does
+   AYN provide the OTA images for manual install?", 2026-02-01): Thor 20260112 Firmware, Thor 20251120 OTA
+   Rollback, Thor 20260206 OTA 1.0.0.377. The OTAs install from Android (renamed `update.zip` at the
+   internal storage's root; Settings → System → Thor OTA → ⋮ → Local Update; 35 % battery or more; may erase
+   data). Check what the Firmware package holds (an `abl` image, an EDL programmer) before relying on it as
+   the way back from a bad ABL flash.
+4. Only without a stock Linux mode: flash OpenABL (downloaded; to `abl_a` and `abl_b`, by `dd` as root in
+   Android, "Run Script as Root", after step 3's backup), ROCKNIX's ABL the fallback (`flash_abl.sh`).
+   Check that Android still boots. In the menu (hold Volume down at power-on): Boot mode Linux, Boot source
+   SD card, Device model AYN Thor (OpenABL: from `\dtbs`, or the entry's own).
 5. Boot a known-good image (ROCKNIX 20261001, downloaded) from SD: proves the bootloader, the SD slot and
    the screens. Don't update ROCKNIX or install it to internal storage (it re-flashes the ABL).
    Note what ROCKNIX's session shows for outputs (`swaymsg -t get_outputs`), inputs
@@ -194,7 +260,10 @@ Known issues and risks, to check first:
    Serial console: none known; a USB keyboard and the screen, or ssh over USB Ethernet.
 7. Library: put games in `~/Games/<system>` and videos in `~/Videos/Films` and `~/Videos/TV` (a folder per
    series); add a TMDB key to `~/.config/clamshell/library.json` (`"keys": { "tmdb": "..." }`) for films' and
-   series' posters and overviews; Tools → Rescan library.
+   series' posters and overviews; Tools → Rescan library. PlayStation games need a BIOS for the
+   PlayStation core (Beetle PSX HW: `scph5501.bin` or another it lists, in `~/.config/retroarch/system`;
+   the old PCSX ReARMed, which didn't, is a 2016 package in Arch Linux ARM that no longer installs beside
+   `libretro-core-info`).
 8. Maintenance: install Claude Code (`curl -fsSL https://claude.ai/install.sh | bash`) and log in; make
    the device's ssh key (`ssh-keygen -t ed25519`) and add it to the GitHub repository (a deploy key with
    write access); then a first `/maintain` from the dock's Maintenance app.
@@ -295,6 +364,16 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       power), and see it in sway's debug log ("direct scan-out"). Whether the display engine's planes
       rotate RGB buffers by 90° (`drm_info`: each plane's rotation property and values): if so, gamescope
       (which uses it) could show games without a composition pass.
+      If the pass costs enough (a few hundred mW at 120 Hz, not tens), the way without plane rotation:
+      games render portrait themselves. wlroots' scene scans out a buffer whose buffer transform matches
+      the output's, and tells clients the transform it prefers (`wl_surface.preferred_buffer_transform`;
+      both to confirm in its source), so sway likely needs nothing. Mesa's Wayland WSI needs a patch:
+      report the preferred transform as `currentTransform`, and set `wl_surface.set_buffer_transform`
+      when an app presents with that pre-transform (as Android's WSI does). DXVK needs one too, a cheap
+      one: its present pass already copies the back buffer into the swapchain image, so that copy writes
+      it rotated into a 1080x1920 swapchain (VKD3D-Proton likewise, probably). Only through Wine's
+      Wayland driver (`PROTON_ENABLE_WAYLAND=1`): an X11 window under Xwayland can't set a buffer
+      transform. Native games gain nothing. Both patches are upstream candidates.
 - [ ] HDR, an experiment (the panels take no HDR signal; HDR as on phones: the panel driven brighter,
       ordinary content drawn dimmer within it, highlights above). Peaks from the spec sheets: top 650
       nits, bottom 550. The bottom needs no HDR, but it shows dual-screen emulators' second screen (DS,
@@ -353,7 +432,8 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       instead), and its deep suspend is still an open PR (#3126, updated 2026-10-18: ~3 s resume, wake on
       the power key and the lid, 4-5 %/h on an Odin 2; with a PCIe fix "without which 7.2 never wakes up
       again", a 54 s freeze on the Thor put down to UFS idle, and the gamepad's fixes after resume). Our
-      kernel is 20261001's, without it: if sleep fails, rebuild with #3126's patches. Kettle reports
+      kernel is Armada's, which carries that work and more (s2idle, 0.77 → 0.46 W asleep on a Thor at the
+      USB input): expect s2idle to work; its sleep power still far above a phone's. Kettle reports
       s2idle passing 5 `systemctl suspend` cycles on a Thor with its own kernel. Then hibernate: `systemctl hibernate`, then resume
       (from the ABL path and the UEFI path); every subsystem after resume (sound, Wi-Fi, Bluetooth, GPU,
       both screens and touch, gamepad); lid closed for over 30 minutes ends in hibernate; UPower's

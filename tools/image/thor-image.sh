@@ -1,8 +1,8 @@
 #!/bin/bash
 # Builds an SD card image for the AYN Thor, best effort, inside the aarch64 machine (tools/vm/vm.py
-# --arch aarch64 thor-image runs it as root there): Arch Linux ARM from its mirrors, ROCKNIX's SM8550
-# kernel (with the Thor's device tree and their patches' drivers; or our build of it, THOR_KERNEL below), its
-# modules and firmware, our initramfs and session, in ROCKNIX's SD layout so their ABL boots it.
+# --arch aarch64 thor-image runs it as root there): Arch Linux ARM from its mirrors, Armada's kernel as
+# tools/image/thor-kernel.sh builds it (THOR_KERNEL below; else ROCKNIX's prebuilt SM8550 kernel), ROCKNIX's
+# firmware, our initramfs and session, in ROCKNIX's SD layout so their ABL (or OpenABL) boots it.
 #
 #   thor-image.sh DEVICE ROCKNIX_TARGET PROGRAM SSH_KEY
 #
@@ -19,8 +19,8 @@
 #
 # Environment: THOR_TIMEZONE (default: this machine's /etc/localtime, else UTC), THOR_LOCALE (default
 # en_US.UTF-8), THOR_KERNEL (a kernel built by tools/image/thor-kernel.sh, its output directory: then the
-# image has that kernel, its device trees and modules, in both boot ways, instead of ROCKNIX's; the
-# firmware and the rest stay ROCKNIX's). Through sudo: sudo THOR_TIMEZONE=Europe/Oslo bash thor-image.sh ...
+# image has that kernel, its device trees and modules, in both boot ways, instead of ROCKNIX's prebuilt one;
+# the firmware and the rest stay ROCKNIX's). Through sudo: sudo THOR_TIMEZONE=Europe/Oslo bash thor-image.sh ...
 set -euo pipefail
 DEVICE=$1 ROCKNIX=$2 PROGRAM=$3 SSH_KEY=$4
 KERNEL=${THOR_KERNEL:-}
@@ -43,16 +43,16 @@ SWAP_GIB=16
 PACKAGES=(base sudo mkinitcpio networkmanager polkit upower bluez openssh sway mako foot xorg-xwayland mesa vulkan-freedreno
           pipewire pipewire-pulse wireplumber alsa-ucm-conf noto-fonts python less vim grim cloud-guest-utils gptfdisk
           retroarch retroarch-assets-xmb retroarch-assets-glui retroarch-assets-ozone python-pillow libretro-core-info libretro-nestopia libretro-snes9x libretro-mupen64plus-next libretro-gambatte
-          libretro-mgba libretro-melonds libretro-genesis-plus-gx libretro-pcsx-rearmed libretro-flycast mpv ffmpeg
+          libretro-mgba libretro-melonds libretro-genesis-plus-gx libretro-beetle-psx-hw libretro-flycast mpv ffmpeg wireless-regdb
           udisks2 udiskie exfatprogs ratarmount uwsm imv zathura zathura-pdf-mupdf xdg-utils git rust base-devel pacman-contrib)
 # The kernel command line: ROCKNIX's tuning for SM8550, our root. The first boot adds resume= and
 # resume_offset= (the swap file's place) to both copies of it: /KERNEL's and the loader entry's.
-CMDLINE="root=LABEL=THOR_ROOT rw rootwait console=tty0 allow_mismatched_32bit_el0 fw_devlink.strict=1 pcie_ports=compat irqaffinity=0-2 cgroup.memory=nokmem,nosocket nosoftlockup usbcore.interrupt_interval_override=045e:028e:2"
+CMDLINE="root=LABEL=THOR_ROOT rw rootwait console=tty0 fbcon=rotate:1 allow_mismatched_32bit_el0 fw_devlink.strict=1 pcie_ports=compat irqaffinity=0-2 cgroup.memory=nokmem,nosocket nosoftlockup usbcore.interrupt_interval_override=045e:028e:2"
 
 say() { echo "== $*"; }
 
-say "tools"
-pacman -S --noconfirm --needed arch-install-scripts squashfs-tools dosfstools gptfdisk git > /dev/null
+say "tools (and Pillow, for session.sh's RetroArch menu theme)"
+pacman -Syu --noconfirm --needed arch-install-scripts squashfs-tools dosfstools gptfdisk git python-pillow > /dev/null
 
 say "ROCKNIX's system (modules, firmware, audio profiles)"
 # A failed run may have left its mounts.
@@ -122,6 +122,22 @@ printf '[Service]\nExecStart=\nExecStart=-/sbin/agetty --autologin %s --noclear 
     > "$ROOT/etc/systemd/system/getty@tty1.service.d/autologin.conf"
 echo uinput > "$ROOT/etc/modules-load.d/thor.conf"
 echo 'KERNEL=="uinput", GROUP="input", MODE="0660"' > "$ROOT/etc/udev/rules.d/70-thor.rules"
+# The touchscreens touch only (they report BTN_TOUCH, which made wlroots count a keyboard in the seat;
+# ROCKNIX 20261001's 61-thor-ft5x06.hwdb).
+mkdir -p "$ROOT/etc/udev/hwdb.d"
+printf 'evdev:name:*_touchscreen:*\n ID_INPUT_KEYBOARD=0\n ID_INPUT_TOUCHSCREEN=1\n' > "$ROOT/etc/udev/hwdb.d/61-thor-touch.hwdb"
+arch-chroot "$ROOT" systemd-hwdb --usr update
+# With ROCKNIX's kernel, each panel's axes turned back (its touchcontrol quirk): its device tree swaps and
+# inverts them, and this undoes it. Armada's device tree reports them as the panels have them: no matrix.
+if [ -z "$KERNEL" ]; then
+    for panel in a90000 98c000; do
+        printf 'SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_TOUCHSCREEN}=="1", ENV{ID_PATH}=="platform-%s.i2c", ENV{LIBINPUT_CALIBRATION_MATRIX}="0 -1 1 1 0 0"\n' "$panel"
+    done > "$ROOT/etc/udev/rules.d/71-thor-touch.rules"
+fi
+# The USB controller allowed to suspend when idle: active, it holds a 1 GB/s interconnect vote that keeps
+# the memory out of its low-power states (Armada's 60-armada-usb-autosuspend.rules).
+echo 'ACTION=="add|bind", SUBSYSTEM=="platform", KERNEL=="*.usb", DRIVERS=="dwc3-qcom", ATTR{power/control}="auto"' \
+    > "$ROOT/etc/udev/rules.d/72-thor-usb.rules"
 arch-chroot "$ROOT" systemctl enable NetworkManager bluetooth sshd systemd-timesyncd > /dev/null
 # The power button and the lid put the machine to sleep with logind's "sleep" action: the first that works
 # of suspend-then-hibernate and suspend (so suspend still works while hibernate doesn't, e.g. before the
@@ -132,7 +148,9 @@ printf '[Login]\nSleepOperation=suspend-then-hibernate suspend\nHandlePowerKey=s
     > "$ROOT/etc/systemd/logind.conf.d/thor.conf"
 # Suspend-then-hibernate: hibernate after 30 minutes asleep (systemd wakes the machine with the RTC alarm
 # to do it), or earlier when the battery runs low.
-printf '[Sleep]\nHibernateDelaySec=30min\n' > "$ROOT/etc/systemd/sleep.conf.d/thor.conf"
+# Suspend as s2idle, as Thorch and Armada settled on for the Thor (the kernel would pick deep where the
+# firmware offers it).
+printf '[Sleep]\nMemorySleepMode=s2idle\nHibernateDelaySec=30min\n' > "$ROOT/etc/systemd/sleep.conf.d/thor.conf"
 # UPower: the battery's history (ClamShell's battery mode shows the last day) and, nearly empty, hibernate
 # rather than dying mid-write (UPower powers off instead when hibernate isn't possible).
 sed -i -e 's/^CriticalPowerAction=.*/CriticalPowerAction=Hibernate/' -e 's/^PercentageAction=.*/PercentageAction=3/' \
