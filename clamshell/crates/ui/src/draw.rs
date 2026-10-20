@@ -630,30 +630,32 @@ impl<'a> Canvas<'a> {
     fn blit(&mut self, image: &Pixmap, x: f32, y: f32, grey: Option<u32>) {
         let (x0, y0) = (self.px(x).round() as i32, self.py(y).round() as i32);
         let pw = self.pixmap.width() as i32;
-        let (cx0, cy0, cx1, cy1) = self.clip;
+        let clip = self.clip;
         let iw = image.width() as usize;
+        let Some((skip, x, len)) = span(clip, x0, iw) else {
+            return;
+        };
         let data = self.pixmap.data_mut();
         for (row, src_row) in image.data().chunks_exact(iw * 4).enumerate() {
             let y = y0 + row as i32;
-            if y < cy0 || y >= cy1 {
+            let i = ((y * pw + x) * 4) as usize;
+            let (Some(dst), Some(src)) =
+                ((clip.1..clip.3).contains(&y).then(|| data.get_mut(i..i + len * 4)).flatten(), src_row.get(skip * 4..(skip + len) * 4))
+            else {
                 continue;
-            }
-            for (col, src) in src_row.chunks_exact(4).enumerate() {
-                let x = x0 + col as i32;
-                if x < cx0 || x >= cx1 {
-                    continue;
-                }
-                let i = ((y * pw + x) * 4) as usize;
-                if let (Some(dst), [r, g, b, a]) = (data.get_mut(i..i + 4), src) {
-                    let mut px = [*r, *g, *b, *a].map(u32::from);
-                    if let Some(level) = grey {
-                        let luma = (px[0] * 54 + px[1] * 183 + px[2] * 19) / 256 * level / 256;
-                        px = [luma, luma, luma, px[3]];
+            };
+            match grey {
+                // (Box art and screenshots: rows without transparency copied whole.)
+                None if src.as_chunks::<4>().0.iter().fold(255, |all, px| all & px[3]) == 255 => dst.copy_from_slice(src),
+                None => {
+                    for (d, s) in dst.as_chunks_mut::<4>().0.iter_mut().zip(src.as_chunks::<4>().0) {
+                        over(d, s.map(u32::from));
                     }
-                    if *a == 255 && grey.is_none() {
-                        dst.copy_from_slice(src);
-                    } else if *a > 0 {
-                        blend(dst, px, 255);
+                }
+                Some(level) => {
+                    for (d, s) in dst.as_chunks_mut::<4>().0.iter_mut().zip(src.as_chunks::<4>().0) {
+                        let luma = (u32::from(s[0]) * 54 + u32::from(s[1]) * 183 + u32::from(s[2]) * 19) / 256 * level / 256;
+                        over(d, [luma, luma, luma, u32::from(s[3])]);
                     }
                 }
             }
@@ -814,26 +816,29 @@ fn blend_mask(pixmap: &mut Pixmap, clip: (i32, i32, i32, i32), x: i32, y: i32, w
     if width == 0 {
         return;
     }
+    let Some((skip, x, len)) = span(clip, x, width) else {
+        return;
+    };
     let pw = pixmap.width() as i32;
-    let (cx0, cy0, cx1, cy1) = clip;
     let src = [color.red(), color.green(), color.blue(), color.alpha()].map(u32::from);
     let data = pixmap.data_mut();
     for (gy, row) in coverage.chunks_exact(width).enumerate() {
         let ty = y + gy as i32;
-        if ty < cy0 || ty >= cy1 {
+        let i = ((ty * pw + x) * 4) as usize;
+        let (Some(dst), Some(cov)) = ((clip.1..clip.3).contains(&ty).then(|| data.get_mut(i..i + len * 4)).flatten(), row.get(skip..skip + len)) else {
             continue;
-        }
-        for (gx, &cov) in row.iter().enumerate() {
-            let tx = x + gx as i32;
-            if cov == 0 || tx < cx0 || tx >= cx1 {
-                continue;
-            }
-            let i = ((ty * pw + tx) * 4) as usize;
-            if let Some(px) = data.get_mut(i..i + 4) {
-                blend(px, src, u32::from(cov));
-            }
+        };
+        for (px, &k) in dst.as_chunks_mut::<4>().0.iter_mut().zip(cov) {
+            blend(px, src, u32::from(k));
         }
     }
+}
+
+/// The part of a row `width` pixels long from `x` inside `clip`'s columns: how many pixels it skips,
+/// where it starts, how long it is.
+fn span((cx0, _, cx1, _): (i32, i32, i32, i32), x: i32, width: usize) -> Option<(usize, i32, usize)> {
+    let (from, to) = (x.max(cx0), (x + width as i32).min(cx1));
+    (to > from).then(|| ((from - x) as usize, from, (to - from) as usize))
 }
 
 /// A rounded rectangle in buffer pixels, for its signed distance (negative inside).
@@ -881,26 +886,47 @@ fn premultiplied(color: Color) -> [u32; 4] {
 }
 
 /// Source-over of premultiplied `src` at coverage `k` (0-255) onto one RGBA pixel.
+/// Premultiplied `src` over the pixel `px` (as [`blend`] fully covered).
+fn over(px: &mut [u8; 4], src: [u32; 4]) {
+    let inverse = 255 - src[3] as u16;
+    for (d, s) in px.iter_mut().zip(src) {
+        *d = (s as u16 + div255(u16::from(*d) * inverse)) as u8;
+    }
+}
+
 /// [`blend`] at byte `i` of `data`, if covered and there.
 fn blend_at(data: &mut [u8], i: usize, src: [u32; 4], k: u32) {
     if k > 0
-        && let Some(px) = data.get_mut(i..i + 4)
+        && let Some(px) = data.get_mut(i..i + 4).and_then(|px| px.as_mut_array())
     {
         blend(px, src, k);
     }
 }
 
-fn blend(px: &mut [u8], src: [u32; 4], k: u32) {
-    let inverse = 255 - src[3] * k / 255;
+fn blend(px: &mut [u8; 4], src: [u32; 4], k: u32) {
+    let k = k as u16;
+    let inverse = 255 - div255(src[3] as u16 * k);
     for (d, s) in px.iter_mut().zip(src) {
-        *d = (s * k / 255 + u32::from(*d) * inverse / 255) as u8;
+        *d = (div255(s as u16 * k) + div255(u16::from(*d) * inverse)) as u8;
     }
+}
+
+/// `x / 255` for `x` up to 255 * 255, in shifts (which vectorise; the same for every such `x`).
+fn div255(x: u16) -> u16 {
+    (x + 1 + (x >> 8)) >> 8
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn div255_divides() {
+        for x in 0..=255 * 255 {
+            assert_eq!(div255(x), x / 255, "{x}");
+        }
+    }
 
     #[test]
     fn cells_fill_the_rect_with_gaps_between() {
