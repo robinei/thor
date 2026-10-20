@@ -7,7 +7,9 @@
 //!     `all.json`, `runner-<key>.json` (a runner's level), `entry-<key>.json` (an entry), the key as the
 //!     entry's units and art are named (see `clamshell_library::key_of`), the screen's id in the file;
 //!     a screen with nothing set has none;
-//!   - `keymaps.json` (none: the initial ones), `window-rules.json`, `dock.json`, `autostart.json`,
+//!   - `keymaps/<name>.json`: a keymap each, named as it is (an entry's or a runner level's own: as its
+//!     settings screen's file); no folder: the initial ones;
+//!   - `window-rules.json`, `dock.json`, `autostart.json`,
 //!     `favourites.json`, `resume.json` (where shelf and the second screen were), `brightness.json`,
 //!     `clock.json`.
 //! - `plays.jsonl`: an entry's plays, a line each (its id, start in seconds since the epoch, duration in
@@ -140,11 +142,13 @@ pub struct Store {
     dir: PathBuf,
     /// The settings screens' files as last written (by name), to write only those that changed.
     screens: Option<HashMap<String, Screen>>,
+    /// The keymaps' files as last written, likewise.
+    keymaps: Option<HashMap<String, Keymap>>,
 }
 
 impl Store {
     pub fn open(dir: &Path) -> Store {
-        Store { dir: dir.to_path_buf(), screens: None }
+        Store { dir: dir.to_path_buf(), screens: None, keymaps: None }
     }
 
     fn file(&self, name: &str) -> PathBuf {
@@ -156,7 +160,7 @@ impl Store {
         let ids = |ids: &[Arc<str>]| ids.iter().map(|id| id.to_string()).collect::<Vec<_>>();
         match save {
             Save::Settings(s) => self.save_settings(s),
-            Save::Keymaps(k) => write_json(&self.file("keymaps.json"), &k.list()),
+            Save::Keymaps(k) => self.save_keymaps(k),
             Save::Favourites(list) => write_json(&self.file("favourites.json"), list),
             Save::Resume(r) => {
                 write_json(&self.file("resume.json"), &ResumeFile { collection: r.collection.clone(), tab: r.tab.clone(), places: r.places.clone() })
@@ -225,10 +229,7 @@ impl Store {
     /// The settings screens' files there are, by name.
     fn screens_on_disk(&mut self) -> &HashMap<String, Screen> {
         let dir = self.file("settings");
-        self.screens.get_or_insert_with(|| {
-            let names = fs::read_dir(&dir).into_iter().flatten().flatten().filter_map(|e| e.file_name().into_string().ok());
-            names.filter(|n| n.ends_with(".json")).filter_map(|n| Some((n.clone(), read_json::<Screen>(&dir.join(&n))?))).collect()
-        })
+        self.screens.get_or_insert_with(|| read_folder(&dir))
     }
 
     /// The settings as one file per screen, written where it changed; the files of screens with nothing
@@ -249,16 +250,8 @@ impl Store {
             screens.insert(screen_file(id), Screen { id: Some(id.to_string()), settings, env });
         }
         screens.retain(|_, screen| !screen.settings.is_empty() || !screen.env.is_empty());
-        let dir = self.file("settings");
         let before = std::mem::take(self.screens_on_disk_mut());
-        for (name, screen) in &screens {
-            if before.get(name) != Some(screen) {
-                write_json(&dir.join(name), screen)?;
-            }
-        }
-        for name in before.keys().filter(|n| !screens.contains_key(*n)) {
-            fs::remove_file(dir.join(name))?;
-        }
+        write_folder(&self.file("settings"), &before, &screens)?;
         self.screens = Some(screens);
         Ok(())
     }
@@ -268,14 +261,27 @@ impl Store {
         self.screens.get_or_insert_default()
     }
 
-    /// The keymaps, none if they were never saved (a keymap that doesn't read back is skipped, logged).
+    /// The keymaps, by id; none if they were never saved (a keymap that doesn't read back is skipped,
+    /// logged).
     pub fn keymaps(&self) -> Option<Keymaps> {
-        let list: Vec<serde_json::Value> = read_json(&self.file("keymaps.json"))?;
-        let list = list
-            .into_iter()
-            .filter_map(|k| serde_json::from_value::<Keymap>(k).map_err(|e| log::warn!("keymaps.json: a keymap doesn't read back: {e}")).ok())
-            .collect();
+        let dir = self.file("keymaps");
+        if !dir.is_dir() {
+            return None;
+        }
+        let mut list: Vec<Keymap> = read_folder(&dir).into_values().collect();
+        list.sort_by_key(|k| k.id);
         Some(Keymaps::from_list(list))
+    }
+
+    /// The keymaps as a file each, written where it changed; the files of those gone removed.
+    fn save_keymaps(&mut self, k: &Keymaps) -> io::Result<()> {
+        let dir = self.file("keymaps");
+        fs::create_dir_all(&dir)?;
+        let before = self.keymaps.take().unwrap_or_else(|| read_folder(&dir));
+        let files: HashMap<String, Keymap> = k.list().iter().map(|k| (keymap_file(k), k.clone())).collect();
+        write_folder(&dir, &before, &files)?;
+        self.keymaps = Some(files);
+        Ok(())
     }
 
     pub fn window_rules(&self) -> WindowRules {
@@ -313,6 +319,35 @@ impl Store {
             b.set_share(&backlight, share.min(100));
         }
         b
+    }
+}
+
+/// A folder's JSON files that read as `T`, by name.
+fn read_folder<T: DeserializeOwned>(dir: &Path) -> HashMap<String, T> {
+    let names = fs::read_dir(dir).into_iter().flatten().flatten().filter_map(|e| e.file_name().into_string().ok());
+    names.filter(|n| n.ends_with(".json")).filter_map(|n| Some((n.clone(), read_json::<T>(&dir.join(&n))?))).collect()
+}
+
+/// A folder's files made `now` from `before` (as they were): those that changed written, those gone
+/// removed.
+fn write_folder<T: Serialize + PartialEq>(dir: &Path, before: &HashMap<String, T>, now: &HashMap<String, T>) -> io::Result<()> {
+    for (name, value) in now {
+        if before.get(name) != Some(value) {
+            write_json(&dir.join(name), value)?;
+        }
+    }
+    for name in before.keys().filter(|n| !now.contains_key(*n)) {
+        fs::remove_file(dir.join(name))?;
+    }
+    Ok(())
+}
+
+/// A keymap's file name: its name (see [`Keymaps::unique_name`]); an entry's or a runner level's own as
+/// its settings screen's ([`screen_file`]).
+fn keymap_file(k: &Keymap) -> String {
+    match &k.owner {
+        Some(owner) => screen_file(owner),
+        None => format!("{}.json", k.name),
     }
 }
 
@@ -514,6 +549,13 @@ mod tests {
         let back = store.keymaps().unwrap();
         assert_eq!(back, keymaps);
         assert_eq!(back.own_of(&zelda).map(|k| k.id), Some(own));
+        let mut files: Vec<String> = fs::read_dir(dir.join("keymaps")).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
+        files.sort();
+        assert_eq!(files, ["FPS.json", "Nintendo layout.json", &format!("entry-{}.json", key_of(&zelda))]);
+        keymaps.rename(fps, "Racing");
+        store.save(&Save::Keymaps(keymaps.clone())).unwrap();
+        assert!(dir.join("keymaps/Racing.json").exists() && !dir.join("keymaps/FPS.json").exists(), "renamed: its file too");
+        assert_eq!(store.keymaps().unwrap(), keymaps);
         store.save(&Save::Keymaps(Keymaps::default())).unwrap();
         assert_eq!(store.keymaps(), Some(Keymaps::default()), "none left: none, not the initial ones");
 

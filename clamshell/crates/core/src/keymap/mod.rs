@@ -17,7 +17,7 @@
 //! ([`Actuation`]): each is a binding of its own. A binding to something on or off may also repeat while
 //! on (turbo) or stay on from one actuation to the next (toggle).
 //!
-//! Kept as JSON, through serde (keymaps.json: see clamshell-system's `store`).
+//! Kept as JSON, through serde (a file each in `keymaps/`: see clamshell-system's `store`).
 
 use std::fmt::{self, Write};
 
@@ -567,8 +567,10 @@ impl Keymaps {
         self.get_mut(to).map(|k| k.layers = layers).is_some()
     }
 
-    /// A name no keymap has: `name`, else with a number after it.
+    /// A name no keymap has: `name`, else with a number after it. As its file is named (see
+    /// clamshell-system's `store`): a `/` made `-`, cut at 64 characters.
     pub fn unique_name(&self, name: &str) -> String {
+        let name: String = name.trim().replace('/', "-").chars().take(64).collect();
         let name = name.trim();
         let taken = |n: &str| self.list.iter().any(|k| k.name == n);
         if !taken(name) {

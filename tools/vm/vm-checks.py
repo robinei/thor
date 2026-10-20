@@ -148,8 +148,14 @@ def plays():
 
 
 def saved_keymaps():
-    """The keymaps as saved: each as JSON (clamshell-core's Keymap)."""
-    return kept("keymaps.json") or []
+    """The keymaps as saved (a file each in keymaps/), by id: each as JSON (clamshell-core's Keymap)."""
+    out = sh(f"cat {DATA}/keymaps/*.json 2>/dev/null")
+    decoder, keymaps, at = json.JSONDecoder(), [], 0
+    while out[at:].strip():
+        at = len(out) - len(out[at:].lstrip())
+        keymap, at = decoder.raw_decode(out, at)
+        keymaps.append(keymap)
+    return sorted(keymaps, key=lambda k: k["id"])
 
 
 def keymap_named(name):

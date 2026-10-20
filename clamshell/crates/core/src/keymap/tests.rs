@@ -253,6 +253,9 @@ fn adding_renaming_duplicating_removing() {
     assert!(maps.rename(a, "Rally"));
     assert!(maps.rename(a, "Rally"), "its own name again");
     assert_eq!(maps.get(a).map(|k| k.name.as_str()), Some("Rally"));
+    let slash = maps.add(" A/B ");
+    assert_eq!(maps.get(slash).map(|k| k.name.as_str()), Some("A-B"), "a name that makes a file name");
+    maps.remove(slash);
     assert!(maps.remove(copy) && !maps.remove(copy));
     assert_eq!(maps.add("New"), 4, "ids are never taken twice while the highest stays");
     assert_eq!(nintendo(1).get(Input::Button(Button::X)).map(|b| b.output), Some(Output::Pad(PadOut::Button(Button::Y))));
