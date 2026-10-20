@@ -224,8 +224,8 @@ with the lid closed) and `40-armada-wake-ledger` (what woke it, logged).
 
 To know:
 - Hibernate: nobody has tried it on the Thor (Thorch sets `AllowHibernation=no`, Armada masks it).
-- The AYN key is `KEY_F24` from its own device (`gpio-keys-ayn`), not the gamepad: ClamShell has to read
-  that device for Home. Back is `BTN_BACK` on the gamepad.
+- The AYN key is `KEY_F24` from its own device (`gpio-keys-ayn`), not the gamepad; ClamShell already reads
+  it there (`pad::device::AynKey`). Back is `BTN_BACK` on the gamepad.
 - Open on Armada: the bottom touchscreen keeping a contact after fingers lift (#757, a candidate patch,
   untested); charging at about 4 W against Android's 27 W (#89).
 - SDR104: Thorch tried it and reverted ("unstable UHS modes"); Armada lifts the mask but keeps a 37.5 MHz
