@@ -486,40 +486,61 @@ impl<'a> Canvas<'a> {
     /// A rounded rectangle, filled.
     pub fn rounded(&mut self, r: Rect, radius: f32, color: impl Into<Color>) {
         let shape = RoundedRect::new(r, radius, self.scale, self.offset);
-        self.shade(shape.bounds(1.0), color.into(), |x, y| (0.5 - shape.distance(x, y)).clamp(0.0, 1.0));
+        self.shade(shape.bounds(1.0), color.into(), Runs::One, |x, y| (0.5 - shape.distance(x, y)).clamp(0.0, 1.0));
     }
 
     /// A rounded rectangle's outline, `width` wide, centred on its edge.
     pub fn outline(&mut self, r: Rect, radius: f32, width: f32, color: impl Into<Color>) {
         let shape = RoundedRect::new(r, radius, self.scale, self.offset);
         let half = width * self.scale / 2.0;
-        self.shade(shape.bounds(half + 1.0), color.into(), |x, y| (half + 0.5 - shape.distance(x, y).abs()).clamp(0.0, 1.0));
+        self.shade(shape.bounds(half + 1.0), color.into(), Runs::Any, |x, y| (half + 0.5 - shape.distance(x, y).abs()).clamp(0.0, 1.0));
     }
 
     pub fn circle(&mut self, cx: f32, cy: f32, r: f32, color: impl Into<Color>) {
         let (cx, cy, r) = (self.px(cx), self.py(cy), r * self.scale);
         let bounds = (cx - r - 1.0, cy - r - 1.0, cx + r + 1.0, cy + r + 1.0);
-        self.shade(bounds, color.into(), |x, y| (0.5 - ((x - cx).hypot(y - cy) - r)).clamp(0.0, 1.0));
+        self.shade(bounds, color.into(), Runs::One, |x, y| (0.5 - ((x - cx).hypot(y - cy) - r)).clamp(0.0, 1.0));
     }
 
     /// Blends `color` over the pixels in `bounds` (x0, y0, x1, y1 in buffer pixels) with the coverage
-    /// `coverage` gives for each pixel centre.
-    fn shade(&mut self, (x0, y0, x1, y1): (f32, f32, f32, f32), color: Color, coverage: impl Fn(f32, f32) -> f32) {
+    /// `coverage` gives for each pixel centre. With [`Runs::One`], a row is asked from either end only
+    /// up to its first fully covered pixel; the pixels between are filled.
+    fn shade(&mut self, (x0, y0, x1, y1): (f32, f32, f32, f32), color: Color, runs: Runs, coverage: impl Fn(f32, f32) -> f32) {
         let pw = self.pixmap.width() as i32;
         let (cx0, cy0, cx1, cy1) = self.clip;
         let (x0, y0) = ((x0.floor() as i32).max(cx0), (y0.floor() as i32).max(cy0));
         let (x1, y1) = ((x1.ceil() as i32).min(cx1), (y1.ceil() as i32).min(cy1));
         let src = premultiplied(color);
         let data = self.pixmap.data_mut();
+        let k_at = |x: i32, y: i32| (coverage(x as f32 + 0.5, y as f32 + 0.5) * 255.0) as u32;
+        let at = |x: i32, y: i32| ((y * pw + x) * 4) as usize;
         for y in y0..y1 {
-            for x in x0..x1 {
-                let k = (coverage(x as f32 + 0.5, y as f32 + 0.5) * 255.0) as u32;
-                let i = ((y * pw + x) * 4) as usize;
-                if k > 0
-                    && let Some(px) = data.get_mut(i..i + 4)
+            let (mut from, mut to) = (x0, x1);
+            if runs == Runs::One {
+                while from < to
+                    && let k = k_at(from, y)
+                    && k < 255
                 {
-                    blend(px, src, k);
+                    blend_at(data, at(from, y), src, k);
+                    from += 1;
                 }
+                while to > from
+                    && let k = k_at(to - 1, y)
+                    && k < 255
+                {
+                    blend_at(data, at(to - 1, y), src, k);
+                    to -= 1;
+                }
+                if src[3] == 255 {
+                    let opaque = src.map(|c| c as u8);
+                    for px in data.get_mut(at(from, y)..at(to, y)).into_iter().flat_map(|run| run.chunks_exact_mut(4)) {
+                        px.copy_from_slice(&opaque);
+                    }
+                    continue;
+                }
+            }
+            for x in from..to {
+                blend_at(data, at(x, y), src, k_at(x, y));
             }
         }
     }
@@ -557,7 +578,7 @@ impl<'a> Canvas<'a> {
         let (dx, dy) = (bx - ax, by - ay);
         let len2 = (dx * dx + dy * dy).max(1e-6);
         let bounds = (ax.min(bx) - half - 1.0, ay.min(by) - half - 1.0, ax.max(bx) + half + 1.0, ay.max(by) + half + 1.0);
-        self.shade(bounds, color.into(), |x, y| {
+        self.shade(bounds, color.into(), Runs::One, |x, y| {
             let t = (((x - ax) * dx + (y - ay) * dy) / len2).clamp(0.0, 1.0);
             let d = (x - ax - t * dx).hypot(y - ay - t * dy);
             (half + 0.5 - d).clamp(0.0, 1.0)
@@ -846,12 +867,29 @@ impl RoundedRect {
     }
 }
 
+/// How a shape covers each row of pixels: in one run (filled and convex: a rounded rectangle, a
+/// circle, a line), or any way (an outline).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Runs {
+    One,
+    Any,
+}
+
 fn premultiplied(color: Color) -> [u32; 4] {
     let c = color.premultiply().to_color_u8();
     [c.red(), c.green(), c.blue(), c.alpha()].map(u32::from)
 }
 
 /// Source-over of premultiplied `src` at coverage `k` (0-255) onto one RGBA pixel.
+/// [`blend`] at byte `i` of `data`, if covered and there.
+fn blend_at(data: &mut [u8], i: usize, src: [u32; 4], k: u32) {
+    if k > 0
+        && let Some(px) = data.get_mut(i..i + 4)
+    {
+        blend(px, src, k);
+    }
+}
+
 fn blend(px: &mut [u8], src: [u32; 4], k: u32) {
     let inverse = 255 - src[3] * k / 255;
     for (d, s) in px.iter_mut().zip(src) {
