@@ -7,6 +7,7 @@
 
 use std::collections::HashMap;
 use std::process::Command;
+use std::sync::mpsc::{Receiver, Sender};
 
 use tiny_skia::{Color, LineCap, LineJoin, Paint, Path, PathBuilder, Pixmap, PremultipliedColorU8, Stroke, Transform};
 
@@ -230,6 +231,60 @@ pub fn rgb(c: u32) -> Color {
 
 type Glyph = (fontdue::Metrics, Vec<u8>);
 
+/// Which font draws a character.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Face {
+    Builtin,
+    /// A font found for characters the built-in one lacks (`DrawCache`'s fallbacks).
+    Fallback(usize),
+    /// Being looked for: not drawn yet.
+    Waiting,
+}
+
+/// A font found for a character: fontconfig's choice (`path`), and the font read from it unless it
+/// was read before or lacks the character.
+pub struct Found {
+    pub ch: char,
+    pub path: Option<String>,
+    pub font: Option<fontdue::Font>,
+}
+
+/// Asks fontconfig for a sans-serif font with `ch`, and reads it unless `loaded` says it was.
+fn find_font(ch: char, loaded: &mut dyn FnMut(&str) -> bool) -> Found {
+    let pattern = format!("sans-serif:charset={:x}", u32::from(ch));
+    let path = Command::new("fc-match")
+        .args(["--format=%{file}", &pattern])
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .and_then(|out| String::from_utf8(out.stdout).ok())
+        .filter(|p| !p.is_empty());
+    let font = path.as_deref().filter(|p| !loaded(p)).and_then(|path| {
+        let bytes = std::fs::read(path).map_err(|e| log::warn!("font {path}: {e}")).ok()?;
+        let font = fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default()).map_err(|e| log::warn!("font {path}: {e}")).ok()?;
+        // (Kept only for a character it has: fontconfig's best may lack it.)
+        (font.lookup_glyph_index(ch) != 0).then_some(font)
+    });
+    Found { ch, path, font }
+}
+
+/// The font finding thread: characters in, the fonts found for them out through `done`.
+pub fn spawn_font_finder(requests: Receiver<char>, done: impl Fn(Found) -> bool + Send + 'static) -> std::io::Result<()> {
+    std::thread::Builder::new().name("fonts".into()).spawn(move || {
+        let mut read: Vec<String> = Vec::new();
+        for ch in requests {
+            let found = find_font(ch, &mut |path| read.iter().any(|p| p == path));
+            if found.font.is_some() {
+                read.extend(found.path.clone());
+            }
+            if !done(found) {
+                return;
+            }
+        }
+    })?;
+    Ok(())
+}
+
 /// The UI's font, built in so text looks the same everywhere: Noto Sans Regular, unmodified (SIL Open
 /// Font License 1.1, fonts/OFL.txt).
 const NOTO_SANS: &[u8] = include_bytes!("../fonts/NotoSans-Regular.ttf");
@@ -241,7 +296,10 @@ pub struct DrawCache {
     /// Fonts for characters the built-in one lacks (a Japanese title, say), found through fontconfig
     /// when first needed; and for each such character, which of them has it (none: no font does).
     fallbacks: Vec<(String, fontdue::Font)>,
-    fallback_for: HashMap<char, Option<usize>>,
+    fallback_for: HashMap<char, Face>,
+    /// Where characters to find a font for go (a font is a few MB to read and parse); `None` finds it
+    /// at once (snapshots, tests).
+    finder: Option<Sender<char>>,
     glyphs: HashMap<(char, u32), Glyph>,
     /// Icon coverage masks, by icon and side in pixels.
     icons: HashMap<(Icon, u32), Vec<u8>>,
@@ -251,15 +309,23 @@ pub struct DrawCache {
 impl DrawCache {
     pub fn load() -> DrawCache {
         let font = fontdue::Font::from_bytes(NOTO_SANS, fontdue::FontSettings::default()).map_err(|e| log::error!("the built-in font: {e}")).ok();
-        DrawCache { font, fallbacks: Vec::new(), fallback_for: HashMap::new(), glyphs: HashMap::new(), icons: HashMap::new(), path: None }
+        DrawCache { font, fallbacks: Vec::new(), fallback_for: HashMap::new(), finder: None, glyphs: HashMap::new(), icons: HashMap::new(), path: None }
+    }
+
+    /// As [`DrawCache::load`], fonts for characters the built-in one lacks found by `finder` (see
+    /// [`spawn_font_finder`]) and handed back through [`DrawCache::found`]; such a character isn't drawn
+    /// until then.
+    pub fn with_finder(finder: Sender<char>) -> DrawCache {
+        DrawCache { finder: Some(finder), ..DrawCache::load() }
     }
 
     fn glyph(&mut self, ch: char, px: f32) -> Option<&Glyph> {
         let key = (ch, px.to_bits());
         if !self.glyphs.contains_key(&key) {
-            let font = match self.fallback(ch) {
-                Some(i) => self.fallbacks.get(i).map(|(_, f)| f),
-                None => self.font.as_ref(),
+            let font = match self.face(ch) {
+                Face::Fallback(i) => self.fallbacks.get(i).map(|(_, f)| f),
+                Face::Builtin => self.font.as_ref(),
+                Face::Waiting => None,
             }?;
             let glyph = font.rasterize(ch, px);
             self.glyphs.insert(key, glyph);
@@ -267,41 +333,44 @@ impl DrawCache {
         self.glyphs.get(&key)
     }
 
-    /// The fallback font to draw `ch` with, if the built-in font lacks it and another has it.
-    fn fallback(&mut self, ch: char) -> Option<usize> {
+    /// The font to draw `ch` with: the built-in one, unless it lacks `ch` and another has it.
+    fn face(&mut self, ch: char) -> Face {
         if ch.is_control() || self.font.as_ref().is_none_or(|f| f.lookup_glyph_index(ch) != 0) {
-            return None;
+            return Face::Builtin;
         }
         if let Some(&known) = self.fallback_for.get(&ch) {
             return known;
         }
-        let found = self.find_fallback(ch);
-        if found.is_none() {
-            log::debug!("no font has {ch:?}");
-        }
-        self.fallback_for.insert(ch, found);
-        found
+        let face = match self.fallbacks.iter().position(|(_, f)| f.lookup_glyph_index(ch) != 0) {
+            Some(i) => Face::Fallback(i),
+            None => match &self.finder {
+                Some(finder) if finder.send(ch).is_ok() => Face::Waiting,
+                Some(_) => Face::Builtin,
+                None => {
+                    let found = find_font(ch, &mut |path| self.fallbacks.iter().any(|(p, _)| p == path));
+                    return self.found(found);
+                }
+            },
+        };
+        self.fallback_for.insert(ch, face);
+        face
     }
 
-    /// Asks fontconfig for a sans-serif font with `ch`, loading it once.
-    fn find_fallback(&mut self, ch: char) -> Option<usize> {
-        if let Some(i) = self.fallbacks.iter().position(|(_, f)| f.lookup_glyph_index(ch) != 0) {
-            return Some(i);
+    /// What the finder found for a character: its font now used (and the character drawn), or the
+    /// built-in one's mark for a missing character if no font has it.
+    pub fn found(&mut self, found: Found) -> Face {
+        let Found { ch, path, font } = found;
+        if let (Some(path), Some(font)) = (path.clone(), font) {
+            log::info!("fallback font for {ch:?}: {path}");
+            self.fallbacks.push((path, font));
         }
-        let pattern = format!("sans-serif:charset={:x}", u32::from(ch));
-        let out = Command::new("fc-match").args(["--format=%{file}", &pattern]).output().ok()?;
-        let path = String::from_utf8(out.stdout).ok().filter(|p| out.status.success() && !p.is_empty())?;
-        if self.fallbacks.iter().any(|(p, _)| *p == path) {
-            return None;
+        let face =
+            path.and_then(|path| self.fallbacks.iter().position(|(p, f)| *p == path && f.lookup_glyph_index(ch) != 0)).map_or(Face::Builtin, Face::Fallback);
+        if face == Face::Builtin {
+            log::debug!("no font has {ch:?}");
         }
-        let bytes = std::fs::read(&path).map_err(|e| log::warn!("font {path}: {e}")).ok()?;
-        let font = fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default())
-            .map_err(|e| log::warn!("font {path}: {e}"))
-            .ok()
-            .filter(|f| f.lookup_glyph_index(ch) != 0)?;
-        log::info!("fallback font for {ch:?}: {path}");
-        self.fallbacks.push((path, font));
-        Some(self.fallbacks.len() - 1)
+        self.fallback_for.insert(ch, face);
+        face
     }
 
     fn ascent(&self, px: f32) -> f32 {
@@ -808,17 +877,41 @@ mod tests {
     }
 
     #[test]
+    fn a_font_found_on_the_finder_thread_draws_the_character_once_back() {
+        let offered = Command::new("fc-match").args(["--format=%{file}", "sans-serif:charset=3042"]).output();
+        if !offered.is_ok_and(|o| o.status.success() && !o.stdout.is_empty()) {
+            return;
+        }
+        let (requests, finder) = std::sync::mpsc::channel();
+        let (done, found) = std::sync::mpsc::channel();
+        spawn_font_finder(finder, move |f| done.send(f).is_ok()).unwrap();
+        let mut cache = DrawCache::with_finder(requests);
+        assert_eq!(cache.face('あ'), Face::Waiting);
+        assert!(cache.glyph('あ', 20.0).is_none(), "not drawn while looked for");
+        // (Another character the built-in font lacks: looked for too, in turn.)
+        assert_eq!(cache.face('い'), Face::Waiting);
+        let first = found.recv().unwrap();
+        assert!(first.font.is_some());
+        assert!(matches!(cache.found(first), Face::Fallback(0)));
+        assert!(cache.glyph('あ', 20.0).is_some_and(|(m, _)| m.width > 0));
+        // The same font for the second: not read again.
+        let second = found.recv().unwrap();
+        assert!(second.font.is_none());
+        assert!(matches!(cache.found(second), Face::Fallback(0)));
+        assert_eq!(cache.fallbacks.len(), 1);
+    }
+
+    #[test]
     fn the_built_in_font_covers_the_ui_and_others_fill_in() {
         let mut cache = DrawCache::load();
         for ch in "Aa0…·°–€éøÅßΩЖ".chars() {
-            assert_eq!(cache.fallback(ch), None, "{ch:?} is in the built-in font");
+            assert_eq!(cache.face(ch), Face::Builtin, "{ch:?} is in the built-in font");
             assert!(cache.glyph(ch, 20.0).is_some_and(|(m, _)| m.width > 0), "{ch:?} draws");
         }
         // A kana: from a system font, when fontconfig knows one (not every machine has one).
         let offered = Command::new("fc-match").args(["--format=%{file}", "sans-serif:charset=3042"]).output();
         if offered.is_ok_and(|o| o.status.success() && !o.stdout.is_empty()) {
-            let i = cache.fallback('あ');
-            assert!(i.is_some(), "fontconfig offers a font with あ, so it is used");
+            assert!(matches!(cache.face('あ'), Face::Fallback(_)), "fontconfig offers a font with あ, so it is used");
             assert!(cache.glyph('あ', 20.0).is_some_and(|(m, _)| m.width > 0));
         }
     }

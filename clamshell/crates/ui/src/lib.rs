@@ -167,6 +167,22 @@ fn install_images(handle: &LoopHandle<'static, App>) -> Result<images::Images, E
     Ok(images::Images::new(requests))
 }
 
+/// Fonts for characters the built-in one lacks: found on a thread, back through the event loop.
+fn install_fonts(handle: &LoopHandle<'static, App>) -> Result<DrawCache, Error> {
+    let (requests, finder) = std::sync::mpsc::channel();
+    let (done, results) = channel::channel();
+    draw::spawn_font_finder(finder, move |found| done.send(found).is_ok())?;
+    handle
+        .insert_source(results, |event, _, app: &mut App| {
+            if let channel::Event::Msg(found) = event {
+                app.fonts.found(found);
+                app.mark(Dirty::BOTH);
+            }
+        })
+        .map_err(|e| e.error)?;
+    Ok(DrawCache::with_finder(requests))
+}
+
 /// How the bottom view is shown.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BottomKind {
@@ -284,7 +300,7 @@ impl App {
             qh: qh.clone(),
             views: Screens::default(),
             state,
-            fonts: DrawCache::load(),
+            fonts: install_fonts(&loop_handle)?,
             keyboard: None,
             pointer: None,
             cursor_shapes: smithay_client_toolkit::seat::pointer::cursor_shape::CursorShapeManager::bind(globals, qh).ok(),

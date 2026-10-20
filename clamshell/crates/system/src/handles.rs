@@ -1,11 +1,11 @@
 //! Carrying out the state's effects: each goes to the thread, the device or the database it is for.
 
-use clamshell_core::{Effect, Instance, Save, Watch, WindowCommand};
+use clamshell_core::{Effect, Instance, Watch, WindowCommand};
 
 use crate::job::Runner;
 use crate::keyboard::VirtualKeyboard;
 use crate::paths::Paths;
-use crate::store::Store;
+use crate::store::{Write, Writer};
 use crate::tuning::Tuning;
 use crate::worker::Worker;
 use crate::{battery, bluetooth, brightness, launcher, mixer, pad, sway, touchpad, wifi};
@@ -13,8 +13,8 @@ use crate::{battery, bluetooth, brightness, launcher, mixer, pad, sway, touchpad
 /// The threads (and the one device and the database) that effects go to.
 pub struct Handles {
     pub paths: Paths,
-    /// Where saves go; `None` if it couldn't be opened (then nothing is kept).
-    pub store: Option<Store>,
+    /// Where saves go; `None` if the database couldn't be opened (then nothing is kept).
+    pub store: Option<Writer>,
     /// What waits for its metadata.
     pub fetching: crate::meta::Queue,
     /// Reads the library again (and fetches what it wants), on a thread; `true`: the metadata misses
@@ -89,15 +89,17 @@ impl Handles {
             }
             Effect::Keymap(keymap) => self.tuning.keymap(keymap),
             Effect::CalibrateGyro => self.tuning.calibrate_gyro(),
-            Effect::Save(save) => self.save(save),
+            Effect::Save(save) => {
+                if let Some(store) = &self.store {
+                    store.send(Write::Save(save.clone()));
+                }
+            }
             Effect::FetchFirst(ids) => self.fetching.first(ids),
             Effect::Tool(tool) => (self.rescan)(*tool == clamshell_library::Tool::Refetch),
             Effect::ReadPosition { game, file } => self.launcher.send(launcher::Command::ReadPosition { game: game.clone(), file: file.clone() }),
             Effect::RecordPlay { game, start, duration } => {
-                if let Some(store) = &self.store
-                    && let Err(e) = store.add_play(game, *start, *duration)
-                {
-                    log::warn!("recording the play of {game}: {e}");
+                if let Some(store) = &self.store {
+                    store.send(Write::Play { id: game.clone(), start: *start, duration: *duration });
                 }
             }
             Effect::Window(command) => self.window(command),
@@ -187,27 +189,6 @@ impl Handles {
             WindowCommand::BottomPower(on) => sway.send(sway::Command::Power(*on)),
             WindowCommand::DownRules(rules) => sway.send(sway::Command::DownRules(rules.clone())),
             WindowCommand::LandRules(ids) => sway.send(sway::Command::LandRules(ids.clone())),
-        }
-    }
-
-    /// Saves what the state keeps, replacing what was saved of it.
-    fn save(&mut self, save: &Save) {
-        let Some(store) = self.store.as_mut() else {
-            return;
-        };
-        let saved = match save {
-            Save::Settings(s) => store.save_settings(s),
-            Save::Keymaps(k) => store.save_keymaps(k),
-            Save::Favourites(ids) => store.save_favourites(ids),
-            Save::Resume(r) => store.save_resume(r),
-            Save::Brightness(b) => store.save_brightness(b),
-            Save::TwelveHour(on) => store.save_twelve_hour(*on),
-            Save::WindowRules(r) => store.save_window_rules(r),
-            Save::Dock(ids) => store.save_dock(ids),
-            Save::Autostart(ids) => store.save_autostart(ids),
-        };
-        if let Err(e) = saved {
-            log::warn!("store: {e}");
         }
     }
 }

@@ -12,7 +12,7 @@ use clamshell_system::keyboard::VirtualKeyboard;
 use clamshell_system::library::{self, Sources};
 use clamshell_system::meta;
 use clamshell_system::paths::Paths;
-use clamshell_system::store::Store;
+use clamshell_system::store::{Store, Writer};
 use clamshell_system::tuning::Tuning;
 use clamshell_system::worker::Worker;
 use clamshell_system::{
@@ -155,6 +155,7 @@ pub fn start(
     let tuning = Tuning { hardware: started("tuning", tuning::spawn()), pad: pad.clone(), mangohud: paths.mangohud.clone() };
     tuning.apply(global, None);
     let store = paths.db().and_then(|f| Store::open(&f).map_err(|e| log::error!("store: {}: {e}", f.display())).ok());
+    let store = store.and_then(|store| Writer::spawn(store).map_err(|e| log::error!("store thread: {e}")).ok());
     Handles {
         paths: paths.clone(),
         store,

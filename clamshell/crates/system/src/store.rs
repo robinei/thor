@@ -2,7 +2,9 @@
 //! short by a crash or power loss leaves the last complete one): play time, favourites, the entries'
 //! settings and environment, the keymaps, the window rules, the dock's pins, where shelf and the second
 //! screen were, and the screens' brightness. Each is saved whole, replacing what was there, in one
-//! transaction. Play time is added a row per play, by the launcher's thread on a connection of its own.
+//! transaction. Play time is added a row per play. ClamShell's own writes go through a thread of their
+//! own ([`Writer`]): one waits while another connection writes (the library's, the metadata's), and now
+//! and then for the disk, which mustn't hold up the screens.
 //!
 //! Tables:
 //!
@@ -28,13 +30,15 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::mpsc::{self, Sender};
+use std::thread::JoinHandle;
 use std::time::Duration;
 
 use clamshell_core::bottom_screen::{WindowRule, WindowRules};
 use clamshell_core::keymap::{Keymap, Keymaps};
 use clamshell_core::levels::Brightness;
 use clamshell_core::settings::{Setting, Settings};
-use clamshell_core::{Dock, Resume};
+use clamshell_core::{Dock, Resume, Save};
 use clamshell_library::{Meta, Plays};
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -81,6 +85,57 @@ pub struct Store {
     db: Connection,
 }
 
+/// A write for the [`Writer`].
+pub enum Write {
+    Save(Save),
+    /// A play of entry `id`.
+    Play {
+        id: Arc<str>,
+        start: u64,
+        duration: u64,
+    },
+}
+
+/// The database's writes, made in order on a thread of their own. Dropped, it finishes those sent
+/// first.
+pub struct Writer {
+    tx: Option<Sender<Write>>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl Writer {
+    pub fn spawn(mut store: Store) -> std::io::Result<Writer> {
+        let (tx, rx) = mpsc::channel::<Write>();
+        let thread = std::thread::Builder::new().name("store".into()).spawn(move || {
+            for write in rx {
+                let written = match &write {
+                    Write::Save(save) => store.save(save),
+                    Write::Play { id, start, duration } => store.add_play(id, *start, *duration),
+                };
+                if let Err(e) = written {
+                    log::warn!("store: {e}");
+                }
+            }
+        })?;
+        Ok(Writer { tx: Some(tx), thread: Some(thread) })
+    }
+
+    pub fn send(&self, write: Write) {
+        if self.tx.as_ref().is_none_or(|tx| tx.send(write).is_err()) {
+            log::warn!("store: its thread is gone: not written");
+        }
+    }
+}
+
+impl Drop for Writer {
+    fn drop(&mut self) {
+        drop(self.tx.take());
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
 impl Store {
     /// Opens `file` (its folder and tables made if missing).
     pub fn open(file: &Path) -> Result<Store, Error> {
@@ -93,6 +148,21 @@ impl Store {
         db.pragma_update(None, "synchronous", "NORMAL")?;
         db.execute_batch(SCHEMA)?;
         Ok(Store { db })
+    }
+
+    /// Saves what the state keeps, replacing what was saved of it.
+    pub fn save(&mut self, save: &Save) -> Result<(), Error> {
+        match save {
+            Save::Settings(s) => self.save_settings(s),
+            Save::Keymaps(k) => self.save_keymaps(k),
+            Save::Favourites(ids) => self.save_favourites(ids),
+            Save::Resume(r) => self.save_resume(r),
+            Save::Brightness(b) => self.save_brightness(b),
+            Save::TwelveHour(on) => self.save_twelve_hour(*on),
+            Save::WindowRules(r) => self.save_window_rules(r),
+            Save::Dock(ids) => self.save_dock(ids),
+            Save::Autostart(ids) => self.save_autostart(ids),
+        }
     }
 
     /// Every entry's plays, summed up.
@@ -383,6 +453,20 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("clamshell-store-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         (Store::open(&dir.join("clamshell.db")).unwrap(), dir)
+    }
+
+    #[test]
+    fn the_writer_writes_in_order_and_finishes_before_it_is_gone() {
+        let (db, dir) = store("writer");
+        let writer = Writer::spawn(db).unwrap();
+        writer.send(Write::Save(Save::Favourites(vec!["a".into()])));
+        writer.send(Write::Save(Save::Favourites(vec!["b".into()])));
+        writer.send(Write::Play { id: "snes:Zelda.sfc".into(), start: 100, duration: 30 });
+        drop(writer);
+        let db = Store::open(&dir.join("clamshell.db")).unwrap();
+        assert_eq!(db.favourites().unwrap(), HashSet::from(["b".to_owned()]));
+        assert_eq!(db.plays().unwrap().get("snes:Zelda.sfc"), Some(&Plays { count: 1, seconds: 30, last: 130 }));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
