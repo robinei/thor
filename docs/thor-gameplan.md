@@ -128,8 +128,12 @@ Known issues and risks, to check first:
    2026-10-15 in its embedded config). Not known: whether the Thor's firmware and drivers come back
    after a resume (the remote processors for audio, sensors, Wi-Fi; the GPU's zap shader; the panels);
    whether the ABL or U-Boot path matters; whether the RTC alarm wakes the Thor from suspend (without
-   it suspend-then-hibernate never gets to hibernate); whether the first boot's growpart, swap file and
-   command line rewrite work (never run: the image hasn't been booted). If the card is not up when
+   it suspend-then-hibernate never gets to hibernate); the first boot's growpart, swap file and command
+   line rewrite were run in the aarch64 VM on 2026-10-20 (a copy of the image, enlarged to 40 GB, booted
+   with the VM's kernel): partition 2 grown to the card and its ext4 resized online, a 16 GiB /swapfile
+   in fstab, and `resume=LABEL=THOR_ROOT resume_offset=403456` (the file's first block, checked with
+   debugfs) in the loader entry and in /KERNEL (thor-boot, with the initramfs rebuilt for 7.2.6-thor).
+   Not run: resuming from it, nor anything that needs the Thor's own hardware. If the card is not up when
    the initramfs's resume runs (thor-root-wait gives it 10 s) the hibernated state is lost and the
    machine boots fresh.
 9. Not done: fan control. ClamShell applies its settings again on waking.
