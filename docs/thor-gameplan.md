@@ -39,8 +39,8 @@ Android kept. Written 2026-10-14, before having the device; everything here is u
   without: our image has both, so it would go the EFI way under either bootloader. Its menu (hold Volume
   down at power-on): Boot mode Linux, Boot source SD card, and **Device model: AYN Thor**, which it needs
   before it boots anything (`no match found for DTB!` otherwise). The way back: `restore_backup_abl.sh`,
-  or `fastboot flash abl_a`/`abl_b` with the backups; an ABL broken past fastboot needs EDL, and there is
-  no public EDL package for the Thor. **ROCKNIX's own updates and its install to internal storage
+  or `fastboot flash abl_a`/`abl_b` with the backups; an ABL broken past fastboot needs EDL, with AYN's
+  factory package (day one, step 3). **ROCKNIX's own updates and its install to internal storage
   re-flash both ABL slots** (`updateabl`), even over stock: boot ROCKNIX from SD only, never update or
   install it. Its `next` moved to OpenABL (OpenHandheldCollective/OpenABL v1.1, 2026-10-19; it also boots
   `BOOTAA64.EFI`, BLS, UKIs, extlinux and `/KERNEL`), so its next release will flash OpenABL instead.
@@ -242,12 +242,22 @@ To know:
    switch works, skip step 4: no ROCKNIX ABL. If it needs unlocking, weigh that (it erases Android's data)
    against flashing ROCKNIX's ABL, which doesn't.
 3. Back up first anyway: the stock ABL (ROCKNIX's `backup_abl.sh`) and anything else the install notes
-   call out, copied off the device. AYN's own images, linked in the AYN Discord's #thor-general-faq ("Does
-   AYN provide the OTA images for manual install?", 2026-02-01): Thor 20260112 Firmware, Thor 20251120 OTA
-   Rollback, Thor 20260206 OTA 1.0.0.377. The OTAs install from Android (renamed `update.zip` at the
-   internal storage's root; Settings → System → Thor OTA → ⋮ → Local Update; 35 % battery or more; may erase
-   data). Check what the Firmware package holds (an `abl` image, an EDL programmer) before relying on it as
-   the way back from a bad ABL flash.
+   call out, copied off the device, and `persist` (per-device data: sensor calibration and the like),
+   which AYN's full package would otherwise overwrite with its own.
+
+   **The way back, whatever breaks: AYN's factory packages** (from the AYN Discord's #thor-general-faq,
+   in `~/Downloads/thor/`): `Thor_20260112.7z` and `Thor_20260206.7z` (1.0.0.377) are full flash packages
+   for Qualcomm's emergency download mode (EDL): every partition's image (the stock `abl.elf`, AYN's
+   U-Boot `loader.img`, boot, super, the firmware), `rawprogram*.xml` and `patch*.xml` for UFS, and the
+   device programmer `xbl_s_devprg_ns.melf`. EDL is in the boot ROM, so this works with the ABL or anything
+   after it broken. AYN's tutorial (the `.docx` beside them): QFIL (QPST 2.7.496, in the same folder;
+   Windows), storage UFS, the `xbl` programmer, all the XMLs; the Thor off and connected by USB, hold Power
+   and both volume keys until the computer sees the port (Qualcomm's 9008), then Download. On Linux,
+   Linaro's `qdl` does the same: `qdl --storage ufs xbl_s_devprg_ns.melf rawprogram*.xml patch*.xml`. The
+   full flash erases Android's data; leave `persist.img` out (edit it out of the rawprogram XML) unless
+   persist itself is lost. For only the ABL, `fastboot flash abl_a`/`abl_b` with the stock `abl.elf` (or
+   the backup) while fastboot still works. `Thor_20251120_ota.zip` is an ordinary Android OTA
+   (`payload.bin`): rollback from Android's Local Update (renamed `update.zip`, 35 % battery or more).
 4. Only without a stock Linux mode: flash OpenABL (downloaded; to `abl_a` and `abl_b`, by `dd` as root in
    Android, "Run Script as Root", after step 3's backup), ROCKNIX's ABL the fallback (`flash_abl.sh`).
    Check that Android still boots. In the menu (hold Volume down at power-on): Boot mode Linux, Boot source
