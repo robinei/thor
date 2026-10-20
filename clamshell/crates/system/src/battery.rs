@@ -14,13 +14,11 @@ use std::sync::mpsc::Receiver;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use clamshell_core::battery::{Battery, Charge, Group, Spender};
-use clamshell_core::{Event, Instance, Reading};
-use zbus::zvariant::OwnedObjectPath;
-
-use crate::dbus::{self, Kept};
+use crate::dbus::{self, Bus, Kept, Path};
 use crate::worker::{self, Next, Worker};
 use crate::{Closed, Sink, cgroup, drm, sys};
+use clamshell_core::battery::{Battery, Charge, Group, Spender};
+use clamshell_core::{Event, Instance, Reading};
 
 const SAMPLE_EVERY: Duration = Duration::from_secs(2);
 const HISTORY_EVERY: Duration = Duration::from_secs(60);
@@ -44,20 +42,8 @@ enum ChargeState {
     Charging = 1,
 }
 
-#[zbus::proxy(interface = "org.freedesktop.UPower", default_service = "org.freedesktop.UPower", default_path = "/org/freedesktop/UPower", gen_async = false)]
-trait UPower {
-    fn enumerate_devices(&self) -> zbus::Result<Vec<OwnedObjectPath>>;
-}
-
-#[zbus::proxy(interface = "org.freedesktop.UPower.Device", default_service = "org.freedesktop.UPower", gen_async = false)]
-trait Device {
-    #[zbus(property, name = "Type")]
-    fn kind(&self) -> zbus::Result<u32>;
-    #[zbus(property)]
-    fn power_supply(&self) -> zbus::Result<bool>;
-    /// (time, value, state) points, newest first.
-    fn get_history(&self, kind: &str, timespan: u32, resolution: u32) -> zbus::Result<Vec<(u32, f64, u32)>>;
-}
+const UPOWER: &str = "org.freedesktop.UPower";
+const UPOWER_DEVICE: &str = "org.freedesktop.UPower.Device";
 
 /// Sampling starts when the battery tab opens and stops when it closes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,7 +54,7 @@ pub enum Command {
 
 #[derive(Debug)]
 enum Error {
-    Bus(zbus::Error),
+    Bus(dbus::Error),
     NoBattery,
 }
 
@@ -81,8 +67,8 @@ impl fmt::Display for Error {
     }
 }
 
-impl From<zbus::Error> for Error {
-    fn from(e: zbus::Error) -> Self {
+impl From<dbus::Error> for Error {
+    fn from(e: dbus::Error) -> Self {
         Error::Bus(e)
     }
 }
@@ -143,13 +129,15 @@ fn history(upower: &mut Kept) -> Result<Vec<Charge>, Error> {
     charges
 }
 
-fn read_history(conn: &zbus::blocking::Connection) -> Result<Vec<Charge>, Error> {
-    for path in dbus::default_proxy::<UPowerProxy>(conn)?.enumerate_devices()? {
-        let device: DeviceProxy = dbus::proxy(conn, path.as_str())?;
-        if device.kind()? != UPOWER_BATTERY || !device.power_supply()? {
+fn read_history(bus: &mut Bus) -> Result<Vec<Charge>, Error> {
+    let (devices,): (Vec<Path<'static>>,) = bus.call(UPOWER, "/org/freedesktop/UPower", UPOWER, "EnumerateDevices", ())?;
+    for path in devices {
+        if bus.get::<u32>(UPOWER, &path, UPOWER_DEVICE, "Type")? != UPOWER_BATTERY || !bus.get::<bool>(UPOWER, &path, UPOWER_DEVICE, "PowerSupply")? {
             continue;
         }
-        return Ok(charges(device.get_history("charge", HISTORY_SPAN, HISTORY_POINTS)?));
+        // (time, value, state) points, newest first.
+        let (points,): (Vec<(u32, f64, u32)>,) = bus.call(UPOWER, &path, UPOWER_DEVICE, "GetHistory", ("charge", HISTORY_SPAN, HISTORY_POINTS))?;
+        return Ok(charges(points));
     }
     Err(Error::NoBattery)
 }

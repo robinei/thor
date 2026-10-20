@@ -1,86 +1,16 @@
 //! NetworkManager's D-Bus interfaces (system bus), as much of them as the Wi-Fi tab uses, and the codes
 //! it reports states and reasons with.
 
-use std::collections::HashMap;
-
-use zbus::zvariant::{ObjectPath, OwnedObjectPath, OwnedValue, Value};
-
+pub const SERVICE: &str = "org.freedesktop.NetworkManager";
+pub const PATH: &str = "/org/freedesktop/NetworkManager";
+pub const MANAGER: &str = "org.freedesktop.NetworkManager";
 pub const DEVICE: &str = "org.freedesktop.NetworkManager.Device";
+pub const WIRELESS: &str = "org.freedesktop.NetworkManager.Device.Wireless";
+pub const ACCESS_POINT: &str = "org.freedesktop.NetworkManager.AccessPoint";
+pub const SETTINGS_PATH: &str = "/org/freedesktop/NetworkManager/Settings";
+pub const SETTINGS: &str = "org.freedesktop.NetworkManager.Settings";
+pub const CONNECTION: &str = "org.freedesktop.NetworkManager.Settings.Connection";
 pub const ACTIVE: &str = "org.freedesktop.NetworkManager.Connection.Active";
-
-#[zbus::proxy(
-    interface = "org.freedesktop.NetworkManager",
-    default_service = "org.freedesktop.NetworkManager",
-    default_path = "/org/freedesktop/NetworkManager",
-    gen_async = false
-)]
-pub trait Manager {
-    fn get_devices(&self) -> zbus::Result<Vec<OwnedObjectPath>>;
-    fn activate_connection(&self, connection: &ObjectPath<'_>, device: &ObjectPath<'_>, specific_object: &ObjectPath<'_>) -> zbus::Result<OwnedObjectPath>;
-    /// The new connection's settings path and the active connection made for it.
-    fn add_and_activate_connection(
-        &self,
-        connection: HashMap<&str, HashMap<&str, Value<'_>>>,
-        device: &ObjectPath<'_>,
-        specific_object: &ObjectPath<'_>,
-    ) -> zbus::Result<(OwnedObjectPath, OwnedObjectPath)>;
-    #[zbus(property)]
-    fn wireless_enabled(&self) -> zbus::Result<bool>;
-    #[zbus(property)]
-    fn set_wireless_enabled(&self, enabled: bool) -> zbus::Result<()>;
-}
-
-#[zbus::proxy(interface = "org.freedesktop.NetworkManager.Device", default_service = "org.freedesktop.NetworkManager", gen_async = false)]
-pub trait Device {
-    #[zbus(property)]
-    fn device_type(&self) -> zbus::Result<u32>;
-    #[zbus(property)]
-    fn state(&self) -> zbus::Result<u32>;
-}
-
-#[zbus::proxy(interface = "org.freedesktop.NetworkManager.Device.Wireless", default_service = "org.freedesktop.NetworkManager", gen_async = false)]
-pub trait Wireless {
-    fn request_scan(&self, options: HashMap<&str, Value<'_>>) -> zbus::Result<()>;
-    fn get_all_access_points(&self) -> zbus::Result<Vec<OwnedObjectPath>>;
-    #[zbus(property)]
-    fn active_access_point(&self) -> zbus::Result<OwnedObjectPath>;
-}
-
-#[zbus::proxy(interface = "org.freedesktop.NetworkManager.AccessPoint", default_service = "org.freedesktop.NetworkManager", gen_async = false)]
-pub trait AccessPoint {
-    #[zbus(property)]
-    fn ssid(&self) -> zbus::Result<Vec<u8>>;
-    #[zbus(property)]
-    fn strength(&self) -> zbus::Result<u8>;
-    #[zbus(property)]
-    fn flags(&self) -> zbus::Result<u32>;
-    #[zbus(property)]
-    fn wpa_flags(&self) -> zbus::Result<u32>;
-    #[zbus(property)]
-    fn rsn_flags(&self) -> zbus::Result<u32>;
-}
-
-#[zbus::proxy(
-    interface = "org.freedesktop.NetworkManager.Settings",
-    default_service = "org.freedesktop.NetworkManager",
-    default_path = "/org/freedesktop/NetworkManager/Settings",
-    gen_async = false
-)]
-pub trait Settings {
-    fn list_connections(&self) -> zbus::Result<Vec<OwnedObjectPath>>;
-}
-
-#[zbus::proxy(interface = "org.freedesktop.NetworkManager.Settings.Connection", default_service = "org.freedesktop.NetworkManager", gen_async = false)]
-pub trait Connection {
-    fn get_settings(&self) -> zbus::Result<HashMap<String, HashMap<String, OwnedValue>>>;
-    fn delete(&self) -> zbus::Result<()>;
-}
-
-#[zbus::proxy(interface = "org.freedesktop.NetworkManager.Connection.Active", default_service = "org.freedesktop.NetworkManager", gen_async = false)]
-pub trait Active {
-    #[zbus(property)]
-    fn state(&self) -> zbus::Result<u32>;
-}
 
 /// NMDeviceType, the one we look for.
 #[repr(u32)]

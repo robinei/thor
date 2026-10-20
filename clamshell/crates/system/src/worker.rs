@@ -196,7 +196,7 @@ impl<E> From<Closed> for Ended<E> {
 }
 
 /// Lets `?` in a run end it as [`Ended::Lost`] on the domain's error and on these others, converted to
-/// it: `lost_on!(Error: zbus::Error, io::Error);` for `Ended<Error>`, or `lost_on!(io::Error);`.
+/// it: `lost_on!(Error: dbus::Error, io::Error);` for `Ended<Error>`, or `lost_on!(io::Error);`.
 macro_rules! lost_on {
     ($domain:ty $(: $($from:ty),*)?) => {
         impl From<$domain> for $crate::worker::Ended<$domain> {

@@ -16,13 +16,11 @@ use std::time::Duration;
 
 use clamshell_core::bluetooth::{self, Action, Bluetooth, Command, Device, Kind, Problem, Reason};
 use clamshell_core::{Event, Reading};
-use zbus::blocking::Connection;
-use zbus::zvariant::{ObjectPath, OwnedObjectPath};
 
-use crate::dbus::{self, Props};
+use crate::dbus::{self, Bus, Path, Props};
 use crate::worker::{self, Changed, Ended, Next, Service, Worker, lost_on};
 use crate::{Closed, Sink};
-use bluez::{ADAPTER, AGENT_PATH, AdapterProxy, Agent, AgentManagerProxy, DEVICE, DeviceProxy, ManagedObjects, ObjectsProxy, device_path};
+use bluez::{ADAPTER, AGENT_MANAGER, AGENT_PATH, DEVICE, ManagedObjects, SERVICE, device_path};
 
 const READ_WATCHING: Duration = Duration::from_secs(1);
 const READ_IDLE: Duration = Duration::from_secs(5);
@@ -50,7 +48,7 @@ impl Request {
 
 #[derive(Debug)]
 enum Error {
-    Bus(zbus::Error),
+    Bus(dbus::Error),
     /// The connecting worker couldn't be started, or has ended.
     Worker(io::Error),
     NoAdapter,
@@ -66,15 +64,9 @@ impl fmt::Display for Error {
     }
 }
 
-impl From<zbus::Error> for Error {
-    fn from(e: zbus::Error) -> Self {
+impl From<dbus::Error> for Error {
+    fn from(e: dbus::Error) -> Self {
         Error::Bus(e)
-    }
-}
-
-impl From<zbus::zvariant::Error> for Error {
-    fn from(e: zbus::zvariant::Error) -> Self {
-        Error::Bus(e.into())
     }
 }
 
@@ -84,15 +76,14 @@ impl From<io::Error> for Error {
     }
 }
 
-lost_on!(Error: zbus::Error, io::Error);
+lost_on!(Error: dbus::Error, io::Error);
 
 /// What went wrong doing `action`, for the screen.
 fn failure(action: Action, e: &Error) -> Problem {
     // BlueZ's errors: "org.bluez.Error.AuthenticationFailed: ..." and the like.
     let reason = match e {
-        Error::Bus(zbus::Error::MethodError(name, detail, _)) => {
-            detail.clone().unwrap_or_else(|| name.as_str().trim_start_matches("org.bluez.Error.").to_owned())
-        }
+        Error::Bus(dbus::Error::Method { name, message }) if message.is_empty() => name.trim_start_matches("org.bluez.Error.").to_owned(),
+        Error::Bus(dbus::Error::Method { message, .. }) => message.clone(),
         other => other.to_string(),
     };
     Problem { action, reason: Reason::Bus(reason) }
@@ -124,50 +115,72 @@ struct BtThread<S> {
     shared: Shared,
 }
 
-/// A connection to BlueZ, and the worker that connects devices through it.
+/// A connection to BlueZ, and the worker that connects devices.
 struct Session {
-    conn: Connection,
-    objects: ObjectsProxy<'static>,
+    bus: Bus,
     connecting: Worker<String>,
 }
 
 impl Session {
-    fn adapter_path(&self) -> Result<OwnedObjectPath, Error> {
-        adapter_path(&self.objects)
-    }
-
-    fn adapter(&self) -> Result<AdapterProxy<'static>, Error> {
-        Ok(dbus::proxy(&self.conn, self.adapter_path()?.as_str())?)
+    fn adapter(&mut self) -> Result<Path<'static>, Error> {
+        adapter_path(&mut self.bus)
     }
 
     /// Starts or stops looking for devices (already doing so is fine).
-    fn discover(&self, on: bool) {
+    fn discover(&mut self, on: bool) {
         if let Ok(adapter) = self.adapter() {
-            let _ = if on { adapter.start_discovery() } else { adapter.stop_discovery() };
+            let _ = self.bus.call::<()>(SERVICE, &adapter, ADAPTER, if on { "StartDiscovery" } else { "StopDiscovery" }, ());
         }
     }
 }
 
+/// A connection to the system bus, calls limited to [`CALL_LIMIT`].
+fn system() -> dbus::Result<Bus> {
+    Ok(Bus::system()?.with_timeout(CALL_LIMIT))
+}
+
+/// Every object BlueZ has.
+fn managed_objects(bus: &mut Bus) -> dbus::Result<ManagedObjects> {
+    let (objects,): (ManagedObjects,) = bus.call(SERVICE, "/", "org.freedesktop.DBus.ObjectManager", "GetManagedObjects", ())?;
+    Ok(objects)
+}
+
 /// The adapter's object path.
-fn adapter_path(objects: &ObjectsProxy) -> Result<OwnedObjectPath, Error> {
-    let all = objects.get_managed_objects()?;
+fn adapter_path(bus: &mut Bus) -> Result<Path<'static>, Error> {
+    let all = managed_objects(bus)?;
     first_adapter(&all).map(|(path, _)| path.clone()).ok_or(Error::NoAdapter)
 }
 
 /// The adapter used: with several (a USB dongle besides the built-in one), always the same, the one
 /// with the lowest path (hci0 before hci1); BlueZ lists them in no order.
-fn first_adapter(objects: &ManagedObjects) -> Option<(&OwnedObjectPath, Props<'_>)> {
-    objects.iter().filter_map(|(path, ifaces)| ifaces.get(ADAPTER).map(|props| (path, Props(props)))).min_by(|a, b| a.0.as_str().cmp(b.0.as_str()))
+fn first_adapter(objects: &ManagedObjects) -> Option<(&Path<'static>, Props<'_>)> {
+    objects.iter().filter_map(|(path, ifaces)| ifaces.get(ADAPTER).map(|props| (path, Props(props)))).min_by(|a, b| (**a.0).cmp(&**b.0))
 }
 
 /// Connects (pairing and trusting a new device first) the devices it is sent, one at a time, showing
-/// which in `busy` meanwhile and what went wrong in `error`.
-fn connecting_worker(conn: Connection, shared: Shared) -> io::Result<Worker<String>> {
+/// which in `busy` meanwhile and what went wrong in `error`; with a connection of its own, which serves
+/// the pairing agent.
+fn connecting_worker(shared: Shared) -> io::Result<Worker<String>> {
     Worker::spawn("bluetooth-connect", move |addresses: Receiver<String>| {
+        let mut bus: Option<Bus> = None;
         for address in addresses {
             shared.lock().busy = Some(address.clone());
-            if let Err(e) = connect(&conn, &address) {
+            let connected = match bus.take().map_or_else(system, Ok) {
+                Ok(mut b) => {
+                    b.serve(Box::new(bluez::agent));
+                    let connected = connect(&mut b, &address);
+                    bus = Some(b);
+                    connected
+                }
+                Err(e) => Err(e.into()),
+            };
+            if let Err(e) = connected {
                 log::warn!("bluetooth: connecting {address}: {e}");
+                if let Error::Bus(e) = &e
+                    && e.is_bus_failure()
+                {
+                    bus = None;
+                }
                 shared.lock().error = Some(failure(Action::Connect, &e));
             }
             shared.lock().busy = None;
@@ -175,27 +188,25 @@ fn connecting_worker(conn: Connection, shared: Shared) -> io::Result<Worker<Stri
     })
 }
 
-fn connect(conn: &Connection, address: &str) -> Result<(), Error> {
-    let adapter = adapter_path(&dbus::default_proxy(conn)?)?;
-    let device: DeviceProxy = dbus::proxy(conn, &device_path(&adapter, address))?;
-    if !device.paired()? {
-        pair(conn, &device)?;
-        device.set_trusted(true)?;
+fn connect(bus: &mut Bus, address: &str) -> Result<(), Error> {
+    let adapter = adapter_path(bus)?;
+    let device = device_path(&adapter, address);
+    if !bus.get::<bool>(SERVICE, &device, DEVICE, "Paired")? {
+        pair(bus, &device)?;
+        bus.set(SERVICE, &device, DEVICE, "Trusted", true)?;
     }
-    device.connect()?;
+    bus.call::<()>(SERVICE, &device, DEVICE, "Connect", ())?;
     log::info!("bluetooth: connected {address}");
     Ok(())
 }
 
-/// Pairs with our agent registered for the time it takes.
-fn pair(conn: &Connection, device: &DeviceProxy) -> zbus::Result<()> {
-    conn.object_server().at(AGENT_PATH, Agent)?;
-    let agents: AgentManagerProxy = dbus::default_proxy(conn)?;
-    let path = ObjectPath::try_from(AGENT_PATH)?;
-    agents.register_agent(&path, "NoInputNoOutput")?;
-    let paired = device.pair();
-    let _ = agents.unregister_agent(&path);
-    let _ = conn.object_server().remove::<Agent, _>(AGENT_PATH);
+/// Pairs with our agent registered for the time it takes (the connection serves it: BlueZ asks it
+/// while the pairing call waits).
+fn pair(bus: &mut Bus, device: &str) -> dbus::Result<()> {
+    let agent = Path::from(AGENT_PATH);
+    bus.call::<()>(SERVICE, "/org/bluez", AGENT_MANAGER, "RegisterAgent", (agent.clone(), "NoInputNoOutput"))?;
+    let paired = bus.call::<()>(SERVICE, device, DEVICE, "Pair", ());
+    let _ = bus.call::<()>(SERVICE, "/org/bluez", AGENT_MANAGER, "UnregisterAgent", (agent,));
     paired
 }
 
@@ -207,7 +218,7 @@ fn read(objects: &ManagedObjects, state: &BtState) -> Bluetooth {
     };
     let devices = objects
         .iter()
-        .filter(|(path, _)| path.as_str().starts_with(adapter_path.as_str()))
+        .filter(|(path, _)| path.starts_with(&**adapter_path))
         .filter_map(|(_, ifaces)| ifaces.get(DEVICE).map(Props))
         .filter_map(|props| {
             let name = props.str("Name");
@@ -234,23 +245,28 @@ impl<S: Sink> BtThread<S> {
 
     /// Carries out a request. Every request but connecting (the worker's, which finds the adapter
     /// itself) needs the adapter, and fails without one.
-    fn apply(&self, s: &Session, request: &Request) -> Result<(), Error> {
+    fn apply(&self, s: &mut Session, request: &Request) -> Result<(), Error> {
         match request {
             Request::Do(Command::Connect(address)) => {
                 s.connecting.try_send(address.clone()).map_err(|_| io::Error::other("it has ended"))?;
             }
             Request::Watch(on) => {
-                s.adapter_path()?;
+                s.adapter()?;
                 self.shared.lock().watching = *on;
                 s.discover(*on);
             }
-            Request::Do(Command::Power(on)) => s.adapter()?.set_powered(*on)?,
+            Request::Do(Command::Power(on)) => {
+                let adapter = s.adapter()?;
+                s.bus.set(SERVICE, &adapter, ADAPTER, "Powered", *on)?;
+            }
             Request::Do(Command::Disconnect(address)) => {
-                dbus::proxy::<DeviceProxy>(&s.conn, &device_path(&s.adapter_path()?, address))?.disconnect()?;
+                let device = device_path(&s.adapter()?, address);
+                s.bus.call::<()>(SERVICE, &device, DEVICE, "Disconnect", ())?;
             }
             Request::Do(Command::Forget(address)) => {
-                let device = ObjectPath::try_from(device_path(&s.adapter_path()?, address))?;
-                s.adapter()?.remove_device(&device)?;
+                let adapter = s.adapter()?;
+                let device = Path::from(device_path(&adapter, address));
+                s.bus.call::<()>(SERVICE, &adapter, ADAPTER, "RemoveDevice", (device,))?;
                 log::info!("bluetooth: forgot {address}");
             }
         }
@@ -265,24 +281,23 @@ impl<S: Sink> Service for BtThread<S> {
     const NAME: &'static str = "bluetooth";
 
     fn connect(&mut self) -> Result<Session, Error> {
-        let conn = dbus::system(Some(CALL_LIMIT))?;
-        let objects: ObjectsProxy = dbus::default_proxy(&conn)?;
+        let mut bus = system()?;
         // BlueZ is there.
-        objects.get_managed_objects()?;
-        let connecting = connecting_worker(conn.clone(), self.shared.clone())?;
-        Ok(Session { conn, objects, connecting })
+        managed_objects(&mut bus)?;
+        let connecting = connecting_worker(self.shared.clone())?;
+        Ok(Session { bus, connecting })
     }
 
     /// Reads every few seconds (every second while watching) and carries out requests, until BlueZ fails
     /// or goes.
-    fn run_while_up(&mut self, s: Session, commands: &Receiver<Request>) -> Result<(), Ended<Error>> {
+    fn run_while_up(&mut self, mut s: Session, commands: &Receiver<Request>) -> Result<(), Ended<Error>> {
         let mut last = Changed::default();
         // Discovery picks up where it was, after a reconnect.
         if self.shared.lock().watching {
             s.discover(true);
         }
         loop {
-            let bt = read(&s.objects.get_managed_objects()?, &self.shared.lock());
+            let bt = read(&managed_objects(&mut s.bus)?, &self.shared.lock());
             if let Some(bt) = last.offer(bt) {
                 self.send(bt)?;
             }
@@ -291,7 +306,7 @@ impl<S: Sink> Service for BtThread<S> {
                 Next::Command(request) => {
                     // A new attempt: what went wrong before is old news.
                     self.shared.lock().error = None;
-                    match self.apply(&s, &request) {
+                    match self.apply(&mut s, &request) {
                         Ok(()) => {}
                         // Without its worker, connecting can't go on.
                         Err(e @ Error::Worker(_)) => return Err(Ended::Lost(e)),
@@ -325,7 +340,7 @@ impl<S: Sink> Service for BtThread<S> {
 
     /// Without BlueZ on the bus (no Bluetooth on this machine) there is nothing to warn about.
     fn expected(e: &Error) -> bool {
-        matches!(e, Error::Bus(e) if dbus::is_absent(e))
+        matches!(e, Error::Bus(e) if e.is_absent())
     }
 }
 
@@ -339,8 +354,7 @@ mod live {
     #[ignore]
     #[allow(clippy::unwrap_used)]
     fn reads_bluez() {
-        let conn = dbus::system(None).unwrap();
-        let objects = dbus::default_proxy::<ObjectsProxy>(&conn).unwrap().get_managed_objects().unwrap();
+        let objects = managed_objects(&mut Bus::system().unwrap()).unwrap();
         let bt = read(&objects, &BtState::default());
         println!("{bt:#?}");
         assert_eq!(bt.adapter, objects.values().any(|i| i.contains_key(ADAPTER)));

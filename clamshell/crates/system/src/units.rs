@@ -13,73 +13,39 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use clamshell_core::{Event, Instance};
-use zbus::blocking::Connection;
-use zbus::zvariant::OwnedObjectPath;
 
+use crate::dbus::{self, Bus, Message, Path, value};
 use crate::worker::{self, Changed, Ended, Service, lost_on};
-use crate::{Closed, Sink, dbus};
+use crate::{Closed, Sink};
 
 const PATTERNS: [&str; 1] = ["clamshell-run-*.scope"];
 
 /// How long to wait before trying the user manager again.
 const RETRY: Duration = Duration::from_secs(5);
 
+const SYSTEMD: &str = "org.freedesktop.systemd1";
+const MANAGER_PATH: &str = "/org/freedesktop/systemd1";
+const MANAGER: &str = "org.freedesktop.systemd1.Manager";
+
 /// ListUnitsByPatterns' rows: name, description, load state, active state, sub state, following,
 /// object path, job id, job type, job path.
-type UnitRow = (String, String, String, String, String, String, OwnedObjectPath, u32, String, OwnedObjectPath);
+type UnitRow = (String, String, String, String, String, String, Path<'static>, u32, String, Path<'static>);
 
-#[zbus::proxy(
-    interface = "org.freedesktop.systemd1.Manager",
-    default_service = "org.freedesktop.systemd1",
-    default_path = "/org/freedesktop/systemd1",
-    gen_async = false
-)]
-trait Manager {
-    /// Without it, the manager doesn't signal unit changes.
-    fn subscribe(&self) -> zbus::Result<()>;
-    fn list_units_by_patterns(&self, states: &[&str], patterns: &[&str]) -> zbus::Result<Vec<UnitRow>>;
-    fn get_unit(&self, name: &str) -> zbus::Result<OwnedObjectPath>;
-    fn stop_unit(&self, name: &str, mode: &str) -> zbus::Result<OwnedObjectPath>;
-    fn freeze_unit(&self, name: &str) -> zbus::Result<()>;
-    fn kill_unit(&self, name: &str, whom: &str, signal: i32) -> zbus::Result<()>;
-    fn thaw_unit(&self, name: &str) -> zbus::Result<()>;
-    fn attach_processes_to_unit(&self, name: &str, subcgroup: &str, pids: &[u32]) -> zbus::Result<()>;
-    fn start_transient_unit(
-        &self,
-        name: &str,
-        mode: &str,
-        properties: &[(&str, zbus::zvariant::Value<'_>)],
-        aux: &[(&str, Vec<(&str, zbus::zvariant::Value<'_>)>)],
-    ) -> zbus::Result<OwnedObjectPath>;
+/// A method of the user manager's.
+fn call<R: ::dbus::arg::ReadAll>(bus: &mut Bus, method: &str, args: impl ::dbus::arg::AppendAll) -> dbus::Result<R> {
+    bus.call(SYSTEMD, MANAGER_PATH, MANAGER, method, args)
 }
 
-#[zbus::proxy(interface = "org.freedesktop.systemd1.Scope", default_service = "org.freedesktop.systemd1", gen_async = false)]
-trait Scope {
-    /// Its cgroup, under /sys/fs/cgroup.
-    #[zbus(property)]
-    fn control_group(&self) -> zbus::Result<String>;
-}
-
-#[zbus::proxy(interface = "org.freedesktop.systemd1.Unit", default_service = "org.freedesktop.systemd1", gen_async = false)]
-trait Unit {
-    /// `running`, `frozen`, `freezing` or `thawing`.
-    #[zbus(property)]
-    fn freezer_state(&self) -> zbus::Result<String>;
-    /// The slice it is in.
-    #[zbus(property)]
-    fn slice(&self) -> zbus::Result<String>;
-}
-
-#[zbus::proxy(interface = "org.freedesktop.systemd1.Slice", default_service = "org.freedesktop.systemd1", gen_async = false)]
-trait Slice {
-    /// Its cgroup, under /sys/fs/cgroup.
-    #[zbus(property)]
-    fn control_group(&self) -> zbus::Result<String>;
+/// The units matching `patterns`, in any state.
+fn units(bus: &mut Bus, patterns: &[&str]) -> dbus::Result<Vec<UnitRow>> {
+    let empty: Vec<&str> = Vec::new();
+    let (rows,): (Vec<UnitRow>,) = call(bus, "ListUnitsByPatterns", (empty, patterns.to_vec()))?;
+    Ok(rows)
 }
 
 #[derive(Debug)]
 pub enum Error {
-    Bus(zbus::Error),
+    Bus(dbus::Error),
     /// The manager's signals ended: the bus connection closed.
     SignalsEnded,
     /// A scope we waited for didn't appear in time.
@@ -96,41 +62,35 @@ impl fmt::Display for Error {
     }
 }
 
-impl From<zbus::Error> for Error {
-    fn from(e: zbus::Error) -> Self {
+impl From<dbus::Error> for Error {
+    fn from(e: dbus::Error) -> Self {
         Error::Bus(e)
     }
 }
 
-lost_on!(Error: zbus::Error);
+lost_on!(Error: dbus::Error);
 
-fn manager(conn: &Connection) -> zbus::Result<ManagerProxy<'static>> {
-    dbus::default_proxy(conn)
-}
-
-/// The session bus, connected once for every one-off unit operation (each connection has threads of its
-/// own); connected again after a call failed.
-static BUS: std::sync::Mutex<Option<Connection>> = std::sync::Mutex::new(None);
+/// The session bus, connected once for every one-off unit operation (made from several threads, one at
+/// a time); connected again after a call failed.
+static BUS: std::sync::Mutex<Option<Bus>> = std::sync::Mutex::new(None);
 
 /// `call` on the user manager, over the shared connection.
-fn with_manager<T>(call: impl FnOnce(&ManagerProxy) -> Result<T, Error>) -> Result<T, Error> {
-    let conn = {
-        let mut bus = BUS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        match bus.as_ref() {
-            Some(c) => c.clone(),
-            None => bus.insert(Connection::session()?).clone(),
-        }
+fn with_manager<T>(call: impl FnOnce(&mut Bus) -> Result<T, Error>) -> Result<T, Error> {
+    let mut shared = BUS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let bus = match shared.take() {
+        Some(bus) => bus,
+        None => Bus::session()?,
     };
-    let result = manager(&conn).map_err(Error::from).and_then(|m| call(&m));
+    let result = call(shared.insert(bus));
     if result.is_err() {
-        *BUS.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        *shared = None;
     }
     result
 }
 
 /// Our scopes that run (dock app instances and games), in the order of their names.
-fn list(manager: &ManagerProxy) -> zbus::Result<Vec<Instance>> {
-    let rows = manager.list_units_by_patterns(&[], &PATTERNS)?;
+fn list(bus: &mut Bus) -> dbus::Result<Vec<Instance>> {
+    let rows = units(bus, &PATTERNS)?;
     let mut names: Vec<String> = rows.into_iter().filter(|row| !matches!(row.3.as_str(), "inactive" | "failed")).map(|row| row.0).collect();
     names.sort();
     Ok(names.iter().filter_map(|n| Instance::from_unit(n)).collect())
@@ -153,48 +113,44 @@ struct Units<S> {
 
 impl<S: Sink> Service for Units<S> {
     type Command = Infallible;
-    type Session = ManagerProxy<'static>;
+    type Session = Bus;
     type Error = Error;
     const NAME: &'static str = "units";
 
-    fn connect(&mut self) -> Result<ManagerProxy<'static>, Error> {
-        let manager = manager(&Connection::session()?)?;
-        manager.subscribe()?;
+    fn connect(&mut self) -> Result<Bus, Error> {
+        let mut bus = Bus::session()?;
+        bus.add_match(&format!("type='signal',sender='{SYSTEMD}',path='{MANAGER_PATH}',interface='{MANAGER}'"))?;
+        call::<()>(&mut bus, "Subscribe", ())?;
         if !std::mem::replace(&mut self.looked, true) {
-            let slices = manager.list_units_by_patterns(&[], &[&format!("{}*.slice", clamshell_core::instance::SLICE_PREFIX)])?;
-            let frozen = slices.into_iter().filter(|row| {
-                let unit = UnitProxy::builder(manager.inner().connection()).path(row.6.clone()).and_then(|b| b.build());
-                unit.and_then(|u| u.freezer_state()).is_ok_and(|s| s == "frozen")
-            });
+            let slices = units(&mut bus, &[&format!("{}*.slice", clamshell_core::instance::SLICE_PREFIX)])?;
+            let frozen = slices
+                .into_iter()
+                .filter(|row| bus.get::<String>(SYSTEMD, &row.6, "org.freedesktop.systemd1.Unit", "FreezerState").is_ok_and(|s| s == "frozen"));
             self.frozen =
                 Some(frozen.filter_map(|row| Some(row.0.strip_prefix(clamshell_core::instance::SLICE_PREFIX)?.strip_suffix(".slice")?.into())).collect());
         }
-        Ok(manager)
+        Ok(bus)
     }
 
     /// Lists the scopes, then again at each signal about one of ours, until the bus closes.
-    fn run_while_up(&mut self, manager: ManagerProxy<'static>, _: &Receiver<Infallible>) -> Result<(), Ended<Error>> {
-        let signals = manager.inner().receive_all_signals()?;
+    fn run_while_up(&mut self, mut bus: Bus, _: &Receiver<Infallible>) -> Result<(), Ended<Error>> {
         let mut last = Changed::default();
-        if let Some(units) = last.offer(list(&manager)?) {
+        if let Some(units) = last.offer(list(&mut bus)?) {
             self.sink.send(Event::Units(units))?;
         }
         if let Some(frozen) = self.frozen.take().filter(|f| !f.is_empty()) {
             log::info!("found frozen (held as suspended): {frozen:?}");
             self.sink.send(Event::Frozen(frozen))?;
         }
-        for message in signals {
-            let Some(name) = unit_of_signal(&message) else {
-                continue;
-            };
-            if !Instance::is_ours(&name) {
-                continue;
-            }
-            if let Some(units) = last.offer(list(&manager)?) {
+        loop {
+            bus.wait(None).map_err(|_| Error::SignalsEnded)?;
+            let signals = bus.signals().map_err(|_| Error::SignalsEnded)?;
+            if signals.iter().filter_map(unit_of_signal).any(|name| Instance::is_ours(&name))
+                && let Some(units) = last.offer(list(&mut bus)?)
+            {
                 self.sink.send(Event::Units(units))?;
             }
         }
-        Err(Ended::Lost(Error::SignalsEnded))
     }
 
     fn command_while_down(&mut self, command: Infallible) -> Result<(), Closed> {
@@ -205,19 +161,23 @@ impl<S: Sink> Service for Units<S> {
 /// The unit a signal of the manager's is about, for the signals that change what runs: a unit loaded
 /// (UnitNew) or gone (UnitRemoved), and a job done (JobRemoved: a scope's start job ends once it runs;
 /// at UnitNew it is still inactive, and listing it then can miss it).
-fn unit_of_signal(message: &zbus::Message) -> Option<String> {
-    let header = message.header();
-    let body = message.body();
-    match header.member()?.as_str() {
-        "UnitNew" | "UnitRemoved" => body.deserialize::<(String, OwnedObjectPath)>().ok().map(|(unit, _)| unit),
-        "JobRemoved" => body.deserialize::<(u32, OwnedObjectPath, String, String)>().ok().map(|(_, _, unit, _)| unit),
+fn unit_of_signal(message: &Message) -> Option<String> {
+    match &*message.member()? {
+        "UnitNew" | "UnitRemoved" => message.read2::<String, Path>().ok().map(|(unit, _)| unit),
+        "JobRemoved" => message.read4::<u32, Path, String, String>().ok().map(|(_, _, unit, _)| unit),
         _ => None,
     }
 }
 
 /// Whether the user manager has this unit loaded (`name` with its suffix).
-fn loaded(manager: &ManagerProxy, name: &str) -> bool {
-    manager.get_unit(name).is_ok()
+fn loaded(bus: &mut Bus, name: &str) -> bool {
+    get_unit(bus, name).is_ok()
+}
+
+/// A loaded unit's object path.
+fn get_unit(bus: &mut Bus, name: &str) -> dbus::Result<Path<'static>> {
+    let (path,): (Path<'static>,) = call(bus, "GetUnit", (name,))?;
+    Ok(path)
 }
 
 /// Moves running processes into scope `unit`, a new one (in `slice`, if given) unless it is there, as a
@@ -225,18 +185,18 @@ fn loaded(manager: &ManagerProxy, name: &str) -> bool {
 /// it is counted, frozen and ended as the launch, apart from its starter. What they start later is in it
 /// too.
 pub fn adopt(unit: &str, slice: Option<&str>, pids: &[u32]) -> Result<(), Error> {
-    use zbus::zvariant::Value;
-    with_manager(|manager| {
-        if loaded(manager, unit) {
-            manager.attach_processes_to_unit(unit, "", pids)?;
+    with_manager(|bus| {
+        if loaded(bus, unit) {
+            call::<()>(bus, "AttachProcessesToUnit", (unit, "", pids.to_vec()))?;
             return Ok(());
         }
         // (Delegated: a user manager moves processes into a unit later only if it is.)
-        let mut properties = vec![("PIDs", Value::from(pids.to_vec())), ("CollectMode", Value::from("inactive-or-failed")), ("Delegate", Value::from(true))];
+        let mut properties = vec![("PIDs", value(pids.to_vec())), ("CollectMode", value("inactive-or-failed".to_owned())), ("Delegate", value(true))];
         if let Some(slice) = slice {
-            properties.push(("Slice", Value::from(slice)));
+            properties.push(("Slice", value(slice.to_owned())));
         }
-        manager.start_transient_unit(unit, "fail", &properties, &[])?;
+        let aux: Vec<(&str, Vec<(&str, dbus::Value)>)> = Vec::new();
+        call::<(Path<'static>,)>(bus, "StartTransientUnit", (unit, "fail", properties, aux))?;
         Ok(())
     })
 }
@@ -255,19 +215,19 @@ pub fn thaw_slice(slice: &str) {
 /// then kills what is left after its timeout), or with `force` killed at once.
 pub fn end(unit: &str, force: bool) -> Result<(), Error> {
     const SIGKILL: i32 = 9;
-    with_manager(|m| {
+    with_manager(|bus| {
         match force {
-            true => m.kill_unit(unit, "all", SIGKILL)?,
-            false => drop(m.stop_unit(unit, "replace")?),
+            true => call::<()>(bus, "KillUnit", (unit, "all", SIGKILL))?,
+            false => drop(call::<(Path<'static>,)>(bus, "StopUnit", (unit, "replace"))?),
         }
         Ok(())
     })
 }
 
 /// Thaws a unit, if it is there and frozen (otherwise systemd does nothing).
-fn thaw_now(manager: &ManagerProxy, unit: &str) {
-    if loaded(manager, unit)
-        && let Err(e) = manager.thaw_unit(unit)
+fn thaw_now(bus: &mut Bus, unit: &str) {
+    if loaded(bus, unit)
+        && let Err(e) = call::<()>(bus, "ThawUnit", (unit,))
     {
         log::debug!("thawing {unit}: {e}");
     }
@@ -302,21 +262,22 @@ struct Systemd;
 
 impl Freezer for Systemd {
     fn thaw(&mut self, unit: &str) {
-        match with_manager(|m| Ok(m.thaw_unit(unit)?)) {
+        match with_manager(|bus| Ok(call::<()>(bus, "ThawUnit", (unit,))?)) {
             Ok(()) => log::info!("thawed {unit}"),
             Err(e) => log::warn!("thawing {unit}: {e}"),
         }
     }
 
     fn freeze(&mut self, unit: &str) {
-        match with_manager(|m| Ok(m.freeze_unit(unit)?)) {
+        match with_manager(|bus| Ok(call::<()>(bus, "FreezeUnit", (unit,))?)) {
             Ok(()) => log::info!("froze {unit}"),
             Err(e) => log::warn!("freezing {unit}: {e}"),
         }
     }
 
     fn busy(&mut self, unit: &str) -> bool {
-        with_manager(|m| Ok(working_without_drawing(m, unit))).unwrap_or(false)
+        let group = with_manager(|bus| Ok(control_group(bus, unit))).ok().flatten();
+        working_without_drawing(group)
     }
 }
 
@@ -456,14 +417,15 @@ const DRAWING_GPU: f64 = 0.05;
 /// How long a slice is watched for that.
 const WATCH: Duration = Duration::from_secs(2);
 
-/// Whether slice `unit` works without drawing, over [`WATCH`]: much CPU, the GPU (its processes' DRM
-/// clients) nearly idle; a game hidden but drawing on uses the GPU. Unreadable: not.
-fn working_without_drawing(manager: &ManagerProxy, unit: &str) -> bool {
-    let group = manager
-        .get_unit(unit)
-        .ok()
-        .and_then(|path| SliceProxy::builder(manager.inner().connection()).path(path).ok()?.build().ok()?.control_group().ok())
-        .filter(|g| !g.is_empty());
+/// A slice's cgroup, under /sys/fs/cgroup.
+fn control_group(bus: &mut Bus, unit: &str) -> Option<String> {
+    let path = get_unit(bus, unit).ok()?;
+    bus.get::<String>(SYSTEMD, &path, "org.freedesktop.systemd1.Slice", "ControlGroup").ok().filter(|g| !g.is_empty())
+}
+
+/// Whether the slice with cgroup `group` works without drawing, over [`WATCH`]: much CPU, the GPU (its
+/// processes' DRM clients) nearly idle; a game hidden but drawing on uses the GPU. Unreadable: not.
+fn working_without_drawing(group: Option<String>) -> bool {
     let Some(group) = group else {
         thread::sleep(WATCH);
         return false;
@@ -506,7 +468,7 @@ fn gpu_ns(dir: &std::path::Path) -> u64 {
 /// Waits for a scope to appear, within `appear`.
 pub fn appear(unit: &str, appear: Duration) -> Result<(), Error> {
     let asked = Instant::now();
-    while !with_manager(|m| Ok(loaded(m, unit)))? {
+    while !with_manager(|bus| Ok(loaded(bus, unit)))? {
         if asked.elapsed() > appear {
             return Err(Error::DidNotStart(unit.to_owned()));
         }
@@ -526,8 +488,8 @@ mod live {
     #[ignore]
     #[allow(clippy::unwrap_used)]
     fn lists_our_scopes() {
-        let manager = manager(&Connection::session().unwrap()).unwrap();
-        println!("{:?}", list(&manager).unwrap());
+        let mut bus = Bus::session().unwrap();
+        println!("{:?}", list(&mut bus).unwrap());
     }
 
     /// With a user session (a desktop): a scope we start shows in the list, and is gone once it ends.
@@ -536,13 +498,13 @@ mod live {
     #[ignore]
     #[allow(clippy::unwrap_used)]
     fn a_scope_comes_and_goes() {
-        let manager = manager(&Connection::session().unwrap()).unwrap();
+        let mut bus = Bus::session().unwrap();
         let instance = Instance::Run { key: "unittest".into(), secs: u64::from(std::process::id()), n: 0 };
         let name = instance.name();
         let mut child =
             Command::new("systemd-run").args(["--user", "--scope", "--quiet", "--collect", &format!("--unit={name}"), "--", "sleep", "1"]).spawn().unwrap();
         let start = Instant::now();
-        while !list(&manager).unwrap().contains(&instance) {
+        while !list(&mut bus).unwrap().contains(&instance) {
             assert!(start.elapsed() < Duration::from_secs(5), "listed");
             thread::sleep(Duration::from_millis(50));
         }
@@ -551,7 +513,7 @@ mod live {
         child.wait().unwrap();
         // (Gone from the list once its process has ended.)
         let start = Instant::now();
-        while list(&manager).unwrap().contains(&instance) {
+        while list(&mut bus).unwrap().contains(&instance) {
             assert!(start.elapsed() < Duration::from_secs(5), "gone");
             thread::sleep(Duration::from_millis(50));
         }

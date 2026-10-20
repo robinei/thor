@@ -6,110 +6,94 @@
 //!
 //!     cargo run -p clamshell-system --example fake_tray
 
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use zbus::blocking::Connection;
-use zbus::zvariant::{ObjectPath, OwnedValue, Structure, Value};
-
-struct Item;
-
-#[zbus::interface(name = "org.kde.StatusNotifierItem")]
-impl Item {
-    fn activate(&self, _x: i32, _y: i32) {
-        println!("activate");
-        match std::process::Command::new("foot").arg("--title=Fake Tray").spawn() {
-            Ok(child) => drop(std::thread::spawn(move || drop(child.wait_with_output()))),
-            Err(e) => println!("no window: {e}"),
-        }
-    }
-
-    #[zbus(property)]
-    fn id(&self) -> &str {
-        "fake-tray"
-    }
-
-    #[zbus(property)]
-    fn title(&self) -> &str {
-        "Fake Tray"
-    }
-
-    #[zbus(property)]
-    fn status(&self) -> &str {
-        "Active"
-    }
-
-    #[zbus(property)]
-    fn icon_name(&self) -> &str {
-        "utilities-terminal"
-    }
-
-    #[zbus(property)]
-    fn menu(&self) -> ObjectPath<'static> {
-        ObjectPath::from_static_str_unchecked("/Menu")
-    }
-}
-
-/// A menu's layout node: id, properties, children (nodes, in variants).
-type Node = (i32, HashMap<String, OwnedValue>, Vec<OwnedValue>);
-
-struct Menu {
-    quit: Arc<AtomicBool>,
-}
+use clamshell_system::dbus::{self, Bus, Message, Path, PropMap, Value, value};
 
 /// A menu node: id, properties, children (in variants).
-fn node(id: i32, label: &str, extra: &[(&str, Value<'static>)], children: Vec<Value<'static>>) -> Value<'static> {
-    let mut props: HashMap<String, Value<'static>> = HashMap::from([("label".to_owned(), Value::from(label.to_owned()))]);
-    for (k, v) in extra {
-        props.insert((*k).to_owned(), v.try_clone().unwrap_or(Value::Bool(false)));
-    }
-    Value::from(Structure::from((id, props, children)))
+fn node(id: i32, label: &str, extra: Vec<(&str, Value)>, children: Vec<Value>) -> Value {
+    let mut props = PropMap::from([("label".to_owned(), value(label.to_owned()))]);
+    props.extend(extra.into_iter().map(|(k, v)| (k.to_owned(), v)));
+    value((id, props, children))
 }
 
-#[zbus::interface(name = "com.canonical.dbusmenu")]
-impl Menu {
-    fn get_layout(&self, _parent: i32, _depth: i32, _props: Vec<String>) -> (u32, Node) {
-        let recent = node(
-            2,
-            "_Recent",
-            &[("children-display", Value::from("submenu"))],
-            vec![Value::Value(Box::new(node(3, "First", &[], vec![]))), Value::Value(Box::new(node(4, "Second", &[], vec![])))],
-        );
-        let children = [
-            node(1, "_Open", &[], vec![]),
-            recent,
-            node(7, "", &[("type", Value::from("separator"))], vec![]),
-            node(5, "Disabled", &[("enabled", Value::from(false))], vec![]),
-            node(6, "E_xit", &[], vec![]),
-        ];
-        let children = children.into_iter().filter_map(|c| OwnedValue::try_from(Value::Value(Box::new(c))).ok()).collect();
-        (1, (0, HashMap::new(), children))
-    }
+/// The menu's layout: (revision, (id, properties, children)).
+fn layout() -> (u32, (i32, PropMap, Vec<Value>)) {
+    let recent =
+        node(2, "_Recent", vec![("children-display", value("submenu".to_owned()))], vec![node(3, "First", vec![], vec![]), node(4, "Second", vec![], vec![])]);
+    let children = vec![
+        node(1, "_Open", vec![], vec![]),
+        recent,
+        node(7, "", vec![("type", value("separator".to_owned()))], vec![]),
+        node(5, "Disabled", vec![("enabled", value(false))], vec![]),
+        node(6, "E_xit", vec![], vec![]),
+    ];
+    (1, (0, PropMap::new(), children))
+}
 
-    fn event(&self, id: i32, kind: &str, _data: OwnedValue, _time: u32) {
-        println!("{kind} {id}");
-        if kind == "clicked" && id == 6 {
-            self.quit.store(true, Ordering::Relaxed);
+fn item_property(name: &str) -> Option<Value> {
+    Some(match name {
+        "Id" => value("fake-tray".to_owned()),
+        "Title" => value("Fake Tray".to_owned()),
+        "Status" => value("Active".to_owned()),
+        "IconName" => value("utilities-terminal".to_owned()),
+        "Menu" => value(Path::from("/Menu")),
+        _ => return None,
+    })
+}
+
+/// The reply to a call, if it is one of ours.
+fn answer(call: &Message, quit: &AtomicBool) -> Option<Message> {
+    let path = call.path()?.to_string();
+    let member = call.member()?.to_string();
+    match (path.as_str(), member.as_str()) {
+        ("/StatusNotifierItem", "Activate") => {
+            println!("activate");
+            match std::process::Command::new("foot").arg("--title=Fake Tray").spawn() {
+                Ok(child) => drop(std::thread::spawn(move || drop(child.wait_with_output()))),
+                Err(e) => println!("no window: {e}"),
+            }
+            Some(call.method_return())
         }
-    }
-
-    fn about_to_show(&self, _id: i32) -> bool {
-        false
+        ("/StatusNotifierItem", "Get") => {
+            let (_, name): (String, String) = call.read2().ok()?;
+            Some(call.return_with_args((item_property(&name)?,)))
+        }
+        ("/StatusNotifierItem", "GetAll") => {
+            let all: PropMap = ["Id", "Title", "Status", "IconName", "Menu"].iter().filter_map(|&n| Some((n.to_owned(), item_property(n)?))).collect();
+            Some(call.return_with_args((all,)))
+        }
+        ("/Menu", "GetLayout") => Some(call.return_with_args(layout())),
+        ("/Menu", "AboutToShow") => Some(call.return_with_args((false,))),
+        ("/Menu", "Event") => {
+            let (id, kind): (i32, String) = call.read2().ok()?;
+            println!("{kind} {id}");
+            if kind == "clicked" && id == 6 {
+                quit.store(true, Ordering::Relaxed);
+            }
+            Some(call.method_return())
+        }
+        _ => None,
     }
 }
 
-fn main() -> zbus::Result<()> {
+fn main() -> dbus::Result<()> {
     let quit = Arc::new(AtomicBool::new(false));
-    let conn = Connection::session()?;
-    conn.object_server().at("/StatusNotifierItem", Item)?;
-    conn.object_server().at("/Menu", Menu { quit: quit.clone() })?;
-    let watcher = zbus::blocking::Proxy::new(&conn, "org.kde.StatusNotifierWatcher", "/StatusNotifierWatcher", "org.kde.StatusNotifierWatcher")?;
-    watcher.call::<_, _, ()>("RegisterStatusNotifierItem", &("/StatusNotifierItem",))?;
-    println!("registered as {}", conn.unique_name().map(ToString::to_string).unwrap_or_default());
+    let mut bus = Bus::session()?;
+    let asked = quit.clone();
+    bus.serve(Box::new(move |call| answer(call, &asked)));
+    bus.call::<()>(
+        "org.kde.StatusNotifierWatcher",
+        "/StatusNotifierWatcher",
+        "org.kde.StatusNotifierWatcher",
+        "RegisterStatusNotifierItem",
+        ("/StatusNotifierItem",),
+    )?;
+    println!("registered as {}", bus.unique_name().unwrap_or_default());
     while !quit.load(Ordering::Relaxed) {
-        std::thread::sleep(Duration::from_millis(100));
+        bus.wait(Some(Duration::from_millis(100)))?;
     }
     Ok(())
 }

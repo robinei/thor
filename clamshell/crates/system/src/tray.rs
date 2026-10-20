@@ -11,19 +11,14 @@ use std::collections::HashMap;
 use std::fmt;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use clamshell_core::Event;
 use clamshell_core::tray::{TrayCommand, TrayEntry, TrayItem};
-use zbus::blocking::Connection;
-use zbus::blocking::fdo::DBusProxy;
-use zbus::names::BusName;
-use zbus::object_server::SignalEmitter;
-use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
 
+use crate::dbus::{self, Bus, Message, PropMap, Props, RefArg, Value, Variant, value};
 use crate::worker::{self, Bell, Changed, Ended, Service, Worker, lost_on};
 use crate::{Closed, Sink, cgroup};
 
@@ -32,40 +27,36 @@ const WATCHER_PATH: &str = "/StatusNotifierWatcher";
 const ITEM: &str = "org.kde.StatusNotifierItem";
 const ITEM_PATH: &str = "/StatusNotifierItem";
 const MENU: &str = "com.canonical.dbusmenu";
+const BUS_NAME: &str = "org.freedesktop.DBus";
+const BUS_PATH: &str = "/org/freedesktop/DBus";
 
 /// How long to wait before trying the bus again.
 const RETRY: Duration = Duration::from_secs(5);
 /// How long after a signal the icons are read: a burst of them (a menu rebuilt) is one read.
 const SETTLE: Duration = Duration::from_millis(100);
+/// How long a program may take to answer: one that doesn't keeps the others waiting.
+const CALL_LIMIT: Duration = Duration::from_secs(5);
 
 #[derive(Debug)]
 pub enum Error {
-    Bus(zbus::Error),
-    SignalsEnded,
+    Bus(dbus::Error),
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::Bus(e) => write!(f, "{e}"),
-            Error::SignalsEnded => write!(f, "the bus' signals ended"),
         }
     }
 }
 
-impl From<zbus::Error> for Error {
-    fn from(e: zbus::Error) -> Self {
+impl From<dbus::Error> for Error {
+    fn from(e: dbus::Error) -> Self {
         Error::Bus(e)
     }
 }
 
-impl From<zbus::fdo::Error> for Error {
-    fn from(e: zbus::fdo::Error) -> Self {
-        Error::Bus(e.into())
-    }
-}
-
-lost_on!(Error: zbus::Error, zbus::fdo::Error);
+lost_on!(Error: dbus::Error);
 
 /// Sends [`Event::Tray`] at start and after every change; carries out [`TrayCommand`]s.
 pub fn spawn(sink: impl Sink) -> io::Result<Worker<TrayCommand>> {
@@ -77,33 +68,21 @@ struct Tray<S> {
     bell: Bell,
 }
 
-/// That the icons are to be read again: marked by signals and registrations, which ring the thread's
-/// bell.
-#[derive(Clone)]
-struct Dirty {
-    flag: Arc<AtomicBool>,
-    bell: Bell,
-}
-
-impl Dirty {
-    fn mark(&self) {
-        self.flag.store(true, Ordering::Relaxed);
-        self.bell.ring();
-    }
-
-    fn take(&self) -> bool {
-        self.flag.swap(false, Ordering::Relaxed)
-    }
+/// The watcher's state, where we serve it: the icons registered, and what came since the thread looked.
+#[derive(Default)]
+struct Watched {
+    items: Vec<String>,
+    /// Registered since: their keys, to be signalled.
+    registered: Vec<String>,
 }
 
 /// A connection to the session bus: the icons registered (ours, if we are the watcher; else read from
-/// the watcher there), and whether a signal came since they were read.
+/// the watcher there).
 struct Session {
-    conn: Connection,
-    ours: Option<Arc<Mutex<Vec<String>>>>,
-    dirty: Dirty,
+    bus: Bus,
+    ours: Option<Arc<Mutex<Watched>>>,
     /// Each icon's menu's object path, by the icon's key (for clicks).
-    menus: HashMap<String, OwnedObjectPath>,
+    menus: HashMap<String, String>,
 }
 
 impl<S: Sink> Service for Tray<S> {
@@ -113,31 +92,41 @@ impl<S: Sink> Service for Tray<S> {
     const NAME: &'static str = "tray";
 
     fn connect(&mut self) -> Result<Session, Error> {
-        let conn = Connection::session()?;
-        let dirty = Dirty { flag: Arc::new(AtomicBool::new(true)), bell: self.bell.clone() };
-        let ours = serve_watcher(&conn, &dirty)?;
-        follow_signals(&conn, &dirty)?;
-        Ok(Session { conn, ours, dirty, menus: HashMap::new() })
+        let mut bus = Bus::session()?.with_timeout(CALL_LIMIT);
+        let ours = serve_watcher(&mut bus)?;
+        // The icons are read again at any signal of the watcher, an icon, a menu, or a name's owner
+        // changing (a program gone).
+        for interface in [WATCHER, ITEM, MENU] {
+            bus.add_match(&format!("type='signal',interface='{interface}'"))?;
+        }
+        bus.add_match(&format!("type='signal',interface='{BUS_NAME}',member='NameOwnerChanged'"))?;
+        Ok(Session { bus, ours, menus: HashMap::new() })
     }
 
     fn run_while_up(&mut self, mut s: Session, commands: &Receiver<TrayCommand>) -> Result<(), Ended<Error>> {
         let mut last = Changed::default();
+        let mut dirty = true;
         loop {
-            if s.dirty.take() {
+            dirty |= s.came()?;
+            if dirty {
                 std::thread::sleep(SETTLE);
-                s.dirty.take();
-                let (items, menus) = read(&s.conn, &registered(&s)?);
+                s.came()?;
+                dirty = false;
+                let keys = registered(&mut s)?;
+                let (items, menus) = read(&mut s.bus, &keys);
                 s.menus = menus;
                 if let Some(items) = last.offer(items) {
                     let names: Vec<String> = items.iter().map(|t| format!("{} ({} entries)", t.title, t.menu.len())).collect();
                     log::info!("tray: {}", if names.is_empty() { "no icons".to_owned() } else { names.join(", ") });
                     self.sink.send(Event::Tray(items))?;
                 }
+                // (What came while reading: read again.)
+                continue;
             }
             loop {
                 match commands.try_recv() {
                     Ok(command) => {
-                        if let Err(e) = carry_out(&s, &command) {
+                        if let Err(e) = carry_out(&mut s, &command) {
                             log::warn!("tray: {command:?}: {e}");
                         }
                     }
@@ -145,8 +134,15 @@ impl<S: Sink> Service for Tray<S> {
                     Err(TryRecvError::Disconnected) => return Ok(()),
                 }
             }
-            // Asleep until a command or a signal.
-            let mut fds = [rustix::event::PollFd::from_borrowed_fd(self.bell.fd(), rustix::event::PollFlags::IN)];
+            if s.came()? {
+                dirty = true;
+                continue;
+            }
+            // Asleep until a command, a signal or a call.
+            let mut fds = [
+                rustix::event::PollFd::from_borrowed_fd(self.bell.fd(), rustix::event::PollFlags::IN),
+                rustix::event::PollFd::from_borrowed_fd(s.bus.fd(), rustix::event::PollFlags::IN),
+            ];
             let _ = rustix::event::poll(&mut fds, None);
             self.bell.clear();
         }
@@ -157,115 +153,111 @@ impl<S: Sink> Service for Tray<S> {
     }
 }
 
-/// The watcher, served where no one else is.
-struct Watcher {
-    items: Arc<Mutex<Vec<String>>>,
-    dirty: Dirty,
-}
-
-#[zbus::interface(name = "org.kde.StatusNotifierWatcher")]
-impl Watcher {
-    /// An icon registered: by its D-Bus name (its object at the usual path), or by its object path (the
-    /// sender's). Kept as KDE's watcher has it: the name, then the path.
-    async fn register_status_notifier_item(
-        &self,
-        service: &str,
-        #[zbus(header)] header: zbus::message::Header<'_>,
-        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
-    ) {
-        let sender = header.sender().map(ToString::to_string).unwrap_or_default();
-        let key = if service.starts_with('/') { format!("{sender}{service}") } else { format!("{service}{ITEM_PATH}") };
-        {
-            let mut items = self.items.lock().unwrap_or_else(PoisonError::into_inner);
-            if !items.contains(&key) {
-                items.push(key.clone());
+impl Session {
+    /// Whether anything came that changes the icons: a signal, or an icon registered with us (which is
+    /// signalled in turn).
+    fn came(&mut self) -> dbus::Result<bool> {
+        let signals = self.bus.signals()?;
+        let registered = self.ours.as_ref().map(|w| std::mem::take(&mut w.lock().unwrap_or_else(PoisonError::into_inner).registered)).unwrap_or_default();
+        for key in &registered {
+            if let Ok(signal) = Message::new_signal(WATCHER_PATH, WATCHER, "StatusNotifierItemRegistered") {
+                let _ = self.bus.send(signal.append1(key.as_str()));
             }
         }
-        self.dirty.mark();
-        let _ = Self::status_notifier_item_registered(&emitter, &key).await;
+        Ok(!signals.is_empty() || !registered.is_empty())
     }
-
-    /// A host (a panel) registered: we are the only one shown.
-    fn register_status_notifier_host(&self, _service: &str) {}
-
-    #[zbus(property)]
-    fn registered_status_notifier_items(&self) -> Vec<String> {
-        self.items.lock().unwrap_or_else(PoisonError::into_inner).clone()
-    }
-
-    #[zbus(property)]
-    fn is_status_notifier_host_registered(&self) -> bool {
-        true
-    }
-
-    #[zbus(property)]
-    fn protocol_version(&self) -> i32 {
-        0
-    }
-
-    #[zbus(signal)]
-    async fn status_notifier_item_registered(emitter: &SignalEmitter<'_>, service: &str) -> zbus::Result<()>;
-
-    #[zbus(signal)]
-    async fn status_notifier_item_unregistered(emitter: &SignalEmitter<'_>, service: &str) -> zbus::Result<()>;
-
-    #[zbus(signal)]
-    async fn status_notifier_host_registered(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
 }
+
+/// The watcher's interface, as introspection gives it.
+const WATCHER_XML: &str = r#"<node><interface name="org.kde.StatusNotifierWatcher">
+<method name="RegisterStatusNotifierItem"><arg name="service" type="s" direction="in"/></method>
+<method name="RegisterStatusNotifierHost"><arg name="service" type="s" direction="in"/></method>
+<property name="RegisteredStatusNotifierItems" type="as" access="read"/>
+<property name="IsStatusNotifierHostRegistered" type="b" access="read"/>
+<property name="ProtocolVersion" type="i" access="read"/>
+<signal name="StatusNotifierItemRegistered"><arg type="s"/></signal>
+<signal name="StatusNotifierItemUnregistered"><arg type="s"/></signal>
+<signal name="StatusNotifierHostRegistered"/>
+</interface></node>"#;
 
 /// Serves the watcher, if no one else does: the icons registered with it; none if another has the name.
-fn serve_watcher(conn: &Connection, dirty: &Dirty) -> Result<Option<Arc<Mutex<Vec<String>>>>, Error> {
-    let items = Arc::new(Mutex::new(Vec::new()));
-    conn.object_server().at(WATCHER_PATH, Watcher { items: items.clone(), dirty: dirty.clone() })?;
-    match conn.request_name_with_flags(WATCHER, zbus::fdo::RequestNameFlags::DoNotQueue.into()) {
-        Ok(zbus::fdo::RequestNameReply::PrimaryOwner | zbus::fdo::RequestNameReply::AlreadyOwner) => {
-            log::info!("tray: the watcher is ours");
-            // (Programs that started before us wait for a host to show their icons.)
-            if let Ok(iface) = conn.object_server().interface::<_, Watcher>(WATCHER_PATH) {
-                let _ = zbus::block_on(Watcher::status_notifier_host_registered(iface.signal_emitter()));
-            }
-            Ok(Some(items))
-        }
-        _ => {
-            let _ = conn.object_server().remove::<Watcher, _>(WATCHER_PATH);
-            log::info!("tray: reading the watcher there");
-            Ok(None)
-        }
+fn serve_watcher(bus: &mut Bus) -> Result<Option<Arc<Mutex<Watched>>>, Error> {
+    // DBUS_NAME_FLAG_DO_NOT_QUEUE; replies: 1 the primary owner, 4 already the owner.
+    let (reply,): (u32,) = bus.call(BUS_NAME, BUS_PATH, BUS_NAME, "RequestName", (WATCHER, 4u32))?;
+    if !matches!(reply, 1 | 4) {
+        log::info!("tray: reading the watcher there");
+        return Ok(None);
     }
+    log::info!("tray: the watcher is ours");
+    let watched = Arc::new(Mutex::new(Watched::default()));
+    let state = watched.clone();
+    bus.serve(Box::new(move |call| answer_watcher(&state, call)));
+    // (Programs that started before us wait for a host to show their icons.)
+    if let Ok(signal) = Message::new_signal(WATCHER_PATH, WATCHER, "StatusNotifierHostRegistered") {
+        bus.send(signal)?;
+    }
+    Ok(Some(watched))
 }
 
-/// Marks the icons to be read again at any signal of the watcher, an icon, a menu, or a name's owner
-/// changing (a program gone), on a thread of its own.
-fn follow_signals(conn: &Connection, dirty: &Dirty) -> Result<(), Error> {
-    let dbus = DBusProxy::new(conn)?;
-    for interface in [WATCHER, ITEM, MENU] {
-        dbus.add_match_rule(zbus::MatchRule::builder().msg_type(zbus::message::Type::Signal).interface(interface)?.build())?;
+/// The watcher's reply to a call, if the call is its.
+fn answer_watcher(watched: &Mutex<Watched>, call: &Message) -> Option<Message> {
+    if call.path().as_deref() != Some(WATCHER_PATH) {
+        return None;
     }
-    dbus.add_match_rule(
-        zbus::MatchRule::builder().msg_type(zbus::message::Type::Signal).interface("org.freedesktop.DBus")?.member("NameOwnerChanged")?.build(),
-    )?;
-    let messages = zbus::blocking::MessageIterator::from(conn.clone());
-    let dirty = dirty.clone();
-    worker::detached("tray signals", move || {
-        for message in messages.flatten() {
-            if message.message_type() == zbus::message::Type::Signal {
-                dirty.mark();
-            }
+    let mut w = watched.lock().unwrap_or_else(PoisonError::into_inner);
+    let property = |w: &Watched, name: &str| -> Option<Value> {
+        match name {
+            "RegisteredStatusNotifierItems" => Some(value(w.items.clone())),
+            "IsStatusNotifierHostRegistered" => Some(value(true)),
+            "ProtocolVersion" => Some(value(0i32)),
+            _ => None,
         }
-    })
-    .map_err(|e| Error::Bus(zbus::Error::InputOutput(Arc::new(e))))
+    };
+    match (call.interface().as_deref().unwrap_or(WATCHER), &*call.member()?) {
+        // An icon registered: by its D-Bus name (its object at the usual path), or by its object path
+        // (the sender's). Kept as KDE's watcher has it: the name, then the path.
+        (WATCHER, "RegisterStatusNotifierItem") => {
+            let service: String = call.read1().ok()?;
+            let sender = call.sender().map(|s| s.to_string()).unwrap_or_default();
+            let key = if service.starts_with('/') { format!("{sender}{service}") } else { format!("{service}{ITEM_PATH}") };
+            if !w.items.contains(&key) {
+                w.items.push(key.clone());
+            }
+            w.registered.push(key);
+            Some(call.method_return())
+        }
+        // A host (a panel) registered: we are the only one shown.
+        (WATCHER, "RegisterStatusNotifierHost") => Some(call.method_return()),
+        ("org.freedesktop.DBus.Properties", "Get") => {
+            let (_, name): (String, String) = call.read2().ok()?;
+            Some(call.return_with_args((property(&w, &name)?,)))
+        }
+        ("org.freedesktop.DBus.Properties", "GetAll") => {
+            let names = ["RegisteredStatusNotifierItems", "IsStatusNotifierHostRegistered", "ProtocolVersion"];
+            let all: PropMap = names.iter().filter_map(|&n| Some((n.to_owned(), property(&w, n)?))).collect();
+            Some(call.return_with_args((all,)))
+        }
+        ("org.freedesktop.DBus.Introspectable", "Introspect") => Some(call.return_with_args((WATCHER_XML,))),
+        ("org.freedesktop.DBus.Peer", "Ping") => Some(call.method_return()),
+        _ => None,
+    }
 }
 
 /// The icons registered: ours (those whose program is gone dropped), or the watcher's there.
-fn registered(s: &Session) -> Result<Vec<String>, Error> {
+fn registered(s: &mut Session) -> dbus::Result<Vec<String>> {
     let Some(ours) = &s.ours else {
-        let watcher = zbus::blocking::Proxy::new(&s.conn, WATCHER, WATCHER_PATH, WATCHER)?;
-        return Ok(watcher.get_property::<Vec<String>>("RegisteredStatusNotifierItems").unwrap_or_default());
+        return Ok(s.bus.get::<Vec<String>>(WATCHER, WATCHER_PATH, WATCHER, "RegisteredStatusNotifierItems").unwrap_or_default());
     };
-    let dbus = DBusProxy::new(&s.conn)?;
-    let mut items = ours.lock().unwrap_or_else(PoisonError::into_inner);
-    items.retain(|key| BusName::try_from(split(key).0).is_ok_and(|name| dbus.name_has_owner(name).unwrap_or(false)));
-    Ok(items.clone())
+    let items = ours.lock().unwrap_or_else(PoisonError::into_inner).items.clone();
+    let mut kept = Vec::with_capacity(items.len());
+    for key in items {
+        let owned: dbus::Result<(bool,)> = s.bus.call(BUS_NAME, BUS_PATH, BUS_NAME, "NameHasOwner", (split(&key).0,));
+        if owned.is_ok_and(|(o,)| o) {
+            kept.push(key);
+        }
+    }
+    ours.lock().unwrap_or_else(PoisonError::into_inner).items.retain(|k| kept.contains(k));
+    Ok(kept)
 }
 
 /// An icon's key as the name and the object path.
@@ -277,12 +269,12 @@ fn split(key: &str) -> (&str, &str) {
 }
 
 /// Every icon (those that can't be read left out), and their menus' paths.
-fn read(conn: &Connection, keys: &[String]) -> (Vec<TrayItem>, HashMap<String, OwnedObjectPath>) {
+fn read(bus: &mut Bus, keys: &[String]) -> (Vec<TrayItem>, HashMap<String, String>) {
     let dirs = crate::desktop::data_dirs();
     let mut menus = HashMap::new();
     let items = keys
         .iter()
-        .filter_map(|key| match read_item(conn, key, &dirs) {
+        .filter_map(|key| match read_item(bus, key, &dirs) {
             Ok((item, menu)) => {
                 if let Some(menu) = menu {
                     menus.insert(key.clone(), menu);
@@ -298,18 +290,18 @@ fn read(conn: &Connection, keys: &[String]) -> (Vec<TrayItem>, HashMap<String, O
     (items, menus)
 }
 
-fn read_item(conn: &Connection, key: &str, dirs: &[PathBuf]) -> Result<(TrayItem, Option<OwnedObjectPath>), Error> {
+fn read_item(bus: &mut Bus, key: &str, dirs: &[PathBuf]) -> Result<(TrayItem, Option<String>), Error> {
     let (name, path) = split(key);
-    let props = zbus::blocking::fdo::PropertiesProxy::builder(conn).destination(name)?.path(path)?.build()?;
-    let all = props.get_all(ITEM.try_into().map_err(zbus::Error::from)?)?;
-    let text = |k: &str| all.get(k).and_then(|v| String::try_from(v.try_clone().ok()?).ok()).unwrap_or_default();
-    let pid = DBusProxy::new(conn)?.get_connection_unix_process_id(BusName::try_from(name).map_err(zbus::Error::from)?).ok();
+    let all = bus.get_all(name, path, ITEM)?;
+    let props = Props(&all);
+    let text = |k: &str| props.str(k).unwrap_or_default();
+    let pid = bus.call::<(u32,)>(BUS_NAME, BUS_PATH, BUS_NAME, "GetConnectionUnixProcessID", (name,)).ok().map(|(pid,)| pid);
     // (Remembered as it is now: what is done to it later by its id is checked to be it still.)
     if let Some(pid) = pid {
         crate::sys::saw(pid);
     }
-    let menu = all.get("Menu").and_then(|v| OwnedObjectPath::try_from(v.try_clone().ok()?).ok()).filter(|p| p.as_str() != "/");
-    let entries = menu.as_ref().map(|m| read_menu(conn, name, m)).unwrap_or_default();
+    let menu = props.path("Menu").filter(|p| p != "/");
+    let entries = menu.as_ref().map(|m| read_menu(bus, name, m)).unwrap_or_default();
     let icon_name = text("IconName");
     let icon = (!icon_name.is_empty()).then(|| find_icon(&icon_name, &text("IconThemePath"), dirs)).flatten();
     let item = TrayItem { key: key.into(), id: text("Id"), title: text("Title"), pid, unit: pid.and_then(cgroup::unit_of), icon, menu: entries };
@@ -335,59 +327,52 @@ fn find_icon(name: &str, theme_path: &str, dirs: &[PathBuf]) -> Option<PathBuf> 
 }
 
 /// A menu's entries, as its program has them now (asked to bring the menu up to date first).
-fn read_menu(conn: &Connection, name: &str, path: &OwnedObjectPath) -> Vec<TrayEntry> {
-    let Ok(menu) = zbus::blocking::Proxy::new(conn, name.to_owned(), path.to_owned(), MENU) else {
-        return vec![];
-    };
-    let _: zbus::Result<bool> = menu.call("AboutToShow", &(0i32,));
-    let layout: zbus::Result<(u32, Node)> = menu.call("GetLayout", &(0i32, -1i32, Vec::<String>::new()));
+fn read_menu(bus: &mut Bus, name: &str, path: &str) -> Vec<TrayEntry> {
+    let _ = bus.call::<(bool,)>(name, path, MENU, "AboutToShow", (0i32,));
+    let layout = bus.call::<(u32, Node)>(name, path, MENU, "GetLayout", (0i32, -1i32, Vec::<String>::new()));
     match layout {
         Ok((_, (_, _, children))) => children.iter().filter_map(|c| entry(c)).collect(),
         Err(e) => {
-            log::debug!("tray: {name}{}: menu: {e}", path.as_str());
+            log::debug!("tray: {name}{path}: menu: {e}");
             vec![]
         }
     }
 }
 
 /// A menu's layout node: an entry's id, its properties, its children (nodes, in variants).
-type Node = (i32, HashMap<String, OwnedValue>, Vec<OwnedValue>);
+type Node = (i32, PropMap, Vec<Value>);
 
 /// A menu entry from its layout node (`(id, properties, children)`, in a variant); none for a separator
 /// or a hidden one.
-fn entry(node: &Value) -> Option<TrayEntry> {
-    let Value::Structure(node) = unwrap(node) else {
-        return None;
-    };
-    let [id, props, children] = node.fields() else {
-        return None;
-    };
-    let Value::I32(id) = unwrap(id) else {
-        return None;
-    };
-    let Value::Dict(props) = unwrap(props) else {
-        return None;
-    };
-    let prop = |key: &str| props.get::<&str, Value>(&key).ok().flatten().and_then(|v| unwrap(&v).try_to_owned().ok());
-    let text = |key: &str| prop(key).and_then(|v| String::try_from(v).ok());
-    let flag = |key: &str| prop(key).and_then(|v| bool::try_from(v).ok());
+fn entry(node: &dyn RefArg) -> Option<TrayEntry> {
+    let mut fields = unwrap(node)?.as_iter()?;
+    let (id, props, children) = (fields.next()?, fields.next()?, fields.next()?);
+    let id = i32::try_from(unwrap(id)?.as_i64()?).ok()?;
+    // (A dictionary iterates as its keys and values in turn.)
+    let mut props_iter = unwrap(props)?.as_iter()?;
+    let mut map: HashMap<&str, &dyn RefArg> = HashMap::new();
+    while let (Some(k), Some(v)) = (props_iter.next(), props_iter.next()) {
+        if let (Some(k), Some(v)) = (k.as_str(), unwrap(v)) {
+            map.insert(k, v);
+        }
+    }
+    let text = |key: &str| map.get(key).and_then(|v| v.as_str()).map(str::to_owned);
+    let number = |key: &str| map.get(key).and_then(|v| v.as_i64());
+    let flag = |key: &str| number(key).map(|n| n != 0);
     if text("type").as_deref() == Some("separator") || flag("visible") == Some(false) {
         return None;
     }
-    let checked = text("toggle-type").filter(|t| !t.is_empty()).map(|_| prop("toggle-state").and_then(|v| i32::try_from(v).ok()) == Some(1));
-    let children = match unwrap(children) {
-        Value::Array(a) => a.iter().filter_map(entry).collect(),
-        _ => vec![],
-    };
-    Some(TrayEntry { id: *id, label: mnemonic_free(&text("label").unwrap_or_default()), enabled: flag("enabled") != Some(false), checked, children })
+    let checked = text("toggle-type").filter(|t| !t.is_empty()).map(|_| number("toggle-state") == Some(1));
+    let children = unwrap(children).and_then(|c| c.as_iter()).map(|c| c.filter_map(entry).collect()).unwrap_or_default();
+    Some(TrayEntry { id, label: mnemonic_free(&text("label").unwrap_or_default()), enabled: flag("enabled") != Some(false), checked, children })
 }
 
 /// A value out of the variants it is wrapped in.
-fn unwrap<'a>(mut v: &'a Value<'a>) -> &'a Value<'a> {
-    while let Value::Value(inner) = v {
-        v = inner;
+fn unwrap(mut v: &dyn RefArg) -> Option<&dyn RefArg> {
+    while v.arg_type() == ::dbus::arg::ArgType::Variant {
+        v = v.as_iter()?.next()?;
     }
-    v
+    Some(v)
 }
 
 /// A menu label without its access key marks: `_File` is `File`, `__` an underscore.
@@ -407,20 +392,18 @@ fn mnemonic_free(label: &str) -> String {
     out
 }
 
-fn carry_out(s: &Session, command: &TrayCommand) -> Result<(), Error> {
+fn carry_out(s: &mut Session, command: &TrayCommand) -> Result<(), Error> {
     match command {
         TrayCommand::Activate(key) => {
             let (name, path) = split(key);
-            let item = zbus::blocking::Proxy::new(&s.conn, name.to_owned(), path.to_owned(), ITEM)?;
-            item.call_noreply("Activate", &(0i32, 0i32))?;
+            s.bus.call_noreply(name, path, ITEM, "Activate", (0i32, 0i32))?;
         }
         TrayCommand::Click { item, id } => {
             let Some(menu) = s.menus.get(&**item) else {
                 return Ok(());
             };
             let (name, _) = split(item);
-            let menu = zbus::blocking::Proxy::new(&s.conn, name.to_owned(), menu.clone(), MENU)?;
-            menu.call_noreply("Event", &(*id, "clicked", Value::I32(0), 0u32))?;
+            s.bus.call_noreply(name, menu, MENU, "Event", (*id, "clicked", Variant(0i32), 0u32))?;
         }
     }
     Ok(())
@@ -428,10 +411,9 @@ fn carry_out(s: &Session, command: &TrayCommand) -> Result<(), Error> {
 
 /// The tray icons there are now, read once (`clamshell --tray`): as the watcher there has them.
 pub fn read_now() -> Result<Vec<TrayItem>, Error> {
-    let conn = Connection::session()?;
-    let watcher = zbus::blocking::Proxy::new(&conn, WATCHER, WATCHER_PATH, WATCHER)?;
-    let keys = watcher.get_property::<Vec<String>>("RegisteredStatusNotifierItems")?;
-    Ok(read(&conn, &keys).0)
+    let mut bus = Bus::session()?.with_timeout(CALL_LIMIT);
+    let keys = bus.get::<Vec<String>>(WATCHER, WATCHER_PATH, WATCHER, "RegisteredStatusNotifierItems")?;
+    Ok(read(&mut bus, &keys).0)
 }
 
 #[cfg(test)]
@@ -449,19 +431,21 @@ mod tests {
 
     #[test]
     fn menu_entries_from_their_layout() {
-        let props = |label: &str, extra: &[(&str, Value<'static>)]| {
-            let mut d: HashMap<String, Value<'static>> = HashMap::from([("label".into(), Value::from(label.to_owned()))]);
-            d.extend(extra.iter().map(|(k, v)| ((*k).to_owned(), v.try_clone().unwrap())));
-            d
+        type Props = Vec<(&'static str, Value)>;
+        let node = |id: i32, label: &str, extra: Props, kids: Vec<Value>| {
+            let mut props: PropMap = PropMap::from([("label".to_owned(), value(label.to_owned()))]);
+            props.extend(extra.into_iter().map(|(k, v)| (k.to_owned(), v)));
+            value((id, props, kids))
         };
-        let node = |id: i32, p: HashMap<String, Value<'static>>, kids: Vec<Value<'static>>| {
-            Value::Value(Box::new(Value::from(zbus::zvariant::Structure::from((id, p, kids)))))
-        };
-        let sep = node(2, props("", &[("type", Value::from("separator"))]), vec![]);
-        let tick = node(3, props("_Big Picture", &[("toggle-type", Value::from("checkmark")), ("toggle-state", Value::from(1i32))]), vec![]);
-        let off = node(4, props("Hidden", &[("visible", Value::from(false))]), vec![]);
-        let sub = node(1, props("Games", &[("children-display", Value::from("submenu"))]), vec![node(5, props("Zelda", &[]), vec![])]);
-        let entries: Vec<TrayEntry> = [sub, sep, tick, off].iter().filter_map(entry).collect();
+        let sep = node(2, "", vec![("type", value("separator".to_owned()))], vec![]);
+        let tick = node(3, "_Big Picture", vec![("toggle-type", value("checkmark".to_owned())), ("toggle-state", value(1i32))], vec![]);
+        let off = node(4, "Hidden", vec![("visible", value(false))], vec![]);
+        let sub = node(1, "Games", vec![("children-display", value("submenu".to_owned()))], vec![node(5, "Zelda", vec![], vec![])]);
+        // (Through a message, as a program's layout comes.)
+        let message = Message::new_signal("/", "test.Menu", "Layout").unwrap().append1(vec![sub, sep, tick, off]);
+        let nodes: Vec<Value> = message.read1().unwrap();
+        let entries: Vec<TrayEntry> = nodes.iter().filter_map(|n| entry(n)).collect();
+        assert_eq!(entries.iter().map(|e| e.label.as_str()).collect::<Vec<_>>(), ["Games", "Big Picture"]);
         assert_eq!(entries.iter().map(|e| e.label.as_str()).collect::<Vec<_>>(), ["Games", "Big Picture"]);
         assert_eq!(entries[0].children[0].label, "Zelda");
         assert_eq!(entries[1].checked, Some(true));

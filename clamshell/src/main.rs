@@ -28,8 +28,7 @@ use cli::Command;
 use config::Env;
 
 fn main() -> ExitCode {
-    // zbus logs its handshake as info: only its warnings.
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info,zbus=warn,tracing=warn")).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info,tracing=warn")).init();
     let args: Vec<String> = std::env::args().skip(1).collect();
     let Some(command) = cli::parse(&args) else {
         eprintln!("{}", cli::USAGE);

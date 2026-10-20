@@ -16,14 +16,12 @@ use std::time::{Duration, Instant};
 
 use clamshell_core::wifi::{self, Command, Network, Problem, Wifi};
 use clamshell_core::{Event, Reading};
-use zbus::blocking::Connection;
-use zbus::zvariant::{ObjectPath, OwnedObjectPath, Value};
 
-use crate::dbus::{self, Props};
+use crate::dbus::{self, Bus, Path, Props, Value, value};
 use crate::worker::{self, Changed, Ended, Next, Service, Worker, lost_on};
 use crate::{Closed, Sink};
-use nm::{AP_PRIVACY, KEY_MGMT_8021X, KEY_MGMT_PSK, KEY_MGMT_SAE, ManagerProxy, SettingsProxy, WirelessProxy};
-use nm::{AccessPointProxy, ActiveProxy, ActiveReason, ActiveState, ConnectionProxy, DeviceProxy, DeviceReason, DeviceState, DeviceType};
+use nm::{AP_PRIVACY, KEY_MGMT_8021X, KEY_MGMT_PSK, KEY_MGMT_SAE, SERVICE};
+use nm::{ActiveReason, ActiveState, DeviceReason, DeviceState, DeviceType};
 
 /// How often the list is read while the mode is open, and how often a scan is asked for.
 const READ_EVERY: Duration = Duration::from_secs(1);
@@ -44,9 +42,7 @@ pub enum Request {
 
 #[derive(Debug)]
 enum Error {
-    Bus(zbus::Error),
-    /// A thread forwarding signals couldn't be started.
-    Thread(io::Error),
+    Bus(dbus::Error),
     NoDevice,
 }
 
@@ -54,31 +50,18 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::Bus(e) => write!(f, "{e}"),
-            Error::Thread(e) => write!(f, "{e}"),
             Error::NoDevice => write!(f, "no Wi-Fi device"),
         }
     }
 }
 
-impl From<zbus::Error> for Error {
-    fn from(e: zbus::Error) -> Self {
+impl From<dbus::Error> for Error {
+    fn from(e: dbus::Error) -> Self {
         Error::Bus(e)
     }
 }
 
-impl From<zbus::zvariant::Error> for Error {
-    fn from(e: zbus::zvariant::Error) -> Self {
-        Error::Bus(e.into())
-    }
-}
-
-impl From<io::Error> for Error {
-    fn from(e: io::Error) -> Self {
-        Error::Thread(e)
-    }
-}
-
-lost_on!(Error: zbus::Error, io::Error);
+lost_on!(Error: dbus::Error);
 
 pub fn spawn(sink: impl Sink) -> io::Result<Worker<Request>> {
     Worker::spawn("wifi", move |commands| worker::supervise(&mut WifiThread { sink, state: WifiState::default() }, &commands, RETRY))
@@ -88,10 +71,10 @@ pub fn spawn(sink: impl Sink) -> io::Result<Worker<Request>> {
 struct Attempt {
     ssid: String,
     /// The connection we added for it (deleted again if the join fails).
-    added: Option<OwnedObjectPath>,
+    added: Option<Path<'static>>,
     /// The active connection NetworkManager made for it, and the device it is on.
-    active: OwnedObjectPath,
-    device: OwnedObjectPath,
+    active: Path<'static>,
+    device: Path<'static>,
     started: Instant,
     /// The device's reason for failing meanwhile, if it did: why the join failed.
     device_failure: Option<u32>,
@@ -114,50 +97,77 @@ struct WifiThread<S> {
 /// An object's StateChanged signal: its new state and the reason.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct StateChange {
-    object: OwnedObjectPath,
+    object: Path<'static>,
     state: u32,
     reason: u32,
 }
 
-/// A connection to NetworkManager, with the state changes of every active connection and device,
+/// A connection to NetworkManager, with the state changes of every active connection and device
 /// subscribed to for as long as it lasts (a join's own pass too quickly to be polled).
 struct Session {
-    conn: Connection,
-    nm: ManagerProxy<'static>,
-    active_changes: Receiver<StateChange>,
-    device_changes: Receiver<StateChange>,
+    bus: Bus,
+    /// Those come since the last look.
+    active_changes: Vec<StateChange>,
+    device_changes: Vec<StateChange>,
 }
 
 impl Session {
     fn connect() -> Result<Session, Error> {
-        let conn = Connection::system()?;
-        let nm: ManagerProxy = dbus::default_proxy(&conn)?;
+        let mut bus = Bus::system()?;
         // NetworkManager is there.
-        nm.wireless_enabled()?;
-        // Active connections signal (state, reason); devices (new state, old state, reason).
-        let active_changes = state_changes(&conn, nm::ACTIVE, "wifi-active", |body| body.deserialize::<(u32, u32)>().ok())?;
-        let device_changes =
-            state_changes(&conn, nm::DEVICE, "wifi-device", |body| body.deserialize::<(u32, u32, u32)>().ok().map(|(new, _old, reason)| (new, reason)))?;
-        Ok(Session { conn, nm, active_changes, device_changes })
+        bus.get::<bool>(SERVICE, nm::PATH, nm::MANAGER, "WirelessEnabled")?;
+        for interface in [nm::ACTIVE, nm::DEVICE] {
+            bus.add_match(&format!("type='signal',sender='{SERVICE}',interface='{interface}',member='StateChanged'"))?;
+        }
+        Ok(Session { bus, active_changes: Vec::new(), device_changes: Vec::new() })
     }
 
-    fn proxy<P>(&self, path: &str) -> zbus::Result<P>
-    where
-        P: zbus::blocking::proxy::ProxyImpl<'static> + From<zbus::Proxy<'static>>,
-    {
-        dbus::proxy(&self.conn, path)
+    /// The state changes signalled since the last look, added to those kept.
+    fn take_signals(&mut self) -> dbus::Result<()> {
+        for message in self.bus.signals()? {
+            let Some(object) = message.path().map(Path::into_static) else {
+                continue;
+            };
+            match message.interface().as_deref() {
+                // Active connections signal (state, reason); devices (new state, old state, reason).
+                Some(nm::ACTIVE) => {
+                    if let Ok((state, reason)) = message.read2::<u32, u32>() {
+                        self.active_changes.push(StateChange { object, state, reason });
+                    }
+                }
+                Some(nm::DEVICE) => {
+                    if let Ok((state, _old, reason)) = message.read3::<u32, u32, u32>() {
+                        self.device_changes.push(StateChange { object, state, reason });
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn get<T: ::dbus::arg::Arg + for<'z> ::dbus::arg::Get<'z>>(&mut self, path: &str, interface: &str, name: &str) -> dbus::Result<T> {
+        self.bus.get(SERVICE, path, interface, name)
+    }
+
+    fn call<R: ::dbus::arg::ReadAll>(&mut self, path: &str, interface: &str, method: &str, args: impl ::dbus::arg::AppendAll) -> dbus::Result<R> {
+        self.bus.call(SERVICE, path, interface, method, args)
+    }
+
+    fn wireless_enabled(&mut self) -> dbus::Result<bool> {
+        self.get(nm::PATH, nm::MANAGER, "WirelessEnabled")
     }
 
     /// The first Wi-Fi device NetworkManager manages (one it leaves alone, an access point's radio,
     /// isn't joined from), else the first Wi-Fi device, if any.
-    fn wifi_device(&self) -> zbus::Result<Option<OwnedObjectPath>> {
+    fn wifi_device(&mut self) -> dbus::Result<Option<Path<'static>>> {
+        let (devices,): (Vec<Path<'static>>,) = self.call(nm::PATH, nm::MANAGER, "GetDevices", ())?;
         let mut unmanaged = None;
-        for path in self.nm.get_devices()? {
-            let device = self.proxy::<DeviceProxy>(path.as_str())?;
-            if device.device_type()? != DeviceType::Wifi as u32 {
+        for path in devices {
+            if self.get::<u32>(&path, nm::DEVICE, "DeviceType")? != DeviceType::Wifi as u32 {
                 continue;
             }
-            if device.state()? != DeviceState::Unmanaged as u32 {
+            if self.get::<u32>(&path, nm::DEVICE, "State")? != DeviceState::Unmanaged as u32 {
                 return Ok(Some(path));
             }
             unmanaged.get_or_insert(path);
@@ -165,20 +175,24 @@ impl Session {
         Ok(unmanaged)
     }
 
-    fn access_points(&self, device: &OwnedObjectPath) -> zbus::Result<Vec<Ap>> {
-        let paths = self.proxy::<WirelessProxy>(device.as_str())?.get_all_access_points()?;
+    fn access_points(&mut self, device: &Path<'static>) -> dbus::Result<Vec<Ap>> {
+        let (paths,): (Vec<Path<'static>>,) = self.call(device, nm::WIRELESS, "GetAllAccessPoints", ())?;
         let mut aps = Vec::with_capacity(paths.len());
         for path in paths {
-            let ap: AccessPointProxy = self.proxy(path.as_str())?;
             // An access point can vanish between the list and its properties.
-            let Ok(ssid) = ap.ssid() else {
+            let Ok(props) = self.bus.get_all(SERVICE, &path, nm::ACCESS_POINT) else {
                 continue;
             };
+            let p = Props(&props);
+            let Some(ssid) = p.bytes("Ssid") else {
+                continue;
+            };
+            let number = |key: &str| props.get(key).and_then(|v| v.0.as_u64()).unwrap_or(0);
             aps.push(Ap {
                 ssid: String::from_utf8_lossy(&ssid).into_owned(),
-                strength: ap.strength().unwrap_or(0),
-                flags: ap.flags().unwrap_or(0),
-                security: ap.wpa_flags().unwrap_or(0) | ap.rsn_flags().unwrap_or(0),
+                strength: u8::try_from(number("Strength")).unwrap_or(0),
+                flags: u32::try_from(number("Flags")).unwrap_or(0),
+                security: u32::try_from(number("WpaFlags") | number("RsnFlags")).unwrap_or(0),
                 path,
             });
         }
@@ -186,10 +200,11 @@ impl Session {
     }
 
     /// Saved Wi-Fi connections: (path, SSID).
-    fn saved(&self) -> zbus::Result<Vec<(OwnedObjectPath, String)>> {
+    fn saved(&mut self) -> dbus::Result<Vec<(Path<'static>, String)>> {
+        let (connections,): (Vec<Path<'static>>,) = self.call(nm::SETTINGS_PATH, nm::SETTINGS, "ListConnections", ())?;
         let mut out = Vec::new();
-        for path in dbus::default_proxy::<SettingsProxy>(&self.conn)?.list_connections()? {
-            let settings = self.proxy::<ConnectionProxy>(path.as_str())?.get_settings()?;
+        for path in connections {
+            let (settings,): (HashMap<String, dbus::PropMap>,) = self.call(&path, nm::CONNECTION, "GetSettings", ())?;
             if let Some(ssid) = settings.get("802-11-wireless").and_then(|w| Props(w).bytes("ssid")) {
                 out.push((path, String::from_utf8_lossy(&ssid).into_owned()));
             }
@@ -197,32 +212,14 @@ impl Session {
         Ok(out)
     }
 
-    fn delete(&self, connection: &OwnedObjectPath) -> zbus::Result<()> {
-        self.proxy::<ConnectionProxy>(connection.as_str())?.delete()
+    fn delete(&mut self, connection: &Path<'static>) -> dbus::Result<()> {
+        self.call(connection, nm::CONNECTION, "Delete", ())
     }
-}
-
-/// The StateChanged signals of every object with `interface`; `state` reads (state, reason) from a
-/// signal's body.
-fn state_changes(
-    conn: &Connection,
-    interface: &'static str,
-    name: &str,
-    state: fn(&zbus::message::Body) -> Option<(u32, u32)>,
-) -> Result<Receiver<StateChange>, Error> {
-    let rule = zbus::MatchRule::builder().msg_type(zbus::message::Type::Signal).interface(interface)?.member("StateChanged")?.build();
-    let signals = zbus::blocking::MessageIterator::for_match_rule(rule, conn, None)?;
-    Ok(dbus::forward_signals(name, signals, move |message| {
-        let message = message.ok()?;
-        let object = OwnedObjectPath::from(message.header().path()?.to_owned());
-        let (state, reason) = state(&message.body())?;
-        Some(StateChange { object, state, reason })
-    })?)
 }
 
 /// An access point as NetworkManager has it.
 struct Ap {
-    path: OwnedObjectPath,
+    path: Path<'static>,
     ssid: String,
     strength: u8,
     flags: u32,
@@ -244,14 +241,14 @@ impl<S: Sink> WifiThread<S> {
         self.sink.send(Event::Reading(Reading::Wifi(wifi)))
     }
 
-    fn read(&mut self, s: &Session, device: Option<&OwnedObjectPath>) -> zbus::Result<Wifi> {
+    fn read(&mut self, s: &mut Session, device: Option<&Path<'static>>) -> dbus::Result<Wifi> {
         let st = &mut self.state;
-        let enabled = s.nm.wireless_enabled()?;
+        let enabled = s.wireless_enabled()?;
         let Some(device) = device else {
             return Ok(Wifi { device: false, enabled, error: st.error.clone(), ..Wifi::default() });
         };
-        let state = s.proxy::<DeviceProxy>(device.as_str())?.state()?;
-        let active_ap = s.proxy::<WirelessProxy>(device.as_str())?.active_access_point()?;
+        let state = s.get::<u32>(device, nm::DEVICE, "State")?;
+        let active_ap = s.get::<Path<'static>>(device, nm::WIRELESS, "ActiveAccessPoint")?;
         let known = s.saved()?;
         let aps = s.access_points(device)?;
         let active_ssid = aps.iter().find(|ap| ap.path == active_ap && state == DeviceState::Activated as u32).map(|ap| ap.ssid.clone());
@@ -272,11 +269,12 @@ impl<S: Sink> WifiThread<S> {
     }
 
     /// Ends the attempt once the network is connected, or with an error once it has failed.
-    fn follow_attempt(&mut self, s: &Session, active: Option<&str>) -> zbus::Result<()> {
+    fn follow_attempt(&mut self, s: &mut Session, active: Option<&str>) -> dbus::Result<()> {
         let st = &mut self.state;
         // The signals since the last look: the attempt's own, if there is one.
-        let active_changes: Vec<_> = s.active_changes.try_iter().collect();
-        let device_changes: Vec<_> = s.device_changes.try_iter().collect();
+        s.take_signals()?;
+        let active_changes = std::mem::take(&mut s.active_changes);
+        let device_changes = std::mem::take(&mut s.device_changes);
         let Some(attempt) = st.attempt.as_mut() else {
             return Ok(());
         };
@@ -297,7 +295,7 @@ impl<S: Sink> WifiThread<S> {
             return Ok(());
         }
         // Gone without a word (it is removed once deactivated): failed, the reason unknown.
-        if ended.is_none() && s.proxy::<ActiveProxy>(attempt.active.as_str())?.state().is_err() {
+        if ended.is_none() && s.get::<u32>(&attempt.active, nm::ACTIVE, "State").is_err() {
             ended = Some(0);
         }
         let timed_out = attempt.started.elapsed() > JOIN_FOR;
@@ -315,7 +313,7 @@ impl<S: Sink> WifiThread<S> {
     }
 
     /// Carries out a request.
-    fn apply(&mut self, s: &Session, request: Request) -> Result<(), Error> {
+    fn apply(&mut self, s: &mut Session, request: Request) -> Result<(), Error> {
         let st = &mut self.state;
         let command = match request {
             Request::Watch(on) => {
@@ -328,7 +326,7 @@ impl<S: Sink> WifiThread<S> {
             Request::Do(command) => command,
         };
         match command {
-            Command::Enable(on) => s.nm.set_wireless_enabled(on)?,
+            Command::Enable(on) => s.bus.set(SERVICE, nm::PATH, nm::MANAGER, "WirelessEnabled", on)?,
             Command::Forget(ssid) => {
                 for (path, _) in s.saved()?.into_iter().filter(|(_, s)| *s == ssid) {
                     s.delete(&path)?;
@@ -339,17 +337,22 @@ impl<S: Sink> WifiThread<S> {
                 st.error = None;
                 let device = s.wifi_device()?.ok_or(Error::NoDevice)?;
                 // From here on, the state changes are this join's.
-                s.active_changes.try_iter().for_each(drop);
-                s.device_changes.try_iter().for_each(drop);
-                let root = ObjectPath::try_from("/")?;
+                s.take_signals()?;
+                s.active_changes.clear();
+                s.device_changes.clear();
+                let root = Path::from("/");
                 let (added, active) = match (s.saved()?.into_iter().find(|(_, s)| *s == ssid), password) {
-                    (Some((connection, _)), None) => (None, s.nm.activate_connection(&connection, &device, &root)?),
+                    (Some((connection, _)), None) => {
+                        let (active,): (Path<'static>,) = s.call(nm::PATH, nm::MANAGER, "ActivateConnection", (connection, device.clone(), root))?;
+                        (None, active)
+                    }
                     (_, password) => {
                         let aps = s.access_points(&device)?;
                         let ap = aps.iter().filter(|ap| ap.ssid == ssid).max_by_key(|ap| ap.strength);
                         let settings = new_connection(&ssid, password.as_deref(), ap);
-                        let ap_path = ap.map_or_else(|| root.clone(), |ap| ap.path.as_ref().clone());
-                        let (path, active) = s.nm.add_and_activate_connection(settings, &device, &ap_path)?;
+                        let ap_path = ap.map_or(root, |ap| ap.path.clone());
+                        let (path, active): (Path<'static>, Path<'static>) =
+                            s.call(nm::PATH, nm::MANAGER, "AddAndActivateConnection", (settings, device.clone(), ap_path))?;
                         (Some(path), active)
                     }
                 };
@@ -373,13 +376,13 @@ impl<S: Sink> Service for WifiThread<S> {
 
     /// Reads every second while watching or joining (scanning every few seconds while watching), and
     /// carries out requests, until NetworkManager fails or goes.
-    fn run_while_up(&mut self, s: Session, commands: &Receiver<Request>) -> Result<(), Ended<Error>> {
+    fn run_while_up(&mut self, mut s: Session, commands: &Receiver<Request>) -> Result<(), Ended<Error>> {
         let mut last = Changed::default();
         loop {
             let busy = self.state.watching || self.state.attempt.is_some();
             match worker::next(commands, busy.then_some(READ_EVERY)) {
                 Next::Command(request) => {
-                    if let Err(e) = self.apply(&s, request) {
+                    if let Err(e) = self.apply(&mut s, request) {
                         log::warn!("wifi: {e}");
                         self.state.error = Some(Problem::Bus(e.to_string()));
                         self.state.attempt = None;
@@ -399,9 +402,9 @@ impl<S: Sink> Service for WifiThread<S> {
             {
                 self.state.last_scan = Some(Instant::now());
                 // Refused while one runs, or right after one: harmless.
-                let _ = s.proxy::<WirelessProxy>(device.as_str())?.request_scan(HashMap::new());
+                let _ = s.call::<()>(device, nm::WIRELESS, "RequestScan", (dbus::PropMap::new(),));
             }
-            let wifi = self.read(&s, device.as_ref())?;
+            let wifi = self.read(&mut s, device.as_ref())?;
             if let Some(wifi) = last.offer(wifi) {
                 self.send(wifi)?;
             }
@@ -438,19 +441,20 @@ fn classify(reason: u32, device_reason: Option<u32>, timed_out: bool, ssid: Stri
 
 /// A new connection's settings: the SSID, and the password as the access point's security wants it
 /// (WPA2/WPA3 personal, or WEP).
-fn new_connection<'a>(ssid: &'a str, password: Option<&'a str>, ap: Option<&Ap>) -> HashMap<&'static str, HashMap<&'static str, Value<'a>>> {
+fn new_connection(ssid: &str, password: Option<&str>, ap: Option<&Ap>) -> HashMap<&'static str, HashMap<&'static str, Value>> {
+    let text = |s: &str| value(s.to_owned());
     let mut settings = HashMap::new();
-    settings.insert("connection", HashMap::from([("type", Value::from("802-11-wireless")), ("id", Value::from(ssid))]));
-    settings.insert("802-11-wireless", HashMap::from([("ssid", Value::from(ssid.as_bytes().to_vec())), ("mode", Value::from("infrastructure"))]));
+    settings.insert("connection", HashMap::from([("type", text("802-11-wireless")), ("id", text(ssid))]));
+    settings.insert("802-11-wireless", HashMap::from([("ssid", value(ssid.as_bytes().to_vec())), ("mode", text("infrastructure"))]));
     if let Some(password) = password {
         let security = ap.map_or(KEY_MGMT_PSK, |ap| ap.security);
         let wep = ap.is_some_and(|ap| ap.flags & AP_PRIVACY != 0 && ap.security == 0);
         let section = if wep {
-            HashMap::from([("key-mgmt", Value::from("none")), ("wep-key0", Value::from(password)), ("wep-key-type", Value::from(1u32))])
+            HashMap::from([("key-mgmt", text("none")), ("wep-key0", text(password)), ("wep-key-type", value(1u32))])
         } else {
             // WPA3-only networks take SAE; everything else (and mixed ones) WPA-PSK.
             let key_mgmt = if security & KEY_MGMT_PSK == 0 && security & KEY_MGMT_SAE != 0 { "sae" } else { "wpa-psk" };
-            HashMap::from([("key-mgmt", Value::from(key_mgmt)), ("psk", Value::from(password))])
+            HashMap::from([("key-mgmt", text(key_mgmt)), ("psk", text(password))])
         };
         settings.insert("802-11-wireless-security", section);
     }
@@ -463,7 +467,7 @@ mod tests {
     use super::*;
 
     fn ap(flags: u32, security: u32) -> Ap {
-        Ap { path: OwnedObjectPath::try_from("/ap/1").unwrap(), ssid: "x".into(), strength: 50, flags, security }
+        Ap { path: Path::from("/ap/1"), ssid: "x".into(), strength: 50, flags, security }
     }
 
     #[test]
@@ -482,12 +486,12 @@ mod tests {
     fn the_password_goes_where_the_security_wants_it() {
         let key_mgmt = |ap: Ap| {
             let s = new_connection("x", Some("pw"), Some(&ap));
-            s["802-11-wireless-security"]["key-mgmt"].to_string()
+            s["802-11-wireless-security"]["key-mgmt"].0.as_str().unwrap_or_default().to_owned()
         };
-        assert_eq!(key_mgmt(ap(AP_PRIVACY, KEY_MGMT_PSK)), "\"wpa-psk\"");
-        assert_eq!(key_mgmt(ap(AP_PRIVACY, KEY_MGMT_PSK | KEY_MGMT_SAE)), "\"wpa-psk\"", "mixed");
-        assert_eq!(key_mgmt(ap(AP_PRIVACY, KEY_MGMT_SAE)), "\"sae\"");
-        assert_eq!(key_mgmt(ap(AP_PRIVACY, 0)), "\"none\"", "WEP");
+        assert_eq!(key_mgmt(ap(AP_PRIVACY, KEY_MGMT_PSK)), "wpa-psk");
+        assert_eq!(key_mgmt(ap(AP_PRIVACY, KEY_MGMT_PSK | KEY_MGMT_SAE)), "wpa-psk", "mixed");
+        assert_eq!(key_mgmt(ap(AP_PRIVACY, KEY_MGMT_SAE)), "sae");
+        assert_eq!(key_mgmt(ap(AP_PRIVACY, 0)), "none", "WEP");
         assert!(!new_connection("x", None, None).contains_key("802-11-wireless-security"), "open");
         assert!(ap(0, KEY_MGMT_8021X).enterprise());
     }
@@ -503,11 +507,11 @@ mod live {
     #[ignore]
     #[allow(clippy::unwrap_used)]
     fn reads_networkmanager() {
-        let s = Session::connect().unwrap();
+        let mut s = Session::connect().unwrap();
         let device = s.wifi_device().unwrap();
         let (tx, _rx) = std::sync::mpsc::channel();
         let mut thread = WifiThread { sink: tx, state: WifiState::default() };
-        let wifi = thread.read(&s, device.as_ref()).unwrap();
+        let wifi = thread.read(&mut s, device.as_ref()).unwrap();
         println!("{wifi:#?}");
         assert_eq!(wifi.device, device.is_some());
     }

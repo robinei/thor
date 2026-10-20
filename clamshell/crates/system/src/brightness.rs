@@ -7,20 +7,9 @@ use std::path::{Path, PathBuf};
 
 use clamshell_core::levels::Share;
 
-use crate::dbus::{self, Kept};
+use crate::dbus::Kept;
 use crate::sys;
 use crate::worker::{self, Quiet, Worker};
-
-/// logind's session of this process.
-#[zbus::proxy(
-    interface = "org.freedesktop.login1.Session",
-    default_service = "org.freedesktop.login1",
-    default_path = "/org/freedesktop/login1/session/auto",
-    gen_async = false
-)]
-trait Session {
-    fn set_brightness(&self, subsystem: &str, name: &str, brightness: u32) -> zbus::Result<()>;
-}
 
 /// The backlights: the devices of a sysfs class directory (/sys/class/backlight, or another laid out the
 /// same way for tests and desktops without one).
@@ -98,7 +87,13 @@ impl Setter {
         let value = raw(level, share, max);
         let through_logind = match self.logind.get() {
             Ok(conn) => {
-                let set = dbus::default_proxy::<SessionProxy>(conn).and_then(|session| session.set_brightness("backlight", name, value));
+                let set = conn.call::<()>(
+                    "org.freedesktop.login1",
+                    "/org/freedesktop/login1/session/auto",
+                    "org.freedesktop.login1.Session",
+                    "SetBrightness",
+                    ("backlight", name, value),
+                );
                 if let Err(e) = &set {
                     self.logind.failed(e);
                 }

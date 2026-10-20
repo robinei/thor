@@ -34,18 +34,6 @@ pub enum Command {
     AskAwake(Vec<String>),
 }
 
-#[zbus::proxy(
-    interface = "org.freedesktop.login1.Manager",
-    default_service = "org.freedesktop.login1",
-    default_path = "/org/freedesktop/login1",
-    gen_async = false
-)]
-trait Manager {
-    fn can_suspend_then_hibernate(&self) -> zbus::Result<String>;
-    fn suspend_then_hibernate(&self, interactive: bool) -> zbus::Result<()>;
-    fn suspend(&self, interactive: bool) -> zbus::Result<()>;
-}
-
 /// Whether `argv` succeeds (within a few seconds).
 fn awake(argv: &[String]) -> bool {
     let Some((program, args)) = argv.split_first() else {
@@ -210,15 +198,18 @@ fn user_cgroup() -> Option<PathBuf> {
 }
 
 fn sleep() {
-    let slept = dbus::system(None).and_then(|conn| {
-        let logind = dbus::default_proxy::<ManagerProxy>(&conn)?;
-        if logind.can_suspend_then_hibernate()? == "yes" {
+    let logind = |bus: &mut dbus::Bus, method: &str| {
+        bus.call::<(String,)>("org.freedesktop.login1", "/org/freedesktop/login1", "org.freedesktop.login1.Manager", method, ())
+    };
+    let slept = dbus::Bus::system().and_then(|mut bus| {
+        let (method, interactive) = if logind(&mut bus, "CanSuspendThenHibernate")?.0 == "yes" {
             log::info!("sleep: suspend, then hibernate");
-            logind.suspend_then_hibernate(false)
+            ("SuspendThenHibernate", false)
         } else {
             log::info!("sleep: suspend");
-            logind.suspend(false)
-        }
+            ("Suspend", false)
+        };
+        bus.call::<()>("org.freedesktop.login1", "/org/freedesktop/login1", "org.freedesktop.login1.Manager", method, (interactive,))
     });
     if let Err(e) = slept {
         log::warn!("sleep: {e}");
@@ -279,21 +270,18 @@ fn set_time_zone(zone: &str) -> Result<(), String> {
 }
 
 /// A notification through the session bus' notification daemon, replacing `replaces` (0: none); its id.
-fn notify(replaces: u32, summary: &str, body: &str, urgent: bool) -> zbus::Result<u32> {
-    use std::collections::HashMap;
-    use zbus::zvariant::Value;
-    let conn = zbus::blocking::Connection::session()?;
+fn notify(replaces: u32, summary: &str, body: &str, urgent: bool) -> dbus::Result<u32> {
     // Urgency: 1 normal, 2 critical (stays until dismissed). Timeout -1: the daemon's own.
-    let hints = HashMap::from([("urgency", Value::U8(if urgent { 2 } else { 1 }))]);
+    let hints = dbus::PropMap::from([("urgency".to_owned(), dbus::value(if urgent { 2u8 } else { 1u8 }))]);
     let actions: Vec<&str> = Vec::new();
-    let reply = conn.call_method(
-        Some("org.freedesktop.Notifications"),
+    let (id,): (u32,) = dbus::Bus::session()?.call(
+        "org.freedesktop.Notifications",
         "/org/freedesktop/Notifications",
-        Some("org.freedesktop.Notifications"),
+        "org.freedesktop.Notifications",
         "Notify",
-        &("ClamShell", replaces, "", summary, body, actions, hints, -1i32),
+        ("ClamShell", replaces, "", summary, body, actions, hints, -1i32),
     )?;
-    reply.body().deserialize()
+    Ok(id)
 }
 
 #[cfg(test)]

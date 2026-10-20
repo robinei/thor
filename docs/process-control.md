@@ -179,8 +179,9 @@ Left: the main thread (the events it is sent: the clock's tick every second, the
 (about 1.5 ms of CPU a reading, the GPU's load walking every process's DRM clients): every second while
 the sysinfo or battery tab can be seen (open, ClamShell's view on the bottom screen, the screens on),
 every five seconds otherwise, the graphs' history kept, coarser. Every tab's watch (Wi-Fi, Bluetooth,
-audio, time) stops the same way while its tab can't be seen. zbus' executor threads (the `blocking`
-crate): about 8 wakeups a second between them, no CPU, idle threads waking every 500 ms.
+audio, time) stops the same way while its tab can't be seen. D-Bus is libdbus without async: each thread
+that talks to a service has its own connection and waits on it itself (before, zbus' executor threads
+woke about 8 times a second between them).
 
 ## Measured and tried
 
