@@ -61,7 +61,11 @@ Android kept. Written 2026-10-14, before having the device; everything here is u
 - Audio: card `AYN-Thor` (`ayn-AYNOdin2` under EFI: U-Boot reports the Odin 2's SMBIOS); UCM profiles
   (their `kettle-ucm-ayn`) and firmware `ayn/thor/*` incl. `AYN-Thor-tplg.bin`; internal mic on DMIC3.
 - Gamepad: InputPlumber (their `40-kettle-thor.yaml`); the AYN key as quick access.
-- Power: 4-18 W; at 5 W the three CPU clusters cap at 1344/1785/1977 MHz. Fan curve in the device tree.
+- Power: 4-18 W; at 5 W the three CPU clusters cap at 1344/1785/1977 MHz. The fan: Kettle reported a
+  curve in the device tree, but in Armada's and ROCKNIX's device trees the thermal zones' trip points
+  link to no cooling device (checked 2026-10-20 in our built DTB: only the GPU's throttling is linked), so
+  the fan runs at the speed the kernel gives it at boot (70 of 255, ROCKNIX's patch 0500) until userspace
+  sets it (Armada's armada-powerd, Thorch's thorch-fancontrol; ours: `clamshell-fan`).
 - Lid switch: sleep on close (`wakeup-event-action`); suspend (s2idle) verified.
 - Backlights: the top one first (`ae96000.dsi.0`), the bottom labelled `bottom-panel`.
 - The bottom screen draws about 0.7 W at idle. Wi-Fi and Bluetooth work.
@@ -79,7 +83,8 @@ What goes in, and from where:
 | Kernel modules, firmware | ROCKNIX's `SYSTEM` (same release), incl. Qualcomm firmware: for this device only, not for sharing; modules ours with `THOR_KERNEL` |
 | Root: ext4 `THOR_ROOT` | `pacstrap` from Arch Linux ARM's mirrors (unpinned): base, sudo, mkinitcpio, NetworkManager, OpenSSH, sway, mako, foot, Xwayland, Mesa + `vulkan-freedreno`, PipeWire, Noto, Python, vim, grim, growpart (`cloud-guest-utils`), gptfdisk; RetroArch with cores for NES, SNES, N64, Game Boy, GBA, DS, Mega Drive, PlayStation and Dreamcast and XMB's assets (its menu in ClamShell's colours: `clamshell/retroarch/menu-theme.py`, needing Pillow), mpv, ffmpeg; for maintenance on the device git, Rust, base-devel, pacman-contrib |
 | System | time zone (`THOR_TIMEZONE`, else the build machine's `/etc/localtime`, else UTC), locale (`THOR_LOCALE`, default `en_US.UTF-8`), systemd-timesyncd, NetworkManager, sshd, Bluetooth |
-| Session | user `thor` (groups wheel, video, input, audio; passwordless sudo, my ssh key), tty1 autologin into sway through uwsm (`wayland-wm@sway.service`; `graphical-session.target` with ClamShell, mako and udiskie as its user services; see process-control.md); the session's files from `tools/device/session.sh` (also run by maintenance): sway config (DSI-2 top, DSI-1 bottom, ROCKNIX's output lines; Print: `clamshell ctl screenshot`; `clamshell/sway/clamshell.conf` included), mako's and foot's configs, the Maintenance app's desktop file, the dock's first pins (Steam, foot, Maintenance), the starter `library.json` (`tools/device/library.json`: Games with a folder per system in `~/Games/<system>`, Films and TV in `~/Videos`) unless there is one; ClamShell built natively for aarch64 as a user service (control pipe `$XDG_RUNTIME_DIR/clamshell-control`, `CLAMSHELL_SESSION=device`: it puts the device to sleep when idle and reads the volume and brightness keys itself), uinput rule |
+| System files | from `tools/device/system.sh` (also run by maintenance): the fan daemon `clamshell-fan` (`clamshell/crates/fan`, a system service from early in boot: the fan's speed from the hottest CPU or GPU sensor every 3 s, by the mode ClamShell's Fan setting writes to `/run/clamshell-fan`); the `power` group's write access to what ClamShell's settings set (cpufreq caps, CPUs' online, the GPU's devfreq cap, the battery's charge limit and charge current, the power key's wakeup; udev rule `73-thor-power.rules`); the sticks' range (`/etc/modprobe.d/thor-rsinput.conf`); a log of each wake's cause (`/var/log/thor-wake.log`, a system-sleep hook); Steam's starter (`/usr/local/bin/steam`, `steam-setup`, `steam.desktop`) |
+| Session | user `thor` (groups wheel, video, input, audio, power; passwordless sudo, my ssh key), tty1 autologin into sway through uwsm (`wayland-wm@sway.service`; `graphical-session.target` with ClamShell, mako and udiskie as its user services; see process-control.md); the session's files from `tools/device/session.sh` (also run by maintenance): sway config (DSI-2 top, DSI-1 bottom, ROCKNIX's output lines; Print: `clamshell ctl screenshot`; `clamshell/sway/clamshell.conf` included), mako's and foot's configs, the Maintenance app's desktop file, the dock's first pins (Steam, foot, Maintenance), the starter `library.json` (`tools/device/library.json`: Games with a folder per system in `~/Games/<system>`, Films and TV in `~/Videos`) unless there is one; ClamShell built natively for aarch64 as a user service (control pipe `$XDG_RUNTIME_DIR/clamshell-control`, `CLAMSHELL_SESSION=device`: it puts the device to sleep when idle and reads the volume and brightness keys itself), uinput rule |
 | Maintenance | this repository cloned to `~/thor` (origin `git@github.com:robinei/thor.git`); the Maintenance app (a desktop file, pinned to the dock) runs `tools/device/maintain`: Claude Code with `/maintain` (`.claude/commands/maintain.md`). pacman hooks: `thor-boot` after updates of systemd, mkinitcpio, kmod, util-linux, zstd; ROCKNIX's audio profiles put back after alsa-ucm-conf's (a copy in `/usr/local/share/thor/ucm2`). The ROCKNIX release in `/usr/local/share/thor/rocknix-release` |
 | Sleep | logind: power button and lid do `sleep` = suspend-then-hibernate, else suspend (`SleepOperation=`); long press powers off. `HibernateDelaySec=30min`. UPower: hibernate at 3 % (power off if it can't) |
 | First boot (`thor-firstboot.service`, once) | grows partition 2 and its ext4 to the card (growpart, resize2fs); makes `/swapfile`, 16 GiB (the RAM; only if 8 GiB stay free beside it), in fstab; then writes `resume=LABEL=THOR_ROOT resume_offset=<first block>` into the loader entry's options and runs `thor-boot`, which puts that command line into `/KERNEL` too. Resume works from the second boot on |
@@ -136,11 +141,15 @@ Known issues and risks, to check first:
    Not run: resuming from it, nor anything that needs the Thor's own hardware. If the card is not up when
    the initramfs's resume runs (thor-root-wait gives it 10 s) the hibernated state is lost and the
    machine boots fresh.
-9. Not done: fan control. ClamShell applies its settings again on waking.
+9. The fan: `clamshell-fan` takes it (`pwm1_enable` 3) and sets it every 3 s; tried only on a copy of
+   /sys (its tests). Check on the device that the hwmon chip is named `pwmfan`, the sensors' types start
+   with `cpu` or `gpu`, the fan stops below 45 °C and speeds up under load (sysinfo shows its rpm), and
+   that Quiet and Max change it. ClamShell applies its settings again on waking.
 10. Test image only: passwordless sudo, sshd with a key, autologin without a password.
-11. Steam: not installed (neither Steam nor FEX is an Arch Linux ARM package), though the dock's first
-    pins include `desktop:steam`. Installed by hand on the device (see "Steam" below), with a
-    `steam.desktop` of its own so the pin and ClamShell's Steam entry find it.
+11. Steam: the client isn't in the image (it is Valve's, downloaded into the user's home); its first
+    start (`/usr/local/bin/steam`, from the dock's pin or a Steam game) runs `steam-setup` in a terminal
+    first (see "Steam" below). Its downloads and checksums were tried on 2026-10-20 (on the PC, into a
+    scratch home); the client itself has never run here.
 
 ## Before the device arrives
 
@@ -219,15 +228,23 @@ fixes (`1003`, `1004`), the s2idle stack (`0523`–`0526`, `0512`, `0522`, `0566
 ROCKNIX's IPCC change), the wake sources (lid on opening only, volume up not), PCIe WAKE#, the codec's rails
 in s2idle, and the charge current limit (`0903`: 0 runs the device from the charger, for bypass).
 Candidates for our own patches, once tried on the device:
-- [ ] The stick range: `axis-range = <1024>` on the gamepad node (Thorch's `dts-patches/0007`). Armada's
-      Thor device tree doesn't set it (they calibrate from userspace, through rsinput's module
-      parameters); without either, games see about 73 % of the sticks' travel.
 - [ ] OpenABL's QSEECOM allowlist patch, if we boot through OpenABL (UEFI variables from Linux).
-Not in it (userspace, Armada's): `system-sleep/50-armada-powerbutton-suspend` (no wake by the power key
-with the lid closed) and `40-armada-wake-ledger` (what woke it, logged).
+Done in userspace instead (2026-10-20), so no patch of ours:
+- [x] The stick range: Thorch sets `axis-range = <1024>` on the gamepad node (its `dts-patches/0007`);
+      Armada's device tree doesn't (they calibrate through rsinput's module parameters); without either,
+      games see about 73 % of the sticks' travel (±1024 of the driver's ±1408). Ours: the same
+      parameters, `axis_*_min=-1024 axis_*_max=1024`, in `/etc/modprobe.d/thor-rsinput.conf`
+      (`tools/device/system.sh`). Check with evtest that the corners reach the axes' ends.
+- [x] Armada's `system-sleep/50-armada-powerbutton-suspend` (no wake by the power key with the lid
+      closed): ClamShell turns the power key's wakeup off as the lid closes and on as it opens
+      (`clamshell-system::lid`). `40-armada-wake-ledger` (what woke it): our `thor-wake-log` hook,
+      `/var/log/thor-wake.log`.
 
 To know:
-- Hibernate: nobody has tried it on the Thor (Thorch sets `AllowHibernation=no`, Armada masks it).
+- Hibernate: nobody has tried it on the Thor (Thorch sets `AllowHibernation=no`, its sleep config saying
+  its power patches are written for s2idle; Armada masks it). Our suspend-then-hibernate stays, but is
+  tried on its own on day one; if hibernate doesn't come back, `SleepOperation=suspend` in our logind
+  config.
 - The AYN key is `KEY_F24` from its own device (`gpio-keys-ayn`), not the gamepad; ClamShell already reads
   it there (`pad::device::AynKey`). Back is `BTN_BACK` on the gamepad.
 - Open on Armada: the bottom touchscreen keeping a contact after fingers lift (#757, a candidate patch,
@@ -289,20 +306,39 @@ To know:
 Steam's client is heavy (steamwebhelper is a Chromium), and on an ARM machine the question is whether the
 client itself runs natively; games run through Proton or FEX either way, unless native ARM64.
 
-1. First choice, Valve's native ARM64 client. Valve publishes it (since April 2026, its `linuxarm64`
-   client manifest, stable and publicbeta) but links it nowhere and doesn't support it; the Steam Frame
-   runs it. Its entry point is `steamrtarm64/steam` in the Steam folder. Needs: 4 KiB pages (`getconf
-   PAGESIZE`; ROCKNIX's arm64 kernel should be 4 KiB) and `/lib/ld-linux-aarch64.so.1` (Arch Linux ARM
-   has it). Games: Windows games through Valve's ARM64 Proton (Wine as ARM64EC, FEX inside), x86 Linux
-   games through Valve's FEX compatibility tool, which the client downloads along with Steam Linux
-   Runtime 4.0 for arm64 (not by default in early builds: check what it fetches). The host needs
-   `binfmt_misc` and EROFS for FEX's root filesystem (`zcat /proc/config.gz`). Community packaging to
-   copy from: steam-arm64-nix (fetches from the manifest, checks with `--doctor`). Reported rough edges:
-   the client's own title bar doesn't move its window (no matter under sway), Big Picture's quick access
-   menu froze once.
-2. Else the x86 client under FEX, as Canonical's ARM64 snap does: FEX built from source (it left the AUR,
-   and no longer supports Arch officially) with an x86-64 root filesystem. Then the whole client is
-   emulated, and Valve's ARM64 Proton can't be used from it.
+Valve's native ARM64 client (researched 2026-10-20). Valve publishes it on its update servers, stable
+(`steam_client_linuxarm64`) and beta (`steam_client_publicbeta_linuxarm64`), but links it nowhere and
+closes ARM bug reports as unsupported. Armada (beta, `steamdeck_publicbeta`), Thorch (beta) and ROCKNIX
+(since 2026-04) all run it on the Thor. It is linked for 4 KiB pages (the Thor's kernel has them). Windows
+games run through Valve's "Proton 11.0 (ARM64)" (Wine as ARM64EC, FEX inside), which Steam fetches like
+any Proton: nothing on the system. x86 Linux games would need FEX with an x86 root filesystem on the
+system (Valve's FEX compatibility tool uses it; Armada packages it, Thorch takes ROCKNIX's build); no
+Arch Linux ARM package, so not here for now. The x86 client under FEX (Canonical's snap) is the
+fallback, slower (its UI emulated).
+
+Ours: `tools/device/steam-setup`, after Thorch's installer for Arch Linux ARM, run as the user on the
+first start of `/usr/local/bin/steam` (`tools/device/steam`, in a terminal):
+- Valve's runtime for the client (steamrt3c arm64, `repo.steampowered.com/steamrt3c/images/<version>/`,
+  checked against its SHA256SUMS) and the client's binaries (the beta manifest's
+  `bins_linuxarm64_linuxarm64` zip, checked against the manifest's sha2) into `~/.local/share/Steam`.
+  The zip names a few links and a folder with backslashes (moved where they belong: `steamrtarm64/libs/`'s
+  `libnghttp2.so.14` and others) and makes its files world-writable (taken away).
+- Links: `~/.steam/{steam,root,sdkarm64}`, and in `~/.local/share/Steam/lib/aarch64-linux-gnu` the older
+  libraries the client wants that Arch Linux ARM has newer or none of (gtk2's and ibus's from Valve's
+  runtime, libvpx 6 from the client); remade at each start. What it still lacks, `ldd` of
+  `steamui.so` lists at the end.
+- A first run (`steam -exitsteam`) that fetches the rest of the client. Then `steam` starts it as Armada's
+  launch-steam does (its folder and the links first in the library path, the runtime's tools on the path,
+  SYSTEM_PATH and SYSTEM_LD_LIBRARY_PATH kept for compatibility tools) with Thorch's flags (no
+  verification, repair or update of the client against a bootstrap it didn't install), so
+  `steam-setup --update` updates it (maintenance).
+- Desktop mode, as ClamShell starts it (`-silent`, or `-silent -applaunch ID` for a game); no gamescope,
+  no SteamOS stubs (those are for Big Picture's SteamOS mode).
+
+Tried 2026-10-20 on the PC into a scratch home (the client's first run left out): the downloads, checksums,
+backslash names and links. On the device: whether the first run and the start work as written; whether
+`steam -silent` stays out of sight under sway; the beta's known issues (the quick access menu freezing
+Big Picture on Adreno, Steam #13544; Remote Play's decoding on SM8550's video decoder, #13428).
 
 Then, either way, Steam made as light as it goes, measured before and after with `tools/inventory.sh`
 (Steam's memory and CPU idle in its tray, and while a game runs):
@@ -424,21 +460,25 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       then lists one controller. Steam's Xbox configuration support stays off (its default), so games read
       the virtual pad directly and ClamShell's keymaps are the only remapping; check that Steam's desktop
       layout doesn't act on the pad outside games (it would beside ClamShell's pad navigation).
-- [ ] Lid: does the Thor report a lid switch (`SW_LID`), and does closing it suspend?
-- [ ] Battery: capacity, charging, power draw in sysinfo; the charge limit setting (sysfs path?); UPower
+- [ ] Lid: does the Thor report a lid switch (`SW_LID`), and does closing it suspend? With the lid
+      closed, the power key's wakeup is off (`cat /sys/class/input/input*/device/power/wakeup` of the
+      `pm8941_pwrkey` device; ClamShell's log says "lid closed"), and a press doesn't wake it; opening the
+      lid does. `/var/log/thor-wake.log` names what woke it each time.
+- [ ] Battery: capacity, charging, power draw in sysinfo; the charge limit setting
+      (`charge_control_end_threshold` of `qcom-battmgr-bat`, written by the power group); UPower
       sees it (the battery mode's graph) and powers off at 3 %; GPU time per program in the battery mode
       (msm's `drm-engine-gpu` in fdinfo).
 - [ ] Bypass charging (Android has it: plugged in, the device runs from the charger and the battery is left
-      alone; less heat and wear while playing). What the battery's power supply offers (`ls
-      /sys/class/power_supply/*/`): `charge_behaviour` (`inhibit-charge` is bypass, the standard way),
-      `charge_control_end_threshold` (the Charge limit setting's: at or below the level now, charging
-      stops and the system runs from the charger), or a vendor node (Qualcomm's downstream
-      `charging_enabled` or the like). With the charger in and a game running, try each, watching the
-      battery's `current_now` and `capacity`: bypass is the current near zero and the level holding. Then
-      a Bypass choice on the Charge limit setting, by whichever works.
-- [ ] Power profiles: cpufreq policies (3 clusters?), GPU devfreq, little-cores-only; the udev rule giving
-      our user write access.
-- [ ] Fan: is there a sysfs control?
+      alone; less heat and wear while playing). Charge limit's Bypass writes 0 to the battery's
+      `constant_charge_current` (Armada's patch `0903`: the battery firmware's charge current limit; the
+      other choices write `constant_charge_current_max` back). With the charger in and a game running,
+      watch the battery's `current_now` and `capacity`: bypass is the current near zero and the level
+      holding. Then: whether it holds after unplugging and plugging in again (ClamShell writes it at each
+      change of the settings, at its start and on waking, not when the charger comes), and after a reboot.
+- [ ] Power profiles: cpufreq policies (3 clusters?), GPU devfreq, little-cores-only; the power group's
+      write access (`ls -l` of a policy's `scaling_max_freq`: group `power`, writable).
+- [ ] Fan: `clamshell-fan` running (`systemctl status clamshell-fan`, its log names the fan and the mode);
+      see known issue 9.
 - [ ] First boot: the root fills the card (`df -h /`), `/swapfile` is on (`swapon`), both command lines
       have `resume=` and `resume_offset=` (`cat /proc/cmdline` on the second boot, under each boot path),
       `journalctl -u thor-firstboot`. Time (timesyncd, `timedatectl`) and locale (`locale`).

@@ -3,8 +3,8 @@ description: Routine maintenance of the AYN Thor - news, updates, the boot image
 model: opus
 ---
 
-Run a maintenance pass on this device (the AYN Thor, Arch Linux ARM with ROCKNIX's kernel and our
-session). The user started it from the dock's Maintenance app (`tools/device/maintain`): you run in a
+Run a maintenance pass on this device (the AYN Thor, Arch Linux ARM with Armada's kernel, ROCKNIX's
+firmware and our session). The user started it from the dock's Maintenance app (`tools/device/maintain`): you run in a
 terminal on the Thor's main screen and the user types on the bottom screen's keyboard, so keep messages
 short and ask few questions. `sudo` needs no password here.
 
@@ -13,8 +13,8 @@ What is ours rather than Arch's (see `tools/image/thor-image.sh`, which builds t
 - The kernel, its modules and most firmware are ROCKNIX's SM8550 release (no Arch kernel package is
   installed): `/usr/lib/modules/<version>`, `/usr/lib/firmware`, the release named in
   `/usr/local/share/thor/rocknix-release`. If `/usr/local/share/thor/kernel` exists, the kernel and its
-  modules are instead our build of ROCKNIX's kernel with binder (`tools/image/thor-kernel.sh`, built on
-  a PC; the file says from what); the firmware is still ROCKNIX's.
+  modules are instead our build of Armada's kernel (`tools/image/thor-kernel.sh`, built on a PC; the
+  file says from what); the firmware is still ROCKNIX's.
 - Our initramfs (`/etc/mkinitcpio-thor.conf`) and the two ways the card boots, both on its FAT partition:
   systemd-boot with the kernel as files (`/Image`, `/dtbs/`, `/initramfs-thor.img`, the command line in
   `/loader/entries/thor.conf`), and `/KERNEL`, an Android boot image for ROCKNIX's ABL. `thor-boot`
@@ -24,6 +24,9 @@ What is ours rather than Arch's (see `tools/image/thor-image.sh`, which builds t
   `/usr/local/share/thor/ucm2`).
 - The session: ClamShell, built from `clamshell/` in this repository, and its files (sway, mako, foot,
   the service, the dock's apps) written by `tools/device/session.sh`.
+- The system files, written by `tools/device/system.sh`: the fan daemon `clamshell-fan` (built with
+  ClamShell; a system service), the `power` group's udev rule and tmpfiles entry, the sticks' range in
+  modprobe.d, the wake log hook, Steam's starter (`/usr/local/bin/steam`, `steam-setup`).
 
 1. **Prepare.** `git status` in this repository. Uncommitted changes: show them and ask whether to
    commit them first. `git pull --rebase` (if it fails for lack of access, say so: the device's ssh key
@@ -42,11 +45,15 @@ What is ours rather than Arch's (see `tools/image/thor-image.sh`, which builds t
    once the new ones are made and checked), but fix it before the user reboots (its log:
    `/var/log/thor-mkinitcpio.log`). If systemd, mesa or the boot images changed, tell the user a reboot is
    due (don't reboot yourself).
+   Steam, if set up (`~/.local/share/Steam/steamrtarm64/steam`) and not running (`pgrep -x steam`):
+   `steam-setup --update` (it starts without updating itself).
 
 4. **ClamShell and the session.** If the pull brought changes in `clamshell/` or `tools/device/`, or
    `~/.local/share/thor/session-commit` isn't the current commit: `cd clamshell && cargo build --release`,
    then `tools/device/session.sh ~ ~ clamshell/target/release/clamshell`, `systemctl --user daemon-reload`,
-   and write `git rev-parse HEAD` to `~/.local/share/thor/session-commit`. Restarting ClamShell
+   `sudo tools/device/system.sh / clamshell/target/release/clamshell-fan`, `sudo systemctl daemon-reload`,
+   `sudo systemctl restart clamshell-fan`, `sudo udevadm control --reload` (its rules and the modprobe
+   options take effect at the next boot), and write `git rev-parse HEAD` to `~/.local/share/thor/session-commit`. Restarting ClamShell
    (`systemctl --user restart clamshell`) redraws both screens; apps and games keep running (each in a
    scope of its own, this terminal too): ask first. sway's config changes take effect at the
    next login (or `swaymsg reload`, after which ClamShell must be restarted: a reload drops the rules it
@@ -65,8 +72,8 @@ What is ours rather than Arch's (see `tools/image/thor-image.sh`, which builds t
    (`KERNEL.old`, `Image.old`) until the user has booted the new kernel and checked screens, sound, Wi-Fi
    and sleep. With our kernel (`/usr/local/share/thor/kernel`), take only the firmware and profiles from
    the release and keep the kernel, modules and `/KERNEL`: putting in ROCKNIX's kernel would drop binder
-   (Waydroid). A newer kernel of ours is built on a PC (`tools/image/thor-kernel.sh` with
-   `ROCKNIX_TAG`) and copied over.
+   (Waydroid) and Armada's patches. A newer kernel of ours is built on a PC (`tools/image/thor-kernel.sh`,
+   Armada's latest or `ARMADA_REF`) and copied over.
 
 6. **pacnew/pacsave.** `pacdiff -o`. For each, diff against the live file, merge sensibly (keep our
    changes, such as `CriticalPowerAction=Hibernate` in `/etc/UPower/UPower.conf`; take upstream's new
