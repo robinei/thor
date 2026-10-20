@@ -26,7 +26,8 @@ fi
 
 help() {
     echo
-    echo "exit: try again.  The whole journal: journalctl --user -b.  ssh works as ever."
+    echo "Hold the power button to turn off; turned on, it tries again. With a keyboard: exit tries again."
+    echo "The whole journal: journalctl --user -b. ssh works as ever."
 }
 
 if [ -e "$failed" ]; then

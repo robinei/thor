@@ -39,7 +39,8 @@ starts a new session (`tools/device/thor-session`, from the login's profile). Un
 ended 3 times within 2 minutes (sway or uwsm dying as they start), the session isn't started again;
 ClamShell failing 4 times within a minute (watchdog restarts too), systemd gives up and
 `clamshell-failed.service` stops the session. Either way the console stays on tty1, saying why (the last
-lines of sway's or ClamShell's journal) and how to go on (`exit` tries again; ssh works). A deliberate
+lines of sway's or ClamShell's journal) and how to go on (the Thor has no keyboard: holding the power
+button turns it off, and turned on it tries again; with a keyboard, `exit` does; ssh works). A deliberate
 restart of ClamShell (maintenance, the VM checks) clears its count first (`systemctl --user reset-failed`).
 Tried in the VM: ClamShell made to exit at once, and sway made to fail at start; each ended on the console
 saying why, and came back once put right.

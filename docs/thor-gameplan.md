@@ -288,6 +288,24 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       sometimes resets at once, or QEMU's ACPI S4 wakes the hibernating kernel; one resume went through.
 - [ ] Time tab: the time zone set from the regions; "Set automatically" off and on (timesyncd); with it
       off, the date and time stepped (the bar's clock follows at once); 24-hour clock off and on.
+- [ ] The session (only tried in the VM and nested on the desktop): autologin on tty1 starts sway through
+      uwsm, `graphical-session.target` is reached, and ClamShell, mako and udiskie are active
+      (`systemctl --user status`); launches run under `app-graphical.slice`. The failure path on the real
+      console: with ClamShell made to fail (as in the VM: `ExecStart=/bin/false` in a drop-in), the
+      session stops and tty1 says why: readable on the top screen (the right way up: the panel is
+      portrait, fbcon may need `fbcon=rotate:`), and holding power then powering on starts it again.
+      ClamShell isn't killed by its watchdog (30 s) while a heavy game loads.
+- [ ] Steam under FEX (the follower and the found-window lineage were only seen on x86): a game started
+      from ClamShell runs in its launch's scope (`systemd-cgls --user`), Steam's launcher for it found
+      by its arguments (`pgrep -af SteamLaunch`: `SteamLaunch` and `AppId=<id>` as arguments of their
+      own, as `steam_launchers` in `launcher.rs` expects, whatever FEX puts before them); the entry ends
+      when the game does; a game started from Steam's own window is found by its window and followed the
+      same way; Suspend and Quit act on the game, not Steam.
+- [ ] ClamShell's idle cost (review 4.2): wakeups per thread, idle on shelf, as measured in the VM (see
+      process-control.md, "ClamShell's own wakeups"), and the CPU of a redraw; then whether the clock's
+      tick every second is worth limiting to when the clock can be seen.
+- [ ] Archives browsed in the Files tab (ratarmount, a service per archive): mounted, opened, unmounted
+      when left; ratarmount is in Arch Linux ARM's repositories (else the image build fails).
 - [ ] The launcher under real use: tools/vm/vm.py's checks again, on the device.
 - [ ] FEX for x86 games (32-bit Windows games are the open question).
 
