@@ -241,9 +241,10 @@ To know:
    what it offers, and whether the bootloader is locked (it says "Unlocked bootloader required"). If the
    switch works, skip step 4: no ROCKNIX ABL. If it needs unlocking, weigh that (it erases Android's data)
    against flashing ROCKNIX's ABL, which doesn't.
-3. Back up first anyway: the stock ABL (ROCKNIX's `backup_abl.sh`) and anything else the install notes
-   call out, copied off the device, and `persist` (per-device data: sensor calibration and the like),
-   which AYN's full package would otherwise overwrite with its own.
+3. Back up first anyway: `tools/device/android-backup.sh`, run with "Run Script as Root", copies the
+   bootloaders (abl, loader, xbl) and the device's own partitions (persist, devinfo, the radios'
+   calibration and the rest AYN's packages don't hold or would overwrite) to `/sdcard/thor-backup/` with
+   checksums; copy that folder off the device.
 
    **The way back, whatever breaks: AYN's factory packages** (from the AYN Discord's #thor-general-faq,
    in `~/Downloads/thor/`): `Thor_20260112.7z` and `Thor_20260206.7z` (1.0.0.377) are full flash packages

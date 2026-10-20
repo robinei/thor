@@ -81,6 +81,16 @@ pub struct Audio {
     pub streams: Vec<Stream>,
 }
 
+/// A backlight's name as the brightness tab shows it: the Thor's by the screen they light (the top's
+/// panel on the DSI host at ae96000, the bottom's at ae94000), any other as /sys/class/backlight names it.
+pub fn backlight_label(name: &str) -> &str {
+    match name {
+        "ae96000.dsi.0" => "Top screen",
+        "ae94000.dsi.0" => "Bottom screen",
+        _ => name,
+    }
+}
+
 /// A backlight's share of the brightness (0-100), by its name in /sys/class/backlight.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Share {
@@ -506,5 +516,12 @@ mod tests {
         read(&mut s, Reading::Status(Status { volume: Some(98), ..Status::default() }));
         assert_eq!(s.apply(LevelEvent::Step(Level::Volume, 1).into()).1, vec![Effect::Sound(Sound::Volume(100))], "up to 100");
         assert_eq!(s.apply(LevelEvent::Step(Level::Volume, 1).into()).1, vec![], "and no further");
+    }
+
+    #[test]
+    fn the_thors_backlights_by_their_screens() {
+        assert_eq!(backlight_label("ae96000.dsi.0"), "Top screen");
+        assert_eq!(backlight_label("ae94000.dsi.0"), "Bottom screen");
+        assert_eq!(backlight_label("intel_backlight"), "intel_backlight");
     }
 }

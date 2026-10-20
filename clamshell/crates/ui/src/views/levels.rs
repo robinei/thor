@@ -202,7 +202,7 @@ pub(super) fn draw_brightness(f: &mut Frame) {
         let mut row = rows.row(i);
         let name = row.take_left(name_w);
         let percent = row.take_right(percent_w);
-        f.c.text_fit(Rect::new(name.x, name.y, name_w - z.pad, name.h), z.text, Tone::Normal, backlight, Keep::Start);
+        f.c.text_fit(Rect::new(name.x, name.y, name_w - z.pad, name.h), z.text, Tone::Normal, clamshell_core::levels::backlight_label(backlight), Keep::Start);
         let level_id = Level::Backlight(i as u16);
         level(f, level_id, row, false);
         number(f, percent, s.levels().level(level_id), " %", z.text);
