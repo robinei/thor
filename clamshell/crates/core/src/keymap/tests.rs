@@ -1,6 +1,6 @@
 use super::*;
 
-/// The keymaps saved (each as JSON, as the database keeps them) and read back.
+/// The keymaps saved (each as JSON, as they are kept) and read back.
 fn round_trip(maps: &Keymaps) -> Keymaps {
     let saved: Vec<String> = maps.list().iter().map(|k| serde_json::to_string(k).unwrap()).collect();
     Keymaps::from_list(saved.iter().map(|k| serde_json::from_str(k).unwrap()).collect())

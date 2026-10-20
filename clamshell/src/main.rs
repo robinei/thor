@@ -120,14 +120,14 @@ fn main() -> ExitCode {
         },
         Command::FetchMetadata => {
             let loaded = library::load(&sources);
-            let (Some(art), Some(db)) = (paths.art.clone(), paths.db()) else {
+            let Some(art) = paths.art.clone() else {
                 log::error!("no home dir: nowhere to keep it");
                 return ExitCode::FAILURE;
             };
             let titles: std::collections::HashMap<_, _> = loaded.library.entries.iter().map(|g| (g.id.clone(), g.title.clone())).collect();
             println!("fetching for {} entries", loaded.wanted.len());
             let (tx, rx) = std::sync::mpsc::channel();
-            if let Err(e) = meta::spawn(meta::Fetch { wanted: loaded.wanted, keys: loaded.keys, art, db }, &meta::Queue::default(), tx) {
+            if let Err(e) = meta::spawn(meta::Fetch { wanted: loaded.wanted, keys: loaded.keys, art }, &meta::Queue::default(), tx) {
                 log::error!("{e}");
                 return ExitCode::FAILURE;
             }
@@ -167,43 +167,29 @@ fn main() -> ExitCode {
     }
 }
 
-/// What was saved: from the database, each piece's default where there is none (or the database can't
-/// be read: logged). The keymaps the first time: the ready-made ones.
+/// What was saved: each piece's default where there is none (or it can't be read: logged). The keymaps
+/// the first time: the ready-made ones, saved at once.
 fn saved(paths: &Paths) -> Init {
-    let Some(mut store) = paths.db().and_then(|f| Store::open(&f).map_err(|e| log::error!("store: {}: {e}", f.display())).ok()) else {
+    let Some(dir) = paths.state_dir.as_deref() else {
         return Init { keymaps: Keymaps::initial(), ..Init::default() };
     };
-    fn or_default<T: Default>(what: &str, r: Result<T, clamshell_system::store::Error>) -> T {
-        r.unwrap_or_else(|e| {
-            log::warn!("store: {what}: {e}");
-            T::default()
-        })
-    }
-    // The first start: the ready-made keymaps, saved at once.
-    // (Not when they couldn't be read: then what was saved stays.)
-    let keymaps = match store.keymaps() {
-        Ok(Some(keymaps)) => keymaps,
-        Ok(None) => {
-            let initial = Keymaps::initial();
-            if let Err(e) = store.save_keymaps(&initial) {
-                log::warn!("store: keymaps: {e}");
-            }
-            initial
-        }
-        Err(e) => {
+    let mut store = Store::open(dir);
+    let keymaps = store.keymaps().unwrap_or_else(|| {
+        let initial = Keymaps::initial();
+        if let Err(e) = store.save(&clamshell_core::Save::Keymaps(initial.clone())) {
             log::warn!("store: keymaps: {e}");
-            Keymaps::initial()
         }
-    };
+        initial
+    });
     Init {
-        settings: or_default("settings", store.settings()),
+        settings: store.settings(),
         keymaps,
-        window_rules: or_default("window rules", store.window_rules()),
-        brightness: or_default("brightness", store.brightness()),
-        twelve_hour: or_default("clock", store.twelve_hour()),
-        dock: or_default("dock", store.dock()),
-        autostart: or_default("autostart", store.autostart()),
-        resume: or_default("resume", store.resume()),
+        window_rules: store.window_rules(),
+        brightness: store.brightness(),
+        twelve_hour: store.twelve_hour(),
+        dock: store.dock(),
+        autostart: store.autostart(),
+        resume: store.resume(),
         ..Init::default()
     }
 }
@@ -250,10 +236,7 @@ fn print_entry(library: &Library, i: usize, depth: usize) {
 fn run(env: &Env, paths: Paths, sources: &Sources) -> ExitCode {
     let loaded = load_library(sources);
     // Metadata to fetch once the threads run (with somewhere to keep it).
-    let fetch = match (paths.art.clone(), paths.db()) {
-        (Some(art), Some(db)) => Some(meta::Fetch { wanted: loaded.wanted, keys: loaded.keys, art, db }),
-        _ => None,
-    };
+    let fetch = paths.art.clone().map(|art| meta::Fetch { wanted: loaded.wanted, keys: loaded.keys, art });
     let state = State::new(Init {
         library: loaded.library,
         start_tab: env.start_tab,

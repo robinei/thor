@@ -30,11 +30,10 @@ vm = importlib.import_module("vm")
 
 HOME = f"/home/{vm.USER}"
 CHECKS_DIR = f"{HOME}/.cache/thor-checks"
-# ClamShell's library config, and its database (play time, favourites, settings, keymaps, the dock, where
-# shelf was, brightness).
+# ClamShell's library config, and what it keeps (play time, favourites, settings, keymaps, the dock, where
+# shelf was, brightness: JSON files, see clamshell-system's store).
 CONFIG = f"{CHECKS_DIR}/config/clamshell"
 DATA = f"{CHECKS_DIR}/data/clamshell"
-DB = f"{DATA}/clamshell.db"
 BACKLIGHT = f"{CHECKS_DIR}/backlight/panel"
 DROP_IN = "$XDG_RUNTIME_DIR/systemd/user/clamshell.service.d/thor-checks.conf"
 # The bar's icons, in the bottom screen's pixels (their centres; the burn-in orbit moves them a few
@@ -107,31 +106,50 @@ def control(line):
     time.sleep(0.3)
 
 
-def query(sql):
-    """Rows from ClamShell's database, a list of fields each."""
-    out = sh(f"sqlite3 -separator '\t' {DB} {shlex.quote(sql)} 2>/dev/null")
-    return [line.split("\t") for line in out.splitlines()]
+def kept(name):
+    """One of ClamShell's files, read; None if it isn't there (or doesn't read)."""
+    out = sh(f"cat {DATA}/{name} 2>/dev/null")
+    try:
+        return json.loads(out) if out.strip() else None
+    except ValueError:
+        return None
 
 
-def kv(key):
-    rows = query(f"SELECT value FROM kv WHERE key = '{key}'")
-    return rows[0][0] if rows else None
+def resume():
+    """Where shelf and the second screen were (as saved)."""
+    return kept("resume.json") or {}
+
+
+def collection():
+    return resume().get("collection")
 
 
 def selection():
     """shelf's selected entry in the collection shown (as saved)."""
-    rows = query(f"SELECT path FROM places WHERE collection = '{kv('collection')}'")
-    return json.loads(rows[0][0])[-1] if rows else None
+    place = dict(map(tuple, resume().get("places", []))).get(collection())
+    return place[-1] if place else None
 
 
 def tab():
     """The second screen's tab (as saved)."""
-    return kv("tab")
+    return resume().get("tab")
+
+
+def screens():
+    """The settings screens' files (all, runners', entries'), read."""
+    out = sh(f"for f in {DATA}/settings/*.json; do [ -e \"$f\" ] && tr -d '\\n' < \"$f\" && echo; done")
+    return [json.loads(line) for line in out.splitlines() if line.strip()]
+
+
+def plays():
+    """How many plays were recorded."""
+    out = sh(f"grep -c . {DATA}/plays.jsonl 2>/dev/null")
+    return int(out.strip() or 0)
 
 
 def saved_keymaps():
     """The keymaps as saved: each as JSON (clamshell-core's Keymap)."""
-    return [json.loads(row[0]) for row in query("SELECT keymap FROM keymaps ORDER BY position")]
+    return kept("keymaps.json") or []
 
 
 def keymap_named(name):
@@ -294,10 +312,10 @@ def setup(bluetooth):
     since = now()
     script = f"""set -e
 mkdir -p {CONFIG} {DATA} {CHECKS_DIR}/games {BACKLIGHT}
-# (ClamShell stopped first: it keeps the database open.)
+# (ClamShell stopped first: it may be writing.)
 systemctl --user stop clamshell
-rm -f {DB} {DB}-wal {DB}-shm
-sqlite3 {DB} "CREATE TABLE dock (position INTEGER PRIMARY KEY, id TEXT NOT NULL); INSERT INTO dock VALUES (0, 'desktop:foot');"
+rm -rf {DATA} && mkdir -p {DATA}
+echo '["desktop:foot"]' > {DATA}/dock.json
 cat > {CONFIG}/library.json <<'EOF'
 {LIBRARY}EOF
 touch {CHECKS_DIR}/games/test.game {CHECKS_DIR}/games/zeta.game {" ".join(f"{CHECKS_DIR}/games/zulu{i:02}.game" for i in range(1, 15))}
@@ -478,7 +496,7 @@ class Checks:
         self.i.touch.up(0)
         raised = until(lambda: level() > start + 10, 3)
         self.check("bar: a slide on brightness sets the backlight (a fake one)", raised, f"{start} -> {level()}")
-        self.check("  and is saved", until(lambda: kv("brightness") is not None, 5), f"{query('SELECT * FROM kv')}")
+        self.check("  and is saved", until(lambda: kept("brightness.json") is not None, 5), sh(f"ls {DATA}"))
         time.sleep(1)
         self.check("  and doesn't open the brightness tab", tab() == "dock", f"tab {tab()!r}")
 
@@ -574,8 +592,8 @@ class Checks:
         """More games than fit in shelf's list: a drag with the pointer scrolls it, settling on a whole row,
         and a click then selects the game under it."""
         sh("swaymsg workspace clamshell-shelf > /dev/null")
-        if kv("collection") not in (None, "Test"):
-            return self.check("shelf: the Test collection in front", False, f"collection {kv('collection')!r}")
+        if collection() not in (None, "Test"):
+            return self.check("shelf: the Test collection in front", False, f"collection {collection()!r}")
         # Down by three rows and a bit, slowly; it settles on three.
         x, y0 = SHELF_X, SHELF_FIRST_Y + 6 * SHELF_ROW_H
         self.i.pointer(x, y0, "down")
@@ -877,8 +895,8 @@ class Checks:
                  and output(k, {"Button": "X"}) == {"Pad": {"Button": "Y"}})
         self.check("  A to Ctrl+X, the right stick and the gyro (while LB) to the pointer, X to Y picked by pressing it, saved",
                    saved, k)
-        chosen = until(lambda: [str(ident)] in query("SELECT value FROM settings WHERE name = 'keymap' AND entry != ''"), 3)
-        self.check("  chosen for the selected game", chosen, query("SELECT * FROM settings WHERE name = 'keymap'"))
+        chosen = until(lambda: any(s.get("id") and s.get("settings", {}).get("keymap") == int(ident) for s in screens()), 3)
+        self.check("  chosen for the selected game", chosen, screens())
         since = now()
         control("tap launch")
         launched = until(lambda: bool(units("run-")) and front() not in ("", "clamshell-shelf"), 10)
@@ -1082,7 +1100,6 @@ class Checks:
         return front()
 
     def launch_and_quit(self):
-        plays = lambda: int((query("SELECT count(*) FROM plays") or [["0"]])[0][0])
         scopes = lambda: [u for u in units("run-") if u.endswith(".scope")]
         before = plays()
         if not self._launch_test_game():

@@ -29,12 +29,12 @@ const PROGRESS: Duration = Duration::from_millis(250);
 const MEDIA: &str = "/run/media/";
 
 /// Where a browse thread reads and what it does with videos: library.json (how files open), the home dir
-/// (`~/`), the database (videos' lengths and frames, as for scanned ones), and how to have those not
+/// (`~/`), the art cache (videos' lengths and frames, as for scanned ones), and how to have those not
 /// read yet read (in the background: they come as metadata).
 pub struct Browsing {
     pub config: Option<PathBuf>,
     pub home: Option<PathBuf>,
-    pub db: Option<PathBuf>,
+    pub art: Option<PathBuf>,
     pub probe: Box<dyn Fn(Vec<crate::meta::Wanted>) + Send>,
     /// Where archives' indexes are kept (see [`crate::archives`]).
     pub cache: Option<PathBuf>,
@@ -42,11 +42,11 @@ pub struct Browsing {
 
 /// The browse thread: lists (and watches) the folder each command names (see [`Browsing`]).
 pub fn spawn_browse(browsing: Browsing, sink: impl Sink) -> io::Result<Worker<BrowseCommand>> {
-    let Browsing { config, home, db, probe, cache } = browsing;
+    let Browsing { config, home, art, probe, cache } = browsing;
     Worker::spawn_belled("browse", move |commands, bell| {
         let mut archives = crate::archives::Mounts::new(cache);
-        // (Opened once: the videos' lengths and frames read from it at each listing with videos.)
-        let store = db.as_deref().and_then(|f| crate::store::Store::open(f).map_err(|e| log::warn!("browse: {e}")).ok());
+        // (The videos' lengths and frames read from it at each listing with videos.)
+        let store = art.as_deref().map(crate::store::Cache::open);
         let mut in_use: Vec<PathBuf> = Vec::new();
         let notify = inotify::init(inotify::CreateFlags::NONBLOCK | inotify::CreateFlags::CLOEXEC).map_err(|e| log::warn!("browse: inotify: {e}")).ok();
         let flags = inotify::WatchFlags::CREATE
@@ -251,13 +251,13 @@ fn enqueued(dir: &Path, runners: &[Runner], home: Option<&Path>) -> (Option<clam
 /// How many names of a folder [`enqueued`] looks at.
 const PEEK: usize = 256;
 
-/// The videos (mpv's) among `entries`: their lengths and frames as the database has them (read before,
+/// The videos (mpv's) among `entries`: their lengths and frames as the cache has them (read before,
 /// here or as scanned entries'); those it hasn't, to read.
-fn known_videos(entries: &mut [Entry], store: Option<&crate::store::Store>) -> Vec<crate::meta::Wanted> {
+fn known_videos(entries: &mut [Entry], store: Option<&crate::store::Cache>) -> Vec<crate::meta::Wanted> {
     if !entries.iter().any(|g| g.mpv_file().is_some()) {
         return Vec::new();
     }
-    let probes = store.and_then(|s| s.probes().ok()).unwrap_or_default();
+    let probes = store.map(crate::store::Cache::probes).unwrap_or_default();
     let mut wanted = Vec::new();
     for g in entries.iter_mut() {
         let Some(file) = g.mpv_file().map(Path::to_path_buf) else {

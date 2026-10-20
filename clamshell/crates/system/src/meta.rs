@@ -1,7 +1,7 @@
 //! Fetching what the library's files don't say: covers, screenshots, what an entry is about, the year it
 //! came out, who made it. After the library is read, the entries it wants (see [`Wanted`]) are fetched
 //! on a few threads (curl), their images kept in the art cache (~/.cache/clamshell/art), what was found
-//! saved in the database (also what wasn't: see [`crate::store`]) and sent to the state as it arrives.
+//! kept beside them (also what wasn't: see [`crate::store::Cache`]) and sent to the state as it arrives.
 //!
 //! - A content dir's games (`"metadata": "libretro:<system>"` in library.json, the system as libretro
 //!   names its folder): box art and a screenshot from libretro's thumbnails, and the developer and year
@@ -33,7 +33,7 @@ use clamshell_core::{Event, Meta};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::store::Store;
+use crate::store::Cache;
 use crate::{Sink, worker};
 
 /// Fetches at once.
@@ -114,10 +114,8 @@ pub struct Wanted {
 pub struct Fetch {
     pub wanted: Vec<Wanted>,
     pub keys: Keys,
-    /// The art cache.
+    /// The art cache (what was fetched kept there too, see [`Cache`]).
     pub art: PathBuf,
-    /// The database.
-    pub db: PathBuf,
 }
 
 /// The entries waiting to be fetched for, in order, and the fetching threads at work.
@@ -170,19 +168,17 @@ pub fn spawn(fetch: Fetch, queue: &Queue, sink: impl Sink + Clone) -> std::io::R
     }
     log::info!("meta: fetching for {count} entries");
     let _ = sink.send(Event::Fetching(true));
-    let shared =
-        Arc::new(Shared { keys: fetch.keys, art: fetch.art, db: fetch.db, listings: Mutex::new(HashMap::new()), databases: Mutex::new(HashMap::new()) });
+    let shared = Arc::new(Shared { keys: fetch.keys, art: fetch.art, listings: Mutex::new(HashMap::new()), databases: Mutex::new(HashMap::new()) });
     for _ in 0..THREADS {
         let (queue, shared, sink) = (queue.clone(), shared.clone(), sink.clone());
         queue.threads.fetch_add(1, Ordering::SeqCst);
         worker::detached("meta", move || {
-            let store = Store::open(&shared.db).map_err(|e| log::warn!("meta: {e}")).ok();
+            let cache = Cache::open(&shared.art);
             while let Some(w) = queue.next() {
                 let meta = shared.fetch(&w);
-                let saved = match (&store, &w.how) {
-                    (Some(store), How::Duration) => store.save_probe(&w.id, meta.duration, meta.shot.as_deref()),
-                    (Some(store), _) => store.save_meta(&w.id, &w.how.source(), now(), &meta),
-                    (None, _) => Ok(()),
+                let saved = match &w.how {
+                    How::Duration => cache.save_probe(&w.id, meta.duration, meta.shot.as_deref()),
+                    _ => cache.save_meta(&w.id, &w.how.source(), now(), &meta),
                 };
                 if let Err(e) = saved {
                     log::warn!("meta: {}: {e}", w.id);
@@ -209,7 +205,6 @@ pub fn now() -> u64 {
 struct Shared {
     keys: Keys,
     art: PathBuf,
-    db: PathBuf,
     listings: Mutex<HashMap<String, Option<Arc<Vec<Name>>>>>,
     /// libretro's database of each system, fetched once.
     databases: Mutex<HashMap<String, Arc<Database>>>,

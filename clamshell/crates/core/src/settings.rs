@@ -339,7 +339,7 @@ impl Overrides {
 }
 
 /// Every entry's settings: the global values and environment, and each entry's overrides and
-/// environment. Saved in ClamShell's database (clamshell-system's `store`).
+/// environment. Kept a file per settings screen (clamshell-system's `store`).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settings {
     pub global: Values,

@@ -196,11 +196,10 @@ if [ ! -e "$H/.config/retroarch/clamshell-assets" ] && [ -d "$ROOT/usr/share/ret
     python3 "$REPO/clamshell/retroarch/menu-theme.py" "$H/.config/retroarch/clamshell-assets" "$ROOT/usr/share/retroarch/assets"
 fi
 
-# The dock's first pins, in ClamShell's database before it has one: Steam, the terminal, Maintenance
-# (once the database is there, the user's pins are kept). The dock's table as ClamShell makes it; ClamShell
-# adds the rest. (sqlite3: the sqlite package, on the machine building the image.)
-DB=$H/.local/share/clamshell/clamshell.db
-if [ ! -e "$DB" ]; then
-    sqlite3 "$DB" "CREATE TABLE dock (position INTEGER PRIMARY KEY, id TEXT NOT NULL);
-        INSERT INTO dock VALUES (0, 'desktop:steam'), (1, 'desktop:foot'), (2, 'desktop:thor-maintenance');"
+# The dock's first pins, before ClamShell has saved any: Steam, the terminal, Maintenance (once it has, the
+# user's pins are kept).
+DOCK=$H/.local/share/clamshell/dock.json
+if [ ! -e "$DOCK" ]; then
+    mkdir -p "$(dirname "$DOCK")"
+    printf '["desktop:steam", "desktop:foot", "desktop:thor-maintenance"]\n' > "$DOCK"
 fi

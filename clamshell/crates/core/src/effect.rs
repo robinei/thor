@@ -103,7 +103,7 @@ pub enum Effect {
         game: Arc<str>,
         file: std::path::PathBuf,
     },
-    /// A play, recorded in the database.
+    /// A play, recorded (clamshell-system's `store`).
     RecordPlay {
         game: Arc<str>,
         start: u64,
@@ -169,7 +169,7 @@ pub enum Watch {
     Status,
 }
 
-/// What ClamShell keeps (in its database): each saved whole.
+/// What ClamShell keeps (clamshell-system's `store`): each saved whole.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Save {
     /// The entries' settings and environment.

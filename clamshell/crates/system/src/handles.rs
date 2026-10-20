@@ -1,4 +1,4 @@
-//! Carrying out the state's effects: each goes to the thread, the device or the database it is for.
+//! Carrying out the state's effects: each goes to the thread or the device it is for.
 
 use clamshell_core::{Effect, Instance, Watch, WindowCommand};
 
@@ -10,10 +10,10 @@ use crate::tuning::Tuning;
 use crate::worker::Worker;
 use crate::{battery, bluetooth, brightness, launcher, mixer, pad, sway, touchpad, wifi};
 
-/// The threads (and the one device and the database) that effects go to.
+/// The threads (and the one device) that effects go to.
 pub struct Handles {
     pub paths: Paths,
-    /// Where saves go; `None` if the database couldn't be opened (then nothing is kept).
+    /// Where saves go; `None` without a state dir, or its thread (then nothing is kept).
     pub store: Option<Writer>,
     /// What waits for its metadata.
     pub fetching: crate::meta::Queue,

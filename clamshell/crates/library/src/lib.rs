@@ -92,7 +92,7 @@ pub struct Entry {
     pub items: Vec<usize>,
     /// The group it is in, if any.
     pub parent: Option<usize>,
-    /// Play history and favourite (from the database).
+    /// Play history and favourite (as kept: clamshell-system's `store`).
     pub plays: Plays,
     pub favourite: bool,
     /// A file or folder of a browsed dir (see [`Browsed`]); none for the rest.

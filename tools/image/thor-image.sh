@@ -41,7 +41,7 @@ SWAP_GIB=16
 # ClamShell's programs open files with (imv, zathura with its PDF backend; xdg-open for the rest), and what maintenance on the device needs: git (this repository, in ~/thor), Rust and a C toolchain to
 # build ClamShell, pacman-contrib (checkupdates, pacdiff).
 PACKAGES=(base sudo mkinitcpio networkmanager polkit upower bluez openssh sway mako foot xorg-xwayland mesa vulkan-freedreno
-          pipewire pipewire-pulse wireplumber alsa-ucm-conf noto-fonts sqlite python less vim grim cloud-guest-utils gptfdisk
+          pipewire pipewire-pulse wireplumber alsa-ucm-conf noto-fonts python less vim grim cloud-guest-utils gptfdisk
           retroarch retroarch-assets-xmb retroarch-assets-glui retroarch-assets-ozone python-pillow libretro-core-info libretro-nestopia libretro-snes9x libretro-mupen64plus-next libretro-gambatte
           libretro-mgba libretro-melonds libretro-genesis-plus-gx libretro-pcsx-rearmed libretro-flycast mpv ffmpeg
           udisks2 udiskie exfatprogs ratarmount uwsm imv zathura zathura-pdf-mupdf xdg-utils git rust base-devel pacman-contrib)

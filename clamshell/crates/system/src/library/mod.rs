@@ -1,5 +1,5 @@
 //! The library from disk: library.json's content dirs (see [`content`]), installed Steam games, the
-//! desktop files' games and apps; play time and favourites from the database. The model is
+//! desktop files' games and apps; play time and favourites as kept (see [`crate::store`]). The model is
 //! clamshell-library's.
 
 pub mod content;
@@ -24,8 +24,10 @@ pub struct Sources {
     pub home: Option<PathBuf>,
     /// Steam's data dir.
     pub steam: Option<PathBuf>,
-    /// The database, for play time and favourites.
-    pub db: Option<PathBuf>,
+    /// ClamShell's state dir, for play time and favourites.
+    pub state: Option<PathBuf>,
+    /// The art cache, for what was fetched about entries and videos' lengths.
+    pub art: Option<PathBuf>,
     /// The XDG data dirs, the installed apps' desktop files in their `applications` (see
     /// [`crate::desktop`]).
     pub data_dirs: Vec<PathBuf>,
@@ -40,7 +42,8 @@ impl Sources {
             config: paths.library.clone(),
             home: home.map(std::path::Path::to_path_buf),
             steam: home.filter(|_| steam).and_then(steam::default_root),
-            db: paths.db(),
+            state: paths.state_dir.clone(),
+            art: paths.art.clone(),
             data_dirs: crate::desktop::data_dirs(),
             watch_later: paths.watch_later.clone(),
         }
@@ -587,29 +590,21 @@ fn first_match<'r>(rules: &[&'r content::Rule], id: &str, name: &str, categories
     rules.iter().copied().find(|r| r.matches(id, name, categories))
 }
 
-/// What the database knows of `library`'s entries: their plays, whether each is a favourite, what was
+/// What is kept about `library`'s entries: their plays, whether each is a favourite, what was
 /// fetched about them (where its images are still there), mpv's videos' places, lengths and frames; and
 /// what to fetch (`hows`: where each entry's metadata comes from).
 fn known(library: &mut Library, hows: Vec<(usize, How)>, sources: &Sources) -> Vec<Wanted> {
     let mut metas = std::collections::HashMap::new();
     let mut probes = std::collections::HashMap::new();
-    if let Some(db) = sources.db.as_deref().and_then(|f| crate::store::Store::open(f).map_err(|e| log::warn!("library: {}: {e}", f.display())).ok()) {
-        metas = db.metas().unwrap_or_else(|e| {
-            log::warn!("library: metadata: {e}");
-            Default::default()
-        });
-        probes = db.probes().unwrap_or_else(|e| {
-            log::warn!("library: lengths: {e}");
-            Default::default()
-        });
-        let plays = db.plays().unwrap_or_else(|e| {
-            log::warn!("library: play time: {e}");
-            Default::default()
-        });
-        let favourites = db.favourites().unwrap_or_else(|e| {
-            log::warn!("library: favourites: {e}");
-            Default::default()
-        });
+    if let Some(art) = sources.art.as_deref() {
+        let cache = crate::store::Cache::open(art);
+        metas = cache.metas();
+        probes = cache.probes();
+    }
+    if let Some(state) = sources.state.as_deref() {
+        let store = crate::store::Store::open(state);
+        let plays = store.plays();
+        let favourites = store.favourites();
         for g in &mut library.entries {
             if let Some(p) = plays.get(&*g.id) {
                 g.plays = *p;

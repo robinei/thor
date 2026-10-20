@@ -8,7 +8,7 @@ pub struct Paths {
     /// The library's content dirs (~/.config/clamshell/library.json, see
     /// [`crate::library::content`]).
     pub library: Option<PathBuf>,
-    /// ClamShell's database (see [`crate::store`]): ~/.local/share/clamshell.
+    /// What ClamShell keeps (see [`crate::store`]): ~/.local/share/clamshell.
     pub state_dir: Option<PathBuf>,
     /// Fetched covers and screenshots (see [`crate::meta`]): ~/.cache/clamshell/art.
     pub art: Option<PathBuf>,
@@ -87,10 +87,6 @@ impl Paths {
     }
 
     /// ClamShell's database (see [`crate::store`]).
-    pub fn db(&self) -> Option<PathBuf> {
-        self.state_dir.as_ref().map(|d| d.join("clamshell.db"))
-    }
-
     /// Whether there is a systemd user session to put apps and games in scopes of.
     pub fn has_user_systemd(&self) -> bool {
         self.runtime.as_deref().is_some_and(|d| d.join("systemd/private").exists())
@@ -116,7 +112,6 @@ mod tests {
         assert_eq!(paths.library.as_deref(), Some(Path::new("/h/.config/clamshell/library.json")));
         assert_eq!(paths.state_dir.as_deref(), Some(Path::new("/h/.local/share/clamshell")));
         assert_eq!((paths.jobs.as_path(), paths.mangohud.as_path()), (Path::new("/run/u/clamshell/jobs"), Path::new("/run/u/clamshell/mangohud")));
-        assert_eq!(paths.db().as_deref(), Some(Path::new("/h/.local/share/clamshell/clamshell.db")));
         assert_eq!(paths.art.as_deref(), Some(Path::new("/h/.cache/clamshell/art")));
         assert_eq!(Paths::new(&Base::default()).state_dir, None, "no HOME, no XDG dirs");
     }

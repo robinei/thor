@@ -12,7 +12,7 @@ use clamshell_system::keyboard::VirtualKeyboard;
 use clamshell_system::library::{self, Sources};
 use clamshell_system::meta;
 use clamshell_system::paths::Paths;
-use clamshell_system::store::{Store, Writer};
+use clamshell_system::store::{Cache, Store, Writer};
 use clamshell_system::tuning::Tuning;
 use clamshell_system::worker::Worker;
 use clamshell_system::{
@@ -59,19 +59,16 @@ fn rescanner(sources: Sources, paths: Paths, queue: meta::Queue, sink: UiSink) -
         detached(
             "rescan",
             clamshell_system::worker::detached("rescan", move || {
-                if refetch
-                    && let Some(db) = paths.db()
-                    && let Err(e) = Store::open(&db).and_then(|s| s.forget_misses())
-                {
-                    log::warn!("rescan: forgetting the misses: {e}");
+                if refetch && let Some(art) = paths.art.as_deref() {
+                    log::info!("rescan: {} misses forgotten", Cache::open(art).forget_misses());
                 }
                 let loaded = library::load(&sources);
                 log::info!("rescan: {} entries", loaded.library.entries.len());
                 if sink.send(clamshell_core::Event::Library(Box::new(loaded.library))).is_err() {
                     return;
                 }
-                if let (Some(art), Some(db)) = (paths.art.clone(), paths.db()) {
-                    detached("meta", meta::spawn(meta::Fetch { wanted: loaded.wanted, keys: loaded.keys, art, db }, &queue, sink));
+                if let Some(art) = paths.art.clone() {
+                    detached("meta", meta::spawn(meta::Fetch { wanted: loaded.wanted, keys: loaded.keys, art }, &queue, sink));
                 }
             }),
         );
@@ -135,17 +132,17 @@ pub fn start(
     let system = started("system", clamshell_system::device::spawn(paths.screenshots.clone(), sink.clone()));
     // (Browsed videos' lengths and frames read as scanned ones' are, by the metadata threads.)
     let probe: Box<dyn Fn(Vec<meta::Wanted>) + Send> = {
-        let (queue, sink, art, db) = (fetching.clone(), sink.clone(), paths.art.clone(), paths.db());
+        let (queue, sink, art) = (fetching.clone(), sink.clone(), paths.art.clone());
         Box::new(move |wanted| {
-            if let (Some(art), Some(db)) = (art.clone(), db.clone()) {
-                detached("meta", meta::spawn(meta::Fetch { wanted, keys: meta::Keys::default(), art, db }, &queue, sink.clone()));
+            if let Some(art) = art.clone() {
+                detached("meta", meta::spawn(meta::Fetch { wanted, keys: meta::Keys::default(), art }, &queue, sink.clone()));
             }
         })
     };
     let browsing = clamshell_system::files::Browsing {
         config: sources.config.clone(),
         home: sources.home.clone(),
-        db: paths.db(),
+        art: paths.art.clone(),
         probe,
         cache: paths.art.as_deref().and_then(std::path::Path::parent).map(std::path::PathBuf::from),
     };
@@ -154,8 +151,7 @@ pub fn start(
     let wifi = started("wifi", wifi::spawn(sink));
     let tuning = Tuning { hardware: started("tuning", tuning::spawn()), pad: pad.clone(), mangohud: paths.mangohud.clone() };
     tuning.apply(global, None);
-    let store = paths.db().and_then(|f| Store::open(&f).map_err(|e| log::error!("store: {}: {e}", f.display())).ok());
-    let store = store.and_then(|store| Writer::spawn(store).map_err(|e| log::error!("store thread: {e}")).ok());
+    let store = paths.state_dir.as_deref().and_then(|dir| Writer::spawn(Store::open(dir)).map_err(|e| log::error!("store thread: {e}")).ok());
     Handles {
         paths: paths.clone(),
         store,

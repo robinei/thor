@@ -17,8 +17,7 @@
 //! ([`Actuation`]): each is a binding of its own. A binding to something on or off may also repeat while
 //! on (turbo) or stay on from one actuation to the next (toggle).
 //!
-//! Saved in ClamShell's database, a keymap a row (as JSON, through serde: see clamshell-system's
-//! `store`).
+//! Kept as JSON, through serde (keymaps.json: see clamshell-system's `store`).
 
 use std::fmt::{self, Write};
 
