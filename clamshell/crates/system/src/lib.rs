@@ -24,6 +24,7 @@ pub mod job;
 pub mod keyboard;
 pub mod launcher;
 pub mod library;
+pub mod lid;
 pub mod meta;
 pub mod metrics;
 pub mod mixer;

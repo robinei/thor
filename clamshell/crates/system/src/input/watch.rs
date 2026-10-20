@@ -3,7 +3,8 @@
 //! while there is some): keys, buttons, relative motion, and absolute axes that moved a real distance (a
 //! resting stick's jitter isn't input). And, in the device's own session, the device's hardware keys:
 //! volume, mute and brightness on small button devices (gpio-keys, a headset's buttons), never on a
-//! full keyboard, whose keys are the desktop's business. Devices that come and go are picked up as
+//! full keyboard, whose keys are the desktop's business; and the lid, for the power key's wakeup
+//! ([`crate::lid`]). Devices that come and go are picked up as
 //! /dev/input changes (inotify; without it, within [`RESCAN_EVERY`]). Grabbed devices (the controller) say nothing here;
 //! their input reaches the state through their own paths and the virtual devices they feed.
 
@@ -16,15 +17,15 @@ use clamshell_core::Event;
 use clamshell_core::hardware::DeviceKey;
 use clamshell_core::idle::IdleEvent;
 use evdev::raw_stream::RawDevice;
-use evdev::{AbsoluteAxisCode, EventType, KeyCode, PropType};
+use evdev::{AbsoluteAxisCode, EventType, KeyCode, PropType, SwitchCode};
 use std::os::fd::OwnedFd;
 
 use rustix::event::{PollFd, PollFlags, Timespec};
 use rustix::fs::inotify;
 
 use super::{Press, Range, Raw};
-use crate::worker;
 use crate::{Closed, Sink};
+use crate::{lid, worker};
 
 /// Input is reported at most this often.
 const ACTIVITY_EVERY: Duration = Duration::from_secs(3);
@@ -39,6 +40,8 @@ struct Watched {
     device: RawDevice,
     /// Its volume and brightness keys are the device's (see the module doc).
     hardware_keys: bool,
+    /// It has the lid's switch.
+    lid: bool,
     /// Each absolute axis' range and the value it last counted at.
     axes: HashMap<u16, (Range, i32)>,
 }
@@ -66,7 +69,8 @@ impl Watched {
                     .collect()
             })
             .unwrap_or_default();
-        Some(Watched { path, device, hardware_keys, axes })
+        let lid = device.supported_switches().is_some_and(|set| set.contains(SwitchCode::SW_LID));
+        Some(Watched { path, device, hardware_keys, lid, axes })
     }
 
     /// Whether `raw` is input (and remembers where an axis counted).
@@ -133,6 +137,9 @@ fn watch(take_keys: bool, sink: &impl Sink) -> Result<(), Closed> {
                     && let Some(w) = Watched::open(path, device)
                 {
                     log::debug!("input watch: {}{}", w.device.name().unwrap_or("?"), if w.hardware_keys { " (hardware keys)" } else { "" });
+                    if take_keys && w.lid {
+                        lid::closed(w.device.get_switch_state().is_ok_and(|on| on.contains(SwitchCode::SW_LID)));
+                    }
                     devices.push(w);
                 }
             }
@@ -161,6 +168,9 @@ fn watch(take_keys: bool, sink: &impl Sink) -> Result<(), Closed> {
                 input |= d.is_input(raw);
                 if take_keys && d.hardware_keys {
                     keys.extend(device_key(raw));
+                }
+                if take_keys && d.lid && raw.kind == EventType::SWITCH && raw.code == SwitchCode::SW_LID.0 {
+                    lid::closed(raw.value != 0);
                 }
             }
             true

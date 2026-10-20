@@ -122,6 +122,19 @@ impl Display for Temp {
     }
 }
 
+/// A fan's speed after a detail: " · fan 3200 rpm", " · fan off", or nothing.
+pub struct Fan(pub Option<u32>);
+
+impl Display for Fan {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self.0 {
+            Some(0) => f.write_str(" · fan off"),
+            Some(rpm) => write!(f, " · fan {rpm} rpm"),
+            None => Ok(()),
+        }
+    }
+}
+
 /// A level (0-100) with `suffix` after it, or "-" when unknown.
 pub struct Level<'a>(pub Option<u8>, pub &'a str);
 
@@ -241,6 +254,9 @@ mod tests {
         assert_eq!(show(Frequency(None)), "clock unknown");
         assert_eq!(show(Temp(Some(46.2))), " · 46°C");
         assert_eq!(show(Temp(None)), "");
+        assert_eq!(show(Fan(Some(3200))), " · fan 3200 rpm");
+        assert_eq!(show(Fan(Some(0))), " · fan off");
+        assert_eq!(show(Fan(None)), "");
         assert_eq!(show(Level(Some(40), " %")), "40 %");
         assert_eq!(show(Level(None, "")), "-");
     }

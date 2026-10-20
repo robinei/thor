@@ -40,7 +40,8 @@ pub enum Setting {
     CpuMax,
     /// The GPU's frequency cap in percent of its range; 0: the power profile's.
     GpuMax,
-    /// Charging stops at this percentage (global only: battery care).
+    /// Charging stops at this percentage; 0: bypass, the battery left alone while the charger powers the
+    /// device (global only: battery care).
     ChargeLimit,
     /// The screens go off after this many minutes without input; 0: never (global only).
     ScreenOff,
@@ -150,7 +151,7 @@ impl Setting {
             // (The others are the keymaps there are.)
             Setting::Keymap => &[0],
             Setting::CpuMax | Setting::GpuMax => &[0, 40, 50, 60, 70, 80, 90, 100],
-            Setting::ChargeLimit => &[100, 90, 80],
+            Setting::ChargeLimit => &[100, 90, 80, 0],
             Setting::ScreenOff => &[1, 2, 5, 10, 0],
             Setting::Sleep => &[5, 15, 30, 60, 0],
         }
@@ -170,7 +171,7 @@ impl Setting {
 
     /// Whether changing it does something yet (the rest are kept, and work once implemented).
     pub fn active(self) -> bool {
-        !matches!(self, Setting::Upscale | Setting::Fan)
+        !matches!(self, Setting::Upscale)
     }
 
     /// Whether it works through the launch's own process (MangoHud's cap and HUD): an app the launch
@@ -241,6 +242,7 @@ impl Setting {
             (Setting::CpuMax, 0) => "CPU auto",
             (Setting::GpuMax, 0) => "GPU auto",
             (Setting::ChargeLimit, 100) => "Charge full",
+            (Setting::ChargeLimit, 0) => "Bypass",
             (Setting::ScreenOff, 0) => "Always on",
             (Setting::Sleep, 0) => "No sleep",
             (Setting::Background, v) => InBackground::of(v).label(),
@@ -464,6 +466,7 @@ mod tests {
         assert_eq!(Setting::Keymap.impact(1), Impact::Changes);
         assert_eq!(Setting::Fan.impact(1), Impact::Changes);
         assert_eq!(Setting::ChargeLimit.impact(80), Impact::Saves);
+        assert_eq!(Setting::ChargeLimit.impact(0), Impact::Saves, "bypass");
     }
 
     #[test]

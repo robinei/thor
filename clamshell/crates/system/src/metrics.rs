@@ -138,6 +138,10 @@ fn read(previous: &CpuTimes, now: &CpuTimes) -> Metrics {
     };
     for chip in sys::entries("/sys/class/hwmon") {
         let name = sys::read::<String>(chip.join("name")).unwrap_or_default();
+        if name == "pwmfan" {
+            m.fan_rpm = sys::read(chip.join("fan1_input"));
+            continue;
+        }
         let kind = match name.as_str() {
             "k10temp" | "coretemp" | "zenpower" | "cpu_thermal" => &mut m.cpu_temp,
             "amdgpu" | "nouveau" | "gpu_thermal" => &mut m.gpu_temp,

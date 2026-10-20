@@ -3,8 +3,9 @@
 //! reloads when it changes).
 //!
 //! These write `scaling_max_freq` of each cpufreq policy, `max_freq` of the GPU's devfreq device, CPUs'
-//! `online`, and the battery's `charge_control_end_threshold`, which needs write access to them (on the
-//! device: a udev rule for the program's user). The hardware is set on a thread of its own ([`spawn`]):
+//! `online`, the battery's `charge_control_end_threshold` and `constant_charge_current`, and the fan
+//! daemon's mode file, which needs write access to them (on the device: the `power` group's, given by
+//! tools/device/system.sh). The hardware is set on a thread of its own ([`spawn`]):
 //! taking cores offline can take a while, and drawing mustn't wait for it.
 
 use std::fs;
@@ -12,6 +13,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use clamshell_core::PowerProfile;
+use clamshell_core::fan;
 use clamshell_core::settings::{Setting, Values};
 
 use crate::pad;
@@ -43,11 +45,11 @@ fn read_list(path: &Path) -> Vec<u64> {
     sys::text(path).map(|s| s.split_whitespace().filter_map(|f| f.parse().ok()).collect()).unwrap_or_default()
 }
 
-/// Writes a sysfs value. Failing is worth one warning (a missing udev rule fails every write, at every
+/// Writes a sysfs value. Failing is worth one warning (missing write access fails every write, at every
 /// change of the settings).
 fn write(path: &Path, value: u64, quiet: &mut Quiet) {
     if let Err(e) = fs::write(path, value.to_string()) {
-        quiet.failed("power profiles need write access to cpufreq and devfreq", &format_args!("{}: {e}", path.display()));
+        quiet.failed("the settings need write access to cpufreq, devfreq and the battery", &format_args!("{}: {e}", path.display()));
     }
 }
 
@@ -151,13 +153,31 @@ fn apply_hardware(v: &Values, quiet: &mut Quiet) {
         };
         write(&dir.join("max_freq"), pick(&steps, min, max, f), quiet);
     }
-    // Battery care: only where the battery has the setting, and only if it differs.
+    // Battery care: only where the battery has the setting, and only if it differs. Bypass: the charge
+    // current limited to 0 (the Thor's battery firmware, through Armada's kernel patch 0903), so that the
+    // charger powers the device and the battery is left alone; written each time, as whether the firmware
+    // keeps it (unplugged, replugged) isn't known.
+    let limit = v.get(Setting::ChargeLimit);
     for supply in sys::power_supplies() {
         let file = supply.join("charge_control_end_threshold");
-        let limit = u64::from(v.get(Setting::ChargeLimit));
-        if file.exists() && sys::read(&file) != Some(limit) {
-            write(&file, limit, quiet);
+        let end = u64::from(if limit == 0 { 100 } else { limit });
+        if file.exists() && sys::read(&file) != Some(end) {
+            write(&file, end, quiet);
         }
+        let current = supply.join("constant_charge_current");
+        if let Some(max) = sys::read::<u64>(supply.join("constant_charge_current_max")).filter(|_| current.exists()) {
+            let want = if limit == 0 { 0 } else { max };
+            if limit == 0 || sys::read(&current) != Some(want) {
+                write(&current, want, quiet);
+            }
+        }
+    }
+    // The fan's mode, for the fan daemon (where it runs: the file is there).
+    let mode = fan::Mode::of(v.get(Setting::Fan)).name();
+    if sys::text(fan::MODE_FILE).is_some_and(|now| now.trim() != mode)
+        && let Err(e) = fs::write(fan::MODE_FILE, mode)
+    {
+        quiet.failed("the fan's mode needs write access to its file", &format_args!("{}: {e}", fan::MODE_FILE));
     }
     log::info!("settings applied: power {}", power.label());
 }

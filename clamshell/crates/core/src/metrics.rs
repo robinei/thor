@@ -22,6 +22,8 @@ pub struct Metrics {
     /// Hottest CPU and GPU sensor, °C.
     pub cpu_temp: Option<f32>,
     pub gpu_temp: Option<f32>,
+    /// The fan's speed, rpm (0: stopped).
+    pub fan_rpm: Option<u32>,
     /// Memory in use and in total, and swap in use, bytes.
     pub mem_used: u64,
     pub mem_total: u64,

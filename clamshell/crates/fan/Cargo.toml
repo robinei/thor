@@ -1,0 +1,11 @@
+[package]
+name = "clamshell-fan"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+clamshell-core.workspace = true
+
+[lints]
+workspace = true

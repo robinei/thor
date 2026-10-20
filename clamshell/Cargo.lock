@@ -210,6 +210,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "clamshell-fan"
+version = "0.1.0"
+dependencies = [
+ "clamshell-core",
+]
+
+[[package]]
 name = "clamshell-library"
 version = "0.1.0"
 

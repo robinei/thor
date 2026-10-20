@@ -5,7 +5,7 @@ use clamshell_core::metrics::{HISTORY, Ring};
 
 use crate::draw::{Canvas, Rect, Rgb};
 use crate::toolkit::Frame;
-use crate::toolkit::format::{Fmt, Frequency, HoursMinutes, Percent, Temp};
+use crate::toolkit::format::{Fan, Fmt, Frequency, HoursMinutes, Percent, Temp};
 use crate::toolkit::style::{self, SURFACE, Tone};
 
 /// Sizes and positions, of a tile's height: label, value, detail; the graph's share at the bottom.
@@ -73,7 +73,7 @@ pub(super) fn draw(f: &mut Frame) {
     let tile = |label, i| Tile { label, rect: grid.cell(2, 3, pad, i) };
 
     let t = tile("CPU", 0);
-    t.text(c, &Line::of(format_args!("{}", Percent(m.cpu))), &Line::of(format_args!("{}{}", Frequency(m.cpu_mhz), Temp(m.cpu_temp))));
+    t.text(c, &Line::of(format_args!("{}", Percent(m.cpu))), &Line::of(format_args!("{}{}{}", Frequency(m.cpu_mhz), Temp(m.cpu_temp), Fan(m.fan_rpm))));
     t.graph(c, &h.cpu, 1.0, CPU);
 
     let t = tile("GPU", 1);

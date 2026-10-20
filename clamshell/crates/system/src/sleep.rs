@@ -2,7 +2,7 @@
 //! so their difference grows by however long the system slept. The clock thread checks it every second.
 //! (No D-Bus: logind's PrepareForSleep(false) didn't reach us after a resume in testing, and this also
 //! sees sleep that didn't go through logind.) Suspending itself is logind's: the power button and the
-//! lid, per logind.conf.
+//! lid, per logind.conf (the power key not waking it while the lid is closed: [`crate::lid`]).
 
 use std::time::Duration;
 

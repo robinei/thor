@@ -18,6 +18,7 @@ pub mod editor;
 mod effect;
 pub mod enqueue;
 mod event;
+pub mod fan;
 pub mod files;
 mod found;
 pub mod hardware;
@@ -519,7 +520,6 @@ impl State {
                 };
                 (if self.bottom.pointing == before { Dirty::NONE } else { Dirty::BOTTOM }, effects)
             }
-            // Sleep may have reset what the settings set (frequency caps, cores): again.
             // Sleep may have reset what the settings set (frequency caps, cores): again.
             Event::Resumed => {
                 self.idle.resumed(self.unix_secs);

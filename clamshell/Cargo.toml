@@ -1,5 +1,7 @@
 [workspace]
 members = ["crates/*"]
+# Built by a plain cargo build: ClamShell and the fan daemon (the system service the image installs).
+default-members = [".", "crates/fan"]
 resolver = "3"
 
 [workspace.package]
@@ -43,6 +45,7 @@ name = "clamshell"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+default-run = "clamshell"
 
 [dependencies]
 clamshell-core.workspace = true

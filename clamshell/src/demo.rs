@@ -204,6 +204,7 @@ pub fn metrics() -> Vec<Event> {
                 gpu_mhz: Some(680),
                 cpu_temp: Some(58.0),
                 gpu_temp: Some(52.0),
+                fan_rpm: Some(3100),
                 mem_used: 6_400_000_000,
                 mem_total: 16_000_000_000,
                 swap_used: 0,
