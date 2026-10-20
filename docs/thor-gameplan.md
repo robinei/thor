@@ -208,7 +208,7 @@ For our image (small):
       bytes (Armada: the ABL may not read past that).
 - [x] USB controller autosuspend (`power/control=auto` on the DWC3 device), so it doesn't hold a DDR vote
       while idle (Thorch `99-thorch-sm8550-usb-autosuspend.rules`, Armada `60-armada-usb-autosuspend.rules`).
-- [ ] Backlight names for the Brightness tab: top `ae96000.dsi.0`, bottom `ae94000.dsi.0` (not Kettle's
+- [x] Backlight names for the Brightness tab: top `ae96000.dsi.0`, bottom `ae94000.dsi.0` (not Kettle's
       "bottom-panel").
 
 Our kernel is Armada's (decided 2026-10-20: the furthest community work, our own patches on top once we
