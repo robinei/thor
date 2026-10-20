@@ -1,7 +1,7 @@
 //! Where ClamShell's files are: worked out once at start from the XDG base directories and HOME, then
 //! passed to whatever reads or writes one.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Paths {
@@ -93,17 +93,10 @@ impl Paths {
     }
 }
 
-/// Writes one of ClamShell's files, its folder made if needed.
-pub fn write(file: &Path, text: &str) -> std::io::Result<()> {
-    if let Some(dir) = file.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    std::fs::write(file, text)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn xdg_dirs_or_their_defaults_under_home() {
