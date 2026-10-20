@@ -101,6 +101,9 @@ Known issues and risks, to check first:
    machine boots fresh.
 9. Not done: fan control. ClamShell applies its settings again on waking.
 10. Test image only: passwordless sudo, sshd with a key, autologin without a password.
+11. Steam: not installed (neither Steam nor FEX is an Arch Linux ARM package), though the dock's first
+    pins include `desktop:steam`. Installed by hand on the device (see "Steam" below), with a
+    `steam.desktop` of its own so the pin and ClamShell's Steam entry find it.
 
 ## Before the device arrives
 
@@ -161,6 +164,36 @@ Known issues and risks, to check first:
 8. Maintenance: install Claude Code (`curl -fsSL https://claude.ai/install.sh | bash`) and log in; make
    the device's ssh key (`ssh-keygen -t ed25519`) and add it to the GitHub repository (a deploy key with
    write access); then a first `/maintain` from the dock's Maintenance app.
+9. Steam, the native ARM64 client first (see "Steam").
+
+## Steam
+
+Steam's client is heavy (steamwebhelper is a Chromium), and on an ARM machine the question is whether the
+client itself runs natively; games run through Proton or FEX either way, unless native ARM64.
+
+1. First choice, Valve's native ARM64 client. Valve publishes it (since April 2026, its `linuxarm64`
+   client manifest, stable and publicbeta) but links it nowhere and doesn't support it; the Steam Frame
+   runs it. Its entry point is `steamrtarm64/steam` in the Steam folder. Needs: 4 KiB pages (`getconf
+   PAGESIZE`; ROCKNIX's arm64 kernel should be 4 KiB) and `/lib/ld-linux-aarch64.so.1` (Arch Linux ARM
+   has it). Games: Windows games through Valve's ARM64 Proton (Wine as ARM64EC, FEX inside), x86 Linux
+   games through Valve's FEX compatibility tool, which the client downloads along with Steam Linux
+   Runtime 4.0 for arm64 (not by default in early builds: check what it fetches). The host needs
+   `binfmt_misc` and EROFS for FEX's root filesystem (`zcat /proc/config.gz`). Community packaging to
+   copy from: steam-arm64-nix (fetches from the manifest, checks with `--doctor`). Reported rough edges:
+   the client's own title bar doesn't move its window (no matter under sway), Big Picture's quick access
+   menu froze once.
+2. Else the x86 client under FEX, as Canonical's ARM64 snap does: FEX built from source (it left the AUR,
+   and no longer supports Arch officially) with an x86-64 root filesystem. Then the whole client is
+   emulated, and Valve's ARM64 Proton can't be used from it.
+
+Then, either way, Steam made as light as it goes, measured before and after with `tools/inventory.sh`
+(Steam's memory and CPU idle in its tray, and while a game runs):
+
+- Started as ClamShell starts it, `-silent` (to its tray, no window).
+- Its settings: Low Performance Mode (Library), shader pre-caching's background processing off unless a
+  game stutters without it, no start with the computer (ClamShell starts it).
+- Whether Steam idle behind a game costs much: if so, try Steam set to Pauses hidden in ClamShell (its
+  downloads and friends stop while hidden; a game's need of the client while running decides it).
 
 ## Testing our system on the device
 
@@ -295,7 +328,8 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       session stops and tty1 says why: readable on the top screen (the right way up: the panel is
       portrait, fbcon may need `fbcon=rotate:`), and holding power then powering on starts it again.
       ClamShell isn't killed by its watchdog (30 s) while a heavy game loads.
-- [ ] Steam under FEX (the follower and the found-window lineage were only seen on x86): a game started
+- [ ] Steam's games, with the client that runs (see "Steam"; the follower and the found-window lineage
+      were only seen on x86, a game itself is FEX or Proton's either way): a game started
       from ClamShell runs in its launch's scope (`systemd-cgls --user`), Steam's launcher for it found
       by its arguments (`pgrep -af SteamLaunch`: `SteamLaunch` and `AppId=<id>` as arguments of their
       own, as `steam_launchers` in `launcher.rs` expects, whatever FEX puts before them); the entry ends
