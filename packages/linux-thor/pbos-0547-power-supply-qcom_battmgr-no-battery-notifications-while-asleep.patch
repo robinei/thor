@@ -15,9 +15,11 @@ Pocket FIT: a 6 h 05 min deep sleep with no self-wake (was 13-43 min).
 
 Ported to Armada's tree after PB-OS's 0545 (which sets the same driver data
 for its switches); otherwise as PB-OS's 0547 (project-barry/pb-os 8ea4653).
+Its requests taken under battmgr->lock, as every other request in the
+driver (ours: PB-OS's skipped it).
 ---
 diff --git a/drivers/power/supply/qcom_battmgr.c b/drivers/power/supply/qcom_battmgr.c
-index eaca3b13f..400db6a0b 100644
+index eaca3b13f..393a76491 100644
 --- a/drivers/power/supply/qcom_battmgr.c
 +++ b/drivers/power/supply/qcom_battmgr.c
 @@ -32,6 +32,7 @@ enum qcom_battmgr_variant {
@@ -52,7 +54,7 @@ index eaca3b13f..400db6a0b 100644
  	pmic_glink_client_register(battmgr->client);
  
  	if (of_machine_is_compatible("retroidpocket,rp6") ||
-@@ -1916,8 +1920,62 @@ static const struct auxiliary_device_id qcom_battmgr_id_table[] = {
+@@ -1916,8 +1920,68 @@ static const struct auxiliary_device_id qcom_battmgr_id_table[] = {
  };
  MODULE_DEVICE_TABLE(auxiliary, qcom_battmgr_id_table);
  
@@ -72,8 +74,14 @@ index eaca3b13f..400db6a0b 100644
 +		.hdr.opcode = cpu_to_le32(enable ? BATTMGR_REQUEST_NOTIFICATION :
 +						   BATTMGR_DISABLE_NOTIFICATION),
 +	};
++	int ret;
 +
-+	return qcom_battmgr_request(battmgr, &req, sizeof(req));
++	/* (Under the lock, as every request: one at a time.) */
++	mutex_lock(&battmgr->lock);
++	ret = qcom_battmgr_request(battmgr, &req, sizeof(req));
++	mutex_unlock(&battmgr->lock);
++
++	return ret;
 +}
 +
 +static int qcom_battmgr_pm_prepare(struct device *dev)

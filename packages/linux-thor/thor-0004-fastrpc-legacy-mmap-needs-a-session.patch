@@ -1,0 +1,26 @@
+From: thor <thor@localhost>
+Subject: [PATCH] misc: fastrpc: no legacy mmap or munmap without a session
+
+After pbos-0560 a file has no session until its first INIT, and the
+legacy MMAP and MUNMAP ioctls dereference it on entry: refuse them
+until then (a root-only oops otherwise; hexagonrpcd attaches first).
+---
+diff --git a/drivers/misc/fastrpc.c b/drivers/misc/fastrpc.c
+index aa246d815..fe06631cd 100644
+--- a/drivers/misc/fastrpc.c
++++ b/drivers/misc/fastrpc.c
+@@ -2637,9 +2637,14 @@ static long fastrpc_legacy_device_ioctl(struct fastrpc_user *fl,
+ 		return fastrpc_legacy_invoke(fl, cmd, argp);
+ 	case FASTRPC_LEGACY_IOCTL_MMAP:
+ 	case FASTRPC_LEGACY_IOCTL_MMAP_64:
++		/* (No session before the first INIT: the mappings need one.) */
++		if (!fl->sctx)
++			return -EINVAL;
+ 		return fastrpc_req_mmap(fl, argp);
+ 	case FASTRPC_LEGACY_IOCTL_MUNMAP:
+ 	case FASTRPC_LEGACY_IOCTL_MUNMAP_64:
++		if (!fl->sctx)
++			return -EINVAL;
+ 		return fastrpc_req_munmap(fl, argp);
+ 	case FASTRPC_LEGACY_IOCTL_SETMODE:
+ 	case FASTRPC_LEGACY_IOCTL_CONTROL:

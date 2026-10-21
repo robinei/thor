@@ -20,6 +20,8 @@ MARKER=sh5001_0_platform.config
 log() { echo "thor-sensors: $*" >&2; }
 
 [ -d "$SHARE/config" ] || { log "no sensor configuration: thor-firmware"; exit 1; }
+# The ADSP's FastRPC node (linux-thor's), there once the ADSP is up.
+udevadm wait --timeout=60 /dev/fastrpc-adsp || { log "no /dev/fastrpc-adsp"; exit 1; }
 # Sound shares the ADSP: its card bound before the sensors process opens FastRPC sessions (an ADSP
 # restart after that is not reliably recovered: PB-OS).
 udevadm wait --timeout=30 /sys/class/sound/card0 || log "no sound card yet, going on"

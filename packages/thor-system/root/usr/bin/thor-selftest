@@ -123,7 +123,7 @@ settled() {
     for z in /sys/class/thermal/thermal_zone*; do
         case $(val "$z/type") in cpu*|gpu*) temps="$temps $(val "$z/type")=$(( $(val "$z/temp") / 1000 ))" ;; esac
     done
-    check "thermal sensors don't wake" bash -c 'grep -qx disabled /sys/bus/platform/drivers/qcom-tsens/*/power/wakeup'
+    check "thermal sensors don't wake" bash -c 'ls /sys/bus/platform/drivers/qcom-tsens/*/power/wakeup > /dev/null && for w in /sys/bus/platform/drivers/qcom-tsens/*/power/wakeup; do grep -qx disabled "$w" || exit 1; done'
     if [ -n "$temps" ]; then ok "CPU and GPU sensors"; info "°C:$temps"; else fail "no cpu*/gpu* thermal zones"; fi
 
     # Power: the battery, the caps' write access.
@@ -169,7 +169,10 @@ settled() {
     check "Bluetooth (hci0)" test -e /sys/class/bluetooth/hci0
     # The motion sensors' services (thor-sensors), on the ADSP's FastRPC node.
     check "FastRPC to the ADSP (/dev/fastrpc-adsp)" test -c /dev/fastrpc-adsp
-    check "motion sensors' services (thor-sensors)" systemctl is-active -q thor-sensors thor-sensors-root
+    local u
+    for u in thor-sensors thor-sensors-root; do
+        check "motion sensors' service $u" systemctl is-active -q "$u"
+    done
     info "network: $(nmcli -t -f DEVICE,STATE device 2> /dev/null | tr '\n' ' ')"
 
     # The session.

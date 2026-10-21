@@ -6,7 +6,7 @@ Armada's driver: a module parameter read at every MCU init, its default
 the driver's own 6,2, so nothing changes unless it is set.
 ---
 diff --git a/drivers/input/joystick/rsinput.c b/drivers/input/joystick/rsinput.c
-index f00bf1258..75f34edc5 100644
+index f00bf1258..f0b493669 100644
 --- a/drivers/input/joystick/rsinput.c
 +++ b/drivers/input/joystick/rsinput.c
 @@ -17,6 +17,7 @@
@@ -35,7 +35,7 @@ index f00bf1258..75f34edc5 100644
  /* MCU release reference; independent of the calibrated evdev maximum. */
  #define RSINPUT_TRIGGER_RELEASE 0x610
  
-@@ -223,12 +235,9 @@ static int rsinput_init_commands(struct rsinput_driver *drv) {
+@@ -223,12 +235,12 @@ static int rsinput_init_commands(struct rsinput_driver *drv) {
      }
  
      msleep(100);
@@ -46,8 +46,11 @@ index f00bf1258..75f34edc5 100644
 -        0x00, 0x00, 0x00, 0x02
 -    };
 +    uint8_t mcu_params[10] = { DATA_COMMOD_SET_PAR, 0x01 };
++    /* (Both values from one write: under the parameters' lock.) */
++    kernel_param_lock(THIS_MODULE);
 +    put_unaligned_be32(mcu_frame[0], &mcu_params[2]);
 +    put_unaligned_be32(mcu_frame[1], &mcu_params[6]);
++    kernel_param_unlock(THIS_MODULE);
      error = rsinput_send_command(drv, CMD_COMMOD, mcu_params, sizeof(mcu_params));
      if (error < 0) {
          dev_err(&drv->serdev->dev, "Failed to set MCU parameters: %d\n", error);
