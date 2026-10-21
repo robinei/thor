@@ -1,7 +1,8 @@
 #!/bin/bash
 # Builds the Thor's packages (packages/*) on this PC for aarch64, then signs and indexes them (repo.sh
 # index): makepkg with a config of its own (CARCH=aarch64), each from a writable copy of packages/
-# (makepkg writes pkgver back) out of this checkout (THOR_REPO). ClamShell is cross-compiled
+# (makepkg writes pkgver back), out of a clone of this checkout's last commit (THOR_REPO): uncommitted
+# changes aren't built. ClamShell is cross-compiled
 # (aarch64-unknown-linux-gnu: rustup's target, clang and lld, against tools/repo/sysroot.sh's sysroot);
 # linux-thor packages tools/image/thor-kernel.sh's build; thor-firmware unpacks ROCKNIX's release (kept
 # in ~/.cache/thor-vm/rocknix: downloaded there if missing) and goes to the repository's local/, never
@@ -36,7 +37,13 @@ OUT=$THOR_REPO_DIR/built
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-cp -r "$CHECKOUT/packages/." "$work/"
+# What is built: the checkout's last commit, not its working tree, so that a package's version (the
+# commit's hash) names exactly what is in it. (A clone of it, sharing its objects: its history makes the
+# versions.)
+git clone -q --shared "$CHECKOUT" "$work/src"
+echo "building $(git -C "$work/src" log -1 --format='%h %s')"
+[ -z "$(git -C "$CHECKOUT" status --porcelain)" ] || echo "(uncommitted changes in $CHECKOUT are left out: commit them to build them)"
+cp -r "$work/src/packages/." "$work/"
 # makepkg's config, its own (not this PC's: no tuning for this CPU in packages for others): the
 # architecture, generic flags, nothing stripped or split off by this PC's tools (which don't know
 # aarch64): ClamShell is stripped by its linker.
@@ -70,15 +77,15 @@ export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=$work/aarch64-cc
 export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C strip=symbols"
 export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C strip=symbols"
 [ "$ARCH" != aarch64 ] || export PKG_CONFIG_ALLOW_CROSS=1 PKG_CONFIG_SYSROOT_DIR=$SYSROOT PKG_CONFIG_LIBDIR=$SYSROOT/usr/lib/pkgconfig
-# (ClamShell's target dir kept between builds, beside the desktop's.)
-export CARGO_TARGET_DIR=$CHECKOUT/clamshell/target
+# (ClamShell's target dir kept between builds, in the checkout's, its own: the clone's path differs.)
+export CARGO_TARGET_DIR=$CHECKOUT/clamshell/target/packages
 mkdir -p "$OUT" "$work/.sources"
 for p in "${PACKAGES[@]}"; do
     echo "== $p"
     rm -f "$OUT"/"$p"-[0-9r]*.pkg.tar.*
     src=$work/.sources
     [ "$p" != thor-firmware ] || { src=$CACHE/rocknix; mkdir -p "$src"; }
-    (cd "$work/$p" && THOR_REPO=$CHECKOUT PKGDEST=$OUT SRCDEST=$src BUILDDIR=$work/.build \
+    (cd "$work/$p" && THOR_REPO=$work/src PKGDEST=$OUT SRCDEST=$src BUILDDIR=$work/.build \
         makepkg --config "$work/makepkg.conf" -f --nodeps --noconfirm --noprogressbar > "$work/$p.log" 2>&1) \
         || { tail -30 "$work/$p.log"; exit 1; }
     ls "$OUT"/"$p"-[0-9r]*.pkg.tar.*

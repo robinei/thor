@@ -15,7 +15,8 @@
 # commit, ours, the config and this script, with how to build it again). Sources and the build tree are
 # kept in ~/.cache/thor-kernel; a second run rebuilds only what changed.
 #
-# Environment: ARMADA_REF (default main: their latest), JOBS (default: all CPUs).
+# Armada's commit: tools/image/kernel/armada-ref (pinned: a checkout builds the same kernel every time).
+# Environment: ARMADA_REF (another commit or branch, main their latest, to try one), JOBS (default: all CPUs).
 #
 # As Armada's scripts/build-kernel.sh does: kernel.org's tarball of BASE.env's version; patches/series in
 # order, each applied without fuzz; their dts/*.dts(i) copied into arch/arm64/boot/dts/qcom, then their
@@ -28,7 +29,7 @@
 # theirs).
 set -euo pipefail
 export LC_ALL=C
-REF=${ARMADA_REF:-main}
+REF=${ARMADA_REF:-$(grep -v '^#' "$(dirname "$(realpath "$0")")/kernel/armada-ref" | head -1)}
 OUT=$(realpath -m "${1:-${XDG_CACHE_HOME:-$HOME/.cache}/thor-vm/kernel}")
 CACHE=${XDG_CACHE_HOME:-$HOME/.cache}/thor-kernel
 JOBS=${JOBS:-$(nproc)}
@@ -145,6 +146,8 @@ for dtb in "${DTBS[@]}"; do cp "$SRC/arch/arm64/boot/dts/$dtb" "$OUT/dtbs/"; don
 "${KMAKE[@]}" -s INSTALL_MOD_PATH="$OUT" INSTALL_MOD_STRIP=1 modules_install > /dev/null
 rm -f "$OUT/lib/modules/$RELEASE/build" "$OUT/lib/modules/$RELEASE/source"
 echo "$RELEASE" > "$OUT/release"
+# (Armada's commit's time, linux-thor's version: the same commit, the same version.)
+git -C "$AR" log -1 --format=%cd --date=format-local:%Y%m%d%H%M > "$OUT/armada-time"
 printf "Armada's kernel, commit %s: Linux %s, %s patches%s; built %s with %s\n" "$COMMIT" "$VERSION" "${#SERIES[@]}" \
     "${MINE:+ and ${#MINE[@]} of ours}" "$(date -u +%F)" "$(clang --version | head -1)" > "$OUT/source"
 mkdir -p "$OUT/licenses"

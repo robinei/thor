@@ -265,9 +265,10 @@ For our image (small):
       "bottom-panel").
 
 Our kernel is Armada's (decided 2026-10-20: the furthest community work, our own patches on top once we
-have the device): `tools/image/thor-kernel.sh` builds their latest (`ARMADA_REF`, default `main`; the
-commit is recorded in the build's `source`), with our config lines and `tools/image/kernel/series` (empty
-for now). So these come with it: the gamepad across sleep (`0508`, `0515`, `1005`–`1007`, `0534`), rumble's
+have the device): `tools/image/thor-kernel.sh` builds the Armada commit pinned in
+`tools/image/kernel/armada-ref` (following them is changing that line, after reading what changed in
+their `packages/kernel` and trying the kernel on the device; `ARMADA_REF` overrides it for a try), with
+our config lines and `tools/image/kernel/series` (empty for now). So these come with it: the gamepad across sleep (`0508`, `0515`, `1005`–`1007`, `0534`), rumble's
 fixes (`1003`, `1004`), the s2idle stack (`0523`–`0526`, `0512`, `0522`, `0566`, `0204`, `0504` instead of
 ROCKNIX's IPCC change), the wake sources (lid on opening only, volume up not), PCIe WAKE#, the codec's rails
 in s2idle, and the charge current limit (`0903`: 0 runs the device from the charger, for bypass).
