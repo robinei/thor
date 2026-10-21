@@ -580,7 +580,9 @@ def ssh_ok():
 
 def ssh_args(command, quiet=False):
     args = ["ssh", "-p", str(A.ssh_port), "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
-            "-o", "LogLevel=ERROR", "-o", "ConnectTimeout=3"]
+            "-o", "LogLevel=ERROR", "-o", "ConnectTimeout=3",
+            # (A machine gone mid-command, QEMU resetting it after a resume: given up on in 15 s, not waited for.)
+            "-o", "ServerAliveInterval=5", "-o", "ServerAliveCountMax=3"]
     if quiet:
         args += ["-o", "BatchMode=yes"]
     return args + [f"{USER}@127.0.0.1"] + list(command)
