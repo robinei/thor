@@ -57,7 +57,7 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
 sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             SKIP
             b0503999564862cd2abeec1a920581f5943e36e5a179bb91bb8eec85c2670c38
-            bd52d03add8c22d384355ea52c1ac7570896a98b95cb4277eb8d04bf18022a85
+            5f8748337364f21c693756e4f0ad918db70d3638f2b547d0bc3cdce3755b67cc
             2c5748b2e5eacd95d8bea920173137e94e185c0243e222e29792050407355679
             e04f90d36e37fda0cfd779f3bb9fba63d74fa44262a9031c7d9ebe82d9bd622b
             09d69478737ce16bdda789007f31d7da3c4b81965bfc12ae7957312c0192319e
