@@ -23,8 +23,9 @@
 # Two ways to boot, one FAT partition: the stock bootloader (U-Boot with UEFI, as Kettle Linux's Thor notes
 # have it) starts systemd-boot (EFI/BOOT/BOOTAA64.EFI), which loads the kernel (an EFI program), our
 # initramfs and the Thor's device tree as files; the ABL boots /KERNEL, an Android boot image of the same
-# kernel. Layout: GPT; 1: FAT "ROCKNIX" at 16 MiB, an EFI system partition with ROCKNIX's GPT name
-# "system" and legacy-boot attribute (their ABL looks for the label); 2: ext4 THOR_ROOT, the system.
+# kernel. Layout: GPT; 1: FAT "ROCKNIX" at 16 MiB, 512 MiB (room for thor-boot's new files beside the
+# old ones), an EFI system partition with ROCKNIX's GPT name "system" and legacy-boot attribute (their ABL
+# looks for the label); 2: ext4 THOR_ROOT, the system.
 # thor-boot (thor-system) fills the FAT partition, here and after every update of what it is made of. The
 # image is small to write; the card's first boot grows the root to the card and makes the swap file for
 # hibernating (thor-firstboot, thor-system's). The test machine's: the same partitions, the FAT one its
@@ -85,7 +86,7 @@ say "partitions"
 # (sfdisk: GPT; 1 an EFI system partition named "system" with the legacy-boot attribute; 2 Linux.)
 sfdisk -q "$IMAGE" <<EOF
 label: gpt
-start=16MiB, size=256MiB, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, name="system", attrs="LegacyBIOSBootable"
+start=16MiB, size=512MiB, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, name="system", attrs="LegacyBIOSBootable"
 type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, name="THOR_ROOT"
 EOF
 DEVICE=$(losetup -Pf --show "$IMAGE")
