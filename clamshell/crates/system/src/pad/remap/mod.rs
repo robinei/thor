@@ -189,8 +189,9 @@ impl Actuator {
     }
 }
 
-/// The Thor's Back button, under the screen (KEY_BACK is assumed until the device test,
-/// docs/thor-gameplan.md): an input of keymaps, never on the game's pad itself.
+/// The Thor's Back button, under the screen (BTN_BACK on the gamepad: Armada's rsinput keymap, PB-OS's
+/// Thor map; to confirm on the device, docs/thor-gameplan.md): an input of keymaps, never on the game's
+/// pad itself.
 pub const BACK_KEY: KeyCode = KeyCode::BTN_BACK;
 
 /// The Thor's AYN button's code (on its own device: see [`super::device::AynKey`]).
