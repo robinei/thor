@@ -71,7 +71,8 @@ pub(crate) struct Display {
     bottom_output: String,
     /// The main screen's mode as it was at start (the Refresh setting's "as is"), by size and refresh.
     original: Option<((i32, i32), i32)>,
-    /// The refresh rate asked for (Hz; 0: as it was), until the outputs are known.
+    /// The refresh rate asked for (Hz; 0: as it was) before the outputs were known: set once they are
+    /// (once, so that a mode set since by something else stays).
     wanted_refresh: Option<u16>,
 }
 
@@ -97,7 +98,12 @@ impl Display {
         }
     }
 
-    /// The screens on or off.
+    /// The second screen's output's name.
+    pub(crate) fn bottom_output(&self) -> &str {
+        &self.bottom_output
+    }
+
+    /// The screens on or off: on, those it turned off.
     pub(crate) fn power(&mut self, on: bool, outputs: impl Iterator<Item = WlOutput>, qh: &QueueHandle<App>) {
         log::info!("screens {}", if on { "on" } else { "off" });
         if on {
@@ -132,11 +138,12 @@ impl Display {
 
     /// The main screen's refresh rate to `hz` (0: as it was at start), the nearest its mode list has.
     pub(crate) fn refresh(&mut self, hz: u16, qh: &QueueHandle<App>) {
-        self.wanted_refresh = Some(hz);
         let (Some(manager), Some(serial)) = (&self.manager, self.serial) else {
+            self.wanted_refresh = Some(hz);
             return;
         };
         let Some(main) = self.heads.iter().find(|h| h.enabled && h.name != self.bottom_output) else {
+            self.wanted_refresh = Some(hz);
             return;
         };
         let current = main.current.as_ref().and_then(|c| main.modes.iter().find(|m| m.mode == *c));

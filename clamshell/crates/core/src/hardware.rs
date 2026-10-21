@@ -96,7 +96,7 @@ impl State {
     }
 
     pub(crate) fn notify(&mut self, what: NoticeKind) {
-        self.bottom.notice = Some(Notice { what, until: self.unix_secs + NOTICE_FOR });
+        self.bottom.notice = Some(Notice { what, until: self.mono_secs + NOTICE_FOR });
     }
 
     /// The notice timed out at `now`: whether it went.
@@ -120,15 +120,15 @@ mod tests {
     #[test]
     fn keys_step_the_levels_and_show_them_for_a_moment() {
         let mut s = state();
-        s.apply(Event::Tick { unix_secs: 100 });
+        s.apply(Event::tick(100));
         s.apply(Reading::Status(Status { volume: Some(50), brightness: Some(40), ..Status::default() }).into());
         assert_eq!(s.apply(Event::Device(DeviceKey::VolumeUp)).1, vec![Effect::Sound(Sound::Volume(55))]);
         assert_eq!(s.bottom().notice().map(|n| &n.what), Some(&NoticeKind::Level(Control::Volume)));
         assert!(matches!(s.apply(Event::Device(DeviceKey::BrightnessDown)).1.as_slice(), [Effect::Brightness { level: 35, .. }]));
         assert_eq!(s.apply(Event::Device(DeviceKey::Mute)).1, vec![Effect::Sound(Sound::Mute(true))]);
-        s.apply(Event::Tick { unix_secs: 101 });
+        s.apply(Event::tick(101));
         assert!(s.bottom().notice().is_some());
-        s.apply(Event::Tick { unix_secs: 102 });
+        s.apply(Event::tick(102));
         assert!(s.bottom().notice().is_none(), "gone after two seconds");
     }
 

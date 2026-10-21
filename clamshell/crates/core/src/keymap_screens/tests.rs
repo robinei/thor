@@ -63,7 +63,7 @@ fn the_picker_chooses_a_keymap_for_the_scope_edited() {
     // Running, it reaches the pad (once).
     let fx = crate::testkit::start(&mut s, "zelda-lttp").1;
     assert_eq!(sent(&fx).map(|k| k.name.as_str()), Some("Nintendo layout"));
-    assert_eq!(sent(&s.apply(Event::Tick { unix_secs: 5 }).1), None);
+    assert_eq!(sent(&s.apply(Event::tick(5)).1), None);
     // Default for it, and the pad gets an empty keymap.
     picker(&mut s);
     let fx = tap(&mut s, row(1));

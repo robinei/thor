@@ -193,10 +193,7 @@ impl State {
                 self.twelve_hour = !self.twelve_hour;
                 return (Dirty::BOTH, vec![Effect::Save(Save::TwelveHour(self.twelve_hour))]);
             }
-            TimeId::Step(field, up) if self.clock_by_hand() => {
-                self.clock_stepped = true;
-                vec![Effect::StepClock(field, if up { 1 } else { -1 })]
-            }
+            TimeId::Step(field, up) if self.clock_by_hand() => vec![Effect::StepClock(field, if up { 1 } else { -1 })],
             TimeId::Step(..) => vec![],
         };
         (Dirty::BOTTOM, effects)

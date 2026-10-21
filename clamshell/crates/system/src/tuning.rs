@@ -7,10 +7,15 @@
 //! daemon's mode file, which needs write access to them (on the device: the `power` group's, given by
 //! tools/device/system.sh). The hardware is set on a thread of its own ([`spawn`]):
 //! taking cores offline can take a while, and drawing mustn't wait for it.
+//!
+//! A cluster whose cores are all offline can't be read (its cpufreq policy's files say EBUSY): the
+//! thread remembers each cluster from when it could, and brings a CPU it knows nothing of online to read
+//! it.
 
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use clamshell_core::PowerProfile;
 use clamshell_core::fan;
@@ -18,7 +23,7 @@ use clamshell_core::settings::{Setting, Values};
 
 use crate::pad;
 use crate::sys;
-use crate::worker::{self, Quiet, Worker};
+use crate::worker::{self, Next, Quiet, Worker};
 
 /// A profile's share of each frequency range.
 fn fraction(power: PowerProfile) -> f64 {
@@ -58,8 +63,14 @@ fn share(power: PowerProfile, percent: u16) -> f64 {
     if percent == 0 { fraction(power) } else { f64::from(percent.min(100)) / 100.0 }
 }
 
-/// The cpufreq policies: (dir, min and max frequency, its CPUs).
-fn policies() -> Vec<(PathBuf, u64, u64, Vec<u32>)> {
+/// Bypass is asserted again this often while it is on, as a charger plugged in may undo it.
+const BYPASS_AGAIN: Duration = Duration::from_secs(30);
+
+/// A cpufreq policy: its dir, min and max frequency, its CPUs.
+type Policy = (PathBuf, u64, u64, Vec<u32>);
+
+/// The cpufreq policies that can be read (those with a CPU online).
+fn policies() -> Vec<Policy> {
     let mut out = Vec::new();
     for dir in sys::entries("/sys/devices/system/cpu/cpufreq") {
         if !dir.file_name().is_some_and(|n| n.to_string_lossy().starts_with("policy")) {
@@ -83,10 +94,24 @@ pub fn big_cpus(clusters: &[(u64, Vec<u32>)]) -> Vec<u32> {
     clusters.iter().filter(|(max, _)| *max > slowest).flat_map(|(_, cpus)| cpus.iter().copied()).filter(|&c| c != 0).collect()
 }
 
-/// The hardware thread: applies the settings it is sent, only the latest when several wait.
+/// The hardware thread: applies the settings it is sent, only the latest when several wait; with Bypass
+/// on, asserts it again every [`BYPASS_AGAIN`].
 pub fn spawn() -> io::Result<Worker<Values>> {
-    let mut quiet = Quiet::default();
-    worker::spawn_coalescing("tuning", |_| (), move |values| apply_hardware(&values, &mut quiet))
+    Worker::spawn("tuning", |commands| {
+        let (mut quiet, mut known, mut last) = (Quiet::default(), Vec::new(), None::<Values>);
+        loop {
+            let every = last.is_some_and(|v| v.get(Setting::ChargeLimit) == 0).then_some(BYPASS_AGAIN);
+            match worker::next(&commands, every) {
+                Next::Command(first) => {
+                    let Some(values) = worker::coalesce(first, &commands, |_| ()).pop() else { continue };
+                    apply_hardware(&values, &mut known, &mut quiet);
+                    last = Some(values);
+                }
+                Next::Elapsed => battery(0, &mut quiet),
+                Next::Disconnected => return,
+            }
+        }
+    })
 }
 
 /// Where the settings in force go: the hardware thread, the pad's keymap, and a
@@ -122,21 +147,16 @@ impl Tuning {
 
 /// Applies the settings in force to the hardware: frequency caps for the profile (or the CPU and GPU
 /// caps where set), the big cores, the charge limit.
-fn apply_hardware(v: &Values, quiet: &mut Quiet) {
+/// `known`: the policies as last read (see the module doc).
+fn apply_hardware(v: &Values, known: &mut Vec<Policy>, quiet: &mut Quiet) {
     let power = PowerProfile::from_value(v.get(Setting::Power));
-    let policies = policies();
-    // Cores first, so the caps reach the policies that stay online.
-    let clusters: Vec<(u64, Vec<u32>)> = policies.iter().map(|(_, _, max, cpus)| (*max, cpus.clone())).collect();
-    let off = if !v.big_cores() { big_cpus(&clusters) } else { vec![] };
-    for (_, cpus) in &clusters {
-        for &cpu in cpus.iter().filter(|&&c| c != 0) {
-            let online = Path::new("/sys/devices/system/cpu").join(format!("cpu{cpu}/online"));
-            let want = u64::from(!off.contains(&cpu));
-            if sys::read(&online) != Some(want) {
-                write(&online, want, quiet);
-            }
-        }
+    // Cores first, so the caps reach the policies that stay online; twice, as a CPU of a cluster not
+    // known yet comes online to be read, and may then belong offline.
+    for _ in 0..2 {
+        remember(known, policies());
+        set_cores(v.big_cores(), known, quiet);
     }
+    let policies = policies();
     let f = share(power, v.get(Setting::CpuMax));
     for (dir, min, max, _) in &policies {
         let freq = pick(&read_list(&dir.join("scaling_available_frequencies")), *min, *max, f);
@@ -153,11 +173,50 @@ fn apply_hardware(v: &Values, quiet: &mut Quiet) {
         };
         write(&dir.join("max_freq"), pick(&steps, min, max, f), quiet);
     }
-    // Battery care: only where the battery has the setting, and only if it differs. Bypass: the charge
-    // current limited to 0 (the Thor's battery firmware, through Armada's kernel patch 0903), so that the
-    // charger powers the device and the battery is left alone; written each time, as whether the firmware
-    // keeps it (unplugged, replugged) isn't known.
-    let limit = v.get(Setting::ChargeLimit);
+    battery(v.get(Setting::ChargeLimit), quiet);
+    // The fan's mode, for the fan daemon (where it runs: the file is there). One write of the whole
+    // value: the file can't be replaced (/run isn't the session's), and the daemon takes an empty read,
+    // between the truncation and the write, for no change.
+    let mode = fan::Mode::of(v.get(Setting::Fan)).name();
+    if sys::text(fan::MODE_FILE).is_some_and(|now| now.trim() != mode)
+        && let Err(e) = fs::write(fan::MODE_FILE, mode)
+    {
+        quiet.failed("the fan's mode needs write access to its file", &format_args!("{}: {e}", fan::MODE_FILE));
+    }
+    log::info!("settings applied: power {}", power.label());
+}
+
+/// Each policy read replaces the one known from the same dir.
+fn remember(known: &mut Vec<Policy>, read: Vec<Policy>) {
+    for p in read {
+        known.retain(|k| k.0 != p.0);
+        known.push(p);
+    }
+}
+
+/// The big cores offline (`big_cores` off) or online, by the clusters `known`; every other CPU online
+/// (one of a cluster not known, so it can be read).
+fn set_cores(big_cores: bool, known: &[Policy], quiet: &mut Quiet) {
+    let clusters: Vec<(u64, Vec<u32>)> = known.iter().map(|(_, _, max, cpus)| (*max, cpus.clone())).collect();
+    let off = if big_cores { vec![] } else { big_cpus(&clusters) };
+    for dir in sys::entries("/sys/devices/system/cpu") {
+        let Some(cpu) = dir.file_name().and_then(|n| n.to_str()?.strip_prefix("cpu")?.parse::<u32>().ok()) else {
+            continue;
+        };
+        let online = dir.join("online");
+        let want = u64::from(!off.contains(&cpu));
+        if cpu != 0 && online.exists() && sys::read(&online) != Some(want) {
+            write(&online, want, quiet);
+        }
+    }
+}
+
+/// Battery care (`limit`: the Charge limit setting, 0 Bypass): only where the battery has the setting,
+/// and only if it differs. Bypass: the charge current limited to 0 (the Thor's battery firmware, through
+/// Armada's kernel patch 0903), so that the charger powers the device and the battery is left alone;
+/// written each time, and again every [`BYPASS_AGAIN`], as whether the firmware keeps it (unplugged,
+/// replugged) isn't known.
+fn battery(limit: u16, quiet: &mut Quiet) {
     for supply in sys::power_supplies() {
         let file = supply.join("charge_control_end_threshold");
         let end = u64::from(if limit == 0 { 100 } else { limit });
@@ -172,14 +231,6 @@ fn apply_hardware(v: &Values, quiet: &mut Quiet) {
             }
         }
     }
-    // The fan's mode, for the fan daemon (where it runs: the file is there).
-    let mode = fan::Mode::of(v.get(Setting::Fan)).name();
-    if sys::text(fan::MODE_FILE).is_some_and(|now| now.trim() != mode)
-        && let Err(e) = fs::write(fan::MODE_FILE, mode)
-    {
-        quiet.failed("the fan's mode needs write access to its file", &format_args!("{}: {e}", fan::MODE_FILE));
-    }
-    log::info!("settings applied: power {}", power.label());
 }
 
 /// The MangoHud config file for a game (in `dir`), written with its frame rate cap (0: none) and HUD

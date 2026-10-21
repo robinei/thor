@@ -165,14 +165,19 @@ impl View {
         images: &mut Images,
         qh: &QueueHandle<App>,
         rgba: bool,
-    ) -> Result<FrameOut, Error> {
+    ) -> Result<Option<FrameOut>, Error> {
         let at = self.placement(state.unix_secs());
+        // (Every buffer of its size still read by the compositor: drawn when one is released.)
+        let (w, h) = (i32::try_from(at.size_px.0)?, i32::try_from(at.size_px.1)?);
+        if self.buffers.len() >= 3 && self.buffers.iter().all(|b| b.height() == h && b.stride() == w * 4 && b.canvas(pool).is_none()) {
+            return Ok(None);
+        }
         let rendered = render::render(&mut self.picture, at, self.screen, state, fonts, images)?;
         if self.present(pool, qh, rgba)? {
             self.dirty = false;
             self.frame_pending = true;
         }
-        Ok(rendered)
+        Ok(Some(rendered))
     }
 
     /// Copies the picture into a free buffer and commits it, asking for a frame callback. False when no

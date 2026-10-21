@@ -99,7 +99,9 @@ pub fn spawn(screenshots: Option<PathBuf>, sink: impl Sink) -> io::Result<Worker
                     let error = step_clock(field, by).err();
                     // (The clock moved: the time now, then the reading.)
                     let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
-                    if sink.send(Event::Tick { unix_secs: now }).is_err() || sink.send(Event::Reading(Reading::Time(read_time(error)))).is_err() {
+                    if sink.send(Event::Tick { unix_secs: now, mono_secs: clamshell_core::mono_secs() }).is_err()
+                        || sink.send(Event::Reading(Reading::Time(read_time(error)))).is_err()
+                    {
                         return;
                     }
                 }

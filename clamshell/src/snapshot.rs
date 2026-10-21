@@ -77,13 +77,13 @@ fn a_play(game: &str, start: u64, duration: u64, now: u64) -> Vec<Event> {
     let workspace = clamshell_core::Instance::workspace_of(&clamshell_library::key_of(game));
     let window = clamshell_core::windows::Window { id: 900, app_id: "game".into(), workspace, visible: true, ..clamshell_core::windows::Window::default() };
     vec![
-        Event::Tick { unix_secs: start },
+        Event::tick(start),
         Event::Units(vec![clamshell_core::Instance::Run { key: clamshell_library::key_of(game), secs: start, n: 0 }]),
         Event::Windows(vec![window]),
-        Event::Tick { unix_secs: start + duration },
+        Event::tick(start + duration),
         Event::Units(vec![]),
         Event::Windows(vec![]),
-        Event::Tick { unix_secs: now },
+        Event::tick(now),
     ]
 }
 
@@ -499,15 +499,15 @@ pub fn render(fresh: &(dyn Fn() -> State + Sync), now: u64, dir: &Path) -> Resul
 
 /// One group's shots, in order, from `state`.
 fn render_group(mut state: State, Group { start, shots }: Group, now: u64, dir: &Path) -> Result<(), Error> {
-    state.apply(Event::Tick { unix_secs: now });
+    state.apply(Event::tick(now));
     state.apply(Event::Reading(Reading::Status(demo::STATUS)));
     for event in start {
         state.apply(event);
     }
     // (What the setting up said, "Starting …" for its launches, gone: the clock past the notice, and
     // back.)
-    state.apply(Event::Tick { unix_secs: now + 5 });
-    state.apply(Event::Tick { unix_secs: now });
+    state.apply(Event::tick(now + 5));
+    state.apply(Event::tick(now));
     for Shot { name, screen, before } in shots {
         for event in before {
             state.apply(event);

@@ -246,6 +246,12 @@ pub trait Service {
     fn expected(_error: &Self::Error) -> bool {
         false
     }
+
+    /// While the service is down: the next command, waiting at most `retry` (a service with more to
+    /// answer meanwhile waits on that too).
+    fn wait_while_down(&mut self, commands: &Receiver<Self::Command>, retry: Duration) -> Next<Self::Command> {
+        next(commands, Some(retry))
+    }
 }
 
 /// Runs `service` until the UI or every command sender is gone: connects, runs while it is up, and
@@ -276,7 +282,7 @@ pub fn supervise<S: Service>(service: &mut S, commands: &Receiver<S::Command>, r
         if told.is_err() {
             return;
         }
-        match next(commands, Some(retry)) {
+        match service.wait_while_down(commands, retry) {
             Next::Command(command) => {
                 if service.command_while_down(command).is_err() {
                     return;

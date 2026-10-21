@@ -361,9 +361,12 @@ impl App {
         for effect in &effects {
             match effect {
                 Effect::Quit => self.exit = true,
-                // The screens' power is the compositor's, asked through Wayland.
+                // The screens' power is the compositor's, asked through Wayland. A bottom screen turned
+                // off (Home+Start) is left out, so that turning the screens on again leaves it off.
                 Effect::Screens(on) => {
-                    let outputs: Vec<_> = self.output_state.outputs().collect();
+                    let bottom_off = self.state.bottom_off().then(|| self.display.bottom_output().to_owned());
+                    let outputs: Vec<_> =
+                        self.output_state.outputs().filter(|o| bottom_off.is_none() || self.output_state.info(o).and_then(|i| i.name) != bottom_off).collect();
                     self.display.power(*on, outputs.into_iter(), &self.qh);
                 }
                 other => {
@@ -392,7 +395,19 @@ impl App {
         }
     }
 
+    /// Draws the views that are due; what the drawing changes (rows, lists) may make another due, which
+    /// is drawn too rather than left until the next event (a few passes at most).
     fn redraw_dirty(&mut self) {
+        for _ in 0..3 {
+            if !self.draw_due() || !self.views.iter_mut().any(|(_, v)| v.as_ref().is_some_and(View::due)) {
+                break;
+            }
+        }
+    }
+
+    /// Draws the views that are due: whether it drew any.
+    fn draw_due(&mut self) -> bool {
+        let mut drew = false;
         let mut rows_changed = None;
         let mut lists = Vec::new();
         // ClamShell's bottom view behind a window moved to the bottom screen while that is shown.
@@ -407,7 +422,9 @@ impl App {
                 continue;
             };
             match view.draw(&mut self.pool, &mut self.fonts, &self.state, &mut self.images, &self.qh, rgba) {
-                Ok(rendered) => {
+                Ok(None) => {}
+                Ok(Some(rendered)) => {
+                    drew = true;
                     view.body = rendered.touchpad_area;
                     if screen == Screen::Bottom {
                         let scale = view.scale.max(1) as f32;
@@ -427,6 +444,7 @@ impl App {
             self.handle(Event::Shelf(ShelfEvent::Rows(rows)));
         }
         self.handle_all(lists);
+        drew
     }
 
     /// Carries out what the input side asks: events, and the presses' timers on the event loop.

@@ -70,10 +70,15 @@ impl ListId {
         }
     }
 
-    /// `id` (a row's target) for row `i` instead: the same part a row up or down.
-    pub fn sibling(id: &Id, i: u16) -> Option<Id> {
+    /// `id` (a row's target) for row `i` instead: the same part a row up or down (a dock tile: the same
+    /// column, or the row's last tile; `dock_len`: how many tiles there are).
+    pub fn sibling(id: &Id, i: u16, dock_len: usize) -> Option<Id> {
         match id {
             Id::Row { list, part, .. } => Some(Id::Row { list: *list, i, part: *part }),
+            Id::Dock(crate::DockId::Entry(at)) => {
+                let tile = (usize::from(i) * crate::dock::DOCK_COLUMNS + usize::from(*at) % crate::dock::DOCK_COLUMNS).min(dock_len.checked_sub(1)?);
+                Some(Id::Dock(crate::DockId::Entry(u16::try_from(tile).ok()?)))
+            }
             _ => None,
         }
     }
@@ -458,5 +463,14 @@ mod tests {
         assert_eq!((dirty, s.lists().get(ListId::Wifi).offset()), (Dirty::BOTH, 3.0));
         s.apply(PointerEvent::Focus(ListId::Wifi.row(0)).into());
         assert_eq!(s.lists().get(ListId::Wifi).offset(), 0.0);
+    }
+
+    #[test]
+    fn a_dock_tile_a_row_down_keeps_its_column() {
+        let tile = |i| Id::Dock(DockId::Entry(i));
+        assert_eq!(ListId::of(&tile(6)), Some((ListId::Dock, 1)));
+        assert_eq!(ListId::sibling(&tile(6), 2, 20), Some(tile(10)));
+        assert_eq!(ListId::sibling(&tile(7), 2, 10), Some(tile(9)), "the last row short: its last tile");
+        assert_eq!(ListId::sibling(&tile(0), 1, 0), None);
     }
 }

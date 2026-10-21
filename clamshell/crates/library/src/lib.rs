@@ -457,7 +457,9 @@ impl Library {
 
     /// Folder `folder`'s listing (browsed: see [`Browsed`]): `entries`, in order, its entries. One there
     /// before (by id) keeps its place in `entries` and its own listing; those gone, and everything in them,
-    /// leave theirs free. At the top of the Trash, an entry is [`BrowseKind::Trashed`].
+    /// leave theirs free, for later listings: not this one's new entries, so that a place held open (a
+    /// folder gone, browsed into) never becomes another entry's at once. At the top of the Trash, an entry
+    /// is [`BrowseKind::Trashed`].
     pub fn set_listing(&mut self, folder: usize, entries: Vec<Entry>) {
         let Some(f) = self.entries.get(folder) else {
             return;
@@ -467,15 +469,15 @@ impl Library {
         if let Some(b) = self.entries.get_mut(folder).and_then(|f| f.browsed.as_mut()) {
             b.listed = true;
         }
-        // (Those gone first, so their places go to the new ones.)
         let ids: HashSet<&Arc<str>> = entries.iter().map(|e| &e.id).collect();
         let mut gone: Vec<usize> = old.iter().filter(|(id, _)| !ids.contains(id)).map(|(_, &i)| i).collect();
+        let mut freed = Vec::new();
         while let Some(i) = gone.pop() {
             if let Some(g) = self.entries.get_mut(i) {
                 gone.append(&mut g.items);
                 *g = Entry::new("", "");
             }
-            self.free.push(i);
+            freed.push(i);
         }
         let mut items = Vec::with_capacity(entries.len());
         for mut e in entries {
@@ -513,6 +515,7 @@ impl Library {
         if let Some(f) = self.entries.get_mut(folder) {
             f.items = items;
         }
+        self.free.append(&mut freed);
     }
 
     /// The files enqueueing entry `i` enqueues, in order: a file itself; a folder's playlist if it has one
@@ -767,19 +770,21 @@ mod tests {
         assert_eq!(lib.entries[0].items, vec![1, 2]);
         assert_eq!(lib.entries[1].parent, Some(0));
         lib.set_listing(1, vec![browsed("browse:Home/a/x", false)]);
-        // Listed again: a stays where it was, with its own listing; b went, its place free for c.
+        // Listed again: a stays where it was, with its own listing; b went, its place free, but not for c.
         lib.set_listing(0, vec![browsed("browse:Home/a", true), browsed("browse:Home/c", false)]);
-        assert_eq!(lib.entries[0].items, vec![1, 2]);
-        assert_eq!(&*lib.entries[2].id, "browse:Home/c", "b's place");
+        assert_eq!(lib.entries[0].items, vec![1, 4]);
+        assert_eq!(&*lib.entries[4].id, "browse:Home/c");
         assert_eq!(lib.entries[1].items, vec![3], "a's listing kept");
         assert!(lib.entries[1].browsed.as_ref().unwrap().listed);
-        // a went, and x in it.
-        lib.set_listing(0, vec![browsed("browse:Home/c", false)]);
-        assert_eq!(lib.entries[0].items, vec![2]);
+        assert_eq!(lib.free, vec![2]);
+        // a went, and x in it; d takes b's place, not a's.
+        lib.set_listing(0, vec![browsed("browse:Home/c", false), browsed("browse:Home/d", true)]);
+        assert_eq!(lib.entries[0].items, vec![4, 2]);
         let mut free = lib.free.clone();
         free.sort_unstable();
         assert_eq!(free, vec![1, 3]);
         assert!(!lib.has("browse:Home/a/x"));
+        assert!(!lib.entries[1].is_group(), "a's place, held open, is no folder now");
     }
 
     #[test]

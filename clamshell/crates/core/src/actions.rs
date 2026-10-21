@@ -167,7 +167,7 @@ mod tests {
         assert_eq!(s.actions().as_slice(), [Action::Open, Action::Continue, Action::Favourite, Action::Pin], "a series: Continue");
         let (_, fx) = s.apply(ShelfEvent::Continue.into());
         assert!(fx.iter().any(|e| matches!(e, Effect::Launch { .. })), "{fx:?}");
-        s.apply(Event::Tick { unix_secs: 1 });
+        s.apply(Event::tick(1));
     }
 
     #[test]

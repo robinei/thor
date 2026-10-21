@@ -321,7 +321,8 @@ impl<S: Sink> Service for Windows<S> {
             let top = self.top.get(&mut c.queries);
             let mut moved = false;
             for command in windows::reconcile(&list, top.as_deref(), &self.down.wanted(), &self.land.wanted(), &mut self.tried) {
-                moved |= c.queries.command(&command).is_ok();
+                // (Only a move sway carried out brings the event; a refused one, none.)
+                moved |= c.queries.command(&command).is_ok_and(|outcomes| !outcomes.is_empty() && outcomes.iter().all(|o| o.success));
             }
             if !moved {
                 self.sink.send(Event::Windows(list))?;

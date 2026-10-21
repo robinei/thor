@@ -437,16 +437,16 @@ mod tests {
     #[test]
     fn the_bottom_screen_dims_untouched_and_lights_when_used() {
         let mut s = state();
-        s.apply(Event::Tick { unix_secs: 1000 });
-        s.apply(Event::Tick { unix_secs: 1000 + DIM_AFTER - 1 });
+        s.apply(Event::tick(1000));
+        s.apply(Event::tick(1000 + DIM_AFTER - 1));
         assert!(!s.bottom_dimmed());
-        let (dirty, _) = s.apply(Event::Tick { unix_secs: 1000 + DIM_AFTER });
+        let (dirty, _) = s.apply(Event::tick(1000 + DIM_AFTER));
         assert!(s.bottom_dimmed() && dirty.bottom, "untouched a while: dimmed, redrawn");
         // A touch on it: lit.
         let (dirty, _) = s.apply(Event::BottomTouched);
         assert!(!s.bottom_dimmed() && dirty.bottom);
         // The pad's focus coming to one of its targets: lit too; shelf's targets (the main screen) not.
-        s.apply(Event::Tick { unix_secs: 1000 + 3 * DIM_AFTER });
+        s.apply(Event::tick(1000 + 3 * DIM_AFTER));
         assert!(s.bottom_dimmed());
         s.apply(Event::Pointer(crate::PointerEvent::Focus(crate::Id::Shelf(crate::ShelfId::Launch))));
         assert!(s.bottom_dimmed(), "the main screen's");
@@ -456,8 +456,8 @@ mod tests {
         let mut s = emulator();
         key(&mut s, DeviceKey::WindowDown);
         s.apply(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]));
-        s.apply(Event::Tick { unix_secs: 5000 });
-        s.apply(Event::Tick { unix_secs: 5000 + 2 * DIM_AFTER });
+        s.apply(Event::tick(5000));
+        s.apply(Event::tick(5000 + 2 * DIM_AFTER));
         assert!(s.bottom_shows_windows() && !s.bottom_dimmed());
     }
 

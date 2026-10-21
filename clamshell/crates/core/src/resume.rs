@@ -8,7 +8,7 @@ use crate::tab::Tab;
 /// Seconds after the last change before it is saved.
 pub(crate) const SAVE_AFTER: u64 = 2;
 
-/// A change waiting to be saved: since when (epoch seconds), if any.
+/// A change waiting to be saved: since when (the monotonic clock's seconds), if any.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) struct Debounce {
     since: Option<u64>,
@@ -83,11 +83,11 @@ mod tests {
     #[test]
     fn the_place_is_saved_after_a_pause_and_restored() {
         let mut s = state();
-        s.apply(Event::Tick { unix_secs: 100 });
+        s.apply(Event::tick(100));
         s.apply(ShelfEvent::ListStep(3).into());
         s.apply(ShelfEvent::CollectionStep(1).into());
-        assert!(s.apply(Event::Tick { unix_secs: 101 }).1.is_empty(), "not while moving");
-        let (_, fx) = s.apply(Event::Tick { unix_secs: 103 });
+        assert!(s.apply(Event::tick(101)).1.is_empty(), "not while moving");
+        let (_, fx) = s.apply(Event::tick(103));
         let Some(Effect::Save(Save::Resume(resume))) = fx.first() else {
             unreachable!("{fx:?}");
         };
@@ -140,8 +140,8 @@ mod tests {
     #[test]
     fn choosing_the_tab_in_front_saves_nothing() {
         let mut s = state();
-        s.apply(Event::Tick { unix_secs: 100 });
+        s.apply(Event::tick(100));
         tap(&mut s, Id::Tab(Tab::Sysinfo));
-        assert!(s.apply(Event::Tick { unix_secs: 110 }).1.is_empty());
+        assert!(s.apply(Event::tick(110)).1.is_empty());
     }
 }

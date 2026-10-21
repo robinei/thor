@@ -17,7 +17,7 @@ use clamshell_core::Event;
 use clamshell_core::hardware::DeviceKey;
 use clamshell_core::idle::IdleEvent;
 use evdev::raw_stream::RawDevice;
-use evdev::{AbsoluteAxisCode, EventType, KeyCode, PropType, SwitchCode};
+use evdev::{AbsoluteAxisCode, EventType, KeyCode, PropType, SwitchCode, SynchronizationCode};
 use std::os::fd::OwnedFd;
 
 use rustix::event::{PollFd, PollFlags, Timespec};
@@ -171,6 +171,10 @@ fn watch(take_keys: bool, sink: &impl Sink) -> Result<(), Closed> {
                 }
                 if take_keys && d.lid && raw.kind == EventType::SWITCH && raw.code == SwitchCode::SW_LID.0 {
                     lid::closed(raw.value != 0);
+                }
+                // (Events dropped, the lid's among them perhaps: as it is now.)
+                if take_keys && d.lid && raw.kind == EventType::SYNCHRONIZATION && raw.code == SynchronizationCode::SYN_DROPPED.0 {
+                    lid::closed(d.device.get_switch_state().is_ok_and(|on| on.contains(SwitchCode::SW_LID)));
                 }
             }
             true

@@ -319,6 +319,25 @@ impl PadRouter {
         log::info!("pad: {to:?}");
     }
 
+    /// Events that bring what the router holds to the controller as it is (`down`: its keys held,
+    /// `axes`: its axes' values), after the kernel dropped some of its events: what was let go meanwhile
+    /// is let go, what was pressed is pressed (Home's press before the others', its release after).
+    pub fn resync(&self, down: &[KeyCode], axes: &[(AbsoluteAxisCode, i32)], out: &mut Vec<Raw>) {
+        let start = out.len();
+        let mut held: Vec<KeyCode> = self.snapshot.keys.iter().chain(&self.taken).copied().collect();
+        held.dedup();
+        out.extend(held.iter().filter(|k| !down.contains(k)).map(|&k| Raw::key(k, Press::Up)));
+        let home = down.contains(&KeyCode::BTN_MODE);
+        if home != (self.home != Home::Up) {
+            out.push(Raw::key(KeyCode::BTN_MODE, if home { Press::Down } else { Press::Up }));
+        }
+        out.extend(down.iter().filter(|&&k| k != KeyCode::BTN_MODE && !held.contains(&k)).map(|&k| Raw::key(k, Press::Down)));
+        out.extend(axes.iter().filter(|&&(code, value)| self.snapshot.value(code).is_some_and(|v| v != value)).map(|&(code, value)| Raw::abs(code, value)));
+        if out.len() > start {
+            out.push(Raw::REPORT);
+        }
+    }
+
     /// One controller event at `now`.
     pub fn event(&mut self, raw: Raw, now: Instant, out: &mut Out) {
         let key = raw.as_key();
@@ -487,6 +506,22 @@ mod tests {
         }
         down.sort_by_key(|k| k.0);
         down
+    }
+
+    #[test]
+    fn events_dropped_are_made_up_from_the_controller_as_it_is() {
+        let (mut r, mut out) = router(PadRoute::Game);
+        let now = Instant::now();
+        r.event(key(KeyCode::BTN_SOUTH, Press::Down), now, &mut out);
+        let mut events = Vec::new();
+        r.resync(&[KeyCode::BTN_EAST], &[(AbsoluteAxisCode::ABS_X, 1000), (AbsoluteAxisCode::ABS_RZ, 500)], &mut events);
+        assert_eq!(events, [key(KeyCode::BTN_SOUTH, Press::Up), key(KeyCode::BTN_EAST, Press::Down), Raw::abs(AbsoluteAxisCode::ABS_RZ, 500), Raw::REPORT]);
+        for e in events {
+            r.event(e, now, &mut out);
+        }
+        let mut again = Vec::new();
+        r.resync(&[KeyCode::BTN_EAST], &[(AbsoluteAxisCode::ABS_X, 1000), (AbsoluteAxisCode::ABS_RZ, 500)], &mut again);
+        assert_eq!(again, [], "in step");
     }
 
     #[test]

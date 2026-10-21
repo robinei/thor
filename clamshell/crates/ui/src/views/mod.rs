@@ -97,7 +97,7 @@ mod tests {
 
     fn demo() -> State {
         let mut state = State::new(Init { library: clamshell_library::demo_library(), ..Init::default() });
-        state.apply(Event::Tick { unix_secs: 1_700_000_000 });
+        state.apply(Event::tick(1_700_000_000));
         state.apply(Event::Reading(Reading::Status(Status { battery: Some(50), volume: Some(50), brightness: Some(50), wifi: Some(50), ..Status::default() })));
         state
     }

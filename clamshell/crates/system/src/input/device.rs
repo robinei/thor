@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use evdev::raw_stream::RawDevice;
+use evdev::{AbsoluteAxisCode, EventType, KeyCode, SynchronizationCode};
 use rustix::event::{PollFd, PollFlags, Timespec};
 
 use super::Raw;
@@ -68,10 +69,15 @@ pub fn open(spec: &DeviceSpec, what: &str, looks_right: impl Fn(&RawDevice) -> b
     first.ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, format!("no {what} ({spec})")))
 }
 
+/// Axes and their values.
+pub type AxisValues = Vec<(AbsoluteAxisCode, i32)>;
+
 /// A device grabbed (nothing else sees its events while we hold it; let go when dropped) and read
 /// without blocking.
 pub struct Grabbed {
     device: RawDevice,
+    /// The kernel dropped events (SYN_DROPPED): what comes until the next report is left out.
+    skipping: bool,
 }
 
 impl Grabbed {
@@ -79,7 +85,7 @@ impl Grabbed {
         device.grab()?;
         let flags = rustix::fs::fcntl_getfl(&device)?;
         rustix::fs::fcntl_setfl(&device, flags | rustix::fs::OFlags::NONBLOCK)?;
-        Ok(Grabbed { device })
+        Ok(Grabbed { device, skipping: false })
     }
 
     pub fn device(&self) -> &RawDevice {
@@ -96,16 +102,38 @@ impl Grabbed {
         }
     }
 
-    /// Appends the events waiting to `out` (none waiting: nothing).
-    pub fn fetch(&mut self, out: &mut Vec<Raw>) -> io::Result<()> {
-        match self.device.fetch_events() {
-            Ok(events) => {
-                out.extend(events.map(Raw::from));
-                Ok(())
+    /// Appends the events waiting to `out` (none waiting: nothing); whether the kernel dropped some
+    /// (its buffer overran: SYN_DROPPED), so that what was read no longer adds up to the device's state
+    /// (see [`Grabbed::state`]). The partial report after a drop is left out, as the kernel asks.
+    pub fn fetch(&mut self, out: &mut Vec<Raw>) -> io::Result<bool> {
+        let events = match self.device.fetch_events() {
+            Ok(events) => events,
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(false),
+            Err(e) => return Err(e),
+        };
+        let mut dropped = false;
+        for raw in events.map(Raw::from) {
+            if raw.kind == EventType::SYNCHRONIZATION && raw.code == SynchronizationCode::SYN_DROPPED.0 {
+                (dropped, self.skipping) = (true, true);
+            } else if self.skipping {
+                self.skipping = raw != Raw::REPORT;
+            } else {
+                out.push(raw);
             }
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock => Ok(()),
-            Err(e) => Err(e),
         }
+        Ok(dropped)
+    }
+
+    /// The device as it is: its keys held, its axes' values.
+    pub fn state(&self) -> io::Result<(Vec<KeyCode>, AxisValues)> {
+        let keys = self.device.get_key_state()?.iter().collect();
+        let abs = self.device.get_abs_state()?;
+        let axes = self
+            .device
+            .supported_absolute_axes()
+            .map(|set| set.iter().filter_map(|code| abs.get(usize::from(code.0)).map(|a| (code, a.value))).collect())
+            .unwrap_or_default();
+        Ok((keys, axes))
     }
 }
 

@@ -219,7 +219,7 @@ mod tests {
     fn the_pad_goes_to_shelf_the_program_or_typing_by_what_is_in_front() {
         let mut s = state();
         let window = |app_id: &str, unit: Option<&str>| Window { unit: unit.map(Into::into), workspace: String::new(), ..win(1, app_id, "", true) };
-        assert_eq!(route(&mut s, Event::Tick { unix_secs: 1 }), PadRoute::Ui, "nothing known, no game: shelf");
+        assert_eq!(route(&mut s, Event::tick(1)), PadRoute::Ui, "nothing known, no game: shelf");
         crate::testkit::start(&mut s, "zelda-lttp");
         assert_eq!(s.pad().route(), PadRoute::Game, "a game runs: in front");
         assert_eq!(route(&mut s, Event::Windows(vec![window(windows::SHELF_APP_ID, None)])), PadRoute::Ui, "shelf in front");

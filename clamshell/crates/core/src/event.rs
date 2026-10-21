@@ -20,11 +20,21 @@ use crate::sys::Status;
 use crate::wifi::Wifi;
 use crate::windows::Window;
 
+/// Seconds on a monotonic clock, counted from the first call (the program's start); stopped while the
+/// system sleeps.
+pub fn mono_secs() -> u64 {
+    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    START.get_or_init(std::time::Instant::now).elapsed().as_secs()
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
-    /// Wall clock, once a second (system thread).
+    /// The clocks, once a second (system thread): the wall clock (epoch seconds), for what is dated, and
+    /// a monotonic one ([`mono_secs`]), for how long things take: a step of the wall clock, by hand or by
+    /// NTP, isn't time gone by.
     Tick {
         unix_secs: u64,
+        mono_secs: u64,
     },
     /// The system as a system thread read it.
     Reading(Reading),
@@ -202,3 +212,10 @@ macro_rules! into_event {
 }
 
 into_event!(ListEvent => List, Reading => Reading, PointerEvent => Pointer, Slide => Slide, LevelEvent => Level, ShelfEvent => Shelf, LaunchEvent => Launch, Pointing => Pointing);
+
+impl Event {
+    /// A tick at `secs` on both clocks (tests and demos, where no clock is stepped).
+    pub fn tick(secs: u64) -> Event {
+        Event::Tick { unix_secs: secs, mono_secs: secs }
+    }
+}

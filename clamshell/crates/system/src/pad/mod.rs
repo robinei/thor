@@ -35,7 +35,7 @@ use clamshell_core::keymap::Keymap;
 use rustix::event::{PollFd, PollFlags, Timespec};
 
 use crate::input::device::{DeviceSpec, Grabbed};
-use crate::worker::{self, Bell, Ended, Service, Worker, lost_on};
+use crate::worker::{self, Bell, Ended, Next, Service, Worker, lost_on};
 use crate::{Closed, Sink};
 use device::{AynKey, Capabilities, VirtualDevices};
 use motion::{EvdevMotion, MotionSource, Sample};
@@ -288,6 +288,38 @@ impl<S: Sink> Service for PadThread<S> {
     fn expected(e: &io::Error) -> bool {
         e.kind() == io::ErrorKind::NotFound
     }
+
+    /// Games' rumble uploads to the virtual pad are answered meanwhile: a game waits for each.
+    fn wait_while_down(&mut self, commands: &Receiver<Command>, retry: Duration) -> Next<Command> {
+        let until = Instant::now() + retry;
+        loop {
+            match commands.try_recv() {
+                Ok(command) => return Next::Command(command),
+                Err(TryRecvError::Disconnected) => return Next::Disconnected,
+                Err(TryRecvError::Empty) => {}
+            }
+            let left = until.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return Next::Elapsed;
+            }
+            let Some(devices) = self.devices.as_ref() else {
+                return worker::next(commands, Some(left));
+            };
+            let mut fds = [PollFd::from_borrowed_fd(devices.pad.as_fd(), PollFlags::IN), PollFd::from_borrowed_fd(self.bell.fd(), PollFlags::IN)];
+            match rustix::event::poll(&mut fds, Some(&timespec(left))) {
+                Ok(_) | Err(rustix::io::Errno::INTR) => self.bell.clear(),
+                Err(e) => {
+                    log::warn!("pad: {e}");
+                    return worker::next(commands, Some(left));
+                }
+            }
+            self.serve_effects(Instant::now());
+        }
+    }
+}
+
+fn timespec(t: Duration) -> Timespec {
+    Timespec { tv_sec: i64::try_from(t.as_secs()).unwrap_or(i64::MAX), tv_nsec: i64::from(t.subsec_nanos()) }
 }
 
 /// Waits (up to `timeout`, if given) for the controller's, the gyro's, the AYN button's or the virtual
@@ -300,7 +332,7 @@ fn wait(
     bell: &Bell,
     timeout: Option<Duration>,
 ) -> io::Result<()> {
-    let timeout = timeout.map(|t| Timespec { tv_sec: i64::try_from(t.as_secs()).unwrap_or(i64::MAX), tv_nsec: i64::from(t.subsec_nanos()) });
+    let timeout = timeout.map(timespec);
     let mut fds = vec![PollFd::new(pad.device(), PollFlags::IN), PollFd::from_borrowed_fd(bell.fd(), PollFlags::IN)];
     if let Some(m) = motion {
         fds.push(PollFd::from_borrowed_fd(m.fd(), PollFlags::IN));
@@ -341,8 +373,16 @@ impl<S: Sink> PadThread<S> {
             let virtual_pad = self.devices.as_ref().map(|d| d.pad.as_fd());
             wait(grabbed, motion.as_deref(), ayn.as_ref(), virtual_pad, &self.bell, wait_for)?;
             let from = raws.len();
-            grabbed.fetch(&mut raws)?;
-            if *letters {
+            if grabbed.fetch(&mut raws)? {
+                // (Events were dropped: what was read is replaced by the controller as it is now.)
+                raws.truncate(from);
+                let (mut down, axes) = grabbed.state()?;
+                if *letters {
+                    down.iter_mut().for_each(|k| *k = device::swap_key(*k));
+                }
+                router.resync(&down, &axes, &mut raws);
+                log::info!("pad: the controller's events overran; caught up with it as it is");
+            } else if *letters {
                 device::swap_xy(raws.get_mut(from..).unwrap_or_default());
             }
             if let Some(a) = ayn.as_mut()
@@ -373,7 +413,9 @@ impl<S: Sink> PadThread<S> {
                 self.buzz = Some((buzz, now + Buzz::LENGTH));
             }
             self.buzz = self.buzz.filter(|(_, until)| now < *until);
-            let (mut strong, mut weak) = if self.route == PadRoute::Game { self.effects.level(now) } else { (0, 0) };
+            // (Effects that ended are let go whatever the route, so the next end is never past.)
+            let level = self.effects.level(now);
+            let (mut strong, mut weak) = if self.route == PadRoute::Game { level } else { (0, 0) };
             if let Some((buzz, _)) = self.buzz {
                 let (s, w) = buzz.level();
                 (strong, weak) = (strong.max(s), weak.max(w));

@@ -24,7 +24,7 @@ fn tick(sink: &impl Sink) -> Result<(), Closed> {
             log::info!("woke from sleep");
             sink.send(Event::Resumed)?;
         }
-        sink.send(Event::Tick { unix_secs: now.as_secs() })?;
+        sink.send(Event::Tick { unix_secs: now.as_secs(), mono_secs: clamshell_core::mono_secs() })?;
         let into_second = Duration::from_nanos(u64::from(now.subsec_nanos()));
         thread::sleep(Duration::from_secs(1).saturating_sub(into_second));
     }

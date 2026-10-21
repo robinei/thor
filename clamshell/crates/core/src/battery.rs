@@ -175,7 +175,7 @@ mod tests {
     #[test]
     fn spenders_are_named_after_their_app_or_game() {
         let mut s = state();
-        s.apply(Event::Tick { unix_secs: 1792010377 });
+        s.apply(Event::tick(1792010377));
         let first = s.shelf().selected().cloned().unwrap_or_default();
         let zelda = launch(&mut s, &first);
         // Each scope keeps its own entry's name.

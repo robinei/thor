@@ -259,35 +259,35 @@ mod tests {
         let key = zelda.key().unwrap().to_owned();
         s.settings.set(Some(&"zelda-lttp".into()), Setting::Background, Some(1));
         let window = |visible| Window { unit: zelda.unit(), visible, ..win(3, "zelda3", &zelda.workspace(), visible) };
-        s.apply(Event::Tick { unix_secs: 100 });
+        s.apply(Event::tick(100));
         s.apply(Event::Windows(vec![window(true)]));
         // Hidden: paused once hidden for the grace period.
         let fx = s.apply(Event::Windows(vec![window(false)])).1;
         assert!(!fx.contains(&freeze(&key, true)));
-        assert!(!s.apply(Event::Tick { unix_secs: 100 + GRACE - 1 }).1.contains(&freeze(&key, true)), "within the grace");
-        assert!(s.apply(Event::Tick { unix_secs: 100 + GRACE }).1.contains(&freeze(&key, true)));
+        assert!(!s.apply(Event::tick(100 + GRACE - 1)).1.contains(&freeze(&key, true)), "within the grace");
+        assert!(s.apply(Event::tick(100 + GRACE)).1.contains(&freeze(&key, true)));
         assert!(s.paused("zelda-lttp"));
-        assert!(!s.apply(Event::Tick { unix_secs: 101 + GRACE }).1.contains(&freeze(&key, true)), "once");
+        assert!(!s.apply(Event::tick(101 + GRACE)).1.contains(&freeze(&key, true)), "once");
         // Shown again: thawed.
         assert!(s.apply(Event::Windows(vec![window(true)])).1.contains(&freeze(&key, false)));
         assert!(!s.paused("zelda-lttp"));
         // Paused, then shown from the dock: thawed before its workspace is.
         s.apply(Event::Windows(vec![window(false)]));
         let t = 101 + 2 * GRACE;
-        s.apply(Event::Tick { unix_secs: t });
+        s.apply(Event::tick(t));
         assert!(s.paused("zelda-lttp"));
         assert_eq!(s.show_running("zelda-lttp"), vec![freeze(&key, false), Effect::Window(WindowCommand::Focus(zelda.workspace()))]);
         // Paused again (hidden for the grace anew since), then quit: thawed, to answer its window's closing.
-        s.apply(Event::Tick { unix_secs: t + 1 });
-        s.apply(Event::Tick { unix_secs: t + GRACE });
+        s.apply(Event::tick(t + 1));
+        s.apply(Event::tick(t + GRACE));
         assert!(!s.paused("zelda-lttp"), "the grace counts again from the thaw");
-        s.apply(Event::Tick { unix_secs: t + 1 + GRACE });
+        s.apply(Event::tick(t + 1 + GRACE));
         assert!(s.paused("zelda-lttp"));
         let id: Arc<str> = "zelda-lttp".into();
         assert_eq!(s.quit(&id), vec![freeze(&key, false), Effect::Window(WindowCommand::Close(vec![3]))]);
         // Its window gone, it ends: not paused meanwhile, though hidden.
         s.apply(Event::Windows(vec![]));
-        s.apply(Event::Tick { unix_secs: t + 3 * GRACE });
+        s.apply(Event::tick(t + 3 * GRACE));
         assert!(!s.paused("zelda-lttp"), "quitting");
     }
 
@@ -305,26 +305,26 @@ mod tests {
         s.settings.set(Some(&runner.key), Setting::Background, Some(1));
         let (pause, resume) = (Effect::RunnerCommand(vec!["pause".into()]), Effect::RunnerCommand(vec!["resume".into()]));
         // Nothing of it running: paused after the grace.
-        s.apply(Event::Tick { unix_secs: 100 });
-        assert!(!s.apply(Event::Tick { unix_secs: 100 + GRACE - 1 }).1.contains(&pause));
-        assert!(s.apply(Event::Tick { unix_secs: 100 + GRACE }).1.contains(&pause));
-        assert!(!s.apply(Event::Tick { unix_secs: 101 + GRACE }).1.contains(&pause), "once");
+        s.apply(Event::tick(100));
+        assert!(!s.apply(Event::tick(100 + GRACE - 1)).1.contains(&pause));
+        assert!(s.apply(Event::tick(100 + GRACE)).1.contains(&pause));
+        assert!(!s.apply(Event::tick(101 + GRACE)).1.contains(&pause), "once");
         // Launched: resumed first.
         let fx = s.launch("desktop:firefox".into());
         assert_eq!(fx.first(), Some(&resume), "{fx:?}");
         crate::testkit::start(&mut s, "desktop:firefox");
         // Starting (its launch, then handed over, no window yet): not paused.
         let t = 101 + 2 * GRACE;
-        assert!(!s.apply(Event::Tick { unix_secs: t }).1.contains(&pause), "its launch runs");
+        assert!(!s.apply(Event::tick(t)).1.contains(&pause), "its launch runs");
         crate::testkit::end(&mut s, "desktop:firefox");
-        assert!(!s.apply(Event::Tick { unix_secs: t + GRACE }).1.contains(&pause), "handed over, waiting for its window");
+        assert!(!s.apply(Event::tick(t + GRACE)).1.contains(&pause), "handed over, waiting for its window");
         // Shown: not paused; hidden for the grace: paused.
         let ws = Instance::workspace_of(&clamshell_library::key_of("desktop:firefox"));
         let window = |visible| Window { visible, ..win(6, "firefox", &ws, visible) };
         assert!(!s.apply(Event::Windows(vec![window(true)])).1.contains(&pause));
-        assert!(!s.apply(Event::Tick { unix_secs: t + GRACE + 1 }).1.contains(&pause));
+        assert!(!s.apply(Event::tick(t + GRACE + 1)).1.contains(&pause));
         s.apply(Event::Windows(vec![window(false)]));
-        assert!(s.apply(Event::Tick { unix_secs: t + 2 * GRACE + 1 }).1.contains(&pause));
+        assert!(s.apply(Event::tick(t + 2 * GRACE + 1)).1.contains(&pause));
         // Shown again: resumed.
         assert!(s.apply(Event::Windows(vec![window(true)])).1.contains(&resume));
     }
@@ -337,7 +337,7 @@ mod tests {
         // Runs hidden (zelda isn't a game here, or set so): only Suspend pauses it.
         s.settings.set(Some(&"zelda-lttp".into()), Setting::Background, Some(0));
         let window = |visible| Window { unit: zelda.unit(), visible, ..win(3, "zelda3", &zelda.workspace(), visible) };
-        s.apply(Event::Tick { unix_secs: 100 });
+        s.apply(Event::tick(100));
         s.apply(Event::Windows(vec![window(true)]));
         assert!(s.suspendable("zelda-lttp"));
         let fx = s.suspend("zelda-lttp");
@@ -345,17 +345,17 @@ mod tests {
         assert!(s.suspended("zelda-lttp") && !s.suspendable("zelda-lttp"));
         // Hidden: stays frozen, not frozen twice.
         s.apply(Event::Windows(vec![window(false)]));
-        assert!(!s.apply(Event::Tick { unix_secs: 100 + 3 * GRACE }).1.contains(&freeze(&key, true)));
+        assert!(!s.apply(Event::tick(100 + 3 * GRACE)).1.contains(&freeze(&key, true)));
         assert!(s.paused("zelda-lttp"));
         // Resume (its menu): shown, thawed.
         let fx = s.show_running("zelda-lttp");
         assert!(fx.contains(&freeze(&key, false)) && !s.suspended("zelda-lttp"), "{fx:?}");
-        s.apply(Event::Tick { unix_secs: 100 + 4 * GRACE });
+        s.apply(Event::tick(100 + 4 * GRACE));
         assert!(!s.paused("zelda-lttp"), "runs hidden again");
         // A ClamShell started again finds its slice frozen: held as suspended, not frozen again.
         let fx = s.apply(Event::Frozen(vec![key.as_str().into()])).1;
         assert!(!fx.contains(&freeze(&key, true)) && s.suspended("zelda-lttp") && s.paused("zelda-lttp"));
-        assert!(!s.apply(Event::Tick { unix_secs: 100 + 6 * GRACE }).1.contains(&freeze(&key, false)), "stays frozen");
+        assert!(!s.apply(Event::tick(100 + 6 * GRACE)).1.contains(&freeze(&key, false)), "stays frozen");
         // Quit: thawed, to end, and no longer suspended.
         assert!(s.quit(&"zelda-lttp".into()).contains(&freeze(&key, false)));
         assert!(!s.suspended("zelda-lttp"));
@@ -368,13 +368,13 @@ mod tests {
         let key = zelda.key().unwrap().to_owned();
         s.settings.set(Some(&"zelda-lttp".into()), Setting::Background, Some(1));
         let window = |visible| Window { unit: zelda.unit(), visible, ..win(3, "zelda3", &zelda.workspace(), visible) };
-        s.apply(Event::Tick { unix_secs: 100 });
+        s.apply(Event::tick(100));
         s.apply(Event::Windows(vec![window(false)]));
-        s.apply(Event::Tick { unix_secs: 100 + GRACE });
+        s.apply(Event::tick(100 + GRACE));
         assert!(s.paused("zelda-lttp"));
         // Its window closed from outside (Steam's Stop): thawed, to end; not paused again.
         assert!(s.apply(Event::Windows(vec![])).1.contains(&freeze(&key, false)));
-        s.apply(Event::Tick { unix_secs: 100 + 3 * GRACE });
+        s.apply(Event::tick(100 + 3 * GRACE));
         assert!(!s.paused("zelda-lttp"), "no window: none hidden");
     }
 
@@ -390,14 +390,14 @@ mod tests {
             Window { unit: zelda.unit(), ..win(3, "zelda3", &zelda.workspace(), false) },
             Window { unit: foot.unit(), ..win(4, "foot", &foot.workspace(), false) },
         ];
-        s.apply(Event::Tick { unix_secs: 100 });
+        s.apply(Event::tick(100));
         s.apply(Event::Windows(windows));
-        let fx = s.apply(Event::Tick { unix_secs: 100 + GRACE }).1;
+        let fx = s.apply(Event::tick(100 + GRACE)).1;
         assert!(fx.contains(&freeze(&key, true)), "a game: {fx:?}");
         assert!(!fx.contains(&freeze(foot.key().unwrap(), true)), "an app: {fx:?}");
         // All set to run: the game runs too.
         s.settings.set(None, Setting::Background, Some(0));
-        assert!(s.apply(Event::Tick { unix_secs: 101 + GRACE }).1.contains(&freeze(&key, false)));
+        assert!(s.apply(Event::tick(101 + GRACE)).1.contains(&freeze(&key, false)));
         assert_eq!(s.background_of("zelda-lttp"), InBackground::Runs);
     }
 

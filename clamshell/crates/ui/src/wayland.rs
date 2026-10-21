@@ -133,6 +133,7 @@ impl SeatHandler for App {
                 if let Some(p) = self.pointer.take() {
                     p.release();
                 }
+                self.up(Source::Mouse, End::Cancel, std::time::Instant::now());
             }
             Capability::Touch => {
                 if let Some(t) = self.touch.take() {
@@ -150,7 +151,10 @@ impl SeatHandler for App {
 impl KeyboardHandler for App {
     fn enter(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: &WlSurface, _: u32, _: &[u32], _: &[Keysym]) {}
 
-    fn leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: &WlSurface, _: u32) {}
+    // (No release comes once the focus has left: a held Enter would go on repeating.)
+    fn leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: &WlSurface, _: u32) {
+        self.up(Source::Enter, End::Cancel, std::time::Instant::now());
+    }
 
     fn press_key(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, event: KeyEvent) {
         self.key(event.keysym, true);

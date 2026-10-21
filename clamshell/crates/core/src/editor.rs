@@ -143,6 +143,11 @@ pub fn count_env(text: &str) -> usize {
             if quote.map_or(d.is_whitespace(), |q| d == q) {
                 break;
             }
+            // (A quoted word's leading spaces: trimmed, as parse_env trims its words.)
+            if len == 0 && d.is_whitespace() {
+                chars.next();
+                continue;
+            }
             if d == '=' && eq.is_none() {
                 eq = Some(len);
             }
@@ -152,7 +157,7 @@ pub fn count_env(text: &str) -> usize {
         if quote.is_some() {
             chars.next();
         }
-        // Like parse_env: a key before the '=' (trimmed tokens: a quoted word's leading spaces don't count).
+        // Like parse_env: a key before the '='.
         if eq.is_some_and(|i| i > 0) {
             count += 1;
         }
@@ -239,7 +244,7 @@ mod tests {
 
     #[test]
     fn counting_variables_agrees_with_parsing_them() {
-        for text in ["", "A=1", "A=1 B=2", "  A=1   'B=x y' C", "=1 D=", "\"E=a b\" F=c", "'unclosed=x y", "x 'y' z=1=2"] {
+        for text in ["", "A=1", "A=1 B=2", "  A=1   'B=x y' C", "=1 D=", "\"E=a b\" F=c", "'unclosed=x y", "x 'y' z=1=2", "' =x'", "'  A =x'"] {
             assert_eq!(count_env(text), parse_env(text).len(), "{text:?}");
         }
     }

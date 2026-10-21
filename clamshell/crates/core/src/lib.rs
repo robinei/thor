@@ -61,7 +61,7 @@ use slider::Control;
 pub use dock::{Dock, DockItem};
 pub use editor::{Editor, count_env, parse_env};
 pub use effect::{Dirty, Effect, Save, Watch, WindowCommand};
-pub use event::{Event, LaunchEvent, LevelEvent, PointerEvent, Reading, ShelfEvent, Slide};
+pub use event::{Event, LaunchEvent, LevelEvent, PointerEvent, Reading, ShelfEvent, Slide, mono_secs};
 pub use id::{AudioId, BtId, DockId, EditorId, Hold, Id, KeymapId, SettingsId, ShelfId, Target, WifiId};
 pub use instance::Instance;
 pub use levels::{Brightness, Level, Levels, Sound};
@@ -170,6 +170,9 @@ pub struct State {
     keymap_sent: Option<keymap::Keymap>,
     lists: Lists,
     unix_secs: u64,
+    /// A monotonic clock, as last ticked (see [`Event::Tick`]): what idle, the notice and the saves time
+    /// themselves by, so that a step of the wall clock (by hand, by NTP) is no time gone by.
+    mono_secs: u64,
     saves: Saves,
     idle: idle::Idle,
     /// ClamShell is the device's own session (see [`Init::device_session`]).
@@ -178,9 +181,6 @@ pub struct State {
     window_rules: bottom_screen::WindowRules,
     /// Clocks on a 12-hour dial (see [`crate::time`]).
     pub(crate) twelve_hour: bool,
-    /// The clock was just stepped by hand: the next time read is a jump, not time gone by (idle starts
-    /// from it).
-    pub(crate) clock_stepped: bool,
     /// Metadata is being fetched; what shelf showed when it was last asked for first (see
     /// [`State::follow_shown`]).
     fetching: bool,
@@ -406,7 +406,7 @@ impl State {
 
     fn apply_event(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
         match event {
-            Event::Tick { unix_secs } => self.tick(unix_secs),
+            Event::Tick { unix_secs, mono_secs } => self.tick(unix_secs, mono_secs),
             Event::Reading(reading) => {
                 let status = matches!(reading, Reading::Status(_));
                 let dirty = self.on_reading(reading);
@@ -522,11 +522,11 @@ impl State {
             }
             // Sleep may have reset what the settings set (frequency caps, cores): again.
             Event::Resumed => {
-                self.idle.resumed(self.unix_secs);
+                self.idle.resumed(self.mono_secs);
                 (Dirty::NONE, vec![Effect::Apply { game: self.session.program.clone(), settings: self.in_force() }])
             }
             Event::Idle(event) => {
-                self.idle.heard(event, self.unix_secs);
+                self.idle.heard(event, self.mono_secs);
                 (Dirty::NONE, vec![])
             }
             Event::Device(key) => (Dirty::BOTTOM, self.on_device_key(key)),
@@ -553,25 +553,22 @@ impl State {
 
     /// The clock: once a minute the bar's clock and both screens' burn-in orbit step; starts systemd
     /// never listed are forgotten; what changed is saved once changes have stopped for a moment.
-    fn tick(&mut self, unix_secs: u64) -> (Dirty, Vec<Effect>) {
-        // (A clock stepped by hand moved: no input missed meanwhile.)
-        if std::mem::take(&mut self.clock_stepped) {
-            self.idle.own_input(unix_secs);
-        }
+    fn tick(&mut self, unix_secs: u64, mono_secs: u64) -> (Dirty, Vec<Effect>) {
         let minute_changed = unix_secs / 60 != self.unix_secs / 60;
-        // The clock's first word: what idle heard before it was dated 0, as if decades ago. Count from now.
+        // The clock's first word: what idle heard before it was dated 0. Count from now.
         if self.unix_secs == 0 {
-            self.idle.resumed(unix_secs);
+            self.idle.resumed(mono_secs);
         }
         self.unix_secs = unix_secs;
+        self.mono_secs = mono_secs;
         let mut effects = vec![];
-        if self.saves.resume.due(unix_secs, SAVE_AFTER) {
+        if self.saves.resume.due(mono_secs, SAVE_AFTER) {
             effects.push(Effect::Save(Save::Resume(self.resume())));
         }
-        if self.saves.brightness.due(unix_secs, SAVE_AFTER) {
+        if self.saves.brightness.due(mono_secs, SAVE_AFTER) {
             effects.push(Effect::Save(Save::Brightness(self.levels.brightness().clone())));
         }
-        let notice_gone = self.expire_notice(unix_secs);
+        let notice_gone = self.expire_notice(mono_secs);
         let dirty = if minute_changed {
             Dirty::BOTH
         } else if notice_gone {
@@ -623,7 +620,7 @@ impl State {
 
     fn on_pointer(&mut self, event: PointerEvent) -> (Dirty, Vec<Effect>) {
         // Input that reached ClamShell itself (the pad driving the screens).
-        self.idle.own_input(self.unix_secs);
+        self.idle.own_input(self.mono_secs);
         match event {
             PointerEvent::Focus(id) => {
                 self.show_focused(&id);
@@ -633,7 +630,7 @@ impl State {
             }
             PointerEvent::HideFocus => (if self.pointer.hide_focus() { Dirty::BOTH } else { Dirty::NONE }, vec![]),
             // (A press that woke the screens only woke them.)
-            PointerEvent::Activate(_) | PointerEvent::LongPress(_) if self.idle.swallows_press(self.unix_secs) => (Dirty::NONE, vec![]),
+            PointerEvent::Activate(_) | PointerEvent::LongPress(_) if self.idle.swallows_press(self.mono_secs) => (Dirty::NONE, vec![]),
             PointerEvent::Activate(id) => self.activate(&id, false),
             PointerEvent::LongPress(id) => self.activate(&id, true),
             PointerEvent::Down(id) => {
@@ -753,7 +750,7 @@ impl State {
                     return self.activate_selected();
                 }
                 if self.shelf.select(&game) {
-                    self.saves.resume.touch(self.unix_secs);
+                    self.saves.resume.touch(self.mono_secs);
                 }
                 vec![]
             }
@@ -804,7 +801,7 @@ impl State {
 
     /// Shelf went to another collection or list: the place is saved, and a focus in shelf's list follows.
     fn moved_collection(&mut self) {
-        self.saves.resume.touch(self.unix_secs);
+        self.saves.resume.touch(self.mono_secs);
         if matches!(self.pointer.focus, Some(Id::Shelf(ShelfId::Game(_) | ShelfId::Collection(_)))) {
             self.pointer.focus = self.shelf.selected().cloned().map(|g| Id::Shelf(ShelfId::Game(g)));
         }
@@ -814,7 +811,7 @@ impl State {
         match event {
             ShelfEvent::ListStep(step) => {
                 if self.shelf.step(step) {
-                    self.saves.resume.touch(self.unix_secs);
+                    self.saves.resume.touch(self.mono_secs);
                 }
                 self.pointer.focus = self.shelf.selected().cloned().map(|g| Id::Shelf(ShelfId::Game(g)));
                 self.pointer.show_focus = true;
@@ -867,7 +864,7 @@ impl State {
             return vec![];
         };
         if moved {
-            self.saves.resume.touch(self.unix_secs);
+            self.saves.resume.touch(self.mono_secs);
         }
         let ids = self.shelf.library().favourite_ids().map(str::to_owned).collect();
         vec![Effect::Save(Save::Favourites(ids))]
@@ -901,7 +898,7 @@ impl State {
         let before = self.levels.brightness().clone();
         let effects = change(&mut self.levels);
         if *self.levels.brightness() != before {
-            self.saves.brightness.touch(self.unix_secs);
+            self.saves.brightness.touch(self.mono_secs);
         }
         effects
     }
@@ -946,7 +943,7 @@ impl State {
     /// keyboard a text field brought up.
     fn choose_tab(&mut self, tab: Tab) -> Vec<Effect> {
         if self.bottom.raised_from.take().is_some() {
-            self.saves.resume.touch(self.unix_secs);
+            self.saves.resume.touch(self.mono_secs);
         }
         self.set_tab(tab)
     }
@@ -958,7 +955,7 @@ impl State {
         if tab == self.bottom.tab {
             return vec![];
         }
-        self.saves.resume.touch(self.unix_secs);
+        self.saves.resume.touch(self.mono_secs);
         self.bottom.tab = tab;
         self.dock.menu = None;
         self.dock.moving = None;
@@ -1179,7 +1176,7 @@ mod tests {
         let mut shapes = Vec::new();
         let mut plays = Vec::new();
         let start_end = |s: &mut State| {
-            s.apply(Event::Tick { unix_secs: 1000 });
+            s.apply(Event::tick(1000));
             let fx = tap(s, game("zelda-lttp"));
             let fx: Vec<Effect> = fx.into_iter().chain(tap(s, game("zelda-lttp"))).collect();
             fx.iter().find_map(|e| match e {
@@ -1204,7 +1201,7 @@ mod tests {
                 for e in end.clone() {
                     recorded += s.apply(e).1.iter().filter(|e| matches!(e, Effect::RecordPlay { .. })).count();
                 }
-                s.apply(Event::Tick { unix_secs: 1001 });
+                s.apply(Event::tick(1001));
                 shapes.push((started, shape(&s)));
                 plays.push(recorded);
             }
@@ -1227,7 +1224,7 @@ mod tests {
         let notice = |s: &State| s.bottom().notice().map(|n| n.what.clone());
         s.apply(with(&["grim isn't installed: no screenshots", "x: no launch command"]));
         assert_eq!(notice(&s), Some(hardware::NoticeKind::Problems("grim isn't installed: no screenshots".into(), 2)));
-        s.apply(Event::Tick { unix_secs: 10_000 });
+        s.apply(Event::tick(10_000));
         s.apply(with(&["grim isn't installed: no screenshots", "x: no launch command"]));
         assert_eq!(notice(&s), None, "the same again: not said");
     }
@@ -1285,7 +1282,7 @@ mod tests {
         assert!(!s.apply(ShelfEvent::ListStep(1).into()).1.iter().any(|e| matches!(e, Effect::FetchFirst(_))), "not fetching");
         let (_, fx) = s.apply(Event::Fetching(true));
         assert_eq!(fx, vec![Effect::FetchFirst(vec!["metroid-zm".into(), "mk-ds".into()])], "the selected first, then the rows shown");
-        assert!(!s.apply(Event::Tick { unix_secs: 5 }).1.iter().any(|e| matches!(e, Effect::FetchFirst(_))), "the same view: not again");
+        assert!(!s.apply(Event::tick(5)).1.iter().any(|e| matches!(e, Effect::FetchFirst(_))), "the same view: not again");
         let (_, fx) = s.apply(ShelfEvent::ListStep(1).into());
         assert!(fx.contains(&Effect::FetchFirst(vec!["mk-ds".into(), "ff6".into()])), "{fx:?}");
         s.apply(Event::Fetching(false));
@@ -1345,7 +1342,7 @@ mod tests {
         let shelf = |focused| win(1, windows::SHELF_APP_ID, &Instance::Shelf.name(), focused);
         let app = "clamshell-run-fdroid-1".to_owned();
         let window = |fx: Vec<Effect>| fx.into_iter().filter(|e| matches!(e, Effect::Window(_))).collect::<Vec<_>>();
-        s.apply(Event::Tick { unix_secs: 100 });
+        s.apply(Event::tick(100));
         s.apply(Event::Windows(vec![shelf(false), win(2, "waydroid.org.fdroid.fdroid", &app, true)]));
         // Its window closes (shelf), another comes on its workspace (moved there, not in front): shown.
         assert_eq!(window(s.apply(Event::Windows(vec![shelf(false)])).1), vec![Effect::Window(WindowCommand::ShowShelf)]);
@@ -1354,7 +1351,7 @@ mod tests {
         // Later: not.
         s.apply(Event::Windows(vec![shelf(false), win(3, "waydroid.org.fdroid.fdroid", &app, true)]));
         s.apply(Event::Windows(vec![shelf(false)]));
-        s.apply(Event::Tick { unix_secs: 103 });
+        s.apply(Event::tick(103));
         let (_, fx) = s.apply(Event::Windows(vec![shelf(true), win(4, "waydroid.org.fdroid.fdroid", &app, false)]));
         assert_eq!(window(fx), vec![], "too late: it stays behind");
     }
@@ -1382,7 +1379,7 @@ mod tests {
     #[test]
     fn tick_redraws_once_a_minute() {
         let mut s = state();
-        assert_eq!(s.apply(Event::Tick { unix_secs: 60 }).0, Dirty::BOTH);
-        assert_eq!(s.apply(Event::Tick { unix_secs: 119 }).0, Dirty::NONE);
+        assert_eq!(s.apply(Event::tick(60)).0, Dirty::BOTH);
+        assert_eq!(s.apply(Event::tick(119)).0, Dirty::NONE);
     }
 }

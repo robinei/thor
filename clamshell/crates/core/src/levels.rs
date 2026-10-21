@@ -502,7 +502,7 @@ mod tests {
         s.apply(Slide::End.into());
         assert_eq!(s.apply(LevelEvent::Step(Level::Brightness, -1).into()).1.len(), 1);
         // Saved a moment later; back after a restart.
-        let saved = s.apply(Event::Tick { unix_secs: 10 }).1;
+        let saved = s.apply(Event::tick(10)).1;
         let brightness = saved.iter().find_map(|e| match e {
             Effect::Save(Save::Brightness(b)) => Some(b),
             _ => None,

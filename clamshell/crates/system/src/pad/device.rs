@@ -66,10 +66,19 @@ impl AynKey {
 }
 
 /// A controller's buttons and axes (each with its range and current value).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Capabilities {
     pub keys: Vec<KeyCode>,
     pub axes: Vec<(AbsoluteAxisCode, AbsInfo)>,
+}
+
+/// The same buttons and axes with the same ranges: the axes' current values don't count (a controller
+/// back with a stick a little off is the same controller).
+impl PartialEq for Capabilities {
+    fn eq(&self, other: &Self) -> bool {
+        let shape = |(code, a): &(AbsoluteAxisCode, AbsInfo)| (*code, a.minimum(), a.maximum(), a.fuzz(), a.flat(), a.resolution());
+        self.keys == other.keys && self.axes.iter().map(shape).eq(other.axes.iter().map(shape))
+    }
 }
 
 impl Capabilities {
@@ -150,11 +159,16 @@ pub fn letter_codes(name: &str, phys: &str) -> bool {
 /// (xpad's: by letter).
 pub fn swap_xy(events: &mut [Raw]) {
     for e in events.iter_mut().filter(|e| e.kind == evdev::EventType::KEY) {
-        if e.code == KeyCode::BTN_NORTH.0 {
-            e.code = KeyCode::BTN_WEST.0;
-        } else if e.code == KeyCode::BTN_WEST.0 {
-            e.code = KeyCode::BTN_NORTH.0;
-        }
+        e.code = swap_key(KeyCode(e.code)).0;
+    }
+}
+
+/// [`swap_xy`] for one key.
+pub fn swap_key(key: KeyCode) -> KeyCode {
+    match key {
+        KeyCode::BTN_NORTH => KeyCode::BTN_WEST,
+        KeyCode::BTN_WEST => KeyCode::BTN_NORTH,
+        key => key,
     }
 }
 
@@ -228,6 +242,14 @@ fn virtual_mouse() -> io::Result<VirtualDevice> {
 mod letter_tests {
     use super::*;
     use crate::input::Press;
+
+    #[test]
+    fn a_controller_back_with_a_stick_moved_is_the_same() {
+        let caps = |x: i32| Capabilities { keys: vec![KeyCode::BTN_SOUTH], axes: vec![(AbsoluteAxisCode::ABS_X, AbsInfo::new(x, -1024, 1024, 16, 32, 0))] };
+        assert_eq!(caps(0), caps(37));
+        let other = Capabilities { axes: vec![(AbsoluteAxisCode::ABS_X, AbsInfo::new(0, -1408, 1408, 16, 32, 0))], ..caps(0) };
+        assert_ne!(caps(0), other, "another range");
+    }
 
     #[test]
     fn x_and_y_swap_between_letters_and_places() {
