@@ -94,7 +94,7 @@ Android kept. Written 2026-10-14, before having the device; everything here is u
 The system is Arch Linux ARM plus the Thor's own packages (`packages/`), so that a device stays current
 with `pacman -Syu` alone. The packages are built on the PC for aarch64 (`tools/repo/build.sh`: makepkg
 with `CARCH=aarch64`; ClamShell cross-compiled with rustup's aarch64 target, clang and lld against a
-sysroot taken from the ARM virtual machine's disk, `tools/repo/sysroot.sh`), signed with the
+sysroot of Arch Linux ARM's packages, `tools/repo/sysroot.sh`), signed with the
 repository's key and indexed (`tools/repo/repo.sh index`, into `~/.cache/thor-vm/repo`), published as the GitHub release `packages`
 (`tools/repo/repo.sh publish`, with `gh`), and read by the devices' pacman as `[thor]`
 (`Server = https://github.com/robinei/thor/releases/download/packages`, before `[core]`). The image

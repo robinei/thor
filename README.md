@@ -119,7 +119,17 @@ Arch Linux ARM and the Thor's own packages (`packages/`: `linux-thor`, `thor-sys
 `pacman -Syu` from the repository `[thor]`, the GitHub release `packages`. What each holds:
 `docs/thor-gameplan.md`, "Our image and packages".
 
-    tools/image/thor-kernel.sh                    # Armada's kernel, built on this PC (linux-thor's input)
-    tools/repo/build.sh                           # the packages, built here for aarch64, signed, indexed
-    tools/repo/repo.sh publish                    # the repository uploaded (gh)
-    tools/image/image.sh                          # an SD card image from them (sudo; qemu-user's binfmt)
+From a checkout, on an Arch Linux PC, everything is built here and nothing needs the virtual machines:
+
+    tools/host-check.sh kernel packages image  # what this PC lacks, and the pacman line that adds it
+    tools/image/image.sh                       # the Thor's SD card image: Armada's kernel (once),
+                                               # the packages, then pacstrap through qemu-user (sudo)
+    tools/image/image.sh vm                    # the same system for x86_64, to try the first boot:
+    tools/vm/vm.py thor-image                  #   in QEMU, a window per screen (--fresh: from scratch)
+
+The steps on their own: `tools/image/thor-kernel.sh` (Armada's kernel; again for a newer one),
+`tools/repo/build.sh [PACKAGE...]` (the packages, ClamShell cross-compiled against
+`tools/repo/sysroot.sh`'s sysroot of Arch Linux ARM's packages), `tools/repo/repo.sh publish` (the
+repository uploaded with `gh`: only with the signing key, `~/.config/thor-repo/gnupg`, which isn't in the
+repository; without it the packages are indexed unsigned and images still build). Arch Linux ARM's
+public keys are in `tools/image/keyrings`.

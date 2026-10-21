@@ -8,13 +8,13 @@
 # kernel and the Thor's packages built for it, booted by systemd-boot under UEFI (tools/vm/vm.py
 # thor-image), to try the first boot and the first session.
 #
-#   thor-image.sh thor IMAGE REPO KEYRINGS CACHE ROCKNIX_TAR FIRMWARE
-#   thor-image.sh vm IMAGE REPO KEYRINGS CACHE
+#   thor-image.sh thor IMAGE REPO CACHE ROCKNIX_TAR FIRMWARE
+#   thor-image.sh vm IMAGE REPO CACHE
 #
 # IMAGE: the image file (made beforehand at its size). REPO: the repository's folder (thor.db and the
-# packages). KEYRINGS: the distribution's keyring files (Arch Linux ARM's from its root tarball; Arch's
-# from this PC). CACHE: pacman's package cache (kept between builds). ROCKNIX_TAR: ROCKNIX's release (its
+# packages). CACHE: pacman's package cache (kept between builds). ROCKNIX_TAR: ROCKNIX's release (its
 # /KERNEL: the boot image whose header ours keeps). FIRMWARE: the thor-firmware package (never published).
+# pacman's config and keyring: tools/image/pacman-conf.sh's (XDG_CACHE_HOME: the user's, through sudo).
 #
 # Nothing in it is anyone's in particular: the user thor logs in on its own (autologin) with its account
 # locked, no password, until one is set in ClamShell (its first-run Setup tab: thor-account); sudo takes
@@ -32,7 +32,7 @@
 #
 # Environment: THOR_TIMEZONE (default UTC), THOR_LOCALE (default en_US.UTF-8).
 set -euo pipefail
-TARGET=$1 IMAGE=$2 REPO=$3 KEYRINGS=$4 CACHE=$5 ROCKNIX=${6:-} FIRMWARE=${7:-}
+TARGET=$1 IMAGE=$2 REPO=$3 CACHE=$4 ROCKNIX=${5:-} FIRMWARE=${6:-}
 HERE=$(cd "$(dirname "$0")" && pwd)
 USER_NAME=thor
 WORK=/var/tmp/thor-image
@@ -58,9 +58,7 @@ case $TARGET in
     thor)
         # The Thor's: its kernel, Turnip (Adreno's Vulkan), its sound profiles (the firmware first, below).
         PACKAGES+=(linux-thor vulkan-freedreno thor-ucm)
-        ARCH=aarch64 KEYRING=archlinuxarm
-        MIRRORS="Server = http://mirror.archlinuxarm.org/\$arch/\$repo"
-        REPOS=(core extra alarm)
+        ARCH=aarch64
         # The kernel command line: ROCKNIX's tuning for SM8550, our root; PSI on (Armada's kernel has it
         # off by default; Android's memory killer in Waydroid needs it), not per cgroup (as Armada's
         # kargs.d/10-armada); the internal UFS given 3 s to answer across sleep (Armada's device-quirks:
@@ -72,9 +70,7 @@ case $TARGET in
         ;;
     vm)
         PACKAGES+=(linux)
-        ARCH=x86_64 KEYRING=archlinux
-        MIRRORS="Include = /etc/pacman.d/mirrorlist"
-        REPOS=(core extra)
+        ARCH=x86_64
         # (QEMU's two screens' modes, the second forced on: QEMU enables an output only once its window
         # reports a size, which a headless one doesn't; tools/vm/vm.py's KERNEL_VIDEO.)
         CMDLINE="root=LABEL=THOR_ROOT rw console=tty0 console=ttyS0 psi=1 cgroup_disable=pressure video=Virtual-1:1920x1080@60 video=Virtual-2:1240x1080@60e"
@@ -94,17 +90,7 @@ losetup -j "$IMAGE" -O NAME -n | xargs -r -n1 losetup -d
 rm -rf "$WORK"; mkdir -p "$WORK" "$CACHE"
 
 say "pacman for $ARCH: the distribution's mirrors and keyring, the local [thor] first"
-{
-    printf '[options]\nArchitecture = %s\nCacheDir = %s\nGPGDir = %s\n' "$ARCH" "$CACHE" "$WORK/gnupg"
-    printf 'SigLevel = Required DatabaseOptional\nLocalFileSigLevel = Optional\nParallelDownloads = 5\n\n'
-    printf '[thor]\nServer = file://%s\n\n' "$REPO"
-    for r in "${REPOS[@]}"; do printf '[%s]\n%s\n\n' "$r" "$MIRRORS"; done
-} > "$WORK/pacman.conf"
-key() { pacman-key --config "$WORK/pacman.conf" --gpgdir "$WORK/gnupg" "$@" > /dev/null 2>&1; }
-key --init
-key --populate-from "$KEYRINGS" --populate "$KEYRING"
-key --add "$HERE/../../packages/thor-keyring/thor.gpg"
-key --lsign-key 6C4C5B7FB11D609B739FDAC30BB252FF8CA9B43F
+bash "$HERE/pacman-conf.sh" "$ARCH" "$WORK" "$CACHE" "$REPO"
 
 say "partitions"
 # (sfdisk: GPT; 1 an EFI system partition named "system" with the legacy-boot attribute; 2 Linux.)

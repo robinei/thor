@@ -19,12 +19,15 @@ CACHE=${XDG_CACHE_HOME:-$HOME/.cache}/thor-vm
 ARCH=${THOR_ARCH:-aarch64}
 SYSROOT=$CACHE/sysroot
 PACKAGES=("$@")
+"$HERE/../host-check.sh" packages || exit 1
 if [ "$ARCH" = aarch64 ]; then
     export THOR_REPO_DIR=$CACHE/repo
     [ ${#PACKAGES[@]} -gt 0 ] || PACKAGES=(thor-keyring thor-ucm linux-thor clamshell thor-system thor-session thor-firmware)
     [ -d "$SYSROOT/usr/lib" ] || "$HERE/sysroot.sh"
-    rustup target list --installed | grep -qx aarch64-unknown-linux-gnu \
-        || { echo "needs rustup's target: rustup target add aarch64-unknown-linux-gnu"; exit 1; }
+    # linux-thor's input: Armada's kernel, built here once (again by hand for a newer one).
+    if printf '%s\n' "${PACKAGES[@]}" | grep -qx linux-thor && [ ! -f "$CACHE/kernel/Image" ]; then
+        "$HERE/../image/thor-kernel.sh"
+    fi
 else
     export THOR_REPO_DIR=$CACHE/repo-$ARCH
     [ ${#PACKAGES[@]} -gt 0 ] || PACKAGES=(thor-keyring clamshell thor-system thor-session)
