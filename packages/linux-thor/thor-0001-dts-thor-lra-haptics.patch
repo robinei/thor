@@ -1,0 +1,24 @@
+From: thor <thor@localhost>
+Subject: [PATCH] arm64: dts: qcom: thor: drive the LRA haptics as an LRA
+
+PB-OS's qcs8550-ayn-thor.append (project-barry/pb-os 8ea4653), as a patch
+against Armada's Thor device tree.
+---
+diff --git a/arch/arm64/boot/dts/qcom/qcs8550-ayn-thor.dts b/arch/arm64/boot/dts/qcom/qcs8550-ayn-thor.dts
+index f5b63a52e..d48c300df 100644
+--- a/arch/arm64/boot/dts/qcom/qcs8550-ayn-thor.dts
++++ b/arch/arm64/boot/dts/qcom/qcs8550-ayn-thor.dts
+@@ -479,3 +479,13 @@ &spk_amp_l {
+ &spk_amp_r {
+ 	firmware-name = "qcom/sm8550/ayn/thor/aw883xx_acf.bin";
+ };
++
++/*
++ * The body's vibration motor is an LRA, driven as stock Android does (AYN's Thor
++ * device tree: no ERM mode, 1300 mV). The common ERM setup at 5000 mV feeds it
++ * plain DC, so rumble was a single click (PB-OS, tested on a Thor: its issue #8).
++ */
++&pm8550b_hv_haptics {
++	/delete-property/ qcom,use-erm;
++	qcom,vmax-mv = <1300>;
++};

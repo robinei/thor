@@ -1,0 +1,49 @@
+From: lavachemist <48248311+lavachemist@users.noreply.github.com>
+Subject: [PATCH] power: supply: qcom_battmgr: SM8350/SM8550 power_now from voltage and current
+
+The power_now part of PB-OS's 0546 (project-barry/pb-os 8ea4653; its charge
+unit and charge_now parts are Armada's 0901 and 0902):
+
+- power_now passed BATT_POWER_NOW through, which is not the battery's
+  power: it sat near 47 W while voltage x current was 2 to 11 W. Report
+  voltage x current instead (negative while discharging, like
+  current_now). Tested on a Retroid Pocket Nova (same firmware family).
+---
+diff --git a/drivers/power/supply/qcom_battmgr.c b/drivers/power/supply/qcom_battmgr.c
+index 4dbd84d52..eaca3b13f 100644
+--- a/drivers/power/supply/qcom_battmgr.c
++++ b/drivers/power/supply/qcom_battmgr.c
+@@ -6,6 +6,7 @@
+  */
+ #include <linux/auxiliary_bus.h>
+ #include <linux/devm-helpers.h>
++#include <linux/math64.h>
+ #include <linux/module.h>
+ #include <linux/mutex.h>
+ #include <linux/nvmem-consumer.h>
+@@ -474,7 +475,24 @@ static int qcom_battmgr_bat_sm8350_update(struct qcom_battmgr *battmgr,
+ 	prop = sm8350_bat_prop_map[psp];
+ 
+ 	mutex_lock(&battmgr->lock);
+-	ret = qcom_battmgr_request_property(battmgr, BATTMGR_BAT_PROPERTY_GET, prop, 0);
++	if (psp == POWER_SUPPLY_PROP_POWER_NOW) {
++		/*
++		 * BATT_POWER_NOW is not the battery's power: on the Retroid
++		 * Nova it stays near 47 W while V x I moves between 2 and 11 W.
++		 * Report V x I instead (negative while discharging, as current).
++		 */
++		ret = qcom_battmgr_request_property(battmgr, BATTMGR_BAT_PROPERTY_GET,
++						    BATT_VOLT_NOW, 0);
++		if (!ret)
++			ret = qcom_battmgr_request_property(battmgr, BATTMGR_BAT_PROPERTY_GET,
++							    BATT_CURR_NOW, 0);
++		if (!ret)
++			battmgr->status.power_now =
++				div_s64((s64)battmgr->status.voltage_now *
++					battmgr->status.current_now, 1000000);
++	} else {
++		ret = qcom_battmgr_request_property(battmgr, BATTMGR_BAT_PROPERTY_GET, prop, 0);
++	}
+ 	mutex_unlock(&battmgr->lock);
+ 
+ 	return ret;

@@ -1,0 +1,53 @@
+From: thor <thor@localhost>
+Subject: [PATCH] input: rsinput: the MCU joystick frame parameters settable
+
+After PB-OS's 0548 (project-barry/pb-os 8ea4653), in a simpler form for
+Armada's driver: a module parameter read at every MCU init, its default
+the driver's own 6,2, so nothing changes unless it is set.
+---
+diff --git a/drivers/input/joystick/rsinput.c b/drivers/input/joystick/rsinput.c
+index f00bf1258..75f34edc5 100644
+--- a/drivers/input/joystick/rsinput.c
++++ b/drivers/input/joystick/rsinput.c
+@@ -17,6 +17,7 @@
+ #include <linux/regulator/consumer.h>
+ #include <linux/serdev.h>
+ #include <linux/slab.h>
++#include <linux/unaligned.h>
+ #include <linux/soc/qcom/qcom_hv_haptics.h>
+ #include <linux/workqueue.h>
+ #include <uapi/linux/sched/types.h>
+@@ -26,6 +27,17 @@ static bool rumble_enable = true;
+ 
+ module_param(rumble_enable, bool, 0660);
+ 
++/*
++ * SET_PAR 0x01 ("joystick frame"), two big-endian u32 values, sent at every MCU
++ * init (probe, resume). AYN's Android library sends 10,4 on the Thor, PB-OS's
++ * driver 40,7, this one 6,2; what the MCU does with them isn't documented
++ * (PB-OS's 0548: "the Thor's sticks feel coarse"). Settable to compare:
++ * rsinput.mcu_frame=10,4, taken at the next init.
++ */
++static unsigned int mcu_frame[2] = { 0x06, 0x02 };
++module_param_array(mcu_frame, uint, NULL, 0644);
++MODULE_PARM_DESC(mcu_frame, "MCU joystick frame parameters A,B (SET_PAR 0x01), taken at the next MCU init");
++
+ /* MCU release reference; independent of the calibrated evdev maximum. */
+ #define RSINPUT_TRIGGER_RELEASE 0x610
+ 
+@@ -223,12 +235,9 @@ static int rsinput_init_commands(struct rsinput_driver *drv) {
+     }
+ 
+     msleep(100);
+-    uint8_t mcu_params[] = {
+-        DATA_COMMOD_SET_PAR,
+-        0x01,
+-        0x00, 0x00, 0x00, 0x06,
+-        0x00, 0x00, 0x00, 0x02
+-    };
++    uint8_t mcu_params[10] = { DATA_COMMOD_SET_PAR, 0x01 };
++    put_unaligned_be32(mcu_frame[0], &mcu_params[2]);
++    put_unaligned_be32(mcu_frame[1], &mcu_params[6]);
+     error = rsinput_send_command(drv, CMD_COMMOD, mcu_params, sizeof(mcu_params));
+     if (error < 0) {
+         dev_err(&drv->serdev->dev, "Failed to set MCU parameters: %d\n", error);
