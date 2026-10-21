@@ -139,7 +139,7 @@ pub enum Reading {
     Backlights(Vec<String>),
     /// The time zone and the ones to choose from (while the time tab is open, and after setting one).
     Time(crate::time::TimeZones),
-    /// The account (while the setup tab is open, and after a change: see [`crate::account`]).
+    /// The account (while the Device view is open, and after a change: see [`crate::account`]).
     Account(crate::account::Account),
 }
 

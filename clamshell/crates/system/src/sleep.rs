@@ -106,7 +106,10 @@ fn hold(pad: &Worker<pad::Command>) -> Result<(), crate::dbus::Error> {
                 released = Instant::now();
                 held = None;
                 woke = false;
-            } else if !before {
+            } else if before {
+                // (Woken and asleep again at once, before the lock was taken: still released.)
+                woke = false;
+            } else {
                 woke = true;
             }
         }

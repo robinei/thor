@@ -171,7 +171,7 @@ pub enum Watch {
     Battery,
     /// The time zone and the ones to choose from.
     Time,
-    /// The account (see [`crate::account`]), and the time zone (the setup tab shows both).
+    /// The account (see [`crate::account`]), and the time zone (the Device view shows both).
     Account,
     /// The system's metrics (read more often while shown).
     Metrics,

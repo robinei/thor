@@ -86,15 +86,6 @@ impl StickState {
         });
     }
 
-    /// The axes as read again after an overrun, corrected.
-    pub fn correct_axes(&self, axes: &mut [(AbsoluteAxisCode, i32)]) {
-        for (code, value) in axes.iter_mut() {
-            if let Some(i) = index(*code) {
-                *value = self.corrected(i, *value);
-            }
-        }
-    }
-
     /// A calibration going, at `now`: what it says (progress now and then, or its end), and when to look
     /// again.
     pub fn step(&mut self, now: Instant) -> (Option<Said>, Option<Instant>) {

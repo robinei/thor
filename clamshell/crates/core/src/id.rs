@@ -54,7 +54,7 @@ pub enum Id {
     Blank,
     /// The time tab's (see [`crate::time`]).
     Time(crate::time::TimeId),
-    /// The setup tab's (see [`crate::account`]).
+    /// The Device view's (see [`crate::device`]).
     Device(crate::device::DeviceId),
     /// The battery tab's list of what is using the machine (see [`crate::battery`]).
     Battery(crate::battery::BatteryId),

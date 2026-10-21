@@ -174,7 +174,7 @@ impl Handles {
             // (Read once as the tab opens: it changes only by the tab.)
             Watch::Time if on => self.system.send(crate::device::Command::ReadTime),
             Watch::Time => {}
-            // (The setup tab: the account, and the time zone it shows.)
+            // (The Device view: the account, and the time zone it shows.)
             Watch::Account if on => {
                 self.system.send(crate::device::Command::Account(clamshell_core::account::AccountCommand::Read));
                 self.system.send(crate::device::Command::ReadTime);

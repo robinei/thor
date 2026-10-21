@@ -344,8 +344,12 @@ impl State {
         effects.extend(self.follow_watch());
         let (changed, applied) = self.follow_program();
         effects.extend(applied);
-        // (After the program in force: its setting, its darkness.)
-        effects.extend(self.follow_bottom_power());
+        // (After the program in force: its setting, its darkness; the watch again if it changed.)
+        let power = self.follow_bottom_power();
+        if !power.is_empty() {
+            effects.extend(power);
+            effects.extend(self.follow_watch());
+        }
         if changed && self.follow_pad_mouse() {
             dirty = Dirty::BOTH;
         }

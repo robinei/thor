@@ -286,6 +286,12 @@ impl State {
             return self.follow_bottom_power();
         }
         self.bottom.screen.off = !self.bottom.screen.off;
+        // (On again by hand: in use, so not off by itself either.)
+        if !self.bottom.screen.off {
+            self.bottom.used_at = self.unix_secs;
+            self.bottom.woken = true;
+            self.bottom.screen.idle_off = false;
+        }
         vec![Effect::Window(WindowCommand::BottomPower(!self.bottom.screen.off))]
     }
 
@@ -531,6 +537,17 @@ mod tests {
         s.apply(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]));
         s.apply(Event::tick(1000));
         assert_eq!(power(&s.apply(Event::tick(1000 + DIM_AFTER + OFF_AFTER)).1), None, "a window shown there");
+    }
+
+    #[test]
+    fn home_start_brings_back_a_screen_off_by_hand_and_by_itself_at_once() {
+        let mut s = state();
+        on_battery(&mut s, true);
+        s.apply(Event::tick(1000));
+        key(&mut s, DeviceKey::BottomPower);
+        s.apply(Event::tick(1000 + DIM_AFTER + OFF_AFTER));
+        assert_eq!(power(&key(&mut s, DeviceKey::BottomPower)), Some(true), "one press");
+        assert!(!s.bottom_off(), "on, and not off by itself either");
     }
 
     #[test]

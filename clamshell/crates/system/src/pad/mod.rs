@@ -457,8 +457,8 @@ impl<S: Sink> PadThread<S> {
             if grabbed.fetch(&mut raws)? {
                 // (Events were dropped: what was read is replaced by the controller as it is now.)
                 raws.truncate(from);
-                let (mut down, mut axes) = grabbed.state()?;
-                sticks.correct_axes(&mut axes);
+                // (The axes raw: sticks.take below corrects what resync gives, as any event.)
+                let (mut down, axes) = grabbed.state()?;
                 if *letters {
                     down.iter_mut().for_each(|k| *k = device::swap_key(*k));
                 }

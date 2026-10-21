@@ -90,7 +90,11 @@ def calibrate(attr, target, fd, pipe):
         print(f"{target} Hz: no stable value in range", file=sys.stderr)
     except OSError as e:
         print(f"{target} Hz: {e}", file=sys.stderr)
-    write(attr, start)
+    # (The value it started from, back; if even that fails, as it is.)
+    try:
+        write(attr, start)
+    except OSError as e:
+        print(f"{target} Hz: not set back: {e}", file=sys.stderr)
     return None
 
 
