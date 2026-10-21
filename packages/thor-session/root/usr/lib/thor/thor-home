@@ -1,0 +1,25 @@
+#!/bin/sh
+# The home's starting files, at each session start (thor-session): each of /usr/share/thor/home's that
+# the home doesn't have is copied in (the user's are never touched; a file deleted comes back, an empty
+# one stays): ClamShell's starter library (a Games tab with a folder per system, each with its RetroArch
+# core; Films and TV played by mpv) and the dock's first pins (Steam, the terminal, Maintenance), mpv's
+# config for the top screen and the pad, RetroArch's (its pads through SDL, its hotkeys on AYN) and the
+# profile of ClamShell's virtual pad. With the starter library, the folders it reads; with RetroArch's
+# config, its menu's look (XMB in ClamShell's colours: menu-theme.py, from RetroArch's assets).
+set -u
+defaults=/usr/share/thor/home
+cd "$defaults" || exit 0
+find . -type f | while read -r f; do
+    [ -e "$HOME/$f" ] && continue
+    mkdir -p "$HOME/$(dirname "$f")"
+    cp "$f" "$HOME/$f"
+    case $f in
+        ./.config/clamshell/library.json)
+            for d in nes snes n64 gb gba nds md psx dc; do mkdir -p "$HOME/Games/$d"; done
+            mkdir -p "$HOME/Videos/Films" "$HOME/Videos/TV" ;;
+    esac
+done
+if [ ! -e "$HOME/.config/retroarch/clamshell-assets" ] && [ -d /usr/share/retroarch/assets/xmb ]; then
+    python3 /usr/lib/thor/menu-theme.py "$HOME/.config/retroarch/clamshell-assets" > /dev/null 2>&1 || true
+fi
+exit 0

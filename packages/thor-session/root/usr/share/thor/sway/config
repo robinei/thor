@@ -1,0 +1,14 @@
+# The Thor's sway config (thor-session starts sway with it): DSI-2 the main (top) screen, DSI-1 the
+# second (bottom) screen (as ROCKNIX and Kettle have them; the test machine's, Virtual-1 and Virtual-2). The machine is here (outputs, inputs, keys,
+# starting ClamShell); how a ClamShell session behaves (borders, focus, tabs) is clamshell.conf. sway's
+# default config, with its key bindings, isn't read. Additions of the user's: ~/.config/sway/config.d/.
+# The outputs' transforms and the touchscreens' outputs, written at each session start (thor-outputs).
+include $XDG_RUNTIME_DIR/thor-outputs.conf
+include /usr/share/thor/sway/clamshell.conf
+# A keyboard's Print key: a screenshot through ClamShell (clamshell ctl writes to its control pipe). The
+# Thor's volume and brightness keys ClamShell reads itself from evdev (CLAMSHELL_SESSION=device).
+bindsym --locked Print exec /usr/bin/clamshell ctl screenshot
+include ~/.config/sway/config.d/*
+# ClamShell, mako and udiskie are user services of graphical-session.target, which uwsm reaches once
+# sway is up and has put its environment (WAYLAND_DISPLAY, SWAYSOCK) in the user manager's: this.
+exec exec uwsm finalize

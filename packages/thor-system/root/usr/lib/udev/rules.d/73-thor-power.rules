@@ -1,0 +1,8 @@
+# The power group's write access to what ClamShell's settings set: cpufreq's caps and the CPUs' online
+# (Power, CPU cap, Big cores), the GPU's cap (GPU cap), the battery's charge limit and charge current
+# (Charge limit, Bypass), the power key's wakeup (off while the lid is closed). (The group: clamshell's
+# sysusers.d; the fan daemon's mode file: its tmpfiles.d.)
+ACTION=="add|change", SUBSYSTEM=="cpu", RUN+="/usr/lib/thor/power-access /sys%p/online /sys%p/cpufreq/scaling_max_freq"
+ACTION=="add|change", SUBSYSTEM=="devfreq", RUN+="/usr/lib/thor/power-access /sys%p/max_freq"
+ACTION=="add|change", SUBSYSTEM=="power_supply", ATTR{type}=="Battery", RUN+="/usr/lib/thor/power-access /sys%p/charge_control_end_threshold /sys%p/constant_charge_current"
+ACTION=="add|change", SUBSYSTEM=="input", KERNEL=="input*", ATTR{name}=="*pwrkey*", RUN+="/usr/lib/thor/power-access /sys%p/device/power/wakeup"

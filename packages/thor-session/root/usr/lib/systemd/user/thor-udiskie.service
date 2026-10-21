@@ -1,0 +1,15 @@
+[Unit]
+Description=udiskie, removable storage mounted as it is put in
+# An SD card, a USB stick, under /run/media/$USER: ClamShell's Files tab shows it (and sources on it come
+# back).
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/udiskie --automount --no-notify --no-tray --no-file-manager
+Restart=on-failure
+# (The session's own, as ClamShell and mako are: not offered to be ended.)
+Slice=session-graphical.slice
+
+[Install]
+WantedBy=graphical-session.target

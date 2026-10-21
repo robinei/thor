@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Maintenance
+Comment=Claude Code's maintenance pass over the system
+Exec=foot --app-id=maintenance /usr/bin/thor-maintain
+Icon=utilities-terminal

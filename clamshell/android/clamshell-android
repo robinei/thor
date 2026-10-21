@@ -64,10 +64,10 @@ if ! running; then
         fi
     fi
     # The clipboard shared with Android through ClamShell's (a stand-in for the pyclip Waydroid imports,
-    # installed beside ClamShell's data: see pyclip.py).
+    # installed with ClamShell's package: see pyclip.py).
     systemd-run --user --quiet --collect --unit=waydroid-session ${bound:+-p BindsTo="$bound" -p After="$bound"} \
         -E WAYLAND_DISPLAY="$display" -E XDG_RUNTIME_DIR -E CLAMSHELL="$(command -v "$filter")" \
-        -E PYTHONPATH="${XDG_DATA_HOME:-$HOME/.local/share}/clamshell/python" waydroid session start 2> /dev/null
+        -E PYTHONPATH=/usr/share/clamshell/python waydroid session start 2> /dev/null
     i=0
     while ! running && [ $i -lt 60 ]; do sleep 1; i=$((i + 1)); done
 fi

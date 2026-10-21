@@ -1,0 +1,36 @@
+# The AYN Thor's system files (root/, as installed): the power group's write access to what ClamShell's
+# settings set, the sticks' range, zram and swapping, the SD card's scheduler, PipeWire's buffers, sleep
+# (logind, s2idle, the wake log), the boot (thor-boot, our initramfs, the first boot's growing and swap
+# file), the checks at each boot (thor-selftest), the account helper for ClamShell's Setup tab
+# (thor-account, through pkexec), the touchscreens' and uinput's udev entries. Built from the checkout
+# this PKGBUILD is in.
+pkgname=thor-system
+pkgver=0
+pkgrel=1
+pkgdesc="The AYN Thor's system files: power access, zram, sleep, boot, checks at boot"
+arch=(any)
+url=https://github.com/robinei/thor
+license=(LicenseRef-unknown)
+# (Not linux-thor: the test machine's image has Arch's kernel, which thor-boot leaves alone.)
+depends=(clamshell systemd polkit sudo python mkinitcpio gzip util-linux e2fsprogs cloud-guest-utils
+         zram-generator pipewire)
+optdepends=('linux-thor: the Thor'"'"'s kernel'
+            'thor-firmware: the Thor'"'"'s firmware (built locally from ROCKNIX'"'"'s release)'
+            'thor-ucm: the Thor'"'"'s sound profiles')
+makedepends=(git)
+install=thor-system.install
+
+# The checkout: the one this PKGBUILD is in, or THOR_REPO (a build from a copy of packages/).
+_repo() { realpath "${THOR_REPO:-$startdir/../..}"; }
+
+# (safe.directory: the checkout may be another user's, as through the build machine's share.)
+_git() { git -c safe.directory="$(_repo)" -C "$(_repo)" "$@"; }
+
+pkgver() {
+    printf 'r%s.%s' "$(_git rev-list --count HEAD)" "$(_git rev-parse --short=7 HEAD)"
+}
+
+package() {
+    # (Owned by root in the package, not by whoever checked it out.)
+    cp -a --no-preserve=ownership "$startdir/root/." "$pkgdir/"
+}

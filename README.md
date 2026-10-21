@@ -64,7 +64,7 @@ Shelf comes from `~/.config/clamshell/library.json`, and nothing is there but wh
 ] }
 ```
 
-The starter library.json (`tools/device/library.json`) declares ClamShell's set: Recent, Favourites,
+The starter library.json (`packages/thor-session/root/usr/share/thor/home/.config/clamshell/library.json`) declares ClamShell's set: Recent, Favourites,
 Games, Films, TV, Files, Apps, Tools; a runner per RetroArch system, Video and Music (mpv), Images (imv),
 PDF (zathura), Text (`less`), last Other files (`xdg-open`); a scan per system and for films and series,
 Steam, the desktop files, Home, Root, the Trash and removable storage. In every list, folders come first.
@@ -111,3 +111,15 @@ E the shoulders, F is Y, P is X.
 - `tools/vm/vm-test.sh`: the VM suite end to end, about twenty minutes; before pushing. The virtual Thor is
   `tools/vm/vm.py` (QEMU/KVM, both screens, a fake controller with a gyro and rumble, simulated Wi-Fi and
   Bluetooth; `tools/vm/vm.py --help`), and its checks `tools/vm/vm-checks.py` (`--list`).
+
+## The device's system
+
+Arch Linux ARM and the Thor's own packages (`packages/`: `linux-thor`, `thor-system`, `thor-session`,
+`clamshell`, `thor-ucm`, `thor-keyring`, and `thor-firmware`, which is never published), kept current with
+`pacman -Syu` from the repository `[thor]`, the GitHub release `packages`. What each holds:
+`docs/thor-gameplan.md`, "Our image and packages".
+
+    tools/image/thor-kernel.sh                    # Armada's kernel, built on this PC (linux-thor's input)
+    tools/repo/build.sh                           # the packages, built here for aarch64, signed, indexed
+    tools/repo/repo.sh publish                    # the repository uploaded (gh)
+    tools/image/image.sh                          # an SD card image from them (sudo; qemu-user's binfmt)

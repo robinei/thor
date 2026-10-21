@@ -1,0 +1,14 @@
+[Unit]
+Description=The Thor's checks at boot (journalctl -t thor-selftest, /var/log/thor-selftest.log)
+# Early (once the root is writable), not waited for: a boot that goes wrong later still has them.
+DefaultDependencies=no
+After=local-fs.target systemd-journald.socket
+Conflicts=shutdown.target
+Before=shutdown.target
+
+[Service]
+ExecStart=/usr/bin/thor-selftest
+SyslogIdentifier=thor-selftest
+
+[Install]
+WantedBy=sysinit.target

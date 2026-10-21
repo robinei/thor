@@ -1,0 +1,27 @@
+# What the boot is made of: after an update, thor-boot puts the kernel, our initramfs and the boot
+# loader on the card again. (The paths: as mkinitcpio's own hook, for what goes into an initramfs.)
+[Trigger]
+Type = Path
+Operation = Install
+Operation = Upgrade
+Target = usr/lib/modules/*/Image
+Target = usr/lib/initcpio/*
+Target = usr/lib/firmware/*
+Target = usr/lib/modprobe.d/
+Target = usr/lib/thor/mkinitcpio.conf
+
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = systemd
+Target = mkinitcpio
+Target = mkinitcpio-busybox
+Target = kmod
+Target = util-linux
+Target = zstd
+
+[Action]
+Description = Putting the Thor's kernel, initramfs and boot loader on the card (thor-boot)...
+When = PostTransaction
+Exec = /usr/bin/thor-boot

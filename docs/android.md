@@ -33,8 +33,8 @@ top, Android's permission prompt, and its window with it.
 
 ```json
 "runners": [
-  { "type": "desktop", "id": "android", "name": "Android", "launch": ["~/.local/bin/clamshell-android", "{id}"], "handover": true,
-    "stop": ["~/.local/bin/clamshell-android", "--stop", "{id}"] }
+  { "type": "desktop", "id": "android", "name": "Android", "launch": ["clamshell-android", "{id}"], "handover": true,
+    "stop": ["clamshell-android", "--stop", "{id}"] }
 ],
 "sources": [
   { "type": "desktop", "id": "Waydroid", "hide": true },
@@ -177,7 +177,7 @@ adb shell settings put global heads_up_notifications_enabled 0
 waydroid session stop
 ```
 
-Then the runner: the session script installs it (`~/.local/bin/clamshell-android`); on a desktop,
+Then the runner: the `clamshell` package installs it (`/usr/bin/clamshell-android`); on a desktop,
 `install -m 755 clamshell/android/clamshell-android ~/.local/bin/`, and the runner and sources above in
 `~/.config/clamshell/library.json`. Apps installed later (`waydroid app install app.apk`) are listed after a
 rescan (Tools).

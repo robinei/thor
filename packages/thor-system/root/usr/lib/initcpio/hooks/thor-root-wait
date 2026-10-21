@@ -1,0 +1,8 @@
+#!/usr/bin/ash
+run_hook() {
+    local i=0
+    while [ ! -b /dev/disk/by-label/THOR_ROOT ] && [ "$i" -lt 10 ]; do
+        sleep 1
+        i=$((i + 1))
+    done
+}

@@ -1,0 +1,3 @@
+post_install() {
+    systemctl --global enable clamshell.service thor-mako.service thor-udiskie.service > /dev/null 2>&1 || true
+}

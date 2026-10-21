@@ -11,7 +11,7 @@ use std::process::{Command, Stdio};
 use clamshell_core::account::{Account, AccountCommand};
 
 /// The helper.
-pub const HELPER: &str = "/usr/local/lib/thor/thor-account";
+pub const HELPER: &str = "/usr/lib/thor/thor-account";
 
 /// The account as the helper reads it; unavailable without it (or if it fails).
 pub fn read() -> Account {

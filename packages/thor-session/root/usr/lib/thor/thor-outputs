@@ -1,0 +1,26 @@
+#!/bin/sh
+# sway's outputs, written at each session start (thor-session) into the runtime directory, where the
+# session's sway config includes them, and which output is ClamShell's bottom screen (its service reads
+# thor-outputs.env). On the Thor (its DSI panels): as ROCKNIX does (its autostart/common/111-sway-init),
+# the panels natively portrait and turned by the kernel's angle (fbcon's rotate, from the panel's
+# orientation in the device tree; the command line sets it too, as Thorch's does), both by the same angle
+# (as Thorch and Armada), each touchscreen on its panel. In the test machine (tools/vm/vm.py thor-image:
+# QEMU's two screens, Virtual-1 and Virtual-2): unturned, its touchscreen on the bottom one.
+if ls /sys/class/drm/card*-DSI-2 > /dev/null 2>&1; then
+    case "$(cat /sys/class/graphics/fbcon/rotate 2> /dev/null)" in
+        1) angle=90 ;; 2) angle=180 ;; 3) angle=270 ;; *) angle=0 ;;
+    esac
+    top=DSI-2 bottom=DSI-1
+    touch="input \"0:0:top_touchscreen\" map_to_output $top
+input \"0:0:bottom_touchscreen\" map_to_output $bottom"
+else
+    angle=0 top=Virtual-1 bottom=Virtual-2
+    touch="input type:touch map_to_output $bottom"
+fi
+cat > "$XDG_RUNTIME_DIR/thor-outputs.conf" <<EOF
+# Written by thor-outputs at session start (rotation: $angle).
+output $top transform $angle position 0 0
+output $bottom transform $angle
+$touch
+EOF
+echo "CLAMSHELL_BOTTOM_OUTPUT=$bottom" > "$XDG_RUNTIME_DIR/thor-outputs.env"

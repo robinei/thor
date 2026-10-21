@@ -1,0 +1,16 @@
+// The session's user (thor) sets the time zone, whether the network sets the clock, and the clock itself
+// from ClamShell's time tab without a password prompt (there is no polkit agent to ask); and, from its
+// active local session, runs thor-account (its password, ssh: the helper checks the rest). thor-system's
+// (and the VM's).
+polkit.addRule(function (action, subject) {
+    var time = ["org.freedesktop.timedate1.set-timezone", "org.freedesktop.timedate1.set-ntp", "org.freedesktop.timedate1.set-time"];
+    if (time.indexOf(action.id) >= 0 && subject.user == "thor") {
+        return polkit.Result.YES;
+    }
+});
+polkit.addRule(function (action, subject) {
+    if (action.id == "org.freedesktop.policykit.exec" && action.lookup("program") == "/usr/lib/thor/thor-account"
+        && subject.user == "thor" && subject.local && subject.active) {
+        return polkit.Result.YES;
+    }
+});

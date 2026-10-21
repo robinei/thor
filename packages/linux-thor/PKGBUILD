@@ -1,0 +1,33 @@
+# Armada's kernel for the AYN Thor as tools/image/thor-kernel.sh builds it (on the PC, with LLVM: building
+# it here, in the emulated aarch64 machine, would take a day), packaged from that build's output:
+# THOR_KERNEL (its directory; default ~/.cache/thor-vm/kernel). The Image and the SM8550 device trees go
+# beside the modules (/usr/lib/modules/$kver), where thor-boot (thor-system) takes them for both ways the
+# card boots; pacman runs thor-boot after an update of this.
+pkgname=linux-thor
+_build=${THOR_KERNEL:-$HOME/.cache/thor-vm/kernel}
+_kver=$(cat "$_build/release" 2> /dev/null)
+# The kernel's version, then when this build was made (two builds of one version differ by it).
+pkgver=${_kver%-thor}.$(date -u -r "$_build/Image" +%Y%m%d%H%M 2> /dev/null)
+pkgrel=1
+pkgdesc="Armada's Linux kernel for the AYN Thor (SM8550), with its modules and device trees"
+arch=(aarch64)
+url=https://github.com/armada-os/armada
+license=(GPL-2.0-only)
+depends=(kmod mkinitcpio)
+provides=(linux)
+options=(!strip !debug)
+
+package() {
+    [ -n "$_kver" ] && [ -f "$_build/Image" ] || { echo "no kernel build in $_build (tools/image/thor-kernel.sh)"; return 1; }
+    local modules=$pkgdir/usr/lib/modules/$_kver
+    mkdir -p "$modules"
+    cp -a "$_build/lib/modules/$_kver/." "$modules/"
+    rm -f "$modules/build" "$modules/source"
+    install -m 644 "$_build/Image" "$modules/Image"
+    install -Dm 644 -t "$modules/dtbs" "$_build"/dtbs/*.dtb
+    install -m 644 "$_build/config" "$modules/config"
+    # What it was built from (Armada's commit, the patches, the compiler).
+    install -m 644 "$_build/source" "$modules/thor-source"
+    # (No pkgbase file: mkinitcpio's own hook would make a preset for it and look for /boot/vmlinuz-*;
+    # thor-boot makes our initramfs.)
+}

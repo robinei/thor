@@ -1,0 +1,6 @@
+#!/bin/sh
+# Gives the power group write access to the files given that exist (udev: 73-thor-power.rules).
+for f in "$@"; do
+    [ -e "$f" ] && chgrp power "$f" && chmod g+w "$f"
+done
+exit 0

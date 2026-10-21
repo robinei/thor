@@ -1,0 +1,26 @@
+# The AYN Thor's ALSA UCM profiles, ROCKNIX's (their alsa-ucm-conf patch 0005, "Add AYN Thor": the
+# speakers, the headphones, the internal mic on DMIC3), as files alsa-ucm-conf doesn't have; and the
+# same profile under the names the card gets booted through AYN's U-Boot (ayn-AYNOdin2: U-Boot reports the
+# Odin 2's SMBIOS), whose own (ROCKNIX's Odin 2 profile) has no internal mic.
+pkgname=thor-ucm
+_rocknix=c445081a59518f37d9776e5412dd7b14910696f7
+pkgver=20261001
+pkgrel=1
+pkgdesc="The AYN Thor's ALSA UCM profiles (ROCKNIX's)"
+arch=(any)
+url=https://github.com/robinei/thor
+license=(BSD-3-Clause)
+depends=(alsa-ucm-conf)
+makedepends=(git)
+source=("0005_Add-AYN-Thor.patch::https://raw.githubusercontent.com/ROCKNIX/distribution/$_rocknix/projects/ROCKNIX/packages/audio/alsa-ucm-conf/patches/SM8550/0005_Add-AYN-Thor.patch")
+sha256sums=(bf04dc835232b8dde16f85c8462fc2f3c6de6b179889d8c05bc46030a6071c7f)
+
+package() {
+    local share=$pkgdir/usr/share/alsa
+    mkdir -p "$share"
+    # (git apply makes the patch's links, which patch doesn't.)
+    git -C "$share" apply "$srcdir/0005_Add-AYN-Thor.patch"
+    for name in ayn-AYNOdin2- AYN-Odin2; do
+        ln -s ../../AYN/Thor/AYN-Thor.conf "$share/ucm2/conf.d/sm8550/$name.conf"
+    done
+}

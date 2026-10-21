@@ -1,0 +1,32 @@
+#!/bin/bash
+# A maintenance pass over the Thor: Claude Code running /maintain (the playbook thor-session installs in
+# /usr/share/thor/maintenance) in ~/.local/share/thor/maintenance, where its notes are kept
+# (changelog.md). The dock's Maintenance app starts it in a terminal. One at a time.
+set -u
+export PATH="$HOME/.local/bin:$PATH"
+dir=${XDG_DATA_HOME:-$HOME/.local/share}/thor/maintenance
+mkdir -p "$dir"
+ln -sfn /usr/share/thor/maintenance/.claude "$dir/.claude"
+cd "$dir" || exit 1
+exec 9> "${XDG_RUNTIME_DIR:-/tmp}/thor-maintenance.lock"
+flock -n 9 || { echo "Another maintenance run is active."; read -rp "Press Enter to close " _; exit 1; }
+if ! command -v claude > /dev/null; then
+    echo "Claude Code isn't installed. Install it with:"
+    echo "  curl -fsSL https://claude.ai/install.sh | bash"
+    read -rp "Press Enter to close " _
+    exit 1
+fi
+# sudo: the password asked here, once; it counts for Claude's commands too (sudoers' global timestamp
+# for wheel: the image's /etc/sudoers.d/wheel), kept fresh while the pass runs, and forgotten after.
+echo "Maintenance needs the account's password (set in ClamShell: Settings, Setup)."
+if ! sudo -v; then
+    echo "No sudo: is a password set?"
+    read -rp "Press Enter to close " _
+    exit 1
+fi
+(while sleep 240; do sudo -n -v 2> /dev/null || exit 0; done) &
+fresh=$!
+claude "${1:-/maintain}"
+kill "$fresh" 2> /dev/null
+sudo -k
+read -rp "Session ended. Press Enter to close " _

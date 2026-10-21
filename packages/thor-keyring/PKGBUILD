@@ -1,0 +1,14 @@
+# The key our packages are signed with (its private half on the publishing computer only:
+# ~/.config/thor-repo/gnupg), for pacman's keyring: `pacman-key --populate thor`, run on install.
+pkgname=thor-keyring
+pkgver=20261021
+pkgrel=1
+pkgdesc="The signing key of the AYN Thor's packages (github.com/robinei/thor)"
+arch=(any)
+url=https://github.com/robinei/thor
+license=(CC0-1.0)
+install=thor-keyring.install
+
+package() {
+    install -Dm644 -t "$pkgdir/usr/share/pacman/keyrings" "$startdir"/thor.gpg "$startdir"/thor-trusted "$startdir"/thor-revoked
+}

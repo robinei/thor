@@ -1,0 +1,3 @@
+# The USB controller allowed to suspend when idle: active, it holds a 1 GB/s interconnect vote that keeps
+# the memory out of its low-power states (Armada's 60-armada-usb-autosuspend.rules).
+ACTION=="add|bind", SUBSYSTEM=="platform", KERNEL=="*.usb", DRIVERS=="dwc3-qcom", ATTR{power/control}="auto"

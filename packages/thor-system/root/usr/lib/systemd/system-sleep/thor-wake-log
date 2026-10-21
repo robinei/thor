@@ -1,0 +1,11 @@
+#!/bin/sh
+# Each wake's interrupt into /var/log/thor-wake.log (the kernel keeps only the last), for the battery's
+# drain while asleep (as Armada's 40-armada-wake-ledger). The last 500 wakes.
+[ "$1" = post ] || exit 0
+log=/var/log/thor-wake.log
+irq=$(cat /sys/power/pm_wakeup_irq 2> /dev/null)
+name=
+[ -n "$irq" ] && name=$(awk -v irq="$irq:" '$1 == irq { print $NF }' /proc/interrupts)
+echo "$(date --iso-8601=seconds) $2: irq ${irq:-none} (${name:-unknown})" >> "$log"
+[ "$(wc -l < "$log")" -le 500 ] || { tail -n 250 "$log" > "$log.new" && mv "$log.new" "$log"; }
+exit 0

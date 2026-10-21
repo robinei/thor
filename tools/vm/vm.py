@@ -19,11 +19,9 @@ devices, ClamShell as a user service started by sway, and this repository shared
   tools/vm/vm.py pad plug|unplug|do 'tap a, dpad down'    a fake controller in the machine (x86_64)
   tools/vm/vm.py bluetooth      two virtual Bluetooth controllers and a test device in the machine (x86_64)
   tools/vm/vm.py reset          throw the machine away (the download stays)
-  tools/vm/vm.py --arch aarch64 thor-image   build an SD card image for the real Thor (best effort): Arch
-                             Linux ARM with ROCKNIX's firmware, our initramfs and session, in ROCKNIX's SD layout
-                             for its ABL or OpenABL (tools/image/thor-image.sh, in the machine); the kernel ROCKNIX's
-                             prebuilt one, or with THOR_KERNEL=~/.cache/thor-vm/kernel Armada's as
-                             tools/image/thor-kernel.sh builds it
+  tools/vm/vm.py thor-image [--fresh]   start the test machine's image (tools/image/image.sh vm: the Thor's
+                             packages on Arch Linux for x86_64), booted by UEFI, in the two windows, its first
+                             start the first boot; --fresh: from the built image again (a new first boot)
 
 --arch x86_64 (the default): Arch's cloud image, provisioned by cloud-init, with KVM: fast; it runs the
 host's build from the shared repository. --arch aarch64: Arch Linux ARM's root filesystem made into a disk
@@ -183,7 +181,7 @@ BASH_PROFILE = """\
 # The session on the first console: sway through uwsm, by the repository's thor-session (as on the
 # device: logged out once it has run, the console staying with why when it can't go on).
 if [ "$(tty)" = /dev/tty1 ] && uwsm check may-start; then
-    /mnt/thor/tools/device/thor-session && exit
+    THOR_SWAY_CONFIG=~/.config/sway/config /mnt/thor/packages/thor-session/root/usr/bin/thor-session && exit
 fi
 """
 
@@ -193,7 +191,7 @@ Description=ClamShell failed: the session ends, the console says why
 
 [Service]
 Type=oneshot
-ExecStart=/mnt/thor/tools/device/thor-session --clamshell-failed
+ExecStart=/mnt/thor/packages/thor-session/root/usr/bin/thor-session --clamshell-failed
 """
 
 # No GPU acceleration in the machine: sway draws with the pixman renderer (uwsm's environment for the
@@ -268,7 +266,7 @@ def system_files():
         ("/etc/udev/rules.d/70-thor-vm.rules",
          'KERNEL=="uinput", GROUP="input", MODE="0660"\n'),
         # The time tab sets the time zone (as on the device).
-        ("/etc/polkit-1/rules.d/50-thor.rules", (REPO / "tools/device/polkit/50-thor.rules").read_text()),
+        ("/etc/polkit-1/rules.d/50-thor.rules", (REPO / "packages/thor-system/root/usr/share/polkit-1/rules.d/50-thor.rules").read_text()),
         # NetworkManager has the device's radio only: the wired link (ssh) stays as it is, the access
         # points' radios are hostapd's.
         ("/etc/NetworkManager/conf.d/thor-vm.conf",
@@ -482,7 +480,8 @@ def image(_args):
     print(f"ready: tools/vm/vm.py --arch {A.name} run")
 
 
-def qemu_command(args, seed_port):
+def qemu_devices(args):
+    """What both machines have (and the test machine's image): the screens, input, network, sockets."""
     common = [
         "-smp", "4", "-m", "4G",
         "-nic", f"user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:{A.ssh_port}-:22",
@@ -506,10 +505,11 @@ def qemu_command(args, seed_port):
     if args.pad:
         vendor, product = args.pad.split(":")
         common += ["-device", f"usb-host,vendorid=0x{vendor},productid=0x{product}"]
-    if getattr(args, "sd", None):
-        # An SD card image to build (/dev/vdb), and the downloads, read-only, at the tag "cache".
-        common += ["-drive", f"file={args.sd},if=virtio,format=raw",
-                   "-virtfs", f"local,path={CACHE},mount_tag=cache,security_model=none,readonly=on"]
+    return common
+
+
+def qemu_command(args, seed_port):
+    common = qemu_devices(args)
     if A.arm:
         boot = arm_boot_files()
         return [
@@ -599,77 +599,26 @@ def build(_args):
     run(ssh_args([f"cd /mnt/thor/clamshell && CARGO_TARGET_DIR=$HOME/target cargo build --release --locked"]))
 
 
-# --- an SD card image for the real Thor
-
-ROCKNIX_RELEASES = "https://api.github.com/repos/ROCKNIX/distribution/releases/latest"
-
-
-def rocknix():
-    """ROCKNIX's latest SM8550 release, checked, with its KERNEL and SYSTEM unpacked; returns that target dir.
-    Without GitHub's API (offline, or its rate limit), the newest one unpacked before."""
-    folder = CACHE / "rocknix"
-    try:
-        release = json.load(urllib.request.urlopen(ROCKNIX_RELEASES))
-    except OSError as e:
-        unpacked = sorted(folder.glob("ROCKNIX-SM8550.aarch64-*/target/SYSTEM"))
-        if not unpacked:
-            sys.exit(f"ROCKNIX's releases: {e}")
-        print(f"ROCKNIX's releases: {e}; using {unpacked[-1].parent.parent.name}, unpacked before")
-        return unpacked[-1].parent
-    assets = {a["name"]: a["browser_download_url"] for a in release["assets"]}
-    name = next(n for n in assets if n.startswith("ROCKNIX-SM8550.aarch64-") and n.endswith(".tar"))
-    folder.mkdir(parents=True, exist_ok=True)
-    tar = folder / name
-    target = folder / name.removesuffix(".tar") / "target"
-    if (target / "KERNEL").exists() and (target / "SYSTEM").exists():
-        return target
-    expected = urllib.request.urlopen(assets[name + ".sha256"]).read().decode().split()[0]
-    if not tar.exists() or digest(tar, "sha256") != expected:
-        print(f"downloading {name}")
-        urllib.request.urlretrieve(assets[name], tar)
-        if digest(tar, "sha256") != expected:
-            sys.exit("checksum mismatch: download again")
-    run(["tar", "-xf", tar, "-C", folder, "--wildcards", "*/target/KERNEL", "*/target/SYSTEM"])
-    return target
-
-
 def thor_image(args):
-    if not A.arm:
-        sys.exit("the Thor's image is built in the aarch64 machine: tools/vm/vm.py --arch aarch64 thor-image")
-    if not A.provisioned.exists():
-        sys.exit("the aarch64 machine isn't provisioned yet: tools/vm/vm.py --arch aarch64 run (once)")
-    target = rocknix()
-    # Our kernel build (Armada's: tools/image/thor-kernel.sh's output, in the cache the machine mounts) instead of ROCKNIX's.
-    kernel = ""
-    if os.environ.get("THOR_KERNEL"):
-        path = Path(os.environ["THOR_KERNEL"]).expanduser().resolve()
-        if not path.is_relative_to(CACHE.resolve()) or not (path / "Image").exists():
-            sys.exit(f"THOR_KERNEL: no kernel build in {path} (it must be in {CACHE}: tools/image/thor-kernel.sh)")
-        kernel = f"THOR_KERNEL=/mnt/cache/{path.relative_to(CACHE.resolve())} "
-    # (A machine already up would be built in, without this image attached: it would go into the old file.)
+    """The test machine's image (tools/image/image.sh vm) on a copy of it, under UEFI (OVMF), with this
+    machine's screens and input; the copy kept between starts until --fresh."""
+    built, disk, uefi_vars = CACHE / "thor-vm.img", CACHE / "thor-vm-run.img", CACHE / "thor-vm-vars.fd"
+    if not built.exists():
+        sys.exit("no image: tools/image/image.sh vm")
     if subprocess.run(ssh_args(["true"], quiet=True), capture_output=True).returncode == 0:
-        sys.exit("the aarch64 machine is running: stop it first (tools/vm/vm.py --arch aarch64 ssh sudo poweroff)")
-    sd = A.state / "thor-sd.img"
-    sd.unlink(missing_ok=True)
-    with open(sd, "wb") as f:
-        f.truncate(args.size << 30)
-    print(f"starting the machine with {sd.name} attached")
-    machine = threading.Thread(target=start, args=(argparse.Namespace(headless=True, pad=None, sd=sd),), daemon=True)
-    machine.start()
-    while subprocess.run(ssh_args(["true"], quiet=True), capture_output=True).returncode != 0:
-        time.sleep(5)
-    # (Powered off however the build ends, so a failed one leaves no machine behind.)
-    inside = f"""set -e
-trap 'sudo poweroff' EXIT
-sudo mkdir -p /mnt/cache
-mountpoint -q /mnt/cache || sudo mount -t 9p -o trans=virtio,version=9p2000.L,ro cache /mnt/cache
-cd /mnt/thor/clamshell && CARGO_TARGET_DIR=$HOME/target cargo build --release --locked
-sudo {kernel}bash /mnt/thor/tools/image/thor-image.sh /dev/vdb /mnt/cache/{target.relative_to(CACHE)} $HOME/target/release/clamshell"""
-    result = subprocess.run(ssh_args([inside]))
-    machine.join(timeout=120)
-    if result.returncode not in (0, 255):
-        sys.exit(f"the build failed ({result.returncode})")
-    print(f"\n{sd}: write it to an SD card (dd, bs=4M); ROCKNIX's ABL (in its release, 3rdparty/bootloader) boots it")
+        sys.exit("the x86_64 machine is running: stop it first (its ports and sockets are shared)")
+    if args.fresh or not disk.exists():
+        run(["cp", "--reflink=auto", "--sparse=always", built, disk])
+        shutil.copy("/usr/share/edk2/x64/OVMF_VARS.4m.fd", uefi_vars)
+    A.state.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        "qemu-system-x86_64", "-enable-kvm", "-machine", "q35,vmport=off", "-vga", "none", "-cpu", "host",
+        "-drive", "if=pflash,format=raw,readonly=on,file=/usr/share/edk2/x64/OVMF_CODE.4m.fd",
+        "-drive", f"if=pflash,format=raw,file={uefi_vars}",
+        "-drive", f"file={disk},if=virtio,format=raw",
+    ] + qemu_devices(args)
+    print(f"starting {disk.name}: the top screen and the bottom one, a window each")
+    return subprocess.call([str(c) for c in cmd])
 
 
 def sync(_args):
@@ -982,10 +931,11 @@ def main():
                                 "stick left 0.5 0, trigger right 1, gyro 0 30 0, sleep 100")
     q.add_argument("command", nargs="+")
     p.set_defaults(func=pad)
-    sub.add_parser("bluetooth", help="virtual Bluetooth controllers and a test device in the machine").set_defaults(func=bluetooth)
-    p = sub.add_parser("thor-image")
-    p.add_argument("--size", type=int, default=12, help="the image's size in GB (default 12)")
+    p = sub.add_parser("thor-image", help="start the test machine's image (tools/image/image.sh vm)")
+    p.add_argument("--fresh", action="store_true", help="from the built image again: a new first boot")
+    p.add_argument("--pad", help="also pass a USB gamepad through (vendor:product)")
     p.set_defaults(func=thor_image)
+    sub.add_parser("bluetooth", help="virtual Bluetooth controllers and a test device in the machine").set_defaults(func=bluetooth)
     args = parser.parse_args()
     A = Arch(args.arch)
     sys.exit(args.func(args) or 0)

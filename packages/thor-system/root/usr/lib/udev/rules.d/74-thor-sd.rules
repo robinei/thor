@@ -1,0 +1,3 @@
+# The SD card (the root's): BFQ and a long readahead, as Armada's 60-armada-block-scheduler.rules and
+# ROCKNIX's 10-bfq-sched.rules.
+ACTION=="add|change", KERNEL=="mmcblk[0-9]", ATTR{queue/scheduler}="bfq", ATTR{queue/read_ahead_kb}="4096"

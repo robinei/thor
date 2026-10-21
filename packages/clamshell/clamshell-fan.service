@@ -1,0 +1,21 @@
+[Unit]
+Description=The fan's speed from the CPU's and GPU's temperatures
+# Nothing in the kernel drives the Thor's fan: from early in boot, and again if it stops.
+DefaultDependencies=no
+After=systemd-tmpfiles-setup.service
+Conflicts=shutdown.target
+Before=sysinit.target shutdown.target
+
+[Service]
+ExecStart=/usr/bin/clamshell-fan
+# (Stopped or failed: the fan left at half speed, not wherever it was, possibly off.)
+ExecStopPost=/usr/bin/clamshell-fan --safe
+Restart=always
+RestartSec=2
+ProtectSystem=strict
+ProtectHome=yes
+PrivateNetwork=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=sysinit.target

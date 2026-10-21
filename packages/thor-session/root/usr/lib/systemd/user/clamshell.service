@@ -1,0 +1,33 @@
+[Unit]
+Description=ClamShell
+# Started once the session is up, stopped with it.
+PartOf=graphical-session.target
+After=graphical-session.target
+StartLimitIntervalSec=60
+StartLimitBurst=4
+OnFailure=clamshell-failed.service
+
+[Service]
+# Up once its screens are drawn; its main loop says it turns, and one that stops for 30 s (hung) is
+# restarted: what it launched runs on in its scopes.
+Type=notify
+NotifyAccess=main
+WatchdogSec=30
+# The control pipe: sway's key bindings (clamshell ctl) write to it.
+ExecStartPre=-/usr/bin/mkfifo %t/clamshell-control
+ExecStart=/usr/bin/clamshell
+Environment=CLAMSHELL_CONTROL=%t/clamshell-control
+# ClamShell is the device's session: it puts the device to sleep when idle (dim, screens off, then sleep
+# through logind) and takes the hardware keys (volume, brightness). Desktop runs leave this unset.
+Environment=CLAMSHELL_SESSION=device
+# The bottom screen's output (DSI-1 on the Thor), as thor-outputs found it.
+EnvironmentFile=%t/thor-outputs.env
+# Restarted when it fails; failing 4 times within a minute, given up: then the session ends and the
+# console says why (clamshell-failed.service, thor-session).
+Restart=on-failure
+RestartSec=2
+# (With the session's own: uwsm's slice for what must stay responsive.)
+Slice=session-graphical.slice
+
+[Install]
+WantedBy=graphical-session.target

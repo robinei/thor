@@ -89,27 +89,42 @@ Android kept. Written 2026-10-14, before having the device; everything here is u
   #529, open).
 - The bottom screen draws about 0.7 W at idle. Wi-Fi and Bluetooth work.
 
-## Our image (`tools/vm/vm.py --arch aarch64 thor-image`, built in the ARM virtual machine)
+## Our image and packages
 
-What goes in, and from where:
+The system is Arch Linux ARM plus the Thor's own packages (`packages/`), so that a device stays current
+with `pacman -Syu` alone. The packages are built on the PC for aarch64 (`tools/repo/build.sh`: makepkg
+with `CARCH=aarch64`; ClamShell cross-compiled with rustup's aarch64 target, clang and lld against a
+sysroot taken from the ARM virtual machine's disk, `tools/repo/sysroot.sh`), signed with the
+repository's key and indexed (`tools/repo/repo.sh index`, into `~/.cache/thor-vm/repo`), published as the GitHub release `packages`
+(`tools/repo/repo.sh publish`, with `gh`), and read by the devices' pacman as `[thor]`
+(`Server = https://github.com/robinei/thor/releases/download/packages`, before `[core]`). The image
+(`tools/image/image.sh`, on the PC too: this PC's pacman installing Arch Linux ARM's aarch64 packages,
+their install scripts and hooks run through qemu-user's binfmt; `tools/image/thor-image.sh` as root) is
+those packages pacstrapped onto an SD card, plus the little that is per device; thor-firmware is built
+with the others but kept out of the published repository. Nothing in either is anyone's in particular.
+
+| Package | What |
+|---|---|
+| `linux-thor` | Armada's kernel as `tools/image/thor-kernel.sh` builds it on the PC (Linux 7.2.6 with their 222 patches at commit 5643b1ab5156, 2026-10-20; binder in their config), packaged from that build: modules, `Image` and the SM8550 device trees in `/usr/lib/modules/<version>` |
+| `thor-system` | the boot: `thor-boot` puts the kernel (`/Image`, decompressed, an EFI program), the Thor's device tree, our initramfs (`/usr/lib/thor/mkinitcpio.conf`: base udev modconf block thor-root-wait resume filesystems fsck, no autodetect) and the loader entry's command line on the card's FAT partition for systemd-boot (`EFI/BOOT/BOOTAA64.EFI`), and the same into `/KERNEL` for the ABL (`bootimg.py repack`: the gzip'd Image with the 14 device trees, ROCKNIX's header); a pacman hook runs it after updates of the kernel, systemd, mkinitcpio, kmod, util-linux, zstd. The first boot (`thor-firstboot.service`, once): grows the root partition and its ext4 to the card; makes `/swapfile`, 16 GiB (only if 8 GiB stay free beside it), in fstab; puts `resume=LABEL=THOR_ROOT resume_offset=<first block>` on the command line. The power group's write access to what ClamShell's settings set (cpufreq caps, CPUs' online, the GPU's devfreq cap, the battery's charge limit and charge current, the power key's wakeup; `73-thor-power.rules`); the sticks' range (`/usr/lib/modprobe.d/thor-rsinput.conf`); zram (zstd, priority 100, before the swap file) and swapping tuned for it (Armada's values); the SD card's scheduler (BFQ, 4 MB readahead); PipeWire's buffers (Armada's, against crackling after sleep); sleep (logind: power button and lid do `sleep` = suspend-then-hibernate, else suspend; long press powers off; s2idle; `HibernateDelaySec=30min`); a log of each wake's cause (`/var/log/thor-wake.log`); the checks at each boot (`thor-selftest`: see "Day one"); the account helper `thor-account` (pkexec, polkit: the password and sshd, for ClamShell's Setup tab); the touchscreens' hwdb entry, uinput for the input group, USB controller autosuspend |
+| `thor-session` | tty1's autologin as `thor` into sway through uwsm (`thor-session`, from `/etc/profile.d/thor-session.sh`; `graphical-session.target` with ClamShell, mako and udiskie as its user services, enabled globally; see process-control.md); sway's config (`/usr/share/thor/sway`: DSI-2 top, DSI-1 bottom; the outputs' transforms from fbcon's rotation and the touchscreens' outputs written at each start into the runtime directory, `thor-outputs`; ClamShell's `clamshell.conf`; the user's additions in `~/.config/sway/config.d/`), foot's (through `XDG_CONFIG_DIRS`) and mako's configs (the user's own first); the home's starting files where missing, at each session start (`thor-home`: the starter `library.json` with its folders, the dock's first pins, mpv's and RetroArch's configs and RetroArch's menu theme); Steam's starter (`steam`, `steam-setup`, `steam.desktop`); the Maintenance app (`thor-maintain`: Claude Code with the `/maintain` playbook in `~/.local/share/thor/maintenance`) |
+| `clamshell` | ClamShell and the fan daemon `clamshell-fan` (a system service from early in boot: the fan's speed every 3 s from the mean of the three hottest CPU and GPU sensors, smoothed, on Armada's moderate curve with its ramp, by the mode ClamShell's Fan setting writes to `/run/clamshell-fan`; stopped or failed, `--safe` leaves it at half speed); the power group (sysusers); `clamshell-android` |
+| `thor-ucm` | the Thor's ALSA UCM profiles, ROCKNIX's patch (`0005_Add-AYN-Thor`, pinned to their commit c445081a), new files beside `alsa-ucm-conf`'s; the same profile under the Odin 2's names the card gets under AYN's U-Boot |
+| `thor-keyring` | the repository's signing key (`pacman-key --populate thor`); its private half on the publishing PC only (`~/.config/thor-repo/gnupg`) |
+| `thor-firmware` | the Thor's firmware from ROCKNIX's SM8550 release (20261001: the GPU's zap shader, ADSP/CDSP, the audio topology, Wi-Fi and Bluetooth, the video decoder's): AYN's and Qualcomm's, for this device only, so never published: built with the others, installed by the image build from `~/.cache/thor-vm/repo/local`, rebuilt on the device by maintenance after a ROCKNIX release |
+
+What the image adds:
 
 | Part | Source |
 |---|---|
-| Bootloader | not in the image: stock U-Boot (UEFI), else ROCKNIX's ABL flashed once (see below) |
-| Kernel | Armada's, as `tools/image/thor-kernel.sh` builds it (`THOR_KERNEL=~/.cache/thor-vm/kernel`; Linux 7.2.6 with their 222 patches at commit 5643b1ab5156, 2026-10-20; binder in their config): its Image, SM8550 device trees and modules in both boot ways and `/usr/lib/modules`, recorded in `/usr/local/share/thor/kernel`. Without `THOR_KERNEL`, ROCKNIX's prebuilt one (`KERNEL` of the release) |
-| UEFI boot, on the same FAT partition (an EFI system partition) | systemd-boot as `EFI/BOOT/BOOTAA64.EFI`, the kernel as `/Image` (decompressed), the Thor's device tree as `/dtbs/qcs8550-ayn-thor.dtb`, our initramfs, a loader entry with our command line; split out by `tools/image/bootimg.py split` |
-| `/KERNEL` on FAT `ROCKNIX` (GPT name `system`, legacy-boot attribute, at 16 MiB) | ROCKNIX's kernel and device trees, unchanged (ours: the gzip'd Image and the 14 device trees, put into ROCKNIX's boot image by `bootimg.py repack --kernel`); our initramfs (mkinitcpio: base udev modconf block thor-root-wait resume filesystems fsck, no autodetect) and command line (`root=LABEL=THOR_ROOT rw` + ROCKNIX's SM8550 parameters; the first boot adds `resume=`, `resume_offset=`), put into both boot ways by `thor-boot` (`tools/device/thor-boot`, repacking with `tools/image/bootimg.py`), as the image is built and again on the device after updates |
-| Kernel modules, firmware | ROCKNIX's `SYSTEM` (same release), incl. Qualcomm firmware: for this device only, not for sharing; modules ours with `THOR_KERNEL` |
-| Root: ext4 `THOR_ROOT` | `pacstrap` from Arch Linux ARM's mirrors (unpinned): base, sudo, mkinitcpio, NetworkManager, OpenSSH, sway, mako, foot, Xwayland, Mesa + `vulkan-freedreno`, PipeWire, Noto, Python, vim, grim, growpart (`cloud-guest-utils`), gptfdisk; RetroArch with cores for NES, SNES, N64, Game Boy, GBA, DS, Mega Drive, PlayStation and Dreamcast and XMB's assets (its menu in ClamShell's colours: `clamshell/retroarch/menu-theme.py`, needing Pillow), mpv, ffmpeg; for maintenance on the device git, Rust, base-devel, pacman-contrib; zram-generator |
-| System | hostname `thor`, time zone UTC (`THOR_TIMEZONE` for another), locale (`THOR_LOCALE`, default `en_US.UTF-8`), systemd-timesyncd, NetworkManager, Bluetooth; sshd installed but off (ClamShell's Remote login turns it on). Nothing personal: the image is the same for anyone |
-| System files | from `tools/device/system.sh` (also run by maintenance): the fan daemon `clamshell-fan` (`clamshell/crates/fan`, a system service from early in boot: the fan's speed every 3 s from the mean of the three hottest CPU and GPU sensors, smoothed, on Armada's moderate curve with its ramp, by the mode ClamShell's Fan setting writes to `/run/clamshell-fan`; stopped or failed, `clamshell-fan --safe` leaves it at half speed); the `power` group's write access to what ClamShell's settings set (cpufreq caps, CPUs' online, the GPU's devfreq cap, the battery's charge limit and charge current, the power key's wakeup; udev rule `73-thor-power.rules`); the sticks' range (`/etc/modprobe.d/thor-rsinput.conf`); zram (`/etc/systemd/zram-generator.conf`: zstd, priority 100, before the swap file) and swapping tuned for it (`/etc/sysctl.d/70-thor-zram.conf`, Armada's values); the SD card's scheduler (BFQ, 4 MB readahead: `74-thor-sd.rules`); PipeWire's buffers (`70-thor-buffers.conf`, Armada's, against crackling after sleep); the checks at each boot (`thor-selftest.service`, `tools/device/thor-selftest`: see "Day one"); a log of each wake's cause (`/var/log/thor-wake.log`, a system-sleep hook); Steam's starter (`/usr/local/bin/steam`, `steam-setup`, `steam.desktop`) |
-| Session | user `thor` (groups wheel, video, input, audio, power), its account locked until a password is set in ClamShell (the first-run screen or Settings, through `thor-account` and pkexec); sudo for wheel with that password (one timestamp for all the user's processes, for maintenance); tty1 autologin into sway through uwsm (`wayland-wm@sway.service`; `graphical-session.target` with ClamShell, mako and udiskie as its user services; see process-control.md); the session's files from `tools/device/session.sh` (also run by maintenance): sway config (DSI-2 top, DSI-1 bottom, ROCKNIX's output lines; Print: `clamshell ctl screenshot`; `clamshell/sway/clamshell.conf` included), mako's and foot's configs, the Maintenance app's desktop file, the dock's first pins (Steam, foot, Maintenance), the starter `library.json` (`tools/device/library.json`: Games with a folder per system in `~/Games/<system>`, Films and TV in `~/Videos`) unless there is one; ClamShell built natively for aarch64 as a user service (control pipe `$XDG_RUNTIME_DIR/clamshell-control`, `CLAMSHELL_SESSION=device`: it puts the device to sleep when idle and reads the volume and brightness keys itself), uinput rule |
-| Maintenance | this repository cloned to `~/thor` (origin `git@github.com:robinei/thor.git`); the Maintenance app (a desktop file, pinned to the dock) runs `tools/device/maintain`: Claude Code with `/maintain` (`.claude/commands/maintain.md`). pacman hooks: `thor-boot` after updates of systemd, mkinitcpio, kmod, util-linux, zstd; ROCKNIX's audio profiles put back after alsa-ucm-conf's (a copy in `/usr/local/share/thor/ucm2`). The ROCKNIX release in `/usr/local/share/thor/rocknix-release` |
-| Sleep | logind: power button and lid do `sleep` = suspend-then-hibernate, else suspend (`SleepOperation=`); long press powers off. `HibernateDelaySec=30min`. UPower: hibernate at 3 % (power off if it can't) |
-| First boot (`thor-firstboot.service`, once) | grows partition 2 and its ext4 to the card (growpart, resize2fs); makes `/swapfile`, 16 GiB (the RAM; only if 8 GiB stay free beside it), in fstab; then writes `resume=LABEL=THOR_ROOT resume_offset=<first block>` into the loader entry's options and runs `thor-boot`, which puts that command line into `/KERNEL` too. Resume works from the second boot on |
+| Bootloader | not in the image: stock U-Boot (UEFI), else ROCKNIX's ABL or OpenABL flashed once (see below) |
+| FAT `ROCKNIX` (GPT name `system`, legacy-boot attribute, at 16 MiB; an EFI system partition) | the loader's config and entry with our command line (`root=LABEL=THOR_ROOT rw` + ROCKNIX's SM8550 parameters, `fbcon=rotate:1`, `psi=1 cgroup_disable=pressure`, `ufshcd_core.uic_cmd_timeout=3000`), ROCKNIX's `/KERNEL` as the header thor-boot repacks; thor-boot then fills it |
+| Root: ext4 `THOR_ROOT` | `pacstrap` from Arch Linux ARM's mirrors (unpinned) and the local `[thor]`: base, sudo, NetworkManager, OpenSSH, Xwayland, Mesa + `vulkan-freedreno`, PipeWire, Noto, vim, grim, gptfdisk; RetroArch with cores for NES, SNES, N64, Game Boy, GBA, DS, Mega Drive, PlayStation and Dreamcast and XMB's assets, mpv, ffmpeg; evtest, alsa-utils; for maintenance pacman-contrib, base-devel, squashfs-tools, git; the Thor's packages (their dependencies bring sway, uwsm, mako, foot, udiskie, zram-generator) |
+| System | hostname `thor`, time zone UTC (`THOR_TIMEZONE` for another), locale (`THOR_LOCALE`, default `en_US.UTF-8`), systemd-timesyncd, NetworkManager, Bluetooth; sshd installed but off; UPower: hibernate at 3 % (power off if it can't); `[thor]` in pacman.conf |
+| User | `thor` (groups wheel, video, input, audio, power), its account locked until a password is set in ClamShell's Setup tab; sudo for wheel with that password (one timestamp for all the user's processes, for maintenance); the session's packages name it |
 
-Built once (2026-10-14, ROCKNIX 20261001, kernel 7.2.0): `~/.cache/thor-vm/aarch64/thor-sd.img`, 12 GB
-(2.5 GB used). Checked from the host and in the build machine: GPT with partition 1 an EFI system
+The image: `~/.cache/thor-vm/thor-sd.img`, 12 GB. Its first build (2026-10-14, ROCKNIX 20261001,
+kernel 7.2.0, before the packages: 2.5 GB used). Checked from the host and in the build machine: GPT with partition 1 an EFI system
 partition (GPT name `system`, legacy-boot attribute, FAT label `ROCKNIX`) holding `KERNEL`,
 `EFI/BOOT/BOOTAA64.EFI`, `Image`, `dtbs/qcs8550-ayn-thor.dtb`, `initramfs-thor.img`, `loader/`; partition
 2 `THOR_ROOT` with ROCKNIX's modules (7.2.0), its firmware (161 MB: `qcom/sm8550/a740_zap.mbn` for the
@@ -123,7 +138,7 @@ What ROCKNIX's system showed (used by the build):
 - Its sway outputs are written at session start by `usr/lib/autostart/common/111-sway-init`: the
   transform from `/sys/class/graphics/fbcon/rotate` (1/2/3: 90/180/270), and for the Thor the
   touchscreens `0:0:top_touchscreen` on DSI-2 and `0:0:bottom_touchscreen` on DSI-1 (bottom one's events
-  off unless something shows there). Our image does the same (`~/.local/bin/thor-outputs`, rotating both
+  off unless something shows there). Our session does the same (`thor-outputs`, rotating both
   panels by fbcon's angle).
 
 Known issues and risks, to check first:
@@ -131,7 +146,7 @@ Known issues and risks, to check first:
 1. Our ramdisk is meant to be unpacked over the kernel's built-in initramfs, so our `/init` wins. If not,
    ROCKNIX's init runs, looks for its own `SYSTEM`, and the boot fails (ABL path only; the UEFI path
    passes our initramfs as the only one... unless the built-in one still unpacks first: same question).
-   Our own kernel build (`THOR_KERNEL`) has no built-in initramfs, so there it doesn't arise.
+   Our own kernel build (linux-thor) has no built-in initramfs, so there it doesn't arise.
 2. Early storage: settled. sdhci-msm is built into ROCKNIX's kernel (its messages are in the Image), as
    are ext4 and f2fs.
 3. Audio: ROCKNIX's UCM profiles are copied over `alsa-ucm-conf`'s (a pacman hook puts them back after
@@ -170,9 +185,9 @@ Known issues and risks, to check first:
    `systemctl stop clamshell-fan` leaves it at half speed. How loud Auto is at a game's usual
    temperature, and whether the hottest sensors' mean lags a GPU spike too long.
 10. Autologin without a password (a handheld's): whoever holds the device has the session. sudo and ssh
-    need the password, which the first-run screen offers to set (skippable).
+    need the password, which ClamShell's Setup tab (opened on first start) offers to set (skippable).
 11. Steam: the client isn't in the image (it is Valve's, downloaded into the user's home); its first
-    start (`/usr/local/bin/steam`, from the dock's pin or a Steam game) runs `steam-setup` in a terminal
+    start (`steam`, from the dock's pin or a Steam game) runs `steam-setup` in a terminal
     first (see "Steam" below). Its downloads and checksums were tried on 2026-10-20 (on the PC, into a
     scratch home); the client itself has never run here.
 
@@ -200,14 +215,14 @@ Known issues and risks, to check first:
       as Armada's.) Needs `bc` on the PC (the build computes the timer
       constants and the OIDs' encodings with it; built 2026-10-19 with a stand-in for those two, checked
       against their known values).
-      Build it, then the image with it: `tools/image/thor-kernel.sh` (into `~/.cache/thor-vm/kernel`),
-      `THOR_KERNEL=~/.cache/thor-vm/kernel tools/vm/vm.py --arch aarch64 thor-image`.
+      Build it, then its package and the image: `tools/image/thor-kernel.sh` (into
+      `~/.cache/thor-vm/kernel`), `tools/repo/build.sh linux-thor`,
+      `tools/image/image.sh`.
       Checked on the PC: the config matches ROCKNIX's embedded one except for binder, DMA-BUF heaps,
       hostname, initramfs, release and compiler-dependent options (clang turns on BTI and the 32-bit
       vDSO); the same 275 modules; the Thor's device tree byte-identical to the one in ROCKNIX's
       `/KERNEL`; `/KERNEL` repacked with our kernel by `bootimg.py repack --kernel`, and split back to the
-      same Image and device tree. Not done: an SD image with it (thor-image.sh's `THOR_KERNEL` path not
-      run end to end). Unverified until the device: that it boots at all (a clang build of a kernel
+      same Image and device tree. An SD image with it: built 2026-10-20 (Armada's, 7.2.6-thor). Unverified until the device: that it boots at all (a clang build of a kernel
       ROCKNIX only builds with GCC), and the rest as for ROCKNIX's kernel; binderfs and Waydroid on it.
 - [x] Find out what the stock Linux boot mode is. Done 2026-10-20 (see "How the boot works"): AYN's U-Boot
       through the fastboot menu's Loader switch, booting `BOOTAA64.EFI`; it needs an unlocked bootloader;
@@ -271,7 +286,7 @@ Done in userspace instead (2026-10-20), so no patch of ours:
       Armada's device tree doesn't (they calibrate through rsinput's module parameters); without either,
       games see about 73 % of the sticks' travel (±1024 of the driver's ±1408). Ours: the same
       parameters, `axis_*_min=-1024 axis_*_max=1024`, in `/etc/modprobe.d/thor-rsinput.conf`
-      (`tools/device/system.sh`). Check with evtest that the corners reach the axes' ends.
+      (thor-system). Check with evtest that the corners reach the axes' ends.
 - [x] Armada's `system-sleep/50-armada-powerbutton-suspend` (no wake by the power key with the lid
       closed): ClamShell turns the power key's wakeup off as the lid closes and on as it opens
       (`clamshell-system::lid`). `40-armada-wake-ledger` (what woke it): our `thor-wake-log` hook,
@@ -327,7 +342,7 @@ To know:
    (`swaymsg -t get_inputs`, `evtest`), the gamepad's device and buttons, sound devices, Wi-Fi.
 6. Boot our image from SD. If it doesn't come up, the known issues above are the suspects, in order.
    Serial console: none known; a USB keyboard and the screen, or ssh over USB Ethernet (after setting
-   a password and turning Remote login on in ClamShell's first-run screen and Settings). Each boot runs
+   a password and turning Remote login on in ClamShell's Setup tab). Each boot runs
    `thor-selftest` (from early on, not waited for): a pass at once (the kernel, its command line), and
    one 90 s later (firmware and remote processors, both screens and backlights, the input devices by
    name, the fan, the battery and the power group's access, zram and the swap file, the SD card's mode
@@ -343,11 +358,10 @@ To know:
    PlayStation core (Beetle PSX HW: `scph5501.bin` or another it lists, in `~/.config/retroarch/system`;
    the old PCSX ReARMed, which didn't, is a 2016 package in Arch Linux ARM that no longer installs beside
    `libretro-core-info`).
-8. Maintenance: set a password (ClamShell: Settings, Password; the Maintenance app asks it for sudo);
-   install Claude Code (`curl -fsSL https://claude.ai/install.sh | bash`) and log in; to push from the
-   device, make its ssh key (`ssh-keygen -t ed25519`), add it to the GitHub repository (a deploy key with
-   write access) and set `~/thor`'s origin to `git@github.com:robinei/thor.git` (the image's is https,
-   pull only); then a first `/maintain` from the dock's Maintenance app.
+8. Maintenance: set a password (ClamShell's Setup tab; the Maintenance app asks it for sudo); install
+   Claude Code (`curl -fsSL https://claude.ai/install.sh | bash`) and log in; then a first `/maintain`
+   from the dock's Maintenance app (it updates through pacman; nothing of this repository is on the
+   device but its packages).
 9. Steam, the native ARM64 client first (see "Steam").
 
 ## Steam
@@ -365,8 +379,8 @@ system (Valve's FEX compatibility tool uses it; Armada packages it, Thorch takes
 Arch Linux ARM package, so not here for now. The x86 client under FEX (Canonical's snap) is the
 fallback, slower (its UI emulated).
 
-Ours: `tools/device/steam-setup`, after Thorch's installer for Arch Linux ARM, run as the user on the
-first start of `/usr/local/bin/steam` (`tools/device/steam`, in a terminal):
+Ours: `steam-setup` (thor-session), after Thorch's installer for Arch Linux ARM, run as the user on the
+first start of `steam` (thor-session too, in a terminal):
 - Valve's runtime for the client (steamrt3c arm64, `repo.steampowered.com/steamrt3c/images/<version>/`,
   checked against its SHA256SUMS) and the client's binaries (the beta manifest's
   `bins_linuxarm64_linuxarm64` zip, checked against the manifest's sha2) into `~/.local/share/Steam`.
@@ -637,5 +651,6 @@ Held back until real use shows whether they are worth what they cost.
 - Pocknix (Arch Linux ARM for SM8250/SM8550 handhelds): <https://github.com/shuuri-labs/pocknix-os>
 - Kettle Linux's Thor notes (stock U-Boot/UEFI, screens, touch, audio, power, gamepad):
   <https://github.com/kettlelinux/kettlelinux/blob/main/docs/THOR.md>
-- Our tools: `tools/vm/vm.py` (virtual Thor, x86-64 and aarch64; `thor-image`), `tools/image/thor-image.sh`,
-  `tools/image/bootimg.py`, `clamshell/tests/nested-sway.sh`
+- Our tools: `tools/vm/vm.py` (virtual Thor, x86-64 and aarch64; `packages`, `thor-image`),
+  `tools/repo/` (building, indexing and publishing the packages), `tools/image/thor-image.sh`,
+  `tools/image/thor-kernel.sh`, `packages/` (the PKGBUILDs), `clamshell/tests/nested-sway.sh`

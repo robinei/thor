@@ -1,0 +1,7 @@
+#!/bin/bash
+build() {
+    add_runscript
+}
+help() {
+    echo "Waits up to 10 s for the THOR_ROOT filesystem, for resume."
+}

@@ -1,0 +1,6 @@
+[Unit]
+Description=ClamShell failed: the session ends, the console says why
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/thor-session --clamshell-failed

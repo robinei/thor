@@ -35,7 +35,7 @@ environment in the user manager's (`uwsm finalize` in sway's config); ClamShell,
 user services of that target, in uwsm's `session-graphical.slice`, started once it is reached and
 stopped with it. As the session ends (sway exits or crashes, `uwsm stop`), uwsm stops the app slices
 first, so every launch (in `app-graphical.slice`) ends before sway does; then the console's autologin
-starts a new session (`tools/device/thor-session`, from the login's profile). Unless it can't go on:
+starts a new session (`thor-session`, thor-session's package, from the login's profile). Unless it can't go on:
 ended 3 times within 2 minutes (sway or uwsm dying as they start), the session isn't started again;
 ClamShell failing 4 times within a minute (watchdog restarts too), systemd gives up and
 `clamshell-failed.service` stops the session. Either way the console stays on tty1, saying why (the last

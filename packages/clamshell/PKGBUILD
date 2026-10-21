@@ -1,0 +1,48 @@
+# ClamShell (this repository's clamshell/): the session's program and the fan daemon, with the fan's
+# system service, and clamshell-android (Waydroid's apps as ClamShell's). Built from the checkout this
+# PKGBUILD is in.
+pkgname=clamshell
+pkgver=0
+pkgrel=1
+pkgdesc="The AYN Thor's handheld session: game shelf, second screen, gamepad, the fan daemon"
+arch=(aarch64 x86_64)
+url=https://github.com/robinei/thor
+license=(LicenseRef-unknown)
+depends=(libxkbcommon dbus gcc-libs glibc)
+makedepends=(cargo git)
+optdepends=('waydroid: Android apps (clamshell-android)')
+install=clamshell.install
+options=(!lto)
+
+# The checkout: the one this PKGBUILD is in, or THOR_REPO (a build from a copy of packages/).
+_repo() { realpath "${THOR_REPO:-$startdir/../..}"; }
+
+# (safe.directory: the checkout may be another user's, as through the build machine's share.)
+_git() { git -c safe.directory="$(_repo)" -C "$(_repo)" "$@"; }
+
+pkgver() {
+    printf 'r%s.%s' "$(_git rev-list --count HEAD)" "$(_git rev-parse --short=7 HEAD)"
+}
+
+# Built for the package's architecture, natively or not (tools/repo/build.sh cross-compiles it, its linker
+# and sysroot given by cargo's environment).
+_target() { echo "$CARCH-unknown-linux-gnu"; }
+
+build() {
+    cd "$(_repo)/clamshell"
+    # (CARGO_TARGET_DIR: a target dir kept between builds.)
+    CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$srcdir/target} cargo build --release --locked --target "$(_target)"
+}
+
+package() {
+    local repo target=${CARGO_TARGET_DIR:-$srcdir/target}/$(_target)
+    repo=$(_repo)
+    install -Dm755 -t "$pkgdir/usr/bin" "$target/release/clamshell" "$target/release/clamshell-fan" \
+        "$repo/clamshell/android/clamshell-android"
+    install -Dm644 -t "$pkgdir/usr/share/clamshell/python" "$repo/clamshell/android/pyclip.py"
+    install -Dm644 -t "$pkgdir/usr/lib/systemd/system" "$startdir/clamshell-fan.service"
+    install -Dm644 "$startdir/clamshell-fan.tmpfiles" "$pkgdir/usr/lib/tmpfiles.d/clamshell-fan.conf"
+    # The power group: what ClamShell's settings set (cpufreq, devfreq, the battery, the fan's mode), given
+    # to it by thor-system's udev rule; the session's user is in it.
+    install -Dm644 "$startdir/clamshell.sysusers" "$pkgdir/usr/lib/sysusers.d/clamshell.conf"
+}

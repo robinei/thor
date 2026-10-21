@@ -1,0 +1,46 @@
+#!/bin/bash
+# Puts the kernel (linux-thor's), our initramfs and the command line in force on the root's card's FAT
+# partition, both ways the card boots: as files for systemd-boot (which it updates too: /Image, the
+# Thor's device tree, /initramfs-thor.img; the loader entry's options line is the command line), and in
+# /KERNEL for the ABL, repacked (checked before it replaces the old one). Run as root. pacman runs it after
+# updates of the kernel or of what the initramfs and the boot loader are made of (90-thor-boot.hook); the
+# first boot, after putting the swap file's place on the command line; the image build, once.
+set -euo pipefail
+# The kernel: the only one there is (linux-thor).
+kver=$(ls /usr/lib/modules)
+[ "$(echo "$kver" | wc -l)" = 1 ] || { echo "thor-boot: expected one kernel in /usr/lib/modules, found: $kver"; exit 1; }
+modules=/usr/lib/modules/$kver
+# (Another kernel, as in the test machine's image: its own package and mkinitcpio boot it.)
+[ -f "$modules/Image" ] || { echo "thor-boot: not linux-thor's kernel: nothing to do"; exit 0; }
+echo "thor-boot: kernel and initramfs $kver"
+mkinitcpio -k "$kver" -c /usr/lib/thor/mkinitcpio.conf -g /boot/initramfs-thor.img > /var/log/thor-mkinitcpio.log 2>&1 \
+    || { tail -20 /var/log/thor-mkinitcpio.log; exit 1; }
+
+# The FAT partition: the first on the card the root is on (another disk may have one too).
+part=$(findmnt -nvo SOURCE /)
+disk=/dev/$(lsblk -ndo PKNAME "$part")
+case $disk in *[0-9]) esp=${disk}p1 ;; *) esp=${disk}1 ;; esac
+mnt=/run/thor-esp
+work=$(mktemp -d)
+mkdir -p "$mnt"
+mountpoint -q "$mnt" || mount "$esp" "$mnt"
+trap 'umount "$mnt"; rm -rf "$work"' EXIT
+
+cmdline=$(sed -n 's/^options //p' "$mnt/loader/entries/thor.conf")
+[ -n "$cmdline" ] || { echo "thor-boot: no options line in the loader entry"; exit 1; }
+# systemd-boot's files: the kernel (an EFI program), the Thor's device tree, the initramfs, the loader.
+mkdir -p "$mnt/dtbs" "$mnt/EFI/BOOT"
+cp "$modules/Image" "$mnt/Image"
+cp "$modules/dtbs/qcs8550-ayn-thor.dtb" "$mnt/dtbs/qcs8550-ayn-thor.dtb"
+cp /boot/initramfs-thor.img "$mnt/initramfs-thor.img"
+cp /usr/lib/systemd/boot/efi/systemd-bootaa64.efi "$mnt/EFI/BOOT/BOOTAA64.EFI"
+# The ABL's: /KERNEL (its header from the image's first one: ROCKNIX's addresses and page size) with the
+# kernel as their build makes it, the gzip'd Image with all the device trees appended (the ABL picks the
+# Thor's).
+{ gzip -c "$modules/Image"; cat "$modules"/dtbs/*.dtb; } > "$work/kernel.gz"
+python3 /usr/lib/thor/bootimg.py repack "$mnt/KERNEL" --kernel "$work/kernel.gz" --ramdisk "$mnt/initramfs-thor.img" \
+    --cmdline "$cmdline" -o "$mnt/KERNEL.new"
+python3 /usr/lib/thor/bootimg.py info "$mnt/KERNEL.new" > /dev/null
+mv "$mnt/KERNEL.new" "$mnt/KERNEL"
+sync
+echo "thor-boot: done (command line: $cmdline)"

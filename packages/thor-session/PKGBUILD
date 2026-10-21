@@ -1,0 +1,45 @@
+# The AYN Thor's session around ClamShell (root/, as installed, plus ClamShell's configs from clamshell/):
+# the first console's autologin into sway through uwsm (thor-session), sway's config for the Thor
+# (/usr/share/thor/sway), ClamShell, mako and udiskie as user services of the session, the home's starting
+# files where missing (thor-home: the starter library, the dock's pins, mpv's and RetroArch's configs),
+# foot's and mako's configs, Steam's starter and setup, the Maintenance app. Built from the checkout this
+# PKGBUILD is in.
+pkgname=thor-session
+pkgver=0
+pkgrel=1
+pkgdesc="The AYN Thor's session: autologin into sway and ClamShell, their configs, Steam's starter"
+arch=(any)
+url=https://github.com/robinei/thor
+license=(LicenseRef-unknown)
+depends=(clamshell thor-system sway uwsm mako foot udiskie xorg-xwayland python python-pillow curl unzip)
+optdepends=('retroarch: the starter library'"'"'s games'
+            'mpv: the starter library'"'"'s films and TV')
+makedepends=(git)
+install=thor-session.install
+
+# The checkout: the one this PKGBUILD is in, or THOR_REPO (a build from a copy of packages/).
+_repo() { realpath "${THOR_REPO:-$startdir/../..}"; }
+
+# (safe.directory: the checkout may be another user's, as through the build machine's share.)
+_git() { git -c safe.directory="$(_repo)" -C "$(_repo)" "$@"; }
+
+pkgver() {
+    printf 'r%s.%s' "$(_git rev-list --count HEAD)" "$(_git rev-parse --short=7 HEAD)"
+}
+
+package() {
+    local repo share=$pkgdir/usr/share/thor
+    repo=$(_repo)
+    # (Owned by root in the package, not by whoever checked it out.)
+    cp -a --no-preserve=ownership "$startdir/root/." "$pkgdir/"
+    install -Dm644 "$repo/clamshell/sway/clamshell.conf" "$share/sway/clamshell.conf"
+    install -Dm644 "$repo/clamshell/mako/config" "$share/mako/config"
+    install -Dm644 "$repo/clamshell/foot/foot.ini" "$share/xdg/foot/foot.ini"
+    install -Dm644 -t "$share/home/.config/mpv" "$repo/clamshell/mpv/mpv.conf" "$repo/clamshell/mpv/input.conf"
+    install -Dm644 "$repo/clamshell/retroarch/retroarch.cfg" "$share/home/.config/retroarch/retroarch.cfg"
+    install -Dm644 "$repo/clamshell/retroarch/autoconfig/Xbox 360 Controller (SDL).cfg" \
+        "$share/home/.config/retroarch/autoconfig/Xbox 360 Controller (SDL).cfg"
+    install -Dm755 "$repo/clamshell/retroarch/menu-theme.py" "$pkgdir/usr/lib/thor/menu-theme.py"
+    # The maintenance pass's playbook (Claude Code's /maintain, in thor-maintain's folder).
+    install -Dm644 "$repo/.claude/commands/maintain.md" "$share/maintenance/.claude/commands/maintain.md"
+}

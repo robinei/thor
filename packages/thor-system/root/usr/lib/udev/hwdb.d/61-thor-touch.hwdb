@@ -1,0 +1,5 @@
+# The touchscreens touch only: they report BTN_TOUCH, which made wlroots count a keyboard in the seat
+# (ROCKNIX 20261001's 61-thor-ft5x06.hwdb).
+evdev:name:*_touchscreen:*
+ ID_INPUT_KEYBOARD=0
+ ID_INPUT_TOUCHSCREEN=1

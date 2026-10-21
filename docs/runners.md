@@ -9,7 +9,7 @@ Steam. library.json declares three things, and ClamShell shows nothing it doesn'
 - `sources`: where items come from, and which place they go to.
 
 Settings come in three levels: All, the runner, the item. The format in full, with every field:
-`clamshell/crates/system/src/library/content.rs`; a whole library: `tools/device/library.json`.
+`clamshell/crates/system/src/library/content.rs`; a whole library: `packages/thor-session/root/usr/share/thor/home/.config/clamshell/library.json`.
 
 | Item | Content | Runner |
 |---|---|---|
@@ -48,7 +48,7 @@ A runner says nothing about where things are or show: that is the sources' and p
 ]
 ```
 
-The starter library.json (`tools/device/library.json`, installed on the device where there is none)
+The starter library.json (`packages/thor-session/root/usr/share/thor/home/.config/clamshell/library.json`, put in the home where there is none)
 declares ClamShell's set: Desktop, Steam, one per RetroArch system (NES, SNES, Nintendo 64, Game Boy, Game
 Boy Advance, Nintendo DS, Mega Drive, PlayStation, Dreamcast), Video and Music (mpv), Images (imv), PDF
 (zathura), Text (`less` in foot), last Other files (`xdg-open`, any name). A runner whose program isn't on

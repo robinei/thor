@@ -1,0 +1,2 @@
+# The fan daemon's mode (ClamShell's Fan setting writes it: the power group).
+f /run/clamshell-fan 0664 root power - auto

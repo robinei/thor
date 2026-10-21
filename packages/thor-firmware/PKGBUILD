@@ -1,0 +1,38 @@
+# The AYN Thor's firmware as ROCKNIX's SM8550 release has it (the GPU's zap shader signed for the Thor,
+# the audio and compute DSPs', the audio topology, Wi-Fi and Bluetooth, the video decoder's): AYN's and
+# Qualcomm's, for this device only, so never published with our packages: built where it is installed
+# (the image build; maintenance, after a ROCKNIX release), from ROCKNIX's release download.
+pkgname=thor-firmware
+pkgver=20261001
+pkgrel=1
+pkgdesc="The AYN Thor's firmware, from ROCKNIX's SM8550 release (not redistributable)"
+arch=(any)
+url=https://github.com/ROCKNIX/distribution
+license=(LicenseRef-proprietary)
+makedepends=(squashfs-tools)
+# (Overlapping files: ROCKNIX's versions of these, tested with the Thor, are kept.)
+conflicts=(linux-firmware linux-firmware-qcom linux-firmware-atheros linux-firmware-realtek)
+options=(!strip)
+source=("https://github.com/ROCKNIX/distribution/releases/download/$pkgver/ROCKNIX-SM8550.aarch64-$pkgver.tar")
+noextract=("ROCKNIX-SM8550.aarch64-$pkgver.tar")
+sha256sums=(188f0b04965466a3dddd72a23835f85b47408f98ddf50d706d030e850e757894)
+
+prepare() {
+    rm -rf system
+    tar -xf "ROCKNIX-SM8550.aarch64-$pkgver.tar" --wildcards '*/target/SYSTEM' --strip-components=2
+    # The firmware: part in usr/lib/firmware, part in the kernel overlay (usr/lib/firmware may be a link
+    # into it).
+    unsquashfs -q -d system SYSTEM usr/lib/kernel-overlays/base/lib/firmware usr/lib/firmware > /dev/null
+}
+
+package() {
+    local fw=$pkgdir/usr/lib/firmware
+    mkdir -p "$fw"
+    if [ -d system/usr/lib/firmware ] && [ ! -L system/usr/lib/firmware ]; then
+        cp -a --no-preserve=ownership system/usr/lib/firmware/. "$fw/"
+    fi
+    cp -a --no-preserve=ownership system/usr/lib/kernel-overlays/base/lib/firmware/. "$fw/"
+    # (The wireless regulatory database is wireless-regdb's, Arch's.)
+    rm -f "$fw"/regulatory.db "$fw"/regulatory.db.p7s
+    echo "$pkgver" > "$pkgdir/usr/lib/firmware/thor-rocknix-release"
+}

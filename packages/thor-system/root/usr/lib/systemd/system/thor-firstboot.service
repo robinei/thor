@@ -1,0 +1,12 @@
+[Unit]
+Description=The card's first boot: grow the root, make the swap file, resume on the command lines
+ConditionPathExists=!/var/lib/thor-firstboot
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/thor/thor-firstboot
+StandardOutput=journal+console
+
+[Install]
+WantedBy=multi-user.target
