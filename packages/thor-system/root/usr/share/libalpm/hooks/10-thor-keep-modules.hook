@@ -1,8 +1,7 @@
-# Before linux-thor is updated or removed: a copy of the running kernel's modules, which the card still
-# boots until thor-boot has put the new kernel there (thor-modules).
+# Before linux-thor is updated: a copy of the running kernel's modules and of the installed one's (the
+# card boots that until thor-boot has put the new kernel there: thor-modules).
 [Trigger]
 Operation = Upgrade
-Operation = Remove
 Type = Package
 Target = linux-thor
 

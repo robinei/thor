@@ -5,6 +5,8 @@ DefaultDependencies=no
 After=systemd-tmpfiles-setup.service
 Conflicts=shutdown.target
 Before=sysinit.target shutdown.target
+# (Started again however often it fails: never left stopped, the fan at --safe's half speed.)
+StartLimitIntervalSec=0
 
 [Service]
 ExecStart=/usr/bin/clamshell-fan

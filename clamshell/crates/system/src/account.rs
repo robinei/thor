@@ -1,4 +1,4 @@
-//! The account through the image's root helper (tools/device's `thor-account`), run with pkexec (polkit
+//! The account through the root helper `/usr/lib/thor/thor-account` (thor-system's), run with pkexec (polkit
 //! lets the active session's user run it without asking): `status` reads whether the session's user has
 //! a password and whether remote login (sshd) is on; `password` sets it (the current one first, when
 //! there is one: on its stdin, a line each); `ssh on` / `ssh off`. Off the device (no helper) the account

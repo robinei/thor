@@ -8,14 +8,15 @@
 #
 # Following Armada: tools/repo/follow-armada.sh [COMMIT] sets _armada, _armada_time and _kver here and the
 # checksums, after reading what changed in their packages/kernel; then build, and try it on the device. A
-# change of ours alone (a patch below, our config lines): pkgrel up.
+# change of ours alone (a patch below, our config lines): pkgrel up (it is in the kernel's release, so the
+# new build's modules go beside the old ones).
 #
 # As Armada's scripts/build-kernel.sh: their patches/series in order, each applied without fuzz; their
 # dts/*.dts(i) copied into arch/arm64/boot/dts/qcom, then their dts/*.patch; defconfig with
 # config/armada-kernel.config.overrides merged, each =y checked. Then ours: the .patch files in source=,
-# in order (none yet: they come with the device); config.thor; a release of its own per build,
-# -thor-<Armada's commit>[-<our patches' hash>], so that an update's modules go beside the running
-# kernel's (thor-system keeps those until the new kernel is on the card). Differing from theirs: LLVM
+# in order (none yet: they come with the device); config.thor; a release of its own per package version,
+# -thor-<Armada's commit>-<pkgrel>, so that an update's modules go beside the running and installed
+# kernels' (thor-system keeps those until the new kernel is on the card). Differing from theirs: LLVM
 # instead of GCC; no built-in initramfs (ours comes from the boot loader: thor-boot); modules stripped of
 # debug information (as theirs). The Image and the SM8550 device trees go beside the modules
 # (/usr/lib/modules/<release>), where thor-boot (thor-system) takes them for both ways the card boots.
@@ -25,7 +26,7 @@ _armada=d2bcf6fd33435f670f59a164c926842af91730f1
 # (Armada's commit's time: the version after the kernel's, so that their newer commit is a newer package.)
 _armada_time=202610202319
 pkgver=$_kver.$_armada_time
-pkgrel=2
+pkgrel=3
 pkgdesc="Armada's Linux kernel for the AYN Thor (SM8550), with its modules and device trees"
 arch=(aarch64)
 url=https://github.com/armada-os/armada
@@ -71,17 +72,15 @@ prepare() {
         echo "dtb-\$(CONFIG_ARCH_QCOM) += $(basename "$patch" .dts).dtb"
     done >> "$src/arch/arm64/boot/dts/qcom/Makefile"
     # Ours, after theirs.
-    local mine=()
     for patch in "${source[@]}"; do
         [[ $patch == *.patch ]] || continue
         echo "ours: $patch"
         _apply "$srcdir/$patch"
-        mine+=("$srcdir/$patch")
     done
 
-    # The config: arm64's defconfig, Armada's overrides, ours, the release.
-    local release=-thor-${_armada:0:7}
-    [ ${#mine[@]} -eq 0 ] || release+=-$(cat "${mine[@]}" | sha256sum | cut -c1-7)
+    # The config: arm64's defconfig, Armada's overrides, ours, the release (Armada's commit and pkgrel:
+    # each version of this package its own modules' folder).
+    local release=-thor-${_armada:0:7}-$pkgrel
     {
         # (kconfig can't read comments after an assignment.)
         sed -E '/^[[:space:]]*CONFIG_[A-Z0-9_]+=/ s/[[:space:]]*#.*$//' "$k/config/armada-kernel.config.overrides"
@@ -104,10 +103,14 @@ _dtbs() {
     for dts in "$srcdir/armada-$_armada"/packages/kernel/dts/qcs8550-*.dts; do echo "qcom/$(basename "$dts" .dts).dtb"; done
 }
 
+# (Reproducible: who and where built it not recorded in /proc/version, its time the source's:
+# SOURCE_DATE_EPOCH, makepkg's, tools/repo/build.sh sets it to the commit's.)
+export KBUILD_BUILD_USER=thor KBUILD_BUILD_HOST=thor
+
 build() {
     # (makepkg's flags are for userspace; the kernel takes its own.)
     unset CFLAGS CXXFLAGS LDFLAGS RUSTFLAGS
-    DTC_FLAGS=-@ _make Image modules $(_dtbs)
+    KBUILD_BUILD_TIMESTAMP=$(date -u -d "@${SOURCE_DATE_EPOCH:-0}") DTC_FLAGS=-@ _make Image modules $(_dtbs)
 }
 
 package() {
@@ -119,15 +122,17 @@ package() {
     install -m644 "$src/arch/arm64/boot/Image" "$modules/Image"
     for dtb in $(_dtbs); do install -Dm644 "$src/arch/arm64/boot/dts/$dtb" "$modules/dtbs/$(basename "$dtb")"; done
     install -m644 "$src/.config" "$modules/config"
-    printf "Armada's kernel, commit %s: Linux %s; built %s with %s\n" "$_armada" "$_kver" "$(date -u +%F)" \
-        "$(clang --version | head -1)" > "$modules/thor-source"
+    printf "Armada's kernel, commit %s: Linux %s; built with %s from github.com/robinei/thor %s\n" "$_armada" "$_kver" \
+        "$(clang --version | head -1)" "${THOR_COMMIT:-(a checkout)}" > "$modules/thor-source"
     # GPL-2.0: the kernel's license files, and where its corresponding source is.
     local licenses=$pkgdir/usr/share/licenses/$pkgname
     install -Dm644 "$src/COPYING" "$licenses/COPYING"
     cp -r --no-preserve=ownership "$src/LICENSES" "$licenses/"
     printf '%s\n' "The corresponding source of this kernel (GPL-2.0): its source package," \
-        "$pkgname-$pkgver-$pkgrel.src.tar.gz, at https://github.com/robinei/thor/releases/tag/packages" \
-        "(this PKGBUILD, kernel.org's tarball, Armada's repository at the commit above, our patches and config)." \
+        "$pkgname-$pkgver-$pkgrel.src.tar.gz, at https://github.com/robinei/thor/releases/tag/packages while" \
+        "this version is the repository's (this PKGBUILD, kernel.org's tarball, Armada's repository at commit" \
+        "$_armada, our patches and config); and always: packages/linux-thor at github.com/robinei/thor" \
+        "commit ${THOR_COMMIT:-(see thor-source)}, whose sources are checksummed and public." \
         > "$licenses/SOURCE"
     # (No pkgbase file: mkinitcpio's own hook would make a preset for it and look for /boot/vmlinuz-*;
     # thor-boot makes our initramfs.)

@@ -35,8 +35,9 @@ Your notes are `changelog.md` in this folder (the device's own).
    game might be running (ClamShell shows it; `systemctl --user list-units 'clamshell-game-*'`). Then
    `sudo pacman -Syu --noconfirm`. Read the output for warnings, failed hooks and `.pacnew` notices. If
    thor-boot ran, it must end with "thor-boot: done": if it failed, the card still boots the previous
-   files (`/KERNEL` is replaced only once the new one is made and checked), but fix it before the user
-   reboots (its log: `/var/log/thor-mkinitcpio.log`). If the kernel, systemd, mesa or the boot changed,
+   kernel (thor-boot replaces the card's files only once all the new ones are written and checked, and
+   the previous kernel's modules are kept: thor-modules), but fix it before the user reboots (its log:
+   `/var/log/thor-mkinitcpio.log`). If the kernel, systemd, mesa or the boot changed,
    tell the user a reboot is due (don't reboot yourself). If `clamshell` or `thor-session` changed, say
    that restarting ClamShell (`systemctl --user restart clamshell`) takes the new one: both screens
    redraw, apps and games keep running (each in a scope of its own, this terminal too); ask first.

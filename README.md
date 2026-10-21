@@ -1,7 +1,7 @@
 # thor (working name)
 
 Linux on the AYN Thor: ClamShell, the program that runs the device's session, plus the setup around it
-(Arch Linux ARM, packages built on the device). What to do when the device arrives, and what is left to
+(Arch Linux ARM and our own packages, built on a PC and kept current by pacman). What to do when the device arrives, and what is left to
 test on it: `docs/thor-gameplan.md`.
 
 This README is kept short while things change; how each part behaves is in its module's documentation

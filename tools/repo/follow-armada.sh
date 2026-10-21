@@ -22,18 +22,26 @@ kver=$(tar -xOzf "$work/armada.tar.gz" "armada-$commit/packages/kernel/BASE.env"
 kernel_sum=$(curl -fsSL "https://cdn.kernel.org/pub/linux/kernel/v${kver%%.*}.x/sha256sums.asc" \
     | awk -v f="linux-$kver.tar.xz" '$2 == f { print $1 }')
 [ -n "$kernel_sum" ] || { echo "no checksum for linux-$kver.tar.xz on kernel.org"; exit 1; }
-python3 - "$PKGBUILD" "$commit" "$time" "$kver" "$armada_sum" "$kernel_sum" <<'EOF'
+# (The PKGBUILD's sources, in order, by their names: which checksum is which.)
+sources=$(bash -c 'source "$1"; for s in "${source[@]}"; do echo "${s%%::*}"; done' _ "$PKGBUILD" | sed 's|.*/||')
+python3 - "$PKGBUILD" "$commit" "$time" "$kver" "$armada_sum" "$kernel_sum" "$sources" <<'EOF'
 import re, sys
-path, commit, time, kver, armada_sum, kernel_sum = sys.argv[1:]
+path, commit, time, kver, armada_sum, kernel_sum, sources = sys.argv[1:]
+names = sources.split()
 s = open(path).read()
 s = re.sub(r"^_armada=.*$", f"_armada={commit}", s, flags=re.M)
 s = re.sub(r"^_armada_time=.*$", f"_armada_time={time}", s, flags=re.M)
 s = re.sub(r"^_kver=.*$", f"_kver={kver}", s, flags=re.M)
 s = re.sub(r"^pkgrel=.*$", "pkgrel=1", s, flags=re.M)
-# The checksums: kernel.org's tarball's first, Armada's archive's third (source= order).
+# The checksums of kernel.org's tarball and Armada's archive, at their sources' places.
 m = re.search(r"sha256sums=\(([^)]*)\)", s)
 sums = m.group(1).split()
-sums[0], sums[2] = kernel_sum, armada_sum
+assert len(sums) == len(names), (names, sums)
+for i, name in enumerate(names):
+    if re.fullmatch(r"linux-[0-9.]+\.tar\.xz", name):
+        sums[i] = kernel_sum
+    elif name.startswith("armada-") or re.fullmatch(r"[0-9a-f]{40}\.tar\.gz", name):
+        sums[i] = armada_sum
 s = s[:m.start(1)] + ("\n" + " " * 12).join(sums) + s[m.end(1):]
 open(path, "w").write(s)
 EOF

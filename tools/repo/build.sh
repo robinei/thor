@@ -41,6 +41,10 @@ trap 'rm -rf "$work"' EXIT
 # versions.)
 git clone -q --shared "$CHECKOUT" "$work/src"
 echo "building $(git -C "$work/src" log -1 --format='%h %s')"
+# (The commit's time as the build's, for reproducible builds; the commit named in what is built.)
+SOURCE_DATE_EPOCH=$(git -C "$work/src" log -1 --format=%ct)
+THOR_COMMIT=$(git -C "$work/src" rev-parse HEAD)
+export SOURCE_DATE_EPOCH THOR_COMMIT
 [ -z "$(git -C "$CHECKOUT" status --porcelain)" ] || echo "(uncommitted changes in $CHECKOUT are left out: commit them to build them)"
 cp -r "$work/src/packages/." "$work/"
 # makepkg's config, its own (not this PC's: no tuning for this CPU in packages for others): the
