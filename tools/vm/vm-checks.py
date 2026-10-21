@@ -926,19 +926,6 @@ class Checks:
         out = capture(f"evtest {mouse}", 2.5, lambda: pad("press lb", "gyro 0 -60 0", "sleep 600", "gyro 0 0 0", "release lb"))
         moved = sum(int(line.rsplit(" ", 1)[1]) for line in out.splitlines() if "(REL_X)" in line and "value" in line)
         self.check("  the gyro with LB held moves the pointer", moved > 100, f"pointer moved {moved} px")
-        # Sleep: the gyro closed before it (ClamShell's delay lock, so the Thor's sensor hub doesn't sample
-        # while asleep), found again after it.
-        since = now()
-        sh("sudo -n systemctl suspend")
-        time.sleep(4)
-        vm.wake(None)
-        closed = logged(since, "pad: the gyro closed for sleep", 20)
-        until(lambda: sh("echo up").strip() == "up", 30)
-        time.sleep(2)
-        out = capture(f"evtest {mouse}", 2.5, lambda: pad("press lb", "gyro 0 -60 0", "sleep 600", "gyro 0 0 0", "release lb"))
-        again = sum(int(line.rsplit(" ", 1)[1]) for line in out.splitlines() if "(REL_X)" in line and "value" in line)
-        self.check("  sleep: the gyro closed before it, and moves the pointer again after it", closed and again > 100,
-                   f"closed {closed}, then {again} px; {journal(since)[-300:]!r}")
         # The gyro's speed slid up on the edit screen's panel, the game still running: further.
         since = now()
         for line in ["tab settings", "tap setting keymap", f"tap keymap-edit {row}", "tap map-from gyro", "slide speed 300 450"]:
@@ -1198,6 +1185,20 @@ class Checks:
 
     # Bluetooth
 
+    def gyro_sleep(self):
+        """Sleep closes the gyro and waking finds it again (ClamShell's delay lock, so the Thor's sensor hub
+        doesn't sample while asleep): a suspend and a wake, read from ClamShell's log. Last of all: QEMU
+        sometimes resets the machine a few minutes after a resume, which would cut off the checks after it."""
+        if not self.check("gyro over sleep: the fake pad grabbed", plug_pad()):
+            return
+        since = now()
+        sh("sudo -n systemctl suspend")
+        time.sleep(4)
+        vm.wake(None)
+        closed = logged(since, "pad: the gyro closed for sleep", 20)
+        found = logged(since, "pad: gyro from clamshell fake pad Motion Sensors", 20)
+        self.check("  the gyro closed before sleep, found again after it", closed and found, journal(since)[-400:])
+
     def bluetooth(self):
         if "ready" not in sh("cat /run/thor-bt-device 2>/dev/null"):
             return self.check("Bluetooth: the test device (tools/vm/vm.py bluetooth)", False, "not set up")
@@ -1237,10 +1238,12 @@ bus.call_sync("org.kde.StatusNotifierWatcher", "/StatusNotifierWatcher", "org.kd
 GLib.MainLoop().run()
 """
 
+
+
 CHECKS = ["shelf_scroll", "bar_tap", "time_zone", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad", "keyboard_points", "window_rules",
           "pad_shelf", "pad_view", "pad_mouse", "pad_typing", "pad_held_key", "pad_unplug", "pad_guide", "keymaps", "keymap_layers",
           "keymap_actuations", "rumble", "launch_and_quit", "pause_hidden", "found_window", "tray_program", "clipboard",
-          "bluetooth"]
+          "bluetooth", "gyro_sleep"]
 
 
 def main():
