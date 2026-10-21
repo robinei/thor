@@ -51,7 +51,8 @@ early() {
     check "command line: psi=1" grep -qw psi=1 /proc/cmdline
     check "UFS command timeout 3000 ms" grep -qx 3000 /sys/module/ufshcd_core/parameters/uic_cmd_timeout
     check "fbcon rotated (rotate 1)" grep -qx 1 /sys/class/graphics/fbcon/rotate
-    check "suspend is s2idle" grep -q '\[s2idle\]' /sys/power/mem_sleep
+    # (The kernel's default; systemd sets ours, s2idle, at each sleep. Whether deep is offered at all.)
+    info "sleep modes: $(cat /sys/power/mem_sleep 2> /dev/null)"
     check "PSI (/proc/pressure/memory)" test -r /proc/pressure/memory
     info "root: $(findmnt -no SOURCE,FSTYPE,OPTIONS /)"
     flush

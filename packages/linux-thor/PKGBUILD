@@ -43,9 +43,10 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         # header says what of it is ours), tested on a Thor there unless its header says otherwise:
         # the battery firmware's own charge switches (ClamShell's CLAMSHELL_CHARGE_LIMIT=firmware),
         # the bottom panel's brightness, the bottom touchscreen's lost contacts, the battery's power,
-        # FastRPC to the ADSP's sensor hub (the motion sensors). thor-*: the body's motor as an LRA
-        # (PB-OS's device tree lines), the gamepad MCU's joystick frame settable, the sensor hub's
-        # device tree nodes (PB-OS's).
+        # FastRPC to the ADSP's sensor hub (the motion sensors), deep sleep's wake by a charger and no
+        # battery notifications while asleep (0505 changes deep sleep only; 0547 any sleep). thor-*: the
+        # body's motor as an LRA (PB-OS's device tree lines), the gamepad MCU's joystick frame settable,
+        # the sensor hub's device tree nodes (PB-OS's).
         pbos-0545-power-supply-qcom_battmgr-retroid-charge-controls.patch
         thor-0001-dts-thor-lra-haptics.patch
         pbos-0620-drm-panel-ch13726a-thor-16-bit-brightness-high-byte-first.patch
@@ -53,7 +54,9 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         pbos-0546-power-supply-qcom_battmgr-power-now.patch
         thor-0002-rsinput-mcu-frame-settable.patch
         pbos-0560-misc-fastrpc-adsp-sensors-pd-routing-and-legacy-ioctl.patch
-        thor-0003-dts-thor-adsp-sensors.patch)
+        thor-0003-dts-thor-adsp-sensors.patch
+        pbos-0505-mailbox-qcom-ipcc-let-a-doorbell-wake-the-system-once-it-is-down.patch
+        pbos-0547-power-supply-qcom_battmgr-no-battery-notifications-while-asleep.patch)
 sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             SKIP
             b0503999564862cd2abeec1a920581f5943e36e5a179bb91bb8eec85c2670c38
@@ -65,7 +68,9 @@ sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             659f5142f8e34fcaf9dc970b9ff612a23ce766a5e40e6750cc4762001fc63be6
             5e2e0cb2c573285edbaefe6f5bbc7393b8b8108b65d6929d4861c7f85ed1e556
             1c0e051714030f45da3cbb051d6bb155b2578a67c4cf76973d6ded9ec1f15be1
-            9a49eff03726996373b65c9bddb70933b0da31ff323d20536e65aac5c14129d4)
+            9a49eff03726996373b65c9bddb70933b0da31ff323d20536e65aac5c14129d4
+            57ea5d13bcb9b00609bb02da07ba0b38398960f4ba17f9fadbdd79ae9677d966
+            2b9c46194548a3e6107f5929dafac44e02f83699208220f9ab35b3e7bedffecf)
 # Linus Torvalds', Greg Kroah-Hartman's (keys/pgp, as Arch's linux has them).
 validpgpkeys=(ABAF11C65A2970B130ABE3C479BE3E4300411886
               647F28654894E3BD457199BE38DBBDC86092693E)

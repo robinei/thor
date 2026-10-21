@@ -1,0 +1,228 @@
+From: lavachemist <48248311+lavachemist@users.noreply.github.com>
+Subject: [PATCH] mailbox: qcom-ipcc: let a doorbell wake deep sleep once it is down
+
+A charger plugged in while an SM8550 handheld is in deep sleep reaches
+Linux only as an ADSP doorbell (pmic_glink), and 0504 masks the summary
+irq for all of suspend-to-RAM: the plug-in went unnoticed until the next
+wake, and the charger firmware charges at about a quarter of the speed
+while the SoC sleeps (AYN Thor: 1.0-1.1 A vs 4.7 A awake).
+
+Keep 0504's mask over the entry only (late suspend to noirq suspend, where
+the entry doorbells come). From the noirq phase on, doorbells are serviced
+as in s2idle, and once the system is down (syscore) a doorbell wakes it.
+The doorbell pending at platform resume is noted in syscore resume and
+counted on the "ipcc-wake" wakeup source in noirq resume (timekeeping is
+not back in syscore resume), and logged with its client/signal, so
+userspace can tell it from other wakes. Runtime switch:
+qcom_ipcc.deep_wake. Only on the SoCs 0504 masks (SM8550/SM8750).
+
+Retroid Pocket Nova 2026-10-11: charger plugged in during deep sleep woke
+it ("deep sleep woken by client 3 signal 0", LPASS GLINK).
+---
+--- a/drivers/mailbox/qcom-ipcc.c
++++ b/drivers/mailbox/qcom-ipcc.c
+@@ -11,7 +11,9 @@
+ #include <linux/module.h>
+ #include <linux/of.h>
+ #include <linux/platform_device.h>
++#include <linux/pm_wakeup.h>
+ #include <linux/suspend.h>
++#include <linux/syscore_ops.h>
+ 
+ #include <dt-bindings/mailbox/qcom-ipcc.h>
+ 
+@@ -29,6 +31,21 @@
+ #define IPCC_CLIENT_ID_MASK		GENMASK(31, 16)
+ 
+ #define IPCC_NO_PENDING_IRQ		GENMASK(31, 0)
++
++/*
++ * A charger plugged in while the system is in deep sleep reaches Linux as
++ * an ADSP doorbell (pmic_glink). On SM8550 the summary irq is masked across
++ * suspend-to-RAM (entry doorbells abort it), so the plug-in went unnoticed
++ * until the next wake, and the charger firmware charges slowly while the SoC
++ * sleeps. deep_wake: the mask covers only the entry (late suspend to noirq
++ * suspend); from the noirq phase on a doorbell is serviced as in s2idle and,
++ * once the system is down (syscore), wakes it. Each wake by a doorbell is
++ * counted on the "ipcc-wake" wakeup source, for userspace to tell it from
++ * other wakes.
++ */
++static bool deep_wake = true;
++module_param(deep_wake, bool, 0644);
++MODULE_PARM_DESC(deep_wake, "SM8550/SM8750: an ADSP doorbell wakes suspend-to-RAM");
+ 
+ /**
+  * struct qcom_ipcc_chan_info - Per-mailbox-channel info
+@@ -51,6 +68,12 @@
+  * @num_chans:		Number of @chans elements
+  * @irq:		Summary irq
+  * @mask_on_s2ram:	Mask the summary irq across suspend-to-RAM
++ * @masked:		The summary irq is masked for suspend-to-RAM now
++ * @deep_armed:		Down in suspend-to-RAM with deep_wake
++ * @woke:		A doorbell was pending when the platform resumed
++ * @woke_hwirq:		That doorbell (client/signal)
++ * @ws:			Counts the wakes by a doorbell ("ipcc-wake")
++ * @syscore:		Arms @deep_armed and reads @woke with the system down
+  */
+ struct qcom_ipcc {
+ 	struct device *dev;
+@@ -62,6 +85,12 @@
+ 	int num_chans;
+ 	int irq;
+ 	bool mask_on_s2ram;
++	bool masked;
++	bool deep_armed;
++	bool woke;
++	u32 woke_hwirq;
++	struct wakeup_source *ws;
++	struct syscore syscore;
+ };
+ 
+ static inline struct qcom_ipcc *to_qcom_ipcc(struct mbox_controller *mbox)
+@@ -273,28 +302,91 @@
+ {
+ 	struct qcom_ipcc *ipcc = dev_get_drvdata(dev);
+ 
+-	if (ipcc->mask_on_s2ram && pm_suspend_target_state == PM_SUSPEND_MEM)
++	if (ipcc->mask_on_s2ram && pm_suspend_target_state == PM_SUSPEND_MEM) {
+ 		disable_irq(ipcc->irq);
++		ipcc->masked = true;
++	}
+ 
+ 	return 0;
+ }
+ 
++/* After the entry: doorbells are serviced again (as in s2idle). */
++static int qcom_ipcc_suspend_noirq(struct device *dev)
++{
++	struct qcom_ipcc *ipcc = dev_get_drvdata(dev);
++
++	if (ipcc->masked && READ_ONCE(deep_wake)) {
++		ipcc->masked = false;
++		enable_irq(ipcc->irq);
++	}
++
++	return 0;
++}
++
+ static int qcom_ipcc_resume_early(struct device *dev)
+ {
+ 	struct qcom_ipcc *ipcc = dev_get_drvdata(dev);
+ 
+-	if (ipcc->mask_on_s2ram && pm_suspend_target_state == PM_SUSPEND_MEM)
++	if (ipcc->masked) {
++		ipcc->masked = false;
+ 		enable_irq(ipcc->irq);
++	}
+ 
+ 	return 0;
+ }
+ 
++/* Last before the platform suspends: from here a doorbell wakes it. */
++static int qcom_ipcc_syscore_suspend(void *data)
++{
++	struct qcom_ipcc *ipcc = data;
++
++	ipcc->deep_armed = pm_suspend_target_state == PM_SUSPEND_MEM && !ipcc->masked;
++	ipcc->woke = false;
++
++	return 0;
++}
++
++/*
++ * First after the platform resumes, irqs still off: a doorbell pending now
++ * is what woke it (its handler runs once irqs are back on). Only noted here:
++ * timekeeping may not be back yet, the wakeup source counts it in noirq
++ * resume.
++ */
++static void qcom_ipcc_syscore_resume(void *data)
++{
++	struct qcom_ipcc *ipcc = data;
++	u32 hwirq;
++
++	if (!ipcc->deep_armed)
++		return;
++	ipcc->deep_armed = false;
++
++	hwirq = readl(ipcc->base + IPCC_REG_RECV_ID);
++	if (hwirq == IPCC_NO_PENDING_IRQ)
++		return;
++	ipcc->woke_hwirq = hwirq;
++	ipcc->woke = true;
++}
++
++static const struct syscore_ops qcom_ipcc_syscore_ops = {
++	.suspend = qcom_ipcc_syscore_suspend,
++	.resume = qcom_ipcc_syscore_resume,
++};
++
+ static int qcom_ipcc_pm_resume(struct device *dev)
+ {
+ 	struct qcom_ipcc *ipcc = dev_get_drvdata(dev);
+ 	u32 hwirq;
+ 	int virq;
+ 
++	if (ipcc->woke) {
++		ipcc->woke = false;
++		pm_wakeup_ws_event(ipcc->ws, 0, false);
++		dev_info(dev, "deep sleep woken by client %lu signal %lu\n",
++			 FIELD_GET(IPCC_CLIENT_ID_MASK, ipcc->woke_hwirq),
++			 FIELD_GET(IPCC_SIGNAL_ID_MASK, ipcc->woke_hwirq));
++	}
++
+ 	hwirq = readl(ipcc->base + IPCC_REG_RECV_ID);
+ 	if (hwirq == IPCC_NO_PENDING_IRQ)
+ 		return 0;
+@@ -362,9 +454,18 @@
+ 	 * A lazy disable leaves the GIC enable bit set, and a doorbell on the
+ 	 * still-powered GIC then wakes suspend-to-RAM despite the masking.
+ 	 */
+-	if (ipcc->mask_on_s2ram)
++	if (ipcc->mask_on_s2ram) {
+ 		irq_set_status_flags(ipcc->irq, IRQ_DISABLE_UNLAZY);
+ 
++		ipcc->ws = wakeup_source_register(&pdev->dev, "ipcc-wake");
++		if (!ipcc->ws) {
++			ret = -ENOMEM;
++			goto err_req_irq;
++		}
++		ipcc->syscore.ops = &qcom_ipcc_syscore_ops;
++		ipcc->syscore.data = ipcc;
++	}
++
+ 	ret = devm_request_irq(&pdev->dev, ipcc->irq, qcom_ipcc_irq_fn,
+ 			       IRQF_TRIGGER_HIGH | IRQF_NO_SUSPEND |
+ 			       IRQF_NO_THREAD, name, ipcc);
+@@ -374,10 +475,13 @@
+ 	}
+ 
+ 	platform_set_drvdata(pdev, ipcc);
++	if (ipcc->mask_on_s2ram)
++		register_syscore(&ipcc->syscore);
+ 
+ 	return 0;
+ 
+ err_req_irq:
++	wakeup_source_unregister(ipcc->ws);
+ 	if (ipcc->num_chans)
+ 		mbox_controller_unregister(&ipcc->mbox);
+ err_mbox:
+@@ -390,6 +494,9 @@
+ {
+ 	struct qcom_ipcc *ipcc = platform_get_drvdata(pdev);
+ 
++	if (ipcc->mask_on_s2ram)
++		unregister_syscore(&ipcc->syscore);
++	wakeup_source_unregister(ipcc->ws);
+ 	disable_irq_wake(ipcc->irq);
+ 	irq_domain_remove(ipcc->irq_domain);
+ }
+@@ -402,7 +509,7 @@
+ 
+ static const struct dev_pm_ops qcom_ipcc_dev_pm_ops = {
+ 	LATE_SYSTEM_SLEEP_PM_OPS(qcom_ipcc_suspend_late, qcom_ipcc_resume_early)
+-	NOIRQ_SYSTEM_SLEEP_PM_OPS(NULL, qcom_ipcc_pm_resume)
++	NOIRQ_SYSTEM_SLEEP_PM_OPS(qcom_ipcc_suspend_noirq, qcom_ipcc_pm_resume)
+ };
+ 
+ static struct platform_driver qcom_ipcc_driver = {

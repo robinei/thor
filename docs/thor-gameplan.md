@@ -696,6 +696,80 @@ From the review of 2026-10-21 (what Armada, ROCKNIX, Thorch and Kettle do, taken
       no longer made again for a stick a little off centre), and rumble requests while it is gone don't
       stall the game.
 
+## If it happens
+
+What to do about each problem we know of from the other projects, before trying anything new. Patches
+named pbos-NNNN are PB-OS's (github.com/project-barry/pb-os, `external-and-mods/kernel-sm8650/sm8550`);
+ours go into linux-thor's `source=`.
+
+Boot
+- Nothing on the screen by the UEFI way: rename `EFI` on the card's FAT partition to `EFI.disabled` (on
+  the PC; as Armada's image) so the ABL boots `/KERNEL`. Under OpenABL: "ABL mode: Verbose".
+- `/KERNEL` alone fails (UEFI boots): the 62 MB Image; `CONFIG_DEBUG_INFO_BTF=n`, `CONFIG_DEBUG_INFO=n` in
+  `config.thor`.
+- ROCKNIX's ABL doesn't find the card: partition 1's type to Microsoft basic data (ROCKNIX's), in
+  `tools/image/thor-image.sh`.
+- A hang with nothing shown: `panic=30` reboots it; `earlycon=efifb` on the loader entry's options line
+  (UEFI way) shows the kernel from its start.
+- SD card errors (CRC, tuning) in the journal: ROCKNIX's `sdhci-caps-mask = <0x3 0x0>` on `mmc@8804000`
+  back (a dts patch of ours; Armada drops it, Thorch reverted SDR104).
+- A resume from hibernate hangs: costs that session only (the signature is reset when found); then
+  `SleepOperation=suspend` in our logind drop-in until it is fixed.
+
+Screens and touch
+- Both screens upside down: `transform 270` instead of 90 in `thor-outputs` (KWin's Rotated270 is the
+  same turn named the other way).
+- Touch turned or mirrored: a udev rule with `LIBINPUT_CALIBRATION_MATRIX` by `ID_PATH` (known issue 4
+  has the matrices).
+- The bottom screen sideways after it was off: ROCKNIX PR #3507 (sway doesn't apply a transform to an
+  output that is off): apply it again when ClamShell turns the output on.
+- Bottom touch stuck after sleep even with pbos-0630: `edt,retain-power-in-suspend` on its node
+  (Thorch's dts-patches/0005, Kettle's device tree).
+- The session dies at start: `journalctl --user -u 'wayland-wm@*'`; `WLR_RENDERER=pixman` in
+  `~/.config/uwsm/env` to get a screen; the GPU's firmware errors in `journalctl -k`.
+- The bottom brightness slider: pbos-0620's range is ours, 0-4095; another range is one number in it.
+
+Controls
+- X and Y swapped: rsinput out of `pad::device::letter_codes` (ClamShell).
+- The sticks feel steppy: `rsinput.mcu_frame=10,4` (AYN's Android) or `40,7` in
+  `/etc/modprobe.d/`, against ours, 6,2 (thor-0002).
+- The sticks don't reach their corners, or pass them: the range in `thor-rsinput.conf` (PB-OS found the
+  real travel about ±740-1000 of 1408 per unit; ROCKNIX's `gamepadcalibration`).
+- The pad dead after waking ("failed to resume: error -110"): Kettle's `kettle-rsinput` system-sleep
+  hook, which binds the serdev device again.
+- Rumble still a click, or too strong: the hv-haptics node's `qcom,vmax-mv` (thor-0001; Armada's RP6
+  patch also sets the effects' waveforms).
+
+Power and sleep
+- GPU hangs ("OOB set GPU_SET" timeouts, GMU faults): ROCKNIX's, Thorch's and Pocknix's
+  `cpu0/cpuidle/state1/disable`, or PB-OS's `sm8550-irq-affinity` (GPU interrupts on the big cores,
+  no `irqaffinity=` on the command line); Armada fixed it in the kernel (0620-0622, ours).
+- It wakes by itself: `/var/log/thor-wake.log` names the interrupt.
+- Deep sleep, to compare with s2idle: `/etc/systemd/sleep.conf.d/deep.conf` with `[Sleep]` and
+  `MemorySleepMode=deep` (pbos-0505 and pbos-0547 are for it). Compare the battery over an hour asleep,
+  the wakes, charging asleep (PB-OS: about 1 A asleep in deep sleep, 4.7 A awake), and that it comes
+  back.
+- High drain asleep: PB-OS's `sm8550-sleep` also moves audio streams to a null sink and suspends the
+  sinks (an open stream keeps the audio DSP up); the stick lights.
+- A USB device gone after sleep, or a reset on waking with something plugged in while asleep:
+  PB-OS's 0540 (xHCI reset on resume) and 0539 (dwc3 role change deferred across sleep).
+- UFS errors after long sleeps: PB-OS's note on `spm_lvl` (their `73-sm8550-ufs-sleep.rules`); Armada's
+  0533.
+- The charge limit doesn't hold: the other `CLAMSHELL_CHARGE_LIMIT` ways (see "Battery"); with
+  `firmware`, whether `retroid_charge_now` survives unplugging and plugging in again.
+- The fan stays at its boot speed: `systemctl status thor-drivers clamshell-fan`, `lsmod | grep pwm`.
+- The Setup tab's password: "Not authorized" in ClamShell's log: drop `subject.local && subject.active`
+  from `50-thor.rules`.
+
+Sound and the rest
+- No sound under U-Boot's way: the card is `ayn-AYNOdin2` there (thor-ucm gives it the Thor's profile).
+- The mic: PB-OS found capturing through a PipeWire loopback on it killed PipeWire.
+- Sound gone once the motion sensors started: the ADSP serves both; start the sensors after the sound
+  card is up (PB-OS's `sm8550-sensors`).
+- A DisplayPort monitor freezes the device (Armada #529): `status = "disabled"` on `&mdss_dp0` in a dts
+  patch of ours until Armada fixes it.
+- A DRM lease (a VR headset, gamescope per screen) leaves a thread stuck when it ends: PB-OS's 0610.
+
 ## Ideas to try once the device is here
 
 Held back until real use shows whether they are worth what they cost.
