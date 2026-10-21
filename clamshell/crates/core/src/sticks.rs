@@ -156,10 +156,7 @@ impl Calibrator {
                 self.phase = Phase::Turn;
             }
             Phase::Turn => {
-                for (a, &v) in self.seen.iter_mut().zip(now.iter()) {
-                    a.low = a.low.min(v);
-                    a.high = a.high.max(v);
-                }
+                self.widen(now);
                 let mid = (self.min + self.max) / 2;
                 let reach =
                     |a: &StickAxis| (a.high - a.centre) as f32 >= (self.max - mid) as f32 * FAR && (a.centre - a.low) as f32 >= (mid - self.min) as f32 * FAR;
@@ -168,13 +165,23 @@ impl Calibrator {
                     self.still = Some((at, now, now));
                 }
             }
+            // (Still widening: the turning goes on past halfway, to the edges.)
             Phase::Release if still_for >= DONE_FOR => return Step::Done(Sticks { axes: self.seen }),
+            Phase::Release => self.widen(now),
             _ => {}
         }
         if at.saturating_sub(started) > GIVE_UP {
             return Step::Failed;
         }
         Step::Going(self.progress())
+    }
+
+    /// The extremes reached, out to `now`.
+    fn widen(&mut self, now: [i32; AXES]) {
+        for (a, &v) in self.seen.iter_mut().zip(now.iter()) {
+            a.low = a.low.min(v);
+            a.high = a.high.max(v);
+        }
     }
 
     pub fn progress(&self) -> Progress {
@@ -229,10 +236,12 @@ mod tests {
         for (x, y) in [(800, 0), (-700, 0), (0, 900), (0, -750)] {
             hold(&mut c, [x, y, x, y], &mut at, 100);
         }
-        let Step::Going(p) = hold(&mut c, rest, &mut at, 100) else { panic!("going") };
+        let Step::Going(p) = hold(&mut c, [900, 0, 900, 0], &mut at, 100) else { panic!("going") };
         assert_eq!(p.phase, Phase::Release, "every axis far each way");
+        assert_eq!(p.seen[0].high, 900, "and still widening past it");
+        hold(&mut c, [800, 0, 800, 0], &mut at, 100);
         let Step::Done(s) = hold(&mut c, rest, &mut at, 600) else { panic!("done") };
-        assert_eq!(s.axes[0], StickAxis { low: -700, centre: 20, high: 800 });
+        assert_eq!(s.axes[0], StickAxis { low: -700, centre: 20, high: 900 });
         assert_eq!(s.axes[1], StickAxis { low: -750, centre: -15, high: 900 });
     }
 

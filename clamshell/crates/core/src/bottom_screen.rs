@@ -173,6 +173,7 @@ impl State {
     fn bottom_idle_wanted(&self) -> bool {
         let untouched = self.bottom.used_at != 0 && self.unix_secs.saturating_sub(self.bottom.used_at) >= DIM_AFTER + OFF_AFTER;
         self.sys.status.discharging
+            && self.device.refresh != crate::device::Refresh::Running
             && self.in_force().bottom_idle_off()
             && !self.bottom_shows_windows()
             && self.bottom.editor().is_none()
@@ -180,10 +181,12 @@ impl State {
     }
 
     /// After any event: the bottom screen off or on by itself as [`State::bottom_idle_wanted`] says (a
-    /// touch, the pad's focus, a window moved down, the charger: on again). Not while it is off by hand.
+    /// touch, the pad's focus, a window moved down, the charger: on again). Not while it is off by hand,
+    /// nor while both screens are off (idle): the screens' coming back reads [`State::bottom_off`].
     pub(crate) fn follow_bottom_power(&mut self) -> Vec<Effect> {
         let wanted = self.bottom_idle_wanted();
-        if wanted == std::mem::replace(&mut self.bottom.screen.idle_off, wanted) || self.bottom.screen.off {
+        let screens_off = self.idle.stage() >= crate::idle::Stage::Off;
+        if wanted == std::mem::replace(&mut self.bottom.screen.idle_off, wanted) || self.bottom.screen.off || screens_off {
             return vec![];
         }
         vec![Effect::Window(WindowCommand::BottomPower(!wanted))]
@@ -277,7 +280,7 @@ impl State {
 
     /// Home+Start: the bottom screen off, or on again (off by itself: on, as a touch would).
     pub(crate) fn toggle_bottom_power(&mut self) -> Vec<Effect> {
-        if self.bottom.screen.idle_off {
+        if self.bottom.screen.idle_off && !self.bottom.screen.off {
             self.bottom.used_at = self.unix_secs;
             self.bottom.woken = true;
             return self.follow_bottom_power();

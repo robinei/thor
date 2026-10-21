@@ -51,6 +51,11 @@ impl StickState {
         state
     }
 
+    /// Whether a calibration goes.
+    pub fn calibrating(&self) -> bool {
+        self.calibrating.is_some()
+    }
+
     fn corrected(&self, i: usize, v: i32) -> i32 {
         self.sticks.map_or(v, |s| s.correct(i, v, self.range.min, self.range.max))
     }
@@ -176,7 +181,7 @@ mod tests {
         }
         let said = feed(&mut s, [0; 4], 700);
         assert!(matches!(said, Some(Said::Done(Some(_)))), "calibrated");
-        assert!(s.calibrating.is_none());
+        assert!(!s.calibrating());
         assert!(s.sticks.is_some(), "and kept for the controller");
     }
 }

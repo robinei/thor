@@ -7,15 +7,31 @@ to Armada's driver: frame_len_120 and frame_len_60 on the panel's device,
 applied at once while the panel streams in that rate (Armada's enabled
 flag), else at its next prepare. thor-system's thor-panel-calibration
 finds a unit's values and applies the saved ones at boot.
+Its DSI commands, the backlight's and enable's and disable's under one lock, so a
+frame length written mid-use doesn't overlap them (ours: neither driver had one).
 ---
 diff --git a/drivers/gpu/drm/panel/panel-chipone-icna35xx.c b/drivers/gpu/drm/panel/panel-chipone-icna35xx.c
-index 2d8d4720e..267c6fd0c 100644
+index 2d8d4720e..f98d8534b 100644
 --- a/drivers/gpu/drm/panel/panel-chipone-icna35xx.c
 +++ b/drivers/gpu/drm/panel/panel-chipone-icna35xx.c
-@@ -35,6 +35,11 @@ struct panel_info {
+@@ -9,6 +9,7 @@
+ #include <linux/delay.h>
+ #include <linux/gpio/consumer.h>
+ #include <linux/module.h>
++#include <linux/mutex.h>
+ #include <linux/of.h>
+ #include <linux/of_graph.h>
+ #include <linux/regulator/consumer.h>
+@@ -35,6 +36,17 @@ struct panel_info {
  	struct backlight_device *backlight;
  	struct drm_panel_bl_levels bl_levels;
  	bool enabled;
++
++	/*
++	 * One DSI command sequence at a time, and `enabled` read with it: the backlight, a frame length
++	 * written, enable and disable (overlapping commands wedge the DSI command engine).
++	 */
++	struct mutex dsi_lock;
 +
 +	/* The ICNA3520's frame lengths at 120 and 60 Hz (calibrated per unit) and the mode's rate. */
 +	int vrefresh;
@@ -24,7 +40,7 @@ index 2d8d4720e..267c6fd0c 100644
  };
  
  struct panel_desc {
-@@ -57,6 +62,10 @@ struct panel_desc {
+@@ -57,6 +69,10 @@ struct panel_desc {
  	unsigned int enter_sleep_ms;
  
  	struct drm_dsc_config dsc;
@@ -35,7 +51,7 @@ index 2d8d4720e..267c6fd0c 100644
  };
  
  static const struct regulator_bulk_data panel_supplies[] = {
-@@ -191,6 +200,32 @@ static int icna3512_init_sequence(struct panel_info *pinfo)
+@@ -191,6 +207,32 @@ static int icna3512_init_sequence(struct panel_info *pinfo)
  	return dsi_ctx.accum_err;
  }
  
@@ -68,7 +84,7 @@ index 2d8d4720e..267c6fd0c 100644
  static int icna3520_init_sequence(struct panel_info *pinfo)
  {
  	struct mipi_dsi_multi_context dsi_ctx = { .dsi = pinfo->dsi };
-@@ -214,19 +249,8 @@ static int icna3520_init_sequence(struct panel_info *pinfo)
+@@ -214,19 +256,8 @@ static int icna3520_init_sequence(struct panel_info *pinfo)
  
  	mipi_dsi_msleep(&dsi_ctx, 120);
  
@@ -90,7 +106,7 @@ index 2d8d4720e..267c6fd0c 100644
  
  	mipi_dsi_generic_write_seq_multi(&dsi_ctx, 0x9F, 0x01);
  	mipi_dsi_generic_write_seq_multi(&dsi_ctx, 0xB2, 0x00);
-@@ -507,6 +531,8 @@ static struct panel_desc icna3520_desc = {
+@@ -507,6 +538,8 @@ static struct panel_desc icna3520_desc = {
  	.bl_num_interp = 32,
  	.display_off_ms = 50,
  	.enter_sleep_ms = 120,
@@ -99,7 +115,32 @@ index 2d8d4720e..267c6fd0c 100644
  	.dsc = {
  		.dsc_version_major = 0x1,
  		.dsc_version_minor = 0x1,
-@@ -729,6 +755,87 @@ static struct backlight_device *icna35xx_create_backlight(struct mipi_dsi_device
+@@ -584,6 +617,7 @@ static int icna35xx_disable(struct drm_panel *panel)
+ 	struct panel_info *pinfo = to_panel_info(panel);
+ 	struct mipi_dsi_multi_context dsi_ctx = { .dsi = pinfo->dsi };
+ 
++	guard(mutex)(&pinfo->dsi_lock);
+ 	pinfo->enabled = false;
+ 
+ 	pinfo->dsi->mode_flags &= ~MIPI_DSI_MODE_LPM;
+@@ -662,6 +696,7 @@ static int icna35xx_enable(struct drm_panel *panel)
+ {
+ 	struct panel_info *pinfo = to_panel_info(panel);
+ 
++	guard(mutex)(&pinfo->dsi_lock);
+ 	pinfo->enabled = true;
+ 
+ 	return 0;
+@@ -684,6 +719,8 @@ static int icna35xx_bl_update_status(struct backlight_device *bl)
+ 						 backlight_get_brightness(bl));
+ 	int ret;
+ 
++	guard(mutex)(&pinfo->dsi_lock);
++
+ 	/*
+ 	 * Only drive the DSI link while the panel is enabled and streaming.
+ 	 * A brightness write that races panel bring-up or the first frame
+@@ -729,6 +766,88 @@ static struct backlight_device *icna35xx_create_backlight(struct mipi_dsi_device
  					      &icna35xx_bl_ops, &props);
  }
  
@@ -123,6 +164,7 @@ index 2d8d4720e..267c6fd0c 100644
 +	if (val < min || val > max)
 +		return -EINVAL;
 +
++	guard(mutex)(&pinfo->dsi_lock);
 +	*frame_len = val;
 +
 +	if (!pinfo->enabled || pinfo->vrefresh != vrefresh)
@@ -187,10 +229,14 @@ index 2d8d4720e..267c6fd0c 100644
  static int icna35xx_probe(struct mipi_dsi_device *dsi)
  {
  	struct device *dev = &dsi->dev;
-@@ -758,6 +865,14 @@ static int icna35xx_probe(struct mipi_dsi_device *dsi)
+@@ -758,6 +877,18 @@ static int icna35xx_probe(struct mipi_dsi_device *dsi)
  	pinfo->dsi = dsi;
  	mipi_dsi_set_drvdata(dsi, pinfo);
  
++	ret = devm_mutex_init(dev, &pinfo->dsi_lock);
++	if (ret)
++		return ret;
++
 +	if (pinfo->desc->frame_len_120) {
 +		pinfo->frame_len_120 = pinfo->desc->frame_len_120;
 +		pinfo->frame_len_60 = pinfo->desc->frame_len_60;

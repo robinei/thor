@@ -573,7 +573,8 @@ impl State {
             }
             Event::RefreshCalibrated(result) => {
                 self.on_refresh(result);
-                (Dirty::TOP, vec![])
+                // (The tool turned the bottom screen off meanwhile and back as it was: as ClamShell has it.)
+                (Dirty::TOP, vec![Effect::Window(WindowCommand::BottomPower(!self.bottom_off()))])
             }
             Event::GyroCalibrated(ok) => {
                 self.notify(crate::hardware::NoticeKind::Gyro(Some(ok)));

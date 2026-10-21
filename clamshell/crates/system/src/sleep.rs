@@ -11,7 +11,7 @@
 //! come), takes the lock again.
 
 use std::sync::mpsc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::dbus::{Bus, Message};
 use crate::pad;
@@ -54,6 +54,8 @@ const LOGIN1_PATH: &str = "/org/freedesktop/login1";
 const MANAGER: &str = "org.freedesktop.login1.Manager";
 /// How long the pad may take to close the gyro before the sleep goes on anyway.
 const PAD_WAIT: Duration = Duration::from_secs(1);
+/// Released this long (monotonic) without the system sleeping: it didn't (a sleep given up).
+const NOT_SLEPT: Duration = Duration::from_secs(10);
 /// After a failure (no bus, no lock), tried again this often.
 const RETRY: Duration = Duration::from_secs(30);
 
@@ -84,21 +86,33 @@ fn hold(pad: &Worker<pad::Command>) -> Result<(), crate::dbus::Error> {
     let mut bus = Bus::system()?;
     bus.add_match(&format!("type='signal',sender='{LOGIN1}',path='{LOGIN1_PATH}',interface='{MANAGER}',member='PrepareForSleep'"))?;
     let mut held = Some(lock(&mut bus)?);
+    // (Started anew, perhaps after a failure while released: the gyro found, if it was closed.)
+    pad.send(pad::Command::Woke);
     let mut watch = Watch::new(slept());
+    let mut released = Instant::now();
     loop {
-        // (Once a second while asleep, for the clocks; else for the signal alone.)
+        // (Once a second while released, for the clocks; else for the signal alone.)
         bus.wait(held.is_none().then_some(Duration::from_secs(1)))?;
-        let signals: Vec<bool> = bus.signals()?.iter().filter_map(before_sleep).collect();
-        let woke = signals.contains(&false) || (held.is_none() && watch.woke(slept()));
-        if held.is_some() && signals.contains(&true) {
-            let (done, wait) = mpsc::channel();
-            pad.send(pad::Command::Sleep(pad::Ack(done)));
-            if wait.recv_timeout(PAD_WAIT).is_err() {
-                log::warn!("sleep: the pad didn't answer in time");
+        let mut woke = false;
+        // In their order: a sleep given up at once (true, then false) is a wake.
+        for before in bus.signals()?.iter().filter_map(before_sleep) {
+            if before && held.is_some() {
+                let (done, wait) = mpsc::channel();
+                pad.send(pad::Command::Sleep(pad::Ack(done)));
+                if wait.recv_timeout(PAD_WAIT).is_err() {
+                    log::warn!("sleep: the pad didn't answer in time");
+                }
+                watch = Watch::new(slept());
+                released = Instant::now();
+                held = None;
+                woke = false;
+            } else if !before {
+                woke = true;
             }
-            watch = Watch::new(slept());
-            held = None;
-        } else if held.is_none() && woke {
+        }
+        // Without the signal: the clocks say it slept; or it has been released a while without sleeping
+        // (CLOCK_MONOTONIC stops while asleep: this much of it means the sleep didn't happen).
+        if held.is_none() && (woke || watch.woke(slept()) || released.elapsed() > NOT_SLEPT) {
             pad.send(pad::Command::Woke);
             held = Some(lock(&mut bus)?);
         }

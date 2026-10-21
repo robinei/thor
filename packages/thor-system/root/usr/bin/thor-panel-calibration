@@ -43,7 +43,7 @@ def display():
             except OSError:
                 pass
         os.close(fd)
-    sys.exit("no display's vblanks")
+    sys.exit("no display's vblanks (the top screen off?)")
 
 
 def rate(fd, pipe):
@@ -59,37 +59,49 @@ def write(attr, value):
     time.sleep(0.5)
 
 
+# The driver's ranges (thor-0005), which the stepping stays in.
+RANGES = {120: (0x10, 0x80), 60: (0x770, 0x838)}
+
+
 def calibrate(attr, target, fd, pipe):
-    """The frame length that puts the rate just above `target` (ROCKNIX's steps and tolerances)."""
+    """The frame length that puts the rate just above `target` (ROCKNIX's steps and tolerances), or
+    None (the value it started from written back)."""
     tolerance, big_error = (0.05, 0.1) if target == 60 else (0.2, 0.4)
+    low, high = RANGES[target]
     start = int(open(attr).read())
     value = start // STEP * STEP
-    start_rate = rate(fd, pipe)
-    deadline, adjust_until = time.monotonic() + 60, time.monotonic() + 15
-    write(attr, value)
-    while time.monotonic() < deadline:
-        delta = rate(fd, pipe) - target
-        settled = 0 <= delta <= tolerance
-        if time.monotonic() < adjust_until:
-            if not settled:
-                step = STEP if abs(delta) < big_error else 2 * STEP
-                value += step if delta > 0 else -step
-                write(attr, value)
-        elif settled:
-            print(f"{target} Hz: {start_rate:.3f} -> {target + delta:.3f} Hz (0x{start:x} -> 0x{value:x})")
-            return value
-        else:
-            adjust_until = time.monotonic() + 3.75
+    try:
+        start_rate = rate(fd, pipe)
+        deadline, adjust_until = time.monotonic() + 60, time.monotonic() + 15
+        write(attr, value)
+        while time.monotonic() < deadline:
+            delta = rate(fd, pipe) - target
+            settled = 0 <= delta <= tolerance
+            if time.monotonic() < adjust_until:
+                if not settled:
+                    step = STEP if abs(delta) < big_error else 2 * STEP
+                    value = min(high, max(low, value + (step if delta > 0 else -step)))
+                    write(attr, value)
+            elif settled:
+                print(f"{target} Hz: {start_rate:.3f} -> {target + delta:.3f} Hz (0x{start:x} -> 0x{value:x})")
+                return value
+            else:
+                adjust_until = time.monotonic() + 3.75
+        print(f"{target} Hz: no stable value in range", file=sys.stderr)
+    except OSError as e:
+        print(f"{target} Hz: {e}", file=sys.stderr)
     write(attr, start)
-    sys.exit(f"{target} Hz: no stable value in range")
+    return None
 
 
-def modes():
-    """The top output's current mode and its modes, as swaymsg's mode arguments, by rate."""
+def outputs():
+    """The top output's current mode and its modes, as swaymsg's mode arguments, by rate; and whether
+    the bottom output is on."""
     outputs = json.loads(subprocess.run(["swaymsg", "-rt", "get_outputs"], capture_output=True, text=True, check=True).stdout)
     top = next(o for o in outputs if o["name"] == OUTPUT)
+    bottom_on = next((o.get("power", True) for o in outputs if o["name"] == BOTTOM), True)
     arg = lambda m: f"{m['width']}x{m['height']}@{m['refresh'] / 1000:.3f}Hz"
-    return arg(top["current_mode"]), {round(m["refresh"] / 1000): arg(m) for m in top["modes"]}
+    return arg(top["current_mode"]), {round(m["refresh"] / 1000): arg(m) for m in top["modes"]}, bottom_on
 
 
 def main():
@@ -101,22 +113,39 @@ def main():
         os.sched_setscheduler(0, os.SCHED_FIFO, os.sched_param(10))
     except OSError:
         pass
-    current, by_rate = modes()
+    current, by_rate, bottom_on = outputs()
     found = {}
     subprocess.run(["swaymsg", "output", BOTTOM, "power", "off"], capture_output=True)
     try:
+        time.sleep(1)
+        # (The top's pipe, the one display left running: found once, kept across its modes.)
+        fd, pipe = display()
         for target in (60, 120):
             subprocess.run(["swaymsg", "output", OUTPUT, "mode", by_rate[target]], check=True, capture_output=True)
             time.sleep(2)
-            fd, pipe = display()
-            found[target] = calibrate(f"{panel}/frame_len_{target}", target, fd, pipe)
-            os.close(fd)
+            value = calibrate(f"{panel}/frame_len_{target}", target, fd, pipe)
+            if value is not None:
+                found[target] = value
+        os.close(fd)
     finally:
         subprocess.run(["swaymsg", "output", OUTPUT, "mode", current], capture_output=True)
-        subprocess.run(["swaymsg", "output", BOTTOM, "power", "on"], capture_output=True)
+        # (The bottom screen as it was: ClamShell may have had it off.)
+        subprocess.run(["swaymsg", "output", BOTTOM, "power", "on" if bottom_on else "off"], capture_output=True)
+    if not found:
+        sys.exit("no rate calibrated")
+    # (What was found kept; a rate not found keeps its saved value.)
+    saved = {}
+    try:
+        with open(SAVED) as f:
+            saved = dict(line.strip().split("=", 1) for line in f if "=" in line)
+    except OSError:
+        pass
+    saved.update({f"frame_len_{r}": str(v) for r, v in found.items()})
     with open(SAVED, "w") as f:
-        f.write("".join(f"frame_len_{r}={v}\n" for r, v in sorted(found.items())))
+        f.write("".join(f"{k}={v}\n" for k, v in sorted(saved.items())))
     print(f"saved in {SAVED}")
+    if len(found) < 2:
+        sys.exit("one rate not calibrated (the other saved)")
 
 
 if __name__ == "__main__":

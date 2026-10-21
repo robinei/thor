@@ -315,6 +315,10 @@ impl<S: Sink> Service for PadThread<S> {
         let mut out = Out::default();
         let mut router = PadRouter::new(c.ranges, std::mem::take(&mut c.snapshot), self.route, self.keymap.clone(), &mut out);
         let result = self.route_events(&mut c, &mut router, &mut out, commands);
+        // (A calibration going when the controller went: given up, said so, so the state doesn't wait on it.)
+        if c.sticks.calibrating() {
+            let _ = self.sink.send(Event::Sticks(SticksEvent::Done(c.name.clone(), None)));
+        }
         if let Some(r) = c.rumble.as_mut() {
             let _ = r.set(0, 0);
         }

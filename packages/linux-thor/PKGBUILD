@@ -26,7 +26,7 @@ _armada=d2bcf6fd33435f670f59a164c926842af91730f1
 # (Armada's commit's time: the version after the kernel's, so that their newer commit is a newer package.)
 _armada_time=202610202319
 pkgver=$_kver.$_armada_time
-pkgrel=6
+pkgrel=7
 pkgdesc="Armada's Linux kernel for the AYN Thor (SM8550), with its modules and device trees"
 arch=(aarch64)
 url=https://github.com/armada-os/armada
@@ -80,7 +80,7 @@ sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             57ea5d13bcb9b00609bb02da07ba0b38398960f4ba17f9fadbdd79ae9677d966
             ffeb7c26a9e482734553faa4bb08b035b41a16ac9c4172334bbbf736ad2afa30
             b76d35f52f1c936ed0d01eacb8a41ce6149fec324a896bfbc5f0ec9da297cfd1
-            132fe2182e0d43f3917df872162952fa9f6da418b27d5aeae8292aea5f7ca679
+            296e9648d47e133a6781a5bb661f1996f2d0f6848beb583c492baf64ad56e504
             2b8592031f6d51b30b82e2d4960098eac10c39050b8ec9d8779f4a7a7c908a71)
 # Linus Torvalds', Greg Kroah-Hartman's (keys/pgp, as Arch's linux has them).
 validpgpkeys=(ABAF11C65A2970B130ABE3C479BE3E4300411886

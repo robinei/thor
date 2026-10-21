@@ -203,6 +203,10 @@ impl State {
         let policy = Policy::of(&self.settings.global, may_sleep);
         let now = self.mono_secs;
         let mut effects = vec![];
+        // (The top screen's refresh calibrating: measured on it, so kept on.)
+        if self.device.refresh == crate::device::Refresh::Running {
+            self.idle.own_input(now);
+        }
         // (An app shown that keeps the screen on without the compositor hearing it: Android's.)
         if let Some(awake) = self.awake_command()
             && self.idle.ask_awake(now, policy)
