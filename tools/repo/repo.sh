@@ -30,6 +30,13 @@ index() {
     mkdir -p "$REPO/built" "$REPO/thor" "$REPO/local"
     shopt -s nullglob
     local new=()
+    # The kernel's corresponding source (linux-thor-VERSION-REL.source.tar), beside its package: the older
+    # ones go with the packages they were the source of.
+    for src in "$REPO"/built/*.source.tar; do
+        rm -f "$REPO"/thor/linux-thor-*.source.tar
+        mv "$src" "$REPO/thor/"
+        echo "source: $(basename "$src")"
+    done
     for pkg in "$REPO"/built/*.pkg.tar.*; do
         case $pkg in *.sig) continue ;; esac
         local name
@@ -50,6 +57,7 @@ index() {
     local sign=()
     ! signing || sign=(-s -k "$KEY")
     repo-add -q -R "${sign[@]}" "$REPO/thor/thor.db.tar.zst" "${new[@]}"
+    rm -f "$REPO"/thor/*.old "$REPO"/thor/*.old.sig
     # (GitHub serves no links: the names pacman asks for, as files.)
     local f
     for f in thor.db thor.files; do

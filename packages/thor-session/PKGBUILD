@@ -10,7 +10,7 @@ pkgrel=1
 pkgdesc="The AYN Thor's session: autologin into sway and ClamShell, their configs, Steam's starter"
 arch=(any)
 url=https://github.com/robinei/thor
-license=(LicenseRef-unknown)
+license=('MIT OR Apache-2.0')
 depends=(clamshell thor-system sway uwsm mako foot udiskie xorg-xwayland python python-pillow curl unzip)
 optdepends=('retroarch: the starter library'"'"'s games'
             'mpv: the starter library'"'"'s films and TV')
@@ -42,4 +42,6 @@ package() {
     install -Dm755 "$repo/clamshell/retroarch/menu-theme.py" "$pkgdir/usr/lib/thor/menu-theme.py"
     # The maintenance pass's playbook (Claude Code's /maintain, in thor-maintain's folder).
     install -Dm644 "$repo/.claude/commands/maintain.md" "$share/maintenance/.claude/commands/maintain.md"
+    # (Ours: MIT or Apache-2.0, either.)
+    install -Dm644 -t "$pkgdir/usr/share/licenses/$pkgname" "$repo/LICENSE-MIT" "$repo/LICENSE-APACHE"
 }

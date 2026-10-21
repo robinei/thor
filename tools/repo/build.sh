@@ -82,5 +82,10 @@ for p in "${PACKAGES[@]}"; do
         makepkg --config "$work/makepkg.conf" -f --nodeps --noconfirm --noprogressbar > "$work/$p.log" 2>&1) \
         || { tail -30 "$work/$p.log"; exit 1; }
     ls "$OUT"/"$p"-[0-9r]*.pkg.tar.*
+    # The kernel's corresponding source beside it, named as the package (GPL-2.0: thor-kernel.sh's bundle).
+    if [ "$p" = linux-thor ]; then
+        pkg=$(basename "$(ls "$OUT"/linux-thor-*.pkg.tar.*)")
+        cp "$CACHE/kernel/linux-thor.source.tar" "$OUT/${pkg%-aarch64.pkg.tar.*}.source.tar"
+    fi
 done
 "$HERE/repo.sh" index

@@ -10,6 +10,8 @@ arch=(any)
 url=https://github.com/ROCKNIX/distribution
 license=(LicenseRef-proprietary)
 makedepends=(squashfs-tools)
+# (No license text comes with these files in ROCKNIX's release: AYN's and Qualcomm's terms are their
+# own. Kept off our repository for that reason.)
 # (Overlapping files: ROCKNIX's versions of these, tested with the Thor, are kept.)
 conflicts=(linux-firmware linux-firmware-qcom linux-firmware-atheros linux-firmware-realtek)
 options=(!strip)

@@ -10,7 +10,7 @@ pkgrel=1
 pkgdesc="The AYN Thor's system files: power access, zram, sleep, boot, checks at boot"
 arch=(any)
 url=https://github.com/robinei/thor
-license=(LicenseRef-unknown)
+license=('MIT OR Apache-2.0')
 # (Not linux-thor: the test machine's image has Arch's kernel, which thor-boot leaves alone.)
 depends=(clamshell systemd polkit sudo python mkinitcpio gzip util-linux e2fsprogs cloud-guest-utils
          zram-generator pipewire)
@@ -32,5 +32,9 @@ pkgver() {
 
 package() {
     # (Owned by root in the package, not by whoever checked it out.)
+    local repo
+    repo=$(_repo)
     cp -a --no-preserve=ownership "$startdir/root/." "$pkgdir/"
+    # (Ours: MIT or Apache-2.0, either.)
+    install -Dm644 -t "$pkgdir/usr/share/licenses/$pkgname" "$repo/LICENSE-MIT" "$repo/LICENSE-APACHE"
 }

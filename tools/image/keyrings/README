@@ -1,0 +1,5 @@
+Arch Linux ARM's public package-signing keys (archlinuxarm.gpg, -trusted, -revoked), as its root
+filesystem tarball ships them in /usr/share/pacman/keyrings: the trust anchor tools/image/pacman-conf.sh
+gives pacman for installing Arch Linux ARM's packages from a PC. Arch Linux ARM's, not ours; public keys
+(nothing here is under this repository's license). After that, updates to them arrive signed, in the
+archlinuxarm-keyring package.

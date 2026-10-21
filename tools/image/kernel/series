@@ -1,2 +1,3 @@
 # Our own kernel patches, applied by thor-kernel.sh after Armada's (their series and device trees), in
 # this order: one file name per line. None yet: they come with the device, for what we find on it.
+# Patches to Linux, so under its license (GPL-2.0), whatever this repository's is.

@@ -7,9 +7,9 @@ pkgrel=1
 pkgdesc="The AYN Thor's handheld session: game shelf, second screen, gamepad, the fan daemon"
 arch=(aarch64 x86_64)
 url=https://github.com/robinei/thor
-license=(LicenseRef-unknown)
+license=('MIT OR Apache-2.0')
 depends=(libxkbcommon dbus gcc-libs glibc)
-makedepends=(cargo git)
+makedepends=(cargo git python)
 optdepends=('waydroid: Android apps (clamshell-android)')
 install=clamshell.install
 options=(!lto)
@@ -32,6 +32,8 @@ build() {
     cd "$(_repo)/clamshell"
     # (CARGO_TARGET_DIR: a target dir kept between builds.)
     CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$srcdir/target} cargo build --release --locked --target "$(_target)"
+    # The licenses of what is built into the programs: the crates they link, the font.
+    python3 "$(_repo)/tools/repo/third-party-licenses.py" . "$(_target)" > "$srcdir/THIRD-PARTY"
 }
 
 package() {
@@ -45,4 +47,7 @@ package() {
     # The power group: what ClamShell's settings set (cpufreq, devfreq, the battery, the fan's mode), given
     # to it by thor-system's udev rule; the session's user is in it.
     install -Dm644 "$startdir/clamshell.sysusers" "$pkgdir/usr/lib/sysusers.d/clamshell.conf"
+    # (Ours: MIT or Apache-2.0, either.)
+    install -Dm644 -t "$pkgdir/usr/share/licenses/$pkgname" "$repo/LICENSE-MIT" "$repo/LICENSE-APACHE"
+    install -Dm644 "$srcdir/THIRD-PARTY" "$pkgdir/usr/share/licenses/$pkgname/THIRD-PARTY"
 }

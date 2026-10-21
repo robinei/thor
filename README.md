@@ -133,3 +133,22 @@ The steps on their own: `tools/image/thor-kernel.sh` (Armada's kernel; again for
 repository uploaded with `gh`: only with the signing key, `~/.config/thor-repo/gnupg`, which isn't in the
 repository; without it the packages are indexed unsigned and images still build). Arch Linux ARM's
 public keys are in `tools/image/keyrings`.
+
+## License
+
+Ours: MIT or Apache-2.0, at your choice (`LICENSE-MIT`, `LICENSE-APACHE`). Not ours, under their own:
+
+- Noto Sans (`clamshell/crates/ui/fonts`, built into ClamShell): SIL Open Font License 1.1 (`OFL.txt`).
+- The Rust crates ClamShell's programs are built with: their licenses (all permissive: MIT, Apache-2.0,
+  BSD, Zlib, Unicode-3.0 and the like), carried by the clamshell package in
+  `/usr/share/licenses/clamshell/THIRD-PARTY` (`tools/repo/third-party-licenses.py`).
+- Kernel patches of ours (`tools/image/kernel`): GPL-2.0, as Linux. The linux-thor package (Armada's
+  kernel: Linux, GPL-2.0) carries the kernel's license files and is published with its corresponding
+  source, `linux-thor-VERSION.source.tar`, beside it (`tools/image/thor-kernel.sh` bundles it).
+- thor-ucm: ROCKNIX's Thor profiles, additions to alsa-ucm-conf, under its BSD-3-Clause license (carried).
+- thor-firmware: AYN's and Qualcomm's firmware from ROCKNIX's release, not redistributed by us (built
+  where it is installed, never published).
+- Arch Linux ARM's public keys (`tools/image/keyrings`): theirs.
+
+Configuration values and facts taken from ROCKNIX, Armada, Thorch and Kettle Linux (named where used) are
+written here in our own words and files.

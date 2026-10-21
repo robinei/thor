@@ -12,8 +12,11 @@ url=https://github.com/robinei/thor
 license=(BSD-3-Clause)
 depends=(alsa-ucm-conf)
 makedepends=(git)
-source=("0005_Add-AYN-Thor.patch::https://raw.githubusercontent.com/ROCKNIX/distribution/$_rocknix/projects/ROCKNIX/packages/audio/alsa-ucm-conf/patches/SM8550/0005_Add-AYN-Thor.patch")
-sha256sums=(bf04dc835232b8dde16f85c8462fc2f3c6de6b179889d8c05bc46030a6071c7f)
+# (The profiles are additions to alsa-ucm-conf, under its license: its text, from its v1.2.15.)
+source=("0005_Add-AYN-Thor.patch::https://raw.githubusercontent.com/ROCKNIX/distribution/$_rocknix/projects/ROCKNIX/packages/audio/alsa-ucm-conf/patches/SM8550/0005_Add-AYN-Thor.patch"
+        "LICENSE::https://raw.githubusercontent.com/alsa-project/alsa-ucm-conf/v1.2.15/LICENSE")
+sha256sums=(bf04dc835232b8dde16f85c8462fc2f3c6de6b179889d8c05bc46030a6071c7f
+            ebffd84f252e01bbd9887645b7dace140fd28f7d87f5e6e73fd6f539c7dd4733)
 
 package() {
     local share=$pkgdir/usr/share/alsa
@@ -23,4 +26,5 @@ package() {
     for name in ayn-AYNOdin2- AYN-Odin2; do
         ln -s ../../AYN/Thor/AYN-Thor.conf "$share/ucm2/conf.d/sm8550/$name.conf"
     done
+    install -Dm644 "$srcdir/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

@@ -6,6 +6,7 @@ pkgrel=1
 pkgdesc="The signing key of the AYN Thor's packages (github.com/robinei/thor)"
 arch=(any)
 url=https://github.com/robinei/thor
+# (A public key: nothing to license; CC0 says so.)
 license=(CC0-1.0)
 install=thor-keyring.install
 

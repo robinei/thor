@@ -2,15 +2,17 @@
 # Builds Armada's kernel (github.com/armada-os/armada, packages/kernel: their Linux version, patch series,
 # device trees and config) with our few changes, cross-compiled on an x86_64 host with LLVM. Armada carries
 # the furthest community work for the Thor (ROCKNIX's stack, newer, with Thorch's, Pocknix's, Kettle's and
-# their own: sleep, the gamepad across it; each patch's source in their PATCHES.md). thor-image.sh uses it
-# instead of ROCKNIX's prebuilt kernel when THOR_KERNEL names the output (tools/vm/vm.py passes it on);
-# firmware, audio profiles and the rest stay ROCKNIX's.
+# their own: sleep, the gamepad across it; each patch's source in their PATCHES.md). The linux-thor package
+# is made from its output (tools/repo/build.sh), with its corresponding source (GPL-2.0), which this
+# bundles: linux-thor.source.tar, published beside the package.
 #
 #   tools/image/thor-kernel.sh [OUT]
 #
-# OUT (default ~/.cache/thor-vm/kernel, where vm.py's machine sees it): Image, dtbs/ (Armada's SM8550 device
-# trees, the Thor's qcs8550-ayn-thor.dtb among them), lib/modules/<release>/, config, System.map, release
-# (the kernel release), source (what it was built from: Armada's commit). Sources and the build tree are
+# OUT (default ~/.cache/thor-vm/kernel): Image, dtbs/ (Armada's SM8550 device trees, the Thor's
+# qcs8550-ayn-thor.dtb among them), lib/modules/<release>/, config, System.map, release (the kernel
+# release), source (what it was built from: Armada's commit), licenses/ (COPYING, LICENSES/),
+# linux-thor.source.tar (the corresponding source: kernel.org's tarball, Armada's packages/kernel at the
+# commit, ours, the config and this script, with how to build it again). Sources and the build tree are
 # kept in ~/.cache/thor-kernel; a second run rebuilds only what changed.
 #
 # Environment: ARMADA_REF (default main: their latest), JOBS (default: all CPUs).
@@ -145,4 +147,36 @@ rm -f "$OUT/lib/modules/$RELEASE/build" "$OUT/lib/modules/$RELEASE/source"
 echo "$RELEASE" > "$OUT/release"
 printf "Armada's kernel, commit %s: Linux %s, %s patches%s; built %s with %s\n" "$COMMIT" "$VERSION" "${#SERIES[@]}" \
     "${MINE:+ and ${#MINE[@]} of ours}" "$(date -u +%F)" "$(clang --version | head -1)" > "$OUT/source"
+mkdir -p "$OUT/licenses"
+cp "$SRC/COPYING" "$OUT/licenses/"
+cp -r "$SRC/LICENSES" "$OUT/licenses/"
+
+say "the corresponding source: $OUT/linux-thor.source.tar"
+# (What a copy of the binary is owed under the GPL: everything it was built from, and how.)
+bundle=$CACHE/source-bundle
+rm -rf "$bundle"; mkdir -p "$bundle/armada" "$bundle/thor/tools/image"
+cp "$TARBALL" "$bundle/"
+git -C "$AR" archive HEAD packages/kernel | tar -x -C "$bundle/armada"
+cp -r "$OURS" "$bundle/thor/tools/image/"
+cp "$0" "$bundle/thor/tools/image/thor-kernel.sh"
+cp "$SRC/.config" "$bundle/config"
+cp "$FRAG" "$bundle/config.fragment"
+cat > "$bundle/README" <<EOF
+The corresponding source of linux-thor (Linux $VERSION, release $RELEASE), under the GPL, version 2
+(COPYING in linux-$VERSION.tar.xz).
+
+linux-$VERSION.tar.xz   kernel.org's release
+armada/                 github.com/armada-os/armada's packages/kernel at commit $COMMIT: their patch
+                        series (patches/series, each patch's origin in PATCHES.md), device trees, config
+thor/                   github.com/robinei/thor's tools/image: thor-kernel.sh (the build), kernel/ (our
+                        patch series and patches, after Armada's)
+config                  the kernel's .config as built; config.fragment: Armada's overrides and ours, merged
+                        into arm64's defconfig
+
+To build it again: tools/image/thor-kernel.sh from github.com/robinei/thor, with ARMADA_REF=$COMMIT
+(it applies Armada's series, ours, merges the config fragment and builds with LLVM: make ARCH=arm64 LLVM=1
+Image modules dtbs).
+EOF
+tar -cf "$OUT/linux-thor.source.tar" -C "$bundle" .
+rm -rf "$bundle"
 say "done: $RELEASE, Image $(du -h "$OUT/Image" | cut -f1), $(find "$OUT/lib/modules" -name '*.ko' | wc -l) modules"

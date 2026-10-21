@@ -28,6 +28,15 @@ package() {
     install -m 644 "$_build/config" "$modules/config"
     # What it was built from (Armada's commit, the patches, the compiler).
     install -m 644 "$_build/source" "$modules/thor-source"
+    # GPL-2.0: the kernel's license files, and where its corresponding source is (thor-kernel.sh's bundle,
+    # published beside this package as linux-thor-$pkgver-$pkgrel.source.tar: tools/repo/repo.sh).
+    local licenses=$pkgdir/usr/share/licenses/$pkgname
+    install -Dm644 "$_build/licenses/COPYING" "$licenses/COPYING"
+    cp -r --no-preserve=ownership "$_build/licenses/LICENSES" "$licenses/"
+    printf '%s\n' "The corresponding source of this kernel (GPL-2.0): linux-thor-$pkgver-$pkgrel.source.tar" \
+        "at https://github.com/robinei/thor/releases/tag/packages (Linux's tarball, Armada's patches," \
+        "device trees and config at the commit in /usr/lib/modules/*/thor-source, ours, and the build script)." \
+        > "$licenses/SOURCE"
     # (No pkgbase file: mkinitcpio's own hook would make a preset for it and look for /boot/vmlinuz-*;
     # thor-boot makes our initramfs.)
 }
