@@ -55,19 +55,38 @@ Android kept. Written 2026-10-14, before having the device; everything here is u
 
 ## The hardware, as Kettle Linux found it
 
-- Screens: top DSI-2, bottom DSI-1, **both natively portrait (1080x1920)**: sway needs a transform on each.
+- Screens: top DSI-2, 1080x1920 at 120 Hz (ICNA3520); bottom DSI-1, 1080x1240 at 60 Hz only (CH13726A;
+  Armada's panel patch `0057`, our DTB). Both natively portrait: sway needs a transform on each.
 - Touch: the device tree swaps and inverts axes; Kettle fixes it with `LIBINPUT_CALIBRATION_MATRIX` in a
   udev rule (`61-kettle-thor-touch.rules`), and maps each touchscreen to its screen.
 - Audio: card `AYN-Thor` (`ayn-AYNOdin2` under EFI: U-Boot reports the Odin 2's SMBIOS); UCM profiles
-  (their `kettle-ucm-ayn`) and firmware `ayn/thor/*` incl. `AYN-Thor-tplg.bin`; internal mic on DMIC3.
-- Gamepad: InputPlumber (their `40-kettle-thor.yaml`); the AYN key as quick access.
+  (their `kettle-ucm-ayn`) and firmware `ayn/thor/*` incl. `AYN-Thor-tplg.bin`. The routes (Thorch's
+  `ucm2/AYN/Thor/HiFi.conf`): speakers on PCM 0, with no hardware volume (software only); headphones on
+  PCM 1 (`Headphone Jack`, which mutes the speakers); the internal mic on PCM 2 (DMIC3 through SWR_MIC7);
+  DisplayPort's sound on `DP0 Jack`.
+- Gamepad: InputPlumber (their `40-kettle-thor.yaml`); the AYN key as quick access. The kernel's rsinput
+  driver registers "AYN Odin2 Gamepad", bus 0x0003, ids 2020:3001, phys `rsinput-gamepad/input0`; it is a
+  serial device (serdev), so there is no hidraw node (Armada's `qcs8550-ayn-common.dtsi`, our DTB).
+  Since Armada's patch `1301` the driver doesn't clip samples, so values can pass the range it reports.
+- Gyro: the IMU is on the ADSP's sensor island, not on the gamepad and not an IIO device: Kettle reads it
+  with libssc through hexagonrpcd and makes a uinput device of it, "Kettle Motion Sensors"
+  (`packages/kettle-motion/kettle-motiond.c`), axes turned by the matrix `0,-1,0,1,0,0,0,0,1` (its
+  `devices.conf`, tried in a game 2026-10-07). Not in our image.
+- Stick lights: `/sys/devices/platform/multi-led{l,r}{1-4}/leds/rgb:*/multi_intensity` and `power-led`
+  (HTR3212); their channels are out of order (red is written `0 0 255`: ROCKNIX's `ledcontrol` and
+  `battery_led_status`). Armada's kernel turns them off in suspend.
 - Power: 4-18 W; at 5 W the three CPU clusters cap at 1344/1785/1977 MHz. The fan: Kettle reported a
   curve in the device tree, but in Armada's and ROCKNIX's device trees the thermal zones' trip points
   link to no cooling device (checked 2026-10-20 in our built DTB: only the GPU's throttling is linked), so
   the fan runs at the speed the kernel gives it at boot (70 of 255, ROCKNIX's patch 0500) until userspace
-  sets it (Armada's armada-powerd, Thorch's thorch-fancontrol; ours: `clamshell-fan`).
+  sets it (Armada's armada-powerd, Thorch's thorch-fancontrol; ours: `clamshell-fan`). Its tachometer
+  gives rpm in `fan1_input`; the device tree's `cooling-levels` stop at 150 of 255.
 - Lid switch: sleep on close (`wakeup-event-action`); suspend (s2idle) verified.
-- Backlights: the top one first (`ae96000.dsi.0`), the bottom labelled `bottom-panel`.
+- Backlights: top `ae96000.dsi.0`, bottom `ae94000.dsi.0` (Kettle's own kernel labels it `bottom-panel`).
+- Battery: `power_supply` named `battery` (ROCKNIX's patch `0503`, in Armada's kernel; `qcom-battmgr-bat`
+  without it); ClamShell and the udev rule find it by its type.
+- USB-C display out: plugging in a DisplayPort monitor hard-freezes the device on Armada's 7.2.3 (Armada
+  #529, open).
 - The bottom screen draws about 0.7 W at idle. Wi-Fi and Bluetooth work.
 
 ## Our image (`tools/vm/vm.py --arch aarch64 thor-image`, built in the ARM virtual machine)
@@ -81,9 +100,9 @@ What goes in, and from where:
 | UEFI boot, on the same FAT partition (an EFI system partition) | systemd-boot as `EFI/BOOT/BOOTAA64.EFI`, the kernel as `/Image` (decompressed), the Thor's device tree as `/dtbs/qcs8550-ayn-thor.dtb`, our initramfs, a loader entry with our command line; split out by `tools/image/bootimg.py split` |
 | `/KERNEL` on FAT `ROCKNIX` (GPT name `system`, legacy-boot attribute, at 16 MiB) | ROCKNIX's kernel and device trees, unchanged (ours: the gzip'd Image and the 14 device trees, put into ROCKNIX's boot image by `bootimg.py repack --kernel`); our initramfs (mkinitcpio: base udev modconf block thor-root-wait resume filesystems fsck, no autodetect) and command line (`root=LABEL=THOR_ROOT rw` + ROCKNIX's SM8550 parameters; the first boot adds `resume=`, `resume_offset=`), put into both boot ways by `thor-boot` (`tools/device/thor-boot`, repacking with `tools/image/bootimg.py`), as the image is built and again on the device after updates |
 | Kernel modules, firmware | ROCKNIX's `SYSTEM` (same release), incl. Qualcomm firmware: for this device only, not for sharing; modules ours with `THOR_KERNEL` |
-| Root: ext4 `THOR_ROOT` | `pacstrap` from Arch Linux ARM's mirrors (unpinned): base, sudo, mkinitcpio, NetworkManager, OpenSSH, sway, mako, foot, Xwayland, Mesa + `vulkan-freedreno`, PipeWire, Noto, Python, vim, grim, growpart (`cloud-guest-utils`), gptfdisk; RetroArch with cores for NES, SNES, N64, Game Boy, GBA, DS, Mega Drive, PlayStation and Dreamcast and XMB's assets (its menu in ClamShell's colours: `clamshell/retroarch/menu-theme.py`, needing Pillow), mpv, ffmpeg; for maintenance on the device git, Rust, base-devel, pacman-contrib |
+| Root: ext4 `THOR_ROOT` | `pacstrap` from Arch Linux ARM's mirrors (unpinned): base, sudo, mkinitcpio, NetworkManager, OpenSSH, sway, mako, foot, Xwayland, Mesa + `vulkan-freedreno`, PipeWire, Noto, Python, vim, grim, growpart (`cloud-guest-utils`), gptfdisk; RetroArch with cores for NES, SNES, N64, Game Boy, GBA, DS, Mega Drive, PlayStation and Dreamcast and XMB's assets (its menu in ClamShell's colours: `clamshell/retroarch/menu-theme.py`, needing Pillow), mpv, ffmpeg; for maintenance on the device git, Rust, base-devel, pacman-contrib; zram-generator |
 | System | time zone (`THOR_TIMEZONE`, else the build machine's `/etc/localtime`, else UTC), locale (`THOR_LOCALE`, default `en_US.UTF-8`), systemd-timesyncd, NetworkManager, sshd, Bluetooth |
-| System files | from `tools/device/system.sh` (also run by maintenance): the fan daemon `clamshell-fan` (`clamshell/crates/fan`, a system service from early in boot: the fan's speed from the hottest CPU or GPU sensor every 3 s, by the mode ClamShell's Fan setting writes to `/run/clamshell-fan`); the `power` group's write access to what ClamShell's settings set (cpufreq caps, CPUs' online, the GPU's devfreq cap, the battery's charge limit and charge current, the power key's wakeup; udev rule `73-thor-power.rules`); the sticks' range (`/etc/modprobe.d/thor-rsinput.conf`); a log of each wake's cause (`/var/log/thor-wake.log`, a system-sleep hook); Steam's starter (`/usr/local/bin/steam`, `steam-setup`, `steam.desktop`) |
+| System files | from `tools/device/system.sh` (also run by maintenance): the fan daemon `clamshell-fan` (`clamshell/crates/fan`, a system service from early in boot: the fan's speed every 3 s from the mean of the three hottest CPU and GPU sensors, smoothed, on Armada's moderate curve with its ramp, by the mode ClamShell's Fan setting writes to `/run/clamshell-fan`; stopped or failed, `clamshell-fan --safe` leaves it at half speed); the `power` group's write access to what ClamShell's settings set (cpufreq caps, CPUs' online, the GPU's devfreq cap, the battery's charge limit and charge current, the power key's wakeup; udev rule `73-thor-power.rules`); the sticks' range (`/etc/modprobe.d/thor-rsinput.conf`); zram (`/etc/systemd/zram-generator.conf`: zstd, priority 100, before the swap file) and swapping tuned for it (`/etc/sysctl.d/70-thor-zram.conf`, Armada's values); the SD card's scheduler (BFQ, 4 MB readahead: `74-thor-sd.rules`); PipeWire's buffers (`70-thor-buffers.conf`, Armada's, against crackling after sleep); the checks at each boot (`thor-selftest.service`, `tools/device/thor-selftest`: see "Day one"); a log of each wake's cause (`/var/log/thor-wake.log`, a system-sleep hook); Steam's starter (`/usr/local/bin/steam`, `steam-setup`, `steam.desktop`) |
 | Session | user `thor` (groups wheel, video, input, audio, power; passwordless sudo, my ssh key), tty1 autologin into sway through uwsm (`wayland-wm@sway.service`; `graphical-session.target` with ClamShell, mako and udiskie as its user services; see process-control.md); the session's files from `tools/device/session.sh` (also run by maintenance): sway config (DSI-2 top, DSI-1 bottom, ROCKNIX's output lines; Print: `clamshell ctl screenshot`; `clamshell/sway/clamshell.conf` included), mako's and foot's configs, the Maintenance app's desktop file, the dock's first pins (Steam, foot, Maintenance), the starter `library.json` (`tools/device/library.json`: Games with a folder per system in `~/Games/<system>`, Films and TV in `~/Videos`) unless there is one; ClamShell built natively for aarch64 as a user service (control pipe `$XDG_RUNTIME_DIR/clamshell-control`, `CLAMSHELL_SESSION=device`: it puts the device to sleep when idle and reads the volume and brightness keys itself), uinput rule |
 | Maintenance | this repository cloned to `~/thor` (origin `git@github.com:robinei/thor.git`); the Maintenance app (a desktop file, pinned to the dock) runs `tools/device/maintain`: Claude Code with `/maintain` (`.claude/commands/maintain.md`). pacman hooks: `thor-boot` after updates of systemd, mkinitcpio, kmod, util-linux, zstd; ROCKNIX's audio profiles put back after alsa-ucm-conf's (a copy in `/usr/local/share/thor/ucm2`). The ROCKNIX release in `/usr/local/share/thor/rocknix-release` |
 | Sleep | logind: power button and lid do `sleep` = suspend-then-hibernate, else suspend (`SleepOperation=`); long press powers off. `HibernateDelaySec=30min`. UPower: hibernate at 3 % (power off if it can't) |
@@ -116,7 +135,9 @@ Known issues and risks, to check first:
 2. Early storage: settled. sdhci-msm is built into ROCKNIX's kernel (its messages are in the Image), as
    are ext4 and f2fs.
 3. Audio: ROCKNIX's UCM profiles are copied over `alsa-ucm-conf`'s (a pacman hook puts them back after
-   an update of that package); under UEFI the card is named `ayn-AYNOdin2` (ROCKNIX has a profile for that name too).
+   an update of that package); under UEFI the card is named `ayn-AYNOdin2`, whose profile in ROCKNIX's
+   set is the Odin 2's (no internal mic, the speakers' volumes unset): the image gives that name the
+   Thor's profile.
 4. Rotation: the bottom panel gets fbcon's angle as well; unverified that it wants the same. ROCKNIX
    fixed a sideways bottom screen after 20261001 (PR #3507: "Sway doesn't apply a transform to an output
    that is powered off"): check that the bottom's transform holds when it is turned off and on. Touch: the
@@ -142,9 +163,12 @@ Known issues and risks, to check first:
    the initramfs's resume runs (thor-root-wait gives it 10 s) the hibernated state is lost and the
    machine boots fresh.
 9. The fan: `clamshell-fan` takes it (`pwm1_enable` 3) and sets it every 3 s; tried only on a copy of
-   /sys (its tests). Check on the device that the hwmon chip is named `pwmfan`, the sensors' types start
-   with `cpu` or `gpu`, the fan stops below 45 °C and speeds up under load (sysinfo shows its rpm), and
-   that Quiet and Max change it. ClamShell applies its settings again on waking.
+   /sys (its tests). The sensors' types starting with `cpu` or `gpu` and the chip's name `pwmfan` are
+   checked in our DTB. Check on the device that the fan stops below 50 °C (Auto; ours alone, Armada's
+   never stops) and starts again cleanly at 55 °C (whether it spins up from 51/255, Armada's minimum),
+   speeds up under load (sysinfo shows its rpm), and that Quiet and Max change it;
+   `systemctl stop clamshell-fan` leaves it at half speed. How loud Auto is at a game's usual
+   temperature, and whether the hottest sensors' mean lags a GPU spike too long.
 10. Test image only: passwordless sudo, sshd with a key, autologin without a password.
 11. Steam: the client isn't in the image (it is Valve's, downloaded into the user's home); its first
     start (`/usr/local/bin/steam`, from the dock's pin or a Steam game) runs `steam-setup` in a terminal
@@ -170,7 +194,9 @@ Known issues and risks, to check first:
       (`/dev/dma_heap/system`, which Waydroid passes to Android's allocators), release `7.2.0-thor`, no
       built-in initramfs. Waydroid needs nothing more: no ashmem (without `/dev/ashmem` it sets
       `sys.use_memfd=true`), and PSI, namespaces, cgroups, veth, bridge and nftables NAT/masquerade
-      (waydroid-net.sh's nft rules) are in ROCKNIX's config. Needs `bc` on the PC (the build computes the timer
+      (waydroid-net.sh's nft rules) are in ROCKNIX's config. (Armada's config, ours since, builds PSI but
+      leaves it off, `CONFIG_PSI_DEFAULT_DISABLED`: our command line has `psi=1 cgroup_disable=pressure`,
+      as Armada's.) Needs `bc` on the PC (the build computes the timer
       constants and the OIDs' encodings with it; built 2026-10-19 with a stand-in for those two, checked
       against their known values).
       Build it, then the image with it: `tools/image/thor-kernel.sh` (into `~/.cache/thor-vm/kernel`),
@@ -188,10 +214,12 @@ Known issues and risks, to check first:
 - [x] ROCKNIX's ABL steps and the way back, Thorch's and Pocknix's notes. Done 2026-10-20 (see "How the
       boot works"). Thorch and Pocknix don't flash an ABL: both expect ROCKNIX's already installed
       (Pocknix: v1.1.7 or newer; its Thor support not yet run on hardware).
-- [ ] An SD card and a USB-C keyboard and Ethernet adapter. The slot runs at High Speed, not SDR104 (ROCKNIX's
-      device tree masks SDR50/SDR104; Kettle measured about 13 MB/s), so a fast card buys little: any
-      decent A1/A2 card. At that speed a hibernate image of a few GB takes minutes to write, and games
-      load slowly from SD: worth a look at what the SDR104 node Kettle lists would take. USB-C is
+- [ ] An SD card and a USB-C keyboard and Ethernet adapter. ROCKNIX's device tree masks SDR50/SDR104, so
+      the slot runs at High Speed there (Kettle measured about 13 MB/s). Armada's, ours, lifts the mask
+      but caps the clock at 37.5 MHz (`max-sd-hs-hz`), so a UHS card may negotiate SDR104 at that clock:
+      untried on a Thor (Thorch reverted UHS as unstable; Armada #564 is a card failing, probably a
+      Kingston). Any decent A1/A2 card; at these speeds a hibernate image of a few GB takes minutes to
+      write, and games load slowly from SD. USB-C is
       dual-role and the kernel has hub, HID and USB Ethernet drivers; a hub with both on a Thor isn't
       reported anywhere. Without a keyboard: ROCKNIX's USB network gadget (169.254.170.2) on the
       known-good image. No serial console is known.
@@ -229,6 +257,14 @@ ROCKNIX's IPCC change), the wake sources (lid on opening only, volume up not), P
 in s2idle, and the charge current limit (`0903`: 0 runs the device from the charger, for bypass).
 Candidates for our own patches, once tried on the device:
 - [ ] OpenABL's QSEECOM allowlist patch, if we boot through OpenABL (UEFI variables from Linux).
+- [ ] The bottom touchscreen kept powered in suspend (`edt,retain-power-in-suspend` on its node: Thorch's
+      `dts-patches/0005`, Kettle's device tree; the FT5452's power-off path is unsafe), if it misbehaves
+      after sleep; with Armada #757 (a contact kept after fingers lift; a candidate patch, open).
+- [ ] The top panel's refresh calibration (it runs at 118.6 Hz): ROCKNIX's `next` after 20261001 has a
+      kernel patch and a `040-panel_calibration` quirk for the Thor; Armada has neither.
+- [ ] The thermal sensors' wake interrupts off (Thorch's `0003-thermal-qcom-tsens-skip-ayn-thor-uplow-wake-irq`,
+      or Kettle's `60-kettle-tsens-nowake.rules` in userspace), if `/var/log/thor-wake.log` shows tsens
+      waking it.
 Done in userspace instead (2026-10-20), so no patch of ours:
 - [x] The stick range: Thorch sets `axis-range = <1024>` on the gamepad node (its `dts-patches/0007`);
       Armada's device tree doesn't (they calibrate through rsinput's module parameters); without either,
@@ -289,7 +325,16 @@ To know:
    Note what ROCKNIX's session shows for outputs (`swaymsg -t get_outputs`), inputs
    (`swaymsg -t get_inputs`, `evtest`), the gamepad's device and buttons, sound devices, Wi-Fi.
 6. Boot our image from SD. If it doesn't come up, the known issues above are the suspects, in order.
-   Serial console: none known; a USB keyboard and the screen, or ssh over USB Ethernet.
+   Serial console: none known; a USB keyboard and the screen, or ssh over USB Ethernet. Each boot runs
+   `thor-selftest` (from early on, not waited for): a pass at once (the kernel, its command line), and
+   one 90 s later (firmware and remote processors, both screens and backlights, the input devices by
+   name, the fan, the battery and the power group's access, zram and the swap file, the SD card's mode
+   and scheduler, sound, Wi-Fi, Bluetooth, the session), each line `ok`, `FAIL` or `info`, into the
+   journal (persistent, on the card) and `/var/log/thor-selftest.log` (the last 20 boots). If the boot
+   gets that far but nothing shows, read them on the PC from the card's root:
+   `journalctl --directory=MNT/var/log/journal -t thor-selftest` (and `-b -1` etc. for earlier boots;
+   the whole journal is there too), or the log file. By hand on the device: `sudo thor-selftest --now`.
+   A boot that fails before the root is mounted leaves nothing on the card.
 7. Library: put games in `~/Games/<system>` and videos in `~/Videos/Films` and `~/Videos/TV` (a folder per
    series); add a TMDB key to `~/.config/clamshell/library.json` (`"keys": { "tmdb": "..." }`) for films' and
    series' posters and overviews; Tools → Rescan library. PlayStation games need a BIOS for the
@@ -323,9 +368,12 @@ first start of `/usr/local/bin/steam` (`tools/device/steam`, in a terminal):
   `bins_linuxarm64_linuxarm64` zip, checked against the manifest's sha2) into `~/.local/share/Steam`.
   The zip names a few links and a folder with backslashes (moved where they belong: `steamrtarm64/libs/`'s
   `libnghttp2.so.14` and others) and makes its files world-writable (taken away).
-- Links: `~/.steam/{steam,root,sdkarm64}`, and in `~/.local/share/Steam/lib/aarch64-linux-gnu` the older
-  libraries the client wants that Arch Linux ARM has newer or none of (gtk2's and ibus's from Valve's
-  runtime, libvpx 6 from the client); remade at each start. What it still lacks, `ldd` of
+- Links: `~/.steam/{steam,root,sdkarm64,steamrtarm64}`, and in `~/.local/share/Steam/lib/aarch64-linux-gnu`
+  the older libraries the client wants that Arch Linux ARM has newer or none of (gtk2's and ibus's from
+  Valve's runtime, libvpx 6 from the client); `steamrtarm64/steam-launch-wrapper` to
+  `../linuxarm64/steam-launch-wrapper` (Steam's own update removes it, and then every Proton launch exits
+  with 127: Thorch's `thorch-repair-steam-arm64`); `~/.steam/sdk64` and `sdk32`'s `steamclient.so` from
+  the first place that has one (Thorch's). Remade at each start and after an update. What it still lacks, `ldd` of
   `steamui.so` lists at the end.
 - A first run (`steam -exitsteam`) that fetches the rest of the client. Then `steam` starts it as Armada's
   launch-steam does (its folder and the links first in the library path, the runtime's tools on the path,
@@ -391,10 +439,11 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       by letter, are swapped as they come in) and that games see them as expected through the virtual
       pad (written by letter, as an Xbox 360 pad's), and that there are no back buttons. Then they can become
       inputs of their own in the keymap (`core::keymap::Button`) and the edit screen (`views/pad.rs`).
-- [ ] Gyro: what the Thor's IMU is (an IIO device, or evdev from the gamepad driver?), its axes, signs and
-      units. ClamShell reads an evdev motion sensor (INPUT_PROP_ACCELEROMETER, ABS_RX/RY/RZ, resolution in
-      units per °/s) paired with the controller; an IIO sensor needs a source of its own behind the same
-      seam (`pad/motion.rs`, `MotionSource`). Its offset at rest (°/s, and how it drifts warm): whether
+- [ ] Gyro: the IMU is the ADSP's (see "The hardware"): neither evdev from the gamepad nor IIO. ClamShell
+      reads an evdev motion sensor (INPUT_PROP_ACCELEROMETER, ABS_RX/RY/RZ, resolution in units per °/s)
+      paired with the controller; for the Thor that takes hexagonrpcd and libssc in the image and either
+      Kettle's kettle-motiond (a uinput device ClamShell could pair) or a source of our own behind the same
+      seam (`pad/motion.rs`, `MotionSource`). First: Kettle's daemon run by hand, its axes, signs and units. Its offset at rest (°/s, and how it drifts warm): whether
       the still detection (under 5 °/s, within 0.5 °/s, for 1.5 s) catches it and doesn't eat slow aim,
       and "Calibrate gyro". Then the feel: gyro to the pointer at each speed (pixels per degree),
       acceleration and tightening's defaults, which way turning and tilting move it (`ROLL_TURNS` in
@@ -454,18 +503,23 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
 - [ ] Home button: which device and key code it sends (BTN_MODE on the gamepad, or KEY_HOMEPAGE on a
       separate gpio-keys device?). ClamShell takes BTN_MODE from the grabbed pad only; Steam's overlay
       then never sees it.
-- [ ] Steam with the virtual Xbox 360 pad: the real controller's USB ids, for a udev rule that clears its
-      joystick tags (SDL and Steam skip it; ClamShell finds it by its capabilities) and closes its hidraw
-      node (Steam reads some controllers through hidraw, past ClamShell's grab: every press twice). Steam
-      then lists one controller. Steam's Xbox configuration support stays off (its default), so games read
+- [ ] Steam with the virtual Xbox 360 pad: the real controller (2020:3001, "AYN Odin2 Gamepad"; serdev,
+      so no hidraw node to close) needs a udev rule that clears its joystick tags (SDL and Steam skip it;
+      ClamShell finds it by its capabilities). Check that Steam lists one controller. Steam's Xbox configuration support stays off (its default), so games read
       the virtual pad directly and ClamShell's keymaps are the only remapping; check that Steam's desktop
       layout doesn't act on the pad outside games (it would beside ClamShell's pad navigation).
 - [ ] Lid: does the Thor report a lid switch (`SW_LID`), and does closing it suspend? With the lid
       closed, the power key's wakeup is off (`cat /sys/class/input/input*/device/power/wakeup` of the
       `pm8941_pwrkey` device; ClamShell's log says "lid closed"), and a press doesn't wake it; opening the
-      lid does. `/var/log/thor-wake.log` names what woke it each time.
+      lid does. `/var/log/thor-wake.log` names what woke it each time. A race: logind sleeps on the same
+      lid event, with no inhibitor holding it for ClamShell's write; close the lid a few times in a row
+      and press the power key each time. If it ever wakes, a delay inhibitor (or a system-sleep hook, as
+      Armada's) is the fix.
 - [ ] Battery: capacity, charging, power draw in sysinfo; the charge limit setting
-      (`charge_control_end_threshold` of `qcom-battmgr-bat`, written by the power group); UPower
+      (`charge_control_end_threshold` of `battery`, written by the power group). Kettle found the
+      threshold has no effect on SM8550's firmware (its patch `1190`); with Armada's patch `0904` a write
+      the firmware refuses fails, and ClamShell's log says so (once). If it does nothing: drop the 90 and
+      80 choices (Bypass stays, if it works). UPower
       sees it (the battery mode's graph) and powers off at 3 %; GPU time per program in the battery mode
       (msm's `drm-engine-gpu` in fdinfo).
 - [ ] Bypass charging (Android has it: plugged in, the device runs from the charger and the battery is left
@@ -474,7 +528,10 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       other choices write `constant_charge_current_max` back). With the charger in and a game running,
       watch the battery's `current_now` and `capacity`: bypass is the current near zero and the level
       holding. Then: whether it holds after unplugging and plugging in again (ClamShell writes it at each
-      change of the settings, at its start and on waking, not when the charger comes), and after a reboot.
+      change of the settings, at its start, on waking, and every 30 s while Bypass is on), and after a
+      reboot. Armada PR #677 warns that charge currents under 100 mA charge unstably on the Thor (500 mA
+      the spec's minimum): watch for the charger dropping out or the battery draining with 0; if so,
+      Bypass may need a small current instead, or to go.
 - [ ] Power profiles: cpufreq policies (3 clusters?), GPU devfreq, little-cores-only; the power group's
       write access (`ls -l` of a policy's `scaling_max_freq`: group `power`, writable).
 - [ ] Fan: `clamshell-fan` running (`systemctl status clamshell-fan`, its log names the fan and the mode);
@@ -519,6 +576,38 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       when left; ratarmount is in Arch Linux ARM's repositories (else the image build fails).
 - [ ] The launcher under real use: tools/vm/vm.py's checks again, on the device.
 - [ ] FEX for x86 games (32-bit Windows games are the open question).
+
+From the review of 2026-10-21 (what Armada, ROCKNIX, Thorch and Kettle do, taken over untried here):
+
+- [ ] Screens turned on the first session: `~/.config/sway/outputs` written (thor-session runs
+      thor-outputs by its path; it wasn't on the login shell's PATH before).
+- [ ] zram: `swapon --show` lists `/dev/zram0` (priority 100) and `/swapfile`; `sysctl vm.swappiness`
+      is 180; a game frozen behind shelf goes to zram, and hibernate still writes to the swap file.
+- [ ] The command line's additions: `/proc/pressure/` exists (`psi=1`; Waydroid's memory killer), and
+      `/sys/module/ufshcd_core/parameters/uic_cmd_timeout` is 3000; no UFS errors after sleep (the 54 s
+      freeze ROCKNIX saw).
+- [ ] Sound under each boot path: the speakers, the headphones (plugging them in mutes the speakers)
+      and the internal mic (`arecord`) both under the ABL path (`AYN-Thor`) and under U-Boot
+      (`ayn-AYNOdin2`, now given the Thor's profile); no crackling after waking (PipeWire's buffers).
+- [ ] The SD card: the mode it runs at (`/sys/kernel/debug/mmc0/ios`: SDR104 at 37.5 MHz, or High
+      Speed) and its speed; card errors in the journal under load and after sleep (if any, put
+      `sdhci-caps-mask` back as ROCKNIX has it). `cat /sys/block/mmcblk0/queue/scheduler` says bfq.
+- [ ] The sticks: with the range at ±1024, the corners reach the axes' ends in `evtest`, and nothing
+      goes past them (since Armada's `1301` the driver doesn't clip); if values pass ±1024, clamp them in
+      the pad thread or use ROCKNIX's per-unit calibration (`gamepadcalibration`).
+- [ ] The stick and power lights: lit at boot or not, off while asleep (Armada's kernel turns them
+      off; ROCKNIX also does it from userspace before sleep, saying lit ones keep it awake).
+- [ ] Steam: a Proton game starts (no exit 127: `steam-launch-wrapper`'s link), after Steam has
+      updated itself too.
+- [ ] GPU hangs (the GMU): if any, ROCKNIX's and Thorch's workaround, `cpu0/cpuidle/state1/disable`
+      (Pocknix turns it back on around sleep).
+- [ ] The bottom touchscreen after sleep: still working, no contact left behind (#757); else the
+      `edt,retain-power-in-suspend` patch (see "Candidates for our own patches").
+- [ ] USB-C display out: last, with nothing unsaved (Armada #529: a DisplayPort monitor hard-freezes
+      the device).
+- [ ] The gamepad back from sleep or a replug while a game runs: the game keeps its pad (the virtual pad
+      no longer made again for a stick a little off centre), and rumble requests while it is gone don't
+      stall the game.
 
 ## Ideas to try once the device is here
 

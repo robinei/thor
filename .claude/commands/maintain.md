@@ -26,7 +26,9 @@ What is ours rather than Arch's (see `tools/image/thor-image.sh`, which builds t
   the service, the dock's apps) written by `tools/device/session.sh`.
 - The system files, written by `tools/device/system.sh`: the fan daemon `clamshell-fan` (built with
   ClamShell; a system service), the `power` group's udev rule and tmpfiles entry, the sticks' range in
-  modprobe.d, the wake log hook, Steam's starter (`/usr/local/bin/steam`, `steam-setup`).
+  modprobe.d, zram's config and the swapping sysctls, the SD card's scheduler rule, PipeWire's buffers,
+  the checks at boot (`thor-selftest`: `journalctl -b -t thor-selftest`; its `FAIL` lines are worth a
+  look in every pass), the wake log hook, Steam's starter (`/usr/local/bin/steam`, `steam-setup`).
 
 1. **Prepare.** `git status` in this repository. Uncommitted changes: show them and ask whether to
    commit them first. `git pull --rebase` (if it fails for lack of access, say so: the device's ssh key
@@ -52,8 +54,8 @@ What is ours rather than Arch's (see `tools/image/thor-image.sh`, which builds t
    `~/.local/share/thor/session-commit` isn't the current commit: `cd clamshell && cargo build --release`,
    then `tools/device/session.sh ~ ~ clamshell/target/release/clamshell`, `systemctl --user daemon-reload`,
    `sudo tools/device/system.sh / clamshell/target/release/clamshell-fan`, `sudo systemctl daemon-reload`,
-   `sudo systemctl restart clamshell-fan`, `sudo udevadm control --reload` (its rules and the modprobe
-   options take effect at the next boot), and write `git rev-parse HEAD` to `~/.local/share/thor/session-commit`. Restarting ClamShell
+   `sudo systemctl restart clamshell-fan`, `sudo udevadm control --reload`, `sudo sysctl --system` (the
+   udev rules, the modprobe options, zram's config and PipeWire's buffers take effect at the next boot), and write `git rev-parse HEAD` to `~/.local/share/thor/session-commit`. Restarting ClamShell
    (`systemctl --user restart clamshell`) redraws both screens; apps and games keep running (each in a
    scope of its own, this terminal too): ask first. sway's config changes take effect at the
    next login (or `swaymsg reload`, after which ClamShell must be restarted: a reload drops the rules it
