@@ -1,8 +1,10 @@
 # The power group's write access to what ClamShell's settings set: cpufreq's caps and the CPUs' online
 # (Power, CPU cap, Big cores), the GPU's cap (GPU cap), the battery's charge limit and charge current
-# (Charge limit, Bypass), the power key's wakeup (off while the lid is closed). (The group: clamshell's
+# (Charge limit, Bypass), the battery firmware's own charge switches (linux-thor's PB-OS patch; on the
+# battery manager's device, there once its driver is bound), the power key's wakeup (off while the lid is closed). (The group: clamshell's
 # sysusers.d; the fan daemon's mode file: its tmpfiles.d.)
 ACTION=="add|change", SUBSYSTEM=="cpu", RUN+="/usr/lib/thor/power-access /sys%p/online /sys%p/cpufreq/scaling_max_freq"
 ACTION=="add|change", SUBSYSTEM=="devfreq", RUN+="/usr/lib/thor/power-access /sys%p/max_freq"
 ACTION=="add|change", SUBSYSTEM=="power_supply", ATTR{type}=="Battery", RUN+="/usr/lib/thor/power-access /sys%p/charge_control_end_threshold /sys%p/constant_charge_current"
+ACTION=="bind|change", SUBSYSTEM=="auxiliary", KERNEL=="pmic_glink.power-supply.*", RUN+="/usr/lib/thor/power-access /sys%p/retroid_charge_now /sys%p/retroid_limit_capacity"
 ACTION=="add|change", SUBSYSTEM=="input", KERNEL=="input*", ATTR{name}=="*pwrkey*", RUN+="/usr/lib/thor/power-access /sys%p/device/power/wakeup"

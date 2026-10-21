@@ -76,16 +76,23 @@ const CHARGE_RESUME: u64 = 5;
 /// kettle-powerd, measured on a Thor: SM8550's battery firmware never answers the end threshold's
 /// request, but takes the current, Armada's patch 0903). `threshold`: the battery firmware's own end
 /// threshold, for trying on firmware that takes it (Armada's patch 0904 makes a refused write fail).
+/// `firmware`: the battery firmware's own switches, which AYN's and Retroid's Android drivers write
+/// (PB-OS's kernel patch, linux-thor's; untried on a Thor): its 80 % limit (`retroid_limit_capacity`)
+/// for 80, running from USB with the battery left alone (`retroid_charge_now` 0) for Bypass, the charge
+/// current for 90 (the firmware has no other level); written again at every look, as the firmware may
+/// drop them when the charger is plugged in again. Without the switches: as `Current`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Hold {
     Current,
     Threshold,
+    Firmware,
 }
 
 impl Hold {
     fn from_env() -> Hold {
         match std::env::var("CLAMSHELL_CHARGE_LIMIT").as_deref() {
             Ok("threshold") => Hold::Threshold,
+            Ok("firmware") => Hold::Firmware,
             _ => Hold::Current,
         }
     }
@@ -138,7 +145,14 @@ pub fn spawn() -> io::Result<Worker<Values>> {
     Worker::spawn("tuning", |commands| {
         let (mut quiet, mut known, mut last) = (Quiet::default(), Vec::new(), None::<Values>);
         let mut charge = Charge { hold: Hold::from_env(), held: false };
-        log::info!("charge limit held by {}", if charge.hold == Hold::Current { "the charge current" } else { "the battery's threshold" });
+        log::info!(
+            "charge limit held by {}",
+            match charge.hold {
+                Hold::Current => "the charge current",
+                Hold::Threshold => "the battery's threshold",
+                Hold::Firmware => "the battery firmware's switches",
+            }
+        );
         loop {
             let limit = last.map(|v| v.get(Setting::ChargeLimit));
             let every = limit.is_some_and(|l| l != 100).then_some(CHARGE_AGAIN);
@@ -264,11 +278,25 @@ impl Charge {
     /// limit); the charge current 0 while held, written each time then, as whether the firmware keeps it
     /// (unplugged, replugged) isn't known, else its maximum where it differs.
     fn battery(&mut self, limit: u16, quiet: &mut Quiet) {
-        let (by_threshold, by_current) = match (self.hold, limit) {
-            (_, 0) => (100, 0),
-            (Hold::Current, l) => (100, l),
-            (Hold::Threshold, l) => (l, 100),
+        let switches = oem_switches();
+        let firmware = self.hold == Hold::Firmware && switches.is_some();
+        // The end threshold, the limit held by the current, the switches' charge_now and limit.
+        let (by_threshold, by_current, charge_now, limit80) = match (self.hold, limit) {
+            (Hold::Firmware, 0) if firmware => (100, 100, 0, 0),
+            (Hold::Firmware, 80) if firmware => (100, 100, 1, 1),
+            (_, 0) => (100, 0, 1, 0),
+            (Hold::Threshold, l) => (l, 100, 1, 0),
+            (_, l) => (100, l, 1, 0),
         };
+        // (Their files show what was last written, -1 before: the firmware's defaults written once.)
+        if let Some(dir) = switches {
+            for (name, want) in [("retroid_charge_now", charge_now), ("retroid_limit_capacity", limit80)] {
+                let file = dir.join(name);
+                if firmware || sys::read::<u64>(&file) != Some(want) {
+                    write(&file, want, quiet);
+                }
+            }
+        }
         for supply in sys::power_supplies() {
             let file = supply.join("charge_control_end_threshold");
             let end = u64::from(by_threshold);
@@ -289,6 +317,12 @@ impl Charge {
             }
         }
     }
+}
+
+/// The battery firmware's own charge switches' device (the battery manager's), where the kernel has
+/// them (see [`Hold`]).
+fn oem_switches() -> Option<PathBuf> {
+    sys::entries("/sys/bus/auxiliary/devices").into_iter().find(|d| d.join("retroid_charge_now").exists())
 }
 
 /// The MangoHud config file for a game (in `dir`), written with its frame rate cap (0: none) and HUD

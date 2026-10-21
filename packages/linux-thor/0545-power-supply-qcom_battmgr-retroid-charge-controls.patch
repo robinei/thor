@@ -1,0 +1,164 @@
+From: lavachemist <48248311+lavachemist@users.noreply.github.com>
+Subject: [PATCH] power: supply: qcom_battmgr: Retroid charge controls
+
+The standard charge-limit request (BATTMGR_CHG_CTRL_LIMIT_EN) is ignored
+by the battery firmware on the Retroid Pocket 6. Retroid's own Android
+driver (qti_battery_charger) uses two OEM properties of the USB supply
+instead, sent with BATTMGR_USB_PROPERTY_SET:
+
+  0x0f  0 = don't charge while on USB power, 1 = charge ("charge separation")
+  0x10  firmware capacity limit off/on
+
+Expose them as retroid_charge_now and retroid_limit_capacity on the
+battery manager device, only on the Retroid Pocket 6, the Nova and the
+AYN Thor (other firmware may give these numbers another meaning), and
+acknowledge the USB property-set reply instead of logging it as an
+unknown message.
+
+AYN's stock driver on the Thor sends the same two properties
+(usb_charge_now, limit_capacity_charge), and the Thor's own ADSP (the
+build PB-OS ships) has the code that acts on them. The Odin 2's older
+ADSP acknowledges the request and keeps charging. Tested on a Nova with
+its own ADSP (2026-10-10): retroid_charge_now 0 runs the device from USB
+with the battery current at 0 A, 1 charges again within seconds. Not yet
+tested on the Thor.
+sm8550-charge-control (userspace) applies the user's choice.
+---
+--- a/drivers/power/supply/qcom_battmgr.c
++++ b/drivers/power/supply/qcom_battmgr.c
+@@ -9,6 +9,7 @@
+ #include <linux/module.h>
+ #include <linux/mutex.h>
+ #include <linux/nvmem-consumer.h>
++#include <linux/of.h>
+ #include <linux/of_device.h>
+ #include <linux/power_supply.h>
+ #include <linux/property.h>
+@@ -333,6 +334,10 @@
+ 	struct qcom_battmgr_wireless wireless;
+ 
+ 	struct work_struct enable_work;
++
++	/* Retroid OEM USB properties (see qcom_battmgr_retroid_attrs); -1 = never set. */
++	int retroid_charge_now;
++	int retroid_limit_capacity;
+ 
+ 	/*
+ 	 * @lock is used to prevent concurrent power supply requests to the
+@@ -1558,6 +1563,7 @@
+ 		break;
+ 	case BATTMGR_REQUEST_NOTIFICATION:
+ 	case BATTMGR_CHG_CTRL_LIMIT_EN:
++	case BATTMGR_USB_PROPERTY_SET:
+ 		battmgr->error = 0;
+ 		break;
+ 	default:
+@@ -1620,8 +1626,90 @@
+ 	{ .compatible = "qcom,x1e80100-pmic-glink", .data = (void *)QCOM_BATTMGR_X1E80100 },
+ 	/* Unmatched devices falls back to QCOM_BATTMGR_SM8350 */
+ 	{}
++};
++
++/*
++ * Retroid's and AYN's Android driver (qti_battery_charger) adds OEM properties
++ * to the USB supply in the battery firmware: 0x0f stops (0) or allows (1)
++ * charging while on USB power ("charge separation"), 0x10 turns the firmware's
++ * capacity limit on or off. Exposed only on Retroid handhelds and the AYN Thor;
++ * other firmware may use these numbers for something else.
++ */
++#define RETROID_USB_CHARGE_NOW		0x0f
++#define RETROID_USB_LIMIT_CAPACITY	0x10
++
++static ssize_t qcom_battmgr_retroid_store(struct device *dev, const char *buf,
++					  size_t count, int property, int *cache)
++{
++	struct qcom_battmgr *battmgr = dev_get_drvdata(dev);
++	bool val;
++	int ret;
++
++	ret = kstrtobool(buf, &val);
++	if (ret)
++		return ret;
++
++	if (!battmgr->service_up)
++		return -EAGAIN;
++
++	mutex_lock(&battmgr->lock);
++	ret = qcom_battmgr_request_property(battmgr, BATTMGR_USB_PROPERTY_SET,
++					    property, val);
++	if (!ret)
++		*cache = val;
++	mutex_unlock(&battmgr->lock);
++
++	return ret ? ret : count;
++}
++
++static ssize_t retroid_charge_now_show(struct device *dev,
++				       struct device_attribute *attr, char *buf)
++{
++	struct qcom_battmgr *battmgr = dev_get_drvdata(dev);
++
++	return sysfs_emit(buf, "%d\n", battmgr->retroid_charge_now);
++}
++
++static ssize_t retroid_charge_now_store(struct device *dev,
++					struct device_attribute *attr,
++					const char *buf, size_t count)
++{
++	struct qcom_battmgr *battmgr = dev_get_drvdata(dev);
++
++	return qcom_battmgr_retroid_store(dev, buf, count, RETROID_USB_CHARGE_NOW,
++					  &battmgr->retroid_charge_now);
++}
++static DEVICE_ATTR_RW(retroid_charge_now);
++
++static ssize_t retroid_limit_capacity_show(struct device *dev,
++					   struct device_attribute *attr, char *buf)
++{
++	struct qcom_battmgr *battmgr = dev_get_drvdata(dev);
++
++	return sysfs_emit(buf, "%d\n", battmgr->retroid_limit_capacity);
++}
++
++static ssize_t retroid_limit_capacity_store(struct device *dev,
++					    struct device_attribute *attr,
++					    const char *buf, size_t count)
++{
++	struct qcom_battmgr *battmgr = dev_get_drvdata(dev);
++
++	return qcom_battmgr_retroid_store(dev, buf, count, RETROID_USB_LIMIT_CAPACITY,
++					  &battmgr->retroid_limit_capacity);
++}
++static DEVICE_ATTR_RW(retroid_limit_capacity);
++
++static struct attribute *qcom_battmgr_retroid_attrs[] = {
++	&dev_attr_retroid_charge_now.attr,
++	&dev_attr_retroid_limit_capacity.attr,
++	NULL
+ };
+ 
++static const struct attribute_group qcom_battmgr_retroid_group = {
++	.attrs = qcom_battmgr_retroid_attrs,
++};
++
+ static char *qcom_battmgr_battery[] = { "battery" };
+ 
+ static int qcom_battmgr_probe(struct auxiliary_device *adev,
+@@ -1725,6 +1813,17 @@
+ 
+ 	pmic_glink_client_register(battmgr->client);
+ 
++	if (of_machine_is_compatible("retroidpocket,rp6") ||
++	    of_machine_is_compatible("retroidpocket,rpnova") ||
++	    of_machine_is_compatible("ayn,thor")) {
++		battmgr->retroid_charge_now = -1;
++		battmgr->retroid_limit_capacity = -1;
++		dev_set_drvdata(dev, battmgr);
++		ret = devm_device_add_group(dev, &qcom_battmgr_retroid_group);
++		if (ret)
++			dev_warn(dev, "no Retroid charge controls: %d\n", ret);
++	}
++
+ 	return 0;
+ }
+ 

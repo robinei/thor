@@ -131,6 +131,10 @@ settled() {
     if [ -n "$b" ]; then
         ok "battery (${b##*/})"
         info "battery: $(val "$b/capacity") %, $(val "$b/status"), $(val "$b/current_now") µA, end threshold $(val "$b/charge_control_end_threshold"), charge current $(val "$b/constant_charge_current") of $(val "$b/constant_charge_current_max")"
+        local glink
+        for glink in /sys/bus/auxiliary/devices/pmic_glink.power-supply.*; do
+            [ -e "$glink/retroid_charge_now" ] && check "battery firmware's switches writable by power" bash -c "stat -c %G '$glink/retroid_charge_now' | grep -qx power"
+        done
         check "battery's charge limit writable by power" bash -c "stat -c %G '$b/charge_control_end_threshold' | grep -qx power"
     else
         fail "no battery"

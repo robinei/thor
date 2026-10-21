@@ -292,7 +292,7 @@ Our kernel is Armada's (decided 2026-10-20: the furthest community work, our own
 have the device): linux-thor's PKGBUILD builds the Armada commit pinned in it (`_armada`; following them
 is `tools/repo/follow-armada.sh`, after reading what changed in their `packages/kernel` and trying the
 kernel on the device), with our config lines (`config.thor`) and our patches (the `.patch` files in its
-`source=`, none yet). So these come with it: the gamepad across sleep (`0508`, `0515`, `1005`–`1007`, `0534`), rumble's
+`source=`: PB-OS's `0545`, the battery firmware's own charge switches). So these come with it: the gamepad across sleep (`0508`, `0515`, `1005`–`1007`, `0534`), rumble's
 fixes (`1003`, `1004`), the s2idle stack (`0523`–`0526`, `0512`, `0522`, `0566`, `0204`, `0504` instead of
 ROCKNIX's IPCC change), the wake sources (lid on opening only, volume up not), PCIe WAKE#, the codec's rails
 in s2idle, and the charge current limit (`0903`: 0 runs the device from the charger, for bypass).
@@ -574,10 +574,16 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       since Kettle found SM8550's battery firmware never answers the end threshold's request (its patch
       `1190`; a firmware matter, not the kernel's). The other, the firmware's own threshold
       (`charge_control_end_threshold`; with Armada's patch `0904` a refused write fails, and ClamShell's
-      log says so once): `systemctl --user set-environment CLAMSHELL_CHARGE_LIMIT=threshold`, then
-      `systemctl --user restart clamshell` (to keep it: that line in `~/.config/environment.d/`). Try
-      both at 80 with the charger in: the level stops at 80 and the battery's `current_now` drops to
-      about 0. If the threshold works on this firmware, it holds through sleep too. UPower
+      log says so once): `CLAMSHELL_CHARGE_LIMIT=threshold`. The third, the battery firmware's own
+      switches, which AYN's Android driver writes (`usb_charge_now`, `limit_capacity_charge`: PB-OS found
+      them in the Thor's ADSP; their kernel patch `0545`, in linux-thor, puts them on
+      `/sys/bus/auxiliary/devices/pmic_glink.power-supply.0/` as `retroid_charge_now` and
+      `retroid_limit_capacity`; untried on a Thor): `CLAMSHELL_CHARGE_LIMIT=firmware`, its fixed 80 % for
+      80 and charge separation for Bypass (90 stays the current's). To switch: `systemctl --user
+      set-environment CLAMSHELL_CHARGE_LIMIT=…`, then `systemctl --user restart clamshell` (to keep it:
+      that line in `~/.config/environment.d/`); its log says which at start. Try each at 80 and Bypass
+      with the charger in: the level stops at 80, the battery's `current_now` drops to about 0. Firmware
+      ones hold through sleep too, and if one works it may be what Android's own limit is. UPower
       sees it (the battery mode's graph) and powers off at 3 %; GPU time per program in the battery mode
       (msm's `drm-engine-gpu` in fdinfo).
 - [ ] Bypass charging (Android has it: plugged in, the device runs from the charger and the battery is left

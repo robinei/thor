@@ -14,7 +14,7 @@
 # As Armada's scripts/build-kernel.sh: their patches/series in order, each applied without fuzz; their
 # dts/*.dts(i) copied into arch/arm64/boot/dts/qcom, then their dts/*.patch; defconfig with
 # config/armada-kernel.config.overrides merged, each =y checked. Then ours: the .patch files in source=,
-# in order (none yet: they come with the device); config.thor; a release of its own per package version,
+# in order (PB-OS's battery firmware switches; the rest come with the device); config.thor; a release of its own per package version,
 # -thor-<Armada's commit>-<pkgrel>, so that an update's modules go beside the running and installed
 # kernels' (thor-system keeps those until the new kernel is on the card). Differing from theirs: LLVM
 # instead of GCC; no built-in initramfs (ours comes from the boot loader: thor-boot); modules stripped of
@@ -26,7 +26,7 @@ _armada=d2bcf6fd33435f670f59a164c926842af91730f1
 # (Armada's commit's time: the version after the kernel's, so that their newer commit is a newer package.)
 _armada_time=202610202319
 pkgver=$_kver.$_armada_time
-pkgrel=4
+pkgrel=5
 pkgdesc="Armada's Linux kernel for the AYN Thor (SM8550), with its modules and device trees"
 arch=(aarch64)
 url=https://github.com/armada-os/armada
@@ -37,11 +37,16 @@ provides=(linux)
 options=(!strip !debug)
 source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.tar."{xz,sign}
         "armada-$_armada.tar.gz::https://github.com/armada-os/armada/archive/$_armada.tar.gz"
-        config.thor)
+        config.thor
+        # PB-OS's (github.com/project-barry/pb-os, external-and-mods/kernel-sm8650/sm8550/patches, at
+        # 2091b85): the battery firmware's own charge switches, AYN's and Retroid's (ClamShell's
+        # CLAMSHELL_CHARGE_LIMIT=firmware).
+        0545-power-supply-qcom_battmgr-retroid-charge-controls.patch)
 sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             SKIP
             b0503999564862cd2abeec1a920581f5943e36e5a179bb91bb8eec85c2670c38
-            bd52d03add8c22d384355ea52c1ac7570896a98b95cb4277eb8d04bf18022a85)
+            bd52d03add8c22d384355ea52c1ac7570896a98b95cb4277eb8d04bf18022a85
+            2c5748b2e5eacd95d8bea920173137e94e185c0243e222e29792050407355679)
 # Linus Torvalds', Greg Kroah-Hartman's (keys/pgp, as Arch's linux has them).
 validpgpkeys=(ABAF11C65A2970B130ABE3C479BE3E4300411886
               647F28654894E3BD457199BE38DBBDC86092693E)
