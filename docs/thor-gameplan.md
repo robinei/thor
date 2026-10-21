@@ -332,7 +332,12 @@ To know:
 
 ## Day one, in order
 
-1. Boot Android, update its firmware, note the versions (Android build, bootloader). Charge.
+1. Boot Android, update its firmware, note the versions (Android build, bootloader). Charge. How
+   Android holds its charge limit (80 %, added by an AYN update; and Direct Power Supply, its bypass):
+   with root, at the limit on the charger, the battery's `constant_charge_current` (or the downstream
+   driver's equivalents under `/sys/class/power_supply/battery/`) and `current_now`: if the current
+   goes to 0, Android holds it as our default does (`tuning::Hold`); if not, it sends the firmware a
+   request mainline's qcom_battmgr doesn't, worth finding for a kernel patch.
 2. **Check for a stock Linux boot mode before flashing anything**: enter the fastboot menu (hold Power and
    Volume down) and look for the default-boot switch (Android / Loader, or Android / UEFI). Note exactly
    what it offers, and whether the bootloader is locked (it says "Unlocked bootloader required"). If the
