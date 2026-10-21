@@ -48,8 +48,9 @@ if [ "$(printf '%s\n' "$recent" | wc -l)" -gt 3 ]; then
     exit 1
 fi
 
-if command -v thor-outputs > /dev/null; then
-    thor-outputs
+# (By its path: ~/.local/bin isn't on the login shell's PATH.)
+if [ -x "$HOME/.local/bin/thor-outputs" ]; then
+    "$HOME/.local/bin/thor-outputs"
 fi
 uwsm start -- sway
 exit 0

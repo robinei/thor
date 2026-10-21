@@ -36,6 +36,8 @@ LOCALE=${THOR_LOCALE:-en_US.UTF-8}
 SWAP_GIB=16
 # The device's packages: the base system, network, the session (sway through uwsm), the GPU (Freedreno/Turnip), sound,
 # notifications (mako), screenshots (grim), growing the root on first boot (growpart, which uses sgdisk for GPT),
+# compressed swap in memory (zram-generator; its config from system.sh),
+# the day-one checks' tools (evtest; alsa-utils: arecord, speaker-test, alsaucm),
 # what the starter library plays (RetroArch and its cores, mpv; ffmpeg's ffprobe for videos' lengths),
 # removable storage mounted as it is put in (udisks2, udiskie; exFAT's tools for SD cards), archives
 # browsed (ratarmount, FUSE) and extracted (bsdtar, libarchive's, in base; unzip, for Steam's setup), the viewers
@@ -45,10 +47,13 @@ PACKAGES=(base sudo mkinitcpio networkmanager polkit upower bluez openssh sway m
           pipewire pipewire-pulse wireplumber alsa-ucm-conf noto-fonts python less vim grim cloud-guest-utils gptfdisk
           retroarch retroarch-assets-xmb retroarch-assets-glui retroarch-assets-ozone python-pillow libretro-core-info libretro-nestopia libretro-snes9x libretro-mupen64plus-next libretro-gambatte
           libretro-mgba libretro-melonds libretro-genesis-plus-gx libretro-beetle-psx-hw libretro-flycast mpv ffmpeg wireless-regdb
-          udisks2 udiskie exfatprogs ratarmount uwsm imv zathura zathura-pdf-mupdf xdg-utils git rust base-devel pacman-contrib unzip)
-# The kernel command line: ROCKNIX's tuning for SM8550, our root. The first boot adds resume= and
+          udisks2 udiskie exfatprogs ratarmount uwsm imv zathura zathura-pdf-mupdf xdg-utils git rust base-devel pacman-contrib unzip zram-generator evtest alsa-utils)
+# The kernel command line: ROCKNIX's tuning for SM8550, our root; PSI on (Armada's kernel has it off by
+# default; Android's memory killer in Waydroid needs it), not per cgroup (as Armada's kargs.d/10-armada);
+# the internal UFS given 3 s to answer across sleep (Armada's device-quirks: SM8550's needs up to that,
+# against the default 0.5 s). The first boot adds resume= and
 # resume_offset= (the swap file's place) to both copies of it: /KERNEL's and the loader entry's.
-CMDLINE="root=LABEL=THOR_ROOT rw rootwait console=tty0 fbcon=rotate:1 allow_mismatched_32bit_el0 fw_devlink.strict=1 pcie_ports=compat irqaffinity=0-2 cgroup.memory=nokmem,nosocket nosoftlockup usbcore.interrupt_interval_override=045e:028e:2"
+CMDLINE="root=LABEL=THOR_ROOT rw rootwait console=tty0 fbcon=rotate:1 allow_mismatched_32bit_el0 fw_devlink.strict=1 pcie_ports=compat irqaffinity=0-2 cgroup.memory=nokmem,nosocket nosoftlockup usbcore.interrupt_interval_override=045e:028e:2 psi=1 cgroup_disable=pressure ufshcd_core.uic_cmd_timeout=3000"
 
 say() { echo "== $*"; }
 
@@ -96,9 +101,15 @@ cp -a "$WORK/system/usr/lib/kernel-overlays/base/lib/firmware/." "$ROOT/usr/lib/
 arch-chroot "$ROOT" depmod "$KVER"
 
 say "ROCKNIX's audio profiles (over alsa-ucm-conf's; a copy kept, which a pacman hook puts back after an update of it)"
-cp -a "$WORK/system/usr/share/alsa/ucm2/." "$ROOT/usr/share/alsa/ucm2/"
 mkdir -p "$ROOT/usr/local/share/thor"
 cp -a "$WORK/system/usr/share/alsa/ucm2" "$ROOT/usr/local/share/thor/ucm2"
+# Booted through AYN's U-Boot the card is named for the Odin 2 (ayn-AYNOdin2, from the firmware's DMI),
+# whose profile has no internal microphone and leaves the speakers' volumes unset: the Thor's under
+# those names too (this image is only for the Thor).
+for name in ayn-AYNOdin2- AYN-Odin2; do
+    cp "$ROOT/usr/local/share/thor/ucm2/conf.d/sm8550/AYN-Thor.conf" "$ROOT/usr/local/share/thor/ucm2/conf.d/sm8550/$name.conf"
+done
+cp -a "$ROOT/usr/local/share/thor/ucm2/." "$ROOT/usr/share/alsa/ucm2/"
 # Which ROCKNIX release the kernel, modules, firmware and profiles are from (maintenance compares it with
 # the latest).
 basename "$(dirname "$(realpath "$ROCKNIX")")" > "$ROOT/usr/local/share/thor/rocknix-release"

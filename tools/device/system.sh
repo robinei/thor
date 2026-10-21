@@ -1,7 +1,8 @@
 #!/bin/bash
 # The Thor's system files from this repository, into a root (as session.sh writes the session into a
 # home): the fan daemon, the session user's write access to what ClamShell's settings set, the gamepad's
-# stick range, the wake log, and Steam's starter. thor-image.sh runs it on the image's root; maintenance
+# stick range, zram and swapping, the SD card's scheduler, PipeWire's buffers, the checks at boot, the
+# wake log, and Steam's starter. thor-image.sh runs it on the image's root; maintenance
 # runs it again on the device after pulling (as root: sudo tools/device/system.sh / FAN_PROGRAM; then
 # systemctl daemon-reload, systemctl restart clamshell-fan, udevadm control --reload; the udev and
 # modprobe changes take effect at the next boot).
@@ -14,7 +15,8 @@ set -euo pipefail
 R=$1 FAN=$2
 HERE=$(cd "$(dirname "$0")" && pwd)
 mkdir -p "$R/usr/local/bin" "$R/usr/local/lib/thor" "$R/usr/local/share/applications" "$R/etc/systemd/system" \
-    "$R/etc/udev/rules.d" "$R/etc/tmpfiles.d" "$R/etc/modprobe.d" "$R/usr/lib/systemd/system-sleep"
+    "$R/etc/udev/rules.d" "$R/etc/tmpfiles.d" "$R/etc/modprobe.d" "$R/usr/lib/systemd/system-sleep" \
+    "$R/etc/sysctl.d" "$R/etc/pipewire/pipewire.conf.d" "$R/etc/pipewire/pipewire-pulse.conf.d"
 
 # The fan daemon (clamshell/crates/fan): nothing in the kernel drives the Thor's fan, so it runs from early
 # in boot, and again if it stops. Its file replaced, not written into, as it may be running.
@@ -30,6 +32,8 @@ Before=sysinit.target shutdown.target
 
 [Service]
 ExecStart=/usr/local/bin/clamshell-fan
+# (Stopped or failed: the fan left at half speed, not wherever it was, possibly off.)
+ExecStopPost=/usr/local/bin/clamshell-fan --safe
 Restart=always
 RestartSec=2
 ProtectSystem=strict
@@ -78,6 +82,70 @@ printf 'f /run/clamshell-fan 0664 root power - auto\n' > "$R/etc/tmpfiles.d/clam
     done
     echo
 } > "$R/etc/modprobe.d/thor-rsinput.conf"
+
+# Memory: compressed swap in memory (zram, zstd) before the swap file on the card, which is slow (about
+# 13 MB/s) and stays for hibernating (systemd hibernates to the swap file, never to zram); the kernel's
+# swapping tuned for zram, as Armada's 60-armada-gaming.conf (swappiness above 100 prefers swapping to
+# dropping file pages; no readahead from swap). Sizes as Armada's zram-generator.conf.
+cat > "$R/etc/systemd/zram-generator.conf" <<'EOF'
+# Written by tools/device/system.sh.
+[zram0]
+zram-size = min(ram, 16384)
+zram-resident-limit = min(ram / 2, 8192)
+compression-algorithm = zstd
+swap-priority = 100
+EOF
+cat > "$R/etc/sysctl.d/70-thor-zram.conf" <<'EOF'
+# Written by tools/device/system.sh: swapping to zram.
+vm.swappiness = 180
+vm.page-cluster = 0
+vm.watermark_boost_factor = 0
+vm.watermark_scale_factor = 125
+EOF
+
+# The SD card (the root's): BFQ and a long readahead, as Armada's 60-armada-block-scheduler.rules and
+# ROCKNIX's 10-bfq-sched.rules.
+echo 'ACTION=="add|change", KERNEL=="mmcblk[0-9]", ATTR{queue/scheduler}="bfq", ATTR{queue/read_ahead_kb}="4096"' \
+    > "$R/etc/udev/rules.d/74-thor-sd.rules"
+
+# Sound: PipeWire's buffers no shorter than Armada's (its 99-armada-buffers.conf, against crackling on
+# waking from sleep).
+cat > "$R/etc/pipewire/pipewire.conf.d/70-thor-buffers.conf" <<'EOF'
+# Written by tools/device/system.sh.
+context.properties = {
+    default.clock.min-quantum = 1024
+}
+EOF
+cat > "$R/etc/pipewire/pipewire-pulse.conf.d/70-thor-buffers.conf" <<'EOF'
+# Written by tools/device/system.sh.
+pulse.properties = {
+    pulse.min.req = 512/48000
+    pulse.min.quantum = 512/48000
+    pulse.min.frag = 512/48000
+}
+EOF
+
+# The checks at each boot (tools/device/thor-selftest): into the journal, kept on the card (its
+# directory makes journald's storage persistent), and /var/log/thor-selftest.log, so that a boot that
+# goes wrong can be read on another computer. Started early (once the root is writable), not waited for.
+install -m 755 "$HERE/thor-selftest" "$R/usr/local/bin/thor-selftest"
+mkdir -p "$R/var/log/journal"
+cat > "$R/etc/systemd/system/thor-selftest.service" <<'EOF'
+[Unit]
+Description=The Thor's checks at boot (journalctl -t thor-selftest, /var/log/thor-selftest.log)
+DefaultDependencies=no
+After=local-fs.target systemd-journald.socket
+Conflicts=shutdown.target
+Before=shutdown.target
+
+[Service]
+ExecStart=/usr/local/bin/thor-selftest
+SyslogIdentifier=thor-selftest
+
+[Install]
+WantedBy=sysinit.target
+EOF
+systemctl --root "$R" --quiet enable thor-selftest.service
 
 # What woke the device, each time (the kernel keeps only the last): for the battery's drain while
 # asleep (as Armada's 40-armada-wake-ledger). The last 500 wakes.

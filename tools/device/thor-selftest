@@ -1,0 +1,188 @@
+#!/bin/bash
+# The Thor's checks at each boot (thor-selftest.service, from tools/device/system.sh): what the device
+# shows of the hardware and of our setup, against what docs/thor-gameplan.md expects, as "ok", "FAIL"
+# (expected and not so) or "info" lines. Into the journal (`journalctl -b -t thor-selftest`) and
+# /var/log/thor-selftest.log (the last 20 boots), synced, so that the card can be read on another
+# computer when the device doesn't come up far enough to show anything
+# (`journalctl --directory=MNT/var/log/journal -t thor-selftest`, or the file).
+#
+# Two passes: at once (early in boot: the kernel, its command line, the card), then after the boot has
+# settled (90 s: the remote processors' firmware, Wi-Fi, the session).
+#
+#   thor-selftest            both passes (the service)
+#   thor-selftest --now      the second pass at once, to the terminal only (by hand, as root)
+set -u
+LOG=/var/log/thor-selftest.log
+USER_NAME=thor
+fails=0 oks=0
+NOW=0
+[ "${1:-}" = --now ] && NOW=1
+
+out() {
+    echo "$*"
+    [ "$NOW" = 1 ] || echo "$*" >> "$LOG"
+}
+ok() { oks=$((oks + 1)); out "ok    $*"; }
+fail() { fails=$((fails + 1)); out "FAIL  $*"; }
+info() { out "info  $*"; }
+# check WHAT COMMAND...: ok if the command succeeds.
+check() {
+    local what=$1
+    shift
+    if "$@" > /dev/null 2>&1; then ok "$what"; else fail "$what"; fi
+}
+# The contents of a file, one line.
+val() { tr '\n' ' ' 2> /dev/null < "$1" | sed 's/ *$//'; }
+# The input devices' names (from /proc/bus/input/devices).
+inputs() { sed -n 's/^N: Name="\(.*\)"$/\1/p' /proc/bus/input/devices 2> /dev/null; }
+flush() {
+    [ "$NOW" = 1 ] && return
+    journalctl --sync 2> /dev/null
+    sync
+}
+
+early() {
+    out "== pass 1, $(date --iso-8601=seconds), boot $(cat /proc/sys/kernel/random/boot_id)"
+    info "kernel $(uname -r)"
+    info "command line: $(cat /proc/cmdline)"
+    check "command line: psi=1" grep -qw psi=1 /proc/cmdline
+    check "UFS command timeout 3000 ms" grep -qx 3000 /sys/module/ufshcd_core/parameters/uic_cmd_timeout
+    check "fbcon rotated (rotate 1)" grep -qx 1 /sys/class/graphics/fbcon/rotate
+    check "suspend is s2idle" grep -q '\[s2idle\]' /sys/power/mem_sleep
+    check "PSI (/proc/pressure/memory)" test -r /proc/pressure/memory
+    info "root: $(findmnt -no SOURCE,FSTYPE,OPTIONS /)"
+    flush
+}
+
+settled() {
+    out "== pass 2, $(date --iso-8601=seconds), up $(cut -d' ' -f1 /proc/uptime) s"
+
+    # systemd
+    info "system state: $(systemctl is-system-running 2> /dev/null)"
+    local failed
+    failed=$(systemctl --failed --plain --no-legend 2> /dev/null | awk '{ print $1 }' | tr '\n' ' ')
+    if [ -z "$failed" ]; then ok "no failed units"; else fail "failed units: $failed"; fi
+    check "first boot done (/var/lib/thor-firstboot)" test -e /var/lib/thor-firstboot
+    check "resume= on the command line" grep -q 'resume_offset=' /proc/cmdline
+
+    # Remote processors (audio, compute, modem's firmware) and firmware errors.
+    local rp
+    for rp in /sys/class/remoteproc/remoteproc*; do
+        [ -e "$rp" ] || { fail "no remote processors"; break; }
+        if [ "$(val "$rp/state")" = running ]; then ok "remoteproc $(val "$rp/name") running"
+        else fail "remoteproc $(val "$rp/name"): $(val "$rp/state")"; fi
+    done
+    local fw
+    fw=$(journalctl -k -b --no-pager -o cat 2> /dev/null | grep -iE 'firmware.*(fail|error|not found)|direct firmware load' | head -20)
+    if [ -z "$fw" ]; then ok "no firmware load errors"; else fail "firmware load errors:"; out "$fw"; fi
+    info "kernel errors: $(journalctl -k -b -p err --no-pager -o cat 2> /dev/null | wc -l) lines (journalctl -k -b -p err)"
+
+    # Screens: both connected, their modes; the backlights by name.
+    local c
+    for c in /sys/class/drm/card*-DSI-*; do
+        [ -e "$c" ] || { fail "no DSI connectors"; break; }
+        info "${c##*/}: $(val "$c/status"), $(val "$c/enabled"), modes $(val "$c/modes")"
+    done
+    check "top backlight ae96000.dsi.0" test -e /sys/class/backlight/ae96000.dsi.0
+    check "bottom backlight ae94000.dsi.0" test -e /sys/class/backlight/ae94000.dsi.0
+    info "backlights: $(ls /sys/class/backlight 2> /dev/null | tr '\n' ' ')"
+
+    # Input devices.
+    info "input devices: $(inputs | tr '\n' ';')"
+    check "gamepad (AYN Odin2 Gamepad)" grep -q 'Name="AYN Odin2 Gamepad"' /proc/bus/input/devices
+    check "gamepad ids 2020:3001" grep -q 'Vendor=2020 Product=3001' /proc/bus/input/devices
+    check "AYN key (gpio-keys-ayn)" grep -q 'Name="gpio-keys-ayn"' /proc/bus/input/devices
+    check "power key (pwrkey)" grep -q 'Name=".*pwrkey.*"' /proc/bus/input/devices
+    check "top touchscreen" grep -q 'Name="top_touchscreen"' /proc/bus/input/devices
+    check "bottom touchscreen" grep -q 'Name="bottom_touchscreen"' /proc/bus/input/devices
+    # (A switch device with SW_LID: bit 0 of its SW capabilities.)
+    check "lid switch" bash -c 'grep "^B: SW=" /proc/bus/input/devices | grep -qE "[13579bdf]$"'
+    check "sticks' range 1024 (rsinput)" grep -qx 1024 /sys/module/rsinput/parameters/axis_leftx_max
+    check "uinput" test -c /dev/uinput
+
+    # The fan.
+    local h fan=
+    for h in /sys/class/hwmon/hwmon*; do [ "$(val "$h/name")" = pwmfan ] && fan=$h; done
+    if [ -n "$fan" ]; then
+        ok "fan (hwmon pwmfan)"
+        check "fan taken by clamshell-fan (pwm1_enable 3)" grep -qx 3 "$fan/pwm1_enable"
+        info "fan: pwm1 $(val "$fan/pwm1"), $(val "$fan/fan1_input") rpm"
+    else
+        fail "no fan (hwmon pwmfan)"
+    fi
+    check "clamshell-fan active" systemctl is-active -q clamshell-fan
+    info "fan mode: $(val /run/clamshell-fan)"
+    local z temps=
+    for z in /sys/class/thermal/thermal_zone*; do
+        case $(val "$z/type") in cpu*|gpu*) temps="$temps $(val "$z/type")=$(( $(val "$z/temp") / 1000 ))" ;; esac
+    done
+    if [ -n "$temps" ]; then ok "CPU and GPU sensors"; info "°C:$temps"; else fail "no cpu*/gpu* thermal zones"; fi
+
+    # Power: the battery, the caps' write access.
+    local b= s
+    for s in /sys/class/power_supply/*; do [ "$(val "$s/type")" = Battery ] && b=$s; done
+    if [ -n "$b" ]; then
+        ok "battery (${b##*/})"
+        info "battery: $(val "$b/capacity") %, $(val "$b/status"), $(val "$b/current_now") µA, end threshold $(val "$b/charge_control_end_threshold"), charge current $(val "$b/constant_charge_current") of $(val "$b/constant_charge_current_max")"
+        check "battery's charge limit writable by power" bash -c "stat -c %G '$b/charge_control_end_threshold' | grep -qx power"
+    else
+        fail "no battery"
+    fi
+    info "cpufreq: $(for p in /sys/devices/system/cpu/cpufreq/policy*; do printf '%s[%s] %s-%s ' "${p##*/}" "$(val "$p/related_cpus")" "$(val "$p/cpuinfo_min_freq")" "$(val "$p/cpuinfo_max_freq")"; done)"
+    check "CPU caps writable by power" bash -c 'stat -c %G /sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq | grep -qx power'
+    check "GPU devfreq" bash -c 'ls /sys/class/devfreq | grep -q gpu'
+    check "USB controller autosuspend" bash -c 'grep -qx auto /sys/bus/platform/drivers/dwc3-qcom/*/power/control'
+
+    # Memory and storage.
+    info "swap: $(swapon --show=NAME,SIZE,PRIO --noheadings 2> /dev/null | tr '\n' ';')"
+    check "zram swap" bash -c 'swapon --show=NAME --noheadings | grep -q zram'
+    check "swap file" bash -c 'swapon --show=NAME --noheadings | grep -qx /swapfile'
+    check "swappiness 180" grep -qx 180 /proc/sys/vm/swappiness
+    local dev
+    dev=$(lsblk -no PKNAME "$(findmnt -no SOURCE /)" 2> /dev/null)
+    if [ -n "$dev" ]; then
+        check "$dev scheduler bfq" grep -q '\[bfq\]' "/sys/block/$dev/queue/scheduler"
+        mountpoint -q /sys/kernel/debug || mount -t debugfs debugfs /sys/kernel/debug 2> /dev/null
+        local ios
+        for ios in /sys/kernel/debug/mmc*/ios; do
+            [ -r "$ios" ] && info "${ios%/ios}: $(grep -E 'clock|timing spec' "$ios" | tr -s ' \t\n' ' ')"
+        done
+    fi
+
+    # Sound, network.
+    info "sound cards: $(sed -n 's/^ *[0-9]* \[\([^ ]*\) *\]: .* - \(.*\)$/\1 (\2)/p' /proc/asound/cards 2> /dev/null | tr '\n' ';')"
+    check "sound card AYN-Thor or ayn-AYNOdin2" grep -qE '\[(AYN-?Thor|ayn-?AYNOdin2|AYNOdin2)' /proc/asound/cards
+    check "Wi-Fi interface" bash -c 'ls /sys/class/ieee80211 | grep -q .'
+    check "Bluetooth (hci0)" test -e /sys/class/bluetooth/hci0
+    info "network: $(nmcli -t -f DEVICE,STATE device 2> /dev/null | tr '\n' ' ')"
+
+    # The session.
+    local uid
+    uid=$(id -u "$USER_NAME" 2> /dev/null)
+    check "a session for $USER_NAME" bash -c "loginctl list-sessions --no-legend | grep -qw $USER_NAME"
+    check "sway running" pgrep -u "$USER_NAME" -x sway
+    if [ -n "$uid" ] && [ -d "/run/user/$uid" ]; then
+        local unit
+        for unit in clamshell mako; do
+            check "$unit active" runuser -u "$USER_NAME" -- env XDG_RUNTIME_DIR="/run/user/$uid" systemctl --user is-active -q "$unit"
+        done
+    fi
+    check "sway outputs written (thor-outputs)" test -s "/home/$USER_NAME/.config/sway/outputs"
+
+    # Sleep so far.
+    [ -r /var/log/thor-wake.log ] && info "last wakes: $(tail -n 3 /var/log/thor-wake.log | tr '\n' ';')"
+    out "== $oks ok, $fails failed"
+    flush
+}
+
+if [ "$NOW" = 1 ]; then
+    settled
+    exit 0
+fi
+# The last 20 boots kept.
+if [ -f "$LOG" ] && [ "$(grep -c '^== pass 1' "$LOG")" -ge 20 ]; then
+    awk '/^== pass 1/ { n++ } n > 1' "$LOG" > "$LOG.new" && mv "$LOG.new" "$LOG"
+fi
+early
+sleep 90
+settled
