@@ -21,7 +21,7 @@ impl Editor {
     pub fn tab(&self) -> crate::Tab {
         match self.purpose {
             Purpose::Password { .. } => crate::Tab::Wifi,
-            Purpose::AccountPassword(_) => crate::Tab::Setup,
+            Purpose::AccountPassword(_) => crate::Tab::Keyboard,
             Purpose::Env { .. } | Purpose::KeymapName(_) => crate::Tab::Settings,
             Purpose::FileName(_) => crate::Tab::Keyboard,
         }

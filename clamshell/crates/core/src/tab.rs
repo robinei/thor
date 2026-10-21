@@ -26,8 +26,6 @@ pub enum Tab {
     Battery,
     /// The clock's: the time zone.
     Time,
-    /// The device's setup: Wi-Fi, the time zone, the password, remote login (see [`crate::account`]).
-    Setup,
 }
 
 // (In the bar's order.)
@@ -43,14 +41,12 @@ names!(Tab {
     Wifi: "wifi";
     Battery: "battery";
     Time: "time";
-    Setup: "setup";
 });
 
 impl Tab {
-    /// Whether it has a button of its own in the bar (the time tab's is the clock; the setup opens from
-    /// the settings).
+    /// Whether it has a button of its own in the bar (the time tab's is the clock).
     pub fn in_bar(self) -> bool {
-        !matches!(self, Tab::Time | Tab::Setup)
+        self != Tab::Time
     }
 
     /// What the tab watches while open (the system read for it).
@@ -62,7 +58,6 @@ impl Tab {
             Tab::Bluetooth => Some(Watch::Bluetooth),
             Tab::Battery => Some(Watch::Battery),
             Tab::Time => Some(Watch::Time),
-            Tab::Setup => Some(Watch::Account),
             Tab::Sysinfo => Some(Watch::Metrics),
             Tab::Settings | Tab::Dock | Tab::Keyboard | Tab::Touchpad => None,
         }
@@ -85,7 +80,8 @@ impl Tab {
             Reading::Backlights(_) => self == Tab::Brightness,
             // (The clock shows it too.)
             Reading::Time(_) => true,
-            Reading::Account(_) => self == Tab::Setup,
+            // (The Device view's, on the main screen.)
+            Reading::Account(_) => false,
         }
     }
 }

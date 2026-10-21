@@ -102,6 +102,10 @@ pub enum Event {
     Screenshot(Result<String, String>),
     /// A calibration of the gyro asked for ended: whether it took (the device was held still enough).
     GyroCalibrated(bool),
+    /// A sticks' calibration's progress, or its end (see [`crate::device`]).
+    Sticks(crate::device::SticksEvent),
+    /// The top screen's refresh rate's calibration ended: what it said, or why it failed.
+    RefreshCalibrated(Result<String, String>),
     /// A change asked of the account's helper is done (what it did), or failed (why); its reading
     /// follows (see [`crate::account`]).
     AccountChanged(Result<String, String>),

@@ -556,8 +556,8 @@ mod tests {
         s.apply(ShelfEvent::CollectionStep(1).into());
         assert_eq!(s.shelf().current(), 1);
         assert_eq!(s.shelf().cursor().index, 0);
-        s.apply(ShelfEvent::CollectionStep(3).into());
-        assert_eq!(s.shelf().current(), 0, "wraps around (past TV and Apps)");
+        s.apply(ShelfEvent::CollectionStep(4).into());
+        assert_eq!(s.shelf().current(), 0, "wraps around (past TV, Apps and Tools)");
         assert_eq!(s.shelf().cursor().index, 2);
     }
 

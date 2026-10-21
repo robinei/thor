@@ -1,7 +1,7 @@
 # The AYN Thor's system files (root/, as installed): the power group's write access to what ClamShell's
 # settings set, the sticks' range, zram and swapping, the SD card's scheduler, PipeWire's buffers, sleep
 # (logind, s2idle, the wake log), the boot (thor-boot, our initramfs, the first boot's growing and swap
-# file), the checks at each boot (thor-selftest), the account helper for ClamShell's Setup tab
+# file), the checks at each boot (thor-selftest), the account helper for ClamShell's Device view
 # (thor-account, through pkexec), the touchscreens' and uinput's udev entries. Built from the checkout
 # this PKGBUILD is in.
 pkgname=thor-system

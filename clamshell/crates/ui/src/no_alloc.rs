@@ -4,6 +4,7 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
+use clamshell_core::device::{DeviceId, SticksEvent};
 use clamshell_core::keyboard::{self, Key, Modifier};
 use clamshell_core::{DockId, EditorId, Event, Id, Init, Instance, PointerEvent, Reading, SettingsId, Slide, State, Tab};
 
@@ -48,6 +49,14 @@ fn window(id: i64, app_id: &str, unit: Option<&str>, focused: bool) -> clamshell
 
 fn key(k: Key) -> Event {
     Event::Pointer(PointerEvent::Activate(Id::Key(keyboard::find(k).expect("key on the layout"))))
+}
+
+/// Shelf's Tools collection opened and its Device entry run: the Device view.
+fn device() -> Vec<Event> {
+    let library = clamshell_library::demo_library();
+    let tools = library.collections.iter().position(|c| c.name == "Tools").unwrap_or(0);
+    let entry = || tap(Id::Shelf(clamshell_core::ShelfId::Game("tool:device".into())));
+    vec![tap(Id::Shelf(clamshell_core::ShelfId::Collection(u16::try_from(tools).unwrap_or(0)))), entry(), entry()]
 }
 
 fn tap(id: Id) -> Event {
@@ -274,16 +283,18 @@ fn warm_frames_do_not_allocate() {
             ],
         ),
         ("keyboard", vec![Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Keyboard)))]),
-        ("setup", vec![tap(Id::Tab(Tab::Settings)), tap(Id::Settings(SettingsId::Setup)), Event::Reading(Reading::Account(account()))]),
+        ("device", [device(), vec![Event::Reading(Reading::Account(account()))]].concat()),
         (
-            "setup, the password",
-            vec![
-                tap(Id::Tab(Tab::Settings)),
-                tap(Id::Settings(SettingsId::Setup)),
-                Event::Reading(Reading::Account(account())),
-                tap(Id::Setup(clamshell_core::account::SetupId::Password)),
-                key(Key::Char('a')),
-            ],
+            "device, the password",
+            [device(), vec![Event::Reading(Reading::Account(account())), tap(Id::Device(DeviceId::Password)), key(Key::Char('a'))]].concat(),
+        ),
+        (
+            "device, the sticks calibrating",
+            [
+                device(),
+                vec![tap(Id::Device(DeviceId::Sticks)), Event::Sticks(SticksEvent::Progress(clamshell_core::sticks::Calibrator::new(-1024, 1024).progress()))],
+            ]
+            .concat(),
         ),
         ("keyboard, Fn", vec![tap(Id::Tab(Tab::Keyboard)), key(Key::Mod(Modifier::Fn))]),
         (

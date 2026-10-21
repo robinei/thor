@@ -31,16 +31,15 @@ const TILE: TileShape = TileShape { icon: 0.36, icon_y: 0.17, cut: None };
 /// Tiles whose setting does nothing yet: barely there.
 const LATER: Rgb = Rgb(0x34343c);
 
-/// What a tile is: a setting, the environment, Reset, or the setup.
+/// What a tile is: a setting, the environment, or Reset.
 #[derive(Clone, Copy)]
 enum Tile {
     Setting(Setting),
     Env,
     Reset,
-    Setup,
 }
 
-/// The grid, in order; on a game's tab Reset follows, on All games the setup. (Settings for the device rather than a game, the
+/// The grid, in order; on a game's tab Reset follows. (Settings for the device rather than a game, the
 /// charge limit and idle, are the battery tab's.)
 const GRID: [Tile; 15] = [
     Tile::Setting(Setting::Power),
@@ -97,8 +96,8 @@ pub(super) fn draw(f: &mut Frame) {
 
     // The grid below.
     let grid = Rect::new(grid.x, grid.y + pad * 0.6, grid.w, grid.h - pad * 0.6);
-    let last = if game.is_some() { Tile::Reset } else { Tile::Setup };
-    for (i, tile) in GRID.into_iter().chain([last]).enumerate() {
+    let last = game.is_some().then_some(Tile::Reset);
+    for (i, tile) in GRID.into_iter().chain(last).enumerate() {
         draw_tile(f, grid.cell(COLUMNS, ROWS, f.body().h * GAP, i), tile);
     }
 }
@@ -163,10 +162,6 @@ fn face(s: &State, tile: Tile) -> Face {
             let any = game.as_ref().is_some_and(|g| s.settings().has_own(g));
             let value = Fmt::of(format_args!("{}", if any { "Reset" } else { "Nothing to reset" }));
             Face { id: Id::Settings(SettingsId::Reset), icon: Icon::Reset, value, impact: Impact::Stock, origin: TileOrigin::Global, active: any, note: "" }
-        }
-        Tile::Setup => {
-            let value = Fmt::of(format_args!("Setup"));
-            Face { id: Id::Settings(SettingsId::Setup), icon: Icon::Lock, value, impact: Impact::Stock, origin: TileOrigin::Global, active: true, note: "" }
         }
     }
 }

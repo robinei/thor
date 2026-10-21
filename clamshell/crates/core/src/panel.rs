@@ -203,7 +203,6 @@ impl State {
                 vec![]
             }
             SettingsId::Reset => self.reset(),
-            SettingsId::Setup => self.choose_tab(crate::Tab::Setup),
         }
     }
 

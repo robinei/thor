@@ -85,7 +85,7 @@ fn tab_button(s: &State, tab: Tab) -> (Id, Icon, Tone) {
             };
             (Id::Tab(tab), icon, if open { Tone::Accent } else { tone })
         }
-        Tab::Settings | Tab::Dock | Tab::Keyboard | Tab::Touchpad | Tab::Sysinfo | Tab::Time | Tab::Setup => {
+        Tab::Settings | Tab::Dock | Tab::Keyboard | Tab::Touchpad | Tab::Sysinfo | Tab::Time => {
             (Id::Tab(tab), Icon::for_tab(tab), if open { Tone::Accent } else { Tone::Dim })
         }
     }

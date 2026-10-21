@@ -196,12 +196,11 @@ pub(crate) fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
         return vec![];
     }
     // Shelf: a page (the rows on screen).
-    if s.pad_on_top() && focus_screen(s, d) == Screen::Top {
+    if on_shelf(s, d) {
         let page = i32::try_from(s.shelf().rows()).unwrap_or(1).max(1);
         return vec![ShelfEvent::ListStep(step * page).into()];
     }
-    // (Not the setup: it opens from the settings.)
-    let tabs: Vec<Tab> = Tab::ALL.into_iter().filter(|t| *t != Tab::Setup).collect();
+    let tabs: Vec<Tab> = Tab::ALL.to_vec();
     let at = tabs.iter().position(|t| *t == s.bottom().tab()).unwrap_or(0) as i32;
     let next = (at + step).rem_euclid(tabs.len() as i32) as usize;
     match tabs.get(next) {
@@ -211,12 +210,17 @@ pub(crate) fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
     }
 }
 
+/// Whether the pad is on shelf (not the view in its place).
+fn on_shelf(s: &State, d: &impl Drawn) -> bool {
+    s.pad_on_top() && focus_screen(s, d) == Screen::Top && s.top_view() == clamshell_core::device::TopView::Shelf
+}
+
 /// L2, R2: shelf's first or last entry.
 pub(crate) fn trigger(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
     if s.in_actions() {
         return vec![];
     }
-    if s.pad_on_top() && focus_screen(s, d) == Screen::Top {
+    if on_shelf(s, d) {
         let len = i32::try_from(s.shelf().list().len()).unwrap_or(i32::MAX);
         return vec![ShelfEvent::ListStep(step * len).into()];
     }
@@ -233,7 +237,7 @@ pub(crate) fn shortcut(s: &State, d: &impl Drawn, button: PadInput) -> Vec<Event
         PadInput::Start => ShelfEvent::Continue,
         _ => return vec![],
     };
-    if s.pad_on_top() && focus_screen(s, d) == Screen::Top {
+    if on_shelf(s, d) {
         return vec![event.into()];
     }
     let backspace = keyboard::find(keyboard::Key::Named(keyboard::Named::Backspace));
@@ -254,6 +258,10 @@ pub(crate) fn back(s: &State) -> Option<Event> {
     }
     if s.keymap_screen().is_some() {
         return Some(PointerEvent::Activate(Id::Keymap(clamshell_core::KeymapId::Back)).into());
+    }
+    // The Device view in shelf's place: back to shelf.
+    if s.top_view() == clamshell_core::device::TopView::Device {
+        return Some(PointerEvent::Activate(Id::Device(clamshell_core::device::DeviceId::Close)).into());
     }
     // On shelf's actions (A held took the pad there): back to the entry in the list.
     if matches!(s.pointer().focus(), Some(Id::Shelf(id)) if !matches!(id, ShelfId::Game(_) | ShelfId::Collection(_) | ShelfId::Up)) {

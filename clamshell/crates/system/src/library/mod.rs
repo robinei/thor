@@ -140,7 +140,13 @@ const NEEDED: [(&str, &str); 8] = [
 ];
 
 /// The Tools tab's entries: id, title, the tool, what it does.
-const TOOLS: [(&str, &str, Tool, &str); 2] = [
+const TOOLS: [(&str, &str, Tool, &str); 3] = [
+    (
+        "tool:device",
+        "Device",
+        Tool::Device,
+        "Calibrates the controller's sticks and gyro and the top screen's refresh rate; sets the password and remote login; Wi-Fi and the time zone.",
+    ),
     (
         "tool:rescan",
         "Rescan library",

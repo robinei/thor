@@ -147,6 +147,12 @@ pub enum Effect {
     /// Calibrate the gyro from its next second (the device held still); the result comes back as
     /// [`crate::Event::GyroCalibrated`].
     CalibrateGyro,
+    /// Calibrate the sticks (the pad thread: [`crate::sticks::Calibrator`]); its progress and end come
+    /// back as [`crate::Event::Sticks`].
+    CalibrateSticks,
+    /// Calibrate the top screen's refresh rate (thor-panel-calibration); the end comes back as
+    /// [`crate::Event::RefreshCalibrated`].
+    CalibrateRefresh,
     Quit,
 }
 
@@ -196,6 +202,8 @@ pub enum Save {
     TwelveHour(bool),
     /// The setup is done: it doesn't open by itself again.
     SetupDone,
+    /// The sticks' calibrations, by controller.
+    Sticks(crate::sticks::Calibrations),
 }
 
 /// What the compositor is asked to do.
@@ -234,6 +242,7 @@ pub struct Dirty {
 
 impl Dirty {
     pub const BOTH: Dirty = Dirty { top: true, bottom: true };
+    pub const TOP: Dirty = Dirty { top: true, bottom: false };
     pub const BOTTOM: Dirty = Dirty { top: false, bottom: true };
     pub const NONE: Dirty = Dirty { top: false, bottom: false };
 

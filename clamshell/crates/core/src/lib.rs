@@ -14,6 +14,7 @@ pub mod background;
 pub mod battery;
 pub mod bluetooth;
 pub mod bottom_screen;
+pub mod device;
 pub mod dock;
 pub mod editor;
 mod effect;
@@ -45,6 +46,7 @@ mod session;
 pub mod settings;
 mod shelf;
 pub mod slider;
+pub mod sticks;
 mod sys;
 mod tab;
 pub mod time;
@@ -137,8 +139,10 @@ pub struct Init {
     pub window_rules: bottom_screen::WindowRules,
     /// Clocks on a 12-hour dial (else 24-hour).
     pub twelve_hour: bool,
-    /// The setup not done yet (ClamShell's first start): it opens (see [`account`]).
+    /// The setup not done yet (ClamShell's first start): the Device view opens (see [`device`]).
     pub setup: bool,
+    /// The sticks' calibrations, by controller (see [`sticks`]).
+    pub sticks: sticks::Calibrations,
 }
 
 #[derive(Debug, Default)]
@@ -152,6 +156,10 @@ pub struct State {
     /// The UI is up (its Start), and the watch in force (see [`State::follow_watch`]).
     ui_up: bool,
     watching: Option<Watch>,
+    /// The account is watched (the Device view open: see [`State::follow_watch`]).
+    account_watched: bool,
+    /// The Device view on the main screen (see [`device`]).
+    device: device::Device,
     /// The screens are off: the bar's status isn't watched (see [`Watch::Status`]).
     status_unwatched: bool,
     /// The battery tab's row whose menu is open (see [`battery`]).
@@ -229,7 +237,11 @@ impl State {
         s.follow_pausable_runners();
         s.pointer.focus = s.shelf.selected().cloned().map(|g| Id::Shelf(ShelfId::Game(g)));
         if init.setup {
-            s.bottom.tab = Tab::Setup;
+            s.pointer.focus = Some(Id::Device(device::DeviceId::Wifi));
+        }
+        s.device.calibrations = init.sticks;
+        if init.setup {
+            s.device.open = true;
         }
         if let Some(tab) = init.start_tab {
             s.bottom.tab = tab;
@@ -552,6 +564,15 @@ impl State {
                 self.on_screenshot(result);
                 (Dirty::BOTTOM, vec![])
             }
+            Event::Sticks(event) => {
+                let done = matches!(event, device::SticksEvent::Done(_, Some(_)));
+                self.on_sticks(event);
+                (Dirty::TOP, if done { vec![self.sticks_saved()] } else { vec![] })
+            }
+            Event::RefreshCalibrated(result) => {
+                self.on_refresh(result);
+                (Dirty::TOP, vec![])
+            }
             Event::GyroCalibrated(ok) => {
                 self.notify(crate::hardware::NoticeKind::Gyro(Some(ok)));
                 (Dirty::BOTTOM, vec![])
@@ -617,7 +638,11 @@ impl State {
             Reading::Audio(audio) => self.levels.read_audio(audio),
             Reading::Backlights(backlights) => self.levels.read_backlights(backlights),
             Reading::Time(time) => replace(&mut self.sys.time, time),
-            Reading::Account(account) => replace(&mut self.sys.account, account),
+            Reading::Account(account) => {
+                // (The Device view shows it, on the main screen.)
+                let changed = replace(&mut self.sys.account, account);
+                return if changed && self.device.open { Dirty::TOP } else { Dirty::NONE };
+            }
         };
         if changed && shown { Dirty::BOTTOM } else { Dirty::NONE }
     }
@@ -731,7 +756,7 @@ impl State {
                 None => (Dirty::NONE, vec![]),
             },
             Id::Time(id) => self.on_time(id),
-            Id::Setup(id) => (Dirty::BOTTOM, self.on_setup(id)),
+            Id::Device(id) => (Dirty::BOTH, self.on_device(id)),
             Id::Battery(id) => (Dirty::BOTTOM, self.on_battery(id)),
             Id::PadMouse => {
                 self.pad.toggle_mouse();
@@ -995,6 +1020,11 @@ impl State {
             Tab::Dock if self.dock.menu.is_some() => Some(Watch::Battery),
             tab => tab.watch(),
         };
+        // (The account: while the Device view is open and the UI up.)
+        let account = self.ui_up && self.device.open;
+        if account != std::mem::replace(&mut self.account_watched, account) {
+            effects.push(Effect::Watch(Watch::Account, account));
+        }
         let wanted = tab.filter(|_| seen);
         if wanted == self.watching {
             return effects;
@@ -1048,6 +1078,10 @@ impl State {
         let shelf_in_front = front.is_none_or(|w| w.app_id == windows::SHELF_APP_ID);
         if !shelf_in_front {
             return vec![Effect::Window(WindowCommand::ShowShelf)];
+        }
+        // (The Device view in shelf's place: back to shelf.)
+        if self.device.open {
+            return self.close_device();
         }
         // (Only where a window shows on the main screen: one moved down leaves its workspace empty.)
         let shown = |ws: &String| session.windows.iter().any(|w| w.workspace == *ws && !w.down);

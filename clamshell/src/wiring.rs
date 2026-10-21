@@ -123,6 +123,10 @@ pub fn start(
     // The controller, grabbed for good with a virtual Xbox pad for games.
     let pad_taken = pad::Taken::default();
     let pad = started("pad", pad::spawn(env.gamepad.clone(), pad_taken.clone(), sink.clone()));
+    // (The sticks' calibrations as saved: the state has them too, from the same file.)
+    if let Some(dir) = paths.state_dir.as_deref() {
+        pad.send(pad::Command::Sticks(Store::open(dir).sticks()));
+    }
     // (Sleep waits for the pad to close the gyro's stream.)
     detached("sleep", clamshell_system::sleep::spawn_hold(pad.clone()));
     let battery = started("battery", battery::spawn(sink.clone()));

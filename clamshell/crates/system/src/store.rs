@@ -10,7 +10,8 @@
 //!   - `keymaps/<name>.json`: a keymap each, named as it is (an entry's or a runner level's own: as its
 //!     settings screen's file); no folder: the initial ones;
 //!   - `window-rules.json`, `dock.json`, `autostart.json`,
-//!     `favourites.json`, `resume.json` (where shelf and the second screen were), `brightness.json`,
+//!     `favourites.json`, `resume.json` (where shelf and the second screen were), `sticks.json` (the sticks'
+//!     calibrations, by controller), `brightness.json`,
 //!     `clock.json`, `setup.json` (the setup done: see `clamshell_core::account`).
 //! - `plays.jsonl`: an entry's plays, a line each (its id, start in seconds since the epoch, duration in
 //!   seconds), appended; a line cut short is skipped.
@@ -182,6 +183,7 @@ impl Store {
             Save::Dock(list) => write_json(&self.file("dock.json"), &ids(list)),
             Save::Autostart(list) => write_json(&self.file("autostart.json"), &ids(list)),
             Save::SetupDone => write_json(&self.file("setup.json"), &SetupFile { done: true }),
+            Save::Sticks(c) => write_json(&self.file("sticks.json"), c),
         }
     }
 
@@ -314,6 +316,11 @@ impl Store {
     /// Whether the setup was done (else it opens at the start).
     pub fn setup_done(&self) -> bool {
         read_json::<SetupFile>(&self.file("setup.json")).is_some_and(|f| f.done)
+    }
+
+    /// The sticks' calibrations, by controller.
+    pub fn sticks(&self) -> clamshell_core::sticks::Calibrations {
+        read_json(&self.file("sticks.json")).unwrap_or_default()
     }
 
     /// Whether clocks show 12 hours (else, or unsaved, 24).

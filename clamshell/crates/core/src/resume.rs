@@ -64,7 +64,7 @@ impl State {
     pub(crate) fn restore(&mut self, resume: &Resume) {
         // Any tab but the touchpad (any touch there points: only on request) and the setup (it opens by
         // itself while not done). What a tab watches starts with Event::Start.
-        if let Some(tab) = Tab::from_name(&resume.tab).filter(|t| !matches!(t, Tab::Touchpad | Tab::Setup)) {
+        if let Some(tab) = Tab::from_name(&resume.tab).filter(|t| *t != Tab::Touchpad) {
             self.bottom.tab = tab;
         }
         for (name, ids) in &resume.places {
@@ -93,7 +93,10 @@ mod tests {
         };
         let place = |c: &str, id: &str| (c.to_owned(), vec![id.to_owned()]);
         assert_eq!((resume.collection.as_str(), resume.tab.as_str()), ("More", "sysinfo"));
-        assert_eq!(resume.places, vec![place("Games", "ff6"), place("More", "ff6"), place("TV", "tv:Cosmos"), place("Apps", "desktop:steam")]);
+        assert_eq!(
+            resume.places,
+            vec![place("Games", "ff6"), place("More", "ff6"), place("TV", "tv:Cosmos"), place("Apps", "desktop:steam"), place("Tools", "tool:device")]
+        );
         let mut fresh = State::new(Init { resume: Some(resume.clone()), ..init() });
         assert_eq!(fresh.shelf().collection().map(|c| c.name.as_str()), Some("More"));
         fresh.apply(ShelfEvent::CollectionStep(-1).into());

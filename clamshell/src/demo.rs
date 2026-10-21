@@ -155,6 +155,14 @@ pub fn battery(now: u64) -> Vec<Event> {
     ]
 }
 
+/// A sticks' calibration midway: the centres taken, the left stick turned up and right so far, the right
+/// stick resting.
+pub fn sticks_progress() -> clamshell_core::sticks::Progress {
+    use clamshell_core::sticks::{Phase, Progress, StickAxis};
+    let axis = |low, high| StickAxis { low, centre: 0, high };
+    Progress { phase: Phase::Turn, now: [620, -540, 10, -5], seen: [axis(-80, 760), axis(-700, 60), axis(-10, 15), axis(-8, 6)], min: -1024, max: 1024 }
+}
+
 /// The time zones as timedated lists them (a sample), Europe/Oslo in force.
 pub fn time_zones() -> clamshell_core::TimeZones {
     let zones = [

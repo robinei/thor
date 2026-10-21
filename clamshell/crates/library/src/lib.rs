@@ -36,6 +36,9 @@ pub enum Tool {
     Rescan,
     /// The entries whose covers and details weren't found tried again, then a rescan.
     Refetch,
+    /// The Device view, ClamShell's own on the main screen (calibrating the controller and the screen,
+    /// the password, remote login).
+    Device,
 }
 
 impl Launch {
@@ -633,11 +636,16 @@ pub fn demo_library() -> Library {
             g.items.push(s);
         }
     }
+    // ClamShell's own tools, as a library.json with a Tools place has them.
+    let tools = games.len();
+    let summary = "Calibrates the controller's sticks and gyro and the top screen's refresh rate; sets the password and remote login.";
+    games.push(Entry { launch: Launch::Tool(Tool::Device), app: true, summary: summary.into(), ..Entry::new("tool:device", "Device") });
     let collections = vec![
         Collection::with_icon("Games", "gamepad", (0..n).collect()),
         Collection::new("More", vec![3, 1]),
         Collection::with_icon("TV", "tv", vec![series]),
         Collection::with_icon("Apps", "apps", (n..n + apps.len()).collect()),
+        Collection::with_icon("Tools", "tools", vec![tools]),
     ];
     let own = |name: &str, icon: &str| Some(OwnTab { name: name.into(), icon: Some(icon.into()) });
     Library {

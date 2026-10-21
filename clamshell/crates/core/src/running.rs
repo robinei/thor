@@ -197,6 +197,10 @@ impl State {
     /// Launches `game` as [`State::launch`] does, by `command` if given (then a group too) instead of its own.
     pub(crate) fn launch_with(&mut self, game: Arc<str>, command: Option<Launch>) -> Vec<Effect> {
         if let Some(Launch::Tool(tool)) = self.shelf.game(&game).map(|g| &g.launch) {
+            // (The Device view is ClamShell's own, on the main screen.)
+            if *tool == clamshell_library::Tool::Device {
+                return self.open_device();
+            }
             return vec![Effect::Tool(*tool)];
         }
         if command.is_none() && self.shelf.game(&game).is_some_and(crate::Entry::is_group) {

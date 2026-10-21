@@ -17,8 +17,9 @@
 # pacman's config and keyring: tools/image/pacman-conf.sh's (XDG_CACHE_HOME: the user's, through sudo).
 #
 # Nothing in it is anyone's in particular: the user thor logs in on its own (autologin) with its account
-# locked, no password, until one is set in ClamShell (its first-run Setup tab: thor-account); sudo takes
-# that password; ssh is off until turned on there; the time zone is UTC until set.
+# locked, no password, until one is set in ClamShell (its Device view, opened at the first start:
+# thor-account); sudo takes that password; ssh is off until turned on there; the time zone is UTC until
+# set.
 #
 # Two ways to boot, one FAT partition: the stock bootloader (U-Boot with UEFI, as Kettle Linux's Thor notes
 # have it) starts systemd-boot (EFI/BOOT/BOOTAA64.EFI), which loads the kernel (an EFI program), our

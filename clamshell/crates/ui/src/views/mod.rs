@@ -11,6 +11,7 @@ pub(crate) mod bar;
 mod battery;
 mod bluetooth;
 mod dark;
+mod device;
 mod dock;
 mod editor;
 mod keyboard;
@@ -18,7 +19,6 @@ mod keymaps;
 mod levels;
 mod radio;
 mod settings;
-mod setup;
 mod shelf;
 mod sysinfo;
 mod time;
@@ -38,10 +38,14 @@ const POINTING_FADE: f32 = 0.7;
 /// brightness is when idle dims them).
 const BOTTOM_DIM: f32 = 2.0 / 3.0;
 
-/// The main screen: shelf, over all of `screen` (the frame starts black: see `render`).
+/// The main screen: shelf, or the view ClamShell shows in its place (the Device view), over all of
+/// `screen` (the frame starts black: see `render`).
 pub fn top(f: &mut Frame, screen: Rect) {
     f.body = screen;
-    f.out.list_rows = Some(shelf::draw(f, screen));
+    match f.s.top_view() {
+        clamshell_core::device::TopView::Shelf => f.out.list_rows = Some(shelf::draw(f, screen)),
+        clamshell_core::device::TopView::Device => device::draw(f, screen),
+    }
 }
 
 /// The second screen: the bar, the open tab below it, and the slider over both while one moves; or,
@@ -62,6 +66,7 @@ pub fn bottom(f: &mut Frame, screen: Rect) {
             Some(Purpose::FileName(FileName::Rename(_))) => editor::draw(f, "New name", "Rename"),
             Some(Purpose::FileName(FileName::NewFolder(_))) => editor::draw(f, "New folder's name", "Make"),
             Some(Purpose::FileName(FileName::Extract(_))) => editor::draw(f, "Extract to", "Extract"),
+            Some(Purpose::AccountPassword(_)) => device::draw_password(f),
             _ => keyboard::draw(f, body),
         },
         Tab::Dock => dock::draw(f),
@@ -73,7 +78,6 @@ pub fn bottom(f: &mut Frame, screen: Rect) {
         Tab::Volume => levels::draw_volume(f),
         Tab::Brightness => levels::draw_brightness(f),
         Tab::Time => time::draw(f),
-        Tab::Setup => setup::draw(f),
     }
     // (Pointing: the area below the bar is a touchpad, what is in it faded; the touchpad tab is nothing else.)
     if f.s.bottom().pointing() && f.s.bottom().tab() != Tab::Touchpad {

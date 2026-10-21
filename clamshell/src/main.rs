@@ -188,6 +188,7 @@ fn saved(paths: &Paths) -> Init {
         brightness: store.brightness(),
         twelve_hour: store.twelve_hour(),
         setup: !store.setup_done(),
+        sticks: store.sticks(),
         dock: store.dock(),
         autostart: store.autostart(),
         resume: store.resume(),

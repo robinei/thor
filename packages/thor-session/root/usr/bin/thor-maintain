@@ -29,7 +29,7 @@ done_pass() {
 }
 trap done_pass EXIT
 trap 'exit 1' INT TERM HUP
-echo "Maintenance needs the account's password (set in ClamShell: Settings, Setup)."
+echo "Maintenance needs the account's password (set in ClamShell: Tools, Device)."
 read -rsp "Password: " password
 echo
 # (The file written to a hidden name first, which sudo skips, checked, then moved into place.)

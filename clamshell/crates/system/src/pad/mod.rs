@@ -14,6 +14,7 @@
 //! Games' rumble on the virtual pad reaches the real controller's motors while the game has the pad
 //! ([`rumble`]), scaled by the Rumble setting.
 
+mod calibrate;
 mod device;
 mod listen;
 pub mod motion;
@@ -32,7 +33,9 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use clamshell_core::Event;
 use clamshell_core::PadRoute;
+use clamshell_core::device::SticksEvent;
 use clamshell_core::keymap::Keymap;
 use rustix::event::{PollFd, PollFlags, Timespec};
 
@@ -68,6 +71,10 @@ pub enum Command {
     Sleep(Ack),
     /// Awake again: the gyro found again.
     Woke,
+    /// Calibrate the controller's sticks (see [`calibrate`]): its progress and end go to the state.
+    CalibrateSticks,
+    /// The sticks' calibrations, by controller (at start; one made here is kept here too).
+    Sticks(clamshell_core::sticks::Calibrations),
 }
 
 /// A command's acknowledgement (equal to any other: commands compare by what they ask).
@@ -122,6 +129,7 @@ pub fn spawn(spec: DeviceSpec, taken: Taken, sink: impl Sink) -> io::Result<Work
             effects: Effects::default(),
             rumble_setting: 3,
             buzz: None,
+            sticks: Default::default(),
         };
         worker::supervise(&mut pad, &commands, retry);
     })?;
@@ -169,6 +177,8 @@ struct PadThread<S> {
     rumble_setting: u16,
     /// The keymap's buzz playing, until when.
     buzz: Option<(Buzz, Instant)>,
+    /// The sticks' calibrations, by controller.
+    sticks: clamshell_core::sticks::Calibrations,
 }
 
 /// A controller taken over, with its gyro if one is found.
@@ -186,6 +196,8 @@ struct Controller {
     /// Its name and physical path, to find its gyro again after sleep.
     name: String,
     phys: String,
+    /// Its sticks: their calibration, one going.
+    sticks: calibrate::StickState,
 }
 
 /// The gyro of the controller named `name` at `phys`: its own motion sensor, else the Thor's sensor hub.
@@ -225,6 +237,12 @@ impl<S: Sink> PadThread<S> {
                 let _ = done.send(());
             }
             Command::Woke => {}
+            // (No controller: nothing to calibrate.)
+            Command::CalibrateSticks => {
+                log::info!("pad: no controller to calibrate the sticks of");
+                let _ = self.sink.send(Event::Sticks(SticksEvent::Done(String::new(), None)));
+            }
+            Command::Sticks(all) => self.sticks = all,
         }
     }
 
@@ -265,7 +283,7 @@ impl<S: Sink> Service for PadThread<S> {
         let id = real.input_id();
         self.taken.set((id.vendor(), id.product()));
         let caps = Capabilities::of(&real)?;
-        let (ranges, snapshot) = (caps.ranges(), caps.snapshot());
+        let (ranges, mut snapshot) = (caps.ranges(), caps.snapshot());
         if self.devices.as_ref().is_none_or(|v| v.made_for != caps) {
             self.devices = Some(VirtualDevices::new(caps)?);
         }
@@ -284,7 +302,11 @@ impl<S: Sink> Service for PadThread<S> {
         if letters {
             log::info!("pad: its X and Y codes are by letter (xpad, rsinput): read by place");
         }
-        Ok(Controller { grabbed, ranges, snapshot, motion, ayn: AynKey::find(), rumble, letters, name, phys })
+        let sticks = calibrate::StickState::new(ranges.stick, self.sticks.get(&name).copied(), &mut snapshot);
+        if sticks.sticks.is_some() {
+            log::info!("pad: its sticks calibrated");
+        }
+        Ok(Controller { grabbed, ranges, snapshot, motion, ayn: AynKey::find(), rumble, letters, name, phys, sticks })
     }
 
     /// Routes the controller's events until it is gone (or the program is).
@@ -390,7 +412,7 @@ fn wait(
 impl<S: Sink> PadThread<S> {
     /// Routes the controller's (and the gyro's) events until it is gone (or the program is).
     fn route_events(&mut self, c: &mut Controller, router: &mut PadRouter, out: &mut Out, commands: &Receiver<Command>) -> Result<(), Ended<io::Error>> {
-        let Controller { grabbed, motion, ayn, rumble, letters, name, phys, .. } = c;
+        let Controller { grabbed, motion, ayn, rumble, letters, name, phys, sticks, .. } = c;
         let mut raws = Vec::new();
         let mut samples: Vec<Sample> = Vec::new();
         let mut wake = None;
@@ -409,6 +431,14 @@ impl<S: Sink> PadThread<S> {
                             *motion = find_motion(name, phys);
                         }
                     }
+                    Ok(Command::CalibrateSticks) => {
+                        log::info!("pad: calibrating the sticks");
+                        sticks.calibrate(Instant::now());
+                    }
+                    Ok(Command::Sticks(all)) => {
+                        sticks.sticks = all.get(name.as_str()).copied();
+                        self.sticks = all;
+                    }
                     Ok(command) => self.apply(command, Some((router, out))),
                     Err(TryRecvError::Empty) => break,
                     Err(TryRecvError::Disconnected) => return Ok(()),
@@ -423,7 +453,8 @@ impl<S: Sink> PadThread<S> {
             if grabbed.fetch(&mut raws)? {
                 // (Events were dropped: what was read is replaced by the controller as it is now.)
                 raws.truncate(from);
-                let (mut down, axes) = grabbed.state()?;
+                let (mut down, mut axes) = grabbed.state()?;
+                sticks.correct_axes(&mut axes);
                 if *letters {
                     down.iter_mut().for_each(|k| *k = device::swap_key(*k));
                 }
@@ -432,6 +463,8 @@ impl<S: Sink> PadThread<S> {
             } else if *letters {
                 device::swap_xy(raws.get_mut(from..).unwrap_or_default());
             }
+            // (The sticks through their calibration; while one goes, its alone.)
+            sticks.take(&mut raws);
             if let Some(a) = ayn.as_mut()
                 && let Err(e) = a.fetch(&mut raws)
             {
@@ -454,6 +487,23 @@ impl<S: Sink> PadThread<S> {
                 router.motion(sample, out);
             }
             wake = router.tick(now, out);
+            // A calibration going: fed, its progress and end told, looked at again soon.
+            let (said, again) = sticks.step(now);
+            match said {
+                Some(calibrate::Said::Progress(p)) => self.sink.send(Event::Sticks(SticksEvent::Progress(p)))?,
+                Some(calibrate::Said::Done(result)) => {
+                    log::info!("pad: the sticks {}", if result.is_some() { "calibrated" } else { "not calibrated (given up)" });
+                    if let Some(s) = result {
+                        self.sticks.insert(name.clone(), s);
+                    }
+                    self.sink.send(Event::Sticks(SticksEvent::Done(name.clone(), result)))?;
+                }
+                None => {}
+            }
+            wake = match (wake, again) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            };
             // Games' rumble, on the controller while the game has the pad, with the keymap's buzzes.
             self.serve_effects(now);
             if let Some(buzz) = out.buzz.take() {

@@ -1,5 +1,5 @@
 #!/bin/bash
-# The session user's account, for ClamShell's Setup tab (Password, Remote login), run as root through
+# The session user's account, for ClamShell's Device view (Password, Remote login), run as root through
 # pkexec (polkit lets the active local session's user run it without asking: 50-thor.rules). The user is
 # pkexec's caller (PKEXEC_UID). The image starts with the account locked (no password): no sudo, no
 # ssh, until a password is set here.

@@ -35,6 +35,22 @@ pub enum Command {
     AskAwake(Vec<String>),
     /// The account read, or changed (then what came of it, and the account read again).
     Account(clamshell_core::account::AccountCommand),
+    /// The top screen's refresh rate calibrated (thor-panel-calibration, on a thread of its own: it takes
+    /// a couple of minutes); what it said comes back.
+    CalibrateRefresh,
+}
+
+/// Runs thor-panel-calibration: the rates it found (its lines saying them), or why it failed.
+fn calibrate_refresh() -> Result<String, String> {
+    let out =
+        std::process::Command::new("thor-panel-calibration").stdin(std::process::Stdio::null()).output().map_err(|e| format!("thor-panel-calibration: {e}"))?;
+    let text = |b: &[u8]| String::from_utf8_lossy(b).trim().to_owned();
+    if out.status.success() {
+        let rates: Vec<String> = text(&out.stdout).lines().filter(|l| l.contains(" Hz: ")).map(str::to_owned).collect();
+        Ok(rates.join("; "))
+    } else {
+        Err(text(&out.stderr).lines().last().unwrap_or("failed").to_owned())
+    }
 }
 
 /// Whether `argv` succeeds (within a few seconds).
@@ -54,7 +70,7 @@ fn awake(argv: &[String]) -> bool {
 }
 
 /// Screenshots go to `screenshots` (a folder, made if needed).
-pub fn spawn(screenshots: Option<PathBuf>, sink: impl Sink) -> io::Result<Worker<Command>> {
+pub fn spawn(screenshots: Option<PathBuf>, sink: impl Sink + Clone) -> io::Result<Worker<Command>> {
     Worker::spawn("system", move |commands| {
         // Our last notification, which the next replaces (a lower battery's warning the earlier one's).
         let mut shown = 0;
@@ -106,6 +122,17 @@ pub fn spawn(screenshots: Option<PathBuf>, sink: impl Sink) -> io::Result<Worker
                         || sink.send(Event::Reading(Reading::Time(read_time(error)))).is_err()
                     {
                         return;
+                    }
+                }
+                Command::CalibrateRefresh => {
+                    let told = sink.clone();
+                    let started = crate::worker::detached("refresh", move || {
+                        let result = calibrate_refresh();
+                        log::info!("refresh calibration: {result:?}");
+                        let _ = told.send(Event::RefreshCalibrated(result));
+                    });
+                    if let Err(e) = started {
+                        let _ = sink.send(Event::RefreshCalibrated(Err(e.to_string())));
                     }
                 }
                 Command::Account(command) => {
