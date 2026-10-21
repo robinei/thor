@@ -33,4 +33,4 @@ python3 tools/vm/vm.py restart > /dev/null
 sleep 3
 python3 tools/vm/vm.py bluetooth
 sleep 5
-python3 tools/vm/vm-checks.py
+python3 -u tools/vm/vm-checks.py

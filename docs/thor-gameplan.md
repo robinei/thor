@@ -339,7 +339,13 @@ To know:
 
 ## Day one, in order
 
-1. Boot Android, update its firmware, note the versions (Android build, bootloader). Charge. How
+1. Boot Android, update its firmware, note the versions (Android build, bootloader). Charge. Read this
+   unit's top panel calibration, which AYN's Android keeps (ROCKNIX's PR #3489 read it over adb:
+   `display.frame_len_120` and `display.frame_len_60`, e.g. 52 and 2000; look for them with
+   `adb shell settings list system | grep frame_len` and `getprop | grep frame_len`): written as
+   `frame_len_120=52` and `frame_len_60=2000` lines into `/var/lib/thor/panel-calibration` on our card,
+   they spare the Device view's two-minute measuring (the panel is timed by its own oscillator, which
+   varies per unit: uncalibrated it runs at 118.6 Hz). How
    Android holds its charge limit (80 %, added by an AYN update; and Direct Power Supply, its bypass):
    with root, at the limit on the charger, the battery's `constant_charge_current` (or the downstream
    driver's equivalents under `/sys/class/power_supply/battery/`) and `current_now`: if the current
