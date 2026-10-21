@@ -1,10 +1,14 @@
 # The AYN Thor's firmware as ROCKNIX's SM8550 release has it (the GPU's zap shader signed for the Thor,
 # the audio and compute DSPs', the audio topology, Wi-Fi and Bluetooth, the video decoder's): AYN's and
 # Qualcomm's, for this device only, so never published with our packages: built where it is installed
-# (the image build; maintenance, after a ROCKNIX release), from ROCKNIX's release download.
+# (the image build; maintenance, after a ROCKNIX release), from ROCKNIX's release download. And the
+# motion sensors' configuration the ADSP's sensor hub reads (thor-sensors serves it): Qualcomm's
+# stock sensor JSON (the Kailua set) and AYN's sns_tppe.so, from PB-OS's repository at a pinned
+# commit (github.com/project-barry/pb-os, sm8550-overlay/usr/share/sm8550-sensors; from the Thor's
+# stock firmware), in /usr/share/thor/sensors.
 pkgname=thor-firmware
 pkgver=20261001
-pkgrel=1
+pkgrel=2
 pkgdesc="The AYN Thor's firmware, from ROCKNIX's SM8550 release (not redistributable)"
 arch=(any)
 url=https://github.com/ROCKNIX/distribution
@@ -15,9 +19,12 @@ makedepends=(squashfs-tools)
 # (Overlapping files: ROCKNIX's versions of these, tested with the Thor, are kept.)
 conflicts=(linux-firmware linux-firmware-qcom linux-firmware-atheros linux-firmware-realtek)
 options=(!strip)
-source=("https://github.com/ROCKNIX/distribution/releases/download/$pkgver/ROCKNIX-SM8550.aarch64-$pkgver.tar")
-noextract=("ROCKNIX-SM8550.aarch64-$pkgver.tar")
-sha256sums=(188f0b04965466a3dddd72a23835f85b47408f98ddf50d706d030e850e757894)
+_pbos=8ea46532da230605252c1b9252ab1797e1ff10f2
+source=("https://github.com/ROCKNIX/distribution/releases/download/$pkgver/ROCKNIX-SM8550.aarch64-$pkgver.tar"
+        "pb-os-$_pbos.tar.gz::https://github.com/project-barry/pb-os/archive/$_pbos.tar.gz")
+noextract=("ROCKNIX-SM8550.aarch64-$pkgver.tar" "pb-os-$_pbos.tar.gz")
+sha256sums=(188f0b04965466a3dddd72a23835f85b47408f98ddf50d706d030e850e757894
+            a6ec3cd7a70b65fda68efb9633ae1a6b9b694417a5da8e2e299d06cb9d0a175c)
 
 prepare() {
     rm -rf system
@@ -25,6 +32,10 @@ prepare() {
     # The firmware: part in usr/lib/firmware, part in the kernel overlay (usr/lib/firmware may be a link
     # into it).
     unsquashfs -q -d system SYSTEM usr/lib/kernel-overlays/base/lib/firmware usr/lib/firmware > /dev/null
+    rm -rf sensors
+    mkdir sensors
+    tar -xzf "pb-os-$_pbos.tar.gz" -C sensors --strip-components=5 \
+        "pb-os-$_pbos/sm8550-overlay/usr/share/sm8550-sensors/kailua" "pb-os-$_pbos/sm8550-overlay/usr/share/sm8550-sensors/thor"
 }
 
 package() {
@@ -37,4 +48,7 @@ package() {
     # (The wireless regulatory database is wireless-regdb's, Arch's.)
     rm -f "$fw"/regulatory.db "$fw"/regulatory.db.p7s
     echo "$pkgver" > "$pkgdir/usr/lib/firmware/thor-rocknix-release"
+    # The sensor hub's: config/ and sns_reg.conf (the Kailua set), dsp/adsp/ (the Thor's).
+    install -d "$pkgdir/usr/share/thor/sensors"
+    cp -a --no-preserve=ownership sensors/kailua/sensors/. sensors/thor/. "$pkgdir/usr/share/thor/sensors/"
 }

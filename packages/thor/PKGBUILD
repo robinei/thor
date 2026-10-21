@@ -1,16 +1,16 @@
 # The AYN Thor's system, the whole of it: what an image installs (tools/image/image.sh: base and this,
-# with thor-firmware), and what pacman keeps current. Its kernel, sound profiles and Vulkan driver
-# (Turnip); the system, the session and ClamShell; the repository's key; the day-one checks' tools
-# (evtest; alsa-utils: arecord, speaker-test, alsaucm); what maintenance needs (pacman-contrib:
-# checkupdates, pacdiff; base-devel, squashfs-tools and git: thor-firmware rebuilt on the device after a
-# ROCKNIX release).
+# with thor-firmware), and what pacman keeps current. Its kernel, sound profiles, Vulkan driver (Turnip)
+# and motion sensors' services; the system, the session and ClamShell; the repository's key; the day-one
+# checks' tools (evtest; alsa-utils: arecord, speaker-test, alsaucm); what maintenance needs
+# (pacman-contrib: checkupdates, pacdiff; base-devel, squashfs-tools and git: thor-firmware rebuilt on
+# the device after a ROCKNIX release).
 pkgname=thor
 pkgver=1
-pkgrel=1
+pkgrel=2
 pkgdesc="The AYN Thor's system: kernel, session, ClamShell and the rest (a metapackage)"
 arch=(aarch64)
 url=https://github.com/robinei/thor
 license=('MIT OR Apache-2.0')
-depends=(linux-thor thor-ucm vulkan-freedreno thor-system thor-session clamshell thor-keyring
+depends=(linux-thor thor-ucm thor-sensors vulkan-freedreno thor-system thor-session clamshell thor-keyring
          alsa-ucm-conf wireless-regdb evtest alsa-utils pacman-contrib base-devel squashfs-tools git)
 optdepends=('thor-firmware: the Thor'"'"'s firmware (from ROCKNIX'"'"'s release; built where it is installed, never published)')

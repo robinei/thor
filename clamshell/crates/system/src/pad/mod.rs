@@ -19,9 +19,11 @@ mod listen;
 pub mod motion;
 mod mouse;
 mod navigator;
+mod qrtr;
 mod remap;
 mod route;
 mod rumble;
+mod sensor_hub;
 mod typing;
 
 use std::io;
@@ -244,7 +246,10 @@ impl<S: Sink> Service for PadThread<S> {
         }
         let grabbed = Grabbed::new(real)?;
         log::info!("pad: {} grabbed; games see the virtual pad", grabbed.device().name().unwrap_or("controller"));
-        let motion = EvdevMotion::find(&name, &phys).map(|m| Box::new(m) as Box<dyn MotionSource>);
+        // (The controller's own motion sensor, else the Thor's sensor hub.)
+        let motion = EvdevMotion::find(&name, &phys)
+            .map(|m| Box::new(m) as Box<dyn MotionSource>)
+            .or_else(|| sensor_hub::SensorHub::find().map(|m| Box::new(m) as Box<dyn MotionSource>));
         let letters = device::letter_codes(&name, &phys);
         if letters {
             log::info!("pad: its X and Y codes are by letter (xpad, rsinput): read by place");

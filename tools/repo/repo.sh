@@ -31,10 +31,12 @@ index() {
     mkdir -p "$REPO/built" "$REPO/thor" "$REPO/local"
     shopt -s nullglob
     local new=()
-    # The kernel's corresponding source (linux-thor-VERSION-REL.src.tar.gz: its source package), beside
-    # its package: the older ones go with the packages they were the source of.
+    # The corresponding source (NAME-VERSION-REL.src.tar.gz: a package's source package, linux-thor's and
+    # thor-sensors'), beside its package: the older ones go with the packages they were the source of.
     for src in "$REPO"/built/*.src.tar.gz; do
-        rm -f "$REPO"/thor/linux-thor-*.src.tar.gz "$REPO"/thor/linux-thor-*.source.tar
+        local of
+        of=$(basename "$src" | sed -E 's/-[^-]+-[^-]+\.src\.tar\.gz$//')
+        rm -f "$REPO"/thor/"$of"-[0-9]*.src.tar.gz "$REPO"/thor/linux-thor-*.source.tar
         mv "$src" "$REPO/thor/"
         echo "source: $(basename "$src")"
     done

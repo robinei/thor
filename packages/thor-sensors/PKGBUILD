@@ -1,0 +1,76 @@
+# The motion sensors' services on the Thor: hexagonrpcd serves the ADSP's sensors process (and its root
+# process) the files it reads through FastRPC (the sensor configuration, its registry, socinfo, AYN's DSP
+# library: thor-sensors, the setup), and sscregistrygen makes the registry once from the configuration.
+# linux-msm's hexagonrpc at a pinned commit with PB-OS's patches (github.com/project-barry/pb-os,
+# external-and-mods/pbos-motion/hexagonrpc; from suckbluefrog's Batocera builds), built static. The
+# sensor hub this brings up gives ClamShell the gyro (its pad::sensor_hub); linux-thor has the kernel's
+# side (FastRPC's sensors routing, the device tree), thor-firmware the configuration (AYN's and
+# Qualcomm's). Tested on a Thor by PB-OS (its commit faff51e).
+pkgname=thor-sensors
+_hexagonrpc=dd9ac70c026e1bad93e8cffa3801255b8ceb551e
+pkgver=0.4.0
+pkgrel=1
+pkgdesc="The AYN Thor's motion sensors' services (hexagonrpcd, with PB-OS's patches)"
+arch=(aarch64)
+url=https://github.com/linux-msm/hexagonrpc
+license=(GPL-3.0-or-later)
+depends=(glibc json-c)
+makedepends=(meson ninja)
+optdepends=('thor-firmware: the sensor configuration (without it the services stay off)')
+install=thor-sensors.install
+source=("hexagonrpc-$_hexagonrpc.tar.gz::https://github.com/linux-msm/hexagonrpc/archive/$_hexagonrpc.tar.gz"
+        thor-sensors
+        thor-sensors.service
+        thor-sensors-root.service
+        pbos-0001-sscregistrygen-ignore-non-json-inputs.patch
+        pbos-0002-hexagonrpcd-add-sns-registry-reverse-interface.patch
+        pbos-0003-hexagonrpcd-keep-listener-registration-open.patch
+        pbos-0004-hexagonrpcd-add-static-pd-option.patch
+        pbos-0005-hexagonrpcd-add-writable-hexagonfs.patch
+        pbos-0006-hexagonrpcd-support-writable-sensor-registry.patch
+        pbos-0007-hexagonrpcd-support-large-and-extended-callbacks.patch
+        pbos-0008-hexagonrpcd-enumerate-virtual-directories.patch)
+sha256sums=(575bf34b8e2a51f851b078cc4b87db3c9bb121ce5849be765352b016756d63eb
+            db74ca9957efcc0214041f37cfbdc1d959ba8c0cbf9f977beaf8c787d1253249
+            03702f998bafebe6e10b683f81be7a98b63c39edf185844003b49314a6bc4586
+            444ea4e3c07560ca4f43b1ae84bf3209a81f476e03024c08143a248c30cd7e96
+            6ab652128fe718e3516fa0cc473c12a94916e9c146614cbcab60b393b7293153
+            5ebb8418e749924bb16d1a49d9bf907cd1a40b7d1d2c5eaba9b71b8f658ab0ce
+            441e2078ce103f7f15cd837b3d9a7af83a5295b78f35e18b13bb6e35689b5ee1
+            d6f8c42bcf15e21337c0bc966a535b7a347d0823492f5247671bf2181045b4ae
+            294a164aed7a4a7368fd536c02501fbaf09af2325f17ed74bd52e7bf3d4dd561
+            91a280b379f7ee76f10352b89127ea3f454bc5a7d3d97658f3453f33bf9fc794
+            8f139139312337c4599c73bb78b297bc3b4a86f37fe67fac3f8bd54e218e6f69
+            595648e17419e73f71285d2d0842ecfef9290623ca241c2ac98c6b89d5936121)
+
+prepare() {
+    cd "hexagonrpc-$_hexagonrpc"
+    local p
+    for p in "$srcdir"/pbos-*.patch; do
+        patch -p1 -F0 -s --no-backup-if-mismatch < "$p"
+    done
+    # (libhexagonrpc built into hexagonrpcd, PB-OS's way: a library() follows --default-library.)
+    sed -i "s/^libhexagonrpc = shared_library(/libhexagonrpc = library(/" libhexagonrpc/meson.build
+    grep -q "^libhexagonrpc = library(" libhexagonrpc/meson.build
+}
+
+build() {
+    local cross=()
+    # (Cross-compiled on the PC: tools/repo/build.sh's compiler and sysroot.)
+    if [ -n "${THOR_CROSS_CC:-}" ]; then
+        printf '%s\n' '[binaries]' "c = '$THOR_CROSS_CC'" "ar = 'llvm-ar'" "strip = 'llvm-strip'" \
+            "pkg-config = 'pkg-config'" '[host_machine]' "system = 'linux'" "cpu_family = 'aarch64'" \
+            "cpu = 'aarch64'" "endian = 'little'" > cross.ini
+        cross=(--cross-file cross.ini)
+    fi
+    meson setup --buildtype=release --default-library=static -Dhexagonrpcd_verbose=false "${cross[@]}" \
+        build "hexagonrpc-$_hexagonrpc"
+    ninja -C build hexagonrpcd/hexagonrpcd tools/sscregistrygen
+}
+
+package() {
+    install -Dm755 -t "$pkgdir/usr/lib/thor/sensors" build/hexagonrpcd/hexagonrpcd build/tools/sscregistrygen
+    install -Dm755 thor-sensors "$pkgdir/usr/lib/thor/thor-sensors"
+    install -Dm644 -t "$pkgdir/usr/lib/systemd/system" thor-sensors.service thor-sensors-root.service
+    install -Dm644 "hexagonrpc-$_hexagonrpc/COPYING" "$pkgdir/usr/share/licenses/$pkgname/COPYING"
+}

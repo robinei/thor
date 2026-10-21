@@ -1,0 +1,11 @@
+[Unit]
+Description=Motion sensors: the ADSP root process's files (hexagonrpcd, RootPD)
+After=thor-sensors.service
+BindsTo=thor-sensors.service
+
+[Service]
+# (Both share one FastRPC node; the sensors process attaches first.)
+ExecStartPre=/bin/sleep 1
+ExecStart=/usr/lib/thor/sensors/hexagonrpcd -f /dev/fastrpc-adsp -d adsp -R /var/lib/thor-sensors/root
+Restart=always
+RestartSec=1

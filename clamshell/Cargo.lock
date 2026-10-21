@@ -229,6 +229,7 @@ dependencies = [
  "dbus",
  "evdev",
  "jiff",
+ "libc",
  "log",
  "rustix",
  "serde",

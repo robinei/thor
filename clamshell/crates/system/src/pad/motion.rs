@@ -4,8 +4,7 @@
 //! with INPUT_PROP_ACCELEROMETER, the gyro on ABS_RX/RY/RZ with its resolution (units per degree per
 //! second) in the axis' info, and MSC_TIMESTAMP (microseconds) with each report. Found next to the
 //! controller: the motion device whose name or physical path pairs with the controller's, else the only
-//! motion sensor there is. (The Thor's own sensor, IIO or evdev, is unknown until it is in hand; it
-//! plugs in here.) The motion device isn't grabbed: nothing else reads it as input, and the idle watch
+//! motion sensor there is. The other is the Thor's sensor hub (`sensor_hub`), read directly. The motion device isn't grabbed: nothing else reads it as input, and the idle watch
 //! ignores accelerometers.
 
 use std::io;

@@ -1,0 +1,60 @@
+#!/bin/bash
+# The motion sensors' files, for the ADSP's sensors process, which reads them through hexagonrpcd
+# (thor-sensors.service, thor-sensors-root.service); ClamShell then reads the gyro from the sensor hub.
+# Makes /var/lib/thor-sensors/root, what the ADSP sees as Android's paths:
+#   sensors/config        Qualcomm's stock sensor JSON (thor-firmware's /usr/share/thor/sensors); the
+#   sensors/sns_reg.conf  ADSP probes which IMU is fitted
+#   sensors/registry      the registry, made once from the JSON by sscregistrygen; the ADSP adds what
+#                         it learns about this unit, so it is never replaced
+#                         (/var/lib/thor-sensors/registry)
+#   socinfo/              the selectors the stock config filters on
+#   dsp/adsp/             AYN's DSP library (sns_tppe.so)
+# As PB-OS's sm8550-sensors (github.com/project-barry/pb-os; after MaSi's SteamOS-ARM-SM8550 and
+# suckbluefrog's Batocera builds).
+set -euo pipefail
+SHARE=/usr/share/thor/sensors
+STATE=/var/lib/thor-sensors
+ROOT=$STATE/root
+# (The registry's file that proves the Thor's IMU profile, the SH5001's, was made.)
+MARKER=sh5001_0_platform.config
+log() { echo "thor-sensors: $*" >&2; }
+
+[ -d "$SHARE/config" ] || { log "no sensor configuration: thor-firmware"; exit 1; }
+# Sound shares the ADSP: its card bound before the sensors process opens FastRPC sessions (an ADSP
+# restart after that is not reliably recovered: PB-OS).
+udevadm wait --timeout=30 /sys/class/sound/card0 || log "no sound card yet, going on"
+
+reg=$STATE/registry
+mkdir -p "$reg"
+if [ ! -s "$reg/$MARKER" ]; then
+    if [ -n "$(ls -A "$reg")" ]; then
+        log "the registry in $reg is incomplete; not replacing it (it may hold this unit's calibration)"
+        exit 1
+    fi
+    soc=$(tr -d '\0\r\n ' < /sys/devices/soc0/soc_id 2> /dev/null || true)
+    tmp=$(mktemp -d "$STATE/registry.new.XXXX")
+    # (The stock Thor's registry is the Kailua HDK profile.)
+    if ! /usr/lib/thor/sensors/sscregistrygen -p HDK -s "${soc:-603}" "$SHARE/config" "$tmp" >&2 \
+        || [ ! -s "$tmp/$MARKER" ]; then
+        rm -rf "$tmp"
+        log "could not make the sensor registry"
+        exit 1
+    fi
+    mv "$tmp"/* "$reg"/
+    rmdir "$tmp"
+    log "made the sensor registry in $reg"
+fi
+
+rm -rf "$ROOT"
+mkdir -p "$ROOT/sensors" "$ROOT/dsp" "$ROOT/socinfo"
+ln -s "$SHARE/config" "$ROOT/sensors/config"
+ln -s "$SHARE/sns_reg.conf" "$ROOT/sensors/sns_reg.conf"
+ln -s "$reg" "$ROOT/sensors/registry"
+printf 'version=%s\0' "$(sed -n 's/^version=//p' "$SHARE/sns_reg.conf" | head -n1)" > "$ROOT/sensors/sns_reg_version"
+ln -s "$SHARE/dsp/adsp" "$ROOT/dsp/adsp"
+# (Mainline's socinfo has only some of Android's selector files.)
+for f in soc_id revision machine family; do
+    [ -r "/sys/devices/soc0/$f" ] && tr -d '\0' < "/sys/devices/soc0/$f" > "$ROOT/socinfo/$f"
+done
+echo HDK > "$ROOT/socinfo/hw_platform"
+for f in platform_subtype platform_subtype_id platform_version; do echo 0 > "$ROOT/socinfo/$f"; done

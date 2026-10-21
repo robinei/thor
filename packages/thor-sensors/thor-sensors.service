@@ -1,0 +1,18 @@
+[Unit]
+Description=Motion sensors: the ADSP sensors process's files (hexagonrpcd, SensorsPD)
+# Only on the Thor, with the ADSP's FastRPC node (linux-thor) and the configuration (thor-firmware).
+ConditionFirmware=device-tree-compatible(ayn,thor)
+ConditionPathExists=/dev/fastrpc-adsp
+ConditionPathExists=/usr/share/thor/sensors/config
+After=sound.target systemd-udevd.service
+Wants=thor-sensors-root.service
+
+[Service]
+ExecStartPre=/usr/lib/thor/thor-sensors
+ExecStart=/usr/lib/thor/sensors/hexagonrpcd -f /dev/fastrpc-adsp -d adsp -s -R /var/lib/thor-sensors/root
+# (Its FastRPC node goes away for a moment while the ADSP restarts.)
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target

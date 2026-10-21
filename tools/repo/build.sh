@@ -4,10 +4,10 @@
 # (makepkg writes pkgver back), out of a clone of this checkout's last commit (THOR_REPO): uncommitted
 # changes aren't built. ClamShell is cross-compiled
 # (aarch64-unknown-linux-gnu: rustup's target, clang and lld, against tools/repo/sysroot.sh's sysroot);
-# linux-thor builds Armada's kernel (its source package too: the GPL's corresponding source, published
-# beside it); thor-firmware unpacks ROCKNIX's release (kept
-# in ~/.cache/thor-vm/rocknix: downloaded there if missing) and goes to the repository's local/, never
-# published; the rest are files.
+# linux-thor builds Armada's kernel, thor-sensors hexagonrpc (cross-compiled too; their source packages
+# also: the GPL's corresponding source, published beside them); thor-firmware unpacks ROCKNIX's release
+# (kept in ~/.cache/thor-vm/rocknix: downloaded there if missing) and goes to the repository's local/,
+# never published; the rest are files.
 #
 #   build.sh [PACKAGE...]     (default all)
 #
@@ -24,8 +24,9 @@ PACKAGES=("$@")
 "$HERE/../host-check.sh" packages || exit 1
 if [ "$ARCH" = aarch64 ]; then
     export THOR_REPO_DIR=$CACHE/repo
-    [ ${#PACKAGES[@]} -gt 0 ] || PACKAGES=(thor-keyring thor-ucm linux-thor clamshell thor-system thor-session thor thor-firmware)
-    [ -d "$SYSROOT/usr/lib" ] || "$HERE/sysroot.sh"
+    [ ${#PACKAGES[@]} -gt 0 ] || PACKAGES=(thor-keyring thor-ucm linux-thor thor-sensors clamshell thor-system thor-session thor thor-firmware)
+    # (Made again when it predates what it holds now: C's headers.)
+    [ -e "$SYSROOT/usr/include/json-c/json.h" ] || "$HERE/sysroot.sh"
 else
     export THOR_REPO_DIR=$CACHE/repo-$ARCH
     [ ${#PACKAGES[@]} -gt 0 ] || PACKAGES=(thor-keyring clamshell thor-system thor-session)
@@ -77,6 +78,8 @@ exec clang --target=aarch64-unknown-linux-gnu --sysroot="$SYSROOT" -fuse-ld=lld 
 EOF
 chmod 755 "$work/aarch64-cc"
 export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=$work/aarch64-cc
+# (C packages built with meson, cross: thor-sensors writes its cross file from these.)
+[ "$ARCH" != aarch64 ] || export THOR_CROSS_CC=$work/aarch64-cc
 export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C strip=symbols"
 export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C strip=symbols"
 [ "$ARCH" != aarch64 ] || export PKG_CONFIG_ALLOW_CROSS=1 PKG_CONFIG_SYSROOT_DIR=$SYSROOT PKG_CONFIG_LIBDIR=$SYSROOT/usr/lib/pkgconfig
@@ -99,11 +102,12 @@ for p in "${PACKAGES[@]}"; do
         || { tail -30 "$work/$p.log"; exit 1; }; }
     mk -f
     ls "$OUT"/"$p"-[0-9r]*.pkg.tar.*
-    # The kernel's corresponding source (GPL-2.0): its source package with every source in it.
-    if [ "$p" = linux-thor ]; then
-        rm -f "$OUT"/linux-thor-*.src.tar.gz
+    # The GPL's corresponding source of what we build from others' GPL code (the kernel, hexagonrpc):
+    # its source package with every source in it.
+    if [ "$p" = linux-thor ] || [ "$p" = thor-sensors ]; then
+        rm -f "$OUT"/"$p"-[0-9]*.src.tar.gz
         mk --allsource -f
-        ls "$OUT"/linux-thor-*.src.tar.gz
+        ls "$OUT"/"$p"-[0-9]*.src.tar.gz
     fi
     rm -rf "$work/.build/$p"
     unset GNUPGHOME
