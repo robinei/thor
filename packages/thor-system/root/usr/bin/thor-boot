@@ -11,7 +11,7 @@ set -euo pipefail
 /usr/lib/thor/thor-modules restore
 # The kernel: linux-thor's (its Image's folder). (None, as in the test machine's image: Arch's kernel, its
 # own package and mkinitcpio boot it.)
-kver=$(pacman -Qlq linux-thor 2> /dev/null | sed -n 's|^/usr/lib/modules/\([^/]*\)/Image$|\1|p')
+kver=$(pacman -Qlq linux-thor 2> /dev/null | sed -n 's|^/usr/lib/modules/\([^/]*\)/Image$|\1|p') || true
 [ -n "$kver" ] || { echo "thor-boot: no linux-thor: nothing to do"; exit 0; }
 modules=/usr/lib/modules/$kver
 echo "thor-boot: kernel and initramfs $kver"
