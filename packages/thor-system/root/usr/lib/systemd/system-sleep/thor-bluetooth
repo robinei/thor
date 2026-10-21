@@ -1,0 +1,18 @@
+#!/bin/sh
+# Bluetooth off while asleep: its UART's clock keeps the SoC's crystal on, so the SoC never sleeps fully
+# (PB-OS's sm8550-sleep). Turned back on after, only if this turned it off (a mark in /run).
+mark=/run/thor-bluetooth-off
+case $1 in
+    pre)
+        if rfkill list bluetooth 2> /dev/null | grep -q 'Soft blocked: no'; then
+            rfkill block bluetooth && touch "$mark"
+        fi
+        ;;
+    post)
+        if [ -e "$mark" ]; then
+            rm -f "$mark"
+            rfkill unblock bluetooth
+        fi
+        ;;
+esac
+exit 0

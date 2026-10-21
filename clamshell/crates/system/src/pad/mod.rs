@@ -162,7 +162,7 @@ struct Controller {
     ayn: Option<AynKey>,
     /// Its motors, if it has force feedback.
     rumble: Option<Rumble>,
-    /// Its X and Y codes are by letter (xpad's), not by place: swapped as they come in.
+    /// Its X and Y codes are by letter (xpad's, rsinput's), not by place: swapped as they come in.
     letters: bool,
 }
 
@@ -247,7 +247,7 @@ impl<S: Sink> Service for PadThread<S> {
         let motion = EvdevMotion::find(&name, &phys).map(|m| Box::new(m) as Box<dyn MotionSource>);
         let letters = device::letter_codes(&name, &phys);
         if letters {
-            log::info!("pad: its X and Y codes are by letter (xpad): read by place");
+            log::info!("pad: its X and Y codes are by letter (xpad, rsinput): read by place");
         }
         Ok(Controller { grabbed, ranges, snapshot, motion, ayn: AynKey::find(), rumble, letters })
     }

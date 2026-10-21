@@ -139,9 +139,10 @@ impl VirtualDevices {
     }
 }
 
-/// Whether the controller (by its name and physical path) is driven by xpad, which names its face buttons'
-/// codes by their letters (its X, on the left, sends BTN_X: the code Linux calls BTN_NORTH) rather than by
-/// their place, as Linux has it (BTN_WEST the left one, BTN_NORTH the top one) and ClamShell does.
+/// Whether the controller (by its name and physical path) is driven by xpad or rsinput (the Thor's own
+/// pad), which name their face buttons' codes by an Xbox pad's letters (the left one sends BTN_X: the code
+/// Linux calls BTN_NORTH; PB-OS found rsinput's top one sending BTN_WEST, BTN_Y) rather than by their
+/// place, as Linux has it (BTN_WEST the left one, BTN_NORTH the top one) and ClamShell does.
 pub fn letter_codes(name: &str, phys: &str) -> bool {
     let Ok(inputs) = std::fs::read_dir("/sys/class/input") else {
         return false;
@@ -150,7 +151,7 @@ pub fn letter_codes(name: &str, phys: &str) -> bool {
     inputs.flatten().map(|e| e.path().join("device")).any(|dev| {
         read(dev.join("name")) == name
             && read(dev.join("phys")) == phys
-            && std::fs::read_link(dev.join("device/driver")).is_ok_and(|d| d.file_name().is_some_and(|n| n == "xpad"))
+            && std::fs::read_link(dev.join("device/driver")).is_ok_and(|d| d.file_name().is_some_and(|n| n == "xpad" || n == "rsinput"))
     })
 }
 

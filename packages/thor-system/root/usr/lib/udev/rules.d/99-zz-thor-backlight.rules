@@ -1,0 +1,6 @@
+# systemd doesn't follow the backlights: each brightness write is a uevent, which systemd turns into a
+# device unit update and a D-Bus signal, and Wine's mountmgr (with every Proton game) re-reads all of
+# UDisks on each (PB-OS's 99-zz-sm8550-backlight-nosystemd.rules: udisksd 34 % -> 4 % while a slider
+# moved). ClamShell keeps and restores the brightness itself; logind's SetBrightness doesn't need the
+# tag. After 99-systemd.rules, which adds it.
+SUBSYSTEM=="backlight", TAG-="systemd"

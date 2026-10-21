@@ -487,9 +487,12 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       shelf, Home with R1 takes a screenshot.
 - [ ] Gamepad buttons the keymap edit screen draws but can't remap yet: which codes the AYN button under
       the screen and the two small buttons beside it send (`evtest`), and from which device; the
-      bottom-left round one should be Home (BTN_MODE). Also confirm the face buttons' codes by their printed letters (B: BTN_SOUTH, A:
-      BTN_EAST, X: BTN_NORTH, Y: BTN_WEST: by place, as ClamShell reads them; an xpad controller's,
-      by letter, are swapped as they come in) and that games see them as expected through the virtual
+      bottom-left round one should be Home (BTN_MODE). Also confirm the face buttons' codes (`evtest`):
+      PB-OS found rsinput sending the top one (X) as BTN_WEST and the left one (Y) as BTN_NORTH, an Xbox
+      pad's letters by place as xpad's, so ClamShell swaps X and Y as they come in for rsinput as for
+      xpad (its log: "by letter (xpad, rsinput)"); bottom (B) BTN_SOUTH, right (A) BTN_EAST. If the top
+      one turns out to send BTN_NORTH, drop rsinput from `pad::device::letter_codes`. And that games
+      see them as expected through the virtual
       pad (written by letter, as an Xbox 360 pad's), and that there are no back buttons. Then they can become
       inputs of their own in the keymap (`core::keymap::Button`) and the edit screen (`views/pad.rs`).
 - [ ] Gyro: the IMU is the ADSP's (see "The hardware"): neither evdev from the gamepad nor IIO. ClamShell
