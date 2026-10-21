@@ -93,6 +93,10 @@ settled() {
     check "top backlight ae96000.dsi.0" test -e /sys/class/backlight/ae96000.dsi.0
     check "bottom backlight ae94000.dsi.0" test -e /sys/class/backlight/ae94000.dsi.0
     info "backlights: $(ls /sys/class/backlight 2> /dev/null | tr '\n' ' ')"
+    local fl
+    for fl in /sys/bus/mipi-dsi/devices/*/frame_len_120; do
+        [ -e "$fl" ] && info "top panel's frame lengths: 120 Hz $(val "$fl"), 60 Hz $(val "${fl%120}60") ($( [ -r /var/lib/thor/panel-calibration ] && tr '\n' ' ' < /var/lib/thor/panel-calibration || echo uncalibrated))"
+    done
 
     # Input devices.
     info "input devices: $(inputs | tr '\n' ';')"

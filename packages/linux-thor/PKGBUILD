@@ -48,7 +48,8 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         # and no battery notifications while asleep (0505 changes deep sleep only; 0547 any sleep).
         # thor-*: the body's motor as an LRA (PB-OS's device tree lines, tried on a Thor), the gamepad
         # MCU's joystick frame settable, the sensor hub's device tree nodes (PB-OS's), FastRPC's legacy
-        # mappings refused without a session.
+        # mappings refused without a session, the top panel's frame length calibrated per unit
+        # (ROCKNIX's 0509, tried on a Thor).
         pbos-0545-power-supply-qcom_battmgr-retroid-charge-controls.patch
         thor-0001-dts-thor-lra-haptics.patch
         pbos-0620-drm-panel-ch13726a-thor-16-bit-brightness-high-byte-first.patch
@@ -59,7 +60,8 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         thor-0003-dts-thor-adsp-sensors.patch
         pbos-0505-mailbox-qcom-ipcc-let-a-doorbell-wake-the-system-once-it-is-down.patch
         pbos-0547-power-supply-qcom_battmgr-no-battery-notifications-while-asleep.patch
-        thor-0004-fastrpc-legacy-mmap-needs-a-session.patch)
+        thor-0004-fastrpc-legacy-mmap-needs-a-session.patch
+        thor-0005-icna35xx-frame-length-calibration.patch)
 sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             SKIP
             b0503999564862cd2abeec1a920581f5943e36e5a179bb91bb8eec85c2670c38
@@ -74,7 +76,8 @@ sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             9a49eff03726996373b65c9bddb70933b0da31ff323d20536e65aac5c14129d4
             57ea5d13bcb9b00609bb02da07ba0b38398960f4ba17f9fadbdd79ae9677d966
             ffeb7c26a9e482734553faa4bb08b035b41a16ac9c4172334bbbf736ad2afa30
-            b76d35f52f1c936ed0d01eacb8a41ce6149fec324a896bfbc5f0ec9da297cfd1)
+            b76d35f52f1c936ed0d01eacb8a41ce6149fec324a896bfbc5f0ec9da297cfd1
+            132fe2182e0d43f3917df872162952fa9f6da418b27d5aeae8292aea5f7ca679)
 # Linus Torvalds', Greg Kroah-Hartman's (keys/pgp, as Arch's linux has them).
 validpgpkeys=(ABAF11C65A2970B130ABE3C479BE3E4300411886
               647F28654894E3BD457199BE38DBBDC86092693E)

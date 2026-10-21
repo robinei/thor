@@ -182,7 +182,7 @@ Known issues and risks, to check first:
    corners of both screens first; if they land turned or mirrored, a udev rule with
    `LIBINPUT_CALIBRATION_MATRIX` by `ID_PATH` (`platform-a90000.i2c` top, `platform-98c000.i2c` bottom):
    `0 -1 1 1 0 0` turns +90°, `0 1 0 -1 0 1` −90°, `-1 0 1 0 -1 1` 180°. The top panel runs at 118.6 Hz
-   uncalibrated (ROCKNIX PR #3489, after 20261001).
+   uncalibrated: `thor-panel-calibration` once (see "Day one").
 5. Gamepad: the kernel driver comes with ROCKNIX's modules; its userspace mapping (Thorch, Kettle:
    InputPlumber maps) doesn't. Check what evdev reports before relying on it.
 6. Device trees: Thorch insists on exactly one Thor device tree in `/KERNEL`; we keep ROCKNIX's 14 (as
@@ -306,8 +306,10 @@ Candidates for our own patches, once tried on the device:
 - [ ] The bottom touchscreen kept powered in suspend (`edt,retain-power-in-suspend` on its node: Thorch's
       `dts-patches/0005`, Kettle's device tree; the FT5452's power-off path is unsafe), if it misbehaves
       after sleep; with Armada #757 (a contact kept after fingers lift; a candidate patch, open).
-- [ ] The top panel's refresh calibration (it runs at 118.6 Hz): ROCKNIX's `next` after 20261001 has a
-      kernel patch and a `040-panel_calibration` quirk for the Thor; Armada has neither.
+- [x] The top panel's refresh calibration (uncalibrated it runs at 118.6 Hz): ROCKNIX's PR #3489 (after
+      20261001; tested on a Thor: 118.63 to 120.09 Hz), its kernel patch ported to Armada's driver
+      (linux-thor's thor-0005) and its tool as ours (`thor-panel-calibration`, thor-system; the values
+      in `/var/lib/thor/panel-calibration`, applied as the panel's driver binds).
 Done in userspace instead (2026-10-20), so no patch of ours:
 - [x] The stick range: Thorch sets `axis-range = <1024>` on the gamepad node (its `dts-patches/0007`);
       Armada's device tree doesn't (they calibrate through rsinput's module parameters); without either,
@@ -666,6 +668,9 @@ From the review of 2026-10-21 (what Armada, ROCKNIX, Thorch and Kettle do, taken
       (`df -h` of it with KERNEL, KERNEL.new, Image and the initramfs): if there is room, a second loader
       entry with the previous kernel (`Image.prev`, its initramfs) for a kernel that boots and then hangs.
 
+- [ ] The top panel's refresh: `thor-panel-calibration` in a terminal (about two minutes: the bottom
+      screen goes off meanwhile); it prints each rate before and after (ROCKNIX's Thor: 118.63 to
+      120.09 Hz, 59.90 to 60.04 Hz); after a reboot the boot checks show the values applied.
 - [ ] Booted: the first check says `device tree: AYN Thor` and which way it booted (UEFI or `/KERNEL`),
       and `fbcon rotated` passes (the console reads upright).
 - [ ] Touch: all four corners of both screens land where tapped (known issue 4).
@@ -738,8 +743,10 @@ Screens and touch
 
 Controls
 - X and Y swapped: rsinput out of `pad::device::letter_codes` (ClamShell).
-- The sticks feel steppy: `rsinput.mcu_frame=10,4` (AYN's Android) or `40,7` in
-  `/etc/modprobe.d/`, against ours, 6,2 (thor-0002).
+- The sticks feel steppy, or jumpy: ours is `rsinput.mcu_frame=10,4` (AYN's Android, in thor-system's
+  `thor-rsinput.conf`); to compare, `6,2` (Armada's driver's) or `40,7` (PB-OS's) in an
+  `/etc/modprobe.d/` file, or `echo 6,2 | sudo tee /sys/module/rsinput/parameters/mcu_frame` (taken
+  at the gamepad's next start: a sleep and wake).
 - The sticks don't reach their corners, or pass them: the range in `thor-rsinput.conf` (PB-OS found the
   real travel about ±740-1000 of 1408 per unit; ROCKNIX's `gamepadcalibration`).
 - The pad dead after waking ("failed to resume: error -110"): Kettle's `kettle-rsinput` system-sleep

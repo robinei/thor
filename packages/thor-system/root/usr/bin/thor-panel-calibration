@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+"""The top panel's refresh rate calibrated (ROCKNIX's rocknix-panel-calibration, PR #3489): the
+ICNA3520's frame length at 120 and 60 Hz, which AYN's Android calibrates per unit (uncalibrated the
+panel runs at 118.6 Hz). In the session, as the user (the power group writes the panel's files): each
+rate's mode set on the top output (swaymsg), its rate measured from the display's vblanks, the frame
+length stepped until the rate is just above the target, and the values saved in
+/var/lib/thor/panel-calibration, which /usr/lib/thor/panel-calibration applies at each boot. The bottom
+screen is off meanwhile (its vblanks, always 60 Hz, would be measured instead: the one display left
+running is the top's); it and the top's mode in use are set back after.
+
+  thor-panel-calibration
+"""
+import fcntl
+import glob
+import json
+import os
+import struct
+import subprocess
+import sys
+import time
+
+DRM_IOCTL_WAIT_VBLANK = 0xC018643A
+STEP = 4
+SAVED = "/var/lib/thor/panel-calibration"
+OUTPUT, BOTTOM = "DSI-2", "DSI-1"
+
+
+def wait(fd, pipe):
+    buf = bytearray(struct.pack("IIqq", 1 | pipe << 1, 1, 0, 0))
+    fcntl.ioctl(fd, DRM_IOCTL_WAIT_VBLANK, buf)
+    _, _, sec, usec = struct.unpack("IIqq", buf)
+    return sec + usec / 1e6
+
+
+def display():
+    """A DRM device and the pipe whose vblanks come (the top panel's: the one at the rate set)."""
+    for card in sorted(glob.glob("/dev/dri/card*")):
+        fd = os.open(card, os.O_RDWR)
+        for pipe in range(8):
+            try:
+                wait(fd, pipe)
+                return fd, pipe
+            except OSError:
+                pass
+        os.close(fd)
+    sys.exit("no display's vblanks")
+
+
+def rate(fd, pipe):
+    ts, end = [], time.monotonic() + 0.5
+    while time.monotonic() < end:
+        ts.append(wait(fd, pipe))
+    return (len(ts) - 1) / (ts[-1] - ts[0])
+
+
+def write(attr, value):
+    with open(attr, "w") as f:
+        f.write(str(value))
+    time.sleep(0.5)
+
+
+def calibrate(attr, target, fd, pipe):
+    """The frame length that puts the rate just above `target` (ROCKNIX's steps and tolerances)."""
+    tolerance, big_error = (0.05, 0.1) if target == 60 else (0.2, 0.4)
+    start = int(open(attr).read())
+    value = start // STEP * STEP
+    start_rate = rate(fd, pipe)
+    deadline, adjust_until = time.monotonic() + 60, time.monotonic() + 15
+    write(attr, value)
+    while time.monotonic() < deadline:
+        delta = rate(fd, pipe) - target
+        settled = 0 <= delta <= tolerance
+        if time.monotonic() < adjust_until:
+            if not settled:
+                step = STEP if abs(delta) < big_error else 2 * STEP
+                value += step if delta > 0 else -step
+                write(attr, value)
+        elif settled:
+            print(f"{target} Hz: {start_rate:.3f} -> {target + delta:.3f} Hz (0x{start:x} -> 0x{value:x})")
+            return value
+        else:
+            adjust_until = time.monotonic() + 3.75
+    write(attr, start)
+    sys.exit(f"{target} Hz: no stable value in range")
+
+
+def modes():
+    """The top output's current mode and its modes, as swaymsg's mode arguments, by rate."""
+    outputs = json.loads(subprocess.run(["swaymsg", "-rt", "get_outputs"], capture_output=True, text=True, check=True).stdout)
+    top = next(o for o in outputs if o["name"] == OUTPUT)
+    arg = lambda m: f"{m['width']}x{m['height']}@{m['refresh'] / 1000:.3f}Hz"
+    return arg(top["current_mode"]), {round(m["refresh"] / 1000): arg(m) for m in top["modes"]}
+
+
+def main():
+    panel = next(iter(glob.glob("/sys/bus/mipi-dsi/devices/*/frame_len_120")), None)
+    if not panel:
+        sys.exit("no calibratable panel (linux-thor's thor-0005)")
+    panel = os.path.dirname(panel)
+    try:
+        os.sched_setscheduler(0, os.SCHED_FIFO, os.sched_param(10))
+    except OSError:
+        pass
+    current, by_rate = modes()
+    found = {}
+    subprocess.run(["swaymsg", "output", BOTTOM, "power", "off"], capture_output=True)
+    try:
+        for target in (60, 120):
+            subprocess.run(["swaymsg", "output", OUTPUT, "mode", by_rate[target]], check=True, capture_output=True)
+            time.sleep(2)
+            fd, pipe = display()
+            found[target] = calibrate(f"{panel}/frame_len_{target}", target, fd, pipe)
+            os.close(fd)
+    finally:
+        subprocess.run(["swaymsg", "output", OUTPUT, "mode", current], capture_output=True)
+        subprocess.run(["swaymsg", "output", BOTTOM, "power", "on"], capture_output=True)
+    with open(SAVED, "w") as f:
+        f.write("".join(f"frame_len_{r}={v}\n" for r, v in sorted(found.items())))
+    print(f"saved in {SAVED}")
+
+
+if __name__ == "__main__":
+    main()

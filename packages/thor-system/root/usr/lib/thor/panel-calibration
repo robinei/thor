@@ -1,0 +1,9 @@
+#!/bin/sh
+# The top panel's calibrated frame lengths (thor-panel-calibration's), into its driver's files when it
+# binds (73-thor-power.rules), taken at its next prepare: PANEL is its device's sysfs path.
+saved=/var/lib/thor/panel-calibration
+[ -r "$saved" ] || exit 0
+while IFS='=' read -r name value; do
+    case $name in frame_len_120 | frame_len_60) [ -w "$1/$name" ] && echo "$value" > "$1/$name" ;; esac
+done < "$saved"
+exit 0
