@@ -1,0 +1,46 @@
+#!/bin/sh
+# The running kernel's modules across an update of linux-thor. Each build of the kernel has its own release
+# (its modules' folder: thor-kernel.sh), and pacman removes the old one's folder as it installs the new
+# one; until the new kernel is on the card (thor-boot) and running, the card still boots the old one,
+# which needs its modules. So:
+#
+#   thor-modules keep      before the update (10-thor-keep-modules.hook): a copy of the running kernel's
+#                          modules, /usr/lib/modules/.thor-kept-<release>
+#   thor-modules restore   after it (thor-boot, first): the copy back where it was if the update removed
+#                          that, else dropped
+#   thor-modules clean     at boot (thor-old-modules.service): module folders no package owns, other than
+#                          the running kernel's, removed (the restored old ones, once the new kernel runs)
+set -eu
+dir=/usr/lib/modules
+case ${1:-} in
+    keep)
+        running=$(uname -r)
+        # (In an image's build the running kernel is the build machine's: nothing of it here.)
+        [ -d "$dir/$running" ] || exit 0
+        rm -rf "$dir/.thor-kept-$running"
+        cp -a "$dir/$running" "$dir/.thor-kept-$running"
+        ;;
+    restore)
+        for kept in "$dir"/.thor-kept-*; do
+            [ -d "$kept" ] || continue
+            release=${kept##*/.thor-kept-}
+            if [ -e "$dir/$release" ]; then
+                rm -rf "$kept"
+            else
+                mv "$kept" "$dir/$release"
+                echo "thor-modules: $release's modules kept for the kernel still on the card"
+            fi
+        done
+        ;;
+    clean)
+        running=$(uname -r)
+        for release in "$dir"/*/; do
+            release=$(basename "$release")
+            [ "$release" = "$running" ] && continue
+            pacman -Qqo "$dir/$release" > /dev/null 2>&1 && continue
+            rm -rf "${dir:?}/$release"
+            echo "thor-modules: $release's modules removed (not running, no package's)"
+        done
+        ;;
+    *) echo "thor-modules keep|restore|clean"; exit 2 ;;
+esac

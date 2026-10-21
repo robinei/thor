@@ -9,7 +9,7 @@ _kver=$(cat "$_build/release" 2> /dev/null)
 # The kernel's version, then the time of Armada's commit it is built from (tools/image/kernel/armada-ref):
 # rebuilding the same commit gives the same version. A change of ours alone (kernel/series, our config
 # lines): pkgrel up.
-pkgver=${_kver%-thor}.$(cat "$_build/armada-time" 2> /dev/null)
+pkgver=${_kver%%-*}.$(cat "$_build/armada-time" 2> /dev/null)
 pkgrel=1
 pkgdesc="Armada's Linux kernel for the AYN Thor (SM8550), with its modules and device trees"
 arch=(aarch64)

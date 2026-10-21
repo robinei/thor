@@ -6,12 +6,14 @@
 # updates of the kernel or of what the initramfs and the boot loader are made of (90-thor-boot.hook); the
 # first boot, after putting the swap file's place on the command line; the image build, once.
 set -euo pipefail
-# The kernel: the only one there is (linux-thor).
-kver=$(ls /usr/lib/modules)
-[ "$(echo "$kver" | wc -l)" = 1 ] || { echo "thor-boot: expected one kernel in /usr/lib/modules, found: $kver"; exit 1; }
+# The previous kernel's modules back, if an update of linux-thor removed them (thor-modules): the card
+# boots that kernel until this has put the new one there.
+/usr/lib/thor/thor-modules restore
+# The kernel: linux-thor's (its Image's folder). (None, as in the test machine's image: Arch's kernel, its
+# own package and mkinitcpio boot it.)
+kver=$(pacman -Qlq linux-thor 2> /dev/null | sed -n 's|^/usr/lib/modules/\([^/]*\)/Image$|\1|p')
+[ -n "$kver" ] || { echo "thor-boot: no linux-thor: nothing to do"; exit 0; }
 modules=/usr/lib/modules/$kver
-# (Another kernel, as in the test machine's image: its own package and mkinitcpio boot it.)
-[ -f "$modules/Image" ] || { echo "thor-boot: not linux-thor's kernel: nothing to do"; exit 0; }
 echo "thor-boot: kernel and initramfs $kver"
 mkinitcpio -k "$kver" -c /usr/lib/thor/mkinitcpio.conf -g /boot/initramfs-thor.img > /var/log/thor-mkinitcpio.log 2>&1 \
     || { tail -20 /var/log/thor-mkinitcpio.log; exit 1; }

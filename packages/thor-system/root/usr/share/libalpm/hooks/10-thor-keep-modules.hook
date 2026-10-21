@@ -1,0 +1,12 @@
+# Before linux-thor is updated or removed: a copy of the running kernel's modules, which the card still
+# boots until thor-boot has put the new kernel there (thor-modules).
+[Trigger]
+Operation = Upgrade
+Operation = Remove
+Type = Package
+Target = linux-thor
+
+[Action]
+Description = Keeping the running kernel's modules until the new kernel is on the card...
+When = PreTransaction
+Exec = /usr/lib/thor/thor-modules keep

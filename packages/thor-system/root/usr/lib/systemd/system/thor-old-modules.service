@@ -1,0 +1,10 @@
+[Unit]
+Description=Old kernels' modules removed, once a newer kernel runs (thor-modules clean)
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/thor/thor-modules clean
+
+[Install]
+WantedBy=multi-user.target

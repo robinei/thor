@@ -9,7 +9,8 @@
 #                     repository (thor/: thor.db, the packages, their signatures; older versions
 #                     removed); thor-firmware, if one was built, into local/ instead: never published
 #                     (AYN's and Qualcomm's firmware)
-#   repo.sh publish   thor/ uploaded to the release (made if missing), assets no longer in thor/ deleted
+#   repo.sh publish   thor/ uploaded to the release (made if missing): the packages, then the database;
+#                     the files of the version before them deleted (one publish late)
 #
 # Signing: the key in ~/.config/thor-repo/gnupg (made for this, without a passphrase; its public half is
 # thor-keyring's), when it is there; without it (a checkout elsewhere) the repository is indexed unsigned,
@@ -77,13 +78,24 @@ publish() {
     gh release view "$RELEASE" -R "$GITHUB" > /dev/null 2>&1 \
         || gh release create "$RELEASE" -R "$GITHUB" --title "Packages" --latest=false \
             --notes "The Thor's pacman repository (not a release): [thor] Server = https://github.com/$GITHUB/releases/download/$RELEASE"
-    local files=()
-    for f in *; do [ -L "$f" ] || files+=("$f"); done
-    gh release upload "$RELEASE" -R "$GITHUB" --clobber "${files[@]}"
-    # Assets no longer in the repository (older versions) deleted.
-    gh release view "$RELEASE" -R "$GITHUB" --json assets -q '.assets[].name' | while read -r asset; do
-        [ -e "$asset" ] && [ ! -L "$asset" ] || gh release delete-asset "$RELEASE" "$asset" -R "$GITHUB" -y
+    # As Arch's repositories: the packages first, the database last, so that a device syncing meanwhile
+    # finds every file the database it gets names (or the old database, whose files are still there).
+    local files=() db=() f
+    for f in *; do
+        [ -L "$f" ] && continue
+        case $f in thor.db* | thor.files*) db+=("$f") ;; *) files+=("$f") ;; esac
     done
+    gh release upload "$RELEASE" -R "$GITHUB" --clobber "${files[@]}"
+    gh release upload "$RELEASE" -R "$GITHUB" --clobber "${db[@]}"
+    # Older versions deleted one publish late: what the previous database named stays until the next
+    # publish, for a device that synced just before this one (recorded in ../published).
+    local kept=../published
+    gh release view "$RELEASE" -R "$GITHUB" --json assets -q '.assets[].name' | while read -r asset; do
+        [ -e "$asset" ] && [ ! -L "$asset" ] && continue
+        grep -qxF "$asset" "$kept" 2> /dev/null && continue
+        gh release delete-asset "$RELEASE" "$asset" -R "$GITHUB" -y
+    done
+    printf '%s\n' "${files[@]}" "${db[@]}" > "$kept"
     echo "published: https://github.com/$GITHUB/releases/tag/$RELEASE"
 }
 

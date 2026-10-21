@@ -21,9 +21,10 @@
 # As Armada's scripts/build-kernel.sh does: kernel.org's tarball of BASE.env's version; patches/series in
 # order, each applied without fuzz; their dts/*.dts(i) copied into arch/arm64/boot/dts/qcom, then their
 # dts/*.patch; defconfig with config/armada-kernel.config.overrides merged (merge_config.sh), each =y
-# checked. Then ours: kernel/series (patches of our own, after theirs; none yet), and a release suffix
-# -thor, DMA-BUF heaps on (Android's allocators use /dev/dma_heap/system, which Waydroid passes into the
-# container), binder's devices left to binderfs (Waydroid makes them). Binder itself (the C driver), its
+# checked. Then ours: kernel/series (patches of our own, after theirs; none yet), a release suffix
+# -thor-<Armada's commit>[-<our patches' hash>], DMA-BUF heaps on (Android's allocators use
+# /dev/dma_heap/system, which Waydroid passes into the container), binder's devices left to binderfs
+# (Waydroid makes them). Binder itself (the C driver), its
 # filesystem and the rest Waydroid needs are in Armada's config. Ours, differing: LLVM instead of their
 # GCC; no built-in initramfs (ours comes from the boot loader); modules stripped of debug information (as
 # theirs).
@@ -86,6 +87,10 @@ apply() {  # PATCH
 
 SRC=$CACHE/linux-$VERSION-armada
 STAMP="Armada $COMMIT; ours $(cat "$OURS/series" "${MINE[@]/#/$OURS/}" | sha256sum | cut -c1-12)"
+# The kernel's release (its modules' folder): -thor, Armada's commit, and our patches' hash when there are
+# any. Each build its own, so that an update's modules go beside the running kernel's instead of over
+# them (thor-system keeps those until the new kernel is on the card).
+SUFFIX=-thor-${COMMIT:0:7}${MINE:+-$(cat "$OURS/series" "${MINE[@]/#/$OURS/}" | sha256sum | cut -c1-7)}
 if [ "$(cat "$SRC/.thor-source" 2> /dev/null)" != "$STAMP" ]; then
     say "sources: Linux $VERSION, ${#SERIES[@]} patches, their device trees${MINE:+, ${#MINE[@]} of ours}"
     rm -rf "$SRC" "$CACHE/linux-$VERSION"
@@ -119,7 +124,7 @@ FRAG=$CACHE/config.fragment
 {
     # (kconfig can't read comments after an assignment.)
     sed -E '/^[[:space:]]*CONFIG_[A-Z0-9_]+=/ s/[[:space:]]*#.*$//' "$K/config/armada-kernel.config.overrides"
-    printf '%s\n' 'CONFIG_LOCALVERSION="-thor"' 'CONFIG_INITRAMFS_SOURCE=""' 'CONFIG_DEFAULT_HOSTNAME="thor"' \
+    printf '%s\n' "CONFIG_LOCALVERSION=\"$SUFFIX\"" 'CONFIG_INITRAMFS_SOURCE=""' 'CONFIG_DEFAULT_HOSTNAME="thor"' \
         'CONFIG_ANDROID_BINDER_DEVICES=""' CONFIG_DMABUF_HEAPS=y CONFIG_DMABUF_HEAPS_SYSTEM=y
 } > "$FRAG"
 # Only replace .config when it changes, so a rebuild with the same config rebuilds nothing.
