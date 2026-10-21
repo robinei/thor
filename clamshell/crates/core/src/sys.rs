@@ -17,6 +17,8 @@ pub struct Status {
     /// Battery charge 0-100, if there is a battery.
     pub battery: Option<u8>,
     pub charging: bool,
+    /// On battery (the battery discharging; not on the charger, held at a limit or not).
+    pub discharging: bool,
     /// Wi-Fi link quality 0-100 while connected; `None` when not.
     pub wifi: Option<u8>,
     /// Output volume 0-100, if known, and whether it is muted.

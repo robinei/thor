@@ -23,7 +23,8 @@ pub enum Setting {
     /// Rendering below the screen's resolution through gamescope: 0 native, 1 FSR from 720p, 2 FSR from
     /// 540p, 3 integer scaling.
     Upscale,
-    /// The second screen while a game runs: 0 on, 1 dark (until tapped).
+    /// The second screen: 0 on (dimmed when untouched), 1 dark while a game runs (until tapped), 2 off
+    /// when idle; 1 and 2 power it off on battery (see [`crate::bottom_screen`]).
     BottomScreen,
     /// The big CPU cores: 1 on, 0 off (the little ones only).
     BigCores,
@@ -147,7 +148,8 @@ impl Setting {
             Setting::FpsCap => &[0, 30, 40, 45, 60, 90, 120],
             Setting::Refresh => &[0, 60, 90, 120],
             Setting::Upscale | Setting::Rumble => &[0, 1, 2, 3],
-            Setting::BottomScreen | Setting::BigCores | Setting::PadMouse => &[0, 1],
+            Setting::BottomScreen => &[2, 0, 1],
+            Setting::BigCores | Setting::PadMouse => &[0, 1],
             // (The others are the keymaps there are.)
             Setting::Keymap => &[0],
             Setting::CpuMax | Setting::GpuMax => &[0, 40, 50, 60, 70, 80, 90, 100],
@@ -163,6 +165,7 @@ impl Setting {
             Setting::Rumble => 3,
             Setting::ChargeLimit => 100,
             Setting::ScreenOff => 5,
+            Setting::BottomScreen => 2,
             Setting::Sleep => 15,
             Setting::Background => InBackground::PausesGames.value(),
             _ => 0,
@@ -191,7 +194,7 @@ impl Setting {
             return Impact::Stock;
         }
         match (self, value) {
-            (Setting::Power, 2) | (Setting::Refresh, 120) | (Setting::Fan, 2) | (Setting::Background, 0) => Impact::Costs,
+            (Setting::Power, 2) | (Setting::Refresh, 120) | (Setting::Fan, 2) | (Setting::Background, 0) | (Setting::BottomScreen, 0) => Impact::Costs,
             (Setting::CpuMax | Setting::GpuMax, 100) => Impact::Costs,
             // Never, or later than by default, costs power; sooner saves it.
             (Setting::ScreenOff | Setting::Sleep, v) if v == 0 || v > self.default_value() => Impact::Costs,
@@ -224,7 +227,8 @@ impl Setting {
             (Setting::Upscale, 2) => "FSR 540p",
             (Setting::Upscale, _) => "Integer",
             (Setting::BottomScreen, 0) => "Screen on",
-            (Setting::BottomScreen, _) => "Dark in game",
+            (Setting::BottomScreen, 1) => "Dark in game",
+            (Setting::BottomScreen, _) => "Off when idle",
             (Setting::BigCores, 0) => "Little cores",
             (Setting::BigCores, _) => "All cores",
             (Setting::Fan, 0) => "Fan auto",
@@ -286,6 +290,11 @@ impl Values {
     /// The bottom screen dark while a game is in force.
     pub fn bottom_dark(&self) -> bool {
         self.get(Setting::BottomScreen) == 1
+    }
+
+    /// The bottom screen powered off on battery when idle (or dark): all but "Screen on".
+    pub fn bottom_idle_off(&self) -> bool {
+        self.get(Setting::BottomScreen) != 0
     }
 
     pub fn pad_mouse(&self) -> bool {

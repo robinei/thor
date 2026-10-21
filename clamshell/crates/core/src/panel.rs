@@ -406,7 +406,7 @@ mod tests {
     fn a_game_can_start_the_pad_mouse_and_darken_the_second_screen() {
         let mut s = state();
         taps(&mut s, Setting::PadMouse, 1);
-        taps(&mut s, Setting::BottomScreen, 1);
+        taps(&mut s, Setting::BottomScreen, 2);
         let (_, fx) = crate::testkit::start(&mut s, "zelda-lttp");
         assert!(fx.contains(&Effect::PadRoute(PadRoute::Mouse)), "{fx:?}");
         assert!(s.bottom_dark());

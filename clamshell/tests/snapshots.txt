@@ -52,11 +52,11 @@ keymaps.png f133c53f67c0912d
 launcher-running.png 37ff62f1d95cb255
 launcher.png 09bfd1fbf7e33dd9
 settings-env.png 817534091cbf35d0
-settings-global.png 6b0b38c132d9d009
-settings-running.png f308ece188e0ee11
-settings.png a4cc3545ce8c1032
+settings-global.png 3889ba3f8b5b1ac6
+settings-running.png 6ec5268205e6ff83
+settings.png a52b52587903b416
 slider.png 4a04ed3a493415dd
-status-low.png 44b2ff45e6fef839
+status-low.png 0f1c4340bd26ee25
 sysinfo.png 7885456e51c58eea
 time-by-hand.png a677c8f5d82d67ab
 time-europe.png edec0693e5b8f0f4

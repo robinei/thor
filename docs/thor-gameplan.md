@@ -684,6 +684,12 @@ From the review of 2026-10-21 (what Armada, ROCKNIX, Thorch and Kettle do, taken
 - [ ] Booted: the first check says `device tree: AYN Thor` and which way it booted (UEFI or `/KERNEL`),
       and `fbcon rotated` passes (the console reads upright).
 - [ ] Touch: all four corners of both screens land where tapped (known issue 4).
+- [ ] The bottom screen off by itself on battery (the setting's default, "Off when idle": dimmed after a
+      minute untouched, off three minutes later; "Dark in game" off at once while dark): unplugged and
+      left alone, it goes off (`swaymsg -t get_outputs`: DSI-1's power off); a tap on it brings it back
+      (touch still delivered to a powered-off output: if not, the pad's focus or Home+Start do); the
+      charger plugged in brings it back. And the power it saves: the battery's draw with it dimmed and
+      with it off (the panel is driven in video mode: streamed every frame until off).
 - [ ] Wi-Fi with the device's own address (`ip link`: the same as the kernel's, not a random one), as
       Armada's and Kettle's NetworkManager config; the fan and battery drivers loaded at boot
       (thor-drivers.service: Kettle saw them late otherwise); the lid heeded 5 s after boot or waking

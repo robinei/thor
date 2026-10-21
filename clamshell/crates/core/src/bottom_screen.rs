@@ -110,10 +110,15 @@ pub struct BottomScreen {
     pub(crate) windows: bool,
     /// Turned off with Home+Start.
     pub(crate) off: bool,
+    /// Turned off by itself: idle (or dark) on battery ([`State::follow_bottom_power`]).
+    pub(crate) idle_off: bool,
 }
 
-/// How long the second screen goes untouched, the pad's focus not on it, before it dims.
+/// How long the second screen goes untouched, the pad's focus not on it, before it dims; and after that
+/// before it powers off by itself (on battery, the setting not "Screen on": see
+/// [`State::follow_bottom_power`]).
 const DIM_AFTER: u64 = 60;
+const OFF_AFTER: u64 = 180;
 
 impl State {
     /// The second screen is dark: a program is in force that wants it so, and it hasn't been tapped
@@ -156,9 +161,32 @@ impl State {
         self.bottom.screen.windows && self.windows_down().next().is_some()
     }
 
-    /// Whether the bottom screen is turned off.
+    /// Whether the bottom screen is turned off (by hand, or by itself).
     pub fn bottom_off(&self) -> bool {
-        self.bottom.screen.off
+        self.bottom.screen.off || self.bottom.screen.idle_off
+    }
+
+    /// Whether the bottom screen is to be off by itself: on battery, the setting in force not "Screen on",
+    /// ClamShell's view on it (no window moved down) with nothing being typed there; and dark for a game
+    /// (not tapped since), or untouched (the pad's focus not on it) [`DIM_AFTER`] and [`OFF_AFTER`] more.
+    /// The panel is driven in video mode, streamed every frame whatever it shows: only off saves that.
+    fn bottom_idle_wanted(&self) -> bool {
+        let untouched = self.bottom.used_at != 0 && self.unix_secs.saturating_sub(self.bottom.used_at) >= DIM_AFTER + OFF_AFTER;
+        self.sys.status.discharging
+            && self.in_force().bottom_idle_off()
+            && !self.bottom_shows_windows()
+            && self.bottom.editor().is_none()
+            && (self.bottom_dark() || untouched)
+    }
+
+    /// After any event: the bottom screen off or on by itself as [`State::bottom_idle_wanted`] says (a
+    /// touch, the pad's focus, a window moved down, the charger: on again). Not while it is off by hand.
+    pub(crate) fn follow_bottom_power(&mut self) -> Vec<Effect> {
+        let wanted = self.bottom_idle_wanted();
+        if wanted == std::mem::replace(&mut self.bottom.screen.idle_off, wanted) || self.bottom.screen.off {
+            return vec![];
+        }
+        vec![Effect::Window(WindowCommand::BottomPower(!wanted))]
     }
 
     /// Whose a window is, for a rule: the running entry's it belongs to.
@@ -247,8 +275,13 @@ impl State {
         vec![Effect::Window(WindowCommand::ShowDown(window))]
     }
 
-    /// Home+Start: the bottom screen off, or on again.
+    /// Home+Start: the bottom screen off, or on again (off by itself: on, as a touch would).
     pub(crate) fn toggle_bottom_power(&mut self) -> Vec<Effect> {
+        if self.bottom.screen.idle_off {
+            self.bottom.used_at = self.unix_secs;
+            self.bottom.woken = true;
+            return self.follow_bottom_power();
+        }
         self.bottom.screen.off = !self.bottom.screen.off;
         vec![Effect::Window(WindowCommand::BottomPower(!self.bottom.screen.off))]
     }
@@ -281,6 +314,7 @@ mod tests {
     use crate::Event;
     use crate::hardware::DeviceKey;
     use crate::running::{Origin, Running};
+    use crate::settings::Setting;
     use crate::testkit::state;
 
     fn win(id: i64, unit: &str, title: &str, focused: bool, down: bool) -> Window {
@@ -432,6 +466,78 @@ mod tests {
             win(3, "clamshell-run-x_1-1-0.scope", "x", true, false),
         ]));
         assert_eq!(s.hidden_down(), None);
+    }
+
+    /// The battery's status read: on battery or on the charger.
+    fn on_battery(s: &mut State, discharging: bool) -> Vec<Effect> {
+        let status = crate::Status { battery: Some(50), charging: !discharging, discharging, ..crate::Status::default() };
+        s.apply(Event::Reading(crate::Reading::Status(status))).1
+    }
+
+    fn power(fx: &[Effect]) -> Option<bool> {
+        fx.iter().find_map(|e| match e {
+            Effect::Window(WindowCommand::BottomPower(on)) => Some(*on),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn on_battery_the_untouched_bottom_screen_goes_off_and_a_touch_brings_it_back() {
+        let mut s = state();
+        on_battery(&mut s, true);
+        s.apply(Event::tick(1000));
+        assert_eq!(power(&s.apply(Event::tick(1000 + DIM_AFTER + OFF_AFTER - 1)).1), None, "dimmed, not yet off");
+        assert_eq!(power(&s.apply(Event::tick(1000 + DIM_AFTER + OFF_AFTER)).1), Some(false), "off by itself");
+        assert!(s.bottom_off());
+        assert_eq!(power(&s.apply(Event::BottomTouched).1), Some(true), "a touch: on again");
+        assert!(!s.bottom_off());
+    }
+
+    #[test]
+    fn on_the_charger_or_set_to_stay_on_it_only_dims() {
+        let mut s = state();
+        on_battery(&mut s, false);
+        s.apply(Event::tick(1000));
+        assert_eq!(power(&s.apply(Event::tick(1000 + DIM_AFTER + OFF_AFTER)).1), None, "on the charger: only dimmed");
+        // Unplugged now, set to Screen on: still only dimmed.
+        s.settings.global.set(Setting::BottomScreen, 0);
+        on_battery(&mut s, true);
+        assert_eq!(power(&s.apply(Event::tick(1001 + DIM_AFTER + OFF_AFTER)).1), None);
+        // The default again: off; the charger plugged in: on.
+        s.settings.global.set(Setting::BottomScreen, 2);
+        assert_eq!(power(&s.apply(Event::tick(1002 + DIM_AFTER + OFF_AFTER)).1), Some(false));
+        assert_eq!(power(&on_battery(&mut s, false)), Some(true), "the charger: on again");
+    }
+
+    #[test]
+    fn dark_for_a_game_on_battery_it_goes_off_and_a_tap_wakes_it() {
+        let mut s = state();
+        on_battery(&mut s, true);
+        s.settings.global.set(Setting::BottomScreen, 1);
+        crate::testkit::start(&mut s, "zelda-lttp");
+        assert!(s.bottom_dark());
+        assert!(s.bottom_off(), "dark on battery: off at once");
+        assert_eq!(power(&s.apply(Event::Pointer(crate::PointerEvent::Activate(crate::Id::Wake))).1), Some(true), "tapped: on");
+    }
+
+    #[test]
+    fn windows_moved_down_keep_it_on() {
+        let mut s = emulator();
+        on_battery(&mut s, true);
+        key(&mut s, DeviceKey::WindowDown);
+        s.apply(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]));
+        s.apply(Event::tick(1000));
+        assert_eq!(power(&s.apply(Event::tick(1000 + DIM_AFTER + OFF_AFTER)).1), None, "a window shown there");
+    }
+
+    #[test]
+    fn home_start_brings_back_a_screen_off_by_itself() {
+        let mut s = state();
+        on_battery(&mut s, true);
+        s.apply(Event::tick(1000));
+        s.apply(Event::tick(1000 + DIM_AFTER + OFF_AFTER));
+        assert_eq!(power(&key(&mut s, DeviceKey::BottomPower)), Some(true), "on, as a touch would");
+        assert!(!s.bottom_off());
     }
 
     #[test]

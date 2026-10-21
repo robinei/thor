@@ -10,10 +10,11 @@ use clamshell_core::windows::Window;
 use clamshell_core::{Event, Id, Instance, PointerEvent, Reading, Status, Tab};
 
 /// Every bar icon shows.
-pub const STATUS: Status = Status { battery: Some(72), charging: true, wifi: Some(80), volume: Some(60), muted: false, brightness: Some(70) };
+pub const STATUS: Status =
+    Status { battery: Some(72), charging: true, discharging: false, wifi: Some(80), volume: Some(60), muted: false, brightness: Some(70) };
 
 /// Low battery, no Wi-Fi, muted.
-pub const STATUS_LOW: Status = Status { battery: Some(9), charging: false, wifi: None, volume: Some(40), muted: true, brightness: None };
+pub const STATUS_LOW: Status = Status { battery: Some(9), charging: false, discharging: true, wifi: None, volume: Some(40), muted: true, brightness: None };
 
 /// A launch of entry `id` (the `n`th thing started).
 pub fn run(id: &str, n: u64) -> Instance {

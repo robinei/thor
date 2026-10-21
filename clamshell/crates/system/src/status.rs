@@ -34,7 +34,7 @@ fn follow(backlights: &Backlights, sink: &impl Sink, commands: &Receiver<bool>) 
         if seen {
             status = read(backlights);
         } else {
-            (status.battery, status.charging) = read_battery().unwrap_or((None, false));
+            (status.battery, status.charging, status.discharging) = read_battery().unwrap_or((None, false, false));
         }
         if let Some(changed) = last.offer(status) {
             sink.send(Event::Reading(Reading::Status(changed)))?;
@@ -48,22 +48,24 @@ fn follow(backlights: &Backlights, sink: &impl Sink, commands: &Receiver<bool>) 
 }
 
 fn read(backlights: &Backlights) -> Status {
-    let (battery, charging) = read_battery().unwrap_or((None, false));
+    let (battery, charging, discharging) = read_battery().unwrap_or((None, false, false));
     let wifi = sys::text("/proc/net/wireless").as_deref().and_then(parse_wireless);
     let (volume, muted) = command::output("wpctl", &["get-volume", "@DEFAULT_AUDIO_SINK@"])
         .and_then(|out| String::from_utf8(out).ok())
         .as_deref()
         .and_then(mixer::parse_get_volume)
         .map_or((None, false), |(v, m)| (Some(v), m));
-    Status { battery, charging, wifi, volume, muted, brightness: backlights.level() }
+    Status { battery, charging, discharging, wifi, volume, muted, brightness: backlights.level() }
 }
 
-/// The system's battery: its capacity and whether it is charging (or full on power).
-fn read_battery() -> Option<(Option<u8>, bool)> {
+/// The system's battery: its capacity, whether it is charging (or full on power), and whether it is
+/// discharging (on battery: not held at a charge limit on the charger, "Not charging").
+fn read_battery() -> Option<(Option<u8>, bool, bool)> {
     let dir = sys::system_battery()?;
     let capacity = sys::read::<u8>(dir.join("capacity")).map(|c| c.min(100));
-    let charging = matches!(sys::read::<String>(dir.join("status")).as_deref(), Some("Charging" | "Full"));
-    Some((capacity, charging))
+    let status = sys::read::<String>(dir.join("status"));
+    let charging = matches!(status.as_deref(), Some("Charging" | "Full"));
+    Some((capacity, charging, status.as_deref() == Some("Discharging")))
 }
 
 /// Link quality (0-100) of the first interface in `/proc/net/wireless`; `None` if none is listed (not
