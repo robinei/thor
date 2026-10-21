@@ -3,7 +3,7 @@
 //! reloads when it changes).
 //!
 //! These write `scaling_max_freq` of each cpufreq policy, `max_freq` of the GPU's devfreq device, CPUs'
-//! `online`, the battery's `charge_control_end_threshold` and `constant_charge_current`, and the fan
+//! `online`, the battery's `charge_control_end_threshold` and `constant_charge_current` (see [`Hold`]), and the fan
 //! daemon's mode file, which needs write access to them (on the device: the `power` group's, given by
 //! thor-system's udev rule `73-thor-power.rules`, the mode file by clamshell's tmpfiles entry). The
 //! hardware is set on a thread of its own ([`spawn`]): taking cores offline can take a while, and drawing
@@ -64,8 +64,45 @@ fn share(power: PowerProfile, percent: u16) -> f64 {
     if percent == 0 { fraction(power) } else { f64::from(percent.min(100)) / 100.0 }
 }
 
-/// Bypass is asserted again this often while it is on, as a charger plugged in may undo it.
-const BYPASS_AGAIN: Duration = Duration::from_secs(30);
+/// While a charge limit or Bypass is on: the battery's level looked at, and the charge current asserted
+/// again, this often (a charger plugged in may undo it).
+const CHARGE_AGAIN: Duration = Duration::from_secs(30);
+/// Held at the limit by the charge current, charging starts again this many percent below it (Kettle's).
+const CHARGE_RESUME: u64 = 5;
+
+/// How a charge limit is held (`CLAMSHELL_CHARGE_LIMIT`, read at start; Bypass is always the current
+/// at 0). `Current`, the default: by the charge current, 0 from the limit until the level is
+/// [`CHARGE_RESUME`] below it, so the charger powers the device and the battery is left alone (Kettle's
+/// kettle-powerd, measured on a Thor: SM8550's battery firmware never answers the end threshold's
+/// request, but takes the current, Armada's patch 0903). `threshold`: the battery firmware's own end
+/// threshold, for trying on firmware that takes it (Armada's patch 0904 makes a refused write fail).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Hold {
+    Current,
+    Threshold,
+}
+
+impl Hold {
+    fn from_env() -> Hold {
+        match std::env::var("CLAMSHELL_CHARGE_LIMIT").as_deref() {
+            Ok("threshold") => Hold::Threshold,
+            _ => Hold::Current,
+        }
+    }
+}
+
+/// Whether charging is held (the current at 0), for the charge limit `limit` held by the current (0:
+/// Bypass, always; 100: never), the battery's level and whether it was held.
+pub fn held(limit: u16, level: Option<u64>, was: bool) -> bool {
+    let limit = u64::from(limit);
+    match (limit, level) {
+        (0, _) => true,
+        (100.., _) => false,
+        (_, Some(level)) if level >= limit => true,
+        (_, Some(level)) if level + CHARGE_RESUME <= limit => false,
+        _ => was,
+    }
+}
 
 /// A cpufreq policy: its dir, min and max frequency, its CPUs.
 type Policy = (PathBuf, u64, u64, Vec<u32>);
@@ -95,20 +132,23 @@ pub fn big_cpus(clusters: &[(u64, Vec<u32>)]) -> Vec<u32> {
     clusters.iter().filter(|(max, _)| *max > slowest).flat_map(|(_, cpus)| cpus.iter().copied()).filter(|&c| c != 0).collect()
 }
 
-/// The hardware thread: applies the settings it is sent, only the latest when several wait; with Bypass
-/// on, asserts it again every [`BYPASS_AGAIN`].
+/// The hardware thread: applies the settings it is sent, only the latest when several wait; with a
+/// charge limit or Bypass on, sees to the battery again every [`CHARGE_AGAIN`].
 pub fn spawn() -> io::Result<Worker<Values>> {
     Worker::spawn("tuning", |commands| {
         let (mut quiet, mut known, mut last) = (Quiet::default(), Vec::new(), None::<Values>);
+        let mut charge = Charge { hold: Hold::from_env(), held: false };
+        log::info!("charge limit held by {}", if charge.hold == Hold::Current { "the charge current" } else { "the battery's threshold" });
         loop {
-            let every = last.is_some_and(|v| v.get(Setting::ChargeLimit) == 0).then_some(BYPASS_AGAIN);
+            let limit = last.map(|v| v.get(Setting::ChargeLimit));
+            let every = limit.is_some_and(|l| l != 100).then_some(CHARGE_AGAIN);
             match worker::next(&commands, every) {
                 Next::Command(first) => {
                     let Some(values) = worker::coalesce(first, &commands, |_| ()).pop() else { continue };
-                    apply_hardware(&values, &mut known, &mut quiet);
+                    apply_hardware(&values, &mut known, &mut charge, &mut quiet);
                     last = Some(values);
                 }
-                Next::Elapsed => battery(0, &mut quiet),
+                Next::Elapsed => charge.battery(limit.unwrap_or(100), &mut quiet),
                 Next::Disconnected => return,
             }
         }
@@ -149,7 +189,7 @@ impl Tuning {
 /// Applies the settings in force to the hardware: frequency caps for the profile (or the CPU and GPU
 /// caps where set), the big cores, the charge limit.
 /// `known`: the policies as last read (see the module doc).
-fn apply_hardware(v: &Values, known: &mut Vec<Policy>, quiet: &mut Quiet) {
+fn apply_hardware(v: &Values, known: &mut Vec<Policy>, charge: &mut Charge, quiet: &mut Quiet) {
     let power = PowerProfile::from_value(v.get(Setting::Power));
     // Cores first, so the caps reach the policies that stay online; twice, as a CPU of a cluster not
     // known yet comes online to be read, and may then belong offline.
@@ -174,7 +214,7 @@ fn apply_hardware(v: &Values, known: &mut Vec<Policy>, quiet: &mut Quiet) {
         };
         write(&dir.join("max_freq"), pick(&steps, min, max, f), quiet);
     }
-    battery(v.get(Setting::ChargeLimit), quiet);
+    charge.battery(v.get(Setting::ChargeLimit), quiet);
     // The fan's mode, for the fan daemon (where it runs: the file is there). One write of the whole
     // value: the file can't be replaced (/run isn't the session's), and the daemon takes an empty read,
     // between the truncation and the write, for no change.
@@ -212,23 +252,40 @@ fn set_cores(big_cores: bool, known: &[Policy], quiet: &mut Quiet) {
     }
 }
 
-/// Battery care (`limit`: the Charge limit setting, 0 Bypass): only where the battery has the setting,
-/// and only if it differs. Bypass: the charge current limited to 0 (the Thor's battery firmware, through
-/// Armada's kernel patch 0903), so that the charger powers the device and the battery is left alone;
-/// written each time, and again every [`BYPASS_AGAIN`], as whether the firmware keeps it (unplugged,
-/// replugged) isn't known.
-fn battery(limit: u16, quiet: &mut Quiet) {
-    for supply in sys::power_supplies() {
-        let file = supply.join("charge_control_end_threshold");
-        let end = u64::from(if limit == 0 { 100 } else { limit });
-        if file.exists() && sys::read(&file) != Some(end) {
-            write(&file, end, quiet);
-        }
-        let current = supply.join("constant_charge_current");
-        if let Some(max) = sys::read::<u64>(supply.join("constant_charge_current_max")).filter(|_| current.exists()) {
-            let want = if limit == 0 { 0 } else { max };
-            if limit == 0 || sys::read(&current) != Some(want) {
-                write(&current, want, quiet);
+/// The charge limit's state: how it is held, and whether charging is held now.
+struct Charge {
+    hold: Hold,
+    held: bool,
+}
+
+impl Charge {
+    /// Battery care (`limit`: the Charge limit setting, 0 Bypass), by [`Hold`]: only where the battery
+    /// has the files. The end threshold written only if it differs (100 unless the threshold holds the
+    /// limit); the charge current 0 while held, written each time then, as whether the firmware keeps it
+    /// (unplugged, replugged) isn't known, else its maximum where it differs.
+    fn battery(&mut self, limit: u16, quiet: &mut Quiet) {
+        let (by_threshold, by_current) = match (self.hold, limit) {
+            (_, 0) => (100, 0),
+            (Hold::Current, l) => (100, l),
+            (Hold::Threshold, l) => (l, 100),
+        };
+        for supply in sys::power_supplies() {
+            let file = supply.join("charge_control_end_threshold");
+            let end = u64::from(by_threshold);
+            if file.exists() && sys::read(&file) != Some(end) {
+                write(&file, end, quiet);
+            }
+            let current = supply.join("constant_charge_current");
+            if let Some(max) = sys::read::<u64>(supply.join("constant_charge_current_max")).filter(|_| current.exists()) {
+                let held = held(by_current, sys::read(supply.join("capacity")), self.held);
+                if held != self.held {
+                    log::info!("charging {} ({} %)", if held { "held" } else { "on" }, sys::text(supply.join("capacity")).unwrap_or_default().trim());
+                }
+                self.held = held;
+                let want = if held { 0 } else { max };
+                if held || sys::read(&current) != Some(want) {
+                    write(&current, want, quiet);
+                }
             }
         }
     }
@@ -268,6 +325,18 @@ mod tests {
         assert_eq!(pick(&steps, 300_000, 2_400_000, 0.8), 1_800_000);
         assert_eq!(pick(&steps, 300_000, 2_400_000, 0.0), 300_000);
         assert_eq!(pick(&[], 1000, 2000, 0.5), 1500, "no list: the target itself");
+    }
+
+    #[test]
+    fn a_charge_limit_holds_at_the_limit_and_charges_again_five_below() {
+        assert!(held(0, Some(40), false), "Bypass: always");
+        assert!(!held(100, Some(100), true), "full: never");
+        assert!(!held(80, Some(79), false));
+        assert!(held(80, Some(80), false), "at the limit");
+        assert!(held(80, Some(76), true), "still held above 75");
+        assert!(!held(80, Some(75), true), "five below: charging again");
+        assert!(!held(80, Some(78), false), "charging on up to the limit");
+        assert!(held(80, None, true) && !held(80, None, false), "no level: as it was");
     }
 
     #[test]

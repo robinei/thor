@@ -563,11 +563,16 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       lid event, with no inhibitor holding it for ClamShell's write; close the lid a few times in a row
       and press the power key each time. If it ever wakes, a delay inhibitor (or a system-sleep hook, as
       Armada's) is the fix.
-- [ ] Battery: capacity, charging, power draw in sysinfo; the charge limit setting
-      (`charge_control_end_threshold` of `battery`, written by the power group). Kettle found the
-      threshold has no effect on SM8550's firmware (its patch `1190`); with Armada's patch `0904` a write
-      the firmware refuses fails, and ClamShell's log says so (once). If it does nothing: drop the 90 and
-      80 choices (Bypass stays, if it works). UPower
+- [ ] Battery: capacity, charging, power draw in sysinfo; the charge limit setting. Two ways to hold
+      it, both in ClamShell (`tuning::Hold`): by default the charge current, as Kettle's kettle-powerd
+      (0 from the limit until 5 % below it; ClamShell's log says "charging held" and "charging on"),
+      since Kettle found SM8550's battery firmware never answers the end threshold's request (its patch
+      `1190`; a firmware matter, not the kernel's). The other, the firmware's own threshold
+      (`charge_control_end_threshold`; with Armada's patch `0904` a refused write fails, and ClamShell's
+      log says so once): `systemctl --user set-environment CLAMSHELL_CHARGE_LIMIT=threshold`, then
+      `systemctl --user restart clamshell` (to keep it: that line in `~/.config/environment.d/`). Try
+      both at 80 with the charger in: the level stops at 80 and the battery's `current_now` drops to
+      about 0. If the threshold works on this firmware, it holds through sleep too. UPower
       sees it (the battery mode's graph) and powers off at 3 %; GPU time per program in the battery mode
       (msm's `drm-engine-gpu` in fdinfo).
 - [ ] Bypass charging (Android has it: plugged in, the device runs from the charger and the battery is left

@@ -40,8 +40,8 @@ pub enum Setting {
     CpuMax,
     /// The GPU's frequency cap in percent of its range; 0: the power profile's.
     GpuMax,
-    /// Charging stops at this percentage; 0: bypass, the battery left alone while the charger powers the
-    /// device (global only: battery care).
+    /// Charging stops at this percentage (again 5 below it: `clamshell_system::tuning::Hold`); 0: bypass,
+    /// the battery left alone while the charger powers the device (global only: battery care).
     ChargeLimit,
     /// The screens go off after this many minutes without input; 0: never (global only).
     ScreenOff,
