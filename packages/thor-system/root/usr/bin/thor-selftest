@@ -167,6 +167,9 @@ settled() {
     check "NetworkManager keeps the device's address" bash -c 'NetworkManager --print-config | grep -qx "wifi.scan-rand-mac-address=no"'
     check "Wi-Fi interface" bash -c 'ls /sys/class/ieee80211 | grep -q .'
     check "Bluetooth (hci0)" test -e /sys/class/bluetooth/hci0
+    # The motion sensors' services (thor-sensors), on the ADSP's FastRPC node.
+    check "FastRPC to the ADSP (/dev/fastrpc-adsp)" test -c /dev/fastrpc-adsp
+    check "motion sensors' services (thor-sensors)" systemctl is-active -q thor-sensors thor-sensors-root
     info "network: $(nmcli -t -f DEVICE,STATE device 2> /dev/null | tr '\n' ' ')"
 
     # The session.

@@ -74,7 +74,11 @@ Android kept. Written 2026-10-14, before having the device; everything here is u
 - Gyro: the IMU is on the ADSP's sensor island, not on the gamepad and not an IIO device: Kettle reads it
   with libssc through hexagonrpcd and makes a uinput device of it, "Kettle Motion Sensors"
   (`packages/kettle-motion/kettle-motiond.c`), axes turned by the matrix `0,-1,0,1,0,0,0,0,1` (its
-  `devices.conf`, tried in a game 2026-10-07). Not in our image.
+  `devices.conf`, tried in a game 2026-10-07). PB-OS (tested on a Thor, its faff51e) reads it without
+  libssc: hexagonrpcd with its patches serves the ADSP's sensors process its files, and its pbos-motiond
+  speaks the hub's QMI service (400) over QRTR. Ours is PB-OS's way: linux-thor's FastRPC patch and
+  device tree nodes, thor-sensors (hexagonrpcd, the setup), thor-firmware's sensor configuration, and
+  ClamShell reading the hub itself (`pad::sensor_hub`, no uinput device).
 - Stick lights: `/sys/devices/platform/multi-led{l,r}{1-4}/leds/rgb:*/multi_intensity` and `power-led`
   (HTR3212); their channels are out of order (red is written `0 0 255`: ROCKNIX's `ledcontrol` and
   `battery_led_status`). Armada's kernel turns them off in suspend.
@@ -495,11 +499,13 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       see them as expected through the virtual
       pad (written by letter, as an Xbox 360 pad's), and that there are no back buttons. Then they can become
       inputs of their own in the keymap (`core::keymap::Button`) and the edit screen (`views/pad.rs`).
-- [ ] Gyro: the IMU is the ADSP's (see "The hardware"): neither evdev from the gamepad nor IIO. ClamShell
-      reads an evdev motion sensor (INPUT_PROP_ACCELEROMETER, ABS_RX/RY/RZ, resolution in units per °/s)
-      paired with the controller; for the Thor that takes hexagonrpcd and libssc in the image and either
-      Kettle's kettle-motiond (a uinput device ClamShell could pair) or a source of our own behind the same
-      seam (`pad/motion.rs`, `MotionSource`). First: Kettle's daemon run by hand, its axes, signs and units. Its offset at rest (°/s, and how it drifts warm): whether
+- [ ] Gyro: the IMU is the ADSP's (see "The hardware"). First the hub: `systemctl status thor-sensors
+      thor-sensors-root` active, `/var/lib/thor-sensors/registry` made ("made the sensor registry" in
+      the journal), sound still working after it started. Then ClamShell's log: "gyro from the sensor
+      hub", "the sensor hub is up", "the gyro streams at 200 Hz" (else "refused a request"). Then the
+      axes and signs (PB-OS hadn't checked them in Steam's preview yet): turning the device to the left
+      (yaw), tipping its top away (pitch), tilting it right (roll), against what the pointer does with a
+      gyro keymap; a wrong one is a sign or row in `THOR_TURN` (`pad/sensor_hub.rs`). Its offset at rest (°/s, and how it drifts warm): whether
       the still detection (under 5 °/s, within 0.5 °/s, for 1.5 s) catches it and doesn't eat slow aim,
       and "Calibrate gyro". Then the feel: gyro to the pointer at each speed (pixels per degree),
       acceleration and tightening's defaults, which way turning and tilting move it (`ROLL_TURNS` in
@@ -764,8 +770,15 @@ Power and sleep
 Sound and the rest
 - No sound under U-Boot's way: the card is `ayn-AYNOdin2` there (thor-ucm gives it the Thor's profile).
 - The mic: PB-OS found capturing through a PipeWire loopback on it killed PipeWire.
-- Sound gone once the motion sensors started: the ADSP serves both; start the sensors after the sound
-  card is up (PB-OS's `sm8550-sensors`).
+- Sound gone once the motion sensors started: the ADSP serves both; thor-sensors waits for the sound
+  card (PB-OS: an ADSP restart after the sensors opened their sessions isn't reliably recovered); if it
+  happens anyway, `systemctl disable --now thor-sensors` and a reboot.
+- No gyro: `journalctl -b -u thor-sensors -u thor-sensors-root` (the registry, hexagonrpcd), then
+  ClamShell's log (`pad:` lines); `ls /dev/fastrpc-adsp`. A registry made wrong:
+  `/var/lib/thor-sensors/registry` removed (it is made again; it holds the unit's calibration).
+- Drain asleep with the gyro streaming (ClamShell keeps it on while it has the controller, at 200 Hz on
+  the ADSP): PB-OS stops it around sleep (a logind delay lock); ours would be the pad thread told of
+  sleep, or a lower rate when the game doesn't have the pad.
 - A DisplayPort monitor freezes the device (Armada #529): `status = "disabled"` on `&mdss_dp0` in a dts
   patch of ours until Armada fixes it.
 - A DRM lease (a VR headset, gamescope per screen) leaves a thread stuck when it ends: PB-OS's 0610.
