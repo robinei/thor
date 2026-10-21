@@ -86,10 +86,17 @@ impl SensorHub {
         hub.map_err(|e| log::warn!("pad: the sensor hub: {e}")).ok().inspect(|_| log::info!("pad: gyro from the sensor hub, once it is up"))
     }
 
+    /// Sends a request to the hub. A send that fails (the ADSP gone before the name service said so)
+    /// drops the hub until it is announced again, rather than the gyro for good, as PB-OS's.
     fn request(&mut self, suid: Suid, msg_id: u32, payload: &[u8]) -> io::Result<()> {
         let Some((node, port)) = self.service else { return Ok(()) };
         self.txn = self.txn.wrapping_add(1);
-        qrtr::send_to(&self.socket, node, port, &qmi_request(self.txn, &client_request(suid, msg_id, payload)))
+        if let Err(e) = qrtr::send_to(&self.socket, node, port, &qmi_request(self.txn, &client_request(suid, msg_id, payload))) {
+            log::warn!("pad: the sensor hub: {e} (until it is back)");
+            self.service = None;
+            self.gyro = None;
+        }
+        Ok(())
     }
 
     /// One datagram from the name service: the hub came (look the gyro up) or went.
@@ -118,7 +125,11 @@ impl SensorHub {
     /// One QMI datagram from the hub: a refusal logged; the gyro's SUID (start it); its samples.
     fn message(&mut self, msg: &[u8], out: &mut Vec<Sample>) -> io::Result<()> {
         match qmi_message(msg) {
-            Some(Qmi::Refused(error)) => log::warn!("pad: the sensor hub refused a request (error {error})"),
+            Some(Qmi::Refused(error)) => {
+                // (Its config refused: started again from the lookup's next report.)
+                log::warn!("pad: the sensor hub refused a request (error {error})");
+                self.gyro = None;
+            }
             Some(Qmi::Report(report)) => match self.gyro {
                 None => {
                     if let Some(suid) = suid_of(report, b"gyro") {

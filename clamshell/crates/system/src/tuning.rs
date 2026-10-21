@@ -78,8 +78,8 @@ const CHARGE_RESUME: u64 = 5;
 /// threshold, for trying on firmware that takes it (Armada's patch 0904 makes a refused write fail).
 /// `firmware`: the battery firmware's own switches, which AYN's and Retroid's Android drivers write
 /// (PB-OS's kernel patch, linux-thor's; untried on a Thor): its 80 % limit (`retroid_limit_capacity`)
-/// for 80, running from USB with the battery left alone (`retroid_charge_now` 0) for Bypass, the charge
-/// current for 90 (the firmware has no other level); written again at every look, as the firmware may
+/// for 80, running from USB with the battery left alone (`retroid_charge_now` 0, and the current at 0
+/// too) for Bypass, the charge current for 90 (the firmware has no other level); written again at every look, as the firmware may
 /// drop them when the charger is plugged in again. Without the switches: as `Current`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Hold {
@@ -163,7 +163,9 @@ pub fn spawn() -> io::Result<Worker<Values>> {
                     last = Some(values);
                 }
                 Next::Elapsed => charge.battery(limit.unwrap_or(100), &mut quiet),
-                Next::Disconnected => return,
+                // (ClamShell ending: the battery back to the firmware's own charging, so that a session
+                // that doesn't come back doesn't leave it held.)
+                Next::Disconnected => return charge.battery(100, &mut quiet),
             }
         }
     })
@@ -282,7 +284,8 @@ impl Charge {
         let firmware = self.hold == Hold::Firmware && switches.is_some();
         // The end threshold, the limit held by the current, the switches' charge_now and limit.
         let (by_threshold, by_current, charge_now, limit80) = match (self.hold, limit) {
-            (Hold::Firmware, 0) if firmware => (100, 100, 0, 0),
+            // (Bypass by the switch and the current both: the current is the one measured on a Thor.)
+            (Hold::Firmware, 0) if firmware => (100, 0, 0, 0),
             (Hold::Firmware, 80) if firmware => (100, 100, 1, 1),
             (_, 0) => (100, 0, 1, 0),
             (Hold::Threshold, l) => (l, 100, 1, 0),
