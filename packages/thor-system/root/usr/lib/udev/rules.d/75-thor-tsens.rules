@@ -1,0 +1,3 @@
+# The thermal sensors don't wake the machine: warm or charging, near a trip point, they woke it from
+# s2idle within seconds (Kettle's 60-kettle-tsens-nowake.rules).
+ACTION=="add", SUBSYSTEM=="platform", DRIVER=="qcom-tsens", ATTR{power/wakeup}="disabled"

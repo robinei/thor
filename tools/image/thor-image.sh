@@ -24,8 +24,8 @@
 # have it) starts systemd-boot (EFI/BOOT/BOOTAA64.EFI), which loads the kernel (an EFI program), our
 # initramfs and the Thor's device tree as files; the ABL boots /KERNEL, an Android boot image of the same
 # kernel. Layout: GPT; 1: FAT "ROCKNIX" at 16 MiB, 512 MiB (room for thor-boot's new files beside the
-# old ones), an EFI system partition with ROCKNIX's GPT name "system" and legacy-boot attribute (their ABL
-# looks for the label); 2: ext4 THOR_ROOT, the system.
+# old ones), an EFI system partition (as Armada's and Kettle's, which ROCKNIX's ABL boots) with ROCKNIX's
+# label, GPT name "system" and legacy-boot attribute; 2: ext4 THOR_ROOT, the system.
 # thor-boot (thor-system) fills the FAT partition, here and after every update of what it is made of. The
 # image is small to write; the card's first boot grows the root to the card and makes the swap file for
 # hibernating (thor-firstboot, thor-system's). The test machine's: the same partitions, the FAT one its
@@ -52,9 +52,10 @@ case $TARGET in
         # The kernel command line: ROCKNIX's tuning for SM8550, our root; PSI on (Armada's kernel has it
         # off by default; Android's memory killer in Waydroid needs it), not per cgroup (as Armada's
         # kargs.d/10-armada); the internal UFS given 3 s to answer across sleep (Armada's device-quirks:
-        # SM8550's needs up to that, against the default 0.5 s). The loader entry holds it; thor-boot copies
+        # SM8550's needs up to that, against the default 0.5 s); a panic reboots after 30 s (Thorch's). The
+        # loader entry holds it; thor-boot copies
         # it into /KERNEL; the first boot adds resume= and resume_offset= (the swap file's place).
-        CMDLINE="root=LABEL=THOR_ROOT rw rootwait console=tty0 fbcon=rotate:1 allow_mismatched_32bit_el0 fw_devlink.strict=1 pcie_ports=compat irqaffinity=0-2 cgroup.memory=nokmem,nosocket nosoftlockup usbcore.interrupt_interval_override=045e:028e:2 psi=1 cgroup_disable=pressure ufshcd_core.uic_cmd_timeout=3000"
+        CMDLINE="root=LABEL=THOR_ROOT rw rootwait console=tty0 fbcon=rotate:1 allow_mismatched_32bit_el0 fw_devlink.strict=1 pcie_ports=compat irqaffinity=0-2 cgroup.memory=nokmem,nosocket nosoftlockup usbcore.interrupt_interval_override=045e:028e:2 psi=1 cgroup_disable=pressure ufshcd_core.uic_cmd_timeout=3000 panic=30"
         [ -e /proc/sys/fs/binfmt_misc/qemu-aarch64 ] || { echo "needs qemu-user's binfmt for aarch64: qemu-user-static-binfmt"; exit 1; }
         [ -f "$FIRMWARE" ] || { echo "no thor-firmware package: $FIRMWARE"; exit 1; }
         ;;
@@ -159,6 +160,8 @@ printf '%%wheel ALL=(ALL:ALL) ALL\n' > "$ROOT/etc/sudoers.d/wheel"
 chmod 440 "$ROOT/etc/sudoers.d/wheel"
 # (sshd isn't: ClamShell's Remote login turns it on, once there is a password.)
 arch-chroot "$ROOT" systemctl enable NetworkManager bluetooth systemd-timesyncd > /dev/null
+# Each card its own machine ID: an empty /etc/machine-id, which systemd fills at the first boot.
+: > "$ROOT/etc/machine-id"
 # UPower: the battery's history (ClamShell's battery mode shows the last day) and, nearly empty, hibernate
 # rather than dying mid-write (UPower powers off instead when hibernate isn't possible).
 sed -i -e 's/^CriticalPowerAction=.*/CriticalPowerAction=Hibernate/' -e 's/^PercentageAction=.*/PercentageAction=3/' \

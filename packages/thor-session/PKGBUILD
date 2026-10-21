@@ -13,11 +13,11 @@ url=https://github.com/robinei/thor
 license=('MIT OR Apache-2.0')
 # Everything the session and ClamShell use (ClamShell's own list of programs: crates/system's
 # library::NEEDED): the network, Bluetooth and the battery (NetworkManager, BlueZ, UPower), sound
-# (PipeWire), X programs (Xwayland), removable storage (udisks2, udiskie; exFAT's tools), archives browsed
+# (PipeWire, ALSA's default device through it too), X programs (Xwayland), removable storage (udisks2, udiskie; exFAT's tools), archives browsed
 # (ratarmount), screenshots (grim), opening files (xdg-utils, imv, zathura); the starter library's players
 # (RetroArch with its cores and XMB's assets, mpv; ffmpeg's ffprobe for videos' lengths).
 depends=(clamshell thor-system sway uwsm mako foot udiskie xorg-xwayland mesa noto-fonts python python-pillow curl unzip
-         networkmanager bluez upower pipewire pipewire-pulse wireplumber udisks2 exfatprogs ratarmount grim xdg-utils
+         networkmanager bluez upower pipewire pipewire-alsa pipewire-pulse wireplumber udisks2 exfatprogs ratarmount grim xdg-utils
          imv zathura zathura-pdf-mupdf mpv ffmpeg
          retroarch retroarch-assets-xmb retroarch-assets-glui retroarch-assets-ozone libretro-core-info
          libretro-nestopia libretro-snes9x libretro-mupen64plus-next libretro-gambatte libretro-mgba libretro-melonds

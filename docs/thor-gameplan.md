@@ -57,8 +57,11 @@ Android kept. Written 2026-10-14, before having the device; everything here is u
 
 - Screens: top DSI-2, 1080x1920 at 120 Hz (ICNA3520); bottom DSI-1, 1080x1240 at 60 Hz only (CH13726A;
   Armada's panel patch `0057`, our DTB). Both natively portrait: sway needs a transform on each.
-- Touch: the device tree swaps and inverts axes; Kettle fixes it with `LIBINPUT_CALIBRATION_MATRIX` in a
-  udev rule (`61-kettle-thor-touch.rules`), and maps each touchscreen to its screen.
+- Touch: ROCKNIX's and Kettle's device trees swap and invert the touchscreens' axes, and their
+  `LIBINPUT_CALIBRATION_MATRIX` (`0 -1 1 1 0 0`, Kettle's `61-kettle-thor-touch.rules`) undoes it. Armada's
+  device tree (ours) drops those properties, so the touchscreens report their panels' own portrait
+  coordinates and need no matrix: wlroots turns touch with the output it is mapped to. Adding the matrix
+  to our device tree would turn touch 90° wrong.
 - Audio: card `AYN-Thor` (`ayn-AYNOdin2` under EFI: U-Boot reports the Odin 2's SMBIOS); UCM profiles
   (their `kettle-ucm-ayn`) and firmware `ayn/thor/*` incl. `AYN-Thor-tplg.bin`. The routes (Thorch's
   `ucm2/AYN/Thor/HiFi.conf`): speakers on PCM 0, with no hardware volume (software only); headphones on
@@ -107,8 +110,8 @@ with the others but kept out of the published repository. Nothing in either is a
 |---|---|
 | `thor` | the metapackage that is the whole system: the packages below, Turnip, the day-one checks' tools, what maintenance needs; an image is `base` and this (and thor-firmware) |
 | `linux-thor` | Armada's kernel, built in its PKGBUILD as Arch Linux ARM's linux-aarch64 is (cross-compiled with LLVM on the PC): kernel.org's tarball (its signature checked against Linus Torvalds' and Greg Kroah-Hartman's keys, `keys/pgp`) and Armada's repository at a pinned commit (`_armada`; Linux 7.2.6 with their 223 patches at d2bcf6fd3343, 2026-10-21, which reports the charge threshold's failures (0904); binder in their config), their series applied as their build does, our patches and config lines after; a release of its own per package version (`7.2.6-thor-d2bcf6f-3`: Armada's commit and pkgrel); modules, `Image` and the SM8550 device trees in `/usr/lib/modules/<release>`. Following Armada: `tools/repo/follow-armada.sh`. Its source package is published beside it (GPL-2.0) |
-| `thor-system` | the boot: `thor-boot` puts the kernel (`/Image`, decompressed, an EFI program), the Thor's device tree, our initramfs (`/usr/lib/thor/mkinitcpio.conf`: base udev modconf block thor-root-wait resume filesystems fsck, no autodetect) and the loader entry's command line on the card's FAT partition for systemd-boot (`EFI/BOOT/BOOTAA64.EFI`), and the same into `/KERNEL` for the ABL (`bootimg.py repack`: the gzip'd Image with the 14 device trees, ROCKNIX's header); a pacman hook runs it after updates of the kernel, systemd, mkinitcpio, kmod, util-linux, zstd. The first boot (`thor-firstboot.service`, once): grows the root partition and its ext4 to the card; makes `/swapfile`, 16 GiB (only if 8 GiB stay free beside it), in fstab; puts `resume=LABEL=THOR_ROOT resume_offset=<first block>` on the command line. The power group's write access to what ClamShell's settings set (cpufreq caps, CPUs' online, the GPU's devfreq cap, the battery's charge limit and charge current, the power key's wakeup; `73-thor-power.rules`); the sticks' range (`/usr/lib/modprobe.d/thor-rsinput.conf`); zram (zstd, priority 100, before the swap file) and swapping tuned for it (Armada's values); the SD card's scheduler (BFQ, 4 MB readahead); PipeWire's buffers (Armada's, against crackling after sleep); sleep (logind: power button and lid do `sleep` = suspend-then-hibernate, else suspend; long press powers off; s2idle; `HibernateDelaySec=30min`); a log of each wake's cause (`/var/log/thor-wake.log`); the checks at each boot (`thor-selftest`: see "Day one"); the account helper `thor-account` (pkexec, polkit: the password and sshd, for ClamShell's Setup tab); the touchscreens' hwdb entry, uinput for the input group, USB controller autosuspend |
-| `thor-session` | tty1's autologin as `thor` into sway through uwsm (`thor-session`, from `/etc/profile.d/thor-session.sh`; `graphical-session.target` with ClamShell, mako and udiskie as its user services, enabled globally; see process-control.md); sway's config (`/usr/share/thor/sway`: DSI-2 top, DSI-1 bottom; the outputs' transforms from fbcon's rotation and the touchscreens' outputs written at each start into the runtime directory, `thor-outputs`; ClamShell's `clamshell.conf`; the user's additions in `~/.config/sway/config.d/`), foot's (through `XDG_CONFIG_DIRS`) and mako's configs (the user's own first); the home's starting files where missing, at each session start (`thor-home`: the starter `library.json` with its folders, the dock's first pins, mpv's and RetroArch's configs and RetroArch's menu theme); Steam's starter (`steam`, `steam-setup`, `steam.desktop`); the Maintenance app (`thor-maintain`: Claude Code with the `/maintain` playbook in `~/.local/share/thor/maintenance`) |
+| `thor-system` | the boot: `thor-boot` puts the kernel (`/Image`, decompressed, an EFI program), the Thor's device tree, our initramfs (`/usr/lib/thor/mkinitcpio.conf`: base udev modconf block thor-root-wait resume filesystems fsck, no autodetect) and the loader entry's command line on the card's FAT partition for systemd-boot (`EFI/BOOT/BOOTAA64.EFI`), and the same into `/KERNEL` for the ABL (`bootimg.py repack`: the gzip'd Image with the 14 device trees, ROCKNIX's header); a pacman hook runs it after updates of the kernel, systemd, mkinitcpio, kmod, util-linux, zstd. The first boot (`thor-firstboot.service`, once): grows the root partition and its ext4 to the card; makes `/swapfile`, 16 GiB (only if 8 GiB stay free beside it), in fstab; puts `resume=LABEL=THOR_ROOT resume_offset=<first block>` on the command line. The power group's write access to what ClamShell's settings set (cpufreq caps, CPUs' online, the GPU's devfreq cap, the battery's charge limit and charge current, the power key's wakeup; `73-thor-power.rules`); the sticks' range (`/usr/lib/modprobe.d/thor-rsinput.conf`); zram (zstd, priority 100, before the swap file) and swapping tuned for it (Armada's values); the SD card's scheduler (BFQ, 4 MB readahead); PipeWire's buffers (Armada's, against crackling after sleep); sleep (logind: power button and lid do `sleep` = suspend-then-hibernate, else suspend; long press powers off; s2idle; `HibernateDelaySec=30min`); a log of each wake's cause (`/var/log/thor-wake.log`); the checks at each boot (`thor-selftest`: see "Day one"); the account helper `thor-account` (pkexec, polkit: the password and sshd, for ClamShell's Setup tab); the touchscreens' hwdb entry, uinput for the input group, USB controller autosuspend; the thermal sensors' wakeup off; the fan's, battery's and gamepad's drivers loaded at boot; Wi-Fi scanning with the device's own address (NetworkManager); the lid heeded 5 s after boot or waking |
+| `thor-session` | tty1's autologin as `thor` into sway through uwsm (`thor-session`, from `/etc/profile.d/thor-session.sh`; `graphical-session.target` with ClamShell, mako and udiskie as its user services, enabled globally; see process-control.md); sway's config (`/usr/share/thor/sway`: DSI-2 top, DSI-1 bottom; both outputs turned 90° and the touchscreens' outputs written at each start into the runtime directory, `thor-outputs`; ClamShell's `clamshell.conf`; the user's additions in `~/.config/sway/config.d/`), foot's (through `XDG_CONFIG_DIRS`) and mako's configs (the user's own first); the home's starting files where missing, at each session start (`thor-home`: the starter `library.json` with its folders, the dock's first pins, mpv's and RetroArch's configs and RetroArch's menu theme); Steam's starter (`steam`, `steam-setup`, `steam.desktop`); the Maintenance app (`thor-maintain`: Claude Code with the `/maintain` playbook in `~/.local/share/thor/maintenance`) |
 | `clamshell` | ClamShell and the fan daemon `clamshell-fan` (a system service from early in boot: the fan's speed every 3 s from the mean of the three hottest CPU and GPU sensors, smoothed, on Armada's moderate curve with its ramp, by the mode ClamShell's Fan setting writes to `/run/clamshell-fan`; stopped or failed, `--safe` leaves it at half speed); the power group (sysusers); `clamshell-android` |
 | `thor-ucm` | the Thor's ALSA UCM profiles, ROCKNIX's patch (`0005_Add-AYN-Thor`, pinned to their commit c445081a), new files beside `alsa-ucm-conf`'s; the same profile under the Odin 2's names the card gets under AYN's U-Boot |
 | `thor-keyring` | the repository's signing key (`pacman-key --populate thor`); its private half on the publishing PC only (`~/.config/thor-repo/gnupg`) |
@@ -128,7 +131,7 @@ What the image adds:
 | Part | Source |
 |---|---|
 | Bootloader | not in the image: stock U-Boot (UEFI), else ROCKNIX's ABL or OpenABL flashed once (see below) |
-| FAT `ROCKNIX` (GPT name `system`, legacy-boot attribute, at 16 MiB; an EFI system partition) | the loader's config and entry with our command line (`root=LABEL=THOR_ROOT rw` + ROCKNIX's SM8550 parameters, `fbcon=rotate:1`, `psi=1 cgroup_disable=pressure`, `ufshcd_core.uic_cmd_timeout=3000`), ROCKNIX's `/KERNEL` as the header thor-boot repacks; thor-boot then fills it |
+| FAT `ROCKNIX` (GPT name `system`, legacy-boot attribute, at 16 MiB, 512 MiB; an EFI system partition) | the loader's config and entry with our command line (`root=LABEL=THOR_ROOT rw` + ROCKNIX's SM8550 parameters, `fbcon=rotate:1`, `psi=1 cgroup_disable=pressure`, `ufshcd_core.uic_cmd_timeout=3000`, `panic=30`), ROCKNIX's `/KERNEL` as the header thor-boot repacks; thor-boot then fills it |
 | Root: ext4 `THOR_ROOT` | `pacstrap` from Arch Linux ARM's mirrors (unpinned) and the local `[thor]`: base, sudo, NetworkManager, OpenSSH, Xwayland, Mesa + `vulkan-freedreno`, PipeWire, Noto, vim, grim, gptfdisk; RetroArch with cores for NES, SNES, N64, Game Boy, GBA, DS, Mega Drive, PlayStation and Dreamcast and XMB's assets, mpv, ffmpeg; evtest, alsa-utils; for maintenance pacman-contrib, base-devel, squashfs-tools, git; the Thor's packages (their dependencies bring sway, uwsm, mako, foot, udiskie, zram-generator) |
 | System | hostname `thor`, time zone UTC (`THOR_TIMEZONE` for another), locale (`THOR_LOCALE`, default `en_US.UTF-8`), systemd-timesyncd, NetworkManager, Bluetooth; sshd installed but off; UPower: hibernate at 3 % (power off if it can't); `[thor]` in pacman.conf |
 | User | `thor` (groups wheel, video, input, audio, power), its account locked until a password is set in ClamShell's Setup tab; sudo for wheel with that password (one timestamp for all the user's processes only during a maintenance pass: thor-maintain); the session's packages name it |
@@ -148,8 +151,9 @@ What ROCKNIX's system showed (used by the build):
 - Its sway outputs are written at session start by `usr/lib/autostart/common/111-sway-init`: the
   transform from `/sys/class/graphics/fbcon/rotate` (1/2/3: 90/180/270), and for the Thor the
   touchscreens `0:0:top_touchscreen` on DSI-2 and `0:0:bottom_touchscreen` on DSI-1 (bottom one's events
-  off unless something shows there). Our session does the same (`thor-outputs`, rotating both
-  panels by fbcon's angle).
+  off unless something shows there). Our session writes the same (`thor-outputs`), but turns both panels
+  90° without reading fbcon (Armada's kernel config had no fbcon rotation until ours added it, so the
+  file said 0; Kettle, Thorch and Armada all turn both panels by 90°).
 
 Known issues and risks, to check first:
 
@@ -164,12 +168,16 @@ Known issues and risks, to check first:
    the Thor's sound: the self-test lists the card, sound itself is a day-one check. Under UEFI the card is
    named `ayn-AYNOdin2`; thor-ucm gives that name the Thor's profile (ROCKNIX's is the Odin 2's: no
    internal mic, the speakers' volumes unset).
-4. Rotation: the bottom panel gets fbcon's angle as well; unverified that it wants the same. ROCKNIX
-   fixed a sideways bottom screen after 20261001 (PR #3507: "Sway doesn't apply a transform to an output
-   that is powered off"): check that the bottom's transform holds when it is turned off and on. Touch: the
-   image has ROCKNIX's calibration matrix for both panels and its hwdb entry marking the touchscreens as
-   not keyboards (they report `BTN_TOUCH`, which made wlroots count a keyboard in the seat). The top panel
-   runs at 118.6 Hz uncalibrated (ROCKNIX PR #3489, after 20261001).
+4. Rotation: both panels turned 90° (sway's `transform 90`, the panels' "right side up" orientation in
+   the device tree), as Kettle, Thorch and Armada. ROCKNIX fixed a sideways bottom screen after 20261001
+   (PR #3507: "Sway doesn't apply a transform to an output that is powered off"): check that the bottom's
+   transform holds when it is turned off and on. Touch: no calibration matrix (see "The hardware": our
+   device tree reports the panels' own coordinates); ROCKNIX's hwdb entry marks the touchscreens as not
+   keyboards (they report `BTN_TOUCH`, which made wlroots count a keyboard in the seat). Tap all four
+   corners of both screens first; if they land turned or mirrored, a udev rule with
+   `LIBINPUT_CALIBRATION_MATRIX` by `ID_PATH` (`platform-a90000.i2c` top, `platform-98c000.i2c` bottom):
+   `0 -1 1 1 0 0` turns +90°, `0 1 0 -1 0 1` −90°, `-1 0 1 0 -1 1` 180°. The top panel runs at 118.6 Hz
+   uncalibrated (ROCKNIX PR #3489, after 20261001).
 5. Gamepad: the kernel driver comes with ROCKNIX's modules; its userspace mapping (Thorch, Kettle:
    InputPlumber maps) doesn't. Check what evdev reports before relying on it.
 6. Device trees: Thorch insists on exactly one Thor device tree in `/KERNEL`; we keep ROCKNIX's 14 (as
@@ -187,7 +195,8 @@ Known issues and risks, to check first:
    debugfs) in the loader entry and in /KERNEL (thor-boot, with the initramfs rebuilt for 7.2.6-thor).
    Not run: resuming from it, nor anything that needs the Thor's own hardware. If the card is not up when
    the initramfs's resume runs (thor-root-wait gives it 10 s) the hibernated state is lost and the
-   machine boots fresh.
+   machine boots fresh. A resume that hangs costs one session, not a boot loop: the kernel resets the
+   swap file's hibernate signature as soon as it finds the image (`swsusp_check`), before loading it.
 9. The fan: `clamshell-fan` takes it (`pwm1_enable` 3) and sets it every 3 s; tried only on a copy of
    /sys (its tests). The sensors' types starting with `cpu` or `gpu` and the chip's name `pwmfan` are
    checked in our DTB. Check on the device that the fan stops below 50 °C (Auto; ours alone, Armada's
@@ -197,7 +206,11 @@ Known issues and risks, to check first:
    temperature, and whether the hottest sensors' mean lags a GPU spike too long.
 10. Autologin without a password (a handheld's): whoever holds the device has the session. sudo and ssh
     need the password, which ClamShell's Setup tab (opened on first start) offers to set (skippable).
-11. Steam: the client isn't in the image (it is Valve's, downloaded into the user's home); its first
+11. The kernel image is 62 MB (ROCKNIX's 34 MB: Armada's config keeps BTF and debug symbols); Armada's
+    boots from `/KERNEL` with the same config, so it fits the ABL's load window. If the `/KERNEL` path
+    alone fails, this is the suspect: a build with `CONFIG_DEBUG_INFO_BTF=n` and `CONFIG_DEBUG_INFO=n`
+    in `config.thor`.
+12. Steam: the client isn't in the image (it is Valve's, downloaded into the user's home); its first
     start (`steam`, from the dock's pin or a Steam game) runs `steam-setup` in a terminal
     first (see "Steam" below). Its downloads and checksums were tried on 2026-10-20 (on the PC, into a
     scratch home); the client itself has never run here.
@@ -266,8 +279,9 @@ For our image (small):
 - [x] Pin s2idle: `MemorySleepMode=s2idle` in our sleep.conf.d (both projects ended up there; Thorch:
       `thorch-bsp/payload/etc/systemd/sleep.conf.d/50-thorch-native-suspend.conf`). Without it the kernel
       picks deep where firmware offers it.
-- [x] `fbcon=rotate:1` on the command line, as Thorch requires: `thor-outputs` turns both outputs by
-      fbcon's rotate, which is 0 if the kernel doesn't set it. Keep `/KERNEL`'s command line under 512
+- [x] `fbcon=rotate:1` on the command line, as Thorch requires, with `CONFIG_FRAMEBUFFER_CONSOLE_ROTATION`
+      in `config.thor` (Armada's config lacks it, and without it the option does nothing): the console
+      turned. `thor-outputs` turns both outputs 90° by itself. Keep `/KERNEL`'s command line under 512
       bytes (Armada: the ABL may not read past that).
 - [x] USB controller autosuspend (`power/control=auto` on the DWC3 device), so it doesn't hold a DDR vote
       while idle (Thorch `99-thorch-sm8550-usb-autosuspend.rules`, Armada `60-armada-usb-autosuspend.rules`).
@@ -289,9 +303,6 @@ Candidates for our own patches, once tried on the device:
       after sleep; with Armada #757 (a contact kept after fingers lift; a candidate patch, open).
 - [ ] The top panel's refresh calibration (it runs at 118.6 Hz): ROCKNIX's `next` after 20261001 has a
       kernel patch and a `040-panel_calibration` quirk for the Thor; Armada has neither.
-- [ ] The thermal sensors' wake interrupts off (Thorch's `0003-thermal-qcom-tsens-skip-ayn-thor-uplow-wake-irq`,
-      or Kettle's `60-kettle-tsens-nowake.rules` in userspace), if `/var/log/thor-wake.log` shows tsens
-      waking it.
 Done in userspace instead (2026-10-20), so no patch of ours:
 - [x] The stick range: Thorch sets `axis-range = <1024>` on the gamepad node (its `dts-patches/0007`);
       Armada's device tree doesn't (they calibrate through rsinput's module parameters); without either,
@@ -302,6 +313,8 @@ Done in userspace instead (2026-10-20), so no patch of ours:
       closed): ClamShell turns the power key's wakeup off as the lid closes and on as it opens
       (`clamshell-system::lid`). `40-armada-wake-ledger` (what woke it): our `thor-wake-log` hook,
       `/var/log/thor-wake.log`.
+- [x] The thermal sensors' wake interrupts off: Kettle's `60-kettle-tsens-nowake.rules` as ours,
+      `75-thor-tsens.rules` (Thorch patches it out instead, `0003-thermal-qcom-tsens-skip-ayn-thor-uplow-wake-irq`).
 
 To know:
 - Hibernate: nobody has tried it on the Thor (Thorch sets `AllowHibernation=no`, its sleep config saying
@@ -352,6 +365,12 @@ To know:
    Note what ROCKNIX's session shows for outputs (`swaymsg -t get_outputs`), inputs
    (`swaymsg -t get_inputs`, `evtest`), the gamepad's device and buttons, sound devices, Wi-Fi.
 6. Boot our image from SD. If it doesn't come up, the known issues above are the suspects, in order.
+   Which way it boots: with `EFI/BOOT/BOOTAA64.EFI` on the card, every bootloader we know of (U-Boot,
+   ROCKNIX's ABL 1.2, OpenABL after its BLS entries) takes the UEFI way (systemd-boot) before `/KERNEL`,
+   and nobody has run systemd-boot on the Thor; the way Thorch, Pocknix and Armada boot is `/KERNEL`. If
+   the UEFI way shows nothing, rename `EFI` on the card's FAT partition to `EFI.disabled` (on the PC; as
+   Armada's image does) to make the ABL take `/KERNEL`. Under OpenABL set "ABL mode: Verbose" to see why
+   an entry fails. A kernel panic reboots after 30 s (`panic=30`).
    Serial console: none known; a USB keyboard and the screen, or ssh over USB Ethernet (after setting
    a password and turning Remote login on in ClamShell's Setup tab). Each boot runs
    `thor-selftest` (from early on, not waited for): a pass at once (the kernel, its command line), and
@@ -621,6 +640,13 @@ From the review of 2026-10-21 (what Armada, ROCKNIX, Thorch and Kettle do, taken
       (`df -h` of it with KERNEL, KERNEL.new, Image and the initramfs): if there is room, a second loader
       entry with the previous kernel (`Image.prev`, its initramfs) for a kernel that boots and then hangs.
 
+- [ ] Booted: the first check says `device tree: AYN Thor` and which way it booted (UEFI or `/KERNEL`),
+      and `fbcon rotated` passes (the console reads upright).
+- [ ] Touch: all four corners of both screens land where tapped (known issue 4).
+- [ ] Wi-Fi with the device's own address (`ip link`: the same as the kernel's, not a random one), as
+      Armada's and Kettle's NetworkManager config; the fan and battery drivers loaded at boot
+      (thor-drivers.service: Kettle saw them late otherwise); the lid heeded 5 s after boot or waking
+      (`HoldoffTimeoutSec`, Kettle's); `aplay` goes through PipeWire (pipewire-alsa).
 - [ ] Screens turned on the first session: `~/.config/sway/outputs` written (thor-session runs
       thor-outputs by its path; it wasn't on the login shell's PATH before).
 - [ ] zram: `swapon --show` lists `/dev/zram0` (priority 100) and `/swapfile`; `sysctl vm.swappiness`

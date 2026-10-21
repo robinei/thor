@@ -1,0 +1,16 @@
+[Unit]
+Description=The Thor's fan, battery and gamepad drivers, loaded at boot
+# udev loads them from the device tree, but not always early enough (Kettle's modules-load.d/kettle.conf:
+# the fan's and the battery's); the gamepad's so that its options (thor-rsinput.conf) are read at boot
+# (Armada's modules-load.d). Only on the Thor (modules-load.d would fail on the test machine).
+ConditionFirmware=device-tree-compatible(ayn,thor)
+DefaultDependencies=no
+Before=sysinit.target clamshell-fan.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/modprobe -a pwm-fan qcom_battmgr rsinput
+
+[Install]
+WantedBy=sysinit.target

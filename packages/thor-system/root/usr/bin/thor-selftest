@@ -45,6 +45,9 @@ early() {
     out "== pass 1, $(date --iso-8601=seconds), boot $(cat /proc/sys/kernel/random/boot_id)"
     info "kernel $(uname -r)"
     info "command line: $(cat /proc/cmdline)"
+    # (Which device tree the bootloader chose, and which way it booted: UEFI or /KERNEL.)
+    check "device tree: AYN Thor" grep -qx 'AYN Thor' <(tr -d '\0' < /proc/device-tree/model)
+    if [ -d /sys/firmware/efi ]; then info "booted by UEFI (systemd-boot)"; else info "booted from /KERNEL (the ABL)"; fi
     check "command line: psi=1" grep -qw psi=1 /proc/cmdline
     check "UFS command timeout 3000 ms" grep -qx 3000 /sys/module/ufshcd_core/parameters/uic_cmd_timeout
     check "fbcon rotated (rotate 1)" grep -qx 1 /sys/class/graphics/fbcon/rotate
@@ -75,6 +78,9 @@ settled() {
     local fw
     fw=$(journalctl -k -b --no-pager -o cat 2> /dev/null | grep -iE 'firmware.*(fail|error|not found)|direct firmware load' | head -20)
     if [ -z "$fw" ]; then ok "no firmware load errors"; else fail "firmware load errors:"; out "$fw"; fi
+    local probe
+    probe=$(journalctl -k -b --no-pager -o cat 2> /dev/null | grep -iE 'probe.*(fail|error)|failed to probe' | head -20)
+    if [ -z "$probe" ]; then ok "no failed probes"; else fail "failed probes:"; out "$probe"; fi
     info "kernel errors: $(journalctl -k -b -p err --no-pager -o cat 2> /dev/null | wc -l) lines (journalctl -k -b -p err)"
 
     # Screens: both connected, their modes; the backlights by name.
@@ -116,6 +122,7 @@ settled() {
     for z in /sys/class/thermal/thermal_zone*; do
         case $(val "$z/type") in cpu*|gpu*) temps="$temps $(val "$z/type")=$(( $(val "$z/temp") / 1000 ))" ;; esac
     done
+    check "thermal sensors don't wake" bash -c 'grep -qx disabled /sys/bus/platform/drivers/qcom-tsens/*/power/wakeup'
     if [ -n "$temps" ]; then ok "CPU and GPU sensors"; info "°C:$temps"; else fail "no cpu*/gpu* thermal zones"; fi
 
     # Power: the battery, the caps' write access.
@@ -152,6 +159,7 @@ settled() {
     # Sound, network.
     info "sound cards: $(sed -n 's/^ *[0-9]* \[\([^ ]*\) *\]: .* - \(.*\)$/\1 (\2)/p' /proc/asound/cards 2> /dev/null | tr '\n' ';')"
     check "sound card AYN-Thor or ayn-AYNOdin2" grep -qE '\[(AYN-?Thor|ayn-?AYNOdin2|AYNOdin2)' /proc/asound/cards
+    check "NetworkManager keeps the device's address" bash -c 'NetworkManager --print-config | grep -qx "wifi.scan-rand-mac-address=no"'
     check "Wi-Fi interface" bash -c 'ls /sys/class/ieee80211 | grep -q .'
     check "Bluetooth (hci0)" test -e /sys/class/bluetooth/hci0
     info "network: $(nmcli -t -f DEVICE,STATE device 2> /dev/null | tr '\n' ' ')"
