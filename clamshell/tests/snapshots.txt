@@ -6,9 +6,9 @@ bluetooth.png ca86ea1f69427d89
 bottom.png 99b9ca29f5805933
 brightness.png 62ac992942d0f2a1
 device-password.png 95383ba37b66d4ca
-device-sticks.png 42130114bf709f82
-device-unavailable.png e4dfe21426001bcc
-device.png 4615126fddcdbd39
+device-sticks.png 8e7e861be5c3b9b5
+device-unavailable.png 27551f6a08db6888
+device.png 696cf264d232092c
 dock-menu.png 9212648354c893a3
 keyboard-back.png e97a7cecbba40e2c
 keyboard-caps.png 7f30ffac03cd8682

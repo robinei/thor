@@ -36,8 +36,11 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) {
     let small = f.text(Text::Small);
     let heading = f.text(Text::Heading);
     f.c.text_fit(area.top_line(heading), heading, Tone::Normal, "Device", Keep::Start);
-    let intro = if s.first_run() { "First start: set these up now, or later from Tools, Device" } else { "Set up once, and now and then" };
-    f.c.text_fit(area.top_line(small).shifted(0.0, heading * 1.5), small, Tone::Dim, intro, Keep::Start);
+    // (At the first start, what it is for.)
+    if s.first_run() {
+        let intro = "First start: set these up now, or later from Tools, Device";
+        f.c.text_fit(area.top_line(small).shifted(0.0, heading * 1.5), small, Tone::Dim, intro, Keep::Start);
+    }
     let top = heading * 1.5 + small * 2.2;
     let mut right = Rect::new(area.x, area.y + top, area.w, area.h - top);
     let rows = right.take_left(area.w * ROWS_W);
