@@ -95,6 +95,11 @@ prepare() {
     lost=$(grep -E '^CONFIG_[A-Z0-9_]+=y$|^CONFIG_(LOCALVERSION|INITRAMFS_SOURCE|ANDROID_BINDER_DEVICES)=' "$srcdir/config.fragment" \
         | while read -r want; do grep -qxF "$want" "$src/.config" || echo "$want"; done)
     [ -z "$lost" ] || { echo "didn't survive Kconfig's dependencies:"; echo "$lost"; return 1; }
+    # (The configuration the build reads, include/config/auto.conf, made from .config now: olddefconfig
+    # leaves defconfig's, and the release would come out without ours.)
+    _make -s syncconfig
+    [ "$(_make -s kernelrelease)" = "$_kver$release" ] \
+        || { echo "the kernel's release is $(_make -s kernelrelease), not $_kver$release"; return 1; }
 }
 
 # The SM8550 boards' device trees (ROCKNIX's ABL picks one by its Device model; the EFI path loads the Thor's).

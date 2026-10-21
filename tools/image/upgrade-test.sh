@@ -19,6 +19,10 @@ work=$(mktemp -d "$CACHE/upgrade-test.XXXXXX")
 trap 'sudo rm -rf "$work"' EXIT
 { cat /etc/makepkg.conf; echo CARCH=aarch64; echo "OPTIONS=(!strip !debug)"; } > "$work/makepkg.conf"
 base=$(bsdtar -tf "$built" | sed -n 's|^usr/lib/modules/\([^/]*\)/Image$|\1|p')
+# (The built kernel's release: its own, with Armada's commit and pkgrel: linux-thor's PKGBUILD.)
+pkgrel=$(bsdtar -xOf "$built" .PKGINFO | sed -n 's/^pkgver = .*-//p')
+[[ $base == *-thor-*-$pkgrel ]] || { echo "FAIL  the built kernel's release, $base, isn't its own (-thor-<commit>-$pkgrel)"; exit 1; }
+echo "ok    the built kernel's release is its own: $base"
 oldver=$(bsdtar -xOf "$built" .PKGINFO | sed -n 's/^pkgver = //p')
 
 # The built kernel under release $base-nextN, as version pkgrel+N.
