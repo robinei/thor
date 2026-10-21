@@ -24,7 +24,7 @@ PACKAGES=("$@")
 "$HERE/../host-check.sh" packages || exit 1
 if [ "$ARCH" = aarch64 ]; then
     export THOR_REPO_DIR=$CACHE/repo
-    [ ${#PACKAGES[@]} -gt 0 ] || PACKAGES=(thor-keyring thor-ucm linux-thor clamshell thor-system thor-session thor-firmware)
+    [ ${#PACKAGES[@]} -gt 0 ] || PACKAGES=(thor-keyring thor-ucm linux-thor clamshell thor-system thor-session thor thor-firmware)
     [ -d "$SYSROOT/usr/lib" ] || "$HERE/sysroot.sh"
 else
     export THOR_REPO_DIR=$CACHE/repo-$ARCH

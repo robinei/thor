@@ -25,7 +25,7 @@ _armada=d2bcf6fd33435f670f59a164c926842af91730f1
 # (Armada's commit's time: the version after the kernel's, so that their newer commit is a newer package.)
 _armada_time=202610202319
 pkgver=$_kver.$_armada_time
-pkgrel=1
+pkgrel=2
 pkgdesc="Armada's Linux kernel for the AYN Thor (SM8550), with its modules and device trees"
 arch=(aarch64)
 url=https://github.com/armada-os/armada
