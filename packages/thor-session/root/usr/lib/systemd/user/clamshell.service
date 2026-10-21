@@ -13,8 +13,7 @@ OnFailure=clamshell-failed.service
 Type=notify
 NotifyAccess=main
 WatchdogSec=30
-# The control pipe: sway's key bindings (clamshell ctl) write to it.
-ExecStartPre=-/usr/bin/mkfifo %t/clamshell-control
+# The control pipe: sway's key bindings (clamshell ctl) write to it (ClamShell makes it, the user's only).
 ExecStart=/usr/bin/clamshell
 Environment=CLAMSHELL_CONTROL=%t/clamshell-control
 # ClamShell is the device's session: it puts the device to sleep when idle (dim, screens off, then sleep

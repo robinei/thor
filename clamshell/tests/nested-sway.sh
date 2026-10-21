@@ -3,7 +3,7 @@
 # size; nothing shows on the desktop, and it needs no display or input devices), ClamShell
 # inside it with a test library, test apps (desktop files) pinned to its dock, drives it through its control pipe (CLAMSHELL_CONTROL: the
 # taps and long presses a user would make), and checks sway's window tree and systemd's units. Leaves
-# nothing behind: its instances are stopped and sway is closed at the end. Needs sway, foot, sqlite3 and
+# nothing behind: its instances are stopped and sway is closed at the end. Needs sway, foot, python3 and
 # a release build.
 #
 #   clamshell/tests/nested-sway.sh            (exit status: the number of failed checks)
@@ -29,10 +29,9 @@ app terminal Terminal 'foot sleep 300'
 app slow Slow 'sh -c "sleep 3; exec foot --app-id=slow sleep 300"'
 app spawner Spawner 'sh -c "foot --app-id=first sleep 300 & sleep 2; foot --app-id=late sleep 300 & wait"'
 app detached Detached 'sh -c "exec env -u XDG_ACTIVATION_TOKEN -u DESKTOP_STARTUP_ID setsid -f foot --app-id=detached sleep 300; sleep 300"'
-# (ClamShell's database: the dock's table, as it makes it; the rest it adds.)
-DB="$T/data/clamshell/clamshell.db"
-sqlite3 "$DB" "CREATE TABLE dock (position INTEGER PRIMARY KEY, id TEXT NOT NULL);
-  INSERT INTO dock VALUES (0, 'desktop:terminal'), (1, 'desktop:slow'), (2, 'desktop:spawner'), (3, 'desktop:detached');"
+# (ClamShell's state, JSON files in its data dir: the dock's pins as it writes them; the rest it adds.)
+STATE="$T/data/clamshell"
+printf '["desktop:terminal", "desktop:slow", "desktop:spawner", "desktop:detached"]\n' > "$STATE/dock.json"
 # Two test games in a content dir, a tab of their own (Test, before Apps); each starts a window of its own.
 cat > "$T/config/clamshell/library.json" <<EOF
 { "places": [
@@ -140,7 +139,19 @@ check_soon "a later window of a launch: on the app's workspace" '[ -n "$(ws_of l
 # The bottom screen: the spawner's windows moved down (Home+Down) and up again (Home+Up).
 SP=$(space spawner)
 # The window rules saved for an app id.
-rules() { sqlite3 "$DB" "select entry from window_rules where app_id = '$1'" 2> /dev/null; }
+rules() { python3 -c "import json,sys
+try: rules = json.load(open(sys.argv[1]))
+except OSError: rules = []
+print('\n'.join(r['entry'] for r in rules if r['app_id'] == sys.argv[2]))" "$STATE/window-rules.json" "$1"; }
+# A workspace with a window of the main screen on it, or shelf's: what the front goes back to.
+shown() { [ "$1" = clamshell-shelf ] || [ -n "$(json get_tree "
+import json,sys
+def walk(c, ws=''):
+    if c.get('type') == 'workspace': ws = c['name']
+    if ws == '$1' and c.get('pid'): print(1); sys.exit()
+    for k in ('nodes', 'floating_nodes'):
+        for d in c.get(k, []): walk(d, ws)
+walk(json.load(sys.stdin))")" ]; }
 focused_output() { json get_outputs "import json,sys; print(next((o['name'] for o in json.load(sys.stdin) if o['focused']), ''))"; }
 msg "[app_id=\"^late$\"] focus"; sleep 0.3
 ctl window down
@@ -149,7 +160,7 @@ check_soon "Home+Down: the window in front to the bottom screen; the main screen
 check "  remembered for its entry" '[ "$(rules late)" = desktop:spawner ]'
 msg "[app_id=\"^first$\"] focus"; sleep 0.3
 ctl window down
-check_soon "  its last window down too: its workspace stays in front, empty" '[ "$(output_of "$(ws_of first)")" = HEADLESS-2 ] && [ "$(front)" = "$SP" ]'
+check_soon "  its last window down too: its emptied workspace leaves the front (to the one before it, shelf last)" '[ "$(output_of "$(ws_of first)")" = HEADLESS-2 ] && [ "$(front)" != "$SP" ] && shown "$(front)"'
 ctl window up; sleep 0.3; ctl window up
 check_soon "Home+Up, twice: both back on their workspace, the rules forgotten" '[ "$(ws_of late)" = "$SP" ] && [ "$(ws_of first)" = "$SP" ] && [ -z "$(rules late)$(rules first)" ]'
 
@@ -163,11 +174,6 @@ check_soon "a window sway can't trace (detached, no token): on its entry's works
 msg 'focus output HEADLESS-2'; sleep 0.3; msg exec "foot --app-id=stray sleep 300"
 check_soon "a window opening on the second screen goes to the main screen" '[ -n "$(ws_of stray)" ] && [ "$(output_of "$(ws_of stray)")" = HEADLESS-1 ]'
 msg '[app_id="^stray$"] kill'
-
-msg exec "foot --app-id=steam_app_42 sleep 300"
-until_ '[ -n "$(ws_of steam_app_42)" ]' 5
-check "a Steam game's window goes to the game's workspace" '[ "$(ws_of steam_app_42)" = clamshell-game ]'
-msg '[app_id="^steam_app_42$"] kill'; until_ '[ -z "$(ws_of steam_app_42)" ]' 5
 
 # (Shelf's collections: Test, then Apps.)
 msg 'workspace clamshell-shelf'; until_ '[ "$(front)" = clamshell-shelf ]' 5; ctl tap collection 0; ctl tap launch
@@ -188,8 +194,8 @@ until_ '[ "$(games | wc -l)" = 1 ]' 10
 ctl long dock 4; ctl tap dock-menu quit
 until_ '[ -z "$(games)" ]' 10
 check "each game's menu, Quit: its windows closed, then its slice stopped" '[ -z "$(games)" ]'
-check "  and the emptied workspace stays in front" '[ "$(front)" = "$G1" ]'
-plays() { sqlite3 "$DB" "select count(*) from plays" 2> /dev/null || echo 0; }
+check "  and the front goes back to what was before them (shelf last)" '[ "$(front)" != "$G1" ] && shown "$(front)"'
+plays() { grep -c . "$STATE/plays.jsonl" 2> /dev/null || echo 0; }
 until_ '[ "$(plays)" -ge 2 ]' 5
 check "  and both plays recorded" '[ "$(plays)" -ge 2 ]'
 

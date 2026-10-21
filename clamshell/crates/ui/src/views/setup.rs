@@ -24,8 +24,8 @@ pub(super) fn draw(f: &mut Frame) {
     if let Some(Editor { purpose: Purpose::AccountPassword(step), text }) = f.s.bottom().editor() {
         let (title, save) = match step {
             PasswordStep::Current => ("Current password", "Next"),
-            PasswordStep::New { current: Some(_) } => ("New password (4 characters at least)", "Set"),
-            PasswordStep::New { current: None } => ("A password, for sudo and remote login (4 characters at least)", "Set"),
+            PasswordStep::New { current: Some(_) } => ("New password (8 characters at least)", "Set"),
+            PasswordStep::New { current: None } => ("A password, for sudo and remote login (8 characters at least)", "Set"),
         };
         let dots = Fmt::<256>::of(format_args!("{}", Dots(text.chars().count())));
         let cancel = (Id::Editor(clamshell_core::EditorId::Cancel), "Cancel");

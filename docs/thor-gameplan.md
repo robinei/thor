@@ -105,13 +105,23 @@ with the others but kept out of the published repository. Nothing in either is a
 
 | Package | What |
 |---|---|
-| `linux-thor` | Armada's kernel as `tools/image/thor-kernel.sh` builds it on the PC (Linux 7.2.6 with their 223 patches at commit d2bcf6fd3343, 2026-10-21, which reports the charge threshold's failures (0904); binder in their config), packaged from that build: modules, `Image` and the SM8550 device trees in `/usr/lib/modules/<version>` |
+| `thor` | the metapackage that is the whole system: the packages below, Turnip, the day-one checks' tools, what maintenance needs; an image is `base` and this (and thor-firmware) |
+| `linux-thor` | Armada's kernel, built in its PKGBUILD as Arch Linux ARM's linux-aarch64 is (cross-compiled with LLVM on the PC): kernel.org's tarball (its signature checked against Linus Torvalds' and Greg Kroah-Hartman's keys, `keys/pgp`) and Armada's repository at a pinned commit (`_armada`; Linux 7.2.6 with their 223 patches at d2bcf6fd3343, 2026-10-21, which reports the charge threshold's failures (0904); binder in their config), their series applied as their build does, our patches and config lines after; a release of its own per build (`7.2.6-thor-d2bcf6f`); modules, `Image` and the SM8550 device trees in `/usr/lib/modules/<release>`. Following Armada: `tools/repo/follow-armada.sh`. Its source package is published beside it (GPL-2.0) |
 | `thor-system` | the boot: `thor-boot` puts the kernel (`/Image`, decompressed, an EFI program), the Thor's device tree, our initramfs (`/usr/lib/thor/mkinitcpio.conf`: base udev modconf block thor-root-wait resume filesystems fsck, no autodetect) and the loader entry's command line on the card's FAT partition for systemd-boot (`EFI/BOOT/BOOTAA64.EFI`), and the same into `/KERNEL` for the ABL (`bootimg.py repack`: the gzip'd Image with the 14 device trees, ROCKNIX's header); a pacman hook runs it after updates of the kernel, systemd, mkinitcpio, kmod, util-linux, zstd. The first boot (`thor-firstboot.service`, once): grows the root partition and its ext4 to the card; makes `/swapfile`, 16 GiB (only if 8 GiB stay free beside it), in fstab; puts `resume=LABEL=THOR_ROOT resume_offset=<first block>` on the command line. The power group's write access to what ClamShell's settings set (cpufreq caps, CPUs' online, the GPU's devfreq cap, the battery's charge limit and charge current, the power key's wakeup; `73-thor-power.rules`); the sticks' range (`/usr/lib/modprobe.d/thor-rsinput.conf`); zram (zstd, priority 100, before the swap file) and swapping tuned for it (Armada's values); the SD card's scheduler (BFQ, 4 MB readahead); PipeWire's buffers (Armada's, against crackling after sleep); sleep (logind: power button and lid do `sleep` = suspend-then-hibernate, else suspend; long press powers off; s2idle; `HibernateDelaySec=30min`); a log of each wake's cause (`/var/log/thor-wake.log`); the checks at each boot (`thor-selftest`: see "Day one"); the account helper `thor-account` (pkexec, polkit: the password and sshd, for ClamShell's Setup tab); the touchscreens' hwdb entry, uinput for the input group, USB controller autosuspend |
 | `thor-session` | tty1's autologin as `thor` into sway through uwsm (`thor-session`, from `/etc/profile.d/thor-session.sh`; `graphical-session.target` with ClamShell, mako and udiskie as its user services, enabled globally; see process-control.md); sway's config (`/usr/share/thor/sway`: DSI-2 top, DSI-1 bottom; the outputs' transforms from fbcon's rotation and the touchscreens' outputs written at each start into the runtime directory, `thor-outputs`; ClamShell's `clamshell.conf`; the user's additions in `~/.config/sway/config.d/`), foot's (through `XDG_CONFIG_DIRS`) and mako's configs (the user's own first); the home's starting files where missing, at each session start (`thor-home`: the starter `library.json` with its folders, the dock's first pins, mpv's and RetroArch's configs and RetroArch's menu theme); Steam's starter (`steam`, `steam-setup`, `steam.desktop`); the Maintenance app (`thor-maintain`: Claude Code with the `/maintain` playbook in `~/.local/share/thor/maintenance`) |
 | `clamshell` | ClamShell and the fan daemon `clamshell-fan` (a system service from early in boot: the fan's speed every 3 s from the mean of the three hottest CPU and GPU sensors, smoothed, on Armada's moderate curve with its ramp, by the mode ClamShell's Fan setting writes to `/run/clamshell-fan`; stopped or failed, `--safe` leaves it at half speed); the power group (sysusers); `clamshell-android` |
 | `thor-ucm` | the Thor's ALSA UCM profiles, ROCKNIX's patch (`0005_Add-AYN-Thor`, pinned to their commit c445081a), new files beside `alsa-ucm-conf`'s; the same profile under the Odin 2's names the card gets under AYN's U-Boot |
 | `thor-keyring` | the repository's signing key (`pacman-key --populate thor`); its private half on the publishing PC only (`~/.config/thor-repo/gnupg`) |
 | `thor-firmware` | the Thor's firmware from ROCKNIX's SM8550 release (20261001: the GPU's zap shader, ADSP/CDSP, the audio topology, Wi-Fi and Bluetooth, the video decoder's): AYN's and Qualcomm's, for this device only, so never published: built with the others, installed by the image build from `~/.cache/thor-vm/repo/local`, rebuilt on the device by maintenance after a ROCKNIX release |
+
+The repository's key: ed25519, made for this alone (fingerprint 6C4C5B7FB11D609B739FDAC30BB252FF8CA9B43F).
+Its private half is only on the publishing PC (`~/.config/thor-repo/gnupg`, without a passphrase so that
+publishing asks nothing): back that folder up, offline. If it is lost: a new key, a new thor-keyring
+carrying it, published; devices can't trust that update by themselves (it is signed by a key they don't
+know), so each one takes it by hand once (`sudo pacman-key --recv-keys`/`--lsign-key` of the new
+fingerprint, or `pacman -U` of the new thor-keyring from the release), and images built afterwards carry
+it. If it leaks: the same, and the old fingerprint in thor-keyring's `thor-revoked`, so that devices which
+update stop trusting it.
 
 What the image adds:
 
@@ -121,7 +131,7 @@ What the image adds:
 | FAT `ROCKNIX` (GPT name `system`, legacy-boot attribute, at 16 MiB; an EFI system partition) | the loader's config and entry with our command line (`root=LABEL=THOR_ROOT rw` + ROCKNIX's SM8550 parameters, `fbcon=rotate:1`, `psi=1 cgroup_disable=pressure`, `ufshcd_core.uic_cmd_timeout=3000`), ROCKNIX's `/KERNEL` as the header thor-boot repacks; thor-boot then fills it |
 | Root: ext4 `THOR_ROOT` | `pacstrap` from Arch Linux ARM's mirrors (unpinned) and the local `[thor]`: base, sudo, NetworkManager, OpenSSH, Xwayland, Mesa + `vulkan-freedreno`, PipeWire, Noto, vim, grim, gptfdisk; RetroArch with cores for NES, SNES, N64, Game Boy, GBA, DS, Mega Drive, PlayStation and Dreamcast and XMB's assets, mpv, ffmpeg; evtest, alsa-utils; for maintenance pacman-contrib, base-devel, squashfs-tools, git; the Thor's packages (their dependencies bring sway, uwsm, mako, foot, udiskie, zram-generator) |
 | System | hostname `thor`, time zone UTC (`THOR_TIMEZONE` for another), locale (`THOR_LOCALE`, default `en_US.UTF-8`), systemd-timesyncd, NetworkManager, Bluetooth; sshd installed but off; UPower: hibernate at 3 % (power off if it can't); `[thor]` in pacman.conf |
-| User | `thor` (groups wheel, video, input, audio, power), its account locked until a password is set in ClamShell's Setup tab; sudo for wheel with that password (one timestamp for all the user's processes, for maintenance); the session's packages name it |
+| User | `thor` (groups wheel, video, input, audio, power), its account locked until a password is set in ClamShell's Setup tab; sudo for wheel with that password (one timestamp for all the user's processes only during a maintenance pass: thor-maintain); the session's packages name it |
 
 The image: `~/.cache/thor-vm/thor-sd.img`, 12 GB. Its first build (2026-10-14, ROCKNIX 20261001,
 kernel 7.2.0, before the packages: 2.5 GB used). Checked from the host and in the build machine: GPT with partition 1 an EFI system
@@ -149,10 +159,11 @@ Known issues and risks, to check first:
    Our own kernel build (linux-thor) has no built-in initramfs, so there it doesn't arise.
 2. Early storage: settled. sdhci-msm is built into ROCKNIX's kernel (its messages are in the Image), as
    are ext4 and f2fs.
-3. Audio: ROCKNIX's UCM profiles are copied over `alsa-ucm-conf`'s (a pacman hook puts them back after
-   an update of that package); under UEFI the card is named `ayn-AYNOdin2`, whose profile in ROCKNIX's
-   set is the Odin 2's (no internal mic, the speakers' volumes unset): the image gives that name the
-   Thor's profile.
+3. Audio: ROCKNIX's Thor profiles (thor-ucm) are new files beside `alsa-ucm-conf`'s, which they
+   include (its WCD938x and LPASS sequences), so an update of alsa-ucm-conf that changes those can change
+   the Thor's sound: the self-test lists the card, sound itself is a day-one check. Under UEFI the card is
+   named `ayn-AYNOdin2`; thor-ucm gives that name the Thor's profile (ROCKNIX's is the Odin 2's: no
+   internal mic, the speakers' volumes unset).
 4. Rotation: the bottom panel gets fbcon's angle as well; unverified that it wants the same. ROCKNIX
    fixed a sideways bottom screen after 20261001 (PR #3507: "Sway doesn't apply a transform to an output
    that is powered off"): check that the bottom's transform holds when it is turned off and on. Touch: the
@@ -196,10 +207,11 @@ Known issues and risks, to check first:
 - [x] Build the image and check it (done 2026-10-14; see above).
 - [x] Settle 2: sdhci-msm is built in (checked 2026-10-14, strings in the Image; f2fs too).
 - [ ] Rebuild nearer the time: a newer ROCKNIX release, current packages.
-- [x] A kernel with binder, for Android (Waydroid). Since 2026-10-20 `thor-kernel.sh` builds Armada's kernel
-      instead (binder is in their config); what follows is the ROCKNIX build it replaced. ROCKNIX's SM8550 config has
+- [x] A kernel with binder, for Android (Waydroid). Since 2026-10-20 Armada's kernel (binder is in their
+      config; since 2026-10-21 built by linux-thor's PKGBUILD); what follows is the ROCKNIX build it
+      replaced. ROCKNIX's SM8550 config has
       `# CONFIG_ANDROID_BINDER_IPC is not set` (checked 2026-10-19, its `next` branch and tag 20261001),
-      and the option is built-in only. Done 2026-10-19: `tools/image/thor-kernel.sh` builds ROCKNIX's
+      and the option is built-in only. Done 2026-10-19: a script of ours (thor-kernel.sh, gone since) built ROCKNIX's
       kernel from their git tag (default 20261001) on the PC with LLVM (3 minutes on 24 threads):
       Linux 7.2 from kernel.org, their 65 patches in their build's order (4 `mainline` and 6 `7.2` of
       the project, 55 of SM8550: panels, the Thor's RSInput gamepad and haptics, audio, GPU, fan),
@@ -215,9 +227,7 @@ Known issues and risks, to check first:
       as Armada's.) Needs `bc` on the PC (the build computes the timer
       constants and the OIDs' encodings with it; built 2026-10-19 with a stand-in for those two, checked
       against their known values).
-      Build it, then its package and the image: `tools/image/thor-kernel.sh` (into
-      `~/.cache/thor-vm/kernel`), `tools/repo/build.sh linux-thor`,
-      `tools/image/image.sh`.
+      Build its package, then the image: `tools/repo/build.sh linux-thor`, `tools/image/image.sh`.
       Checked on the PC: the config matches ROCKNIX's embedded one except for binder, DMA-BUF heaps,
       hostname, initramfs, release and compiler-dependent options (clang turns on BTI and the 32-bit
       vDSO); the same 275 modules; the Thor's device tree byte-identical to the one in ROCKNIX's
@@ -265,10 +275,10 @@ For our image (small):
       "bottom-panel").
 
 Our kernel is Armada's (decided 2026-10-20: the furthest community work, our own patches on top once we
-have the device): `tools/image/thor-kernel.sh` builds the Armada commit pinned in
-`tools/image/kernel/armada-ref` (following them is changing that line, after reading what changed in
-their `packages/kernel` and trying the kernel on the device; `ARMADA_REF` overrides it for a try), with
-our config lines and `tools/image/kernel/series` (empty for now). So these come with it: the gamepad across sleep (`0508`, `0515`, `1005`–`1007`, `0534`), rumble's
+have the device): linux-thor's PKGBUILD builds the Armada commit pinned in it (`_armada`; following them
+is `tools/repo/follow-armada.sh`, after reading what changed in their `packages/kernel` and trying the
+kernel on the device), with our config lines (`config.thor`) and our patches (the `.patch` files in its
+`source=`, none yet). So these come with it: the gamepad across sleep (`0508`, `0515`, `1005`–`1007`, `0534`), rumble's
 fixes (`1003`, `1004`), the s2idle stack (`0523`–`0526`, `0512`, `0522`, `0566`, `0204`, `0504` instead of
 ROCKNIX's IPCC change), the wake sources (lid on opening only, volume up not), PCIe WAKE#, the codec's rails
 in s2idle, and the charge current limit (`0903`: 0 runs the device from the charger, for bypass).
@@ -598,6 +608,16 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
 
 From the review of 2026-10-21 (what Armada, ROCKNIX, Thorch and Kettle do, taken over untried here):
 
+- [ ] ClamShell runs as a user service, in no logind session of its own: polkit's and logind's "the user's
+      active session" has to resolve to tty1's autologin for these to work: the Setup tab setting a
+      password (pkexec, polkit's `subject.active`), the brightness slider (logind's SetBrightness), sleep
+      from its menu (logind's Suspend). Try each.
+- [ ] A kernel update on the device: `pacman -U` a second linux-thor, then the card has the new kernel
+      ("thor-boot: done"), the old release's modules are still there until the next boot
+      (`/usr/lib/modules`), and gone after it (thor-old-modules). Then the FAT partition's room
+      (`df -h` of it with KERNEL, KERNEL.new, Image and the initramfs): if there is room, a second loader
+      entry with the previous kernel (`Image.prev`, its initramfs) for a kernel that boots and then hangs.
+
 - [ ] Screens turned on the first session: `~/.config/sway/outputs` written (thor-session runs
       thor-outputs by its path; it wasn't on the login shell's PATH before).
 - [ ] zram: `swapon --show` lists `/dev/zram0` (priority 100) and `/swapfile`; `sysctl vm.swappiness`
@@ -654,4 +674,4 @@ Held back until real use shows whether they are worth what they cost.
   <https://github.com/kettlelinux/kettlelinux/blob/main/docs/THOR.md>
 - Our tools: `tools/vm/vm.py` (virtual Thor, x86-64 and aarch64; `packages`, `thor-image`),
   `tools/repo/` (building, indexing and publishing the packages), `tools/image/thor-image.sh`,
-  `tools/image/thor-kernel.sh`, `packages/` (the PKGBUILDs), `clamshell/tests/nested-sway.sh`
+  `packages/` (the PKGBUILDs), `clamshell/tests/nested-sway.sh`

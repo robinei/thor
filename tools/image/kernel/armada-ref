@@ -1,4 +1,0 @@
-# Armada's commit thor-kernel.sh builds (github.com/armada-os/armada): following them is changing this
-# line (after reading what changed in their packages/kernel, and trying the kernel on the device).
-# ARMADA_REF overrides it for a try.
-d2bcf6fd33435f670f59a164c926842af91730f1

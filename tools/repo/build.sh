@@ -4,7 +4,8 @@
 # (makepkg writes pkgver back), out of a clone of this checkout's last commit (THOR_REPO): uncommitted
 # changes aren't built. ClamShell is cross-compiled
 # (aarch64-unknown-linux-gnu: rustup's target, clang and lld, against tools/repo/sysroot.sh's sysroot);
-# linux-thor packages tools/image/thor-kernel.sh's build; thor-firmware unpacks ROCKNIX's release (kept
+# linux-thor builds Armada's kernel (its source package too: the GPL's corresponding source, published
+# beside it); thor-firmware unpacks ROCKNIX's release (kept
 # in ~/.cache/thor-vm/rocknix: downloaded there if missing) and goes to the repository's local/, never
 # published; the rest are files.
 #
@@ -25,17 +26,15 @@ if [ "$ARCH" = aarch64 ]; then
     export THOR_REPO_DIR=$CACHE/repo
     [ ${#PACKAGES[@]} -gt 0 ] || PACKAGES=(thor-keyring thor-ucm linux-thor clamshell thor-system thor-session thor-firmware)
     [ -d "$SYSROOT/usr/lib" ] || "$HERE/sysroot.sh"
-    # linux-thor's input: Armada's kernel, built here once (again by hand for a newer one).
-    if printf '%s\n' "${PACKAGES[@]}" | grep -qx linux-thor && [ ! -f "$CACHE/kernel/Image" ]; then
-        "$HERE/../image/thor-kernel.sh"
-    fi
 else
     export THOR_REPO_DIR=$CACHE/repo-$ARCH
     [ ${#PACKAGES[@]} -gt 0 ] || PACKAGES=(thor-keyring clamshell thor-system thor-session)
 fi
 OUT=$THOR_REPO_DIR/built
 
-work=$(mktemp -d)
+# (On disk, not in /tmp, which may be memory: the kernel's build is several GB.)
+mkdir -p "$CACHE/sources"
+work=$(mktemp -d "$CACHE/build.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 # What is built: the checkout's last commit, not its working tree, so that a package's version (the
 # commit's hash) names exactly what is in it. (A clone of it, sharing its objects: its history makes the
@@ -83,16 +82,26 @@ mkdir -p "$OUT" "$work/.sources"
 for p in "${PACKAGES[@]}"; do
     echo "== $p"
     rm -f "$OUT"/"$p"-[0-9r]*.pkg.tar.*
-    src=$work/.sources
+    # Downloads kept between builds (ROCKNIX's release where it already is).
+    src=$CACHE/sources
     [ "$p" != thor-firmware ] || { src=$CACHE/rocknix; mkdir -p "$src"; }
-    (cd "$work/$p" && THOR_REPO=$work/src PKGDEST=$OUT SRCDEST=$src BUILDDIR=$work/.build \
-        makepkg --config "$work/makepkg.conf" -f --nodeps --noconfirm --noprogressbar > "$work/$p.log" 2>&1) \
-        || { tail -30 "$work/$p.log"; exit 1; }
+    # (A package's PGP keys, keys/pgp as Arch has them, in a keyring of the build's own: kernel.org's
+    # signature checked against Linus Torvalds' and Greg Kroah-Hartman's keys.)
+    export GNUPGHOME=$work/gnupg-$p
+    mkdir -p -m 700 "$GNUPGHOME"
+    for key in "$work/$p"/keys/pgp/*.asc; do [ -f "$key" ] && gpg --quiet --import "$key" 2> /dev/null; done
+    mk() { (cd "$work/$p" && THOR_REPO=$work/src PKGDEST=$OUT SRCDEST=$src SRCPKGDEST=$OUT BUILDDIR=$work/.build \
+        makepkg --config "$work/makepkg.conf" --nodeps --noconfirm --noprogressbar "$@" >> "$work/$p.log" 2>&1) \
+        || { tail -30 "$work/$p.log"; exit 1; }; }
+    mk -f
     ls "$OUT"/"$p"-[0-9r]*.pkg.tar.*
-    # The kernel's corresponding source beside it, named as the package (GPL-2.0: thor-kernel.sh's bundle).
+    # The kernel's corresponding source (GPL-2.0): its source package with every source in it.
     if [ "$p" = linux-thor ]; then
-        pkg=$(basename "$(ls "$OUT"/linux-thor-*.pkg.tar.*)")
-        cp "$CACHE/kernel/linux-thor.source.tar" "$OUT/${pkg%-aarch64.pkg.tar.*}.source.tar"
+        rm -f "$OUT"/linux-thor-*.src.tar.gz
+        mk --allsource -f
+        ls "$OUT"/linux-thor-*.src.tar.gz
     fi
+    rm -rf "$work/.build/$p"
+    unset GNUPGHOME
 done
 "$HERE/repo.sh" index

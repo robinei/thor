@@ -13,7 +13,7 @@ CACHE=${XDG_CACHE_HOME:-$HOME/.cache}/thor-vm
 TARGET=${1:-thor}
 case $TARGET in
     thor)
-        "$HERE/../host-check.sh" kernel packages image || exit 1
+        "$HERE/../host-check.sh" packages image || exit 1
         SIZE=${2:-12} IMAGE=$CACHE/thor-sd.img
         "$HERE/../repo/build.sh"
         firmware=$(ls -t "$CACHE"/repo/local/thor-firmware-*.pkg.tar.* | head -1)

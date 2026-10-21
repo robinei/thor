@@ -1,6 +1,6 @@
 #!/bin/sh
 # The running kernel's modules across an update of linux-thor. Each build of the kernel has its own release
-# (its modules' folder: thor-kernel.sh), and pacman removes the old one's folder as it installs the new
+# (its modules' folder: linux-thor's PKGBUILD), and pacman removes the old one's folder as it installs the new
 # one; until the new kernel is on the card (thor-boot) and running, the card still boots the old one,
 # which needs its modules. So:
 #

@@ -12,8 +12,8 @@ arch=(any)
 url=https://github.com/robinei/thor
 license=('MIT OR Apache-2.0')
 # (Not linux-thor: the test machine's image has Arch's kernel, which thor-boot leaves alone.)
-depends=(clamshell systemd polkit sudo python mkinitcpio gzip util-linux e2fsprogs cloud-guest-utils
-         zram-generator pipewire)
+depends=(clamshell systemd polkit sudo openssh python mkinitcpio gzip util-linux e2fsprogs cloud-guest-utils
+         gptfdisk zram-generator pipewire)
 optdepends=('linux-thor: the Thor'"'"'s kernel'
             'thor-firmware: the Thor'"'"'s firmware (built locally from ROCKNIX'"'"'s release)'
             'thor-ucm: the Thor'"'"'s sound profiles')

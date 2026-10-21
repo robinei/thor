@@ -5,8 +5,9 @@
 //! These write `scaling_max_freq` of each cpufreq policy, `max_freq` of the GPU's devfreq device, CPUs'
 //! `online`, the battery's `charge_control_end_threshold` and `constant_charge_current`, and the fan
 //! daemon's mode file, which needs write access to them (on the device: the `power` group's, given by
-//! tools/device/system.sh). The hardware is set on a thread of its own ([`spawn`]):
-//! taking cores offline can take a while, and drawing mustn't wait for it.
+//! thor-system's udev rule `73-thor-power.rules`, the mode file by clamshell's tmpfiles entry). The
+//! hardware is set on a thread of its own ([`spawn`]): taking cores offline can take a while, and drawing
+//! mustn't wait for it.
 //!
 //! A cluster whose cores are all offline can't be read (its cpufreq policy's files say EBUSY): the
 //! thread remembers each cluster from when it could, and brings a CPU it knows nothing of online to read

@@ -9,7 +9,12 @@
 #                             the new one, a line each
 #   thor-account ssh on|off   sshd enabled and started, or disabled and stopped (on: only with a password)
 #
-# Errors: exit 1 and a line on stderr: "wrong password", "too short", "set a password first", "failed".
+# Errors: exit 1 and a line on stderr: "wrong password", "too short" (under 8 characters), "set a password
+# first", "failed".
+#
+# The password is sudo's and ssh's: Remote login takes it (sshd's 50-thor.conf: thor only, 3 tries per
+# connection), and through it a key can be added (~/.ssh/authorized_keys); at least 8 characters, as it
+# guards root over the network.
 set -u
 fail() { echo "$1" >&2; exit 1; }
 
@@ -40,7 +45,7 @@ case ${1:-} in
         else
             IFS= read -r new || fail "failed"
         fi
-        [ "${#new}" -ge 4 ] || fail "too short"
+        [ "${#new}" -ge 8 ] || fail "too short"
         printf '%s:%s\n' "$user" "$new" | chpasswd 2> /dev/null || fail "failed"
         ;;
     ssh)

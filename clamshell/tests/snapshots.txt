@@ -51,7 +51,7 @@ settings-env.png 817534091cbf35d0
 settings-global.png 1042a18419e8f676
 settings-running.png f308ece188e0ee11
 settings.png a4cc3545ce8c1032
-setup-password.png baef9464901beb7d
+setup-password.png bb92e0688db3f22d
 setup-unavailable.png 7264b3adad1a08d1
 setup.png 5f4a0a030250138f
 slider.png 4a04ed3a493415dd

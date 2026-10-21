@@ -33,7 +33,8 @@ if [ -e /swapfile ]; then
     offset=$(filefrag -v /swapfile | awk '$1 == "0:" { sub(/\.\.$/, "", $4); print $4 }')
     case $disk in *[0-9]) esp=${disk}p1 ;; *) esp=${disk}1 ;; esac
     mkdir -p /run/thor-esp
-    mount "$esp" /run/thor-esp
+    # (A run cut off before may have left it mounted.)
+    mountpoint -q /run/thor-esp || mount "$esp" /run/thor-esp
     entry=/run/thor-esp/loader/entries/thor.conf
     # (The options line without any resume= of before, then this file's.)
     options=$(sed -n 's/^options //p' "$entry" | sed -E 's/ ?resume(_offset)?=[^ ]*//g')

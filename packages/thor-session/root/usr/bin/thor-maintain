@@ -16,17 +16,35 @@ if ! command -v claude > /dev/null; then
     read -rp "Press Enter to close " _
     exit 1
 fi
-# sudo: the password asked here, once; it counts for Claude's commands too (sudoers' global timestamp
-# for wheel: the image's /etc/sudoers.d/wheel), kept fresh while the pass runs, and forgotten after.
+# sudo for the pass: the password asked here, once, and Claude's commands (which have no terminal of
+# their own) use it: for the pass only, sudoers' timestamp is the user's across processes (a file of its
+# own, /etc/sudoers.d/zz-thor-maintenance, removed after; at boot too, if a pass was cut off:
+# tmpfiles.d/thor-maintenance.conf); outside a pass, sudo asks in each terminal as usual. Kept fresh
+# while the pass runs, forgotten after.
+GLOBAL=/etc/sudoers.d/zz-thor-maintenance
+done_pass() {
+    [ -n "${fresh:-}" ] && kill "$fresh" 2> /dev/null
+    sudo -n rm -f "$GLOBAL" 2> /dev/null
+    sudo -k
+}
+trap done_pass EXIT
+trap 'exit 1' INT TERM HUP
 echo "Maintenance needs the account's password (set in ClamShell: Settings, Setup)."
-if ! sudo -v; then
-    echo "No sudo: is a password set?"
+read -rsp "Password: " password
+echo
+# (The file written to a hidden name first, which sudo skips, checked, then moved into place.)
+if ! printf '%s\n' "$password" | sudo -S -p '' sh -c 'umask 077
+    f=$(mktemp /etc/sudoers.d/.thor-maintenance.XXXXXX) || exit 1
+    printf "Defaults:%%wheel timestamp_type=global\n" > "$f" && chmod 0440 "$f" && visudo -qcf "$f" \
+        && mv "$f" '"$GLOBAL"' || { rm -f "$f"; exit 1; }' 2> /dev/null \
+    || ! printf '%s\n' "$password" | sudo -S -p '' -v 2> /dev/null; then
+    unset password
+    echo "No sudo: is a password set, and was it typed right?"
     read -rp "Press Enter to close " _
     exit 1
 fi
+unset password
 (while sleep 240; do sudo -n -v 2> /dev/null || exit 0; done) &
 fresh=$!
 claude "${1:-/maintain}"
-kill "$fresh" 2> /dev/null
-sudo -k
 read -rp "Session ended. Press Enter to close " _

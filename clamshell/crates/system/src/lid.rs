@@ -3,7 +3,7 @@
 //! wakes it (logind sleeps on closing it, per logind.conf). The input watch (device session only) calls
 //! [`closed`] as the lid closes and opens, and for its state when it first sees the lid; this turns the
 //! power key's wakeup off and on: its device's `power/wakeup` (the `pwrkey` input device's parent, the
-//! PMIC's; writable by the `power` group, tools/device/system.sh). As Armada's
+//! PMIC's; writable by the `power` group: thor-system's `73-thor-power.rules`). As Armada's
 //! `50-armada-powerbutton-suspend`, but on the lid's state rather than a suspend's cause.
 
 use std::fs;

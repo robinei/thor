@@ -1,3 +1,11 @@
 post_install() {
     systemctl enable thor-selftest.service thor-firstboot.service thor-old-modules.service > /dev/null 2>&1 || true
 }
+
+# Units added after the first version, enabled when coming from before them (not again later: one the
+# user disabled stays so).
+post_upgrade() {
+    if [ "$(vercmp "$2" r403)" -le 0 ]; then
+        systemctl enable thor-old-modules.service > /dev/null 2>&1 || true
+    fi
+}

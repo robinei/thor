@@ -232,7 +232,6 @@ Type=notify
 NotifyAccess=main
 WatchdogSec=30
 # Tests drive it through this pipe (tools/vm/vm.py ssh -- 'echo mode wifi > $XDG_RUNTIME_DIR/clamshell-control').
-ExecStartPre=-/usr/bin/mkfifo %t/clamshell-control
 ExecStart={A.program}
 Environment=CLAMSHELL_BOTTOM_OUTPUT=Virtual-2
 Environment=CLAMSHELL_CONTROL=%t/clamshell-control

@@ -39,25 +39,14 @@ WORK=/var/tmp/thor-image
 ROOT=$WORK/root
 ZONE=${THOR_TIMEZONE:-UTC}
 LOCALE=${THOR_LOCALE:-en_US.UTF-8}
-# The device's packages: the base system, network, the GPU (Mesa), sound, screenshots (grim), the day-one
-# checks' tools (evtest; alsa-utils: arecord, speaker-test, alsaucm), what the starter library plays
-# (RetroArch and its cores, mpv; ffmpeg's ffprobe for videos' lengths), removable storage (exFAT's tools
-# for SD cards), archives browsed (ratarmount, FUSE) and extracted (bsdtar, libarchive's, in base), the
-# viewers ClamShell's programs open files with (imv, zathura with its PDF backend; xdg-open for the rest),
-# and what maintenance needs: pacman-contrib (checkupdates, pacdiff); base-devel, squashfs-tools and git
-# (thor-firmware built on the device after a ROCKNIX release, from a checkout). The Thor's own after them
-# (their dependencies bring sway, uwsm, mako, foot, udiskie, zram-generator and the rest).
-PACKAGES=(base sudo networkmanager upower bluez openssh xorg-xwayland mesa
-          pipewire pipewire-pulse wireplumber alsa-ucm-conf noto-fonts less vim grim gptfdisk
-          retroarch retroarch-assets-xmb retroarch-assets-glui retroarch-assets-ozone libretro-core-info libretro-nestopia libretro-snes9x libretro-mupen64plus-next libretro-gambatte
-          libretro-mgba libretro-melonds libretro-genesis-plus-gx libretro-beetle-psx-hw libretro-flycast mpv ffmpeg wireless-regdb
-          udisks2 exfatprogs ratarmount imv zathura zathura-pdf-mupdf xdg-utils pacman-contrib base-devel squashfs-tools git
-          evtest alsa-utils
-          thor-keyring thor-system thor-session clamshell)
+# The packages: the base system, an editor and a pager, and the Thor's (packages/thor: the metapackage
+# that is the whole system, kept current by pacman; the test machine's: the same session and system with
+# Arch's kernel).
+PACKAGES=(base less vim)
 case $TARGET in
     thor)
-        # The Thor's: its kernel, Turnip (Adreno's Vulkan), its sound profiles (the firmware first, below).
-        PACKAGES+=(linux-thor vulkan-freedreno thor-ucm)
+        # (thor-firmware first, below.)
+        PACKAGES+=(thor)
         ARCH=aarch64
         # The kernel command line: ROCKNIX's tuning for SM8550, our root; PSI on (Armada's kernel has it
         # off by default; Android's memory killer in Waydroid needs it), not per cgroup (as Armada's
@@ -69,7 +58,7 @@ case $TARGET in
         [ -f "$FIRMWARE" ] || { echo "no thor-firmware package: $FIRMWARE"; exit 1; }
         ;;
     vm)
-        PACKAGES+=(linux)
+        PACKAGES+=(linux thor-system thor-session clamshell thor-keyring)
         ARCH=x86_64
         # (QEMU's two screens' modes, the second forced on: QEMU enables an output only once its window
         # reports a size, which a headless one doesn't; tools/vm/vm.py's KERNEL_VIDEO.)
@@ -164,9 +153,8 @@ say "  time zone $ZONE, locale $LOCALE"
 # controller and keys, power writes what ClamShell's settings set; wheel: sudo, with the user's password.
 # (useradd leaves the account locked: no password.)
 arch-chroot "$ROOT" useradd -m -G wheel,video,input,audio,power -s /bin/bash "$USER_NAME"
-# (The password asked once counts for all the user's processes, not per terminal: maintenance asks it in
-# its terminal, and Claude's commands, which have none, use it: thor-maintain.)
-printf '%%wheel ALL=(ALL:ALL) ALL\nDefaults:%%wheel timestamp_type=global\n' > "$ROOT/etc/sudoers.d/wheel"
+# (A maintenance pass shares its timestamp with Claude's commands for its length only: thor-maintain.)
+printf '%%wheel ALL=(ALL:ALL) ALL\n' > "$ROOT/etc/sudoers.d/wheel"
 chmod 440 "$ROOT/etc/sudoers.d/wheel"
 # (sshd isn't: ClamShell's Remote login turns it on, once there is a password.)
 arch-chroot "$ROOT" systemctl enable NetworkManager bluetooth systemd-timesyncd > /dev/null

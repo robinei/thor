@@ -80,8 +80,8 @@ file wins. libretro's lists are kept in `~/.cache/clamshell/libretro` for 30 day
 `crates/system/src/meta.rs`.
 
 What ClamShell keeps (play time, favourites, settings, keymaps, window rules, the dock's pins, where shelf
-was, brightness) is in one SQLite database, `~/.local/share/clamshell/clamshell.db`; its tables:
-`crates/system/src/store.rs`.
+was, brightness) is in JSON files in `~/.local/share/clamshell`, readable and editable by hand; which
+file holds what: `crates/system/src/store.rs`.
 
 ## Running
 
@@ -122,14 +122,15 @@ Arch Linux ARM and the Thor's own packages (`packages/`: `linux-thor`, `thor-sys
 From a checkout, on an Arch Linux PC, everything is built here and nothing needs the virtual machines:
 
     tools/host-check.sh kernel packages image  # what this PC lacks, and the pacman line that adds it
-    tools/image/image.sh                       # the Thor's SD card image: Armada's kernel (once),
-                                               # the packages, then pacstrap through qemu-user (sudo)
+    tools/image/image.sh                       # the Thor's SD card image: the packages (the kernel
+                                               # among them), then pacstrap through qemu-user (sudo)
     tools/image/image.sh vm                    # the same system for x86_64, to try the first boot:
     tools/vm/vm.py thor-image                  #   in QEMU, a window per screen (--fresh: from scratch)
 
-The steps on their own: `tools/image/thor-kernel.sh` (Armada's kernel; again for a newer one),
-`tools/repo/build.sh [PACKAGE...]` (the packages, ClamShell cross-compiled against
-`tools/repo/sysroot.sh`'s sysroot of Arch Linux ARM's packages), `tools/repo/repo.sh publish` (the
+The steps on their own: `tools/repo/build.sh [PACKAGE...]` (the packages, from the last commit: ClamShell
+cross-compiled against `tools/repo/sysroot.sh`'s sysroot of Arch Linux ARM's packages, linux-thor built
+from Armada's pinned commit), `tools/repo/follow-armada.sh [COMMIT]` (linux-thor moved to another of
+Armada's commits), `tools/repo/repo.sh publish` (the
 repository uploaded with `gh`: only with the signing key, `~/.config/thor-repo/gnupg`, which isn't in the
 repository; without it the packages are indexed unsigned and images still build). Arch Linux ARM's
 public keys are in `tools/image/keyrings`.
@@ -142,9 +143,10 @@ Ours: MIT or Apache-2.0, at your choice (`LICENSE-MIT`, `LICENSE-APACHE`). Not o
 - The Rust crates ClamShell's programs are built with: their licenses (all permissive: MIT, Apache-2.0,
   BSD, Zlib, Unicode-3.0 and the like), carried by the clamshell package in
   `/usr/share/licenses/clamshell/THIRD-PARTY` (`tools/repo/third-party-licenses.py`).
-- Kernel patches of ours (`tools/image/kernel`): GPL-2.0, as Linux. The linux-thor package (Armada's
+- Kernel patches of ours (`packages/linux-thor`): GPL-2.0, as Linux. The linux-thor package (Armada's
   kernel: Linux, GPL-2.0) carries the kernel's license files and is published with its corresponding
-  source, `linux-thor-VERSION.source.tar`, beside it (`tools/image/thor-kernel.sh` bundles it).
+  source beside it: its source package, `linux-thor-VERSION.src.tar.gz` (`makepkg --allsource`: the
+  PKGBUILD, kernel.org's tarball, Armada's repository at the commit, our patches and config).
 - thor-ucm: ROCKNIX's Thor profiles, additions to alsa-ucm-conf, under its BSD-3-Clause license (carried).
 - thor-firmware: AYN's and Qualcomm's firmware from ROCKNIX's release, not redistributed by us (built
   where it is installed, never published).
