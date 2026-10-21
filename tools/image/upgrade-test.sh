@@ -33,7 +33,8 @@ license=(GPL-2.0-only)
 options=(!strip !debug)
 package() { cp -a "\$startdir/files/." "\$pkgdir/"; }
 EOF
-(cd "$work/pkg" && CARCH=aarch64 PKGDEST="$work" makepkg --nodeps --noconfirm --config <(cat /etc/makepkg.conf; echo CARCH=aarch64; echo "OPTIONS=(!strip !debug)") > "$work/makepkg.log" 2>&1) \
+{ cat /etc/makepkg.conf; echo CARCH=aarch64; echo "OPTIONS=(!strip !debug)"; } > "$work/makepkg.conf"
+(cd "$work/pkg" && PKGDEST="$work" makepkg --nodeps --noconfirm --config "$work/makepkg.conf" > "$work/makepkg.log" 2>&1) \
     || { tail -20 "$work/makepkg.log"; exit 1; }
 next=$(ls "$work"/linux-thor-*.pkg.tar.*)
 

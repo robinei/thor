@@ -114,8 +114,9 @@ E the shoulders, F is Y, P is X.
 
 ## The device's system
 
-Arch Linux ARM and the Thor's own packages (`packages/`: `linux-thor`, `thor-system`, `thor-session`,
-`clamshell`, `thor-ucm`, `thor-keyring`, and `thor-firmware`, which is never published), kept current with
+Arch Linux ARM and the Thor's own packages (`packages/`: `thor`, the metapackage that is the whole
+system, and what it holds: `linux-thor`, `thor-system`, `thor-session`, `clamshell`, `thor-ucm`,
+`thor-keyring`; and `thor-firmware`, which is never published), kept current with
 `pacman -Syu` from the repository `[thor]`, the GitHub release `packages`. What each holds:
 `docs/thor-gameplan.md`, "Our image and packages".
 
@@ -126,6 +127,7 @@ From a checkout, on an Arch Linux PC, everything is built here and nothing needs
                                                # among them), then pacstrap through qemu-user (sudo)
     tools/image/image.sh vm                    # the same system for x86_64, to try the first boot:
     tools/vm/vm.py thor-image                  #   in QEMU, a window per screen (--fresh: from scratch)
+    tools/image/upgrade-test.sh                # a kernel update tried on a copy of the Thor's image
 
 The steps on their own: `tools/repo/build.sh [PACKAGE...]` (the packages, from the last commit: ClamShell
 cross-compiled against `tools/repo/sysroot.sh`'s sysroot of Arch Linux ARM's packages, linux-thor built
