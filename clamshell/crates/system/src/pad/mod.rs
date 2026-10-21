@@ -63,7 +63,24 @@ pub enum Command {
     /// /dev/input changed: a missing controller is looked for again (the supervisor tries again after
     /// any command).
     Look,
+    /// The system is about to sleep: the gyro's stream closed (its source dropped), then the
+    /// acknowledgement ([`crate::sleep::spawn_hold`]).
+    Sleep(Ack),
+    /// Awake again: the gyro found again.
+    Woke,
 }
+
+/// A command's acknowledgement (equal to any other: commands compare by what they ask).
+#[derive(Debug, Clone)]
+pub struct Ack(pub std::sync::mpsc::Sender<()>);
+
+impl PartialEq for Ack {
+    fn eq(&self, _: &Ack) -> bool {
+        true
+    }
+}
+
+impl Eq for Ack {}
 
 lost_on!(io::Error);
 
@@ -166,6 +183,16 @@ struct Controller {
     rumble: Option<Rumble>,
     /// Its X and Y codes are by letter (xpad's, rsinput's), not by place: swapped as they come in.
     letters: bool,
+    /// Its name and physical path, to find its gyro again after sleep.
+    name: String,
+    phys: String,
+}
+
+/// The gyro of the controller named `name` at `phys`: its own motion sensor, else the Thor's sensor hub.
+fn find_motion(name: &str, phys: &str) -> Option<Box<dyn MotionSource>> {
+    EvdevMotion::find(name, phys)
+        .map(|m| Box::new(m) as Box<dyn MotionSource>)
+        .or_else(|| sensor_hub::SensorHub::find().map(|m| Box::new(m) as Box<dyn MotionSource>))
 }
 
 impl<S: Sink> PadThread<S> {
@@ -192,6 +219,12 @@ impl<S: Sink> PadThread<S> {
             },
             // (Looking is the supervisor's, after the command; with a controller, nothing to do.)
             Command::Look => {}
+            // (No controller, no gyro: nothing to close or find; a controller with one takes these in
+            // route_events.)
+            Command::Sleep(Ack(done)) => {
+                let _ = done.send(());
+            }
+            Command::Woke => {}
         }
     }
 
@@ -246,15 +279,12 @@ impl<S: Sink> Service for PadThread<S> {
         }
         let grabbed = Grabbed::new(real)?;
         log::info!("pad: {} grabbed; games see the virtual pad", grabbed.device().name().unwrap_or("controller"));
-        // (The controller's own motion sensor, else the Thor's sensor hub.)
-        let motion = EvdevMotion::find(&name, &phys)
-            .map(|m| Box::new(m) as Box<dyn MotionSource>)
-            .or_else(|| sensor_hub::SensorHub::find().map(|m| Box::new(m) as Box<dyn MotionSource>));
+        let motion = find_motion(&name, &phys);
         let letters = device::letter_codes(&name, &phys);
         if letters {
             log::info!("pad: its X and Y codes are by letter (xpad, rsinput): read by place");
         }
-        Ok(Controller { grabbed, ranges, snapshot, motion, ayn: AynKey::find(), rumble, letters })
+        Ok(Controller { grabbed, ranges, snapshot, motion, ayn: AynKey::find(), rumble, letters, name, phys })
     }
 
     /// Routes the controller's events until it is gone (or the program is).
@@ -360,13 +390,25 @@ fn wait(
 impl<S: Sink> PadThread<S> {
     /// Routes the controller's (and the gyro's) events until it is gone (or the program is).
     fn route_events(&mut self, c: &mut Controller, router: &mut PadRouter, out: &mut Out, commands: &Receiver<Command>) -> Result<(), Ended<io::Error>> {
-        let Controller { grabbed, motion, ayn, rumble, letters, .. } = c;
+        let Controller { grabbed, motion, ayn, rumble, letters, name, phys, .. } = c;
         let mut raws = Vec::new();
         let mut samples: Vec<Sample> = Vec::new();
         let mut wake = None;
         loop {
             loop {
                 match commands.try_recv() {
+                    // (The gyro closed before sleep, its stream with it, and found again after.)
+                    Ok(Command::Sleep(Ack(done))) => {
+                        if motion.take().is_some() {
+                            log::info!("pad: the gyro closed for sleep");
+                        }
+                        let _ = done.send(());
+                    }
+                    Ok(Command::Woke) => {
+                        if motion.is_none() {
+                            *motion = find_motion(name, phys);
+                        }
+                    }
                     Ok(command) => self.apply(command, Some((router, out))),
                     Err(TryRecvError::Empty) => break,
                     Err(TryRecvError::Disconnected) => return Ok(()),

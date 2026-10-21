@@ -123,6 +123,8 @@ pub fn start(
     // The controller, grabbed for good with a virtual Xbox pad for games.
     let pad_taken = pad::Taken::default();
     let pad = started("pad", pad::spawn(env.gamepad.clone(), pad_taken.clone(), sink.clone()));
+    // (Sleep waits for the pad to close the gyro's stream.)
+    detached("sleep", clamshell_system::sleep::spawn_hold(pad.clone()));
     let battery = started("battery", battery::spawn(sink.clone()));
     let mixer = started("mixer", mixer::spawn(backlights.clone(), sink.clone()));
     let bluetooth = started("bluetooth", bluetooth::spawn(sink.clone()));

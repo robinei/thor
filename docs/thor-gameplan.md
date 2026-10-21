@@ -777,9 +777,9 @@ Sound and the rest
 - No gyro: `journalctl -b -u thor-sensors -u thor-sensors-root` (the registry, hexagonrpcd), then
   ClamShell's log (`pad:` lines); `ls /dev/fastrpc-adsp`. A registry made wrong:
   `/var/lib/thor-sensors/registry` removed (it is made again; it holds the unit's calibration).
-- Drain asleep with the gyro streaming (ClamShell keeps it on while it has the controller, at 200 Hz on
-  the ADSP): PB-OS stops it around sleep (a logind delay lock); ours would be the pad thread told of
-  sleep, or a lower rate when the game doesn't have the pad.
+- Drain asleep from the gyro: ClamShell closes its stream before sleep (a logind delay lock, as PB-OS's
+  pbos-motiond; its log says "the gyro closed for sleep") and opens it after. If the log lacks the line,
+  `systemd-inhibit --list` shows whether ClamShell holds its lock.
 - A DisplayPort monitor freezes the device (Armada #529): `status = "disabled"` on `&mdss_dp0` in a dts
   patch of ours until Armada fixes it.
 - A DRM lease (a VR headset, gamescope per screen) leaves a thread stuck when it ends: PB-OS's 0610.

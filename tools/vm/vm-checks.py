@@ -926,6 +926,19 @@ class Checks:
         out = capture(f"evtest {mouse}", 2.5, lambda: pad("press lb", "gyro 0 -60 0", "sleep 600", "gyro 0 0 0", "release lb"))
         moved = sum(int(line.rsplit(" ", 1)[1]) for line in out.splitlines() if "(REL_X)" in line and "value" in line)
         self.check("  the gyro with LB held moves the pointer", moved > 100, f"pointer moved {moved} px")
+        # Sleep: the gyro closed before it (ClamShell's delay lock, so the Thor's sensor hub doesn't sample
+        # while asleep), found again after it.
+        since = now()
+        sh("sudo -n systemctl suspend")
+        time.sleep(4)
+        vm.wake(None)
+        closed = logged(since, "pad: the gyro closed for sleep", 20)
+        until(lambda: sh("echo up").strip() == "up", 30)
+        time.sleep(2)
+        out = capture(f"evtest {mouse}", 2.5, lambda: pad("press lb", "gyro 0 -60 0", "sleep 600", "gyro 0 0 0", "release lb"))
+        again = sum(int(line.rsplit(" ", 1)[1]) for line in out.splitlines() if "(REL_X)" in line and "value" in line)
+        self.check("  sleep: the gyro closed before it, and moves the pointer again after it", closed and again > 100,
+                   f"closed {closed}, then {again} px; {journal(since)[-300:]!r}")
         # The gyro's speed slid up on the edit screen's panel, the game still running: further.
         since = now()
         for line in ["tab settings", "tap setting keymap", f"tap keymap-edit {row}", "tap map-from gyro", "slide speed 300 450"]:
