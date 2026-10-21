@@ -185,7 +185,7 @@ fn zones(f: &mut Frame) {
 }
 
 /// A zone's name, readable: "America/Argentina/Buenos_Aires" as "America / Argentina / Buenos Aires".
-struct Name<'a>(&'a str);
+pub(super) struct Name<'a>(pub(super) &'a str);
 
 impl Display for Name<'_> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {

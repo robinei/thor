@@ -119,6 +119,8 @@ impl Icon {
             Tab::Bluetooth => Icon::Bluetooth { connected: false },
             // (Its button is the clock.)
             Tab::Time => Icon::Gauge,
+            // (The settings' Setup tile's.)
+            Tab::Setup => Icon::Lock,
         }
     }
 

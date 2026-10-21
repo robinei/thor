@@ -60,6 +60,8 @@ pub enum NoticeKind {
     NotStarted(String),
     /// A launch asked for (its entry's title): it is starting.
     Starting(String),
+    /// A change of the account is done (what), or failed (why) (see [`crate::account`]).
+    Account(Result<String, String>),
     /// The library read anew has problems (the first, and how many: all are listed on the Tools tab's
     /// Rescan library).
     Problems(String, usize),

@@ -4,11 +4,14 @@
 # tools/image/thor-kernel.sh builds it (THOR_KERNEL below; else ROCKNIX's prebuilt SM8550 kernel), ROCKNIX's
 # firmware, our initramfs and session, in ROCKNIX's SD layout so their ABL (or OpenABL) boots it.
 #
-#   thor-image.sh DEVICE ROCKNIX_TARGET PROGRAM SSH_KEY
+#   thor-image.sh DEVICE ROCKNIX_TARGET PROGRAM
 #
 # DEVICE: the SD image (a virtual disk). ROCKNIX_TARGET: the release's target/ (KERNEL, SYSTEM).
-# PROGRAM: ClamShell built for aarch64 (the fan daemon, clamshell-fan, beside it). SSH_KEY: a public key to
-# log in with.
+# PROGRAM: ClamShell built for aarch64 (the fan daemon, clamshell-fan, beside it).
+#
+# Nothing in it is anyone's in particular: the user thor logs in on its own (autologin) with its account
+# locked, no password, until one is set in ClamShell (its first-run screen, or Settings: thor-account);
+# sudo takes that password; ssh is off until turned on there; the time zone is UTC until set.
 #
 # Two ways to boot, one FAT partition: the stock bootloader (U-Boot with UEFI, as Kettle Linux's Thor notes
 # have it) starts systemd-boot (EFI/BOOT/BOOTAA64.EFI), which loads the kernel (an EFI program: ROCKNIX's
@@ -18,18 +21,17 @@
 # label); 2: ext4 THOR_ROOT, the system. The image is small to write; the card's first boot grows the root to
 # the card and makes the swap file for hibernating (thor-firstboot, below).
 #
-# Environment: THOR_TIMEZONE (default: this machine's /etc/localtime, else UTC), THOR_LOCALE (default
+# Environment: THOR_TIMEZONE (default UTC), THOR_LOCALE (default
 # en_US.UTF-8), THOR_KERNEL (a kernel built by tools/image/thor-kernel.sh, its output directory: then the
 # image has that kernel, its device trees and modules, in both boot ways, instead of ROCKNIX's prebuilt one;
 # the firmware and the rest stay ROCKNIX's). Through sudo: sudo THOR_TIMEZONE=Europe/Oslo bash thor-image.sh ...
 set -euo pipefail
-DEVICE=$1 ROCKNIX=$2 PROGRAM=$3 SSH_KEY=$4
+DEVICE=$1 ROCKNIX=$2 PROGRAM=$3
 KERNEL=${THOR_KERNEL:-}
 USER_NAME=thor
 WORK=/var/tmp/thor-image
 ROOT=$WORK/root
-ZONE=${THOR_TIMEZONE:-$(readlink /etc/localtime 2> /dev/null | sed 's|.*/zoneinfo/||')}
-ZONE=${ZONE:-UTC}
+ZONE=${THOR_TIMEZONE:-UTC}
 LOCALE=${THOR_LOCALE:-en_US.UTF-8}
 # The swap file for hibernating, in GiB: as much as the RAM (16 GB), so a hibernate with everything in use
 # fits. Made on the card's first boot, not here (it would make the image 16 GB bigger to write).
@@ -129,10 +131,12 @@ say "  time zone $ZONE, locale $LOCALE"
 bash "$(dirname "$0")/../device/system.sh" "$ROOT" "$(dirname "$PROGRAM")/clamshell-fan"
 # input: /dev/input/event* (udev gives them to the group), which ClamShell reads for keys and idle; power:
 # what its settings set.
+# (useradd leaves the account locked: no password.) wheel: sudo, with the user's password.
 arch-chroot "$ROOT" useradd -m -G wheel,video,input,audio,power -s /bin/bash "$USER_NAME"
-echo "$USER_NAME ALL=(ALL) NOPASSWD: ALL" > "$ROOT/etc/sudoers.d/$USER_NAME"
-install -d -m 700 "$ROOT/home/$USER_NAME/.ssh"
-echo "$SSH_KEY" > "$ROOT/home/$USER_NAME/.ssh/authorized_keys"
+# (The password asked once counts for all the user's processes, not per terminal: maintenance asks it in
+# its terminal, and Claude's commands, which have none, use it: tools/device/maintain.)
+printf '%%wheel ALL=(ALL:ALL) ALL\nDefaults:%%wheel timestamp_type=global\n' > "$ROOT/etc/sudoers.d/wheel"
+chmod 440 "$ROOT/etc/sudoers.d/wheel"
 mkdir -p "$ROOT/etc/systemd/system/getty@tty1.service.d"
 printf '[Service]\nExecStart=\nExecStart=-/sbin/agetty --autologin %s --noclear %%I $TERM\n' "$USER_NAME" \
     > "$ROOT/etc/systemd/system/getty@tty1.service.d/autologin.conf"
@@ -154,7 +158,8 @@ fi
 # the memory out of its low-power states (Armada's 60-armada-usb-autosuspend.rules).
 echo 'ACTION=="add|bind", SUBSYSTEM=="platform", KERNEL=="*.usb", DRIVERS=="dwc3-qcom", ATTR{power/control}="auto"' \
     > "$ROOT/etc/udev/rules.d/72-thor-usb.rules"
-arch-chroot "$ROOT" systemctl enable NetworkManager bluetooth sshd systemd-timesyncd > /dev/null
+# (sshd isn't: ClamShell's Remote login turns it on, once there is a password.)
+arch-chroot "$ROOT" systemctl enable NetworkManager bluetooth systemd-timesyncd > /dev/null
 # The power button and the lid put the machine to sleep with logind's "sleep" action: the first that works
 # of suspend-then-hibernate and suspend (so suspend still works while hibernate doesn't, e.g. before the
 # swap file exists or on a card too small for it). ClamShell notices waking and applies its settings again.
@@ -244,9 +249,9 @@ say "the session (sway, ClamShell; tools/device/session.sh) and this repository 
 H=$ROOT/home/$USER_NAME
 bash "$(dirname "$0")/../device/session.sh" "$H" "/home/$USER_NAME" "$PROGRAM"
 # This repository as committed, for maintenance on the device (tools/device/maintain), its origin the
-# GitHub one (pushing from the device needs its key added there).
+# public GitHub one over https (pulling needs nothing; pushing, an account's key or token there).
 git -c safe.directory="*" clone -q "$(dirname "$0")/../.." "$H/thor"
-git -C "$H/thor" remote set-url origin git@github.com:robinei/thor.git
+git -C "$H/thor" remote set-url origin https://github.com/robinei/thor.git
 mkdir -p "$H/.local/share/thor"
 git -C "$H/thor" rev-parse HEAD > "$H/.local/share/thor/session-commit"
 arch-chroot "$ROOT" chown -R "$USER_NAME:$USER_NAME" "/home/$USER_NAME"

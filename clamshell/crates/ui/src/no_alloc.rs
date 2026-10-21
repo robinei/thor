@@ -67,6 +67,10 @@ fn wifi_reading() -> Event {
     }))
 }
 
+fn account() -> clamshell_core::account::Account {
+    clamshell_core::account::Account { available: true, password: true, ssh: true }
+}
+
 /// Each case from the same base state (the demo library, a fixed time), so they don't depend on each
 /// other.
 #[test]
@@ -270,6 +274,17 @@ fn warm_frames_do_not_allocate() {
             ],
         ),
         ("keyboard", vec![Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Keyboard)))]),
+        ("setup", vec![tap(Id::Tab(Tab::Settings)), tap(Id::Settings(SettingsId::Setup)), Event::Reading(Reading::Account(account()))]),
+        (
+            "setup, the password",
+            vec![
+                tap(Id::Tab(Tab::Settings)),
+                tap(Id::Settings(SettingsId::Setup)),
+                Event::Reading(Reading::Account(account())),
+                tap(Id::Setup(clamshell_core::account::SetupId::Password)),
+                key(Key::Char('a')),
+            ],
+        ),
         ("keyboard, Fn", vec![tap(Id::Tab(Tab::Keyboard)), key(Key::Mod(Modifier::Fn))]),
         (
             "keyboard, Shift and a pressed key",

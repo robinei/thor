@@ -143,6 +143,7 @@ impl Handles {
             Effect::Screenshot => self.system.send(crate::device::Command::Screenshot),
             Effect::AskAwake(argv) => self.system.send(crate::device::Command::AskAwake(argv.clone())),
             Effect::Sleep => self.system.send(crate::device::Command::Sleep),
+            Effect::Account(command) => self.system.send(crate::device::Command::Account(command.clone())),
             Effect::SetTimeZone(zone) => self.system.send(crate::device::Command::SetTimeZone(zone.clone())),
             Effect::SetNtp(on) => self.system.send(crate::device::Command::SetNtp(*on)),
             Effect::StepClock(field, by) => self.system.send(crate::device::Command::StepClock(*field, *by)),
@@ -171,6 +172,12 @@ impl Handles {
             // (Read once as the tab opens: it changes only by the tab.)
             Watch::Time if on => self.system.send(crate::device::Command::ReadTime),
             Watch::Time => {}
+            // (The setup tab: the account, and the time zone it shows.)
+            Watch::Account if on => {
+                self.system.send(crate::device::Command::Account(clamshell_core::account::AccountCommand::Read));
+                self.system.send(crate::device::Command::ReadTime);
+            }
+            Watch::Account => {}
         }
     }
 

@@ -6,7 +6,8 @@ model: opus
 Run a maintenance pass on this device (the AYN Thor, Arch Linux ARM with Armada's kernel, ROCKNIX's
 firmware and our session). The user started it from the dock's Maintenance app (`tools/device/maintain`): you run in a
 terminal on the Thor's main screen and the user types on the bottom screen's keyboard, so keep messages
-short and ask few questions. `sudo` needs no password here.
+short and ask few questions. `sudo` works without asking: the Maintenance app took the password before
+starting you (if a `sudo` asks or fails, say so and stop rather than retrying).
 
 What is ours rather than Arch's (see `tools/image/thor-image.sh`, which builds the image, and
 `docs/thor-gameplan.md`, "Our image"):
@@ -31,7 +32,7 @@ What is ours rather than Arch's (see `tools/image/thor-image.sh`, which builds t
   look in every pass), the wake log hook, Steam's starter (`/usr/local/bin/steam`, `steam-setup`).
 
 1. **Prepare.** `git status` in this repository. Uncommitted changes: show them and ask whether to
-   commit them first. `git pull --rebase` (if it fails for lack of access, say so: the device's ssh key
+   commit them first. `git pull --rebase` (if it fails for lack of access, say so: with an ssh origin, the device's ssh key
    isn't on GitHub yet, `~/.ssh/id_ed25519.pub`; make one with `ssh-keygen -t ed25519` if missing, and
    go on without pulling).
 

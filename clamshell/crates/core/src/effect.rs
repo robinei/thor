@@ -127,6 +127,9 @@ pub enum Effect {
     Sleep,
     /// Both screens to a file; the result comes back as [`crate::Event::Screenshot`].
     Screenshot,
+    /// Ask the account's helper (see [`crate::account`]); a change is reported, then the account read
+    /// again.
+    Account(crate::account::AccountCommand),
     /// Set the system's time zone (tzdata's name); the time zones are read again after.
     SetTimeZone(String),
     /// The system's clock set by the network (NTP), or not; read again after.
@@ -162,6 +165,8 @@ pub enum Watch {
     Battery,
     /// The time zone and the ones to choose from.
     Time,
+    /// The account (see [`crate::account`]), and the time zone (the setup tab shows both).
+    Account,
     /// The system's metrics (read more often while shown).
     Metrics,
     /// The bar's status (battery, Wi-Fi, volume): watched while the screens are on, then only the
@@ -189,6 +194,8 @@ pub enum Save {
     Autostart(Vec<std::sync::Arc<str>>),
     /// Clocks on a 12-hour dial, or 24-hour.
     TwelveHour(bool),
+    /// The setup is done: it doesn't open by itself again.
+    SetupDone,
 }
 
 /// What the compositor is asked to do.

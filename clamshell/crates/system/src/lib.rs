@@ -3,6 +3,7 @@
 //! sway, systemd, NetworkManager, BlueZ, PipeWire, UPower, logind and sysfs; and the files ClamShell
 //! keeps. Nothing here waits for the UI. How a thread is built: [`worker`].
 
+pub mod account;
 pub mod archives;
 pub mod battery;
 pub mod bluetooth;

@@ -1,4 +1,5 @@
-//! The editor's screen, shared by the environment, Wi-Fi passwords and keymaps' names: a line saying what
+//! The editor's screen, shared by the environment, Wi-Fi passwords, the account's password (as dots) and
+//! keymaps' names: a line saying what
 //! is edited, the field with the text so far (its end, if long), Cancel and the save button, and the
 //! keyboard below (its keys type here, Enter saves, Esc cancels, Ctrl+V pastes the clipboard's text). A
 //! key chord being typed for a keymap looks the same ([`field`]).

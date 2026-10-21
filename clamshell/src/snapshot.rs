@@ -419,6 +419,20 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 shot("time-europe.png", Bottom, vec![PointerEvent::Activate(ListId::Time.row(7)).into()]),
             ],
         ),
+        // The setup (from the settings' tile): off the device (no helper), then with an account without a
+        // password, and its password typed (as dots).
+        group(
+            vec![],
+            vec![
+                shot("setup-unavailable.png", Bottom, vec![tab(Tab::Settings), tap(Id::Settings(SettingsId::Setup)), Reading::Time(demo::time_zones()).into()]),
+                shot("setup.png", Bottom, vec![Reading::Account(clamshell_core::account::Account { available: true, password: false, ssh: false }).into()]),
+                shot(
+                    "setup-password.png",
+                    Bottom,
+                    [tap(Id::Setup(clamshell_core::account::SetupId::Password))].into_iter().chain(control::type_text("secret")?).collect(),
+                ),
+            ],
+        ),
         // The clock set by hand, on a 12-hour dial.
         group(
             vec![],

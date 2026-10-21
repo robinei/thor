@@ -200,7 +200,8 @@ pub(crate) fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
         let page = i32::try_from(s.shelf().rows()).unwrap_or(1).max(1);
         return vec![ShelfEvent::ListStep(step * page).into()];
     }
-    let tabs = Tab::ALL;
+    // (Not the setup: it opens from the settings.)
+    let tabs: Vec<Tab> = Tab::ALL.into_iter().filter(|t| *t != Tab::Setup).collect();
     let at = tabs.iter().position(|t| *t == s.bottom().tab()).unwrap_or(0) as i32;
     let next = (at + step).rem_euclid(tabs.len() as i32) as usize;
     match tabs.get(next) {

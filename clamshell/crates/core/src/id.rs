@@ -54,6 +54,8 @@ pub enum Id {
     Blank,
     /// The time tab's (see [`crate::time`]).
     Time(crate::time::TimeId),
+    /// The setup tab's (see [`crate::account`]).
+    Setup(crate::account::SetupId),
     /// The battery tab's list of what is using the machine (see [`crate::battery`]).
     Battery(crate::battery::BatteryId),
     /// The bar's button for the front program's windows on the bottom screen, hidden by ClamShell's view:
@@ -118,6 +120,8 @@ pub enum SettingsId {
     Scope(Scope),
     /// Drops the game in context's overrides.
     Reset,
+    /// The setup tab (see [`crate::account`]).
+    Setup,
 }
 
 /// The keymaps' screens' buttons (the picker's rows are [`Id::Row`]s of [`crate::ListId::Keymaps`]).

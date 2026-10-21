@@ -7,6 +7,7 @@
 //! radios ([`Radios`]), the controller ([`Pad`]), focus and presses ([`Pointer`]), and the system's
 //! readings ([`Sys`]). Each owns its own rules; what involves two of them is [`State`]'s.
 
+pub mod account;
 pub mod actions;
 pub mod autostart;
 pub mod background;
@@ -136,6 +137,8 @@ pub struct Init {
     pub window_rules: bottom_screen::WindowRules,
     /// Clocks on a 12-hour dial (else 24-hour).
     pub twelve_hour: bool,
+    /// The setup not done yet (ClamShell's first start): it opens (see [`account`]).
+    pub setup: bool,
 }
 
 #[derive(Debug, Default)]
@@ -187,6 +190,8 @@ pub struct State {
     shown: Option<(usize, Option<usize>, usize, usize, usize)>,
     /// Pins of entries gone were dropped at start: saved once the UI is up.
     pins_dropped: bool,
+    /// The setup not done yet (see [`account`]).
+    first_run: bool,
     /// The file actions' clipboard and confirmation, the folder browsed (see [`files`]).
     files: files::Files,
     /// The text on the system's clipboard, for the editor's Ctrl+V (files copied in the Files tab are its
@@ -213,6 +218,7 @@ impl State {
             dock: init.dock,
             autostart: init.autostart,
             device_session: init.device_session,
+            first_run: init.setup,
             ..State::default()
         };
         if let Some(resume) = &init.resume {
@@ -222,6 +228,9 @@ impl State {
         s.pins_dropped = s.drop_gone_pins();
         s.follow_pausable_runners();
         s.pointer.focus = s.shelf.selected().cloned().map(|g| Id::Shelf(ShelfId::Game(g)));
+        if init.setup {
+            s.bottom.tab = Tab::Setup;
+        }
         if let Some(tab) = init.start_tab {
             s.bottom.tab = tab;
         }
@@ -547,6 +556,10 @@ impl State {
                 self.notify(crate::hardware::NoticeKind::Gyro(Some(ok)));
                 (Dirty::BOTTOM, vec![])
             }
+            Event::AccountChanged(result) => {
+                self.on_account_changed(result);
+                (Dirty::BOTTOM, vec![])
+            }
             Event::Quit => (Dirty::NONE, vec![Effect::Save(Save::Resume(self.resume())), Effect::Quit]),
         }
     }
@@ -604,6 +617,7 @@ impl State {
             Reading::Audio(audio) => self.levels.read_audio(audio),
             Reading::Backlights(backlights) => self.levels.read_backlights(backlights),
             Reading::Time(time) => replace(&mut self.sys.time, time),
+            Reading::Account(account) => replace(&mut self.sys.account, account),
         };
         if changed && shown { Dirty::BOTTOM } else { Dirty::NONE }
     }
@@ -717,6 +731,7 @@ impl State {
                 None => (Dirty::NONE, vec![]),
             },
             Id::Time(id) => self.on_time(id),
+            Id::Setup(id) => (Dirty::BOTTOM, self.on_setup(id)),
             Id::Battery(id) => (Dirty::BOTTOM, self.on_battery(id)),
             Id::PadMouse => {
                 self.pad.toggle_mouse();

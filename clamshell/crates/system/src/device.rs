@@ -3,7 +3,8 @@
 //! suspend; waking is noticed by the clock thread, see [`crate::sleep`]), and notifications through the
 //! session's notification daemon (mako, on the main screen); the time zone, whether the network sets
 //! the clock (NTP) and the clock itself through timedated (`timedatectl`: setting them needs polkit's
-//! permission, which the image gives the session's user).
+//! permission, which the image gives the session's user); the account through the image's helper (see
+//! [`crate::account`]).
 
 use std::io;
 use std::path::PathBuf;
@@ -32,6 +33,8 @@ pub enum Command {
     StepClock(clamshell_core::ClockField, i8),
     /// A runner's `awake` command run: if it succeeds, the shown app keeps the screen on.
     AskAwake(Vec<String>),
+    /// The account read, or changed (then what came of it, and the account read again).
+    Account(clamshell_core::account::AccountCommand),
 }
 
 /// Whether `argv` succeeds (within a few seconds).
@@ -102,6 +105,20 @@ pub fn spawn(screenshots: Option<PathBuf>, sink: impl Sink) -> io::Result<Worker
                     if sink.send(Event::Tick { unix_secs: now, mono_secs: clamshell_core::mono_secs() }).is_err()
                         || sink.send(Event::Reading(Reading::Time(read_time(error)))).is_err()
                     {
+                        return;
+                    }
+                }
+                Command::Account(command) => {
+                    if command != clamshell_core::account::AccountCommand::Read {
+                        let result = crate::account::change(&command);
+                        if let Err(e) = &result {
+                            log::warn!("account: {e}");
+                        }
+                        if sink.send(Event::AccountChanged(result)).is_err() {
+                            return;
+                        }
+                    }
+                    if sink.send(Event::Reading(Reading::Account(crate::account::read()))).is_err() {
                         return;
                     }
                 }

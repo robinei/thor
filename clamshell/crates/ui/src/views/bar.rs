@@ -85,7 +85,7 @@ fn tab_button(s: &State, tab: Tab) -> (Id, Icon, Tone) {
             };
             (Id::Tab(tab), icon, if open { Tone::Accent } else { tone })
         }
-        Tab::Settings | Tab::Dock | Tab::Keyboard | Tab::Touchpad | Tab::Sysinfo | Tab::Time => {
+        Tab::Settings | Tab::Dock | Tab::Keyboard | Tab::Touchpad | Tab::Sysinfo | Tab::Time | Tab::Setup => {
             (Id::Tab(tab), Icon::for_tab(tab), if open { Tone::Accent } else { Tone::Dim })
         }
     }
@@ -123,8 +123,8 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> Rect {
     // Before the line, every tab, evenly spread (volume and brightness land near the middle; their
     // slider makes do with the room on either side). Each opens its tab; volume and brightness, held or
     // slid, bring up the slider, which runs along the screen's whole width.
-    let cell = bar.w.max(0.0) / (Tab::ALL.len() - 1) as f32;
-    for (i, tab) in Tab::ALL.into_iter().filter(|t| *t != Tab::Time).enumerate() {
+    let cell = bar.w.max(0.0) / Tab::ALL.into_iter().filter(|t| t.in_bar()).count() as f32;
+    for (i, tab) in Tab::ALL.into_iter().filter(|t| t.in_bar()).enumerate() {
         let (id, icon, tone) = tab_button(f.s, tab);
         let slides = matches!(id, Id::Control(_));
         icon_button(f, id, Rect::new(i as f32 * cell, 0.0, cell, bar_h), icon, tone);
@@ -166,8 +166,8 @@ fn draw_notice(f: &mut Frame, what: &NoticeKind, w: f32, bar_h: f32) {
         NoticeKind::Gyro(Some(false)) => (None, Fmt::of(format_args!("Moved: gyro not calibrated"))),
         NoticeKind::BottomRule(true) => (None, Fmt::of(format_args!("On the bottom screen from now on"))),
         NoticeKind::BottomRule(false) => (None, Fmt::of(format_args!("Back on top from now on"))),
-        NoticeKind::Files(Ok(done)) => (None, Fmt::of(format_args!("{done}"))),
-        NoticeKind::Files(Err(e)) => (None, Fmt::of(format_args!("{e}"))),
+        NoticeKind::Files(Ok(done)) | NoticeKind::Account(Ok(done)) => (None, Fmt::of(format_args!("{done}"))),
+        NoticeKind::Files(Err(e)) | NoticeKind::Account(Err(e)) => (None, Fmt::of(format_args!("{e}"))),
         NoticeKind::Enqueued(1, to) => (None, Fmt::of(format_args!("Added to {to}"))),
         NoticeKind::Enqueued(n, to) => (None, Fmt::of(format_args!("{n} added to {to}"))),
         NoticeKind::NoWindow(title) => (None, Fmt::of(format_args!("{title} has no window"))),

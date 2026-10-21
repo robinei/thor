@@ -12,5 +12,17 @@ if ! command -v claude > /dev/null; then
     read -rp "Press Enter to close " _
     exit 1
 fi
+# sudo: the password asked here, once; it counts for Claude's commands too (sudoers' global timestamp
+# for wheel: thor-image.sh), kept fresh while the pass runs, and forgotten after.
+echo "Maintenance needs the account's password (set in ClamShell: Settings, Password)."
+if ! sudo -v; then
+    echo "No sudo: is a password set?"
+    read -rp "Press Enter to close " _
+    exit 1
+fi
+(while sleep 240; do sudo -n -v 2> /dev/null || exit 0; done) &
+fresh=$!
 claude "${1:-/maintain}"
+kill "$fresh" 2> /dev/null
+sudo -k
 read -rp "Session ended. Press Enter to close " _

@@ -102,6 +102,9 @@ pub enum Event {
     Screenshot(Result<String, String>),
     /// A calibration of the gyro asked for ended: whether it took (the device was held still enough).
     GyroCalibrated(bool),
+    /// A change asked of the account's helper is done (what it did), or failed (why); its reading
+    /// follows (see [`crate::account`]).
+    AccountChanged(Result<String, String>),
     Quit,
 }
 
@@ -132,6 +135,8 @@ pub enum Reading {
     Backlights(Vec<String>),
     /// The time zone and the ones to choose from (while the time tab is open, and after setting one).
     Time(crate::time::TimeZones),
+    /// The account (while the setup tab is open, and after a change: see [`crate::account`]).
+    Account(crate::account::Account),
 }
 
 /// A press on a target, from touch, the mouse or the pad's A; and the pad's focus.

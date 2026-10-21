@@ -18,6 +18,7 @@ mod keymaps;
 mod levels;
 mod radio;
 mod settings;
+mod setup;
 mod shelf;
 mod sysinfo;
 mod time;
@@ -72,6 +73,7 @@ pub fn bottom(f: &mut Frame, screen: Rect) {
         Tab::Volume => levels::draw_volume(f),
         Tab::Brightness => levels::draw_brightness(f),
         Tab::Time => time::draw(f),
+        Tab::Setup => setup::draw(f),
     }
     // (Pointing: the area below the bar is a touchpad, what is in it faded; the touchpad tab is nothing else.)
     if f.s.bottom().pointing() && f.s.bottom().tab() != Tab::Touchpad {

@@ -11,7 +11,7 @@
 //!     settings screen's file); no folder: the initial ones;
 //!   - `window-rules.json`, `dock.json`, `autostart.json`,
 //!     `favourites.json`, `resume.json` (where shelf and the second screen were), `brightness.json`,
-//!     `clock.json`.
+//!     `clock.json`, `setup.json` (the setup done: see `clamshell_core::account`).
 //! - `plays.jsonl`: an entry's plays, a line each (its id, start in seconds since the epoch, duration in
 //!   seconds), appended; a line cut short is skipped.
 //!
@@ -131,6 +131,11 @@ struct ClockFile {
 }
 
 #[derive(Serialize, Deserialize)]
+struct SetupFile {
+    done: bool,
+}
+
+#[derive(Serialize, Deserialize)]
 struct Play {
     id: String,
     start: u64,
@@ -176,6 +181,7 @@ impl Store {
             }
             Save::Dock(list) => write_json(&self.file("dock.json"), &ids(list)),
             Save::Autostart(list) => write_json(&self.file("autostart.json"), &ids(list)),
+            Save::SetupDone => write_json(&self.file("setup.json"), &SetupFile { done: true }),
         }
     }
 
@@ -303,6 +309,11 @@ impl Store {
     pub fn resume(&self) -> Option<Resume> {
         let r: ResumeFile = read_json(&self.file("resume.json"))?;
         Some(Resume { collection: r.collection, tab: r.tab, places: r.places })
+    }
+
+    /// Whether the setup was done (else it opens at the start).
+    pub fn setup_done(&self) -> bool {
+        read_json::<SetupFile>(&self.file("setup.json")).is_some_and(|f| f.done)
     }
 
     /// Whether clocks show 12 hours (else, or unsaved, 24).

@@ -21,6 +21,7 @@ impl Editor {
     pub fn tab(&self) -> crate::Tab {
         match self.purpose {
             Purpose::Password { .. } => crate::Tab::Wifi,
+            Purpose::AccountPassword(_) => crate::Tab::Setup,
             Purpose::Env { .. } | Purpose::KeymapName(_) => crate::Tab::Settings,
             Purpose::FileName(_) => crate::Tab::Keyboard,
         }
@@ -37,6 +38,8 @@ pub enum Purpose {
     KeymapName(KeymapName),
     /// A browsed file's or folder's name (see [`crate::files`]).
     FileName(crate::files::FileName),
+    /// The account's password, current or new (see [`crate::account`]).
+    AccountPassword(crate::account::PasswordStep),
 }
 
 /// What a keymap's name is for.
@@ -215,6 +218,7 @@ impl crate::State {
             Purpose::Password { ssid } => self.join(ssid, Some(editor.text)),
             Purpose::KeymapName(action) => self.named_keymap(action, &editor.text),
             Purpose::FileName(purpose) => self.file_named(purpose, &editor.text),
+            Purpose::AccountPassword(step) => self.password_typed(step, editor.text),
         }
     }
 }

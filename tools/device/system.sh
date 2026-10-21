@@ -125,6 +125,10 @@ pulse.properties = {
 }
 EOF
 
+# The account helper for ClamShell's Password and Remote login settings (tools/device/thor-account, run
+# through pkexec; polkit allows it in 50-thor.rules).
+install -m 755 "$HERE/thor-account" "$R/usr/local/lib/thor/thor-account"
+
 # The checks at each boot (tools/device/thor-selftest): into the journal, kept on the card (its
 # directory makes journald's storage persistent), and /var/log/thor-selftest.log, so that a boot that
 # goes wrong can be read on another computer. Started early (once the root is writable), not waited for.
