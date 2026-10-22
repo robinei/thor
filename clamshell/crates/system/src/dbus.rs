@@ -255,17 +255,28 @@ impl Bus {
     }
 }
 
-/// A system-bus connection kept between calls (connected when first needed), and made again after the
-/// bus failed.
-#[derive(Default)]
+/// A bus connection kept between calls (connected when first needed), and made again after the bus
+/// failed.
 pub struct Kept {
+    session: bool,
     bus: Option<Bus>,
 }
 
 impl Kept {
+    /// The system bus's.
+    pub const fn system() -> Kept {
+        Kept { session: false, bus: None }
+    }
+
+    /// The session bus's.
+    pub const fn session() -> Kept {
+        Kept { session: true, bus: None }
+    }
+
     pub fn get(&mut self) -> Result<&mut Bus> {
         let bus = match self.bus.take() {
             Some(bus) => bus,
+            None if self.session => Bus::session()?,
             None => Bus::system()?,
         };
         Ok(self.bus.insert(bus))

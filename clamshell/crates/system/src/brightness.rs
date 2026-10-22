@@ -72,11 +72,16 @@ pub fn spawn(backlights: Backlights) -> io::Result<Worker<Command>> {
 
 /// Sets backlights: through logind's session (its connection kept, made again after the bus fails),
 /// else by writing sysfs (which needs write access).
-#[derive(Default)]
 struct Setter {
     logind: Kept,
     bus: Quiet,
     sysfs: Quiet,
+}
+
+impl Default for Setter {
+    fn default() -> Setter {
+        Setter { logind: Kept::system(), bus: Quiet::default(), sysfs: Quiet::default() }
+    }
 }
 
 impl Setter {

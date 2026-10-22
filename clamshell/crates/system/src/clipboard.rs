@@ -79,7 +79,7 @@ pub fn spawn(sink: impl Sink + Clone + 'static) -> io::Result<()> {
             let sink = crate::lock(&sink);
             let _ = sink.send(Event::Reading(Reading::Clipboard(text.map(Arc::from))));
         };
-        let kept = Arc::new(Kept { text: Mutex::new(before), on_read: Box::new(on_read) });
+        let kept = Arc::new(KeptText { text: Mutex::new(before), on_read: Box::new(on_read) });
         match Keeper::connect(Mode::Keep { kept, own: None }) {
             Ok((mut keeper, mut queue)) => {
                 log::info!("clipboard: kept by ClamShell");
@@ -124,12 +124,12 @@ pub fn set(text: String) -> Result<(), String> {
 }
 
 /// What is kept, and who is told.
-struct Kept {
+struct KeptText {
     text: Mutex<Option<String>>,
     on_read: Box<dyn Fn(Option<String>) + Send + Sync>,
 }
 
-impl Kept {
+impl KeptText {
     fn text(&self) -> std::sync::MutexGuard<'_, Option<String>> {
         crate::lock(&self.text)
     }
@@ -137,7 +137,7 @@ impl Kept {
 
 enum Mode {
     /// ClamShell keeping the clipboard; its own offer, while the clipboard is it.
-    Keep { kept: Arc<Kept>, own: Option<ExtDataControlSourceV1> },
+    Keep { kept: Arc<KeptText>, own: Option<ExtDataControlSourceV1> },
     /// `--clipboard get`: the clipboard's offer of text, once the compositor has said.
     Get { found: Option<(ExtDataControlOfferV1, &'static str)> },
     /// `--clipboard set`: the text offered, and whether it has been taken (or replaced).

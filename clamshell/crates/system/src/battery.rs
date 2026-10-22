@@ -86,7 +86,7 @@ fn sample(commands: &Receiver<Command>, sink: &impl Sink) -> Result<(), Closed> 
     let mut sampler = Sampler::default();
     let mut battery = Battery::default();
     let mut last_history: Option<Instant> = None;
-    let mut upower = Kept::default();
+    let mut upower = Kept::system();
     loop {
         match worker::next(commands, sampling.then_some(SAMPLE_EVERY)) {
             Next::Command(command) => {
@@ -342,7 +342,7 @@ mod live {
     #[test]
     #[ignore]
     fn reads_upower() {
-        match history(&mut Kept::default()) {
+        match history(&mut Kept::system()) {
             Ok(charges) => println!("{} points, the last {:?}", charges.len(), charges.last()),
             Err(e) => println!("no history: {e}"),
         }

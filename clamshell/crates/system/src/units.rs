@@ -70,19 +70,15 @@ impl From<dbus::Error> for Error {
 lost_on!(Error: dbus::Error);
 
 /// The session bus, connected once for every one-off unit operation (made from several threads, one at
-/// a time); connected again after a call failed.
-static BUS: std::sync::Mutex<Option<Bus>> = std::sync::Mutex::new(None);
+/// a time); connected again after the bus failed.
+static BUS: std::sync::Mutex<dbus::Kept> = std::sync::Mutex::new(dbus::Kept::session());
 
 /// `call` on the user manager, over the shared connection.
 fn with_manager<T>(call: impl FnOnce(&mut Bus) -> Result<T, Error>) -> Result<T, Error> {
-    let mut shared = crate::lock(&BUS);
-    let bus = match shared.take() {
-        Some(bus) => bus,
-        None => Bus::session()?,
-    };
-    let result = call(shared.insert(bus));
-    if result.is_err() {
-        *shared = None;
+    let mut kept = crate::lock(&BUS);
+    let result = call(kept.get()?);
+    if let Err(Error::Bus(e)) = &result {
+        kept.failed(e);
     }
     result
 }
