@@ -15,8 +15,19 @@ pub fn get(url: &str, headers: &[&str]) -> Option<Vec<u8>> {
     for h in headers {
         config.push_str(&format!("header = {}\n", quoted(h)));
     }
-    let out = command::run("curl", &["-sfL", "--max-time", "30", "-A", "ClamShell", "-K", "-"], Some(config.as_bytes()), CURL_LIMIT).ok()?;
-    out.status.success().then_some(out.stdout)
+    let out = command::run("curl", &["-sfL", "--max-time", "30", "-A", "ClamShell", "-K", "-"], Some(config.as_bytes()), CURL_LIMIT)
+        .inspect_err(|e| log::warn!("{}: {e}", shown(url)))
+        .ok()?;
+    if !out.status.success() {
+        log::debug!("{}: curl {}", shown(url), out.status);
+        return None;
+    }
+    Some(out.stdout)
+}
+
+/// `url` as a log line shows it: without its query, which may hold an API key.
+fn shown(url: &str) -> &str {
+    url.split_once('?').map_or(url, |(base, _)| base)
 }
 
 /// How long curl may take: its own limit, and a little more.
@@ -44,17 +55,18 @@ fn quoted(text: &str) -> String {
 
 /// The body of `url` (see [`get`]) as JSON.
 pub fn get_json(url: &str, headers: &[&str]) -> Option<Value> {
-    serde_json::from_slice(&get(url, headers)?).ok()
+    serde_json::from_slice(&get(url, headers)?).inspect_err(|e| log::warn!("{}: {e}", shown(url))).ok()
 }
 
 /// `file`'s contents if it is younger than `max_age`; else `fetch`ed and kept in it (see
 /// [`fs::write_file`]), or (the fetch failing) its older contents, if any.
 pub fn kept(file: &Path, max_age: Duration, fetch: impl FnOnce() -> Option<Vec<u8>>) -> Option<Vec<u8>> {
     let age = std::fs::metadata(file).and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok());
-    if age.is_some_and(|a| a < max_age)
-        && let Ok(kept) = std::fs::read(file)
-    {
-        return Some(kept);
+    if age.is_some_and(|a| a < max_age) {
+        match std::fs::read(file) {
+            Ok(kept) => return Some(kept),
+            Err(e) => log::warn!("{}: {e}", file.display()),
+        }
     }
     match fetch().filter(|b| !b.is_empty()) {
         Some(body) => {
@@ -63,7 +75,13 @@ pub fn kept(file: &Path, max_age: Duration, fetch: impl FnOnce() -> Option<Vec<u
             }
             Some(body)
         }
-        None => std::fs::read(file).ok(),
+        None => std::fs::read(file)
+            .inspect_err(|e| {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    log::warn!("{}: {e}", file.display());
+                }
+            })
+            .ok(),
     }
 }
 
