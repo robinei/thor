@@ -175,7 +175,7 @@ impl Handles {
             Watch::Time => {}
             // (The Device view: the account, and the time zone it shows.)
             Watch::Account if on => {
-                self.system.send(crate::device::Command::Account(clamshell_core::account::AccountCommand::Read));
+                self.system.send(crate::device::Command::Account(clamshell_core::device::account::AccountCommand::Read));
                 self.system.send(crate::device::Command::ReadTime);
             }
             Watch::Account => {}

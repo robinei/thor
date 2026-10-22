@@ -75,7 +75,7 @@ pub enum Command {
     /// Calibrate the controller's sticks (see [`calibrate`]): its progress and end go to the state.
     CalibrateSticks,
     /// The sticks' calibrations, by controller (at start; one made here is kept here too).
-    Sticks(clamshell_core::sticks::Calibrations),
+    Sticks(clamshell_core::device::sticks::Calibrations),
 }
 
 /// A command's acknowledgement: sent once the command is carried out.
@@ -161,7 +161,7 @@ struct PadThread<S> {
     /// The keymap's buzz playing, until when.
     buzz: Option<(Buzz, Instant)>,
     /// The sticks' calibrations, by controller.
-    sticks: clamshell_core::sticks::Calibrations,
+    sticks: clamshell_core::device::sticks::Calibrations,
 }
 
 /// A controller taken over, with its gyro if one is found.

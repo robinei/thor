@@ -1,4 +1,4 @@
-//! The sticks' calibration in the pad thread (see `clamshell_core::sticks`): the controller's raw stick
+//! The sticks' calibration in the pad thread (see `clamshell_core::device::sticks`): the controller's raw stick
 //! values corrected through its calibration as they come in ([`Sticks::correct`]; an extreme passed
 //! widens it, for this session), before the router or anything else reads them; and a calibration
 //! asked for, fed the raw values (the router doesn't get the sticks meanwhile, so turning them doesn't
@@ -6,7 +6,7 @@
 
 use std::time::{Duration, Instant};
 
-use clamshell_core::sticks::{AXES, Calibrator, Step, Sticks};
+use clamshell_core::device::sticks::{AXES, Calibrator, Step, Sticks};
 use evdev::AbsoluteAxisCode;
 
 use super::route::PadSnapshot;
@@ -41,7 +41,7 @@ struct Calibrating {
 
 /// What a calibration said.
 pub enum Said {
-    Progress(clamshell_core::sticks::Progress),
+    Progress(clamshell_core::device::sticks::Progress),
     Done(Option<Sticks>),
 }
 
@@ -124,7 +124,7 @@ impl StickState {
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
-    use clamshell_core::sticks::StickAxis;
+    use clamshell_core::device::sticks::StickAxis;
 
     fn state(sticks: Option<Sticks>) -> StickState {
         let axes = STICK_AXES.iter().map(|&code| super::super::route::Axis { code, value: 0, rest: 0 }).collect();

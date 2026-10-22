@@ -10,8 +10,8 @@ use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use clamshell_core::account::AccountCommand;
-use clamshell_core::idle::IdleEvent;
+use clamshell_core::device::account::AccountCommand;
+use clamshell_core::device::idle::IdleEvent;
 use clamshell_core::{Event, Reading, TimeZones};
 
 use crate::worker::Worker;
@@ -36,7 +36,7 @@ pub enum Command {
     /// A runner's `awake` command run: if it succeeds, the shown app keeps the screen on.
     AskAwake(Vec<String>),
     /// The account read, or changed (then what came of it, and the account read again).
-    Account(clamshell_core::account::AccountCommand),
+    Account(clamshell_core::device::account::AccountCommand),
     /// The top screen's refresh rate calibrated (thor-panel-calibration, on a thread of its own: it takes
     /// a couple of minutes); what it said comes back.
     CalibrateRefresh,

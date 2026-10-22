@@ -343,13 +343,13 @@ mod tests {
         long(&mut s, dock(0));
         assert_eq!(tap(&mut s, Id::Dock(DockId::ForceKill)), vec![Effect::EndRun { key, force: true }, closed()]);
         // Home with B: the window in front closes; held, its entry quits.
-        assert_eq!(s.apply(Event::Device(hardware::DeviceKey::CloseWindow)).1, vec![Effect::Window(WindowCommand::Close(vec![5]))]);
-        assert_eq!(s.apply(Event::Device(hardware::DeviceKey::Quit)).1, vec![Effect::Window(WindowCommand::Close(vec![5]))]);
+        assert_eq!(s.apply(Event::Device(crate::device::buttons::DeviceKey::CloseWindow)).1, vec![Effect::Window(WindowCommand::Close(vec![5]))]);
+        assert_eq!(s.apply(Event::Device(crate::device::buttons::DeviceKey::Quit)).1, vec![Effect::Window(WindowCommand::Close(vec![5]))]);
     }
 
     #[test]
     fn home_b_closes_the_bottom_screens_window_with_none_in_front_above() {
-        use crate::hardware::DeviceKey;
+        use crate::device::buttons::DeviceKey;
         let mut s = state();
         s.apply(Event::Windows(vec![shelf_window(false), foot()]));
         s.apply(Event::Device(DeviceKey::WindowDown));

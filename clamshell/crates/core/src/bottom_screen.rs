@@ -191,7 +191,7 @@ impl State {
     /// nor while both screens are off (idle): the screens' coming back reads [`State::bottom_off`].
     pub(crate) fn follow_bottom_power(&mut self) -> Vec<Effect> {
         let wanted = self.bottom_idle_wanted();
-        let screens_off = self.idle.stage() >= crate::idle::Stage::Off;
+        let screens_off = self.idle.stage() >= crate::device::idle::Stage::Off;
         if wanted == std::mem::replace(&mut self.bottom.screen.idle_off, wanted) || self.bottom.screen.off || screens_off {
             return vec![];
         }
@@ -327,7 +327,7 @@ impl State {
 mod tests {
     use super::*;
     use crate::Event;
-    use crate::hardware::DeviceKey;
+    use crate::device::buttons::DeviceKey;
     use crate::running::{Origin, Running};
     use crate::settings::{Choice, Setting};
     use crate::testkit::state;

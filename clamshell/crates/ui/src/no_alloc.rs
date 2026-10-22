@@ -4,13 +4,13 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
-use clamshell_core::account::Account;
+use clamshell_core::device::account::Account;
+use clamshell_core::device::sticks::Calibrator;
 use clamshell_core::device::{DeviceId, SticksEvent};
 use clamshell_core::keyboard::{self, Key, Modifier};
 use clamshell_core::keymap::{Button, Input, Keymaps, Layer, Param, Side};
 use clamshell_core::levels::slider::Control;
 use clamshell_core::settings::Setting;
-use clamshell_core::sticks::Calibrator;
 use clamshell_core::windows::Window;
 use clamshell_core::{
     DockId, EditorId, Event, Id, Init, Instance, KeymapId, ListEvent, ListId, PointerEvent, Reading, RowPart, Scope, SettingsId, ShelfEvent, ShelfId, Slide,

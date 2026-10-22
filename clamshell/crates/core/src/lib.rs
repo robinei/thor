@@ -7,13 +7,12 @@
 //! ([`Radios`]), the controller ([`Pad`]), focus and presses ([`Pointer`]), and the system's readings
 //! ([`Sys`]). The rules are a module per feature, each an `impl State` block, since most features read
 //! more than one group. A few pure models live here too because the system threads share them with the
-//! state: the fan's mode ([`settings::fan`]) and the sticks' calibration ([`sticks`]).
+//! state: the fan's mode ([`settings::fan`]) and the sticks' calibration ([`crate::device::sticks`]).
 //!
 //! Panics are ruled out by the workspace's lints (no `unwrap`, `expect` or indexing). A lookup whose
 //! index is valid by construction (an enum's place in an array sized for it, an index the library's own
 //! tree holds) falls back quietly; where a bug could reach a fallback, a `debug_assert!` says so in tests.
 
-pub mod account;
 pub mod actions;
 pub mod autostart;
 pub mod background;
@@ -27,9 +26,7 @@ pub mod enqueue;
 mod event;
 pub mod files;
 mod found;
-pub mod hardware;
 mod id;
-pub mod idle;
 pub mod instance;
 pub mod keyboard;
 pub mod keymap;
@@ -45,7 +42,6 @@ mod running;
 mod session;
 pub mod settings;
 mod shelf;
-pub mod sticks;
 mod sys;
 mod tab;
 pub mod time;
@@ -113,8 +109,8 @@ pub struct Init {
     /// ClamShell's first start (the Device view not closed with Done yet): the Device view opens (see
     /// [`device`]).
     pub first_start: bool,
-    /// The sticks' calibrations, by controller (see [`sticks`]).
-    pub sticks: sticks::Calibrations,
+    /// The sticks' calibrations, by controller (see [`crate::device::sticks`]).
+    pub sticks: crate::device::sticks::Calibrations,
 }
 
 #[derive(Debug, Default)]
@@ -160,7 +156,7 @@ pub struct State {
     /// (by hand, by NTP) is no time gone by. The wall clock dates things only.
     mono_secs: u64,
     saves: Saves,
-    idle: idle::Idle,
+    idle: crate::device::idle::Idle,
     /// ClamShell is the device's own session (see [`Init::device_session`]).
     device_session: bool,
     /// Which programs' windows go to the bottom screen.
@@ -261,7 +257,7 @@ impl State {
         &self.keyboard
     }
 
-    pub fn idle(&self) -> &idle::Idle {
+    pub fn idle(&self) -> &crate::device::idle::Idle {
         &self.idle
     }
 
@@ -1017,11 +1013,11 @@ impl State {
     fn follow_watch(&mut self) -> Vec<Effect> {
         let mut effects = Vec::new();
         // (The bar's status: while the screens are on.)
-        let screens_off = self.idle.stage() >= idle::Stage::Off;
+        let screens_off = self.idle.stage() >= crate::device::idle::Stage::Off;
         if screens_off != std::mem::replace(&mut self.status_unwatched, screens_off) {
             effects.push(Effect::Watch(Watch::Status, !screens_off));
         }
-        let seen = self.ui_up && !self.bottom_shows_windows() && !self.bottom_off() && self.idle.stage() < idle::Stage::Off;
+        let seen = self.ui_up && !self.bottom_shows_windows() && !self.bottom_off() && self.idle.stage() < crate::device::idle::Stage::Off;
         let tab = match self.bottom.tab {
             Tab::Dock if self.dock.menu.is_some() => Some(Watch::Battery),
             tab => tab.watch(),

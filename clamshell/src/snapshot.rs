@@ -445,7 +445,11 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
             vec![ShelfEvent::Rows(8).into()],
             vec![
                 shot("device-unavailable.png", Top, open_device().into_iter().chain([Reading::Time(demo::time_zones()).into()]).collect()),
-                shot("device.png", Top, vec![Reading::Account(clamshell_core::account::Account { available: true, password: false, ssh: false }).into()]),
+                shot(
+                    "device.png",
+                    Top,
+                    vec![Reading::Account(clamshell_core::device::account::Account { available: true, password: false, ssh: false }).into()],
+                ),
                 shot("device-sticks.png", Top, vec![tap(Id::Device(DeviceId::Sticks)), Event::Sticks(SticksEvent::Progress(demo::sticks_progress()))]),
                 shot("device-password.png", Bottom, [tap(Id::Device(DeviceId::Password))].into_iter().chain(control::type_text("secret")?).collect()),
             ],

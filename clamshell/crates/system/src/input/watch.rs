@@ -14,8 +14,8 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use clamshell_core::Event;
-use clamshell_core::hardware::DeviceKey;
-use clamshell_core::idle::IdleEvent;
+use clamshell_core::device::buttons::DeviceKey;
+use clamshell_core::device::idle::IdleEvent;
 use evdev::raw_stream::RawDevice;
 use evdev::{AbsoluteAxisCode, EventType, KeyCode, PropType, SwitchCode, SynchronizationCode};
 use std::os::fd::OwnedFd;

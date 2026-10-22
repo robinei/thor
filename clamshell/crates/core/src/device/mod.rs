@@ -1,19 +1,24 @@
 //! The Device view: on the main screen in shelf's place ([`TopView`]), opened by the Tools' Device entry
 //! (from shelf, or pinned to the dock), and by itself at ClamShell's first start. What a device needs set
 //! up once and now and then, a row each: Wi-Fi (its tab), the time zone (the time tab), the password and
-//! remote login (see [`crate::account`]); the controller calibrated, its sticks ([`crate::sticks`]) and
+//! remote login (see [`crate::device::account`]); the controller calibrated, its sticks ([`crate::device::sticks`]) and
 //! its gyro; the top screen's refresh rate calibrated (thor-panel-calibration); Done at the first start.
 //! B, Home or Close go back to shelf.
 
+pub mod account;
+pub mod buttons;
+pub mod idle;
+pub mod sticks;
+
 use crate::State;
-use crate::account::{AccountCommand, PasswordStep};
 use crate::editor::{Editor, Purpose};
 use crate::effect::{Effect, Save, WindowCommand};
 use crate::kit::secret::Secret;
 use crate::notice::NoticeKind;
-use crate::sticks::{Calibrations, Progress, Sticks};
 use crate::tab::Tab;
 use crate::{Id, ShelfId};
+use account::{AccountCommand, PasswordStep};
+use sticks::{Calibrations, Progress, Sticks};
 
 /// What the main screen shows of ClamShell's own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -219,7 +224,7 @@ mod tests {
     }
 
     fn available(s: &mut State, password: bool) {
-        s.apply(Event::Reading(Reading::Account(crate::account::Account { available: true, password, ssh: false })));
+        s.apply(Event::Reading(Reading::Account(crate::device::account::Account { available: true, password, ssh: false })));
     }
 
     #[test]
@@ -270,11 +275,11 @@ mod tests {
     fn a_sticks_calibration_shows_its_progress_and_keeps_its_result() {
         let mut s = State::new(init());
         assert_eq!(tap(&mut s, DeviceId::Sticks), vec![Effect::CalibrateSticks]);
-        let p = crate::sticks::Calibrator::new(-1024, 1024).progress();
+        let p = crate::device::sticks::Calibrator::new(-1024, 1024).progress();
         s.apply(Event::Sticks(SticksEvent::Progress(p)));
         assert!(s.device().sticks().is_some());
         assert!(tap(&mut s, DeviceId::Sticks).is_empty(), "one at a time");
-        let sticks = Sticks { axes: [crate::sticks::StickAxis { low: -900, centre: 0, high: 900 }; crate::sticks::AXES] };
+        let sticks = Sticks { axes: [crate::device::sticks::StickAxis { low: -900, centre: 0, high: 900 }; crate::device::sticks::AXES] };
         let effects = s.apply(Event::Sticks(SticksEvent::Done("pad".into(), Some(sticks)))).1;
         assert!(s.device().calibrated("pad"));
         assert!(effects.iter().any(|e| matches!(e, Effect::Save(Save::Sticks(c)) if c.contains_key("pad"))), "{effects:?}");

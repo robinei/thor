@@ -318,7 +318,7 @@ impl Store {
     }
 
     /// The sticks' calibrations, by controller.
-    pub fn sticks(&self) -> clamshell_core::sticks::Calibrations {
+    pub fn sticks(&self) -> clamshell_core::device::sticks::Calibrations {
         read_json(&self.file("sticks.json")).unwrap_or_default()
     }
 

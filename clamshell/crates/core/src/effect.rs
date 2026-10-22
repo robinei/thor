@@ -53,7 +53,7 @@ pub enum Effect {
     /// `pause` or `resume` (see [`crate::background`]).
     RunnerCommand(Vec<String>),
     /// A runner's `awake` command: whether its app shown keeps the screen on (then
-    /// [`crate::idle::IdleEvent::KeptAwake`]).
+    /// [`crate::device::idle::IdleEvent::KeptAwake`]).
     AskAwake(Vec<String>),
     /// An entry's slice (all its launches' processes) frozen, or thawed (see [`crate::background`]).
     Freeze {
@@ -125,9 +125,9 @@ pub enum Effect {
     Sleep,
     /// Both screens to a file; the result comes back as [`crate::Event::Screenshot`].
     Screenshot,
-    /// Ask the account's helper (see [`crate::account`]); a change is reported, then the account read
+    /// Ask the account's helper (see [`crate::device::account`]); a change is reported, then the account read
     /// again.
-    Account(crate::account::AccountCommand),
+    Account(crate::device::account::AccountCommand),
     /// Set the system's time zone (tzdata's name); the time zones are read again after.
     SetTimeZone(String),
     /// The system's clock set by the network (NTP), or not; read again after.
@@ -145,7 +145,7 @@ pub enum Effect {
     /// Calibrate the gyro from its next second (the device held still); the result comes back as
     /// [`crate::Event::GyroCalibrated`].
     CalibrateGyro,
-    /// Calibrate the sticks (the pad thread: [`crate::sticks::Calibrator`]); its progress and end come
+    /// Calibrate the sticks (the pad thread: [`crate::device::sticks::Calibrator`]); its progress and end come
     /// back as [`crate::Event::Sticks`].
     CalibrateSticks,
     /// Calibrate the top screen's refresh rate (thor-panel-calibration); the end comes back as
@@ -169,7 +169,7 @@ pub enum Watch {
     Battery,
     /// The time zone and the ones to choose from.
     Time,
-    /// The account (see [`crate::account`]), and the time zone (the Device view shows both).
+    /// The account (see [`crate::device::account`]), and the time zone (the Device view shows both).
     Account,
     /// The system's metrics (read more often while shown).
     Metrics,
@@ -201,7 +201,7 @@ pub enum Save {
     /// The first start is over (the Device view closed with Done): it doesn't open by itself again.
     FirstStartDone,
     /// The sticks' calibrations, by controller.
-    Sticks(crate::sticks::Calibrations),
+    Sticks(crate::device::sticks::Calibrations),
 }
 
 /// What the compositor is asked to do.

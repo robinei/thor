@@ -48,8 +48,8 @@ pub enum Purpose {
     KeymapName(KeymapName),
     /// A browsed file's or folder's name (see [`crate::files`]).
     FileName(crate::files::FileName),
-    /// The account's password, current or new (see [`crate::account`]).
-    AccountPassword(crate::account::PasswordStep),
+    /// The account's password, current or new (see [`crate::device::account`]).
+    AccountPassword(crate::device::account::PasswordStep),
 }
 
 /// What a keymap's name is for.

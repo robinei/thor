@@ -4,7 +4,7 @@
 //! state out, so switching routes is tested here (whatever a mapping holds down is let go when the pad
 //! leaves it).
 
-use clamshell_core::hardware::DeviceKey;
+use clamshell_core::device::buttons::DeviceKey;
 use std::time::Instant;
 
 use clamshell_core::{Event, PadInput, PadRoute};

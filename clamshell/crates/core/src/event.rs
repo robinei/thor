@@ -6,9 +6,9 @@ use crate::touch::Pointing;
 use std::sync::Arc;
 
 use crate::battery::Battery;
-use crate::hardware::DeviceKey;
+use crate::device::buttons::DeviceKey;
+use crate::device::idle::IdleEvent;
 use crate::id::Id;
-use crate::idle::IdleEvent;
 use crate::instance::Instance;
 use crate::levels::slider::Control;
 use crate::levels::{Audio, Level};
@@ -100,7 +100,7 @@ pub enum Event {
     /// The top screen's refresh rate's calibration ended: what it said, or why it failed.
     RefreshCalibrated(Result<String, String>),
     /// A change asked of the account's helper is done (what it did), or failed (why); its reading
-    /// follows (see [`crate::account`]).
+    /// follows (see [`crate::device::account`]).
     AccountChanged(Result<String, String>),
     Quit,
 }
@@ -132,8 +132,8 @@ pub enum Reading {
     Backlights(Vec<String>),
     /// The time zone and the ones to choose from (while the time tab is open, and after setting one).
     Time(crate::time::TimeZones),
-    /// The account (while the Device view is open, and after a change: see [`crate::account`]).
-    Account(crate::account::Account),
+    /// The account (while the Device view is open, and after a change: see [`crate::device::account`]).
+    Account(crate::device::account::Account),
 }
 
 /// A press on a target, from touch, the mouse or the pad's A; and the pad's focus.

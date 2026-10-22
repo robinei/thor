@@ -10,7 +10,7 @@ use std::fmt;
 use std::io::BufRead;
 use std::path::PathBuf;
 
-use clamshell_core::hardware::DeviceKey;
+use clamshell_core::device::buttons::DeviceKey;
 use clamshell_core::keyboard::{self, Key, Modifier, Named};
 use clamshell_core::keymap::{Actuation, Dir, Input, Layer, MouseButton, Output, PadOut, Param, Side};
 use clamshell_core::levels::Level;

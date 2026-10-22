@@ -7,7 +7,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use clamshell_core::account::{Account, AccountCommand};
+use clamshell_core::device::account::{Account, AccountCommand};
 
 use crate::command;
 

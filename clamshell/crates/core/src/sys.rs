@@ -38,8 +38,8 @@ pub struct Sys {
     pub battery: Battery,
     /// The time zone and the ones to choose from, as last read.
     pub time: crate::time::TimeZones,
-    /// The account, as last read (see [`crate::account`]).
-    pub account: crate::account::Account,
+    /// The account, as last read (see [`crate::device::account`]).
+    pub account: crate::device::account::Account,
     /// The lowest of [`WARN_AT`] warned about since the battery last charged.
     warned: Option<u8>,
 }
