@@ -7,7 +7,7 @@
 //! ([`Radios`]), the controller ([`Pad`]), focus and presses ([`Pointer`]), and the system's readings
 //! ([`Sys`]). The rules are a module per feature, each an `impl State` block, since most features read
 //! more than one group. A few pure models live here too because the system threads share them with the
-//! state: the fan's curve ([`fan`]) and the sticks' calibration ([`sticks`]).
+//! state: the fan's mode ([`settings::fan`]) and the sticks' calibration ([`sticks`]).
 //!
 //! Panics are ruled out by the workspace's lints (no `unwrap`, `expect` or indexing). A lookup whose
 //! index is valid by construction (an enum's place in an array sized for it, an index the library's own
@@ -25,7 +25,6 @@ pub mod editor;
 mod effect;
 pub mod enqueue;
 mod event;
-pub mod fan;
 pub mod files;
 mod found;
 pub mod hardware;
@@ -39,7 +38,6 @@ pub mod levels;
 pub mod metrics;
 pub mod nav;
 pub mod notice;
-mod panel;
 pub mod program;
 pub mod radios;
 mod resume;
@@ -66,14 +64,15 @@ pub use crate::kit::list::Scroll;
 pub use crate::nav::lists::{ListEvent, ListId, Lists, RowPart};
 pub use crate::nav::pad::{Claimant, Pad, PadInput, PadMouse, PadRoute};
 pub use crate::nav::pointer::Pointer;
+pub use crate::settings::env::{count_env, parse_env};
+pub use crate::settings::panel::{Scope, TileOrigin};
 pub use dock::{Dock, DockItem};
-pub use editor::{Editor, count_env, parse_env};
+pub use editor::Editor;
 pub use effect::{Dirty, Effect, Save, Watch, WindowCommand};
 pub use event::{Event, LaunchEvent, LevelEvent, PointerEvent, Reading, ShelfEvent, Slide};
 pub use id::{AudioId, BtId, DockId, EditorId, Hold, Id, KeymapId, SettingsId, ShelfId, Target, WifiId};
 pub use instance::Instance;
 pub use levels::{Brightness, Level, Levels, Sound};
-pub use panel::{Scope, TileOrigin};
 pub use program::Program;
 pub use radios::{RadioStatus, Radios};
 pub use running::{Front, Launching, Origin, Running};

@@ -14,7 +14,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use clamshell_core::fan::{MODE_FILE, Mode};
+use clamshell_core::settings::fan::{MODE_FILE, Mode};
 
 mod curve;
 use curve::Duty;

@@ -3,12 +3,16 @@
 //! ones); [`Overrides`] a game's own choices, each replacing the global one where set; [`Settings`] all
 //! of them, with the environment variables.
 
+pub mod env;
+pub mod fan;
+pub(crate) mod panel;
+
 use std::collections::HashMap;
 use std::fmt::Write;
 use std::sync::Arc;
 
-use crate::editor::parse_env;
 use crate::kit::names::names;
+use env::parse_env;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Setting {
@@ -283,7 +287,7 @@ impl Setting {
             Setting::Upscale => Some(&Upscale::TABLE),
             Setting::BottomScreen => Some(&BottomWhenIdle::TABLE),
             Setting::BigCores => Some(&Cores::TABLE),
-            Setting::Fan => Some(&crate::fan::Mode::TABLE),
+            Setting::Fan => Some(&crate::settings::fan::Mode::TABLE),
             Setting::PadMouse => Some(&MouseAtLaunch::TABLE),
             Setting::Rumble => Some(&RumbleStrength::TABLE),
             Setting::Background => Some(&InBackground::TABLE),

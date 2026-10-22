@@ -18,7 +18,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use clamshell_core::fan;
+use clamshell_core::settings::fan;
 use clamshell_core::settings::{Cores, Hud, PowerProfile};
 use clamshell_core::settings::{Setting, Values};
 

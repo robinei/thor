@@ -8,7 +8,7 @@ use crate::editor::Editor;
 use crate::effect::Watch;
 use crate::event::Reading;
 use crate::kit::names::names;
-use crate::panel::Scope;
+use crate::settings::panel::Scope;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Tab {
