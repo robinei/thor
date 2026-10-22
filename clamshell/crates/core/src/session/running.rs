@@ -21,6 +21,7 @@
 //! (shelf, a running entry, another window) decides where the pad goes, what Home does and what the settings
 //! page edits.
 
+use crate::{Dirty, LaunchEvent};
 use std::sync::Arc;
 
 use clamshell_library::{Launch, ids};
@@ -621,6 +622,23 @@ impl State {
         }
         self.session.quitting = quitting;
         effects
+    }
+}
+
+impl State {
+    pub(crate) fn on_launch_event(&mut self, event: LaunchEvent) -> (Dirty, Vec<Effect>) {
+        let effects = match event {
+            LaunchEvent::Position { entry: game, position } => {
+                self.shelf.set_position(&game, position, self.unix_secs);
+                vec![]
+            }
+            // (A launch that never started: nothing runs one less, but it is no longer starting.)
+            LaunchEvent::LaunchFailed(game) => {
+                self.launch_failed(game);
+                vec![]
+            }
+        };
+        (Dirty::BOTH, effects)
     }
 }
 

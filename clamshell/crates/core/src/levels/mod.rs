@@ -14,12 +14,11 @@
 
 pub mod slider;
 
-use crate::State;
 use crate::effect::Effect;
 use crate::id::Id;
-use crate::kit::list::ItemKey;
-use crate::kit::list::Rows;
+use crate::kit::list::{ItemKey, Rows};
 use crate::nav::lists::{ListId, RowPart};
+use crate::{AudioId, Dirty, LevelEvent, Slide, State};
 use slider::{Control, Slider};
 
 /// A level row.
@@ -437,6 +436,62 @@ impl State {
         match part {
             RowPart::Mute => self.levels.toggle_stream_mute(i),
             RowPart::Main | RowPart::Level | RowPart::Edit => vec![],
+        }
+    }
+}
+
+impl State {
+    /// The volume tab's buttons.
+    pub(crate) fn on_audio(&mut self, id: AudioId) -> Vec<Effect> {
+        match id {
+            AudioId::MuteOutput => self.levels.toggle_mute(),
+            AudioId::Output(i) => self.levels.choose_output(usize::from(i)),
+        }
+    }
+
+    /// Changes the levels with `change`; a brightness changed is saved a moment later.
+    pub(crate) fn change_levels(&mut self, change: impl FnOnce(&mut Levels) -> Vec<Effect>) -> Vec<Effect> {
+        let before = self.levels.brightness().clone();
+        let effects = change(&mut self.levels);
+        if *self.levels.brightness() != before {
+            self.saves.brightness.touch(self.mono_secs);
+        }
+        effects
+    }
+
+    pub(crate) fn on_slide(&mut self, slide: Slide) -> (Dirty, Vec<Effect>) {
+        match slide {
+            Slide::Start { control: Control::Param(param), x, width } => {
+                self.param_slide_start(param, x, width);
+                (Dirty::BOTTOM, vec![])
+            }
+            Slide::Start { control, x, width } => {
+                self.levels.slide_start(control, x, width);
+                (Dirty::BOTTOM, vec![])
+            }
+            Slide::To { x } if self.levels.slider().is_none() => (if self.param_slide_to(x) { Dirty::BOTTOM } else { Dirty::NONE }, vec![]),
+            Slide::To { x } => {
+                let effects = self.change_levels(|l| l.slide_to(x));
+                (if effects.is_empty() { Dirty::NONE } else { Dirty::BOTTOM }, effects)
+            }
+            Slide::End => {
+                self.levels.slide_end();
+                (Dirty::BOTTOM, self.param_slide_end())
+            }
+        }
+    }
+
+    pub(crate) fn on_level(&mut self, event: LevelEvent) -> (Dirty, Vec<Effect>) {
+        match event {
+            LevelEvent::Set(level, value) => {
+                let Some(level) = self.resolve_level(level) else {
+                    return (Dirty::NONE, vec![]);
+                };
+                let before = self.levels.level(level);
+                let effects = self.change_levels(|l| l.set(level, value));
+                (if self.levels.level(level) == before { Dirty::NONE } else { Dirty::BOTTOM }, effects)
+            }
+            LevelEvent::Step(level, direction) => (Dirty::BOTTOM, self.change_levels(|l| l.step(level, direction))),
         }
     }
 }

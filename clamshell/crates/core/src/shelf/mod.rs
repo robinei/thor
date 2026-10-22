@@ -5,6 +5,7 @@
 
 pub mod actions;
 pub mod files;
+mod rules;
 
 use std::sync::Arc;
 

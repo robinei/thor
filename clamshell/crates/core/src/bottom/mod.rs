@@ -14,6 +14,7 @@ use crate::effect::Watch;
 use crate::event::Reading;
 use crate::kit::names::names;
 use crate::settings::panel::Scope;
+use crate::{Effect, State, TimePage};
 use editor::Editor;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -166,6 +167,80 @@ impl Bottom {
     /// up.
     pub fn chosen_tab(&self) -> Tab {
         self.raised_from.unwrap_or(self.tab)
+    }
+}
+
+impl State {
+    /// The user chose a tab (its icon, a control's tap, the shoulder buttons): it stays, also over a
+    /// keyboard a text field brought up.
+    pub(crate) fn choose_tab(&mut self, tab: Tab) -> Vec<Effect> {
+        if self.bottom.raised_from.take().is_some() {
+            self.saves.resume.touch(self.mono_secs);
+        }
+        self.set_tab(tab)
+    }
+
+    /// Changes the second screen's tab (its watch follows: see [`State::follow_watch`]); a level being set
+    /// ends. What the tab left had open (an editor, the keymaps' screens) stays for coming back to.
+    pub(crate) fn set_tab(&mut self, tab: Tab) -> Vec<Effect> {
+        if tab == self.bottom.tab {
+            return vec![];
+        }
+        self.saves.resume.touch(self.mono_secs);
+        self.bottom.tab = tab;
+        self.dock.menu = None;
+        self.dock.moving = None;
+        // No level row of the tab left is being set any more.
+        self.levels.release();
+        // (The time tab opens on its main page again.)
+        self.bottom.time_page = TimePage::Main;
+        vec![]
+    }
+
+    /// What the second screen watches: the open tab's (the dock's, with an entry's menu open: what the
+    /// entry costs, the battery tab's readings), while it can be seen (ClamShell's view on the bottom
+    /// screen, that on, the screens on) and the UI is up. Its watch started and stopped as that changes.
+    pub(crate) fn follow_watch(&mut self) -> Vec<Effect> {
+        let mut effects = Vec::new();
+        // (The bar's status: while the screens are on.)
+        let screens_off = self.idle.stage() >= crate::device::idle::Stage::Off;
+        if screens_off != std::mem::replace(&mut self.status_unwatched, screens_off) {
+            effects.push(Effect::Watch(Watch::Status, !screens_off));
+        }
+        let seen = self.ui_up && !self.bottom_shows_windows() && !self.bottom_off() && self.idle.stage() < crate::device::idle::Stage::Off;
+        let tab = match self.bottom.tab {
+            Tab::Dock if self.dock.menu.is_some() => Some(Watch::Battery),
+            tab => tab.watch(),
+        };
+        // (The account: while the Device view is open and the UI up.)
+        let account = self.ui_up && self.device.open;
+        if account != std::mem::replace(&mut self.account_watched, account) {
+            effects.push(Effect::Watch(Watch::Account, account));
+        }
+        let wanted = tab.filter(|_| seen);
+        if wanted == self.watching {
+            return effects;
+        }
+        let was = std::mem::replace(&mut self.watching, wanted);
+        effects.extend(was.map(|w| Effect::Watch(w, false)).into_iter().chain(wanted.map(|w| Effect::Watch(w, true))));
+        effects
+    }
+
+    /// A text field wants typing (or is done): the keyboard comes up, and goes back to the tab it came up
+    /// from when the field is done, unless the user chose a tab meanwhile.
+    pub(crate) fn text_input(&mut self, active: bool) -> Vec<Effect> {
+        if active {
+            // (Not over an open editor: what is typed there would be lost.)
+            if self.bottom.tab == Tab::Keyboard || self.bottom.editor().is_some() {
+                return vec![];
+            }
+            self.bottom.raised_from = Some(self.bottom.tab);
+            return self.set_tab(Tab::Keyboard);
+        }
+        match self.bottom.raised_from.take() {
+            Some(tab) if self.bottom.tab == Tab::Keyboard => self.set_tab(tab),
+            _ => vec![],
+        }
     }
 }
 
