@@ -1,11 +1,12 @@
 //! Line icons, drawn as paths on a 24x24 grid scaled into a square and blended as cached masks
-//! ([`Canvas::icon`]). There is no icon font and there are no image files. The toolkit decides which icon
+//! ([`Painter::icon`]). There is no icon font and there are no image files. The toolkit decides which icon
 //! stands for one of the state's things, such as a tab, a setting or a device (`toolkit::icons`).
 
 use tiny_skia::{Color, Pixmap};
 
-use super::canvas::{Canvas, blend_mask};
+use super::canvas::Canvas;
 use super::geom::Rect;
+use super::paint::{Painter, blend_mask};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Icon {
@@ -141,6 +142,17 @@ impl Icon {
 }
 
 impl Canvas<'_> {
+    /// Draws `icon` centred in `r`, as large as fits (see [`Painter::icon`]).
+    pub fn icon(&mut self, icon: Icon, r: Rect, color: impl Into<Color>) {
+        let side = (r.w.min(r.h) * self.scale).round().max(1.0) as u32;
+        let (cx, cy) = r.center();
+        let x = (self.px(cx) - side as f32 / 2.0).round() as i32;
+        let y = (self.py(cy) - side as f32 / 2.0).round() as i32;
+        self.record_icon(icon, r, color.into(), (x, y), i32::try_from(side).unwrap_or(0));
+    }
+}
+
+impl Painter<'_> {
     /// Draws `icon` centred in `r`, as large as fits. It is rendered once per size, then blended as a mask.
     pub fn icon(&mut self, icon: Icon, r: Rect, color: impl Into<Color>) {
         let side = (r.w.min(r.h) * self.scale).round().max(1.0) as u32;
@@ -152,7 +164,7 @@ impl Canvas<'_> {
             {
                 let logical = side as f32 / self.scale;
                 let clip = (0, 0, side as i32, side as i32);
-                let mut c = Canvas { pixmap: mask.as_mut(), scale: self.scale, offset: (0.0, 0.0), clip, cache: &mut *self.cache };
+                let mut c = Painter { pixmap: mask.as_mut(), scale: self.scale, offset: (0.0, 0.0), clip, cache: &mut *self.cache };
                 draw(&mut c, icon, Rect::new(0.0, 0.0, logical, logical), Color::WHITE);
             }
             let coverage = mask.data().chunks_exact(4).filter_map(|px| px.get(3).copied()).collect();
@@ -174,7 +186,7 @@ const THIN: f32 = 0.8;
 
 /// Draws on the 24x24 grid, scaled into a square of the canvas.
 struct Pen<'a, 'c> {
-    c: &'a mut Canvas<'c>,
+    c: &'a mut Painter<'c>,
     x0: f32,
     y0: f32,
     /// Logical pixels per grid unit.
@@ -242,7 +254,7 @@ impl Pen<'_, '_> {
 }
 
 /// Draws `icon` centred in `r`, as large as fits.
-pub fn draw(c: &mut Canvas, icon: Icon, r: Rect, color: Color) {
+pub fn draw(c: &mut Painter, icon: Icon, r: Rect, color: Color) {
     let size = r.w.min(r.h);
     let (cx, cy) = r.center();
     let mut pen = Pen { c, x0: cx - size / 2.0, y0: cy - size / 2.0, u: size / 24.0, color };
@@ -707,7 +719,7 @@ mod tests {
         let mut cache = DrawCache::load();
         for icon in every() {
             let mut pixmap = Pixmap::new(48, 48).expect("pixmap");
-            Canvas::new(pixmap.as_mut(), 1.0, &mut cache).icon(icon, Rect::new(0.0, 0.0, 48.0, 48.0), Color::WHITE);
+            Painter::new(pixmap.as_mut(), 1.0, (0, 0), &mut cache).icon(icon, Rect::new(0.0, 0.0, 48.0, 48.0), Color::WHITE);
             let covered = pixmap.data().chunks_exact(4).filter(|px| px.get(3).is_some_and(|&a| a > 0)).count();
             assert!(covered > 20, "{icon:?}: {covered} pixels");
         }

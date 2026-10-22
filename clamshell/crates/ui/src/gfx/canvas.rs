@@ -1,20 +1,21 @@
-//! The canvas over a pixmap. It draws shapes and images, and draws icons and text (see [`super::text`])
-//! from cached coverage masks. All coordinates are in logical pixels; the canvas scales them to the
-//! buffer.
+//! The canvas the views draw on. It records what they draw ([`super::record`]) rather than drawing it:
+//! the player ([`super::paint`]) turns a recording into pixels. Its methods draw shapes and images, and
+//! icons and text (see [`super::text`], [`super::icons`]); text is measured from the glyph cache while
+//! recording. All coordinates are in logical pixels; the canvas scales them to the buffer.
 //!
-//! Once the caches are warm, drawing a frame does no heap allocation, and a test checks this. Glyphs and
-//! icons are rasterized once and blended straight into the pixmap as coverage masks. Rounded rectangles,
-//! circles and lines are computed per pixel from their distance function, with no path at all. Only
-//! plain rectangles and the strokes drawn into the icon cache go through tiny-skia.
+//! Once the caches are warm, recording a frame does no heap allocation, and a test checks this.
 
 use std::collections::HashMap;
 use std::sync::mpsc::Sender;
 
-use tiny_skia::{Color, LineCap, LineJoin, Paint, Path, PathBuilder, Pixmap, PixmapMut, PremultipliedColorU8, Stroke, Transform};
+use tiny_skia::{Color, Path, PathBuilder};
 
 use super::fonts::{Face, Found, Glyph, NOTO_SANS, find_font};
 use super::geom::Rect;
 use super::icons::Icon;
+use super::images::Image;
+use super::paint::RoundedRect;
+use super::record::{Bounds, Cmd, Op, Px, Recording};
 
 /// What drawing keeps between frames: the font, the fonts found for characters it lacks, the rasterized
 /// glyphs by character and pixel size, and a path builder whose memory is reused for every shape.
@@ -32,12 +33,24 @@ pub struct DrawCache {
     /// Icon coverage masks, by icon and side in pixels.
     pub(super) icons: HashMap<(Icon, u32), Vec<u8>>,
     pub(super) path: Option<PathBuilder>,
+    /// Counts the fonts found for characters. A text recorded before a font arrived for one of its
+    /// characters is drawn differently after, so recordings keep it.
+    pub(super) generation: u32,
 }
 
 impl DrawCache {
     pub fn load() -> DrawCache {
         let font = fontdue::Font::from_bytes(NOTO_SANS, fontdue::FontSettings::default()).map_err(|e| log::error!("the built-in font: {e}")).ok();
-        DrawCache { font, fallbacks: Vec::new(), fallback_for: HashMap::new(), finder: None, glyphs: HashMap::new(), icons: HashMap::new(), path: None }
+        DrawCache {
+            font,
+            fallbacks: Vec::new(),
+            fallback_for: HashMap::new(),
+            finder: None,
+            glyphs: HashMap::new(),
+            icons: HashMap::new(),
+            path: None,
+            generation: 0,
+        }
     }
 
     /// Like [`DrawCache::load`], but fonts for characters the built-in one lacks are found by `finder`
@@ -94,6 +107,7 @@ impl DrawCache {
     /// missing character.
     pub fn found(&mut self, found: Found) -> Face {
         let Found { ch, path, font } = found;
+        self.generation = self.generation.wrapping_add(1);
         if let (Some(path), Some(font)) = (path.clone(), font) {
             log::info!("fallback font for {ch:?}: {path}");
             self.fallbacks.push((path, font));
@@ -112,56 +126,60 @@ impl DrawCache {
     }
 
     /// An empty path builder, reusing the last path's memory.
-    fn builder(&mut self) -> PathBuilder {
+    pub(super) fn builder(&mut self) -> PathBuilder {
         self.path.take().unwrap_or_default()
     }
 
     /// Gives a finished path's memory back for the next shape.
-    fn recycle(&mut self, path: Path) {
+    pub(super) fn recycle(&mut self, path: Path) {
         self.path = Some(path.clear());
     }
 }
 
+/// Records a frame into a [`Recording`]. Each command keeps the buffer pixels it may touch, within the
+/// clip in force.
 pub struct Canvas<'a> {
-    pub(super) pixmap: PixmapMut<'a>,
+    rec: &'a mut Recording,
     pub(super) scale: f32,
     /// How many whole buffer pixels everything is moved by, for the burn-in orbit.
     pub(super) offset: (f32, f32),
-    /// The area drawing is limited to, as (x0, y0, x1, y1) in buffer pixels. It is the whole pixmap or a
-    /// scrolled list's area.
-    pub(super) clip: (i32, i32, i32, i32),
+    /// The area drawing is limited to, in buffer pixels. It is the whole buffer or a scrolled list's
+    /// area.
+    clip: Bounds,
     pub(super) cache: &'a mut DrawCache,
 }
 
 impl<'a> Canvas<'a> {
-    pub fn new(pixmap: PixmapMut<'a>, scale: f32, cache: &'a mut DrawCache) -> Self {
-        let clip = (0, 0, pixmap.width() as i32, pixmap.height() as i32);
-        Canvas { pixmap, scale, offset: (0.0, 0.0), clip, cache }
+    /// Starts recording a frame of `size` buffer pixels into `rec`, which is emptied first.
+    pub fn new(rec: &'a mut Recording, size: (u32, u32), scale: f32, cache: &'a mut DrawCache) -> Self {
+        rec.start(size, scale, (0, 0));
+        Canvas { rec, scale, offset: (0.0, 0.0), clip: Bounds::of_size(size), cache }
     }
 
-    /// Keeps drawing within `r` from now on. `None` allows the whole pixmap again.
+    /// Moves everything drawn by whole buffer pixels.
+    pub fn with_offset(mut self, (dx, dy): (i32, i32)) -> Self {
+        self.rec.offset = (dx, dy);
+        self.offset = (dx as f32, dy as f32);
+        self
+    }
+
+    /// Keeps drawing within `r` from now on. `None` allows the whole buffer again.
     pub fn clip(&mut self, r: Option<Rect>) {
-        let (pw, ph) = (self.pixmap.width() as i32, self.pixmap.height() as i32);
+        let all = Bounds::of_size(self.rec.size);
         self.clip = match r {
-            Some(r) => (
-                (self.px(r.x).floor() as i32).clamp(0, pw),
-                (self.py(r.y).floor() as i32).clamp(0, ph),
-                (self.px(r.x + r.w).ceil() as i32).clamp(0, pw),
-                (self.py(r.y + r.h).ceil() as i32).clamp(0, ph),
+            Some(r) => Bounds::new(
+                (self.px(r.x).floor() as i32).clamp(0, all.x1),
+                (self.py(r.y).floor() as i32).clamp(0, all.y1),
+                (self.px(r.x + r.w).ceil() as i32).clamp(0, all.x1),
+                (self.py(r.y + r.h).ceil() as i32).clamp(0, all.y1),
             ),
-            None => (0, 0, pw, ph),
+            None => all,
         };
     }
 
     /// Buffer pixels per logical pixel.
     pub fn scale(&self) -> f32 {
         self.scale
-    }
-
-    /// Moves everything drawn by whole buffer pixels.
-    pub fn with_offset(mut self, (dx, dy): (i32, i32)) -> Self {
-        self.offset = (dx as f32, dy as f32);
-        self
     }
 
     /// Converts logical x and y to buffer pixels.
@@ -173,11 +191,44 @@ impl<'a> Canvas<'a> {
         y * self.scale + self.offset.1
     }
 
-    fn paint(color: Color) -> Paint<'static> {
-        let mut paint = Paint::default();
-        paint.set_color(color);
-        paint.anti_alias = true;
-        paint
+    /// Records `op`, which touches `bounds` at most. A command clipped away entirely is left out.
+    fn record(&mut self, op: Op, bounds: Bounds) {
+        let bounds = bounds.intersect(self.clip);
+        if !bounds.is_empty() {
+            self.rec.cmds.push(Cmd { op, bounds });
+        }
+    }
+
+    /// Records `op`, whose shape covers `extent`, as (x0, y0, x1, y1) in buffer pixels.
+    fn shape(&mut self, op: Op, extent: (f32, f32, f32, f32)) {
+        self.record(op, Bounds::around(extent));
+    }
+
+    /// Records a line of text with its glyphs' pixels.
+    pub(super) fn record_text(&mut self, op: Op, text: &str, ink: Bounds) {
+        let Op::Text { x, y, size, color, fonts, .. } = op else {
+            return;
+        };
+        let (start, len) = (self.rec.text.len(), text.len());
+        let (Ok(start), Ok(len)) = (u32::try_from(start), u32::try_from(len)) else {
+            return;
+        };
+        let bounds = Bounds::new(ink.x0 - 1, ink.y0 - 1, ink.x1 + 1, ink.y1 + 1).intersect(self.clip);
+        if !ink.is_empty() && !bounds.is_empty() {
+            self.rec.text.extend_from_slice(text.as_bytes());
+            self.rec.cmds.push(Cmd { op: Op::Text { x, y, size, color, start, len, fonts }, bounds });
+        }
+    }
+
+    /// Records an icon drawn in a `side` pixel square at (x, y).
+    pub(super) fn record_icon(&mut self, icon: Icon, r: Rect, color: Color, (x, y): (i32, i32), side: i32) {
+        self.record(Op::Icon { icon, r: Px::rect(r), color: color.into() }, Bounds::new(x - 1, y - 1, x + side + 1, y + side + 1));
+    }
+
+    /// The whole buffer in `color`, under everything drawn after.
+    pub fn clear(&mut self, color: impl Into<Color>) {
+        let all = Bounds::of_size(self.rec.size);
+        self.record(Op::Clear(color.into().into()), all);
     }
 
     /// A vertical line `px` buffer pixels wide, centred on `x` and snapped to whole pixels so that it is
@@ -185,101 +236,39 @@ impl<'a> Canvas<'a> {
     pub fn vline(&mut self, x: f32, y0: f32, y1: f32, px: u32, color: impl Into<Color>) {
         let left = (self.px(x) - px as f32 / 2.0).round();
         let (top, bottom) = (self.py(y0).round(), self.py(y1).round());
-        if let Some(rect) = self.clipped(left, top, left + px as f32, bottom) {
-            self.pixmap.fill_rect(rect, &Self::paint(color.into()), Transform::identity(), None);
-        }
+        let op = Op::VLine { x: Px::new(x), y0: Px::new(y0), y1: Px::new(y1), px, color: color.into().into() };
+        self.shape(op, (left, top, left + px as f32, bottom));
     }
 
     /// A horizontal line `px` buffer pixels high, centred on `y` and snapped to whole pixels.
     pub fn hline(&mut self, x0: f32, x1: f32, y: f32, px: u32, color: impl Into<Color>) {
         let top = (self.py(y) - px as f32 / 2.0).round();
         let (left, right) = (self.px(x0).round(), self.px(x1).round());
-        if let Some(rect) = self.clipped(left, top, right, top + px as f32) {
-            self.pixmap.fill_rect(rect, &Self::paint(color.into()), Transform::identity(), None);
-        }
+        let op = Op::HLine { x0: Px::new(x0), x1: Px::new(x1), y: Px::new(y), px, color: color.into().into() };
+        self.shape(op, (left, top, right, top + px as f32));
     }
 
     pub fn fill(&mut self, r: Rect, color: impl Into<Color>) {
-        // Filled in buffer pixels without a transform, because tiny-skia fills a transformed rect as a
-        // path, which allocates.
         let (x0, y0) = (self.px(r.x), self.py(r.y));
-        if let Some(rect) = self.clipped(x0, y0, x0 + r.w * self.scale, y0 + r.h * self.scale) {
-            self.pixmap.fill_rect(rect, &Self::paint(color.into()), Transform::identity(), None);
-        }
-    }
-
-    /// A rectangle in buffer pixels cut to the clip, or `None` if nothing is left.
-    fn clipped(&self, x0: f32, y0: f32, x1: f32, y1: f32) -> Option<tiny_skia::Rect> {
-        let (cx0, cy0, cx1, cy1) = self.clip;
-        tiny_skia::Rect::from_ltrb(x0.max(cx0 as f32), y0.max(cy0 as f32), x1.min(cx1 as f32), y1.min(cy1 as f32))
-    }
-
-    fn stroke_path(&mut self, path: Path, stroke: &Stroke, color: Color) {
-        self.pixmap.stroke_path(&path, &Self::paint(color), stroke, Transform::identity(), None);
-        self.cache.recycle(path);
+        self.shape(Op::Fill { r: Px::rect(r), color: color.into().into() }, (x0, y0, x0 + r.w * self.scale, y0 + r.h * self.scale));
     }
 
     /// A rounded rectangle, filled.
     pub fn rounded(&mut self, r: Rect, radius: f32, color: impl Into<Color>) {
-        let shape = RoundedRect::new(r, radius, self.scale, self.offset);
-        self.shade(shape.bounds(1.0), color.into(), Runs::One, |x, y| (0.5 - shape.distance(x, y)).clamp(0.0, 1.0));
+        let bounds = RoundedRect::new(r, radius, self.scale, self.offset).bounds(1.0);
+        self.shape(Op::Rounded { r: Px::rect(r), radius: Px::new(radius), color: color.into().into() }, bounds);
     }
 
     /// A rounded rectangle's outline, `width` wide, centred on its edge.
     pub fn outline(&mut self, r: Rect, radius: f32, width: f32, color: impl Into<Color>) {
-        let shape = RoundedRect::new(r, radius, self.scale, self.offset);
-        let half = width * self.scale / 2.0;
-        self.shade(shape.bounds(half + 1.0), color.into(), Runs::Any, |x, y| (half + 0.5 - shape.distance(x, y).abs()).clamp(0.0, 1.0));
+        let bounds = RoundedRect::new(r, radius, self.scale, self.offset).bounds(width * self.scale / 2.0 + 1.0);
+        self.shape(Op::Outline { r: Px::rect(r), radius: Px::new(radius), width: Px::new(width), color: color.into().into() }, bounds);
     }
 
     pub fn circle(&mut self, cx: f32, cy: f32, r: f32, color: impl Into<Color>) {
-        let (cx, cy, r) = (self.px(cx), self.py(cy), r * self.scale);
-        let bounds = (cx - r - 1.0, cy - r - 1.0, cx + r + 1.0, cy + r + 1.0);
-        self.shade(bounds, color.into(), Runs::One, |x, y| (0.5 - ((x - cx).hypot(y - cy) - r)).clamp(0.0, 1.0));
-    }
-
-    /// Blends `color` over the pixels in `bounds`, given as (x0, y0, x1, y1) in buffer pixels, with the
-    /// coverage that `coverage` gives for each pixel centre. With [`Runs::One`], each row is asked for
-    /// coverage from either end only up to its first fully covered pixel, and the pixels between are
-    /// filled.
-    fn shade(&mut self, (x0, y0, x1, y1): (f32, f32, f32, f32), color: Color, runs: Runs, coverage: impl Fn(f32, f32) -> f32) {
-        let pw = self.pixmap.width() as i32;
-        let (cx0, cy0, cx1, cy1) = self.clip;
-        let (x0, y0) = ((x0.floor() as i32).max(cx0), (y0.floor() as i32).max(cy0));
-        let (x1, y1) = ((x1.ceil() as i32).min(cx1), (y1.ceil() as i32).min(cy1));
-        let src = premultiplied(color);
-        let data = self.pixmap.data_mut();
-        let k_at = |x: i32, y: i32| (coverage(x as f32 + 0.5, y as f32 + 0.5) * 255.0) as u32;
-        let at = |x: i32, y: i32| ((y * pw + x) * 4) as usize;
-        for y in y0..y1 {
-            let (mut from, mut to) = (x0, x1);
-            if runs == Runs::One {
-                while from < to
-                    && let k = k_at(from, y)
-                    && k < 255
-                {
-                    blend_at(data, at(from, y), src, k);
-                    from += 1;
-                }
-                while to > from
-                    && let k = k_at(to - 1, y)
-                    && k < 255
-                {
-                    blend_at(data, at(to - 1, y), src, k);
-                    to -= 1;
-                }
-                if src[3] == 255 {
-                    let opaque = src.map(|c| c as u8);
-                    for px in data.get_mut(at(from, y)..at(to, y)).into_iter().flat_map(|run| run.chunks_exact_mut(4)) {
-                        px.copy_from_slice(&opaque);
-                    }
-                    continue;
-                }
-            }
-            for x in from..to {
-                blend_at(data, at(x, y), src, k_at(x, y));
-            }
-        }
+        let (x, y, rr) = (self.px(cx), self.py(cy), r * self.scale);
+        let op = Op::Circle { cx: Px::new(cx), cy: Px::new(cy), r: Px::new(r), color: color.into().into() };
+        self.shape(op, (x - rr - 1.0, y - rr - 1.0, x + rr + 1.0, y + rr + 1.0));
     }
 
     /// A straight line from (x0, y0) to (x1, y1), `width` wide with round ends. It can be at any angle,
@@ -287,210 +276,23 @@ impl<'a> Canvas<'a> {
     pub fn line(&mut self, (x0, y0): (f32, f32), (x1, y1): (f32, f32), width: f32, color: impl Into<Color>) {
         let (ax, ay, bx, by) = (self.px(x0), self.py(y0), self.px(x1), self.py(y1));
         let half = width * self.scale / 2.0;
-        let (dx, dy) = (bx - ax, by - ay);
-        let len2 = (dx * dx + dy * dy).max(1e-6);
-        let bounds = (ax.min(bx) - half - 1.0, ay.min(by) - half - 1.0, ax.max(bx) + half + 1.0, ay.max(by) + half + 1.0);
-        self.shade(bounds, color.into(), Runs::One, |x, y| {
-            let t = (((x - ax) * dx + (y - ay) * dy) / len2).clamp(0.0, 1.0);
-            let d = (x - ax - t * dx).hypot(y - ay - t * dy);
-            (half + 0.5 - d).clamp(0.0, 1.0)
-        });
-    }
-
-    /// Connected lines through `points`, with round caps and joins. It uses tiny-skia, which allocates,
-    /// so it is only for drawing icons into their cache.
-    pub fn polyline(&mut self, points: &[(f32, f32)], width: f32, color: Color) {
-        self.stroke_points(points, width, color, false);
-    }
-
-    /// [`Canvas::polyline`] with the last point joined back to the first.
-    pub fn polygon(&mut self, points: &[(f32, f32)], width: f32, color: Color) {
-        self.stroke_points(points, width, color, true);
-    }
-
-    fn stroke_points(&mut self, points: &[(f32, f32)], width: f32, color: Color, close: bool) {
-        let mut iter = points.iter();
-        let Some(&(x, y)) = iter.next() else {
-            return;
-        };
-        let mut pb = self.cache.builder();
-        pb.move_to(self.px(x), self.py(y));
-        for &(x, y) in iter {
-            pb.line_to(self.px(x), self.py(y));
-        }
-        if close {
-            pb.close();
-        }
-        if let Some(path) = pb.finish() {
-            let stroke = Stroke { width: width * self.scale, line_cap: LineCap::Round, line_join: LineJoin::Round, ..Stroke::default() };
-            self.stroke_path(path, &stroke, color);
-        }
+        let op = Op::Line { a: [Px::new(x0), Px::new(y0)], b: [Px::new(x1), Px::new(y1)], width: Px::new(width), color: color.into().into() };
+        self.shape(op, (ax.min(bx) - half - 1.0, ay.min(by) - half - 1.0, ax.max(bx) + half + 1.0, ay.max(by) + half + 1.0));
     }
 
     /// Draws `image`, already at its pixel size, with its top left at (x, y), blending its alpha.
-    pub fn image(&mut self, image: &Pixmap, x: f32, y: f32) {
+    pub fn image(&mut self, image: Image, x: f32, y: f32) {
         self.blit(image, x, y, None);
     }
 
     /// Draws `image` in grey at `level` (0..1) of its brightness, as for an idle app's icon.
-    pub fn image_grey(&mut self, image: &Pixmap, x: f32, y: f32, level: f32) {
+    pub fn image_grey(&mut self, image: Image, x: f32, y: f32, level: f32) {
         self.blit(image, x, y, Some((level.clamp(0.0, 1.0) * 256.0) as u32));
     }
 
-    /// Blends the premultiplied `image` with its top left at (x, y). With `grey`, the image is drawn as
-    /// its luminance scaled by `grey`/256.
-    fn blit(&mut self, image: &Pixmap, x: f32, y: f32, grey: Option<u32>) {
+    fn blit(&mut self, image: Image, x: f32, y: f32, grey: Option<u32>) {
         let (x0, y0) = (self.px(x).round() as i32, self.py(y).round() as i32);
-        let pw = self.pixmap.width() as i32;
-        let clip = self.clip;
-        let iw = image.width() as usize;
-        let Some((skip, x, len)) = span(clip, x0, iw) else {
-            return;
-        };
-        let data = self.pixmap.data_mut();
-        for (row, src_row) in image.data().chunks_exact(iw * 4).enumerate() {
-            let y = y0 + row as i32;
-            let i = ((y * pw + x) * 4) as usize;
-            let (Some(dst), Some(src)) =
-                ((clip.1..clip.3).contains(&y).then(|| data.get_mut(i..i + len * 4)).flatten(), src_row.get(skip * 4..(skip + len) * 4))
-            else {
-                continue;
-            };
-            match grey {
-                // Rows without transparency, as in box art and screenshots, are copied whole.
-                None if src.as_chunks::<4>().0.iter().fold(255, |all, px| all & px[3]) == 255 => dst.copy_from_slice(src),
-                None => {
-                    for (d, s) in dst.as_chunks_mut::<4>().0.iter_mut().zip(src.as_chunks::<4>().0) {
-                        over(d, s.map(u32::from));
-                    }
-                }
-                Some(level) => {
-                    for (d, s) in dst.as_chunks_mut::<4>().0.iter_mut().zip(src.as_chunks::<4>().0) {
-                        let luma = (u32::from(s[0]) * 54 + u32::from(s[1]) * 183 + u32::from(s[2]) * 19) / 256 * level / 256;
-                        over(d, [luma, luma, luma, u32::from(s[3])]);
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// Blends a glyph's coverage, `width` bytes per row, in `color` onto the pixmap at (x, y). It blends
-/// source-over with premultiplied alpha, within `clip` (x0, y0, x1, y1, inside the pixmap).
-pub(super) fn blend_mask(pixmap: &mut PixmapMut, clip: (i32, i32, i32, i32), x: i32, y: i32, width: usize, coverage: &[u8], color: PremultipliedColorU8) {
-    if width == 0 {
-        return;
-    }
-    let Some((skip, x, len)) = span(clip, x, width) else {
-        return;
-    };
-    let pw = pixmap.width() as i32;
-    let src = [color.red(), color.green(), color.blue(), color.alpha()].map(u32::from);
-    let data = pixmap.data_mut();
-    for (gy, row) in coverage.chunks_exact(width).enumerate() {
-        let ty = y + gy as i32;
-        let i = ((ty * pw + x) * 4) as usize;
-        let (Some(dst), Some(cov)) = ((clip.1..clip.3).contains(&ty).then(|| data.get_mut(i..i + len * 4)).flatten(), row.get(skip..skip + len)) else {
-            continue;
-        };
-        for (px, &k) in dst.as_chunks_mut::<4>().0.iter_mut().zip(cov) {
-            blend(px, src, u32::from(k));
-        }
-    }
-}
-
-/// The part of a row `width` pixels long, starting at `x`, that is inside `clip`'s columns. Returns how
-/// many pixels it skips, where it starts and how long it is.
-fn span((cx0, _, cx1, _): (i32, i32, i32, i32), x: i32, width: usize) -> Option<(usize, i32, usize)> {
-    let (from, to) = (x.max(cx0), (x + width as i32).min(cx1));
-    (to > from).then(|| ((from - x) as usize, from, (to - from) as usize))
-}
-
-/// A rounded rectangle in buffer pixels, used for its signed distance, which is negative inside.
-struct RoundedRect {
-    cx: f32,
-    cy: f32,
-    /// Half the size minus the radius. This is the inner rectangle the corners are centred on.
-    hx: f32,
-    hy: f32,
-    radius: f32,
-}
-
-impl RoundedRect {
-    fn new(r: Rect, radius: f32, scale: f32, (dx, dy): (f32, f32)) -> Self {
-        let (w, h) = (r.w * scale, r.h * scale);
-        let radius = (radius * scale).min(w / 2.0).min(h / 2.0).max(0.0);
-        let (cx, cy) = (r.x * scale + dx + w / 2.0, r.y * scale + dy + h / 2.0);
-        RoundedRect { cx, cy, hx: w / 2.0 - radius, hy: h / 2.0 - radius, radius }
-    }
-
-    fn distance(&self, x: f32, y: f32) -> f32 {
-        let qx = (x - self.cx).abs() - self.hx;
-        let qy = (y - self.cy).abs() - self.hy;
-        qx.max(0.0).hypot(qy.max(0.0)) + qx.max(qy).min(0.0) - self.radius
-    }
-
-    /// Pixel bounds, grown by `margin`.
-    fn bounds(&self, margin: f32) -> (f32, f32, f32, f32) {
-        let (ex, ey) = (self.hx + self.radius + margin, self.hy + self.radius + margin);
-        (self.cx - ex, self.cy - ey, self.cx + ex, self.cy + ey)
-    }
-}
-
-/// How a shape covers each row of pixels. A filled convex shape, such as a rounded rectangle, a circle or
-/// a line, covers it in one run. An outline may cover it any way.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Runs {
-    One,
-    Any,
-}
-
-fn premultiplied(color: Color) -> [u32; 4] {
-    let c = color.premultiply().to_color_u8();
-    [c.red(), c.green(), c.blue(), c.alpha()].map(u32::from)
-}
-
-/// Premultiplied `src` over the pixel `px`, as [`blend`] does when fully covered.
-fn over(px: &mut [u8; 4], src: [u32; 4]) {
-    let inverse = 255 - src[3] as u16;
-    for (d, s) in px.iter_mut().zip(src) {
-        *d = (s as u16 + div255(u16::from(*d) * inverse)) as u8;
-    }
-}
-
-/// [`blend`] at byte `i` of `data`, if the pixel is covered and within `data`.
-fn blend_at(data: &mut [u8], i: usize, src: [u32; 4], k: u32) {
-    if k > 0
-        && let Some(px) = data.get_mut(i..i + 4).and_then(|px| px.as_mut_array())
-    {
-        blend(px, src, k);
-    }
-}
-
-/// Source-over of premultiplied `src` at coverage `k` (0-255) onto one RGBA pixel.
-fn blend(px: &mut [u8; 4], src: [u32; 4], k: u32) {
-    let k = k as u16;
-    let inverse = 255 - div255(src[3] as u16 * k);
-    for (d, s) in px.iter_mut().zip(src) {
-        *d = (div255(s as u16 * k) + div255(u16::from(*d) * inverse)) as u8;
-    }
-}
-
-/// `x / 255` for `x` up to 255 * 255, done with shifts so that it vectorises. The result is exact for
-/// every such `x`.
-fn div255(x: u16) -> u16 {
-    (x + 1 + (x >> 8)) >> 8
-}
-
-#[cfg(test)]
-#[allow(clippy::unwrap_used)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn div255_divides() {
-        for x in 0..=255 * 255 {
-            assert_eq!(div255(x), x / 255, "{x}");
-        }
+        let (w, h) = (i32::try_from(image.width()).unwrap_or(0), i32::try_from(image.height()).unwrap_or(0));
+        self.record(Op::Image { image, x: Px::new(x), y: Px::new(y), grey }, Bounds::new(x0, y0, x0 + w, y0 + h));
     }
 }

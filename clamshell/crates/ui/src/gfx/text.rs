@@ -1,10 +1,13 @@
 //! Text on the canvas. It is drawn as a line, in a rect, cut to fit or wrapped, and can be measured. The
-//! glyphs come from the cache.
+//! glyphs come from the cache: the canvas measures with their metrics and records each line, and the
+//! painter blends them.
 
 use tiny_skia::Color;
 
-use super::canvas::{Canvas, blend_mask};
+use super::canvas::Canvas;
 use super::geom::{Align, Rect, Span};
+use super::paint::{Painter, blend_mask};
+use super::record::{Bounds, Op, Px};
 
 /// The height of a line of text, as a multiple of its size: Noto Sans' ascent and descent, rounded up.
 pub const LINE: f32 = 1.2;
@@ -24,24 +27,50 @@ const ELLIPSIS: &str = "…";
 /// [`LINE`], for easier reading.
 pub const WRAP_LINE: f32 = 1.3;
 
-impl Canvas<'_> {
-    /// Draws one line of text with its top at `y`; returns its width.
-    pub fn text(&mut self, x: f32, y: f32, size: f32, color: impl Into<Color>, text: &str) -> f32 {
+impl Painter<'_> {
+    /// Draws one line of text with its top at `y`. A character waiting for a font ends it.
+    pub fn text(&mut self, x: f32, y: f32, size: f32, color: impl Into<Color>, text: &str) {
         let px = size * self.scale;
         let baseline = (self.py(y) + self.cache.ascent(px)).round();
-        let start = self.px(x);
-        let mut pen = start;
+        let mut pen = self.px(x);
         let color = color.into().premultiply().to_color_u8();
         for ch in text.chars() {
             let Some((metrics, coverage)) = self.cache.glyph(ch, px) else {
-                return 0.0;
+                return;
             };
             let gx = (pen + metrics.xmin as f32).round() as i32;
             let gy = (baseline - metrics.height as f32 - metrics.ymin as f32) as i32;
             blend_mask(&mut self.pixmap, self.clip, gx, gy, metrics.width, coverage, color);
             pen += metrics.advance_width;
         }
-        (pen - start) / self.scale
+    }
+}
+
+impl Canvas<'_> {
+    /// Draws one line of text with its top at `y`; returns its width, or 0 if a character in it is
+    /// waiting for a font. The glyphs drawn are where the painter puts them (see [`Painter::text`]).
+    pub fn text(&mut self, x: f32, y: f32, size: f32, color: impl Into<Color>, text: &str) -> f32 {
+        let px = size * self.scale;
+        let baseline = (self.py(y) + self.cache.ascent(px)).round();
+        let start = self.px(x);
+        let mut pen = start;
+        let mut ink = Bounds::EMPTY;
+        let mut waiting = false;
+        for ch in text.chars() {
+            let Some((metrics, _)) = self.cache.glyph(ch, px) else {
+                waiting = true;
+                break;
+            };
+            if metrics.width > 0 && metrics.height > 0 {
+                let gx = (pen + metrics.xmin as f32).round() as i32;
+                let gy = (baseline - metrics.height as f32 - metrics.ymin as f32) as i32;
+                ink = ink.union(Bounds::new(gx, gy, gx + metrics.width as i32, gy + metrics.height as i32));
+            }
+            pen += metrics.advance_width;
+        }
+        let op = Op::Text { x: Px::new(x), y: Px::new(y), size: Px::new(size), color: color.into().into(), start: 0, len: 0, fonts: self.cache.generation };
+        self.record_text(op, text, ink);
+        if waiting { 0.0 } else { (pen - start) / self.scale }
     }
 
     /// Draws one line of text centred vertically in `r` and placed horizontally as `align` says. The
@@ -180,8 +209,8 @@ mod tests {
     use crate::gfx::DrawCache;
     use crate::gfx::color::rgb;
     use crate::gfx::fonts::{Face, spawn_font_finder};
+    use crate::gfx::record::Recording;
     use std::process::Command;
-    use tiny_skia::Pixmap;
 
     /// Whether a font with あ is installed. `fc-match` always names its closest font, even one without the
     /// character, so `fc-list` is asked instead: it lists only fonts that have it.
@@ -230,8 +259,8 @@ mod tests {
     #[test]
     fn text_is_cut_to_fit() {
         let mut cache = DrawCache::load();
-        let mut pixmap = Pixmap::new(400, 50).unwrap();
-        let mut c = Canvas::new(pixmap.as_mut(), 1.0, &mut cache);
+        let mut rec = Recording::default();
+        let mut c = Canvas::new(&mut rec, (400, 50), 1.0, &mut cache);
         let text = "A Link to the Past";
         let full = c.text_width(20.0, text);
         let width = full * 0.6;

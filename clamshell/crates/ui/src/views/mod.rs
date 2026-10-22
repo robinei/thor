@@ -102,17 +102,17 @@ pub fn bottom(f: &mut Frame, screen: Rect) {
 mod tests {
     use super::*;
     use crate::gfx::images::Images;
+    use crate::gfx::record::Recording;
     use crate::gfx::{Canvas, DrawCache};
     use crate::toolkit::{Scratch, Target};
     use clamshell_core::{Event, Id, Init, Reading, State, Status};
-    use tiny_skia::Pixmap;
 
     /// Draws the second screen for `state` at `w` x `h`. Returns what can be tapped in it and what the
     /// frame reports.
     fn draw_bottom(state: &State, (w, h): (u32, u32), cache: &mut DrawCache) -> (Vec<Target>, crate::toolkit::FrameOut) {
-        let mut pixmap = Pixmap::new(w, h).expect("pixmap");
+        let mut rec = Recording::default();
         let mut targets = Vec::new();
-        let mut canvas = Canvas::new(pixmap.as_mut(), 1.0, cache);
+        let mut canvas = Canvas::new(&mut rec, (w, h), 1.0, cache);
         let (mut images, mut scratch) = (Images::synchronous(), Scratch::default());
         let mut f = Frame::new(&mut canvas, state, &mut images, &mut scratch, &mut targets);
         bottom(&mut f, Rect::new(0.0, 0.0, w as f32, h as f32));

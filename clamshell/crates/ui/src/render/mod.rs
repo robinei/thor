@@ -1,5 +1,7 @@
-//! Drawing one frame of a screen. It works the same for a live view, which draws straight into the
-//! compositor's shared buffer, and for a snapshot, which draws into a pixmap of its own.
+//! Drawing one frame of a screen. The views are recorded ([`record`]), the recording is compared with
+//! the last one drawn, and what changed is played into a buffer. It works the same for a live view,
+//! which draws straight into the compositor's shared buffer, and for a snapshot, which draws into a
+//! pixmap of its own.
 //!
 //! Coordinates, from the inside out:
 //! - Layout units are logical pixels from the top left of the area inside the burn-in margin. The views
@@ -19,6 +21,8 @@ use clamshell_core::{Event, ListEvent, ListId, ShelfEvent, State};
 use tiny_skia::PixmapMut;
 
 use crate::gfx::images::Images;
+use crate::gfx::paint::play;
+use crate::gfx::record::{Bounds, Recording};
 use crate::gfx::{Canvas, DrawCache, Rect};
 use crate::toolkit::{Frame, FrameOut, Scratch, Target};
 use crate::views;
@@ -58,35 +62,32 @@ pub(crate) struct Placement {
     pub drift: (i32, i32),
 }
 
-/// What a screen keeps from its last frame: what can be tapped in it, in surface pixels, and kept text.
+/// What a screen keeps from its last frame: what can be tapped in it, in surface pixels, kept text, the
+/// recording of the frame drawn last and the one recorded after it.
 #[derive(Default)]
 pub(crate) struct Retained {
     pub targets: Vec<Target>,
     pub scratch: Scratch,
+    pub drawn: Recording,
+    pub next: Recording,
 }
 
-/// Draws `screen` for `state` into `pixmap`, which must be `at`'s size, and moves its targets and the
-/// touchpad area into surface pixels. The whole frame is drawn, onto black.
-pub(crate) fn render(
-    mut pixmap: PixmapMut,
-    retained: &mut Retained,
-    at: Placement,
-    screen: Screen,
-    state: &State,
-    fonts: &mut DrawCache,
-    images: &mut Images,
-) -> Result<FrameOut, Error> {
-    let (w, h) = at.size_px;
-    if (pixmap.width(), pixmap.height()) != (w, h) {
-        return Err(format!("a {}x{} pixmap for a {w}x{h} frame", pixmap.width(), pixmap.height()).into());
+impl Retained {
+    /// The frame recorded has been drawn.
+    pub(crate) fn drew(&mut self) {
+        std::mem::swap(&mut self.drawn, &mut self.next);
     }
-    // Fill it all with black. The views paint on black and have no background of their own, and a
-    // reused buffer still holds an older frame.
-    pixmap.fill(crate::toolkit::style::BG.into());
+}
+
+/// Records `screen` for `state` into `retained.next`, and moves its targets and the touchpad area into
+/// surface pixels. The frame starts with the whole buffer black.
+pub(crate) fn record(retained: &mut Retained, at: Placement, screen: Screen, state: &State, fonts: &mut DrawCache, images: &mut Images) -> FrameOut {
     let scale = at.scale.max(1);
-    let ((lw, lh), offset) = inset((w, h), scale, at.drift);
+    let ((lw, lh), offset) = inset(at.size_px, scale, at.drift);
     let mut out = {
-        let mut canvas = Canvas::new(pixmap, scale as f32, fonts).with_offset(offset);
+        let mut canvas = Canvas::new(&mut retained.next, at.size_px, scale as f32, fonts).with_offset(offset);
+        // The views paint on black and have no background of their own.
+        canvas.clear(crate::toolkit::style::BG);
         let mut f = Frame::new(&mut canvas, state, images, &mut retained.scratch, &mut retained.targets);
         let layout = Rect::new(0.0, 0.0, lw, lh);
         match screen {
@@ -107,6 +108,27 @@ pub(crate) fn render(
         }
     }
     out.touchpad_area = out.touchpad_area.map(|r| r.shifted(sx, sy));
+    out
+}
+
+/// Draws `screen` for `state` into `pixmap`, which must be `at`'s size, as [`record`] and then the
+/// whole recording played.
+pub(crate) fn render(
+    pixmap: PixmapMut,
+    retained: &mut Retained,
+    at: Placement,
+    screen: Screen,
+    state: &State,
+    fonts: &mut DrawCache,
+    images: &mut Images,
+) -> Result<FrameOut, Error> {
+    let (w, h) = at.size_px;
+    if (pixmap.width(), pixmap.height()) != (w, h) {
+        return Err(format!("a {}x{} pixmap for a {w}x{h} frame", pixmap.width(), pixmap.height()).into());
+    }
+    let out = record(retained, at, screen, state, fonts, images);
+    play(pixmap, &retained.next, Bounds::of_size(at.size_px), fonts, images);
+    retained.drew();
     Ok(out)
 }
 
@@ -147,9 +169,8 @@ mod tests {
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing)]
 mod frame_times {
-    //! How long a frame takes to draw at the Thor's size. It measures drawing straight into a buffer, as
-    //! a live view does, and drawing into a pixmap of its own and then copying it into a buffer, as a
-    //! live view did before. Run it by hand:
+    //! How long a frame takes to draw at the Thor's size: a whole frame recorded and played straight into
+    //! a buffer, as a live view does; only the playing; and only the recording. Run it by hand:
     //! `cargo test --release -p clamshell-ui frame_times -- --ignored --nocapture`.
 
     use super::*;
@@ -187,25 +208,32 @@ mod frame_times {
             let mut retained = Retained::default();
             let len = size.0 as usize * size.1 as usize * 4;
             let mut buffer = vec![0u8; len];
-            let mut pixmap = tiny_skia::Pixmap::new(size.0, size.1).unwrap();
             let rounds = 200;
-            let (mut direct, mut copied) = (Vec::new(), Vec::new());
+            let (mut full, mut checked, mut played) = (Vec::new(), Vec::new(), Vec::new());
             for round in 0..rounds + 20 {
+                // A whole frame: recorded and played into the buffer.
                 let t = Instant::now();
                 let target = tiny_skia::PixmapMut::from_bytes(&mut buffer, size.0, size.1).unwrap();
                 render(target, &mut retained, at, screen, &s, &mut fonts, &mut images).unwrap();
-                let d = t.elapsed();
+                let f = t.elapsed();
+                // Only recorded.
                 let t = Instant::now();
-                render(pixmap.as_mut(), &mut retained, at, screen, &s, &mut fonts, &mut images).unwrap();
-                buffer.copy_from_slice(pixmap.data());
+                record(&mut retained, at, screen, &s, &mut fonts, &mut images);
                 let c = t.elapsed();
+                // Only played.
+                let t = Instant::now();
+                let target = tiny_skia::PixmapMut::from_bytes(&mut buffer, size.0, size.1).unwrap();
+                play(target, &retained.next, Bounds::of_size(size), &mut fonts, &images);
+                let p = t.elapsed();
                 // The first rounds warm the caches.
                 if round >= 20 {
-                    direct.push(d);
-                    copied.push(c);
+                    full.push(f);
+                    checked.push(c);
+                    played.push(p);
                 }
             }
-            println!("{name:18} direct {:>7.3} ms   drawn then copied {:>7.3} ms", median(direct).as_secs_f64() * 1e3, median(copied).as_secs_f64() * 1e3);
+            let ms = |v: Vec<Duration>| median(v).as_secs_f64() * 1e3;
+            println!("{name:18} whole frame {:>7.3} ms   played {:>7.3} ms   recorded {:>7.3} ms", ms(full), ms(played), ms(checked),);
         }
     }
 }

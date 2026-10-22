@@ -1,5 +1,6 @@
 //! Box art and other images. They are decoded and scaled on a worker thread, kept in memory by game and
-//! pixel size, and drawn by blending, with no allocation per frame.
+//! pixel size, and drawn by blending, with no allocation per frame. A recording refers to a loaded image by an
+//! [`Image`].
 //!
 //! The view asks for what it draws. An image that isn't loaded is requested once and drawn as a
 //! placeholder until it arrives. When the cache goes over its budget, images not drawn lately are dropped.
@@ -47,30 +48,55 @@ struct Entry {
     /// `None` if the file couldn't be read. It is not asked for again.
     pixmap: Option<Pixmap>,
     used: u64,
+    /// Which load this is, so that a recording made before an image was loaded or reloaded differs from
+    /// one made after.
+    generation: u32,
+}
+
+/// A loaded image as a recording refers to it: where it is kept, which load it is, and its size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Image {
+    index: u32,
+    generation: u32,
+    w: u32,
+    h: u32,
+}
+
+impl Image {
+    pub fn width(&self) -> u32 {
+        self.w
+    }
+
+    pub fn height(&self) -> u32 {
+        self.h
+    }
 }
 
 pub struct Images {
-    cache: HashMap<Key, Entry>,
+    /// Where each image is kept in `entries`. A slot left by a dropped image is reused.
+    index: HashMap<Key, usize>,
+    entries: Vec<Option<Entry>>,
     pending: HashSet<Key>,
     /// Where requests go. `None` decodes at once, which snapshots use.
     worker: Option<Sender<Request>>,
     frame: u64,
+    generation: u32,
 }
 
 impl Images {
     pub fn new(worker: Sender<Request>) -> Self {
-        Images { cache: HashMap::new(), pending: HashSet::new(), worker: Some(worker), frame: 0 }
+        Images { worker: Some(worker), ..Images::synchronous() }
     }
 
     /// Decodes on request, in the calling thread.
     pub fn synchronous() -> Self {
-        Images { cache: HashMap::new(), pending: HashSet::new(), worker: None, frame: 0 }
+        Images { index: HashMap::new(), entries: Vec::new(), pending: HashSet::new(), worker: None, frame: 0, generation: 0 }
     }
 
     /// The image of `id` in `slot` fitted into `w`x`h` pixels, if it is loaded. If not, it is asked for.
-    pub fn get(&mut self, id: &Arc<str>, slot: Slot, path: &Path, w: u32, h: u32) -> Option<&Pixmap> {
+    pub fn get(&mut self, id: &Arc<str>, slot: Slot, path: &Path, w: u32, h: u32) -> Option<Image> {
         let key = Key { id: id.clone(), slot, w, h };
-        if !self.cache.contains_key(&key) {
+        if !self.index.contains_key(&key) {
             match &self.worker {
                 Some(worker) => {
                     if !self.pending.contains(&key) {
@@ -85,27 +111,58 @@ impl Images {
                 }
                 None => {
                     let pixmap = load(path, w, h, slot == Slot::Thumb);
-                    self.cache.insert(key.clone(), Entry { pixmap, used: self.frame });
+                    self.insert(key.clone(), pixmap);
                 }
             }
         }
-        let entry = self.cache.get_mut(&key)?;
+        let index = *self.index.get(&key)?;
+        let entry = self.entries.get_mut(index)?.as_mut()?;
         entry.used = self.frame;
-        entry.pixmap.as_ref()
+        let pixmap = entry.pixmap.as_ref()?;
+        Some(Image { index: u32::try_from(index).ok()?, generation: entry.generation, w: pixmap.width(), h: pixmap.height() })
+    }
+
+    /// The pixels of `image`, unless it has been dropped since.
+    pub fn pixmap(&self, image: Image) -> Option<&Pixmap> {
+        let entry = self.entries.get(image.index as usize)?.as_ref()?;
+        (entry.generation == image.generation).then_some(entry.pixmap.as_ref()).flatten()
+    }
+
+    fn insert(&mut self, key: Key, pixmap: Option<Pixmap>) {
+        self.generation = self.generation.wrapping_add(1);
+        let entry = Entry { pixmap, used: self.frame, generation: self.generation };
+        match self.index.get(&key).copied().or_else(|| self.entries.iter().position(Option::is_none)) {
+            Some(i) => {
+                if let Some(slot) = self.entries.get_mut(i) {
+                    *slot = Some(entry);
+                }
+                self.index.insert(key, i);
+            }
+            None => {
+                self.index.insert(key, self.entries.len());
+                self.entries.push(Some(entry));
+            }
+        }
     }
 
     /// A decoded image arrived from the worker.
     pub fn arrived(&mut self, key: Key, pixmap: Option<Pixmap>) {
         self.pending.remove(&key);
-        self.cache.insert(key, Entry { pixmap, used: self.frame });
+        self.insert(key, pixmap);
     }
 
     /// Called after a frame. If the cache is over budget, drops the images that weren't drawn in it.
     pub fn end_frame(&mut self) {
-        let bytes: usize = self.cache.values().filter_map(|e| e.pixmap.as_ref()).map(|p| p.data().len()).sum();
+        let bytes: usize = self.entries.iter().flatten().filter_map(|e| e.pixmap.as_ref()).map(|p| p.data().len()).sum();
         if bytes > BUDGET {
             let frame = self.frame;
-            self.cache.retain(|_, e| e.used == frame);
+            for slot in &mut self.entries {
+                if slot.as_ref().is_some_and(|e| e.used != frame) {
+                    *slot = None;
+                }
+            }
+            let entries = &self.entries;
+            self.index.retain(|_, i| entries.get(*i).is_some_and(Option::is_some));
         }
         self.frame += 1;
     }
