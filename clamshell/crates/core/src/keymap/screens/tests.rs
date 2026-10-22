@@ -59,7 +59,7 @@ fn the_picker_chooses_a_keymap_for_the_scope_edited() {
     tap(&mut s, row(2));
     assert_eq!(s.keymap_screen(), None, "chosen: the picker closes");
     assert_eq!(s.settings().overrides_of("zelda-lttp").get(Setting::Keymap), Some(1));
-    assert_eq!(s.keymap_users(1), Users { all_games: false, games: 1 });
+    assert_eq!(s.settings().keymap_users(1), Users { all_games: false, games: 1 });
     // Once the game runs, the keymap is sent to the pad, and only once.
     let fx = crate::testkit::start(&mut s, "zelda-lttp").1;
     assert_eq!(sent(&fx).map(|k| k.name.as_str()), Some("Nintendo layout"));
@@ -214,7 +214,7 @@ fn rename_duplicate_and_delete_with_games_using_it() {
     tap(&mut s, Id::Settings(SettingsId::Scope(Scope::Global)));
     picker(&mut s);
     tap(&mut s, row(1));
-    assert_eq!(s.keymap_users(1), Users { all_games: true, games: 1 });
+    assert_eq!(s.settings().keymap_users(1), Users { all_games: true, games: 1 });
     // Rename.
     picker(&mut s);
     long(&mut s, row(1));
@@ -602,7 +602,7 @@ fn a_games_own_keymap_is_made_and_kept_while_another_is_chosen() {
     assert_eq!(s.keymap_screen(), Some(Screen::Edit(own)));
     assert_eq!(s.settings().overrides_of("zelda-lttp").get(Setting::Keymap), Some(own));
     assert_eq!((s.keymap_name(own), s.keymaps().get(own).unwrap().bindings().len()), ("Own keymap", 4));
-    assert_eq!(s.keymap_users(1), Users::default(), "Nintendo layout no longer used");
+    assert_eq!(s.settings().keymap_users(1), Users::default(), "Nintendo layout no longer used");
     // With Default chosen, the game's own keymap stays and is still offered.
     keymap(&mut s, KeymapId::Back);
     tap(&mut s, row(1));

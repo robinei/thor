@@ -257,13 +257,6 @@ impl State {
         }
     }
 
-    /// Who uses keymap `id`.
-    pub fn keymap_users(&self, id: u16) -> Users {
-        let all_games = self.settings.global.get(Setting::Keymap) == id;
-        let games = self.settings.overrides.values().filter(|o| o.get(Setting::Keymap) == Some(id)).count();
-        Users { all_games, games }
-    }
-
     /// The keymap in force: the running game's, or else all games'. It is Default (id 0, empty) if there
     /// is none.
     pub fn keymap_in_force(&self) -> Keymap {
@@ -443,7 +436,7 @@ impl State {
             }
             KeymapId::LoadFrom if self.keymap_is_own(k) => self.keymap_screens.open = Some(Screen::Load(k)),
             KeymapId::SaveAs if self.keymap_is_own(k) => self.keymap_screens.open = Some(Screen::SaveAs(k)),
-            KeymapId::Delete if self.keymap_users(k).any() => self.keymap_screens.open = Some(Screen::Delete(k)),
+            KeymapId::Delete if self.settings.keymap_users(k).any() => self.keymap_screens.open = Some(Screen::Delete(k)),
             KeymapId::Delete => return self.delete_keymap(k),
             _ => {}
         }
@@ -690,16 +683,7 @@ impl State {
     fn delete_keymap(&mut self, id: u16) -> Vec<Effect> {
         let before = self.in_force();
         self.keymaps.remove(id);
-        if self.settings.global.get(Setting::Keymap) == id {
-            self.settings.global.set(Setting::Keymap, 0);
-        }
-        let games: Vec<_> = self.settings.overrides.iter().filter(|(_, o)| o.get(Setting::Keymap) == Some(id)).map(|(g, _)| g.clone()).collect();
-        let global = self.settings.global.get(Setting::Keymap);
-        for game in games {
-            // The game gets Default as its own choice, unless all games use Default anyway, in which case
-            // its own choice is cleared.
-            self.settings.set(Some(&game), Setting::Keymap, (global != 0).then_some(0));
-        }
+        self.settings.forget_keymap(id);
         self.keymap_screens.open = Some(Screen::List);
         let mut effects = vec![self.save_keymaps()];
         effects.extend(self.saved_and_applied(before));

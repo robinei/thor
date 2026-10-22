@@ -99,7 +99,7 @@ fn remap_title(input: Input) -> Fmt<64> {
 
 /// Who uses a keymap, in words.
 fn users(f: &Frame, id: u16) -> Fmt<48> {
-    let u = f.s.keymap_users(id);
+    let u = f.s.settings().keymap_users(id);
     match (u.all_games, u.games) {
         (true, 0) => Fmt::of(format_args!("All games")),
         (true, n) => Fmt::of(format_args!("All games, {n} {}", if n == 1 { "game" } else { "games" })),
@@ -200,7 +200,7 @@ fn delete(f: &mut Frame, id: u16) {
 fn overwrite(f: &mut Frame, to: u16) {
     let name = f.s.keymap_name(to);
     let title = Fmt::<128>::of(format_args!("Replace {name}?"));
-    let text = if f.s.keymap_users(to).any() {
+    let text = if f.s.settings().keymap_users(to).any() {
         Fmt::<160>::of(format_args!("Its bindings become the own keymap's, for every game using it ({}).", users(f, to).as_str()))
     } else {
         Fmt::of(format_args!("Its bindings become the own keymap's."))

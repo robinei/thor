@@ -554,6 +554,27 @@ impl Settings {
     pub fn has_own(&self, game: &str) -> bool {
         self.overrides.contains_key(game) || self.env.contains_key(game)
     }
+
+    /// Who uses keymap `id`: all games, if it is the global choice, and the games that chose it.
+    pub fn keymap_users(&self, id: u16) -> crate::keymap::screens::Users {
+        let all_games = self.global.get(Setting::Keymap) == id;
+        let games = self.overrides.values().filter(|o| o.get(Setting::Keymap) == Some(id)).count();
+        crate::keymap::screens::Users { all_games, games }
+    }
+
+    /// Keymap `id` is gone. The games that used it, and all games if it was theirs, go back to Default.
+    pub fn forget_keymap(&mut self, id: u16) {
+        if self.global.get(Setting::Keymap) == id {
+            self.global.set(Setting::Keymap, 0);
+        }
+        let games: Vec<_> = self.overrides.iter().filter(|(_, o)| o.get(Setting::Keymap) == Some(id)).map(|(g, _)| g.clone()).collect();
+        let global = self.global.get(Setting::Keymap);
+        for game in games {
+            // The game gets Default as its own choice, unless all games use Default anyway, in which case
+            // its own choice is cleared.
+            self.set(Some(&game), Setting::Keymap, (global != 0).then_some(0));
+        }
+    }
 }
 
 #[cfg(test)]
