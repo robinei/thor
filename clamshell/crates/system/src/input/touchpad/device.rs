@@ -8,12 +8,12 @@ use evdev::{AbsInfo, AbsoluteAxisCode, AttributeSet, KeyCode, PropType, UinputAb
 use super::pointing::SLOTS;
 use crate::os::evdev::{Rect, keyset};
 
-/// The virtual touchpad's keys: one dummy button, so libinput takes it as a touchpad with buttons and
-/// taps for clicks, and the touch and finger-count keys.
+/// The virtual touchpad's keys. One is a dummy button, so libinput takes it as a touchpad with buttons
+/// and taps for clicks. The others are the touch and finger-count keys.
 const TOUCHPAD_KEYS: [KeyCode; 6] =
     [KeyCode::BTN_LEFT, KeyCode::BTN_TOUCH, KeyCode::BTN_TOOL_FINGER, KeyCode::BTN_TOOL_DOUBLETAP, KeyCode::BTN_TOOL_TRIPLETAP, KeyCode::BTN_TOOL_QUADTAP];
 
-/// A touchpad the size of `area` (screen pixels, `px_per_mm` of them per millimetre).
+/// A touchpad the size of `area`, in screen pixels, with `px_per_mm` pixels per millimetre.
 pub fn virtual_touchpad(area: Rect, px_per_mm: f32) -> io::Result<VirtualDevice> {
     let (w, h) = (area.width().max(1.0) as i32, area.height().max(1.0) as i32);
     let res = px_per_mm.round().max(1.0) as i32;

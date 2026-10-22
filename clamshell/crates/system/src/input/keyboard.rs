@@ -1,8 +1,8 @@
-//! The on-screen keyboard's output: a virtual keyboard (uinput), like the touchpad and the controller.
-//! Each key press from the keyboard mode becomes its modifiers pressed, the key pressed and released,
-//! and the modifiers released. Key positions are US; the compositor must use the US layout for this
-//! device (sway: `input "<vendor>:<product>:clamshell_keyboard" xkb_layout us`), or the characters drawn
-//! on the keys won't match what is typed.
+//! The on-screen keyboard's output: a virtual keyboard through uinput, like the touchpad and the
+//! controller. Each key press from the keyboard mode becomes its modifiers pressed, the key pressed and
+//! released, and the modifiers released. Key positions are US, so the compositor must use the US layout
+//! for this device, or the characters drawn on the keys won't match what is typed. In sway that is
+//! `input "<vendor>:<product>:clamshell_keyboard" xkb_layout us`.
 
 use std::io;
 
@@ -14,7 +14,7 @@ use crate::os::evdev::{Press, Raw, keyset};
 
 pub const NAME: &str = "clamshell keyboard";
 
-/// The US key for an (unshifted) printable character.
+/// The US key for an unshifted printable character.
 fn char_key(c: char) -> Option<KeyCode> {
     Some(match c {
         'a' => KeyCode::KEY_A,
@@ -131,17 +131,17 @@ pub fn events(stroke: &Stroke) -> Vec<(KeyCode, Press)> {
     out
 }
 
-/// The modifier keys, in the order they go down (and come up reversed).
+/// The modifier keys, in the order they go down. They come up in reverse order.
 pub const MODIFIERS: [KeyCode; 4] = [KeyCode::KEY_LEFTCTRL, KeyCode::KEY_LEFTALT, KeyCode::KEY_LEFTMETA, KeyCode::KEY_LEFTSHIFT];
 
-/// A keymap's chord: its modifiers' keys and its key's, if it has one.
+/// The keys of a keymap's chord: its modifiers, and its key if it has one.
 pub fn chord_keys(chord: &clamshell_core::keymap::Chord) -> (Vec<KeyCode>, Option<KeyCode>) {
     let mods = [chord.ctrl, chord.alt, chord.logo, chord.shift].into_iter().zip(MODIFIERS).filter_map(|(on, k)| on.then_some(k)).collect();
     let key = chord.key.and_then(|key| key_of(&Stroke { key, shift: false, ctrl: false, alt: false, logo: false }));
     (mods, key)
 }
 
-/// Every key the on-screen keyboard (or a keymap's chord) can press.
+/// Every key the on-screen keyboard, or a keymap's chord, can press.
 pub fn all_keys() -> Vec<KeyCode> {
     let mut keys = MODIFIERS.to_vec();
     keys.extend((' '..='~').filter_map(char_key));
@@ -172,7 +172,7 @@ pub struct VirtualKeyboard {
 }
 
 impl VirtualKeyboard {
-    /// Creates the device; it has every key the on-screen keyboard can press.
+    /// Creates the device with every key the on-screen keyboard can press.
     pub fn new() -> io::Result<Self> {
         let keys = keyset(&all_keys());
         let device = VirtualDevice::builder()?.name(NAME).with_keys(&keys)?.build()?;
@@ -258,7 +258,7 @@ mod tests {
         assert!(events(&stroke(Key::Named(Named::F(13)))).is_empty());
     }
 
-    /// Creates the real device and reads it back. Needs /dev/uinput; the reader grabs the device first,
+    /// Creates the real device and reads it back. Needs /dev/uinput. The reader grabs the device first,
     /// so the compositor never sees these keys. `cargo test -p clamshell-system -- --ignored`
     #[test]
     #[ignore = "needs /dev/uinput"]

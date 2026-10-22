@@ -1,7 +1,8 @@
-//! The second screen as a touchpad (see clamshell-core's `touch`): the fingers the UI says point (on any
-//! tab, or any in the touchpad tab) go to a virtual touchpad, and sway's libinput does what it does for a
-//! laptop touchpad: pointer motion with acceleration, tap to click, two-finger scroll, tap and drag,
-//! palm detection, all configurable with `input` lines. Our part is only this forwarding.
+//! The second screen as a touchpad (see clamshell-core's `touch`). The fingers the UI says are pointing,
+//! on any tab, or any finger in the touchpad tab, go to a virtual touchpad. sway's libinput then does
+//! what it does for a laptop touchpad: pointer motion with acceleration, tap to click, two-finger scroll,
+//! tap and drag, and palm detection, all configurable with `input` lines. Our part is only the
+//! forwarding.
 //!
 //! The touchpad is the size of the second screen, in its pixels. It is made once the UI has drawn that
 //! screen, and kept: libinput takes a moment to see a new device, so it is ready before any finger.
@@ -22,7 +23,7 @@ const LAYOUT_EVERY: std::time::Duration = std::time::Duration::from_millis(100);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
-    /// Fingers pointing: one touch frame's.
+    /// The fingers pointing in one touch frame.
     Contacts(Vec<Contact>),
 }
 
@@ -32,13 +33,13 @@ pub struct Config {
     pub px_per_mm: f32,
 }
 
-/// Forwards the fingers pointing to the virtual touchpad. `layout`: the second screen's size, kept up to
-/// date by the UI.
+/// Forwards the fingers pointing to the virtual touchpad. `layout` holds the second screen's size, kept
+/// up to date by the UI.
 pub fn spawn(config: Config, layout: Arc<Mutex<TouchLayout>>) -> io::Result<Worker<Command>> {
     Worker::spawn("touchpad", move |commands| {
         let mut touchpad = Touchpad { config, layout, pad: None, fingers: pointing::Fingers::default() };
         loop {
-            // (Until the touchpad is made, looking for the screen's size now and then.)
+            // Until the touchpad is made, look for the screen's size now and then.
             let wait = touchpad.pad.is_none().then_some(LAYOUT_EVERY);
             let next = worker::next(&commands, wait);
             touchpad.make();
@@ -60,8 +61,8 @@ struct Touchpad {
 }
 
 impl Touchpad {
-    /// The touchpad made the second screen's size; made again if that size changed while no finger is on
-    /// it.
+    /// Makes the touchpad the second screen's size. It is made again if that size changes while no finger
+    /// is on it.
     fn make(&mut self) {
         let screen = crate::os::lock(&self.layout).screen;
         let size = Some((screen.0 as i32, screen.1 as i32)).filter(|(w, h)| *w > 0 && *h > 0);
@@ -77,7 +78,7 @@ impl Touchpad {
         }
     }
 
-    /// Fingers pointing, to the touchpad as one frame (none yet: dropped).
+    /// Sends the fingers pointing to the touchpad as one frame. Without a touchpad yet, they are dropped.
     fn contacts(&mut self, contacts: &[Contact]) {
         let Some((pad, size)) = self.pad.as_mut() else {
             return;

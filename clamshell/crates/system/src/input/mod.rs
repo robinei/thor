@@ -1,4 +1,4 @@
-//! Input: the controller's path (pad), the virtual touchpad and keyboard, and the devices watched for
+//! Input: the controller's path (`pad`), the virtual touchpad and keyboard, and the devices watched for
 //! activity and hardware keys.
 
 pub(crate) mod keyboard;

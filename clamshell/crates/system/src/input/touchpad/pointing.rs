@@ -1,17 +1,17 @@
-//! The fingers the UI says point (see clamshell-core's `touch`), as touchpad events. Pure: contacts in,
-//! events out.
+//! The fingers the UI says are pointing (see clamshell-core's `touch`), as touchpad events. Contacts go
+//! in and events come out, with no I/O.
 
 use clamshell_core::bottom::touch::{Contact, ContactPhase};
 use evdev::{AbsoluteAxisCode, KeyCode};
 
 use crate::os::evdev::{Press, Raw};
 
-/// Slots (fingers) tracked.
+/// The number of slots, or fingers, tracked.
 pub const SLOTS: usize = clamshell_core::bottom::touch::SLOTS as usize;
-/// BTN_TOOL_FINGER, _DOUBLETAP, _TRIPLETAP, _QUADTAP: how many fingers are on the touchpad.
+/// BTN_TOOL_FINGER, _DOUBLETAP, _TRIPLETAP and _QUADTAP say how many fingers are on the touchpad.
 const TOOLS: [KeyCode; 4] = [KeyCode::BTN_TOOL_FINGER, KeyCode::BTN_TOOL_DOUBLETAP, KeyCode::BTN_TOOL_TRIPLETAP, KeyCode::BTN_TOOL_QUADTAP];
 
-/// BTN_TOUCH and the tool key for `fingers` fingers on the touchpad, `before` before.
+/// BTN_TOUCH and the tool key for `fingers` fingers on the touchpad, where there were `before`.
 fn finger_keys(before: usize, fingers: usize, out: &mut Vec<Raw>) {
     if fingers == before {
         return;
@@ -29,7 +29,7 @@ fn finger_keys(before: usize, fingers: usize, out: &mut Vec<Raw>) {
     }
 }
 
-/// The fingers pointing, by slot (where each is), and the last tracking id given.
+/// Where each finger pointing is, by slot, and the last tracking id given.
 #[derive(Debug, Default)]
 pub struct Fingers {
     down: [Option<(i32, i32)>; SLOTS],
@@ -50,9 +50,9 @@ impl Fingers {
         self.down.iter().flatten().next().copied()
     }
 
-    /// One touch frame's contacts as one touchpad frame (on a touchpad of `size` pixels): each slot's
-    /// events, then the touch and finger-count keys and the first finger's position as they changed.
-    /// Nothing for a frame of fingers that weren't down moving or lifting.
+    /// One touch frame's contacts as one touchpad frame, on a touchpad of `size` pixels. That is each
+    /// slot's events, then the touch and finger-count keys and the first finger's position where they
+    /// changed. A frame in which only fingers that weren't down move or lift gives nothing.
     pub fn frame(&mut self, contacts: &[Contact], size: (i32, i32)) -> Vec<crate::os::evdev::Raw> {
         let (before, first) = (self.count(), self.first());
         let mut out = Vec::new();
@@ -71,7 +71,7 @@ impl Fingers {
         out
     }
 
-    /// Contact `c`'s slot events, to `out`.
+    /// Appends contact `c`'s slot events to `out`.
     fn contact(&mut self, c: Contact, size: (i32, i32), out: &mut Vec<Raw>) {
         let slot = usize::from(c.slot).min(SLOTS - 1);
         let at = (c.x.clamp(0, size.0), c.y.clamp(0, size.1));
@@ -139,7 +139,7 @@ mod tests {
             vec![Raw::abs(SLOT, 0), Raw::abs(ID, -1), Raw::key(KeyCode::BTN_TOUCH, Press::Up), Raw::key(KeyCode::BTN_TOOL_FINGER, Press::Up), Raw::REPORT]
         );
         assert!(f.frame(&[contact(0, ContactPhase::Move, 1, 1)], size).is_empty(), "not down");
-        // Two fingers moving in one frame: one report.
+        // Two fingers moving in one frame make one report.
         f.frame(&[contact(0, ContactPhase::Down, 10, 10), contact(1, ContactPhase::Down, 20, 10)], size);
         let both = f.frame(&[contact(0, ContactPhase::Move, 10, 30), contact(1, ContactPhase::Move, 20, 30)], size);
         assert_eq!(

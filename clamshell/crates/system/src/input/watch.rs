@@ -1,12 +1,17 @@
-//! Watching the input devices: every one is read (not grabbed, so the compositor and logind still get
-//! everything), for two things. Input on any of them, for idle (sent at most every [`ACTIVITY_EVERY`] while
-//! there is some): keys, buttons, relative motion, and absolute axes that moved a real distance (a resting
-//! stick's jitter isn't input). And, in the device's own session, the device's hardware keys: volume, mute
-//! and brightness on small button devices (gpio-keys, a headset's buttons), never on a full keyboard, whose
-//! keys are the desktop's business; and the lid, for the power key's wakeup ([`crate::power::lid`]). Devices that
-//! come and go are picked up as /dev/input changes (inotify; without it, within [`RESCAN_EVERY`]). Grabbed
-//! devices (the controller) say nothing here; their input reaches the state through their own paths and the
-//! virtual devices they feed.
+//! Watching the input devices. Every device is read but not grabbed, so the compositor and logind still
+//! get everything. The devices are read for two things:
+//!
+//! - Input on any of them, for idle. It is sent at most every [`ACTIVITY_EVERY`] while there is some.
+//!   Input means keys, buttons, relative motion, and absolute axes that moved a real distance, since a
+//!   resting stick's jitter isn't input.
+//! - In the device's own session, the device's hardware keys. These are volume, mute and brightness on
+//!   small button devices such as gpio-keys or a headset's buttons, never on a full keyboard, whose keys
+//!   are the desktop's business. The lid is read too, for the power key's wakeup
+//!   ([`crate::power::lid`]).
+//!
+//! Devices that come and go are picked up as /dev/input changes, through inotify, or without it within
+//! [`RESCAN_EVERY`]. Grabbed devices such as the controller show nothing here. Their input reaches the
+//! state through their own paths and the virtual devices they feed.
 
 use std::collections::HashMap;
 use std::io;
@@ -30,18 +35,18 @@ use crate::{Closed, Sink};
 
 /// Input is reported at most this often.
 const ACTIVITY_EVERY: Duration = Duration::from_secs(3);
-/// New devices are looked for this often, without inotify.
+/// How often new devices are looked for without inotify.
 const RESCAN_EVERY: Duration = Duration::from_secs(5);
-/// An absolute axis counts as input once it has moved this far (of its range) since it last counted.
+/// An absolute axis counts as input once it has moved this fraction of its range since it last counted.
 const ABS_MOVE: f32 = 0.05;
 
 /// A device read for input.
 struct Watched {
     path: PathBuf,
     device: RawDevice,
-    /// Its volume and brightness keys are the device's (see the module doc).
+    /// Whether its volume and brightness keys are the device's (see the module docs).
     hardware_keys: bool,
-    /// It has the lid's switch.
+    /// Whether it has the lid's switch.
     lid: bool,
     /// Each absolute axis' range and the value it last counted at.
     axes: HashMap<u16, (Range, i32)>,
@@ -49,7 +54,7 @@ struct Watched {
 
 impl Watched {
     fn open(path: PathBuf, device: RawDevice) -> Option<Watched> {
-        // Accelerometers report all the time: not input.
+        // Accelerometers report all the time, which isn't input.
         if device.properties().contains(PropType::ACCELEROMETER) {
             return None;
         }
@@ -77,7 +82,7 @@ impl Watched {
         Some(Watched { path, device, hardware_keys, lid, axes })
     }
 
-    /// Whether `raw` is input (and remembers where an axis counted).
+    /// Whether `raw` is input. Remembers the value an axis last counted at.
     fn is_input(&mut self, raw: Raw) -> bool {
         match raw.kind {
             EventType::KEY | EventType::RELATIVE => true,
@@ -89,7 +94,7 @@ impl Watched {
                     }
                     moved >= ABS_MOVE
                 }
-                // An axis it didn't say it had (or a slot change): counts.
+                // An axis the device didn't say it had counts, except a slot change.
                 None => AbsoluteAxisCode(raw.code) != AbsoluteAxisCode::ABS_MT_SLOT,
             },
             _ => false,
@@ -97,7 +102,7 @@ impl Watched {
     }
 }
 
-/// A hardware key's meaning, if `raw` is one pressed (or held: it repeats).
+/// A hardware key's meaning, if `raw` is one pressed or held. Holding it repeats.
 fn device_key(raw: Raw) -> Option<DeviceKey> {
     let (key, press) = raw.as_key()?;
     if !press.held() {
@@ -113,8 +118,8 @@ fn device_key(raw: Raw) -> Option<DeviceKey> {
     })
 }
 
-/// An inotify watch of /dev/input, non-blocking: a device's node coming, and udev giving it its
-/// permissions (both say look again). The pad thread watches with one of its own.
+/// A non-blocking inotify watch of /dev/input. It sees a device's node appear and udev give it its
+/// permissions, and either means look again. The pad thread has a watch of its own.
 pub fn devices_watch() -> Option<rustix::fd::OwnedFd> {
     let fd = inotify::init(inotify::CreateFlags::NONBLOCK | inotify::CreateFlags::CLOEXEC).inspect_err(|e| log::warn!("inotify: {e}")).ok()?;
     inotify::add_watch(&fd, "/dev/input", inotify::WatchFlags::CREATE | inotify::WatchFlags::ATTRIB | inotify::WatchFlags::MOVED_TO)
@@ -123,7 +128,8 @@ pub fn devices_watch() -> Option<rustix::fd::OwnedFd> {
     Some(fd)
 }
 
-/// Starts watching. `hardware_keys`: take the device's hardware keys (its own session only).
+/// Starts watching. With `hardware_keys` it takes the device's hardware keys, which is for the device's
+/// own session only.
 pub fn spawn(hardware_keys: bool, sink: impl Sink) -> io::Result<()> {
     worker::detached("input watch", move || {
         if let Err(Closed) = watch(hardware_keys, &sink) {
@@ -154,7 +160,7 @@ fn watch(take_keys: bool, sink: &impl Sink) -> Result<(), Closed> {
                     devices.push(w);
                 }
             }
-            // Whether there is anything to watch (no permission to read /dev/input: nothing).
+            // Whether there is anything to watch. Without permission to read /dev/input there is nothing.
             let now = !devices.is_empty();
             if watching != Some(now) {
                 watching = Some(now);
@@ -186,7 +192,7 @@ fn watch(take_keys: bool, sink: &impl Sink) -> Result<(), Closed> {
                 if take_keys && d.lid && raw.kind == EventType::SWITCH && raw.code == SwitchCode::SW_LID.0 {
                     lid::closed(raw.value != 0);
                 }
-                // (Events dropped, the lid's among them perhaps: as it is now.)
+                // Events were dropped, perhaps the lid's among them, so read the lid as it is now.
                 if take_keys && d.lid && raw.kind == EventType::SYNCHRONIZATION && raw.code == SynchronizationCode::SYN_DROPPED.0 {
                     lid::closed(lid_switch(d));
                 }
@@ -203,7 +209,7 @@ fn watch(take_keys: bool, sink: &impl Sink) -> Result<(), Closed> {
     }
 }
 
-/// Whether the lid's switch on `w` is closed (unreadable: open).
+/// Whether the lid's switch on `w` is closed. If it can't be read, it counts as open.
 fn lid_switch(w: &Watched) -> bool {
     w.device
         .get_switch_state()
@@ -211,8 +217,8 @@ fn lid_switch(w: &Watched) -> bool {
         .is_ok_and(|on| on.contains(SwitchCode::SW_LID))
 }
 
-/// Waits until a device has events or /dev/input changed (`notify`; without it, at most
-/// [`RESCAN_EVERY`]); whether to look for devices again.
+/// Waits until a device has events or /dev/input changed (`notify`). Without `notify` it waits at most
+/// [`RESCAN_EVERY`]. Returns whether to look for devices again.
 fn wait(devices: &[Watched], notify: Option<&OwnedFd>) -> bool {
     let mut fds: Vec<PollFd> = devices.iter().map(|d| PollFd::new(&d.device, PollFlags::IN)).collect();
     let Some(notify) = notify else {
