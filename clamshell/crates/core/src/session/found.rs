@@ -7,7 +7,7 @@
 //! with its app id or of its process, go to its workspace, which is shown if one of them was in front.
 //!
 //! Its process, and those it started, are moved into a scope of ours as a launch of the entry
-//! ([`State::adopt`]). From then on it is paused, quit and killed through its slice. A process that also
+//! ([`Session::adopt`]). From then on it is paused, quit and killed through its slice. A process that also
 //! has another entry's windows, such as a browser showing a file opened from the Files tab, is not moved:
 //! Quit closes its windows, and that is all. Nested in a desktop session this works the same, since a
 //! window in ClamShell's sway belongs to that session; the desktop's own programs show their windows on the
@@ -21,30 +21,30 @@ use std::sync::Arc;
 use clamshell_library::ids;
 
 use crate::effect::{Effect, WindowCommand};
+use crate::out::Out;
 use crate::session::instance::Instance;
 use crate::session::running::{Origin, Running};
 use crate::session::windows::Window;
-use crate::{Entry, State};
+use crate::{Clock, Entry, Library, Session};
 
-impl State {
+impl Session {
     /// Moves a found program's process, and those it started, into a scope of ours as a launch of entry
-    /// `key`. Once systemd lists the scope, it runs as a launch (see [`State::follow_units`]).
-    pub(crate) fn adopt(&mut self, key: &str, pid: u32) -> Effect {
-        let (secs, n) = (self.clock.unix(), self.session.next_instance());
+    /// `key`. Once systemd lists the scope, it runs as a launch (see [`crate::State::follow_units`]).
+    fn adopt(&mut self, key: &str, pid: u32, clock: &Clock) -> Effect {
+        let (secs, n) = (clock.unix(), self.next_instance());
         Effect::Adopt { instance: Instance::Run { key: key.to_owned(), secs, n }, pid }
     }
 
     /// Makes the programs of windows that still belong to no entry run as entries found by them. `taken`
     /// lists windows just given to a browsed file, which are left out.
-    pub(crate) fn follow_found_windows(&mut self, taken: &[i64]) -> Vec<Effect> {
-        let now = self.clock.mono();
-        let session = &self.session;
+    pub(crate) fn follow_found_windows(&mut self, taken: &[i64], clock: &Clock, library: &Library, out: &mut Out) {
+        let now = clock.mono();
         // A starting launch's window is left out, such as a Steam game found running whose launch is
         // still to come.
-        let starting = |w: &Window| session.launching.iter().any(|l| l.app_id.as_deref() == Some(w.app_id.as_str()));
+        let starting = |w: &Window| self.launching.iter().any(|l| l.app_id.as_deref() == Some(w.app_id.as_str()));
         let service = |w: &Window| w.unit.as_deref().is_some_and(Instance::is_service);
         let mut new: Vec<Running> = Vec::new();
-        for w in session.windows.iter().filter(|w| !taken.contains(&w.id) && w.home().is_none() && session.running_of(w).is_none()) {
+        for w in self.windows.iter().filter(|w| !taken.contains(&w.id) && w.home().is_none() && self.running_of(w).is_none()) {
             let Some(&pid) = w.pids.first().filter(|_| !starting(w) && !service(w)) else {
                 continue;
             };
@@ -52,59 +52,57 @@ impl State {
                 continue;
             }
             // Its process is its own if none of the process's windows belongs to another entry.
-            let own = !session.windows.iter().any(|o| o.pids.first() == Some(&pid) && session.running_of(o).is_some());
+            let own = !self.windows.iter().any(|o| o.pids.first() == Some(&pid) && self.running_of(o).is_some());
             let app_id: Option<Arc<str>> = (!w.app_id.is_empty()).then(|| w.app_id.as_str().into());
             // Known by neither its app id nor its process, no entry would find it again.
             if app_id.is_none() && !own {
                 continue;
             }
-            let game = self.found_entry(&w.app_id, || {
+            let game = found_entry(library, &w.app_id, || {
                 let name = app_id.as_deref().map_or_else(|| pid.to_string(), str::to_owned);
                 let title = if w.app_id.is_empty() { &w.title } else { &w.app_id };
                 Entry { app: true, ..Entry::new(&format!("{}{name}", ids::WINDOW), title) }
             });
-            if session.running(&game.id).is_some() {
+            if self.running(&game.id).is_some() {
                 continue;
             }
             new.push(Running { app_id, seen: true, ..Running::of(&game, Origin::Found { pid: own.then_some(pid), tray: None }, now) });
         }
-        self.start_found(new, taken)
-    }
-
-    /// The entry that a program found by `name`, its window's app id or its tray icon's id, runs as. It is
-    /// the library's desktop entry of that name, ignoring case, or else one of its own made by `own`.
-    pub(crate) fn found_entry(&self, name: &str, own: impl FnOnce() -> Entry) -> Entry {
-        let named = |g: &&Entry| ids::desktop_file(&g.id).is_some_and(|d| d.eq_ignore_ascii_case(name));
-        self.shelf.library().entries.iter().find(named).cloned().unwrap_or_else(own)
+        self.start_found(new, taken, clock, out);
     }
 
     /// Runs entries just found by windows or tray icons. Their windows, except `taken`, go to their
     /// workspaces, which are shown if one of the windows was in front. An entry of its own gets its
     /// picture looked up by its app id, and each is moved into a scope of ours.
-    pub(crate) fn start_found(&mut self, new: Vec<Running>, taken: &[i64]) -> Vec<Effect> {
-        let session = &self.session;
-        let mut effects = Vec::new();
+    pub(crate) fn start_found(&mut self, new: Vec<Running>, taken: &[i64], clock: &Clock, out: &mut Out) {
         for r in &new {
-            let mine: Vec<&Window> = session.windows.iter().filter(|w| !taken.contains(&w.id) && (r.owns(w) || r.fathered(w))).collect();
+            let mine: Vec<&Window> = self.windows.iter().filter(|w| !taken.contains(&w.id) && (r.owns(w) || r.fathered(w))).collect();
             if !mine.is_empty() {
-                effects.push(Effect::Window(WindowCommand::Move { windows: mine.iter().map(|w| w.id).collect(), to: r.workspace() }));
+                out.effects.push(Effect::Window(WindowCommand::Move { windows: mine.iter().map(|w| w.id).collect(), to: r.workspace() }));
             }
             if mine.iter().any(|w| w.focused) {
-                effects.push(Effect::Window(WindowCommand::Focus(r.workspace())));
+                out.effects.push(Effect::Window(WindowCommand::Focus(r.workspace())));
             }
             if r.id.starts_with(ids::WINDOW)
                 && let Some(app_id) = &r.app_id
             {
-                effects.push(Effect::FindIcon { entry: r.id.clone(), app_id: app_id.to_string() });
+                out.effects.push(Effect::FindIcon { entry: r.id.clone(), app_id: app_id.to_string() });
             }
         }
         let adopt: Vec<(String, u32)> = new.iter().filter_map(|r| Some((r.key.clone(), r.pid()?))).collect();
-        self.session.running.extend(new);
+        self.running.extend(new);
         for (key, pid) in adopt {
-            effects.push(self.adopt(&key, pid));
+            let adopted = self.adopt(&key, pid, clock);
+            out.effects.push(adopted);
         }
-        effects
     }
+}
+
+/// The entry that a program found by `name`, its window's app id or its tray icon's id, runs as. It is the
+/// library's desktop entry of that name, ignoring case, or else one of its own made by `own`.
+pub(crate) fn found_entry(library: &Library, name: &str, own: impl FnOnce() -> Entry) -> Entry {
+    let named = |g: &&Entry| ids::desktop_file(&g.id).is_some_and(|d| d.eq_ignore_ascii_case(name));
+    library.entries.iter().find(named).cloned().unwrap_or_else(own)
 }
 
 #[cfg(test)]
@@ -112,7 +110,7 @@ impl State {
 mod tests {
     use super::*;
     use crate::testkit::*;
-    use crate::{Event, Init};
+    use crate::{Event, Init, State};
 
     /// A window of process `pid`, whose parent is 1, in `unit`.
     fn window(id: i64, app_id: &str, pid: u32, unit: &str, focused: bool) -> Window {

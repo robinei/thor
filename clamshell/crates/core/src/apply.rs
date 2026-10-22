@@ -151,9 +151,8 @@ impl State {
             }
             Event::Fetching(on) => self.shelf.set_fetching(on),
             Event::Tray(items) => {
-                if let Some(effects) = self.set_tray(items) {
+                if self.session.set_tray(items, &self.clock, self.shelf.library(), out) {
                     out.mark(Dirty::BOTH);
-                    out.effects.extend(effects);
                 }
             }
             Event::Units(units) => {

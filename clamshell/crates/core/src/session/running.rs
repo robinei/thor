@@ -208,8 +208,9 @@ impl State {
         let title = r.entry.as_ref().map_or_else(|| id.to_owned(), |g| g.title.clone());
         // With no window but a tray icon, the program is asked to show itself, as for Steam started
         // silently.
-        if let Some(show) = self.activate_tray(id) {
-            return vec![show];
+        let mut out = Out::default();
+        if self.session.activate_tray(id, &self.clock, &mut out) {
+            return out.effects;
         }
         self.bottom.notify(crate::bottom::notice::NoticeKind::NoWindow(title), self.clock.mono());
         vec![]
@@ -365,7 +366,9 @@ impl State {
         effects.extend(self.windows_to_their_entries());
         let (taken, stray) = self.stray_to_waiting(known, &mut effects);
         let given: Vec<i64> = if taken.is_some() { stray } else { Vec::new() };
-        effects.extend(self.follow_found_windows(&given));
+        let mut found = Out::default();
+        self.session.follow_found_windows(&given, &self.clock, self.shelf.library(), &mut found);
+        effects.extend(found.effects);
         if taken.is_none() {
             effects.extend(self.landing_up());
         }

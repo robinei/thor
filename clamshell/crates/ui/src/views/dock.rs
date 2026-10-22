@@ -88,7 +88,7 @@ fn entry_tile(f: &mut Frame, r: Rect, i: usize, id: &std::sync::Arc<str>, severa
         let art = Rect::new(r.x + (r.w - w) / 2.0, r.y + r.h * ART_TOP, w, h);
         widgets::art(f.c, f.images, picture, art, ART_RADIUS, crate::gfx::Align::Center, !running);
     });
-    if s.tray_of(id).is_some() {
+    if s.session().tray_of(id).is_some() {
         tray_mark(f, r, i);
     }
 }
@@ -113,7 +113,7 @@ fn tray_mark(f: &mut Frame, tile: Rect, i: usize) {
 /// menu is open, that is drawn instead.
 fn draw_menu(f: &mut Frame, entry: &std::sync::Arc<str>) {
     let s = f.s;
-    if let Some((tray, entries)) = s.tray_page().filter(|_| s.dock().tray_open()) {
+    if let Some((tray, entries)) = s.dock().tray_page(s.session()).filter(|_| s.dock().tray_open()) {
         return draw_tray_menu(f, &tray.title, entries);
     }
     let title = s.entry(entry).map_or("", |g| g.title.as_str());
@@ -126,7 +126,7 @@ fn draw_menu(f: &mut Frame, entry: &std::sync::Arc<str>) {
     let items = [
         if s.opens_another(entry) { item(DockId::OpenAnother, "Open another", Tone::Fn) } else { None },
         if running && s.entry_window(entry).is_some() { item(DockId::CloseWindow, "Close window", Tone::Fn) } else { None },
-        if s.tray_of(entry).is_some() { item(DockId::TrayMenu, "Menu", Tone::Fn) } else { None },
+        if s.session().tray_of(entry).is_some() { item(DockId::TrayMenu, "Menu", Tone::Fn) } else { None },
         if pinnable { item(DockId::Pin, if pinned { "Unpin" } else { "Pin" }, Tone::Fn) } else { None },
         if pinnable {
             item(DockId::Autostart, if s.session().autostarts(entry) { "Don't start with ClamShell" } else { "Start with ClamShell" }, Tone::Fn)

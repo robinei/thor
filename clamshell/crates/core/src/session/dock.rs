@@ -163,7 +163,7 @@ impl State {
                     self.dock.tray = Some(vec![]);
                 }
             }
-            DockId::TrayEntry(id) => out.effects.extend(self.tray_choice(id)),
+            DockId::TrayEntry(id) => self.dock.tray_choice(id, &self.session, out),
             // Back in a submenu goes to the menu above it.
             DockId::Back if self.dock.tray.as_ref().is_some_and(|path| !path.is_empty()) => {
                 if let Some(path) = &mut self.dock.tray {

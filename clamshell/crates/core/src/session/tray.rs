@@ -23,9 +23,11 @@ use std::sync::Arc;
 use clamshell_library::ids;
 
 use crate::effect::Effect;
+use crate::out::Out;
+use crate::session::found::found_entry;
 use crate::session::instance::Instance;
 use crate::session::running::{Origin, Running};
-use crate::{Entry, State};
+use crate::{Clock, Dock, Entry, Library, Session};
 
 /// A tray icon.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -66,36 +68,38 @@ pub enum TrayCommand {
     Click { item: Arc<str>, id: i32 },
 }
 
-impl State {
+impl Session {
     /// Takes the tray icons after any change. Programs not started by ClamShell run as entries found by
-    /// their icons, and end with them, or with their last window if one is still open.
-    pub(crate) fn set_tray(&mut self, items: Vec<TrayItem>) -> Option<Vec<Effect>> {
-        if self.session.tray == items {
-            return None;
+    /// their icons, and end with them, or with their last window if one is still open. Returns whether
+    /// they changed.
+    pub(crate) fn set_tray(&mut self, items: Vec<TrayItem>, clock: &Clock, library: &Library, out: &mut Out) -> bool {
+        if self.tray == items {
+            return false;
         }
-        self.session.tray = items;
-        Some(self.follow_tray())
+        self.tray = items;
+        self.follow_tray(clock, library, out);
+        true
     }
 
     /// Makes entries found by tray icons: one for each icon of a program not started by ClamShell, whose
     /// process is in no scope of ours, unless the icon already has one. This happens only in the device's
     /// session. In a desktop's session the programs are the desktop's, and ClamShell is a guest there that
     /// manages only what it started.
-    pub(crate) fn follow_tray(&mut self) -> Vec<Effect> {
-        if !self.session.device_session {
-            return vec![];
+    fn follow_tray(&mut self, clock: &Clock, library: &Library, out: &mut Out) {
+        if !self.device_session {
+            return;
         }
-        let now = self.clock.mono();
+        let now = clock.mono();
         let mut new = Vec::new();
-        for t in &self.session.tray {
+        for t in &self.tray {
             let ours = t.unit.as_deref().and_then(Instance::from_unit).is_some();
             let Some(pid) = t.pid.filter(|_| !ours) else {
                 continue;
             };
-            if self.session.running.iter().any(|r| r.tray().is_some_and(|k| *k == t.key)) {
+            if self.running.iter().any(|r| r.tray().is_some_and(|k| *k == t.key)) {
                 continue;
             }
-            let game = self.found_entry(&t.id, || {
+            let game = found_entry(library, &t.id, || {
                 let title = if t.title.is_empty() { &t.id } else { &t.title };
                 // It is named by the icon's own id, which is the same each time the program runs, so that
                 // a pin or a setting stays with it. Without an id, the icon's D-Bus name is used.
@@ -104,7 +108,7 @@ impl State {
             });
             // Its entry runs already. If it was found another way, by a window, the icon becomes that
             // entry's. If it is a launch of ours, the icon is already its own.
-            if let Some(r) = self.session.running.iter_mut().find(|r| r.id == game.id) {
+            if let Some(r) = self.running.iter_mut().find(|r| r.id == game.id) {
                 if let Origin::Found { pid: found_pid, tray } = &mut r.origin {
                     *tray = Some(t.key.clone());
                     *found_pid = found_pid.or(Some(pid));
@@ -113,21 +117,38 @@ impl State {
             }
             new.push(Running::of(&game, Origin::Found { pid: Some(pid), tray: Some(t.key.clone()) }, now));
         }
-        self.start_found(new, &[])
+        self.start_found(new, &[], clock, out);
     }
 
     /// The tray icon of a running entry, if it has one: the icon of its scope's process, or the one it was
     /// found by.
     pub fn tray_of(&self, entry: &str) -> Option<&TrayItem> {
-        let r = self.session.running(entry)?;
+        let r = self.running(entry)?;
         let in_scope = |t: &&TrayItem| t.unit.as_deref().and_then(Instance::from_unit).is_some_and(|i| i.key() == Some(r.key.as_str()));
-        self.session.tray.iter().find(|t| r.tray().is_some_and(|k| *k == t.key) || in_scope(t))
+        self.tray.iter().find(|t| r.tray().is_some_and(|k| *k == t.key) || in_scope(t))
     }
 
+    /// Shows a running entry that has a tray icon but no open window. The program is asked to show itself,
+    /// and its window is shown when it comes, on the entry's workspace; it is moved there if it opens
+    /// elsewhere. Returns whether the entry has a tray icon to ask.
+    pub(crate) fn activate_tray(&mut self, entry: &str, clock: &Clock, out: &mut Out) -> bool {
+        let Some(key) = self.tray_of(entry).map(|t| t.key.clone()) else {
+            return false;
+        };
+        let Some(r) = self.running(entry) else {
+            return false;
+        };
+        self.pending_show = Some(Instance::Run { key: r.key.clone(), secs: clock.unix(), n: 0 });
+        out.effects.push(Effect::Tray(TrayCommand::Activate(key)));
+        true
+    }
+}
+
+impl Dock {
     /// The open menu page, if there is one: the entry's tray icon and the entries of the open submenu.
-    pub fn tray_page(&self) -> Option<(&TrayItem, &[TrayEntry])> {
-        let path = self.dock.tray.as_ref()?;
-        let item = self.tray_of(self.dock.menu()?)?;
+    pub fn tray_page<'a>(&self, session: &'a Session) -> Option<(&'a TrayItem, &'a [TrayEntry])> {
+        let path = self.tray.as_ref()?;
+        let item = session.tray_of(self.menu()?)?;
         let mut entries = item.menu.as_slice();
         for id in path {
             entries = entries.iter().find(|e| e.id == *id)?.children.as_slice();
@@ -137,33 +158,23 @@ impl State {
 
     /// An entry of the open menu page was chosen. A submenu opens; anything else is clicked, and the menu
     /// closes. A disabled entry does nothing.
-    pub(crate) fn tray_choice(&mut self, id: i32) -> Vec<Effect> {
-        let Some((item, entries)) = self.tray_page() else {
-            return vec![];
+    pub(crate) fn tray_choice(&mut self, id: i32, session: &Session, out: &mut Out) {
+        let Some((item, entries)) = self.tray_page(session) else {
+            return;
         };
         let Some(entry) = entries.iter().find(|e| e.id == id).filter(|e| e.enabled) else {
-            return vec![];
+            return;
         };
         if !entry.children.is_empty() {
-            if let Some(path) = &mut self.dock.tray {
+            if let Some(path) = &mut self.tray {
                 path.push(id);
             }
-            return vec![];
+            return;
         }
         let click = Effect::Tray(TrayCommand::Click { item: item.key.clone(), id });
-        self.dock.menu = None;
-        self.dock.tray = None;
-        vec![click]
-    }
-
-    /// Shows a running entry that has a tray icon but no open window. The program is asked to show itself,
-    /// and its window is shown when it comes, on the entry's workspace; it is moved there if it opens
-    /// elsewhere.
-    pub(crate) fn activate_tray(&mut self, entry: &str) -> Option<Effect> {
-        let key = self.tray_of(entry)?.key.clone();
-        let r = self.session.running(entry)?;
-        self.session.pending_show = Some(Instance::Run { key: r.key.clone(), secs: self.clock.unix(), n: 0 });
-        Some(Effect::Tray(TrayCommand::Activate(key)))
+        self.menu = None;
+        self.tray = None;
+        out.effects.push(click);
     }
 }
 
@@ -174,7 +185,7 @@ mod tests {
     use crate::id::{DockId, Id};
     use crate::session::windows::{self, Window};
     use crate::testkit::*;
-    use crate::{Event, WindowCommand};
+    use crate::{Event, State, WindowCommand};
 
     fn entry(id: i32, label: &str, children: Vec<TrayEntry>) -> TrayEntry {
         TrayEntry { id, label: label.into(), enabled: true, checked: None, children }
@@ -200,7 +211,7 @@ mod tests {
         let zelda = launch(&mut s, "zelda-lttp");
         let zelda_icon = item(":1.5/a", "zelda3", zelda.unit().as_deref());
         s.apply(Event::Tray(vec![zelda_icon.clone()]));
-        assert_eq!(s.tray_of("zelda-lttp").map(|t| &*t.key), Some(":1.5/a"));
+        assert_eq!(s.session().tray_of("zelda-lttp").map(|t| &*t.key), Some(":1.5/a"));
         assert_eq!(s.session().running_entries().len(), 1);
         // A program not started by ClamShell runs as the entry whose desktop file is named as its id,
         // here Firefox's.
@@ -230,11 +241,11 @@ mod tests {
         // Its corner mark opens its menu. A submenu opens, Back goes up, and clicking an entry closes the
         // menu.
         tap_dock(&mut s, DockId::Tray(at));
-        assert_eq!(s.tray_page().map(|(_, e)| e.len()), Some(3));
+        assert_eq!(s.dock().tray_page(s.session()).map(|(_, e)| e.len()), Some(3));
         tap_dock(&mut s, DockId::TrayEntry(2));
-        assert_eq!(s.tray_page().map(|(_, e)| e[0].label.as_str()), Some("Zelda"));
+        assert_eq!(s.dock().tray_page(s.session()).map(|(_, e)| e[0].label.as_str()), Some("Zelda"));
         tap_dock(&mut s, DockId::Back);
-        assert_eq!(s.tray_page().map(|(_, e)| e.len()), Some(3));
+        assert_eq!(s.dock().tray_page(s.session()).map(|(_, e)| e.len()), Some(3));
         let closed = Effect::Watch(crate::effect::Watch::Battery, false);
         assert_eq!(tap_dock(&mut s, DockId::TrayEntry(4)), vec![Effect::Tray(TrayCommand::Click { item: ":1.9/b".into(), id: 4 }), closed]);
         assert!(s.dock().menu().is_none());
@@ -268,6 +279,6 @@ mod tests {
         let zelda = launch(&mut s, "zelda-lttp");
         s.apply(Event::Tray(vec![item(":1.5/a", "zelda3", zelda.unit().as_deref()), item(":1.9/b", "firefox", None)]));
         assert!(s.session().running("desktop:firefox").is_none(), "the desktop's");
-        assert!(s.tray_of("zelda-lttp").is_some(), "its own launch's icon: its menu");
+        assert!(s.session().tray_of("zelda-lttp").is_some(), "its own launch's icon: its menu");
     }
 }
