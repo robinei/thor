@@ -314,7 +314,15 @@ impl<S: Sink> Service for Windows<S> {
             let mut moved = false;
             for command in windows::reconcile(&list, top.as_deref(), &self.down.wanted(), &self.land.wanted(), &mut self.tried) {
                 // (Only a move sway carried out brings the event; a refused one, none.)
-                moved |= c.queries.command(&command).is_ok_and(|outcomes| !outcomes.is_empty() && outcomes.iter().all(|o| o.success));
+                match c.queries.command(&command) {
+                    Ok(outcomes) => {
+                        if let Some(error) = ipc::refused(&outcomes) {
+                            log::debug!("sway: {command}: {error}");
+                        }
+                        moved |= !outcomes.is_empty() && outcomes.iter().all(|o| o.success);
+                    }
+                    Err(e) => log::warn!("sway: {command}: {e}"),
+                }
             }
             if !moved {
                 self.sink.send(Event::Windows(list))?;
