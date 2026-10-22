@@ -4,9 +4,18 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
+use clamshell_core::account::Account;
 use clamshell_core::device::{DeviceId, SticksEvent};
 use clamshell_core::keyboard::{self, Key, Modifier};
-use clamshell_core::{DockId, EditorId, Event, Id, Init, Instance, PointerEvent, Reading, SettingsId, Slide, State, Tab};
+use clamshell_core::keymap::{Button, Input, Keymaps, Layer, Param, Side};
+use clamshell_core::settings::Setting;
+use clamshell_core::slider::Control;
+use clamshell_core::sticks::Calibrator;
+use clamshell_core::windows::Window;
+use clamshell_core::{
+    DockId, EditorId, Event, Id, Init, Instance, KeymapId, ListEvent, ListId, PointerEvent, Reading, RowPart, Scope, SettingsId, ShelfEvent, ShelfId, Slide,
+    State, Status, Tab, Target, TimeZones, battery, bluetooth, levels, tray, wifi,
+};
 
 use crate::Screen;
 use crate::draw::DrawCache;
@@ -42,9 +51,9 @@ fn allocs() -> usize {
     ALLOCS.with(Cell::get)
 }
 
-fn window(id: i64, app_id: &str, unit: Option<&str>, focused: bool) -> clamshell_core::windows::Window {
+fn window(id: i64, app_id: &str, unit: Option<&str>, focused: bool) -> Window {
     let workspace = unit.map_or("1", |u| u.trim_end_matches(".scope")).to_owned();
-    clamshell_core::windows::Window { id, app_id: app_id.into(), focused, unit: unit.map(Into::into), workspace, ..Default::default() }
+    Window { id, app_id: app_id.into(), focused, unit: unit.map(Into::into), workspace, ..Default::default() }
 }
 
 fn key(k: Key) -> Event {
@@ -55,8 +64,8 @@ fn key(k: Key) -> Event {
 fn device() -> Vec<Event> {
     let library = clamshell_library::demo::library();
     let tools = library.collections.iter().position(|c| c.name == "Tools").unwrap_or(0);
-    let entry = || tap(Id::Shelf(clamshell_core::ShelfId::Game("tool:device".into())));
-    vec![tap(Id::Shelf(clamshell_core::ShelfId::Collection(u16::try_from(tools).unwrap_or(0)))), entry(), entry()]
+    let entry = || tap(Id::Shelf(ShelfId::Game("tool:device".into())));
+    vec![tap(Id::Shelf(ShelfId::Collection(u16::try_from(tools).unwrap_or(0)))), entry(), entry()]
 }
 
 fn tap(id: Id) -> Event {
@@ -64,20 +73,20 @@ fn tap(id: Id) -> Event {
 }
 
 fn wifi_reading() -> Event {
-    Event::Reading(Reading::Wifi(clamshell_core::wifi::Wifi {
+    Event::Reading(Reading::Wifi(wifi::Wifi {
         present: true,
         on: true,
         networks: vec![
-            clamshell_core::wifi::Network { ssid: "home".into(), strength: 80, secure: true, saved: true, connected: true, enterprise: false },
-            clamshell_core::wifi::Network { ssid: "cafe".into(), strength: 40, secure: true, ..Default::default() },
+            wifi::Network { ssid: "home".into(), strength: 80, secure: true, saved: true, connected: true, enterprise: false },
+            wifi::Network { ssid: "cafe".into(), strength: 40, secure: true, ..Default::default() },
         ],
         busy: Some("cafe".into()),
         error: None,
     }))
 }
 
-fn account() -> clamshell_core::account::Account {
-    clamshell_core::account::Account { available: true, password: true, ssh: true }
+fn account() -> Account {
+    Account { available: true, password: true, ssh: true }
 }
 
 /// Each case from the same base state (the demo library, a fixed time), so they don't depend on each
@@ -93,8 +102,8 @@ fn warm_frames_do_not_allocate() {
     let cases: Vec<(&str, Vec<Event>)> = vec![
         ("sysinfo", vec![]),
         ("settings", vec![Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Settings)))]),
-        ("settings, a changed tile", vec![tap(Id::Tab(Tab::Settings)), tap(Id::Settings(SettingsId::Tile(clamshell_core::settings::Setting::FpsCap)))]),
-        ("settings, all games", vec![tap(Id::Tab(Tab::Settings)), tap(Id::Settings(SettingsId::Scope(clamshell_core::Scope::Global)))]),
+        ("settings, a changed tile", vec![tap(Id::Tab(Tab::Settings)), tap(Id::Settings(SettingsId::Tile(Setting::FpsCap)))]),
+        ("settings, all games", vec![tap(Id::Tab(Tab::Settings)), tap(Id::Settings(SettingsId::Scope(Scope::Global)))]),
         ("environment editor", vec![tap(Id::Tab(Tab::Settings)), tap(Id::Settings(SettingsId::Env)), key(Key::Char('a'))]),
         (
             "environment saved",
@@ -127,7 +136,7 @@ fn warm_frames_do_not_allocate() {
         (
             "wifi",
             vec![
-                Event::Reading(Reading::Status(clamshell_core::Status { volume: Some(40), brightness: Some(70), wifi: Some(60), ..Default::default() })),
+                Event::Reading(Reading::Status(Status { volume: Some(40), brightness: Some(70), wifi: Some(60), ..Default::default() })),
                 tap(Id::Tab(Tab::Wifi)),
                 wifi_reading(),
             ],
@@ -136,58 +145,55 @@ fn warm_frames_do_not_allocate() {
             "wifi, scrolled part way",
             vec![
                 tap(Id::Tab(Tab::Wifi)),
-                Event::Reading(Reading::Wifi(clamshell_core::wifi::Wifi {
+                Event::Reading(Reading::Wifi(wifi::Wifi {
                     present: true,
                     on: true,
-                    networks: (0..20).map(|i| clamshell_core::wifi::Network { ssid: format!("n{i}"), strength: 50, ..Default::default() }).collect(),
+                    networks: (0..20).map(|i| wifi::Network { ssid: format!("n{i}"), strength: 50, ..Default::default() }).collect(),
                     ..Default::default()
                 })),
-                Event::List(clamshell_core::ListEvent::Visible(clamshell_core::ListId::Wifi, 6.5)),
-                Event::List(clamshell_core::ListEvent::Scroll(clamshell_core::ListId::Wifi, 3.3)),
+                Event::List(ListEvent::Visible(ListId::Wifi, 6.5)),
+                Event::List(ListEvent::Scroll(ListId::Wifi, 3.3)),
             ],
         ),
-        (
-            "shelf, dragged part way",
-            vec![Event::Shelf(clamshell_core::ShelfEvent::Rows(3)), Event::List(clamshell_core::ListEvent::Scroll(clamshell_core::ListId::Shelf, 1.6))],
-        ),
-        ("keymap picker", vec![tap(Id::Tab(Tab::Settings)), tap(Id::Settings(SettingsId::Tile(clamshell_core::settings::Setting::Keymap)))]),
+        ("shelf, dragged part way", vec![Event::Shelf(ShelfEvent::Rows(3)), Event::List(ListEvent::Scroll(ListId::Shelf, 1.6))]),
+        ("keymap picker", vec![tap(Id::Tab(Tab::Settings)), tap(Id::Settings(SettingsId::Tile(Setting::Keymap)))]),
         (
             "keymap edit screen",
             vec![
                 tap(Id::Tab(Tab::Settings)),
-                tap(Id::Settings(SettingsId::Tile(clamshell_core::settings::Setting::Keymap))),
-                tap(Id::Row { list: clamshell_core::ListId::Keymaps, i: 1, part: clamshell_core::RowPart::Edit }),
+                tap(Id::Settings(SettingsId::Tile(Setting::Keymap))),
+                tap(Id::Row { list: ListId::Keymaps, i: 1, part: RowPart::Edit }),
             ],
         ),
         (
             "keymap mouse",
             vec![
                 tap(Id::Tab(Tab::Settings)),
-                tap(Id::Settings(SettingsId::Tile(clamshell_core::settings::Setting::Keymap))),
-                tap(Id::Row { list: clamshell_core::ListId::Keymaps, i: 1, part: clamshell_core::RowPart::Edit }),
-                tap(Id::Keymap(clamshell_core::KeymapId::Input(clamshell_core::keymap::Input::Trigger(clamshell_core::keymap::Side::Left)))),
-                tap(Id::Keymap(clamshell_core::KeymapId::Target(clamshell_core::Target::MouseParts))),
+                tap(Id::Settings(SettingsId::Tile(Setting::Keymap))),
+                tap(Id::Row { list: ListId::Keymaps, i: 1, part: RowPart::Edit }),
+                tap(Id::Keymap(KeymapId::Input(Input::Trigger(Side::Left)))),
+                tap(Id::Keymap(KeymapId::Target(Target::MouseParts))),
             ],
         ),
         (
             "keymap picking a control",
             vec![
                 tap(Id::Tab(Tab::Settings)),
-                tap(Id::Settings(SettingsId::Tile(clamshell_core::settings::Setting::Keymap))),
-                tap(Id::Row { list: clamshell_core::ListId::Keymaps, i: 1, part: clamshell_core::RowPart::Edit }),
-                tap(Id::Keymap(clamshell_core::KeymapId::Input(clamshell_core::keymap::Input::Button(clamshell_core::keymap::Button::A)))),
-                tap(Id::Keymap(clamshell_core::KeymapId::Target(clamshell_core::Target::Pick))),
+                tap(Id::Settings(SettingsId::Tile(Setting::Keymap))),
+                tap(Id::Row { list: ListId::Keymaps, i: 1, part: RowPart::Edit }),
+                tap(Id::Keymap(KeymapId::Input(Input::Button(Button::A)))),
+                tap(Id::Keymap(KeymapId::Target(Target::Pick))),
             ],
         ),
         (
             "keymap panel, a slider up, another layer",
             vec![
                 tap(Id::Tab(Tab::Settings)),
-                tap(Id::Settings(SettingsId::Tile(clamshell_core::settings::Setting::Keymap))),
-                tap(Id::Row { list: clamshell_core::ListId::Keymaps, i: 1, part: clamshell_core::RowPart::Edit }),
-                tap(Id::Keymap(clamshell_core::KeymapId::Layer(clamshell_core::keymap::Layer(1)))),
-                tap(Id::Keymap(clamshell_core::KeymapId::Input(clamshell_core::keymap::Input::Stick(clamshell_core::keymap::Side::Left)))),
-                Event::Slide(Slide::Start { control: clamshell_core::slider::Control::Param(clamshell_core::keymap::Param::Deadzone), x: 285.0, width: 620.0 }),
+                tap(Id::Settings(SettingsId::Tile(Setting::Keymap))),
+                tap(Id::Row { list: ListId::Keymaps, i: 1, part: RowPart::Edit }),
+                tap(Id::Keymap(KeymapId::Layer(Layer(1)))),
+                tap(Id::Keymap(KeymapId::Input(Input::Stick(Side::Left)))),
+                Event::Slide(Slide::Start { control: Control::Param(Param::Deadzone), x: 285.0, width: 620.0 }),
                 Event::Slide(Slide::To { x: 320.0 }),
             ],
         ),
@@ -195,50 +201,41 @@ fn warm_frames_do_not_allocate() {
             "keymap key capture",
             vec![
                 tap(Id::Tab(Tab::Settings)),
-                tap(Id::Settings(SettingsId::Tile(clamshell_core::settings::Setting::Keymap))),
-                tap(Id::Row { list: clamshell_core::ListId::Keymaps, i: 1, part: clamshell_core::RowPart::Edit }),
-                tap(Id::Keymap(clamshell_core::KeymapId::Input(clamshell_core::keymap::Input::Stick(clamshell_core::keymap::Side::Left)))),
-                tap(Id::Keymap(clamshell_core::KeymapId::Target(clamshell_core::Target::Keys))),
+                tap(Id::Settings(SettingsId::Tile(Setting::Keymap))),
+                tap(Id::Row { list: ListId::Keymaps, i: 1, part: RowPart::Edit }),
+                tap(Id::Keymap(KeymapId::Input(Input::Stick(Side::Left)))),
+                tap(Id::Keymap(KeymapId::Target(Target::Keys))),
                 key(Key::Char('w')),
                 key(Key::Mod(Modifier::Shift)),
             ],
         ),
-        ("wifi password", vec![tap(Id::Tab(Tab::Wifi)), wifi_reading(), tap(clamshell_core::ListId::Wifi.row(1)), tap(clamshell_core::ListId::Wifi.row(0))]),
+        ("wifi password", vec![tap(Id::Tab(Tab::Wifi)), wifi_reading(), tap(ListId::Wifi.row(1)), tap(ListId::Wifi.row(0))]),
         (
             "sliding",
             vec![
-                Event::Reading(Reading::Status(clamshell_core::Status { volume: Some(40), ..Default::default() })),
-                Event::Pointer(PointerEvent::Down(Id::Control(clamshell_core::slider::Control::Volume))),
-                Event::Slide(Slide::Start { control: clamshell_core::slider::Control::Volume, x: 285.0, width: 620.0 }),
+                Event::Reading(Reading::Status(Status { volume: Some(40), ..Default::default() })),
+                Event::Pointer(PointerEvent::Down(Id::Control(Control::Volume))),
+                Event::Slide(Slide::Start { control: Control::Volume, x: 285.0, width: 620.0 }),
                 Event::Slide(Slide::To { x: 320.0 }),
             ],
         ),
         (
             "battery",
             vec![
-                Event::Reading(Reading::Status(clamshell_core::Status { battery: Some(41), ..Default::default() })),
+                Event::Reading(Reading::Status(Status { battery: Some(41), ..Default::default() })),
                 Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Battery))),
-                Event::Reading(Reading::Battery(clamshell_core::battery::Battery {
-                    history: (0..50u64)
-                        .map(|i| clamshell_core::battery::Charge { at: 1_699_950_000 + i * 900, level: (90 - i) as u8, charging: i > 40 })
-                        .collect(),
+                Event::Reading(Reading::Battery(battery::Battery {
+                    history: (0..50u64).map(|i| battery::Charge { at: 1_699_950_000 + i * 900, level: (90 - i) as u8, charging: i > 40 }).collect(),
                     spenders: vec![
-                        clamshell_core::battery::Spender {
-                            group: clamshell_core::battery::Group::Process("firefox".into()),
+                        battery::Spender {
+                            group: battery::Group::Process("firefox".into()),
                             cpu: 0.2,
                             gpu: 0.1,
                             memory: 300 << 20,
                             pids: vec![],
                             endable: true,
                         },
-                        clamshell_core::battery::Spender {
-                            group: clamshell_core::battery::Group::System,
-                            cpu: 0.05,
-                            gpu: 0.0,
-                            memory: 600 << 20,
-                            pids: vec![],
-                            endable: false,
-                        },
+                        battery::Spender { group: battery::Group::System, cpu: 0.05, gpu: 0.0, memory: 600 << 20, pids: vec![], endable: false },
                     ],
                     has_history: true,
                 })),
@@ -248,13 +245,13 @@ fn warm_frames_do_not_allocate() {
             "bluetooth",
             vec![
                 Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Bluetooth))),
-                Event::Reading(Reading::Bluetooth(clamshell_core::bluetooth::Bluetooth {
+                Event::Reading(Reading::Bluetooth(bluetooth::Bluetooth {
                     present: true,
                     on: true,
-                    devices: vec![clamshell_core::bluetooth::Device {
+                    devices: vec![bluetooth::Device {
                         address: "00:11".into(),
                         name: "buds".into(),
-                        kind: clamshell_core::bluetooth::Kind::Audio,
+                        kind: bluetooth::Kind::Audio,
                         paired: true,
                         connected: true,
                     }],
@@ -267,11 +264,11 @@ fn warm_frames_do_not_allocate() {
             "volume",
             vec![
                 Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Volume))),
-                Event::Reading(Reading::Audio(clamshell_core::levels::Audio {
-                    outputs: vec![clamshell_core::levels::Output { id: 1, name: "Speakers".into(), default: true }],
-                    streams: vec![clamshell_core::levels::Stream { id: 2, app: "Firefox".into(), title: String::new(), volume: 40, muted: false }],
+                Event::Reading(Reading::Audio(levels::Audio {
+                    outputs: vec![levels::Output { id: 1, name: "Speakers".into(), default: true }],
+                    streams: vec![levels::Stream { id: 2, app: "Firefox".into(), title: String::new(), volume: 40, muted: false }],
                 })),
-                Event::Pointer(PointerEvent::Down(clamshell_core::levels::Level::Stream(0).id())),
+                Event::Pointer(PointerEvent::Down(levels::Level::Stream(0).id())),
             ],
         ),
         ("brightness", vec![Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Brightness))), Event::Reading(Reading::Backlights(vec!["panel".into()]))]),
@@ -279,7 +276,7 @@ fn warm_frames_do_not_allocate() {
             "dark while a game runs",
             vec![
                 Event::Units(vec![Instance::Run { key: clamshell_library::key_of("zelda-lttp"), secs: 1, n: 0 }]),
-                tap(Id::Settings(SettingsId::Tile(clamshell_core::settings::Setting::BottomScreen))),
+                tap(Id::Settings(SettingsId::Tile(Setting::BottomScreen))),
             ],
         ),
         ("keyboard", vec![Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Keyboard)))]),
@@ -290,13 +287,87 @@ fn warm_frames_do_not_allocate() {
         ),
         (
             "device, the sticks calibrating",
-            [
-                device(),
-                vec![tap(Id::Device(DeviceId::Sticks)), Event::Sticks(SticksEvent::Progress(clamshell_core::sticks::Calibrator::new(-1024, 1024).progress()))],
-            ]
-            .concat(),
+            [device(), vec![tap(Id::Device(DeviceId::Sticks)), Event::Sticks(SticksEvent::Progress(Calibrator::new(-1024, 1024).progress()))]].concat(),
         ),
         ("keyboard, Fn", vec![tap(Id::Tab(Tab::Keyboard)), key(Key::Mod(Modifier::Fn))]),
+        ("touchpad", vec![tap(Id::Tab(Tab::Touchpad))]),
+        (
+            "time",
+            vec![
+                tap(Id::Tab(Tab::Time)),
+                Event::Reading(Reading::Time(TimeZones {
+                    current: Some("Europe/Oslo".into()),
+                    zones: ["Europe/Oslo", "Europe/Paris", "America/New_York"].map(String::from).to_vec(),
+                    ntp: Some(true),
+                    synced: true,
+                    error: None,
+                })),
+            ],
+        ),
+        (
+            "keymap name editor",
+            vec![tap(Id::Tab(Tab::Settings)), tap(Id::Settings(SettingsId::Tile(Setting::Keymap))), tap(Id::Keymap(KeymapId::New)), key(Key::Char('a'))],
+        ),
+        // (The demo's TV tab: its series, open.)
+        ("shelf, an open group", vec![Event::Shelf(ShelfEvent::Rows(8)), tap(Id::Shelf(ShelfId::Collection(2))), tap(Id::Shelf(ShelfId::Launch))]),
+        (
+            "shelf, a video",
+            vec![
+                Event::Shelf(ShelfEvent::Rows(8)),
+                tap(Id::Shelf(ShelfId::Collection(2))),
+                tap(Id::Shelf(ShelfId::Launch)),
+                tap(Id::Shelf(ShelfId::Launch)),
+                Event::Shelf(ShelfEvent::ListStep(1)),
+            ],
+        ),
+        (
+            "dock, an entry's menu",
+            vec![
+                tap(Id::Tab(Tab::Dock)),
+                Event::Units(vec![Instance::Run { key: clamshell_library::key_of("desktop:foot"), secs: 1, n: 0 }]),
+                Event::Pointer(PointerEvent::LongPress(Id::Dock(DockId::Entry(0)))),
+            ],
+        ),
+        (
+            "dock, a tray menu",
+            vec![
+                tap(Id::Tab(Tab::Dock)),
+                Event::Tray(vec![tray::TrayItem {
+                    key: "org.kde.StatusNotifierItem-1/StatusNotifierItem".into(),
+                    id: "steam".into(),
+                    title: "Steam".into(),
+                    pid: Some(4242),
+                    unit: None,
+                    icon: None,
+                    menu: ["Library", "Friends", "Exit Steam"]
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, label)| tray::TrayEntry { id: i as i32, label: label.into(), enabled: true, checked: None, children: vec![] })
+                        .collect(),
+                }]),
+                Event::Pointer(PointerEvent::LongPress(Id::Dock(DockId::Entry(0)))),
+                tap(Id::Dock(DockId::TrayMenu)),
+            ],
+        ),
+        (
+            "battery, a program's menu",
+            vec![
+                tap(Id::Tab(Tab::Battery)),
+                Event::Reading(Reading::Battery(battery::Battery {
+                    history: vec![],
+                    spenders: vec![battery::Spender {
+                        group: battery::Group::Process("firefox".into()),
+                        cpu: 0.2,
+                        gpu: 0.1,
+                        memory: 300 << 20,
+                        pids: vec![77],
+                        endable: true,
+                    }],
+                    has_history: false,
+                })),
+                tap(Id::Battery(battery::BatteryId::Spender(0))),
+            ],
+        ),
         (
             "keyboard, Shift and a pressed key",
             vec![
@@ -306,14 +377,29 @@ fn warm_frames_do_not_allocate() {
             ],
         ),
     ];
+    // What the cases that are easy to get wrong must have reached, to test the screen they are named for.
+    type Reached = fn(&State) -> bool;
+    let reached: [(&str, Reached); 7] = [
+        ("keymap name editor", |s| s.bottom().editor().is_some()),
+        ("shelf, an open group", |s| s.shelf().group().is_some()),
+        ("shelf, a video", |s| s.shelf().selected().is_some_and(|id| id.ends_with(".mkv"))),
+        ("dock, an entry's menu", |s| s.dock().menu().is_some() && !s.dock().tray_open()),
+        ("dock, a tray menu", |s| s.dock().tray_open()),
+        ("battery, a program's menu", |s| s.spender_menu().is_some()),
+        ("time", |s| s.bottom().tab() == Tab::Time),
+    ];
     for (name, events) in cases {
         // (The Nintendo layout with a layer added.)
-        let mut keymaps = clamshell_core::keymap::Keymaps::initial();
+        let mut keymaps = Keymaps::initial();
         keymaps.get_mut(1).and_then(|k| k.add_layer("aim"));
-        let mut state = State::new(Init { library: clamshell_library::demo::library(), keymaps, ..Init::default() });
+        // (As the device's own session: tray icons are followed only there.)
+        let mut state = State::new(Init { library: clamshell_library::demo::library(), keymaps, device_session: true, ..Init::default() });
         state.apply(Event::tick(1_700_000_000));
         for event in events {
             state.apply(event);
+        }
+        if let Some((_, check)) = reached.iter().find(|(n, _)| *n == name) {
+            assert!(check(&state), "{name}: not reached");
         }
         for round in 0..3 {
             let before = allocs();

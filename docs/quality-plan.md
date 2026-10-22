@@ -141,8 +141,9 @@ Helpers that exist but are bypassed:
       dirs in the system, fan and UI tests; the fan's and the lid's tests had left hundreds behind.
 - [ ] The sensor hub's parser against captured bytes, not its own encoder: waits for the device (the
       datagrams logged at trace level; the gyro's day-one item in `docs/thor-gameplan.md` says how).
-- [ ] The no-alloc test's gaps: Time and Touchpad tabs, the file name editors, the battery, dock and
-      tray menus, an open group, a video; the menus without per-frame `Vec`/`format!`.
+- [x] The no-alloc test's gaps: the Time and Touchpad tabs, a name editor, an open group, a video, the dock's
+      and tray's menus, the battery's program menu, each checked to reach its screen; three allocated every
+      frame and are fixed (`to_continue`, the battery menu's clone, the dock menus' `Vec`s).
 - [ ] `#[ignore = "why"]` on the live tests; rustdoc's 9 warnings.
 
 ## 5. How it reads
