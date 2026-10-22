@@ -11,15 +11,30 @@ use crate::{
     WindowCommand,
 };
 
+/// What the steps after an event last saw (see [`State::reconcile`]).
+#[derive(Debug, Default)]
+pub(crate) struct Settled {
+    /// The session's version (see [`crate::Session::version`]).
+    session: u64,
+    /// The running entries' ids before the session's steps, kept so that the list is reused.
+    running: Vec<std::sync::Arc<str>>,
+}
+
+impl Settled {
+    /// As at start: the session's steps run on the first change to what it follows.
+    pub(crate) fn new(session: &crate::Session) -> Settled {
+        Settled { session: session.version(), running: Vec::new() }
+    }
+}
+
 impl State {
     /// Applies one event and returns which screens changed and what must happen outside. After the event
     /// itself, everything that follows from it is applied: the pad mouse follows the game in front, the
     /// pad is routed to where it is wanted, and idle moves on or back.
     pub fn apply(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
-        let session_input = matches!(event, Event::Tick { .. } | Event::Windows(_) | Event::Units(_) | Event::Tray(_) | Event::Launch(_) | Event::Library(_));
         let mut out = Out::default();
         self.apply_event(event, &mut out);
-        if session_input && self.reconcile(&mut out) {
+        if self.session.version() != self.settled.session && self.reconcile(&mut out) {
             out.mark(Dirty::BOTTOM);
         }
         if self.bottom.follow_dim(&self.session, &self.clock) {
@@ -59,7 +74,8 @@ impl State {
     }
 
     /// Runs after any change to what the session follows (the windows, systemd's scopes, the tray, the
-    /// launcher's messages, the library), and every second. It applies everything that follows, in this
+    /// launcher's messages, the library), and every second, which [`crate::Session::version`] counts. It
+    /// applies everything that follows, in this
     /// order, since each step reads what the earlier ones settled:
     ///
     /// 1. systemd's scopes: entries found running, found ones promoted to launches, and ours ended
@@ -77,7 +93,10 @@ impl State {
     ///
     /// A step does nothing when nothing changed for it. Returns whether the running entries changed.
     fn reconcile(&mut self, out: &mut Out) -> bool {
-        let before: Vec<std::sync::Arc<str>> = self.session.running_entries().iter().map(|r| r.id.clone()).collect();
+        self.settled.session = self.session.version();
+        let mut before = std::mem::take(&mut self.settled.running);
+        before.clear();
+        before.extend(self.session.running_entries().iter().map(|r| r.id.clone()));
         if self.session.follow_units(&self.clock, &mut self.shelf, self.bottom.notice_mut(), out) {
             self.bottom.unwake();
         }
@@ -113,7 +132,9 @@ impl State {
         let docked = self.dock.follow(&self.session);
         self.session.followed();
         let after = self.session.running_entries().iter().map(|r| &r.id);
-        docked || !after.eq(before.iter())
+        let changed = docked || !after.eq(before.iter());
+        self.settled.running = before;
+        changed
     }
 
     /// Called when the program in force changed. Turns the pad mouse on if the program wants it
@@ -315,6 +336,7 @@ impl State {
     /// depends on its entries is updated: runners' pauses and keymaps, landing rules, and pins of entries
     /// that are gone.
     fn library_read(&mut self, library: Library, out: &mut Out) {
+        self.session.changed();
         let problems = &library.problems;
         if !problems.is_empty() && *problems != self.shelf.library().problems {
             let first = problems.first().cloned().unwrap_or_default();
@@ -354,6 +376,8 @@ impl State {
             self.idle.resumed(mono_secs);
         }
         let minute_changed = self.clock.tick(unix_secs, mono_secs);
+        // The session's steps follow the time.
+        self.session.changed();
         if self.resume.due(mono_secs, SAVE_AFTER) {
             out.effects.push(Effect::Save(Save::Resume(self.resume())));
         }

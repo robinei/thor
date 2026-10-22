@@ -73,6 +73,7 @@ impl Session {
     /// their icons, and end with them, or with their last window if one is still open. Returns whether
     /// they changed.
     pub(crate) fn set_tray(&mut self, items: Vec<TrayItem>, clock: &Clock, library: &Library, out: &mut Out) -> bool {
+        self.changed();
         if self.tray == items {
             return false;
         }

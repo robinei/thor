@@ -142,6 +142,8 @@ pub struct State {
     /// moment. Shelf and the bottom screen say when they changed; `apply` touches this at its end.
     resume: kit::debounce::Debounce,
     idle: crate::device::idle::Idle,
+    /// What the steps after an event last saw.
+    settled: apply::Settled,
 }
 
 impl State {
@@ -176,6 +178,7 @@ impl State {
             s.pad.toggle_mouse();
             s.reconcile_pad();
         }
+        s.settled = apply::Settled::new(&s.session);
         s
     }
 

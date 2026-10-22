@@ -626,6 +626,7 @@ impl Session {
 impl State {
     pub(crate) fn on_launch_event(&mut self, event: LaunchEvent, out: &mut Out) {
         out.mark(Dirty::BOTH);
+        self.session.changed();
         match event {
             LaunchEvent::Position { entry: game, position } => self.shelf.set_position(&game, position, self.clock.unix()),
             // A launch that never started doesn't change what runs, but it is no longer starting.
