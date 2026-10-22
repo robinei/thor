@@ -1,6 +1,6 @@
-//! MangoHud's files: the config file a game is started with (its frame rate cap, its overlay, its log),
-//! the CSV logs it writes (read by [`super::frames`]), and logs written the same way for what it can't
-//! measure.
+//! MangoHud's files: the config file a game is started with, which sets its frame rate cap, overlay and
+//! log; the CSV logs it writes, read by [`super::frames`]; and logs written the same way for apps it
+//! can't measure.
 
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
@@ -9,12 +9,12 @@ use std::path::{Path, PathBuf};
 
 use clamshell_core::settings::Hud;
 
-/// The MangoHud config file for a game (in `dir`), written with its frame rate cap (0: none) and HUD
-/// (0: invisible, 1: the frame rate only, 2: the full overlay), logging for the FPS tile. Rewritten in
-/// place, which MangoHud picks up live.
+/// Writes the MangoHud config file for a game in `dir`, with its frame rate cap (0 for none) and HUD
+/// (invisible, the frame rate only, or the full overlay), and logging for the FPS tile. The file is
+/// rewritten in place, which MangoHud picks up live.
 pub fn config(dir: &Path, game: &str, fps_cap: u16, hud: Hud) -> io::Result<PathBuf> {
     fs::create_dir_all(dir)?;
-    // (Named by the entry's key, as its scopes, workspace and art are.)
+    // Named by the entry's key, as its scopes, workspace and art are.
     let path = dir.join(format!("{}.conf", clamshell_library::key_of(game)));
     let overlay = match hud {
         Hud::Off => "alpha=0\nbackground_alpha=0\n",
@@ -31,8 +31,8 @@ pub fn env(config: &Path) -> Vec<(String, String)> {
     vec![("MANGOHUD".into(), "1".into()), ("MANGOHUD_CONFIGFILE".into(), config.display().to_string())]
 }
 
-/// Reads a growing MangoHud CSV: finds the fps and frametime columns from the header row, and keeps
-/// the latest values. Pure.
+/// Reads a growing MangoHud CSV. It finds the fps and frametime columns from the header row and keeps
+/// the latest values. It does no I/O.
 #[derive(Debug, Default)]
 pub struct Tail {
     columns: Option<(usize, usize)>,
@@ -62,8 +62,8 @@ impl Tail {
     }
 }
 
-/// Frame rate logs written MangoHud's way, for apps it can't measure (Waydroid's: see
-/// [`crate::waydroid`]): a file per app, its header first.
+/// Frame rate logs written the way MangoHud writes them, for apps it can't measure, such as Waydroid's
+/// (see [`crate::waydroid`]). There is a file per app, starting with its header.
 pub struct FrameLog {
     dir: PathBuf,
     files: HashMap<String, File>,
@@ -74,7 +74,7 @@ impl FrameLog {
         FrameLog { dir: dir.to_path_buf(), files: HashMap::new() }
     }
 
-    /// A row: `fps` now for `app`.
+    /// Writes a row with the current `fps` for `app`.
     pub fn row(&mut self, app: &str, fps: f32) {
         let name = format!("android-{}.csv", app.replace(['/', ' '], "_"));
         if !self.files.contains_key(&name) {

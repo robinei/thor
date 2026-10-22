@@ -1,8 +1,10 @@
-//! What is using the machine now: CPU time per process (`/proc/<pid>/stat`) and GPU time per DRM client
-//! (see [`crate::os::drm`]; only our user's processes are readable), and the memory each has resident,
-//! grouped by our scopes (an app instance, the game), else (Waydroid's container) by Android app, else by
-//! program name for our user's processes, else as the system: those doing work, the busiest first, then
-//! those idle that hold much memory.
+//! What is using the machine now: CPU time per process (`/proc/<pid>/stat`), GPU time per DRM client
+//! (see [`crate::os::drm`]; only our user's processes are readable), and each process's resident memory.
+//!
+//! Processes are grouped by our scopes (an app instance, the game), or else by Android app for
+//! Waydroid's container, or else by program name for our user's processes. Everything else is grouped
+//! as the system. Groups doing work come first, busiest first, followed by idle groups that hold a lot
+//! of memory.
 
 use std::collections::HashMap;
 use std::os::unix::fs::MetadataExt;
@@ -14,8 +16,8 @@ use clamshell_core::status::battery::{Group, Spender};
 
 use crate::os::{cgroup, drm, sys};
 
-/// Spenders sent at most, and the least share of the machine that still counts; an idle one still
-/// counts with this much memory resident.
+/// The most groups sent, and the smallest share of the machine that still counts. An idle group still
+/// counts if it has `MUCH_MEMORY` resident.
 const MOST: usize = 12;
 const LEAST: f32 = 0.002;
 const MUCH_MEMORY: u64 = 100 << 20;
@@ -25,9 +27,9 @@ struct Counters {
     group: Group,
     /// CPU time in clock ticks.
     cpu: u64,
-    /// Memory resident (bytes).
+    /// Resident memory in bytes.
     memory: u64,
-    /// Not the session's own (see [`endable`]).
+    /// Whether it may be ended, as it isn't the session's own (see [`endable`]).
     endable: bool,
     /// GPU time in ns per DRM client id.
     gpu: HashMap<u64, u64>,
@@ -50,7 +52,7 @@ impl Sampler {
             let ticks = rustix::param::clock_ticks_per_second() as f32;
             let cores = thread::available_parallelism().map_or(1, |n| n.get()) as f32;
             for (pid, now) in &current {
-                // (Processes that started since the last reading do work from the next one.)
+                // Processes that started since the last reading count from the next one.
                 let (cpu, gpu) = match self.last.get(pid) {
                     Some(before) => {
                         let gpu_ns: u64 = now.gpu.iter().map(|(client, ns)| ns.saturating_sub(before.gpu.get(client).copied().unwrap_or(*ns))).sum();
@@ -75,7 +77,7 @@ impl Sampler {
             s.gpu = s.gpu.min(1.0);
         }
         spenders.retain(|s| s.load() >= LEAST || s.memory >= MUCH_MEMORY);
-        // The busy by their work, then the idle by their memory.
+        // The busy ones by their work, then the idle ones by their memory.
         let busy = |s: &Spender| s.load() >= LEAST;
         spenders.sort_by(|a, b| busy(b).cmp(&busy(a)).then(b.load().total_cmp(&a.load())).then(b.memory.cmp(&a.memory)));
         spenders.truncate(MOST);
@@ -107,10 +109,12 @@ fn read_processes() -> HashMap<u32, Counters> {
     out
 }
 
-/// Whether a process may be ended from the battery tab: not ClamShell itself, nor the session's own
-/// (`session.slice`: under uwsm, sway, ClamShell, mako, udiskie, and PipeWire and the bus; a login
-/// session's scope, where sway runs without uwsm, in a desktop's session; the user manager's own scope;
-/// ClamShell's service).
+/// Whether a process may be ended from the battery tab. ClamShell itself and the session's own processes
+/// may not. The session's own are those in:
+/// - `session.slice`, which under uwsm holds sway, ClamShell, mako, udiskie, PipeWire and the bus;
+/// - a login session's scope, where sway runs without uwsm in a desktop's session;
+/// - the user manager's own scope;
+/// - ClamShell's service.
 fn endable(pid: u32, dir: &std::path::Path) -> bool {
     if pid == std::process::id() {
         return false;
@@ -123,10 +127,9 @@ fn endable(pid: u32, dir: &std::path::Path) -> bool {
     !cgroup.lines().any(|line| own(line.trim()))
 }
 
-/// A process's resident memory (bytes): `/proc/<pid>/statm`'s second field, in pages.
-/// A process of Waydroid's container (its LXC payload cgroup): an app's (Android names an app's
-/// processes after its package, `<package>[:<name>]`), by the app id Waydroid gives its windows
-/// (`waydroid.<package>`), else Android's own.
+/// The group of a process in Waydroid's container, which is its LXC payload cgroup. An app's process is
+/// grouped by the app id Waydroid gives its windows (`waydroid.<package>`); Android names an app's
+/// processes after its package, as `<package>[:<name>]`. Other processes are grouped as Android's own.
 fn android(dir: &std::path::Path) -> Option<Group> {
     if !sys::text(dir.join("cgroup"))?.contains("/lxc.payload.waydroid") {
         return None;
@@ -141,17 +144,19 @@ fn android_group(cmdline: &[u8]) -> Group {
     if package.contains('.') && !package.contains('/') { Group::App(format!("waydroid.{package}")) } else { Group::Process("Android".to_owned()) }
 }
 
+/// A process's resident memory in bytes, from `/proc/<pid>/statm`'s second field, which is in pages.
 fn resident(dir: &std::path::Path) -> u64 {
     let pages: u64 = sys::text(dir.join("statm")).and_then(|t| t.split_whitespace().nth(1)?.parse().ok()).unwrap_or(0);
     pages * rustix::param::page_size() as u64
 }
 
-/// `/proc/<pid>/stat`: the process name and its user and system CPU time (clock ticks).
+/// The process name and its user plus system CPU time in clock ticks, from `/proc/<pid>/stat`.
 fn parse_stat(text: &str) -> Option<(String, u64)> {
     let open = text.find('(')?;
     let close = text.rfind(')')?;
     let comm = text.get(open + 1..close)?.to_owned();
-    // After the name: state, ppid, ... utime is the 14th field of the line, the 12th after the name.
+    // After the name come state, ppid and so on. utime is the 14th field of the line, the 12th after the
+    // name.
     let mut fields = text.get(close + 2..)?.split_whitespace();
     let utime: u64 = fields.nth(11)?.parse().ok()?;
     let stime: u64 = fields.next()?.parse().ok()?;
@@ -179,7 +184,7 @@ mod tests {
         assert_eq!(android_group(b"/system/bin/surfaceflinger\0"), Group::Process("Android".into()));
     }
 
-    /// On any Linux: two samples a moment apart find someone busy (this test, at least).
+    /// On any Linux, two samples a moment apart find something busy, at least this test.
     #[test]
     fn sampling_finds_the_busy() {
         let mut sampler = Sampler::default();

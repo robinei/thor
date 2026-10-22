@@ -1,5 +1,5 @@
-//! What the bar and the tabs show of the system: the status, the metrics, the battery's history and
-//! what spends it, and a game's frame rate.
+//! What the bar and the tabs show about the system: the status, the metrics, the battery's history and
+//! what uses it, and a game's frame rate.
 
 pub(crate) mod battery;
 pub(crate) mod frames;

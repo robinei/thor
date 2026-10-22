@@ -1,6 +1,6 @@
-//! The bar's status: battery, Wi-Fi signal, volume and brightness, read every few seconds while the
-//! screens are on and sent when they change; while they are off, only the battery, once a minute (for
-//! its warnings), without starting `pw-dump`.
+//! The bar's status: battery, Wi-Fi signal, volume and brightness. They are read every few seconds while
+//! the screens are on, and sent when they change. While the screens are off, only the battery is read,
+//! once a minute for its warnings, so `pw-dump` isn't started.
 
 use std::io;
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
@@ -14,13 +14,14 @@ use crate::os::sys;
 use crate::os::worker::{Changed, Shown, Worker};
 use crate::{Closed, Sink};
 
-/// How often the status is read: battery and Wi-Fi change slowly; a volume changed elsewhere (not with
-/// ClamShell's own controls, which show it at once) shows within this.
+/// How often the status is read. Battery and Wi-Fi change slowly, and a volume changed outside ClamShell
+/// shows within this time. ClamShell's own controls show their changes at once.
 const EVERY: Duration = Duration::from_secs(5);
 /// How often only the battery is read while the screens are off.
 const UNSEEN_EVERY: Duration = Duration::from_secs(60);
 
-/// The status thread; its commands: whether the screens are on (see [`clamshell_core::Watch::Status`]).
+/// Starts the status thread. Its commands say whether the screens are on (see
+/// [`clamshell_core::Watch::Status`]).
 pub fn spawn(backlights: Backlights, sink: impl Sink) -> io::Result<Worker<Shown>> {
     Worker::spawn("status", move |seen| {
         let _ = follow(&backlights, &sink, &seen);
@@ -30,7 +31,7 @@ pub fn spawn(backlights: Backlights, sink: impl Sink) -> io::Result<Worker<Shown
 fn follow(backlights: &Backlights, sink: &impl Sink, commands: &Receiver<Shown>) -> Result<(), Closed> {
     let mut last = Changed::default();
     let mut seen = true;
-    // (Unseen: the rest as last read, the battery read anew.)
+    // While unseen, the battery is read again and the rest stays as last read.
     let mut status = read(backlights);
     loop {
         if seen {
@@ -57,7 +58,8 @@ fn read(backlights: &Backlights) -> Status {
 }
 
 /// The system's battery: its capacity, whether it is charging (or full on power), and whether it is
-/// discharging (on battery: not held at a charge limit on the charger, "Not charging").
+/// discharging. Discharging means running on battery, not held at a charge limit on the charger, which
+/// reads "Not charging".
 fn read_battery() -> Option<(Option<u8>, bool, bool)> {
     let dir = sys::system_battery()?;
     let capacity = sys::read::<u8>(dir.join("capacity")).map(|c| c.min(100));
@@ -66,8 +68,8 @@ fn read_battery() -> Option<(Option<u8>, bool, bool)> {
     Some((capacity, charging, status.as_deref() == Some("Discharging")))
 }
 
-/// Link quality (0-100) of the first interface in `/proc/net/wireless`; `None` if none is listed (not
-/// connected). Quality is out of 70 on most drivers.
+/// Link quality (0-100) of the first interface in `/proc/net/wireless`, or `None` if none is listed
+/// because it isn't connected. Quality is out of 70 on most drivers.
 fn parse_wireless(text: &str) -> Option<u8> {
     let line = text.lines().nth(2)?;
     let field = line.split_whitespace().nth(2)?;

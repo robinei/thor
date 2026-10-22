@@ -1,10 +1,10 @@
 //! A running game's frame rate and frame time, from MangoHud.
 //!
-//! MangoHud measures inside the game (Vulkan layer, or OpenGL through its wrapper). Games are started
+//! MangoHud measures inside the game, as a Vulkan layer or through its OpenGL wrapper. Games are started
 //! with a MangoHud config file ([`super::mangohud::config`]) that makes its overlay fully transparent and
-//! logs a CSV row every 500 ms to a folder in RAM; this thread follows the newest log and reports its
-//! latest frame rate and frame time. (MangoHud's `no_display` would hide the overlay too, but stops the
-//! measuring with it.) A new log starts whenever MangoHud reloads its config (an FPS cap change).
+//! logs a CSV row every 500 ms to a folder in RAM. This thread follows the newest log and reports its
+//! latest frame rate and frame time. MangoHud's `no_display` would also hide the overlay, but it stops
+//! the measuring too. A new log starts whenever MangoHud reloads its config, as when the FPS cap changes.
 //!
 //! Under gamescope there is also mangoapp's message queue, which gamescope itself feeds; our sway
 //! setup doesn't run games inside gamescope, so this reads MangoHud's own log instead.
@@ -25,13 +25,13 @@ use crate::os::worker::{self, Changed};
 use crate::readings::mangohud;
 use crate::{Closed, Sink};
 
-/// A log not written for this long belongs to a game that has ended (MangoHud logs every 500 ms,
-/// tuning::mangohud_config): while one is followed, looked at this often for that.
+/// A log not written for this long belongs to a game that has ended, since MangoHud logs every 500 ms
+/// (see [`super::mangohud::config`]). While a log is followed, it is checked this often for that.
 const STALE: Duration = Duration::from_secs(3);
 /// Ended games' logs are removed after this.
 const KEEP: Duration = Duration::from_secs(600);
 
-/// Follows the logs in `dir` (MangoHud's folder, [`crate::paths::Paths::mangohud`]).
+/// Follows the logs in `dir`, MangoHud's folder ([`crate::paths::Paths::mangohud`]).
 pub fn spawn(dir: PathBuf, sink: impl Sink) -> io::Result<()> {
     fs::create_dir_all(&dir)?;
     worker::detached("frames", move || {
@@ -39,8 +39,9 @@ pub fn spawn(dir: PathBuf, sink: impl Sink) -> io::Result<()> {
     })
 }
 
-/// Sends the latest frame rate whenever it changes, until the UI is gone. Asleep until the folder
-/// changes (a log written), and while a log is followed at most [`STALE`] (to see its game has ended).
+/// Sends the latest frame rate whenever it changes, until the UI is gone. It sleeps until the folder
+/// changes because a log was written. While a log is followed, it sleeps at most [`STALE`], to notice
+/// that its game has ended.
 fn follow(dir: &Path, sink: &impl Sink) -> Result<(), Closed> {
     let notify = inotify::init(inotify::CreateFlags::NONBLOCK | inotify::CreateFlags::CLOEXEC).map_err(|e| log::warn!("frames: inotify: {e}")).ok();
     let flags = inotify::WatchFlags::CREATE | inotify::WatchFlags::MODIFY | inotify::WatchFlags::MOVED_TO;
@@ -54,7 +55,7 @@ fn follow(dir: &Path, sink: &impl Sink) -> Result<(), Closed> {
         let timeout = (current.is_some() || last.is_some()).then_some(STALE);
         match notify.as_ref() {
             Some(fd) => wait(fd, timeout),
-            // (Without inotify: looked at twice a second.)
+            // Without inotify, look twice a second.
             None => thread::sleep(Duration::from_millis(500)),
         }
         let newest = newest_fresh_log(dir);
@@ -73,7 +74,7 @@ fn follow(dir: &Path, sink: &impl Sink) -> Result<(), Closed> {
     }
 }
 
-/// Waits for the folder's inotify events (all read), up to `timeout` if given.
+/// Waits for the folder's inotify events, up to `timeout` if given, and reads them all.
 fn wait(fd: &OwnedFd, timeout: Option<Duration>) {
     let timeout = timeout.map(crate::os::sys::timespec);
     let mut fds = [PollFd::new(fd, PollFlags::IN)];
@@ -112,7 +113,7 @@ fn newest_fresh_log(dir: &Path) -> Option<PathBuf> {
     newest.filter(|(t, _)| now.duration_since(*t).unwrap_or_default() <= STALE).map(|(_, p)| p)
 }
 
-/// What was appended to `path` since `offset` (advanced past it).
+/// What was appended to `path` since `offset`, which is advanced past it.
 fn read_new(path: &Path, offset: &mut u64) -> Option<String> {
     let said = |e: &io::Error| log::debug!("frames: reading {}: {e}", path.display());
     let mut file = fs::File::open(path).inspect_err(said).ok()?;

@@ -1,12 +1,15 @@
-//! Reads the system's metrics for the sysinfo mode once a second while they can be seen (the sysinfo or
-//! battery tab open, ClamShell's view on the bottom screen, the screens on), every five seconds otherwise
-//! (the graphs' history kept, coarser): CPU load (total and per core) and frequency, GPU load and frequency,
-//! temperatures, memory, battery power. Every source is optional: what a machine lacks stays `None`. Sources:
-//! /proc/stat, /proc/meminfo, cpufreq, hwmon and thermal zones, amdgpu (desktop) or devfreq (Adreno on the
-//! Thor), the battery's power supply.
+//! Reads the system's metrics for the sysinfo mode: CPU load (total and per core) and frequency, GPU
+//! load and frequency, temperatures, memory and battery power. They are read once a second while they
+//! can be seen, meaning the sysinfo or battery tab is open, ClamShell's view is on the bottom screen and
+//! the screens are on. Otherwise they are read every five seconds, which keeps the graphs' history at a
+//! coarser rate.
 //!
-//! GPU load: amdgpu's busy file where there is one; otherwise (Adreno on the Thor) the GPU time of every
-//! DRM client over the second (see [`crate::os::drm`]).
+//! Every source is optional, and what a machine lacks stays `None`. The sources are /proc/stat,
+//! /proc/meminfo, cpufreq, hwmon and thermal zones, amdgpu on a desktop or devfreq for the Thor's Adreno,
+//! and the battery's power supply.
+//!
+//! GPU load comes from amdgpu's busy file where there is one. Otherwise, as for the Thor's Adreno, it is
+//! the GPU time of every DRM client over the interval (see [`crate::os::drm`]).
 
 use std::io;
 use std::sync::mpsc::Receiver;
@@ -19,12 +22,13 @@ use crate::os::worker::{Next, Shown, Worker};
 use crate::os::{drm, sys, worker};
 use crate::{Closed, Sink};
 
-/// How often the metrics are read while they can be seen, and otherwise: the graphs keep their history,
-/// coarser, at less cost.
+/// How often the metrics are read while they can be seen, and otherwise. While hidden, the graphs keep
+/// a coarser history at less cost.
 const SHOWN_EVERY: Duration = Duration::from_secs(1);
 const HIDDEN_EVERY: Duration = Duration::from_secs(5);
 
-/// The metrics thread; its commands: whether the metrics can be seen (read at once as they can).
+/// Starts the metrics thread. Its commands say whether the metrics can be seen; they are read at once
+/// when they become visible.
 pub fn spawn(sink: impl Sink) -> io::Result<Worker<Shown>> {
     Worker::spawn("metrics", move |commands| {
         let _ = follow(&sink, &commands);
@@ -45,13 +49,13 @@ fn follow(sink: &impl Sink, commands: &Receiver<Shown>) -> Result<(), Closed> {
         }
         let now = read_cpu_times();
         let mut m = read(&previous, &now);
-        // No busy file: GPU time used by all clients over the time elapsed.
+        // Without a busy file, use the GPU time of all clients over the time elapsed.
         let gpu_now = drm::total_ns().map(|t| (t, Instant::now()));
         if m.gpu.is_none()
             && let (Some((t0, i0)), Some((t1, i1))) = (gpu_previous, gpu_now)
         {
             let wall = i1.duration_since(i0).as_nanos() as f64;
-            // Clients that exited take their time with them: no reading then.
+            // Clients that exited take their time with them, so there is no reading then.
             if t1 >= t0 && wall > 0.0 {
                 m.gpu = Some(((t1 - t0) as f64 / wall).clamp(0.0, 1.0) as f32);
             }
@@ -62,14 +66,14 @@ fn follow(sink: &impl Sink, commands: &Receiver<Shown>) -> Result<(), Closed> {
     }
 }
 
-/// (busy, total) jiffies for the whole CPU, then each core.
+/// (busy, total) jiffies for the whole CPU, then for each core.
 type CpuTimes = Vec<(u64, u64)>;
 
 fn read_cpu_times() -> CpuTimes {
     sys::text("/proc/stat").map(|s| parse_proc_stat(&s)).unwrap_or_default()
 }
 
-/// The `cpu` lines of /proc/stat: busy (all but idle and iowait) and total time each.
+/// The busy and total time of each `cpu` line in /proc/stat. Busy is everything but idle and iowait.
 fn parse_proc_stat(text: &str) -> CpuTimes {
     text.lines()
         .filter(|l| l.starts_with("cpu"))
@@ -100,7 +104,7 @@ fn parse_meminfo(text: &str) -> (u64, u64, u64, u64) {
     (field("MemTotal:"), field("MemAvailable:"), field("SwapTotal:"), field("SwapFree:"))
 }
 
-/// The current GPU clock from amdgpu's level list ("1: 1800Mhz *"), MHz.
+/// The current GPU clock in MHz, from amdgpu's level list ("1: 1800Mhz *").
 fn parse_dpm_clock(text: &str) -> Option<u32> {
     let line = text.lines().find(|l| l.trim_end().ends_with('*'))?;
     let clock = line.split_whitespace().find(|w| w.to_ascii_lowercase().ends_with("mhz"))?;
@@ -118,7 +122,7 @@ fn read(previous: &CpuTimes, now: &CpuTimes) -> Metrics {
     m.cpu_mhz =
         (0..256).map_while(|i| sys::read::<f64>(format!("/sys/devices/system/cpu/cpu{i}/cpufreq/scaling_cur_freq"))).map(|khz| (khz / 1000.0) as u32).max();
 
-    // GPU: amdgpu (desktop), else a devfreq device named like a GPU (Adreno: 3d00000.gpu).
+    // GPU: amdgpu on a desktop, or else a devfreq device named like a GPU (Adreno's is 3d00000.gpu).
     for card in sys::entries("/sys/class/drm") {
         let device = card.join("device");
         if let Some(busy) = sys::read::<f64>(device.join("gpu_busy_percent")) {
@@ -135,7 +139,7 @@ fn read(previous: &CpuTimes, now: &CpuTimes) -> Metrics {
             .map(|hz| (hz / 1e6) as u32);
     }
 
-    // Temperatures: hwmon chips by name, and thermal zones by type, hottest of each kind.
+    // Temperatures: hwmon chips by name and thermal zones by type, taking the hottest of each kind.
     let hottest = |slot: &mut Option<f32>, millideg: f64| {
         let c = (millideg / 1000.0) as f32;
         if c > -40.0 && c < 150.0 && slot.is_none_or(|t| c > t) {

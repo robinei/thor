@@ -1,6 +1,6 @@
-//! The battery tab's readings, while it is open: the charge over the last day from UPower (system bus; it
-//! records the battery's level as it changes), and what is using the machine now ([`super::usage`]).
-//! Sampled every two seconds, sent as [`Reading::Battery`].
+//! The battery tab's readings while it is open: the charge over the last day from UPower on the system
+//! bus, which records the battery's level as it changes, and what is using the machine now
+//! ([`super::usage`]). They are sampled every two seconds and sent as [`Reading::Battery`].
 
 use std::fmt;
 use std::io;
@@ -19,10 +19,10 @@ const HISTORY_EVERY: Duration = Duration::from_secs(60);
 /// The history's span and how many points to ask for.
 const HISTORY_SPAN: u32 = 24 * 3600;
 const HISTORY_POINTS: u32 = 240;
-/// UPower's device type for a battery (UpDeviceKind).
+/// UPower's device type (UpDeviceKind) for a battery.
 const UPOWER_BATTERY: u32 = 2;
 
-/// A history point's state (UpDeviceState): unknown states are gaps (with a level of 0).
+/// A history point's state (UpDeviceState). Points with an unknown state are gaps, with a level of 0.
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ChargeState {
@@ -54,15 +54,15 @@ impl From<dbus::Error> for Error {
     }
 }
 
-/// The battery thread: it samples what spends the battery while the battery tab is shown.
+/// Starts the battery thread, which samples what uses the battery while the battery tab is shown.
 pub fn spawn(sink: impl Sink) -> io::Result<Worker<Shown>> {
     Worker::spawn("battery", move |commands| {
         let _ = sample(&commands, &sink);
     })
 }
 
-/// Samples every two seconds while started (the history once a minute), until the commands or the UI
-/// go.
+/// Samples every two seconds while the tab is shown, and the history once a minute, until the command
+/// channel or the UI is gone.
 fn sample(commands: &Receiver<Shown>, sink: &impl Sink) -> Result<(), Closed> {
     let mut sampling = false;
     let mut sampler = Sampler::default();
@@ -101,8 +101,8 @@ fn sample(commands: &Receiver<Shown>, sink: &impl Sink) -> Result<(), Closed> {
     }
 }
 
-/// The battery's charge over the last day, oldest first, from UPower (its connection kept between
-/// calls).
+/// The battery's charge over the last day, oldest first, from UPower. The connection is kept between
+/// calls.
 fn history(upower: &mut Kept) -> Result<Vec<Charge>, Error> {
     let charges = read_history(upower.get()?);
     if let Err(Error::Bus(e)) = &charges {
@@ -117,14 +117,15 @@ fn read_history(bus: &mut Bus) -> Result<Vec<Charge>, Error> {
         if bus.get::<u32>(UPOWER, &path, UPOWER_DEVICE, "Type")? != UPOWER_BATTERY || !bus.get::<bool>(UPOWER, &path, UPOWER_DEVICE, "PowerSupply")? {
             continue;
         }
-        // (time, value, state) points, newest first.
+        // Points of (time, value, state), newest first.
         let (points,): (Vec<(u32, f64, u32)>,) = bus.call(UPOWER, &path, UPOWER_DEVICE, "GetHistory", ("charge", HISTORY_SPAN, HISTORY_POINTS))?;
         return Ok(charges(points));
     }
     Err(Error::NoBattery)
 }
 
-/// UPower's history points (newest first; unknown states are gaps with a level of 0) as charges.
+/// UPower's history points, newest first, as charges, oldest first. Points with an unknown state are
+/// gaps with a level of 0 and are dropped.
 fn charges(points: Vec<(u32, f64, u32)>) -> Vec<Charge> {
     let mut out: Vec<Charge> = points
         .into_iter()
@@ -152,8 +153,8 @@ mod tests {
 mod live {
     use super::*;
 
-    /// With UPower running (a desktop): reads the charge history, or says why there is none; nothing is
-    /// changed (run by hand: `--ignored --nocapture`).
+    /// With UPower running, as on a desktop, reads the charge history or says why there is none. Nothing
+    /// is changed. Run it by hand with `--ignored --nocapture`.
     #[test]
     #[ignore = "needs UPower"]
     fn reads_upower() {
