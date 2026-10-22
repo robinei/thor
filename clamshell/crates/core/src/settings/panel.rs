@@ -1,6 +1,7 @@
-//! The settings panel's rules: which item it is about (by what is in front) and which level it edits
-//! (All; the item's runner, Desktop for an app, Steam for a Steam game; the item itself),
-//! changes applied at once when they change the settings in force, the environment editor opened.
+//! The settings panel's rules. The panel is about an item chosen by what is in front. It edits one
+//! level: All, the item's runner (Desktop for an app, Steam for a Steam game), or the item itself.
+//! Changes are applied at once when they change the settings in force. The panel also opens the
+//! environment editor.
 
 use crate::State;
 use crate::bottom::editor::{Editor, Purpose};
@@ -11,8 +12,9 @@ use crate::session::running::Front;
 use crate::settings::{Setting, Values};
 
 /// What the settings panel edits: the global settings (All), the runner of the item in context, or the
-/// item itself (a game, an app, a film; not a browsed file or a folder, nor an item of a runner without
-/// item settings). Content where the item has no level of its own edits its runner's.
+/// item itself. The item can be a game, an app or a film, but not a browsed file or a folder, nor an
+/// item of a runner without item settings. Content edits the runner's level when the item has no level
+/// of its own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Scope {
     Global,
@@ -26,30 +28,32 @@ pub enum Scope {
 pub enum TileOrigin {
     /// The game's own choice.
     Own,
-    /// The global value, which the game follows (it has no choice of its own).
+    /// The global value, which the game follows because it has no choice of its own.
     Inherited,
     /// The global settings are being edited, or the setting is global only.
     Global,
 }
 
 impl State {
-    /// The settings in force: the program in force's (see [`crate::session::program`]), else the global ones.
+    /// The settings in force: those of the program in force (see [`crate::session::program`]), or else
+    /// the global ones.
     pub fn in_force(&self) -> Values {
         self.session.program.as_ref().map_or(self.settings.global, |id| self.settings_of(id))
     }
 
-    /// The level entry `id` takes its settings from before its own: its runner's, if it has one.
+    /// The level that entry `id` takes its settings from before its own, which is its runner's, if it
+    /// has one.
     fn runner_of(&self, id: &str) -> Option<&str> {
         self.entry(id).and_then(|g| g.runner.as_ref()).map(|r| &*r.key)
     }
 
-    /// The settings entry (or level) `id` runs with: the global ones, its runner's, its own.
+    /// The settings entry or level `id` runs with: the global ones, then its runner's, then its own.
     pub fn settings_of(&self, id: &str) -> Values {
         self.settings.of_in(id, self.runner_of(id).as_slice())
     }
 
-    /// What entry (or level) `id` does while hidden ([`Setting::Background`]): Pauses games (the
-    /// default) said for it, paused if it is a game (see [`State::is_games`]), else run.
+    /// What entry or level `id` does while hidden ([`Setting::Background`]). If it is set to Pauses
+    /// games, the default, it is paused if it is a game (see [`State::is_games`]) and runs otherwise.
     pub fn background_of(&self, id: &str) -> crate::settings::InBackground {
         use crate::settings::InBackground;
         match self.settings_of(id).choice::<InBackground>() {
@@ -59,9 +63,9 @@ impl State {
         }
     }
 
-    /// Whether entry `id` is a game (not an app, a game launcher, a film, a file or a group), or level
-    /// `id` a runner's all of whose entries are: games are paused when hidden by default (consoles do
-    /// the same; one that minds, online play, is set to run).
+    /// Whether entry `id` is a game, rather than an app, a game launcher, a film, a file or a group. For
+    /// a runner's level `id`, whether all of the runner's entries are games. Games are paused when hidden
+    /// by default, as consoles do. A game that minds, such as one played online, can be set to run.
     pub fn is_games(&self, id: &str) -> bool {
         let game = |g: &crate::Entry| !g.app && g.browsed.is_none() && g.mpv_file().is_none() && !g.is_group();
         if let Some(g) = self.entry(id) {
@@ -71,15 +75,15 @@ impl State {
         of_runner.peek().is_some() && of_runner.all(game)
     }
 
-    /// The environment entry `id` gets: the global variables, its runner's, its own.
+    /// The environment entry `id` gets: the global variables, then its runner's, then its own.
     pub fn env_of(&self, id: &str) -> Vec<(String, String)> {
         self.settings.env_in(id, self.runner_of(id).as_slice())
     }
 
-    /// The levels below All the settings panel offers for the item in context, with their titles: its
-    /// runner's and its own (`All | SNES | Zelda`, `All | Desktop | Spotify`); only its runner's for a
-    /// browsed file, a folder, or a runner's item without item settings (`All | Text`); only its own for
-    /// one without a runner (ClamShell's tools).
+    /// The levels below All that the settings panel offers for the item in context, with their titles.
+    /// Normally these are its runner's and its own (`All | SNES | Zelda`, `All | Desktop | Spotify`).
+    /// There is only its runner's for a browsed file, a folder, or a runner's item without item settings
+    /// (`All | Text`). There is only its own for an item without a runner, such as ClamShell's tools.
     pub fn setting_levels(&self) -> [Option<(Scope, Program<'_>)>; 2] {
         let Some((item, g)) = self.context().and_then(|item| Some((item.clone(), self.entry(&item.id)?))) else {
             return [None, None];
@@ -94,8 +98,8 @@ impl State {
         }
     }
 
-    /// Runners that come with a keymap of ClamShell's (see [`crate::Library::runner_keymaps`]) and have
-    /// no keymap chosen and none of their own: that keymap made their own and chosen, saved.
+    /// For runners that come with one of ClamShell's keymaps (see [`crate::Library::runner_keymaps`]) and
+    /// have no keymap chosen and none of their own: makes that keymap their own, chooses it, and saves.
     pub(crate) fn follow_runner_keymaps(&mut self) -> Vec<Effect> {
         let library = self.shelf.library();
         let wanting: Vec<(std::sync::Arc<str>, crate::keymap::Keymap)> = library
@@ -115,9 +119,9 @@ impl State {
         vec![Effect::Save(Save::Keymaps(self.keymaps.clone())), Effect::Save(Save::Settings(self.settings.clone()))]
     }
 
-    /// The item the settings panel is about, by what is in front: the entry whose window is in front,
-    /// shelf's selection (a browsed file that is a library entry's: that entry), or none (a window of no
-    /// program: the panel edits the defaults).
+    /// The item the settings panel is about, chosen by what is in front. It is the entry whose window is
+    /// in front, or shelf's selection, where a browsed file that belongs to a library entry stands for
+    /// that entry. It is none for a window of no program, and then the panel edits the defaults.
     pub fn context(&self) -> Option<Program<'_>> {
         let id = match self.session.front() {
             Front::Program => {
@@ -129,8 +133,8 @@ impl State {
         self.program(&id)
     }
 
-    /// What the settings panel edits now: the level of the scope chosen (Content where the item has none
-    /// of its own: its runner's), or none for All.
+    /// What the settings panel edits now: the level of the chosen scope, or none for All. Content edits
+    /// the runner's level when the item has none of its own.
     pub fn editing(&self) -> Option<Program<'_>> {
         if self.bottom.scope == Scope::Global {
             return None;
@@ -144,14 +148,15 @@ impl State {
         }
     }
 
-    /// Whether the settings panel edits a runner whose launches hand their app over to another program
-    /// (Android's: Waydroid's session runs them), or an item of it: what works through the launch's
-    /// process (see [`Setting::through_launch`], and the environment) has no effect on it.
+    /// Whether the settings panel edits a runner whose launches hand their app over to another program,
+    /// or an item of such a runner. Android is one: Waydroid's session runs its apps. Anything that works
+    /// through the launch's process, such as [`Setting::through_launch`] settings and the environment,
+    /// has no effect there.
     pub fn handed_over(&self) -> bool {
         self.editing().is_some() && self.context().and_then(|item| self.entry(&item.id)).and_then(|g| g.runner.as_ref()).is_some_and(|r| r.handover)
     }
 
-    /// The scope the settings panel shows chosen: the one chosen, or the level that stands in for it.
+    /// The scope the settings panel shows as chosen: the one chosen, or the level that stands in for it.
     pub fn scope_shown(&self) -> Scope {
         match self.editing() {
             None => Scope::Global,
@@ -159,7 +164,7 @@ impl State {
         }
     }
 
-    /// The value a tile shows and steps from: the game's effective one, or the global one.
+    /// The value a tile shows and steps from: the game's effective value, or the global one.
     pub fn tile_value(&self, setting: Setting) -> u16 {
         match self.editing() {
             Some(g) if !setting.global_only() => self.settings_of(&g.id).get(setting),
@@ -201,9 +206,9 @@ impl State {
         }
     }
 
-    /// Changes `setting` where the panel edits (the game's overrides, or the global settings): to
-    /// `value`, or back to the default (none). Saved, and applied at once if the settings in force
-    /// changed.
+    /// Changes `setting` where the panel edits, in the game's overrides or the global settings. It is set
+    /// to `value`, or back to the default for `None`. The change is saved, and applied at once if the
+    /// settings in force changed.
     pub(crate) fn change(&mut self, setting: Setting, value: Option<u16>) -> Vec<Effect> {
         let before = self.in_force();
         let game = self.editing().map(|g| g.id.clone());
@@ -220,7 +225,7 @@ impl State {
         effects
     }
 
-    /// Opens the editor on what the panel edits: the game's variables, or all games'.
+    /// Opens the editor on what the panel edits: the game's variables, or those for all games.
     fn open_editor(&mut self) {
         let game = self.editing().map(|g| g.id.clone());
         let text = self.settings.env_text(game.as_deref()).to_owned();
@@ -328,7 +333,7 @@ mod tests {
         let own = s.keymaps().own_of("runner:text").map(|k| k.id);
         assert!(own.is_some());
         assert_eq!(s.settings().overrides_of("runner:text").get(Setting::Keymap), own);
-        // Default chosen for it instead: left so, also when the library is read again.
+        // With Default chosen for it instead, it is left that way, also when the library is read again.
         s.settings.set(Some(&runner_key("text")), Setting::Keymap, Some(0));
         let fx = s.apply(Event::Library(Box::new(s.shelf().library().clone()))).1;
         assert!(!fx.iter().any(|e| matches!(e, Effect::Save(Save::Keymaps(_)))));
@@ -353,7 +358,7 @@ mod tests {
         let fresh = state_with(saved);
         assert_eq!(fresh.settings_of("zelda-lttp"), zelda);
         assert_eq!(fresh.settings().global, s.settings().global);
-        // A long press drops one override; Reset all of them.
+        // A long press drops one override, and Reset drops all of them.
         taps(&mut s, Setting::Rumble, 1);
         long(&mut s, Id::Settings(SettingsId::Tile(Setting::Power)));
         assert_eq!(s.settings().overrides_of("zelda-lttp").get(Setting::Power), None);
@@ -436,7 +441,7 @@ mod tests {
         s.apply(Event::Reading(Reading::Clipboard(Some("A=1\nB=2\n".into()))));
         ctrl_v(&mut s);
         assert_eq!(s.bottom().editor().map(|e| e.text.as_str()), Some("A=1 B=2"), "its line breaks spaces, its end trimmed");
-        // A right click the same.
+        // A right click does the same.
         s.apply(Event::Paste);
         assert_eq!(s.bottom().editor().map(|e| e.text.as_str()), Some("A=1 B=2A=1 B=2"));
     }
@@ -475,13 +480,13 @@ mod tests {
     #[test]
     fn an_editor_stays_with_its_tab() {
         let mut s = state();
-        // (An app in front: the keyboard types into it.)
+        // An app in front, so the keyboard types into it.
         s.apply(Event::Windows(vec![foot()]));
         tap(&mut s, Id::Tab(Tab::Settings));
         tap(&mut s, Id::Settings(SettingsId::Env));
         let key = |s: &mut State, k| tap(s, Id::Key(find(k).unwrap()));
         key(&mut s, Key::Char('a'));
-        // The keyboard tab: its keys go to the app, not the editor left in the settings.
+        // In the keyboard tab, keys go to the app, not to the editor left open in the settings.
         tap(&mut s, Id::Tab(Tab::Keyboard));
         assert_eq!(s.bottom().editor(), None);
         assert_eq!(key(&mut s, Key::Char('b')).len(), 1, "sent");

@@ -1,12 +1,12 @@
-//! The fan's mode, as the Fan setting chooses it and the fan daemon (`clamshell-fan`, whose curves and
-//! steps are its own) reads it: written to [`MODE_FILE`] (which the image makes writable by the session's
-//! user); without one, the daemon runs [`Mode::Auto`].
+//! The fan's mode, chosen by the Fan setting and read by the fan daemon, `clamshell-fan`, which has its
+//! own curves and steps. The mode is written to [`MODE_FILE`], which the image makes writable by the
+//! session's user. Without that file, the daemon runs [`Mode::Auto`].
 
-/// Where the mode is written: its name, as [`Mode::name`] has it.
+/// Where the mode is written, as its name from [`Mode::name`].
 pub const MODE_FILE: &str = "/run/clamshell-fan";
 
 crate::settings::choices!(
-    /// The fan's curve: [`crate::settings::Setting::Fan`].
+    /// The fan's curve, for [`crate::settings::Setting::Fan`].
     Mode for Fan, default Auto {
         Auto = 0, "Fan auto", Stock;
         Quiet = 1, "Fan quiet", Changes;
@@ -15,7 +15,7 @@ crate::settings::choices!(
 );
 
 impl Mode {
-    /// Its word in the mode file.
+    /// The mode's word in the mode file.
     pub fn name(self) -> &'static str {
         match self {
             Mode::Auto => "auto",
@@ -24,7 +24,7 @@ impl Mode {
         }
     }
 
-    /// A mode file's contents; anything else: none.
+    /// Parses a mode file's contents. Anything else gives `None`.
     pub fn parse(text: &str) -> Option<Mode> {
         [Mode::Auto, Mode::Quiet, Mode::Max].into_iter().find(|m| m.name() == text.trim())
     }

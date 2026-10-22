@@ -1,7 +1,7 @@
-//! The tweakable settings: a fixed table of settings, each with a short list of values (tapping a tile
-//! steps through them). [`Values`] holds one value per setting (the global ones, or a game's effective
-//! ones); [`Overrides`] a game's own choices, each replacing the global one where set; [`Settings`] all
-//! of them, with the environment variables.
+//! The tweakable settings: a fixed table of settings, each with a short list of values that tapping its
+//! tile steps through. [`Values`] holds one value per setting, either the global ones or a game's
+//! effective ones. [`Overrides`] holds a game's own choices, each replacing the global one where set.
+//! [`Settings`] holds all of them, along with the environment variables.
 
 pub mod env;
 pub mod fan;
@@ -16,60 +16,61 @@ use env::parse_env;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Setting {
-    /// The power profile: 0 Battery, 1 Balanced, 2 Performance (CPU and GPU frequency caps).
+    /// The power profile, which sets CPU and GPU frequency caps: 0 Battery, 1 Balanced, 2 Performance.
     Power,
-    /// Frames per second at most (MangoHud's limiter); 0: no cap.
+    /// The most frames per second, using MangoHud's limiter. 0 means no cap.
     FpsCap,
-    /// The main screen's refresh rate in Hz; 0: as it is.
+    /// The main screen's refresh rate in Hz. 0 leaves it as it is.
     Refresh,
     /// MangoHud's overlay: 0 off, 1 the frame rate only, 2 the full overlay.
     Hud,
     /// Rendering below the screen's resolution through gamescope: 0 native, 1 FSR from 720p, 2 FSR from
     /// 540p, 3 integer scaling.
     Upscale,
-    /// The second screen: 0 on (dimmed when untouched), 1 dark while a game runs (until tapped), 2 off
-    /// when idle; 1 and 2 power it off on battery (see [`crate::bottom::screen`]).
+    /// The second screen: 0 on but dimmed when untouched, 1 dark while a game runs until tapped, 2 off
+    /// when idle. With 1 and 2 it is powered off on battery (see [`crate::bottom::screen`]).
     BottomScreen,
-    /// The big CPU cores: 1 on, 0 off (the little ones only).
+    /// The big CPU cores: 1 on, 0 off, leaving only the little ones.
     BigCores,
     /// The fan: 0 auto, 1 quiet, 2 max.
     Fan,
     /// The pad mouse at launch: 0 off, 1 on.
     PadMouse,
-    /// The keymap (see [`crate::keymap`]), by its id; 0: Default, no remapping. Chosen in its picker
-    /// (any id is kept; one that is gone counts as Default).
+    /// The keymap by its id (see [`crate::keymap`]). 0 is Default, with no remapping. It is chosen in
+    /// the keymap picker. Any id is kept, and one whose keymap is gone counts as Default.
     Keymap,
-    /// Rumble: 0 off up to 3 full.
+    /// Rumble strength, from 0 (off) up to 3 (full).
     Rumble,
-    /// The CPU's frequency cap in percent of its range; 0: the power profile's.
+    /// The CPU's frequency cap as a percent of its range. 0 uses the power profile's.
     CpuMax,
-    /// The GPU's frequency cap in percent of its range; 0: the power profile's.
+    /// The GPU's frequency cap as a percent of its range. 0 uses the power profile's.
     GpuMax,
-    /// Charging stops at this percentage (again 5 below it: `clamshell_system::power::tuning::Hold`); 0: bypass,
-    /// the battery left alone while the charger powers the device (global only: battery care).
+    /// Charging stops at this percentage, and starts again 5 below it
+    /// (`clamshell_system::power::tuning::Hold`). 0 means bypass: the battery is left alone while the
+    /// charger powers the device. Global only, since it is for battery care.
     ChargeLimit,
-    /// The screens go off after this many minutes without input; 0: never (global only).
+    /// The screens go off after this many minutes without input. 0 means never. Global only.
     ScreenOff,
-    /// The device sleeps after this many minutes without input; 0: never (global only).
+    /// The device sleeps after this many minutes without input. 0 means never. Global only.
     Sleep,
-    /// What a program does while none of its windows is shown: see [`InBackground`].
+    /// What a program does while none of its windows is shown (see [`InBackground`]).
     Background,
 }
 
-/// A setting whose values are named choices: an enum, each variant stored as its value (see [`Values`]).
-/// Defined by [`choices!`], which gives each variant its value, its label and what it does.
+/// A setting whose values are named choices. It is an enum, and each variant is stored as its value (see
+/// [`Values`]). Defined by [`choices!`], which gives each variant its value, its label and what it does.
 pub trait Choice: Copy + PartialEq + 'static {
     const SETTING: Setting;
-    /// Its values, labels and impacts, in the order a tap steps through them.
+    /// The values, labels and impacts, in the order a tap steps through them.
     const TABLE: Table;
 
     fn value(self) -> u16;
 
-    /// The choice `value` stands for (a value not offered: the default).
+    /// The choice `value` stands for. A value that isn't offered gives the default.
     fn of(value: u16) -> Self;
 }
 
-/// A choice setting's values as data: what [`Setting`]'s tables read for it.
+/// A choice setting's values as data, which [`Setting`] reads for it.
 pub struct Table {
     pub values: &'static [u16],
     labels: &'static [&'static str],
@@ -95,7 +96,7 @@ impl Table {
     }
 }
 
-/// Defines a [`Choice`]: the enum, its default, and per variant (in tap order) its stored value, its
+/// Defines a [`Choice`]: the enum, its default, and for each variant, in tap order, its stored value, its
 /// label and its [`Impact`].
 macro_rules! choices {
     ($(#[$doc:meta])* $ty:ident for $setting:ident, default $default:ident {
@@ -155,7 +156,8 @@ macro_rules! choices {
 pub(crate) use choices;
 
 choices!(
-    /// [`Setting::Power`]: how fast CPU and GPU may run (frequency caps; the Thor has no TDP setting).
+    /// [`Setting::Power`]: how fast the CPU and GPU may run, through frequency caps. The Thor has no TDP
+    /// setting.
     PowerProfile for Power, default Balanced {
         Battery = 0, "Battery", Saves;
         Balanced = 1, "Balanced", Stock;
@@ -183,13 +185,14 @@ choices!(
 );
 
 choices!(
-    /// [`Setting::BottomScreen`]: the second screen while it isn't used (see [`crate::bottom::screen`]).
+    /// [`Setting::BottomScreen`]: what the second screen does while it isn't used (see
+    /// [`crate::bottom::screen`]).
     BottomWhenIdle for BottomScreen, default OffWhenIdle {
-        /// Off on battery when idle (dimmed first).
+        /// Off on battery when idle, after dimming first.
         OffWhenIdle = 2, "Off when idle", Stock;
-        /// On, dimmed when untouched.
+        /// On, but dimmed when untouched.
         On = 0, "Screen on", Costs;
-        /// Dark while a game is in force (until tapped), and off on battery.
+        /// Dark while a game is in force, until tapped, and off on battery.
         DarkInGame = 1, "Dark in game", Saves;
     }
 );
@@ -224,10 +227,10 @@ choices!(
     /// [`Setting::Background`]: what a program does while none of its windows is shown (see
     /// [`crate::session::background`]).
     InBackground for Background, default PausesGames {
-        /// The default: Pauses for a game, else Runs (see [`crate::State::background_of`]).
+        /// The default. Pauses for a game, and Runs otherwise (see [`crate::State::background_of`]).
         PausesGames = 3, "Pauses games", Stock;
         Runs = 0, "Runs hidden", Costs;
-        /// Paused (frozen) once hidden for the grace.
+        /// Paused (frozen) once it has been hidden for the grace period.
         Pauses = 1, "Pauses hidden", Saves;
         /// Ended once its last window has closed.
         Quits = 2, "Quits closed", Saves;
@@ -236,8 +239,8 @@ choices!(
 
 pub const COUNT: usize = 17;
 
-/// What a value does, for the tile's colour: nothing (the stock value), saves power or eases the load,
-/// costs power, or changes how the game looks or plays.
+/// What a value does, for the tile's colour. It is the stock value and does nothing, or it saves power
+/// or eases the load, costs power, or changes how the game looks or plays.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Impact {
     Stock,
@@ -246,7 +249,8 @@ pub enum Impact {
     Changes,
 }
 
-// (In the enum's order: a setting's index is its place. The name is its key in the settings file.)
+// In the enum's order, since a setting's index is its position. The name is its key in the settings
+// file.
 names!(Setting {
     Power: "power";
     FpsCap: "fps";
@@ -274,12 +278,12 @@ impl Setting {
         self as usize
     }
 
-    /// Whether `value` is one it takes: one of its choices (any keymap's id, for the keymap).
+    /// Whether the setting takes `value`. It must be one of its choices, or any keymap id for the keymap.
     pub fn accepts(self, value: u16) -> bool {
         self == Setting::Keymap || self.choices().contains(&value)
     }
 
-    /// Its values as a [`Choice`]'s table, if they are named choices.
+    /// The setting's values as a [`Choice`]'s table, if they are named choices.
     fn table(self) -> Option<&'static Table> {
         match self {
             Setting::Power => Some(&PowerProfile::TABLE),
@@ -304,7 +308,7 @@ impl Setting {
         match self {
             Setting::FpsCap => &[0, 30, 40, 45, 60, 90, 120],
             Setting::Refresh => &[0, 60, 90, 120],
-            // (The others are the keymaps there are.)
+            // The other values are the existing keymaps.
             Setting::Keymap => &[0],
             Setting::CpuMax | Setting::GpuMax => &[0, 40, 50, 60, 70, 80, 90, 100],
             Setting::ChargeLimit => &[100, 90, 80, 0],
@@ -326,18 +330,19 @@ impl Setting {
         }
     }
 
-    /// Whether changing it does something yet (the rest are kept, and work once implemented).
+    /// Whether changing the setting does anything yet. The others are still stored, and will work once
+    /// implemented.
     pub fn active(self) -> bool {
         !matches!(self, Setting::Upscale)
     }
 
-    /// Whether it works through the launch's own process (MangoHud's cap and HUD): an app the launch
-    /// hands over to another program (see [`crate::State::handed_over`]) doesn't get it.
+    /// Whether the setting works through the launch's own process, as MangoHud's cap and HUD do. An app
+    /// that the launch hands over to another program (see [`crate::State::handed_over`]) doesn't get it.
     pub fn through_launch(self) -> bool {
         matches!(self, Setting::FpsCap | Setting::Hud)
     }
 
-    /// Only for all games (not per game).
+    /// Whether the setting applies only to all games, not per game.
     pub fn global_only(self) -> bool {
         matches!(self, Setting::ChargeLimit | Setting::ScreenOff | Setting::Sleep)
     }
@@ -352,14 +357,14 @@ impl Setting {
         }
         match (self, value) {
             (Setting::Refresh, 120) | (Setting::CpuMax | Setting::GpuMax, 100) => Impact::Costs,
-            // Never, or later than by default, costs power; sooner saves it.
+            // Never, or later than the default, costs power. Sooner saves it.
             (Setting::ScreenOff | Setting::Sleep, v) if v == 0 || v > self.default_value() => Impact::Costs,
             (Setting::Keymap, _) => Impact::Changes,
             _ => Impact::Saves,
         }
     }
 
-    /// The value after `value` (wrapping).
+    /// The value after `value`, wrapping around.
     pub fn next(self, value: u16) -> u16 {
         let choices = self.choices();
         let i = choices.iter().position(|&c| c == value).map_or(0, |i| (i + 1) % choices.len());
@@ -376,7 +381,7 @@ impl Setting {
             (Setting::FpsCap, 0) => "No cap",
             (Setting::Refresh, 0) => "Hz as is",
             (Setting::Keymap, 0) => "Default",
-            // (The tile shows the keymap's name.)
+            // The tile shows the keymap's name.
             (Setting::Keymap, v) => return number(buf, "Keymap ", v, ""),
             (Setting::CpuMax, 0) => "CPU auto",
             (Setting::GpuMax, 0) => "GPU auto",
@@ -392,7 +397,7 @@ impl Setting {
             (Setting::ChargeLimit, v) => return number(buf, "Charge to ", v, " %"),
             (Setting::ScreenOff, v) => return number(buf, "Off after ", v, " min"),
             (Setting::Sleep, v) => return number(buf, "Sleep after ", v, " min"),
-            // (Named choices: their table, above.)
+            // Named choices come from their table, above.
             _ => "",
         };
         let _ = buf.write_str(text);
@@ -429,13 +434,13 @@ impl Values {
         }
     }
 
-    /// Every value, as overrides (to write them all).
+    /// Every value as overrides, to write them all.
     pub fn all(&self) -> Overrides {
         Overrides(self.0.map(Some))
     }
 }
 
-/// A game's own choices: a value per setting, or none to follow the global one.
+/// A game's own choices: a value per setting, or none to follow the global value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Overrides([Option<u16>; COUNT]);
 
@@ -467,19 +472,19 @@ impl Overrides {
 }
 
 /// Every entry's settings: the global values and environment, and each entry's overrides and
-/// environment. Kept a file per settings screen (clamshell-system's `store`).
+/// environment. Stored as one file per settings screen (clamshell-system's `store`).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settings {
     pub global: Values,
     pub overrides: HashMap<Arc<str>, Overrides>,
-    /// Extra environment for every game, and per game (on top), as `KEY=value` words.
+    /// Extra environment for every game, and per game on top of it, as `KEY=value` words.
     pub global_env: String,
     pub env: HashMap<Arc<str>, String>,
 }
 
 impl Settings {
-    /// The settings `game` runs with below `levels` (its runner's: see [`crate::runner_key`]): the global
-    /// ones, each level's overrides over them, then its own.
+    /// The settings `game` runs with, below `levels`, such as its runner's (see [`crate::runner_key`]).
+    /// These are the global ones, with each level's overrides on top, then the game's own.
     pub fn of_in(&self, game: &str, levels: &[&str]) -> Values {
         let inherited = levels.iter().fold(self.global, |values, f| self.overrides_of(f).over(&values));
         self.overrides_of(game).over(&inherited)
@@ -489,8 +494,9 @@ impl Settings {
         self.overrides.get(game).copied().unwrap_or_default()
     }
 
-    /// Sets `setting` for `game` (none: for all games, as are global-only settings) to `value`, or
-    /// back to the default (none: the global value for a game, the stock value for all games).
+    /// Sets `setting` for `game` to `value`. With no game, or for a global-only setting, it is set for all
+    /// games. With no value it goes back to the default: the global value for a game, or the stock value
+    /// for all games.
     pub fn set(&mut self, game: Option<&Arc<str>>, setting: Setting, value: Option<u16>) {
         match game {
             Some(id) if !setting.global_only() => {
@@ -506,7 +512,7 @@ impl Settings {
         }
     }
 
-    /// A game's own environment text, or all games' (none).
+    /// A game's own environment text, or with `None`, the one for all games.
     pub fn env_text(&self, game: Option<&str>) -> &str {
         match game {
             Some(id) => self.env.get(id).map_or("", |e| e.as_str()),
@@ -527,8 +533,8 @@ impl Settings {
         }
     }
 
-    /// The environment a game below `levels` gets: the global variables, each level's, then its own
-    /// (later ones win).
+    /// The environment a game below `levels` gets: the global variables, then each level's, then its own.
+    /// Later ones win.
     pub fn env_in(&self, game: &str, levels: &[&str]) -> Vec<(String, String)> {
         let mut vars = parse_env(&self.global_env);
         for f in levels {
@@ -596,7 +602,7 @@ mod tests {
         assert_eq!(s.global.get(Setting::ChargeLimit), 80, "global-only settings go global");
         assert_eq!(s.env_in("ff6", &[]), vec![("A".to_owned(), "1".to_owned())]);
         assert!(Setting::FpsCap.accepts(40) && !Setting::FpsCap.accepts(33) && Setting::Keymap.accepts(7));
-        // Below levels: the first one's, the next one's over it, its own over both.
+        // Below levels: the first level's, then the next one's over it, then the game's own over both.
         s.set(Some(&"runner:SNES".into()), Setting::FpsCap, Some(30));
         s.set(Some(&"runner:SNES".into()), Setting::Keymap, Some(2));
         s.set(Some(&"runner:SNES RPG".into()), Setting::Keymap, Some(3));

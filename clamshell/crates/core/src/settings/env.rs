@@ -1,11 +1,11 @@
-//! Environment variables as the editor's text holds them: `KEY=value` words.
+//! Environment variables as the editor's text holds them, as `KEY=value` words.
 
-/// `KEY=value` words (see [`Words`]) as variables.
+/// Parses `KEY=value` words (see [`Words`]) into variables.
 pub fn parse_env(text: &str) -> Vec<(String, String)> {
     vars(text).map(|(k, v)| (k.to_owned(), v.to_owned())).collect()
 }
 
-/// How many variables [`parse_env`] finds in `text`, without allocating (for drawing).
+/// How many variables [`parse_env`] finds in `text`, without allocating, for drawing.
 pub fn count_env(text: &str) -> usize {
     vars(text).count()
 }
@@ -15,8 +15,9 @@ fn vars(text: &str) -> impl Iterator<Item = (&str, &str)> {
     Words { rest: text }.filter_map(|word| word.split_once('=')).filter(|(k, _)| !k.is_empty())
 }
 
-/// The words of a text: whitespace separates; a word starting with `'` or `"` runs to the next same quote
-/// (quotes removed); quotes inside an unquoted word are literal; words are trimmed.
+/// The words of a text. Words are separated by whitespace and trimmed. A word starting with `'` or `"`
+/// runs to the next matching quote, and the quotes are removed. Quotes inside an unquoted word are
+/// literal.
 struct Words<'a> {
     rest: &'a str,
 }
