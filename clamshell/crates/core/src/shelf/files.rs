@@ -223,9 +223,9 @@ impl State {
 
     /// The file actions of what the details show (see [`State::file_target`]), from its place: its own if
     /// it is the selected entry, then the folder open's (Paste with something copied, New folder).
-    pub fn file_actions(&self) -> crate::actions::Actions {
+    pub fn file_actions(&self) -> crate::shelf::actions::Actions {
         use FileAction::*;
-        let mut actions = crate::actions::Actions::default();
+        let mut actions = crate::shelf::actions::Actions::default();
         let Some((game, selected)) = self.file_target() else {
             return actions;
         };
@@ -245,19 +245,19 @@ impl State {
         };
         // (An archive a runner opens: a ROM's zip.)
         if selected && b.archive && self.opened_in(game).is_some() {
-            actions.push(crate::actions::Action::File(OpenIn));
+            actions.push(crate::shelf::actions::Action::File(OpenIn));
         }
         for &a in own {
-            actions.push(crate::actions::Action::File(a));
+            actions.push(crate::shelf::actions::Action::File(a));
         }
         if self.open_dir().is_some() {
             if self.files.clip.is_some() {
-                actions.push(crate::actions::Action::File(Paste));
+                actions.push(crate::shelf::actions::Action::File(Paste));
             }
-            actions.push(crate::actions::Action::File(NewFolder));
+            actions.push(crate::shelf::actions::Action::File(NewFolder));
         }
         if self.shelf.group().is_some_and(|g| g.browsed_dir().is_some()) {
-            actions.push(crate::actions::Action::File(ShowHidden));
+            actions.push(crate::shelf::actions::Action::File(ShowHidden));
         }
         actions
     }
@@ -279,7 +279,7 @@ impl State {
 
     /// A file action pressed (if what the details show has it).
     pub(crate) fn on_file(&mut self, action: FileAction) -> Vec<Effect> {
-        if !self.file_actions().contains(&crate::actions::Action::File(action)) {
+        if !self.file_actions().contains(&crate::shelf::actions::Action::File(action)) {
             return vec![];
         }
         let Some((game, _)) = self.file_target() else {
@@ -487,7 +487,7 @@ mod tests {
         listed(&mut s, "browse:Home", vec![zip]);
         let acts = s.file_actions();
         for a in [FileAction::OpenIn, FileAction::Extract, FileAction::Rename, FileAction::Trash] {
-            assert!(acts.contains(&crate::actions::Action::File(a)), "{a:?}: {acts:?}");
+            assert!(acts.contains(&crate::shelf::actions::Action::File(a)), "{a:?}: {acts:?}");
         }
         // Extract: its name typed, without the extensions.
         tap(&mut s, Id::Shelf(ShelfId::File(FileAction::Extract)));
@@ -500,9 +500,9 @@ mod tests {
         listed(&mut s, "browse:Home/game.tar.gz", vec![entry("browse:Home/game.tar.gz/a.sfc", false, BrowseKind::Plain)]);
         // Inside: only copied out; nothing pasted in or made.
         let acts = s.file_actions();
-        assert!(acts.contains(&crate::actions::Action::File(FileAction::Copy)));
+        assert!(acts.contains(&crate::shelf::actions::Action::File(FileAction::Copy)));
         for a in [FileAction::Cut, FileAction::Rename, FileAction::Trash, FileAction::NewFolder] {
-            assert!(!acts.contains(&crate::actions::Action::File(a)), "{a:?}");
+            assert!(!acts.contains(&crate::shelf::actions::Action::File(a)), "{a:?}");
         }
         // Left: no longer in use.
         let fx = tap(&mut s, Id::Shelf(ShelfId::Up));
@@ -561,7 +561,7 @@ mod tests {
         tap(&mut s, Id::Shelf(ShelfId::Launch));
         listed(&mut s, "browse:Home", vec![entry("browse:Home/Films", true, BrowseKind::Plain), entry("browse:Home/a.txt", false, BrowseKind::Plain)]);
         s.apply(ShelfEvent::ListStep(1).into());
-        let file = |a: &[FileAction]| a.iter().map(|&a| crate::actions::Action::File(a)).collect::<Vec<_>>();
+        let file = |a: &[FileAction]| a.iter().map(|&a| crate::shelf::actions::Action::File(a)).collect::<Vec<_>>();
         assert_eq!(
             s.file_actions().as_slice(),
             file(&[
@@ -577,7 +577,7 @@ mod tests {
         // Y on a browsed entry: Copy; X: Paste.
         s.apply(ShelfEvent::ToggleFavourite.into());
         assert_eq!(s.files().clip.as_ref().map(|c| c.entries.iter().map(|(_, n)| n.as_str()).collect::<Vec<_>>()), Some(vec!["a.txt"]));
-        assert!(s.file_actions().contains(&crate::actions::Action::File(FileAction::Paste)));
+        assert!(s.file_actions().contains(&crate::shelf::actions::Action::File(FileAction::Paste)));
         s.apply(ShelfEvent::ListStep(-1).into());
         tap(&mut s, Id::Shelf(ShelfId::Launch));
         assert_eq!(s.file_target().map(|(g, selected)| (&*g.id, selected)), Some(("browse:Home/Films", false)), "empty: the folder's actions");
@@ -612,7 +612,7 @@ mod tests {
         s.apply(ShelfEvent::ListStep(1).into());
         tap(&mut s, Id::Shelf(ShelfId::Launch));
         listed(&mut s, "browse:Trash", vec![entry("browse:Trash/old", false, BrowseKind::Plain)]);
-        let file = |a: &[FileAction]| a.iter().map(|&a| crate::actions::Action::File(a)).collect::<Vec<_>>();
+        let file = |a: &[FileAction]| a.iter().map(|&a| crate::shelf::actions::Action::File(a)).collect::<Vec<_>>();
         assert_eq!(
             s.file_actions().as_slice(),
             file(&[FileAction::Restore, FileAction::Delete, FileAction::Select, FileAction::ShowHidden]),

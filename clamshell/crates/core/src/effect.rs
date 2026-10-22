@@ -87,9 +87,9 @@ pub enum Effect {
         lines: Vec<String>,
     },
     /// The browse thread: a folder to list and watch, or the files in use.
-    Browse(crate::files::BrowseCommand),
+    Browse(crate::shelf::files::BrowseCommand),
     /// A file operation (the files thread).
-    Files(crate::files::FileOp),
+    Files(crate::shelf::files::FileOp),
     /// One of ClamShell's own tools (the Tools tab): `rescan` (the library read again), `refetch` (what
     /// metadata wasn't found tried again, then a rescan).
     Tool(clamshell_library::Tool),

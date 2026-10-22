@@ -442,7 +442,7 @@ mod tests {
         assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(PointerEvent::Focus(Id::Shelf(ShelfId::Pin)).into()), "not down to the second screen");
         assert_eq!(shoulder(&s, &d, 1), vec![]);
         assert_eq!(shortcut(&s, &d, PadInput::Y), vec![ShelfEvent::ToggleFavourite.into()], "sent, but the state has no shortcut there");
-        assert_eq!(s.shortcut(clamshell_core::actions::Shortcut::Y), None);
+        assert_eq!(s.shortcut(clamshell_core::shelf::actions::Shortcut::Y), None);
     }
 
     #[test]

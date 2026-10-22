@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::TryRecvError;
 use std::time::{Duration, Instant};
 
-use clamshell_core::files::{Browse, BrowseCommand, FileOp, FilesEvent};
+use clamshell_core::shelf::files::{Browse, BrowseCommand, FileOp, FilesEvent};
 use clamshell_core::{Browsed, Entry, Event};
 use rustix::fs::inotify;
 

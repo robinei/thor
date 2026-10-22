@@ -29,7 +29,7 @@ mod wifi;
 
 use clamshell_core::Tab;
 use clamshell_core::bottom::editor::Purpose;
-use clamshell_core::files::FileName;
+use clamshell_core::shelf::files::FileName;
 
 use crate::draw::Rect;
 use crate::toolkit::Frame;

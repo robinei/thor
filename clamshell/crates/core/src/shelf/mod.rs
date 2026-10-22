@@ -3,6 +3,9 @@
 //! library (plays, favourites) that keep the collection and selection. The methods say whether the
 //! selection changed; the state saves the place and moves the focus around them.
 
+pub mod actions;
+pub mod files;
+
 use std::sync::Arc;
 
 use crate::kit::list::{Rows, Scroll};

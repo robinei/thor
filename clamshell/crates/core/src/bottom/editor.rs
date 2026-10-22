@@ -46,8 +46,8 @@ pub enum Purpose {
     Password { ssid: String },
     /// A keymap's name.
     KeymapName(KeymapName),
-    /// A browsed file's or folder's name (see [`crate::files`]).
-    FileName(crate::files::FileName),
+    /// A browsed file's or folder's name (see [`crate::shelf::files`]).
+    FileName(crate::shelf::files::FileName),
     /// The account's password, current or new (see [`crate::device::account`]).
     AccountPassword(crate::device::account::PasswordStep),
 }

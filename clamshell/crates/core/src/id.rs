@@ -80,8 +80,8 @@ pub enum ShelfId {
     Continue,
     /// The selected entry (or the entries selected) added to what its runner plays (see [`crate::enqueue`]).
     Enqueue,
-    /// A browsed entry's file action, or the folder open's (see [`crate::files`]).
-    File(crate::files::FileAction),
+    /// A browsed entry's file action, or the folder open's (see [`crate::shelf::files`]).
+    File(crate::shelf::files::FileAction),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

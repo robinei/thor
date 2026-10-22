@@ -221,7 +221,7 @@ pub const TARGETS: &[Form<Id>] = &[
         "file ACTION",
         "a browsed entry's file action: copy, cut, rename, trash, restore, delete, empty-trash, eject, select, paste, new-folder, show-hidden, extract, open-in",
         |a| {
-            use clamshell_core::files::FileAction;
+            use clamshell_core::shelf::files::FileAction;
             Ok(Id::Shelf(ShelfId::File(match arg(a, 0) {
                 "copy" => FileAction::Copy,
                 "cut" => FileAction::Cut,
@@ -531,7 +531,7 @@ mod tests {
         assert_eq!(parse("tap launch"), Ok(activate(Id::Shelf(ShelfId::Launch))));
         assert_eq!(parse("tap collection 1"), Ok(activate(Id::Shelf(ShelfId::Collection(1)))));
         assert_eq!(parse("tap up"), Ok(activate(Id::Shelf(ShelfId::Up))));
-        assert_eq!(parse("tap file new-folder"), Ok(activate(Id::Shelf(ShelfId::File(clamshell_core::files::FileAction::NewFolder)))));
+        assert_eq!(parse("tap file new-folder"), Ok(activate(Id::Shelf(ShelfId::File(clamshell_core::shelf::files::FileAction::NewFolder)))));
         assert_eq!(parse("tap network 2"), Ok(activate(ListId::Wifi.row(2))));
         assert_eq!(parse("long network 0"), Ok(vec![PointerEvent::LongPress(ListId::Wifi.row(0)).into()]));
         assert_eq!(parse("tap wifi-power"), Ok(activate(Id::Wifi(WifiId::Power))));

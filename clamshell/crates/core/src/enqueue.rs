@@ -101,7 +101,7 @@ mod tests {
     fn enqueue_plays_with_nothing_playing_then_adds_to_what_plays() {
         let mut s = music_state();
         assert_eq!(s.shelf().selected().map(|g| &**g), Some("album"));
-        assert!(s.actions().contains(&crate::actions::Action::Enqueue));
+        assert!(s.actions().contains(&crate::shelf::actions::Action::Enqueue));
         let fx = tap(&mut s, Id::Shelf(ShelfId::Enqueue));
         let launch = fx.iter().find_map(|e| match e {
             Effect::Launch { entry: game, launch, .. } => Some((game.to_string(), launch.clone())),

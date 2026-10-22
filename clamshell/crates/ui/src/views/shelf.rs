@@ -299,8 +299,8 @@ fn selected(f: &mut Frame, game: &Entry, screen: Rect, list: Rect, pad: f32) {
 /// Copy and Paste), the file actions (Delete and Empty Trash asking to be pressed again); a paste under
 /// way, how far. Their height.
 fn actions(f: &mut Frame, game: &Entry, r: Rect, action_h: f32, pad: f32) -> f32 {
-    use clamshell_core::actions::{Action, Shortcut};
-    use clamshell_core::files::FileAction;
+    use clamshell_core::shelf::actions::{Action, Shortcut};
+    use clamshell_core::shelf::files::FileAction;
     let s = f.s;
     let mut y = r.y;
     // (A row as wide as fourteen of the details' text size; Continue's, naming the next video, as the details.)
@@ -366,7 +366,7 @@ fn actions(f: &mut Frame, game: &Entry, r: Rect, action_h: f32, pad: f32) -> f32
         widgets::key_action(f, Id::Shelf(action.id()), Rect::new(r.x, y, row_w, action_h), key, &label, tone, in_actions);
         y += action_h + pad * 0.15;
     }
-    if let Some(clamshell_core::files::Busy { what, fraction }) = &s.files().busy {
+    if let Some(clamshell_core::shelf::files::Busy { what, fraction }) = &s.files().busy {
         y += pad * 0.3;
         let size = action_h * 0.62;
         f.c.text_fit(Rect::new(r.x, y, r.w, size * 1.4), size, Tone::Normal, what, Keep::Start);

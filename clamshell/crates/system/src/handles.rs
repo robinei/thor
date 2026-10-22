@@ -43,8 +43,8 @@ pub struct Handles {
     /// Screenshots and sleep.
     pub system: Worker<crate::device::Command>,
     /// Lists (and watches) the browsed folder open; does the file operations.
-    pub browse: Worker<clamshell_core::files::BrowseCommand>,
-    pub files: Worker<clamshell_core::files::FileOp>,
+    pub browse: Worker<clamshell_core::shelf::files::BrowseCommand>,
+    pub files: Worker<clamshell_core::shelf::files::FileOp>,
     /// The on-screen keyboard types through it; `None` if it couldn't be made.
     pub keyboard: Option<VirtualKeyboard>,
 }

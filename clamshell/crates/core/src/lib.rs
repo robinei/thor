@@ -13,7 +13,6 @@
 //! index is valid by construction (an enum's place in an array sized for it, an index the library's own
 //! tree holds) falls back quietly; where a bug could reach a fallback, a `debug_assert!` says so in tests.
 
-pub mod actions;
 pub mod autostart;
 pub mod background;
 pub mod bottom;
@@ -22,7 +21,6 @@ pub mod dock;
 mod effect;
 pub mod enqueue;
 mod event;
-pub mod files;
 mod found;
 mod id;
 pub mod instance;
@@ -36,7 +34,7 @@ mod resume;
 mod running;
 mod session;
 pub mod settings;
-mod shelf;
+pub mod shelf;
 pub mod status;
 pub mod tray;
 pub mod windows;
@@ -163,8 +161,8 @@ pub struct State {
     pins_dropped: bool,
     /// ClamShell's first start (see [`Init::first_start`]).
     first_start: bool,
-    /// The file actions' clipboard and confirmation, the folder browsed (see [`files`]).
-    files: files::Files,
+    /// The file actions' clipboard and confirmation, the folder browsed (see [`crate::shelf::files`]).
+    files: crate::shelf::files::Files,
     /// The text on the system's clipboard, for the editor's Ctrl+V (files copied in the Files tab are its
     /// own, above).
     clipboard: Option<std::sync::Arc<str>>,
@@ -860,9 +858,9 @@ impl State {
             }
             ShelfEvent::Rows(rows) => (if self.shelf.set_rows(rows) { Dirty::BOTH } else { Dirty::NONE }, vec![]),
             // The details' actions on the pad's buttons (see [`actions`]).
-            ShelfEvent::Continue => (Dirty::BOTH, self.act(actions::Shortcut::Start)),
-            ShelfEvent::ToggleFavourite => (Dirty::BOTH, self.act(actions::Shortcut::Y)),
-            ShelfEvent::TogglePin => (Dirty::BOTH, self.act(actions::Shortcut::X)),
+            ShelfEvent::Continue => (Dirty::BOTH, self.act(crate::shelf::actions::Shortcut::Start)),
+            ShelfEvent::ToggleFavourite => (Dirty::BOTH, self.act(crate::shelf::actions::Shortcut::Y)),
+            ShelfEvent::TogglePin => (Dirty::BOTH, self.act(crate::shelf::actions::Shortcut::X)),
             ShelfEvent::ClearFilter => {
                 if self.shelf.set_filter(String::new()) {
                     self.moved_collection();
