@@ -52,7 +52,7 @@ mod tests {
         let firefox = Instance::Run { key: clamshell_library::key_of("desktop:firefox"), secs: 1, n: 0 };
         let (_, fx) = s.apply(Event::Units(vec![firefox]));
         assert_eq!(launches(&fx), 1, "Zelda only: Firefox runs, `gone` isn't in the library: {fx:?}");
-        assert!(s.session().pending_show.is_none(), "not shown");
+        assert!(s.session().pending_show().is_none(), "not shown");
         assert_eq!(launches(&s.apply(Event::Units(vec![])).1), 0, "once");
         // Choosing in the dock menu saves the list.
         let mut out = crate::out::Out::default();

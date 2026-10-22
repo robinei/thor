@@ -715,7 +715,7 @@ mod tests {
         assert_eq!(s.shelf().collection().map(|c| c.name.as_str()), Some("TV"));
         assert_eq!(s.shelf().group().map(|g| &*g.id), Some("tv:Cosmos/Season 1"));
         assert_eq!(s.shelf().selected().map(|g| &**g), Some("tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv"));
-        assert!(s.session().launching.is_empty(), "nothing started");
+        assert!(s.session().launching().is_empty(), "nothing started");
     }
 
     #[test]

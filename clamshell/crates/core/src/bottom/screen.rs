@@ -244,13 +244,13 @@ impl Bottom {
     /// Home+Down moves the window in front on the top screen to the bottom screen, shows it there, and
     /// remembers it for its program.
     pub(crate) fn window_down(&mut self, session: &Session, now: u64, out: &mut Out) {
-        let Some(w) = session.windows.iter().find(|w| w.focused && !w.down && w.home() != Some(Instance::Shelf)) else {
+        let Some(w) = session.windows().iter().find(|w| w.focused && !w.down && w.home() != Some(Instance::Shelf)) else {
             return;
         };
         self.show_down(w.id, out);
         // The title is only used to tell it apart from another window of its program with the same
         // app id.
-        let others = session.windows.iter().any(|o| o.id != w.id && o.app_id == w.app_id && o.unit == w.unit);
+        let others = session.windows().iter().any(|o| o.id != w.id && o.app_id == w.app_id && o.unit == w.unit);
         let title = others.then(|| w.title.clone());
         if let Some(owner) = session.owner_of(w)
             && self.window_rules.add(WindowRule { owner, app_id: w.app_id.clone(), title })
@@ -309,7 +309,7 @@ impl Bottom {
         if self.shows_windows(session) {
             return None;
         }
-        let front = session.windows.iter().find(|w| w.focused && !w.down)?.unit.as_deref().filter(|u| Instance::is_ours(u))?;
+        let front = session.windows().iter().find(|w| w.focused && !w.down)?.unit.as_deref().filter(|u| Instance::is_ours(u))?;
         session.windows_down().find(|w| w.unit.as_deref() == Some(front)).map(|w| w.id)
     }
 
@@ -342,7 +342,7 @@ impl Bottom {
     /// Runs after the windows changed. A window whose program has a rule for it is sent down, once.
     pub(crate) fn follow_window_rules(&mut self, session: &Session, out: &mut Out) {
         let wanted: Vec<i64> = session
-            .windows
+            .windows()
             .iter()
             .filter(|w| !w.down && !self.sent_down.contains(&w.id))
             .filter(|w| session.owner_of(w).is_some_and(|o| self.window_rules.wants(&o, w)))
@@ -352,21 +352,21 @@ impl Bottom {
             self.sent_down.push(id);
             self.show_down(id, out);
         }
-        self.sent_down.retain(|id| session.windows.iter().any(|w| w.id == *id));
+        self.sent_down.retain(|id| session.windows().iter().any(|w| w.id == *id));
     }
 }
 
 impl State {
     /// Whether the second screen is dark (see [`Bottom::dark`]).
     pub fn bottom_dark(&self) -> bool {
-        self.bottom.dark(self.session.program.is_some(), self.in_force().choice::<BottomWhenIdle>())
+        self.bottom.dark(self.session.program().is_some(), self.in_force().choice::<BottomWhenIdle>())
     }
 
     /// What the second screen's power follows, as things are now.
     pub(crate) fn power(&self) -> Power {
         Power {
             any_down: self.session.windows_down().next().is_some(),
-            in_game: self.session.program.is_some(),
+            in_game: self.session.program().is_some(),
             when_idle: self.in_force().choice::<BottomWhenIdle>(),
             discharging: self.sys.status().discharging,
             refreshing: *self.device.refresh() == crate::device::Refresh::Running,
@@ -413,8 +413,7 @@ mod tests {
     /// A game started by shelf, running with a top window and a second window, the second in front.
     fn emulator() -> State {
         let mut s = state();
-        s.session.running.push(running("melonds", "melonds_1"));
-        s.session.units.push(emu());
+        s.session.add_run(running("melonds", "melonds_1"), emu());
         s.apply(Event::Windows(vec![win(1, GAME, "Top", false, false), win(2, GAME, "Bottom", true, false)]));
         s
     }
@@ -426,8 +425,7 @@ mod tests {
     #[test]
     fn a_programs_only_window_is_remembered_by_its_app_id_alone() {
         let mut s = state();
-        s.session.running.push(running("melonds", "melonds_1"));
-        s.session.units.push(emu());
+        s.session.add_run(running("melonds", "melonds_1"), emu());
         s.apply(Event::Windows(vec![win(2, GAME, "Page one", true, false)]));
         let fx = key(&mut s, DeviceKey::WindowDown);
         let rule = WindowRule { owner: "melonds".into(), app_id: "emu".into(), title: None };
@@ -474,8 +472,7 @@ mod tests {
         // down, once.
         let mut s = state();
         s.bottom = Bottom::new(rules.clone());
-        s.session.running.push(running("melonds", "melonds_1"));
-        s.session.units.push(emu());
+        s.session.add_run(running("melonds", "melonds_1"), emu());
         let fx = s.apply(Event::Windows(vec![win(5, GAME, "Top", true, false), win(6, GAME, "Bottom", false, false)])).1;
         assert!(fx.contains(&Effect::Window(WindowCommand::Down(6))), "{fx:?}");
         assert!(!fx.contains(&Effect::Window(WindowCommand::Down(5))));
@@ -486,15 +483,13 @@ mod tests {
         s.bottom = Bottom::new(rules.clone());
         let fx = s.apply(Event::Windows(vec![win(8, GAME, "Bottom", true, false)])).1;
         assert!(!fx.iter().any(|e| matches!(e, Effect::Window(WindowCommand::Down(_)))), "no entry yet: {fx:?}");
-        s.session.running.push(running("melonds", "melonds_1"));
-        s.session.units.push(emu());
+        s.session.add_run(running("melonds", "melonds_1"), emu());
         let fx = s.apply(Event::Units(vec![emu()])).1;
         assert!(fx.contains(&Effect::Window(WindowCommand::Down(8))), "{fx:?}");
         let mut s = emulator();
         key(&mut s, DeviceKey::WindowDown);
         // Another game's window with that title doesn't match the rule.
-        s.session.running.push(running("other", "other_2"));
-        s.session.units.push(Instance::Run { key: "other_2".into(), secs: 5, n: 2 });
+        s.session.add_run(running("other", "other_2"), Instance::Run { key: "other_2".into(), secs: 5, n: 2 });
         let fx = s.apply(Event::Windows(vec![win(7, "clamshell-run-other_2-5-2.scope", "Bottom", false, false)])).1;
         assert!(!fx.iter().any(|e| matches!(e, Effect::Window(WindowCommand::Down(_)))), "{fx:?}");
     }

@@ -28,43 +28,43 @@ const REOPEN_SECS: u64 = 2;
 #[derive(Debug, Default)]
 pub struct Session {
     /// The entries that run, in the order they started.
-    pub(crate) running: Vec<Running>,
+    running: Vec<Running>,
     /// The id of the program in force (see [`crate::session::program`]).
-    pub(crate) program: Option<Arc<str>>,
+    program: Option<Arc<str>>,
     /// Launches asked for that haven't started.
-    pub(crate) launching: Vec<Launching>,
+    launching: Vec<Launching>,
     /// The compositor's windows.
-    pub(crate) windows: Vec<Window>,
+    windows: Vec<Window>,
     /// Our running scopes, as systemd lists them.
-    pub(crate) units: Vec<Instance>,
+    units: Vec<Instance>,
     /// Workspaces by when they were last in front, most recent first.
-    pub(crate) recent: Vec<String>,
+    recent: Vec<String>,
     /// The launch to show when its first window appears.
-    pub(crate) pending_show: Option<Instance>,
+    pending_show: Option<Instance>,
     /// The workspace whose window in front closed, leaving it empty, and when (see
     /// [`Session::show_reopened`]).
-    pub(crate) closed_front: Option<(String, u64)>,
+    closed_front: Option<(String, u64)>,
     /// Entries quitting (see [`Quitting`]).
-    pub(crate) quitting: Vec<Quitting>,
+    quitting: Vec<Quitting>,
     /// The counter that numbers new instances' names. Together with the time, it makes them unique across
     /// restarts.
-    pub(crate) next_instance: u64,
+    next_instance: u64,
     /// Whether systemd has listed our scopes at least once, so that what runs is known.
-    pub(crate) units_known: bool,
+    units_known: bool,
     /// What the last [`crate::State::reconcile`] saw: the windows' ids and the workspace in front on the
     /// main screen. They tell which windows are new and when the one in front closes.
-    pub(crate) followed_windows: Vec<i64>,
-    pub(crate) followed_front: Option<String>,
+    followed_windows: Vec<i64>,
+    followed_front: Option<String>,
     /// Programs' tray icons (see [`crate::session::tray`]).
-    pub(crate) tray: Vec<tray::TrayItem>,
+    tray: Vec<tray::TrayItem>,
     /// Programs paused or ended while hidden (see [`crate::session::background`]).
-    pub(crate) background: background::Background,
+    background: background::Background,
     /// The entries started with ClamShell, and whether they have been started yet (see
     /// [`crate::session::autostart`]).
-    pub(crate) autostart: Vec<Arc<str>>,
-    pub(crate) autostarted: bool,
+    autostart: Vec<Arc<str>>,
+    autostarted: bool,
     /// ClamShell is the device's own session (see [`crate::Init::device_session`]).
-    pub(crate) device_session: bool,
+    device_session: bool,
 }
 
 /// An entry by its id, in `library` or else among the `running` (see [`Session::entry`]).
@@ -177,6 +177,51 @@ impl Session {
     /// The windows of running entry `id`, including those moved to the bottom screen.
     pub fn windows_of<'a>(&'a self, id: &'a str) -> impl Iterator<Item = &'a Window> + 'a {
         self.windows.iter().filter(move |w| self.running_of(w).is_some_and(|r| &*r.id == id))
+    }
+
+    /// The `awake` command of the runner of a shown window, if it has one.
+    pub(crate) fn awake_command(&self) -> Option<Arc<[String]>> {
+        self.windows.iter().filter(|w| w.visible).find_map(|w| {
+            let runner = self.running_of(w)?.entry.as_ref()?.runner.as_ref()?;
+            (!runner.awake.is_empty()).then(|| runner.awake.clone())
+        })
+    }
+
+    /// The window Home with B acts on. It is the one in front on the top screen, other than shelf's. If
+    /// there is none, it is the one in view on the bottom screen while it shows the windows moved there
+    /// (`shows_windows`).
+    pub(crate) fn home_b_window(&self, shows_windows: bool) -> Option<&Window> {
+        let windows = &self.windows;
+        windows
+            .iter()
+            .find(|w| w.focused && !w.down && w.app_id != SHELF_APP_ID)
+            .or_else(|| shows_windows.then(|| windows.iter().filter(|w| w.down).max_by_key(|w| w.visible)).flatten())
+    }
+
+    /// Sets the icon of found entry `entry`, once it was found (see [`Effect::FindIcon`]). Returns whether
+    /// it changed.
+    pub(crate) fn set_icon(&mut self, entry: &str, path: std::path::PathBuf) -> bool {
+        let running = self.running.iter_mut().find(|r| &*r.id == entry);
+        running.and_then(|r| r.entry.as_mut()).is_some_and(|g| crate::kit::replace(&mut g.icon, Some(path)))
+    }
+
+    /// Has `running` run in scope `unit`, as if it had started and systemd listed the scope.
+    #[cfg(test)]
+    pub(crate) fn add_run(&mut self, running: Running, unit: Instance) {
+        self.running.push(running);
+        self.units.push(unit);
+    }
+
+    /// The launches asked for that haven't started.
+    #[cfg(test)]
+    pub(crate) fn launching(&self) -> &[Launching] {
+        &self.launching
+    }
+
+    /// The launch to show when its first window appears.
+    #[cfg(test)]
+    pub(crate) fn pending_show(&self) -> Option<&Instance> {
+        self.pending_show.as_ref()
     }
 
     /// The counter for a new instance's name (see [`crate::session::instance::Instance::Run`]).

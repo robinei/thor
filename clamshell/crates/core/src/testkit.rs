@@ -9,8 +9,8 @@ use crate::*;
 /// the one the launch asked for, or else one of the entry's, as if an earlier ClamShell had started it.
 pub fn start(s: &mut State, id: &str) -> (Dirty, Vec<Effect>) {
     let key = s.entry(id).map_or_else(|| clamshell_library::key_of(id), |g| g.key.clone());
-    let launch = s.session.launching.iter().find(|l| &*l.entry == id).map(|l| l.instance.clone());
-    let mut units = s.session.units.clone();
+    let launch = s.session.launching().iter().find(|l| &*l.entry == id).map(|l| l.instance.clone());
+    let mut units = s.session.units().to_vec();
     units.push(launch.unwrap_or(Instance::Run { key, secs: s.clock.unix(), n: 99 }));
     s.apply(Event::Units(units))
 }
@@ -18,7 +18,7 @@ pub fn start(s: &mut State, id: &str) -> (Dirty, Vec<Effect>) {
 /// Entry `id`'s launches end, as systemd reports it: its scopes are no longer listed.
 pub fn end(s: &mut State, id: &str) -> (Dirty, Vec<Effect>) {
     let key = s.entry(id).map_or_else(|| clamshell_library::key_of(id), |g| g.key.clone());
-    let units = s.session.units.iter().filter(|u| u.key() != Some(key.as_str())).cloned().collect();
+    let units = s.session.units().iter().filter(|u| u.key() != Some(key.as_str())).cloned().collect();
     s.apply(Event::Units(units))
 }
 

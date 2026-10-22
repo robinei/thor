@@ -2,7 +2,6 @@
 //! elsewhere. The follow-up steps run in an order where each one finds the steps it depends on settled.
 
 use crate::bottom::editor::Done;
-use crate::kit::replace;
 use crate::levels::slider::Control;
 use crate::out::Out;
 use crate::resume::SAVE_AFTER;
@@ -120,7 +119,7 @@ impl State {
     /// Called when the program in force changed. Turns the pad mouse on if the program wants it
     /// (Setting::PadMouse), and off again if the program had turned it on. Returns whether it changed.
     fn follow_pad_mouse(&mut self) -> bool {
-        let wanted = self.session.program.is_some() && self.in_force().choice::<MouseAtLaunch>() == MouseAtLaunch::On;
+        let wanted = self.session.program().is_some() && self.in_force().choice::<MouseAtLaunch>() == MouseAtLaunch::On;
         self.pad.follow_game(wanted)
     }
 
@@ -203,7 +202,7 @@ impl State {
             // again.
             Event::Resumed => {
                 self.idle.resumed(self.clock.mono());
-                out.effects.push(Effect::Apply { entry: self.session.program.clone(), settings: self.in_force() });
+                out.effects.push(Effect::Apply { entry: self.session.program().cloned(), settings: self.in_force() });
             }
             Event::Idle(event) => self.idle.heard(event, self.clock.mono()),
             Event::Device(key) => {
@@ -378,10 +377,7 @@ impl State {
                 self.sys.read_status(status) | levels
             }
             Reading::Clipboard(text) => self.bottom.read_clipboard(text),
-            Reading::Icon { entry, path } => {
-                let running = self.session.running.iter_mut().find(|r| r.id == entry);
-                running.and_then(|r| r.entry.as_mut()).is_some_and(|g| replace(&mut g.icon, Some(path)))
-            }
+            Reading::Icon { entry, path } => self.session.set_icon(&entry, path),
             // The graphs move on with every reading.
             Reading::Metrics(metrics) => {
                 self.sys.read_metrics(metrics);

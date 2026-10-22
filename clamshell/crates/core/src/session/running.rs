@@ -705,7 +705,7 @@ mod tests {
         assert!(launches(&launch_now(&mut s, &first), &first));
         crate::testkit::start(&mut s, &first);
         // The first launch's scope is gone and the second's is listed.
-        let second: Vec<Instance> = s.session.units.iter().skip(1).cloned().collect();
+        let second: Vec<Instance> = s.session().units().iter().skip(1).cloned().collect();
         s.apply(Event::Units(second));
         assert!(s.session().running(&first).is_some(), "the other still runs");
         s.apply(Event::tick(1660));

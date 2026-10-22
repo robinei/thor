@@ -43,10 +43,10 @@ pub const GRACE: u64 = 10;
 /// has been out of use for the grace period.
 #[derive(Debug, Default)]
 pub(crate) struct Background {
-    pub(crate) entries: Pauses,
+    entries: Pauses,
     /// The runners whose entries are paused together, from the library.
-    pub(crate) runners: Vec<RunnerOf>,
-    pub(crate) runner_pauses: Pauses,
+    runners: Vec<RunnerOf>,
+    runner_pauses: Pauses,
 }
 
 /// Things that can be paused, such as an entry's slice or a runner's container. It keeps since when each

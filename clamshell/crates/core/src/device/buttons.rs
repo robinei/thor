@@ -6,8 +6,8 @@ use crate::effect::{Effect, WindowCommand};
 use crate::levels::Level;
 use crate::levels::slider::Control;
 use crate::out::Out;
-use crate::session::windows::{SHELF_APP_ID, Window};
-use crate::{EntryAct, Event, Session, State};
+
+use crate::{EntryAct, Event, State};
 
 /// A hardware key, or the same key requested through the control pipe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,7 +59,7 @@ impl State {
         self.levels.change(self.clock.mono(), |l| l.step(level, direction, out));
     }
 
-    /// Home with B, released at once, asks that window (see [`Session::home_b_window`]) to close.
+    /// Home with B, released at once, asks that window (see [`crate::Session::home_b_window`]) to close.
     pub(crate) fn close_front_window(&self, out: &mut Out) {
         if let Some(w) = self.session.home_b_window(self.bottom.shows_windows(&self.session)) {
             out.effects.push(Effect::Window(WindowCommand::Close(vec![w.id])));
@@ -82,19 +82,6 @@ impl State {
     /// The screenshot was taken, with its file, or failed.
     pub(crate) fn on_screenshot(&mut self, result: Result<String, String>) {
         self.bottom.notify(NoticeKind::Screenshot(result), self.clock.mono());
-    }
-}
-
-impl Session {
-    /// The window Home with B acts on. It is the one in front on the top screen, other than shelf's. If
-    /// there is none, it is the one in view on the bottom screen while it shows the windows moved there
-    /// (`shows_windows`).
-    pub(crate) fn home_b_window(&self, shows_windows: bool) -> Option<&Window> {
-        let windows = &self.windows;
-        windows
-            .iter()
-            .find(|w| w.focused && !w.down && w.app_id != SHELF_APP_ID)
-            .or_else(|| shows_windows.then(|| windows.iter().filter(|w| w.down).max_by_key(|w| w.visible)).flatten())
     }
 }
 

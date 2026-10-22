@@ -16,7 +16,7 @@ use std::sync::Arc;
 use crate::effect::Effect;
 use crate::out::Out;
 use crate::settings::{Setting, Values};
-use crate::{Levels, Session, State};
+use crate::{Levels, State};
 
 /// The compositor reports no input after this many seconds without any.
 pub const NOTIFY_AFTER: u64 = 10;
@@ -201,7 +201,7 @@ impl Idle {
     /// Updates idle for how things are now, at `now`. The stage moves on to dimmed, screens off or
     /// sleep, or back on any input, and the screens get what they need for it. `refreshing` is a refresh
     /// rate calibration running, and `awake` the shown app's runner's command that says whether it keeps
-    /// the screen on (see [`Session::awake_command`]).
+    /// the screen on (see [`crate::Session::awake_command`]).
     pub(crate) fn follow(&mut self, now: u64, policy: Policy, refreshing: bool, awake: Option<Arc<[String]>>, levels: &Levels, out: &mut Out) {
         // While the top screen's refresh rate is being calibrated, it is measured on the screen, so the
         // screen is kept on.
@@ -229,16 +229,6 @@ impl Idle {
         if wanted == Stage::Asleep {
             out.effects.push(Effect::Sleep);
         }
-    }
-}
-
-impl Session {
-    /// The `awake` command of the runner of a shown window, if it has one.
-    pub(crate) fn awake_command(&self) -> Option<Arc<[String]>> {
-        self.windows.iter().filter(|w| w.visible).find_map(|w| {
-            let runner = self.running_of(w)?.entry.as_ref()?.runner.as_ref()?;
-            (!runner.awake.is_empty()).then(|| runner.awake.clone())
-        })
     }
 }
 

@@ -214,7 +214,7 @@ impl State {
     /// The settings in force: those of the program in force (see [`crate::session::program`]), or else
     /// the global ones.
     pub fn in_force(&self) -> Values {
-        self.session.program.as_ref().map_or(self.prefs.settings.global, |id| self.settings_of(id))
+        self.session.program().as_ref().map_or(self.prefs.settings.global, |id| self.settings_of(id))
     }
 
     /// The level that entry `id` takes its settings from before its own, which is its runner's, if it
@@ -255,7 +255,7 @@ impl State {
     pub fn panel(&self) -> Panel<'_> {
         let id = match self.session.front() {
             Front::Program => {
-                self.session.windows.iter().find(|w| w.focused && !w.down).and_then(|w| self.session.owner_of(w)).or_else(|| self.session.program.clone())
+                self.session.windows().iter().find(|w| w.focused && !w.down).and_then(|w| self.session.owner_of(w)).or_else(|| self.session.program().cloned())
             }
             Front::Shelf => self.shelf.selected().cloned().map(|id| self.shelf.entry_of_file(&id).unwrap_or(id)),
             Front::Other => None,
@@ -322,7 +322,7 @@ impl State {
         out.effects.push(self.prefs.save_effect());
         let now = self.in_force();
         if now != before {
-            out.effects.push(Effect::Apply { entry: self.session.program.clone(), settings: now });
+            out.effects.push(Effect::Apply { entry: self.session.program().cloned(), settings: now });
         }
     }
 }

@@ -89,7 +89,7 @@ and the UI change with the code they call; doc links to moved methods are fixed 
 - [x] 11. Keymapping: data methods on `Settings`; the struct; getters and editing; the handlers pushing into
       `Out` (choose/delete/capture as events).
 - [x] 12. Prefs and the `Panel` view.
-- [ ] 13. Session: fields in; session-only rules; units, windows, found, tray, background; `launch` and
+- [x] 13. Session: fields in; session-only rules; units, windows, found, tray, background; `launch` and
       `reconcile`; dock with `EntryAct`; enqueue.
 - [ ] 13b. `apply` in three phases: handle, settle, sync. "Reconcile" and "follow-ups" stop being separate.
       - Settle: one ordered list of steps that bring core's state up to date with what happened, using
@@ -130,7 +130,9 @@ and the UI change with the code they call; doc links to moved methods are fixed 
       allocate once warm. After every `apply`, each visible screen is recorded and compared with its last
       recording (two slice compares); only a changed one is played into the shm buffer and committed.
       `Dirty` and every `out.mark(..)` go. Later: damage regions from the differing commands. Start with a
-      prototype on one screen measuring record + compare against a full draw.
+      prototype on one screen measuring record + compare against a full draw. Floats in commands are a
+      `Px(f32)` compared and hashed by `to_bits()` (layout is deterministic, so bit-equal means the same
+      drawing; a NaN equals itself; output is unchanged); the burn-in orbit offset is part of the recording.
 - [ ] Each frame target records the key of the item it shows (a `u64` hash, so drawing stays
       allocation-free); a press keys its item from the target it landed on rather than from the state
       at `Down`. Today a list that changes between a frame and the press keys the item now at that
