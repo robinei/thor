@@ -46,7 +46,7 @@ fn wpctl_args(sound: &Sound) -> Vec<String> {
 pub fn spawn() -> io::Result<Worker<Sound>> {
     worker::spawn_coalescing("sound", kind, |sound| {
         let args = wpctl_args(&sound);
-        command::run("wpctl", &args.iter().map(String::as_str).collect::<Vec<_>>());
+        command::output("wpctl", &args.iter().map(String::as_str).collect::<Vec<_>>());
     })
 }
 

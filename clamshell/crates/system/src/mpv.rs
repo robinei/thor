@@ -7,8 +7,11 @@
 //! lowest priority: a game started meanwhile comes first): of the keyframes from a point on, the most
 //! representative (its `thumbnail` filter), so not a dark scene, a fade or a title card.
 
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::time::Duration;
+
+use crate::command;
 
 /// The folders mpv keeps places in, the one mpv.conf names first.
 pub fn watch_later_dirs(config_home: Option<&Path>, state_home: Option<&Path>) -> Vec<PathBuf> {
@@ -49,16 +52,17 @@ pub fn position(dirs: &[PathBuf], file: &Path) -> Option<(u32, u64)> {
 
 /// A video's length (seconds), from ffprobe.
 pub fn duration(file: &Path) -> Option<u32> {
-    let out = Command::new("nice")
-        .args(["-n", "19", "ffprobe", "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0"])
-        .arg(file)
-        .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .output()
-        .ok()?;
+    let mut args: Vec<&OsStr> = ["-n", "19", "ffprobe", "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0"].map(OsStr::new).into();
+    args.push(file.as_os_str());
+    let out = command::run("nice", &args, None, PROBE_LIMIT).ok()?;
     let seconds: f64 = String::from_utf8_lossy(&out.stdout).trim().parse().ok()?;
     (seconds > 0.0).then_some(seconds.round() as u32)
 }
+
+/// How long ffprobe may take to read a video's length, and ffmpeg to pick a frame (it decodes keyframes
+/// only; a network mount may be slow).
+const PROBE_LIMIT: Duration = Duration::from_secs(30);
+const FRAME_LIMIT: Duration = Duration::from_secs(120);
 
 /// Keyframes `frame` chooses among (from its starting point: a few minutes of a video).
 const FRAMES_LOOKED_AT: u32 = 60;
@@ -71,16 +75,12 @@ pub fn frame(file: &Path, at: u32, out: &Path) -> bool {
         let _ = std::fs::create_dir_all(dir);
     }
     let part = out.with_extension("part.jpg");
-    let choose = format!("scale=640:-2,thumbnail={FRAMES_LOOKED_AT}");
-    let ok = Command::new("nice")
-        .args(["-n", "19", "ffmpeg", "-v", "quiet", "-y", "-skip_frame", "nokey", "-ss", &at.to_string(), "-i"])
-        .arg(file)
-        .args(["-vf", &choose, "-frames:v", "1", "-fps_mode", "vfr", "-q:v", "4"])
-        .arg(&part)
-        .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success());
+    let (choose, at) = (format!("scale=640:-2,thumbnail={FRAMES_LOOKED_AT}"), at.to_string());
+    let mut args: Vec<&OsStr> = ["-n", "19", "ffmpeg", "-v", "quiet", "-y", "-skip_frame", "nokey", "-ss", &at, "-i"].map(OsStr::new).into();
+    args.push(file.as_os_str());
+    args.extend(["-vf", &choose, "-frames:v", "1", "-fps_mode", "vfr", "-q:v", "4"].map(OsStr::new));
+    args.push(part.as_os_str());
+    let ok = command::run("nice", &args, None, FRAME_LIMIT).is_ok_and(|ran| ran.status.success());
     ok && std::fs::rename(&part, out).is_ok()
 }
 

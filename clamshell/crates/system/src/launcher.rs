@@ -28,10 +28,11 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use clamshell_core::{Event, Instance, Launch, LaunchEvent};
+use rustix::process::{Pid, Signal};
 
 use crate::job::{self, Job, Runner, Started};
 use crate::worker::{self, Worker};
-use crate::{Sink, cgroup, command, sys, units};
+use crate::{Sink, cgroup, sys, units};
 
 /// How long sway may take to start a game (its scope to appear).
 const GAME_START: Duration = Duration::from_secs(30);
@@ -336,9 +337,13 @@ pub fn end_processes(pids: &[u32], force: bool) {
         return;
     }
     log::info!("{} processes {pids:?}", if force { "killing" } else { "ending" });
-    let mut args = vec![if force { "-KILL".to_owned() } else { "-TERM".to_owned() }];
-    args.extend(pids.iter().map(u32::to_string));
-    command::run("kill", &args.iter().map(String::as_str).collect::<Vec<_>>());
+    let signal = if force { Signal::KILL } else { Signal::TERM };
+    for pid in pids {
+        let Some(pid) = i32::try_from(pid).ok().and_then(Pid::from_raw) else { continue };
+        if let Err(e) = rustix::process::kill_process(pid, signal) {
+            log::warn!("signalling process {pid:?}: {e}");
+        }
+    }
 }
 
 /// Runs a runner's command (its `stop`, `pause` or `resume`: Waydroid's, Android stopping an app or

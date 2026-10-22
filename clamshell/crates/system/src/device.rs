@@ -8,7 +8,7 @@
 
 use std::io;
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use clamshell_core::{Event, Reading, TimeZones};
 
@@ -40,10 +40,15 @@ pub enum Command {
     CalibrateRefresh,
 }
 
+/// How long the top screen's calibration may take (it measures each rate for a few seconds).
+const CALIBRATION_LIMIT: Duration = Duration::from_secs(600);
+
+/// How long a runner's `awake` command may take.
+const AWAKE_LIMIT: Duration = Duration::from_secs(10);
+
 /// Runs thor-panel-calibration: the rates it found (its lines saying them), or why it failed.
 fn calibrate_refresh() -> Result<String, String> {
-    let out =
-        std::process::Command::new("thor-panel-calibration").stdin(std::process::Stdio::null()).output().map_err(|e| format!("thor-panel-calibration: {e}"))?;
+    let out = command::run::<&str>("thor-panel-calibration", &[], None, CALIBRATION_LIMIT)?;
     let text = |b: &[u8]| String::from_utf8_lossy(b).trim().to_owned();
     if out.status.success() {
         let rates: Vec<String> = text(&out.stdout).lines().filter(|l| l.contains(" Hz: ")).map(str::to_owned).collect();
@@ -53,20 +58,12 @@ fn calibrate_refresh() -> Result<String, String> {
     }
 }
 
-/// Whether `argv` succeeds (within a few seconds).
+/// Whether `argv` succeeds within [`AWAKE_LIMIT`].
 fn awake(argv: &[String]) -> bool {
     let Some((program, args)) = argv.split_first() else {
         return false;
     };
-    let mut timed = vec!["10".to_owned(), program.clone()];
-    timed.extend(args.iter().cloned());
-    std::process::Command::new("timeout")
-        .args(&timed)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success())
+    command::run(program, args, None, AWAKE_LIMIT).is_ok_and(|ran| ran.status.success())
 }
 
 /// Screenshots go to `screenshots` (a folder, made if needed).
@@ -165,7 +162,7 @@ fn screenshot(dir: Option<&PathBuf>) -> Result<String, String> {
     let secs = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
     let file = dir.join(format!("clamshell-{}.png", timestamp(secs)));
     let path = file.to_string_lossy().into_owned();
-    if command::run("grim", &[&path]) {
+    if command::output("grim", &[&path]).is_some() {
         log::info!("screenshot: {path}");
         Ok(path)
     } else {
@@ -277,17 +274,12 @@ fn read_time(error: Option<String>) -> TimeZones {
 /// timedatectl with `args`, without asking for a password (polkit allows the session's user); what it
 /// said, if it failed.
 fn timedatectl(args: &[&str]) -> Result<(), String> {
-    let out = std::process::Command::new("timedatectl")
-        .arg("--no-ask-password")
-        .args(args)
-        .stdin(std::process::Stdio::null())
-        .output()
-        .map_err(|e| format!("timedatectl: {e}"))?;
+    let out = command::run("timedatectl", &[&["--no-ask-password"], args].concat(), None, command::LIMIT)?;
     if out.status.success() {
         log::info!("timedatectl {}", args.join(" "));
         return Ok(());
     }
-    let said = String::from_utf8_lossy(&out.stderr).trim().to_owned();
+    let said = out.said();
     log::warn!("timedatectl {}: {said}", args.join(" "));
     Err(format!("Couldn't: {said}"))
 }

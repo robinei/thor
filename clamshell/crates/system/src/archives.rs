@@ -9,9 +9,11 @@
 //! Its indexes are kept in the cache, not beside the archives. Those a ClamShell before this one left
 //! are stopped at start.
 
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+
+use crate::command;
 
 /// The names browsed as archives (their endings, lowercase).
 const ENDINGS: [&str; 13] = [".zip", ".7z", ".rar", ".tar", ".tgz", ".txz", ".tbz2", ".tar.gz", ".tar.xz", ".tar.zst", ".tar.bz2", ".tar.lz4", ".tzst"];
@@ -36,7 +38,7 @@ impl Mounts {
     pub fn new(cache: Option<PathBuf>) -> Mounts {
         let root = std::env::var_os("XDG_RUNTIME_DIR").map(|d| PathBuf::from(d).join("clamshell/archives"));
         // (Left by a ClamShell before: their services stopped, any mount left detached, the dirs gone.)
-        let _ = Command::new("systemctl").args(["--user", "stop", "clamshell-archive-*.service"]).stdin(Stdio::null()).stderr(Stdio::null()).status();
+        let _ = command::run("systemctl", &["--user", "stop", "clamshell-archive-*.service"], None, command::LIMIT);
         if let Some(root) = &root {
             for dir in mounted_under(root) {
                 detach(&dir);
@@ -58,16 +60,17 @@ impl Mounts {
         let dir = root.join(format!("{:016x}", hash(archive)));
         fs::create_dir_all(&dir).map_err(|e| format!("Opening {name}: {e}"))?;
         let unit = unit_of(archive);
-        let mut command = Command::new("systemd-run");
-        command.args(["--user", "--quiet", "--collect", "--slice=background-graphical.slice"]).arg(format!("--unit={unit}"));
+        let mut args: Vec<OsString> = ["--user", "--quiet", "--collect", "--slice=background-graphical.slice"].map(OsString::from).into();
+        args.push(format!("--unit={unit}").into());
         // (Stopped or crashed: the mount detached, lazily.)
-        command.arg(format!("--property=ExecStopPost=/usr/bin/fusermount3 -uz {}", dir.display()));
-        command.args(["ratarmount", "--foreground"]);
+        args.push(format!("--property=ExecStopPost=/usr/bin/fusermount3 -uz {}", dir.display()).into());
+        args.extend(["ratarmount", "--foreground"].map(OsString::from));
         if let Some(index) = &self.index {
             let _ = fs::create_dir_all(index);
-            command.arg("--index-folders").arg(index);
+            args.extend(["--index-folders".into(), index.into()]);
         }
-        let started = command.arg(archive).arg(&dir).stdin(Stdio::null()).status().map_err(|e| format!("Opening {name}: systemd-run: {e}"))?;
+        args.extend([archive.into(), dir.clone().into()]);
+        let started = command::run("systemd-run", &args, None, command::LIMIT).map_err(|e| format!("Opening {name}: {e}"))?.status;
         // Mounted once its dir is a mount; failed once the service isn't running (a big compressed tar
         // is read through for its index first: no time limit).
         let mounted = started.success()
@@ -119,14 +122,14 @@ fn unit_of(archive: &Path) -> String {
 
 /// Whether service `unit` runs (or is starting).
 fn active(unit: &str) -> bool {
-    let out = Command::new("systemctl").args(["--user", "is-active", unit]).stdin(Stdio::null()).output();
+    let out = command::run("systemctl", &["--user", "is-active", unit], None, command::LIMIT);
     out.is_ok_and(|o| matches!(String::from_utf8_lossy(&o.stdout).trim(), "active" | "activating" | "reloading"))
 }
 
 /// `dir` detached (lazily: open files stay readable) and removed.
 fn detach(dir: &Path) {
-    let done = Command::new("fusermount3").arg("-uz").arg(dir).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status();
-    if !done.is_ok_and(|s| s.success()) {
+    let done = command::run("fusermount3", &[OsStr::new("-uz"), dir.as_os_str()], None, command::LIMIT);
+    if !done.is_ok_and(|ran| ran.status.success()) {
         log::warn!("archives: unmounting {} failed", dir.display());
     }
     let _ = fs::remove_dir(dir);

@@ -18,11 +18,13 @@ use clamshell_core::files::{Browse, BrowseCommand, FileOp, FilesEvent};
 use clamshell_core::{Browsed, Entry, Event};
 use rustix::fs::inotify;
 
-use crate::Sink;
 use crate::library::content;
 use crate::library::runners::{self, Runner};
 use crate::worker::{Bell, Worker};
+use crate::{Sink, command};
 
+/// How long ejecting a card may take.
+const EJECT_LIMIT: Duration = Duration::from_secs(60);
 /// A paste's progress, at most this often.
 const PROGRESS: Duration = Duration::from_millis(250);
 /// Where udisks2 mounts removable filesystems.
@@ -418,12 +420,13 @@ fn run(op: &FileOp, home: Option<&Path>, sink: &impl Sink) -> Result<String, Str
             Ok("Emptied the Trash".to_owned())
         }
         FileOp::Eject(device) => {
-            let out = std::process::Command::new("udisksctl").args(["unmount", "-b", device]).output().map_err(|e| format!("udisksctl: {e}"))?;
+            // (Unmounting writes out what is pending, which on a slow card can take a while.)
+            let out = command::run("udisksctl", &["unmount", "-b", device], None, EJECT_LIMIT)?;
             if !out.status.success() {
-                return Err(format!("Ejecting {device}: {}", String::from_utf8_lossy(&out.stderr).trim()));
+                return Err(format!("Ejecting {device}: {}", out.said()));
             }
             // (An SD card reader may not power off: unmounted is enough.)
-            let _ = std::process::Command::new("udisksctl").args(["power-off", "-b", device]).output();
+            let _ = command::run("udisksctl", &["power-off", "-b", device], None, command::LIMIT);
             Ok(format!("{device} can be taken out"))
         }
     }

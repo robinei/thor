@@ -4,14 +4,18 @@
 //! there is one: on its stdin, a line each); `ssh on` / `ssh off`. Off the device (no helper) the account
 //! reads as unavailable.
 
-use std::io::Write as _;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::time::Duration;
 
 use clamshell_core::account::{Account, AccountCommand};
 
+use crate::command;
+
 /// The helper.
 const HELPER: &str = "/usr/lib/thor/thor-account";
+
+/// How long the helper may take (setting a password hashes it; turning remote login on starts sshd).
+const HELPER_LIMIT: Duration = Duration::from_secs(30);
 
 /// The account as the helper reads it; unavailable without it (or if it fails).
 pub fn read() -> Account {
@@ -59,24 +63,12 @@ pub fn change(command: &AccountCommand) -> Result<String, String> {
 /// Runs the helper through pkexec with `args`, `input` on its stdin: its output, or its message (its
 /// first line on stderr) when it fails.
 fn run(args: &[&str], input: Option<&str>) -> Result<String, String> {
-    let mut child = Command::new("pkexec")
-        .arg(HELPER)
-        .args(args)
-        .stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() })
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("pkexec: {e}"))?;
-    if let (Some(text), Some(mut stdin)) = (input, child.stdin.take()) {
-        stdin.write_all(text.as_bytes()).map_err(|e| format!("pkexec: {e}"))?;
-    }
-    let out = child.wait_with_output().map_err(|e| format!("pkexec: {e}"))?;
+    let out = command::run("pkexec", &[&[HELPER], args].concat(), input.map(str::as_bytes), HELPER_LIMIT)?;
     if out.status.success() {
         return Ok(String::from_utf8_lossy(&out.stdout).into_owned());
     }
-    let err = String::from_utf8_lossy(&out.stderr);
-    let first = err.lines().find(|l| !l.trim().is_empty()).unwrap_or("failed").trim();
-    Err(capitalised(first))
+    let said = out.said();
+    Err(capitalised(if said.is_empty() { "failed" } else { &said }))
 }
 
 /// "wrong password" as a notice says it: "Wrong password".
