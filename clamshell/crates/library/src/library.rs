@@ -75,6 +75,11 @@ impl Library {
         })
     }
 
+    /// An entry by its id.
+    pub fn entry(&self, id: &str) -> Option<&Entry> {
+        self.entries.iter().find(|g| &*g.id == id)
+    }
+
     /// Whether entry `id` is in it, or its source is away.
     pub fn has(&self, id: &str) -> bool {
         self.entries.iter().any(|g| &*g.id == id) || self.away.iter().any(|p| id.starts_with(p.as_str()))

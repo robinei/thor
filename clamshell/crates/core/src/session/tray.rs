@@ -240,10 +240,10 @@ mod tests {
         assert!(s.dock().menu().is_none());
         // Quit closes its windows, then asks its process to end. Force kill kills it.
         let id: Arc<str> = "desktop:firefox".into();
-        assert_eq!(s.quit(&id), vec![Effect::Window(WindowCommand::Close(vec![6]))]);
+        assert_eq!(quit(&mut s, &id), vec![Effect::Window(WindowCommand::Close(vec![6]))]);
         let (_, fx) = s.apply(Event::Windows(vec![shelf.clone()]));
         assert!(fx.contains(&Effect::EndProcesses { pids: vec![77], force: false }), "{fx:?}");
-        assert_eq!(s.force_kill("desktop:firefox"), vec![Effect::EndProcesses { pids: vec![77], force: true }]);
+        assert_eq!(force_kill(&mut s, "desktop:firefox"), vec![Effect::EndProcesses { pids: vec![77], force: true }]);
         // With its icon gone and no window, it has ended.
         s.apply(Event::Tray(vec![zelda_icon.clone()]));
         assert!(s.session().running("desktop:firefox").is_none());
@@ -257,7 +257,7 @@ mod tests {
         let instance = fx.iter().find_map(|e| if let Effect::Adopt { instance, .. } = e { Some(instance.clone()) } else { None }).unwrap();
         s.apply(Event::Units(vec![zelda.clone(), instance.clone()]));
         assert_eq!(s.session().running("desktop:firefox").map(|r| (r.origin.clone(), r.pid())), Some((Origin::Ours, None)));
-        assert_eq!(s.force_kill("desktop:firefox"), vec![Effect::EndRun { key: clamshell_library::key_of("desktop:firefox"), force: true }]);
+        assert_eq!(force_kill(&mut s, "desktop:firefox"), vec![Effect::EndRun { key: clamshell_library::key_of("desktop:firefox"), force: true }]);
         s.apply(Event::Units(vec![zelda]));
         assert!(s.session().running("desktop:firefox").is_none(), "its scope gone");
     }

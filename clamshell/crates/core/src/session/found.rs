@@ -149,7 +149,7 @@ mod tests {
         assert_eq!(s.entry("window:org.x.Thing").and_then(|g| g.icon.clone()), Some("/icons/thing.svg".into()));
         // The system hasn't moved it yet, so Force kill ends its process. Once its windows are gone, it
         // has ended.
-        assert_eq!(s.force_kill("window:org.x.Thing"), vec![Effect::EndProcesses { pids: vec![500], force: true }]);
+        assert_eq!(force_kill(&mut s, "window:org.x.Thing"), vec![Effect::EndProcesses { pids: vec![500], force: true }]);
         s.apply(Event::Windows(vec![]));
         assert!(s.session().running("window:org.x.Thing").is_none());
         // A program the library has a desktop file for runs as that entry.
@@ -203,7 +203,7 @@ mod tests {
         assert!(!fx.iter().any(|e| matches!(e, Effect::Adopt { .. })), "{fx:?}");
         // Quit closes its windows, and that is all.
         let id: Arc<str> = "window:org.other".into();
-        assert_eq!(s.quit(&id), vec![Effect::Window(WindowCommand::Close(vec![6]))]);
+        assert_eq!(quit(&mut s, &id), vec![Effect::Window(WindowCommand::Close(vec![6]))]);
         let (_, fx) = s.apply(Event::Windows(vec![mine]));
         assert!(!fx.iter().any(|e| matches!(e, Effect::EndProcesses { .. } | Effect::EndRun { .. })), "{fx:?}");
         assert!(s.session().running("window:org.other").is_none());

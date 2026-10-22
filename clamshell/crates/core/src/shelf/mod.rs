@@ -153,7 +153,7 @@ impl Shelf {
 
     /// An entry by its id.
     pub fn entry(&self, id: &str) -> Option<&Entry> {
-        self.library.entries.iter().find(|g| &*g.id == id)
+        self.library.entry(id)
     }
 
     /// The library entry, not a browsed one, for the file of browsed entry `id`, if there is one.

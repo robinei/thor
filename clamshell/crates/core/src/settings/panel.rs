@@ -228,29 +228,6 @@ impl State {
         self.prefs.settings.of_in(id, self.runner_of(id).as_slice())
     }
 
-    /// What entry or level `id` does while hidden ([`Setting::Background`]). If it is set to Pauses
-    /// games, the default, it is paused if it is a game (see [`State::is_games`]) and runs otherwise.
-    pub fn background_of(&self, id: &str) -> crate::settings::InBackground {
-        use crate::settings::InBackground;
-        match self.settings_of(id).choice::<InBackground>() {
-            InBackground::PausesGames if self.is_games(id) => InBackground::Pauses,
-            InBackground::PausesGames => InBackground::Runs,
-            b => b,
-        }
-    }
-
-    /// Whether entry `id` is a game, rather than an app, a game launcher, a film, a file or a group. For
-    /// a runner's level `id`, whether all of the runner's entries are games. Games are paused when hidden
-    /// by default, as consoles do. A game that minds, such as one played online, can be set to run.
-    pub fn is_games(&self, id: &str) -> bool {
-        let game = |g: &crate::Entry| !g.app && g.browsed.is_none() && g.mpv_file().is_none() && !g.is_group();
-        if let Some(g) = self.entry(id) {
-            return game(g);
-        }
-        let mut of_runner = self.shelf.library().entries.iter().filter(|g| g.runner.as_ref().is_some_and(|r| &*r.key == id)).peekable();
-        of_runner.peek().is_some() && of_runner.all(game)
-    }
-
     /// The environment entry `id` gets: the global variables, then its runner's, then its own.
     pub fn env_of(&self, id: &str) -> Vec<(String, String)> {
         self.prefs.settings.env_in(id, self.runner_of(id).as_slice())

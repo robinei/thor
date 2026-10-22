@@ -85,10 +85,10 @@ impl State {
         }
         let by_windows = self.follow_windows(&known);
         self.bottom.follow_window_rules(&self.session, out);
-        out.effects.extend(self.follow_background());
+        self.session.follow_background(self.clock.mono(), self.shelf.library(), self.prefs.settings(), out);
         self.session.show_pending(out);
         self.session.show_reopened(self.clock.mono(), out);
-        out.effects.extend(self.follow_quitting());
+        self.session.follow_quitting(self.shelf.library(), out);
         self.session.follow_closed(was, self.clock.mono(), out);
         // After handling the front one closing, so that a window just taken by a browsed file is shown
         // over it.
@@ -200,7 +200,7 @@ impl State {
             }
             Event::BottomTouched => out.mark(self.bottom.used(&self.session, &self.clock)),
             Event::Frozen(keys) => {
-                self.found_frozen(keys);
+                self.session.found_frozen(keys);
                 out.mark(Dirty::BOTTOM);
             }
             Event::Paste => {
@@ -241,8 +241,8 @@ impl State {
                     EntryAct::Play => out.effects.extend(self.play(id)),
                     EntryAct::TogglePin => out.effects.extend(self.toggle_pin(id)),
                     EntryAct::Enqueue => out.effects.extend(self.enqueue(&id)),
-                    EntryAct::Quit => out.effects.extend(self.quit(&id)),
-                    EntryAct::ForceKill => out.effects.extend(self.force_kill(&id)),
+                    EntryAct::Quit => self.session.quit(&id, self.shelf.library(), out),
+                    EntryAct::ForceKill => self.session.force_kill(&id, self.shelf.library(), out),
                 }
             }
             Event::Keymap(e) => {
@@ -301,7 +301,7 @@ impl State {
         if self.shelf.reload(library) {
             self.shelf.moved(&mut self.pointer);
         }
-        self.follow_pausable_runners();
+        self.session.follow_pausable_runners(self.shelf.library());
         out.effects.extend(self.follow_runner_keymaps());
         out.effects.push(self.land_rules());
         if self.dock.drop_gone(self.shelf.library(), &self.session) {

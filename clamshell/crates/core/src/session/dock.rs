@@ -209,14 +209,23 @@ impl State {
                 self.session.toggle_autostart(entry, out);
                 vec![]
             }
-            DockId::Suspend if self.suspended(&entry) => self.show_running(&entry),
-            DockId::Suspend => self.suspend(&entry),
+            DockId::Suspend if self.session.suspended(&entry) => self.show_running(&entry),
+            DockId::Suspend => {
+                self.session.suspend(&entry, out);
+                vec![]
+            }
             DockId::Move => {
                 self.dock.moving = Some(entry);
                 vec![]
             }
-            DockId::Quit => self.quit(&entry),
-            DockId::ForceKill => self.force_kill(&entry),
+            DockId::Quit => {
+                self.session.quit(&entry, self.shelf.library(), out);
+                vec![]
+            }
+            DockId::ForceKill => {
+                self.session.force_kill(&entry, self.shelf.library(), out);
+                vec![]
+            }
             _ => vec![],
         };
         out.effects.extend(effects);

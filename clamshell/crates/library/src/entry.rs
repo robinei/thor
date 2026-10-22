@@ -208,6 +208,12 @@ impl Entry {
         !self.items.is_empty() || self.browsed.as_ref().is_some_and(|b| b.folder)
     }
 
+    /// Whether it is a game, rather than an app, a game launcher, a film, a file or a group. Games are
+    /// paused when hidden by default, as consoles do.
+    pub fn is_game(&self) -> bool {
+        !self.app && self.browsed.is_none() && self.mpv_file().is_none() && !self.is_group()
+    }
+
     /// For a browsed folder, its dir, which is listed when the folder is opened.
     pub fn browsed_dir(&self) -> Option<&std::path::Path> {
         self.file.as_deref().filter(|_| self.browsed.as_ref().is_some_and(|b| b.folder))

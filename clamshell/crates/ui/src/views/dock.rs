@@ -77,7 +77,7 @@ fn entry_tile(f: &mut Frame, r: Rect, i: usize, id: &std::sync::Arc<str>, severa
     let in_force = several && s.session().program() == Some(id);
     let moving = s.dock().moving() == Some(id);
     let caption_tone = if moving { Tone::Accent } else { Tone::Normal };
-    let note = if s.suspended(id) { "Suspended" } else { "" };
+    let note = if s.session().suspended(id) { "Suspended" } else { "" };
     let face = TileFace { caption: &game.title, caption_tone, dot: in_force.then_some(Tone::Go), note };
     // For a file, the picture of the app showing it, if its window says which app that is.
     let picture = s.app_showing(id).unwrap_or(game);
@@ -134,9 +134,9 @@ fn draw_menu(f: &mut Frame, entry: &std::sync::Arc<str>) {
             None
         },
         item(DockId::Move, "Move", Tone::Fn),
-        if s.suspended(entry) {
+        if s.session().suspended(entry) {
             item(DockId::Suspend, "Resume", Tone::Fn)
-        } else if s.suspendable(entry) {
+        } else if s.session().suspendable(entry) {
             item(DockId::Suspend, "Suspend", Tone::Fn)
         } else {
             None

@@ -99,3 +99,17 @@ pub fn launch(s: &mut State, id: &str) -> Instance {
     crate::testkit::start(s, id);
     instance.unwrap()
 }
+
+/// Quit on entry `id`, as from its dock menu, with what it does at once.
+pub fn quit(s: &mut State, id: &str) -> Vec<Effect> {
+    let mut out = crate::out::Out::default();
+    s.session.quit(&id.into(), s.shelf.library(), &mut out);
+    out.effects
+}
+
+/// Force kill on entry `id`, with what it does.
+pub fn force_kill(s: &mut State, id: &str) -> Vec<Effect> {
+    let mut out = crate::out::Out::default();
+    s.session.force_kill(id, s.shelf.library(), &mut out);
+    out.effects
+}

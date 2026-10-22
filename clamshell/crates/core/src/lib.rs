@@ -162,7 +162,7 @@ impl State {
             s.restore(resume);
         }
         s.dock.drop_gone_at_start(s.shelf.library(), &s.session);
-        s.follow_pausable_runners();
+        s.session.follow_pausable_runners(s.shelf.library());
         s.pointer.focus_shelf(s.shelf.selected());
         if init.first_start {
             s.pointer.focus_on(Id::Device(crate::DeviceId::Wifi));
@@ -234,6 +234,6 @@ impl State {
     /// A library entry by its id. An entry that is still running after leaving the library, because its
     /// file was deleted, is returned as it was.
     pub fn entry(&self, id: &str) -> Option<&Entry> {
-        self.shelf.entry(id).or_else(|| self.session.running(id).and_then(|r| r.entry.as_deref()))
+        self.session.entry(self.shelf.library(), id)
     }
 }

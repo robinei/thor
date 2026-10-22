@@ -162,7 +162,7 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
             // while paused), on the dock, and favourite.
             let mark = r.h * MARK;
             let mut right = r.x + r.w - pad * 0.5;
-            let paused = s.paused(&game.id) || s.suspended(&game.id);
+            let paused = s.session().paused(&game.id) || s.session().suspended(&game.id);
             let marks = [
                 (game.is_group(), Icon::Chevron, Tone::Normal),
                 (s.session().running(&game.id).is_some(), Icon::Dot, if paused { Tone::Dim } else { Tone::Go }),

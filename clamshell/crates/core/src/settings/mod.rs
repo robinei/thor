@@ -227,7 +227,7 @@ choices!(
     /// [`Setting::Background`]: what a program does while none of its windows is shown (see
     /// [`crate::session::background`]).
     InBackground for Background, default PausesGames {
-        /// The default. Pauses for a game, and Runs otherwise (see [`crate::State::background_of`]).
+        /// The default. Pauses for a game, and Runs otherwise (see [`crate::Session::background_of`]).
         PausesGames = 3, "Pauses games", Stock;
         Runs = 0, "Runs hidden", Costs;
         /// Paused (frozen) once it has been hidden for the grace period.

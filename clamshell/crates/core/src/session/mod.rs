@@ -17,6 +17,7 @@ use std::sync::Arc;
 
 use crate::effect::{Effect, WindowCommand};
 use crate::out::Out;
+use crate::{Entry, Library};
 use instance::Instance;
 use running::{Front, Launching, Running};
 use windows::{SHELF_APP_ID, Window};
@@ -66,6 +67,11 @@ pub struct Session {
     pub(crate) device_session: bool,
 }
 
+/// An entry by its id, in `library` or else among the `running` (see [`Session::entry`]).
+fn entry_in<'a>(library: &'a Library, running: &'a [Running], id: &str) -> Option<&'a Entry> {
+    library.entry(id).or_else(|| running.iter().find(|r| &*r.id == id).and_then(|r| r.entry.as_deref()))
+}
+
 /// An entry quitting. Its windows are asked to close, and once none is left it is ended if it still runs,
 /// which sets `ended`. `stop` is its runner's stop, for an entry known by its app id that ends with its
 /// windows.
@@ -104,6 +110,12 @@ impl Session {
     /// The running entry whose windows have app id `app`.
     pub(crate) fn running_app(&self, app: &str) -> Option<Arc<str>> {
         self.running.iter().find(|r| r.app_id.as_deref() == Some(app)).map(|r| r.id.clone())
+    }
+
+    /// An entry by its id: the library's, or else, for an entry that is still running after leaving the
+    /// library because its file was deleted, the entry as it was.
+    pub fn entry<'a>(&'a self, library: &'a Library, id: &str) -> Option<&'a Entry> {
+        entry_in(library, &self.running, id)
     }
 
     /// A running entry, by its id.
