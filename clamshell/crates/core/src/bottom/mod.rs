@@ -16,7 +16,7 @@ use crate::effect::Watch;
 use crate::event::Reading;
 use crate::kit::names::names;
 use crate::settings::panel::Scope;
-use crate::{Effect, State};
+use crate::{Dirty, Effect, State};
 use editor::{Editor, Editors};
 use notice::Notice;
 
@@ -123,6 +123,8 @@ pub struct Bottom {
     /// The text on the system clipboard, for Ctrl+V in the editor. Files copied in the Files tab use their
     /// own clipboard (see [`crate::shelf::files`]).
     pub(crate) clipboard: Option<std::sync::Arc<str>>,
+    /// The tab chosen changed and isn't saved yet (see [`crate::Resume`]).
+    pub(crate) unsaved: bool,
 }
 
 impl Bottom {
@@ -175,49 +177,124 @@ impl Bottom {
     }
 }
 
-impl State {
+impl Bottom {
+    /// Changes the tab. Whatever the old tab had open, such as an editor or the keymap screens, stays
+    /// there for coming back to. Returns whether it changed, so State can follow (see
+    /// [`State::left_tab`]).
+    pub(crate) fn set_tab(&mut self, tab: Tab) -> bool {
+        if tab == self.tab {
+            return false;
+        }
+        self.unsaved = true;
+        self.tab = tab;
+        true
+    }
+
     /// The user chose a tab, by its icon, by tapping a control, or with the shoulder buttons. The tab
-    /// stays, even if a text field had brought up the keyboard.
-    pub(crate) fn choose_tab(&mut self, tab: Tab) -> Vec<Effect> {
-        if self.bottom.raised_from.take().is_some() {
-            self.saves.resume.touch(self.clock.mono());
+    /// stays, even if a text field had brought up the keyboard. Returns whether the tab changed.
+    pub(crate) fn choose_tab(&mut self, tab: Tab) -> bool {
+        if self.raised_from.take().is_some() {
+            self.unsaved = true;
         }
         self.set_tab(tab)
     }
 
-    /// Changes the second screen's tab, and its watch follows (see [`State::follow_watch`]). Any level
-    /// being set is released. Whatever the old tab had open, such as an editor or the keymap screens,
-    /// stays there for coming back to.
-    pub(crate) fn set_tab(&mut self, tab: Tab) -> Vec<Effect> {
-        if tab == self.bottom.tab {
-            return vec![];
-        }
-        self.saves.resume.touch(self.clock.mono());
-        self.bottom.tab = tab;
-        self.dock.menu = None;
-        self.dock.moving = None;
-        // No level row of the tab left is being set any more.
-        self.levels.release();
-        // The time tab opens on its main page again.
-        self.sys.reset_time_page();
-        vec![]
+    /// The tab as it was left, at start.
+    pub(crate) fn restore_tab(&mut self, tab: Tab) {
+        self.tab = tab;
+    }
+
+    /// Whether the tab chosen changed since this was last asked, so the place is saved.
+    pub(crate) fn take_unsaved(&mut self) -> bool {
+        std::mem::take(&mut self.unsaved)
     }
 
     /// A text field wants typing, or is done. The keyboard comes up, and when the field is done the
-    /// screen goes back to the tab it came from, unless the user chose a tab in the meantime.
-    pub(crate) fn text_input(&mut self, active: bool) -> Vec<Effect> {
-        if active {
+    /// screen goes back to the tab it came from, unless the user chose a tab in the meantime. A field
+    /// taking focus brings typing back from pointing. Returns the screens to redraw and whether the tab
+    /// changed.
+    pub(crate) fn text_input(&mut self, active: bool) -> (Dirty, bool) {
+        let pointing = self.pointing;
+        self.pointing &= !active;
+        let changed = if active {
             // Not over an open editor, since what is typed there would be lost.
-            if self.bottom.tab == Tab::Keyboard || self.bottom.editor().is_some() {
-                return vec![];
+            if self.tab == Tab::Keyboard || self.editor().is_some() {
+                false
+            } else {
+                self.raised_from = Some(self.tab);
+                self.set_tab(Tab::Keyboard)
             }
-            self.bottom.raised_from = Some(self.bottom.tab);
-            return self.set_tab(Tab::Keyboard);
+        } else {
+            match self.raised_from.take() {
+                Some(tab) if self.tab == Tab::Keyboard => self.set_tab(tab),
+                _ => false,
+            }
+        };
+        let dirty = if changed {
+            Dirty::BOTH
+        } else if self.pointing != pointing {
+            Dirty::BOTTOM
+        } else {
+            Dirty::NONE
+        };
+        (dirty, changed)
+    }
+
+    /// Opens `editor` on the keyboard tab, which goes back to the tab it came up from when the editing is
+    /// done (see [`Bottom::back_from_keyboard`]). Returns whether the tab changed.
+    pub(crate) fn open_on_keyboard(&mut self, editor: Editor) -> bool {
+        self.editors.open(editor);
+        if self.tab != Tab::Keyboard {
+            self.raised_from = Some(self.tab);
         }
-        match self.bottom.raised_from.take() {
-            Some(tab) if self.bottom.tab == Tab::Keyboard => self.set_tab(tab),
-            _ => vec![],
+        self.set_tab(Tab::Keyboard)
+    }
+
+    /// Goes back to the tab the keyboard came up from, if it did. Returns whether the tab changed.
+    pub(crate) fn back_from_keyboard(&mut self) -> bool {
+        match self.raised_from.take() {
+            Some(tab) => self.set_tab(tab),
+            None => false,
         }
+    }
+
+    /// Contacts on the area below the bar, passed on to the virtual touchpad, or none (see [`touch`]).
+    pub(crate) fn point(&mut self, pointing: touch::Pointing) -> (Dirty, Vec<Effect>) {
+        let before = self.pointing;
+        let effects = match pointing {
+            touch::Pointing::Contacts(contacts) => {
+                self.pointing = true;
+                vec![Effect::Touchpad(contacts)]
+            }
+            touch::Pointing::Idle => {
+                self.pointing = false;
+                vec![]
+            }
+        };
+        (if self.pointing == before { Dirty::NONE } else { Dirty::BOTTOM }, effects)
+    }
+
+    pub(crate) fn set_scope(&mut self, scope: Scope) {
+        self.scope = scope;
+    }
+}
+
+impl State {
+    /// The user chose a tab (see [`Bottom::choose_tab`]).
+    pub(crate) fn choose_tab(&mut self, tab: Tab) {
+        if self.bottom.choose_tab(tab) {
+            self.left_tab();
+        }
+    }
+
+    /// The second screen's tab changed, and its watch follows (see [`State::follow_watch`]). What the
+    /// tab left had going ends: the dock's menu or move, and any level row being set. The time tab opens
+    /// on its main page again.
+    pub(crate) fn left_tab(&mut self) {
+        self.dock.menu = None;
+        self.dock.moving = None;
+        self.levels.release();
+        self.sys.reset_time_page();
     }
 }
 

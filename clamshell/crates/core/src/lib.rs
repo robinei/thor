@@ -193,7 +193,7 @@ impl State {
             s.pointer.focus_on(Id::Device(crate::DeviceId::Wifi));
         }
         if let Some(tab) = init.start_tab {
-            s.bottom.tab = tab;
+            s.bottom.restore_tab(tab);
         }
         s.reconcile_pad();
         s.keymap_sent = Some(s.keymap_in_force());

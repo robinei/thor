@@ -136,11 +136,11 @@ impl State {
     /// What the settings panel edits now: the level of the chosen scope, or none for All. Content edits
     /// the runner's level when the item has none of its own.
     pub fn editing(&self) -> Option<Program<'_>> {
-        if self.bottom.scope == Scope::Global {
+        if self.bottom.scope() == Scope::Global {
             return None;
         }
         let [runner, own] = self.setting_levels();
-        let chosen = |l: &Option<(Scope, Program<'_>)>| l.as_ref().is_some_and(|(scope, _)| *scope == self.bottom.scope);
+        let chosen = |l: &Option<(Scope, Program<'_>)>| l.as_ref().is_some_and(|(scope, _)| *scope == self.bottom.scope());
         match (chosen(&runner), own) {
             (true, _) => runner.map(|(_, p)| p),
             (false, Some((_, p))) => Some(p),
@@ -199,7 +199,7 @@ impl State {
                 vec![]
             }
             SettingsId::Scope(scope) => {
-                self.bottom.scope = scope;
+                self.bottom.set_scope(scope);
                 vec![]
             }
             SettingsId::Reset => self.reset(),

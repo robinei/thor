@@ -67,7 +67,7 @@ impl State {
     /// the screens aren't off for idle. The dock with an entry's menu open watches the battery tab's
     /// readings, to show what the entry costs.
     pub(crate) fn follow_watch(&mut self) -> Vec<Effect> {
-        let tab = match self.bottom.tab {
+        let tab = match self.bottom.tab() {
             Tab::Dock if self.dock.menu.is_some() => Some(Watch::Battery),
             tab => tab.watch(),
         };

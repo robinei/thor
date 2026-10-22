@@ -43,7 +43,7 @@ impl State {
         // Any tab but the touchpad. There every touch moves the pointer, so it opens only on request.
         // What a tab watches starts with Event::Start.
         if let Some(tab) = Tab::from_name(&resume.tab).filter(|t| *t != Tab::Touchpad) {
-            self.bottom.tab = tab;
+            self.bottom.restore_tab(tab);
         }
         for (name, ids) in &resume.places {
             let ids: Vec<&str> = ids.iter().map(String::as_str).collect();

@@ -53,6 +53,9 @@ impl State {
                 dirty = Dirty::BOTH;
             }
         }
+        if self.bottom.take_unsaved() {
+            self.saves.resume.touch(self.clock.mono());
+        }
         (dirty, effects)
     }
 
@@ -107,8 +110,8 @@ impl State {
     /// Works out where the pad goes as things are now. Returns the new route if it changed.
     pub(crate) fn reconcile_pad(&mut self) -> Option<PadRoute> {
         let listening = self.listening();
-        let moving = self.dock.moving.is_some() && self.bottom.tab == Tab::Dock;
-        self.pad.reconcile(self.session.front(), self.bottom.tab, self.pointer.show_focus(), listening, moving)
+        let moving = self.dock.moving.is_some() && self.bottom.tab() == Tab::Dock;
+        self.pad.reconcile(self.session.front(), self.bottom.tab(), self.pointer.show_focus(), listening, moving)
     }
 
     fn apply_event(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
@@ -155,8 +158,14 @@ impl State {
             }
             // Never applied here: the UI handles pad navigation itself.
             Event::Pad(_) => (Dirty::NONE, vec![]),
-            Event::TextInput(active) => self.text_input_changed(active),
-            Event::Pointing(pointing) => self.pointing(pointing),
+            Event::TextInput(active) => {
+                let (dirty, changed) = self.bottom.text_input(active);
+                if changed {
+                    self.left_tab();
+                }
+                (dirty, vec![])
+            }
+            Event::Pointing(pointing) => self.bottom.point(pointing),
             // Sleep may have reset what the settings set, such as frequency caps and cores, so apply them
             // again.
             Event::Resumed => {
@@ -250,7 +259,7 @@ impl State {
         for m in mutations {
             match m {
                 Mutation::Effect(e) => effects.push(e),
-                Mutation::Tab(tab) => effects.extend(self.choose_tab(tab)),
+                Mutation::Tab(tab) => self.choose_tab(tab),
                 Mutation::Act(id, EntryAct::Quit) => effects.extend(self.quit(&id)),
                 Mutation::Act(id, EntryAct::ForceKill) => effects.extend(self.force_kill(&id)),
             }
@@ -273,38 +282,6 @@ impl State {
         effects.extend(self.follow_keymap(true));
         effects.push(self.window_rules.effect());
         effects
-    }
-
-    /// A text field of the app in front wants typing, or no longer does. A field taking focus brings
-    /// typing back from the touchpad.
-    fn text_input_changed(&mut self, active: bool) -> (Dirty, Vec<Effect>) {
-        let (before, pointing) = (self.bottom.tab, self.bottom.pointing);
-        self.bottom.pointing &= !active;
-        let effects = self.text_input(active);
-        let dirty = if self.bottom.tab != before {
-            Dirty::BOTH
-        } else if self.bottom.pointing != pointing {
-            Dirty::BOTTOM
-        } else {
-            Dirty::NONE
-        };
-        (dirty, effects)
-    }
-
-    /// Contacts on the touchpad tab, passed on to the pointer, or none.
-    fn pointing(&mut self, pointing: crate::bottom::touch::Pointing) -> (Dirty, Vec<Effect>) {
-        let before = self.bottom.pointing;
-        let effects = match pointing {
-            crate::bottom::touch::Pointing::Contacts(contacts) => {
-                self.bottom.pointing = true;
-                vec![Effect::Touchpad(contacts)]
-            }
-            crate::bottom::touch::Pointing::Idle => {
-                self.bottom.pointing = false;
-                vec![]
-            }
-        };
-        (if self.bottom.pointing == before { Dirty::NONE } else { Dirty::BOTTOM }, effects)
     }
 
     /// The clock ticked. Once a minute, the bar's clock and both screens' burn-in orbit move on. Changes
@@ -333,7 +310,7 @@ impl State {
 
     /// A reading of the system. It is stored, and the second screen is redrawn if it shows what changed.
     fn on_reading(&mut self, reading: Reading) -> Dirty {
-        let shown = self.bottom.tab.shows(&reading);
+        let shown = self.bottom.tab().shows(&reading);
         let changed = match reading {
             // The volume, mute and brightness go to the levels, where a finger on a slider wins over the
             // reading.
@@ -440,7 +417,10 @@ impl State {
             Id::Audio(id) => (Dirty::BOTTOM, self.levels.on_audio(id)),
             Id::Row { list, i, part } => (list.screens(), self.on_row(list, usize::from(i), part, long)),
             Id::Keymap(id) => (Dirty::BOTTOM, self.on_keymap(id, long)),
-            Id::Tab(tab) => (Dirty::BOTH, self.choose_tab(tab)),
+            Id::Tab(tab) => {
+                self.choose_tab(tab);
+                (Dirty::BOTH, vec![])
+            }
             // A tap opens the tab. Slides are handled by the UI and don't end in a tap.
             Id::Control(control) if !long => {
                 let tab = match control {
@@ -449,7 +429,8 @@ impl State {
                     // A keymap parameter is held or slid, not tapped.
                     Control::Param(_) => return (Dirty::NONE, vec![]),
                 };
-                (Dirty::BOTH, self.choose_tab(tab))
+                self.choose_tab(tab);
+                (Dirty::BOTH, vec![])
             }
             Id::Control(_) | Id::Level(_) | Id::List(_) | Id::Blank => (Dirty::NONE, vec![]),
             Id::Key(pos) => {

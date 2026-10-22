@@ -14,7 +14,7 @@ use clamshell_library::BrowseKind;
 use crate::bottom::editor::{Editor, Purpose};
 use crate::bottom::notice::NoticeKind;
 use crate::effect::Effect;
-use crate::{Entry, State, Tab};
+use crate::{Entry, State};
 
 /// What can be done to a browsed entry, or in the open folder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -364,38 +364,35 @@ impl State {
 
     /// Opens the editor on the keyboard tab for a file's name, starting from `text`.
     fn name_file(&mut self, purpose: FileName, text: String) -> Vec<Effect> {
-        self.bottom.editors_mut().open(Editor { purpose: Purpose::FileName(purpose), text });
-        if self.bottom.tab != Tab::Keyboard {
-            self.bottom.raised_from = Some(self.bottom.tab);
+        if self.bottom.open_on_keyboard(Editor { purpose: Purpose::FileName(purpose), text }) {
+            self.left_tab();
         }
-        self.set_tab(Tab::Keyboard)
+        vec![]
     }
 
     /// A file's name was typed. The entry is renamed, the folder made or the archive extracted, and the
     /// keyboard goes back to the tab it came up from.
     pub(crate) fn file_named(&mut self, purpose: FileName, name: &str) -> Vec<Effect> {
         let name = name.trim();
-        let mut effects = match self.bottom.raised_from.take() {
-            Some(tab) => self.set_tab(tab),
-            None => vec![],
-        };
-        if name.is_empty() || name.contains('/') || name == "." || name == ".." {
-            return effects;
+        if self.bottom.back_from_keyboard() {
+            self.left_tab();
         }
-        effects.push(Effect::Files(match purpose {
+        if name.is_empty() || name.contains('/') || name == "." || name == ".." {
+            return vec![];
+        }
+        vec![Effect::Files(match purpose {
             FileName::Rename(path) => FileOp::Rename { path, name: name.to_owned() },
             FileName::NewFolder(dir) => FileOp::NewFolder { dir, name: name.to_owned() },
             FileName::Extract(archive) => FileOp::Extract { archive, name: name.to_owned() },
-        }));
-        effects
+        })]
     }
 
     /// Editing a file's name was cancelled. The keyboard goes back to the tab it came up from.
     pub(crate) fn file_name_cancelled(&mut self) -> Vec<Effect> {
-        match self.bottom.raised_from.take() {
-            Some(tab) => self.set_tab(tab),
-            None => vec![],
+        if self.bottom.back_from_keyboard() {
+            self.left_tab();
         }
+        vec![]
     }
 
     pub(crate) fn on_files(&mut self, event: FilesEvent) -> Vec<Effect> {
@@ -642,7 +639,7 @@ mod tests {
         listed(&mut s, "browse:Home", vec![entry("browse:Home/a.txt", false, BrowseKind::Plain)]);
         let before = s.bottom().tab();
         tap(&mut s, Id::Shelf(ShelfId::File(FileAction::Rename)));
-        assert_eq!(s.bottom().tab(), Tab::Keyboard);
+        assert_eq!(s.bottom().tab(), crate::Tab::Keyboard);
         assert_eq!(s.bottom().editor().map(|e| e.text.as_str()), Some("a.txt"));
         let fx = tap(&mut s, Id::Editor(crate::EditorId::Save));
         assert_eq!(s.bottom().tab(), before);

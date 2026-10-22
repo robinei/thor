@@ -200,7 +200,7 @@ impl State {
 
     /// The keymaps' screen that is open, while the settings tab is shown.
     pub(crate) fn keymaps_shown(&self) -> Option<Screen> {
-        self.keymap_screens.open.filter(|_| self.bottom.tab == crate::Tab::Settings)
+        self.keymap_screens.open.filter(|_| self.bottom.tab() == crate::Tab::Settings)
     }
 
     /// Whether the pad listens for inputs: the edit screen, or a screen waiting for a pad button, is in
