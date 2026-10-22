@@ -6,8 +6,8 @@
 use clamshell_core::Id;
 use clamshell_core::bottom::keyboard::{self, Key, KeyPos, Keyboard, LAYOUT, Modifier, Named, Slot};
 
-use crate::draw::{Align, Canvas, Rect};
-use crate::icons::Icon;
+use crate::gfx::icons::Icon;
+use crate::gfx::{Align, Canvas, Rect};
 use crate::toolkit::Frame;
 use crate::toolkit::style::{Look, Tone};
 

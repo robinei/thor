@@ -20,7 +20,7 @@ use clamshell_core::keymap::Input;
 use clamshell_core::keymap::screens::{PickerRow, Screen, holds, picked};
 use clamshell_core::{Id, KeymapId, ListId, RowPart, Scope};
 
-use crate::draw::{Rect, Rgb, Span};
+use crate::gfx::{Rect, Rgb, Span};
 use crate::toolkit::format::Fmt;
 use crate::toolkit::style::{Text, Tone};
 use crate::toolkit::widgets::{EditCell, HeaderRight, ListArea, ListRow};

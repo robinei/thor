@@ -10,8 +10,8 @@ use std::fmt::{self, Display, Formatter, Write};
 
 use clamshell_core::{ClockField, Id, ListId, TimeId, TimePage, TimeRow};
 
-use crate::draw::{Column, Rect};
-use crate::icons::Icon;
+use crate::gfx::icons::Icon;
+use crate::gfx::{Column, Rect};
 use crate::toolkit::format::Fmt;
 use crate::toolkit::style::{self, Look, Text, Tone};
 use crate::toolkit::widgets::{self, EditCell, HeaderRight, ListArea, ListRow};

@@ -10,7 +10,7 @@ use clamshell_core::levels::Level;
 use clamshell_core::{DockId, EditorId, Event, Id, LevelEvent, ListId, PadInput, PointerEvent, ShelfEvent, ShelfId, State, Tab};
 use smithay_client_toolkit::seat::keyboard::Keysym;
 
-use crate::draw::Rect;
+use crate::gfx::Rect;
 use crate::nav::{self, Dir, NavTarget};
 use crate::screens::{Screen, Screens};
 use crate::toolkit::Target;

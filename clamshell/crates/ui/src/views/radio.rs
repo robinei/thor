@@ -3,7 +3,7 @@
 
 use clamshell_core::Id;
 
-use crate::draw::{Keep, Rect};
+use crate::gfx::{Keep, Rect};
 use crate::toolkit::style::{self, Text, Tone};
 use crate::toolkit::widgets::ListArea;
 use crate::toolkit::{Frame, widgets};

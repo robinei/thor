@@ -10,8 +10,8 @@ use clamshell_core::bottom::editor::{Editor, KeymapName, Purpose};
 use clamshell_core::settings::{Impact, Setting};
 use clamshell_core::{Id, Scope, SettingsId, State, TileOrigin};
 
-use crate::draw::{Align, Rect, Rgb};
-use crate::icons::Icon;
+use crate::gfx::icons::Icon;
+use crate::gfx::{Align, Rect, Rgb};
 use crate::toolkit::Frame;
 use crate::toolkit::format::{Fmt, Variables};
 use crate::toolkit::style::{self, Text, Tone};

@@ -13,8 +13,8 @@
 use clamshell_core::State;
 use tiny_skia::PixmapMut;
 
-use crate::draw::{Canvas, DrawCache, Rect};
-use crate::images::Images;
+use crate::gfx::images::Images;
+use crate::gfx::{Canvas, DrawCache, Rect};
 use crate::toolkit::{Frame, FrameOut, Scratch, Target};
 use crate::views;
 use crate::{Error, Screen};

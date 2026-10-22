@@ -12,7 +12,7 @@ use clamshell_core::session::dock::DOCK_COLUMNS;
 use clamshell_core::session::tray::TrayEntry;
 use clamshell_core::{DockId, Id, ListId};
 
-use crate::draw::{Keep, Rect};
+use crate::gfx::{Keep, Rect};
 use crate::toolkit::Frame;
 use crate::toolkit::format::{Bytes, Fmt, MaybeShare, Share};
 use crate::toolkit::scroll::Scrolled;
@@ -84,7 +84,7 @@ fn entry_tile(f: &mut Frame, r: Rect, i: usize, id: &std::sync::Arc<str>, severa
         let h = r.h * (CAPTION_Y - ART_TOP - ART_ROOM);
         let w = if picture.box_front.is_some() { h * 2.0 / 3.0 } else { h };
         let art = Rect::new(r.x + (r.w - w) / 2.0, r.y + r.h * ART_TOP, w, h);
-        widgets::art(f.c, f.images, picture, art, ART_RADIUS, crate::draw::Align::Center, !running);
+        widgets::art(f.c, f.images, picture, art, ART_RADIUS, crate::gfx::Align::Center, !running);
     });
     if s.tray_of(id).is_some() {
         tray_mark(f, r, i);

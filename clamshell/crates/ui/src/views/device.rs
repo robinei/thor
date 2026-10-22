@@ -15,7 +15,7 @@ use clamshell_core::device::account::PasswordStep;
 use clamshell_core::device::sticks::{Phase, Progress, StickAxis};
 
 use super::time::Name;
-use crate::draw::{Align, Column, Keep, Rect};
+use crate::gfx::{Align, Column, Keep, Rect};
 use crate::toolkit::Frame;
 use crate::toolkit::format::Fmt;
 use crate::toolkit::style::{self, Look, SURFACE_HI, Text, Tone};

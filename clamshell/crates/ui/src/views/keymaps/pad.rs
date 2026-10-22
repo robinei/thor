@@ -12,7 +12,7 @@
 
 use clamshell_core::keymap::{Button, Dir, Input, Side};
 
-use crate::draw::Rect;
+use crate::gfx::Rect;
 
 /// A group of controls in a cluster.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

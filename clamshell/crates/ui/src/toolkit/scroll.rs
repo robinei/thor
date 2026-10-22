@@ -7,7 +7,7 @@ use clamshell_core::{Id, ListId};
 
 use super::Frame;
 use super::style::Tone;
-use crate::draw::Rect;
+use crate::gfx::Rect;
 
 /// A target in a scrolled list: which, and how tall its rows are (a drag of a row's height scrolls by
 /// one row).

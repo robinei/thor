@@ -10,11 +10,9 @@
 //! connects them to Wayland and the event loop.
 
 mod display;
-mod draw;
 mod fling;
 mod focus;
-mod icons;
-pub mod images;
+pub mod gfx;
 mod input;
 pub mod nav;
 #[cfg(test)]
@@ -56,8 +54,8 @@ use smithay_client_toolkit::{
     shm::{Shm, slot::SlotPool},
 };
 
-use draw::DrawCache;
 use focus::PadPress;
+use gfx::DrawCache;
 use input::{Action, End, Input, Source};
 use nav::Dir;
 use render::{Placement, Retained};
@@ -156,10 +154,10 @@ impl Shells {
 }
 
 /// Images: requests to a decoding thread, results back through the event loop.
-fn install_images(handle: &LoopHandle<'static, App>) -> Result<images::Images, Error> {
+fn install_images(handle: &LoopHandle<'static, App>) -> Result<crate::gfx::images::Images, Error> {
     let (requests, worker) = std::sync::mpsc::channel();
     let (done, results) = channel::channel();
-    images::spawn_worker(worker, move |key, pixmap| done.send((key, pixmap)).is_ok())?;
+    crate::gfx::images::spawn_worker(worker, move |key, pixmap| done.send((key, pixmap)).is_ok())?;
     handle
         .insert_source(results, |event, _, app: &mut App| {
             if let channel::Event::Msg((key, pixmap)) = event {
@@ -168,14 +166,14 @@ fn install_images(handle: &LoopHandle<'static, App>) -> Result<images::Images, E
             }
         })
         .map_err(|e| e.error)?;
-    Ok(images::Images::new(requests))
+    Ok(crate::gfx::images::Images::new(requests))
 }
 
 /// Fonts for characters the built-in one lacks: found on a thread, back through the event loop.
 fn install_fonts(handle: &LoopHandle<'static, App>) -> Result<DrawCache, Error> {
     let (requests, finder) = std::sync::mpsc::channel();
     let (done, results) = channel::channel();
-    draw::spawn_font_finder(finder, move |found| done.send(found).is_ok())?;
+    gfx::spawn_font_finder(finder, move |found| done.send(found).is_ok())?;
     handle
         .insert_source(results, |event, _, app: &mut App| {
             if let channel::Event::Msg(found) = event {
@@ -222,7 +220,7 @@ pub fn snapshot(state: &State, screen: Screen, size: (u32, u32), scale: u32, pat
     let at = Placement { size_px: (size.0 * scale, size.1 * scale), scale, drift: (0, 0) };
     let mut pixmap = tiny_skia::Pixmap::new(at.size_px.0, at.size_px.1).ok_or("no pixmap")?;
     let mut retained = Retained::default();
-    let rendered = render::render(pixmap.as_mut(), &mut retained, at, screen, state, &mut DrawCache::load(), &mut images::Images::synchronous())?;
+    let rendered = render::render(pixmap.as_mut(), &mut retained, at, screen, state, &mut DrawCache::load(), &mut crate::gfx::images::Images::synchronous())?;
     pixmap.save_png(path)?;
     Ok(frame_events(state, &rendered))
 }
@@ -264,7 +262,7 @@ struct App {
     pub(crate) cursor: Option<smithay_client_toolkit::reexports::protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::WpCursorShapeDeviceV1>,
     touch: Option<wl_touch::WlTouch>,
     touch_layout: Arc<Mutex<TouchLayout>>,
-    images: images::Images,
+    images: crate::gfx::images::Images,
     input: Input,
     /// The presses' running timers.
     timers: HashMap<(Source, input::Timer), RegistrationToken>,
@@ -290,7 +288,7 @@ impl App {
         qh: &QueueHandle<App>,
         state: State,
         config: &Config,
-        images: images::Images,
+        images: crate::gfx::images::Images,
         loop_handle: LoopHandle<'static, App>,
         on_effect: Box<dyn FnMut(&Effect)>,
     ) -> Result<App, Error> {
@@ -516,7 +514,7 @@ impl App {
         };
         let below_bar = bottom && view.body.is_some_and(|b| b.contains(x as f32, y as f32));
         let Some(target) =
-            found.or_else(|| below_bar.then(|| crate::toolkit::Target { rect: crate::draw::Rect::default(), id: Id::Blank, track: None, list: None }))
+            found.or_else(|| below_bar.then(|| crate::toolkit::Target { rect: crate::gfx::Rect::default(), id: Id::Blank, track: None, list: None }))
         else {
             return;
         };

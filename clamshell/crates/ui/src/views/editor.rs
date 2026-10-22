@@ -6,7 +6,7 @@
 use clamshell_core::{EditorId, Id};
 
 use super::keyboard;
-use crate::draw::{Align, Keep, LINE, Rect};
+use crate::gfx::{Align, Keep, LINE, Rect};
 use crate::toolkit::Frame;
 use crate::toolkit::style::{self, RADIUS, SURFACE_HI, Text, Tone};
 

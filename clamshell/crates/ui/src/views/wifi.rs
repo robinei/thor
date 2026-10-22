@@ -10,7 +10,7 @@ use clamshell_core::radios::wifi::{NetState, Problem, Wifi};
 use clamshell_core::{Id, ListId, RadioStatus, WifiId};
 
 use super::radio;
-use crate::icons::Icon;
+use crate::gfx::icons::Icon;
 use crate::toolkit::Frame;
 use crate::toolkit::format::Fmt;
 use crate::toolkit::style::Tone;

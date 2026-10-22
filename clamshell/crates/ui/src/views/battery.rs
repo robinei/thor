@@ -11,7 +11,7 @@ use clamshell_core::settings::Setting;
 use clamshell_core::status::battery::Group;
 use clamshell_core::{Id, State};
 
-use crate::draw::{Align, Keep, LINE, Rect};
+use crate::gfx::{Align, Keep, LINE, Rect};
 use crate::toolkit::Frame;
 use crate::toolkit::format::{Bytes, Duration, Fmt, MaybeShare, Share};
 use crate::toolkit::style::{self, Look, SURFACE, SURFACE_HI, Tone};

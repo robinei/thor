@@ -9,7 +9,7 @@ use clamshell_core::radios::bluetooth::{Action, Bluetooth, DeviceState, Problem,
 use clamshell_core::{BtId, Id, ListId, RadioStatus};
 
 use super::radio;
-use crate::icons::Icon;
+use crate::gfx::icons::Icon;
 use crate::toolkit::Frame;
 use crate::toolkit::format::Fmt;
 use crate::toolkit::style::Tone;

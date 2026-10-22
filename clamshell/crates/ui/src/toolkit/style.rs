@@ -7,7 +7,7 @@
 
 use tiny_skia::Color;
 
-use crate::draw::Rgb;
+use crate::gfx::Rgb;
 
 pub const BG: Rgb = Rgb(0x000000);
 /// Fills of buttons and the selected row: barely above black.
@@ -98,9 +98,9 @@ pub fn pad(area_h: f32) -> f32 {
 
 /// Where a tab's content goes in its area (`body`): padded at the sides and the bottom; the top is the
 /// tab's own (a header row brings its own room).
-pub fn content(body: crate::draw::Rect) -> crate::draw::Rect {
+pub fn content(body: crate::gfx::Rect) -> crate::gfx::Rect {
     let pad = pad(body.h);
-    crate::draw::Rect::new(body.x + pad, body.y, body.w - 2.0 * pad, body.h - pad)
+    crate::gfx::Rect::new(body.x + pad, body.y, body.w - 2.0 * pad, body.h - pad)
 }
 
 /// The gap between tiles in a grid (the settings', the dock's), of the area's height.

@@ -1,13 +1,11 @@
-//! Line icons, drawn as paths on a 24x24 grid scaled into a square. No icon font or image files. Which
-//! icon stands for what (a tab, a level, a signal, an app) is decided here too, by the constructors.
+//! Line icons, drawn as paths on a 24x24 grid scaled into a square, and blended as cached masks
+//! ([`Canvas::icon`]). No icon font or image files. Which icon stands for one of the state's things (a
+//! tab, a setting, a device) is the toolkit's (`toolkit::icons`).
 
-use clamshell_core::Tab;
-use clamshell_core::radios::bluetooth::Kind;
-use clamshell_core::radios::wifi::signal_bars;
-use clamshell_core::settings::Setting;
-use tiny_skia::Color;
+use tiny_skia::{Color, Pixmap};
 
-use crate::draw::{Canvas, Rect};
+use super::canvas::{Canvas, blend_mask};
+use super::geom::Rect;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Icon {
@@ -104,24 +102,6 @@ pub enum Icon {
 }
 
 impl Icon {
-    /// A tab's icon in the bar, as it looks without a reading.
-    pub fn for_tab(tab: Tab) -> Icon {
-        match tab {
-            Tab::Settings => Icon::Sliders,
-            Tab::Dock => Icon::Apps,
-            Tab::Keyboard => Icon::Keyboard,
-            Tab::Touchpad => Icon::Touchpad,
-            Tab::Sysinfo => Icon::Sysinfo,
-            Tab::Volume => Icon::Volume { waves: 3, muted: false },
-            Tab::Brightness => Icon::Brightness,
-            Tab::Wifi => Icon::Wifi { bars: Some(3) },
-            Tab::Battery => Icon::Battery { tenths: 10, charging: false },
-            Tab::Bluetooth => Icon::Bluetooth { connected: false },
-            // (Its button is the clock.)
-            Tab::Time => Icon::Gauge,
-        }
-    }
-
     /// A shelf tab's icon, by the name library.json gives (`gamepad`, `apps`, `film`, `tv`, `music`,
     /// `star`, `clock`, `tools`, `folder`, `file`, `trash`, `card`); none for another.
     pub fn named(name: &str) -> Option<Icon> {
@@ -154,48 +134,35 @@ impl Icon {
         Icon::Volume { waves, muted }
     }
 
-    /// A Wi-Fi signal's quality (0-100); `None`: not connected.
-    pub fn wifi(quality: Option<u8>) -> Icon {
-        Icon::Wifi { bars: quality.map(signal_bars) }
-    }
-
     /// A battery's charge (0-100), to the nearest tenth.
     pub fn battery(level: u8, charging: bool) -> Icon {
         Icon::Battery { tenths: ((u16::from(level) + 5) / 10) as u8, charging }
     }
+}
 
-    /// A settings tile's icon.
-    pub fn for_setting(s: Setting) -> Icon {
-        match s {
-            Setting::Power => Icon::Bolt,
-            Setting::FpsCap => Icon::Gauge,
-            Setting::Refresh => Icon::Refresh,
-            Setting::Hud => Icon::Hud,
-            Setting::Upscale => Icon::Upscale,
-            Setting::BottomScreen => Icon::ScreenOff,
-            Setting::BigCores => Icon::Cores,
-            Setting::Fan => Icon::Fan,
-            Setting::PadMouse => Icon::Mouse,
-            Setting::Keymap => Icon::Buttons,
-            Setting::Rumble => Icon::Rumble,
-            Setting::CpuMax => Icon::Cpu,
-            Setting::GpuMax => Icon::Gpu,
-            Setting::ChargeLimit => Icon::Battery { tenths: 8, charging: true },
-            Setting::ScreenOff => Icon::ScreenOff,
-            Setting::Sleep => Icon::Moon,
-            Setting::Background => Icon::Windows,
+impl Canvas<'_> {
+    /// Draws `icon` centred in `r`, as large as fits. Rendered once per size, then blended as a mask.
+    pub fn icon(&mut self, icon: Icon, r: Rect, color: impl Into<Color>) {
+        let side = (r.w.min(r.h) * self.scale).round().max(1.0) as u32;
+        let key = (icon, side);
+        if !self.cache.icons.contains_key(&key) {
+            let Some(mut mask) = Pixmap::new(side, side) else {
+                return;
+            };
+            {
+                let logical = side as f32 / self.scale;
+                let clip = (0, 0, side as i32, side as i32);
+                let mut c = Canvas { pixmap: mask.as_mut(), scale: self.scale, offset: (0.0, 0.0), clip, cache: &mut *self.cache };
+                draw(&mut c, icon, Rect::new(0.0, 0.0, logical, logical), Color::WHITE);
+            }
+            let coverage = mask.data().chunks_exact(4).filter_map(|px| px.get(3).copied()).collect();
+            self.cache.icons.insert(key, coverage);
         }
-    }
-
-    /// A Bluetooth device's icon, by its kind.
-    pub fn for_device(kind: Kind) -> Icon {
-        match kind {
-            Kind::Audio => Icon::Headphones,
-            Kind::Gamepad => Icon::Gamepad,
-            Kind::Keyboard => Icon::Keyboard,
-            Kind::Mouse => Icon::Mouse,
-            Kind::Phone => Icon::Phone,
-            Kind::Computer | Kind::Other => Icon::Bluetooth { connected: false },
+        let (cx, cy) = r.center();
+        let x = (self.px(cx) - side as f32 / 2.0).round() as i32;
+        let y = (self.py(cy) - side as f32 / 2.0).round() as i32;
+        if let Some(coverage) = self.cache.icons.get(&key) {
+            blend_mask(&mut self.pixmap, self.clip, x, y, side as usize, coverage, color.into().premultiply().to_color_u8());
         }
     }
 }
@@ -600,7 +567,7 @@ fn sun(p: &mut Pen) {
 #[allow(clippy::expect_used)]
 mod tests {
     use super::*;
-    use crate::draw::DrawCache;
+    use crate::gfx::DrawCache;
     use tiny_skia::Pixmap;
 
     /// Every icon, each variant at least once; `variant` fails to compile when one is added.
@@ -750,8 +717,6 @@ mod tests {
     fn levels_pick_their_icons() {
         assert_eq!(Icon::volume(0, false), Icon::Volume { waves: 0, muted: false });
         assert_eq!(Icon::volume(50, true), Icon::Volume { waves: 2, muted: true });
-        assert_eq!(Icon::wifi(Some(80)), Icon::Wifi { bars: Some(3) });
-        assert_eq!(Icon::wifi(None), Icon::Wifi { bars: None });
         assert_eq!(Icon::battery(44, false), Icon::Battery { tenths: 4, charging: false });
         assert_eq!(Icon::battery(100, true), Icon::Battery { tenths: 10, charging: true });
     }

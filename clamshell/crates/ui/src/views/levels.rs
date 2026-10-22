@@ -6,8 +6,8 @@
 use clamshell_core::levels::Level;
 use clamshell_core::{AudioId, Id, ListId, RowPart};
 
-use crate::draw::{Align, Column, Keep, Rect};
-use crate::icons::Icon;
+use crate::gfx::icons::Icon;
+use crate::gfx::{Align, Column, Keep, Rect};
 use crate::toolkit::format::{self, Fmt};
 use crate::toolkit::scroll::Scrolled;
 use crate::toolkit::style::{self, Look, Text, Tone};

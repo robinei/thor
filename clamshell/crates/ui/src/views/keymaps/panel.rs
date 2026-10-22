@@ -6,8 +6,8 @@ use clamshell_core::keymap::{Actuation, Binding, Change, Input, Keymap, Kind, La
 use clamshell_core::levels::slider::{Control, Slider};
 use clamshell_core::{Id, KeymapId, Target};
 
-use crate::draw::{Align, Column, Keep, LINE, Rect};
-use crate::icons::Icon;
+use crate::gfx::icons::Icon;
+use crate::gfx::{Align, Column, Keep, LINE, Rect};
 use crate::toolkit::format::Fmt;
 use crate::toolkit::style::{Look, Text, Tone};
 use crate::toolkit::widgets::HeldSlider;

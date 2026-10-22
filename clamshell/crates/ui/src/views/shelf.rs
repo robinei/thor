@@ -7,8 +7,8 @@ use std::fmt::{self, Display, Formatter};
 
 use clamshell_core::{Entry, Id, Launch, ListId, ShelfId, State, Tab};
 
-use crate::draw::{Column, Keep, Rect, Span, WRAP_LINE};
-use crate::icons::Icon;
+use crate::gfx::icons::Icon;
+use crate::gfx::{Column, Keep, Rect, Span, WRAP_LINE};
 use crate::toolkit::format::{Bytes, DaysAgo, Fmt, PlayTime};
 use crate::toolkit::scroll::Scrolled;
 use crate::toolkit::style::{self, Look, RADIUS_L, SURFACE_HI, Tone};

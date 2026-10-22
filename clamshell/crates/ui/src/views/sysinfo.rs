@@ -3,7 +3,7 @@
 
 use clamshell_core::status::metrics::{HISTORY, Ring};
 
-use crate::draw::{Canvas, Rect, Rgb};
+use crate::gfx::{Canvas, Rect, Rgb};
 use crate::toolkit::Frame;
 use crate::toolkit::format::{Fan, Fmt, Frequency, HoursMinutes, Percent, Temp};
 use crate::toolkit::style::{self, SURFACE, Tone};

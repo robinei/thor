@@ -13,8 +13,8 @@ use clamshell_core::bottom::notice::NoticeKind;
 use clamshell_core::levels::slider::{Control, Slider};
 use clamshell_core::{Id, State, Tab};
 
-use crate::draw::{Align, Rect};
-use crate::icons::Icon;
+use crate::gfx::icons::Icon;
+use crate::gfx::{Align, Rect};
 use crate::toolkit::format::Fmt;
 use crate::toolkit::style::{Look, Tone};
 use crate::toolkit::{Frame, Track, widgets};

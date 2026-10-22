@@ -31,7 +31,7 @@ use clamshell_core::Tab;
 use clamshell_core::bottom::editor::Purpose;
 use clamshell_core::shelf::files::FileName;
 
-use crate::draw::Rect;
+use crate::gfx::Rect;
 use crate::toolkit::Frame;
 
 /// How much of the area below the bar the black over it hides while it points.
@@ -83,13 +83,13 @@ pub fn bottom(f: &mut Frame, screen: Rect) {
     }
     // (Pointing: the area below the bar is a touchpad, what is in it faded; the touchpad tab is nothing else.)
     if f.s.bottom().pointing() && f.s.bottom().tab() != Tab::Touchpad {
-        f.c.fill(body, crate::draw::Rgb(0).alpha(POINTING_FADE));
+        f.c.fill(body, crate::gfx::Rgb(0).alpha(POINTING_FADE));
     }
     bar::draw_slider_over(f, screen, body.y);
     f.out.touchpad_area = Some(body);
     // (Untouched a while, the pad elsewhere: dimmed, as the screens are before they go off.)
     if f.s.bottom_dimmed() {
-        f.c.fill(screen, crate::draw::Rgb(0).alpha(BOTTOM_DIM));
+        f.c.fill(screen, crate::gfx::Rgb(0).alpha(BOTTOM_DIM));
     }
 }
 
@@ -97,8 +97,8 @@ pub fn bottom(f: &mut Frame, screen: Rect) {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
-    use crate::draw::{Canvas, DrawCache};
-    use crate::images::Images;
+    use crate::gfx::images::Images;
+    use crate::gfx::{Canvas, DrawCache};
     use crate::toolkit::{Scratch, Target};
     use clamshell_core::{Event, Id, Init, Reading, State, Status};
     use tiny_skia::Pixmap;

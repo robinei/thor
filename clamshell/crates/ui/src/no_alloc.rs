@@ -22,7 +22,7 @@ use clamshell_core::{
 };
 
 use crate::Screen;
-use crate::draw::DrawCache;
+use crate::gfx::DrawCache;
 use crate::render::{Placement, Retained, render};
 
 thread_local! {
@@ -98,7 +98,7 @@ fn account() -> Account {
 #[test]
 fn warm_frames_do_not_allocate() {
     let mut cache = DrawCache::load();
-    let mut images = crate::images::Images::synchronous();
+    let mut images = crate::gfx::images::Images::synchronous();
     let (mut top, mut bottom) = (Retained::default(), Retained::default());
     let (mut top_px, mut bottom_px) = (tiny_skia::Pixmap::new(1920, 1080).expect("pixmap"), tiny_skia::Pixmap::new(1240, 1080).expect("pixmap"));
     let top_at = Placement { size_px: (1920, 1080), scale: 1, drift: (1, -2) };

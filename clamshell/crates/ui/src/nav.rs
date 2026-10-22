@@ -4,7 +4,7 @@
 use clamshell_core::Id;
 
 use crate::Screen;
-use crate::draw::Rect;
+use crate::gfx::Rect;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Dir {

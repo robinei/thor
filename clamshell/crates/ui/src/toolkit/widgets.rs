@@ -8,9 +8,9 @@ use clamshell_core::{Entry, Id};
 use super::scroll::Scrolled;
 use super::style::{self, Look, SURFACE_HI, Text, Tone};
 use super::{Frame, Track};
-use crate::draw::{Align, Canvas, Column, Keep, LINE, Rect, Rgb};
-use crate::icons::Icon;
-use crate::images::{Images, Slot};
+use crate::gfx::icons::Icon;
+use crate::gfx::images::{Images, Slot};
+use crate::gfx::{Align, Canvas, Column, Keep, LINE, Rect, Rgb};
 
 /// A row of tabs from `area.x`, `area.h` high: each its icon (if it has one) and label (cut to `max`
 /// wide) with `inner` space on both sides; the current one bright with an amber line under it. Tabs that

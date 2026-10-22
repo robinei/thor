@@ -4,14 +4,15 @@
 //! allocation) and [`scroll`] (scrolled lists). The screens themselves are in `views`.
 
 pub(crate) mod format;
+mod icons;
 pub(crate) mod scroll;
 pub(crate) mod style;
 pub(crate) mod widgets;
 
 use clamshell_core::{Id, ListId, State};
 
-use crate::draw::{Canvas, Rect};
-use crate::images::Images;
+use crate::gfx::images::Images;
+use crate::gfx::{Canvas, Rect};
 use format::Fmt;
 use style::{Look, PRESSED, RADIUS_S, Text, Tone};
 
@@ -223,14 +224,14 @@ impl<'f, 'c> Frame<'f, 'c> {
     }
 
     /// A text action (see [`Look::TEXT`]): `label` in `r` at `size` (centred, or from the left with
-    /// [`crate::draw::Align::Start`]), in `tone` (blue for an action, see [`Tone::Fn`]), white while
+    /// [`crate::gfx::Align::Start`]), in `tone` (blue for an action, see [`Tone::Fn`]), white while
     /// pressed. The whole of `r` is its target.
-    pub(crate) fn text_button(&mut self, id: Id, r: Rect, size: f32, tone: Tone, label: &str, align: crate::draw::Align) {
+    pub(crate) fn text_button(&mut self, id: Id, r: Rect, size: f32, tone: Tone, label: &str, align: crate::gfx::Align) {
         let tone = if self.pressed(&id) { Tone::High } else { tone };
         self.button(id, r, Look::TEXT, |f| {
             let w = f.c.text_width(size, label).min(r.w);
-            let x = if align == crate::draw::Align::Start { r.x } else { r.x + (r.w - w) / 2.0 };
-            f.c.text_fit(Rect::new(x, r.y, w + 1.0, r.h), size, tone, label, crate::draw::Keep::Start);
+            let x = if align == crate::gfx::Align::Start { r.x } else { r.x + (r.w - w) / 2.0 };
+            f.c.text_fit(Rect::new(x, r.y, w + 1.0, r.h), size, tone, label, crate::gfx::Keep::Start);
         });
     }
 

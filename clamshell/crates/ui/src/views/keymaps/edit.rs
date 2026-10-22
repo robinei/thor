@@ -6,8 +6,8 @@ use std::fmt::Write;
 use clamshell_core::keymap::{Actuation, Binding, Button, Change, Dir, Input, Keymap, Layer, Side, change};
 use clamshell_core::{Id, KeymapId};
 
-use crate::draw::{Align, Keep, LINE, Rect};
-use crate::icons::Icon;
+use crate::gfx::icons::Icon;
+use crate::gfx::{Align, Keep, LINE, Rect};
 use crate::toolkit::format::Fmt;
 use crate::toolkit::style::{Look, Text, Tone};
 use crate::toolkit::{Frame, style};
