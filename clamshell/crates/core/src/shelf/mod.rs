@@ -105,12 +105,22 @@ impl Shelf {
         self.library.entries.get(g)
     }
 
+    /// Whether there is a place for each collection, the current one among them (unless there are none),
+    /// and each holds a place for its list and each open group's.
+    fn navs_consistent(&self) -> bool {
+        self.navs.len() == self.library.collections.len()
+            && (self.navs.is_empty() || self.current < self.navs.len())
+            && self.navs.iter().all(|n| n.places.len() == n.open.len() + 1)
+    }
+
     /// The current list's place.
     fn place(&self) -> Option<&Place> {
+        debug_assert!(self.navs_consistent(), "a place for each collection and open group: {:?}, current {}", self.navs, self.current);
         self.navs.get(self.current).and_then(|n| n.places.last())
     }
 
     fn place_mut(&mut self) -> Option<&mut Place> {
+        debug_assert!(self.navs_consistent(), "a place for each collection and open group: {:?}, current {}", self.navs, self.current);
         self.navs.get_mut(self.current).and_then(|n| n.places.last_mut())
     }
 
@@ -320,6 +330,7 @@ impl Shelf {
             return false;
         };
         self.current = c;
+        debug_assert!(self.navs.get(c).is_some(), "a place for collection {c}");
         if let Some(n) = self.navs.get_mut(c) {
             *n = Nav::default();
         }
@@ -483,6 +494,7 @@ impl Shelf {
     pub(crate) fn places(&self) -> Vec<(String, Vec<String>)> {
         let mut places = Vec::new();
         for (c, coll) in self.library.collections.iter().enumerate() {
+            debug_assert!(self.navs.get(c).is_some(), "a place for collection {c}");
             let Some(nav) = self.navs.get(c) else {
                 continue;
             };
