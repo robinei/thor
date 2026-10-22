@@ -148,7 +148,8 @@ pub enum PointerEvent {
     Up(Id),
     /// Tap, click, or the pad's A on a focused item.
     Activate(Id),
-    /// A press held longer than a tap. It locks a keyboard modifier, and otherwise acts like `Activate`.
+    /// A press held longer than a tap. It is handled like `Activate`, as a long press. On a keyboard
+    /// modifier it does nothing, since holding one is handled by `Down` and `Up`.
     LongPress(Id),
     /// The pad moved focus, and the focus is shown. The UI finds the target, since only it knows the
     /// layout.

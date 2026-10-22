@@ -306,6 +306,7 @@ pub enum BatteryId {
 pub enum Hold {
     /// Activate now and again at the repeat rate until released, as keyboard keys do.
     Repeat,
-    /// One long press, then nothing on release. This locks a modifier.
+    /// One long press, then nothing on release. Keyboard modifiers get this too; they act while held
+    /// through `Down` and `Up`, not through the long press.
     Long,
 }
