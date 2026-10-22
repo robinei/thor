@@ -63,7 +63,8 @@ impl Touchpad {
     /// The touchpad made the second screen's size; made again if that size changed while no finger is on
     /// it.
     fn make(&mut self) {
-        let size = self.layout.lock().ok().map(|l| (l.screen.0 as i32, l.screen.1 as i32)).filter(|(w, h)| *w > 0 && *h > 0);
+        let screen = crate::lock(&self.layout).screen;
+        let size = Some((screen.0 as i32, screen.1 as i32)).filter(|(w, h)| *w > 0 && *h > 0);
         let Some(size) = size.filter(|size| self.pad.as_ref().is_none_or(|(_, s)| s != size)) else {
             return;
         };

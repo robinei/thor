@@ -151,7 +151,7 @@ impl Queue {
     }
 
     fn next(&self) -> Option<Wanted> {
-        self.waiting.lock().ok()?.pop_front()
+        crate::lock(&self.waiting).pop_front()
     }
 }
 
@@ -309,7 +309,7 @@ impl Shared {
     /// The names (without `.png`) in a system's folder of a kind, fetched once.
     fn listing(&self, system: &str, kind: &str) -> Option<Arc<Vec<Name>>> {
         let id = format!("{system}/{kind}");
-        let mut listings = self.listings.lock().ok()?;
+        let mut listings = crate::lock(&self.listings);
         if let Some(l) = listings.get(&id) {
             return l.clone();
         }

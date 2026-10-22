@@ -75,7 +75,7 @@ static BUS: std::sync::Mutex<Option<Bus>> = std::sync::Mutex::new(None);
 
 /// `call` on the user manager, over the shared connection.
 fn with_manager<T>(call: impl FnOnce(&mut Bus) -> Result<T, Error>) -> Result<T, Error> {
-    let mut shared = BUS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut shared = crate::lock(&BUS);
     let bus = match shared.take() {
         Some(bus) => bus,
         None => Bus::session()?,

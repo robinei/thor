@@ -12,7 +12,7 @@ use std::fmt;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, TryRecvError};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use clamshell_core::Event;
@@ -158,7 +158,7 @@ impl Session {
     /// signalled in turn).
     fn came(&mut self) -> dbus::Result<bool> {
         let signals = self.bus.signals()?;
-        let registered = self.ours.as_ref().map(|w| std::mem::take(&mut w.lock().unwrap_or_else(PoisonError::into_inner).registered)).unwrap_or_default();
+        let registered = self.ours.as_ref().map(|w| std::mem::take(&mut crate::lock(w).registered)).unwrap_or_default();
         for key in &registered {
             if let Ok(signal) = Message::new_signal(WATCHER_PATH, WATCHER, "StatusNotifierItemRegistered") {
                 let _ = self.bus.send(signal.append1(key.as_str()));
@@ -204,7 +204,7 @@ fn answer_watcher(watched: &Mutex<Watched>, call: &Message) -> Option<Message> {
     if call.path().as_deref() != Some(WATCHER_PATH) {
         return None;
     }
-    let mut w = watched.lock().unwrap_or_else(PoisonError::into_inner);
+    let mut w = crate::lock(watched);
     let property = |w: &Watched, name: &str| -> Option<Value> {
         match name {
             "RegisteredStatusNotifierItems" => Some(value(w.items.clone())),
@@ -248,7 +248,7 @@ fn registered(s: &mut Session) -> dbus::Result<Vec<String>> {
     let Some(ours) = &s.ours else {
         return Ok(s.bus.get::<Vec<String>>(WATCHER, WATCHER_PATH, WATCHER, "RegisteredStatusNotifierItems").unwrap_or_default());
     };
-    let items = ours.lock().unwrap_or_else(PoisonError::into_inner).items.clone();
+    let items = crate::lock(ours).items.clone();
     let mut kept = Vec::with_capacity(items.len());
     for key in items {
         let owned: dbus::Result<(bool,)> = s.bus.call(BUS_NAME, BUS_PATH, BUS_NAME, "NameHasOwner", (split(&key).0,));
@@ -256,7 +256,7 @@ fn registered(s: &mut Session) -> dbus::Result<Vec<String>> {
             kept.push(key);
         }
     }
-    ours.lock().unwrap_or_else(PoisonError::into_inner).items.retain(|k| kept.contains(k));
+    crate::lock(ours).items.retain(|k| kept.contains(k));
     Ok(kept)
 }
 

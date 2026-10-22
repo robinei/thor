@@ -11,7 +11,7 @@ mod bluez;
 use std::fmt;
 use std::io;
 use std::sync::mpsc::Receiver;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use clamshell_core::bluetooth::{self, Action, Bluetooth, Command, Device, Kind, Problem, Reason};
@@ -102,7 +102,7 @@ struct Shared(Arc<Mutex<BtState>>);
 
 impl Shared {
     fn lock(&self) -> MutexGuard<'_, BtState> {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+        crate::lock(&self.0)
     }
 }
 

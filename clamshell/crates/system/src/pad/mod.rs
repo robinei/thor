@@ -92,15 +92,13 @@ pub struct Taken(Arc<Mutex<Option<(u16, u16)>>>);
 
 impl Taken {
     fn set(&self, ids: (u16, u16)) {
-        if let Ok(mut taken) = self.0.lock() {
-            *taken = Some(ids);
-        }
+        *crate::lock(&self.0) = Some(ids);
     }
 
     /// A launch's variable for it, if a controller was grabbed (and it isn't the virtual pad's ids:
     /// ignoring those would hide the virtual pad too).
     pub fn env(&self) -> Option<(String, String)> {
-        let (vendor, product) = (*self.0.lock().ok()?)?;
+        let (vendor, product) = (*crate::lock(&self.0))?;
         ((vendor, product) != device::VIRTUAL_IDS).then(|| ("SDL_GAMECONTROLLER_IGNORE_DEVICES".to_owned(), format!("0x{vendor:04x}/0x{product:04x}")))
     }
 }

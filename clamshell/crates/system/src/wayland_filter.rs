@@ -30,7 +30,7 @@ use std::mem::MaybeUninit;
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock, PoisonError, mpsc};
+use std::sync::{Arc, Mutex, OnceLock, mpsc};
 use std::time::{Duration, Instant};
 
 use rustix::net::{RecvAncillaryBuffer, RecvAncillaryMessage, RecvFlags, SendAncillaryBuffer, SendAncillaryMessage, SendFlags};
@@ -333,9 +333,9 @@ fn connect(client: UnixStream, upstream: &Path, settings: &Path, frames: &Path, 
         relay(
             &client,
             &server,
-            |o, op, args, now| requests.lock().unwrap_or_else(PoisonError::into_inner).request(o, op, args, now),
+            |o, op, args, now| crate::lock(&requests).request(o, op, args, now),
             |now| {
-                if let Some((app, fps)) = rates.lock().unwrap_or_else(PoisonError::into_inner).frame_rate(now) {
+                if let Some((app, fps)) = crate::lock(&rates).frame_rate(now) {
                     log.row(&app, fps);
                 }
             },
@@ -350,7 +350,7 @@ fn connect(client: UnixStream, upstream: &Path, settings: &Path, frames: &Path, 
         relay(
             &server2,
             &client2,
-            |o, op, args, now| objects.lock().unwrap_or_else(PoisonError::into_inner).event(o, op, args, now),
+            |o, op, args, now| crate::lock(&objects).event(o, op, args, now),
             |_| {},
             |compositor_closed| end(&first2, compositor_closed, &ended2),
         );

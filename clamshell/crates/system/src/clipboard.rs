@@ -22,7 +22,7 @@
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::os::fd::{AsFd, OwnedFd};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -76,7 +76,7 @@ pub fn spawn(sink: impl Sink + Clone + 'static) -> io::Result<()> {
                     log::debug!("clipboard: {}: {e}", path.display());
                 }
             }
-            let sink = sink.lock().unwrap_or_else(PoisonError::into_inner);
+            let sink = crate::lock(&sink);
             let _ = sink.send(Event::Reading(Reading::Clipboard(text.map(Arc::from))));
         };
         let kept = Arc::new(Kept { text: Mutex::new(before), on_read: Box::new(on_read) });
@@ -131,7 +131,7 @@ struct Kept {
 
 impl Kept {
     fn text(&self) -> std::sync::MutexGuard<'_, Option<String>> {
-        self.text.lock().unwrap_or_else(PoisonError::into_inner)
+        crate::lock(&self.text)
     }
 }
 

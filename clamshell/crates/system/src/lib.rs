@@ -52,6 +52,12 @@ use clamshell_core::Event;
 
 pub use handles::Handles;
 
+/// Locks `m`. Nothing here panics while holding a lock (the workspace's lints rule panics out), so a lock
+/// poisoned anyway still holds usable data: it is taken as it is.
+pub(crate) fn lock<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// The UI is gone: a thread whose events can't be delivered ends.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Closed;

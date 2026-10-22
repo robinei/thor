@@ -30,7 +30,7 @@ use std::convert::Infallible;
 use std::io;
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use clamshell_core::Event;
@@ -82,7 +82,7 @@ impl DownRules {
     /// Rules in force from now on (`Some`), or as they were; defined where they aren't, every one
     /// switched; `fresh`: sway has none defined (connected anew).
     fn apply(&self, ipc: &mut Ipc, wanted: Option<Vec<DownRule>>, fresh: bool, bottom: &str) -> Result<(), Error> {
-        let mut guard = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut guard = crate::lock(&self.0);
         let (wanted_now, defined) = &mut *guard;
         if let Some(rules) = wanted {
             *wanted_now = rules;
@@ -111,7 +111,7 @@ impl DownRules {
 
     /// The rules in force.
     fn wanted(&self) -> Vec<DownRule> {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner).0.clone()
+        crate::lock(&self.0).0.clone()
     }
 }
 
@@ -126,7 +126,7 @@ impl LandRules {
     /// App ids wanted from now on (`Some`), or as they were; defined where they aren't; `fresh`: sway has
     /// none defined (connected anew).
     fn apply(&self, ipc: &mut Ipc, wanted: Option<Vec<Arc<str>>>, fresh: bool) -> Result<(), Error> {
-        let mut guard = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut guard = crate::lock(&self.0);
         let (wanted_now, defined) = &mut *guard;
         if let Some(ids) = wanted {
             *wanted_now = ids;
@@ -153,7 +153,7 @@ impl LandRules {
 
     /// The app ids wanted.
     fn wanted(&self) -> Vec<Arc<str>> {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner).0.clone()
+        crate::lock(&self.0).0.clone()
     }
 }
 
@@ -169,13 +169,13 @@ impl TopOutput {
     fn read(&self, ipc: &mut Ipc) -> Option<String> {
         let outputs = ipc.outputs().map_err(|e| log::debug!("sway: outputs: {e}")).ok()?;
         let top = outputs.into_iter().find(|o| o.active && o.name != self.bottom).map(|o| o.name);
-        *self.known.lock().unwrap_or_else(PoisonError::into_inner) = top.clone();
+        *crate::lock(&self.known) = top.clone();
         top
     }
 
     /// The output as last read, else read now through `ipc`.
     fn get(&self, ipc: &mut Ipc) -> Option<String> {
-        let known = self.known.lock().unwrap_or_else(PoisonError::into_inner).clone();
+        let known = crate::lock(&self.known).clone();
         known.or_else(|| self.read(ipc))
     }
 }
