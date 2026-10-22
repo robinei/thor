@@ -6,3 +6,4 @@ pub mod frames;
 pub mod mangohud;
 pub mod metrics;
 pub mod status;
+pub mod usage;
