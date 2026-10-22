@@ -23,10 +23,11 @@ passes (session; keymap and settings; shelf, nav and bottom; the rest and State 
   capture; a recorded play) is an `Event` variant, so outside code can send the same commands. A rule
   queues such an event; State handles it with `apply_event` (the follow-up steps run once, at the end of
   the outer `apply`). There is no separate `Mutation` type.
-- **One output buffer per event.** `apply` creates an `Out { effects: Vec<Effect>, events: Vec<Event>,
-  dirty: Dirty }` and passes `&mut Out` down; rules push effects in the order things happen and queue
-  events. After a rule returns, State handles the queued events in order, so their effects follow those
-  pushed before them. `apply` returns `out.dirty` and `out.effects`. Rules no longer return `Vec<Effect>`.
+- **One output buffer per event.** `apply` makes an `Out { effects: Vec<Effect>, events: Vec<Event>,
+  dirty: Dirty }` from the caller's effects vector and State's event queue, and passes `&mut Out` down;
+  rules push effects in the order things happen and queue events. After a rule returns, State handles the
+  events it queued in order, so their effects follow those pushed before them. `apply` hands the effects
+  back in the caller's vector and returns `out.dirty`. Rules no longer return `Vec<Effect>`.
 - **`Clock`** `{ unix, mono }` replaces `unix_secs`/`mono_secs`, with `read()` and `unix_at(mono)`.
   Session rules take `clock` and `&Library`. Settings in force are not in it: they change during an
   event and are passed where needed.
@@ -52,13 +53,15 @@ passes (session; keymap and settings; shelf, nav and bottom; the rest and State 
   prefs and keymapping (what it edits, its levels, the tiles' values). Mutating handlers take owned values
   out of it first.
 - **What stays in State's impl:** construction; area accessors; `apply`/`apply_event`/`activate`/
-  `on_pointer`/`tick`/`ui_started`/`library_read`; `launch` (shelf, device, settings, session
-  and the resume save); `settle` (its order kept exactly); `choose_tab`/`left_tab`; `in_force`,
-  `settings_of`, `panel`; `wanted`/`sync` (the diff itself is on `Sent`, in `sync.rs`),
-  `follow_runner_keymaps`, `power()` for bottom; the cross-area
-  queries the UI uses (`entry`, `rows`, `scroll`, `list_len`, `bottom_dark`, `pad_back`); `item_key`,
-  `find_item`, `resolve`; `editor_done`. Estimated 650-800 lines with docs, in `state.rs`; `lib.rs` keeps
-  the crate doc, modules, re-exports and `Init`.
+  `on_pointer`/`tick`/`ui_started`/`library_read`; `launch` (opening the Device view or a group that
+  `Session::launch` hands back); `settle` (its order kept exactly); `choose_tab`/`left_tab`; `in_force`,
+  `settings_of`, `panel`, `lists`; `wanted`/`sync` (the diff itself is on `Sent`, in `sync.rs`),
+  `power()` for bottom; the cross-area queries the UI uses (`entry`, `bottom_dark`, `pad_back`);
+  `move_list`/`follow_lists`; `editor_done`. In `state.rs`; `lib.rs` keeps the crate doc, modules,
+  re-exports and `Init`.
+- **The lists** are a read-only view too, `State::lists() -> Lists<'_>` (in `nav/lists.rs`), built from
+  the areas whose rows they are and the scroll positions (`Scrolls`): each list's rows and length, its
+  scroll, and a pressed item's key and where it is now.
 - **Outside code reads the areas directly**: `State` has one accessor per area returning `&Area`, and no
   pass-through getters (`s.radios().wifi()`, `s.sys().time_zones()`, `s.keymapping().screen()`,
   `s.panel().editing()`, `s.shelf().in_actions(s.pointer())`, `s.clock().unix()`). It changes state
