@@ -64,7 +64,7 @@ pub(super) fn draw(f: &mut Frame) {
     if f.s.bottom().editor().is_some() {
         return editor(f);
     }
-    if let Some(screen) = f.s.keymap_screen() {
+    if let Some(screen) = f.s.keymapping().screen() {
         return super::keymaps::draw(f, screen);
     }
     let s = f.s;
@@ -135,7 +135,7 @@ fn face(s: &State, tile: Tile) -> Face {
             let value = s.tile_value(setting);
             // The keymap's tile shows its name.
             let text = match setting {
-                Setting::Keymap => Fmt::of(format_args!("{}", s.keymap_name(value))),
+                Setting::Keymap => Fmt::of(format_args!("{}", s.keymapping().name(value))),
                 _ => {
                     let mut text = Fmt::new();
                     setting.describe(value, &mut text);
@@ -208,12 +208,12 @@ fn editor(f: &mut Frame) {
         }
         Some(Editor { purpose: Purpose::KeymapName(name), .. }) => match name {
             KeymapName::New => Fmt::of(format_args!("Name of the new keymap")),
-            KeymapName::Rename(id) => Fmt::of(format_args!("New name for {}", s.keymap_name(*id))),
-            KeymapName::Duplicate(id) => Fmt::of(format_args!("Name of the copy of {}", s.keymap_name(*id))),
+            KeymapName::Rename(id) => Fmt::of(format_args!("New name for {}", s.keymapping().name(*id))),
+            KeymapName::Duplicate(id) => Fmt::of(format_args!("Name of the copy of {}", s.keymapping().name(*id))),
             KeymapName::SaveAs(_) => Fmt::of(format_args!("A name for the copy (other games can use it)")),
             KeymapName::NewLayer(..) => Fmt::of(format_args!("Name of the new layer")),
             KeymapName::RenameLayer(id, layer) => {
-                let name = s.keymaps().get(*id).and_then(|k| k.layer_name(*layer)).unwrap_or("the layer");
+                let name = s.keymapping().keymaps().get(*id).and_then(|k| k.layer_name(*layer)).unwrap_or("the layer");
                 Fmt::of(format_args!("New name for {name}"))
             }
         },

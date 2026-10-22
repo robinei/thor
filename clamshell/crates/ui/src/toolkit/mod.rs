@@ -138,7 +138,7 @@ impl<'f, 'c> Frame<'f, 'c> {
             return false;
         };
         let up = |s: Option<clamshell_core::levels::slider::Slider>| s.is_some_and(|s| s.control == *control);
-        up(self.s.levels().slider().copied()) || up(self.s.keymap_edit().slider)
+        up(self.s.levels().slider().copied()) || up(self.s.keymapping().edit().slider)
     }
 
     /// A text action (see [`Look::TEXT`]). Draws `label` in `r` at `size`, centred, or from the left with

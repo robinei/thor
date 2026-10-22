@@ -223,7 +223,7 @@ mod tests {
                 for e in events {
                     state.apply(e.clone());
                 }
-                assert!(state.keymap_screen().is_some() || state.bottom().editor().is_some(), "{name}: a keymap screen");
+                assert!(state.keymapping().screen().is_some() || state.bottom().editor().is_some(), "{name}: a keymap screen");
                 let (targets, out) = draw_bottom(&state, (w, h), &mut cache);
                 let body = out.touchpad_area.expect("the area below the bar");
                 let case = format!("{name} at {w}x{h}");

@@ -145,7 +145,7 @@ impl State {
             ListId::Streams => RowsOf::Of(self.levels.audio()),
             ListId::Backlights => RowsOf::Of(self.levels.backlight_rows()),
             ListId::Keymaps => RowsOf::Count(self.keymap_rows_len()),
-            ListId::Layers => RowsOf::Count(self.layer_rows()),
+            ListId::Layers => RowsOf::Count(self.keymapping.layer_rows()),
             ListId::Time => RowsOf::Count(self.sys.time_rows()),
             ListId::Dock => RowsOf::Count(self.dock.items().len().div_ceil(crate::session::dock::DOCK_COLUMNS)),
         }
@@ -157,8 +157,8 @@ impl State {
             ListId::Wifi => self.radios.tap_network(i, long, self.bottom.editors_mut(), out),
             ListId::Bluetooth => self.radios.tap_device(i, long, out),
             ListId::Streams => self.levels.on_stream(i, part, out),
-            ListId::Keymaps => out.effects.extend(self.on_keymap_row(i, part, long)),
-            ListId::Layers => out.effects.extend(self.on_layer_row(i, part, long)),
+            ListId::Keymaps => self.on_keymap_row(i, part, long, out),
+            ListId::Layers => self.on_layer_row(i, part, long, out),
             ListId::Time => self.sys.on_time_row(i, self.lists.get_mut(ListId::Time), out),
             // Its tiles are targets of their own.
             ListId::Dock => {}

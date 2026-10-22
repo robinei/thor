@@ -171,7 +171,7 @@ impl crate::State {
                 out.effects.push(Effect::Save(Save::Settings(self.settings.clone())));
             }
             (Done::Save, Purpose::Password { ssid }) => self.radios.join(ssid, Some(editor.text), out),
-            (Done::Save, Purpose::KeymapName(action)) => out.effects.extend(self.named_keymap(action, &editor.text)),
+            (Done::Save, Purpose::KeymapName(action)) => self.keymapping.named(action, &editor.text, out),
             (Done::Save, Purpose::FileName(purpose)) => {
                 self.back_from_keyboard();
                 out.effects.extend(crate::shelf::files::named(purpose, &editor.text).map(Effect::Files));

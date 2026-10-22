@@ -263,7 +263,7 @@ pub(crate) fn back(s: &State) -> Option<Event> {
     if s.bottom().tab() == Tab::Time && s.sys().time_page() != clamshell_core::TimePage::Main {
         return Some(PointerEvent::Activate(Id::Time(clamshell_core::TimeId::Back)).into());
     }
-    if s.keymap_screen().is_some() {
+    if s.keymapping().screen().is_some() {
         return Some(PointerEvent::Activate(Id::Keymap(clamshell_core::KeymapId::Back)).into());
     }
     // The Device view in shelf's place goes back to shelf.

@@ -60,7 +60,7 @@ use settings::Settings;
 // the groups the getters return.
 pub use clock::Clock;
 pub use effect::{Dirty, Effect, Save, Watch, WindowCommand};
-pub use event::{EntryAct, Event, LaunchEvent, LevelEvent, PointerEvent, Reading, ShelfEvent, Slide};
+pub use event::{EntryAct, Event, KeymapEvent, LaunchEvent, LevelEvent, PointerEvent, Reading, ShelfEvent, Slide};
 pub use id::{AudioId, BatteryId, BtId, DeviceId, DockId, EditorId, Hold, Id, KeymapId, SettingsId, ShelfId, Target, TimeId, WifiId};
 pub use resume::Resume;
 
@@ -142,11 +142,8 @@ pub struct State {
     sys: Sys,
     settings: Settings,
     keyboard: Keyboard,
-    keymaps: keymap::Keymaps,
-    /// The keymap screens shown over the settings tab (see [`keymap::screens`]).
-    keymap_screens: crate::keymap::screens::Screens,
-    /// The keymap in force as last sent to the pad.
-    keymap_sent: Option<keymap::Keymap>,
+    /// The keymaps and their screens (see [`keymap::screens`]).
+    keymapping: keymap::screens::Keymapping,
     lists: Lists,
     clock: Clock,
     /// Where shelf and the second screen are ([`State::resume`]), saved once they stop changing for a
@@ -164,7 +161,7 @@ impl State {
         let mut s = State {
             shelf: Shelf::new(init.library),
             settings: init.settings,
-            keymaps: init.keymaps,
+            keymapping: keymap::screens::Keymapping::new(init.keymaps),
             bottom: Bottom::new(init.window_rules),
             sys: Sys::new(init.twelve_hour),
             levels: Levels::new(init.brightness),
@@ -188,7 +185,7 @@ impl State {
             s.bottom.restore_tab(tab);
         }
         s.reconcile_pad();
-        s.keymap_sent = Some(s.keymap_in_force());
+        s.keymapping.mark_sent(s.in_force().get(settings::Setting::Keymap));
         if init.pad_mouse {
             s.pad.toggle_mouse();
             s.reconcile_pad();

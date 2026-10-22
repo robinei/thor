@@ -858,7 +858,7 @@ fn a_parameter_slid_applies_at_once() {
     let (mut r, mut out) = router(Keymap::default(), PadRoute::Game);
     axis(&mut r, AbsoluteAxisCode::ABS_X, STICK_MAX / 2, &mut out);
     assert_eq!(last(&out.pad, AbsoluteAxisCode::ABS_X), Some(STICK_MAX / 2));
-    // The slider sends the keymap as it moves (see core's keymap_screens), and the stick held still
+    // The slider sends the keymap as it moves (see core's keymap::screens), and the stick held still
     // follows.
     for dz in [10, 30, 50] {
         r.set_keymap(keymap(&[(Input::Stick(Side::Left), Binding { deadzone: dz, ..own })]), &mut out);

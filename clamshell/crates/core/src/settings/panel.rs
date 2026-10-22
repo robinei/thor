@@ -105,18 +105,18 @@ impl State {
         let wanting: Vec<(std::sync::Arc<str>, crate::keymap::Keymap)> = library
             .runner_keymaps
             .iter()
-            .filter(|(key, _)| self.settings.overrides_of(key).get(Setting::Keymap).is_none() && self.keymaps.own_of(key).is_none())
+            .filter(|(key, _)| self.settings.overrides_of(key).get(Setting::Keymap).is_none() && self.keymapping.keymaps().own_of(key).is_none())
             .filter_map(|(key, name)| Some((key.clone(), crate::keymap::preset(name)?)))
             .collect();
         if wanting.is_empty() {
             return vec![];
         }
         for (key, preset) in &wanting {
-            if let Some(id) = self.keymaps.make_own_from(preset, key) {
+            if let Some(id) = self.keymapping.make_own_from(preset, key) {
                 self.settings.set(Some(key), Setting::Keymap, Some(id));
             }
         }
-        vec![Effect::Save(Save::Keymaps(self.keymaps.clone())), Effect::Save(Save::Settings(self.settings.clone()))]
+        vec![self.keymapping.save_effect(), Effect::Save(Save::Settings(self.settings.clone()))]
     }
 
     /// The item the settings panel is about, chosen by what is in front. It is the entry whose window is
@@ -187,7 +187,7 @@ impl State {
     pub(crate) fn on_settings(&mut self, id: SettingsId, long: bool) -> Vec<Effect> {
         match id {
             SettingsId::Tile(Setting::Keymap) if !long => {
-                self.open_keymaps();
+                self.keymapping.open_picker();
                 vec![]
             }
             SettingsId::Tile(setting) => {
@@ -330,7 +330,7 @@ mod tests {
         let mut s = State::new(Init { library, ..init() });
         let fx = s.apply(Event::Start).1;
         assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Keymaps(_)))), "{fx:?}");
-        let own = s.keymaps().own_of("runner:text").map(|k| k.id);
+        let own = s.keymapping().keymaps().own_of("runner:text").map(|k| k.id);
         assert!(own.is_some());
         assert_eq!(s.settings().overrides_of("runner:text").get(Setting::Keymap), own);
         // With Default chosen for it instead, it is left that way, also when the library is read again.

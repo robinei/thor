@@ -40,7 +40,7 @@ impl State {
         if changed && self.follow_pad_mouse() {
             out.mark(Dirty::BOTH);
         }
-        out.effects.extend(self.follow_keymap(false));
+        self.follow_keymap(false, &mut out);
         if let Some(route) = self.reconcile_pad() {
             out.effects.push(Effect::PadRoute(route));
             // The focus ring shows where the pad is.
@@ -170,7 +170,7 @@ impl State {
             Event::Home => out.effects.extend(self.home()),
             Event::Listened(input) => {
                 out.mark(Dirty::BOTTOM);
-                out.effects.extend(self.listened(input));
+                self.keymapping.listened(input, self.pad.route() == PadRoute::Listen, out);
             }
             Event::PadSwitch => self.pad.switch(),
             // Never applied here: the UI handles pad navigation itself.
@@ -240,6 +240,10 @@ impl State {
                     EntryAct::Quit => out.effects.extend(self.quit(&id)),
                     EntryAct::ForceKill => out.effects.extend(self.force_kill(&id)),
                 }
+            }
+            Event::Keymap(e) => {
+                out.mark(Dirty::BOTTOM);
+                self.keymap_event(e, out);
             }
             Event::EditOnKeyboard(editor) => {
                 if self.bottom.open_on_keyboard(editor) {
@@ -312,7 +316,7 @@ impl State {
         out.effects.extend(self.levels.brightness_effect());
         out.effects.push(Effect::PadRoute(self.pad.route()));
         out.effects.extend(self.follow_runner_keymaps());
-        out.effects.extend(self.follow_keymap(true));
+        self.follow_keymap(true, out);
         out.effects.push(self.bottom.window_rules().effect());
     }
 
@@ -471,7 +475,7 @@ impl State {
             }
             Id::Keymap(id) => {
                 out.mark(Dirty::BOTTOM);
-                out.effects.extend(self.on_keymap(id, long));
+                self.on_keymap(id, long, out);
             }
             Id::Tab(tab) => {
                 self.choose_tab(tab);
@@ -500,7 +504,9 @@ impl State {
                             self.editor_done(done, out);
                         }
                     }
-                    Some(stroke) if self.capturing() => out.effects.extend(self.captured(State::chord(stroke))),
+                    Some(stroke) if self.keymapping.capturing(self.bottom.tab(), self.bottom.editor().is_some()) => {
+                        self.keymapping.captured(crate::keymap::screens::chord(stroke), out);
+                    }
                     Some(stroke) if self.session.front() == crate::session::running::Front::Shelf => {
                         out.mark(Dirty::BOTH);
                         self.shelf.find(stroke, &mut self.pointer, out);

@@ -106,6 +106,8 @@ pub enum Event {
     AccountChanged(Result<String, String>),
     /// Opens a tab on the second screen, as tapping its icon does.
     ChooseTab(crate::Tab),
+    /// What the keymaps' screens ask of the settings and the keyboard (see [`crate::keymap::screens`]).
+    Keymap(KeymapEvent),
     /// Something done to an entry, by its id.
     Entry(Arc<str>, EntryAct),
     /// Opens `editor` on the keyboard tab, as for a file's name. When the editor closes, the screen goes
@@ -127,6 +129,21 @@ pub enum EntryAct {
     /// Quit, as from the dock.
     Quit,
     ForceKill,
+}
+
+/// What the keymaps' screens ask of the settings and the keyboard.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeymapEvent {
+    /// Keymap `id` is chosen for what the settings panel edits.
+    Choose(u16),
+    /// Keymap `id` was made as the own keymap of the game the settings panel edits. It is chosen for the
+    /// game, and then the keymaps are saved.
+    MadeOwn(u16),
+    /// Keymap `id` was deleted. The games that used it, and all games if it was theirs, go back to
+    /// Default.
+    Deleted(u16),
+    /// The capture screen's Done: the keyboard's modifiers held make the chord.
+    Capture,
 }
 
 /// What a system thread read from the system.

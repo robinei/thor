@@ -199,7 +199,7 @@ impl crate::State {
         if (self.dock.menu.is_some() || self.dock.moving.is_some()) && self.bottom.tab() == crate::Tab::Dock {
             return Some(crate::Id::Dock(crate::DockId::Back));
         }
-        self.keymaps_shown().map(|_| crate::Id::Keymap(crate::KeymapId::Back))
+        self.keymapping.shown(self.bottom.tab()).map(|_| crate::Id::Keymap(crate::KeymapId::Back))
     }
 }
 

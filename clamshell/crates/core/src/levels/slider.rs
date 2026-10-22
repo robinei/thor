@@ -1,7 +1,7 @@
 //! Volume and brightness in the bar. A finger held on either icon, or sliding off it sideways, brings up
 //! a slider with the current value under the finger. Moving sets the level as it goes, and lifting
 //! leaves it there. A tap opens the icon's tab instead. The same slider sets a keymap binding's
-//! parameters from the edit screen's panel ([`Control::Param`], see `keymap_screens`).
+//! parameters from the edit screen's panel ([`Control::Param`], see [`crate::keymap::screens`]).
 //!
 //! The slider runs along the screen's width. Its length is what fits on both sides of where the finger
 //! came down, given the level there: the part below the level goes left of the finger and the rest goes

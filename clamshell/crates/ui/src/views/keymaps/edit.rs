@@ -248,7 +248,7 @@ pub(super) fn edit_corners(f: &mut Frame, l: &EditLayout, keymap: Option<&Keymap
         return;
     }
     f.text_button(Id::Keymap(KeymapId::Back), close, size, Tone::Fn, "Close", Align::Start);
-    if f.s.can_undo() {
+    if f.s.keymapping().can_undo() {
         f.text_button(Id::Keymap(KeymapId::Undo), undo, size, Tone::Fn, "Undo", Align::Start);
     } else {
         f.c.text_in(undo, size, Tone::Dim, "Undo", Align::Start);
@@ -271,8 +271,8 @@ pub(super) fn edit_corners(f: &mut Frame, l: &EditLayout, keymap: Option<&Keymap
 pub(super) fn edit(f: &mut Frame, id: u16, picking: Option<Picking>) {
     let body = f.body();
     let s = f.s;
-    let keymap = s.keymaps().get(id);
-    let view = s.keymap_edit();
+    let keymap = s.keymapping().keymaps().get(id);
+    let view = s.keymapping().edit();
     let layer = view.layer;
     let layout = edit_layout(body);
     edit_corners(f, &layout, keymap, layer, picking.is_some());
@@ -351,7 +351,7 @@ pub(super) fn edit(f: &mut Frame, id: u16, picking: Option<Picking>) {
             let muted = picking.is_some_and(|p| !p.takes(input));
             // While picking the gyro's hold, the control holding it now is lit.
             let hold = match picking {
-                Some(Picking::Hold(gyro)) => s.param_base(id, gyro).and_then(|b| b.hold) == Some(input),
+                Some(Picking::Hold(gyro)) => s.keymapping().param_base(id, gyro).and_then(|b| b.hold) == Some(input),
                 _ => false,
             };
             control(f, input, part, tone, view.selected == Some(input) || hold, muted, size);
@@ -417,11 +417,11 @@ pub(super) fn edit(f: &mut Frame, id: u16, picking: Option<Picking>) {
 /// used by all games, 2 games"). For a game without its own keymap, "Make own" follows, which makes a
 /// copy for that game alone to edit from then on.
 fn keymap_line(f: &mut Frame, mut row: Rect, id: u16, size: f32) {
-    let own = f.s.keymap_is_own(id);
+    let own = f.s.keymapping().is_own(id);
     let text = match (own, f.s.editing()) {
         (true, Some(game)) => Fmt::<128>::of(format_args!("Own keymap of {}", game.title)),
         (true, None) => Fmt::of(format_args!("Own keymap")),
-        (false, _) => Fmt::of(format_args!("{}, used by {}", f.s.keymap_name(id), Lower(super::users(f, id).as_str()))),
+        (false, _) => Fmt::of(format_args!("{}, used by {}", f.s.keymapping().name(id), Lower(super::users(f, id).as_str()))),
     };
     let label = if !own && f.s.keymap_can_make_own() { "Make own" } else { "" };
     // The text and then the action, centred together.

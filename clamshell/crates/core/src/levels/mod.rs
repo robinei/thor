@@ -470,7 +470,7 @@ impl State {
     pub(crate) fn on_slide(&mut self, slide: Slide, out: &mut Out) {
         match slide {
             Slide::Start { control: Control::Param(param), x, width } => {
-                self.param_slide_start(param, x, width);
+                self.keymapping.param_slide_start(param, x, width);
                 out.mark(Dirty::BOTTOM);
             }
             Slide::Start { control, x, width } => {
@@ -478,7 +478,7 @@ impl State {
                 out.mark(Dirty::BOTTOM);
             }
             Slide::To { x } if self.levels.slider().is_none() => {
-                if self.param_slide_to(x) {
+                if self.keymapping.param_slide_to(x) {
                     out.mark(Dirty::BOTTOM);
                 }
             }
@@ -492,7 +492,7 @@ impl State {
             Slide::End => {
                 self.levels.slide_end();
                 out.mark(Dirty::BOTTOM);
-                out.effects.extend(self.param_slide_end());
+                self.keymapping.param_slide_end(out);
             }
         }
     }

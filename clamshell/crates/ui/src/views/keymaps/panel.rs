@@ -49,7 +49,7 @@ pub(super) fn picking_panel(f: &mut Frame, r: Rect, id: u16, picking: Picking) {
     };
     match picking {
         Picking::Hold(gyro) => {
-            let always = f.s.param_base(id, gyro).is_some_and(|b| b.hold.is_none());
+            let always = f.s.keymapping().param_base(id, gyro).is_some_and(|b| b.hold.is_none());
             let (a, c) = (row.cell(2, 1, 0.0, 0), row.cell(2, 1, 0.0, 1));
             f.text_button(Id::Keymap(KeymapId::Hold(None)), a, small, if always { Tone::High } else { Tone::Fn }, "Always", Align::Center);
             f.text_button(Id::Keymap(KeymapId::Back), c, small, Tone::Fn, "Cancel", Align::Center);
@@ -147,7 +147,7 @@ pub(super) fn panel(f: &mut Frame, r: Rect, id: u16, keymap: Option<&Keymap>, vi
     // A note when a press waits because the input has a hold or a double.
     if act == Actuation::Press
         && input.kind() == Kind::Digital
-        && s.press_waits(id, input)
+        && s.keymapping().press_waits(id, input)
         && let Some(row) = col.next(small * LINE)
     {
         widgets::centred_text(f, row, small * 0.85, Tone::Dim, "A short press acts on letting go");
@@ -167,7 +167,7 @@ pub(super) fn panel(f: &mut Frame, r: Rect, id: u16, keymap: Option<&Keymap>, vi
     }
     col.skip(pad * 0.4);
     // The parameters: the binding's own, or else those of the layers below, or else as on the pad.
-    let Some(base) = s.param_base(id, input) else {
+    let Some(base) = s.keymapping().param_base(id, input) else {
         return;
     };
     let rh = f.body().h * PANEL_ROW_H;

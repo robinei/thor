@@ -23,7 +23,7 @@ use super::{BUTTON_H, PART_LINE, PART_W, ROW_H, SELECTED_W, choice_header, heade
 /// the one it maps to now marked. New layer… at the end names a new layer and then maps to it. Choosing
 /// one closes the screen; Cancel gives up.
 pub(super) fn layers(f: &mut Frame, id: u16, input: Input) {
-    let now = binding(f.s.keymaps().get(id), f.s.keymap_edit().layer, input).map(|b| b.output);
+    let now = binding(f.s.keymapping().keymaps().get(id), f.s.keymapping().edit().layer, input).map(|b| b.output);
     let area = choice_header(f, &remap_title(input));
     layer_list(f, area, id, |l| now == Some(Output::Layer(l)), false);
 }
@@ -33,12 +33,12 @@ pub(super) fn layers(f: &mut Frame, id: u16, input: Input) {
 /// New layer… comes last.
 pub(super) fn layer_list(f: &mut Frame, area: Rect, id: u16, current: impl Fn(Layer) -> bool, edit: bool) {
     let s = f.s;
-    let keymap = s.keymaps().get(id);
+    let keymap = s.keymapping().keymaps().get(id);
     let list = ListArea::new(f, area, f.body().h * ROW_H);
     let rows = list.scrolled(f, ListId::Layers, s.list_len(ListId::Layers));
     for i in rows.shown() {
         let at = |part| Id::Row { list: ListId::Layers, i: i as u16, part };
-        let layer = s.layer_row(i);
+        let layer = s.keymapping().layer_row(i);
         let (name, what, mine) = match layer {
             Some(l) => (keymap.and_then(|k| k.layer_name(l)).unwrap_or(""), keymap.map_or(Fmt::new(), |k| turned_on_by(k, l)), current(l)),
             None => ("New layer…", Fmt::new(), false),
@@ -57,10 +57,10 @@ pub(super) fn layer_list(f: &mut Frame, area: Rect, id: u16, current: impl Fn(La
 
 /// A layer's menu: rename it, or delete it along with what maps to it.
 pub(super) fn layer_menu(f: &mut Frame, id: u16, layer: Layer) {
-    let name = f.s.keymaps().get(id).and_then(|k| k.layer_name(layer)).unwrap_or("");
+    let name = f.s.keymapping().keymaps().get(id).and_then(|k| k.layer_name(layer)).unwrap_or("");
     let area = header(f, name, HeaderRight::None);
     let k = |id| Id::Keymap(id);
-    if f.s.keymap_edit().clearing {
+    if f.s.keymapping().edit().clearing {
         widgets::menu(f, area, [(k(KeymapId::ConfirmClear), "Clear all its bindings", Tone::Accent), (k(KeymapId::Back), "Cancel", Tone::Fn)]);
     } else if layer == Layer::BASE {
         widgets::menu(f, area, [(k(KeymapId::Clear), "Clear", Tone::Fn)]);
@@ -70,7 +70,7 @@ pub(super) fn layer_menu(f: &mut Frame, id: u16, layer: Layer) {
         let small = f.text(Text::Small);
         let mut rest = area;
         let row = rest.take_top(f.body().h * BUTTON_H);
-        let on = f.s.keymaps().get(id).is_some_and(|k| k.layer_once(layer));
+        let on = f.s.keymapping().keymaps().get(id).is_some_and(|k| k.layer_once(layer));
         // Its row reaches into the margin, so that its label lines up with the actions below.
         let r = Rect::new(row.x, row.y, widgets::menu_w(area, size), row.h).widened(size * 0.4);
         widgets::switch_row(f, k(KeymapId::LayerOnce), r, size, "Once", on);
@@ -89,7 +89,7 @@ pub(super) fn layer_menu(f: &mut Frame, id: u16, layer: Layer) {
 /// layer… at the end. A layer's Edit button or a long press opens its menu. Back returns to the edit
 /// screen.
 pub(super) fn layer_picker(f: &mut Frame, id: u16) {
-    let shown = f.s.keymap_edit().layer;
+    let shown = f.s.keymapping().edit().layer;
     let area = choice_header(f, "Layers");
     layer_list(f, area, id, |l| l == shown, true);
 }
@@ -105,7 +105,7 @@ pub(super) const MOUSE_ASPECT: f32 = 0.6;
 /// it maps to now is lit. Choosing one closes the screen; Cancel or Back gives up.
 pub(super) fn mouse(f: &mut Frame, id: u16, input: Input) {
     let s = f.s;
-    let out = binding(s.keymaps().get(id), s.keymap_edit().layer, input).map(|b| b.output);
+    let out = binding(s.keymapping().keymaps().get(id), s.keymapping().edit().layer, input).map(|b| b.output);
     let area = choice_header(f, &remap_title(input));
     let small = f.text(Text::Small);
     let room = widgets::hint(f, area, "A button, the wheel (its middle button) or an arrow (a turn of it)");

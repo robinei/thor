@@ -1,4 +1,4 @@
-//! The keymap screens, drawn over the settings tab. Their rules are in `core`'s `keymap_screens`.
+//! The keymap screens, drawn over the settings tab. Their rules are on [`clamshell_core::keymap::screens::Keymapping`].
 //!
 //! - The picker, a scrolled list. For a game it starts with its own keymap or Make own keymap. Then come
 //!   Default, the named keymaps (each with who uses it and an Edit button), and New.
@@ -146,13 +146,13 @@ fn list(f: &mut Frame, listing: Listing) {
         let at = |part| Id::Row { list: ListId::Keymaps, i: i as u16, part };
         let (id, label, note) = match row {
             PickerRow::Own(Some(k)) => (Some(k.id), "Own keymap", Fmt::<48>::of(format_args!("This game only"))),
-            PickerRow::Own(None) => (None, "Make own keymap", Fmt::of(format_args!("From {}", s.keymap_name(chosen)))),
+            PickerRow::Own(None) => (None, "Make own keymap", Fmt::of(format_args!("From {}", s.keymapping().name(chosen)))),
             PickerRow::New => (None, "New keymap…", Fmt::new()),
             PickerRow::Default => (Some(0), "Default", Fmt::of(format_args!("As on the pad"))),
             PickerRow::Named(k) => (Some(k.id), k.name.as_str(), users(f, k.id)),
         };
         // A keymap that no longer exists counts as Default.
-        let mine = loading.is_none() && (id == Some(chosen) || (id == Some(0) && s.keymaps().get(chosen).is_none()));
+        let mine = loading.is_none() && (id == Some(chosen) || (id == Some(0) && s.keymapping().keymaps().get(chosen).is_none()));
         let tone = if id.is_none() { Tone::Fn } else { Tone::high_if(mine) };
         let edit = match id {
             _ if loading.is_some() => EditCell::None,
@@ -166,11 +166,11 @@ fn list(f: &mut Frame, listing: Listing) {
 }
 
 fn menu(f: &mut Frame, id: u16) {
-    let name = f.s.keymap_name(id);
+    let name = f.s.keymapping().name(id);
     let area = header(f, name, HeaderRight::None);
     let k = |id| Id::Keymap(id);
     // A game's own keymap becomes a shared one when it is named.
-    if f.s.keymap_is_own(id) {
+    if f.s.keymapping().is_own(id) {
         let items = [
             (k(KeymapId::Edit), "Edit", Tone::Fn),
             (k(KeymapId::LoadFrom), "Load from…", Tone::Fn),
@@ -189,7 +189,7 @@ fn menu(f: &mut Frame, id: u16) {
 }
 
 fn delete(f: &mut Frame, id: u16) {
-    let name = f.s.keymap_name(id);
+    let name = f.s.keymapping().name(id);
     let title = Fmt::<128>::of(format_args!("Delete {name}?"));
     let text = Fmt::<160>::of(format_args!("In use ({}): deleting it puts them back on Default.", users(f, id).as_str()));
     confirm(f, &title, &text, (KeymapId::ConfirmDelete, "Delete"));
@@ -198,7 +198,7 @@ fn delete(f: &mut Frame, id: u16) {
 /// Asks to confirm saving a game's own keymap over the named keymap `to`, since the change reaches the
 /// games using it.
 fn overwrite(f: &mut Frame, to: u16) {
-    let name = f.s.keymap_name(to);
+    let name = f.s.keymapping().name(to);
     let title = Fmt::<128>::of(format_args!("Replace {name}?"));
     let text = if f.s.settings().keymap_users(to).any() {
         Fmt::<160>::of(format_args!("Its bindings become the own keymap's, for every game using it ({}).", users(f, to).as_str()))
