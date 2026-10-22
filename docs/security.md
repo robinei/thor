@@ -18,7 +18,7 @@ the copy would undo that.
 
 ## The control pipe
 
-`$XDG_RUNTIME_DIR/clamshell-control` (a FIFO, mode 0600; see `src/control.rs`) takes commands as the
+`$XDG_RUNTIME_DIR/clamshell-control` (a FIFO, mode 0600; see `clamshell/src/control/`) takes commands as the
 device's keys and the user's taps would make them: `clamshell ctl` and the tests use it. Any process of
 the user can write to it, and so can tap ClamShell's screens and type into the window in front through
 ClamShell's virtual keyboard (`type TEXT`). Android's apps run as other users inside Waydroid's

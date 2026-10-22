@@ -1,4 +1,4 @@
-# FNV-1a hashes of the snapshots' sizes and pixels (src/snapshot.rs). After a change meant to change
+# FNV-1a hashes of the snapshots' sizes and pixels (src/dev/snapshot.rs). After a change meant to change
 # what is drawn: CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots
 bar-window-below.png 7437abbdc302a1d7
 battery.png a8c24178fa75e160

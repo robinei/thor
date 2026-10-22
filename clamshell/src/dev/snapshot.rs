@@ -21,7 +21,7 @@ use clamshell_core::{
 use clamshell_ui::Screen;
 
 use crate::control::{self, ParseError};
-use crate::demo;
+use crate::dev::demo;
 
 /// The time snapshots are taken at, unless asked for the current one.
 pub const FIXED_NOW: u64 = 1_760_000_000;
@@ -574,7 +574,7 @@ mod tests {
 
     /// The reference hashes, one `name hash` line per file.
     const REFERENCE: &str = "tests/snapshots.txt";
-    const HEADER: &str = "# FNV-1a hashes of the snapshots' sizes and pixels (src/snapshot.rs). After a change meant to change\n\
+    const HEADER: &str = "# FNV-1a hashes of the snapshots' sizes and pixels (src/dev/snapshot.rs). After a change meant to change\n\
                           # what is drawn: CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots\n";
 
     /// A PNG's size and pixels hashed (not its bytes: they change with the encoder, the pixels don't).
