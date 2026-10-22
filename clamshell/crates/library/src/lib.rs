@@ -455,24 +455,45 @@ impl Library {
     /// the first if none was played; none when the last was watched to the end, or it holds no videos (a
     /// folder of games).
     pub fn to_continue(&self, group: usize) -> Option<usize> {
-        let mut leaves = Vec::new();
-        let mut stack: Vec<usize> = self.entries.get(group)?.items.iter().rev().copied().collect();
-        while let Some(i) = stack.pop() {
-            match self.entries.get(i) {
-                Some(g) if g.is_group() => stack.extend(g.items.iter().rev()),
-                Some(g) if g.mpv_file().is_some() => leaves.push(i),
-                Some(_) => {}
-                None => {}
-            }
+        // (Walked in order without allocating: shelf asks every frame, to label its Continue.)
+        let mut walk = ContinueWalk::default();
+        for &i in &self.entries.get(group)?.items {
+            self.walk_videos(i, &mut walk, 0);
         }
-        let played = |i: &usize| self.entries.get(*i).is_some_and(|g| g.plays.count > 0 || g.playback.position.is_some());
-        let Some(at) =
-            leaves.iter().enumerate().filter(|(_, i)| played(i)).max_by_key(|(_, i)| self.entries.get(**i).map_or(0, Entry::last_watched)).map(|(n, _)| n)
-        else {
-            return leaves.first().copied();
+        match walk.last {
+            None => walk.first,
+            Some((_, last)) if self.entries.get(last).is_some_and(Entry::watched) => walk.after_last,
+            Some((_, last)) => Some(last),
+        }
+    }
+
+    /// The videos under entry `i`, in order, through `walk` (groups `depth` deep; a few at most).
+    fn walk_videos(&self, i: usize, walk: &mut ContinueWalk, depth: u8) {
+        let Some(g) = self.entries.get(i) else {
+            return;
         };
-        let last = *leaves.get(at)?;
-        if self.entries.get(last).is_some_and(Entry::watched) { leaves.get(at + 1).copied() } else { Some(last) }
+        if g.is_group() {
+            if depth < MAX_DEPTH {
+                for &item in &g.items {
+                    self.walk_videos(item, walk, depth + 1);
+                }
+            }
+            return;
+        }
+        if g.mpv_file().is_none() {
+            return;
+        }
+        walk.first.get_or_insert(i);
+        if std::mem::take(&mut walk.after_pending) {
+            walk.after_last = Some(i);
+        }
+        // (Of those watched as late, the last in order.)
+        let played = g.plays.count > 0 || g.playback.position.is_some();
+        if played && walk.last.is_none_or(|(at, _)| g.last_watched() >= at) {
+            walk.last = Some((g.last_watched(), i));
+            walk.after_last = None;
+            walk.after_pending = true;
+        }
     }
 
     /// Folder `folder`'s listing (browsed: see [`Browsed`]): `entries`, in order, its entries. One there
@@ -580,6 +601,19 @@ impl Library {
         groups
     }
 }
+
+/// [`Library::to_continue`]'s walk: the first video, the one watched last (when, and which), and the one
+/// after that.
+#[derive(Default)]
+struct ContinueWalk {
+    first: Option<usize>,
+    last: Option<(u64, usize)>,
+    after_last: Option<usize>,
+    after_pending: bool,
+}
+
+/// How deep groups go at most (a series' seasons' episodes are two), so a walk ends.
+const MAX_DEPTH: u8 = 8;
 
 /// Entries in the Recent tab.
 const RECENT: usize = 20;
