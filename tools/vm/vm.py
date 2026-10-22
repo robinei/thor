@@ -250,8 +250,8 @@ def session_files():
         (f"/home/{USER}/.config/systemd/user/graphical-session.target.d/thor-vm.conf", SESSION_WANTS),
         (f"/home/{USER}/.config/uwsm/env", UWSM_ENV),
         # (Where mako looks, also when D-Bus starts it for a notification.)
-        (f"/home/{USER}/.config/mako/config", (REPO / "clamshell/mako/config").read_text()),
-        (f"/home/{USER}/.config/foot/foot.ini", (REPO / "clamshell/foot/foot.ini").read_text()),
+        (f"/home/{USER}/.config/mako/config", (REPO / "packages/thor-session/root/usr/share/thor/mako/config").read_text()),
+        (f"/home/{USER}/.config/foot/foot.ini", (REPO / "packages/thor-session/root/usr/share/thor/xdg/foot/foot.ini").read_text()),
     ]
 
 

@@ -17,7 +17,7 @@ links point at /usr/share/retroarch/assets either way.
 
 Run again after a RetroArch update brings new icons. Needs Pillow (python-pillow).
 
-    clamshell/retroarch/menu-theme.py [folder [system assets]]
+    menu-theme.py [folder [system assets]]
 """
 
 import os

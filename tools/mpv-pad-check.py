@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""clamshell/mpv's pad bindings, with a virtual Xbox 360 pad (as ClamShell's virtual pad): a test video
-(three chapters, two audio and two subtitle tracks, silent) in a headless sway, mpv muted with its own
-watch-later folder; each button pressed, mpv's state read over IPC before and after. Exit status: the
-number of failed checks. Needs python-evdev and write access to /dev/uinput.
+"""mpv's pad bindings (thor-session's input.conf), with a virtual Xbox 360 pad (as ClamShell's virtual
+pad): a test video (three chapters, two audio and two subtitle tracks, silent) in a headless sway, mpv
+muted with its own watch-later folder; each button pressed, mpv's state read over IPC before and after.
+Exit status: the number of failed checks. Needs python-evdev and write access to /dev/uinput.
 
     tools/mpv-pad-check.py
 """
@@ -10,7 +10,7 @@ import json, os, shutil, socket, subprocess, sys, tempfile, time
 from evdev import UInput, ecodes as e, AbsInfo
 
 D = tempfile.mkdtemp(prefix="mpv-pad-check.")
-CONFIG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "clamshell", "mpv")
+CONFIG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "packages", "thor-session", "root", "usr", "share", "thor", "home", ".config", "mpv")
 VIDEO = f"{D}/test.mkv"
 SOCK = f"{D}/mpv.sock"
 WL = f"{D}/watch_later"
