@@ -1,10 +1,11 @@
-//! Notifications through the session's notification daemon (mako, on the main screen).
+//! Notifications through the session's notification daemon, which is mako on the main screen.
 
 use crate::os::dbus;
 
-/// A notification through the session bus' notification daemon, replacing `replaces` (0: none); its id.
+/// Sends a notification through the session bus' notification daemon, replacing notification `replaces`
+/// unless it is 0. Returns its id.
 pub fn notify(replaces: u32, summary: &str, body: &str, urgent: bool) -> dbus::Result<u32> {
-    // Urgency: 1 normal, 2 critical (stays until dismissed). Timeout -1: the daemon's own.
+    // Urgency 1 is normal and 2 is critical, which stays until dismissed. Timeout -1 uses the daemon's own.
     let hints = dbus::PropMap::from([("urgency".to_owned(), dbus::value(if urgent { 2u8 } else { 1u8 }))]);
     let actions: Vec<&str> = Vec::new();
     let (id,): (u32,) = dbus::Bus::session()?.call(

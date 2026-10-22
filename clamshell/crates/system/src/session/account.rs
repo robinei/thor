@@ -1,8 +1,12 @@
-//! The account through the root helper `/usr/lib/thor/thor-account` (thor-system's), run with pkexec (polkit
-//! lets the active session's user run it without asking): `status` reads whether the session's user has
-//! a password and whether remote login (sshd) is on; `password` sets it (the current one first, when
-//! there is one: on its stdin, a line each); `ssh on` / `ssh off`. Off the device (no helper) the account
-//! reads as unavailable.
+//! The account, managed through thor-system's root helper `/usr/lib/thor/thor-account`. It is run with
+//! pkexec, and polkit lets the active session's user run it without asking.
+//!
+//! - `status` reads whether the session's user has a password and whether remote login (sshd) is on.
+//! - `password` sets the password. It reads the current password first, if there is one, then the new
+//!   one, each on a line of its stdin.
+//! - `ssh on` and `ssh off` turn remote login on and off.
+//!
+//! Off the device, where there is no helper, the account reads as unavailable.
 
 use std::path::Path;
 use std::time::Duration;
@@ -14,10 +18,10 @@ use crate::os::command;
 /// The helper.
 const HELPER: &str = "/usr/lib/thor/thor-account";
 
-/// How long the helper may take (setting a password hashes it; turning remote login on starts sshd).
+/// How long the helper may take. Setting a password hashes it, and turning remote login on starts sshd.
 const HELPER_LIMIT: Duration = Duration::from_secs(30);
 
-/// The account as the helper reads it; unavailable without it (or if it fails).
+/// The account as the helper reads it. It is unavailable if there is no helper or it fails.
 pub fn read() -> Account {
     if !Path::new(HELPER).exists() {
         return Account::default();
@@ -37,7 +41,8 @@ fn parse(out: &str) -> Account {
     Account { available: true, password: line("password set"), ssh: line("ssh on") }
 }
 
-/// A change asked of the helper: what it did, or why it didn't. ([`AccountCommand::Read`] is [`read`]'s.)
+/// Asks the helper for a change. Returns what it did, or why it didn't. [`AccountCommand::Read`] is
+/// handled by [`read`].
 pub fn change(command: &AccountCommand) -> Result<String, String> {
     if !Path::new(HELPER).exists() {
         return Err("Not on this system".to_owned());
@@ -60,8 +65,8 @@ pub fn change(command: &AccountCommand) -> Result<String, String> {
     }
 }
 
-/// Runs the helper through pkexec with `args`, `input` on its stdin: its output, or its message (its
-/// first line on stderr) when it fails.
+/// Runs the helper through pkexec with `args` and `input` on its stdin. Returns its output, or its
+/// message from stderr when it fails.
 fn run(args: &[&str], input: Option<&str>) -> Result<String, String> {
     let out = command::run("pkexec", &[&[HELPER], args].concat(), input.map(str::as_bytes), HELPER_LIMIT)?;
     if out.status.success() {
@@ -71,7 +76,7 @@ fn run(args: &[&str], input: Option<&str>) -> Result<String, String> {
     Err(capitalised(if said.is_empty() { "failed" } else { &said }))
 }
 
-/// "wrong password" as a notice says it: "Wrong password".
+/// A message capitalised for a notice: "wrong password" becomes "Wrong password".
 fn capitalised(text: &str) -> String {
     let mut chars = text.chars();
     chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default()

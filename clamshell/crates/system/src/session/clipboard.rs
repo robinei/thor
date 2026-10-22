@@ -1,23 +1,25 @@
-//! The clipboard, kept by ClamShell (the session's shell) through the compositor's data control
-//! (`ext_data_control_manager_v1`: given to a shell, not to apps; the clipboard read and set without a
-//! window). Text only; files copied in the Files tab are that tab's own.
+//! The clipboard, kept by ClamShell as the session's shell. It uses the compositor's data control
+//! protocol (`ext_data_control_manager_v1`), which is given to a shell and not to apps, and lets the
+//! clipboard be read and set without a window. Only text is handled; files copied in the Files tab are
+//! kept by that tab.
 //!
-//! - Kept: each text copied is read as it is copied; when the program it came from quits (the clipboard
-//!   emptied: on Wayland the data stays with the program that copied it), ClamShell offers it itself, so
-//!   it can still be pasted. Something else copied (an image) forgets it.
-//! - Copied to the primary selection too, so what a middle click pastes (Foot's right click: see its
-//!   config) is the last text copied or selected, wherever.
-//! - Written to the user's runtime directory too: a ClamShell started again (an update, a crash) offers
-//!   it, if the clipboard is empty then (a tmpfs only the user can read, gone at a reboot).
-//! - A password manager's copy (marked `x-kde-passwordManagerHint`) is as one that isn't text: not
-//!   kept, written or pasted into ClamShell's fields, and what was kept is forgotten. The manager
+//! - Each copied text is read as it is copied. On Wayland the data stays with the program that copied
+//!   it, so when that program quits the clipboard is emptied. ClamShell then offers the text itself, so
+//!   it can still be pasted. Copying something else, such as an image, forgets the text.
+//! - The text is also copied to the primary selection, so a middle click (a right click in Foot, see its
+//!   config) pastes the last text copied or selected anywhere.
+//! - The text is also written to the user's runtime directory, a tmpfs only the user can read that is
+//!   gone at a reboot. A ClamShell started again, after an update or a crash, offers it if the clipboard
+//!   is empty then.
+//! - A password manager's copy, marked `x-kde-passwordManagerHint`, is treated as if it weren't text. It
+//!   isn't kept, written, or pasted into ClamShell's fields, and what was kept is forgotten. The manager
 //!   clears it itself.
-//! - Sent to the state ([`Reading::Clipboard`]) for ClamShell's own fields' Ctrl+V.
-//! - `clamshell --clipboard get|set` ([`get`], [`set`]): the clipboard's text written out, or set from
-//!   what is read in (Waydroid's clipboard sharing, through a stand-in for its `pyclip`).
+//! - The text is sent to the state ([`Reading::Clipboard`]) for Ctrl+V in ClamShell's own fields.
+//! - `clamshell --clipboard get|set` ([`get`], [`set`]) writes out the clipboard's text, or sets it from
+//!   stdin. Waydroid's clipboard sharing uses it through a stand-in for its `pyclip`.
 //!
-//! A text is read on a thread of its own: the program offering it may be ClamShell itself (its own
-//! offer, after a quit), which answers on this one.
+//! A text is read on a thread of its own, because the program offering it may be ClamShell itself (its
+//! own offer, after the copying program quit), which answers on this thread.
 
 use std::fs::File;
 use std::io::{self, Read, Write};
@@ -40,21 +42,22 @@ use crate::os::worker;
 
 /// The text types offered, and taken in this order of preference.
 const TEXT: [&str; 5] = ["text/plain;charset=utf-8", "UTF8_STRING", "text/plain", "TEXT", "STRING"];
-/// The most text kept (bytes): more is left to the program that copied it.
+/// The most text kept, in bytes. Anything longer is left to the program that copied it.
 const MOST: usize = 1 << 20;
-/// The type a password manager's copy is marked with (as KDE's clipboard and others honour it).
+/// The type a password manager's copy is marked with, as honoured by KDE's clipboard and others.
 const SECRET: &str = "x-kde-passwordManagerHint";
-/// How long `--clipboard set` waits for its text to be taken (ClamShell keeps it then).
+/// How long `--clipboard set` waits for its text to be taken. Once ClamShell takes it, ClamShell keeps it.
 const SET_WAIT: Duration = Duration::from_secs(5);
 
-/// Where the text kept is written too, so that a ClamShell started again (an update, a crash) offers
-/// it: the user's runtime directory, theirs alone and gone at a reboot.
+/// Where the kept text is also written, so that a ClamShell started again after an update or a crash
+/// offers it. It is in the user's runtime directory, which only they can read and which is gone at a
+/// reboot.
 fn saved() -> Option<std::path::PathBuf> {
     std::env::var_os("XDG_RUNTIME_DIR").map(|d| std::path::PathBuf::from(d).join("clamshell/clipboard"))
 }
 
-/// Keeps the clipboard (see the module's doc), on a thread of its own, as long as the compositor is there.
-/// It starts from the text a ClamShell before kept, offered if the clipboard is empty.
+/// Keeps the clipboard (see the module's doc) on a thread of its own, as long as the compositor is
+/// there. It starts with the text an earlier ClamShell kept, offered if the clipboard is empty.
 pub fn spawn(sink: impl Sink + Clone + 'static) -> io::Result<()> {
     worker::detached("clipboard", move || {
         let before = saved()
@@ -73,7 +76,7 @@ pub fn spawn(sink: impl Sink + Clone + 'static) -> io::Result<()> {
         if before.is_some() {
             let _ = sink.send(Event::Reading(Reading::Clipboard(before.as_deref().map(Arc::from))));
         }
-        // (Told from the reading threads.)
+        // The reading threads send through this.
         let sink = Mutex::new(sink);
         let on_read = move |text: Option<String>| {
             if let Some(path) = saved() {
@@ -111,7 +114,7 @@ pub fn spawn(sink: impl Sink + Clone + 'static) -> io::Result<()> {
 /// The clipboard's text, if it has one (`--clipboard get`).
 pub fn get() -> Result<Option<String>, String> {
     let (mut keeper, mut queue) = Keeper::connect(Mode::Get { found: None })?;
-    // (The compositor tells the clipboard's offer as the device is made.)
+    // The compositor sends the clipboard's offer when the device is made.
     for _ in 0..2 {
         queue.roundtrip(&mut keeper).map_err(|e| e.to_string())?;
     }
@@ -122,8 +125,8 @@ pub fn get() -> Result<Option<String>, String> {
     Ok(read_text(read))
 }
 
-/// Sets the clipboard to `text` (`--clipboard set`), until it is taken (by ClamShell, which keeps it), or
-/// for [`SET_WAIT`].
+/// Sets the clipboard to `text` (`--clipboard set`) until it is taken, normally by ClamShell, which then
+/// keeps it, or for at most [`SET_WAIT`].
 pub fn set(text: String) -> Result<(), String> {
     let (mut keeper, mut queue) = Keeper::connect(Mode::Set { text, done: false })?;
     let qh = queue.handle();
@@ -136,12 +139,12 @@ pub fn set(text: String) -> Result<(), String> {
     while !matches!(keeper.mode, Mode::Set { done: true, .. }) && start.elapsed() < SET_WAIT {
         dispatch_for(&mut queue, &mut keeper, Duration::from_millis(200))?;
     }
-    // (A moment for the text written to be read.)
+    // Give the reader a moment to read the written text.
     thread::sleep(Duration::from_millis(100));
     Ok(())
 }
 
-/// What is kept, and who is told.
+/// The kept text, and who is told when it changes.
 struct KeptText {
     text: Mutex<Option<String>>,
     on_read: Box<dyn Fn(Option<String>) + Send + Sync>,
@@ -154,11 +157,11 @@ impl KeptText {
 }
 
 enum Mode {
-    /// ClamShell keeping the clipboard; its own offer, while the clipboard is it.
+    /// ClamShell keeping the clipboard. `own` is its own offer while that is the clipboard.
     Keep { kept: Arc<KeptText>, own: Option<ExtDataControlSourceV1> },
-    /// `--clipboard get`: the clipboard's offer of text, once the compositor has said.
+    /// `--clipboard get`: the clipboard's text offer, once the compositor has sent it.
     Get { found: Option<(ExtDataControlOfferV1, &'static str)> },
-    /// `--clipboard set`: the text offered, and whether it has been taken (or replaced).
+    /// `--clipboard set`: the text offered, and whether it has been taken or replaced.
     Set { text: String, done: bool },
 }
 
@@ -166,7 +169,7 @@ struct Keeper {
     conn: Connection,
     manager: ExtDataControlManagerV1,
     device: ExtDataControlDeviceV1,
-    /// Offers announced, with their types (until the selection says which is current).
+    /// Offers announced with their types, kept until the selection says which is current.
     offers: Vec<(ExtDataControlOfferV1, Vec<String>)>,
     mode: Mode,
 }
@@ -182,9 +185,9 @@ impl Keeper {
         Ok((Keeper { conn, manager, device, offers: Vec::new(), mode }, queue))
     }
 
-    /// The best text type `offer` has, if any; none for a secret (a password manager's copy, marked
-    /// `x-kde-passwordManagerHint`: it clears the clipboard itself after a while, which keeping it would
-    /// undo, and it is never to be written down).
+    /// The best text type `offer` has, if any. None for a secret: a password manager's copy, marked
+    /// `x-kde-passwordManagerHint`. The manager clears the clipboard itself after a while, which keeping
+    /// the text would undo, and the text must never be written down.
     fn text_type(&self, offer: &ExtDataControlOfferV1) -> Option<&'static str> {
         let types = &self.offers.iter().find(|(o, _)| o == offer)?.1;
         if types.iter().any(|t| t == SECRET) {
@@ -193,7 +196,7 @@ impl Keeper {
         TEXT.into_iter().find(|t| types.iter().any(|x| x == t))
     }
 
-    /// The clipboard changed to `offer` (none: emptied).
+    /// The clipboard changed to `offer`, or was emptied if it is none.
     fn selection(&mut self, offer: Option<ExtDataControlOfferV1>, qh: &QueueHandle<Keeper>) {
         let mime = offer.as_ref().and_then(|o| self.text_type(o));
         for (o, _) in std::mem::take(&mut self.offers) {
@@ -205,7 +208,7 @@ impl Keeper {
             Mode::Get { found } => *found = offer.zip(mime),
             Mode::Set { .. } => {}
             Mode::Keep { kept, own } => match (offer, mime) {
-                // Emptied (the program that copied quit): offered by ClamShell, if it has a text.
+                // Emptied because the program that copied quit: ClamShell offers its text, if it has one.
                 (None, _) => {
                     if kept.text().is_some() {
                         let source = self.manager.create_data_source(qh, ());
@@ -236,8 +239,8 @@ impl Keeper {
                         if changed {
                             *kept.text() = Some(text.clone());
                             (kept.on_read)(Some(text));
-                            // The primary selection too: what a middle click (Foot: a right click)
-                            // pastes is then the last text copied or selected.
+                            // Set the primary selection too, so a middle click (a right click in Foot)
+                            // pastes the last text copied or selected.
                             let source = manager.create_data_source(&qh, ());
                             for t in TEXT {
                                 source.offer(t.to_owned());
@@ -256,8 +259,8 @@ impl Keeper {
         }
     }
 
-    /// The clipboard's text asked of an offer of ours: written on a thread of its own (the one asking may
-    /// be this program).
+    /// Sends the clipboard's text when one of our offers is asked for it. It is written on a thread of its
+    /// own, since the program asking may be this one.
     fn send(&mut self, fd: OwnedFd) {
         let text = match &mut self.mode {
             Mode::Keep { kept, .. } => kept.text().clone(),
@@ -281,7 +284,7 @@ impl Keeper {
     }
 }
 
-/// Asks `offer` for its text as `mime`: the pipe's end to read it from.
+/// Asks `offer` for its text as `mime`. Returns the end of the pipe to read it from.
 fn receive(conn: &Connection, offer: &ExtDataControlOfferV1, mime: &str) -> Result<OwnedFd, String> {
     let (read, write) = rustix::pipe::pipe_with(rustix::pipe::PipeFlags::CLOEXEC).map_err(|e| e.to_string())?;
     offer.receive(mime.to_owned(), write.as_fd());
@@ -290,7 +293,7 @@ fn receive(conn: &Connection, offer: &ExtDataControlOfferV1, mime: &str) -> Resu
     Ok(read)
 }
 
-/// A pipe's text, to its end (none: too long, or not text).
+/// Reads a pipe's text to the end. None if it is too long or not text.
 fn read_text(read: OwnedFd) -> Option<String> {
     let mut bytes = Vec::new();
     File::from(read).take(MOST as u64 + 1).read_to_end(&mut bytes).inspect_err(|e| log::warn!("clipboard: reading the copied text: {e}")).ok()?;
@@ -300,7 +303,7 @@ fn read_text(read: OwnedFd) -> Option<String> {
     String::from_utf8(bytes).ok()
 }
 
-/// Dispatches what comes within `wait`.
+/// Dispatches the events that arrive within `wait`.
 fn dispatch_for(queue: &mut EventQueue<Keeper>, keeper: &mut Keeper, wait: Duration) -> Result<(), String> {
     queue.flush().map_err(|e| e.to_string())?;
     if let Some(guard) = queue.prepare_read() {

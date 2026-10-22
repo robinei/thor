@@ -1,11 +1,14 @@
-//! Programs' tray icons: freedesktop's StatusNotifierItem (KDE's names) on the session bus, with their
-//! menus (com.canonical.dbusmenu). Programs register their icons with the watcher
-//! (`org.kde.StatusNotifierWatcher`): ClamShell is it where no one else is (the device's session: no
-//! panel), else (a desktop's session, around a nested ClamShell) reads the one there. The icons are read
-//! again after any signal of the watcher, an icon, a menu or the bus (a program gone): each one's title,
-//! process (and its systemd unit: whose it is), icon file and menu, sent as [`Event::Tray`].
+//! Programs' tray icons: freedesktop's StatusNotifierItem, under KDE's names, on the session bus, with
+//! their menus (com.canonical.dbusmenu).
 //!
-//! Commands: an icon activated (the program shows itself), a menu entry clicked.
+//! Programs register their icons with the watcher (`org.kde.StatusNotifierWatcher`). ClamShell serves
+//! the watcher where no one else does, as in the device's session, which has no panel. Otherwise, as in
+//! a desktop session around a nested ClamShell, it reads the watcher there. The icons are read again
+//! after any signal from the watcher, an icon, a menu, or the bus when a program is gone. Each icon's
+//! title, process, systemd unit (which tells whose it is), icon file and menu are sent as
+//! [`Event::Tray`].
+//!
+//! The commands activate an icon, which makes the program show itself, and click a menu entry.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -33,9 +36,10 @@ const BUS_PATH: &str = "/org/freedesktop/DBus";
 
 /// How long to wait before trying the bus again.
 const RETRY: Duration = Duration::from_secs(5);
-/// How long after a signal the icons are read: a burst of them (a menu rebuilt) is one read.
+/// How long after a signal the icons are read, so that a burst of signals, such as from a menu being
+/// rebuilt, causes one read.
 const SETTLE: Duration = Duration::from_millis(100);
-/// How long a program may take to answer: one that doesn't keeps the others waiting.
+/// How long a program may take to answer. One that doesn't answer keeps the others waiting.
 const CALL_LIMIT: Duration = Duration::from_secs(5);
 
 #[derive(Debug)]
@@ -69,20 +73,21 @@ struct Tray<S> {
     bell: Bell,
 }
 
-/// The watcher's state, where we serve it: the icons registered, and what came since the thread looked.
+/// The watcher's state when we serve it: the registered icons, and those registered since the thread
+/// last looked.
 #[derive(Default)]
 struct Watched {
     items: Vec<String>,
-    /// Registered since: their keys, to be signalled.
+    /// The keys of icons registered since then, to be signalled.
     registered: Vec<String>,
 }
 
-/// A connection to the session bus: the icons registered (ours, if we are the watcher; else read from
-/// the watcher there).
+/// A connection to the session bus. `ours` holds the registered icons if we are the watcher; otherwise
+/// they are read from the watcher there.
 struct Session {
     bus: Bus,
     ours: Option<Arc<Mutex<Watched>>>,
-    /// Each icon's menu's object path, by the icon's key (for clicks).
+    /// The object path of each icon's menu, by the icon's key, for clicks.
     menus: HashMap<String, String>,
 }
 
@@ -95,8 +100,8 @@ impl<S: Sink> Service for Tray<S> {
     fn connect(&mut self) -> Result<Session, Error> {
         let mut bus = Bus::session()?.with_timeout(CALL_LIMIT);
         let ours = serve_watcher(&mut bus)?;
-        // The icons are read again at any signal of the watcher, an icon, a menu, or a name's owner
-        // changing (a program gone).
+        // The icons are read again at any signal from the watcher, an icon or a menu, or when a name's
+        // owner changes because a program is gone.
         for interface in [WATCHER, ITEM, MENU] {
             bus.add_match(&format!("type='signal',interface='{interface}'"))?;
         }
@@ -121,7 +126,7 @@ impl<S: Sink> Service for Tray<S> {
                     log::info!("tray: {}", if names.is_empty() { "no icons".to_owned() } else { names.join(", ") });
                     self.sink.send(Event::Tray(items))?;
                 }
-                // (What came while reading: read again.)
+                // Read again in case something came while reading.
                 continue;
             }
             loop {
@@ -139,7 +144,7 @@ impl<S: Sink> Service for Tray<S> {
                 dirty = true;
                 continue;
             }
-            // Asleep until a command, a signal or a call.
+            // Sleep until a command, a signal or a call comes.
             let mut fds = [
                 rustix::event::PollFd::from_borrowed_fd(self.bell.fd(), rustix::event::PollFlags::IN),
                 rustix::event::PollFd::from_borrowed_fd(s.bus.fd(), rustix::event::PollFlags::IN),
@@ -157,8 +162,8 @@ impl<S: Sink> Service for Tray<S> {
 }
 
 impl Session {
-    /// Whether anything came that changes the icons: a signal, or an icon registered with us (which is
-    /// signalled in turn).
+    /// Whether anything came that changes the icons: a signal, or an icon registered with us, which is
+    /// then signalled.
     fn came(&mut self) -> dbus::Result<bool> {
         let signals = self.bus.signals()?;
         let registered = self.ours.as_ref().map(|w| std::mem::take(&mut crate::os::lock(w).registered)).unwrap_or_default();
@@ -185,9 +190,10 @@ const WATCHER_XML: &str = r#"<node><interface name="org.kde.StatusNotifierWatche
 <signal name="StatusNotifierHostRegistered"/>
 </interface></node>"#;
 
-/// Serves the watcher, if no one else does: the icons registered with it; none if another has the name.
+/// Serves the watcher if no one else does, returning the icons registered with it. None if another
+/// program has the name.
 fn serve_watcher(bus: &mut Bus) -> Result<Option<Arc<Mutex<Watched>>>, Error> {
-    // DBUS_NAME_FLAG_DO_NOT_QUEUE; replies: 1 the primary owner, 4 already the owner.
+    // Flag 4 is DBUS_NAME_FLAG_DO_NOT_QUEUE. Reply 1 means we are the primary owner, 4 that we already were.
     let (reply,): (u32,) = bus.call(BUS_NAME, BUS_PATH, BUS_NAME, "RequestName", (WATCHER, 4u32))?;
     if !matches!(reply, 1 | 4) {
         log::info!("tray: reading the watcher there");
@@ -197,7 +203,7 @@ fn serve_watcher(bus: &mut Bus) -> Result<Option<Arc<Mutex<Watched>>>, Error> {
     let watched = Arc::new(Mutex::new(Watched::default()));
     let state = watched.clone();
     bus.serve(Box::new(move |call| answer_watcher(&state, call)));
-    // (Programs that started before us wait for a host to show their icons.)
+    // Programs that started before us wait for a host before showing their icons.
     if let Ok(signal) = Message::new_signal(WATCHER_PATH, WATCHER, "StatusNotifierHostRegistered") {
         bus.send(signal)?;
     }
@@ -219,8 +225,8 @@ fn answer_watcher(watched: &Mutex<Watched>, call: &Message) -> Option<Message> {
         }
     };
     match (call.interface().as_deref().unwrap_or(WATCHER), &*call.member()?) {
-        // An icon registered: by its D-Bus name (its object at the usual path), or by its object path
-        // (the sender's). Kept as KDE's watcher has it: the name, then the path.
+        // An icon is registered by its D-Bus name, with its object at the usual path, or by an object
+        // path on the sender. It is kept the way KDE's watcher keeps it: the name, then the path.
         (WATCHER, "RegisterStatusNotifierItem") => {
             let service: String = call.read1().inspect_err(|e| log::debug!("tray: RegisterStatusNotifierItem: {e}")).ok()?;
             let sender = call.sender().map(|s| s.to_string()).unwrap_or_default();
@@ -231,7 +237,7 @@ fn answer_watcher(watched: &Mutex<Watched>, call: &Message) -> Option<Message> {
             w.registered.push(key);
             Some(call.method_return())
         }
-        // A host (a panel) registered: we are the only one shown.
+        // A host, such as a panel, registered. We are the only host that is shown.
         (WATCHER, "RegisterStatusNotifierHost") => Some(call.method_return()),
         ("org.freedesktop.DBus.Properties", "Get") => {
             let (_, name): (String, String) = call.read2().inspect_err(|e| log::debug!("tray: Properties.Get: {e}")).ok()?;
@@ -248,7 +254,7 @@ fn answer_watcher(watched: &Mutex<Watched>, call: &Message) -> Option<Message> {
     }
 }
 
-/// The icons registered: ours (those whose program is gone dropped), or the watcher's there.
+/// The registered icons: ours, dropping those whose program is gone, or else the watcher's there.
 fn registered(s: &mut Session) -> dbus::Result<Vec<String>> {
     let Some(ours) = &s.ours else {
         return Ok(s
@@ -269,7 +275,7 @@ fn registered(s: &mut Session) -> dbus::Result<Vec<String>> {
     Ok(kept)
 }
 
-/// An icon's key as the name and the object path.
+/// An icon's key split into the bus name and the object path.
 fn split(key: &str) -> (&str, &str) {
     match key.find('/') {
         Some(i) => key.split_at(i),
@@ -277,7 +283,7 @@ fn split(key: &str) -> (&str, &str) {
     }
 }
 
-/// Every icon (those that can't be read left out), and their menus' paths.
+/// Every icon that can be read, and the paths of their menus.
 fn read(bus: &mut Bus, keys: &[String]) -> (Vec<TrayItem>, HashMap<String, String>) {
     let dirs = crate::os::xdg::data_dirs();
     let mut menus = HashMap::new();
@@ -309,7 +315,8 @@ fn read_item(bus: &mut Bus, key: &str, dirs: &[PathBuf]) -> Result<(TrayItem, Op
         .inspect_err(|e| log::debug!("tray: {key}: its process: {e}"))
         .ok()
         .map(|(pid,)| pid);
-    // (Remembered as it is now: what is done to it later by its id is checked to be it still.)
+    // Remember the process as it is now, so that anything done to it later by its id can check it is
+    // still the same process.
     if let Some(pid) = pid {
         crate::os::sys::saw(pid);
     }
@@ -321,7 +328,8 @@ fn read_item(bus: &mut Bus, key: &str, dirs: &[PathBuf]) -> Result<(TrayItem, Op
     Ok((item, menu))
 }
 
-/// An icon's image file: in the program's own theme dir (as named, or under hicolor), else the themes'.
+/// An icon's image file. It is looked for in the program's own theme dir, directly or as a theme, and
+/// then in the icon themes.
 fn find_icon(name: &str, theme_path: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
     if !theme_path.is_empty() {
         let base = Path::new(theme_path);
@@ -339,7 +347,7 @@ fn find_icon(name: &str, theme_path: &str, dirs: &[PathBuf]) -> Option<PathBuf> 
     crate::os::xdg::find_icon(name, dirs)
 }
 
-/// A menu's entries, as its program has them now (asked to bring the menu up to date first).
+/// A menu's current entries. The program is asked to bring the menu up to date first.
 fn read_menu(bus: &mut Bus, name: &str, path: &str) -> Vec<TrayEntry> {
     if let Err(e) = bus.call::<(bool,)>(name, path, MENU, "AboutToShow", (0i32,)) {
         log::debug!("tray: {name}{path}: AboutToShow: {e}");
@@ -354,16 +362,16 @@ fn read_menu(bus: &mut Bus, name: &str, path: &str) -> Vec<TrayEntry> {
     }
 }
 
-/// A menu's layout node: an entry's id, its properties, its children (nodes, in variants).
+/// A menu's layout node: an entry's id, its properties and its children, which are nodes in variants.
 type Node = (i32, PropMap, Vec<Value>);
 
-/// A menu entry from its layout node (`(id, properties, children)`, in a variant); none for a separator
-/// or a hidden one.
+/// A menu entry from its layout node, `(id, properties, children)` in a variant. None for a separator or
+/// a hidden entry.
 fn entry(node: &dyn RefArg) -> Option<TrayEntry> {
     let mut fields = unwrap(node)?.as_iter()?;
     let (id, props, children) = (fields.next()?, fields.next()?, fields.next()?);
     let id = i32::try_from(unwrap(id)?.as_i64()?).ok()?;
-    // (A dictionary iterates as its keys and values in turn.)
+    // A dictionary iterates as its keys and values in turn.
     let mut props_iter = unwrap(props)?.as_iter()?;
     let mut map: HashMap<&str, &dyn RefArg> = HashMap::new();
     while let (Some(k), Some(v)) = (props_iter.next(), props_iter.next()) {
@@ -382,7 +390,7 @@ fn entry(node: &dyn RefArg) -> Option<TrayEntry> {
     Some(TrayEntry { id, label: mnemonic_free(&text("label").unwrap_or_default()), enabled: flag("enabled") != Some(false), checked, children })
 }
 
-/// A value out of the variants it is wrapped in.
+/// A value unwrapped from the variants around it.
 fn unwrap(mut v: &dyn RefArg) -> Option<&dyn RefArg> {
     while v.arg_type() == ::dbus::arg::ArgType::Variant {
         v = v.as_iter()?.next()?;
@@ -390,7 +398,7 @@ fn unwrap(mut v: &dyn RefArg) -> Option<&dyn RefArg> {
     Some(v)
 }
 
-/// A menu label without its access key marks: `_File` is `File`, `__` an underscore.
+/// A menu label without its access key marks: `_File` becomes `File`, and `__` an underscore.
 fn mnemonic_free(label: &str) -> String {
     let mut out = String::with_capacity(label.len());
     let mut chars = label.chars().peekable();
@@ -424,7 +432,7 @@ fn carry_out(s: &mut Session, command: &TrayCommand) -> Result<(), Error> {
     Ok(())
 }
 
-/// The tray icons there are now, read once (`clamshell --tray`): as the watcher there has them.
+/// The current tray icons, read once from the watcher (`clamshell --tray`).
 pub fn read_now() -> Result<Vec<TrayItem>, Error> {
     let mut bus = Bus::session()?.with_timeout(CALL_LIMIT);
     let keys = bus.get::<Vec<String>>(WATCHER, WATCHER_PATH, WATCHER, "RegisteredStatusNotifierItems")?;
@@ -456,7 +464,7 @@ mod tests {
         let tick = node(3, "_Big Picture", vec![("toggle-type", value("checkmark".to_owned())), ("toggle-state", value(1i32))], vec![]);
         let off = node(4, "Hidden", vec![("visible", value(false))], vec![]);
         let sub = node(1, "Games", vec![("children-display", value("submenu".to_owned()))], vec![node(5, "Zelda", vec![], vec![])]);
-        // (Through a message, as a program's layout comes.)
+        // Pass it through a message, as a program's layout arrives.
         let message = Message::new_signal("/", "test.Menu", "Layout").unwrap().append1(vec![sub, sep, tick, off]);
         let nodes: Vec<Value> = message.read1().unwrap();
         let entries: Vec<TrayEntry> = nodes.iter().filter_map(|n| entry(n)).collect();

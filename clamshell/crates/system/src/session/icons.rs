@@ -1,6 +1,7 @@
-//! Pictures for entries found by their window that have no desktop file: the window's app id looked up in
-//! the icon themes as a desktop file's icon is (as it is, lowercase, and its last part lowercase:
-//! `org.gnome.Calculator`, `calculator`), on a thread of its own. None found: the UI's app glyph stays.
+//! Pictures for entries that were found by their window and have no desktop file. On a thread of its
+//! own, the window's app id is looked up in the icon themes the way a desktop file's icon is: as it is,
+//! in lowercase, and its last part in lowercase (`org.gnome.Calculator`, `calculator`). If none is found,
+//! the UI's app glyph stays.
 
 use std::io;
 use std::sync::Arc;
@@ -11,7 +12,7 @@ use crate::Sink;
 use crate::os::worker::Worker;
 use crate::os::xdg;
 
-/// The icons thread; its requests: an entry and the app id to look up.
+/// Starts the icons thread. Each request is an entry and the app id to look up.
 pub fn spawn(sink: impl Sink) -> io::Result<Worker<(Arc<str>, String)>> {
     Worker::spawn("icons", move |requests: std::sync::mpsc::Receiver<(Arc<str>, String)>| {
         let dirs = xdg::data_dirs();
