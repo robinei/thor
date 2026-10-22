@@ -1,10 +1,15 @@
-//! The time tab (the clock in the bar opens it). Its main page: the clock large, the date under it; then
-//! the time zone (tapped: the regions and UTC, then a region's zones, the one in force marked by a dot as
-//! is the region it is in; a zone tapped is set, and the main page is back), whether the network sets the
-//! clock, and 24 hours or 12. While the clock is set by hand, its place shows the date and time a field
-//! each (day, month, year; hour, minute), an arrow above and below each to step it, set at once. Zones'
-//! names as tzdata has them, made readable: the region left out, underscores as spaces ("Argentina /
-//! Buenos Aires").
+//! The time tab, opened by the clock in the bar.
+//!
+//! The main page shows the clock large with the date under it, then rows for the time zone, whether the
+//! network sets the clock, and 24 or 12 hours. Tapping the time zone lists the regions and UTC, then a
+//! region's zones. A dot marks the zone in force and the region it is in. Tapping a zone sets it and
+//! returns to the main page.
+//!
+//! While the clock is set by hand, the clock's place shows a field each for day, month, year, hour and
+//! minute, with an arrow above and below to step it. Each step is set at once.
+//!
+//! Zone names are tzdata's, made readable: the region left out and underscores shown as spaces
+//! ("Argentina / Buenos Aires").
 
 use std::fmt::{self, Display, Formatter, Write};
 
@@ -17,14 +22,15 @@ use crate::toolkit::style::{self, Look, Text, Tone};
 use crate::toolkit::widgets::{self, EditCell, HeaderRight, ListArea, ListRow};
 use crate::toolkit::{Frame, LocalTime};
 
-/// A row's height, of the area's height.
+/// A row's height, as a fraction of the area's height.
 const ROW_H: f32 = 0.105;
-/// The large clock's text size, of its area's height.
+/// The large clock's text size, as a fraction of its area's height.
 const CLOCK: f32 = 0.4;
-/// The steppers' values' size, of their area's height; their arrows', of a column's height.
+/// The size of the steppers' values as a fraction of their area's height, and of their arrows as a
+/// fraction of a column's height.
 const STEP_VALUE: f32 = 0.2;
 const STEP_ARROW: f32 = 0.28;
-/// Room between the date's three columns and the time's two, of a column's width.
+/// The gap between the date's three columns and the time's two, as a fraction of a column's width.
 const STEP_GAP: f32 = 0.5;
 
 pub(super) fn draw(f: &mut Frame) {
@@ -34,7 +40,7 @@ pub(super) fn draw(f: &mut Frame) {
     }
 }
 
-/// The main page: the clock (or its fields to set), then the rows.
+/// The main page: the clock, or its fields while it is set by hand, then the rows.
 fn main(f: &mut Frame) {
     let s = f.s;
     let body = f.body();
@@ -81,7 +87,8 @@ fn date(local: LocalTime) -> Fmt<48> {
     Fmt::of(format_args!("{} {} {} {}", local.weekday_name(), local.day, local.month_name(), local.year))
 }
 
-/// The time large, centred in `r`, the date under it (on a 12-hour dial, AM or PM smaller after it).
+/// The time in large text, centred in `r`, with the date under it. On a 12-hour clock, AM or PM follows
+/// in smaller text.
 fn large_clock(f: &mut Frame, r: Rect, local: LocalTime) {
     let s = f.s;
     let big = r.h * CLOCK;
@@ -100,15 +107,15 @@ fn large_clock(f: &mut Frame, r: Rect, local: LocalTime) {
     let x = r.x + (r.w - time_w - half_w) / 2.0;
     f.c.text(x, top, big, Tone::High, &time);
     if let Some(h) = half {
-        // (On the time's baseline, near enough: its top a little below the digits'.)
+        // Roughly on the time's baseline, with its top a little below the digits' top.
         f.c.text(x + time_w + half_size * 0.4, top + big * 0.55, half_size, Tone::Dim, h);
     }
     let line = Rect::new(r.x, top + big * 1.25, r.w, small * 1.6);
     widgets::centred_text(f, line, small, Tone::Dim, &date(local));
 }
 
-/// The date and time to set by hand, a column each: an arrow up, the value, an arrow down; the date
-/// under them.
+/// The date and time fields to set by hand, a column each with an up arrow, the value and a down arrow.
+/// The date goes under them.
 fn steppers(f: &mut Frame, r: Rect, local: LocalTime) {
     let s = f.s;
     let small = f.text(Text::Body);
@@ -153,7 +160,7 @@ fn steppers(f: &mut Frame, r: Rect, local: LocalTime) {
     widgets::centred_text(f, line, small, Tone::Dim, &date(local));
 }
 
-/// The zones' pages: the regions and UTC, or a region's zones; the header's arrow goes back a page.
+/// The zone pages: the regions and UTC, or a region's zones. The header's arrow goes back a page.
 fn zones(f: &mut Frame) {
     let s = f.s;
     let zones = s.time_zones();
@@ -184,7 +191,8 @@ fn zones(f: &mut Frame) {
     list.end(f, rows);
 }
 
-/// A zone's name, readable: "America/Argentina/Buenos_Aires" as "America / Argentina / Buenos Aires".
+/// A zone's name made readable: "America/Argentina/Buenos_Aires" becomes "America / Argentina / Buenos
+/// Aires".
 pub(super) struct Name<'a>(pub(super) &'a str);
 
 impl Display for Name<'_> {

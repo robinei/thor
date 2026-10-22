@@ -1,5 +1,5 @@
-//! The dark second screen, while a game runs that wants it so: nothing drawn, and a tap anywhere lights
-//! it again.
+//! The second screen when it is dark, while a game that asks for this is running. Nothing is drawn, and
+//! a tap anywhere lights it again.
 
 use clamshell_core::Id;
 

@@ -1,5 +1,5 @@
-//! What the Wi-Fi and Bluetooth tabs share: a header with what the radio is doing on the left and its
-//! switch on the right, then a scrolled list of rows (networks, devices) above a hint line.
+//! The layout the Wi-Fi and Bluetooth tabs share. A header shows what the radio is doing on the left and
+//! its switch on the right. Below it is a scrolled list of rows (networks or devices) above a hint line.
 
 use clamshell_core::Id;
 
@@ -8,14 +8,14 @@ use crate::toolkit::style::{self, Text, Tone};
 use crate::toolkit::widgets::ListArea;
 use crate::toolkit::{Frame, widgets};
 
-/// The header's height and a row's height, of the area's height.
+/// The height of the header and of a row, as a fraction of the area's height.
 const HEADER_H: f32 = 0.1;
 const ROW_H: f32 = 0.105;
-/// The switch's button, of the header's height.
+/// The size of the switch's button, as a fraction of the header's height.
 const SWITCH_W: f32 = 1.6;
 
-/// The header: the radio's `switch` (on or off) and what it is doing (`status`, in its
-/// tone); returns where the rows go.
+/// Draws the header with the radio's `switch` (on or off) and what it is doing (`status`, in its tone).
+/// Returns the area for the rows.
 pub(super) fn header(f: &mut Frame, switch: Id, on: bool, (tone, status): (Tone, &str)) -> ListArea {
     let body = f.body();
     let pad = f.pad();

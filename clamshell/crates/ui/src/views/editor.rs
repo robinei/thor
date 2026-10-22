@@ -1,7 +1,8 @@
-//! The editor's screen, shared by the environment, Wi-Fi passwords, the account's password (as dots) and
-//! keymaps' names: a line saying what is edited, the field with the text so far (its end, if long), Cancel
-//! and the save button, and the keyboard below (its keys type here, Enter saves, Esc cancels, Ctrl+V pastes
-//! the clipboard's text). A key chord being typed for a keymap looks the same ([`field`]).
+//! The editor screen, used for the environment, Wi-Fi passwords, the account password (shown as dots)
+//! and keymap names. It has a line saying what is being edited, the field with the text so far (only its
+//! end if it is long), Cancel and the save button, and the keyboard below. The keyboard's keys type into
+//! the field; Enter saves, Esc cancels and Ctrl+V pastes the clipboard's text. Typing a key chord for a
+//! keymap uses the same layout ([`field`]).
 
 use clamshell_core::{EditorId, Id};
 
@@ -10,8 +11,8 @@ use crate::gfx::{Align, Keep, LINE, Rect};
 use crate::toolkit::Frame;
 use crate::toolkit::style::{self, RADIUS, SURFACE_HI, Text, Tone};
 
-/// The field's row, of the area's height; the field's share of the row's width; the field's and the
-/// buttons' text, of the row's height.
+/// The field's row height as a fraction of the area's height, the field's share of the row's width, and
+/// the text sizes of the field and buttons as fractions of the row's height.
 const ROW_H: f32 = 0.1;
 const FIELD_W: f32 = 0.7;
 const FIELD_TEXT: f32 = 0.42;
@@ -24,8 +25,8 @@ pub(super) fn draw(f: &mut Frame, title: &str, save: &str) {
     field(f, title, &editor.text, (Id::Editor(EditorId::Cancel), "Cancel"), (Id::Editor(EditorId::Save), save));
 }
 
-/// The editor's layout: `title`, a field with `text` and a caret, the two buttons (`cancel`, `save`:
-/// their targets and labels), the keyboard below.
+/// Draws the editor's layout: `title`, a field with `text` and a caret, and the two buttons. `cancel` and
+/// `save` give each button's target and label. The keyboard goes below.
 pub(super) fn field(f: &mut Frame, title: &str, text: &str, cancel: (Id, &str), save: (Id, &str)) {
     let body = f.body();
     let pad = f.pad();
@@ -33,7 +34,8 @@ pub(super) fn field(f: &mut Frame, title: &str, text: &str, cancel: (Id, &str), 
     let size = f.text(Text::Small);
     f.c.text_fit(area.top_line(size), size, Tone::Dim, title, Keep::Start);
 
-    // The field, with a caret after the text (its end, when it is too long); Cancel and save beside it.
+    // The field, with a caret after the text, showing only the end when the text is too long. Cancel and
+    // save go beside it.
     let mut row = Rect::new(area.x, area.y + size * 1.6, area.w, f.body().h * ROW_H);
     let field = row.take_left(row.w * FIELD_W);
     f.c.rounded(field, RADIUS, SURFACE_HI);

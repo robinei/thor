@@ -1,9 +1,12 @@
-//! The Device view, on the main screen in shelf's place (see `clamshell_core::device`): a row each, as the
-//! time tab's: Wi-Fi (its tab), the time zone (the time tab), the password (typed in the second screen's
-//! editor, shown as dots there), remote login; the sticks and the gyro calibrated; the top screen's
-//! refresh rate calibrated; Done at the first start, else Close. A sticks' calibration shows on the
-//! right: what to do, and each stick as a circle with its dot and the extremes reached so far. Off the
-//! device (no helper) the password and remote login read as unavailable.
+//! The Device view, shown on the main screen in place of the shelf (see `clamshell_core::device`). It
+//! has one row per setting, styled like the time tab's rows: Wi-Fi (opens its tab), the time zone (opens
+//! the time tab), the password (typed in the second screen's editor and shown as dots there), remote
+//! login, calibrating the sticks and the gyro, and calibrating the top screen's refresh rate. The last
+//! button is Done at the first start and Close otherwise.
+//!
+//! While the sticks are being calibrated, the right side shows what to do and draws each stick as a
+//! circle with its dot and the extremes reached so far. Off the device, where there is no helper, the
+//! password and remote login show as unavailable.
 
 use std::fmt::{self, Display, Formatter, Write};
 
@@ -21,10 +24,12 @@ use crate::toolkit::format::Fmt;
 use crate::toolkit::style::{self, Look, SURFACE_HI, Text, Tone};
 use crate::toolkit::widgets;
 
-/// A row's height, of the screen's height; the rows' column, of its width.
+/// A row's height as a fraction of the screen's height, and the rows' column width as a fraction of its
+/// width.
 const ROW_H: f32 = 0.085;
 const ROWS_W: f32 = 0.5;
-/// A stick's circle, of the right half's width; the dot's radius, of the circle's.
+/// A stick's circle as a fraction of the right half's width, and the dot's radius as a fraction of the
+/// circle's.
 const STICK: f32 = 0.36;
 const DOT: f32 = 0.07;
 
@@ -37,7 +42,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) {
     let small = f.text(Text::Small);
     let heading = f.text(Text::Heading);
     f.c.text_fit(area.top_line(heading), heading, Tone::Normal, "Device", Keep::Start);
-    // (At the first start, what it is for.)
+    // At the first start, a line saying what the view is for.
     if s.first_start() {
         let intro = "First start: set these up now, or later from Tools, Device";
         f.c.text_fit(area.top_line(small).shifted(0.0, heading * 1.5), small, Tone::Dim, intro, Keep::Start);
@@ -48,7 +53,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) {
     let row_h = screen.h * ROW_H;
     let mut col = Column::new(rows);
 
-    // Wi-Fi: the network joined (its name when the Wi-Fi tab has read it).
+    // Wi-Fi: the joined network, by name once the Wi-Fi tab has read it.
     let wifi = col.take(row_h);
     let joined = s.radios().wifi.networks.iter().find(|n| n.connected).map(|n| n.ssid.as_str());
     let value = match (joined, s.sys().status.wifi) {
@@ -116,7 +121,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) {
     }
 }
 
-/// A sticks' calibration going: what to do, and each stick.
+/// A sticks calibration in progress: what to do, and each stick.
 fn draw_sticks(f: &mut Frame, area: Rect, p: &Progress, size: f32) {
     let say = match p.phase {
         Phase::LetGo => "Let go of the sticks",
@@ -130,7 +135,7 @@ fn draw_sticks(f: &mut Frame, area: Rect, p: &Progress, size: f32) {
         let (x, y) = (i * 2, i * 2 + 1);
         f.c.circle(cx, cy, r, SURFACE_HI);
         let to = |v: i32| (v - (p.min + p.max) / 2) as f32 / ((p.max - p.min) as f32 / 2.0) * r;
-        // The extremes reached: a box (from the centre taken; before that, nothing).
+        // The extremes reached, as a box. Nothing is drawn until the centre has been taken.
         if p.phase != Phase::LetGo {
             let (ax, ay) = (axis(p, x), axis(p, y));
             let b = Rect::new(cx + to(ax.low), cy + to(ay.low), to(ax.high) - to(ax.low), to(ay.high) - to(ay.low));
@@ -145,7 +150,7 @@ fn axis(p: &Progress, i: usize) -> StickAxis {
     p.seen.get(i).copied().unwrap_or(StickAxis { low: 0, centre: 0, high: 0 })
 }
 
-/// The password's editor, on the second screen's keyboard tab: what is asked, the text as dots.
+/// The password editor on the second screen's keyboard tab: what is asked, and the text as dots.
 pub(super) fn draw_password(f: &mut Frame) {
     let Some(Editor { purpose: Purpose::AccountPassword(step), text }) = f.s.bottom().editor() else {
         return;
@@ -160,7 +165,7 @@ pub(super) fn draw_password(f: &mut Frame) {
     super::editor::field(f, title, &dots, cancel, (Id::Editor(clamshell_core::EditorId::Save), save));
 }
 
-/// A password as dots, one a character.
+/// A password as dots, one per character.
 struct Dots(usize);
 
 impl Display for Dots {

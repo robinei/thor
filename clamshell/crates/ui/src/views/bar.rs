@@ -1,13 +1,13 @@
-//! The bar along the top of the second screen: a button per tab, the open one lit; volume and
-//! brightness, near the middle, where a slider has room on both sides of the finger; Bluetooth, Wi-Fi and
-//! the battery (tabs too, that carry their status), all spread evenly; then, past a faint line, the clock
-//! (the time tab's button), the pad mouse toggle, which is a switch rather than a tab, and at the end the
-//! front program's windows on this screen when ClamShell's view hides them (a tap shows them; its room is
-//! kept without them, so nothing moves).
+//! The bar along the top of the second screen. It has a button per tab, with the open one lit, all spread
+//! evenly. Volume and brightness sit near the middle, where a slider has room on both sides of the
+//! finger. Bluetooth, Wi-Fi and the battery are tabs too, and their icons show their status. Past a faint
+//! line come the clock (the time tab's button) and the pad mouse toggle, which is a switch rather than a
+//! tab. At the end is a button for the front program's windows on this screen when ClamShell's view hides
+//! them. A tap shows them. Its room is kept when there are none, so nothing moves.
 //!
-//! While a finger is held on volume or brightness (or slides off it sideways), a slider is drawn over
-//! the bar (the bar stays visible under it): a track whose current level sits under the finger, and the
-//! level as a number beside it.
+//! While a finger is held on volume or brightness, or slides off it sideways, a slider is drawn over the
+//! bar, which stays visible under it. The slider is a track with the current level under the finger, and
+//! the level as a number beside it.
 
 use clamshell_core::bottom::notice::NoticeKind;
 use clamshell_core::levels::slider::{Control, Slider};
@@ -19,26 +19,25 @@ use crate::toolkit::format::Fmt;
 use crate::toolkit::style::{Look, Tone};
 use crate::toolkit::{Frame, Track, widgets};
 
-/// The bar's height, of the screen's (at least 20 pixels).
+/// The bar's height as a fraction of the screen's, at least 20 pixels.
 const BAR_H: f32 = 0.075;
-/// Icon and clock text sizes, of the bar's height.
+/// Icon and clock text sizes, as fractions of the bar's height.
 const ICON: f32 = 0.62;
 const CLOCK_TEXT: f32 = 0.34;
-/// Room around the clock text, of the bar's height.
+/// Space around the clock text, as a fraction of the bar's height.
 const CLOCK_PAD: f32 = 0.5;
-/// The pad mouse switch's tap slot, of the bar's height (the tabs share the room before the clock).
+/// The width of the pad mouse switch's tap slot, as a fraction of the bar's height. The tabs share the
+/// room before the clock.
 const SLOT: f32 = 1.15;
-/// The line before the clock and the pad mouse toggle: its height, of the bar's, and how strongly it
-/// shows.
+/// The line before the clock and the pad mouse toggle: its height as a fraction of the bar's, and how
+/// strongly it shows.
 const DIVIDER: f32 = 0.4;
 const DIVIDER_ALPHA: f32 = 0.35;
-/// Battery at or below this (and not charging) shows in the accent colour.
+/// A battery level at or below this, while not charging, shows in the accent colour.
 const LOW_BATTERY: u8 = 15;
 
-/// A tab's button in the bar: its id (volume and brightness are controls, which open their tab on a
-/// tap), its icon (with its level or status), and its tone: lit while open, dim without a reading.
-/// The bar's target for `tab`'s icon: volume and brightness are their controls (a tap opens the tab, a
-/// slide sets the level), the rest the tab.
+/// The bar's target for `tab`'s icon. Volume and brightness target their controls, where a tap opens the
+/// tab and a slide sets the level. The other tabs target the tab itself.
 pub(crate) fn tab_target(tab: Tab) -> Id {
     match tab {
         Tab::Volume => Id::Control(Control::Volume),
@@ -47,6 +46,8 @@ pub(crate) fn tab_target(tab: Tab) -> Id {
     }
 }
 
+/// A tab's button in the bar: its target, its icon with its level or status, and its tone. The tone is
+/// lit while the tab is open and dim without a reading.
 fn tab_button(s: &State, tab: Tab) -> (Id, Icon, Tone) {
     let open = s.bottom().tab() == tab;
     let lit = |reading: bool| {
@@ -73,7 +74,7 @@ fn tab_button(s: &State, tab: Tab) -> (Id, Icon, Tone) {
             let quality = s.sys().status.wifi;
             (Id::Tab(tab), Icon::wifi(quality), lit(quality.is_some()))
         }
-        // An empty, dim battery when there is none; low in the accent colour.
+        // An empty, dim battery when there is none, and the accent colour when low.
         Tab::Battery => {
             let status = &s.sys().status;
             let (icon, tone) = match status.battery {
@@ -91,13 +92,13 @@ fn tab_button(s: &State, tab: Tab) -> (Id, Icon, Tone) {
     }
 }
 
-/// Draws the bar along the top of `screen`; returns the area below it.
+/// Draws the bar along the top of `screen` and returns the area below it.
 pub(super) fn draw(f: &mut Frame, screen: Rect) -> Rect {
     let bar_h = (screen.h * BAR_H).max(20.0);
     let mut body = screen;
     let mut bar = body.take_top(bar_h);
     let icon_button = |f: &mut Frame, id: Id, r: Rect, icon: Icon, tone: Tone| {
-        // (Smaller in a narrow window, so neighbours don't touch.)
+        // Smaller in a narrow window, so that neighbours don't touch.
         let side = (bar_h * ICON).min(r.w * 0.8);
         f.button(id, r, Look::ICON, |f| f.c.icon(icon, r.square_center(side), tone));
     };
@@ -120,9 +121,9 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> Rect {
     let line = bar_h * DIVIDER;
     f.c.fill(Rect::new(clock_r.x - 0.5, (bar_h - line) / 2.0, 1.0, line), Tone::Dim.rgb().alpha(DIVIDER_ALPHA));
 
-    // Before the line, every tab, evenly spread (volume and brightness land near the middle; their
-    // slider makes do with the room on either side). Each opens its tab; volume and brightness, held or
-    // slid, bring up the slider, which runs along the screen's whole width.
+    // Before the line, every tab, spread evenly. Volume and brightness land near the middle, and their
+    // slider makes do with the room on either side. Each button opens its tab. Holding or sliding on
+    // volume or brightness brings up the slider, which runs along the screen's whole width.
     let cell = bar.w.max(0.0) / Tab::ALL.into_iter().filter(|t| t.in_bar()).count() as f32;
     for (i, tab) in Tab::ALL.into_iter().filter(|t| t.in_bar()).enumerate() {
         let (id, icon, tone) = tab_button(f.s, tab);
@@ -135,8 +136,8 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> Rect {
     body
 }
 
-/// The slider, while one moves, else a notice (what a key just did): drawn last, over the bar and the
-/// tab below it.
+/// The slider while one is moving, or else a notice of what a key just did. It is drawn last, over the
+/// bar and the tab below it.
 pub(super) fn draw_slider_over(f: &mut Frame, screen: Rect, bar_h: f32) {
     if let Some(slider) = f.s.levels().slider() {
         draw_slider(f, *slider, screen.w, bar_h);
@@ -145,8 +146,8 @@ pub(super) fn draw_slider_over(f: &mut Frame, screen: Rect, bar_h: f32) {
     }
 }
 
-/// A notice on a card below the bar, in the middle: a level a key changed (its icon and number), or
-/// the screenshot's outcome.
+/// A notice on a card below the bar, in the middle: a level a key changed, with its icon and number, or
+/// the outcome of a screenshot.
 fn draw_notice(f: &mut Frame, what: &NoticeKind, w: f32, bar_h: f32) {
     let (icon, text): (Option<Icon>, Fmt<96>) = match what {
         NoticeKind::Level(control) => {
@@ -180,7 +181,7 @@ fn draw_notice(f: &mut Frame, what: &NoticeKind, w: f32, bar_h: f32) {
     widgets::card(f, x, bar_h * 1.3, bar_h, icon, &text);
 }
 
-/// The slider over the bar's row (see [`widgets::held_slider`]): the level as a number below the bar.
+/// The slider over the bar's row (see [`widgets::held_slider`]), with the level as a number below the bar.
 fn draw_slider(f: &mut Frame, slider: Slider, w: f32, bar_h: f32) {
     let icon = level_icon(f, slider.control, slider.value);
     let text = Fmt::<4>::of(format_args!("{}", slider.value));
@@ -188,8 +189,8 @@ fn draw_slider(f: &mut Frame, slider: Slider, w: f32, bar_h: f32) {
     widgets::held_slider(f, widgets::HeldSlider { slider: &slider, x0: 0.0, cy: bar_h / 2.0, h: bar_h, within, icon: Some(icon), text: &text });
 }
 
-/// A level's icon at `value`: volume's (muted, or how loud), brightness's. (A keymap parameter's slider
-/// is drawn in its row on the edit screen, without one.)
+/// The icon for a level at `value`: for volume, muted or how loud; for brightness, its one icon. A keymap
+/// parameter's slider has no icon, as it is drawn in its row on the edit screen.
 fn level_icon(f: &Frame, control: Control, value: u8) -> Icon {
     match control {
         Control::Volume => Icon::volume(value, f.s.levels().muted()),

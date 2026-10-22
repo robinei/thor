@@ -8,24 +8,26 @@ use crate::toolkit::Frame;
 use crate::toolkit::format::{Fan, Fmt, Frequency, HoursMinutes, Percent, Temp};
 use crate::toolkit::style::{self, SURFACE, Tone};
 
-/// Sizes and positions, of a tile's height: label, value, detail; the graph's share at the bottom.
+/// Sizes and positions of the label, value and detail, and the graph's share at the bottom, all as
+/// fractions of a tile's height.
 const LABEL: f32 = 0.11;
 const VALUE_Y: f32 = 0.14;
 const VALUE: f32 = 0.24;
 const DETAIL_Y: f32 = 0.45;
 const DETAIL: f32 = 0.105;
 const GRAPH: f32 = 0.28;
-/// The cores' bars: where they start, of the tile's height; a bar's width, of its slot.
+/// Where the cores' bars start, as a fraction of the tile's height, and a bar's width as a fraction of
+/// its slot.
 const CORES_Y: f32 = 0.2;
 const CORE_W: f32 = 0.3;
 
-/// Graph colours: muted, one per tile.
+/// Graph colours, muted, one per tile.
 const CPU: Rgb = Rgb(0x3b5479);
 const GPU: Rgb = Rgb(0x2f6846);
 const FPS: Rgb = Rgb(0x76602e);
 const POWER: Rgb = Rgb(0x684577);
 const MEMORY: Rgb = Rgb(0x3c616d);
-/// Full scale for graphs whose values have no natural maximum, at least.
+/// The smallest full scale for graphs whose values have no natural maximum.
 const POWER_SCALE_W: f32 = 10.0;
 const FPS_SCALE: f32 = 60.0;
 const GIB: f32 = 1024.0 * 1024.0 * 1024.0;
@@ -108,7 +110,7 @@ pub(super) fn draw(f: &mut Frame) {
     }
     t.graph(c, &h.mem, 1.0, MEMORY);
 
-    // Cores: one bar per core, its current load, over a dim track.
+    // Cores: one bar per core showing its current load, over a dim track.
     let t = tile("Cores", 5);
     let r = t.rect;
     c.text(r.x, r.y, r.h * LABEL, Tone::Dim, t.label);

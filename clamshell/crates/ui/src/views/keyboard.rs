@@ -1,7 +1,7 @@
-//! The keyboard tab: the PC-style layout from `core`, as black cells without gaps. Each key shows its main
-//! function, with its Shift character small above and its Fn function small below (in blue); the active
-//! layer's function takes the middle, also while a modifier is only held. Modifiers that are on (armed or
-//! held) are amber; Caps Lock has a light in its corner. Backspace is red, Enter amber.
+//! The keyboard tab: the PC-style layout from `core`, drawn as black cells without gaps. Each key shows
+//! its main function, with its Shift character small above and its Fn function small below in blue. The
+//! active layer's function moves to the middle, also while a modifier is only held. Modifiers that are on
+//! (armed or held) are amber, and Caps Lock has a light in its corner. Backspace is red and Enter amber.
 
 use clamshell_core::Id;
 use clamshell_core::bottom::keyboard::{self, Key, KeyPos, Keyboard, LAYOUT, Modifier, Named, Slot};
@@ -11,29 +11,29 @@ use crate::gfx::{Align, Canvas, Rect};
 use crate::toolkit::Frame;
 use crate::toolkit::style::{Look, Tone};
 
-/// Label sizes, of a key's height: the main one and the small ones above and below.
+/// Label sizes as fractions of a key's height: the main label, and the small ones above and below.
 const MAIN_TEXT: f32 = 0.3;
 const SMALL_TEXT: f32 = 0.17;
-/// Named keys' main label (Tab, Esc, Ctrl), of MAIN_TEXT.
+/// The main label size of named keys (Tab, Esc, Ctrl), as a fraction of `MAIN_TEXT`.
 const NAMED_TEXT: f32 = 0.7;
-/// How far the small labels sit above and below the key's centre, of its height (a little more below,
-/// clear of descenders like y, p and j).
+/// How far the small labels sit above and below the key's centre, as fractions of its height. Below is a
+/// little further, to clear descenders like y, p and j.
 const ABOVE: f32 = 0.26;
 const BELOW: f32 = 0.31;
-/// Icons, of their label's size.
+/// Icon size, as a fraction of the label size.
 const ICON: f32 = 1.4;
-/// Caps Lock's light: its radius and the glow's around it, of the key's height; where it sits, from the
-/// key's top right corner.
+/// Caps Lock's light: its radius and the radius of the glow around it, and its offset from the key's top
+/// right corner, all as fractions of the key's height.
 const LED: f32 = 0.06;
 const GLOW: f32 = 0.13;
 const LED_AT: f32 = 0.2;
-/// Room at a key's sides, of its height (labels shrink to fit).
+/// The margin at a key's sides, as a fraction of its height. Labels shrink to fit inside it.
 const SIDE: f32 = 0.08;
 /// How strongly Caps Lock's glow shows.
 const GLOW_ALPHA: f32 = 0.18;
 
-/// Each key's position, slot and cell: rows split `body` evenly; each row fills the width, its keys
-/// sharing it by their widths.
+/// Each key's position, slot and cell. The rows split `body` evenly, and each row fills the width, its
+/// keys sharing it in proportion to their widths.
 fn cells(body: Rect) -> impl Iterator<Item = (KeyPos, &'static Slot, Rect)> {
     let row_h = body.h / LAYOUT.len() as f32;
     LAYOUT.iter().enumerate().flat_map(move |(row, slots)| {
@@ -61,8 +61,8 @@ pub(super) fn draw(f: &mut Frame, body: Rect) {
     }
 }
 
-/// Where a key label goes: big in the middle, or small above it (the Shift layer) or below it (Fn), all
-/// centred, so each key reads as one column even without lines between keys.
+/// Where a key label goes: big in the middle, or small above it (the Shift layer) or below it (Fn). All
+/// are centred, so that each key reads as one column even without lines between keys.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Place {
     Center,
@@ -83,8 +83,8 @@ impl Label {
     }
 }
 
-/// What a key shows, for the keyboard's state: in the middle, small above (the Shift layer) and small
-/// below (Fn).
+/// What a key shows for the keyboard's current state: in the middle, small above (the Shift layer) and
+/// small below (Fn).
 struct KeyFace {
     main: Label,
     above: Option<Label>,
@@ -126,7 +126,7 @@ fn draw_key(c: &mut Canvas, kb: &Keyboard, slot: &Slot, r: Rect) {
         tone = Tone::Accent;
     }
     if slot.base == Key::Caps {
-        // The light: a dim ring when off; lit, with a soft glow, when on.
+        // The light: a dim ring when off, and lit with a soft glow when on.
         let (lx, ly) = (r.x + r.w - r.h * LED_AT, r.y + r.h * LED_AT);
         if kb.caps {
             c.circle(lx, ly, r.h * GLOW, Tone::Accent.rgb().alpha(GLOW_ALPHA));

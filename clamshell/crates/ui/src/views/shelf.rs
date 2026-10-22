@@ -1,7 +1,8 @@
-//! shelf on the main screen: collections as tabs along the top (icon and name); the current list (the
-//! collection's entries, or its open group's under a header that goes back) with box art thumbnails on
-//! the left, scrolled to keep the selection on screen; the selected entry's large box art and details on
-//! the right. Images come from the image cache (placeholders in the entry's colour until they arrive).
+//! shelf on the main screen. The collections are tabs along the top, each an icon and a name. The current
+//! list is on the left with box art thumbnails, scrolled to keep the selection on screen. It holds the
+//! collection's entries, or an open group's entries under a header that goes back. The selected entry's
+//! large box art and details are on the right. Images come from the image cache, with placeholders in
+//! the entry's colour until they arrive.
 
 use std::fmt::{self, Display, Formatter};
 
@@ -14,47 +15,49 @@ use crate::toolkit::scroll::Scrolled;
 use crate::toolkit::style::{self, Look, RADIUS_L, SURFACE_HI, Tone};
 use crate::toolkit::{Frame, widgets};
 
-/// The tab bar's height and text size, of the screen's height.
+/// The tab bar's height and text size, as fractions of the screen's height.
 const TABS_H: f32 = 0.08;
 const TAB_TEXT: f32 = 0.034;
 /// The list's share of the width.
 const LIST_W: f32 = 0.42;
-/// A row's height aimed for, of the screen's height (rows are stretched to fill the list exactly).
+/// The target row height, as a fraction of the screen's height. Rows are stretched to fill the list
+/// exactly.
 const ROW_H: f32 = 0.085;
-/// Title size and thumbnail height, of a row's height; thumbnails are portrait boxes.
+/// Title size and thumbnail height (`THUMB`), as fractions of a row's height.
 const ROW_TEXT: f32 = 0.36;
-/// The filter's and an open group's header text, a little larger than a row's.
+/// The text size of the filter and an open group's header, a little larger than a row's.
 const HEADER_TEXT: f32 = ROW_TEXT * 1.15;
 const THUMB: f32 = 0.82;
-/// A row's marks (favourite, on the dock, running): their size, of a row's height.
+/// The size of a row's marks (favourite, on the dock, running), as a fraction of a row's height.
 const MARK: f32 = 0.3;
 const BOX_ASPECT: f32 = 2.0 / 3.0;
-/// A row's picture: a square (box art and a video's frame cropped to fill it).
+/// A row's picture is square, with box art and video frames cropped to fill it.
 const ROW_ASPECT: f32 = 1.0;
 /// A thumbnail placeholder's corner radius.
 const THUMB_RADIUS: f32 = 3.0;
-/// The large art's height, of the list's height.
+/// The large art's height, as a fraction of the list's height.
 const ART_H: f32 = 0.78;
-/// Details text sizes, of the screen's height.
+/// Details text sizes, as fractions of the screen's height.
 const TITLE: f32 = 0.05;
 const DETAIL: f32 = 0.03;
 const SUMMARY: f32 = 0.028;
-/// An action row's height, of the details' text size.
+/// An action row's height, as a multiple of the details' text size.
 const ACTION: f32 = 1.45;
-/// The gap after each paragraph of the details, of the padding.
+/// The gap after each paragraph of the details, as a fraction of the padding.
 const PARA_GAP: f32 = 0.4;
-/// A screenshot's height at most, of the list's height (it is as wide as the details, 16:9).
+/// The largest screenshot height, as a fraction of the list's height. The screenshot is as wide as the
+/// details, at 16:9.
 const SHOT_H: f32 = 0.45;
-/// The box art's width at most, of the room right of the list: a portrait one is as high as it may be
-/// within it; a landscape one this wide, the screenshot under it.
+/// The largest box art width, as a fraction of the room right of the list. Portrait art is as tall as
+/// fits within it. Landscape art is this wide, with the screenshot under it.
 const COVER_W: f32 = 0.55;
 
-/// Draws shelf over `screen`; returns how many list rows fit (the state keeps the selection within
-/// them).
+/// Draws shelf over `screen` and returns how many list rows fit. The state keeps the selection within
+/// them.
 pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
     let s = f.s;
     let (w, h) = (screen.w, screen.h);
-    // (The second screen's padding rule, of this screen's height; at least 4 pixels.)
+    // The second screen's padding rule applied to this screen's height, at least 4 pixels.
     let pad = style::pad(h).max(4.0);
 
     // Tabs: the collections' icons and names.
@@ -66,7 +69,8 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
     });
     let tabs_end = widgets::tabs(f, Rect::new(pad, 0.0, w - 2.0 * pad, tabs_h), h * TAB_TEXT, pad * 0.8, f32::INFINITY, items);
 
-    // What was wrong reading the library (library.json, a folder missing): the first, at the right end.
+    // The first problem found reading the library, such as in library.json or a missing folder, shown at
+    // the right end.
     let problems = &s.shelf().library().problems;
     if let Some(first) = problems.first() {
         let more = Fmt::<16>::of(format_args!(" (+{})", problems.len() - 1));
@@ -79,13 +83,13 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
         }
     }
 
-    // The list, filling the height below the tabs (and an open group's header) exactly with whole rows.
+    // The list fills the height below the tabs, and below an open group's header, exactly with whole rows.
     let mut list = Rect::new(pad, tabs_h + pad * 0.5, w * LIST_W - pad, h - tabs_h - pad * 1.5);
     if let Some(group) = s.shelf().group() {
         let header = list.take_top(h * ROW_H);
         group_header(f, group, header, pad);
     }
-    // What is typed to find an entry by (the bottom screen's keyboard), over the list.
+    // The filter text typed on the bottom screen's keyboard to find an entry, over the list.
     let filter = s.shelf().filter();
     if !filter.is_empty() {
         let line = list.take_top(h * ROW_H * 0.7);
@@ -99,20 +103,22 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
     }
     let rows = ((list.h / (h * ROW_H)).floor() as usize).max(1);
     list_rows(f, list, rows, s.shelf().list().len(), pad);
-    // Nothing but ClamShell's own tools: where games and apps come from, in the middle of the screen.
+    // When there is nothing but ClamShell's own tools, say where games and apps come from, in the middle
+    // of the screen.
     if s.shelf().library().entries.iter().all(|g| matches!(g.launch, Launch::Tool(_))) {
         let line = Rect::new(pad, h * 0.5 - h * ROW_H, w - 2.0 * pad, h * ROW_H);
         widgets::centred_text(f, line, h * DETAIL, Tone::Dim, "No games or apps found: see ~/.config/clamshell/library.json");
     }
-    // The selected entry; in an empty browsed folder, the folder (its actions: paste, a new folder).
+    // The selected entry. In an empty browsed folder, the folder itself, for its actions (paste, new
+    // folder).
     if let Some((game, _)) = s.file_target().filter(|(g, selected)| *selected || g.browsed.is_some()) {
         selected(f, game, screen, list, pad);
     }
     rows
 }
 
-/// An open group's header over the list: a back arrow and the groups open, outermost first ("Handhelds ›
-/// GBA"; cut at the start where it doesn't fit); a tap goes back out.
+/// An open group's header over the list: a back arrow and the open groups, outermost first ("Handhelds ›
+/// GBA"), cut at the start when it doesn't fit. A tap goes back out.
 fn group_header(f: &mut Frame, group: &Entry, r: Rect, pad: f32) {
     let s = f.s;
     f.button(Id::Shelf(ShelfId::Up), r, Look::ICON, |f| {
@@ -124,8 +130,8 @@ fn group_header(f: &mut Frame, group: &Entry, r: Rect, pad: f32) {
     });
 }
 
-/// The list (`len` entries, `rows` on screen), scrolled as the cursor says, the selection on a background;
-/// where in the list: a thin bar along its right edge, when it doesn't all fit.
+/// The list of `len` entries with `rows` on screen, scrolled as the cursor says, with the selection on a
+/// background. When it doesn't all fit, a thin bar along its right edge shows the position.
 fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
     let s = f.s;
     let row_h = list.h / rows as f32;
@@ -138,7 +144,7 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
         let at = scrolled.row(position);
         let r = Rect::new(at.x, at.y, list.w - pad * 0.6, row_h - 2.0);
         let selected = position == cursor.index;
-        // A video watched (to its end, or into its credits): dimmer.
+        // A watched video, to its end or into its credits, is dimmer.
         let tone = if selected {
             Tone::High
         } else if game.mpv_file().is_some() && game.watched() {
@@ -147,13 +153,13 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
             Tone::Normal
         };
         let look = Look { fill: selected.then_some(SURFACE_HI), ..Look::CARD };
-        // (Every row's picture in a square, cropped to fill it: the titles in line.)
+        // Every row's picture is a square, cropped to fill it, so that the titles line up.
         let thumb_h = r.h * THUMB;
         let thumb = Rect::new(r.x + pad * 0.4, r.y + (r.h - thumb_h) / 2.0, thumb_h * ROW_ASPECT, thumb_h);
         f.button(Id::Shelf(ShelfId::Entry(game.id.clone())), r, look, |f| {
             widgets::thumb(f.c, f.images, game, thumb, THUMB_RADIUS, false);
-            // Its marks at the row's right end, right to left: a folder's chevron, running (dim while
-            // paused), on the dock, a favourite.
+            // The marks at the row's right end, from right to left: a folder's chevron, running (dim
+            // while paused), on the dock, and favourite.
             let mark = r.h * MARK;
             let mut right = r.x + r.w - pad * 0.5;
             let paused = s.paused(&game.id) || s.suspended(&game.id);
@@ -173,7 +179,7 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
             }
             let tx = thumb.x + thumb.w + pad * 0.6;
             let title = Rect::new(tx, r.y, right - tx - pad * 0.3, r.h);
-            // Away from its folder (Recent, Favourites): the folders it is in before its title.
+            // Outside its folder, as in Recent or Favourites, the folders it is in go before its title.
             let open = s.shelf().group().map(|g| &g.id);
             let in_view = game.parent.and_then(|p| s.shelf().library().entries.get(p)).is_none_or(|p| Some(&p.id) == open);
             if in_view {
@@ -182,7 +188,7 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
                 let path = Fmt::<256>::of(format_args!("{}", Groups { s, game, own: true, between: " · " }));
                 f.c.text_fit(title, row_h * ROW_TEXT, tone, &path, Keep::Start);
             }
-            // A video under way: how far, under its title.
+            // For a video under way, how far in it is, under its title.
             if let Some(fraction) = watched_fraction(game).filter(|_| !game.watched()) {
                 let bar = Rect::new(tx, r.y + r.h * 0.8, (title.w * 0.6).min(row_h * 4.0), (r.h * 0.05).max(2.0));
                 widgets::progress(f.c, bar, fraction);
@@ -192,10 +198,10 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
     scrolled.end(f, list.x + list.w - 3.0);
 }
 
-/// The selected entry right of the `list`, as high as it: large box art, then beside it the title, the
-/// groups it is in, who made it and when, what playing it does now, whether it is a favourite and on the
-/// dock, the play time, what it is about (as much as fits), and a screenshot: at the bottom of the text,
-/// or under a landscape box (as wide as it).
+/// The selected entry, right of the `list` and as tall as it. Large box art comes first. Beside it are
+/// the title, the groups it is in, who made it and when, what playing it does now, whether it is a
+/// favourite and on the dock, the play time, and as much of its summary as fits. A screenshot goes at the
+/// bottom of the text, or under landscape box art at the same width.
 fn selected(f: &mut Frame, game: &Entry, screen: Rect, list: Rect, pad: f32) {
     let s = f.s;
     let h = screen.h;
@@ -206,14 +212,14 @@ fn selected(f: &mut Frame, game: &Entry, screen: Rect, list: Rect, pad: f32) {
     let tx = if landscape { room.x + room.w } else { cover.x + cover.w } + pad * 1.2;
     let text_w = screen.w - pad - tx;
     let mut col = Column::new(Rect::new(tx, list.y, text_w, list.h));
-    // A paragraph of the details: wrapped in up to `lines` lines where the column is, then a gap.
+    // A paragraph of the details, wrapped in up to `lines` lines at the column's position, then a gap.
     let para = |f: &mut Frame, col: &mut Column, size: f32, tone: Tone, text: &str, lines: usize| {
         col.skip(f.c.wrap(Span { x: tx, y: col.y(), w: text_w }, size, tone, text, lines) + pad * PARA_GAP);
     };
     let detail = h * DETAIL;
     para(f, &mut col, h * TITLE, Tone::High, &game.title, 3);
 
-    // The groups it is in (a series, a season); who made it and when.
+    // The groups it is in (a series, a season), and who made it and when.
     if game.parent.is_some() {
         let groups = Fmt::<192>::of(format_args!("{}", Groups { s, game, own: false, between: " · " }));
         para(f, &mut col, detail, Tone::Normal, &groups, 2);
@@ -223,20 +229,20 @@ fn selected(f: &mut Frame, game: &Entry, screen: Rect, list: Rect, pad: f32) {
         para(f, &mut col, detail, Tone::Dim, &maker, 2);
     }
 
-    // A browsed file: how big, when it was changed.
+    // A browsed file: its size and when it was changed.
     if let Some(b) = game.browsed.as_ref().filter(|b| !b.folder && b.modified > 0) {
         let days = s.unix_secs().saturating_sub(b.modified) / 86_400;
         let facts = Fmt::<64>::of(format_args!("{}{}", Bytes(b.size.unwrap_or(0)), DaysAgo(days)));
         para(f, &mut col, detail, Tone::Dim, &facts, 1);
     }
 
-    // A folder: what is in it (not a browsed one: what is known of it may be old).
+    // A folder: what is in it. Not for a browsed folder, since what is known of it may be out of date.
     if game.is_group() && game.browsed.is_none() {
         let inside = Fmt::<64>::of(format_args!("{}", Inside(s, game)));
         para(f, &mut col, detail, Tone::Normal, &inside, 2);
     }
 
-    // A video: how far into it, and how long it is.
+    // A video: how far in it is, and how long it is.
     if let Some(at) = game.playback.position.filter(|_| game.mpv_file().is_some()) {
         let minutes = Fmt::<48>::of(format_args!("{}", Minutes(at, game.playback.duration)));
         let bar_w = (text_w * 0.45).min(detail * 9.0);
@@ -251,7 +257,7 @@ fn selected(f: &mut Frame, game: &Entry, screen: Rect, list: Rect, pad: f32) {
         para(f, &mut col, detail, Tone::Dim, "Watched", 1);
     }
 
-    // Its actions (see clamshell-core's `actions`): each a row to tap, with its button.
+    // Its actions (see clamshell-core's `actions`), each a row to tap, with its button.
     let action_h = detail * ACTION;
     let rows = actions(f, game, Rect::new(tx, col.y(), text_w, list.y + list.h - col.y()), action_h, pad);
     col.skip(rows);
@@ -265,14 +271,13 @@ fn selected(f: &mut Frame, game: &Entry, screen: Rect, list: Rect, pad: f32) {
         para(f, &mut col, detail, Tone::Dim, &played, 2);
     }
 
-    // A screenshot: under a landscape box, as wide; else at the bottom of the text. What it is about in as
-    // many lines as fit above that.
-    // (Its screenshot as its picture already: not twice.)
+    // A screenshot goes under landscape box art at the same width, or else at the bottom of the text. The
+    // summary takes as many lines as fit above that. There is no screenshot if it is already the picture.
     let shot = match (game.details.shot.is_some() && !widgets::wide_picture(game), landscape) {
         (false, _) => None,
         (true, true) => {
             let y = cover.y + cover.h + pad;
-            // (4:3 room: a console's screenshots fill the width; a wider one fits in it.)
+            // 4:3 room, so a console's screenshots fill the width and a wider one fits inside it.
             Some(Rect::new(room.x, y, room.w, (room.w * 3.0 / 4.0).min(list.y + list.h - y)))
         }
         (true, false) => {
@@ -294,19 +299,21 @@ fn selected(f: &mut Frame, game: &Entry, screen: Rect, list: Rect, pad: f32) {
     }
 }
 
-/// The details' actions, as rows from the top of `r`, each with its pad button: A opens (plays, shows
-/// it running), Start continues a folder of videos, Y and X a favourite and on the dock (a browsed file's:
-/// Copy and Paste), the file actions (Delete and Empty Trash asking to be pressed again); a paste under
-/// way, how far. Their height.
+/// Draws the details' actions as rows from the top of `r`, each with its pad button, and returns their
+/// height. A opens (plays, or shows it running), Start continues a folder of videos, and Y and X toggle
+/// favourite and on the dock, or Copy and Paste for a browsed file. Then come the file actions, where
+/// Delete and Empty Trash ask to be pressed again, and how far a paste under way has got.
 fn actions(f: &mut Frame, game: &Entry, r: Rect, action_h: f32, pad: f32) -> f32 {
     use clamshell_core::shelf::actions::{Action, Shortcut};
     use clamshell_core::shelf::files::FileAction;
     let s = f.s;
     let mut y = r.y;
-    // (A row as wide as fourteen of the details' text size; Continue's, naming the next video, as the details.)
+    // A row is fourteen times the details' text size wide. Continue's row, which names the next video,
+    // is as wide as the details.
     let w = r.w.min(action_h / ACTION * 14.0);
     let shortcut = |key| s.button_of(key);
-    // (The pad on the actions themselves: their shortcuts off, faded; A and B said below.)
+    // While the pad is on the actions themselves, their shortcuts are off and faded, and A and B are
+    // explained below.
     let in_actions = s.in_actions();
     for &action in s.actions().as_slice() {
         let key = match action {
@@ -324,7 +331,7 @@ fn actions(f: &mut Frame, game: &Entry, r: Rect, action_h: f32, pad: f32) -> f32
             Action::Open if game.browsed.is_some() => (Fmt::of(format_args!("Open")), Tone::Normal),
             Action::Open => (Fmt::of(format_args!("Play")), Tone::Normal),
             Action::Continue => {
-                // (Where in it is mpv's.)
+                // The position within it is mpv's.
                 let library = s.shelf().library();
                 let next = library.entries.iter().position(|g| g.id == game.id).and_then(|g| library.to_continue(g)).and_then(|i| library.entries.get(i));
                 match next {
@@ -374,7 +381,8 @@ fn actions(f: &mut Frame, game: &Entry, r: Rect, action_h: f32, pad: f32) -> f32
         widgets::progress(f.c, Rect::new(r.x, y, w, (size * 0.22).max(3.0)), *fraction);
         y += size;
     }
-    // The pad on them: what its buttons do now, at the bottom (the details' text gives way).
+    // While the pad is on them, what its buttons do now is shown at the bottom, and the details' text
+    // below the actions gives way to it.
     if in_actions {
         let line = Rect::new(r.x, r.y + r.h - action_h, w, action_h);
         let confirm = widgets::key_hint(f, line, "A", "Confirm");
@@ -384,13 +392,13 @@ fn actions(f: &mut Frame, game: &Entry, r: Rect, action_h: f32, pad: f32) -> f32
     y - r.y
 }
 
-/// How far into a video, of its length, if both are known.
+/// How far into a video, as a fraction of its length, if both are known.
 fn watched_fraction(game: &Entry) -> Option<f32> {
     let (at, length) = (game.playback.position?, game.playback.duration?);
     (length > 0).then(|| at as f32 / length as f32)
 }
 
-/// Minutes into a video, and of how many: "23 of 45 min"; "23 min in" without its length.
+/// Minutes into a video and its length: "23 of 45 min", or "23 min in" without the length.
 struct Minutes(u32, Option<u32>);
 
 impl Display for Minutes {
@@ -409,7 +417,7 @@ struct Within<'a>(&'a State, &'a Entry, &'a Entry);
 impl Display for Within<'_> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let games = &self.0.shelf().library().entries;
-        // (The folders from the entry up to the folder, written from the top down.)
+        // The folders from the entry up to the folder, collected bottom up and written top down.
         let mut chain = [None; 8];
         let mut at = self.1.parent;
         let mut n = 0;
@@ -448,7 +456,7 @@ impl Display for Inside<'_> {
     }
 }
 
-/// Who made an entry and when: "Supergiant Games · 2020", either alone, or nothing.
+/// Who made an entry and when: "Supergiant Games · 2020", either one alone, or nothing.
 struct Maker<'a>(&'a Entry);
 
 impl Display for Maker<'_> {
@@ -463,8 +471,8 @@ impl Display for Maker<'_> {
     }
 }
 
-/// The groups an entry is in, outermost first, `between` between them: "Cosmos · Season 1"; with its own
-/// title last if `own`.
+/// The groups an entry is in, outermost first and separated by `between`: "Cosmos · Season 1". Its own
+/// title comes last if `own` is set.
 struct Groups<'a> {
     s: &'a State,
     game: &'a Entry,
@@ -475,7 +483,7 @@ struct Groups<'a> {
 impl Display for Groups<'_> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let games = &self.s.shelf().library().entries;
-        // (At most a few levels: walked from the entry up, written from the top down.)
+        // At most a few levels, walked from the entry up and written from the top down.
         let mut chain = [None; 8];
         let mut at = self.game.parent;
         let mut n = 0;

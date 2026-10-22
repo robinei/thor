@@ -1,12 +1,13 @@
-//! The touchpad tab: the area below the bar with nothing in it, always pointing (see clamshell-core's
-//! `touch`). Black, with a faint cross through the middle to show where it is.
+//! The touchpad tab: the empty area below the bar, where touches always move the pointer (see
+//! clamshell-core's `touch`). It is black, with a faint cross through the middle to show where it is.
 
 use crate::gfx::Rgb;
 use crate::toolkit::Frame;
 
-/// The cross: barely above black.
+/// The cross's colour, barely above black.
 const CROSS: Rgb = Rgb(0x18181c);
-/// How far the cross stops short of the area's edges (and of the bar above), of its height.
+/// How far the cross stops short of the area's edges and the bar above, as a fraction of the area's
+/// height.
 const CLEAR: f32 = 0.05;
 
 pub(super) fn draw(f: &mut Frame) {

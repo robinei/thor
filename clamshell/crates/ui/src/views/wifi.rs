@@ -1,7 +1,7 @@
-//! The Wi-Fi tab: what Wi-Fi is doing (connected, joining, what went wrong) with the radio's switch,
-//! then the networks in range, one row each: signal, name, a lock if it needs a password, and whether it
-//! is connected, being joined or saved. A tap joins (asking for the password first when needed), a long
-//! press forgets a saved network. The password is typed in the shared editor.
+//! The Wi-Fi tab. The header shows what Wi-Fi is doing (connected, joining, or what went wrong) next to
+//! the radio's switch. Below it is one row per network in range, with its signal, its name, a lock if it
+//! needs a password, and whether it is connected, joining or saved. A tap joins, asking for the password
+//! first when needed. A long press forgets a saved network. The password is typed in the shared editor.
 
 use std::fmt::{self, Display, Formatter};
 
@@ -58,7 +58,7 @@ fn status_tone(wifi: &Wifi) -> Tone {
     }
 }
 
-/// The header's text: an error first, then no device, off, joining, connected, or not.
+/// The header's text: an error, no device, off, joining, connected, or not connected.
 struct Status<'a>(&'a Wifi);
 
 impl Display for Status<'_> {

@@ -1,10 +1,12 @@
-//! The battery tab: the level and what it is doing (drain, time left) on top, beside the tiles of the
-//! battery's settings (the charge limit, when the screens go off and the device sleeps without input), drawn
-//! and stepped as in the settings grid; the charge over the last day (UPower's history; charging in green);
-//! then what is using the machine now, the busiest first, then those idle that hold much memory, as many as
-//! fit: each a bar of its share of the work, its CPU, GPU and memory. The battery reports only its total
-//! drain, so programs are ranked by work, not watts. A row (not the system's) opens its menu in the tab's
-//! place: Quit, Force kill.
+//! The battery tab. The top row shows the level and what the battery is doing (drain and time left),
+//! beside tiles for the battery's settings: the charge limit, and when the screens go off and the device
+//! sleeps without input. The tiles are drawn and stepped as in the settings grid. Below is the charge over
+//! the last day, from UPower's history, with charging in green.
+//!
+//! Then comes what is using the machine now, as many programs as fit: the busiest first, then idle ones
+//! that hold a lot of memory. Each row has a bar for its share of the work, and its CPU, GPU and memory.
+//! The battery reports only its total drain, so programs are ranked by work, not watts. Tapping a row,
+//! other than the system's, opens its menu in place of the tab, with Quit and Force kill.
 
 use clamshell_core::BatteryId;
 use clamshell_core::settings::Setting;
@@ -17,25 +19,27 @@ use crate::toolkit::format::{Bytes, Duration, Fmt, MaybeShare, Share};
 use crate::toolkit::style::{self, Look, SURFACE, SURFACE_HI, Tone};
 use crate::toolkit::widgets::{self, HeaderRight};
 
-/// The top row's height, the level's and the other text's sizes, of the area's height. (The text is
-/// a little smaller than other tabs' body text, for the figures to fit.)
+/// The top row's height, and the sizes of the level and the other text, as fractions of the area's
+/// height. The text is a little smaller than other tabs' body text so that the figures fit.
 const TOP_H: f32 = 0.22;
-/// The settings tiles beside the level, and a tile's width, of the row's (near the settings grid's).
+/// The settings tiles beside the level, and a tile's width as a fraction of the row's, close to the
+/// settings grid's.
 const TILES: [Setting; 3] = [Setting::ChargeLimit, Setting::ScreenOff, Setting::Sleep];
 const TILE_W: f32 = 0.23;
-/// A tile's height, of the area's height (the settings grid's).
+/// A tile's height as a fraction of the area's height, the same as the settings grid's.
 const TILE_H: f32 = 0.19;
 const LEVEL: f32 = 0.075;
 const TEXT_SIZE: f32 = 0.036;
-/// The graph's height, of the area's height; the line's width.
+/// The graph's height as a fraction of the area's height, and the line's width.
 const GRAPH_H: f32 = 0.28;
 const STROKE: f32 = 2.0;
-/// A spender's row height, of the area's height; its name column, of the width.
+/// A program row's height as a fraction of the area's height, and its name column as a fraction of the
+/// width.
 const ROW_H: f32 = 0.072;
 const NAME_W: f32 = 0.3;
-/// Secondary text (the list's title, the figures), of the text size.
+/// The size of secondary text (the list's title and the figures), as a fraction of the text size.
 const SMALL: f32 = 0.85;
-/// The history's span, seconds.
+/// The history's span, in seconds.
 const SPAN: f32 = 24.0 * 3600.0;
 
 pub(super) fn draw(f: &mut Frame) {
@@ -54,7 +58,7 @@ pub(super) fn draw(f: &mut Frame) {
     let graph = Rect::new(graph.x, graph.y + pad * 0.5, graph.w, graph.h - pad * 1.5);
     history(f, graph, size);
 
-    // What is using the machine, as many as fit.
+    // What is using the machine, as many programs as fit.
     let title_y = rest.y + pad * 0.3;
     f.c.text(rest.x, title_y, size * SMALL, Tone::Dim, "Using the machine now");
     let list = Rect::new(rest.x, title_y + size * 1.6, rest.w, rest.y + rest.h - title_y - size * 1.6);
@@ -65,7 +69,7 @@ pub(super) fn draw(f: &mut Frame) {
         f.c.text(list.x, list.y, size, Tone::Dim, "Measuring");
     }
     let total: f32 = spenders.iter().map(|p| p.load()).sum::<f32>().max(f32::EPSILON);
-    // The figures' column, as wide as the widest they can be, so the bars line up.
+    // The figures' column is as wide as the widest figures can be, so that the bars line up.
     let figures_x = list.x + list.w - f.c.text_width(size * SMALL, "CPU 100% · GPU 100% · 999 MB");
     for (i, p) in spenders.iter().enumerate().take(rows) {
         let r = Rect::new(list.x, list.y + i as f32 * row_h, list.w, row_h);
@@ -74,7 +78,7 @@ pub(super) fn draw(f: &mut Frame) {
             f.c.text_fit(Rect::new(r.x, r.y, name_w - pad, r.h), size, Tone::Normal, s.spender_name(p), Keep::Start);
             let figures = Fmt::<64>::of(format_args!("CPU {} · GPU {} · {}", Share(p.cpu), MaybeShare(p.group.gpu_known().then_some(p.gpu)), Bytes(p.memory)));
             let figures_w = f.c.text_width(size * SMALL, &figures);
-            // Smaller, on the name's line.
+            // In smaller text, on the same line as the name.
             let ty = r.y + (r.h - size * LINE) / 2.0;
             f.c.text(r.x + r.w - figures_w, ty + size * 0.1, size * SMALL, Tone::Dim, &figures);
             let track = Rect::new(r.x + name_w, r.y + r.h * 0.42, figures_x - pad - r.x - name_w, r.h * 0.16);
@@ -84,7 +88,7 @@ pub(super) fn draw(f: &mut Frame) {
                 f.c.rounded(Rect::new(track.x, track.y, (track.w * share).max(track.h), track.h), track.h / 2.0, Tone::Normal);
             }
         };
-        // (The system's and the session's own aren't to be ended from here.)
+        // The system's and the session's own processes can't be ended from here.
         if p.endable {
             f.button(Id::Battery(BatteryId::Spender(i as u16)), r, Look::ROW, row);
         } else {
@@ -93,8 +97,8 @@ pub(super) fn draw(f: &mut Frame) {
     }
 }
 
-/// A row's menu, from a tap on it: Quit and Force kill what it is (an entry as from the dock; another
-/// program, its processes). The back arrow returns to the tab.
+/// A row's menu, opened by a tap on it, with Quit and Force kill. For a dock entry they act as in the
+/// dock; for another program they act on its processes. The back arrow returns to the tab.
 fn spender_menu(f: &mut Frame, group: &Group) {
     let s = f.s;
     let name = s.sys().battery.spenders.iter().find(|p| p.group == *group).map_or("", |p| s.spender_name(p));
@@ -103,15 +107,15 @@ fn spender_menu(f: &mut Frame, group: &Group) {
     widgets::menu(f, area, items);
 }
 
-/// The level with the state (and drain) and the time left under it, and the settings tiles on the
-/// right.
+/// The level, with the state, drain and time left under it, and the settings tiles on the right.
 fn top_line(f: &mut Frame, top: Rect, body_h: f32) {
     let s = f.s;
     let level_size = body_h * LEVEL;
     let size = body_h * TEXT_SIZE;
     let mut row = top;
     let tile_w = top.w * TILE_W;
-    // As tall as the settings grid's tiles (their captions the same size), in the row's middle.
+    // The tiles are as tall as the settings grid's, with captions the same size, in the middle of the
+    // row.
     let tile_h = body_h * TILE_H;
     for setting in TILES.into_iter().rev() {
         let column = row.take_right(tile_w);
@@ -148,8 +152,8 @@ fn drain(s: &State) -> (Fmt<64>, Fmt<64>) {
     (state, left)
 }
 
-/// The last day's charge: 0, 50 and 100% as faint lines, the level as a line (green while charging),
-/// carried on to now at the current level; the times below.
+/// The last day's charge, with 0, 50 and 100% as faint lines. The level is a line, green while charging,
+/// carried on to now at the current level. The times go below.
 fn history(f: &mut Frame, g: Rect, size: f32) {
     let s = f.s;
     let mut plot = g;
@@ -168,8 +172,8 @@ fn history(f: &mut Frame, g: Rect, size: f32) {
     let now = s.unix_secs() as f32;
     let x_at = |at: u64| plot.x + ((at as f32 - (now - SPAN)) / SPAN).clamp(0.0, 1.0) * plot.w;
     let y_at = |level: u8| plot.y + plot.h * (1.0 - f32::from(level) / 100.0);
-    // A step line of rectangles (no paths: drawing doesn't allocate): along at each level, then up or
-    // down to the next.
+    // A step line made of rectangles, since paths would allocate while drawing. It runs along at each
+    // level, then up or down to the next.
     let step = |f: &mut Frame, from: (u64, u8), to: (u64, u8), charging: bool| {
         let tone = if charging { Tone::Go } else { Tone::Normal };
         let (x0, x1, y0, y1) = (x_at(from.0), x_at(to.0), y_at(from.1), y_at(to.1));
@@ -182,7 +186,7 @@ fn history(f: &mut Frame, g: Rect, size: f32) {
             step(f, (a.at, a.level), (b.at, b.level), a.charging);
         }
     }
-    // From the last point to now, at today's level.
+    // From the last point to now, at the current level.
     if let (Some(last), Some(level)) = (history.last(), s.sys().status.battery) {
         step(f, (last.at, last.level), (s.unix_secs(), level), s.sys().status.charging);
     }

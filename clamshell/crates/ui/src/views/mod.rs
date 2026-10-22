@@ -1,13 +1,14 @@
-//! The screens. Each is a function of the state and its size that draws everything and lists what can be
-//! tapped or focused (immediate mode): shelf on the main screen; the bar and the open tab below it on the
-//! second screen (or nothing, while it is dark). One module per tab; what they're drawn with is the
-//! toolkit (`crate::toolkit`: the frame, style, widgets, text formatting, scrolled lists).
+//! The screens, drawn in immediate mode. Each is a function of the state and the screen's size that
+//! draws everything and lists what can be tapped or focused. The main screen shows the shelf. The second
+//! screen shows the bar with the open tab below it, or nothing while it is dark. There is one module per
+//! tab. They are drawn with the toolkit (`crate::toolkit`): the frame, style, widgets, text formatting and
+//! scrolled lists.
 //!
 //! Everything here is in layout units: logical pixels from the top left of the area inside the burn-in
-//! margin (see `render`). Sizes are fractions of the screen or of the element they sit in. Those that
-//! define a layout (a row's height, a column's width, a gap) are named, per module, or in `style` when
-//! shared; small adjustments where they are used (half a padding, a text a little larger) are written
-//! in place.
+//! margin (see `render`). Sizes are fractions of the screen or of the element they sit in. Sizes that
+//! define a layout, such as a row's height, a column's width or a gap, are named constants in their
+//! module, or in `style` when shared. Small adjustments, such as half a padding or slightly larger text,
+//! are written where they are used.
 
 pub(crate) mod bar;
 mod battery;
@@ -34,14 +35,14 @@ use clamshell_core::shelf::files::FileName;
 use crate::gfx::Rect;
 use crate::toolkit::Frame;
 
-/// How much of the area below the bar the black over it hides while it points.
+/// How much the black layer over the area below the bar hides it while that area is a touchpad.
 const POINTING_FADE: f32 = 0.7;
-/// How much the black over the second screen hides while it is dimmed (a third left, as the screens'
-/// brightness is when idle dims them).
+/// How much the black layer over the second screen hides it while it is dimmed. A third is left, as with
+/// the screens' brightness when idle dims them.
 const BOTTOM_DIM: f32 = 2.0 / 3.0;
 
-/// The main screen: shelf, or the view ClamShell shows in its place (the Device view), over all of
-/// `screen` (the frame starts black: see `render`).
+/// The main screen, over all of `screen`: the shelf, or the Device view shown in its place. The frame
+/// starts black (see `render`).
 pub fn top(f: &mut Frame, screen: Rect) {
     f.body = screen;
     match f.s.top_view() {
@@ -50,8 +51,8 @@ pub fn top(f: &mut Frame, screen: Rect) {
     }
 }
 
-/// The second screen: the bar, the open tab below it, and the slider over both while one moves; or,
-/// while a game wants it dark, nothing (the frame starts black: see `render`).
+/// The second screen: the bar, the open tab below it, and the slider over both while one is moving.
+/// While a game wants the screen dark, nothing is drawn. The frame starts black (see `render`).
 pub fn bottom(f: &mut Frame, screen: Rect) {
     f.body = screen;
     if f.s.bottom_dark() {
@@ -63,7 +64,8 @@ pub fn bottom(f: &mut Frame, screen: Rect) {
     f.body = body;
     match f.s.bottom().tab() {
         Tab::Settings => settings::draw(f),
-        // A browsed file's name being typed: the editor over the keyboard.
+        // While a browsed file's name or the account password is being typed, the editor replaces the
+        // keyboard.
         Tab::Keyboard => match f.s.bottom().editor().map(|e| &e.purpose) {
             Some(Purpose::FileName(FileName::Rename(_))) => editor::draw(f, "New name", "Rename"),
             Some(Purpose::FileName(FileName::NewFolder(_))) => editor::draw(f, "New folder's name", "Make"),
@@ -81,13 +83,15 @@ pub fn bottom(f: &mut Frame, screen: Rect) {
         Tab::Brightness => levels::draw_brightness(f),
         Tab::Time => time::draw(f),
     }
-    // (Pointing: the area below the bar is a touchpad, what is in it faded; the touchpad tab is nothing else.)
+    // While pointing, the area below the bar is a touchpad and its contents are faded. The touchpad tab
+    // has nothing to fade.
     if f.s.bottom().pointing() && f.s.bottom().tab() != Tab::Touchpad {
         f.c.fill(body, crate::gfx::Rgb(0).alpha(POINTING_FADE));
     }
     bar::draw_slider_over(f, screen, body.y);
     f.out.touchpad_area = Some(body);
-    // (Untouched a while, the pad elsewhere: dimmed, as the screens are before they go off.)
+    // Dimmed when untouched for a while and the pad is in use elsewhere, as the screens are before they
+    // go off.
     if f.s.bottom_dimmed() {
         f.c.fill(screen, crate::gfx::Rgb(0).alpha(BOTTOM_DIM));
     }
@@ -103,8 +107,8 @@ mod tests {
     use clamshell_core::{Event, Id, Init, Reading, State, Status};
     use tiny_skia::Pixmap;
 
-    /// The second screen drawn for `state` at `w` x `h`: what can be tapped in it, and what the frame
-    /// reports.
+    /// Draws the second screen for `state` at `w` x `h`. Returns what can be tapped in it and what the
+    /// frame reports.
     fn draw_bottom(state: &State, (w, h): (u32, u32), cache: &mut DrawCache) -> (Vec<Target>, crate::toolkit::FrameOut) {
         let mut pixmap = Pixmap::new(w, h).expect("pixmap");
         let mut targets = Vec::new();
@@ -123,8 +127,8 @@ mod tests {
         state
     }
 
-    /// Two targets may overlap only when one is drawn over the other on purpose: the dock's "+" over its
-    /// app's tile.
+    /// Whether two targets may overlap because one is drawn over the other on purpose: a list's area
+    /// under its rows, a stick's click on its cap, and the mouse's wheel on its buttons.
     fn stacked(a: &Id, b: &Id) -> bool {
         // A list's area lies under its rows.
         if matches!(a, Id::List(_)) || matches!(b, Id::List(_)) {
@@ -154,8 +158,8 @@ mod tests {
         !apart
     }
 
-    /// The keymaps' screens one after another (as a user goes through them) at the desktop's window, the
-    /// Thor's screen and a narrow one: targets within the area, none overlapping but on purpose.
+    /// The keymap screens one after another, as a user goes through them, at the desktop's window size,
+    /// the Thor's screen and a narrow one. Targets stay within the area and none overlap except on purpose.
     #[test]
     fn the_keymap_screens_lay_out() {
         use clamshell_core::keymap::{Button, Input, Keymaps, Layer, Output, Param, Side};
@@ -211,7 +215,7 @@ mod tests {
         ];
         let mut cache = DrawCache::load();
         for (w, h) in [(620u32, 540u32), (1240, 1080), (300, 540)] {
-            // (The Nintendo layout with a layer added.)
+            // The Nintendo layout with a layer added.
             let mut keymaps = Keymaps::initial();
             keymaps.get_mut(1).and_then(|k| k.add_layer("aim"));
             let mut state = State::new(Init { library: clamshell_library::demo::library(), keymaps, ..Init::default() });
@@ -225,8 +229,8 @@ mod tests {
                 let case = format!("{name} at {w}x{h}");
                 assert!(targets.iter().any(|t| matches!(t.id, Id::Keymap(_) | Id::Row { .. } | Id::Editor(_))), "{case}: its buttons");
                 if name.starts_with("edit") {
-                    // The panel, its buttons and rows, between the label columns; the label columns
-                    // clear of the clusters.
+                    // The panel, its buttons and rows lie between the label columns, and the label
+                    // columns are clear of the clusters.
                     let l = keymaps::edit_layout(body);
                     for t in targets.iter().filter(|t| {
                         matches!(t.id, Id::Control(clamshell_core::Control::Param(_)) | Id::Keymap(KeymapId::Target(_) | KeymapId::Toggle(_) | KeymapId::Holds))
@@ -245,8 +249,8 @@ mod tests {
                     }
                 }
                 if *name == "edit" {
-                    // Every input the Thor has can be touched; on its screen, with room for a finger.
-                    // (The Thor has no back buttons.)
+                    // Every input the Thor has can be touched, and on its screen there is room for a
+                    // finger. The Thor has no back buttons.
                     for input in Input::all().filter(|i| !matches!(i, Input::Button(b) if b.is_back())) {
                         let id = Id::Keymap(KeymapId::Input(input));
                         let biggest = targets.iter().filter(|t| t.id == id).map(|t| t.rect.w.min(t.rect.h)).fold(0.0, f32::max);
@@ -271,9 +275,9 @@ mod tests {
         }
     }
 
-    /// Long lists (more networks, devices, apps playing and backlights than fit) at the desktop's window,
-    /// the Thor's screen and a narrow one, at the top and scrolled part way: rows are cut to the list's
-    /// area, every target stays within the area below the bar and none overlap but on purpose.
+    /// Lists longer than fit (networks, devices, apps playing and backlights) at the desktop's window
+    /// size, the Thor's screen and a narrow one, at the top and scrolled part way. Rows are cut to the
+    /// list's area, every target stays within the area below the bar, and none overlap except on purpose.
     #[test]
     fn long_lists_scroll_within_their_area() {
         use clamshell_core::levels::{Audio, Stream};
@@ -346,9 +350,9 @@ mod tests {
         }
     }
 
-    /// Every tab at the desktop's window, the Thor's screen and a window dragged narrow, empty and with
-    /// readings: targets have a size, stay on the screen (the tab's within its area below the bar), and
-    /// don't overlap unless stacked on purpose; the bar shows all its buttons.
+    /// Every tab at the desktop's window size, the Thor's screen and a window dragged narrow, both empty
+    /// and with readings. Targets have a size, stay on the screen (a tab's within its area below the
+    /// bar), and don't overlap unless stacked on purpose. The bar shows all its buttons.
     #[test]
     fn every_tab_lays_out() {
         let mut cache = DrawCache::load();
@@ -379,8 +383,8 @@ mod tests {
         }
     }
 
-    /// Down from a tab's icon in the bar reaches what is right below it in the tab, a control at the
-    /// header's end too (Wi-Fi's switch, the volume's slider), not the first list row past it.
+    /// Pressing down from a tab's icon in the bar reaches what is right below it in the tab, including a
+    /// control at the header's end (Wi-Fi's switch, the volume's slider), rather than the first list row.
     #[test]
     fn down_from_the_bar_reaches_the_tabs_first_line() {
         use crate::input::nav::{Dir, NavTarget, step};

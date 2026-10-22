@@ -1,7 +1,12 @@
-//! The volume and brightness tabs. Volume: the output volume with its mute button, which output plays
-//! (a tap chooses one), then each app playing with its own level and mute button. Brightness: the level
-//! (the bar's), then each screen's backlight with its share of it (the two multiply). A level row is set
-//! by where the finger is on its track (and follows it); the pad's left and right step it.
+//! The volume and brightness tabs.
+//!
+//! The volume tab shows the output volume with its mute button, the outputs (a tap chooses which one
+//! plays), then each app that is playing, with its own level and mute button. The brightness tab shows
+//! the brightness level, the same as the bar's, then each screen's backlight as a share of it. The two
+//! are multiplied.
+//!
+//! A level row is set to where the finger is on its track and follows the finger as it moves. The pad's
+//! left and right step it.
 
 use clamshell_core::levels::Level;
 use clamshell_core::{AudioId, Id, ListId, RowPart};
@@ -13,23 +18,24 @@ use crate::toolkit::scroll::Scrolled;
 use crate::toolkit::style::{self, Look, Text, Tone};
 use crate::toolkit::{Frame, Track, widgets};
 
-/// A row's height, of the area's height.
+/// A row's height, as a fraction of the area's height.
 const ROW_H: f32 = 0.11;
-/// A level row: the name's column and the number's, of the area's width; the track's thickness and
-/// thumb, of the row's height; icons, of the row's height.
+/// A level row: the widths of the name and number columns as fractions of the area's width, and the
+/// track's thickness, the thumb and icons as fractions of the row's height.
 const NAME_W: f32 = 0.28;
-/// The brightness tab's name column (backlight names are long).
+/// The width of the brightness tab's name column, wider because backlight names are long.
 const BACKLIGHT_NAME_W: f32 = 0.4;
 const NUMBER_W: f32 = 0.09;
-/// A screen's share ("100 %"), of the area's width.
+/// The width of a screen's share ("100 %"), as a fraction of the area's width.
 const PERCENT_W: f32 = 0.13;
 const TRACK: f32 = 0.06;
 const THUMB: f32 = 0.16;
 const ICON: f32 = 0.5;
-/// An output's row, of a level row's height; its default's dot, of its own height.
+/// An output's row height as a fraction of a level row's height, and the dot marking the default output
+/// as a fraction of the output row's height.
 const OUTPUT_H: f32 = 0.8;
 const DOT: f32 = 0.09;
-/// A group heading's line, of its text size.
+/// The line height of a group heading, as a multiple of its text size.
 const HEADING_LINE: f32 = 1.8;
 
 /// The tab's sizes, from its area's height.
@@ -53,8 +59,9 @@ impl Sizes {
     }
 }
 
-/// A level row's track over `r` (the whole width is 0 to 100, inset by the thumb so it stays within the
-/// row at either end): lit up to the level, the thumb at it; dim without a level or while muted.
+/// A level row's track over `r`, lit up to the level with the thumb at the level. The width runs from 0
+/// to 100, inset by the thumb so that it stays within the row at either end. The track is dim when there
+/// is no level or while muted.
 fn level(f: &mut Frame, level: Level, r: Rect, muted: bool) {
     let value = f.s.levels().level(level);
     let thumb = r.h * THUMB;
@@ -64,7 +71,7 @@ fn level(f: &mut Frame, level: Level, r: Rect, muted: bool) {
     f.track(along);
 }
 
-/// The level as a number in `r`, right-aligned (`suffix` after it); "-" when unknown.
+/// The level as a number in `r`, right-aligned and followed by `suffix`, or "-" when unknown.
 fn number(f: &mut Frame, r: Rect, value: Option<u8>, suffix: &str, size: f32) {
     let text = Fmt::<8>::of(format_args!("{}", format::Level(value, suffix)));
     f.c.text_in(r, size, Tone::Normal, &text, Align::End);
@@ -82,7 +89,7 @@ fn empty(f: &mut Frame, col: &mut Column, h: f32, size: f32, text: &str) {
     f.c.text(r.x, r.y, size, Tone::Dim, text);
 }
 
-/// A muted thing's tone: its mute button lit.
+/// The tone for a mute button, lit while muted.
 fn mute_tone(muted: bool) -> Tone {
     if muted { Tone::Accent } else { Tone::Normal }
 }
@@ -117,7 +124,7 @@ pub(super) fn draw_volume(f: &mut Frame) {
     if outputs.is_empty() {
         empty(f, &mut col, z.row_h * 0.6, z.text, "No outputs");
     }
-    // (Room kept below for the apps' heading and a row.)
+    // Keep room below for the apps' heading and one row.
     let apps_room = z.heading * HEADING_LINE + z.row_h + z.pad;
     for (i, o) in outputs.iter().enumerate() {
         let h = z.row_h * OUTPUT_H;
@@ -176,7 +183,7 @@ pub(super) fn draw_brightness(f: &mut Frame) {
     let (name_w, number_w, percent_w) = (area.w * BACKLIGHT_NAME_W, area.w * NUMBER_W, area.w * PERCENT_W);
     let mut col = Column::new(area);
 
-    // The level (the bar's): every screen follows it.
+    // The brightness level, the same as the bar's. Every screen follows it.
     let mut row = col.take(z.row_h);
     let name = row.take_left(name_w);
     let number_r = row.take_right(number_w);
@@ -186,7 +193,7 @@ pub(super) fn draw_brightness(f: &mut Frame) {
     number(f, number_r, s.levels().level(Level::Brightness), "", z.text);
     col.skip(z.pad * 0.5);
 
-    // Each screen's share of it.
+    // Each screen's share of the level.
     heading(f, &mut col, z.heading, "Each screen, of the brightness above");
     if s.levels().backlights().is_empty() {
         let r = col.rest();

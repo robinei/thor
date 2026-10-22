@@ -1,10 +1,12 @@
 //! Settings: a grid of tiles on black, one per setting, each an icon over its value. A tap steps to the
 //! next value, and a long press goes back to the default. The icon's colour says what the value does:
 //! grey for the stock value, green when it saves power, amber when it costs power, blue when it changes
-//! how the game looks or plays. Two scopes sit as tabs along the top: All games (the defaults) and the
-//! game in context (the running one, else shelf's selection). A game's own choices override the defaults
-//! one by one; those tiles carry a dot, and the rest show the default's value dimmed. Changes reach a
-//! running game at once. The environment tile opens an editor over the on-screen keyboard.
+//! how the game looks or plays.
+//!
+//! Tabs along the top choose the scope: All games (the defaults) and the current game, which is the
+//! running one or else the shelf's selection. A game's own choices override the defaults one by one.
+//! Those tiles carry a dot, and the rest show the default's value dimmed. Changes reach a running game at
+//! once. The environment tile opens an editor over the on-screen keyboard.
 
 use clamshell_core::bottom::editor::{Editor, KeymapName, Purpose};
 use clamshell_core::settings::{Impact, Setting};
@@ -17,16 +19,16 @@ use crate::toolkit::format::{Fmt, Variables};
 use crate::toolkit::style::{self, Text, Tone};
 use crate::toolkit::widgets::{self, TileFace, TileShape};
 
-/// The scope tabs' row, of the area's height.
+/// The height of the scope tabs' row, as a fraction of the area's height.
 const TABS_H: f32 = 0.1;
-/// The tab label's width at most, of the area's width (long titles are cut).
+/// The largest width of a tab label, as a fraction of the area's width. Longer titles are cut.
 const TAB_MAX: f32 = 0.5;
 const COLUMNS: usize = 4;
 const ROWS: usize = 4;
-/// The icon's size and top, of a tile's height.
-/// (Values are short; in a narrow window, a long one runs over the tile's edges.)
+/// The icon's size and top, as fractions of a tile's height. Values are not cut, since they are short; in
+/// a narrow window a long one runs over the tile's edges.
 const TILE: TileShape = TileShape { icon: 0.36, icon_y: 0.17, cut: None };
-/// Tiles whose setting does nothing yet: barely there.
+/// The colour of tiles whose setting does nothing yet, barely visible.
 const LATER: Rgb = Rgb(0x34343c);
 
 /// What a tile is: a setting, the environment, or Reset.
@@ -37,8 +39,8 @@ enum Tile {
     Reset,
 }
 
-/// The grid, in order; on a game's tab Reset follows. (Settings for the device rather than a game, the
-/// charge limit and idle, are the battery tab's.)
+/// The grid, in order. On a game's tab, Reset follows. The settings for the device rather than a game,
+/// the charge limit and idle, are on the battery tab.
 const GRID: [Tile; 15] = [
     Tile::Setting(Setting::Power),
     Tile::Setting(Setting::FpsCap),
@@ -73,7 +75,8 @@ pub(super) fn draw(f: &mut Frame) {
     let mut grid = style::content(body);
     let bar = grid.take_top(f.body().h * TABS_H);
 
-    // Tabs: All (the defaults), then the item's levels (its runner's, its own); a note on the right.
+    // Tabs: All (the defaults), then the item's levels (its runner's and its own), with a note on the
+    // right.
     let inner = pad * 0.8;
     let levels = s.setting_levels();
     let tabs = std::iter::once((Scope::Global, "All")).chain(levels.iter().flatten().map(|(scope, level)| (*scope, level.title)));
@@ -100,9 +103,10 @@ pub(super) fn draw(f: &mut Frame) {
     }
 }
 
-/// How a tile looks: its icon, its value, what the value does (the icon's colour), where it comes from
-/// (the game's own choice: a dot; following the default on a game's tab: dimmed value), and whether it
-/// does anything (dimmed, with a note why not: not yet, or not for what is edited).
+/// How a tile looks: its icon and value, and what the value does, shown by the icon's colour. It also
+/// shows where the value comes from: a dot marks the game's own choice, and on a game's tab a value that
+/// follows the default is dimmed. A tile that does nothing is dimmed, with a note saying why: not yet, or
+/// not for what is being edited.
 struct Face {
     id: Id,
     icon: Icon,
@@ -113,7 +117,7 @@ struct Face {
     note: &'static str,
 }
 
-/// A tile's note when it does nothing: not yet (`later`), or not for what is edited (`no_effect`).
+/// A tile's note when it does nothing: not yet (`later`), or not for what is being edited (`no_effect`).
 fn note(later: bool, no_effect: bool) -> &'static str {
     if later {
         "later"
@@ -164,7 +168,7 @@ fn face(s: &State, tile: Tile) -> Face {
     }
 }
 
-/// A global setting's tile outside the grid (the battery tab's), drawn as in it.
+/// A global setting's tile outside the grid, as on the battery tab, drawn the same as in the grid.
 pub(super) fn setting_tile(f: &mut Frame, r: Rect, setting: Setting) {
     draw_tile(f, r, Tile::Setting(setting));
 }
@@ -177,7 +181,7 @@ fn draw_tile(f: &mut Frame, r: Rect, tile: Tile) {
         dot: (face.origin == TileOrigin::Own).then_some(Tone::Normal),
         note: face.note,
     };
-    // No background: the grid's alignment is the structure; pressed still lights it.
+    // No background, since the grid's alignment gives the structure. A press still lights it.
     widgets::tile(f, face.id.clone(), r, &TILE, tile_face, |f, r| {
         let color = match (face.active, face.impact) {
             (false, _) => LATER,
@@ -190,7 +194,7 @@ fn draw_tile(f: &mut Frame, r: Rect, tile: Tile) {
     });
 }
 
-/// The editor over the settings: the environment, or a keymap's name; then the shared editor (field,
+/// The editor over the settings, for the environment or a keymap's name, using the shared editor (field,
 /// Cancel and Save, keyboard).
 fn editor(f: &mut Frame) {
     let s = f.s;

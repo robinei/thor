@@ -1,7 +1,7 @@
-//! The Bluetooth tab: what Bluetooth is doing (connected, connecting, what went wrong) with the radio's
-//! switch, then the devices, one row each: its kind's icon, its name, and whether it is connected, being
-//! connected or paired. A tap connects (pairing a new device first) or disconnects, a long press forgets a
-//! paired device. While open, new devices are looked for.
+//! The Bluetooth tab. The header shows what Bluetooth is doing (connected, connecting, or what went
+//! wrong) next to the radio's switch. Below it is one row per device, with an icon for its kind, its name,
+//! and whether it is connected, connecting or paired. A tap connects, pairing a new device first, or
+//! disconnects. A long press forgets a paired device. While the tab is open, it scans for new devices.
 
 use std::fmt::{self, Display, Formatter};
 
@@ -51,7 +51,8 @@ fn status_tone(bt: &Bluetooth) -> Tone {
     }
 }
 
-/// The header's text: an error first, then no adapter, off, connecting, connected, or nothing.
+/// The header's text: an error, no adapter, off, connecting, connected (to one device or several), or
+/// nothing connected.
 struct Status<'a>(&'a Bluetooth);
 
 impl Display for Status<'_> {
@@ -68,7 +69,7 @@ impl Display for Status<'_> {
     }
 }
 
-/// What went wrong, in words: what was being done, and why it failed.
+/// What went wrong, in words: what was being done and why it failed.
 struct ProblemText<'a>(&'a Problem);
 
 impl Display for ProblemText<'_> {
