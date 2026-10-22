@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use crate::bottom::keyboard::{self, Key, Named, Stroke};
 use crate::effect::{Effect, Save};
+use crate::out::Out;
 
 /// What the editor edits, and the text so far.
 #[derive(Clone, PartialEq, Eq)]
@@ -157,21 +158,23 @@ impl crate::State {
     /// purpose: the environment is saved, the network joined with the password, the keymap or file named,
     /// or the account password used. Cancelling a file's name goes back to the tab the keyboard came up
     /// from.
-    pub(crate) fn editor_done(&mut self, done: Done) -> Vec<Effect> {
+    pub(crate) fn editor_done(&mut self, done: Done, out: &mut Out) {
         let Some(editor) = self.bottom.close_editor() else {
-            return vec![];
+            return;
         };
         match (done, editor.purpose) {
-            (Done::Cancel, Purpose::FileName(_)) => self.file_name_cancelled(),
-            (Done::Cancel, _) => vec![],
+            (Done::Cancel, Purpose::FileName(_)) => out.effects.extend(self.file_name_cancelled()),
+            (Done::Cancel, _) => {}
             (Done::Save, Purpose::Env { entry: game }) => {
                 self.settings.set_env(game, &editor.text);
-                vec![Effect::Save(Save::Settings(self.settings.clone()))]
+                out.effects.push(Effect::Save(Save::Settings(self.settings.clone())));
             }
-            (Done::Save, Purpose::Password { ssid }) => vec![self.radios.join(ssid, Some(editor.text))],
-            (Done::Save, Purpose::KeymapName(action)) => self.named_keymap(action, &editor.text),
-            (Done::Save, Purpose::FileName(purpose)) => self.file_named(purpose, &editor.text),
-            (Done::Save, Purpose::AccountPassword(step)) => crate::device::account::password_typed(step, editor.text, self.bottom.editors_mut()),
+            (Done::Save, Purpose::Password { ssid }) => self.radios.join(ssid, Some(editor.text), out),
+            (Done::Save, Purpose::KeymapName(action)) => out.effects.extend(self.named_keymap(action, &editor.text)),
+            (Done::Save, Purpose::FileName(purpose)) => out.effects.extend(self.file_named(purpose, &editor.text)),
+            (Done::Save, Purpose::AccountPassword(step)) => {
+                out.effects.extend(crate::device::account::password_typed(step, editor.text, self.bottom.editors_mut()))
+            }
         }
     }
 }

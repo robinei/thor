@@ -461,15 +461,15 @@ impl State {
                     EditorId::Cancel => Done::Cancel,
                 };
                 out.mark(Dirty::BOTTOM);
-                out.effects.extend(self.editor_done(done));
+                self.editor_done(done, out);
             }
             Id::Wifi(WifiId::Power) => {
                 out.mark(Dirty::BOTTOM);
-                out.effects.push(self.radios.power_wifi());
+                self.radios.power_wifi(out);
             }
             Id::Bluetooth(BtId::Power) => {
                 out.mark(Dirty::BOTTOM);
-                out.effects.push(self.radios.power_bluetooth());
+                self.radios.power_bluetooth(out);
             }
             Id::Audio(id) => {
                 out.mark(Dirty::BOTTOM);
@@ -477,7 +477,7 @@ impl State {
             }
             Id::Row { list, i, part } => {
                 out.mark(list.screens());
-                out.effects.extend(self.on_row(list, usize::from(i), part, long));
+                self.on_row(list, usize::from(i), part, long, out);
             }
             Id::Keymap(id) => {
                 out.mark(Dirty::BOTTOM);
@@ -507,7 +507,7 @@ impl State {
                 match stroke {
                     Some(stroke) if self.bottom.editor().is_some() => {
                         if let Some(done) = self.bottom.edit(stroke) {
-                            out.effects.extend(self.editor_done(done));
+                            self.editor_done(done, out);
                         }
                     }
                     Some(stroke) if self.capturing() => out.effects.extend(self.captured(State::chord(stroke))),

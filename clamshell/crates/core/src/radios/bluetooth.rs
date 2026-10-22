@@ -6,6 +6,7 @@
 use crate::effect::Effect;
 use crate::kit::list::ItemKey;
 use crate::kit::list::Rows;
+use crate::out::Out;
 use crate::radios::{RadioStatus, Radios};
 
 /// What kind of device it is, from BlueZ's icon name, for choosing its icon.
@@ -192,21 +193,21 @@ impl Rows for Bluetooth {
 
 impl Radios {
     /// The Bluetooth tab's switch.
-    pub(crate) fn power_bluetooth(&self) -> Effect {
-        Effect::Bluetooth(Command::Power(!self.bluetooth.on))
+    pub(crate) fn power_bluetooth(&self, out: &mut Out) {
+        out.effects.push(Effect::Bluetooth(Command::Power(!self.bluetooth.on)));
     }
 
     /// A tap on the device at `index` connects it, or disconnects it if it is connected. A long press
     /// forgets a paired device.
-    pub(crate) fn tap_device(&mut self, index: usize, long: bool) -> Vec<Effect> {
+    pub(crate) fn tap_device(&mut self, index: usize, long: bool, out: &mut Out) {
         let bt = &mut self.bluetooth;
         let Some(d) = bt.devices.get(index) else {
-            return vec![];
+            return;
         };
         let address = d.address.clone();
         let command = match (long, d.paired, d.connected) {
             (true, true, _) => Command::Forget(address),
-            (true, false, _) => return vec![],
+            (true, false, _) => return,
             (false, _, true) => Command::Disconnect(address),
             (false, _, false) => {
                 bt.busy = Some(address.clone());
@@ -214,7 +215,7 @@ impl Radios {
                 Command::Connect(address)
             }
         };
-        vec![Effect::Bluetooth(command)]
+        out.effects.push(Effect::Bluetooth(command));
     }
 }
 

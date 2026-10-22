@@ -11,9 +11,9 @@
 //! module only maps each list to its feature.
 
 use crate::State;
-use crate::effect::Effect;
 use crate::id::Id;
 use crate::kit::list::{EMPTY, RowsOf, Scroll};
+use crate::out::Out;
 
 /// A scrolled list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -152,18 +152,18 @@ impl State {
     }
 
     /// A tap or long press on a row, handled by the list's feature.
-    pub(crate) fn on_row(&mut self, list: ListId, i: usize, part: RowPart, long: bool) -> Vec<Effect> {
+    pub(crate) fn on_row(&mut self, list: ListId, i: usize, part: RowPart, long: bool, out: &mut Out) {
         match list {
-            ListId::Wifi => self.radios.tap_network(i, long, self.bottom.editors_mut()),
-            ListId::Bluetooth => self.radios.tap_device(i, long),
-            ListId::Streams => self.levels.on_stream(i, part),
-            ListId::Keymaps => self.on_keymap_row(i, part, long),
-            ListId::Layers => self.on_layer_row(i, part, long),
-            ListId::Time => self.sys.on_time_row(i, self.lists.get_mut(ListId::Time)),
+            ListId::Wifi => self.radios.tap_network(i, long, self.bottom.editors_mut(), out),
+            ListId::Bluetooth => self.radios.tap_device(i, long, out),
+            ListId::Streams => out.effects.extend(self.levels.on_stream(i, part)),
+            ListId::Keymaps => out.effects.extend(self.on_keymap_row(i, part, long)),
+            ListId::Layers => out.effects.extend(self.on_layer_row(i, part, long)),
+            ListId::Time => out.effects.extend(self.sys.on_time_row(i, self.lists.get_mut(ListId::Time))),
             // Its tiles are targets of their own.
-            ListId::Dock => vec![],
+            ListId::Dock => {}
             // A shelf game's row is its game's target, and a backlight's row is only its level.
-            ListId::Shelf | ListId::Backlights => vec![],
+            ListId::Shelf | ListId::Backlights => {}
         }
     }
 

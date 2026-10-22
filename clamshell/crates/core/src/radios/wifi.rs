@@ -8,6 +8,7 @@ use crate::effect::Effect;
 use crate::kit::list::ItemKey;
 use crate::kit::list::Rows;
 use crate::kit::secret::Secret;
+use crate::out::Out;
 use crate::radios::{RadioStatus, Radios};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -162,38 +163,41 @@ impl Rows for Wifi {
 
 impl Radios {
     /// The Wi-Fi tab's switch.
-    pub(crate) fn power_wifi(&self) -> Effect {
-        Effect::Wifi(Command::Enable(!self.wifi.on))
+    pub(crate) fn power_wifi(&self, out: &mut Out) {
+        out.effects.push(Effect::Wifi(Command::Enable(!self.wifi.on)));
     }
 
     /// A tap on the network at `index`, or a long press. A network with a password that isn't saved
     /// asks for it first.
-    pub(crate) fn tap_network(&mut self, index: usize, long: bool, editors: &mut Editors) -> Vec<Effect> {
+    pub(crate) fn tap_network(&mut self, index: usize, long: bool, editors: &mut Editors, out: &mut Out) {
         let Some(n) = self.wifi.networks.get(index) else {
-            return vec![];
+            return;
         };
         let ssid = n.ssid.clone();
         if long {
-            return if n.saved { vec![Effect::Wifi(Command::Forget(ssid))] } else { vec![] };
+            if n.saved {
+                out.effects.push(Effect::Wifi(Command::Forget(ssid)));
+            }
+            return;
         }
         if n.connected {
-            return vec![];
+            return;
         }
         if n.enterprise && !n.saved {
             self.wifi.error = Some(Problem::NeedsLogin { ssid });
-            return vec![];
+            return;
         }
         if n.secure && !n.saved {
             editors.open(Editor { purpose: Purpose::Password { ssid }, text: String::new() });
-            return vec![];
+            return;
         }
-        vec![self.join(ssid, None)]
+        self.join(ssid, None, out);
     }
 
-    pub(crate) fn join(&mut self, ssid: String, password: Option<String>) -> Effect {
+    pub(crate) fn join(&mut self, ssid: String, password: Option<String>, out: &mut Out) {
         self.wifi.busy = Some(ssid.clone());
         self.wifi.error = None;
-        Effect::Wifi(Command::Connect { ssid, password: password.map(Secret) })
+        out.effects.push(Effect::Wifi(Command::Connect { ssid, password: password.map(Secret) }));
     }
 }
 
