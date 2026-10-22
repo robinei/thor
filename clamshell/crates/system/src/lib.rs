@@ -5,6 +5,7 @@
 
 pub mod account;
 pub mod archives;
+pub mod audio;
 pub mod battery;
 pub mod bluetooth;
 pub mod brightness;
@@ -21,11 +22,9 @@ pub mod launch;
 pub mod library;
 pub mod lid;
 pub mod metrics;
-pub mod mixer;
 pub mod os;
 pub mod paths;
 pub mod sleep;
-pub mod sound;
 pub mod status;
 pub mod store;
 pub mod sway;
