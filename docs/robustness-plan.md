@@ -45,8 +45,9 @@ Policy: don't crash unless there is no way on; a failure that is handled by fall
 `warn` for what shouldn't happen, `debug` for the expected (an optional file that isn't there, a device
 that isn't present). Fallbacks on indexes valid by construction stay quiet, as core's crate doc says.
 
-- [ ] A helper for the common case (a `Result` turned into an `Option` or a default, with the failure
-      logged and what was being done).
+- [x] No helper: `.inspect_err(|e| log::warn!("reading {}: {e}", path.display())).ok()` says it in place.
+      A failure that repeats on a timer (a reading every few seconds) logs at `debug`, so the log isn't
+      flooded.
 - [ ] system: discarded `Result`s (`.ok()`, `let _ =`, `if let Ok` with no else, `unwrap_or*` on a
       `Result`) logged.
 - [ ] ui, binary, fan, library: the same.
