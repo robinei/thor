@@ -23,9 +23,14 @@ pub struct Resume {
 impl Resume {
     /// Where `shelf` and the second screen (`bottom`) are.
     pub(crate) fn of(shelf: &Shelf, bottom: &Bottom) -> Resume {
+        Resume::at(shelf, bottom.chosen_tab())
+    }
+
+    /// Where `shelf` is, with the second screen's chosen tab `tab`.
+    pub(crate) fn at(shelf: &Shelf, tab: Tab) -> Resume {
         let mut places = Vec::new();
         shelf.places(&mut places);
-        Resume { collection: shelf.collection().map(|c| c.name.clone()).unwrap_or_default(), tab: bottom.chosen_tab().name().to_owned(), places }
+        Resume { collection: shelf.collection().map(|c| c.name.clone()).unwrap_or_default(), tab: tab.name().to_owned(), places }
     }
 
     /// Takes `shelf` and the second screen (`bottom`) back to this place. Collections and entries that are

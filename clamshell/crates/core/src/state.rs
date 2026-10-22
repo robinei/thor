@@ -18,7 +18,7 @@ use crate::kit::list::{ItemKey, RowsOf};
 use crate::levels::slider::Control;
 use crate::out::Out;
 use crate::resume::SAVE_AFTER;
-use crate::session::running::app_id_of;
+use crate::session::running::OwnView;
 use crate::settings::{BottomWhenIdle, MouseAtLaunch, Setting, Values};
 use crate::sync::{Resend, Sent, Wanted};
 use crate::{
@@ -1142,49 +1142,18 @@ impl State {
         }
     }
 
-    /// Launches `game`, again in another tab if it runs, unless a launch of it is starting. An entry that
-    /// runs in another program's processes is shown instead, since Steam doesn't start a game twice and
-    /// Android doesn't start an app twice. It runs `command` instead of its own if given, and a group can
-    /// then be launched too. The launch is `shown` once its first window appears, or else started in the
-    /// background.
+    /// Launches `game` (see [`Session::launch`]). The Device view is opened, and a group shown open in
+    /// shelf.
     pub(crate) fn launch(&mut self, game: Arc<str>, command: Option<Launch>, shown: bool, out: &mut Out) {
-        if let Some(Launch::Tool(tool)) = self.shelf.entry(&game).map(|g| &g.launch) {
-            // The Device view is ClamShell's own, on the main screen.
-            if *tool == clamshell_library::Tool::Device {
-                self.device.open(&mut self.pointer, out);
-            } else {
-                out.effects.push(Effect::Tool(*tool));
-            }
-            return;
-        }
-        if command.is_none() && self.shelf.entry(&game).is_some_and(crate::Entry::is_group) {
-            if self.shelf.reveal(&game) {
+        let tab = self.bottom.chosen_tab();
+        match self.session.launch(game.clone(), command, shown, &self.shelf, tab, self.prefs.settings(), &self.clock, self.bottom.notice_mut(), out) {
+            Some(OwnView::Device) => self.device.open(&mut self.pointer, out),
+            Some(OwnView::Group) if self.shelf.reveal(&game) => {
                 self.shelf.moved(&mut self.pointer);
                 out.effects.push(Effect::Window(WindowCommand::ShowShelf));
             }
-            return;
+            Some(OwnView::Group) | None => {}
         }
-        if self.session.is_launching(&game) {
-            return;
-        }
-        if self.session.running(&game).is_some_and(|r| r.app_id.is_some()) {
-            self.session.show(&game, &self.clock, self.shelf.library(), self.bottom.notice_mut(), out);
-            return;
-        }
-        let Some(g) = self.shelf.entry(&game) else {
-            return;
-        };
-        let app_id = app_id_of(g).filter(|_| command.is_none());
-        let (launch, key) = (command.unwrap_or_else(|| g.launch.clone()), g.key.clone());
-        let runner = g.runner.as_ref().map(|r| &*r.key);
-        let settings = self.prefs.settings().of_in(&game, runner.as_slice());
-        let mut env = Vec::new();
-        self.prefs.settings().env_in(&game, runner.as_slice(), &mut env);
-        // If its runner, and so its container, is paused, it is resumed first.
-        self.session.resume_runner_of(&game, self.shelf.library(), out);
-        let instance = self.session.begin_launch(game.clone(), key, app_id, &self.clock, shown);
-        out.effects.push(Effect::Save(Save::Resume(self.resume())));
-        out.effects.push(Effect::Launch { entry: game, instance, settings, env, launch });
     }
 
     /// Enqueue was pressed on what shelf's details show. The entries are added to the running launch of

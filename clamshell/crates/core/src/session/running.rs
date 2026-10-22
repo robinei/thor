@@ -26,11 +26,13 @@ use std::sync::Arc;
 
 use clamshell_library::{Launch, ids};
 
+use crate::bottom::Tab;
 use crate::bottom::notice::{Notice, NoticeKind};
-use crate::effect::{Effect, WindowCommand};
+use crate::effect::{Effect, Save, WindowCommand};
 use crate::out::Out;
 use crate::session::instance::{Instance, STEAM_APP_PREFIX};
-use crate::{Clock, Entry, Library, Session, Shelf};
+use crate::settings::Settings;
+use crate::{Clock, Entry, Library, Resume, Session, Shelf};
 
 /// What is in front on the main screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -441,6 +443,14 @@ impl Session {
     }
 }
 
+/// What a launch leaves to ClamShell's own views: the Device view on the main screen, or a group, shown
+/// open in shelf.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OwnView {
+    Device,
+    Group,
+}
+
 /// The app ids of the library's entries known by them, for sway's rules. Their windows land on a
 /// workspace of their own, to be moved to their entry's (see [`Session::follow_windows`]).
 pub(crate) fn land_rules(library: &Library) -> Effect {
@@ -487,6 +497,60 @@ impl Session {
             self.pending_show = Some(instance.clone());
         }
         instance
+    }
+
+    /// Launches `game`, again in another tab if it runs, unless a launch of it is starting. An entry that
+    /// runs in another program's processes is shown instead, since Steam doesn't start a game twice and
+    /// Android doesn't start an app twice. It runs `command` instead of its own if given, and a group can
+    /// then be launched too. The launch is `shown` once its first window appears, or else started in the
+    /// background. Before it starts, where shelf and the second screen (its tab `tab`) are is saved.
+    ///
+    /// The Device view and a group aren't launched: they are returned, for State to show.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn launch(
+        &mut self,
+        game: Arc<str>,
+        command: Option<Launch>,
+        shown: bool,
+        shelf: &Shelf,
+        tab: Tab,
+        settings: &Settings,
+        clock: &Clock,
+        notice: &mut Option<Notice>,
+        out: &mut Out,
+    ) -> Option<OwnView> {
+        let library = shelf.library();
+        if let Some(Launch::Tool(tool)) = library.entry(&game).map(|g| &g.launch) {
+            // The Device view is ClamShell's own, on the main screen.
+            if *tool == clamshell_library::Tool::Device {
+                return Some(OwnView::Device);
+            }
+            out.effects.push(Effect::Tool(*tool));
+            return None;
+        }
+        if command.is_none() && library.entry(&game).is_some_and(Entry::is_group) {
+            return Some(OwnView::Group);
+        }
+        if self.is_launching(&game) {
+            return None;
+        }
+        if self.running(&game).is_some_and(|r| r.app_id.is_some()) {
+            self.show(&game, clock, library, notice, out);
+            return None;
+        }
+        let g = library.entry(&game)?;
+        let app_id = app_id_of(g).filter(|_| command.is_none());
+        let (launch, key) = (command.unwrap_or_else(|| g.launch.clone()), g.key.clone());
+        let runner = g.runner.as_ref().map(|r| &*r.key);
+        let values = settings.of_in(&game, runner.as_slice());
+        let mut env = Vec::new();
+        settings.env_in(&game, runner.as_slice(), &mut env);
+        // If its runner, and so its container, is paused, it is resumed first.
+        self.resume_runner_of(&game, library, out);
+        let instance = self.begin_launch(game.clone(), key, app_id, clock, shown);
+        out.effects.push(Effect::Save(Save::Resume(Resume::at(shelf, tab))));
+        out.effects.push(Effect::Launch { entry: game, instance, settings: values, env, launch });
+        None
     }
 
     /// Quit: asks the entry's windows to close. Once none is left, it is ended if it still runs, or its
