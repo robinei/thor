@@ -340,10 +340,23 @@ impl State {
     /// - one left on the landing workspace that is no entry's goes to the main screen;
     /// - an entry running by its windows that had windows and has none, or waited in vain, has ended.
     pub(crate) fn follow_windows(&mut self, known: &[i64]) -> Vec<Effect> {
+        let mut effects = self.start_by_app_id();
+        effects.extend(self.windows_to_their_entries());
+        let (taken, stray) = self.stray_to_waiting(known, &mut effects);
+        let given: Vec<i64> = if taken.is_some() { stray } else { Vec::new() };
+        effects.extend(self.follow_found_windows(&given));
+        if taken.is_none() {
+            effects.extend(self.landing_up());
+        }
+        effects.extend(self.end_windowless(taken.as_ref()));
+        effects
+    }
+
+    /// Entries started elsewhere, by their windows' app ids (a window's app id says whose it is before
+    /// its scope does: a game Steam started is in Steam's scope). A Steam game is launched (the launcher
+    /// finds it running); the rest run by their windows, the last shown.
+    fn start_by_app_id(&mut self) -> Vec<Effect> {
         let now = self.mono_secs;
-        let mut effects = Vec::new();
-        // Started elsewhere. (A window's app id says whose it is before its scope does: a game Steam
-        // started is in Steam's scope.)
         let session = &self.session;
         let mut new: Vec<&Entry> = Vec::new();
         for w in session.windows.iter().filter(|w| !session.running.iter().any(|r| r.owns(w))) {
@@ -364,19 +377,27 @@ impl State {
             self.bottom.woken = false;
         }
         self.session.running.extend(new);
-        for game in steam {
-            effects.extend(self.launch(game));
-        }
-        // Windows found by app id or by process to their entry's workspace.
+        steam.into_iter().flat_map(|game| self.launch(game)).collect()
+    }
+
+    /// Windows found by app id or by process, to their entry's workspace.
+    fn windows_to_their_entries(&self) -> Vec<Effect> {
         let session = &self.session;
+        let mut effects = Vec::new();
         for r in session.running.iter().filter(|r| r.outside()) {
             let away: Vec<i64> = session.windows_of(&r.id).filter(|w| !w.down && Instance::key_of(&w.workspace) != Some(&r.key)).map(|w| w.id).collect();
             if !away.is_empty() {
                 effects.push(Effect::Window(WindowCommand::Move { windows: away, to: r.workspace() }));
             }
         }
-        // New windows of no launch of ours to the latest browsed file waiting for one.
-        let landing = Instance::Landing.name();
+        effects
+    }
+
+    /// New windows of no launch of ours (not in `known`) to the latest browsed file waiting for one,
+    /// shown. The entry that took them, if one did, and those windows.
+    fn stray_to_waiting(&self, known: &[i64], effects: &mut Vec<Effect>) -> (Option<Arc<str>>, Vec<i64>) {
+        let now = self.mono_secs;
+        let session = &self.session;
         let stray: Vec<i64> = session
             .windows
             .iter()
@@ -388,27 +409,37 @@ impl State {
             .iter()
             .filter(|r| r.app_id.is_none() && !r.seen && matches!(r.origin, Origin::Windows { until, .. } if now <= until))
             .max_by_key(|r| r.start);
-        let mut taken = None;
-        if let Some(r) = waiting.filter(|_| !stray.is_empty()) {
-            effects.push(Effect::Window(WindowCommand::Move { windows: stray.clone(), to: r.workspace() }));
-            effects.push(Effect::Window(WindowCommand::Focus(r.workspace())));
-            taken = Some(r.id.clone());
-        }
-        // Still no entry's: their programs' (see [`crate::found`]).
-        let given: Vec<i64> = if taken.is_some() { stray } else { Vec::new() };
-        effects.extend(self.follow_found_windows(&given));
-        let session = &self.session;
-        // Left on the landing workspace (its entry gone from the library since its rule was given).
-        // (Not one whose entry's launch is starting: a Steam game found running, see above.)
-        let starting = |w: &crate::windows::Window| session.launching.iter().any(|l| l.app_id.as_deref() == Some(w.app_id.as_str()));
-        if taken.is_none() {
-            for w in session.windows.iter().filter(|w| w.workspace == landing && session.running_of(w).is_none() && !starting(w)) {
-                effects.push(Effect::Window(WindowCommand::Up { window: w.id, to: None }));
+        match waiting.filter(|_| !stray.is_empty()) {
+            Some(r) => {
+                effects.push(Effect::Window(WindowCommand::Move { windows: stray.clone(), to: r.workspace() }));
+                effects.push(Effect::Window(WindowCommand::Focus(r.workspace())));
+                (Some(r.id.clone()), stray)
             }
+            None => (None, stray),
         }
-        // Those with windows (a window just taken is still where it came up).
+    }
+
+    /// Windows left on the landing workspace (their entry gone from the library since its rule was
+    /// given) to the main screen; not one whose entry's launch is starting (a Steam game found running).
+    fn landing_up(&self) -> Vec<Effect> {
+        let session = &self.session;
+        let landing = Instance::Landing.name();
+        let starting = |w: &crate::windows::Window| session.launching.iter().any(|l| l.app_id.as_deref() == Some(w.app_id.as_str()));
+        session
+            .windows
+            .iter()
+            .filter(|w| w.workspace == landing && session.running_of(w).is_none() && !starting(w))
+            .map(|w| Effect::Window(WindowCommand::Up { window: w.id, to: None }))
+            .collect()
+    }
+
+    /// Entries running by their windows or found by a tray icon end when those are gone (`taken`: an
+    /// entry whose window was just given it, still where it came up); a play by windows is recorded.
+    fn end_windowless(&mut self, taken: Option<&Arc<str>>) -> Vec<Effect> {
+        let now = self.mono_secs;
+        let session = &self.session;
         let with: Vec<Arc<str>> =
-            session.running.iter().filter(|r| taken.as_ref() == Some(&r.id) || session.windows_of(&r.id).next().is_some()).map(|r| r.id.clone()).collect();
+            session.running.iter().filter(|r| taken == Some(&r.id) || session.windows_of(&r.id).next().is_some()).map(|r| r.id.clone()).collect();
         let mut ended = Vec::new();
         let icons: Vec<Arc<str>> = self.tray.iter().map(|t| t.key.clone()).collect();
         // (Those with a scope listed: a launch of theirs runs.)
@@ -428,10 +459,7 @@ impl State {
                 Origin::Ours => true,
             }
         });
-        for (game, start) in ended {
-            effects.extend(self.record_play(game, start));
-        }
-        effects
+        ended.into_iter().flat_map(|(game, start)| self.record_play(game, start)).collect()
     }
 
     /// The app ids of the library's entries known by them, for sway's rules: their windows land on a
