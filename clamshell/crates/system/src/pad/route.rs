@@ -22,7 +22,7 @@ use crate::input::{Press, Range, Raw};
 
 /// The virtual mouse's keys: the pad mouse's buttons and the keys the pad types with. What the device
 /// is built with, and what leaving the pad mouse or typing lets go of.
-pub const MOUSE_DEVICE_KEYS: [KeyCode; 9] = [
+const MOUSE_DEVICE_KEYS: [KeyCode; 9] = [
     KeyCode::BTN_LEFT,
     KeyCode::BTN_RIGHT,
     KeyCode::BTN_MIDDLE,
@@ -127,7 +127,7 @@ impl PadSnapshot {
     }
 
     /// [`PadSnapshot::events`] for the keys and axes whose event `pick` takes.
-    pub fn events_where(&self, real: bool, pick: impl Fn(Raw) -> bool, out: &mut Vec<Raw>) {
+    fn events_where(&self, real: bool, pick: impl Fn(Raw) -> bool, out: &mut Vec<Raw>) {
         let press = if real { Press::Down } else { Press::Up };
         let start = out.len();
         out.extend(self.keys.iter().map(|&k| Raw::key(k, press)).filter(|r| pick(*r)));

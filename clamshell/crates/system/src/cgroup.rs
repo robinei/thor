@@ -9,7 +9,7 @@ pub fn unit_of(pid: u32) -> Option<String> {
 }
 
 /// The innermost unit in a cgroup file's path (`0::/user.slice/…/app.slice/foo.scope`).
-pub fn parse_unit(cgroup: &str) -> Option<&str> {
+fn parse_unit(cgroup: &str) -> Option<&str> {
     let path = cgroup.lines().find_map(|l| l.strip_prefix("0::"))?;
     path.rsplit('/').find(|part| part.ends_with(".scope") || part.ends_with(".service"))
 }

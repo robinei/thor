@@ -38,7 +38,7 @@ use crate::{Sink, worker};
 /// Fetches at once.
 const THREADS: usize = 4;
 /// How long a libretro list kept on disk is used before it is fetched again.
-pub const LISTS_KEPT: std::time::Duration = std::time::Duration::from_secs(30 * 86_400);
+const LISTS_KEPT: std::time::Duration = std::time::Duration::from_secs(30 * 86_400);
 
 /// A miss (nothing found) is tried again after this long (seconds).
 pub const RETRY_MISS: u64 = 30 * 86_400;

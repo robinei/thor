@@ -140,7 +140,7 @@ fn parse(text: &str) -> Entry {
 
 /// An Exec line as program and arguments: split at unquoted spaces, double quotes with backslash
 /// escapes, field codes (%f, %U, ...) dropped, `%%` a percent sign.
-pub fn exec_args(exec: &str) -> Vec<String> {
+fn exec_args(exec: &str) -> Vec<String> {
     let mut args = Vec::new();
     let mut word = String::new();
     let (mut quoted, mut started) = (false, false);

@@ -10,8 +10,8 @@ use super::route::{Mapping, Out};
 use crate::input::{Press, Range, Raw};
 
 /// A direction held this long starts repeating, this often.
-pub const REPEAT_AFTER: Duration = Duration::from_millis(350);
-pub const REPEAT_EVERY: Duration = Duration::from_millis(90);
+const REPEAT_AFTER: Duration = Duration::from_millis(350);
+const REPEAT_EVERY: Duration = Duration::from_millis(90);
 /// The left stick counts as a direction past this (of full).
 const STICK_DIRECTION: f32 = 0.6;
 /// A trigger counts as pulled past this (of full).

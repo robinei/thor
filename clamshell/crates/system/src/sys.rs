@@ -29,7 +29,7 @@ pub fn processes() -> impl Iterator<Item = (u32, PathBuf)> {
 
 /// When process `pid` started (clock ticks after boot: /proc/<pid>/stat's 22nd field); none if it is
 /// gone. With its id, it tells the process from a later one given the same id.
-pub fn start_time(pid: u32) -> Option<u64> {
+fn start_time(pid: u32) -> Option<u64> {
     let stat = text(format!("/proc/{pid}/stat"))?;
     // (The fields after the name in parentheses, which may hold anything: the state is the 3rd.)
     stat.rsplit_once(')')?.1.split_whitespace().nth(22 - 3)?.parse().ok()

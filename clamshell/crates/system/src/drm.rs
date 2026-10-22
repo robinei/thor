@@ -15,7 +15,7 @@ use crate::sys;
 
 /// One DRM client's id and its render-engine time (ns), from an fdinfo file; `None` for a file that
 /// isn't a DRM client's or has no render engine.
-pub fn parse_fdinfo(text: &str) -> Option<(u64, u64)> {
+fn parse_fdinfo(text: &str) -> Option<(u64, u64)> {
     let mut id = None;
     let mut ns = None;
     for line in text.lines() {

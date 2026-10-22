@@ -70,7 +70,7 @@ pub fn open(spec: &DeviceSpec, what: &str, looks_right: impl Fn(&RawDevice) -> b
 }
 
 /// Axes and their values.
-pub type AxisValues = Vec<(AbsoluteAxisCode, i32)>;
+type AxisValues = Vec<(AbsoluteAxisCode, i32)>;
 
 /// A device grabbed (nothing else sees its events while we hold it; let go when dropped) and read
 /// without blocking.

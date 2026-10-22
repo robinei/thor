@@ -71,7 +71,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub type Value = Variant<Box<dyn RefArg>>;
 
 /// What a thread serves: given a call to it, the reply; `None` if it isn't one of its (refused).
-pub type Serve = Box<dyn FnMut(&Message) -> Option<Message> + Send>;
+type Serve = Box<dyn FnMut(&Message) -> Option<Message> + Send>;
 
 /// A connection to a bus, used by one thread.
 pub struct Bus {

@@ -6,7 +6,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 /// How long a tool may take.
-pub const LIMIT: Duration = Duration::from_secs(3);
+const LIMIT: Duration = Duration::from_secs(3);
 
 /// Runs `program` with `args`; its standard output if it succeeded within the limit (failures logged).
 pub fn output(program: &str, args: &[&str]) -> Option<Vec<u8>> {

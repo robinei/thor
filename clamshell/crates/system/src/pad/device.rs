@@ -12,7 +12,7 @@ use super::route::{Axis, PadSnapshot, Ranges, mouse_device_keys};
 use crate::input::device::{self, DeviceSpec};
 use crate::input::{Press, Range, Raw, keyset};
 
-pub const VIRTUAL_PAD: &str = "clamshell pad (Xbox 360)";
+const VIRTUAL_PAD: &str = "clamshell pad (Xbox 360)";
 /// The virtual pad's USB ids: a wired Xbox 360 controller's.
 pub const VIRTUAL_IDS: (u16, u16) = (0x045e, 0x028e);
 const VIRTUAL_MOUSE: &str = "clamshell pad mouse";

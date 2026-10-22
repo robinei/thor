@@ -227,7 +227,7 @@ enum Span {
 }
 
 /// The controller's codes for a button (the back buttons go by several names).
-pub fn button_codes(b: Button) -> &'static [KeyCode] {
+fn button_codes(b: Button) -> &'static [KeyCode] {
     match b {
         Button::A => &[KeyCode::BTN_SOUTH],
         Button::B => &[KeyCode::BTN_EAST],
@@ -250,7 +250,7 @@ pub fn button_codes(b: Button) -> &'static [KeyCode] {
 }
 
 /// The code a button is on the pad games see: its own, but AYN is Guide there.
-pub fn pad_code(b: Button) -> Option<KeyCode> {
+fn pad_code(b: Button) -> Option<KeyCode> {
     match b {
         Button::Ayn => Some(KeyCode::BTN_MODE),
         b => button_codes(b).first().copied(),
@@ -333,7 +333,7 @@ fn range(v: f32, deadzone: u8, full: u8) -> f32 {
 
 /// A stick's position (each axis -1 to 1, y down) tuned by its binding: inverted, its distance from the
 /// middle through the deadzone, the full point and the curve (the direction kept).
-pub fn tune_stick((x, y): (f32, f32), b: &Binding) -> (f32, f32) {
+fn tune_stick((x, y): (f32, f32), b: &Binding) -> (f32, f32) {
     let (x, y) = (if b.invert_x { -x } else { x }, if b.invert_y { -y } else { y });
     if b.deadzone == 0 && b.full >= 100 && b.curve == 0 {
         return (x, y);

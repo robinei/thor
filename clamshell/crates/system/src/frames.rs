@@ -33,7 +33,7 @@ const KEEP: Duration = Duration::from_secs(600);
 /// Reads a growing MangoHud CSV: finds the fps and frametime columns from the header row, and keeps
 /// the latest values. Pure.
 #[derive(Debug, Default)]
-pub struct Tail {
+struct Tail {
     columns: Option<(usize, usize)>,
     partial: String,
 }

@@ -108,7 +108,7 @@ struct Toplevel {
 
 /// What the proxy knows of a connection's objects.
 #[derive(Debug, Default)]
-pub struct Objects {
+struct Objects {
     registries: HashSet<u32>,
     wm_bases: HashSet<u32>,
     /// Each xdg_surface's wl_surface.

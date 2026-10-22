@@ -132,7 +132,7 @@ fn policies() -> Vec<Policy> {
 
 /// The CPUs to take offline for "little cores only": all but the slowest cluster's, when there are
 /// clusters of different speeds (never CPU 0).
-pub fn big_cpus(clusters: &[(u64, Vec<u32>)]) -> Vec<u32> {
+fn big_cpus(clusters: &[(u64, Vec<u32>)]) -> Vec<u32> {
     let Some(slowest) = clusters.iter().map(|(max, _)| *max).min() else {
         return vec![];
     };
