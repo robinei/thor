@@ -356,38 +356,18 @@ impl State {
         let Some(screen) = self.keymap_screens.open else {
             return vec![];
         };
-        match (id, screen) {
-            (KeymapId::Back, _) => {
-                self.keymap_back();
-                vec![]
-            }
-            (KeymapId::New, Screen::List) => {
+        if id == KeymapId::Back {
+            self.keymap_back();
+            return vec![];
+        }
+        match screen {
+            Screen::List if id == KeymapId::New => {
                 self.name_keymap(KeymapName::New, String::new());
                 vec![]
             }
-            (KeymapId::Edit, Screen::Menu(k)) => {
-                self.open_edit(k);
-                vec![]
-            }
-            (KeymapId::Rename, Screen::Menu(k)) => {
-                let name = self.keymap_name(k).to_owned();
-                self.name_keymap(KeymapName::Rename(k), name);
-                vec![]
-            }
-            (KeymapId::Duplicate, Screen::Menu(k)) => {
-                let name = self.keymaps.unique_name(self.keymap_name(k));
-                self.name_keymap(KeymapName::Duplicate(k), name);
-                vec![]
-            }
-            (KeymapId::LoadFrom, Screen::Menu(k)) if self.keymap_is_own(k) => {
-                self.keymap_screens.open = Some(Screen::Load(k));
-                vec![]
-            }
-            (KeymapId::SaveAs, Screen::Menu(k)) if self.keymap_is_own(k) => {
-                self.keymap_screens.open = Some(Screen::SaveAs(k));
-                vec![]
-            }
-            (KeymapId::ConfirmSave, Screen::Overwrite { own, to }) => {
+            Screen::List => vec![],
+            Screen::Menu(k) => self.on_keymap_menu(id, k),
+            Screen::Overwrite { own, to } if id == KeymapId::ConfirmSave => {
                 self.keymap_screens.open = Some(Screen::List);
                 if !self.keymaps.copy_into(to, own) {
                     return vec![];
@@ -396,91 +376,94 @@ impl State {
                 effects.extend(self.follow_keymap(false));
                 effects
             }
-            (KeymapId::MakeOwn, Screen::Edit(k)) => self.make_own(k),
-            (KeymapId::Delete, Screen::Menu(k)) if self.keymap_users(k).any() => {
-                self.keymap_screens.open = Some(Screen::Delete(k));
-                vec![]
+            Screen::Delete(k) if id == KeymapId::ConfirmDelete => self.delete_keymap(k),
+            Screen::Edit(k) => self.on_edit_screen(id, k, long),
+            Screen::LayerPicker(k) => self.on_layer_picker(id, k, long),
+            Screen::LayerMenu { id: k, layer } => self.on_layer_menu(id, k, layer),
+            Screen::Layers { id: k, input } => match id {
+                KeymapId::ToLayer(layer) => self.choose(k, input, Output::Layer(layer)),
+                KeymapId::NewLayer => {
+                    let act = self.keymap_screens.edit.act;
+                    self.name_keymap(KeymapName::NewLayer(k, Some((input, act))), String::new());
+                    vec![]
+                }
+                _ => vec![],
+            },
+            Screen::Pick { id: k, input } => match id {
+                KeymapId::Input(tapped) => picked(input, tapped).map(|output| self.choose(k, input, output)).unwrap_or_default(),
+                KeymapId::Target(target) => self.map_to(k, input, target),
+                _ => vec![],
+            },
+            Screen::Mouse { id: k, input } => match id {
+                KeymapId::Target(target) => self.map_to(k, input, target),
+                _ => vec![],
+            },
+            Screen::Holds { id: k, input } => match id {
+                KeymapId::Hold(hold) => self.set_hold(k, input, hold),
+                KeymapId::Input(tapped) if holds(tapped) => self.set_hold(k, input, Some(tapped)),
+                _ => vec![],
+            },
+            Screen::Capture { .. } if id == KeymapId::Done => {
+                let chord = self.keyboard.take_modifiers();
+                self.captured(chord)
             }
-            (KeymapId::Delete, Screen::Menu(k)) | (KeymapId::ConfirmDelete, Screen::Delete(k)) => self.delete_keymap(k),
-            (KeymapId::Input(input), Screen::Edit(k)) if long => {
+            Screen::Load(_) | Screen::SaveAs(_) | Screen::Overwrite { .. } | Screen::Delete(_) | Screen::Capture { .. } => vec![],
+        }
+    }
+
+    /// A keymap's menu (a long press on its row).
+    fn on_keymap_menu(&mut self, id: KeymapId, k: u16) -> Vec<Effect> {
+        match id {
+            KeymapId::Edit => self.open_edit(k),
+            KeymapId::Rename => {
+                let name = self.keymap_name(k).to_owned();
+                self.name_keymap(KeymapName::Rename(k), name);
+            }
+            KeymapId::Duplicate => {
+                let name = self.keymaps.unique_name(self.keymap_name(k));
+                self.name_keymap(KeymapName::Duplicate(k), name);
+            }
+            KeymapId::LoadFrom if self.keymap_is_own(k) => self.keymap_screens.open = Some(Screen::Load(k)),
+            KeymapId::SaveAs if self.keymap_is_own(k) => self.keymap_screens.open = Some(Screen::SaveAs(k)),
+            KeymapId::Delete if self.keymap_users(k).any() => self.keymap_screens.open = Some(Screen::Delete(k)),
+            KeymapId::Delete => return self.delete_keymap(k),
+            _ => {}
+        }
+        vec![]
+    }
+
+    /// The edit screen: an input selected (a long press: its binding removed), its actuation, its target
+    /// and parameters, the layer shown, Undo, Make own, the gyro's calibration and hold.
+    fn on_edit_screen(&mut self, id: KeymapId, k: u16, long: bool) -> Vec<Effect> {
+        match id {
+            KeymapId::MakeOwn => self.make_own(k),
+            KeymapId::Input(input) if long => {
                 self.keymap_screens.edit.selected = Some(input);
                 self.bind(k, input, None)
             }
-            (KeymapId::Input(input), Screen::Edit(k)) => self.select(k, input),
-            (KeymapId::Input(tapped), Screen::Pick { id: k, input }) => match picked(input, tapped) {
-                Some(output) => self.choose(k, input, output),
-                None => vec![],
-            },
-            (KeymapId::Actuation(act), Screen::Edit(_)) => {
+            KeymapId::Input(input) => self.select(k, input),
+            KeymapId::Actuation(act) => {
                 let view = &mut self.keymap_screens.edit;
                 if view.selected.is_some_and(|i| act.fits(i.kind())) {
                     view.act = act;
                 }
                 vec![]
             }
-            (KeymapId::Undo, Screen::Edit(k)) => self.undo(k),
-            (KeymapId::EditLayer(layer), Screen::LayerPicker(k)) => self.open_layer_menu(k, layer),
-            (KeymapId::LayerPicker, Screen::Edit(k)) => {
+            KeymapId::Undo => self.undo(k),
+            KeymapId::LayerPicker => {
                 self.keymap_screens.open = Some(Screen::LayerPicker(k));
                 vec![]
             }
-            (KeymapId::Layer(layer), Screen::LayerPicker(k)) if long => self.open_layer_menu(k, layer),
-            (KeymapId::Layer(layer), Screen::LayerPicker(k)) => {
-                self.keymap_screens.edit.layer = layer;
-                self.keymap_screens.open = Some(Screen::Edit(k));
-                vec![]
-            }
-            (KeymapId::NewLayer, Screen::LayerPicker(k)) => {
-                self.name_keymap(KeymapName::NewLayer(k, None), String::new());
-                vec![]
-            }
-            (KeymapId::Layer(layer), Screen::Edit(_)) => {
+            KeymapId::Layer(layer) => {
                 self.keymap_screens.edit.layer = layer;
                 self.keymap_screens.edit.clearing = false;
                 vec![]
             }
-            (KeymapId::RenameLayer, Screen::LayerMenu { id: k, layer }) => {
-                let name = self.keymaps.get(k).and_then(|km| km.layer_name(layer)).unwrap_or("").to_owned();
-                self.name_keymap(KeymapName::RenameLayer(k, layer), name);
-                vec![]
-            }
-            (KeymapId::LayerOnce, Screen::LayerMenu { id: k, layer }) => {
-                let changed = self.keymaps.get_mut(k).is_some_and(|km| {
-                    let once = !km.layer_once(layer);
-                    km.set_layer_once(layer, once)
-                });
-                self.saved_if(changed)
-            }
-            (KeymapId::DeleteLayer, Screen::LayerMenu { id: k, layer }) if layer != Layer::BASE => {
-                self.keymap_screens.open = Some(Screen::LayerPicker(k));
-                if self.keymap_screens.edit.layer == layer {
-                    self.keymap_screens.edit.layer = Layer::BASE;
-                }
-                let changed = self.keymaps.get_mut(k).is_some_and(|km| km.remove_layer(layer));
-                self.saved_if(changed)
-            }
-            (KeymapId::ToLayer(layer), Screen::Layers { id: k, input }) => self.choose(k, input, Output::Layer(layer)),
-            (KeymapId::NewLayer, Screen::Layers { id: k, input }) => {
-                let act = self.keymap_screens.edit.act;
-                self.name_keymap(KeymapName::NewLayer(k, Some((input, act))), String::new());
-                vec![]
-            }
-            (KeymapId::Clear, Screen::LayerMenu { .. }) => {
-                self.keymap_screens.edit.clearing = true;
-                vec![]
-            }
-            (KeymapId::ConfirmClear, Screen::LayerMenu { id: k, layer }) => {
-                self.keymap_screens.edit.clearing = false;
-                self.keymap_screens.open = Some(Screen::LayerPicker(k));
-                let changed = self.keymaps.get_mut(k).is_some_and(|k| k.clear(layer));
-                self.saved_if(changed)
-            }
-            (KeymapId::Target(target), Screen::Edit(k)) => match self.keymap_screens.edit.selected {
+            KeymapId::Target(target) => match self.keymap_screens.edit.selected {
                 Some(input) => self.map_to(k, input, target),
                 None => vec![],
             },
-            (KeymapId::Target(target), Screen::Pick { id: k, input } | Screen::Mouse { id: k, input }) => self.map_to(k, input, target),
-            (KeymapId::Toggle(param), Screen::Edit(k)) => match self.param_binding(param) {
+            KeymapId::Toggle(param) => match self.param_binding(param) {
                 Some((_, input, mut b)) => {
                     let on = param.get(&b) > 0;
                     param.set(&mut b, u8::from(!on));
@@ -489,22 +472,71 @@ impl State {
                 }
                 None => vec![],
             },
-            (KeymapId::Calibrate, Screen::Edit(_)) => {
+            KeymapId::Calibrate => {
                 self.notify(crate::notice::NoticeKind::Gyro(None));
                 vec![Effect::CalibrateGyro]
             }
-            (KeymapId::Holds, Screen::Edit(k)) => {
+            KeymapId::Holds => {
                 let input = self.keymap_screens.edit.selected.filter(|i| *i == Input::Gyro);
                 if let Some(input) = input.filter(|i| self.param_base(k, *i).is_some_and(|b| b.output != Output::Nothing)) {
                     self.keymap_screens.open = Some(Screen::Holds { id: k, input });
                 }
                 vec![]
             }
-            (KeymapId::Hold(hold), Screen::Holds { id: k, input }) => self.set_hold(k, input, hold),
-            (KeymapId::Input(tapped), Screen::Holds { id: k, input }) if holds(tapped) => self.set_hold(k, input, Some(tapped)),
-            (KeymapId::Done, Screen::Capture { .. }) => {
-                let chord = self.keyboard.take_modifiers();
-                self.captured(chord)
+            _ => vec![],
+        }
+    }
+
+    /// The layer picker: a layer shown on the edit screen (a long press: its menu), or a new one.
+    fn on_layer_picker(&mut self, id: KeymapId, k: u16, long: bool) -> Vec<Effect> {
+        match id {
+            KeymapId::EditLayer(layer) => self.open_layer_menu(k, layer),
+            KeymapId::Layer(layer) if long => self.open_layer_menu(k, layer),
+            KeymapId::Layer(layer) => {
+                self.keymap_screens.edit.layer = layer;
+                self.keymap_screens.open = Some(Screen::Edit(k));
+                vec![]
+            }
+            KeymapId::NewLayer => {
+                self.name_keymap(KeymapName::NewLayer(k, None), String::new());
+                vec![]
+            }
+            _ => vec![],
+        }
+    }
+
+    /// A layer's menu: rename, Once, clear (confirmed), delete.
+    fn on_layer_menu(&mut self, id: KeymapId, k: u16, layer: Layer) -> Vec<Effect> {
+        match id {
+            KeymapId::RenameLayer => {
+                let name = self.keymaps.get(k).and_then(|km| km.layer_name(layer)).unwrap_or("").to_owned();
+                self.name_keymap(KeymapName::RenameLayer(k, layer), name);
+                vec![]
+            }
+            KeymapId::LayerOnce => {
+                let changed = self.keymaps.get_mut(k).is_some_and(|km| {
+                    let once = !km.layer_once(layer);
+                    km.set_layer_once(layer, once)
+                });
+                self.saved_if(changed)
+            }
+            KeymapId::DeleteLayer if layer != Layer::BASE => {
+                self.keymap_screens.open = Some(Screen::LayerPicker(k));
+                if self.keymap_screens.edit.layer == layer {
+                    self.keymap_screens.edit.layer = Layer::BASE;
+                }
+                let changed = self.keymaps.get_mut(k).is_some_and(|km| km.remove_layer(layer));
+                self.saved_if(changed)
+            }
+            KeymapId::Clear => {
+                self.keymap_screens.edit.clearing = true;
+                vec![]
+            }
+            KeymapId::ConfirmClear => {
+                self.keymap_screens.edit.clearing = false;
+                self.keymap_screens.open = Some(Screen::LayerPicker(k));
+                let changed = self.keymaps.get_mut(k).is_some_and(|km| km.clear(layer));
+                self.saved_if(changed)
             }
             _ => vec![],
         }
