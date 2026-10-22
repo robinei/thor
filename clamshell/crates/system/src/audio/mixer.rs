@@ -56,10 +56,16 @@ fn follow(backlights: &Backlights, commands: &Receiver<Command>, sink: &impl Sin
     }
 }
 
-/// The PipeWire graph, as `pw-dump` prints it.
+/// The PipeWire graph, as `pw-dump` prints it. It is read every few seconds, so a failure is logged at
+/// debug; a missing `pw-dump` is reported at start with the other tools.
 fn dump() -> Option<Value> {
-    let out = crate::os::command::output("pw-dump", &[])?;
-    serde_json::from_slice(&out).map_err(|e| log::warn!("pw-dump: {e}")).ok()
+    use crate::os::command;
+    let ran = command::run("pw-dump", &[] as &[&str], None, command::LIMIT).inspect_err(|e| log::debug!("{e}")).ok()?;
+    if !ran.status.success() {
+        log::debug!("pw-dump: {}", ran.status);
+        return None;
+    }
+    serde_json::from_slice(&ran.stdout).inspect_err(|e| log::debug!("pw-dump: {e}")).ok()
 }
 
 fn read_audio() -> Audio {
