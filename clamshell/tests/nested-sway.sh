@@ -105,7 +105,7 @@ walk(json.load(sys.stdin))"; }
 # A tap or long press, as the program's control pipe takes them.
 ctl() { echo "$*" > "$T/control"; sleep 0.3; }
 start_program() {
-    msg exec "env CLAMSHELL_TEST=$T CLAMSHELL_CONTROL=$T/control CLAMSHELL_STEAM=off XDG_CONFIG_HOME=$T/config XDG_DATA_HOME=$T/data XDG_DATA_DIRS=$T/none CLAMSHELL_BOTTOM_OUTPUT=HEADLESS-2 CLAMSHELL_START_MODE=dock $BIN >> $T/program.log 2>&1"
+    msg exec "env CLAMSHELL_TEST=$T CLAMSHELL_CONTROL=$T/control CLAMSHELL_STEAM=off XDG_CONFIG_HOME=$T/config XDG_DATA_HOME=$T/data XDG_DATA_DIRS=$T/none CLAMSHELL_BOTTOM_OUTPUT=HEADLESS-2 CLAMSHELL_START_TAB=dock $BIN >> $T/program.log 2>&1"
 }
 program_pid() { for p in $(pgrep -x clamshell); do { tr '\0' '\n' < "/proc/$p/environ"; } 2>/dev/null | grep -qx "CLAMSHELL_TEST=$T" && echo "$p"; done; }
 # The test apps, by position on the dock (their pins).

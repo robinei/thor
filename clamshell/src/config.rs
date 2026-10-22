@@ -18,7 +18,7 @@ pub struct Env {
     pub gamepad: DeviceSpec,
     /// CLAMSHELL_STEAM=off: without Steam's games (tests).
     pub steam: bool,
-    /// CLAMSHELL_START_MODE: start in this tab (touchpad, keyboard, dock, ...; development). What it
+    /// CLAMSHELL_START_TAB: start in this tab (touchpad, keyboard, dock, ...; development). What it
     /// watches starts with the others' at the start.
     pub start_tab: Option<Tab>,
     /// CLAMSHELL_PAD_MOUSE=1: start with the pad mouse on (where the pad goes is sent at the start).
@@ -53,7 +53,7 @@ impl Env {
             bottom_panel: flag("CLAMSHELL_BOTTOM_PANEL", "1"),
             gamepad: DeviceSpec::parse(var("CLAMSHELL_GAMEPAD").as_deref()),
             steam: !flag("CLAMSHELL_STEAM", "off"),
-            start_tab: var("CLAMSHELL_START_MODE").and_then(|t| Tab::from_name(&t)),
+            start_tab: var("CLAMSHELL_START_TAB").and_then(|t| Tab::from_name(&t)),
             pad_mouse: flag("CLAMSHELL_PAD_MOUSE", "1"),
             control: path("CLAMSHELL_CONTROL"),
             device_session: flag("CLAMSHELL_SESSION", "device"),
