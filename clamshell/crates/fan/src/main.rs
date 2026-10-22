@@ -1,15 +1,17 @@
-//! clamshell-fan: the fan daemon (its curve: [`curve`]), a system service started early in boot
-//! and restarted if it stops. Every tick: the fan (the hwmon chip named `pwmfan`, looked for until it is
-//! there: pwm-fan is a module), the mode ([`MODE_FILE`]), the CPU and GPU thermal zones, and the speed
-//! from those written when it changes. It takes the fan once found: `pwm1_enable` 3, which also cuts the
-//! fan's supply when the speed is 0 (and during suspend).
+//! clamshell-fan, the fan daemon. It is a system service started early in boot and restarted if it
+//! stops; the curve is in [`curve`].
+//!
+//! Every tick it looks for the fan, reads the mode ([`MODE_FILE`]) and the CPU and GPU thermal zones, and
+//! writes the speed when it changes. The fan is the hwmon chip named `pwmfan`; it is looked for until it
+//! appears, since pwm-fan is a module. Once found, the daemon takes it by setting `pwm1_enable` to 3,
+//! which also cuts the fan's supply when the speed is 0 and during suspend.
 //!
 //!   `clamshell-fan [ROOT]`
 //!   `clamshell-fan --safe [ROOT]`
 //!
-//! ROOT (default /): where /sys and /run are, for trying it on a copy. `--safe`: the fan to its safe speed
-//! ([`curve::SAFE`]), then exit: as the service stops (its `ExecStopPost`), so that a stopped daemon
-//! doesn't leave the fan off.
+//! ROOT (default /) is where /sys and /run are, for trying it on a copy. `--safe` sets the fan to its
+//! safe speed ([`curve::SAFE`]) and exits. The service runs it as it stops (its `ExecStopPost`), so that
+//! a stopped daemon doesn't leave the fan off.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -24,7 +26,7 @@ fn find_fan(root: &Path) -> Option<PathBuf> {
     entries(&root.join("sys/class/hwmon")).into_iter().find(|chip| text(&chip.join("name")).as_deref() == Some("pwmfan") && chip.join("pwm1").exists())
 }
 
-/// The CPU and GPU thermal zones' readings (°C).
+/// The readings of the CPU and GPU thermal zones, in °C.
 fn readings(root: &Path) -> Vec<f32> {
     entries(&root.join("sys/class/thermal"))
         .into_iter()
@@ -50,9 +52,9 @@ fn entries(dir: &Path) -> Vec<PathBuf> {
 struct Daemon {
     /// The fan's hwmon directory, once found.
     fan: Option<PathBuf>,
-    /// `pwm1_enable` set (tried again each tick until it is).
+    /// Whether `pwm1_enable` is set. It is tried again each tick until it is.
     taken: bool,
-    /// The mode in force: the mode file's, kept while the file can't be read or is half written.
+    /// The mode in force, from the mode file. It is kept while the file can't be read or is half written.
     mode: Option<Mode>,
     /// The mode last logged.
     said: Option<Mode>,
@@ -60,7 +62,7 @@ struct Daemon {
     temp: Option<f32>,
 }
 
-/// One tick: the speed set (or kept). What happened worth a line in the log, if anything.
+/// One tick, which sets or keeps the speed. Returns a line for the log if anything worth one happened.
 fn tick(root: &Path, d: &mut Daemon) -> Option<String> {
     let mut found = false;
     if d.fan.as_ref().is_none_or(|dir| !dir.join("pwm1").exists()) {
@@ -76,7 +78,7 @@ fn tick(root: &Path, d: &mut Daemon) -> Option<String> {
             Err(e) => problem = Some(format!("{}: pwm1_enable: {e}", dir.display())),
         }
     }
-    // (ClamShell writes the file in place: empty or partial for a moment.)
+    // ClamShell writes the file in place, so it can be empty or partial for a moment.
     if let Some(mode) = text(&root.join(MODE_FILE.trim_start_matches('/'))).as_deref().and_then(Mode::parse) {
         d.mode = Some(mode);
     }
@@ -106,7 +108,7 @@ fn tick(root: &Path, d: &mut Daemon) -> Option<String> {
     }
 }
 
-/// The fan to its safe speed (the service stopping).
+/// Sets the fan to its safe speed, for when the service stops.
 fn safe(root: &Path) -> Result<(), String> {
     let dir = find_fan(root).ok_or("no fan")?;
     fs::write(dir.join("pwm1"), curve::SAFE.to_string()).map_err(|e| format!("{}: pwm1: {e}", dir.display()))
@@ -126,7 +128,7 @@ fn main() {
     let mut daemon = Daemon::default();
     let mut said = None;
     loop {
-        // (Each thing said once until something else is.)
+        // Log each line once, until a different one comes.
         let line = tick(&root, &mut daemon);
         if line.is_some() && line != said {
             if let Some(line) = &line {
@@ -186,7 +188,7 @@ mod tests {
         fs::write(root.join("run/clamshell-fan"), "max").unwrap();
         assert_eq!(tick(&root, &mut d).as_deref(), Some("mode max"));
         assert_eq!(tick(&root, &mut d), None, "nothing new");
-        // (Half written: the mode kept.)
+        // A half-written file keeps the mode.
         fs::write(root.join("run/clamshell-fan"), "").unwrap();
         assert_eq!(tick(&root, &mut d), None);
         assert_eq!(d.mode, Some(Mode::Max));

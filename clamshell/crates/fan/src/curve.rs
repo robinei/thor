@@ -1,7 +1,10 @@
-//! The daemon's curve. Nothing in the Thor's kernel drives the fan (its device tree links no thermal zone
-//! to it; it runs at the speed it was given at boot), so the daemon sets its speed from the CPU and GPU
-//! sensors every [`TICK`], as Armada's armada-powerd does: the mean of the hottest few ([`temperature`]),
-//! smoothed ([`smooth`]), on the [`Mode`]'s curve, the speed changing a step at a time ([`next`]).
+//! The daemon's fan curve.
+//!
+//! Nothing in the Thor's kernel drives the fan. Its device tree links no thermal zone to it, so it keeps
+//! the speed it was given at boot. The daemon therefore sets the speed from the CPU and GPU sensors every
+//! [`TICK`], as Armada's armada-powerd does. It takes the mean of the hottest few sensors
+//! ([`temperature`]), smooths it ([`smooth`]), looks it up on the [`Mode`]'s curve, and changes the speed
+//! a step at a time ([`next`]).
 
 use std::time::Duration;
 
@@ -10,35 +13,36 @@ use clamshell_core::settings::fan::Mode;
 /// How often the daemon reads the sensors and sets the speed.
 pub const TICK: Duration = Duration::from_secs(3);
 
-/// The fan's speed as the hardware takes it (hwmon's `pwm1`): a duty cycle, 0 off to 255 full. (The
-/// device tree's `cooling-levels` for it stop at 150; nothing uses them, and full speed stays available.)
+/// The fan's speed as the hardware takes it in hwmon's `pwm1`: a duty cycle from 0 (off) to 255 (full).
+/// The device tree's `cooling-levels` for the fan stop at 150, but nothing uses them and full speed is
+/// still available.
 pub type Duty = u8;
 
-/// Full speed at once, in every mode, at or above this (°C): past the curves' ends, so a step at a time
-/// is no longer worth waiting for.
+/// At or above this temperature (°C) the fan goes to full speed at once, in every mode. It is past the
+/// ends of the curves, so stepping up gradually is no longer worth waiting for.
 pub const HOT: f32 = 95.0;
-/// When no sensor can be read, and when the daemon stops (`clamshell-fan --safe`).
+/// The speed used when no sensor can be read, and when the daemon stops (`clamshell-fan --safe`).
 pub const SAFE: Duty = 128;
-/// The slowest the fan runs at (Armada's `min_pwm`): starting goes straight to it, slowing down never goes
-/// below it but straight to off.
+/// The slowest speed the fan runs at (Armada's `min_pwm`). Starting goes straight to it, and slowing down
+/// never goes below it but straight to off instead.
 const MIN_RUNNING: Duty = 51;
-/// Turned off only this far (°C) below a curve's first point, so that it doesn't start and stop around
-/// it. (Off at all is ours: Armada's curves never stop the fan.)
+/// How far below a curve's first point (°C) the fan is turned off, so that it doesn't keep starting and
+/// stopping around that point. Turning it off at all is our choice; Armada's curves never stop the fan.
 const OFF_BELOW: f32 = 5.0;
-/// Speeding up goes at most this much a tick, slowing down at most [`STEP_DOWN`] (Armada's ramp).
+/// The most the speed rises in one tick. It falls by at most [`STEP_DOWN`]. Both are Armada's ramp.
 const STEP_UP: Duty = 36;
 const STEP_DOWN: Duty = 6;
-/// The sensors averaged: the hottest this many.
+/// How many of the hottest sensors are averaged.
 const HOTTEST: usize = 3;
 /// How much of a new reading [`smooth`] takes.
 const SMOOTHING: f32 = 0.5;
 
-/// Each mode's curve: (°C, duty) points, rising; linear between them, off below the first, full above the
-/// last. Auto is Armada's moderate curve; Quiet starts later and stays slower.
+/// Each mode's curve as rising (°C, duty) points. The speed is linear between points, off below the first
+/// and full above the last. Auto is Armada's moderate curve; Quiet starts later and stays slower.
 const AUTO: [(f32, Duty); 6] = [(55.0, 51), (72.0, 77), (78.0, 102), (84.0, 153), (90.0, 204), (96.0, 255)];
 const QUIET: [(f32, Duty); 5] = [(60.0, 51), (78.0, 77), (85.0, 102), (90.0, 153), (95.0, 204)];
 
-/// `mode`'s curve: (°C, duty) points, rising; none for Max (full speed).
+/// The curve for `mode` as rising (°C, duty) points. Max has none, as it is always full speed.
 fn curve(mode: Mode) -> &'static [(f32, Duty)] {
     match mode {
         Mode::Auto => &AUTO,
@@ -47,8 +51,8 @@ fn curve(mode: Mode) -> &'static [(f32, Duty)] {
     }
 }
 
-/// The temperature the fan follows, from the CPU and GPU sensors' readings (°C): the mean of the hottest
-/// [`HOTTEST`], those believable (-40 to 150 °C) only; none if none is.
+/// The temperature the fan follows, from the CPU and GPU sensor readings in °C. It is the mean of the
+/// [`HOTTEST`] hottest believable readings, those between -40 and 150 °C. None if no reading is believable.
 pub fn temperature(readings: impl IntoIterator<Item = f32>) -> Option<f32> {
     let mut hot: Vec<f32> = readings.into_iter().filter(|&c| c > -40.0 && c < 150.0).collect();
     hot.sort_by(|a, b| b.total_cmp(a));
@@ -56,14 +60,15 @@ pub fn temperature(readings: impl IntoIterator<Item = f32>) -> Option<f32> {
     (!hot.is_empty()).then(|| hot.iter().sum::<f32>() / hot.len() as f32)
 }
 
-/// A new [`temperature`] smoothed with the last (so that a spike moves the fan less); none read: none.
+/// A new [`temperature`] smoothed with the previous one, so that a spike moves the fan less. None if
+/// nothing was read.
 pub fn smooth(was: Option<f32>, now: Option<f32>) -> Option<f32> {
     let now = now?;
     Some(was.map_or(now, |was| was + (now - was) * SMOOTHING))
 }
 
-/// The speed for the next tick, in `mode` at `temp` (°C, as [`smooth`] gives it; `None`: no sensor could
-/// be read), the fan running at `now`.
+/// The speed for the next tick, in `mode`, with the fan running at `now`. `temp` is in °C as [`smooth`]
+/// gives it, or `None` if no sensor could be read.
 pub fn next(mode: Mode, temp: Option<f32>, now: Duty) -> Duty {
     let curve = curve(mode);
     let (Some(&(first_t, first)), Some(&(last_t, _))) = (curve.first(), curve.last()) else {
@@ -111,7 +116,7 @@ mod tests {
 
     #[test]
     fn the_curve_between_its_points() {
-        // (From a speed it may jump to: the curve itself.)
+        // Starting from a speed it can reach in one step, so the result is the curve itself.
         assert_eq!(next(Mode::Auto, Some(40.0), 0), 0, "cool: off");
         assert_eq!(next(Mode::Auto, Some(55.0), 0), 51);
         assert_eq!(next(Mode::Auto, Some(81.0), 128), 128, "half way from 102 to 153");
