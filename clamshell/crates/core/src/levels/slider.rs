@@ -1,12 +1,12 @@
-//! Volume and brightness in the bar: a finger held on either icon (or sliding off it sideways) brings
-//! up a slider whose current value is under the finger; moving sets the level as it goes, lifting leaves
-//! it there. A tap opens the icon's tab instead. The same slider sets a keymap binding's parameters
-//! from the edit screen's panel ([`Control::Param`], see `keymap_screens`).
+//! Volume and brightness in the bar. A finger held on either icon, or sliding off it sideways, brings up
+//! a slider with the current value under the finger. Moving sets the level as it goes, and lifting
+//! leaves it there. A tap opens the icon's tab instead. The same slider sets a keymap binding's
+//! parameters from the edit screen's panel ([`Control::Param`], see `keymap_screens`).
 //!
 //! The slider runs along the screen's width. Its length is what fits on both sides of where the finger
-//! came down, given the level there (the part below the level goes left of the finger, the rest right),
-//! so the value can go from 0 to 100 without the track leaving the screen (the icons sit near the middle
-//! of the bar for this, not exactly in it).
+//! came down, given the level there: the part below the level goes left of the finger and the rest goes
+//! right. This lets the value go from 0 to 100 without the track leaving the screen. For the same reason
+//! the icons sit near the middle of the bar, but not exactly in it.
 
 use crate::effect::Effect;
 use crate::levels::{Level, Levels};
@@ -20,7 +20,7 @@ pub enum Control {
 }
 
 impl Control {
-    /// The level it sets, if it is a level's.
+    /// The level it sets, if it sets one.
     pub fn level(self) -> Option<Level> {
         match self {
             Control::Volume => Some(Level::Volume),
@@ -34,36 +34,37 @@ impl Control {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Slider {
     pub control: Control,
-    /// The value when the finger came down, and now, in `lo..=hi` (a level's 0-100, a parameter's
-    /// range).
+    /// The value when the finger came down, and the value now, in `lo..=hi`. That is 0-100 for a level,
+    /// or a parameter's range.
     pub start: u8,
     pub value: u8,
     pub lo: u8,
     pub hi: u8,
-    /// Where the finger came down, and the track's length (the whole range).
+    /// Where the finger came down, and the length of the track, which covers the whole range.
     pub x: f32,
     pub length: f32,
-    /// The level changed during this touch (so lifting isn't a tap).
+    /// The level changed during this touch, so lifting isn't a tap.
     pub moved: bool,
 }
 
-/// A finger held this long on volume or brightness brings up the slider (a shorter touch is a tap, which
-/// opens the tab); moving sideways this far (layout units) brings it up at once. For touch and the mouse.
+/// A finger held this long on volume or brightness brings up the slider. A shorter touch is a tap, which
+/// opens the tab. Moving sideways [`SLIDE_MOVE`] layout units brings the slider up at once. This applies
+/// to touch and the mouse.
 pub const SLIDE_AFTER: std::time::Duration = std::time::Duration::from_millis(200);
 pub const SLIDE_MOVE: f32 = 8.0;
 
 /// Where a slider starts when the level isn't known.
 const UNKNOWN_START: u8 = 50;
 
-/// Space kept free at each end of the track, of the screen's width.
+/// Space kept free at each end of the track, as a fraction of the screen's width.
 const EDGE: f32 = 0.03;
-/// The track's length at most and at least, of the screen's width (so a percent is about as far
-/// wherever the finger came down).
+/// The longest and shortest track, as a fraction of the screen's width. This keeps a percent about the
+/// same distance wherever the finger came down.
 const LONGEST: f32 = 0.5;
 const SHORTEST: f32 = 0.1;
 
 impl Slider {
-    /// A slider for `control` at value `start` (0-100), the finger at `x` on a screen `width` wide.
+    /// A slider for `control` at value `start` (0-100), with the finger at `x` on a screen `width` wide.
     pub fn new(control: Control, start: u8, x: f32, width: f32) -> Slider {
         Slider::ranged(control, start, 0, 100, x, width)
     }
@@ -82,13 +83,13 @@ impl Slider {
         (f32::from(v.clamp(self.lo, self.hi)) - f32::from(self.lo)) / span
     }
 
-    /// The value now, as a percent of the range (where the track's thumb is).
+    /// The value now, as a percent of the range. This is where the track's thumb is.
     pub fn percent(&self) -> u8 {
         (self.fraction(self.value) * 100.0).round() as u8
     }
 
-    /// The longest track (up to half the screen) that stays on a screen `width` wide with the part
-    /// `below` (0 to 1) of it left of `x`, the rest right of it.
+    /// The longest track, up to half the screen, that stays on a screen `width` wide when the fraction
+    /// `below` (0 to 1) of it is left of `x` and the rest is right of it.
     pub fn length_at(x: f32, below: f32, width: f32) -> f32 {
         let below = below.clamp(0.0, 1.0);
         let (left, right) = (x - width * EDGE, width * (1.0 - EDGE) - x);
@@ -97,7 +98,7 @@ impl Slider {
         fits(left, below).min(fits(right, 1.0 - below)).clamp(width * SHORTEST, width * LONGEST)
     }
 
-    /// Where the track starts: so that the starting level sits under the finger.
+    /// Where the track starts, so that the starting level sits under the finger.
     pub fn track_start(&self) -> f32 {
         self.x - self.fraction(self.start) * self.length
     }
@@ -112,7 +113,8 @@ impl Slider {
 
 impl Levels {
     pub(crate) fn slide_start(&mut self, control: Control, x: f32, width: f32) {
-        // Without a reading (a desktop without a backlight), from the middle: the slider still shows.
+        // Without a reading, as on a desktop without a backlight, start from the middle so the slider
+        // still shows.
         let start = self.control(control).unwrap_or(UNKNOWN_START);
         self.slider = Some(Slider::new(control, start, x, width));
     }
@@ -130,11 +132,11 @@ impl Levels {
         }
         slider.value = value;
         slider.moved = true;
-        // The same level as the tab's row (turning the volume up or down unmutes).
+        // The same level as the tab's row. Turning the volume up or down unmutes.
         self.set(level, value)
     }
 
-    /// The finger lifted: the level stays where it was set (readings count again).
+    /// The finger lifted. The level stays where it was set, and readings count again.
     pub(crate) fn slide_end(&mut self) {
         if self.slider.take().is_some() {
             self.release();
@@ -171,8 +173,8 @@ mod tests {
     #[test]
     fn the_level_starts_under_the_finger_and_follows_it() {
         let mut s = with_levels();
-        // A finger at 300 on a 620-wide screen, at 80 %: 281.4 fits left of it (for 80 % of the track),
-        // more right of it; the track is the most allowed, half the screen.
+        // A finger at 300 on a 620-wide screen, at 80 %. 281.4 fits left of it for 80 % of the track, and
+        // more fits right of it, so the track is the longest allowed, half the screen.
         slide(&mut s, Slide::Start { control: Control::Brightness, x: 300.0, width: 620.0 });
         let slider = *s.levels().slider().unwrap();
         assert!((slider.length - 310.0).abs() < 0.01);
@@ -212,7 +214,7 @@ mod tests {
         assert_eq!(start, 100.0, "Off under the finger, the track to its right");
         assert_eq!((s.value_at(start + s.length), s.value_at(start + s.length / 2.0), s.value_at(start - 50.0)), (30, 15, 0));
         assert_eq!(Slider { value: 15, ..s }.percent(), 50, "the thumb halfway");
-        // A range from above 0 (a hold's time, 20 to 100).
+        // A range that starts above 0, such as a hold's time, 20 to 100.
         let s = Slider::ranged(Control::Volume, 40, 20, 100, 300.0, 620.0);
         assert_eq!((s.value_at(s.track_start()), s.value_at(s.track_start() + s.length)), (20, 100));
     }
