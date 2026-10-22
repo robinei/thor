@@ -323,7 +323,7 @@ systemctl --user stop clamshell
 rm -rf {DATA} && mkdir -p {DATA}
 echo '["desktop:foot"]' > {DATA}/dock.json
 # (Set up: not a first start, which would open the Device view over shelf.)
-echo '{{"done": true}}' > {DATA}/setup.json
+echo '{{"done": true}}' > {DATA}/first-start.json
 cat > {CONFIG}/library.json <<'EOF'
 {LIBRARY}EOF
 touch {CHECKS_DIR}/games/test.game {CHECKS_DIR}/games/zeta.game {" ".join(f"{CHECKS_DIR}/games/zulu{i:02}.game" for i in range(1, 15))}
