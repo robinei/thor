@@ -331,7 +331,7 @@ mod tests {
     }
 
     fn t(x: f32, y: f32, id: Id) -> Target {
-        Target { rect: Rect::new(x, y, 10.0, 10.0), id, track: None, list: None }
+        Target { rect: Rect::new(x, y, 10.0, 10.0), id, track: None, list: None, item: None }
     }
 
     fn state() -> State {

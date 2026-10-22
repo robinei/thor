@@ -230,7 +230,7 @@ impl Input {
         };
         let id = target.id.clone();
         self.presses.push((source, Press::new(id.clone(), Some(target.rect), gesture, (x, y), target.list, now)));
-        actions.extend([Action::Emit(PointerEvent::HideFocus.into()), Action::Emit(PointerEvent::Down(id, None).into())]);
+        actions.extend([Action::Emit(PointerEvent::HideFocus.into()), Action::Emit(PointerEvent::Down(id, target.item).into())]);
         match gesture {
             // A keymap parameter's row has nothing to tap, so it slides at once from where the finger
             // came down. A touch without moving changes nothing.
@@ -469,7 +469,7 @@ mod tests {
     }
 
     fn target(id: Id, track: Option<Track>) -> Target {
-        Target { rect: Rect::new(0.0, 0.0, 100.0, 50.0), id, track, list: None }
+        Target { rect: Rect::new(0.0, 0.0, 100.0, 50.0), id, track, list: None, item: None }
     }
 
     fn tab() -> Target {
@@ -524,7 +524,7 @@ mod tests {
 
     fn row(list: ListId, i: u16) -> Target {
         let id = list.row(i);
-        Target { rect: Rect::new(0.0, 0.0, 100.0, 1000.0), id, track: None, list: Some(InList { list, row_h: 50.0 }) }
+        Target { rect: Rect::new(0.0, 0.0, 100.0, 1000.0), id, track: None, list: Some(InList { list, row_h: 50.0 }), item: None }
     }
 
     /// Applies what the actions emit to `s`, and returns whether a timer was armed again.

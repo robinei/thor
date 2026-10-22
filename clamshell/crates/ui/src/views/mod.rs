@@ -421,4 +421,33 @@ mod tests {
             assert_eq!(step(&all, down.as_ref(), Dir::Down).as_ref(), Some(&second), "{tab:?}: then the list");
         }
     }
+
+    /// A press keys its list item from the frame it landed on, so a list that re-sorts between the frame
+    /// and the press acts on the item that was drawn there.
+    #[test]
+    fn a_tap_acts_on_the_item_drawn_under_it() {
+        use crate::input::{End, Input, Source};
+        use clamshell_core::radios::bluetooth::{Bluetooth, Command, Device, Kind};
+        use clamshell_core::{Effect, ListId, Tab};
+        let device = |name: &str, connected| Device { address: format!("00:{name}"), name: name.into(), kind: Kind::Other, paired: true, connected };
+        let bt = |devices| Event::Reading(Reading::Bluetooth(Bluetooth { present: true, on: true, devices, ..Bluetooth::default() }));
+        let mut state = demo();
+        state.apply(bt(vec![device("buds", false), device("pad", false)]), &mut Vec::new());
+        state.apply(Event::Pointer(clamshell_core::PointerEvent::Activate(Id::Tab(Tab::Bluetooth))), &mut Vec::new());
+        let (targets, _) = draw_bottom(&state, (1240, 1080), &mut DrawCache::load());
+        let first = targets.iter().rev().find(|t| t.id == ListId::Bluetooth.row(0)).expect("the first device");
+        // The pad connects and sorts first before the finger comes down where the buds were drawn.
+        state.apply(bt(vec![device("pad", true), device("buds", false)]), &mut Vec::new());
+        let (mut input, now) = (Input::default(), std::time::Instant::now());
+        let mut actions = input.touch(Source::Touch(1), first, (first.rect.x + 1.0, first.rect.y + 1.0), now);
+        actions.extend(input.up(Source::Touch(1), End::Release, &state, now));
+        let mut effects = Vec::new();
+        for action in actions {
+            if let crate::input::Action::Emit(e) = action {
+                state.apply(e, &mut effects);
+            }
+        }
+        assert!(effects.contains(&Effect::Bluetooth(Command::Connect("00:buds".into()))), "{effects:?}");
+        assert!(!effects.iter().any(|e| matches!(e, Effect::Bluetooth(Command::Disconnect(_)))), "{effects:?}");
+    }
 }

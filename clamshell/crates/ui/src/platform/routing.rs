@@ -29,8 +29,8 @@ impl App {
             return;
         };
         let below_bar = bottom && view.body.is_some_and(|b| b.contains(x as f32, y as f32));
-        let Some(target) =
-            found.or_else(|| below_bar.then(|| crate::toolkit::Target { rect: crate::gfx::Rect::default(), id: Id::Blank, track: None, list: None }))
+        let Some(target) = found
+            .or_else(|| below_bar.then(|| crate::toolkit::Target { rect: crate::gfx::Rect::default(), id: Id::Blank, track: None, list: None, item: None }))
         else {
             return;
         };

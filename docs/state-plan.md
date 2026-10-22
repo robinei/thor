@@ -142,7 +142,7 @@ and the UI change with the code they call; doc links to moved methods are fixed 
       prototype on one screen measuring record + compare against a full draw. Floats in commands are a
       `Px(f32)` compared and hashed by `to_bits()` (layout is deterministic, so bit-equal means the same
       drawing; a NaN equals itself; output is unchanged); the burn-in orbit offset is part of the recording.
-- [ ] Each frame target records the key of the item it shows (a `u64` hash, so drawing stays
+- [x] Each frame target records the key of the item it shows (a `u64` hash, so drawing stays
       allocation-free); a press keys its item from the target it landed on rather than from the state
       at `Down`. Today a list that changes between a frame and the press keys the item now at that
       position, not the one that was drawn there.

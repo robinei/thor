@@ -11,7 +11,7 @@ pub(crate) mod scroll;
 pub(crate) mod style;
 pub(crate) mod widgets;
 
-use clamshell_core::{Id, ListId, State};
+use clamshell_core::{Id, ItemKey, ListId, State};
 
 use crate::gfx::images::Images;
 use crate::gfx::{Canvas, Rect};
@@ -28,6 +28,9 @@ pub struct Target {
     pub track: Option<Track>,
     /// The scrolled list it is in, if any. A vertical drag on it scrolls the list.
     pub list: Option<scroll::InList>,
+    /// The list item it shows, if it is one, as it was when drawn. A press on it carries the key, so it
+    /// acts on that item even if the list changes before the press.
+    pub item: Option<ItemKey>,
 }
 
 /// The span along x over which a finger on a target sets a value, in the same units as the target's
@@ -123,7 +126,8 @@ impl<'f, 'c> Frame<'f, 'c> {
         if self.s.pointer().focused(&id) {
             self.c.outline(shown.inset(look.ring), look.radius.max(RADIUS_S), 2.0, Tone::Accent);
         }
-        self.targets.push(Target { rect, id, track: None, list: None });
+        let item = self.s.lists().item_key(&id);
+        self.targets.push(Target { rect, id, track: None, list: None, item });
     }
 
     /// Whether `id` is held down by a finger or the pad's A. A control whose slider is up doesn't count,
