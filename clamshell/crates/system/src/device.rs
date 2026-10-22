@@ -10,10 +10,12 @@ use std::io;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use clamshell_core::account::AccountCommand;
+use clamshell_core::idle::IdleEvent;
 use clamshell_core::{Event, Reading, TimeZones};
 
 use crate::worker::Worker;
-use crate::{Sink, command, dbus};
+use crate::{Closed, Sink, command, dbus};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
@@ -66,93 +68,102 @@ fn awake(argv: &[String]) -> bool {
     command::run(program, args, None, AWAKE_LIMIT).is_ok_and(|ran| ran.status.success())
 }
 
-/// Screenshots go to `screenshots` (a folder, made if needed).
+/// Screenshots go to `screenshots` (a folder, made if needed). What may take seconds (the account's
+/// helper, a runner's awake check, the panel's calibration) runs on a thread of its own, so a screenshot
+/// or sleep asked for meanwhile doesn't wait for it.
 pub fn spawn(screenshots: Option<PathBuf>, sink: impl Sink + Clone) -> io::Result<Worker<Command>> {
     Worker::spawn("system", move |commands| {
         // Our last notification, which the next replaces (a lower battery's warning the earlier one's).
         let mut shown = 0;
         for command in commands {
-            match command {
-                Command::Screenshot => {
-                    let result = screenshot(screenshots.as_ref());
-                    if sink.send(Event::Screenshot(result)).is_err() {
-                        return;
-                    }
-                }
-                // (Busy: something works on that the user left it to, a download, a build.)
-                Command::Sleep => match busy() {
-                    Some(why) => {
-                        log::info!("sleep: not now, {why}");
-                        if sink.send(Event::Idle(clamshell_core::idle::IdleEvent::Busy)).is_err() {
-                            return;
-                        }
-                    }
-                    None => sleep(),
-                },
-                Command::AskAwake(argv) => {
-                    if awake(&argv) && sink.send(Event::Idle(clamshell_core::idle::IdleEvent::KeptAwake)).is_err() {
-                        return;
-                    }
-                }
-                Command::ReadTime => {
-                    if sink.send(Event::Reading(Reading::Time(read_time(None)))).is_err() {
-                        return;
-                    }
-                }
-                Command::SetTimeZone(zone) => {
-                    let error = set_time_zone(&zone).err();
-                    if sink.send(Event::Reading(Reading::Time(read_time(error)))).is_err() {
-                        return;
-                    }
-                }
-                Command::SetNtp(on) => {
-                    let error = timedatectl(&["set-ntp", if on { "true" } else { "false" }]).err();
-                    if sink.send(Event::Reading(Reading::Time(read_time(error)))).is_err() {
-                        return;
-                    }
-                }
-                Command::StepClock(field, by) => {
-                    let error = step_clock(field, by).err();
-                    // (The clock moved: the time now, then the reading.)
-                    let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
-                    if sink.send(Event::Tick { unix_secs: now, mono_secs: clamshell_core::mono_secs() }).is_err()
-                        || sink.send(Event::Reading(Reading::Time(read_time(error)))).is_err()
-                    {
-                        return;
-                    }
-                }
-                Command::CalibrateRefresh => {
-                    let told = sink.clone();
-                    let started = crate::worker::detached("refresh", move || {
-                        let result = calibrate_refresh();
-                        log::info!("refresh calibration: {result:?}");
-                        let _ = told.send(Event::RefreshCalibrated(result));
-                    });
-                    if let Err(e) = started {
-                        let _ = sink.send(Event::RefreshCalibrated(Err(e.to_string())));
-                    }
-                }
-                Command::Account(command) => {
-                    if command != clamshell_core::account::AccountCommand::Read {
-                        let result = crate::account::change(&command);
-                        if let Err(e) = &result {
-                            log::warn!("account: {e}");
-                        }
-                        if sink.send(Event::AccountChanged(result)).is_err() {
-                            return;
-                        }
-                    }
-                    if sink.send(Event::Reading(Reading::Account(crate::account::read()))).is_err() {
-                        return;
-                    }
-                }
-                Command::Notify { summary, body, urgent } => match notify(shown, &summary, &body, urgent) {
-                    Ok(id) => shown = id,
-                    Err(e) => log::warn!("notification \"{summary}\": {e}"),
-                },
+            if carry_out(command, screenshots.as_ref(), &mut shown, &sink).is_err() {
+                return;
             }
         }
     })
+}
+
+/// One command of the system thread's; `Closed` once the UI is gone.
+fn carry_out(command: Command, screenshots: Option<&PathBuf>, shown: &mut u32, sink: &(impl Sink + Clone)) -> Result<(), Closed> {
+    match command {
+        Command::Screenshot => sink.send(Event::Screenshot(screenshot(screenshots))),
+        // (Busy: something works on that the user left it to, a download, a build.)
+        Command::Sleep => match busy() {
+            Some(why) => {
+                log::info!("sleep: not now, {why}");
+                sink.send(Event::Idle(IdleEvent::Busy))
+            }
+            None => {
+                sleep();
+                Ok(())
+            }
+        },
+        Command::AskAwake(argv) => {
+            in_background("awake", sink, move || if awake(&argv) { vec![Event::Idle(IdleEvent::KeptAwake)] } else { vec![] });
+            Ok(())
+        }
+        Command::ReadTime => sink.send(Event::Reading(Reading::Time(read_time(None)))),
+        Command::SetTimeZone(zone) => {
+            let error = set_time_zone(&zone).err();
+            sink.send(Event::Reading(Reading::Time(read_time(error))))
+        }
+        Command::SetNtp(on) => {
+            let error = timedatectl(&["set-ntp", if on { "true" } else { "false" }]).err();
+            sink.send(Event::Reading(Reading::Time(read_time(error))))
+        }
+        Command::StepClock(field, by) => {
+            let error = step_clock(field, by).err();
+            // (The clock moved: the time now, then the reading.)
+            let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
+            sink.send(Event::Tick { unix_secs: now, mono_secs: clamshell_core::mono_secs() })?;
+            sink.send(Event::Reading(Reading::Time(read_time(error))))
+        }
+        Command::CalibrateRefresh => {
+            in_background("refresh", sink, || {
+                let result = calibrate_refresh();
+                log::info!("refresh calibration: {result:?}");
+                vec![Event::RefreshCalibrated(result)]
+            });
+            Ok(())
+        }
+        Command::Account(command) => {
+            in_background("account", sink, move || {
+                let mut events = Vec::new();
+                if command != AccountCommand::Read {
+                    let result = crate::account::change(&command);
+                    if let Err(e) = &result {
+                        log::warn!("account: {e}");
+                    }
+                    events.push(Event::AccountChanged(result));
+                }
+                events.push(Event::Reading(Reading::Account(crate::account::read())));
+                events
+            });
+            Ok(())
+        }
+        Command::Notify { summary, body, urgent } => {
+            match notify(*shown, &summary, &body, urgent) {
+                Ok(id) => *shown = id,
+                Err(e) => log::warn!("notification \"{summary}\": {e}"),
+            }
+            Ok(())
+        }
+    }
+}
+
+/// `work` on a thread of its own, its events sent when it is done (a thread that can't start: logged).
+fn in_background(name: &str, sink: &(impl Sink + Clone), work: impl FnOnce() -> Vec<Event> + Send + 'static) {
+    let sink = sink.clone();
+    let started = crate::worker::detached(name, move || {
+        for event in work() {
+            if sink.send(event).is_err() {
+                return;
+            }
+        }
+    });
+    if let Err(e) = started {
+        log::warn!("{name}: {e}");
+    }
 }
 
 /// Both screens (as the compositor lays them out) into one PNG named by the time; its path, or why not.

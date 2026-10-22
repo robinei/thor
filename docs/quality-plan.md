@@ -111,10 +111,10 @@ Helpers that exist but are bypassed:
       14 slots for 19 actions, now room for each and an assertion.
 - [x] Per-event waste: `follow_keymap` clones the keymap each event; `app_id_of` `format!`s per entry ×
       window each second; `found.rs:73` lowercases every id.
-- [ ] Giant functions split: `core::apply_event`, `keymap_screens::on_keymap`, `running::follow_windows`,
+- [x] Giant functions split: `core::apply_event`, `keymap_screens::on_keymap`, `running::follow_windows`,
       `remap::wanted`, `PadThread::route_events` (the rumble mixing a pure, tested function), `main`
       (one error path).
-- [ ] The system thread: Account and AskAwake off it (as CalibrateRefresh); `?` on `Closed`.
+- [x] The system thread: Account and AskAwake off it (as CalibrateRefresh); `?` on `Closed`.
 - [ ] One way each: bus reconnection (`dbus::Kept` for both buses, `units.rs:76`), mutex poisoning,
       thread spawning (`worker`), the Unix-seconds clock (7 copies), `Duration`→`Timespec` (4 copies),
       the /dev/input watch (two watchers), reader on/off commands and `Command`/`Request` names.
