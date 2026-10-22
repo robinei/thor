@@ -491,7 +491,8 @@ impl State {
     pub(crate) fn follow_units(&mut self) -> Vec<Effect> {
         let (now, unix) = (self.mono_secs, self.unix_secs);
         // The entries of launches whose scope is there run as launches of ours, including one that was
-        // handed over to its windows and launched again. The second screen is lit for them to darken.
+        // handed over to its windows and launched again. A second screen tapped awake may go dark again
+        // for the new launch.
         let session = &mut self.session;
         let started: Vec<Launching> = {
             let units = &session.units;
