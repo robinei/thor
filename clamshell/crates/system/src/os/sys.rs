@@ -1,5 +1,5 @@
 //! Reading sysfs and procfs: a file's value, a class's devices, the processes, the battery that powers
-//! the system. Everything here is optional: what a machine lacks reads as `None` or empty.
+//! the system. Everything here is optional. Whatever a machine lacks reads as `None` or empty.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -10,12 +10,12 @@ pub fn text(path: impl AsRef<Path>) -> Option<String> {
     fs::read_to_string(path).ok()
 }
 
-/// A file's value (surrounding whitespace ignored), if it can be read and parsed.
+/// A file's value, ignoring surrounding whitespace, if it can be read and parsed.
 pub fn read<T: FromStr>(path: impl AsRef<Path>) -> Option<T> {
     text(path)?.trim().parse().ok()
 }
 
-/// The entries of a directory (a sysfs class: its devices), sorted; empty if it can't be read.
+/// The entries of a directory, such as the devices of a sysfs class, sorted. Empty if it can't be read.
 pub fn entries(dir: impl AsRef<Path>) -> Vec<PathBuf> {
     let mut out: Vec<PathBuf> = fs::read_dir(dir).map(|d| d.flatten().map(|e| e.path()).collect()).unwrap_or_default();
     out.sort();
@@ -27,13 +27,14 @@ pub fn processes() -> impl Iterator<Item = (u32, PathBuf)> {
     fs::read_dir("/proc").into_iter().flatten().flatten().filter_map(|e| Some((e.file_name().to_str()?.parse().ok()?, e.path())))
 }
 
-/// When process `pid` started (clock ticks after boot: `/proc/<pid>/stat`'s 22nd field); none if it is
-/// gone. With its id, it tells the process from a later one given the same id.
+/// When process `pid` started, in clock ticks after boot, from the 22nd field of `/proc/<pid>/stat`.
+/// None if the process is gone. Together with the id, it tells the process apart from a later one given
+/// the same id.
 fn start_time(pid: u32) -> Option<u64> {
     stat_field(&text(format!("/proc/{pid}/stat"))?, 22)
 }
 
-/// Process `pid`'s parent (`/proc/<pid>/stat`'s 4th field).
+/// The parent of process `pid`, from the 4th field of `/proc/<pid>/stat`.
 pub fn parent(pid: u32) -> Option<u32> {
     parent_in(&text(format!("/proc/{pid}/stat"))?)
 }
@@ -43,22 +44,22 @@ pub fn parent_in(stat: &str) -> Option<u32> {
     stat_field(stat, 4)
 }
 
-/// Field `n` (from 1, as proc(5) numbers them) of a `/proc/<pid>/stat` file, from the 3rd on. The 2nd, the
-/// name in parentheses, may hold anything, spaces and parentheses too, so fields are counted after its
-/// last `)`.
+/// Field `n` of a `/proc/<pid>/stat` file, counted from 1 as proc(5) numbers them. Only the 3rd field on
+/// can be read. The 2nd is the name in parentheses, which may hold anything including spaces and
+/// parentheses, so fields are counted after the last `)`.
 fn stat_field<T: std::str::FromStr>(stat: &str, n: usize) -> Option<T> {
     stat.rsplit_once(')')?.1.split_whitespace().nth(n.checked_sub(3)?)?.parse().ok()
 }
 
-/// The windows' and tray icons' processes as last seen (their start times): what ClamShell acts on by a
-/// process id (adopting it, ending it) is checked to be the same process still.
+/// The start times of the windows' and tray icons' processes as last seen. When ClamShell acts on a
+/// process by its id, for example to adopt or end it, this is used to check it is still the same process.
 static SEEN: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<u32, u64>>> = std::sync::LazyLock::new(Default::default);
 
-/// Process `pid` seen (a window's, a tray icon's): its start time, remembered.
+/// Remembers the start time of process `pid`, seen as a window's or a tray icon's, and returns it.
 pub fn saw(pid: u32) -> Option<u64> {
     let start = start_time(pid)?;
     let mut seen = crate::os::lock(&SEEN);
-    // (Bounded: those of windows long gone forgotten now and then.)
+    // Keep the map bounded by forgetting everything now and then, including windows long gone.
     if seen.len() > 1024 {
         seen.clear();
     }
@@ -66,17 +67,17 @@ pub fn saw(pid: u32) -> Option<u64> {
     Some(start)
 }
 
-/// Whether process `pid` is the one last seen with that id (one never seen: as far as is known, yes).
+/// Whether process `pid` is the one last seen with that id. A process never seen counts as the same.
 pub fn same_process(pid: u32) -> bool {
     let known = crate::os::lock(&SEEN).get(&pid).copied();
     known.is_none_or(|start| start_time(pid) == Some(start))
 }
 
-/// A process, then its parent, and so on up to (not including) pid 1; as far as /proc says.
+/// A process, then its parent, and so on up to but not including pid 1, as far as /proc says.
 pub fn lineage(pid: u32) -> Vec<u32> {
     let mut out = Vec::new();
     let mut at = pid;
-    // (A bound: /proc read as it changes can't loop forever.)
+    // A bound, so reading /proc while it changes can't loop forever.
     while at > 1 && out.len() < 64 {
         out.push(at);
         let Some(parent) = parent(at) else {
@@ -99,7 +100,8 @@ pub struct MountLine {
     pub fs: String,
 }
 
-/// The mount table (/proc/self/mounts), in the order mounted, its names unescaped (`\040`: a space).
+/// The mount table from /proc/self/mounts, in the order mounted, with its names unescaped (`\040` is a
+/// space).
 pub fn mount_table() -> Vec<MountLine> {
     let text = text("/proc/self/mounts").unwrap_or_default();
     text.lines()
@@ -116,8 +118,8 @@ pub fn mount_table() -> Vec<MountLine> {
 
 const POWER_SUPPLY: &str = "/sys/class/power_supply";
 
-/// The battery that powers the system: the first power supply of type Battery that isn't a device's
-/// (a mouse's or a headset's battery has the scope Device).
+/// The battery that powers the system: the first power supply of type Battery that doesn't belong to a
+/// device. A mouse's or a headset's battery has the scope Device.
 pub fn system_battery() -> Option<PathBuf> {
     system_battery_in(Path::new(POWER_SUPPLY))
 }
@@ -128,7 +130,7 @@ fn system_battery_in(class: &Path) -> Option<PathBuf> {
         .find(|dir| read::<String>(dir.join("type")).as_deref() == Some("Battery") && read::<String>(dir.join("scope")).as_deref() != Some("Device"))
 }
 
-/// Every power supply (for settings only some have, as the charge limit).
+/// Every power supply, for settings only some of them have, such as the charge limit.
 pub fn power_supplies() -> Vec<PathBuf> {
     entries(POWER_SUPPLY)
 }
@@ -181,7 +183,7 @@ mod process_tests {
         assert!(start_time(me).is_some());
         assert_eq!(saw(me), start_time(me));
         assert!(same_process(me));
-        // Another start under the same id: not the same.
+        // A different start time under the same id is a different process.
         crate::os::lock(&SEEN).insert(me, 1);
         assert!(!same_process(me));
         assert!(same_process(u32::MAX - 1), "never seen: as far as is known");

@@ -3,9 +3,9 @@
 
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, percent_decode_str, utf8_percent_encode};
 
-/// What stays as it is in a URL's part: letters, digits and `-._~`.
+/// The characters left as they are in one part of a URL: letters, digits and `-._~`.
 const COMPONENT: &AsciiSet = &NON_ALPHANUMERIC.remove(b'-').remove(b'.').remove(b'_').remove(b'~');
-/// The same, and `/` between a path's parts.
+/// The same, plus `/` between the parts of a path.
 const PATH: &AsciiSet = &COMPONENT.remove(b'/');
 
 /// `text` percent-encoded as one part of a URL.
@@ -13,7 +13,7 @@ pub fn percent_encode(text: &str) -> String {
     utf8_percent_encode(text, COMPONENT).to_string()
 }
 
-/// A path percent-encoded, its slashes kept.
+/// A path percent-encoded, with its slashes kept.
 pub fn percent_encode_path(text: &str) -> String {
     utf8_percent_encode(text, PATH).to_string()
 }
@@ -23,7 +23,8 @@ pub fn percent_decode(text: &str) -> String {
     percent_decode_str(text).decode_utf8_lossy().into_owned()
 }
 
-/// `\040` (mounts) and `\x20` (udev's names) as the characters they stand for.
+/// Replaces escapes such as `\040` (in mounts) and `\x20` (in udev's names) with the characters they
+/// stand for.
 pub fn unescape(text: &str) -> String {
     let bytes = text.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());

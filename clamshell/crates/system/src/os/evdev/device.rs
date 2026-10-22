@@ -1,5 +1,5 @@
 //! Input devices: which one to use ([`DeviceSpec`], from the environment), finding it ([`open`]), and
-//! holding it grabbed while reading it ([`Grabbed`]).
+//! keeping it grabbed while reading it ([`Grabbed`]).
 
 use std::fmt;
 use std::io;
@@ -24,7 +24,8 @@ pub enum DeviceSpec {
 }
 
 impl DeviceSpec {
-    /// A path (starting with '/'), else part of a name; nothing: the first that looks right.
+    /// A value starting with '/' is a path, and anything else is part of a name. No value means the first
+    /// device that looks right.
     pub fn parse(value: Option<&str>) -> DeviceSpec {
         match value {
             Some(path) if path.starts_with('/') => DeviceSpec::Path(path.into()),
@@ -44,8 +45,9 @@ impl fmt::Display for DeviceSpec {
     }
 }
 
-/// The device `spec` asks for, else the first that `looks_right`; by name, never one named in `ours`
-/// (our own virtual devices). Not found: an error of kind NotFound (`no <what>`).
+/// Opens the device `spec` asks for, or else the first that `looks_right`. When searching, a device named
+/// in `ours`, one of our own virtual devices, is never chosen. If none is found, the error is of kind
+/// NotFound (`no <what>`).
 pub fn open(spec: &DeviceSpec, what: &str, looks_right: impl Fn(&RawDevice) -> bool, ours: &[&str]) -> io::Result<RawDevice> {
     if let DeviceSpec::Path(path) = spec {
         return RawDevice::open(path);
@@ -58,7 +60,8 @@ pub fn open(spec: &DeviceSpec, what: &str, looks_right: impl Fn(&RawDevice) -> b
                 _ => looks_right(d),
             }
     });
-    // By name: one that also looks right first (a controller's motion sensor shares its name).
+    // When matching by name, prefer a device that also looks right, because a controller's motion sensor
+    // shares its name.
     let mut first = None;
     for d in candidates {
         if looks_right(&d) {
@@ -72,11 +75,11 @@ pub fn open(spec: &DeviceSpec, what: &str, looks_right: impl Fn(&RawDevice) -> b
 /// Axes and their values.
 type AxisValues = Vec<(AbsoluteAxisCode, i32)>;
 
-/// A device grabbed (nothing else sees its events while we hold it; let go when dropped) and read
-/// without blocking.
+/// A grabbed device, read without blocking. Nothing else sees its events while we hold it, and it is let
+/// go when dropped.
 pub struct Grabbed {
     device: RawDevice,
-    /// The kernel dropped events (SYN_DROPPED): what comes until the next report is left out.
+    /// The kernel dropped events (SYN_DROPPED), so everything until the next report is left out.
     skipping: bool,
 }
 
@@ -92,7 +95,7 @@ impl Grabbed {
         &self.device
     }
 
-    /// Waits up to `timeout` for events to read (less if a signal interrupts the wait).
+    /// Waits up to `timeout` for events to read, or less if a signal interrupts the wait.
     pub fn wait(&self, timeout: Duration) -> io::Result<()> {
         let timeout = crate::os::sys::timespec(timeout);
         let mut fds = [PollFd::new(&self.device, PollFlags::IN)];
@@ -102,8 +105,8 @@ impl Grabbed {
         }
     }
 
-    /// Appends the events waiting to `out` (none waiting: nothing); whether the kernel dropped some
-    /// (its buffer overran: SYN_DROPPED), so that what was read no longer adds up to the device's state
+    /// Appends the waiting events, if any, to `out`. Returns whether the kernel dropped some because its
+    /// buffer overran (SYN_DROPPED). In that case what was read no longer adds up to the device's state
     /// (see [`Grabbed::state`]). The partial report after a drop is left out, as the kernel asks.
     pub fn fetch(&mut self, out: &mut Vec<Raw>) -> io::Result<bool> {
         let events = match self.device.fetch_events() {
@@ -124,7 +127,7 @@ impl Grabbed {
         Ok(dropped)
     }
 
-    /// The device as it is: its keys held, its axes' values.
+    /// The device's current state: the keys held and the axes' values.
     pub fn state(&self) -> io::Result<(Vec<KeyCode>, AxisValues)> {
         let keys = self.device.get_key_state()?.iter().collect();
         let abs = self.device.get_abs_state()?;

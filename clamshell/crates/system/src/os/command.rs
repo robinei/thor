@@ -1,5 +1,6 @@
-//! Running the system's command-line tools (`wpctl`, `pw-dump`, `bsdtar`, ...) with a time limit, so
-//! a wedged service can't hang the thread that asked: past it, the program is killed and counts as failed.
+//! Runs the system's command-line tools (`wpctl`, `pw-dump`, `bsdtar`, ...) with a time limit, so a
+//! wedged service can't hang the thread that asked. A program that runs past the limit is killed and
+//! counts as failed.
 
 use std::ffi::OsStr;
 use std::io::{Read, Write};
@@ -11,7 +12,7 @@ use std::time::{Duration, Instant};
 pub const LIMIT: Duration = Duration::from_secs(3);
 
 /// How long the output may still take to arrive once the program has ended. A process it started may
-/// hold the pipes open; the output so far is given up rather than waited for.
+/// hold the pipes open, so after this the output is given up rather than waited for.
 const DRAIN: Duration = Duration::from_secs(1);
 
 /// How a program ended.
@@ -22,15 +23,15 @@ pub struct Ran {
 }
 
 impl Ran {
-    /// Its standard error's first non-empty line, trimmed (what it said went wrong).
+    /// The first non-empty line of standard error, trimmed. It usually says what went wrong.
     pub fn said(&self) -> String {
         let err = String::from_utf8_lossy(&self.stderr);
         err.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or_default().to_owned()
     }
 }
 
-/// Runs `program` with `args`, `input` on its standard input, for at most `limit`: how it ended, or why
-/// it didn't (it couldn't start, or ran past the limit and was killed).
+/// Runs `program` with `args` and `input` on its standard input, for at most `limit`. Returns how it
+/// ended, or an error if it couldn't start or ran past the limit and was killed.
 pub fn run<S: AsRef<OsStr>>(program: &str, args: &[S], input: Option<&[u8]>, limit: Duration) -> Result<Ran, String> {
     let mut child = Command::new(program)
         .args(args)
@@ -42,7 +43,7 @@ pub fn run<S: AsRef<OsStr>>(program: &str, args: &[S], input: Option<&[u8]>, lim
     if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
         stdin.write_all(input).map_err(|e| format!("{program}: {e}"))?;
     }
-    // Read as they come (a full pipe would stall it), each on a thread of its own.
+    // Read the outputs as they come, each on a thread of its own, since a full pipe would stall the program.
     let stdout = drain(program, child.stdout.take());
     let stderr = drain(program, child.stderr.take());
     let deadline = Instant::now() + limit;
@@ -71,10 +72,10 @@ fn shown<S: AsRef<OsStr>>(args: &[S]) -> String {
     args.iter().map(|a| a.as_ref().to_string_lossy()).collect::<Vec<_>>().join(" ")
 }
 
-/// A pipe read to its end on a thread of its own; what it held, through the channel.
+/// Reads a pipe to its end on a thread of its own and sends what it held through the channel.
 fn drain(program: &str, pipe: Option<impl Read + Send + 'static>) -> mpsc::Receiver<Vec<u8>> {
     let (tx, rx) = mpsc::channel();
-    // (A thread that can't start drops its sender: the output reads as empty.)
+    // If the thread can't start, its sender is dropped and the output reads as empty.
     if let Some(mut pipe) = pipe {
         let name = program.to_owned();
         let started = crate::os::worker::detached("output", move || {
@@ -93,7 +94,8 @@ fn drain(program: &str, pipe: Option<impl Read + Send + 'static>) -> mpsc::Recei
     rx
 }
 
-/// Runs `program` with `args` within [`LIMIT`]; its standard output if it succeeded (failures logged).
+/// Runs `program` with `args` within [`LIMIT`] and returns its standard output if it succeeded. Failures
+/// are logged.
 pub fn output(program: &str, args: &[&str]) -> Option<Vec<u8>> {
     match run(program, args, None, LIMIT) {
         Ok(ran) if ran.status.success() => Some(ran.stdout),
@@ -135,7 +137,7 @@ mod tests {
 
     #[test]
     fn a_process_left_holding_the_output_does_not_hold_it_up() {
-        // The shell ends at once; the sleep it started keeps stdout open.
+        // The shell ends at once, but the sleep it started keeps stdout open.
         let start = Instant::now();
         let ran = run("sh", &["-c", "echo out; sleep 5 &"], None, LIMIT);
         assert!(ran.is_ok_and(|r| r.status.success()));

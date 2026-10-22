@@ -1,11 +1,12 @@
-//! GPU time from the kernel's per-client DRM statistics (`/proc/<pid>/fdinfo/<fd>` of a /dev/dri file
-//! descriptor; Documentation/gpu/drm-usage-stats.rst), as MangoHud reads it for one process.
+//! GPU time from the kernel's per-client DRM statistics, read the way MangoHud reads it for one process.
+//! The statistics are in `/proc/<pid>/fdinfo/<fd>` for a /dev/dri file descriptor; the format is in
+//! Documentation/gpu/drm-usage-stats.rst.
 //!
-//! GPU time is the render engine's: `drm-engine-gpu` (msm, the Thor's Adreno, which reports only that
-//! engine) or `drm-engine-gfx` (amdgpu). Other engines (compute, video, copy) aren't counted: they run
-//! alongside the render engine, so adding them up could pass 100%, and the render engine alone matches
-//! what amdgpu's busy figure means. The sysinfo tab's GPU load and the battery tab's GPU shares use this
-//! same rule.
+//! GPU time means the render engine's time. That is `drm-engine-gpu` on msm (the Thor's Adreno, which
+//! reports only that engine) or `drm-engine-gfx` on amdgpu. Other engines such as compute, video and copy
+//! aren't counted. They run alongside the render engine, so adding them up could pass 100%, and the
+//! render engine alone matches what amdgpu's busy figure means. The sysinfo tab's GPU load and the
+//! battery tab's GPU shares follow the same rule.
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -13,8 +14,8 @@ use std::path::Path;
 
 use crate::os::sys;
 
-/// One DRM client's id and its render-engine time (ns), from an fdinfo file; `None` for a file that
-/// isn't a DRM client's or has no render engine.
+/// A DRM client's id and its render engine time in nanoseconds, from an fdinfo file. Returns `None` if
+/// the file isn't a DRM client's or has no render engine.
 fn parse_fdinfo(text: &str) -> Option<(u64, u64)> {
     let mut id = None;
     let mut ns = None;
@@ -32,8 +33,8 @@ fn parse_fdinfo(text: &str) -> Option<(u64, u64)> {
     Some((id?, ns?))
 }
 
-/// The DRM clients a process has open (its /proc dir), with their GPU time: a client open through
-/// several file descriptors counts once. Only our user's processes can be read.
+/// The DRM clients a process has open, with their GPU time. `process` is its /proc dir. A client open
+/// through several file descriptors counts once. Only our user's processes can be read.
 pub fn clients(process: &Path) -> HashMap<u64, u64> {
     let mut clients = HashMap::new();
     let dir = process.join("fd");
@@ -55,7 +56,7 @@ pub fn clients(process: &Path) -> HashMap<u64, u64> {
     clients
 }
 
-/// The GPU time of every DRM client this user can see, each counted once; `None` if there are none.
+/// The GPU time of every DRM client this user can see, each counted once. `None` if there are none.
 pub fn total_ns() -> Option<u64> {
     let mut seen = HashSet::new();
     let mut total = None::<u64>;
@@ -89,8 +90,8 @@ mod live {
     use super::*;
     use std::time::{Duration, Instant};
 
-    /// Compares the fdinfo load with amdgpu's own busy figure, where there is one (run by hand:
-    /// `--ignored --nocapture`).
+    /// Compares the fdinfo load with amdgpu's own busy figure, where there is one. Run it by hand with
+    /// `--ignored --nocapture`.
     #[test]
     #[ignore = "reads this machine's GPU"]
     fn fdinfo_load_on_this_machine() {

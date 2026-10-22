@@ -1,19 +1,21 @@
 //! What every system thread is made of:
 //!
 //! - A thread is spawned with its command channel ([`Worker::spawn`]).
-//! - It waits for its next command or for its period ([`next`]). A thread that waits on files (a device,
-//!   inotify) waits on those and its [`Bell`] together; its commands ring the bell.
-//! - It sends a reading only when it changed ([`Changed`]).
-//! - A thread that talks to a service (a bus, a socket, a device) connects, runs while the service is up,
-//!   and is supervised: while the service is down, it is tried again every `retry` ([`supervise`]).
+//! - It waits for its next command or for its period to pass ([`next`]). A thread that waits on files,
+//!   such as a device or inotify, waits on those and its [`Bell`] together, and its commands ring the
+//!   bell.
+//! - It sends a reading only when the reading changed ([`Changed`]).
+//! - A thread that talks to a service, such as a bus, a socket or a device, connects and runs while the
+//!   service is up. It is supervised: while the service is down, it is tried again every `retry`
+//!   ([`supervise`]).
 //!
-//! The rule for commands while a service is down: what a command sets (watching, a route) is kept and
-//! applies once the service is back; what it asks to be done is refused at once ("unavailable"), never
-//! queued. Either way the service is tried again right after the command, so opening a tab is a fresh
-//! attempt.
+//! Commands that arrive while a service is down follow one rule. Something a command sets, such as
+//! watching or a route, is kept and applies once the service is back. Something a command asks to be
+//! done is refused at once as "unavailable" and never queued. Either way the service is tried again right
+//! after the command, so opening a tab is a fresh attempt.
 //!
-//! Logging failures: the first failure of a run of them is a warning, the retries are debug (see
-//! [`Quiet`]); a failure that is a normal state (no controller plugged in) is always debug.
+//! In a run of failures, the first is logged as a warning and the retries at debug (see [`Quiet`]). A
+//! failure that is a normal state, such as no controller being plugged in, is always logged at debug.
 
 use std::convert::Infallible;
 use std::fmt::Display;
@@ -25,7 +27,7 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::Duration;
 
-/// The UI is gone: a thread whose events can't be delivered ends.
+/// The UI is gone. A thread whose events can't be delivered ends.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Closed;
 
@@ -43,10 +45,10 @@ impl<C> Clone for Worker<C> {
     }
 }
 
-/// A thread's bell: an eventfd that its commands ring as they are sent, for a thread that waits on
-/// files (poll) and so can't wait on its channel too. It waits on the bell's fd with its own, and when
-/// woken clears it and takes its commands (try_recv): without the bell it would have to wake now and
-/// then to look.
+/// A thread's bell: an eventfd that is rung as commands are sent to the thread. It is for a thread that
+/// polls files and so can't wait on its channel too. The thread polls the bell's fd along with its own,
+/// and when woken it clears the bell and takes its commands with try_recv. Without the bell it would have
+/// to wake now and then to look.
 #[derive(Clone)]
 pub struct Bell(Arc<OwnedFd>);
 
@@ -56,7 +58,7 @@ impl Bell {
         Ok(Bell(Arc::new(fd)))
     }
 
-    /// The fd to wait on (readable once rung).
+    /// The fd to wait on. It is readable once the bell has rung.
     pub fn fd(&self) -> BorrowedFd<'_> {
         self.0.as_fd()
     }
@@ -67,7 +69,7 @@ impl Bell {
         }
     }
 
-    /// Resets the bell, however often it rang. The bell carries no message: whatever rang it is waiting
+    /// Resets the bell, however often it rang. The bell carries no message. Whatever rang it is waiting
     /// in the command channel, or is for the ringer to say.
     pub fn clear(&self) {
         let mut count = [0u8; 8];
@@ -79,8 +81,8 @@ impl Bell {
     }
 }
 
-/// A reader thread's command: whether what it reads is shown (read often while it is; seldom, or not at
-/// all, while it isn't).
+/// A command for a reader thread: whether what it reads is shown. While it is, the thread reads often.
+/// While it isn't, the thread reads seldom or not at all.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Shown(pub bool);
 
@@ -89,16 +91,16 @@ pub struct Shown(pub bool);
 pub struct Gone;
 
 impl<C: Send + 'static> Worker<C> {
-    /// A thread named `name` running `body` with the receiving end of its command channel. The thread
-    /// ends when `body` returns (usually when every sender is dropped).
+    /// Starts a thread named `name` running `body` with the receiving end of its command channel. The
+    /// thread ends when `body` returns, usually when every sender is dropped.
     pub fn spawn(name: &'static str, body: impl FnOnce(Receiver<C>) + Send + 'static) -> io::Result<Worker<C>> {
         let (tx, rx) = mpsc::channel();
         thread::Builder::new().name(name.into()).spawn(move || body(rx))?;
         Ok(Worker { name, tx: Some(tx), gone: Arc::default(), bell: None })
     }
 
-    /// As [`Worker::spawn`], for a thread that waits on files: `body` also has the [`Bell`] its commands
-    /// ring.
+    /// Like [`Worker::spawn`], for a thread that waits on files. `body` also gets the [`Bell`] that its
+    /// commands ring.
     pub fn spawn_belled(name: &'static str, body: impl FnOnce(Receiver<C>, Bell) + Send + 'static) -> io::Result<Worker<C>> {
         let bell = Bell::new()?;
         let (tx, rx) = mpsc::channel();
@@ -109,17 +111,17 @@ impl<C: Send + 'static> Worker<C> {
 }
 
 impl<C> Worker<C> {
-    /// Stands in for a thread that couldn't be started: commands go nowhere (logged once).
+    /// Stands in for a thread that couldn't be started. Commands go nowhere, which is logged once.
     pub fn gone(name: &'static str) -> Worker<C> {
         Worker { name, tx: None, gone: Arc::default(), bell: None }
     }
 
-    /// Sends a command; if the thread has ended, says so in the log (once).
+    /// Sends a command. If the thread has ended, this is logged once.
     pub fn send(&self, command: C) {
         let _ = self.try_send(command);
     }
 
-    /// Sends a command, or says the thread has ended (also in the log, once).
+    /// Sends a command, or returns `Gone` if the thread has ended. That is also logged once.
     pub fn try_send(&self, command: C) -> Result<(), Gone> {
         let sent = self.tx.as_ref().is_some_and(|tx| tx.send(command).is_ok());
         if sent {
@@ -135,7 +137,7 @@ impl<C> Worker<C> {
     }
 }
 
-/// Starts a thread without commands (it ends when the UI is gone).
+/// Starts a thread that takes no commands. It ends when the UI is gone.
 pub fn detached(name: &str, body: impl FnOnce() + Send + 'static) -> io::Result<()> {
     thread::Builder::new().name(name.into()).spawn(body).map(drop)
 }
@@ -146,11 +148,11 @@ pub enum Next<C> {
     Command(C),
     /// The period passed without one.
     Elapsed,
-    /// Every sender is gone: the thread ends.
+    /// Every sender is gone, so the thread ends.
     Disconnected,
 }
 
-/// The next command, waiting at most `every` (`None`: until one comes).
+/// Waits for the next command, for at most `every`. With `None` it waits until one comes.
 pub fn next<C>(commands: &Receiver<C>, every: Option<Duration>) -> Next<C> {
     let received = match every {
         Some(every) => commands.recv_timeout(every),
@@ -181,7 +183,7 @@ impl<T: PartialEq + Clone> Changed<T> {
         Changed { last: Some(value) }
     }
 
-    /// `value` if it differs from the last one offered (it becomes the last), else `None`.
+    /// Returns `value` if it differs from the last one offered, and makes it the last. Otherwise `None`.
     pub fn offer(&mut self, value: T) -> Option<T> {
         if self.last.as_ref() == Some(&value) {
             return None;
@@ -190,7 +192,8 @@ impl<T: PartialEq + Clone> Changed<T> {
         Some(value)
     }
 
-    /// The next offer goes through whatever it is (after a pause, so what changed meanwhile shows).
+    /// Lets the next offer through whatever it is. This is used after a pause, so that what changed in
+    /// the meantime is shown.
     pub fn forget(&mut self) {
         self.last = None;
     }
@@ -199,7 +202,7 @@ impl<T: PartialEq + Clone> Changed<T> {
 /// How a run with the service up ended, if not for good.
 #[derive(Debug)]
 pub enum Ended<E> {
-    /// The UI is gone: the thread ends.
+    /// The UI is gone, so the thread ends.
     Closed,
     /// The service failed or went away.
     Lost(E),
@@ -211,8 +214,9 @@ impl<E> From<Closed> for Ended<E> {
     }
 }
 
-/// Lets `?` in a run end it as [`Ended::Lost`] on the domain's error and on these others, converted to
-/// it: `lost_on!(Error: dbus::Error, io::Error);` for `Ended<Error>`, or `lost_on!(io::Error);`.
+/// Lets `?` in a run end it as [`Ended::Lost`]. This works on the domain's error and on the other errors
+/// listed, which are converted to it. For example `lost_on!(Error: dbus::Error, io::Error);` for
+/// `Ended<Error>`, or `lost_on!(io::Error);`.
 macro_rules! lost_on {
     ($domain:ty $(: $($from:ty),*)?) => {
         impl From<$domain> for $crate::os::worker::Ended<$domain> {
@@ -229,11 +233,11 @@ macro_rules! lost_on {
 }
 pub(crate) use lost_on;
 
-/// A thread that talks to a service: connects, runs while it is up, and says what to do while it is
-/// down. Driven by [`supervise`].
+/// A thread that talks to a service. It connects, runs while the service is up, and says what to do while
+/// it is down. It is driven by [`supervise`].
 pub trait Service {
     type Command;
-    /// What a connection gives (the bus and its proxies, a grabbed device).
+    /// What a connection gives, such as the bus and its proxies or a grabbed device.
     type Session;
     type Error: Display;
     /// For the log.
@@ -241,37 +245,38 @@ pub trait Service {
 
     fn connect(&mut self) -> Result<Self::Session, Self::Error>;
 
-    /// Runs with the service up until it fails (`Err(Ended::Lost)`), the UI is gone
-    /// (`Err(Ended::Closed)`) or every command sender is (`Ok`).
+    /// Runs with the service up until the service fails (`Err(Ended::Lost)`), the UI is gone
+    /// (`Err(Ended::Closed)`) or every command sender is gone (`Ok`).
     fn run_while_up(&mut self, session: Self::Session, commands: &Receiver<Self::Command>) -> Result<(), Ended<Self::Error>>;
 
-    /// A command while the service is down (see the module's rule).
+    /// Handles a command while the service is down, following the rule in the module docs.
     fn command_while_down(&mut self, command: Self::Command) -> Result<(), Closed>;
 
-    /// The service couldn't be reached: tell the UI, if it shows that.
+    /// Called when the service couldn't be reached, to tell the UI if it shows that.
     fn unavailable(&mut self, _error: &Self::Error) -> Result<(), Closed> {
         Ok(())
     }
 
-    /// The service was up and went away: tell the UI, if it shows that.
+    /// Called when the service was up and went away, to tell the UI if it shows that.
     fn lost(&mut self, error: &Self::Error) -> Result<(), Closed> {
         self.unavailable(error)
     }
 
-    /// Whether this failure to connect is a normal state (nothing to connect to), logged at debug only.
+    /// Whether this failure to connect is a normal state, such as there being nothing to connect to. Such
+    /// failures are logged at debug only.
     fn expected(_error: &Self::Error) -> bool {
         false
     }
 
-    /// While the service is down: the next command, waiting at most `retry` (a service with more to
-    /// answer meanwhile waits on that too).
+    /// Waits for the next command while the service is down, for at most `retry`. A service that has
+    /// other things to answer in the meantime waits on those too.
     fn wait_while_down(&mut self, commands: &Receiver<Self::Command>, retry: Duration) -> Next<Self::Command> {
         next(commands, Some(retry))
     }
 }
 
-/// Runs `service` until the UI or every command sender is gone: connects, runs while it is up, and
-/// while it is down waits `retry` (or for a command) before trying again.
+/// Runs `service` until the UI or every command sender is gone. It connects and runs while the service
+/// is up. While the service is down, it waits `retry` or for a command before trying again.
 pub fn supervise<S: Service>(service: &mut S, commands: &Receiver<S::Command>, retry: Duration) {
     let mut quiet = Quiet::default();
     loop {
@@ -310,15 +315,15 @@ pub fn supervise<S: Service>(service: &mut S, commands: &Receiver<S::Command>, r
     }
 }
 
-/// Supervises a service that takes no commands (it follows the service's own signals or events).
+/// Supervises a service that takes no commands and follows only the service's own signals or events.
 pub fn supervise_alone<S: Service<Command = Infallible>>(service: &mut S, retry: Duration) {
-    // A sender kept for as long as this runs: waiting for a command is then waiting `retry`.
+    // Keep a sender for as long as this runs, so that waiting for a command means waiting `retry`.
     let (_keep, commands) = mpsc::channel();
     supervise(service, &commands, retry);
 }
 
-/// Warns about the first failure of a run of them and logs the rest at debug, so a service that stays
-/// away (or a file that stays read-only) is mentioned once, not at every retry.
+/// Warns about the first failure in a run and logs the rest at debug, so a service that stays away, or a
+/// file that stays read-only, is mentioned once and not at every retry.
 #[derive(Debug, Default)]
 pub struct Quiet {
     warned: bool,
@@ -334,14 +339,14 @@ impl Quiet {
         }
     }
 
-    /// It worked: the next failure is worth a warning again.
+    /// Records a success, so the next failure is worth a warning again.
     pub fn ok(&mut self) {
         self.warned = false;
     }
 }
 
-/// The first command and every one waiting behind it, keeping only the latest of each kind (in the order
-/// the kinds first came): while a finger slides, requests come faster than they can be carried out.
+/// The first command and every command waiting behind it, keeping only the latest of each kind, in the
+/// order the kinds first came. While a finger slides, requests come faster than they can be carried out.
 pub fn coalesce<C, K: PartialEq>(first: C, commands: &Receiver<C>, kind: impl Fn(&C) -> K) -> Vec<C> {
     let mut kept: Vec<C> = Vec::new();
     for c in std::iter::once(first).chain(commands.try_iter()) {
@@ -353,7 +358,7 @@ pub fn coalesce<C, K: PartialEq>(first: C, commands: &Receiver<C>, kind: impl Fn
     kept
 }
 
-/// A thread that carries out commands as they come, coalesced ([`coalesce`]) when several wait.
+/// A thread that carries out commands as they come, coalescing them ([`coalesce`]) when several wait.
 pub fn spawn_coalescing<C: Send + 'static, K: PartialEq + 'static>(
     name: &'static str,
     kind: fn(&C) -> K,
@@ -460,8 +465,8 @@ mod tests {
         thread::sleep(Duration::from_millis(100));
         tx.send("join").unwrap();
         drop(tx);
-        // The command while down is taken and the service tried again at once; after the second
-        // failure the retry interval passes; then it is up.
+        // The command sent while the service is down is taken and the service is tried again at once.
+        // After the second failure the retry interval passes, and then the service is up.
         assert_eq!(worker.join().unwrap(), vec!["down 1", "down: watch", "down 2", "up: join"]);
     }
 }

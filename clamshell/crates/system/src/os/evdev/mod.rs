@@ -1,6 +1,6 @@
-//! evdev events as values, shared by the pad, the touchpad and the keyboard: an event ([`Raw`]), a key's
-//! press ([`Press`]), an axis' range ([`Range`]), an area of the screen ([`Rect`]), the D-pad as arrow
-//! keys ([`hat_keys`]); and the devices themselves ([`device`]).
+//! evdev events as values, shared by the pad, the touchpad and the keyboard. There is an event
+//! ([`Raw`]), a key press ([`Press`]), an axis' range ([`Range`]), an area of the screen ([`Rect`]) and the
+//! D-pad as arrow keys ([`hat_keys`]). The devices themselves are in [`device`].
 
 pub mod device;
 
@@ -15,7 +15,7 @@ pub struct Raw {
 }
 
 impl Raw {
-    /// The end of a report (SYN_REPORT): what came before it belongs together.
+    /// The end of a report (SYN_REPORT). The events before it belong together.
     pub const REPORT: Raw = Raw { kind: EventType::SYNCHRONIZATION, code: 0, value: 0 };
 
     pub fn key(code: KeyCode, press: Press) -> Raw {
@@ -67,7 +67,7 @@ pub enum Press {
 }
 
 impl Press {
-    /// 0 up, 1 down, 2 (or more) repeated.
+    /// 0 is up, 1 is down, and 2 or more is a repeat.
     pub fn from_value(value: i32) -> Press {
         match value {
             ..=0 => Press::Up,
@@ -84,7 +84,7 @@ impl Press {
         }
     }
 
-    /// Down, or held down (repeated).
+    /// Whether the key is down, including a repeat while held.
     pub fn held(self) -> bool {
         self != Press::Up
     }
@@ -98,23 +98,23 @@ pub struct Range {
 }
 
 impl Range {
-    /// A stick's full range on most controllers (the range assumed when a controller doesn't say).
+    /// A stick's full range on most controllers. It is assumed when a controller doesn't give one.
     pub const STICK: Range = Range { min: -32768, max: 32767 };
 
-    /// A value as -1..1 from the middle (sticks).
+    /// A value as -1..1 from the middle, for sticks.
     pub fn centered(self, v: i32) -> f32 {
         let mid = (self.min as f32 + self.max as f32) / 2.0;
         let half = ((self.max - self.min) as f32 / 2.0).max(1.0);
         ((v as f32 - mid) / half).clamp(-1.0, 1.0)
     }
 
-    /// How far along the range a value is: 0 at its minimum, 1 at its maximum, and beyond either
-    /// outside it (a touch at the screen's very edge).
+    /// How far along the range a value is: 0 at its minimum and 1 at its maximum. A value outside the
+    /// range, such as a touch at the screen's very edge, goes beyond 0 or 1.
     pub fn fraction(self, v: i32) -> f32 {
         (v - self.min) as f32 / (self.max - self.min).max(1) as f32
     }
 
-    /// A value as 0..1 (triggers).
+    /// A value as 0..1, for triggers.
     pub fn unit(self, v: i32) -> f32 {
         self.fraction(v).clamp(0.0, 1.0)
     }
@@ -130,12 +130,12 @@ pub struct Rect {
 }
 
 impl Rect {
-    /// From corners as the touch layout gives them: (x0, y0, x1, y1).
+    /// Makes a rect from corners as the touch layout gives them: (x0, y0, x1, y1).
     pub fn from_corners((x0, y0, x1, y1): (f32, f32, f32, f32)) -> Rect {
         Rect { x0, y0, x1, y1 }
     }
 
-    /// Whether it has no area (not laid out yet).
+    /// Whether it has no area, which means it isn't laid out yet.
     pub fn is_empty(&self) -> bool {
         !(self.x1 > self.x0 && self.y1 > self.y0)
     }
@@ -149,8 +149,9 @@ impl Rect {
     }
 }
 
-/// The D-pad (a hat axis: -1, 0 or 1) as arrow keys: the key of its direction down, the other up, and
-/// the report; `None` for any other axis. Letting go reports 0, which lifts both.
+/// The D-pad as arrow keys. A hat axis reports -1, 0 or 1. This returns the key for that direction
+/// pressed, the opposite key released, and the report. Any other axis gives `None`. Letting go reports 0,
+/// which releases both.
 pub fn hat_keys(axis: AbsoluteAxisCode, value: i32) -> Option<[Raw; 3]> {
     let (minus, plus) = match axis {
         AbsoluteAxisCode::ABS_HAT0X => (KeyCode::KEY_LEFT, KeyCode::KEY_RIGHT),

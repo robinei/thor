@@ -10,13 +10,13 @@ pub fn data_dirs() -> Vec<PathBuf> {
     user.into_iter().chain(system.split(':').filter(|d| !d.is_empty()).map(PathBuf::from)).collect()
 }
 
-/// Icon themes looked in, in order (hicolor is the fallback every app installs into).
+/// The icon themes to look in, in order. hicolor is the fallback every app installs into.
 const THEMES: [&str; 3] = ["hicolor", "Adwaita", "breeze"];
-/// Bitmap sizes, largest first: icons are drawn at about 120 pixels.
+/// Bitmap sizes, largest first. Icons are drawn at about 120 pixels.
 const SIZES: [u32; 8] = [512, 256, 192, 128, 96, 64, 48, 32];
 
-/// An icon's image file: an absolute path as is, else the largest in the themes (scalable first), else
-/// pixmaps.
+/// An icon's image file. An absolute path is used as it is. Otherwise the largest image in the themes is
+/// found, scalable ones first, and then the pixmaps folders are tried.
 pub fn find_icon(name: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
     let path = Path::new(name);
     if path.is_absolute() {

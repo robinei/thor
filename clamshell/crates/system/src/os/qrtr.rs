@@ -1,8 +1,10 @@
-//! QRTR sockets (AF_QIPCRTR): how Linux talks to the Qualcomm DSPs' services, each at a node (the
-//! processor) and a port. Datagrams: [`send_to`] a node and port, [`recv_from`] says where one came from.
-//! The name service (on our own node, at [`PORT_CTRL`]) tells a socket where a service is
-//! ([`lookup`]: NEW_SERVER and DEL_SERVER packets as it comes and goes). rustix has no QRTR, so these
-//! call libc.
+//! QRTR sockets (AF_QIPCRTR), which Linux uses to talk to services on the Qualcomm DSPs. Each service is at
+//! a node, which is the processor, and a port.
+//!
+//! The sockets carry datagrams. [`send_to`] sends one to a node and port, and [`recv_from`] says where one
+//! came from. The name service, on our own node at [`PORT_CTRL`], tells a socket where a service is: after
+//! a [`lookup`] it sends NEW_SERVER and DEL_SERVER packets as the service comes and goes. rustix has no
+//! QRTR, so these functions call libc.
 
 use std::io;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
@@ -11,7 +13,7 @@ use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 const AF_QIPCRTR: libc::c_int = 42;
 /// The name service's port, on every node.
 pub const PORT_CTRL: u32 = 0xffff_fffe;
-/// Control packets' commands (linux/qrtr.h).
+/// Commands in control packets (linux/qrtr.h).
 pub const NEW_SERVER: u32 = 4;
 pub const DEL_SERVER: u32 = 5;
 const NEW_LOOKUP: u32 = 10;
@@ -58,7 +60,8 @@ pub fn send_to(fd: &OwnedFd, node: u32, port: u32, data: &[u8]) -> io::Result<()
     if r < 0 { Err(io::Error::last_os_error()) } else { Ok(()) }
 }
 
-/// Reads a datagram into `buf`: its length and where it came from (node, port); `None` when none waits.
+/// Reads a datagram into `buf`. Returns its length and where it came from (node, port), or `None` when
+/// nothing is waiting.
 pub fn recv_from(fd: &OwnedFd, buf: &mut [u8]) -> io::Result<Option<(usize, u32, u32)>> {
     let mut from = Addr::default();
     let mut len = ADDR_LEN;
@@ -72,8 +75,8 @@ pub fn recv_from(fd: &OwnedFd, buf: &mut [u8]) -> io::Result<Option<(usize, u32,
     Ok(Some((n.unsigned_abs(), from.node, from.port)))
 }
 
-/// Asks the name service (on our `node`) to tell this socket where `service` is, and again whenever it
-/// comes or goes.
+/// Asks the name service on our `node` to tell this socket where `service` is, and to tell it again
+/// whenever the service comes or goes.
 pub fn lookup(fd: &OwnedFd, node: u32, service: u32) -> io::Result<()> {
     let mut pkt = [0u8; 20];
     pkt[..4].copy_from_slice(&NEW_LOOKUP.to_le_bytes());

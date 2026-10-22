@@ -1,6 +1,8 @@
-//! cgroups (the unified hierarchy): which systemd unit a process runs in, from its cgroup
-//! (`/proc/<pid>/cgroup`: the kernel's record of which launch it comes from, whatever it did since,
-//! detached or double-forked), and what a cgroup's processes spend.
+//! cgroups in the unified hierarchy. This finds which systemd unit a process runs in, and how much CPU
+//! and GPU time a cgroup's processes have used.
+//!
+//! The unit comes from the process's cgroup in `/proc/<pid>/cgroup`. That is the kernel's record of which
+//! launch the process comes from, even if it has since detached or double-forked.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -22,13 +24,14 @@ pub fn dir(path: &str) -> PathBuf {
     Path::new("/sys/fs/cgroup").join(path.trim_start_matches('/'))
 }
 
-/// A cgroup's CPU time so far (microseconds), its subgroups' included.
+/// A cgroup's CPU time so far in microseconds, including its subgroups.
 pub fn cpu_usec(dir: &Path) -> Option<u64> {
     let stat = sys::text(dir.join("cpu.stat"))?;
     stat.lines().find_map(|l| l.strip_prefix("usage_usec ")).and_then(|v| v.trim().parse().ok())
 }
 
-/// The GPU time so far of a cgroup's processes (its subgroups' too), each DRM client once (nanoseconds).
+/// The GPU time so far of a cgroup's processes, including its subgroups, in nanoseconds. Each DRM client
+/// is counted once.
 pub fn gpu_ns(dir: &Path) -> u64 {
     let mut clients = HashMap::new();
     let mut dirs = vec![dir.to_path_buf()];
@@ -47,7 +50,7 @@ pub fn gpu_ns(dir: &Path) -> u64 {
     clients.values().sum()
 }
 
-/// The unified hierarchy's path in a cgroup file (its `0::` line).
+/// The unified hierarchy's path in a cgroup file, from its `0::` line.
 fn parse_path(cgroup: &str) -> Option<&str> {
     cgroup.lines().find_map(|l| l.strip_prefix("0::"))
 }

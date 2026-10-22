@@ -1,9 +1,11 @@
-//! D-Bus, through libdbus (the dbus crate's channel, without its dispatchers or async): a connection per
-//! thread ([`Bus`]). A method call is sent and its reply waited for here; what comes meanwhile is handled
-//! as it comes: a call to us is answered by what the thread serves ([`Bus::serve`]; anything else is
-//! refused), a signal is kept for the thread to read ([`Bus::signals`]) if it asked for signals
-//! ([`Bus::add_match`]). A thread waits for the bus with [`Bus::wait`], or polls its file descriptor
-//! ([`Bus::fd`]) beside others.
+//! D-Bus through libdbus, using the dbus crate's channel without its dispatchers or async. Each thread
+//! has its own connection ([`Bus`]).
+//!
+//! A method call waits here for its reply. Anything that arrives in the meantime is handled as it comes:
+//! calls to us are answered by what the thread serves ([`Bus::serve`]) and refused otherwise, and
+//! signals are kept for the thread to read ([`Bus::signals`]) if it asked for them ([`Bus::add_match`]).
+//! A thread waits for the bus with [`Bus::wait`], or polls its file descriptor ([`Bus::fd`]) alongside
+//! others.
 
 use std::collections::VecDeque;
 use std::fmt;
@@ -16,15 +18,16 @@ use ::dbus::channel::{BusType, Channel};
 pub use ::dbus::message::MessageType;
 pub use ::dbus::{Message, Path};
 
-/// How long a call may take unless the bus is given another limit (libdbus' own default).
+/// How long a call may take unless the bus is given another limit. This is libdbus' own default.
 const TIMEOUT: Duration = Duration::from_secs(25);
 const PROPERTIES: &str = "org.freedesktop.DBus.Properties";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
-    /// The bus itself: not reached, closed, or no reply in time. A kept connection is made again.
+    /// The bus itself failed: it couldn't be reached, it closed, or no reply came in time. A kept
+    /// connection is made again.
     Bus(String),
-    /// The service's answer: an error it replied with (its name and message).
+    /// The service replied with an error, which has a name and a message.
     Method { name: String, message: String },
     /// A reply that isn't what was asked for.
     Reply(String),
@@ -53,13 +56,13 @@ impl From<::dbus::arg::TypeMismatchError> for Error {
 }
 
 impl Error {
-    /// Whether the bus failed (rather than the service answering with an error), after which a kept
-    /// connection is made again.
+    /// Whether the bus failed, as opposed to the service answering with an error. After a bus failure a
+    /// kept connection is made again.
     pub fn is_bus_failure(&self) -> bool {
         matches!(self, Error::Bus(_))
     }
 
-    /// The part worth showing a person: the service's own message if it gave one.
+    /// The part worth showing a person: the service's own message, if it gave one.
     pub fn message(&self) -> &str {
         match self {
             Error::Method { message, .. } if !message.is_empty() => message,
@@ -68,7 +71,7 @@ impl Error {
         }
     }
 
-    /// Whether the service isn't on the bus at all (not installed, or not running).
+    /// Whether the service isn't on the bus at all, because it isn't installed or isn't running.
     pub fn is_absent(&self) -> bool {
         matches!(self, Error::Method { name, .. } if matches!(name.as_str(), "org.freedesktop.DBus.Error.ServiceUnknown" | "org.freedesktop.DBus.Error.NameHasNoOwner"))
     }
@@ -79,7 +82,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// A value of any type, as property maps and variant arguments hold them.
 pub type Value = Variant<Box<dyn RefArg>>;
 
-/// What a thread serves: given a call to it, the reply; `None` if it isn't one of its (refused).
+/// What a thread serves. Given a call, it returns the reply, or `None` to refuse a call it doesn't serve.
 type Serve = Box<dyn FnMut(&Message) -> Option<Message> + Send>;
 
 /// A connection to a bus, used by one thread.
@@ -87,7 +90,7 @@ pub struct Bus {
     channel: Channel,
     timeout: Duration,
     serve: Option<Serve>,
-    /// The signals come, if any were asked for.
+    /// The signals that have arrived, if any were asked for.
     signals: Option<VecDeque<Message>>,
     closed: bool,
 }
@@ -107,13 +110,13 @@ impl Bus {
         Ok(Bus { channel, timeout: TIMEOUT, serve: None, signals: None, closed: false })
     }
 
-    /// Calls fail after `timeout` (else [`TIMEOUT`]).
+    /// Makes calls fail after `timeout` instead of [`TIMEOUT`].
     pub fn with_timeout(mut self, timeout: Duration) -> Bus {
         self.timeout = timeout;
         self
     }
 
-    /// Calls to this connection answered by `serve` from now on (refused before).
+    /// From now on, calls to this connection are answered by `serve`. Until then they are refused.
     pub fn serve(&mut self, serve: Serve) {
         self.serve = Some(serve);
     }
@@ -122,8 +125,8 @@ impl Bus {
         self.channel.unique_name().map(str::to_owned)
     }
 
-    /// The connection's socket, to poll for reading beside other files; then [`Bus::signals`] (which
-    /// also answers calls to us).
+    /// The connection's socket, to poll for reading alongside other files. When it is readable, call
+    /// [`Bus::signals`], which also answers calls to us.
     pub fn fd(&self) -> BorrowedFd<'_> {
         // SAFETY: the descriptor is the channel's socket, open as long as the channel is; the borrow
         // can't outlive `self`, which owns the channel.
@@ -133,7 +136,7 @@ impl Bus {
         }
     }
 
-    /// `method` of `interface` on `path` at `dest`, with `args`; its reply's values.
+    /// Calls `method` of `interface` on `path` at `dest` with `args`, and returns the reply's values.
     pub fn call<R: ReadAll>(&mut self, dest: &str, path: &str, interface: &str, method: &str, args: impl AppendAll) -> Result<R> {
         let mut message = Message::new_method_call(dest, path, interface, method).map_err(Error::Reply)?;
         message.append_all(args);
@@ -141,7 +144,7 @@ impl Bus {
         Ok(reply.read_all::<R>()?)
     }
 
-    /// As [`Bus::call`], not waiting for (nor asking for) a reply.
+    /// Like [`Bus::call`], but neither asks for nor waits for a reply.
     pub fn call_noreply(&mut self, dest: &str, path: &str, interface: &str, method: &str, args: impl AppendAll) -> Result<()> {
         let mut message = Message::new_method_call(dest, path, interface, method).map_err(Error::Reply)?;
         message.append_all(args);
@@ -165,28 +168,29 @@ impl Bus {
         Ok(all)
     }
 
-    /// The signals `rule` matches come to this connection, kept for [`Bus::signals`].
+    /// Makes the signals that `rule` matches come to this connection, where they are kept for
+    /// [`Bus::signals`].
     pub fn add_match(&mut self, rule: &str) -> Result<()> {
         self.signals.get_or_insert_default();
         self.call("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "AddMatch", (rule,))
     }
 
-    /// Sends a message (a signal, a reply).
+    /// Sends a message, such as a signal or a reply.
     pub fn send(&mut self, message: Message) -> Result<()> {
         self.channel.send(message).map_err(|()| Error::Bus("couldn't send".into()))?;
         self.channel.flush();
         Ok(())
     }
 
-    /// What came since the last look, at once: calls to us answered, the signals kept since returned.
-    /// Fails once the bus has closed.
+    /// Handles what came since the last look without waiting. Calls to us are answered, and the signals
+    /// kept since then are returned. Fails once the bus has closed.
     pub fn signals(&mut self) -> Result<Vec<Message>> {
         self.read(Some(Duration::ZERO))?;
         Ok(self.signals.as_mut().map(|s| s.drain(..).collect()).unwrap_or_default())
     }
 
-    /// Waits until something comes (for at most `timeout`; none: until it does), and handles it; then
-    /// [`Bus::signals`] has the signals.
+    /// Waits until something arrives and handles it. With a `timeout` it waits at most that long, and
+    /// without one it waits until something comes. Afterwards [`Bus::signals`] has the signals.
     pub fn wait(&mut self, timeout: Option<Duration>) -> Result<()> {
         if self.signals.as_ref().is_some_and(|s| !s.is_empty()) {
             return Ok(());
@@ -194,7 +198,7 @@ impl Bus {
         self.read(timeout)
     }
 
-    /// Reads from the socket (waiting up to `timeout`), and handles every message there.
+    /// Reads from the socket, waiting up to `timeout`, and handles every message there.
     fn read(&mut self, timeout: Option<Duration>) -> Result<()> {
         self.ensure_open()?;
         if self.channel.read_write(timeout).is_err() {
@@ -210,7 +214,7 @@ impl Bus {
         if self.closed { Err(Error::Bus("the bus closed".into())) } else { Ok(()) }
     }
 
-    /// Sends `message` and waits for its reply, handling what comes meanwhile.
+    /// Sends `message` and waits for its reply, handling anything else that comes in the meantime.
     fn call_message(&mut self, message: Message) -> Result<Message> {
         self.ensure_open()?;
         let serial = self.channel.send(message).map_err(|()| Error::Bus("couldn't send".into()))?;
@@ -236,8 +240,8 @@ impl Bus {
         }
     }
 
-    /// A message that isn't a reply waited for: a call to us answered (or refused), a signal kept (if
-    /// signals were asked for), the bus closing noted.
+    /// Handles a message that isn't an awaited reply. A call to us is answered or refused, a signal is
+    /// kept if signals were asked for, and the bus closing is noted.
     fn handle(&mut self, message: Message) {
         match message.msg_type() {
             MessageType::MethodCall => {
@@ -266,20 +270,19 @@ impl Bus {
     }
 }
 
-/// A bus connection kept between calls (connected when first needed), and made again after the bus
-/// failed.
+/// A bus connection kept between calls. It connects when first needed, and again after the bus fails.
 pub struct Kept {
     session: bool,
     bus: Option<Bus>,
 }
 
 impl Kept {
-    /// The system bus's.
+    /// A kept connection to the system bus.
     pub const fn system() -> Kept {
         Kept { session: false, bus: None }
     }
 
-    /// The session bus's.
+    /// A kept connection to the session bus.
     pub const fn session() -> Kept {
         Kept { session: true, bus: None }
     }
@@ -293,7 +296,8 @@ impl Kept {
         Ok(self.bus.insert(bus))
     }
 
-    /// A call through it failed: if the bus did, the connection goes and the next call connects again.
+    /// Reports that a call through it failed. If the bus failed, the connection is dropped and the next
+    /// call connects again.
     pub fn failed(&mut self, error: &Error) {
         if error.is_bus_failure() {
             self.bus = None;
@@ -364,8 +368,8 @@ mod tests {
 mod live {
     use super::*;
 
-    /// With a session bus (a desktop): a call to ourselves is answered by what we serve, while we wait
-    /// for its reply on another connection's thread (run by hand: `--ignored`).
+    /// Needs a session bus, so a desktop. A call to ourselves is answered by what we serve while another
+    /// connection's thread waits for the reply. Run it by hand with `--ignored`.
     #[test]
     #[ignore = "needs a session bus"]
     #[allow(clippy::unwrap_used)]

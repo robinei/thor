@@ -7,9 +7,9 @@ use serde_json::Value;
 
 use crate::os::{command, fs};
 
-/// The body of `url` (a GET, redirects followed), if it answered 2xx. The URL and the headers go to curl
-/// on its stdin, as a config (`-K -`): they may hold an API key, and a command line is anyone's to read
-/// in /proc.
+/// The body of a GET of `url`, following redirects, if the answer is 2xx. The URL and the headers go to
+/// curl on its stdin as a config (`-K -`), because they may hold an API key and anyone can read a command
+/// line in /proc.
 pub fn get(url: &str, headers: &[&str]) -> Option<Vec<u8>> {
     let mut config = format!("url = {}\n", quoted(url));
     for h in headers {
@@ -25,15 +25,15 @@ pub fn get(url: &str, headers: &[&str]) -> Option<Vec<u8>> {
     Some(out.stdout)
 }
 
-/// `url` as a log line shows it: without its query, which may hold an API key.
+/// `url` as a log line shows it, without its query, which may hold an API key.
 fn shown(url: &str) -> &str {
     url.split_once('?').map_or(url, |(base, _)| base)
 }
 
-/// How long curl may take: its own limit, and a little more.
+/// How long curl may take: its own `--max-time` and a little more.
 const CURL_LIMIT: Duration = Duration::from_secs(35);
 
-/// `text` as a curl config's quoted string.
+/// `text` as a quoted string for a curl config.
 fn quoted(text: &str) -> String {
     let mut out = String::with_capacity(text.len() + 2);
     out.push('"');
@@ -58,8 +58,8 @@ pub fn get_json(url: &str, headers: &[&str]) -> Option<Value> {
     serde_json::from_slice(&get(url, headers)?).inspect_err(|e| log::warn!("{}: {e}", shown(url))).ok()
 }
 
-/// `file`'s contents if it is younger than `max_age`; else `fetch`ed and kept in it (see
-/// [`fs::write_file`]), or (the fetch failing) its older contents, if any.
+/// The contents of `file` if it is younger than `max_age`. Otherwise the contents are fetched with `fetch`
+/// and kept in `file` (see [`fs::write_file`]). If the fetch fails, the older contents are used, if any.
 pub fn kept(file: &Path, max_age: Duration, fetch: impl FnOnce() -> Option<Vec<u8>>) -> Option<Vec<u8>> {
     let age = std::fs::metadata(file).and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok());
     if age.is_some_and(|a| a < max_age) {
@@ -85,7 +85,7 @@ pub fn kept(file: &Path, max_age: Duration, fetch: impl FnOnce() -> Option<Vec<u
     }
 }
 
-/// `url` into `file` (see [`fs::write_file`]); whether it worked.
+/// Downloads `url` into `file` (see [`fs::write_file`]). Returns whether it worked.
 pub fn download(url: &str, headers: &[&str], file: &Path) -> bool {
     let Some(body) = get(url, headers).filter(|b| !b.is_empty()) else {
         return false;
