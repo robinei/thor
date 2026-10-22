@@ -538,25 +538,31 @@ impl Keymaps {
         self.list.iter().find(|k| k.owner.as_deref() == Some(game))
     }
 
+    /// The id for a new keymap: one past the highest, so an id is never taken twice while the highest
+    /// stays. None once the ids have run out.
+    fn next_id(&self) -> Option<u16> {
+        self.list.iter().map(|k| k.id).max().unwrap_or(0).checked_add(1)
+    }
+
     /// `game`'s own keymap made, a copy of keymap `from` (Default, or one gone: empty); its id.
-    pub fn make_own(&mut self, from: u16, game: &std::sync::Arc<str>) -> u16 {
-        let id = self.list.iter().map(|k| k.id).max().unwrap_or(0).saturating_add(1);
+    pub fn make_own(&mut self, from: u16, game: &std::sync::Arc<str>) -> Option<u16> {
+        let id = self.next_id()?;
         let mut own = Keymap::new(id, "");
         own.owner = Some(game.clone());
         if let Some(from) = self.get(from) {
             own.layers = from.layers.clone();
         }
         self.list.push(own);
-        id
+        Some(id)
     }
 
     /// `owner`'s own keymap made with `preset`'s bindings (see [`preset`]); its id.
-    pub fn make_own_from(&mut self, preset: &Keymap, owner: &std::sync::Arc<str>) -> u16 {
-        let id = self.make_own(0, owner);
+    pub fn make_own_from(&mut self, preset: &Keymap, owner: &std::sync::Arc<str>) -> Option<u16> {
+        let id = self.make_own(0, owner)?;
         if let Some(own) = self.get_mut(id) {
             own.layers = preset.layers.clone();
         }
-        id
+        Some(id)
     }
 
     /// Keymap `to`'s bindings and layers replaced by a copy of keymap `from`'s (Default, or one gone:
@@ -579,17 +585,17 @@ impl Keymaps {
     }
 
     /// A new, empty keymap named `name` (made unique); its id.
-    pub fn add(&mut self, name: &str) -> u16 {
-        let id = self.list.iter().map(|k| k.id).max().unwrap_or(0).saturating_add(1);
+    pub fn add(&mut self, name: &str) -> Option<u16> {
+        let id = self.next_id()?;
         let name = self.unique_name(name);
         self.list.push(Keymap::new(id, &name));
-        id
+        Some(id)
     }
 
     /// A copy of keymap `id` named `name` (made unique); the copy's id.
     pub fn duplicate(&mut self, id: u16, name: &str) -> Option<u16> {
         let layers = self.get(id).map(|k| k.layers.clone())?;
-        let copy = self.add(name);
+        let copy = self.add(name)?;
         if let Some(k) = self.get_mut(copy) {
             k.layers = layers;
         }

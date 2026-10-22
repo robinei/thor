@@ -114,8 +114,9 @@ impl State {
             return vec![];
         }
         for (key, preset) in &wanting {
-            let id = self.keymaps.make_own_from(preset, key);
-            self.settings.set(Some(key), Setting::Keymap, Some(id));
+            if let Some(id) = self.keymaps.make_own_from(preset, key) {
+                self.settings.set(Some(key), Setting::Keymap, Some(id));
+            }
         }
         vec![Effect::Save(Save::Keymaps(self.keymaps.clone())), Effect::Save(Save::Settings(self.settings.clone()))]
     }

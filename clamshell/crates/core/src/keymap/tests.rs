@@ -32,7 +32,7 @@ fn only_fitting_targets_bind() {
 #[test]
 fn keymaps_round_trip() {
     let mut maps = Keymaps::initial();
-    let fps = maps.add("FPS");
+    let fps = maps.add("FPS").unwrap();
     let k = maps.get_mut(fps).unwrap();
     k.set(Input::Button(Button::A), Some(Binding::to(Output::Key(ctrl('x')))));
     k.set(Input::Stick(Side::Right), Some(Binding { speed: 75, deadzone: 20, full: 90, curve: 40, invert_y: true, ..Binding::to(Output::Pointer) }));
@@ -53,7 +53,7 @@ fn keymaps_round_trip() {
 fn a_games_own_keymap_round_trips() {
     let mut maps = Keymaps::initial();
     let game: std::sync::Arc<str> = "zelda-lttp".into();
-    let own = maps.make_own(1, &game);
+    let own = maps.make_own(1, &game).unwrap();
     assert_eq!(maps.get(own).map(|k| (k.name.as_str(), k.bindings().len())), Some(("", 4)), "a copy of Nintendo layout");
     assert_eq!(round_trip(&maps), maps);
     assert_eq!(round_trip(&maps).get(own).and_then(|k| k.owner.clone()), Some(game));
@@ -234,8 +234,8 @@ fn layers_fall_through_to_those_beneath() {
 #[test]
 fn adding_renaming_duplicating_removing() {
     let mut maps = Keymaps::initial();
-    let a = maps.add("Racing");
-    assert_eq!(maps.add("Racing"), 3);
+    let a = maps.add("Racing").unwrap();
+    assert_eq!(maps.add("Racing"), Some(3));
     assert_eq!(maps.get(3).map(|k| k.name.as_str()), Some("Racing 2"), "names stay apart");
     maps.get_mut(a).unwrap().set(Input::Button(Button::A), Some(Binding::to(Output::Pad(PadOut::Trigger(Side::Right)))));
     let copy = maps.duplicate(a, "Racing").unwrap();
@@ -243,11 +243,14 @@ fn adding_renaming_duplicating_removing() {
     assert!(maps.rename(a, "Rally"));
     assert!(maps.rename(a, "Rally"), "its own name again");
     assert_eq!(maps.get(a).map(|k| k.name.as_str()), Some("Rally"));
-    let slash = maps.add(" A/B ");
+    let slash = maps.add(" A/B ").unwrap();
     assert_eq!(maps.get(slash).map(|k| k.name.as_str()), Some("A-B"), "a name that makes a file name");
     maps.remove(slash);
     assert!(maps.remove(copy) && !maps.remove(copy));
-    assert_eq!(maps.add("New"), 4, "ids are never taken twice while the highest stays");
+    assert_eq!(maps.add("New"), Some(4), "ids are never taken twice while the highest stays");
+    let mut full = Keymaps::from_list(vec![Keymap::new(u16::MAX, "Last")]);
+    assert_eq!(full.add("More"), None, "no id left: none made");
+    assert_eq!(full.make_own(0, &"zelda".into()), None);
     assert_eq!(nintendo(1).get(Input::Button(Button::X)).map(|b| b.output), Some(Output::Pad(PadOut::Button(Button::Y))));
 }
 

@@ -559,8 +559,8 @@ mod tests {
 
         let mut keymaps = Keymaps::initial();
         let zelda: Arc<str> = "snes:Zelda.sfc".into();
-        let fps = keymaps.add("FPS");
-        let own = keymaps.make_own(1, &zelda);
+        let fps = keymaps.add("FPS").unwrap();
+        let own = keymaps.make_own(1, &zelda).unwrap();
         keymaps.get_mut(fps).unwrap().set(Input::Button(Button::A), Some(Binding::to(Output::Pad(PadOut::Button(Button::Y)))));
         store.save(&Save::Keymaps(keymaps.clone())).unwrap();
         let back = store.keymaps().unwrap();

@@ -340,7 +340,9 @@ impl State {
         let Some(game) = self.editing().map(|g| g.id.clone()) else {
             return vec![];
         };
-        let own = self.keymaps.make_own(from, &game);
+        let Some(own) = self.keymaps.make_own(from, &game) else {
+            return vec![];
+        };
         let mut effects = self.change(Setting::Keymap, Some(own));
         self.open_edit(own);
         effects.push(self.save_keymaps());
@@ -599,18 +601,15 @@ impl State {
         }
         match action {
             KeymapName::New => {
-                let id = self.keymaps.add(name);
-                self.open_edit(id);
+                if let Some(id) = self.keymaps.add(name) {
+                    self.open_edit(id);
+                }
             }
             KeymapName::Rename(id) => {
                 self.keymaps.rename(id, name);
                 self.bottom.keymaps = Some(Screen::List);
             }
-            KeymapName::Duplicate(id) => {
-                self.keymaps.duplicate(id, name);
-                self.bottom.keymaps = Some(Screen::List);
-            }
-            KeymapName::SaveAs(id) => {
+            KeymapName::Duplicate(id) | KeymapName::SaveAs(id) => {
                 self.keymaps.duplicate(id, name);
                 self.bottom.keymaps = Some(Screen::List);
             }
