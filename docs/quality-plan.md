@@ -156,8 +156,8 @@ Helpers that exist but are bypassed:
       `Effect::Launch { game }`) → entry; `KeymapId` (a button enum) renamed, the keymap's id a newtype;
       `Init.setup` / `first_run` / `SetupDone`; the name collisions (`Output`, `Device`, `Kind`,
       `Action`).
-- [ ] Commit messages: short imperative scoped subjects, one concern each (from 2026-10-22 on).
-- [ ] `docs/review-2026-10.md` framed as the design log it is.
-- [ ] Cargo metadata: `description`, `repository`, `publish = false`, `rust-version`.
-- [ ] `clamshell/README`: what the config folders beside the workspace are; `.claude/commands/maintain.md`
-      named in the README as the device's maintenance playbook.
+- [x] Commit messages: short imperative scoped subjects, one concern each (from 2026-10-22 on).
+- [x] `docs/review-2026-10.md` framed as the design record it is.
+- [x] Cargo metadata: `description`, `repository`, `publish = false`, `rust-version`.
+- [x] The config folders beside the workspace and `.claude/commands/maintain.md` (the device's maintenance
+      playbook) described in the README.
