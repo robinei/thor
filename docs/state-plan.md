@@ -15,14 +15,16 @@ passes (session; keymap and settings; shelf, nav and bottom; the rest and State 
   (`self.radios.tap_network(i, long)`, `self.bottom.window_down(&self.session, now)`); disjoint field
   borrows inside State's impl make this work. Values are taken out of a borrow (an `Arc` clone, a `u16`)
   before a `&mut` call on another area.
-- **One follow-up vocabulary.** When an area's rule needs something done outside it, it returns it in
-  `Vec<Then>` instead of reaching over: `Then::Effect(Effect)`, `Notify(NoticeKind)`, `Act(EntryAct)`
-  (play, launch, show, show down, quit, force kill, suspend, toggle autostart, enqueue),
-  `OpenEditor(Editor)`, `Tab(Tab)`, `ShelfMoved`, `Played(Play)`, `Unwake`, and the few the keymap
-  screens need (`ChooseKeymap`, `KeymapDeleted`, `DropModifiers`, `Capture`). State's `settle(Vec<Then>)
-  -> Vec<Effect>` carries them out in order, so effects keep today's exact order, interleaving included.
-  This replaces the per-area enums the research proposed (`DeviceTap`, `BatteryTap`, `WifiTap`,
-  `PanelFollow`, `KeymapFollow`, `DockOut`, shelf's `Then`, session's `Out`).
+- **One mutation vocabulary.** When an area's rule needs State changed outside that area, it returns the
+  change in `Vec<Mutation>` instead of reaching over: `Mutation::Effect(Effect)` (an effect appended to
+  what `apply` returns), `Notify(NoticeKind)`, `Act(EntryAct)` (play, launch, show, show down, quit,
+  force kill, suspend, toggle autostart, enqueue), `OpenEditor(Editor)`, `Tab(Tab)`, `ShelfMoved`,
+  `Played(Play)`, `Unwake`, and the few the keymap screens need (`ChooseKeymap`, `KeymapDeleted`,
+  `DropModifiers`, `Capture`). State's `settle(Vec<Mutation>) -> Vec<Effect>` applies them in order, so
+  effects keep today's exact order, interleaving included. Like Flux's actions, but applied at once,
+  within the event, each by the one area it concerns. This replaces the per-area enums the research
+  proposed (`DeviceTap`, `BatteryTap`, `WifiTap`, `PanelFollow`, `KeymapFollow`, `DockOut`, shelf's
+  `Then`, session's `Out`).
 - **`Clock`** `{ unix, mono }` replaces `unix_secs`/`mono_secs`, with `read()` and `unix_at(mono)`.
   Session rules take `clock` and `&Library`. Settings in force are not in it: they change during an
   event and are passed where needed.
@@ -63,7 +65,7 @@ Each step is one or a few commits that pass `tools/check.sh` with the snapshot h
 and the UI change with the code they call; doc links to moved methods are fixed in the same commit.
 
 - [ ] 1. `Clock`.
-- [ ] 2. `Then` and `State::settle`, with `Notify` and `Effect` first; `State::notify` stays as a wrapper
+- [ ] 2. `Mutation` and `State::settle`, with `Notify` and `Effect` first; `State::notify` stays as a wrapper
       until the areas return notices.
 - [ ] 3. Radios: private fields, `tap_network`/`tap_device`/`join`/power, `read_wifi`/`read_bluetooth`.
 - [ ] 4. Levels: brightness debounce in, `change`/`on_audio`/`on_stream`; `read_status` split between
@@ -78,7 +80,7 @@ and the UI change with the code they call; doc links to moved methods are fixed 
       flag and the resume debounce on State.
 - [ ] 10. Lists: `move_list`; drop `list_offset`, `list_can_scroll`, `anchor`.
 - [ ] 11. Keymapping: data methods on `Settings`; the struct; getters and editing; the handlers with
-      `Then`.
+      `Mutation`.
 - [ ] 12. Prefs and the `Panel` view.
 - [ ] 13. Session: fields in; session-only rules; units, windows, found, tray, background; `launch` and
       `reconcile`; dock with `EntryAct`; enqueue.
