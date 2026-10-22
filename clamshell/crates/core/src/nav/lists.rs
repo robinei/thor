@@ -187,51 +187,33 @@ impl State {
         self.rows(list).len()
     }
 
-    /// How far `list` is scrolled, in rows.
-    pub fn list_offset(&self, list: ListId) -> f32 {
-        self.scroll(list).offset()
-    }
-
-    /// Whether scrolling `list` by `rows` would move it.
-    pub fn list_can_scroll(&self, list: ListId, rows: f32) -> bool {
-        self.scroll(list).can_scroll(rows, self.list_len(list))
-    }
-
     /// A list scrolled or was laid out. Returns whether it moved.
     pub(crate) fn on_list(&mut self, event: ListEvent) -> bool {
-        let (list, moved) = match event {
-            ListEvent::Scroll(list, rows) => {
-                let len = self.list_len(list);
-                (list, self.scroll_mut(list).is_some_and(|s| s.scroll_by(rows, len)))
-            }
-            ListEvent::Visible(list, rows) => {
-                let len = self.list_len(list);
-                (list, self.scroll_mut(list).is_some_and(|s| s.set_visible(rows, len)))
-            }
-        };
-        if moved {
-            self.anchor(list);
+        match event {
+            ListEvent::Scroll(list, rows) => self.move_list(list, |s, len| s.scroll_by(rows, len)),
+            ListEvent::Visible(list, rows) => self.move_list(list, |s, len| s.set_visible(rows, len)),
         }
-        moved
     }
 
     /// The pad's focus moved to `id`. If it is a list row, the list scrolls to show it.
     pub(crate) fn show_focused(&mut self, id: &Id) {
-        let Some((list, i)) = ListId::of(id) else {
-            return;
-        };
-        let len = self.list_len(list);
-        if self.scroll_mut(list).is_some_and(|s| s.show(i, len)) {
-            self.anchor(list);
+        if let Some((list, i)) = ListId::of(id) {
+            self.move_list(list, |s, len| s.show(i, len));
         }
     }
 
-    /// Remembers which item is at the top of `list`'s view.
-    fn anchor(&mut self, list: ListId) {
+    /// Moves `list` by `f`, given its scroll and how many rows it has. If it moved, the item now at the top
+    /// of its view is remembered, to keep there when the list changes. Returns whether it moved.
+    fn move_list(&mut self, list: ListId, f: impl FnOnce(&mut Scroll, usize) -> bool) -> bool {
+        let len = self.list_len(list);
+        if !self.scroll_mut(list).is_some_and(|s| f(s, len)) {
+            return false;
+        }
         let key = self.rows(list).key(self.scroll(list).top());
         if let Some(s) = self.scroll_mut(list) {
             s.anchor(key);
         }
+        true
     }
 
     /// Runs after the lists' contents may have changed. Each scrolled list keeps its top item where it

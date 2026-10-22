@@ -85,7 +85,7 @@ and the UI change with the code they call; doc links to moved methods are fixed 
       effect lists; `Tab` and entry acts as `Event` variants.
 - [x] 9. Shelf: `Files`, `fetching`, `shown` in; files and rules and actions onto `Shelf`; the unsaved
       flag and the resume debounce on State.
-- [ ] 10. Lists: `move_list`; drop `list_offset`, `list_can_scroll`, `anchor`.
+- [x] 10. Lists: `move_list`; drop `list_offset`, `list_can_scroll`, `anchor`.
 - [ ] 11. Keymapping: data methods on `Settings`; the struct; getters and editing; the handlers pushing into
       `Out` (choose/delete/capture as events).
 - [ ] 12. Prefs and the `Panel` view.

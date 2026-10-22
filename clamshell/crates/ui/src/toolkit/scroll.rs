@@ -49,7 +49,7 @@ impl Scrolled {
             *slot = Some(visible);
         }
         // The state keeps it within the list's ends.
-        let offset = f.s.list_offset(list);
+        let offset = f.s.scroll(list).offset();
         let first_target = f.targets.len();
         if area.h > 0.0 && area.w > 0.0 {
             f.targets.push(super::Target { rect: area, id: Id::List(list), track: None, list: None });
