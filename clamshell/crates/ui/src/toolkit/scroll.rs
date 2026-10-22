@@ -82,7 +82,7 @@ impl Scrolled {
             let keep = if i < self.first_target {
                 true
             } else {
-                t.rect = intersect(t.rect, area);
+                t.rect = t.rect.intersect(area);
                 t.list = Some(in_list);
                 t.rect.w > 0.0 && t.rect.h > 0.0
             };
@@ -96,11 +96,4 @@ impl Scrolled {
             f.c.rounded(Rect::new(bar_x, y, BAR_W, h), BAR_W / 2.0, Tone::Dim);
         }
     }
-}
-
-/// Where two rects overlap (empty, zero-sized, where they don't).
-fn intersect(a: Rect, b: Rect) -> Rect {
-    let (x0, y0) = (a.x.max(b.x), a.y.max(b.y));
-    let (x1, y1) = (a.right().min(b.right()), a.bottom().min(b.bottom()));
-    Rect::new(x0, y0, (x1 - x0).max(0.0), (y1 - y0).max(0.0))
 }
