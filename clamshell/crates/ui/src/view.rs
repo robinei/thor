@@ -23,9 +23,9 @@ use smithay_client_toolkit::{
 };
 use tiny_skia::PixmapMut;
 
-use crate::focus::Drawn;
 use crate::gfx::images::Images;
 use crate::gfx::{DrawCache, Rect};
+use crate::input::focus::Drawn;
 use crate::render::{self, Placement, Retained};
 use crate::screens::{Screen, Screens};
 use crate::toolkit::{FrameOut, Target};

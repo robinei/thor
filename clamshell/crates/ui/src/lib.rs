@@ -10,11 +10,8 @@
 //! connects them to Wayland and the event loop.
 
 mod display;
-mod fling;
-mod focus;
 pub mod gfx;
 mod input;
-pub mod nav;
 #[cfg(test)]
 #[allow(unsafe_code, clippy::unwrap_used, clippy::expect_used)]
 mod no_alloc;
@@ -54,10 +51,10 @@ use smithay_client_toolkit::{
     shm::{Shm, slot::SlotPool},
 };
 
-use focus::PadPress;
 use gfx::DrawCache;
+use input::focus::{self, PadPress};
+use input::nav::Dir;
 use input::{Action, End, Input, Source};
-use nav::Dir;
 use render::{Placement, Retained};
 use screens::Screens;
 use view::View;

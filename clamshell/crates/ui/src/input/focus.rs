@@ -11,7 +11,7 @@ use clamshell_core::{DockId, EditorId, Event, Id, LevelEvent, ListId, PadInput, 
 use smithay_client_toolkit::seat::keyboard::Keysym;
 
 use crate::gfx::Rect;
-use crate::nav::{self, Dir, NavTarget};
+use crate::input::nav::{self, Dir, NavTarget};
 use crate::screens::{Screen, Screens};
 use crate::toolkit::Target;
 

@@ -383,7 +383,7 @@ mod tests {
     /// header's end too (Wi-Fi's switch, the volume's slider), not the first list row past it.
     #[test]
     fn down_from_the_bar_reaches_the_tabs_first_line() {
-        use crate::nav::{Dir, NavTarget, step};
+        use crate::input::nav::{Dir, NavTarget, step};
         use clamshell_core::levels::{Audio, Level, Stream};
         use clamshell_core::radios::wifi::{Network, Wifi};
         use clamshell_core::{ListId, WifiId};

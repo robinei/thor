@@ -21,8 +21,8 @@ use clamshell_core::levels::Level;
 use clamshell_core::levels::slider::{Control, SLIDE_AFTER, SLIDE_MOVE};
 use clamshell_core::{Event, Hold, Id, LevelEvent, ListEvent, PadRoute, PointerEvent, Slide, State};
 
-use crate::fling::{FLING_EVERY, Fling, Trail};
 use crate::gfx::Rect;
+use crate::input::fling::{FLING_EVERY, Fling, Trail};
 use crate::toolkit::scroll::InList;
 use crate::toolkit::{Target, Track};
 
