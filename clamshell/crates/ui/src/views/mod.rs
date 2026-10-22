@@ -165,7 +165,7 @@ mod tests {
         let km = |id| tap(Id::Keymap(id));
         let pick = |input| vec![km(KeymapId::Input(input))];
         let slide = |param, lift: bool| {
-            let control = clamshell_core::levels::slider::Control::Param(param);
+            let control = clamshell_core::Control::Param(param);
             let mut v =
                 vec![Event::Slide(clamshell_core::Slide::Start { control, x: 100.0, width: 300.0 }), Event::Slide(clamshell_core::Slide::To { x: 160.0 })];
             if lift {
@@ -229,11 +229,7 @@ mod tests {
                     // clear of the clusters.
                     let l = keymaps::edit_layout(body);
                     for t in targets.iter().filter(|t| {
-                        matches!(
-                            t.id,
-                            Id::Control(clamshell_core::levels::slider::Control::Param(_))
-                                | Id::Keymap(KeymapId::Target(_) | KeymapId::Toggle(_) | KeymapId::Holds)
-                        )
+                        matches!(t.id, Id::Control(clamshell_core::Control::Param(_)) | Id::Keymap(KeymapId::Target(_) | KeymapId::Toggle(_) | KeymapId::Holds))
                     }) {
                         assert!(
                             t.rect.x >= l.strip.x - 0.5 && t.rect.right() <= l.strip.right() + 0.5,

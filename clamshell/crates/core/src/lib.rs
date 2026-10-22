@@ -2,12 +2,24 @@
 //! world must do comes back as [`Effect`]s. The UI and the system threads only read the state and send
 //! events, so all of this is unit-testable.
 //!
-//! The state is grouped by what it is about: shelf ([`Shelf`]), the second screen ([`Bottom`]), what runs
-//! and is in front ([`Session`]), the dock ([`Dock`]), volume and brightness ([`Levels`]), the radios
-//! ([`Radios`]), the controller ([`Pad`]), focus and presses ([`Pointer`]), and the system's readings
-//! ([`Sys`]). The rules are a module per feature, each an `impl State` block, since most features read
-//! more than one group. A few pure models live here too because the system threads share them with the
-//! state: the fan's mode ([`settings::fan`]) and the sticks' calibration ([`crate::device::sticks`]).
+//! The state is grouped by what it is about, and so are the modules: each area holds its model and its
+//! rules (an `impl State` block, since most rules read more than one group):
+//!
+//! - [`shelf`]: the library's view on the main screen ([`Shelf`]), its actions and files;
+//! - [`bottom`]: the second screen's tabs ([`Bottom`]), the editor, the on-screen keyboard, the screen's
+//!   own rules;
+//! - [`session`]: what runs and is in front ([`Session`]): launches, windows, programs found, the tray,
+//!   the dock, Home;
+//! - [`levels`]: volume and brightness, and the slider setting them;
+//! - [`radios`]: Wi-Fi and Bluetooth;
+//! - [`settings`]: the settings' table and panel, the environment variables, the fan's mode;
+//! - [`device`]: the Device view, the account, the sticks' calibration, the device buttons, idle;
+//! - [`status`]: the system's readings ([`Sys`]): status, metrics, the battery, the time;
+//! - [`keymap`]: keymaps and their screens;
+//! - [`nav`]: focus and presses ([`Pointer`]), the lists, the pad's route ([`Pad`]);
+//! - [`kit`]: generic parts the areas build on, knowing nothing of them.
+//!
+//! `apply.rs` takes each event to its area and then, in order, everything that follows from it.
 //!
 //! Panics are ruled out by the workspace's lints (no `unwrap`, `expect` or indexing). A lookup whose
 //! index is valid by construction (an enum's place in an array sized for it, an index the library's own
@@ -36,32 +48,35 @@ pub(crate) mod testkit;
 #[allow(clippy::unwrap_used)]
 mod tests;
 
-use crate::bottom::keyboard::Keyboard;
-pub use resume::Resume;
+use bottom::keyboard::Keyboard;
 use resume::Saves;
 use settings::Settings;
 
-pub use crate::bottom::editor::Editor;
-pub use crate::bottom::{Bottom, Tab};
-pub use crate::kit::list::Scroll;
-pub use crate::nav::lists::{ListEvent, ListId, Lists, RowPart};
-pub use crate::nav::pad::{Claimant, Pad, PadInput, PadMouse, PadRoute};
-pub use crate::nav::pointer::Pointer;
-pub use crate::session::dock::{Dock, DockItem};
-pub use crate::session::instance::Instance;
-pub use crate::session::program::Program;
-pub use crate::session::running::{Front, Launching, Origin, Running};
-pub use crate::settings::env::{count_env, parse_env};
-pub use crate::settings::panel::{Scope, TileOrigin};
-pub use crate::status::time::{ClockField, TimePage, TimeRow, TimeZones};
-pub use crate::status::{Status, Sys};
+// What other crates talk to the state with: the events and effects and what they carry, the ids, and
+// the groups the getters return.
 pub use effect::{Dirty, Effect, Save, Watch, WindowCommand};
 pub use event::{Event, LaunchEvent, LevelEvent, PointerEvent, Reading, ShelfEvent, Slide};
 pub use id::{AudioId, BatteryId, BtId, DeviceId, DockId, EditorId, Hold, Id, KeymapId, SettingsId, ShelfId, Target, TimeId, WifiId};
+pub use resume::Resume;
+
+pub use bottom::editor::Editor;
+pub use bottom::{Bottom, Tab};
+pub use kit::list::Scroll;
+pub use levels::slider::Control;
 pub use levels::{Brightness, Level, Levels, Sound};
+pub use nav::lists::{ListEvent, ListId, Lists, RowPart};
+pub use nav::pad::{Claimant, Pad, PadInput, PadMouse, PadRoute};
+pub use nav::pointer::Pointer;
 pub use radios::{RadioStatus, Radios};
 pub use session::Session;
+pub use session::dock::{Dock, DockItem};
+pub use session::instance::Instance;
+pub use session::program::Program;
+pub use session::running::{Front, Launching, Origin, Running};
+pub use settings::panel::{Scope, TileOrigin};
 pub use shelf::{Cursor, Shelf};
+pub use status::time::{ClockField, TimePage, TimeRow, TimeZones};
+pub use status::{Status, Sys};
 
 pub use clamshell_library::{BrowseKind, Browsed, Collection, Entry, Launch, Library, Meta, RunnerOf, runner_key};
 

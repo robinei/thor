@@ -10,11 +10,11 @@ use std::fmt;
 use std::io::BufRead;
 use std::path::PathBuf;
 
+use clamshell_core::Control;
 use clamshell_core::bottom::keyboard::{self, Key, Modifier, Named};
 use clamshell_core::device::buttons::DeviceKey;
 use clamshell_core::keymap::{Actuation, Dir, Input, Layer, MouseButton, Output, PadOut, Param, Side};
 use clamshell_core::levels::Level;
-use clamshell_core::levels::slider::Control;
 use clamshell_core::settings::Setting;
 use clamshell_core::{
     BtId, DockId, EditorId, Event, Id, KeymapId, LevelEvent, ListId, PadInput, PointerEvent, RowPart, SettingsId, ShelfEvent, ShelfId, Slide, Tab, Target,

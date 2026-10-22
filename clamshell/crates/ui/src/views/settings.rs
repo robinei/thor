@@ -149,7 +149,7 @@ fn face(s: &State, tile: Tile) -> Face {
             }
         }
         Tile::Env => {
-            let count = clamshell_core::count_env(s.settings().env_text(game.as_deref()));
+            let count = clamshell_core::settings::env::count_env(s.settings().env_text(game.as_deref()));
             let impact = if count > 0 { Impact::Changes } else { Impact::Stock };
             let origin = if game.is_some() && count > 0 { TileOrigin::Own } else { TileOrigin::Global };
             let value = Fmt::of(format_args!("{}", Variables(count)));
