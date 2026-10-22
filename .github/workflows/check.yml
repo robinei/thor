@@ -11,7 +11,7 @@ jobs:
   check:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Libraries ClamShell links, and the time zones (the snapshots draw a clock)
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libdbus-1-dev libxkbcommon-dev pkg-config tzdata
       # The version the workspace declares (rust-version), so a newer clippy's lints don't fail a build
