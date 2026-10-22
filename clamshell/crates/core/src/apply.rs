@@ -51,6 +51,8 @@ impl State {
         if self.bottom.take_unsaved() {
             self.saves.resume.touch(self.clock.mono());
         }
+        // The follow-up steps don't queue events: one queued here would never be handled.
+        debug_assert!(out.events.is_empty(), "an event queued after the event was handled: {:?}", out.events);
         (out.dirty, out.effects)
     }
 
