@@ -130,13 +130,14 @@ impl Folders<'_> {
 
 /// The programs ClamShell runs itself (not a runner's: those are the runners' problems), and what goes
 /// without each.
-const NEEDED: [(&str, &str); 7] = [
+const NEEDED: [(&str, &str); 8] = [
     ("systemd-run", "nothing can be launched"),
     ("ratarmount", "archives can't be browsed"),
     ("fusermount3", "archives can't be browsed"),
     ("bsdtar", "archives can't be extracted"),
     ("grim", "no screenshots"),
-    ("wpctl", "no volume in the bar"),
+    ("wpctl", "the volume can't be set"),
+    ("pw-dump", "no volume in the bar or the sound tab"),
     ("curl", "no covers or details fetched"),
 ];
 

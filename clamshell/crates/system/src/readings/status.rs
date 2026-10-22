@@ -1,6 +1,6 @@
 //! The bar's status: battery, Wi-Fi signal, volume and brightness, read every few seconds while the
 //! screens are on and sent when they change; while they are off, only the battery, once a minute (for
-//! its warnings), without starting `wpctl`.
+//! its warnings), without starting `pw-dump`.
 
 use std::io;
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
@@ -10,8 +10,8 @@ use clamshell_core::{Event, Reading, Status};
 
 use crate::audio::mixer;
 use crate::display::brightness::Backlights;
+use crate::os::sys;
 use crate::os::worker::{Changed, Shown, Worker};
-use crate::os::{command, sys};
 use crate::{Closed, Sink};
 
 /// How often the status is read: battery and Wi-Fi change slowly; a volume changed elsewhere (not with
@@ -52,11 +52,7 @@ fn follow(backlights: &Backlights, sink: &impl Sink, commands: &Receiver<Shown>)
 fn read(backlights: &Backlights) -> Status {
     let (battery, charging, discharging) = read_battery().unwrap_or((None, false, false));
     let wifi = sys::text("/proc/net/wireless").as_deref().and_then(parse_wireless);
-    let (volume, muted) = command::output("wpctl", &["get-volume", "@DEFAULT_AUDIO_SINK@"])
-        .and_then(|out| String::from_utf8(out).ok())
-        .as_deref()
-        .and_then(mixer::parse_get_volume)
-        .map_or((None, false), |(v, m)| (Some(v), m));
+    let (volume, muted) = mixer::read_volume().map_or((None, false), |(v, m)| (Some(v), m));
     Status { battery, charging, discharging, wifi, volume, muted, brightness: backlights.level() }
 }
 

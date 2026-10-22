@@ -1,4 +1,4 @@
-//! Running the system's command-line tools (`wpctl`, `systemctl`, `udisksctl`, ...) with a time limit, so
+//! Running the system's command-line tools (`wpctl`, `pw-dump`, `bsdtar`, ...) with a time limit, so
 //! a wedged service can't hang the thread that asked: past it, the program is killed and counts as failed.
 
 use std::ffi::OsStr;

@@ -13,7 +13,7 @@ replies and real errors.
 - [x] `systemctl` (archives: `is-active`, stopping those left before) → `org.freedesktop.systemd1`, as
       scopes and the freezer already were. `systemd-run` stays: it starts programs (a launch's scope
       around `exec`, an archive's service) and nothing it prints is read.
-- [ ] `wpctl get-volume` → the default sink's volume and mute from `pw-dump`'s JSON, which the mixer reads
+- [x] `wpctl get-volume` → the default sink's volume and mute from `pw-dump`'s JSON, which the mixer reads
       already.
 
 Staying: `pw-dump` (JSON), `grim` (only its exit status), `fc-match` (a path, once), `bsdtar`, and the
