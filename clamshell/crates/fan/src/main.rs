@@ -1,4 +1,4 @@
-//! clamshell-fan: the fan daemon (see [`clamshell_core::fan`]), a system service started early in boot
+//! clamshell-fan: the fan daemon (its curve: [`curve`]), a system service started early in boot
 //! and restarted if it stops. Every tick: the fan (the hwmon chip named `pwmfan`, looked for until it is
 //! there: pwm-fan is a module), the mode ([`MODE_FILE`]), the CPU and GPU thermal zones, and the speed
 //! from those written when it changes. It takes the fan once found: `pwm1_enable` 3, which also cuts the
@@ -8,13 +8,16 @@
 //!   `clamshell-fan --safe [ROOT]`
 //!
 //! ROOT (default /): where /sys and /run are, for trying it on a copy. `--safe`: the fan to its safe speed
-//! ([`fan::SAFE`]), then exit: as the service stops (its `ExecStopPost`), so that a stopped daemon
+//! ([`curve::SAFE`]), then exit: as the service stops (its `ExecStopPost`), so that a stopped daemon
 //! doesn't leave the fan off.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use clamshell_core::fan::{self, Duty, MODE_FILE, Mode};
+use clamshell_core::fan::{MODE_FILE, Mode};
+
+mod curve;
+use curve::Duty;
 
 /// The fan's hwmon directory under `root`, if it is there.
 fn find_fan(root: &Path) -> Option<PathBuf> {
@@ -81,8 +84,8 @@ fn tick(root: &Path, d: &mut Daemon) -> Option<String> {
     let changed = d.said != Some(mode);
     d.said = Some(mode);
     let now: Duty = text(&dir.join("pwm1")).and_then(|t| t.parse().ok()).unwrap_or(0);
-    d.temp = fan::smooth(d.temp, fan::temperature(readings(root)));
-    let duty = fan::next(mode, d.temp, now);
+    d.temp = curve::smooth(d.temp, curve::temperature(readings(root)));
+    let duty = curve::next(mode, d.temp, now);
     if duty != now
         && let Err(e) = fs::write(dir.join("pwm1"), duty.to_string())
     {
@@ -100,7 +103,7 @@ fn tick(root: &Path, d: &mut Daemon) -> Option<String> {
 /// The fan to its safe speed (the service stopping).
 fn safe(root: &Path) -> Result<(), String> {
     let dir = find_fan(root).ok_or("no fan")?;
-    fs::write(dir.join("pwm1"), fan::SAFE.to_string()).map_err(|e| format!("{}: pwm1: {e}", dir.display()))
+    fs::write(dir.join("pwm1"), curve::SAFE.to_string()).map_err(|e| format!("{}: pwm1: {e}", dir.display()))
 }
 
 fn main() {
@@ -125,7 +128,7 @@ fn main() {
             }
             said = line;
         }
-        std::thread::sleep(fan::TICK);
+        std::thread::sleep(curve::TICK);
     }
 }
 
@@ -172,7 +175,7 @@ mod tests {
         let dir = add_fan(&root);
         assert!(tick(&root, &mut d).is_some_and(|l| l.starts_with("the fan") && l.ends_with("mode auto")));
         assert_eq!(text(&dir.join("pwm1_enable")).as_deref(), Some("3"));
-        assert_eq!(text(&dir.join("pwm1")).as_deref(), Some(&*fan::next(Mode::Auto, Some(66.5), 70).to_string()));
+        assert_eq!(text(&dir.join("pwm1")).as_deref(), Some(&*curve::next(Mode::Auto, Some(66.5), 70).to_string()));
 
         fs::write(root.join("run/clamshell-fan"), "max").unwrap();
         assert_eq!(tick(&root, &mut d).as_deref(), Some("mode max"));
