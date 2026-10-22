@@ -36,7 +36,6 @@ impl State {
         self.apply_event(event, &mut out);
         self.settle(&mut out);
         self.sync(&mut out);
-        self.follow_keymap(false, &mut out);
         if let Some(route) = self.reconcile_pad() {
             out.effects.push(Effect::PadRoute(route));
             // The focus ring shows where the pad is.
@@ -371,7 +370,7 @@ impl State {
         out.effects.extend(self.levels.brightness_effect());
         out.effects.push(Effect::PadRoute(self.pad.route()));
         out.effects.extend(self.follow_runner_keymaps());
-        self.follow_keymap(true, out);
+        self.sent.resend(Resend::Start);
         out.effects.push(self.bottom.window_rules().effect());
     }
 

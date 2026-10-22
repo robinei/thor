@@ -10,8 +10,9 @@ use std::sync::Arc;
 use crate::bottom::Tab;
 use crate::device::idle::Stage;
 use crate::effect::{Effect, Watch, WindowCommand};
+use crate::keymap::screens::Keymapping;
 use crate::out::Out;
-use crate::settings::Values;
+use crate::settings::{Setting, Values};
 use crate::shelf::files::{Browse, BrowseCommand};
 use crate::shelf::{Shelf, ShelfView};
 use crate::{Levels, Running, State};
@@ -42,6 +43,9 @@ pub(crate) struct Wanted<'a> {
     tab: Option<Watch>,
     /// The Device view is open.
     device_open: bool,
+    /// The keymap in force (see [`Keymapping::version_of`]), and the keymaps it is taken from.
+    keymap: (u16, u64),
+    keymapping: &'a Keymapping,
 }
 
 /// What the outside was last sent.
@@ -67,6 +71,11 @@ pub(crate) struct Sent {
     account: bool,
     /// The open tab's watch.
     tab: Option<Watch>,
+    /// The keymap in force as last sent to the pad, by its id and version, or None to send it again.
+    keymap: Option<(u16, u64)>,
+    /// The keymap sent, to check that the id and version stand for it.
+    #[cfg(debug_assertions)]
+    keymap_sent: Option<crate::keymap::Keymap>,
 }
 
 impl Default for Sent {
@@ -83,6 +92,9 @@ impl Default for Sent {
             status_off: false,
             account: false,
             tab: None,
+            keymap: None,
+            #[cfg(debug_assertions)]
+            keymap_sent: None,
         }
     }
 }
@@ -93,6 +105,8 @@ pub(crate) enum Resend {
     /// The library was read again or fetching started or stopped: shelf's entries shown are asked for
     /// first again.
     Shown,
+    /// The UI started: the pad is sent its keymap.
+    Start,
     /// Back from sleep, which may have reset what the settings set, such as frequency caps and cores: they
     /// are applied again.
     Resumed,
@@ -105,10 +119,21 @@ impl Sent {
     /// Forgets what was sent for `why`, so that it is sent again.
     pub(crate) fn resend(&mut self, why: Resend) {
         match why {
+            Resend::Start => self.keymap = None,
             Resend::Shown => self.shown = None,
             Resend::Resumed => self.program = None,
             Resend::RefreshCalibrated => self.bottom_on = None,
         }
+    }
+
+    /// As at start, where the pad is taken to have what `w` says.
+    pub(crate) fn new(w: &Wanted) -> Sent {
+        let mut sent = Sent { keymap: Some(w.keymap), ..Sent::default() };
+        #[cfg(debug_assertions)]
+        {
+            sent.keymap_sent = Some(w.keymapping.in_force(w.settings.get(Setting::Keymap)));
+        }
+        sent
     }
 
     /// The UI is up. The open tab's and the account's watches start from now.
@@ -124,6 +149,7 @@ impl Sent {
         self.settings(w, out);
         self.bottom_power(w, out);
         self.watches(w, out);
+        self.keymap(w, out);
     }
 
     /// While metadata is being fetched and what shelf shows has changed, asks for the shown entries'
@@ -220,6 +246,30 @@ impl Sent {
         let was = std::mem::replace(&mut self.tab, tab);
         out.effects.extend(was.map(|w| Effect::Watch(w, false)).into_iter().chain(tab.map(|w| Effect::Watch(w, true))));
     }
+
+    /// The pad gets the keymap in force when it changed.
+    fn keymap(&mut self, w: &Wanted, out: &mut Out) {
+        let id = w.settings.get(Setting::Keymap);
+        if self.keymap == Some(w.keymap) {
+            // Compared in place, since this runs after every event.
+            #[cfg(debug_assertions)]
+            debug_assert!(
+                self.keymap_sent.as_ref().is_some_and(|k| match w.keymapping.keymaps().get(id) {
+                    Some(stored) => k == stored,
+                    None => k.id == 0,
+                }),
+                "keymap {id} unchanged by its version"
+            );
+            return;
+        }
+        self.keymap = Some(w.keymap);
+        let keymap = w.keymapping.in_force(id);
+        #[cfg(debug_assertions)]
+        {
+            self.keymap_sent = Some(keymap.clone());
+        }
+        out.effects.push(Effect::Keymap(keymap));
+    }
 }
 
 impl State {
@@ -231,6 +281,7 @@ impl State {
             Tab::Dock if self.dock.menu().is_some() => Some(Watch::Battery),
             tab => tab.watch(),
         };
+        let settings = self.in_force();
         Wanted {
             shelf: &self.shelf,
             shown: self.shelf.fetch_first(),
@@ -240,11 +291,13 @@ impl State {
             stage: self.idle.stage(),
             levels: &self.levels,
             program: self.session.program(),
-            settings: self.in_force(),
+            settings,
             bottom_on: !self.bottom.off(),
             bottom_seen: !self.bottom.shows_windows(&self.session) && !self.bottom.off(),
             tab,
             device_open: self.device.is_open(),
+            keymap: self.keymapping.version_of(settings.get(Setting::Keymap)),
+            keymapping: &self.keymapping,
         }
     }
 

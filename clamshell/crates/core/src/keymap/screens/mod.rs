@@ -140,29 +140,22 @@ pub fn picked(source: Input, tapped: Input) -> Option<Output> {
     out.fits(kind).then_some(out)
 }
 
-/// The keymaps and their screens: every keymap, the screen open over the settings tab, the edit screen's
-/// view and its Undo, and the keymap in force as last sent to the pad.
+/// The keymaps and their screens: every keymap, the screen open over the settings tab, and the edit
+/// screen's view and its Undo.
 #[derive(Debug, Clone, Default)]
 pub struct Keymapping {
     keymaps: Keymaps,
     open: Option<Screen>,
     edit: EditView,
     undo: Undo,
-    /// The keymap in force as last sent to the pad, by its id and version (see [`Keymaps::version`]).
-    /// Default, which has no stored keymap, is (0, 0).
-    sent: Option<(u16, u64)>,
-    /// The keymap sent, to check that the id and version stand for it.
-    #[cfg(debug_assertions)]
-    sent_keymap: Option<Keymap>,
 }
 
 /// What the keymaps' screens read from elsewhere: the game the settings panel edits, if any, the keymap
-/// chosen for its scope, the keymap in force, and the time, in monotonic seconds.
+/// chosen for its scope, and the time, in monotonic seconds.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct KeymapCx {
     pub(crate) game: Option<Arc<str>>,
     pub(crate) chosen: u16,
-    pub(crate) in_force: u16,
     pub(crate) now: u64,
 }
 
@@ -303,42 +296,10 @@ impl Keymapping {
         self.keymaps.get(id).cloned().unwrap_or_else(|| Keymap::new(0, "Default"))
     }
 
-    /// Keymap `in_force`, to send to the pad if it changed since it was last sent, or if `always`.
-    pub(crate) fn follow(&mut self, in_force: u16, always: bool) -> Option<Effect> {
-        let sent = Some(self.sent_as(in_force));
-        if sent == self.sent && !always {
-            // Compared in place, since this runs after every event.
-            #[cfg(debug_assertions)]
-            debug_assert!(
-                self.sent_keymap.as_ref().is_some_and(|k| match self.keymaps.get(in_force) {
-                    Some(stored) => k == stored,
-                    None => k.id == 0,
-                }),
-                "keymap {in_force} unchanged by its version"
-            );
-            return None;
-        }
-        self.sent = sent;
-        let now = self.in_force(in_force);
-        #[cfg(debug_assertions)]
-        {
-            self.sent_keymap = Some(now.clone());
-        }
-        Some(Effect::Keymap(now))
-    }
-
-    /// Keymap `in_force` is the one the pad has, as at start.
-    pub(crate) fn mark_sent(&mut self, in_force: u16) {
-        self.sent = Some(self.sent_as(in_force));
-        #[cfg(debug_assertions)]
-        {
-            self.sent_keymap = Some(self.in_force(in_force));
-        }
-    }
-
-    /// Keymap `in_force` as it is sent: its id and version, or (0, 0) for Default.
-    fn sent_as(&self, in_force: u16) -> (u16, u64) {
-        match self.keymaps.get(in_force) {
+    /// Keymap `id` as it is sent, to tell when it changed: its id and version (see
+    /// [`Keymaps::version`]), or (0, 0) for Default, which has no stored keymap.
+    pub(crate) fn version_of(&self, id: u16) -> (u16, u64) {
+        match self.keymaps.get(id) {
             Some(k) => (k.id, self.keymaps.version(k.id)),
             None => (0, 0),
         }
@@ -362,8 +323,8 @@ impl Keymapping {
         match self.open {
             Some(Screen::Load(own)) => {
                 match self.row(i, game) {
-                    Some(PickerRow::Default) if !long => self.load_into(own, 0, cx, out),
-                    Some(PickerRow::Named(k)) if !long => self.load_into(own, k.id, cx, out),
+                    Some(PickerRow::Default) if !long => self.load_into(own, 0, out),
+                    Some(PickerRow::Named(k)) if !long => self.load_into(own, k.id, out),
                     _ => {}
                 }
                 return;
@@ -397,11 +358,10 @@ impl Keymapping {
 
     /// Copies keymap `from` into `own`, a game's own keymap, and opens its edit screen, where Undo puts it
     /// back as it was.
-    fn load_into(&mut self, own: u16, from: u16, cx: &KeymapCx, out: &mut Out) {
+    fn load_into(&mut self, own: u16, from: u16, out: &mut Out) {
         self.open_edit(own);
         if self.keymaps.copy_into(own, from) {
             out.effects.push(self.save());
-            out.effects.extend(self.follow(cx.in_force, false));
         }
     }
 
@@ -432,7 +392,6 @@ impl Keymapping {
                 self.open = Some(Screen::List);
                 if self.keymaps.copy_into(to, own) {
                     out.effects.push(self.save());
-                    out.effects.extend(self.follow(cx.in_force, false));
                 }
             }
             Screen::Delete(k) if id == KeymapId::ConfirmDelete => self.delete(k, out),
@@ -807,23 +766,12 @@ impl State {
     /// What the keymaps' screens read from the settings panel and the clock (see [`KeymapCx`]).
     fn keymap_cx(&self) -> KeymapCx {
         let panel = self.panel();
-        KeymapCx {
-            game: panel.editing().map(|g| g.id.clone()),
-            chosen: panel.keymap_chosen(),
-            in_force: self.in_force().get(Setting::Keymap),
-            now: self.clock.mono(),
-        }
+        KeymapCx { game: panel.editing().map(|g| g.id.clone()), chosen: panel.keymap_chosen(), now: self.clock.mono() }
     }
 
     /// Whether the pad listens for inputs (see [`Keymapping::listening`]).
     pub(crate) fn listening(&self) -> bool {
         self.keymapping.listening(self.bottom.tab(), self.bottom.editor().is_some())
-    }
-
-    /// The keymap in force, to send to the pad if it changed since it was last sent, or if `always`.
-    pub(crate) fn follow_keymap(&mut self, always: bool, out: &mut Out) {
-        let in_force = self.in_force().get(Setting::Keymap);
-        out.effects.extend(self.keymapping.follow(in_force, always));
     }
 
     /// The keymaps' screens' buttons. Back goes back a screen; the others are the screen's.

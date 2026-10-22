@@ -174,12 +174,12 @@ impl State {
             s.bottom.restore_tab(tab);
         }
         s.reconcile_pad();
-        s.keymapping.mark_sent(s.in_force().get(settings::Setting::Keymap));
         if init.pad_mouse {
             s.pad.toggle_mouse();
             s.reconcile_pad();
         }
         s.settled = apply::Settled::new(&s.session);
+        s.sent = sync::Sent::new(&s.wanted());
         s
     }
 
