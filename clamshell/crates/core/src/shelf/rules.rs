@@ -1,96 +1,108 @@
-//! Shelf's rules on the state: its targets, the pad's steps through it, typing to find a title, the
-//! favourites, and fetching metadata first for the entries it shows.
+//! Shelf's rules: its targets, the pad's steps through it, typing to find a title, the favourites, and
+//! fetching metadata first for the entries it shows.
 
 use crate::bottom::keyboard::{self, Key};
-use crate::{Dirty, Effect, Save, ShelfEvent, ShelfId, State};
+use crate::out::Out;
+use crate::shelf::Shelf;
+use crate::shelf::actions::Shortcut;
+use crate::{Dirty, Effect, EntryAct, Event, Pointer, Save, ShelfEvent, ShelfId};
 
-impl State {
+impl Shelf {
     /// Shelf's targets.
-    pub(crate) fn on_shelf(&mut self, id: ShelfId) -> Vec<Effect> {
+    pub(crate) fn on_target(&mut self, id: ShelfId, pointer: &mut Pointer, out: &mut Out) {
         match id {
             ShelfId::Entry(game) => {
                 // Activating the selected entry again opens it if it is a group, or else plays it by
                 // starting it or switching to it.
-                if self.shelf.selected() == Some(&game) {
-                    return self.activate_selected();
+                if self.selected() == Some(&game) {
+                    self.activate(pointer, out);
+                } else if self.select(&game) {
+                    self.unsaved = true;
                 }
-                if self.shelf.select(&game) {
-                    self.shelf.mark_unsaved();
-                }
-                vec![]
             }
             ShelfId::Collection(i) => {
-                if self.shelf.set_collection(usize::from(i)) {
-                    self.shelf.moved(&mut self.pointer);
+                if self.set_collection(usize::from(i)) {
+                    self.moved(pointer);
                 }
-                vec![]
             }
-            ShelfId::Launch => self.activate_selected(),
-            ShelfId::Favourite => self.toggle_favourite(),
-            ShelfId::Pin => match self.shelf.selected().cloned() {
-                Some(id) => self.toggle_pin(id),
-                None => vec![],
-            },
-            ShelfId::Continue => self.continue_selected(),
-            ShelfId::Enqueue => self.enqueue_selected(),
-            ShelfId::File(action) => self.on_file(action),
+            ShelfId::Launch => self.activate(pointer, out),
+            ShelfId::Favourite => self.toggle_favourite(out),
+            ShelfId::Pin => self.ask(EntryAct::TogglePin, out),
+            ShelfId::Continue => self.continue_selected(out),
+            ShelfId::Enqueue => self.ask(EntryAct::Enqueue, out),
+            ShelfId::File(action) => self.on_file(action, out),
             ShelfId::Up => {
-                if self.shelf.up() {
-                    self.shelf.moved(&mut self.pointer);
+                if self.up() {
+                    self.moved(pointer);
                 }
-                vec![]
             }
+        }
+    }
+
+    /// Asks for `act` on the selected entry, if there is one.
+    pub(crate) fn ask(&self, act: EntryAct, out: &mut Out) {
+        if let Some(id) = self.selected() {
+            out.events.push(Event::Entry(id.clone(), act));
         }
     }
 
     /// Plays the entry that the selected group's Continue points to (see [`crate::Library::to_continue`]).
-    pub(crate) fn continue_selected(&mut self) -> Vec<Effect> {
-        let next = self.shelf.selected_index().and_then(|g| self.shelf.library().to_continue(g));
-        match next.and_then(|i| self.shelf.library().entries.get(i)).map(|g| g.id.clone()) {
-            Some(id) => self.play(id),
-            None => vec![],
+    pub(crate) fn continue_selected(&self, out: &mut Out) {
+        let next = self.selected_index().and_then(|g| self.library().to_continue(g));
+        if let Some(g) = next.and_then(|i| self.library().entries.get(i)) {
+            out.events.push(Event::Entry(g.id.clone(), EntryAct::Play));
         }
     }
 
     /// Shelf's action on its selected entry: a group opens, anything else plays.
-    pub(crate) fn activate_selected(&mut self) -> Vec<Effect> {
-        if self.shelf.open() {
-            self.shelf.moved(&mut self.pointer);
-            return vec![];
-        }
-        match self.shelf.selected().cloned() {
-            Some(game) => self.play(game),
-            None => vec![],
+    pub(crate) fn activate(&mut self, pointer: &mut Pointer, out: &mut Out) {
+        if self.open() {
+            self.moved(pointer);
+        } else {
+            self.ask(EntryAct::Play, out);
         }
     }
 
-    pub(crate) fn on_shelf_event(&mut self, event: ShelfEvent) -> (Dirty, Vec<Effect>) {
+    pub(crate) fn on_event(&mut self, event: ShelfEvent, pointer: &mut Pointer, out: &mut Out) {
         match event {
             ShelfEvent::ListStep(step) => {
-                if self.shelf.step(step) {
-                    self.shelf.mark_unsaved();
+                if self.step(step) {
+                    self.unsaved = true;
                 }
-                self.pointer.focus_shelf(self.shelf.selected());
-                self.pointer.show();
-                (Dirty::BOTH, vec![])
+                pointer.focus_shelf(self.selected());
+                pointer.show();
+                out.mark(Dirty::BOTH);
             }
             ShelfEvent::CollectionStep(step) => {
-                if self.shelf.collection_step(step) {
-                    self.shelf.moved(&mut self.pointer);
+                if self.collection_step(step) {
+                    self.moved(pointer);
                 }
-                self.pointer.show();
-                (Dirty::BOTH, vec![])
+                pointer.show();
+                out.mark(Dirty::BOTH);
             }
-            ShelfEvent::Rows(rows) => (if self.shelf.set_rows(rows) { Dirty::BOTH } else { Dirty::NONE }, vec![]),
-            // The details' actions on the pad's buttons (see [`actions`]).
-            ShelfEvent::Continue => (Dirty::BOTH, self.act(crate::shelf::actions::Shortcut::Start)),
-            ShelfEvent::ToggleFavourite => (Dirty::BOTH, self.act(crate::shelf::actions::Shortcut::Y)),
-            ShelfEvent::TogglePin => (Dirty::BOTH, self.act(crate::shelf::actions::Shortcut::X)),
-            ShelfEvent::ClearFilter => {
-                if self.shelf.set_filter(String::new()) {
-                    self.shelf.moved(&mut self.pointer);
+            ShelfEvent::Rows(rows) => {
+                if self.set_rows(rows) {
+                    out.mark(Dirty::BOTH);
                 }
-                (Dirty::BOTH, vec![])
+            }
+            // The details' actions on the pad's buttons (see [`crate::shelf::actions`]).
+            ShelfEvent::Continue => {
+                out.mark(Dirty::BOTH);
+                self.act(Shortcut::Start, pointer, out);
+            }
+            ShelfEvent::ToggleFavourite => {
+                out.mark(Dirty::BOTH);
+                self.act(Shortcut::Y, pointer, out);
+            }
+            ShelfEvent::TogglePin => {
+                out.mark(Dirty::BOTH);
+                self.act(Shortcut::X, pointer, out);
+            }
+            ShelfEvent::ClearFilter => {
+                if self.set_filter(String::new()) {
+                    self.moved(pointer);
+                }
+                out.mark(Dirty::BOTH);
             }
         }
     }
@@ -98,46 +110,53 @@ impl State {
     /// A key typed with shelf in front. A character narrows the current list to the titles starting with
     /// what is typed, Backspace removes the last character, Esc clears it all, and Enter opens or plays the
     /// selected entry.
-    pub(crate) fn find(&mut self, stroke: keyboard::Stroke) -> Vec<Effect> {
-        let mut filter = self.shelf.filter().to_owned();
+    pub(crate) fn find(&mut self, stroke: keyboard::Stroke, pointer: &mut Pointer, out: &mut Out) {
+        let mut filter = self.filter().to_owned();
         match stroke.key {
             Key::Char(c) if !stroke.ctrl && !stroke.alt && !stroke.logo => filter.push(if stroke.shift { keyboard::shifted(c) } else { c }),
             Key::Named(keyboard::Named::Backspace) => {
                 filter.pop();
             }
             Key::Named(keyboard::Named::Esc) => filter.clear(),
-            Key::Named(keyboard::Named::Enter) => return self.activate_selected(),
-            _ => return vec![],
+            Key::Named(keyboard::Named::Enter) => return self.activate(pointer, out),
+            _ => return,
         }
-        if self.shelf.set_filter(filter) {
-            self.shelf.moved(&mut self.pointer);
+        if self.set_filter(filter) {
+            self.moved(pointer);
         }
-        vec![]
     }
 
     /// Puts the selected entry in or out of the favourites and saves them.
-    pub(crate) fn toggle_favourite(&mut self) -> Vec<Effect> {
-        let Some(moved) = self.shelf.toggle_favourite() else {
-            return vec![];
+    pub(crate) fn toggle_favourite(&mut self, out: &mut Out) {
+        let Some(moved) = self.favourite_selected() else {
+            return;
         };
         if moved {
-            self.shelf.mark_unsaved();
+            self.unsaved = true;
         }
-        let ids = self.shelf.library().favourite_ids().map(str::to_owned).collect();
-        vec![Effect::Save(Save::Favourites(ids))]
+        let ids = self.library().favourite_ids().map(str::to_owned).collect();
+        out.effects.push(Effect::Save(Save::Favourites(ids)));
+    }
+
+    /// Whether metadata is being fetched (see [`Shelf::follow_shown`]).
+    pub(crate) fn set_fetching(&mut self, on: bool) {
+        self.fetching = on;
+        self.shown = None;
     }
 
     /// While metadata is being fetched and what shelf shows has changed, asks for the shown entries'
     /// metadata first.
-    pub(crate) fn follow_shown(&mut self) -> Option<Effect> {
+    pub(crate) fn follow_shown(&mut self, out: &mut Out) {
         if !self.fetching {
-            return None;
+            return;
         }
-        let view = self.shelf.view();
+        let view = self.view();
         if self.shown == Some(view) {
-            return None;
+            return;
         }
         self.shown = Some(view);
-        Some(Effect::FetchFirst(self.shelf.shown()))
+        let mut ids = Vec::new();
+        self.in_view(&mut ids);
+        out.effects.push(Effect::FetchFirst(ids));
     }
 }

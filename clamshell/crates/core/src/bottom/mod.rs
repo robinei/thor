@@ -295,6 +295,13 @@ impl State {
         }
     }
 
+    /// Goes back to the tab the keyboard came up from, if it did.
+    pub(crate) fn back_from_keyboard(&mut self) {
+        if self.bottom.back_from_keyboard() {
+            self.left_tab();
+        }
+    }
+
     /// The second screen's tab changed, and its watch follows (see [`State::follow_watch`]). What the
     /// tab left had going ends: the dock's menu or move, and any level row being set. The time tab opens
     /// on its main page again.

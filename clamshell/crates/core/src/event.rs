@@ -108,12 +108,22 @@ pub enum Event {
     ChooseTab(crate::Tab),
     /// Something done to an entry, by its id.
     Entry(Arc<str>, EntryAct),
+    /// Opens `editor` on the keyboard tab, as for a file's name. When the editor closes, the screen goes
+    /// back to the tab the keyboard came up from.
+    EditOnKeyboard(crate::Editor),
     Quit,
 }
 
 /// What is done to an entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntryAct {
+    /// Starts it, or shows it if it runs (see [`crate::State::play`]).
+    Play,
+    /// Pins it to the dock, or unpins it.
+    TogglePin,
+    /// Adds it, or the entries selected in its folder, to what its runner plays (see
+    /// [`crate::session::enqueue`]). Only for shelf's selected entry.
+    Enqueue,
     /// Quit, as from the dock.
     Quit,
     ForceKill,

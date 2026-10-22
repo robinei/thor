@@ -111,7 +111,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
     }
     // The selected entry. In an empty browsed folder, the folder itself, for its actions (paste, new
     // folder).
-    if let Some((game, _)) = s.file_target().filter(|(g, selected)| *selected || g.browsed.is_some()) {
+    if let Some((game, _)) = s.shelf().file_target().filter(|(g, selected)| *selected || g.browsed.is_some()) {
         selected(f, game, screen, list, pad);
     }
     rows
@@ -166,7 +166,7 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
             let marks = [
                 (game.is_group(), Icon::Chevron, Tone::Normal),
                 (s.session().running(&game.id).is_some(), Icon::Dot, if paused { Tone::Dim } else { Tone::Go }),
-                (s.files().selected.contains(&game.id), Icon::Check, Tone::Accent),
+                (s.shelf().files().selected().contains(&game.id), Icon::Check, Tone::Accent),
                 (s.dock().is_pinned(&game.id), Icon::for_tab(Tab::Dock), Tone::Normal),
                 (game.favourite, Icon::Star, Tone::Accent),
             ];
@@ -311,11 +311,11 @@ fn actions(f: &mut Frame, game: &Entry, r: Rect, action_h: f32, pad: f32) -> f32
     // A row is fourteen times the details' text size wide. Continue's row, which names the next video,
     // is as wide as the details.
     let w = r.w.min(action_h / ACTION * 14.0);
-    let shortcut = |key| s.button_of(key);
+    let shortcut = |key| s.shelf().button_of(key);
     // While the pad is on the actions themselves, their shortcuts are off and faded, and A and B are
     // explained below.
-    let in_actions = s.in_actions();
-    for &action in s.actions().as_slice() {
+    let in_actions = s.shelf().in_actions(s.pointer());
+    for &action in s.shelf().actions().as_slice() {
         let key = match action {
             Action::Open => "A",
             _ if shortcut(Shortcut::Start) == Some(action) => "Start",
@@ -339,23 +339,25 @@ fn actions(f: &mut Frame, game: &Entry, r: Rect, action_h: f32, pad: f32) -> f32
                     None => (Fmt::of(format_args!("Play")), Tone::Go),
                 }
             }
-            Action::Enqueue if !s.files().selected.is_empty() => (Fmt::of(format_args!("Enqueue · {} selected", s.files().selected.len())), Tone::Normal),
+            Action::Enqueue if !s.shelf().files().selected().is_empty() => {
+                (Fmt::of(format_args!("Enqueue · {} selected", s.shelf().files().selected().len())), Tone::Normal)
+            }
             Action::Enqueue => (Fmt::of(format_args!("Enqueue")), Tone::Normal),
             Action::Favourite if game.favourite => (Fmt::of(format_args!("Favourite")), Tone::Accent),
             Action::Favourite => (Fmt::of(format_args!("Not a favourite")), Tone::Dim),
             Action::Pin if s.dock().is_pinned(&game.id) => (Fmt::of(format_args!("On the dock")), Tone::Normal),
             Action::Pin => (Fmt::of(format_args!("Not on the dock")), Tone::Dim),
-            Action::File(a) if s.file_armed(a) => (Fmt::of(format_args!("{} · press again", a.label())), Tone::Accent),
+            Action::File(a) if s.shelf().file_armed(a) => (Fmt::of(format_args!("{} · press again", a.label())), Tone::Accent),
             Action::File(a) => {
-                let files = s.files();
-                let clip = files.clip.as_ref();
-                let selected = files.selected.len();
+                let files = s.shelf().files();
+                let clip = files.clip();
+                let selected = files.selected().len();
                 let label = match (a, clip) {
                     (FileAction::Paste, Some(clip)) if clip.entries.len() > 1 => Fmt::of(format_args!("Paste · {} entries", clip.entries.len())),
                     (FileAction::Paste, Some(clip)) => Fmt::of(format_args!("Paste · {}", clip.entries.first().map_or("", |(_, n)| n.as_str()))),
-                    (FileAction::Select, _) if files.selected.contains(&game.id) => Fmt::of(format_args!("Selected · {selected}")),
-                    (FileAction::ShowHidden, _) => Fmt::of(format_args!("{} hidden files", if files.hidden { "Hide" } else { "Show" })),
-                    (FileAction::OpenIn, _) => Fmt::of(format_args!("Open in {}", s.opened_in(game).map_or("", |r| &*r.name))),
+                    (FileAction::Select, _) if files.selected().contains(&game.id) => Fmt::of(format_args!("Selected · {selected}")),
+                    (FileAction::ShowHidden, _) => Fmt::of(format_args!("{} hidden files", if files.hidden() { "Hide" } else { "Show" })),
+                    (FileAction::OpenIn, _) => Fmt::of(format_args!("Open in {}", s.shelf().opened_in(game).map_or("", |r| &*r.name))),
                     (FileAction::Copy | FileAction::Cut | FileAction::Trash | FileAction::Restore | FileAction::Delete, _) if selected > 0 => {
                         Fmt::of(format_args!("{} · {selected} selected", a.label()))
                     }
@@ -373,7 +375,7 @@ fn actions(f: &mut Frame, game: &Entry, r: Rect, action_h: f32, pad: f32) -> f32
         widgets::key_action(f, Id::Shelf(action.id()), Rect::new(r.x, y, row_w, action_h), key, &label, tone, in_actions);
         y += action_h + pad * 0.15;
     }
-    if let Some(clamshell_core::shelf::files::Busy { what, fraction }) = &s.files().busy {
+    if let Some(clamshell_core::shelf::files::Busy { what, fraction }) = s.shelf().files().busy() {
         y += pad * 0.3;
         let size = action_h * 0.62;
         f.c.text_fit(Rect::new(r.x, y, r.w, size * 1.4), size, Tone::Normal, what, Keep::Start);

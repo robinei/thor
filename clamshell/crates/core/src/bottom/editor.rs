@@ -163,7 +163,8 @@ impl crate::State {
             return;
         };
         match (done, editor.purpose) {
-            (Done::Cancel, Purpose::FileName(_)) => out.effects.extend(self.file_name_cancelled()),
+            // The keyboard goes back to the tab it came up from.
+            (Done::Cancel, Purpose::FileName(_)) => self.back_from_keyboard(),
             (Done::Cancel, _) => {}
             (Done::Save, Purpose::Env { entry: game }) => {
                 self.settings.set_env(game, &editor.text);
@@ -171,7 +172,10 @@ impl crate::State {
             }
             (Done::Save, Purpose::Password { ssid }) => self.radios.join(ssid, Some(editor.text), out),
             (Done::Save, Purpose::KeymapName(action)) => out.effects.extend(self.named_keymap(action, &editor.text)),
-            (Done::Save, Purpose::FileName(purpose)) => out.effects.extend(self.file_named(purpose, &editor.text)),
+            (Done::Save, Purpose::FileName(purpose)) => {
+                self.back_from_keyboard();
+                out.effects.extend(crate::shelf::files::named(purpose, &editor.text).map(Effect::Files));
+            }
             (Done::Save, Purpose::AccountPassword(step)) => crate::device::account::password_typed(step, editor.text, self.bottom.editors_mut(), out),
         }
     }

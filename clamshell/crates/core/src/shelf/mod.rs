@@ -2,8 +2,10 @@
 //! then a season, and a cursor over the list at each level, kept in range and on screen. Changes to the
 //! library, such as plays and favourites, keep the current collection and the selection.
 //!
-//! The methods return whether the selection changed. The state, which calls them, saves the place and
-//! moves the focus.
+//! Shelf's rules are here too: its targets, the pad's steps through it, typing to find a title, the
+//! details' actions and the file actions. A change to the place marks it to be saved (see
+//! [`crate::State::resume`]), and a focus in shelf's list follows the selection. What needs another
+//! area, such as playing an entry, is queued as an event.
 
 pub mod actions;
 pub mod files;
@@ -63,6 +65,12 @@ pub struct Shelf {
     listings: Vec<(Arc<str>, Vec<Entry>)>,
     /// The place changed since it was last saved (see [`crate::State::resume`]).
     unsaved: bool,
+    /// The clipboard and confirmation for file actions, and the folder being browsed (see [`files`]).
+    files: files::Files,
+    /// Whether metadata is being fetched, and what the list showed when the shown entries were last asked
+    /// for first (see [`Shelf::follow_shown`]).
+    fetching: bool,
+    shown: Option<ShelfView>,
 }
 
 /// What shelf's list shows: the collection, the open group, the first row shown, how many rows, and the
@@ -235,11 +243,6 @@ impl Shelf {
         self.list_of(c).iter().position(|&i| self.library.entries.get(i).is_some_and(|g| &*g.id == game))
     }
 
-    /// Marks the place as changed, to be saved.
-    pub(crate) fn mark_unsaved(&mut self) {
-        self.unsaved = true;
-    }
-
     /// Shelf went to another collection or list. The place is saved, and a focus in shelf's list follows
     /// the selection.
     pub(crate) fn moved(&mut self, pointer: &mut crate::Pointer) {
@@ -297,18 +300,17 @@ impl Shelf {
         }
     }
 
-    /// The entries in view: the selected one first, then the rows shown, then the groups the list is in,
-    /// such as a series when its episodes show.
-    pub(crate) fn shown(&self) -> Vec<Arc<str>> {
+    /// Adds the entries in view to `ids`: the selected one first, then the rows shown, then the groups the
+    /// list is in, such as a series when its episodes show.
+    fn in_view(&self, ids: &mut Vec<Arc<str>>) {
         let ShelfView { group, top, rows, selected, .. } = self.view();
         let list = self.list();
         let rows = (top..top + rows + 1).filter(|&p| p != selected);
-        let mut indices: Vec<usize> = std::iter::once(selected).chain(rows).filter_map(|p| list.get(p).copied()).collect();
+        let id = |i: usize| self.library.entries.get(i).map(|g| g.id.clone());
+        ids.extend(std::iter::once(selected).chain(rows).filter_map(|p| list.get(p).copied()).filter_map(id));
         if let Some(g) = group {
-            indices.extend(self.library.groups_of(g));
-            indices.push(g);
+            ids.extend(self.library.groups_of(g).into_iter().chain([g]).filter_map(id));
         }
-        indices.iter().filter_map(|&i| self.library.entries.get(i)).map(|g| g.id.clone()).collect()
     }
 
     /// Opens the selected entry if it is a group, showing its list from the first entry. Returns whether it
@@ -423,9 +425,11 @@ impl Shelf {
         let before = self.selected.clone();
         let places = self.places();
         let current = self.collection().map(|c| c.name.clone());
-        let (rows, unsaved) = (self.rows, self.unsaved);
+        let (rows, unsaved, fetching) = (self.rows, self.unsaved, self.fetching);
         let listings = std::mem::take(&mut self.listings);
-        *self = Shelf::new(library);
+        let files = std::mem::take(&mut self.files);
+        // What shows is asked for first again, from the new library.
+        *self = Shelf { files, fetching, ..Shelf::new(library) };
         (self.rows, self.unsaved) = (rows, unsaved);
         for (folder, entries) in listings {
             if let Some(f) = self.library.entries.iter().position(|g| g.id == folder) {
@@ -502,7 +506,7 @@ impl Shelf {
 
     /// Puts the selected entry in or out of the favourites, if there is one. Returns whether the selection
     /// changed.
-    pub(crate) fn toggle_favourite(&mut self) -> Option<bool> {
+    fn favourite_selected(&mut self) -> Option<bool> {
         let id = self.selected.clone()?;
         Some(self.relayout(|lib| {
             if let Some(g) = lib.entries.iter_mut().find(|g| g.id == id) {

@@ -55,6 +55,11 @@ impl crate::Bottom {
         self.notice = Some(Notice::new(what, now));
     }
 
+    /// The notice, for another area's rule to show one.
+    pub(crate) fn notice_mut(&mut self) -> &mut Option<Notice> {
+        &mut self.notice
+    }
+
     /// Removes the notice if it has timed out at `now`. Returns whether it did.
     pub(crate) fn expire_notice(&mut self, now: u64) -> bool {
         let expired = self.notice.as_ref().is_some_and(|n| now >= n.until);

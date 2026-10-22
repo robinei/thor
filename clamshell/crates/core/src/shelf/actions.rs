@@ -9,10 +9,12 @@
 //!
 //! Where Favourite and Pin are missing, Y and X take the place's Copy and Paste, and Start takes its
 //! Select. The details draw these rows in order, and the pad's buttons act on them. Holding A on the
-//! selected entry takes the pad to the rows themselves (see [`State::in_actions`]).
+//! selected entry takes the pad to the rows themselves (see [`Shelf::in_actions`]).
 
+use crate::out::Out;
+use crate::shelf::Shelf;
 use crate::shelf::files::FileAction;
-use crate::{Effect, ShelfId, State};
+use crate::{EntryAct, Pointer, ShelfId};
 
 /// A row of the details' actions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,7 +84,7 @@ impl Action {
     }
 }
 
-impl State {
+impl Shelf {
     /// The details' actions, in order (see the module's doc).
     pub fn actions(&self) -> Actions {
         let mut actions = Actions::default();
@@ -92,7 +94,7 @@ impl State {
         if selected {
             actions.push(Action::Open);
         }
-        let next = self.shelf.selected_index().filter(|_| selected && game.is_group()).and_then(|g| self.shelf.library().to_continue(g));
+        let next = self.selected_index().filter(|_| selected && game.is_group()).and_then(|g| self.library().to_continue(g));
         if next.is_some() {
             actions.push(Action::Continue);
         }
@@ -112,16 +114,15 @@ impl State {
     /// Whether the pad is on the details' actions, which holding A on the selected entry does. This is a
     /// mode of its own: the face buttons' shortcuts are off, the focus stays on the actions, A confirms
     /// and B goes back.
-    pub fn in_actions(&self) -> bool {
-        let pointer = self.pointer();
+    pub fn in_actions(&self, pointer: &Pointer) -> bool {
         pointer.show_focus() && self.actions().as_slice().iter().any(|a| pointer.focus() == Some(&crate::Id::Shelf(a.id())))
     }
 
     /// The action a pad button stands for: Start for Continue (or else Select), Y for Favourite (or else
     /// Copy), and X for Pin (or else Paste). There is none while the pad is on the actions themselves (see
-    /// [`State::button_of`]).
-    pub fn shortcut(&self, key: Shortcut) -> Option<Action> {
-        if self.in_actions() {
+    /// [`Shelf::button_of`]).
+    pub fn shortcut(&self, key: Shortcut, pointer: &Pointer) -> Option<Action> {
+        if self.in_actions(pointer) {
             return None;
         }
         self.button_of(key)
@@ -140,24 +141,17 @@ impl State {
     }
 
     /// Does a pad button's action, if the details have it.
-    pub(crate) fn act(&mut self, key: Shortcut) -> Vec<Effect> {
-        match self.shortcut(key) {
-            Some(action) => self.on_action(action),
-            None => vec![],
-        }
-    }
-
-    fn on_action(&mut self, action: Action) -> Vec<Effect> {
+    pub(crate) fn act(&mut self, key: Shortcut, pointer: &mut Pointer, out: &mut Out) {
+        let Some(action) = self.shortcut(key, pointer) else {
+            return;
+        };
         match action {
-            Action::Open => self.activate_selected(),
-            Action::Continue => self.continue_selected(),
-            Action::Enqueue => self.enqueue_selected(),
-            Action::Favourite => self.toggle_favourite(),
-            Action::Pin => match self.shelf.selected().cloned() {
-                Some(id) => self.toggle_pin(id),
-                None => vec![],
-            },
-            Action::File(a) => self.on_file(a),
+            Action::Open => self.activate(pointer, out),
+            Action::Continue => self.continue_selected(out),
+            Action::Enqueue => self.ask(EntryAct::Enqueue, out),
+            Action::Favourite => self.toggle_favourite(out),
+            Action::Pin => self.ask(EntryAct::TogglePin, out),
+            Action::File(a) => self.on_file(a, out),
         }
     }
 }
@@ -166,16 +160,16 @@ impl State {
 mod tests {
     use super::*;
     use crate::testkit::*;
-    use crate::{Event, Id, ShelfEvent};
+    use crate::{Effect, Event, Id, ShelfEvent};
 
     #[test]
     fn an_entrys_actions_come_from_its_runner_content_and_identity() {
         let mut s = state();
-        assert_eq!(s.actions().as_slice(), [Action::Open, Action::Favourite, Action::Pin]);
-        assert_eq!(s.shortcut(Shortcut::Y), Some(Action::Favourite));
-        assert_eq!(s.shortcut(Shortcut::Start), None, "a game: nothing to continue");
+        assert_eq!(s.shelf().actions().as_slice(), [Action::Open, Action::Favourite, Action::Pin]);
+        assert_eq!(s.shelf().shortcut(Shortcut::Y, s.pointer()), Some(Action::Favourite));
+        assert_eq!(s.shelf().shortcut(Shortcut::Start, s.pointer()), None, "a game: nothing to continue");
         tap(&mut s, Id::Shelf(ShelfId::Collection(2)));
-        assert_eq!(s.actions().as_slice(), [Action::Open, Action::Continue, Action::Favourite, Action::Pin], "a series: Continue");
+        assert_eq!(s.shelf().actions().as_slice(), [Action::Open, Action::Continue, Action::Favourite, Action::Pin], "a series: Continue");
         let (_, fx) = s.apply(ShelfEvent::Continue.into());
         assert!(fx.iter().any(|e| matches!(e, Effect::Launch { .. })), "{fx:?}");
         s.apply(Event::tick(1));

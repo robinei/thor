@@ -94,8 +94,8 @@ pub(crate) fn switch_screen(s: &State, d: &impl Drawn, memory: &mut Screens<Opti
 /// main one.
 pub(crate) fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, dir: Dir) -> Option<Event> {
     // On shelf's actions, reached by holding A, up and down move through them only.
-    if s.in_actions() {
-        let actions: Vec<Id> = s.actions().as_slice().iter().map(|a| Id::Shelf(a.id())).collect();
+    if s.shelf().in_actions(s.pointer()) {
+        let actions: Vec<Id> = s.shelf().actions().as_slice().iter().map(|a| Id::Shelf(a.id())).collect();
         let (w, h) = d.size(Screen::Top);
         let rows: Vec<NavTarget> = d
             .targets(Screen::Top)
@@ -197,7 +197,7 @@ pub(crate) fn press(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>) -> 
 /// tabs from left to right, opening and focusing each.
 pub(crate) fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
     // On shelf's actions, shelf stays where it is.
-    if s.in_actions() {
+    if s.shelf().in_actions(s.pointer()) {
         return vec![];
     }
     // On shelf, move a page, which is the rows on screen.
@@ -222,7 +222,7 @@ fn on_shelf(s: &State, d: &impl Drawn) -> bool {
 
 /// L2 and R2 go to shelf's first or last entry.
 pub(crate) fn trigger(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
-    if s.in_actions() {
+    if s.shelf().in_actions(s.pointer()) {
         return vec![];
     }
     if on_shelf(s, d) {
@@ -442,7 +442,7 @@ mod tests {
         let mut d = drawn(&s);
         d.0.top.extend([t(60.0, 0.0, Id::Shelf(ShelfId::Launch)), t(60.0, 15.0, Id::Shelf(ShelfId::Favourite)), t(60.0, 30.0, Id::Shelf(ShelfId::Pin))]);
         focus(&mut s, Id::Shelf(ShelfId::Launch));
-        assert!(s.in_actions());
+        assert!(s.shelf().in_actions(s.pointer()));
         let memory = Screens::default();
         assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(PointerEvent::Focus(Id::Shelf(ShelfId::Favourite)).into()));
         assert_eq!(navigate(&s, &d, &memory, Dir::Left), None, "not out to the list");
@@ -450,7 +450,7 @@ mod tests {
         assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(PointerEvent::Focus(Id::Shelf(ShelfId::Pin)).into()), "not down to the second screen");
         assert_eq!(shoulder(&s, &d, 1), vec![]);
         assert_eq!(shortcut(&s, &d, PadInput::Y), vec![ShelfEvent::ToggleFavourite.into()], "sent, but the state has no shortcut there");
-        assert_eq!(s.shortcut(clamshell_core::shelf::actions::Shortcut::Y), None);
+        assert_eq!(s.shelf().shortcut(clamshell_core::shelf::actions::Shortcut::Y, s.pointer()), None);
     }
 
     #[test]

@@ -28,9 +28,10 @@ impl State {
         candidates.rev().min_by_key(|r| session.recent.iter().position(|w| *w == r.workspace()).unwrap_or(usize::MAX))
     }
 
-    /// Enqueue was pressed. The entries are added to the running launch of their runner, or else launched.
-    pub(crate) fn enqueue_selected(&mut self) -> Vec<Effect> {
-        let Some((game, true)) = self.file_target() else {
+    /// Enqueue was pressed on shelf's selected entry `id`. The entries are added to the running launch of
+    /// their runner, or else launched.
+    pub(crate) fn enqueue(&mut self, id: &str) -> Vec<Effect> {
+        let Some((game, true)) = self.shelf.file_target().filter(|(g, _)| &*g.id == id) else {
             return vec![];
         };
         let Some(runner) = game.runner.clone().filter(|r| r.enqueue.is_some()) else {
@@ -40,8 +41,9 @@ impl State {
         let index_of = |id: &str| library.entries.iter().position(|g| &*g.id == id);
         // While there is a selection, its entries are queued in the order picked, and the open folder is
         // the entry that plays them.
-        let (entry, ids): (Arc<str>, Vec<Arc<str>>) = match self.shelf.group().filter(|_| !self.files.selected.is_empty()) {
-            Some(folder) => (folder.id.clone(), self.files.selected.clone()),
+        let picked = self.shelf.files().selected();
+        let (entry, ids): (Arc<str>, Vec<Arc<str>>) = match self.shelf.group().filter(|_| !picked.is_empty()) {
+            Some(folder) => (folder.id.clone(), picked.to_vec()),
             None => (game.id.clone(), vec![game.id.clone()]),
         };
         let files: Vec<PathBuf> = ids.iter().filter_map(|id| index_of(id)).flat_map(|i| library.queue_files(i, &runner.key)).collect();
@@ -49,7 +51,7 @@ impl State {
             return vec![];
         }
         let alone = entry == game.id && !game.is_group();
-        self.files.selected.clear();
+        self.shelf.clear_file_selection();
         match self.enqueue_target(&runner.key) {
             Some(r) => {
                 let (key, title) = (r.key.clone(), r.entry.as_ref().map_or_else(String::new, |g| g.title.clone()));
@@ -105,7 +107,7 @@ mod tests {
     fn enqueue_plays_with_nothing_playing_then_adds_to_what_plays() {
         let mut s = music_state();
         assert_eq!(s.shelf().selected().map(|g| &**g), Some("album"));
-        assert!(s.actions().contains(&crate::shelf::actions::Action::Enqueue));
+        assert!(s.shelf().actions().contains(&crate::shelf::actions::Action::Enqueue));
         let fx = tap(&mut s, Id::Shelf(ShelfId::Enqueue));
         let launch = fx.iter().find_map(|e| match e {
             Effect::Launch { entry: game, launch, .. } => Some((game.to_string(), launch.clone())),

@@ -155,15 +155,8 @@ pub struct State {
     idle: crate::device::idle::Idle,
     /// ClamShell is the device's own session (see [`Init::device_session`]).
     device_session: bool,
-    /// Whether metadata is being fetched, and what shelf showed when it was last asked to fetch it first
-    /// (see [`State::follow_shown`]).
-    fetching: bool,
-    shown: Option<shelf::ShelfView>,
     /// Pins of entries that no longer exist were dropped at start. The dock is saved once the UI is up.
     pins_dropped: bool,
-    /// The clipboard and confirmation for file actions, and the folder being browsed (see
-    /// [`crate::shelf::files`]).
-    files: crate::shelf::files::Files,
 }
 
 impl State {

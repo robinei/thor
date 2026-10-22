@@ -26,8 +26,8 @@ impl State {
         if self.bottom.follow_dim(&self.session, &self.clock) {
             out.mark(Dirty::BOTTOM);
         }
-        out.effects.extend(self.follow_shown());
-        out.effects.extend(self.follow_browse());
+        self.shelf.follow_shown(&mut out);
+        self.shelf.follow_browse(self.session.running_entries(), &mut out);
         self.follow_idle(&mut out);
         self.follow_watch(&mut out);
         let (changed, applied) = self.follow_program();
@@ -124,11 +124,7 @@ impl State {
             Event::Pointer(e) => self.pointer_event(e, out),
             Event::Slide(slide) => self.on_slide(slide, out),
             Event::Level(e) => self.on_level(e, out),
-            Event::Shelf(e) => {
-                let (dirty, effects) = self.on_shelf_event(e);
-                out.mark(dirty);
-                out.effects.extend(effects);
-            }
+            Event::Shelf(e) => self.shelf.on_event(e, &mut self.pointer, out),
             Event::Launch(e) => {
                 let (dirty, effects) = self.on_launch_event(e);
                 out.mark(dirty);
@@ -149,12 +145,9 @@ impl State {
             }
             Event::Files(e) => {
                 out.mark(Dirty::BOTH);
-                out.effects.extend(self.on_files(e));
+                self.shelf.on_files(e, &mut self.pointer, self.bottom.notice_mut(), self.clock.mono(), out);
             }
-            Event::Fetching(on) => {
-                self.fetching = on;
-                self.shown = None;
-            }
+            Event::Fetching(on) => self.shelf.set_fetching(on),
             Event::Tray(items) => {
                 if let Some(effects) = self.set_tray(items) {
                     out.mark(Dirty::BOTH);
@@ -241,9 +234,18 @@ impl State {
             Event::Entry(id, act) => {
                 out.mark(Dirty::BOTTOM);
                 match act {
+                    EntryAct::Play => out.effects.extend(self.play(id)),
+                    EntryAct::TogglePin => out.effects.extend(self.toggle_pin(id)),
+                    EntryAct::Enqueue => out.effects.extend(self.enqueue(&id)),
                     EntryAct::Quit => out.effects.extend(self.quit(&id)),
                     EntryAct::ForceKill => out.effects.extend(self.force_kill(&id)),
                 }
+            }
+            Event::EditOnKeyboard(editor) => {
+                if self.bottom.open_on_keyboard(editor) {
+                    self.left_tab();
+                }
+                out.mark(Dirty::BOTH);
             }
             Event::Quit => {
                 out.effects.push(Effect::Save(Save::Resume(self.resume())));
@@ -297,7 +299,6 @@ impl State {
         if self.drop_gone_pins() {
             out.effects.push(Effect::Save(Save::Dock(self.dock.pinned_ids())));
         }
-        self.shown = None;
     }
 
     /// The UI is up. Sends what was waiting for it: the dock if pins were dropped at start, the
@@ -427,14 +428,14 @@ impl State {
             // entry's actions and focuses the first. Up and down go through them, A runs one, and B goes
             // back to the list.
             Id::Shelf(ShelfId::Entry(game)) if long && self.pointer.show_focus() && self.shelf.selected() == Some(&game) => {
-                if let Some(first) = self.actions().as_slice().first() {
+                if let Some(first) = self.shelf.actions().as_slice().first() {
                     self.pointer.focus_on(Id::Shelf(first.id()));
                 }
                 out.mark(Dirty::BOTH);
             }
             Id::Shelf(id) => {
                 out.mark(Dirty::BOTH);
-                out.effects.extend(self.on_shelf(id));
+                self.shelf.on_target(id, &mut self.pointer, out);
             }
             Id::Dock(id) => {
                 out.mark(Dirty::BOTTOM);
@@ -502,7 +503,7 @@ impl State {
                     Some(stroke) if self.capturing() => out.effects.extend(self.captured(State::chord(stroke))),
                     Some(stroke) if self.session.front() == crate::session::running::Front::Shelf => {
                         out.mark(Dirty::BOTH);
-                        out.effects.extend(self.find(stroke));
+                        self.shelf.find(stroke, &mut self.pointer, out);
                     }
                     Some(stroke) => out.effects.push(Effect::Key(stroke)),
                     None => {}
