@@ -340,7 +340,7 @@ mod tests {
             awake: vec!["awake".to_owned()].into(),
             ..clamshell_library::RunnerOf::new("android", "Android", true)
         };
-        let mut library = clamshell_library::demo_library();
+        let mut library = clamshell_library::demo::library();
         if let Some(g) = library.entries.iter_mut().find(|g| &*g.id == "desktop:firefox") {
             g.runner = Some(runner);
         }

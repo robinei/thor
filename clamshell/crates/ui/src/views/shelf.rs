@@ -5,7 +5,7 @@
 
 use std::fmt::{self, Display, Formatter};
 
-use clamshell_core::{Entry, Id, ListId, ShelfId, State, Tab};
+use clamshell_core::{Entry, Id, Launch, ListId, ShelfId, State, Tab};
 
 use crate::draw::{Column, Keep, Rect, Span, WRAP_LINE};
 use crate::icons::Icon;
@@ -95,6 +95,11 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
     }
     let rows = ((list.h / (h * ROW_H)).floor() as usize).max(1);
     list_rows(f, list, rows, s.shelf().list().len(), pad);
+    // Nothing but ClamShell's own tools: where games and apps come from, in the middle of the screen.
+    if s.shelf().library().entries.iter().all(|g| matches!(g.launch, Launch::Tool(_))) {
+        let line = Rect::new(pad, h * 0.5 - h * ROW_H, w - 2.0 * pad, h * ROW_H);
+        widgets::centred_text(f, line, h * DETAIL, Tone::Dim, "No games or apps found: see ~/.config/clamshell/library.json");
+    }
     // The selected entry; in an empty browsed folder, the folder (its actions: paste, a new folder).
     if let Some((game, _)) = s.file_target().filter(|(g, selected)| *selected || g.browsed.is_some()) {
         selected(f, game, screen, list, pad);

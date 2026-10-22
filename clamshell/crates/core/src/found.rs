@@ -181,7 +181,7 @@ mod tests {
 
     #[test]
     fn a_process_with_another_entrys_windows_is_not_moved() {
-        let mut library = clamshell_library::demo_library();
+        let mut library = clamshell_library::demo::library();
         let firefox = library.entries.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap();
         firefox.runner = Some(clamshell_library::RunnerOf { handover: true, ..clamshell_library::RunnerOf::new("android", "Android", true) });
         let mut s = State::new(Init { library, device_session: true, ..init() });

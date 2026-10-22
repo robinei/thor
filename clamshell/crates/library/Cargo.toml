@@ -7,5 +7,9 @@ license.workspace = true
 # No dependencies: the state (clamshell-core) builds on this model.
 [dependencies]
 
+[features]
+# The demo library (`demo`), for tests and snapshots.
+demo = []
+
 [lints]
 workspace = true

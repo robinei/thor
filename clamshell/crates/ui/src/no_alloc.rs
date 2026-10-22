@@ -53,7 +53,7 @@ fn key(k: Key) -> Event {
 
 /// Shelf's Tools collection opened and its Device entry run: the Device view.
 fn device() -> Vec<Event> {
-    let library = clamshell_library::demo_library();
+    let library = clamshell_library::demo::library();
     let tools = library.collections.iter().position(|c| c.name == "Tools").unwrap_or(0);
     let entry = || tap(Id::Shelf(clamshell_core::ShelfId::Game("tool:device".into())));
     vec![tap(Id::Shelf(clamshell_core::ShelfId::Collection(u16::try_from(tools).unwrap_or(0)))), entry(), entry()]
@@ -310,7 +310,7 @@ fn warm_frames_do_not_allocate() {
         // (The Nintendo layout with a layer added.)
         let mut keymaps = clamshell_core::keymap::Keymaps::initial();
         keymaps.get_mut(1).and_then(|k| k.add_layer("aim"));
-        let mut state = State::new(Init { library: clamshell_library::demo_library(), keymaps, ..Init::default() });
+        let mut state = State::new(Init { library: clamshell_library::demo::library(), keymaps, ..Init::default() });
         state.apply(Event::tick(1_700_000_000));
         for event in events {
             state.apply(event);

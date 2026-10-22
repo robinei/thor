@@ -70,7 +70,7 @@ fn main() -> ExitCode {
             }
         },
         Command::Library => {
-            print_library(State::new(Init { library: load_library(&sources).library, ..Init::default() }).shelf().library());
+            print_library(State::new(Init { library: library::load(&sources).library, ..Init::default() }).shelf().library());
             ExitCode::SUCCESS
         }
         Command::WaylandFilter => match clamshell_system::wayland_filter::run(
@@ -153,7 +153,7 @@ fn main() -> ExitCode {
         }
         Command::Snapshot(dir) => {
             // The demo games unless asked for the real library.
-            let library = if env.snapshot_real_library { load_library(&sources).library } else { clamshell_library::demo_library() };
+            let library = if env.snapshot_real_library { library::load(&sources).library } else { clamshell_library::demo::library() };
             let now = if env.snapshot_now { SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() } else { snapshot::FIXED_NOW };
             match snapshot::render(&|| snapshot::state(library.clone()), now, &dir) {
                 Ok(()) => ExitCode::SUCCESS,
@@ -196,14 +196,6 @@ fn saved(paths: &Paths) -> Init {
     }
 }
 
-/// The library: library.json's content dirs, Steam, the desktop files; the demo library if it is empty.
-fn load_library(sources: &Sources) -> library::Loaded {
-    let loaded = library::load(sources);
-    // (Nothing but the Tools tab: the demo games.)
-    let empty = loaded.library.entries.iter().all(|g| matches!(g.launch, clamshell_library::Launch::Tool(_)));
-    if empty { library::Loaded { library: clamshell_library::demo_library(), ..library::Loaded::default() } } else { loaded }
-}
-
 fn print_library(library: &Library) {
     for c in &library.collections {
         println!("{} ({}, {} entries)", c.name, c.icon.as_deref().unwrap_or("no icon"), c.entries.len());
@@ -236,7 +228,7 @@ fn print_entry(library: &Library, i: usize, depth: usize) {
 
 /// The session: the state from what was saved, the UI, and the system threads.
 fn run(env: &Env, paths: Paths, sources: &Sources) -> ExitCode {
-    let loaded = load_library(sources);
+    let loaded = library::load(sources);
     // Metadata to fetch once the threads run (with somewhere to keep it).
     let fetch = paths.art.clone().map(|art| meta::Fetch { wanted: loaded.wanted, keys: loaded.keys, art });
     let state = State::new(Init {

@@ -67,7 +67,7 @@ impl From<ParseError> for Error {
 
 /// Shelf's Tools collection opened and its Device entry run (selected, then activated): the Device view.
 fn open_device() -> Vec<Event> {
-    let library = clamshell_library::demo_library();
+    let library = clamshell_library::demo::library();
     let tools = state(library).shelf().library().collections.iter().position(|c| c.name == "Tools").unwrap_or(0);
     let device = || tap(Id::Shelf(ShelfId::Game("tool:device".into())));
     vec![tap(Id::Shelf(ShelfId::Collection(u16::try_from(tools).unwrap_or(0)))), device(), device()]
@@ -563,7 +563,7 @@ mod tests {
         let base = std::env::temp_dir().join(format!("clamshell-snapshots-{}", std::process::id()));
         let dir = base.join("shots");
         std::fs::create_dir_all(&dir).unwrap();
-        render(&|| state(clamshell_library::demo_library()), FIXED_NOW, &dir).unwrap();
+        render(&|| state(clamshell_library::demo::library()), FIXED_NOW, &dir).unwrap();
         let mut hashes = BTreeMap::new();
         for entry in std::fs::read_dir(&dir).unwrap().flatten() {
             hashes.insert(

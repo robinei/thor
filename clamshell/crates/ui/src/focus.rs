@@ -327,7 +327,7 @@ mod tests {
     }
 
     fn state() -> State {
-        State::new(Init { library: clamshell_library::demo_library(), ..Init::default() })
+        State::new(Init { library: clamshell_library::demo::library(), ..Init::default() })
     }
 
     fn game(s: &State, i: usize) -> Id {

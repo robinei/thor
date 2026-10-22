@@ -15,7 +15,7 @@ image.workspace = true
 log.workspace = true
 
 [dev-dependencies]
-clamshell-library.workspace = true
+clamshell-library = { workspace = true, features = ["demo"] }
 
 [lints]
 workspace = true

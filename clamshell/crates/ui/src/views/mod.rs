@@ -102,7 +102,7 @@ mod tests {
     use tiny_skia::Pixmap;
 
     fn demo() -> State {
-        let mut state = State::new(Init { library: clamshell_library::demo_library(), ..Init::default() });
+        let mut state = State::new(Init { library: clamshell_library::demo::library(), ..Init::default() });
         state.apply(Event::tick(1_700_000_000));
         state.apply(Event::Reading(Reading::Status(Status { battery: Some(50), volume: Some(50), brightness: Some(50), wifi: Some(50), ..Status::default() })));
         state
@@ -195,7 +195,7 @@ mod tests {
             // (The Nintendo layout with a layer added.)
             let mut keymaps = Keymaps::initial();
             keymaps.get_mut(1).and_then(|k| k.add_layer("aim"));
-            let mut state = State::new(Init { library: clamshell_library::demo_library(), keymaps, ..Init::default() });
+            let mut state = State::new(Init { library: clamshell_library::demo::library(), keymaps, ..Init::default() });
             for (name, events) in &screens {
                 for e in events {
                     state.apply(e.clone());

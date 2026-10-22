@@ -3,6 +3,8 @@
 //! that need no disk. No I/O and no dependencies: scanning (library.json's content dirs, Steam, desktop
 //! files), play time and favourites are clamshell-system's (`library`).
 
+#[cfg(any(test, feature = "demo"))]
+pub mod demo;
 pub mod hash;
 pub mod pattern;
 pub mod plays;
@@ -567,97 +569,6 @@ impl Library {
 /// Entries in the Recent tab.
 const RECENT: usize = 20;
 
-/// Placeholder games for development and snapshots.
-pub fn demo_games() -> Vec<Entry> {
-    [
-        ("zelda-lttp", "A Link to the Past", 0x3f8f4f),
-        ("metroid-zm", "Metroid: Zero Mission", 0xb0503a),
-        ("mk-ds", "Mario Kart DS", 0xc8a038),
-        ("ff6", "Final Fantasy VI", 0x5060b0),
-        ("dark-souls", "Dark Souls", 0x606060),
-        ("hades", "Hades", 0xa03060),
-        ("celeste", "Celeste", 0x8050b0),
-    ]
-    .into_iter()
-    .map(|(id, title, color)| match id {
-        // As fetched metadata gives it.
-        "zelda-lttp" => Entry {
-            color,
-            developer: "Nintendo".into(),
-            year: Some(1991),
-            summary: "Link sets out across Hyrule and the Dark World to free the descendants of the Seven Sages from the wizard Agahnim.".into(),
-            ..Entry::new(id, title)
-        },
-        _ => Entry { color, ..Entry::new(id, title) },
-    })
-    .collect()
-}
-
-/// The demo games in two collections, a few installed apps, and a series (two seasons of episodes),
-/// for development and snapshots.
-pub fn demo_library() -> Library {
-    let mut games = demo_games();
-    let n = games.len();
-    // A few installed apps, as desktop files give them.
-    let apps = [("desktop:steam", "Steam", "steam"), ("desktop:foot", "Terminal", "foot"), ("desktop:firefox", "Firefox", "firefox")];
-    games.extend(apps.iter().map(|(id, title, program)| Entry { launch: Launch::program(vec![(*program).into()]), app: true, ..Entry::new(id, title) }));
-    let series = games.len();
-    games.push(Entry { color: 0x305a78, ..Entry::new("tv:Cosmos", "Cosmos") });
-    let seasons: [(&str, &[&str]); 2] = [
-        ("Season 1", &["1. The Shores of the Cosmic Ocean", "2. One Voice in the Cosmic Fugue", "10. The Edge of Forever"]),
-        ("Season 2", &["1. Standing Up in the Milky Way"]),
-    ];
-    for (season, episodes) in seasons {
-        let s = games.len();
-        let id = format!("tv:Cosmos/{season}");
-        games.push(Entry { parent: Some(series), color: 0x305a78, ..Entry::new(&id, season) });
-        for episode in episodes {
-            let e = games.len();
-            let file = format!("{id}/{episode}.mkv");
-            let path = format!("/videos/{}", file.trim_start_matches("tv:"));
-            let argv = vec!["mpv".into(), path.clone()];
-            // (The second episode left halfway.)
-            let position = episode.starts_with("2.").then_some(1500);
-            let launch = Launch::program(argv);
-            games.push(Entry {
-                parent: Some(s),
-                color: 0x305a78,
-                launch,
-                file: Some(path.into()),
-                duration: Some(2640),
-                position,
-                ..Entry::new(&file, episode)
-            });
-            if let Some(season) = games.get_mut(s) {
-                season.items.push(e);
-            }
-        }
-        if let Some(g) = games.get_mut(series) {
-            g.items.push(s);
-        }
-    }
-    // ClamShell's own tools, as a library.json with a Tools place has them.
-    let tools = games.len();
-    let summary = "Calibrates the controller's sticks and gyro and the top screen's refresh rate; sets the password and remote login.";
-    games.push(Entry { launch: Launch::Tool(Tool::Device), app: true, summary: summary.into(), ..Entry::new("tool:device", "Device") });
-    let collections = vec![
-        Collection::with_icon("Games", "gamepad", (0..n).collect()),
-        Collection::new("More", vec![3, 1]),
-        Collection::with_icon("TV", "tv", vec![series]),
-        Collection::with_icon("Apps", "apps", (n..n + apps.len()).collect()),
-        Collection::with_icon("Tools", "tools", vec![tools]),
-    ];
-    let own = |name: &str, icon: &str| Some(OwnTab { name: name.into(), icon: Some(icon.into()) });
-    Library {
-        collections,
-        entries: games,
-        order: vec!["Recent".into(), "Favourites".into()],
-        recent: own("Recent", "clock"),
-        favourites: own("Favourites", "star"),
-        ..Library::default()
-    }
-}
-
 #[cfg(test)]
 #[allow(clippy::indexing_slicing, clippy::unwrap_used)]
 mod tests {
@@ -689,7 +600,7 @@ mod tests {
 
     #[test]
     fn recent_and_favourites_come_first() {
-        let mut lib = demo_library();
+        let mut lib = demo::library();
         lib.collections.retain(|c| c.name == "Games");
         lib.entries[2].plays.add(100, 10);
         lib.entries[4].plays.add(500, 10);
@@ -706,7 +617,7 @@ mod tests {
 
     #[test]
     fn a_series_is_a_group_of_seasons_of_episodes() {
-        let lib = demo_library();
+        let lib = demo::library();
         let tv = lib.collections.iter().find(|c| c.name == "TV").unwrap();
         let series = &lib.entries[tv.entries[0]];
         assert!(series.is_group());
@@ -719,7 +630,7 @@ mod tests {
 
     #[test]
     fn a_series_cover_reaches_its_seasons_but_not_its_videos() {
-        let mut lib = demo_library();
+        let mut lib = demo::library();
         let tv = lib.collections.iter().find(|c| c.name == "TV").unwrap().entries[0];
         let season = lib.entries[tv].items[0];
         let (first, second) = (lib.entries[season].items[0], lib.entries[season].items[1]);
@@ -734,7 +645,7 @@ mod tests {
 
     #[test]
     fn continue_goes_on_from_the_episode_played_last() {
-        let mut lib = demo_library();
+        let mut lib = demo::library();
         let tv = lib.collections.iter().find(|c| c.name == "TV").unwrap().entries[0];
         let s1 = lib.entries[tv].items[0];
         let s2 = lib.entries[tv].items[1];

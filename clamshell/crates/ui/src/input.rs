@@ -584,7 +584,7 @@ mod tests {
 
     #[test]
     fn shelf_settles_on_a_whole_row() {
-        let mut state = State::new(Init { library: clamshell_library::demo_library(), ..Init::default() });
+        let mut state = State::new(Init { library: clamshell_library::demo::library(), ..Init::default() });
         state.apply(clamshell_core::ShelfEvent::Rows(3).into());
         let mut input = Input::default();
         let t = t0();

@@ -1139,7 +1139,7 @@ pub(crate) mod testkit {
 
     /// What a test state starts from: the demo library, nothing else.
     pub fn init() -> Init {
-        Init { library: clamshell_library::demo_library(), ..Init::default() }
+        Init { library: clamshell_library::demo::library(), ..Init::default() }
     }
 
     /// (Up, as after the UI's Start: its watches in force.)
@@ -1282,7 +1282,7 @@ mod tests {
     fn new_library_problems_are_said_once() {
         let mut s = state();
         let with = |problems: &[&str]| {
-            let mut library = clamshell_library::demo_library();
+            let mut library = clamshell_library::demo::library();
             library.problems = problems.iter().map(|p| (*p).to_owned()).collect();
             Event::Library(Box::new(library))
         };

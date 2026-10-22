@@ -9,5 +9,8 @@ clamshell-library.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
+[dev-dependencies]
+clamshell-library = { workspace = true, features = ["demo"] }
+
 [lints]
 workspace = true

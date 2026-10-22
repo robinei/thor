@@ -299,7 +299,7 @@ mod tests {
             resume: vec!["resume".to_owned()].into(),
             ..clamshell_library::RunnerOf::new("android", "Android", true)
         };
-        let mut library = clamshell_library::demo_library();
+        let mut library = clamshell_library::demo::library();
         library.entries.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap().runner = Some(runner.clone());
         let mut s = State::new(crate::Init { library, ..init() });
         s.settings.set(Some(&runner.key), Setting::Background, Some(1));

@@ -329,7 +329,7 @@ mod tests {
 
     #[test]
     fn pins_of_entries_gone_are_dropped_but_not_those_away() {
-        let mut library = clamshell_library::demo_library();
+        let mut library = clamshell_library::demo::library();
         library.away = vec!["sd:".into()];
         let dock = dock::Dock::pinned(vec!["ff6".into(), "gone:x".into(), "sd:Zelda.sfc".into()]);
         let mut s = State::new(Init { library, dock, ..init() });
@@ -337,7 +337,7 @@ mod tests {
         let fx = s.apply(Event::Start).1;
         assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Dock(ids)) if ids.len() == 2)), "saved: {fx:?}");
         // A rescan without ff6: dropped then too.
-        let mut library = clamshell_library::demo_library();
+        let mut library = clamshell_library::demo::library();
         library.entries.retain(|g| &*g.id != "ff6");
         library.collections.iter_mut().for_each(|c| c.entries.clear());
         let fx = s.apply(Event::Library(Box::new(library))).1;

@@ -51,7 +51,8 @@ default-run = "clamshell"
 [dependencies]
 clamshell-core.workspace = true
 clamshell-system.workspace = true
-clamshell-library.workspace = true
+# (The demo library: `--snapshot` draws it.)
+clamshell-library = { workspace = true, features = ["demo"] }
 clamshell-ui.workspace = true
 log.workspace = true
 env_logger.workspace = true

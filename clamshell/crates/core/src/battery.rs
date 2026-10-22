@@ -217,7 +217,7 @@ mod tests {
 
     #[test]
     fn an_app_handed_over_is_known_by_its_app_id_and_edited_without_what_it_cant_get() {
-        let mut library = clamshell_library::demo_library();
+        let mut library = clamshell_library::demo::library();
         let firefox = library.entries.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap();
         firefox.another = true;
         firefox.runner = Some(clamshell_library::RunnerOf { handover: true, ..clamshell_library::RunnerOf::new("android", "Android", true) });

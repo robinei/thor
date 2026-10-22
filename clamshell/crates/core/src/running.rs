@@ -595,7 +595,7 @@ mod tests {
     }
 
     fn steam_ff6() -> State {
-        let mut library = clamshell_library::demo_library();
+        let mut library = clamshell_library::demo::library();
         if let Some(g) = library.entries.iter_mut().find(|g| &*g.id == "ff6") {
             g.launch = Launch::Steam { appid: 620 };
         }
@@ -744,7 +744,7 @@ mod tests {
 
     /// A Files tab with a file of its own and one that is a library entry's (zelda's).
     fn files() -> State {
-        let mut library = clamshell_library::demo_library();
+        let mut library = clamshell_library::demo::library();
         if let Some(zelda) = library.entries.first_mut() {
             zelda.file = Some("/roms/zelda.sfc".into());
         }
@@ -796,7 +796,7 @@ mod tests {
         assert!(s.session().running("browse:Home/notes.md").is_some(), "runs while its window is open");
         assert_eq!(s.app_showing("browse:Home/notes.md").map(|g| &*g.id), Some("desktop:foot"), "its picture: the app's");
         // Its file gone from the library meanwhile: still shown by what it was.
-        s.apply(Event::Library(Box::new(clamshell_library::demo_library())));
+        s.apply(Event::Library(Box::new(clamshell_library::demo::library())));
         assert!(s.shelf().game("browse:Home/notes.md").is_none());
         assert_eq!(s.game("browse:Home/notes.md").map(|g| g.title.as_str()), Some("/h/notes.md"));
         s.apply(Event::Library(Box::new(files().shelf().library().clone())));
@@ -814,7 +814,7 @@ mod tests {
 
     #[test]
     fn an_app_handed_over_runs_by_its_window_found_by_its_app_id() {
-        let mut library = clamshell_library::demo_library();
+        let mut library = clamshell_library::demo::library();
         let firefox = library.entries.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap();
         let stop = vec!["stop".to_owned(), "{id}".to_owned()].into();
         firefox.runner = Some(clamshell_library::RunnerOf { handover: true, stop, ..clamshell_library::RunnerOf::new("android", "Android", true) });
