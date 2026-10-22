@@ -1,11 +1,12 @@
 # thor (working name)
 
-Linux on the AYN Thor: ClamShell, the program that runs the device's session, plus the setup around it
-(Arch Linux ARM and our own packages, built on a PC and kept current by pacman). What to do when the device arrives, and what is left to
-test on it: `docs/thor-gameplan.md`.
+Linux on the AYN Thor, a handheld with two screens. This repository holds ClamShell, the program that
+runs the device's session, and the system around it: Arch Linux ARM with our own packages, built on a PC
+and kept current by pacman. `docs/thor-gameplan.md` says what to do when the device arrives and what is
+left to test on it.
 
-This README is kept short while things change; how each part behaves is in its module's documentation
-(`cargo doc --open` in `clamshell/`) and its tests.
+This README is kept short while things change. How each part behaves is in its module's documentation
+(`cargo doc --open --document-private-items` in `clamshell/`) and in its tests.
 
 ## ClamShell
 
@@ -23,6 +24,13 @@ on-screen keyboard), and the games' settings and keymaps. Rust, a Cargo workspac
 | `src/` | the program around them: the command line, the environment, the threads, the control pipe, the snapshots |
 
 No panics by construction: `unwrap`, `expect`, `panic!` and slice indexing are denied outside tests.
+Where a lookup can't fail by construction it falls back quietly; where a bug could reach the fallback, a
+`debug_assert!` catches it in tests.
+
+Beside the workspace are the configuration files the packages install with it: `sway/` (ClamShell's part
+of sway's config), `foot/`, `mako/`, `mpv/` and `retroarch/` (those programs' settings for the device),
+and `android/` (the Waydroid session's script and its clipboard bridge). `tests/` holds the nested sway
+test and the snapshots' reference hashes.
 
 ## The library
 
@@ -100,12 +108,14 @@ E the shoulders, F is Y, P is X.
 
 ## Checking
 
-- `tools/check.sh`: formatting, clippy with warnings as errors, and the tests (the snapshots among them),
-  about a minute. Every commit passes it: `git config core.hooksPath tools/hooks` makes it the
-  pre-commit hook.
-- Snapshots: the tests draw every screen and compare hashes with `clamshell/tests/snapshots.txt`. After
-  a change meant to change what is drawn, look at the files (`--snapshot DIR`), then write the new
-  hashes with `CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots`.
+- `tools/check.sh`: formatting, clippy with warnings as errors (the `dev` build too), the tests (the
+  snapshots among them), and the documentation; about a minute. Every commit passes it:
+  `git config core.hooksPath tools/hooks` makes it the pre-commit hook.
+- Snapshots: the tests draw every screen and compare hashes of their pixels with
+  `clamshell/tests/snapshots.txt`; on a difference the files drawn are kept and the failure says where.
+  After a change meant to change what is drawn, look at the files (`cargo run --features dev --
+  --snapshot DIR`), then write the new hashes with `CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell
+  snapshots`.
 - `clamshell/tests/nested-sway.sh` (after `cargo build --release`): a headless sway with ClamShell in it,
   driven through the control pipe; about a minute.
 - `tools/vm/vm-test.sh`: the VM suite end to end, about twenty minutes; before pushing. The virtual Thor is
@@ -118,7 +128,9 @@ Arch Linux ARM and the Thor's own packages (`packages/`: `thor`, the metapackage
 system, and what it holds: `linux-thor`, `thor-system`, `thor-session`, `clamshell`, `thor-ucm`,
 `thor-keyring`; and `thor-firmware`, which is never published), kept current with
 `pacman -Syu` from the repository `[thor]`, the GitHub release `packages`. What each holds:
-`docs/thor-gameplan.md`, "Our image and packages".
+`docs/thor-gameplan.md`, "Our image and packages". On the device, `.claude/commands/maintain.md` is the
+playbook for a maintenance pass with Claude Code, which the dock's Maintenance app starts: news,
+updates, the boot, the firmware, pacnew files and health.
 
 From a checkout, on an Arch Linux PC, everything is built here and nothing needs the virtual machines:
 
