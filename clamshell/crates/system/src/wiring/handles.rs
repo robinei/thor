@@ -2,6 +2,7 @@
 
 use clamshell_core::{Effect, Instance, Watch, WindowCommand};
 
+use super::Tuning;
 use crate::audio::mixer;
 use crate::display::brightness;
 use crate::input::keyboard::VirtualKeyboard;
@@ -11,7 +12,6 @@ use crate::launch::launcher;
 use crate::network::{bluetooth, wifi};
 use crate::os::worker::{self, Shown, Worker};
 use crate::paths::Paths;
-use crate::power::tuning::Tuning;
 use crate::store::{Write, Writer};
 use crate::sway;
 
@@ -114,7 +114,7 @@ impl Handles {
                 let lines = lines.clone();
                 // (Off the main thread: a player slow to read waits nothing here.)
                 let started = worker::detached("enqueue", move || {
-                    if let Err(e) = enqueue(&socket, &lines) {
+                    if let Err(e) = crate::launch::mpv::enqueue(&socket, &lines) {
                         log::warn!("enqueue to {}: {e}", socket.display());
                     }
                 });
@@ -204,25 +204,4 @@ impl Handles {
             WindowCommand::LandRules(ids) => sway.send(sway::Command::LandRules(ids.clone())),
         }
     }
-}
-
-/// `lines` written to the control socket at `socket`, each its own line, then as many lines read back
-/// (or none, for a while), so the player reads them all before the connection closes.
-fn enqueue(socket: &std::path::Path, lines: &[String]) -> std::io::Result<()> {
-    use std::io::{BufRead, Write};
-    let mut stream = std::os::unix::net::UnixStream::connect(socket)?;
-    stream.set_write_timeout(Some(std::time::Duration::from_secs(2)))?;
-    stream.set_read_timeout(Some(std::time::Duration::from_secs(2)))?;
-    for line in lines {
-        stream.write_all(line.as_bytes())?;
-        stream.write_all(b"\n")?;
-    }
-    // (mpv answers each command, and drops those it hasn't read when the client goes.)
-    let mut replies = std::io::BufReader::new(stream).lines();
-    for _ in lines {
-        if !matches!(replies.next(), Some(Ok(_))) {
-            break;
-        }
-    }
-    Ok(())
 }

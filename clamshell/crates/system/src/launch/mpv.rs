@@ -1,9 +1,10 @@
-//! Where mpv left a video. With `save-position-on-quit`, mpv keeps the place of a
-//! video quit before its end in a file of its watch_later folder, named by the MD5 (in capitals) of the
-//! video's path, or of its file name alone with `ignore-path-in-watch-later-config`; the line
-//! `start=<seconds>` is the place. A video watched to its end has none. Both names are looked for (the path's
-//! first), in the folder mpv.conf names (`watch-later-dir`) and in mpv's own (~/.local/state/mpv/watch_later,
-//! older ~/.config/mpv/watch_later).
+//! mpv: where it left a video, and commands sent to a running one (playlist entries added).
+//!
+//! With `save-position-on-quit`, mpv keeps the place of a video quit before its end in a file of its
+//! watch_later folder, named by the MD5 (in capitals) of the video's path, or of its file name alone with
+//! `ignore-path-in-watch-later-config`; the line `start=<seconds>` is the place. A video watched to its
+//! end has none. Both names are looked for (the path's first), in the folder mpv.conf names
+//! (`watch-later-dir`) and in mpv's own (~/.local/state/mpv/watch_later, older ~/.config/mpv/watch_later).
 
 use std::path::{Path, PathBuf};
 
@@ -47,6 +48,27 @@ pub fn position(dirs: &[PathBuf], file: &Path) -> Option<(u32, u64)> {
 /// MD5 of `data` as 32 capital hex digits (as mpv names its watch_later files).
 fn md5_hex(data: &[u8]) -> String {
     clamshell_library::hash::md5(data).iter().map(|b| format!("{b:02X}")).collect()
+}
+
+/// `lines` (mpv's JSON IPC commands) written to a launch's control socket at `socket`, each its own line, then as many lines read back
+/// (or none, for a while), so the player reads them all before the connection closes.
+pub fn enqueue(socket: &std::path::Path, lines: &[String]) -> std::io::Result<()> {
+    use std::io::{BufRead, Write};
+    let mut stream = std::os::unix::net::UnixStream::connect(socket)?;
+    stream.set_write_timeout(Some(std::time::Duration::from_secs(2)))?;
+    stream.set_read_timeout(Some(std::time::Duration::from_secs(2)))?;
+    for line in lines {
+        stream.write_all(line.as_bytes())?;
+        stream.write_all(b"\n")?;
+    }
+    // (mpv answers each command, and drops those it hasn't read when the client goes.)
+    let mut replies = std::io::BufReader::new(stream).lines();
+    for _ in lines {
+        if !matches!(replies.next(), Some(Ok(_))) {
+            break;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

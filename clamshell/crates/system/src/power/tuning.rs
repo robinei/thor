@@ -1,6 +1,6 @@
-//! Applying settings: the power profile and CPU/GPU caps (frequency caps), the big cores, the charge
-//! limit, and the frame rate cap and HUD (MangoHud, through a per-game MangoHud config file that MangoHud
-//! reloads when it changes).
+//! Applying settings to the hardware: the power profile and CPU/GPU caps (frequency caps), the big cores,
+//! the charge limit. (The frame rate cap and HUD go to a game's MangoHud config, see
+//! [`crate::readings::mangohud`]; [`crate::wiring::Tuning`] sends each setting where it goes.)
 //!
 //! These write `scaling_max_freq` of each cpufreq policy, `max_freq` of the GPU's devfreq device, CPUs'
 //! `online`, the battery's `charge_control_end_threshold` and `constant_charge_current` (see [`Hold`]), and
@@ -22,10 +22,8 @@ use clamshell_core::settings::fan;
 use clamshell_core::settings::{Cores, PowerProfile};
 use clamshell_core::settings::{Setting, Values};
 
-use crate::input::pad;
 use crate::os::sys;
 use crate::os::worker::{self, Next, Quiet, Worker};
-use crate::readings::mangohud;
 
 /// A profile's share of each frequency range.
 fn fraction(power: PowerProfile) -> f64 {
@@ -170,37 +168,6 @@ pub fn spawn() -> io::Result<Worker<Values>> {
             }
         }
     })
-}
-
-/// Where the settings in force go: the hardware thread, the pad's keymap, and a
-/// game's MangoHud config (in `mangohud`).
-#[derive(Clone)]
-pub struct Tuning {
-    pub hardware: Worker<Values>,
-    pub pad: Worker<pad::Command>,
-    pub mangohud: PathBuf,
-}
-
-impl Tuning {
-    /// The keymap in force, for the pad.
-    pub fn keymap(&self, keymap: &clamshell_core::keymap::Keymap) {
-        self.pad.send(pad::Command::Keymap(Box::new(keymap.clone())));
-    }
-
-    /// The gyro calibrated from its next second.
-    pub fn calibrate_gyro(&self) {
-        self.pad.send(pad::Command::CalibrateGyro);
-    }
-
-    /// Applies the settings in force (`game`'s, or the global ones without a game): the hardware, and
-    /// for a game its MangoHud config (written, and reloaded live if it runs), whose
-    /// path is returned for its launch.
-    pub fn apply(&self, v: &Values, game: Option<&str>) -> Option<PathBuf> {
-        self.hardware.send(*v);
-        self.pad.send(pad::Command::Rumble(v.choice()));
-        let game = game?;
-        mangohud::config(&self.mangohud, game, v.get(Setting::FpsCap), v.choice()).map_err(|e| log::warn!("MangoHud config: {e}")).ok()
-    }
 }
 
 /// Applies the settings in force to the hardware: frequency caps for the profile (or the CPU and GPU
