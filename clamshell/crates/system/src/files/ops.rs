@@ -66,20 +66,31 @@ fn run(op: &FileOp, home: Option<&Path>, sink: &impl Sink) -> Result<String, Str
         FileOp::Delete(path) => {
             remove(path).map_err(|e| failed("Deleting", path, &e))?;
             // (In the Trash: its record too.)
-            if let Some(info) = trash_info(path) {
-                let _ = fs::remove_file(info);
+            if let Some(info) = trash_info(path)
+                && let Err(e) = fs::remove_file(&info)
+            {
+                log::warn!("files: removing {}: {e}", info.display());
             }
             Ok(format!("Deleted {}", name_of(path)))
         }
         FileOp::EmptyTrash(files) => {
-            for entry in fs::read_dir(files).map_err(|e| failed("Reading", files, &e))?.flatten() {
+            for entry in fs::read_dir(files)
+                .map_err(|e| failed("Reading", files, &e))?
+                .filter_map(|e| e.inspect_err(|e| log::warn!("files: {}: {e}", files.display())).ok())
+            {
                 remove(&entry.path()).map_err(|e| failed("Deleting", &entry.path(), &e))?;
             }
-            if let Some(info) = files.parent().map(|t| t.join("info"))
-                && let Ok(entries) = fs::read_dir(info)
-            {
-                for e in entries.flatten() {
-                    let _ = fs::remove_file(e.path());
+            if let Some(info) = files.parent().map(|t| t.join("info")) {
+                match fs::read_dir(&info) {
+                    Ok(entries) => {
+                        for e in entries.filter_map(|e| e.inspect_err(|e| log::warn!("files: {}: {e}", info.display())).ok()) {
+                            if let Err(err) = fs::remove_file(e.path()) {
+                                log::warn!("files: removing {}: {err}", e.path().display());
+                            }
+                        }
+                    }
+                    Err(e) if e.kind() == io::ErrorKind::NotFound => log::debug!("files: {}: {e}", info.display()),
+                    Err(e) => log::warn!("files: {}: {e}", info.display()),
                 }
             }
             Ok("Emptied the Trash".to_owned())
@@ -129,13 +140,18 @@ fn paste(path: &Path, into: &Path, cut: bool, sink: &impl Sink) -> Result<String
         return Ok(format!("{name} is there already"));
     }
     let to = free_name(into, &name);
-    if cut && fs::rename(path, &to).is_ok() {
-        return Ok(format!("Moved {name}"));
+    if cut {
+        match fs::rename(path, &to) {
+            Ok(()) => return Ok(format!("Moved {name}")),
+            Err(e) => log::debug!("files: renaming {} to {}: {e}: copying it", path.display(), to.display()),
+        }
     }
     let mut progress =
         Progress { what: format!("{} {name}", if cut { "Moving" } else { "Copying" }), total: size(path).max(1), done: 0, last: Instant::now(), sink };
     if let Err(e) = copy(path, &to, &mut progress) {
-        let _ = remove(&to);
+        if let Err(e) = remove(&to) {
+            log::warn!("files: removing {}: {e}", to.display());
+        }
         return Err(format!("Copying {name}: {e}"));
     }
     if cut {
@@ -161,7 +177,9 @@ fn extract(archive: &Path, name: &str, sink: &impl Sink) -> Result<String, Strin
         .stderr(std::process::Stdio::piped())
         .spawn();
     let mut child = child.map_err(|e| {
-        let _ = fs::remove_dir(&into);
+        if let Err(e) = fs::remove_dir(&into) {
+            log::warn!("files: removing {}: {e}", into.display());
+        }
         format!("Extracting {what}: bsdtar: {e}")
     })?;
     let total = archive.metadata().map_or(1, |m| m.len().max(1));
@@ -178,13 +196,17 @@ fn extract(archive: &Path, name: &str, sink: &impl Sink) -> Result<String, Strin
         std::thread::sleep(PROGRESS);
     };
     let mut said = String::new();
-    if let Some(mut e) = child.stderr.take() {
-        let _ = e.read_to_string(&mut said);
+    if let Some(mut e) = child.stderr.take()
+        && let Err(e) = e.read_to_string(&mut said)
+    {
+        log::debug!("files: bsdtar's errors: {e}");
     }
     match status {
         Ok(s) if s.success() => Ok(format!("Extracted {what} into {}", name_of(&into))),
         result => {
-            let _ = remove(&into);
+            if let Err(e) = remove(&into) {
+                log::warn!("files: removing {}: {e}", into.display());
+            }
             let why = said.lines().rev().find(|l| !l.trim().is_empty()).map(str::trim).map(str::to_owned);
             Err(format!("Extracting {what}: {}", why.unwrap_or_else(|| result.map_or_else(|e| e.to_string(), |s| s.to_string()))))
         }
@@ -194,15 +216,22 @@ fn extract(archive: &Path, name: &str, sink: &impl Sink) -> Result<String, Strin
 /// How far process `pid` has read `file` (its open file's offset), if it has it open.
 fn read_so_far(pid: u32, file: &Path) -> Option<u64> {
     let fds = PathBuf::from(format!("/proc/{pid}/fd"));
-    let fd = fs::read_dir(&fds).ok()?.flatten().find(|e| fs::read_link(e.path()).is_ok_and(|t| t == file))?;
-    let info = fs::read_to_string(PathBuf::from(format!("/proc/{pid}/fdinfo")).join(fd.file_name())).ok()?;
+    let fd = fs::read_dir(&fds)
+        .inspect_err(|e| log::debug!("files: {}: {e}", fds.display()))
+        .ok()?
+        .flatten()
+        .find(|e| fs::read_link(e.path()).is_ok_and(|t| t == file))?;
+    let info_path = PathBuf::from(format!("/proc/{pid}/fdinfo")).join(fd.file_name());
+    let info = fs::read_to_string(&info_path).inspect_err(|e| log::debug!("files: {}: {e}", info_path.display())).ok()?;
     info.lines().find_map(|l| l.strip_prefix("pos:")).and_then(|p| p.trim().parse().ok())
 }
 
 /// The bytes of the files in `path`, all the way down.
 fn size(path: &Path) -> u64 {
     match path.symlink_metadata() {
-        Ok(m) if m.is_dir() => fs::read_dir(path).map(|d| d.flatten().map(|e| size(&e.path())).sum()).unwrap_or(0),
+        Ok(m) if m.is_dir() => {
+            fs::read_dir(path).inspect_err(|e| log::debug!("files: {}: {e}", path.display())).map(|d| d.flatten().map(|e| size(&e.path())).sum()).unwrap_or(0)
+        }
         Ok(m) if m.is_file() => m.len(),
         _ => 0,
     }
@@ -235,7 +264,8 @@ fn copy(from: &Path, to: &Path, progress: &mut Progress<impl Sink>) -> io::Resul
     }
     if meta.is_dir() {
         fs::create_dir(to)?;
-        for e in fs::read_dir(from)?.flatten() {
+        for e in fs::read_dir(from)? {
+            let e = e?;
             copy(&e.path(), &to.join(e.file_name()), progress)?;
         }
         return fs::set_permissions(to, meta.permissions());

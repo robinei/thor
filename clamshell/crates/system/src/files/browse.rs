@@ -74,8 +74,10 @@ pub fn spawn_browse(browsing: Browsing, sink: impl Sink) -> io::Result<Worker<Br
                     bell.ring();
                 }
                 Ok(BrowseCommand::Open(browse)) => {
-                    if let (Some(fd), Some((_, _, Some(wd)))) = (notify.as_ref(), open.take()) {
-                        let _ = inotify::remove_watch(fd, wd);
+                    if let (Some(fd), Some((_, _, Some(wd)))) = (notify.as_ref(), open.take())
+                        && let Err(e) = inotify::remove_watch(fd, wd)
+                    {
+                        log::debug!("browse: removing the watch: {e}");
                     }
                     if let Some(fd) = notify.as_ref() {
                         changed(fd);
@@ -137,7 +139,8 @@ fn wait(bell: &Bell, notify: Option<&rustix::fd::OwnedFd>, mounts: Option<&fs::F
         fds.push(PollFd::new(f, PollFlags::PRI));
         fds.len() - 1
     });
-    if rustix::event::poll(&mut fds, None).is_err() {
+    if let Err(e) = rustix::event::poll(&mut fds, None) {
+        log::debug!("browse: waiting: {e}");
         // (Interrupted: looked at as if anything changed.)
         return (true, true);
     }
@@ -161,16 +164,29 @@ fn changed(fd: &rustix::fd::OwnedFd) -> bool {
 /// name; hidden ones (`.name`) only if `hidden`. A picture is its own art; a file opens by the first of
 /// `runners` that opens its name (`~/` in its command against `home`).
 pub fn list(dir: &Path, folder: &str, runners: &[Runner], home: Option<&Path>, hidden: bool) -> Vec<Entry> {
-    let Ok(read) = fs::read_dir(dir) else {
-        return Vec::new();
+    let read = match fs::read_dir(dir) {
+        Ok(read) => read,
+        Err(e) => {
+            if e.kind() == io::ErrorKind::NotFound {
+                log::debug!("browse: {}: {e}", dir.display());
+            } else {
+                log::warn!("browse: {}: {e}", dir.display());
+            }
+            return Vec::new();
+        }
     };
     let mut games: Vec<Entry> = read
-        .flatten()
+        .filter_map(|e| e.inspect_err(|e| log::debug!("browse: {}: {e}", dir.display())).ok())
         .filter_map(|e| {
-            let name = e.file_name().into_string().ok().filter(|n| hidden || !n.starts_with('.'))?;
+            let name = e
+                .file_name()
+                .into_string()
+                .inspect_err(|n| log::debug!("browse: {}: not UTF-8: skipped", n.display()))
+                .ok()
+                .filter(|n| hidden || !n.starts_with('.'))?;
             let path = e.path();
             // (Through a link: what it points at.)
-            let meta = fs::metadata(&path).ok();
+            let meta = fs::metadata(&path).inspect_err(|e| log::debug!("browse: {}: {e}", path.display())).ok();
             let is_dir = meta.as_ref().is_some_and(fs::Metadata::is_dir);
             let size = meta.as_ref().filter(|m| m.is_file()).map(fs::Metadata::len);
             let modified = meta.and_then(|m| m.modified().ok()).map_or(0, crate::time::clock::unix_secs_at);
@@ -215,8 +231,12 @@ pub fn list(dir: &Path, folder: &str, runners: &[Runner], home: Option<&Path>, h
 /// enqueue, and its playlist (an `.m3u` in it), from a look at its first names (`~/` the home dir).
 fn enqueued(dir: &Path, runners: &[Runner], home: Option<&Path>) -> (Option<clamshell_library::RunnerOf>, Option<PathBuf>) {
     let (mut runner, mut playlist) = (None, None);
-    let Ok(read) = fs::read_dir(dir) else {
-        return (None, None);
+    let read = match fs::read_dir(dir) {
+        Ok(read) => read,
+        Err(e) => {
+            log::debug!("browse: {}: {e}", dir.display());
+            return (None, None);
+        }
     };
     for e in read.flatten().take(PEEK) {
         let name = e.file_name().to_string_lossy().to_lowercase();

@@ -45,8 +45,17 @@ impl Mounts {
             for dir in mounted_under(root) {
                 detach(&dir);
             }
-            for e in fs::read_dir(root).into_iter().flatten().flatten() {
-                let _ = fs::remove_dir(e.path());
+            let entries = fs::read_dir(root).inspect_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    log::debug!("archives: {}: {e}", root.display());
+                } else {
+                    log::warn!("archives: {}: {e}", root.display());
+                }
+            });
+            for e in entries.into_iter().flatten().flatten() {
+                if let Err(err) = fs::remove_dir(e.path()) {
+                    log::warn!("archives: removing {}: {err}", e.path().display());
+                }
             }
         }
         Mounts { root, index: cache.map(|c| c.join("archive-index")), mounted: Vec::new() }
@@ -68,7 +77,9 @@ impl Mounts {
         args.push(format!("--property=ExecStopPost=/usr/bin/fusermount3 -uz {}", dir.display()).into());
         args.extend(["ratarmount", "--foreground"].map(OsString::from));
         if let Some(index) = &self.index {
-            let _ = fs::create_dir_all(index);
+            if let Err(e) = fs::create_dir_all(index) {
+                log::warn!("archives: {}: {e}", index.display());
+            }
             args.extend(["--index-folders".into(), index.into()]);
         }
         args.extend([archive.into(), dir.clone().into()]);
@@ -86,7 +97,9 @@ impl Mounts {
                 std::thread::sleep(std::time::Duration::from_millis(100));
             };
         if !mounted {
-            let _ = fs::remove_dir(&dir);
+            if let Err(e) = fs::remove_dir(&dir) {
+                log::warn!("archives: removing {}: {e}", dir.display());
+            }
             log::warn!("archives: {}: not mounted (journalctl --user -u {unit})", archive.display());
             return Err(format!("{name} can't be opened (damaged, or it has a password)"));
         }
@@ -136,7 +149,9 @@ fn detach(dir: &Path) {
     if !done.is_ok_and(|ran| ran.status.success()) {
         log::warn!("archives: unmounting {} failed", dir.display());
     }
-    let _ = fs::remove_dir(dir);
+    if let Err(e) = fs::remove_dir(dir) {
+        log::warn!("archives: removing {}: {e}", dir.display());
+    }
 }
 
 /// FNV-1a of a path: its mount's dir name.

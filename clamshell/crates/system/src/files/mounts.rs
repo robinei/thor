@@ -25,6 +25,7 @@ pub struct Mount {
 pub fn media_mounts() -> Vec<Mount> {
     let named = |dir: &str| -> Vec<(String, PathBuf)> {
         fs::read_dir(dir)
+            .inspect_err(|e| log::debug!("mounts: {dir}: {e}"))
             .map(|d| d.flatten().filter_map(|e| Some((text::unescape(&e.file_name().into_string().ok()?), fs::canonicalize(e.path()).ok()?))).collect())
             .unwrap_or_default()
     };
@@ -33,7 +34,7 @@ pub fn media_mounts() -> Vec<Mount> {
         .into_iter()
         .filter(|m| m.dir.starts_with(MEDIA))
         .map(|m| {
-            let real = fs::canonicalize(&m.device).ok();
+            let real = fs::canonicalize(&m.device).inspect_err(|e| log::debug!("mounts: {}: {e}", m.device)).ok();
             let find = |names: &[(String, PathBuf)]| names.iter().find(|(_, p)| Some(p) == real.as_ref()).map(|(n, _)| n.clone()).unwrap_or_default();
             let label = Some(find(&labels))
                 .filter(|l| !l.is_empty())

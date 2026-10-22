@@ -41,7 +41,9 @@ pub(super) fn trash(path: &Path, home: Option<&Path>) -> Result<(), String> {
         fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
     use std::os::unix::fs::PermissionsExt;
-    let _ = fs::set_permissions(&trash, fs::Permissions::from_mode(0o700));
+    if let Err(e) = fs::set_permissions(&trash, fs::Permissions::from_mode(0o700)) {
+        log::warn!("trash: {}: {e}", trash.display());
+    }
     // A name free in both: the record made first (exclusively), then the move.
     let name = name_of(&path);
     let mut n = 1;
@@ -53,13 +55,17 @@ pub(super) fn trash(path: &Path, home: Option<&Path>) -> Result<(), String> {
             Ok(mut f) if files.join(&candidate).symlink_metadata().is_err() => {
                 f.write_all(text.as_bytes()).map_err(|e| format!("{}: {e}", record.display()))?;
                 if let Err(e) = fs::rename(&path, files.join(&candidate)) {
-                    let _ = fs::remove_file(&record);
+                    if let Err(e) = fs::remove_file(&record) {
+                        log::warn!("trash: removing {}: {e}", record.display());
+                    }
                     return Err(format!("Moving {name} to the Trash: {e}"));
                 }
                 return Ok(());
             }
             Ok(_) => {
-                let _ = fs::remove_file(&record);
+                if let Err(e) = fs::remove_file(&record) {
+                    log::warn!("trash: removing {}: {e}", record.display());
+                }
             }
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
             Err(e) => return Err(format!("{}: {e}", record.display())),
@@ -93,7 +99,9 @@ pub(super) fn restore(path: &Path) -> Result<PathBuf, String> {
     fs::create_dir_all(&parent).map_err(|e| format!("{}: {e}", parent.display()))?;
     let to = free_name(&parent, &name_of(&to));
     fs::rename(path, &to).map_err(|e| format!("Restoring {name}: {e}"))?;
-    let _ = fs::remove_file(info);
+    if let Err(e) = fs::remove_file(&info) {
+        log::warn!("trash: removing {}: {e}", info.display());
+    }
     Ok(to)
 }
 
