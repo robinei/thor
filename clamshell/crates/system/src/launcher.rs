@@ -31,7 +31,7 @@ use clamshell_core::{Event, Instance, Launch, LaunchEvent};
 
 use crate::job::{self, Job, Runner, Started};
 use crate::worker::{self, Worker};
-use crate::{Sink, command, sys, units};
+use crate::{Sink, cgroup, command, sys, units};
 
 /// How long sway may take to start a game (its scope to appear).
 const GAME_START: Duration = Duration::from_secs(30);
@@ -204,8 +204,7 @@ fn start_steam(config: &Config, request: &Request, appid: u32) -> Result<(), Err
 /// within [`STEAM_START`]); then it ends (see the module's doc).
 pub fn follow_steam(appid: u32) {
     let marker = format!("AppId={appid}");
-    let own = sys::text("/proc/self/cgroup").unwrap_or_default();
-    let Some(unit) = own.trim_end().rsplit('/').next().filter(|u| u.ends_with(".scope")).map(str::to_owned) else {
+    let Some(unit) = cgroup::unit_of(std::process::id()).filter(|u| u.ends_with(".scope")) else {
         log::warn!("follow-steam: not in a scope of its own");
         return;
     };
@@ -247,7 +246,7 @@ fn ask_steam(config: &Config, request: &Request, appid: u32) -> Result<(), Error
 /// Steam's launchers for a game (`launchers`, `marker` in their command line) and what they started,
 /// those not yet in the launch's scope `unit`: moved there.
 fn gather(marker: &str, unit: &str, slice: Option<&str>, launchers: &[u32]) {
-    let outside = |pid: &u32| !sys::text(format!("/proc/{pid}/cgroup")).is_some_and(|c| c.trim_end().ends_with(&format!("/{unit}")));
+    let outside = |pid: &u32| cgroup::unit_of(*pid).is_none_or(|u| u != unit);
     let pids: Vec<u32> = with_descendants(launchers, &parents()).into_iter().filter(outside).collect();
     if pids.is_empty() {
         return;
@@ -313,9 +312,8 @@ pub fn adopt(instance: Instance, pid: u32) {
             log::info!("adopt: process {pid} is gone (another has its id)");
             return;
         }
-        let cgroup = sys::text(format!("/proc/{pid}/cgroup")).unwrap_or_default();
-        let group = cgroup.trim_end().rsplit('/').next().unwrap_or_default();
-        if Instance::is_service(group) || Instance::from_unit(group).is_some() {
+        let group = cgroup::unit_of(pid).unwrap_or_default();
+        if Instance::is_service(&group) || Instance::from_unit(&group).is_some() {
             log::info!("adopt: process {pid} stays in {group}");
             return;
         }
@@ -440,7 +438,7 @@ mod live {
     use super::*;
 
     fn group_of(pid: u32) -> String {
-        sys::text(format!("/proc/{pid}/cgroup")).unwrap_or_default().trim_end().rsplit('/').next().unwrap_or_default().to_owned()
+        cgroup::unit_of(pid).unwrap_or_default()
     }
 
     fn wait_for(what: impl Fn() -> bool) -> bool {

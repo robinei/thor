@@ -237,8 +237,7 @@ fn busy() -> Option<String> {
 
 /// The user manager's cgroup (user@<uid>.service): the cgroup ClamShell runs in, up to it.
 fn user_cgroup() -> Option<PathBuf> {
-    let own = crate::sys::text("/proc/self/cgroup")?;
-    let path = own.lines().find_map(|l| l.strip_prefix("0::"))?;
+    let path = crate::cgroup::path_of(std::process::id())?;
     let end = path.find(".service/").map(|i| i + ".service".len())?;
     Some(PathBuf::from("/sys/fs/cgroup").join(path.get(..end)?.trim_start_matches('/')))
 }
