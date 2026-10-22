@@ -38,11 +38,11 @@ const SMALL: f32 = 0.85;
 const SPAN: f32 = 24.0 * 3600.0;
 
 pub(super) fn draw(f: &mut Frame) {
-    if let Some(group) = f.s.spender_menu().cloned() {
-        return spender_menu(f, &group);
+    let s = f.s;
+    if let Some(group) = s.spender_menu() {
+        return spender_menu(f, group);
     }
     let body = f.body();
-    let s = f.s;
     let pad = f.pad();
     let mut rest = style::content(body);
     let size = f.body().h * TEXT_SIZE;
@@ -99,7 +99,7 @@ fn spender_menu(f: &mut Frame, group: &Group) {
     let name = s.sys().battery.spenders.iter().find(|p| p.group == *group).map_or("", |p| s.spender_name(p));
     let area = widgets::header(f, Some(Id::Battery(BatteryId::Back)), name, false, HeaderRight::None);
     let items = [(Id::Battery(BatteryId::Quit), "Quit", Tone::Accent), (Id::Battery(BatteryId::ForceKill), "Force kill", Tone::Accent)];
-    widgets::menu(f, area, &items);
+    widgets::menu(f, area, items);
 }
 
 /// The level with the state (and drain) and the time left under it, and the settings tiles on the
