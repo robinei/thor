@@ -17,10 +17,11 @@ core/src/
   apply.rs      event dispatch and the after-every-event order
   event.rs effect.rs id.rs resume.rs testkit.rs tests.rs
   kit/          names!, list (Scroll, Rows, ItemKey), Debounce, Secret, testdir, replace
-  session/      running, program, instance, windows, found, tray, background, autostart, enqueue, dock, front
-  shelf/        rules, nav (the Shelf model), actions, files
+  session/      running, program, instance, windows, found, tray, background, autostart, enqueue, dock,
+                front (Home, a closed window's successor)
+  shelf/        mod.rs (the Shelf model), rules, actions, files
   bottom/       Tab, Bottom, screen, notice, editor, keyboard, touch
-  nav/          pointer (+ press resolution from items), lists (ListId, Lists), pad
+  nav/          pointer, items (presses on list items), lists (ListId, Lists), pad
   keymap/       as now, with keymap_screens nested as keymap/screens
   levels/       Levels and their rules, slider
   radios/       Radios, wifi, bluetooth
@@ -29,13 +30,13 @@ core/src/
   status/       Sys, metrics, battery, time
 ```
 
-- [ ] Clock readers (`unix_secs`, `mono_secs`) out of core (I/O in a pure crate) into system's `clock`.
-- [ ] Fan curve (the daemon's algorithm) into crates/fan; core keeps the Mode choice and `MODE_FILE`.
-- [ ] `lib.rs`: tests and testkit out; event dispatch into `apply.rs`; each area's rules into its area.
-- [ ] `kit/`; `scroll.rs` and `items.rs` split into their generic and feature halves.
-- [ ] One commit per area directory, as in the tree.
-- [ ] Every screen's ids in `id.rs` (`TimeId`, `DeviceId`, `BatteryId` were in feature files).
-- [ ] The crate doc describes the tree; the root `pub use` grouped by area.
+- [x] Clock readers (`unix_secs`, `mono_secs`) out of core (I/O in a pure crate) into system's `clock`.
+- [x] Fan curve (the daemon's algorithm) into crates/fan; core keeps the Mode choice and `MODE_FILE`.
+- [x] `lib.rs`: tests and testkit out; event dispatch into `apply.rs`; each area's rules into its area.
+- [x] `kit/`; `scroll.rs` and `items.rs` split into their generic and feature halves.
+- [x] One commit per area directory, as in the tree.
+- [x] Every screen's ids in `id.rs` (`TimeId`, `DeviceId`, `BatteryId` were in feature files).
+- [x] The crate doc describes the tree; the root `pub use` grouped by area.
 
 ## System
 
@@ -43,9 +44,9 @@ core/src/
 system/src/
   lib.rs paths.rs store.rs device.rs
   os/        worker, command, dbus, sys, cgroup, drm, qrtr, evdev/, fs, text, http, xdg
-  wiring/    start (from the binary's wiring.rs), handles, tuning (the router)
+  wiring/    mod.rs (start, from the binary's wiring.rs), handles, settings (the Tuning router)
   input/     watch, keyboard, pad/ (sensor_hub/{mod, wire}), touchpad/
-  launch/    launcher, steam, job, scopes, freezer, mpv
+  launch/    launcher, steam, job, scopes (was units), freezer, mpv
   library/   as now, plus meta/{mod, libretro, tmdb, steam, steamgriddb, probe, titles, cache}
   files/     browse, ops, trash, mounts, archives
   audio/     mixer, sound, pipewire
@@ -61,26 +62,27 @@ system/src/
 
 `os/` uses nothing from `clamshell_core` or the rest of the crate.
 
-- [ ] `os/` from the flat infrastructure files, `pad/qrtr` and `input/{mod, device}` (as `os/evdev`).
-- [ ] Duplicates merged:
+- [x] `os/` from the flat infrastructure files, `pad/qrtr` and `input/{mod, device}` (as `os/evdev`).
+- [x] Duplicates merged:
   - percent encoding and decoding (in files and meta) and `sys::unescape` into `os/text`;
   - the hand-written date conversion (`device::civil`) replaced by jiff, already a dependency;
   - MD5 (mpv) and CRC32 (meta) into `clamshell_library::hash`;
   - the two cgroup CPU readers into `os/cgroup`;
-  - logind's names into `power/logind`;
-  - icon-theme lookup into `os/xdg`;
-  - `desktop::data_dirs` into `Paths`;
+  - logind's names: suspending moved into `power/sleep`, which had them (no module of its own needed);
+  - icon-theme lookup and `desktop::data_dirs` into `os/xdg` (both XDG specs; the tray keeps its own
+    theme-path rule);
   - MangoHud's format (config in tuning, reader in frames, writer in wayland_filter) into `readings/mangohud`.
-- [ ] The files that hold several things split:
+- [x] The files that hold several things split:
   - `meta.rs` into `library/meta/*`;
   - `files.rs`, `device.rs`, `sleep.rs`, `units.rs` (scopes, freezer), `launcher.rs` (Steam following),
     `battery.rs` (usage sampling), `tuning.rs` (hardware, MangoHud, the router);
   - `sensor_hub.rs` (wire codec);
   - `wayland_filter.rs` into `waydroid/{filter, wire}`;
   - `store.rs`, whose metadata cache goes to `library/meta/cache`.
-- [ ] The area directories, as in the tree.
-- [ ] Thread start-up (`src/wiring.rs`) into `wiring/`, next to the routing of effects to those threads.
-  The binary keeps the UI sink and the control pipe. Modules no other crate uses become `pub(crate)`.
+- [x] The area directories, as in the tree.
+- [x] Thread start-up (`src/wiring.rs`) into `wiring/`, next to the routing of effects to those threads.
+  The binary keeps the UI sink and the control pipe. Modules no other crate uses become `pub(crate)`
+  (53 of 75).
 
 ## UI
 
@@ -97,26 +99,27 @@ ui/src/
   views/        as now
 ```
 
-- [ ] `draw.rs` split into `gfx/{geom, color, canvas, text, fonts}`.
-- [ ] `icons.rs`: drawing to `gfx/icons`, the choices typed by core to `toolkit/icons`; `images` to `gfx`.
-- [ ] `input/`, `render/`, `platform/`; `lib.rs` down to the crate's API.
-- [ ] `LocalTime` and `Scratch` out of `toolkit/mod.rs` into `toolkit/clock.rs`.
+- [x] `draw.rs` split into `gfx/{geom, color, canvas, text, fonts}`.
+- [x] `icons.rs`: drawing to `gfx/icons`, the choices typed by core to `toolkit/icons`; `images` to `gfx`.
+- [x] `input/`, `render/`, `platform/`; `lib.rs` down to the crate's API.
+- [x] `LocalTime` and `Scratch` out of `toolkit/mod.rs` into `toolkit/clock.rs`.
 
 ## Library crate
 
-- [ ] `lib.rs` split into `entry`, `runner`, `meta`, `library`.
-- [ ] Pure title parsing (`season_of`, `episode_title`, `stem`, ...) and `list_order`/`first_frame` from
-  system's library scanning; the scanning (disk, mounts, the store) stays in system, as Steam's already does.
+- [x] `lib.rs` split into `entry`, `runner`, `meta`, `library`.
+- [x] Pure title parsing (`titles`: `season_of`, `episode_title`, `stem`, ...), `sort::list_order` and
+  `Library::first_frame` from system's library scanning; the scanning (disk, mounts, the store) stays in
+  system, as Steam's already does.
 
 ## Binary
 
-- [ ] `control.rs` into `control/{mod (grammar), words (tables), pipe (the server)}`.
-- [ ] `main.rs`: session start into `session.rs`, the one-shot printers into `commands.rs`; `snapshot.rs`
-  and `demo.rs` under `dev/`.
+- [x] `control.rs` into `control/{mod (grammar), words (tables), pipe (the server)}`.
+- [x] `main.rs`: session start into `session.rs` (with the UI sink from `wiring.rs`), the one-shot
+  printers into `commands.rs`; `snapshot.rs` and `demo.rs` under `dev/`.
 
 ## Repository
 
-- [ ] The session's configs (mako, foot, mpv, retroarch) from `clamshell/` into
+- [x] The session's configs (mako, foot, mpv, retroarch) from `clamshell/` into
   `packages/thor-session/root/` at their installed paths; ClamShell's own (sway's config, android helpers)
   stay. The packages' file lists stay the same.
 
