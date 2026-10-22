@@ -117,21 +117,14 @@ impl Param {
         }
     }
 
-    /// Its value unless set, for `input` mapped to `output`: the same for every pair but a stick on
-    /// the pointer, whose deadzone and curve are [`POINTER_DEADZONE`] and [`POINTER_CURVE`].
+    /// Its value unless set, for `input` mapped to `output`: [`Binding::to`]'s for every pair but a stick
+    /// on the pointer, whose deadzone and curve are [`POINTER_DEADZONE`] and [`POINTER_CURVE`].
     pub fn default_for(self, input: Input, output: Output) -> u8 {
         let pointer = input.kind() == Kind::Stick && output == Output::Pointer;
         match self {
-            Param::Speed => DEFAULT_SPEED,
-            Param::Threshold => DEFAULT_THRESHOLD,
-            Param::Full => 100,
             Param::Deadzone if pointer => POINTER_DEADZONE,
             Param::Curve if pointer => POINTER_CURVE,
-            Param::Deadzone | Param::Curve | Param::InvertX | Param::InvertY | Param::Turbo | Param::Toggle => 0,
-            Param::Accel | Param::StickMin | Param::Twist | Param::Ratchet => 0,
-            Param::HoldTime => DEFAULT_HOLD_TIME,
-            Param::AccelAt => DEFAULT_ACCEL_AT,
-            Param::Tighten => DEFAULT_TIGHTEN,
+            _ => self.get(&Binding::to(output)),
         }
     }
 

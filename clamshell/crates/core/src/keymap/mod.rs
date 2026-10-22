@@ -93,8 +93,8 @@ pub struct Binding {
 }
 
 impl Binding {
-    /// A binding to `output` with the parameters' general defaults (no deadzone, linear); see
-    /// [`Binding::of`] for an input's.
+    /// A binding to `output` with the parameters' general defaults (no deadzone, linear): where those
+    /// are written. See [`Binding::of`] for an input's.
     pub fn to(output: Output) -> Binding {
         Binding {
             output,
