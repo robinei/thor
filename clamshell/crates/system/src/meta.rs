@@ -24,7 +24,6 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -33,7 +32,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::store::{self, Cache};
-use crate::{Sink, worker};
+use crate::{Sink, command, worker};
 
 /// Fetches at once.
 const THREADS: usize = 4;
@@ -515,15 +514,39 @@ const CRC32_TABLE: [u32; 256] = {
     table
 };
 
-/// The body of `url` (a GET, redirects followed), if it answered 2xx.
+/// The body of `url` (a GET, redirects followed), if it answered 2xx. The URL and the headers go to curl
+/// on its stdin, as a config (`-K -`): they may hold an API key, and a command line is anyone's to read
+/// in /proc.
 fn get(url: &str, headers: &[&str]) -> Option<Vec<u8>> {
-    let mut curl = Command::new("curl");
-    curl.args(["-sfL", "--max-time", "30", "-A", "ClamShell"]);
+    let mut config = format!("url = {}\n", quoted(url));
     for h in headers {
-        curl.args(["-H", h]);
+        config.push_str(&format!("header = {}\n", quoted(h)));
     }
-    let out = curl.arg(url).stdin(Stdio::null()).stderr(Stdio::null()).output().ok()?;
+    let out = command::run("curl", &["-sfL", "--max-time", "30", "-A", "ClamShell", "-K", "-"], Some(config.as_bytes()), CURL_LIMIT).ok()?;
     out.status.success().then_some(out.stdout)
+}
+
+/// How long curl may take: its own limit, and a little more.
+const CURL_LIMIT: std::time::Duration = std::time::Duration::from_secs(35);
+
+/// `text` as a curl config's quoted string.
+fn quoted(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() + 2);
+    out.push('"');
+    for c in text.chars() {
+        match c {
+            '\\' | '"' => {
+                out.push('\\');
+                out.push(c);
+            }
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
 }
 
 fn get_json(url: &str, headers: &[&str]) -> Option<Value> {
@@ -783,6 +806,12 @@ mod tests {
         assert_eq!(kept(&file, now, || Some(b"two".to_vec())).as_deref(), Some(&b"two"[..]), "old: fetched again");
         assert_eq!(kept(&file, now, || None).as_deref(), Some(&b"two"[..]), "the fetch failing: the old one");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn curl_config_strings() {
+        assert_eq!(quoted("https://x/?q=a b"), r#""https://x/?q=a b""#);
+        assert_eq!(quoted("say \"hi\" \\ there\n"), r#""say \"hi\" \\ there\n""#);
     }
 
     #[test]
