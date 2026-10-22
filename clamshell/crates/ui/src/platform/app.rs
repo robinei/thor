@@ -51,7 +51,9 @@ impl App {
             fonts: install_fonts(&loop_handle)?,
             keyboard: None,
             pointer: None,
-            cursor_shapes: smithay_client_toolkit::seat::pointer::cursor_shape::CursorShapeManager::bind(globals, qh).ok(),
+            cursor_shapes: smithay_client_toolkit::seat::pointer::cursor_shape::CursorShapeManager::bind(globals, qh)
+                .inspect_err(|e| log::info!("no cursor shape protocol: {e}"))
+                .ok(),
             cursor: None,
             touch: None,
             touch_layout: config.touch_layout.clone(),

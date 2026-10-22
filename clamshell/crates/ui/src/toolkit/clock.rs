@@ -60,7 +60,7 @@ impl Scratch {
     pub(crate) fn local(&mut self, unix_secs: u64, zone: Option<&str>) -> LocalTime {
         let minute = unix_secs / 60;
         if self.zone.as_ref().map(|(name, _)| name.as_str()) != zone {
-            let tz = zone.and_then(|z| jiff::tz::db().get(z).ok());
+            let tz = zone.and_then(|z| jiff::tz::db().get(z).inspect_err(|e| log::warn!("time zone {z}: {e}")).ok());
             self.zone = zone.map(|z| (z.to_owned(), tz.unwrap_or_else(jiff::tz::TimeZone::system)));
             self.local = None;
         }

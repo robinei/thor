@@ -21,7 +21,7 @@ impl Notifier {
     /// one, `@…`, isn't the user manager's and isn't used).
     pub fn new() -> Notifier {
         let path = std::env::var_os("NOTIFY_SOCKET").map(std::path::PathBuf::from).filter(|p| p.is_absolute());
-        let socket = path.and_then(|p| UnixDatagram::unbound().ok().map(|s| (s, p)));
+        let socket = path.and_then(|p| UnixDatagram::unbound().inspect_err(|e| log::warn!("notify {}: {e}", p.display())).ok().map(|s| (s, p)));
         Notifier { socket, ready: false, last: None }
     }
 

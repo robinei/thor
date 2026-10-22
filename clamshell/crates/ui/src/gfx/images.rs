@@ -71,8 +71,13 @@ impl Images {
         if !self.cache.contains_key(&key) {
             match &self.worker {
                 Some(worker) => {
-                    if !self.pending.contains(&key) && worker.send(Request { key: key.clone(), path: path.to_path_buf() }).is_ok() {
-                        self.pending.insert(key);
+                    if !self.pending.contains(&key) {
+                        match worker.send(Request { key: key.clone(), path: path.to_path_buf() }) {
+                            Ok(()) => {
+                                self.pending.insert(key);
+                            }
+                            Err(e) => log::trace!("image {}: {e}", path.display()),
+                        }
                     }
                     return None;
                 }
@@ -110,7 +115,12 @@ pub fn load(path: &Path, w: u32, h: u32, crop: bool) -> Option<Pixmap> {
     if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("svg")) {
         return load_svg(path, w, h);
     }
-    let image = image::ImageReader::open(path).ok()?.with_guessed_format().ok()?.decode().ok()?;
+    let image = image::ImageReader::open(path)
+        .and_then(image::ImageReader::with_guessed_format)
+        .map_err(image::ImageError::from)
+        .and_then(image::ImageReader::decode)
+        .inspect_err(|e| log::debug!("image {}: {e}", path.display()))
+        .ok()?;
     let (iw, ih) = (image.width().max(1), image.height().max(1));
     // Fitted in w by h, or (`crop`) filling it, its middle kept.
     let scaled = if crop {
@@ -134,8 +144,8 @@ pub fn load(path: &Path, w: u32, h: u32, crop: bool) -> Option<Pixmap> {
 }
 
 fn load_svg(path: &Path, w: u32, h: u32) -> Option<Pixmap> {
-    let data = std::fs::read(path).ok()?;
-    let tree = resvg::usvg::Tree::from_data(&data, &resvg::usvg::Options::default()).ok()?;
+    let data = std::fs::read(path).inspect_err(|e| log::debug!("image {}: {e}", path.display())).ok()?;
+    let tree = resvg::usvg::Tree::from_data(&data, &resvg::usvg::Options::default()).inspect_err(|e| log::debug!("image {}: {e}", path.display())).ok()?;
     let size = tree.size();
     let scale = (w as f32 / size.width()).min(h as f32 / size.height());
     let (tw, th) = (((size.width() * scale).round() as u32).max(1), ((size.height() * scale).round() as u32).max(1));
@@ -149,9 +159,6 @@ pub fn spawn_worker(requests: Receiver<Request>, done: impl Fn(Key, Option<Pixma
     std::thread::Builder::new().name("images".into()).spawn(move || {
         for Request { key, path } in requests {
             let pixmap = load(&path, key.w, key.h, key.slot == Slot::Thumb);
-            if pixmap.is_none() {
-                log::debug!("image {}: can't load", path.display());
-            }
             if !done(key, pixmap) {
                 return;
             }

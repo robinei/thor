@@ -30,9 +30,10 @@ pub(super) fn find_font(ch: char, loaded: &mut dyn FnMut(&str) -> bool) -> Found
     let path = Command::new("fc-match")
         .args(["--format=%{file}", &pattern])
         .output()
+        .inspect_err(|e| log::warn!("fc-match {pattern}: {e}"))
         .ok()
         .filter(|out| out.status.success())
-        .and_then(|out| String::from_utf8(out.stdout).ok())
+        .and_then(|out| String::from_utf8(out.stdout).inspect_err(|e| log::warn!("fc-match {pattern}: {e}")).ok())
         .filter(|p| !p.is_empty());
     let font = path.as_deref().filter(|p| !loaded(p)).and_then(|path| {
         let bytes = std::fs::read(path).map_err(|e| log::warn!("font {path}: {e}")).ok()?;

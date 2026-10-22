@@ -97,7 +97,11 @@ struct Shells {
 
 impl Shells {
     fn bind(globals: &GlobalList, qh: &QueueHandle<App>) -> Result<Shells, Error> {
-        Ok(Shells { compositor: CompositorState::bind(globals, qh)?, xdg: XdgShell::bind(globals, qh)?, layer: LayerShell::bind(globals, qh).ok() })
+        Ok(Shells {
+            compositor: CompositorState::bind(globals, qh)?,
+            xdg: XdgShell::bind(globals, qh)?,
+            layer: LayerShell::bind(globals, qh).inspect_err(|e| log::info!("no layer shell protocol: {e}")).ok(),
+        })
     }
 }
 

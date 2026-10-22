@@ -69,8 +69,13 @@ impl DrawCache {
         let face = match self.fallbacks.iter().position(|(_, f)| f.lookup_glyph_index(ch) != 0) {
             Some(i) => Face::Fallback(i),
             None => match &self.finder {
-                Some(finder) if finder.send(ch).is_ok() => Face::Waiting,
-                Some(_) => Face::Builtin,
+                Some(finder) => match finder.send(ch) {
+                    Ok(()) => Face::Waiting,
+                    Err(e) => {
+                        log::warn!("finding a font for {ch:?}: {e}");
+                        Face::Builtin
+                    }
+                },
                 None => {
                     let found = find_font(ch, &mut |path| self.fallbacks.iter().any(|(p, _)| p == path));
                     return self.found(found);

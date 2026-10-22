@@ -225,7 +225,8 @@ impl Drawn for Screens<Option<View>> {
 
 /// Tells the virtual touchpad the second screen's size (pixels).
 pub(crate) fn publish(touch: &Mutex<TouchLayout>, screen: (f32, f32)) {
-    if let Ok(mut layout) = touch.lock() {
-        layout.screen = screen;
+    match touch.lock() {
+        Ok(mut layout) => layout.screen = screen,
+        Err(e) => log::trace!("touch layout: {e}"),
     }
 }
