@@ -1,10 +1,15 @@
-//! What can be done to what shelf's details show (see docs/runners.md), each from one source: opening from
-//! its runner (A) and Enqueue (a runner that takes more while it plays), Continue from its content (a folder
-//! of videos: Start), the file actions from its place (a browsed dir: see [`crate::shelf::files`]), Favourite (Y)
-//! and Pin (X) from an identity that outlives a rescan (not a browsed file's). Where the identity's are
-//! missing, Y and X take the place's Copy and Paste, Start its Select. The details draw these rows in order;
-//! the pad's buttons act on them. Holding A on the selected entry takes the pad to the rows themselves (see
-//! [`State::in_actions`]).
+//! What can be done to what shelf's details show (see docs/runners.md). Each action comes from one source:
+//!
+//! - Open (A) comes from the entry's runner, and so does Enqueue, for a runner that takes more while it
+//!   plays.
+//! - Continue (Start) comes from the entry's content, such as a folder of videos.
+//! - The file actions come from the entry's place, a browsed directory (see [`crate::shelf::files`]).
+//! - Favourite (Y) and Pin (X) come from an identity that outlives a rescan, which a browsed file doesn't
+//!   have.
+//!
+//! Where Favourite and Pin are missing, Y and X take the place's Copy and Paste, and Start takes its
+//! Select. The details draw these rows in order, and the pad's buttons act on them. Holding A on the
+//! selected entry takes the pad to the rows themselves (see [`State::in_actions`]).
 
 use crate::shelf::files::FileAction;
 use crate::{Effect, ShelfId, State};
@@ -23,8 +28,8 @@ pub enum Action {
 /// Room for every action once: the five of an entry and the fourteen file actions.
 const ROOM: usize = 5 + 14;
 
-/// The details' actions, in order: at most one of each, without allocating (shelf draws them every
-/// frame).
+/// The details' actions, in order, with at most one of each. It doesn't allocate, because shelf draws
+/// them every frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Actions {
     items: [Action; ROOM],
@@ -104,16 +109,17 @@ impl State {
         actions
     }
 
-    /// Whether the pad is on the details' actions (A held on the selected entry took it there): a mode
-    /// of its own, the face buttons' shortcuts off, the focus kept to the actions, A confirms and B goes
-    /// back.
+    /// Whether the pad is on the details' actions, which holding A on the selected entry does. This is a
+    /// mode of its own: the face buttons' shortcuts are off, the focus stays on the actions, A confirms
+    /// and B goes back.
     pub fn in_actions(&self) -> bool {
         let pointer = self.pointer();
         pointer.show_focus() && self.actions().as_slice().iter().any(|a| pointer.focus() == Some(&crate::Id::Shelf(a.id())))
     }
 
-    /// The action a pad button stands for: Start Continue, Y Favourite (else Copy), X Pin (else Paste);
-    /// none while the pad is on the actions themselves (see [`State::button_of`]).
+    /// The action a pad button stands for: Start for Continue (or else Select), Y for Favourite (or else
+    /// Copy), and X for Pin (or else Paste). There is none while the pad is on the actions themselves (see
+    /// [`State::button_of`]).
     pub fn shortcut(&self, key: Shortcut) -> Option<Action> {
         if self.in_actions() {
             return None;
@@ -121,7 +127,8 @@ impl State {
         self.button_of(key)
     }
 
-    /// The action pad button `key` is the shortcut of, the pad on the actions or not (their badges).
+    /// The action that pad button `key` is the shortcut for, whether or not the pad is on the actions. The
+    /// actions' badges use this.
     pub fn button_of(&self, key: Shortcut) -> Option<Action> {
         let wanted: &[Action] = match key {
             Shortcut::Y => &[Action::Favourite, Action::File(FileAction::Copy)],
@@ -132,7 +139,7 @@ impl State {
         wanted.iter().copied().find(|a| actions.contains(a))
     }
 
-    /// A pad button's action done, if the details have it.
+    /// Does a pad button's action, if the details have it.
     pub(crate) fn act(&mut self, key: Shortcut) -> Vec<Effect> {
         match self.shortcut(key) {
             Some(action) => self.on_action(action),
@@ -179,10 +186,10 @@ mod tests {
         use crate::PointerEvent;
         let mut s = state();
         let g = Id::Shelf(ShelfId::Entry(s.shelf().selected().cloned().unwrap_or_else(|| "?".into())));
-        // By touch (no focus shown): nothing.
+        // By touch, with no focus shown, nothing happens.
         s.apply(PointerEvent::LongPress(g.clone()).into());
         assert_eq!(s.pointer().focus(), Some(&g));
-        // With the pad: its first action.
+        // With the pad, the focus goes to the first action.
         s.apply(PointerEvent::Focus(g.clone()).into());
         s.apply(PointerEvent::LongPress(g).into());
         assert_eq!(s.pointer().focus(), Some(&Id::Shelf(ShelfId::Launch)));

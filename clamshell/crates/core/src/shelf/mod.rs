@@ -1,7 +1,9 @@
-//! Shelf's navigation: the collections, each with its own place: the groups opened in it (a series, then
-//! a season) and a cursor over each level's list, kept in range and on screen; and changes to the
-//! library (plays, favourites) that keep the collection and selection. The methods say whether the
-//! selection changed; the state saves the place and moves the focus around them.
+//! Shelf's navigation. Each collection keeps its own place: the groups opened in it, such as a series and
+//! then a season, and a cursor over the list at each level, kept in range and on screen. Changes to the
+//! library, such as plays and favourites, keep the current collection and the selection.
+//!
+//! The methods return whether the selection changed. The state, which calls them, saves the place and
+//! moves the focus.
 
 pub mod actions;
 pub mod files;
@@ -12,16 +14,17 @@ use std::sync::Arc;
 use crate::kit::list::{Rows, Scroll};
 use crate::{Collection, Entry, Library};
 
-/// A list's place: the selected entry's position, and the rows scrolled past (whole rows at rest;
-/// fractions while a finger drags the list).
+/// A list's place: the selected entry's position, and the rows scrolled past. The rows are whole at rest
+/// and fractional while a finger drags the list.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Cursor {
     pub index: usize,
     pub top: f32,
 }
 
-/// A list's place as kept: the selected entry's position and the list's scroll; what is typed to find an
-/// entry by, and the entries whose titles start with it (the list shown while it isn't empty).
+/// A list's place as kept: the selected entry's position and the list's scroll, what has been typed to
+/// find an entry, and the entries whose titles start with it. While the typed text isn't empty, the list
+/// shows only those entries.
 #[derive(Debug, Clone, Default)]
 struct Place {
     index: usize,
@@ -30,8 +33,8 @@ struct Place {
     found: Vec<usize>,
 }
 
-/// A collection's place: the groups opened, outermost first, and the place in each level's list (the
-/// collection's, then each open group's).
+/// A collection's place: the groups opened, outermost first, and the place in the list at each level,
+/// which is the collection's list and then each open group's.
 #[derive(Debug, Clone)]
 struct Nav {
     open: Vec<usize>,
@@ -50,12 +53,13 @@ pub struct Shelf {
     /// The current collection, and each collection's place.
     current: usize,
     navs: Vec<Nav>,
-    /// List rows on screen (reported by the UI).
+    /// How many list rows are on screen, as reported by the UI.
     rows: usize,
-    /// Id of the selected entry (shelf's list on top, its settings below): the current list's cursor's.
+    /// The id of the selected entry, at the current list's cursor. It is shown in shelf's list on the top
+    /// screen and in its settings below.
     selected: Option<Arc<str>>,
-    /// Browsed folders' listings by folder, in the order they came (a folder's before those of the
-    /// folders in it): applied again to the library read again.
+    /// The listings of browsed folders, by folder, in the order they came; a folder's listing comes before
+    /// those of the folders in it. They are applied again when the library is read again.
     listings: Vec<(Arc<str>, Vec<Entry>)>,
 }
 
@@ -105,8 +109,8 @@ impl Shelf {
         self.library.entries.get(g)
     }
 
-    /// Whether there is a place for each collection, the current one among them (unless there are none),
-    /// and each holds a place for its list and each open group's.
+    /// Whether there is a place for each collection, the current collection is among them unless there
+    /// are none, and each place has a list place for the collection and for each open group.
     fn navs_consistent(&self) -> bool {
         self.navs.len() == self.library.collections.len()
             && (self.navs.is_empty() || self.current < self.navs.len())
@@ -142,15 +146,16 @@ impl Shelf {
         self.library.entries.iter().find(|g| &*g.id == id)
     }
 
-    /// The library entry (not browsed) of browsed file `id`'s file, if there is one.
+    /// The library entry, not a browsed one, for the file of browsed entry `id`, if there is one.
     pub(crate) fn entry_of_file(&self, id: &str) -> Option<Arc<str>> {
-        // (An archive, though browsed as a folder: a ROM's zip is a file of the library's.)
+        // An archive counts even though it is browsed as a folder, since a ROM's zip is a file in the
+        // library.
         let file = self.entry(id).filter(|g| g.browsed.as_ref().is_some_and(|b| !b.folder || b.archive))?.file.as_ref()?;
         self.library.entries.iter().find(|g| g.browsed.is_none() && !g.is_group() && g.file.as_ref() == Some(file)).map(|g| g.id.clone())
     }
 
-    /// Collection `c`'s list as its place has it: the innermost open group's entries, else its own; those
-    /// found by what is typed, while something is.
+    /// Collection `c`'s list at its current place: the innermost open group's entries, or else the
+    /// collection's own. While something is typed, it is only the entries found by it.
     fn list_of(&self, c: usize) -> &[usize] {
         match self.navs.get(c).and_then(|n| n.places.last()).filter(|p| !p.filter.is_empty()) {
             Some(p) => &p.found,
@@ -158,7 +163,7 @@ impl Shelf {
         }
     }
 
-    /// Collection `c`'s list as its place has it, all of it (what is typed aside).
+    /// Collection `c`'s list at its current place, all of it, ignoring what is typed.
     fn whole_list_of(&self, c: usize) -> &[usize] {
         match self.navs.get(c).and_then(|n| n.open.last()) {
             Some(&g) => self.library.entries.get(g).map_or(&[], |g| g.items.as_slice()),
@@ -166,13 +171,13 @@ impl Shelf {
         }
     }
 
-    /// What is typed to find an entry in the current list by (empty: nothing).
+    /// What is typed to find an entry in the current list; empty when nothing is.
     pub fn filter(&self) -> &str {
         self.place().map_or("", |p| p.filter.as_str())
     }
 
-    /// What is typed in the current list now `filter`: its entries whose titles start with it (any case),
-    /// the first selected. Whether the selection changed.
+    /// Sets what is typed in the current list to `filter`. The list then shows its entries whose titles
+    /// start with it, ignoring case, with the first selected. Returns whether the selection changed.
     pub(crate) fn set_filter(&mut self, filter: String) -> bool {
         let found = self.found(self.current, &filter);
         if let Some(p) = self.place_mut() {
@@ -183,14 +188,14 @@ impl Shelf {
         self.sync()
     }
 
-    /// The entries of collection `c`'s whole list whose titles start with `filter` (any case).
+    /// The entries of collection `c`'s whole list whose titles start with `filter`, ignoring case.
     fn found(&self, c: usize, filter: &str) -> Vec<usize> {
         let filter = filter.to_lowercase();
         let games = &self.library.entries;
         self.whole_list_of(c).iter().copied().filter(|&i| games.get(i).is_some_and(|g| g.title.to_lowercase().starts_with(&filter))).collect()
     }
 
-    /// Every list's entries found again by what is typed in it (the library changed under them).
+    /// Finds every list's entries again by what is typed in it, after the library changed under them.
     fn refind(&mut self) {
         for c in 0..self.navs.len() {
             let filter = self.navs.get(c).and_then(|n| n.places.last()).map(|p| p.filter.clone()).unwrap_or_default();
@@ -228,8 +233,8 @@ impl Shelf {
         self.list_of(c).iter().position(|&i| self.library.entries.get(i).is_some_and(|g| &*g.id == game))
     }
 
-    /// Keeps the cursor in range and on screen, and `selected` in step with it. Whether the selection
-    /// changed.
+    /// Keeps the cursor in range and on screen, and `selected` in step with it. Returns whether the
+    /// selection changed.
     pub(crate) fn sync(&mut self) -> bool {
         let before = self.selected.clone();
         let len = self.list().len();
@@ -243,7 +248,7 @@ impl Shelf {
         self.selected != before
     }
 
-    /// Moves the cursor by `step` entries (clamped at the ends). Whether the selection changed.
+    /// Moves the cursor by `step` entries, stopping at the ends. Returns whether the selection changed.
     pub(crate) fn step(&mut self, step: i32) -> bool {
         let len = self.list().len();
         if let Some(p) = self.place_mut() {
@@ -253,7 +258,7 @@ impl Shelf {
         self.sync()
     }
 
-    /// Selects `game` in the current list, if it is there. Whether the selection changed.
+    /// Selects `game` in the current list, if it is there. Returns whether the selection changed.
     pub(crate) fn select(&mut self, game: &str) -> bool {
         let position = self.position_in(self.current, game);
         if let (Some(i), Some(p)) = (position, self.place_mut()) {
@@ -273,8 +278,8 @@ impl Shelf {
         }
     }
 
-    /// The entries in view, the selected first, then the rows shown, then the groups the list is in (a
-    /// series, when its episodes show).
+    /// The entries in view: the selected one first, then the rows shown, then the groups the list is in,
+    /// such as a series when its episodes show.
     pub(crate) fn shown(&self) -> Vec<Arc<str>> {
         let ShelfView { group, top, rows, selected, .. } = self.view();
         let list = self.list();
@@ -287,7 +292,8 @@ impl Shelf {
         indices.iter().filter_map(|&i| self.library.entries.get(i)).map(|g| g.id.clone()).collect()
     }
 
-    /// Opens the selected entry if it is a group (its list shown, from its first entry). Whether it did.
+    /// Opens the selected entry if it is a group, showing its list from the first entry. Returns whether it
+    /// did.
     pub(crate) fn open(&mut self) -> bool {
         let Some(&g) = self.list().get(self.cursor().index) else {
             return false;
@@ -303,7 +309,8 @@ impl Shelf {
         true
     }
 
-    /// Closes the open group (back to the list it is in, it selected). Whether there was one.
+    /// Closes the open group, going back to the list it is in with the group selected. Returns whether
+    /// there was one.
     pub(crate) fn up(&mut self) -> bool {
         let Some(n) = self.navs.get_mut(self.current).filter(|n| !n.open.is_empty()) else {
             return false;
@@ -314,8 +321,8 @@ impl Shelf {
         true
     }
 
-    /// Shows `group` open: in the current collection if it has the group's outermost group, else the
-    /// first that does. Whether it is there.
+    /// Shows `group` open, in the current collection if that has the group's outermost group, or else in
+    /// the first collection that does. Returns whether the group is there.
     pub(crate) fn reveal(&mut self, group: &str) -> bool {
         let Some(g) = self.library.entries.iter().position(|x| &*x.id == group) else {
             return false;
@@ -342,7 +349,7 @@ impl Shelf {
         true
     }
 
-    /// Makes collection `i` the current one, if there is one there (whether there was).
+    /// Makes collection `i` the current one, if it exists. Returns whether it does.
     pub(crate) fn set_collection(&mut self, i: usize) -> bool {
         if i >= self.library.collections.len() {
             return false;
@@ -352,13 +359,13 @@ impl Shelf {
         true
     }
 
-    /// Goes `step` collections on, wrapping (whether there are any).
+    /// Moves `step` collections on, wrapping around. Returns whether there are any collections.
     pub(crate) fn collection_step(&mut self, step: i32) -> bool {
         let n = self.library.collections.len() as i64;
         n > 0 && self.set_collection((self.current as i64 + i64::from(step)).rem_euclid(n) as usize)
     }
 
-    /// How many rows are on screen. Whether the cursor moved (to keep the selection on screen).
+    /// Sets how many rows are on screen. Returns whether the cursor moved to keep the selection on screen.
     pub(crate) fn set_rows(&mut self, rows: usize) -> bool {
         if rows == self.rows {
             return false;
@@ -369,16 +376,17 @@ impl Shelf {
         self.cursor() != before
     }
 
-    /// Changes the library (favourites, plays) keeping the current collection, each one's place and the
-    /// selected entry, all by name, since derived collections may come or go. Whether the selection
-    /// changed.
+    /// Changes the library, for favourites or plays, keeping the current collection, each collection's
+    /// place and the selected entry. These are kept by name, since derived collections may come or go.
+    /// Returns whether the selection changed.
     pub(crate) fn relayout(&mut self, change: impl FnOnce(&mut Library)) -> bool {
         let names: Vec<String> = self.library.collections.iter().map(|c| c.name.clone()).collect();
         let current_name = names.get(self.current).cloned();
         let selected = self.selected.clone();
         change(&mut self.library);
         let old = std::mem::take(&mut self.navs);
-        // (Derived collections come and go: what is typed in each found again below.)
+        // Derived collections come and go, so places are matched by name. What is typed in each list is
+        // found again below.
         self.navs =
             self.library.collections.iter().map(|c| names.iter().position(|n| *n == c.name).and_then(|i| old.get(i).cloned()).unwrap_or_default()).collect();
         self.current = current_name.and_then(|n| self.library.collections.iter().position(|c| c.name == n)).unwrap_or(0);
@@ -389,8 +397,9 @@ impl Shelf {
         self.sync()
     }
 
-    /// The library read again: the browsed folders' listings in it again (those still there), each
-    /// collection's place kept by name and ids (the scroll from the top). Whether the selection changed.
+    /// Takes the library read again. The listings of browsed folders that are still there are applied to
+    /// it again, and each collection's place is kept by name and ids, with the scroll starting from the
+    /// top. Returns whether the selection changed.
     pub(crate) fn reload(&mut self, library: Library) -> bool {
         let before = self.selected.clone();
         let places = self.places();
@@ -413,8 +422,9 @@ impl Shelf {
         self.selected != before
     }
 
-    /// Browsed folder `folder`'s entries now (see [`Library::set_listing`]): the selected entry kept by
-    /// id, the groups open that went closed. Whether the selection changed.
+    /// Takes browsed folder `folder`'s entries as they are now (see [`Library::set_listing`]). The
+    /// selected entry is kept by id, and open groups that are gone are closed. Returns whether the
+    /// selection changed.
     pub(crate) fn listed(&mut self, folder: Arc<str>, entries: Vec<Entry>) -> bool {
         let Some(f) = self.library.entries.iter().position(|g| g.id == folder) else {
             return false;
@@ -423,7 +433,7 @@ impl Shelf {
         self.listings.retain(|(id, _)| *id != folder);
         self.listings.push((folder, entries.clone()));
         self.library.set_listing(f, entries);
-        // (The listings of folders gone with it.)
+        // Drops the listings of folders that went with it.
         let library = &self.library;
         self.listings.retain(|(id, _)| library.entries.iter().any(|g| g.id == *id));
         self.close_gone();
@@ -435,7 +445,8 @@ impl Shelf {
         self.selected != before
     }
 
-    /// Each collection's groups open, as far as each is still in the one before (or the collection).
+    /// Keeps each collection's open groups only as far as each is still in the list of the group before
+    /// it, or of the collection for the first one.
     fn close_gone(&mut self) {
         for (c, nav) in self.navs.iter_mut().enumerate() {
             let mut list = self.library.collections.get(c).map_or(&[][..], |c| c.entries.as_slice());
@@ -452,7 +463,7 @@ impl Shelf {
         }
     }
 
-    /// Where mpv left a video (none: at its end), at `now`.
+    /// Records where mpv left a video, at `now`. None means at its end.
     pub(crate) fn set_position(&mut self, id: &str, position: Option<u32>, now: u64) {
         if let Some(g) = self.library.entries.iter_mut().find(|g| &*g.id == id) {
             g.playback.position = position;
@@ -460,7 +471,8 @@ impl Shelf {
         }
     }
 
-    /// What was fetched about entry `id` (see [`Library::apply_meta`]). Whether it is there.
+    /// Applies what was fetched about entry `id` (see [`Library::apply_meta`]). Returns whether the entry
+    /// is there.
     pub(crate) fn apply_meta(&mut self, id: &str, meta: &crate::Meta) -> bool {
         let Some(i) = self.library.entries.iter().position(|g| &*g.id == id) else {
             return false;
@@ -469,7 +481,8 @@ impl Shelf {
         true
     }
 
-    /// The selected entry in or out of the favourites, if there is one: whether the selection changed.
+    /// Puts the selected entry in or out of the favourites, if there is one. Returns whether the selection
+    /// changed.
     pub(crate) fn toggle_favourite(&mut self) -> Option<bool> {
         let id = self.selected.clone()?;
         Some(self.relayout(|lib| {
@@ -480,7 +493,7 @@ impl Shelf {
         }))
     }
 
-    /// A play of `game` counted (it ended). Whether the selection changed.
+    /// Counts a play of `game`, which has ended. Returns whether the selection changed.
     pub(crate) fn add_play(&mut self, game: &str, start: u64, duration: u64) -> bool {
         self.relayout(|lib| {
             if let Some(g) = lib.entries.iter_mut().find(|g| &*g.id == game) {
@@ -509,8 +522,8 @@ impl Shelf {
         places
     }
 
-    /// Opens the groups `ids` names but the last, then selects the last, in the collection named `name`
-    /// (any may be gone: then it stops there).
+    /// In the collection named `name`, opens the groups that `ids` names except the last, then selects the
+    /// last. If one of them is gone, it stops there.
     pub(crate) fn restore_selection(&mut self, name: &str, ids: &[&str]) {
         let Some(c) = self.library.collections.iter().position(|c| c.name == name) else {
             return;
@@ -539,8 +552,8 @@ impl Shelf {
     }
 }
 
-/// The current list's entries as a list's rows (its place is kept by position, per collection and
-/// group).
+/// The current list's entries as a list's rows. Their place is kept by position, per collection and
+/// group.
 impl Rows for Shelf {
     fn len(&self) -> usize {
         self.list().len()
@@ -617,7 +630,7 @@ mod tests {
         key(&mut s, Key::Char('a'));
         assert_eq!(titles(&s), ["Mario Kart DS"], "any case: Ma");
         assert_eq!(s.shelf().selected().map(|g| &**g), Some("mk-ds"));
-        // Into a folder and out: each list its own.
+        // Going into a folder and back out, each list keeps what was typed in it.
         key(&mut s, Key::Named(crate::bottom::keyboard::Named::Backspace));
         assert_eq!(titles(&s).len(), 2);
         s.apply(ShelfEvent::ClearFilter.into());
@@ -686,7 +699,7 @@ mod tests {
                 _ => None,
             })
         };
-        // (The demo's second episode is under way: not here.)
+        // The demo has the second episode under way. This test marks it as watched to its end instead.
         s.apply(LaunchEvent::Position { entry: "tv:Cosmos/Season 1/2. One Voice in the Cosmic Fugue.mkv".into(), position: None }.into());
         let fx = tap(&mut s, Id::Shelf(ShelfId::Continue));
         assert_eq!(launched(&fx).as_deref(), Some(first), "none watched: the first");

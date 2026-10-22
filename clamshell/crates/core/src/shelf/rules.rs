@@ -1,5 +1,5 @@
 //! Shelf's rules on the state: its targets, the pad's steps through it, typing to find a title, the
-//! favourites, and its entries' metadata fetched first while it shows them.
+//! favourites, and fetching metadata first for the entries it shows.
 
 use crate::bottom::keyboard::{self, Key};
 use crate::{Dirty, Effect, Id, Save, ShelfEvent, ShelfId, State};
@@ -9,8 +9,8 @@ impl State {
     pub(crate) fn on_shelf(&mut self, id: ShelfId) -> Vec<Effect> {
         match id {
             ShelfId::Entry(game) => {
-                // Activating the selected entry again opens it (a group) or plays it (starts it, or
-                // switches to it).
+                // Activating the selected entry again opens it if it is a group, or else plays it by
+                // starting it or switching to it.
                 if self.shelf.selected() == Some(&game) {
                     return self.activate_selected();
                 }
@@ -43,7 +43,7 @@ impl State {
         }
     }
 
-    /// The selected group's Continue (see [`crate::Library::to_continue`]): that entry played.
+    /// Plays the entry that the selected group's Continue points to (see [`crate::Library::to_continue`]).
     pub(crate) fn continue_selected(&mut self) -> Vec<Effect> {
         let next = self.shelf.selected_index().and_then(|g| self.shelf.library().to_continue(g));
         match next.and_then(|i| self.shelf.library().entries.get(i)).map(|g| g.id.clone()) {
@@ -64,7 +64,8 @@ impl State {
         }
     }
 
-    /// Shelf went to another collection or list: the place is saved, and a focus in shelf's list follows.
+    /// Shelf went to another collection or list. The place is saved, and a focus in shelf's list follows
+    /// the selection.
     pub(crate) fn moved_collection(&mut self) {
         self.saves.resume.touch(self.mono_secs);
         if matches!(self.pointer.focus, Some(Id::Shelf(ShelfId::Entry(_) | ShelfId::Collection(_)))) {
@@ -103,9 +104,9 @@ impl State {
         }
     }
 
-    /// A key typed with shelf in front: a character narrows the current list to the titles starting with
-    /// what is typed, Backspace takes the last one back, Esc clears it, Enter opens or plays the selected
-    /// entry.
+    /// A key typed with shelf in front. A character narrows the current list to the titles starting with
+    /// what is typed, Backspace removes the last character, Esc clears it all, and Enter opens or plays the
+    /// selected entry.
     pub(crate) fn find(&mut self, stroke: keyboard::Stroke) -> Vec<Effect> {
         let mut filter = self.shelf.filter().to_owned();
         match stroke.key {
@@ -123,7 +124,7 @@ impl State {
         vec![]
     }
 
-    /// The selected entry in or out of the favourites, saved.
+    /// Puts the selected entry in or out of the favourites and saves them.
     pub(crate) fn toggle_favourite(&mut self) -> Vec<Effect> {
         let Some(moved) = self.shelf.toggle_favourite() else {
             return vec![];
@@ -135,7 +136,8 @@ impl State {
         vec![Effect::Save(Save::Favourites(ids))]
     }
 
-    /// While metadata is fetched, what shelf shows changed: its entries' metadata first.
+    /// While metadata is being fetched and what shelf shows has changed, asks for the shown entries'
+    /// metadata first.
     pub(crate) fn follow_shown(&mut self) -> Option<Effect> {
         if !self.fetching {
             return None;
