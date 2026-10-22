@@ -2,7 +2,7 @@
 //! favourites, and fetching metadata first for the entries it shows.
 
 use crate::bottom::keyboard::{self, Key};
-use crate::{Dirty, Effect, Id, Save, ShelfEvent, ShelfId, State};
+use crate::{Dirty, Effect, Save, ShelfEvent, ShelfId, State};
 
 impl State {
     /// Shelf's targets.
@@ -68,9 +68,7 @@ impl State {
     /// the selection.
     pub(crate) fn moved_collection(&mut self) {
         self.saves.resume.touch(self.clock.mono());
-        if matches!(self.pointer.focus, Some(Id::Shelf(ShelfId::Entry(_) | ShelfId::Collection(_)))) {
-            self.pointer.focus = self.shelf.selected().cloned().map(|g| Id::Shelf(ShelfId::Entry(g)));
-        }
+        self.pointer.follow_shelf(self.shelf.selected());
     }
 
     pub(crate) fn on_shelf_event(&mut self, event: ShelfEvent) -> (Dirty, Vec<Effect>) {
@@ -79,15 +77,15 @@ impl State {
                 if self.shelf.step(step) {
                     self.saves.resume.touch(self.clock.mono());
                 }
-                self.pointer.focus = self.shelf.selected().cloned().map(|g| Id::Shelf(ShelfId::Entry(g)));
-                self.pointer.show_focus = true;
+                self.pointer.focus_shelf(self.shelf.selected());
+                self.pointer.show();
                 (Dirty::BOTH, vec![])
             }
             ShelfEvent::CollectionStep(step) => {
                 if self.shelf.collection_step(step) {
                     self.moved_collection();
                 }
-                self.pointer.show_focus = true;
+                self.pointer.show();
                 (Dirty::BOTH, vec![])
             }
             ShelfEvent::Rows(rows) => (if self.shelf.set_rows(rows) { Dirty::BOTH } else { Dirty::NONE }, vec![]),

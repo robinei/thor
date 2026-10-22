@@ -191,9 +191,9 @@ impl State {
         // Saved once the UI is up.
         s.pins_dropped = s.drop_gone_pins();
         s.follow_pausable_runners();
-        s.pointer.focus = s.shelf.selected().cloned().map(|g| Id::Shelf(ShelfId::Entry(g)));
+        s.pointer.focus_shelf(s.shelf.selected());
         if init.first_start {
-            s.pointer.focus = Some(Id::Device(crate::DeviceId::Wifi));
+            s.pointer.focus_on(Id::Device(crate::DeviceId::Wifi));
         }
         if let Some(tab) = init.start_tab {
             s.bottom.tab = tab;
@@ -267,11 +267,5 @@ impl State {
     /// file was deleted, is returned as it was.
     pub fn entry(&self, id: &str) -> Option<&Entry> {
         self.shelf.entry(id).or_else(|| self.session.running(id).and_then(|r| r.entry.as_deref()))
-    }
-
-    /// Whether the pad, while on ClamShell's screens, may go to shelf's screen or only to the second
-    /// screen. It may go to shelf's when shelf is in front and nothing else has the pad.
-    pub fn pad_on_top(&self) -> bool {
-        self.pad.on_top()
     }
 }

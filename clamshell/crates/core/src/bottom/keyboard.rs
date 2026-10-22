@@ -309,6 +309,17 @@ impl Keyboard {
         })
     }
 
+    /// What holding `id` does: keys repeat, and modifiers and every other target get one long press.
+    pub fn hold(&self, id: &crate::Id) -> crate::Hold {
+        match id {
+            crate::Id::Key(pos) => match self.effective(*pos) {
+                Some(Key::Mod(_) | Key::Caps) | None => crate::Hold::Long,
+                Some(_) => crate::Hold::Repeat,
+            },
+            _ => crate::Hold::Long,
+        }
+    }
+
     /// A tap (`long` = false) or long press on the key at `pos`. Returns the stroke to send, if any. A
     /// tap on a modifier arms or disarms it. A long press on one does nothing, since holding is handled
     /// by `down` and `up`.

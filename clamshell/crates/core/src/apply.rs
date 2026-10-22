@@ -1,14 +1,13 @@
 //! Applying an event: which feature's rules handle it, and then everything that follows from it
 //! elsewhere. The follow-up steps run in an order where each one finds the steps it depends on settled.
 
-use crate::bottom::keyboard::Key;
 use crate::kit::replace;
 use crate::levels::slider::Control;
 use crate::mutation::{EntryAct, Mutation};
 use crate::resume::SAVE_AFTER;
 use crate::settings::MouseAtLaunch;
 use crate::{
-    BtId, Dirty, Effect, Event, Hold, Id, Level, Library, ListId, PadRoute, PointerEvent, Reading, Save, SettingsId, ShelfId, State, Tab, WifiId, WindowCommand,
+    BtId, Dirty, Effect, Event, Id, Level, Library, ListId, PadRoute, PointerEvent, Reading, Save, SettingsId, ShelfId, State, Tab, WifiId, WindowCommand,
 };
 
 impl State {
@@ -107,7 +106,7 @@ impl State {
     pub(crate) fn reconcile_pad(&mut self) -> Option<PadRoute> {
         let listening = self.listening();
         let moving = self.dock.moving.is_some() && self.bottom.tab == Tab::Dock;
-        self.pad.reconcile(self.session.front(), self.bottom.tab, self.pointer.show_focus, listening, moving)
+        self.pad.reconcile(self.session.front(), self.bottom.tab, self.pointer.show_focus(), listening, moving)
     }
 
     fn apply_event(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
@@ -374,8 +373,8 @@ impl State {
         match event {
             PointerEvent::Focus(id) => {
                 self.show_focused(&id);
-                self.pointer.focus = Some(id);
-                self.pointer.show_focus = true;
+                self.pointer.focus_on(id);
+                self.pointer.show();
                 (Dirty::BOTH, vec![])
             }
             PointerEvent::HideFocus => (if self.pointer.hide_focus() { Dirty::BOTH } else { Dirty::NONE }, vec![]),
@@ -388,19 +387,14 @@ impl State {
                 if let Id::Key(pos) = id {
                     self.keyboard.down(pos);
                 }
-                self.pointer.press = self.item_key(&id).map(|item| crate::nav::pointer::Press { id: id.clone(), item });
-                self.pointer.pressed = Some(id);
+                let item = self.item_key(&id);
+                self.pointer.down(id, item);
                 (dirty, vec![])
             }
             PointerEvent::Up(id) => {
-                if self.pointer.pressed.as_ref() == Some(&id) {
-                    self.pointer.pressed = None;
-                }
+                self.pointer.up(&id);
                 if Level::of(&id).is_some() {
                     self.levels.release();
-                }
-                if self.pointer.press.as_ref().is_some_and(|p| p.id == id) {
-                    self.pointer.press = None;
                 }
                 if let Id::Key(pos) = id {
                     self.keyboard.up(pos);
@@ -417,14 +411,14 @@ impl State {
         let Some(id) = self.resolve(id) else {
             return (Dirty::BOTTOM, vec![]);
         };
-        self.pointer.focus = Some(id.clone());
+        self.pointer.focus_on(id.clone());
         match id {
             // A hold on the selected entry with the pad, while its focus is showing, moves the pad to the
             // entry's actions and focuses the first. Up and down go through them, A runs one, and B goes
             // back to the list.
-            Id::Shelf(ShelfId::Entry(game)) if long && self.pointer.show_focus && self.shelf.selected() == Some(&game) => {
+            Id::Shelf(ShelfId::Entry(game)) if long && self.pointer.show_focus() && self.shelf.selected() == Some(&game) => {
                 if let Some(first) = self.actions().as_slice().first() {
-                    self.pointer.focus = Some(Id::Shelf(first.id()));
+                    self.pointer.focus_on(Id::Shelf(first.id()));
                 }
                 (Dirty::BOTH, vec![])
             }
@@ -484,17 +478,6 @@ impl State {
                 self.bottom.woken = true;
                 (Dirty::BOTTOM, vec![])
             }
-        }
-    }
-
-    /// What holding `id` does: keyboard keys repeat, modifiers and everything else get one long press.
-    pub fn hold(&self, id: &Id) -> Hold {
-        match id {
-            Id::Key(pos) => match self.keyboard.effective(*pos) {
-                Some(Key::Mod(_) | Key::Caps) | None => Hold::Long,
-                Some(_) => Hold::Repeat,
-            },
-            _ => Hold::Long,
         }
     }
 }

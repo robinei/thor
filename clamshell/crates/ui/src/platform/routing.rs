@@ -130,7 +130,7 @@ impl App {
             }
             PadInput::Shoulder(step) => self.handle_all(focus::shoulder(&self.state, &self.views, step)),
             PadInput::Trigger(step) => self.handle_all(focus::trigger(&self.state, &self.views, step)),
-            PadInput::Switch if self.state.pad_on_top() => {
+            PadInput::Switch if self.state.pad().on_top() => {
                 let event = focus::switch_screen(&self.state, &self.views, &mut self.focus_memory);
                 self.handle_all(event);
             }

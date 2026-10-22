@@ -10,25 +10,63 @@ use crate::kit::list::ItemKey;
 /// A press on a list item, kept by what the item is rather than where it is, so a list that changes
 /// under the finger doesn't redirect it.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Press {
-    pub id: Id,
-    pub item: ItemKey,
+struct Press {
+    id: Id,
+    item: ItemKey,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct Pointer {
-    pub(crate) focus: Option<Id>,
+    focus: Option<Id>,
     /// The focus ring is shown only while navigating with the pad.
-    pub(crate) show_focus: bool,
+    show_focus: bool,
     /// The target being pressed (drawn lit), if any.
-    pub(crate) pressed: Option<Id>,
-    pub(crate) press: Option<Press>,
+    pressed: Option<Id>,
+    press: Option<Press>,
 }
 
 impl Pointer {
+    /// The focus goes to `id`. The ring stays as it was.
+    pub(crate) fn focus_on(&mut self, id: Id) {
+        self.focus = Some(id);
+    }
+
     /// The focus goes to shelf's selected entry, or nowhere without one.
     pub(crate) fn focus_shelf(&mut self, selected: Option<&Arc<str>>) {
         self.focus = selected.cloned().map(|g| Id::Shelf(ShelfId::Entry(g)));
+    }
+
+    /// Shelf's selection moved. A focus in shelf's list follows it.
+    pub(crate) fn follow_shelf(&mut self, selected: Option<&Arc<str>>) {
+        if matches!(self.focus, Some(Id::Shelf(ShelfId::Entry(_) | ShelfId::Collection(_)))) {
+            self.focus_shelf(selected);
+        }
+    }
+
+    /// Shows the focus ring, as the pad navigates.
+    pub(crate) fn show(&mut self) {
+        self.show_focus = true;
+    }
+
+    /// `id` is pressed, on the list item `item` if it is one.
+    pub(crate) fn down(&mut self, id: Id, item: Option<ItemKey>) {
+        self.press = item.map(|item| Press { id: id.clone(), item });
+        self.pressed = Some(id);
+    }
+
+    /// The press on `id` ended.
+    pub(crate) fn up(&mut self, id: &Id) {
+        if self.pressed.as_ref() == Some(id) {
+            self.pressed = None;
+        }
+        if self.press.as_ref().is_some_and(|p| p.id == *id) {
+            self.press = None;
+        }
+    }
+
+    /// The list item the press on `id` came down on, if `id` is pressed and is a list item.
+    pub(crate) fn pressed_item(&self, id: &Id) -> Option<&ItemKey> {
+        self.press.as_ref().filter(|p| p.id == *id).map(|p| &p.item)
     }
 
     pub fn focus(&self) -> Option<&Id> {
@@ -64,9 +102,9 @@ mod tests {
     #[test]
     fn keys_repeat_and_modifiers_lock_when_held() {
         let s = state();
-        assert_eq!(s.hold(&Id::Key(find(Key::Char('a')).unwrap())), Hold::Repeat);
-        assert_eq!(s.hold(&Id::Key(find(Key::Mod(Modifier::Shift)).unwrap())), Hold::Long);
-        assert_eq!(s.hold(&Id::Shelf(ShelfId::Launch)), Hold::Long);
+        assert_eq!(s.keyboard().hold(&Id::Key(find(Key::Char('a')).unwrap())), Hold::Repeat);
+        assert_eq!(s.keyboard().hold(&Id::Key(find(Key::Mod(Modifier::Shift)).unwrap())), Hold::Long);
+        assert_eq!(s.keyboard().hold(&Id::Shelf(ShelfId::Launch)), Hold::Long);
     }
 
     #[test]

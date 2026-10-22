@@ -210,7 +210,7 @@ impl State {
     /// focus on its first row. The account is read while it is open ([`State::follow_watch`]).
     pub(crate) fn open_device(&mut self) -> Vec<Effect> {
         self.device.open();
-        self.pointer.focus = Some(Id::Device(DeviceId::Wifi));
+        self.pointer.focus_on(Id::Device(DeviceId::Wifi));
         vec![Effect::Window(WindowCommand::ShowShelf)]
     }
 
@@ -260,7 +260,7 @@ mod tests {
         let effects = s.open_device();
         assert_eq!(s.device().top_view(), TopView::Device);
         assert_eq!(effects, vec![Effect::Window(WindowCommand::ShowShelf)], "shelf's window in front");
-        assert_eq!(s.pointer.focus, Some(Id::Device(DeviceId::Wifi)));
+        assert_eq!(s.pointer().focus(), Some(&Id::Device(DeviceId::Wifi)));
         let effects = tap(&mut s, DeviceId::Close);
         assert_eq!(s.device().top_view(), TopView::Shelf);
         assert!(!effects.contains(&Effect::Save(Save::FirstStartDone)), "not the first start: nothing saved");

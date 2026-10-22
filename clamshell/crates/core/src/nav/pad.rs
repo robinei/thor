@@ -260,7 +260,7 @@ mod tests {
         tap(&mut s, Id::Tab(Tab::Keyboard));
         assert_eq!(s.pad().route(), PadRoute::Keys);
         assert_eq!(s.apply(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Ui)], "to the keys on screen");
-        assert!(!s.pad_on_top());
+        assert!(!s.pad().on_top());
         assert_eq!(s.apply(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Keys)], "and back to typing");
         // The pad mouse takes it, and View moves it to the second screen and back.
         assert_eq!(tap(&mut s, Id::PadMouse), vec![Effect::PadRoute(PadRoute::Mouse)]);

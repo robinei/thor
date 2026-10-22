@@ -364,7 +364,7 @@ impl Input {
         if press.gesture == Gesture::Tap {
             press.gesture = Gesture::Held;
         }
-        match state.hold(&press.id) {
+        match state.keyboard().hold(&press.id) {
             Hold::Repeat => {
                 actions.push(Action::Emit(PointerEvent::Activate(press.id.clone()).into()));
                 actions.push(Action::Arm(source, Timer::Hold, REPEAT));

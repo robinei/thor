@@ -36,7 +36,7 @@ pub(crate) enum PadScope {
 
 pub(crate) fn scope(s: &State) -> PadScope {
     let in_list = matches!(s.pointer().focus(), Some(Id::Shelf(ShelfId::Entry(_) | ShelfId::Collection(_))));
-    match (s.pad_on_top(), in_list) {
+    match (s.pad().on_top(), in_list) {
         (true, true) => PadScope::ShelfList,
         (true, false) => PadScope::BothScreens,
         (false, _) => PadScope::BottomOnly,
@@ -188,7 +188,7 @@ pub(crate) fn press(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>) -> 
     let screen = (scope(s) == PadScope::BottomOnly).then_some(Screen::Bottom);
     match s.pointer().focus() {
         Some(id) if drawn_on(d, screen, id) => Some(PadPress::Press(id.clone())),
-        _ if s.pad_on_top() => default_focus(s, Screen::Top).map(|id| PadPress::Focus(PointerEvent::Focus(id).into())),
+        _ if s.pad().on_top() => default_focus(s, Screen::Top).map(|id| PadPress::Focus(PointerEvent::Focus(id).into())),
         _ => Some(PadPress::Focus(focus_bottom(s, d, memory))),
     }
 }
@@ -217,7 +217,7 @@ pub(crate) fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
 
 /// Whether the pad is on shelf, rather than on a view shown in its place.
 fn on_shelf(s: &State, d: &impl Drawn) -> bool {
-    s.pad_on_top() && focus_screen(s, d) == Screen::Top && s.device().top_view() == clamshell_core::device::TopView::Shelf
+    s.pad().on_top() && focus_screen(s, d) == Screen::Top && s.device().top_view() == clamshell_core::device::TopView::Shelf
 }
 
 /// L2 and R2 go to shelf's first or last entry.

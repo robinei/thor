@@ -8,7 +8,6 @@ use crate::State;
 use crate::id::{AudioId, DockId, Id, ShelfId};
 use crate::kit::list::ItemKey;
 use crate::levels::Level;
-use crate::nav::pointer::Press;
 
 impl State {
     /// The key of the item `id` points at, if `id` is a list item.
@@ -42,9 +41,9 @@ impl State {
     /// `id` resolved to the item the press landed on: the same item where it is now, or `None` once it
     /// is gone. Ids that aren't list items, or weren't pressed, are returned as they are.
     pub(crate) fn resolve(&self, id: &Id) -> Option<Id> {
-        match &self.pointer.press {
-            Some(Press { id: pressed, item }) if pressed == id => self.find_item(id, item),
-            _ => Some(id.clone()),
+        match self.pointer.pressed_item(id) {
+            Some(item) => self.find_item(id, item),
+            None => Some(id.clone()),
         }
     }
 
