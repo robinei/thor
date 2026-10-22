@@ -1,26 +1,34 @@
-//! Fetching what the library's files don't say: covers, screenshots, what an entry is about, the year it
-//! came out, who made it. After the library is read, the entries it wants (see [`Wanted`]) are fetched
-//! on a few threads (curl), their images kept in the art cache (~/.cache/clamshell/art), what was found
-//! kept beside them (also what wasn't: see [`crate::library::meta::cache::Cache`]) and sent to the state as it arrives.
+//! Fetching what the library's files don't say: covers, screenshots, a summary, the year an entry came
+//! out and who made it.
 //!
-//! - A content dir's games (`"metadata": "libretro:<system>"` in library.json, the system as libretro names
-//!   its folder): box art and a screenshot from libretro's thumbnails, and the developer and year from
-//!   libretro's database. The game is found by its file's checksum (CRC32: a zip's from its directory, a file
-//!   up to 64 MB read whole) in the database's No-Intro list, else by name: the entry's title as libretro
-//!   names the game, or the same once case, bracketed tags (`(USA)`), "the" and punctuation are left out,
-//!   `and` and `&` alike, and Roman numerals read as numbers, or (where only one game fits) the same but for
-//!   libretro's subtitle after ` - `; of several releases, the USA one, then World, then Europe. (A subtitle
-//!   of the title's own isn't left out: "Front Mission - Gun Hazard" is another game than "Front Mission".)
+//! After the library is read, the entries it wants (see [`Wanted`]) are fetched with curl on a few
+//! threads. Their images are kept in the art cache (~/.cache/clamshell/art). What was found, and also
+//! what wasn't, is kept beside them (see [`crate::library::meta::cache::Cache`]) and sent to the state as
+//! it arrives.
+//!
+//! - A content dir's games, with `"metadata": "libretro:<system>"` in library.json, where the system is
+//!   named as libretro names its folder. Box art and a screenshot come from libretro's thumbnails, and the
+//!   developer and year from libretro's database. The game is found by its file's CRC32 checksum in the
+//!   database's No-Intro list. For a zip the checksum comes from its directory; other files up to 64 MB
+//!   are read whole. Failing that, the game is found by name:
+//!   - the entry's title as libretro names the game;
+//!   - or the same after ignoring case, bracketed tags (`(USA)`), "the" and punctuation, treating `and`
+//!     and `&` alike, and reading Roman numerals as numbers;
+//!   - or, if only one game fits, the same but without libretro's subtitle after ` - `.
+//!
+//!   Of several releases, the USA one is preferred, then World, then Europe. A subtitle in the title
+//!   itself isn't ignored, since "Front Mission - Gun Hazard" is a different game from "Front Mission".
 //! - A content dir's films or series (`"tmdb:movie"`, `"tmdb:tv"`): poster, backdrop, overview and year
-//!   from TMDB, by title (a `(1980)` at its end the year, tried first: a series may be dated from another
-//!   year than its pilot's); needs `keys.tmdb` in library.json.
-//! - Steam's games: the store's description, developer, year and first screenshot (no key).
-//! - The desktop files' games: a cover from SteamGridDB, by name; needs `keys.steamgriddb`.
+//!   from TMDB, by title. A `(1980)` at the end of the title is the year and is tried first, but a series
+//!   may be dated from a different year than its pilot. Needs `keys.tmdb` in library.json.
+//! - Steam's games: the store's description, developer, year and first screenshot. No key is needed.
+//! - Games from desktop files: a cover from SteamGridDB, by name. Needs `keys.steamgriddb`.
 //!
-//! Art beside an entry's file comes first: what is fetched never replaces it.
+//! Art beside an entry's file comes first; what is fetched never replaces it.
 //!
-//! libretro's lists (a system's thumbnails, its database's files) are kept in ~/.cache/clamshell/libretro
-//! and fetched again after [`LISTS_KEPT`]; an older copy serves while a fetch fails.
+//! libretro's lists (a system's thumbnails and its database's files) are kept in
+//! ~/.cache/clamshell/libretro and fetched again after [`LISTS_KEPT`]. An older copy is used while a
+//! fetch fails.
 
 pub(crate) mod cache;
 mod libretro;
@@ -44,12 +52,12 @@ use titles::Name;
 use crate::Sink;
 use crate::os::{http, worker};
 
-/// Fetches at once.
+/// How many fetches run at once.
 const THREADS: usize = 4;
 /// How long a libretro list kept on disk is used before it is fetched again.
 const LISTS_KEPT: std::time::Duration = std::time::Duration::from_secs(30 * 86_400);
 
-/// A miss (nothing found) is tried again after this long (seconds).
+/// How long after a miss, when nothing was found, to try again, in seconds.
 pub const RETRY_MISS: u64 = 30 * 86_400;
 
 /// The services' keys, from library.json's `keys`.
@@ -65,7 +73,7 @@ pub struct Keys {
 /// Where an entry's metadata comes from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum How {
-    /// libretro's thumbnails of this system (its folder's name there).
+    /// libretro's thumbnails of this system, named as its folder there.
     Libretro(String),
     /// TMDB, a film (`movie`) or a series (`tv`).
     Tmdb(String),
@@ -73,14 +81,14 @@ pub enum How {
     Steam(u32),
     /// SteamGridDB, by name.
     SteamGridDb,
-    /// A video's length (ffprobe's) and a frame of it (ffmpeg's, a quarter in): kept apart from the rest
-    /// (see [`crate::store`]).
+    /// A video's length from ffprobe, and a frame from a quarter of the way in from ffmpeg. These are
+    /// stored apart from the rest (see [`crate::store`]).
     Duration,
 }
 
 impl How {
-    /// From library.json's `metadata` field: `libretro:<system>`, `tmdb:movie`, `tmdb:tv`, `steamgriddb`
-    /// (`steam`, a Steam game's store page, is by its app id: see the library).
+    /// Parses library.json's `metadata` field: `libretro:<system>`, `tmdb:movie`, `tmdb:tv` or
+    /// `steamgriddb`. `steam`, a Steam game's store page, needs the app id and is handled by the library.
     pub fn parse(field: &str) -> Option<How> {
         if field == "steamgriddb" {
             return Some(How::SteamGridDb);
@@ -92,7 +100,7 @@ impl How {
         }
     }
 
-    /// As saved with what was found: fetched again when it changes.
+    /// The form saved with what was found. The entry is fetched again when this changes.
     pub fn source(&self) -> String {
         match self {
             How::Libretro(system) => format!("libretro:{system}"),
@@ -108,13 +116,13 @@ impl How {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Wanted {
     pub id: Arc<str>,
-    /// Its key: the art cache's files are named by it.
+    /// The entry's key, which names its files in the art cache.
     pub key: String,
     pub title: String,
-    /// Its file in its content dir, for its checksum.
+    /// The entry's file in its content dir, for the checksum.
     pub file: Option<PathBuf>,
     pub how: How,
-    /// It has art of its own already (no cover wanted).
+    /// Whether it has art of its own already, so no cover is wanted.
     pub art: bool,
 }
 
@@ -122,7 +130,7 @@ pub struct Wanted {
 pub struct Fetch {
     pub wanted: Vec<Wanted>,
     pub keys: Keys,
-    /// The art cache (what was fetched kept there too, see [`Cache`]).
+    /// The art cache, which also keeps what was fetched (see [`Cache`]).
     pub art: PathBuf,
 }
 
@@ -134,7 +142,7 @@ pub struct Queue {
 }
 
 impl Queue {
-    /// These entries (those still waiting) first, in this order.
+    /// Moves these entries to the front, in this order, if they are still waiting.
     pub fn first(&self, ids: &[Arc<str>]) {
         let mut q = crate::os::lock(&self.waiting);
         for id in ids.iter().rev() {
@@ -146,7 +154,7 @@ impl Queue {
         }
     }
 
-    /// `wanted` added at the end (those not waiting already); how many wait now.
+    /// Adds `wanted` at the end, skipping entries already waiting. Returns how many wait now.
     fn add(&self, wanted: Vec<Wanted>) -> usize {
         let mut q = crate::os::lock(&self.waiting);
         for w in wanted {
@@ -162,8 +170,9 @@ impl Queue {
     }
 }
 
-/// Adds what `fetch` wants to `queue` and fetches on [`THREADS`] more threads until it is empty (or the
-/// UI is gone): `Fetching(true)` as they start, `Fetching(false)` when the last thread is done.
+/// Adds what `fetch` wants to `queue` and fetches on [`THREADS`] more threads until the queue is empty or
+/// the UI is gone. Sends `Fetching(true)` as they start and `Fetching(false)` when the last thread is
+/// done.
 pub fn spawn(fetch: Fetch, queue: &Queue, sink: impl Sink + Clone) -> std::io::Result<()> {
     use std::sync::atomic::Ordering;
     let count = queue.add(fetch.wanted);
@@ -200,8 +209,8 @@ pub fn spawn(fetch: Fetch, queue: &Queue, sink: impl Sink + Clone) -> std::io::R
     Ok(())
 }
 
-/// What the threads share: the keys, where images go, and libretro's file lists (fetched once per
-/// system and kind, `None` if that failed).
+/// What the threads share: the keys, where images go, and libretro's file lists. Each list is fetched
+/// once per system and kind, and is `None` if that failed.
 struct Shared {
     keys: Keys,
     art: PathBuf,
@@ -223,22 +232,22 @@ impl Shared {
         meta
     }
 
-    /// One of libretro's lists (`name` in the lists' folder, next to the art cache), from `url`: kept on
-    /// disk (see [`http::kept`]).
+    /// One of libretro's lists, fetched from `url` and kept on disk as `name` in the lists' folder next to
+    /// the art cache (see [`http::kept`]).
     fn list(&self, name: &str, url: &str) -> Option<String> {
         let dir = self.art.with_file_name("libretro");
         let file = dir.join(name.replace('/', "_"));
         http::kept(&file, LISTS_KEPT, || http::get(url, &[])).map(|b| String::from_utf8_lossy(&b).into_owned())
     }
 
-    /// The image at `url` into the art cache as `<key>-<what>.<its extension>`.
+    /// Downloads the image at `url` into the art cache as `<key>-<what>.<extension>`.
     fn image(&self, w: &Wanted, what: &str, url: &str) -> Option<PathBuf> {
         let file = self.art.join(format!("{}-{what}.{}", w.key, extension(url)));
         http::download(url, &[], &file).then_some(file)
     }
 }
 
-/// An image URL's extension (jpg, png or webp), jpg where it says none of them.
+/// An image URL's extension: png or webp if it says so, otherwise jpg.
 fn extension(url: &str) -> &'static str {
     let path = url.split(['?', '#']).next().unwrap_or(url).to_ascii_lowercase();
     match path.rsplit('.').next() {

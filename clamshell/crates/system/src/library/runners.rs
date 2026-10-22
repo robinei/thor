@@ -1,12 +1,14 @@
-//! Runners: how things open (see docs/runners.md), library.json's `runners`, every one declared there
-//! (nothing is opened by a runner it doesn't list). A file opens with the first runner one of whose
-//! patterns its name matches (a scan's entries too, unless the scan names its runner). Two
-//! types of runner find their items themselves, each item with its own command: `"type": "desktop"` the
-//! desktop files' apps and games (and a `.desktop` file opened), `"type": "steam"` Steam's installed games;
-//! without one, those aren't in the library.
+//! Runners decide how things open (see docs/runners.md). They are library.json's `runners`, and only
+//! those: nothing is opened by a runner the file doesn't list.
 //!
-//! A runner's `id` keeps its settings, environment and own keymap (its `name` is only shown, and may
-//! change); without one, its name in lowercase, spaces as `-`.
+//! A file opens with the first runner that has a pattern matching its name. That includes a scan's
+//! entries, unless the scan names its runner. Two types of runner find their items themselves, each item
+//! with its own command. `"type": "desktop"` covers the apps and games from desktop files, and a
+//! `.desktop` file that is opened. `"type": "steam"` covers Steam's installed games. Without such a
+//! runner, those aren't in the library.
+//!
+//! A runner's settings, environment and keymap are kept by its `id`. Its `name` is only shown and may
+//! change. Without an `id`, the id is the name in lowercase with spaces as `-`.
 
 use std::path::Path;
 
@@ -17,52 +19,55 @@ use serde::Deserialize;
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Runner {
-    /// What its settings, environment and own keymap are kept by (see the module's doc).
+    /// What its settings, environment and keymap are kept by (see the module's doc).
     #[serde(default)]
     pub id: String,
     /// Its settings page's title.
     #[serde(default)]
     pub name: String,
-    /// One that finds its items itself (see the module's doc); none: it opens files by its command.
+    /// Set for a runner that finds its items itself (see the module's doc). Without it, the runner opens
+    /// files with its command.
     #[serde(default, rename = "type")]
     pub kind: Option<Kind>,
-    /// The file names it opens (one name each: `*.sfc`; any case).
+    /// Patterns for the file names it opens, like `*.sfc`. Each matches a single name, in any case.
     #[serde(default, rename = "match")]
     pub patterns: Vec<String>,
-    /// The command, `{path}` the file. A desktop runner's, if it has one, replaces its entries' own
-    /// (their desktop file's): `{id}` the desktop file's name, `{exec}` its command (as arguments of
-    /// their own): to wrap it, or launch otherwise (the Android runner's script, docs/android.md).
+    /// The command, with `{path}` for the file. A desktop runner's command, if it has one, replaces the
+    /// command from each entry's desktop file. In it, `{id}` is the desktop file's name and `{exec}` is the
+    /// file's command, as separate arguments. That way it can wrap the command or launch the app another
+    /// way, as the Android runner's script does (docs/android.md).
     #[serde(default)]
     pub launch: Vec<String>,
-    /// A keymap of ClamShell's it comes with (`viewer`: the D-pad, A, B and the shoulders as keys), its own
-    /// until one is chosen for it.
+    /// One of ClamShell's keymaps that it comes with, such as `viewer` (the D-pad, A, B and the shoulders
+    /// as keys). It is used until another is chosen for the runner.
     #[serde(default)]
     pub keymap: Option<String>,
-    /// Whether its entries have settings of their own (a settings tab), beside the runner's; else only
-    /// the runner's. On unless said (a browsed file or a folder has none either way).
+    /// Whether its entries have their own settings tab beside the runner's. If not, only the runner has
+    /// settings. Defaults to on; a browsed file or a folder has none either way.
     #[serde(default)]
     pub item_settings: Option<bool>,
-    /// What to write to a launch's control socket (its command's `{socket}`) to add a file to it while
-    /// it runs (`{path}` in it the file, as a JSON string's contents): its entries can be enqueued.
+    /// What to write to a launch's control socket (`{socket}` in its command) to add a file while it runs.
+    /// `{path}` in it is the file, escaped as JSON string contents. If set, its entries can be enqueued.
     #[serde(default)]
     pub enqueue: Option<String>,
-    /// Whether its launches hand their app over to something running outside them and end (a desktop
-    /// runner's: Waydroid's apps, whose windows are the Waydroid session's): its entries run on by their
-    /// windows, found by their app id (the desktop file's name).
+    /// Whether its launches hand their app over to something running outside them and then end. This is
+    /// for a desktop runner such as Waydroid's, whose apps' windows belong to the Waydroid session. Its
+    /// entries are tracked by their windows instead, found by their app id (the desktop file's name).
     #[serde(default)]
     pub handover: bool,
-    /// For a runner that hands its apps over: the command that ends one (Force kill, and Quit once its
-    /// windows are closed), `{id}` its windows' app id.
+    /// For a runner that hands its apps over, the command that ends one, with `{id}` for its windows' app
+    /// id. It is used for Force kill, and for Quit once the app's windows are closed.
     #[serde(default)]
     pub stop: Vec<String>,
-    /// For a runner whose entries share one container (Waydroid's): the commands that pause it all
-    /// (In the background: Pauses hidden, set for the runner) and resume it.
+    /// For a runner whose entries share one container, as Waydroid's do, the commands that pause and
+    /// resume all of it. Pausing is used when the runner's "In the background" setting is "Pauses hidden".
     #[serde(default)]
     pub pause: Vec<String>,
     #[serde(default)]
     pub resume: Vec<String>,
-    /// A command that succeeds while the runner's app shown keeps the screen on, which the compositor
-    /// doesn't hear (Android's keep-screen-on: a video, the camera); asked before the screens dim.
+    /// A command that succeeds while the runner's app on screen keeps the screen on in a way the
+    /// compositor doesn't see, such as Android's keep-screen-on for a video or the camera. It is run before
+    /// the screens dim.
     #[serde(default)]
     pub awake: Vec<String>,
 }
@@ -71,15 +76,16 @@ pub struct Runner {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
-    /// The desktop files' apps and games, by their `Exec`; a `.desktop` file opened from the Files tab.
+    /// The apps and games from desktop files, run by their `Exec`, and a `.desktop` file opened from the
+    /// Files tab.
     Desktop,
-    /// Steam's installed games, by Steam.
+    /// Steam's installed games, run by Steam.
     Steam,
 }
 
 impl Runner {
-    /// Its command for file `path` (`{path}` it, `~/` the home dir), in the file's folder: a desktop
-    /// file's its own, nothing for a Steam runner.
+    /// Its command for file `path`, run in the file's folder, with `{path}` filled in and `~/` as the home
+    /// dir. A desktop file uses its own command, and a Steam runner has none.
     pub fn command(&self, path: &Path, home: Option<&Path>) -> Launch {
         match self.kind {
             Some(Kind::Desktop) => crate::library::desktop::command(path).unwrap_or_default(),
@@ -89,7 +95,7 @@ impl Runner {
         }
     }
 
-    /// The runner that opens an entry of it, as the entry keeps it (`~/` the home dir in its commands).
+    /// The runner in the form an entry keeps it, with `~/` expanded to the home dir in its commands.
     pub fn of(&self, home: Option<&Path>) -> clamshell_library::RunnerOf {
         clamshell_library::RunnerOf {
             command: self.template(home).into(),
@@ -103,13 +109,15 @@ impl Runner {
         }
     }
 
-    /// Its command with `~/` against `home` (or as it is), `{path}`, `{paths}` and `{socket}` left in.
+    /// Its command with `~/` expanded against `home`, if given, and `{path}`, `{paths}` and `{socket}`
+    /// left in.
     fn template(&self, home: Option<&Path>) -> Vec<String> {
         self.launch.iter().map(|a| super::content::expand(a, home).to_string_lossy().into_owned()).collect()
     }
 
-    /// A desktop entry's command as this runner launches it (desktop file `id`, its own command
-    /// `exec`; `~/` the home dir): its `launch` filled in, if it has one; else none (the entry's own).
+    /// A desktop entry's command as this runner launches it: the runner's `launch` filled in with the
+    /// desktop file's `id` and its own command `exec`, and `~/` as the home dir. None if the runner has no
+    /// `launch`, in which case the entry's own command is used.
     pub fn wrap(&self, id: &str, exec: &Launch, home: Option<&Path>) -> Option<Launch> {
         if self.kind != Some(Kind::Desktop) || self.launch.is_empty() {
             return None;
@@ -134,21 +142,22 @@ impl Runner {
         self.patterns.iter().any(|p| pattern::matches(&p.to_lowercase(), &name))
     }
 
-    /// Whether it opens file name `name` by a pattern of its own, not one for any file (`*`).
+    /// Whether it opens file name `name` by a specific pattern, not the catch-all `*`.
     pub fn opens_as_its_own(&self, name: &str) -> bool {
         let name = name.to_lowercase();
         self.patterns.iter().filter(|p| p.as_str() != "*").any(|p| pattern::matches(&p.to_lowercase(), &name))
     }
 }
 
-/// A command with `~/` against `home` (or as it is).
+/// A command with `~/` expanded against `home`, if given.
 fn expanded(args: &[String], home: Option<&Path>) -> std::sync::Arc<[String]> {
     args.iter().map(|a| super::content::expand(a, home).to_string_lossy().into_owned()).collect()
 }
 
-/// library.json's runners, each with its id (else its name's) and its name (else its id); what is wrong
-/// with them: one without an id or a name, or (not of a type) without a command, is left out; one whose
-/// program isn't installed (`installed`: whether a program is on the PATH) is said so.
+/// library.json's runners, checked, and their problems. Each gets an id, from its name if it has none,
+/// and a name, from its id if it has none. A runner with neither, or one without a type and without a
+/// command, is left out. A runner whose program isn't installed is kept but reported; `installed` says
+/// whether a program is on the PATH.
 pub fn checked(config: &[Runner], installed: &dyn Fn(&str) -> bool) -> (Vec<Runner>, Vec<String>) {
     let mut problems = Vec::new();
     let mut runners = Vec::new();
@@ -177,17 +186,17 @@ pub fn on_path(program: &str) -> bool {
     std::env::var_os("PATH").is_some_and(|paths| std::env::split_paths(&paths).any(|d| d.join(program).is_file()))
 }
 
-/// The runners in force here: library.json's, checked (see [`checked`]).
+/// The runners in force here: library.json's, checked against the PATH (see [`checked`]).
 pub fn in_force(config: &[Runner]) -> (Vec<Runner>, Vec<String>) {
     checked(config, &on_path)
 }
 
-/// The runner that opens a file named `name`: the first that does.
+/// The first runner that opens a file named `name`.
 pub fn opener<'a>(runners: &'a [Runner], name: &str) -> Option<&'a Runner> {
     runners.iter().find(|p| p.opens(name))
 }
 
-/// File `path` opened by the first of `runners` that opens its name: its command and runner.
+/// The command and runner for file `path`, from the first of `runners` that opens its name.
 pub fn open(runners: &[Runner], path: &Path, home: Option<&Path>) -> Option<(Launch, clamshell_library::RunnerOf)> {
     let runner = opener(runners, &path.file_name()?.to_string_lossy())?;
     Some((runner.command(path, home), runner.of(home)))

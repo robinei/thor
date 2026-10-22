@@ -1,6 +1,6 @@
-//! library.json: the places declared, the runners (how things open: see [`super::runners`]), the sources
-//! (where entries come from, and where they go), the services' keys. Nothing is ClamShell's but what it
-//! declares: a tab, a runner, a source left out isn't there.
+//! library.json: the declared places, the runners that open things (see [`super::runners`]), the sources
+//! that say where entries come from and where they go, and the keys for metadata services. ClamShell adds
+//! nothing of its own: a tab, runner or source that is left out of the file doesn't exist.
 //!
 //! ```json
 //! { "places": [
@@ -26,50 +26,72 @@
 //!   "keys": { "tmdb": "...", "steamgriddb": "..." } }
 //! ```
 //!
-//! `places` (see [`Place`]): an `id` to refer to a place by (`"place": "@snes"`, `"@snes/RPG"` a folder in
-//! it; its folder's id `place:snes`, which outlives a new path), its `path` (a tab, then folders in it: see
-//! [`place`]; a place not declared works as a path too), an `icon` (a tab's one of the UI's by name; a
-//! folder's also an image file, shown in its row), a folder's `picture` (shown large when it is selected),
-//! `recent: false` (what is in it isn't in Recent: apps), `type` for ClamShell's own tabs (`recent`,
-//! `favourites`, `tools`: its path their name). The tabs come in the order declared (those not declared
-//! after, as first named).
+//! `places` (see [`Place`]) have these fields:
+//! - `id` refers to the place, as in `"place": "@snes"`, or `"@snes/RPG"` for a folder in it. The place's
+//!   folder gets the id `place:snes`, which stays the same if its path changes.
+//! - `path` is a tab, then folders in it (see [`place`]). A place that isn't declared can be given as a
+//!   path too.
+//! - `icon` is one of the UI's icons by name. A folder's icon can also be an image file, shown in its row.
+//! - `picture` is a folder's image, shown large when the folder is selected.
+//! - `recent: false` keeps what is in the place out of Recent, for apps.
+//! - `type` makes it one of ClamShell's own tabs (`recent`, `favourites`, `tools`), named by its path.
+//!
+//! The tabs come in the order they are declared. Tabs that aren't declared come after, in the order they
+//! are first named.
 //!
 //! `sources` (see [`Source`]), by `type`:
-//! - `dir` (see [`Scan`]): a dir scanned. `runner` (an id) opens its entries, else each opens by the runner
-//!   its file's name matches (a group as its first entry). `match`: patterns (see clamshell-library's
-//!   `pattern`) against paths in `dir` (else its runner's); an entry per name at the top of `dir`: a file,
-//!   or a folder (matched itself, `*/`, or by a file in it, `*/*.cue`); where several files of a folder
-//!   match, the first pattern wins, then the first name. `items`: a matched folder is a group: in it and
-//!   every folder under it, the files matching these patterns are entries and the folders with any are
-//!   groups (a series' seasons, their episodes). `metadata`: where its entries' covers, screenshots and the
-//!   rest come from (`libretro:<system>`, `tmdb:movie`, `tmdb:tv`; `keys`: the services' keys, see
-//!   [`crate::library::meta`]). Ids: `<id>:<path in dir>`, so moving the whole dir (a new `dir`) keeps them;
-//!   renaming or moving inside it doesn't. Titles: the name at the top of `dir`, an episode's file name,
-//!   without the extension (a file's); in a season's folder (`Season 2`, `S02`, `Series 2`; `Specials` for
-//!   season 0), a file named for an episode of that season (`017 S02E18 Title`) is titled by its number
-//!   there: `18. Title` (`1–2.` for a double one). Box art: `<name>.jpg` (or .jpeg, .png, .webp) beside a
-//!   file, or `poster`, `cover` or `folder` in a folder (any case: `Cover.jpg`); else the group's, but for
-//!   a video mpv plays (its frame is its picture). A folder's art: its place's picture, else `poster`,
-//!   `cover` or `folder` in the scan's dir. `on`: the removable filesystem `dir` is in (see [`On`]),
-//!   `dir` then a path in it; the source is away while none matching is mounted.
-//! - `browse`: a dir listed as it is opened, not scanned (no metadata, not in Recent), its own folder at
-//!   its `place` (its last part the folder's title); `trash`: the Trash's `files` dir.
-//! - `desktop`, `steam`: the desktop files' apps and games, Steam's installed games (opened by a runner of
-//!   that type). Each source of the type takes, in order, those left that it matches (see [`Rule`]: by id,
-//!   name, a desktop file's categories; globs, any case; none: all), putting them at its `place`, or leaving
-//!   them out (`hide`); what none takes is left out. `runner`: the runner of the type that opens them (else
-//!   the first); `metadata`: `steamgriddb`, a Steam source's `steam`. A desktop file's id is its name without
-//!   `.desktop`, a Steam game's its app id. `{ "type": "desktop", "id": "net.lutris.*", "place": "@apps" }`,
-//!   `{ "type": "desktop", "categories": "Game", "place": "@games" }`, `{ "type": "desktop", "id":
-//!   "*uninstall*", "hide": true }`, `{ "type": "desktop", "place": "@apps" }` (the rest).
-//! - `removable`: the removable filesystems mounted (udisks2's, under `/run/media/$USER`), browsed as
-//!   `browse`'s dirs, taken the same way (see [`MountRule`]: by `label`, `uuid`, `fs`), each at its source's
-//!   `place` (`{label}` in it the filesystem's label, else its UUID).
+//! - `dir` (see [`Scan`]) is a dir that is scanned.
+//!   - `runner`, an id, opens its entries. Without it, each file opens with the runner whose patterns its
+//!     name matches, and a group opens as its first entry.
+//!   - `match` is a list of patterns (see clamshell-library's `pattern`) matched against paths in `dir`;
+//!     without it, the runner's are used. Each name at the top of `dir` gives one entry: a file, or a
+//!     folder matched itself (`*/`) or through a file in it (`*/*.cue`). Where several files in a folder
+//!     match, the first pattern wins, then the first name.
+//!   - `items` makes each matched folder a group. In it and every folder under it, the files matching
+//!     these patterns are entries and the folders containing any are groups, such as a series' seasons and
+//!     their episodes.
+//!   - `metadata` says where its entries' covers, screenshots and other details come from:
+//!     `libretro:<system>`, `tmdb:movie` or `tmdb:tv`. The services' keys are in `keys` (see
+//!     [`crate::library::meta`]).
+//!   - `on` names the removable filesystem `dir` is on (see [`On`]); `dir` is then a path inside it. The
+//!     source is away while no matching filesystem is mounted.
 //!
-//! `~` and `~/` at the start of `dir` or of a launch argument is the home dir; in `dir`, `$VAR`, `${VAR}`
-//! and `${VAR:-default}` are environment variables (`${XDG_DATA_HOME:-~/.local/share}/roms`). A source
-//! whose dir is missing is skipped, as one naming a variable unset without a default (shown); so is a file
-//! that doesn't parse (logged).
+//!   Ids are `<id>:<path in dir>`, so moving the whole dir and updating `dir` keeps them, but renaming or
+//!   moving things inside it doesn't.
+//!
+//!   An entry's title is its name at the top of `dir`, or an episode's file name, without a file's
+//!   extension. In a season's folder (`Season 2`, `S02`, `Series 2`, or `Specials` for season 0), a file
+//!   named for an episode of that season, like `017 S02E18 Title`, is titled by its number: `18. Title`,
+//!   or `1–2.` for a double episode.
+//!
+//!   Box art is `<name>.jpg` (or .jpeg, .png, .webp) beside a file, or `poster`, `cover` or `folder` in a
+//!   folder, in any case (`Cover.jpg` works). Otherwise an entry uses its group's art, except a video mpv
+//!   plays, whose frame is its picture. The folder at the source's place uses the place's picture, or
+//!   else a `poster`, `cover` or `folder` image in the scan's dir.
+//! - `browse` is a dir that is listed when it is opened instead of being scanned, so it has no metadata
+//!   and isn't in Recent. It gets its own folder at its `place`, titled by the last part. `trash` marks it
+//!   as the Trash's `files` dir.
+//! - `desktop` and `steam` take the apps and games from desktop files and Steam's installed games, which
+//!   are opened by a runner of that type. The sources of each type take entries in order: each takes the
+//!   remaining ones it matches (see [`Rule`]) and puts them at its `place`, or leaves them out with
+//!   `hide`. Matching is by id, name and a desktop file's categories, as globs in any case; a rule with
+//!   none of them matches everything. Entries no source takes are left out. `runner` is the runner of the
+//!   type that opens them, by default the first. `metadata` is `steamgriddb`, or `steam` for a Steam
+//!   source. A desktop file's id is its name without `.desktop`, and a Steam game's is its app id.
+//!   Examples, in order:
+//!   `{ "type": "desktop", "id": "net.lutris.*", "place": "@apps" }`,
+//!   `{ "type": "desktop", "categories": "Game", "place": "@games" }`,
+//!   `{ "type": "desktop", "id": "*uninstall*", "hide": true }`,
+//!   `{ "type": "desktop", "place": "@apps" }` for the rest.
+//! - `removable` takes the mounted removable filesystems (udisks2's, under `/run/media/$USER`). They are
+//!   browsed like `browse` dirs and taken in the same way as `desktop` entries, matched by `label`, `uuid`
+//!   and `fs` (see [`MountRule`]). Each goes at its source's `place`, where `{label}` is replaced by the
+//!   filesystem's label, or its UUID if it has none.
+//!
+//! `~` and `~/` at the start of `dir` or of a launch argument mean the home dir. In `dir`, `$VAR`,
+//! `${VAR}` and `${VAR:-default}` are environment variables, as in `${XDG_DATA_HOME:-~/.local/share}/roms`.
+//! A source whose dir is missing is skipped. So is one naming an unset variable with no default, which is
+//! shown as a problem. A file that doesn't parse is skipped too, and logged.
 
 use std::collections::HashSet;
 use std::fs;
@@ -83,8 +105,8 @@ use serde::Deserialize;
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
-    /// Places declared: their ids (to refer to as `@id`), icons and pictures; the tabs' order; ClamShell's
-    /// own tabs.
+    /// The declared places, with their ids (referred to as `@id`), icons and pictures. They also set the
+    /// tabs' order and declare ClamShell's own tabs.
     #[serde(default)]
     pub places: Vec<Place>,
     #[serde(default)]
@@ -96,11 +118,13 @@ pub struct Config {
     pub keys: crate::library::meta::Keys,
 }
 
-/// Where entries come from (`type`), and where they go: a dir scanned (`dir`), one browsed (`browse`), the
-/// desktop files' apps and games (`desktop`), Steam's installed games (`steam`), the removable
-/// filesystems mounted (`removable`). Of the last three, the sources of a type take their entries in
-/// turn: each the ones left that it matches (see [`Rule`], [`MountRule`]), putting them at its place or
-/// leaving them out (`hide`); what none takes is left out.
+/// Where entries come from, by `type`, and where they go. The types are a scanned dir (`dir`), a browsed
+/// dir (`browse`), the apps and games from desktop files (`desktop`), Steam's installed games (`steam`)
+/// and the mounted removable filesystems (`removable`).
+///
+/// For the last three, the sources of a type take their entries in turn. Each takes the remaining ones it
+/// matches (see [`Rule`], [`MountRule`]) and puts them at its place, or leaves them out with `hide`.
+/// Entries no source takes are left out.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum Source {
@@ -111,13 +135,20 @@ pub enum Source {
     Removable(MountRule),
 }
 
-/// A place declared: its `id` (`"place": "@snes"`, `"@snes/RPG"` elsewhere; its folder's id, `place:snes`,
-/// which outlives a new path), its `path` (`Games/SNES`; one part: a tab), its `icon` (one of the UI's by
-/// name, `gamepad`; a folder's also an image file, its row's) and a folder's `picture` (an image file,
-/// shown large when it is selected; a tab has none: something in it is always selected). Image files: `~/`
-/// the home dir, else from library.json's dir. `recent: false`: what is in it (and in its folders, unless
-/// they say) isn't in Recent (apps). `type`: one of ClamShell's own tabs (`recent`, `favourites`,
-/// `tools`), its path its name.
+/// A declared place.
+///
+/// - `id` refers to it elsewhere, as `"place": "@snes"` or `"@snes/RPG"`. Its folder's id is
+///   `place:snes`, which stays the same if the path changes.
+/// - `path` is like `Games/SNES`; a single part is a tab.
+/// - `icon` is one of the UI's icons by name, such as `gamepad`. A folder's icon can also be an image
+///   file, shown in its row.
+/// - `picture` is a folder's image file, shown large when it is selected. A tab has none, because
+///   something in it is always selected.
+/// - `recent: false` keeps what is in it out of Recent, for apps. Its folders inherit this unless they
+///   set it themselves.
+/// - `type` makes it one of ClamShell's own tabs (`recent`, `favourites`, `tools`), named by its path.
+///
+/// Image file paths starting with `~/` are in the home dir; others are relative to library.json's dir.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Place {
@@ -137,14 +168,15 @@ pub struct Place {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum OwnTab {
-    /// The entries played last (not those in a place with `recent: false`).
+    /// The entries played last, except those in a place with `recent: false`.
     Recent,
     Favourites,
-    /// ClamShell's own tools (rescanning the library, fetching what is missing again).
+    /// ClamShell's own tools, such as rescanning the library and fetching what is missing again.
     Tools,
 }
 
-/// `place` with a declared place's id (`@snes`, `@snes/RPG`) as its path; Err: an id not declared.
+/// `place` with a declared place's id (`@snes`, `@snes/RPG`) replaced by its path. Errs if the id isn't
+/// declared.
 pub fn resolve(place: &str, places: &[Place]) -> Result<String, String> {
     let Some(reference) = place.trim().strip_prefix('@') else {
         return Ok(place.to_owned());
@@ -154,9 +186,9 @@ pub fn resolve(place: &str, places: &[Place]) -> Result<String, String> {
     Ok(if rest.is_empty() { declared.path.clone() } else { format!("{}/{rest}", declared.path.trim_end_matches('/')) })
 }
 
-/// A dir browsed: its own folder at `place` (its last part the folder's title: `Files/Home`,
-/// `Files/Places/Root`), listed when it is opened; `trash`: it is the Trash's `files` dir (its entries
-/// restored, deleted).
+/// A browsed dir. It gets its own folder at `place`, titled by the last part (`Files/Home`,
+/// `Files/Places/Root`), and is listed when it is opened. `trash` marks it as the Trash's `files` dir,
+/// whose entries can be restored or deleted.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BrowseRoot {
@@ -166,9 +198,10 @@ pub struct BrowseRoot {
     pub trash: bool,
 }
 
-/// A removable source: the mounted removable filesystems (those left) matching all of its `label`,
-/// `uuid` and `fs` (globs, any case; none: all) go at `place` as their folder (its last part the folder's
-/// title; `{label}` in it their label, or their UUID without one), or are left out (`hide`).
+/// A removable source. The remaining mounted removable filesystems that match all of its `label`, `uuid`
+/// and `fs` go at `place` as their own folders, or are left out with `hide`. The fields are globs in any
+/// case, and an unset one matches anything. The folder is titled by the last part of `place`, where
+/// `{label}` is replaced by the filesystem's label, or its UUID if it has none.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MountRule {
@@ -191,11 +224,14 @@ impl MountRule {
     }
 }
 
-/// A desktop or Steam source: the desktop files' entries or Steam's games (those left) matching all of
-/// its `id`, `name` and `categories` (globs, any case; `categories` matches if any of an entry's does;
-/// Steam's games have none; none: all) go at `place` (a tab, or a folder in one: `@games/Launchers`), or
-/// are left out (`hide`); `runner` (an id; else the first runner of the type) opens them, `metadata`
-/// (`steamgriddb`; a Steam source's `steam`, its store) is where their covers and details come from.
+/// A desktop or Steam source. The remaining desktop file entries or Steam games that match all of its
+/// `id`, `name` and `categories` go at `place`, a tab or a folder in one (`@games/Launchers`), or are left
+/// out with `hide`. The fields are globs in any case, and an unset one matches anything. `categories`
+/// matches if any of an entry's categories does; Steam games have none.
+///
+/// `runner`, an id, is the runner that opens them; by default it is the first runner of the type.
+/// `metadata` is where their covers and details come from: `steamgriddb`, or `steam` (the Steam store)
+/// for a Steam source.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Rule {
@@ -225,16 +261,19 @@ impl Rule {
     }
 }
 
-/// A dir whose entries go in the library: `id` names them (`<id>:<path in dir>`), `place` says where they
-/// show, `match` (paths in `dir`, a part per folder level: `*/*.cue`) and `items` (a matched folder's own
-/// entries) say what is an entry, `metadata` where their covers and details come from; `runner` (an id)
-/// opens them all, else each opens by the runner its file's name matches (see [`super::runners`]).
+/// A dir whose entries go in the library.
+///
+/// `id` names the entries as `<id>:<path in dir>`, and `place` says where they show. `match` and `items`
+/// say what is an entry: `match` is matched against paths in `dir`, one part per folder level
+/// (`*/*.cue`), and `items` against a matched folder's own entries. `metadata` says where their covers and
+/// details come from. `runner`, an id, opens them all; without it, each opens with the runner its file
+/// name matches (see [`super::runners`]).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Scan {
     pub id: String,
     pub dir: String,
-    /// Where its entries go: a tab (`Games`), or a folder in one (`Games/SNES`, `@snes`).
+    /// Where its entries go: a tab (`Games`) or a folder in one (`Games/SNES`, `@snes`).
     pub place: String,
     #[serde(default, rename = "match")]
     pub patterns: Vec<String>,
@@ -244,13 +283,14 @@ pub struct Scan {
     pub metadata: Option<String>,
     #[serde(default)]
     pub runner: Option<String>,
-    /// The removable filesystem `dir` is on (the first mounted matching this): then `dir` is a path in it
-    /// (`roms/snes`), and the source is away while none is mounted.
+    /// The removable filesystem `dir` is on: the first mounted one matching this. `dir` is then a path
+    /// inside it (`roms/snes`), and the source is away while none is mounted.
     #[serde(default)]
     pub on: Option<On>,
 }
 
-/// A removable filesystem, by its `label`, `uuid` and `fs` (globs, any case; none: any).
+/// A removable filesystem, matched by its `label`, `uuid` and `fs`. These are globs in any case, and an
+/// unset one matches anything.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct On {
@@ -275,8 +315,8 @@ impl On {
 /// How a scanned file opens: its command and its runner, if a runner opens it.
 pub type Open<'a> = dyn Fn(&Path) -> Option<(Launch, clamshell_library::RunnerOf)> + 'a;
 
-/// A place's tab and the path of folders in it (none: the tab's top): `Games/Handhelds/GBA` is Games and
-/// `Handhelds/GBA`; slashes at its ends and spaces around its parts don't count.
+/// A place's tab and the path of folders in it, which is empty for the tab's top. `Games/Handhelds/GBA`
+/// gives Games and `Handhelds/GBA`. Slashes at the ends and spaces around the parts are ignored.
 pub fn place(place: &str) -> (&str, &str) {
     let place = place.trim().trim_matches('/');
     match place.split_once('/') {
@@ -285,7 +325,8 @@ pub fn place(place: &str) -> (&str, &str) {
     }
 }
 
-/// The config at `file`; none if it is missing, or if it doesn't parse (then what is wrong with it).
+/// The config at `file`. It is the default if the file is missing or doesn't parse; in the second case,
+/// what is wrong with it is returned too.
 pub fn read_config(file: &Path) -> (Config, Option<String>) {
     let Ok(text) = fs::read_to_string(file).inspect_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
@@ -305,8 +346,8 @@ pub fn read_config(file: &Path) -> (Config, Option<String>) {
     }
 }
 
-/// A scan's entries: appended to `games` (groups before their items, each file opened as `open` says, a
-/// group by its first entry's runner), the indices of its top-level ones returned.
+/// Scans `source` and appends its entries to `games`, groups before their items. Each file opens as `open`
+/// says, and a group with its first entry's runner. Returns the indices of the top-level entries.
 pub fn scan(source: &Scan, home: Option<&Path>, games: &mut Vec<Entry>, open: &Open) -> Vec<usize> {
     let dir = match expand_dir(&source.dir, home) {
         Ok(dir) => dir,
@@ -358,13 +399,13 @@ pub fn scan(source: &Scan, home: Option<&Path>, games: &mut Vec<Entry>, open: &O
     tops
 }
 
-/// `path`'s command and runner as `open` says; nothing (and none) if no runner opens it.
+/// `path`'s command and runner as `open` says, or no launch and no runner if no runner opens it.
 fn opened(open: &Open, path: &Path) -> (Launch, Option<clamshell_library::RunnerOf>) {
     open(path).map_or((Launch::None, None), |(launch, runner)| (launch, Some(runner)))
 }
 
-/// The paths under `dir` that `parts` match, a part per level (the last a folder if `folders`, else a
-/// file), in name order.
+/// The paths under `dir` that `parts` match, one part per level, in name order. The last part matches a
+/// folder if `folders` is set, and a file otherwise.
 fn matches(dir: &Path, parts: &[&str], folders: bool) -> Vec<PathBuf> {
     let Some((part, rest)) = parts.split_first() else {
         return Vec::new();
@@ -395,14 +436,15 @@ fn listing(dir: &Path) -> Vec<(String, PathBuf)> {
     entries
 }
 
-/// The group of `folder` (in `dir`, the source's): its subfolders with entries first, then its files
-/// matching `items`; added to `games` with its items, its index returned. None if nothing in it matches.
+/// Adds the group for `folder`, which is in the source's `dir`, to `games` along with its items, and
+/// returns its index. Its subfolders with entries come first, then its files matching `items`. None if
+/// nothing in it matches.
 fn group(folder: &Path, dir: &Path, source: &str, items: &[String], open: &Open, parent: Option<usize>, games: &mut Vec<Entry>) -> Option<usize> {
     let id = |path: &Path| format!("{source}:{}", path.strip_prefix(dir).unwrap_or(path).to_string_lossy());
     let name = folder.file_name()?.to_string_lossy().into_owned();
     let index = games.len();
     let art = art(folder, dir).or_else(|| parent.and_then(|p| games.get(p)).and_then(|g| g.box_front.clone()));
-    // (A folder's entries in its outermost folder's colour: one colour for a series while it has no art.)
+    // A folder's entries take its outermost folder's colour, so a series has one colour while it has no art.
     let mut own = Entry { parent, box_front: art.clone(), ..Entry::new(&id(folder), &name) };
     if let Some(p) = parent.and_then(|p| games.get(p)) {
         own.color = p.color;
@@ -422,7 +464,7 @@ fn group(folder: &Path, dir: &Path, source: &str, items: &[String], open: &Open,
         if !items.iter().any(|p| !hidden(file, p) && pattern::matches(p, file)) {
             continue;
         }
-        // (A video keeps its own picture, its frame: not its folder's art.)
+        // A video keeps its own picture, its frame, rather than its folder's art.
         let (launch, runner) = opened(open, path);
         let video = Entry { launch: launch.clone(), file: Some(path.clone()), ..Entry::new("", "") }.mpv_file().is_some();
         let box_front = art_beside(path).or_else(|| art.clone().filter(|_| !video));
@@ -437,7 +479,8 @@ fn group(folder: &Path, dir: &Path, source: &str, items: &[String], open: &Open,
         });
         files.push(games.len() - 1);
     }
-    // The files by their titles (an episode's number, where it has one), after the folders.
+    // Sort the files by title, which starts with the episode number where there is one. They go after the
+    // folders.
     files.sort_by(|&a, &b| {
         let key = |i: usize| games.get(i).map(|g| (&g.sort_key, &g.title));
         key(a).cmp(&key(b))
@@ -447,7 +490,8 @@ fn group(folder: &Path, dir: &Path, source: &str, items: &[String], open: &Open,
         games.truncate(index);
         return None;
     }
-    // (Its runner: its first entry's. Its playlist: an `.m3u` in it, enqueued instead of its entries.)
+    // The group's runner is its first entry's. Its playlist is an `.m3u` in it, enqueued instead of its
+    // entries.
     let runner = members.iter().find_map(|&m| games.get(m).and_then(|g| g.runner.clone()));
     let playlist = listing.iter().find(|(n, p)| p.is_file() && [".m3u", ".m3u8"].iter().any(|e| n.to_lowercase().ends_with(e))).map(|(_, p)| p.clone());
     if let Some(g) = games.get_mut(index) {
@@ -463,13 +507,15 @@ const IMAGES: [&str; 4] = ["jpg", "jpeg", "png", "webp"];
 /// A folder's own art, by name.
 const FOLDER_ART: [&str; 3] = ["poster", "cover", "folder"];
 
-/// An entry's art: a folder's own; a file's beside it, else its folder's (one inside the source's `dir`).
+/// An entry's art. A folder uses its own; a file uses the art beside it, or else its folder's if that
+/// folder is inside the source's `dir`.
 fn art(path: &Path, dir: &Path) -> Option<PathBuf> {
     picture_of(path).or_else(|| path.parent().filter(|p| *p != dir && p.starts_with(dir) && path.is_file()).and_then(folder_art))
 }
 
-/// A file's or folder's own picture, wherever it is (scanned or browsed): a folder's `poster`, `cover` or
-/// `folder` image in it; a file's `<name>.<image>` beside it, else the file itself if it is an image.
+/// A file's or folder's own picture, whether scanned or browsed. For a folder, it is a `poster`, `cover`
+/// or `folder` image in it. For a file, it is `<name>.<image>` beside it, or else the file itself if it is
+/// an image.
 pub fn picture_of(path: &Path) -> Option<PathBuf> {
     if path.is_dir() {
         return folder_art(path);
@@ -484,7 +530,7 @@ fn art_beside(file: &Path) -> Option<PathBuf> {
 }
 
 pub(crate) fn folder_art(folder: &Path) -> Option<PathBuf> {
-    // (By name in any case: `Cover.jpg` too.)
+    // Names match in any case, so `Cover.jpg` counts.
     let files: Vec<(String, PathBuf)> = fs::read_dir(folder)
         .inspect_err(|e| log::debug!("library: {}: {e}", folder.display()))
         .map(|d| d.flatten().filter_map(|e| Some((e.file_name().to_str()?.to_lowercase(), e.path()))).collect())
@@ -504,15 +550,15 @@ pub(crate) fn expand(path: &str, home: Option<&Path>) -> PathBuf {
     }
 }
 
-/// A dir as library.json gives it: its environment variables (see [`expand_vars`]), then `~/`. Err: a
-/// variable without a value or a default (its name).
+/// Expands a dir as library.json gives it: environment variables first (see [`expand_vars`]), then `~/`.
+/// Errs with the name of a variable that has no value and no default.
 pub(crate) fn expand_dir(dir: &str, home: Option<&Path>) -> Result<PathBuf, String> {
     expand_vars(dir, &|name| std::env::var(name).ok()).map(|d| expand(&d, home))
 }
 
-/// `$NAME`, `${NAME}` and `${NAME:-default}` (the default when it is unset or empty; expanded itself) in
-/// `text`, by `lookup`; a `$` before anything else is itself. Err: a variable without a value or a default
-/// (its name).
+/// Expands `$NAME`, `${NAME}` and `${NAME:-default}` in `text` using `lookup`. The default is used when
+/// the variable is unset or empty, and is expanded itself. A `$` followed by anything else stays as it is.
+/// Errs with the name of a variable that has no value and no default.
 pub(crate) fn expand_vars(text: &str, lookup: &dyn Fn(&str) -> Option<String>) -> Result<String, String> {
     let name_len =
         |s: &str| s.char_indices().find(|&(i, c)| !(c == '_' || c.is_ascii_alphabetic() || (i > 0 && c.is_ascii_digit()))).map_or(s.len(), |(i, _)| i);
@@ -522,7 +568,7 @@ pub(crate) fn expand_vars(text: &str, lookup: &dyn Fn(&str) -> Option<String>) -
         out.push_str(rest.get(..at).unwrap_or(""));
         let after = rest.get(at + 1..).unwrap_or("");
         if let Some(inner) = after.strip_prefix('{') {
-            // To the matching brace (a default may hold `${...}` itself).
+            // Find the matching brace, since a default may contain `${...}` itself.
             let mut depth = 1;
             let end = inner.char_indices().find(|&(_, c)| {
                 depth += match c {

@@ -1,6 +1,6 @@
-//! Installed Steam games, from Steam's own files: the library folders (`libraryfolders.vdf`), each
-//! game's manifest (`appmanifest_<id>.acf`), and its portrait art in Steam's cache. The files' syntax is
-//! clamshell-library's (`steam`). Installing and browsing stay in Steam.
+//! Installed Steam games, read from Steam's own files: the library folders (`libraryfolders.vdf`), each
+//! game's manifest (`appmanifest_<id>.acf`), and its portrait art in Steam's cache. Parsing the files is
+//! done by clamshell-library's `steam`. Installing and browsing games stay in Steam.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -63,8 +63,9 @@ pub fn games(root: &Path) -> Vec<Entry> {
     games
 }
 
-/// The game's portrait art in Steam's cache: `<appid>/library_600x900.jpg` (older), or
-/// `<appid>/<hash>/library_capsule.jpg` (newer); the landscape header if there is no portrait.
+/// The game's portrait art in Steam's cache: `<appid>/library_600x900.jpg` in older versions, or
+/// `<appid>/<hash>/library_capsule.jpg` in newer ones. Falls back to the landscape header if there is no
+/// portrait.
 fn art(cache: &Path, appid: u32) -> Option<PathBuf> {
     let dir = cache.join(appid.to_string());
     let flat = [dir.join("library_600x900.jpg"), cache.join(format!("{appid}_library_600x900.jpg"))];

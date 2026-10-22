@@ -1,4 +1,4 @@
-//! SteamGridDB: a cover by name, for the desktop files' games; needs `keys.steamgriddb`.
+//! SteamGridDB: a cover by name for games from desktop files. Needs `keys.steamgriddb`.
 
 use clamshell_core::Meta;
 

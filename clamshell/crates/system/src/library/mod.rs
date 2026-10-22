@@ -1,6 +1,6 @@
-//! The library from disk: library.json's content dirs (see [`content`]), installed Steam games, the
-//! desktop files' games and apps; play time and favourites as kept (see [`crate::store`]). The model is
-//! clamshell-library's.
+//! Reads the library from disk: library.json's content dirs (see [`content`]), installed Steam games, and
+//! the games and apps from desktop files, along with the stored play time and favourites (see
+//! [`crate::store`]). The model is in clamshell-library.
 
 pub(crate) mod content;
 pub(crate) mod desktop;
@@ -30,7 +30,7 @@ pub struct Sources {
     pub state: Option<PathBuf>,
     /// The art cache, for what was fetched about entries and videos' lengths.
     pub art: Option<PathBuf>,
-    /// The XDG data dirs, the installed apps' desktop files in their `applications` (see
+    /// The XDG data dirs, whose `applications` dirs hold the installed apps' desktop files (see
     /// [`crate::library::desktop`]).
     pub data_dirs: Vec<PathBuf>,
     /// Where mpv keeps videos' places.
@@ -52,8 +52,8 @@ impl Sources {
     }
 }
 
-/// The folders made in the tabs, by tab and path; library.json's places (their ids, icons, pictures),
-/// image files in them from `config_dir` (`~/` the home dir).
+/// The folders made in the tabs, by tab and path, and library.json's places with their ids, icons and
+/// pictures. Image file paths in the places are relative to `config_dir`, or to the home dir with `~/`.
 struct Folders<'a> {
     made: HashMap<(String, String), usize>,
     places: &'a [content::Place],
@@ -62,9 +62,9 @@ struct Folders<'a> {
 }
 
 impl Folders<'_> {
-    /// Puts `entries` (a scan's, from `dir`) in the folder at `path` in `tab` (`A/B`: B in A), made where it
-    /// isn't there yet (its art from a place declared there, else from `dir`); the folder at the top of the
-    /// tab if it is new (to add to it).
+    /// Puts `entries`, from a scan of `dir`, in the folder at `path` in `tab`, where `A/B` is B inside A.
+    /// Folders that don't exist yet are made. Their art comes from a place declared there, or else from
+    /// `dir`. Returns the folder at the top of the tab if it is new, for the caller to add to the tab.
     fn put(&mut self, games: &mut Vec<Entry>, tab: &str, path: &str, dir: &Path, entries: &[usize]) -> Option<usize> {
         let mut new_top = None;
         let mut parent: Option<usize> = None;
@@ -104,8 +104,8 @@ impl Folders<'_> {
         new_top
     }
 
-    /// A new folder at `at` in `tab`, titled `title`: a place declared there gives its id (`place:<id>`),
-    /// icon and picture; else its id is its path (`folder:<tab>/<at>`).
+    /// A new folder at `at` in `tab`, titled `title`. If a place is declared there, it gives the folder's
+    /// id (`place:<id>`), icon and picture. Otherwise the id is the path (`folder:<tab>/<at>`).
     fn folder(&self, tab: &str, at: &str, title: &str) -> Entry {
         let path = format!("{tab}/{at}");
         let Some(place) = self.places.iter().find(|p| p.path.trim().trim_matches('/') == path) else {
@@ -119,7 +119,7 @@ impl Folders<'_> {
         let mut g = Entry::new(&format!("place:{}", place.id), title);
         g.box_front = place.picture.as_deref().map(file);
         match place.icon.as_deref() {
-            // (An image file, or one of the UI's icons by name.)
+            // Either an image file or one of the UI's icons by name.
             Some(icon) if icon.contains(['/', '.']) => g.icon = Some(file(icon)),
             Some(icon) => g.glyph = Some(icon.into()),
             None => {}
@@ -128,8 +128,8 @@ impl Folders<'_> {
     }
 }
 
-/// The programs ClamShell runs itself (not a runner's: those are the runners' problems), and what goes
-/// without each.
+/// The programs ClamShell runs itself, and what doesn't work without each. Programs that runners use are
+/// checked with the runners.
 const NEEDED: [(&str, &str); 8] = [
     ("systemd-run", "nothing can be launched"),
     ("ratarmount", "archives can't be browsed"),
@@ -141,7 +141,7 @@ const NEEDED: [(&str, &str); 8] = [
     ("curl", "no covers or details fetched"),
 ];
 
-/// The Tools tab's entries: id, title, the tool, what it does.
+/// The Tools tab's entries: id, title, the tool and what it does.
 const TOOLS: [(&str, &str, Tool, &str); 3] = [
     (
         "tool:device",
@@ -172,15 +172,15 @@ fn browsed_root(id: &str, dir: PathBuf, kind: BrowseKind) -> Entry {
 #[derive(Debug, Default)]
 pub struct Loaded {
     pub library: Library,
-    /// The entries to fetch metadata for (none fetched, the source changed, a miss long ago, or its
-    /// images gone from the cache).
+    /// The entries to fetch metadata for: never fetched, fetched from a different source, missed long
+    /// ago, or with images gone from the cache.
     pub wanted: Vec<Wanted>,
     pub keys: Keys,
 }
 
-/// Reads library.json's sources into its places (see [`content`]): each entry, its runner and where its
-/// metadata comes from; ClamShell's own tabs as declared; the tabs in their order. Then each entry's
-/// plays, whether it is a favourite, and what was fetched about it.
+/// Reads library.json's sources into its places (see [`content`]), with each entry's runner and where
+/// its metadata comes from. Adds ClamShell's own tabs as declared and puts the tabs in order. Then adds
+/// each entry's plays, whether it is a favourite, and what was fetched about it.
 pub fn load(sources: &Sources) -> Loaded {
     let (config, config_problem) = sources.config.as_deref().map(content::read_config).unwrap_or_default();
     let (runners, runner_problems) = runners::in_force(&config.runners);
@@ -206,7 +206,7 @@ pub fn load(sources: &Sources) -> Loaded {
         match source {
             content::Source::Dir(scan) => b.scan(scan),
             content::Source::Browse(root) => b.browse(root),
-            // (Each kind of these at once, its sources in turn.)
+            // These are handled one type at a time below, with each type's sources in turn.
             content::Source::Desktop(_) | content::Source::Steam(_) | content::Source::Removable(_) => {}
         }
     }
@@ -226,8 +226,8 @@ pub fn load(sources: &Sources) -> Loaded {
     Loaded { library, wanted, keys: config.keys }
 }
 
-/// The library as it is read: its entries and tabs, the folders made, where each entry's metadata comes
-/// from, what is wrong, the sources away; the removable filesystems mounted.
+/// The library while it is read: its entries and tabs, the folders made, where each entry's metadata
+/// comes from, the problems, the sources that are away, and the mounted removable filesystems.
 struct Builder<'a> {
     config: &'a content::Config,
     runners: &'a [runners::Runner],
@@ -242,7 +242,8 @@ struct Builder<'a> {
 }
 
 impl Builder<'_> {
-    /// A tab shows its icon only, one of the UI's: something in it is always selected.
+    /// Reports tabs with a picture or an image icon. A tab shows only an icon from the UI's set, because
+    /// something in it is always selected.
     fn check_tabs(&mut self) {
         for p in self.config.places.iter().filter(|p| !p.path.trim().trim_matches('/').contains('/')) {
             if p.picture.is_some() || p.icon.as_deref().is_some_and(|i| i.contains(['/', '.'])) {
@@ -251,12 +252,14 @@ impl Builder<'_> {
         }
     }
 
-    /// A place as library.json gives it (`@id` a declared one's path), or what is wrong with it (said).
+    /// A place as library.json gives it, with `@id` replaced by the declared place's path. If that fails,
+    /// the problem is recorded and none is returned.
     fn resolve(&mut self, place: &str) -> Option<String> {
         content::resolve(place, &self.config.places).map_err(|e| self.problems.push(e)).ok()
     }
 
-    /// `entries` at `place` (resolved): in its tab, or in a folder of it (made from `dir`'s art).
+    /// Puts `entries` at the resolved `place`: in its tab, or in a folder in it that takes its art from
+    /// `dir`.
     fn put(&mut self, place: &str, dir: &Path, entries: Vec<usize>) {
         let (tab, path) = content::place(place);
         let entries = match path {
@@ -276,14 +279,16 @@ impl Builder<'_> {
         }
     }
 
-    /// Where a source's `metadata` says its entries' covers and details come from; what is wrong with it.
+    /// Where a source's `metadata` says its entries' covers and details come from. Problems with it are
+    /// recorded.
     fn how(&mut self, id: &str, metadata: Option<&str>) -> Option<How> {
         let m = metadata?;
         let Some(how) = How::parse(m) else {
             self.problems.push(format!("{id}: metadata \"{m}\" isn't libretro:<system>, tmdb:movie, tmdb:tv, steamgriddb or steam"));
             return None;
         };
-        // (Without the key nothing is asked: not a miss, so it is fetched once the key is there.)
+        // Without the key nothing is asked. That isn't recorded as a miss, so it is fetched once the key is
+        // there.
         let keys = &self.config.keys;
         match how {
             How::Tmdb(_) if keys.tmdb.is_none() => self.problems.push(format!("{id}: tmdb needs keys.tmdb")),
@@ -293,12 +298,13 @@ impl Builder<'_> {
         None
     }
 
-    /// A dir source: its entries scanned, each opened by its runner (or its file's name's), at its place.
+    /// Scans a dir source and puts its entries at its place. Each opens with the source's runner, or the
+    /// runner matching its file name.
     fn scan(&mut self, source: &content::Scan) {
         let runners = self.runners;
         let home = self.sources.home.as_deref();
-        // The runner it names opens all its entries (its patterns theirs, unless it has its own); else
-        // each its file's name's.
+        // The runner the source names opens all its entries, and its patterns are used unless the source
+        // has its own. Otherwise each entry opens with the runner matching its file name.
         let named = match source.runner.as_deref().map(|id| runners.iter().find(|r| r.id == id).ok_or(id)) {
             Some(Err(id)) => return self.problems.push(format!("{}: no runner {id}", source.id)),
             Some(Ok(r)) => Some(r),
@@ -312,7 +318,7 @@ impl Builder<'_> {
             Some(r) => Some((r.command(path, home), r.of(home))),
             None => runners::open(runners, path, home),
         };
-        // Its dir: on a removable filesystem (away while none matching is mounted), or as it says.
+        // The dir is either on a removable filesystem, away while no matching one is mounted, or as given.
         let dir = match &source.on {
             Some(on) => match self.mounts.iter().find(|m| on.matches(&m.label, &m.uuid, &m.fs)) {
                 Some(m) => m.dir.join(source.dir.trim_start_matches('/')),
@@ -334,7 +340,7 @@ impl Builder<'_> {
         let scan = content::Scan { patterns, dir: dir.to_string_lossy().into_owned(), on: None, ..source.clone() };
         let entries = content::scan(&scan, home, &mut self.games, &open);
         if let Some(how) = self.how(&source.id, source.metadata.as_deref()) {
-            // (libretro has games, not folders of them.)
+            // libretro has games, not folders of them.
             let games = &self.games;
             let fits = |i: &usize| !matches!(how, How::Libretro(_)) || games.get(*i).is_some_and(|g| !g.is_group());
             let fitting: Vec<usize> = entries.iter().copied().filter(fits).collect();
@@ -345,7 +351,7 @@ impl Builder<'_> {
         }
     }
 
-    /// A browse source: its dir's own folder at its place, listed when it is opened.
+    /// A browse source: puts its dir's own folder at its place, to be listed when it is opened.
     fn browse(&mut self, root: &content::BrowseRoot) {
         let Some(place) = self.resolve(&root.place) else {
             return;
@@ -356,7 +362,7 @@ impl Builder<'_> {
             Ok(dir) => return self.problems.push(format!("{place}: no folder {}", dir.display())),
             Err(name) => return self.problems.push(format!("{place}: ${name} isn't set")),
         };
-        // (The Trash's folder may not be made yet.)
+        // The Trash's folder may not exist yet.
         if root.trash
             && let Err(e) = std::fs::create_dir_all(&dir)
         {
@@ -366,7 +372,7 @@ impl Builder<'_> {
         self.browsed_root(&place, browsed_root(&format!("{}{place}", ids::BROWSE), dir, kind));
     }
 
-    /// The removable filesystems mounted, each taken by the first removable source matching it.
+    /// Adds the mounted removable filesystems, each taken by the first removable source matching it.
     fn removable(&mut self) {
         let config = self.config;
         let rules: Vec<&content::MountRule> = config
@@ -393,7 +399,8 @@ impl Builder<'_> {
         }
     }
 
-    /// A browsed dir's folder at `place`: its last part the folder's title, the rest where it is.
+    /// Adds a browsed dir's folder at `place`. The last part of `place` is the folder's title, and the rest
+    /// is where it goes.
     fn browsed_root(&mut self, place: &str, mut root: Entry) {
         let (tab, path) = content::place(place);
         if path.is_empty() {
@@ -408,9 +415,9 @@ impl Builder<'_> {
         self.put(&place, Path::new(""), i);
     }
 
-    /// Steam's installed games and the desktop files' apps and games, each taken by the first source of
-    /// its type matching it: at its place (or left out: `hide`, or none matching), opened by its runner,
-    /// its metadata from where it says. (The games first, then the apps.)
+    /// Adds Steam's installed games and the apps and games from desktop files, games first. Each is taken
+    /// by the first source of its type that matches it, which puts it at its place, sets its runner and
+    /// says where its metadata comes from. It is left out if that source has `hide` or none matches.
     fn installed(&mut self) {
         let config = self.config;
         let of_type = |want: fn(&content::Source) -> Option<&content::Rule>| config.sources.iter().filter_map(want).collect::<Vec<_>>();
@@ -423,7 +430,7 @@ impl Builder<'_> {
             _ => None,
         });
         let mut placed: Vec<(&content::Rule, Entry)> = Vec::new();
-        // (Its problems once each.)
+        // Report each of these problems only once.
         let first_problem = self.problems.len();
         if !steam.is_empty() {
             for game in self.sources.steam.as_deref().map(steam::games).unwrap_or_default() {
@@ -448,7 +455,7 @@ impl Builder<'_> {
             let Some(place) = rule.place.as_deref().filter(|_| !rule.hide) else {
                 continue;
             };
-            // Its runner: the one the source names, else the first of its type.
+            // The runner is the one the source names, or else the first of its type.
             let kind = if matches!(game.launch, Launch::Steam { .. }) { runners::Kind::Steam } else { runners::Kind::Desktop };
             let runner = match rule.runner.as_deref() {
                 Some(id) => self.runners.iter().find(|r| r.id == id && r.kind == Some(kind)),
@@ -461,7 +468,7 @@ impl Builder<'_> {
                 continue;
             };
             game.runner = Some(runner.of(self.sources.home.as_deref()));
-            // (A desktop runner's own command, if it has one, instead of the desktop file's.)
+            // A desktop runner's own command, if it has one, replaces the desktop file's.
             if let Some(launch) = ids::desktop_file(&game.id).and_then(|id| runner.wrap(id, &game.launch, self.sources.home.as_deref())) {
                 game.launch = launch;
             }
@@ -483,8 +490,8 @@ impl Builder<'_> {
         self.problems.extend(mine);
     }
 
-    /// A folder's entries (from its sources, and its folders) and each tab's in list order; the tabs
-    /// without entries left out.
+    /// Puts each folder's entries, from its sources and its subfolders, and each tab's entries in list
+    /// order. Tabs without entries are dropped.
     fn order(&mut self) {
         let games = &self.games;
         let mut sorted: Vec<(usize, Vec<usize>)> = Vec::new();
@@ -510,8 +517,8 @@ impl Builder<'_> {
         self.config.places.iter().find(|p| p.path.trim().trim_matches('/') == name)
     }
 
-    /// What is in Recent: not what is in a place (or a folder of one) saying `recent: false`; the tabs'
-    /// icons, as their places give them.
+    /// Marks what is left out of Recent: anything in a place, or a folder of one, with `recent: false`.
+    /// Also sets the tabs' icons from their places.
     fn mark_recent(&mut self) {
         let places = &self.config.places;
         for c in 0..self.collections.len() {
@@ -542,7 +549,8 @@ impl Builder<'_> {
         Some(clamshell_library::OwnTab { name: p.path.trim().trim_matches('/').to_owned(), icon: p.icon.clone() })
     }
 
-    /// The programs ClamShell runs itself that aren't installed: a problem each (what goes without).
+    /// Records a problem for each program ClamShell runs itself that isn't installed, saying what doesn't
+    /// work without it.
     fn needed(&mut self) {
         for (program, for_what) in NEEDED {
             if !runners::on_path(program) {
@@ -551,8 +559,8 @@ impl Builder<'_> {
         }
     }
 
-    /// ClamShell's own tools, in their tab if a place declares it. The rescan's details list what is
-    /// wrong with the library (as read now).
+    /// Adds ClamShell's own tools, in their tab, if a place declares it. The rescan entry's details list
+    /// the library's current problems.
     fn tools(&mut self) {
         let Some(tab) = self.own(content::OwnTab::Tools) else {
             return;
@@ -578,9 +586,9 @@ fn first_match<'r>(rules: &[&'r content::Rule], id: &str, name: &str, categories
     rules.iter().copied().find(|r| r.matches(id, name, categories))
 }
 
-/// What is kept about `library`'s entries: their plays, whether each is a favourite, what was
-/// fetched about them (where its images are still there), mpv's videos' places, lengths and frames; and
-/// what to fetch (`hows`: where each entry's metadata comes from).
+/// Applies what is stored about `library`'s entries: their plays, whether each is a favourite, what was
+/// fetched about them if its images still exist, and the positions, lengths and frames of mpv's videos.
+/// Returns what to fetch; `hows` says where each entry's metadata comes from.
 fn known(library: &mut Library, hows: Vec<(usize, How)>, sources: &Sources) -> Vec<Wanted> {
     let mut metas = std::collections::HashMap::new();
     let mut probes = std::collections::HashMap::new();
@@ -623,7 +631,8 @@ fn known(library: &mut Library, hows: Vec<(usize, How)>, sources: &Sources) -> V
             library.apply_meta(i, &f.meta);
         }
     }
-    // mpv's videos: where mpv left each, its length and a frame of it (read once, then kept).
+    // For mpv's videos: where mpv left each, its length and a frame of it. The length and frame are probed
+    // once, then kept.
     for g in &mut library.entries {
         let Some(file) = g.mpv_file().map(std::path::Path::to_path_buf) else {
             continue;
@@ -641,7 +650,7 @@ fn known(library: &mut Library, hows: Vec<(usize, How)>, sources: &Sources) -> V
             None => wanted.push(Wanted { id: g.id.clone(), key: g.key.clone(), title: g.title.clone(), file: Some(file), how: How::Duration, art: true }),
         }
     }
-    // A folder of videos without art: the frame of its first video that has one.
+    // A folder of videos without art uses the frame of its first video that has one.
     for i in 0..library.entries.len() {
         let bare = library.entries.get(i).is_some_and(|g| g.is_group() && g.box_front.is_none() && g.details.shot.is_none());
         if bare
@@ -670,7 +679,7 @@ mod tests {
         std::fs::write(steam.join("steamapps/appmanifest_20.acf"), manifest(20, "Zork")).unwrap();
         std::fs::create_dir_all(root.join("snes")).unwrap();
         std::fs::write(root.join("snes/Mario.sfc"), "").unwrap();
-        // (The Steam sources.)
+        // The Steam sources go in `steam`.
         let config = |steam: &str| {
             format!(
                 r#"{{ "runners": [{{ "name": "Test SNES", "match": ["*.sfc"], "launch": ["retroarch", "{{path}}"] }}, {{ "type": "steam", "id": "steam", "name": "Steam" }}],
@@ -686,8 +695,8 @@ mod tests {
         };
         assert_eq!(games_tab(&config(r#"{ "type": "steam", "place": "Games" }"#)), ["SNES", "Arma", "Zork"], "the folder first, before Arma");
         assert_eq!(games_tab(&config(r#"{ "type": "steam", "place": "Games/Steam" }"#)), ["SNES", "Steam"], "Steam's games in their folder");
-        // By name or app id, into folders, or hidden; the rest by the source matching anything; each taken by
-        // the first matching it (Zork by z*, not by the last).
+        // Match by name or app id, into folders or hidden, and the rest by a source that matches anything.
+        // Each is taken by the first source matching it: Zork by z*, not by the last one.
         let rules = r#"{ "type": "steam", "name": "z*", "place": "Games/Steam/Text" }, { "type": "steam", "id": "10", "hide": true },
                        { "type": "steam", "place": "Games/Steam" }"#;
         std::fs::write(steam.join("steamapps/appmanifest_30.acf"), manifest(30, "Celeste")).unwrap();
@@ -792,7 +801,7 @@ mod tests {
             )
         };
         let (snes, gba, pc) = (source("SNES", "snes", "*.sfc", "snes9x"), source("@gba", "gba", "*.gba", "mgba"), source("", "pc", "*.sh", "sh"));
-        // (The PC scan names its runner; the others' files open by their names.)
+        // The PC scan names its runner; the other files open by their names.
         let pc_scan = pc.1.replace(r#""match""#, r#""runner": "test-pc", "match""#);
         let config = format!(
             r#"{{ "places": [{{ "id": "other", "path": "Other", "icon": "star" }}, {{ "id": "games", "path": "Games", "icon": "film" }},
@@ -803,7 +812,7 @@ mod tests {
         );
         std::fs::write(root.join("library.json"), config).unwrap();
         let lib = load(&Sources { config: Some(root.join("library.json")), ..Sources::default() }).library;
-        // (The test's emulators aren't installed: only that is wrong.)
+        // The test's emulators aren't installed, and that should be the only problem.
         assert!(lib.problems.iter().all(|p| p.ends_with("isn't installed")), "{:?}", lib.problems);
         assert_eq!(lib.collections.last().map(|c| c.name.as_str()), Some("Mine"), "ClamShell's tools, named and placed as declared");
         assert_eq!((lib.collections[0].name.as_str(), lib.collections[0].icon.as_deref()), ("Games", Some("film")), "listed: its icon; Other has nothing");

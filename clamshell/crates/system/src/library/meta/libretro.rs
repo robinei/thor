@@ -1,5 +1,5 @@
-//! libretro: box art and screenshots from its thumbnails, the developer and year from its database, the
-//! game found by its file's checksum, else by name.
+//! libretro: box art and screenshots from its thumbnails, and the developer and year from its database.
+//! The game is found by its file's checksum, or else by name.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -18,7 +18,7 @@ const DATABASE: &str = "https://raw.githubusercontent.com/libretro/libretro-data
 
 impl Shared {
     pub(super) fn libretro(&self, w: &Wanted, system: &str) -> Meta {
-        // By checksum: the game's name in the database, as its thumbnails are named.
+        // By checksum: the game's name in the database, which is how its thumbnails are named.
         let database = self.database(system);
         let crc = w.file.as_deref().and_then(checksum);
         let known = crc.and_then(|c| database.names.get(&c));
@@ -26,7 +26,7 @@ impl Shared {
         let get = |c: Option<u32>, of: &HashMap<u32, String>| c.and_then(|c| of.get(&c)).cloned().unwrap_or_default();
         let details = Details { year: crc.and_then(|c| database.years.get(&c)).copied(), developer: get(crc, &database.developers), ..Details::default() };
         let mut meta = Meta { details, ..Meta::default() };
-        // The checksum's name, else (none, or no pictures under it) the title's.
+        // Try the checksum's name, then the title's if there is no checksum match or no pictures under it.
         let mut tried = None;
         for name in [known.map(|n| thumbnail_name(n)), None] {
             let Some(name) = name.or_else(|| by_name().filter(|n| tried.as_ref() != Some(n))) else {
@@ -43,8 +43,8 @@ impl Shared {
         meta
     }
 
-    /// libretro's database of `system`: its No-Intro list's names, and the developers and years, by
-    /// checksum; fetched once (empty where it couldn't be).
+    /// libretro's database of `system`: the names from its No-Intro list, and the developers and years, by
+    /// checksum. It is fetched once, and parts that couldn't be fetched are empty.
     pub(super) fn database(&self, system: &str) -> Arc<Database> {
         let mut databases = crate::os::lock(&self.databases);
         if let Some(d) = databases.get(system) {
@@ -76,7 +76,7 @@ impl Shared {
         d
     }
 
-    /// The names (without `.png`) in a system's folder of a kind, fetched once.
+    /// The names, without `.png`, in a system's folder of thumbnails of a kind. Fetched once.
     pub(super) fn listing(&self, system: &str, kind: &str) -> Option<Arc<Vec<Name>>> {
         let id = format!("{system}/{kind}");
         let mut listings = crate::os::lock(&self.listings);
@@ -101,8 +101,8 @@ pub(super) struct Database {
     years: HashMap<u32, u16>,
 }
 
-/// A clrmamepro DAT's games: each file's checksum (`rom ( ... crc XXXXXXXX ... )`) with its game's
-/// fields (`name "..."`, `developer "..."`, ...; the first of each).
+/// A clrmamepro DAT's games: each file's checksum (`rom ( ... crc XXXXXXXX ... )`) with its game's fields
+/// (`name "..."`, `developer "..."`, ...). Only the first of each field is kept.
 pub(super) fn dat_games(text: &str) -> Vec<(u32, HashMap<String, String>)> {
     let mut out = Vec::new();
     let mut fields: HashMap<String, String> = HashMap::new();
@@ -135,7 +135,7 @@ pub(super) fn dat_games(text: &str) -> Vec<(u32, HashMap<String, String>)> {
     out
 }
 
-/// A game's name as libretro's thumbnails name it: the characters a file name can't have as `_`.
+/// A game's name as libretro's thumbnails name it, with characters a file name can't have replaced by `_`.
 pub(super) fn thumbnail_name(name: &str) -> String {
     name.chars().map(|c| if "&*/:`<>?\\|\"".contains(c) { '_' } else { c }).collect()
 }
@@ -143,8 +143,8 @@ pub(super) fn thumbnail_name(name: &str) -> String {
 /// The largest file whose checksum is worked out, in bytes: a cartridge's size, not a disc's.
 pub(super) const CHECKSUM_MAX: u64 = 64 << 20;
 
-/// A game file's checksum (CRC32): a zip's largest file's, from the zip's directory; a file up to
-/// [`CHECKSUM_MAX`].
+/// A game file's CRC32 checksum. For a zip, it is the checksum of its largest file, read from the zip's
+/// directory. Other files are read whole, up to [`CHECKSUM_MAX`].
 pub(super) fn checksum(file: &Path) -> Option<u32> {
     if file.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")) {
         return zip_tail(file).and_then(|(tail, base)| zip_crc(&tail, base));
@@ -167,8 +167,7 @@ pub(super) fn checksum(file: &Path) -> Option<u32> {
     crc().map_err(|e| log::warn!("checksum of {}: {e}", file.display())).ok()
 }
 
-/// The end of a zip (its last MiB: the central directory of a few files is there), and where in the file
-/// it starts.
+/// The last MiB of a zip, where the central directory of a few files is, and the offset it starts at.
 pub(super) fn zip_tail(file: &Path) -> Option<(Vec<u8>, usize)> {
     use std::io::{Read, Seek, SeekFrom};
     let failed = |e: &std::io::Error| log::debug!("checksum of {}: {e}", file.display());
@@ -181,12 +180,13 @@ pub(super) fn zip_tail(file: &Path) -> Option<(Vec<u8>, usize)> {
     Some((tail, usize::try_from(base).ok()?))
 }
 
-/// The CRC32 of a zip's largest file, from its central directory: `zip` the end of the file, from
-/// `base` in it.
+/// The CRC32 of a zip's largest file, from its central directory. `zip` is the end of the file, starting
+/// at offset `base`.
 pub(super) fn zip_crc(zip: &[u8], base: usize) -> Option<u32> {
     let u16_at = |at: usize| zip.get(at..at + 2).and_then(|b| <[u8; 2]>::try_from(b).ok()).map(u16::from_le_bytes);
     let u32_at = |at: usize| zip.get(at..at + 4).and_then(|b| <[u8; 4]>::try_from(b).ok()).map(u32::from_le_bytes);
-    // The end of the central directory: its signature, within the last 64 KiB (after it, a comment).
+    // Find the end of the central directory by its signature, within the last 64 KiB; a comment may
+    // follow it.
     let from = zip.len().saturating_sub(65_557);
     let end = (from..zip.len().saturating_sub(21)).rev().find(|&i| u32_at(i) == Some(0x0605_4b50))?;
     let count = usize::from(u16_at(end + 10)?);
@@ -218,7 +218,7 @@ mod tests {
 
     #[test]
     fn checksums_and_databases() {
-        // A zip of two files (stored), made by hand: its directory's checksum of the larger.
+        // A hand-made zip of two stored files. The checksum is the directory's one for the larger file.
         let mut zip = Vec::new();
         let mut directory = Vec::new();
         for (name, data) in [("a.txt", &b"hi"[..]), ("game.sfc", &b"123456789"[..])] {

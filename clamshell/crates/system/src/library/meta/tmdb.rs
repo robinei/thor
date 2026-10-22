@@ -1,4 +1,4 @@
-//! TMDB: films' and series' posters, backdrops, overviews and years, by title; needs `keys.tmdb`.
+//! TMDB: posters, backdrops, overviews and years for films and series, by title. Needs `keys.tmdb`.
 
 use clamshell_core::Meta;
 use clamshell_library::Details;
@@ -27,7 +27,8 @@ impl Shared {
             }
             http::get_json(&url, &headers).and_then(|v| v.get("results")?.get(0).cloned())
         };
-        // By the title's year first; else (TMDB may date a series from another year than its pilot's) any.
+        // Search with the title's year first, then without, since TMDB may date a series from a different
+        // year than its pilot.
         let Some(hit) = search(year).or_else(|| year.and_then(|_| search(None))) else {
             return Meta::default();
         };

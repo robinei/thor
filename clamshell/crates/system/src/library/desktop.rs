@@ -1,16 +1,18 @@
-//! Desktop files: the installed apps and games, as library entries (every app desktop file in
-//! `<data dir>/applications` of the XDG data dirs, the user's first, not hidden), each with its name,
-//! command, working dir and icon (from the icon themes). Its categories say which: `Game` is a game
-//! (shelf's Games), unless also `Emulator` (an emulator is started for a game: an app); anything else is
-//! an app (Apps). Steam's shortcuts to its games (`steam://rungameid/`) are left out: Steam's own
-//! library has them.
+//! Desktop files: the installed apps and games as library entries. Every application desktop file in
+//! `<data dir>/applications` of the XDG data dirs is read, the user's first, skipping hidden ones. Each
+//! entry gets its name, command, working dir and icon, the icon looked up in the icon themes.
+//!
+//! The categories decide between game and app. `Game` is a game (shelf's Games) unless it is also
+//! `Emulator`, since an emulator is started for a game and so is an app. Anything else is an app (Apps).
+//! Steam's shortcuts to its games (`steam://rungameid/`) are left out because Steam's own library has
+//! them.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::os::xdg;
 
-/// An installed app or game: its entry, and what library.json's desktop rules match it by (see
+/// An installed app or game: its entry, and the fields library.json's desktop rules match it by (see
 /// [`crate::library::content::Rule`]).
 #[derive(Debug, Clone)]
 pub struct Desktop {
@@ -31,14 +33,15 @@ struct Entry {
     /// The working dir (`Path`).
     path: String,
     categories: String,
-    /// NoDisplay or Hidden: not to be shown in menus.
+    /// NoDisplay or Hidden, meaning it isn't to be shown in menus.
     hidden: bool,
-    /// SingleMainWindow: a second launch makes no second window worth having.
+    /// SingleMainWindow, meaning a second launch doesn't give a useful second window.
     single_window: bool,
 }
 
-/// Desktop files in the Game category alone that are no game: game launchers and tools for games (by
-/// id). Others are told by a category no game is in (Steam's Network, Lutris' PackageManager).
+/// Desktop files, by id, whose only category is Game but which aren't games: game launchers and tools for
+/// games. Others like them are recognized by a category no game has, such as Steam's Network or Lutris'
+/// PackageManager.
 const NOT_GAMES: &[&str] = &[
     "com.heroicgameslauncher.hgl",
     "heroic",
@@ -54,9 +57,9 @@ const NOT_GAMES: &[&str] = &[
     "page.kramo.Cartridges",
 ];
 
-/// The installed apps and games as library entries (id `desktop:<id>`; an app a tool), by desktop file:
-/// the first of an id in `dirs` (the user's dir first), applications with a command that aren't hidden
-/// (nor Steam's game shortcuts).
+/// The installed apps and games as library entries, with ids `desktop:<id>`. For each id, the first
+/// desktop file in `dirs` is used, the user's dir coming first. Only applications with a command that
+/// aren't hidden are included, and not Steam's game shortcuts.
 pub fn entries(dirs: &[PathBuf]) -> Vec<Desktop> {
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
@@ -77,7 +80,7 @@ pub fn entries(dirs: &[PathBuf]) -> Vec<Desktop> {
             let Some(id) = path.file_name().and_then(|n| n.to_str()).and_then(|n| n.strip_suffix(".desktop")).map(str::to_owned) else {
                 continue;
             };
-            // (A user's file hides the system's of the same id, whatever it says.)
+            // A user's file hides the system's file with the same id, whatever it says.
             if !seen.insert(id.clone()) {
                 continue;
             }
@@ -100,11 +103,11 @@ pub fn entries(dirs: &[PathBuf]) -> Vec<Desktop> {
             let mut game = clamshell_library::Entry::new(&format!("{}{id}", clamshell_library::ids::DESKTOP), &title);
             game.launch = clamshell_library::Launch::Program { argv, workdir: (!entry.path.is_empty()).then(|| PathBuf::from(&entry.path)) };
             game.icon = (!entry.icon.is_empty()).then(|| xdg::find_icon(&entry.icon, dirs)).flatten();
-            // (A game launcher or a tool for games is no game: its games are entries of their own.)
+            // A game launcher or a tool for games isn't a game; its games are entries of their own.
             let no_game =
                 NOT_GAMES.iter().any(|n| n.eq_ignore_ascii_case(&id)) || ["Emulator", "PackageManager", "Network", "Utility"].iter().any(|c| category(c));
             game.app = !category("Game") || no_game;
-            // (A game's desktop file starts a game: once is enough.)
+            // A game's desktop file starts a game, and once is enough.
             game.another = game.app && !entry.single_window;
             let categories = entry.categories.split(';').filter(|c| !c.is_empty()).map(str::to_owned).collect();
             out.push(Desktop { id, name: title, categories, game });
@@ -113,7 +116,7 @@ pub fn entries(dirs: &[PathBuf]) -> Vec<Desktop> {
     out
 }
 
-/// The command of the desktop file at `path` (an app's, opened from the Files tab), if it has one.
+/// The command of the desktop file at `path`, if it has one. This is for an app opened from the Files tab.
 pub fn command(path: &Path) -> Option<clamshell_library::Launch> {
     let entry = parse(&fs::read_to_string(path).inspect_err(|e| log::debug!("desktop: {}: {e}", path.display())).ok()?);
     let argv = exec_args(&entry.exec);
@@ -148,8 +151,8 @@ fn parse(text: &str) -> Entry {
     entry
 }
 
-/// An Exec line as program and arguments: split at unquoted spaces, double quotes with backslash
-/// escapes, field codes (%f, %U, ...) dropped, `%%` a percent sign.
+/// Splits an Exec line into program and arguments. It splits at unquoted spaces and handles double quotes
+/// with backslash escapes. Field codes (%f, %U, ...) are dropped, and `%%` becomes a percent sign.
 fn exec_args(exec: &str) -> Vec<String> {
     let mut args = Vec::new();
     let mut word = String::new();
@@ -166,7 +169,8 @@ fn exec_args(exec: &str) -> Vec<String> {
                     word.push(next);
                 }
             }
-            // `%%` is a percent sign; other field codes go (we start apps without files or URLs).
+            // `%%` is a percent sign. Other field codes are dropped, since apps are started without files or
+            // URLs.
             '%' => {
                 if chars.next() == Some('%') {
                     word.push('%');

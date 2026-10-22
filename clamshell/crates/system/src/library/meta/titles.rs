@@ -1,12 +1,12 @@
-//! Titles matched to names as others write them: libretro's (case, tags, "the", punctuation and Roman
-//! numerals aside), and the years and developers in the stores' text.
+//! Matching titles to names as others write them: libretro's names, ignoring case, tags, "the",
+//! punctuation and Roman numerals. Also reading years and developers from the stores' text.
 
 use super::libretro::thumbnail_name;
 
-/// A title as compared with libretro's names: bracketed parts, a ` # ...` tail, "the" and "and", case and
-/// anything but letters and digits left out, Roman numerals (II to X) as numbers.
+/// A title in the form compared with libretro's names. Bracketed parts, a ` # ...` tail, "the", "and",
+/// case and anything but letters and digits are dropped, and Roman numerals from II to X become numbers.
 pub(super) fn normal(title: &str) -> String {
-    // (A ` # ...` tail: a translation's, "Star Ocean # SNES".)
+    // A ` # ...` tail marks a translation, as in "Star Ocean # SNES".
     let title = title.split_once(" # ").map_or(title, |(t, _)| t);
     let mut kept = String::with_capacity(title.len());
     let mut depth = 0u32;
@@ -31,7 +31,7 @@ pub(super) fn main_title(title: &str) -> Option<&str> {
     title.split_once(" - ").map(|(main, _)| main)
 }
 
-/// A libretro name, and it as [`normal`] compares it, whole and without its subtitle.
+/// A libretro name, and its [`normal`] form both whole and without its subtitle.
 #[derive(Debug, Clone)]
 pub(super) struct Name {
     name: String,
@@ -45,10 +45,12 @@ impl Name {
     }
 }
 
-/// libretro's name for `title`: the same name (its characters libretro can't have in a file name as
-/// `_`); else of the releases whose name is the same once [`normal`] (or failing that, where one game
-/// alone fits, the same but for libretro's subtitle): USA, then World, then Europe, then any other, a
-/// prototype or demo last.
+/// libretro's name for `title`.
+///
+/// An exact match comes first, with characters libretro can't have in a file name replaced by `_`.
+/// Otherwise it picks among the releases whose [`normal`] form is the same. Failing that, if only one game
+/// fits, it picks among those that are the same apart from libretro's subtitle. Among releases, USA comes
+/// first, then World, then Europe, then any other, with prototypes and demos last.
 pub(super) fn best_match<'a>(title: &str, names: &'a [Name]) -> Option<&'a str> {
     let exact = thumbnail_name(title);
     if let Some(n) = names.iter().find(|n| n.name == exact) {
@@ -69,7 +71,7 @@ pub(super) fn best_match<'a>(title: &str, names: &'a [Name]) -> Option<&'a str> 
     if !same.is_empty() {
         return best(same);
     }
-    // libretro's with a subtitle the title doesn't have, and only one game it can be.
+    // libretro's names with a subtitle the title doesn't have, if they are all one game.
     let loose: Vec<&Name> = names.iter().filter(|n| n.main.as_ref() == Some(&wanted)).collect();
     let games: std::collections::HashSet<&str> = loose.iter().map(|n| n.normal.as_str()).collect();
     if games.len() == 1 { best(loose) } else { None }
@@ -92,12 +94,12 @@ pub(super) fn year_in(text: &str) -> Option<u16> {
     text.split(|c: char| !c.is_ascii_digit()).find(|w| w.len() == 4).and_then(|w| w.parse().ok())
 }
 
-/// A developer as libretro's database gives it, its "???" (unknown) parts left out.
+/// A developer as libretro's database gives it, without its "???" (unknown) parts.
 pub(super) fn developer(text: &str) -> String {
     text.split_whitespace().filter(|w| !w.chars().all(|c| c == '?')).collect::<Vec<_>>().join(" ")
 }
 
-/// HTML's common entities undone (Steam's texts have them).
+/// Decodes HTML's common entities, which Steam's texts contain.
 pub(super) fn entities(text: &str) -> String {
     text.replace("&quot;", "\"").replace("&#39;", "'").replace("&apos;", "'").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
 }

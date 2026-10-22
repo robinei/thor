@@ -1,6 +1,7 @@
-//! Videos: their length (ffprobe's) and a frame to show for them (ffmpeg's), both at the lowest priority
-//! (a game started meanwhile comes first): of the keyframes from a point on, the most representative
-//! (its `thumbnail` filter), so not a dark scene, a fade or a title card.
+//! Videos: their length from ffprobe and a frame to show for them from ffmpeg. Both run at the lowest
+//! priority, so a game started meanwhile comes first. The frame is the most representative of the
+//! keyframes from a given point on, picked by ffmpeg's `thumbnail` filter, so it isn't a dark scene, a
+//! fade or a title card.
 
 use std::ffi::OsStr;
 use std::path::Path;
@@ -13,7 +14,7 @@ use super::{Shared, Wanted};
 use crate::os::command;
 
 impl Shared {
-    /// A video's length, and its most representative frame from a quarter in (see [`frame`])
+    /// A video's length, and its most representative frame from a quarter of the way in (see [`frame`])
     /// as its screenshot.
     pub(super) fn probe(&self, w: &Wanted) -> Meta {
         let Some(file) = w.file.as_deref() else {
@@ -26,7 +27,7 @@ impl Shared {
     }
 }
 
-/// A video's length (seconds), from ffprobe.
+/// A video's length in seconds, from ffprobe.
 pub fn duration(file: &Path) -> Option<u32> {
     let mut args: Vec<&OsStr> = ["-n", "19", "ffprobe", "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0"].map(OsStr::new).into();
     args.push(file.as_os_str());
@@ -36,17 +37,19 @@ pub fn duration(file: &Path) -> Option<u32> {
     (seconds > 0.0).then_some(seconds.round() as u32)
 }
 
-/// How long ffprobe may take to read a video's length, and ffmpeg to pick a frame (it decodes keyframes
-/// only; a network mount may be slow).
+/// How long ffprobe may take to read a video's length, and ffmpeg to pick a frame. ffmpeg decodes only
+/// keyframes, but a network mount may be slow.
 const PROBE_LIMIT: Duration = Duration::from_secs(30);
 const FRAME_LIMIT: Duration = Duration::from_secs(120);
 
-/// Keyframes `frame` chooses among (from its starting point: a few minutes of a video).
+/// How many keyframes [`frame`] chooses among from its starting point, which covers a few minutes of a
+/// video.
 const FRAMES_LOOKED_AT: u32 = 60;
 
-/// A frame of `file`, 640 pixels wide, into `out` (JPEG; written whole, then renamed into place): of the
-/// [`FRAMES_LOOKED_AT`] keyframes from `at` seconds on, the most representative (ffmpeg's `thumbnail`
-/// filter; keyframes only, so it is quick). Whether it worked.
+/// Writes a frame of `file`, 640 pixels wide, to `out` as a JPEG. It is written whole, then renamed into
+/// place. The frame is the most representative of the [`FRAMES_LOOKED_AT`] keyframes from `at` seconds
+/// on, picked by ffmpeg's `thumbnail` filter; using only keyframes keeps it quick. Returns whether it
+/// worked.
 pub fn frame(file: &Path, at: u32, out: &Path) -> bool {
     if let Some(dir) = out.parent()
         && let Err(e) = std::fs::create_dir_all(dir)

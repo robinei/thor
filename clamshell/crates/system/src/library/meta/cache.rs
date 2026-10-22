@@ -1,6 +1,6 @@
-//! What was fetched about an entry, and a video's length: a file per entry in the art cache, beside its
-//! images (`<key>-meta.json`, `<key>-probe.json`; the entry's id in the file). Each is written whole by
-//! one thread (the metadata's, the folder browser's).
+//! What was fetched about an entry, and a video's length. Each is a file per entry in the art cache,
+//! beside its images: `<key>-meta.json` and `<key>-probe.json`, with the entry's id inside. Each file is
+//! written whole by one thread, either the metadata fetcher or the folder browser.
 
 use std::collections::HashMap;
 use std::fs;
@@ -14,14 +14,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::os::fs::{read_json, write_json};
 
-/// A video's length and a frame of it, as read.
+/// A video's length and a frame of it, as probed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Probe {
     pub seconds: Option<u32>,
     pub frame: Option<PathBuf>,
 }
 
-/// What was fetched about an entry, from where (as [`crate::library::meta::How::source`] says) and when.
+/// What was fetched about an entry, from where (as [`crate::library::meta::How::source`] gives it) and
+/// when.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Fetched {
     pub source: String,
@@ -58,7 +59,7 @@ impl Cache {
         Cache { dir: dir.to_path_buf() }
     }
 
-    /// The files whose names end in `suffix`, read.
+    /// Reads the files whose names end in `suffix`.
     fn read_all<T: DeserializeOwned>(&self, suffix: &str) -> Vec<(PathBuf, T)> {
         let entries = fs::read_dir(&self.dir)
             .inspect_err(|e| {
@@ -74,18 +75,18 @@ impl Cache {
         entries.map(|e| e.path()).filter(|p| p.to_str().is_some_and(|p| p.ends_with(suffix))).filter_map(|p| Some((p.clone(), read_json(&p)?))).collect()
     }
 
-    /// What was fetched about each entry: from where, when, and what.
+    /// What was fetched about each entry, from where and when.
     pub fn metas(&self) -> HashMap<String, Fetched> {
         self.read_all::<MetaFile>("-meta.json").into_iter().map(|(_, m)| (m.id, Fetched { source: m.source, at: m.fetched, meta: m.meta })).collect()
     }
 
-    /// What was fetched about `id` (nothing: a miss), from `source`, at `at`.
+    /// Saves what was fetched about `id` from `source` at `at`. An empty `meta` records a miss.
     pub fn save_meta(&self, id: &str, source: &str, at: u64, meta: &Meta) -> io::Result<()> {
         let file = MetaFile { id: id.to_owned(), source: source.to_owned(), fetched: at, meta: meta.clone() };
         write_json(&self.dir.join(format!("{}-meta.json", key_of(id))), &file)
     }
 
-    /// The videos' lengths (none: ffprobe couldn't tell) and frames, by id.
+    /// The videos' lengths and frames, by id. A length is none if ffprobe couldn't tell.
     pub fn probes(&self) -> HashMap<String, Probe> {
         self.read_all::<ProbeFile>("-probe.json").into_iter().map(|(_, p)| (p.id, Probe { seconds: p.seconds, frame: p.frame })).collect()
     }
@@ -94,7 +95,7 @@ impl Cache {
         write_json(&self.dir.join(format!("{}-probe.json", key_of(id))), &ProbeFile { id: id.to_owned(), seconds, frame: frame.map(Path::to_path_buf) })
     }
 
-    /// The misses (fetched, nothing found) forgotten: fetched again. How many.
+    /// Forgets the misses, where nothing was found, so they are fetched again. Returns how many.
     pub fn forget_misses(&self) -> usize {
         let misses = self.read_all::<MetaFile>("-meta.json").into_iter().filter(|(_, m)| m.meta == Meta::default());
         misses.filter(|(path, _)| fs::remove_file(path).inspect_err(|e| log::warn!("meta: removing {}: {e}", path.display())).is_ok()).count()
