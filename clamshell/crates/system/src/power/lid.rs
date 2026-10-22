@@ -1,18 +1,19 @@
-//! The lid and the power key: while the lid is closed, the power key doesn't wake the device. Closed in a
-//! bag, a pressed key would wake it, screens on, until logind put it back to sleep; opening the lid
-//! wakes it (logind sleeps on closing it, per logind.conf). The input watch (device session only) calls
-//! [`closed`] as the lid closes and opens, and for its state when it first sees the lid; this turns the
-//! power key's wakeup off and on: its device's `power/wakeup` (the `pwrkey` input device's parent, the
-//! PMIC's; writable by the `power` group: thor-system's `73-thor-power.rules`). As Armada's
-//! `50-armada-powerbutton-suspend`, but on the lid's state rather than a suspend's cause.
+//! The lid and the power key: while the lid is closed, the power key doesn't wake the device. Otherwise,
+//! in a bag, a pressed key would wake it with the screens on until logind put it back to sleep. Opening
+//! the lid wakes it, and logind sleeps when it is closed, per logind.conf.
+//!
+//! The input watch, in the device session only, calls [`closed`] as the lid closes and opens, and with
+//! its state when it first sees the lid. This turns the power key's wakeup off and on through its
+//! device's `power/wakeup`. That device is the `pwrkey` input device's parent, the PMIC, and the file is
+//! writable by the `power` group through thor-system's `73-thor-power.rules`. It works like Armada's
+//! `50-armada-powerbutton-suspend`, but follows the lid's state rather than the cause of a suspend.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::os::sys;
 
-/// The power keys' wakeup files under `input` (the input class): of each device named like a PMIC's
-/// power key.
+/// The wakeup files under `input`, the input class, of each device named like a PMIC's power key.
 fn wakeup_files(input: &Path) -> Vec<PathBuf> {
     sys::entries(input)
         .into_iter()
@@ -23,7 +24,8 @@ fn wakeup_files(input: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
-/// The lid closed (`true`) or open: the power key's wakeup off or on, where it differs.
+/// Turns the power key's wakeup off when the lid is closed (`true`) and on when it is open, where it
+/// differs.
 pub fn closed(closed: bool) {
     set_in(Path::new("/sys/class/input"), closed);
 }

@@ -1,13 +1,13 @@
-//! Sleep. Suspending is logind's: the power button and the lid, per logind.conf (the power key not
-//! waking it while the lid is closed: [`crate::power::lid`]), and the Sleep action ([`suspend`]), which
-//! first checks that the machine isn't busy ([`busy`]). Waking is noticed from the clocks
-//! ([`crate::time::wake`]).
+//! Sleep. Suspending is done by logind, triggered by the power button and the lid per logind.conf, and by
+//! the Sleep action ([`suspend`]), which first checks that the machine isn't busy ([`busy`]). While the
+//! lid is closed the power key doesn't wake the device (see [`crate::power::lid`]). Waking is noticed
+//! from the clocks ([`crate::time::wake`]).
 //!
-//! Before sleep, the pad thread closes the gyro's stream (the Thor's sensor hub samples on the ADSP while
-//! asleep otherwise, as PB-OS's pbos-motiond found): [`spawn_hold`] keeps a logind delay lock, and at
-//! PrepareForSleep(true) tells the pad ([`pad::Command::Sleep`]), waits for it, and lets the sleep go
-//! on; after it ([`pad::Command::Woke`]: PrepareForSleep(false), or the clocks, should that signal not
-//! come), takes the lock again.
+//! Before sleep, the pad thread closes the gyro's stream. Otherwise the Thor's sensor hub keeps sampling
+//! on the ADSP while asleep, as PB-OS's pbos-motiond found. [`spawn_hold`] keeps a logind delay lock. At
+//! PrepareForSleep(true) it tells the pad ([`pad::Command::Sleep`]), waits for it, and lets the sleep go
+//! on. After the sleep it sends [`pad::Command::Woke`] and takes the lock again. The wake is noticed
+//! from PrepareForSleep(false), or from the clocks in case that signal doesn't come.
 
 use std::path::PathBuf;
 use std::sync::mpsc;
@@ -24,9 +24,10 @@ const LOGIN1_PATH: &str = "/org/freedesktop/login1";
 const MANAGER: &str = "org.freedesktop.login1.Manager";
 /// How long the pad may take to close the gyro before the sleep goes on anyway.
 const PAD_WAIT: Duration = Duration::from_secs(1);
-/// Released this long (monotonic) without the system sleeping: it didn't (a sleep given up).
+/// If the lock has been released this long (on the monotonic clock) without the system sleeping, the
+/// sleep was given up.
 const NOT_SLEPT: Duration = Duration::from_secs(10);
-/// After a failure (no bus, no lock), tried again this often.
+/// How long to wait before trying again after a failure, such as no bus or no lock.
 const RETRY: Duration = Duration::from_secs(30);
 
 /// The thread holding sleep for the pad (see the module doc).
@@ -41,7 +42,7 @@ pub fn spawn_hold(pad: Worker<pad::Command>) -> std::io::Result<()> {
     })
 }
 
-/// logind's delay lock: sleep waits until it is closed (dropped).
+/// Takes logind's delay lock. Sleep waits until it is closed by dropping it.
 fn lock(bus: &mut Bus) -> Result<::dbus::arg::OwnedFd, crate::os::dbus::Error> {
     let what = ("sleep", "ClamShell", "the gyro's stream closed first", "delay");
     bus.call::<(::dbus::arg::OwnedFd,)>(LOGIN1, LOGIN1_PATH, MANAGER, "Inhibit", what).map(|(fd,)| fd)
@@ -58,15 +59,15 @@ fn hold(pad: &Worker<pad::Command>) -> Result<(), crate::os::dbus::Error> {
     let mut bus = Bus::system()?;
     bus.add_match(&format!("type='signal',sender='{LOGIN1}',path='{LOGIN1_PATH}',interface='{MANAGER}',member='PrepareForSleep'"))?;
     let mut held = Some(lock(&mut bus)?);
-    // (Started anew, perhaps after a failure while released: the gyro found, if it was closed.)
+    // Starting anew, perhaps after a failure while released, so reopen the gyro if it was closed.
     pad.send(pad::Command::Woke);
     let mut watch = Watch::new(slept());
     let mut released = Instant::now();
     loop {
-        // (Once a second while released, for the clocks; else for the signal alone.)
+        // While released, wake once a second to check the clocks. Otherwise wait for the signal alone.
         bus.wait(held.is_none().then_some(Duration::from_secs(1)))?;
         let mut woke = false;
-        // In their order: a sleep given up at once (true, then false) is a wake.
+        // Handle the signals in order: a sleep given up at once (true, then false) counts as a wake.
         for before in bus.signals()?.iter().filter_map(before_sleep) {
             if before && held.is_some() {
                 let (done, wait) = mpsc::channel();
@@ -79,14 +80,14 @@ fn hold(pad: &Worker<pad::Command>) -> Result<(), crate::os::dbus::Error> {
                 held = None;
                 woke = false;
             } else if before {
-                // (Woken and asleep again at once, before the lock was taken: still released.)
+                // Woken and asleep again at once, before the lock was taken, so it stays released.
                 woke = false;
             } else {
                 woke = true;
             }
         }
-        // Without the signal: the clocks say it slept; or it has been released a while without sleeping
-        // (CLOCK_MONOTONIC stops while asleep: this much of it means the sleep didn't happen).
+        // Without the signal, the clocks may say it slept. Or it has been released a while without
+        // sleeping: CLOCK_MONOTONIC stops while asleep, so this much of it means the sleep didn't happen.
         if held.is_none() && (woke || watch.woke(slept()) || released.elapsed() > NOT_SLEPT) {
             pad.send(pad::Command::Woke);
             held = Some(lock(&mut bus)?);
@@ -94,20 +95,20 @@ fn hold(pad: &Worker<pad::Command>) -> Result<(), crate::os::dbus::Error> {
     }
 }
 
-/// Sleep: suspend, then hibernate after a while (logind's HibernateDelaySec) if it can, else suspend.
-/// Above this much CPU (cores) for the user's processes, or this many bytes a second on the network, the
-/// machine is busy: not put to sleep.
+/// Above this much CPU, in cores, for the user's processes, or this many bytes a second on the network,
+/// the machine is busy and isn't put to sleep.
 const BUSY_CPU: f64 = 0.3;
 const BUSY_NET: f64 = 100_000.0;
 
-/// Whether the machine is busy now (looked at for a few seconds): the user's processes' CPU (the user
-/// manager's cgroup, all of them: ClamShell's launches, Steam), or the network's traffic; why.
+/// Whether the machine is busy now, measured over a few seconds, and why. It looks at the CPU use of all
+/// the user's processes, meaning the user manager's cgroup with ClamShell's launches and Steam, and at
+/// the network's traffic.
 pub fn busy() -> Option<String> {
     let user = user_cgroup();
     let cpu = || user.as_deref().and_then(cgroup::cpu_usec);
     let net = || {
         let text = sys::text("/proc/net/dev").unwrap_or_default();
-        // (Each interface but loopback: received bytes, the 1st number, and sent, the 9th.)
+        // For each interface except loopback: received bytes, the 1st number, and sent, the 9th.
         text.lines()
             .skip(2)
             .filter_map(|l| l.split_once(':'))
@@ -130,15 +131,15 @@ pub fn busy() -> Option<String> {
     (rate > BUSY_NET).then(|| format!("{:.0} kB/s on the network", rate / 1000.0))
 }
 
-/// The user manager's cgroup (`user@<uid>.service`): the cgroup ClamShell runs in, up to it.
+/// The user manager's cgroup (`user@<uid>.service`): the cgroup ClamShell runs in, cut off there.
 fn user_cgroup() -> Option<PathBuf> {
     let path = cgroup::path_of(std::process::id())?;
     let end = path.find(".service/").map(|i| i + ".service".len())?;
     Some(cgroup::dir(path.get(..end)?))
 }
 
-/// Suspends through logind: suspend-then-hibernate where the system can (a swap file to hibernate to),
-/// else suspend.
+/// Suspends through logind. Where the system can, because it has a swap file to hibernate to, it
+/// suspends and then hibernates after a while (logind's HibernateDelaySec). Otherwise it just suspends.
 pub fn suspend() {
     let logind = |bus: &mut dbus::Bus, method: &str| bus.call::<(String,)>(LOGIN1, LOGIN1_PATH, MANAGER, method, ());
     let slept = dbus::Bus::system().and_then(|mut bus| {
@@ -158,8 +159,8 @@ pub fn suspend() {
 
 #[cfg(test)]
 mod live {
-    /// On a desktop: whether the machine is busy now, and the cgroup looked at (run by hand: `--ignored
-    /// --nocapture`).
+    /// On a desktop, prints whether the machine is busy now and the cgroup looked at. Run it by hand with
+    /// `--ignored --nocapture`.
     #[test]
     #[ignore = "reads this machine"]
     fn busy_now() {
