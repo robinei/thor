@@ -579,12 +579,12 @@ class Checks:
             time.sleep(1)
             # The row now under the first row's place (the list is 2.2 rows down: row 2's lower part).
             self.i.tap(300, FIRST_ROW_Y + 0.2 * ROW_H)
-            joined = until(lambda: "wifi: join" in journal(since), 5)
-            line = next((l for l in journal(since).splitlines() if "wifi: join" in l), "")
+            joined = until(lambda: "wifi: joining " in journal(since), 5)
+            line = next((l for l in journal(since).splitlines() if "wifi: joining " in l), "")
             expected = order[2] if len(order) > 2 else None
             self.check("  a drag scrolls the list and a tap after it acts on the row under it", joined and expected and
-                       line.endswith(f"join {expected}"), f"joined {line!r}, expected {expected!r} of {order}")
-            joins = [l for l in journal(since).splitlines() if "wifi: join " in l]
+                       line.endswith(f"joining {expected}"), f"joined {line!r}, expected {expected!r} of {order}")
+            joins = [l for l in journal(since).splitlines() if "wifi: joining " in l]
             self.check("  the drag itself joined nothing", len(joins) == 1, "\n".join(joins))
         finally:
             sh("sudo systemctl stop thor-extra-ap; sudo systemctl reset-failed thor-extra-ap 2>/dev/null; "

@@ -3,7 +3,7 @@
 # the Bluetooth test device, runs tools/vm/vm-checks.py, and stops the VM. About twenty minutes; run before
 # pushing, after changes to the pad, the session or the devices. Exit status: the checks'.
 #
-#   tools/vm/vm-test.sh
+#   tools/vm/vm-test.sh [CHECK...]   (all checks, or these: vm-checks.py --list)
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$ROOT/clamshell" && cargo build --release --quiet && cargo build --release --quiet -p clamshell-system --examples || exit 1
@@ -33,4 +33,4 @@ python3 tools/vm/vm.py restart > /dev/null
 sleep 3
 python3 tools/vm/vm.py bluetooth
 sleep 5
-python3 -u tools/vm/vm-checks.py
+python3 -u tools/vm/vm-checks.py "$@"
