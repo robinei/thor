@@ -200,37 +200,6 @@ impl State {
         vec![]
     }
 
-    /// Keeps the second screen's watch up to date. It watches what the open tab watches, while the tab
-    /// can be seen and the UI is up. It can be seen when ClamShell's view is on the bottom screen, that
-    /// screen is on, and the screens aren't off for idle. The dock with an entry's menu open watches the
-    /// battery tab's readings, to show what the entry costs. Watches are started and stopped as this
-    /// changes.
-    pub(crate) fn follow_watch(&mut self) -> Vec<Effect> {
-        let mut effects = Vec::new();
-        // The bar's status is watched while the screens are on.
-        let screens_off = self.idle.stage() >= crate::device::idle::Stage::Off;
-        if screens_off != std::mem::replace(&mut self.status_unwatched, screens_off) {
-            effects.push(Effect::Watch(Watch::Status, !screens_off));
-        }
-        let seen = self.ui_up && !self.bottom_shows_windows() && !self.bottom_off() && self.idle.stage() < crate::device::idle::Stage::Off;
-        let tab = match self.bottom.tab {
-            Tab::Dock if self.dock.menu.is_some() => Some(Watch::Battery),
-            tab => tab.watch(),
-        };
-        // The account is watched while the Device view is open and the UI is up.
-        let account = self.ui_up && self.device.is_open();
-        if account != std::mem::replace(&mut self.account_watched, account) {
-            effects.push(Effect::Watch(Watch::Account, account));
-        }
-        let wanted = tab.filter(|_| seen);
-        if wanted == self.watching {
-            return effects;
-        }
-        let was = std::mem::replace(&mut self.watching, wanted);
-        effects.extend(was.map(|w| Effect::Watch(w, false)).into_iter().chain(wanted.map(|w| Effect::Watch(w, true))));
-        effects
-    }
-
     /// A text field wants typing, or is done. The keyboard comes up, and when the field is done the
     /// screen goes back to the tab it came from, unless the user chose a tab in the meantime.
     pub(crate) fn text_input(&mut self, active: bool) -> Vec<Effect> {

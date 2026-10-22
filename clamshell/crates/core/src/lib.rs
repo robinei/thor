@@ -51,6 +51,7 @@ pub(crate) mod testkit;
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests;
+mod watch;
 
 use bottom::keyboard::Keyboard;
 use resume::Saves;
@@ -126,16 +127,9 @@ pub struct State {
     dock: Dock,
     /// Programs' tray icons (see [`crate::session::tray`]).
     tray: Vec<crate::session::tray::TrayItem>,
-    /// Whether the UI is up (it has sent Start), and the watch in force (see [`State::follow_watch`]).
-    ui_up: bool,
-    watching: Option<Watch>,
-    /// Whether the account is watched, which it is while the Device view is open (see
-    /// [`State::follow_watch`]).
-    account_watched: bool,
+    watches: watch::Watches,
     /// The Device view on the main screen (see [`device`]).
     device: device::Device,
-    /// The screens are off, so the bar's status isn't watched (see [`Watch::Status`]).
-    status_unwatched: bool,
     /// Programs paused or ended while hidden (see [`crate::session::background`]).
     background: crate::session::background::Background,
     /// The entries started with ClamShell, and whether they have been started yet (see

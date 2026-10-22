@@ -264,7 +264,7 @@ impl State {
     /// brightness, the pad's route, the keymaps and the down rules. The open tab's watch starts from now
     /// (see [`State::follow_watch`]).
     fn ui_started(&mut self) -> Vec<Effect> {
-        self.ui_up = true;
+        self.watches.ui_started();
         let mut effects: Vec<Effect> = Vec::new();
         if std::mem::take(&mut self.pins_dropped) {
             effects.push(Effect::Save(Save::Dock(self.dock.pinned_ids())));

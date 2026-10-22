@@ -35,7 +35,7 @@ pub fn state() -> State {
 /// A test state with this library.
 pub fn state_with(library: Library) -> State {
     let mut s = State::new(Init { library, ..Init::default() });
-    s.ui_up = true;
+    s.watches.ui_started();
     let _ = s.follow_watch();
     s
 }
