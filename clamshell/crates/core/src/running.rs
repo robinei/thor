@@ -50,7 +50,7 @@ pub enum Origin {
     /// icon's, or its window's: windows of it, or of a process it started, are the entry's), none if
     /// it runs in another program's; `tray`: the icon's key, if it has one.
     Found { pid: Option<u32>, tray: Option<Arc<str>> },
-    /// By its windows, since `since` (epoch seconds): started by another program, or its launches ended
+    /// By its windows, since `since` ([`crate::mono_secs`]): started by another program, or its launches ended
     /// while it ran on in a program not ours. It ends once it has had windows ([`Running::seen`]) and has
     /// none, or none came by `until`; its play from `since` recorded then. Its windows: those with its app
     /// id, else (a browsed file's) a new window of no launch of ours, taken until `until`.
@@ -69,7 +69,7 @@ pub struct Running {
     pub origin: Origin,
     /// The app id its windows have, if it runs in another program's processes (see [`app_id_of`]).
     pub app_id: Option<Arc<str>>,
-    /// When it first started (epoch seconds).
+    /// When it first started ([`crate::mono_secs`]).
     pub start: u64,
     /// A window of it has been there (since it started, or since it went on by its windows): before, it
     /// is starting.
@@ -243,7 +243,7 @@ impl State {
     /// after it started, runs on by its windows (see [`Origin::Windows`]); the rest have ended, their
     /// play recorded.
     pub(crate) fn follow_ours(&mut self) -> Vec<Effect> {
-        let now = self.unix_secs;
+        let now = self.mono_secs;
         let session = &self.session;
         let mut ended = Vec::new();
         let mut handed = Vec::new();
@@ -280,11 +280,12 @@ impl State {
         ended.into_iter().flat_map(|(game, start)| self.record_play(game, start)).collect()
     }
 
-    /// A play of `game` from `start` until now: counted, and recorded.
+    /// A play of `game` from `start` ([`crate::mono_secs`]) until now: counted, and recorded, dated by the
+    /// wall clock.
     /// (A video's: where mpv left it read, mpv having written it as it quit.)
     fn record_play(&mut self, game: Arc<str>, start: u64) -> Vec<Effect> {
-        let now = self.unix_secs;
-        let duration = now.saturating_sub(start);
+        let duration = self.mono_secs.saturating_sub(start);
+        let start = self.unix_at(start);
         if self.shelf.add_play(&game, start, duration) {
             self.saves.resume.touch(self.mono_secs);
         }
@@ -309,7 +310,7 @@ impl State {
             return;
         };
         if self.session.running(&game).is_none() {
-            let now = self.unix_secs;
+            let now = self.mono_secs;
             let origin = Origin::Windows { since: now, until: now + HANDOFF };
             self.session.running.push(Running { app_id, ..Running::of(&entry, origin, now) });
         }
@@ -326,7 +327,7 @@ impl State {
     /// - one left on the landing workspace that is no entry's goes to the main screen;
     /// - an entry running by its windows that had windows and has none, or waited in vain, has ended.
     pub(crate) fn follow_windows(&mut self, known: &[i64]) -> Vec<Effect> {
-        let now = self.unix_secs;
+        let now = self.mono_secs;
         let mut effects = Vec::new();
         // Started elsewhere. (A window's app id says whose it is before its scope does: a game Steam
         // started is in Steam's scope.)
@@ -346,7 +347,7 @@ impl State {
         let new: Vec<Running> =
             new.into_iter().map(|g| Running { app_id: app_id_of(g), seen: true, ..Running::of(g, Origin::Windows { since: now, until: now }, now) }).collect();
         if let Some(r) = new.last() {
-            self.session.pending_show = Some(Instance::Run { key: r.key.clone(), secs: now, n: 0 });
+            self.session.pending_show = Some(Instance::Run { key: r.key.clone(), secs: self.unix_secs, n: 0 });
             self.bottom.woken = false;
         }
         self.session.running.extend(new);
@@ -432,7 +433,7 @@ impl State {
     /// name); one found by its tray icon whose process is in a scope of ours now runs as a launch; then
     /// those whose launches have ended (see [`State::follow_ours`]).
     pub(crate) fn follow_units(&mut self) -> Vec<Effect> {
-        let now = self.unix_secs;
+        let (now, unix) = (self.mono_secs, self.unix_secs);
         // Launches whose scope is there: their entries run (as launches of ours: one handed over to its
         // windows, launched again, too), the second screen lit for them to darken.
         let session = &mut self.session;
@@ -479,7 +480,8 @@ impl State {
                 Instance::Run { key: k, secs, .. } if k == key => Some(*secs),
                 _ => None,
             });
-            let start = first.min().unwrap_or(now);
+            // (Its scopes are named by the wall clock.)
+            let start = first.min().map_or(now, |secs| now.saturating_sub(unix.saturating_sub(secs)));
             session.running.push(Running { app_id: app_id_of(g), ..Running::of(g, Origin::Ours, start) });
         }
         self.follow_ours()
@@ -602,6 +604,20 @@ mod tests {
 
     fn key(id: &str) -> String {
         clamshell_library::key_of(id)
+    }
+
+    #[test]
+    fn a_play_lasts_by_the_monotonic_clock_however_the_wall_clock_steps() {
+        let mut s = state();
+        let first = s.shelf().selected().cloned().unwrap();
+        tap(&mut s, Id::Shelf(ShelfId::Launch));
+        s.apply(Event::Tick { unix_secs: 100_000, mono_secs: 1000 });
+        crate::testkit::start(&mut s, &first);
+        // A minute later by the monotonic clock, the wall clock set on a day.
+        s.apply(Event::Tick { unix_secs: 100_000 + 86_400 + 60, mono_secs: 1060 });
+        let (_, fx) = crate::testkit::end(&mut s, &first);
+        let start = 100_000 + 86_400;
+        assert!(fx.contains(&Effect::RecordPlay { game: first, start, duration: 60 }), "dated by the wall clock as it reads now: {fx:?}");
     }
 
     #[test]

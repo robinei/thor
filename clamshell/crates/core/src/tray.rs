@@ -79,7 +79,7 @@ impl State {
         if !self.device_session {
             return vec![];
         }
-        let now = self.unix_secs;
+        let now = self.mono_secs;
         let mut new = Vec::new();
         for t in &self.tray {
             let ours = t.unit.as_deref().and_then(Instance::from_unit).is_some();

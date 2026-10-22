@@ -132,20 +132,25 @@ impl State {
     /// played with the pad on the main screen keeps the device awake, while nobody looks below: the OLED
     /// spared. A touch on it, or the pad's focus coming to it, brings it back.
     pub fn bottom_dimmed(&self) -> bool {
-        self.bottom.used_at != 0 && !self.bottom_shows_windows() && self.unix_secs.saturating_sub(self.bottom.used_at) >= DIM_AFTER
+        !self.bottom_shows_windows() && self.bottom_idle_for() >= DIM_AFTER
+    }
+
+    /// Seconds since the second screen was last used (0 before the clock's first reading).
+    fn bottom_idle_for(&self) -> u64 {
+        self.bottom.used_at.map_or(0, |at| self.mono_secs.saturating_sub(at))
     }
 
     /// The second screen in use: lit (redrawn, if it was dimmed).
     pub(crate) fn bottom_used(&mut self) -> Dirty {
-        self.bottom.used_at = self.unix_secs;
+        self.bottom.used_at = Some(self.mono_secs);
         if self.follow_bottom_dim() { Dirty::BOTTOM } else { Dirty::NONE }
     }
 
     /// After any event: whether the second screen's dimming changed (to redraw it). Its time counts from
     /// the first clock reading.
     pub(crate) fn follow_bottom_dim(&mut self) -> bool {
-        if self.bottom.used_at == 0 {
-            self.bottom.used_at = self.unix_secs;
+        if self.bottom.used_at.is_none() && self.clock_read() {
+            self.bottom.used_at = Some(self.mono_secs);
         }
         let dimmed = self.bottom_dimmed();
         std::mem::replace(&mut self.bottom.dimmed, dimmed) != dimmed
@@ -171,7 +176,7 @@ impl State {
     /// (not tapped since), or untouched (the pad's focus not on it) [`DIM_AFTER`] and [`OFF_AFTER`] more.
     /// The panel is driven in video mode, streamed every frame whatever it shows: only off saves that.
     fn bottom_idle_wanted(&self) -> bool {
-        let untouched = self.bottom.used_at != 0 && self.unix_secs.saturating_sub(self.bottom.used_at) >= DIM_AFTER + OFF_AFTER;
+        let untouched = self.bottom_idle_for() >= DIM_AFTER + OFF_AFTER;
         self.sys.status.discharging
             && self.device.refresh != crate::device::Refresh::Running
             && self.in_force().bottom_idle_off()
@@ -281,14 +286,14 @@ impl State {
     /// Home+Start: the bottom screen off, or on again (off by itself: on, as a touch would).
     pub(crate) fn toggle_bottom_power(&mut self) -> Vec<Effect> {
         if self.bottom.screen.idle_off && !self.bottom.screen.off {
-            self.bottom.used_at = self.unix_secs;
+            self.bottom.used_at = Some(self.mono_secs);
             self.bottom.woken = true;
             return self.follow_bottom_power();
         }
         self.bottom.screen.off = !self.bottom.screen.off;
         // (On again by hand: in use, so not off by itself either.)
         if !self.bottom.screen.off {
-            self.bottom.used_at = self.unix_secs;
+            self.bottom.used_at = Some(self.mono_secs);
             self.bottom.woken = true;
             self.bottom.screen.idle_off = false;
         }
@@ -500,6 +505,18 @@ mod tests {
         assert!(s.bottom_off());
         assert_eq!(power(&s.apply(Event::BottomTouched).1), Some(true), "a touch: on again");
         assert!(!s.bottom_off());
+    }
+
+    #[test]
+    fn the_wall_clock_set_back_does_not_keep_it_on() {
+        let mut s = state();
+        on_battery(&mut s, true);
+        let year = 365 * 86_400;
+        s.apply(Event::Tick { unix_secs: 2 * year, mono_secs: 1000 });
+        let at = |mono: u64| Event::Tick { unix_secs: year + mono, mono_secs: mono };
+        assert_eq!(power(&s.apply(at(1000 + DIM_AFTER + OFF_AFTER - 1)).1), None);
+        assert!(s.bottom_dimmed(), "dimmed on time");
+        assert_eq!(power(&s.apply(at(1000 + DIM_AFTER + OFF_AFTER)).1), Some(false), "off on time");
     }
 
     #[test]

@@ -181,8 +181,9 @@ pub struct State {
     keymap_sent: Option<keymap::Keymap>,
     lists: Lists,
     unix_secs: u64,
-    /// A monotonic clock, as last ticked (see [`Event::Tick`]): what idle, the notice and the saves time
-    /// themselves by, so that a step of the wall clock (by hand, by NTP) is no time gone by.
+    /// A monotonic clock, as last ticked (see [`Event::Tick`]): every duration is timed by it (idle, the
+    /// bottom screen, notices, saves, plays, background grace, handoffs), so that a step of the wall clock
+    /// (by hand, by NTP) is no time gone by. The wall clock dates things only.
     mono_secs: u64,
     saves: Saves,
     idle: idle::Idle,
@@ -302,6 +303,16 @@ impl State {
         self.unix_secs
     }
 
+    /// Whether the clocks have been read (the first [`Event::Tick`] came).
+    pub(crate) fn clock_read(&self) -> bool {
+        self.unix_secs != 0
+    }
+
+    /// Epoch seconds at monotonic time `mono` (as the wall clock reads now: a step of it since moves it).
+    pub(crate) fn unix_at(&self, mono: u64) -> u64 {
+        self.unix_secs.saturating_sub(self.mono_secs.saturating_sub(mono))
+    }
+
     /// Whether the dock menu offers Open another for `id`: it runs, and another launch of it makes sense
     /// (see [`crate::Entry::another`]).
     pub fn opens_another(&self, id: &str) -> bool {
@@ -390,7 +401,7 @@ impl State {
         effects.extend(self.follow_window_rules());
         effects.extend(self.follow_background());
         effects.extend(self.session.show_pending());
-        effects.extend(self.session.show_reopened(self.unix_secs));
+        effects.extend(self.session.show_reopened(self.mono_secs));
         effects.extend(self.follow_quitting());
         effects.extend(self.follow_closed(was));
         // (After the one in front closing: a window just taken by a browsed file is shown over it.)
@@ -1071,7 +1082,7 @@ impl State {
             Some(ws) if !Instance::Shelf.is(ws) => vec![Effect::Window(WindowCommand::Focus(ws.clone()))],
             _ => vec![Effect::Window(WindowCommand::ShowShelf)],
         };
-        self.session.closed_front = Some((was, self.unix_secs));
+        self.session.closed_front = Some((was, self.mono_secs));
         effects
     }
 

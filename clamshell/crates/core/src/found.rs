@@ -34,7 +34,7 @@ impl State {
     /// Windows that are still no entry's (`taken`: ones given to a browsed file just now, left out):
     /// their programs run as entries found by them.
     pub(crate) fn follow_found_windows(&mut self, taken: &[i64]) -> Vec<Effect> {
-        let now = self.unix_secs;
+        let now = self.mono_secs;
         let session = &self.session;
         // (Not a starting launch's: a Steam game found running, its launch to come.)
         let starting = |w: &Window| session.launching.iter().any(|l| l.app_id.as_deref() == Some(w.app_id.as_str()));
