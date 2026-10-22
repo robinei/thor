@@ -619,7 +619,7 @@ fn known(library: &mut Library, hows: Vec<(usize, How)>, sources: &Sources) -> V
             g.favourite = favourites.contains(&*g.id);
         }
     }
-    let now = crate::clock::unix_secs();
+    let now = crate::time::clock::unix_secs();
     let mut wanted = Vec::new();
     for (i, how) in hows {
         let Some(g) = library.entries.get(i) else {

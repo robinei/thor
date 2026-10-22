@@ -21,7 +21,8 @@ use clamshell_system::paths::Paths;
 use clamshell_system::power::tuning;
 use clamshell_system::power::tuning::Tuning;
 use clamshell_system::store::{Store, Writer};
-use clamshell_system::{Closed, Handles, Sink, battery, bluetooth, clock, frames, metrics, status, sway, wifi};
+use clamshell_system::time::clock;
+use clamshell_system::{Closed, Handles, Sink, battery, bluetooth, frames, metrics, status, sway, wifi};
 use clamshell_ui::EventSender;
 
 use crate::config::Env;

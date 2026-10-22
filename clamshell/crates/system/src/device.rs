@@ -115,8 +115,8 @@ fn carry_out(command: Command, screenshots: Option<&PathBuf>, shown: &mut u32, s
         Command::StepClock(field, by) => {
             let error = step_clock(field, by).err();
             // (The clock moved: the time now, then the reading.)
-            let now = crate::clock::unix_secs();
-            sink.send(Event::Tick { unix_secs: now, mono_secs: crate::clock::mono_secs() })?;
+            let now = crate::time::clock::unix_secs();
+            sink.send(Event::Tick { unix_secs: now, mono_secs: crate::time::clock::mono_secs() })?;
             sink.send(Event::Reading(Reading::Time(read_time(error))))
         }
         Command::CalibrateRefresh => {
@@ -171,7 +171,7 @@ fn in_background(name: &str, sink: &(impl Sink + Clone), work: impl FnOnce() -> 
 fn screenshot(dir: Option<&PathBuf>) -> Result<String, String> {
     let dir = dir.ok_or("no folder for screenshots (no HOME)")?;
     std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-    let secs = crate::clock::unix_secs();
+    let secs = crate::time::clock::unix_secs();
     let file = dir.join(format!("clamshell-{}.png", timestamp(secs)));
     let path = file.to_string_lossy().into_owned();
     if command::output("grim", &[&path]).is_some() {

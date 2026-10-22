@@ -187,7 +187,7 @@ pub fn list(dir: &Path, folder: &str, runners: &[Runner], home: Option<&Path>, h
             let meta = fs::metadata(&path).ok();
             let is_dir = meta.as_ref().is_some_and(fs::Metadata::is_dir);
             let size = meta.as_ref().filter(|m| m.is_file()).map(fs::Metadata::len);
-            let modified = meta.and_then(|m| m.modified().ok()).map_or(0, crate::clock::unix_secs_at);
+            let modified = meta.and_then(|m| m.modified().ok()).map_or(0, crate::time::clock::unix_secs_at);
             let mut game = Entry::new(&format!("{folder}/{name}"), &name);
             // (An archive: browsed as a folder, through its mount; a runner that opens it kept, for
             // Open in.)

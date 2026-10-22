@@ -186,7 +186,7 @@ pub fn spawn(fetch: Fetch, queue: &Queue, sink: impl Sink + Clone) -> std::io::R
                 let meta = shared.fetch(&w);
                 let saved = match &w.how {
                     How::Duration => cache.save_probe(&w.id, meta.duration, meta.details.shot.as_deref()),
-                    _ => cache.save_meta(&w.id, &w.how.source(), crate::clock::unix_secs(), &meta),
+                    _ => cache.save_meta(&w.id, &w.how.source(), crate::time::clock::unix_secs(), &meta),
                 };
                 if let Err(e) = saved {
                     log::warn!("meta: {}: {e}", w.id);
