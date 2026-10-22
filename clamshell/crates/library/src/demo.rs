@@ -1,5 +1,5 @@
-//! A demo library, for tests and snapshots (the `demo` feature): placeholder games, apps and a series,
-//! none of which launch anything real.
+//! A demo library for tests and snapshots, behind the `demo` feature. It has placeholder games, apps and
+//! a series, none of which launch anything real.
 
 use crate::{Collection, Details, Entry, Launch, Library, OwnTab, Playback, Tool};
 
@@ -16,7 +16,7 @@ pub fn games() -> Vec<Entry> {
     ]
     .into_iter()
     .map(|(id, title, color)| match id {
-        // As fetched metadata gives it.
+        // Details as fetched metadata would give them.
         "zelda-lttp" => Entry {
             color,
             details: Details {
@@ -55,7 +55,7 @@ pub fn library() -> Library {
             let file = format!("{id}/{episode}.mkv");
             let path = format!("/videos/{}", file.trim_start_matches("tv:"));
             let argv = vec!["mpv".into(), path.clone()];
-            // (The second episode left halfway.)
+            // The second episode is left halfway through.
             let position = episode.starts_with("2.").then_some(1500);
             let launch = Launch::program(argv);
             games.push(Entry {
@@ -74,7 +74,7 @@ pub fn library() -> Library {
             g.items.push(s);
         }
     }
-    // ClamShell's own tools, as a library.json with a Tools place has them.
+    // ClamShell's own tools, as a library.json with a Tools place would have them.
     let tools = games.len();
     let summary = "Calibrates the controller's sticks and gyro and the top screen's refresh rate; sets the password and remote login.";
     games.push(Entry {

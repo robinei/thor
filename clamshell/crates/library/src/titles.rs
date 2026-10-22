@@ -1,7 +1,7 @@
-//! Titles from file and folder names: an extension left off, a ROM dump's tags left off, a season's folder
-//! and an episode's number in it.
+//! Titles from file and folder names. This drops extensions and ROM dump tags, and recognizes season
+//! folders and the episode numbers in them.
 
-/// The season a folder is, by its name: `Season 2`, `S02`, `Series 2`; `Specials` is season 0.
+/// The season number of a folder, from names like `Season 2`, `S02` or `Series 2`. `Specials` is season 0.
 pub fn season_of(folder: &str) -> Option<u32> {
     let name = folder.trim().to_lowercase();
     if name == "specials" {
@@ -11,8 +11,9 @@ pub fn season_of(folder: &str) -> Option<u32> {
     number.trim().parse().ok()
 }
 
-/// An episode's title in season `season`'s folder, from its file name: `017 S01E18 Title` (season 1) is
-/// `18. Title`, `S05E01E02 Title` is `1–2. Title`; none if the name has no episode of that season.
+/// An episode's title in the folder of season `season`, from its file name. `017 S01E18 Title` in season 1
+/// becomes `18. Title`, and `S05E01E02 Title` becomes `1–2. Title`. Returns none if the name has no
+/// episode of that season.
 pub fn episode_title(stem: &str, season: u32) -> Option<String> {
     let chars: Vec<char> = stem.chars().collect();
     let digits = |from: usize| -> (u32, usize) {
@@ -60,8 +61,9 @@ pub fn stem(name: &str) -> String {
     name.rsplit_once('.').map_or(name, |(stem, _)| stem).to_owned()
 }
 
-/// A title without the dump tags at its end (`(U) [!]`, `(USA) (Rev 1)`, `(Japan, USA) (En,Ja)`, a
-/// translation's ` # SNES`); words in brackets stay (`(Part 1)`), and so does a year (`Cosmos (1980)`).
+/// A title without the dump tags at its end, such as `(U) [!]`, `(USA) (Rev 1)`, `(Japan, USA) (En,Ja)`
+/// or a translation's ` # SNES`. Other words in brackets stay, like `(Part 1)`, and so does a year, like
+/// `Cosmos (1980)`.
 pub fn untagged(title: &str) -> String {
     let mut t = title.split_once(" # ").map_or(title, |(t, _)| t).trim_end();
     while let Some(open) = t.strip_suffix([')', ']']).and_then(|rest| rest.rfind(['(', '['])) {
@@ -76,8 +78,8 @@ pub fn untagged(title: &str) -> String {
     t.to_owned()
 }
 
-/// Whether a bracketed tag is a ROM dump's (a region, languages, a revision, a stage): `U`, `JU`, `M5`,
-/// `V1.1`, `USA`, `Japan, USA`, `En,Ja`, `Rev 1`, `Beta`, `Unl`, `Hack`.
+/// Whether a bracketed tag is a ROM dump tag: a region, languages, a revision or a release stage. Examples:
+/// `U`, `JU`, `M5`, `V1.1`, `USA`, `Japan, USA`, `En,Ja`, `Rev 1`, `Beta`, `Unl`, `Hack`.
 pub fn dump_tag(tag: &str) -> bool {
     const WORDS: [&str; 26] = [
         "usa",

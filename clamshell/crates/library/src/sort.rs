@@ -1,14 +1,15 @@
-//! Sorting titles: case ignored; whitespace before punctuation before digits before letters, so "Cave
-//! Story+" comes before "Caves of Qud" and "Game Saves" before "Games"; numbers by their value, so "2."
-//! comes before "10." (leading zeros ignored). A key built once per title. And the order of a list of
-//! entries ([`list_order`]).
+//! Sorting titles, and the order of a list of entries ([`list_order`]).
+//!
+//! Case is ignored. Whitespace sorts before punctuation, punctuation before digits and digits before
+//! letters, so "Cave Story+" comes before "Caves of Qud" and "Game Saves" before "Games". Numbers sort by
+//! value, ignoring leading zeros, so "2." comes before "10.". The sort key is built once per title.
 
 use std::cmp::Ordering;
 
 use crate::{BrowseKind, Entry};
 
-/// The key to sort `title` by: per character, its class, then the character lowercased; a run of digits
-/// as its length (leading zeros dropped), then its digits.
+/// The key to sort `title` by. Each character becomes its class and its lowercase form. A run of digits
+/// becomes its length without leading zeros, followed by the digits.
 pub fn key(title: &str) -> Vec<(u8, char)> {
     let mut key = Vec::with_capacity(title.len());
     let mut chars = title.chars().peekable();
@@ -39,8 +40,8 @@ pub fn key(title: &str) -> Vec<(u8, char)> {
     key
 }
 
-/// The order of a tab's or a folder's entries: folders first, then by title; browsed dirs' own folders
-/// after the other folders, as library.json and the mounts have them.
+/// The order of a tab's or a folder's entries: folders first, then by title. The top folders of browsed
+/// dirs come after the other folders, in the order library.json and the mounts give them.
 pub fn list_order(games: &[Entry], a: usize, b: usize) -> Ordering {
     let key = |i: usize| {
         games.get(i).map(|g| match g.browsed.as_ref().map(|b| &b.kind) {

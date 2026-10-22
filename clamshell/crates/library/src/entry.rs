@@ -1,5 +1,6 @@
-//! An entry: a game, an app, a film, a file, or a group of them (a series' seasons and episodes, a folder),
-//! with how it launches, what was fetched about it, a video's playback, and its key and colour.
+//! An entry is a game, an app, a film, a file, or a group of them, such as a series' seasons and episodes
+//! or a folder. It holds how the entry launches, what was fetched about it, a video's playback position,
+//! and its key and colour.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -9,12 +10,13 @@ use crate::{Plays, RunnerOf, hash, sort};
 /// How an entry starts.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum Launch {
-    /// Nothing to start (a group: it opens in shelf).
+    /// Nothing to start. This is a group, which opens in shelf.
     #[default]
     None,
     /// Through Steam.
     Steam { appid: u32 },
-    /// A program with its arguments (filled in already), in `workdir` (else the home dir).
+    /// A program with its arguments, already filled in. It runs in `workdir`, or in the home dir if that
+    /// is none.
     Program { argv: Vec<String>, workdir: Option<PathBuf> },
     /// One of ClamShell's own tools (the Tools tab).
     Tool(Tool),
@@ -23,13 +25,13 @@ pub enum Launch {
 /// ClamShell's own tools.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tool {
-    /// The library read again (library.json, its folders, Steam, the desktop files), then the missing
-    /// covers and details fetched.
+    /// Reads the library again (library.json, its folders, Steam, the desktop files), then fetches the
+    /// missing covers and details.
     Rescan,
-    /// The entries whose covers and details weren't found tried again, then a rescan.
+    /// Tries again for the entries whose covers and details weren't found, then rescans.
     Refetch,
-    /// The Device view, ClamShell's own on the main screen (calibrating the controller and the screen,
-    /// the password, remote login).
+    /// The Device view on the main screen, for calibrating the controller and the screen, the password
+    /// and remote login.
     Device,
 }
 
@@ -43,57 +45,58 @@ impl Launch {
 /// One entry as the rest of the program sees it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
-    /// Stable id: `<source id>:<path in the source's dir>`, `steam:<appid>` or `desktop:<file id>`. Focus,
-    /// settings and play time are keyed by it. Shared, so the UI can put it in a frame's targets without
-    /// allocating.
+    /// A stable id: `<source id>:<path in the source's dir>`, `steam:<appid>` or `desktop:<file id>`.
+    /// Focus, settings and play time are keyed by it. It is shared so the UI can put it in a frame's
+    /// targets without allocating.
     pub id: Arc<str>,
-    /// The id made fit for unit and workspace names (see [`key_of`]): what its launches are named by.
+    /// The id made fit for unit and workspace names (see [`key_of`]). Its launches are named by it.
     pub key: String,
     pub title: String,
     /// What it sorts by (see [`sort`]).
     pub sort_key: Vec<(u8, char)>,
-    /// Stand-in for box art while there is none or it is loading: 0xRRGGBB, from the id.
+    /// A colour shown instead of box art while there is none or it is loading. It is 0xRRGGBB, derived
+    /// from the id.
     pub color: u32,
     pub launch: Launch,
-    /// Its file or folder in its content dir (none for Steam's games and desktop files).
+    /// The entry's file or folder in its content dir. Steam games and desktop files have none.
     pub file: Option<PathBuf>,
     pub box_front: Option<PathBuf>,
-    /// An icon (an app's; a folder's small picture, its row's), drawn where there is no box art (a
-    /// folder's row: before it).
+    /// An icon, such as an app's icon or a folder's small picture. It is drawn where there is no box art;
+    /// in a folder's row it is drawn before the name.
     pub icon: Option<PathBuf>,
-    /// One of the UI's own icons by name (`folder`, `file`, `gamepad`), drawn where there is no picture
-    /// (a browsed entry's; a folder's from library.json's places).
+    /// One of the UI's own icons by name (`folder`, `file`, `gamepad`), drawn where there is no picture.
+    /// Browsed entries and folders from library.json's places use it.
     pub glyph: Option<Arc<str>>,
     /// What was fetched about it (see [`crate::Meta`]).
     pub details: Details,
-    /// A video mpv plays: where it was left and how long it is.
+    /// For a video mpv plays: where it was left and how long it is.
     pub playback: Playback,
-    /// An app, not a game or a film: Recent leaves it out.
+    /// An app rather than a game or a film. Recent leaves it out.
     pub app: bool,
-    /// Another launch of it while it runs makes sense (the dock menu's Open another): an app from a
-    /// desktop file, which opens a window of its own each time, unless its file says it has one main
-    /// window (`SingleMainWindow`). Not a game, nor a file opened.
+    /// Whether launching it again while it runs makes sense, for the dock menu's Open another. This is
+    /// true for an app from a desktop file, which opens a new window each time, unless its file says it
+    /// has one main window (`SingleMainWindow`). It is false for games and opened files.
     pub another: bool,
-    /// A group's entries (a series' seasons, a season's episodes), as indices into [`crate::Library::entries`], in
-    /// order; empty for anything else.
+    /// A group's entries in order, such as a series' seasons or a season's episodes, as indices into
+    /// [`crate::Library::entries`]. Empty for anything else.
     pub items: Vec<usize>,
     /// The group it is in, if any.
     pub parent: Option<usize>,
-    /// Play history and favourite (as kept: clamshell-system's `store`).
+    /// Play history and favourite, as kept by clamshell-system's `store`.
     pub plays: Plays,
     pub favourite: bool,
-    /// A file or folder of a browsed dir (see [`Browsed`]); none for the rest.
+    /// Set for a file or folder in a browsed dir (see [`Browsed`]).
     pub browsed: Option<Browsed>,
-    /// A folder's playlist (an `.m3u` in it): what enqueueing the folder enqueues, not its entries.
+    /// A folder's playlist, an `.m3u` in it. Enqueueing the folder enqueues this instead of its entries.
     pub playlist: Option<PathBuf>,
-    /// The runner that opens it (library.json's or ClamShell's): a scanned entry's (and a folder of them),
-    /// a browsed file's, Desktop for a desktop file's app or game, Steam for Steam's games. None for
-    /// ClamShell's own tools.
+    /// The runner that opens it, from library.json or ClamShell's own. Scanned entries, folders of them
+    /// and browsed files have their runner; apps and games from desktop files have Desktop, and Steam
+    /// games have Steam. ClamShell's own tools have none.
     pub runner: Option<RunnerOf>,
 }
 
-/// What was fetched about an entry (see [`crate::Meta`]): a screenshot (a film's backdrop), what it is about, the
-/// year it came out, who made it.
+/// What was fetched about an entry (see [`crate::Meta`]): a screenshot or a film's backdrop, a summary,
+/// the year it came out and who made it.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Details {
@@ -108,7 +111,7 @@ pub struct Details {
 }
 
 impl Details {
-    /// `found` over these: each detail it has.
+    /// Overwrites each detail that `found` has.
     pub fn merge(&mut self, found: &Details) {
         if found.shot.is_some() {
             self.shot.clone_from(&found.shot);
@@ -125,9 +128,12 @@ impl Details {
     }
 }
 
-/// A video's playback: where mpv was when last quit (seconds; none: not started, or watched to the end),
-/// when it kept that place (seconds since the epoch: it was watched then, maybe outside ClamShell), and
-/// how long the video is (seconds, once read).
+/// A video's playback state.
+///
+/// `position` is where mpv was when it last quit, in seconds; it is none if the video wasn't started or
+/// was watched to the end. `at` is when mpv saved that position, in seconds since the epoch; that is
+/// when it was watched, possibly outside ClamShell. `duration` is the video's length in seconds, once
+/// read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Playback {
     pub position: Option<u32>,
@@ -135,22 +141,22 @@ pub struct Playback {
     pub duration: Option<u32>,
 }
 
-/// A file or folder of a browsed dir (library.json's `browse`, removable storage): not scanned, but listed
-/// when its folder is opened (its entries' ids its own, `/`, their names); it has the file actions instead
-/// of a game's (no favourite, no pin, not in Recent).
+/// A file or folder in a browsed dir, from library.json's `browse` or removable storage. It isn't
+/// scanned but listed when its folder is opened; its entries' ids are the folder's id, `/` and their
+/// names. It has file actions instead of a game's: no favourite, no pin, and it isn't in Recent.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Browsed {
-    /// A folder (it opens), not a file.
+    /// A folder, which opens, rather than a file.
     pub folder: bool,
-    /// A folder whose entries are in (its `items`), from a listing.
+    /// A folder whose entries have been listed into its `items`.
     pub listed: bool,
-    /// An archive (a zip, 7z, rar, tar), browsed as a folder: its entries are those of its mount, read
-    /// only.
+    /// An archive (zip, 7z, rar, tar) browsed as a folder. Its entries are those of its read-only mount.
     pub archive: bool,
-    /// A folder nothing in it can be changed in (not writable: an archive's, the system's).
+    /// A folder whose contents can't be changed because it isn't writable, such as an archive's or a
+    /// system folder.
     pub locked: bool,
     pub kind: BrowseKind,
-    /// A file's size (bytes), and when it was last changed (seconds since the epoch; 0: not known).
+    /// A file's size in bytes, and when it was last changed in seconds since the epoch (0 if not known).
     pub size: Option<u64>,
     pub modified: u64,
 }
@@ -160,13 +166,13 @@ pub struct Browsed {
 pub enum BrowseKind {
     #[default]
     Plain,
-    /// A dir library.json's `browse` names.
+    /// A dir named by library.json's `browse`.
     Root,
-    /// A removable filesystem's top (its device, to eject).
+    /// The top of a removable filesystem, with its device for ejecting.
     Removable(String),
-    /// The Trash (its `files` dir).
+    /// The Trash, meaning its `files` dir.
     Trash,
-    /// At the top of the Trash: it can be restored.
+    /// An item at the top of the Trash, which can be restored.
     Trashed,
 }
 
@@ -197,17 +203,17 @@ impl Entry {
         }
     }
 
-    /// Whether it is a group (it opens rather than starts): one with entries, or a browsed folder.
+    /// Whether it is a group, which opens rather than starts: one with entries, or a browsed folder.
     pub fn is_group(&self) -> bool {
         !self.items.is_empty() || self.browsed.as_ref().is_some_and(|b| b.folder)
     }
 
-    /// A browsed folder: its dir, listed when it is opened.
+    /// For a browsed folder, its dir, which is listed when the folder is opened.
     pub fn browsed_dir(&self) -> Option<&std::path::Path> {
         self.file.as_deref().filter(|_| self.browsed.as_ref().is_some_and(|b| b.folder))
     }
 
-    /// Its file, if mpv plays it (its launch command's program is mpv): where mpv keeps its place.
+    /// The entry's file, if its launch command runs mpv. mpv keeps its place by this file.
     pub fn mpv_file(&self) -> Option<&std::path::Path> {
         let Launch::Program { argv, .. } = &self.launch else {
             return None;
@@ -216,13 +222,14 @@ impl Entry {
         self.file.as_deref().filter(|_| program == Some("mpv"))
     }
 
-    /// When it was last played or watched (seconds since the epoch): through ClamShell, or where mpv kept
-    /// its place.
+    /// When it was last played or watched, in seconds since the epoch. This is the later of the last play
+    /// through ClamShell and the time mpv saved its place.
     pub fn last_watched(&self) -> u64 {
         self.plays.last.max(self.playback.at)
     }
 
-    /// Watched: played and left at the end (mpv keeps no place), or quit near it (past [`DONE`]).
+    /// Whether it was watched: played to the end, so mpv keeps no place, or quit near the end (past
+    /// [`DONE`]).
     pub fn watched(&self) -> bool {
         match (self.playback.position, self.playback.duration) {
             (None, _) => self.plays.count > 0,
@@ -232,13 +239,14 @@ impl Entry {
     }
 }
 
-/// How far into a video counts as watched (the credits left).
+/// How far into a video counts as watched, leaving room for the credits.
 pub const DONE: f64 = 0.9;
 
-/// An entry's key, from its id: what its launches' units and its workspace are named by. Letters, digits
-/// and `_` only (no `-`, which separates the parts of those names): the id's last part (its file's name
-/// without the extension, or after `:`), lowercase, at most 16 characters, then `_` and 6 hex digits of a
-/// hash of the whole id, so ids alike stay apart.
+/// An entry's key, made from its id. Its launches' units and its workspace are named by it.
+///
+/// It has only letters, digits and `_`, because `-` separates the parts of those names. It is the id's
+/// last part (the file name without its extension, or what follows `:`), lowercased and cut to 16
+/// characters, then `_` and 6 hex digits of a hash of the whole id so that similar ids stay distinct.
 pub fn key_of(id: &str) -> String {
     let last = id.rsplit(['/', ':']).next().unwrap_or(id);
     let stem = last.rsplit_once('.').map_or(last, |(stem, _)| stem);

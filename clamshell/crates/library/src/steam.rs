@@ -1,7 +1,7 @@
-//! Steam's own files, the parts that need no disk: Valve's KeyValues text (VDF), the library folders
-//! listed in `libraryfolders.vdf`, and what a game's manifest (`appmanifest_<id>.acf`) says. Steam's
-//! tools (Proton, the Linux runtimes, the redistributables) are left out. Finding the files and the art
-//! is clamshell-system's (`library::steam`).
+//! Reading Steam's files, the parts that need no disk access: Valve's KeyValues text (VDF), the library
+//! folders listed in `libraryfolders.vdf`, and a game's manifest (`appmanifest_<id>.acf`). Steam's tools
+//! (Proton, the Linux runtimes, the redistributables) are left out. Finding the files and the art is done
+//! by clamshell-system's `library::steam`.
 
 use std::path::PathBuf;
 
@@ -36,8 +36,8 @@ impl Value {
     }
 }
 
-/// Parses Valve's KeyValues text ("key" "value", "key" { ... }, `//` comments); the whole file as one
-/// block.
+/// Parses Valve's KeyValues text (`"key" "value"`, `"key" { ... }`, `//` comments) into one block for the
+/// whole file.
 pub fn parse_vdf(text: &str) -> Value {
     parse_block(&mut tokenize(text).into_iter().peekable())
 }
@@ -111,8 +111,8 @@ fn is_tool(name: &str) -> bool {
     name.starts_with("Proton ") || name.starts_with("Steam Linux Runtime") || name.starts_with("Steamworks Common")
 }
 
-/// An installed game a manifest describes: its app id and name; `None` for a tool, a game not fully
-/// installed, or a manifest that doesn't say.
+/// The app id and name of the installed game a manifest describes. `None` for a tool, a game that isn't
+/// fully installed, or a manifest that doesn't say.
 pub fn manifest(vdf: &Value) -> Option<(u32, &str)> {
     let app = vdf.get("AppState")?;
     let appid: u32 = app.str("appid")?.parse().ok()?;

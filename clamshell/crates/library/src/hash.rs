@@ -1,5 +1,5 @@
-//! FNV-1a, a small and stable hash for names made from text: unit and file names, colours, the
-//! screenshot test's file hashes. Not for anything adversarial.
+//! FNV-1a, a small and stable hash used to make names and values from text: unit and file names,
+//! colours, and the screenshot test's file hashes. It is not for anything adversarial.
 
 /// FNV-1a, 32 bits.
 pub fn fnv1a32(bytes: &[u8]) -> u32 {

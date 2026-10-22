@@ -1,6 +1,7 @@
-//! An entry's play history, summed up. Reading and writing it is clamshell-system's (`store`).
+//! A summary of an entry's play history. It is read and written by clamshell-system's `store`.
 
-/// A game's plays: how many, how long in all (seconds), and when the last one ended (epoch seconds).
+/// A game's plays: how many there were, their total length in seconds, and when the last one ended in
+/// epoch seconds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Plays {
     pub count: u32,

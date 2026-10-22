@@ -1,8 +1,10 @@
-//! Name patterns, as library.json's `match` and `items` give them: `*` for any run of characters, `?` for
-//! one, anything else itself; neither crosses `/`. A pattern of several parts (`*/*.cue`) is matched a
-//! part per folder level (by clamshell-system, on disk); a last part ending in `/` matches folders only.
+//! Name patterns, as used by library.json's `match` and `items`. `*` matches any run of characters, `?`
+//! matches one character, and anything else matches itself. Neither `*` nor `?` crosses `/`.
+//!
+//! A pattern with several parts, such as `*/*.cue`, is matched one part per folder level; clamshell-system
+//! does that on disk. If the last part ends in `/`, it matches folders only.
 
-/// Whether `name` (one file or folder name) matches `pattern` (one part of a pattern).
+/// Whether `name`, a single file or folder name, matches `pattern`, a single part of a pattern.
 pub fn matches(pattern: &str, name: &str) -> bool {
     let (p, n): (Vec<char>, Vec<char>) = (pattern.chars().collect(), name.chars().collect());
     // The classic two-pointer match: on a mismatch, the last `*` takes one more character.
@@ -37,8 +39,8 @@ pub fn parts(pattern: &str) -> (Vec<&str>, bool) {
     (pattern.trim_end_matches('/').split('/').filter(|p| !p.is_empty()).collect(), folders)
 }
 
-/// Whether a name is hidden (starts with a dot): patterns skip hidden names unless their part starts
-/// with a dot too.
+/// Whether a name counts as hidden for `part`. Names starting with a dot are skipped unless the pattern
+/// part starts with a dot too.
 pub fn hidden(name: &str, part: &str) -> bool {
     name.starts_with('.') && !part.starts_with('.')
 }
