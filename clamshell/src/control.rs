@@ -12,7 +12,7 @@ use std::path::PathBuf;
 
 use clamshell_core::hardware::DeviceKey;
 use clamshell_core::keyboard::{self, Key, Modifier, Named};
-use clamshell_core::keymap::{Actuation, Dir, Input, Layer, MouseButton, PadOut, Param, Side};
+use clamshell_core::keymap::{Actuation, Dir, Input, Layer, MouseButton, Output, PadOut, Param, Side};
 use clamshell_core::levels::Level;
 use clamshell_core::settings::Setting;
 use clamshell_core::slider::Control;
@@ -409,21 +409,21 @@ fn target_named(word: &str) -> Result<Target, ParseError> {
     Ok(match word.split_once('-') {
         None => match word {
             "default" => Target::Default,
-            "nothing" => Target::Nothing,
+            "nothing" => Target::To(Output::Nothing),
             "pick" => Target::Pick,
             "mouse" => Target::MouseParts,
             "layers" => Target::Layers,
             "key" => Target::Key,
             "keys" => Target::Keys,
-            "pointer" => Target::Pointer,
-            "dpad" => Target::Dpad,
+            "pointer" => Target::To(Output::Pointer),
+            "dpad" => Target::To(Output::Dpad),
             _ => return Err(name()),
         },
-        Some(("pad", input)) => Target::Pad(PadOut::of(input_named(input)?).ok_or_else(name)?),
-        Some(("mouse", m)) => Target::Mouse(MouseButton::from_name(m).ok_or_else(name)?),
-        Some(("wheel", d)) => Target::Wheel(Dir::from_name(d).ok_or_else(name)?),
-        Some(("stick", s)) => Target::Stick(side(s)?),
-        Some(("trigger", s)) => Target::Trigger(side(s)?),
+        Some(("pad", input)) => Target::To(Output::Pad(PadOut::of(input_named(input)?).ok_or_else(name)?)),
+        Some(("mouse", m)) => Target::To(Output::Mouse(MouseButton::from_name(m).ok_or_else(name)?)),
+        Some(("wheel", d)) => Target::To(Output::Wheel(Dir::from_name(d).ok_or_else(name)?)),
+        Some(("stick", s)) => Target::To(Output::Stick(side(s)?)),
+        Some(("trigger", s)) => Target::To(Output::Trigger(side(s)?)),
         _ => return Err(name()),
     })
 }
@@ -556,10 +556,10 @@ mod tests {
         assert_eq!(parse("tap map-from rstick"), Ok(km(KeymapId::Input(Input::Stick(Side::Right)))));
         assert_eq!(parse("tap map-from lstick-up"), Ok(km(KeymapId::Input(Input::StickDir(Side::Left, Dir::Up)))));
         assert_eq!(parse("tap map-to key"), Ok(km(KeymapId::Target(Target::Key))));
-        assert_eq!(parse("tap map-to pad-b"), Ok(km(KeymapId::Target(Target::Pad(PadOut::Button(Button::B))))));
+        assert_eq!(parse("tap map-to pad-b"), Ok(km(KeymapId::Target(Target::To(Output::Pad(PadOut::Button(Button::B)))))));
         assert_eq!(parse("tap map-to pad-l4"), Err(ParseError::Name("pad-l4".into())), "not on the game's pad");
-        assert_eq!(parse("tap map-to mouse-right"), Ok(km(KeymapId::Target(Target::Mouse(MouseButton::Right)))));
-        assert_eq!(parse("tap map-to stick-left"), Ok(km(KeymapId::Target(Target::Stick(Side::Left)))));
+        assert_eq!(parse("tap map-to mouse-right"), Ok(km(KeymapId::Target(Target::To(Output::Mouse(MouseButton::Right))))));
+        assert_eq!(parse("tap map-to stick-left"), Ok(km(KeymapId::Target(Target::To(Output::Stick(Side::Left))))));
         assert_eq!(parse("tap gyro-hold lt"), Ok(km(KeymapId::Hold(Some(Input::Trigger(Side::Left))))));
         assert_eq!(parse("tap gyro-hold always"), Ok(km(KeymapId::Hold(None))));
         assert_eq!(parse("tap keymap-layer 1"), Ok(km(KeymapId::Layer(Layer(1)))));

@@ -109,7 +109,7 @@ pub(super) fn mouse(f: &mut Frame, id: u16, input: Input) {
     f.c.line((cx, wheel.bottom() + a), (cx, split), PART_W, PART_LINE);
     // The buttons: the body's top halves, named in them.
     for (b, half) in [(MouseButton::Left, Rect::new(m.x, m.y, w / 2.0, split - m.y)), (MouseButton::Right, Rect::new(cx, m.y, w / 2.0, split - m.y))] {
-        let kid = Id::Keymap(KeymapId::Target(Target::Mouse(b)));
+        let kid = Id::Keymap(KeymapId::Target(Target::To(Output::Mouse(b))));
         let on = lit(Output::Mouse(b));
         f.button(kid.clone(), half, look, |f| {
             let name = Rect::new(half.x, split - half.h * 0.22, half.w, half.h * 0.16);
@@ -124,14 +124,14 @@ pub(super) fn mouse(f: &mut Frame, id: u16, input: Input) {
         (Dir::Left, Rect::new(wheel.x - a * 1.05, wheel.center().1 - a / 2.0, a, a), Icon::ArrowLeft),
         (Dir::Right, Rect::new(wheel.right() + a * 0.05, wheel.center().1 - a / 2.0, a, a), Icon::ArrowRight),
     ];
-    let kid = Id::Keymap(KeymapId::Target(Target::Mouse(MouseButton::Middle)));
+    let kid = Id::Keymap(KeymapId::Target(Target::To(Output::Mouse(MouseButton::Middle))));
     let on = lit(Output::Mouse(MouseButton::Middle));
     f.button(kid, wheel, Look { radius: wheel.w / 2.0, ..look }, |f| {
         let (lw, lc) = line(on);
         f.c.outline(wheel, wheel.w / 2.0, lw, lc);
     });
     for (d, r, icon) in turns {
-        let kid = Id::Keymap(KeymapId::Target(Target::Wheel(d)));
+        let kid = Id::Keymap(KeymapId::Target(Target::To(Output::Wheel(d))));
         let on = lit(Output::Wheel(d));
         f.button(kid.clone(), r, look, |f| {
             let tone = label(f, &kid, on);
@@ -144,7 +144,7 @@ pub(super) fn mouse(f: &mut Frame, id: u16, input: Input) {
         let shown = Rect::new(m.x - sw * 0.5, y, sw, h * 0.1);
         let tw = f.c.text_width(small * 0.9, name);
         let target = Rect::new(shown.x - tw - sw * 2.0, y - h * 0.015, tw + sw * 3.0, h * 0.13);
-        let kid = Id::Keymap(KeymapId::Target(Target::Mouse(b)));
+        let kid = Id::Keymap(KeymapId::Target(Target::To(Output::Mouse(b))));
         let on = lit(Output::Mouse(b));
         f.button_in(kid.clone(), target, shown, Look { radius: sw / 2.0, ..look }, |f| {
             let (lw, lc) = line(on);

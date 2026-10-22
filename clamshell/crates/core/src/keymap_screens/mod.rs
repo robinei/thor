@@ -86,9 +86,9 @@ impl Screen {
 /// gyro's "as before" is off.
 pub fn ways(kind: Kind) -> &'static [Target] {
     match kind {
-        Kind::Digital | Kind::Trigger => &[Target::Pick, Target::Key, Target::MouseParts, Target::Layers, Target::Default, Target::Nothing],
-        Kind::Stick => &[Target::Pick, Target::Keys, Target::Pointer, Target::Default, Target::Nothing],
-        Kind::Gyro => &[Target::Pick, Target::Pointer, Target::Default],
+        Kind::Digital | Kind::Trigger => &[Target::Pick, Target::Key, Target::MouseParts, Target::Layers, Target::Default, Target::To(Output::Nothing)],
+        Kind::Stick => &[Target::Pick, Target::Keys, Target::To(Output::Pointer), Target::Default, Target::To(Output::Nothing)],
+        Kind::Gyro => &[Target::Pick, Target::To(Output::Pointer), Target::Default],
     }
 }
 
@@ -96,12 +96,12 @@ pub fn ways(kind: Kind) -> &'static [Target] {
 pub fn way_of(output: Option<Output>) -> Target {
     match output {
         None => Target::Default,
-        Some(Output::Nothing) => Target::Nothing,
+        Some(Output::Nothing) => Target::To(Output::Nothing),
         Some(Output::Pad(_) | Output::Stick(_) | Output::Trigger(_) | Output::Dpad) => Target::Pick,
         Some(Output::Key(_)) => Target::Key,
         Some(Output::Keys(_)) => Target::Keys,
         Some(Output::Mouse(_) | Output::Wheel(_)) => Target::MouseParts,
-        Some(Output::Pointer) => Target::Pointer,
+        Some(Output::Pointer) => Target::To(Output::Pointer),
         Some(Output::Layer(_)) => Target::Layers,
     }
 }
@@ -695,18 +695,10 @@ impl State {
 
     /// An output chosen for `input`, by the way it was asked for.
     fn chosen(&mut self, id: u16, input: Input, target: Target) -> Vec<Effect> {
-        let output = match target {
-            Target::Default | Target::Pick | Target::Key | Target::Keys | Target::MouseParts | Target::Layers => return vec![],
-            Target::Nothing => Output::Nothing,
-            Target::Pad(p) => Output::Pad(p),
-            Target::Mouse(m) => Output::Mouse(m),
-            Target::Wheel(d) => Output::Wheel(d),
-            Target::Stick(s) => Output::Stick(s),
-            Target::Pointer => Output::Pointer,
-            Target::Dpad => Output::Dpad,
-            Target::Trigger(s) => Output::Trigger(s),
-        };
-        self.choose(id, input, output)
+        match target {
+            Target::To(output) => self.choose(id, input, output),
+            Target::Default | Target::Pick | Target::Key | Target::Keys | Target::MouseParts | Target::Layers => vec![],
+        }
     }
 
     /// `input` maps to `output` (its parameters and hold kept): back to the edit screen, whose panel

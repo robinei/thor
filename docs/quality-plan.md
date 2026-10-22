@@ -89,8 +89,9 @@ Helpers that exist but are bypassed:
 - [x] Typed enum settings (Power, Fan, BottomScreen, Background…): one `Choice` trait and `choices!` macro,
       each variant's value, label and impact in one table. (`ClockField`, `Modifier`, `FileAction::label`,
       `ListId::ALL` stay plain arrays and matches: nothing is repeated there.)
-- [ ] Keymap parameters in one table: `Binding::to` from `Param::default_for` (`keymap/mod.rs:58-119`,
-      `param.rs`); `Target` vs `Output`, `Stroke` vs `Chord` merged where they mirror.
+- [x] Keymap parameters in one table: `Param::default_for` reads `Binding::to`'s defaults; `Target`'s
+      outputs are `Target::To(Output)`. (`Stroke` stays beside `Chord`: a typed stroke always has a key,
+      a modifier's too; a chord's may be none.)
 - [ ] `State`: notices out of `hardware.rs` into `notice.rs`; Home combos into `hardware.rs`; the keymap
       screens' state out of `Bottom` into its own struct; `PowerProfile` beside the settings.
 - [x] Duplicated logic in core: `editor.rs` `words()` / `count_env()`; `levels.rs:247-263` and

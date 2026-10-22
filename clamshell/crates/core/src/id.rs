@@ -191,7 +191,6 @@ pub enum KeymapId {
 pub enum Target {
     /// No binding: in Base, as on the pad (the gyro: off); in another layer, as the layers below it.
     Default,
-    Nothing,
     /// A control picked on the pad's drawing, tapped or pressed on the pad: a button, a trigger, a stick,
     /// the D-pad.
     Pick,
@@ -203,13 +202,8 @@ pub enum Target {
     MouseParts,
     /// A layer of the keymap, from the list of them (on while the binding is).
     Layers,
-    Pointer,
-    Pad(crate::keymap::PadOut),
-    Mouse(crate::keymap::MouseButton),
-    Wheel(crate::keymap::Dir),
-    Stick(crate::keymap::Side),
-    Dpad,
-    Trigger(crate::keymap::Side),
+    /// An output chosen directly.
+    To(crate::keymap::Output),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

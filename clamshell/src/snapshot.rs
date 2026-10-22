@@ -8,7 +8,7 @@ use std::path::Path;
 
 use clamshell_core::device::{DeviceId, SticksEvent};
 use clamshell_core::keyboard::{Key, Modifier, Named};
-use clamshell_core::keymap::{Actuation, Button, Dir, Input, Layer, MouseButton, PadOut, Param, Side};
+use clamshell_core::keymap::{Actuation, Button, Dir, Input, Layer, MouseButton, Output, PadOut, Param, Side};
 use clamshell_core::levels::Level;
 use clamshell_core::settings::Setting;
 use clamshell_core::slider::Control;
@@ -161,19 +161,19 @@ fn fps_keymap() -> Result<Vec<Event>, ParseError> {
         select(Input::Button(Button::A)),
         vec![km(KeymapId::Target(Target::Key)), key(Key::Mod(Modifier::Ctrl))?, key(Key::Char('x'))?],
         select(Input::Button(Button::LB)),
-        vec![km(KeymapId::Target(Target::Mouse(MouseButton::Right)))],
+        vec![km(KeymapId::Target(Target::To(Output::Mouse(MouseButton::Right))))],
         select(Input::Stick(Side::Left)),
         vec![km(KeymapId::Target(Target::Keys)), key(Key::Char('w'))?, key(Key::Char('a'))?, key(Key::Char('s'))?, key(Key::Char('d'))?],
         select(Input::StickDir(Side::Right, Dir::Up)),
-        vec![km(KeymapId::Target(Target::Wheel(Dir::Up)))],
+        vec![km(KeymapId::Target(Target::To(Output::Wheel(Dir::Up))))],
         select(Input::Gyro),
-        vec![km(KeymapId::Target(Target::Pointer)), km(KeymapId::Holds), km(KeymapId::Hold(Some(Input::Trigger(Side::Left))))],
+        vec![km(KeymapId::Target(Target::To(Output::Pointer))), km(KeymapId::Holds), km(KeymapId::Hold(Some(Input::Trigger(Side::Left))))],
         select(Input::Button(Button::View)),
         vec![km(KeymapId::Target(Target::Key)), key(Key::Char('m'))?],
         select(Input::Dpad(Dir::Left)),
         vec![km(KeymapId::Target(Target::Key)), key(Key::Char('1'))?],
         select(Input::Button(Button::B)),
-        vec![km(KeymapId::Target(Target::Pad(PadOut::Button(Button::Y))))],
+        vec![km(KeymapId::Target(Target::To(Output::Pad(PadOut::Button(Button::Y)))))],
         select(Input::Button(Button::LB)),
         vec![km(KeymapId::Actuation(Actuation::Hold)), km(KeymapId::Target(Target::Key)), key(Key::Named(Named::Esc))?],
         vec![km(KeymapId::Actuation(Actuation::Double)), km(KeymapId::Target(Target::Key)), key(Key::Named(Named::Tab))?],
@@ -314,7 +314,7 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                         km(KeymapId::Input(Input::Trigger(Side::Right))),
                         km(KeymapId::Actuation(Actuation::FullPull)),
                         km(KeymapId::Target(Target::MouseParts)),
-                        km(KeymapId::Target(Target::Mouse(MouseButton::Left))),
+                        km(KeymapId::Target(Target::To(Output::Mouse(MouseButton::Left)))),
                     ],
                 ),
                 shot("keymap-edit-stick.png", Bottom, vec![km(KeymapId::Input(Input::Stick(Side::Left)))]),

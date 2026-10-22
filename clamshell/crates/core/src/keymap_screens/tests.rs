@@ -99,7 +99,7 @@ fn a_new_keymap_is_named_edited_and_mapped() {
     assert_eq!(a.map(|b| b.output), Some(Output::Key(Chord { ctrl: true, ..Chord::of(Key::Char('x')) })));
     // The right stick to the pointer, faster.
     open(&mut s, Input::Stick(Side::Right));
-    keymap(&mut s, KeymapId::Target(Target::Pointer));
+    keymap(&mut s, KeymapId::Target(Target::To(Output::Pointer)));
 
     assert_eq!(s.keymap_screen(), Some(Screen::Edit(2)), "chosen: its parameters are in the panel");
     slide(&mut s, Param::Speed, 80);
@@ -112,7 +112,7 @@ fn a_new_keymap_is_named_edited_and_mapped() {
     assert_eq!(s.keymaps().get(2).unwrap().get(Input::Stick(Side::Left)).map(|b| b.output), Some(Output::Keys([w('w'), w('a'), w('s'), w('d')])));
     // The gyro to the pointer while LT is held; Shift alone on LB (Done with only a modifier).
     open(&mut s, Input::Gyro);
-    keymap(&mut s, KeymapId::Target(Target::Pointer));
+    keymap(&mut s, KeymapId::Target(Target::To(Output::Pointer)));
     keymap(&mut s, KeymapId::Holds);
     assert_eq!(s.keymap_screen(), Some(Screen::Holds { id: 2, input: Input::Gyro }));
     assert_eq!(s.pad().route(), PadRoute::Listen, "picked on the drawing: the pad listens");
@@ -160,7 +160,7 @@ fn a_new_keymap_is_named_edited_and_mapped() {
     open(&mut s, Input::Trigger(Side::Right));
     keymap(&mut s, KeymapId::Target(Target::MouseParts));
     assert_eq!(s.keymap_screen(), Some(Screen::Mouse { id: 2, input: Input::Trigger(Side::Right) }));
-    keymap(&mut s, KeymapId::Target(Target::Mouse(MouseButton::Left)));
+    keymap(&mut s, KeymapId::Target(Target::To(Output::Mouse(MouseButton::Left))));
     assert_eq!(s.keymap_screen(), Some(Screen::Edit(2)));
     slide(&mut s, Param::Threshold, 75);
     assert_eq!(s.keymaps().get(2).unwrap().get(Input::Trigger(Side::Right)).map(|b| b.threshold), Some(75));
@@ -197,8 +197,8 @@ fn targets_offered_fit_the_input() {
     picker(&mut s);
     tap(&mut s, Id::Row { list: ListId::Keymaps, i: 2, part: RowPart::Edit });
     open(&mut s, Input::Button(Button::A));
-    assert_eq!(keymap(&mut s, KeymapId::Target(Target::Pointer)), vec![], "a button can't move the pointer");
-    keymap(&mut s, KeymapId::Target(Target::Wheel(Dir::Down)));
+    assert_eq!(keymap(&mut s, KeymapId::Target(Target::To(Output::Pointer))), vec![], "a button can't move the pointer");
+    keymap(&mut s, KeymapId::Target(Target::To(Output::Wheel(Dir::Down))));
     assert_eq!(s.keymaps().get(1).unwrap().get(Input::Button(Button::A)).map(|b| b.output), Some(Output::Wheel(Dir::Down)));
     open(&mut s, Input::Button(Button::A));
     keymap(&mut s, KeymapId::Target(Target::Default));
@@ -291,7 +291,7 @@ fn the_panel_selects_changes_and_resets() {
     assert_eq!(s.keymap_edit().selected, Some(Input::Button(Button::B)), "so does a press");
     s.apply(Event::Listened(a));
     keymap(&mut s, KeymapId::Target(Target::MouseParts));
-    keymap(&mut s, KeymapId::Target(Target::Mouse(MouseButton::Left)));
+    keymap(&mut s, KeymapId::Target(Target::To(Output::Mouse(MouseButton::Left))));
     assert_eq!((s.keymap_screen(), s.keymap_edit().selected), (Some(Screen::Edit(1)), Some(a)), "back with it still selected");
     assert_eq!(s.keymaps().get(1).unwrap().get(a).map(|b| b.output), Some(Output::Mouse(MouseButton::Left)));
     let fx = keymap(&mut s, KeymapId::Target(Target::Default));
@@ -299,7 +299,7 @@ fn the_panel_selects_changes_and_resets() {
     assert_eq!(s.keymaps().get(1).unwrap().get(a), None, "as on the pad");
     assert_eq!(keymap(&mut s, KeymapId::Target(Target::Default)), vec![], "already");
     // Only the ways that fit: a button has no pointer, nor four keys.
-    assert_eq!(ways(Kind::Digital).iter().filter(|w| matches!(w, Target::Pointer | Target::Keys)).count(), 0);
+    assert_eq!(ways(Kind::Digital).iter().filter(|w| matches!(w, Target::To(Output::Pointer) | Target::Keys)).count(), 0);
     keymap(&mut s, KeymapId::Target(Target::Keys));
     assert_eq!(s.keymap_screen(), Some(Screen::Edit(1)));
 }
@@ -413,7 +413,7 @@ fn undo_goes_back_over_the_changes_since_the_edit_screen_opened() {
     assert!(!s.can_undo());
     assert_eq!(keymap(&mut s, KeymapId::Undo), vec![], "nothing to undo");
     open(&mut s, Input::Button(Button::LB));
-    keymap(&mut s, KeymapId::Target(Target::Nothing));
+    keymap(&mut s, KeymapId::Target(Target::To(Output::Nothing)));
     let after_lb = s.keymaps().get(1).unwrap().clone();
     let aim = add_layer(&mut s, "aim");
     assert_eq!(s.keymap_edit().layer, aim);
@@ -428,7 +428,7 @@ fn undo_goes_back_over_the_changes_since_the_edit_screen_opened() {
     assert!(!s.can_undo());
     // Opened again: a fresh start.
     open(&mut s, Input::Button(Button::LB));
-    keymap(&mut s, KeymapId::Target(Target::Nothing));
+    keymap(&mut s, KeymapId::Target(Target::To(Output::Nothing)));
     keymap(&mut s, KeymapId::Back);
     tap(&mut s, Id::Row { list: ListId::Keymaps, i: 2, part: RowPart::Edit });
     assert!(!s.can_undo());
@@ -439,7 +439,7 @@ fn a_layer_is_cleared_from_its_menu_once_confirmed() {
     let mut s = edit_screen();
     let aim = add_layer(&mut s, "aim");
     open(&mut s, Input::Button(Button::LB));
-    keymap(&mut s, KeymapId::Target(Target::Nothing));
+    keymap(&mut s, KeymapId::Target(Target::To(Output::Nothing)));
     // The layer button: the list; a long press on a layer: its menu.
     keymap(&mut s, KeymapId::LayerPicker);
     assert_eq!(s.keymap_screen(), Some(Screen::LayerPicker(1)));
@@ -532,7 +532,7 @@ fn a_trigger_full_pull_beside_its_pull() {
     keymap(&mut s, KeymapId::Actuation(Actuation::FullPull));
     assert_eq!(s.keymap_edit().act, Actuation::FullPull);
     keymap(&mut s, KeymapId::Target(Target::MouseParts));
-    keymap(&mut s, KeymapId::Target(Target::Mouse(MouseButton::Left)));
+    keymap(&mut s, KeymapId::Target(Target::To(Output::Mouse(MouseButton::Left))));
     let k = s.keymaps().get(1).unwrap();
     assert_eq!(k.get_of(Layer::BASE, rt, Actuation::FullPull).map(|b| (b.output, b.threshold)), Some((Output::Mouse(MouseButton::Left), 95)));
     assert_eq!(k.get(rt), None, "the pull as on the pad (analog)");
@@ -624,7 +624,7 @@ fn a_games_own_keymap_is_saved_as_a_new_named_one_or_over_one() {
     tap(&mut s, row(0));
     let own = s.keymaps().own_of("zelda-lttp").unwrap().id;
     keymap(&mut s, KeymapId::Input(Input::Button(Button::A)));
-    keymap(&mut s, KeymapId::Target(Target::Nothing));
+    keymap(&mut s, KeymapId::Target(Target::To(Output::Nothing)));
     keymap(&mut s, KeymapId::Back);
     // As a new one: a copy, named; the game keeps its own.
     long(&mut s, row(0));

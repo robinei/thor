@@ -127,9 +127,10 @@ mod tests {
         };
         // The mouse's wheel and its turns sit on its buttons.
         use clamshell_core::Target;
-        use clamshell_core::keymap::MouseButton;
-        let button = |id: &Id| matches!(id, Id::Keymap(clamshell_core::KeymapId::Target(Target::Mouse(MouseButton::Left | MouseButton::Right))));
-        let wheel = |id: &Id| matches!(id, Id::Keymap(clamshell_core::KeymapId::Target(Target::Mouse(MouseButton::Middle) | Target::Wheel(_))));
+        use clamshell_core::keymap::{MouseButton, Output};
+        let button = |id: &Id| matches!(id, Id::Keymap(clamshell_core::KeymapId::Target(Target::To(Output::Mouse(MouseButton::Left | MouseButton::Right)))));
+        let wheel =
+            |id: &Id| matches!(id, Id::Keymap(clamshell_core::KeymapId::Target(Target::To(Output::Mouse(MouseButton::Middle)) | Target::To(Output::Wheel(_)))));
         click(a, b) || (button(a) && wheel(b)) || (wheel(a) && button(b)) || click(b, a)
     }
 
@@ -142,7 +143,7 @@ mod tests {
     /// Thor's screen and a narrow one: targets within the area, none overlapping but on purpose.
     #[test]
     fn the_keymap_screens_lay_out() {
-        use clamshell_core::keymap::{Button, Input, Keymaps, Layer, Param, Side};
+        use clamshell_core::keymap::{Button, Input, Keymaps, Layer, Output, Param, Side};
         use clamshell_core::settings::Setting;
         use clamshell_core::{KeymapId, ListId, PointerEvent, SettingsId, Target};
         let tap = |id| Event::Pointer(PointerEvent::Activate(id));
@@ -176,9 +177,12 @@ mod tests {
             ("edit, a button selected", vec![km(KeymapId::Input(Input::Button(Button::A)))]),
             ("the mouse", vec![km(KeymapId::Target(Target::MouseParts))]),
             ("capture", [vec![km(KeymapId::Back)], pick(Input::Trigger(Side::Left)), vec![km(KeymapId::Target(Target::Key))]].concat()),
-            ("edit, the gyro's panel", [vec![km(KeymapId::Back)], pick(Input::Gyro), vec![km(KeymapId::Target(Target::Pointer))]].concat()),
+            ("edit, the gyro's panel", [vec![km(KeymapId::Back)], pick(Input::Gyro), vec![km(KeymapId::Target(Target::To(Output::Pointer)))]].concat()),
             ("the gyro's hold", vec![km(KeymapId::Holds)]),
-            ("edit, a stick's panel", [vec![km(KeymapId::Back)], pick(Input::Stick(Side::Right)), vec![km(KeymapId::Target(Target::Pointer))]].concat()),
+            (
+                "edit, a stick's panel",
+                [vec![km(KeymapId::Back)], pick(Input::Stick(Side::Right)), vec![km(KeymapId::Target(Target::To(Output::Pointer)))]].concat(),
+            ),
             ("edit, a slider up", slide(Param::Speed, false)),
             (
                 "edit, another layer",

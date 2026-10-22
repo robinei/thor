@@ -49,9 +49,9 @@ pub(super) fn way_icon(way: Target) -> Icon {
     match way {
         Target::Pick => Icon::Gamepad,
         Target::Key | Target::Keys => Icon::Keyboard,
-        Target::MouseParts | Target::Pointer => Icon::Mouse,
+        Target::MouseParts | Target::To(Output::Pointer) => Icon::Mouse,
         Target::Layers => Icon::Layers,
-        Target::Nothing => Icon::Off,
+        Target::To(Output::Nothing) => Icon::Off,
         _ => Icon::Reset,
     }
 }
