@@ -12,7 +12,7 @@ use std::sync::Arc;
 use clamshell_library::RunnerOf;
 
 use crate::bottom::notice::NoticeKind;
-use crate::running::Running;
+use crate::session::running::Running;
 use crate::{Effect, State};
 
 impl State {

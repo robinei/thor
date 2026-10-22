@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use crate::State;
 use crate::effect::Effect;
-use crate::windows::Window;
+use crate::session::windows::Window;
 
 /// A program as the settings panel shows it: its entry's id and name.
 #[derive(Debug, Clone, PartialEq, Eq)]

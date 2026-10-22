@@ -6,11 +6,11 @@ use std::sync::Arc;
 use clamshell_library::Launch;
 
 use crate::bottom::keyboard::Stroke;
-use crate::instance::Instance;
 use crate::levels::{Share, Sound};
 use crate::nav::pad::PadRoute;
 use crate::radios::bluetooth;
 use crate::radios::wifi;
+use crate::session::instance::Instance;
 use crate::settings::Values;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,12 +50,12 @@ pub enum Effect {
         force: bool,
     },
     /// A runner's command: its `stop`, for an entry that runs in another program's processes; its
-    /// `pause` or `resume` (see [`crate::background`]).
+    /// `pause` or `resume` (see [`crate::session::background`]).
     RunnerCommand(Vec<String>),
     /// A runner's `awake` command: whether its app shown keeps the screen on (then
     /// [`crate::device::idle::IdleEvent::KeptAwake`]).
     AskAwake(Vec<String>),
-    /// An entry's slice (all its launches' processes) frozen, or thawed (see [`crate::background`]).
+    /// An entry's slice (all its launches' processes) frozen, or thawed (see [`crate::session::background`]).
     Freeze {
         slice: String,
         frozen: bool,
@@ -80,8 +80,8 @@ pub enum Effect {
         force: bool,
     },
     /// Ask the tray thread: a program shown, or its menu's entry clicked.
-    Tray(crate::tray::TrayCommand),
-    /// Write these lines to the control socket of entry `key`'s launch (see [`crate::enqueue`]).
+    Tray(crate::session::tray::TrayCommand),
+    /// Write these lines to the control socket of entry `key`'s launch (see [`crate::session::enqueue`]).
     Enqueue {
         key: String,
         lines: Vec<String>,
@@ -194,7 +194,7 @@ pub enum Save {
     WindowRules(crate::bottom::screen::WindowRules),
     /// The dock's pinned entries' ids, in order.
     Dock(Vec<std::sync::Arc<str>>),
-    /// The entries started with ClamShell (see [`crate::autostart`]).
+    /// The entries started with ClamShell (see [`crate::session::autostart`]).
     Autostart(Vec<std::sync::Arc<str>>),
     /// Clocks on a 12-hour dial, or 24-hour.
     TwelveHour(bool),
@@ -227,7 +227,7 @@ pub enum WindowCommand {
     /// The windows that go to the bottom screen as they open (all of them: the rules in force).
     DownRules(Vec<crate::bottom::screen::DownRule>),
     /// The app ids whose windows land on the landing workspace as they open (all of them), to be moved
-    /// to their entry's (see [`crate::running::app_id_of`]).
+    /// to their entry's (see [`crate::session::running::app_id_of`]).
     LandRules(Vec<std::sync::Arc<str>>),
 }
 

@@ -13,7 +13,7 @@
 //! switched it meanwhile.
 
 use crate::bottom::Tab;
-use crate::running::Front;
+use crate::session::running::Front;
 
 /// Where the controller's input goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -236,12 +236,12 @@ mod tests {
         assert_eq!(route(&mut s, Event::tick(1)), PadRoute::Ui, "nothing known, no game: shelf");
         crate::testkit::start(&mut s, "zelda-lttp");
         assert_eq!(s.pad().route(), PadRoute::Game, "a game runs: in front");
-        assert_eq!(route(&mut s, Event::Windows(vec![window(windows::SHELF_APP_ID, None)])), PadRoute::Ui, "shelf in front");
+        assert_eq!(route(&mut s, Event::Windows(vec![window(crate::session::windows::SHELF_APP_ID, None)])), PadRoute::Ui, "shelf in front");
         assert_eq!(route(&mut s, Event::Windows(vec![window("foot", Some("clamshell-run-foot_1-1-0.scope"))])), PadRoute::Game, "an app: its pad, as a game's");
         assert_eq!(route(&mut s, PointerEvent::Activate(Id::Tab(Tab::Keyboard)).into()), PadRoute::Keys, "an app and the keyboard: typing");
         assert_eq!(route(&mut s, Event::Windows(vec![window("retroarch", Some("clamshell-run-zelda_1-1-0.scope"))])), PadRoute::Keys, "a game too");
         assert_eq!(route(&mut s, PointerEvent::Activate(Id::Tab(Tab::Dock)).into()), PadRoute::Game);
-        let (_, fx) = s.apply(Event::Windows(vec![window(windows::SHELF_APP_ID, None)]));
+        let (_, fx) = s.apply(Event::Windows(vec![window(crate::session::windows::SHELF_APP_ID, None)]));
         assert_eq!(fx, vec![Effect::PadRoute(PadRoute::Ui)]);
     }
 
@@ -266,7 +266,7 @@ mod tests {
         assert_eq!(s.apply(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Ui)]);
         assert_eq!(s.apply(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Game)]);
         // Shelf in front, the pad used on the second screen: it stays when the keyboard comes up under it.
-        s.apply(Event::Windows(vec![win(2, windows::SHELF_APP_ID, &Instance::Shelf.name(), true)]));
+        s.apply(Event::Windows(vec![win(2, crate::session::windows::SHELF_APP_ID, &Instance::Shelf.name(), true)]));
         s.apply(PointerEvent::Focus(Id::Tab(Tab::Dock)).into());
         tap(&mut s, Id::Tab(Tab::Keyboard));
         assert_eq!(s.pad().route(), PadRoute::Ui);

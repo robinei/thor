@@ -4,9 +4,9 @@
 use clamshell_core::levels::{Audio, AudioOutput, Stream};
 use clamshell_core::radios::bluetooth::{self, Bluetooth, Kind};
 use clamshell_core::radios::wifi::{Network, Wifi};
+use clamshell_core::session::windows::Window;
 use clamshell_core::status::battery::{Battery, Charge, Group, Spender};
 use clamshell_core::status::metrics::Metrics;
-use clamshell_core::windows::Window;
 use clamshell_core::{Event, Id, Instance, PointerEvent, Reading, Status, Tab};
 
 /// Every bar icon shows.

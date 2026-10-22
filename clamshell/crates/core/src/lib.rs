@@ -13,31 +13,21 @@
 //! index is valid by construction (an enum's place in an array sized for it, an index the library's own
 //! tree holds) falls back quietly; where a bug could reach a fallback, a `debug_assert!` says so in tests.
 
-pub mod autostart;
-pub mod background;
 pub mod bottom;
 pub mod device;
-pub mod dock;
 mod effect;
-pub mod enqueue;
 mod event;
-mod found;
 mod id;
-pub mod instance;
 pub mod keymap;
 pub mod kit;
 pub mod levels;
 pub mod nav;
-pub mod program;
 pub mod radios;
 mod resume;
-mod running;
-mod session;
+pub mod session;
 pub mod settings;
 pub mod shelf;
 pub mod status;
-pub mod tray;
-pub mod windows;
 
 use crate::bottom::keyboard::{Key, Keyboard};
 use crate::levels::slider::Control;
@@ -52,19 +42,19 @@ pub use crate::kit::list::Scroll;
 pub use crate::nav::lists::{ListEvent, ListId, Lists, RowPart};
 pub use crate::nav::pad::{Claimant, Pad, PadInput, PadMouse, PadRoute};
 pub use crate::nav::pointer::Pointer;
+pub use crate::session::dock::{Dock, DockItem};
+pub use crate::session::instance::Instance;
+pub use crate::session::program::Program;
+pub use crate::session::running::{Front, Launching, Origin, Running};
 pub use crate::settings::env::{count_env, parse_env};
 pub use crate::settings::panel::{Scope, TileOrigin};
 pub use crate::status::time::{ClockField, TimeId, TimePage, TimeRow, TimeZones};
 pub use crate::status::{Status, Sys};
-pub use dock::{Dock, DockItem};
 pub use effect::{Dirty, Effect, Save, Watch, WindowCommand};
 pub use event::{Event, LaunchEvent, LevelEvent, PointerEvent, Reading, ShelfEvent, Slide};
 pub use id::{AudioId, BtId, DockId, EditorId, Hold, Id, KeymapId, SettingsId, ShelfId, Target, WifiId};
-pub use instance::Instance;
 pub use levels::{Brightness, Level, Levels, Sound};
-pub use program::Program;
 pub use radios::{RadioStatus, Radios};
-pub use running::{Front, Launching, Origin, Running};
 pub use session::Session;
 pub use shelf::{Cursor, Shelf};
 
@@ -82,7 +72,7 @@ pub struct Init {
     pub brightness: Brightness,
     /// The dock's pinned entries, in order.
     pub dock: Dock,
-    /// The entries started with ClamShell (see [`autostart`]).
+    /// The entries started with ClamShell (see [`crate::session::autostart`]).
     pub autostart: Vec<std::sync::Arc<str>>,
     /// Where shelf and the second screen were.
     pub resume: Option<Resume>,
@@ -109,8 +99,8 @@ pub struct State {
     bottom: Bottom,
     session: Session,
     dock: Dock,
-    /// Programs' tray icons (see [`tray`]).
-    tray: Vec<tray::TrayItem>,
+    /// Programs' tray icons (see [`crate::session::tray`]).
+    tray: Vec<crate::session::tray::TrayItem>,
     /// The UI is up (its Start), and the watch in force (see [`State::follow_watch`]).
     ui_up: bool,
     watching: Option<Watch>,
@@ -122,9 +112,9 @@ pub struct State {
     status_unwatched: bool,
     /// The battery tab's row whose menu is open (see [`crate::status::battery`]).
     spender_menu: Option<crate::status::battery::Group>,
-    /// Programs paused or ended while hidden (see [`background`]).
-    background: background::Background,
-    /// The entries started with ClamShell, and whether they have been (see [`autostart`]).
+    /// Programs paused or ended while hidden (see [`crate::session::background`]).
+    background: crate::session::background::Background,
+    /// The entries started with ClamShell, and whether they have been (see [`crate::session::autostart`]).
     autostart: Vec<std::sync::Arc<str>>,
     autostarted: bool,
     levels: Levels,
@@ -737,7 +727,7 @@ impl State {
                 let effects = match stroke {
                     Some(stroke) if self.bottom.editor().is_some() => self.edit(stroke),
                     Some(stroke) if self.capturing() => self.captured(State::chord(stroke)),
-                    Some(stroke) if self.session.front() == running::Front::Shelf => return (Dirty::BOTH, self.find(stroke)),
+                    Some(stroke) if self.session.front() == crate::session::running::Front::Shelf => return (Dirty::BOTH, self.find(stroke)),
                     Some(stroke) => vec![Effect::Key(stroke)],
                     None => vec![],
                 };
@@ -1067,7 +1057,7 @@ impl State {
     fn home(&mut self) -> Vec<Effect> {
         let session = &self.session;
         let front = session.windows.iter().find(|w| w.focused);
-        let shelf_in_front = front.is_none_or(|w| w.app_id == windows::SHELF_APP_ID);
+        let shelf_in_front = front.is_none_or(|w| w.app_id == crate::session::windows::SHELF_APP_ID);
         if !shelf_in_front {
             return vec![Effect::Window(WindowCommand::ShowShelf)];
         }
@@ -1091,8 +1081,8 @@ impl State {
 pub(crate) mod testkit {
     //! Shorthands for the tests.
 
+    pub use crate::session::windows::Window;
     pub use crate::settings::Values;
-    pub use crate::windows::Window;
 
     use crate::*;
 
@@ -1160,7 +1150,7 @@ pub(crate) mod testkit {
 
     /// Shelf's window, in front or not.
     pub fn shelf_window(focused: bool) -> Window {
-        win(1, crate::windows::SHELF_APP_ID, &Instance::Shelf.name(), focused)
+        win(1, crate::session::windows::SHELF_APP_ID, &Instance::Shelf.name(), focused)
     }
 
     /// The notice shown, if one is.
@@ -1220,7 +1210,8 @@ mod tests {
     #[test]
     fn a_launchs_start_and_end_come_to_the_same_in_any_order() {
         let shape = |s: &State| {
-            let running: Vec<(String, bool)> = s.session().running_entries().iter().map(|r| (r.id.to_string(), r.origin == running::Origin::Ours)).collect();
+            let running: Vec<(String, bool)> =
+                s.session().running_entries().iter().map(|r| (r.id.to_string(), r.origin == crate::session::running::Origin::Ours)).collect();
             let dock: Vec<String> = s.dock().items().iter().map(|i| i.id.to_string()).collect();
             (running, dock)
         };

@@ -117,12 +117,13 @@ impl<S: Sink> Service for Units<S> {
         bus.add_match(&format!("type='signal',sender='{SYSTEMD}',path='{MANAGER_PATH}',interface='{MANAGER}'"))?;
         call::<()>(&mut bus, "Subscribe", ())?;
         if !std::mem::replace(&mut self.looked, true) {
-            let slices = units(&mut bus, &[&format!("{}*.slice", clamshell_core::instance::SLICE_PREFIX)])?;
+            let slices = units(&mut bus, &[&format!("{}*.slice", clamshell_core::session::instance::SLICE_PREFIX)])?;
             let frozen = slices
                 .into_iter()
                 .filter(|row| bus.get::<String>(SYSTEMD, &row.6, "org.freedesktop.systemd1.Unit", "FreezerState").is_ok_and(|s| s == "frozen"));
-            self.frozen =
-                Some(frozen.filter_map(|row| Some(row.0.strip_prefix(clamshell_core::instance::SLICE_PREFIX)?.strip_suffix(".slice")?.into())).collect());
+            self.frozen = Some(
+                frozen.filter_map(|row| Some(row.0.strip_prefix(clamshell_core::session::instance::SLICE_PREFIX)?.strip_suffix(".slice")?.into())).collect(),
+            );
         }
         Ok(bus)
     }
@@ -522,7 +523,7 @@ mod live {
     #[allow(clippy::unwrap_used)]
     fn a_freeze_waits_while_the_slice_works_without_drawing() {
         let id = std::process::id();
-        let slice = format!("{}busytest_{id}.slice", clamshell_core::instance::SLICE_PREFIX);
+        let slice = format!("{}busytest_{id}.slice", clamshell_core::session::instance::SLICE_PREFIX);
         let state = || {
             let out = Command::new("systemctl").args(["--user", "show", "-p", "FreezerState", "--value", &slice]).output().unwrap();
             String::from_utf8(out.stdout).unwrap().trim().to_owned()

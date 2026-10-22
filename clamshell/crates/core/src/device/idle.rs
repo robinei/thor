@@ -333,8 +333,8 @@ mod tests {
     #[test]
     fn an_app_shown_that_keeps_the_screen_on_its_own_way_is_asked_before_dimming() {
         use crate::Event;
-        use crate::instance::Instance;
-        use crate::windows::Window;
+        use crate::session::instance::Instance;
+        use crate::session::windows::Window;
         let runner = clamshell_library::RunnerOf {
             handover: true,
             awake: vec!["awake".to_owned()].into(),

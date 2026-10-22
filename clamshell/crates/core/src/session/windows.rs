@@ -2,9 +2,9 @@
 //! is a systemd scope we started, and every window of its processes (a second window, a program started
 //! from its terminal) goes on the entry's workspace, as a tab (see [`Instance`]). An entry that runs in
 //! another program's processes (Steam's games, Waydroid's apps) gets a workspace of its own too, its
-//! windows found by their app id (see [`crate::running`]).
+//! windows found by their app id (see [`crate::session::running`]).
 
-use crate::instance::Instance;
+use crate::session::instance::Instance;
 
 /// Shelf's window's app id (its own Wayland surface on the main screen).
 pub const SHELF_APP_ID: &str = "clamshell.top";

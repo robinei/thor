@@ -23,8 +23,8 @@ use std::sync::Arc;
 use clamshell_library::ids;
 
 use crate::effect::Effect;
-use crate::instance::Instance;
-use crate::running::{Origin, Running};
+use crate::session::instance::Instance;
+use crate::session::running::{Origin, Running};
 use crate::{Entry, State};
 
 /// A tray icon.
@@ -169,8 +169,8 @@ impl State {
 mod tests {
     use super::*;
     use crate::id::{DockId, Id};
+    use crate::session::windows::{self, Window};
     use crate::testkit::*;
-    use crate::windows::{self, Window};
     use crate::{Event, WindowCommand};
 
     fn entry(id: i32, label: &str, children: Vec<TrayEntry>) -> TrayEntry {

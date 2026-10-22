@@ -1,12 +1,23 @@
-//! What runs and what is in front: the running entries (see [`crate::running`]), our scopes as systemd
+//! What runs and what is in front: the running entries (see [`crate::session::running`]), our scopes as systemd
 //! lists them, the compositor's windows, and the launch to show once its first window appears.
+
+pub mod autostart;
+pub mod background;
+pub mod dock;
+pub mod enqueue;
+pub(crate) mod found;
+pub mod instance;
+pub mod program;
+pub(crate) mod running;
+pub mod tray;
+pub mod windows;
 
 use std::sync::Arc;
 
 use crate::effect::{Effect, WindowCommand};
-use crate::instance::Instance;
-use crate::running::{Front, Launching, Running};
-use crate::windows::{SHELF_APP_ID, Window};
+use instance::Instance;
+use running::{Front, Launching, Running};
+use windows::{SHELF_APP_ID, Window};
 
 /// How long after the window in front closed a new one on its workspace is shown again (seconds).
 const REOPEN_SECS: u64 = 2;
@@ -15,7 +26,7 @@ const REOPEN_SECS: u64 = 2;
 pub struct Session {
     /// The entries that run, in the order they started.
     pub(crate) running: Vec<Running>,
-    /// The program in force (see [`crate::program`]): an entry's id.
+    /// The program in force (see [`crate::session::program`]): an entry's id.
     pub(crate) program: Option<Arc<str>>,
     /// Launches asked for that haven't started.
     pub(crate) launching: Vec<Launching>,
@@ -99,7 +110,7 @@ impl Session {
     }
 
     /// The running entry a window belongs to, by the first that says: its app id (see
-    /// [`crate::running::app_id_of`]: a Steam game's, though it runs in Steam's scope), its scope (moved
+    /// [`crate::session::running::app_id_of`]: a Steam game's, though it runs in Steam's scope), its scope (moved
     /// down too), its process (a program found by its tray icon), its workspace.
     pub fn running_of(&self, w: &Window) -> Option<&Running> {
         let by_key = |k: Option<&str>| self.running.iter().find(|r| k == Some(r.key.as_str()));
@@ -116,7 +127,7 @@ impl Session {
         self.windows.iter().filter(move |w| self.running_of(w).is_some_and(|r| &*r.id == id))
     }
 
-    /// The counter for a new instance's name (see [`crate::instance::Instance::Run`]).
+    /// The counter for a new instance's name (see [`crate::session::instance::Instance::Run`]).
     pub(crate) fn next_instance(&mut self) -> u64 {
         let n = self.next_instance;
         self.next_instance += 1;

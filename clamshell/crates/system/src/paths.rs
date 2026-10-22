@@ -80,9 +80,9 @@ impl Paths {
         }
     }
 
-    /// The control socket of entry `key`'s launches (see [`clamshell_core::enqueue`]).
+    /// The control socket of entry `key`'s launches (see [`clamshell_core::session::enqueue`]).
     pub fn socket(&self, key: &str) -> PathBuf {
-        self.sockets.join(clamshell_core::instance::Instance::socket_of(key))
+        self.sockets.join(clamshell_core::session::instance::Instance::socket_of(key))
     }
 
     /// ClamShell's database (see [`crate::store`]).

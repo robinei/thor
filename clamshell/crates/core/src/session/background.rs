@@ -29,8 +29,8 @@ use crate::State;
 use clamshell_library::RunnerOf;
 
 use crate::effect::Effect;
-use crate::instance::Instance;
-use crate::running::Origin;
+use crate::session::instance::Instance;
+use crate::session::running::Origin;
 use crate::settings::InBackground;
 
 /// How long a program's windows are all hidden before it is paused (seconds): switching away and back
@@ -125,11 +125,11 @@ impl State {
         let mut end = Vec::new();
         let session = &self.session;
         // (Launches of ours: a Steam game's too, in its launch's own scope since it started.)
-        let ours: Vec<&crate::running::Running> = session.running.iter().filter(|r| r.origin == Origin::Ours).collect();
+        let ours: Vec<&crate::session::running::Running> = session.running.iter().filter(|r| r.origin == Origin::Ours).collect();
         let keys: Vec<Arc<str>> = ours.iter().map(|r| Arc::from(r.key.as_str())).collect();
         self.background.entries.keep(&keys);
         for (r, key) in ours.into_iter().zip(&keys) {
-            let mine: Vec<&crate::windows::Window> = session.windows_of(&r.id).collect();
+            let mine: Vec<&crate::session::windows::Window> = session.windows_of(&r.id).collect();
             let shown = mine.iter().any(|w| w.visible);
             let setting = self.background_of(&r.id);
             // (One quitting isn't paused: frozen, it couldn't end. Nor one without a window: none hidden,
@@ -173,7 +173,7 @@ impl State {
         for runner in &self.background.runners {
             let pauses = self.background_of(&runner.key) == InBackground::Pauses;
             let session = &self.session;
-            let of_runner = |r: &crate::running::Running| r.entry.as_ref().and_then(|g| g.runner.as_ref()).is_some_and(|o| o.key == runner.key);
+            let of_runner = |r: &crate::session::running::Running| r.entry.as_ref().and_then(|g| g.runner.as_ref()).is_some_and(|o| o.key == runner.key);
             let shown = session.windows.iter().filter(|w| w.visible).any(|w| session.running_of(w).is_some_and(of_runner));
             let starting = session.running.iter().filter(|r| of_runner(r)).any(|r| !r.found() && !r.seen);
             match self.background.runner_pauses.follow(&runner.key, !pauses || shown || starting, now) {
@@ -244,9 +244,9 @@ mod tests {
     use super::*;
     use crate::Event;
     use crate::effect::WindowCommand;
+    use crate::session::windows::Window;
     use crate::settings::{Choice, Setting};
     use crate::testkit::*;
-    use crate::windows::Window;
 
     fn freeze(key: &str, frozen: bool) -> Effect {
         Effect::Freeze { slice: Instance::slice_of(key), frozen }

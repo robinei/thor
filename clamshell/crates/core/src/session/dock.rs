@@ -4,7 +4,7 @@
 //! there). A long press opens its menu: Open another (another launch, another tab; an app's only, see
 //! [`crate::Entry::another`]), Close window (the one in view), Pin or Unpin, Move (the D-pad moves it, A or B
 //! ends), Quit and Force kill; a stopped one's: Unpin and Move. A running entry with a tray icon (see
-//! [`crate::tray`]) has Menu: its program's own menu, as a page of the same kind (a submenu another).
+//! [`crate::session::tray`]) has Menu: its program's own menu, as a page of the same kind (a submenu another).
 
 use std::sync::Arc;
 
@@ -12,7 +12,7 @@ use crate::State;
 use crate::effect::{Effect, Save, WindowCommand};
 use crate::id::DockId;
 use crate::keymap::Dir;
-use crate::windows::Window;
+use crate::session::windows::Window;
 
 /// The dock's tiles in a row.
 pub const DOCK_COLUMNS: usize = 4;
@@ -56,7 +56,7 @@ impl Dock {
         self.menu.as_ref()
     }
 
-    /// Whether the menu shows its entry's tray menu (see [`crate::tray`]).
+    /// Whether the menu shows its entry's tray menu (see [`crate::session::tray`]).
     pub fn tray_open(&self) -> bool {
         self.tray.is_some()
     }
@@ -300,7 +300,7 @@ mod tests {
     fn pins_of_entries_gone_are_dropped_but_not_those_away() {
         let mut library = clamshell_library::demo::library();
         library.away = vec!["sd:".into()];
-        let dock = dock::Dock::pinned(vec!["ff6".into(), "gone:x".into(), "sd:Zelda.sfc".into()]);
+        let dock = crate::session::dock::Dock::pinned(vec!["ff6".into(), "gone:x".into(), "sd:Zelda.sfc".into()]);
         let mut s = State::new(Init { library, dock, ..init() });
         assert_eq!(s.dock().pinned_ids(), vec![std::sync::Arc::from("ff6"), "sd:Zelda.sfc".into()], "the gone one dropped; the away one kept");
         let fx = s.apply(Event::Start).1;
@@ -315,7 +315,7 @@ mod tests {
 
     #[test]
     fn move_mode_reorders_by_the_dpad_and_saves_the_pins() {
-        let mut s = State::new(Init { dock: dock::Dock::pinned(vec!["zelda-lttp".into(), "ff6".into()]), ..init() });
+        let mut s = State::new(Init { dock: crate::session::dock::Dock::pinned(vec!["zelda-lttp".into(), "ff6".into()]), ..init() });
         assert_eq!((entry(&s, 0), entry(&s, 1)), (Some("zelda-lttp"), Some("ff6")));
         long(&mut s, dock(0));
         tap(&mut s, Id::Dock(DockId::Move));

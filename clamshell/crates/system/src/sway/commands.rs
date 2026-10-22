@@ -4,8 +4,8 @@
 use std::path::Path;
 
 use clamshell_core::bottom::screen::DownRule;
-use clamshell_core::instance::Instance;
-use clamshell_core::windows::SHELF_APP_ID;
+use clamshell_core::session::instance::Instance;
+use clamshell_core::session::windows::SHELF_APP_ID;
 
 use super::ipc::Error;
 

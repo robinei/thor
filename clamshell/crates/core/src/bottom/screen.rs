@@ -18,9 +18,9 @@ use std::sync::Arc;
 use crate::State;
 use crate::bottom::notice::NoticeKind;
 use crate::effect::{Dirty, Effect, Save, WindowCommand};
-use crate::instance::Instance;
+use crate::session::instance::Instance;
+use crate::session::windows::Window;
 use crate::settings::BottomWhenIdle;
-use crate::windows::Window;
 
 /// A window that goes to the bottom screen when its entry opens it: the entry's (by its id), with this
 /// app id and, if said, this title.
@@ -328,7 +328,7 @@ mod tests {
     use super::*;
     use crate::Event;
     use crate::device::buttons::DeviceKey;
-    use crate::running::{Origin, Running};
+    use crate::session::running::{Origin, Running};
     use crate::settings::{Choice, Setting};
     use crate::testkit::state;
 

@@ -231,7 +231,7 @@ fn run(env: &Env, paths: Paths, sources: &Sources) -> Result<(), String> {
 }
 
 /// A tray menu's entries, indented by depth (`--tray`).
-fn print_tray_menu(entries: &[clamshell_core::tray::TrayEntry], depth: usize) {
+fn print_tray_menu(entries: &[clamshell_core::session::tray::TrayEntry], depth: usize) {
     for e in entries {
         let state = match (e.enabled, e.checked) {
             (false, _) => " (disabled)",

@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use clamshell_core::Event;
-use clamshell_core::tray::{TrayCommand, TrayEntry, TrayItem};
+use clamshell_core::session::tray::{TrayCommand, TrayEntry, TrayItem};
 
 use crate::dbus::{self, Bus, Message, PropMap, Props, RefArg, Value, Variant, value};
 use crate::worker::{self, Bell, Changed, Ended, Service, Worker, lost_on};

@@ -8,17 +8,17 @@ use std::sync::Arc;
 use crate::device::buttons::DeviceKey;
 use crate::device::idle::IdleEvent;
 use crate::id::Id;
-use crate::instance::Instance;
 use crate::levels::slider::Control;
 use crate::levels::{Audio, Level};
 use crate::nav::lists::ListEvent;
 use crate::nav::pad::PadInput;
 use crate::radios::bluetooth::Bluetooth;
 use crate::radios::wifi::Wifi;
+use crate::session::instance::Instance;
+use crate::session::windows::Window;
 use crate::status::Status;
 use crate::status::battery::Battery;
 use crate::status::metrics::Metrics;
-use crate::windows::Window;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
@@ -52,10 +52,10 @@ pub enum Event {
     /// Our running scopes (dock app instances and games shelf started), after any change.
     Units(Vec<Instance>),
     /// Our slices found frozen at start (their keys), after the first [`Event::Units`]: held as
-    /// suspended (see [`crate::background`]).
+    /// suspended (see [`crate::session::background`]).
     Frozen(Vec<std::sync::Arc<str>>),
     /// Programs' tray icons and their menus, after any change (the tray thread).
-    Tray(Vec<crate::tray::TrayItem>),
+    Tray(Vec<crate::session::tray::TrayItem>),
     /// What was fetched about an entry (its cover, a screenshot, ...): the metadata thread.
     Meta {
         id: Arc<str>,

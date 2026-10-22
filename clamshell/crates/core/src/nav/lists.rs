@@ -30,7 +30,7 @@ pub enum ListId {
     Layers,
     /// The time tab's regions, or a region's zones.
     Time,
-    /// The dock: its rows of tiles ([`crate::dock::DOCK_COLUMNS`] a row).
+    /// The dock: its rows of tiles ([`crate::session::dock::DOCK_COLUMNS`] a row).
     Dock,
 }
 
@@ -64,7 +64,7 @@ impl ListId {
     pub fn of(id: &Id) -> Option<(ListId, usize)> {
         match id {
             Id::Row { list, i, .. } => Some((*list, usize::from(*i))),
-            Id::Dock(crate::DockId::Entry(i)) => Some((ListId::Dock, usize::from(*i) / crate::dock::DOCK_COLUMNS)),
+            Id::Dock(crate::DockId::Entry(i)) => Some((ListId::Dock, usize::from(*i) / crate::session::dock::DOCK_COLUMNS)),
             _ => None,
         }
     }
@@ -75,7 +75,8 @@ impl ListId {
         match id {
             Id::Row { list, part, .. } => Some(Id::Row { list: *list, i, part: *part }),
             Id::Dock(crate::DockId::Entry(at)) => {
-                let tile = (usize::from(i) * crate::dock::DOCK_COLUMNS + usize::from(*at) % crate::dock::DOCK_COLUMNS).min(dock_len.checked_sub(1)?);
+                let tile =
+                    (usize::from(i) * crate::session::dock::DOCK_COLUMNS + usize::from(*at) % crate::session::dock::DOCK_COLUMNS).min(dock_len.checked_sub(1)?);
                 Some(Id::Dock(crate::DockId::Entry(u16::try_from(tile).ok()?)))
             }
             _ => None,
@@ -143,7 +144,7 @@ impl State {
             ListId::Keymaps => RowsOf::Count(self.keymap_rows_len()),
             ListId::Layers => RowsOf::Count(self.layer_rows()),
             ListId::Time => RowsOf::Count(self.time_rows()),
-            ListId::Dock => RowsOf::Count(self.dock.items().len().div_ceil(crate::dock::DOCK_COLUMNS)),
+            ListId::Dock => RowsOf::Count(self.dock.items().len().div_ceil(crate::session::dock::DOCK_COLUMNS)),
         }
     }
 

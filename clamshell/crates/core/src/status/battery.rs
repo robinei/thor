@@ -5,7 +5,7 @@
 
 use crate::Effect;
 use crate::State;
-use crate::instance::Instance;
+use crate::session::instance::Instance;
 
 /// Who a spender is: one of our instances or a game shelf started (by its scope), an app run in another
 /// program's processes (by its app id: Android's, in Waydroid's container), another program of the

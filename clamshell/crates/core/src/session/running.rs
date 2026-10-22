@@ -26,7 +26,7 @@ use std::sync::Arc;
 use clamshell_library::{Launch, ids};
 
 use crate::effect::{Effect, Save, WindowCommand};
-use crate::instance::{Instance, STEAM_APP_PREFIX};
+use crate::session::instance::{Instance, STEAM_APP_PREFIX};
 use crate::{Entry, State};
 
 /// What is in front on the main screen.
@@ -44,8 +44,8 @@ pub enum Front {
 pub enum Origin {
     /// By its launches: the launcher thread says when each has ended.
     Ours,
-    /// A program not started by ClamShell, found by its tray icon (see [`crate::tray`]) or a window of it
-    /// (see [`crate::found`]): it runs while the icon is there, or a window of it is open; until it is
+    /// A program not started by ClamShell, found by its tray icon (see [`crate::session::tray`]) or a window of it
+    /// (see [`crate::session::found`]): it runs while the icon is there, or a window of it is open; until it is
     /// moved into a scope of ours (then it runs as [`Origin::Ours`]). `pid`: its own process (the tray
     /// icon's, or its window's: windows of it, or of a process it started, are the entry's), none if
     /// it runs in another program's; `tray`: the icon's key, if it has one.
@@ -107,12 +107,12 @@ impl Running {
     }
 
     /// Whether `w` is one of its windows by its app id.
-    pub fn owns(&self, w: &crate::windows::Window) -> bool {
+    pub fn owns(&self, w: &crate::session::windows::Window) -> bool {
         self.app_id.as_deref() == Some(w.app_id.as_str())
     }
 
     /// Whether `w` is one of its windows by its process: the tray icon's, or one it started.
-    pub fn fathered(&self, w: &crate::windows::Window) -> bool {
+    pub fn fathered(&self, w: &crate::session::windows::Window) -> bool {
         self.pid().is_some_and(|pid| w.pids.contains(&pid))
     }
 
@@ -336,7 +336,7 @@ impl State {
     ///   it is paused and ended as any launch);
     /// - a running entry's windows found by app id go to its workspace;
     /// - a new window of no launch of ours goes to the latest browsed file waiting for one, shown;
-    /// - one still no entry's makes its program an entry found by it (see [`crate::found`]);
+    /// - one still no entry's makes its program an entry found by it (see [`crate::session::found`]);
     /// - one left on the landing workspace that is no entry's goes to the main screen;
     /// - an entry running by its windows that had windows and has none, or waited in vain, has ended.
     pub(crate) fn follow_windows(&mut self, known: &[i64]) -> Vec<Effect> {
@@ -424,7 +424,7 @@ impl State {
     fn landing_up(&self) -> Vec<Effect> {
         let session = &self.session;
         let landing = Instance::Landing.name();
-        let starting = |w: &crate::windows::Window| session.launching.iter().any(|l| l.app_id.as_deref() == Some(w.app_id.as_str()));
+        let starting = |w: &crate::session::windows::Window| session.launching.iter().any(|l| l.app_id.as_deref() == Some(w.app_id.as_str()));
         session
             .windows
             .iter()
@@ -627,7 +627,7 @@ impl State {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use crate::running::HANDOFF;
+    use crate::session::running::HANDOFF;
     use crate::testkit::*;
     use crate::*;
 
@@ -829,7 +829,7 @@ mod tests {
     fn a_file_handed_to_another_program_runs_by_its_window() {
         let mut s = files();
         s.apply(Event::tick(100));
-        let shelf = win(1, windows::SHELF_APP_ID, &Instance::Shelf.name(), true);
+        let shelf = win(1, crate::session::windows::SHELF_APP_ID, &Instance::Shelf.name(), true);
         let other = win(5, "steam", "3", false);
         s.apply(Event::Windows(vec![shelf.clone(), other.clone()]));
         let fx = tap(&mut s, Id::Shelf(ShelfId::Launch));
@@ -876,7 +876,7 @@ mod tests {
         firefox.runner = Some(clamshell_library::RunnerOf { handover: true, stop, ..clamshell_library::RunnerOf::new("android", "Android", true) });
         let mut s = State::new(Init { library, ..init() });
         s.apply(Event::tick(100));
-        let shelf = win(1, windows::SHELF_APP_ID, &Instance::Shelf.name(), true);
+        let shelf = win(1, crate::session::windows::SHELF_APP_ID, &Instance::Shelf.name(), true);
         let landing = Instance::Landing.name();
         s.apply(Event::Windows(vec![shelf.clone()]));
         let ws = Instance::workspace_of(&key("desktop:firefox"));
@@ -970,7 +970,7 @@ mod tests {
         let id = |s: &State| s.context().map(|g| g.id.to_string());
         in_front(&mut s, Window { unit: zelda.unit(), ..win(2, "zelda3", &zelda.workspace(), true) });
         assert_eq!(id(&s).as_deref(), Some("zelda-lttp"), "the entry in front");
-        in_front(&mut s, win(1, windows::SHELF_APP_ID, &Instance::Shelf.name(), true));
+        in_front(&mut s, win(1, crate::session::windows::SHELF_APP_ID, &Instance::Shelf.name(), true));
         assert_eq!(id(&s).as_deref(), Some("ff6"), "shelf in front: its selection");
         in_front(&mut s, win(3, "foot", "1", true));
         assert_eq!(s.context(), None, "a window of none of ours: the defaults");

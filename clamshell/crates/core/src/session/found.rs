@@ -1,5 +1,5 @@
 //! Programs ClamShell didn't start, found by a window of theirs that belongs to no entry (or by a tray
-//! icon: see [`crate::tray`]), so that anything with a window is on the dock.
+//! icon: see [`crate::session::tray`]), so that anything with a window is on the dock.
 //!
 //! Each such program runs as an entry ([`Origin::Found`]): the library's desktop entry named like the
 //! window's app id, else an entry of its own (`window:<app id>`, with a picture looked up by the app id in
@@ -21,9 +21,9 @@ use std::sync::Arc;
 use clamshell_library::ids;
 
 use crate::effect::{Effect, WindowCommand};
-use crate::instance::Instance;
-use crate::running::{Origin, Running};
-use crate::windows::Window;
+use crate::session::instance::Instance;
+use crate::session::running::{Origin, Running};
+use crate::session::windows::Window;
 use crate::{Entry, State};
 
 impl State {

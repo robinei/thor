@@ -8,8 +8,8 @@
 //! tray icon (see `core`'s `tray`) has a mark of three bars in its top left corner, which opens the
 //! program's menu in the same place, as Menu in its long-press menu does.
 
-use clamshell_core::dock::DOCK_COLUMNS;
-use clamshell_core::tray::TrayEntry;
+use clamshell_core::session::dock::DOCK_COLUMNS;
+use clamshell_core::session::tray::TrayEntry;
 use clamshell_core::{DockId, Id, ListId};
 
 use crate::draw::{Keep, Rect};

@@ -24,7 +24,7 @@ pub struct Handles {
     pub mixer: Worker<mixer::Command>,
     pub wifi: Worker<wifi::Request>,
     pub bluetooth: Worker<bluetooth::Request>,
-    pub tray: Worker<clamshell_core::tray::TrayCommand>,
+    pub tray: Worker<clamshell_core::session::tray::TrayCommand>,
     pub metrics: Worker<Shown>,
     /// The bar's status, read often while the screens are on.
     pub status: Worker<Shown>,

@@ -222,7 +222,7 @@ choices!(
 
 choices!(
     /// [`Setting::Background`]: what a program does while none of its windows is shown (see
-    /// [`crate::background`]).
+    /// [`crate::session::background`]).
     InBackground for Background, default PausesGames {
         /// The default: Pauses for a game, else Runs (see [`crate::State::background_of`]).
         PausesGames = 3, "Pauses games", Stock;

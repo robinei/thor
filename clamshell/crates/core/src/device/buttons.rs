@@ -6,7 +6,7 @@ use crate::bottom::notice::NoticeKind;
 use crate::effect::{Effect, WindowCommand};
 use crate::levels::Level;
 use crate::levels::slider::Control;
-use crate::windows::{SHELF_APP_ID, Window};
+use crate::session::windows::{SHELF_APP_ID, Window};
 
 /// A hardware key (or the same asked for through the control pipe).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

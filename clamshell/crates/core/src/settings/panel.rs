@@ -6,8 +6,8 @@ use crate::State;
 use crate::bottom::editor::{Editor, Purpose};
 use crate::effect::{Effect, Save};
 use crate::id::SettingsId;
-use crate::program::Program;
-use crate::running::Front;
+use crate::session::program::Program;
+use crate::session::running::Front;
 use crate::settings::{Setting, Values};
 
 /// What the settings panel edits: the global settings (All), the runner of the item in context, or the
@@ -33,7 +33,7 @@ pub enum TileOrigin {
 }
 
 impl State {
-    /// The settings in force: the program in force's (see [`crate::program`]), else the global ones.
+    /// The settings in force: the program in force's (see [`crate::session::program`]), else the global ones.
     pub fn in_force(&self) -> Values {
         self.session.program.as_ref().map_or(self.settings.global, |id| self.settings_of(id))
     }

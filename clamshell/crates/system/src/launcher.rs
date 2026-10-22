@@ -153,7 +153,7 @@ fn start(config: &Config, request: &Request) -> Result<(), Error> {
 
 /// Starts `argv` in `workdir` (else the home dir) as the request's instance.
 fn start_program(config: &Config, request: &Request, argv: Vec<String>, workdir: Option<PathBuf>) -> Result<(), Error> {
-    // (`{socket}`: its entry's control socket, see clamshell_core::enqueue.)
+    // (`{socket}`: its entry's control socket, see clamshell_core::session::enqueue.)
     let argv = match &request.instance {
         Instance::Run { key, .. } if argv.iter().any(|a| a.contains("{socket}")) => {
             std::fs::create_dir_all(&config.sockets)?;

@@ -78,7 +78,7 @@ pub enum ShelfId {
     Pin,
     /// A folder's next video played (see [`crate::Library::to_continue`]).
     Continue,
-    /// The selected entry (or the entries selected) added to what its runner plays (see [`crate::enqueue`]).
+    /// The selected entry (or the entries selected) added to what its runner plays (see [`crate::session::enqueue`]).
     Enqueue,
     /// A browsed entry's file action, or the folder open's (see [`crate::shelf::files`]).
     File(crate::shelf::files::FileAction),
@@ -88,7 +88,7 @@ pub enum ShelfId {
 pub enum DockId {
     /// An entry on the dock, by position.
     Entry(u16),
-    /// The menu a long press opens (see [`crate::dock`]): another launch, the window in view closed,
+    /// The menu a long press opens (see [`crate::session::dock`]): another launch, the window in view closed,
     /// pinned or unpinned, moved, quit, force killed, back to the dock.
     OpenAnother,
     CloseWindow,
@@ -97,13 +97,13 @@ pub enum DockId {
     Quit,
     ForceKill,
     Back,
-    /// The corner mark of the tile at this position: its program's tray menu (see [`crate::tray`]).
+    /// The corner mark of the tile at this position: its program's tray menu (see [`crate::session::tray`]).
     Tray(u16),
     /// Its long-press menu's Menu: the same.
     TrayMenu,
-    /// Its long-press menu's Start with ClamShell, or Don't (see [`crate::autostart`]).
+    /// Its long-press menu's Start with ClamShell, or Don't (see [`crate::session::autostart`]).
     Autostart,
-    /// Its long-press menu's Suspend, or Resume (see [`crate::background`]).
+    /// Its long-press menu's Suspend, or Resume (see [`crate::session::background`]).
     Suspend,
     /// An entry of that menu, by its id there.
     TrayEntry(i32),
