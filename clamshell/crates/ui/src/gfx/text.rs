@@ -183,10 +183,15 @@ mod tests {
     use std::process::Command;
     use tiny_skia::Pixmap;
 
+    /// Whether a font with あ is installed. `fc-match` always names its closest font, even one without the
+    /// character, so `fc-list` is asked instead: it lists only fonts that have it.
+    fn kana_font_installed() -> bool {
+        Command::new("fc-list").args([":charset=3042", "file"]).output().is_ok_and(|o| o.status.success() && !o.stdout.is_empty())
+    }
+
     #[test]
     fn a_font_found_on_the_finder_thread_draws_the_character_once_back() {
-        let offered = Command::new("fc-match").args(["--format=%{file}", "sans-serif:charset=3042"]).output();
-        if !offered.is_ok_and(|o| o.status.success() && !o.stdout.is_empty()) {
+        if !kana_font_installed() {
             return;
         }
         let (requests, finder) = std::sync::mpsc::channel();
@@ -216,8 +221,7 @@ mod tests {
             assert!(cache.glyph(ch, 20.0).is_some_and(|(m, _)| m.width > 0), "{ch:?} draws");
         }
         // A kana comes from a system font if fontconfig knows one. Not every machine has one.
-        let offered = Command::new("fc-match").args(["--format=%{file}", "sans-serif:charset=3042"]).output();
-        if offered.is_ok_and(|o| o.status.success() && !o.stdout.is_empty()) {
+        if kana_font_installed() {
             assert!(matches!(cache.face('あ'), Face::Fallback(_)), "fontconfig offers a font with あ, so it is used");
             assert!(cache.glyph('あ', 20.0).is_some_and(|(m, _)| m.width > 0));
         }
