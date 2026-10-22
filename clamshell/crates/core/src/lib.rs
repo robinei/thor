@@ -45,6 +45,7 @@ pub mod session;
 pub mod settings;
 pub mod shelf;
 pub mod status;
+mod sync;
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 pub(crate) mod testkit;
@@ -144,6 +145,8 @@ pub struct State {
     idle: crate::device::idle::Idle,
     /// What the steps after an event last saw.
     settled: apply::Settled,
+    /// What the outside was last sent (see [`sync`]).
+    sent: sync::Sent,
 }
 
 impl State {

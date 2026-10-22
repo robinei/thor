@@ -67,10 +67,8 @@ pub struct Shelf {
     unsaved: bool,
     /// The clipboard and confirmation for file actions, and the folder being browsed (see [`files`]).
     files: files::Files,
-    /// Whether metadata is being fetched, and what the list showed when the shown entries were last asked
-    /// for first (see [`Shelf::follow_shown`]).
+    /// Whether metadata is being fetched (see [`Shelf::fetch_first`]).
     fetching: bool,
-    shown: Option<ShelfView>,
 }
 
 /// What shelf's list shows: the collection, the open group, the first row shown, how many rows, and the
@@ -302,7 +300,7 @@ impl Shelf {
 
     /// Adds the entries in view to `ids`: the selected one first, then the rows shown, then the groups the
     /// list is in, such as a series when its episodes show.
-    fn in_view(&self, ids: &mut Vec<Arc<str>>) {
+    pub(crate) fn in_view(&self, ids: &mut Vec<Arc<str>>) {
         let ShelfView { group, top, rows, selected, .. } = self.view();
         let list = self.list();
         let rows = (top..top + rows + 1).filter(|&p| p != selected);

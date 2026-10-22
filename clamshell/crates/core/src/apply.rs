@@ -6,6 +6,7 @@ use crate::levels::slider::Control;
 use crate::out::Out;
 use crate::resume::SAVE_AFTER;
 use crate::settings::MouseAtLaunch;
+use crate::sync::Resend;
 use crate::{
     BtId, Dirty, EditorId, Effect, EntryAct, Event, Id, Level, Library, ListId, PadRoute, PointerEvent, Reading, Save, SettingsId, ShelfId, State, Tab, WifiId,
     WindowCommand,
@@ -40,7 +41,7 @@ impl State {
         if self.bottom.follow_dim(&self.session, &self.clock) {
             out.mark(Dirty::BOTTOM);
         }
-        self.shelf.follow_shown(&mut out);
+        self.sync(&mut out);
         self.shelf.follow_browse(self.session.running_entries(), &mut out);
         self.follow_idle(&mut out);
         self.follow_watch(&mut out);
@@ -177,12 +178,16 @@ impl State {
             Event::Library(library) => {
                 out.mark(Dirty::BOTH);
                 self.library_read(*library, out);
+                self.sent.resend(Resend::Shown);
             }
             Event::Files(e) => {
                 out.mark(Dirty::BOTH);
                 self.shelf.on_files(e, &mut self.pointer, self.bottom.notice_mut(), self.clock.mono(), out);
             }
-            Event::Fetching(on) => self.shelf.set_fetching(on),
+            Event::Fetching(on) => {
+                self.shelf.set_fetching(on);
+                self.sent.resend(Resend::Shown);
+            }
             Event::Tray(items) => {
                 if self.session.set_tray(items, &self.clock, self.shelf.library(), out) {
                     out.mark(Dirty::BOTH);

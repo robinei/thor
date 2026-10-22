@@ -3,8 +3,8 @@
 
 use crate::bottom::keyboard::{self, Key};
 use crate::out::Out;
-use crate::shelf::Shelf;
 use crate::shelf::actions::Shortcut;
+use crate::shelf::{Shelf, ShelfView};
 use crate::{Dirty, Effect, EntryAct, Event, Pointer, Save, ShelfEvent, ShelfId};
 
 impl Shelf {
@@ -145,25 +145,14 @@ impl Shelf {
         out.effects.push(Effect::Save(Save::Favourites(ids)));
     }
 
-    /// Whether metadata is being fetched (see [`Shelf::follow_shown`]).
+    /// Whether metadata is being fetched (see [`Shelf::fetch_first`]).
     pub(crate) fn set_fetching(&mut self, on: bool) {
         self.fetching = on;
-        self.shown = None;
     }
 
-    /// While metadata is being fetched and what shelf shows has changed, asks for the shown entries'
-    /// metadata first.
-    pub(crate) fn follow_shown(&mut self, out: &mut Out) {
-        if !self.fetching {
-            return;
-        }
-        let view = self.view();
-        if self.shown == Some(view) {
-            return;
-        }
-        self.shown = Some(view);
-        let mut ids = Vec::new();
-        self.in_view(&mut ids);
-        out.effects.push(Effect::FetchFirst(ids));
+    /// While metadata is being fetched, what the list shows, whose entries' metadata is asked for first
+    /// whenever it changes (see [`crate::sync::Sent::fetch_first`]).
+    pub(crate) fn fetch_first(&self) -> Option<ShelfView> {
+        self.fetching.then(|| self.view())
     }
 }
