@@ -1,4 +1,4 @@
-//! BlueZ's D-Bus interfaces (system bus), as much of them as the Bluetooth tab uses, and the pairing
+//! The parts of BlueZ's D-Bus interfaces on the system bus that the Bluetooth tab uses, and the pairing
 //! agent we register while pairing.
 
 use std::collections::HashMap;
@@ -14,14 +14,14 @@ pub const AGENT_PATH: &str = "/org/clamshell/agent";
 /// Every object BlueZ has, with its interfaces' properties.
 pub type ManagedObjects = HashMap<Path<'static>, HashMap<String, PropMap>>;
 
-/// A device's object path: the adapter's, then `dev_` and its address with underscores.
+/// A device's object path: the adapter's path, then `dev_` and the address with underscores.
 pub fn device_path(adapter: &str, address: &str) -> String {
     format!("{adapter}/dev_{}", address.replace(':', "_"))
 }
 
-/// The pairing agent (org.bluez.Agent1 at [`AGENT_PATH`]), served while pairing: no screen or keyboard
-/// to show or type a code with; what BlueZ asks to confirm is confirmed (the user asked to pair). Its
-/// reply to a call, if the call is its.
+/// The pairing agent (org.bluez.Agent1 at [`AGENT_PATH`]), served while pairing. It has no screen or
+/// keyboard to show or type a code with, and it confirms whatever BlueZ asks, since the user asked to
+/// pair. Returns its reply to a call, if the call is for it.
 pub fn agent(call: &Message) -> Option<Message> {
     if call.path().as_deref() != Some(AGENT_PATH) || call.interface().as_deref() != Some("org.bluez.Agent1") {
         return None;

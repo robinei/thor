@@ -1,10 +1,12 @@
-//! Wi-Fi through NetworkManager (D-Bus, system bus): while the Wi-Fi tab is open, the networks in
-//! range (scanned every few seconds), which are saved and which is connected, sent as [`Reading::Wifi`]
-//! when they change; joining (a saved connection, or a new one with a password), forgetting, the radio
-//! on and off. A new connection that fails to join is deleted again, so a mistyped password isn't kept.
-//! A join is followed through the active connection NetworkManager makes for it (not the device, which
-//! also goes through leaving the network it was on); why one failed, from the device's failure (which
-//! leaving a network doesn't go through).
+//! Wi-Fi through NetworkManager on the system bus. While the Wi-Fi tab is open, it reads the networks in
+//! range, scanning every few seconds, and which are saved and which is connected. These are sent as
+//! [`Reading::Wifi`] when they change. It also joins networks, either through a saved connection or a new
+//! one with a password, forgets them, and turns the radio on and off.
+//!
+//! A new connection that fails to join is deleted again, so a mistyped password isn't kept. A join is
+//! followed through the active connection NetworkManager makes for it rather than through the device,
+//! because the device also goes through leaving the network it was on. Why a join failed is taken from
+//! the device's failure, which leaving a network doesn't go through.
 
 mod nm;
 
@@ -23,17 +25,17 @@ use crate::{Closed, Sink};
 use nm::{AP_PRIVACY, KEY_MGMT_8021X, KEY_MGMT_PSK, KEY_MGMT_SAE, SERVICE};
 use nm::{ActiveReason, ActiveState, DeviceReason, DeviceState, DeviceType};
 
-/// How often the list is read while the mode is open, and how often a scan is asked for.
+/// How often the list is read while the tab is open, and how often a scan is asked for.
 const READ_EVERY: Duration = Duration::from_secs(1);
 const SCAN_EVERY: Duration = Duration::from_secs(10);
-/// A join that hasn't finished by then has failed (NetworkManager gives up on an address after 45 s and
-/// says so itself first).
+/// A join that hasn't finished by then has failed. NetworkManager gives up on getting an address after
+/// 45 s and reports that itself first.
 const JOIN_FOR: Duration = Duration::from_secs(60);
 /// How long to wait before trying NetworkManager again.
 const RETRY: Duration = Duration::from_secs(10);
 
-/// What this thread is asked: to watch while the Wi-Fi tab is open (scan now and keep the list fresh),
-/// and the state's commands.
+/// What this thread is asked: to watch while the Wi-Fi tab is open, which scans now and keeps the list
+/// fresh, and to carry out the state's commands.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {
     Watch(bool),
@@ -70,13 +72,13 @@ pub fn spawn(sink: impl Sink) -> io::Result<Worker<Request>> {
 /// A connection being made.
 struct Attempt {
     ssid: String,
-    /// The connection we added for it (deleted again if the join fails).
+    /// The connection we added for it, deleted again if the join fails.
     added: Option<Path<'static>>,
     /// The active connection NetworkManager made for it, and the device it is on.
     active: Path<'static>,
     device: Path<'static>,
     started: Instant,
-    /// The device's reason for failing meanwhile, if it did: why the join failed.
+    /// The device's reason for failing meanwhile, if it did, which tells why the join failed.
     device_failure: Option<u32>,
 }
 
@@ -102,11 +104,11 @@ struct StateChange {
     reason: u32,
 }
 
-/// A connection to NetworkManager, with the state changes of every active connection and device
-/// subscribed to for as long as it lasts (a join's own pass too quickly to be polled).
+/// A connection to NetworkManager, subscribed to the state changes of every active connection and
+/// device for as long as it lasts. A join's state changes pass too quickly to be polled.
 struct Session {
     bus: Bus,
-    /// Those come since the last look.
+    /// The changes that came since the last look.
     active_changes: Vec<StateChange>,
     device_changes: Vec<StateChange>,
 }
@@ -114,7 +116,7 @@ struct Session {
 impl Session {
     fn connect() -> Result<Session, Error> {
         let mut bus = Bus::system()?;
-        // NetworkManager is there.
+        // Check that NetworkManager is there.
         bus.get::<bool>(SERVICE, nm::PATH, nm::MANAGER, "WirelessEnabled")?;
         for interface in [nm::ACTIVE, nm::DEVICE] {
             bus.add_match(&format!("type='signal',sender='{SERVICE}',interface='{interface}',member='StateChanged'"))?;
@@ -122,14 +124,14 @@ impl Session {
         Ok(Session { bus, active_changes: Vec::new(), device_changes: Vec::new() })
     }
 
-    /// The state changes signalled since the last look, added to those kept.
+    /// Adds the state changes signalled since the last look to those kept.
     fn take_signals(&mut self) -> dbus::Result<()> {
         for message in self.bus.signals()? {
             let Some(object) = message.path().map(Path::into_static) else {
                 continue;
             };
             match message.interface().as_deref() {
-                // Active connections signal (state, reason); devices (new state, old state, reason).
+                // Active connections signal (state, reason), and devices (new state, old state, reason).
                 Some(nm::ACTIVE) => match message.read2::<u32, u32>() {
                     Ok((state, reason)) => self.active_changes.push(StateChange { object, state, reason }),
                     Err(e) => log::warn!("wifi: reading {object}'s state change: {e}"),
@@ -156,8 +158,8 @@ impl Session {
         self.get(nm::PATH, nm::MANAGER, "WirelessEnabled")
     }
 
-    /// The first Wi-Fi device NetworkManager manages (one it leaves alone, an access point's radio,
-    /// isn't joined from), else the first Wi-Fi device, if any.
+    /// The first Wi-Fi device NetworkManager manages, or else the first Wi-Fi device, if any. A device it
+    /// leaves alone, such as an access point's radio, isn't used to join.
     fn wifi_device(&mut self) -> dbus::Result<Option<Path<'static>>> {
         let (devices,): (Vec<Path<'static>>,) = self.call(nm::PATH, nm::MANAGER, "GetDevices", ())?;
         let mut unmanaged = None;
@@ -273,7 +275,7 @@ impl<S: Sink> WifiThread<S> {
     /// Ends the attempt once the network is connected, or with an error once it has failed.
     fn follow_attempt(&mut self, s: &mut Session, active: Option<&str>) -> dbus::Result<()> {
         let st = &mut self.state;
-        // The signals since the last look: the attempt's own, if there is one.
+        // Take the signals since the last look, which belong to the attempt if there is one.
         s.take_signals()?;
         let active_changes = std::mem::take(&mut s.active_changes);
         let device_changes = std::mem::take(&mut s.device_changes);
@@ -296,7 +298,8 @@ impl<S: Sink> WifiThread<S> {
             st.attempt = None;
             return Ok(());
         }
-        // Gone without a word (it is removed once deactivated): failed, the reason unknown.
+        // If the active connection is gone without a signal, since it is removed once deactivated, the
+        // join failed for an unknown reason.
         if ended.is_none() && s.get::<u32>(&attempt.active, nm::ACTIVE, "State").inspect_err(|e| log::debug!("wifi: {}: {e}", attempt.active)).is_err() {
             ended = Some(0);
         }
@@ -340,7 +343,7 @@ impl<S: Sink> WifiThread<S> {
             Command::Connect { ssid, password } => {
                 st.error = None;
                 let device = s.wifi_device()?.ok_or(Error::NoDevice)?;
-                // From here on, the state changes are this join's.
+                // From here on, the state changes belong to this join.
                 s.take_signals()?;
                 s.active_changes.clear();
                 s.device_changes.clear();
@@ -378,8 +381,8 @@ impl<S: Sink> Service for WifiThread<S> {
         Session::connect()
     }
 
-    /// Reads every second while watching or joining (scanning every few seconds while watching), and
-    /// carries out requests, until NetworkManager fails or goes.
+    /// Reads every second while watching or joining, scanning every few seconds while watching, and
+    /// carries out requests until NetworkManager fails or goes away.
     fn run_while_up(&mut self, mut s: Session, commands: &Receiver<Request>) -> Result<(), Ended<Error>> {
         let mut last = Changed::default();
         loop {
@@ -405,7 +408,7 @@ impl<S: Sink> Service for WifiThread<S> {
                 && self.state.last_scan.is_none_or(|t| t.elapsed() >= SCAN_EVERY)
             {
                 self.state.last_scan = Some(Instant::now());
-                // Refused while one runs, or right after one: harmless.
+                // A scan is refused while one runs or right after one, which is harmless.
                 if let Err(e) = s.call::<()>(device, nm::WIRELESS, "RequestScan", (dbus::PropMap::new(),)) {
                     log::debug!("wifi: scan: {e}");
                 }
@@ -417,7 +420,7 @@ impl<S: Sink> Service for WifiThread<S> {
         }
     }
 
-    /// Watching is kept; anything else can't be done and says so.
+    /// Watching is remembered. Anything else can't be done, and an error says so.
     fn command_while_down(&mut self, request: Request) -> Result<(), Closed> {
         match request {
             Request::Watch(on) => self.state.watching = on,
@@ -431,8 +434,8 @@ impl<S: Sink> Service for WifiThread<S> {
     }
 }
 
-/// Why a join failed: from the active connection's reason for ending (0: none given), the device's
-/// reason for failing (if it did), and whether the attempt ran out of time.
+/// Why a join failed, from the active connection's reason for ending (0 if none was given), the
+/// device's reason for failing if it did, and whether the attempt ran out of time.
 fn classify(reason: u32, device_reason: Option<u32>, timed_out: bool, ssid: String) -> Problem {
     if reason == ActiveReason::NoSecrets as u32 || device_reason == Some(DeviceReason::NoSecrets as u32) {
         Problem::WrongPassword { ssid }
@@ -445,8 +448,8 @@ fn classify(reason: u32, device_reason: Option<u32>, timed_out: bool, ssid: Stri
     }
 }
 
-/// A new connection's settings: the SSID, and the password as the access point's security wants it
-/// (WPA2/WPA3 personal, or WEP).
+/// A new connection's settings: the SSID, and the password in the form the access point's security
+/// wants (WPA2/WPA3 personal, or WEP).
 fn new_connection(ssid: &str, password: Option<&str>, ap: Option<&Ap>) -> HashMap<&'static str, HashMap<&'static str, Value>> {
     let text = |s: &str| value(s.to_owned());
     let mut settings = HashMap::new();
@@ -458,7 +461,7 @@ fn new_connection(ssid: &str, password: Option<&str>, ap: Option<&Ap>) -> HashMa
         let section = if wep {
             HashMap::from([("key-mgmt", text("none")), ("wep-key0", text(password)), ("wep-key-type", value(1u32))])
         } else {
-            // WPA3-only networks take SAE; everything else (and mixed ones) WPA-PSK.
+            // WPA3-only networks take SAE. Everything else, including mixed networks, takes WPA-PSK.
             let key_mgmt = if security & KEY_MGMT_PSK == 0 && security & KEY_MGMT_SAE != 0 { "sae" } else { "wpa-psk" };
             HashMap::from([("key-mgmt", text(key_mgmt)), ("psk", text(password))])
         };
@@ -507,8 +510,8 @@ mod tests {
 mod live {
     use super::*;
 
-    /// With NetworkManager running (a desktop): its Wi-Fi view reads without error; nothing is changed
-    /// (run by hand: `--ignored --nocapture`).
+    /// With NetworkManager running, as on a desktop, its Wi-Fi view reads without error. Nothing is
+    /// changed. Run it by hand with `--ignored --nocapture`.
     #[test]
     #[ignore = "needs NetworkManager"]
     #[allow(clippy::unwrap_used)]

@@ -1,10 +1,12 @@
-//! Bluetooth through BlueZ (D-Bus, system bus): the adapter and its devices, sent as
-//! [`Reading::Bluetooth`] when they change (every few seconds; every second while the Bluetooth tab is
-//! open, which also looks for new devices). Connecting a new device pairs, trusts and connects it; for
-//! the pairing a "no input, no output" agent is registered (headphones and controllers pair without a
-//! code), and unregistered after, so a desktop's own agent stays the default otherwise. Connecting (and
-//! pairing, which can take long) runs on a worker of its own, so the list, the radio's switch and leaving
-//! the tab don't wait for it; every call has a time limit.
+//! Bluetooth through BlueZ on the system bus. The adapter and its devices are read every few seconds, or
+//! every second while the Bluetooth tab is open, and sent as [`Reading::Bluetooth`] when they change.
+//! While the tab is open, it also looks for new devices.
+//!
+//! Connecting a new device pairs, trusts and connects it. For the pairing, a "no input, no output" agent
+//! is registered, since headphones and controllers pair without a code. It is unregistered afterwards,
+//! so a desktop's own agent otherwise stays the default. Connecting, and pairing, which can take long,
+//! run on a worker of their own, so the list, the radio's switch and leaving the tab don't wait for it.
+//! Every call has a time limit.
 
 mod bluez;
 
@@ -24,13 +26,13 @@ use bluez::{ADAPTER, AGENT_MANAGER, AGENT_PATH, DEVICE, ManagedObjects, SERVICE,
 
 const READ_WATCHING: Duration = Duration::from_secs(1);
 const READ_IDLE: Duration = Duration::from_secs(5);
-/// How long a call may take: pairing waits for the device (BlueZ gives up within about half a minute).
+/// How long a call may take. Pairing waits for the device, and BlueZ gives up within about half a minute.
 const CALL_LIMIT: Duration = Duration::from_secs(45);
 /// How long to wait before trying BlueZ again.
 const RETRY: Duration = Duration::from_secs(10);
 
-/// What this thread is asked: to watch while the Bluetooth tab is open (look for devices), and the
-/// state's commands.
+/// What this thread is asked: to watch, looking for devices, while the Bluetooth tab is open, and to
+/// carry out the state's commands.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {
     Watch(bool),
@@ -80,7 +82,7 @@ lost_on!(Error: dbus::Error, io::Error);
 
 /// What went wrong doing `action`, for the screen.
 fn failure(action: Action, e: &Error) -> Problem {
-    // BlueZ's errors: "org.bluez.Error.AuthenticationFailed: ..." and the like.
+    // BlueZ's errors look like "org.bluez.Error.AuthenticationFailed: ...".
     let reason = match e {
         Error::Bus(dbus::Error::Method { name, message }) if message.is_empty() => name.trim_start_matches("org.bluez.Error.").to_owned(),
         Error::Bus(dbus::Error::Method { message, .. }) => message.clone(),
@@ -89,7 +91,7 @@ fn failure(action: Action, e: &Error) -> Problem {
     Problem { action, reason: Reason::Bus(reason) }
 }
 
-/// What this thread keeps between reads (shared with the connecting worker), and across reconnecting.
+/// What this thread keeps between reads and across reconnecting. It is shared with the connecting worker.
 #[derive(Default)]
 struct BtState {
     watching: bool,
@@ -126,7 +128,7 @@ impl Session {
         adapter_path(&mut self.bus)
     }
 
-    /// Starts or stops looking for devices (already doing so is fine).
+    /// Starts or stops looking for devices. It is fine if it is already doing so.
     fn discover(&mut self, on: bool) {
         let method = if on { "StartDiscovery" } else { "StopDiscovery" };
         match self.adapter() {
@@ -140,7 +142,7 @@ impl Session {
     }
 }
 
-/// A connection to the system bus, calls limited to [`CALL_LIMIT`].
+/// A connection to the system bus, with calls limited to [`CALL_LIMIT`].
 fn system() -> dbus::Result<Bus> {
     Ok(Bus::system()?.with_timeout(CALL_LIMIT))
 }
@@ -157,15 +159,15 @@ fn adapter_path(bus: &mut Bus) -> Result<Path<'static>, Error> {
     first_adapter(&all).map(|(path, _)| path.clone()).ok_or(Error::NoAdapter)
 }
 
-/// The adapter used: with several (a USB dongle besides the built-in one), always the same, the one
-/// with the lowest path (hci0 before hci1); BlueZ lists them in no order.
+/// The adapter used. With several, such as a USB dongle besides the built-in one, it is always the one
+/// with the lowest path (hci0 before hci1), since BlueZ lists them in no particular order.
 fn first_adapter(objects: &ManagedObjects) -> Option<(&Path<'static>, Props<'_>)> {
     objects.iter().filter_map(|(path, ifaces)| ifaces.get(ADAPTER).map(|props| (path, Props(props)))).min_by(|a, b| (**a.0).cmp(&**b.0))
 }
 
-/// Connects (pairing and trusting a new device first) the devices it is sent, one at a time, showing
-/// which in `busy` meanwhile and what went wrong in `error`; with a connection of its own, which serves
-/// the pairing agent.
+/// Connects the devices it is sent, one at a time, pairing and trusting a new device first. Meanwhile it
+/// shows which device in `busy`, and what went wrong in `error`. It has a connection of its own, which
+/// serves the pairing agent.
 fn connecting_worker(shared: Shared) -> io::Result<Worker<String>> {
     Worker::spawn("bluetooth-connect", move |addresses: Receiver<String>| {
         let mut bus: Option<Bus> = None;
@@ -206,8 +208,8 @@ fn connect(bus: &mut Bus, address: &str) -> Result<(), Error> {
     Ok(())
 }
 
-/// Pairs with our agent registered for the time it takes (the connection serves it: BlueZ asks it
-/// while the pairing call waits).
+/// Pairs, with our agent registered for the time it takes. The connection serves the agent, and BlueZ
+/// asks it while the pairing call waits.
 fn pair(bus: &mut Bus, device: &str) -> dbus::Result<()> {
     let agent = Path::from(AGENT_PATH);
     bus.call::<()>(SERVICE, "/org/bluez", AGENT_MANAGER, "RegisterAgent", (agent.clone(), "NoInputNoOutput"))?;
@@ -251,8 +253,8 @@ impl<S: Sink> BtThread<S> {
         self.sink.send(Event::Reading(Reading::Bluetooth(bt)))
     }
 
-    /// Carries out a request. Every request but connecting (the worker's, which finds the adapter
-    /// itself) needs the adapter, and fails without one.
+    /// Carries out a request. Every request except connecting needs the adapter and fails without one.
+    /// Connecting is done by the worker, which finds the adapter itself.
     fn apply(&self, s: &mut Session, request: &Request) -> Result<(), Error> {
         match request {
             Request::Do(Command::Connect(address)) => {
@@ -290,17 +292,17 @@ impl<S: Sink> Service for BtThread<S> {
 
     fn connect(&mut self) -> Result<Session, Error> {
         let mut bus = system()?;
-        // BlueZ is there.
+        // Check that BlueZ is there.
         managed_objects(&mut bus)?;
         let connecting = connecting_worker(self.shared.clone())?;
         Ok(Session { bus, connecting })
     }
 
-    /// Reads every few seconds (every second while watching) and carries out requests, until BlueZ fails
-    /// or goes.
+    /// Reads every few seconds, or every second while watching, and carries out requests until BlueZ
+    /// fails or goes away.
     fn run_while_up(&mut self, mut s: Session, commands: &Receiver<Request>) -> Result<(), Ended<Error>> {
         let mut last = Changed::default();
-        // Discovery picks up where it was, after a reconnect.
+        // After a reconnect, discovery resumes if it was on.
         if self.shared.lock().watching {
             s.discover(true);
         }
@@ -312,7 +314,7 @@ impl<S: Sink> Service for BtThread<S> {
             let every = if self.shared.lock().watching { READ_WATCHING } else { READ_IDLE };
             match worker::next(commands, Some(every)) {
                 Next::Command(request) => {
-                    // A new attempt: what went wrong before is old news.
+                    // A new attempt clears the previous error.
                     self.shared.lock().error = None;
                     match self.apply(&mut s, &request) {
                         Ok(()) => {}
@@ -330,7 +332,7 @@ impl<S: Sink> Service for BtThread<S> {
         }
     }
 
-    /// Watching is kept; anything else can't be done and says so.
+    /// Watching is remembered. Anything else can't be done, and an error says so.
     fn command_while_down(&mut self, request: Request) -> Result<(), Closed> {
         if let Request::Watch(on) = request {
             self.shared.lock().watching = on;
@@ -346,7 +348,7 @@ impl<S: Sink> Service for BtThread<S> {
         self.send(Bluetooth { error, ..Bluetooth::default() })
     }
 
-    /// Without BlueZ on the bus (no Bluetooth on this machine) there is nothing to warn about.
+    /// Without BlueZ on the bus, because the machine has no Bluetooth, there is nothing to warn about.
     fn expected(e: &Error) -> bool {
         matches!(e, Error::Bus(e) if e.is_absent())
     }
@@ -356,8 +358,8 @@ impl<S: Sink> Service for BtThread<S> {
 mod live {
     use super::*;
 
-    /// With BlueZ running (a desktop): its view reads without error; nothing is changed (run by hand:
-    /// `--ignored --nocapture`).
+    /// With BlueZ running, as on a desktop, its view reads without error. Nothing is changed. Run it by
+    /// hand with `--ignored --nocapture`.
     #[test]
     #[ignore = "needs BlueZ"]
     #[allow(clippy::unwrap_used)]
