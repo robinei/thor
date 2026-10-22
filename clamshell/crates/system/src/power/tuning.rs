@@ -47,7 +47,9 @@ pub fn pick(available: &[u64], min: u64, max: u64, fraction: f64) -> u64 {
 }
 
 fn read_list(path: &Path) -> Vec<u64> {
-    sys::text(path).map(|s| s.split_whitespace().filter_map(|f| f.parse().ok()).collect()).unwrap_or_default()
+    sys::text(path)
+        .map(|s| s.split_whitespace().filter_map(|f| f.parse().inspect_err(|e| log::warn!("tuning: {}: {f:?}: {e}", path.display())).ok()).collect())
+        .unwrap_or_default()
 }
 
 /// Writes a sysfs value. Failing is worth one warning (missing write access fails every write, at every
@@ -123,7 +125,11 @@ fn policies() -> Vec<Policy> {
         let (Some(min), Some(max)) = (sys::read(dir.join("cpuinfo_min_freq")), sys::read(dir.join("cpuinfo_max_freq"))) else {
             continue;
         };
-        let cpus = sys::text(dir.join("related_cpus")).map(|s| s.split_whitespace().filter_map(|c| c.parse().ok()).collect()).unwrap_or_default();
+        let cpus = sys::text(dir.join("related_cpus"))
+            .map(|s| {
+                s.split_whitespace().filter_map(|c| c.parse().inspect_err(|e| log::warn!("tuning: {}/related_cpus: {c:?}: {e}", dir.display())).ok()).collect()
+            })
+            .unwrap_or_default();
         out.push((dir, min, max, cpus));
     }
     out

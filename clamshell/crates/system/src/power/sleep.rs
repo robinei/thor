@@ -49,7 +49,9 @@ fn lock(bus: &mut Bus) -> Result<::dbus::arg::OwnedFd, crate::os::dbus::Error> {
 
 /// PrepareForSleep's argument: true before sleep, false after.
 fn before_sleep(m: &Message) -> Option<bool> {
-    (m.member().as_deref() == Some("PrepareForSleep")).then(|| m.read1::<bool>().ok()).flatten()
+    (m.member().as_deref() == Some("PrepareForSleep"))
+        .then(|| m.read1::<bool>().inspect_err(|e| log::warn!("sleep: reading PrepareForSleep: {e}")).ok())
+        .flatten()
 }
 
 fn hold(pad: &Worker<pad::Command>) -> Result<(), crate::os::dbus::Error> {
@@ -111,7 +113,7 @@ pub fn busy() -> Option<String> {
             .filter_map(|l| l.split_once(':'))
             .filter(|(name, _)| name.trim() != "lo")
             .map(|(_, v)| {
-                let n: Vec<u64> = v.split_whitespace().filter_map(|x| x.parse().ok()).collect();
+                let n: Vec<u64> = v.split_whitespace().filter_map(|x| x.parse().inspect_err(|e| log::debug!("busy: /proc/net/dev: {x:?}: {e}")).ok()).collect();
                 n.first().copied().unwrap_or(0) + n.get(8).copied().unwrap_or(0)
             })
             .sum::<u64>()
