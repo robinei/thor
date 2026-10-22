@@ -60,6 +60,8 @@ struct Daemon {
     said: Option<Mode>,
     /// The temperature, smoothed.
     temp: Option<f32>,
+    /// The speed last written, used when `pwm1` can't be read back.
+    written: Option<Duty>,
 }
 
 /// One tick, which sets or keeps the speed. Returns a line for the log if anything worth one happened.
@@ -85,19 +87,20 @@ fn tick(root: &Path, d: &mut Daemon) -> Option<String> {
     let mode = d.mode.unwrap_or(Mode::Auto);
     let changed = d.said != Some(mode);
     d.said = Some(mode);
-    let now: Duty = match fs::read_to_string(dir.join("pwm1")).map_err(|e| e.to_string()).and_then(|t| t.trim().parse().map_err(|e| format!("{t:?}: {e}"))) {
-        Ok(duty) => duty,
-        Err(e) => {
-            problem.get_or_insert(format!("{}: pwm1: {e}", dir.display()));
-            0
-        }
-    };
+    // If the speed can't be read, the curve goes on from the speed last written (or the safe speed), and
+    // the new speed is written whether or not it differs, since the fan's real speed is unknown.
+    let read = fs::read_to_string(dir.join("pwm1")).map_err(|e| e.to_string()).and_then(|t| t.trim().parse::<Duty>().map_err(|e| format!("{t:?}: {e}")));
+    if let Err(e) = &read {
+        problem.get_or_insert(format!("{}: pwm1: {e}", dir.display()));
+    }
+    let now = read.as_ref().ok().copied().or(d.written).unwrap_or(curve::SAFE);
     d.temp = curve::smooth(d.temp, curve::temperature(readings(root)));
     let duty = curve::next(mode, d.temp, now);
-    if duty != now
-        && let Err(e) = fs::write(dir.join("pwm1"), duty.to_string())
-    {
-        return Some(format!("{}: pwm1: {e}", dir.display()));
+    if duty != now || read.is_err() {
+        if let Err(e) = fs::write(dir.join("pwm1"), duty.to_string()) {
+            return Some(format!("{}: pwm1: {e}", dir.display()));
+        }
+        d.written = Some(duty);
     }
     match d.temp {
         _ if problem.is_some() => problem,
@@ -211,6 +214,18 @@ mod tests {
         tick(&root, &mut d);
         assert!(d.taken);
         assert_eq!(text(&dir.join("pwm1_enable")).as_deref(), Some("3"));
+    }
+
+    #[test]
+    fn an_unreadable_speed_goes_on_from_the_safe_speed() {
+        let root = machine("unreadable");
+        let dir = add_fan(&root);
+        fs::write(dir.join("pwm1"), "garbage\n").unwrap();
+        let mut d = Daemon::default();
+        assert!(tick(&root, &mut d).is_some_and(|l| l.contains("pwm1")));
+        let expected = curve::next(Mode::Auto, d.temp, curve::SAFE);
+        assert_eq!(text(&dir.join("pwm1")).as_deref(), Some(&*expected.to_string()));
+        assert_eq!(d.written, Some(expected));
     }
 
     #[test]

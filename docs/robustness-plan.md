@@ -59,7 +59,7 @@ Open, as they change behaviour:
 
 - [x] The control pipe's reader thread ends for good if the pipe can't be reopened (`clamshell ctl` stops
       working until a restart).
-- [ ] The fan daemon takes an unreadable `pwm1` as 0, which feeds the curve.
+- [x] The fan daemon takes an unreadable `pwm1` as 0, which feeds the curve.
 - [ ] Emptying the Trash says "Emptied the Trash" when some entries couldn't be removed.
 - [ ] `content::scan` expands a source's dir a second time after its caller did.
 
