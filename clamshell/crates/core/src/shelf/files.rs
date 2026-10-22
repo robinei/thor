@@ -412,7 +412,7 @@ impl State {
             }
             FilesEvent::Done(result) => {
                 self.files.busy = None;
-                self.notify(NoticeKind::Files(result));
+                self.bottom.notify(NoticeKind::Files(result), self.clock.mono());
                 vec![]
             }
             // Removable storage's groups, and sources on it, come and go when the library is read again.

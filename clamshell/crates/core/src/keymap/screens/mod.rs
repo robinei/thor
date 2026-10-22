@@ -491,7 +491,7 @@ impl State {
                 None => vec![],
             },
             KeymapId::Calibrate => {
-                self.notify(crate::bottom::notice::NoticeKind::Gyro(None));
+                self.bottom.notify(crate::bottom::notice::NoticeKind::Gyro(None), self.clock.mono());
                 vec![Effect::CalibrateGyro]
             }
             KeymapId::Holds => {

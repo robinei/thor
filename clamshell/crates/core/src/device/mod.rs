@@ -21,7 +21,7 @@ use crate::State;
 use std::sync::Arc;
 
 use crate::bottom::editor::{Editor, Purpose};
-use crate::bottom::notice::{Notice, NoticeKind};
+use crate::bottom::notice::NoticeKind;
 use crate::bottom::{Bottom, Tab};
 use crate::effect::{Effect, Save, WindowCommand};
 use crate::kit::replace;
@@ -152,7 +152,7 @@ impl Device {
             }
             DeviceId::Sticks => vec![],
             DeviceId::Gyro => {
-                bottom.notice = Some(Notice::new(NoticeKind::Gyro(None), now));
+                bottom.notify(NoticeKind::Gyro(None), now);
                 vec![Mutation::Effect(Effect::CalibrateGyro)]
             }
             DeviceId::Refresh if self.refresh != Refresh::Running => {

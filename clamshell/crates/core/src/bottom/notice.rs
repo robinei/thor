@@ -1,7 +1,6 @@
 //! The short notice under the bar that says what just happened, such as a level changed by a key, a
 //! screenshot saved, a launch starting or a file operation done. One shows at a time, for [`NOTICE_FOR`].
 
-use crate::State;
 use crate::levels::slider::Control;
 
 /// How long a notice shows, in seconds.
@@ -50,16 +49,17 @@ impl Notice {
     }
 }
 
-impl State {
-    pub(crate) fn notify(&mut self, what: NoticeKind) {
-        self.bottom.notice = Some(Notice::new(what, self.clock.mono()));
+impl crate::Bottom {
+    /// Shows `what` from `now`, in place of any notice showing.
+    pub(crate) fn notify(&mut self, what: NoticeKind, now: u64) {
+        self.notice = Some(Notice::new(what, now));
     }
 
     /// Removes the notice if it has timed out at `now`. Returns whether it did.
     pub(crate) fn expire_notice(&mut self, now: u64) -> bool {
-        let expired = self.bottom.notice.as_ref().is_some_and(|n| now >= n.until);
+        let expired = self.notice.as_ref().is_some_and(|n| now >= n.until);
         if expired {
-            self.bottom.notice = None;
+            self.notice = None;
         }
         expired
     }

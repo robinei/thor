@@ -54,7 +54,7 @@ impl State {
             Some(r) => {
                 let (key, title) = (r.key.clone(), r.entry.as_ref().map_or_else(String::new, |g| g.title.clone()));
                 let lines = files.iter().filter_map(|f| line(&runner, f)).collect();
-                self.notify(NoticeKind::Enqueued(files.len(), title));
+                self.bottom.notify(NoticeKind::Enqueued(files.len(), title), self.clock.mono());
                 vec![Effect::Enqueue { key, lines }]
             }
             // A file alone is opened as A opens it, which includes resuming where it was left.

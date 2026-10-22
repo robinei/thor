@@ -42,7 +42,7 @@ impl State {
             DeviceKey::BrightnessUp => (Level::Brightness, 1),
             DeviceKey::BrightnessDown => (Level::Brightness, -1),
             DeviceKey::Mute => {
-                self.notify(NoticeKind::Level(Control::Volume));
+                self.bottom.notify(NoticeKind::Level(Control::Volume), self.clock.mono());
                 return self.levels.toggle_mute();
             }
             DeviceKey::Screenshot => return vec![Effect::Screenshot],
@@ -54,7 +54,7 @@ impl State {
             DeviceKey::WindowUp => return self.window_up(),
         };
         let control = if level == Level::Volume { Control::Volume } else { Control::Brightness };
-        self.notify(NoticeKind::Level(control));
+        self.bottom.notify(NoticeKind::Level(control), self.clock.mono());
         self.levels.change(self.clock.mono(), |l| l.step(level, direction))
     }
 
@@ -81,7 +81,7 @@ impl State {
 
     /// The screenshot was taken, with its file, or failed.
     pub(crate) fn on_screenshot(&mut self, result: Result<String, String>) {
-        self.notify(NoticeKind::Screenshot(result));
+        self.bottom.notify(NoticeKind::Screenshot(result), self.clock.mono());
     }
 }
 

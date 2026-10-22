@@ -187,12 +187,12 @@ impl State {
                 (Dirty::TOP, vec![Effect::Window(WindowCommand::BottomPower(!self.bottom_off()))])
             }
             Event::GyroCalibrated(ok) => {
-                self.notify(crate::bottom::notice::NoticeKind::Gyro(Some(ok)));
+                self.bottom.notify(crate::bottom::notice::NoticeKind::Gyro(Some(ok)), self.clock.mono());
                 (Dirty::BOTTOM, vec![])
             }
             Event::AccountChanged(result) => {
                 // What the helper did, or why it failed, shown for a moment.
-                self.notify(crate::bottom::notice::NoticeKind::Account(result));
+                self.bottom.notify(crate::bottom::notice::NoticeKind::Account(result), self.clock.mono());
                 (Dirty::BOTTOM, vec![])
             }
             Event::Quit => (Dirty::NONE, vec![Effect::Save(Save::Resume(self.resume())), Effect::Quit]),
@@ -226,7 +226,7 @@ impl State {
         let problems = &library.problems;
         if !problems.is_empty() && *problems != self.shelf.library().problems {
             let first = problems.first().cloned().unwrap_or_default();
-            self.notify(crate::bottom::notice::NoticeKind::Problems(first, problems.len()));
+            self.bottom.notify(crate::bottom::notice::NoticeKind::Problems(first, problems.len()), self.clock.mono());
         }
         if self.shelf.reload(library) {
             self.moved_collection();
@@ -318,7 +318,7 @@ impl State {
             effects.push(Effect::Save(Save::Resume(self.resume())));
         }
         effects.extend(self.levels.save_due(mono_secs));
-        let notice_gone = self.expire_notice(mono_secs);
+        let notice_gone = self.bottom.expire_notice(mono_secs);
         let dirty = if minute_changed {
             Dirty::BOTH
         } else if notice_gone {
