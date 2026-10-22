@@ -67,21 +67,21 @@ Helpers that exist but are bypassed:
 
 ## 2. Bugs
 
-- [ ] Durations timed by the wall clock, which the Time tab steps: bottom screen dim/off
+- [x] Durations timed by the wall clock, which the Time tab steps: bottom screen dim/off
       (`bottom_screen.rs:135,174`), background `GRACE` (`background.rs:123,171`), `HANDOFF`
       (`running.rs:245-260,311,328`), `REOPEN_SECS`, tray/found timing → `mono_secs`.
-- [ ] A missing or empty library shows the demo games (`src/main.rs` `load_library`): an empty shelf with a
+- [x] A missing or empty library shows the demo games (`src/main.rs` `load_library`): an empty shelf with a
       hint; the demo only for `--snapshot` and the desktop's demo mode, out of the library crate's
       non-test code.
-- [ ] `held.dedup()` without sorting (`pad/route.rs:301`).
+- [x] `held.dedup()` without sorting (`pad/route.rs:301`).
 - [x] `mounted_under` doesn't unescape `/proc/self/mounts` (`archives.rs:111`).
 - [x] The TMDB key in curl's command line, visible in `/proc` (`meta.rs:342`) → `curl -K -`.
 - [x] `command.rs:50`: `reader.join()` can hang on a grandchild holding stdout.
-- [ ] A test that checks only its first value (`core/settings.rs:458-462`).
-- [ ] The Wi-Fi password and the editor's text not `Secret` (`core/wifi.rs:123`, `editor.rs`).
-- [ ] Undo: a step popped then filtered by id is lost (`keymap_screens/undo.rs`).
-- [ ] Keymap id allocation at `u16::MAX` returns an existing id (`keymap/mod.rs:544,584`).
-- [ ] `relay` treats EINTR as a close; `wayland_filter.rs` loses spawn errors and exits from a worker
+- [x] A test that checks only its first value (`core/settings.rs:458-462`).
+- [x] The Wi-Fi password and the editor's text not `Secret` (`core/wifi.rs:123`, `editor.rs`).
+- [x] Undo: a step popped then filtered by id is lost (`keymap_screens/undo.rs`).
+- [x] Keymap id allocation at `u16::MAX` returns an existing id (`keymap/mod.rs:544,584`).
+- [x] `relay` treats EINTR as a close; `wayland_filter.rs` loses spawn errors and exits from a worker
       thread (`:308-336,388`).
 
 ## 3. Structure
