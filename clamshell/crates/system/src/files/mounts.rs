@@ -3,6 +3,9 @@
 use std::fs;
 use std::path::PathBuf;
 
+use std::time::Duration;
+
+use crate::os::dbus::{self, Bus, PropMap, Props};
 use crate::os::{sys, text};
 
 /// Where udisks2 mounts removable filesystems.
@@ -38,4 +41,31 @@ pub fn media_mounts() -> Vec<Mount> {
             Mount { device: m.device, fs: m.fs, label, uuid: find(&uuids), dir: m.dir }
         })
         .collect()
+}
+
+const UDISKS: &str = "org.freedesktop.UDisks2";
+
+/// Unmounts `device` through udisks2, then powers its drive off. Unmounting writes out what is pending,
+/// which on a slow card can take a while, so it gets `limit`. Powering off is allowed to fail: an SD
+/// card reader may not support it, and unmounted is enough.
+pub(super) fn eject(device: &str, limit: Duration) -> dbus::Result<()> {
+    let mut bus = Bus::system()?.with_timeout(limit);
+    // No password prompt: polkit allows the session's user, or the call fails.
+    let options = || PropMap::from([("auth.no_user_interaction".to_owned(), dbus::value(true))]);
+    let spec = PropMap::from([("path".to_owned(), dbus::value(device.to_owned()))]);
+    let (blocks,): (Vec<dbus::Path<'static>>,) =
+        bus.call(UDISKS, "/org/freedesktop/UDisks2/Manager", "org.freedesktop.UDisks2.Manager", "ResolveDevice", (spec, options()))?;
+    let block = blocks.first().ok_or_else(|| dbus::Error::Reply(format!("udisks2 doesn't know {device}")))?.to_string();
+    bus.call::<()>(UDISKS, &block, "org.freedesktop.UDisks2.Filesystem", "Unmount", (options(),))?;
+    let drive = bus.get_all(UDISKS, &block, "org.freedesktop.UDisks2.Block").map(|props| Props(&props).path("Drive"));
+    match drive {
+        Ok(Some(drive)) if drive != "/" => {
+            if let Err(e) = bus.call::<()>(UDISKS, &drive, "org.freedesktop.UDisks2.Drive", "PowerOff", (options(),)) {
+                log::info!("powering off {drive}: {e}");
+            }
+        }
+        Ok(_) => {}
+        Err(e) => log::info!("the drive of {device}: {e}"),
+    }
+    Ok(())
 }

@@ -3,7 +3,7 @@
 //! mounted and unmounted (udisks2's, under `/run/media`). The files thread does the operations one after
 //! another: rename, new folder, paste (a copy, or a move; across filesystems a copy then a delete, with
 //! its progress), the Trash (freedesktop's: the home Trash, or a filesystem's own `.Trash-<uid>`), delete,
-//! eject (`udisksctl`), extract (`bsdtar`, its progress read from how far it has read the archive).
+//! eject (udisks2), extract (`bsdtar`, its progress read from how far it has read the archive).
 //! An archive is browsed as a folder through its mount (see [`crate::files::archives`]).
 
 pub(crate) mod archives;

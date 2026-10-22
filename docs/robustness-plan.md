@@ -9,7 +9,7 @@ The `dbus` crate is already used; these tools are front ends to services it can 
 replies and real errors.
 
 - [x] `timedatectl` → `org.freedesktop.timedate1` (`Timezone`, `NTP`; `SetTimezone`, `SetNTP`).
-- [ ] `udisksctl` → `org.freedesktop.UDisks2` (`Filesystem.Mount`/`Unmount`, `Drive.PowerOff`).
+- [x] `udisksctl` → `org.freedesktop.UDisks2` (`Filesystem.Mount`/`Unmount`, `Drive.PowerOff`).
 - [ ] `systemd-run` and `systemctl` → `org.freedesktop.systemd1` (`StartTransientUnit`, `StopUnit`, the
       unit's `FreezerState`).
 - [ ] `wpctl get-volume` → the default sink's volume and mute from `pw-dump`'s JSON, which the mixer reads

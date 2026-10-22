@@ -11,7 +11,6 @@ use clamshell_core::shelf::files::{FileOp, FilesEvent};
 
 use super::trash::{restore, trash, trash_info};
 use crate::Sink;
-use crate::os::command;
 use crate::os::worker::Worker;
 
 /// How long ejecting a card may take.
@@ -86,13 +85,7 @@ fn run(op: &FileOp, home: Option<&Path>, sink: &impl Sink) -> Result<String, Str
             Ok("Emptied the Trash".to_owned())
         }
         FileOp::Eject(device) => {
-            // (Unmounting writes out what is pending, which on a slow card can take a while.)
-            let out = command::run("udisksctl", &["unmount", "-b", device], None, EJECT_LIMIT)?;
-            if !out.status.success() {
-                return Err(format!("Ejecting {device}: {}", out.said()));
-            }
-            // (An SD card reader may not power off: unmounted is enough.)
-            let _ = command::run("udisksctl", &["power-off", "-b", device], None, command::LIMIT);
+            super::mounts::eject(device, EJECT_LIMIT).map_err(|e| format!("Ejecting {device}: {}", e.message()))?;
             Ok(format!("{device} can be taken out"))
         }
     }
