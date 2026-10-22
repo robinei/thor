@@ -1,25 +1,27 @@
-//! What ClamShell keeps, as files in its state dir (~/.local/share/clamshell), JSON a person can read and
-//! edit. No file grows and is written again whole:
+//! What ClamShell keeps, as files in its state dir (~/.local/share/clamshell). They are JSON that a person
+//! can read and edit. No file both grows and is rewritten whole:
 //!
-//! - What the state saves whole (see [`Save`]): one file each, replaced by writing a new one and renaming
-//!   it over the old (a write cut short by a crash or power loss leaves the last complete one):
-//!   - `settings/<screen>.json`: a settings screen's own settings and environment, one file per screen:
-//!     `all.json`, `runner-<key>.json` (a runner's level), `entry-<key>.json` (an entry), the key as the
-//!     entry's units and art are named (see `clamshell_library::key_of`), the screen's id in the file;
-//!     a screen with nothing set has none;
-//!   - `keymaps/<name>.json`: a keymap each, named as it is (an entry's or a runner level's own: as its
-//!     settings screen's file); no folder: the initial ones;
-//!   - `window-rules.json`, `dock.json`, `autostart.json`, `favourites.json`, `resume.json` (where shelf and
-//!     the second screen were), `sticks.json` (the sticks' calibrations, by controller), `brightness.json`,
-//!     `clock.json`, `first-start.json` (the first start over: see `clamshell_core::device`).
-//! - `plays.jsonl`: an entry's plays, a line each (its id, start in seconds since the epoch, duration in
-//!   seconds), appended; a line cut short is skipped.
+//! - Each thing the state saves whole (see [`Save`]) has a file of its own. It is replaced by writing a
+//!   new file and renaming it over the old one, so a write cut short by a crash or power loss leaves the
+//!   last complete one.
+//!   - `settings/<screen>.json` holds one settings screen's own settings and environment. The files are
+//!     `all.json`, `runner-<key>.json` for a runner's level and `entry-<key>.json` for an entry. The key
+//!     is the one the entry's units and art are named by (see `clamshell_library::key_of`), and the
+//!     screen's id is inside the file. A screen with nothing set has no file.
+//!   - `keymaps/<name>.json` holds one keymap, named after it. A keymap owned by an entry or a runner level
+//!     is named like that owner's settings file. With no folder, the initial keymaps are used.
+//!   - `window-rules.json`, `dock.json`, `autostart.json`, `favourites.json`, `resume.json` (where shelf
+//!     and the second screen were), `sticks.json` (the sticks' calibrations, by controller),
+//!     `brightness.json`, `clock.json`, and `first-start.json` (whether the first start is over, see
+//!     `clamshell_core::device`).
+//! - `plays.jsonl` has one line per play: the entry's id, the start in seconds since the epoch and the
+//!   duration in seconds. Lines are appended, and a line cut short is skipped.
 //!
-//! What was fetched about an entry, and a video's length, are kept in the art cache, a file per entry
+//! What was fetched about an entry, and a video's length, are kept in the art cache, in a file per entry
 //! beside its images (`crate::library::meta::cache`).
 //!
-//! ClamShell's own writes go through a thread of their own ([`Writer`]): the disk mustn't hold up the
-//! screens. A file read back that doesn't make sense is logged, and left out.
+//! ClamShell's own writes go through a thread of their own ([`Writer`]) so the disk doesn't hold up the
+//! screens. A file that doesn't make sense when read back is logged and left out.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
@@ -43,10 +45,10 @@ use serde::{Deserialize, Serialize};
 /// A settings screen's file.
 #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
 struct Screen {
-    /// The screen's id: an entry's, a runner level's (`runner:<name>`); none for All.
+    /// The screen's id: an entry's id, or `runner:<name>` for a runner's level. All has none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     id: Option<String>,
-    /// Its settings by name (All: those that aren't their default).
+    /// The settings by name. For All, only those that aren't at their default.
     #[serde(default)]
     settings: BTreeMap<String, u16>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -65,7 +67,7 @@ struct Rule {
 struct ResumeFile {
     collection: String,
     tab: String,
-    /// Each collection's place: its open groups' ids, then its selected entry's.
+    /// Each collection's place: the ids of its open groups, then the id of its selected entry.
     places: Vec<(String, Vec<String>)>,
 }
 
@@ -99,9 +101,9 @@ struct Play {
 /// The state dir's files.
 pub struct Store {
     dir: PathBuf,
-    /// The settings screens' files as last written (by name), to write only those that changed.
+    /// The settings screens' files as last written, by name, so only those that changed are written.
     screens: Option<HashMap<String, Screen>>,
-    /// The keymaps' files as last written, likewise.
+    /// The keymaps' files as last written, for the same reason.
     keymaps: Option<HashMap<String, Keymap>>,
 }
 
@@ -114,7 +116,7 @@ impl Store {
         self.dir.join(name)
     }
 
-    /// Saves what the state keeps, replacing what was saved of it.
+    /// Saves something the state keeps, replacing what was saved before.
     pub fn save(&mut self, save: &Save) -> io::Result<()> {
         let ids = |ids: &[Arc<str>]| ids.iter().map(|id| id.to_string()).collect::<Vec<_>>();
         match save {
@@ -164,7 +166,7 @@ impl Store {
         out
     }
 
-    /// Adds a play of `id`: a line appended (whole, in one write), flushed to the disk.
+    /// Adds a play of `id`. The line is appended whole in one write and flushed to the disk.
     pub fn add_play(&self, id: &str, start: u64, duration: u64) -> io::Result<()> {
         fs::create_dir_all(&self.dir)?;
         let mut line = serde_json::to_string(&Play { id: id.to_owned(), start, duration }).map_err(io::Error::other)?;
@@ -178,7 +180,7 @@ impl Store {
         read_json::<Vec<String>>(&self.file("favourites.json")).unwrap_or_default().into_iter().collect()
     }
 
-    /// The settings and environment (settings it doesn't know, or values they don't take, skipped).
+    /// The settings and environment. Unknown settings, and values a setting doesn't take, are skipped.
     pub fn settings(&mut self) -> Settings {
         let mut s = Settings::default();
         for screen in self.screens_on_disk().values() {
@@ -196,14 +198,14 @@ impl Store {
         s
     }
 
-    /// The settings screens' files there are, by name.
+    /// The settings screens' files on disk, by name.
     fn screens_on_disk(&mut self) -> &HashMap<String, Screen> {
         let dir = self.file("settings");
         self.screens.get_or_insert_with(|| read_folder(&dir))
     }
 
-    /// The settings as one file per screen, written where it changed; the files of screens with nothing
-    /// set any more removed.
+    /// Saves the settings as one file per screen, writing only the files that changed. Files of screens
+    /// that no longer have anything set are removed.
     fn save_settings(&mut self, s: &Settings) -> io::Result<()> {
         let mut screens: HashMap<String, Screen> = HashMap::new();
         let global = Screen {
@@ -231,8 +233,8 @@ impl Store {
         self.screens.get_or_insert_default()
     }
 
-    /// The keymaps, by id; none if they were never saved (a keymap that doesn't read back is skipped,
-    /// logged).
+    /// The keymaps, by id, or none if they were never saved. A keymap that doesn't read back is logged
+    /// and skipped.
     pub fn keymaps(&self) -> Option<Keymaps> {
         let dir = self.file("keymaps");
         if !dir.is_dir() {
@@ -243,7 +245,8 @@ impl Store {
         Some(Keymaps::from_list(list))
     }
 
-    /// The keymaps as a file each, written where it changed; the files of those gone removed.
+    /// Saves each keymap as a file, writing only the files that changed. Files of removed keymaps are
+    /// deleted.
     fn save_keymaps(&mut self, k: &Keymaps) -> io::Result<()> {
         let dir = self.file("keymaps");
         fs::create_dir_all(&dir)?;
@@ -269,13 +272,13 @@ impl Store {
         read_json::<Vec<String>>(&self.file("autostart.json")).unwrap_or_default().into_iter().map(Arc::from).collect()
     }
 
-    /// Where shelf and the second screen were; none if that was never saved.
+    /// Where shelf and the second screen were, or none if that was never saved.
     pub fn resume(&self) -> Option<Resume> {
         let r: ResumeFile = read_json(&self.file("resume.json"))?;
         Some(Resume { collection: r.collection, tab: r.tab, places: r.places })
     }
 
-    /// Whether the first start is over (else the Device view opens at the start).
+    /// Whether the first start is over. If not, the Device view opens at the start.
     pub fn first_start_done(&self) -> bool {
         read_json::<FirstStartFile>(&self.file("first-start.json")).is_some_and(|f| f.done)
     }
@@ -285,7 +288,7 @@ impl Store {
         read_json(&self.file("sticks.json")).unwrap_or_default()
     }
 
-    /// Whether clocks show 12 hours (else, or unsaved, 24).
+    /// Whether clocks show 12 hours. Otherwise, or if never saved, they show 24.
     pub fn twelve_hour(&self) -> bool {
         read_json::<ClockFile>(&self.file("clock.json")).is_some_and(|c| c.hours == 12)
     }
@@ -302,7 +305,7 @@ impl Store {
     }
 }
 
-/// A folder's JSON files that read as `T`, by name.
+/// The JSON files in a folder that read as `T`, by name.
 fn read_folder<T: DeserializeOwned>(dir: &Path) -> HashMap<String, T> {
     let entries = fs::read_dir(dir)
         .inspect_err(|e| {
@@ -318,8 +321,8 @@ fn read_folder<T: DeserializeOwned>(dir: &Path) -> HashMap<String, T> {
     names.filter(|n| n.ends_with(".json")).filter_map(|n| Some((n.clone(), read_json::<T>(&dir.join(&n))?))).collect()
 }
 
-/// A folder's files made `now` from `before` (as they were): those that changed written, those gone
-/// removed.
+/// Changes a folder's files from `before` to `now`. Files that changed are written and files no longer in
+/// `now` are removed.
 fn write_folder<T: Serialize + PartialEq>(dir: &Path, before: &HashMap<String, T>, now: &HashMap<String, T>) -> io::Result<()> {
     for (name, value) in now {
         if before.get(name) != Some(value) {
@@ -332,8 +335,8 @@ fn write_folder<T: Serialize + PartialEq>(dir: &Path, before: &HashMap<String, T
     Ok(())
 }
 
-/// A keymap's file name: its name (see [`Keymaps::unique_name`]); an entry's or a runner level's own as
-/// its settings screen's ([`screen_file`]).
+/// A keymap's file name. It is the keymap's name (see [`Keymaps::unique_name`]), except that a keymap
+/// owned by an entry or a runner level is named like the owner's settings file ([`screen_file`]).
 fn keymap_file(k: &Keymap) -> String {
     match &k.owner {
         Some(owner) => screen_file(owner),
@@ -360,9 +363,9 @@ pub enum Write {
     },
 }
 
-/// The state's writes, made in order on a thread of their own. Dropped, it finishes those sent first: its
-/// thread is joined (which [`crate::os::worker::Worker`] doesn't do), so the last writes are made before the
-/// program exits.
+/// Makes the state's writes in order on a thread of their own. When dropped, it finishes the writes
+/// already sent. Its thread is joined, which [`crate::os::worker::Worker`] doesn't do, so the last writes
+/// are made before the program exits.
 pub struct Writer {
     tx: Option<Sender<Write>>,
     thread: Option<JoinHandle<()>>,
@@ -504,7 +507,7 @@ mod tests {
         assert_eq!(names, ["all.json".to_owned(), format!("entry-{}.json", key_of(&zelda)), format!("runner-{}.json", key_of("SNES"))]);
         assert_eq!(Store::open(&dir).settings(), settings);
 
-        // Zelda's override and environment taken back: its file gone; All's left as it was.
+        // With Zelda's override and environment cleared, its file is gone and All's file is untouched.
         let all = dir.join("settings/all.json");
         let written = fs::metadata(&all).unwrap().modified().unwrap();
         settings.set(Some(&zelda), Setting::Power, None);

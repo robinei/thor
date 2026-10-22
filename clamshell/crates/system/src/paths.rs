@@ -1,23 +1,25 @@
-//! Where ClamShell's files are: worked out once at start from the XDG base directories and HOME, then
-//! passed to whatever reads or writes one.
+//! Where ClamShell's files are. The paths are worked out once at start from the XDG base directories and
+//! HOME, then passed to whatever reads or writes the files.
 
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Paths {
-    /// The library's content dirs (~/.config/clamshell/library.json, see [`crate::library::content`]).
+    /// The file listing the library's content directories: ~/.config/clamshell/library.json. See
+    /// [`crate::library::content`].
     pub library: Option<PathBuf>,
-    /// What ClamShell keeps (see [`crate::store`]): ~/.local/share/clamshell.
+    /// ClamShell's own data, ~/.local/share/clamshell. See [`crate::store`].
     pub state_dir: Option<PathBuf>,
-    /// Fetched covers and screenshots (see [`crate::library::meta`]): ~/.cache/clamshell/art.
+    /// Fetched covers and screenshots, ~/.cache/clamshell/art. See [`crate::library::meta`].
     pub art: Option<PathBuf>,
-    /// Where mpv keeps the places of videos quit before their end (see [`crate::launch::mpv`]).
+    /// Where mpv keeps the position of videos quit before the end. See [`crate::launch::mpv`].
     pub watch_later: Vec<PathBuf>,
-    /// Launches handed to sway's exec ($XDG_RUNTIME_DIR/clamshell/jobs, see [`crate::launch::job`]).
+    /// Launches handed to sway's exec, in $XDG_RUNTIME_DIR/clamshell/jobs. See [`crate::launch::job`].
     pub jobs: PathBuf,
     /// MangoHud's config files and frame logs, in RAM ($XDG_RUNTIME_DIR/clamshell/mangohud).
     pub mangohud: PathBuf,
-    /// Launches' control sockets, a command's `{socket}` ($XDG_RUNTIME_DIR/clamshell/sockets).
+    /// The launches' control sockets, which a command gets as `{socket}`. They are in
+    /// $XDG_RUNTIME_DIR/clamshell/sockets.
     pub sockets: PathBuf,
     /// $XDG_RUNTIME_DIR, where systemd's user manager has its socket.
     pub runtime: Option<PathBuf>,
@@ -80,12 +82,11 @@ impl Paths {
         }
     }
 
-    /// The control socket of entry `key`'s launches (see [`clamshell_core::session::enqueue`]).
+    /// The control socket for launches of entry `key`. See [`clamshell_core::session::enqueue`].
     pub fn socket(&self, key: &str) -> PathBuf {
         self.sockets.join(clamshell_core::session::instance::Instance::socket_of(key))
     }
 
-    /// ClamShell's database (see [`crate::store`]).
     /// Whether there is a systemd user session to put apps and games in scopes of.
     pub fn has_user_systemd(&self) -> bool {
         self.runtime.as_deref().is_some_and(|d| d.join("systemd/private").exists())
