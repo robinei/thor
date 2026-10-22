@@ -136,12 +136,13 @@ impl Sent {
 
     /// As at start, where the pad is taken to have what `w` says.
     pub(crate) fn new(w: &Wanted) -> Sent {
-        let mut sent = Sent { keymap: Some(w.keymap), route: Some(w.route), ..Sent::default() };
-        #[cfg(debug_assertions)]
-        {
-            sent.keymap_sent = Some(w.keymapping.in_force(w.settings.get(Setting::Keymap)));
+        Sent {
+            keymap: Some(w.keymap),
+            route: Some(w.route),
+            #[cfg(debug_assertions)]
+            keymap_sent: Some(w.keymapping.in_force(w.settings.get(Setting::Keymap))),
+            ..Sent::default()
         }
-        sent
     }
 
     /// The UI is up. The open tab's and the account's watches start from now.
