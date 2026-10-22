@@ -23,6 +23,8 @@ const LIST_W: f32 = 0.42;
 const ROW_H: f32 = 0.085;
 /// Title size and thumbnail height, of a row's height; thumbnails are portrait boxes.
 const ROW_TEXT: f32 = 0.36;
+/// The filter's and an open group's header text, a little larger than a row's.
+const HEADER_TEXT: f32 = ROW_TEXT * 1.15;
 const THUMB: f32 = 0.82;
 /// A row's marks (favourite, on the dock, running): their size, of a row's height.
 const MARK: f32 = 0.3;
@@ -39,6 +41,8 @@ const DETAIL: f32 = 0.03;
 const SUMMARY: f32 = 0.028;
 /// An action row's height, of the details' text size.
 const ACTION: f32 = 1.45;
+/// The gap after each paragraph of the details, of the padding.
+const PARA_GAP: f32 = 0.4;
 /// A screenshot's height at most, of the list's height (it is as wide as the details, 16:9).
 const SHOT_H: f32 = 0.45;
 /// The box art's width at most, of the room right of the list: a portrait one is as high as it may be
@@ -85,7 +89,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
     let filter = s.shelf().filter();
     if !filter.is_empty() {
         let line = list.take_top(h * ROW_H * 0.7);
-        let size = line.h * ROW_TEXT * 1.15;
+        let size = line.h * HEADER_TEXT;
         let text = Fmt::<96>::of(format_args!("{filter}…"));
         f.c.text_fit(Rect::new(line.x + pad * 0.4, line.y, line.w - pad, line.h), size, Tone::Accent, &text, Keep::End);
         if s.shelf().list().is_empty() {
@@ -116,7 +120,7 @@ fn group_header(f: &mut Frame, group: &Entry, r: Rect, pad: f32) {
         f.c.icon(Icon::ArrowLeft, arrow.square_center(r.h * 0.4), Tone::Normal);
         let title = Rect::new(r.x + r.h + pad * 0.2, r.y, r.w - r.h - pad * 0.2, r.h);
         let path = Fmt::<192>::of(format_args!("{}", Groups { s, game: group, own: true, between: " › " }));
-        f.c.text_fit(title, r.h * ROW_TEXT * 1.15, Tone::High, &path, Keep::End);
+        f.c.text_fit(title, r.h * HEADER_TEXT, Tone::High, &path, Keep::End);
     });
 }
 
@@ -202,31 +206,34 @@ fn selected(f: &mut Frame, game: &Entry, screen: Rect, list: Rect, pad: f32) {
     let tx = if landscape { room.x + room.w } else { cover.x + cover.w } + pad * 1.2;
     let text_w = screen.w - pad - tx;
     let mut col = Column::new(Rect::new(tx, list.y, text_w, list.h));
-    let span = |col: &Column| Span { x: tx, y: col.y(), w: text_w };
+    // A paragraph of the details: wrapped in up to `lines` lines where the column is, then a gap.
+    let para = |f: &mut Frame, col: &mut Column, size: f32, tone: Tone, text: &str, lines: usize| {
+        col.skip(f.c.wrap(Span { x: tx, y: col.y(), w: text_w }, size, tone, text, lines) + pad * PARA_GAP);
+    };
     let detail = h * DETAIL;
-    col.skip(f.c.wrap(span(&col), h * TITLE, Tone::High, &game.title, 3) + pad * 0.4);
+    para(f, &mut col, h * TITLE, Tone::High, &game.title, 3);
 
     // The groups it is in (a series, a season); who made it and when.
     if game.parent.is_some() {
         let groups = Fmt::<192>::of(format_args!("{}", Groups { s, game, own: false, between: " · " }));
-        col.skip(f.c.wrap(span(&col), detail, Tone::Normal, &groups, 2) + pad * 0.4);
+        para(f, &mut col, detail, Tone::Normal, &groups, 2);
     }
     let maker = Fmt::<128>::of(format_args!("{}", Maker(game)));
     if !maker.is_empty() {
-        col.skip(f.c.wrap(span(&col), detail, Tone::Dim, &maker, 2) + pad * 0.4);
+        para(f, &mut col, detail, Tone::Dim, &maker, 2);
     }
 
     // A browsed file: how big, when it was changed.
     if let Some(b) = game.browsed.as_ref().filter(|b| !b.folder && b.modified > 0) {
         let days = s.unix_secs().saturating_sub(b.modified) / 86_400;
         let facts = Fmt::<64>::of(format_args!("{}{}", Bytes(b.size.unwrap_or(0)), DaysAgo(days)));
-        col.skip(f.c.wrap(span(&col), detail, Tone::Dim, &facts, 1) + pad * 0.4);
+        para(f, &mut col, detail, Tone::Dim, &facts, 1);
     }
 
     // A folder: what is in it (not a browsed one: what is known of it may be old).
     if game.is_group() && game.browsed.is_none() {
         let inside = Fmt::<64>::of(format_args!("{}", Inside(s, game)));
-        col.skip(f.c.wrap(span(&col), detail, Tone::Normal, &inside, 2) + pad * 0.4);
+        para(f, &mut col, detail, Tone::Normal, &inside, 2);
     }
 
     // A video: how far into it, and how long it is.
@@ -239,9 +246,9 @@ fn selected(f: &mut Frame, game: &Entry, screen: Rect, list: Rect, pad: f32) {
         }
         let x = if watched_fraction(game).is_some() { tx + bar_w + pad * 0.6 } else { tx };
         f.c.text(x, col.y(), detail, Tone::Normal, &minutes);
-        col.skip(detail * WRAP_LINE + pad * 0.4);
+        col.skip(detail * WRAP_LINE + pad * PARA_GAP);
     } else if game.mpv_file().is_some() && game.watched() {
-        col.skip(f.c.wrap(span(&col), detail, Tone::Dim, "Watched", 1) + pad * 0.4);
+        para(f, &mut col, detail, Tone::Dim, "Watched", 1);
     }
 
     // Its actions (see clamshell-core's `actions`): each a row to tap, with its button.
@@ -255,7 +262,7 @@ fn selected(f: &mut Frame, game: &Entry, screen: Rect, list: Rect, pad: f32) {
     if plays.count > 0 {
         let days = s.unix_secs().saturating_sub(plays.last) / 86_400;
         let played = Fmt::<64>::of(format_args!("{}{}", PlayTime(plays.seconds), DaysAgo(days)));
-        col.skip(f.c.wrap(span(&col), detail, Tone::Dim, &played, 2) + pad * 0.4);
+        para(f, &mut col, detail, Tone::Dim, &played, 2);
     }
 
     // A screenshot: under a landscape box, as wide; else at the bottom of the text. What it is about in as

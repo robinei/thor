@@ -121,8 +121,9 @@ Helpers that exist but are bypassed:
       (`devices_watch`; the pad and input threads keep a watch each), reader commands (`Shown`). Wi-Fi's and
       Bluetooth's `Request` stays: it wraps core's `Command` with the watch.
 - [x] The keymap views' wildcard imports (`ui/views/keymaps/mod.rs:39-43`): explicit.
-- [ ] UI: the confirm dialog written twice (`keymaps/mod.rs:196-222`); layout literals named or helped
-      (`Column::para`), shared gaps in `style`.
+- [x] UI: the confirm dialog written twice (`confirm`); the tiles' gap shared (`style::TILE_GAP`); shelf's
+      details through one `para`; the views' sizing rule written as followed (layout sizes named, small
+      adjustments in place).
 - [x] Dev tooling out of the device binary: `--snapshot` and the demo library behind a `dev` feature (checked
       by `tools/check.sh`). `--library`, `--tray`, `--fetch-metadata` and `--mangohud-env` stay: diagnostics
       worth having on the device (`docs/runners.md` points at `--tray`).

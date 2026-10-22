@@ -23,8 +23,6 @@ const TABS_H: f32 = 0.1;
 const TAB_MAX: f32 = 0.5;
 const COLUMNS: usize = 4;
 const ROWS: usize = 4;
-/// Gap between tiles, of the area's height.
-const GAP: f32 = 0.014;
 /// The icon's size and top, of a tile's height.
 /// (Values are short; in a narrow window, a long one runs over the tile's edges.)
 const TILE: TileShape = TileShape { icon: 0.36, icon_y: 0.17, cut: None };
@@ -98,7 +96,7 @@ pub(super) fn draw(f: &mut Frame) {
     let grid = Rect::new(grid.x, grid.y + pad * 0.6, grid.w, grid.h - pad * 0.6);
     let last = game.is_some().then_some(Tile::Reset);
     for (i, tile) in GRID.into_iter().chain(last).enumerate() {
-        draw_tile(f, grid.cell(COLUMNS, ROWS, f.body().h * GAP, i), tile);
+        draw_tile(f, grid.cell(COLUMNS, ROWS, f.body().h * style::TILE_GAP, i), tile);
     }
 }
 

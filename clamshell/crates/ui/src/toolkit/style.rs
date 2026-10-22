@@ -103,6 +103,9 @@ pub fn content(body: crate::draw::Rect) -> crate::draw::Rect {
     crate::draw::Rect::new(body.x + pad, body.y, body.w - 2.0 * pad, body.h - pad)
 }
 
+/// The gap between tiles in a grid (the settings', the dock's), of the area's height.
+pub const TILE_GAP: f32 = 0.014;
+
 /// Corner radii in logical pixels: tabs and the least a focus ring has; rows and buttons; tiles and box
 /// art.
 pub const RADIUS_S: f32 = 6.0;

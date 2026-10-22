@@ -4,8 +4,10 @@
 //! toolkit (`crate::toolkit`: the frame, style, widgets, text formatting, scrolled lists).
 //!
 //! Everything here is in layout units: logical pixels from the top left of the area inside the burn-in
-//! margin (see `render`). Sizes are fractions of the screen or of the element they sit in, named per
-//! module unless they are shared (then in `style`).
+//! margin (see `render`). Sizes are fractions of the screen or of the element they sit in. Those that
+//! define a layout (a row's height, a column's width, a gap) are named, per module, or in `style` when
+//! shared; small adjustments where they are used (half a padding, a text a little larger) are written
+//! in place.
 
 pub(crate) mod bar;
 mod battery;

@@ -19,8 +19,6 @@ use crate::toolkit::widgets::{self, CAPTION_Y, HeaderRight, TileFace, TileShape}
 
 /// The grid: at least this many rows fill the area, so a few entries keep tile-sized tiles.
 const MIN_ROWS: usize = 4;
-/// Gap between tiles, of the area's height.
-const GAP: f32 = 0.014;
 const TILE: TileShape = TileShape { icon: 0.42, icon_y: 0.1, cut: Some(8.0) };
 /// A tile's picture: its top, and the room it leaves above the caption, of the tile's height; its corners'
 /// radius.
@@ -47,7 +45,7 @@ pub(super) fn draw(f: &mut Frame) {
     }
     let items = s.dock().items();
     let rows = items.len().div_ceil(DOCK_COLUMNS);
-    let gap = f.body().h * GAP;
+    let gap = f.body().h * style::TILE_GAP;
     let row_h = area.h / MIN_ROWS as f32;
     let several = s.session().running_entries().len() > 1;
     let list = Scrolled::begin(f, ListId::Dock, area, row_h, rows);
