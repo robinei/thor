@@ -10,3 +10,5 @@ cargo clippy --workspace --all-targets --quiet -- -D warnings
 # (The development build too: --snapshot and the demo library.)
 cargo clippy --package clamshell --features dev --quiet -- -D warnings
 cargo test --workspace --quiet
+# The docs, private items too (a broken link is a warning, so an error here).
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --quiet
