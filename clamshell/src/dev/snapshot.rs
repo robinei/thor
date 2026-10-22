@@ -546,7 +546,24 @@ pub fn render(fresh: &(dyn Fn() -> State + Sync), now: u64, dir: &Path) -> Resul
 }
 
 /// One group's shots, in order, from `state`.
-fn render_group(mut state: State, Group { start, shots }: Group, now: u64, dir: &Path) -> Result<(), Error> {
+fn render_group(state: State, group: Group, now: u64, dir: &Path) -> Result<(), Error> {
+    walk_group(state, group, now, |state, name, screen| {
+        let path = dir.join(name);
+        let events = clamshell_ui::snapshot(state, screen, size(screen), 1, &path).map_err(|e| Error::Render(path.display().to_string(), e.to_string()))?;
+        log::info!("wrote {}", path.display());
+        Ok(events)
+    })
+}
+
+/// Brings `state` to each of the group's shots in turn and calls `shot` with it, the shot's name and its
+/// screen. `shot` returns what the frame reports, which is applied, as a live frame's report is: shelf's
+/// rows and the lists' rows keep the selections on screen.
+fn walk_group(
+    mut state: State,
+    Group { start, shots }: Group,
+    now: u64,
+    mut shot: impl FnMut(&State, &str, Screen) -> Result<Vec<Event>, Error>,
+) -> Result<(), Error> {
     state.apply(Event::tick(now), &mut Vec::new());
     state.apply(Event::Reading(Reading::Status(demo::STATUS)), &mut Vec::new());
     // The demo's time zone, so the clock reads the same whatever zone the machine is in.
@@ -561,13 +578,9 @@ fn render_group(mut state: State, Group { start, shots }: Group, now: u64, dir: 
         for event in before {
             state.apply(event, &mut Vec::new());
         }
-        let path = dir.join(name);
-        // Applying what a live frame reports (shelf's rows, the lists' rows) keeps the selections on screen.
-        let events = clamshell_ui::snapshot(&state, screen, size(screen), 1, &path).map_err(|e| Error::Render(path.display().to_string(), e.to_string()))?;
-        for event in events {
+        for event in shot(&state, name, screen)? {
             state.apply(event, &mut Vec::new());
         }
-        log::info!("wrote {}", path.display());
     }
     Ok(())
 }
@@ -593,6 +606,28 @@ mod tests {
         bytes.extend(image.height().to_le_bytes());
         bytes.extend(image.as_raw());
         format!("{:016x}", clamshell_library::hash::fnv1a64(&bytes))
+    }
+
+    /// Draws every shot of the scenario as a live view would, frame after frame with only what changed
+    /// drawn, and checks each frame against the shot drawn whole.
+    #[test]
+    fn damaged_frames_match_whole_ones() {
+        let groups = shots(FIXED_NOW).unwrap();
+        std::thread::scope(|scope| {
+            for group in groups {
+                scope.spawn(move || {
+                    let frames = |screen| (clamshell_ui::Frames::new(screen, size(screen)).unwrap(), clamshell_ui::Frames::new(screen, size(screen)).unwrap());
+                    let (mut top, mut bottom) = (frames(Screen::Top), frames(Screen::Bottom));
+                    walk_group(state(clamshell_library::demo::library()), group, FIXED_NOW, |state, name, screen| {
+                        let (damaged, whole) = if screen == Screen::Top { (&mut top.0, &mut top.1) } else { (&mut bottom.0, &mut bottom.1) };
+                        let (pixels, events) = damaged.draw(state);
+                        assert!(pixels == whole.whole(state).unwrap(), "{name}: drawn frame after frame, it differs from the whole frame");
+                        Ok(events)
+                    })
+                    .unwrap();
+                });
+            }
+        });
     }
 
     /// Draws and hashes the snapshots and compares them with the reference hashes. If any differ, the

@@ -73,6 +73,11 @@ pub(crate) struct Retained {
 }
 
 impl Retained {
+    /// What the frame recorded changes from the one drawn last, or `None` if it looks the same.
+    pub(crate) fn damage(&self) -> Option<Bounds> {
+        self.next.damage(&self.drawn)
+    }
+
     /// The frame recorded has been drawn.
     pub(crate) fn drew(&mut self) {
         std::mem::swap(&mut self.drawn, &mut self.next);
@@ -132,6 +137,57 @@ pub(crate) fn render(
     Ok(out)
 }
 
+/// Brings `pixmap`, a buffer that holds frame `held` of `history` (0 if none), up to the frame recorded
+/// in `retained`, which changed `damage` from the last one drawn. Only the commands that meet what
+/// changed since `held` are played, within it. Returns the new frame's number, which the buffer now
+/// holds.
+pub(crate) fn draw_damaged(
+    pixmap: PixmapMut,
+    held: u64,
+    damage: Bounds,
+    retained: &mut Retained,
+    history: &mut History,
+    fonts: &mut DrawCache,
+    images: &Images,
+) -> u64 {
+    let frame = history.push(damage);
+    let area = history.since(held, Bounds::of_size(retained.next.size()));
+    play(pixmap, &retained.next, area, fonts, images);
+    retained.drew();
+    frame
+}
+
+/// How many frames back [`History`] remembers what changed.
+const AGES: usize = 4;
+
+/// What changed in each of the last frames drawn, to bring a buffer drawn a few frames ago up to date.
+#[derive(Debug, Default)]
+pub(crate) struct History {
+    /// How many frames have been drawn. Frame 0 is none.
+    frame: u64,
+    damage: [Bounds; AGES],
+}
+
+impl History {
+    /// A frame that changed `damage` is drawn. Returns its number.
+    fn push(&mut self, damage: Bounds) -> u64 {
+        self.frame += 1;
+        if let Some(d) = self.damage.get_mut(self.frame as usize % AGES) {
+            *d = damage;
+        }
+        self.frame
+    }
+
+    /// What a buffer that holds frame `held` (0 for none) needs drawn to hold the latest frame: what
+    /// changed in each frame since, or `all` if that is too long ago.
+    fn since(&self, held: u64, all: Bounds) -> Bounds {
+        if held == 0 || held > self.frame || self.frame - held >= AGES as u64 {
+            return all;
+        }
+        (held + 1..=self.frame).fold(Bounds::EMPTY, |d, f| d.union(self.damage.get(f as usize % AGES).copied().unwrap_or(all)))
+    }
+}
+
 /// What the state doesn't know yet about the lists a frame drew: how many rows each one shows. A count
 /// the state already has, give or take rounding, is not reported.
 pub(crate) fn list_changes(state: &State, out: &FrameOut) -> impl Iterator<Item = Event> {
@@ -155,6 +211,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_buffer_is_brought_up_to_date_with_what_changed_since_it_was_drawn() {
+        let all = Bounds::new(0, 0, 100, 100);
+        let mut h = History::default();
+        let row = |y| Bounds::new(0, y, 100, y + 1);
+        assert_eq!(h.push(row(1)), 1);
+        assert_eq!(h.push(row(2)), 2);
+        assert_eq!(h.push(row(3)), 3);
+        assert_eq!(h.since(0, all), all, "a new buffer");
+        assert_eq!(h.since(2, all), row(3));
+        assert_eq!(h.since(1, all), Bounds::new(0, 2, 100, 4));
+        for y in 4..10 {
+            h.push(row(y));
+        }
+        assert_eq!(h.since(9, all), Bounds::EMPTY);
+        assert_eq!(h.since(6, all), Bounds::new(0, 7, 100, 10));
+        assert_eq!(h.since(5, all), all, "too long ago");
+    }
+
+    #[test]
     fn orbit_stays_in_the_margin_and_moves_slowly() {
         let mut last = orbit(0);
         for minute in 1..2000u64 {
@@ -170,7 +245,8 @@ mod tests {
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing)]
 mod frame_times {
     //! How long a frame takes to draw at the Thor's size: a whole frame recorded and played straight into
-    //! a buffer, as a live view does; only the playing; and only the recording. Run it by hand:
+    //! a buffer, as a live view draws a frame that changed everywhere; only the playing; and recording a
+    //! frame and finding it unchanged, which is what every event costs a visible screen. Run it by hand:
     //! `cargo test --release -p clamshell-ui frame_times -- --ignored --nocapture`.
 
     use super::*;
@@ -216,9 +292,10 @@ mod frame_times {
                 let target = tiny_skia::PixmapMut::from_bytes(&mut buffer, size.0, size.1).unwrap();
                 render(target, &mut retained, at, screen, &s, &mut fonts, &mut images).unwrap();
                 let f = t.elapsed();
-                // Only recorded.
+                // Recorded again and found unchanged, which is all an event that changes nothing costs.
                 let t = Instant::now();
                 record(&mut retained, at, screen, &s, &mut fonts, &mut images);
+                assert_eq!(retained.damage(), None);
                 let c = t.elapsed();
                 // Only played.
                 let t = Instant::now();
@@ -233,7 +310,7 @@ mod frame_times {
                 }
             }
             let ms = |v: Vec<Duration>| median(v).as_secs_f64() * 1e3;
-            println!("{name:18} whole frame {:>7.3} ms   played {:>7.3} ms   recorded {:>7.3} ms", ms(full), ms(played), ms(checked),);
+            println!("{name:18} whole frame {:>7.3} ms   played {:>7.3} ms   recorded and compared {:>7.3} ms", ms(full), ms(played), ms(checked),);
         }
     }
 }

@@ -32,7 +32,8 @@ use clamshell_core::{Event, State};
 use smithay_client_toolkit::reexports::calloop::channel;
 
 use gfx::DrawCache;
-use render::{Placement, Retained};
+use gfx::images::Images;
+use render::{History, Placement, Retained};
 
 pub type Error = Box<dyn std::error::Error>;
 
@@ -69,7 +70,63 @@ pub fn snapshot(state: &State, screen: Screen, size: (u32, u32), scale: u32, pat
     let at = Placement { size_px: (size.0 * scale, size.1 * scale), scale, drift: (0, 0) };
     let mut pixmap = tiny_skia::Pixmap::new(at.size_px.0, at.size_px.1).ok_or("no pixmap")?;
     let mut retained = Retained::default();
-    let rendered = render::render(pixmap.as_mut(), &mut retained, at, screen, state, &mut DrawCache::load(), &mut crate::gfx::images::Images::synchronous())?;
+    let rendered = render::render(pixmap.as_mut(), &mut retained, at, screen, state, &mut DrawCache::load(), &mut Images::synchronous())?;
     pixmap.save_png(path)?;
     Ok(render::frame_events(state, &rendered))
+}
+
+/// Draws one screen frame after frame without Wayland, as a live view does: each frame is recorded and
+/// compared with the last, and only what changed is played, into two buffers used in turn. Each buffer
+/// is brought up to date with what changed since it was last drawn into. Tests use it to check that
+/// this gives the pixels a whole frame does.
+pub struct Frames {
+    screen: Screen,
+    at: Placement,
+    retained: Retained,
+    history: History,
+    /// The buffers, each with the frame it holds (0 for none).
+    buffers: [(tiny_skia::Pixmap, u64); 2],
+    /// The buffer that holds the latest frame.
+    latest: usize,
+    fonts: DrawCache,
+    images: Images,
+}
+
+impl Frames {
+    /// For `screen` at `size` pixels.
+    pub fn new(screen: Screen, size: (u32, u32)) -> Result<Frames, Error> {
+        let buffer = || tiny_skia::Pixmap::new(size.0, size.1).map(|p| (p, 0)).ok_or("no pixmap");
+        Ok(Frames {
+            screen,
+            at: Placement { size_px: size, scale: 1, drift: (0, 0) },
+            retained: Retained::default(),
+            history: History::default(),
+            buffers: [buffer()?, buffer()?],
+            latest: 1,
+            fonts: DrawCache::load(),
+            images: Images::synchronous(),
+        })
+    }
+
+    /// Draws `state` as the next frame. Returns the pixels shown, premultiplied RGBA, and the events a
+    /// live frame would send the state.
+    pub fn draw(&mut self, state: &State) -> (&[u8], Vec<Event>) {
+        let out = render::record(&mut self.retained, self.at, self.screen, state, &mut self.fonts, &mut self.images);
+        if let Some(damage) = self.retained.damage() {
+            let next = (self.latest + 1) % self.buffers.len();
+            if let Some((pixmap, held)) = self.buffers.get_mut(next) {
+                *held = render::draw_damaged(pixmap.as_mut(), *held, damage, &mut self.retained, &mut self.history, &mut self.fonts, &self.images);
+                self.latest = next;
+            }
+        }
+        (self.buffers.get(self.latest).map_or(&[], |(p, _)| p.data()), render::frame_events(state, &out))
+    }
+
+    /// Draws `state` whole, as a fresh view's first frame. Returns its pixels.
+    pub fn whole(&mut self, state: &State) -> Result<&[u8], Error> {
+        let (pixmap, _) = self.buffers.first_mut().ok_or("no buffer")?;
+        let mut retained = Retained::default();
+        render::render(pixmap.as_mut(), &mut retained, self.at, self.screen, state, &mut self.fonts, &mut self.images)?;
+        Ok(pixmap.data())
+    }
 }

@@ -1,5 +1,6 @@
 //! Drawing a frame must not touch the heap once the caches are warm, that is, once glyphs are rasterized
-//! and buffers sized. The test counts allocations with an allocator that tallies this thread's calls.
+//! and buffers sized: recording it, comparing it with the last, and playing what changed. The test
+//! counts allocations with an allocator that tallies this thread's calls.
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
@@ -23,7 +24,7 @@ use clamshell_core::{
 
 use crate::Screen;
 use crate::gfx::DrawCache;
-use crate::render::{Placement, Retained, render};
+use crate::render::{History, Placement, Retained, draw_damaged, record};
 
 thread_local! {
     static ALLOCS: Cell<usize> = const { Cell::new(0) };
@@ -89,6 +90,31 @@ fn wifi_reading() -> Event {
     }))
 }
 
+/// A screen drawn frame after frame into one pixmap, as a live view does.
+struct Screen1 {
+    retained: Retained,
+    history: History,
+    pixmap: tiny_skia::Pixmap,
+    held: u64,
+    at: Placement,
+    screen: Screen,
+}
+
+impl Screen1 {
+    fn new(screen: Screen, at: Placement) -> Self {
+        let pixmap = tiny_skia::Pixmap::new(at.size_px.0, at.size_px.1).expect("pixmap");
+        Screen1 { retained: Retained::default(), history: History::default(), pixmap, held: 0, at, screen }
+    }
+
+    /// Records `state`, and plays what changed since the last frame.
+    fn draw(&mut self, state: &State, cache: &mut DrawCache, images: &mut crate::gfx::images::Images) {
+        record(&mut self.retained, self.at, self.screen, state, cache, images);
+        if let Some(damage) = self.retained.damage() {
+            self.held = draw_damaged(self.pixmap.as_mut(), self.held, damage, &mut self.retained, &mut self.history, cache, images);
+        }
+    }
+}
+
 fn account() -> Account {
     Account { available: true, password: true, ssh: true }
 }
@@ -99,10 +125,8 @@ fn account() -> Account {
 fn warm_frames_do_not_allocate() {
     let mut cache = DrawCache::load();
     let mut images = crate::gfx::images::Images::synchronous();
-    let (mut top, mut bottom) = (Retained::default(), Retained::default());
-    let (mut top_px, mut bottom_px) = (tiny_skia::Pixmap::new(1920, 1080).expect("pixmap"), tiny_skia::Pixmap::new(1240, 1080).expect("pixmap"));
-    let top_at = Placement { size_px: (1920, 1080), scale: 1, drift: (1, -2) };
-    let bottom_at = Placement { size_px: (1240, 1080), scale: 1, drift: (-3, 0) };
+    let mut top = Screen1::new(Screen::Top, Placement { size_px: (1920, 1080), scale: 1, drift: (1, -2) });
+    let mut bottom = Screen1::new(Screen::Bottom, Placement { size_px: (1240, 1080), scale: 1, drift: (-3, 0) });
 
     let cases: Vec<(&str, Vec<Event>)> = vec![
         ("sysinfo", vec![]),
@@ -394,28 +418,41 @@ fn warm_frames_do_not_allocate() {
         ("battery, a program's menu", |s| s.sys().spender_menu().is_some()),
         ("time", |s| s.bottom().tab() == Tab::Time),
     ];
-    for (name, events) in cases {
+    let base = || {
         // The Nintendo layout, with a layer added.
         let mut keymaps = Keymaps::initial();
         keymaps.get_mut(1).and_then(|k| k.add_layer("aim"));
         // Run as the device's own session, because tray icons are followed only there.
         let mut state = State::new(Init { library: clamshell_library::demo::library(), keymaps, device_session: true, ..Init::default() });
         state.apply(Event::tick(1_700_000_000), &mut Vec::new());
+        // The time tab's zone in every case, since a change of zone from one case to the next is read
+        // anew.
+        state.apply(Event::Reading(Reading::Time(TimeZones { current: Some("Europe/Oslo".into()), ..TimeZones::default() })), &mut Vec::new());
+        state
+    };
+    let mut last = base();
+    for (name, events) in cases {
+        let mut state = base();
         for event in events {
             state.apply(event, &mut Vec::new());
         }
         if let Some((_, check)) = reached.iter().find(|(n, _)| *n == name) {
             assert!(check(&state), "{name}: not reached");
         }
+        // Each round goes back to the last case's state and then to this one's, so that both frames
+        // change part of the screen.
         for round in 0..3 {
             let before = allocs();
-            render(top_px.as_mut(), &mut top, top_at, Screen::Top, &state, &mut cache, &mut images).expect("top");
-            render(bottom_px.as_mut(), &mut bottom, bottom_at, Screen::Bottom, &state, &mut cache, &mut images).expect("bottom");
+            for s in [&last, &state] {
+                top.draw(s, &mut cache, &mut images);
+                bottom.draw(s, &mut cache, &mut images);
+            }
             let n = allocs() - before;
             // The first rounds fill the glyph cache and size the vectors.
             if round == 2 {
                 assert_eq!(n, 0, "{name}: {n} allocations in a warm frame");
             }
         }
+        last = state;
     }
 }
