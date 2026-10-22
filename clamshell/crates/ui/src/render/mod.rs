@@ -1,14 +1,15 @@
-//! Drawing one frame of a screen, the same for a live view (straight into the compositor's shared buffer)
-//! and a snapshot (into a pixmap of its own).
+//! Drawing one frame of a screen. It works the same for a live view, which draws straight into the
+//! compositor's shared buffer, and for a snapshot, which draws into a pixmap of its own.
 //!
 //! Coordinates, from the inside out:
-//! - Layout units: logical pixels from the top left of the area inside the burn-in margin. The views
+//! - Layout units are logical pixels from the top left of the area inside the burn-in margin. The views
 //!   draw and place their targets in these.
-//! - Surface pixels: logical pixels of the surface (what Wayland reports for touch and the pointer).
-//!   Layout units moved by the burn-in offset; targets are moved into these once the frame is drawn.
-//! - Buffer pixels: surface pixels times the scale (what the pixmap has).
-//! - Screen pixels: the touchscreen's, for the virtual touchpad: buffer pixels of the second screen,
-//!   which fills its output.
+//! - Surface pixels are the surface's logical pixels, which Wayland reports for touch and the pointer.
+//!   They are layout units moved by the burn-in offset. Targets are moved into these once the frame is
+//!   drawn.
+//! - Buffer pixels are surface pixels times the scale, as the pixmap has them.
+//! - Screen pixels are the touchscreen's, used for the virtual touchpad. They are the buffer pixels of
+//!   the second screen, which fills its output.
 
 #[cfg(test)]
 #[allow(unsafe_code, clippy::unwrap_used, clippy::expect_used)]
@@ -23,11 +24,11 @@ use crate::toolkit::{Frame, FrameOut, Scratch, Target};
 use crate::views;
 use crate::{Error, Screen};
 
-/// OLED burn-in protection: every screen is laid out inside a black margin of MARGIN buffer pixels on
-/// each side, and drawn moved within it by an offset that drifts slowly (about a pixel a minute, along an
-/// irregular path within ±MARGIN), so static elements like the bar's icons and the clock don't sit on the
-/// same pixels for hours, and nothing ever reaches the edge or is cut off. Tap areas move with the
-/// picture.
+/// OLED burn-in protection. Every screen is laid out inside a black margin of MARGIN buffer pixels on
+/// each side, and drawn moved within it by an offset that drifts slowly, about a pixel a minute along an
+/// irregular path within ±MARGIN. This keeps static elements such as the bar's icons and the clock from
+/// sitting on the same pixels for hours, while nothing reaches the edge or is cut off. Tap areas move
+/// with the picture.
 pub(crate) const MARGIN: u32 = 4;
 
 /// The burn-in drift at `unix_secs`, in buffer pixels.
@@ -40,7 +41,7 @@ pub(crate) fn orbit(unix_secs: u64) -> (i32, i32) {
     (dx, dy)
 }
 
-/// The layout's size (inside the margin, in layout units), and the buffer-pixel offset to draw it at
+/// The layout's size inside the margin, in layout units, and the offset in buffer pixels to draw it at
 /// for a drift of `(dx, dy)`.
 pub(crate) fn inset(size_px: (u32, u32), scale: u32, (dx, dy): (i32, i32)) -> ((f32, f32), (i32, i32)) {
     let scale = scale.max(1) as f32;
@@ -57,15 +58,15 @@ pub(crate) struct Placement {
     pub drift: (i32, i32),
 }
 
-/// What a screen keeps from its last frame: what can be tapped in it (in surface pixels), and kept text.
+/// What a screen keeps from its last frame: what can be tapped in it, in surface pixels, and kept text.
 #[derive(Default)]
 pub(crate) struct Retained {
     pub targets: Vec<Target>,
     pub scratch: Scratch,
 }
 
-/// Draws `screen` for `state` into `pixmap` (`at`'s size), and moves its targets and the touchpad area
-/// into surface pixels. The whole frame is drawn, onto black.
+/// Draws `screen` for `state` into `pixmap`, which must be `at`'s size, and moves its targets and the
+/// touchpad area into surface pixels. The whole frame is drawn, onto black.
 pub(crate) fn render(
     mut pixmap: PixmapMut,
     retained: &mut Retained,
@@ -79,8 +80,8 @@ pub(crate) fn render(
     if (pixmap.width(), pixmap.height()) != (w, h) {
         return Err(format!("a {}x{} pixmap for a {w}x{h} frame", pixmap.width(), pixmap.height()).into());
     }
-    // Black, all of it: the views paint on black (no background of their own), and a buffer reused
-    // holds an older frame.
+    // Fill it all with black. The views paint on black and have no background of their own, and a
+    // reused buffer still holds an older frame.
     pixmap.fill(crate::toolkit::style::BG.into());
     let scale = at.scale.max(1);
     let ((lw, lh), offset) = inset((w, h), scale, at.drift);
@@ -109,8 +110,8 @@ pub(crate) fn render(
     Ok(out)
 }
 
-/// What a frame says about the lists it drew that the state doesn't know yet: how many rows each
-/// shows (as the state has it, give or take rounding).
+/// What the state doesn't know yet about the lists a frame drew: how many rows each one shows. A count
+/// the state already has, give or take rounding, is not reported.
 pub(crate) fn list_changes(state: &State, out: &FrameOut) -> impl Iterator<Item = Event> {
     ListId::ALL.into_iter().filter_map(move |list| {
         let rows = out.lists.get(list.index()).copied().flatten()?;
@@ -119,8 +120,8 @@ pub(crate) fn list_changes(state: &State, out: &FrameOut) -> impl Iterator<Item 
     })
 }
 
-/// What a frame drawn without Wayland reports back to the state, as a live one would: shelf's rows, the
-/// lists' visible rows.
+/// What a frame drawn without Wayland reports back to the state, as a live frame would: shelf's rows and
+/// the lists' visible rows.
 pub(crate) fn frame_events(state: &State, out: &FrameOut) -> Vec<Event> {
     let mut events: Vec<Event> = out.list_rows.filter(|&r| r != state.shelf().rows()).map(|r| ShelfEvent::Rows(r).into()).into_iter().collect();
     events.extend(list_changes(state, out));
@@ -146,8 +147,9 @@ mod tests {
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing)]
 mod frame_times {
-    //! How long a frame takes to draw, at the Thor's size: straight into a buffer (what a live view does),
-    //! and drawn into a pixmap of its own then copied into a buffer (what it did before). Run by hand:
+    //! How long a frame takes to draw at the Thor's size. It measures drawing straight into a buffer, as
+    //! a live view does, and drawing into a pixmap of its own and then copying it into a buffer, as a
+    //! live view did before. Run it by hand:
     //! `cargo test --release -p clamshell-ui frame_times -- --ignored --nocapture`.
 
     use super::*;
@@ -197,7 +199,7 @@ mod frame_times {
                 render(pixmap.as_mut(), &mut retained, at, screen, &s, &mut fonts, &mut images).unwrap();
                 buffer.copy_from_slice(pixmap.data());
                 let c = t.elapsed();
-                // (The first rounds warm the caches.)
+                // The first rounds warm the caches.
                 if round >= 20 {
                     direct.push(d);
                     copied.push(c);

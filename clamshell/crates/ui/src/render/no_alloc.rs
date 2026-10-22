@@ -1,5 +1,5 @@
-//! Drawing a frame must not touch the heap once caches are warm (glyphs rasterized, buffers sized):
-//! counted with an allocator that tallies this thread's allocations.
+//! Drawing a frame must not touch the heap once the caches are warm, that is, once glyphs are rasterized
+//! and buffers sized. The test counts allocations with an allocator that tallies this thread's calls.
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
@@ -31,7 +31,7 @@ thread_local! {
 
 struct Counting;
 
-// SAFETY: forwards to the system allocator unchanged; only counts calls.
+// SAFETY: forwards to the system allocator unchanged and only counts the calls.
 unsafe impl GlobalAlloc for Counting {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let _ = ALLOCS.try_with(|n| n.set(n.get() + 1));
@@ -64,7 +64,7 @@ fn key(k: Key) -> Event {
     Event::Pointer(PointerEvent::Activate(Id::Key(keyboard::find(k).expect("key on the layout"))))
 }
 
-/// Shelf's Tools collection opened and its Device entry run: the Device view.
+/// Opens the shelf's Tools collection and runs its Device entry, which shows the Device view.
 fn device() -> Vec<Event> {
     let library = clamshell_library::demo::library();
     let tools = library.collections.iter().position(|c| c.name == "Tools").unwrap_or(0);
@@ -93,8 +93,8 @@ fn account() -> Account {
     Account { available: true, password: true, ssh: true }
 }
 
-/// Each case from the same base state (the demo library, a fixed time), so they don't depend on each
-/// other.
+/// Each case starts from the same base state, the demo library at a fixed time, so that the cases don't
+/// depend on each other.
 #[test]
 fn warm_frames_do_not_allocate() {
     let mut cache = DrawCache::load();
@@ -313,7 +313,7 @@ fn warm_frames_do_not_allocate() {
             "keymap name editor",
             vec![tap(Id::Tab(Tab::Settings)), tap(Id::Settings(SettingsId::Tile(Setting::Keymap))), tap(Id::Keymap(KeymapId::New)), key(Key::Char('a'))],
         ),
-        // (The demo's TV tab: its series, open.)
+        // The demo's TV tab with one of its series open.
         ("shelf, an open group", vec![Event::Shelf(ShelfEvent::Rows(8)), tap(Id::Shelf(ShelfId::Collection(2))), tap(Id::Shelf(ShelfId::Launch))]),
         (
             "shelf, a video",
@@ -382,7 +382,8 @@ fn warm_frames_do_not_allocate() {
             ],
         ),
     ];
-    // What the cases that are easy to get wrong must have reached, to test the screen they are named for.
+    // For the cases that are easy to get wrong: the state each must reach, so that it tests the screen it
+    // is named for.
     type Reached = fn(&State) -> bool;
     let reached: [(&str, Reached); 7] = [
         ("keymap name editor", |s| s.bottom().editor().is_some()),
@@ -394,10 +395,10 @@ fn warm_frames_do_not_allocate() {
         ("time", |s| s.bottom().tab() == Tab::Time),
     ];
     for (name, events) in cases {
-        // (The Nintendo layout with a layer added.)
+        // The Nintendo layout, with a layer added.
         let mut keymaps = Keymaps::initial();
         keymaps.get_mut(1).and_then(|k| k.add_layer("aim"));
-        // (As the device's own session: tray icons are followed only there.)
+        // Run as the device's own session, because tray icons are followed only there.
         let mut state = State::new(Init { library: clamshell_library::demo::library(), keymaps, device_session: true, ..Init::default() });
         state.apply(Event::tick(1_700_000_000));
         for event in events {
