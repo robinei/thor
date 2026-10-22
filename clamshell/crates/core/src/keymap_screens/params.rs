@@ -10,7 +10,7 @@ impl State {
         };
         // (Its value now under the finger, as the bar's sliders have it.)
         let range = param.range();
-        self.bottom.keymap_edit.slider = Some(Slider::ranged(Control::Param(param), param.get(&b), *range.start(), *range.end(), x, width));
+        self.keymap_screens.edit.slider = Some(Slider::ranged(Control::Param(param), param.get(&b), *range.start(), *range.end(), x, width));
     }
 
     /// What the selected input's parameters start from in the layer and actuation shown: its binding
@@ -18,7 +18,7 @@ impl State {
     /// or double without a binding has none.
     pub fn param_base(&self, id: u16, input: Input) -> Option<Binding> {
         let k = self.keymaps.get(id);
-        let act = self.bottom.keymap_edit.act;
+        let act = self.keymap_screens.edit.act;
         let shown = self.layers_shown();
         let found = k.and_then(|k| k.lookup_of(input, act, shown.as_slice())).copied();
         match act {
@@ -30,18 +30,18 @@ impl State {
     /// The selected input and what its parameters start from, if `param` applies to it (on the edit
     /// screen).
     pub(super) fn param_binding(&self, param: Param) -> Option<(u16, Input, Binding)> {
-        let Some(Screen::Edit(id)) = self.bottom.keymaps else {
+        let Some(Screen::Edit(id)) = self.keymap_screens.open else {
             return None;
         };
-        let input = self.bottom.keymap_edit.selected?;
+        let input = self.keymap_screens.edit.selected?;
         let b = self.param_base(id, input)?;
-        param.applies_to(input, b.output, self.bottom.keymap_edit.act).then_some((id, input, b))
+        param.applies_to(input, b.output, self.keymap_screens.edit.act).then_some((id, input, b))
     }
 
     /// Stores `input`'s changed parameters in the layer shown. In Base, parameters back to how the pad
     /// has them remove the binding instead. Returns whether anything changed.
     pub(super) fn set_tuned(&mut self, id: u16, input: Input, b: Binding) -> bool {
-        let EditView { layer, act, .. } = self.bottom.keymap_edit;
+        let EditView { layer, act, .. } = self.keymap_screens.edit;
         let plain = layer == Layer::BASE && act == Actuation::Press && as_on_the_pad(input).map(|o| Binding::of(input, o)) == Some(b);
         self.keymaps.get_mut(id).is_some_and(|k| k.set_of(layer, input, act, (!plain).then_some(b)))
     }
@@ -49,7 +49,7 @@ impl State {
     /// The parameter's slider moved: the binding follows at once (the pad gets the keymap as it changes),
     /// saved when the finger lifts. Whether it changed.
     pub(crate) fn param_slide_to(&mut self, x: f32) -> bool {
-        let Some(slider) = self.bottom.keymap_edit.slider else {
+        let Some(slider) = self.keymap_screens.edit.slider else {
             return false;
         };
         let Control::Param(param) = slider.control else {
@@ -63,13 +63,13 @@ impl State {
         if value == slider.value {
             return false;
         }
-        self.bottom.keymap_edit.slider = Some(Slider { value, moved: true, ..slider });
+        self.keymap_screens.edit.slider = Some(Slider { value, moved: true, ..slider });
         self.set_tuned(id, input, b)
     }
 
     /// The finger lifted: the keymaps saved, if the slider changed anything.
     pub(crate) fn param_slide_end(&mut self) -> Vec<Effect> {
-        match self.bottom.keymap_edit.slider.take() {
+        match self.keymap_screens.edit.slider.take() {
             Some(s) if s.moved => vec![self.save_keymaps()],
             _ => vec![],
         }

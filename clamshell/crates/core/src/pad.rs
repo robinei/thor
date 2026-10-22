@@ -180,6 +180,21 @@ impl Pad {
     }
 }
 
+impl crate::State {
+    /// What the pad's Back button does on ClamShell's screens, as the target it activates: in the editor,
+    /// Cancel; on the keymaps' screens, back one (picking a control: give up). (Elsewhere nothing has a
+    /// back of its own. On the edit screen while the pad listens, Back comes as an input to remap.)
+    pub fn pad_back(&self) -> Option<crate::Id> {
+        if self.bottom.editor().is_some() {
+            return Some(crate::Id::Editor(crate::EditorId::Cancel));
+        }
+        if (self.dock.menu.is_some() || self.dock.moving.is_some()) && self.bottom.tab == crate::Tab::Dock {
+            return Some(crate::Id::Dock(crate::DockId::Back));
+        }
+        self.keymaps_shown().map(|_| crate::Id::Keymap(crate::KeymapId::Back))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::testkit::*;

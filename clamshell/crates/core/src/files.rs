@@ -11,7 +11,7 @@ use clamshell_library::BrowseKind;
 
 use crate::editor::{Editor, Purpose};
 use crate::effect::Effect;
-use crate::hardware::NoticeKind;
+use crate::notice::NoticeKind;
 use crate::{Entry, State, Tab};
 
 /// What can be done to a browsed entry, or in the folder open.

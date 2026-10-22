@@ -17,7 +17,7 @@ pub(super) const UNDO_MAX: usize = 50;
 impl State {
     /// The keymaps saved; a change to the keymap being edited is a step Undo goes back over.
     pub(crate) fn save_keymaps(&mut self) -> Effect {
-        let undo = &mut self.bottom.keymap_undo;
+        let undo = &mut self.keymap_screens.undo;
         if let Some(last) = undo.last.as_ref()
             && let Some(now) = self.keymaps.get(last.id)
             && now != last
@@ -38,13 +38,13 @@ impl State {
 
     /// Whether the edit screen's Undo has a change to go back over.
     pub fn can_undo(&self) -> bool {
-        !self.bottom.keymap_undo.steps.is_empty()
+        !self.keymap_screens.undo.steps.is_empty()
     }
 
     /// Undo: the keymap being edited as it was before its last change (the layer shown Base if that one
     /// is gone).
     pub(super) fn undo(&mut self, id: u16) -> Vec<Effect> {
-        let undo = &mut self.bottom.keymap_undo;
+        let undo = &mut self.keymap_screens.undo;
         // (Only the keymap being edited has steps; one of another is left, not dropped.)
         let Some(before) = undo.steps.pop_back_if(|k| k.id == id) else {
             return vec![];
@@ -53,7 +53,7 @@ impl State {
         if let Some(k) = self.keymaps.get_mut(id) {
             *k = before;
         }
-        let view = &mut self.bottom.keymap_edit;
+        let view = &mut self.keymap_screens.edit;
         if self.keymaps.get(id).is_none_or(|k| k.layer_name(view.layer).is_none()) {
             view.layer = Layer::BASE;
         }
@@ -63,8 +63,8 @@ impl State {
 
     /// The edit screen of keymap `id`, as first opened: Base, nothing selected.
     pub(super) fn open_edit(&mut self, id: u16) {
-        self.bottom.keymaps = Some(Screen::Edit(id));
-        self.bottom.keymap_edit = EditView::default();
-        self.bottom.keymap_undo = Undo { last: self.keymaps.get(id).cloned(), steps: VecDeque::new() };
+        self.keymap_screens.open = Some(Screen::Edit(id));
+        self.keymap_screens.edit = EditView::default();
+        self.keymap_screens.undo = Undo { last: self.keymaps.get(id).cloned(), steps: VecDeque::new() };
     }
 }

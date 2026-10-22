@@ -9,7 +9,7 @@ use crate::State;
 use crate::account::{AccountCommand, PasswordStep};
 use crate::editor::{Editor, Purpose};
 use crate::effect::{Effect, Save, WindowCommand};
-use crate::hardware::NoticeKind;
+use crate::notice::NoticeKind;
 use crate::secret::Secret;
 use crate::sticks::{Calibrations, Progress, Sticks};
 use crate::tab::Tab;

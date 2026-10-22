@@ -12,7 +12,7 @@ use crate::State;
 use crate::effect::{Effect, Save, WindowCommand};
 use crate::id::DockId;
 use crate::keymap::Dir;
-use crate::windows::{SHELF_APP_ID, Window};
+use crate::windows::Window;
 
 /// The dock's tiles in a row.
 pub const DOCK_COLUMNS: usize = 4;
@@ -228,37 +228,6 @@ impl State {
         let item = self.dock.items.remove(at);
         self.dock.items.insert(to, item);
         vec![Effect::Save(Save::Dock(self.dock.pinned_ids()))]
-    }
-
-    /// The window Home with B acts on: the one in front on the top screen (not shelf's); with none
-    /// there, the one in view on the bottom screen while it shows the windows moved there.
-    fn home_b_window(&self) -> Option<&Window> {
-        let windows = &self.session.windows;
-        windows
-            .iter()
-            .find(|w| w.focused && !w.down && w.app_id != SHELF_APP_ID)
-            .or_else(|| self.bottom_shows_windows().then(|| windows.iter().filter(|w| w.down).max_by_key(|w| w.visible)).flatten())
-    }
-
-    /// Home with B, let go at once: that window (see [`State::home_b_window`]) closes, politely.
-    pub(crate) fn close_front_window(&self) -> Vec<Effect> {
-        match self.home_b_window() {
-            Some(w) => vec![Effect::Window(WindowCommand::Close(vec![w.id]))],
-            None => vec![],
-        }
-    }
-
-    /// Home with B, held: that window's entry quits, as its menu's Quit would; any other window just
-    /// closes.
-    pub(crate) fn quit_front(&mut self) -> Vec<Effect> {
-        let Some(w) = self.home_b_window() else {
-            return vec![];
-        };
-        let (id, entry) = (w.id, self.session.running_of(w).map(|r| r.id.clone()));
-        match entry {
-            Some(entry) => self.quit(&entry),
-            None => vec![Effect::Window(WindowCommand::Close(vec![id]))],
-        }
     }
 }
 

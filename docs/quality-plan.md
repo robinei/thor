@@ -92,8 +92,9 @@ Helpers that exist but are bypassed:
 - [x] Keymap parameters in one table: `Param::default_for` reads `Binding::to`'s defaults; `Target`'s
       outputs are `Target::To(Output)`. (`Stroke` stays beside `Chord`: a typed stroke always has a key,
       a modifier's too; a chord's may be none.)
-- [ ] `State`: notices out of `hardware.rs` into `notice.rs`; Home combos into `hardware.rs`; the keymap
-      screens' state out of `Bottom` into its own struct; `PowerProfile` beside the settings.
+- [x] `State`: notices out of `hardware.rs` into `notice.rs`; Home combos into `hardware.rs`; `pad_back` into
+      `pad.rs`; the keymap screens' state out of `Bottom` into `keymap_screens::Screens`; `PowerProfile`
+      beside the settings.
 - [x] Duplicated logic in core: `editor.rs` `words()` / `count_env()`; `levels.rs:247-263` and
       `backlights()`/`backlight_rows()`; the six `if changed { save_keymaps }`; identical match arms
       (`keymap_screens/mod.rs:419/428,610/614`); `panel.rs:47-52,77-83`.

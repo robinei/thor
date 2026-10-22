@@ -161,7 +161,7 @@ impl State {
         let effects = self.launch(game);
         // (Said at once: a start may take a while, Android's first, a Steam game's, Proton's setup.)
         if let Some(title) = title.filter(|_| effects.iter().any(|e| matches!(e, Effect::Launch { .. }))) {
-            self.notify(crate::hardware::NoticeKind::Starting(title));
+            self.notify(crate::notice::NoticeKind::Starting(title));
         }
         effects
     }
@@ -185,7 +185,7 @@ impl State {
         if let Some(show) = self.activate_tray(id) {
             return vec![show];
         }
-        self.notify(crate::hardware::NoticeKind::NoWindow(title));
+        self.notify(crate::notice::NoticeKind::NoWindow(title));
         vec![]
     }
 
@@ -268,7 +268,7 @@ impl State {
             }
         }
         for title in unstarted {
-            self.notify(crate::hardware::NoticeKind::NotStarted(title));
+            self.notify(crate::notice::NoticeKind::NotStarted(title));
         }
         for (id, origin, has) in handed {
             if let Some(r) = self.session.running.iter_mut().find(|r| r.id == id) {
@@ -305,7 +305,7 @@ impl State {
             // (Nothing to wait for: it didn't start, and says so.)
             let title = self.shelf.game(&game).map_or_else(|| game.to_string(), |g| g.title.clone());
             if self.session.running(&game).is_none() {
-                self.notify(crate::hardware::NoticeKind::NotStarted(title));
+                self.notify(crate::notice::NoticeKind::NotStarted(title));
             }
             return;
         };

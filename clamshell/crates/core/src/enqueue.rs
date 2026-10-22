@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use clamshell_library::RunnerOf;
 
-use crate::hardware::NoticeKind;
+use crate::notice::NoticeKind;
 use crate::running::Running;
 use crate::{Effect, State};
 

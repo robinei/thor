@@ -17,8 +17,8 @@ use std::sync::Arc;
 
 use crate::State;
 use crate::effect::{Dirty, Effect, Save, WindowCommand};
-use crate::hardware::NoticeKind;
 use crate::instance::Instance;
+use crate::notice::NoticeKind;
 use crate::settings::BottomWhenIdle;
 use crate::windows::Window;
 

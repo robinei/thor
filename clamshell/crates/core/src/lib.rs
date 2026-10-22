@@ -34,6 +34,7 @@ pub mod keymap_screens;
 pub mod levels;
 pub mod metrics;
 mod names;
+pub mod notice;
 mod pad;
 mod panel;
 mod pointer;
@@ -148,6 +149,8 @@ pub struct State {
     settings: Settings,
     keyboard: Keyboard,
     keymaps: keymap::Keymaps,
+    /// The keymaps' screens over the settings tab (see [`keymap_screens`]).
+    keymap_screens: keymap_screens::Screens,
     /// The keymap in force as last sent to the pad.
     keymap_sent: Option<keymap::Keymap>,
     lists: Lists,
@@ -445,7 +448,7 @@ impl State {
                 let problems = &library.problems;
                 if !problems.is_empty() && *problems != self.shelf.library().problems {
                     let first = problems.first().cloned().unwrap_or_default();
-                    self.notify(hardware::NoticeKind::Problems(first, problems.len()));
+                    self.notify(notice::NoticeKind::Problems(first, problems.len()));
                 }
                 if self.shelf.reload(*library) {
                     self.moved_collection();
@@ -561,7 +564,7 @@ impl State {
                 (Dirty::TOP, vec![Effect::Window(WindowCommand::BottomPower(!self.bottom_off()))])
             }
             Event::GyroCalibrated(ok) => {
-                self.notify(crate::hardware::NoticeKind::Gyro(Some(ok)));
+                self.notify(crate::notice::NoticeKind::Gyro(Some(ok)));
                 (Dirty::BOTTOM, vec![])
             }
             Event::AccountChanged(result) => {
@@ -1259,7 +1262,7 @@ mod tests {
         };
         let notice = |s: &State| s.bottom().notice().map(|n| n.what.clone());
         s.apply(with(&["grim isn't installed: no screenshots", "x: no launch command"]));
-        assert_eq!(notice(&s), Some(hardware::NoticeKind::Problems("grim isn't installed: no screenshots".into(), 2)));
+        assert_eq!(notice(&s), Some(notice::NoticeKind::Problems("grim isn't installed: no screenshots".into(), 2)));
         s.apply(Event::tick(10_000));
         s.apply(with(&["grim isn't installed: no screenshots", "x: no launch command"]));
         assert_eq!(notice(&s), None, "the same again: not said");
@@ -1269,7 +1272,7 @@ mod tests {
     fn a_launch_says_it_is_starting() {
         let mut s = state();
         launch(&mut s, "zelda-lttp");
-        assert!(matches!(s.bottom().notice().map(|n| &n.what), Some(hardware::NoticeKind::Starting(t)) if t == "A Link to the Past"));
+        assert!(matches!(s.bottom().notice().map(|n| &n.what), Some(notice::NoticeKind::Starting(t)) if t == "A Link to the Past"));
     }
 
     #[test]
@@ -1278,14 +1281,14 @@ mod tests {
         let mut s = state();
         launch(&mut s, "zelda-lttp");
         crate::testkit::end(&mut s, "zelda-lttp");
-        assert!(matches!(notice(&s), Some(hardware::NoticeKind::NotStarted(_))), "{:?}", notice(&s));
+        assert!(matches!(notice(&s), Some(notice::NoticeKind::NotStarted(_))), "{:?}", notice(&s));
         // One that showed a window and ended: nothing said.
         let mut s = state();
         let zelda = launch(&mut s, "zelda-lttp");
         s.apply(Event::Windows(vec![Window { unit: zelda.unit(), visible: true, ..win(5, "zelda3", &zelda.workspace(), true) }]));
         s.apply(Event::Windows(vec![]));
         crate::testkit::end(&mut s, "zelda-lttp");
-        assert!(!matches!(notice(&s), Some(hardware::NoticeKind::NotStarted(_))), "{:?}", notice(&s));
+        assert!(!matches!(notice(&s), Some(notice::NoticeKind::NotStarted(_))), "{:?}", notice(&s));
     }
 
     #[test]
@@ -1295,7 +1298,7 @@ mod tests {
         tap(&mut s, game("zelda-lttp"));
         s.apply(Event::Launch(LaunchEvent::LaunchFailed("zelda-lttp".into())));
         let notice = s.bottom().notice().map(|n| n.what.clone());
-        assert!(matches!(&notice, Some(hardware::NoticeKind::NotStarted(t)) if t == "A Link to the Past"), "{notice:?}");
+        assert!(matches!(&notice, Some(notice::NoticeKind::NotStarted(t)) if t == "A Link to the Past"), "{notice:?}");
         assert!(s.session().running("zelda-lttp").is_none());
     }
 

@@ -103,12 +103,6 @@ pub struct Bottom {
     pub(crate) editors: Vec<Editor>,
     /// What the settings panel edits (global whenever there is no game in context).
     pub(crate) scope: Scope,
-    /// The keymaps' screen open over the settings tab (see [`crate::keymap_screens`]).
-    pub(crate) keymaps: Option<crate::keymap_screens::Screen>,
-    /// The edit screen's layer, selection and confirmation.
-    pub(crate) keymap_edit: crate::keymap_screens::EditView,
-    /// The keymap being edited as it was before each change since its edit screen opened (Undo).
-    pub(crate) keymap_undo: crate::keymap_screens::Undo,
     /// The dark second screen was tapped awake (until the next game).
     pub(crate) woken: bool,
     /// What the bottom screen shows (ClamShell's view or a window moved down), and whether it is off.
@@ -116,7 +110,7 @@ pub struct Bottom {
     /// What the time tab shows: its main page, the regions, or a region's zones.
     pub(crate) time_page: crate::time::TimePage,
     /// What a key just did (a level, a screenshot), shown under the bar for a moment.
-    pub(crate) notice: Option<crate::hardware::Notice>,
+    pub(crate) notice: Option<crate::notice::Notice>,
     /// The area below the bar points (see [`crate::touch`]).
     pub(crate) pointing: bool,
 }
@@ -154,7 +148,7 @@ impl Bottom {
         Some(self.editors.remove(i))
     }
 
-    pub fn notice(&self) -> Option<&crate::hardware::Notice> {
+    pub fn notice(&self) -> Option<&crate::notice::Notice> {
         self.notice.as_ref()
     }
 

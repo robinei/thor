@@ -5,7 +5,7 @@
 //! as unavailable.
 
 use crate::State;
-use crate::hardware::NoticeKind;
+use crate::notice::NoticeKind;
 use crate::secret::Secret;
 
 /// The account as the helper read it.

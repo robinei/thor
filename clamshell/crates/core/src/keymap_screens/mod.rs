@@ -125,6 +125,15 @@ pub fn picked(source: Input, tapped: Input) -> Option<Output> {
     out.fits(kind).then_some(out)
 }
 
+/// The keymaps' screens' state: the screen open over the settings tab, the edit screen's view, and its
+/// Undo.
+#[derive(Debug, Clone, Default)]
+pub struct Screens {
+    pub(crate) open: Option<Screen>,
+    pub(crate) edit: EditView,
+    pub(crate) undo: Undo,
+}
+
 /// The edit screen's own state, kept while its input's screens are open: the layer shown and edited, the
 /// input selected (shown in the panel) and which of its actuations, whether "No changes" waits for its
 /// confirmation, and the slider of one of its parameters while a finger is on it.
@@ -168,30 +177,17 @@ impl State {
 
     /// The keymaps' screen open over the settings tab, if one is.
     pub fn keymap_screen(&self) -> Option<Screen> {
-        self.bottom.keymaps
+        self.keymap_screens.open
     }
 
     /// The edit screen's layer, selection and confirmation.
     pub fn keymap_edit(&self) -> EditView {
-        self.bottom.keymap_edit
-    }
-
-    /// What the pad's Back button does on ClamShell's screens, as the target it activates: in the editor,
-    /// Cancel; on the keymaps' screens, back one (picking a control: give up). (Elsewhere nothing has a
-    /// back of its own. On the edit screen while the pad listens, Back comes as an input to remap.)
-    pub fn pad_back(&self) -> Option<crate::Id> {
-        if self.bottom.editor().is_some() {
-            return Some(crate::Id::Editor(crate::EditorId::Cancel));
-        }
-        if (self.dock.menu.is_some() || self.dock.moving.is_some()) && self.bottom.tab == crate::Tab::Dock {
-            return Some(crate::Id::Dock(crate::DockId::Back));
-        }
-        self.keymaps_shown().map(|_| crate::Id::Keymap(KeymapId::Back))
+        self.keymap_screens.edit
     }
 
     /// The keymaps' screen open, while the settings (its tab) are shown.
-    fn keymaps_shown(&self) -> Option<Screen> {
-        self.bottom.keymaps.filter(|_| self.bottom.tab == crate::Tab::Settings)
+    pub(crate) fn keymaps_shown(&self) -> Option<Screen> {
+        self.keymap_screens.open.filter(|_| self.bottom.tab == crate::Tab::Settings)
     }
 
     /// Whether the pad listens for inputs (the edit screen, or waiting for a pad button, in view).
@@ -203,7 +199,7 @@ impl State {
     /// keymaps. Loading into a game's own: Default and the named keymaps; saving it: a new one and the named
     /// keymaps.
     fn keymap_rows(&self) -> impl Iterator<Item = PickerRow<'_>> {
-        let (loading, saving) = match self.bottom.keymaps {
+        let (loading, saving) = match self.keymap_screens.open {
             Some(Screen::Load(_)) => (true, false),
             Some(Screen::SaveAs(_)) => (false, true),
             _ => (false, false),
@@ -271,14 +267,14 @@ impl State {
 
     /// The keymap tile: the picker opens.
     pub(crate) fn open_keymaps(&mut self) {
-        self.bottom.keymaps = Some(Screen::List);
+        self.keymap_screens.open = Some(Screen::List);
     }
 
     /// A row of the picker: a tap chooses it for the scope being edited (and closes the picker), a long
     /// press opens a keymap's menu; its Edit button its edit screen. The game's row without its own keymap
     /// makes it.
     pub(crate) fn on_keymap_row(&mut self, i: usize, part: RowPart, long: bool) -> Vec<Effect> {
-        match self.bottom.keymaps {
+        match self.keymap_screens.open {
             Some(Screen::Load(own)) => {
                 return match self.keymap_row(i) {
                     Some(PickerRow::Default) if !long => self.load_into(own, 0),
@@ -289,7 +285,7 @@ impl State {
             Some(Screen::SaveAs(own)) => {
                 match self.keymap_row(i) {
                     Some(PickerRow::New) if !long => self.name_keymap(KeymapName::SaveAs(own), String::new()),
-                    Some(PickerRow::Named(k)) if !long => self.bottom.keymaps = Some(Screen::Overwrite { own, to: k.id }),
+                    Some(PickerRow::Named(k)) if !long => self.keymap_screens.open = Some(Screen::Overwrite { own, to: k.id }),
                     _ => {}
                 }
                 return vec![];
@@ -308,11 +304,11 @@ impl State {
                 vec![]
             }
             (_, true) if keymap => {
-                self.bottom.keymaps = Some(Screen::Menu(id));
+                self.keymap_screens.open = Some(Screen::Menu(id));
                 vec![]
             }
             (_, false) => {
-                self.bottom.keymaps = None;
+                self.keymap_screens.open = None;
                 self.change(Setting::Keymap, Some(id))
             }
             _ => vec![],
@@ -351,7 +347,7 @@ impl State {
 
     /// The keymaps' screens' buttons.
     pub(crate) fn on_keymap(&mut self, id: KeymapId, long: bool) -> Vec<Effect> {
-        let Some(screen) = self.bottom.keymaps else {
+        let Some(screen) = self.keymap_screens.open else {
             return vec![];
         };
         match (id, screen) {
@@ -378,15 +374,15 @@ impl State {
                 vec![]
             }
             (KeymapId::LoadFrom, Screen::Menu(k)) if self.keymap_is_own(k) => {
-                self.bottom.keymaps = Some(Screen::Load(k));
+                self.keymap_screens.open = Some(Screen::Load(k));
                 vec![]
             }
             (KeymapId::SaveAs, Screen::Menu(k)) if self.keymap_is_own(k) => {
-                self.bottom.keymaps = Some(Screen::SaveAs(k));
+                self.keymap_screens.open = Some(Screen::SaveAs(k));
                 vec![]
             }
             (KeymapId::ConfirmSave, Screen::Overwrite { own, to }) => {
-                self.bottom.keymaps = Some(Screen::List);
+                self.keymap_screens.open = Some(Screen::List);
                 if !self.keymaps.copy_into(to, own) {
                     return vec![];
                 }
@@ -396,12 +392,12 @@ impl State {
             }
             (KeymapId::MakeOwn, Screen::Edit(k)) => self.make_own(k),
             (KeymapId::Delete, Screen::Menu(k)) if self.keymap_users(k).any() => {
-                self.bottom.keymaps = Some(Screen::Delete(k));
+                self.keymap_screens.open = Some(Screen::Delete(k));
                 vec![]
             }
             (KeymapId::Delete, Screen::Menu(k)) | (KeymapId::ConfirmDelete, Screen::Delete(k)) => self.delete_keymap(k),
             (KeymapId::Input(input), Screen::Edit(k)) if long => {
-                self.bottom.keymap_edit.selected = Some(input);
+                self.keymap_screens.edit.selected = Some(input);
                 self.bind(k, input, None)
             }
             (KeymapId::Input(input), Screen::Edit(k)) => self.select(k, input),
@@ -410,7 +406,7 @@ impl State {
                 None => vec![],
             },
             (KeymapId::Actuation(act), Screen::Edit(_)) => {
-                let view = &mut self.bottom.keymap_edit;
+                let view = &mut self.keymap_screens.edit;
                 if view.selected.is_some_and(|i| act.fits(i.kind())) {
                     view.act = act;
                 }
@@ -419,13 +415,13 @@ impl State {
             (KeymapId::Undo, Screen::Edit(k)) => self.undo(k),
             (KeymapId::EditLayer(layer), Screen::LayerPicker(k)) => self.open_layer_menu(k, layer),
             (KeymapId::LayerPicker, Screen::Edit(k)) => {
-                self.bottom.keymaps = Some(Screen::LayerPicker(k));
+                self.keymap_screens.open = Some(Screen::LayerPicker(k));
                 vec![]
             }
             (KeymapId::Layer(layer), Screen::LayerPicker(k)) if long => self.open_layer_menu(k, layer),
             (KeymapId::Layer(layer), Screen::LayerPicker(k)) => {
-                self.bottom.keymap_edit.layer = layer;
-                self.bottom.keymaps = Some(Screen::Edit(k));
+                self.keymap_screens.edit.layer = layer;
+                self.keymap_screens.open = Some(Screen::Edit(k));
                 vec![]
             }
             (KeymapId::NewLayer, Screen::LayerPicker(k)) => {
@@ -433,8 +429,8 @@ impl State {
                 vec![]
             }
             (KeymapId::Layer(layer), Screen::Edit(_)) => {
-                self.bottom.keymap_edit.layer = layer;
-                self.bottom.keymap_edit.clearing = false;
+                self.keymap_screens.edit.layer = layer;
+                self.keymap_screens.edit.clearing = false;
                 vec![]
             }
             (KeymapId::RenameLayer, Screen::LayerMenu { id: k, layer }) => {
@@ -450,30 +446,30 @@ impl State {
                 self.saved_if(changed)
             }
             (KeymapId::DeleteLayer, Screen::LayerMenu { id: k, layer }) if layer != Layer::BASE => {
-                self.bottom.keymaps = Some(Screen::LayerPicker(k));
-                if self.bottom.keymap_edit.layer == layer {
-                    self.bottom.keymap_edit.layer = Layer::BASE;
+                self.keymap_screens.open = Some(Screen::LayerPicker(k));
+                if self.keymap_screens.edit.layer == layer {
+                    self.keymap_screens.edit.layer = Layer::BASE;
                 }
                 let changed = self.keymaps.get_mut(k).is_some_and(|km| km.remove_layer(layer));
                 self.saved_if(changed)
             }
             (KeymapId::ToLayer(layer), Screen::Layers { id: k, input }) => self.choose(k, input, Output::Layer(layer)),
             (KeymapId::NewLayer, Screen::Layers { id: k, input }) => {
-                let act = self.bottom.keymap_edit.act;
+                let act = self.keymap_screens.edit.act;
                 self.name_keymap(KeymapName::NewLayer(k, Some((input, act))), String::new());
                 vec![]
             }
             (KeymapId::Clear, Screen::LayerMenu { .. }) => {
-                self.bottom.keymap_edit.clearing = true;
+                self.keymap_screens.edit.clearing = true;
                 vec![]
             }
             (KeymapId::ConfirmClear, Screen::LayerMenu { id: k, layer }) => {
-                self.bottom.keymap_edit.clearing = false;
-                self.bottom.keymaps = Some(Screen::LayerPicker(k));
+                self.keymap_screens.edit.clearing = false;
+                self.keymap_screens.open = Some(Screen::LayerPicker(k));
                 let changed = self.keymaps.get_mut(k).is_some_and(|k| k.clear(layer));
                 self.saved_if(changed)
             }
-            (KeymapId::Target(target), Screen::Edit(k)) => match self.bottom.keymap_edit.selected {
+            (KeymapId::Target(target), Screen::Edit(k)) => match self.keymap_screens.edit.selected {
                 Some(input) => self.map_to(k, input, target),
                 None => vec![],
             },
@@ -488,13 +484,13 @@ impl State {
                 None => vec![],
             },
             (KeymapId::Calibrate, Screen::Edit(_)) => {
-                self.notify(crate::hardware::NoticeKind::Gyro(None));
+                self.notify(crate::notice::NoticeKind::Gyro(None));
                 vec![Effect::CalibrateGyro]
             }
             (KeymapId::Holds, Screen::Edit(k)) => {
-                let input = self.bottom.keymap_edit.selected.filter(|i| *i == Input::Gyro);
+                let input = self.keymap_screens.edit.selected.filter(|i| *i == Input::Gyro);
                 if let Some(input) = input.filter(|i| self.param_base(k, *i).is_some_and(|b| b.output != Output::Nothing)) {
-                    self.bottom.keymaps = Some(Screen::Holds { id: k, input });
+                    self.keymap_screens.open = Some(Screen::Holds { id: k, input });
                 }
                 vec![]
             }
@@ -512,11 +508,11 @@ impl State {
     /// the picker to the settings.
     pub(crate) fn keymap_back(&mut self) {
         // Clearing a layer waiting for its confirmation: not after all.
-        if matches!(self.bottom.keymaps, Some(Screen::LayerMenu { .. })) && self.bottom.keymap_edit.clearing {
-            self.bottom.keymap_edit.clearing = false;
+        if matches!(self.keymap_screens.open, Some(Screen::LayerMenu { .. })) && self.keymap_screens.edit.clearing {
+            self.keymap_screens.edit.clearing = false;
             return;
         }
-        self.bottom.keymaps = match self.bottom.keymaps {
+        self.keymap_screens.open = match self.keymap_screens.open {
             None | Some(Screen::List) => None,
             Some(Screen::Menu(_) | Screen::Delete(_) | Screen::Edit(_)) => Some(Screen::List),
             Some(Screen::Load(id) | Screen::SaveAs(id)) => Some(Screen::Menu(id)),
@@ -541,7 +537,7 @@ impl State {
     /// An input chosen on the edit screen (touched, or pressed on the pad): selected into the panel; the
     /// one selected already, the way it is mapped now opens again (a key: the keyboard), if it has one.
     fn select(&mut self, id: u16, input: Input) -> Vec<Effect> {
-        let view = &mut self.bottom.keymap_edit;
+        let view = &mut self.keymap_screens.edit;
         view.clearing = false;
         if view.selected != Some(input) {
             view.selected = Some(input);
@@ -560,7 +556,7 @@ impl State {
         if self.pad.route() != crate::PadRoute::Listen {
             return vec![];
         }
-        match self.bottom.keymaps {
+        match self.keymap_screens.open {
             Some(Screen::Edit(id)) => self.select(id, input),
             Some(Screen::Pick { id, input: to }) => match picked(to, input) {
                 Some(out) => self.choose(id, to, out),
@@ -573,7 +569,7 @@ impl State {
 
     /// What holds the gyro on, chosen (none: always on): back to the edit screen.
     fn set_hold(&mut self, id: u16, gyro: Input, hold: Option<Input>) -> Vec<Effect> {
-        self.bottom.keymaps = Some(Screen::Edit(id));
+        self.keymap_screens.open = Some(Screen::Edit(id));
         let Some(mut b) = self.param_base(id, gyro) else {
             return vec![];
         };
@@ -600,31 +596,31 @@ impl State {
             }
             KeymapName::Rename(id) => {
                 self.keymaps.rename(id, name);
-                self.bottom.keymaps = Some(Screen::List);
+                self.keymap_screens.open = Some(Screen::List);
             }
             KeymapName::Duplicate(id) | KeymapName::SaveAs(id) => {
                 self.keymaps.duplicate(id, name);
-                self.bottom.keymaps = Some(Screen::List);
+                self.keymap_screens.open = Some(Screen::List);
             }
             KeymapName::NewLayer(id, for_input) => {
                 let layer = self.keymaps.get_mut(id).and_then(|k| k.add_layer(name));
-                self.bottom.keymaps = Some(Screen::Edit(id));
+                self.keymap_screens.open = Some(Screen::Edit(id));
                 match (layer, for_input) {
                     // Made from the layers' list: the input maps to it (in the layer shown).
                     (Some(l), Some((input, act))) => {
-                        self.bottom.keymap_edit.act = act;
+                        self.keymap_screens.edit.act = act;
                         let mut effects = self.choose(id, input, Output::Layer(l));
                         effects.push(self.save_keymaps());
                         return effects;
                     }
                     // From the +: shown.
-                    (Some(l), None) => self.bottom.keymap_edit.layer = l,
+                    (Some(l), None) => self.keymap_screens.edit.layer = l,
                     (None, _) => {}
                 }
             }
             KeymapName::RenameLayer(id, layer) => {
                 self.keymaps.get_mut(id).map(|k| k.rename_layer(layer, name));
-                self.bottom.keymaps = Some(Screen::LayerPicker(id));
+                self.keymap_screens.open = Some(Screen::LayerPicker(id));
             }
         }
         vec![self.save_keymaps()]
@@ -643,7 +639,7 @@ impl State {
             // Default: their own choice of it, unless all games' is Default anyway.
             self.settings.set(Some(&game), Setting::Keymap, (global != 0).then_some(0));
         }
-        self.bottom.keymaps = Some(Screen::List);
+        self.keymap_screens.open = Some(Screen::List);
         let mut effects = vec![self.save_keymaps()];
         effects.extend(self.saved_and_applied(before));
         effects
@@ -651,8 +647,8 @@ impl State {
 
     /// The menu of keymap `id`'s `layer` (see [`Screen::LayerMenu`]).
     fn open_layer_menu(&mut self, id: u16, layer: Layer) -> Vec<Effect> {
-        self.bottom.keymap_edit.clearing = false;
-        self.bottom.keymaps = Some(Screen::LayerMenu { id, layer });
+        self.keymap_screens.edit.clearing = false;
+        self.keymap_screens.open = Some(Screen::LayerMenu { id, layer });
         vec![]
     }
 
@@ -660,14 +656,14 @@ impl State {
     /// if that changed them. `None` removes the binding: the input then acts as on the pad, or as the
     /// layers below, and a hold or double does nothing.
     fn bind(&mut self, id: u16, input: Input, binding: Option<Binding>) -> Vec<Effect> {
-        let EditView { layer, act, .. } = self.bottom.keymap_edit;
+        let EditView { layer, act, .. } = self.keymap_screens.edit;
         let changed = self.keymaps.get_mut(id).is_some_and(|k| k.set_of(layer, input, act, binding));
         self.saved_if(changed)
     }
 
     /// `input`'s binding in the layer and actuation shown.
     fn binding_shown(&self, id: u16, input: Input) -> Option<Binding> {
-        let EditView { layer, act, .. } = self.bottom.keymap_edit;
+        let EditView { layer, act, .. } = self.keymap_screens.edit;
         self.keymaps.get(id).and_then(|k| k.get_of(layer, input, act)).copied()
     }
 
@@ -681,14 +677,14 @@ impl State {
             Target::MouseParts => Screen::Mouse { id, input },
             Target::Layers => Screen::Layers { id, input },
             Target::Default => {
-                self.bottom.keymaps = Some(Screen::Edit(id));
+                self.keymap_screens.open = Some(Screen::Edit(id));
                 return self.bind(id, input, None);
             }
             _ => return self.chosen(id, input, target),
         };
         // (Only the ways that fit it: a stick has no key chord of its own, the gyro no mouse buttons.)
         if ways(input.kind()).contains(&target) {
-            self.bottom.keymaps = Some(screen);
+            self.keymap_screens.open = Some(screen);
         }
         vec![]
     }
@@ -704,7 +700,7 @@ impl State {
     /// `input` maps to `output` (its parameters and hold kept): back to the edit screen, whose panel
     /// has its parameters.
     fn choose(&mut self, id: u16, input: Input, output: Output) -> Vec<Effect> {
-        let full_pull = self.bottom.keymap_edit.act == Actuation::FullPull;
+        let full_pull = self.keymap_screens.edit.act == Actuation::FullPull;
         // (A full pull to a trigger picked: that trigger pulled all the way, as a button.)
         let output = match output {
             Output::Trigger(s) if full_pull => Output::Pad(PadOut::Trigger(s)),
@@ -717,14 +713,14 @@ impl State {
         let fresh = || Binding { threshold: if full_pull { crate::keymap::FULL_PULL } else { crate::keymap::DEFAULT_THRESHOLD }, ..Binding::of(input, output) };
         let binding = kept.map_or_else(fresh, |k| k.retarget(input, output));
         let effects = self.bind(id, input, Some(binding));
-        self.bottom.keymaps = Some(Screen::Edit(id));
+        self.keymap_screens.open = Some(Screen::Edit(id));
         effects
     }
 
     /// A key typed while a chord is wanted: the chord for the input, or the next of a stick's four keys
     /// (the fourth completes them).
     pub(crate) fn captured(&mut self, chord: Chord) -> Vec<Effect> {
-        let Some(Screen::Capture { id, input, keys }) = self.bottom.keymaps else {
+        let Some(Screen::Capture { id, input, keys }) = self.keymap_screens.open else {
             return vec![];
         };
         if chord.is_empty() {
@@ -737,7 +733,7 @@ impl State {
                     *slot = chord;
                 }
                 if n + 1 < so_far.len() {
-                    self.bottom.keymaps = Some(Screen::Capture { id, input, keys: Some((n + 1, so_far)) });
+                    self.keymap_screens.open = Some(Screen::Capture { id, input, keys: Some((n + 1, so_far)) });
                     return vec![];
                 }
                 self.choose(id, input, Output::Keys(so_far))
