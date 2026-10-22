@@ -111,8 +111,7 @@ impl Mounts {
 
 /// The mounts directly under `root`.
 fn mounted_under(root: &Path) -> Vec<PathBuf> {
-    let text = fs::read_to_string("/proc/self/mounts").unwrap_or_default();
-    text.lines().filter_map(|l| l.split(' ').nth(1)).map(PathBuf::from).filter(|d| d.parent() == Some(root)).collect()
+    crate::sys::mount_table().into_iter().map(|m| m.dir).filter(|d| d.parent() == Some(root)).collect()
 }
 
 /// The service of archive `archive`'s mount.

@@ -51,17 +51,18 @@ Dead or vestigial code:
       match, `crc32`'s table rebuilt per call.
 
 Helpers that exist but are bypassed:
-- [ ] cgroup parsing by hand: `launcher.rs:207,250,316,443`, `device.rs:240` → `cgroup::unit_of`.
-- [ ] Atomic writes reimplemented: `meta.rs:531-535,551-552`, `mpv.rs:74-85` → `store::write_file`.
-- [ ] `/proc/<pid>/stat` parsed three times (`sys::start_time`, `sys::lineage`, `launcher::parents`) →
+- [x] cgroup parsing by hand: `launcher.rs:207,250,316,443`, `device.rs:240` → `cgroup::unit_of`.
+- [x] Atomic writes reimplemented: `meta.rs:531-535,551-552` → `store::write_file` (`mpv.rs` keeps its rename:
+      ffmpeg writes the file).
+- [x] `/proc/<pid>/stat` parsed three times (`sys::start_time`, `sys::lineage`, `launcher::parents`) →
       `sys::parent`.
-- [ ] Subprocesses without the time limit `command.rs` exists for: `files.rs:421,426`,
+- [x] Subprocesses without the time limit `command.rs` exists for: `files.rs:421,426`,
       `archives.rs:39,122,128`, `device.rs:46,281`, `account.rs:62`; `device.rs:63`'s `timeout` binary;
       `launcher::end_processes`' `kill` subprocess → rustix.
-- [ ] FNV-1a written five times (`library/lib.rs:301,307`, `snapshot.rs:560`, `system/archives.rs:138`,
+- [x] FNV-1a written five times (`library/lib.rs:301,307`, `snapshot.rs:560`, `system/archives.rs:138`,
       `system/sway/commands.rs:84`) → one helper.
-- [ ] JSON escaped by hand (`core/enqueue.rs:68-80`) → `serde_json`.
-- [ ] `/proc/self/mounts` parsed three times (`files.rs:301,606`, `archives.rs:111`), one without
+- [x] JSON escaped by hand (`core/enqueue.rs:68-80`) → `serde_json`.
+- [x] `/proc/self/mounts` parsed three times (`files.rs:301,606`, `archives.rs:111`), one without
       unescaping.
 
 ## 2. Bugs
@@ -73,9 +74,9 @@ Helpers that exist but are bypassed:
       hint; the demo only for `--snapshot` and the desktop's demo mode, out of the library crate's
       non-test code.
 - [ ] `held.dedup()` without sorting (`pad/route.rs:301`).
-- [ ] `mounted_under` doesn't unescape `/proc/self/mounts` (`archives.rs:111`).
-- [ ] The TMDB key in curl's command line, visible in `/proc` (`meta.rs:342`) → `curl -K -`.
-- [ ] `command.rs:50`: `reader.join()` can hang on a grandchild holding stdout.
+- [x] `mounted_under` doesn't unescape `/proc/self/mounts` (`archives.rs:111`).
+- [x] The TMDB key in curl's command line, visible in `/proc` (`meta.rs:342`) → `curl -K -`.
+- [x] `command.rs:50`: `reader.join()` can hang on a grandchild holding stdout.
 - [ ] A test that checks only its first value (`core/settings.rs:458-462`).
 - [ ] The Wi-Fi password and the editor's text not `Secret` (`core/wifi.rs:123`, `editor.rs`).
 - [ ] Undo: a step popped then filtered by id is lost (`keymap_screens/undo.rs`).

@@ -21,7 +21,7 @@ use rustix::fs::inotify;
 use crate::library::content;
 use crate::library::runners::{self, Runner};
 use crate::worker::{Bell, Worker};
-use crate::{Sink, command};
+use crate::{Sink, command, sys};
 
 /// How long ejecting a card may take.
 const EJECT_LIMIT: Duration = Duration::from_secs(60);
@@ -300,58 +300,24 @@ pub struct Mount {
 
 /// The removable filesystems mounted (under `/run/media`), in the order they were mounted.
 pub fn media_mounts() -> Vec<Mount> {
-    let text = fs::read_to_string("/proc/self/mounts").unwrap_or_default();
     let named = |dir: &str| -> Vec<(String, PathBuf)> {
         fs::read_dir(dir)
-            .map(|d| d.flatten().filter_map(|e| Some((unescape(&e.file_name().into_string().ok()?), fs::canonicalize(e.path()).ok()?))).collect())
+            .map(|d| d.flatten().filter_map(|e| Some((sys::unescape(&e.file_name().into_string().ok()?), fs::canonicalize(e.path()).ok()?))).collect())
             .unwrap_or_default()
     };
     let (labels, uuids) = (named("/dev/disk/by-label"), named("/dev/disk/by-uuid"));
-    text.lines()
-        .filter_map(|line| {
-            let mut fields = line.split(' ');
-            let (device, dir, fs) = (fields.next()?, unescape(fields.next()?), fields.next()?);
-            if !dir.starts_with(MEDIA) {
-                return None;
-            }
-            let real = fs::canonicalize(device).ok();
+    sys::mount_table()
+        .into_iter()
+        .filter(|m| m.dir.starts_with(MEDIA))
+        .map(|m| {
+            let real = fs::canonicalize(&m.device).ok();
             let find = |names: &[(String, PathBuf)]| names.iter().find(|(_, p)| Some(p) == real.as_ref()).map(|(n, _)| n.clone()).unwrap_or_default();
-            let dir = PathBuf::from(dir);
-            let label =
-                Some(find(&labels)).filter(|l| !l.is_empty()).unwrap_or_else(|| dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
-            Some(Mount { device: device.to_owned(), fs: fs.to_owned(), label, uuid: find(&uuids), dir })
+            let label = Some(find(&labels))
+                .filter(|l| !l.is_empty())
+                .unwrap_or_else(|| m.dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
+            Mount { device: m.device, fs: m.fs, label, uuid: find(&uuids), dir: m.dir }
         })
         .collect()
-}
-
-/// `\040` (mounts) and `\x20` (udev's names) as the characters they stand for.
-fn unescape(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while let Some(&b) = bytes.get(i) {
-        let octal = bytes.get(i + 1..i + 4).filter(|d| d.iter().all(|c| (b'0'..=b'7').contains(c)));
-        let hex = bytes
-            .get(i + 1..i + 4)
-            .filter(|d| d.first() == Some(&b'x'))
-            .and_then(|d| std::str::from_utf8(d.get(1..)?).ok())
-            .and_then(|h| u8::from_str_radix(h, 16).ok());
-        match (b, octal, hex) {
-            (b'\\', Some(d), _) => {
-                out.push(d.iter().fold(0u8, |n, c| n.wrapping_mul(8).wrapping_add(c - b'0')));
-                i += 4;
-            }
-            (b'\\', None, Some(h)) => {
-                out.push(h);
-                i += 4;
-            }
-            _ => {
-                out.push(b);
-                i += 1;
-            }
-        }
-    }
-    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// The files thread: each operation done, then what was done (or what went wrong) sent.
@@ -606,13 +572,7 @@ fn home_trash(home: Option<&Path>) -> Option<PathBuf> {
 
 /// The filesystem's mount point `path` is on: the longest mount point it is under.
 fn mount_point(path: &Path) -> PathBuf {
-    let text = fs::read_to_string("/proc/self/mounts").unwrap_or_default();
-    text.lines()
-        .filter_map(|l| l.split(' ').nth(1))
-        .map(|d| PathBuf::from(unescape(d)))
-        .filter(|d| path.starts_with(d))
-        .max_by_key(|d| d.as_os_str().len())
-        .unwrap_or_else(|| PathBuf::from("/"))
+    sys::mount_table().into_iter().map(|m| m.dir).filter(|d| path.starts_with(d)).max_by_key(|d| d.as_os_str().len()).unwrap_or_else(|| PathBuf::from("/"))
 }
 
 /// `path` moved to the Trash: the home one where it is on the same filesystem, else its filesystem's
@@ -824,9 +784,7 @@ mod tests {
     }
 
     #[test]
-    fn escapes_and_encodings() {
-        assert_eq!(unescape(r"/run/media/u/My\040Card"), "/run/media/u/My Card");
-        assert_eq!(unescape(r"My\x20Card"), "My Card");
+    fn encodings() {
         assert_eq!(percent_decode(&percent_encode("/a b/ø%.txt")), "/a b/ø%.txt");
         assert_eq!(name_of(&free_name(Path::new("/nonexistent"), "a.txt")), "a.txt");
     }

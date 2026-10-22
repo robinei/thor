@@ -87,6 +87,54 @@ pub fn lineage(pid: u32) -> Vec<u32> {
     out
 }
 
+/// A line of the mount table.
+pub struct MountLine {
+    pub device: String,
+    pub dir: PathBuf,
+    pub fs: String,
+}
+
+/// The mount table (/proc/self/mounts), in the order mounted, its names unescaped (`\040`: a space).
+pub fn mount_table() -> Vec<MountLine> {
+    let text = text("/proc/self/mounts").unwrap_or_default();
+    text.lines()
+        .filter_map(|line| {
+            let mut fields = line.split(' ');
+            Some(MountLine { device: unescape(fields.next()?), dir: PathBuf::from(unescape(fields.next()?)), fs: fields.next()?.to_owned() })
+        })
+        .collect()
+}
+
+/// `\040` (mounts) and `\x20` (udev's names) as the characters they stand for.
+pub fn unescape(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while let Some(&b) = bytes.get(i) {
+        let octal = bytes.get(i + 1..i + 4).filter(|d| d.iter().all(|c| (b'0'..=b'7').contains(c)));
+        let hex = bytes
+            .get(i + 1..i + 4)
+            .filter(|d| d.first() == Some(&b'x'))
+            .and_then(|d| std::str::from_utf8(d.get(1..)?).ok())
+            .and_then(|h| u8::from_str_radix(h, 16).ok());
+        match (b, octal, hex) {
+            (b'\\', Some(d), _) => {
+                out.push(d.iter().fold(0u8, |n, c| n.wrapping_mul(8).wrapping_add(c - b'0')));
+                i += 4;
+            }
+            (b'\\', None, Some(h)) => {
+                out.push(h);
+                i += 4;
+            }
+            _ => {
+                out.push(b);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 const POWER_SUPPLY: &str = "/sys/class/power_supply";
 
 /// The battery that powers the system: the first power supply of type Battery that isn't a device's
@@ -110,6 +158,13 @@ pub fn power_supplies() -> Vec<PathBuf> {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn escaped_names() {
+        assert_eq!(unescape(r"/run/media/u/My\040Card"), "/run/media/u/My Card");
+        assert_eq!(unescape(r"My\x20Card"), "My Card");
+        assert_eq!(unescape(r"a\b\0"), r"a\b\0", "not an escape");
+    }
 
     #[test]
     fn stat_fields_count_after_the_name() {
