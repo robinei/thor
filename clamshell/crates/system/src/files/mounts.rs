@@ -11,7 +11,8 @@ use crate::os::{sys, text};
 /// Where udisks2 mounts removable filesystems.
 pub(super) const MEDIA: &str = "/run/media/";
 
-/// A removable filesystem mounted: its device, where, its type, label and UUID (empty if none).
+/// A mounted removable filesystem: its device, mount point, type, label and UUID. The label and UUID
+/// are empty if there is none.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Mount {
     pub device: String,
@@ -21,7 +22,7 @@ pub struct Mount {
     pub uuid: String,
 }
 
-/// The removable filesystems mounted (under `/run/media`), in the order they were mounted.
+/// The mounted removable filesystems under `/run/media`, in the order they were mounted.
 pub fn media_mounts() -> Vec<Mount> {
     let named = |dir: &str| -> Vec<(String, PathBuf)> {
         fs::read_dir(dir)
@@ -51,7 +52,7 @@ const UDISKS: &str = "org.freedesktop.UDisks2";
 /// card reader may not support it, and unmounted is enough.
 pub(super) fn eject(device: &str, limit: Duration) -> dbus::Result<()> {
     let mut bus = Bus::system()?.with_timeout(limit);
-    // No password prompt: polkit allows the session's user, or the call fails.
+    // No password prompt: polkit either allows the session's user or the call fails.
     let options = || PropMap::from([("auth.no_user_interaction".to_owned(), dbus::value(true))]);
     let spec = PropMap::from([("path".to_owned(), dbus::value(device.to_owned()))]);
     let (blocks,): (Vec<dbus::Path<'static>>,) =

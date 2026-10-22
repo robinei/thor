@@ -1,5 +1,5 @@
-//! freedesktop's Trash: the home Trash, or a filesystem's own `.Trash-<uid>`; a record of where each thing
-//! was, to restore it.
+//! freedesktop's Trash: the home Trash or a filesystem's own `.Trash-<uid>`, with a record of where each
+//! thing was so it can be restored.
 
 use std::fs;
 use std::io::{self, Write};
@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use super::ops::{free_name, name_of};
 use crate::os::{sys, text};
 
-/// The home Trash: `$XDG_DATA_HOME/Trash`, else `~/.local/share/Trash`.
+/// The home Trash: `$XDG_DATA_HOME/Trash`, or else `~/.local/share/Trash`.
 pub(super) fn home_trash(home: Option<&Path>) -> Option<PathBuf> {
     match std::env::var_os("XDG_DATA_HOME").filter(|d| !d.is_empty()) {
         Some(data) => Some(PathBuf::from(data).join("Trash")),
@@ -17,13 +17,13 @@ pub(super) fn home_trash(home: Option<&Path>) -> Option<PathBuf> {
     }
 }
 
-/// The filesystem's mount point `path` is on: the longest mount point it is under.
+/// The mount point of the filesystem `path` is on: the longest mount point it is under.
 pub(super) fn mount_point(path: &Path) -> PathBuf {
     sys::mount_table().into_iter().map(|m| m.dir).filter(|d| path.starts_with(d)).max_by_key(|d| d.as_os_str().len()).unwrap_or_else(|| PathBuf::from("/"))
 }
 
-/// `path` moved to the Trash: the home one where it is on the same filesystem, else its filesystem's
-/// `.Trash-<uid>` (the path recorded relative to that filesystem's top).
+/// Moves `path` to the Trash. That is the home Trash if `path` is on the same filesystem, or else its
+/// filesystem's `.Trash-<uid>`, where the path is recorded relative to the filesystem's top.
 pub(super) fn trash(path: &Path, home: Option<&Path>) -> Result<(), String> {
     let path = path.canonicalize().map_err(|e| format!("{}: {e}", name_of(path)))?;
     let dev = |p: &Path| fs::metadata(p).map(|m| m.dev()).ok();
@@ -44,7 +44,7 @@ pub(super) fn trash(path: &Path, home: Option<&Path>) -> Result<(), String> {
     if let Err(e) = fs::set_permissions(&trash, fs::Permissions::from_mode(0o700)) {
         log::warn!("trash: {}: {e}", trash.display());
     }
-    // A name free in both: the record made first (exclusively), then the move.
+    // Find a name free in both dirs. The record is created first, exclusively, then the file is moved.
     let name = name_of(&path);
     let mut n = 1;
     loop {
@@ -81,15 +81,15 @@ pub(super) fn trash_info(path: &Path) -> Option<PathBuf> {
     info.exists().then_some(info)
 }
 
-/// `path` (at the top of a Trash's `files`) moved back where its record says it was (under a free name
-/// if that is taken); where it went.
+/// Moves `path`, at the top of a Trash's `files`, back to where its record says it was, under a free name
+/// if that is taken. Returns where it went.
 pub(super) fn restore(path: &Path) -> Result<PathBuf, String> {
     let name = name_of(path);
     let info = trash_info(path).ok_or_else(|| format!("{name}: the Trash has no record of where it was"))?;
     let text = fs::read_to_string(&info).map_err(|e| format!("{}: {e}", info.display()))?;
     let recorded = text.lines().find_map(|l| l.strip_prefix("Path=")).map(text::percent_decode).ok_or_else(|| format!("{}: no Path", info.display()))?;
     let mut to = PathBuf::from(&recorded);
-    // (A filesystem's own Trash records paths from its top.)
+    // A filesystem's own Trash records paths relative to its top.
     if to.is_relative()
         && let Some(top) = info.parent().and_then(Path::parent).and_then(Path::parent)
     {
@@ -105,7 +105,7 @@ pub(super) fn restore(path: &Path) -> Result<PathBuf, String> {
     Ok(to)
 }
 
-/// Now as the Trash records it, local time: 2026-10-18T14:03:00.
+/// The current local time as the Trash records it, like 2026-10-18T14:03:00.
 pub(super) fn deletion_date() -> String {
     jiff::Zoned::now().strftime("%Y-%m-%dT%H:%M:%S").to_string()
 }
@@ -125,7 +125,7 @@ mod tests {
         let home = dir.join("home");
         fs::create_dir_all(home.join("docs")).unwrap();
         fs::write(home.join("docs/a b.txt"), "x").unwrap();
-        // (XDG_DATA_HOME may be set: the home Trash from it, then.)
+        // XDG_DATA_HOME may be set, in which case the home Trash is there and the test is skipped.
         let trash_dir = home_trash(Some(&home)).unwrap();
         if !trash_dir.starts_with(&home) {
             return;
@@ -134,7 +134,7 @@ mod tests {
         assert!(!home.join("docs/a b.txt").exists());
         let record = fs::read_to_string(trash_dir.join("info/a b.txt.trashinfo")).unwrap();
         assert!(record.contains("Path=") && record.contains("a%20b.txt"), "{record}");
-        // The same name again: another.
+        // The same name again gets a different name in the Trash.
         fs::write(home.join("docs/a b.txt"), "y").unwrap();
         trash(&home.join("docs/a b.txt"), Some(&home)).unwrap();
         assert_eq!(fs::read_dir(trash_dir.join("files")).unwrap().count(), 2);

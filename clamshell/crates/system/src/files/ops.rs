@@ -1,5 +1,5 @@
-//! The files thread: the operations one after another (rename, new folder, paste, the trash, delete,
-//! eject, extract), with their progress.
+//! The files thread. It runs the operations one after another, with their progress: rename, new folder,
+//! paste, the Trash, delete, eject and extract.
 
 use std::fs;
 use std::io::{self, Read, Write};
@@ -16,10 +16,10 @@ use crate::os::worker::Worker;
 /// How long ejecting a card may take.
 const EJECT_LIMIT: Duration = Duration::from_secs(60);
 
-/// A paste's progress, at most this often.
+/// How often, at most, a paste's progress is sent.
 const PROGRESS: Duration = Duration::from_millis(250);
 
-/// The files thread: each operation done, then what was done (or what went wrong) sent.
+/// Starts the files thread. It runs each operation, then sends what was done or what went wrong.
 pub fn spawn_ops(home: Option<PathBuf>, sink: impl Sink) -> io::Result<Worker<FileOp>> {
     Worker::spawn("files", move |ops| {
         for op in ops {
@@ -65,7 +65,7 @@ fn run(op: &FileOp, home: Option<&Path>, sink: &impl Sink) -> Result<String, Str
         }
         FileOp::Delete(path) => {
             remove(path).map_err(|e| failed("Deleting", path, &e))?;
-            // (In the Trash: its record too.)
+            // In the Trash, its record goes too.
             if let Some(info) = trash_info(path)
                 && let Err(e) = fs::remove_file(&info)
             {
@@ -107,7 +107,7 @@ pub(super) fn failed(what: &str, path: &Path, e: &io::Error) -> String {
     format!("{what} {}: {e}", name_of(path))
 }
 
-/// A file, or a folder with everything in it, deleted.
+/// Deletes a file, or a folder with everything in it.
 fn remove(path: &Path) -> io::Result<()> {
     match path.symlink_metadata()?.is_dir() {
         true => fs::remove_dir_all(path),
@@ -115,7 +115,7 @@ fn remove(path: &Path) -> io::Result<()> {
     }
 }
 
-/// A name in `dir` free for `name`: itself, else `stem (2).ext`, `stem (3).ext` ...
+/// A free path in `dir` for `name`: the name itself, or else `stem (2).ext`, `stem (3).ext` and so on.
 pub(super) fn free_name(dir: &Path, name: &str) -> PathBuf {
     let (stem, ext) = match name.rsplit_once('.') {
         Some((stem, ext)) if !stem.is_empty() => (stem, format!(".{ext}")),
@@ -130,7 +130,7 @@ pub(super) fn free_name(dir: &Path, name: &str) -> PathBuf {
     path
 }
 
-/// `path` copied (or moved, `cut`) into `into`, under a free name; a copy's progress sent.
+/// Copies `path` into `into`, or moves it if `cut`, under a free name. A copy's progress is sent.
 fn paste(path: &Path, into: &Path, cut: bool, sink: &impl Sink) -> Result<String, String> {
     let name = name_of(path);
     if into.starts_with(path) {
@@ -161,8 +161,8 @@ fn paste(path: &Path, into: &Path, cut: bool, sink: &impl Sink) -> Result<String
     Ok(format!("Copied {name}"))
 }
 
-/// Archive `archive`'s entries extracted (bsdtar) into a new folder `name` beside it (" (2)" if taken);
-/// its progress, how far bsdtar has read the archive, sent.
+/// Extracts `archive` with bsdtar into a new folder `name` beside it, with " (2)" added if the name is
+/// taken. The progress sent is how far bsdtar has read the archive.
 fn extract(archive: &Path, name: &str, sink: &impl Sink) -> Result<String, String> {
     let what = name_of(archive);
     let into = free_name(archive.parent().unwrap_or(Path::new("/")), name);
@@ -213,7 +213,7 @@ fn extract(archive: &Path, name: &str, sink: &impl Sink) -> Result<String, Strin
     }
 }
 
-/// How far process `pid` has read `file` (its open file's offset), if it has it open.
+/// How far process `pid` has read `file`, from the open file's offset, if it has it open.
 fn read_so_far(pid: u32, file: &Path) -> Option<u64> {
     let fds = PathBuf::from(format!("/proc/{pid}/fd"));
     let fd = fs::read_dir(&fds)
@@ -226,7 +226,7 @@ fn read_so_far(pid: u32, file: &Path) -> Option<u64> {
     info.lines().find_map(|l| l.strip_prefix("pos:")).and_then(|p| p.trim().parse().ok())
 }
 
-/// The bytes of the files in `path`, all the way down.
+/// The total size in bytes of the files in `path`, including subfolders.
 fn size(path: &Path) -> u64 {
     match path.symlink_metadata() {
         Ok(m) if m.is_dir() => {
@@ -256,7 +256,8 @@ impl<S: Sink> Progress<'_, S> {
     }
 }
 
-/// `from` (a file, a link, a folder with everything in it) copied to `to`, which isn't there.
+/// Copies `from`, which is a file, a link or a folder with everything in it, to `to`, which must not
+/// exist.
 fn copy(from: &Path, to: &Path, progress: &mut Progress<impl Sink>) -> io::Result<()> {
     let meta = from.symlink_metadata()?;
     if meta.file_type().is_symlink() {

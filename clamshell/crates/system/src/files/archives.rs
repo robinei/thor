@@ -1,13 +1,13 @@
-//! Archives browsed as folders (see clamshell-core's `files`): each mounted read-only with ratarmount
-//! (FUSE: zip, 7z, rar, tar and its compressed kinds) when its folder is opened, so its entries are
-//! files like any others (opened, copied out); unmounted once nothing uses it (the folder open isn't in
-//! it, no copied entry and no running launch's file is in it).
+//! Archives browsed as folders (see clamshell-core's `files`). When its folder is opened, an archive is
+//! mounted read-only with ratarmount, a FUSE filesystem for zip, 7z, rar, tar and compressed tars. Its
+//! entries are then files like any others, which can be opened or copied out. It is unmounted once
+//! nothing uses it: the open folder isn't in it, and no copied entry or running launch's file is in it.
 //!
-//! Each mount is a service of its own (`clamshell-archive-<hash>.service`: ratarmount in the
-//! foreground, in uwsm's `background-graphical.slice`): unmounting is stopping it, and after it stops
-//! (or crashes) the mount is detached lazily, so none is left behind; the session ending stops them all.
-//! Its indexes are kept in the cache, not beside the archives. Those a ClamShell before this one left
-//! are stopped at start.
+//! Each mount is a service of its own, `clamshell-archive-<hash>.service`, running ratarmount in the
+//! foreground in uwsm's `background-graphical.slice`. Unmounting means stopping the service. After it
+//! stops or crashes the mount is detached lazily, so none is left behind, and the session ending stops
+//! them all. The indexes are kept in the cache, not beside the archives. Services left by an earlier
+//! ClamShell are stopped at start.
 
 use std::ffi::{OsStr, OsString};
 use std::fs;
@@ -15,29 +15,29 @@ use std::path::{Path, PathBuf};
 
 use crate::os::command;
 
-/// The names browsed as archives (their endings, lowercase).
+/// The file name endings browsed as archives, in lowercase.
 const ENDINGS: [&str; 13] = [".zip", ".7z", ".rar", ".tar", ".tgz", ".txz", ".tbz2", ".tar.gz", ".tar.xz", ".tar.zst", ".tar.bz2", ".tar.lz4", ".tzst"];
 
-/// Whether file name `name` is an archive's.
+/// Whether file name `name` is an archive.
 pub fn is_archive(name: &str) -> bool {
     let lower = name.to_lowercase();
     ENDINGS.iter().any(|e| lower.ends_with(e) && lower.len() > e.len())
 }
 
-/// The archives mounted, and where.
+/// The mounted archives, and where they are mounted.
 pub struct Mounts {
-    /// Where they are mounted (each in a dir of its own), and their indexes kept.
+    /// Where they are mounted, each in a dir of its own, and where their indexes are kept.
     root: Option<PathBuf>,
     index: Option<PathBuf>,
     mounted: Vec<(PathBuf, PathBuf)>,
 }
 
 impl Mounts {
-    /// Mounts under `$XDG_RUNTIME_DIR/clamshell/archives`, indexes in `cache`; those left there by a
-    /// ClamShell before unmounted.
+    /// Mounts go under `$XDG_RUNTIME_DIR/clamshell/archives` and indexes in `cache`. Mounts left there
+    /// by an earlier ClamShell are unmounted.
     pub fn new(cache: Option<PathBuf>) -> Mounts {
         let root = std::env::var_os("XDG_RUNTIME_DIR").map(|d| PathBuf::from(d).join("clamshell/archives"));
-        // (Left by a ClamShell before: their services stopped, any mount left detached, the dirs gone.)
+        // Clean up after an earlier ClamShell: stop its services, detach any mount left, remove the dirs.
         if let Err(e) = crate::launch::scopes::stop_matching("clamshell-archive-*.service") {
             log::warn!("archives: stopping those left before: {e}");
         }
@@ -61,7 +61,7 @@ impl Mounts {
         Mounts { root, index: cache.map(|c| c.join("archive-index")), mounted: Vec::new() }
     }
 
-    /// Where `archive` is mounted, mounted now if it isn't; what went wrong if it can't be.
+    /// Where `archive` is mounted, mounting it now if it isn't. Errs with what went wrong if it can't be.
     pub fn mount(&mut self, archive: &Path) -> Result<PathBuf, String> {
         if let Some((_, dir)) = self.mounted.iter().find(|(a, _)| a == archive) {
             return Ok(dir.clone());
@@ -73,7 +73,7 @@ impl Mounts {
         let unit = unit_of(archive);
         let mut args: Vec<OsString> = ["--user", "--quiet", "--collect", "--slice=background-graphical.slice"].map(OsString::from).into();
         args.push(format!("--unit={unit}").into());
-        // (Stopped or crashed: the mount detached, lazily.)
+        // When the service stops or crashes, the mount is detached lazily.
         args.push(format!("--property=ExecStopPost=/usr/bin/fusermount3 -uz {}", dir.display()).into());
         args.extend(["ratarmount", "--foreground"].map(OsString::from));
         if let Some(index) = &self.index {
@@ -84,8 +84,8 @@ impl Mounts {
         }
         args.extend([archive.into(), dir.clone().into()]);
         let started = command::run("systemd-run", &args, None, command::LIMIT).map_err(|e| format!("Opening {name}: {e}"))?.status;
-        // Mounted once its dir is a mount; failed once the service isn't running (a big compressed tar
-        // is read through for its index first: no time limit).
+        // It is mounted once its dir is a mount, and has failed once the service isn't running. There is
+        // no time limit, since a big compressed tar is read through for its index first.
         let mounted = started.success()
             && loop {
                 if mounted_under(root).contains(&dir) {
@@ -108,7 +108,8 @@ impl Mounts {
         Ok(dir)
     }
 
-    /// Only the archives `in_use` needs mounted (one of them the archive, or in its mount).
+    /// Unmounts the archives `in_use` doesn't need. An archive is needed if a path in `in_use` is the
+    /// archive or is inside its mount.
     pub fn keep(&mut self, in_use: &[&Path]) {
         self.mounted.retain(|(archive, dir)| {
             let used = in_use.iter().any(|p| *p == archive || p.starts_with(dir));
@@ -134,7 +135,7 @@ fn unit_of(archive: &Path) -> String {
     format!("clamshell-archive-{:016x}.service", hash(archive))
 }
 
-/// Whether service `unit` runs (or is starting). If the user manager can't be asked, it counts as
+/// Whether service `unit` is running or starting. If the user manager can't be asked, it counts as
 /// stopped, so a mount isn't waited for forever.
 fn active(unit: &str) -> bool {
     crate::launch::scopes::is_active(unit).unwrap_or_else(|e| {
@@ -143,7 +144,7 @@ fn active(unit: &str) -> bool {
     })
 }
 
-/// `dir` detached (lazily: open files stay readable) and removed.
+/// Detaches `dir` lazily, so open files stay readable, and removes it.
 fn detach(dir: &Path) {
     let done = command::run("fusermount3", &[OsStr::new("-uz"), dir.as_os_str()], None, command::LIMIT);
     if !done.is_ok_and(|ran| ran.status.success()) {
@@ -154,7 +155,7 @@ fn detach(dir: &Path) {
     }
 }
 
-/// FNV-1a of a path: its mount's dir name.
+/// FNV-1a of a path, used to name its mount's dir.
 fn hash(path: &Path) -> u64 {
     use std::os::unix::ffi::OsStrExt;
     clamshell_library::hash::fnv1a64(path.as_os_str().as_bytes())

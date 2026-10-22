@@ -1,5 +1,5 @@
-//! The browse thread: lists the folder shelf has open, and lists it again whenever it changes (inotify)
-//! or a removable filesystem is mounted or unmounted.
+//! The browse thread. It lists the folder shelf has open, and lists it again whenever the folder changes
+//! (seen through inotify) or a removable filesystem is mounted or unmounted.
 
 use std::fs;
 use std::io;
@@ -17,9 +17,10 @@ use crate::library::content;
 use crate::library::runners::{self, Runner};
 use crate::os::worker::{Bell, Worker};
 
-/// Where a browse thread reads and what it does with videos: library.json (how files open), the home dir
-/// (`~/`), the art cache (videos' lengths and frames, as for scanned ones), and how to have those not
-/// read yet read (in the background: they come as metadata).
+/// What a browse thread reads and how it handles videos. `config` is library.json, which says how files
+/// open, and `home` is the home dir for `~/`. `art` is the art cache, holding videos' lengths and frames
+/// as for scanned entries. `probe` has the videos not read yet read in the background; their results
+/// arrive as metadata.
 pub struct Browsing {
     pub config: Option<PathBuf>,
     pub home: Option<PathBuf>,
@@ -29,12 +30,12 @@ pub struct Browsing {
     pub cache: Option<PathBuf>,
 }
 
-/// The browse thread: lists (and watches) the folder each command names (see [`Browsing`]).
+/// Starts the browse thread, which lists and watches the folder each command names (see [`Browsing`]).
 pub fn spawn_browse(browsing: Browsing, sink: impl Sink) -> io::Result<Worker<BrowseCommand>> {
     let Browsing { config, home, art, probe, cache } = browsing;
     Worker::spawn_belled("browse", move |commands, bell| {
         let mut archives = crate::files::archives::Mounts::new(cache);
-        // (The videos' lengths and frames read from it at each listing with videos.)
+        // The videos' lengths and frames are read from this at each listing that has videos.
         let store = art.as_deref().map(crate::library::meta::cache::Cache::open);
         let mut in_use: Vec<PathBuf> = Vec::new();
         let notify = inotify::init(inotify::CreateFlags::NONBLOCK | inotify::CreateFlags::CLOEXEC).map_err(|e| log::warn!("browse: inotify: {e}")).ok();
@@ -46,12 +47,12 @@ pub fn spawn_browse(browsing: Browsing, sink: impl Sink) -> io::Result<Worker<Br
             | inotify::WatchFlags::ATTRIB
             | inotify::WatchFlags::DELETE_SELF
             | inotify::WatchFlags::MOVE_SELF;
-        // (The folder open, the dir listed for it, its watch.)
+        // The open folder, the dir listed for it, and its watch.
         let mut open: Option<(Browse, PathBuf, Option<i32>)> = None;
         let mut mounts = media_mounts();
-        // (The kernel marks the mount table read through this file when it changes: POLLPRI.)
+        // When the mount table changes, the kernel signals POLLPRI on this file.
         let mount_table = fs::File::open("/proc/self/mounts").map_err(|e| log::warn!("browse: mounts: {e}")).ok();
-        // (An archive's: its mount's.)
+        // For an archive, `dir` is its mount.
         let list = |b: &Browse, dir: &Path| {
             let config = config.as_deref().map(content::read_config).unwrap_or_default().0;
             let (runners, _) = runners::in_force(&config.runners);
@@ -63,9 +64,9 @@ pub fn spawn_browse(browsing: Browsing, sink: impl Sink) -> io::Result<Worker<Br
             sink.send(Event::Files(FilesEvent::Listed { folder: b.folder.clone(), entries }))
         };
         loop {
-            // Asleep until a command, the folder or the mounts change.
+            // Sleep until a command comes, or the folder or the mounts change.
             let (folder_changed, mounts_changed) = wait(&bell, notify.as_ref(), mount_table.as_ref());
-            // (A command and a change may come together: the change is looked at too.)
+            // A command and a change may come together, so the change is looked at too.
             match commands.try_recv() {
                 Ok(BrowseCommand::InUse(files)) => {
                     in_use = files;
@@ -83,7 +84,8 @@ pub fn spawn_browse(browsing: Browsing, sink: impl Sink) -> io::Result<Worker<Br
                         changed(fd);
                     }
                     let Some(b) = browse else { continue };
-                    // (An archive: mounted, its mount listed; one that can't be, empty, and why told.)
+                    // An archive is mounted and its mount listed. If it can't be mounted, the listing is
+                    // empty and the user is told why.
                     let dir = match b.dir.is_file() {
                         true => archives.mount(&b.dir).unwrap_or_else(|e| {
                             let _ = sink.send(Event::Files(FilesEvent::Done(Err(e))));
@@ -99,7 +101,7 @@ pub fn spawn_browse(browsing: Browsing, sink: impl Sink) -> io::Result<Worker<Br
                     }
                     archives.keep(&in_use.iter().map(PathBuf::as_path).chain([b.dir.as_path()]).collect::<Vec<_>>());
                     open = Some((b, dir, wd));
-                    // (Another command may be waiting: the bell was cleared for all of them.)
+                    // Another command may be waiting, and the bell was cleared for all of them.
                     bell.ring();
                 }
                 Err(TryRecvError::Empty) => {
@@ -126,8 +128,8 @@ pub fn spawn_browse(browsing: Browsing, sink: impl Sink) -> io::Result<Worker<Br
     })
 }
 
-/// Waits for the browse thread's bell, the folder's inotify events or a change of the mounts; which of
-/// the last two came.
+/// Waits for the browse thread's bell, the folder's inotify events or a change of the mounts. Returns
+/// whether the folder changed and whether the mounts changed.
 fn wait(bell: &Bell, notify: Option<&rustix::fd::OwnedFd>, mounts: Option<&fs::File>) -> (bool, bool) {
     use rustix::event::{PollFd, PollFlags};
     let mut fds = vec![PollFd::from_borrowed_fd(bell.fd(), PollFlags::IN)];
@@ -141,7 +143,7 @@ fn wait(bell: &Bell, notify: Option<&rustix::fd::OwnedFd>, mounts: Option<&fs::F
     });
     if let Err(e) = rustix::event::poll(&mut fds, None) {
         log::debug!("browse: waiting: {e}");
-        // (Interrupted: looked at as if anything changed.)
+        // If interrupted, act as if anything changed.
         return (true, true);
     }
     bell.clear();
@@ -149,7 +151,7 @@ fn wait(bell: &Bell, notify: Option<&rustix::fd::OwnedFd>, mounts: Option<&fs::F
     (came(folder, PollFlags::IN), came(table, PollFlags::PRI | PollFlags::ERR))
 }
 
-/// Whether inotify has events (all read).
+/// Whether inotify has events. Reads them all.
 fn changed(fd: &rustix::fd::OwnedFd) -> bool {
     let mut buf = [MaybeUninit::uninit(); 4096];
     let mut reader = inotify::Reader::new(fd, &mut buf);
@@ -160,9 +162,10 @@ fn changed(fd: &rustix::fd::OwnedFd) -> bool {
     any
 }
 
-/// The entries of `dir` (folder `folder`'s: their ids it, `/`, their names), folders first, then by
-/// name; hidden ones (`.name`) only if `hidden`. A picture is its own art; a file opens by the first of
-/// `runners` that opens its name (`~/` in its command against `home`).
+/// The entries of `dir`, the dir of folder `folder`, with ids made of the folder's id, `/` and their
+/// names. Folders come first, then the rest by name. Hidden entries (`.name`) are included only if
+/// `hidden`. A picture is its own art. A file opens with the first of `runners` that opens its name, with
+/// `~/` in its command expanded against `home`.
 pub fn list(dir: &Path, folder: &str, runners: &[Runner], home: Option<&Path>, hidden: bool) -> Vec<Entry> {
     let read = match fs::read_dir(dir) {
         Ok(read) => read,
@@ -185,16 +188,17 @@ pub fn list(dir: &Path, folder: &str, runners: &[Runner], home: Option<&Path>, h
                 .ok()
                 .filter(|n| hidden || !n.starts_with('.'))?;
             let path = e.path();
-            // (Through a link: what it points at.)
+            // For a link, this is what it points at.
             let meta = fs::metadata(&path).inspect_err(|e| log::debug!("browse: {}: {e}", path.display())).ok();
             let is_dir = meta.as_ref().is_some_and(fs::Metadata::is_dir);
             let size = meta.as_ref().filter(|m| m.is_file()).map(fs::Metadata::len);
             let modified = meta.and_then(|m| m.modified().ok()).map_or(0, crate::time::clock::unix_secs_at);
             let mut game = Entry::new(&format!("{folder}/{name}"), &name);
-            // (An archive: browsed as a folder, through its mount; a runner that opens it kept, for
-            // Open in.)
+            // An archive is browsed as a folder through its mount. A runner that opens it is kept for
+            // Open in.
             let archive = !is_dir && crate::files::archives::is_archive(&name);
-            // (An archive's: only a runner whose own files it is, a ROM's zip; not one for any file.)
+            // For an archive, only a runner whose own patterns match it counts, as for a ROM's zip, and
+            // not a catch-all runner.
             let opener = runners::open(runners, &path, home).filter(|_| !is_dir);
             if let Some((launch, runner)) = opener.filter(|_| !archive || runners.iter().find(|r| r.opens(&name)).is_some_and(|r| r.opens_as_its_own(&name))) {
                 game.launch = launch;
@@ -203,7 +207,7 @@ pub fn list(dir: &Path, folder: &str, runners: &[Runner], home: Option<&Path>, h
             if is_dir {
                 (game.runner, game.playlist) = enqueued(&path, runners, home);
             }
-            // (Its picture as a scanned entry's would be; else what it is.)
+            // Its picture is found as for a scanned entry. Without one, a glyph shows what it is.
             game.box_front = content::picture_of(&path);
             if game.box_front.is_none() {
                 game.glyph = Some(
@@ -227,8 +231,9 @@ pub fn list(dir: &Path, folder: &str, runners: &[Runner], home: Option<&Path>, h
     games
 }
 
-/// What enqueueing folder `dir` (not listed) is by: the runner that enqueues its first file one can
-/// enqueue, and its playlist (an `.m3u` in it), from a look at its first names (`~/` the home dir).
+/// How enqueueing the unlisted folder `dir` works, from a look at its first names: the runner that can
+/// enqueue its first enqueueable file, and its playlist, an `.m3u` in it. `~/` in the runner's commands
+/// is expanded against `home`.
 fn enqueued(dir: &Path, runners: &[Runner], home: Option<&Path>) -> (Option<clamshell_library::RunnerOf>, Option<PathBuf>) {
     let (mut runner, mut playlist) = (None, None);
     let read = match fs::read_dir(dir) {
@@ -260,8 +265,8 @@ fn enqueued(dir: &Path, runners: &[Runner], home: Option<&Path>) -> (Option<clam
 /// How many names of a folder [`enqueued`] looks at.
 const PEEK: usize = 256;
 
-/// The videos (mpv's) among `entries`: their lengths and frames as the cache has them (read before,
-/// here or as scanned entries'); those it hasn't, to read.
+/// Fills in the lengths and frames of the mpv videos among `entries` from the cache, which has those read
+/// before, here or as scanned entries. Returns the videos the cache doesn't have, to be read.
 fn known_videos(entries: &mut [Entry], store: Option<&crate::library::meta::cache::Cache>) -> Vec<crate::library::meta::Wanted> {
     if !entries.iter().any(|g| g.mpv_file().is_some()) {
         return Vec::new();
@@ -276,7 +281,7 @@ fn known_videos(entries: &mut [Entry], store: Option<&crate::library::meta::cach
             Some(p) => {
                 g.playback.duration = p.seconds;
                 g.details.shot.clone_from(&p.frame);
-                // (A video's frame is its picture, not the file glyph.)
+                // A video's frame is its picture, not the file glyph.
                 g.glyph = None;
             }
             None => {
@@ -334,7 +339,7 @@ mod tests {
         assert_eq!(games[3].box_front.as_deref(), Some(dir.join("cover.png").as_path()), "a picture is its own art");
         assert_eq!(games[2].browsed.as_ref().unwrap().size, Some(1));
         assert_eq!(argv(&games[4]), ["tool", "--open"], "a desktop file: its own command");
-        // Pictures as a scan's: a folder's cover in it, a file's beside it, an image itself; else its glyph.
+        // Pictures as in a scan: a folder's cover in it, a file's beside it, an image itself, else a glyph.
         fs::write(dir.join("Zelda/cover.jpg"), "x").unwrap();
         fs::write(dir.join("b.jpg"), "x").unwrap();
         let games = list(&dir, "browse:Files/Home", &runners, None, false);
