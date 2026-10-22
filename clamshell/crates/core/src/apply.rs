@@ -36,13 +36,6 @@ impl State {
         self.apply_event(event, &mut out);
         self.settle(&mut out);
         self.sync(&mut out);
-        if let Some(route) = self.reconcile_pad() {
-            out.effects.push(Effect::PadRoute(route));
-            // The focus ring shows where the pad is.
-            if route != PadRoute::Ui && self.pointer.hide_focus() {
-                out.mark(Dirty::BOTH);
-            }
-        }
         // Both are taken, so neither is left marked.
         if self.shelf.take_unsaved() | self.bottom.take_unsaved() {
             self.resume.touch(self.clock.mono());
@@ -63,6 +56,8 @@ impl State {
     /// 6. The second screen turning off or on by itself, which reads the program in force's setting and
     ///    darkness.
     /// 7. The pad mouse, when the program in force changed.
+    /// 8. What claims the pad, and where it goes. The focus ring shows where the pad is, so it is hidden
+    ///    when the pad leaves ClamShell's screens.
     fn settle(&mut self, out: &mut Out) {
         if self.session.version() != self.settled.session && self.reconcile(out) {
             out.mark(Dirty::BOTTOM);
@@ -75,6 +70,9 @@ impl State {
         let changed = self.session.follow_program();
         self.bottom.follow_power(self.power(), self.clock.mono());
         if changed && self.follow_pad_mouse() {
+            out.mark(Dirty::BOTH);
+        }
+        if self.reconcile_pad().is_some_and(|route| route != PadRoute::Ui) && self.pointer.hide_focus() {
             out.mark(Dirty::BOTH);
         }
     }
@@ -360,17 +358,16 @@ impl State {
     }
 
     /// The UI is up. Sends what was waiting for it: the dock if pins were dropped at start, the
-    /// brightness, the pad's route, the keymaps and the down rules. The open tab's watch starts from now
-    /// (see [`crate::sync::Sent::ui_started`]).
+    /// brightness, the runners' keymaps and the down rules, and after the event the pad's route and
+    /// keymap. The open tab's watch starts from now (see [`crate::sync::Sent::ui_started`]).
     fn ui_started(&mut self, out: &mut Out) {
         self.sent.ui_started();
+        self.sent.resend(Resend::Start);
         if self.dock.take_unsaved() {
             out.effects.push(Effect::Save(Save::Dock(self.dock.pinned_ids())));
         }
         out.effects.extend(self.levels.brightness_effect());
-        out.effects.push(Effect::PadRoute(self.pad.route()));
         out.effects.extend(self.follow_runner_keymaps());
-        self.sent.resend(Resend::Start);
         out.effects.push(self.bottom.window_rules().effect());
     }
 

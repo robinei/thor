@@ -15,7 +15,7 @@ use crate::out::Out;
 use crate::settings::{Setting, Values};
 use crate::shelf::files::{Browse, BrowseCommand};
 use crate::shelf::{Shelf, ShelfView};
-use crate::{Levels, Running, State};
+use crate::{Levels, PadRoute, Running, State};
 
 /// What the outside should have as things are now. It is built after every event, so it holds
 /// references and small values only.
@@ -46,6 +46,8 @@ pub(crate) struct Wanted<'a> {
     /// The keymap in force (see [`Keymapping::version_of`]), and the keymaps it is taken from.
     keymap: (u16, u64),
     keymapping: &'a Keymapping,
+    /// Where the pad goes.
+    route: PadRoute,
 }
 
 /// What the outside was last sent.
@@ -76,6 +78,8 @@ pub(crate) struct Sent {
     /// The keymap sent, to check that the id and version stand for it.
     #[cfg(debug_assertions)]
     keymap_sent: Option<crate::keymap::Keymap>,
+    /// Where the pad was last sent, or None to send it again.
+    route: Option<PadRoute>,
 }
 
 impl Default for Sent {
@@ -95,6 +99,7 @@ impl Default for Sent {
             keymap: None,
             #[cfg(debug_assertions)]
             keymap_sent: None,
+            route: None,
         }
     }
 }
@@ -105,7 +110,7 @@ pub(crate) enum Resend {
     /// The library was read again or fetching started or stopped: shelf's entries shown are asked for
     /// first again.
     Shown,
-    /// The UI started: the pad is sent its keymap.
+    /// The UI started: the pad is sent its route and keymap.
     Start,
     /// Back from sleep, which may have reset what the settings set, such as frequency caps and cores: they
     /// are applied again.
@@ -119,7 +124,7 @@ impl Sent {
     /// Forgets what was sent for `why`, so that it is sent again.
     pub(crate) fn resend(&mut self, why: Resend) {
         match why {
-            Resend::Start => self.keymap = None,
+            Resend::Start => (self.keymap, self.route) = (None, None),
             Resend::Shown => self.shown = None,
             Resend::Resumed => self.program = None,
             Resend::RefreshCalibrated => self.bottom_on = None,
@@ -128,7 +133,7 @@ impl Sent {
 
     /// As at start, where the pad is taken to have what `w` says.
     pub(crate) fn new(w: &Wanted) -> Sent {
-        let mut sent = Sent { keymap: Some(w.keymap), ..Sent::default() };
+        let mut sent = Sent { keymap: Some(w.keymap), route: Some(w.route), ..Sent::default() };
         #[cfg(debug_assertions)]
         {
             sent.keymap_sent = Some(w.keymapping.in_force(w.settings.get(Setting::Keymap)));
@@ -150,6 +155,7 @@ impl Sent {
         self.bottom_power(w, out);
         self.watches(w, out);
         self.keymap(w, out);
+        self.pad_route(w, out);
     }
 
     /// While metadata is being fetched and what shelf shows has changed, asks for the shown entries'
@@ -270,6 +276,13 @@ impl Sent {
         }
         out.effects.push(Effect::Keymap(keymap));
     }
+
+    /// The pad goes where it is wanted (see [`crate::Pad::reconcile`]).
+    fn pad_route(&mut self, w: &Wanted, out: &mut Out) {
+        if self.route.replace(w.route) != Some(w.route) {
+            out.effects.push(Effect::PadRoute(w.route));
+        }
+    }
 }
 
 impl State {
@@ -298,6 +311,7 @@ impl State {
             device_open: self.device.is_open(),
             keymap: self.keymapping.version_of(settings.get(Setting::Keymap)),
             keymapping: &self.keymapping,
+            route: self.pad.route(),
         }
     }
 
