@@ -159,7 +159,7 @@ impl State {
                 self.settle(mutations)
             }
             ListId::Bluetooth => self.radios.tap_device(i, long),
-            ListId::Streams => self.on_stream(i, part),
+            ListId::Streams => self.levels.on_stream(i, part),
             ListId::Keymaps => self.on_keymap_row(i, part, long),
             ListId::Layers => self.on_layer_row(i, part, long),
             ListId::Time => self.on_time_row(i),

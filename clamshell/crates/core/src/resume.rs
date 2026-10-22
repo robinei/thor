@@ -14,8 +14,6 @@ pub(crate) const SAVE_AFTER: u64 = 2;
 pub(crate) struct Saves {
     /// Where shelf and the second screen are ([`State::resume`]).
     pub resume: Debounce,
-    /// The screens' brightness.
-    pub brightness: Debounce,
 }
 
 /// Where shelf and the second screen are, to come back to after a restart.

@@ -50,6 +50,15 @@ pub struct Sys {
 }
 
 impl Sys {
+    /// A status reading. Returns whether it changed, leaving out the volume and mute: what the bar shows
+    /// of those comes from the levels.
+    pub(crate) fn read_status(&mut self, status: Status) -> bool {
+        let shown = |s: Status| Status { volume: None, muted: false, ..s };
+        let changed = shown(status) != shown(self.status);
+        self.status = status;
+        changed
+    }
+
     /// Runs after a status reading. Gives a warning when the battery has fallen to one of [`WARN_AT`],
     /// with the lower one marked urgent.
     pub(crate) fn battery_warning(&mut self) -> Option<Effect> {

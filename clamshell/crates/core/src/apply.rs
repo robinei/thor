@@ -8,8 +8,7 @@ use crate::mutation::Mutation;
 use crate::resume::SAVE_AFTER;
 use crate::settings::MouseAtLaunch;
 use crate::{
-    BtId, Dirty, Effect, Event, Hold, Id, Level, Library, PadRoute, PointerEvent, Reading, Save, SettingsId, ShelfId, State, Status, Tab, WifiId,
-    WindowCommand, device,
+    BtId, Dirty, Effect, Event, Hold, Id, Level, Library, PadRoute, PointerEvent, Reading, Save, SettingsId, ShelfId, State, Tab, WifiId, WindowCommand, device,
 };
 
 impl State {
@@ -324,9 +323,7 @@ impl State {
         if self.saves.resume.due(mono_secs, SAVE_AFTER) {
             effects.push(Effect::Save(Save::Resume(self.resume())));
         }
-        if self.saves.brightness.due(mono_secs, SAVE_AFTER) {
-            effects.push(Effect::Save(Save::Brightness(self.levels.brightness().clone())));
-        }
+        effects.extend(self.levels.save_due(mono_secs));
         let notice_gone = self.expire_notice(mono_secs);
         let dirty = if minute_changed {
             Dirty::BOTH
@@ -342,7 +339,12 @@ impl State {
     fn on_reading(&mut self, reading: Reading) -> Dirty {
         let shown = self.bottom.tab.shows(&reading);
         let changed = match reading {
-            Reading::Status(status) => self.read_status(status),
+            // The volume, mute and brightness go to the levels, where a finger on a slider wins over the
+            // reading.
+            Reading::Status(status) => {
+                let levels = self.levels.read(status.volume, status.muted, status.brightness);
+                self.sys.read_status(status) | levels
+            }
             Reading::Clipboard(text) => replace(&mut self.clipboard, text),
             Reading::Icon { entry, path } => {
                 let running = self.session.running.iter_mut().find(|r| r.id == entry);
@@ -370,16 +372,6 @@ impl State {
             }
         };
         if changed && shown { Dirty::BOTTOM } else { Dirty::NONE }
-    }
-
-    /// A status reading. The volume, mute and brightness go to the levels, where a finger on a slider
-    /// wins over the reading. Returns whether what the bar shows changed.
-    fn read_status(&mut self, status: Status) -> bool {
-        let shown = |s: &State| Status { volume: s.levels.volume(), muted: s.levels.muted(), ..s.sys.status };
-        let before = shown(self);
-        self.sys.status = status;
-        self.levels.read(status.volume, status.muted, status.brightness);
-        shown(self) != before
     }
 
     fn on_pointer(&mut self, event: PointerEvent) -> (Dirty, Vec<Effect>) {
@@ -449,7 +441,7 @@ impl State {
             Id::Editor(id) => (Dirty::BOTTOM, self.on_editor(id)),
             Id::Wifi(WifiId::Power) => (Dirty::BOTTOM, vec![self.radios.power_wifi()]),
             Id::Bluetooth(BtId::Power) => (Dirty::BOTTOM, vec![self.radios.power_bluetooth()]),
-            Id::Audio(id) => (Dirty::BOTTOM, self.on_audio(id)),
+            Id::Audio(id) => (Dirty::BOTTOM, self.levels.on_audio(id)),
             Id::Row { list, i, part } => (list.screens(), self.on_row(list, usize::from(i), part, long)),
             Id::Keymap(id) => (Dirty::BOTTOM, self.on_keymap(id, long)),
             Id::Tab(tab) => (Dirty::BOTH, self.choose_tab(tab)),

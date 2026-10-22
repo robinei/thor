@@ -15,10 +15,12 @@
 
 pub mod slider;
 
-use crate::effect::Effect;
+use crate::effect::{Effect, Save};
 use crate::id::Id;
+use crate::kit::debounce::Debounce;
 use crate::kit::list::{ItemKey, Rows};
 use crate::nav::lists::{ListId, RowPart};
+use crate::resume::SAVE_AFTER;
 use crate::{AudioId, Dirty, LevelEvent, Slide, State};
 use slider::{Control, Slider};
 
@@ -191,9 +193,11 @@ pub struct Levels {
     /// The first backlight's level as last read. It stands for the brightness until ClamShell sets one.
     read_brightness: Option<u8>,
     /// Volume or brightness being slid in the bar, if any.
-    pub(crate) slider: Option<Slider>,
+    slider: Option<Slider>,
     /// The level row a finger is on.
     holding: Option<Level>,
+    /// A change of the brightness, saved a moment later.
+    unsaved: Debounce,
 }
 
 impl Levels {
@@ -274,11 +278,45 @@ impl Levels {
         Effect::Brightness { level, shares: self.brightness.shares.clone() }
     }
 
-    /// A status reading of the volume, mute and brightness.
-    pub(crate) fn read(&mut self, volume: Option<u8>, muted: bool, brightness: Option<u8>) {
+    /// A status reading of the volume, mute and brightness. Returns whether the volume or mute shown
+    /// changed, which a finger on the level may keep from changing.
+    pub(crate) fn read(&mut self, volume: Option<u8>, muted: bool, brightness: Option<u8>) -> bool {
+        let before = (self.volume(), self.muted());
         self.volume.reading(volume);
         self.muted.reading(muted);
         self.read_brightness = brightness;
+        (self.volume(), self.muted()) != before
+    }
+
+    /// Changes the levels with `change` at `now`. A changed brightness is saved a moment later.
+    pub(crate) fn change(&mut self, now: u64, change: impl FnOnce(&mut Levels) -> Vec<Effect>) -> Vec<Effect> {
+        let before = self.brightness.clone();
+        let effects = change(self);
+        if self.brightness != before {
+            self.unsaved.touch(now);
+        }
+        effects
+    }
+
+    /// The brightness to save, once it has stopped changing for a moment.
+    pub(crate) fn save_due(&mut self, now: u64) -> Option<Effect> {
+        self.unsaved.due(now, SAVE_AFTER).then(|| Effect::Save(Save::Brightness(self.brightness.clone())))
+    }
+
+    /// The volume tab's buttons.
+    pub(crate) fn on_audio(&mut self, id: AudioId) -> Vec<Effect> {
+        match id {
+            AudioId::MuteOutput => self.toggle_mute(),
+            AudioId::Output(i) => self.choose_output(usize::from(i)),
+        }
+    }
+
+    /// A tap on part of an app's row. Its mute button mutes it; its level is set by the finger.
+    pub(crate) fn on_stream(&mut self, i: usize, part: RowPart) -> Vec<Effect> {
+        match part {
+            RowPart::Mute => self.toggle_stream_mute(i),
+            RowPart::Main | RowPart::Level | RowPart::Edit => vec![],
+        }
     }
 
     /// New readings of the outputs and streams. A stream the finger is on keeps the finger's value.
@@ -435,34 +473,6 @@ impl Rows for Backlights {
 }
 
 impl State {
-    /// A tap on part of an app's row. Its mute button mutes it; its level is set by the finger.
-    pub(crate) fn on_stream(&mut self, i: usize, part: RowPart) -> Vec<Effect> {
-        match part {
-            RowPart::Mute => self.levels.toggle_stream_mute(i),
-            RowPart::Main | RowPart::Level | RowPart::Edit => vec![],
-        }
-    }
-}
-
-impl State {
-    /// The volume tab's buttons.
-    pub(crate) fn on_audio(&mut self, id: AudioId) -> Vec<Effect> {
-        match id {
-            AudioId::MuteOutput => self.levels.toggle_mute(),
-            AudioId::Output(i) => self.levels.choose_output(usize::from(i)),
-        }
-    }
-
-    /// Changes the levels with `change`. A changed brightness is saved a moment later.
-    pub(crate) fn change_levels(&mut self, change: impl FnOnce(&mut Levels) -> Vec<Effect>) -> Vec<Effect> {
-        let before = self.levels.brightness().clone();
-        let effects = change(&mut self.levels);
-        if *self.levels.brightness() != before {
-            self.saves.brightness.touch(self.clock.mono());
-        }
-        effects
-    }
-
     pub(crate) fn on_slide(&mut self, slide: Slide) -> (Dirty, Vec<Effect>) {
         match slide {
             Slide::Start { control: Control::Param(param), x, width } => {
@@ -475,7 +485,7 @@ impl State {
             }
             Slide::To { x } if self.levels.slider().is_none() => (if self.param_slide_to(x) { Dirty::BOTTOM } else { Dirty::NONE }, vec![]),
             Slide::To { x } => {
-                let effects = self.change_levels(|l| l.slide_to(x));
+                let effects = self.levels.change(self.clock.mono(), |l| l.slide_to(x));
                 (if effects.is_empty() { Dirty::NONE } else { Dirty::BOTTOM }, effects)
             }
             Slide::End => {
@@ -492,10 +502,10 @@ impl State {
                     return (Dirty::NONE, vec![]);
                 };
                 let before = self.levels.level(level);
-                let effects = self.change_levels(|l| l.set(level, value));
+                let effects = self.levels.change(self.clock.mono(), |l| l.set(level, value));
                 (if self.levels.level(level) == before { Dirty::NONE } else { Dirty::BOTTOM }, effects)
             }
-            LevelEvent::Step(level, direction) => (Dirty::BOTTOM, self.change_levels(|l| l.step(level, direction))),
+            LevelEvent::Step(level, direction) => (Dirty::BOTTOM, self.levels.change(self.clock.mono(), |l| l.step(level, direction))),
         }
     }
 }

@@ -55,7 +55,7 @@ impl State {
         };
         let control = if level == Level::Volume { Control::Volume } else { Control::Brightness };
         self.notify(NoticeKind::Level(control));
-        self.change_levels(|l| l.step(level, direction))
+        self.levels.change(self.clock.mono(), |l| l.step(level, direction))
     }
 
     /// The window Home with B acts on. It is the one in front on the top screen, other than shelf's. If
