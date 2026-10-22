@@ -103,7 +103,9 @@ pub fn run(path: &Path) -> Error {
         Ok(job) => job,
         Err(e) => return e,
     };
-    let _ = std::fs::remove_file(path);
+    if let Err(e) = std::fs::remove_file(path) {
+        log::warn!("removing {}: {e}", path.display());
+    }
     match command(&job) {
         Some(mut cmd) => cmd.exec().into(),
         None => Error::EmptyCommand,

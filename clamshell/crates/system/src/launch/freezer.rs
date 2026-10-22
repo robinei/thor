@@ -51,7 +51,7 @@ impl Freezer for Systemd {
     }
 
     fn busy(&mut self, unit: &str) -> bool {
-        let group = with_manager(|bus| Ok(control_group(bus, unit))).ok().flatten();
+        let group = with_manager(|bus| Ok(control_group(bus, unit))).inspect_err(|e| log::debug!("freezer: {unit}'s cgroup: {e}")).ok().flatten();
         working_without_drawing(group)
     }
 }
@@ -123,8 +123,11 @@ const WATCH: Duration = Duration::from_secs(2);
 
 /// A slice's cgroup, under /sys/fs/cgroup.
 fn control_group(bus: &mut Bus, unit: &str) -> Option<String> {
-    let path = get_unit(bus, unit).ok()?;
-    bus.get::<String>(SYSTEMD, &path, "org.freedesktop.systemd1.Slice", "ControlGroup").ok().filter(|g| !g.is_empty())
+    let path = get_unit(bus, unit).inspect_err(|e| log::debug!("freezer: {unit}: {e}")).ok()?;
+    bus.get::<String>(SYSTEMD, &path, "org.freedesktop.systemd1.Slice", "ControlGroup")
+        .inspect_err(|e| log::debug!("freezer: {unit}'s cgroup: {e}"))
+        .ok()
+        .filter(|g| !g.is_empty())
 }
 
 /// Whether the slice with cgroup `group` works without drawing, over [`WATCH`]: much CPU, the GPU (its

@@ -118,9 +118,11 @@ impl<S: Sink> Service for Units<S> {
         call::<()>(&mut bus, "Subscribe", ())?;
         if !std::mem::replace(&mut self.looked, true) {
             let slices = units(&mut bus, &[&format!("{}*.slice", clamshell_core::session::instance::SLICE_PREFIX)])?;
-            let frozen = slices
-                .into_iter()
-                .filter(|row| bus.get::<String>(SYSTEMD, &row.6, "org.freedesktop.systemd1.Unit", "FreezerState").is_ok_and(|s| s == "frozen"));
+            let frozen = slices.into_iter().filter(|row| {
+                bus.get::<String>(SYSTEMD, &row.6, "org.freedesktop.systemd1.Unit", "FreezerState")
+                    .inspect_err(|e| log::warn!("units: {}'s freezer state: {e}", row.0))
+                    .is_ok_and(|s| s == "frozen")
+            });
             self.frozen = Some(
                 frozen.filter_map(|row| Some(row.0.strip_prefix(clamshell_core::session::instance::SLICE_PREFIX)?.strip_suffix(".slice")?.into())).collect(),
             );
@@ -159,15 +161,19 @@ impl<S: Sink> Service for Units<S> {
 /// at UnitNew it is still inactive, and listing it then can miss it).
 fn unit_of_signal(message: &Message) -> Option<String> {
     match &*message.member()? {
-        "UnitNew" | "UnitRemoved" => message.read2::<String, Path>().ok().map(|(unit, _)| unit),
-        "JobRemoved" => message.read4::<u32, Path, String, String>().ok().map(|(_, _, unit, _)| unit),
+        "UnitNew" | "UnitRemoved" => {
+            message.read2::<String, Path>().inspect_err(|e| log::warn!("units: reading a unit signal: {e}")).ok().map(|(unit, _)| unit)
+        }
+        "JobRemoved" => {
+            message.read4::<u32, Path, String, String>().inspect_err(|e| log::warn!("units: reading a job signal: {e}")).ok().map(|(_, _, unit, _)| unit)
+        }
         _ => None,
     }
 }
 
 /// Whether the user manager has this unit loaded (`name` with its suffix).
 fn loaded(bus: &mut Bus, name: &str) -> bool {
-    get_unit(bus, name).is_ok()
+    get_unit(bus, name).inspect_err(|e| log::debug!("{name} not loaded: {e}")).is_ok()
 }
 
 /// A loaded unit's object path.

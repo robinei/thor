@@ -12,7 +12,15 @@ use std::path::{Path, PathBuf};
 pub fn watch_later_dirs(config_home: Option<&Path>, state_home: Option<&Path>) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     let conf = config_home.map(|c| c.join("mpv/mpv.conf"));
-    if let Some(text) = conf.and_then(|c| std::fs::read_to_string(c).ok()) {
+    let read = |c: PathBuf| {
+        std::fs::read_to_string(&c)
+            .inspect_err(|e| match e.kind() {
+                std::io::ErrorKind::NotFound => log::debug!("reading {}: {e}", c.display()),
+                _ => log::warn!("reading {}: {e}", c.display()),
+            })
+            .ok()
+    };
+    if let Some(text) = conf.and_then(read) {
         for line in text.lines().map(str::trim) {
             if let Some(dir) = line.strip_prefix("watch-later-dir=").or_else(|| line.strip_prefix("watch-later-directory=")) {
                 let dir = dir.trim().trim_matches('"');
@@ -39,10 +47,14 @@ pub fn position(dirs: &[PathBuf], file: &Path) -> Option<(u32, u64)> {
     let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let names = [md5_hex(path.as_bytes()), md5_hex(name.as_bytes())];
     let kept = names.iter().flat_map(|n| dirs.iter().map(move |d| d.join(n))).find(|f| f.is_file())?;
-    let text = std::fs::read_to_string(&kept).ok()?;
+    let text = std::fs::read_to_string(&kept).inspect_err(|e| log::warn!("reading {}: {e}", kept.display())).ok()?;
     let start = text.lines().find_map(|l| l.trim().strip_prefix("start="))?;
-    let at = std::fs::metadata(&kept).and_then(|m| m.modified()).ok().map_or(0, crate::time::clock::unix_secs_at);
-    start.trim().parse::<f64>().ok().filter(|s| *s >= 0.0).map(|s| (s as u32, at))
+    let at = std::fs::metadata(&kept)
+        .and_then(|m| m.modified())
+        .inspect_err(|e| log::warn!("reading the time of {}: {e}", kept.display()))
+        .ok()
+        .map_or(0, crate::time::clock::unix_secs_at);
+    start.trim().parse::<f64>().inspect_err(|e| log::warn!("{}: start={start}: {e}", kept.display())).ok().filter(|s| *s >= 0.0).map(|s| (s as u32, at))
 }
 
 /// MD5 of `data` as 32 capital hex digits (as mpv names its watch_later files).
