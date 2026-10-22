@@ -4,6 +4,7 @@
 use crate::bottom::keyboard::Key;
 use crate::kit::replace;
 use crate::levels::slider::Control;
+use crate::mutation::Mutation;
 use crate::resume::SAVE_AFTER;
 use crate::settings::MouseAtLaunch;
 use crate::{
@@ -240,6 +241,19 @@ impl State {
         effects
     }
 
+    /// Applies what an area's rule asked of the rest of the state, in order, and returns its effects in
+    /// the order they were asked for.
+    pub(crate) fn settle(&mut self, mutations: Vec<Mutation>) -> Vec<Effect> {
+        let mut effects = Vec::new();
+        for m in mutations {
+            match m {
+                Mutation::Effect(e) => effects.push(e),
+                Mutation::Notify(what) => self.notify(what),
+            }
+        }
+        effects
+    }
+
     /// The UI is up. Sends what was waiting for it: the dock if pins were dropped at start, the
     /// brightness, the pad's route, the keymaps and the down rules. The open tab's watch starts from now
     /// (see [`State::follow_watch`]).
@@ -253,7 +267,7 @@ impl State {
         effects.push(Effect::PadRoute(self.pad.route()));
         effects.extend(self.follow_runner_keymaps());
         effects.extend(self.follow_keymap(true));
-        effects.push(self.down_rules_effect());
+        effects.push(self.window_rules.effect());
         effects
     }
 

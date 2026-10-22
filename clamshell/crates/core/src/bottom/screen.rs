@@ -22,6 +22,7 @@ use std::sync::Arc;
 use crate::State;
 use crate::bottom::notice::NoticeKind;
 use crate::effect::{Dirty, Effect, Save, WindowCommand};
+use crate::mutation::Mutation;
 use crate::session::instance::Instance;
 use crate::session::windows::Window;
 use crate::settings::BottomWhenIdle;
@@ -76,20 +77,33 @@ impl WindowRules {
         &self.list
     }
 
-    /// Adds a rule unless there is one like it. Returns whether it was new.
-    fn add(&mut self, rule: WindowRule) -> bool {
+    /// Adds a rule unless there is one like it. A new rule is shown in a notice, saved and given to sway.
+    fn add(&mut self, rule: WindowRule) -> Vec<Mutation> {
         if self.list.contains(&rule) {
-            return false;
+            return vec![];
         }
         self.list.push(rule);
-        true
+        self.changed(true)
     }
 
-    /// Forgets the rules that match a window of `owner`. Returns whether there were any.
-    fn forget(&mut self, owner: &str, w: &Window) -> bool {
+    /// Forgets the rules that match a window of `owner`. If there were any, that is shown in a notice,
+    /// and the rules are saved and given to sway.
+    fn forget(&mut self, owner: &str, w: &Window) -> Vec<Mutation> {
         let before = self.list.len();
         self.list.retain(|r| !r.matches(owner, w));
-        self.list.len() != before
+        if self.list.len() == before {
+            return vec![];
+        }
+        self.changed(false)
+    }
+
+    fn changed(&self, added: bool) -> Vec<Mutation> {
+        vec![Mutation::Notify(NoticeKind::BottomRule(added)), Mutation::Effect(Effect::Save(Save::WindowRules(self.clone()))), Mutation::Effect(self.effect())]
+    }
+
+    /// The rules in the form sway uses to place windows.
+    pub(crate) fn effect(&self) -> Effect {
+        Effect::Window(WindowCommand::DownRules(self.down_rules()))
     }
 
     fn wants(&self, owner: &str, w: &Window) -> bool {
@@ -223,12 +237,9 @@ impl State {
         // app id.
         let others = self.session.windows.iter().any(|o| o.id != w.id && o.app_id == w.app_id && o.unit == w.unit);
         let title = others.then(|| w.title.clone());
-        if let Some(owner) = self.owner(&w)
-            && self.window_rules.add(WindowRule { owner, app_id: w.app_id.clone(), title })
-        {
-            self.notify(NoticeKind::BottomRule(true));
-            effects.push(Effect::Save(Save::WindowRules(self.window_rules.clone())));
-            effects.push(self.down_rules_effect());
+        if let Some(owner) = self.owner(&w) {
+            let changes = self.window_rules.add(WindowRule { owner, app_id: w.app_id.clone(), title });
+            effects.extend(self.settle(changes));
         }
         effects
     }
@@ -254,19 +265,11 @@ impl State {
             return vec![];
         };
         let mut effects = vec![Effect::Window(WindowCommand::Up { window: w.id, to: w.home() })];
-        if let Some(owner) = self.owner(&w)
-            && self.window_rules.forget(&owner, &w)
-        {
-            self.notify(NoticeKind::BottomRule(false));
-            effects.push(Effect::Save(Save::WindowRules(self.window_rules.clone())));
-            effects.push(self.down_rules_effect());
+        if let Some(owner) = self.owner(&w) {
+            let changes = self.window_rules.forget(&owner, &w);
+            effects.extend(self.settle(changes));
         }
         effects
-    }
-
-    /// The rules in the form sway uses to place windows.
-    pub(crate) fn down_rules_effect(&self) -> Effect {
-        Effect::Window(WindowCommand::DownRules(self.window_rules.down_rules()))
     }
 
     /// Home+Select switches the bottom screen between the windows moved there and ClamShell's view. It

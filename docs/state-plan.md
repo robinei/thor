@@ -64,8 +64,8 @@ passes (session; keymap and settings; shelf, nav and bottom; the rest and State 
 Each step is one or a few commits that pass `tools/check.sh` with the snapshot hashes unchanged; tests
 and the UI change with the code they call; doc links to moved methods are fixed in the same commit.
 
-- [ ] 1. `Clock`.
-- [ ] 2. `Mutation` and `State::settle`, with `Notify` and `Effect` first; `State::notify` stays as a wrapper
+- [x] 1. `Clock`.
+- [x] 2. `Mutation` and `State::settle`, with `Notify` and `Effect` first; `State::notify` stays as a wrapper
       until the areas return notices.
 - [ ] 3. Radios: private fields, `tap_network`/`tap_device`/`join`/power, `read_wifi`/`read_bluetooth`.
 - [ ] 4. Levels: brightness debounce in, `change`/`on_audio`/`on_stream`; `read_status` split between
