@@ -66,16 +66,9 @@ impl State {
 /// The line that adds `file` to a launch of `runner`: its `enqueue`, `{path}` the file as a JSON string's
 /// contents.
 fn line(runner: &RunnerOf, file: &std::path::Path) -> Option<String> {
-    let mut escaped = String::new();
-    for c in file.to_string_lossy().chars() {
-        match c {
-            '"' => escaped.push_str("\\\""),
-            '\\' => escaped.push_str("\\\\"),
-            c if u32::from(c) < 0x20 => escaped.push_str(&format!("\\u{:04x}", u32::from(c))),
-            c => escaped.push(c),
-        }
-    }
-    Some(runner.enqueue.as_ref()?.replace("{path}", &escaped))
+    let quoted = serde_json::to_string(&file.to_string_lossy()).ok()?;
+    let escaped = quoted.strip_prefix('"')?.strip_suffix('"')?;
+    Some(runner.enqueue.as_ref()?.replace("{path}", escaped))
 }
 
 #[cfg(test)]
