@@ -3,12 +3,12 @@
 //! press forgets a saved network. What a network's row and the tab's header say is decided here
 //! ([`Wifi::net_state`], [`Wifi::status`]), and the UI puts it into words.
 
+use crate::bottom::Bottom;
 use crate::bottom::editor::{Editor, Purpose};
 use crate::effect::Effect;
 use crate::kit::list::ItemKey;
 use crate::kit::list::Rows;
 use crate::kit::secret::Secret;
-use crate::mutation::Mutation;
 use crate::radios::{RadioStatus, Radios};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -169,13 +169,13 @@ impl Radios {
 
     /// A tap on the network at `index`, or a long press. A network with a password that isn't saved
     /// asks for it first.
-    pub(crate) fn tap_network(&mut self, index: usize, long: bool) -> Vec<Mutation> {
+    pub(crate) fn tap_network(&mut self, index: usize, long: bool, bottom: &mut Bottom) -> Vec<Effect> {
         let Some(n) = self.wifi.networks.get(index) else {
             return vec![];
         };
         let ssid = n.ssid.clone();
         if long {
-            return if n.saved { vec![Mutation::Effect(Effect::Wifi(Command::Forget(ssid)))] } else { vec![] };
+            return if n.saved { vec![Effect::Wifi(Command::Forget(ssid))] } else { vec![] };
         }
         if n.connected {
             return vec![];
@@ -185,9 +185,10 @@ impl Radios {
             return vec![];
         }
         if n.secure && !n.saved {
-            return vec![Mutation::OpenEditor(Editor { purpose: Purpose::Password { ssid }, text: String::new() })];
+            bottom.open_editor(Editor { purpose: Purpose::Password { ssid }, text: String::new() });
+            return vec![];
         }
-        vec![Mutation::Effect(self.join(ssid, None))]
+        vec![self.join(ssid, None)]
     }
 
     pub(crate) fn join(&mut self, ssid: String, password: Option<String>) -> Effect {

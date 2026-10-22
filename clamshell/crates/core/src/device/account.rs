@@ -6,10 +6,10 @@
 //! The account is read while the Device view is open and after each change. Off the device there is no
 //! helper, and all of it shows as unavailable.
 
+use crate::bottom::Bottom;
 use crate::bottom::editor::{Editor, Purpose};
 use crate::effect::Effect;
 use crate::kit::secret::Secret;
-use crate::mutation::Mutation;
 
 /// The account as the helper read it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -44,12 +44,13 @@ pub enum PasswordStep {
 
 /// The password editor was saved with `text`. After the current password it asks for the new one, and
 /// after the new one it sets the password.
-pub(crate) fn password_typed(step: PasswordStep, text: String) -> Mutation {
+pub(crate) fn password_typed(step: PasswordStep, text: String, bottom: &mut Bottom) -> Vec<Effect> {
     match step {
         PasswordStep::Current => {
             let step = PasswordStep::New { current: Some(Secret(text)) };
-            Mutation::OpenEditor(Editor { purpose: Purpose::AccountPassword(step), text: String::new() })
+            bottom.open_editor(Editor { purpose: Purpose::AccountPassword(step), text: String::new() });
+            vec![]
         }
-        PasswordStep::New { current } => Mutation::Effect(Effect::Account(AccountCommand::Password { current, new: Secret(text) })),
+        PasswordStep::New { current } => vec![Effect::Account(AccountCommand::Password { current, new: Secret(text) })],
     }
 }

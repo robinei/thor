@@ -20,9 +20,8 @@
 use std::sync::Arc;
 
 use crate::State;
-use crate::bottom::notice::NoticeKind;
+use crate::bottom::notice::{Notice, NoticeKind};
 use crate::effect::{Dirty, Effect, Save, WindowCommand};
-use crate::mutation::Mutation;
 use crate::session::instance::Instance;
 use crate::session::windows::Window;
 use crate::settings::BottomWhenIdle;
@@ -78,27 +77,28 @@ impl WindowRules {
     }
 
     /// Adds a rule unless there is one like it. A new rule is shown in a notice, saved and given to sway.
-    fn add(&mut self, rule: WindowRule) -> Vec<Mutation> {
+    fn add(&mut self, rule: WindowRule, notice: &mut Option<Notice>, now: u64) -> Vec<Effect> {
         if self.list.contains(&rule) {
             return vec![];
         }
         self.list.push(rule);
-        self.changed(true)
+        self.changed(true, notice, now)
     }
 
     /// Forgets the rules that match a window of `owner`. If there were any, that is shown in a notice,
     /// and the rules are saved and given to sway.
-    fn forget(&mut self, owner: &str, w: &Window) -> Vec<Mutation> {
+    fn forget(&mut self, owner: &str, w: &Window, notice: &mut Option<Notice>, now: u64) -> Vec<Effect> {
         let before = self.list.len();
         self.list.retain(|r| !r.matches(owner, w));
         if self.list.len() == before {
             return vec![];
         }
-        self.changed(false)
+        self.changed(false, notice, now)
     }
 
-    fn changed(&self, added: bool) -> Vec<Mutation> {
-        vec![Mutation::Notify(NoticeKind::BottomRule(added)), Mutation::Effect(Effect::Save(Save::WindowRules(self.clone()))), Mutation::Effect(self.effect())]
+    fn changed(&self, added: bool, notice: &mut Option<Notice>, now: u64) -> Vec<Effect> {
+        *notice = Some(Notice::new(NoticeKind::BottomRule(added), now));
+        vec![Effect::Save(Save::WindowRules(self.clone())), self.effect()]
     }
 
     /// The rules in the form sway uses to place windows.
@@ -238,8 +238,8 @@ impl State {
         let others = self.session.windows.iter().any(|o| o.id != w.id && o.app_id == w.app_id && o.unit == w.unit);
         let title = others.then(|| w.title.clone());
         if let Some(owner) = self.owner(&w) {
-            let changes = self.window_rules.add(WindowRule { owner, app_id: w.app_id.clone(), title });
-            effects.extend(self.settle(changes));
+            let rule = WindowRule { owner, app_id: w.app_id.clone(), title };
+            effects.extend(self.window_rules.add(rule, &mut self.bottom.notice, self.clock.mono()));
         }
         effects
     }
@@ -266,8 +266,7 @@ impl State {
         };
         let mut effects = vec![Effect::Window(WindowCommand::Up { window: w.id, to: w.home() })];
         if let Some(owner) = self.owner(&w) {
-            let changes = self.window_rules.forget(&owner, &w);
-            effects.extend(self.settle(changes));
+            effects.extend(self.window_rules.forget(&owner, &w, &mut self.bottom.notice, self.clock.mono()));
         }
         effects
     }

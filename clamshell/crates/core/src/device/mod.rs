@@ -18,13 +18,15 @@ pub mod sticks;
 
 use crate::DeviceId;
 use crate::State;
-use crate::bottom::Tab;
+use std::sync::Arc;
+
 use crate::bottom::editor::{Editor, Purpose};
-use crate::bottom::notice::NoticeKind;
+use crate::bottom::notice::{Notice, NoticeKind};
+use crate::bottom::{Bottom, Tab};
 use crate::effect::{Effect, Save, WindowCommand};
 use crate::kit::replace;
 use crate::mutation::Mutation;
-use crate::{Id, ShelfId};
+use crate::{Id, Pointer};
 use account::{Account, AccountCommand, PasswordStep};
 use sticks::{Calibrations, Progress, Sticks};
 
@@ -128,8 +130,9 @@ impl Device {
         replace(&mut self.account, account) && self.open
     }
 
-    /// A tap on one of the Device view's targets.
-    pub(crate) fn tap(&mut self, id: DeviceId) -> Vec<Mutation> {
+    /// A tap on one of the Device view's targets at `now`. Closing it gives the focus back to shelf's
+    /// selection (`selected`). A tab to open is returned as a mutation, since State changes tabs.
+    pub(crate) fn tap(&mut self, id: DeviceId, now: u64, bottom: &mut Bottom, pointer: &mut Pointer, selected: Option<&Arc<str>>) -> Vec<Mutation> {
         let account = self.account;
         match id {
             DeviceId::Wifi => vec![Mutation::Tab(Tab::Wifi)],
@@ -137,7 +140,8 @@ impl Device {
             // Typed in the editor on the second screen's keyboard.
             DeviceId::Password if account.available => {
                 let step = if account.password { PasswordStep::Current } else { PasswordStep::New { current: None } };
-                vec![Mutation::OpenEditor(Editor { purpose: Purpose::AccountPassword(step), text: String::new() }), Mutation::Tab(Tab::Keyboard)]
+                bottom.open_editor(Editor { purpose: Purpose::AccountPassword(step), text: String::new() });
+                vec![Mutation::Tab(Tab::Keyboard)]
             }
             // Remote login needs a password to log in with.
             DeviceId::Ssh if account.available && account.password => vec![Mutation::Effect(Effect::Account(AccountCommand::Ssh(!account.ssh)))],
@@ -147,7 +151,10 @@ impl Device {
                 vec![Mutation::Effect(Effect::CalibrateSticks)]
             }
             DeviceId::Sticks => vec![],
-            DeviceId::Gyro => vec![Mutation::Notify(NoticeKind::Gyro(None)), Mutation::Effect(Effect::CalibrateGyro)],
+            DeviceId::Gyro => {
+                bottom.notice = Some(Notice::new(NoticeKind::Gyro(None), now));
+                vec![Mutation::Effect(Effect::CalibrateGyro)]
+            }
             DeviceId::Refresh if self.refresh != Refresh::Running => {
                 self.refresh = Refresh::Running;
                 vec![Mutation::Effect(Effect::CalibrateRefresh)]
@@ -158,11 +165,13 @@ impl Device {
             DeviceId::Done if self.first_start => {
                 self.first_start = false;
                 self.close();
-                vec![Mutation::Effect(Effect::Save(Save::FirstStartDone)), Mutation::FocusShelf, Mutation::Tab(Tab::default())]
+                pointer.focus_shelf(selected);
+                vec![Mutation::Effect(Effect::Save(Save::FirstStartDone)), Mutation::Tab(Tab::default())]
             }
             DeviceId::Done | DeviceId::Close => {
                 self.close();
-                vec![Mutation::FocusShelf]
+                pointer.focus_shelf(selected);
+                vec![]
             }
         }
     }
@@ -208,13 +217,8 @@ impl State {
     /// Goes back to shelf, with the focus on its selection.
     pub(crate) fn close_device(&mut self) -> Vec<Effect> {
         self.device.close();
-        self.focus_shelf();
+        self.pointer.focus_shelf(self.shelf.selected());
         vec![]
-    }
-
-    /// The focus goes to shelf's selection.
-    pub(crate) fn focus_shelf(&mut self) {
-        self.pointer.focus = self.shelf.selected().cloned().map(|g| Id::Shelf(ShelfId::Entry(g)));
     }
 }
 

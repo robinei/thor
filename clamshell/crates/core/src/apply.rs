@@ -249,10 +249,7 @@ impl State {
         for m in mutations {
             match m {
                 Mutation::Effect(e) => effects.push(e),
-                Mutation::Notify(what) => self.notify(what),
-                Mutation::OpenEditor(editor) => self.bottom.open_editor(editor),
                 Mutation::Tab(tab) => effects.extend(self.choose_tab(tab)),
-                Mutation::FocusShelf => self.focus_shelf(),
                 Mutation::Act(id, EntryAct::Quit) => effects.extend(self.quit(&id)),
                 Mutation::Act(id, EntryAct::ForceKill) => effects.extend(self.force_kill(&id)),
             }
@@ -472,7 +469,7 @@ impl State {
             },
             Id::Time(id) => self.sys.on_time(id, self.lists.get_mut(ListId::Time)),
             Id::Device(id) => {
-                let mutations = self.device.tap(id);
+                let mutations = self.device.tap(id, self.clock.mono(), &mut self.bottom, &mut self.pointer, self.shelf.selected());
                 (Dirty::BOTH, self.settle(mutations))
             }
             Id::Battery(id) => {

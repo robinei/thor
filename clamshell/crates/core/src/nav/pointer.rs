@@ -2,7 +2,9 @@
 //! navigating with the pad, and the target a finger, the mouse or the pad's A is pressing, which is drawn
 //! lit. For a press it also holds which list item the press came down on (see [`crate::nav::items`]).
 
-use crate::id::Id;
+use std::sync::Arc;
+
+use crate::id::{Id, ShelfId};
 use crate::kit::list::ItemKey;
 
 /// A press on a list item, kept by what the item is rather than where it is, so a list that changes
@@ -24,6 +26,11 @@ pub struct Pointer {
 }
 
 impl Pointer {
+    /// The focus goes to shelf's selected entry, or nowhere without one.
+    pub(crate) fn focus_shelf(&mut self, selected: Option<&Arc<str>>) {
+        self.focus = selected.cloned().map(|g| Id::Shelf(ShelfId::Entry(g)));
+    }
+
     pub fn focus(&self) -> Option<&Id> {
         self.focus.as_ref()
     }
