@@ -2,7 +2,7 @@
 //! before it.
 
 use crate::out::Out;
-use crate::{Effect, Instance, Running, Session, WindowCommand};
+use crate::{Effect, EntryAct, Event, Instance, Running, Session, WindowCommand};
 
 impl Session {
     /// Runs after the windows changed. If the window in front when the last pass ran (see
@@ -31,7 +31,7 @@ impl Session {
     /// The Home button. From anything it goes to shelf. From shelf it goes back to what was in front
     /// before, or, without that history because the compositor hasn't reported any, to the program in
     /// force. (When the Device view is in shelf's place, Home closes it instead: see
-    /// [`crate::State::close_device`].)
+    /// [`crate::device::Device::close`].)
     pub(crate) fn home(&self, out: &mut Out) {
         if !self.shelf_in_front() {
             out.effects.push(Effect::Window(WindowCommand::ShowShelf));
@@ -44,6 +44,25 @@ impl Session {
         let game = self.program.as_deref().and_then(|id| self.running(id)).map(Running::workspace).filter(shown);
         if let Some(workspace) = before.or(game) {
             out.effects.push(Effect::Window(WindowCommand::Focus(workspace)));
+        }
+    }
+
+    /// Home with B, released at once, asks that window (see [`Session::home_b_window`]) to close.
+    pub(crate) fn close_front_window(&self, shows_windows: bool, out: &mut Out) {
+        if let Some(w) = self.home_b_window(shows_windows) {
+            out.effects.push(Effect::Window(WindowCommand::Close(vec![w.id])));
+        }
+    }
+
+    /// Home with B, held, quits that window's entry, as Quit in its menu would. Any other window is just
+    /// closed.
+    pub(crate) fn quit_front(&self, shows_windows: bool, out: &mut Out) {
+        let Some(w) = self.home_b_window(shows_windows) else {
+            return;
+        };
+        match self.running_of(w) {
+            Some(r) => out.events.push(Event::Entry(r.id.clone(), EntryAct::Quit)),
+            None => out.effects.push(Effect::Window(WindowCommand::Close(vec![w.id]))),
         }
     }
 }

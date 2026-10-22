@@ -2,12 +2,12 @@
 //! the Home combinations. Each one says what happened in a notice (see [`crate::bottom::notice`]).
 
 use crate::bottom::notice::NoticeKind;
-use crate::effect::{Effect, WindowCommand};
+use crate::effect::Effect;
 use crate::levels::Level;
 use crate::levels::slider::Control;
 use crate::out::Out;
 
-use crate::{EntryAct, Event, State};
+use crate::State;
 
 /// A hardware key, or the same key requested through the control pipe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,8 +48,8 @@ impl State {
             }
             DeviceKey::Screenshot => return out.effects.push(Effect::Screenshot),
             DeviceKey::BottomView => return self.bottom.toggle_view(&self.session),
-            DeviceKey::CloseWindow => return self.close_front_window(out),
-            DeviceKey::Quit => return self.quit_front(out),
+            DeviceKey::CloseWindow => return self.session.close_front_window(self.bottom.shows_windows(&self.session), out),
+            DeviceKey::Quit => return self.session.quit_front(self.bottom.shows_windows(&self.session), out),
             DeviceKey::BottomPower => return self.bottom.toggle_power(self.power(), self.clock.mono()),
             DeviceKey::WindowDown => return self.bottom.window_down(&self.session, self.clock.mono(), out),
             DeviceKey::WindowUp => return self.bottom.window_up(&self.session, self.clock.mono(), out),
@@ -57,31 +57,6 @@ impl State {
         let control = if level == Level::Volume { Control::Volume } else { Control::Brightness };
         self.bottom.notify(NoticeKind::Level(control), self.clock.mono());
         self.levels.change(self.clock.mono(), |l| l.step(level, direction, out));
-    }
-
-    /// Home with B, released at once, asks that window (see [`crate::Session::home_b_window`]) to close.
-    pub(crate) fn close_front_window(&self, out: &mut Out) {
-        if let Some(w) = self.session.home_b_window(self.bottom.shows_windows(&self.session)) {
-            out.effects.push(Effect::Window(WindowCommand::Close(vec![w.id])));
-        }
-    }
-
-    /// Home with B, held, quits that window's entry, as Quit in its menu would. Any other window is just
-    /// closed.
-    pub(crate) fn quit_front(&mut self, out: &mut Out) {
-        let Some(w) = self.session.home_b_window(self.bottom.shows_windows(&self.session)) else {
-            return;
-        };
-        let (id, entry) = (w.id, self.session.running_of(w).map(|r| r.id.clone()));
-        match entry {
-            Some(entry) => out.events.push(Event::Entry(entry, EntryAct::Quit)),
-            None => out.effects.push(Effect::Window(WindowCommand::Close(vec![id]))),
-        }
-    }
-
-    /// The screenshot was taken, with its file, or failed.
-    pub(crate) fn on_screenshot(&mut self, result: Result<String, String>) {
-        self.bottom.notify(NoticeKind::Screenshot(result), self.clock.mono());
     }
 }
 

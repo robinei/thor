@@ -55,6 +55,7 @@ pub(crate) mod testkit;
 mod tests;
 
 use bottom::keyboard::Keyboard;
+use out::Out;
 use settings::Settings;
 
 // What other crates use to talk to the state: the events and effects and what they carry, the ids, and
@@ -163,7 +164,7 @@ impl State {
             ..State::default()
         };
         if let Some(resume) = &init.resume {
-            s.restore(resume);
+            resume.restore(&mut s.shelf, &mut s.bottom);
         }
         s.dock.drop_gone_at_start(s.shelf.library(), &s.session);
         s.session.follow_pausable_runners(s.shelf.library());
@@ -238,6 +239,29 @@ impl State {
         // Not for an entry handed over to another program, such as Android's: launching it again just
         // shows the one already running.
         self.session.running(id).is_some() && self.entry(id).is_some_and(|g| g.another && !g.runner.as_ref().is_some_and(|r| r.handover))
+    }
+
+    /// Enqueue was pressed on what shelf's details show. The entries are added to the running launch of
+    /// their runner, or else launched (see [`crate::session::enqueue`]).
+    pub(crate) fn enqueue(&mut self, out: &mut Out) {
+        let Some(enqueued) = self.shelf.take_enqueued() else {
+            return;
+        };
+        if self.session.enqueue(&enqueued, self.bottom.notice_mut(), self.clock.mono(), out) {
+            return;
+        }
+        if enqueued.alone {
+            // A file alone is opened as A opens it, which includes resuming where it was left.
+            self.play(enqueued.entry, out);
+        } else {
+            let entry = self.shelf.entry_of_file(&enqueued.entry).unwrap_or(enqueued.entry);
+            self.launch(entry, Some(enqueued.runner.command_for(&enqueued.files)), true, out);
+        }
+    }
+
+    /// Where shelf and the second screen are, to come back to.
+    pub(crate) fn resume(&self) -> Resume {
+        Resume::of(&self.shelf, &self.bottom)
     }
 
     /// A library entry by its id. An entry that is still running after leaving the library, because its

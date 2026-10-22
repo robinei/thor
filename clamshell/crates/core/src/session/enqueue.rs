@@ -13,10 +13,10 @@ use std::sync::Arc;
 
 use clamshell_library::RunnerOf;
 
-use crate::bottom::notice::NoticeKind;
+use crate::bottom::notice::{Notice, NoticeKind};
 use crate::out::Out;
 use crate::session::running::Running;
-use crate::{Effect, Session, State};
+use crate::{Effect, Session, Shelf};
 
 impl Session {
     /// The running entry of runner `key` that was most recently in front. Only entries in a scope of ours
@@ -29,45 +29,55 @@ impl Session {
     }
 }
 
-impl State {
-    /// Enqueue was pressed on what shelf's details show. The entries are added to the running launch of
-    /// their runner, or else launched.
-    pub(crate) fn enqueue(&mut self, out: &mut Out) {
-        let Some((game, true)) = self.shelf.file_target() else {
-            return;
+/// What Enqueue adds: the files, in order, for `runner`, and the entry that plays them if it has to be
+/// started. `alone` says that entry is the details' entry itself, a file rather than a folder.
+#[derive(Debug)]
+pub(crate) struct Enqueued {
+    pub(crate) entry: Arc<str>,
+    pub(crate) alone: bool,
+    pub(crate) runner: RunnerOf,
+    pub(crate) files: Vec<PathBuf>,
+}
+
+impl Shelf {
+    /// What Enqueue adds from what the details show, if its runner takes more while it runs. The selected
+    /// files are taken: the selection is cleared.
+    pub(crate) fn take_enqueued(&mut self) -> Option<Enqueued> {
+        let Some((game, true)) = self.file_target() else {
+            return None;
         };
-        let Some(runner) = game.runner.clone().filter(|r| r.enqueue.is_some()) else {
-            return;
-        };
-        let library = self.shelf.library();
+        let runner = game.runner.clone().filter(|r| r.enqueue.is_some())?;
+        let library = self.library();
         let index_of = |id: &str| library.entries.iter().position(|g| &*g.id == id);
         // While there is a selection, its entries are queued in the order picked, and the open folder is
         // the entry that plays them.
-        let picked = self.shelf.files().selected();
-        let (entry, ids): (Arc<str>, Vec<Arc<str>>) = match self.shelf.group().filter(|_| !picked.is_empty()) {
+        let picked = self.files().selected();
+        let (entry, ids): (Arc<str>, Vec<Arc<str>>) = match self.group().filter(|_| !picked.is_empty()) {
             Some(folder) => (folder.id.clone(), picked.to_vec()),
             None => (game.id.clone(), vec![game.id.clone()]),
         };
         let files: Vec<PathBuf> = ids.iter().filter_map(|id| index_of(id)).flat_map(|i| library.queue_files(i, &runner.key)).collect();
         if files.is_empty() {
-            return;
+            return None;
         }
         let alone = entry == game.id && !game.is_group();
-        self.shelf.clear_file_selection();
-        match self.session.enqueue_target(&runner.key) {
-            Some(r) => {
-                let (key, title) = (r.key.clone(), r.entry.as_ref().map_or_else(String::new, |g| g.title.clone()));
-                let lines = files.iter().filter_map(|f| line(&runner, f)).collect();
-                self.bottom.notify(NoticeKind::Enqueued(files.len(), title), self.clock.mono());
-                out.effects.push(Effect::Enqueue { key, lines });
-            }
-            // A file alone is opened as A opens it, which includes resuming where it was left.
-            None if alone => self.play(entry, out),
-            None => {
-                let entry = self.shelf.entry_of_file(&entry).unwrap_or(entry);
-                self.launch(entry, Some(runner.command_for(&files)), true, out);
-            }
-        }
+        self.clear_file_selection();
+        Some(Enqueued { entry, alone, runner, files })
+    }
+}
+
+impl Session {
+    /// Adds what is `enqueued` to the running launch of its runner that was most recently in front (see
+    /// [`Session::enqueue_target`]), saying so in a notice. Returns whether there was one.
+    pub(crate) fn enqueue(&self, enqueued: &Enqueued, notice: &mut Option<Notice>, now: u64, out: &mut Out) -> bool {
+        let Some(r) = self.enqueue_target(&enqueued.runner.key) else {
+            return false;
+        };
+        let (key, title) = (r.key.clone(), r.entry.as_ref().map_or_else(String::new, |g| g.title.clone()));
+        let lines = enqueued.files.iter().filter_map(|f| line(&enqueued.runner, f)).collect();
+        *notice = Some(Notice::new(NoticeKind::Enqueued(enqueued.files.len(), title), now));
+        out.effects.push(Effect::Enqueue { key, lines });
+        true
     }
 }
 
@@ -84,7 +94,7 @@ fn line(runner: &RunnerOf, file: &std::path::Path) -> Option<String> {
 mod tests {
     use super::*;
     use crate::testkit::{state_with, tap};
-    use crate::{Collection, Entry, Id, Launch, Library, ShelfId};
+    use crate::{Collection, Entry, Id, Launch, Library, ShelfId, State};
 
     fn music() -> RunnerOf {
         RunnerOf {

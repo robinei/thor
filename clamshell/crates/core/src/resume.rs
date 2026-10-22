@@ -2,8 +2,8 @@
 //! collection's open groups and selected entry, and the second screen's tab, and also the screens'
 //! brightness. Both are written once changes have stopped for a moment.
 
-use crate::State;
-use crate::bottom::Tab;
+use crate::Shelf;
+use crate::bottom::{Bottom, Tab};
 
 /// Seconds after the last change before it is saved.
 pub(crate) const SAVE_AFTER: u64 = 2;
@@ -20,26 +20,27 @@ pub struct Resume {
     pub places: Vec<(String, Vec<String>)>,
 }
 
-impl State {
-    /// Where shelf and the second screen are, to come back to.
-    pub fn resume(&self) -> Resume {
+impl Resume {
+    /// Where `shelf` and the second screen (`bottom`) are.
+    pub(crate) fn of(shelf: &Shelf, bottom: &Bottom) -> Resume {
         let mut places = Vec::new();
-        self.shelf.places(&mut places);
-        Resume { collection: self.shelf.collection().map(|c| c.name.clone()).unwrap_or_default(), tab: self.bottom.chosen_tab().name().to_owned(), places }
+        shelf.places(&mut places);
+        Resume { collection: shelf.collection().map(|c| c.name.clone()).unwrap_or_default(), tab: bottom.chosen_tab().name().to_owned(), places }
     }
 
-    /// Goes back to the place `resume` saved. Collections and entries that are gone are skipped.
-    pub(crate) fn restore(&mut self, resume: &Resume) {
+    /// Takes `shelf` and the second screen (`bottom`) back to this place. Collections and entries that are
+    /// gone are skipped.
+    pub(crate) fn restore(&self, shelf: &mut Shelf, bottom: &mut Bottom) {
         // Any tab but the touchpad. There every touch moves the pointer, so it opens only on request.
         // What a tab watches starts with Event::Start.
-        if let Some(tab) = Tab::from_name(&resume.tab).filter(|t| *t != Tab::Touchpad) {
-            self.bottom.restore_tab(tab);
+        if let Some(tab) = Tab::from_name(&self.tab).filter(|t| *t != Tab::Touchpad) {
+            bottom.restore_tab(tab);
         }
-        for (name, ids) in &resume.places {
+        for (name, ids) in &self.places {
             let ids: Vec<&str> = ids.iter().map(String::as_str).collect();
-            self.shelf.restore_selection(name, &ids);
+            shelf.restore_selection(name, &ids);
         }
-        self.shelf.restore_current(&resume.collection);
+        shelf.restore_current(&self.collection);
     }
 }
 

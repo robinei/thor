@@ -13,7 +13,6 @@
 
 use std::sync::Arc;
 
-use crate::State;
 use crate::effect::Effect;
 use crate::out::Out;
 use crate::settings::{Setting, Values};
@@ -222,20 +221,10 @@ impl Idle {
     }
 }
 
-impl State {
-    /// Idle follows how things are now (see [`Idle::follow`]).
-    pub(crate) fn follow_idle(&mut self, out: &mut Out) {
-        // Sleep only in the device's own session. A program in front doesn't hold it off; one playing a
-        // video asks the compositor to keep the screen on.
-        let policy = Policy::of(&self.prefs.settings().global, self.session.device_session());
-        let refreshing = *self.device.refresh() == crate::device::Refresh::Running;
-        self.idle.follow(self.clock.mono(), policy, refreshing, self.session.awake_command(), out);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::State;
 
     fn policy(off: u64, sleep: u64, may_sleep: bool) -> Policy {
         Policy { screen_off: (off > 0).then_some(off * 60), sleep: (sleep > 0).then_some(sleep * 60), may_sleep }

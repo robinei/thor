@@ -117,12 +117,18 @@ impl Device {
         self.account
     }
 
-    pub(crate) fn open(&mut self) {
+    /// Opens the view on the main screen, bringing shelf's window to the front, with the pad's focus on
+    /// its first row. The account is read while it is open ([`crate::sync::Sent::watches`]).
+    pub(crate) fn open(&mut self, pointer: &mut Pointer, out: &mut Out) {
         self.open = true;
+        pointer.focus_on(Id::Device(DeviceId::Wifi));
+        out.effects.push(Effect::Window(WindowCommand::ShowShelf));
     }
 
-    pub(crate) fn close(&mut self) {
+    /// Goes back to shelf, with the focus on its `selected` entry.
+    pub(crate) fn close(&mut self, pointer: &mut Pointer, selected: Option<&Arc<str>>) {
         self.open = false;
+        pointer.focus_shelf(selected);
     }
 
     /// A reading of the account. Returns whether the view shows a change.
@@ -164,15 +170,11 @@ impl Device {
             // below.
             DeviceId::Done if self.first_start => {
                 self.first_start = false;
-                self.close();
-                pointer.focus_shelf(selected);
+                self.close(pointer, selected);
                 out.effects.push(Effect::Save(Save::FirstStartDone));
                 out.events.push(Event::ChooseTab(Tab::default()));
             }
-            DeviceId::Done | DeviceId::Close => {
-                self.close();
-                pointer.focus_shelf(selected);
-            }
+            DeviceId::Done | DeviceId::Close => self.close(pointer, selected),
         }
     }
 
@@ -201,20 +203,6 @@ impl Device {
 impl State {
     pub fn device(&self) -> &Device {
         &self.device
-    }
-
-    /// Opens the Device view on the main screen, bringing shelf's window to the front, with the pad's
-    /// focus on its first row. The account is read while it is open ([`crate::sync::Sent::watches`]).
-    pub(crate) fn open_device(&mut self, out: &mut Out) {
-        self.device.open();
-        self.pointer.focus_on(Id::Device(DeviceId::Wifi));
-        out.effects.push(Effect::Window(WindowCommand::ShowShelf));
-    }
-
-    /// Goes back to shelf, with the focus on its selection.
-    pub(crate) fn close_device(&mut self) {
-        self.device.close();
-        self.pointer.focus_shelf(self.shelf.selected());
     }
 }
 
@@ -253,9 +241,7 @@ mod tests {
     #[test]
     fn the_device_entry_opens_it_and_close_goes_back_to_shelf() {
         let mut s = State::new(init());
-        let mut out = crate::out::Out::default();
-        s.open_device(&mut out);
-        let effects = out.effects;
+        let effects = launch_now(&mut s, "tool:device");
         assert_eq!(s.device().top_view(), TopView::Device);
         assert_eq!(effects, vec![Effect::Window(WindowCommand::ShowShelf)], "shelf's window in front");
         assert_eq!(s.pointer().focus(), Some(&Id::Device(DeviceId::Wifi)));
@@ -267,7 +253,7 @@ mod tests {
     #[test]
     fn the_password_is_typed_below_the_current_one_first() {
         let mut s = State::new(init());
-        s.open_device(&mut crate::out::Out::default());
+        launch_now(&mut s, "tool:device");
         assert!(tap(&mut s, DeviceId::Password).is_empty(), "unavailable off the device");
         available(&mut s, true);
         tap(&mut s, DeviceId::Password);

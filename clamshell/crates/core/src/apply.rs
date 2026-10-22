@@ -128,7 +128,11 @@ impl State {
             out.mark(Dirty::BOTTOM);
         }
         self.shelf.follow_folder();
-        self.follow_idle(out);
+        // Sleep only in the device's own session. A program in front doesn't hold it off; one playing a
+        // video asks the compositor to keep the screen on.
+        let policy = crate::device::idle::Policy::of(&self.prefs.settings().global, self.session.device_session());
+        let refreshing = *self.device.refresh() == crate::device::Refresh::Running;
+        self.idle.follow(self.clock.mono(), policy, refreshing, self.session.awake_command(), out);
         let changed = self.session.follow_program();
         self.bottom.follow_power(self.power(), self.clock.mono());
         if changed && self.follow_pad_mouse() {
@@ -208,7 +212,7 @@ impl State {
                 out.mark(Dirty::BOTTOM);
             }
             // When the Device view is in shelf's place, Home goes back to shelf.
-            Event::Home if self.session.shelf_in_front() && self.device.is_open() => self.close_device(),
+            Event::Home if self.session.shelf_in_front() && self.device.is_open() => self.device.close(&mut self.pointer, self.shelf.selected()),
             Event::Home => self.session.home(out),
             Event::Listened(input) => {
                 out.mark(Dirty::BOTTOM);
@@ -244,7 +248,7 @@ impl State {
                 out.mark(Dirty::BOTTOM);
             }
             Event::Screenshot(result) => {
-                self.on_screenshot(result);
+                self.bottom.notify(crate::bottom::notice::NoticeKind::Screenshot(result), self.clock.mono());
                 out.mark(Dirty::BOTTOM);
             }
             Event::Sticks(event) => {
