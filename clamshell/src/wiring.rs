@@ -16,6 +16,7 @@ use clamshell_system::launch::{launcher, scopes};
 use clamshell_system::library::meta;
 use clamshell_system::library::meta::cache::Cache;
 use clamshell_system::library::{self, Sources};
+use clamshell_system::network::{bluetooth, wifi};
 use clamshell_system::os::worker::Worker;
 use clamshell_system::paths::Paths;
 use clamshell_system::power::tuning;
@@ -23,7 +24,7 @@ use clamshell_system::power::tuning::Tuning;
 use clamshell_system::readings::{battery, frames, metrics, status};
 use clamshell_system::store::{Store, Writer};
 use clamshell_system::time::clock;
-use clamshell_system::{Closed, Handles, Sink, bluetooth, sway, wifi};
+use clamshell_system::{Closed, Handles, Sink, sway};
 use clamshell_ui::EventSender;
 
 use crate::config::Env;

@@ -8,11 +8,12 @@ use crate::input::keyboard::VirtualKeyboard;
 use crate::input::{pad, touchpad};
 use crate::launch::job::Runner;
 use crate::launch::launcher;
+use crate::network::{bluetooth, wifi};
 use crate::os::worker::{self, Shown, Worker};
 use crate::paths::Paths;
 use crate::power::tuning::Tuning;
 use crate::store::{Write, Writer};
-use crate::{bluetooth, sway, wifi};
+use crate::sway;
 
 /// The threads (and the one device) that effects go to.
 pub struct Handles {

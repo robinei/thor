@@ -6,7 +6,6 @@
 pub mod account;
 pub mod archives;
 pub mod audio;
-pub mod bluetooth;
 pub mod clipboard;
 pub mod desktop;
 pub mod device;
@@ -17,6 +16,7 @@ pub mod icons;
 pub mod input;
 pub mod launch;
 pub mod library;
+pub mod network;
 pub mod os;
 pub mod paths;
 pub mod power;
@@ -26,7 +26,6 @@ pub mod sway;
 pub mod time;
 pub mod tray;
 pub mod wayland_filter;
-pub mod wifi;
 
 use std::sync::mpsc;
 
