@@ -53,7 +53,7 @@ pub use route::{Mapping, PadSnapshot};
 const RETRY: Duration = Duration::from_secs(30);
 const RETRY_UNWATCHED: Duration = Duration::from_secs(1);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum Command {
     Route(PadRoute),
     /// The keymap in force (Default: no bindings).
@@ -76,17 +76,9 @@ pub enum Command {
     Sticks(clamshell_core::sticks::Calibrations),
 }
 
-/// A command's acknowledgement (equal to any other: commands compare by what they ask).
+/// A command's acknowledgement: sent once the command is carried out.
 #[derive(Debug, Clone)]
 pub struct Ack(pub std::sync::mpsc::Sender<()>);
-
-impl PartialEq for Ack {
-    fn eq(&self, _: &Ack) -> bool {
-        true
-    }
-}
-
-impl Eq for Ack {}
 
 lost_on!(io::Error);
 

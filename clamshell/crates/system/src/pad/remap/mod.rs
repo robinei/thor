@@ -346,7 +346,7 @@ pub fn tune_stick((x, y): (f32, f32), b: &Binding) -> (f32, f32) {
     (x / len * tuned, y / len * tuned)
 }
 
-/// What every output should be now.
+/// What every output should be now. The default is the pad at rest: nothing pressed, nothing moved.
 #[derive(Debug, Clone, Default, PartialEq)]
 struct Wanted {
     /// The game's pad: buttons down, and every axis' value.
@@ -393,11 +393,6 @@ impl Remap {
         }
     }
 
-    /// The pad's state as it was when nothing had been sent (a fresh pad, or after letting go).
-    fn rest(&self) -> Wanted {
-        Wanted::default()
-    }
-
     /// A new keymap: what it makes of the controller now replaces what the old one held.
     pub fn set_keymap(&mut self, keymap: Keymap, snap: &PadSnapshot, live: bool, out: &mut Out) {
         self.keymap = keymap;
@@ -409,9 +404,9 @@ impl Remap {
     /// Lets go of everything sent (leaving the game, the controller gone): the keyboard's and mouse's
     /// keys up, the pad's buttons up and axes at rest.
     pub fn release(&mut self, out: &mut Out) {
-        let rest = Wanted { pad_axes: self.sent.pad_axes.iter().map(|&(a, _)| (a, self.axis_rest(a))).collect(), ..self.rest() };
+        let rest = Wanted { pad_axes: self.sent.pad_axes.iter().map(|&(a, _)| (a, self.axis_rest(a))).collect(), ..Wanted::default() };
         self.send(rest, out);
-        self.sent = self.rest();
+        self.sent = Wanted::default();
         self.gyro = Rate::default();
         self.carry = (0.0, 0.0);
         self.last_pointer = None;
@@ -448,9 +443,9 @@ impl Remap {
         // What each input is doing now (read first; the actuators follow below).
         let mut states = Vec::new();
         for input in Input::all() {
-            let digital_trigger = self.binding(input, snap).is_some_and(|b| b.output.digital());
+            let digital_trigger = self.binding(input).is_some_and(|b| b.output.digital());
             let full_pull = self.find(input, Actuation::FullPull).copied();
-            if !self.watched(input, snap) {
+            if !self.watched(input) {
                 continue;
             }
             // A trigger's full pull: on past its own threshold, beside the pull.
@@ -461,7 +456,7 @@ impl Remap {
             let on = (input.kind() == Kind::Digital || digital_trigger) && self.pressed(input, snap);
             let hold = self.find(input, Actuation::Hold).map(|b| Duration::from_millis(u64::from(b.hold_time) * 10));
             let double = self.find(input, Actuation::Double).is_some();
-            let binding = |act| self.binding_of(input, act, snap);
+            let binding = |act| self.binding_of(input, act);
             let toggles = Actuation::ALL.map(|a| binding(a).is_some_and(|b| b.toggle));
             states.push((input, on, full, hold, double, toggles));
         }
@@ -492,15 +487,15 @@ impl Remap {
         }
         // (Those at rest and holding nothing on are dropped.)
         self.actuators.retain(|a| a.phase != Phase::Up || a.beats.iter().any(|b| b.raw || b.latched));
-        self.activate(snap, now, &risen);
+        self.activate(now, &risen);
     }
 
     /// Whether an input's actuations are followed: a digital input, or a trigger mapped to something on
     /// or off (or with a full pull).
-    fn watched(&self, input: Input, snap: &PadSnapshot) -> bool {
+    fn watched(&self, input: Input) -> bool {
         match input.kind() {
             Kind::Digital => true,
-            Kind::Trigger => self.binding(input, snap).is_some_and(|b| b.output.digital()) || self.find(input, Actuation::FullPull).is_some(),
+            Kind::Trigger => self.binding(input).is_some_and(|b| b.output.digital()) || self.find(input, Actuation::FullPull).is_some(),
             Kind::Stick | Kind::Gyro => false,
         }
     }
@@ -522,7 +517,7 @@ impl Remap {
             let new_press = |i: Input| {
                 i != a.input
                     && Actuation::ALL.into_iter().any(|act| self.keymap.get_of(layer, i, act).is_some())
-                    && self.watched(i, snap)
+                    && self.watched(i)
                     && self.pressed(i, snap)
                     && !self.actuators.iter().any(|x| x.input == i && x.phase != Phase::Up)
             };
@@ -542,14 +537,14 @@ impl Remap {
                 }
             }
         }
-        self.activate(snap, now, &[]);
+        self.activate(now, &[]);
     }
 
     /// Layers on and off. A binding to one turns it on while its actuation (or its toggle) is; a Once
     /// layer turned on by a tap (its binding off before it was used) stays armed until the first input
     /// it maps has acted and let go, as does a toggled one (and its toggle goes off with it); its binding
     /// pressed again while armed turns it off. `risen`: the actuations that came on now.
-    fn activate(&mut self, snap: &PadSnapshot, now: Instant, risen: &[(Input, Actuation)]) {
+    fn activate(&mut self, now: Instant, risen: &[(Input, Actuation)]) {
         // An input a Once layer maps acted: the newest such layer on is used.
         for &(input, act) in risen {
             if self.activations.iter().any(|x| x.input == input) {
@@ -570,7 +565,7 @@ impl Remap {
         let mut seen = Vec::new();
         for a in &self.actuators {
             for act in Actuation::ALL {
-                let Some(b) = self.binding_of(a.input, act, snap).filter(|b| matches!(b.output, Output::Layer(_))) else {
+                let Some(b) = self.binding_of(a.input, act).filter(|b| matches!(b.output, Output::Layer(_))) else {
                     continue;
                 };
                 seen.push((a.input, act, b, a.beat(act).on(&b, now)));
@@ -662,9 +657,9 @@ impl Remap {
     }
 
     /// [`Remap::find`], a press's as on the pad without one.
-    fn binding_of(&self, input: Input, act: Actuation, snap: &PadSnapshot) -> Option<Binding> {
+    fn binding_of(&self, input: Input, act: Actuation) -> Option<Binding> {
         match act {
-            Actuation::Press => self.binding(input, snap),
+            Actuation::Press => self.binding(input),
             act => self.find(input, act).copied(),
         }
     }
@@ -672,7 +667,7 @@ impl Remap {
     /// Whether a digital input is down: a trigger past its press binding's threshold, the rest as
     /// [`Remap::digital`].
     fn pressed(&self, input: Input, snap: &PadSnapshot) -> bool {
-        match (input, self.binding(input, snap)) {
+        match (input, self.binding(input)) {
             (Input::Trigger(s), Some(b)) => {
                 let v = self.trigger(s, snap);
                 v * 100.0 >= f32::from(b.threshold) && v > 0.0
@@ -704,18 +699,18 @@ impl Remap {
         if !self.actuators.is_empty() {
             self.update(snap, now, out);
         }
-        let timed = self.next_due(snap, now);
+        let timed = self.next_due(now);
         let pointer = self.tick_pointer(now, out);
         [timed, pointer].into_iter().flatten().min()
     }
 
     /// When an actuation next moves on by itself, or a turbo beats.
-    fn next_due(&self, snap: &PadSnapshot, now: Instant) -> Option<Instant> {
+    fn next_due(&self, now: Instant) -> Option<Instant> {
         let mut next = None;
         for a in &self.actuators {
             let mut times = vec![a.due];
             for act in Actuation::ALL {
-                let b = self.binding_of(a.input, act, snap);
+                let b = self.binding_of(a.input, act);
                 times.push(b.and_then(|b| a.beat(act).next_beat(&b, now)));
             }
             next = times.into_iter().flatten().chain(next).min();
@@ -760,20 +755,21 @@ impl Remap {
     }
 
     /// `input`'s binding in the layer in force, if it has one.
-    fn get(&self, input: Input, _: &PadSnapshot) -> Option<&Binding> {
+    fn get(&self, input: Input) -> Option<&Binding> {
         self.find(input, Actuation::Press)
     }
 
     /// The gyro's binding, if it acts now: always without a hold; with one, while it is held (or, a
     /// ratchet, while it isn't).
     fn gyro_binding(&self, snap: &PadSnapshot) -> Option<Binding> {
-        let b = *self.get(Input::Gyro, snap)?;
+        let b = *self.get(Input::Gyro)?;
         let on = b.hold.is_none_or(|h| self.digital(h, snap) != b.ratchet);
         on.then_some(b)
     }
 
-    fn binding(&self, input: Input, snap: &PadSnapshot) -> Option<Binding> {
-        if let Some(b) = self.get(input, snap) {
+    /// `input`'s press binding in the layer in force, else its own output as on the pad.
+    fn binding(&self, input: Input) -> Option<Binding> {
+        if let Some(b) = self.get(input) {
             return Some(*b);
         }
         // As on the pad.
@@ -798,7 +794,7 @@ impl Remap {
         let (ax, ay) = stick_axes(s);
         let at = |a| self.ranges.stick.centered(snap.value(a).unwrap_or(0));
         let xy = (at(ax), at(ay));
-        match self.get(Input::Stick(s), snap) {
+        match self.get(Input::Stick(s)) {
             Some(b) => tune_stick(xy, b),
             None => xy,
         }
@@ -807,7 +803,7 @@ impl Remap {
     /// A stick as raw units from its middle (y down), tuned, its bound directions taken out (they act
     /// as buttons instead).
     fn stick(&self, s: Side, snap: &PadSnapshot) -> (f32, f32) {
-        let (mut x, mut y) = match self.get(Input::Stick(s), snap) {
+        let (mut x, mut y) = match self.get(Input::Stick(s)) {
             Some(b) if b.shapes() => {
                 let half = self.stick_middle().1;
                 let (x, y) = self.tuned_stick(s, snap);
@@ -821,7 +817,7 @@ impl Remap {
                 (at(ax), at(ay))
             }
         };
-        let bound = |d| self.get(Input::StickDir(s, d), snap).is_some();
+        let bound = |d| self.get(Input::StickDir(s, d)).is_some();
         if (x < 0.0 && bound(Dir::Left)) || (x > 0.0 && bound(Dir::Right)) {
             x = 0.0;
         }
@@ -834,7 +830,7 @@ impl Remap {
     /// A trigger's pull, 0 to 1, tuned by its binding (deadzone, full point).
     fn trigger(&self, s: Side, snap: &PadSnapshot) -> f32 {
         let v = self.ranges.trigger.unit(snap.value(trigger_axis(s)).unwrap_or(self.ranges.trigger.min));
-        match self.get(Input::Trigger(s), snap) {
+        match self.get(Input::Trigger(s)) {
             Some(b) if b.deadzone > 0 || b.full < 100 => range(v, b.deadzone, b.full),
             _ => v,
         }
@@ -899,7 +895,7 @@ impl Remap {
             }
         };
         for input in Input::all() {
-            let Some(b) = self.binding(input, snap) else {
+            let Some(b) = self.binding(input) else {
                 continue;
             };
             match input {
@@ -979,10 +975,10 @@ impl Remap {
             let (ax, ay) = stick_axes(s);
 
             // A stick as itself keeps its exact values.
-            let plain = self.get(Input::Stick(s), snap).is_none_or(|b| b.output == Output::Stick(s) && !b.shapes());
-            let own = plain && self.get(Input::Gyro, snap).is_none_or(|g| g.output != Output::Stick(s));
-            let other = Side::ALL.into_iter().filter(|o| *o != s).any(|o| self.get(Input::Stick(o), snap).is_some_and(|b| b.output == Output::Stick(s)));
-            let dirs = Dir::ALL.into_iter().any(|d| self.get(Input::StickDir(s, d), snap).is_some());
+            let plain = self.get(Input::Stick(s)).is_none_or(|b| b.output == Output::Stick(s) && !b.shapes());
+            let own = plain && self.get(Input::Gyro).is_none_or(|g| g.output != Output::Stick(s));
+            let other = Side::ALL.into_iter().filter(|o| *o != s).any(|o| self.get(Input::Stick(o)).is_some_and(|b| b.output == Output::Stick(s)));
+            let dirs = Dir::ALL.into_iter().any(|d| self.get(Input::StickDir(s, d)).is_some());
             // (Only the axes the pad has: the game's pad has the controller's.)
             for (axis, v) in [(ax, x), (ay, y)] {
                 if let Some(value) = snap.value(axis) {
@@ -996,7 +992,7 @@ impl Remap {
             if snap.value(axis).is_none() {
                 continue;
             }
-            let plain = self.get(Input::Trigger(s), snap).is_none_or(|b| b.output == Output::Trigger(s) && !b.shapes());
+            let plain = self.get(Input::Trigger(s)).is_none_or(|b| b.output == Output::Trigger(s) && !b.shapes());
             let own = plain && v == self.trigger(s, snap);
             let value = if own { snap.value(axis).unwrap_or(trig.min) } else { trig.min + ((trig.max - trig.min) as f32 * v.clamp(0.0, 1.0)).round() as i32 };
             w.pad_axes.push((axis, value));
