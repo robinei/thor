@@ -20,6 +20,7 @@ use crate::id::Id;
 use crate::kit::debounce::Debounce;
 use crate::kit::list::{ItemKey, Rows};
 use crate::nav::lists::{ListId, RowPart};
+use crate::out::Out;
 use crate::resume::SAVE_AFTER;
 use crate::{AudioId, Dirty, LevelEvent, Slide, State};
 use slider::{Control, Slider};
@@ -289,33 +290,34 @@ impl Levels {
     }
 
     /// Changes the levels with `change` at `now`. A changed brightness is saved a moment later.
-    pub(crate) fn change(&mut self, now: u64, change: impl FnOnce(&mut Levels) -> Vec<Effect>) -> Vec<Effect> {
+    pub(crate) fn change(&mut self, now: u64, change: impl FnOnce(&mut Levels)) {
         let before = self.brightness.clone();
-        let effects = change(self);
+        change(self);
         if self.brightness != before {
             self.unsaved.touch(now);
         }
-        effects
     }
 
-    /// The brightness to save, once it has stopped changing for a moment.
-    pub(crate) fn save_due(&mut self, now: u64) -> Option<Effect> {
-        self.unsaved.due(now, SAVE_AFTER).then(|| Effect::Save(Save::Brightness(self.brightness.clone())))
+    /// Saves the brightness once it has stopped changing for a moment.
+    pub(crate) fn save_due(&mut self, now: u64, out: &mut Out) {
+        if self.unsaved.due(now, SAVE_AFTER) {
+            out.effects.push(Effect::Save(Save::Brightness(self.brightness.clone())));
+        }
     }
 
     /// The volume tab's buttons.
-    pub(crate) fn on_audio(&mut self, id: AudioId) -> Vec<Effect> {
+    pub(crate) fn on_audio(&mut self, id: AudioId, out: &mut Out) {
         match id {
-            AudioId::MuteOutput => self.toggle_mute(),
-            AudioId::Output(i) => self.choose_output(usize::from(i)),
+            AudioId::MuteOutput => self.toggle_mute(out),
+            AudioId::Output(i) => self.choose_output(usize::from(i), out),
         }
     }
 
     /// A tap on part of an app's row. Its mute button mutes it; its level is set by the finger.
-    pub(crate) fn on_stream(&mut self, i: usize, part: RowPart) -> Vec<Effect> {
+    pub(crate) fn on_stream(&mut self, i: usize, part: RowPart, out: &mut Out) {
         match part {
-            RowPart::Mute => self.toggle_stream_mute(i),
-            RowPart::Main | RowPart::Level | RowPart::Edit => vec![],
+            RowPart::Mute => self.toggle_stream_mute(i, out),
+            RowPart::Main | RowPart::Level | RowPart::Edit => {}
         }
     }
 
@@ -352,10 +354,10 @@ impl Levels {
     }
 
     /// A level row set to `value` by the finger on it.
-    pub(crate) fn set(&mut self, level: Level, value: u8) -> Vec<Effect> {
+    pub(crate) fn set(&mut self, level: Level, value: u8, out: &mut Out) {
         let value = value.min(100);
         if self.level(level) == Some(value) {
-            return vec![];
+            return;
         }
         self.hold(level);
         match level {
@@ -364,77 +366,69 @@ impl Levels {
                 // Turning it up or down unmutes.
                 let was_muted = self.muted();
                 self.muted.hold(false);
-                let mut effects = vec![];
                 if was_muted {
-                    effects.push(Effect::Sound(Sound::Mute(false)));
+                    out.effects.push(Effect::Sound(Sound::Mute(false)));
                 }
-                effects.push(Effect::Sound(Sound::Volume(value)));
-                effects
+                out.effects.push(Effect::Sound(Sound::Volume(value)));
             }
-            Level::Stream(i) => match self.audio.streams.get_mut(usize::from(i)) {
-                Some(s) => {
+            Level::Stream(i) => {
+                if let Some(s) = self.audio.streams.get_mut(usize::from(i)) {
                     s.volume = value;
                     s.muted = false;
-                    vec![Effect::Sound(Sound::StreamVolume(s.id, value))]
+                    out.effects.push(Effect::Sound(Sound::StreamVolume(s.id, value)));
                 }
-                None => vec![],
-            },
+            }
             Level::Brightness => {
                 self.brightness.level = Some(value);
-                self.brightness_effect().into_iter().collect()
+                out.effects.extend(self.brightness_effect());
             }
-            Level::Backlight(i) => match self.backlights.0.get(usize::from(i)).cloned() {
-                Some(name) => {
+            Level::Backlight(i) => {
+                if let Some(name) = self.backlights.0.get(usize::from(i)).cloned() {
                     self.brightness.set_share(&name, value);
                     // The level as read, until ClamShell sets one. All shares were 100 until then.
                     if self.brightness.level.is_none() {
                         self.brightness.level = self.read_brightness;
                     }
-                    self.brightness_effect().into_iter().collect()
+                    out.effects.extend(self.brightness_effect());
                 }
-                None => vec![],
-            },
+            }
         }
     }
 
     /// The pad's left or right on a level row steps it, as if the finger set it and lifted.
-    pub(crate) fn step(&mut self, level: Level, direction: i16) -> Vec<Effect> {
+    pub(crate) fn step(&mut self, level: Level, direction: i16, out: &mut Out) {
         let Some(now) = self.level(level) else {
-            return vec![];
+            return;
         };
         let value = (i16::from(now) + direction.signum() * STEP).clamp(0, 100) as u8;
-        let effects = self.set(level, value);
+        self.set(level, value, out);
         self.release();
-        effects
     }
 
-    pub(crate) fn toggle_mute(&mut self) -> Vec<Effect> {
+    pub(crate) fn toggle_mute(&mut self, out: &mut Out) {
         if self.volume().is_none() {
-            return vec![];
+            return;
         }
         let muted = !self.muted();
         self.muted.put(muted);
-        vec![Effect::Sound(Sound::Mute(muted))]
+        out.effects.push(Effect::Sound(Sound::Mute(muted)));
     }
 
-    pub(crate) fn toggle_stream_mute(&mut self, i: usize) -> Vec<Effect> {
-        match self.audio.streams.get_mut(i) {
-            Some(s) => {
-                s.muted = !s.muted;
-                vec![Effect::Sound(Sound::StreamMute(s.id, s.muted))]
-            }
-            None => vec![],
+    pub(crate) fn toggle_stream_mute(&mut self, i: usize, out: &mut Out) {
+        if let Some(s) = self.audio.streams.get_mut(i) {
+            s.muted = !s.muted;
+            out.effects.push(Effect::Sound(Sound::StreamMute(s.id, s.muted)));
         }
     }
 
-    pub(crate) fn choose_output(&mut self, i: usize) -> Vec<Effect> {
+    pub(crate) fn choose_output(&mut self, i: usize, out: &mut Out) {
         let Some(id) = self.audio.outputs.get(i).filter(|o| !o.default).map(|o| o.id) else {
-            return vec![];
+            return;
         };
         for o in &mut self.audio.outputs {
             o.default = o.id == id;
         }
-        vec![Effect::Sound(Sound::Output(id))]
+        out.effects.push(Effect::Sound(Sound::Output(id)));
     }
 }
 
@@ -473,39 +467,52 @@ impl Rows for Backlights {
 }
 
 impl State {
-    pub(crate) fn on_slide(&mut self, slide: Slide) -> (Dirty, Vec<Effect>) {
+    pub(crate) fn on_slide(&mut self, slide: Slide, out: &mut Out) {
         match slide {
             Slide::Start { control: Control::Param(param), x, width } => {
                 self.param_slide_start(param, x, width);
-                (Dirty::BOTTOM, vec![])
+                out.mark(Dirty::BOTTOM);
             }
             Slide::Start { control, x, width } => {
                 self.levels.slide_start(control, x, width);
-                (Dirty::BOTTOM, vec![])
+                out.mark(Dirty::BOTTOM);
             }
-            Slide::To { x } if self.levels.slider().is_none() => (if self.param_slide_to(x) { Dirty::BOTTOM } else { Dirty::NONE }, vec![]),
+            Slide::To { x } if self.levels.slider().is_none() => {
+                if self.param_slide_to(x) {
+                    out.mark(Dirty::BOTTOM);
+                }
+            }
             Slide::To { x } => {
-                let effects = self.levels.change(self.clock.mono(), |l| l.slide_to(x));
-                (if effects.is_empty() { Dirty::NONE } else { Dirty::BOTTOM }, effects)
+                let before = out.effects.len();
+                self.levels.change(self.clock.mono(), |l| l.slide_to(x, out));
+                if out.effects.len() > before {
+                    out.mark(Dirty::BOTTOM);
+                }
             }
             Slide::End => {
                 self.levels.slide_end();
-                (Dirty::BOTTOM, self.param_slide_end())
+                out.mark(Dirty::BOTTOM);
+                out.effects.extend(self.param_slide_end());
             }
         }
     }
 
-    pub(crate) fn on_level(&mut self, event: LevelEvent) -> (Dirty, Vec<Effect>) {
+    pub(crate) fn on_level(&mut self, event: LevelEvent, out: &mut Out) {
         match event {
             LevelEvent::Set(level, value) => {
                 let Some(level) = self.resolve_level(level) else {
-                    return (Dirty::NONE, vec![]);
+                    return;
                 };
                 let before = self.levels.level(level);
-                let effects = self.levels.change(self.clock.mono(), |l| l.set(level, value));
-                (if self.levels.level(level) == before { Dirty::NONE } else { Dirty::BOTTOM }, effects)
+                self.levels.change(self.clock.mono(), |l| l.set(level, value, out));
+                if self.levels.level(level) != before {
+                    out.mark(Dirty::BOTTOM);
+                }
             }
-            LevelEvent::Step(level, direction) => (Dirty::BOTTOM, self.levels.change(self.clock.mono(), |l| l.step(level, direction))),
+            LevelEvent::Step(level, direction) => {
+                out.mark(Dirty::BOTTOM);
+                self.levels.change(self.clock.mono(), |l| l.step(level, direction, out));
+            }
         }
     }
 }

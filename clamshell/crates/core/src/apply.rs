@@ -121,16 +121,8 @@ impl State {
                 }
             }
             Event::Pointer(e) => self.pointer_event(e, out),
-            Event::Slide(slide) => {
-                let (dirty, effects) = self.on_slide(slide);
-                out.mark(dirty);
-                out.effects.extend(effects);
-            }
-            Event::Level(e) => {
-                let (dirty, effects) = self.on_level(e);
-                out.mark(dirty);
-                out.effects.extend(effects);
-            }
+            Event::Slide(slide) => self.on_slide(slide, out),
+            Event::Level(e) => self.on_level(e, out),
             Event::Shelf(e) => {
                 let (dirty, effects) = self.on_shelf_event(e);
                 out.mark(dirty);
@@ -210,7 +202,7 @@ impl State {
             Event::Idle(event) => self.idle.heard(event, self.clock.mono()),
             Event::Device(key) => {
                 out.mark(Dirty::BOTTOM);
-                out.effects.extend(self.on_device_key(key));
+                self.on_device_key(key, out);
             }
             Event::BottomTouched => out.mark(self.bottom.used(&self.session, &self.clock)),
             Event::Frozen(keys) => {
@@ -337,7 +329,7 @@ impl State {
         if self.saves.resume.due(mono_secs, SAVE_AFTER) {
             out.effects.push(Effect::Save(Save::Resume(self.resume())));
         }
-        out.effects.extend(self.levels.save_due(mono_secs));
+        self.levels.save_due(mono_secs, out);
         let notice_gone = self.bottom.expire_notice(mono_secs);
         if minute_changed {
             out.mark(Dirty::BOTH);
@@ -473,7 +465,7 @@ impl State {
             }
             Id::Audio(id) => {
                 out.mark(Dirty::BOTTOM);
-                out.effects.extend(self.levels.on_audio(id));
+                self.levels.on_audio(id, out);
             }
             Id::Row { list, i, part } => {
                 out.mark(list.screens());

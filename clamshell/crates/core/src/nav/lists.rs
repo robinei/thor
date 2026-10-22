@@ -156,7 +156,7 @@ impl State {
         match list {
             ListId::Wifi => self.radios.tap_network(i, long, self.bottom.editors_mut(), out),
             ListId::Bluetooth => self.radios.tap_device(i, long, out),
-            ListId::Streams => out.effects.extend(self.levels.on_stream(i, part)),
+            ListId::Streams => self.levels.on_stream(i, part, out),
             ListId::Keymaps => out.effects.extend(self.on_keymap_row(i, part, long)),
             ListId::Layers => out.effects.extend(self.on_layer_row(i, part, long)),
             ListId::Time => out.effects.extend(self.sys.on_time_row(i, self.lists.get_mut(ListId::Time))),

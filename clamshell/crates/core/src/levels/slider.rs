@@ -8,8 +8,8 @@
 //! right. This lets the value go from 0 to 100 without the track leaving the screen. For the same reason
 //! the icons sit near the middle of the bar, but not exactly in it.
 
-use crate::effect::Effect;
 use crate::levels::{Level, Levels};
+use crate::out::Out;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Control {
@@ -119,21 +119,21 @@ impl Levels {
         self.slider = Some(Slider::new(control, start, x, width));
     }
 
-    pub(crate) fn slide_to(&mut self, x: f32) -> Vec<Effect> {
+    pub(crate) fn slide_to(&mut self, x: f32, out: &mut Out) {
         let Some(slider) = self.slider.as_mut() else {
-            return vec![];
+            return;
         };
         let Some(level) = slider.control.level() else {
-            return vec![];
+            return;
         };
         let value = slider.value_at(x);
         if value == slider.value {
-            return vec![];
+            return;
         }
         slider.value = value;
         slider.moved = true;
         // The same level as the tab's row. Turning the volume up or down unmutes.
-        self.set(level, value)
+        self.set(level, value, out);
     }
 
     /// The finger lifted. The level stays where it was set, and readings count again.

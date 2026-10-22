@@ -5,6 +5,7 @@ use crate::bottom::notice::NoticeKind;
 use crate::effect::{Effect, WindowCommand};
 use crate::levels::Level;
 use crate::levels::slider::Control;
+use crate::out::Out;
 use crate::session::windows::{SHELF_APP_ID, Window};
 use crate::{Session, State};
 
@@ -35,7 +36,7 @@ pub enum DeviceKey {
 impl State {
     /// A hardware key. A level key steps the level and shows it. The others take a screenshot or run
     /// their Home combination.
-    pub(crate) fn on_device_key(&mut self, key: DeviceKey) -> Vec<Effect> {
+    pub(crate) fn on_device_key(&mut self, key: DeviceKey, out: &mut Out) {
         let (level, direction) = match key {
             DeviceKey::VolumeUp => (Level::Volume, 1),
             DeviceKey::VolumeDown => (Level::Volume, -1),
@@ -43,19 +44,19 @@ impl State {
             DeviceKey::BrightnessDown => (Level::Brightness, -1),
             DeviceKey::Mute => {
                 self.bottom.notify(NoticeKind::Level(Control::Volume), self.clock.mono());
-                return self.levels.toggle_mute();
+                return self.levels.toggle_mute(out);
             }
-            DeviceKey::Screenshot => return vec![Effect::Screenshot],
-            DeviceKey::BottomView => return self.bottom.toggle_view(&self.session),
-            DeviceKey::CloseWindow => return self.close_front_window(),
-            DeviceKey::Quit => return self.quit_front(),
-            DeviceKey::BottomPower => return self.bottom.toggle_power(self.power(), self.clock.mono()),
-            DeviceKey::WindowDown => return self.bottom.window_down(&self.session, self.clock.mono()),
-            DeviceKey::WindowUp => return self.bottom.window_up(&self.session, self.clock.mono()),
+            DeviceKey::Screenshot => return out.effects.push(Effect::Screenshot),
+            DeviceKey::BottomView => return out.effects.extend(self.bottom.toggle_view(&self.session)),
+            DeviceKey::CloseWindow => return out.effects.extend(self.close_front_window()),
+            DeviceKey::Quit => return out.effects.extend(self.quit_front()),
+            DeviceKey::BottomPower => return out.effects.extend(self.bottom.toggle_power(self.power(), self.clock.mono())),
+            DeviceKey::WindowDown => return out.effects.extend(self.bottom.window_down(&self.session, self.clock.mono())),
+            DeviceKey::WindowUp => return out.effects.extend(self.bottom.window_up(&self.session, self.clock.mono())),
         };
         let control = if level == Level::Volume { Control::Volume } else { Control::Brightness };
         self.bottom.notify(NoticeKind::Level(control), self.clock.mono());
-        self.levels.change(self.clock.mono(), |l| l.step(level, direction))
+        self.levels.change(self.clock.mono(), |l| l.step(level, direction, out));
     }
 
     /// Home with B, released at once, asks that window (see [`Session::home_b_window`]) to close.
