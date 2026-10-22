@@ -1,10 +1,12 @@
-//! The control pipe ($XDG_RUNTIME_DIR/clamshell-control, or CLAMSHELL_CONTROL): `clamshell ctl` and
-//! tests send commands through it, one per line, as the events the device's keys or a user's taps and
-//! presses would make. The commands and the targets a tap or a long press can be on are the rows of
-//! [`COMMANDS`] and [`TARGETS`]: each its words (placeholders in capitals), what it does, and what it
-//! makes; `clamshell ctl help` lists them.
+//! The control pipe, at $XDG_RUNTIME_DIR/clamshell-control or CLAMSHELL_CONTROL. `clamshell ctl` and the
+//! tests send commands through it, one per line. Each command becomes the events that the device's keys
+//! or a user's taps and presses would make.
 //!
-//! Any process of the user can write to it (mode 0600): see docs/security.md.
+//! The commands are the rows of [`COMMANDS`], and the targets a tap or a long press can be on are the rows
+//! of [`TARGETS`]. Each row has its words (placeholders in capitals), what it does, and the events or
+//! target it makes. `clamshell ctl help` lists them.
+//!
+//! Any of the user's processes can write to the pipe (mode 0600); see docs/security.md.
 
 mod pipe;
 mod words;
@@ -18,7 +20,7 @@ use clamshell_core::{Event, PointerEvent};
 pub use pipe::{send, spawn};
 pub use words::type_text;
 use words::{COMMANDS, TARGETS};
-// (Named keys: the snapshots tap them.)
+// The snapshots tap keys by name.
 #[cfg(any(test, feature = "dev"))]
 pub use words::key;
 
@@ -28,7 +30,7 @@ pub enum ParseError {
     Unknown,
     /// A number that doesn't parse.
     Number(String),
-    /// A name it doesn't know (a slider, a tab, a pad button).
+    /// An unknown name, such as a slider, a tab or a pad button.
     Name(String),
     /// A character the on-screen keyboard has no key for.
     Untypeable(char),
@@ -57,9 +59,9 @@ pub(super) fn control(name: &str) -> Result<Control, ParseError> {
     }
 }
 
-/// A command or a target, as a row of the tables: its words (literal, or a placeholder in capitals that
-/// any word fills: `N`, `INPUT`, ...), what it does (for `clamshell ctl help`), and what it makes from the
-/// placeholders' words.
+/// A command or a target, as a row of the tables. It has its words, what it does (for `clamshell ctl
+/// help`), and a function that makes the result from the placeholders' words. Each word is either literal
+/// or a placeholder in capitals that any word fills, such as `N` or `INPUT`.
 pub struct Form<T> {
     pub words: &'static str,
     pub help: &'static str,
@@ -70,7 +72,8 @@ pub(super) const fn form<T>(words: &'static str, help: &'static str, make: fn(&[
     Form { words, help, make }
 }
 
-/// The placeholders' words, if `words` fit `pattern` (the same count, each literal the same).
+/// Returns the placeholders' words if `words` fit `pattern`, which means the same number of words and
+/// every literal matching.
 pub(super) fn fits<'a>(pattern: &str, words: &[&'a str]) -> Option<Vec<&'a str>> {
     let tokens: Vec<&str> = pattern.split(' ').collect();
     if tokens.len() != words.len() {
@@ -87,7 +90,7 @@ pub(super) fn fits<'a>(pattern: &str, words: &[&'a str]) -> Option<Vec<&'a str>>
     Some(args)
 }
 
-/// The first row `words` fit, made; not a command if none.
+/// Makes the result of the first row that `words` fit. If no row fits, the line is not a command.
 pub(super) fn by_table<T>(table: &[Form<T>], words: &[&str]) -> Result<T, ParseError> {
     for f in table {
         if let Some(args) = fits(f.words, words) {
@@ -97,7 +100,7 @@ pub(super) fn by_table<T>(table: &[Form<T>], words: &[&str]) -> Result<T, ParseE
     Err(ParseError::Unknown)
 }
 
-/// The `i`th placeholder's word.
+/// The `i`th placeholder's word, or an empty string.
 pub(super) fn arg<'a>(args: &[&'a str], i: usize) -> &'a str {
     args.get(i).copied().unwrap_or("")
 }
@@ -106,7 +109,7 @@ pub(super) fn name_err(word: &str) -> ParseError {
     ParseError::Name(word.to_owned())
 }
 
-/// The commands and targets, a line each.
+/// The help text: the commands and targets, a line each.
 pub fn help() -> String {
     let mut text = String::from("Commands (`type TEXT` types the rest of the line):\n");
     let line = |t: &mut String, words: &str, help: &str| t.push_str(&format!("  {words:<26} {help}\n"));
@@ -120,7 +123,7 @@ pub fn help() -> String {
     text
 }
 
-/// A line as the events it stands for.
+/// Parses a line into the events it stands for.
 pub fn parse(line: &str) -> Result<Vec<Event>, ParseError> {
     // The text to type is the rest of the line, as it is.
     if let Some(text) = line.strip_prefix("type ") {
@@ -207,7 +210,7 @@ mod tests {
         for f in COMMANDS.iter().map(|f| (f.words, f.help)).chain(TARGETS.iter().map(|f| (f.words, f.help))) {
             assert!(help.contains(f.0) && help.contains(f.1), "{f:?}");
         }
-        // (A row whose words an earlier row's pattern takes would never be reached.)
+        // A row whose words an earlier row's pattern also fits would never be reached.
         let shadowed = |table: &[(&str, usize)]| {
             for (i, (later, _)) in table.iter().enumerate() {
                 let words: Vec<&str> = later.split(' ').collect();

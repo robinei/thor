@@ -1,4 +1,4 @@
-//! The pipe itself: commands written to it (`clamshell ctl`), and the thread reading them.
+//! The control pipe itself: writing a command to it (`clamshell ctl`) and the thread that reads them.
 
 use std::io::BufRead;
 use std::path::PathBuf;
@@ -8,14 +8,13 @@ use clamshell_system::os::worker;
 
 use super::parse;
 
-/// Reads commands from the pipe, one per line, for as long as the program runs.
-/// Sends `line` to the running ClamShell's control pipe (`clamshell ctl`). Without ClamShell reading it,
-/// an error rather than waiting.
+/// Sends `line` to the running ClamShell's control pipe (`clamshell ctl`). If ClamShell isn't reading the
+/// pipe, this fails instead of waiting.
 pub fn send(path: Option<&PathBuf>, line: &str) -> std::io::Result<()> {
     use std::io::Write;
     use std::os::unix::fs::OpenOptionsExt;
     let path = path.ok_or_else(|| std::io::Error::other("no control pipe (no XDG_RUNTIME_DIR)"))?;
-    // Non-blocking: opening a pipe nobody reads fails at once (ENXIO) instead of waiting for a reader.
+    // Opened non-blocking so that, if nobody reads the pipe, it fails at once (ENXIO) instead of waiting.
     let mut pipe = std::fs::OpenOptions::new()
         .write(true)
         .custom_flags(rustix::fs::OFlags::NONBLOCK.bits() as i32)
@@ -24,7 +23,8 @@ pub fn send(path: Option<&PathBuf>, line: &str) -> std::io::Result<()> {
     writeln!(pipe, "{line}")
 }
 
-/// Reads commands from the pipe at `path` (made if it isn't there) and sends their events.
+/// Reads commands from the pipe at `path`, one per line, and sends their events. The pipe is created if it
+/// doesn't exist.
 pub fn spawn(path: PathBuf, sink: impl Sink) {
     if !path.exists()
         && let Err(e) = rustix::fs::mknodat(rustix::fs::CWD, &path, rustix::fs::FileType::Fifo, rustix::fs::Mode::from_raw_mode(0o600), 0)
@@ -32,7 +32,7 @@ pub fn spawn(path: PathBuf, sink: impl Sink) {
         log::warn!("control: {}: {e}", path.display());
     }
     let spawned = worker::detached("control", move || {
-        // Each writer closes the pipe after its line: open it again for the next.
+        // Each writer closes the pipe after its line, so it is opened again for the next one.
         loop {
             let file = match std::fs::File::open(&path) {
                 Ok(file) => file,

@@ -1,5 +1,5 @@
-//! The commands and the targets, a row each: its words, what it does, what it makes; and the names of
-//! pad buttons, keys and keymap inputs and outputs they take.
+//! The tables of commands and targets, a row each with its words, what it does and what it makes. Also
+//! the names of the pad buttons, keys, and keymap inputs and outputs that the commands take.
 
 use clamshell_core::Control;
 use clamshell_core::bottom::keyboard::{self, Key, Modifier, Named};
@@ -15,23 +15,23 @@ use clamshell_core::{ClockField, Scope, TimeId};
 
 use super::{Form, ParseError, arg, control, form, name_err, number};
 
-/// The layout width a slide's positions are on (the second screen at half size).
+/// The layout width that a slide's positions are measured on: the second screen at half size.
 pub(super) const SLIDE_WIDTH: f32 = 620.0;
 
-/// The steps a slide moves in.
+/// The number of steps a slide moves in.
 pub(super) const SLIDE_STEPS: u16 = 10;
 
 pub(super) fn device(key: DeviceKey) -> Result<Vec<Event>, ParseError> {
     Ok(vec![Event::Device(key)])
 }
 
-/// The level row set to a value, and the finger lifted.
+/// Sets the level row to a value and lifts the finger.
 pub(super) fn level(level: Level, value: &str) -> Result<Vec<Event>, ParseError> {
     Ok(vec![LevelEvent::Set(level, number(value)?).into(), PointerEvent::Up(level.id()).into()])
 }
 
-/// The commands (a tap's and a long press's targets are [`TARGETS`]; `type TEXT` types the rest of the
-/// line as it is).
+/// The commands. The targets of a tap or a long press are in [`TARGETS`], and `type TEXT` types the rest
+/// of the line as it is.
 pub const COMMANDS: &[Form<Vec<Event>>] = &[
     form("volume up", "the volume key", |_| device(DeviceKey::VolumeUp)),
     form("volume down", "the volume key", |_| device(DeviceKey::VolumeDown)),
@@ -244,7 +244,8 @@ pub const TARGETS: &[Form<Id>] = &[
     form("key-done", "the keyboard's Done (the modifiers alone)", |_| km(KeymapId::Done)),
 ];
 
-/// A finger down on a slider at `from`, moved to `to` in steps, lifted unless held.
+/// Puts a finger down on a slider at `from` and moves it to `to` in steps. The finger is lifted at the end
+/// unless `hold` is set.
 pub(super) fn slide(control: Control, from: f32, to: f32, hold: bool) -> Vec<Event> {
     let id = Id::Control(control);
     let mut events = vec![PointerEvent::Down(id.clone()).into(), Slide::Start { control, x: from, width: SLIDE_WIDTH }.into()];
@@ -335,7 +336,7 @@ pub fn key(key: Key) -> Result<Id, ParseError> {
     keyboard::find(key).map(Id::Key).ok_or_else(untypeable)
 }
 
-/// Text typed on the on-screen keyboard: each character's key, after Shift (once) if it needs it.
+/// Types text on the on-screen keyboard: each character's key, preceded by one Shift tap if it needs it.
 pub fn type_text(text: &str) -> Result<Vec<Event>, ParseError> {
     let tap = |k: Key| key(k).map(|id| Event::Pointer(PointerEvent::Activate(id)));
     let mut events = Vec::new();
