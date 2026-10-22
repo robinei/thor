@@ -1032,7 +1032,14 @@ impl Remap {
         w.pad_axes.push((AbsoluteAxisCode::ABS_HAT0Y, i32::from(down) - i32::from(up)));
         w.pad_keys.sort_by_key(|k| k.0);
         w.pad_keys.dedup();
-        w.keys.dedup();
+        // (Keys keep their order: a chord's modifiers go down before its key.)
+        let mut keys = Vec::with_capacity(w.keys.len());
+        for k in w.keys.drain(..) {
+            if !keys.contains(&k) {
+                keys.push(k);
+            }
+        }
+        w.keys = keys;
         w
     }
 
