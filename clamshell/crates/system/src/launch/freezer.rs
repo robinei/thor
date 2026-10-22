@@ -1,4 +1,4 @@
-//! Freezing a hidden game's slice (the cgroup freezer, through systemd), and thawing it when it shows.
+//! Freezing a hidden game's slice with the cgroup freezer through systemd, and thawing it when it shows.
 
 use std::thread;
 use std::time::{Duration, Instant};
@@ -8,11 +8,12 @@ use crate::os::cgroup;
 use crate::os::dbus::Bus;
 use crate::os::worker;
 
-/// Freezes a unit (a slice: every scope in it), or thaws it: the cgroup freezer, which stops its
-/// processes where they are, without their knowing. Done by the freezer thread, one unit after another,
-/// each unit's latest request only (thaws first). A freeze waits while the slice works without drawing
-/// ([`working_without_drawing`]: loading, compiling shaders, which the user switched away to wait for);
-/// a later request for the unit (shown again: thawed) ends the wait.
+/// Freezes or thaws a unit. For a slice that means every scope in it. The cgroup freezer stops the
+/// processes where they are, without their knowing. The freezer thread does this one unit after another,
+/// acting only on each unit's latest request, thaws first. A freeze waits while the slice works without
+/// drawing ([`working_without_drawing`]), for example while it loads or compiles shaders and the user has
+/// switched away to wait. A later request for the unit, such as a thaw when it is shown again, ends the
+/// wait.
 pub fn freeze(unit: String, frozen: bool) {
     static FREEZER: std::sync::OnceLock<Option<std::sync::mpsc::Sender<(String, bool)>>> = std::sync::OnceLock::new();
     let sender = FREEZER.get_or_init(|| {
@@ -24,11 +25,11 @@ pub fn freeze(unit: String, frozen: bool) {
     }
 }
 
-/// What the freezer does to units: systemd's, or a test's.
+/// What the freezer does to units. It is implemented for systemd's units and for a test's.
 trait Freezer {
     fn thaw(&mut self, unit: &str);
     fn freeze(&mut self, unit: &str);
-    /// Whether the unit works without drawing (looked at for a while: see [`working_without_drawing`]).
+    /// Whether the unit works without drawing, watched for a while. See [`working_without_drawing`].
     fn busy(&mut self, unit: &str) -> bool;
 }
 
@@ -56,17 +57,17 @@ impl Freezer for Systemd {
     }
 }
 
-/// The freezer thread: carried out by systemd (see [`follow_requests`]).
+/// The freezer thread, acting on systemd's units. See [`follow_requests`].
 fn freezer(requests: &std::sync::mpsc::Receiver<(String, bool)>) {
     follow_requests(requests, &mut Systemd);
 }
 
-/// The requests waiting, each unit's latest, carried out by `units` until none is left: thaws at once; a
-/// freeze once its unit isn't busy, unless asked otherwise meanwhile (a busy one looked at again after
-/// the others). Returns when the requests' sender is gone.
+/// Carries out the waiting requests on `units`, each unit's latest, until none is left. Thaws happen at
+/// once. A freeze happens once its unit isn't busy, unless a different request comes in the meantime. A
+/// busy unit is looked at again after the others. Returns when the requests' sender is gone.
 fn follow_requests(requests: &std::sync::mpsc::Receiver<(String, bool)>, units: &mut impl Freezer) {
     let mut waiting: Vec<(String, bool)> = Vec::new();
-    // (Those a freeze waits for, said once each.)
+    // The units a freeze is waiting for, so each is logged once.
     let mut said: Vec<String> = Vec::new();
     let take = |waiting: &mut Vec<(String, bool)>, (unit, frozen): (String, bool)| {
         waiting.retain(|(u, _)| *u != unit);
@@ -112,13 +113,13 @@ fn follow_requests(requests: &std::sync::mpsc::Receiver<(String, bool)>, units: 
     }
 }
 
-/// Above this CPU (cores) with the GPU below [`DRAWING_GPU`] (of its time), a slice works without
-/// drawing.
+/// A slice using more CPU than this, in cores, while its GPU use is below [`DRAWING_GPU`] is working
+/// without drawing.
 const BUSY_CPU: f64 = 0.5;
 
 const DRAWING_GPU: f64 = 0.05;
 
-/// How long a slice is watched for that.
+/// How long a slice is watched to decide that.
 const WATCH: Duration = Duration::from_secs(2);
 
 /// A slice's cgroup, under /sys/fs/cgroup.
@@ -130,8 +131,9 @@ fn control_group(bus: &mut Bus, unit: &str) -> Option<String> {
         .filter(|g| !g.is_empty())
 }
 
-/// Whether the slice with cgroup `group` works without drawing, over [`WATCH`]: much CPU, the GPU (its
-/// processes' DRM clients) nearly idle; a game hidden but drawing on uses the GPU. Unreadable: not.
+/// Whether the slice with cgroup `group` works without drawing over [`WATCH`]. That means much CPU while
+/// the GPU, as its processes' DRM clients, is nearly idle. A hidden game that keeps drawing uses the GPU.
+/// If the figures can't be read, the answer is no.
 fn working_without_drawing(group: Option<String>) -> bool {
     let Some(group) = group else {
         thread::sleep(WATCH);
@@ -156,8 +158,8 @@ mod tests {
     use super::*;
     use std::sync::mpsc::{Sender, channel};
 
-    /// Units in a test: what was done to them, in order; busy ones stay busy for as many looks as given,
-    /// and a look may let more requests in (as the 2 s look would).
+    /// Units in a test. It records what was done to them, in order. Busy units stay busy for as many
+    /// looks as given, and a look may let more requests in, as the real 2 s look would.
     #[derive(Default)]
     struct Fake {
         done: Vec<String>,
@@ -174,7 +176,7 @@ mod tests {
             self.done.push(format!("freeze {unit}"));
         }
         fn busy(&mut self, unit: &str) -> bool {
-            // (Sent once, then the sender dropped: the loop ends when the requests are done.)
+            // Send these once, then drop the sender so the loop ends when the requests are done.
             if let Some(send) = self.send.take() {
                 for r in self.during_look.drain(..) {
                     let _ = send.send(r);
@@ -195,8 +197,8 @@ mod tests {
         for (u, f) in requests {
             let _ = send.send(((*u).to_owned(), *f));
         }
-        // (Kept by the fake only to send more during a look; else dropped: the loop ends when the requests
-        // are done.)
+        // The fake keeps the sender only to send more during a look. Otherwise it is dropped, so the loop
+        // ends when the requests are done.
         if fake.during_look.is_empty() {
             drop(send);
         } else {
@@ -208,17 +210,17 @@ mod tests {
 
     #[test]
     fn each_units_latest_request_thaws_first() {
-        // a: freeze then thaw: only the thaw; b: frozen.
+        // a is frozen then thawed, so only the thaw happens. b is frozen.
         let done = run(&[("a", true), ("b", true), ("a", false)], Fake::default());
         assert_eq!(done, ["thaw a", "freeze b"]);
     }
 
     #[test]
     fn a_busy_unit_waits_and_a_thaw_meanwhile_cancels_its_freeze() {
-        // a busy for two looks, b not: b frozen first, then a.
+        // a is busy for two looks and b isn't, so b is frozen first, then a.
         let fake = Fake { busy: vec![("a".into(), 2)], ..Fake::default() };
         assert_eq!(run(&[("a", true), ("b", true)], fake), ["freeze b", "freeze a"]);
-        // a busy, and shown during the look (thawed): never frozen.
+        // a is busy and is shown (thawed) during the look, so it is never frozen.
         let fake = Fake { busy: vec![("a".into(), 1)], during_look: vec![("a".into(), false)], ..Fake::default() };
         assert_eq!(run(&[("a", true)], fake), ["thaw a"]);
     }
@@ -230,8 +232,8 @@ mod live {
     use std::process::Command;
     use std::thread;
 
-    /// A slice working without drawing (a busy loop, no GPU) isn't frozen while it does; once idle, it is
-    /// (run by hand: `--ignored`).
+    /// A slice working without drawing, a busy loop with no GPU, isn't frozen while it does. Once idle it
+    /// is. Run it by hand with `--ignored`.
     #[test]
     #[ignore = "needs a user session; starts scopes"]
     #[allow(clippy::unwrap_used)]
@@ -251,7 +253,7 @@ mod live {
         freeze(slice.clone(), true);
         thread::sleep(Duration::from_secs(6));
         assert_eq!(state(), "running", "busy without drawing: not yet");
-        // Idle (the loop gone, a sleep left): frozen.
+        // Once idle, with the loop gone and a sleep left, it is frozen.
         let _ = Command::new("systemctl").args(["--user", "stop", &format!("{busy}.scope")]).status();
         let _ = looping.wait();
         let mut sleeping = Command::new("systemd-run")

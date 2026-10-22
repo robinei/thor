@@ -1,11 +1,11 @@
-//! Starting a program as an instance of ours (an app or a game), in its systemd scope (ClamShell needs a
-//! systemd user manager): under sway, through sway's `exec`, aimed at the instance's workspace (its app's,
-//! or its game's), so its first window opens there; elsewhere as a child process.
+//! Starting a program as an instance of ours, an app or a game, in its systemd scope. ClamShell needs a
+//! systemd user manager for this. Under sway the program starts through sway's `exec`, aimed at the
+//! instance's workspace, so its first window opens there. Elsewhere it starts as a child process.
 //!
-//! A launch is handed to sway's `exec` without its arguments going through sway's command parser (which
-//! splits at ';' and ','): the job is written to a file, sway runs `clamshell --run <file>`, and that reads
-//! it, deletes it and becomes the program (exec: the same process, so sway's launch tracking and its
-//! startup token carry over), inside the job's systemd scope.
+//! A launch is handed to sway's `exec` without its arguments going through sway's command parser, which
+//! splits at ';' and ','. Instead the job is written to a file and sway runs `clamshell --run <file>`.
+//! That reads the file, deletes it and execs the program inside the job's systemd scope. Because exec
+//! keeps the same process, sway's launch tracking and its startup token carry over.
 
 use std::fmt;
 use std::io;
@@ -22,9 +22,9 @@ use crate::sway;
 pub struct Job {
     /// The scope's name (without `.scope`).
     pub unit: String,
-    /// The workspace its first window opens on (under sway).
+    /// The workspace its first window opens on, under sway.
     pub workspace: String,
-    /// The slice its scope goes in (a dock app's: all its instances'), if any.
+    /// The slice its scope goes in, if any. A dock app's slice holds all its instances.
     pub slice: Option<String>,
     /// Program and arguments.
     pub argv: Vec<String>,
@@ -64,7 +64,7 @@ impl From<serde_json::Error> for Error {
     }
 }
 
-/// Writes the job into `dir`, where `--run` will read it; returns its path.
+/// Writes the job into `dir`, where `--run` will read it, and returns its path.
 pub fn write(dir: &Path, job: &Job) -> Result<PathBuf, Error> {
     std::fs::create_dir_all(dir)?;
     let path = dir.join(format!("{}.json", job.unit));
@@ -72,11 +72,12 @@ pub fn write(dir: &Path, job: &Job) -> Result<PathBuf, Error> {
     Ok(path)
 }
 
-/// `program` with `args`, in a systemd scope named `unit` (`--user`, collected when it ends; in `slice`,
-/// if given).
+/// A command running `program` with `args` in a user systemd scope named `unit`, in `slice` if given. The
+/// scope is collected when it ends.
 fn scoped(unit: &str, slice: Option<&str>, program: impl AsRef<std::ffi::OsStr>, args: &[impl AsRef<std::ffi::OsStr>]) -> Command {
     let mut cmd = Command::new("systemd-run");
-    // (Delegated: what is in it may move processes into it, a Steam game's follower Steam's launcher.)
+    // The scope is delegated, so what runs in it may move processes into it. For example, a Steam game's
+    // follower moves Steam's launcher.
     cmd.args(["--user", "--scope", "--quiet", "--collect", "--property=Delegate=yes", &format!("--unit={unit}")]);
     if let Some(slice) = slice {
         cmd.arg(format!("--slice={slice}"));
@@ -85,7 +86,7 @@ fn scoped(unit: &str, slice: Option<&str>, program: impl AsRef<std::ffi::OsStr>,
     cmd
 }
 
-/// The command a job runs as: in its workdir, else in HOME.
+/// The command a job runs as, in its workdir or else in HOME.
 pub fn command(job: &Job) -> Option<Command> {
     let (program, args) = job.argv.split_first()?;
     let mut cmd = scoped(&job.unit, job.slice.as_deref(), program, args);
@@ -97,7 +98,7 @@ pub fn command(job: &Job) -> Option<Command> {
     Some(cmd)
 }
 
-/// `--run <file>`: becomes the job's program. Returns only if that fails.
+/// Handles `--run <file>` by becoming the job's program. Returns only if that fails.
 pub fn run(path: &Path) -> Error {
     let job: Job = match std::fs::read(path).map_err(Error::from).and_then(|b| Ok(serde_json::from_slice(&b)?)) {
         Ok(job) => job,
@@ -112,8 +113,8 @@ pub fn run(path: &Path) -> Error {
     }
 }
 
-/// Waits for a child on a thread of its own, so it is reaped whenever it ends (whether it runs is
-/// systemd's list's to say, or the caller's).
+/// Waits for a child on a thread of its own, so it is reaped whenever it ends. Whether it runs is for
+/// systemd's list, or the caller, to say.
 pub fn reap(mut child: Child) {
     if let Err(e) = worker::detached("reaper", move || drop(child.wait())) {
         log::warn!("reaper: {e}");
@@ -123,12 +124,13 @@ pub fn reap(mut child: Child) {
 /// How a job was started.
 #[derive(Debug)]
 pub enum Started {
-    /// By sway: it runs once its scope is there.
+    /// Started by sway. It runs once its scope is there.
     Sway,
     Child(Child),
 }
 
-/// Starts jobs: through sway where there is sway (written to `jobs`), else as child processes.
+/// Starts jobs through sway where there is sway, writing them to `jobs`, and otherwise as child
+/// processes.
 #[derive(Clone)]
 pub struct Runner {
     pub jobs: PathBuf,
@@ -143,7 +145,7 @@ impl Runner {
             return Ok(Started::Sway);
         }
         let mut cmd = command(job).ok_or(Error::EmptyCommand)?;
-        // Its own process group: our signals (a Ctrl-C in a terminal) don't reach it.
+        // In its own process group, our signals, such as a Ctrl-C in a terminal, don't reach it.
         Ok(Started::Child(cmd.stdin(Stdio::null()).process_group(0).spawn()?))
     }
 
@@ -187,7 +189,7 @@ mod tests {
         let job = Job { unit, workspace: "u".into(), slice: None, argv: vec!["true".into()], env: vec![], workdir: None };
         let empty = Job { argv: vec![], ..job.clone() };
         assert!(matches!(runner.start(&empty), Err(Error::EmptyCommand)));
-        // (Only where there is a user manager to start the scope.)
+        // Only where there is a user manager to start the scope.
         if std::env::var_os("XDG_RUNTIME_DIR").is_some_and(|d| std::path::Path::new(&d).join("systemd/private").exists()) {
             let started = runner.start(&job).unwrap();
             assert!(matches!(&started, Started::Child(_)));

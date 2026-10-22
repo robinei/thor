@@ -1,5 +1,5 @@
-//! Launching and following what runs: launches in scopes of their own (launcher, job), the scopes
-//! watched, paused and ended (scopes), and where mpv left a video (mpv).
+//! Launching and following what runs. `launcher` and `job` start launches in scopes of their own,
+//! `scopes` watches, pauses and ends the scopes, and `mpv` reads where mpv left a video.
 
 pub(crate) mod freezer;
 pub mod job;

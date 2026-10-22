@@ -1,8 +1,10 @@
-//! Our launches as systemd sees them: the user manager's scopes named `clamshell-run-*` (D-Bus,
-//! org.freedesktop.systemd1), listed at start and again whenever it signals a unit of ours coming, starting
-//! or going. This is the truth for what runs: a scope lives as long as any of its processes, whatever its
-//! windows do, and survives a restart of ClamShell. A session's sway ending stops them all (the device's
-//! uwsm, the desktop's nested sway's unit: their slices are stopped after it).
+//! Our launches as systemd sees them: the user manager's scopes named `clamshell-run-*`, read over D-Bus
+//! (org.freedesktop.systemd1). They are listed at start, and again whenever the manager signals that a
+//! unit of ours is coming, starting or going.
+//!
+//! This is the truth for what runs. A scope lives as long as any of its processes, whatever its windows
+//! do, and it survives a restart of ClamShell. When a session's sway ends, they all stop, because their
+//! slices are stopped after it: by uwsm on the device, and by the nested sway's unit on the desktop.
 
 use std::convert::Infallible;
 use std::fmt;
@@ -26,11 +28,11 @@ pub(super) const SYSTEMD: &str = "org.freedesktop.systemd1";
 const MANAGER_PATH: &str = "/org/freedesktop/systemd1";
 const MANAGER: &str = "org.freedesktop.systemd1.Manager";
 
-/// ListUnitsByPatterns' rows: name, description, load state, active state, sub state, following,
+/// A row of ListUnitsByPatterns: name, description, load state, active state, sub state, following,
 /// object path, job id, job type, job path.
 type UnitRow = (String, String, String, String, String, String, Path<'static>, u32, String, Path<'static>);
 
-/// A method of the user manager's.
+/// Calls a method of the user manager.
 pub(super) fn call<R: ::dbus::arg::ReadAll>(bus: &mut Bus, method: &str, args: impl ::dbus::arg::AppendAll) -> dbus::Result<R> {
     bus.call(SYSTEMD, MANAGER_PATH, MANAGER, method, args)
 }
@@ -45,7 +47,7 @@ fn units(bus: &mut Bus, patterns: &[&str]) -> dbus::Result<Vec<UnitRow>> {
 #[derive(Debug)]
 pub enum Error {
     Bus(dbus::Error),
-    /// The manager's signals ended: the bus connection closed.
+    /// The manager's signals ended because the bus connection closed.
     SignalsEnded,
     /// A scope we waited for didn't appear in time.
     DidNotStart(String),
@@ -69,11 +71,11 @@ impl From<dbus::Error> for Error {
 
 lost_on!(Error: dbus::Error);
 
-/// The session bus, connected once for every one-off unit operation (made from several threads, one at
-/// a time); connected again after the bus failed.
+/// The session bus connection shared by every one-off unit operation. Several threads use it, one at a
+/// time. It connects again after the bus fails.
 static BUS: std::sync::Mutex<dbus::Kept> = std::sync::Mutex::new(dbus::Kept::session());
 
-/// `call` on the user manager, over the shared connection.
+/// Runs `call` on the user manager over the shared connection.
 pub(super) fn with_manager<T>(call: impl FnOnce(&mut Bus) -> Result<T, Error>) -> Result<T, Error> {
     let mut kept = crate::os::lock(&BUS);
     let result = call(kept.get()?);
@@ -83,7 +85,7 @@ pub(super) fn with_manager<T>(call: impl FnOnce(&mut Bus) -> Result<T, Error>) -
     result
 }
 
-/// Our scopes that run (dock app instances and games), in the order of their names.
+/// Our running scopes, which are dock app instances and games, sorted by name.
 fn list(bus: &mut Bus) -> dbus::Result<Vec<Instance>> {
     let rows = units(bus, &PATTERNS)?;
     let mut names: Vec<String> = rows.into_iter().filter(|row| !matches!(row.3.as_str(), "inactive" | "failed")).map(|row| row.0).collect();
@@ -91,18 +93,19 @@ fn list(bus: &mut Bus) -> dbus::Result<Vec<Instance>> {
     Ok(names.iter().filter_map(|n| Instance::from_unit(n)).collect())
 }
 
-/// Sends [`Event::Units`] at start and after every change of our scopes; connects again if the bus goes.
-/// At start, after the first, [`Event::Frozen`]: our slices found frozen (by a ClamShell before this
-/// one: suspended, or paused hidden), held as suspended.
+/// Sends [`Event::Units`] at start and after every change of our scopes, and connects again if the bus
+/// goes. At start, after the first list, it sends [`Event::Frozen`] with our slices that are found
+/// frozen. An earlier ClamShell froze them, when suspending or pausing a hidden game, and they are held
+/// as suspended.
 pub fn spawn(sink: impl Sink) -> io::Result<()> {
     worker::detached("units", move || worker::supervise_alone(&mut Units { sink, frozen: None, looked: false }, RETRY))
 }
 
 struct Units<S> {
     sink: S,
-    /// Our slices found frozen, to be told after the first list.
+    /// Our slices found frozen, to be sent after the first list.
     frozen: Option<Vec<std::sync::Arc<str>>>,
-    /// They have been looked for (once, at start).
+    /// Whether frozen slices have been looked for. That happens once, at start.
     looked: bool,
 }
 
@@ -130,7 +133,7 @@ impl<S: Sink> Service for Units<S> {
         Ok(bus)
     }
 
-    /// Lists the scopes, then again at each signal about one of ours, until the bus closes.
+    /// Lists the scopes, and again at each signal about one of ours, until the bus closes.
     fn run_while_up(&mut self, mut bus: Bus, _: &Receiver<Infallible>) -> Result<(), Ended<Error>> {
         let mut last = Changed::default();
         if let Some(units) = last.offer(list(&mut bus)?) {
@@ -156,9 +159,9 @@ impl<S: Sink> Service for Units<S> {
     }
 }
 
-/// The unit a signal of the manager's is about, for the signals that change what runs: a unit loaded
-/// (UnitNew) or gone (UnitRemoved), and a job done (JobRemoved: a scope's start job ends once it runs;
-/// at UnitNew it is still inactive, and listing it then can miss it).
+/// The unit a manager signal is about, for the signals that change what runs: a unit loaded (UnitNew), a
+/// unit gone (UnitRemoved) and a job done (JobRemoved). JobRemoved matters because a scope's start job
+/// ends once the scope runs. At UnitNew the scope is still inactive, so a list made then can miss it.
 fn unit_of_signal(message: &Message) -> Option<String> {
     match &*message.member()? {
         "UnitNew" | "UnitRemoved" => {
@@ -171,7 +174,7 @@ fn unit_of_signal(message: &Message) -> Option<String> {
     }
 }
 
-/// Whether the user manager has this unit loaded (`name` with its suffix).
+/// Whether the user manager has this unit loaded. `name` includes the suffix.
 fn loaded(bus: &mut Bus, name: &str) -> bool {
     get_unit(bus, name).inspect_err(|e| log::debug!("{name} not loaded: {e}")).is_ok()
 }
@@ -182,17 +185,17 @@ pub(super) fn get_unit(bus: &mut Bus, name: &str) -> dbus::Result<Path<'static>>
     Ok(path)
 }
 
-/// Moves running processes into scope `unit`, a new one (in `slice`, if given) unless it is there, as a
-/// launch's own: for a program another program started (a Steam game, under Steam's launcher), so that
-/// it is counted, frozen and ended as the launch, apart from its starter. What they start later is in it
-/// too.
+/// Moves running processes into the scope `unit`, creating it (in `slice`, if given) if it doesn't
+/// exist. This is for a program started by another program, such as a Steam game started by Steam's
+/// launcher: in a scope of its own it is counted, frozen and ended as the launch, separately from its
+/// starter. Anything it starts later is in the scope too.
 pub fn adopt(unit: &str, slice: Option<&str>, pids: &[u32]) -> Result<(), Error> {
     with_manager(|bus| {
         if loaded(bus, unit) {
             call::<()>(bus, "AttachProcessesToUnit", (unit, "", pids.to_vec()))?;
             return Ok(());
         }
-        // (Delegated: a user manager moves processes into a unit later only if it is.)
+        // Delegated, because a user manager moves processes into a unit later only if it is.
         let mut properties = vec![("PIDs", value(pids.to_vec())), ("CollectMode", value("inactive-or-failed".to_owned())), ("Delegate", value(true))];
         if let Some(slice) = slice {
             properties.push(("Slice", value(slice.to_owned())));
@@ -203,7 +206,7 @@ pub fn adopt(unit: &str, slice: Option<&str>, pids: &[u32]) -> Result<(), Error>
     })
 }
 
-/// Thaws a launch's slice before it starts (one left frozen: systemd starts no scope in it).
+/// Thaws a launch's slice before it starts, because systemd starts no scope in a slice left frozen.
 pub fn thaw_slice(slice: &str) {
     if let Err(e) = with_manager(|m| {
         thaw_now(m, slice);
@@ -213,8 +216,8 @@ pub fn thaw_slice(slice: &str) {
     }
 }
 
-/// Ends unit `unit` (an entry's slice: all its launches): stopped (systemd asks its processes to end,
-/// then kills what is left after its timeout), or with `force` killed at once.
+/// Ends `unit`, such as an entry's slice with all its launches. Normally it is stopped: systemd asks its
+/// processes to end, then kills what is left after its timeout. With `force` they are killed at once.
 pub fn end(unit: &str, force: bool) -> Result<(), Error> {
     const SIGKILL: i32 = 9;
     with_manager(|bus| {
@@ -226,7 +229,7 @@ pub fn end(unit: &str, force: bool) -> Result<(), Error> {
     })
 }
 
-/// Stops every running unit whose name matches `pattern` (a glob, as `ListUnitsByPatterns` takes).
+/// Stops every running unit whose name matches `pattern`, a glob as `ListUnitsByPatterns` takes it.
 pub fn stop_matching(pattern: &str) -> Result<(), Error> {
     with_manager(|bus| {
         for row in units(bus, &[pattern])? {
@@ -243,7 +246,7 @@ pub fn is_active(unit: &str) -> Result<bool, Error> {
     with_manager(|bus| Ok(units(bus, &[unit])?.iter().any(|row| matches!(row.3.as_str(), "active" | "activating" | "reloading"))))
 }
 
-/// Thaws a unit, if it is there and frozen (otherwise systemd does nothing).
+/// Thaws a unit if it is loaded. systemd does nothing if it isn't frozen.
 fn thaw_now(bus: &mut Bus, unit: &str) {
     if loaded(bus, unit)
         && let Err(e) = call::<()>(bus, "ThawUnit", (unit,))
@@ -269,8 +272,8 @@ mod live {
     use super::*;
     use std::process::Command;
 
-    /// With a user session (a desktop): lists our scopes; nothing is changed (run by hand: `--ignored
-    /// --nocapture`).
+    /// Needs a user session, so a desktop. Lists our scopes without changing anything. Run it by hand
+    /// with `--ignored --nocapture`.
     #[test]
     #[ignore = "needs a user session"]
     #[allow(clippy::unwrap_used)]
@@ -279,8 +282,8 @@ mod live {
         println!("{:?}", list(&mut bus).unwrap());
     }
 
-    /// With a user session (a desktop): a scope we start shows in the list, and is gone once it ends.
-    /// Starts a one-second `sleep` in a scope of its own (run by hand: `--ignored`).
+    /// Needs a user session, so a desktop. A scope we start shows in the list and is gone once it ends.
+    /// Starts a one-second `sleep` in a scope of its own. Run it by hand with `--ignored`.
     #[test]
     #[ignore = "needs a user session; starts a scope"]
     #[allow(clippy::unwrap_used)]
@@ -298,7 +301,7 @@ mod live {
         let unit = instance.unit().unwrap();
         appear(&unit, Duration::from_secs(1)).unwrap();
         child.wait().unwrap();
-        // (Gone from the list once its process has ended.)
+        // It is gone from the list once its process has ended.
         let start = Instant::now();
         while list(&mut bus).unwrap().contains(&instance) {
             assert!(start.elapsed() < Duration::from_secs(5), "gone");

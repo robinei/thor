@@ -1,14 +1,15 @@
-//! mpv: where it left a video, and commands sent to a running one (playlist entries added).
+//! mpv: where it left a video, and commands sent to a running mpv, such as adding playlist entries.
 //!
-//! With `save-position-on-quit`, mpv keeps the place of a video quit before its end in a file of its
-//! watch_later folder, named by the MD5 (in capitals) of the video's path, or of its file name alone with
-//! `ignore-path-in-watch-later-config`; the line `start=<seconds>` is the place. A video watched to its
-//! end has none. Both names are looked for (the path's first), in the folder mpv.conf names
-//! (`watch-later-dir`) and in mpv's own (~/.local/state/mpv/watch_later, older ~/.config/mpv/watch_later).
+//! With `save-position-on-quit`, mpv keeps the position of a video quit before its end in a file in its
+//! watch_later folder. The file is named by the MD5, in capitals, of the video's path, or of its file
+//! name alone with `ignore-path-in-watch-later-config`. The line `start=<seconds>` is the position. A
+//! video watched to its end has no file. Both names are looked for, the path's first. They are looked
+//! for in the folder mpv.conf names (`watch-later-dir`) and in mpv's own folders,
+//! ~/.local/state/mpv/watch_later and the older ~/.config/mpv/watch_later.
 
 use std::path::{Path, PathBuf};
 
-/// The folders mpv keeps places in, the one mpv.conf names first.
+/// The folders mpv keeps positions in, with the one mpv.conf names first.
 pub fn watch_later_dirs(config_home: Option<&Path>, state_home: Option<&Path>) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     let conf = config_home.map(|c| c.join("mpv/mpv.conf"));
@@ -24,7 +25,7 @@ pub fn watch_later_dirs(config_home: Option<&Path>, state_home: Option<&Path>) -
         for line in text.lines().map(str::trim) {
             if let Some(dir) = line.strip_prefix("watch-later-dir=").or_else(|| line.strip_prefix("watch-later-directory=")) {
                 let dir = dir.trim().trim_matches('"');
-                // (mpv's `~/`, and `~~state/`, `~~/` for its own folders.)
+                // mpv's `~/` for home, and `~~state/` and `~~/` for its own folders.
                 let dir = match (dir.strip_prefix("~~state/"), dir.strip_prefix("~~/"), dir.strip_prefix("~/")) {
                     (Some(rest), _, _) => state_home.map(|s| s.join("mpv").join(rest)),
                     (_, Some(rest), _) => config_home.map(|c| c.join("mpv").join(rest)),
@@ -40,8 +41,8 @@ pub fn watch_later_dirs(config_home: Option<&Path>, state_home: Option<&Path>) -
     dirs
 }
 
-/// Where mpv left `file` (seconds), if it kept a place, and when it did (its file's time, seconds since
-/// the epoch).
+/// Where mpv left `file`, in seconds, if it kept a position, and when it did so. The time is the
+/// watch_later file's, in seconds since the epoch.
 pub fn position(dirs: &[PathBuf], file: &Path) -> Option<(u32, u64)> {
     let path = file.to_string_lossy();
     let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
@@ -57,13 +58,14 @@ pub fn position(dirs: &[PathBuf], file: &Path) -> Option<(u32, u64)> {
     start.trim().parse::<f64>().inspect_err(|e| log::warn!("{}: start={start}: {e}", kept.display())).ok().filter(|s| *s >= 0.0).map(|s| (s as u32, at))
 }
 
-/// MD5 of `data` as 32 capital hex digits (as mpv names its watch_later files).
+/// MD5 of `data` as 32 capital hex digits, as mpv names its watch_later files.
 fn md5_hex(data: &[u8]) -> String {
     format!("{:X}", md5::compute(data))
 }
 
-/// `lines` (mpv's JSON IPC commands) written to a launch's control socket at `socket`, each its own line, then as many lines read back
-/// (or none, for a while), so the player reads them all before the connection closes.
+/// Writes `lines`, which are mpv JSON IPC commands, to a launch's control socket at `socket`, one per
+/// line. Then as many lines are read back, or none for a while, so the player reads them all before the
+/// connection closes.
 pub fn enqueue(socket: &std::path::Path, lines: &[String]) -> std::io::Result<()> {
     use std::io::{BufRead, Write};
     let mut stream = std::os::unix::net::UnixStream::connect(socket)?;
@@ -73,7 +75,7 @@ pub fn enqueue(socket: &std::path::Path, lines: &[String]) -> std::io::Result<()
         stream.write_all(line.as_bytes())?;
         stream.write_all(b"\n")?;
     }
-    // (mpv answers each command, and drops those it hasn't read when the client goes.)
+    // mpv answers each command, and drops those it hasn't read when the client goes.
     let mut replies = std::io::BufReader::new(stream).lines();
     for _ in lines {
         if !matches!(replies.next(), Some(Ok(_))) {

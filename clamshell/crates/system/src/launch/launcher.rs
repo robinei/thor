@@ -1,14 +1,14 @@
-//! Starting entries (games, apps, films). Each launch is started and left: whether it runs, and when it
-//! has ended, systemd's list of our scopes says (see [`crate::launch::scopes`] and clamshell-core's `running`);
-//! the launcher reports only a launch that couldn't start (its scope never came). Starting runs on a
-//! thread of its own, so launches start side by side.
+//! Starting entries: games, apps, films. Each launch is started and then left alone. Whether it runs,
+//! and when it has ended, comes from systemd's list of our scopes (see [`crate::launch::scopes`] and
+//! clamshell-core's `running`). The launcher reports only a launch that couldn't start because its scope
+//! never appeared. Each start runs on a thread of its own, so launches start side by side.
 //!
-//! - A program (its arguments filled in by the library) runs in its own systemd scope (`systemd-run
-//!   --user --scope`, through sway's exec: its first window opens on its workspace), so restarting
-//!   ClamShell doesn't end it.
-//! - A Steam game is given to Steam, and followed in its launch's scope: see [`crate::launch::steam`].
+//! - A program, with its arguments filled in by the library, runs in its own systemd scope (`systemd-run
+//!   --user --scope`), so restarting ClamShell doesn't end it. It goes through sway's exec so its first
+//!   window opens on its workspace.
+//! - A Steam game is handed to Steam and followed in its launch's scope. See [`crate::launch::steam`].
 //!
-//! Where mpv left a video is read here too, as its play ends (the state asks: `ReadPosition`).
+//! Where mpv left a video is also read here when its play ends, at the state's request (`ReadPosition`).
 
 use std::fmt;
 use std::io;
@@ -27,13 +27,13 @@ use crate::launch::{scopes, steam};
 use crate::os::worker::{self, Worker};
 use crate::os::{cgroup, sys};
 
-/// How long sway may take to start a game (its scope to appear).
+/// How long sway may take to start a game, until its scope appears.
 const GAME_START: Duration = Duration::from_secs(30);
 
 /// What the launcher is asked.
 pub enum Command {
     Launch(Request),
-    /// Where mpv left video `file` (entry `game`'s): read, and told (`LaunchEvent::Position`).
+    /// Read where mpv left video `file` of entry `game`, and send it as `LaunchEvent::Position`.
     ReadPosition {
         game: Arc<str>,
         file: PathBuf,
@@ -42,21 +42,21 @@ pub enum Command {
 
 pub struct Request {
     pub game: Arc<str>,
-    /// Its scope and workspace, from the state.
+    /// The launch's scope and workspace, from the state.
     pub instance: Instance,
     pub launch: Launch,
-    /// The game's environment (its MangoHud config, its own variables).
+    /// The game's environment: its MangoHud config and its own variables.
     pub env: Vec<(String, String)>,
 }
 
 #[derive(Clone)]
 pub struct Config {
-    /// Where mpv keeps videos' places.
+    /// Where mpv keeps the positions of videos.
     pub watch_later: Vec<PathBuf>,
-    /// How jobs start: under sway, through it (see [`crate::sway`]), so the game's window opens on the
-    /// game's workspace.
+    /// How jobs start. Under sway they start through it (see [`crate::sway`]), so the game's window opens
+    /// on the game's workspace.
     pub jobs: Runner,
-    /// Where launches' control sockets go (a command's `{socket}`).
+    /// Where the launches' control sockets go, which a command gets as `{socket}`.
     pub sockets: PathBuf,
 }
 
@@ -66,7 +66,7 @@ pub enum Error {
     Job(job::Error),
     Units(scopes::Error),
     NoCommand,
-    /// The instance has no scope to follow the game by (only apps' and games' instances have one).
+    /// The instance has no scope to follow the game by. Only apps' and games' instances have one.
     NoScope,
     EmptyCommand,
 }
@@ -125,7 +125,7 @@ pub fn spawn(config: Config, sink: impl Sink + Clone) -> io::Result<Worker<Comma
     })
 }
 
-/// Starts the game a request is for: done once its scope is there.
+/// Starts the game a request is for. It is done once the game's scope is there.
 fn start(config: &Config, request: &Request) -> Result<(), Error> {
     if let Some(slice) = request.instance.slice() {
         scopes::thaw_slice(&slice);
@@ -138,9 +138,9 @@ fn start(config: &Config, request: &Request) -> Result<(), Error> {
     }
 }
 
-/// Starts `argv` in `workdir` (else the home dir) as the request's instance.
+/// Starts `argv` as the request's instance, in `workdir` or else the home dir.
 fn start_program(config: &Config, request: &Request, argv: Vec<String>, workdir: Option<PathBuf>) -> Result<(), Error> {
-    // (`{socket}`: its entry's control socket, see clamshell_core::session::enqueue.)
+    // `{socket}` is the entry's control socket. See clamshell_core::session::enqueue.
     let argv = match &request.instance {
         Instance::Run { key, .. } if argv.iter().any(|a| a.contains("{socket}")) => {
             std::fs::create_dir_all(&config.sockets)?;
@@ -149,8 +149,8 @@ fn start_program(config: &Config, request: &Request, argv: Vec<String>, workdir:
         }
         _ => argv,
     };
-    // (`CLAMSHELL`: this program, for what a runner's script asks of it: the Android runner's Wayland
-    // filter.)
+    // `CLAMSHELL` is this program's path, for runner scripts that call it, such as the Android runner's
+    // Wayland filter.
     let mut env = request.env.clone();
     match std::env::current_exe() {
         Ok(exe) => env.push(("CLAMSHELL".to_owned(), exe.to_string_lossy().into_owned())),
@@ -160,7 +160,7 @@ fn start_program(config: &Config, request: &Request, argv: Vec<String>, workdir:
     started(config.jobs.start(&job)?, request)
 }
 
-/// A job started for `request`: done once its scope is there (sway may not start it).
+/// Waits for a job started for `request` until its scope is there, since sway may not start it.
 pub(super) fn started(started: Started, request: &Request) -> Result<(), Error> {
     if let Started::Child(child) = started {
         job::reap(child);
@@ -170,9 +170,9 @@ pub(super) fn started(started: Started, request: &Request) -> Result<(), Error> 
     Ok(())
 }
 
-/// Ends an entry's slice, all its launches: stopped (systemd asks its processes to end, then kills what
-/// is left after its timeout), or with `force` killed at once. On a thread of its own (stopping waits
-/// for them).
+/// Ends an entry's slice with all its launches. Normally the slice is stopped: systemd asks its processes
+/// to end and kills what is left after its timeout. With `force` they are killed at once. This runs on a
+/// thread of its own, because stopping waits for the processes.
 pub fn end_run(key: &str, force: bool) {
     let slice = Instance::slice_of(key);
     let ended = worker::detached("end", move || {
@@ -186,9 +186,10 @@ pub fn end_run(key: &str, force: bool) {
     }
 }
 
-/// A program not started by ClamShell (found by its tray icon): its process and those it started moved
-/// into `instance`'s scope (in its entry's slice), on a thread of its own. Not one a systemd service runs
-/// (moved out, the service would lose it), nor one in a scope of ours already.
+/// Adopts a program not started by ClamShell, found by its tray icon. Its process and the processes it
+/// started are moved into `instance`'s scope, in its entry's slice, on a thread of its own. A program run
+/// by a systemd service is left alone, because the service would lose it, and so is one already in a
+/// scope of ours.
 pub fn adopt(instance: Instance, pid: u32) {
     let done = worker::detached("adopt", move || {
         let Some(unit) = instance.unit() else {
@@ -214,9 +215,10 @@ pub fn adopt(instance: Instance, pid: u32) {
     }
 }
 
-/// Processes asked to end (SIGTERM), or killed: a program not started by ClamShell.
+/// Asks the processes of a program not started by ClamShell to end (SIGTERM), or kills them.
 pub fn end_processes(pids: &[u32], force: bool) {
-    // (Only those still the processes seen: a process gone may have left its id to another.)
+    // Only signal processes that are still the ones seen, since a process that is gone may have left its
+    // id to another.
     let pids: Vec<u32> = pids.iter().copied().filter(|&p| sys::same_process(p)).collect();
     if pids.is_empty() {
         return;
@@ -231,8 +233,8 @@ pub fn end_processes(pids: &[u32], force: bool) {
     }
 }
 
-/// Runs a runner's command (its `stop`, `pause` or `resume`: Waydroid's, Android stopping an app or
-/// frozen), not waited for.
+/// Runs a runner's `stop`, `pause` or `resume` command without waiting for it. Waydroid's runner uses
+/// these to have Android stop an app or freeze it.
 pub fn runner_command(argv: &[String]) {
     let Some((program, args)) = argv.split_first() else {
         return;
@@ -249,7 +251,7 @@ pub(super) fn parents() -> Vec<(u32, u32)> {
     sys::processes().filter_map(|(pid, dir)| Some((pid, sys::parent_in(&sys::text(dir.join("stat"))?)?))).collect()
 }
 
-/// `pids` and all their descendants, by `parents` (pid, parent).
+/// `pids` and all their descendants, found through `parents` as (pid, parent) pairs.
 pub(super) fn with_descendants(pids: &[u32], parents: &[(u32, u32)]) -> Vec<u32> {
     let mut out: Vec<u32> = pids.to_vec();
     let mut at = 0;
@@ -278,7 +280,7 @@ mod tests {
         Config { watch_later: Vec::new(), jobs: Runner { jobs: std::env::temp_dir(), sway: None }, sockets: std::env::temp_dir() }
     }
 
-    /// (Only where there is a user manager to start its scope.)
+    /// Runs only where there is a user manager to start the scope.
     #[test]
     fn runs_a_game_in_its_scope_and_reports_nothing_more() {
         if !std::env::var_os("XDG_RUNTIME_DIR").is_some_and(|d| std::path::Path::new(&d).join("systemd/private").exists()) {
@@ -297,7 +299,7 @@ mod tests {
         launcher.send(Command::Launch(Request { game: id, instance, launch, env: vec![] }));
         drop(launcher);
 
-        // (Its scope came: nothing told; that it runs and ends is systemd's list's.)
+        // Its scope appeared, so nothing is sent. Whether it runs and ends is for systemd's list to say.
         let events: Vec<Event> = events.iter().collect();
         assert_eq!(events, vec![]);
         std::thread::sleep(Duration::from_secs(2));
@@ -336,8 +338,8 @@ mod live {
         true
     }
 
-    /// A program in a scope not ours (a desktop's app scope) is moved into one of ours, with what it
-    /// started; one a service runs stays (run by hand: `--ignored`).
+    /// A program in a scope that isn't ours, such as a desktop's app scope, is moved into one of ours
+    /// together with what it started. A program run by a service stays. Run it by hand with `--ignored`.
     #[test]
     #[ignore = "needs a user session; moves processes"]
     #[allow(clippy::unwrap_used)]
@@ -348,7 +350,7 @@ mod live {
             .spawn()
             .unwrap();
         let pid = child.id();
-        // (The scope's process: systemd-run runs the shell as itself.)
+        // This is the scope's process, since systemd-run runs the shell as itself.
         assert!(wait_for(|| group_of(pid).starts_with("app-adopttest")), "{}", group_of(pid));
         assert!(wait_for(|| with_descendants(&[pid], &parents()).len() == 2), "its sleep");
         let instance = Instance::Run { key: format!("adopttest_{id}"), secs: u64::from(id), n: 0 };
@@ -357,7 +359,7 @@ mod live {
         assert!(wait_for(|| with_descendants(&[pid], &parents()).iter().all(|p| group_of(*p) == unit)), "moved, the sleep too");
         let _ = Process::new("systemctl").args(["--user", "stop", &instance.slice().unwrap()]).status();
         let _ = child.wait();
-        // A service's: stays.
+        // A service's process stays.
         let service = format!("adopttest-{id}");
         Process::new("systemd-run").args(["--user", "--quiet", "--collect", &format!("--unit={service}"), "sleep", "30"]).status().unwrap();
         let pid: u32 = String::from_utf8(Process::new("systemctl").args(["--user", "show", "-p", "MainPID", "--value", &service]).output().unwrap().stdout)

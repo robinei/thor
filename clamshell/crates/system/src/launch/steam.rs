@@ -1,12 +1,17 @@
-//! Steam's games. A game is started with `steam -silent -applaunch <id>`: given to Steam if it runs; else
-//! Steam is started with it as a launch of Steam's desktop entry (its scope, so it is on the dock and
-//! outlives ClamShell), without the game's environment (Steam's own would be it, for every game it
-//! starts). The launch's own scope holds a follower (`clamshell --follow-steam <id>`, [`follow`]): it
-//! moves Steam's launcher for the game (`reaper SteamLaunch AppId=<id>`) and what it started into its
-//! scope, and any later one (Steam may run a setup first, then the game), as long as one runs or did
-//! within [`STEAM_GAP`]; then it ends, and the scope with the game's last process: the game is counted,
-//! frozen and ended apart from Steam, as long as it runs. A game started in Steam itself is launched by
-//! the state when its window comes: found running, it is followed the same way, not started.
+//! Steam's games. A game is started with `steam -silent -applaunch <id>`. If Steam is running, the
+//! command is handed to it. Otherwise Steam is started with the command as a launch of Steam's desktop
+//! entry, in that entry's scope, so Steam is on the dock and outlives ClamShell. That start doesn't get
+//! the game's environment, because it would become Steam's own environment for every game it starts.
+//!
+//! The launch's own scope holds a follower (`clamshell --follow-steam <id>`, [`follow`]). It moves Steam's
+//! launcher for the game (`reaper SteamLaunch AppId=<id>`) and what it started into its scope. It does
+//! the same for any later launcher, since Steam may run a setup first and then the game. It keeps going
+//! as long as a launcher runs or ran within [`STEAM_GAP`], and then it ends. The scope ends with the
+//! game's last process. This way the game is counted, frozen and ended separately from Steam for as long
+//! as it runs.
+//!
+//! A game started in Steam itself is launched by the state when its window appears. Since it is found
+//! running, it is followed the same way instead of being started.
 
 use std::os::unix::process::CommandExt;
 use std::process::{Command as Process, Stdio};
@@ -20,16 +25,18 @@ use super::launcher::{Config, Error, Request, parents, started, with_descendants
 use super::scopes;
 use crate::os::{cgroup, sys};
 
-/// How long Steam may take to start a game (it may need to start or update first): the follower ends
-/// if no launcher of Steam's for it comes by then.
+/// How long Steam may take to start a game, since it may need to start or update first. The follower
+/// ends if no launcher of Steam's for the game appears by then.
 const STEAM_START: Duration = Duration::from_secs(120);
 
-/// How long a Steam game counts as running with no launcher of Steam's for it: Steam may run a setup
-/// first (Proton's install scripts, in a fresh Steam), then the game, under launchers of their own.
+/// How long a Steam game counts as running with no launcher of Steam's for it. Steam may first run a
+/// setup, such as Proton's install scripts in a fresh Steam, and then the game, each under a launcher of
+/// its own.
 const STEAM_GAP: Duration = Duration::from_secs(10);
 
-/// A Steam game: asked of Steam (unless its launcher runs: started in Steam itself), and the launch's
-/// scope started with its follower in it (see the module's doc).
+/// Starts a Steam game. Steam is asked to start it, unless its launcher already runs because it was
+/// started in Steam itself. Then the launch's scope is started with the follower in it. See the module
+/// docs.
 pub(super) fn start(config: &Config, request: &Request, appid: u32) -> Result<(), Error> {
     if steam_running(&format!("AppId={appid}")) {
         log::info!("launcher: Steam's AppId={appid} runs: following it");
@@ -42,9 +49,9 @@ pub(super) fn start(config: &Config, request: &Request, appid: u32) -> Result<()
     started(config.jobs.without_sway().start(&job)?, request)
 }
 
-/// `clamshell --follow-steam <id>`, in a Steam game's launch scope: Steam's launcher for the game, and
-/// what it started, moved into this scope as long as one runs (or did within [`STEAM_GAP`]; the first
-/// within [`STEAM_START`]); then it ends (see the module's doc).
+/// `clamshell --follow-steam <id>`, run in a Steam game's launch scope. It moves Steam's launcher for the
+/// game, and what it started, into this scope for as long as a launcher runs or ran within [`STEAM_GAP`].
+/// The first launcher must appear within [`STEAM_START`]. Then it ends. See the module docs.
 pub fn follow(appid: u32) {
     let marker = format!("AppId={appid}");
     let Some(unit) = cgroup::unit_of(std::process::id()).filter(|u| u.ends_with(".scope")) else {
@@ -66,10 +73,10 @@ pub fn follow(appid: u32) {
     }
 }
 
-/// Asks Steam to start a game: Steam started for it if it isn't running.
+/// Asks Steam to start a game, starting Steam for it if it isn't running.
 pub(super) fn ask_steam(config: &Config, request: &Request, appid: u32) -> Result<(), Error> {
     let env = &request.env;
-    // (`-silent`: if Steam isn't running, it starts without its window, only the game showing.)
+    // With `-silent`, a Steam that isn't running starts without its window, so only the game shows.
     let argv: Vec<String> = ["steam", "-silent", "-applaunch", &appid.to_string()].map(String::from).to_vec();
     if !steam_client_running() {
         let instance = Instance::Run { key: clamshell_library::key_of(STEAM_ENTRY), secs: crate::time::clock::unix_secs(), n: 0 };
@@ -86,8 +93,8 @@ pub(super) fn ask_steam(config: &Config, request: &Request, appid: u32) -> Resul
     Ok(())
 }
 
-/// Steam's launchers for a game (`launchers`, `marker` in their command line) and what they started,
-/// those not yet in the launch's scope `unit`: moved there.
+/// Moves Steam's launchers for a game (`launchers`, with `marker` in their command line), and what they
+/// started, into the launch's scope `unit` if they aren't in it yet.
 pub(super) fn gather(marker: &str, unit: &str, slice: Option<&str>, launchers: &[u32]) {
     let outside = |pid: &u32| cgroup::unit_of(*pid).is_none_or(|u| u != unit);
     let pids: Vec<u32> = with_descendants(launchers, &parents()).into_iter().filter(outside).collect();
@@ -100,10 +107,10 @@ pub(super) fn gather(marker: &str, unit: &str, slice: Option<&str>, launchers: &
     }
 }
 
-/// Steam's desktop entry, whose launches Steam started for a game is one of.
+/// Steam's desktop entry. A Steam started for a game is one of its launches.
 const STEAM_ENTRY: &str = "desktop:steam";
 
-/// Whether Steam's client (or its starter script) runs.
+/// Whether Steam's client, or its starter script, is running.
 pub(super) fn steam_client_running() -> bool {
     sys::processes().any(|(_, dir)| sys::text(dir.join("comm")).is_some_and(|c| c.trim() == "steam"))
 }
@@ -113,8 +120,8 @@ pub(super) fn steam_running(marker: &str) -> bool {
     !steam_launchers(marker).is_empty()
 }
 
-/// The processes of Steam's launcher for an app (`... SteamLaunch AppId=<id> ...`: `marker`), which the
-/// game's processes descend from.
+/// The processes of Steam's launcher for an app, whose command line is `... SteamLaunch AppId=<id> ...`
+/// with `marker` as `AppId=<id>`. The game's processes descend from them.
 pub(super) fn steam_launchers(marker: &str) -> Vec<u32> {
     sys::processes()
         .filter(|(_, dir)| {
