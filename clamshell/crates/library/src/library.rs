@@ -61,6 +61,16 @@ pub struct OwnTab {
 }
 
 impl Library {
+    /// The first frame (a video's, in order, all the way down) in folder `i`.
+    pub fn first_frame(&self, i: usize) -> Option<PathBuf> {
+        let g = self.entries.get(i)?;
+        g.items.iter().find_map(|&item| match self.entries.get(item) {
+            Some(e) if e.is_group() => self.first_frame(item),
+            Some(e) => e.details.shot.clone().filter(|_| e.mpv_file().is_some()),
+            None => None,
+        })
+    }
+
     /// Whether entry `id` is in it, or its source is away.
     pub fn has(&self, id: &str) -> bool {
         self.entries.iter().any(|g| &*g.id == id) || self.away.iter().any(|p| id.starts_with(p.as_str()))

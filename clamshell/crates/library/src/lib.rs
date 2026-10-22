@@ -11,6 +11,7 @@ pub mod pattern;
 pub mod plays;
 pub mod sort;
 pub mod steam;
+pub mod titles;
 
 mod entry;
 mod library;

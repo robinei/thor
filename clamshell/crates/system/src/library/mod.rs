@@ -158,18 +158,6 @@ const TOOLS: [(&str, &str, Tool, &str); 3] = [
     ("tool:refetch", "Fetch missing art again", Tool::Refetch, "Tries again for the entries whose covers and details weren't found, then rescans."),
 ];
 
-/// The order of a tab's or a folder's entries: folders first, then by title; browsed dirs' own folders
-/// after the other folders, as library.json and the mounts have them.
-fn list_order(games: &[Entry], a: usize, b: usize) -> std::cmp::Ordering {
-    let key = |i: usize| {
-        games.get(i).map(|g| match g.browsed.as_ref().map(|b| &b.kind) {
-            Some(BrowseKind::Root | BrowseKind::Trash | BrowseKind::Removable(_)) => (false, true, None),
-            _ => (!g.is_group(), false, Some((&g.sort_key, &g.title))),
-        })
-    };
-    key(a).cmp(&key(b))
-}
-
 /// A browsed dir's own folder.
 fn browsed_root(id: &str, dir: PathBuf, kind: BrowseKind) -> Entry {
     let glyph = match kind {
@@ -178,16 +166,6 @@ fn browsed_root(id: &str, dir: PathBuf, kind: BrowseKind) -> Entry {
         _ => "folder",
     };
     Entry { file: Some(dir), browsed: Some(Browsed { folder: true, kind, ..Browsed::default() }), glyph: Some(glyph.into()), ..Entry::new(id, "") }
-}
-
-/// The first frame (a video's, in order, all the way down) in folder `i`.
-fn first_frame(library: &Library, i: usize) -> Option<PathBuf> {
-    let g = library.entries.get(i)?;
-    g.items.iter().find_map(|&item| match library.entries.get(item) {
-        Some(e) if e.is_group() => first_frame(library, item),
-        Some(e) => e.details.shot.clone().filter(|_| e.mpv_file().is_some()),
-        None => None,
-    })
 }
 
 /// The library, and what to fetch for it.
@@ -510,7 +488,7 @@ impl Builder<'_> {
         let mut sorted: Vec<(usize, Vec<usize>)> = Vec::new();
         for &f in self.folders.made.values() {
             let mut items = games.get(f).map(|g| g.items.clone()).unwrap_or_default();
-            items.sort_by(|&a, &b| list_order(games, a, b));
+            items.sort_by(|&a, &b| clamshell_library::sort::list_order(games, a, b));
             sorted.push((f, items));
         }
         for (f, items) in sorted {
@@ -521,7 +499,7 @@ impl Builder<'_> {
         self.collections.retain(|c| !c.entries.is_empty());
         let games = &self.games;
         for c in &mut self.collections {
-            c.entries.sort_by(|&a, &b| list_order(games, a, b));
+            c.entries.sort_by(|&a, &b| clamshell_library::sort::list_order(games, a, b));
         }
     }
 
@@ -665,7 +643,7 @@ fn known(library: &mut Library, hows: Vec<(usize, How)>, sources: &Sources) -> V
     for i in 0..library.entries.len() {
         let bare = library.entries.get(i).is_some_and(|g| g.is_group() && g.box_front.is_none() && g.details.shot.is_none());
         if bare
-            && let Some(frame) = first_frame(library, i)
+            && let Some(frame) = library.first_frame(i)
             && let Some(g) = library.entries.get_mut(i)
         {
             g.details.shot = Some(frame);
