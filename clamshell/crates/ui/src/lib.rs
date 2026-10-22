@@ -12,9 +12,6 @@
 mod display;
 pub mod gfx;
 mod input;
-#[cfg(test)]
-#[allow(unsafe_code, clippy::unwrap_used, clippy::expect_used)]
-mod no_alloc;
 mod notify;
 mod render;
 mod screens;
@@ -29,7 +26,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use clamshell_core::bottom::touch::TouchLayout;
-use clamshell_core::{Dirty, Effect, Event, Id, ListEvent, ListId, PadInput, PointerEvent, ShelfEvent, State};
+use clamshell_core::{Dirty, Effect, Event, Id, ListEvent, PadInput, PointerEvent, ShelfEvent, State};
 use smithay_client_toolkit::{
     compositor::CompositorState,
     output::OutputState,
@@ -219,25 +216,7 @@ pub fn snapshot(state: &State, screen: Screen, size: (u32, u32), scale: u32, pat
     let mut retained = Retained::default();
     let rendered = render::render(pixmap.as_mut(), &mut retained, at, screen, state, &mut DrawCache::load(), &mut crate::gfx::images::Images::synchronous())?;
     pixmap.save_png(path)?;
-    Ok(frame_events(state, &rendered))
-}
-
-/// What a frame says about the lists it drew that the state doesn't know yet: how many rows each
-/// shows (as the state has it, give or take rounding).
-fn list_changes(state: &State, out: &toolkit::FrameOut) -> impl Iterator<Item = Event> {
-    ListId::ALL.into_iter().filter_map(move |list| {
-        let rows = out.lists.get(list.index()).copied().flatten()?;
-        let known = state.scroll(list).visible().is_some_and(|v| (v - rows).abs() < 1e-3);
-        (!known).then(|| ListEvent::Visible(list, rows).into())
-    })
-}
-
-/// What a frame drawn without Wayland reports back to the state, as a live one would: shelf's rows, the
-/// lists' visible rows.
-fn frame_events(state: &State, out: &toolkit::FrameOut) -> Vec<Event> {
-    let mut events: Vec<Event> = out.list_rows.filter(|&r| r != state.shelf().rows()).map(|r| ShelfEvent::Rows(r).into()).into_iter().collect();
-    events.extend(list_changes(state, out));
-    events
+    Ok(render::frame_events(state, &rendered))
 }
 
 struct App {
@@ -429,7 +408,7 @@ impl App {
                         view::publish(&self.touch_layout, (view.size.0 as f32 * scale, view.size.1 as f32 * scale));
                     }
                     rows_changed = rows_changed.or(rendered.list_rows.filter(|&rows| rows != self.state.shelf().rows()));
-                    lists.extend(list_changes(&self.state, &rendered));
+                    lists.extend(render::list_changes(&self.state, &rendered));
                 }
                 Err(e) => {
                     log::warn!("drawing {screen:?}: {e}");
