@@ -195,13 +195,13 @@ impl State {
     fn apply_event(&mut self, event: Event, out: &mut Out) {
         match event {
             Event::Tick { unix_secs, mono_secs } => self.tick(unix_secs, mono_secs, out),
-            Event::Reading(reading) => self.reading_came(reading, out),
+            Event::Reading(reading) => self.on_reading(reading, out),
             Event::List(e) => {
                 if self.on_list(e) {
                     out.mark(e.list().screens());
                 }
             }
-            Event::Pointer(e) => self.pointer_event(e, out),
+            Event::Pointer(e) => self.on_pointer(e, out),
             Event::Slide(slide) => self.on_slide(slide, out),
             Event::Level(e) => self.on_level(e, out),
             Event::Shelf(e) => self.shelf.on_event(e, &mut self.pointer, out),
@@ -521,49 +521,47 @@ impl State {
         }
     }
 
-    /// A reading from a system thread. After a status reading, the battery warning is checked.
-    fn reading_came(&mut self, reading: Reading, out: &mut Out) {
+    /// A reading of the system from a system thread. It is stored, and the second screen is redrawn if it
+    /// shows what changed. After a status reading, the battery warning is checked.
+    fn on_reading(&mut self, reading: Reading, out: &mut Out) {
         let status = matches!(reading, Reading::Status(_));
-        let dirty = self.on_reading(reading);
+        let shown = self.bottom.tab().shows(&reading);
+        let dirty = 'dirty: {
+            let changed = match reading {
+                // The volume, mute and brightness go to the levels, where a finger on a slider wins over the
+                // reading.
+                Reading::Status(status) => {
+                    let levels = self.levels.read(status.volume, status.muted, status.brightness);
+                    self.sys.read_status(status) | levels
+                }
+                Reading::Clipboard(text) => self.bottom.read_clipboard(text),
+                Reading::Icon { entry, path } => self.session.set_icon(&entry, path),
+                // The graphs move on with every reading.
+                Reading::Metrics(metrics) => {
+                    self.sys.read_metrics(metrics);
+                    true
+                }
+                Reading::Frames { fps, frame_ms } => {
+                    self.sys.frames(fps, frame_ms);
+                    true
+                }
+                Reading::Wifi(wifi) => self.radios.read_wifi(wifi),
+                Reading::Bluetooth(bluetooth) => self.radios.read_bluetooth(bluetooth),
+                Reading::Battery(battery) => self.sys.read_battery(battery),
+                Reading::Audio(audio) => self.levels.read_audio(audio),
+                Reading::Backlights(backlights) => self.levels.read_backlights(backlights),
+                Reading::Time(time) => self.sys.read_time(time),
+                Reading::Account(account) => {
+                    // The account is shown in the Device view, on the main screen.
+                    break 'dirty if self.device.read_account(account) { Dirty::TOP } else { Dirty::NONE };
+                }
+            };
+            if changed && shown { Dirty::BOTTOM } else { Dirty::NONE }
+        };
         if status {
             self.sys.battery_warning(out);
         }
         out.mark(if self.follow_lists() { Dirty::BOTTOM } else { dirty });
-    }
-
-    /// A reading of the system. It is stored, and the second screen is redrawn if it shows what changed.
-    fn on_reading(&mut self, reading: Reading) -> Dirty {
-        let shown = self.bottom.tab().shows(&reading);
-        let changed = match reading {
-            // The volume, mute and brightness go to the levels, where a finger on a slider wins over the
-            // reading.
-            Reading::Status(status) => {
-                let levels = self.levels.read(status.volume, status.muted, status.brightness);
-                self.sys.read_status(status) | levels
-            }
-            Reading::Clipboard(text) => self.bottom.read_clipboard(text),
-            Reading::Icon { entry, path } => self.session.set_icon(&entry, path),
-            // The graphs move on with every reading.
-            Reading::Metrics(metrics) => {
-                self.sys.read_metrics(metrics);
-                true
-            }
-            Reading::Frames { fps, frame_ms } => {
-                self.sys.frames(fps, frame_ms);
-                true
-            }
-            Reading::Wifi(wifi) => self.radios.read_wifi(wifi),
-            Reading::Bluetooth(bluetooth) => self.radios.read_bluetooth(bluetooth),
-            Reading::Battery(battery) => self.sys.read_battery(battery),
-            Reading::Audio(audio) => self.levels.read_audio(audio),
-            Reading::Backlights(backlights) => self.levels.read_backlights(backlights),
-            Reading::Time(time) => self.sys.read_time(time),
-            Reading::Account(account) => {
-                // The account is shown in the Device view, on the main screen.
-                return if self.device.read_account(account) { Dirty::TOP } else { Dirty::NONE };
-            }
-        };
-        if changed && shown { Dirty::BOTTOM } else { Dirty::NONE }
     }
 
     /// The library was read again. New problems are reported once and shelf is reloaded. Then what
@@ -613,18 +611,14 @@ impl State {
 
     /// A touch or a pad focus change. Focusing or pressing a target on the second screen counts as using
     /// that screen.
-    fn pointer_event(&mut self, e: PointerEvent, out: &mut Out) {
-        let used = match &e {
+    fn on_pointer(&mut self, event: PointerEvent, out: &mut Out) {
+        let used = match &event {
             PointerEvent::Focus(id) | PointerEvent::Activate(id) | PointerEvent::LongPress(id) | PointerEvent::Down(id) => id.screen() == Dirty::BOTTOM,
             _ => false,
         };
         if used {
             out.mark(self.bottom.used(&self.session, &self.clock));
         }
-        self.on_pointer(e, out);
-    }
-
-    fn on_pointer(&mut self, event: PointerEvent, out: &mut Out) {
         // Input that reached ClamShell itself, such as the pad driving the screens.
         self.idle.own_input(self.clock.mono());
         match event {
