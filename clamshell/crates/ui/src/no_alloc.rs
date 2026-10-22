@@ -14,7 +14,7 @@ use clamshell_core::settings::Setting;
 use clamshell_core::windows::Window;
 use clamshell_core::{
     DockId, EditorId, Event, Id, Init, Instance, KeymapId, ListEvent, ListId, PointerEvent, Reading, RowPart, Scope, SettingsId, ShelfEvent, ShelfId, Slide,
-    State, Status, Tab, Target, TimeZones, battery, levels, radios::bluetooth, radios::wifi, tray,
+    State, Status, Tab, Target, TimeZones, levels, radios::bluetooth, radios::wifi, status::battery, tray,
 };
 
 use crate::Screen;

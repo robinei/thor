@@ -16,7 +16,6 @@
 pub mod actions;
 pub mod autostart;
 pub mod background;
-pub mod battery;
 pub mod bottom_screen;
 pub mod device;
 pub mod dock;
@@ -32,7 +31,6 @@ pub mod keyboard;
 pub mod keymap;
 pub mod kit;
 pub mod levels;
-pub mod metrics;
 pub mod nav;
 pub mod notice;
 pub mod program;
@@ -42,9 +40,8 @@ mod running;
 mod session;
 pub mod settings;
 mod shelf;
-mod sys;
+pub mod status;
 mod tab;
-pub mod time;
 pub mod touch;
 pub mod tray;
 pub mod windows;
@@ -62,6 +59,8 @@ pub use crate::nav::pad::{Claimant, Pad, PadInput, PadMouse, PadRoute};
 pub use crate::nav::pointer::Pointer;
 pub use crate::settings::env::{count_env, parse_env};
 pub use crate::settings::panel::{Scope, TileOrigin};
+pub use crate::status::time::{ClockField, TimeId, TimePage, TimeRow, TimeZones};
+pub use crate::status::{Status, Sys};
 pub use dock::{Dock, DockItem};
 pub use editor::Editor;
 pub use effect::{Dirty, Effect, Save, Watch, WindowCommand};
@@ -74,9 +73,7 @@ pub use radios::{RadioStatus, Radios};
 pub use running::{Front, Launching, Origin, Running};
 pub use session::Session;
 pub use shelf::{Cursor, Shelf};
-pub use sys::{Status, Sys};
 pub use tab::{Bottom, Tab};
-pub use time::{ClockField, TimeId, TimePage, TimeRow, TimeZones};
 
 pub use clamshell_library::{BrowseKind, Browsed, Collection, Entry, Launch, Library, Meta, RunnerOf, runner_key};
 
@@ -130,8 +127,8 @@ pub struct State {
     device: device::Device,
     /// The screens are off: the bar's status isn't watched (see [`Watch::Status`]).
     status_unwatched: bool,
-    /// The battery tab's row whose menu is open (see [`battery`]).
-    spender_menu: Option<battery::Group>,
+    /// The battery tab's row whose menu is open (see [`crate::status::battery`]).
+    spender_menu: Option<crate::status::battery::Group>,
     /// Programs paused or ended while hidden (see [`background`]).
     background: background::Background,
     /// The entries started with ClamShell, and whether they have been (see [`autostart`]).
@@ -161,7 +158,7 @@ pub struct State {
     device_session: bool,
     /// Which programs' windows go to the bottom screen.
     window_rules: bottom_screen::WindowRules,
-    /// Clocks on a 12-hour dial (see [`crate::time`]).
+    /// Clocks on a 12-hour dial (see [`crate::status::time`]).
     pub(crate) twelve_hour: bool,
     /// Metadata is being fetched; what shelf showed when it was last asked for first (see
     /// [`State::follow_shown`]).

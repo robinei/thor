@@ -108,7 +108,7 @@ pub struct Bottom {
     /// What the bottom screen shows (ClamShell's view or a window moved down), and whether it is off.
     pub(crate) screen: crate::bottom_screen::BottomScreen,
     /// What the time tab shows: its main page, the regions, or a region's zones.
-    pub(crate) time_page: crate::time::TimePage,
+    pub(crate) time_page: crate::status::time::TimePage,
     /// What a key just did (a level, a screenshot), shown under the bar for a moment.
     pub(crate) notice: Option<crate::notice::Notice>,
     /// The area below the bar points (see [`crate::touch`]).

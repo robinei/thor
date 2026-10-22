@@ -5,19 +5,19 @@
 use crate::touch::Pointing;
 use std::sync::Arc;
 
-use crate::battery::Battery;
 use crate::device::buttons::DeviceKey;
 use crate::device::idle::IdleEvent;
 use crate::id::Id;
 use crate::instance::Instance;
 use crate::levels::slider::Control;
 use crate::levels::{Audio, Level};
-use crate::metrics::Metrics;
 use crate::nav::lists::ListEvent;
 use crate::nav::pad::PadInput;
 use crate::radios::bluetooth::Bluetooth;
 use crate::radios::wifi::Wifi;
-use crate::sys::Status;
+use crate::status::Status;
+use crate::status::battery::Battery;
+use crate::status::metrics::Metrics;
 use crate::windows::Window;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -131,7 +131,7 @@ pub enum Reading {
     /// The backlights' names (while the brightness tab is open).
     Backlights(Vec<String>),
     /// The time zone and the ones to choose from (while the time tab is open, and after setting one).
-    Time(crate::time::TimeZones),
+    Time(crate::status::time::TimeZones),
     /// The account (while the Device view is open, and after a change: see [`crate::device::account`]).
     Account(crate::device::account::Account),
 }

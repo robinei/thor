@@ -297,7 +297,7 @@ mod tests {
 
     #[test]
     fn the_state_dims_turns_the_screens_off_and_back_and_sleeps_only_when_allowed() {
-        use crate::sys::Status;
+        use crate::status::Status;
         use crate::testkit::state;
         use crate::{Event, Reading};
         let brightness = |e: &[Effect]| {

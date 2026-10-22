@@ -3,9 +3,13 @@
 //! account. The volume and brightness readings in the status feed [`crate::levels::Levels`], which shows
 //! them.
 
-use crate::battery::Battery;
+pub mod battery;
+pub mod metrics;
+pub mod time;
+
 use crate::effect::Effect;
-use crate::metrics::{History, Metrics};
+use battery::Battery;
+use metrics::{History, Metrics};
 
 /// Battery levels (while not charging) at which a notification warns over whatever runs, once each until
 /// it charges; UPower hibernates the device at 3 % (the image's UPower.conf).
@@ -37,7 +41,7 @@ pub struct Sys {
     pub history: History,
     pub battery: Battery,
     /// The time zone and the ones to choose from, as last read.
-    pub time: crate::time::TimeZones,
+    pub time: crate::status::time::TimeZones,
     /// The account, as last read (see [`crate::device::account`]).
     pub account: crate::device::account::Account,
     /// The lowest of [`WARN_AT`] warned about since the battery last charged.
@@ -92,11 +96,11 @@ mod tests {
     fn a_tabs_readings_redraw_only_while_it_is_open() {
         let mut s = state();
         tap(&mut s, Id::Tab(Tab::Touchpad));
-        assert_eq!(read(&mut s, Reading::Metrics(metrics::Metrics::default())), Dirty::NONE, "sysinfo isn't open");
+        assert_eq!(read(&mut s, Reading::Metrics(crate::status::metrics::Metrics::default())), Dirty::NONE, "sysinfo isn't open");
         tap(&mut s, Id::Tab(Tab::Sysinfo));
         assert_eq!(read(&mut s, Reading::Frames { fps: Some(60.0), frame_ms: Some(16.7) }), Dirty::BOTTOM);
         assert_eq!(s.sys().metrics.fps, Some(60.0));
-        read(&mut s, Reading::Metrics(metrics::Metrics::default()));
+        read(&mut s, Reading::Metrics(crate::status::metrics::Metrics::default()));
         assert_eq!(s.sys().metrics.fps, Some(60.0), "the frame rate comes separately");
     }
 }

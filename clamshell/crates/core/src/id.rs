@@ -54,12 +54,12 @@ pub enum Id {
     /// The second screen below the bar where there is nothing: a tap does nothing, a finger moving
     /// points (see [`crate::touch`]).
     Blank,
-    /// The time tab's (see [`crate::time`]).
-    Time(crate::time::TimeId),
+    /// The time tab's (see [`crate::status::time`]).
+    Time(crate::status::time::TimeId),
     /// The Device view's (see [`crate::device`]).
     Device(crate::device::DeviceId),
-    /// The battery tab's list of what is using the machine (see [`crate::battery`]).
-    Battery(crate::battery::BatteryId),
+    /// The battery tab's list of what is using the machine (see [`crate::status::battery`]).
+    Battery(crate::status::battery::BatteryId),
     /// The bar's button for the front program's windows on the bottom screen, hidden by ClamShell's view:
     /// they are shown.
     BottomWindows,

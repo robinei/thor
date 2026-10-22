@@ -12,7 +12,7 @@ use std::io;
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
-use clamshell_core::metrics::{MAX_CORES, Metrics};
+use clamshell_core::status::metrics::{MAX_CORES, Metrics};
 use clamshell_core::{Event, Reading};
 
 use crate::worker::{Next, Shown, Worker};

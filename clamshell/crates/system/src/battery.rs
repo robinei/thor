@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use crate::dbus::{self, Bus, Kept, Path};
 use crate::worker::{self, Next, Shown, Worker};
 use crate::{Closed, Sink, cgroup, drm, sys};
-use clamshell_core::battery::{Battery, Charge, Group, Spender};
+use clamshell_core::status::battery::{Battery, Charge, Group, Spender};
 use clamshell_core::{Event, Instance, Reading};
 
 const SAMPLE_EVERY: Duration = Duration::from_secs(2);

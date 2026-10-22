@@ -134,7 +134,7 @@ pub enum Effect {
     SetNtp(bool),
     /// The system's clock moved by a step of one of its fields, as the local time has it (a month on
     /// from the 31st: the month's last day); read again after.
-    StepClock(crate::time::ClockField, i8),
+    StepClock(crate::status::time::ClockField, i8),
     /// A desktop notification (on the main screen, over a game: the notification daemon's), urgent ones
     /// staying until dismissed.
     Notify {

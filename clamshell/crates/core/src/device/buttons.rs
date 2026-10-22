@@ -98,7 +98,7 @@ impl State {
 mod tests {
     use super::*;
     use crate::levels::Sound;
-    use crate::sys::Status;
+    use crate::status::Status;
     use crate::testkit::state;
     use crate::{Event, Reading};
 

@@ -6,8 +6,8 @@
 //! drain, so programs are ranked by work, not watts. A row (not the system's) opens its menu in the tab's
 //! place: Quit, Force kill.
 
-use clamshell_core::battery::{BatteryId, Group};
 use clamshell_core::settings::Setting;
+use clamshell_core::status::battery::{BatteryId, Group};
 use clamshell_core::{Id, State};
 
 use crate::draw::{Align, Keep, LINE, Rect};

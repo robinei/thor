@@ -143,7 +143,7 @@ fn draw_menu(f: &mut Frame, entry: &std::sync::Arc<str>) {
     ];
     let mut area = widgets::header(f, Some(Id::Dock(DockId::Back)), title, false, HeaderRight::None);
     // What it costs now, once read (see the battery tab).
-    if let Some(clamshell_core::battery::Cost { cpu, gpu, memory }) = s.cost_of(entry) {
+    if let Some(clamshell_core::status::battery::Cost { cpu, gpu, memory }) = s.cost_of(entry) {
         let size = f.text(Text::Small);
         let line = area.take_top(size * 2.0);
         let cost = Fmt::<64>::of(format_args!("{} · CPU {} · GPU {}", Bytes(memory), Share(cpu), MaybeShare(gpu)));

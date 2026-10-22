@@ -192,10 +192,10 @@ pub const TARGETS: &[Form<Id>] = &[
         },
     ),
     form("spender N", "the battery tab's row N of what is using the machine: its menu", |a| {
-        Ok(Id::Battery(clamshell_core::battery::BatteryId::Spender(number(arg(a, 0))?)))
+        Ok(Id::Battery(clamshell_core::status::battery::BatteryId::Spender(number(arg(a, 0))?)))
     }),
     form("spender-menu ACTION", "a battery tab row's menu: quit, force-kill, back", |a| {
-        use clamshell_core::battery::BatteryId;
+        use clamshell_core::status::battery::BatteryId;
         Ok(Id::Battery(match arg(a, 0) {
             "quit" => BatteryId::Quit,
             "force-kill" => BatteryId::ForceKill,
