@@ -1,24 +1,29 @@
-//! The time tab. Its main page: the clock (the time, the date), the time zone (a tap shows the regions,
-//! Europe, America..., and UTC; then a region's zones, the one in force marked; a zone tapped is set at
-//! once, and the main page is back), whether the network sets the clock (NTP), and while it doesn't, the
-//! date and time to set by hand: each field a step up or down at a press, set at once. And whether
-//! ClamShell's clocks (the bar's, this page's) show 12 hours or 24, ClamShell's own (saved).
+//! The time tab. Its main page has:
 //!
-//! The system's side (systemd's timedated) is read while the tab is open and after each change.
+//! - the clock, with the time and the date;
+//! - the time zone. A tap shows the regions (Europe, America, ...) and UTC, then a region's zones, with
+//!   the one in force marked. A tapped zone is set at once, and the main page comes back;
+//! - whether the network sets the clock (NTP);
+//! - while it doesn't, the date and time to set by hand. Each press steps a field up or down, and it is
+//!   set at once;
+//! - whether ClamShell's clocks, in the bar and on this page, show 12 or 24 hours. This is ClamShell's
+//!   own setting, and is saved.
+//!
+//! The system side, systemd's timedated, is read while the tab is open and after each change.
 
 use crate::State;
 use crate::TimeId;
 use crate::effect::{Dirty, Effect, Save};
 use crate::nav::lists::ListId;
 
-/// The time zone as the system has it, and the ones to choose from (tzdata's names, "Europe/Oslo"); and
-/// whether the network sets the clock.
+/// The system's time zone and the ones to choose from, by tzdata name ("Europe/Oslo"), and whether the
+/// network sets the clock.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TimeZones {
     pub current: Option<String>,
     pub zones: Vec<String>,
-    /// The network (NTP) sets the clock (`Some(true)`), or it is set by hand; none: the system has no
-    /// way to (no time sync service).
+    /// Whether the network sets the clock through NTP (`Some(true)`), or it is set by hand. `None` when
+    /// the system has no way to sync, because there is no time sync service.
     pub ntp: Option<bool>,
     /// The clock is synchronised with the network.
     pub synced: bool,
@@ -26,8 +31,8 @@ pub struct TimeZones {
     pub error: Option<String>,
 }
 
-/// The regions the zones are chosen by (tzdata's first parts, without the old and the administrative
-/// ones: Etc, US, Canada...); UTC is a row of its own after them.
+/// The regions the zones are chosen by. These are tzdata's first name parts, without the old and
+/// administrative ones such as Etc, US and Canada. UTC is a row of its own after them.
 pub const REGIONS: [&str; 10] = ["Africa", "America", "Antarctica", "Arctic", "Asia", "Atlantic", "Australia", "Europe", "Indian", "Pacific"];
 
 /// What the time tab shows.
@@ -37,7 +42,7 @@ pub enum TimePage {
     Main,
     /// The regions to choose a zone from, and UTC.
     Regions,
-    /// A region's zones (in [`REGIONS`]).
+    /// A region's zones, by its index in [`REGIONS`].
     Region(u8),
 }
 
@@ -52,11 +57,11 @@ pub enum ClockField {
 }
 
 impl ClockField {
-    /// As the main page shows them, left to right.
+    /// In the order the main page shows them, left to right.
     pub const ALL: [ClockField; 5] = [ClockField::Day, ClockField::Month, ClockField::Year, ClockField::Hour, ClockField::Minute];
 }
 
-/// A row of the time tab's list (the regions, a region's zones).
+/// A row of the time tab's list, which shows the regions or a region's zones.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimeRow<'a> {
     Region(&'a str),
@@ -86,12 +91,12 @@ impl State {
         self.bottom.time_page
     }
 
-    /// Whether ClamShell's clocks show 12 hours (else 24).
+    /// Whether ClamShell's clocks show 12 hours rather than 24.
     pub fn twelve_hour(&self) -> bool {
         self.twelve_hour
     }
 
-    /// Whether the date and time are set by hand now (the network doesn't).
+    /// Whether the date and time are set by hand now, rather than by the network.
     pub fn clock_by_hand(&self) -> bool {
         self.sys.time.ntp != Some(true)
     }
@@ -132,8 +137,8 @@ impl State {
         }
     }
 
-    /// A tap on a row: a region opens (scrolled to the zone in force if it is there); UTC or a zone is
-    /// set, and the main page is back.
+    /// A tap on a row. A region opens, scrolled to the zone in force if it is there. UTC or a zone is
+    /// set, and the main page comes back.
     pub(crate) fn on_time_row(&mut self, i: usize) -> Vec<Effect> {
         let region = match self.time_row(i) {
             Some(TimeRow::Region(_)) => u8::try_from(i).ok(),
@@ -167,7 +172,7 @@ impl State {
                 vec![]
             }
             TimeId::Zone => {
-                // (The regions, scrolled to the one the zone in force is in.)
+                // Show the regions, scrolled to the one the zone in force is in.
                 self.bottom.time_page = TimePage::Regions;
                 let current = self.sys.time.current.as_deref();
                 let at = REGIONS.iter().position(|r| current.is_some_and(|c| in_region(c, r)));
@@ -185,8 +190,8 @@ impl State {
         (Dirty::BOTTOM, effects)
     }
 
-    /// Back one page: from a region's zones to the regions (that region shown), from those to the main
-    /// page.
+    /// Goes back one page: from a region's zones to the regions, with that region shown, and from the
+    /// regions to the main page.
     pub(crate) fn time_back(&mut self) {
         match self.bottom.time_page {
             TimePage::Main => {}
@@ -201,7 +206,7 @@ impl State {
     fn show_time_row(&mut self, i: usize) {
         let len = self.time_rows();
         if let Some(scroll) = self.scroll_mut(ListId::Time) {
-            // (From the top: another region's place means nothing here.)
+            // Start from the top, since another region's scroll position means nothing here.
             scroll.scroll_by(-scroll.offset(), len);
             scroll.show(i, len);
         }

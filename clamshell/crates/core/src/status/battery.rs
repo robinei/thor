@@ -1,16 +1,16 @@
-//! What the battery tab shows beyond the bar's status: the charge over the last day (UPower's history)
-//! and what is using the machine now (CPU and GPU time per program, read by the system side). The battery
-//! reports only its total drain; per program there is no power reading, so programs are ranked by their
-//! share of the work instead.
+//! What the battery tab shows beyond the bar's status: the charge over the last day, from UPower's
+//! history, and what is using the machine now, as CPU and GPU time per program read by the system side.
+//! The battery reports only its total drain. There is no power reading per program, so programs are
+//! ranked by their share of the work instead.
 
 use crate::BatteryId;
 use crate::Effect;
 use crate::State;
 use crate::session::instance::Instance;
 
-/// Who a spender is: one of our instances or a game shelf started (by its scope), an app run in another
-/// program's processes (by its app id: Android's, in Waydroid's container), another program of the
-/// user's (by process name), or everything the system runs.
+/// Who a spender is. It is one of our instances or a game started by shelf, known by its scope. Or an
+/// app run in another program's processes, known by its app id, such as an Android app in Waydroid's
+/// container. Or another of the user's programs, known by process name. Or everything the system runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Group {
     Instance(Instance),
@@ -20,8 +20,9 @@ pub enum Group {
 }
 
 impl Group {
-    /// Whether its GPU time can be read: only our user's processes' (an app run in another program's
-    /// processes, Android's, and the system's are another user's).
+    /// Whether its GPU time can be read. That is only possible for our user's processes. An app run in
+    /// another program's processes, such as Android's, and the system's processes belong to another
+    /// user.
     pub fn gpu_known(&self) -> bool {
         matches!(self, Group::Instance(_) | Group::Process(_))
     }
@@ -30,15 +31,15 @@ impl Group {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Spender {
     pub group: Group,
-    /// CPU in use, of all cores (0-1); GPU busy, of the GPU's time (0-1).
+    /// CPU in use, as a share of all cores (0-1), and GPU busy, as a share of the GPU's time (0-1).
     pub cpu: f32,
     pub gpu: f32,
-    /// Memory its processes have resident (bytes).
+    /// Memory its processes have resident, in bytes.
     pub memory: u64,
-    /// Its processes (another program's: what its Quit and Force kill end).
+    /// Its processes. For another program, these are what Quit and Force kill end.
     pub pids: Vec<u32>,
-    /// It may be ended from the list: not the session's own (ClamShell, sway and what its config starts,
-    /// PipeWire, the bus), nor the system.
+    /// Whether it may be ended from the list. The session's own processes can't be, meaning ClamShell,
+    /// sway and what its config starts, PipeWire and the bus, and neither can the system.
     pub endable: bool,
 }
 
@@ -49,7 +50,8 @@ impl Spender {
     }
 }
 
-/// A point of the charge history: when (epoch seconds), the level (0-100), and whether charging.
+/// A point of the charge history: when, in epoch seconds, the level (0-100), and whether it was
+/// charging.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Charge {
     pub at: u64,
@@ -59,16 +61,16 @@ pub struct Charge {
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Battery {
-    /// The charge over the last day, oldest first; empty without UPower.
+    /// The charge over the last day, oldest first. Empty without UPower.
     pub history: Vec<Charge>,
-    /// The busiest first.
+    /// What is using the machine, busiest first.
     pub spenders: Vec<Spender>,
-    /// The history could be read (UPower runs and has a battery).
+    /// Whether the history could be read, meaning UPower is running and has a battery.
     pub has_history: bool,
 }
 
-/// What a running entry costs: its share of the machine's CPU and GPU (0-1; the GPU's unknown if any of it
-/// is unreadable, see [`Group::gpu_known`]), and its resident memory (bytes).
+/// What a running entry costs: its share of the machine's CPU and GPU (0-1), and its resident memory in
+/// bytes. The GPU share is unknown if any of it can't be read (see [`Group::gpu_known`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Cost {
     pub cpu: f32,
@@ -77,18 +79,18 @@ pub struct Cost {
 }
 
 impl State {
-    /// The row whose menu is open: what it is.
+    /// What the row whose menu is open is.
     pub fn spender_menu(&self) -> Option<&Group> {
         self.spender_menu.as_ref()
     }
 
-    /// A tap on a row of what is using the machine (its menu opened: not the system's), or a choice in
-    /// its menu: an entry quit or killed as from the dock, another program's processes asked to end or
-    /// killed.
+    /// A tap on a row of what is using the machine, or a choice in a row's menu. A tap opens the row's
+    /// menu, except for rows that can't be ended, such as the system's. In the menu, an entry is quit or
+    /// killed as from the dock, and another program's processes are asked to end or killed.
     pub(crate) fn on_battery(&mut self, id: BatteryId) -> Vec<Effect> {
         match id {
             BatteryId::Spender(i) => {
-                // (An app: ended as its entry, so only one that runs.)
+                // An app is ended as its entry, so only one that is running gets a menu.
                 let endable = |s: &&Spender| s.endable && !matches!(&s.group, Group::App(app) if self.running_app(app).is_none());
                 self.spender_menu = self.sys.battery.spenders.get(usize::from(i)).filter(endable).map(|s| s.group.clone());
                 vec![]
@@ -120,8 +122,8 @@ impl State {
         }
     }
 
-    /// What a running entry costs now, from the last reading (its launches together). Read while the
-    /// battery tab or the entry's dock menu is open.
+    /// What a running entry costs now, from the last reading, with all its launches together. It is read
+    /// while the battery tab or the entry's dock menu is open.
     pub fn cost_of(&self, entry: &str) -> Option<Cost> {
         let r = self.session.running(entry)?;
         let mine = self.sys.battery.spenders.iter().filter(|s| match &s.group {
@@ -198,15 +200,15 @@ mod tests {
         let spenders = vec![spender(Group::Instance(zelda.clone())), firefox, spender(Group::System)];
         s.apply(Event::Reading(Reading::Battery(Battery { spenders, ..Battery::default() })));
         assert_eq!(s.cost_of("zelda-lttp"), Some(Cost { cpu: 0.1, gpu: Some(0.0), memory: 0 }));
-        // Another program: its processes.
+        // Another program ends its processes.
         tap(&mut s, Id::Battery(BatteryId::Spender(1)));
         assert_eq!(s.spender_menu(), Some(&Group::Process("firefox".into())));
         assert_eq!(tap(&mut s, Id::Battery(BatteryId::ForceKill)), vec![Effect::EndProcesses { pids: vec![40, 41], force: true }]);
         assert_eq!(s.spender_menu(), None);
-        // An entry: as from the dock (no window: ended at once).
+        // An entry ends as from the dock. With no window, it is ended at once.
         tap(&mut s, Id::Battery(BatteryId::Spender(0)));
         assert_eq!(tap(&mut s, Id::Battery(BatteryId::Quit)), vec![Effect::EndRun { key: zelda.key().unwrap().to_owned(), force: false }]);
-        // The system's, or the session's own: no menu.
+        // The system's row, or the session's own, has no menu.
         tap(&mut s, Id::Battery(BatteryId::Spender(2)));
         assert_eq!(s.spender_menu(), None);
         let sway = Spender { endable: false, ..spender(Group::Process("sway".into())) };
@@ -228,7 +230,8 @@ mod tests {
         crate::testkit::end(&mut s, "desktop:firefox");
         s.apply(Event::Windows(vec![win(6, "firefox", &ws, true)]));
         assert!(!s.opens_another("desktop:firefox"), "a launch would show the one it runs");
-        // Its processes (another program's, Android's): its cost, its row named and ended as the entry.
+        // Its processes belong to another program, as Android apps do. The entry gets their cost, and
+        // the row is named and ended as the entry.
         let spenders = vec![spender(Group::App("firefox".into())), spender(Group::App("org.other".into()))];
         s.apply(Event::Reading(Reading::Battery(Battery { spenders, ..Battery::default() })));
         assert_eq!(s.cost_of("desktop:firefox"), Some(Cost { cpu: 0.1, gpu: None, memory: 0 }), "its GPU time: another user's");
@@ -237,7 +240,7 @@ mod tests {
         assert_eq!(s.spender_menu(), None, "an app that isn't an entry running: no menu");
         tap(&mut s, Id::Battery(BatteryId::Spender(0)));
         assert_eq!(tap(&mut s, Id::Battery(BatteryId::Quit)), vec![Effect::Window(WindowCommand::Close(vec![6]))]);
-        // Its settings: the launch's own process gets none, so neither does it.
+        // Settings that go through the launch's own process don't reach it either.
         tap(&mut s, Id::Settings(SettingsId::Scope(Scope::Global)));
         assert!(!s.handed_over(), "All");
         tap(&mut s, Id::Settings(SettingsId::Scope(Scope::Runner)));

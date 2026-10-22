@@ -1,12 +1,13 @@
-//! System metrics for the sysinfo tab, and a minute of history for its graphs. Fixed-size, so keeping
-//! and drawing them never allocates.
+//! System metrics for the sysinfo tab, and a minute of history for its graphs. Everything is fixed-size,
+//! so keeping and drawing them never allocates.
 
-/// Most cores shown individually.
+/// The most cores shown individually.
 pub const MAX_CORES: usize = 16;
-/// Samples kept per graph (one a second).
+/// Samples kept per graph, one a second.
 pub const HISTORY: usize = 60;
 
-/// One reading of the system (system thread, once a second). `None`: not available on this machine.
+/// One reading of the system, made by a system thread once a second. `None` means not available on
+/// this machine.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Metrics {
     /// Total CPU load, 0-1.
@@ -14,25 +15,25 @@ pub struct Metrics {
     /// Per-core load, 0-1, for the first `core_count` cores.
     pub cores: [f32; MAX_CORES],
     pub core_count: u8,
-    /// The fastest core's current frequency, MHz.
+    /// The fastest core's current frequency in MHz.
     pub cpu_mhz: Option<u32>,
     /// GPU load 0-1 and frequency.
     pub gpu: Option<f32>,
     pub gpu_mhz: Option<u32>,
-    /// Hottest CPU and GPU sensor, °C.
+    /// The hottest CPU and GPU sensor, in °C.
     pub cpu_temp: Option<f32>,
     pub gpu_temp: Option<f32>,
-    /// The fan's speed, rpm (0: stopped).
+    /// The fan's speed in rpm, 0 when stopped.
     pub fan_rpm: Option<u32>,
-    /// Memory in use and in total, and swap in use, bytes.
+    /// Memory in use and in total, and swap in use, in bytes.
     pub mem_used: u64,
     pub mem_total: u64,
     pub swap_used: u64,
-    /// Battery power: positive while discharging, watts.
+    /// Battery power in watts, positive while discharging.
     pub power_w: Option<f32>,
-    /// Minutes left at the current draw (discharging only).
+    /// Minutes left at the current draw, only while discharging.
     pub minutes_left: Option<u32>,
-    /// From the game (MangoHud), when there is one.
+    /// From the game through MangoHud, when there is one.
     pub fps: Option<f32>,
     pub frame_ms: Option<f32>,
 }

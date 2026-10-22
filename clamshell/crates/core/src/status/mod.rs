@@ -1,7 +1,7 @@
 //! The system as the bar, the sysinfo tab and the battery tab show it: the last status reading, the
-//! metrics with a minute of history, the battery's history and what spends it, the time zones and the
-//! account. The volume and brightness readings in the status feed [`crate::levels::Levels`], which shows
-//! them.
+//! metrics with a minute of history, the battery's history and what is using it, the time zones and the
+//! account. The volume and brightness readings in the status go to [`crate::levels::Levels`], which
+//! shows them.
 
 pub mod battery;
 pub mod metrics;
@@ -11,8 +11,8 @@ use crate::effect::Effect;
 use battery::Battery;
 use metrics::{History, Metrics};
 
-/// Battery levels (while not charging) at which a notification warns over whatever runs, once each until
-/// it charges; UPower hibernates the device at 3 % (the image's UPower.conf).
+/// Battery levels at which a notification warns, over whatever is running, while not charging. Each
+/// warns once until the battery charges. UPower hibernates the device at 3 % (the image's UPower.conf).
 const WARN_AT: [u8; 2] = [10, 5];
 
 /// The system's status as system threads read it.
@@ -21,21 +21,22 @@ pub struct Status {
     /// Battery charge 0-100, if there is a battery.
     pub battery: Option<u8>,
     pub charging: bool,
-    /// On battery (the battery discharging; not on the charger, held at a limit or not).
+    /// On battery, meaning the battery is discharging. False on the charger, whether or not the charge
+    /// is held at a limit.
     pub discharging: bool,
-    /// Wi-Fi link quality 0-100 while connected; `None` when not.
+    /// Wi-Fi link quality 0-100 while connected, `None` when not.
     pub wifi: Option<u8>,
     /// Output volume 0-100, if known, and whether it is muted.
     pub volume: Option<u8>,
     pub muted: bool,
-    /// The first backlight's level 0-100 as read, if there is one: the brightness until ClamShell sets
-    /// one (see [`crate::levels::Brightness`]).
+    /// The first backlight's level 0-100 as read, if there is a backlight. It stands for the brightness
+    /// until ClamShell sets one (see [`crate::levels::Brightness`]).
     pub brightness: Option<u8>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct Sys {
-    /// The last status reading, as read (the levels shown are [`crate::levels::Levels`]').
+    /// The last status reading, as read. The levels that are shown come from [`crate::levels::Levels`].
     pub status: Status,
     pub metrics: Metrics,
     pub history: History,
@@ -49,8 +50,8 @@ pub struct Sys {
 }
 
 impl Sys {
-    /// After a status reading: a warning when the battery has fallen to one of [`WARN_AT`] (the lower one
-    /// marked urgent).
+    /// Runs after a status reading. Gives a warning when the battery has fallen to one of [`WARN_AT`],
+    /// with the lower one marked urgent.
     pub(crate) fn battery_warning(&mut self) -> Option<Effect> {
         let Status { battery: Some(level), charging: false, .. } = self.status else {
             self.warned = None;
@@ -65,7 +66,7 @@ impl Sys {
         Some(Effect::Notify { summary, body: "Plug in the charger: at 3 % the device hibernates.".to_owned(), urgent: at == WARN_AT[1] })
     }
 
-    /// A metrics reading; the frame rate comes separately (see [`Sys::frames`]) and is kept.
+    /// A metrics reading. The frame rate comes separately (see [`Sys::frames`]) and is kept.
     pub(crate) fn read_metrics(&mut self, mut m: Metrics) {
         m.fps = self.metrics.fps;
         m.frame_ms = self.metrics.frame_ms;
