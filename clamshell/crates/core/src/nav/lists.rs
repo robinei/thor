@@ -249,8 +249,8 @@ impl State {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::radios::wifi::{Network, Wifi};
     use crate::testkit::*;
-    use crate::wifi::{Network, Wifi};
     use crate::*;
 
     fn network(ssid: &str) -> Network {

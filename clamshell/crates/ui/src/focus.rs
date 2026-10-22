@@ -489,7 +489,7 @@ mod tests {
     #[test]
     fn up_and_down_in_a_list_go_to_the_next_row_shown_or_not() {
         use clamshell_core::Reading;
-        use clamshell_core::wifi::{Network, Wifi};
+        use clamshell_core::radios::wifi::{Network, Wifi};
         let mut s = state();
         let networks = (0..10).map(|i| Network { ssid: format!("n{i}"), ..Network::default() }).collect();
         s.apply(Reading::Wifi(Wifi { present: true, on: true, networks, ..Wifi::default() }).into());

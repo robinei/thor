@@ -56,8 +56,8 @@ impl State {
 
 #[cfg(test)]
 mod tests {
-    use crate::bluetooth::{Bluetooth, Command, Device, Kind};
     use crate::levels::{Audio, Level, Stream};
+    use crate::radios::bluetooth::{Bluetooth, Command, Device, Kind};
     use crate::testkit::*;
     use crate::*;
 

@@ -5,13 +5,13 @@ use std::sync::Arc;
 
 use clamshell_library::Launch;
 
-use crate::bluetooth;
 use crate::instance::Instance;
 use crate::keyboard::Stroke;
 use crate::levels::{Share, Sound};
 use crate::nav::pad::PadRoute;
+use crate::radios::bluetooth;
+use crate::radios::wifi;
 use crate::settings::Values;
-use crate::wifi;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Effect {

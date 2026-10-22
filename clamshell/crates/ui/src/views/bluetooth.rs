@@ -5,7 +5,7 @@
 
 use std::fmt::{self, Display, Formatter};
 
-use clamshell_core::bluetooth::{Action, Bluetooth, DeviceState, Problem, Reason};
+use clamshell_core::radios::bluetooth::{Action, Bluetooth, DeviceState, Problem, Reason};
 use clamshell_core::{BtId, Id, ListId, RadioStatus};
 
 use super::radio;

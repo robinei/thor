@@ -208,7 +208,7 @@ mod tests {
         assert!(!format!("{e:?}").contains("hunter22"));
         let e = Editor { purpose: Purpose::Env { entry: None }, text: "A=1".into() };
         assert!(format!("{e:?}").contains("A=1"), "the rest is shown");
-        let connect = crate::wifi::Command::Connect { ssid: "home".into(), password: Some(crate::kit::secret::Secret("hunter22".into())) };
+        let connect = crate::radios::wifi::Command::Connect { ssid: "home".into(), password: Some(crate::kit::secret::Secret("hunter22".into())) };
         assert!(!format!("{connect:?}").contains("hunter22"));
     }
 

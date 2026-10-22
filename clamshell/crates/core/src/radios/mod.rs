@@ -1,8 +1,11 @@
 //! The radios as their tabs show them: Wi-Fi and Bluetooth, each as its system thread last read it, and
 //! what the tab's header says about either.
 
-use crate::bluetooth::Bluetooth;
-use crate::wifi::Wifi;
+pub mod bluetooth;
+pub mod wifi;
+
+use bluetooth::Bluetooth;
+use wifi::Wifi;
 
 #[derive(Debug, Clone, Default)]
 pub struct Radios {

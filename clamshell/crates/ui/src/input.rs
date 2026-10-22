@@ -497,7 +497,7 @@ mod tests {
 
     /// A state with `n` networks, of which the Wi-Fi list shows 5.
     fn networks(n: usize) -> State {
-        use clamshell_core::wifi::{Network, Wifi};
+        use clamshell_core::radios::wifi::{Network, Wifi};
         let mut s = State::new(Init::default());
         let networks = (0..n).map(|i| Network { ssid: format!("n{i}"), ..Network::default() }).collect();
         s.apply(Event::Reading(clamshell_core::Reading::Wifi(Wifi { present: true, on: true, networks, ..Wifi::default() })));

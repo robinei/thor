@@ -2,9 +2,9 @@
 //! icon stands for what (a tab, a level, a signal, an app) is decided here too, by the constructors.
 
 use clamshell_core::Tab;
-use clamshell_core::bluetooth::Kind;
+use clamshell_core::radios::bluetooth::Kind;
+use clamshell_core::radios::wifi::signal_bars;
 use clamshell_core::settings::Setting;
-use clamshell_core::wifi::signal_bars;
 use tiny_skia::Color;
 
 use crate::draw::{Canvas, Rect};

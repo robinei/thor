@@ -6,7 +6,6 @@ use crate::touch::Pointing;
 use std::sync::Arc;
 
 use crate::battery::Battery;
-use crate::bluetooth::Bluetooth;
 use crate::hardware::DeviceKey;
 use crate::id::Id;
 use crate::idle::IdleEvent;
@@ -15,9 +14,10 @@ use crate::levels::{Audio, Level};
 use crate::metrics::Metrics;
 use crate::nav::lists::ListEvent;
 use crate::nav::pad::PadInput;
+use crate::radios::bluetooth::Bluetooth;
+use crate::radios::wifi::Wifi;
 use crate::slider::Control;
 use crate::sys::Status;
-use crate::wifi::Wifi;
 use crate::windows::Window;
 
 #[derive(Debug, Clone, PartialEq)]

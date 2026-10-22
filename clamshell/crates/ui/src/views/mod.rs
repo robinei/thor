@@ -279,9 +279,9 @@ mod tests {
     /// area, every target stays within the area below the bar and none overlap but on purpose.
     #[test]
     fn long_lists_scroll_within_their_area() {
-        use clamshell_core::bluetooth::{Bluetooth, Device, Kind};
         use clamshell_core::levels::{Audio, Stream};
-        use clamshell_core::wifi::{Network, Wifi};
+        use clamshell_core::radios::bluetooth::{Bluetooth, Device, Kind};
+        use clamshell_core::radios::wifi::{Network, Wifi};
         use clamshell_core::{ListEvent, ListId};
         let mut cache = DrawCache::load();
         let readings = [
@@ -388,7 +388,7 @@ mod tests {
     fn down_from_the_bar_reaches_the_tabs_first_line() {
         use crate::nav::{Dir, NavTarget, step};
         use clamshell_core::levels::{Audio, Level, Stream};
-        use clamshell_core::wifi::{Network, Wifi};
+        use clamshell_core::radios::wifi::{Network, Wifi};
         use clamshell_core::{ListId, WifiId};
         let mut cache = DrawCache::load();
         let (w, h) = (1240u32, 1080u32);
