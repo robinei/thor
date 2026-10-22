@@ -103,6 +103,19 @@ mod tests {
     use clamshell_core::{Event, Id, Init, Reading, State, Status};
     use tiny_skia::Pixmap;
 
+    /// The second screen drawn for `state` at `w` x `h`: what can be tapped in it, and what the frame
+    /// reports.
+    fn draw_bottom(state: &State, (w, h): (u32, u32), cache: &mut DrawCache) -> (Vec<Target>, crate::toolkit::FrameOut) {
+        let mut pixmap = Pixmap::new(w, h).expect("pixmap");
+        let mut targets = Vec::new();
+        let mut canvas = Canvas::new(&mut pixmap, 1.0, cache);
+        let (mut images, mut scratch) = (Images::synchronous(), Scratch::default());
+        let mut f = Frame::new(&mut canvas, state, &mut images, &mut scratch, &mut targets);
+        bottom(&mut f, Rect::new(0.0, 0.0, w as f32, h as f32));
+        let out = f.finish();
+        (targets, out)
+    }
+
     fn demo() -> State {
         let mut state = State::new(Init { library: clamshell_library::demo::library(), ..Init::default() });
         state.apply(Event::tick(1_700_000_000));
@@ -207,14 +220,8 @@ mod tests {
                     state.apply(e.clone());
                 }
                 assert!(state.keymap_screen().is_some() || state.bottom().editor().is_some(), "{name}: a keymap screen");
-                let mut pixmap = Pixmap::new(w, h).expect("pixmap");
-                let mut targets = Vec::new();
-                let mut canvas = Canvas::new(&mut pixmap, 1.0, &mut cache);
-                let (mut images, mut scratch) = (Images::synchronous(), Scratch::default());
-                let mut f = Frame::new(&mut canvas, &state, &mut images, &mut scratch, &mut targets);
-                let screen = Rect::new(0.0, 0.0, w as f32, h as f32);
-                bottom(&mut f, screen);
-                let body = f.finish().touchpad_area.expect("the area below the bar");
+                let (targets, out) = draw_bottom(&state, (w, h), &mut cache);
+                let body = out.touchpad_area.expect("the area below the bar");
                 let case = format!("{name} at {w}x{h}");
                 assert!(targets.iter().any(|t| matches!(t.id, Id::Keymap(_) | Id::Row { .. } | Id::Editor(_))), "{case}: its buttons");
                 if name.starts_with("edit") {
@@ -308,21 +315,12 @@ mod tests {
                         state.apply(Event::Reading(r.clone()));
                     }
                     state.apply(Event::Pointer(clamshell_core::PointerEvent::Activate(Id::Tab(tab))));
-                    let mut pixmap = Pixmap::new(w, h).expect("pixmap");
-                    let screen = Rect::new(0.0, 0.0, w as f32, h as f32);
-                    let mut targets = Vec::new();
-                    let draw = |state: &State, cache: &mut DrawCache, pixmap: &mut Pixmap, targets: &mut Vec<Target>| {
-                        let mut canvas = Canvas::new(pixmap, 1.0, cache);
-                        let (mut images, mut scratch) = (Images::synchronous(), Scratch::default());
-                        let mut f = Frame::new(&mut canvas, state, &mut images, &mut scratch, targets);
-                        bottom(&mut f, screen);
-                        f.finish()
-                    };
-                    let out = draw(&state, &mut cache, &mut pixmap, &mut targets);
+                    let (_, out) = draw_bottom(&state, (w, h), &mut cache);
                     let visible = out.lists[list.index()].expect("the list reports its rows");
                     state.apply(ListEvent::Visible(list, visible).into());
                     state.apply(ListEvent::Scroll(list, scrolled).into());
-                    let body = draw(&state, &mut cache, &mut pixmap, &mut targets).touchpad_area.expect("the area below the bar");
+                    let (targets, out) = draw_bottom(&state, (w, h), &mut cache);
+                    let body = out.touchpad_area.expect("the area below the bar");
                     let case = format!("{tab:?} at {w}x{h} scrolled {scrolled}");
                     let area = targets.iter().find(|t| t.id == Id::List(list)).map(|t| t.rect).expect("the list's area");
                     assert!(
@@ -362,14 +360,9 @@ mod tests {
                 for (w, h) in [(620u32, 540u32), (1240, 1080), (300, 540)] {
                     let mut state = if with_data { demo() } else { State::new(Init::default()) };
                     state.apply(Event::Pointer(clamshell_core::PointerEvent::Activate(Id::Tab(tab))));
-                    let mut pixmap = Pixmap::new(w, h).expect("pixmap");
-                    let mut targets = Vec::new();
-                    let mut canvas = Canvas::new(&mut pixmap, 1.0, &mut cache);
-                    let (mut images, mut scratch) = (Images::synchronous(), Scratch::default());
-                    let mut f = Frame::new(&mut canvas, &state, &mut images, &mut scratch, &mut targets);
+                    let (targets, out) = draw_bottom(&state, (w, h), &mut cache);
                     let screen = Rect::new(0.0, 0.0, w as f32, h as f32);
-                    bottom(&mut f, screen);
-                    let body = f.finish().touchpad_area.expect("the area below the bar");
+                    let body = out.touchpad_area.expect("the area below the bar");
                     let case = format!("{tab:?} at {w}x{h}{}", if with_data { ", with data" } else { "" });
                     let bar = targets.iter().filter(|t| t.rect.y + t.rect.h <= body.y + 0.5).count();
                     assert!(bar >= 11, "{case}: {bar} bar targets");
@@ -409,15 +402,7 @@ mod tests {
             let streams = (0..3).map(|i| Stream { id: i, app: format!("app {i}"), title: String::new(), volume: 50, muted: false }).collect();
             state.apply(Event::Reading(Reading::Audio(Audio { outputs: vec![], streams })));
             state.apply(Event::Pointer(clamshell_core::PointerEvent::Activate(Id::Tab(tab))));
-            let mut pixmap = Pixmap::new(w, h).expect("pixmap");
-            let mut targets = Vec::new();
-            {
-                let mut canvas = Canvas::new(&mut pixmap, 1.0, &mut cache);
-                let (mut images, mut scratch) = (Images::synchronous(), Scratch::default());
-                let mut f = Frame::new(&mut canvas, &state, &mut images, &mut scratch, &mut targets);
-                bottom(&mut f, Rect::new(0.0, 0.0, w as f32, h as f32));
-                f.finish();
-            }
+            let (targets, _) = draw_bottom(&state, (w, h), &mut cache);
             let all: Vec<NavTarget> = targets
                 .iter()
                 .filter(|t| !matches!(t.id, Id::List(_)))

@@ -216,7 +216,7 @@ mod tests {
         // Off and on again by hand: the user's now, it stays when the game ends.
         tap(&mut s, Id::PadMouse);
         tap(&mut s, Id::PadMouse);
-        played(&mut s, "zelda-lttp");
+        end(&mut s, "zelda-lttp");
         assert_eq!(s.pad().mouse(), PadMouse::ByUser);
     }
 

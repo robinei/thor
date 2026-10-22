@@ -268,7 +268,7 @@ mod tests {
         assert!(matches!(fx.as_slice(), [Effect::Save(Save::Dock(ids)), _] if ids.last().is_some_and(|i| &**i == "zelda-lttp")), "{fx:?}");
         assert_eq!(fx.last(), Some(&closed()));
         // It stops: still there (pinned), a tap starts it.
-        played(&mut s, "zelda-lttp");
+        end(&mut s, "zelda-lttp");
         assert_eq!(entry(&s, 0), Some("zelda-lttp"));
         assert!(tap(&mut s, dock(0)).iter().any(|e| matches!(e, Effect::Launch { .. })));
         // Unpinned while stopped: gone.
@@ -351,10 +351,9 @@ mod tests {
     fn home_b_closes_the_bottom_screens_window_with_none_in_front_above() {
         use crate::hardware::DeviceKey;
         let mut s = state();
-        let shelf = |focused| win(1, windows::SHELF_APP_ID, &Instance::Shelf.name(), focused);
-        s.apply(Event::Windows(vec![shelf(false), foot()]));
+        s.apply(Event::Windows(vec![shelf_window(false), foot()]));
         s.apply(Event::Device(DeviceKey::WindowDown));
-        s.apply(Event::Windows(vec![shelf(true), Window { down: true, visible: true, focused: false, ..foot() }]));
+        s.apply(Event::Windows(vec![shelf_window(true), Window { down: true, visible: true, focused: false, ..foot() }]));
         assert!(s.bottom_shows_windows());
         assert_eq!(s.apply(Event::Device(DeviceKey::CloseWindow)).1, vec![Effect::Window(WindowCommand::Close(vec![foot().id]))]);
         // ClamShell's view down there instead: nothing to close.

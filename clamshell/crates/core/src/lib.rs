@@ -1185,9 +1185,19 @@ pub(crate) mod testkit {
         s.apply(reading.into()).0
     }
 
-    /// `game`'s launches ended (their scopes gone).
-    pub fn played(s: &mut State, game: &str) -> Vec<Effect> {
-        crate::testkit::end(s, game).1
+    /// Shelf's window, in front or not.
+    pub fn shelf_window(focused: bool) -> Window {
+        win(1, crate::windows::SHELF_APP_ID, &Instance::Shelf.name(), focused)
+    }
+
+    /// The notice shown, if one is.
+    pub fn notice(s: &State) -> Option<crate::notice::NoticeKind> {
+        s.bottom().notice().map(|n| n.what.clone())
+    }
+
+    /// The window commands among `fx`.
+    pub fn window_effects(fx: Vec<Effect>) -> Vec<Effect> {
+        fx.into_iter().filter(|e| matches!(e, Effect::Window(_))).collect()
     }
 
     /// Showing `instance`'s workspace.
@@ -1289,7 +1299,6 @@ mod tests {
             library.problems = problems.iter().map(|p| (*p).to_owned()).collect();
             Event::Library(Box::new(library))
         };
-        let notice = |s: &State| s.bottom().notice().map(|n| n.what.clone());
         s.apply(with(&["grim isn't installed: no screenshots", "x: no launch command"]));
         assert_eq!(notice(&s), Some(notice::NoticeKind::Problems("grim isn't installed: no screenshots".into(), 2)));
         s.apply(Event::tick(10_000));
@@ -1306,7 +1315,6 @@ mod tests {
 
     #[test]
     fn a_launch_that_ends_without_a_window_didnt_start() {
-        let notice = |s: &State| s.bottom().notice().map(|n| n.what.clone());
         let mut s = state();
         launch(&mut s, "zelda-lttp");
         crate::testkit::end(&mut s, "zelda-lttp");
@@ -1360,87 +1368,84 @@ mod tests {
     #[test]
     fn home_goes_to_shelf_and_back_to_what_was_in_front() {
         let mut s = state();
-        let shelf = |focused| win(1, windows::SHELF_APP_ID, &Instance::Shelf.name(), focused);
         let zelda = Instance::workspace_of(&clamshell_library::key_of("zelda-lttp"));
         let home = |s: &mut State| s.apply(Event::Home).1;
         assert_eq!(home(&mut s), vec![], "nothing before shelf: it stays");
         crate::testkit::start(&mut s, "zelda-lttp");
         assert_eq!(home(&mut s), vec![], "the program in force, no window of it yet: shelf stays");
-        s.apply(Event::Windows(vec![shelf(true), win(3, "retroarch", &zelda, false)]));
+        s.apply(Event::Windows(vec![shelf_window(true), win(3, "retroarch", &zelda, false)]));
         assert_eq!(home(&mut s), vec![Effect::Window(WindowCommand::Focus(zelda.clone()))], "no history: the program in force");
         // A terminal in front, then shelf: home goes back to the terminal.
         let terminal = "clamshell-run-foot_1";
-        s.apply(Event::Windows(vec![shelf(false), win(2, "foot", terminal, true)]));
+        s.apply(Event::Windows(vec![shelf_window(false), win(2, "foot", terminal, true)]));
         assert_eq!(home(&mut s), vec![Effect::Window(WindowCommand::ShowShelf)]);
-        s.apply(Event::Windows(vec![shelf(true), win(2, "foot", terminal, false)]));
+        s.apply(Event::Windows(vec![shelf_window(true), win(2, "foot", terminal, false)]));
         assert_eq!(home(&mut s), vec![Effect::Window(WindowCommand::Focus(terminal.into()))]);
         // The terminal closed: back to the game, which was in front before.
-        s.apply(Event::Windows(vec![shelf(false), win(3, "retroarch", &zelda, true)]));
-        s.apply(Event::Windows(vec![shelf(true), win(3, "retroarch", &zelda, false)]));
+        s.apply(Event::Windows(vec![shelf_window(false), win(3, "retroarch", &zelda, true)]));
+        s.apply(Event::Windows(vec![shelf_window(true), win(3, "retroarch", &zelda, false)]));
         assert_eq!(home(&mut s), vec![Effect::Window(WindowCommand::Focus(zelda))]);
     }
 
     #[test]
     fn a_closed_window_goes_back_to_what_was_in_front_before_it_shelf_last() {
         let mut s = state();
-        let shelf = |focused| win(1, windows::SHELF_APP_ID, &Instance::Shelf.name(), focused);
         let (zelda, terminal) = ("clamshell-run-zelda-1".to_owned(), "clamshell-run-foot-2".to_owned());
-        let window = |fx: Vec<Effect>| fx.into_iter().filter(|e| matches!(e, Effect::Window(_))).collect::<Vec<_>>();
         // Shelf, then the terminal, then the game in front.
-        s.apply(Event::Windows(vec![shelf(true)]));
-        s.apply(Event::Windows(vec![shelf(false), win(2, "foot", &terminal, true)]));
-        s.apply(Event::Windows(vec![shelf(false), win(2, "foot", &terminal, false), win(3, "retroarch", &zelda, true)]));
+        s.apply(Event::Windows(vec![shelf_window(true)]));
+        s.apply(Event::Windows(vec![shelf_window(false), win(2, "foot", &terminal, true)]));
+        s.apply(Event::Windows(vec![shelf_window(false), win(2, "foot", &terminal, false), win(3, "retroarch", &zelda, true)]));
         // The game quits: the terminal, in front before it.
-        let (_, fx) = s.apply(Event::Windows(vec![shelf(false), win(2, "foot", &terminal, false)]));
-        assert_eq!(window(fx), vec![Effect::Window(WindowCommand::Focus(terminal.clone()))]);
-        s.apply(Event::Windows(vec![shelf(false), win(2, "foot", &terminal, true)]));
+        let (_, fx) = s.apply(Event::Windows(vec![shelf_window(false), win(2, "foot", &terminal, false)]));
+        assert_eq!(window_effects(fx), vec![Effect::Window(WindowCommand::Focus(terminal.clone()))]);
+        s.apply(Event::Windows(vec![shelf_window(false), win(2, "foot", &terminal, true)]));
         // The terminal quits: shelf.
-        let (_, fx) = s.apply(Event::Windows(vec![shelf(false)]));
-        assert_eq!(window(fx), vec![Effect::Window(WindowCommand::ShowShelf)]);
+        let (_, fx) = s.apply(Event::Windows(vec![shelf_window(false)]));
+        assert_eq!(window_effects(fx), vec![Effect::Window(WindowCommand::ShowShelf)]);
         // A program's own second window closing, or a new workspace before its window: nothing.
-        s.apply(Event::Windows(vec![shelf(false), win(3, "retroarch", &zelda, true), win(4, "retroarch", &zelda, false)]));
-        assert_eq!(window(s.apply(Event::Windows(vec![shelf(false), win(4, "retroarch", &zelda, true)])).1), vec![]);
-        s.apply(Event::Windows(vec![shelf(true), win(4, "retroarch", &zelda, false)]));
-        assert_eq!(window(s.apply(Event::Windows(vec![shelf(false), win(4, "retroarch", &zelda, false)])).1), vec![], "shelf's window is still there");
+        s.apply(Event::Windows(vec![shelf_window(false), win(3, "retroarch", &zelda, true), win(4, "retroarch", &zelda, false)]));
+        assert_eq!(window_effects(s.apply(Event::Windows(vec![shelf_window(false), win(4, "retroarch", &zelda, true)])).1), vec![]);
+        s.apply(Event::Windows(vec![shelf_window(true), win(4, "retroarch", &zelda, false)]));
+        assert_eq!(
+            window_effects(s.apply(Event::Windows(vec![shelf_window(false), win(4, "retroarch", &zelda, false)])).1),
+            vec![],
+            "shelf's window is still there"
+        );
     }
 
     #[test]
     fn a_window_in_front_replaced_at_once_is_shown_again() {
         let mut s = state();
-        let shelf = |focused| win(1, windows::SHELF_APP_ID, &Instance::Shelf.name(), focused);
         let app = "clamshell-run-fdroid-1".to_owned();
-        let window = |fx: Vec<Effect>| fx.into_iter().filter(|e| matches!(e, Effect::Window(_))).collect::<Vec<_>>();
         s.apply(Event::tick(100));
-        s.apply(Event::Windows(vec![shelf(false), win(2, "waydroid.org.fdroid.fdroid", &app, true)]));
+        s.apply(Event::Windows(vec![shelf_window(false), win(2, "waydroid.org.fdroid.fdroid", &app, true)]));
         // Its window closes (shelf), another comes on its workspace (moved there, not in front): shown.
-        assert_eq!(window(s.apply(Event::Windows(vec![shelf(false)])).1), vec![Effect::Window(WindowCommand::ShowShelf)]);
-        let (_, fx) = s.apply(Event::Windows(vec![shelf(true), win(3, "waydroid.org.fdroid.fdroid", &app, false)]));
-        assert_eq!(window(fx), vec![Effect::Window(WindowCommand::Focus(app.clone()))]);
+        assert_eq!(window_effects(s.apply(Event::Windows(vec![shelf_window(false)])).1), vec![Effect::Window(WindowCommand::ShowShelf)]);
+        let (_, fx) = s.apply(Event::Windows(vec![shelf_window(true), win(3, "waydroid.org.fdroid.fdroid", &app, false)]));
+        assert_eq!(window_effects(fx), vec![Effect::Window(WindowCommand::Focus(app.clone()))]);
         // Later: not.
-        s.apply(Event::Windows(vec![shelf(false), win(3, "waydroid.org.fdroid.fdroid", &app, true)]));
-        s.apply(Event::Windows(vec![shelf(false)]));
+        s.apply(Event::Windows(vec![shelf_window(false), win(3, "waydroid.org.fdroid.fdroid", &app, true)]));
+        s.apply(Event::Windows(vec![shelf_window(false)]));
         s.apply(Event::tick(103));
-        let (_, fx) = s.apply(Event::Windows(vec![shelf(true), win(4, "waydroid.org.fdroid.fdroid", &app, false)]));
-        assert_eq!(window(fx), vec![], "too late: it stays behind");
+        let (_, fx) = s.apply(Event::Windows(vec![shelf_window(true), win(4, "waydroid.org.fdroid.fdroid", &app, false)]));
+        assert_eq!(window_effects(fx), vec![], "too late: it stays behind");
     }
 
     #[test]
     fn home_doesnt_go_back_to_a_workspace_whose_window_moved_down() {
         let mut s = state();
-        let shelf = |focused| win(1, windows::SHELF_APP_ID, &Instance::Shelf.name(), focused);
         let terminal = "clamshell-run-foot_1";
-        s.apply(Event::Windows(vec![shelf(false), win(2, "foot", terminal, true)]));
+        s.apply(Event::Windows(vec![shelf_window(false), win(2, "foot", terminal, true)]));
         // Its window moved to the bottom screen, shelf in front: nothing to go back to on the main screen.
-        s.apply(Event::Windows(vec![shelf(true), Window { down: true, ..win(2, "foot", terminal, false) }]));
+        s.apply(Event::Windows(vec![shelf_window(true), Window { down: true, ..win(2, "foot", terminal, false) }]));
         assert_eq!(s.apply(Event::Home).1, vec![]);
     }
 
     #[test]
     fn home_goes_back_to_a_workspace_that_isnt_ours() {
         let mut s = state();
-        let shelf = |focused| win(1, windows::SHELF_APP_ID, &Instance::Shelf.name(), focused);
-        s.apply(Event::Windows(vec![shelf(false), foot()]));
-        s.apply(Event::Windows(vec![shelf(true), Window { focused: false, ..foot() }]));
+        s.apply(Event::Windows(vec![shelf_window(false), foot()]));
+        s.apply(Event::Windows(vec![shelf_window(true), Window { focused: false, ..foot() }]));
         assert_eq!(s.apply(Event::Home).1, vec![Effect::Window(WindowCommand::Focus("1".into()))]);
     }
 

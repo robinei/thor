@@ -134,8 +134,9 @@ Helpers that exist but are bypassed:
 ## 4. Tests
 
 - [x] The screenshot test hashes pixels, not PNG bytes, and keeps its output on failure.
-- [ ] Test helpers shared: core's testkit (the shelf/window closures, `start_end`), ui's
-      `tap`/`key`/`device()` and `snapshot.rs`' copies, the Frame setup in `views/mod.rs`.
+- [x] Test helpers shared: core's testkit (shelf's window, the notice, window effects; `played` was `end`),
+      the view tests' frame drawing (`draw_bottom`). (`no_alloc`'s and the snapshots' small event helpers
+      stay apart: they are in different crates' tests.)
 - [ ] One test `TempDir` with `Drop` for the ~20 hand-made temp dirs (system).
 - [ ] The sensor hub's parser against captured bytes, not its own encoder (on the device: a fixture).
 - [ ] The no-alloc test's gaps: Time and Touchpad tabs, the file name editors, the battery, dock and

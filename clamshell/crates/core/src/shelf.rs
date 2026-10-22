@@ -675,12 +675,12 @@ mod tests {
         assert_eq!(launched(&fx).as_deref(), Some(first), "none watched: the first");
         crate::testkit::start(&mut s, first);
         s.apply(LaunchEvent::Position { game: first.into(), position: Some(600) }.into());
-        played(&mut s, first);
+        end(&mut s, first);
         let fx = s.apply(ShelfEvent::Continue.into()).1;
         assert_eq!(launched(&fx).as_deref(), Some(first), "left early: it again");
         crate::testkit::start(&mut s, first);
         s.apply(LaunchEvent::Position { game: first.into(), position: None }.into());
-        played(&mut s, first);
+        end(&mut s, first);
         let fx = s.apply(ShelfEvent::Continue.into()).1;
         assert_eq!(launched(&fx).as_deref(), Some("tv:Cosmos/Season 1/2. One Voice in the Cosmic Fugue.mkv"), "watched to its end: the next");
     }
