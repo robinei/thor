@@ -165,7 +165,7 @@ impl Command {
 }
 
 /// Sorts devices with connected ones first, then paired ones, then by name with unnamed ones last.
-pub fn sort(mut devices: Vec<Device>) -> Vec<Device> {
+pub fn sort(devices: &mut [Device]) {
     devices.sort_by(|a, b| {
         b.connected
             .cmp(&a.connected)
@@ -173,7 +173,6 @@ pub fn sort(mut devices: Vec<Device>) -> Vec<Device> {
             .then(a.name.is_empty().cmp(&b.name.is_empty()))
             .then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
-    devices
 }
 
 /// The devices as a list's rows, found again by their address.
@@ -231,8 +230,9 @@ mod tests {
 
     #[test]
     fn connected_and_paired_first() {
-        let names: Vec<String> =
-            sort(vec![dev("zz", false, false), dev("", false, false), dev("pad", true, false), dev("buds", true, true)]).into_iter().map(|d| d.name).collect();
+        let mut devices = vec![dev("zz", false, false), dev("", false, false), dev("pad", true, false), dev("buds", true, true)];
+        sort(&mut devices);
+        let names: Vec<String> = devices.into_iter().map(|d| d.name).collect();
         assert_eq!(names, ["buds", "pad", "zz", ""]);
         assert_eq!(Kind::from_icon("audio-headphones"), Kind::Audio);
         assert_eq!(Kind::from_icon("input-gaming"), Kind::Gamepad);

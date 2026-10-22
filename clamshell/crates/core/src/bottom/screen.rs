@@ -96,22 +96,22 @@ impl WindowRules {
 
     /// The rules in the form sway uses to place windows.
     pub(crate) fn effect(&self) -> Effect {
-        Effect::Window(WindowCommand::DownRules(self.down_rules()))
+        let mut rules = Vec::new();
+        self.down_rules(&mut rules);
+        Effect::Window(WindowCommand::DownRules(rules))
     }
 
     fn wants(&self, owner: &str, w: &Window) -> bool {
         self.list.iter().any(|r| r.matches(owner, w))
     }
 
-    /// What the rules match, for sway, without duplicates.
-    pub fn down_rules(&self) -> Vec<DownRule> {
-        let mut out: Vec<DownRule> = Vec::new();
+    /// Appends what the rules match, for sway, without duplicates, to `out`.
+    pub fn down_rules(&self, out: &mut Vec<DownRule>) {
         for rule in self.list.iter().map(WindowRule::down_rule) {
             if !out.contains(&rule) {
                 out.push(rule);
             }
         }
-        out
     }
 }
 

@@ -258,7 +258,7 @@ impl<S: Sink> WifiThread<S> {
         let active_ssid = aps.iter().find(|ap| ap.path == active_ap && state == DeviceState::Activated as u32).map(|ap| ap.ssid.clone());
         self.follow_attempt(s, active_ssid.as_deref())?;
         let st = &self.state;
-        let networks = aps
+        let mut networks = aps
             .into_iter()
             .map(|ap| Network {
                 saved: known.iter().any(|(_, ssid)| *ssid == ap.ssid),
@@ -269,7 +269,8 @@ impl<S: Sink> WifiThread<S> {
                 ssid: ap.ssid,
             })
             .collect();
-        Ok(Wifi { present: true, on: enabled, networks: wifi::sort(networks), busy: st.attempt.as_ref().map(|a| a.ssid.clone()), error: st.error.clone() })
+        wifi::sort(&mut networks);
+        Ok(Wifi { present: true, on: enabled, networks, busy: st.attempt.as_ref().map(|a| a.ssid.clone()), error: st.error.clone() })
     }
 
     /// Ends the attempt once the network is connected, or with an error once it has failed.

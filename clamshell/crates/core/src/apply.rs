@@ -348,10 +348,10 @@ impl State {
             self.shelf.moved(&mut self.pointer);
         }
         self.session.follow_pausable_runners(self.shelf.library());
-        out.effects.extend(self.follow_runner_keymaps());
+        self.follow_runner_keymaps(out);
         out.effects.push(crate::session::running::land_rules(self.shelf.library()));
         if self.dock.drop_gone(self.shelf.library(), &self.session) {
-            out.effects.push(Effect::Save(Save::Dock(self.dock.pinned_ids())));
+            out.effects.push(self.dock.save_effect());
         }
     }
 
@@ -362,10 +362,10 @@ impl State {
         self.sent.ui_started();
         self.sent.resend(Resend::Start);
         if self.dock.take_unsaved() {
-            out.effects.push(Effect::Save(Save::Dock(self.dock.pinned_ids())));
+            out.effects.push(self.dock.save_effect());
         }
         out.effects.extend(self.levels.brightness_effect());
-        out.effects.extend(self.follow_runner_keymaps());
+        self.follow_runner_keymaps(out);
         out.effects.push(self.bottom.window_rules().effect());
     }
 

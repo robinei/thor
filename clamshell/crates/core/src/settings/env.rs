@@ -1,8 +1,8 @@
 //! Environment variables as the editor's text holds them, as `KEY=value` words.
 
-/// Parses `KEY=value` words (see [`Words`]) into variables.
-pub fn parse_env(text: &str) -> Vec<(String, String)> {
-    vars(text).map(|(k, v)| (k.to_owned(), v.to_owned())).collect()
+/// Parses `KEY=value` words (see [`Words`]) into variables, appended to `out`.
+pub fn parse_env(text: &str, out: &mut Vec<(String, String)>) {
+    out.extend(vars(text).map(|(k, v)| (k.to_owned(), v.to_owned())));
 }
 
 /// How many variables [`parse_env`] finds in `text`, without allocating, for drawing.
@@ -50,7 +50,9 @@ mod tests {
     #[test]
     fn counting_variables_agrees_with_parsing_them() {
         for text in ["", "A=1", "A=1 B=2", "  A=1   'B=x y' C", "=1 D=", "\"E=a b\" F=c", "'unclosed=x y", "x 'y' z=1=2", "' =x'", "'  A =x'"] {
-            assert_eq!(count_env(text), parse_env(text).len(), "{text:?}");
+            let mut vars = Vec::new();
+            parse_env(text, &mut vars);
+            assert_eq!(count_env(text), vars.len(), "{text:?}");
         }
     }
 }

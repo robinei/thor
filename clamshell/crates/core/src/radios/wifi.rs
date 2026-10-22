@@ -128,22 +128,20 @@ pub enum Command {
 /// Sorts the networks to one entry per SSID. Each entry has the strength of the strongest access point,
 /// and counts as saved or connected if any of the SSID's access points is. The connected network comes first, then
 /// saved ones, then the rest by strength. Hidden networks, with an empty SSID, are left out.
-pub fn sort(networks: Vec<Network>) -> Vec<Network> {
-    let mut out: Vec<Network> = Vec::with_capacity(networks.len());
-    for n in networks.into_iter().filter(|n| !n.ssid.is_empty()) {
-        match out.iter_mut().find(|o| o.ssid == n.ssid) {
-            Some(o) => {
-                o.saved |= n.saved;
-                o.connected |= n.connected;
-                if n.strength > o.strength {
-                    o.strength = n.strength;
-                }
-            }
-            None => out.push(n),
+pub fn sort(networks: &mut Vec<Network>) {
+    networks.retain(|n| !n.ssid.is_empty());
+    // By SSID, keeping their order, so that each SSID's first access point takes in the others.
+    networks.sort_by(|a, b| a.ssid.cmp(&b.ssid));
+    networks.dedup_by(|n, first| {
+        if n.ssid != first.ssid {
+            return false;
         }
-    }
-    out.sort_by(|a, b| b.connected.cmp(&a.connected).then(b.saved.cmp(&a.saved)).then(b.strength.cmp(&a.strength)).then(a.ssid.cmp(&b.ssid)));
-    out
+        first.saved |= n.saved;
+        first.connected |= n.connected;
+        first.strength = first.strength.max(n.strength);
+        true
+    });
+    networks.sort_by(|a, b| b.connected.cmp(&a.connected).then(b.saved.cmp(&a.saved)).then(b.strength.cmp(&a.strength)).then(a.ssid.cmp(&b.ssid)));
 }
 
 /// The networks as a list's rows, found again by their SSID.
@@ -214,13 +212,14 @@ mod tests {
 
     #[test]
     fn one_entry_per_network_connected_and_saved_first() {
-        let sorted = sort(vec![
+        let mut sorted = vec![
             net("cafe", 90, false, false, false),
             net("home", 40, true, true, false),
             net("home", 70, true, false, true),
             net("", 99, false, false, false),
             net("work", 50, true, true, false),
-        ]);
+        ];
+        sort(&mut sorted);
         let names: Vec<(&str, u8, bool)> = sorted.iter().map(|n| (n.ssid.as_str(), n.strength, n.saved)).collect();
         assert_eq!(names, [("home", 70, true), ("work", 50, true), ("cafe", 90, false)]);
     }

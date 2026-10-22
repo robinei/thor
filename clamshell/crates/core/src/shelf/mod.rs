@@ -187,7 +187,8 @@ impl Shelf {
     /// Sets what is typed in the current list to `filter`. The list then shows its entries whose titles
     /// start with it, ignoring case, with the first selected. Returns whether the selection changed.
     pub(crate) fn set_filter(&mut self, filter: String) -> bool {
-        let found = self.found(self.current, &filter);
+        let mut found = Vec::new();
+        self.found(self.current, &filter, &mut found);
         if let Some(p) = self.place_mut() {
             p.filter = filter;
             p.found = found;
@@ -196,11 +197,12 @@ impl Shelf {
         self.sync()
     }
 
-    /// The entries of collection `c`'s whole list whose titles start with `filter`, ignoring case.
-    fn found(&self, c: usize, filter: &str) -> Vec<usize> {
+    /// Appends the entries of collection `c`'s whole list whose titles start with `filter`, ignoring case,
+    /// to `found`.
+    fn found(&self, c: usize, filter: &str, found: &mut Vec<usize>) {
         let filter = filter.to_lowercase();
         let games = &self.library.entries;
-        self.whole_list_of(c).iter().copied().filter(|&i| games.get(i).is_some_and(|g| g.title.to_lowercase().starts_with(&filter))).collect()
+        found.extend(self.whole_list_of(c).iter().copied().filter(|&i| games.get(i).is_some_and(|g| g.title.to_lowercase().starts_with(&filter))));
     }
 
     /// Finds every list's entries again by what is typed in it, after the library changed under them.
@@ -210,7 +212,8 @@ impl Shelf {
             if filter.is_empty() {
                 continue;
             }
-            let found = self.found(c, &filter);
+            let mut found = Vec::new();
+            self.found(c, &filter, &mut found);
             if let Some(p) = self.navs.get_mut(c).and_then(|n| n.places.last_mut()) {
                 p.found = found;
             }
@@ -421,7 +424,8 @@ impl Shelf {
     /// top. Returns whether the selection changed.
     pub(crate) fn reload(&mut self, library: Library) -> bool {
         let before = self.selected.clone();
-        let places = self.places();
+        let mut places = Vec::new();
+        self.places(&mut places);
         let current = self.collection().map(|c| c.name.clone());
         let (rows, unsaved, fetching) = (self.rows, self.unsaved, self.fetching);
         let listings = std::mem::take(&mut self.listings);
@@ -540,9 +544,9 @@ impl Shelf {
         }
     }
 
-    /// Each collection's place: its name, then its open groups' ids and its selected entry's id.
-    pub(crate) fn places(&self) -> Vec<(String, Vec<String>)> {
-        let mut places = Vec::new();
+    /// Appends each collection's place to `places`: its name, then its open groups' ids and its selected
+    /// entry's id.
+    pub(crate) fn places(&self, places: &mut Vec<(String, Vec<String>)>) {
         for (c, coll) in self.library.collections.iter().enumerate() {
             debug_assert!(self.navs.get(c).is_some(), "a place for collection {c}");
             let Some(nav) = self.navs.get(c) else {
@@ -556,7 +560,6 @@ impl Shelf {
             ids.push(g.id.to_string());
             places.push((coll.name.clone(), ids));
         }
-        places
     }
 
     /// In the collection named `name`, opens the groups that `ids` names except the last, then selects the

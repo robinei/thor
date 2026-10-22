@@ -533,15 +533,14 @@ impl Settings {
         }
     }
 
-    /// The environment a game below `levels` gets: the global variables, then each level's, then its own.
-    /// Later ones win.
-    pub fn env_in(&self, game: &str, levels: &[&str]) -> Vec<(String, String)> {
-        let mut vars = parse_env(&self.global_env);
+    /// Appends the environment a game below `levels` gets to `vars`: the global variables, then each
+    /// level's, then its own. Later ones win.
+    pub fn env_in(&self, game: &str, levels: &[&str], vars: &mut Vec<(String, String)>) {
+        parse_env(&self.global_env, vars);
         for f in levels {
-            vars.extend(parse_env(self.env_text(Some(f))));
+            parse_env(self.env_text(Some(f)), vars);
         }
-        vars.extend(parse_env(self.env_text(Some(game))));
-        vars
+        parse_env(self.env_text(Some(game)), vars);
     }
 
     /// Drops a game's overrides and environment.
@@ -621,7 +620,12 @@ mod tests {
         s.set_env(Some("ff6".into()), " A=1 ");
         assert_eq!(s.of_in("zelda", &[]).get(Setting::Power), 2);
         assert_eq!(s.global.get(Setting::ChargeLimit), 80, "global-only settings go global");
-        assert_eq!(s.env_in("ff6", &[]), vec![("A".to_owned(), "1".to_owned())]);
+        let env_in = |s: &Settings, game: &str, levels: &[&str]| {
+            let mut vars = Vec::new();
+            s.env_in(game, levels, &mut vars);
+            vars
+        };
+        assert_eq!(env_in(&s, "ff6", &[]), vec![("A".to_owned(), "1".to_owned())]);
         assert!(Setting::FpsCap.accepts(40) && !Setting::FpsCap.accepts(33) && Setting::Keymap.accepts(7));
         // Below levels: the first level's, then the next one's over it, then the game's own over both.
         s.set(Some(&"runner:SNES".into()), Setting::FpsCap, Some(30));
@@ -631,7 +635,7 @@ mod tests {
         assert_eq!((ff6.get(Setting::FpsCap), ff6.get(Setting::Keymap)), (30, 3));
         s.set_env(Some("runner:SNES".into()), "A=2 B=1");
         let vars = |list: &[(&str, &str)]| list.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect::<Vec<_>>();
-        assert_eq!(s.env_in("ff6", &["runner:SNES"]), vars(&[("A", "2"), ("B", "1"), ("A", "1")]), "the level's, then its own");
+        assert_eq!(env_in(&s, "ff6", &["runner:SNES"]), vars(&[("A", "2"), ("B", "1"), ("A", "1")]), "the level's, then its own");
         s.reset("zelda");
         assert!(!s.has_own("zelda"));
         assert_eq!(s.of_in("zelda", &[]), s.global);

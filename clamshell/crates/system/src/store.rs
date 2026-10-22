@@ -472,7 +472,7 @@ mod tests {
         assert_eq!(store.window_rules(), rules);
 
         store.save(&Save::Dock(vec!["b".into(), "a".into()])).unwrap();
-        assert_eq!(store.dock().pinned_ids(), vec![Arc::from("b"), Arc::from("a")]);
+        assert!(store.dock().pinned_ids().map(|i| &**i).eq(["b", "a"]));
         store.save(&Save::Autostart(vec!["a".into()])).unwrap();
         assert_eq!(store.autostart(), vec![Arc::from("a")]);
 

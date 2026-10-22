@@ -226,7 +226,8 @@ impl State {
         let (launch, key) = (command.unwrap_or_else(|| g.launch.clone()), g.key.clone());
         let runner = g.runner.as_ref().map(|r| &*r.key);
         let settings = self.prefs.settings().of_in(&game, runner.as_slice());
-        let env = self.prefs.settings().env_in(&game, runner.as_slice());
+        let mut env = Vec::new();
+        self.prefs.settings().env_in(&game, runner.as_slice(), &mut env);
         // If its runner, and so its container, is paused, it is resumed first.
         self.session.resume_runner_of(&game, self.shelf.library(), out);
         let instance = self.session.begin_launch(game.clone(), key, app_id, &self.clock, shown);

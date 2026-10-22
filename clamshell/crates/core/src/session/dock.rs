@@ -58,8 +58,13 @@ impl Dock {
     }
 
     /// The pinned entries' ids, in order, which is what is saved.
-    pub fn pinned_ids(&self) -> Vec<Arc<str>> {
-        self.items.iter().filter(|i| i.pinned).map(|i| i.id.clone()).collect()
+    pub fn pinned_ids(&self) -> impl Iterator<Item = &Arc<str>> {
+        self.items.iter().filter(|i| i.pinned).map(|i| &i.id)
+    }
+
+    /// Saves the pinned entries.
+    pub(crate) fn save_effect(&self) -> Effect {
+        Effect::Save(Save::Dock(self.pinned_ids().cloned().collect()))
     }
 
     pub fn items(&self) -> &[DockItem] {
@@ -214,7 +219,7 @@ impl Dock {
             None => self.items.push(DockItem { id: entry, pinned: true }),
         }
         self.follow(session);
-        out.effects.push(Effect::Save(Save::Dock(self.pinned_ids())));
+        out.effects.push(self.save_effect());
     }
 
     /// In move mode, moves the entry one place left or right, or one row up or down, and saves the order.
@@ -234,7 +239,7 @@ impl Dock {
         }
         let item = self.items.remove(at);
         self.items.insert(to, item);
-        out.effects.push(Effect::Save(Save::Dock(self.pinned_ids())));
+        out.effects.push(self.save_effect());
     }
 }
 
@@ -369,7 +374,7 @@ mod tests {
         library.away = vec!["sd:".into()];
         let dock = crate::session::dock::Dock::pinned(vec!["ff6".into(), "gone:x".into(), "sd:Zelda.sfc".into()]);
         let mut s = State::new(Init { library, dock, ..init() });
-        assert_eq!(s.dock().pinned_ids(), vec![std::sync::Arc::from("ff6"), "sd:Zelda.sfc".into()], "the gone one dropped; the away one kept");
+        assert!(s.dock().pinned_ids().map(|i| &**i).eq(["ff6", "sd:Zelda.sfc"]), "the gone one dropped; the away one kept");
         let fx = s.apply(Event::Start).1;
         assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Dock(ids)) if ids.len() == 2)), "saved: {fx:?}");
         // A rescan without ff6 drops its pin too.

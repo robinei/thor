@@ -226,7 +226,7 @@ fn read(objects: &ManagedObjects, state: &BtState) -> Bluetooth {
     let Some((adapter_path, adapter)) = adapter else {
         return Bluetooth { error: state.error.clone(), ..Bluetooth::default() };
     };
-    let devices = objects
+    let mut devices: Vec<Device> = objects
         .iter()
         .filter(|(path, _)| path.starts_with(&**adapter_path))
         .filter_map(|(_, ifaces)| ifaces.get(DEVICE).map(Props))
@@ -245,7 +245,8 @@ fn read(objects: &ManagedObjects, state: &BtState) -> Bluetooth {
             })
         })
         .collect();
-    Bluetooth { present: true, on: adapter.flag("Powered"), devices: bluetooth::sort(devices), busy: state.busy.clone(), error: state.error.clone() }
+    bluetooth::sort(&mut devices);
+    Bluetooth { present: true, on: adapter.flag("Powered"), devices, busy: state.busy.clone(), error: state.error.clone() }
 }
 
 impl<S: Sink> BtThread<S> {

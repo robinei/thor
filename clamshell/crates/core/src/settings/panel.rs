@@ -230,7 +230,7 @@ impl State {
 
     /// For runners that come with one of ClamShell's keymaps (see [`crate::Library::runner_keymaps`]) and
     /// have no keymap chosen and none of their own: makes that keymap their own, chooses it, and saves.
-    pub(crate) fn follow_runner_keymaps(&mut self) -> Vec<Effect> {
+    pub(crate) fn follow_runner_keymaps(&mut self, out: &mut Out) {
         let library = self.shelf.library();
         let wanting: Vec<(std::sync::Arc<str>, crate::keymap::Keymap)> = library
             .runner_keymaps
@@ -239,14 +239,15 @@ impl State {
             .filter_map(|(key, name)| Some((key.clone(), crate::keymap::preset(name)?)))
             .collect();
         if wanting.is_empty() {
-            return vec![];
+            return;
         }
         for (key, preset) in &wanting {
             if let Some(id) = self.keymapping.make_own_from(preset, key) {
                 self.prefs.set(Some(key), Setting::Keymap, Some(id));
             }
         }
-        vec![self.keymapping.save_effect(), self.prefs.save_effect()]
+        out.effects.push(self.keymapping.save_effect());
+        out.effects.push(self.prefs.save_effect());
     }
 
     /// The settings panel as it is now. Its item is chosen by what is in front: the entry whose window is
@@ -549,7 +550,9 @@ mod tests {
         // What a launch of it gets: the variables of all games, its runner's and its own.
         let env_of = |s: &State| {
             let runner = s.entry("zelda-lttp").and_then(|g| g.runner.as_ref()).map(|r| &*r.key);
-            s.prefs().settings().env_in("zelda-lttp", runner.as_slice())
+            let mut vars = Vec::new();
+            s.prefs().settings().env_in("zelda-lttp", runner.as_slice(), &mut vars);
+            vars
         };
         assert_eq!(env_of(&s), vec![("dxv".to_owned(), "1".to_owned())]);
         let fresh = state_with(s.prefs().settings());

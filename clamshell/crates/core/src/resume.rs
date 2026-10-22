@@ -23,11 +23,9 @@ pub struct Resume {
 impl State {
     /// Where shelf and the second screen are, to come back to.
     pub fn resume(&self) -> Resume {
-        Resume {
-            collection: self.shelf.collection().map(|c| c.name.clone()).unwrap_or_default(),
-            tab: self.bottom.chosen_tab().name().to_owned(),
-            places: self.shelf.places(),
-        }
+        let mut places = Vec::new();
+        self.shelf.places(&mut places);
+        Resume { collection: self.shelf.collection().map(|c| c.name.clone()).unwrap_or_default(), tab: self.bottom.chosen_tab().name().to_owned(), places }
     }
 
     /// Goes back to the place `resume` saved. Collections and entries that are gone are skipped.
