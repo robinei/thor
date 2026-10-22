@@ -3,16 +3,13 @@
 //! sway, systemd, NetworkManager, BlueZ, PipeWire, UPower, logind and sysfs; and the files ClamShell
 //! keeps. Nothing here waits for the UI. How a thread is built: [`os::worker`].
 
-pub mod account;
 pub mod archives;
 pub mod audio;
-pub mod clipboard;
 pub mod desktop;
 pub mod device;
 pub mod display;
 pub mod files;
 pub mod handles;
-pub mod icons;
 pub mod input;
 pub mod launch;
 pub mod library;
@@ -21,10 +18,10 @@ pub mod os;
 pub mod paths;
 pub mod power;
 pub mod readings;
+pub mod session;
 pub mod store;
 pub mod sway;
 pub mod time;
-pub mod tray;
 pub mod wayland_filter;
 
 use std::sync::mpsc;

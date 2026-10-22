@@ -82,14 +82,14 @@ fn carry_out(command: Command) -> Result<(), String> {
             clamshell_system::wayland_filter::run(runtime, paths.mangohud.clone()).map_err(|e| format!("wayland filter: {e}"))
         }
         Command::ClipboardGet => {
-            let text = clamshell_system::clipboard::get().map_err(|e| format!("clipboard: {e}"))?;
+            let text = clamshell_system::session::clipboard::get().map_err(|e| format!("clipboard: {e}"))?;
             print!("{}", text.unwrap_or_default());
             Ok(())
         }
         Command::ClipboardSet => {
             let mut text = String::new();
             std::io::Read::read_to_string(&mut std::io::stdin(), &mut text).map_err(|e| format!("clipboard: {e}"))?;
-            clamshell_system::clipboard::set(text).map_err(|e| format!("clipboard: {e}"))
+            clamshell_system::session::clipboard::set(text).map_err(|e| format!("clipboard: {e}"))
         }
         Command::Tray => print_tray(),
         Command::FetchMetadata => fetch_metadata(&paths, &sources),
@@ -100,7 +100,7 @@ fn carry_out(command: Command) -> Result<(), String> {
 
 /// `--tray`: the tray icons there are, and their menus.
 fn print_tray() -> Result<(), String> {
-    let items = clamshell_system::tray::read_now().map_err(|e| format!("tray: {e}"))?;
+    let items = clamshell_system::session::tray::read_now().map_err(|e| format!("tray: {e}"))?;
     for item in items {
         println!("{} ({}) pid {:?} unit {:?} icon {:?}", item.title, item.id, item.pid, item.unit, item.icon);
         print_tray_menu(&item.menu, 1);

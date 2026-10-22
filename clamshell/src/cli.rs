@@ -17,10 +17,10 @@ pub enum Command {
     MangohudEnv,
     /// `--library`: print the tabs and entries found (library.json's content dirs, Steam, desktop files).
     Library,
-    /// `--tray`: print the tray icons there are, and their menus (see clamshell_system::tray).
+    /// `--tray`: print the tray icons there are, and their menus (see clamshell_system::session::tray).
     Tray,
     /// `--clipboard get`: the clipboard's text, written out; `--clipboard set`: the clipboard set to what is
-    /// read in (see clamshell_system::clipboard).
+    /// read in (see clamshell_system::session::clipboard).
     ClipboardGet,
     ClipboardSet,
     /// `--wayland-filter`: a Wayland proxy for Waydroid beside the compositor's socket (see

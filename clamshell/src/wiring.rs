@@ -139,9 +139,9 @@ pub fn start(
     let battery = started("battery", battery::spawn(sink.clone()));
     let mixer = started("mixer", mixer::spawn(backlights.clone(), sink.clone()));
     let bluetooth = started("bluetooth", bluetooth::spawn(sink.clone()));
-    let tray = started("tray", clamshell_system::tray::spawn(sink.clone()));
-    detached("clipboard", clamshell_system::clipboard::spawn(sink.clone()));
-    let icons = started("icons", clamshell_system::icons::spawn(sink.clone()));
+    let tray = started("tray", clamshell_system::session::tray::spawn(sink.clone()));
+    detached("clipboard", clamshell_system::session::clipboard::spawn(sink.clone()));
+    let icons = started("icons", clamshell_system::session::icons::spawn(sink.clone()));
     let system = started("system", clamshell_system::device::spawn(paths.screenshots.clone(), sink.clone()));
     // (Browsed videos' lengths and frames read as scanned ones' are, by the metadata threads.)
     let probe: Box<dyn Fn(Vec<meta::Wanted>) + Send> = {

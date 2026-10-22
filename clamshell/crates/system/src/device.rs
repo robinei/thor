@@ -4,7 +4,7 @@
 //! session's notification daemon (mako, on the main screen); the time zone, whether the network sets
 //! the clock (NTP) and the clock itself through timedated (`timedatectl`: setting them needs polkit's
 //! permission, which the image gives the session's user); the account through the image's helper (see
-//! [`crate::account`]).
+//! [`crate::session::account`]).
 
 use std::io;
 use std::path::PathBuf;
@@ -131,13 +131,13 @@ fn carry_out(command: Command, screenshots: Option<&PathBuf>, shown: &mut u32, s
             in_background("account", sink, move || {
                 let mut events = Vec::new();
                 if command != AccountCommand::Read {
-                    let result = crate::account::change(&command);
+                    let result = crate::session::account::change(&command);
                     if let Err(e) = &result {
                         log::warn!("account: {e}");
                     }
                     events.push(Event::AccountChanged(result));
                 }
-                events.push(Event::Reading(Reading::Account(crate::account::read())));
+                events.push(Event::Reading(Reading::Account(crate::session::account::read())));
                 events
             });
             Ok(())
