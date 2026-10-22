@@ -57,6 +57,9 @@ pub struct State {
     settled: Settled,
     /// What the outside was last sent (see [`crate::sync`]).
     sent: Sent,
+    /// The events the rules queue for State, lent to `apply`'s [`Out`] and returned empty, so that its
+    /// room is kept.
+    queue: Vec<Event>,
 }
 
 impl State {
@@ -179,7 +182,7 @@ impl State {
     /// changed. After the event itself, the state is settled ([`State::settle`]), and then the outside is
     /// told what changed for it ([`State::sync`]).
     pub fn apply(&mut self, event: Event, effects: &mut Vec<Effect>) -> Dirty {
-        let mut out = Out { effects: std::mem::take(effects), ..Out::default() };
+        let mut out = Out { effects: std::mem::take(effects), events: std::mem::take(&mut self.queue), dirty: Dirty::NONE };
         self.apply_event(event, &mut out);
         self.settle(&mut out);
         self.sync(&mut out);
@@ -190,10 +193,14 @@ impl State {
         // The follow-up steps don't queue events: one queued here would never be handled.
         debug_assert!(out.events.is_empty(), "an event queued after the event was handled: {:?}", out.events);
         *effects = out.effects;
+        out.events.clear();
+        self.queue = out.events;
         out.dirty
     }
 
     fn apply_event(&mut self, event: Event, out: &mut Out) {
+        // Where the events this one queues start.
+        let mark = out.events.len();
         match event {
             Event::Tick { unix_secs, mono_secs } => self.tick(unix_secs, mono_secs, out),
             Event::Reading(reading) => self.on_reading(reading, out),
@@ -351,8 +358,10 @@ impl State {
                 out.effects.push(Effect::Quit);
             }
         }
-        // What the event's rules asked of State, in order, after the effects they pushed.
-        for queued in std::mem::take(&mut out.events) {
+        // What the event's rules asked of State, in order, after the effects they pushed. Each is handled
+        // with what it queues in turn, before the next.
+        while out.events.len() > mark {
+            let queued = out.events.remove(mark);
             self.apply_event(queued, out);
         }
     }
