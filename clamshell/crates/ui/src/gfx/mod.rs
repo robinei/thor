@@ -1,6 +1,6 @@
-//! Generic drawing, knowing nothing of ClamShell's state: geometry ([`geom`]), colours ([`color`]), the
-//! canvas over a pixmap ([`canvas`]: shapes, lines, images), icons ([`icons`]), text ([`text`]),
-//! fonts ([`fonts`]) and images decoded off the drawing thread ([`images`]).
+//! Generic drawing that knows nothing of ClamShell's state. It has geometry ([`geom`]), colours
+//! ([`color`]), the canvas over a pixmap that draws shapes, lines and images ([`canvas`]), icons
+//! ([`icons`]), text ([`text`]), fonts ([`fonts`]) and images decoded off the drawing thread ([`images`]).
 
 pub mod canvas;
 pub mod color;

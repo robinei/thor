@@ -1,11 +1,12 @@
-//! Text on the canvas: a line, in a rect, cut to fit, or wrapped; measured; glyphs from the cache.
+//! Text on the canvas. It is drawn as a line, in a rect, cut to fit or wrapped, and can be measured. The
+//! glyphs come from the cache.
 
 use tiny_skia::Color;
 
 use super::canvas::{Canvas, blend_mask};
 use super::geom::{Align, Rect, Span};
 
-/// A line of text's height, of its size (Noto Sans' ascent and descent, rounded up).
+/// The height of a line of text, as a multiple of its size: Noto Sans' ascent and descent, rounded up.
 pub const LINE: f32 = 1.2;
 
 /// Which part of a text [`Canvas::text_fit`] keeps when it is too wide.
@@ -13,13 +14,14 @@ pub const LINE: f32 = 1.2;
 pub enum Keep {
     /// The start, with "…" where it is cut.
     Start,
-    /// The end (the latest typed).
+    /// The end, which is what was typed last.
     End,
 }
 
 const ELLIPSIS: &str = "…";
 
-/// The distance between wrapped lines, of the text's size (a little more than [`LINE`], for reading).
+/// The distance between wrapped lines, as a multiple of the text's size. It is a little more than
+/// [`LINE`], for easier reading.
 pub const WRAP_LINE: f32 = 1.3;
 
 impl Canvas<'_> {
@@ -42,8 +44,8 @@ impl Canvas<'_> {
         (pen - start) / self.scale
     }
 
-    /// Draws one line of text centred across `r`'s height, placed along its width as `align` says
-    /// (not cut: see [`Canvas::text_fit`]). Returns its width.
+    /// Draws one line of text centred vertically in `r` and placed horizontally as `align` says. The
+    /// text is not cut; for that, see [`Canvas::text_fit`]. Returns its width.
     pub fn text_in(&mut self, r: Rect, size: f32, color: impl Into<Color>, text: &str, align: Align) -> f32 {
         let y = r.y + (r.h - size * LINE) / 2.0;
         let x = match align {
@@ -54,8 +56,8 @@ impl Canvas<'_> {
         self.text(x, y, size, color, text)
     }
 
-    /// Draws one line of text from `r`'s left, centred across its height, cut to its width as `keep`
-    /// says if it is wider. Returns the width drawn.
+    /// Draws one line of text from `r`'s left, centred vertically. If the text is wider than `r`, it is
+    /// cut to fit as `keep` says. Returns the width drawn.
     pub fn text_fit(&mut self, r: Rect, size: f32, color: impl Into<Color>, text: &str, keep: Keep) -> f32 {
         let color = color.into();
         let y = r.y + (r.h - size * LINE) / 2.0;
@@ -71,8 +73,8 @@ impl Canvas<'_> {
         }
     }
 
-    /// Draws `text` word by word from `at`, wrapping within its width, at most `max_lines` lines (the
-    /// last one cut at a word). Newlines in the text start a new line. Returns the height used.
+    /// Draws `text` word by word from `at`, wrapping within its width, in at most `max_lines` lines. The
+    /// last line is cut at a word. Newlines in the text start a new line. Returns the height used.
     pub fn wrap(&mut self, at: Span, size: f32, color: impl Into<Color>, text: &str, max_lines: usize) -> f32 {
         let color = color.into();
         let line_h = size * WRAP_LINE;
@@ -134,8 +136,8 @@ impl Canvas<'_> {
         self.cache.glyph(ch, px).map_or(0.0, |(m, _)| m.advance_width) / self.scale
     }
 
-    /// Draws one line of text with its ink (what its glyphs cover, not their advance and the line's
-    /// height) centred in `r`: a letter in a badge looks centred whatever its shape.
+    /// Draws one line of text with its ink centred in `r`. The ink is what the glyphs cover, rather than
+    /// their advance and the line's height, so a letter in a badge looks centred whatever its shape.
     pub fn text_ink_centred(&mut self, r: Rect, size: f32, color: impl Into<Color>, text: &str) {
         let px = size * self.scale;
         let ascent = self.cache.ascent(px);
@@ -193,13 +195,13 @@ mod tests {
         let mut cache = DrawCache::with_finder(requests);
         assert_eq!(cache.face('あ'), Face::Waiting);
         assert!(cache.glyph('あ', 20.0).is_none(), "not drawn while looked for");
-        // (Another character the built-in font lacks: looked for too, in turn.)
+        // Another character the built-in font lacks is looked for too, in turn.
         assert_eq!(cache.face('い'), Face::Waiting);
         let first = found.recv().unwrap();
         assert!(first.font.is_some());
         assert!(matches!(cache.found(first), Face::Fallback(0)));
         assert!(cache.glyph('あ', 20.0).is_some_and(|(m, _)| m.width > 0));
-        // The same font for the second: not read again.
+        // The second character gets the same font, which is not read again.
         let second = found.recv().unwrap();
         assert!(second.font.is_none());
         assert!(matches!(cache.found(second), Face::Fallback(0)));
@@ -213,7 +215,7 @@ mod tests {
             assert_eq!(cache.face(ch), Face::Builtin, "{ch:?} is in the built-in font");
             assert!(cache.glyph(ch, 20.0).is_some_and(|(m, _)| m.width > 0), "{ch:?} draws");
         }
-        // A kana: from a system font, when fontconfig knows one (not every machine has one).
+        // A kana comes from a system font if fontconfig knows one. Not every machine has one.
         let offered = Command::new("fc-match").args(["--format=%{file}", "sans-serif:charset=3042"]).output();
         if offered.is_ok_and(|o| o.status.success() && !o.stdout.is_empty()) {
             assert!(matches!(cache.face('あ'), Face::Fallback(_)), "fontconfig offers a font with あ, so it is used");

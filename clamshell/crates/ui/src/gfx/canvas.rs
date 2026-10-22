@@ -1,9 +1,11 @@
-//! The canvas over a pixmap: shapes and images through tiny-skia, icons and text (see [`super::text`]) as
-//! cached coverage masks. All coordinates are logical pixels; the canvas scales them to the buffer.
+//! The canvas over a pixmap. It draws shapes and images, and draws icons and text (see [`super::text`])
+//! from cached coverage masks. All coordinates are in logical pixels; the canvas scales them to the
+//! buffer.
 //!
-//! No heap allocation per frame once warm (a test counts): glyphs and icons are rasterized once and
-//! blended straight into the pixmap as coverage masks; rounded rectangles and circles are computed per
-//! pixel from their distance function, with no path at all.
+//! Once the caches are warm, drawing a frame does no heap allocation, and a test checks this. Glyphs and
+//! icons are rasterized once and blended straight into the pixmap as coverage masks. Rounded rectangles,
+//! circles and lines are computed per pixel from their distance function, with no path at all. Only
+//! plain rectangles and the strokes drawn into the icon cache go through tiny-skia.
 
 use std::collections::HashMap;
 use std::sync::mpsc::Sender;
@@ -14,16 +16,17 @@ use super::fonts::{Face, Found, Glyph, NOTO_SANS, find_font};
 use super::geom::Rect;
 use super::icons::Icon;
 
-/// What drawing keeps between frames: the font, fonts found for characters it lacks, the rasterized
-/// glyphs (by character and pixel size), and a path builder whose memory is reused for every shape.
+/// What drawing keeps between frames: the font, the fonts found for characters it lacks, the rasterized
+/// glyphs by character and pixel size, and a path builder whose memory is reused for every shape.
 pub struct DrawCache {
     pub(super) font: Option<fontdue::Font>,
-    /// Fonts for characters the built-in one lacks (a Japanese title, say), found through fontconfig
-    /// when first needed; and for each such character, which of them has it (none: no font does).
+    /// Fonts for characters the built-in one lacks, such as in a Japanese title. They are found through
+    /// fontconfig when first needed. `fallback_for` records which of them has each such character, or
+    /// `Face::Builtin` if none does.
     pub(super) fallbacks: Vec<(String, fontdue::Font)>,
     pub(super) fallback_for: HashMap<char, Face>,
-    /// Where characters to find a font for go (a font is a few MB to read and parse); `None` finds it
-    /// at once (snapshots, tests).
+    /// Where characters go to have a font found for them, since a font is a few MB to read and parse.
+    /// `None` finds the font at once, which snapshots and tests use.
     pub(super) finder: Option<Sender<char>>,
     pub(super) glyphs: HashMap<(char, u32), Glyph>,
     /// Icon coverage masks, by icon and side in pixels.
@@ -37,9 +40,9 @@ impl DrawCache {
         DrawCache { font, fallbacks: Vec::new(), fallback_for: HashMap::new(), finder: None, glyphs: HashMap::new(), icons: HashMap::new(), path: None }
     }
 
-    /// As [`DrawCache::load`], fonts for characters the built-in one lacks found by `finder` (see
-    /// [`super::fonts::spawn_font_finder`]) and handed back through [`DrawCache::found`]; such a character isn't drawn
-    /// until then.
+    /// Like [`DrawCache::load`], but fonts for characters the built-in one lacks are found by `finder`
+    /// (see [`super::fonts::spawn_font_finder`]) and handed back through [`DrawCache::found`]. Such a
+    /// character isn't drawn until then.
     pub fn with_finder(finder: Sender<char>) -> DrawCache {
         DrawCache { finder: Some(finder), ..DrawCache::load() }
     }
@@ -58,7 +61,7 @@ impl DrawCache {
         self.glyphs.get(&key)
     }
 
-    /// The font to draw `ch` with: the built-in one, unless it lacks `ch` and another has it.
+    /// The font to draw `ch` with. It is the built-in one, unless that lacks `ch` and another font has it.
     pub(super) fn face(&mut self, ch: char) -> Face {
         if ch.is_control() || self.font.as_ref().is_none_or(|f| f.lookup_glyph_index(ch) != 0) {
             return Face::Builtin;
@@ -86,8 +89,9 @@ impl DrawCache {
         face
     }
 
-    /// What the finder found for a character: its font now used (and the character drawn), or the
-    /// built-in one's mark for a missing character if no font has it.
+    /// Takes what the finder found for a character. The font found is used from now on and the
+    /// character is drawn with it. If no font has the character, the built-in font draws its mark for a
+    /// missing character.
     pub fn found(&mut self, found: Found) -> Face {
         let Found { ch, path, font } = found;
         if let (Some(path), Some(font)) = (path.clone(), font) {
@@ -121,9 +125,10 @@ impl DrawCache {
 pub struct Canvas<'a> {
     pub(super) pixmap: PixmapMut<'a>,
     pub(super) scale: f32,
-    /// Whole buffer pixels everything is moved by (burn-in orbit).
+    /// How many whole buffer pixels everything is moved by, for the burn-in orbit.
     pub(super) offset: (f32, f32),
-    /// Where drawing reaches, in buffer pixels (x0, y0, x1, y1): the pixmap, or a scrolled list's area.
+    /// The area drawing is limited to, as (x0, y0, x1, y1) in buffer pixels. It is the whole pixmap or a
+    /// scrolled list's area.
     pub(super) clip: (i32, i32, i32, i32),
     pub(super) cache: &'a mut DrawCache,
 }
@@ -134,7 +139,7 @@ impl<'a> Canvas<'a> {
         Canvas { pixmap, scale, offset: (0.0, 0.0), clip, cache }
     }
 
-    /// Drawing kept within `r` from now on (`None`: the whole pixmap again).
+    /// Keeps drawing within `r` from now on. `None` allows the whole pixmap again.
     pub fn clip(&mut self, r: Option<Rect>) {
         let (pw, ph) = (self.pixmap.width() as i32, self.pixmap.height() as i32);
         self.clip = match r {
@@ -159,7 +164,7 @@ impl<'a> Canvas<'a> {
         self
     }
 
-    /// Logical x and y to buffer pixels.
+    /// Converts logical x and y to buffer pixels.
     pub(super) fn px(&self, x: f32) -> f32 {
         x * self.scale + self.offset.0
     }
@@ -175,7 +180,8 @@ impl<'a> Canvas<'a> {
         paint
     }
 
-    /// A vertical line `px` buffer pixels wide, centred on `x` and snapped to whole pixels (sharp).
+    /// A vertical line `px` buffer pixels wide, centred on `x` and snapped to whole pixels so that it is
+    /// sharp.
     pub fn vline(&mut self, x: f32, y0: f32, y1: f32, px: u32, color: impl Into<Color>) {
         let left = (self.px(x) - px as f32 / 2.0).round();
         let (top, bottom) = (self.py(y0).round(), self.py(y1).round());
@@ -194,15 +200,15 @@ impl<'a> Canvas<'a> {
     }
 
     pub fn fill(&mut self, r: Rect, color: impl Into<Color>) {
-        // In buffer pixels, filled without a transform: tiny-skia fills a transformed rect as a path,
-        // which allocates.
+        // Filled in buffer pixels without a transform, because tiny-skia fills a transformed rect as a
+        // path, which allocates.
         let (x0, y0) = (self.px(r.x), self.py(r.y));
         if let Some(rect) = self.clipped(x0, y0, x0 + r.w * self.scale, y0 + r.h * self.scale) {
             self.pixmap.fill_rect(rect, &Self::paint(color.into()), Transform::identity(), None);
         }
     }
 
-    /// A rectangle in buffer pixels cut to the clip; `None` if nothing is left.
+    /// A rectangle in buffer pixels cut to the clip, or `None` if nothing is left.
     fn clipped(&self, x0: f32, y0: f32, x1: f32, y1: f32) -> Option<tiny_skia::Rect> {
         let (cx0, cy0, cx1, cy1) = self.clip;
         tiny_skia::Rect::from_ltrb(x0.max(cx0 as f32), y0.max(cy0 as f32), x1.min(cx1 as f32), y1.min(cy1 as f32))
@@ -232,9 +238,10 @@ impl<'a> Canvas<'a> {
         self.shade(bounds, color.into(), Runs::One, |x, y| (0.5 - ((x - cx).hypot(y - cy) - r)).clamp(0.0, 1.0));
     }
 
-    /// Blends `color` over the pixels in `bounds` (x0, y0, x1, y1 in buffer pixels) with the coverage
-    /// `coverage` gives for each pixel centre. With [`Runs::One`], a row is asked from either end only
-    /// up to its first fully covered pixel; the pixels between are filled.
+    /// Blends `color` over the pixels in `bounds`, given as (x0, y0, x1, y1) in buffer pixels, with the
+    /// coverage that `coverage` gives for each pixel centre. With [`Runs::One`], each row is asked for
+    /// coverage from either end only up to its first fully covered pixel, and the pixels between are
+    /// filled.
     fn shade(&mut self, (x0, y0, x1, y1): (f32, f32, f32, f32), color: Color, runs: Runs, coverage: impl Fn(f32, f32) -> f32) {
         let pw = self.pixmap.width() as i32;
         let (cx0, cy0, cx1, cy1) = self.clip;
@@ -275,8 +282,8 @@ impl<'a> Canvas<'a> {
         }
     }
 
-    /// A straight line from (x0, y0) to (x1, y1), `width` wide with round ends; any angle, antialiased,
-    /// computed per pixel (no path).
+    /// A straight line from (x0, y0) to (x1, y1), `width` wide with round ends. It can be at any angle,
+    /// is antialiased, and is computed per pixel without a path.
     pub fn line(&mut self, (x0, y0): (f32, f32), (x1, y1): (f32, f32), width: f32, color: impl Into<Color>) {
         let (ax, ay, bx, by) = (self.px(x0), self.py(y0), self.px(x1), self.py(y1));
         let half = width * self.scale / 2.0;
@@ -290,8 +297,8 @@ impl<'a> Canvas<'a> {
         });
     }
 
-    /// Connected lines through `points`, round caps and joins. Uses tiny-skia (allocates): for drawing
-    /// icons into their cache only.
+    /// Connected lines through `points`, with round caps and joins. It uses tiny-skia, which allocates,
+    /// so it is only for drawing icons into their cache.
     pub fn polyline(&mut self, points: &[(f32, f32)], width: f32, color: Color) {
         self.stroke_points(points, width, color, false);
     }
@@ -320,18 +327,18 @@ impl<'a> Canvas<'a> {
         }
     }
 
-    /// Draws `image` (already at its pixel size) with its top left at (x, y), blending its alpha.
+    /// Draws `image`, already at its pixel size, with its top left at (x, y), blending its alpha.
     pub fn image(&mut self, image: &Pixmap, x: f32, y: f32) {
         self.blit(image, x, y, None);
     }
 
-    /// Draws `image` in grey at `level` (0..1) of its brightness: an idle app's icon.
+    /// Draws `image` in grey at `level` (0..1) of its brightness, as for an idle app's icon.
     pub fn image_grey(&mut self, image: &Pixmap, x: f32, y: f32, level: f32) {
         self.blit(image, x, y, Some((level.clamp(0.0, 1.0) * 256.0) as u32));
     }
 
-    /// Blends `image` (premultiplied) with its top left at (x, y); `grey`: as luminance scaled by this
-    /// (of 256).
+    /// Blends the premultiplied `image` with its top left at (x, y). With `grey`, the image is drawn as
+    /// its luminance scaled by `grey`/256.
     fn blit(&mut self, image: &Pixmap, x: f32, y: f32, grey: Option<u32>) {
         let (x0, y0) = (self.px(x).round() as i32, self.py(y).round() as i32);
         let pw = self.pixmap.width() as i32;
@@ -350,7 +357,7 @@ impl<'a> Canvas<'a> {
                 continue;
             };
             match grey {
-                // (Box art and screenshots: rows without transparency copied whole.)
+                // Rows without transparency, as in box art and screenshots, are copied whole.
                 None if src.as_chunks::<4>().0.iter().fold(255, |all, px| all & px[3]) == 255 => dst.copy_from_slice(src),
                 None => {
                     for (d, s) in dst.as_chunks_mut::<4>().0.iter_mut().zip(src.as_chunks::<4>().0) {
@@ -368,8 +375,8 @@ impl<'a> Canvas<'a> {
     }
 }
 
-/// Blends a glyph's coverage (`width` bytes per row) in `color` onto the pixmap at (x, y), source-over,
-/// premultiplied; within `clip` (x0, y0, x1, y1, inside the pixmap).
+/// Blends a glyph's coverage, `width` bytes per row, in `color` onto the pixmap at (x, y). It blends
+/// source-over with premultiplied alpha, within `clip` (x0, y0, x1, y1, inside the pixmap).
 pub(super) fn blend_mask(pixmap: &mut PixmapMut, clip: (i32, i32, i32, i32), x: i32, y: i32, width: usize, coverage: &[u8], color: PremultipliedColorU8) {
     if width == 0 {
         return;
@@ -392,18 +399,18 @@ pub(super) fn blend_mask(pixmap: &mut PixmapMut, clip: (i32, i32, i32, i32), x: 
     }
 }
 
-/// The part of a row `width` pixels long from `x` inside `clip`'s columns: how many pixels it skips,
-/// where it starts, how long it is.
+/// The part of a row `width` pixels long, starting at `x`, that is inside `clip`'s columns. Returns how
+/// many pixels it skips, where it starts and how long it is.
 fn span((cx0, _, cx1, _): (i32, i32, i32, i32), x: i32, width: usize) -> Option<(usize, i32, usize)> {
     let (from, to) = (x.max(cx0), (x + width as i32).min(cx1));
     (to > from).then(|| ((from - x) as usize, from, (to - from) as usize))
 }
 
-/// A rounded rectangle in buffer pixels, for its signed distance (negative inside).
+/// A rounded rectangle in buffer pixels, used for its signed distance, which is negative inside.
 struct RoundedRect {
     cx: f32,
     cy: f32,
-    /// Half size minus the radius: the inner rectangle the corners are centred on.
+    /// Half the size minus the radius. This is the inner rectangle the corners are centred on.
     hx: f32,
     hy: f32,
     radius: f32,
@@ -430,8 +437,8 @@ impl RoundedRect {
     }
 }
 
-/// How a shape covers each row of pixels: in one run (filled and convex: a rounded rectangle, a
-/// circle, a line), or any way (an outline).
+/// How a shape covers each row of pixels. A filled convex shape, such as a rounded rectangle, a circle or
+/// a line, covers it in one run. An outline may cover it any way.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Runs {
     One,
@@ -443,8 +450,7 @@ fn premultiplied(color: Color) -> [u32; 4] {
     [c.red(), c.green(), c.blue(), c.alpha()].map(u32::from)
 }
 
-/// Source-over of premultiplied `src` at coverage `k` (0-255) onto one RGBA pixel.
-/// Premultiplied `src` over the pixel `px` (as [`blend`] fully covered).
+/// Premultiplied `src` over the pixel `px`, as [`blend`] does when fully covered.
 fn over(px: &mut [u8; 4], src: [u32; 4]) {
     let inverse = 255 - src[3] as u16;
     for (d, s) in px.iter_mut().zip(src) {
@@ -452,7 +458,7 @@ fn over(px: &mut [u8; 4], src: [u32; 4]) {
     }
 }
 
-/// [`blend`] at byte `i` of `data`, if covered and there.
+/// [`blend`] at byte `i` of `data`, if the pixel is covered and within `data`.
 fn blend_at(data: &mut [u8], i: usize, src: [u32; 4], k: u32) {
     if k > 0
         && let Some(px) = data.get_mut(i..i + 4).and_then(|px| px.as_mut_array())
@@ -461,6 +467,7 @@ fn blend_at(data: &mut [u8], i: usize, src: [u32; 4], k: u32) {
     }
 }
 
+/// Source-over of premultiplied `src` at coverage `k` (0-255) onto one RGBA pixel.
 fn blend(px: &mut [u8; 4], src: [u32; 4], k: u32) {
     let k = k as u16;
     let inverse = 255 - div255(src[3] as u16 * k);
@@ -469,7 +476,8 @@ fn blend(px: &mut [u8; 4], src: [u32; 4], k: u32) {
     }
 }
 
-/// `x / 255` for `x` up to 255 * 255, in shifts (which vectorise; the same for every such `x`).
+/// `x / 255` for `x` up to 255 * 255, done with shifts so that it vectorises. The result is exact for
+/// every such `x`.
 fn div255(x: u16) -> u16 {
     (x + 1 + (x >> 8)) >> 8
 }

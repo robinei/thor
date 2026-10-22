@@ -1,6 +1,6 @@
-//! Line icons, drawn as paths on a 24x24 grid scaled into a square, and blended as cached masks
-//! ([`Canvas::icon`]). No icon font or image files. Which icon stands for one of the state's things (a
-//! tab, a setting, a device) is the toolkit's (`toolkit::icons`).
+//! Line icons, drawn as paths on a 24x24 grid scaled into a square and blended as cached masks
+//! ([`Canvas::icon`]). There is no icon font and there are no image files. The toolkit decides which icon
+//! stands for one of the state's things, such as a tab, a setting or a device (`toolkit::icons`).
 
 use tiny_skia::{Color, Pixmap};
 
@@ -10,8 +10,8 @@ use super::geom::Rect;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Icon {
     Apps,
-    /// The front program's windows on the bottom screen, hidden by ClamShell's view: the two screens, a
-    /// window on the lower one.
+    /// The front program's windows on the bottom screen, which ClamShell's view hides. It shows the two
+    /// screens with a window on the lower one.
     Windows,
     /// The pad mouse toggle: a mouse.
     Mouse,
@@ -49,7 +49,7 @@ pub enum Icon {
         tenths: u8,
         charging: bool,
     },
-    /// Lit arcs (0-3); `None`: not connected.
+    /// Lit arcs (0-3), or `None` if not connected.
     Wifi {
         bars: Option<u8>,
     },
@@ -62,7 +62,7 @@ pub enum Icon {
     Brightness,
     /// A network that needs a password.
     Lock,
-    /// Bluetooth's rune; `connected`: with the dots beside it.
+    /// Bluetooth's rune. When `connected`, it has dots beside it.
     Bluetooth {
         connected: bool,
     },
@@ -74,36 +74,36 @@ pub enum Icon {
     Off,
     /// Layers: three sheets stacked.
     Layers,
-    // Shelf's tabs (library.json names them: see [`Icon::named`]).
+    // Shelf's tabs, named in library.json (see [`Icon::named`]).
     Film,
     Tv,
     Music,
     Star,
     Clock,
-    /// A folder in shelf's list: a chevron, it opens.
+    /// A folder in shelf's list, which opens: a chevron.
     Chevron,
     /// The Tools tab: a wrench.
     Wrench,
-    /// Browsed entries without a picture: a folder, a file (a sheet with a corner folded), the Trash (a
-    /// bin), a removable filesystem (a memory card).
+    /// Browsed entries without a picture. A folder; a file, shown as a sheet with a corner folded; the
+    /// Trash, shown as a bin; and a removable filesystem, shown as a memory card.
     Folder,
     File,
     Trash,
     Card,
-    /// An entry selected (the Files tab): a tick.
+    /// A selected entry in the Files tab: a tick.
     Check,
-    /// An app with no picture of its own (a program found by its window, with no desktop file): a
+    /// An app with no picture of its own, such as a program found by its window with no desktop file: a
     /// window.
     App,
-    /// A browsed archive (a zip, 7z, rar, tar): a box.
+    /// A browsed archive, such as a zip, 7z, rar or tar: a box.
     Archive,
-    /// An entry that runs (shelf's row mark): a dot.
+    /// Shelf's row mark for an entry that is running: a dot.
     Dot,
 }
 
 impl Icon {
-    /// A shelf tab's icon, by the name library.json gives (`gamepad`, `apps`, `film`, `tv`, `music`,
-    /// `star`, `clock`, `tools`, `folder`, `file`, `trash`, `card`); none for another.
+    /// A shelf tab's icon, by the name library.json gives it: `gamepad`, `apps`, `film`, `tv`, `music`,
+    /// `star`, `clock`, `tools`, `folder`, `archive`, `file`, `trash` or `card`. Any other name has none.
     pub fn named(name: &str) -> Option<Icon> {
         Some(match name {
             "gamepad" => Icon::Gamepad,
@@ -123,7 +123,7 @@ impl Icon {
         })
     }
 
-    /// A volume (0-100): a wave per third.
+    /// The icon for a volume (0-100), with a wave per third.
     pub fn volume(level: u8, muted: bool) -> Icon {
         let waves = match level {
             0 => 0,
@@ -134,14 +134,14 @@ impl Icon {
         Icon::Volume { waves, muted }
     }
 
-    /// A battery's charge (0-100), to the nearest tenth.
+    /// The icon for a battery's charge (0-100), to the nearest tenth.
     pub fn battery(level: u8, charging: bool) -> Icon {
         Icon::Battery { tenths: ((u16::from(level) + 5) / 10) as u8, charging }
     }
 }
 
 impl Canvas<'_> {
-    /// Draws `icon` centred in `r`, as large as fits. Rendered once per size, then blended as a mask.
+    /// Draws `icon` centred in `r`, as large as fits. It is rendered once per size, then blended as a mask.
     pub fn icon(&mut self, icon: Icon, r: Rect, color: impl Into<Color>) {
         let side = (r.w.min(r.h) * self.scale).round().max(1.0) as u32;
         let key = (icon, side);
@@ -167,8 +167,8 @@ impl Canvas<'_> {
     }
 }
 
-/// The usual stroke width, and the thin one of a scale's unlit steps (levels show as thick lit strokes;
-/// the rest of the scale stays visible, thin), in grid units.
+/// The usual stroke width and the thin width for a scale's unlit steps, in grid units. Levels show as
+/// thick lit strokes, and the rest of the scale stays visible as thin ones.
 const LINE: f32 = 1.8;
 const THIN: f32 = 0.8;
 
@@ -192,7 +192,7 @@ impl Pen<'_, '_> {
         Rect::new(self.x0 + x * u, self.y0 + y * u, w * u, h * u)
     }
 
-    /// The points on the canvas (at most 12; an icon's paths are short).
+    /// The points on the canvas. There are at most 12, since an icon's paths are short.
     fn points(&self, points: &[(f32, f32)]) -> ([(f32, f32); 12], usize) {
         let mut out = [(0.0, 0.0); 12];
         let n = points.len().min(out.len());
@@ -230,7 +230,7 @@ impl Pen<'_, '_> {
         self.c.circle(self.x0 + x * self.u, self.y0 + y * self.u, radius * self.u, self.color);
     }
 
-    /// An arc around `center` from `from` to `to` degrees (counterclockwise from the right).
+    /// An arc around `center` from `from` to `to` degrees, counterclockwise from the right.
     fn arc(&mut self, (cx, cy): (f32, f32), r: f32, (from, to): (f32, f32), width: f32) {
         let mut points = [(0.0, 0.0); 7];
         for (i, point) in points.iter_mut().enumerate() {
@@ -395,7 +395,7 @@ pub fn draw(c: &mut Canvas, icon: Icon, r: Rect, color: Color) {
             p.line(&[(6.5, 17.5), (17.5, 6.5)], LINE);
         }
         Icon::Moon => {
-            // The lit edge (the long way round the left), and the shadow's edge joining its ends.
+            // The lit edge, the long way round the left, and the shadow's edge joining its ends.
             p.arc((12.0, 12.0), 8.0, (60.0, 300.0), LINE);
             p.arc((19.0, 12.0), 7.55, (113.0, 247.0), LINE);
         }
@@ -570,7 +570,7 @@ mod tests {
     use crate::gfx::DrawCache;
     use tiny_skia::Pixmap;
 
-    /// Every icon, each variant at least once; `variant` fails to compile when one is added.
+    /// Every icon, with each variant at least once. `variant` fails to compile when a variant is added.
     fn every() -> Vec<Icon> {
         let all = vec![
             Icon::Apps,

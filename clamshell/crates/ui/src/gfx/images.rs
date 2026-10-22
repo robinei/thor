@@ -1,7 +1,8 @@
-//! Box art and other images: decoded and scaled on a worker thread, kept in memory by game and pixel
-//! size, drawn by blending (no allocation per frame). The view asks for what it draws; a miss is
-//! requested once and drawn as a placeholder until it arrives; images not drawn lately are dropped when
-//! the cache passes its budget.
+//! Box art and other images. They are decoded and scaled on a worker thread, kept in memory by game and
+//! pixel size, and drawn by blending, with no allocation per frame.
+//!
+//! The view asks for what it draws. An image that isn't loaded is requested once and drawn as a
+//! placeholder until it arrives. When the cache goes over its budget, images not drawn lately are dropped.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -13,7 +14,8 @@ use tiny_skia::{IntSize, Pixmap};
 /// Bytes of decoded images kept before the ones not drawn lately are dropped.
 const BUDGET: usize = 96 << 20;
 
-/// An image at one size: the entry's id, which of its images, and the box it is fitted into, in pixels.
+/// An image at one size: the entry's id, which of its images it is, and the box it is fitted into, in
+/// pixels.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Key {
     pub id: Arc<str>,
@@ -22,14 +24,14 @@ pub struct Key {
     pub h: u32,
 }
 
-/// Which of an entry's images.
+/// Which of an entry's images is meant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Slot {
     /// Its box art.
     Art,
-    /// Its icon (an app's, a folder's).
+    /// Its icon, such as an app's or a folder's.
     Icon,
-    /// Its picture (box art, a screenshot) cropped to fill a list row's square.
+    /// Its picture, such as box art or a screenshot, cropped to fill a list row's square.
     Thumb,
     /// A screenshot.
     Shot,
@@ -42,7 +44,7 @@ pub struct Request {
 }
 
 struct Entry {
-    /// `None`: the file couldn't be read; not asked for again.
+    /// `None` if the file couldn't be read. It is not asked for again.
     pixmap: Option<Pixmap>,
     used: u64,
 }
@@ -50,7 +52,7 @@ struct Entry {
 pub struct Images {
     cache: HashMap<Key, Entry>,
     pending: HashSet<Key>,
-    /// Where requests go; `None` decodes at once (snapshots).
+    /// Where requests go. `None` decodes at once, which snapshots use.
     worker: Option<Sender<Request>>,
     frame: u64,
 }
@@ -65,7 +67,7 @@ impl Images {
         Images { cache: HashMap::new(), pending: HashSet::new(), worker: None, frame: 0 }
     }
 
-    /// The image of `id` in `slot` fitted into `w`x`h` pixels, if loaded; asks for it if not.
+    /// The image of `id` in `slot` fitted into `w`x`h` pixels, if it is loaded. If not, it is asked for.
     pub fn get(&mut self, id: &Arc<str>, slot: Slot, path: &Path, w: u32, h: u32) -> Option<&Pixmap> {
         let key = Key { id: id.clone(), slot, w, h };
         if !self.cache.contains_key(&key) {
@@ -98,7 +100,7 @@ impl Images {
         self.cache.insert(key, Entry { pixmap, used: self.frame });
     }
 
-    /// After a frame: drops images that weren't drawn in it while the cache is over budget.
+    /// Called after a frame. If the cache is over budget, drops the images that weren't drawn in it.
     pub fn end_frame(&mut self) {
         let bytes: usize = self.cache.values().filter_map(|e| e.pixmap.as_ref()).map(|p| p.data().len()).sum();
         if bytes > BUDGET {
@@ -109,8 +111,8 @@ impl Images {
     }
 }
 
-/// Decodes `path` and scales it to fit within `w`x`h` (keeping its shape), premultiplied RGBA. SVG
-/// (app icons) is rendered at that size.
+/// Decodes `path` into premultiplied RGBA and scales it to fit within `w`x`h`, keeping its shape. With
+/// `crop`, it is scaled to fill the box instead. An SVG, such as an app icon, is rendered at that size.
 pub fn load(path: &Path, w: u32, h: u32, crop: bool) -> Option<Pixmap> {
     if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("svg")) {
         return load_svg(path, w, h);
@@ -122,7 +124,7 @@ pub fn load(path: &Path, w: u32, h: u32, crop: bool) -> Option<Pixmap> {
         .inspect_err(|e| log::debug!("image {}: {e}", path.display()))
         .ok()?;
     let (iw, ih) = (image.width().max(1), image.height().max(1));
-    // Fitted in w by h, or (`crop`) filling it, its middle kept.
+    // Fit within w by h, or with `crop`, fill it and keep the middle.
     let scaled = if crop {
         image.resize_to_fill(w.max(1), h.max(1), image::imageops::FilterType::Triangle).into_rgba8()
     } else {
@@ -154,7 +156,7 @@ fn load_svg(path: &Path, w: u32, h: u32) -> Option<Pixmap> {
     Some(pixmap)
 }
 
-/// The decoding thread: requests in, decoded images out through `done`.
+/// Starts the decoding thread. It takes requests from `requests` and passes the decoded images to `done`.
 pub fn spawn_worker(requests: Receiver<Request>, done: impl Fn(Key, Option<Pixmap>) -> bool + Send + 'static) -> std::io::Result<()> {
     std::thread::Builder::new().name("images".into()).spawn(move || {
         for Request { key, path } in requests {
@@ -176,7 +178,7 @@ mod tests {
     fn scales_to_fit_and_premultiplies() {
         let dir = clamshell_core::kit::testdir::TempDir::new("img");
         let path = dir.join("half.png");
-        // 60x90, half-transparent red.
+        // A 60x90 image in half-transparent red.
         image::RgbaImage::from_pixel(60, 90, image::Rgba([255, 0, 0, 128])).save(&path).unwrap();
         let p = load(&path, 40, 40, false).expect("decoded");
         assert_eq!((p.width(), p.height()), (27, 40));

@@ -1,5 +1,5 @@
 //! Layout geometry in logical pixels: rectangles cut into rows, columns and cells, a column filled from
-//! the top, a line's span, alignment.
+//! the top, the span of a line of text, and alignment.
 
 use super::text::LINE;
 
@@ -33,19 +33,19 @@ impl Rect {
         (self.x + self.w / 2.0, self.y + self.h / 2.0)
     }
 
-    /// Smaller by `d` on every side (negative: larger).
+    /// Smaller by `d` on every side, or larger if `d` is negative.
     pub fn inset(&self, d: f32) -> Rect {
         Rect::new(self.x + d, self.y + d, self.w - 2.0 * d, self.h - 2.0 * d)
     }
 
-    /// The part of this inside `other` (empty, with no size, if none).
+    /// The part of this inside `other`. If there is none, the result has no size.
     pub fn intersect(&self, other: Rect) -> Rect {
         let (x0, y0) = (self.x.max(other.x), self.y.max(other.y));
         let (x1, y1) = (self.right().min(other.right()), self.bottom().min(other.bottom()));
         Rect::new(x0, y0, (x1 - x0).max(0.0), (y1 - y0).max(0.0))
     }
 
-    /// Wider by `dx` on each side (into the margins, as a list's rows reach for their pressed look).
+    /// Wider by `dx` on each side. A list's rows use it to reach into the margins when drawn pressed.
     pub fn widened(&self, dx: f32) -> Rect {
         Rect::new(self.x - dx, self.y, self.w + 2.0 * dx, self.h)
     }
@@ -60,17 +60,18 @@ impl Rect {
         Rect::new(self.x + (self.w - w) / 2.0, self.y + (self.h - h) / 2.0, w, h)
     }
 
-    /// A square of `side` centred in this one (an icon's place).
+    /// A square of `side` centred in this one, as for an icon.
     pub fn square_center(&self, side: f32) -> Rect {
         self.centered(side, side)
     }
 
-    /// The first line of text of `size` in this: its top, its width, one [`LINE`] high.
+    /// The first line for text of `size` in this rectangle: at its top, its full width and one [`LINE`]
+    /// high.
     pub fn top_line(&self, size: f32) -> Rect {
         Rect::new(self.x, self.y, self.w, size * LINE)
     }
 
-    /// Cuts the top `h` off this; returns it.
+    /// Cuts the top `h` off this and returns it.
     pub fn take_top(&mut self, h: f32) -> Rect {
         let top = Rect::new(self.x, self.y, self.w, h);
         self.y += h;
@@ -78,13 +79,13 @@ impl Rect {
         top
     }
 
-    /// Cuts the bottom `h` off this; returns it.
+    /// Cuts the bottom `h` off this and returns it.
     pub fn take_bottom(&mut self, h: f32) -> Rect {
         self.h -= h;
         Rect::new(self.x, self.y + self.h, self.w, h)
     }
 
-    /// Cuts the left `w` off this; returns it.
+    /// Cuts the left `w` off this and returns it.
     pub fn take_left(&mut self, w: f32) -> Rect {
         let left = Rect::new(self.x, self.y, w, self.h);
         self.x += w;
@@ -92,14 +93,14 @@ impl Rect {
         left
     }
 
-    /// Cuts the right `w` off this; returns it.
+    /// Cuts the right `w` off this and returns it.
     pub fn take_right(&mut self, w: f32) -> Rect {
         self.w -= w;
         Rect::new(self.x + self.w, self.y, w, self.h)
     }
 
-    /// Cell `i` (row by row) of a grid of `cols` by `rows` equal cells filling this, `gap` between them.
-    /// A row of buttons is a grid with one row.
+    /// Cell `i` of a grid of `cols` by `rows` equal cells that fills this rectangle, with `gap` between
+    /// the cells. Cells are counted row by row. A row of buttons is a grid with one row.
     pub fn cell(&self, cols: usize, rows: usize, gap: f32, i: usize) -> Rect {
         let (cols, rows) = (cols.max(1), rows.max(1));
         let w = (self.w - (cols - 1) as f32 * gap) / cols as f32;
@@ -109,7 +110,7 @@ impl Rect {
     }
 }
 
-/// Lines stacked down an area: each [`Column::take`] takes the next `h` below the last.
+/// Lines stacked down an area. Each [`Column::take`] takes the next `h` below the last line.
 #[derive(Debug, Clone, Copy)]
 pub struct Column {
     area: Rect,
@@ -143,7 +144,7 @@ impl Column {
         r
     }
 
-    /// The next `h`, if it fits (rows taken while there is room).
+    /// The next `h`, if it fits. Use it to take rows while there is room.
     pub fn next(&mut self, h: f32) -> Option<Rect> {
         if self.y + h > self.end() + 0.01 {
             return None;
@@ -162,8 +163,8 @@ impl Column {
     }
 }
 
-/// Where a line of text starts and how much room it has to the right (for text that runs on over
-/// several lines).
+/// Where a line of text starts and how much room it has to the right. It is used for text that runs on
+/// over several lines.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Span {
     pub x: f32,

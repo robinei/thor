@@ -7,7 +7,7 @@ use tiny_skia::Color;
 pub struct Rgb(pub u32);
 
 impl Rgb {
-    /// At `alpha` (0-1): what is under it shows through.
+    /// The same colour at `alpha` (0-1), so what is under it shows through.
     pub fn alpha(self, alpha: f32) -> Color {
         let c = self.0;
         Color::from_rgba8((c >> 16) as u8, (c >> 8) as u8, c as u8, (alpha.clamp(0.0, 1.0) * 255.0) as u8)
@@ -20,7 +20,7 @@ impl From<Rgb> for Color {
     }
 }
 
-/// 0xRRGGBB to an opaque colour.
+/// Converts 0xRRGGBB to an opaque colour.
 pub fn rgb(c: u32) -> Color {
     Color::from_rgba8((c >> 16) as u8, (c >> 8) as u8, c as u8, 255)
 }

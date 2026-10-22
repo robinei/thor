@@ -1,4 +1,4 @@
-//! The fonts: the built-in Noto Sans, and fonts for characters it lacks, found through fontconfig
+//! The fonts. Noto Sans is built in. Fonts for characters it lacks are found through fontconfig
 //! (`fc-match`) on a thread of their own.
 
 use std::process::Command;
@@ -12,19 +12,19 @@ pub enum Face {
     Builtin,
     /// A font found for characters the built-in one lacks (`DrawCache`'s fallbacks).
     Fallback(usize),
-    /// Being looked for: not drawn yet.
+    /// A font is still being looked for, so the character is not drawn yet.
     Waiting,
 }
 
-/// A font found for a character: fontconfig's choice (`path`), and the font read from it unless it
-/// was read before or lacks the character.
+/// A font found for a character. `path` is fontconfig's choice, and `font` is the font read from it,
+/// unless it was read before or lacks the character.
 pub struct Found {
     pub ch: char,
     pub path: Option<String>,
     pub font: Option<fontdue::Font>,
 }
 
-/// Asks fontconfig for a sans-serif font with `ch`, and reads it unless `loaded` says it was.
+/// Asks fontconfig for a sans-serif font with `ch`, and reads it unless `loaded` says it was read already.
 pub(super) fn find_font(ch: char, loaded: &mut dyn FnMut(&str) -> bool) -> Found {
     let pattern = format!("sans-serif:charset={:x}", u32::from(ch));
     let path = Command::new("fc-match")
@@ -38,13 +38,14 @@ pub(super) fn find_font(ch: char, loaded: &mut dyn FnMut(&str) -> bool) -> Found
     let font = path.as_deref().filter(|p| !loaded(p)).and_then(|path| {
         let bytes = std::fs::read(path).map_err(|e| log::warn!("font {path}: {e}")).ok()?;
         let font = fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default()).map_err(|e| log::warn!("font {path}: {e}")).ok()?;
-        // (Kept only for a character it has: fontconfig's best may lack it.)
+        // Keep it only if it has the character; fontconfig's best match may lack it.
         (font.lookup_glyph_index(ch) != 0).then_some(font)
     });
     Found { ch, path, font }
 }
 
-/// The font finding thread: characters in, the fonts found for them out through `done`.
+/// Starts the font finding thread. It takes characters from `requests` and passes the fonts found for
+/// them to `done`.
 pub fn spawn_font_finder(requests: Receiver<char>, done: impl Fn(Found) -> bool + Send + 'static) -> std::io::Result<()> {
     std::thread::Builder::new().name("fonts".into()).spawn(move || {
         let mut read: Vec<String> = Vec::new();
@@ -61,6 +62,6 @@ pub fn spawn_font_finder(requests: Receiver<char>, done: impl Fn(Found) -> bool 
     Ok(())
 }
 
-/// The UI's font, built in so text looks the same everywhere: Noto Sans Regular, unmodified (SIL Open
-/// Font License 1.1, fonts/OFL.txt).
+/// The UI's font, Noto Sans Regular, built in so that text looks the same everywhere. It is unmodified and
+/// under the SIL Open Font License 1.1 (fonts/OFL.txt).
 pub(super) const NOTO_SANS: &[u8] = include_bytes!("../../fonts/NotoSans-Regular.ttf");
