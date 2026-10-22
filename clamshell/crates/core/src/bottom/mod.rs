@@ -286,7 +286,7 @@ mod tests {
         let mut s = state();
         assert_eq!(tap(&mut s, Id::Tab(Tab::Touchpad)), vec![Effect::Watch(Watch::Metrics, false)], "nothing to watch");
         assert!(s.bottom().pointing());
-        s.apply(crate::bottom::touch::Pointing::Idle.into());
+        s.applied(crate::bottom::touch::Pointing::Idle.into());
         assert!(s.bottom().pointing(), "idle or not");
         let wifi = |on| Effect::Watch(Watch::Wifi, on);
         assert_eq!(tap(&mut s, Id::Tab(Tab::Wifi)), vec![wifi(true)]);
@@ -298,31 +298,31 @@ mod tests {
     fn a_text_field_brings_up_the_keyboard_and_back() {
         let mut s = state();
         tap(&mut s, Id::Tab(Tab::Touchpad));
-        s.apply(Event::Windows(vec![foot()]));
-        let (dirty, fx) = s.apply(Event::TextInput(true));
+        s.applied(Event::Windows(vec![foot()]));
+        let (dirty, fx) = s.applied(Event::TextInput(true));
         assert_eq!(s.bottom().tab(), Tab::Keyboard);
         assert_eq!((dirty, fx), (Dirty::BOTH, vec![Effect::PadRoute(PadRoute::Keys)]));
         // The app in front has the pad again, as a game would.
         let back = vec![Effect::PadRoute(PadRoute::Game)];
-        assert_eq!(s.apply(Event::TextInput(false)).1, back);
+        assert_eq!(s.applied(Event::TextInput(false)).1, back);
         assert_eq!(s.bottom().tab(), Tab::Touchpad, "back where it came from");
     }
 
     #[test]
     fn a_tab_chosen_while_the_keyboard_is_up_stays() {
         let mut s = state();
-        s.apply(Event::Windows(vec![foot()]));
+        s.applied(Event::Windows(vec![foot()]));
         // Even the keyboard's own.
-        s.apply(Event::TextInput(true));
+        s.applied(Event::TextInput(true));
         tap(&mut s, Id::Tab(Tab::Keyboard));
-        s.apply(Event::TextInput(false));
+        s.applied(Event::TextInput(false));
         assert_eq!(s.bottom().tab(), Tab::Keyboard);
         assert_eq!(s.resume().tab, "keyboard");
         // Already on the keyboard, so there is nothing to go back to.
         tap(&mut s, Id::Tab(Tab::Dock));
         tap(&mut s, Id::Tab(Tab::Keyboard));
-        s.apply(Event::TextInput(true));
-        s.apply(Event::TextInput(false));
+        s.applied(Event::TextInput(true));
+        s.applied(Event::TextInput(false));
         assert_eq!(s.bottom().tab(), Tab::Keyboard);
     }
 
@@ -330,7 +330,7 @@ mod tests {
     fn any_program_asking_for_text_brings_up_the_keyboard() {
         let mut s = state();
         crate::testkit::start(&mut s, "zelda-lttp");
-        s.apply(Event::TextInput(true));
+        s.applied(Event::TextInput(true));
         assert_eq!(s.bottom().tab(), Tab::Keyboard, "a game too");
     }
 }

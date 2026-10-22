@@ -193,7 +193,7 @@ mod tests {
     use crate::*;
 
     fn route(s: &mut State, event: Event) -> PadRoute {
-        s.apply(event);
+        s.applied(event);
         s.pad().route()
     }
 
@@ -233,35 +233,35 @@ mod tests {
         assert_eq!(route(&mut s, PointerEvent::Activate(Id::Tab(Tab::Keyboard)).into()), PadRoute::Keys, "an app and the keyboard: typing");
         assert_eq!(route(&mut s, Event::Windows(vec![window("retroarch", Some("clamshell-run-zelda_1-1-0.scope"))])), PadRoute::Keys, "a game too");
         assert_eq!(route(&mut s, PointerEvent::Activate(Id::Tab(Tab::Dock)).into()), PadRoute::Game);
-        let (_, fx) = s.apply(Event::Windows(vec![window(crate::session::windows::SHELF_APP_ID, None)]));
+        let (_, fx) = s.applied(Event::Windows(vec![window(crate::session::windows::SHELF_APP_ID, None)]));
         assert_eq!(fx, vec![Effect::PadRoute(PadRoute::Ui)]);
     }
 
     #[test]
     fn view_moves_the_pad_between_the_second_screen_and_what_wants_it() {
         let mut s = state();
-        s.apply(Event::Windows(vec![foot()]));
+        s.applied(Event::Windows(vec![foot()]));
         tap(&mut s, Id::Tab(Tab::Keyboard));
         assert_eq!(s.pad().route(), PadRoute::Keys);
-        assert_eq!(s.apply(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Ui)], "to the keys on screen");
+        assert_eq!(s.applied(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Ui)], "to the keys on screen");
         assert!(!s.pad().on_top());
-        assert_eq!(s.apply(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Keys)], "and back to typing");
+        assert_eq!(s.applied(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Keys)], "and back to typing");
         // The pad mouse takes it, and View moves it to the second screen and back.
         assert_eq!(tap(&mut s, Id::PadMouse), vec![Effect::PadRoute(PadRoute::Mouse)]);
-        assert_eq!(s.apply(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Ui)]);
-        assert_eq!(s.apply(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Mouse)]);
+        assert_eq!(s.applied(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Ui)]);
+        assert_eq!(s.applied(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Mouse)]);
         // With the pad mouse off and another tab open, the app in front has it, as a game would, and View
         // is its button.
         tap(&mut s, Id::PadMouse);
         tap(&mut s, Id::Tab(Tab::Dock));
         assert_eq!(s.pad().route(), PadRoute::Game);
         // A switch from outside the pad moves it to the second screen and back, since View is the app's.
-        assert_eq!(s.apply(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Ui)]);
-        assert_eq!(s.apply(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Game)]);
+        assert_eq!(s.applied(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Ui)]);
+        assert_eq!(s.applied(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Game)]);
         // With shelf in front and the pad in use on the second screen, the pad stays there when the
         // keyboard comes up under it.
-        s.apply(Event::Windows(vec![win(2, crate::session::windows::SHELF_APP_ID, &Instance::Shelf.name(), true)]));
-        s.apply(PointerEvent::Focus(Id::Tab(Tab::Dock)).into());
+        s.applied(Event::Windows(vec![win(2, crate::session::windows::SHELF_APP_ID, &Instance::Shelf.name(), true)]));
+        s.applied(PointerEvent::Focus(Id::Tab(Tab::Dock)).into());
         tap(&mut s, Id::Tab(Tab::Keyboard));
         assert_eq!(s.pad().route(), PadRoute::Ui);
     }
@@ -269,7 +269,7 @@ mod tests {
     #[test]
     fn the_focus_ring_hides_when_the_pad_leaves_the_screens() {
         let mut s = state();
-        s.apply(PointerEvent::Focus(game("zelda-lttp")).into());
+        s.applied(PointerEvent::Focus(game("zelda-lttp")).into());
         assert!(s.pointer().show_focus());
         let (dirty, _) = crate::testkit::start(&mut s, "zelda-lttp");
         assert_eq!((dirty, s.pointer().show_focus()), (Dirty::BOTH, false));
@@ -278,15 +278,15 @@ mod tests {
     #[test]
     fn moving_a_dock_entry_takes_the_pad_from_the_game() {
         let mut s = state();
-        s.apply(Event::Windows(vec![foot()]));
+        s.applied(Event::Windows(vec![foot()]));
         tap(&mut s, Id::Tab(Tab::Dock));
         assert_eq!(s.pad().route(), PadRoute::Game);
         let foot_entry = Instance::Run { key: clamshell_library::key_of("desktop:foot"), secs: 1, n: 0 };
-        s.apply(Event::Units(vec![foot_entry]));
+        s.applied(Event::Units(vec![foot_entry]));
         long(&mut s, Id::Dock(crate::DockId::Entry(0)));
-        let (_, fx) = s.apply(PointerEvent::Activate(Id::Dock(crate::DockId::Move)).into());
+        let (_, fx) = s.applied(PointerEvent::Activate(Id::Dock(crate::DockId::Move)).into());
         assert_eq!(fx, vec![Effect::Watch(crate::effect::Watch::Battery, false), Effect::PadRoute(PadRoute::Ui)], "moving: the D-pad's");
-        let (_, fx) = s.apply(PointerEvent::Activate(Id::Dock(crate::DockId::Done)).into());
+        let (_, fx) = s.applied(PointerEvent::Activate(Id::Dock(crate::DockId::Done)).into());
         assert_eq!(fx, vec![Effect::PadRoute(PadRoute::Game)], "done: the game's again");
     }
 }

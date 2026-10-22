@@ -53,19 +53,20 @@ pub enum Pointing {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testkit::Applied;
     use crate::{Effect, Event};
 
     #[test]
     fn it_points_until_idle_or_a_text_field_takes_focus() {
         let mut s = crate::testkit::state();
         let contact = Contact { slot: 1, phase: ContactPhase::Down, x: 10, y: 20 };
-        let (dirty, fx) = s.apply(Pointing::Contacts(vec![contact]).into());
+        let (dirty, fx) = s.applied(Pointing::Contacts(vec![contact]).into());
         assert!(s.bottom().pointing() && dirty.bottom);
         assert_eq!(fx, vec![Effect::Touchpad(vec![contact])]);
-        s.apply(Pointing::Idle.into());
+        s.applied(Pointing::Idle.into());
         assert!(!s.bottom().pointing());
-        s.apply(Pointing::Contacts(vec![contact]).into());
-        s.apply(Event::TextInput(true));
+        s.applied(Pointing::Contacts(vec![contact]).into());
+        s.applied(Event::TextInput(true));
         assert!(!s.bottom().pointing(), "a field took focus: typing");
     }
 }

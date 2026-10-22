@@ -21,14 +21,14 @@ mod tests {
         let bt = |devices| Reading::Bluetooth(Bluetooth { present: true, on: true, devices, ..Bluetooth::default() });
         let pad = ListId::Bluetooth.row(1);
         read(&mut s, bt(vec![device("buds", true, false), device("pad", true, false)]));
-        s.apply(PointerEvent::Down(pad.clone()).into());
+        s.applied(PointerEvent::Down(pad.clone()).into());
         // The buds connect and the list changes under the finger.
         read(&mut s, bt(vec![device("pad", true, false), device("buds", true, true)]));
         assert_eq!(long(&mut s, pad.clone()), vec![Effect::Bluetooth(Command::Forget("00:pad".into()))]);
-        s.apply(PointerEvent::Up(pad).into());
+        s.applied(PointerEvent::Up(pad).into());
         // If it is gone in the meantime, nothing happens.
         let first = ListId::Bluetooth.row(0);
-        s.apply(PointerEvent::Down(first.clone()).into());
+        s.applied(PointerEvent::Down(first.clone()).into());
         read(&mut s, bt(vec![device("buds", true, true)]));
         assert_eq!(long(&mut s, first), vec![]);
     }
@@ -38,11 +38,11 @@ mod tests {
         let mut s = state();
         let stream = |id, app: &str| Stream { id, app: app.into(), title: String::new(), volume: 50, muted: false };
         read(&mut s, Reading::Audio(Audio { outputs: vec![], streams: vec![stream(1, "a"), stream(2, "b")] }));
-        s.apply(PointerEvent::Down(Level::Stream(0).id()).into());
-        s.apply(LevelEvent::Set(Level::Stream(0), 60).into());
+        s.applied(PointerEvent::Down(Level::Stream(0).id()).into());
+        s.applied(LevelEvent::Set(Level::Stream(0), 60).into());
         // A new app sorts first.
         read(&mut s, Reading::Audio(Audio { outputs: vec![], streams: vec![stream(0, "new"), stream(1, "a"), stream(2, "b")] }));
-        let fx = s.apply(LevelEvent::Set(Level::Stream(0), 70).into()).1;
+        let fx = s.applied(LevelEvent::Set(Level::Stream(0), 70).into()).1;
         assert_eq!(fx, vec![Effect::Sound(Sound::StreamVolume(1, 70))]);
     }
 }

@@ -332,7 +332,7 @@ mod tests {
         assert_eq!(tap(&mut s, dock(0)), vec![]);
         assert!(s.bottom().notice().is_some());
         // With a window, a tap shows it, and its menu pins it.
-        s.apply(Event::Windows(vec![win(3, "zelda3", &zelda.workspace(), false)]));
+        s.applied(Event::Windows(vec![win(3, "zelda3", &zelda.workspace(), false)]));
         assert_eq!(tap(&mut s, dock(0)), vec![focus(&zelda)]);
         long(&mut s, dock(0));
         assert_eq!(s.dock().menu().map(|m| &**m), Some("zelda-lttp"));
@@ -344,7 +344,7 @@ mod tests {
         assert_eq!(entry(&s, 0), Some("zelda-lttp"));
         assert!(tap(&mut s, dock(0)).iter().any(|e| matches!(e, Effect::Launch { .. })));
         // Unpinned while stopped, it is removed.
-        s.apply(LaunchEvent::LaunchFailed("zelda-lttp".into()).into());
+        s.applied(LaunchEvent::LaunchFailed("zelda-lttp".into()).into());
         long(&mut s, dock(0));
         tap(&mut s, Id::Dock(DockId::Pin));
         assert_eq!(entry(&s, 0), None);
@@ -354,7 +354,7 @@ mod tests {
     fn shelf_pins_and_unpins_any_entry_a_series_too() {
         let mut s = state();
         tap(&mut s, Id::Shelf(ShelfId::Collection(2)));
-        let fx = s.apply(ShelfEvent::TogglePin.into()).1;
+        let fx = s.applied(ShelfEvent::TogglePin.into()).1;
         assert!(matches!(fx.as_slice(), [Effect::Save(Save::Dock(ids))] if ids.iter().map(|i| &**i).eq(["tv:Cosmos"])), "{fx:?}");
         assert_eq!(entry(&s, 0), Some("tv:Cosmos"));
         assert!(s.dock().is_pinned("tv:Cosmos"));
@@ -364,7 +364,7 @@ mod tests {
         assert_eq!(s.shelf().group().map(|g| &*g.id), Some("tv:Cosmos"));
         // Unpinned from shelf, it is removed, since it doesn't run.
         tap(&mut s, Id::Shelf(ShelfId::Up));
-        s.apply(ShelfEvent::TogglePin.into());
+        s.applied(ShelfEvent::TogglePin.into());
         assert_eq!(entry(&s, 0), None);
     }
 
@@ -375,13 +375,13 @@ mod tests {
         let dock = crate::session::dock::Dock::pinned(vec!["ff6".into(), "gone:x".into(), "sd:Zelda.sfc".into()]);
         let mut s = State::new(Init { library, dock, ..init() });
         assert!(s.dock().pinned_ids().map(|i| &**i).eq(["ff6", "sd:Zelda.sfc"]), "the gone one dropped; the away one kept");
-        let fx = s.apply(Event::Start).1;
+        let fx = s.applied(Event::Start).1;
         assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Dock(ids)) if ids.len() == 2)), "saved: {fx:?}");
         // A rescan without ff6 drops its pin too.
         let mut library = clamshell_library::demo::library();
         library.entries.retain(|g| &*g.id != "ff6");
         library.collections.iter_mut().for_each(|c| c.entries.clear());
-        let fx = s.apply(Event::Library(Box::new(library))).1;
+        let fx = s.applied(Event::Library(Box::new(library))).1;
         assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Dock(ids)) if ids.is_empty())), "{fx:?}");
     }
 
@@ -404,7 +404,7 @@ mod tests {
         tap(&mut s, Id::Tab(crate::Tab::Dock));
         let zelda = launch(&mut s, "zelda-lttp");
         let w = Window { unit: zelda.unit(), visible: true, ..win(5, "zelda3", &zelda.workspace(), true) };
-        s.apply(Event::Windows(vec![w]));
+        s.applied(Event::Windows(vec![w]));
         let key = clamshell_library::key_of("zelda-lttp");
         long(&mut s, dock(0));
         assert!(!s.opens_another("zelda-lttp") && tap(&mut s, Id::Dock(DockId::OpenAnother)) == vec![closed()], "a game: not another");
@@ -415,21 +415,21 @@ mod tests {
         long(&mut s, dock(0));
         assert_eq!(tap(&mut s, Id::Dock(DockId::ForceKill)), vec![Effect::EndRun { key, force: true }, closed()]);
         // Home with B closes the window in front; held, it quits the window's entry.
-        assert_eq!(s.apply(Event::Device(crate::device::buttons::DeviceKey::CloseWindow)).1, vec![Effect::Window(WindowCommand::Close(vec![5]))]);
-        assert_eq!(s.apply(Event::Device(crate::device::buttons::DeviceKey::Quit)).1, vec![Effect::Window(WindowCommand::Close(vec![5]))]);
+        assert_eq!(s.applied(Event::Device(crate::device::buttons::DeviceKey::CloseWindow)).1, vec![Effect::Window(WindowCommand::Close(vec![5]))]);
+        assert_eq!(s.applied(Event::Device(crate::device::buttons::DeviceKey::Quit)).1, vec![Effect::Window(WindowCommand::Close(vec![5]))]);
     }
 
     #[test]
     fn home_b_closes_the_bottom_screens_window_with_none_in_front_above() {
         use crate::device::buttons::DeviceKey;
         let mut s = state();
-        s.apply(Event::Windows(vec![shelf_window(false), foot()]));
-        s.apply(Event::Device(DeviceKey::WindowDown));
-        s.apply(Event::Windows(vec![shelf_window(true), Window { down: true, visible: true, focused: false, ..foot() }]));
+        s.applied(Event::Windows(vec![shelf_window(false), foot()]));
+        s.applied(Event::Device(DeviceKey::WindowDown));
+        s.applied(Event::Windows(vec![shelf_window(true), Window { down: true, visible: true, focused: false, ..foot() }]));
         assert!(s.bottom().shows_windows(s.session()));
-        assert_eq!(s.apply(Event::Device(DeviceKey::CloseWindow)).1, vec![Effect::Window(WindowCommand::Close(vec![foot().id]))]);
+        assert_eq!(s.applied(Event::Device(DeviceKey::CloseWindow)).1, vec![Effect::Window(WindowCommand::Close(vec![foot().id]))]);
         // With ClamShell's view on the bottom screen instead, there is nothing to close.
-        s.apply(Event::Device(DeviceKey::BottomView));
-        assert_eq!(s.apply(Event::Device(DeviceKey::CloseWindow)).1, vec![]);
+        s.applied(Event::Device(DeviceKey::BottomView));
+        assert_eq!(s.applied(Event::Device(DeviceKey::CloseWindow)).1, vec![]);
     }
 }

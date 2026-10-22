@@ -32,29 +32,30 @@ mod tests {
     use crate::levels::Sound;
     use crate::levels::slider::Control;
     use crate::status::Status;
+    use crate::testkit::Applied;
     use crate::testkit::state;
     use crate::{Effect, Event, Reading};
 
     #[test]
     fn keys_step_the_levels_and_show_them_for_a_moment() {
         let mut s = state();
-        s.apply(Event::tick(100));
-        s.apply(Reading::Status(Status { volume: Some(50), brightness: Some(40), ..Status::default() }).into());
-        assert_eq!(s.apply(Event::Device(DeviceKey::VolumeUp)).1, vec![Effect::Sound(Sound::Volume(55))]);
+        s.applied(Event::tick(100));
+        s.applied(Reading::Status(Status { volume: Some(50), brightness: Some(40), ..Status::default() }).into());
+        assert_eq!(s.applied(Event::Device(DeviceKey::VolumeUp)).1, vec![Effect::Sound(Sound::Volume(55))]);
         assert_eq!(s.bottom().notice().map(|n| &n.what), Some(&NoticeKind::Level(Control::Volume)));
-        assert!(matches!(s.apply(Event::Device(DeviceKey::BrightnessDown)).1.as_slice(), [Effect::Brightness { level: 35, .. }]));
-        assert_eq!(s.apply(Event::Device(DeviceKey::Mute)).1, vec![Effect::Sound(Sound::Mute(true))]);
-        s.apply(Event::tick(101));
+        assert!(matches!(s.applied(Event::Device(DeviceKey::BrightnessDown)).1.as_slice(), [Effect::Brightness { level: 35, .. }]));
+        assert_eq!(s.applied(Event::Device(DeviceKey::Mute)).1, vec![Effect::Sound(Sound::Mute(true))]);
+        s.applied(Event::tick(101));
         assert!(s.bottom().notice().is_some());
-        s.apply(Event::tick(102));
+        s.applied(Event::tick(102));
         assert!(s.bottom().notice().is_none(), "gone after two seconds");
     }
 
     #[test]
     fn a_screenshot_is_asked_for_and_its_result_shown() {
         let mut s = state();
-        assert_eq!(s.apply(Event::Device(DeviceKey::Screenshot)).1, vec![Effect::Screenshot]);
-        s.apply(Event::Screenshot(Ok("/home/thor/Pictures/Screenshots/a.png".into())));
+        assert_eq!(s.applied(Event::Device(DeviceKey::Screenshot)).1, vec![Effect::Screenshot]);
+        s.applied(Event::Screenshot(Ok("/home/thor/Pictures/Screenshots/a.png".into())));
         assert!(matches!(s.bottom().notice().map(|n| &n.what), Some(NoticeKind::Screenshot(Ok(_)))));
     }
 }

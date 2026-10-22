@@ -207,6 +207,8 @@ pub(crate) struct App {
     display: display::Display,
     loop_handle: LoopHandle<'static, App>,
     on_effect: Box<dyn FnMut(&Effect)>,
+    /// The effects of the event being handled, kept to be reused for the next one.
+    effects: Vec<Effect>,
     exit: bool,
 }
 

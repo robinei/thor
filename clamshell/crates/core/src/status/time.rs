@@ -218,23 +218,24 @@ mod tests {
     use crate::event::Reading;
     use crate::id::TimeId;
     use crate::nav::lists::ListId;
+    use crate::testkit::Applied;
     use crate::{Event, Id, Init, State, Tab};
 
     fn state() -> State {
         let mut s = State::new(Init::default());
-        s.apply(Event::Pointer(crate::PointerEvent::Activate(Id::Tab(Tab::Time))));
+        s.applied(Event::Pointer(crate::PointerEvent::Activate(Id::Tab(Tab::Time))));
         let zones = ["Africa/Cairo", "America/Argentina/Salta", "America/New_York", "Europe/London", "Europe/Oslo", "UTC"];
         let time = TimeZones { current: Some("Europe/Oslo".to_owned()), zones: zones.map(str::to_owned).to_vec(), ntp: Some(true), synced: true, error: None };
-        s.apply(Event::Reading(Reading::Time(time)));
+        s.applied(Event::Reading(Reading::Time(time)));
         s
     }
 
     fn tap(s: &mut State, i: u16) -> Vec<Effect> {
-        s.apply(Event::Pointer(crate::PointerEvent::Activate(ListId::Time.row(i)))).1
+        s.applied(Event::Pointer(crate::PointerEvent::Activate(ListId::Time.row(i)))).1
     }
 
     fn time(s: &mut State, id: TimeId) -> Vec<Effect> {
-        s.apply(Event::Pointer(crate::PointerEvent::Activate(Id::Time(id)))).1
+        s.applied(Event::Pointer(crate::PointerEvent::Activate(Id::Time(id)))).1
     }
 
     #[test]
@@ -267,7 +268,7 @@ mod tests {
         assert_eq!(time(&mut s, TimeId::Ntp), vec![Effect::SetNtp(false)]);
         let mut by_hand = s.sys().time_zones().clone();
         by_hand.ntp = Some(false);
-        s.apply(Event::Reading(Reading::Time(by_hand)));
+        s.applied(Event::Reading(Reading::Time(by_hand)));
         assert!(s.sys().clock_by_hand());
         assert_eq!(time(&mut s, TimeId::Step(ClockField::Month, false)), vec![Effect::StepClock(ClockField::Month, -1)]);
         assert!(!s.sys().twelve_hour());
@@ -278,7 +279,7 @@ mod tests {
     #[test]
     fn the_tab_reads_the_time_zone_while_open() {
         let mut s = crate::testkit::state();
-        let (_, effects) = s.apply(Event::Pointer(crate::PointerEvent::Activate(Id::Tab(Tab::Time))));
+        let (_, effects) = s.applied(Event::Pointer(crate::PointerEvent::Activate(Id::Tab(Tab::Time))));
         assert_eq!(effects, vec![Effect::Watch(crate::Watch::Metrics, false), Effect::Watch(crate::Watch::Time, true)]);
     }
 }

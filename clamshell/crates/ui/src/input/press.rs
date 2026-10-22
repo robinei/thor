@@ -517,8 +517,8 @@ mod tests {
         use clamshell_core::radios::wifi::{Network, Wifi};
         let mut s = State::new(Init::default());
         let networks = (0..n).map(|i| Network { ssid: format!("n{i}"), ..Network::default() }).collect();
-        s.apply(Event::Reading(clamshell_core::Reading::Wifi(Wifi { present: true, on: true, networks, ..Wifi::default() })));
-        s.apply(ListEvent::Visible(ListId::Wifi, 5.0).into());
+        s.apply(Event::Reading(clamshell_core::Reading::Wifi(Wifi { present: true, on: true, networks, ..Wifi::default() })), &mut Vec::new());
+        s.apply(ListEvent::Visible(ListId::Wifi, 5.0).into(), &mut Vec::new());
         s
     }
 
@@ -530,7 +530,7 @@ mod tests {
     /// Applies what the actions emit to `s`, and returns whether a timer was armed again.
     fn run(s: &mut State, actions: &[Action]) -> bool {
         for e in events(actions) {
-            s.apply(e);
+            s.apply(e, &mut Vec::new());
         }
         actions.iter().any(|a| matches!(a, Action::Arm(..)))
     }
@@ -603,7 +603,7 @@ mod tests {
     #[test]
     fn shelf_settles_on_a_whole_row() {
         let mut state = State::new(Init { library: clamshell_library::demo::library(), ..Init::default() });
-        state.apply(clamshell_core::ShelfEvent::Rows(3).into());
+        state.apply(clamshell_core::ShelfEvent::Rows(3).into(), &mut Vec::new());
         let mut input = Input::default();
         let t = t0();
         let ms = |n| t + Duration::from_millis(n);

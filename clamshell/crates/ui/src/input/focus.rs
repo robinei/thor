@@ -354,7 +354,7 @@ mod tests {
     }
 
     fn focus(s: &mut State, id: Id) {
-        s.apply(PointerEvent::Focus(id).into());
+        s.apply(PointerEvent::Focus(id).into(), &mut Vec::new());
     }
 
     #[test]
@@ -408,7 +408,7 @@ mod tests {
         assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(ShelfEvent::ListStep(1).into()));
         assert_eq!(navigate(&s, &d, &memory, Dir::Right), Some(ShelfEvent::CollectionStep(1).into()));
         let len = s.shelf().collection().map_or(0, |c| c.entries.len());
-        s.apply(ShelfEvent::ListStep(len as i32).into());
+        s.apply(ShelfEvent::ListStep(len as i32).into(), &mut Vec::new());
         let last = game(&s, len - 1);
         focus(&mut s, last.clone());
         // Past the last game, the focus moves by direction on to the second screen.
@@ -487,7 +487,7 @@ mod tests {
         assert_eq!(shortcut(&s, &d, PadInput::Y), vec![], "the second screen: not shelf's");
         assert_eq!(shortcut(&s, &d, PadInput::X), vec![]);
         // Typing with the pad: X is Backspace.
-        s.apply(PointerEvent::Activate(Id::Tab(Tab::Keyboard)).into());
+        s.apply(PointerEvent::Activate(Id::Tab(Tab::Keyboard)).into(), &mut Vec::new());
         focus(&mut s, Id::Tab(Tab::Sysinfo));
         let backspace = keyboard::find(keyboard::Key::Named(keyboard::Named::Backspace)).map(Id::Key);
         assert_eq!(shortcut(&s, &d, PadInput::X), backspace.map(|b| PointerEvent::Activate(b).into()).into_iter().collect::<Vec<_>>());
@@ -500,8 +500,8 @@ mod tests {
         use clamshell_core::radios::wifi::{Network, Wifi};
         let mut s = state();
         let networks = (0..10).map(|i| Network { ssid: format!("n{i}"), ..Network::default() }).collect();
-        s.apply(Reading::Wifi(Wifi { present: true, on: true, networks, ..Wifi::default() }).into());
-        s.apply(PointerEvent::Activate(Id::Tab(Tab::Wifi)).into());
+        s.apply(Reading::Wifi(Wifi { present: true, on: true, networks, ..Wifi::default() }).into(), &mut Vec::new());
+        s.apply(PointerEvent::Activate(Id::Tab(Tab::Wifi)).into(), &mut Vec::new());
         let row = |i| ListId::Wifi.row(i);
         // Rows 3 and 4 are drawn, with the list's area under them.
         let d = Fake(Screens { top: vec![], bottom: vec![t(0.0, 0.0, Id::List(ListId::Wifi)), t(0.0, 30.0, row(3)), t(0.0, 40.0, row(4))] });

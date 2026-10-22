@@ -175,11 +175,11 @@ impl State {
 
     // Applying an event: handle, settle, sync.
 
-    /// Applies one event and returns which screens changed and what must happen outside. After the event
-    /// itself, the state is settled ([`State::settle`]), and then the outside is told what changed for it
-    /// ([`State::sync`]).
-    pub fn apply(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
-        let mut out = Out::default();
+    /// Applies one event, appends what must happen outside to `effects`, and returns which screens
+    /// changed. After the event itself, the state is settled ([`State::settle`]), and then the outside is
+    /// told what changed for it ([`State::sync`]).
+    pub fn apply(&mut self, event: Event, effects: &mut Vec<Effect>) -> Dirty {
+        let mut out = Out { effects: std::mem::take(effects), ..Out::default() };
         self.apply_event(event, &mut out);
         self.settle(&mut out);
         self.sync(&mut out);
@@ -189,7 +189,8 @@ impl State {
         }
         // The follow-up steps don't queue events: one queued here would never be handled.
         debug_assert!(out.events.is_empty(), "an event queued after the event was handled: {:?}", out.events);
-        (out.dirty, out.effects)
+        *effects = out.effects;
+        out.dirty
     }
 
     fn apply_event(&mut self, event: Event, out: &mut Out) {

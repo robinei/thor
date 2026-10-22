@@ -22,15 +22,15 @@ fn keymap(s: &mut State, id: KeymapId) -> Vec<Effect> {
 
 /// Slides the selected input's parameter to `value`: a finger is held on its row, moved and lifted.
 fn slide(s: &mut State, param: Param, value: u8) -> Vec<Effect> {
-    s.apply(Slide::Start { control: Control::Param(param), x: 300.0, width: 620.0 }.into());
+    s.applied(Slide::Start { control: Control::Param(param), x: 300.0, width: 620.0 }.into());
     let slider = s.keymapping().edit().slider.unwrap();
     assert_eq!(
         slider.start,
         param.get(&s.keymapping().param_base(s.keymapping().screen().and_then(Screen::keymap).unwrap(), s.keymapping().edit().selected.unwrap()).unwrap())
     );
     let x = slider.x + (f32::from(value) - f32::from(slider.start)) / f32::from(slider.hi - slider.lo) * slider.length;
-    let mut fx = s.apply(Slide::To { x }.into()).1;
-    fx.extend(s.apply(Slide::End.into()).1);
+    let mut fx = s.applied(Slide::To { x }.into()).1;
+    fx.extend(s.applied(Slide::End.into()).1);
     fx
 }
 
@@ -67,7 +67,7 @@ fn the_picker_chooses_a_keymap_for_the_scope_edited() {
     // Once the game runs, the keymap is sent to the pad, and only once.
     let fx = crate::testkit::start(&mut s, "zelda-lttp").1;
     assert_eq!(sent(&fx).map(|k| k.name.as_str()), Some("Nintendo layout"));
-    assert_eq!(sent(&s.apply(Event::tick(5)).1), None);
+    assert_eq!(sent(&s.applied(Event::tick(5)).1), None);
     // Choosing Default for the game sends the pad an empty keymap.
     picker(&mut s);
     let fx = tap(&mut s, row(1));
@@ -88,9 +88,9 @@ fn a_new_keymap_is_named_edited_and_mapped() {
     assert!(s.listening(), "the pad listens on the edit screen");
     assert_eq!(s.pad().route(), PadRoute::Listen);
     // Pressing A on the pad selects it. Then the keyboard opens and a key chord is typed: Ctrl, then x.
-    s.apply(Event::Listened(Input::Button(Button::A)));
+    s.applied(Event::Listened(Input::Button(Button::A)));
     assert_eq!((s.keymapping().screen(), s.keymapping().edit().selected), (Some(Screen::Edit(2)), Some(Input::Button(Button::A))));
-    s.apply(Event::Listened(Input::Button(Button::A)));
+    s.applied(Event::Listened(Input::Button(Button::A)));
     assert_eq!(s.keymapping().screen(), Some(Screen::Edit(2)), "pressed again, nothing to reopen yet");
     keymap(&mut s, KeymapId::Target(Target::Key));
     assert_eq!(s.keymapping().screen(), Some(Screen::Capture { id: 2, input: Input::Button(Button::A), keys: None }));
@@ -128,7 +128,7 @@ fn a_new_keymap_is_named_edited_and_mapped() {
     assert_eq!(s.keymapping().screen(), Some(Screen::Edit(2)));
     // The hold can be pressed on the pad instead, and then set back to always on.
     keymap(&mut s, KeymapId::Holds);
-    s.apply(Event::Listened(Input::Button(Button::RB)));
+    s.applied(Event::Listened(Input::Button(Button::RB)));
     assert_eq!(s.keymapping().keymaps().get(2).unwrap().get(Input::Gyro).and_then(|b| b.hold), Some(Input::Button(Button::RB)));
     keymap(&mut s, KeymapId::Holds);
     keymap(&mut s, KeymapId::Hold(None));
@@ -156,9 +156,9 @@ fn a_new_keymap_is_named_edited_and_mapped() {
     keymap(&mut s, KeymapId::Target(Target::Pick));
     assert_eq!(s.keymapping().screen(), Some(Screen::Pick { id: 2, input: Input::Button(Button::B) }));
     assert_eq!(s.pad().route(), PadRoute::Listen);
-    s.apply(Event::Listened(Input::Stick(Side::Left)));
+    s.applied(Event::Listened(Input::Stick(Side::Left)));
     assert!(matches!(s.keymapping().screen(), Some(Screen::Pick { .. })), "a stick isn't a button: still picking");
-    s.apply(Event::Listened(Input::Button(Button::Y)));
+    s.applied(Event::Listened(Input::Button(Button::Y)));
     assert_eq!(s.keymapping().keymaps().get(2).unwrap().get(Input::Button(Button::B)).map(|b| b.output), Some(Output::Pad(PadOut::Button(Button::Y))));
     assert_eq!(s.keymapping().screen(), Some(Screen::Edit(2)), "chosen: closed");
     keymap(&mut s, KeymapId::Target(Target::Pick));
@@ -175,7 +175,7 @@ fn a_new_keymap_is_named_edited_and_mapped() {
     // A long press on an input puts it back as on the pad. Home leaves the edit screen.
     long(&mut s, Id::Keymap(KeymapId::Input(Input::Button(Button::B))));
     assert_eq!(s.keymapping().keymaps().get(2).unwrap().get(Input::Button(Button::B)), None);
-    s.apply(Event::Home);
+    s.applied(Event::Home);
     assert_eq!(s.keymapping().screen(), Some(Screen::List));
     assert_eq!(s.pad().route(), PadRoute::Ui);
 }
@@ -274,7 +274,7 @@ fn the_keymap_screens_stay_with_their_tab_and_listen_only_in_view() {
     // A game in front keeps the pad.
     crate::testkit::start(&mut s, "zelda-lttp");
     assert_eq!(s.pad().route(), PadRoute::Game);
-    s.apply(Event::Listened(Input::Button(Button::A)));
+    s.applied(Event::Listened(Input::Button(Button::A)));
     assert_eq!(s.keymapping().screen(), Some(Screen::Edit(1)), "not listening: nothing");
 }
 
@@ -296,9 +296,9 @@ fn the_panel_selects_changes_and_resets() {
     assert_eq!(s.keymapping().screen(), Some(Screen::Edit(1)));
     keymap(&mut s, KeymapId::Input(a));
     assert_eq!((s.keymapping().screen(), s.keymapping().edit().selected), (Some(Screen::Edit(1)), Some(a)), "a touch selects");
-    s.apply(Event::Listened(Input::Button(Button::B)));
+    s.applied(Event::Listened(Input::Button(Button::B)));
     assert_eq!(s.keymapping().edit().selected, Some(Input::Button(Button::B)), "so does a press");
-    s.apply(Event::Listened(a));
+    s.applied(Event::Listened(a));
     keymap(&mut s, KeymapId::Target(Target::MouseParts));
     keymap(&mut s, KeymapId::Target(Target::To(Output::Mouse(MouseButton::Left))));
     assert_eq!((s.keymapping().screen(), s.keymapping().edit().selected), (Some(Screen::Edit(1)), Some(a)), "back with it still selected");
@@ -495,17 +495,17 @@ fn parameters_slide_and_switch_whatever_the_mapping() {
     keymap(&mut s, KeymapId::Input(ls));
     // An input as on the pad can still be tuned. The slider changes it as it moves, and it is saved when
     // the finger lifts.
-    s.apply(Slide::Start { control: Control::Param(Param::Deadzone), x: 300.0, width: 620.0 }.into());
+    s.applied(Slide::Start { control: Control::Param(Param::Deadzone), x: 300.0, width: 620.0 }.into());
     let slider = s.keymapping().edit().slider.unwrap();
     assert_eq!((slider.start, slider.control), (0, Control::Param(Param::Deadzone)));
     // Deadzone's range is 0-50, so about a quarter of the track is 12.
     assert_eq!((slider.lo, slider.hi), (0, 50));
-    let (_, fx) = s.apply(Slide::To { x: 300.0 + 0.24 * slider.length }.into());
+    let (_, fx) = s.applied(Slide::To { x: 300.0 + 0.24 * slider.length }.into());
     assert!(fx.iter().all(|e| !matches!(e, Effect::Save(_))), "not saved while sliding: {fx:?}");
     let k = s.keymapping().keymaps().get(1).unwrap().get(ls).copied();
     assert_eq!(k.map(|b| (b.output, b.deadzone)), Some((Output::Stick(Side::Left), 12)));
     assert_eq!(s.keymapping().edit().slider.map(|s| s.value), Some(12));
-    let (_, fx) = s.apply(Slide::End.into());
+    let (_, fx) = s.applied(Slide::End.into());
     assert!(matches!(fx.as_slice(), [Effect::Save(Save::Keymaps(_))]), "{fx:?}");
     assert_eq!(s.keymapping().edit().slider, None);
     // The value is kept within its range, and a switch flips.
@@ -529,9 +529,9 @@ fn parameters_slide_and_switch_whatever_the_mapping() {
     keymap(&mut s, KeymapId::Input(Input::Button(Button::A)));
     assert_eq!(slide_start(&mut s, Param::Speed), None);
     // The bar's sliders are unchanged by it.
-    s.apply(Slide::Start { control: Control::Volume, x: 300.0, width: 620.0 }.into());
+    s.applied(Slide::Start { control: Control::Volume, x: 300.0, width: 620.0 }.into());
     assert!(s.levels().slider().is_some() && s.keymapping().edit().slider.is_none());
-    s.apply(Slide::End.into());
+    s.applied(Slide::End.into());
 }
 
 #[test]
@@ -588,9 +588,9 @@ fn the_hold_and_double_tabs_edit_their_own_bindings() {
 }
 
 fn slide_start(s: &mut State, param: Param) -> Option<Slider> {
-    s.apply(Slide::Start { control: Control::Param(param), x: 300.0, width: 620.0 }.into());
+    s.applied(Slide::Start { control: Control::Param(param), x: 300.0, width: 620.0 }.into());
     let slider = s.keymapping().edit().slider;
-    s.apply(Slide::End.into());
+    s.applied(Slide::End.into());
     slider
 }
 

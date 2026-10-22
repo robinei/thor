@@ -35,7 +35,7 @@ fn a_launchs_start_and_end_come_to_the_same_in_any_order() {
     let mut shapes = Vec::new();
     let mut plays = Vec::new();
     let start_end = |s: &mut State| {
-        s.apply(Event::tick(1000));
+        s.applied(Event::tick(1000));
         let fx = tap(s, game("zelda-lttp"));
         let fx: Vec<Effect> = fx.into_iter().chain(tap(s, game("zelda-lttp"))).collect();
         fx.iter().find_map(|e| match e {
@@ -53,14 +53,14 @@ fn a_launchs_start_and_end_come_to_the_same_in_any_order() {
             let mut s = state();
             start_end(&mut s);
             for e in start.clone() {
-                s.apply(e);
+                s.applied(e);
             }
             let started = shape(&s);
             let mut recorded = 0;
             for e in end.clone() {
-                recorded += s.apply(e).1.iter().filter(|e| matches!(e, Effect::RecordPlay { .. })).count();
+                recorded += s.applied(e).1.iter().filter(|e| matches!(e, Effect::RecordPlay { .. })).count();
             }
-            s.apply(Event::tick(1001));
+            s.applied(Event::tick(1001));
             shapes.push((started, shape(&s)));
             plays.push(recorded);
         }
@@ -80,10 +80,10 @@ fn new_library_problems_are_said_once() {
         library.problems = problems.iter().map(|p| (*p).to_owned()).collect();
         Event::Library(Box::new(library))
     };
-    s.apply(with(&["grim isn't installed: no screenshots", "x: no launch command"]));
+    s.applied(with(&["grim isn't installed: no screenshots", "x: no launch command"]));
     assert_eq!(notice(&s), Some(crate::bottom::notice::NoticeKind::Problems("grim isn't installed: no screenshots".into(), 2)));
-    s.apply(Event::tick(10_000));
-    s.apply(with(&["grim isn't installed: no screenshots", "x: no launch command"]));
+    s.applied(Event::tick(10_000));
+    s.applied(with(&["grim isn't installed: no screenshots", "x: no launch command"]));
     assert_eq!(notice(&s), None, "the same again: not said");
 }
 
@@ -103,8 +103,8 @@ fn a_launch_that_ends_without_a_window_didnt_start() {
     // A launch that showed a window and then ended gets no notice.
     let mut s = state();
     let zelda = launch(&mut s, "zelda-lttp");
-    s.apply(Event::Windows(vec![Window { unit: zelda.unit(), visible: true, ..win(5, "zelda3", &zelda.workspace(), true) }]));
-    s.apply(Event::Windows(vec![]));
+    s.applied(Event::Windows(vec![Window { unit: zelda.unit(), visible: true, ..win(5, "zelda3", &zelda.workspace(), true) }]));
+    s.applied(Event::Windows(vec![]));
     crate::testkit::end(&mut s, "zelda-lttp");
     assert!(!matches!(notice(&s), Some(crate::bottom::notice::NoticeKind::NotStarted(_))), "{:?}", notice(&s));
 }
@@ -114,7 +114,7 @@ fn a_launch_that_didnt_start_says_so() {
     let mut s = state();
     tap(&mut s, game("zelda-lttp"));
     tap(&mut s, game("zelda-lttp"));
-    s.apply(Event::Launch(LaunchEvent::LaunchFailed("zelda-lttp".into())));
+    s.applied(Event::Launch(LaunchEvent::LaunchFailed("zelda-lttp".into())));
     let notice = s.bottom().notice().map(|n| n.what.clone());
     assert!(matches!(&notice, Some(crate::bottom::notice::NoticeKind::NotStarted(t)) if t == "A Link to the Past"), "{notice:?}");
     assert!(s.session().running("zelda-lttp").is_none());
@@ -136,19 +136,19 @@ fn starts_where_it_was_told() {
 #[test]
 fn while_metadata_is_fetched_shelfs_view_goes_first() {
     let mut s = state();
-    assert!(!s.apply(ShelfEvent::ListStep(1).into()).1.iter().any(|e| matches!(e, Effect::FetchFirst(_))), "not fetching");
-    let (_, fx) = s.apply(Event::Fetching(true));
+    assert!(!s.applied(ShelfEvent::ListStep(1).into()).1.iter().any(|e| matches!(e, Effect::FetchFirst(_))), "not fetching");
+    let (_, fx) = s.applied(Event::Fetching(true));
     assert_eq!(fx, vec![Effect::FetchFirst(vec!["metroid-zm".into(), "mk-ds".into()])], "the selected first, then the rows shown");
-    assert!(!s.apply(Event::tick(5)).1.iter().any(|e| matches!(e, Effect::FetchFirst(_))), "the same view: not again");
-    let (_, fx) = s.apply(ShelfEvent::ListStep(1).into());
+    assert!(!s.applied(Event::tick(5)).1.iter().any(|e| matches!(e, Effect::FetchFirst(_))), "the same view: not again");
+    let (_, fx) = s.applied(ShelfEvent::ListStep(1).into());
     assert!(fx.contains(&Effect::FetchFirst(vec!["mk-ds".into(), "ff6".into()])), "{fx:?}");
-    s.apply(Event::Fetching(false));
-    assert!(!s.apply(ShelfEvent::ListStep(1).into()).1.iter().any(|e| matches!(e, Effect::FetchFirst(_))), "done");
+    s.applied(Event::Fetching(false));
+    assert!(!s.applied(ShelfEvent::ListStep(1).into()).1.iter().any(|e| matches!(e, Effect::FetchFirst(_))), "done");
 }
 
 #[test]
 fn tick_redraws_once_a_minute() {
     let mut s = state();
-    assert_eq!(s.apply(Event::tick(60)).0, Dirty::BOTH);
-    assert_eq!(s.apply(Event::tick(119)).0, Dirty::NONE);
+    assert_eq!(s.applied(Event::tick(60)).0, Dirty::BOTH);
+    assert_eq!(s.applied(Event::tick(119)).0, Dirty::NONE);
 }

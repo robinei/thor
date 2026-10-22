@@ -239,8 +239,8 @@ mod tests {
     fn rows_under_the_view_stay_when_the_list_changes() {
         let mut s = state();
         networks(&mut s, &["a", "b", "c", "d", "e", "f", "g", "h"]);
-        s.apply(ListEvent::Visible(ListId::Wifi, 3.0).into());
-        s.apply(ListEvent::Scroll(ListId::Wifi, 2.5).into());
+        s.applied(ListEvent::Visible(ListId::Wifi, 3.0).into());
+        s.applied(ListEvent::Scroll(ListId::Wifi, 2.5).into());
         // "a" vanishes above the view, and "c" stays at the top, half scrolled past.
         networks(&mut s, &["b", "c", "d", "e", "f", "g", "h"]);
         assert_eq!(s.lists().scroll(ListId::Wifi).offset(), 1.5);
@@ -257,10 +257,10 @@ mod tests {
     fn the_pads_focus_on_a_row_shows_it() {
         let mut s = state();
         networks(&mut s, &["a", "b", "c", "d", "e", "f"]);
-        s.apply(ListEvent::Visible(ListId::Wifi, 2.0).into());
-        let (dirty, _) = s.apply(PointerEvent::Focus(ListId::Wifi.row(4)).into());
+        s.applied(ListEvent::Visible(ListId::Wifi, 2.0).into());
+        let (dirty, _) = s.applied(PointerEvent::Focus(ListId::Wifi.row(4)).into());
         assert_eq!((dirty, s.lists().scroll(ListId::Wifi).offset()), (Dirty::BOTH, 3.0));
-        s.apply(PointerEvent::Focus(ListId::Wifi.row(0)).into());
+        s.applied(PointerEvent::Focus(ListId::Wifi.row(0)).into());
         assert_eq!(s.lists().scroll(ListId::Wifi).offset(), 0.0);
     }
 

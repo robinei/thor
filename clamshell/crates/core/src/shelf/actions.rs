@@ -170,9 +170,9 @@ mod tests {
         assert_eq!(s.shelf().shortcut(Shortcut::Start, s.pointer()), None, "a game: nothing to continue");
         tap(&mut s, Id::Shelf(ShelfId::Collection(2)));
         assert_eq!(s.shelf().actions().as_slice(), [Action::Open, Action::Continue, Action::Favourite, Action::Pin], "a series: Continue");
-        let (_, fx) = s.apply(ShelfEvent::Continue.into());
+        let (_, fx) = s.applied(ShelfEvent::Continue.into());
         assert!(fx.iter().any(|e| matches!(e, Effect::Launch { .. })), "{fx:?}");
-        s.apply(Event::tick(1));
+        s.applied(Event::tick(1));
     }
 
     #[test]
@@ -181,11 +181,11 @@ mod tests {
         let mut s = state();
         let g = Id::Shelf(ShelfId::Entry(s.shelf().selected().cloned().unwrap_or_else(|| "?".into())));
         // By touch, with no focus shown, nothing happens.
-        s.apply(PointerEvent::LongPress(g.clone()).into());
+        s.applied(PointerEvent::LongPress(g.clone()).into());
         assert_eq!(s.pointer().focus(), Some(&g));
         // With the pad, the focus goes to the first action.
-        s.apply(PointerEvent::Focus(g.clone()).into());
-        s.apply(PointerEvent::LongPress(g).into());
+        s.applied(PointerEvent::Focus(g.clone()).into());
+        s.applied(PointerEvent::LongPress(g).into());
         assert_eq!(s.pointer().focus(), Some(&Id::Shelf(ShelfId::Launch)));
     }
 }

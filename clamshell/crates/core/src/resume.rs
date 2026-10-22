@@ -57,11 +57,11 @@ mod tests {
     #[test]
     fn the_place_is_saved_after_a_pause_and_restored() {
         let mut s = state();
-        s.apply(Event::tick(100));
-        s.apply(ShelfEvent::ListStep(3).into());
-        s.apply(ShelfEvent::CollectionStep(1).into());
-        assert!(s.apply(Event::tick(101)).1.is_empty(), "not while moving");
-        let (_, fx) = s.apply(Event::tick(103));
+        s.applied(Event::tick(100));
+        s.applied(ShelfEvent::ListStep(3).into());
+        s.applied(ShelfEvent::CollectionStep(1).into());
+        assert!(s.applied(Event::tick(101)).1.is_empty(), "not while moving");
+        let (_, fx) = s.applied(Event::tick(103));
         let Some(Effect::Save(Save::Resume(resume))) = fx.first() else {
             unreachable!("{fx:?}");
         };
@@ -73,7 +73,7 @@ mod tests {
         );
         let mut fresh = State::new(Init { resume: Some(resume.clone()), ..init() });
         assert_eq!(fresh.shelf().collection().map(|c| c.name.as_str()), Some("More"));
-        fresh.apply(ShelfEvent::CollectionStep(-1).into());
+        fresh.applied(ShelfEvent::CollectionStep(-1).into());
         assert_eq!(fresh.shelf().selected().map(|g| &**g), Some("ff6"));
     }
 
@@ -83,7 +83,7 @@ mod tests {
         tap(&mut s, Id::Shelf(ShelfId::Collection(2)));
         tap(&mut s, Id::Shelf(ShelfId::Launch));
         tap(&mut s, Id::Shelf(ShelfId::Launch));
-        s.apply(ShelfEvent::ListStep(2).into());
+        s.applied(ShelfEvent::ListStep(2).into());
         let resume = s.resume();
         let path = ["tv:Cosmos", "tv:Cosmos/Season 1", "tv:Cosmos/Season 1/10. The Edge of Forever.mkv"].map(str::to_owned).to_vec();
         assert!(resume.places.contains(&("TV".to_owned(), path)), "{resume:?}");
@@ -95,9 +95,9 @@ mod tests {
     #[test]
     fn a_keyboard_a_text_field_brought_up_isnt_saved_as_the_tab() {
         let mut s = state();
-        s.apply(Event::Windows(vec![foot()]));
+        s.applied(Event::Windows(vec![foot()]));
         tap(&mut s, Id::Tab(Tab::Dock));
-        s.apply(Event::TextInput(true));
+        s.applied(Event::TextInput(true));
         assert_eq!(s.bottom().tab(), Tab::Keyboard);
         assert_eq!(s.resume().tab, "dock");
     }
@@ -108,7 +108,7 @@ mod tests {
         tap(&mut s, Id::Tab(Tab::Wifi));
         let mut again = State::new(Init { resume: Some(s.resume()), ..init() });
         assert_eq!(again.bottom().tab(), Tab::Wifi);
-        assert!(again.apply(Event::Start).1.contains(&Effect::Watch(Watch::Wifi, true)));
+        assert!(again.applied(Event::Start).1.contains(&Effect::Watch(Watch::Wifi, true)));
         tap(&mut s, Id::Tab(Tab::Touchpad));
         let again = State::new(Init { resume: Some(s.resume()), ..init() });
         assert_eq!(again.bottom().tab(), Tab::default());
@@ -117,8 +117,8 @@ mod tests {
     #[test]
     fn choosing_the_tab_in_front_saves_nothing() {
         let mut s = state();
-        s.apply(Event::tick(100));
+        s.applied(Event::tick(100));
         tap(&mut s, Id::Tab(Tab::Sysinfo));
-        assert!(s.apply(Event::tick(110)).1.is_empty());
+        assert!(s.applied(Event::tick(110)).1.is_empty());
     }
 }

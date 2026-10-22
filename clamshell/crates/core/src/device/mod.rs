@@ -207,18 +207,18 @@ mod tests {
     use crate::{EditorId, Event, Init, Reading, State};
 
     fn tap(s: &mut State, id: DeviceId) -> Vec<Effect> {
-        s.apply(Event::Pointer(crate::PointerEvent::Activate(Id::Device(id)))).1
+        s.applied(Event::Pointer(crate::PointerEvent::Activate(Id::Device(id)))).1
     }
 
     fn type_and_save(s: &mut State, text: &str) -> Vec<Effect> {
         if let Some(e) = s.editor_mut() {
             e.text = text.to_owned();
         }
-        s.apply(Event::Pointer(crate::PointerEvent::Activate(Id::Editor(EditorId::Save)))).1
+        s.applied(Event::Pointer(crate::PointerEvent::Activate(Id::Editor(EditorId::Save)))).1
     }
 
     fn available(s: &mut State, password: bool) {
-        s.apply(Event::Reading(Reading::Account(crate::device::account::Account { available: true, password, ssh: false })));
+        s.applied(Event::Reading(Reading::Account(crate::device::account::Account { available: true, password, ssh: false })));
     }
 
     #[test]
@@ -270,14 +270,14 @@ mod tests {
         let mut s = State::new(init());
         assert_eq!(tap(&mut s, DeviceId::Sticks), vec![Effect::CalibrateSticks]);
         let p = crate::device::sticks::Calibrator::new(-1024, 1024).progress();
-        s.apply(Event::Sticks(SticksEvent::Progress(p)));
+        s.applied(Event::Sticks(SticksEvent::Progress(p)));
         assert!(s.device().sticks().is_some());
         assert!(tap(&mut s, DeviceId::Sticks).is_empty(), "one at a time");
         let sticks = Sticks { axes: [crate::device::sticks::StickAxis { low: -900, centre: 0, high: 900 }; crate::device::sticks::AXES] };
-        let effects = s.apply(Event::Sticks(SticksEvent::Done("pad".into(), Some(sticks)))).1;
+        let effects = s.applied(Event::Sticks(SticksEvent::Done("pad".into(), Some(sticks)))).1;
         assert!(s.device().calibrated("pad"));
         assert!(effects.iter().any(|e| matches!(e, Effect::Save(Save::Sticks(c)) if c.contains_key("pad"))), "{effects:?}");
-        s.apply(Event::Sticks(SticksEvent::Done("pad".into(), None)));
+        s.applied(Event::Sticks(SticksEvent::Done("pad".into(), None)));
         assert!(s.device().sticks_failed());
     }
 
@@ -286,7 +286,7 @@ mod tests {
         let mut s = State::new(init());
         assert_eq!(tap(&mut s, DeviceId::Refresh), vec![Effect::CalibrateRefresh]);
         assert!(tap(&mut s, DeviceId::Refresh).is_empty());
-        s.apply(Event::RefreshCalibrated(Ok("120 Hz: 118.630 -> 120.089 Hz".into())));
+        s.applied(Event::RefreshCalibrated(Ok("120 Hz: 118.630 -> 120.089 Hz".into())));
         assert!(matches!(s.device().refresh(), Refresh::Done(Ok(_))));
     }
 }

@@ -610,39 +610,39 @@ mod tests {
     #[test]
     fn the_list_scrolls_to_keep_the_selection_on_screen() {
         let mut s = state();
-        s.apply(ShelfEvent::Rows(3).into());
-        s.apply(ShelfEvent::ListStep(4).into());
+        s.applied(ShelfEvent::Rows(3).into());
+        s.applied(ShelfEvent::ListStep(4).into());
         assert_eq!(s.shelf().cursor(), Cursor { index: 4, top: 2.0 });
         assert_eq!(s.shelf().selected().map(|g| &**g), Some("dark-souls"));
         assert_eq!(s.pointer().focus(), Some(&game("dark-souls")));
-        s.apply(ShelfEvent::ListStep(-100).into());
+        s.applied(ShelfEvent::ListStep(-100).into());
         assert_eq!(s.shelf().cursor(), Cursor { index: 0, top: 0.0 });
-        s.apply(ShelfEvent::ListStep(100).into());
+        s.applied(ShelfEvent::ListStep(100).into());
         assert_eq!(s.shelf().cursor().index, 6);
     }
 
     #[test]
     fn a_drag_scrolls_without_moving_the_selection_and_the_pad_brings_it_back() {
         let mut s = state();
-        s.apply(ShelfEvent::Rows(3).into());
-        let (dirty, _) = s.apply(ListEvent::Scroll(ListId::Shelf, 2.5).into());
+        s.applied(ShelfEvent::Rows(3).into());
+        let (dirty, _) = s.applied(ListEvent::Scroll(ListId::Shelf, 2.5).into());
         assert_eq!((dirty, s.shelf().cursor()), (Dirty::BOTH, Cursor { index: 0, top: 2.5 }));
-        s.apply(ListEvent::Scroll(ListId::Shelf, 100.0).into());
+        s.applied(ListEvent::Scroll(ListId::Shelf, 100.0).into());
         assert_eq!(s.shelf().cursor().top, 4.0, "the last game on the last row");
         let can_scroll = |rows| s.lists().scroll(ListId::Shelf).can_scroll(rows, s.lists().len(ListId::Shelf));
         assert!(!can_scroll(1.0) && can_scroll(-1.0));
-        s.apply(ShelfEvent::ListStep(1).into());
+        s.applied(ShelfEvent::ListStep(1).into());
         assert_eq!(s.shelf().cursor(), Cursor { index: 1, top: 1.0 }, "the selection on screen again");
     }
 
     #[test]
     fn collections_keep_their_own_place() {
         let mut s = state();
-        s.apply(ShelfEvent::ListStep(2).into());
-        s.apply(ShelfEvent::CollectionStep(1).into());
+        s.applied(ShelfEvent::ListStep(2).into());
+        s.applied(ShelfEvent::CollectionStep(1).into());
         assert_eq!(s.shelf().current(), 1);
         assert_eq!(s.shelf().cursor().index, 0);
-        s.apply(ShelfEvent::CollectionStep(4).into());
+        s.applied(ShelfEvent::CollectionStep(4).into());
         assert_eq!(s.shelf().current(), 0, "wraps around (past TV, Apps and Tools)");
         assert_eq!(s.shelf().cursor().index, 2);
     }
@@ -650,9 +650,9 @@ mod tests {
     #[test]
     fn a_favourite_shows_in_its_collection_and_is_saved() {
         let mut s = state();
-        s.apply(ShelfEvent::ListStep(2).into());
+        s.applied(ShelfEvent::ListStep(2).into());
         let name = s.shelf().collection().map(|c| c.name.clone());
-        let (_, fx) = s.apply(ShelfEvent::ToggleFavourite.into());
+        let (_, fx) = s.applied(ShelfEvent::ToggleFavourite.into());
         assert_eq!(fx, vec![Effect::Save(Save::Favourites(vec!["mk-ds".into()]))]);
         assert!(s.shelf().library().collections.iter().any(|c| c.name == "Favourites" && c.entries == vec![2]));
         assert_eq!(s.shelf().collection().map(|c| c.name.clone()), name, "the collection stays");
@@ -674,7 +674,7 @@ mod tests {
         // Going into a folder and back out, each list keeps what was typed in it.
         key(&mut s, Key::Named(crate::bottom::keyboard::Named::Backspace));
         assert_eq!(titles(&s).len(), 2);
-        s.apply(ShelfEvent::ClearFilter.into());
+        s.applied(ShelfEvent::ClearFilter.into());
         assert_eq!(s.shelf().filter(), "");
         assert_eq!(titles(&s).len(), 7);
         tap(&mut s, Id::Shelf(ShelfId::Collection(2)));
@@ -695,7 +695,7 @@ mod tests {
         assert_eq!(s.shelf().group().map(|g| g.title.as_str()), Some("Cosmos"));
         let titles = |s: &State| s.shelf().list().iter().map(|&i| s.shelf().library().entries[i].title.clone()).collect::<Vec<_>>();
         assert_eq!(titles(&s), vec!["Season 1", "Season 2"]);
-        s.apply(ShelfEvent::ListStep(1).into());
+        s.applied(ShelfEvent::ListStep(1).into());
         tap(&mut s, Id::Shelf(ShelfId::Launch));
         assert_eq!(titles(&s), vec!["1. Standing Up in the Milky Way"]);
         let fx = tap(&mut s, Id::Shelf(ShelfId::Launch));
@@ -741,18 +741,18 @@ mod tests {
             })
         };
         // The demo has the second episode under way. This test marks it as watched to its end instead.
-        s.apply(LaunchEvent::Position { entry: "tv:Cosmos/Season 1/2. One Voice in the Cosmic Fugue.mkv".into(), position: None }.into());
+        s.applied(LaunchEvent::Position { entry: "tv:Cosmos/Season 1/2. One Voice in the Cosmic Fugue.mkv".into(), position: None }.into());
         let fx = tap(&mut s, Id::Shelf(ShelfId::Continue));
         assert_eq!(launched(&fx).as_deref(), Some(first), "none watched: the first");
         crate::testkit::start(&mut s, first);
-        s.apply(LaunchEvent::Position { entry: first.into(), position: Some(600) }.into());
+        s.applied(LaunchEvent::Position { entry: first.into(), position: Some(600) }.into());
         end(&mut s, first);
-        let fx = s.apply(ShelfEvent::Continue.into()).1;
+        let fx = s.applied(ShelfEvent::Continue.into()).1;
         assert_eq!(launched(&fx).as_deref(), Some(first), "left early: it again");
         crate::testkit::start(&mut s, first);
-        s.apply(LaunchEvent::Position { entry: first.into(), position: None }.into());
+        s.applied(LaunchEvent::Position { entry: first.into(), position: None }.into());
         end(&mut s, first);
-        let fx = s.apply(ShelfEvent::Continue.into()).1;
+        let fx = s.applied(ShelfEvent::Continue.into()).1;
         assert_eq!(launched(&fx).as_deref(), Some("tv:Cosmos/Season 1/2. One Voice in the Cosmic Fugue.mkv"), "watched to its end: the next");
     }
 

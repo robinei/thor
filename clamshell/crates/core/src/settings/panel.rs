@@ -324,14 +324,14 @@ mod tests {
         let mut library = clamshell_library::demo::library();
         library.runner_keymaps = vec![(runner_key("text"), "viewer".into())];
         let mut s = State::new(Init { library, ..init() });
-        let fx = s.apply(Event::Start).1;
+        let fx = s.applied(Event::Start).1;
         assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Keymaps(_)))), "{fx:?}");
         let own = s.keymapping().keymaps().own_of("runner:text").map(|k| k.id);
         assert!(own.is_some());
         assert_eq!(s.prefs().settings().overrides_of("runner:text").get(Setting::Keymap), own);
         // With Default chosen for it instead, it is left that way, also when the library is read again.
         s.settings_mut().set(Some(&runner_key("text")), Setting::Keymap, Some(0));
-        let fx = s.apply(Event::Library(Box::new(s.shelf().library().clone()))).1;
+        let fx = s.applied(Event::Library(Box::new(s.shelf().library().clone()))).1;
         assert!(!fx.iter().any(|e| matches!(e, Effect::Save(Save::Keymaps(_)))));
     }
 
@@ -434,11 +434,11 @@ mod tests {
         };
         ctrl_v(&mut s);
         assert_eq!(s.bottom().editor().map(|e| e.text.as_str()), Some(""), "nothing on the clipboard");
-        s.apply(Event::Reading(Reading::Clipboard(Some("A=1\nB=2\n".into()))));
+        s.applied(Event::Reading(Reading::Clipboard(Some("A=1\nB=2\n".into()))));
         ctrl_v(&mut s);
         assert_eq!(s.bottom().editor().map(|e| e.text.as_str()), Some("A=1 B=2"), "its line breaks spaces, its end trimmed");
         // A right click does the same.
-        s.apply(Event::Paste);
+        s.applied(Event::Paste);
         assert_eq!(s.bottom().editor().map(|e| e.text.as_str()), Some("A=1 B=2A=1 B=2"));
     }
 
@@ -472,11 +472,11 @@ mod tests {
     #[test]
     fn a_text_field_doesnt_take_the_screen_from_an_open_editor() {
         let mut s = state();
-        s.apply(Event::Windows(vec![foot()]));
+        s.applied(Event::Windows(vec![foot()]));
         tap(&mut s, Id::Tab(Tab::Settings));
         tap(&mut s, Id::Settings(SettingsId::Env));
         assert!(s.bottom().editor().is_some());
-        s.apply(Event::TextInput(true));
+        s.applied(Event::TextInput(true));
         assert!(s.bottom().editor().is_some() && s.bottom().tab() == Tab::Settings, "its typing would be lost");
     }
 
@@ -484,7 +484,7 @@ mod tests {
     fn an_editor_stays_with_its_tab() {
         let mut s = state();
         // An app in front, so the keyboard types into it.
-        s.apply(Event::Windows(vec![foot()]));
+        s.applied(Event::Windows(vec![foot()]));
         tap(&mut s, Id::Tab(Tab::Settings));
         tap(&mut s, Id::Settings(SettingsId::Env));
         let key = |s: &mut State, k| tap(s, Id::Key(find(k).unwrap()));

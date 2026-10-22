@@ -5,6 +5,20 @@ pub use crate::settings::Values;
 
 use crate::*;
 
+/// [`State::apply`] with a vector of its own for the effects, for tests.
+pub trait Applied {
+    /// Applies `event`, and returns which screens changed and the effects.
+    fn applied(&mut self, event: Event) -> (Dirty, Vec<Effect>);
+}
+
+impl Applied for State {
+    fn applied(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
+        let mut effects = Vec::new();
+        let dirty = self.apply(event, &mut effects);
+        (dirty, effects)
+    }
+}
+
 /// Entry `id`'s launch starts, as systemd reports it: its scope is listed with the others. The scope is
 /// the one the launch asked for, or else one of the entry's, as if an earlier ClamShell had started it.
 pub fn start(s: &mut State, id: &str) -> (Dirty, Vec<Effect>) {
@@ -12,14 +26,14 @@ pub fn start(s: &mut State, id: &str) -> (Dirty, Vec<Effect>) {
     let launch = s.session().launching().iter().find(|l| &*l.entry == id).map(|l| l.instance.clone());
     let mut units = s.session().units().to_vec();
     units.push(launch.unwrap_or(Instance::Run { key, secs: s.clock().unix(), n: 99 }));
-    s.apply(Event::Units(units))
+    s.applied(Event::Units(units))
 }
 
 /// Entry `id`'s launches end, as systemd reports it: its scopes are no longer listed.
 pub fn end(s: &mut State, id: &str) -> (Dirty, Vec<Effect>) {
     let key = s.entry(id).map_or_else(|| clamshell_library::key_of(id), |g| g.key.clone());
     let units = s.session().units().iter().filter(|u| u.key() != Some(key.as_str())).cloned().collect();
-    s.apply(Event::Units(units))
+    s.applied(Event::Units(units))
 }
 
 /// What a test state starts from: the demo library and nothing else.
@@ -60,15 +74,15 @@ pub fn game(id: &str) -> Id {
 
 /// Taps `id` and returns the effects.
 pub fn tap(s: &mut State, id: Id) -> Vec<Effect> {
-    s.apply(PointerEvent::Activate(id).into()).1
+    s.applied(PointerEvent::Activate(id).into()).1
 }
 
 pub fn long(s: &mut State, id: Id) -> Vec<Effect> {
-    s.apply(PointerEvent::LongPress(id).into()).1
+    s.applied(PointerEvent::LongPress(id).into()).1
 }
 
 pub fn read(s: &mut State, reading: Reading) -> Dirty {
-    s.apply(reading.into()).0
+    s.applied(reading.into()).0
 }
 
 /// Shelf's window, in front or not.

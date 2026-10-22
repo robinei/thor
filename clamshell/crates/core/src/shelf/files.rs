@@ -462,6 +462,7 @@ fn name_file(purpose: FileName, text: String, out: &mut Out) {
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
+    use crate::testkit::Applied;
     use crate::testkit::{state_with, tap};
     use crate::{Browsed, Collection, Event, Id, Library, ShelfEvent, ShelfId, State};
 
@@ -527,13 +528,13 @@ mod tests {
     }
 
     fn listed(s: &mut State, folder: &str, entries: Vec<Entry>) {
-        s.apply(Event::Files(FilesEvent::Listed { folder: folder.into(), entries }));
+        s.applied(Event::Files(FilesEvent::Listed { folder: folder.into(), entries }));
     }
 
     #[test]
     fn the_folder_open_is_listed_and_watched_while_open() {
         let mut s = files_state();
-        let fx = browses(s.apply(Event::Pointer(crate::PointerEvent::Activate(Id::Shelf(ShelfId::Launch)))).1);
+        let fx = browses(s.applied(Event::Pointer(crate::PointerEvent::Activate(Id::Shelf(ShelfId::Launch)))).1);
         assert_eq!(fx, vec![Effect::Browse(BrowseCommand::Open(Some(Browse { folder: "browse:Home".into(), dir: "/Home".into(), hidden: false })))]);
         assert!(s.shelf().list().is_empty(), "nothing in it until listed");
         listed(&mut s, "browse:Home", vec![entry("browse:Home/Films", true, BrowseKind::Plain), entry("browse:Home/a.txt", false, BrowseKind::Plain)]);
@@ -560,7 +561,7 @@ mod tests {
         tap(&mut s, Id::Shelf(ShelfId::Launch));
         listed(&mut s, "browse:Home/Films", vec![entry("browse:Home/Films/x.mkv", false, BrowseKind::Plain)]);
         let library = files_state().shelf().library().clone();
-        let (_, fx) = s.apply(Event::Library(Box::new(library)));
+        let (_, fx) = s.applied(Event::Library(Box::new(library)));
         assert_eq!(s.shelf().selected().map(|g| &**g), Some("browse:Home/Films/x.mkv"), "still in Films");
         assert!(!fx.iter().any(|e| matches!(e, Effect::Browse(BrowseCommand::Open(_)))), "the same folder: watched still");
     }
@@ -570,7 +571,7 @@ mod tests {
         let mut s = files_state();
         tap(&mut s, Id::Shelf(ShelfId::Launch));
         listed(&mut s, "browse:Home", vec![entry("browse:Home/Films", true, BrowseKind::Plain), entry("browse:Home/a.txt", false, BrowseKind::Plain)]);
-        s.apply(ShelfEvent::ListStep(1).into());
+        s.applied(ShelfEvent::ListStep(1).into());
         let file = |a: &[FileAction]| a.iter().map(|&a| crate::shelf::actions::Action::File(a)).collect::<Vec<_>>();
         assert_eq!(
             s.shelf().file_actions().as_slice(),
@@ -585,14 +586,14 @@ mod tests {
             ])
         );
         // On a browsed entry, Y is Copy and X is Paste.
-        s.apply(ShelfEvent::ToggleFavourite.into());
+        s.applied(ShelfEvent::ToggleFavourite.into());
         assert_eq!(s.shelf().files().clip().map(|c| c.entries.iter().map(|(_, n)| n.as_str()).collect::<Vec<_>>()), Some(vec!["a.txt"]));
         assert!(s.shelf().file_actions().contains(&crate::shelf::actions::Action::File(FileAction::Paste)));
-        s.apply(ShelfEvent::ListStep(-1).into());
+        s.applied(ShelfEvent::ListStep(-1).into());
         tap(&mut s, Id::Shelf(ShelfId::Launch));
         assert_eq!(s.shelf().file_target().map(|(g, selected)| (&*g.id, selected)), Some(("browse:Home/Films", false)), "empty: the folder's actions");
         let paste = vec![Effect::Files(FileOp::Paste { path: "/Home/a.txt".into(), into: "/Home/Films".into(), cut: false })];
-        assert_eq!(s.apply(ShelfEvent::TogglePin.into()).1, paste);
+        assert_eq!(s.applied(ShelfEvent::TogglePin.into()).1, paste);
         assert_eq!(tap(&mut s, Id::Shelf(ShelfId::File(FileAction::Paste))), paste);
         assert!(s.shelf().files().clip().is_some(), "a copy pastes again");
     }
@@ -604,9 +605,9 @@ mod tests {
         let three = ["a", "b", "c"].map(|n| entry(&format!("browse:Home/{n}"), false, BrowseKind::Plain)).to_vec();
         listed(&mut s, "browse:Home", three);
         // Start on a and on c selects them. Move to Trash then acts on both and uses up the selection.
-        s.apply(ShelfEvent::Continue.into());
-        s.apply(ShelfEvent::ListStep(2).into());
-        s.apply(ShelfEvent::Continue.into());
+        s.applied(ShelfEvent::Continue.into());
+        s.applied(ShelfEvent::ListStep(2).into());
+        s.applied(ShelfEvent::Continue.into());
         assert_eq!(s.shelf().files().selected().len(), 2);
         let fx = tap(&mut s, Id::Shelf(ShelfId::File(FileAction::Trash)));
         assert_eq!(fx, vec![Effect::Files(FileOp::Trash("/Home/a".into())), Effect::Files(FileOp::Trash("/Home/c".into()))]);
@@ -619,7 +620,7 @@ mod tests {
     #[test]
     fn deleting_asks_first() {
         let mut s = files_state();
-        s.apply(ShelfEvent::ListStep(1).into());
+        s.applied(ShelfEvent::ListStep(1).into());
         tap(&mut s, Id::Shelf(ShelfId::Launch));
         listed(&mut s, "browse:Trash", vec![entry("browse:Trash/old", false, BrowseKind::Plain)]);
         let file = |a: &[FileAction]| a.iter().map(|&a| crate::shelf::actions::Action::File(a)).collect::<Vec<_>>();

@@ -122,8 +122,11 @@ mod tests {
 
     fn demo() -> State {
         let mut state = State::new(Init { library: clamshell_library::demo::library(), ..Init::default() });
-        state.apply(Event::tick(1_700_000_000));
-        state.apply(Event::Reading(Reading::Status(Status { battery: Some(50), volume: Some(50), brightness: Some(50), wifi: Some(50), ..Status::default() })));
+        state.apply(Event::tick(1_700_000_000), &mut Vec::new());
+        state.apply(
+            Event::Reading(Reading::Status(Status { battery: Some(50), volume: Some(50), brightness: Some(50), wifi: Some(50), ..Status::default() })),
+            &mut Vec::new(),
+        );
         state
     }
 
@@ -221,7 +224,7 @@ mod tests {
             let mut state = State::new(Init { library: clamshell_library::demo::library(), keymaps, ..Init::default() });
             for (name, events) in &screens {
                 for e in events {
-                    state.apply(e.clone());
+                    state.apply(e.clone(), &mut Vec::new());
                 }
                 assert!(state.keymapping().screen().is_some() || state.bottom().editor().is_some(), "{name}: a keymap screen");
                 let (targets, out) = draw_bottom(&state, (w, h), &mut cache);
@@ -313,13 +316,13 @@ mod tests {
                 for scrolled in [0.0, 2.5] {
                     let mut state = demo();
                     for r in &readings {
-                        state.apply(Event::Reading(r.clone()));
+                        state.apply(Event::Reading(r.clone()), &mut Vec::new());
                     }
-                    state.apply(Event::Pointer(clamshell_core::PointerEvent::Activate(Id::Tab(tab))));
+                    state.apply(Event::Pointer(clamshell_core::PointerEvent::Activate(Id::Tab(tab))), &mut Vec::new());
                     let (_, out) = draw_bottom(&state, (w, h), &mut cache);
                     let visible = out.lists[list.index()].expect("the list reports its rows");
-                    state.apply(ListEvent::Visible(list, visible).into());
-                    state.apply(ListEvent::Scroll(list, scrolled).into());
+                    state.apply(ListEvent::Visible(list, visible).into(), &mut Vec::new());
+                    state.apply(ListEvent::Scroll(list, scrolled).into(), &mut Vec::new());
                     let (targets, out) = draw_bottom(&state, (w, h), &mut cache);
                     let body = out.touchpad_area.expect("the area below the bar");
                     let case = format!("{tab:?} at {w}x{h} scrolled {scrolled}");
@@ -360,7 +363,7 @@ mod tests {
             for tab in Tab::ALL {
                 for (w, h) in [(620u32, 540u32), (1240, 1080), (300, 540)] {
                     let mut state = if with_data { demo() } else { State::new(Init::default()) };
-                    state.apply(Event::Pointer(clamshell_core::PointerEvent::Activate(Id::Tab(tab))));
+                    state.apply(Event::Pointer(clamshell_core::PointerEvent::Activate(Id::Tab(tab))), &mut Vec::new());
                     let (targets, out) = draw_bottom(&state, (w, h), &mut cache);
                     let screen = Rect::new(0.0, 0.0, w as f32, h as f32);
                     let body = out.touchpad_area.expect("the area below the bar");
@@ -399,10 +402,10 @@ mod tests {
         ] {
             let mut state = demo();
             let networks = (0..4).map(|i| Network { ssid: format!("net {i}"), ..Network::default() }).collect();
-            state.apply(Event::Reading(Reading::Wifi(Wifi { present: true, on: true, networks, ..Wifi::default() })));
+            state.apply(Event::Reading(Reading::Wifi(Wifi { present: true, on: true, networks, ..Wifi::default() })), &mut Vec::new());
             let streams = (0..3).map(|i| Stream { id: i, app: format!("app {i}"), title: String::new(), volume: 50, muted: false }).collect();
-            state.apply(Event::Reading(Reading::Audio(Audio { outputs: vec![], streams })));
-            state.apply(Event::Pointer(clamshell_core::PointerEvent::Activate(Id::Tab(tab))));
+            state.apply(Event::Reading(Reading::Audio(Audio { outputs: vec![], streams })), &mut Vec::new());
+            state.apply(Event::Pointer(clamshell_core::PointerEvent::Activate(Id::Tab(tab))), &mut Vec::new());
             let (targets, _) = draw_bottom(&state, (w, h), &mut cache);
             let all: Vec<NavTarget> = targets
                 .iter()

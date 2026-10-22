@@ -158,9 +158,9 @@ mod frame_times {
 
     fn state(events: Vec<Event>) -> State {
         let mut s = State::new(Init { library: clamshell_library::demo::library(), ..Init::default() });
-        s.apply(Event::tick(1_700_000_000));
+        s.apply(Event::tick(1_700_000_000), &mut Vec::new());
         for e in events {
-            s.apply(e);
+            s.apply(e, &mut Vec::new());
         }
         s
     }

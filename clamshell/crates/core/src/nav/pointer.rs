@@ -111,21 +111,21 @@ mod tests {
     fn down_and_up_light_a_target_on_its_screen() {
         let mut s = state();
         let launch = Id::Shelf(ShelfId::Launch);
-        assert_eq!(s.apply(PointerEvent::Down(launch.clone()).into()).0, Dirty::BOTH, "shelf's: drawn on top");
+        assert_eq!(s.applied(PointerEvent::Down(launch.clone()).into()).0, Dirty::BOTH, "shelf's: drawn on top");
         assert_eq!(s.pointer().pressed(), Some(&launch));
-        s.apply(PointerEvent::Up(launch).into());
+        s.applied(PointerEvent::Up(launch).into());
         assert_eq!(s.pointer().pressed(), None);
-        assert_eq!(s.apply(PointerEvent::Down(Id::PadMouse).into()).0, Dirty::BOTTOM);
+        assert_eq!(s.applied(PointerEvent::Down(Id::PadMouse).into()).0, Dirty::BOTTOM);
     }
 
     #[test]
     fn the_focus_ring_shows_for_the_pad_only() {
         let mut s = state();
         assert!(!s.pointer().show_focus());
-        s.apply(PointerEvent::Focus(Id::Shelf(ShelfId::Launch)).into());
+        s.applied(PointerEvent::Focus(Id::Shelf(ShelfId::Launch)).into());
         assert!(s.pointer().focused(&Id::Shelf(ShelfId::Launch)));
-        assert_eq!(s.apply(PointerEvent::HideFocus.into()).0, Dirty::BOTH);
+        assert_eq!(s.applied(PointerEvent::HideFocus.into()).0, Dirty::BOTH);
         assert!(!s.pointer().show_focus());
-        assert_eq!(s.apply(PointerEvent::HideFocus.into()).0, Dirty::NONE);
+        assert_eq!(s.applied(PointerEvent::HideFocus.into()).0, Dirty::NONE);
     }
 }

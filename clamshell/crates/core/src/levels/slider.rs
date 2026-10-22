@@ -158,15 +158,15 @@ mod tests {
     }
 
     fn slide(s: &mut State, slide: Slide) -> Vec<Effect> {
-        s.apply(slide.into()).1
+        s.applied(slide.into()).1
     }
 
     #[test]
     fn a_slide_goes_on_while_another_finger_opens_a_tab() {
         let mut s = with_levels();
-        s.apply(Slide::Start { control: Control::Brightness, x: 300.0, width: 620.0 }.into());
-        s.apply(PointerEvent::Activate(Id::Tab(crate::Tab::Wifi)).into());
-        let fx = s.apply(Slide::To { x: 200.0 }.into()).1;
+        s.applied(Slide::Start { control: Control::Brightness, x: 300.0, width: 620.0 }.into());
+        s.applied(PointerEvent::Activate(Id::Tab(crate::Tab::Wifi)).into());
+        let fx = s.applied(Slide::To { x: 200.0 }.into()).1;
         assert!(matches!(fx.as_slice(), [Effect::Brightness { .. }]), "still sliding: {fx:?}");
     }
 

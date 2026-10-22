@@ -172,17 +172,17 @@ mod tests {
         let mut s = started(crate::Init { device_session: true, ..init() });
         tap(&mut s, Id::Tab(crate::Tab::Dock));
         let shelf = win(1, windows::SHELF_APP_ID, &Instance::Shelf.name(), true);
-        s.apply(Event::Windows(vec![shelf.clone()]));
+        s.applied(Event::Windows(vec![shelf.clone()]));
         // The icon of a running entry, whose process is in the entry's scope, gives that entry its menu.
         let zelda = launch(&mut s, "zelda-lttp");
         let zelda_icon = item(":1.5/a", "zelda3", zelda.unit().as_deref());
-        s.apply(Event::Tray(vec![zelda_icon.clone()]));
+        s.applied(Event::Tray(vec![zelda_icon.clone()]));
         assert_eq!(s.session().tray_of("zelda-lttp").map(|t| &*t.key), Some(":1.5/a"));
         assert_eq!(s.session().running_entries().len(), 1);
         // A program not started by ClamShell runs as the entry whose desktop file is named as its id,
         // here Firefox's.
         let firefox_icon = item(":1.9/b", "firefox", None);
-        let (_, fx) = s.apply(Event::Tray(vec![zelda_icon.clone(), firefox_icon.clone()]));
+        let (_, fx) = s.applied(Event::Tray(vec![zelda_icon.clone(), firefox_icon.clone()]));
         assert!(
             fx.iter()
                 .any(|e| matches!(e, Effect::Adopt { pid: 77, instance } if instance.key() == Some(clamshell_library::key_of("desktop:firefox").as_str()))),
@@ -197,10 +197,10 @@ mod tests {
         let at = s.dock().items().iter().position(|i| &*i.id == "desktop:firefox").unwrap() as u16;
         assert_eq!(tap_dock(&mut s, DockId::Entry(at)), vec![Effect::Tray(TrayCommand::Activate(":1.9/b".into()))]);
         let window = Window { pids: vec![900, 77], ..win(6, "firefox", &Instance::Shelf.name(), true) };
-        let (_, fx) = s.apply(Event::Windows(vec![shelf.clone(), window.clone()]));
+        let (_, fx) = s.applied(Event::Windows(vec![shelf.clone(), window.clone()]));
         assert!(fx.contains(&Effect::Window(WindowCommand::Move { windows: vec![6], to: ws.clone() })), "{fx:?}");
         let moved = Window { workspace: ws.clone(), ..window };
-        let (_, fx) = s.apply(Event::Windows(vec![shelf.clone(), moved.clone()]));
+        let (_, fx) = s.applied(Event::Windows(vec![shelf.clone(), moved.clone()]));
         assert!(fx.contains(&Effect::Window(WindowCommand::Focus(ws.clone()))), "{fx:?}");
         // With its window open, a tap shows it.
         assert_eq!(tap_dock(&mut s, DockId::Entry(at)), vec![Effect::Window(WindowCommand::Focus(ws.clone()))]);
@@ -218,24 +218,24 @@ mod tests {
         // Quit closes its windows, then asks its process to end. Force kill kills it.
         let id: Arc<str> = "desktop:firefox".into();
         assert_eq!(quit(&mut s, &id), vec![Effect::Window(WindowCommand::Close(vec![6]))]);
-        let (_, fx) = s.apply(Event::Windows(vec![shelf.clone()]));
+        let (_, fx) = s.applied(Event::Windows(vec![shelf.clone()]));
         assert!(fx.contains(&Effect::EndProcesses { pids: vec![77], force: false }), "{fx:?}");
         assert_eq!(force_kill(&mut s, "desktop:firefox"), vec![Effect::EndProcesses { pids: vec![77], force: true }]);
         // With its icon gone and no window, it has ended.
-        s.apply(Event::Tray(vec![zelda_icon.clone()]));
+        s.applied(Event::Tray(vec![zelda_icon.clone()]));
         assert!(s.session().running("desktop:firefox").is_none());
         // A program the library has no desktop file for gets an entry of its own, named as the icon.
-        s.apply(Event::Tray(vec![zelda_icon.clone(), item(":1.7/c", "thing", None)]));
+        s.applied(Event::Tray(vec![zelda_icon.clone(), item(":1.7/c", "thing", None)]));
         assert_eq!(s.entry("tray:thing").map(|g| g.title.as_str()), Some("thing"), "named by its id, the same each run");
         assert!(s.dock().items().iter().any(|i| &*i.id == "tray:thing"));
         // Once moved into a scope of ours and listed by systemd, it is a launch. It is ended through its
         // slice, and has ended once the scope is gone.
-        let (_, fx) = s.apply(Event::Tray(vec![zelda_icon.clone(), firefox_icon]));
+        let (_, fx) = s.applied(Event::Tray(vec![zelda_icon.clone(), firefox_icon]));
         let instance = fx.iter().find_map(|e| if let Effect::Adopt { instance, .. } = e { Some(instance.clone()) } else { None }).unwrap();
-        s.apply(Event::Units(vec![zelda.clone(), instance.clone()]));
+        s.applied(Event::Units(vec![zelda.clone(), instance.clone()]));
         assert_eq!(s.session().running("desktop:firefox").map(|r| (r.origin.clone(), r.pid())), Some((Origin::Ours, None)));
         assert_eq!(force_kill(&mut s, "desktop:firefox"), vec![Effect::EndRun { key: clamshell_library::key_of("desktop:firefox"), force: true }]);
-        s.apply(Event::Units(vec![zelda]));
+        s.applied(Event::Units(vec![zelda]));
         assert!(s.session().running("desktop:firefox").is_none(), "its scope gone");
     }
 
@@ -243,7 +243,7 @@ mod tests {
     fn a_guest_in_a_desktops_session_adopts_none_of_its_programs() {
         let mut s = state();
         let zelda = launch(&mut s, "zelda-lttp");
-        s.apply(Event::Tray(vec![item(":1.5/a", "zelda3", zelda.unit().as_deref()), item(":1.9/b", "firefox", None)]));
+        s.applied(Event::Tray(vec![item(":1.5/a", "zelda3", zelda.unit().as_deref()), item(":1.9/b", "firefox", None)]));
         assert!(s.session().running("desktop:firefox").is_none(), "the desktop's");
         assert!(s.session().tray_of("zelda-lttp").is_some(), "its own launch's icon: its menu");
     }

@@ -286,36 +286,36 @@ mod tests {
         let key = zelda.key().unwrap().to_owned();
         s.settings_mut().set(Some(&"zelda-lttp".into()), Setting::Background, Some(InBackground::Pauses.value()));
         let window = |visible| Window { unit: zelda.unit(), visible, ..win(3, "zelda3", &zelda.workspace(), visible) };
-        s.apply(Event::tick(100));
-        s.apply(Event::Windows(vec![window(true)]));
+        s.applied(Event::tick(100));
+        s.applied(Event::Windows(vec![window(true)]));
         // Once hidden for the grace period, it is paused.
-        let fx = s.apply(Event::Windows(vec![window(false)])).1;
+        let fx = s.applied(Event::Windows(vec![window(false)])).1;
         assert!(!fx.contains(&freeze(&key, true)));
-        assert!(!s.apply(Event::tick(100 + GRACE - 1)).1.contains(&freeze(&key, true)), "within the grace");
-        assert!(s.apply(Event::tick(100 + GRACE)).1.contains(&freeze(&key, true)));
+        assert!(!s.applied(Event::tick(100 + GRACE - 1)).1.contains(&freeze(&key, true)), "within the grace");
+        assert!(s.applied(Event::tick(100 + GRACE)).1.contains(&freeze(&key, true)));
         assert!(s.session().paused("zelda-lttp"));
-        assert!(!s.apply(Event::tick(101 + GRACE)).1.contains(&freeze(&key, true)), "once");
+        assert!(!s.applied(Event::tick(101 + GRACE)).1.contains(&freeze(&key, true)), "once");
         // Shown again, it is thawed.
-        assert!(s.apply(Event::Windows(vec![window(true)])).1.contains(&freeze(&key, false)));
+        assert!(s.applied(Event::Windows(vec![window(true)])).1.contains(&freeze(&key, false)));
         assert!(!s.session().paused("zelda-lttp"));
         // Paused and then shown from the dock, it is thawed before its workspace is shown.
-        s.apply(Event::Windows(vec![window(false)]));
+        s.applied(Event::Windows(vec![window(false)]));
         let t = 101 + 2 * GRACE;
-        s.apply(Event::tick(t));
+        s.applied(Event::tick(t));
         assert!(s.session().paused("zelda-lttp"));
         assert_eq!(show(&mut s, "zelda-lttp"), vec![freeze(&key, false), Effect::Window(WindowCommand::Focus(zelda.workspace()))]);
         // It is paused again after being hidden for the grace period anew. Quitting thaws it, so that it
         // can answer its window's closing.
-        s.apply(Event::tick(t + 1));
-        s.apply(Event::tick(t + GRACE));
+        s.applied(Event::tick(t + 1));
+        s.applied(Event::tick(t + GRACE));
         assert!(!s.session().paused("zelda-lttp"), "the grace counts again from the thaw");
-        s.apply(Event::tick(t + 1 + GRACE));
+        s.applied(Event::tick(t + 1 + GRACE));
         assert!(s.session().paused("zelda-lttp"));
         let id: Arc<str> = "zelda-lttp".into();
         assert_eq!(quit(&mut s, &id), vec![freeze(&key, false), Effect::Window(WindowCommand::Close(vec![3]))]);
         // With its window gone it ends, and it isn't paused meanwhile even though it is hidden.
-        s.apply(Event::Windows(vec![]));
-        s.apply(Event::tick(t + 3 * GRACE));
+        s.applied(Event::Windows(vec![]));
+        s.applied(Event::tick(t + 3 * GRACE));
         assert!(!s.session().paused("zelda-lttp"), "quitting");
     }
 
@@ -333,28 +333,28 @@ mod tests {
         s.settings_mut().set(Some(&runner.key), Setting::Background, Some(InBackground::Pauses.value()));
         let (pause, resume) = (Effect::RunnerCommand(vec!["pause".into()]), Effect::RunnerCommand(vec!["resume".into()]));
         // With nothing of it running, it is paused after the grace period.
-        s.apply(Event::tick(100));
-        assert!(!s.apply(Event::tick(100 + GRACE - 1)).1.contains(&pause));
-        assert!(s.apply(Event::tick(100 + GRACE)).1.contains(&pause));
-        assert!(!s.apply(Event::tick(101 + GRACE)).1.contains(&pause), "once");
+        s.applied(Event::tick(100));
+        assert!(!s.applied(Event::tick(100 + GRACE - 1)).1.contains(&pause));
+        assert!(s.applied(Event::tick(100 + GRACE)).1.contains(&pause));
+        assert!(!s.applied(Event::tick(101 + GRACE)).1.contains(&pause), "once");
         // Launching resumes it first.
         let fx = launch_now(&mut s, "desktop:firefox");
         assert_eq!(fx.first(), Some(&resume), "{fx:?}");
         crate::testkit::start(&mut s, "desktop:firefox");
         // While starting, first as its launch and then handed over with no window yet, it isn't paused.
         let t = 101 + 2 * GRACE;
-        assert!(!s.apply(Event::tick(t)).1.contains(&pause), "its launch runs");
+        assert!(!s.applied(Event::tick(t)).1.contains(&pause), "its launch runs");
         crate::testkit::end(&mut s, "desktop:firefox");
-        assert!(!s.apply(Event::tick(t + GRACE)).1.contains(&pause), "handed over, waiting for its window");
+        assert!(!s.applied(Event::tick(t + GRACE)).1.contains(&pause), "handed over, waiting for its window");
         // Shown, it isn't paused; hidden for the grace period, it is.
         let ws = Instance::workspace_of(&clamshell_library::key_of("desktop:firefox"));
         let window = |visible| Window { visible, ..win(6, "firefox", &ws, visible) };
-        assert!(!s.apply(Event::Windows(vec![window(true)])).1.contains(&pause));
-        assert!(!s.apply(Event::tick(t + GRACE + 1)).1.contains(&pause));
-        s.apply(Event::Windows(vec![window(false)]));
-        assert!(s.apply(Event::tick(t + 2 * GRACE + 1)).1.contains(&pause));
+        assert!(!s.applied(Event::Windows(vec![window(true)])).1.contains(&pause));
+        assert!(!s.applied(Event::tick(t + GRACE + 1)).1.contains(&pause));
+        s.applied(Event::Windows(vec![window(false)]));
+        assert!(s.applied(Event::tick(t + 2 * GRACE + 1)).1.contains(&pause));
         // Shown again, it is resumed.
-        assert!(s.apply(Event::Windows(vec![window(true)])).1.contains(&resume));
+        assert!(s.applied(Event::Windows(vec![window(true)])).1.contains(&resume));
     }
 
     #[test]
@@ -365,25 +365,25 @@ mod tests {
         // Set to Runs hidden, it is paused only by Suspend.
         s.settings_mut().set(Some(&"zelda-lttp".into()), Setting::Background, Some(InBackground::Runs.value()));
         let window = |visible| Window { unit: zelda.unit(), visible, ..win(3, "zelda3", &zelda.workspace(), visible) };
-        s.apply(Event::tick(100));
-        s.apply(Event::Windows(vec![window(true)]));
+        s.applied(Event::tick(100));
+        s.applied(Event::Windows(vec![window(true)]));
         assert!(s.session().suspendable("zelda-lttp"));
         let fx = s.handle(Event::Entry("zelda-lttp".into(), crate::EntryAct::Suspend));
         assert!(fx.contains(&freeze(&key, true)) && fx.contains(&Effect::Window(crate::effect::WindowCommand::ShowShelf)), "{fx:?}");
         assert!(s.session().suspended("zelda-lttp") && !s.session().suspendable("zelda-lttp"));
         // Hidden, it stays frozen and isn't frozen twice.
-        s.apply(Event::Windows(vec![window(false)]));
-        assert!(!s.apply(Event::tick(100 + 3 * GRACE)).1.contains(&freeze(&key, true)));
+        s.applied(Event::Windows(vec![window(false)]));
+        assert!(!s.applied(Event::tick(100 + 3 * GRACE)).1.contains(&freeze(&key, true)));
         assert!(s.session().paused("zelda-lttp"));
         // Resume, in its menu, shows and thaws it.
         let fx = show(&mut s, "zelda-lttp");
         assert!(fx.contains(&freeze(&key, false)) && !s.session().suspended("zelda-lttp"), "{fx:?}");
-        s.apply(Event::tick(100 + 4 * GRACE));
+        s.applied(Event::tick(100 + 4 * GRACE));
         assert!(!s.session().paused("zelda-lttp"), "runs hidden again");
         // A restarted ClamShell finds its slice frozen. It is held as suspended and not frozen again.
-        let fx = s.apply(Event::Frozen(vec![key.as_str().into()])).1;
+        let fx = s.applied(Event::Frozen(vec![key.as_str().into()])).1;
         assert!(!fx.contains(&freeze(&key, true)) && s.session().suspended("zelda-lttp") && s.session().paused("zelda-lttp"));
-        assert!(!s.apply(Event::tick(100 + 6 * GRACE)).1.contains(&freeze(&key, false)), "stays frozen");
+        assert!(!s.applied(Event::tick(100 + 6 * GRACE)).1.contains(&freeze(&key, false)), "stays frozen");
         // Quit thaws it so that it can end, and it is no longer suspended.
         assert!(quit(&mut s, "zelda-lttp").contains(&freeze(&key, false)));
         assert!(!s.session().suspended("zelda-lttp"));
@@ -396,14 +396,14 @@ mod tests {
         let key = zelda.key().unwrap().to_owned();
         s.settings_mut().set(Some(&"zelda-lttp".into()), Setting::Background, Some(InBackground::Pauses.value()));
         let window = |visible| Window { unit: zelda.unit(), visible, ..win(3, "zelda3", &zelda.workspace(), visible) };
-        s.apply(Event::tick(100));
-        s.apply(Event::Windows(vec![window(false)]));
-        s.apply(Event::tick(100 + GRACE));
+        s.applied(Event::tick(100));
+        s.applied(Event::Windows(vec![window(false)]));
+        s.applied(Event::tick(100 + GRACE));
         assert!(s.session().paused("zelda-lttp"));
         // Its window is closed from outside, as by Steam's Stop. It is thawed so that it can end, and isn't
         // paused again.
-        assert!(s.apply(Event::Windows(vec![])).1.contains(&freeze(&key, false)));
-        s.apply(Event::tick(100 + 3 * GRACE));
+        assert!(s.applied(Event::Windows(vec![])).1.contains(&freeze(&key, false)));
+        s.applied(Event::tick(100 + 3 * GRACE));
         assert!(!s.session().paused("zelda-lttp"), "no window: none hidden");
     }
 
@@ -419,14 +419,14 @@ mod tests {
             Window { unit: zelda.unit(), ..win(3, "zelda3", &zelda.workspace(), false) },
             Window { unit: foot.unit(), ..win(4, "foot", &foot.workspace(), false) },
         ];
-        s.apply(Event::tick(100));
-        s.apply(Event::Windows(windows));
-        let fx = s.apply(Event::tick(100 + GRACE)).1;
+        s.applied(Event::tick(100));
+        s.applied(Event::Windows(windows));
+        let fx = s.applied(Event::tick(100 + GRACE)).1;
         assert!(fx.contains(&freeze(&key, true)), "a game: {fx:?}");
         assert!(!fx.contains(&freeze(foot.key().unwrap(), true)), "an app: {fx:?}");
         // With All set to run, the game runs too.
         s.settings_mut().set(None, Setting::Background, Some(InBackground::Runs.value()));
-        assert!(s.apply(Event::tick(101 + GRACE)).1.contains(&freeze(&key, false)));
+        assert!(s.applied(Event::tick(101 + GRACE)).1.contains(&freeze(&key, false)));
         assert_eq!(s.session().background_of("zelda-lttp", s.shelf().library(), s.prefs().settings()), InBackground::Runs);
     }
 
@@ -437,15 +437,15 @@ mod tests {
         let key = zelda.key().unwrap().to_owned();
         s.settings_mut().set(Some(&"zelda-lttp".into()), Setting::Background, Some(InBackground::Quits.value()));
         // With no window yet, while starting, it is left alone.
-        assert!(!s.apply(Event::Windows(vec![])).1.iter().any(|e| matches!(e, Effect::EndRun { .. })));
-        s.apply(Event::Windows(vec![Window { unit: zelda.unit(), ..win(3, "zelda3", &zelda.workspace(), true) }]));
-        let fx = s.apply(Event::Windows(vec![])).1;
+        assert!(!s.applied(Event::Windows(vec![])).1.iter().any(|e| matches!(e, Effect::EndRun { .. })));
+        s.applied(Event::Windows(vec![Window { unit: zelda.unit(), ..win(3, "zelda3", &zelda.workspace(), true) }]));
+        let fx = s.applied(Event::Windows(vec![])).1;
         assert!(fx.contains(&Effect::EndRun { key: key.clone(), force: false }), "{fx:?}");
         // With the default setting, a program without a window runs on.
         let mut s = state();
         let zelda = launch(&mut s, "zelda-lttp");
-        s.apply(Event::Windows(vec![Window { unit: zelda.unit(), ..win(3, "zelda3", &zelda.workspace(), true) }]));
-        assert!(!s.apply(Event::Windows(vec![])).1.iter().any(|e| matches!(e, Effect::EndRun { .. })));
+        s.applied(Event::Windows(vec![Window { unit: zelda.unit(), ..win(3, "zelda3", &zelda.workspace(), true) }]));
+        assert!(!s.applied(Event::Windows(vec![])).1.iter().any(|e| matches!(e, Effect::EndRun { .. })));
         crate::testkit::end(&mut s, "zelda-lttp");
     }
 }

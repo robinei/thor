@@ -69,6 +69,7 @@ impl App {
             display: display::Display::bind(globals, qh, &config.bottom_output),
             loop_handle,
             on_effect,
+            effects: Vec::new(),
             exit: false,
         })
     }
@@ -105,7 +106,10 @@ impl App {
         if let Event::Pad(input) = event {
             return self.pad(input);
         }
-        let (dirty, effects) = self.state.apply(event);
+        // Taken while the effects are carried out, which may handle further events.
+        let mut effects = std::mem::take(&mut self.effects);
+        effects.clear();
+        let dirty = self.state.apply(event, &mut effects);
         self.mark(dirty);
         let released = self.input.pad_route(self.state.pad().route(), &self.state);
         self.run_actions(released);
@@ -131,6 +135,8 @@ impl App {
                 }
             }
         }
+        effects.clear();
+        self.effects = effects;
     }
 
     pub(super) fn handle_all(&mut self, events: impl IntoIterator<Item = Event>) {

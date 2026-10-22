@@ -547,25 +547,25 @@ pub fn render(fresh: &(dyn Fn() -> State + Sync), now: u64, dir: &Path) -> Resul
 
 /// One group's shots, in order, from `state`.
 fn render_group(mut state: State, Group { start, shots }: Group, now: u64, dir: &Path) -> Result<(), Error> {
-    state.apply(Event::tick(now));
-    state.apply(Event::Reading(Reading::Status(demo::STATUS)));
+    state.apply(Event::tick(now), &mut Vec::new());
+    state.apply(Event::Reading(Reading::Status(demo::STATUS)), &mut Vec::new());
     // The demo's time zone, so the clock reads the same whatever zone the machine is in.
-    state.apply(Event::Reading(Reading::Time(demo::time_zones())));
+    state.apply(Event::Reading(Reading::Time(demo::time_zones())), &mut Vec::new());
     for event in start {
-        state.apply(event);
+        state.apply(event, &mut Vec::new());
     }
     // Clear the notice the setup left ("Starting …" for its launches) by moving the clock past it and back.
-    state.apply(Event::tick(now + 5));
-    state.apply(Event::tick(now));
+    state.apply(Event::tick(now + 5), &mut Vec::new());
+    state.apply(Event::tick(now), &mut Vec::new());
     for Shot { name, screen, before } in shots {
         for event in before {
-            state.apply(event);
+            state.apply(event, &mut Vec::new());
         }
         let path = dir.join(name);
         // Applying what a live frame reports (shelf's rows, the lists' rows) keeps the selections on screen.
         let events = clamshell_ui::snapshot(&state, screen, size(screen), 1, &path).map_err(|e| Error::Render(path.display().to_string(), e.to_string()))?;
         for event in events {
-            state.apply(event);
+            state.apply(event, &mut Vec::new());
         }
         log::info!("wrote {}", path.display());
     }

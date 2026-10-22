@@ -5,7 +5,7 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
-use clamshell_core::{Event, Id, Init, PointerEvent, Reading, State, Status, Tab};
+use clamshell_core::{Effect, Event, Id, Init, PointerEvent, Reading, State, Status, Tab};
 
 thread_local! {
     static ALLOCS: Cell<usize> = const { Cell::new(0) };
@@ -56,14 +56,13 @@ unsafe impl GlobalAlloc for Counting {
 static COUNTING: Counting = Counting;
 
 /// Allocations made while applying `event` (built beforehand, so building it doesn't count).
-fn count(s: &mut State, event: Event) -> usize {
+fn count(s: &mut State, event: Event, effects: &mut Vec<Effect>) -> usize {
+    effects.clear();
     let before = ALLOCS.with(Cell::get);
     MEASURING.with(|m| m.set(true));
-    let out = s.apply(event);
+    s.apply(event, effects);
     MEASURING.with(|m| m.set(false));
-    let n = ALLOCS.with(Cell::get) - before;
-    drop(out);
-    n
+    ALLOCS.with(Cell::get) - before
 }
 
 #[test]
@@ -71,14 +70,16 @@ fn allocations_per_event() {
     let mut s = State::new(Init { library: clamshell_library::demo::library(), ..Init::default() });
     let t0 = 1_760_000_000;
     let mut rows = Vec::new();
+    let mut effects = Vec::new();
     let mut run = |name: &str, s: &mut State, make: &dyn Fn(u64) -> Event| {
         // Warm up with the same kind of event, then measure the third.
         for i in 0..2 {
-            s.apply(make(i));
+            effects.clear();
+            s.apply(make(i), &mut effects);
         }
-        rows.push((name.to_owned(), count(s, make(2))));
+        rows.push((name.to_owned(), count(s, make(2), &mut effects)));
     };
-    s.apply(Event::Start);
+    s.apply(Event::Start, &mut Vec::new());
     run("tick, same minute", &mut s, &|i| Event::Tick { unix_secs: t0 + i, mono_secs: 100 + i });
     run("tick, a new minute each", &mut s, &|i| Event::Tick { unix_secs: t0 + 60 * (i + 1), mono_secs: 200 + 60 * i });
     run("status reading, unchanged", &mut s, &|_| Event::Reading(Reading::Status(Status::default())));

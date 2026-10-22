@@ -169,7 +169,7 @@ mod tests {
     #[test]
     fn spenders_are_named_after_their_app_or_game() {
         let mut s = state();
-        s.apply(Event::tick(1792010377));
+        s.applied(Event::tick(1792010377));
         let first = s.shelf().selected().cloned().unwrap_or_default();
         let zelda = launch(&mut s, &first);
         // Each scope keeps its own entry's name.
@@ -190,7 +190,7 @@ mod tests {
         let zelda = launch(&mut s, "zelda-lttp");
         let firefox = Spender { pids: vec![40, 41], ..spender(Group::Process("firefox".into())) };
         let spenders = vec![spender(Group::Instance(zelda.clone())), firefox, spender(Group::System)];
-        s.apply(Event::Reading(Reading::Battery(Battery { spenders, ..Battery::default() })));
+        s.applied(Event::Reading(Reading::Battery(Battery { spenders, ..Battery::default() })));
         assert_eq!(s.session().running("zelda-lttp").and_then(|r| s.sys().cost_of(r)), Some(Cost { cpu: 0.1, gpu: Some(0.0), memory: 0 }));
         // Another program ends its processes.
         tap(&mut s, Id::Battery(BatteryId::Spender(1)));
@@ -204,7 +204,7 @@ mod tests {
         tap(&mut s, Id::Battery(BatteryId::Spender(2)));
         assert_eq!(s.sys().spender_menu(), None);
         let sway = Spender { endable: false, ..spender(Group::Process("sway".into())) };
-        s.apply(Event::Reading(Reading::Battery(Battery { spenders: vec![sway], ..Battery::default() })));
+        s.applied(Event::Reading(Reading::Battery(Battery { spenders: vec![sway], ..Battery::default() })));
         tap(&mut s, Id::Battery(BatteryId::Spender(0)));
         assert_eq!(s.sys().spender_menu(), None);
     }
@@ -220,12 +220,12 @@ mod tests {
         launch_now(&mut s, "desktop:firefox");
         crate::testkit::start(&mut s, "desktop:firefox");
         crate::testkit::end(&mut s, "desktop:firefox");
-        s.apply(Event::Windows(vec![win(6, "firefox", &ws, true)]));
+        s.applied(Event::Windows(vec![win(6, "firefox", &ws, true)]));
         assert!(!s.opens_another("desktop:firefox"), "a launch would show the one it runs");
         // Its processes belong to another program, as Android apps do. The entry gets their cost, and
         // the row is named and ended as the entry.
         let spenders = vec![spender(Group::App("firefox".into())), spender(Group::App("org.other".into()))];
-        s.apply(Event::Reading(Reading::Battery(Battery { spenders, ..Battery::default() })));
+        s.applied(Event::Reading(Reading::Battery(Battery { spenders, ..Battery::default() })));
         assert_eq!(
             s.session().running("desktop:firefox").and_then(|r| s.sys().cost_of(r)),
             Some(Cost { cpu: 0.1, gpu: None, memory: 0 }),
