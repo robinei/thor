@@ -379,9 +379,8 @@ impl Session {
     /// since its rule was given. A window whose entry's launch is starting, such as a Steam game found
     /// running, stays.
     fn landing_up(&self, out: &mut Out) {
-        let landing = Instance::Landing.name();
         let starting = |w: &crate::session::windows::Window| self.launching.iter().any(|l| l.app_id.as_deref() == Some(w.app_id.as_str()));
-        let up = self.windows.iter().filter(|w| w.workspace == landing && self.running_of(w).is_none() && !starting(w));
+        let up = self.windows.iter().filter(|w| Instance::Landing.is(&w.workspace) && self.running_of(w).is_none() && !starting(w));
         out.effects.extend(up.map(|w| Effect::Window(WindowCommand::Up { window: w.id, to: None })));
     }
 
