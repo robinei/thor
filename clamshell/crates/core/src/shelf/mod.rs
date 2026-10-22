@@ -526,6 +526,22 @@ impl Shelf {
         })
     }
 
+    /// Counts and records a play of `game` from `start` (monotonic seconds, as in [`crate::Event::Tick`])
+    /// until now, dated by the wall clock. For a video, it also reads where mpv left it, which mpv wrote as
+    /// it quit.
+    pub(crate) fn record_play(&mut self, game: Arc<str>, start: u64, clock: &crate::Clock, out: &mut crate::out::Out) {
+        let duration = clock.mono().saturating_sub(start);
+        let start = clock.unix_at(start);
+        if self.add_play(&game, start, duration) {
+            self.unsaved = true;
+        }
+        let file = self.entry(&game).and_then(|g| g.mpv_file()).map(std::path::Path::to_path_buf);
+        out.effects.push(crate::Effect::RecordPlay { entry: game.clone(), start, duration });
+        if let Some(file) = file {
+            out.effects.push(crate::Effect::ReadPosition { entry: game, file });
+        }
+    }
+
     /// Each collection's place: its name, then its open groups' ids and its selected entry's id.
     pub(crate) fn places(&self) -> Vec<(String, Vec<String>)> {
         let mut places = Vec::new();

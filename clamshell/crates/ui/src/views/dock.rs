@@ -80,7 +80,7 @@ fn entry_tile(f: &mut Frame, r: Rect, i: usize, id: &std::sync::Arc<str>, severa
     let note = if s.session().suspended(id) { "Suspended" } else { "" };
     let face = TileFace { caption: &game.title, caption_tone, dot: in_force.then_some(Tone::Go), note };
     // For a file, the picture of the app showing it, if its window says which app that is.
-    let picture = s.app_showing(id).unwrap_or(game);
+    let picture = s.session().app_showing(id, s.shelf().library()).unwrap_or(game);
     widgets::tile(f, Id::Dock(DockId::Entry(i as u16)), r, &TILE, face, |f, r| {
         // Above the caption: portrait box art or a square icon.
         let h = r.h * (CAPTION_Y - ART_TOP - ART_ROOM);

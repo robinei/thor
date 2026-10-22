@@ -29,7 +29,7 @@ use crate::{Clock, Entry, Library, Session};
 
 impl Session {
     /// Moves a found program's process, and those it started, into a scope of ours as a launch of entry
-    /// `key`. Once systemd lists the scope, it runs as a launch (see [`crate::State::follow_units`]).
+    /// `key`. Once systemd lists the scope, it runs as a launch (see [`Session::follow_units`]).
     fn adopt(&mut self, key: &str, pid: u32, clock: &Clock) -> Effect {
         let (secs, n) = (clock.unix(), self.next_instance());
         Effect::Adopt { instance: Instance::Run { key: key.to_owned(), secs, n }, pid }

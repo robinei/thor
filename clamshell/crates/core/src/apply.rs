@@ -64,10 +64,12 @@ impl State {
     /// order, since each step reads what the earlier ones settled:
     ///
     /// 1. systemd's scopes: entries found running, found ones promoted to launches, and ours ended
-    ///    ([`State::follow_units`]). The first time, the entries to start with ClamShell are started.
-    /// 2. The windows: entries started or ended by them, windows moved to their entries, and programs
-    ///    found by them ([`State::follow_windows`]; `known` is the set of windows the last pass saw).
-    ///    Then the rules that send windows down.
+    ///    ([`crate::Session::follow_units`]). The first time, the entries to start with ClamShell are started.
+    /// 2. The windows: entries started by their app ids ([`crate::Session::start_by_app_id`]), with Steam's
+    ///    games launched before the windows are followed, since a starting launch's window is left where
+    ///    it is; then windows moved to their entries, programs found by them, and entries ended by them
+    ///    ([`crate::Session::follow_windows`], which compares with the windows the last pass saw). Then the rules
+    ///    that send windows down. The windows' effects come after those of steps 3 and 4.
     /// 3. In the background: entries paused, thawed or ended by their setting. This reads 1 and 2.
     /// 4. What is shown: a launch's first window, a workspace whose window came back, and going back to
     ///    what was before when the one in front closed.
@@ -76,30 +78,42 @@ impl State {
     ///
     /// A step does nothing when nothing changed for it. Returns whether the running entries changed.
     fn reconcile(&mut self, out: &mut Out) -> bool {
-        let before: Vec<std::sync::Arc<str>> = self.session.running.iter().map(|r| r.id.clone()).collect();
-        let known = std::mem::take(&mut self.session.followed_windows);
-        let was = self.session.followed_front.take();
-        out.effects.extend(self.follow_units());
+        let before: Vec<std::sync::Arc<str>> = self.session.running_entries().iter().map(|r| r.id.clone()).collect();
+        if self.session.follow_units(&self.clock, &mut self.shelf, self.bottom.notice_mut(), out) {
+            self.bottom.unwake();
+        }
         let mut due = Vec::new();
         self.session.autostart_due(self.shelf.library(), &mut due);
         // They start in the background, so what was going to be shown still is.
         for id in due {
             self.launch(id, None, false, out);
         }
-        let by_windows = self.follow_windows(&known);
+        // The windows' effects are moved after those of the steps that follow them, below.
+        let windows_from = out.effects.len();
+        let mut steam = Vec::new();
+        if self.session.start_by_app_id(&self.clock, self.shelf.library(), &mut steam) {
+            self.bottom.unwake();
+        }
+        // Before following the windows, which leaves a starting launch's windows where they are.
+        for id in steam {
+            self.launch(id, None, true, out);
+        }
+        self.session.follow_windows(&self.clock, &mut self.shelf, out);
+        let by_windows = out.effects.len() - windows_from;
         self.bottom.follow_window_rules(&self.session, out);
         self.session.follow_background(self.clock.mono(), self.shelf.library(), self.prefs.settings(), out);
         self.session.show_pending(out);
         self.session.show_reopened(self.clock.mono(), out);
         self.session.follow_quitting(self.shelf.library(), out);
-        self.session.follow_closed(was, self.clock.mono(), out);
+        self.session.follow_closed(self.clock.mono(), out);
         // After handling the front one closing, so that a window just taken by a browsed file is shown
         // over it.
-        out.effects.extend(by_windows);
+        if let Some(effects) = out.effects.get_mut(windows_from..) {
+            effects.rotate_left(by_windows);
+        }
         let docked = self.follow_dock();
-        self.session.followed_windows = self.session.windows.iter().map(|w| w.id).collect();
-        self.session.followed_front = self.session.windows.iter().find(|w| w.focused && !w.down).map(|w| w.workspace.clone());
-        let after = self.session.running.iter().map(|r| &r.id);
+        self.session.followed();
+        let after = self.session.running_entries().iter().map(|r| &r.id);
         docked || !after.eq(before.iter())
     }
 
@@ -130,11 +144,7 @@ impl State {
             Event::Slide(slide) => self.on_slide(slide, out),
             Event::Level(e) => self.on_level(e, out),
             Event::Shelf(e) => self.shelf.on_event(e, &mut self.pointer, out),
-            Event::Launch(e) => {
-                let (dirty, effects) = self.on_launch_event(e);
-                out.mark(dirty);
-                out.effects.extend(effects);
-            }
+            Event::Launch(e) => self.on_launch_event(e, out),
             Event::Windows(windows) => {
                 self.session.set_windows(windows);
                 out.mark(Dirty::BOTH);
@@ -305,7 +315,7 @@ impl State {
         }
         self.session.follow_pausable_runners(self.shelf.library());
         out.effects.extend(self.follow_runner_keymaps());
-        out.effects.push(self.land_rules());
+        out.effects.push(crate::session::running::land_rules(self.shelf.library()));
         if self.dock.drop_gone(self.shelf.library(), &self.session) {
             out.effects.push(Effect::Save(Save::Dock(self.dock.pinned_ids())));
         }

@@ -5,14 +5,14 @@ use crate::out::Out;
 use crate::{Effect, Instance, Running, Session, WindowCommand};
 
 impl Session {
-    /// Runs after the windows changed. If the window in front, on workspace `was`, closed and nothing of
-    /// its workspace is left, goes back to what was in front before it, with shelf as the last resort;
-    /// otherwise sway would leave the empty workspace in front. The workspace is remembered in case a
+    /// Runs after the windows changed. If the window in front when the last pass ran (see
+    /// [`Session::followed`]) closed and nothing of its workspace is left, goes back to what was in front
+    /// before it, with shelf as the last resort; otherwise sway would leave the empty workspace in front. The workspace is remembered in case a
     /// window appears on it soon after (see [`Session::show_reopened`]).
-    pub(crate) fn follow_closed(&mut self, was: Option<String>, now: u64, out: &mut Out) {
+    pub(crate) fn follow_closed(&mut self, now: u64, out: &mut Out) {
         let windows = &self.windows;
-        let Some(was) = was else { return };
-        if windows.iter().any(|w| w.focused || w.workspace == was) {
+        let Some(was) = &self.followed_front else { return };
+        if windows.iter().any(|w| w.focused || w.workspace == *was) {
             return;
         }
         let shown = |ws: &String| windows.iter().any(|w| w.workspace == *ws && !w.down);
@@ -20,7 +20,7 @@ impl Session {
             Some(ws) if !Instance::Shelf.is(ws) => Effect::Window(WindowCommand::Focus(ws.clone())),
             _ => Effect::Window(WindowCommand::ShowShelf),
         });
-        self.closed_front = Some((was, now));
+        self.closed_front = Some((was.clone(), now));
     }
 
     /// Whether shelf is in front on the main screen, as it is before the compositor reports a window.
