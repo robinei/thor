@@ -7,11 +7,14 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::effect::Effect;
+use crate::bottom::Tab;
+use crate::device::idle::Stage;
+use crate::effect::{Effect, Watch, WindowCommand};
 use crate::out::Out;
+use crate::settings::Values;
 use crate::shelf::files::{Browse, BrowseCommand};
 use crate::shelf::{Shelf, ShelfView};
-use crate::{Running, State};
+use crate::{Levels, Running, State};
 
 /// What the outside should have as things are now. It is built after every event, so it holds
 /// references and small values only.
@@ -25,10 +28,24 @@ pub(crate) struct Wanted<'a> {
     hidden: bool,
     /// The running entries, whose files are in use (see [`Shelf::in_use`]).
     running: &'a [Running],
+    /// How far idle has gone, and the levels, for the screens' brightness while dimmed.
+    stage: Stage,
+    levels: &'a Levels,
+    /// The program in force and the settings in force (see [`State::in_force`]).
+    program: Option<&'a Arc<str>>,
+    settings: Values,
+    /// The bottom screen is on (see [`crate::Bottom::off`]).
+    bottom_on: bool,
+    /// ClamShell's view is on the bottom screen, and that screen is on.
+    bottom_seen: bool,
+    /// What the open tab watches.
+    tab: Option<Watch>,
+    /// The Device view is open.
+    device_open: bool,
 }
 
 /// What the outside was last sent.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct Sent {
     /// What shelf showed when the entries it shows were last asked for first.
     shown: Option<ShelfView>,
@@ -36,6 +53,38 @@ pub(crate) struct Sent {
     browsing: Option<Browse>,
     /// A hash of the files in use (see [`BrowseCommand::InUse`]); 0 for none.
     in_use: u64,
+    /// The idle stage the screens were last set for.
+    stage: Stage,
+    /// The program whose settings were applied last, or None to apply them again.
+    program: Option<Option<Arc<str>>>,
+    /// The bottom screen's power, or None to set it again.
+    bottom_on: Option<bool>,
+    /// The UI is up (it has sent Start). Before that, no tab or account is watched.
+    ui_up: bool,
+    /// The bar's status isn't watched, since the screens are off (see [`Watch::Status`]).
+    status_off: bool,
+    /// The account is watched.
+    account: bool,
+    /// The open tab's watch.
+    tab: Option<Watch>,
+}
+
+impl Default for Sent {
+    /// As at start: no program's settings applied, the bottom screen on and the bar's status watched.
+    fn default() -> Sent {
+        Sent {
+            shown: None,
+            browsing: None,
+            in_use: 0,
+            stage: Stage::Awake,
+            program: Some(None),
+            bottom_on: Some(true),
+            ui_up: false,
+            status_off: false,
+            account: false,
+            tab: None,
+        }
+    }
 }
 
 /// Why the outside is to be sent something again, whatever it was last sent.
@@ -44,6 +93,12 @@ pub(crate) enum Resend {
     /// The library was read again or fetching started or stopped: shelf's entries shown are asked for
     /// first again.
     Shown,
+    /// Back from sleep, which may have reset what the settings set, such as frequency caps and cores: they
+    /// are applied again.
+    Resumed,
+    /// The refresh rate calibration turned the bottom screen off while it ran and then restored it: it is
+    /// set to what ClamShell wants.
+    RefreshCalibrated,
 }
 
 impl Sent {
@@ -51,12 +106,29 @@ impl Sent {
     pub(crate) fn resend(&mut self, why: Resend) {
         match why {
             Resend::Shown => self.shown = None,
+            Resend::Resumed => self.program = None,
+            Resend::RefreshCalibrated => self.bottom_on = None,
         }
+    }
+
+    /// The UI is up. The open tab's and the account's watches start from now.
+    pub(crate) fn ui_started(&mut self) {
+        self.ui_up = true;
+    }
+
+    /// Sends what differs from `w`, in this order.
+    fn sync(&mut self, w: &Wanted, out: &mut Out) {
+        self.fetch_first(w, out);
+        self.browse(w, out);
+        self.idle(w, out);
+        self.settings(w, out);
+        self.bottom_power(w, out);
+        self.watches(w, out);
     }
 
     /// While metadata is being fetched and what shelf shows has changed, asks for the shown entries'
     /// metadata first.
-    pub(crate) fn fetch_first(&mut self, w: &Wanted, out: &mut Out) {
+    fn fetch_first(&mut self, w: &Wanted, out: &mut Out) {
         let Some(view) = w.shown else {
             return;
         };
@@ -71,7 +143,7 @@ impl Sent {
 
     /// The open browsed folder is listed and watched when it becomes the open one, and the watch is
     /// dropped when there is none. The files in use are told when they change.
-    pub(crate) fn browse(&mut self, w: &Wanted, out: &mut Out) {
+    fn browse(&mut self, w: &Wanted, out: &mut Out) {
         let open = w.browsed.map(|(folder, dir)| (folder, dir, w.hidden));
         if self.browsing.as_ref().map(|b| (&b.folder, b.dir.as_path(), b.hidden)) != open {
             self.browsing = open.map(|(folder, dir, hidden)| Browse { folder: folder.clone(), dir: dir.to_path_buf(), hidden });
@@ -91,26 +163,95 @@ impl Sent {
             out.effects.push(Effect::Browse(BrowseCommand::InUse(in_use.map(PathBuf::from).collect())));
         }
     }
+
+    /// The screens for the idle stage: brightness goes down while dimmed or darker and comes back when
+    /// awake, the screens go off and come back, and the device sleeps.
+    fn idle(&mut self, w: &Wanted, out: &mut Out) {
+        let was = std::mem::replace(&mut self.stage, w.stage);
+        if was == w.stage {
+            return;
+        }
+        if (was >= Stage::Dimmed) != (w.stage >= Stage::Dimmed) {
+            out.effects.extend(if w.stage >= Stage::Dimmed { w.levels.dimmed_effect() } else { w.levels.undimmed_effect() });
+        }
+        if (was >= Stage::Off) != (w.stage >= Stage::Off) {
+            out.effects.push(Effect::Screens(w.stage < Stage::Off));
+        }
+        if w.stage == Stage::Asleep {
+            out.effects.push(Effect::Sleep);
+        }
+    }
+
+    /// The settings in force are applied when the program in force changes.
+    fn settings(&mut self, w: &Wanted, out: &mut Out) {
+        if self.program.as_ref().is_some_and(|p| p.as_ref() == w.program) {
+            return;
+        }
+        self.program = Some(w.program.cloned());
+        out.effects.push(Effect::Apply { entry: w.program.cloned(), settings: w.settings });
+    }
+
+    /// The bottom screen is turned off and on. While both screens are off for idle it is left as it is,
+    /// since the screens set it when they come back.
+    fn bottom_power(&mut self, w: &Wanted, out: &mut Out) {
+        let was = self.bottom_on.replace(w.bottom_on);
+        if was == Some(w.bottom_on) || was.is_some() && w.stage >= Stage::Off {
+            return;
+        }
+        out.effects.push(Effect::Window(WindowCommand::BottomPower(w.bottom_on)));
+    }
+
+    /// The bar's status is watched while the screens are on, the account while the Device view is open
+    /// and the UI is up, and the open tab's watch while the tab can be seen and the UI is up.
+    fn watches(&mut self, w: &Wanted, out: &mut Out) {
+        let screens_off = w.stage >= Stage::Off;
+        if screens_off != std::mem::replace(&mut self.status_off, screens_off) {
+            out.effects.push(Effect::Watch(Watch::Status, !screens_off));
+        }
+        let account = self.ui_up && w.device_open;
+        if account != std::mem::replace(&mut self.account, account) {
+            out.effects.push(Effect::Watch(Watch::Account, account));
+        }
+        let seen = self.ui_up && w.bottom_seen && !screens_off;
+        let tab = w.tab.filter(|_| seen);
+        if tab == self.tab {
+            return;
+        }
+        let was = std::mem::replace(&mut self.tab, tab);
+        out.effects.extend(was.map(|w| Effect::Watch(w, false)).into_iter().chain(tab.map(|w| Effect::Watch(w, true))));
+    }
 }
 
 impl State {
-    /// What the outside should have as things are now.
+    /// What the outside should have as things are now. The second screen watches what the open tab
+    /// watches; the dock with an entry's menu open watches the battery tab's readings, to show what the
+    /// entry costs. It can be seen when ClamShell's view is on the bottom screen and that screen is on.
     pub(crate) fn wanted(&self) -> Wanted<'_> {
+        let tab = match self.bottom.tab() {
+            Tab::Dock if self.dock.menu().is_some() => Some(Watch::Battery),
+            tab => tab.watch(),
+        };
         Wanted {
             shelf: &self.shelf,
             shown: self.shelf.fetch_first(),
             browsed: self.shelf.browsed(),
             hidden: self.shelf.files().hidden(),
             running: self.session.running_entries(),
+            stage: self.idle.stage(),
+            levels: &self.levels,
+            program: self.session.program(),
+            settings: self.in_force(),
+            bottom_on: !self.bottom.off(),
+            bottom_seen: !self.bottom.shows_windows(&self.session) && !self.bottom.off(),
+            tab,
+            device_open: self.device.is_open(),
         }
     }
 
     /// Sends the outside what differs from what it was last sent.
     pub(crate) fn sync(&mut self, out: &mut Out) {
         let mut sent = std::mem::take(&mut self.sent);
-        let wanted = self.wanted();
-        sent.fetch_first(&wanted, out);
-        sent.browse(&wanted, out);
+        sent.sync(&self.wanted(), out);
         self.sent = sent;
     }
 }

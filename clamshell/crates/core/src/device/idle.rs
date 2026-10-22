@@ -13,10 +13,10 @@
 
 use std::sync::Arc;
 
+use crate::State;
 use crate::effect::Effect;
 use crate::out::Out;
 use crate::settings::{Setting, Values};
-use crate::{Levels, State};
 
 /// The compositor reports no input after this many seconds without any.
 pub const NOTIFY_AFTER: u64 = 10;
@@ -199,10 +199,11 @@ impl Idle {
 
 impl Idle {
     /// Updates idle for how things are now, at `now`. The stage moves on to dimmed, screens off or
-    /// sleep, or back on any input, and the screens get what they need for it. `refreshing` is a refresh
-    /// rate calibration running, and `awake` the shown app's runner's command that says whether it keeps
-    /// the screen on (see [`crate::Session::awake_command`]).
-    pub(crate) fn follow(&mut self, now: u64, policy: Policy, refreshing: bool, awake: Option<Arc<[String]>>, levels: &Levels, out: &mut Out) {
+    /// sleep, or back on any input; the screens get what they need for it after the event (see
+    /// [`crate::sync::Sent::idle`]). `refreshing` is a refresh rate calibration running, and `awake` the
+    /// shown app's runner's command that says whether it keeps the screen on (see
+    /// [`crate::Session::awake_command`]).
+    pub(crate) fn follow(&mut self, now: u64, policy: Policy, refreshing: bool, awake: Option<Arc<[String]>>, out: &mut Out) {
         // While the top screen's refresh rate is being calibrated, it is measured on the screen, so the
         // screen is kept on.
         if refreshing {
@@ -215,19 +216,8 @@ impl Idle {
             out.effects.push(Effect::AskAwake(awake.to_vec()));
         }
         let wanted = self.wanted(now, policy);
-        if wanted == self.stage {
-            return;
-        }
-        let was = self.set(wanted, now);
-        // Brightness goes down while dimmed or darker, and comes back when awake.
-        if (was >= Stage::Dimmed) != (wanted >= Stage::Dimmed) {
-            out.effects.extend(if wanted >= Stage::Dimmed { levels.dimmed_effect() } else { levels.undimmed_effect() });
-        }
-        if (was >= Stage::Off) != (wanted >= Stage::Off) {
-            out.effects.push(Effect::Screens(wanted < Stage::Off));
-        }
-        if wanted == Stage::Asleep {
-            out.effects.push(Effect::Sleep);
+        if wanted != self.stage {
+            self.set(wanted, now);
         }
     }
 }
@@ -239,7 +229,7 @@ impl State {
         // video asks the compositor to keep the screen on.
         let policy = Policy::of(&self.prefs.settings().global, self.session.device_session());
         let refreshing = *self.device.refresh() == crate::device::Refresh::Running;
-        self.idle.follow(self.clock.mono(), policy, refreshing, self.session.awake_command(), &self.levels, out);
+        self.idle.follow(self.clock.mono(), policy, refreshing, self.session.awake_command(), out);
     }
 }
 

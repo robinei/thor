@@ -170,7 +170,7 @@ mod tests {
     #[test]
     fn a_program_with_a_tray_icon_runs_with_its_windows_on_its_workspace() {
         let mut s = State::new(crate::Init { device_session: true, ..init() });
-        s.watches.ui_started();
+        s.sent.ui_started();
         tap(&mut s, Id::Tab(crate::Tab::Dock));
         let shelf = win(1, windows::SHELF_APP_ID, &Instance::Shelf.name(), true);
         s.apply(Event::Windows(vec![shelf.clone()]));

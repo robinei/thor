@@ -52,7 +52,6 @@ pub(crate) mod testkit;
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests;
-mod watch;
 
 use bottom::keyboard::Keyboard;
 use settings::Settings;
@@ -124,7 +123,6 @@ pub struct State {
     bottom: Bottom,
     session: Session,
     dock: Dock,
-    watches: watch::Watches,
     /// The Device view on the main screen (see [`device`]).
     device: device::Device,
     levels: Levels,

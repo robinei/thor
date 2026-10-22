@@ -204,7 +204,7 @@ impl State {
     }
 
     /// Opens the Device view on the main screen, bringing shelf's window to the front, with the pad's
-    /// focus on its first row. The account is read while it is open ([`State::follow_watch`]).
+    /// focus on its first row. The account is read while it is open ([`crate::sync::Sent::watches`]).
     pub(crate) fn open_device(&mut self, out: &mut Out) {
         self.device.open();
         self.pointer.focus_on(Id::Device(DeviceId::Wifi));

@@ -291,7 +291,7 @@ impl State {
         }
     }
 
-    /// The second screen's tab changed, and its watch follows (see [`State::follow_watch`]). What the
+    /// The second screen's tab changed, and its watch follows (see [`crate::sync::Sent::watches`]). What the
     /// tab left had going ends: the dock's menu or move, and any level row being set. The time tab opens
     /// on its main page again.
     pub(crate) fn left_tab(&mut self) {

@@ -140,8 +140,6 @@ pub(crate) struct Power {
     pub discharging: bool,
     /// A refresh calibration is running.
     pub refreshing: bool,
-    /// Both screens are off for idle.
-    pub screens_off: bool,
 }
 
 /// How long, in seconds, the second screen goes untouched and without the pad's focus before it dims,
@@ -219,16 +217,10 @@ impl Bottom {
     }
 
     /// Runs after any event. Turns the bottom screen off or on by itself as [`Bottom::idle_wanted`] says.
-    /// A touch, the pad's focus, a window moved down or the charger turn it on again. Does nothing while
-    /// it is off by hand, or while both screens are off for idle; when the screens come back they read
-    /// [`Bottom::off`]. Returns whether it turned the screen off or on.
-    pub(crate) fn follow_power(&mut self, p: Power, now: u64, out: &mut Out) -> bool {
-        let wanted = self.idle_wanted(p, now);
-        if wanted == std::mem::replace(&mut self.screen.idle_off, wanted) || self.screen.off || p.screens_off {
-            return false;
-        }
-        out.effects.push(Effect::Window(WindowCommand::BottomPower(!wanted)));
-        true
+    /// A touch, the pad's focus, a window moved down or the charger turn it on again. The screen is told
+    /// after the event (see [`crate::sync::Sent::bottom_power`]).
+    pub(crate) fn follow_power(&mut self, p: Power, now: u64) {
+        self.screen.idle_off = self.idle_wanted(p, now);
     }
 
     /// The darkened second screen was tapped awake. This lasts until the next game.
@@ -263,9 +255,7 @@ impl Bottom {
     fn show_down(&mut self, id: i64, out: &mut Out) {
         self.screen.windows = true;
         out.effects.push(Effect::Window(WindowCommand::Down(id)));
-        if std::mem::take(&mut self.screen.off) {
-            out.effects.push(Effect::Window(WindowCommand::BottomPower(true)));
-        }
+        self.screen.off = false;
     }
 
     /// Home+Up moves the window the bottom screen shows (the tab in view) back to its place on the top
@@ -322,11 +312,11 @@ impl Bottom {
 
     /// Home+Start turns the bottom screen off, or on again. If it had turned off by itself, this turns it
     /// on, as a touch would.
-    pub(crate) fn toggle_power(&mut self, p: Power, now: u64, out: &mut Out) {
+    pub(crate) fn toggle_power(&mut self, p: Power, now: u64) {
         if self.screen.idle_off && !self.screen.off {
             self.used_at = Some(now);
             self.woken = true;
-            self.follow_power(p, now, out);
+            self.follow_power(p, now);
             return;
         }
         self.screen.off = !self.screen.off;
@@ -336,7 +326,6 @@ impl Bottom {
             self.woken = true;
             self.screen.idle_off = false;
         }
-        out.effects.push(Effect::Window(WindowCommand::BottomPower(!self.screen.off)));
     }
 
     /// Runs after the windows changed. A window whose program has a rule for it is sent down, once.
@@ -370,7 +359,6 @@ impl State {
             when_idle: self.in_force().choice::<BottomWhenIdle>(),
             discharging: self.sys.status().discharging,
             refreshing: *self.device.refresh() == crate::device::Refresh::Running,
-            screens_off: self.idle.stage() >= crate::device::idle::Stage::Off,
         }
     }
 }

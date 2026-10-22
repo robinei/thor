@@ -50,7 +50,7 @@ impl State {
             DeviceKey::BottomView => return self.bottom.toggle_view(&self.session),
             DeviceKey::CloseWindow => return self.close_front_window(out),
             DeviceKey::Quit => return self.quit_front(out),
-            DeviceKey::BottomPower => return self.bottom.toggle_power(self.power(), self.clock.mono(), out),
+            DeviceKey::BottomPower => return self.bottom.toggle_power(self.power(), self.clock.mono()),
             DeviceKey::WindowDown => return self.bottom.window_down(&self.session, self.clock.mono(), out),
             DeviceKey::WindowUp => return self.bottom.window_up(&self.session, self.clock.mono(), out),
         };

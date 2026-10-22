@@ -126,7 +126,8 @@ and the UI change with the code they call; doc links to moved methods are fixed 
       asserts no allocation for warm ticks, readings, windows/units, pointer and pad events.
 - [ ] Drawing records, then plays: `Canvas` keeps its methods but records into a `Recording { cmds:
       Vec<Cmd>, text: Vec<u8> }` (a small `Copy` enum of commands; text bytes in the byte buffer, referred
-      to by range; images carry a generation so a load changes the command), reused so recording doesn't
+      to by range; images carry a generation so a load changes the command, and text the glyph cache's generation so a
+      fallback font arriving does too), reused so recording doesn't
       allocate once warm. After every `apply`, each visible screen is recorded and compared with its last
       recording (two slice compares); only a changed one is played into the shm buffer and committed.
       `Dirty` and every `out.mark(..)` go. Damage is one rectangle: the bounds of the commands between the first and last difference, from

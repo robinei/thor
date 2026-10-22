@@ -9,7 +9,6 @@ use crate::settings::MouseAtLaunch;
 use crate::sync::Resend;
 use crate::{
     BtId, Dirty, EditorId, Effect, EntryAct, Event, Id, Level, Library, ListId, PadRoute, PointerEvent, Reading, Save, SettingsId, ShelfId, State, Tab, WifiId,
-    WindowCommand,
 };
 
 /// What the steps after an event last saw (see [`State::reconcile`]).
@@ -30,33 +29,13 @@ impl Settled {
 
 impl State {
     /// Applies one event and returns which screens changed and what must happen outside. After the event
-    /// itself, everything that follows from it is applied: the pad mouse follows the game in front, the
-    /// pad is routed to where it is wanted, and idle moves on or back.
+    /// itself, the state is settled ([`State::settle`]), and then the outside is told what changed for it
+    /// ([`State::sync`]).
     pub fn apply(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
         let mut out = Out::default();
         self.apply_event(event, &mut out);
-        if self.session.version() != self.settled.session && self.reconcile(&mut out) {
-            out.mark(Dirty::BOTTOM);
-        }
-        if self.bottom.follow_dim(&self.session, &self.clock) {
-            out.mark(Dirty::BOTTOM);
-        }
-        self.shelf.follow_folder();
+        self.settle(&mut out);
         self.sync(&mut out);
-        self.follow_idle(&mut out);
-        self.follow_watch(&mut out);
-        let changed = self.session.follow_program();
-        if changed {
-            out.effects.push(Effect::Apply { entry: self.session.program().cloned(), settings: self.in_force() });
-        }
-        // This comes after the program in force is settled, since it reads that program's setting and
-        // darkness. If it changed anything, the watch is followed again.
-        if self.bottom.follow_power(self.power(), self.clock.mono(), &mut out) {
-            self.follow_watch(&mut out);
-        }
-        if changed && self.follow_pad_mouse() {
-            out.mark(Dirty::BOTH);
-        }
         self.follow_keymap(false, &mut out);
         if let Some(route) = self.reconcile_pad() {
             out.effects.push(Effect::PadRoute(route));
@@ -72,6 +51,33 @@ impl State {
         // The follow-up steps don't queue events: one queued here would never be handled.
         debug_assert!(out.events.is_empty(), "an event queued after the event was handled: {:?}", out.events);
         (out.dirty, out.effects)
+    }
+
+    /// Brings the state up to date with what happened, in this order, since each step reads what the
+    /// earlier ones settled:
+    ///
+    /// 1. The session's steps, when what it follows changed ([`State::reconcile`]).
+    /// 2. The second screen's dimming.
+    /// 3. The browsed folder's selection and armed action.
+    /// 4. The idle stage.
+    /// 5. The program in force.
+    /// 6. The second screen turning off or on by itself, which reads the program in force's setting and
+    ///    darkness.
+    /// 7. The pad mouse, when the program in force changed.
+    fn settle(&mut self, out: &mut Out) {
+        if self.session.version() != self.settled.session && self.reconcile(out) {
+            out.mark(Dirty::BOTTOM);
+        }
+        if self.bottom.follow_dim(&self.session, &self.clock) {
+            out.mark(Dirty::BOTTOM);
+        }
+        self.shelf.follow_folder();
+        self.follow_idle(out);
+        let changed = self.session.follow_program();
+        self.bottom.follow_power(self.power(), self.clock.mono());
+        if changed && self.follow_pad_mouse() {
+            out.mark(Dirty::BOTH);
+        }
     }
 
     /// Runs after any change to what the session follows (the windows, systemd's scopes, the tray, the
@@ -224,11 +230,9 @@ impl State {
                 out.mark(dirty);
             }
             Event::Pointing(pointing) => self.bottom.point(pointing, out),
-            // Sleep may have reset what the settings set, such as frequency caps and cores, so apply them
-            // again.
             Event::Resumed => {
                 self.idle.resumed(self.clock.mono());
-                out.effects.push(Effect::Apply { entry: self.session.program().cloned(), settings: self.in_force() });
+                self.sent.resend(Resend::Resumed);
             }
             Event::Idle(event) => self.idle.heard(event, self.clock.mono()),
             Event::Device(key) => {
@@ -254,10 +258,8 @@ impl State {
             }
             Event::RefreshCalibrated(result) => {
                 self.device.refresh_done(result);
-                // The tool turned the bottom screen off while it ran and then restored it. Set it to what
-                // ClamShell wants.
                 out.mark(Dirty::TOP);
-                out.effects.push(Effect::Window(WindowCommand::BottomPower(!self.bottom.off())));
+                self.sent.resend(Resend::RefreshCalibrated);
             }
             Event::GyroCalibrated(ok) => {
                 self.bottom.notify(crate::bottom::notice::NoticeKind::Gyro(Some(ok)), self.clock.mono());
@@ -360,9 +362,9 @@ impl State {
 
     /// The UI is up. Sends what was waiting for it: the dock if pins were dropped at start, the
     /// brightness, the pad's route, the keymaps and the down rules. The open tab's watch starts from now
-    /// (see [`State::follow_watch`]).
+    /// (see [`crate::sync::Sent::ui_started`]).
     fn ui_started(&mut self, out: &mut Out) {
-        self.watches.ui_started();
+        self.sent.ui_started();
         if self.dock.take_unsaved() {
             out.effects.push(Effect::Save(Save::Dock(self.dock.pinned_ids())));
         }
