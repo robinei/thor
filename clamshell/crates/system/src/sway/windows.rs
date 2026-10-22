@@ -4,7 +4,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use clamshell_core::bottom_screen::DownRule;
+use clamshell_core::bottom::screen::DownRule;
 use clamshell_core::instance::Instance;
 use clamshell_core::windows::Window;
 

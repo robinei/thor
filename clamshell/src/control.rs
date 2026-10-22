@@ -10,8 +10,8 @@ use std::fmt;
 use std::io::BufRead;
 use std::path::PathBuf;
 
+use clamshell_core::bottom::keyboard::{self, Key, Modifier, Named};
 use clamshell_core::device::buttons::DeviceKey;
-use clamshell_core::keyboard::{self, Key, Modifier, Named};
 use clamshell_core::keymap::{Actuation, Dir, Input, Layer, MouseButton, Output, PadOut, Param, Side};
 use clamshell_core::levels::Level;
 use clamshell_core::levels::slider::Control;

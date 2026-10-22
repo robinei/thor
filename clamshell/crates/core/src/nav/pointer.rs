@@ -50,7 +50,7 @@ impl Pointer {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use crate::keyboard::{Key, Modifier, find};
+    use crate::bottom::keyboard::{Key, Modifier, find};
     use crate::testkit::*;
     use crate::*;
 

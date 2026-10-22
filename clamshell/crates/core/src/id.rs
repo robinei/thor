@@ -7,12 +7,12 @@
 use std::sync::Arc;
 
 use crate::Dirty;
-use crate::keyboard::KeyPos;
+use crate::bottom::Tab;
+use crate::bottom::keyboard::KeyPos;
 use crate::levels::Level;
 use crate::levels::slider::Control;
 use crate::settings::Setting;
 use crate::settings::panel::Scope;
-use crate::tab::Tab;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Id {
@@ -52,7 +52,7 @@ pub enum Id {
     /// The dark second screen (while a game runs): a tap anywhere lights it.
     Wake,
     /// The second screen below the bar where there is nothing: a tap does nothing, a finger moving
-    /// points (see [`crate::touch`]).
+    /// points (see [`crate::bottom::touch`]).
     Blank,
     /// The time tab's (see [`crate::status::time`]).
     Time(crate::status::time::TimeId),

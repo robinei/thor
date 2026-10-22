@@ -12,7 +12,7 @@ mod pointing;
 use std::io;
 use std::sync::{Arc, Mutex};
 
-use clamshell_core::touch::{Contact, TouchLayout};
+use clamshell_core::bottom::touch::{Contact, TouchLayout};
 
 use crate::input::Rect;
 use crate::worker::{self, Next, Worker};

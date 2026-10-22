@@ -4,8 +4,8 @@
 use std::io;
 use std::sync::{Arc, Mutex};
 
+use clamshell_core::bottom::touch::TouchLayout;
 use clamshell_core::settings::Values;
-use clamshell_core::touch::TouchLayout;
 use clamshell_system::brightness::Backlights;
 use clamshell_system::job::Runner;
 use clamshell_system::keyboard::VirtualKeyboard;

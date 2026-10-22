@@ -4,7 +4,7 @@
 //! held) are amber; Caps Lock has a light in its corner. Backspace is red, Enter amber.
 
 use clamshell_core::Id;
-use clamshell_core::keyboard::{self, Key, KeyPos, Keyboard, LAYOUT, Modifier, Named, Slot};
+use clamshell_core::bottom::keyboard::{self, Key, KeyPos, Keyboard, LAYOUT, Modifier, Named, Slot};
 
 use crate::draw::{Align, Canvas, Rect};
 use crate::icons::Icon;

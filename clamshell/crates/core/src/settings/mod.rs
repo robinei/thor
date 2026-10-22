@@ -28,7 +28,7 @@ pub enum Setting {
     /// 540p, 3 integer scaling.
     Upscale,
     /// The second screen: 0 on (dimmed when untouched), 1 dark while a game runs (until tapped), 2 off
-    /// when idle; 1 and 2 power it off on battery (see [`crate::bottom_screen`]).
+    /// when idle; 1 and 2 power it off on battery (see [`crate::bottom::screen`]).
     BottomScreen,
     /// The big CPU cores: 1 on, 0 off (the little ones only).
     BigCores,
@@ -183,7 +183,7 @@ choices!(
 );
 
 choices!(
-    /// [`Setting::BottomScreen`]: the second screen while it isn't used (see [`crate::bottom_screen`]).
+    /// [`Setting::BottomScreen`]: the second screen while it isn't used (see [`crate::bottom::screen`]).
     BottomWhenIdle for BottomScreen, default OffWhenIdle {
         /// Off on battery when idle (dimmed first).
         OffWhenIdle = 2, "Off when idle", Stock;

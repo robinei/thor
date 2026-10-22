@@ -3,8 +3,8 @@
 //! written once changes have stopped for a moment.
 
 use crate::State;
+use crate::bottom::Tab;
 use crate::kit::debounce::Debounce;
-use crate::tab::Tab;
 
 /// Seconds after the last change before it is saved.
 pub(crate) const SAVE_AFTER: u64 = 2;

@@ -3,7 +3,7 @@
 //! changes applied at once when they change the settings in force, the environment editor opened.
 
 use crate::State;
-use crate::editor::{Editor, Purpose};
+use crate::bottom::editor::{Editor, Purpose};
 use crate::effect::{Effect, Save};
 use crate::id::SettingsId;
 use crate::program::Program;
@@ -240,7 +240,7 @@ impl State {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use crate::keyboard::{Key, Named, find};
+    use crate::bottom::keyboard::{Key, Named, find};
     use crate::settings::{self, Choice, PowerProfile, Setting};
     use crate::testkit::*;
     use crate::*;
@@ -428,7 +428,7 @@ mod tests {
         tap(&mut s, Id::Settings(SettingsId::Env));
         let key = |s: &mut State, k| tap(s, Id::Key(find(k).unwrap()));
         let ctrl_v = |s: &mut State| {
-            key(s, Key::Mod(crate::keyboard::Modifier::Ctrl));
+            key(s, Key::Mod(crate::bottom::keyboard::Modifier::Ctrl));
             key(s, Key::Char('v'))
         };
         ctrl_v(&mut s);

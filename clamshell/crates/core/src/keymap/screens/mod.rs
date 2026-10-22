@@ -19,10 +19,10 @@
 //! This module also sends the keymap in force to the pad whenever it changes.
 
 use crate::State;
-use crate::editor::{Editor, KeymapName, Purpose};
+use crate::bottom::editor::{Editor, KeymapName, Purpose};
+use crate::bottom::keyboard::{Key, Stroke};
 use crate::effect::{Effect, Save};
 use crate::id::{KeymapId, Target};
-use crate::keyboard::{Key, Stroke};
 use crate::keymap::{Actuation, Binding, Chord, Input, Keymap, Keymaps, Kind, Layer, Output, PadOut, Param, as_on_the_pad};
 use crate::levels::slider::{Control, Slider};
 use crate::nav::lists::RowPart;
@@ -479,7 +479,7 @@ impl State {
                 None => vec![],
             },
             KeymapId::Calibrate => {
-                self.notify(crate::notice::NoticeKind::Gyro(None));
+                self.notify(crate::bottom::notice::NoticeKind::Gyro(None));
                 vec![Effect::CalibrateGyro]
             }
             KeymapId::Holds => {

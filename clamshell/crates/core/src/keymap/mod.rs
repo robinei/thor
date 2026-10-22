@@ -21,7 +21,7 @@
 
 use std::fmt::{self, Write};
 
-use crate::keyboard::{Key, Named};
+use crate::bottom::keyboard::{Key, Named};
 use crate::kit::names::names;
 
 mod inputs;

@@ -1,13 +1,13 @@
 //! The fingers the UI says point (see clamshell-core's `touch`), as touchpad events. Pure: contacts in,
 //! events out.
 
-use clamshell_core::touch::{Contact, ContactPhase};
+use clamshell_core::bottom::touch::{Contact, ContactPhase};
 use evdev::{AbsoluteAxisCode, KeyCode};
 
 use crate::input::{Press, Raw};
 
 /// Slots (fingers) tracked.
-pub const SLOTS: usize = clamshell_core::touch::SLOTS as usize;
+pub const SLOTS: usize = clamshell_core::bottom::touch::SLOTS as usize;
 /// BTN_TOOL_FINGER, _DOUBLETAP, _TRIPLETAP, _QUADTAP: how many fingers are on the touchpad.
 const TOOLS: [KeyCode; 4] = [KeyCode::BTN_TOOL_FINGER, KeyCode::BTN_TOOL_DOUBLETAP, KeyCode::BTN_TOOL_TRIPLETAP, KeyCode::BTN_TOOL_QUADTAP];
 

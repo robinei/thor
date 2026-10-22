@@ -11,11 +11,11 @@ pub mod idle;
 pub mod sticks;
 
 use crate::State;
-use crate::editor::{Editor, Purpose};
+use crate::bottom::Tab;
+use crate::bottom::editor::{Editor, Purpose};
+use crate::bottom::notice::NoticeKind;
 use crate::effect::{Effect, Save, WindowCommand};
 use crate::kit::secret::Secret;
-use crate::notice::NoticeKind;
-use crate::tab::Tab;
 use crate::{Id, ShelfId};
 use account::{AccountCommand, PasswordStep};
 use sticks::{Calibrations, Progress, Sticks};

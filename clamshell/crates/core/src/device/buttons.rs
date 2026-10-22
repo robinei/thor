@@ -1,11 +1,11 @@
 //! The device's own buttons and what they do: volume and brightness up and down, mute, a screenshot, and
-//! the Home combinations; each says what happened in a notice (see [`crate::notice`]).
+//! the Home combinations; each says what happened in a notice (see [`crate::bottom::notice`]).
 
 use crate::State;
+use crate::bottom::notice::NoticeKind;
 use crate::effect::{Effect, WindowCommand};
 use crate::levels::Level;
 use crate::levels::slider::Control;
-use crate::notice::NoticeKind;
 use crate::windows::{SHELF_APP_ID, Window};
 
 /// A hardware key (or the same asked for through the control pipe).

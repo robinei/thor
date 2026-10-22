@@ -6,7 +6,7 @@
 
 use std::io;
 
-use clamshell_core::keyboard::{Key, Named, Stroke};
+use clamshell_core::bottom::keyboard::{Key, Named, Stroke};
 use evdev::uinput::VirtualDevice;
 use evdev::{InputEvent, KeyCode};
 

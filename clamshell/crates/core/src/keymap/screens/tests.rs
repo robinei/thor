@@ -1,5 +1,5 @@
 use super::*;
-use crate::keyboard::{Modifier, find};
+use crate::bottom::keyboard::{Modifier, find};
 use crate::keymap::{Button, Dir, MouseButton, Side};
 use crate::levels::slider::Control;
 use crate::testkit::*;

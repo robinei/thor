@@ -29,7 +29,7 @@ use std::sync::Arc;
 use std::sync::mpsc::{self, Sender};
 use std::thread::JoinHandle;
 
-use clamshell_core::bottom_screen::{WindowRule, WindowRules};
+use clamshell_core::bottom::screen::{WindowRule, WindowRules};
 use clamshell_core::keymap::{Keymap, Keymaps};
 use clamshell_core::levels::Brightness;
 use clamshell_core::settings::{Setting, Settings};

@@ -28,7 +28,7 @@ mod touchpad;
 mod wifi;
 
 use clamshell_core::Tab;
-use clamshell_core::editor::Purpose;
+use clamshell_core::bottom::editor::Purpose;
 use clamshell_core::files::FileName;
 
 use crate::draw::Rect;

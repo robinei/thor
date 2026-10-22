@@ -5,7 +5,7 @@
 
 use std::fmt::{self, Display, Formatter};
 
-use clamshell_core::editor::{Editor, Purpose};
+use clamshell_core::bottom::editor::{Editor, Purpose};
 use clamshell_core::radios::wifi::{NetState, Problem, Wifi};
 use clamshell_core::{Id, ListId, RadioStatus, WifiId};
 

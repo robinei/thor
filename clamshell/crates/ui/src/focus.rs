@@ -5,7 +5,7 @@
 //! Where the pad may go ([`PadScope`]): with shelf in front, both screens, and in shelf's list up and
 //! down step through the games; with anything else in front, only the second screen.
 
-use clamshell_core::keyboard;
+use clamshell_core::bottom::keyboard;
 use clamshell_core::levels::Level;
 use clamshell_core::{DockId, EditorId, Event, Id, LevelEvent, ListId, PadInput, PointerEvent, ShelfEvent, ShelfId, State, Tab};
 use smithay_client_toolkit::seat::keyboard::Keysym;

@@ -5,8 +5,8 @@
 //! as unavailable.
 
 use crate::State;
+use crate::bottom::notice::NoticeKind;
 use crate::kit::secret::Secret;
-use crate::notice::NoticeKind;
 
 /// The account as the helper read it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

@@ -590,7 +590,7 @@ mod tests {
 
     #[test]
     fn typing_with_shelf_in_front_finds_entries_by_their_titles_start() {
-        use crate::keyboard::find;
+        use crate::bottom::keyboard::find;
         let mut s = state();
         tap(&mut s, Id::Tab(crate::Tab::Keyboard));
         let key = |s: &mut State, k| find(k).map(|pos| tap(s, Id::Key(pos))).unwrap_or_default();
@@ -601,7 +601,7 @@ mod tests {
         assert_eq!(titles(&s), ["Mario Kart DS"], "any case: Ma");
         assert_eq!(s.shelf().selected().map(|g| &**g), Some("mk-ds"));
         // Into a folder and out: each list its own.
-        key(&mut s, Key::Named(crate::keyboard::Named::Backspace));
+        key(&mut s, Key::Named(crate::bottom::keyboard::Named::Backspace));
         assert_eq!(titles(&s).len(), 2);
         s.apply(ShelfEvent::ClearFilter.into());
         assert_eq!(s.shelf().filter(), "");
@@ -609,7 +609,7 @@ mod tests {
         tap(&mut s, Id::Shelf(ShelfId::Collection(2)));
         key(&mut s, Key::Char('c'));
         assert_eq!(titles(&s), ["Cosmos"]);
-        let fx = key(&mut s, Key::Named(crate::keyboard::Named::Enter));
+        let fx = key(&mut s, Key::Named(crate::bottom::keyboard::Named::Enter));
         assert!(fx.is_empty() && s.shelf().group().is_some(), "Enter: opened");
         assert_eq!(s.shelf().filter(), "", "the folder's own list");
         tap(&mut s, Id::Shelf(ShelfId::Up));

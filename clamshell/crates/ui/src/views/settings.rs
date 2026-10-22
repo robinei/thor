@@ -6,7 +6,7 @@
 //! one by one; those tiles carry a dot, and the rest show the default's value dimmed. Changes reach a
 //! running game at once. The environment tile opens an editor over the on-screen keyboard.
 
-use clamshell_core::editor::{Editor, KeymapName, Purpose};
+use clamshell_core::bottom::editor::{Editor, KeymapName, Purpose};
 use clamshell_core::settings::{Impact, Setting};
 use clamshell_core::{Id, Scope, SettingsId, State, TileOrigin};
 

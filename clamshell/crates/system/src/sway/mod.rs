@@ -34,7 +34,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use clamshell_core::Event;
-use clamshell_core::bottom_screen::DownRule;
+use clamshell_core::bottom::screen::DownRule;
 
 use crate::worker::{self, Ended, Service, Worker, lost_on};
 use crate::{Closed, Sink, cgroup};

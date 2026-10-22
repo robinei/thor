@@ -2,7 +2,7 @@
 //! system thread (readings of the system, the compositor's windows, systemd's scopes, games starting and
 //! ending), grouped by what they are about.
 
-use crate::touch::Pointing;
+use crate::bottom::touch::Pointing;
 use std::sync::Arc;
 
 use crate::device::buttons::DeviceKey;
@@ -82,7 +82,7 @@ pub enum Event {
     Listened(crate::keymap::Input),
     /// A text field of the app in front wants typing (true), or no longer does (the Wayland side).
     TextInput(bool),
-    /// The keyboard points (see [`crate::keyboard`]).
+    /// The keyboard points (see [`crate::bottom::keyboard`]).
     Pointing(Pointing),
     /// The system woke from sleep.
     Resumed,

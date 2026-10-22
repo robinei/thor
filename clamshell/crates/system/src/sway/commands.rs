@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use clamshell_core::bottom_screen::DownRule;
+use clamshell_core::bottom::screen::DownRule;
 use clamshell_core::instance::Instance;
 use clamshell_core::windows::SHELF_APP_ID;
 

@@ -16,9 +16,9 @@
 
 use std::time::{Duration, Instant};
 
+use clamshell_core::bottom::touch::{ContactPhase, Pointing};
 use clamshell_core::levels::Level;
 use clamshell_core::levels::slider::{Control, SLIDE_AFTER, SLIDE_MOVE};
-use clamshell_core::touch::{ContactPhase, Pointing};
 use clamshell_core::{Event, Hold, Id, LevelEvent, ListEvent, PadRoute, PointerEvent, Slide, State};
 
 use crate::draw::Rect;
@@ -438,7 +438,7 @@ impl Input {
 #[allow(clippy::indexing_slicing)]
 mod tests {
     use super::*;
-    use clamshell_core::keyboard::{self, Key, KeyPos};
+    use clamshell_core::bottom::keyboard::{self, Key, KeyPos};
     use clamshell_core::{Init, ListId, Tab};
 
     fn t0() -> Instant {

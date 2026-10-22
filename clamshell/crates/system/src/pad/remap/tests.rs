@@ -3,7 +3,7 @@ use crate::input::Range;
 use crate::pad::motion::Sample;
 use crate::pad::route::{Axis, PadRouter};
 use clamshell_core::PadRoute;
-use clamshell_core::keyboard::{Key, Named};
+use clamshell_core::bottom::keyboard::{Key, Named};
 
 const STICK_MAX: i32 = 32767;
 

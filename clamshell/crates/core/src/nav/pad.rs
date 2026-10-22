@@ -12,8 +12,8 @@
 //! on for a program that wants it, off again when another (or none) is in force, unless the user
 //! switched it meanwhile.
 
+use crate::bottom::Tab;
 use crate::running::Front;
-use crate::tab::Tab;
 
 /// Where the controller's input goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

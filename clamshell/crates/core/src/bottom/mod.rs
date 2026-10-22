@@ -4,11 +4,17 @@
 //! runs. Volume and brightness open from their controls, Bluetooth, Wi-Fi and Battery from their status
 //! icons; all are tabs alike.
 
-use crate::editor::Editor;
+pub mod editor;
+pub mod keyboard;
+pub mod notice;
+pub mod screen;
+pub mod touch;
+
 use crate::effect::Watch;
 use crate::event::Reading;
 use crate::kit::names::names;
 use crate::settings::panel::Scope;
+use editor::Editor;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Tab {
@@ -106,12 +112,12 @@ pub struct Bottom {
     /// The dark second screen was tapped awake (until the next game).
     pub(crate) woken: bool,
     /// What the bottom screen shows (ClamShell's view or a window moved down), and whether it is off.
-    pub(crate) screen: crate::bottom_screen::BottomScreen,
+    pub(crate) screen: crate::bottom::screen::BottomScreen,
     /// What the time tab shows: its main page, the regions, or a region's zones.
     pub(crate) time_page: crate::status::time::TimePage,
     /// What a key just did (a level, a screenshot), shown under the bar for a moment.
-    pub(crate) notice: Option<crate::notice::Notice>,
-    /// The area below the bar points (see [`crate::touch`]).
+    pub(crate) notice: Option<crate::bottom::notice::Notice>,
+    /// The area below the bar points (see [`crate::bottom::touch`]).
     pub(crate) pointing: bool,
 }
 
@@ -120,7 +126,7 @@ impl Bottom {
         self.tab
     }
 
-    /// Whether the area below the bar points (see [`crate::touch`]): always in the touchpad tab.
+    /// Whether the area below the bar points (see [`crate::bottom::touch`]): always in the touchpad tab.
     pub fn pointing(&self) -> bool {
         self.pointing || self.tab == Tab::Touchpad
     }
@@ -148,7 +154,7 @@ impl Bottom {
         Some(self.editors.remove(i))
     }
 
-    pub fn notice(&self) -> Option<&crate::notice::Notice> {
+    pub fn notice(&self) -> Option<&crate::bottom::notice::Notice> {
         self.notice.as_ref()
     }
 
@@ -173,7 +179,7 @@ mod tests {
         let mut s = state();
         assert_eq!(tap(&mut s, Id::Tab(Tab::Touchpad)), vec![Effect::Watch(Watch::Metrics, false)], "nothing to watch");
         assert!(s.bottom().pointing());
-        s.apply(crate::touch::Pointing::Idle.into());
+        s.apply(crate::bottom::touch::Pointing::Idle.into());
         assert!(s.bottom().pointing(), "idle or not");
         let wifi = |on| Effect::Watch(Watch::Wifi, on);
         assert_eq!(tap(&mut s, Id::Tab(Tab::Wifi)), vec![wifi(true)]);

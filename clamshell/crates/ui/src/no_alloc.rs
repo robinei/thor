@@ -4,10 +4,10 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
+use clamshell_core::bottom::keyboard::{self, Key, Modifier};
 use clamshell_core::device::account::Account;
 use clamshell_core::device::sticks::Calibrator;
 use clamshell_core::device::{DeviceId, SticksEvent};
-use clamshell_core::keyboard::{self, Key, Modifier};
 use clamshell_core::keymap::{Button, Input, Keymaps, Layer, Param, Side};
 use clamshell_core::levels::slider::Control;
 use clamshell_core::settings::Setting;

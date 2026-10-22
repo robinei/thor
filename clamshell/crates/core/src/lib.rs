@@ -16,10 +16,9 @@
 pub mod actions;
 pub mod autostart;
 pub mod background;
-pub mod bottom_screen;
+pub mod bottom;
 pub mod device;
 pub mod dock;
-pub mod editor;
 mod effect;
 pub mod enqueue;
 mod event;
@@ -27,12 +26,10 @@ pub mod files;
 mod found;
 mod id;
 pub mod instance;
-pub mod keyboard;
 pub mod keymap;
 pub mod kit;
 pub mod levels;
 pub mod nav;
-pub mod notice;
 pub mod program;
 pub mod radios;
 mod resume;
@@ -41,18 +38,18 @@ mod session;
 pub mod settings;
 mod shelf;
 pub mod status;
-mod tab;
-pub mod touch;
 pub mod tray;
 pub mod windows;
 
+use crate::bottom::keyboard::{Key, Keyboard};
 use crate::levels::slider::Control;
-use keyboard::{Key, Keyboard};
 use kit::replace;
 pub use resume::Resume;
 use resume::{SAVE_AFTER, Saves};
 use settings::{MouseAtLaunch, Settings};
 
+pub use crate::bottom::editor::Editor;
+pub use crate::bottom::{Bottom, Tab};
 pub use crate::kit::list::Scroll;
 pub use crate::nav::lists::{ListEvent, ListId, Lists, RowPart};
 pub use crate::nav::pad::{Claimant, Pad, PadInput, PadMouse, PadRoute};
@@ -62,7 +59,6 @@ pub use crate::settings::panel::{Scope, TileOrigin};
 pub use crate::status::time::{ClockField, TimeId, TimePage, TimeRow, TimeZones};
 pub use crate::status::{Status, Sys};
 pub use dock::{Dock, DockItem};
-pub use editor::Editor;
 pub use effect::{Dirty, Effect, Save, Watch, WindowCommand};
 pub use event::{Event, LaunchEvent, LevelEvent, PointerEvent, Reading, ShelfEvent, Slide};
 pub use id::{AudioId, BtId, DockId, EditorId, Hold, Id, KeymapId, SettingsId, ShelfId, Target, WifiId};
@@ -73,7 +69,6 @@ pub use radios::{RadioStatus, Radios};
 pub use running::{Front, Launching, Origin, Running};
 pub use session::Session;
 pub use shelf::{Cursor, Shelf};
-pub use tab::{Bottom, Tab};
 
 pub use clamshell_library::{BrowseKind, Browsed, Collection, Entry, Launch, Library, Meta, RunnerOf, runner_key};
 
@@ -100,7 +95,7 @@ pub struct Init {
     /// ClamShell is the device's own session: it may put the device to sleep when idle.
     pub device_session: bool,
     /// Which programs' windows go to the bottom screen.
-    pub window_rules: bottom_screen::WindowRules,
+    pub window_rules: crate::bottom::screen::WindowRules,
     /// Clocks on a 12-hour dial (else 24-hour).
     pub twelve_hour: bool,
     /// ClamShell's first start (the Device view not closed with Done yet): the Device view opens (see
@@ -157,7 +152,7 @@ pub struct State {
     /// ClamShell is the device's own session (see [`Init::device_session`]).
     device_session: bool,
     /// Which programs' windows go to the bottom screen.
-    window_rules: bottom_screen::WindowRules,
+    window_rules: crate::bottom::screen::WindowRules,
     /// Clocks on a 12-hour dial (see [`crate::status::time`]).
     pub(crate) twelve_hour: bool,
     /// Metadata is being fetched; what shelf showed when it was last asked for first (see
@@ -476,7 +471,7 @@ impl State {
                 (Dirty::TOP, vec![Effect::Window(WindowCommand::BottomPower(!self.bottom_off()))])
             }
             Event::GyroCalibrated(ok) => {
-                self.notify(crate::notice::NoticeKind::Gyro(Some(ok)));
+                self.notify(crate::bottom::notice::NoticeKind::Gyro(Some(ok)));
                 (Dirty::BOTTOM, vec![])
             }
             Event::AccountChanged(result) => {
@@ -513,7 +508,7 @@ impl State {
         let problems = &library.problems;
         if !problems.is_empty() && *problems != self.shelf.library().problems {
             let first = problems.first().cloned().unwrap_or_default();
-            self.notify(notice::NoticeKind::Problems(first, problems.len()));
+            self.notify(crate::bottom::notice::NoticeKind::Problems(first, problems.len()));
         }
         if self.shelf.reload(library) {
             self.moved_collection();
@@ -562,14 +557,14 @@ impl State {
     }
 
     /// The touchpad tab's contacts: passed on as the pointer's, or none.
-    fn pointing(&mut self, pointing: crate::touch::Pointing) -> (Dirty, Vec<Effect>) {
+    fn pointing(&mut self, pointing: crate::bottom::touch::Pointing) -> (Dirty, Vec<Effect>) {
         let before = self.bottom.pointing;
         let effects = match pointing {
-            crate::touch::Pointing::Contacts(contacts) => {
+            crate::bottom::touch::Pointing::Contacts(contacts) => {
                 self.bottom.pointing = true;
                 vec![Effect::Touchpad(contacts)]
             }
-            crate::touch::Pointing::Idle => {
+            crate::bottom::touch::Pointing::Idle => {
                 self.bottom.pointing = false;
                 vec![]
             }
@@ -880,15 +875,15 @@ impl State {
     /// A key typed with shelf in front: a character narrows the current list to the titles starting with
     /// what is typed, Backspace takes the last one back, Esc clears it, Enter opens or plays the selected
     /// entry.
-    fn find(&mut self, stroke: keyboard::Stroke) -> Vec<Effect> {
+    fn find(&mut self, stroke: crate::bottom::keyboard::Stroke) -> Vec<Effect> {
         let mut filter = self.shelf.filter().to_owned();
         match stroke.key {
-            Key::Char(c) if !stroke.ctrl && !stroke.alt && !stroke.logo => filter.push(if stroke.shift { keyboard::shifted(c) } else { c }),
-            Key::Named(keyboard::Named::Backspace) => {
+            Key::Char(c) if !stroke.ctrl && !stroke.alt && !stroke.logo => filter.push(if stroke.shift { crate::bottom::keyboard::shifted(c) } else { c }),
+            Key::Named(crate::bottom::keyboard::Named::Backspace) => {
                 filter.pop();
             }
-            Key::Named(keyboard::Named::Esc) => filter.clear(),
-            Key::Named(keyboard::Named::Enter) => return self.activate_selected(),
+            Key::Named(crate::bottom::keyboard::Named::Esc) => filter.clear(),
+            Key::Named(crate::bottom::keyboard::Named::Enter) => return self.activate_selected(),
             _ => return vec![],
         }
         if self.shelf.set_filter(filter) {
@@ -1171,7 +1166,7 @@ pub(crate) mod testkit {
     }
 
     /// The notice shown, if one is.
-    pub fn notice(s: &State) -> Option<crate::notice::NoticeKind> {
+    pub fn notice(s: &State) -> Option<crate::bottom::notice::NoticeKind> {
         s.bottom().notice().map(|n| n.what.clone())
     }
 
@@ -1280,7 +1275,7 @@ mod tests {
             Event::Library(Box::new(library))
         };
         s.apply(with(&["grim isn't installed: no screenshots", "x: no launch command"]));
-        assert_eq!(notice(&s), Some(notice::NoticeKind::Problems("grim isn't installed: no screenshots".into(), 2)));
+        assert_eq!(notice(&s), Some(crate::bottom::notice::NoticeKind::Problems("grim isn't installed: no screenshots".into(), 2)));
         s.apply(Event::tick(10_000));
         s.apply(with(&["grim isn't installed: no screenshots", "x: no launch command"]));
         assert_eq!(notice(&s), None, "the same again: not said");
@@ -1290,7 +1285,7 @@ mod tests {
     fn a_launch_says_it_is_starting() {
         let mut s = state();
         launch(&mut s, "zelda-lttp");
-        assert!(matches!(s.bottom().notice().map(|n| &n.what), Some(notice::NoticeKind::Starting(t)) if t == "A Link to the Past"));
+        assert!(matches!(s.bottom().notice().map(|n| &n.what), Some(crate::bottom::notice::NoticeKind::Starting(t)) if t == "A Link to the Past"));
     }
 
     #[test]
@@ -1298,14 +1293,14 @@ mod tests {
         let mut s = state();
         launch(&mut s, "zelda-lttp");
         crate::testkit::end(&mut s, "zelda-lttp");
-        assert!(matches!(notice(&s), Some(notice::NoticeKind::NotStarted(_))), "{:?}", notice(&s));
+        assert!(matches!(notice(&s), Some(crate::bottom::notice::NoticeKind::NotStarted(_))), "{:?}", notice(&s));
         // One that showed a window and ended: nothing said.
         let mut s = state();
         let zelda = launch(&mut s, "zelda-lttp");
         s.apply(Event::Windows(vec![Window { unit: zelda.unit(), visible: true, ..win(5, "zelda3", &zelda.workspace(), true) }]));
         s.apply(Event::Windows(vec![]));
         crate::testkit::end(&mut s, "zelda-lttp");
-        assert!(!matches!(notice(&s), Some(notice::NoticeKind::NotStarted(_))), "{:?}", notice(&s));
+        assert!(!matches!(notice(&s), Some(crate::bottom::notice::NoticeKind::NotStarted(_))), "{:?}", notice(&s));
     }
 
     #[test]
@@ -1315,7 +1310,7 @@ mod tests {
         tap(&mut s, game("zelda-lttp"));
         s.apply(Event::Launch(LaunchEvent::LaunchFailed("zelda-lttp".into())));
         let notice = s.bottom().notice().map(|n| n.what.clone());
-        assert!(matches!(&notice, Some(notice::NoticeKind::NotStarted(t)) if t == "A Link to the Past"), "{notice:?}");
+        assert!(matches!(&notice, Some(crate::bottom::notice::NoticeKind::NotStarted(t)) if t == "A Link to the Past"), "{notice:?}");
         assert!(s.session().running("zelda-lttp").is_none());
     }
 

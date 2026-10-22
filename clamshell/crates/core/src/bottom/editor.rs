@@ -6,9 +6,9 @@
 use std::fmt;
 use std::sync::Arc;
 
+use crate::bottom::keyboard::{self, Key, Named, Stroke};
 use crate::effect::{Effect, Save};
 use crate::id::EditorId;
-use crate::keyboard::{self, Key, Named, Stroke};
 
 /// What the editor edits, and the text so far.
 #[derive(Clone, PartialEq, Eq)]
@@ -115,7 +115,7 @@ impl crate::State {
 
     /// A key from the on-screen keyboard while the editor is open: Ctrl+V pastes the clipboard's text.
     pub(crate) fn edit(&mut self, stroke: Stroke) -> Vec<Effect> {
-        if stroke.ctrl && !stroke.alt && stroke.key == crate::keyboard::Key::Char('v') {
+        if stroke.ctrl && !stroke.alt && stroke.key == crate::bottom::keyboard::Key::Char('v') {
             self.paste();
             return vec![];
         }

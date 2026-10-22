@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use clamshell_library::Launch;
 
+use crate::bottom::keyboard::Stroke;
 use crate::instance::Instance;
-use crate::keyboard::Stroke;
 use crate::levels::{Share, Sound};
 use crate::nav::pad::PadRoute;
 use crate::radios::bluetooth;
@@ -38,7 +38,7 @@ pub enum Effect {
     /// A key press for the focused app (virtual keyboard).
     Key(Stroke),
     /// Fingers pointing (one touch frame's), for the virtual touchpad.
-    Touchpad(Vec<crate::touch::Contact>),
+    Touchpad(Vec<crate::bottom::touch::Contact>),
     /// Where the controller's input goes now.
     PadRoute(PadRoute),
     /// The compositor: show, close or move windows.
@@ -191,7 +191,7 @@ pub enum Save {
     /// The screens' brightness, to apply at the next start.
     Brightness(crate::levels::Brightness),
     /// Which programs' windows go to the bottom screen.
-    WindowRules(crate::bottom_screen::WindowRules),
+    WindowRules(crate::bottom::screen::WindowRules),
     /// The dock's pinned entries' ids, in order.
     Dock(Vec<std::sync::Arc<str>>),
     /// The entries started with ClamShell (see [`crate::autostart`]).
@@ -225,7 +225,7 @@ pub enum WindowCommand {
     /// The bottom screen's output on or off.
     BottomPower(bool),
     /// The windows that go to the bottom screen as they open (all of them: the rules in force).
-    DownRules(Vec<crate::bottom_screen::DownRule>),
+    DownRules(Vec<crate::bottom::screen::DownRule>),
     /// The app ids whose windows land on the landing workspace as they open (all of them), to be moved
     /// to their entry's (see [`crate::running::app_id_of`]).
     LandRules(Vec<std::sync::Arc<str>>),

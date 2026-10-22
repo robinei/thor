@@ -4,7 +4,7 @@
 //! ([`Wifi::net_state`], [`Wifi::status`]); the UI words it.
 
 use crate::State;
-use crate::editor::{Editor, Purpose};
+use crate::bottom::editor::{Editor, Purpose};
 use crate::effect::Effect;
 use crate::id::WifiId;
 use crate::kit::list::ItemKey;
@@ -239,7 +239,7 @@ mod tests {
         assert_eq!(tap(&mut s, network(2)), vec![], "asks first");
         assert!(matches!(s.bottom().editor(), Some(Editor { purpose: Purpose::Password { ssid }, .. }) if ssid == "new"));
         for c in ['p', 'w'] {
-            tap(&mut s, Id::Key(keyboard::find(keyboard::Key::Char(c)).unwrap()));
+            tap(&mut s, Id::Key(crate::bottom::keyboard::find(crate::bottom::keyboard::Key::Char(c)).unwrap()));
         }
         assert_eq!(tap(&mut s, Id::Editor(EditorId::Save)), connect("new", Some("pw")));
         assert_eq!(s.bottom().editor(), None);
