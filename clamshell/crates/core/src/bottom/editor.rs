@@ -8,7 +8,6 @@ use std::sync::Arc;
 
 use crate::bottom::keyboard::{self, Key, Named, Stroke};
 use crate::effect::{Effect, Save};
-use crate::id::EditorId;
 
 /// What the editor edits, and the text so far.
 #[derive(Clone, PartialEq, Eq)]
@@ -98,60 +97,81 @@ impl Editor {
     }
 }
 
-impl crate::State {
-    /// The editor's buttons.
-    pub(crate) fn on_editor(&mut self, id: EditorId) -> Vec<Effect> {
-        match id {
-            EditorId::Save => self.save_editor(),
-            EditorId::Cancel => self.cancel_editor(),
+/// The texts being edited, such as a game's environment or a Wi-Fi password. Each is in its own tab, at
+/// most one per tab, and is kept while another tab is shown.
+#[derive(Debug, Clone, Default)]
+pub struct Editors {
+    list: Vec<Editor>,
+}
+
+impl Editors {
+    /// The editor open in `tab`, if any.
+    pub fn on(&self, tab: crate::Tab) -> Option<&Editor> {
+        self.list.iter().find(|e| e.tab() == tab)
+    }
+
+    pub(crate) fn on_mut(&mut self, tab: crate::Tab) -> Option<&mut Editor> {
+        self.list.iter_mut().find(|e| e.tab() == tab)
+    }
+
+    /// Opens an editor in its tab, replacing any editor already there.
+    pub(crate) fn open(&mut self, editor: Editor) {
+        self.list.retain(|e| e.tab() != editor.tab());
+        self.list.push(editor);
+    }
+
+    /// Closes the editor in `tab` and returns it.
+    pub(crate) fn close(&mut self, tab: crate::Tab) -> Option<Editor> {
+        let i = self.list.iter().position(|e| e.tab() == tab)?;
+        Some(self.list.remove(i))
+    }
+}
+
+impl crate::Bottom {
+    /// A key from the on-screen keyboard while the editor is open. Ctrl+V pastes the clipboard's text.
+    /// Returns how the key ended the editing, if it did.
+    pub(crate) fn edit(&mut self, stroke: Stroke) -> Option<Done> {
+        if stroke.ctrl && !stroke.alt && stroke.key == Key::Char('v') {
+            self.paste();
+            return None;
         }
+        self.editor_mut().and_then(|e| e.key(stroke))
     }
 
     /// Pastes the clipboard's text into the open editor, if there is one. Used by Ctrl+V and a right
     /// click.
     pub(crate) fn paste(&mut self) {
-        if let (Some(text), Some(editor)) = (self.clipboard.clone(), self.bottom.editor_mut()) {
+        if let (Some(text), Some(editor)) = (self.clipboard.clone(), self.editor_mut()) {
             editor.paste(&text);
         }
     }
 
-    /// A key from the on-screen keyboard while the editor is open. Ctrl+V pastes the clipboard's text.
-    pub(crate) fn edit(&mut self, stroke: Stroke) -> Vec<Effect> {
-        if stroke.ctrl && !stroke.alt && stroke.key == crate::bottom::keyboard::Key::Char('v') {
-            self.paste();
-            return vec![];
-        }
-        match self.bottom.editor_mut().and_then(|e| e.key(stroke)) {
-            Some(Done::Save) => self.save_editor(),
-            Some(Done::Cancel) => self.cancel_editor(),
-            None => vec![],
-        }
+    /// A reading of the system clipboard's text. Returns whether it changed.
+    pub(crate) fn read_clipboard(&mut self, text: Option<Arc<str>>) -> bool {
+        crate::kit::replace(&mut self.clipboard, text)
     }
+}
 
-    /// The editor's Cancel closes it. For a file's name, it also goes back to the tab the keyboard came
-    /// up from.
-    fn cancel_editor(&mut self) -> Vec<Effect> {
-        match self.bottom.close_editor().map(|e| e.purpose) {
-            Some(Purpose::FileName(_)) => self.file_name_cancelled(),
-            _ => vec![],
-        }
-    }
-
-    /// The editor's Save closes it and hands the text to its purpose: the environment is saved, the
-    /// network joined with the password, the keymap or file named, or the account password used.
-    fn save_editor(&mut self) -> Vec<Effect> {
+impl crate::State {
+    /// The editor's Save or Cancel, by its button or a key. Either closes it. Save hands the text to its
+    /// purpose: the environment is saved, the network joined with the password, the keymap or file named,
+    /// or the account password used. Cancelling a file's name goes back to the tab the keyboard came up
+    /// from.
+    pub(crate) fn editor_done(&mut self, done: Done) -> Vec<Effect> {
         let Some(editor) = self.bottom.close_editor() else {
             return vec![];
         };
-        match editor.purpose {
-            Purpose::Env { entry: game } => {
+        match (done, editor.purpose) {
+            (Done::Cancel, Purpose::FileName(_)) => self.file_name_cancelled(),
+            (Done::Cancel, _) => vec![],
+            (Done::Save, Purpose::Env { entry: game }) => {
                 self.settings.set_env(game, &editor.text);
                 vec![Effect::Save(Save::Settings(self.settings.clone()))]
             }
-            Purpose::Password { ssid } => vec![self.radios.join(ssid, Some(editor.text))],
-            Purpose::KeymapName(action) => self.named_keymap(action, &editor.text),
-            Purpose::FileName(purpose) => self.file_named(purpose, &editor.text),
-            Purpose::AccountPassword(step) => crate::device::account::password_typed(step, editor.text, &mut self.bottom),
+            (Done::Save, Purpose::Password { ssid }) => vec![self.radios.join(ssid, Some(editor.text))],
+            (Done::Save, Purpose::KeymapName(action)) => self.named_keymap(action, &editor.text),
+            (Done::Save, Purpose::FileName(purpose)) => self.file_named(purpose, &editor.text),
+            (Done::Save, Purpose::AccountPassword(step)) => crate::device::account::password_typed(step, editor.text, self.bottom.editors_mut()),
         }
     }
 }

@@ -17,7 +17,8 @@ use crate::event::Reading;
 use crate::kit::names::names;
 use crate::settings::panel::Scope;
 use crate::{Effect, State};
-use editor::Editor;
+use editor::{Editor, Editors};
+use notice::Notice;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Tab {
@@ -107,9 +108,7 @@ pub struct Bottom {
     /// The tab that was open when an app's text field brought up the keyboard. The screen goes back to it
     /// when the field is done, unless the user chose a tab in the meantime.
     pub(crate) raised_from: Option<Tab>,
-    /// The texts being edited, such as a game's environment or a Wi-Fi password. Each is in its own tab,
-    /// at most one per tab, and is kept while another tab is shown.
-    pub(crate) editors: Vec<Editor>,
+    pub(crate) editors: Editors,
     /// What the settings panel edits. It is global whenever there is no game in context.
     pub(crate) scope: Scope,
     /// The darkened second screen was tapped awake. This lasts until the next game.
@@ -118,9 +117,12 @@ pub struct Bottom {
     pub(crate) screen: crate::bottom::screen::BottomScreen,
     /// What a key just did, such as change a level or take a screenshot, shown under the bar for a
     /// moment.
-    pub(crate) notice: Option<crate::bottom::notice::Notice>,
+    pub(crate) notice: Option<Notice>,
     /// Whether the area below the bar is pointing (see [`crate::bottom::touch`]).
     pub(crate) pointing: bool,
+    /// The text on the system clipboard, for Ctrl+V in the editor. Files copied in the Files tab use their
+    /// own clipboard (see [`crate::shelf::files`]).
+    pub(crate) clipboard: Option<std::sync::Arc<str>>,
 }
 
 impl Bottom {
@@ -136,28 +138,29 @@ impl Bottom {
 
     /// The editor open in the tab shown, if any.
     pub fn editor(&self) -> Option<&Editor> {
-        self.editors.iter().find(|e| e.tab() == self.tab)
+        self.editors.on(self.tab)
     }
 
     pub(crate) fn editor_mut(&mut self) -> Option<&mut Editor> {
-        let tab = self.tab;
-        self.editors.iter_mut().find(|e| e.tab() == tab)
-    }
-
-    /// Opens an editor in its tab, replacing any editor already there.
-    pub(crate) fn open_editor(&mut self, editor: Editor) {
-        self.editors.retain(|e| e.tab() != editor.tab());
-        self.editors.push(editor);
+        self.editors.on_mut(self.tab)
     }
 
     /// Closes the editor of the tab shown and returns it.
     pub(crate) fn close_editor(&mut self) -> Option<Editor> {
-        let tab = self.tab;
-        let i = self.editors.iter().position(|e| e.tab() == tab)?;
-        Some(self.editors.remove(i))
+        self.editors.close(self.tab)
     }
 
-    pub fn notice(&self) -> Option<&crate::bottom::notice::Notice> {
+    /// The editors, for a rule that opens one.
+    pub(crate) fn editors_mut(&mut self) -> &mut Editors {
+        &mut self.editors
+    }
+
+    /// The editors and the notice, for a rule that may open an editor or show a notice.
+    pub(crate) fn editors_and_notice(&mut self) -> (&mut Editors, &mut Option<Notice>) {
+        (&mut self.editors, &mut self.notice)
+    }
+
+    pub fn notice(&self) -> Option<&Notice> {
         self.notice.as_ref()
     }
 

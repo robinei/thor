@@ -20,9 +20,9 @@ use crate::DeviceId;
 use crate::State;
 use std::sync::Arc;
 
-use crate::bottom::editor::{Editor, Purpose};
-use crate::bottom::notice::NoticeKind;
-use crate::bottom::{Bottom, Tab};
+use crate::bottom::Tab;
+use crate::bottom::editor::{Editor, Editors, Purpose};
+use crate::bottom::notice::{Notice, NoticeKind};
 use crate::effect::{Effect, Save, WindowCommand};
 use crate::kit::replace;
 use crate::mutation::Mutation;
@@ -132,7 +132,15 @@ impl Device {
 
     /// A tap on one of the Device view's targets at `now`. Closing it gives the focus back to shelf's
     /// selection (`selected`). A tab to open is returned as a mutation, since State changes tabs.
-    pub(crate) fn tap(&mut self, id: DeviceId, now: u64, bottom: &mut Bottom, pointer: &mut Pointer, selected: Option<&Arc<str>>) -> Vec<Mutation> {
+    pub(crate) fn tap(
+        &mut self,
+        id: DeviceId,
+        now: u64,
+        editors: &mut Editors,
+        notice: &mut Option<Notice>,
+        pointer: &mut Pointer,
+        selected: Option<&Arc<str>>,
+    ) -> Vec<Mutation> {
         let account = self.account;
         match id {
             DeviceId::Wifi => vec![Mutation::Tab(Tab::Wifi)],
@@ -140,7 +148,7 @@ impl Device {
             // Typed in the editor on the second screen's keyboard.
             DeviceId::Password if account.available => {
                 let step = if account.password { PasswordStep::Current } else { PasswordStep::New { current: None } };
-                bottom.open_editor(Editor { purpose: Purpose::AccountPassword(step), text: String::new() });
+                editors.open(Editor { purpose: Purpose::AccountPassword(step), text: String::new() });
                 vec![Mutation::Tab(Tab::Keyboard)]
             }
             // Remote login needs a password to log in with.
@@ -152,7 +160,7 @@ impl Device {
             }
             DeviceId::Sticks => vec![],
             DeviceId::Gyro => {
-                bottom.notify(NoticeKind::Gyro(None), now);
+                *notice = Some(Notice::new(NoticeKind::Gyro(None), now));
                 vec![Mutation::Effect(Effect::CalibrateGyro)]
             }
             DeviceId::Refresh if self.refresh != Refresh::Running => {

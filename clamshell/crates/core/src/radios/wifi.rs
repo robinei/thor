@@ -3,8 +3,7 @@
 //! press forgets a saved network. What a network's row and the tab's header say is decided here
 //! ([`Wifi::net_state`], [`Wifi::status`]), and the UI puts it into words.
 
-use crate::bottom::Bottom;
-use crate::bottom::editor::{Editor, Purpose};
+use crate::bottom::editor::{Editor, Editors, Purpose};
 use crate::effect::Effect;
 use crate::kit::list::ItemKey;
 use crate::kit::list::Rows;
@@ -169,7 +168,7 @@ impl Radios {
 
     /// A tap on the network at `index`, or a long press. A network with a password that isn't saved
     /// asks for it first.
-    pub(crate) fn tap_network(&mut self, index: usize, long: bool, bottom: &mut Bottom) -> Vec<Effect> {
+    pub(crate) fn tap_network(&mut self, index: usize, long: bool, editors: &mut Editors) -> Vec<Effect> {
         let Some(n) = self.wifi.networks.get(index) else {
             return vec![];
         };
@@ -185,7 +184,7 @@ impl Radios {
             return vec![];
         }
         if n.secure && !n.saved {
-            bottom.open_editor(Editor { purpose: Purpose::Password { ssid }, text: String::new() });
+            editors.open(Editor { purpose: Purpose::Password { ssid }, text: String::new() });
             return vec![];
         }
         vec![self.join(ssid, None)]

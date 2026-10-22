@@ -638,7 +638,7 @@ impl State {
 
     /// Opens the editor for a keymap's name.
     fn name_keymap(&mut self, action: KeymapName, text: String) {
-        self.bottom.open_editor(Editor { purpose: Purpose::KeymapName(action), text });
+        self.bottom.editors_mut().open(Editor { purpose: Purpose::KeymapName(action), text });
     }
 
     /// The editor saved a name: for a new keymap, which then opens on its edit screen, a renamed keymap, a

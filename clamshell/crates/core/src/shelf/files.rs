@@ -364,7 +364,7 @@ impl State {
 
     /// Opens the editor on the keyboard tab for a file's name, starting from `text`.
     fn name_file(&mut self, purpose: FileName, text: String) -> Vec<Effect> {
-        self.bottom.open_editor(Editor { purpose: Purpose::FileName(purpose), text });
+        self.bottom.editors_mut().open(Editor { purpose: Purpose::FileName(purpose), text });
         if self.bottom.tab != Tab::Keyboard {
             self.bottom.raised_from = Some(self.bottom.tab);
         }

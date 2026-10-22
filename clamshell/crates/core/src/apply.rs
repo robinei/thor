@@ -1,13 +1,15 @@
 //! Applying an event: which feature's rules handle it, and then everything that follows from it
 //! elsewhere. The follow-up steps run in an order where each one finds the steps it depends on settled.
 
+use crate::bottom::editor::Done;
 use crate::kit::replace;
 use crate::levels::slider::Control;
 use crate::mutation::{EntryAct, Mutation};
 use crate::resume::SAVE_AFTER;
 use crate::settings::MouseAtLaunch;
 use crate::{
-    BtId, Dirty, Effect, Event, Id, Level, Library, ListId, PadRoute, PointerEvent, Reading, Save, SettingsId, ShelfId, State, Tab, WifiId, WindowCommand,
+    BtId, Dirty, EditorId, Effect, Event, Id, Level, Library, ListId, PadRoute, PointerEvent, Reading, Save, SettingsId, ShelfId, State, Tab, WifiId,
+    WindowCommand,
 };
 
 impl State {
@@ -172,7 +174,7 @@ impl State {
                 (Dirty::BOTTOM, vec![])
             }
             Event::Paste => {
-                self.paste();
+                self.bottom.paste();
                 (Dirty::BOTTOM, vec![])
             }
             Event::Screenshot(result) => {
@@ -339,7 +341,7 @@ impl State {
                 let levels = self.levels.read(status.volume, status.muted, status.brightness);
                 self.sys.read_status(status) | levels
             }
-            Reading::Clipboard(text) => replace(&mut self.clipboard, text),
+            Reading::Clipboard(text) => self.bottom.read_clipboard(text),
             Reading::Icon { entry, path } => {
                 let running = self.session.running.iter_mut().find(|r| r.id == entry);
                 running.and_then(|r| r.entry.as_mut()).is_some_and(|g| replace(&mut g.icon, Some(path)))
@@ -426,7 +428,13 @@ impl State {
             Id::Dock(id) => (Dirty::BOTTOM, self.on_dock(id, long)),
             Id::Settings(id @ (SettingsId::Tile(_) | SettingsId::Reset)) => (Dirty::BOTH, self.on_settings(id, long)),
             Id::Settings(id) => (Dirty::BOTTOM, self.on_settings(id, long)),
-            Id::Editor(id) => (Dirty::BOTTOM, self.on_editor(id)),
+            Id::Editor(id) => {
+                let done = match id {
+                    EditorId::Save => Done::Save,
+                    EditorId::Cancel => Done::Cancel,
+                };
+                (Dirty::BOTTOM, self.editor_done(done))
+            }
             Id::Wifi(WifiId::Power) => (Dirty::BOTTOM, vec![self.radios.power_wifi()]),
             Id::Bluetooth(BtId::Power) => (Dirty::BOTTOM, vec![self.radios.power_bluetooth()]),
             Id::Audio(id) => (Dirty::BOTTOM, self.levels.on_audio(id)),
@@ -449,7 +457,7 @@ impl State {
                 // The key goes to the editor while it is open, to finding an entry while shelf is in
                 // front, and otherwise to the focused app.
                 let effects = match stroke {
-                    Some(stroke) if self.bottom.editor().is_some() => self.edit(stroke),
+                    Some(stroke) if self.bottom.editor().is_some() => self.bottom.edit(stroke).map_or_else(Vec::new, |done| self.editor_done(done)),
                     Some(stroke) if self.capturing() => self.captured(State::chord(stroke)),
                     Some(stroke) if self.session.front() == crate::session::running::Front::Shelf => return (Dirty::BOTH, self.find(stroke)),
                     Some(stroke) => vec![Effect::Key(stroke)],
@@ -463,7 +471,10 @@ impl State {
             },
             Id::Time(id) => self.sys.on_time(id, self.lists.get_mut(ListId::Time)),
             Id::Device(id) => {
-                let mutations = self.device.tap(id, self.clock.mono(), &mut self.bottom, &mut self.pointer, self.shelf.selected());
+                let mutations = {
+                    let (editors, notice) = self.bottom.editors_and_notice();
+                    self.device.tap(id, self.clock.mono(), editors, notice, &mut self.pointer, self.shelf.selected())
+                };
                 (Dirty::BOTH, self.settle(mutations))
             }
             Id::Battery(id) => {

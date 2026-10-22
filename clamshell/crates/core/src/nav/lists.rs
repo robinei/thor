@@ -154,7 +154,7 @@ impl State {
     /// A tap or long press on a row, handled by the list's feature.
     pub(crate) fn on_row(&mut self, list: ListId, i: usize, part: RowPart, long: bool) -> Vec<Effect> {
         match list {
-            ListId::Wifi => self.radios.tap_network(i, long, &mut self.bottom),
+            ListId::Wifi => self.radios.tap_network(i, long, self.bottom.editors_mut()),
             ListId::Bluetooth => self.radios.tap_device(i, long),
             ListId::Streams => self.levels.on_stream(i, part),
             ListId::Keymaps => self.on_keymap_row(i, part, long),

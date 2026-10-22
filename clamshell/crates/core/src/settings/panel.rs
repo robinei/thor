@@ -229,7 +229,7 @@ impl State {
     fn open_editor(&mut self) {
         let game = self.editing().map(|g| g.id.clone());
         let text = self.settings.env_text(game.as_deref()).to_owned();
-        self.bottom.open_editor(Editor { purpose: Purpose::Env { entry: game }, text });
+        self.bottom.editors_mut().open(Editor { purpose: Purpose::Env { entry: game }, text });
     }
 
     /// Drops the edited game's overrides and environment.

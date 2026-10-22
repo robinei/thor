@@ -165,9 +165,6 @@ pub struct State {
     /// The clipboard and confirmation for file actions, and the folder being browsed (see
     /// [`crate::shelf::files`]).
     files: crate::shelf::files::Files,
-    /// The text on the system clipboard, for Ctrl+V in the editor. Files copied in the Files tab use their
-    /// own clipboard, above.
-    clipboard: Option<std::sync::Arc<str>>,
 }
 
 impl State {
