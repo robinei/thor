@@ -33,8 +33,15 @@ pub fn spawn(path: PathBuf, sink: impl Sink) {
     }
     let spawned = worker::detached("control", move || {
         // Each writer closes the pipe after its line: open it again for the next.
-        while let Ok(file) = std::fs::File::open(&path) {
-            for line in std::io::BufReader::new(file).lines().map_while(Result::ok) {
+        loop {
+            let file = match std::fs::File::open(&path) {
+                Ok(file) => file,
+                Err(e) => {
+                    log::warn!("control: {}: {e}", path.display());
+                    return;
+                }
+            };
+            for line in std::io::BufReader::new(file).lines().map_while(|l| l.inspect_err(|e| log::warn!("control: reading {}: {e}", path.display())).ok()) {
                 match parse(&line) {
                     Ok(events) => {
                         if events.into_iter().try_for_each(|e| sink.send(e)).is_err() {
