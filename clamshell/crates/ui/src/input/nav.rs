@@ -1,4 +1,4 @@
-//! Pad navigation: moving focus by direction between the targets of both screens, as if the bottom screen
+//! Pad navigation. Focus moves by direction between the targets on both screens, as if the bottom screen
 //! were directly below the top one (see [`step`]).
 
 use clamshell_core::Id;
@@ -14,8 +14,8 @@ pub enum Dir {
     Down,
 }
 
-/// A target placed in one plane shared by both screens: x in 0..1 on either, y in 0..1 on the top screen
-/// and 1..2 on the bottom one (normalized, so panels of different sizes line up).
+/// A target placed in one plane shared by both screens. x is 0..1 on either screen; y is 0..1 on the top
+/// screen and 1..2 on the bottom one. The values are normalized so that panels of different sizes line up.
 #[derive(Debug, Clone)]
 pub struct NavTarget {
     pub screen: Screen,
@@ -23,16 +23,18 @@ pub struct NavTarget {
     pub id: Id,
 }
 
-/// How much more the distance the way it goes weighs than the distance across (squared, as Android's
-/// focus finder has it).
+/// How much more the distance in the direction of travel weighs than the distance across it. Both
+/// distances are squared, as in Android's focus finder.
 const ALONG: f32 = 13.0;
 
-/// The target to focus after moving `dir` from `current`: of those beyond it that way, the nearest by
-/// the gap the way it goes (between their edges: 0 for one alongside) weighted far over the offset
-/// across (between their centres). So the next in a row wins over one alongside but far across, and a
-/// small control just past an edge over a wide row further on. Up and down may cross to the other
-/// screen; left and right stay on the current one. With no current focus (or a focused item no longer
-/// drawn), the first target.
+/// The target to focus after moving `dir` from `current`. Of the targets beyond it in that direction, it
+/// picks the nearest, weighting the gap in the direction of travel far above the offset across it. The
+/// gap is measured between edges, so it is 0 for a target alongside; the offset is measured between
+/// centres. So the next item in a row wins over one alongside but far across, and a small control just
+/// past an edge wins over a wide row further on.
+///
+/// Up and down may cross to the other screen; left and right stay on the current one. With no current
+/// focus, or a focused item that is no longer drawn, it returns the first target.
 pub fn step(targets: &[NavTarget], current: Option<&Id>, dir: Dir) -> Option<Id> {
     let Some(from) = current.and_then(|id| targets.iter().find(|t| &t.id == id)) else {
         return targets.first().map(|t| t.id.clone());
