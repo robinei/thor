@@ -218,7 +218,7 @@ pub fn load(sources: &Sources) -> Loaded {
         problems: config_problem.into_iter().chain(runner_problems).collect(),
         away: Vec::new(),
         mounts: if config.sources.iter().any(|s| matches!(s, content::Source::Removable(_) | content::Source::Dir(content::Scan { on: Some(_), .. }))) {
-            crate::files::media_mounts()
+            crate::files::mounts::media_mounts()
         } else {
             Vec::new()
         },
@@ -260,7 +260,7 @@ struct Builder<'a> {
     hows: Vec<(usize, How)>,
     problems: Vec<String>,
     away: Vec<String>,
-    mounts: Vec<crate::files::Mount>,
+    mounts: Vec<crate::files::mounts::Mount>,
 }
 
 impl Builder<'_> {

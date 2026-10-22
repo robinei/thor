@@ -152,15 +152,15 @@ pub fn start(
             }
         })
     };
-    let browsing = clamshell_system::files::Browsing {
+    let browsing = clamshell_system::files::browse::Browsing {
         config: sources.config.clone(),
         home: sources.home.clone(),
         art: paths.art.clone(),
         probe,
         cache: paths.art.as_deref().and_then(std::path::Path::parent).map(std::path::PathBuf::from),
     };
-    let browse = started("browse", clamshell_system::files::spawn_browse(browsing, sink.clone()));
-    let files = started("files", clamshell_system::files::spawn_ops(sources.home.clone(), sink.clone()));
+    let browse = started("browse", clamshell_system::files::browse::spawn_browse(browsing, sink.clone()));
+    let files = started("files", clamshell_system::files::ops::spawn_ops(sources.home.clone(), sink.clone()));
     let wifi = started("wifi", wifi::spawn(sink));
     let tuning = Tuning { hardware: started("tuning", tuning::spawn()), pad: pad.clone(), mangohud: paths.mangohud.clone() };
     tuning.apply(global, None);
