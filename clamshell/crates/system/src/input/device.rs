@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use evdev::raw_stream::RawDevice;
 use evdev::{AbsoluteAxisCode, EventType, KeyCode, SynchronizationCode};
-use rustix::event::{PollFd, PollFlags, Timespec};
+use rustix::event::{PollFd, PollFlags};
 
 use super::Raw;
 
@@ -94,7 +94,7 @@ impl Grabbed {
 
     /// Waits up to `timeout` for events to read (less if a signal interrupts the wait).
     pub fn wait(&self, timeout: Duration) -> io::Result<()> {
-        let timeout = Timespec { tv_sec: i64::try_from(timeout.as_secs()).unwrap_or(i64::MAX), tv_nsec: i64::from(timeout.subsec_nanos()) };
+        let timeout = crate::sys::timespec(timeout);
         let mut fds = [PollFd::new(&self.device, PollFlags::IN)];
         match rustix::event::poll(&mut fds, Some(&timeout)) {
             Ok(_) | Err(rustix::io::Errno::INTR) => Ok(()),

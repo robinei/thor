@@ -18,7 +18,7 @@ use std::thread;
 use std::time::{Duration, SystemTime};
 
 use clamshell_core::{Event, Reading};
-use rustix::event::{PollFd, PollFlags, Timespec};
+use rustix::event::{PollFd, PollFlags};
 use rustix::fs::inotify;
 
 use crate::worker::{self, Changed};
@@ -105,7 +105,7 @@ fn follow(dir: &Path, sink: &impl Sink) -> Result<(), Closed> {
 
 /// Waits for the folder's inotify events (all read), up to `timeout` if given.
 fn wait(fd: &OwnedFd, timeout: Option<Duration>) {
-    let timeout = timeout.map(|t| Timespec { tv_sec: i64::try_from(t.as_secs()).unwrap_or(i64::MAX), tv_nsec: i64::from(t.subsec_nanos()) });
+    let timeout = timeout.map(crate::sys::timespec);
     let mut fds = [PollFd::new(fd, PollFlags::IN)];
     let _ = rustix::event::poll(&mut fds, timeout.as_ref());
     let mut buf = [MaybeUninit::uninit(); 4096];

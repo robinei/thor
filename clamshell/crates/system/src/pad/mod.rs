@@ -37,7 +37,7 @@ use clamshell_core::PadRoute;
 use clamshell_core::device::SticksEvent;
 use clamshell_core::keymap::Keymap;
 use clamshell_core::settings::RumbleStrength;
-use rustix::event::{PollFd, PollFlags, Timespec};
+use rustix::event::{PollFd, PollFlags};
 
 use crate::input::Raw;
 use crate::input::device::{DeviceSpec, Grabbed};
@@ -360,7 +360,7 @@ impl<S: Sink> Service for PadThread<S> {
                 return worker::next(commands, Some(left));
             };
             let mut fds = [PollFd::from_borrowed_fd(devices.pad.as_fd(), PollFlags::IN), PollFd::from_borrowed_fd(self.bell.fd(), PollFlags::IN)];
-            match rustix::event::poll(&mut fds, Some(&timespec(left))) {
+            match rustix::event::poll(&mut fds, Some(&crate::sys::timespec(left))) {
                 Ok(_) | Err(rustix::io::Errno::INTR) => self.bell.clear(),
                 Err(e) => {
                     log::warn!("pad: {e}");
@@ -370,10 +370,6 @@ impl<S: Sink> Service for PadThread<S> {
             self.serve_effects(Instant::now());
         }
     }
-}
-
-fn timespec(t: Duration) -> Timespec {
-    Timespec { tv_sec: i64::try_from(t.as_secs()).unwrap_or(i64::MAX), tv_nsec: i64::from(t.subsec_nanos()) }
 }
 
 /// The controller's events and gyro samples since the last read, into `raws` and `samples`: events the
@@ -421,7 +417,7 @@ fn wait(
     bell: &Bell,
     timeout: Option<Duration>,
 ) -> io::Result<()> {
-    let timeout = timeout.map(timespec);
+    let timeout = timeout.map(crate::sys::timespec);
     let mut fds = vec![PollFd::new(pad.device(), PollFlags::IN), PollFd::from_borrowed_fd(bell.fd(), PollFlags::IN)];
     if let Some(m) = motion {
         fds.push(PollFd::from_borrowed_fd(m.fd(), PollFlags::IN));

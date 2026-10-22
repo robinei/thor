@@ -87,6 +87,11 @@ pub fn lineage(pid: u32) -> Vec<u32> {
     out
 }
 
+/// `d` as poll(2)'s timeout.
+pub fn timespec(d: std::time::Duration) -> rustix::event::Timespec {
+    rustix::event::Timespec { tv_sec: i64::try_from(d.as_secs()).unwrap_or(i64::MAX), tv_nsec: i64::from(d.subsec_nanos()) }
+}
+
 /// A line of the mount table.
 pub struct MountLine {
     pub device: String,
