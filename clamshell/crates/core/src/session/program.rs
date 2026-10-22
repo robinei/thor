@@ -1,6 +1,7 @@
-//! The program in force: the running entry most recently in front (it stays while shelf or a window of
-//! none of ours is, as long as it runs; once it doesn't, the entry started last that still runs). Its
-//! settings are in force, its keymap is the pad's, its pad mouse setting decides the pad mouse.
+//! The program in force: the running entry most recently in front. It stays in force while shelf, or a
+//! window that isn't ours, is in front, as long as it runs. Once it stops, the entry started last that
+//! still runs takes over. Its settings are in force, its keymap is the pad's, and its pad mouse setting
+//! decides the pad mouse.
 
 use std::sync::Arc;
 
@@ -31,8 +32,8 @@ impl State {
         self.session.program.as_ref()
     }
 
-    /// After any event: the program in force follows the one in front (or, gone, the latest running); its
-    /// settings applied when it changed. Whether it changed.
+    /// Runs after any event. The program in force follows the one in front, or, when that is gone, the
+    /// latest that runs. Its settings are applied when it changes. Returns whether it changed.
     pub(crate) fn follow_program(&mut self) -> (bool, Vec<Effect>) {
         let session = &self.session;
         let front = session.windows.iter().find(|w| w.focused && !w.down).and_then(|w| self.program_of(w));

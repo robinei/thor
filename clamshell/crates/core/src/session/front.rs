@@ -1,12 +1,13 @@
-//! What is in front: the Home button, and a closed window's place taken by what was in front before it.
+//! What is in front: the Home button, and what takes a closed window's place, which is what was in front
+//! before it.
 
 use crate::{Effect, Instance, Running, State, WindowCommand};
 
 impl State {
-    /// After the windows changed: the window in front (`was`, its workspace) closed, nothing of its
-    /// workspace left (sway leaves the empty workspace in front): back to what was in front before it,
-    /// shelf at the bottom of that; the workspace remembered for a window soon after (see
-    /// [`crate::Session::show_reopened`]).
+    /// Runs after the windows changed. If the window in front, on workspace `was`, closed and nothing of
+    /// its workspace is left, goes back to what was in front before it, with shelf as the last resort;
+    /// otherwise sway would leave the empty workspace in front. The workspace is remembered in case a
+    /// window appears on it soon after (see [`crate::Session::show_reopened`]).
     pub(crate) fn follow_closed(&mut self, was: Option<String>) -> Vec<Effect> {
         let windows = &self.session.windows;
         let Some(was) = was else { return vec![] };
@@ -22,8 +23,9 @@ impl State {
         effects
     }
 
-    /// The home button: from anything to shelf; from shelf back to what was in front before it, or
-    /// without that history (no compositor's word) to the program in force.
+    /// The Home button. From anything it goes to shelf. From shelf it goes back to what was in front
+    /// before, or, without that history because the compositor hasn't reported any, to the program in
+    /// force.
     pub(crate) fn home(&mut self) -> Vec<Effect> {
         let session = &self.session;
         let front = session.windows.iter().find(|w| w.focused);
@@ -31,11 +33,12 @@ impl State {
         if !shelf_in_front {
             return vec![Effect::Window(WindowCommand::ShowShelf)];
         }
-        // (The Device view in shelf's place: back to shelf.)
+        // When the Device view is in shelf's place, Home goes back to shelf.
         if self.device.open {
             return self.close_device();
         }
-        // (Only where a window shows on the main screen: one moved down leaves its workspace empty.)
+        // Only workspaces with a window on the main screen count; a window moved down leaves its workspace
+        // empty.
         let shown = |ws: &String| session.windows.iter().any(|w| w.workspace == *ws && !w.down);
         let before = session.recent.iter().find(|ws| !Instance::Shelf.is(ws) && shown(ws)).cloned();
         let game = session.program.as_deref().and_then(|id| session.running(id)).map(Running::workspace).filter(shown);
@@ -82,14 +85,15 @@ mod tests {
         s.apply(Event::Windows(vec![shelf_window(true)]));
         s.apply(Event::Windows(vec![shelf_window(false), win(2, "foot", &terminal, true)]));
         s.apply(Event::Windows(vec![shelf_window(false), win(2, "foot", &terminal, false), win(3, "retroarch", &zelda, true)]));
-        // The game quits: the terminal, in front before it.
+        // When the game quits, the terminal, which was in front before it, comes back.
         let (_, fx) = s.apply(Event::Windows(vec![shelf_window(false), win(2, "foot", &terminal, false)]));
         assert_eq!(window_effects(fx), vec![Effect::Window(WindowCommand::Focus(terminal.clone()))]);
         s.apply(Event::Windows(vec![shelf_window(false), win(2, "foot", &terminal, true)]));
-        // The terminal quits: shelf.
+        // When the terminal quits, shelf comes back.
         let (_, fx) = s.apply(Event::Windows(vec![shelf_window(false)]));
         assert_eq!(window_effects(fx), vec![Effect::Window(WindowCommand::ShowShelf)]);
-        // A program's own second window closing, or a new workspace before its window: nothing.
+        // Nothing happens when a program's own second window closes, or for a new workspace before its
+        // window.
         s.apply(Event::Windows(vec![shelf_window(false), win(3, "retroarch", &zelda, true), win(4, "retroarch", &zelda, false)]));
         assert_eq!(window_effects(s.apply(Event::Windows(vec![shelf_window(false), win(4, "retroarch", &zelda, true)])).1), vec![]);
         s.apply(Event::Windows(vec![shelf_window(true), win(4, "retroarch", &zelda, false)]));
@@ -106,11 +110,12 @@ mod tests {
         let app = "clamshell-run-fdroid-1".to_owned();
         s.apply(Event::tick(100));
         s.apply(Event::Windows(vec![shelf_window(false), win(2, "waydroid.org.fdroid.fdroid", &app, true)]));
-        // Its window closes (shelf), another comes on its workspace (moved there, not in front): shown.
+        // Its window closes and shelf shows. Another window comes on its workspace, moved there and not in
+        // front, and the workspace is shown again.
         assert_eq!(window_effects(s.apply(Event::Windows(vec![shelf_window(false)])).1), vec![Effect::Window(WindowCommand::ShowShelf)]);
         let (_, fx) = s.apply(Event::Windows(vec![shelf_window(true), win(3, "waydroid.org.fdroid.fdroid", &app, false)]));
         assert_eq!(window_effects(fx), vec![Effect::Window(WindowCommand::Focus(app.clone()))]);
-        // Later: not.
+        // Later than that, it isn't.
         s.apply(Event::Windows(vec![shelf_window(false), win(3, "waydroid.org.fdroid.fdroid", &app, true)]));
         s.apply(Event::Windows(vec![shelf_window(false)]));
         s.apply(Event::tick(103));
@@ -123,7 +128,8 @@ mod tests {
         let mut s = state();
         let terminal = "clamshell-run-foot_1";
         s.apply(Event::Windows(vec![shelf_window(false), win(2, "foot", terminal, true)]));
-        // Its window moved to the bottom screen, shelf in front: nothing to go back to on the main screen.
+        // With its window moved to the bottom screen and shelf in front, there is nothing to go back to on
+        // the main screen.
         s.apply(Event::Windows(vec![shelf_window(true), Window { down: true, ..win(2, "foot", terminal, false) }]));
         assert_eq!(s.apply(Event::Home).1, vec![]);
     }

@@ -1,10 +1,12 @@
-//! Enqueue (see docs/runners.md): what the details show added to what its runner plays. A runner that
-//! declares `enqueue` (mpv: `loadfile <file> append-play`) takes more while it runs, by its launch's
-//! control socket. The details' entry (or, in the Files tab, the entries selected) goes to the launch of
-//! its runner most recently in front; with none running, it is launched with them all.
+//! Enqueue (see docs/runners.md) adds what the details show to what its runner plays. A runner that
+//! declares `enqueue`, such as mpv with `loadfile <file> append-play`, takes more while it runs, through
+//! its launch's control socket. The details' entry, or in the Files tab the selected entries, goes to the
+//! launch of its runner that was most recently in front. If none is running, the runner is launched with
+//! all of them.
 //!
-//! A file is itself; a folder its playlist (an `.m3u` in it, so nothing is queued twice), else its files
-//! of that runner, all the way down, in list order (see [`clamshell_library::Library::queue_files`]).
+//! A file is queued as itself. A folder is queued as its playlist, an `.m3u` in it, so that nothing is
+//! queued twice. Without one, it is queued as its files for that runner, all the way down, in list order
+//! (see [`clamshell_library::Library::queue_files`]).
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -16,16 +18,17 @@ use crate::session::running::Running;
 use crate::{Effect, State};
 
 impl State {
-    /// The running entry of runner `key` most recently in front (in a scope of ours: not known by app id).
+    /// The running entry of runner `key` that was most recently in front. Only entries in a scope of ours
+    /// count, not those known by app id.
     pub fn enqueue_target(&self, key: &str) -> Option<&Running> {
         let session = &self.session;
         let runner_of = |r: &Running| r.entry.as_ref().and_then(|g| g.runner.as_ref()).is_some_and(|o| &*o.key == key);
         let candidates = session.running.iter().filter(|r| r.app_id.is_none() && runner_of(r));
-        // (Never in front: after those that were, the last started first.)
+        // Entries never in front come after those that were, the last started first.
         candidates.rev().min_by_key(|r| session.recent.iter().position(|w| *w == r.workspace()).unwrap_or(usize::MAX))
     }
 
-    /// Enqueue pressed: the entries added to the running launch of their runner, else launched.
+    /// Enqueue was pressed. The entries are added to the running launch of their runner, or else launched.
     pub(crate) fn enqueue_selected(&mut self) -> Vec<Effect> {
         let Some((game, true)) = self.file_target() else {
             return vec![];
@@ -35,7 +38,8 @@ impl State {
         };
         let library = self.shelf.library();
         let index_of = |id: &str| library.entries.iter().position(|g| &*g.id == id);
-        // (The selection, in the order picked, while there is one; the folder open is what plays them.)
+        // While there is a selection, its entries are queued in the order picked, and the open folder is
+        // the entry that plays them.
         let (entry, ids): (Arc<str>, Vec<Arc<str>>) = match self.shelf.group().filter(|_| !self.files.selected.is_empty()) {
             Some(folder) => (folder.id.clone(), self.files.selected.clone()),
             None => (game.id.clone(), vec![game.id.clone()]),
@@ -53,7 +57,7 @@ impl State {
                 self.notify(NoticeKind::Enqueued(files.len(), title));
                 vec![Effect::Enqueue { key, lines }]
             }
-            // (A file alone: opened as A opens it, where it was left included.)
+            // A file alone is opened as A opens it, which includes resuming where it was left.
             None if alone => self.play(entry),
             None => {
                 let entry = self.shelf.entry_of_file(&entry).unwrap_or(entry);
@@ -63,8 +67,8 @@ impl State {
     }
 }
 
-/// The line that adds `file` to a launch of `runner`: its `enqueue`, `{path}` the file as a JSON string's
-/// contents.
+/// The line that adds `file` to a launch of `runner`: its `enqueue`, with `{path}` replaced by the file as
+/// the contents of a JSON string.
 fn line(runner: &RunnerOf, file: &std::path::Path) -> Option<String> {
     let quoted = serde_json::to_string(&file.to_string_lossy()).ok()?;
     let escaped = quoted.strip_prefix('"')?.strip_suffix('"')?;

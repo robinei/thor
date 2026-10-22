@@ -1,7 +1,8 @@
-//! Entries started with ClamShell: chosen in an entry's dock menu (Start with ClamShell), saved. Once
-//! ClamShell knows what runs (systemd's first list of its scopes: what a ClamShell restarted finds still
-//! running isn't started twice), each that the library has and that doesn't run is launched, in the
-//! background: on its own workspace, not shown (Steam's window, if it opens one, doesn't cover shelf).
+//! Entries started with ClamShell, chosen in an entry's dock menu (Start with ClamShell) and saved. Once
+//! ClamShell knows what runs, from systemd's first list of its scopes, each of these entries that the
+//! library has and that doesn't run is launched. Waiting for that list keeps a restarted ClamShell from
+//! starting again what is still running. They are launched in the background, on their own workspaces and
+//! not shown, so that a window Steam opens doesn't cover shelf.
 
 use std::sync::Arc;
 
@@ -14,7 +15,7 @@ impl State {
         self.autostart.iter().any(|a| &**a == id)
     }
 
-    /// Start with ClamShell, or don't: the choice saved.
+    /// Starts `id` with ClamShell, or stops doing so, and saves the choice.
     pub(crate) fn toggle_autostart(&mut self, id: Arc<str>) -> Vec<Effect> {
         match self.autostart.iter().position(|a| *a == id) {
             Some(i) => {
@@ -25,8 +26,8 @@ impl State {
         vec![Effect::Save(Save::Autostart(self.autostart.clone()))]
     }
 
-    /// The first time what runs is known: the entries to start that don't run, launched without being
-    /// shown.
+    /// The first time what runs is known, launches the entries to start that don't run, without showing
+    /// them.
     pub(crate) fn start_autostart(&mut self) -> Vec<Effect> {
         if std::mem::replace(&mut self.autostarted, true) {
             return vec![];
@@ -36,7 +37,7 @@ impl State {
         for id in ids {
             let shown = self.session.pending_show.clone();
             effects.extend(self.launch(id));
-            // (In the background: what was to be shown still is.)
+            // They start in the background, so what was going to be shown still is.
             self.session.pending_show = shown;
         }
         effects
@@ -53,14 +54,14 @@ mod tests {
     fn chosen_entries_start_once_what_runs_is_known_unless_they_run() {
         let launches = |fx: &[Effect]| fx.iter().filter(|e| matches!(e, Effect::Launch { .. })).count();
         let init = |ids: &[&str]| Init { autostart: ids.iter().map(|i| Arc::from(*i)).collect(), ..init() };
-        // Zelda and Firefox to start; Firefox's scope is there already (ClamShell restarted).
+        // Zelda and Firefox are to start. Firefox's scope is there already, as after a ClamShell restart.
         let mut s = State::new(init(&["zelda-lttp", "desktop:firefox", "gone"]));
         let firefox = Instance::Run { key: clamshell_library::key_of("desktop:firefox"), secs: 1, n: 0 };
         let (_, fx) = s.apply(Event::Units(vec![firefox]));
         assert_eq!(launches(&fx), 1, "Zelda only: Firefox runs, `gone` isn't in the library: {fx:?}");
         assert!(s.session().pending_show.is_none(), "not shown");
         assert_eq!(launches(&s.apply(Event::Units(vec![])).1), 0, "once");
-        // Chosen in the dock menu: saved.
+        // Choosing in the dock menu saves the list.
         assert_eq!(s.toggle_autostart("zelda-lttp".into()), vec![Effect::Save(Save::Autostart(vec!["desktop:firefox".into(), "gone".into()]))]);
         assert!(!s.autostarts("zelda-lttp"));
     }

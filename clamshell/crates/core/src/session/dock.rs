@@ -1,10 +1,19 @@
-//! The dock: the entries pinned there, in the user's order (saved), and those running, added at the end as
-//! they start and gone again when they stop (unless pinned). A pinned entry not running shows dimmed; a tap
-//! starts it. A tap on a running one shows its workspace (all its windows on the bottom screen: shows them
-//! there). A long press opens its menu: Open another (another launch, another tab; an app's only, see
-//! [`crate::Entry::another`]), Close window (the one in view), Pin or Unpin, Move (the D-pad moves it, A or B
-//! ends), Quit and Force kill; a stopped one's: Unpin and Move. A running entry with a tray icon (see
-//! [`crate::session::tray`]) has Menu: its program's own menu, as a page of the same kind (a submenu another).
+//! The dock: the entries pinned there, in the user's saved order, and the running entries, added at the end
+//! as they start and removed when they stop unless pinned. A pinned entry that isn't running shows dimmed,
+//! and a tap starts it. A tap on a running entry shows its workspace, or, if all its windows are on the
+//! bottom screen, shows them there.
+//!
+//! A long press opens the entry's menu:
+//!
+//! - Open another starts another launch in another tab, for apps only (see [`crate::Entry::another`]).
+//! - Close window closes the one in view.
+//! - Pin or Unpin.
+//! - Move lets the D-pad move the entry; A or B ends it.
+//! - Quit and Force kill.
+//!
+//! A stopped entry's menu has Unpin and Move. A running entry with a tray icon (see
+//! [`crate::session::tray`]) also has Menu, which shows its program's own menu as a page of the same kind,
+//! with each submenu as another page.
 
 use std::sync::Arc;
 
@@ -30,9 +39,10 @@ pub struct Dock {
     items: Vec<DockItem>,
     /// The entry whose menu is open.
     pub(crate) menu: Option<Arc<str>>,
-    /// The entry being moved (the D-pad moves it).
+    /// The entry being moved with the D-pad.
     pub(crate) moving: Option<Arc<str>>,
-    /// The menu's entry's tray menu open instead of its own: the submenus open in it (none: the top).
+    /// Set when the menu shows its entry's tray menu instead of its own. It holds the submenus open in it;
+    /// empty is the top.
     pub(crate) tray: Option<Vec<i32>>,
 }
 
@@ -42,7 +52,7 @@ impl Dock {
         Dock { items: ids.into_iter().map(|id| DockItem { id, pinned: true }).collect(), ..Dock::default() }
     }
 
-    /// The pinned entries' ids, in order (what is saved).
+    /// The pinned entries' ids, in order, which is what is saved.
     pub fn pinned_ids(&self) -> Vec<Arc<str>> {
         self.items.iter().filter(|i| i.pinned).map(|i| i.id.clone()).collect()
     }
@@ -81,8 +91,9 @@ impl State {
         &self.dock
     }
 
-    /// After anything that may start or stop an entry: those running and not on the dock added at its
-    /// end; those stopped and not pinned (nor being moved) gone. Whether it changed.
+    /// Runs after anything that may start or stop an entry. Running entries not on the dock are added at
+    /// its end, and stopped ones that are neither pinned nor being moved are removed. Returns whether it
+    /// changed.
     pub(crate) fn follow_dock(&mut self) -> bool {
         let before = self.dock.items.len();
         let session = &self.session;
@@ -95,8 +106,8 @@ impl State {
         removed || added
     }
 
-    /// An entry's window in view: in front on the top screen, else shown there, else (nothing of it on
-    /// top) shown on the bottom screen. For the menu's Close window.
+    /// An entry's window in view, for the menu's Close window. It is the one in front on the top screen,
+    /// or else one shown there, or else, with nothing of the entry on top, one shown on the bottom screen.
     pub fn entry_window(&self, id: &str) -> Option<i64> {
         let session = &self.session;
         let mine = || session.windows_of(id);
@@ -105,8 +116,7 @@ impl State {
         shown.map(|w| w.id)
     }
 
-    /// A tap or long press on a dock tile, a choice in its menu (which then closes), or a step in move
-    /// mode.
+    /// A tap or long press on a dock tile, a choice in its menu, which then closes, or a step in move mode.
     pub(crate) fn on_dock(&mut self, id: DockId, long: bool) -> Vec<Effect> {
         match id {
             DockId::Entry(i) => {
@@ -134,7 +144,7 @@ impl State {
                 vec![]
             }
             DockId::TrayEntry(id) => self.tray_choice(id),
-            // Back in a submenu: the menu above it.
+            // Back in a submenu goes to the menu above it.
             DockId::Back if self.dock.tray.as_ref().is_some_and(|path| !path.is_empty()) => {
                 if let Some(path) = &mut self.dock.tray {
                     path.pop();
@@ -157,8 +167,8 @@ impl State {
         }
     }
 
-    /// A tap on a dock entry: a stopped one starts; a running one is shown (all its windows on the bottom
-    /// screen: shown there).
+    /// A tap on a dock entry. A stopped entry starts. A running one is shown, on the bottom screen if all
+    /// its windows are there.
     fn tap_entry(&mut self, entry: Arc<str>) -> Vec<Effect> {
         if self.session.running(&entry).is_none() {
             return self.play(entry);
@@ -190,8 +200,8 @@ impl State {
         }
     }
 
-    /// The pins of entries the library doesn't have (and whose source isn't away) dropped, unless they
-    /// run. Whether any were.
+    /// Drops the pins of entries the library doesn't have, and whose source isn't away, unless they run.
+    /// Returns whether any were dropped.
     pub(crate) fn drop_gone_pins(&mut self) -> bool {
         let before = self.dock.items.len();
         let (library, session) = (self.shelf.library(), &self.session);
@@ -199,8 +209,8 @@ impl State {
         self.dock.items.len() != before
     }
 
-    /// Pins `entry` to the dock (at the end, if it isn't there), or unpins it (gone, unless it runs); the
-    /// pins saved.
+    /// Pins `entry` to the dock, at the end if it isn't there, or unpins it, which removes it unless it
+    /// runs. The pins are saved.
     pub(crate) fn toggle_pin(&mut self, entry: Arc<str>) -> Vec<Effect> {
         match self.dock.position(&entry).and_then(|i| self.dock.items.get_mut(i)) {
             Some(item) => item.pinned = !item.pinned,
@@ -210,7 +220,7 @@ impl State {
         vec![Effect::Save(Save::Dock(self.dock.pinned_ids()))]
     }
 
-    /// Move mode: the entry one place along (left, right) or a row (up, down); the order saved.
+    /// In move mode, moves the entry one place left or right, or one row up or down, and saves the order.
     fn step(&mut self, dir: Dir) -> Vec<Effect> {
         let Some(at) = self.dock.moving.as_ref().and_then(|id| self.dock.position(id)) else {
             return vec![];
@@ -237,7 +247,7 @@ mod tests {
     use crate::testkit::*;
     use crate::*;
 
-    /// A menu closing: what its entry costs is no longer read.
+    /// The effect of a menu closing, which stops reading what its entry costs.
     fn closed() -> Effect {
         Effect::Watch(crate::effect::Watch::Battery, false)
     }
@@ -256,10 +266,10 @@ mod tests {
         tap(&mut s, Id::Tab(crate::Tab::Dock));
         let zelda = launch(&mut s, "zelda-lttp");
         assert_eq!(entry(&s, 0), Some("zelda-lttp"), "running: on the dock");
-        // A tap without a window of it to show: what is in front stays, a notice says so.
+        // A tap with no window of it to show leaves what is in front, and a notice says so.
         assert_eq!(tap(&mut s, dock(0)), vec![]);
         assert!(s.bottom().notice().is_some());
-        // With one, a tap shows it; its menu pins it.
+        // With a window, a tap shows it, and its menu pins it.
         s.apply(Event::Windows(vec![win(3, "zelda3", &zelda.workspace(), false)]));
         assert_eq!(tap(&mut s, dock(0)), vec![focus(&zelda)]);
         long(&mut s, dock(0));
@@ -267,11 +277,11 @@ mod tests {
         let fx = tap(&mut s, Id::Dock(DockId::Pin));
         assert!(matches!(fx.as_slice(), [Effect::Save(Save::Dock(ids)), _] if ids.last().is_some_and(|i| &**i == "zelda-lttp")), "{fx:?}");
         assert_eq!(fx.last(), Some(&closed()));
-        // It stops: still there (pinned), a tap starts it.
+        // When it stops it stays, being pinned, and a tap starts it.
         end(&mut s, "zelda-lttp");
         assert_eq!(entry(&s, 0), Some("zelda-lttp"));
         assert!(tap(&mut s, dock(0)).iter().any(|e| matches!(e, Effect::Launch { .. })));
-        // Unpinned while stopped: gone.
+        // Unpinned while stopped, it is removed.
         s.apply(LaunchEvent::LaunchFailed("zelda-lttp".into()).into());
         long(&mut s, dock(0));
         tap(&mut s, Id::Dock(DockId::Pin));
@@ -290,7 +300,7 @@ mod tests {
         tap(&mut s, Id::Shelf(ShelfId::Collection(0)));
         assert_eq!(tap(&mut s, dock(0)), vec![Effect::Window(WindowCommand::ShowShelf)]);
         assert_eq!(s.shelf().group().map(|g| &*g.id), Some("tv:Cosmos"));
-        // Unpinned from shelf: gone (it doesn't run).
+        // Unpinned from shelf, it is removed, since it doesn't run.
         tap(&mut s, Id::Shelf(ShelfId::Up));
         s.apply(ShelfEvent::TogglePin.into());
         assert_eq!(entry(&s, 0), None);
@@ -305,7 +315,7 @@ mod tests {
         assert_eq!(s.dock().pinned_ids(), vec![std::sync::Arc::from("ff6"), "sd:Zelda.sfc".into()], "the gone one dropped; the away one kept");
         let fx = s.apply(Event::Start).1;
         assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Dock(ids)) if ids.len() == 2)), "saved: {fx:?}");
-        // A rescan without ff6: dropped then too.
+        // A rescan without ff6 drops its pin too.
         let mut library = clamshell_library::demo::library();
         library.entries.retain(|g| &*g.id != "ff6");
         library.collections.iter_mut().for_each(|c| c.entries.clear());
@@ -342,7 +352,7 @@ mod tests {
         assert_eq!(tap(&mut s, Id::Dock(DockId::Quit)), vec![Effect::Window(WindowCommand::Close(vec![5])), closed()]);
         long(&mut s, dock(0));
         assert_eq!(tap(&mut s, Id::Dock(DockId::ForceKill)), vec![Effect::EndRun { key, force: true }, closed()]);
-        // Home with B: the window in front closes; held, its entry quits.
+        // Home with B closes the window in front; held, it quits the window's entry.
         assert_eq!(s.apply(Event::Device(crate::device::buttons::DeviceKey::CloseWindow)).1, vec![Effect::Window(WindowCommand::Close(vec![5]))]);
         assert_eq!(s.apply(Event::Device(crate::device::buttons::DeviceKey::Quit)).1, vec![Effect::Window(WindowCommand::Close(vec![5]))]);
     }
@@ -356,7 +366,7 @@ mod tests {
         s.apply(Event::Windows(vec![shelf_window(true), Window { down: true, visible: true, focused: false, ..foot() }]));
         assert!(s.bottom_shows_windows());
         assert_eq!(s.apply(Event::Device(DeviceKey::CloseWindow)).1, vec![Effect::Window(WindowCommand::Close(vec![foot().id]))]);
-        // ClamShell's view down there instead: nothing to close.
+        // With ClamShell's view on the bottom screen instead, there is nothing to close.
         s.apply(Event::Device(DeviceKey::BottomView));
         assert_eq!(s.apply(Event::Device(DeviceKey::CloseWindow)).1, vec![]);
     }

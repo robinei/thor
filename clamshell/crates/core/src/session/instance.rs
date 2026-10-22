@@ -1,13 +1,17 @@
-//! The names ClamShell gives sway workspaces, systemd scopes and slices. A launch of a library entry (a game,
-//! an app: alike) is a scope we started (`clamshell-run-<key>-<secs>-<n>.scope`) in the entry's slice
-//! (`app-graphical-clamshell-run-<key>.slice`, in the session's app slice; Quit and Force kill end it); all
-//! the entry's windows are on its workspace (`clamshell-run-<key>`), as tabs. `<key>` is the entry's
-//! ([`clamshell_library::key_of`]: letters, digits and `_`). An entry that runs in another program's
-//! processes (a game in Steam's, an Android app in Waydroid's) isn't in a scope of ours, but its windows go
-//! to its entry's workspace too. Shelf's window has `clamshell-shelf`, the second screen `clamshell-bottom`;
-//! those entries' windows land on `clamshell-game` (sway rules by their app ids put them there). `<secs>-<n>`
-//! is the start time and a counter, so names are unique across restarts and sort in the order things were
+//! The names ClamShell gives sway workspaces, systemd scopes and slices.
+//!
+//! A launch of a library entry, whether a game or an app, is a scope we started
+//! (`clamshell-run-<key>-<secs>-<n>.scope`). It is in the entry's slice
+//! (`app-graphical-clamshell-run-<key>.slice`), which is in the session's app slice; Quit and Force kill
+//! end the slice. All the entry's windows are on its workspace (`clamshell-run-<key>`), as tabs. `<key>` is
+//! the entry's key ([`clamshell_library::key_of`]), made of letters, digits and `_`. `<secs>-<n>` is the
+//! start time and a counter, so names are unique across restarts and sort in the order things were
 //! started.
+//!
+//! An entry that runs in another program's processes, such as a game in Steam's or an Android app in
+//! Waydroid's, isn't in a scope of ours, but its windows go to its entry's workspace too. They first land on
+//! `clamshell-game`, where sway rules put them by their app ids. Shelf's window is on `clamshell-shelf`, and
+//! the second screen is `clamshell-bottom`.
 
 use std::fmt::{self, Write};
 use std::str::FromStr;
@@ -15,14 +19,14 @@ use std::str::FromStr;
 /// Every name of ours starts with this.
 const PREFIX: &str = "clamshell-";
 const RUN: &str = "clamshell-run-";
-/// An entry's slice: in the session's slice for apps (uwsm's `app-graphical.slice`, stopped before the
-/// compositor as the session ends), named by its key.
+/// The prefix of an entry's slice, which is named by the entry's key. The slice is in the session's slice
+/// for apps, uwsm's `app-graphical.slice`, which is stopped before the compositor as the session ends.
 pub const SLICE_PREFIX: &str = "app-graphical-clamshell-run-";
 const SCOPE: &str = ".scope";
 /// Steam's app id for a game's windows: `steam_app_<id>`.
 pub const STEAM_APP_PREFIX: &str = "steam_app_";
 
-/// A workspace of ours, or (a launch) a scope and the workspace its windows are on.
+/// A workspace of ours, or, for a launch, a scope and the workspace its windows are on.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Instance {
     /// Shelf's window.
@@ -36,8 +40,8 @@ pub enum Instance {
 }
 
 impl Instance {
-    /// The instance `name` (a workspace's or a scope's, without `.scope`) stands for, if it is ours (an
-    /// entry's workspace is none: its launches share it).
+    /// The instance that `name`, a workspace's or a scope's without `.scope`, stands for, if it is ours. An
+    /// entry's workspace gives none, since its launches share it.
     pub fn parse(name: &str) -> Option<Instance> {
         match name.strip_prefix(PREFIX)? {
             "shelf" => return Some(Instance::Shelf),
@@ -57,14 +61,14 @@ impl Instance {
         Instance::parse(unit.strip_suffix(SCOPE)?).filter(|i| matches!(i, Instance::Run { .. }))
     }
 
-    /// The control socket's file name (in the runtime dir) of entry `key`'s launches: a command's
-    /// `{socket}`.
+    /// The file name, in the runtime dir, of the control socket of entry `key`'s launches. It is a
+    /// command's `{socket}`.
     pub fn socket_of(key: &str) -> String {
         format!("{RUN}{key}.sock")
     }
 
-    /// The entry key in `name`: a launch's scope (with or without `.scope`), or an entry's workspace
-    /// (without allocating).
+    /// The entry key in `name`, which is a launch's scope, with or without `.scope`, or an entry's
+    /// workspace. It doesn't allocate.
     pub fn key_of(name: &str) -> Option<&str> {
         let rest = name.strip_prefix(RUN)?;
         let rest = rest.strip_suffix(SCOPE).unwrap_or(rest);
@@ -72,35 +76,36 @@ impl Instance {
         (!key.is_empty()).then_some(key)
     }
 
-    /// The workspace of the entry with `key`: its launches' windows, as tabs.
+    /// The workspace of the entry with `key`, which holds its launches' windows as tabs.
     pub fn workspace_of(key: &str) -> String {
         format!("{RUN}{key}")
     }
 
-    /// The slice of the entry with `key`: its launches' scopes (all its processes).
+    /// The slice of the entry with `key`, which holds its launches' scopes and so all its processes.
     pub fn slice_of(key: &str) -> String {
         format!("{SLICE_PREFIX}{key}.slice")
     }
 
-    /// Whether unit `unit` is a systemd service a program runs in as the service's (a portal, the polkit
-    /// agent: its windows and processes the service's, not moved): not sway's own unit (the device's under
-    /// uwsm, `wayland-wm@sway.service`; the desktop's nested one, `clamshell-nested-sway.service`), where
-    /// what sway's config starts runs until it is moved out.
+    /// Whether `unit` is a systemd service that a program runs in as part of the service, such as a portal
+    /// or the polkit agent. Such a program's windows and processes belong to the service and aren't moved.
+    /// Sway's own unit doesn't count, because what sway's config starts runs there until it is moved out.
+    /// That unit is `wayland-wm@sway.service` on the device under uwsm, and
+    /// `clamshell-nested-sway.service` for the desktop's nested sway.
     pub fn is_service(unit: &str) -> bool {
         unit.ends_with(".service") && !unit.starts_with("wayland-wm@") && unit != "clamshell-nested-sway.service"
     }
 
-    /// Whether `name` is one of ours (a workspace or scope ClamShell names, known kind or not).
+    /// Whether `name` is one of ours: a workspace or scope that ClamShell names, of a known kind or not.
     pub fn is_ours(name: &str) -> bool {
         name.starts_with(PREFIX)
     }
 
-    /// Its name: its scope's (without `.scope`) for a launch, else its workspace's.
+    /// Its name: for a launch, its scope's without `.scope`, or else its workspace's.
     pub fn name(&self) -> String {
         self.to_string()
     }
 
-    /// The workspace its windows are on: its entry's for a launch, else its own name's.
+    /// The workspace its windows are on: its entry's for a launch, or else the one with its own name.
     pub fn workspace(&self) -> String {
         match self {
             Instance::Run { key, .. } => Instance::workspace_of(key),
@@ -142,7 +147,7 @@ impl Instance {
         }
     }
 
-    /// Whether `name` is this instance's name, compared without allocating (for drawing).
+    /// Whether `name` is this instance's name, compared without allocating so it can be used while drawing.
     pub fn is(&self, name: &str) -> bool {
         let mut rest = Rest(Some(name));
         let _ = write!(rest, "{self}");
@@ -150,8 +155,8 @@ impl Instance {
     }
 }
 
-/// What is left of a name to compare against, as [`Instance::is`] writes the instance's name piece
-/// by piece; `None` once a piece didn't match.
+/// What is left of a name to compare against, as [`Instance::is`] writes the instance's name piece by
+/// piece. It is `None` once a piece didn't match.
 struct Rest<'a>(Option<&'a str>);
 
 impl Write for Rest<'_> {

@@ -1,20 +1,20 @@
-//! Programs ClamShell didn't start, found by a window of theirs that belongs to no entry (or by a tray
-//! icon: see [`crate::session::tray`]), so that anything with a window is on the dock.
+//! Programs ClamShell didn't start, found by a window of theirs that belongs to no entry, or by a tray icon
+//! (see [`crate::session::tray`]), so that anything with a window is on the dock.
 //!
-//! Each such program runs as an entry ([`Origin::Found`]): the library's desktop entry named like the
-//! window's app id, else an entry of its own (`window:<app id>`, with a picture looked up by the app id in
-//! the icon themes, else the UI's app glyph). Its windows (those with its app id, or of its process) go to
-//! its workspace, and are shown there if one was in front.
+//! Each such program runs as an entry ([`Origin::Found`]). That is the library's desktop entry named like
+//! the window's app id, or else an entry of its own (`window:<app id>`). An entry of its own gets a picture
+//! looked up by the app id in the icon themes, or else the UI's app glyph. The program's windows, those
+//! with its app id or of its process, go to its workspace, which is shown if one of them was in front.
 //!
 //! Its process, and those it started, are moved into a scope of ours as a launch of the entry
-//! ([`State::adopt`]); from then on it is paused, quit and killed through its slice. A process that also
-//! has another entry's windows (a browser showing a file opened from the Files tab) is not moved: Quit
-//! closes its windows, and that is all. Nested in a desktop session this works the same, since a window
-//! in ClamShell's sway belongs to that session (the desktop's own programs show their windows on the
-//! desktop, not there).
+//! ([`State::adopt`]). From then on it is paused, quit and killed through its slice. A process that also
+//! has another entry's windows, such as a browser showing a file opened from the Files tab, is not moved:
+//! Quit closes its windows, and that is all. Nested in a desktop session this works the same, since a
+//! window in ClamShell's sway belongs to that session; the desktop's own programs show their windows on the
+//! desktop, not there.
 //!
-//! A window that a systemd service opened (a portal's file chooser, the password prompt) is not found as
-//! a program: it belongs to the program that asked for it, and is gone in seconds.
+//! A window that a systemd service opened, such as a portal's file chooser or the password prompt, is not
+//! found as a program. It belongs to the program that asked for it, and is gone in seconds.
 
 use std::sync::Arc;
 
@@ -27,19 +27,20 @@ use crate::session::windows::Window;
 use crate::{Entry, State};
 
 impl State {
-    /// A found program's process (and those it started) moved into a scope of ours, as a launch of
-    /// entry `key`'s; once systemd lists that, it runs as one (see [`State::follow_units`]).
+    /// Moves a found program's process, and those it started, into a scope of ours as a launch of entry
+    /// `key`. Once systemd lists the scope, it runs as a launch (see [`State::follow_units`]).
     pub(crate) fn adopt(&mut self, key: &str, pid: u32) -> Effect {
         let (secs, n) = (self.unix_secs, self.session.next_instance());
         Effect::Adopt { instance: Instance::Run { key: key.to_owned(), secs, n }, pid }
     }
 
-    /// Windows that are still no entry's (`taken`: ones given to a browsed file just now, left out):
-    /// their programs run as entries found by them.
+    /// Makes the programs of windows that still belong to no entry run as entries found by them. `taken`
+    /// lists windows just given to a browsed file, which are left out.
     pub(crate) fn follow_found_windows(&mut self, taken: &[i64]) -> Vec<Effect> {
         let now = self.mono_secs;
         let session = &self.session;
-        // (Not a starting launch's: a Steam game found running, its launch to come.)
+        // A starting launch's window is left out, such as a Steam game found running whose launch is
+        // still to come.
         let starting = |w: &Window| session.launching.iter().any(|l| l.app_id.as_deref() == Some(w.app_id.as_str()));
         let service = |w: &Window| w.unit.as_deref().is_some_and(Instance::is_service);
         let mut new: Vec<Running> = Vec::new();
@@ -50,10 +51,10 @@ impl State {
             if new.iter().any(|r| r.owns(w) || r.fathered(w)) {
                 continue;
             }
-            // Its process its own: no window of it another entry's.
+            // Its process is its own if none of the process's windows belongs to another entry.
             let own = !session.windows.iter().any(|o| o.pids.first() == Some(&pid) && session.running_of(o).is_some());
             let app_id: Option<Arc<str>> = (!w.app_id.is_empty()).then(|| w.app_id.as_str().into());
-            // (Known by neither its app id nor its process: no entry would find it again.)
+            // Known by neither its app id nor its process, no entry would find it again.
             if app_id.is_none() && !own {
                 continue;
             }
@@ -70,16 +71,16 @@ impl State {
         self.start_found(new, taken)
     }
 
-    /// The entry a program found by `name` (its window's app id, its tray icon's id) runs as: the
-    /// library's desktop entry of that name (any case), else one of its own, made by `own`.
+    /// The entry that a program found by `name`, its window's app id or its tray icon's id, runs as. It is
+    /// the library's desktop entry of that name, ignoring case, or else one of its own made by `own`.
     pub(crate) fn found_entry(&self, name: &str, own: impl FnOnce() -> Entry) -> Entry {
         let named = |g: &&Entry| ids::desktop_file(&g.id).is_some_and(|d| d.eq_ignore_ascii_case(name));
         self.shelf.library().entries.iter().find(named).cloned().unwrap_or_else(own)
     }
 
-    /// Entries just found (by windows or tray icons) run: their windows (but `taken`) to their
-    /// workspaces, shown there if one was in front; an own entry's picture looked up by its app id; each
-    /// moved into a scope of ours.
+    /// Runs entries just found by windows or tray icons. Their windows, except `taken`, go to their
+    /// workspaces, which are shown if one of the windows was in front. An entry of its own gets its
+    /// picture looked up by its app id, and each is moved into a scope of ours.
     pub(crate) fn start_found(&mut self, new: Vec<Running>, taken: &[i64]) -> Vec<Effect> {
         let session = &self.session;
         let mut effects = Vec::new();
@@ -113,7 +114,7 @@ mod tests {
     use crate::testkit::*;
     use crate::{Event, Init};
 
-    /// A window of process `pid` (its parent: 1), in `unit`.
+    /// A window of process `pid`, whose parent is 1, in `unit`.
     fn window(id: i64, app_id: &str, pid: u32, unit: &str, focused: bool) -> Window {
         Window { pids: vec![pid], unit: Some(unit.into()), ..win(id, app_id, "1", focused) }
     }
@@ -142,15 +143,16 @@ mod tests {
         assert!(fx.contains(&Effect::Window(WindowCommand::Focus(ws))), "it was in front: {fx:?}");
         assert!(fx.iter().any(|e| matches!(e, Effect::Adopt { pid: 500, .. })), "{fx:?}");
         assert!(s.dock().items().iter().any(|i| &*i.id == "window:org.x.Thing"), "on the dock");
-        // Its picture: looked up by its app id; found, it is the entry's.
+        // Its picture is looked up by its app id, and once found it is the entry's.
         assert!(fx.contains(&Effect::FindIcon { entry: "window:org.x.Thing".into(), app_id: "org.x.Thing".into() }), "{fx:?}");
         s.apply(Event::Reading(crate::Reading::Icon { entry: "window:org.x.Thing".into(), path: "/icons/thing.svg".into() }));
         assert_eq!(s.entry("window:org.x.Thing").and_then(|g| g.icon.clone()), Some("/icons/thing.svg".into()));
-        // Not moved yet (the system didn't): its process ended; its windows gone, it has ended.
+        // The system hasn't moved it yet, so Force kill ends its process. Once its windows are gone, it
+        // has ended.
         assert_eq!(s.force_kill("window:org.x.Thing"), vec![Effect::EndProcesses { pids: vec![500], force: true }]);
         s.apply(Event::Windows(vec![]));
         assert!(s.session().running("window:org.x.Thing").is_none());
-        // One the library has a desktop file for: that entry.
+        // A program the library has a desktop file for runs as that entry.
         s.apply(Event::Windows(vec![window(7, "firefox", 501, "app-firefox.scope", false)]));
         assert!(s.session().running("desktop:firefox").is_some());
     }
@@ -162,10 +164,10 @@ mod tests {
         let (_, fx) = s.apply(Event::Windows(vec![window(5, "foot", 500, "app-foot.scope", true)]));
         let (instance, _) = adopted(&fx).unwrap();
         s.apply(Event::Units(vec![instance.clone()]));
-        // Moved: its window's unit is ours now. Closed: its scope still listed a moment.
+        // Once moved, its window's unit is ours. Once closed, its scope is still listed for a moment.
         s.apply(Event::Windows(vec![Window { unit: instance.unit(), ..window(5, "foot", 500, "app-foot.scope", true) }]));
         s.apply(Event::Windows(vec![]));
-        // Another foot (another process) before systemd's list says the scope is gone.
+        // Another foot, in another process, appears before systemd's list says the scope is gone.
         let other = window(6, "foot", 600, "session-3.scope", true);
         let (_, fx) = s.apply(Event::Windows(vec![other.clone()]));
         let (_, more) = s.apply(Event::Units(vec![]));
@@ -193,12 +195,13 @@ mod tests {
         crate::testkit::end(&mut s, "desktop:firefox");
         let mine = window(5, "firefox", 700, "waydroid-session.scope", false);
         s.apply(Event::Windows(vec![mine.clone()]));
-        // Another program's window, of the same process (Waydroid's session: an app the library hasn't).
+        // Another program's window from the same process: Waydroid's session showing an app the library
+        // doesn't have.
         let (_, fx) = s.apply(Event::Windows(vec![mine.clone(), window(6, "org.other", 700, "waydroid-session.scope", true)]));
         let r = s.session().running("window:org.other").unwrap();
         assert_eq!(r.pid(), None, "not its own process");
         assert!(!fx.iter().any(|e| matches!(e, Effect::Adopt { .. })), "{fx:?}");
-        // Quit: its windows closed, and that is all.
+        // Quit closes its windows, and that is all.
         let id: Arc<str> = "window:org.other".into();
         assert_eq!(s.quit(&id), vec![Effect::Window(WindowCommand::Close(vec![6]))]);
         let (_, fx) = s.apply(Event::Windows(vec![mine]));
@@ -208,7 +211,8 @@ mod tests {
 
     #[test]
     fn nested_in_a_desktop_a_window_found_is_adopted_too() {
-        // (A guest: a window in ClamShell's own sway is that session's, as on the device.)
+        // As a guest in a desktop, a window in ClamShell's own sway belongs to that session, as on the
+        // device.
         let mut s = state();
         let (_, fx) = s.apply(Event::Windows(vec![window(5, "org.x.Thing", 500, "app-thing.scope", true)]));
         assert!(s.session().running("window:org.x.Thing").is_some(), "on the dock");

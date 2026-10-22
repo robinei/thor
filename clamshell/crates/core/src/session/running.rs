@@ -1,25 +1,26 @@
-//! Running entries: what was launched from shelf or the dock, a game or an app alike. Each launch is a
-//! scope of its own in the entry's slice, its windows on the entry's workspace (see [`Instance`]); an
-//! entry may run more than once (another launch is another scope, another tab).
+//! Running entries: what was launched from shelf or the dock, games and apps alike. Each launch is a scope
+//! of its own in the entry's slice, with its windows on the entry's workspace (see [`Instance`]). An entry
+//! may run more than once; another launch is another scope and another tab.
 //!
-//! Some entries run in another program's processes, not a scope of ours, and are known by their windows'
-//! app id ([`app_id_of`]): Steam's games (`steam_app_<id>`, in Steam's scope) and the entries of a runner
-//! that hands its apps over (Waydroid's, in the Waydroid session; their desktop file's name). Their
-//! windows land on a workspace of their own (sway's rules, [`WindowCommand::LandRules`]) and are moved to
-//! their entry's; one opening while the entry doesn't run (the game started in Steam, the app by another
-//! app) starts it. Such an entry runs once (another launch shows it), and runs on by its windows after its
-//! launch ends, until the last closes.
+//! Some entries run in another program's processes, not in a scope of ours, and are known by their
+//! windows' app id ([`app_id_of`]). These are Steam's games (`steam_app_<id>`, in Steam's scope) and the
+//! entries of a runner that hands its apps over, such as Waydroid's, whose app id is their desktop file's
+//! name and which run in the Waydroid session. Their windows land on a workspace of their own by sway's
+//! rules ([`WindowCommand::LandRules`]) and are moved to their entry's. A window that opens while the
+//! entry doesn't run, such as a game started in Steam or an app opened by another app, starts the entry.
+//! Such an entry runs once, so another launch shows it instead. It runs on by its windows after its launch
+//! ends, until the last one closes.
 //!
-//! A file opened from the Files tab (a browsed entry) whose launch hands it to a program not ours and ends
-//! (`xdg-open` to an app's own instance, D-Bus activation) runs on by its windows too: a new window of no
-//! launch of ours appearing within [`HANDOFF`] is moved to its workspace, and it has ended when that
-//! window has closed (or when none came).
+//! A file opened from the Files tab, a browsed entry, may have a launch that hands it to a program not
+//! ours and ends, as with `xdg-open` to an app's own instance or with D-Bus activation. It runs on by its
+//! windows too: a new window of no launch of ours that appears within [`HANDOFF`] is moved to its
+//! workspace, and the file has ended when that window has closed, or when none came.
 //!
-//! In shelf, activating a running entry shows it, a stopped one starts. Quit asks an entry's windows to close
-//! and, once none is left and it still runs, ends it: its slice stopped, or (Steam's) the processes under
-//! Steam's launcher for it, and its runner's `stop` command run; Force kill ends it at once. What is in front
-//! (shelf, a running entry, another window) decides where the pad goes, what Home does and what the settings
-//! page edits.
+//! In shelf, activating a running entry shows it, and activating a stopped one starts it. Quit asks an
+//! entry's windows to close and, once none is left and it still runs, ends it. That stops its slice, or for
+//! a Steam game the processes under Steam's launcher for it, and runs its runner's `stop` command. Force
+//! kill ends it at once. What is in front, whether shelf, a running entry or another window, decides where
+//! the pad goes, what Home does and what the settings page edits.
 
 use crate::{Dirty, LaunchEvent};
 use std::sync::Arc;
@@ -36,58 +37,61 @@ pub enum Front {
     Shelf,
     /// A window of a running entry.
     Program,
-    /// Another window (none of ours).
+    /// Another window, not one of ours.
     Other,
 }
 
 /// How a running entry runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Origin {
-    /// By its launches: the launcher thread says when each has ended.
+    /// By its launches. The launcher thread says when each has ended.
     Ours,
-    /// A program not started by ClamShell, found by its tray icon (see [`crate::session::tray`]) or a window of it
-    /// (see [`crate::session::found`]): it runs while the icon is there, or a window of it is open; until it is
-    /// moved into a scope of ours (then it runs as [`Origin::Ours`]). `pid`: its own process (the tray
-    /// icon's, or its window's: windows of it, or of a process it started, are the entry's), none if
-    /// it runs in another program's; `tray`: the icon's key, if it has one.
+    /// A program not started by ClamShell, found by its tray icon (see [`crate::session::tray`]) or by a
+    /// window of it (see [`crate::session::found`]). It runs while the icon is there or a window of it is
+    /// open, until it is moved into a scope of ours, after which it runs as [`Origin::Ours`].
+    ///
+    /// `pid` is its own process, the tray icon's or its window's; windows of that process, or of a process
+    /// it started, are the entry's. It is none if the program runs in another program's process. `tray` is
+    /// the icon's key, if it has one.
     Found { pid: Option<u32>, tray: Option<Arc<str>> },
-    /// By its windows, since `since` (monotonic seconds, as in [`crate::Event::Tick`]): started by another program, or its launches ended
-    /// while it ran on in a program not ours. It ends once it has had windows ([`Running::seen`]) and has
-    /// none, or none came by `until`; its play from `since` recorded then. Its windows: those with its app
-    /// id, else (a browsed file's) a new window of no launch of ours, taken until `until`.
+    /// By its windows, since `since` (monotonic seconds, as in [`crate::Event::Tick`]). It was started by
+    /// another program, or its launches ended while it ran on in a program not ours. It ends once it has
+    /// had windows ([`Running::seen`]) and has none left, or when none came by `until`, and its play from
+    /// `since` is recorded then. Its windows are those with its app id, or, for a browsed file, a new window
+    /// of no launch of ours, taken until `until`.
     Windows { since: u64, until: u64 },
 }
 
-/// How long a launch that handed over waits for its window (seconds).
+/// How long a launch that handed over waits for its window, in seconds.
 pub const HANDOFF: u64 = 15;
 
 /// An entry that runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Running {
     pub id: Arc<str>,
-    /// Its key: its workspace's (and its launches' scopes' and slice's) names.
+    /// Its key, which names its workspace and its launches' scopes and slice.
     pub key: String,
     pub origin: Origin,
     /// The app id its windows have, if it runs in another program's processes (see [`app_id_of`]).
     pub app_id: Option<Arc<str>>,
-    /// When it first started (monotonic seconds, as in [`crate::Event::Tick`]).
+    /// When it first started, in monotonic seconds as in [`crate::Event::Tick`].
     pub start: u64,
-    /// A window of it has been there (since it started, or since it went on by its windows): before, it
-    /// is starting.
+    /// Whether a window of it has been there since it started, or since it went on by its windows. Until
+    /// then it is starting.
     pub(crate) seen: bool,
-    /// Its entry as it was when it started: the dock shows it by this if it leaves the library while it
-    /// runs (its file renamed or deleted).
+    /// Its entry as it was when it started. The dock shows it by this if it leaves the library while it
+    /// runs, for example because its file was renamed or deleted.
     pub entry: Option<Box<crate::Entry>>,
 }
 
 impl Running {
-    /// Entry `game` running as `origin` since `start` (no launch followed, no window seen yet).
+    /// Entry `game` running as `origin` since `start`, with no launch followed and no window seen yet.
     pub(crate) fn of(game: &Entry, origin: Origin, start: u64) -> Running {
         let entry = Some(Box::new(game.clone()));
         Running { id: game.id.clone(), key: game.key.clone(), origin, app_id: None, start, seen: false, entry }
     }
 
-    /// Found: its own process, if it has one (see [`Origin::Found`]).
+    /// Its own process, if it was found and has one (see [`Origin::Found`]).
     pub fn pid(&self) -> Option<u32> {
         match self.origin {
             Origin::Found { pid, .. } => pid,
@@ -95,7 +99,7 @@ impl Running {
         }
     }
 
-    /// Found by a tray icon: the icon's key.
+    /// The icon's key, if it was found by a tray icon.
     pub fn tray(&self) -> Option<&Arc<str>> {
         match &self.origin {
             Origin::Found { tray, .. } => tray.as_ref(),
@@ -112,13 +116,13 @@ impl Running {
         self.app_id.as_deref() == Some(w.app_id.as_str())
     }
 
-    /// Whether `w` is one of its windows by its process: the tray icon's, or one it started.
+    /// Whether `w` is one of its windows by its process: its own process, or one that process started.
     pub fn fathered(&self, w: &crate::session::windows::Window) -> bool {
         self.pid().is_some_and(|pid| w.pids.contains(&pid))
     }
 
-    /// Whether its windows are found otherwise than by its scope (by app id, or by process), and so are
-    /// moved to its workspace wherever they open.
+    /// Whether its windows are found other than by its scope, by app id or by process, and so are moved
+    /// to its workspace wherever they open.
     pub fn outside(&self) -> bool {
         self.app_id.is_some() || self.pid().is_some()
     }
@@ -129,7 +133,8 @@ impl Running {
     }
 }
 
-/// A launch asked for and not started yet (the launcher thread says when it has, or that it couldn't).
+/// A launch asked for and not started yet. The launcher thread says when it has started, or that it
+/// couldn't.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Launching {
     pub entry: Arc<str>,
@@ -138,9 +143,10 @@ pub struct Launching {
     pub app_id: Option<Arc<str>>,
 }
 
-/// The app id an entry's windows have when it runs in another program's processes, by which they are
-/// its wherever they open: Steam's games' `steam_app_<id>`, a desktop file's name for an entry whose
-/// runner hands its apps over (Waydroid's). None for the rest, which run in scopes of ours.
+/// The app id an entry's windows have when it runs in another program's processes, which makes them its
+/// windows wherever they open. For Steam's games it is `steam_app_<id>`. For an entry whose runner hands
+/// its apps over, such as Waydroid's, it is the desktop file's name. It is none for the rest, which run in
+/// scopes of ours.
 pub fn app_id_of(g: &Entry) -> Option<Arc<str>> {
     match &g.launch {
         Launch::Steam { appid } => Some(format!("{STEAM_APP_PREFIX}{appid}").into()),
@@ -148,7 +154,8 @@ pub fn app_id_of(g: &Entry) -> Option<Arc<str>> {
     }
 }
 
-/// Whether `app_id` is [`app_id_of`] `g`, without making it (asked for every window and entry).
+/// Whether `app_id` is [`app_id_of`] `g`, without building it, since this is asked for every window and
+/// entry.
 pub fn has_app_id(g: &Entry, app_id: &str) -> bool {
     match &g.launch {
         Launch::Steam { appid } => app_id.strip_prefix(STEAM_APP_PREFIX).and_then(|n| n.parse::<u32>().ok()) == Some(*appid),
@@ -162,27 +169,27 @@ fn handed_over_app(g: &Entry) -> Option<&str> {
 }
 
 impl State {
-    /// Shelf's action on its selected entry, or a tap on a stopped dock entry: show it if it runs, else
-    /// start it.
-    /// A group isn't started: it is shown open in shelf.
+    /// Shelf's action on its selected entry, or a tap on a stopped dock entry: shows the entry if it runs,
+    /// or else starts it. A group isn't started; it is shown open in shelf.
     pub(crate) fn play(&mut self, game: Arc<str>) -> Vec<Effect> {
-        // A browsed file that is a library entry too: as that entry.
+        // A browsed file that is also a library entry plays as that entry.
         let game = self.shelf.entry_of_file(&game).unwrap_or(game);
         if self.session.running(&game).is_some() {
             return self.show_running(&game);
         }
         let title = self.shelf.entry(&game).map(|g| g.title.clone());
         let effects = self.launch(game);
-        // (Said at once: a start may take a while, Android's first, a Steam game's, Proton's setup.)
+        // The notice comes at once, since a start may take a while: Android's first start, a Steam
+        // game's, or Proton's setup.
         if let Some(title) = title.filter(|_| effects.iter().any(|e| matches!(e, Effect::Launch { .. }))) {
             self.notify(crate::bottom::notice::NoticeKind::Starting(title));
         }
         effects
     }
 
-    /// Running entry `id` shown: its workspace, if a window of it is there to see; else what is in front
-    /// stays, and a notice says it has none (it runs without one, hasn't shown one yet, or lost its
-    /// display: its dock menu's Quit ends it). Never an empty screen.
+    /// Shows running entry `id`: its workspace, if a window of it is there to see. Otherwise what is in
+    /// front stays, and a notice says it has no window. It may run without one, not have shown one yet, or
+    /// have lost its display, in which case its dock menu's Quit ends it. It never shows an empty screen.
     pub(crate) fn show_running(&mut self, id: &str) -> Vec<Effect> {
         let session = &self.session;
         let Some(r) = session.running(id) else {
@@ -190,12 +197,13 @@ impl State {
         };
         if session.windows_of(&r.id).next().is_some() {
             let focus = Effect::Window(WindowCommand::Focus(r.workspace()));
-            // (Paused, or its runner: thawed first, so it draws as it is shown.)
+            // If it or its runner is paused, it is thawed first, so that it draws as it is shown.
             let resumed = self.resume_runner_of(id);
             return self.thaw(id).into_iter().chain(resumed).chain([focus]).collect();
         }
         let title = r.entry.as_ref().map_or_else(|| id.to_owned(), |g| g.title.clone());
-        // (No window, but a tray icon: the program asked to show itself, Steam started silently.)
+        // With no window but a tray icon, the program is asked to show itself, as for Steam started
+        // silently.
         if let Some(show) = self.activate_tray(id) {
             return vec![show];
         }
@@ -203,16 +211,18 @@ impl State {
         vec![]
     }
 
-    /// Launches `game` (again, if it runs: another tab), unless a launch of it is starting; one that runs
-    /// in another program's processes is shown instead (Steam doesn't start a game twice, Android an app).
+    /// Launches `game`, again in another tab if it runs, unless a launch of it is starting. An entry that
+    /// runs in another program's processes is shown instead, since Steam doesn't start a game twice and
+    /// Android doesn't start an app twice.
     pub(crate) fn launch(&mut self, game: Arc<str>) -> Vec<Effect> {
         self.launch_with(game, None)
     }
 
-    /// Launches `game` as [`State::launch`] does, by `command` if given (then a group too) instead of its own.
+    /// Launches `game` as [`State::launch`] does, but by `command` instead of its own if given. A group
+    /// can then be launched too.
     pub(crate) fn launch_with(&mut self, game: Arc<str>, command: Option<Launch>) -> Vec<Effect> {
         if let Some(Launch::Tool(tool)) = self.shelf.entry(&game).map(|g| &g.launch) {
-            // (The Device view is ClamShell's own, on the main screen.)
+            // The Device view is ClamShell's own, on the main screen.
             if *tool == clamshell_library::Tool::Device {
                 return self.open_device();
             }
@@ -241,7 +251,7 @@ impl State {
         let instance = Instance::Run { key, secs, n };
         let settings = self.settings_of(&game);
         let env = self.env_of(&game);
-        // (Its runner paused, its container with it: resumed first.)
+        // If its runner, and so its container, is paused, it is resumed first.
         let resumed = self.resume_runner_of(&game);
         self.session.launching.push(Launching { entry: game.clone(), instance: instance.clone(), app_id });
         // Shown once its first window appears.
@@ -251,11 +261,11 @@ impl State {
         effects
     }
 
-    /// Our launches' entries run while systemd lists a scope of theirs (a Steam game's holds its follower
-    /// between Steam's setup and the game; one started by a ClamShell before this one: its scopes). Once
-    /// none, one known by its app id whose windows are open or may still come, or a browsed file's soon
-    /// after it started, runs on by its windows (see [`Origin::Windows`]); the rest have ended, their
-    /// play recorded.
+    /// Our launches' entries run while systemd lists a scope of theirs. A Steam game's scope holds its
+    /// follower between Steam's setup and the game, and an entry started by an earlier ClamShell has its
+    /// scopes listed too. Once there are none, an entry known by its app id whose windows are open or may
+    /// still come, or a browsed file's entry soon after it started, runs on by its windows (see
+    /// [`Origin::Windows`]). The rest have ended, and their play is recorded.
     pub(crate) fn follow_ours(&mut self) -> Vec<Effect> {
         let now = self.mono_secs;
         let session = &self.session;
@@ -275,7 +285,8 @@ impl State {
                 handed.push((r.id.clone(), Origin::Windows { since: now, until: r.start + HANDOFF }, has));
             } else {
                 ended.push((r.id.clone(), r.start));
-                // (Ended without ever a window, not quit: it didn't start, a Steam game that never came.)
+                // It ended without ever having a window and without being quit, so it didn't start, as
+                // with a Steam game that never came.
                 if !r.seen && !session.is_quitting(&r.id) {
                     unstarted.push(r.entry.as_ref().map_or_else(|| r.id.to_string(), |g| g.title.clone()));
                 }
@@ -294,9 +305,9 @@ impl State {
         ended.into_iter().flat_map(|(game, start)| self.record_play(game, start)).collect()
     }
 
-    /// A play of `game` from `start` (monotonic seconds, as in [`crate::Event::Tick`]) until now: counted, and recorded, dated by the
-    /// wall clock.
-    /// (A video's: where mpv left it read, mpv having written it as it quit.)
+    /// Counts and records a play of `game` from `start` (monotonic seconds, as in [`crate::Event::Tick`])
+    /// until now, dated by the wall clock. For a video, it also reads where mpv left it, which mpv wrote as
+    /// it quit.
     fn record_play(&mut self, game: Arc<str>, start: u64) -> Vec<Effect> {
         let duration = self.mono_secs.saturating_sub(start);
         let start = self.unix_at(start);
@@ -308,15 +319,15 @@ impl State {
         [Effect::RecordPlay { entry: game, start, duration }].into_iter().chain(position).collect()
     }
 
-    /// A launch that never started (its scope was gone before it was seen): a browsed file's, or one known
-    /// by its app id, waits for its window (see [`Origin::Windows`]).
+    /// A launch that never started, its scope gone before it was seen. A browsed file's launch, or one
+    /// known by its app id, waits for its window (see [`Origin::Windows`]).
     pub(crate) fn launch_failed(&mut self, game: Arc<str>) {
         let app_id = match self.session.launching.iter().position(|l| l.entry == game) {
             Some(i) => self.session.launching.remove(i).app_id,
             None => None,
         };
         let Some(entry) = self.shelf.entry(&game).filter(|g| g.browsed.is_some() || app_id.is_some()).cloned() else {
-            // (Nothing to wait for: it didn't start, and says so.)
+            // There is nothing to wait for, so it didn't start, and a notice says so.
             let title = self.shelf.entry(&game).map_or_else(|| game.to_string(), |g| g.title.clone());
             if self.session.running(&game).is_none() {
                 self.notify(crate::bottom::notice::NoticeKind::NotStarted(title));
@@ -330,16 +341,18 @@ impl State {
         }
     }
 
-    /// After the windows changed, and every second (`known`: the windows there before):
-    /// - a window with the app id of a library entry that doesn't run starts it, shown (see
-    ///   [`app_id_of`]: an Android app opened by another, running by its windows; a game started in
-    ///   Steam, as a launch of it: the launcher finds it running and moves it into the launch's scope, so
-    ///   it is paused and ended as any launch);
-    /// - a running entry's windows found by app id go to its workspace;
-    /// - a new window of no launch of ours goes to the latest browsed file waiting for one, shown;
-    /// - one still no entry's makes its program an entry found by it (see [`crate::session::found`]);
-    /// - one left on the landing workspace that is no entry's goes to the main screen;
-    /// - an entry running by its windows that had windows and has none, or waited in vain, has ended.
+    /// Runs after the windows changed, and every second; `known` holds the windows that were there before.
+    ///
+    /// - A window with the app id of a library entry that doesn't run starts it, shown (see
+    ///   [`app_id_of`]). An Android app opened by another runs by its windows. A game started in Steam
+    ///   runs as a launch of it: the launcher finds it running and moves it into the launch's scope, so it
+    ///   is paused and ended as any launch.
+    /// - A running entry's windows found by app id go to its workspace.
+    /// - A new window of no launch of ours goes to the latest browsed file waiting for one, shown.
+    /// - A window that still belongs to no entry makes its program an entry found by it (see
+    ///   [`crate::session::found`]).
+    /// - A window left on the landing workspace that belongs to no entry goes to the main screen.
+    /// - An entry running by its windows that had windows and has none, or that waited in vain, has ended.
     pub(crate) fn follow_windows(&mut self, known: &[i64]) -> Vec<Effect> {
         let mut effects = self.start_by_app_id();
         effects.extend(self.windows_to_their_entries());
@@ -353,9 +366,9 @@ impl State {
         effects
     }
 
-    /// Entries started elsewhere, by their windows' app ids (a window's app id says whose it is before
-    /// its scope does: a game Steam started is in Steam's scope). A Steam game is launched (the launcher
-    /// finds it running); the rest run by their windows, the last shown.
+    /// Starts entries that were started elsewhere, found by their windows' app ids. A window's app id says
+    /// whose it is before its scope does, since a game Steam started is in Steam's scope. A Steam game is
+    /// launched, and the launcher finds it running. The rest run by their windows, and the last is shown.
     fn start_by_app_id(&mut self) -> Vec<Effect> {
         let now = self.mono_secs;
         let session = &self.session;
@@ -381,7 +394,7 @@ impl State {
         steam.into_iter().flat_map(|game| self.launch(game)).collect()
     }
 
-    /// Windows found by app id or by process, to their entry's workspace.
+    /// Moves windows found by app id or by process to their entry's workspace.
     fn windows_to_their_entries(&self) -> Vec<Effect> {
         let session = &self.session;
         let mut effects = Vec::new();
@@ -394,8 +407,8 @@ impl State {
         effects
     }
 
-    /// New windows of no launch of ours (not in `known`) to the latest browsed file waiting for one,
-    /// shown. The entry that took them, if one did, and those windows.
+    /// Moves new windows of no launch of ours, those not in `known`, to the latest browsed file waiting
+    /// for one, and shows it. Returns the entry that took them, if one did, and those windows.
     fn stray_to_waiting(&self, known: &[i64], effects: &mut Vec<Effect>) -> (Option<Arc<str>>, Vec<i64>) {
         let now = self.mono_secs;
         let session = &self.session;
@@ -420,8 +433,9 @@ impl State {
         }
     }
 
-    /// Windows left on the landing workspace (their entry gone from the library since its rule was
-    /// given) to the main screen; not one whose entry's launch is starting (a Steam game found running).
+    /// Moves windows left on the landing workspace to the main screen; their entry has left the library
+    /// since its rule was given. A window whose entry's launch is starting, such as a Steam game found
+    /// running, stays.
     fn landing_up(&self) -> Vec<Effect> {
         let session = &self.session;
         let landing = Instance::Landing.name();
@@ -434,8 +448,8 @@ impl State {
             .collect()
     }
 
-    /// Entries running by their windows or found by a tray icon end when those are gone (`taken`: an
-    /// entry whose window was just given it, still where it came up); a play by windows is recorded.
+    /// Ends entries running by their windows, or found by a tray icon, once those are gone. `taken` is an
+    /// entry that was just given a window, which is still where it came up. A play by windows is recorded.
     fn end_windowless(&mut self, taken: Option<&Arc<str>>) -> Vec<Effect> {
         let now = self.mono_secs;
         let session = &self.session;
@@ -443,7 +457,7 @@ impl State {
             session.running.iter().filter(|r| taken == Some(&r.id) || session.windows_of(&r.id).next().is_some()).map(|r| r.id.clone()).collect();
         let mut ended = Vec::new();
         let icons: Vec<Arc<str>> = self.tray.iter().map(|t| t.key.clone()).collect();
-        // (Those with a scope listed: a launch of theirs runs.)
+        // Entries with a scope listed have a launch of theirs running.
         let launched: Vec<String> = session.running.iter().filter(|r| session.has_units(&r.key)).map(|r| r.key.clone()).collect();
         self.session.running.retain_mut(|r| {
             let has = with.contains(&r.id);
@@ -463,21 +477,21 @@ impl State {
         ended.into_iter().flat_map(|(game, start)| self.record_play(game, start)).collect()
     }
 
-    /// The app ids of the library's entries known by them, for sway's rules: their windows land on a
+    /// The app ids of the library's entries known by them, for sway's rules. Their windows land on a
     /// workspace of their own, to be moved to their entry's (see [`State::follow_windows`]).
     pub(crate) fn land_rules(&self) -> Effect {
         let ids = self.shelf.library().entries.iter().filter_map(app_id_of).collect();
         Effect::Window(WindowCommand::LandRules(ids))
     }
 
-    /// After systemd's list of our scopes changed: an entry with scopes listed that isn't known to run
-    /// (started by a ClamShell before this one) runs, since its first scope started (the time in its
-    /// name); one found by its tray icon whose process is in a scope of ours now runs as a launch; then
-    /// those whose launches have ended (see [`State::follow_ours`]).
+    /// Runs after systemd's list of our scopes changed. An entry with scopes listed that isn't known to
+    /// run, because an earlier ClamShell started it, runs from when its first scope started, by the time
+    /// in the scope's name. An entry found by its tray icon whose process is now in a scope of ours runs as
+    /// a launch. Then the entries whose launches have ended are handled (see [`State::follow_ours`]).
     pub(crate) fn follow_units(&mut self) -> Vec<Effect> {
         let (now, unix) = (self.mono_secs, self.unix_secs);
-        // Launches whose scope is there: their entries run (as launches of ours: one handed over to its
-        // windows, launched again, too), the second screen lit for them to darken.
+        // The entries of launches whose scope is there run as launches of ours, including one that was
+        // handed over to its windows and launched again. The second screen is lit for them to darken.
         let session = &mut self.session;
         let started: Vec<Launching> = {
             let units = &session.units;
@@ -489,7 +503,7 @@ impl State {
             match self.session.running.iter_mut().find(|r| r.id == l.entry) {
                 Some(r) => r.origin = Origin::Ours,
                 None => {
-                    // (An entry gone from the library meanwhile: by its id alone.)
+                    // An entry gone from the library meanwhile is known by its id alone.
                     let known = self.shelf.entry(&l.entry).cloned();
                     let entry = known.clone().unwrap_or_else(|| Entry::new(&l.entry, &l.entry));
                     let r = Running { app_id: l.app_id, ..Running::of(&entry, Origin::Ours, now) };
@@ -502,8 +516,8 @@ impl State {
         let units = &session.units;
         for r in session.running.iter_mut().filter(|r| r.found()) {
             if units.iter().any(|u| u.key() == Some(r.key.as_str())) {
-                // (Its windows are its scope's now: not every window of that app id or process, which
-                // would keep another one of the program, started later, to it.)
+                // Its windows are now its scope's, not every window of that app id or process. That would
+                // tie another instance of the program, started later, to it.
                 r.origin = Origin::Ours;
                 r.app_id = None;
             }
@@ -522,16 +536,16 @@ impl State {
                 Instance::Run { key: k, secs, .. } if k == key => Some(*secs),
                 _ => None,
             });
-            // (Its scopes are named by the wall clock.)
+            // Its scopes are named by the wall clock.
             let start = first.min().map_or(now, |secs| now.saturating_sub(unix.saturating_sub(secs)));
             session.running.push(Running { app_id: app_id_of(g), ..Running::of(g, Origin::Ours, start) });
         }
         self.follow_ours()
     }
 
-    /// The app whose window shows browsed file `id` (running): the desktop file named as the window's
-    /// app id says (`org.kde.kate`: `desktop:org.kde.kate`; any case), else the one whose program it is.
-    /// For its picture only: the file runs as itself.
+    /// The app whose window shows the running browsed file `id`. It is the app whose desktop file is named
+    /// as the window's app id, ignoring case, such as `desktop:org.kde.kate` for `org.kde.kate`, or else
+    /// the one whose program it is. This is for the file's picture only; the file runs as itself.
     pub fn app_showing(&self, id: &str) -> Option<&crate::Entry> {
         self.shelf.entry(id).filter(|g| g.browsed.is_some())?;
         let session = &self.session;
@@ -546,17 +560,17 @@ impl State {
         games.iter().find(named).or_else(|| games.iter().filter(|g| ids::desktop_file(&g.id).is_some()).find(program))
     }
 
-    /// The windows of a running entry (moved to the bottom screen too).
+    /// The windows of a running entry, including those moved to the bottom screen.
     pub(crate) fn windows_of(&self, game: &str) -> Vec<i64> {
         let session = &self.session;
         session.windows_of(game).map(|w| w.id).collect()
     }
 
-    /// Quit: the entry's windows asked to close; once none is left (a "save changes?" window keeps it
-    /// until answered) it is ended if it still runs, or its runner's stop run if it ended with them (see
-    /// [`State::follow_quitting`]).
+    /// Quit: asks the entry's windows to close. Once none is left, it is ended if it still runs, or its
+    /// runner's stop is run if it ended with them (see [`State::follow_quitting`]). A window such as "save
+    /// changes?" keeps it until it is answered.
     pub(crate) fn quit(&mut self, game: &Arc<str>) -> Vec<Effect> {
-        // (Paused: thawed, to answer its windows' closing.)
+        // If it is paused, it is thawed so that it can answer its windows' closing.
         let thawed = self.thaw(game);
         let windows = self.windows_of(game);
         let stop = self.stop_of(game);
@@ -570,20 +584,21 @@ impl State {
         effects
     }
 
-    /// Force kill: the entry ended at once.
+    /// Force kill: ends the entry at once.
     pub(crate) fn force_kill(&mut self, game: &str) -> Vec<Effect> {
         self.session.quitting.retain(|q| &*q.entry != game);
         let thawed = self.thaw(game);
         thawed.into_iter().chain(self.end(game, true)).collect()
     }
 
-    /// Ending a running entry: its slice stopped (`force`: killed; a Steam game's too, moved into its
-    /// launch's scope), and its runner's `stop` command run (`{id}` its app id).
+    /// Ends a running entry. Its slice is stopped, or killed with `force`; this also covers a Steam game,
+    /// which was moved into its launch's scope. Its runner's `stop` command is run, with `{id}` as its app
+    /// id.
     fn end(&self, game: &str, force: bool) -> Vec<Effect> {
         let Some(r) = self.session.running(game) else {
             return vec![];
         };
-        // (Found, not moved into a scope of ours: its process, if it is its own.)
+        // Found and not moved into a scope of ours, it is ended by its process, if that is its own.
         if r.found() {
             return match r.pid() {
                 Some(pid) => vec![Effect::EndProcesses { pids: vec![pid], force }],
@@ -595,15 +610,17 @@ impl State {
         effects
     }
 
-    /// The runner's `stop` command for a running entry known by its app id (`{id}` that).
+    /// The runner's `stop` command for a running entry known by its app id, with `{id}` replaced by the
+    /// app id.
     fn stop_of(&self, game: &str) -> Option<Effect> {
         let app_id = self.session.running(game)?.app_id.as_ref()?;
         let stop = self.entry(game)?.runner.as_ref().map(|o| &o.stop).filter(|s| !s.is_empty())?;
         Some(Effect::RunnerCommand(stop.iter().map(|a| a.replace("{id}", app_id)).collect()))
     }
 
-    /// Entries quitting: one whose windows are all gone while it still runs is ended (once); one that no
-    /// longer runs is done, its runner's stop run if it ended with its windows before that.
+    /// Follows the entries quitting. One whose windows are all gone while it still runs is ended, once. One
+    /// that no longer runs is done, and if it ended with its windows before being ended, its runner's stop
+    /// is run.
     pub(crate) fn follow_quitting(&mut self) -> Vec<Effect> {
         let mut quitting = std::mem::take(&mut self.session.quitting);
         let mut effects = vec![];
@@ -632,7 +649,7 @@ impl State {
                 self.shelf.set_position(&game, position, self.unix_secs);
                 vec![]
             }
-            // (A launch that never started: nothing runs one less, but it is no longer starting.)
+            // A launch that never started doesn't change what runs, but it is no longer starting.
             LaunchEvent::LaunchFailed(game) => {
                 self.launch_failed(game);
                 vec![]
@@ -687,7 +704,7 @@ mod tests {
         tap(&mut s, Id::Shelf(ShelfId::Launch));
         s.apply(Event::Tick { unix_secs: 100_000, mono_secs: 1000 });
         crate::testkit::start(&mut s, &first);
-        // A minute later by the monotonic clock, the wall clock set on a day.
+        // A minute later by the monotonic clock, with the wall clock set forward a day.
         s.apply(Event::Tick { unix_secs: 100_000 + 86_400 + 60, mono_secs: 1060 });
         let (_, fx) = crate::testkit::end(&mut s, &first);
         let start = 100_000 + 86_400;
@@ -707,10 +724,10 @@ mod tests {
         assert_eq!(tap(&mut s, Id::Shelf(ShelfId::Launch)), vec![], "running, no window yet: nothing to show");
         s.apply(Event::Windows(vec![win(3, "game", &workspace, false)]));
         assert_eq!(tap(&mut s, Id::Shelf(ShelfId::Launch)), vec![Effect::Window(WindowCommand::Focus(workspace))], "running: shown");
-        // Another launch (the dock's Open another): it runs twice, until both end.
+        // Another launch, as from the dock's Open another, runs it twice until both end.
         assert!(launches(&s.launch(first.clone()), &first));
         crate::testkit::start(&mut s, &first);
-        // (The first one's scope gone, the second's listed.)
+        // The first launch's scope is gone and the second's is listed.
         let second: Vec<Instance> = s.session.units.iter().skip(1).cloned().collect();
         s.apply(Event::Units(second));
         assert!(s.session().running(&first).is_some(), "the other still runs");
@@ -759,8 +776,8 @@ mod tests {
         let landing = Instance::Landing.name();
         let windows = vec![win(1, "zelda3", &zelda, false), win(7, "steam_app_620", &landing, true)];
         let (_, fx) = s.apply(Event::Windows(windows.clone()));
-        // Found by its window: launched (the launcher finds it running and moves it into the launch's
-        // scope), its window left where it is meanwhile.
+        // Found by its window, it is launched; the launcher finds it running and moves it into the
+        // launch's scope. Its window is left where it is meanwhile.
         assert!(launches(&fx, "ff6"), "{fx:?}");
         assert!(!fx.iter().any(|e| matches!(e, Effect::Window(WindowCommand::Up { window: 7, .. }))), "{fx:?}");
         assert!(!launches(&s.apply(Event::Windows(windows)).1, "ff6"), "once");
@@ -769,7 +786,7 @@ mod tests {
         let (_, fx) = s.apply(Event::Windows(vec![win(1, "zelda3", &zelda, false), win(7, "steam_app_620", &landing, true)]));
         let ff6 = Instance::workspace_of(&key("ff6"));
         assert!(fx.contains(&Effect::Window(WindowCommand::Move { windows: vec![7], to: ff6 })), "{fx:?}");
-        // Ended as any launch: its slice.
+        // It is ended like any launch, through its slice.
         assert_eq!(s.force_kill("ff6"), vec![Effect::EndRun { key: key("ff6"), force: true }]);
         s.apply(Event::tick(1600));
         s.apply(Event::Windows(vec![win(1, "zelda3", &zelda, true)]));
@@ -780,7 +797,7 @@ mod tests {
         let (_, fx) = s.apply(Event::Windows(vec![win(1, "zelda3", &zelda, false), win(9, "steam_app_1", &landing, true)]));
         assert!(!fx.iter().any(|e| matches!(e, Effect::Launch { .. })), "{fx:?}");
         assert_eq!(s.session().running_entries().len(), 1, "zelda only");
-        // Started by a Steam of ours: in Steam's scope, but the app id says whose it is.
+        // A game started by a Steam of ours is in Steam's scope, but the app id says whose it is.
         let steam = Instance::Run { key: key("desktop:steam"), secs: 1, n: 0 };
         let in_steam = Window { unit: steam.unit(), ..win(8, "steam_app_620", &steam.workspace(), true) };
         let (_, fx) = s.apply(Event::Windows(vec![win(1, "zelda3", &zelda, false), in_steam]));
@@ -860,7 +877,7 @@ mod tests {
         // xdg-open ended before its scope was seen; the app's window comes up on shelf's workspace.
         s.apply(LaunchEvent::LaunchFailed("browse:Home/notes.md".into()).into());
         assert!(s.session().running("browse:Home/notes.md").is_some(), "waits for its window");
-        // (The demo's Terminal: its desktop file is foot's.)
+        // The demo's Terminal has foot's desktop file.
         let app = win(6, "foot", &Instance::Shelf.name(), true);
         let (_, fx) = s.apply(Event::Windows(vec![shelf.clone(), other.clone(), app.clone()]));
         assert!(fx.contains(&Effect::Window(WindowCommand::Move { windows: vec![6], to: ws.clone() })), "only the new one: {fx:?}");
@@ -869,14 +886,14 @@ mod tests {
         s.apply(Event::tick(200));
         assert!(s.session().running("browse:Home/notes.md").is_some(), "runs while its window is open");
         assert_eq!(s.app_showing("browse:Home/notes.md").map(|g| &*g.id), Some("desktop:foot"), "its picture: the app's");
-        // Its file gone from the library meanwhile: still shown by what it was.
+        // With its file gone from the library meanwhile, it is still shown by what it was.
         s.apply(Event::Library(Box::new(clamshell_library::demo::library())));
         assert!(s.shelf().entry("browse:Home/notes.md").is_none());
         assert_eq!(s.entry("browse:Home/notes.md").map(|g| g.title.as_str()), Some("/h/notes.md"));
         s.apply(Event::Library(Box::new(files().shelf().library().clone())));
         s.apply(Event::Windows(vec![shelf.clone(), other.clone()]));
         assert!(s.session().running("browse:Home/notes.md").is_none(), "its window closed: ended");
-        // Another that never shows a window: gone after a while.
+        // Another launch that never shows a window is gone after a while.
         tap(&mut s, Id::Shelf(ShelfId::Launch));
         s.apply(LaunchEvent::LaunchFailed("browse:Home/notes.md".into()).into());
         s.apply(Event::tick(200 + HANDOFF));
@@ -901,7 +918,7 @@ mod tests {
         assert!(matches!(&s.land_rules(), Effect::Window(WindowCommand::LandRules(ids)) if ids.iter().any(|i| &**i == "firefox")), "its windows land");
         assert!(launches(&s.launch("desktop:firefox".into()), "desktop:firefox"));
         crate::testkit::start(&mut s, "desktop:firefox");
-        // Its launch handed the app over (to the Waydroid session) and ended.
+        // Its launch handed the app over to the Waydroid session and ended.
         crate::testkit::end(&mut s, "desktop:firefox");
         assert!(s.session().running("desktop:firefox").is_some(), "waits for its window");
         let app = win(6, "firefox", &landing, false);
@@ -917,13 +934,13 @@ mod tests {
         let (_, fx) = s.apply(Event::Windows(vec![shelf.clone()]));
         assert!(s.session().running("desktop:firefox").is_none(), "its window closed: ended");
         assert!(fx.contains(&Effect::RecordPlay { entry: "desktop:firefox".into(), start: 100, duration: 300 }), "played until then: {fx:?}");
-        // Opened by another app: it runs, its window to its workspace, shown.
+        // Opened by another app, it runs, and its window goes to its workspace and is shown.
         let (_, fx) = s.apply(Event::Windows(vec![shelf.clone(), app]));
         assert!(s.session().running("desktop:firefox").is_some());
         assert!(fx.contains(&Effect::Window(WindowCommand::Move { windows: vec![6], to: ws.clone() })), "{fx:?}");
         let (_, fx) = s.apply(Event::Windows(vec![shelf.clone(), Window { focused: true, ..moved.clone() }]));
         assert!(fx.contains(&Effect::Window(WindowCommand::Focus(ws))), "{fx:?}");
-        // Quit: its window closed; it ends with it, its runner's stop run then (once).
+        // Quit closes its window. It ends with the window, and its runner's stop runs then, once.
         let stop = Effect::RunnerCommand(vec!["stop".into(), "firefox".into()]);
         let fx = s.quit(&"desktop:firefox".into());
         assert!(fx.contains(&Effect::Window(WindowCommand::Close(vec![6]))) && !fx.contains(&stop), "{fx:?}");
@@ -931,10 +948,10 @@ mod tests {
         assert!(fx.contains(&stop), "{fx:?}");
         assert!(!s.apply(Event::Windows(vec![shelf.clone()])).1.contains(&stop), "once");
         s.apply(Event::Windows(vec![shelf.clone(), moved]));
-        // A landed window that is no entry's (its rule outlived it): to the main screen.
+        // A landed window that belongs to no entry, because its rule outlived it, goes to the main screen.
         let (_, fx) = s.apply(Event::Windows(vec![shelf.clone(), win(9, "gone", &landing, false)]));
         assert!(fx.contains(&Effect::Window(WindowCommand::Up { window: 9, to: None })), "{fx:?}");
-        // Another runner's: ended with its launch.
+        // An entry of another runner ends with its launch.
         let mut s = state();
         s.launch("desktop:firefox".into());
         crate::testkit::start(&mut s, "desktop:firefox");
@@ -969,7 +986,8 @@ mod tests {
         });
         let zelda = zelda.unwrap();
         assert!(s.session().running("zelda-lttp").is_none(), "asked for, its scope not there yet: starting");
-        // Its scope listed: it runs; listed no longer: it has ended, its play recorded once.
+        // While its scope is listed it runs. Once it is no longer listed, it has ended and its play is
+        // recorded once.
         s.apply(Event::Units(vec![zelda.clone()]));
         assert!(s.session().running("zelda-lttp").is_some());
         s.apply(Event::tick(400));

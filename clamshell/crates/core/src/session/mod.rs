@@ -1,5 +1,5 @@
-//! What runs and what is in front: the running entries (see [`crate::session::running`]), our scopes as systemd
-//! lists them, the compositor's windows, and the launch to show once its first window appears.
+//! What runs and what is in front: the running entries (see [`crate::session::running`]), our scopes as
+//! systemd lists them, the compositor's windows, and the launch to show once its first window appears.
 
 pub mod autostart;
 pub mod background;
@@ -20,22 +20,22 @@ use instance::Instance;
 use running::{Front, Launching, Running};
 use windows::{SHELF_APP_ID, Window};
 
-/// How long after the window in front closed a new one on its workspace is shown again (seconds).
+/// How soon after the window in front closed a new window on its workspace is shown again, in seconds.
 const REOPEN_SECS: u64 = 2;
 
 #[derive(Debug, Default)]
 pub struct Session {
     /// The entries that run, in the order they started.
     pub(crate) running: Vec<Running>,
-    /// The program in force (see [`crate::session::program`]): an entry's id.
+    /// The id of the program in force (see [`crate::session::program`]).
     pub(crate) program: Option<Arc<str>>,
     /// Launches asked for that haven't started.
     pub(crate) launching: Vec<Launching>,
     /// The compositor's windows.
     pub(crate) windows: Vec<Window>,
-    /// Windows sent to the bottom screen by a rule (each once; dropped when it closes).
+    /// Windows a rule sent to the bottom screen. Each is sent once and dropped from here when it closes.
     pub(crate) sent_down: Vec<i64>,
-    /// Our running scopes (systemd's list).
+    /// Our running scopes, as systemd lists them.
     pub(crate) units: Vec<Instance>,
     /// Workspaces by when they were last in front, most recent first.
     pub(crate) recent: Vec<String>,
@@ -46,18 +46,20 @@ pub struct Session {
     pub(crate) closed_front: Option<(String, u64)>,
     /// Entries quitting (see [`Quitting`]).
     pub(crate) quitting: Vec<Quitting>,
-    /// Numbers new instances' names (with the time, unique across restarts).
+    /// The counter that numbers new instances' names. Together with the time, it makes them unique across
+    /// restarts.
     pub(crate) next_instance: u64,
-    /// systemd has listed our scopes (once: what runs is known).
+    /// Whether systemd has listed our scopes at least once, so that what runs is known.
     pub(crate) units_known: bool,
-    /// What the last [`crate::State::reconcile`] saw: the windows' ids, and the workspace in front on the
-    /// main screen (to tell new windows, and the one in front closing).
+    /// What the last [`crate::State::reconcile`] saw: the windows' ids and the workspace in front on the
+    /// main screen. They tell which windows are new and when the one in front closes.
     pub(crate) followed_windows: Vec<i64>,
     pub(crate) followed_front: Option<String>,
 }
 
-/// An entry quitting: its windows asked to close; once none is left, ended (then `ended`) if it still
-/// runs; and its runner's stop, for one that ends with its windows (known by its app id).
+/// An entry quitting. Its windows are asked to close, and once none is left it is ended if it still runs,
+/// which sets `ended`. `stop` is its runner's stop, for an entry known by its app id that ends with its
+/// windows.
 #[derive(Debug, Clone)]
 pub(crate) struct Quitting {
     pub(crate) entry: Arc<str>,
@@ -110,9 +112,13 @@ impl Session {
         }
     }
 
-    /// The running entry a window belongs to, by the first that says: its app id (see
-    /// [`crate::session::running::app_id_of`]: a Steam game's, though it runs in Steam's scope), its scope (moved
-    /// down too), its process (a program found by its tray icon), its workspace.
+    /// The running entry a window belongs to, by the first of these that matches:
+    ///
+    /// - its app id (see [`crate::session::running::app_id_of`]), as for a Steam game that runs in Steam's
+    ///   scope;
+    /// - its scope, which also covers windows moved down;
+    /// - its process, for a program found by its tray icon;
+    /// - its workspace.
     pub fn running_of(&self, w: &Window) -> Option<&Running> {
         let by_key = |k: Option<&str>| self.running.iter().find(|r| k == Some(r.key.as_str()));
         self.running
@@ -123,7 +129,7 @@ impl Session {
             .or_else(|| by_key(Instance::key_of(&w.workspace)))
     }
 
-    /// The windows of running entry `id` (moved to the bottom screen too).
+    /// The windows of running entry `id`, including those moved to the bottom screen.
     pub fn windows_of<'a>(&'a self, id: &'a str) -> impl Iterator<Item = &'a Window> + 'a {
         self.windows.iter().filter(move |w| self.running_of(w).is_some_and(|r| &*r.id == id))
     }
@@ -150,8 +156,9 @@ impl Session {
         self.units_known = true;
     }
 
-    /// A window on the workspace whose window in front closed, within [`REOPEN_SECS`] (a program that
-    /// replaces its first window: a splash's, Waydroid's on a cold start): that workspace shown again.
+    /// If a window appears within [`REOPEN_SECS`] on the workspace whose window in front closed, shows
+    /// that workspace again. This is for a program that replaces its first window, such as a splash
+    /// screen, or Waydroid on a cold start.
     pub(crate) fn show_reopened(&mut self, now: u64) -> Vec<Effect> {
         let Some((ws, at)) = self.closed_front.take() else {
             return vec![];
@@ -166,9 +173,9 @@ impl Session {
         vec![]
     }
 
-    /// The launch just started, once its own first window is there (the entry's workspace may have its
-    /// other launches' already; one known by its app id has no scope of ours: any of its windows): its
-    /// workspace shown.
+    /// Shows the workspace of the launch just started, once its own first window is there. The entry's
+    /// workspace may already have windows of its other launches. An entry known by its app id has no scope
+    /// of ours, so any of its windows counts.
     pub(crate) fn show_pending(&mut self) -> Vec<Effect> {
         let arrived = self.pending_show.as_ref().is_some_and(|i| {
             let unit = i.unit();
