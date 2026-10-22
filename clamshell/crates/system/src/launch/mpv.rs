@@ -47,7 +47,7 @@ pub fn position(dirs: &[PathBuf], file: &Path) -> Option<(u32, u64)> {
 
 /// MD5 of `data` as 32 capital hex digits (as mpv names its watch_later files).
 fn md5_hex(data: &[u8]) -> String {
-    clamshell_library::hash::md5(data).iter().map(|b| format!("{b:02X}")).collect()
+    format!("{:X}", md5::compute(data))
 }
 
 /// `lines` (mpv's JSON IPC commands) written to a launch's control socket at `socket`, each its own line, then as many lines read back

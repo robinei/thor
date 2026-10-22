@@ -21,7 +21,7 @@ programs started rather than read (`systemd-run`, `nice`, `pkexec`, `fusermount3
 
 ## 2. Crates for hand-written code
 
-- [ ] MD5 and CRC32 (`clamshell_library::hash`) → `md5` and `crc32fast`. FNV stays (a few lines).
+- [x] MD5 and CRC32 (`clamshell_library::hash`) → `md5` and `crc32fast`. FNV stays (a few lines).
 - [ ] Percent encoding (`os/text`) → `percent-encoding`.
 - [ ] Icon lookup (`os/xdg::find_icon`: three themes and two layouts guessed) → `freedesktop-icons`, which
       follows the icon theme spec (`index.theme`, inheritance, the user's theme), if its dependencies are

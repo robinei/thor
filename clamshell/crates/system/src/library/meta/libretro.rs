@@ -142,11 +142,11 @@ pub(super) fn thumbnail_name(name: &str) -> String {
     name.chars().map(|c| if "&*/:`<>?\\|\"".contains(c) { '_' } else { c }).collect()
 }
 
-/// The largest a file read whole for its checksum may be (bytes): a cartridge's, not a disc's.
+/// The largest file whose checksum is worked out, in bytes: a cartridge's size, not a disc's.
 pub(super) const CHECKSUM_MAX: u64 = 64 << 20;
 
 /// A game file's checksum (CRC32): a zip's largest file's, from the zip's directory; a file up to
-/// [`CHECKSUM_MAX`], read whole.
+/// [`CHECKSUM_MAX`].
 pub(super) fn checksum(file: &Path) -> Option<u32> {
     if file.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")) {
         return zip_tail(file).and_then(|(tail, base)| zip_crc(&tail, base));
@@ -154,7 +154,19 @@ pub(super) fn checksum(file: &Path) -> Option<u32> {
     if std::fs::metadata(file).ok()?.len() > CHECKSUM_MAX || !file.is_file() {
         return None;
     }
-    Some(clamshell_library::hash::crc32(&std::fs::read(file).ok()?))
+    let crc = || -> std::io::Result<u32> {
+        use std::io::Read;
+        let mut hasher = crc32fast::Hasher::new();
+        let mut file = std::fs::File::open(file)?;
+        let mut buf = vec![0; 1 << 16];
+        loop {
+            match file.read(&mut buf)? {
+                0 => return Ok(hasher.finalize()),
+                n => hasher.update(buf.get(..n).unwrap_or_default()),
+            }
+        }
+    };
+    crc().map_err(|e| log::warn!("checksum of {}: {e}", file.display())).ok()
 }
 
 /// The end of a zip (its last MiB: the central directory of a few files is there), and where in the file
@@ -212,7 +224,7 @@ mod tests {
         let mut directory = Vec::new();
         for (name, data) in [("a.txt", &b"hi"[..]), ("game.sfc", &b"123456789"[..])] {
             let offset = zip.len() as u32;
-            let crc = clamshell_library::hash::crc32(data);
+            let crc = crc32fast::hash(data);
             let header = |sig: u32, extra: &[u8]| {
                 let mut h = sig.to_le_bytes().to_vec();
                 h.extend_from_slice(extra);
