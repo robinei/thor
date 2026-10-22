@@ -3,14 +3,13 @@
 //! press forgets a saved network. What a network's row and the tab's header say is decided here
 //! ([`Wifi::net_state`], [`Wifi::status`]), and the UI puts it into words.
 
-use crate::State;
 use crate::bottom::editor::{Editor, Purpose};
 use crate::effect::Effect;
-use crate::id::WifiId;
 use crate::kit::list::ItemKey;
 use crate::kit::list::Rows;
 use crate::kit::secret::Secret;
-use crate::radios::RadioStatus;
+use crate::mutation::Mutation;
+use crate::radios::{RadioStatus, Radios};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Network {
@@ -162,41 +161,39 @@ impl Rows for Wifi {
     }
 }
 
-impl State {
-    /// A tap on the Wi-Fi tab's switch.
-    pub(crate) fn on_wifi(&mut self, id: WifiId) -> Vec<Effect> {
-        match id {
-            WifiId::Power => vec![Effect::Wifi(Command::Enable(!self.radios.wifi.on))],
-        }
+impl Radios {
+    /// The Wi-Fi tab's switch.
+    pub(crate) fn power_wifi(&self) -> Effect {
+        Effect::Wifi(Command::Enable(!self.wifi.on))
     }
 
-    /// A tap on the network at `index`, or a long press.
-    pub(crate) fn tap_network(&mut self, index: usize, long: bool) -> Vec<Effect> {
-        let Some(n) = self.radios.wifi.networks.get(index) else {
+    /// A tap on the network at `index`, or a long press. A network with a password that isn't saved
+    /// asks for it first.
+    pub(crate) fn tap_network(&mut self, index: usize, long: bool) -> Vec<Mutation> {
+        let Some(n) = self.wifi.networks.get(index) else {
             return vec![];
         };
         let ssid = n.ssid.clone();
         if long {
-            return if n.saved { vec![Effect::Wifi(Command::Forget(ssid))] } else { vec![] };
+            return if n.saved { vec![Mutation::Effect(Effect::Wifi(Command::Forget(ssid)))] } else { vec![] };
         }
         if n.connected {
             return vec![];
         }
         if n.enterprise && !n.saved {
-            self.radios.wifi.error = Some(Problem::NeedsLogin { ssid });
+            self.wifi.error = Some(Problem::NeedsLogin { ssid });
             return vec![];
         }
         if n.secure && !n.saved {
-            self.bottom.open_editor(Editor { purpose: Purpose::Password { ssid }, text: String::new() });
-            return vec![];
+            return vec![Mutation::OpenEditor(Editor { purpose: Purpose::Password { ssid }, text: String::new() })];
         }
-        self.join(ssid, None)
+        vec![Mutation::Effect(self.join(ssid, None))]
     }
 
-    pub(crate) fn join(&mut self, ssid: String, password: Option<String>) -> Vec<Effect> {
-        self.radios.wifi.busy = Some(ssid.clone());
-        self.radios.wifi.error = None;
-        vec![Effect::Wifi(Command::Connect { ssid, password: password.map(Secret) })]
+    pub(crate) fn join(&mut self, ssid: String, password: Option<String>) -> Effect {
+        self.wifi.busy = Some(ssid.clone());
+        self.wifi.error = None;
+        Effect::Wifi(Command::Connect { ssid, password: password.map(Secret) })
     }
 }
 
@@ -234,8 +231,8 @@ mod tests {
             |ssid: &str, password: Option<&str>| vec![Effect::Wifi(Command::Connect { ssid: ssid.into(), password: password.map(|p| Secret(p.into())) })];
         let network = |i| ListId::Wifi.row(i);
         assert_eq!(tap(&mut s, network(0)), connect("home", None), "saved");
-        assert_eq!(s.radios().wifi.busy.as_deref(), Some("home"));
-        assert_eq!(s.radios().wifi.status(), RadioStatus::Busy("home"));
+        assert_eq!(s.radios().wifi().busy.as_deref(), Some("home"));
+        assert_eq!(s.radios().wifi().status(), RadioStatus::Busy("home"));
         assert_eq!(tap(&mut s, network(1)), connect("cafe", None), "open");
         assert_eq!(tap(&mut s, network(2)), vec![], "asks first");
         assert!(matches!(s.bottom().editor(), Some(Editor { purpose: Purpose::Password { ssid }, .. }) if ssid == "new"));
@@ -253,9 +250,9 @@ mod tests {
         let mut s = state();
         let login = Network { enterprise: true, ..net("work", 60, true, false, false) };
         read(&mut s, Reading::Wifi(Wifi { present: true, on: true, networks: vec![login.clone()], ..Wifi::default() }));
-        assert_eq!(s.radios().wifi.net_state(&login), NetState::Login);
+        assert_eq!(s.radios().wifi().net_state(&login), NetState::Login);
         assert_eq!(tap(&mut s, ListId::Wifi.row(0)), vec![]);
-        assert_eq!(s.radios().wifi.status(), RadioStatus::Error(&Problem::NeedsLogin { ssid: "work".into() }));
+        assert_eq!(s.radios().wifi().status(), RadioStatus::Error(&Problem::NeedsLogin { ssid: "work".into() }));
     }
 
     #[test]

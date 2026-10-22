@@ -3,12 +3,10 @@
 //! connected one. A long press forgets a paired device. What a device's row and the tab's header say is
 //! decided here ([`Bluetooth::device_state`], [`Bluetooth::status`]), and the UI puts it into words.
 
-use crate::State;
 use crate::effect::Effect;
-use crate::id::BtId;
 use crate::kit::list::ItemKey;
 use crate::kit::list::Rows;
-use crate::radios::RadioStatus;
+use crate::radios::{RadioStatus, Radios};
 
 /// What kind of device it is, from BlueZ's icon name, for choosing its icon.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -192,18 +190,16 @@ impl Rows for Bluetooth {
     }
 }
 
-impl State {
-    /// A tap on the Bluetooth tab's switch.
-    pub(crate) fn on_bluetooth(&mut self, id: BtId) -> Vec<Effect> {
-        match id {
-            BtId::Power => vec![Effect::Bluetooth(Command::Power(!self.radios.bluetooth.on))],
-        }
+impl Radios {
+    /// The Bluetooth tab's switch.
+    pub(crate) fn power_bluetooth(&self) -> Effect {
+        Effect::Bluetooth(Command::Power(!self.bluetooth.on))
     }
 
     /// A tap on the device at `index` connects it, or disconnects it if it is connected. A long press
     /// forgets a paired device.
     pub(crate) fn tap_device(&mut self, index: usize, long: bool) -> Vec<Effect> {
-        let bt = &mut self.radios.bluetooth;
+        let bt = &mut self.bluetooth;
         let Some(d) = bt.devices.get(index) else {
             return vec![];
         };
@@ -247,13 +243,13 @@ mod tests {
         tap(&mut s, Id::Tab(Tab::Bluetooth));
         let devices = vec![dev("buds", true, true), dev("pad", true, false), dev("new", false, false)];
         read(&mut s, Reading::Bluetooth(Bluetooth { present: true, on: true, devices, ..Bluetooth::default() }));
-        assert_eq!(s.radios().bluetooth.status(), RadioStatus::Connected("buds"));
+        assert_eq!(s.radios().bluetooth().status(), RadioStatus::Connected("buds"));
         let bt = |c: Command| vec![Effect::Bluetooth(c)];
         let device = |i| ListId::Bluetooth.row(i);
         assert_eq!(tap(&mut s, device(0)), bt(Command::Disconnect("00:buds".into())));
         assert_eq!(tap(&mut s, device(1)), bt(Command::Connect("00:pad".into())));
-        assert_eq!(s.radios().bluetooth.busy.as_deref(), Some("00:pad"));
-        assert_eq!(s.radios().bluetooth.status(), RadioStatus::Busy("pad"));
+        assert_eq!(s.radios().bluetooth().busy.as_deref(), Some("00:pad"));
+        assert_eq!(s.radios().bluetooth().status(), RadioStatus::Busy("pad"));
         assert_eq!(tap(&mut s, device(2)), bt(Command::Connect("00:new".into())), "pairs it");
         assert_eq!(long(&mut s, device(1)), bt(Command::Forget("00:pad".into())));
         assert_eq!(long(&mut s, device(2)), vec![], "nothing to forget");

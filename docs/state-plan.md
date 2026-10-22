@@ -67,7 +67,7 @@ and the UI change with the code they call; doc links to moved methods are fixed 
 - [x] 1. `Clock`.
 - [x] 2. `Mutation` and `State::settle`, with `Notify` and `Effect` first; `State::notify` stays as a wrapper
       until the areas return notices.
-- [ ] 3. Radios: private fields, `tap_network`/`tap_device`/`join`/power, `read_wifi`/`read_bluetooth`.
+- [x] 3. Radios: private fields, `tap_network`/`tap_device`/`join`/power, `read_wifi`/`read_bluetooth`.
 - [ ] 4. Levels: brightness debounce in, `change`/`on_audio`/`on_stream`; `read_status` split between
       `Sys` and `Levels`.
 - [ ] 5. Sys: private fields and getters; `spender_menu`, `twelve_hour`, `time_page` in; the time tab's

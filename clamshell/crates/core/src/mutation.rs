@@ -2,6 +2,7 @@
 //! the changes it needs elsewhere, which [`crate::State::settle`] applies in order.
 
 use crate::Effect;
+use crate::bottom::editor::Editor;
 use crate::bottom::notice::NoticeKind;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -10,4 +11,6 @@ pub(crate) enum Mutation {
     Effect(Effect),
     /// A notice under the bar.
     Notify(NoticeKind),
+    /// An editor opened in its tab.
+    OpenEditor(Editor),
 }

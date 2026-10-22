@@ -1,5 +1,5 @@
 //! The radios as their tabs show them. Wi-Fi and Bluetooth are each kept as their system thread last
-//! read them, along with what the tab's header says about each.
+//! read them, along with what the tab's header says about each. Their rules are in their modules.
 
 pub mod bluetooth;
 pub mod wifi;
@@ -7,10 +7,32 @@ pub mod wifi;
 use bluetooth::Bluetooth;
 use wifi::Wifi;
 
+use crate::kit::replace;
+
 #[derive(Debug, Clone, Default)]
 pub struct Radios {
-    pub wifi: Wifi,
-    pub bluetooth: Bluetooth,
+    wifi: Wifi,
+    bluetooth: Bluetooth,
+}
+
+impl Radios {
+    pub fn wifi(&self) -> &Wifi {
+        &self.wifi
+    }
+
+    pub fn bluetooth(&self) -> &Bluetooth {
+        &self.bluetooth
+    }
+
+    /// A reading of Wi-Fi. Returns whether it changed.
+    pub(crate) fn read_wifi(&mut self, wifi: Wifi) -> bool {
+        replace(&mut self.wifi, wifi)
+    }
+
+    /// A reading of Bluetooth. Returns whether it changed.
+    pub(crate) fn read_bluetooth(&mut self, bluetooth: Bluetooth) -> bool {
+        replace(&mut self.bluetooth, bluetooth)
+    }
 }
 
 /// What a radio is doing, for its tab's header. `P` is its kind of problem.

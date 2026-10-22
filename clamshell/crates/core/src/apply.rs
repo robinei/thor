@@ -8,7 +8,8 @@ use crate::mutation::Mutation;
 use crate::resume::SAVE_AFTER;
 use crate::settings::MouseAtLaunch;
 use crate::{
-    Dirty, Effect, Event, Hold, Id, Level, Library, PadRoute, PointerEvent, Reading, Save, SettingsId, ShelfId, State, Status, Tab, WindowCommand, device,
+    BtId, Dirty, Effect, Event, Hold, Id, Level, Library, PadRoute, PointerEvent, Reading, Save, SettingsId, ShelfId, State, Status, Tab, WifiId,
+    WindowCommand, device,
 };
 
 impl State {
@@ -249,6 +250,7 @@ impl State {
             match m {
                 Mutation::Effect(e) => effects.push(e),
                 Mutation::Notify(what) => self.notify(what),
+                Mutation::OpenEditor(editor) => self.bottom.open_editor(editor),
             }
         }
         effects
@@ -355,8 +357,8 @@ impl State {
                 self.sys.frames(fps, frame_ms);
                 true
             }
-            Reading::Wifi(wifi) => replace(&mut self.radios.wifi, wifi),
-            Reading::Bluetooth(bluetooth) => replace(&mut self.radios.bluetooth, bluetooth),
+            Reading::Wifi(wifi) => self.radios.read_wifi(wifi),
+            Reading::Bluetooth(bluetooth) => self.radios.read_bluetooth(bluetooth),
             Reading::Battery(battery) => replace(&mut self.sys.battery, battery),
             Reading::Audio(audio) => self.levels.read_audio(audio),
             Reading::Backlights(backlights) => self.levels.read_backlights(backlights),
@@ -445,8 +447,8 @@ impl State {
             Id::Settings(id @ (SettingsId::Tile(_) | SettingsId::Reset)) => (Dirty::BOTH, self.on_settings(id, long)),
             Id::Settings(id) => (Dirty::BOTTOM, self.on_settings(id, long)),
             Id::Editor(id) => (Dirty::BOTTOM, self.on_editor(id)),
-            Id::Wifi(id) => (Dirty::BOTTOM, self.on_wifi(id)),
-            Id::Bluetooth(id) => (Dirty::BOTTOM, self.on_bluetooth(id)),
+            Id::Wifi(WifiId::Power) => (Dirty::BOTTOM, vec![self.radios.power_wifi()]),
+            Id::Bluetooth(BtId::Power) => (Dirty::BOTTOM, vec![self.radios.power_bluetooth()]),
             Id::Audio(id) => (Dirty::BOTTOM, self.on_audio(id)),
             Id::Row { list, i, part } => (list.screens(), self.on_row(list, usize::from(i), part, long)),
             Id::Keymap(id) => (Dirty::BOTTOM, self.on_keymap(id, long)),

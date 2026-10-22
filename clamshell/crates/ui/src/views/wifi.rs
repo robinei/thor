@@ -21,7 +21,7 @@ pub(super) fn draw(f: &mut Frame) {
         let title = Fmt::<128>::of(format_args!("Password for {ssid}"));
         return super::editor::draw(f, &title, "Join");
     }
-    let wifi = &f.s.radios().wifi;
+    let wifi = f.s.radios().wifi();
     let status = Fmt::<256>::of(format_args!("{}", Status(wifi)));
     let list = radio::header(f, Id::Wifi(WifiId::Power), wifi.on, (status_tone(wifi), &status));
     // The networks, as many as fit above the hint.

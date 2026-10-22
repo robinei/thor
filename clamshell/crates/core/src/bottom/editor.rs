@@ -148,7 +148,7 @@ impl crate::State {
                 self.settings.set_env(game, &editor.text);
                 vec![Effect::Save(Save::Settings(self.settings.clone()))]
             }
-            Purpose::Password { ssid } => self.join(ssid, Some(editor.text)),
+            Purpose::Password { ssid } => vec![self.radios.join(ssid, Some(editor.text))],
             Purpose::KeymapName(action) => self.named_keymap(action, &editor.text),
             Purpose::FileName(purpose) => self.file_named(purpose, &editor.text),
             Purpose::AccountPassword(step) => self.password_typed(step, editor.text),

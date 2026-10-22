@@ -66,7 +66,7 @@ fn tab_button(s: &State, tab: Tab) -> (Id, Icon, Tone) {
         }
         Tab::Brightness => (tab_target(tab), Icon::Brightness, lit(s.levels().control(Control::Brightness).is_some())),
         Tab::Bluetooth => {
-            let bt = &s.radios().bluetooth;
+            let bt = s.radios().bluetooth();
             let connected = bt.connected() > 0;
             (Id::Tab(tab), Icon::Bluetooth { connected }, lit(bt.on && connected))
         }

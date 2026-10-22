@@ -140,8 +140,8 @@ impl State {
     pub(crate) fn rows(&self, list: ListId) -> RowsOf<'_> {
         match list {
             ListId::Shelf => RowsOf::Of(&self.shelf),
-            ListId::Wifi => RowsOf::Of(&self.radios.wifi),
-            ListId::Bluetooth => RowsOf::Of(&self.radios.bluetooth),
+            ListId::Wifi => RowsOf::Of(self.radios.wifi()),
+            ListId::Bluetooth => RowsOf::Of(self.radios.bluetooth()),
             ListId::Streams => RowsOf::Of(self.levels.audio()),
             ListId::Backlights => RowsOf::Of(self.levels.backlight_rows()),
             ListId::Keymaps => RowsOf::Count(self.keymap_rows_len()),
@@ -154,8 +154,11 @@ impl State {
     /// A tap or long press on a row, handled by the list's feature.
     pub(crate) fn on_row(&mut self, list: ListId, i: usize, part: RowPart, long: bool) -> Vec<Effect> {
         match list {
-            ListId::Wifi => self.tap_network(i, long),
-            ListId::Bluetooth => self.tap_device(i, long),
+            ListId::Wifi => {
+                let mutations = self.radios.tap_network(i, long);
+                self.settle(mutations)
+            }
+            ListId::Bluetooth => self.radios.tap_device(i, long),
             ListId::Streams => self.on_stream(i, part),
             ListId::Keymaps => self.on_keymap_row(i, part, long),
             ListId::Layers => self.on_layer_row(i, part, long),
