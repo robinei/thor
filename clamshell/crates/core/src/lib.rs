@@ -3,9 +3,15 @@
 //! events, so all of this is unit-testable.
 //!
 //! The state is grouped by what it is about: shelf ([`Shelf`]), the second screen ([`Bottom`]), what runs
-//! and is in front ([`Session`]), the dock ([`Dock`]), volume and brightness ([`Levels`]), the
-//! radios ([`Radios`]), the controller ([`Pad`]), focus and presses ([`Pointer`]), and the system's
-//! readings ([`Sys`]). Each owns its own rules; what involves two of them is [`State`]'s.
+//! and is in front ([`Session`]), the dock ([`Dock`]), volume and brightness ([`Levels`]), the radios
+//! ([`Radios`]), the controller ([`Pad`]), focus and presses ([`Pointer`]), and the system's readings
+//! ([`Sys`]). The rules are a module per feature, each an `impl State` block, since most features read
+//! more than one group. A few pure models live here too because the system threads share them with the
+//! state: the fan's curve ([`fan`]) and the sticks' calibration ([`sticks`]).
+//!
+//! Panics are ruled out by the workspace's lints (no `unwrap`, `expect` or indexing). A lookup whose
+//! index is valid by construction (an enum's place in an array sized for it, an index the library's own
+//! tree holds) falls back quietly; where a bug could reach a fallback, a `debug_assert!` says so in tests.
 
 pub mod account;
 pub mod actions;

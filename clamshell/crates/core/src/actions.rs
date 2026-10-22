@@ -20,22 +20,26 @@ pub enum Action {
     File(FileAction),
 }
 
+/// Room for every action once: the five of an entry and the fourteen file actions.
+const ROOM: usize = 5 + 14;
+
 /// The details' actions, in order: at most one of each, without allocating (shelf draws them every
 /// frame).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Actions {
-    items: [Action; 14],
+    items: [Action; ROOM],
     len: usize,
 }
 
 impl Default for Actions {
     fn default() -> Actions {
-        Actions { items: [Action::Open; 14], len: 0 }
+        Actions { items: [Action::Open; ROOM], len: 0 }
     }
 }
 
 impl Actions {
     pub fn push(&mut self, action: Action) {
+        debug_assert!(!self.contains(&action) && self.len < ROOM, "each action once: {action:?} in {self:?}");
         if let Some(slot) = self.items.get_mut(self.len) {
             *slot = action;
             self.len += 1;

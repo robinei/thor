@@ -106,8 +106,9 @@ Helpers that exist but are bypassed:
 - [x] Anonymous tuples in state as named structs: shelf's view (`shelf.rs:242`), `cost_of`, `Files`'
       `armed`/`busy`/`browsing`, `Calibrator`'s `(Calibrator, Instant, Instant)`,
       `remap::actuate`'s 6-tuple, the gyro calibration's `Option<Option<Run>>`.
-- [ ] Silent fallbacks the no-panic lints produce where an invariant should hold: `debug_assert!`
-      (`Values::get`, `Lists::get`, `Actions::push`, library indices).
+- [x] Silent fallbacks the no-panic lints produce: the policy stated in core's crate doc (quiet where an
+      index is valid by construction, `debug_assert!` where a bug could reach the fallback); `Actions` had
+      14 slots for 19 actions, now room for each and an assertion.
 - [ ] Per-event waste: `follow_keymap` clones the keymap each event; `app_id_of` `format!`s per entry ×
       window each second; `found.rs:73` lowercases every id.
 - [ ] Giant functions split: `core::apply_event`, `keymap_screens::on_keymap`, `running::follow_windows`,
