@@ -181,7 +181,7 @@ mod tests {
             ("edit, a stick's panel", [vec![km(KeymapId::Back)], pick(Input::Stick(Side::Right)), vec![km(KeymapId::Target(Target::Pointer))]].concat()),
             ("edit, a slider up", slide(Param::Speed, false)),
             (
-                "edit, the Back layer",
+                "edit, another layer",
                 [slide(Param::Speed, true), vec![km(KeymapId::Layer(Layer(1))), km(KeymapId::Input(Input::Trigger(Side::Right)))]].concat(),
             ),
             ("edit, clearing", vec![km(KeymapId::Clear)]),

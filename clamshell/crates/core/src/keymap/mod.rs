@@ -10,8 +10,9 @@
 //! D-pad; a trigger to a trigger or, past a threshold, anything a button maps to; the gyro to the mouse
 //! pointer or a stick, always or while a chosen button is held.
 //!
-//! Each keymap has two layers ([`Layer`]): the main one, and one in force while the pad's Back button is
-//! held. An input without a binding in the Back layer does what the main layer says.
+//! A keymap has layers ([`Layer`]): Base, and any number added. A binding turns a layer on
+//! ([`Output::Layer`]) while held, until pressed again, or for one input. An input with no binding in a
+//! layer that is on does what the layers below it say, Base last.
 //!
 //! A button (or a D-pad or stick direction) may also act differently held long or pressed twice
 //! ([`Actuation`]): each is a binding of its own. A binding to something on or off may also repeat while
@@ -475,9 +476,9 @@ impl Keymap {
     }
 }
 
-/// What does what `input` does on the pad, as a binding's output (to say so in the Back layer while the
-/// main layer maps it): a button, D-pad direction, stick or trigger as itself; the gyro off. A stick's
-/// direction has none (it is part of its stick).
+/// The output that does what `input` does on the pad: a button, D-pad direction, stick or trigger maps to
+/// itself, and the gyro to nothing. Used to give an input its plain behaviour back in a layer above one
+/// that remaps it. A stick's direction has none, since it is part of its stick.
 pub fn as_on_the_pad(input: Input) -> Option<Output> {
     match input {
         // (Back isn't on the pad games see: it does nothing there.)
@@ -491,7 +492,7 @@ pub fn as_on_the_pad(input: Input) -> Option<Output> {
     }
 }
 
-/// The ready-made keymap made when there is no keymap file yet: A and B, X and Y swapped.
+/// The ready-made keymap there is before any are saved: A and B, X and Y swapped.
 pub fn nintendo(id: u16) -> Keymap {
     let mut k = Keymap::new(id, "Nintendo layout");
     for (from, to) in [(Button::A, Button::B), (Button::B, Button::A), (Button::X, Button::Y), (Button::Y, Button::X)] {

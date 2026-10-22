@@ -189,7 +189,7 @@ pub enum KeymapId {
 /// something is chosen, Back gives up), or the output itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Target {
-    /// No binding: as on the pad in the main layer (the gyro: off), as the main layer in the Back layer.
+    /// No binding: in Base, as on the pad (the gyro: off); in another layer, as the layers below it.
     Default,
     Nothing,
     /// A control picked on the pad's drawing, tapped or pressed on the pad: a button, a trigger, a stick,

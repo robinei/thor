@@ -102,7 +102,7 @@ pub(super) fn panel(f: &mut Frame, r: Rect, id: u16, keymap: Option<&Keymap>, vi
             }
         }
     }
-    // What it does: its binding of the actuation shown; in the Back layer without one, the main layer's.
+    // What it does: its binding for the actuation shown, or without one in a layer above Base, Base's.
     let unset = |input: Input| match act {
         Actuation::Press => as_on_pad(input),
         Actuation::Hold => Fmt::of(format_args!("No hold")),
@@ -150,7 +150,7 @@ pub(super) fn panel(f: &mut Frame, r: Rect, id: u16, keymap: Option<&Keymap>, vi
         }
     }
     col.skip(pad * 0.4);
-    // The parameters (from the main layer's in the Back layer without its own, else as on the pad).
+    // The parameters: the binding's, else the layers' below, else as on the pad.
     let Some(base) = s.param_base(id, input) else {
         return;
     };

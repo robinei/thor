@@ -282,7 +282,7 @@ fn edit_screen() -> State {
 fn the_panel_selects_changes_and_resets() {
     let mut s = edit_screen();
     let a = Input::Button(Button::A);
-    assert_eq!(s.keymap_edit(), EditView::default(), "the main layer, nothing selected");
+    assert_eq!(s.keymap_edit(), EditView::default(), "Base, nothing selected");
     assert_eq!(keymap(&mut s, KeymapId::Target(Target::Key)), vec![], "nothing selected");
     assert_eq!(s.keymap_screen(), Some(Screen::Edit(1)));
     keymap(&mut s, KeymapId::Input(a));
@@ -501,11 +501,11 @@ fn parameters_slide_and_switch_whatever_the_mapping() {
     assert_eq!(s.keymaps().get(1).unwrap().get(ls).map(|b| b.deadzone), Some(50));
     keymap(&mut s, KeymapId::Toggle(Param::InvertY));
     assert_eq!(s.keymaps().get(1).unwrap().get(ls).map(|b| b.invert_y), Some(true));
-    // Back to the defaults: no binding left in the main layer.
+    // Back to the defaults: no binding left in Base.
     keymap(&mut s, KeymapId::Toggle(Param::InvertY));
     slide(&mut s, Param::Deadzone, 0);
     assert_eq!(s.keymaps().get(1).unwrap().get(ls), None);
-    // In the Back layer it starts from the main layer's and is the Back layer's own.
+    // In another layer it starts from Base's binding and becomes that layer's own.
     slide(&mut s, Param::Full, 80);
     let aim = add_layer(&mut s, "aim");
     slide(&mut s, Param::Curve, 30);

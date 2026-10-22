@@ -14,8 +14,8 @@ impl State {
     }
 
     /// What the selected input's parameters start from in the layer and actuation shown: its binding
-    /// there; in the Back layer without one, the main layer's; else, for a press, the input as on the pad
-    /// (a hold or double without a binding has none).
+    /// there, else the binding of the layers below it, else, for a press, the input as on the pad. A hold
+    /// or double without a binding has none.
     pub fn param_base(&self, id: u16, input: Input) -> Option<Binding> {
         let k = self.keymaps.get(id);
         let act = self.bottom.keymap_edit.act;
@@ -38,8 +38,8 @@ impl State {
         param.applies_to(input, b.output, self.bottom.keymap_edit.act).then_some((id, input, b))
     }
 
-    /// `input`'s parameters changed in the layer shown: kept, unless in the main layer they are all as
-    /// on the pad again (then it has no binding). Whether it changed.
+    /// Stores `input`'s changed parameters in the layer shown. In Base, parameters back to how the pad
+    /// has them remove the binding instead. Returns whether anything changed.
     pub(super) fn set_tuned(&mut self, id: u16, input: Input, b: Binding) -> bool {
         let EditView { layer, act, .. } = self.bottom.keymap_edit;
         let plain = layer == Layer::BASE && act == Actuation::Press && as_on_the_pad(input).map(|o| Binding::of(input, o)) == Some(b);

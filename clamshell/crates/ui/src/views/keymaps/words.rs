@@ -14,7 +14,7 @@ pub(super) fn mapping(b: Binding, keymap: Option<&Keymap>) -> Fmt<48> {
 }
 
 /// What an input's binding in a layer says, and its tone: blue where it maps the input to something
-/// else, grey where it is the input as on the pad (tuned, or said so in the Back layer).
+/// else, grey where it is the input as on the pad (tuned, or set so in a layer above Base).
 pub(super) fn described(input: Input, b: &Binding, keymap: Option<&Keymap>) -> (Fmt<48>, Tone) {
     match change(input, Some(b)) {
         Change::Mapped => (summary(input, b, keymap), Tone::Fn),

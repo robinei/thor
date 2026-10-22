@@ -658,8 +658,9 @@ impl State {
         effects
     }
 
-    /// `input` of keymap `id` bound to `binding` in the layer and actuation shown (none: as on the pad, or
-    /// as the main layer; no hold or double); saved if it changed.
+    /// Binds `input` of keymap `id` to `binding` in the layer and actuation shown, and saves the keymaps
+    /// if that changed them. `None` removes the binding: the input then acts as on the pad, or as the
+    /// layers below, and a hold or double does nothing.
     fn bind(&mut self, id: u16, input: Input, binding: Option<Binding>) -> Vec<Effect> {
         let EditView { layer, act, .. } = self.bottom.keymap_edit;
         let changed = self.keymaps.get_mut(id).is_some_and(|k| k.set_of(layer, input, act, binding));

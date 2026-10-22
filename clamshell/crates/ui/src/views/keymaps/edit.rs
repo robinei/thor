@@ -240,15 +240,14 @@ pub(super) fn edit_corners(f: &mut Frame, l: &EditLayout, keymap: Option<&Keymap
     f.button(id, r, Look::TEXT, |f| layer_button(f, tone));
 }
 
-/// The edit screen: the controls in two clusters at the sides (see [`super::pad`]), each a target; one
-/// the layer shown changes has a line in to a label (blue: mapped to something else; grey: as on the
-/// pad, tuned). Home and the AYN button are drawn dim, not remappable (their codes are a device test, see
-/// docs/thor-gameplan.md); Back is the layer key, a target that switches the layer shown, lit while it is
-/// the Back layer. Between the label columns, the panel: the selected input, what it does in the layer,
-/// the ways to remap it, and its parameters (a value slid for the slider, a switch tapped). The gyro's
-/// button sits at the bottom, over the AYN button. Below, a hint and "No changes". While a control is
-/// picked (what the selected input maps to, or what holds the gyro on), the controls that can't be are
-/// dimmed, and the panel and the hint say what to do.
+/// The edit screen. The controls sit in two clusters at the sides (see [`super::pad`]), each one a
+/// target. A control that the layer shown changes has a line to a label: blue when it is mapped to
+/// something else, grey when it acts as on the pad with tuned parameters. Home is ClamShell's and drawn
+/// dim. The layer button at the top switches the layer shown. Between the label columns is the panel:
+/// the selected input, what it does in the layer, the ways to remap it, and its parameters (a slider, or
+/// a switch). Below are a hint and "No changes". While a control is being picked (what the selected
+/// input maps to, or what holds the gyro on), the controls that can't be picked are dimmed, and the
+/// panel and the hint say what to do.
 pub(super) fn edit(f: &mut Frame, id: u16, picking: Option<Picking>) {
     let body = f.body();
     let s = f.s;
