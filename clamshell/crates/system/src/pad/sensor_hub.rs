@@ -66,7 +66,6 @@ pub struct SensorHub {
     /// The gyro streaming.
     gyro: Option<Suid>,
     txn: u16,
-    turn: [[f32; 3]; 3],
     /// For a datagram.
     buf: Vec<u8>,
 }
@@ -82,26 +81,28 @@ impl SensorHub {
         let hub = (|| {
             let (socket, node) = qrtr::socket()?;
             qrtr::lookup(&socket, node, SERVICE)?;
-            Ok::<_, io::Error>(SensorHub { socket, service: None, gyro: None, txn: 0, turn: THOR_TURN, buf: vec![0; 65536] })
+            Ok::<_, io::Error>(SensorHub { socket, service: None, gyro: None, txn: 0, buf: vec![0; 65536] })
         })();
         hub.map_err(|e| log::warn!("pad: the sensor hub: {e}")).ok().inspect(|_| log::info!("pad: gyro from the sensor hub, once it is up"))
     }
 
-    /// Sends a request to the hub. A send that fails (the ADSP gone before the name service said so)
-    /// drops the hub until it is announced again, rather than the gyro for good, as PB-OS's.
-    fn request(&mut self, suid: Suid, msg_id: u32, payload: &[u8]) -> io::Result<()> {
-        let Some((node, port)) = self.service else { return Ok(()) };
+    /// Sends a request to the hub; whether it was sent. A send that fails (the ADSP gone before the name
+    /// service said so) drops the hub until it is announced again, rather than the gyro for good, as
+    /// PB-OS's does.
+    fn request(&mut self, suid: Suid, msg_id: u32, payload: &[u8]) -> bool {
+        let Some((node, port)) = self.service else { return false };
         self.txn = self.txn.wrapping_add(1);
         if let Err(e) = qrtr::send_to(&self.socket, node, port, &qmi_request(self.txn, &client_request(suid, msg_id, payload))) {
             log::warn!("pad: the sensor hub: {e} (until it is back)");
             self.service = None;
             self.gyro = None;
+            return false;
         }
-        Ok(())
+        true
     }
 
     /// One datagram from the name service: the hub came (look the gyro up) or went.
-    fn control(&mut self, pkt: &[u8]) -> io::Result<()> {
+    fn control(&mut self, pkt: &[u8]) {
         match qrtr::control(pkt) {
             Some((qrtr::NEW_SERVER, SERVICE, node, port)) if node != 0 || port != 0 => {
                 log::info!("pad: the sensor hub is up");
@@ -111,20 +112,19 @@ impl SensorHub {
                 pb_bytes(&mut lookup, 1, b"gyro");
                 pb_varint_field(&mut lookup, 2, 1); // register_updates
                 pb_varint_field(&mut lookup, 3, 1); // default_only
-                self.request(SUID_LOOKUP, MSG_SUID_REQUEST, &lookup)
+                self.request(SUID_LOOKUP, MSG_SUID_REQUEST, &lookup);
             }
             Some((qrtr::DEL_SERVER, SERVICE, node, port)) if self.service == Some((node, port)) => {
                 log::info!("pad: the sensor hub is gone (until it is back)");
                 self.service = None;
                 self.gyro = None;
-                Ok(())
             }
-            _ => Ok(()),
+            _ => {}
         }
     }
 
     /// One QMI datagram from the hub: a refusal logged; the gyro's SUID (start it); its samples.
-    fn message(&mut self, msg: &[u8], out: &mut Vec<Sample>) -> io::Result<()> {
+    fn message(&mut self, msg: &[u8], out: &mut Vec<Sample>) {
         match qmi_message(msg) {
             Some(Qmi::Refused(error)) => {
                 // (Its config refused: started again from the lookup's next report.)
@@ -136,27 +136,27 @@ impl SensorHub {
                     if let Some(suid) = suid_of(report, b"gyro") {
                         let mut config = Vec::new();
                         pb_fixed32(&mut config, 1, RATE_HZ.to_bits());
-                        self.request(suid, MSG_STD_SENSOR_CONFIG, &config)?;
-                        self.gyro = Some(suid);
-                        log::info!("pad: the gyro streams at {RATE_HZ} Hz");
+                        if self.request(suid, MSG_STD_SENSOR_CONFIG, &config) {
+                            self.gyro = Some(suid);
+                            log::info!("pad: the gyro streams at {RATE_HZ} Hz");
+                        }
                     }
                 }
                 Some(_) => samples(report, |[x, y, z], ticks| {
-                    let d = turned(self.turn, [x, y, z]).map(f32::to_degrees);
+                    let d = turned(THOR_TURN, [x, y, z]).map(f32::to_degrees);
                     let at = Duration::from_nanos(u64::try_from(u128::from(ticks) * 1_000_000_000 / u128::from(TICKS_PER_SECOND)).unwrap_or(u64::MAX));
                     out.push(Sample { rate: Rate { pitch: d[0], yaw: d[1], roll: d[2] }, at });
                 }),
             },
             None => {}
         }
-        Ok(())
     }
 }
 
 impl Drop for SensorHub {
     fn drop(&mut self) {
         if let Some(gyro) = self.gyro.take() {
-            let _ = self.request(gyro, MSG_CLIENT_DISABLE, &[]);
+            self.request(gyro, MSG_CLIENT_DISABLE, &[]);
         }
     }
 }
@@ -172,9 +172,9 @@ impl MotionSource for SensorHub {
             while let Some((n, _, port)) = qrtr::recv_from(&self.socket, &mut buf)? {
                 let msg = buf.get(..n).unwrap_or_default();
                 if port == qrtr::PORT_CTRL {
-                    self.control(msg)?;
+                    self.control(msg);
                 } else {
-                    self.message(msg, out)?;
+                    self.message(msg, out);
                 }
             }
             Ok(())
