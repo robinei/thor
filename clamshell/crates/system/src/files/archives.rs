@@ -38,7 +38,9 @@ impl Mounts {
     pub fn new(cache: Option<PathBuf>) -> Mounts {
         let root = std::env::var_os("XDG_RUNTIME_DIR").map(|d| PathBuf::from(d).join("clamshell/archives"));
         // (Left by a ClamShell before: their services stopped, any mount left detached, the dirs gone.)
-        let _ = command::run("systemctl", &["--user", "stop", "clamshell-archive-*.service"], None, command::LIMIT);
+        if let Err(e) = crate::launch::scopes::stop_matching("clamshell-archive-*.service") {
+            log::warn!("archives: stopping those left before: {e}");
+        }
         if let Some(root) = &root {
             for dir in mounted_under(root) {
                 detach(&dir);
@@ -119,10 +121,13 @@ fn unit_of(archive: &Path) -> String {
     format!("clamshell-archive-{:016x}.service", hash(archive))
 }
 
-/// Whether service `unit` runs (or is starting).
+/// Whether service `unit` runs (or is starting). If the user manager can't be asked, it counts as
+/// stopped, so a mount isn't waited for forever.
 fn active(unit: &str) -> bool {
-    let out = command::run("systemctl", &["--user", "is-active", unit], None, command::LIMIT);
-    out.is_ok_and(|o| matches!(String::from_utf8_lossy(&o.stdout).trim(), "active" | "activating" | "reloading"))
+    crate::launch::scopes::is_active(unit).unwrap_or_else(|e| {
+        log::warn!("archives: {unit}: {e}");
+        false
+    })
 }
 
 /// `dir` detached (lazily: open files stay readable) and removed.
@@ -141,6 +146,7 @@ fn hash(path: &Path) -> u64 {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
@@ -152,5 +158,24 @@ mod tests {
         for name in ["zip", ".zip", "a.gz", "a.iso", "a.zipx"] {
             assert!(!is_archive(name), "{name}");
         }
+    }
+
+    #[test]
+    #[ignore = "needs a user manager, ratarmount and bsdtar"]
+    fn live_mount_and_unmount() {
+        let dir = clamshell_core::kit::testdir::TempDir::new("archives");
+        fs::write(dir.join("inside.txt"), "hello").unwrap();
+        let zip = dir.join("a.zip");
+        assert!(std::process::Command::new("bsdtar").arg("-C").arg(&*dir).args(["-a", "-cf"]).arg(&zip).arg("inside.txt").status().unwrap().success());
+        let mut mounts = Mounts::new(None);
+        let at = mounts.mount(&zip).unwrap();
+        assert_eq!(fs::read_to_string(at.join("inside.txt")).unwrap(), "hello");
+        mounts.keep(&[]);
+        let unit = unit_of(&zip);
+        let gone = (0..50).any(|_| {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            !active(&unit)
+        });
+        assert!(gone);
     }
 }

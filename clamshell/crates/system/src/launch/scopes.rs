@@ -220,6 +220,23 @@ pub fn end(unit: &str, force: bool) -> Result<(), Error> {
     })
 }
 
+/// Stops every running unit whose name matches `pattern` (a glob, as `ListUnitsByPatterns` takes).
+pub fn stop_matching(pattern: &str) -> Result<(), Error> {
+    with_manager(|bus| {
+        for row in units(bus, &[pattern])? {
+            if !matches!(row.3.as_str(), "inactive" | "failed") {
+                call::<(Path<'static>,)>(bus, "StopUnit", (row.0.as_str(), "replace"))?;
+            }
+        }
+        Ok(())
+    })
+}
+
+/// Whether unit `unit` is running or on its way there.
+pub fn is_active(unit: &str) -> Result<bool, Error> {
+    with_manager(|bus| Ok(units(bus, &[unit])?.iter().any(|row| matches!(row.3.as_str(), "active" | "activating" | "reloading"))))
+}
+
 /// Thaws a unit, if it is there and frozen (otherwise systemd does nothing).
 fn thaw_now(bus: &mut Bus, unit: &str) {
     if loaded(bus, unit)

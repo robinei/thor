@@ -10,13 +10,14 @@ replies and real errors.
 
 - [x] `timedatectl` → `org.freedesktop.timedate1` (`Timezone`, `NTP`; `SetTimezone`, `SetNTP`).
 - [x] `udisksctl` → `org.freedesktop.UDisks2` (`Filesystem.Mount`/`Unmount`, `Drive.PowerOff`).
-- [ ] `systemd-run` and `systemctl` → `org.freedesktop.systemd1` (`StartTransientUnit`, `StopUnit`, the
-      unit's `FreezerState`).
+- [x] `systemctl` (archives: `is-active`, stopping those left before) → `org.freedesktop.systemd1`, as
+      scopes and the freezer already were. `systemd-run` stays: it starts programs (a launch's scope
+      around `exec`, an archive's service) and nothing it prints is read.
 - [ ] `wpctl get-volume` → the default sink's volume and mute from `pw-dump`'s JSON, which the mixer reads
       already.
 
 Staying: `pw-dump` (JSON), `grim` (only its exit status), `fc-match` (a path, once), `bsdtar`, and the
-programs started rather than read (`nice`, `pkexec`, `fusermount3`, `foot`).
+programs started rather than read (`systemd-run`, `nice`, `pkexec`, `fusermount3`, `foot`).
 
 ## 2. Crates for hand-written code
 
