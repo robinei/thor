@@ -45,7 +45,7 @@ impl fmt::Display for DeviceSpec {
 }
 
 /// The device `spec` asks for, else the first that `looks_right`; by name, never one named in `ours`
-/// (our own virtual devices). Not found: an error of kind NotFound ("no <what>").
+/// (our own virtual devices). Not found: an error of kind NotFound (`no <what>`).
 pub fn open(spec: &DeviceSpec, what: &str, looks_right: impl Fn(&RawDevice) -> bool, ours: &[&str]) -> io::Result<RawDevice> {
     if let DeviceSpec::Path(path) = spec {
         return RawDevice::open(path);

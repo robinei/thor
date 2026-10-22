@@ -1,6 +1,6 @@
 //! What every screen is drawn with: [`Frame`] (the drawing context: the canvas, the state, the targets
 //! the screen lists, the sizes of the area drawn in) and the pieces built on it: [`style`] (palette,
-//! sizes, looks), [`widgets`] (headers, menus, rows, sliders, switches, tiles), [`format`] (text without
+//! sizes, looks), [`widgets`] (headers, menus, rows, sliders, switches, tiles), [`format`](mod@format) (text without
 //! allocation) and [`scroll`] (scrolled lists). The screens themselves are in `views`.
 
 pub(crate) mod format;

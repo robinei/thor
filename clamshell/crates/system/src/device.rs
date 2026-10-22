@@ -243,7 +243,7 @@ fn busy() -> Option<String> {
     (rate > BUSY_NET).then(|| format!("{:.0} kB/s on the network", rate / 1000.0))
 }
 
-/// The user manager's cgroup (user@<uid>.service): the cgroup ClamShell runs in, up to it.
+/// The user manager's cgroup (`user@<uid>.service`): the cgroup ClamShell runs in, up to it.
 fn user_cgroup() -> Option<PathBuf> {
     let path = crate::cgroup::path_of(std::process::id())?;
     let end = path.find(".service/").map(|i| i + ".service".len())?;
@@ -349,7 +349,7 @@ mod live {
     /// On a desktop: whether the machine is busy now, and the cgroup looked at (run by hand: `--ignored
     /// --nocapture`).
     #[test]
-    #[ignore]
+    #[ignore = "reads this machine"]
     fn busy_now() {
         println!("{:?}: {:?}", super::user_cgroup(), super::busy());
     }

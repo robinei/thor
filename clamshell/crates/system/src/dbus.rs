@@ -356,7 +356,7 @@ mod live {
     /// With a session bus (a desktop): a call to ourselves is answered by what we serve, while we wait
     /// for its reply on another connection's thread (run by hand: `--ignored`).
     #[test]
-    #[ignore]
+    #[ignore = "needs a session bus"]
     #[allow(clippy::unwrap_used)]
     fn calls_are_served_while_a_call_waits() {
         let mut server = Bus::session().unwrap();

@@ -4,8 +4,8 @@
 //! from those written when it changes. It takes the fan once found: `pwm1_enable` 3, which also cuts the
 //! fan's supply when the speed is 0 (and during suspend).
 //!
-//!   clamshell-fan [ROOT]
-//!   clamshell-fan --safe [ROOT]
+//!   `clamshell-fan [ROOT]`
+//!   `clamshell-fan --safe [ROOT]`
 //!
 //! ROOT (default /): where /sys and /run are, for trying it on a copy. `--safe`: the fan to its safe speed
 //! ([`fan::SAFE`]), then exit: as the service stops (its `ExecStopPost`), so that a stopped daemon

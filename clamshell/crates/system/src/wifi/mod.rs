@@ -504,7 +504,7 @@ mod live {
     /// With NetworkManager running (a desktop): its Wi-Fi view reads without error; nothing is changed
     /// (run by hand: `--ignored --nocapture`).
     #[test]
-    #[ignore]
+    #[ignore = "needs NetworkManager"]
     #[allow(clippy::unwrap_used)]
     fn reads_networkmanager() {
         let mut s = Session::connect().unwrap();

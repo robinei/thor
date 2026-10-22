@@ -351,7 +351,7 @@ mod live {
     /// With BlueZ running (a desktop): its view reads without error; nothing is changed (run by hand:
     /// `--ignored --nocapture`).
     #[test]
-    #[ignore]
+    #[ignore = "needs BlueZ"]
     #[allow(clippy::unwrap_used)]
     fn reads_bluez() {
         let objects = managed_objects(&mut Bus::system().unwrap()).unwrap();

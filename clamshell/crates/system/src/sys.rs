@@ -27,23 +27,23 @@ pub fn processes() -> impl Iterator<Item = (u32, PathBuf)> {
     fs::read_dir("/proc").into_iter().flatten().flatten().filter_map(|e| Some((e.file_name().to_str()?.parse().ok()?, e.path())))
 }
 
-/// When process `pid` started (clock ticks after boot: /proc/<pid>/stat's 22nd field); none if it is
+/// When process `pid` started (clock ticks after boot: `/proc/<pid>/stat`'s 22nd field); none if it is
 /// gone. With its id, it tells the process from a later one given the same id.
 fn start_time(pid: u32) -> Option<u64> {
     stat_field(&text(format!("/proc/{pid}/stat"))?, 22)
 }
 
-/// Process `pid`'s parent (/proc/<pid>/stat's 4th field).
+/// Process `pid`'s parent (`/proc/<pid>/stat`'s 4th field).
 pub fn parent(pid: u32) -> Option<u32> {
     parent_in(&text(format!("/proc/{pid}/stat"))?)
 }
 
-/// The parent in a /proc/<pid>/stat file's text.
+/// The parent in a `/proc/<pid>/stat` file's text.
 pub fn parent_in(stat: &str) -> Option<u32> {
     stat_field(stat, 4)
 }
 
-/// Field `n` (from 1, as proc(5) numbers them) of a /proc/<pid>/stat file, from the 3rd on. The 2nd, the
+/// Field `n` (from 1, as proc(5) numbers them) of a `/proc/<pid>/stat` file, from the 3rd on. The 2nd, the
 /// name in parentheses, may hold anything, spaces and parentheses too, so fields are counted after its
 /// last `)`.
 fn stat_field<T: std::str::FromStr>(stat: &str, n: usize) -> Option<T> {

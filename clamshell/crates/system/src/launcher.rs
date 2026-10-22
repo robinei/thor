@@ -448,7 +448,7 @@ mod live {
     /// A program in a scope not ours (a desktop's app scope) is moved into one of ours, with what it
     /// started; one a service runs stays (run by hand: `--ignored`).
     #[test]
-    #[ignore]
+    #[ignore = "needs a user session; moves processes"]
     #[allow(clippy::unwrap_used)]
     fn a_program_is_adopted_unless_a_service_runs_it() {
         let id = std::process::id();

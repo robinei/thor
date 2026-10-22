@@ -334,7 +334,7 @@ mod live {
     /// With UPower running (a desktop): reads the charge history, or says why there is none; nothing is
     /// changed (run by hand: `--ignored --nocapture`).
     #[test]
-    #[ignore]
+    #[ignore = "needs UPower"]
     fn reads_upower() {
         match history(&mut Kept::system()) {
             Ok(charges) => println!("{} points, the last {:?}", charges.len(), charges.last()),

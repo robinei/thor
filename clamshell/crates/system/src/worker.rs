@@ -25,7 +25,7 @@ use std::time::Duration;
 
 use crate::Closed;
 
-/// A thread's command channel. Sending to a thread that has ended is logged once ("<name> is gone").
+/// A thread's command channel. Sending to a thread that has ended is logged once (`<name> is gone`).
 pub struct Worker<C> {
     name: &'static str,
     tx: Option<Sender<C>>,

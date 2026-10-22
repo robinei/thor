@@ -480,7 +480,7 @@ mod live {
     /// With a user session (a desktop): lists our scopes; nothing is changed (run by hand: `--ignored
     /// --nocapture`).
     #[test]
-    #[ignore]
+    #[ignore = "needs a user session"]
     #[allow(clippy::unwrap_used)]
     fn lists_our_scopes() {
         let mut bus = Bus::session().unwrap();
@@ -490,7 +490,7 @@ mod live {
     /// With a user session (a desktop): a scope we start shows in the list, and is gone once it ends.
     /// Starts a one-second `sleep` in a scope of its own (run by hand: `--ignored`).
     #[test]
-    #[ignore]
+    #[ignore = "needs a user session; starts a scope"]
     #[allow(clippy::unwrap_used)]
     fn a_scope_comes_and_goes() {
         let mut bus = Bus::session().unwrap();
@@ -518,7 +518,7 @@ mod live {
     /// A slice working without drawing (a busy loop, no GPU) isn't frozen while it does; once idle, it is
     /// (run by hand: `--ignored`).
     #[test]
-    #[ignore]
+    #[ignore = "needs a user session; starts scopes"]
     #[allow(clippy::unwrap_used)]
     fn a_freeze_waits_while_the_slice_works_without_drawing() {
         let id = std::process::id();

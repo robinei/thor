@@ -144,7 +144,8 @@ Helpers that exist but are bypassed:
 - [x] The no-alloc test's gaps: the Time and Touchpad tabs, a name editor, an open group, a video, the dock's
       and tray's menus, the battery's program menu, each checked to reach its screen; three allocated every
       frame and are fixed (`to_continue`, the battery menu's clone, the dock menus' `Vec`s).
-- [ ] `#[ignore = "why"]` on the live tests; rustdoc's 9 warnings.
+- [x] `#[ignore = "why"]` on the live tests; the docs build clean with private items (checked by
+      `tools/check.sh`), links from public to private items allowed (an application).
 
 ## 5. How it reads
 

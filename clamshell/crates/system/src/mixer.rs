@@ -60,7 +60,7 @@ fn read_audio() -> Audio {
     crate::command::output("pw-dump", &[]).and_then(|out| serde_json::from_slice(&out).ok()).map(|v| parse(&v)).unwrap_or_default()
 }
 
-/// `wpctl get-volume` output, "Volume: 0.60" or "Volume: 0.60 [MUTED]": the volume 0-100 and mute.
+/// `wpctl get-volume` output, `Volume: 0.60` or `Volume: 0.60 [MUTED]`: the volume 0-100 and mute.
 pub fn parse_get_volume(text: &str) -> Option<(u8, bool)> {
     let rest = text.trim().strip_prefix("Volume:")?;
     let volume: f32 = rest.split_whitespace().next()?.parse().ok()?;
@@ -163,7 +163,7 @@ mod live {
     /// With PipeWire running (a desktop): prints what the volume tab would show; nothing is changed (run
     /// by hand: `--ignored --nocapture`).
     #[test]
-    #[ignore]
+    #[ignore = "needs PipeWire"]
     fn reads_pipewire() {
         let audio = super::read_audio();
         println!("{audio:#?}");

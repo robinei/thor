@@ -42,7 +42,7 @@ mod tests {
 mod live {
     /// Under a desktop session every process is in some scope or service.
     #[test]
-    #[ignore]
+    #[ignore = "needs a desktop session"]
     fn this_process_has_a_unit() {
         let unit = super::unit_of(std::process::id());
         assert!(unit.is_some_and(|u| u.ends_with(".scope") || u.ends_with(".service")));

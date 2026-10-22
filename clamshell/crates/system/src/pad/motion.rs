@@ -187,7 +187,7 @@ fn is_motion(d: &RawDevice) -> bool {
 }
 
 /// Whether `motion` is `controller`'s: its name starts with the controller's (drivers call it
-/// "<controller> Motion Sensors"), or their physical paths differ only in the last part.
+/// `<controller> Motion Sensors`), or their physical paths differ only in the last part.
 pub fn pairs(controller: (&str, &str), motion: (&str, &str)) -> bool {
     let (c_name, c_phys) = controller;
     let (m_name, m_phys) = motion;

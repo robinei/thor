@@ -87,7 +87,7 @@ mod live {
     /// Compares the fdinfo load with amdgpu's own busy figure, where there is one (run by hand:
     /// `--ignored --nocapture`).
     #[test]
-    #[ignore]
+    #[ignore = "reads this machine's GPU"]
     fn fdinfo_load_on_this_machine() {
         let (Some(t0), i0) = (total_ns(), Instant::now()) else {
             eprintln!("no DRM clients");

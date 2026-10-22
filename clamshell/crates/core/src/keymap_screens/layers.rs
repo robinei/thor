@@ -15,7 +15,7 @@ impl LayersShown {
 }
 
 impl State {
-    /// The layers' list's rows (see [`ListId::Layers`]): the keymap's layers (but Base, as a target),
+    /// The layers' list's rows (see [`crate::ListId::Layers`]): the keymap's layers (but Base, as a target),
     /// then New layer; none on another screen.
     pub(crate) fn layer_rows(&self) -> usize {
         let (id, all) = match self.keymap_screens.open {

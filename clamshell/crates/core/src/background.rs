@@ -1,5 +1,5 @@
 //! What a program does while none of its windows is shown: its setting In the background
-//! ([`Setting::Background`], by the settings' levels: All, its runner, itself).
+//! ([`crate::settings::Setting::Background`], by the settings' levels: All, its runner, itself).
 //!
 //! - Runs hidden (the default): nothing is done.
 //! - Pauses hidden: once none of its windows has been shown for [`GRACE`] seconds, its slice (all its
