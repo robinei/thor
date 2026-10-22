@@ -176,7 +176,7 @@ impl State {
         let below = |w: &&Window| w.down;
         let down = self.session.windows_of(&entry).all(|w| w.down).then(|| self.session.windows_of(&entry).find(below).map(|w| w.id)).flatten();
         match down {
-            Some(window) => self.show_program_down(window),
+            Some(window) => self.bottom.show_program_down(window),
             None => self.show_running(&entry),
         }
     }
@@ -364,7 +364,7 @@ mod tests {
         s.apply(Event::Windows(vec![shelf_window(false), foot()]));
         s.apply(Event::Device(DeviceKey::WindowDown));
         s.apply(Event::Windows(vec![shelf_window(true), Window { down: true, visible: true, focused: false, ..foot() }]));
-        assert!(s.bottom_shows_windows());
+        assert!(s.bottom().shows_windows(s.session()));
         assert_eq!(s.apply(Event::Device(DeviceKey::CloseWindow)).1, vec![Effect::Window(WindowCommand::Close(vec![foot().id]))]);
         // With ClamShell's view on the bottom screen instead, there is nothing to close.
         s.apply(Event::Device(DeviceKey::BottomView));

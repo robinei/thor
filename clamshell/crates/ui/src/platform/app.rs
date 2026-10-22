@@ -116,7 +116,7 @@ impl App {
                 // screen turned off with Home+Start is left out, so turning the screens on again leaves
                 // it off.
                 Effect::Screens(on) => {
-                    let bottom_off = self.state.bottom_off().then(|| self.display.bottom_output().to_owned());
+                    let bottom_off = self.state.bottom().off().then(|| self.display.bottom_output().to_owned());
                     let outputs: Vec<_> =
                         self.output_state.outputs().filter(|o| bottom_off.is_none() || self.output_state.info(o).and_then(|i| i.name) != bottom_off).collect();
                     self.display.power(*on, outputs.into_iter(), &self.qh);
@@ -164,7 +164,7 @@ impl App {
         let mut rows_changed = None;
         let mut lists = Vec::new();
         // While a window is shown on the bottom screen, ClamShell's bottom view goes behind it.
-        let behind = self.state.bottom_shows_windows();
+        let behind = self.state.bottom().shows_windows(self.state.session());
         if let Some(view) = self.views.iter_mut().find(|(s, _)| *s == Screen::Bottom).and_then(|(_, v)| v.as_mut()) {
             view.set_behind(behind);
         }

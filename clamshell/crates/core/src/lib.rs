@@ -154,8 +154,6 @@ pub struct State {
     idle: crate::device::idle::Idle,
     /// ClamShell is the device's own session (see [`Init::device_session`]).
     device_session: bool,
-    /// Which programs' windows go to the bottom screen.
-    window_rules: crate::bottom::screen::WindowRules,
     /// Whether metadata is being fetched, and what shelf showed when it was last asked to fetch it first
     /// (see [`State::follow_shown`]).
     fetching: bool,
@@ -173,7 +171,7 @@ impl State {
             shelf: Shelf::new(init.library),
             settings: init.settings,
             keymaps: init.keymaps,
-            window_rules: init.window_rules,
+            bottom: Bottom::new(init.window_rules),
             sys: Sys::new(init.twelve_hour),
             levels: Levels::new(init.brightness),
             dock: init.dock,

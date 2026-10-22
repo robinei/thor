@@ -388,7 +388,7 @@ impl State {
             new.into_iter().map(|g| Running { app_id: app_id_of(g), seen: true, ..Running::of(g, Origin::Windows { since: now, until: now }, now) }).collect();
         if let Some(r) = new.last() {
             self.session.pending_show = Some(Instance::Run { key: r.key.clone(), secs: self.clock.unix(), n: 0 });
-            self.bottom.woken = false;
+            self.bottom.unwake();
         }
         self.session.running.extend(new);
         steam.into_iter().flat_map(|game| self.launch(game)).collect()
@@ -511,7 +511,7 @@ impl State {
                     self.session.running.push(Running { entry: r.entry.filter(|_| known.is_some()), ..r });
                 }
             }
-            self.bottom.woken = false;
+            self.bottom.unwake();
         }
         let session = &mut self.session;
         let units = &session.units;

@@ -19,12 +19,13 @@
 
 use std::sync::Arc;
 
-use crate::State;
-use crate::bottom::notice::{Notice, NoticeKind};
+use crate::bottom::Bottom;
+use crate::bottom::notice::NoticeKind;
 use crate::effect::{Dirty, Effect, Save, WindowCommand};
 use crate::session::instance::Instance;
 use crate::session::windows::Window;
 use crate::settings::BottomWhenIdle;
+use crate::{Clock, Session, State};
 
 /// A window that goes to the bottom screen when its entry opens it. The rule names the entry by its id,
 /// the app id, and optionally the title.
@@ -76,29 +77,20 @@ impl WindowRules {
         &self.list
     }
 
-    /// Adds a rule unless there is one like it. A new rule is shown in a notice, saved and given to sway.
-    fn add(&mut self, rule: WindowRule, notice: &mut Option<Notice>, now: u64) -> Vec<Effect> {
+    /// Adds a rule unless there is one like it. Returns whether it did.
+    fn add(&mut self, rule: WindowRule) -> bool {
         if self.list.contains(&rule) {
-            return vec![];
+            return false;
         }
         self.list.push(rule);
-        self.changed(true, notice, now)
+        true
     }
 
-    /// Forgets the rules that match a window of `owner`. If there were any, that is shown in a notice,
-    /// and the rules are saved and given to sway.
-    fn forget(&mut self, owner: &str, w: &Window, notice: &mut Option<Notice>, now: u64) -> Vec<Effect> {
+    /// Forgets the rules that match a window of `owner`. Returns whether there were any.
+    fn forget(&mut self, owner: &str, w: &Window) -> bool {
         let before = self.list.len();
         self.list.retain(|r| !r.matches(owner, w));
-        if self.list.len() == before {
-            return vec![];
-        }
-        self.changed(false, notice, now)
-    }
-
-    fn changed(&self, added: bool, notice: &mut Option<Notice>, now: u64) -> Vec<Effect> {
-        *notice = Some(Notice::new(NoticeKind::BottomRule(added), now));
-        vec![Effect::Save(Save::WindowRules(self.clone())), self.effect()]
+        self.list.len() != before
     }
 
     /// The rules in the form sway uses to place windows.
@@ -127,128 +119,150 @@ impl WindowRules {
 pub struct BottomScreen {
     /// Whether the bottom screen shows the windows moved down (the tab sway shows) over ClamShell's
     /// view, rather than ClamShell's view.
-    pub(crate) windows: bool,
+    windows: bool,
     /// Turned off with Home+Start.
-    pub(crate) off: bool,
-    /// Turned off by itself, when idle or dark on battery ([`State::follow_bottom_power`]).
-    pub(crate) idle_off: bool,
+    off: bool,
+    /// Turned off by itself, when idle or dark on battery ([`Bottom::follow_power`]).
+    idle_off: bool,
+}
+
+/// What the second screen's power follows from the rest of the state (see [`Bottom::follow_power`]).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Power {
+    /// Windows are moved to the bottom screen.
+    pub any_down: bool,
+    /// A program is in force.
+    pub in_game: bool,
+    /// The setting in force for the second screen.
+    pub when_idle: BottomWhenIdle,
+    /// Running on battery.
+    pub discharging: bool,
+    /// A refresh calibration is running.
+    pub refreshing: bool,
+    /// Both screens are off for idle.
+    pub screens_off: bool,
 }
 
 /// How long, in seconds, the second screen goes untouched and without the pad's focus before it dims,
 /// and after that before it powers off by itself. It only powers off on battery and when the setting
-/// isn't "Screen on" (see [`State::follow_bottom_power`]).
+/// isn't "Screen on" (see [`Bottom::follow_power`]).
 const DIM_AFTER: u64 = 60;
 const OFF_AFTER: u64 = 180;
 
-impl State {
-    /// Whether the second screen is dark. It is when the program in force wants it dark and the screen
-    /// hasn't been tapped since.
-    pub fn bottom_dark(&self) -> bool {
-        self.session.program.is_some() && self.in_force().choice::<BottomWhenIdle>() == BottomWhenIdle::DarkInGame && !self.bottom.woken
+impl Bottom {
+    /// Whether the second screen is dark. It is when the program in force (`in_game`) wants it dark and
+    /// the screen hasn't been tapped since.
+    pub(crate) fn dark(&self, in_game: bool, when_idle: BottomWhenIdle) -> bool {
+        in_game && when_idle == BottomWhenIdle::DarkInGame && !self.woken
     }
 
     /// Whether the second screen is drawn dimmed. It is when it shows ClamShell's view and has gone
     /// untouched, without the pad's focus, for [`DIM_AFTER`]. Windows moved there are never dimmed, since
     /// they are watched without touching. This spares the OLED while a game played with the pad on the
     /// main screen keeps the device awake and nobody looks below. A touch on it, or the pad's focus
-    /// coming to it, brings it back.
-    pub fn bottom_dimmed(&self) -> bool {
-        !self.bottom_shows_windows() && self.bottom_idle_for() >= DIM_AFTER
+    /// coming to it, brings it back. Kept by [`Bottom::follow_dim`], which runs after every event.
+    pub fn dimmed(&self) -> bool {
+        self.dimmed
     }
 
-    /// Seconds since the second screen was last used, or 0 before the clock's first reading.
-    fn bottom_idle_for(&self) -> u64 {
-        self.bottom.used_at.map_or(0, |at| self.clock.mono().saturating_sub(at))
+    /// Seconds since the second screen was last used at `now`, or 0 before the clock's first reading.
+    fn idle_for(&self, now: u64) -> u64 {
+        self.used_at.map_or(0, |at| now.saturating_sub(at))
     }
 
     /// The second screen is in use, so it is lit, and redrawn if it was dimmed.
-    pub(crate) fn bottom_used(&mut self) -> Dirty {
-        self.bottom.used_at = Some(self.clock.mono());
-        if self.follow_bottom_dim() { Dirty::BOTTOM } else { Dirty::NONE }
+    pub(crate) fn used(&mut self, session: &Session, clock: &Clock) -> Dirty {
+        self.used_at = Some(clock.mono());
+        if self.follow_dim(session, clock) { Dirty::BOTTOM } else { Dirty::NONE }
     }
 
     /// Runs after any event. Returns whether the second screen's dimming changed, so it can be redrawn.
     /// The time counts from the first clock reading.
-    pub(crate) fn follow_bottom_dim(&mut self) -> bool {
-        if self.bottom.used_at.is_none() && self.clock.read() {
-            self.bottom.used_at = Some(self.clock.mono());
+    pub(crate) fn follow_dim(&mut self, session: &Session, clock: &Clock) -> bool {
+        if self.used_at.is_none() && clock.read() {
+            self.used_at = Some(clock.mono());
         }
-        let dimmed = self.bottom_dimmed();
-        std::mem::replace(&mut self.bottom.dimmed, dimmed) != dimmed
-    }
-
-    /// The windows moved to the bottom screen, in the compositor's order.
-    pub fn windows_down(&self) -> impl Iterator<Item = &Window> {
-        self.session.windows.iter().filter(|w| w.down)
+        let dimmed = !self.shows_windows(session) && self.idle_for(clock.mono()) >= DIM_AFTER;
+        std::mem::replace(&mut self.dimmed, dimmed) != dimmed
     }
 
     /// Whether the bottom screen shows the windows moved there instead of ClamShell's view.
-    pub fn bottom_shows_windows(&self) -> bool {
-        self.bottom.screen.windows && self.windows_down().next().is_some()
+    pub fn shows_windows(&self, session: &Session) -> bool {
+        self.shows(session.windows_down().next().is_some())
+    }
+
+    /// Whether the bottom screen shows the windows moved there, when there are any (`any_down`).
+    fn shows(&self, any_down: bool) -> bool {
+        self.screen.windows && any_down
     }
 
     /// Whether the bottom screen is turned off, by hand or by itself.
-    pub fn bottom_off(&self) -> bool {
-        self.bottom.screen.off || self.bottom.screen.idle_off
+    pub fn off(&self) -> bool {
+        self.screen.off || self.screen.idle_off
     }
 
-    /// Whether the bottom screen should be off by itself. That needs all of: running on battery, the
-    /// setting in force not "Screen on", no refresh calibration running, ClamShell's view on it rather
+    /// Whether the bottom screen should be off by itself at `now`. That needs all of: running on battery,
+    /// the setting in force not "Screen on", no refresh calibration running, ClamShell's view on it rather
     /// than a window moved down, and nothing being typed there. On top of that, the screen must be dark
     /// for a game and not tapped since, or untouched and without the pad's focus for [`DIM_AFTER`] plus
     /// [`OFF_AFTER`]. The panel is driven in video mode and streamed every frame whatever it shows, so
     /// only turning it off saves power.
-    fn bottom_idle_wanted(&self) -> bool {
-        let untouched = self.bottom_idle_for() >= DIM_AFTER + OFF_AFTER;
-        self.sys.status().discharging
-            && *self.device.refresh() != crate::device::Refresh::Running
-            && self.in_force().choice::<BottomWhenIdle>() != BottomWhenIdle::On
-            && !self.bottom_shows_windows()
-            && self.bottom.editor().is_none()
-            && (self.bottom_dark() || untouched)
+    fn idle_wanted(&self, p: Power, now: u64) -> bool {
+        let untouched = self.idle_for(now) >= DIM_AFTER + OFF_AFTER;
+        p.discharging
+            && !p.refreshing
+            && p.when_idle != BottomWhenIdle::On
+            && !self.shows(p.any_down)
+            && self.editor().is_none()
+            && (self.dark(p.in_game, p.when_idle) || untouched)
     }
 
-    /// Runs after any event. Turns the bottom screen off or on by itself as [`State::bottom_idle_wanted`]
-    /// says. A touch, the pad's focus, a window moved down or the charger turn it on again. Does nothing
-    /// while it is off by hand, or while both screens are off for idle; when the screens come back they
-    /// read [`State::bottom_off`].
-    pub(crate) fn follow_bottom_power(&mut self) -> Vec<Effect> {
-        let wanted = self.bottom_idle_wanted();
-        let screens_off = self.idle.stage() >= crate::device::idle::Stage::Off;
-        if wanted == std::mem::replace(&mut self.bottom.screen.idle_off, wanted) || self.bottom.screen.off || screens_off {
+    /// Runs after any event. Turns the bottom screen off or on by itself as [`Bottom::idle_wanted`] says.
+    /// A touch, the pad's focus, a window moved down or the charger turn it on again. Does nothing while
+    /// it is off by hand, or while both screens are off for idle; when the screens come back they read
+    /// [`Bottom::off`].
+    pub(crate) fn follow_power(&mut self, p: Power, now: u64) -> Vec<Effect> {
+        let wanted = self.idle_wanted(p, now);
+        if wanted == std::mem::replace(&mut self.screen.idle_off, wanted) || self.screen.off || p.screens_off {
             return vec![];
         }
         vec![Effect::Window(WindowCommand::BottomPower(!wanted))]
     }
 
-    /// Which running entry a window belongs to, for a rule.
-    fn owner(&self, w: &Window) -> Option<Arc<str>> {
-        self.session.running_of(w).map(|r| r.id.clone())
+    /// The darkened second screen was tapped awake. This lasts until the next game.
+    pub(crate) fn wake(&mut self) {
+        self.woken = true;
+    }
+
+    /// A game started, so the screen may go dark again.
+    pub(crate) fn unwake(&mut self) {
+        self.woken = false;
     }
 
     /// Home+Down moves the window in front on the top screen to the bottom screen, shows it there, and
     /// remembers it for its program.
-    pub(crate) fn window_down(&mut self) -> Vec<Effect> {
-        let Some(w) = self.session.windows.iter().find(|w| w.focused && !w.down && w.home() != Some(Instance::Shelf)).cloned() else {
+    pub(crate) fn window_down(&mut self, session: &Session, now: u64) -> Vec<Effect> {
+        let Some(w) = session.windows.iter().find(|w| w.focused && !w.down && w.home() != Some(Instance::Shelf)) else {
             return vec![];
         };
         let mut effects = self.show_down(w.id);
         // The title is only used to tell it apart from another window of its program with the same
         // app id.
-        let others = self.session.windows.iter().any(|o| o.id != w.id && o.app_id == w.app_id && o.unit == w.unit);
+        let others = session.windows.iter().any(|o| o.id != w.id && o.app_id == w.app_id && o.unit == w.unit);
         let title = others.then(|| w.title.clone());
-        if let Some(owner) = self.owner(&w) {
-            let rule = WindowRule { owner, app_id: w.app_id.clone(), title };
-            effects.extend(self.window_rules.add(rule, &mut self.bottom.notice, self.clock.mono()));
+        if let Some(owner) = session.owner_of(w)
+            && self.window_rules.add(WindowRule { owner, app_id: w.app_id.clone(), title })
+        {
+            effects.extend(self.window_rules_changed(true, now));
         }
         effects
     }
 
     /// Moves a window down and shows it there, turning the bottom screen on again if it was off.
     fn show_down(&mut self, id: i64) -> Vec<Effect> {
-        self.bottom.screen.windows = true;
+        self.screen.windows = true;
         let mut effects = vec![Effect::Window(WindowCommand::Down(id))];
-        if std::mem::take(&mut self.bottom.screen.off) {
+        if std::mem::take(&mut self.screen.off) {
             effects.push(Effect::Window(WindowCommand::BottomPower(true)));
         }
         effects
@@ -257,25 +271,34 @@ impl State {
     /// Home+Up moves the window the bottom screen shows (the tab in view) back to its place on the top
     /// screen, and forgets its rule. The bottom screen then shows the next tab, or ClamShell's view after
     /// the last one.
-    pub(crate) fn window_up(&mut self) -> Vec<Effect> {
-        if !self.bottom_shows_windows() {
+    pub(crate) fn window_up(&mut self, session: &Session, now: u64) -> Vec<Effect> {
+        if !self.shows_windows(session) {
             return vec![];
         }
-        let Some(w) = self.windows_down().find(|w| w.visible).or_else(|| self.windows_down().next()).cloned() else {
+        let Some(w) = session.windows_down().find(|w| w.visible).or_else(|| session.windows_down().next()) else {
             return vec![];
         };
         let mut effects = vec![Effect::Window(WindowCommand::Up { window: w.id, to: w.home() })];
-        if let Some(owner) = self.owner(&w) {
-            effects.extend(self.window_rules.forget(&owner, &w, &mut self.bottom.notice, self.clock.mono()));
+        if let Some(owner) = session.owner_of(w)
+            && self.window_rules.forget(&owner, w)
+        {
+            effects.extend(self.window_rules_changed(false, now));
         }
         effects
     }
 
+    /// A rule was added or forgotten. That is shown in a notice, and the rules are saved and given to
+    /// sway.
+    fn window_rules_changed(&mut self, added: bool, now: u64) -> Vec<Effect> {
+        self.notify(NoticeKind::BottomRule(added), now);
+        vec![Effect::Save(Save::WindowRules(self.window_rules.clone())), self.window_rules.effect()]
+    }
+
     /// Home+Select switches the bottom screen between the windows moved there and ClamShell's view. It
     /// does nothing when no window is down.
-    pub(crate) fn toggle_bottom_view(&mut self) -> Vec<Effect> {
-        if self.windows_down().next().is_some() {
-            self.bottom.screen.windows = !self.bottom.screen.windows;
+    pub(crate) fn toggle_view(&mut self, session: &Session) -> Vec<Effect> {
+        if session.windows_down().next().is_some() {
+            self.screen.windows = !self.screen.windows;
         }
         vec![]
     }
@@ -283,57 +306,74 @@ impl State {
     /// A window of the program in front on the top screen that is on the bottom screen but hidden by
     /// ClamShell's view. The bar then offers to show them. Windows are matched by their scopes, which our
     /// programs run in. It doesn't allocate, since the bar asks every frame.
-    pub fn hidden_down(&self) -> Option<i64> {
-        if self.bottom_shows_windows() {
+    pub fn hidden_down(&self, session: &Session) -> Option<i64> {
+        if self.shows_windows(session) {
             return None;
         }
-        let front = self.session.windows.iter().find(|w| w.focused && !w.down)?.unit.as_deref().filter(|u| Instance::is_ours(u))?;
-        self.windows_down().find(|w| w.unit.as_deref() == Some(front)).map(|w| w.id)
+        let front = session.windows.iter().find(|w| w.focused && !w.down)?.unit.as_deref().filter(|u| Instance::is_ours(u))?;
+        session.windows_down().find(|w| w.unit.as_deref() == Some(front)).map(|w| w.id)
     }
 
     /// A tap on a program whose windows are all on the bottom screen shows them there, with its first
     /// tab in view.
     pub(crate) fn show_program_down(&mut self, window: i64) -> Vec<Effect> {
-        self.bottom.screen.windows = true;
+        self.screen.windows = true;
         vec![Effect::Window(WindowCommand::ShowDown(window))]
     }
 
     /// Home+Start turns the bottom screen off, or on again. If it had turned off by itself, this turns it
     /// on, as a touch would.
-    pub(crate) fn toggle_bottom_power(&mut self) -> Vec<Effect> {
-        if self.bottom.screen.idle_off && !self.bottom.screen.off {
-            self.bottom.used_at = Some(self.clock.mono());
-            self.bottom.woken = true;
-            return self.follow_bottom_power();
+    pub(crate) fn toggle_power(&mut self, p: Power, now: u64) -> Vec<Effect> {
+        if self.screen.idle_off && !self.screen.off {
+            self.used_at = Some(now);
+            self.woken = true;
+            return self.follow_power(p, now);
         }
-        self.bottom.screen.off = !self.bottom.screen.off;
+        self.screen.off = !self.screen.off;
         // Turned on again by hand, so it is in use and shouldn't turn off by itself either.
-        if !self.bottom.screen.off {
-            self.bottom.used_at = Some(self.clock.mono());
-            self.bottom.woken = true;
-            self.bottom.screen.idle_off = false;
+        if !self.screen.off {
+            self.used_at = Some(now);
+            self.woken = true;
+            self.screen.idle_off = false;
         }
-        vec![Effect::Window(WindowCommand::BottomPower(!self.bottom.screen.off))]
+        vec![Effect::Window(WindowCommand::BottomPower(!self.screen.off))]
     }
 
     /// Runs after the windows changed. A window whose program has a rule for it is sent down, once.
-    pub(crate) fn follow_window_rules(&mut self) -> Vec<Effect> {
+    pub(crate) fn follow_window_rules(&mut self, session: &Session) -> Vec<Effect> {
         let mut effects = Vec::new();
-        let wanted: Vec<i64> = self
-            .session
+        let wanted: Vec<i64> = session
             .windows
             .iter()
-            .filter(|w| !w.down && !self.session.sent_down.contains(&w.id))
-            .filter(|w| self.owner(w).is_some_and(|o| self.window_rules.wants(&o, w)))
+            .filter(|w| !w.down && !self.sent_down.contains(&w.id))
+            .filter(|w| session.owner_of(w).is_some_and(|o| self.window_rules.wants(&o, w)))
             .map(|w| w.id)
             .collect();
         for id in wanted {
-            self.session.sent_down.push(id);
+            self.sent_down.push(id);
             effects.extend(self.show_down(id));
         }
-        let open: Vec<i64> = self.session.windows.iter().map(|w| w.id).collect();
-        self.session.sent_down.retain(|id| open.contains(id));
+        self.sent_down.retain(|id| session.windows.iter().any(|w| w.id == *id));
         effects
+    }
+}
+
+impl State {
+    /// Whether the second screen is dark (see [`Bottom::dark`]).
+    pub fn bottom_dark(&self) -> bool {
+        self.bottom.dark(self.session.program.is_some(), self.in_force().choice::<BottomWhenIdle>())
+    }
+
+    /// What the second screen's power follows, as things are now.
+    pub(crate) fn power(&self) -> Power {
+        Power {
+            any_down: self.session.windows_down().next().is_some(),
+            in_game: self.session.program.is_some(),
+            when_idle: self.in_force().choice::<BottomWhenIdle>(),
+            discharging: self.sys.status().discharging,
+            refreshing: *self.device.refresh() == crate::device::Refresh::Running,
+            screens_off: self.idle.stage() >= crate::device::idle::Stage::Off,
+        }
     }
 }
 
@@ -402,7 +442,7 @@ mod tests {
     fn a_window_moved_down_is_shown_there_and_remembered() {
         let mut s = emulator();
         assert_eq!(key(&mut s, DeviceKey::BottomView), vec![], "nothing down: nothing to switch to");
-        assert!(!s.bottom_shows_windows());
+        assert!(!s.bottom().shows_windows(s.session()));
         let fx = key(&mut s, DeviceKey::WindowDown);
         assert_eq!(fx[0], Effect::Window(WindowCommand::Down(2)));
         // The title is included, since the emulator has another window with the same app id.
@@ -412,30 +452,30 @@ mod tests {
         assert_eq!(s.bottom().notice().map(|n| &n.what), Some(&NoticeKind::BottomRule(true)));
         // sway reports it down, so it is shown there.
         s.apply(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]));
-        assert!(s.bottom_shows_windows());
+        assert!(s.bottom().shows_windows(s.session()));
         // Home+Select shows ClamShell's view, where Home+Up does nothing, and then the windows again.
         key(&mut s, DeviceKey::BottomView);
-        assert!(!s.bottom_shows_windows());
+        assert!(!s.bottom().shows_windows(s.session()));
         assert_eq!(key(&mut s, DeviceKey::WindowUp), vec![]);
         key(&mut s, DeviceKey::BottomView);
-        assert!(s.bottom_shows_windows());
+        assert!(s.bottom().shows_windows(s.session()));
         // Up moves it back to its workspace, forgets the rule, and shows ClamShell's view below.
         let fx = key(&mut s, DeviceKey::WindowUp);
         assert_eq!(fx[0], Effect::Window(WindowCommand::Up { window: 2, to: Some(emu()) }));
         assert!(matches!(&fx[1], Effect::Save(Save::WindowRules(r)) if r.list().is_empty()), "{fx:?}");
         s.apply(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, false)]));
-        assert!(!s.bottom_shows_windows(), "none down: ClamShell's view");
+        assert!(!s.bottom().shows_windows(s.session()), "none down: ClamShell's view");
     }
 
     #[test]
     fn a_rule_sends_the_window_down_when_its_program_opens_it_again() {
         let mut s = emulator();
         key(&mut s, DeviceKey::WindowDown);
-        let rules = s.window_rules.clone();
+        let rules = s.bottom().window_rules().clone();
         // A fresh start with the rules. The game's windows open on top, and the one the rule names goes
         // down, once.
         let mut s = state();
-        s.window_rules = WindowRules::from_list(rules.list().to_vec());
+        s.bottom = Bottom::new(rules.clone());
         s.session.running.push(running("melonds", "melonds_1"));
         s.session.units.push(emu());
         let fx = s.apply(Event::Windows(vec![win(5, GAME, "Top", true, false), win(6, GAME, "Bottom", false, false)])).1;
@@ -445,7 +485,7 @@ mod tests {
         assert!(!fx.contains(&Effect::Window(WindowCommand::Down(6))), "asked once");
         // Its window appears before its scope is listed, and is sent down when the scope appears.
         let mut s = state();
-        s.window_rules = WindowRules::from_list(rules.list().to_vec());
+        s.bottom = Bottom::new(rules.clone());
         let fx = s.apply(Event::Windows(vec![win(8, GAME, "Bottom", true, false)])).1;
         assert!(!fx.iter().any(|e| matches!(e, Effect::Window(WindowCommand::Down(_)))), "no entry yet: {fx:?}");
         s.session.running.push(running("melonds", "melonds_1"));
@@ -472,7 +512,7 @@ mod tests {
         let fx = key(&mut s, DeviceKey::WindowUp);
         assert!(fx.contains(&Effect::Window(WindowCommand::Up { window: 1, to: Some(emu()) })), "the tab in view: {fx:?}");
         s.apply(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]));
-        assert!(s.bottom_shows_windows(), "the other tab");
+        assert!(s.bottom().shows_windows(s.session()), "the other tab");
         let fx = key(&mut s, DeviceKey::WindowUp);
         assert!(fx.contains(&Effect::Window(WindowCommand::Up { window: 2, to: Some(emu()) })), "{fx:?}");
     }
@@ -482,12 +522,12 @@ mod tests {
         let mut s = emulator();
         key(&mut s, DeviceKey::WindowDown);
         s.apply(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]));
-        assert_eq!(s.hidden_down(), None, "shown");
+        assert_eq!(s.bottom().hidden_down(s.session()), None, "shown");
         key(&mut s, DeviceKey::BottomView);
-        assert_eq!(s.hidden_down(), Some(2), "ClamShell's view over them");
+        assert_eq!(s.bottom().hidden_down(s.session()), Some(2), "ClamShell's view over them");
         let fx = s.apply(Event::Pointer(crate::PointerEvent::Activate(crate::Id::BottomWindows))).1;
         assert_eq!(fx, vec![Effect::Window(WindowCommand::ShowDown(2)), Effect::Watch(crate::Watch::Metrics, false)], "its view not seen: not watched");
-        assert!(s.bottom_shows_windows());
+        assert!(s.bottom().shows_windows(s.session()));
         // With another program in front, the bar doesn't offer these windows.
         key(&mut s, DeviceKey::BottomView);
         s.apply(Event::Windows(vec![
@@ -495,7 +535,7 @@ mod tests {
             win(2, GAME, "Bottom", false, true),
             win(3, "clamshell-run-x_1-1-0.scope", "x", true, false),
         ]));
-        assert_eq!(s.hidden_down(), None);
+        assert_eq!(s.bottom().hidden_down(s.session()), None);
     }
 
     /// A status reading that says the device is on battery or on the charger.
@@ -518,9 +558,9 @@ mod tests {
         s.apply(Event::tick(1000));
         assert_eq!(power(&s.apply(Event::tick(1000 + DIM_AFTER + OFF_AFTER - 1)).1), None, "dimmed, not yet off");
         assert_eq!(power(&s.apply(Event::tick(1000 + DIM_AFTER + OFF_AFTER)).1), Some(false), "off by itself");
-        assert!(s.bottom_off());
+        assert!(s.bottom().off());
         assert_eq!(power(&s.apply(Event::BottomTouched).1), Some(true), "a touch: on again");
-        assert!(!s.bottom_off());
+        assert!(!s.bottom().off());
     }
 
     #[test]
@@ -531,7 +571,7 @@ mod tests {
         s.apply(Event::Tick { unix_secs: 2 * year, mono_secs: 1000 });
         let at = |mono: u64| Event::Tick { unix_secs: year + mono, mono_secs: mono };
         assert_eq!(power(&s.apply(at(1000 + DIM_AFTER + OFF_AFTER - 1)).1), None);
-        assert!(s.bottom_dimmed(), "dimmed on time");
+        assert!(s.bottom().dimmed(), "dimmed on time");
         assert_eq!(power(&s.apply(at(1000 + DIM_AFTER + OFF_AFTER)).1), Some(false), "off on time");
     }
 
@@ -558,7 +598,7 @@ mod tests {
         s.settings.global.set(Setting::BottomScreen, BottomWhenIdle::DarkInGame.value());
         crate::testkit::start(&mut s, "zelda-lttp");
         assert!(s.bottom_dark());
-        assert!(s.bottom_off(), "dark on battery: off at once");
+        assert!(s.bottom().off(), "dark on battery: off at once");
         assert_eq!(power(&s.apply(Event::Pointer(crate::PointerEvent::Activate(crate::Id::Wake))).1), Some(true), "tapped: on");
     }
 
@@ -580,7 +620,7 @@ mod tests {
         key(&mut s, DeviceKey::BottomPower);
         s.apply(Event::tick(1000 + DIM_AFTER + OFF_AFTER));
         assert_eq!(power(&key(&mut s, DeviceKey::BottomPower)), Some(true), "one press");
-        assert!(!s.bottom_off(), "on, and not off by itself either");
+        assert!(!s.bottom().off(), "on, and not off by itself either");
     }
 
     #[test]
@@ -590,7 +630,7 @@ mod tests {
         s.apply(Event::tick(1000));
         s.apply(Event::tick(1000 + DIM_AFTER + OFF_AFTER));
         assert_eq!(power(&key(&mut s, DeviceKey::BottomPower)), Some(true), "on, as a touch would");
-        assert!(!s.bottom_off());
+        assert!(!s.bottom().off());
     }
 
     #[test]
@@ -598,27 +638,27 @@ mod tests {
         let mut s = state();
         s.apply(Event::tick(1000));
         s.apply(Event::tick(1000 + DIM_AFTER - 1));
-        assert!(!s.bottom_dimmed());
+        assert!(!s.bottom().dimmed());
         let (dirty, _) = s.apply(Event::tick(1000 + DIM_AFTER));
-        assert!(s.bottom_dimmed() && dirty.bottom, "untouched a while: dimmed, redrawn");
+        assert!(s.bottom().dimmed() && dirty.bottom, "untouched a while: dimmed, redrawn");
         // A touch on it lights it.
         let (dirty, _) = s.apply(Event::BottomTouched);
-        assert!(!s.bottom_dimmed() && dirty.bottom);
+        assert!(!s.bottom().dimmed() && dirty.bottom);
         // The pad's focus coming to one of its targets lights it too, but not shelf's targets on the main
         // screen.
         s.apply(Event::tick(1000 + 3 * DIM_AFTER));
-        assert!(s.bottom_dimmed());
+        assert!(s.bottom().dimmed());
         s.apply(Event::Pointer(crate::PointerEvent::Focus(crate::Id::Shelf(crate::ShelfId::Launch))));
-        assert!(s.bottom_dimmed(), "the main screen's");
+        assert!(s.bottom().dimmed(), "the main screen's");
         s.apply(Event::Pointer(crate::PointerEvent::Focus(crate::Id::Tab(crate::Tab::Dock))));
-        assert!(!s.bottom_dimmed());
+        assert!(!s.bottom().dimmed());
         // Windows moved there are watched without touching, so they are never dimmed.
         let mut s = emulator();
         key(&mut s, DeviceKey::WindowDown);
         s.apply(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]));
         s.apply(Event::tick(5000));
         s.apply(Event::tick(5000 + 2 * DIM_AFTER));
-        assert!(s.bottom_shows_windows() && !s.bottom_dimmed());
+        assert!(s.bottom().shows_windows(s.session()) && !s.bottom().dimmed());
     }
 
     #[test]
@@ -626,10 +666,10 @@ mod tests {
         let mut s = emulator();
         let off = vec![Effect::Window(WindowCommand::BottomPower(false)), Effect::Watch(crate::Watch::Metrics, false)];
         assert_eq!(key(&mut s, DeviceKey::BottomPower), off, "nothing seen: not watched");
-        assert!(s.bottom_off());
+        assert!(s.bottom().off());
         // A window moved down turns it on again.
         let fx = key(&mut s, DeviceKey::WindowDown);
         assert!(fx.contains(&Effect::Window(WindowCommand::BottomPower(true))), "{fx:?}");
-        assert!(!s.bottom_off());
+        assert!(!s.bottom().off());
     }
 }

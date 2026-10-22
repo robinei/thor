@@ -99,35 +99,44 @@ impl Tab {
 /// The second screen's own state.
 #[derive(Debug, Clone, Default)]
 pub struct Bottom {
-    pub(crate) tab: Tab,
+    tab: Tab,
     /// When the second screen was last touched or had the pad's focus, in monotonic seconds as in
     /// [`crate::Event::Tick`]. None before the clock's first reading. Also whether the screen is drawn
-    /// dimmed (see [`crate::State::bottom_dimmed`]).
-    pub(crate) used_at: Option<u64>,
-    pub(crate) dimmed: bool,
+    /// dimmed (see [`Bottom::dimmed`]).
+    used_at: Option<u64>,
+    dimmed: bool,
     /// The tab that was open when an app's text field brought up the keyboard. The screen goes back to it
     /// when the field is done, unless the user chose a tab in the meantime.
-    pub(crate) raised_from: Option<Tab>,
-    pub(crate) editors: Editors,
+    raised_from: Option<Tab>,
+    editors: Editors,
     /// What the settings panel edits. It is global whenever there is no game in context.
-    pub(crate) scope: Scope,
+    scope: Scope,
     /// The darkened second screen was tapped awake. This lasts until the next game.
-    pub(crate) woken: bool,
+    woken: bool,
     /// What the bottom screen shows, ClamShell's view or a window moved down, and whether it is off.
-    pub(crate) screen: crate::bottom::screen::BottomScreen,
+    screen: screen::BottomScreen,
+    /// Which programs' windows go to the bottom screen.
+    window_rules: screen::WindowRules,
+    /// Windows a rule sent to the bottom screen. Each is sent once and dropped from here when it closes.
+    sent_down: Vec<i64>,
     /// What a key just did, such as change a level or take a screenshot, shown under the bar for a
     /// moment.
-    pub(crate) notice: Option<Notice>,
+    notice: Option<Notice>,
     /// Whether the area below the bar is pointing (see [`crate::bottom::touch`]).
-    pub(crate) pointing: bool,
+    pointing: bool,
     /// The text on the system clipboard, for Ctrl+V in the editor. Files copied in the Files tab use their
     /// own clipboard (see [`crate::shelf::files`]).
-    pub(crate) clipboard: Option<std::sync::Arc<str>>,
+    clipboard: Option<std::sync::Arc<str>>,
     /// The tab chosen changed and isn't saved yet (see [`crate::Resume`]).
-    pub(crate) unsaved: bool,
+    unsaved: bool,
 }
 
 impl Bottom {
+    /// The second screen at start, with the saved window rules.
+    pub(crate) fn new(window_rules: screen::WindowRules) -> Bottom {
+        Bottom { window_rules, ..Bottom::default() }
+    }
+
     pub fn tab(&self) -> Tab {
         self.tab
     }
@@ -164,6 +173,10 @@ impl Bottom {
 
     pub fn notice(&self) -> Option<&Notice> {
         self.notice.as_ref()
+    }
+
+    pub fn window_rules(&self) -> &screen::WindowRules {
+        &self.window_rules
     }
 
     pub fn scope(&self) -> Scope {

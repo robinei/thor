@@ -92,7 +92,7 @@ pub fn bottom(f: &mut Frame, screen: Rect) {
     f.out.touchpad_area = Some(body);
     // Dimmed when untouched for a while and the pad is in use elsewhere, as the screens are before they
     // go off.
-    if f.s.bottom_dimmed() {
+    if f.s.bottom().dimmed() {
         f.c.fill(screen, crate::gfx::Rgb(0).alpha(BOTTOM_DIM));
     }
 }

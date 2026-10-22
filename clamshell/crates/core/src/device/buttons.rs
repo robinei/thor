@@ -46,12 +46,12 @@ impl State {
                 return self.levels.toggle_mute();
             }
             DeviceKey::Screenshot => return vec![Effect::Screenshot],
-            DeviceKey::BottomView => return self.toggle_bottom_view(),
+            DeviceKey::BottomView => return self.bottom.toggle_view(&self.session),
             DeviceKey::CloseWindow => return self.close_front_window(),
             DeviceKey::Quit => return self.quit_front(),
-            DeviceKey::BottomPower => return self.toggle_bottom_power(),
-            DeviceKey::WindowDown => return self.window_down(),
-            DeviceKey::WindowUp => return self.window_up(),
+            DeviceKey::BottomPower => return self.bottom.toggle_power(self.power(), self.clock.mono()),
+            DeviceKey::WindowDown => return self.bottom.window_down(&self.session, self.clock.mono()),
+            DeviceKey::WindowUp => return self.bottom.window_up(&self.session, self.clock.mono()),
         };
         let control = if level == Level::Volume { Control::Volume } else { Control::Brightness };
         self.bottom.notify(NoticeKind::Level(control), self.clock.mono());
@@ -60,7 +60,7 @@ impl State {
 
     /// Home with B, released at once, asks that window (see [`Session::home_b_window`]) to close.
     pub(crate) fn close_front_window(&self) -> Vec<Effect> {
-        match self.session.home_b_window(self.bottom_shows_windows()) {
+        match self.session.home_b_window(self.bottom.shows_windows(&self.session)) {
             Some(w) => vec![Effect::Window(WindowCommand::Close(vec![w.id]))],
             None => vec![],
         }
@@ -69,7 +69,7 @@ impl State {
     /// Home with B, held, quits that window's entry, as Quit in its menu would. Any other window is just
     /// closed.
     pub(crate) fn quit_front(&mut self) -> Vec<Effect> {
-        let Some(w) = self.session.home_b_window(self.bottom_shows_windows()) else {
+        let Some(w) = self.session.home_b_window(self.bottom.shows_windows(&self.session)) else {
             return vec![];
         };
         let (id, entry) = (w.id, self.session.running_of(w).map(|r| r.id.clone()));

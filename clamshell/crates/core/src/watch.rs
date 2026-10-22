@@ -73,7 +73,7 @@ impl State {
         };
         let wanted = Wanted {
             screens_off: self.idle.stage() >= Stage::Off,
-            bottom_seen: !self.bottom_shows_windows() && !self.bottom_off(),
+            bottom_seen: !self.bottom.shows_windows(&self.session) && !self.bottom.off(),
             tab,
             device_open: self.device.is_open(),
         };

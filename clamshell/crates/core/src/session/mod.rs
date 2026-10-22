@@ -33,8 +33,6 @@ pub struct Session {
     pub(crate) launching: Vec<Launching>,
     /// The compositor's windows.
     pub(crate) windows: Vec<Window>,
-    /// Windows a rule sent to the bottom screen. Each is sent once and dropped from here when it closes.
-    pub(crate) sent_down: Vec<i64>,
     /// Our running scopes, as systemd lists them.
     pub(crate) units: Vec<Instance>,
     /// Workspaces by when they were last in front, most recent first.
@@ -132,6 +130,16 @@ impl Session {
             .or_else(|| by_key(w.unit.as_deref().and_then(Instance::key_of)))
             .or_else(|| self.running.iter().find(|r| r.fathered(w)))
             .or_else(|| by_key(Instance::key_of(&w.workspace)))
+    }
+
+    /// The id of the running entry a window belongs to (see [`Session::running_of`]).
+    pub(crate) fn owner_of(&self, w: &Window) -> Option<Arc<str>> {
+        self.running_of(w).map(|r| r.id.clone())
+    }
+
+    /// The windows moved to the bottom screen, in the compositor's order.
+    pub fn windows_down(&self) -> impl Iterator<Item = &Window> {
+        self.windows.iter().filter(|w| w.down)
     }
 
     /// The windows of running entry `id`, including those moved to the bottom screen.

@@ -104,7 +104,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> Rect {
     };
     // On the right: the hidden windows' button, the pad mouse, the clock, and the line before them.
     let windows = bar.take_right(bar_h * SLOT);
-    if f.s.hidden_down().is_some() {
+    if f.s.bottom().hidden_down(f.s.session()).is_some() {
         icon_button(f, Id::BottomWindows, windows, Icon::Windows, Tone::Fn);
     }
     let mouse = bar.take_right(bar_h * SLOT);

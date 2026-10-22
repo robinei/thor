@@ -26,7 +26,7 @@ impl State {
                 dirty = dirty.or(Dirty::BOTTOM);
             }
         }
-        if self.follow_bottom_dim() {
+        if self.bottom.follow_dim(&self.session, &self.clock) {
             dirty = dirty.or(Dirty::BOTTOM);
         }
         effects.extend(self.follow_shown());
@@ -37,7 +37,7 @@ impl State {
         effects.extend(applied);
         // This comes after the program in force is settled, since it reads that program's setting and
         // darkness. If it changed anything, the watch is followed again.
-        let power = self.follow_bottom_power();
+        let power = self.bottom.follow_power(self.power(), self.clock.mono());
         if !power.is_empty() {
             effects.extend(power);
             effects.extend(self.follow_watch());
@@ -84,7 +84,7 @@ impl State {
             effects.extend(self.start_autostart());
         }
         let by_windows = self.follow_windows(&known);
-        effects.extend(self.follow_window_rules());
+        effects.extend(self.bottom.follow_window_rules(&self.session));
         effects.extend(self.follow_background());
         effects.extend(self.session.show_pending());
         effects.extend(self.session.show_reopened(self.clock.mono()));
@@ -177,7 +177,7 @@ impl State {
                 (Dirty::NONE, vec![])
             }
             Event::Device(key) => (Dirty::BOTTOM, self.on_device_key(key)),
-            Event::BottomTouched => (self.bottom_used(), vec![]),
+            Event::BottomTouched => (self.bottom.used(&self.session, &self.clock), vec![]),
             Event::Frozen(keys) => {
                 self.found_frozen(keys);
                 (Dirty::BOTTOM, vec![])
@@ -195,7 +195,7 @@ impl State {
                 self.device.refresh_done(result);
                 // The tool turned the bottom screen off while it ran and then restored it. Set it to what
                 // ClamShell wants.
-                (Dirty::TOP, vec![Effect::Window(WindowCommand::BottomPower(!self.bottom_off()))])
+                (Dirty::TOP, vec![Effect::Window(WindowCommand::BottomPower(!self.bottom.off()))])
             }
             Event::GyroCalibrated(ok) => {
                 self.bottom.notify(crate::bottom::notice::NoticeKind::Gyro(Some(ok)), self.clock.mono());
@@ -225,7 +225,7 @@ impl State {
             PointerEvent::Focus(id) | PointerEvent::Activate(id) | PointerEvent::LongPress(id) | PointerEvent::Down(id) => id.screen() == Dirty::BOTTOM,
             _ => false,
         };
-        let lit = if used { self.bottom_used() } else { Dirty::NONE };
+        let lit = if used { self.bottom.used(&self.session, &self.clock) } else { Dirty::NONE };
         let (dirty, effects) = self.on_pointer(e);
         (dirty.or(lit), effects)
     }
@@ -280,7 +280,7 @@ impl State {
         effects.push(Effect::PadRoute(self.pad.route()));
         effects.extend(self.follow_runner_keymaps());
         effects.extend(self.follow_keymap(true));
-        effects.push(self.window_rules.effect());
+        effects.push(self.bottom.window_rules().effect());
         effects
     }
 
@@ -446,8 +446,8 @@ impl State {
                 };
                 (Dirty::BOTTOM, effects)
             }
-            Id::BottomWindows => match self.hidden_down() {
-                Some(window) => (Dirty::BOTH, self.show_program_down(window)),
+            Id::BottomWindows => match self.bottom.hidden_down(&self.session) {
+                Some(window) => (Dirty::BOTH, self.bottom.show_program_down(window)),
                 None => (Dirty::NONE, vec![]),
             },
             Id::Time(id) => self.sys.on_time(id, self.lists.get_mut(ListId::Time)),
@@ -467,7 +467,7 @@ impl State {
                 (Dirty::BOTTOM, vec![])
             }
             Id::Wake => {
-                self.bottom.woken = true;
+                self.bottom.wake();
                 (Dirty::BOTTOM, vec![])
             }
         }

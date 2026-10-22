@@ -77,7 +77,7 @@ and the UI change with the code they call; doc links to moved methods are fixed 
       rules (taking the Time list's scroll) and the battery tab's.
 - [x] 6. Device and Idle: `first_start`, `account` in; taps, sticks, refresh; `Idle::follow`.
 - [x] 7. `Watches`.
-- [ ] 8. Bottom: notices, screen rules (`Power`), window rules and `sent_down`, tabs, clipboard, pointing,
+- [x] 8. Bottom: notices, screen rules (`Power`), window rules and `sent_down`, tabs, clipboard, pointing,
       text input, the editor (`Bottom::edit`, State's `editor_done`); `Pointer` methods; `Keyboard::hold`.
 - [ ] 9. Shelf: `Files`, `fetching`, `shown` in; files and rules and actions onto `Shelf`; the unsaved
       flag and the resume debounce on State.
