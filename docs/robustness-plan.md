@@ -68,7 +68,10 @@ Open, as they change behaviour:
 Plain sentences with articles, one idea each; no colon chains or parentheses stacked in parentheses.
 Rewrite what is hard to read and leave what reads well; don't add comments or lengthen them.
 
-- [ ] core
-- [ ] system
-- [ ] ui
-- [ ] binary, library, fan
+- [x] core
+- [x] system
+- [x] ui
+- [x] binary, library, fan
+
+About 3,000 comments rewritten, the rest left; about 45 found contradicting the code and corrected (one, a
+long press locking a keyboard modifier, has a commit of its own). Only comment lines changed.
