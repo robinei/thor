@@ -6,36 +6,20 @@ fn round_trip(maps: &Keymaps) -> Keymaps {
     Keymaps::from_list(saved.iter().map(|k| serde_json::from_str(k).unwrap()).collect())
 }
 
-fn chord(text: &str) -> Chord {
-    Chord::parse(text).unwrap()
-}
-
-#[test]
-fn chords_as_text() {
-    let mut text = String::new();
-    chord("x+ctrl").write(&mut text).unwrap();
-    assert_eq!(text, "ctrl+x", "modifiers first");
-    for t in ["shift", "space", "f5", "alt+tab", "ctrl+shift+=", "pagedown", "super+d", "/"] {
-        let mut back = String::new();
-        chord(t).write(&mut back).unwrap();
-        assert_eq!(back, t);
-    }
-    assert_eq!(Chord::parse("ctrl+x+y"), None, "two keys");
-    assert_eq!(Chord::parse("f13"), None);
-    assert_eq!(Chord::parse("é"), None, "no key types it");
-    assert_eq!(Chord::parse(""), None);
+fn ctrl(c: char) -> Chord {
+    Chord { ctrl: true, ..Chord::of(Key::Char(c)) }
 }
 
 #[test]
 fn only_fitting_targets_bind() {
     let mut k = Keymap::new(1, "k");
-    assert!(k.set(Input::Button(Button::A), Some(Binding::to(Output::Key(chord("ctrl+x"))))));
+    assert!(k.set(Input::Button(Button::A), Some(Binding::to(Output::Key(ctrl('x'))))));
     assert!(!k.set(Input::Button(Button::A), Some(Binding::to(Output::Pointer))), "a button can't move the pointer");
     assert!(!k.set(Input::Stick(Side::Right), Some(Binding::to(Output::Mouse(MouseButton::Left)))));
     assert!(k.set(Input::Stick(Side::Right), Some(Binding::to(Output::Pointer))));
-    assert!(k.set(Input::Trigger(Side::Left), Some(Binding::to(Output::Key(chord("shift"))))), "a trigger past its threshold");
+    assert!(k.set(Input::Trigger(Side::Left), Some(Binding::to(Output::Key(Chord { shift: true, ..Chord::default() })))), "a trigger past its threshold");
     assert!(!k.set(Input::Trigger(Side::Left), Some(Binding::to(Output::Dpad))));
-    assert!(!k.set(Input::Gyro, Some(Binding::to(Output::Keys([chord("w"); 4])))));
+    assert!(!k.set(Input::Gyro, Some(Binding::to(Output::Keys([Chord::of(Key::Char('w')); 4])))));
     assert!(k.set(Input::Gyro, Some(Binding::to(Output::Stick(Side::Right)))));
     for kind in [Kind::Digital, Kind::Stick, Kind::Trigger, Kind::Gyro] {
         assert!(Output::Nothing.fits(kind));
@@ -50,10 +34,13 @@ fn keymaps_round_trip() {
     let mut maps = Keymaps::initial();
     let fps = maps.add("FPS");
     let k = maps.get_mut(fps).unwrap();
-    k.set(Input::Button(Button::A), Some(Binding::to(Output::Key(chord("ctrl+x")))));
+    k.set(Input::Button(Button::A), Some(Binding::to(Output::Key(ctrl('x')))));
     k.set(Input::Stick(Side::Right), Some(Binding { speed: 75, deadzone: 20, full: 90, curve: 40, invert_y: true, ..Binding::to(Output::Pointer) }));
     k.set(Input::Trigger(Side::Right), Some(Binding { deadzone: 5, ..Binding::to(Output::Trigger(Side::Right)) }));
-    k.set(Input::Stick(Side::Left), Some(Binding::to(Output::Keys([chord("w"), chord("a"), chord("s"), chord("d")]))));
+    k.set(
+        Input::Stick(Side::Left),
+        Some(Binding::to(Output::Keys([Chord::of(Key::Char('w')), Chord::of(Key::Char('a')), Chord::of(Key::Char('s')), Chord::of(Key::Char('d'))]))),
+    );
     k.set(Input::Trigger(Side::Left), Some(Binding { threshold: 25, ..Binding::to(Output::Mouse(MouseButton::Right)) }));
     k.set(Input::StickDir(Side::Right, Dir::Up), Some(Binding::to(Output::Wheel(Dir::Up))));
     k.set(Input::Dpad(Dir::Down), Some(Binding::to(Output::Nothing)));
@@ -83,8 +70,8 @@ fn layers_are_named_targets() {
     assert_eq!(aim, Layer(1));
     assert!(k.set(Input::Button(Button::LB), Some(Binding::to(Output::Layer(aim)))));
     assert!(!k.set(Input::Button(Button::RB), Some(Binding::to(Output::Layer(Layer(9))))), "not there");
-    assert!(k.set_in(aim, a, Some(Binding::to(Output::Key(chord("y"))))));
-    assert_eq!(k.lookup(a, &[aim]).map(|b| b.output), Some(Output::Key(chord("y"))));
+    assert!(k.set_in(aim, a, Some(Binding::to(Output::Key(Chord::of(Key::Char('y')))))));
+    assert_eq!(k.lookup(a, &[aim]).map(|b| b.output), Some(Output::Key(Chord::of(Key::Char('y')))));
     assert_eq!(k.lookup(a, &[]), None, "Base: as on the pad");
     let maps = Keymaps { list: vec![k.clone()] };
     assert_eq!(round_trip(&maps), maps);
@@ -134,25 +121,28 @@ fn parameters_stay_in_range_and_apply_by_target() {
     let maps = Keymaps { list: vec![k] };
     assert_eq!(round_trip(&maps), maps);
     assert_eq!(ps(Input::Gyro, Output::Nothing), vec![], "off");
-    assert_eq!(ps(Input::Trigger(Side::Left), Output::Key(chord("x"))), vec![Param::Deadzone, Param::Full, Param::Threshold, Param::Turbo, Param::Toggle]);
+    assert_eq!(
+        ps(Input::Trigger(Side::Left), Output::Key(Chord::of(Key::Char('x')))),
+        vec![Param::Deadzone, Param::Full, Param::Threshold, Param::Turbo, Param::Toggle]
+    );
     assert_eq!(ps(Input::Trigger(Side::Left), Output::Trigger(Side::Right)), vec![Param::Deadzone, Param::Full]);
-    assert_eq!(ps(Input::Button(Button::A), Output::Key(chord("x"))), vec![Param::Turbo, Param::Toggle]);
+    assert_eq!(ps(Input::Button(Button::A), Output::Key(Chord::of(Key::Char('x')))), vec![Param::Turbo, Param::Toggle]);
     assert_eq!(ps(Input::Button(Button::A), Output::Nothing), vec![], "nothing has no turbo");
     let a = Input::Button(Button::A);
-    assert_eq!(params_of(a, Output::Key(chord("x")), Actuation::Hold).collect::<Vec<_>>(), vec![Param::HoldTime, Param::Turbo, Param::Toggle]);
+    assert_eq!(params_of(a, Output::Key(Chord::of(Key::Char('x'))), Actuation::Hold).collect::<Vec<_>>(), vec![Param::HoldTime, Param::Turbo, Param::Toggle]);
 }
 
 #[test]
 fn holds_doubles_turbo_and_toggle_are_kept() {
     let a = Input::Button(Button::A);
     let mut k = Keymap::new(4, "Combo");
-    assert!(k.set(a, Some(Binding { turbo: 12, ..Binding::to(Output::Key(chord("x"))) })));
-    assert!(k.set_of(Layer::BASE, a, Actuation::Hold, Some(Binding { hold_time: 60, ..Binding::to(Output::Key(chord("esc"))) })));
+    assert!(k.set(a, Some(Binding { turbo: 12, ..Binding::to(Output::Key(Chord::of(Key::Char('x')))) })));
+    assert!(k.set_of(Layer::BASE, a, Actuation::Hold, Some(Binding { hold_time: 60, ..Binding::to(Output::Key(Chord::of(Key::Named(Named::Esc)))) })));
     assert!(k.set_of(Layer::BASE, a, Actuation::Double, Some(Binding { toggle: true, ..Binding::to(Output::Mouse(MouseButton::Left)) })));
     assert!(!k.set_of(Layer::BASE, Input::Stick(Side::Left), Actuation::Hold, Some(Binding::to(Output::Pointer))), "a stick has no hold");
     let aim = k.add_layer("Aim").unwrap();
-    assert!(k.set_of(aim, a, Actuation::Hold, Some(Binding::to(Output::Key(chord("tab"))))));
-    assert_eq!(k.lookup_of(a, Actuation::Hold, &[aim]).map(|b| b.output), Some(Output::Key(chord("tab"))));
+    assert!(k.set_of(aim, a, Actuation::Hold, Some(Binding::to(Output::Key(Chord::of(Key::Named(Named::Tab)))))));
+    assert_eq!(k.lookup_of(a, Actuation::Hold, &[aim]).map(|b| b.output), Some(Output::Key(Chord::of(Key::Named(Named::Tab)))));
     assert_eq!(k.lookup_of(a, Actuation::Double, &[aim]).map(|b| b.toggle), Some(true), "falls through");
     let maps = Keymaps { list: vec![k] };
     assert_eq!(round_trip(&maps), maps);
@@ -205,7 +195,7 @@ fn layers_round_trip() {
     let mut maps = Keymaps::initial();
     let k = maps.get_mut(1).unwrap();
     let aim = k.add_layer("Aim").unwrap();
-    assert!(k.set_in(aim, Input::Button(Button::A), Some(Binding::to(Output::Key(chord("ctrl+y"))))));
+    assert!(k.set_in(aim, Input::Button(Button::A), Some(Binding::to(Output::Key(ctrl('y'))))));
     assert!(k.set_in(aim, Input::Gyro, Some(Binding { hold: Some(Input::Button(Button::RB)), ..Binding::to(Output::Pointer) })));
     assert!(k.set_in(aim, Input::Button(Button::B), as_on_the_pad(Input::Button(Button::B)).map(Binding::to)));
     assert!(!k.set_layer_once(Layer::BASE, true), "Base is never Once");

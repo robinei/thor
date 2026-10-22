@@ -118,7 +118,7 @@ pub enum Kind {
 }
 
 impl Input {
-    /// Every input, in the order keymaps are written.
+    /// Every input, in the order a keymap keeps its bindings.
     pub fn all() -> impl Iterator<Item = Input> {
         let buttons = Button::ALL.into_iter().map(Input::Button);
         let dpad = Dir::ALL.into_iter().map(Input::Dpad);
@@ -136,7 +136,7 @@ impl Input {
         }
     }
 
-    /// Its name in the keymap file and the control pipe: `a`, `up`, `lstick`, `lstick-up`, `lt`, `gyro`.
+    /// Its name in the control pipe: `a`, `up`, `lstick`, `lstick-up`, `lt`, `gyro`.
     pub fn name(self, out: &mut impl Write) -> fmt::Result {
         match self {
             Input::Button(b) => out.write_str(b.name()),
@@ -148,6 +148,7 @@ impl Input {
         }
     }
 
+    /// The input with this name in the control pipe.
     pub fn parse(word: &str) -> Option<Input> {
         Input::all().find(|i| {
             let mut name = String::new();

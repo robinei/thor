@@ -167,9 +167,8 @@ pub enum Actuation {
     FullPull,
 }
 
-// (The name is its word after the input in the keymap file; a press has none.)
 names!(Actuation {
-    Press: "", "Press";
+    Press: "press", "Press";
     Hold: "hold", "Hold";
     Double: "double", "Double";
     FullPull: "full", "Full pull";

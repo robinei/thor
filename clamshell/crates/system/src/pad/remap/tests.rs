@@ -3,7 +3,7 @@ use crate::input::Range;
 use crate::pad::motion::Sample;
 use crate::pad::route::{Axis, PadRouter};
 use clamshell_core::PadRoute;
-use clamshell_core::keyboard::Key;
+use clamshell_core::keyboard::{Key, Named};
 
 const STICK_MAX: i32 = 32767;
 
@@ -75,8 +75,8 @@ fn sum(events: &[Raw], code: RelativeAxisCode) -> i32 {
     events.iter().filter(|e| e.kind == evdev::EventType::RELATIVE && e.code == code.0).map(|e| e.value).sum()
 }
 
-fn chord(text: &str) -> Chord {
-    Chord::parse(text).unwrap()
+fn ctrl(c: char) -> Chord {
+    Chord { ctrl: true, ..Chord::of(Key::Char(c)) }
 }
 
 #[test]
@@ -92,7 +92,7 @@ fn a_button_to_another_button() {
 
 #[test]
 fn a_button_to_a_key_chord_held_while_held() {
-    let k = keymap(&[(Input::Button(Button::A), to(Output::Key(chord("ctrl+x"))))]);
+    let k = keymap(&[(Input::Button(Button::A), to(Output::Key(ctrl('x'))))]);
     let (mut r, mut out) = router(k, PadRoute::Game);
     press(&mut r, KeyCode::BTN_SOUTH, true, &mut out);
     let downs: Vec<Raw> = out.mouse.iter().copied().filter(|e| e.as_key().is_some()).collect();
@@ -108,7 +108,7 @@ fn a_button_to_a_key_chord_held_while_held() {
 
 #[test]
 fn two_chords_share_a_modifier() {
-    let k = keymap(&[(Input::Button(Button::A), to(Output::Key(chord("ctrl+x")))), (Input::Button(Button::B), to(Output::Key(chord("ctrl+c"))))]);
+    let k = keymap(&[(Input::Button(Button::A), to(Output::Key(ctrl('x')))), (Input::Button(Button::B), to(Output::Key(ctrl('c'))))]);
     let (mut r, mut out) = router(k, PadRoute::Game);
     press(&mut r, KeyCode::BTN_SOUTH, true, &mut out);
     press(&mut r, KeyCode::BTN_EAST, true, &mut out);
@@ -145,7 +145,10 @@ fn buttons_to_the_mouse_and_the_wheel() {
 fn a_stick_to_the_pointer_to_keys_and_to_the_other_stick() {
     let k = keymap(&[
         (Input::Stick(Side::Right), to(Output::Pointer)),
-        (Input::Stick(Side::Left), to(Output::Keys([chord("w"), chord("a"), chord("s"), chord("d")]))),
+        (
+            Input::Stick(Side::Left),
+            to(Output::Keys([Chord::of(Key::Char('w')), Chord::of(Key::Char('a')), Chord::of(Key::Char('s')), Chord::of(Key::Char('d'))])),
+        ),
     ]);
     let (mut r, mut out) = router(k, PadRoute::Game);
     let t0 = Instant::now();
@@ -190,7 +193,7 @@ fn a_stick_to_the_dpad() {
 #[test]
 fn a_trigger_past_its_threshold_and_to_the_other_trigger() {
     let k = keymap(&[
-        (Input::Trigger(Side::Left), Binding { threshold: 75, ..to(Output::Key(chord("shift"))) }),
+        (Input::Trigger(Side::Left), Binding { threshold: 75, ..to(Output::Key(Chord { shift: true, ..Chord::default() })) }),
         (Input::Trigger(Side::Right), to(Output::Trigger(Side::Left))),
     ]);
     let (mut r, mut out) = router(k, PadRoute::Game);
@@ -305,7 +308,7 @@ fn the_gyro_to_a_stick() {
 #[test]
 fn only_the_game_route_is_remapped_and_nothing_stays_down() {
     let k = keymap(&[
-        (Input::Button(Button::A), to(Output::Key(chord("ctrl+x")))),
+        (Input::Button(Button::A), to(Output::Key(ctrl('x')))),
         (Input::Button(Button::B), to(Output::Pad(PadOut::Button(Button::X)))),
         (Input::Button(Button::X), to(Output::Mouse(MouseButton::Left))),
         (Input::Stick(Side::Right), to(Output::Pointer)),
@@ -368,7 +371,7 @@ fn the_ayn_button_is_the_games_guide_unless_mapped() {
     assert_eq!(held(&out.pad), vec![KeyCode::BTN_MODE], "another button to AYN: Guide");
 }
 
-/// `input` bound in a layer on while Back is held (made the first time), as old Back layers load.
+/// Binds `input` in a layer that is on while Back is held, making the layer the first time.
 fn back_layer(k: &mut Keymap, input: Input, b: Binding) {
     let held = k.layers().find(|(_, n)| *n == "held").map(|(l, _)| l);
     let layer = held.or_else(|| k.add_layer("held")).unwrap();
@@ -378,8 +381,8 @@ fn back_layer(k: &mut Keymap, input: Input, b: Binding) {
 
 #[test]
 fn the_back_layer_while_back_is_held_and_nothing_stuck_letting_go_mid_press() {
-    let mut k = keymap(&[(Input::Button(Button::A), to(Output::Key(chord("ctrl+x")))), (Input::Button(Button::B), to(Output::Key(chord("z"))))]);
-    back_layer(&mut k, Input::Button(Button::A), to(Output::Key(chord("ctrl+y"))));
+    let mut k = keymap(&[(Input::Button(Button::A), to(Output::Key(ctrl('x')))), (Input::Button(Button::B), to(Output::Key(Chord::of(Key::Char('z')))))]);
+    back_layer(&mut k, Input::Button(Button::A), to(Output::Key(ctrl('y'))));
     let (mut r, mut out) = router(k, PadRoute::Game);
     press(&mut r, KeyCode::BTN_SOUTH, true, &mut out);
     assert_eq!(held(&out.mouse), vec![KeyCode::KEY_LEFTCTRL, KeyCode::KEY_X], "main");
@@ -388,7 +391,7 @@ fn the_back_layer_while_back_is_held_and_nothing_stuck_letting_go_mid_press() {
     assert!(out.pad.is_empty() && held(&out.mouse).is_empty(), "Back alone sends nothing: {out:?}");
     press(&mut r, KeyCode::BTN_SOUTH, true, &mut out);
     press(&mut r, KeyCode::BTN_EAST, true, &mut out);
-    assert_eq!(held(&out.mouse), vec![KeyCode::KEY_Y, KeyCode::KEY_LEFTCTRL, KeyCode::KEY_Z], "the Back layer's, B falling through");
+    assert_eq!(held(&out.mouse), vec![KeyCode::KEY_Y, KeyCode::KEY_LEFTCTRL, KeyCode::KEY_Z], "the held layer's, B falling through");
     // Back let go while A is held: Ctrl+Y up, A is main's Ctrl+X now.
     press(&mut r, KeyCode::BTN_BACK, false, &mut out);
     assert_eq!(held(&out.mouse), vec![KeyCode::KEY_LEFTCTRL, KeyCode::KEY_Z, KeyCode::KEY_X]);
@@ -406,10 +409,10 @@ fn the_back_layer_while_back_is_held_and_nothing_stuck_letting_go_mid_press() {
 #[test]
 fn a_hold_to_a_layer_is_decided_by_an_input_the_layer_maps() {
     // LB: X tapped, held a layer where A is Y.
-    let mut k = keymap(&[(Input::Button(Button::LB), to(Output::Key(chord("x"))))]);
+    let mut k = keymap(&[(Input::Button(Button::LB), to(Output::Key(Chord::of(Key::Char('x')))))]);
     let aim = k.add_layer("aim").unwrap();
     k.set_of(Layer::BASE, Input::Button(Button::LB), Actuation::Hold, Some(to(Output::Layer(aim))));
-    k.set_in(aim, Input::Button(Button::A), Some(to(Output::Key(chord("y")))));
+    k.set_in(aim, Input::Button(Button::A), Some(to(Output::Key(Chord::of(Key::Char('y'))))));
     let (mut r, mut out) = router(k, PadRoute::Game);
     let t0 = Instant::now();
     // B (not in the layer) meanwhile: as on the pad, LB still deciding.
@@ -438,8 +441,8 @@ fn a_once_layer_tapped_is_on_until_an_input_it_maps_has_acted() {
     let menu = k.add_layer("menu").unwrap();
     k.set_layer_once(menu, true);
     k.set(Input::Button(Button::LB), Some(to(Output::Layer(menu))));
-    k.set_in(menu, Input::Button(Button::A), Some(to(Output::Key(chord("enter")))));
-    k.set_in(menu, Input::Button(Button::B), Some(to(Output::Key(chord("esc")))));
+    k.set_in(menu, Input::Button(Button::A), Some(to(Output::Key(Chord::of(Key::Named(Named::Enter))))));
+    k.set_in(menu, Input::Button(Button::B), Some(to(Output::Key(Chord::of(Key::Named(Named::Esc))))));
     let (mut r, mut out) = router(k, PadRoute::Game);
     let tap = |r: &mut PadRouter, code, out: &mut Out| {
         press(r, code, true, out);
@@ -483,7 +486,7 @@ fn a_toggled_once_layer_goes_off_with_its_toggle_once_used() {
     let menu = k.add_layer("menu").unwrap();
     k.set_layer_once(menu, true);
     k.set(Input::Button(Button::LB), Some(Binding { toggle: true, ..to(Output::Layer(menu)) }));
-    k.set_in(menu, Input::Button(Button::A), Some(to(Output::Key(chord("enter")))));
+    k.set_in(menu, Input::Button(Button::A), Some(to(Output::Key(Chord::of(Key::Named(Named::Enter))))));
     let (mut r, mut out) = router(k, PadRoute::Game);
     for _ in 0..2 {
         press(&mut r, KeyCode::BTN_TL, true, &mut out);
@@ -512,7 +515,7 @@ fn a_toggled_once_layer_goes_off_with_its_toggle_once_used() {
 #[test]
 fn random_presses_over_every_kind_of_layer_leave_nothing_down() {
     use clamshell_core::keymap::Layer;
-    let key = |c: &str| to(Output::Key(chord(c)));
+    let key = |c: Chord| to(Output::Key(c));
     let mut k = keymap(&[]);
     let menu = k.add_layer("menu").unwrap();
     let aim = k.add_layer("aim").unwrap();
@@ -520,18 +523,18 @@ fn random_presses_over_every_kind_of_layer_leave_nothing_down() {
     let b = |x| Input::Button(x);
     // LB: menu (Once). RB: R pressed, aim held. X: aim toggled. Y: T pressed, menu twice.
     k.set(b(Button::LB), Some(to(Output::Layer(menu))));
-    k.set(b(Button::RB), Some(key("r")));
+    k.set(b(Button::RB), Some(key(Chord::of(Key::Char('r')))));
     k.set_of(Layer::BASE, b(Button::RB), Actuation::Hold, Some(to(Output::Layer(aim))));
     k.set(b(Button::X), Some(Binding { toggle: true, ..to(Output::Layer(aim)) }));
-    k.set(b(Button::Y), Some(key("t")));
+    k.set(b(Button::Y), Some(key(Chord::of(Key::Char('t')))));
     k.set_of(Layer::BASE, b(Button::Y), Actuation::Double, Some(to(Output::Layer(menu))));
-    k.set(b(Button::A), Some(key("x")));
+    k.set(b(Button::A), Some(key(Chord::of(Key::Char('x')))));
     // menu: A Enter, B Esc. aim: A Ctrl+Y, LB Z, B held H.
-    k.set_in(menu, b(Button::A), Some(key("enter")));
-    k.set_in(menu, b(Button::B), Some(key("esc")));
-    k.set_in(aim, b(Button::A), Some(key("ctrl+y")));
-    k.set_in(aim, b(Button::LB), Some(key("z")));
-    k.set_of(aim, b(Button::B), Actuation::Hold, Some(key("h")));
+    k.set_in(menu, b(Button::A), Some(key(Chord::of(Key::Named(Named::Enter)))));
+    k.set_in(menu, b(Button::B), Some(key(Chord::of(Key::Named(Named::Esc)))));
+    k.set_in(aim, b(Button::A), Some(key(ctrl('y'))));
+    k.set_in(aim, b(Button::LB), Some(key(Chord::of(Key::Char('z')))));
+    k.set_of(aim, b(Button::B), Actuation::Hold, Some(key(Chord::of(Key::Char('h')))));
     let sent = [
         KeyCode::KEY_R,
         KeyCode::KEY_T,
@@ -589,11 +592,11 @@ fn a_toggled_layer_and_a_layer_key_the_layer_remaps() {
     let menu = k.add_layer("menu").unwrap();
     // LB toggles aim; in aim, A is Ctrl+Y and LB itself is a key (it still turns aim off).
     k.set(Input::Button(Button::LB), Some(Binding { toggle: true, ..to(Output::Layer(aim)) }));
-    k.set_in(aim, Input::Button(Button::A), Some(to(Output::Key(chord("ctrl+y")))));
-    k.set_in(aim, Input::Button(Button::LB), Some(to(Output::Key(chord("z")))));
+    k.set_in(aim, Input::Button(Button::A), Some(to(Output::Key(ctrl('y')))));
+    k.set_in(aim, Input::Button(Button::LB), Some(to(Output::Key(Chord::of(Key::Char('z'))))));
     // RB held: menu, on top of aim; in it B is Q.
     k.set(Input::Button(Button::RB), Some(to(Output::Layer(menu))));
-    k.set_in(menu, Input::Button(Button::B), Some(to(Output::Key(chord("q")))));
+    k.set_in(menu, Input::Button(Button::B), Some(to(Output::Key(Chord::of(Key::Char('q'))))));
     let (mut r, mut out) = router(k, PadRoute::Game);
     press(&mut r, KeyCode::BTN_TL, true, &mut out);
     press(&mut r, KeyCode::BTN_TL, false, &mut out);
@@ -623,7 +626,7 @@ fn the_gyro_differs_by_layer() {
     for i in 0..=50 {
         gyro(&mut r, i * 4, -20.0, &mut out);
     }
-    assert_eq!(sum(&out.mouse, RelativeAxisCode::REL_X), 0, "off in the main layer");
+    assert_eq!(sum(&out.mouse, RelativeAxisCode::REL_X), 0, "off in Base");
     press(&mut r, KeyCode::BTN_BACK, true, &mut out);
     for i in 51..=300 {
         gyro(&mut r, i * 4, -20.0, &mut out);
@@ -664,7 +667,13 @@ fn a_stick_curve_and_tuning_before_mapping() {
     let v = last(&out.pad, AbsoluteAxisCode::ABS_X).unwrap();
     assert!((v - STICK_MAX / 8).abs() < 200, "cubed: an eighth: {v}");
     // A stick on keys with a deadzone of 50: its directions count past it.
-    let k = keymap(&[(Input::Stick(Side::Left), Binding { deadzone: 50, ..to(Output::Keys([chord("w"), chord("a"), chord("s"), chord("d")])) })]);
+    let k = keymap(&[(
+        Input::Stick(Side::Left),
+        Binding {
+            deadzone: 50,
+            ..to(Output::Keys([Chord::of(Key::Char('w')), Chord::of(Key::Char('a')), Chord::of(Key::Char('s')), Chord::of(Key::Char('d'))]))
+        },
+    )]);
     let (mut r, mut out) = router(k, PadRoute::Game);
     axis(&mut r, AbsoluteAxisCode::ABS_X, STICK_MAX * 7 / 10, &mut out);
     assert!(held(&out.mouse).is_empty(), "70 % is under half once past the deadzone");
@@ -676,7 +685,7 @@ fn a_stick_curve_and_tuning_before_mapping() {
 fn a_trigger_tuned_as_on_the_pad_and_on_a_key() {
     let k = keymap(&[
         (Input::Trigger(Side::Left), Binding { deadzone: 10, full: 60, ..to(Output::Trigger(Side::Left)) }),
-        (Input::Trigger(Side::Right), Binding { full: 50, threshold: 90, ..to(Output::Key(chord("x"))) }),
+        (Input::Trigger(Side::Right), Binding { full: 50, threshold: 90, ..to(Output::Key(Chord::of(Key::Char('x')))) }),
     ]);
     let (mut r, mut out) = router(k, PadRoute::Game);
     axis(&mut r, AbsoluteAxisCode::ABS_Z, 80, &mut out);
@@ -727,14 +736,14 @@ fn ms(n: u64) -> Duration {
 
 /// A on X when pressed, plus `act`'s binding.
 fn with(act: Actuation, b: Binding) -> Keymap {
-    let mut k = keymap(&[(Input::Button(Button::A), to(Output::Key(chord("x"))))]);
+    let mut k = keymap(&[(Input::Button(Button::A), to(Output::Key(Chord::of(Key::Char('x')))))]);
     assert!(k.set_of(clamshell_core::keymap::Layer::BASE, Input::Button(Button::A), act, Some(b)));
     k
 }
 
 #[test]
 fn a_plain_press_acts_at_once_with_no_timers() {
-    let (mut r, mut out) = router(keymap(&[(Input::Button(Button::A), to(Output::Key(chord("x"))))]), PadRoute::Game);
+    let (mut r, mut out) = router(keymap(&[(Input::Button(Button::A), to(Output::Key(Chord::of(Key::Char('x')))))]), PadRoute::Game);
     let t0 = Instant::now();
     press_at(&mut r, KeyCode::BTN_SOUTH, true, t0, &mut out);
     assert_eq!(held(&out.mouse), vec![KeyCode::KEY_X], "on the press itself");
@@ -743,7 +752,7 @@ fn a_plain_press_acts_at_once_with_no_timers() {
 
 #[test]
 fn a_hold_acts_at_its_time_and_a_short_press_taps_on_letting_go() {
-    let k = with(Actuation::Hold, Binding { hold_time: 40, ..to(Output::Key(chord("esc"))) });
+    let k = with(Actuation::Hold, Binding { hold_time: 40, ..to(Output::Key(Chord::of(Key::Named(Named::Esc)))) });
     let (mut r, mut out) = router(k, PadRoute::Game);
     let t0 = Instant::now();
     press_at(&mut r, KeyCode::BTN_SOUTH, true, t0, &mut out);
@@ -768,7 +777,7 @@ fn a_hold_acts_at_its_time_and_a_short_press_taps_on_letting_go() {
 
 #[test]
 fn a_double_and_a_single_press_with_a_double() {
-    let k = with(Actuation::Double, to(Output::Key(chord("tab"))));
+    let k = with(Actuation::Double, to(Output::Key(Chord::of(Key::Named(Named::Tab)))));
     let (mut r, mut out) = router(k, PadRoute::Game);
     let t0 = Instant::now();
     press_at(&mut r, KeyCode::BTN_SOUTH, true, t0, &mut out);
@@ -814,8 +823,8 @@ fn a_trigger_pulls_and_clicks_at_full_pull() {
 #[test]
 fn toggle_and_turbo() {
     let k = keymap(&[
-        (Input::Button(Button::A), Binding { toggle: true, ..to(Output::Key(chord("x"))) }),
-        (Input::Button(Button::B), Binding { turbo: 10, ..to(Output::Key(chord("z"))) }),
+        (Input::Button(Button::A), Binding { toggle: true, ..to(Output::Key(Chord::of(Key::Char('x')))) }),
+        (Input::Button(Button::B), Binding { turbo: 10, ..to(Output::Key(Chord::of(Key::Char('z')))) }),
     ]);
     let (mut r, mut out) = router(k, PadRoute::Game);
     let t0 = Instant::now();

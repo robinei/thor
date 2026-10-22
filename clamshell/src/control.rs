@@ -59,18 +59,7 @@ fn control(name: &str) -> Result<Control, ParseError> {
     match name {
         "volume" => Ok(Control::Volume),
         "brightness" => Ok(Control::Brightness),
-        "speed" => Ok(Control::Param(Param::Speed)),
-        "threshold" => Ok(Control::Param(Param::Threshold)),
-        "deadzone" => Ok(Control::Param(Param::Deadzone)),
-        "full" => Ok(Control::Param(Param::Full)),
-        "curve" => Ok(Control::Param(Param::Curve)),
-        "turbo" => Ok(Control::Param(Param::Turbo)),
-        "holdtime" => Ok(Control::Param(Param::HoldTime)),
-        "accel" => Ok(Control::Param(Param::Accel)),
-        "accelat" => Ok(Control::Param(Param::AccelAt)),
-        "tighten" => Ok(Control::Param(Param::Tighten)),
-        "stickmin" => Ok(Control::Param(Param::StickMin)),
-        other => Err(ParseError::Name(other.to_owned())),
+        other => Param::from_name(other).filter(|p| !p.switch()).map(Control::Param).ok_or_else(|| name_err(other)),
     }
 }
 
@@ -316,12 +305,7 @@ pub const TARGETS: &[Form<Id>] = &[
     }),
     form("keymap-act ACT", "the panel's tab: press, hold, double, full", |a| {
         let act = arg(a, 0);
-        km(KeymapId::Actuation(
-            Actuation::ALL
-                .into_iter()
-                .find(|x| x.label().eq_ignore_ascii_case(act) || (act == "full" && *x == Actuation::FullPull))
-                .ok_or_else(|| name_err(act))?,
-        ))
+        km(KeymapId::Actuation(Actuation::from_name(act).ok_or_else(|| name_err(act))?))
     }),
     form(
         "map-to TARGET",

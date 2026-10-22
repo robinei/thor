@@ -29,7 +29,7 @@ pub enum Param {
     Ratchet,
 }
 
-// (In the panel's order. Both inversions are `invert` in the file, as `invert=xy`.)
+// In the panel's order.
 names!(Param {
     Speed: "speed", "Speed";
     Accel: "accel", "Acceleration";
@@ -44,8 +44,8 @@ names!(Param {
     Turbo: "turbo", "Turbo";
     Toggle: "toggle", "Toggle";
     Twist: "twist", "Turn by tilting";
-    InvertX: "invert", "Invert X";
-    InvertY: "invert", "Invert Y";
+    InvertX: "invertx", "Invert X";
+    InvertY: "inverty", "Invert Y";
     Ratchet: "ratchet", "Off while held";
 });
 

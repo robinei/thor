@@ -23,34 +23,6 @@ impl Chord {
         self.key.is_none() && !(self.shift || self.ctrl || self.alt || self.logo)
     }
 
-    /// As text: `ctrl+shift+x`, `space`, `f5`, `shift` (modifiers first, `+` between).
-    pub fn write(&self, out: &mut impl Write) -> fmt::Result {
-        let mut first = true;
-        let mut part = |out: &mut dyn Write, text: &str| -> fmt::Result {
-            if !first {
-                out.write_char('+')?;
-            }
-            first = false;
-            out.write_str(text)
-        };
-        for (on, name) in [(self.ctrl, "ctrl"), (self.alt, "alt"), (self.logo, "super"), (self.shift, "shift")] {
-            if on {
-                part(out, name)?;
-            }
-        }
-        match self.key {
-            Some(Key::Char(' ')) => part(out, "space"),
-            Some(Key::Char(c)) => part(out, c.encode_utf8(&mut [0; 4])),
-            Some(Key::Named(Named::F(n))) => {
-                let mut name = Small::default();
-                let _ = write!(name, "f{n}");
-                part(out, name.as_str())
-            }
-            Some(Key::Named(n)) => part(out, named_name(n)),
-            Some(Key::Mod(_) | Key::Caps) | None => Ok(()),
-        }
-    }
-
     /// How it reads on screen: `Ctrl+X`, `Space`, `F5`, `Shift`.
     pub fn label(&self, out: &mut impl Write) -> fmt::Result {
         let mut first = true;
@@ -74,71 +46,6 @@ impl Chord {
             Some(Key::Mod(_) | Key::Caps) | None => Ok(()),
         }
     }
-
-    pub fn parse(text: &str) -> Option<Chord> {
-        let mut chord = Chord::default();
-        for part in text.split('+') {
-            match part {
-                "ctrl" => chord.ctrl = true,
-                "alt" => chord.alt = true,
-                "super" => chord.logo = true,
-                "shift" => chord.shift = true,
-                "space" => chord.key = Some(Key::Char(' ')),
-                _ if chord.key.is_some() => return None,
-                p => {
-                    let mut chars = p.chars();
-                    chord.key = Some(match (chars.next(), chars.next()) {
-                        (Some(c), None) if (' '..='~').contains(&c) && crate::keyboard::find(Key::Char(c)).is_some() => Key::Char(c),
-                        _ => Key::Named(parse_named(p)?),
-                    });
-                }
-            }
-        }
-        (!chord.is_empty()).then_some(chord)
-    }
-}
-
-/// A few bytes of text without allocation (a function key's name).
-#[derive(Default)]
-struct Small {
-    bytes: [u8; 8],
-    len: usize,
-}
-
-impl Small {
-    fn as_str(&self) -> &str {
-        self.bytes.get(..self.len).and_then(|b| std::str::from_utf8(b).ok()).unwrap_or("")
-    }
-}
-
-impl Write for Small {
-    fn write_str(&mut self, s: &str) -> fmt::Result {
-        let end = self.len + s.len();
-        let slot = self.bytes.get_mut(self.len..end).ok_or(fmt::Error)?;
-        slot.copy_from_slice(s.as_bytes());
-        self.len = end;
-        Ok(())
-    }
-}
-
-fn named_name(n: Named) -> &'static str {
-    match n {
-        Named::Backspace => "backspace",
-        Named::Tab => "tab",
-        Named::Enter => "enter",
-        Named::Esc => "esc",
-        Named::Delete => "delete",
-        Named::Insert => "insert",
-        Named::Home => "home",
-        Named::End => "end",
-        Named::PageUp => "pageup",
-        Named::PageDown => "pagedown",
-        Named::Left => "left",
-        Named::Right => "right",
-        Named::Up => "up",
-        Named::Down => "down",
-        Named::F(_) => "f",
-    }
 }
 
 fn named_label(n: Named) -> &'static str {
@@ -159,30 +66,6 @@ fn named_label(n: Named) -> &'static str {
         Named::Down => "Down",
         Named::F(_) => "F",
     }
-}
-
-fn parse_named(word: &str) -> Option<Named> {
-    if let Some(n) = word.strip_prefix('f').and_then(|n| n.parse::<u8>().ok()) {
-        return (1..=12).contains(&n).then_some(Named::F(n));
-    }
-    [
-        Named::Backspace,
-        Named::Tab,
-        Named::Enter,
-        Named::Esc,
-        Named::Delete,
-        Named::Insert,
-        Named::Home,
-        Named::End,
-        Named::PageUp,
-        Named::PageDown,
-        Named::Left,
-        Named::Right,
-        Named::Up,
-        Named::Down,
-    ]
-    .into_iter()
-    .find(|n| named_name(*n) == word)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
