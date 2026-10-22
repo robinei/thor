@@ -7,7 +7,7 @@ use crate::keyboard::VirtualKeyboard;
 use crate::paths::Paths;
 use crate::store::{Write, Writer};
 use crate::tuning::Tuning;
-use crate::worker::Worker;
+use crate::worker::{self, Worker};
 use crate::{battery, bluetooth, brightness, launcher, mixer, pad, sway, touchpad, wifi};
 
 /// The threads (and the one device) that effects go to.
@@ -108,11 +108,14 @@ impl Handles {
                 let socket = self.paths.socket(key);
                 let lines = lines.clone();
                 // (Off the main thread: a player slow to read waits nothing here.)
-                std::thread::spawn(move || {
+                let started = worker::detached("enqueue", move || {
                     if let Err(e) = enqueue(&socket, &lines) {
                         log::warn!("enqueue to {}: {e}", socket.display());
                     }
                 });
+                if let Err(e) = started {
+                    log::warn!("enqueue: {e}");
+                }
             }
             Effect::Browse(command) => {
                 log::info!("effect: {effect:?}");

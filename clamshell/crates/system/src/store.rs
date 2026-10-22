@@ -476,7 +476,9 @@ pub enum Write {
     },
 }
 
-/// The state's writes, made in order on a thread of their own. Dropped, it finishes those sent first.
+/// The state's writes, made in order on a thread of their own. Dropped, it finishes those sent first: its
+/// thread is joined (which [`crate::worker::Worker`] doesn't do), so the last writes are made before the
+/// program exits.
 pub struct Writer {
     tx: Option<Sender<Write>>,
     thread: Option<JoinHandle<()>>,

@@ -119,7 +119,7 @@ pub fn spawn(config: Config, sink: impl Sink + Clone) -> io::Result<Worker<Comma
     Worker::spawn("launcher", move |commands| {
         for command in commands {
             let (config, sink) = (config.clone(), sink.clone());
-            let started = thread::Builder::new().name("launch".into()).spawn(move || match command {
+            let started = worker::detached("launch", move || match command {
                 Command::Launch(request) => {
                     if let Err(e) = start(&config, &request) {
                         log::warn!("launcher: {}: {e}", request.game);
