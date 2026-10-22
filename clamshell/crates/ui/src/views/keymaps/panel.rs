@@ -1,5 +1,6 @@
-//! The edit screen's panel: the selected input's name, actuation tabs, what it does, the ways to remap it
-//! and its parameters (rows, switches, held sliders); and the panel while a control is picked.
+//! The edit screen's panel. It shows the selected input's name, the actuation tabs, what the input does,
+//! the ways to remap it, and its parameters as rows, switches and held sliders. There is also a version
+//! of the panel for while a control is being picked.
 
 use clamshell_core::keymap::screens::{EditView, way_of, ways};
 use clamshell_core::keymap::{Actuation, Binding, Change, Input, Keymap, Kind, Layer, Output, Param, change, params_of};
@@ -16,8 +17,8 @@ use crate::toolkit::{Frame, Track, widgets};
 use super::words::{Label, as_on_pad, described, shown, summary};
 use super::{BUTTON_H, PANEL_ROW_H, PANEL_TEXT, Picking, remap_title};
 
-/// The panel while a control is picked: what for, what to do, and Cancel (for the gyro's hold, Always
-/// beside it).
+/// The panel while a control is being picked: what it is for, what to do, and Cancel. For the gyro's
+/// hold, Always sits beside Cancel.
 pub(super) fn picking_panel(f: &mut Frame, r: Rect, id: u16, picking: Picking) {
     let small = f.text(Text::Small) * PANEL_TEXT;
     let heading = f.text(Text::Heading) * 0.9;
@@ -34,7 +35,7 @@ pub(super) fn picking_panel(f: &mut Frame, r: Rect, id: u16, picking: Picking) {
         ),
         Picking::Hold(_) => (Fmt::of(format_args!("Gyro active while…")), "Tap or press a button or a trigger"),
     };
-    // (On two lines if it doesn't fit on one.)
+    // On two lines if it doesn't fit on one.
     let lines = if f.c.text_width(heading, &title) > r.w { 2.0 } else { 1.0 };
     if let Some(row) = col.next(heading * LINE * lines) {
         widgets::centred_lines(f, row, heading, Tone::High, &title);
@@ -69,9 +70,9 @@ pub(super) fn way_icon(way: Target) -> Icon {
     }
 }
 
-/// The panel: the selected input's name; what it does in the layer shown; the ways to remap it, as icons
-/// (the way it is mapped now in white); its parameters, a row each (one whose slider is up shows it in its
-/// place).
+/// The panel: the selected input's name, what it does in the layer shown, and the ways to remap it as
+/// icons, with the current way in white. Its parameters follow, a row each. A parameter whose slider is
+/// up shows the slider in place of its row.
 pub(super) fn panel(f: &mut Frame, r: Rect, id: u16, keymap: Option<&Keymap>, view: EditView) {
     let body = f.body();
     let s = f.s;
@@ -82,7 +83,7 @@ pub(super) fn panel(f: &mut Frame, r: Rect, id: u16, keymap: Option<&Keymap>, vi
         let mut lines = Column::new(r);
         lines.skip(r.h * 0.4);
         widgets::text_lines(f, &mut lines, &[(small, Tone::Dim, "Press or touch an input"), (small, Tone::Dim, "to see what it does")]);
-        // In another layer than Base: which, and what the faded labels are.
+        // In a layer other than Base, say which one and what the faded labels are.
         if view.layer != Layer::BASE {
             let name = keymap.and_then(|k| k.layer_name(view.layer)).unwrap_or("");
             lines.skip(small * LINE);
@@ -99,8 +100,8 @@ pub(super) fn panel(f: &mut Frame, r: Rect, id: u16, keymap: Option<&Keymap>, vi
     if let Some(row) = col.next(heading * LINE) {
         widgets::centred_text(f, row, heading, Tone::High, &name);
     }
-    // Press, Hold, Double (a button's, a direction's), Pull and Full pull (a trigger's): the one shown in
-    // white; a dot under one set.
+    // The actuation tabs: Press, Hold and Double for a button or a direction, Pull and Full pull for a
+    // trigger. The one shown is in white, and a dot marks each one that is set.
     let tabs = Actuation::of(input.kind()).count();
     if tabs > 1
         && let Some(row) = col.next(small * LINE * 2.2)
@@ -115,7 +116,8 @@ pub(super) fn panel(f: &mut Frame, r: Rect, id: u16, keymap: Option<&Keymap>, vi
             }
         }
     }
-    // What it does: its binding for the actuation shown, or without one in a layer above Base, Base's.
+    // What it does: its binding for the actuation shown. Without one, in a layer above Base, it is Base's
+    // binding.
     let unset = |input: Input| match act {
         Actuation::Press => as_on_pad(input),
         Actuation::Hold => Fmt::of(format_args!("No hold")),
@@ -130,7 +132,8 @@ pub(super) fn panel(f: &mut Frame, r: Rect, id: u16, keymap: Option<&Keymap>, vi
                 widgets::text_lines(f, &mut lines, &[(small, Tone::Dim, "As in Base"), (small, Tone::Dim, &main())]);
             }
             (None, _) => widgets::centred_lines(f, row, small, Tone::Dim, &unset(input)),
-            // (The panel's own content in white: blue is for labels of what is remapped, and actions.)
+            // The panel's own content is in white. Blue is for actions and for the labels of what is
+            // remapped.
             (Some(b), _) => {
                 let tone = if input == Input::Gyro || change(input, Some(&b)) == Change::Mapped || act != Actuation::Press {
                     Tone::High
@@ -141,7 +144,7 @@ pub(super) fn panel(f: &mut Frame, r: Rect, id: u16, keymap: Option<&Keymap>, vi
             }
         }
     }
-    // A press that waits (the input has a hold or a double).
+    // A note when a press waits because the input has a hold or a double.
     if act == Actuation::Press
         && input.kind() == Kind::Digital
         && s.press_waits(id, input)
@@ -163,15 +166,16 @@ pub(super) fn panel(f: &mut Frame, r: Rect, id: u16, keymap: Option<&Keymap>, vi
         }
     }
     col.skip(pad * 0.4);
-    // The parameters: the binding's, else the layers' below, else as on the pad.
+    // The parameters: the binding's own, or else those of the layers below, or else as on the pad.
     let Some(base) = s.param_base(id, input) else {
         return;
     };
     let rh = f.body().h * PANEL_ROW_H;
-    // (Acceleration's speed only with acceleration; the ratchet after the gyro's hold, with one.)
+    // Acceleration's speed shows only with acceleration on. The ratchet goes after the gyro's hold, when
+    // it has one.
     let shown_params = params_of(input, base.output, act).filter(|p| match p {
         Param::AccelAt => base.accel > 0,
-        // (Y shares X's row.)
+        // Y shares X's row.
         Param::Ratchet | Param::InvertY => false,
         _ => true,
     });
@@ -190,9 +194,9 @@ pub(super) fn panel(f: &mut Frame, r: Rect, id: u16, keymap: Option<&Keymap>, vi
             } else {
                 let value = shown(p, v);
                 let slider = view.slider.filter(|sl| sl.control == Control::Param(p));
-                // (The screen's width, as the bar's sliders: the track as long, over the drawing.)
+                // The track spans the screen's width, over the drawing, as the bar's sliders do.
                 let track = Track { x0: body.x, w: body.w };
-                // (A held slider is drawn last, its card over the rows below it.)
+                // A held slider is drawn last, so its card covers the rows below it.
                 if let Some(sl) = slider {
                     held = Some((row, track, sl, p));
                 }
@@ -231,11 +235,11 @@ pub(super) fn panel(f: &mut Frame, r: Rect, id: u16, keymap: Option<&Keymap>, vi
     }
 }
 
-/// The inversions' row: "Invert", then a switch each for X and Y, each its own target.
+/// The inversion row: "Invert", then a switch each for X and Y, each its own target.
 pub(super) fn invert_row(f: &mut Frame, row: Rect, size: f32, b: &Binding) {
     let inner = row.inset(size * 0.4);
     let (mut sw_w, mut letter) = (widgets::switch_w(size), size * 1.2);
-    // (Narrow: no word, the two switches scaled into the row.)
+    // When narrow, the word is left out and the two switches are scaled to fit the row.
     let label = inner.w >= 2.0 * (sw_w + letter + size * 0.6) + size * 3.0;
     if !label {
         let k = (inner.w / (2.0 * (sw_w + letter + size * 0.6))).min(1.0);
@@ -256,10 +260,11 @@ pub(super) fn invert_row(f: &mut Frame, row: Rect, size: f32, b: &Binding) {
     }
 }
 
-/// A parameter's row while its slider is up (the bar's slider, within the panel): the name and value
-/// above, the track along the row with the thumb under the finger.
+/// A parameter's row while its slider is up, using the bar's slider within the panel. The name and value
+/// are above, and the track runs along the row with the thumb under the finger.
 pub(super) fn slider_row(f: &mut Frame, row: Rect, track: Track, sl: Slider, p: Param, panel: Rect) {
-    // As the bar's: the track along the screen through the row, the value on a card beside the finger.
+    // As with the bar's slider, the track runs along the screen through the row, and the value is on a
+    // card beside the finger.
     let text = Fmt::<32>::of(format_args!("{} {}", p.label(), shown(p, sl.value).as_str()));
     let within = Rect::new(track.x0, panel.y, track.w, panel.h);
     widgets::held_slider(f, HeldSlider { slider: &sl, x0: track.x0, cy: row.y + row.h / 2.0, h: row.h * 0.75, within, icon: None, text: &text });

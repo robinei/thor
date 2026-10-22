@@ -1,20 +1,21 @@
-//! The keymaps' screens, drawn over the settings tab (their rules are `core`'s `keymap_screens`):
+//! The keymap screens, drawn over the settings tab. Their rules are in `core`'s `keymap_screens`.
 //!
-//! - The picker, a scrolled list: for a game, its own keymap or Make own keymap; then Default, the named
-//!   keymaps (each with who uses it and an Edit button), and New.
+//! - The picker, a scrolled list. For a game it starts with its own keymap or Make own keymap. Then come
+//!   Default, the named keymaps (each with who uses it and an Edit button), and New.
 //! - A keymap's menu, and the confirmation for deleting one in use.
-//! - The keymaps to load into a game's own and to save it as: the picker's rows without the game's own,
-//!   its Edit buttons and its mark; saving lists a new keymap first. Saving over a named one asks first.
-//! - The edit screen ([`edit`](fn@edit)): one layer of the keymap, named at the top right with a button to the
-//!   list of layers, and Close at the top left. The pad's controls are drawn in two clusters at the sides,
-//!   as they sit beside the screen, each control the layer changes with a label. Between the label
-//!   columns, the full height, is a panel for the selected input: the ways to remap it as icons, and its
-//!   parameters.
-//! - The layers' lists and a layer's menu; the edit screen while a control is picked on it; what holds
-//!   the gyro on; a part of the mouse on its drawing; a key chord typed on the keyboard.
+//! - The lists for loading a keymap into a game's own and for saving the game's own as a named one.
+//!   They show the picker's rows without the game's own keymap, the Edit buttons and the mark. Saving
+//!   lists a new keymap first, and saving over a named one asks first.
+//! - The edit screen ([`edit`](fn@edit)), showing one layer of the keymap. The layer's name is at the top
+//!   right with a button to the list of layers, and Close is at the top left. The pad's controls are
+//!   drawn in two clusters at the sides, as they sit beside the screen, with a label for each control the
+//!   layer changes. Between the label columns, at full height, is a panel for the selected input with
+//!   the ways to remap it as icons, and its parameters.
+//! - The layer lists and a layer's menu, the edit screen while a control is being picked on it, what
+//!   holds the gyro on, a part of the mouse on its drawing, and a key chord typed on the keyboard.
 //!
-//! Colours follow the rest of the UI on black: the pad's parts are thin dim outlines, blue marks what a
-//! keymap maps to something else, and grey what it only tunes.
+//! Colours follow the rest of the UI on black. The pad's parts are thin dim outlines, blue marks what a
+//! keymap maps to something else, and grey marks what it only tunes.
 
 use clamshell_core::keymap::Input;
 use clamshell_core::keymap::screens::{PickerRow, Screen, holds, picked};
@@ -39,7 +40,7 @@ use words::Label;
 #[cfg(test)]
 pub(super) use edit::edit_layout;
 
-/// A list row's height and a button's, of the area's height.
+/// The height of a list row and of a button, as fractions of the area's height.
 const ROW_H: f32 = 0.1;
 const BUTTON_H: f32 = 0.085;
 
@@ -62,7 +63,7 @@ pub(super) fn draw(f: &mut Frame, screen: Screen) {
     }
 }
 
-/// The keymap screens' header (see [`widgets::header`]): Back, the title, and on the right `right`.
+/// The keymap screens' header (see [`widgets::header`]): Back, the title, and `right` on the right.
 fn header(f: &mut Frame, title: &str, right: HeaderRight) -> Rect {
     widgets::header(f, Some(Id::Keymap(KeymapId::Back)), title, false, right)
 }
@@ -84,9 +85,9 @@ impl Picking {
     }
 }
 
-/// A choice's header (what an input is remapped to, what holds the gyro on): the title centred and
-/// Cancel on the right; no back arrow, since choosing something closes it and Cancel gives up. Returns
-/// the area below it.
+/// The header for a choice, such as what an input is remapped to or what holds the gyro on. It has the
+/// title centred and Cancel on the right. There is no back arrow, since choosing something closes it and
+/// Cancel gives up. Returns the area below it.
 fn choice_header(f: &mut Frame, title: &str) -> Rect {
     widgets::header(f, None, title, true, HeaderRight::Action(Id::Keymap(KeymapId::Back), "Cancel"))
 }
@@ -118,7 +119,7 @@ enum Listing {
     Save,
 }
 
-/// The picker; or the keymaps to load into a game's own, or to save it as.
+/// The picker, or the list of keymaps to load into a game's own or to save it as.
 fn list(f: &mut Frame, listing: Listing) {
     let s = f.s;
     let scope = match (s.bottom().scope(), s.editing()) {
@@ -150,7 +151,7 @@ fn list(f: &mut Frame, listing: Listing) {
             PickerRow::Default => (Some(0), "Default", Fmt::of(format_args!("As on the pad"))),
             PickerRow::Named(k) => (Some(k.id), k.name.as_str(), users(f, k.id)),
         };
-        // (A keymap that is gone counts as Default.)
+        // A keymap that no longer exists counts as Default.
         let mine = loading.is_none() && (id == Some(chosen) || (id == Some(0) && s.keymaps().get(chosen).is_none()));
         let tone = if id.is_none() { Tone::Fn } else { Tone::high_if(mine) };
         let edit = match id {
@@ -168,7 +169,7 @@ fn menu(f: &mut Frame, id: u16) {
     let name = f.s.keymap_name(id);
     let area = header(f, name, HeaderRight::None);
     let k = |id| Id::Keymap(id);
-    // A game's own: named, it becomes a shared one.
+    // A game's own keymap becomes a shared one when it is named.
     if f.s.keymap_is_own(id) {
         let items = [
             (k(KeymapId::Edit), "Edit", Tone::Fn),
@@ -194,7 +195,8 @@ fn delete(f: &mut Frame, id: u16) {
     confirm(f, &title, &text, (KeymapId::ConfirmDelete, "Delete"));
 }
 
-/// Saving a game's own keymap over named keymap `to`: are you sure (it reaches the games using it).
+/// Asks to confirm saving a game's own keymap over the named keymap `to`, since the change reaches the
+/// games using it.
 fn overwrite(f: &mut Frame, to: u16) {
     let name = f.s.keymap_name(to);
     let title = Fmt::<128>::of(format_args!("Replace {name}?"));
@@ -206,8 +208,8 @@ fn overwrite(f: &mut Frame, to: u16) {
     confirm(f, &title, &text, (KeymapId::ConfirmSave, "Replace"));
 }
 
-/// A screen asking to confirm something that can't be undone: its title, what it does, then Keep it (back)
-/// and the action.
+/// A screen asking to confirm something that can't be undone: its title, what it does, then Keep it,
+/// which goes back, and the action.
 fn confirm(f: &mut Frame, title: &str, text: &str, (act, label): (KeymapId, &str)) {
     let area = header(f, title, HeaderRight::None);
     let size = f.text(Text::Body);
@@ -217,28 +219,31 @@ fn confirm(f: &mut Frame, title: &str, text: &str, (act, label): (KeymapId, &str
     widgets::menu(f, rest, [(Id::Keymap(KeymapId::Back), "Keep it", Tone::Fn), (Id::Keymap(act), label, Tone::Accent)]);
 }
 
-/// The edit screen: the labels' text, of the small text size; of the area's width, a cluster's width,
-/// the room between it and its labels (where the lines turn), and the labels' column's width; the
-/// bottom row's height and the panel's rows', of the area's height.
+/// Edit screen sizes. The labels' text is a fraction of the small text size. A cluster's width, the gap
+/// between it and its labels where the lines turn, and the labels' column width are fractions of the
+/// area's width. The panel's row height is a fraction of the area's height.
 const LABEL: f32 = 0.66;
 const CLUSTER_W: f32 = 0.222;
 const GAP: f32 = 0.016;
 const LABEL_COLUMN_W: f32 = 0.115;
 const PANEL_ROW_H: f32 = 0.075;
-/// The panel's and the bottom row's text, of the small text size.
+/// The text size of the panel and the bottom row, as a fraction of the small text size.
 const PANEL_TEXT: f32 = 0.8;
-/// The controls' outlines, and the lines in to the labels (blue, dimmed).
+/// The colour of the controls' outlines, and how strongly the lines in to the labels show. Those lines
+/// take their label's tone.
 const PART_LINE: Rgb = Rgb(0x4a4a54);
-/// The buttons drawn that can't be remapped (Home, the AYN button and its neighbours).
+/// The colour of buttons that are drawn but can't be remapped (Home, the AYN button and its neighbours).
 const FIXED: Rgb = Rgb(0x2a2a30);
-/// While a control is picked, those that can't be: barely there.
+/// While a control is being picked, the colour of those that can't be picked, barely visible.
 const MUTED: Rgb = Rgb(0x1c1c21);
 const LEADER_ALPHA: f32 = 0.45;
-/// Line widths in logical pixels: the controls', the lines in, a selected control's.
+/// Line widths in logical pixels: the controls' outlines, the lines in to the labels, and a selected
+/// control's outline.
 const PART_W: f32 = 1.5;
 const LEADER_W: f32 = 1.0;
 const SELECTED_W: f32 = 2.5;
-/// The least room between labels, and the narrowest column (of the labels' text size) that has words.
+/// The smallest gap between labels, and the narrowest column that still shows words, as multiples of
+/// the labels' text size.
 const LABEL_GAP: f32 = 1.2;
 const LABEL_MIN: f32 = 4.5;
 /// The most controls in a cluster.

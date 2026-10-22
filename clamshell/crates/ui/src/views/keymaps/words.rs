@@ -1,4 +1,4 @@
-//! Bindings in words: what an input maps to, a label's summary, the Thor's printed button names, a
+//! Bindings in words: what an input maps to, a label's summary, the button names printed on the Thor, a
 //! parameter's value, and what turns a layer on.
 
 use std::fmt::Write;
@@ -8,18 +8,19 @@ use clamshell_core::keymap::{Actuation, Binding, Button, Change, Input, Keymap, 
 use crate::toolkit::format::Fmt;
 use crate::toolkit::style::Tone;
 
-/// What a binding maps to, in words; the pad's buttons by the Thor's printed names, as for inputs (games
-/// get them by position: the printed B is the Xbox pad's A).
+/// What a binding maps to, in words. The pad's buttons go by the names printed on the Thor, as inputs
+/// do. Games get them by position, so the printed B is the Xbox pad's A.
 pub(super) fn mapping(b: Binding, keymap: Option<&Keymap>) -> Fmt<48> {
     match b.output {
-        // (A layer by its name in the keymap.)
+        // A layer goes by its name in the keymap.
         Output::Layer(l) => Fmt::of(format_args!("Layer: {}", keymap.and_then(|k| k.layer_name(l)).unwrap_or("?"))),
         out => Fmt::of(format_args!("{}", OutputLabel(out))),
     }
 }
 
-/// What an input's binding in a layer says, and its tone: blue where it maps the input to something
-/// else, grey where it is the input as on the pad (tuned, or set so in a layer above Base).
+/// What an input's binding in a layer says, and its tone. The tone is blue where it maps the input to
+/// something else, and grey where the input acts as on the pad, either tuned or set that way in a layer
+/// above Base.
 pub(super) fn described(input: Input, b: &Binding, keymap: Option<&Keymap>) -> (Fmt<48>, Tone) {
     match change(input, Some(b)) {
         Change::Mapped => (summary(input, b, keymap), Tone::Fn),
@@ -29,9 +30,9 @@ pub(super) fn described(input: Input, b: &Binding, keymap: Option<&Keymap>) -> (
     }
 }
 
-/// A binding in a few words: what it maps to, with its turbo and toggle (`Ctrl+X · 12/s`); one that only
-/// repeats or toggles the input as on the pad says just that (`Turbo 12/s`), one only tuned otherwise
-/// `Tuned`.
+/// A binding in a few words: what it maps to, with its turbo and toggle (`Ctrl+X · 12/s`). A binding
+/// that only repeats or toggles the input as on the pad says just that (`Turbo 12/s`). One that is only
+/// tuned says `Tuned`.
 pub(super) fn summary(input: Input, b: &Binding, keymap: Option<&Keymap>) -> Fmt<48> {
     let mut text = Fmt::<48>::new();
     let mapped = Some(b.output) != clamshell_core::keymap::as_on_the_pad(input);
@@ -60,7 +61,7 @@ pub(super) fn summary(input: Input, b: &Binding, keymap: Option<&Keymap>) -> Fmt
     text
 }
 
-/// "As on the pad" in words, for an input (the gyro: off).
+/// "As on the pad" in words for an input. For the gyro it is "Off".
 pub(super) fn as_on_pad(input: Input) -> Fmt<48> {
     Fmt::of(format_args!("{}", if input == Input::Gyro { "Off" } else { "As on the pad" }))
 }
@@ -72,8 +73,8 @@ pub(super) fn shown(p: Param, v: u8) -> Fmt<16> {
     text
 }
 
-/// A button's name as printed on the Thor. Its face buttons are lettered Nintendo-style by position: the
-/// bottom one (Xbox A, BTN_SOUTH) is B, the right one A, the top one X, the left one Y.
+/// A button's name as printed on the Thor. The face buttons are lettered Nintendo-style by position: the
+/// bottom one (Xbox A, BTN_SOUTH) is B, the right one A, the top one X and the left one Y.
 pub(super) fn thor(b: Button) -> &'static str {
     match b {
         Button::A => "B",
@@ -90,7 +91,7 @@ pub(super) fn thor(b: Button) -> &'static str {
     }
 }
 
-/// An input's name on screen: the Thor's.
+/// An input's name on screen, as printed on the Thor.
 pub(super) struct Label(pub(super) Input);
 
 impl std::fmt::Display for Label {
@@ -115,8 +116,8 @@ impl std::fmt::Display for OutputLabel {
     }
 }
 
-/// What turns layer `l` on, in words: each binding to it (`Back`, `LB held`, `L1 twice`, toggles saying
-/// so; a Once layer says so first); Base is beneath the others.
+/// What turns layer `l` on, in words: each binding to it, such as `Back`, `LB held` or `L1 twice`.
+/// Toggles say so, and a Once layer says so first. Base is described as beneath the others.
 pub(super) fn turned_on_by(k: &Keymap, l: Layer) -> Fmt<96> {
     let mut out = Fmt::new();
     if l == Layer::BASE {

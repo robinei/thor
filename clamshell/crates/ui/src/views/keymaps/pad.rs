@@ -1,14 +1,20 @@
 //! Where the AYN Thor's controls are drawn on the keymap edit screen. They sit on either side of its
-//! bottom screen, so they are drawn as two clusters at the screen's edges, each a column of groups in
-//! the order of [`LEFT`] and [`RIGHT`]: the shoulders (on the back's top edge), a small round button
-//! above the screen's corner (Select, Start), a stick and the D-pad or the face buttons, and a small
-//! round button at the screen's bottom corner (Home: drawn, not remappable; Back: an input like the
-//! others). The gyro sits on the left, below the D-pad. The AYN button (on the chin, between them) is a
-//! pill on Home's row, toward the middle, Home moved out to make room.
+//! bottom screen, so they are drawn as two clusters at the screen's edges. Each cluster is a column of
+//! groups in the order of [`LEFT`] and [`RIGHT`]:
 //!
-//! A remapped control has a line in to its label (between the clusters): it leaves the control's inner
-//! side straight across, or, for the controls a line across would pass through others (the outer one of
-//! the D-pad, of a stick's directions, of the face buttons), first straight up above its group.
+//! - the shoulders, on the top edge of the back;
+//! - a small round button above the screen's corner (Select, Start);
+//! - a stick, and the D-pad or the face buttons;
+//! - a small round button at the screen's bottom corner. Home is drawn but can't be remapped; Back is an
+//!   input like the others.
+//!
+//! The gyro sits on the left, below the D-pad. The AYN button, on the chin between the clusters, is a
+//! pill on Home's row toward the middle, with Home moved out to make room.
+//!
+//! A remapped control has a line in to its label between the clusters. The line leaves the control's
+//! inner side straight across. For controls where a line across would pass through others (the outer
+//! one of the D-pad, of a stick's directions, or of the face buttons), it first goes straight up above
+//! its group.
 
 use clamshell_core::keymap::{Button, Dir, Input, Side};
 
@@ -21,14 +27,14 @@ pub enum Group {
     Trigger,
     /// L1, R1.
     Bumper,
-    /// The small round button above the screen's corner: Select, Start.
+    /// The small round button above the screen's corner: Select or Start.
     Top,
     Stick,
     Dpad,
     Face,
     /// The gyro (a pill), below the D-pad.
     Gyro,
-    /// The small round button at the screen's bottom corner: Home, Back; AYN's pill beside Home.
+    /// The small round button at the screen's bottom corner, Home or Back, and AYN's pill beside Home.
     Foot,
 }
 
@@ -38,49 +44,51 @@ pub const LEFT: [(Group, f32); 7] =
 pub const RIGHT: [(Group, f32); 6] =
     [(Group::Trigger, 0.1), (Group::Bumper, 0.085), (Group::Top, 0.09), (Group::Face, 0.32), (Group::Stick, 0.33), (Group::Foot, 0.075)];
 
-/// Sizes in a group, of the smaller of its width and height. A stick: the well's radius, the cap's and
-/// the click's (dimple); the click's target's half height (its width is the cap's).
+/// Sizes in a group, as fractions of the smaller of its width and height. For a stick: the radii of the
+/// well, the cap and the click's dimple, and the half height of the click's target, which is as wide as
+/// the cap.
 const WELL: f32 = 0.38;
 const CAP: f32 = 0.27;
 const DIMPLE: f32 = 0.11;
 const CLICK: f32 = 0.145;
-/// The D-pad: an arm's reach from the centre, its half width, where it starts from the centre.
+/// The D-pad: how far an arm reaches from the centre, its half width, and where it starts from the
+/// centre.
 const ARM_L: f32 = 0.38;
 const ARM_HALF: f32 = 0.105;
 const ARM_FROM: f32 = 0.13;
-/// The face buttons: their distance from the centre and radius.
+/// The face buttons' distance from the centre, and their radius.
 const FACE_OFF: f32 = 0.33;
 const FACE_R: f32 = 0.12;
-/// Where the lane above a group runs, below its top.
+/// How far below a group's top the lane above it runs.
 const LANE: f32 = 0.035;
-/// The trigger and bumper, of the group's width and height.
+/// The trigger and bumper sizes, as fractions of the group's width and height.
 const TRIGGER: (f32, f32) = (0.5, 0.82);
 const BUMPER: (f32, f32) = (0.76, 0.5);
-/// The small round buttons' radius, of their group's height, and their centre's distance from the
-/// cluster's inner edge, of their radius.
+/// The small round buttons' radius as a fraction of their group's height, and their centre's distance
+/// from the cluster's inner edge as a multiple of their radius.
 const ROUND: f32 = 0.2;
 const ROUND_IN: f32 = 2.2;
-/// AYN's pill on Home's row: where its half of the row starts, of the row's width; its size, of that
-/// half's width and the row's height.
+/// AYN's pill on Home's row: where its half of the row starts, as a fraction of the row's width, and its
+/// size as fractions of that half's width and the row's height.
 const AYN_FROM: f32 = 0.5;
 const AYN: (f32, f32) = (0.62, 0.62);
 
 /// A control as drawn: its shape, its target, and where its line in leaves.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Part {
-    /// What is drawn (its highlight and focus ring follow it), and the corner radius of that.
+    /// What is drawn, which the highlight and focus ring follow, and its corner radius.
     pub shown: Rect,
     pub radius: f32,
-    /// What a finger hits; a stick also takes its group's corners.
+    /// What a finger hits. A stick also takes its group's corners.
     pub target: Rect,
     pub corners: Option<[Rect; 4]>,
-    /// Where its line starts, and the height of the lane it goes up to first, if it does.
+    /// Where its line starts, and the height of the lane it first goes up to, if any.
     pub anchor: (f32, f32),
     pub lane: Option<f32>,
     pub side: Side,
 }
 
-/// The clusters placed: the area they're in and each one's width.
+/// The placed clusters: the area they are in and each one's width.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Pad {
     area: Rect,
@@ -128,15 +136,16 @@ impl Pad {
         square((x, g.center().1), r)
     }
 
-    /// Home's or Back's small round button, at the screen's bottom corner (Home drawn, not remappable;
-    /// Back an input like the others). Home sits in its row's outer half: AYN has the inner one.
+    /// Home's or Back's small round button, at the screen's bottom corner. Home is drawn but can't be
+    /// remapped; Back is an input like the others. Home sits in its row's outer half, as AYN has the
+    /// inner one.
     pub fn foot(&self, side: Side) -> Option<Rect> {
         let g = self.group(side, Group::Foot)?;
         let round = self.round(side, g);
         Some(if side == Side::Left { square((g.x + g.w * AYN_FROM - round.w, g.center().1), round.w / 2.0) } else { round })
     }
 
-    /// Where `input` is, if it is in a cluster (the gyro is in the middle; the Thor has no back buttons).
+    /// Where `input` is, if it is in a cluster. The Thor has no back buttons.
     pub fn part(&self, input: Input) -> Option<Part> {
         let (side, group) = match input {
             Input::Trigger(s) => (s, Group::Trigger),
@@ -178,19 +187,20 @@ impl Pad {
                 flat(shown, shown.h / 2.0)
             }
             Input::Button(Button::Ayn) => {
-                // The row's inner half (a little more room below for a finger, as Back's).
+                // The row's inner half, with a little more room below for a finger, as for Back.
                 let half = Rect::new(g.x + g.w * AYN_FROM, g.y, g.w * (1.0 - AYN_FROM), g.h + 4.0);
                 let shown = Rect::new(half.x, g.y, half.w, g.h).centered(half.w * AYN.0, g.h * AYN.1);
                 Part { shown, radius: shown.h / 2.0, target: half, corners: None, anchor: (inner(shown, k), cy), lane: None, side }
             }
             Input::Button(Button::View | Button::Menu | Button::Back) => {
                 let shown = self.round(side, g);
-                // (Back's row is shallow, at the bottom: a little more room below for a finger.)
+                // Back's row is shallow and at the bottom, so it gets a little more room below for a
+                // finger.
                 let target = if input == Input::Button(Button::Back) { Rect::new(g.x, g.y, g.w, g.h + 4.0) } else { g };
                 Part { shown, radius: shown.w / 2.0, target, corners: None, anchor: (inner(shown, k), cy), lane: None, side }
             }
             Input::Stick(_) => {
-                // From the cap's edge above the middle, clear of the direction marks.
+                // The line starts at the cap's edge above the middle, clear of the direction marks.
                 let r = CAP * s;
                 let (x0, x1, y0, y1) = (cx - r, cx + r, cy - r, cy + r);
                 let corners = [
@@ -231,7 +241,8 @@ impl Pad {
                 let (anchor, lane) = if toward > 0.0 {
                     ((at.0 + k * half, at.1), None)
                 } else if toward < 0.0 {
-                    // Away from the labels: up from the mark, through the well, to the lane.
+                    // Pointing away from the labels: the line goes up from the mark, through the well, to
+                    // the lane.
                     ((at.0, at.1 - half), Some(lane))
                 } else {
                     ((at.0 + k * half, at.1), None)
@@ -287,12 +298,12 @@ impl Pad {
     }
 }
 
-/// Which side's table has `group` (the D-pad and the face buttons may be on either).
+/// Which side's table has `group`. The D-pad and the face buttons may be on either.
 fn side_of(group: Group) -> Side {
     if LEFT.iter().any(|(g, _)| *g == group) { Side::Left } else { Side::Right }
 }
 
-/// The side of `r` toward the labels (`k` 1: right).
+/// The edge of `r` toward the labels: the right edge when `k` is 1.
 fn inner(r: Rect, k: f32) -> f32 {
     if k > 0.0 { r.right() } else { r.x }
 }

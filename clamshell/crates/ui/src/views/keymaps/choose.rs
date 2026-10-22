@@ -1,5 +1,6 @@
-//! The screens a way to remap opens, and the layers' screens: the layers' lists (to show one, as a
-//! target), a layer's menu, the mouse's drawing, and a key chord typed on the keyboard.
+//! The screens that a way to remap opens, and the layer screens. These are the layer lists (to show a
+//! layer, or to pick one as a target), a layer's menu, the mouse's drawing, and a key chord typed on the
+//! keyboard.
 
 use std::fmt::Write;
 
@@ -18,17 +19,18 @@ use super::edit::binding;
 use super::words::{Label, OutputLabel, turned_on_by};
 use super::{BUTTON_H, PART_LINE, PART_W, ROW_H, SELECTED_W, choice_header, header, remap_title};
 
-/// The layers for `input` to turn on: the keymap's, but Base (the one it maps to now marked), each with
-/// what turns it on, and New layer… at the end (named, then mapped to). Chosen, it closes; Cancel gives
-/// up.
+/// The layers that `input` can turn on: the keymap's layers except Base, each with what turns it on, and
+/// the one it maps to now marked. New layer… at the end names a new layer and then maps to it. Choosing
+/// one closes the screen; Cancel gives up.
 pub(super) fn layers(f: &mut Frame, id: u16, input: Input) {
     let now = binding(f.s.keymaps().get(id), f.s.keymap_edit().layer, input).map(|b| b.output);
     let area = choice_header(f, &remap_title(input));
     layer_list(f, area, id, |l| now == Some(Output::Layer(l)), false);
 }
 
-/// A keymap's layers on the scrolled list ([`ListId::Layers`]), the rows the state gives: each its name
-/// (`current` marked), what turns it on, its Edit (`edit`), then New layer….
+/// A keymap's layers on the scrolled list ([`ListId::Layers`]), in the rows the state gives. Each row
+/// has the layer's name, with `current` marked, what turns it on, and an Edit button if `edit` is set.
+/// New layer… comes last.
 pub(super) fn layer_list(f: &mut Frame, area: Rect, id: u16, current: impl Fn(Layer) -> bool, edit: bool) {
     let s = f.s;
     let keymap = s.keymaps().get(id);
@@ -53,7 +55,7 @@ pub(super) fn layer_list(f: &mut Frame, area: Rect, id: u16, current: impl Fn(La
     list.end(f, rows);
 }
 
-/// A layer's menu: rename it, delete it (what maps to it too).
+/// A layer's menu: rename it, or delete it along with what maps to it.
 pub(super) fn layer_menu(f: &mut Frame, id: u16, layer: Layer) {
     let name = f.s.keymaps().get(id).and_then(|k| k.layer_name(layer)).unwrap_or("");
     let area = header(f, name, HeaderRight::None);
@@ -63,13 +65,13 @@ pub(super) fn layer_menu(f: &mut Frame, id: u16, layer: Layer) {
     } else if layer == Layer::BASE {
         widgets::menu(f, area, [(k(KeymapId::Clear), "Clear", Tone::Fn)]);
     } else {
-        // Once: a switch, and what it means.
+        // Once: a switch, and a line saying what it means.
         let size = f.text(Text::Body);
         let small = f.text(Text::Small);
         let mut rest = area;
         let row = rest.take_top(f.body().h * BUTTON_H);
         let on = f.s.keymaps().get(id).is_some_and(|k| k.layer_once(layer));
-        // (Its row reaches into the margin, so its label lines up with the actions below.)
+        // Its row reaches into the margin, so that its label lines up with the actions below.
         let r = Rect::new(row.x, row.y, widgets::menu_w(area, size), row.h).widened(size * 0.4);
         widgets::switch_row(f, k(KeymapId::LayerOnce), r, size, "Once", on);
         let note = rest.take_top(small * LINE * 1.6);
@@ -83,22 +85,24 @@ pub(super) fn layer_menu(f: &mut Frame, id: u16, layer: Layer) {
     }
 }
 
-/// The keymap's layers, to show one on the edit screen (the one shown marked), and New layer… at the
-/// end; a layer's Edit (or a long press): its menu. Back returns to the edit screen.
+/// The keymap's layers, for choosing which one the edit screen shows, with the shown one marked and New
+/// layer… at the end. A layer's Edit button or a long press opens its menu. Back returns to the edit
+/// screen.
 pub(super) fn layer_picker(f: &mut Frame, id: u16) {
     let shown = f.s.keymap_edit().layer;
     let area = choice_header(f, "Layers");
     layer_list(f, area, id, |l| l == shown, true);
 }
 
-/// The mouse's drawing, of the room under the header: its height, and its width of its height.
+/// The mouse drawing's height as a fraction of the room under the header, and its width as a fraction of
+/// its height.
 pub(super) const MOUSE_H: f32 = 0.8;
 pub(super) const MOUSE_ASPECT: f32 = 0.6;
 
-/// A part of the mouse for `input`, on a drawing of one: the left and right buttons (the body's top
-/// halves), the wheel (pressed: the middle button) with arrows for its turns, the two side buttons on the
-/// left (Forward above Back). Each part is a target; the one it maps to now is lit. Chosen, it closes;
-/// Cancel (or Back) gives up.
+/// Picks a part of the mouse for `input` on a drawing of a mouse. The parts are the left and right
+/// buttons (the top halves of the body), the wheel with arrows for its turns (pressing it is the middle
+/// button), and the two side buttons on the left, Forward above Back. Each part is a target, and the one
+/// it maps to now is lit. Choosing one closes the screen; Cancel or Back gives up.
 pub(super) fn mouse(f: &mut Frame, id: u16, input: Input) {
     let s = f.s;
     let out = binding(s.keymaps().get(id), s.keymap_edit().layer, input).map(|b| b.output);
@@ -115,14 +119,14 @@ pub(super) fn mouse(f: &mut Frame, id: u16, input: Input) {
     let look = Look { radius: w * 0.1, fill: None, inset: 0.0, ring: -3.0, press_fill: false };
     let label = |f: &mut Frame, kid: &Id, on: bool| if on || f.pressed(kid) { Tone::High } else { Tone::Fn };
 
-    // The wheel and its turns' arrows (the line between the buttons stops short of them).
+    // The wheel and the arrows for its turns. The line between the buttons stops short of them.
     let wheel = Rect::new(cx - w * 0.07, m.y + h * 0.11, w * 0.14, h * 0.14);
     let a = w * 0.14;
-    // The body, the line between the buttons and the palm, and between the buttons.
+    // The body, the line between the buttons and the palm, and the line between the two buttons.
     f.c.outline(m, w * 0.45, PART_W, PART_LINE);
     f.c.line((m.x + PART_W, split), (m.right() - PART_W, split), PART_W, PART_LINE);
     f.c.line((cx, wheel.bottom() + a), (cx, split), PART_W, PART_LINE);
-    // The buttons: the body's top halves, named in them.
+    // The buttons are the top halves of the body, with their names inside.
     for (b, half) in [(MouseButton::Left, Rect::new(m.x, m.y, w / 2.0, split - m.y)), (MouseButton::Right, Rect::new(cx, m.y, w / 2.0, split - m.y))] {
         let kid = Id::Keymap(KeymapId::Target(Target::To(Output::Mouse(b))));
         let on = lit(Output::Mouse(b));
@@ -132,7 +136,7 @@ pub(super) fn mouse(f: &mut Frame, id: u16, input: Input) {
             f.c.text_in(name, small * 0.9, tone, if b == MouseButton::Left { "Left click" } else { "Right click" }, Align::Center);
         });
     }
-    // The wheel (the middle button) and its turns.
+    // The wheel, which is also the middle button, and its turns.
     let turns = [
         (Dir::Up, Rect::new(cx - a / 2.0, wheel.y - a, a, a), Icon::ArrowUp),
         (Dir::Down, Rect::new(cx - a / 2.0, wheel.bottom(), a, a), Icon::ArrowDown),
@@ -170,7 +174,7 @@ pub(super) fn mouse(f: &mut Frame, id: u16, input: Input) {
     }
 }
 
-/// A key chord (or a stick's four keys, in turn) typed on the keyboard below.
+/// A key chord typed on the keyboard below, or a stick's four keys typed in turn.
 pub(super) fn capture(f: &mut Frame, input: Input, keys: Option<(usize, [Chord; 4])>) {
     let kb = f.s.keyboard();
     let held = Chord { key: None, shift: kb.shift.on(), ctrl: kb.ctrl.on(), alt: kb.alt.on(), logo: kb.logo.on() };

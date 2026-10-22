@@ -1,5 +1,5 @@
-//! The keymap edit screen: the Thor's controls drawn in two clusters, each changed one with a label
-//! (its lines in to it), the corners (Close, Undo, the layer button), and the layout they share.
+//! The keymap edit screen: the Thor's controls drawn in two clusters, with a label and a line in to it
+//! for each changed control, the corners (Close, Undo, the layer button), and the layout they share.
 
 use std::fmt::Write;
 
@@ -20,12 +20,11 @@ use super::{
     SELECTED_W,
 };
 
-/// An input's binding in keymap `k`'s `layer` itself, if it has one there.
 /// A label's first line: its actuation, text and tone.
 pub(super) type FirstLine = (Actuation, Fmt<48>, Tone);
 
-/// An input's label in a layer: its press's line (unless as on the pad in Base), then its hold's and
-/// double's (the first of those its first line without a press).
+/// An input's label in a layer: the line for its press, unless that is as on the pad in Base, then the
+/// lines for its hold and double. Without a press line, the first of those becomes the first line.
 pub(super) fn callout_lines(keymap: Option<&Keymap>, layer: Layer, input: Input) -> (Option<FirstLine>, [Option<(Actuation, Fmt<48>)>; 2]) {
     let press = binding(keymap, layer, input).filter(|b| layer != Layer::BASE || change(input, Some(b)) != Change::None);
     let mut lines = press.map(|b| {
@@ -45,30 +44,31 @@ pub(super) fn callout_lines(keymap: Option<&Keymap>, layer: Layer, input: Input)
     (lines, extra)
 }
 
+/// An input's binding in keymap `k`'s `layer` itself, if it has one there.
 pub(super) fn binding(k: Option<&Keymap>, layer: Layer, input: Input) -> Option<Binding> {
     k.and_then(|k| k.get_in(layer, input)).copied()
 }
 
 /// A changed control's label beside its cluster: the control, its text and tone, and the label's top
-/// once placed.
+/// once it has been placed.
 #[derive(Clone, Copy)]
 pub(super) struct Callout {
     part: Part,
-    /// Its first line (a press's, else a hold's or a double's), and its tone.
+    /// Its first line, which is the press's or else the hold's or double's, and its tone.
     act: Actuation,
     text: Fmt<48>,
     tone: Tone,
     /// A hold's and a double's lines below it, smaller.
     extra: [Option<(Actuation, Fmt<48>)>; 2],
     top: f32,
-    /// Its extra lines left out for room (the first says how many with "+N").
+    /// Whether its extra lines are left out to save room. The first line then says how many with "+N".
     collapsed: bool,
-    /// Base's, shown faded in another layer that doesn't map the input.
+    /// Whether this is Base's label, shown faded in another layer that doesn't map the input.
     faded: bool,
 }
 
 impl Callout {
-    /// The height its line reaches the labels' side at.
+    /// The height at which its line reaches the labels' side.
     fn exit(&self) -> f32 {
         self.part.lane.unwrap_or(self.part.anchor.1)
     }
@@ -77,16 +77,17 @@ impl Callout {
         self.extra.iter().flatten().count()
     }
 
-    /// Its height: the first line's, and the extra lines' unless collapsed.
+    /// Its height: the first line, plus the extra lines unless collapsed.
     fn height(&self, line: f32) -> f32 {
         line + if self.collapsed { 0.0 } else { self.extras() as f32 * line * EXTRA }
     }
 }
 
-/// An extra line of a label (a hold's, a double's), of a line's height and text size.
+/// The height and text size of a label's extra lines (a hold's or a double's), as a fraction of the first
+/// line's.
 pub(super) const EXTRA: f32 = 0.85;
 
-/// The word before a hold's or a double's line on a label.
+/// The word before a hold's, double's or full pull's line on a label.
 pub(super) fn act_word(act: Actuation) -> &'static str {
     match act {
         Actuation::Press => "",
@@ -96,7 +97,7 @@ pub(super) fn act_word(act: Actuation) -> &'static str {
     }
 }
 
-/// One cluster's labels, in the order their lines arrive in (top to bottom).
+/// One cluster's labels, in the order their lines arrive, from top to bottom.
 pub(super) struct Labels {
     items: [Option<Callout>; CONTROLS],
     len: usize,
@@ -125,13 +126,14 @@ impl Labels {
         self.len += 1;
     }
 
-    /// The labels' heights together, with `gap` between them.
+    /// The labels' total height, with `gap` between them.
     fn total(&self, line: f32, gap: f32) -> f32 {
         self.iter().map(|c| c.height(line)).sum::<f32>() + gap * self.len.saturating_sub(1) as f32
     }
 
-    /// Places the labels (their first lines `line` high) level with their lines where they can be,
-    /// within `y0`..`y1`, at least `gap` apart (less if they don't fit; their extra lines left out first).
+    /// Places the labels, whose first lines are `line` high, level with their lines where possible,
+    /// within `y0`..`y1` and at least `gap` apart. If they don't fit, the extra lines are left out first,
+    /// and then the gap shrinks.
     fn place(&mut self, y0: f32, y1: f32, line: f32, gap: f32) {
         if self.total(line, gap) > y1 - y0 {
             for c in self.items.iter_mut().take(self.len).flatten() {
@@ -154,8 +156,8 @@ impl Labels {
     }
 }
 
-/// What a label's line says: a dim word first (`hold`, `2×`; none for a press), the text in `tone`, and
-/// a dim note after it (`+2`).
+/// What a label's line says: a dim word first (`hold`, `2×`, or none for a press), the text in `tone`,
+/// and a dim note after it (`+2`).
 pub(super) struct LabelLine<'a> {
     word: &'a str,
     text: &'a str,
@@ -163,15 +165,15 @@ pub(super) struct LabelLine<'a> {
     note: &'a str,
 }
 
-/// One line of a label at `y`, at `size`, its text cut to `lw`; placed by `at` from its width (from the
-/// left or right).
+/// One line of a label at `y` and `size`, with its text cut to `lw`. `at` gives its x from its width, so
+/// that it can be placed from the left or the right.
 pub(super) fn label_line(f: &mut Frame, at: impl Fn(f32) -> f32, y: f32, size: f32, lw: f32, line: LabelLine) {
     let LabelLine { word, text, tone, note } = line;
     let space = size * 0.3;
     let word_w = if word.is_empty() { 0.0 } else { f.c.text_width(size, word) + space };
     let note_w = if note.is_empty() { 0.0 } else { f.c.text_width(size, note) };
     let text_w = f.c.text_width(size, text).min((lw - word_w - note_w).max(size));
-    // The three in a run from where `at` puts it.
+    // The word, text and note in a run, starting where `at` puts them.
     let mut x = at(word_w + text_w + note_w);
     let h = size * LINE;
     if !word.is_empty() {
@@ -185,9 +187,9 @@ pub(super) fn label_line(f: &mut Frame, at: impl Fn(f32) -> f32, y: f32, size: f
     }
 }
 
-/// Where the edit screen's parts go in `body`: the clusters' area (below the corners), Close's corner (top
-/// left) and the layer button's (top right), a cluster's width, the room between it and its labels, the
-/// labels' column's width, and the strip between the label columns, the whole height (the panel's).
+/// Where the edit screen's parts go in `body`: the clusters' area below the corners, Close's corner at
+/// the top left and the layer button's at the top right, a cluster's width, the gap between it and its
+/// labels, the labels' column width, and the panel's strip between the label columns at full height.
 pub(crate) struct EditLayout {
     pub area: Rect,
     pub close: Rect,
@@ -198,10 +200,10 @@ pub(crate) struct EditLayout {
     pub strip: Rect,
 }
 
-/// The corners' height (Close, the layer button), of the area's height.
+/// The height of the corners (Close, the layer button), as a fraction of the area's height.
 pub(super) const CORNER_H: f32 = 0.075;
 
-/// The edit screen's margin at the sides, of the usual one (the drawing wants the room).
+/// The edit screen's side margin as a fraction of the usual one, since the drawing needs the room.
 pub(super) const EDIT_SIDE: f32 = 0.35;
 
 pub(crate) fn edit_layout(body: Rect) -> EditLayout {
@@ -220,8 +222,8 @@ pub(crate) fn edit_layout(body: Rect) -> EditLayout {
     EditLayout { area, close, layer, cw, gap, lw, strip }
 }
 
-/// The edit screen's corners: Close and Undo at the top left, the layer shown at the top right, a button
-/// to the list of layers (all faded while a control is picked).
+/// The edit screen's corners: Close and Undo at the top left, and at the top right the layer shown, as a
+/// button to the list of layers. All are faded while a control is being picked.
 pub(super) fn edit_corners(f: &mut Frame, l: &EditLayout, keymap: Option<&Keymap>, layer: Layer, picking: bool) {
     let size = f.text(Text::Small);
     let name = keymap.and_then(|k| k.layer_name(layer)).unwrap_or("Base");
@@ -234,11 +236,11 @@ pub(super) fn edit_corners(f: &mut Frame, l: &EditLayout, keymap: Option<&Keymap
         let mut room = r;
         f.c.icon(Icon::ArrowDown, room.take_right(arrow).square_center(arrow), tone);
     };
-    // Close, and Undo beside it (faded with nothing to undo).
+    // Close, and Undo beside it, faded when there is nothing to undo.
     let close_w = f.c.text_width(size, "Close") + size * 1.2;
     let close = Rect::new(l.close.x, l.close.y, close_w, l.close.h);
     let undo = Rect::new(close.right(), l.close.y, (l.close.w - close_w).max(1.0), l.close.h);
-    // (Picking: the panel has Cancel; these wait, faded.)
+    // While picking, the panel has Cancel, and these are faded and inactive.
     if picking {
         f.c.text_in(close, size, Tone::Dim, "Close", Align::Start);
         f.c.text_in(undo, size, Tone::Dim, "Undo", Align::Start);
@@ -251,7 +253,8 @@ pub(super) fn edit_corners(f: &mut Frame, l: &EditLayout, keymap: Option<&Keymap
     } else {
         f.c.text_in(undo, size, Tone::Dim, "Undo", Align::Start);
     }
-    // The layer shown: Base in blue as any button; another in white, so it is plain which one is edited.
+    // The layer shown: Base in blue like any button, another layer in white, so that it is clear which
+    // one is being edited.
     let id = Id::Keymap(KeymapId::LayerPicker);
     let tone = if f.pressed(&id) || layer != Layer::BASE { Tone::High } else { Tone::Fn };
     f.button(id, r, Look::TEXT, |f| layer_button(f, tone));
@@ -260,11 +263,11 @@ pub(super) fn edit_corners(f: &mut Frame, l: &EditLayout, keymap: Option<&Keymap
 /// The edit screen. The controls sit in two clusters at the sides (see [`super::pad`]), each one a
 /// target. A control that the layer shown changes has a line to a label: blue when it is mapped to
 /// something else, grey when it acts as on the pad with tuned parameters. Home is ClamShell's and drawn
-/// dim. The layer button at the top switches the layer shown. Between the label columns is the panel:
-/// the selected input, what it does in the layer, the ways to remap it, and its parameters (a slider, or
-/// a switch). Below are a hint and "No changes". While a control is being picked (what the selected
-/// input maps to, or what holds the gyro on), the controls that can't be picked are dimmed, and the
-/// panel and the hint say what to do.
+/// dim. The layer button at the top switches the layer shown. Between the label columns is the panel,
+/// with the selected input, what it does in the layer, the ways to remap it, and its parameters as
+/// sliders or switches. Below are a hint and "No changes". While a control is being picked, either what
+/// the selected input maps to or what holds the gyro on, the controls that can't be picked are dimmed,
+/// and the panel and the hint say what to do.
 pub(super) fn edit(f: &mut Frame, id: u16, picking: Option<Picking>) {
     let body = f.body();
     let s = f.s;
@@ -283,11 +286,12 @@ pub(super) fn edit(f: &mut Frame, id: u16, picking: Option<Picking>) {
         let Some(part) = pad.part(input) else {
             continue;
         };
-        // While a control is picked, those that can't be have no label.
+        // While a control is being picked, those that can't be picked have no label.
         if picking.is_some_and(|p| !p.takes(input)) {
             continue;
         }
-        // The layer's own; in another layer than Base, an input it doesn't map: Base's, faded.
+        // The layer's own label. In a layer other than Base, an input the layer doesn't map shows Base's,
+        // faded.
         let (mut lines, mut extra) = callout_lines(keymap, layer, input);
         let mut faded = false;
         if lines.is_none() && layer != Layer::BASE {
@@ -328,7 +332,7 @@ pub(super) fn edit(f: &mut Frame, id: u16, picking: Option<Picking>) {
         }
     }
 
-    // The controls (the clicks last: they sit on the sticks' caps).
+    // The controls, with the stick clicks last since they sit on the sticks' caps.
     for side in Side::ALL {
         if let Some(well) = pad.well(side) {
             let muted = picking.is_some_and(|p| !p.takes(Input::Stick(side)));
@@ -345,7 +349,7 @@ pub(super) fn edit(f: &mut Frame, id: u16, picking: Option<Picking>) {
                 None => Tone::Dim,
             };
             let muted = picking.is_some_and(|p| !p.takes(input));
-            // (Picking the gyro's hold, the one holding it now is lit.)
+            // While picking the gyro's hold, the control holding it now is lit.
             let hold = match picking {
                 Some(Picking::Hold(gyro)) => s.param_base(id, gyro).and_then(|b| b.hold) == Some(input),
                 _ => false,
@@ -354,8 +358,8 @@ pub(super) fn edit(f: &mut Frame, id: u16, picking: Option<Picking>) {
         }
     }
 
-    // The labels; where their column is too narrow for words (a narrow window), a dot at the line's end
-    // (the panel says what the selected one does).
+    // The labels. Where their column is too narrow for words, as in a narrow window, a dot goes at the
+    // line's end instead, and the panel says what the selected one does.
     let words = lw >= size * LABEL_MIN;
     for (side, column) in [(Side::Left, &left), (Side::Right, &right)] {
         let cluster = pad.cluster(side);
@@ -380,7 +384,7 @@ pub(super) fn edit(f: &mut Frame, id: u16, picking: Option<Picking>) {
         }
     }
 
-    // Home (ClamShell's, drawn dim), at the screen's bottom left corner.
+    // Home, which is ClamShell's and drawn dim, at the screen's bottom left corner.
     let fixed = if picking.is_some() { MUTED } else { FIXED };
     if let Some(r) = pad.foot(Side::Left) {
         f.c.outline(r, r.w, PART_W, fixed);
@@ -388,16 +392,17 @@ pub(super) fn edit(f: &mut Frame, id: u16, picking: Option<Picking>) {
         f.c.text_in(Rect::new(r.x - r.w * 0.6 - w, r.y, w, r.h), size, fixed, "Home", Align::Start);
     }
 
-    // The panel: the whole strip between the label columns, above the keymap's line: which keymap is edited
-    // (a game's own, or a named one with who uses it: its edits reach them all) and Make own.
+    // The panel fills the strip between the label columns, above the keymap line. That line says which
+    // keymap is edited, a game's own or a named one with who uses it (its edits reach them all), and
+    // offers Make own.
     let margin = (strip.w * 0.04).min(size);
     let mut panel_r = Rect::new(strip.x + margin, strip.y, (strip.w - 2.0 * margin).max(1.0), strip.h);
     if picking.is_none() {
         let small = f.text(Text::Small) * PANEL_TEXT;
         let row = panel_r.take_bottom(small * LINE * 1.6);
-        // (Wider than the panel into the label columns while their labels end above it: those of AYN
-        // and Back, the controls beside it, reach down to it when they are mapped.)
-        // (Both sides alike, so it stays centred.)
+        // The line reaches into the label columns while their labels end above it. The labels of AYN and
+        // Back, the controls beside it, reach down to it when they are mapped. Both sides widen alike, so
+        // that it stays centred.
         let free = |column: &Labels| column.iter().all(|c| c.top + c.height(line) <= row.y);
         let into = if free(&left) && free(&right) { lw * 0.9 } else { 0.0 };
         keymap_line(f, Rect::new(strip.x - into, row.y, strip.w + 2.0 * into, row.h), id, small);
@@ -409,8 +414,8 @@ pub(super) fn edit(f: &mut Frame, id: u16, picking: Option<Picking>) {
 }
 
 /// Which keymap is edited: a game's own ("Own keymap of Hades"), or a named one with who uses it ("FPS,
-/// used by all games, 2 games"), and then for a game without its own keymap "Make own" (a copy for the
-/// game alone, edited from then on).
+/// used by all games, 2 games"). For a game without its own keymap, "Make own" follows, which makes a
+/// copy for that game alone to edit from then on.
 fn keymap_line(f: &mut Frame, mut row: Rect, id: u16, size: f32) {
     let own = f.s.keymap_is_own(id);
     let text = match (own, f.s.editing()) {
@@ -419,7 +424,7 @@ fn keymap_line(f: &mut Frame, mut row: Rect, id: u16, size: f32) {
         (false, _) => Fmt::of(format_args!("{}, used by {}", f.s.keymap_name(id), Lower(super::users(f, id).as_str()))),
     };
     let label = if !own && f.s.keymap_can_make_own() { "Make own" } else { "" };
-    // Centred together: the text, then the action.
+    // The text and then the action, centred together.
     let gap = size;
     let action_w = if label.is_empty() { 0.0 } else { f.c.text_width(size, label) + gap };
     let w = (f.c.text_width(size, &text) + action_w).min(row.w);
@@ -431,7 +436,7 @@ fn keymap_line(f: &mut Frame, mut row: Rect, id: u16, size: f32) {
     f.c.text_fit(row, size, Tone::Dim, &text, Keep::Start);
 }
 
-/// Text with its first letter in lower case ("All games" after "Used by").
+/// Text with its first letter in lower case, as for "All games" after "used by".
 struct Lower<'a>(&'a str);
 
 impl std::fmt::Display for Lower<'_> {
@@ -444,8 +449,9 @@ impl std::fmt::Display for Lower<'_> {
     }
 }
 
-/// A control in a cluster: its outline and its own mark, in `tone` (blue mapped, grey tuned, dim as on
-/// the pad); outlined brighter when selected, darker when `muted` (it can't be picked); a target.
+/// A control in a cluster, as a target: its outline and its mark in `tone` (blue when mapped, grey when
+/// tuned, dim when as on the pad). The outline is brighter when selected, and darker when `muted`
+/// because it can't be picked.
 pub(super) fn control(f: &mut Frame, input: Input, p: Part, tone: Tone, selected: bool, muted: bool, size: f32) {
     let look = Look { radius: p.radius, fill: None, inset: 0.0, ring: -3.0, press_fill: true };
     let shown = p.shown;
@@ -456,13 +462,13 @@ pub(super) fn control(f: &mut Frame, input: Input, p: Part, tone: Tone, selected
         (false, false) => (PART_W, PART_LINE),
     };
     let tone = if muted { MUTED } else { tone.rgb() };
-    // A stick takes its group's corners as well (drawn first, so the cap's outline stays on top).
+    // A stick also takes its group's corners as targets, added first so the cap's outline stays on top.
     for corner in p.corners.into_iter().flatten() {
         f.button_in(id.clone(), corner, shown, look, |_| {});
     }
     f.button_in(id, p.target, shown, look, |f| {
         let (cx, cy) = shown.center();
-        // (Centred by its ink: a letter in a round button looks centred whatever its shape.)
+        // Centred by its ink, so that a letter in a round button looks centred whatever its shape.
         let name = |f: &mut Frame, t: &str, r: Rect, size: f32| {
             f.c.text_ink_centred(r, size, tone, t);
         };
