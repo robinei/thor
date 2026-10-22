@@ -236,7 +236,7 @@ impl Bottom {
     /// Home+Down moves the window in front on the top screen to the bottom screen, shows it there, and
     /// remembers it for its program.
     pub(crate) fn window_down(&mut self, session: &Session, now: u64, out: &mut Out) {
-        let Some(w) = session.windows().iter().find(|w| w.focused && !w.down && w.home() != Some(Instance::Shelf)) else {
+        let Some(w) = session.windows().iter().find(|w| w.focused && !w.down && !w.is_shelf()) else {
             return;
         };
         self.show_down(w.id, out);

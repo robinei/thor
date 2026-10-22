@@ -362,7 +362,7 @@ impl Session {
     fn stray_to_waiting(&self, now: u64, taken: &mut Vec<i64>, out: &mut Out) -> Option<Arc<str>> {
         let known = &self.followed_windows;
         let stray: Vec<i64> =
-            self.windows.iter().filter(|w| !known.contains(&w.id) && w.home().is_none() && !w.down && self.running_of(w).is_none()).map(|w| w.id).collect();
+            self.windows.iter().filter(|w| !known.contains(&w.id) && !w.has_home() && !w.down && self.running_of(w).is_none()).map(|w| w.id).collect();
         let waiting = self
             .running
             .iter()
@@ -388,19 +388,23 @@ impl Session {
     /// entry that was just given a window, which is still where it came up. A play by windows is recorded.
     fn end_windowless(&mut self, taken: Option<&Arc<str>>, clock: &Clock, shelf: &mut Shelf, out: &mut Out) {
         let now = clock.mono();
-        let with: Vec<Arc<str>> =
-            self.running.iter().filter(|r| taken == Some(&r.id) || self.windows_of(&r.id).next().is_some()).map(|r| r.id.clone()).collect();
+        // Which have windows is worked out before any is removed, since a window's entry is found among
+        // all of them.
+        let mut with = std::mem::take(&mut self.with_windows);
+        with.clear();
+        with.extend(self.running.iter().map(|r| taken == Some(&r.id) || self.windows_of(&r.id).next().is_some()));
         let mut ended = Vec::new();
-        let icons: Vec<Arc<str>> = self.tray.iter().map(|t| t.key.clone()).collect();
-        // Entries with a scope listed have a launch of theirs running.
-        let launched: Vec<String> = self.running.iter().filter(|r| self.has_units(&r.key)).map(|r| r.key.clone()).collect();
+        let (icons, units) = (&self.tray, &self.units);
+        let mut has_windows = with.iter();
         self.running.retain_mut(|r| {
-            let has = with.contains(&r.id);
+            let has = has_windows.next().copied().unwrap_or(false);
             r.seen |= has;
             match r.origin {
-                Origin::Found { ref tray, .. } => tray.as_ref().is_some_and(|k| icons.contains(k)) || has,
+                Origin::Found { ref tray, .. } => tray.as_ref().is_some_and(|k| icons.iter().any(|t| t.key == *k)) || has,
                 Origin::Windows { since, until } => {
-                    let runs = launched.contains(&r.key) || if r.seen { has } else { now <= until };
+                    // An entry with a scope listed has a launch of its own running.
+                    let launched = units.iter().any(|u| u.key() == Some(r.key.as_str()));
+                    let runs = launched || if r.seen { has } else { now <= until };
                     if !runs && r.seen {
                         ended.push((r.id.clone(), since));
                     }
@@ -409,6 +413,7 @@ impl Session {
                 Origin::Ours => true,
             }
         });
+        self.with_windows = with;
         for (game, start) in ended {
             shelf.record_play(game, start, clock, out);
         }

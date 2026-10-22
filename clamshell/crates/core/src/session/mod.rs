@@ -55,6 +55,9 @@ pub struct Session {
     /// main screen. They tell which windows are new and when the one in front closes.
     followed_windows: Vec<i64>,
     followed_front: Option<String>,
+    /// Which running entries have windows, in their order, kept so that each pass reuses it (see
+    /// [`Session::end_windowless`]).
+    with_windows: Vec<bool>,
     /// Programs' tray icons (see [`crate::session::tray`]).
     tray: Vec<tray::TrayItem>,
     /// Programs paused or ended while hidden (see [`crate::session::background`]).
@@ -250,7 +253,9 @@ impl Session {
         self.windows = windows;
         let present = |name: &String| self.windows.iter().any(|w| w.workspace == *name);
         self.recent.retain(present);
-        if let Some(front) = self.windows.iter().find(|w| w.focused).map(|w| w.workspace.clone()) {
+        // Already first, it stays.
+        if let Some(front) = self.windows.iter().find(|w| w.focused).map(|w| &w.workspace).filter(|f| self.recent.first() != Some(*f)) {
+            let front = front.clone();
             self.recent.retain(|n| *n != front);
             self.recent.insert(0, front);
         }

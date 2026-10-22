@@ -49,16 +49,28 @@ impl Instance {
             "game" => return Some(Instance::Landing),
             _ => {}
         }
+        let (key, secs, n) = Instance::parse_run(name)?;
+        Some(Instance::Run { key: key.to_owned(), secs, n })
+    }
+
+    /// A launch's key, start time and counter, from its name.
+    fn parse_run(name: &str) -> Option<(&str, u64, u64)> {
         let mut parts = name.strip_prefix(RUN)?.rsplitn(3, '-');
         let n = parts.next()?.parse().ok()?;
         let secs = parts.next()?.parse().ok()?;
         let key = parts.next().filter(|k| !k.is_empty() && !k.contains('-'))?;
-        Some(Instance::Run { key: key.to_owned(), secs, n })
+        Some((key, secs, n))
     }
 
     /// The launch whose scope `unit` (`<name>.scope`) is, if we started it.
     pub fn from_unit(unit: &str) -> Option<Instance> {
         Instance::parse(unit.strip_suffix(SCOPE)?).filter(|i| matches!(i, Instance::Run { .. }))
+    }
+
+    /// Whether `unit` is the scope of a launch we started ([`Instance::from_unit`]), found without
+    /// allocating.
+    pub fn is_launch_unit(unit: &str) -> bool {
+        unit.strip_suffix(SCOPE).and_then(Instance::parse_run).is_some()
     }
 
     /// The file name, in the runtime dir, of the control socket of entry `key`'s launches. It is a

@@ -42,6 +42,21 @@ impl Window {
     pub fn home(&self) -> Option<Instance> {
         self.instance().or_else(|| (self.app_id == SHELF_APP_ID).then_some(Instance::Shelf))
     }
+
+    /// Whether it has a home ([`Window::home`]), found without allocating.
+    pub fn has_home(&self) -> bool {
+        self.launched() || self.app_id == SHELF_APP_ID
+    }
+
+    /// Whether its home is shelf's workspace ([`Window::home`]), found without allocating.
+    pub fn is_shelf(&self) -> bool {
+        !self.launched() && self.app_id == SHELF_APP_ID
+    }
+
+    /// Whether it is in a scope we started.
+    fn launched(&self) -> bool {
+        self.unit.as_deref().is_some_and(Instance::is_launch_unit)
+    }
 }
 
 #[cfg(test)]
@@ -60,5 +75,10 @@ mod tests {
         assert_eq!(w(Some("app-steam.scope"), "steam_app_620").home(), None, "Steam's: placed by the program");
         assert_eq!(w(Some("app-steam.scope"), "steam").home(), None, "not ours: left alone");
         assert_eq!(w(Some("clamshell.service"), SHELF_APP_ID).home(), Some(Instance::Shelf));
+        // The same without allocating.
+        let windows = [foot, w(Some("app-steam.scope"), "steam"), w(Some("clamshell.service"), SHELF_APP_ID), w(None, SHELF_APP_ID)];
+        for w in &windows {
+            assert_eq!((w.has_home(), w.is_shelf()), (w.home().is_some(), w.home() == Some(Instance::Shelf)), "{w:?}");
+        }
     }
 }
