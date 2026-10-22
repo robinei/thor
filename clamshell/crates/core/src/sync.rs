@@ -115,6 +115,8 @@ pub(crate) enum Resend {
     /// Back from sleep, which may have reset what the settings set, such as frequency caps and cores: they
     /// are applied again.
     Resumed,
+    /// The settings in force were changed: they are applied.
+    Settings,
     /// The refresh rate calibration turned the bottom screen off while it ran and then restored it: it is
     /// set to what ClamShell wants.
     RefreshCalibrated,
@@ -126,7 +128,7 @@ impl Sent {
         match why {
             Resend::Start => (self.keymap, self.route) = (None, None),
             Resend::Shown => self.shown = None,
-            Resend::Resumed => self.program = None,
+            Resend::Resumed | Resend::Settings => self.program = None,
             Resend::RefreshCalibrated => self.bottom_on = None,
         }
     }
@@ -214,7 +216,7 @@ impl Sent {
         }
     }
 
-    /// The settings in force are applied when the program in force changes.
+    /// The settings in force are applied when the program in force changes, and when they are changed.
     fn settings(&mut self, w: &Wanted, out: &mut Out) {
         if self.program.as_ref().is_some_and(|p| p.as_ref() == w.program) {
             return;

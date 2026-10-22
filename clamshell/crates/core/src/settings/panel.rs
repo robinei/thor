@@ -317,12 +317,12 @@ impl State {
         self.saved_and_applied(before, out);
     }
 
-    /// Saves the settings, and applies the settings in force if they changed from `before`.
-    pub(crate) fn saved_and_applied(&self, before: Values, out: &mut Out) {
+    /// Saves the settings, and applies the settings in force after the event if they changed from
+    /// `before`.
+    pub(crate) fn saved_and_applied(&mut self, before: Values, out: &mut Out) {
         out.effects.push(self.prefs.save_effect());
-        let now = self.in_force();
-        if now != before {
-            out.effects.push(Effect::Apply { entry: self.session.program().cloned(), settings: now });
+        if self.in_force() != before {
+            self.sent.resend(crate::sync::Resend::Settings);
         }
     }
 }
