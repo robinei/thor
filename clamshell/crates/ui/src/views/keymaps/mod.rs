@@ -186,30 +186,31 @@ fn menu(f: &mut Frame, id: u16) {
 fn delete(f: &mut Frame, id: u16) {
     let name = f.s.keymap_name(id);
     let title = Fmt::<128>::of(format_args!("Delete {name}?"));
-    let area = header(f, &title, HeaderRight::None);
-    let who = users(f, id);
-    let size = f.text(Text::Body);
-    let text = Fmt::<160>::of(format_args!("In use ({}): deleting it puts them back on Default.", who.as_str()));
-    let used = f.c.wrap(Span { x: area.x, y: area.y, w: area.w }, size, Tone::Normal, &text, 3);
-    let pad = f.pad();
-    let rest = Rect::new(area.x, area.y + used + pad, area.w, area.h - used - pad);
-    widgets::menu(f, rest, &[(Id::Keymap(KeymapId::Back), "Keep it", Tone::Fn), (Id::Keymap(KeymapId::ConfirmDelete), "Delete", Tone::Accent)]);
+    let text = Fmt::<160>::of(format_args!("In use ({}): deleting it puts them back on Default.", users(f, id).as_str()));
+    confirm(f, &title, &text, (KeymapId::ConfirmDelete, "Delete"));
 }
 
 /// Saving a game's own keymap over named keymap `to`: are you sure (it reaches the games using it).
 fn overwrite(f: &mut Frame, to: u16) {
     let name = f.s.keymap_name(to);
     let title = Fmt::<128>::of(format_args!("Replace {name}?"));
-    let area = header(f, &title, HeaderRight::None);
-    let size = f.text(Text::Body);
-    let text = match f.s.keymap_users(to).any() {
-        true => Fmt::<160>::of(format_args!("Its bindings become the own keymap's, for every game using it ({}).", users(f, to).as_str())),
-        false => Fmt::of(format_args!("Its bindings become the own keymap's.")),
+    let text = if f.s.keymap_users(to).any() {
+        Fmt::<160>::of(format_args!("Its bindings become the own keymap's, for every game using it ({}).", users(f, to).as_str()))
+    } else {
+        Fmt::of(format_args!("Its bindings become the own keymap's."))
     };
-    let used = f.c.wrap(Span { x: area.x, y: area.y, w: area.w }, size, Tone::Normal, &text, 3);
+    confirm(f, &title, &text, (KeymapId::ConfirmSave, "Replace"));
+}
+
+/// A screen asking to confirm something that can't be undone: its title, what it does, then Keep it (back)
+/// and the action.
+fn confirm(f: &mut Frame, title: &str, text: &str, (act, label): (KeymapId, &str)) {
+    let area = header(f, title, HeaderRight::None);
+    let size = f.text(Text::Body);
+    let used = f.c.wrap(Span { x: area.x, y: area.y, w: area.w }, size, Tone::Normal, text, 3);
     let pad = f.pad();
     let rest = Rect::new(area.x, area.y + used + pad, area.w, area.h - used - pad);
-    widgets::menu(f, rest, &[(Id::Keymap(KeymapId::Back), "Keep it", Tone::Fn), (Id::Keymap(KeymapId::ConfirmSave), "Replace", Tone::Accent)]);
+    widgets::menu(f, rest, &[(Id::Keymap(KeymapId::Back), "Keep it", Tone::Fn), (Id::Keymap(act), label, Tone::Accent)]);
 }
 
 /// The edit screen: the labels' text, of the small text size; of the area's width, a cluster's width,
