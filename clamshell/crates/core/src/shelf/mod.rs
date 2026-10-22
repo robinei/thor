@@ -538,6 +538,7 @@ impl Rows for Shelf {
 #[cfg(test)]
 #[allow(clippy::indexing_slicing)]
 mod tests {
+    use crate::bottom::keyboard::Key;
     use crate::testkit::*;
     use crate::*;
 

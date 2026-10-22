@@ -1,7 +1,8 @@
 //! Shelf's rules on the state: its targets, the pad's steps through it, typing to find a title, the
 //! favourites, and its entries' metadata fetched first while it shows them.
 
-use crate::{Dirty, Effect, Id, Key, Save, ShelfEvent, ShelfId, State};
+use crate::bottom::keyboard::{self, Key};
+use crate::{Dirty, Effect, Id, Save, ShelfEvent, ShelfId, State};
 
 impl State {
     /// Shelf's targets.
@@ -105,15 +106,15 @@ impl State {
     /// A key typed with shelf in front: a character narrows the current list to the titles starting with
     /// what is typed, Backspace takes the last one back, Esc clears it, Enter opens or plays the selected
     /// entry.
-    pub(crate) fn find(&mut self, stroke: crate::bottom::keyboard::Stroke) -> Vec<Effect> {
+    pub(crate) fn find(&mut self, stroke: keyboard::Stroke) -> Vec<Effect> {
         let mut filter = self.shelf.filter().to_owned();
         match stroke.key {
-            Key::Char(c) if !stroke.ctrl && !stroke.alt && !stroke.logo => filter.push(if stroke.shift { crate::bottom::keyboard::shifted(c) } else { c }),
-            Key::Named(crate::bottom::keyboard::Named::Backspace) => {
+            Key::Char(c) if !stroke.ctrl && !stroke.alt && !stroke.logo => filter.push(if stroke.shift { keyboard::shifted(c) } else { c }),
+            Key::Named(keyboard::Named::Backspace) => {
                 filter.pop();
             }
-            Key::Named(crate::bottom::keyboard::Named::Esc) => filter.clear(),
-            Key::Named(crate::bottom::keyboard::Named::Enter) => return self.activate_selected(),
+            Key::Named(keyboard::Named::Esc) => filter.clear(),
+            Key::Named(keyboard::Named::Enter) => return self.activate_selected(),
             _ => return vec![],
         }
         if self.shelf.set_filter(filter) {
