@@ -1,7 +1,7 @@
-//! Whether an app's text field wants typing, from the compositor's input-method protocol (sway relays
-//! text-input-v3, which GTK, Qt, Firefox and foot use): ClamShell registers as the seat's input method
-//! and only listens; the keys still go through the keyboard's virtual device. A field that is let go is
-//! reported after a short wait, so moving between fields doesn't bounce the keyboard.
+//! Whether an app's text field wants typing, learned from the compositor's input-method protocol. Sway
+//! relays text-input-v3, which GTK, Qt, Firefox and foot use. ClamShell registers as the seat's input
+//! method and only listens; the keys still go through the keyboard's virtual device. A field that is let
+//! go is reported after a short wait, so moving between fields doesn't make the keyboard bounce.
 
 use std::time::Duration;
 
@@ -24,12 +24,12 @@ use super::App;
 /// How long a field must stay let go before the keyboard goes back.
 const SETTLE: Duration = Duration::from_millis(400);
 
-/// What the input method said, once a batch of its events is done.
+/// What the input method said, once a batch of its events is complete.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Field {
     /// A field wants typing (true) or was let go (false).
     Active(bool),
-    /// Another input method has the seat: any field is let go at once.
+    /// Another input method has the seat. Any field is treated as let go at once.
     Gone,
 }
 
@@ -38,7 +38,7 @@ pub(crate) enum Field {
 pub(crate) struct TextInput {
     manager: Option<ZwpInputMethodManagerV2>,
     method: Option<ZwpInputMethodV2>,
-    /// Activate or deactivate since the last `done`.
+    /// An activate (true) or deactivate (false) since the last `done`.
     pending: Option<bool>,
     /// What the state was last told.
     active: bool,
@@ -51,20 +51,20 @@ impl TextInput {
         TextInput { manager, ..TextInput::default() }
     }
 
-    /// Becomes the input method of `seat` (the first one).
+    /// Becomes the input method of `seat`. Only the first seat is used.
     pub(crate) fn seat(&mut self, seat: &WlSeat, qh: &QueueHandle<App>) {
         if let (Some(manager), None) = (&self.manager, &self.method) {
             self.method = Some(manager.get_input_method(seat, qh, Data));
         }
     }
 
-    /// The input method's `event`; what it means once it is complete.
+    /// Handles the input method's `event`. Returns what the batch means once it is complete.
     fn event(&mut self, method: &ZwpInputMethodV2, event: zwp_input_method_v2::Event) -> Option<Field> {
         match event {
             zwp_input_method_v2::Event::Activate => self.pending = Some(true),
             zwp_input_method_v2::Event::Deactivate => self.pending = Some(false),
             zwp_input_method_v2::Event::Done => return self.pending.take().map(Field::Active),
-            // Another input method has the seat (fcitx, ibus on a desktop): do without.
+            // Another input method, such as fcitx or ibus on a desktop, has the seat. Do without.
             zwp_input_method_v2::Event::Unavailable => {
                 log::info!("another input method is running: the keyboard won't come up for text fields");
                 method.destroy();
@@ -77,7 +77,7 @@ impl TextInput {
         None
     }
 
-    /// Records what the state is told; whether that is news.
+    /// Records what the state is told, and returns whether that is news.
     fn tell(&mut self, active: bool) -> bool {
         std::mem::replace(&mut self.active, active) != active
     }
@@ -99,8 +99,8 @@ impl Dispatch2<ZwpInputMethodV2, App> for Data {
 }
 
 impl App {
-    /// Tells the state about a text field: at once when one wants typing (or the input method is gone),
-    /// after `SETTLE` when it was let go.
+    /// Tells the state about a text field. This happens at once when a field wants typing or the input
+    /// method is gone, and after `SETTLE` when a field was let go.
     fn text_field(&mut self, field: Field) {
         if let Some(token) = self.text_input.settle.take() {
             self.loop_handle.remove(token);

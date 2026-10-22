@@ -1,5 +1,6 @@
-//! The app's own work: views placed on the outputs, events applied and the views they touched marked,
-//! frames drawn when due, the input machines' actions carried out and their timers armed.
+//! The app's own work. It places the views on the outputs, applies events and marks the views they
+//! touched, draws frames when they are due, and carries out the input machines' actions and arms their
+//! timers.
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -72,7 +73,7 @@ impl App {
         })
     }
 
-    /// The top view as a window; the bottom one as `BottomKind::choose` says.
+    /// Places the top view as a window, and the bottom one as `BottomKind::choose` says.
     pub(super) fn place_views(&mut self, shells: &Shells, qh: &QueueHandle<App>, config: &Config) {
         self.views.top = Some(View::window(&shells.compositor, &shells.xdg, qh, Screen::Top, config.top_size));
         self.display.all_on(self.output_state.outputs(), qh);
@@ -111,8 +112,9 @@ impl App {
         for effect in &effects {
             match effect {
                 Effect::Quit => self.exit = true,
-                // The screens' power is the compositor's, asked through Wayland. A bottom screen turned
-                // off (Home+Start) is left out, so that turning the screens on again leaves it off.
+                // The compositor controls the screens' power, and we ask it through Wayland. A bottom
+                // screen turned off with Home+Start is left out, so turning the screens on again leaves
+                // it off.
                 Effect::Screens(on) => {
                     let bottom_off = self.state.bottom_off().then(|| self.display.bottom_output().to_owned());
                     let outputs: Vec<_> =
@@ -120,7 +122,8 @@ impl App {
                     self.display.power(*on, outputs.into_iter(), &self.qh);
                 }
                 other => {
-                    // The main screen's refresh rate follows the settings in force (Wayland too).
+                    // The main screen's refresh rate follows the settings in force. It is also set
+                    // through Wayland.
                     if let Effect::Apply { settings, .. } | Effect::Launch { settings, .. } = other {
                         self.display.refresh(settings.get(clamshell_core::settings::Setting::Refresh), &self.qh);
                     }
@@ -145,8 +148,8 @@ impl App {
         }
     }
 
-    /// Draws the views that are due; what the drawing changes (rows, lists) may make another due, which
-    /// is drawn too rather than left until the next event (a few passes at most).
+    /// Draws the views that are due. What the drawing changes, such as rows and lists, may make another
+    /// view due. That view is drawn too rather than left until the next event, for a few passes at most.
     pub(super) fn redraw_dirty(&mut self) {
         for _ in 0..3 {
             if !self.draw_due() || !self.views.iter_mut().any(|(_, v)| v.as_ref().is_some_and(View::due)) {
@@ -155,12 +158,12 @@ impl App {
         }
     }
 
-    /// Draws the views that are due: whether it drew any.
+    /// Draws the views that are due. Returns whether it drew any.
     fn draw_due(&mut self) -> bool {
         let mut drew = false;
         let mut rows_changed = None;
         let mut lists = Vec::new();
-        // ClamShell's bottom view behind a window moved to the bottom screen while that is shown.
+        // While a window is shown on the bottom screen, ClamShell's bottom view goes behind it.
         let behind = self.state.bottom_shows_windows();
         if let Some(view) = self.views.iter_mut().find(|(s, _)| *s == Screen::Bottom).and_then(|(_, v)| v.as_mut()) {
             view.set_behind(behind);
@@ -206,12 +209,13 @@ impl App {
                         self.loop_handle.remove(token);
                     }
                 }
-                // (In the second screen's pixels; a finger's slot from its touch id.)
+                // Positions are in the second screen's pixels, and a finger's slot comes from its touch id.
                 Action::Point(Source::Touch(id), phase, (x, y)) => {
                     let scale = self.views.bottom.as_ref().map_or(1, |v| v.scale.max(1)) as f32;
                     let slot = id.rem_euclid(clamshell_core::bottom::touch::SLOTS) as u8;
                     let contact = clamshell_core::bottom::touch::Contact { slot, phase, x: (x * scale).round() as i32, y: (y * scale).round() as i32 };
-                    // (A touch frame's events come in one go: once they are handled, its contacts as one.)
+                    // A touch frame's events come in one go. Once they are handled, the frame's contacts
+                    // are sent on together.
                     if self.contacts.is_empty() {
                         self.loop_handle.insert_idle(|app| {
                             let contacts = std::mem::take(&mut app.contacts);
@@ -230,7 +234,8 @@ impl App {
             self.loop_handle.remove(token);
         }
         let fire = move |_, _: &mut (), app: &mut App| {
-            // This timer is done (dropped by returning Drop), not to be removed from inside itself.
+            // The timer is dropped by returning Drop, so here it is only forgotten, not removed from the
+            // loop from inside itself.
             app.timers.remove(&(source, timer));
             let actions = app.input.timer(source, timer, &app.state, std::time::Instant::now());
             app.run_actions(actions);

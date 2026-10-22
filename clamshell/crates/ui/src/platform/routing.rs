@@ -1,4 +1,4 @@
-//! Input routed to the pure machines: presses, the wheel, pointer motion and releases, the pad, keys.
+//! Routes input to the pure machines: presses, the wheel, pointer motion and releases, the pad and keys.
 
 use clamshell_core::{Event, Id, ListEvent, PadInput, PointerEvent, State};
 use smithay_client_toolkit::{reexports::client::protocol::wl_surface::WlSurface, seat::keyboard::Keysym};
@@ -12,14 +12,15 @@ use super::App;
 use crate::input;
 
 impl App {
-    /// A finger or button comes down at `position` on `surface`: a press on the topmost (last drawn)
-    /// target there, so a button on a tile (the dock's "+") wins over the tile.
+    /// A finger or button comes down at `position` on `surface`. It presses the topmost target there,
+    /// which is the last one drawn, so a button on a tile (such as the dock's "+") wins over the tile.
     pub(super) fn press_at(&mut self, source: Source, surface: &WlSurface, (x, y): (f64, f64), time: u32) {
         let Some(view) = self.view_mut(surface) else {
             return;
         };
         let found = view.retained.targets.iter().rev().find(|t| t.rect.contains(x as f32, y as f32)).cloned();
-        // (Nothing there, below the second screen's bar: the blank, which may point.)
+        // With no target there, below the second screen's bar, the press is on the blank, which may
+        // point.
         let bottom = view.screen == Screen::Bottom;
         if bottom {
             self.handle(Event::BottomTouched);
@@ -35,7 +36,7 @@ impl App {
         };
         let now = self.clock.at(time);
         let actions = match source {
-            // (While it points, a finger there points too.)
+            // While the second screen is pointing, a finger put down there points too.
             Source::Touch(_) if self.state.bottom().pointing() && bottom && input::points(&target.id) => {
                 self.input.point(source, &target, (x as f32, y as f32), now)
             }
@@ -44,7 +45,7 @@ impl App {
         self.run_actions(actions);
     }
 
-    /// The wheel over a scrolled list on `surface` at `position`: it scrolls by `notches` rows.
+    /// The wheel over a scrolled list on `surface` at `position`. It scrolls by `notches` rows.
     pub(super) fn wheel(&mut self, surface: &WlSurface, (x, y): (f64, f64), notches: i32) {
         let Some(view) = self.view_mut(surface) else {
             return;
@@ -66,7 +67,7 @@ impl App {
         self.run_actions(actions);
     }
 
-    /// A press ends at `now` (a finger's or the mouse's: [`App::at`] its event time).
+    /// A press ends at `now`. For a finger or the mouse, `now` is its event time from [`App::at`].
     pub(super) fn up(&mut self, source: Source, end: End, now: std::time::Instant) {
         let actions = self.input.up(source, end, &self.state, now);
         self.run_actions(actions);
@@ -77,14 +78,18 @@ impl App {
         self.run_actions(actions);
     }
 
-    /// The pad on ClamShell's screens (see `focus`): directions move focus, A acts on the focused
-    /// target, B goes back (see `focus::back`), Y, X and Start shelf's details' actions while the pad
-    /// is on shelf (see `focus::shortcut`; X is Backspace on the keyboard), the shoulders
-    /// page through shelf (or step the second screen's tabs), the triggers go to shelf's first or last entry.
-    /// View moves focus to the other screen with shelf in front; else it moves the pad between the second
-    /// screen and what else wants it (the pad mouse, typing; the pad thread sends View from there too).
+    /// The pad on ClamShell's screens (see `focus`):
+    /// - directions move focus;
+    /// - A acts on the focused target, and B goes back (see `focus::back`);
+    /// - Y, X and Start do the shelf details' actions while the pad is on the shelf (see
+    ///   `focus::shortcut`). On the keyboard, X is Backspace;
+    /// - the shoulders page through the shelf or step through the second screen's tabs;
+    /// - the triggers go to the shelf's first or last entry;
+    /// - View moves focus to the other screen while the shelf is in front. Otherwise it moves the pad
+    ///   between the second screen and whatever else wants it, such as the pad mouse or typing. The pad
+    ///   thread sends View from there too.
     pub(super) fn pad(&mut self, input: PadInput) {
-        // Moving a dock entry: the D-pad moves it, A or B ends it.
+        // While a dock entry is being moved, the D-pad moves it and A or B ends the move.
         if self.state.dock().moving().is_some() && self.state.bottom().tab() == clamshell_core::Tab::Dock {
             let step = |dir| Some(clamshell_core::DockId::Step(dir));
             use clamshell_core::keymap::Dir as Step;
@@ -117,7 +122,7 @@ impl App {
             PadInput::A(false) => self.up(Source::PadA, End::Release, std::time::Instant::now()),
             PadInput::B => self.handle_all(focus::back(&self.state)),
             PadInput::Y | PadInput::X | PadInput::Start => self.handle_all(focus::shortcut(&self.state, &self.views, input)),
-            // The Back button: what the screen has for back (the edit screen's other layer).
+            // The Back button does what the screen has for back, such as the edit screen's other layer.
             PadInput::Back => {
                 if let Some(id) = self.state.pad_back() {
                     self.handle(PointerEvent::Activate(id).into());
@@ -129,8 +134,8 @@ impl App {
                 let event = focus::switch_screen(&self.state, &self.views, &mut self.focus_memory);
                 self.handle_all(event);
             }
-            // The pad between the second screen and what else wants it; back on the screen, the focus
-            // where it was.
+            // Move the pad between the second screen and whatever else wants it. When it comes back to
+            // the screen, the focus returns to where it was.
             PadInput::Switch => {
                 let on_ui = |s: &State| s.pad().route() == clamshell_core::PadRoute::Ui;
                 if on_ui(&self.state) {
@@ -146,7 +151,7 @@ impl App {
         }
     }
 
-    /// A (or Enter) on the focused target.
+    /// A or Enter on the focused target.
     fn press_focus(&mut self, source: Source) {
         match focus::press(&self.state, &self.views, &self.focus_memory) {
             Some(PadPress::Press(id)) => {

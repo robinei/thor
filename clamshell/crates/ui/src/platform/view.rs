@@ -1,5 +1,5 @@
-//! A view: one screen's surface (an xdg window or a layer surface), its shm buffers, and drawing a
-//! frame of it (see `render`) and handing it to the compositor.
+//! A view is one screen's surface, either an xdg window or a layer surface, with its shm buffers. It
+//! draws a frame (see `render`) and hands it to the compositor.
 
 use std::sync::Mutex;
 
@@ -49,21 +49,23 @@ impl Shell {
 pub(crate) struct View {
     pub(crate) screen: Screen,
     pub(crate) shell: Shell,
-    /// Logical size, from the compositor's configure (or `default_size` if it leaves it to us).
+    /// Logical size, from the compositor's configure, or `default_size` if it leaves the size to us.
     pub(crate) size: (u32, u32),
     pub(crate) default_size: (u32, u32),
     pub(crate) scale: i32,
     pub(crate) configured: bool,
     pub(crate) dirty: bool,
-    /// A frame was committed and its callback hasn't come yet: wait, then draw the latest state once.
+    /// A frame was committed and its callback hasn't come yet. Until it comes, wait; then draw the latest
+    /// state once.
     pub(crate) frame_pending: bool,
-    /// What the last frame left: what can be tapped or focused in it.
+    /// What the last frame left behind, including what can be tapped or focused in it.
     pub(crate) retained: Retained,
-    /// The second screen's area below the bar in the last frame (logical pixels).
+    /// The second screen's area below the bar in the last frame, in logical pixels.
     pub(crate) body: Option<Rect>,
-    /// shm buffers, reused once the compositor releases them (two in turn, a third if it holds both).
+    /// shm buffers, reused once the compositor releases them. Two are used in turn, and a third is added
+    /// if the compositor holds both.
     buffers: Vec<Buffer>,
-    /// A layer surface's place: behind the windows, or over them (see [`View::set_behind`]).
+    /// Whether a layer surface is behind the windows rather than over them (see [`View::set_behind`]).
     behind: bool,
 }
 
@@ -99,8 +101,8 @@ impl View {
         View::new(screen, Shell::Window(window), size)
     }
 
-    /// The second screen as a layer surface: over the whole `output`, or a panel of `corner` size in the
-    /// bottom right corner.
+    /// The second screen as a layer surface, either over the whole `output` or as a panel of `corner` size
+    /// in the bottom right corner.
     pub(crate) fn layer(
         compositor: &CompositorState,
         layer_shell: &LayerShell,
@@ -109,16 +111,16 @@ impl View {
         corner: Option<(u32, u32)>,
     ) -> Self {
         let surface = compositor.create_surface(qh);
-        // (Over the windows, a fullscreen one too: a window moved to the bottom screen is shown by putting
-        // this behind it, see `set_behind`.)
+        // The surface goes over the windows, including a fullscreen one. A window moved to the bottom
+        // screen is shown by putting this behind it (see `set_behind`).
         let layer = layer_shell.create_layer_surface(qh, surface, Layer::Overlay, Some("clamshell-bottom"), output);
         match corner {
-            // The whole output (the device's second screen).
+            // The whole output, which is the device's second screen.
             None => {
                 layer.set_anchor(Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT);
                 layer.set_size(0, 0);
             }
-            // A panel of this size in the bottom right corner (testing on a desktop).
+            // A panel of this size in the bottom right corner, for testing on a desktop.
             Some((w, h)) => {
                 layer.set_anchor(Anchor::BOTTOM | Anchor::RIGHT);
                 layer.set_size(w, h);
@@ -130,40 +132,40 @@ impl View {
         View::new(Screen::Bottom, Shell::Layer(layer), (1, 1))
     }
 
-    /// The bottom screen's layer surface behind the windows (a window moved there is shown) or over
-    /// them (ClamShell's view shown, also over a fullscreen window); a change is committed with the next
-    /// frame. A window has no layer.
+    /// Puts the bottom screen's layer surface behind the windows, so a window moved there is shown, or
+    /// over them, so ClamShell's view is shown even over a fullscreen window. A window has no layer, so
+    /// this does nothing for it.
     pub(crate) fn set_behind(&mut self, behind: bool) {
         if let Shell::Layer(layer) = &self.shell
             && self.behind != behind
         {
             layer.set_layer(if behind { Layer::Background } else { Layer::Overlay });
-            // (Now, not with the next frame: behind a window the surface gets no frame callbacks, so a
-            // frame may never come to carry it.)
+            // Commit now rather than with the next frame. Behind a window the surface gets no frame
+            // callbacks, so a frame may never come to carry the change.
             layer.wl_surface().commit();
             self.behind = behind;
             self.dirty = true;
         }
     }
 
-    /// Whether a frame is due: configured, changed, and the last frame shown.
+    /// Whether a frame is due: the view is configured, has changed, and its last frame has been shown.
     pub(crate) fn due(&self) -> bool {
         self.configured && self.dirty && !self.frame_pending
     }
 
-    /// The buffer's size, its scale, and the burn-in drift now.
+    /// The buffer's size, its scale, and the current burn-in drift.
     fn placement(&self, unix_secs: u64) -> Placement {
         let scale = self.scale.max(1).unsigned_abs();
         Placement { size_px: (self.size.0 * scale, self.size.1 * scale), scale, drift: render::orbit(unix_secs) }
     }
 
     /// Draws a frame of `state` straight into a free shm buffer and commits it, asking for a frame
-    /// callback. With every buffer still read by the compositor, nothing is drawn: the view stays dirty,
-    /// and a buffer's release wakes the loop to draw again.
+    /// callback. If the compositor is still reading every buffer, nothing is drawn. The view then stays
+    /// dirty, and a buffer's release wakes the loop to draw again.
     ///
-    /// The buffer is ABGR8888, tiny-skia's byte order (RGBA in memory, premultiplied), so it is drawn
-    /// into as it is. The whole buffer is drawn and damaged: the burn-in orbit moves everything every
-    /// minute anyway, and drawing whole frames keeps the views free of damage tracking.
+    /// The buffer is ABGR8888, which is tiny-skia's byte order (premultiplied RGBA in memory), so it is
+    /// drawn into directly. The whole buffer is drawn and damaged. The burn-in orbit moves everything
+    /// every minute anyway, and drawing whole frames keeps the views free of damage tracking.
     pub(crate) fn draw(
         &mut self,
         pool: &mut SlotPool,
@@ -198,8 +200,8 @@ impl View {
     }
 }
 
-/// A `w` x `h` buffer the compositor isn't reading: one kept, or a new one if fewer than three are kept;
-/// `None` when all three are busy.
+/// A `w` x `h` buffer the compositor isn't reading. It is a kept one, or a new one if fewer than three
+/// are kept. Returns `None` when all three are busy.
 fn free_buffer(buffers: &mut Vec<Buffer>, pool: &mut SlotPool, w: i32, h: i32) -> Result<Option<usize>, Error> {
     buffers.retain(|b| b.height() == h && b.stride() == w * 4);
     if let Some(i) = buffers.iter().position(|b| b.canvas(pool).is_some()) {
@@ -223,7 +225,7 @@ impl Drawn for Screens<Option<View>> {
     }
 }
 
-/// Tells the virtual touchpad the second screen's size (pixels).
+/// Tells the virtual touchpad the second screen's size, in pixels.
 pub(crate) fn publish(touch: &Mutex<TouchLayout>, screen: (f32, f32)) {
     match touch.lock() {
         Ok(mut layout) => layout.screen = screen,

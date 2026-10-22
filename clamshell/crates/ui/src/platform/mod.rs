@@ -1,6 +1,6 @@
-//! The Wayland side: the app's event loop, its views (a surface each, drawn into shm buffers), the
-//! compositor's events ([`handlers`]), idle and output power ([`display`]), the input method
-//! ([`text_input`]) and systemd's notifications ([`notify`]).
+//! The Wayland side. This module holds the app's event loop and its views, each a surface drawn into shm
+//! buffers. The submodules handle the compositor's events ([`handlers`]), idle and output power
+//! ([`display`]), the input method ([`text_input`]) and systemd's notifications ([`notify`]).
 
 mod app;
 mod display;
@@ -39,8 +39,8 @@ use crate::screens::Screens;
 use crate::{Config, Error, EventSender, gfx, input};
 use view::View;
 
-/// Runs the UI until quit. `start` gets a sender for the system threads; `on_effect` carries out what the
-/// state asks for (launching games, ...).
+/// Runs the UI until it quits. `start` gets a sender for the system threads. `on_effect` carries out what
+/// the state asks for, such as launching games.
 pub fn run(state: State, config: Config, start: impl FnOnce(EventSender), on_effect: impl FnMut(&Effect) + 'static) -> Result<(), Error> {
     let conn = Connection::connect_to_env()?;
     let (globals, mut queue) = registry_queue_init::<App>(&conn)?;
@@ -50,11 +50,11 @@ pub fn run(state: State, config: Config, start: impl FnOnce(EventSender), on_eff
     let images = install_images(&event_loop.handle())?;
     let mut app = App::new(&globals, &qh, state, &config, images, event_loop.handle(), Box::new(on_effect))?;
 
-    // Learn the outputs and their names before placing the bottom view. (These roundtrips dispatch into
-    // the app, so it exists before its views.)
+    // Learn the outputs and their names before placing the bottom view. These roundtrips dispatch into
+    // the app, which is why the app is made before its views.
     queue.roundtrip(&mut app)?;
     queue.roundtrip(&mut app)?;
-    // (Frames are drawn straight into shm buffers in tiny-skia's byte order, which sway takes.)
+    // Frames are drawn straight into shm buffers in tiny-skia's byte order, which sway accepts.
     if !app.shm.formats().contains(&smithay_client_toolkit::reexports::client::protocol::wl_shm::Format::Abgr8888) {
         return Err("the compositor doesn't take ABGR8888 shm buffers (sway does)".into());
     }
@@ -75,10 +75,12 @@ pub fn run(state: State, config: Config, start: impl FnOnce(EventSender), on_eff
         })
         .map_err(|e| e.error)?;
     start(EventSender(sender));
-    // What the state in force needs now that everything runs (the tab's watch, brightness, the pad).
+    // Now that everything runs, start what the current state needs, such as the tab's watch, brightness
+    // and the pad.
     app.handle(Event::Start);
 
-    // (systemd told it is up once the screens are drawn, and that the loop turns: see notify.)
+    // systemd is told the program is up once the screens are drawn, and that the loop is still turning
+    // (see notify).
     let mut notifier = notify::Notifier::new();
     while !app.exit {
         event_loop.dispatch(None, &mut app)?;
@@ -105,7 +107,7 @@ impl Shells {
     }
 }
 
-/// Images: requests to a decoding thread, results back through the event loop.
+/// Sets up image loading. Requests go to a decoding thread, and results come back through the event loop.
 fn install_images(handle: &LoopHandle<'static, App>) -> Result<crate::gfx::images::Images, Error> {
     let (requests, worker) = std::sync::mpsc::channel();
     let (done, results) = channel::channel();
@@ -121,7 +123,8 @@ fn install_images(handle: &LoopHandle<'static, App>) -> Result<crate::gfx::image
     Ok(crate::gfx::images::Images::new(requests))
 }
 
-/// Fonts for characters the built-in one lacks: found on a thread, back through the event loop.
+/// Sets up finding fonts for characters the built-in one lacks. They are found on a thread and come back
+/// through the event loop.
 fn install_fonts(handle: &LoopHandle<'static, App>) -> Result<DrawCache, Error> {
     let (requests, finder) = std::sync::mpsc::channel();
     let (done, results) = channel::channel();
@@ -140,7 +143,7 @@ fn install_fonts(handle: &LoopHandle<'static, App>) -> Result<DrawCache, Error> 
 /// How the bottom view is shown.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BottomKind {
-    /// A layer surface over the second screen's output (the device).
+    /// A layer surface over the second screen's output, on the device.
     Output,
     /// A layer surface in a desktop's corner, which never takes the keyboard focus.
     Panel,
@@ -149,8 +152,8 @@ enum BottomKind {
 }
 
 impl BottomKind {
-    /// From whether the second screen's output exists, whether the compositor has layer shell, and
-    /// whether a panel was asked for.
+    /// Chooses from whether the second screen's output exists, whether the compositor has layer shell,
+    /// and whether a panel was asked for.
     fn choose(output: bool, layer_shell: bool, panel: bool) -> BottomKind {
         match (output, layer_shell) {
             (true, true) => BottomKind::Output,
@@ -159,7 +162,7 @@ impl BottomKind {
         }
     }
 
-    /// Keys stand in for the pad everywhere but on the device (there, keys reaching shelf are typing).
+    /// Keys stand in for the pad everywhere except on the device, where keys reaching shelf are typing.
     fn desktop_keys(self) -> bool {
         self != BottomKind::Output
     }
@@ -178,8 +181,8 @@ pub(crate) struct App {
     fonts: DrawCache,
     keyboard: Option<wl_keyboard::WlKeyboard>,
     pointer: Option<wl_pointer::WlPointer>,
-    /// The compositor's cursor shapes, and our pointer's (the arrow over our surfaces: without it sway
-    /// shows none there).
+    /// The compositor's cursor shapes and our pointer's shape. We set the arrow over our surfaces,
+    /// because otherwise sway shows no cursor there.
     cursor_shapes: Option<smithay_client_toolkit::seat::pointer::cursor_shape::CursorShapeManager>,
     pub(crate) cursor: Option<smithay_client_toolkit::reexports::protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::WpCursorShapeDeviceV1>,
     touch: Option<wl_touch::WlTouch>,
@@ -188,13 +191,16 @@ pub(crate) struct App {
     input: Input,
     /// The presses' running timers.
     timers: HashMap<(Source, input::Timer), RegistrationToken>,
-    /// The compositor's event times as instants (when a finger moved, not when it was handled).
+    /// Turns the compositor's event times into instants, so they say when a finger moved rather than
+    /// when the event was handled.
     clock: input::EventClock,
-    /// Fingers pointing in the touch frame being handled: sent on together once it is.
+    /// Fingers pointing in the touch frame being handled. They are sent on together once the whole frame
+    /// has been handled.
     contacts: Vec<clamshell_core::bottom::touch::Contact>,
-    /// Where the pad's focus was on each screen, for View switching back to it.
+    /// Where the pad's focus was on each screen, so View can switch back to it.
     focus_memory: Screens<Option<Id>>,
-    /// Keys stand in for the pad (a desktop; not on the device, where keys reaching shelf are typing).
+    /// Whether keys stand in for the pad. They do on a desktop, but not on the device, where keys
+    /// reaching shelf are typing.
     desktop_keys: bool,
     text_input: text_input::TextInput,
     /// The compositor's idle report, the screens' power and the main screen's refresh rate.

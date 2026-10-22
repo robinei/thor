@@ -1,5 +1,5 @@
-//! The Wayland protocol handlers: configures and frame callbacks for the views, seats and their
-//! keyboard, pointer and touch, passed on to the input side.
+//! The Wayland protocol handlers: configures and frame callbacks for the views, and the seats with their
+//! keyboard, pointer and touch, whose events are passed on to the input side.
 
 use clamshell_core::{Event, ShelfEvent};
 use smithay_client_toolkit::{
@@ -151,7 +151,7 @@ impl SeatHandler for App {
 impl KeyboardHandler for App {
     fn enter(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: &WlSurface, _: u32, _: &[u32], _: &[Keysym]) {}
 
-    // (No release comes once the focus has left: a held Enter would go on repeating.)
+    // No release comes once the focus has left, so a held Enter would go on repeating.
     fn leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: &WlSurface, _: u32) {
         self.up(Source::Enter, End::Cancel, std::time::Instant::now());
     }
@@ -180,7 +180,7 @@ impl PointerHandler for App {
     fn pointer_frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_pointer::WlPointer, events: &[PointerEvent]) {
         for event in events {
             match event.kind {
-                // Over our surfaces, the arrow.
+                // Show the arrow over our surfaces.
                 PointerEventKind::Enter { serial } => {
                     if let Some(cursor) = &self.cursor {
                         cursor.set_shape(
@@ -189,7 +189,7 @@ impl PointerHandler for App {
                         );
                     }
                 }
-                // A right click on the second screen pastes into the field open there (as Ctrl+V).
+                // A right click on the second screen pastes into the field open there, as Ctrl+V does.
                 PointerEventKind::Press { button: BTN_RIGHT, .. } if self.views.top.as_ref().is_none_or(|v| v.shell.surface() != &event.surface) => {
                     self.handle(Event::Paste);
                 }
@@ -199,8 +199,8 @@ impl PointerHandler for App {
                     let now = self.at(time);
                     self.up(Source::Mouse, End::Release, now);
                 }
-                // The wheel over the main screen scrolls shelf's list, a game per notch; over a list on the
-                // second screen, a row per notch.
+                // The wheel over the main screen scrolls the shelf's list by a game per notch. Over a list
+                // on the second screen, it scrolls by a row per notch.
                 PointerEventKind::Axis { vertical, .. } => {
                     let over_top = self.views.top.as_ref().is_some_and(|v| v.shell.surface() == &event.surface);
                     let notches = if vertical.discrete != 0 { vertical.discrete } else { (vertical.absolute / 10.0) as i32 };

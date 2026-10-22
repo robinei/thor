@@ -1,15 +1,18 @@
-//! The Wayland side: two views, the main (top) screen and the second (bottom) screen, drawn on the CPU
-//! into shm buffers. A view is redrawn only when the state changed for it, at most once per frame
-//! callback; between events the program sleeps.
+//! The Wayland side. There are two views, the main (top) screen and the second (bottom) screen, both
+//! drawn on the CPU into shm buffers. A view is redrawn only when its state changed, at most once per
+//! frame callback; between events the program sleeps.
 //!
-//! The top view is an xdg toplevel (sway rules make it fullscreen in its own workspace). The bottom view
-//! is a layer-shell surface on the second screen's output when that output exists (the Thor: `DSI-1`),
-//! else a panel in a desktop's corner, or a second ordinary window, so it runs on any desktop.
+//! The top view is an xdg toplevel, which sway rules make fullscreen in its own workspace. The bottom
+//! view is a layer-shell surface on the second screen's output when that output exists (`DSI-1` on the
+//! Thor). Otherwise it is a panel in a corner of the desktop or a second ordinary window, so it runs on
+//! any desktop.
 //!
-//! The crate, by layers: `gfx` draws (geometry, the canvas, text, icons, images; no state), `toolkit`
-//! is the immediate-mode kit the screens are drawn with, `views` the screens themselves, `render` one
-//! frame of them; `input` turns presses and the pad into events (pure parts), and `platform` connects
-//! all of it to Wayland and the event loop.
+//! The crate's layers:
+//! - `gfx` draws geometry, the canvas, text, icons and images, and holds no state;
+//! - `toolkit` is the immediate-mode kit the screens are drawn with;
+//! - `views` are the screens themselves, and `render` draws one frame of them;
+//! - `input` turns presses and the pad into events (the pure parts);
+//! - `platform` connects all of it to Wayland and the event loop.
 
 mod gfx;
 mod input;
@@ -39,11 +42,12 @@ pub struct Config {
     /// Logical sizes when shown as windows (on a desktop).
     pub top_size: (u32, u32),
     pub bottom_size: (u32, u32),
-    /// Without the second screen's output (a desktop): show the bottom view as a panel in a corner
-    /// instead of a window, so tapping its keyboard leaves the keyboard focus on the app being typed into.
+    /// When the second screen's output is missing (on a desktop), show the bottom view as a panel in a
+    /// corner instead of a window. Tapping its keyboard then leaves the keyboard focus on the app being
+    /// typed into.
     pub bottom_panel: bool,
-    /// Where the touchpad area and the bar's targets are, for the touchpad tab's input side; updated
-    /// with every frame of the second screen.
+    /// Where the touchpad area and the bar's targets are, for the touchpad tab's input side. It is
+    /// updated with every frame of the second screen.
     pub touch_layout: Arc<Mutex<TouchLayout>>,
 }
 
@@ -59,8 +63,8 @@ impl EventSender {
 }
 
 /// Renders one screen without Wayland, at `size` logical pixels and integer `scale`, to a PNG file.
-/// For checking layouts and for automated tests. Returns what a live frame would tell the state (shelf's
-/// rows, the lists' rows).
+/// For checking layouts and for automated tests. Returns the events a live frame would send the state,
+/// such as the shelf's rows and the lists' rows.
 pub fn snapshot(state: &State, screen: Screen, size: (u32, u32), scale: u32, path: &std::path::Path) -> Result<Vec<Event>, Error> {
     let at = Placement { size_px: (size.0 * scale, size.1 * scale), scale, drift: (0, 0) };
     let mut pixmap = tiny_skia::Pixmap::new(at.size_px.0, at.size_px.1).ok_or("no pixmap")?;

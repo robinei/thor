@@ -1,8 +1,11 @@
-//! The screens as the compositor has them, through standard Wayland protocols (no compositor's own IPC):
-//! whether it has seen input lately (ext-idle-notify: idle, held off by apps that ask it to keep the
-//! screen on), turning the screens off and on (wlr-output-power-management, for idle), and the main
-//! screen's refresh rate (wlr-output-management, for the Refresh setting). A compositor without one of
-//! them just goes without that part.
+//! The screens as the compositor has them, through standard Wayland protocols rather than any
+//! compositor's own IPC. There are three parts:
+//! - whether the compositor has seen input lately (ext-idle-notify). Apps that ask to keep the screen
+//!   on hold off idle here.
+//! - turning the screens off and on, for idle (wlr-output-power-management).
+//! - the main screen's refresh rate, for the Refresh setting (wlr-output-management).
+//!
+//! A compositor without one of these protocols just goes without that part.
 
 use std::sync::Arc;
 
@@ -61,18 +64,19 @@ pub(crate) struct Display {
     notifier: Option<ExtIdleNotifierV1>,
     notification: Option<ExtIdleNotificationV1>,
     power: Option<ZwlrOutputPowerManagerV1>,
-    /// The outputs turned off (each with its power control), to turn on again.
+    /// The power controls of the outputs we turned off, used to turn them on again.
     off: Vec<ZwlrOutputPowerV1>,
     manager: Option<ZwlrOutputManagerV1>,
     heads: Vec<Head>,
-    /// The output configuration's serial (from the manager's `done`).
+    /// The output configuration's serial, from the manager's `done`.
     serial: Option<u32>,
-    /// The second screen's output: the other enabled one is the main screen.
+    /// The second screen's output. The other enabled output is the main screen.
     bottom_output: String,
-    /// The main screen's mode as it was at start (the Refresh setting's "as is"), by size and refresh.
+    /// The main screen's mode at start, by size and refresh. This is what the Refresh setting's "as is"
+    /// returns to.
     original: Option<((i32, i32), i32)>,
-    /// The refresh rate asked for (Hz; 0: as it was) before the outputs were known: set once they are
-    /// (once, so that a mode set since by something else stays).
+    /// A refresh rate in Hz asked for before the outputs were known, where 0 means as it was. It is set
+    /// once they are known, and only once, so a mode set since by something else stays.
     wanted_refresh: Option<u16>,
 }
 
@@ -90,7 +94,7 @@ impl Display {
         }
     }
 
-    /// Asks the compositor, for `seat`, to say when it has seen no input for a while (and input again).
+    /// Asks the compositor to say when `seat` has seen no input for a while, and when input comes again.
     pub(crate) fn seat(&mut self, seat: &WlSeat, qh: &QueueHandle<App>) {
         if let (Some(notifier), None) = (&self.notifier, &self.notification) {
             let timeout = u32::try_from(NOTIFY_AFTER * 1000).unwrap_or(u32::MAX);
@@ -103,7 +107,7 @@ impl Display {
         &self.bottom_output
     }
 
-    /// The screens on or off: on, those it turned off.
+    /// Turns the screens on or off. Turning on affects only the screens this turned off.
     pub(crate) fn power(&mut self, on: bool, outputs: impl Iterator<Item = WlOutput>, qh: &QueueHandle<App>) {
         log::info!("screens {}", if on { "on" } else { "off" });
         if on {
@@ -123,8 +127,8 @@ impl Display {
         }
     }
 
-    /// Every screen on, at start: a ClamShell before this one may have left them off (idle), and nothing
-    /// else turns them on again.
+    /// Turns every screen on at start. A ClamShell before this one may have left them off for idle, and
+    /// nothing else turns them on again.
     pub(crate) fn all_on(&self, outputs: impl Iterator<Item = WlOutput>, qh: &QueueHandle<App>) {
         let Some(manager) = &self.power else {
             return;
@@ -136,7 +140,8 @@ impl Display {
         }
     }
 
-    /// The main screen's refresh rate to `hz` (0: as it was at start), the nearest its mode list has.
+    /// Sets the main screen's refresh rate to the nearest its mode list has to `hz`. 0 means the rate it
+    /// had at start.
     pub(crate) fn refresh(&mut self, hz: u16, qh: &QueueHandle<App>) {
         let (Some(manager), Some(serial)) = (&self.manager, self.serial) else {
             self.wanted_refresh = Some(hz);
@@ -159,7 +164,7 @@ impl Display {
             return;
         };
         log::info!("{}: {}x{} at {:.0} Hz", main.name, target.size.0, target.size.1, f64::from(target.refresh) / 1000.0);
-        // A configuration names every output: the others as they are.
+        // A configuration has to name every output, so the others are given as they are.
         let config = manager.create_configuration(serial, qh, Data);
         for head in &self.heads {
             if head.enabled {
@@ -182,8 +187,8 @@ impl Display {
         self.heads.iter_mut().flat_map(|h| h.modes.iter_mut()).find(|m| m.mode == *mode)
     }
 
-    /// The outputs are known (a `done`): the main screen's mode at start is remembered, and a refresh
-    /// rate asked for before is set.
+    /// Called when the outputs are known, on a `done`. Remembers the main screen's mode at start and sets
+    /// a refresh rate that was asked for earlier.
     fn listed(&mut self, serial: u32, qh: &QueueHandle<App>) {
         self.serial = Some(serial);
         if self.original.is_none()
@@ -198,7 +203,7 @@ impl Display {
     }
 }
 
-/// The objects' user data (they carry nothing; what they describe is kept in [`Display`]).
+/// The objects' user data. It carries nothing; what the objects describe is kept in [`Display`].
 pub(crate) struct Data;
 
 impl Dispatch2<ExtIdleNotifierV1, App> for Data {
@@ -222,7 +227,7 @@ impl Dispatch2<ZwlrOutputPowerManagerV1, App> for Data {
 
 impl Dispatch2<ZwlrOutputPowerV1, App> for Data {
     fn event(&self, app: &mut App, power: &ZwlrOutputPowerV1, event: zwlr_output_power_v1::Event, _: &Connection, _: &QueueHandle<App>) {
-        // The output went away, or another client controls its power: let go of it.
+        // The output went away or another client controls its power, so let go of it.
         if let zwlr_output_power_v1::Event::Failed = event {
             app.display.off.retain(|p| p != power);
             power.destroy();
