@@ -143,8 +143,17 @@ impl Store {
     /// Every entry's plays, summed up.
     pub fn plays(&self) -> HashMap<String, Plays> {
         let mut out: HashMap<String, Plays> = HashMap::new();
-        let Ok(text) = fs::read_to_string(self.file("plays.jsonl")) else {
-            return out;
+        let path = self.file("plays.jsonl");
+        let text = match fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(e) => {
+                if e.kind() == io::ErrorKind::NotFound {
+                    log::debug!("{}: {e}", path.display());
+                } else {
+                    log::warn!("{}: {e}", path.display());
+                }
+                return out;
+            }
         };
         for line in text.lines().filter(|l| !l.trim().is_empty()) {
             match serde_json::from_str::<Play>(line) {
@@ -295,7 +304,17 @@ impl Store {
 
 /// A folder's JSON files that read as `T`, by name.
 fn read_folder<T: DeserializeOwned>(dir: &Path) -> HashMap<String, T> {
-    let names = fs::read_dir(dir).into_iter().flatten().flatten().filter_map(|e| e.file_name().into_string().ok());
+    let entries = fs::read_dir(dir)
+        .inspect_err(|e| {
+            if e.kind() == io::ErrorKind::NotFound {
+                log::debug!("{}: {e}", dir.display());
+            } else {
+                log::warn!("{}: {e}", dir.display());
+            }
+        })
+        .into_iter()
+        .flatten();
+    let names = entries.filter_map(|e| e.inspect_err(|e| log::warn!("{}: {e}", dir.display())).ok()).filter_map(|e| e.file_name().into_string().ok());
     names.filter(|n| n.ends_with(".json")).filter_map(|n| Some((n.clone(), read_json::<T>(&dir.join(&n))?))).collect()
 }
 
@@ -376,8 +395,10 @@ impl Writer {
 impl Drop for Writer {
     fn drop(&mut self) {
         drop(self.tx.take());
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
+        if let Some(thread) = self.thread.take()
+            && thread.join().is_err()
+        {
+            log::warn!("store: its thread panicked");
         }
     }
 }
