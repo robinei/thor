@@ -326,6 +326,7 @@ impl PadRouter {
     pub fn resync(&self, down: &[KeyCode], axes: &[(AbsoluteAxisCode, i32)], out: &mut Vec<Raw>) {
         let start = out.len();
         let mut held: Vec<KeyCode> = self.snapshot.keys.iter().chain(&self.taken).copied().collect();
+        held.sort_by_key(|k| k.0);
         held.dedup();
         out.extend(held.iter().filter(|k| !down.contains(k)).map(|&k| Raw::key(k, Press::Up)));
         let home = down.contains(&KeyCode::BTN_MODE);
