@@ -549,6 +549,8 @@ pub fn render(fresh: &(dyn Fn() -> State + Sync), now: u64, dir: &Path) -> Resul
 fn render_group(mut state: State, Group { start, shots }: Group, now: u64, dir: &Path) -> Result<(), Error> {
     state.apply(Event::tick(now));
     state.apply(Event::Reading(Reading::Status(demo::STATUS)));
+    // The demo's time zone, so the clock reads the same whatever zone the machine is in.
+    state.apply(Event::Reading(Reading::Time(demo::time_zones())));
     for event in start {
         state.apply(event);
     }
