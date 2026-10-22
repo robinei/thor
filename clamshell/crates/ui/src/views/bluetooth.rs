@@ -18,11 +18,11 @@ use crate::toolkit::widgets::{self, RowFace};
 pub(super) fn draw(f: &mut Frame) {
     let bt = &f.s.radios().bluetooth;
     let status = Fmt::<256>::of(format_args!("{}", Status(bt)));
-    let list = radio::header(f, Id::Bluetooth(BtId::Power), bt.powered, (status_tone(bt), &status));
+    let list = radio::header(f, Id::Bluetooth(BtId::Power), bt.on, (status_tone(bt), &status));
     if bt.devices.iter().any(|d| d.paired) {
         list.hint(f, "Long press a paired device to forget it");
     }
-    if bt.powered && bt.devices.is_empty() {
+    if bt.on && bt.devices.is_empty() {
         list.empty(f, "Looking for devices");
     }
     let rows = list.scrolled(f, ListId::Bluetooth, bt.devices.len());

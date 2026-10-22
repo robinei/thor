@@ -49,7 +49,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) {
 
     // Wi-Fi: the network joined (its name when the Wi-Fi tab has read it).
     let wifi = col.take(row_h);
-    let joined = s.radios().wifi.networks.iter().find(|n| n.active).map(|n| n.ssid.as_str());
+    let joined = s.radios().wifi.networks.iter().find(|n| n.connected).map(|n| n.ssid.as_str());
     let value = match (joined, s.sys().status.wifi) {
         (Some(ssid), _) => Fmt::<96>::of(format_args!("{ssid}")),
         (None, Some(_)) => Fmt::of(format_args!("Connected")),

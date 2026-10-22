@@ -235,7 +235,7 @@ fn read(objects: &ManagedObjects, state: &BtState) -> Bluetooth {
             })
         })
         .collect();
-    Bluetooth { adapter: true, powered: adapter.flag("Powered"), devices: bluetooth::sort(devices), busy: state.busy.clone(), error: state.error.clone() }
+    Bluetooth { present: true, on: adapter.flag("Powered"), devices: bluetooth::sort(devices), busy: state.busy.clone(), error: state.error.clone() }
 }
 
 impl<S: Sink> BtThread<S> {
@@ -357,6 +357,6 @@ mod live {
         let objects = managed_objects(&mut Bus::system().unwrap()).unwrap();
         let bt = read(&objects, &BtState::default());
         println!("{bt:#?}");
-        assert_eq!(bt.adapter, objects.values().any(|i| i.contains_key(ADAPTER)));
+        assert_eq!(bt.present, objects.values().any(|i| i.contains_key(ADAPTER)));
     }
 }

@@ -433,7 +433,7 @@ mod tests {
     }
 
     fn networks(s: &mut State, names: &[&str]) {
-        read(s, Reading::Wifi(Wifi { device: true, enabled: true, networks: names.iter().map(|n| network(n)).collect(), ..Wifi::default() }));
+        read(s, Reading::Wifi(Wifi { present: true, on: true, networks: names.iter().map(|n| network(n)).collect(), ..Wifi::default() }));
     }
 
     #[test]

@@ -67,7 +67,7 @@ fn tab_button(s: &State, tab: Tab) -> (Id, Icon, Tone) {
         Tab::Bluetooth => {
             let bt = &s.radios().bluetooth;
             let connected = bt.connected() > 0;
-            (Id::Tab(tab), Icon::Bluetooth { connected }, lit(bt.powered && connected))
+            (Id::Tab(tab), Icon::Bluetooth { connected }, lit(bt.on && connected))
         }
         Tab::Wifi => {
             let quality = s.sys().status.wifi;

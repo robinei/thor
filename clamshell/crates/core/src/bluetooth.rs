@@ -79,8 +79,9 @@ pub struct Problem {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Bluetooth {
     /// There is an adapter (and BlueZ runs).
-    pub adapter: bool,
-    pub powered: bool,
+    pub present: bool,
+    /// The radio is on.
+    pub on: bool,
     /// Connected first, then paired, then the rest by name.
     pub devices: Vec<Device>,
     /// The device being connected or paired, by address.
@@ -122,10 +123,10 @@ impl Bluetooth {
         if let Some(e) = &self.error {
             return RadioStatus::Error(e);
         }
-        if !self.adapter {
+        if !self.present {
             return RadioStatus::NoDevice;
         }
-        if !self.powered {
+        if !self.on {
             return RadioStatus::Off;
         }
         if let Some(address) = &self.busy {
@@ -194,7 +195,7 @@ impl State {
     /// A tap on the Bluetooth tab's switch.
     pub(crate) fn on_bluetooth(&mut self, id: BtId) -> Vec<Effect> {
         match id {
-            BtId::Power => vec![Effect::Bluetooth(Command::Power(!self.radios.bluetooth.powered))],
+            BtId::Power => vec![Effect::Bluetooth(Command::Power(!self.radios.bluetooth.on))],
         }
     }
 
@@ -244,7 +245,7 @@ mod tests {
         let mut s = state();
         tap(&mut s, Id::Tab(Tab::Bluetooth));
         let devices = vec![dev("buds", true, true), dev("pad", true, false), dev("new", false, false)];
-        read(&mut s, Reading::Bluetooth(Bluetooth { adapter: true, powered: true, devices, ..Bluetooth::default() }));
+        read(&mut s, Reading::Bluetooth(Bluetooth { present: true, on: true, devices, ..Bluetooth::default() }));
         assert_eq!(s.radios().bluetooth.status(), RadioStatus::Connected("buds"));
         let bt = |c: Command| vec![Effect::Bluetooth(c)];
         let device = |i| ListId::Bluetooth.row(i);

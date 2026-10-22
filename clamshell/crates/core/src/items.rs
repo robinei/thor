@@ -75,7 +75,7 @@ mod tests {
     #[test]
     fn a_long_press_forgets_the_device_it_came_down_on() {
         let mut s = state();
-        let bt = |devices| Reading::Bluetooth(Bluetooth { adapter: true, powered: true, devices, ..Bluetooth::default() });
+        let bt = |devices| Reading::Bluetooth(Bluetooth { present: true, on: true, devices, ..Bluetooth::default() });
         let pad = ListId::Bluetooth.row(1);
         read(&mut s, bt(vec![device("buds", true, false), device("pad", true, false)]));
         s.apply(PointerEvent::Down(pad.clone()).into());

@@ -492,7 +492,7 @@ mod tests {
         use clamshell_core::wifi::{Network, Wifi};
         let mut s = state();
         let networks = (0..10).map(|i| Network { ssid: format!("n{i}"), ..Network::default() }).collect();
-        s.apply(Reading::Wifi(Wifi { device: true, enabled: true, networks, ..Wifi::default() }).into());
+        s.apply(Reading::Wifi(Wifi { present: true, on: true, networks, ..Wifi::default() }).into());
         s.apply(PointerEvent::Activate(Id::Tab(Tab::Wifi)).into());
         let row = |i| ListId::Wifi.row(i);
         // Rows 3 and 4 drawn, the list's area under them.

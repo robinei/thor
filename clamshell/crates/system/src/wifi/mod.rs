@@ -245,7 +245,7 @@ impl<S: Sink> WifiThread<S> {
         let st = &mut self.state;
         let enabled = s.wireless_enabled()?;
         let Some(device) = device else {
-            return Ok(Wifi { device: false, enabled, error: st.error.clone(), ..Wifi::default() });
+            return Ok(Wifi { present: false, on: enabled, error: st.error.clone(), ..Wifi::default() });
         };
         let state = s.get::<u32>(device, nm::DEVICE, "State")?;
         let active_ap = s.get::<Path<'static>>(device, nm::WIRELESS, "ActiveAccessPoint")?;
@@ -257,15 +257,15 @@ impl<S: Sink> WifiThread<S> {
         let networks = aps
             .into_iter()
             .map(|ap| Network {
-                known: known.iter().any(|(_, ssid)| *ssid == ap.ssid),
-                active: active_ssid.as_deref() == Some(&ap.ssid),
+                saved: known.iter().any(|(_, ssid)| *ssid == ap.ssid),
+                connected: active_ssid.as_deref() == Some(&ap.ssid),
                 secure: ap.secure(),
                 enterprise: ap.enterprise(),
                 strength: ap.strength,
                 ssid: ap.ssid,
             })
             .collect();
-        Ok(Wifi { device: true, enabled, networks: wifi::sort(networks), connecting: st.attempt.as_ref().map(|a| a.ssid.clone()), error: st.error.clone() })
+        Ok(Wifi { present: true, on: enabled, networks: wifi::sort(networks), busy: st.attempt.as_ref().map(|a| a.ssid.clone()), error: st.error.clone() })
     }
 
     /// Ends the attempt once the network is connected, or with an error once it has failed.
@@ -513,6 +513,6 @@ mod live {
         let mut thread = WifiThread { sink: tx, state: WifiState::default() };
         let wifi = thread.read(&mut s, device.as_ref()).unwrap();
         println!("{wifi:#?}");
-        assert_eq!(wifi.device, device.is_some());
+        assert_eq!(wifi.present, device.is_some());
     }
 }

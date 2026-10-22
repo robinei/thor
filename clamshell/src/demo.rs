@@ -51,17 +51,17 @@ pub fn window_below() -> Vec<Event> {
 /// Four networks in range, one connected.
 pub fn wifi() -> Wifi {
     Wifi {
-        device: true,
-        enabled: true,
+        present: true,
+        on: true,
         networks: [
             ("home", 82, true, true, true),
             ("cafe-guest", 64, false, false, false),
             ("neighbours", 41, true, false, false),
             ("office", 30, true, true, false),
         ]
-        .map(|(ssid, strength, secure, known, active)| Network { ssid: ssid.into(), strength, secure, known, active, enterprise: false })
+        .map(|(ssid, strength, secure, saved, connected)| Network { ssid: ssid.into(), strength, secure, saved, connected, enterprise: false })
         .to_vec(),
-        connecting: None,
+        busy: None,
         error: None,
     }
 }
@@ -87,8 +87,8 @@ pub fn wifi_crowded() -> Wifi {
         ssid: (*ssid).into(),
         strength: 60 - 4 * i as u8,
         secure: i % 3 != 1,
-        known: false,
-        active: false,
+        saved: false,
+        connected: false,
         enterprise: false,
     }));
     wifi
@@ -97,8 +97,8 @@ pub fn wifi_crowded() -> Wifi {
 /// Four devices: paired and connected, paired, and new ones.
 pub fn bluetooth() -> Bluetooth {
     Bluetooth {
-        adapter: true,
-        powered: true,
+        present: true,
+        on: true,
         devices: [
             ("WH-1000XM4", Kind::Audio, true, true),
             ("Xbox Wireless Controller", Kind::Gamepad, true, false),

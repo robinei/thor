@@ -23,12 +23,12 @@ pub(super) fn draw(f: &mut Frame) {
     }
     let wifi = &f.s.radios().wifi;
     let status = Fmt::<256>::of(format_args!("{}", Status(wifi)));
-    let list = radio::header(f, Id::Wifi(WifiId::Power), wifi.enabled, (status_tone(wifi), &status));
+    let list = radio::header(f, Id::Wifi(WifiId::Power), wifi.on, (status_tone(wifi), &status));
     // The networks, as many as fit above the hint.
-    if wifi.networks.iter().any(|n| n.known) {
+    if wifi.networks.iter().any(|n| n.saved) {
         list.hint(f, "Long press a saved network to forget it");
     }
-    if wifi.enabled && wifi.networks.is_empty() {
+    if wifi.on && wifi.networks.is_empty() {
         list.empty(f, "Looking for networks");
     }
     let rows = list.scrolled(f, ListId::Wifi, wifi.networks.len());
@@ -43,7 +43,7 @@ pub(super) fn draw(f: &mut Frame) {
             NetState::Login => ("Login", Tone::Dim),
             NetState::Other => ("", Tone::Dim),
         };
-        let face = RowFace { icon: Icon::wifi(Some(n.strength)), name: &n.ssid, tone: Tone::high_if(n.active), lock: n.secure, state, state_tone };
+        let face = RowFace { icon: Icon::wifi(Some(n.strength)), name: &n.ssid, tone: Tone::high_if(n.connected), lock: n.secure, state, state_tone };
         widgets::status_row(f, ListId::Wifi.row(i as u16), rows.row(i), list.pad, list.size, face);
     }
     list.end(f, rows);

@@ -65,13 +65,13 @@ fn tap(id: Id) -> Event {
 
 fn wifi_reading() -> Event {
     Event::Reading(Reading::Wifi(clamshell_core::wifi::Wifi {
-        device: true,
-        enabled: true,
+        present: true,
+        on: true,
         networks: vec![
-            clamshell_core::wifi::Network { ssid: "home".into(), strength: 80, secure: true, known: true, active: true, enterprise: false },
+            clamshell_core::wifi::Network { ssid: "home".into(), strength: 80, secure: true, saved: true, connected: true, enterprise: false },
             clamshell_core::wifi::Network { ssid: "cafe".into(), strength: 40, secure: true, ..Default::default() },
         ],
-        connecting: Some("cafe".into()),
+        busy: Some("cafe".into()),
         error: None,
     }))
 }
@@ -137,8 +137,8 @@ fn warm_frames_do_not_allocate() {
             vec![
                 tap(Id::Tab(Tab::Wifi)),
                 Event::Reading(Reading::Wifi(clamshell_core::wifi::Wifi {
-                    device: true,
-                    enabled: true,
+                    present: true,
+                    on: true,
                     networks: (0..20).map(|i| clamshell_core::wifi::Network { ssid: format!("n{i}"), strength: 50, ..Default::default() }).collect(),
                     ..Default::default()
                 })),
@@ -249,8 +249,8 @@ fn warm_frames_do_not_allocate() {
             vec![
                 Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Bluetooth))),
                 Event::Reading(Reading::Bluetooth(clamshell_core::bluetooth::Bluetooth {
-                    adapter: true,
-                    powered: true,
+                    present: true,
+                    on: true,
                     devices: vec![clamshell_core::bluetooth::Device {
                         address: "00:11".into(),
                         name: "buds".into(),

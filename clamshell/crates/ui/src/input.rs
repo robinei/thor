@@ -500,7 +500,7 @@ mod tests {
         use clamshell_core::wifi::{Network, Wifi};
         let mut s = State::new(Init::default());
         let networks = (0..n).map(|i| Network { ssid: format!("n{i}"), ..Network::default() }).collect();
-        s.apply(Event::Reading(clamshell_core::Reading::Wifi(Wifi { device: true, enabled: true, networks, ..Wifi::default() })));
+        s.apply(Event::Reading(clamshell_core::Reading::Wifi(Wifi { present: true, on: true, networks, ..Wifi::default() })));
         s.apply(ListEvent::Visible(ListId::Wifi, 5.0).into());
         s
     }

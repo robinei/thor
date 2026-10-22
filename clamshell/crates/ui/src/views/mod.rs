@@ -277,14 +277,14 @@ mod tests {
         let mut cache = DrawCache::load();
         let readings = [
             Reading::Wifi(Wifi {
-                device: true,
-                enabled: true,
+                present: true,
+                on: true,
                 networks: (0..30).map(|i| Network { ssid: format!("net {i}"), ..Network::default() }).collect(),
                 ..Wifi::default()
             }),
             Reading::Bluetooth(Bluetooth {
-                adapter: true,
-                powered: true,
+                present: true,
+                on: true,
                 devices: (0..30)
                     .map(|i| Device { address: format!("{i}"), name: format!("dev {i}"), kind: Kind::Other, paired: true, connected: false })
                     .collect(),
@@ -403,7 +403,7 @@ mod tests {
         ] {
             let mut state = demo();
             let networks = (0..4).map(|i| Network { ssid: format!("net {i}"), ..Network::default() }).collect();
-            state.apply(Event::Reading(Reading::Wifi(Wifi { device: true, enabled: true, networks, ..Wifi::default() })));
+            state.apply(Event::Reading(Reading::Wifi(Wifi { present: true, on: true, networks, ..Wifi::default() })));
             let streams = (0..3).map(|i| Stream { id: i, app: format!("app {i}"), title: String::new(), volume: 50, muted: false }).collect();
             state.apply(Event::Reading(Reading::Audio(Audio { outputs: vec![], streams })));
             state.apply(Event::Pointer(clamshell_core::PointerEvent::Activate(Id::Tab(tab))));
