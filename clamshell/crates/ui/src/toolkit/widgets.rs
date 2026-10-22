@@ -58,7 +58,7 @@ pub(crate) const SHADE_ALPHA: f32 = 0.85;
 /// x its track's positions count from, the height of its middle, its size (the bar's height, a row's),
 /// the room its card may use, and what the card says.
 pub(crate) struct HeldSlider<'a> {
-    pub slider: &'a clamshell_core::slider::Slider,
+    pub slider: &'a clamshell_core::levels::slider::Slider,
     pub x0: f32,
     pub cy: f32,
     pub h: f32,

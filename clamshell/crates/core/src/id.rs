@@ -9,9 +9,9 @@ use std::sync::Arc;
 use crate::Dirty;
 use crate::keyboard::KeyPos;
 use crate::levels::Level;
+use crate::levels::slider::Control;
 use crate::panel::Scope;
 use crate::settings::Setting;
-use crate::slider::Control;
 use crate::tab::Tab;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

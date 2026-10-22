@@ -12,13 +12,15 @@
 //!
 //! The bar's sliders set the same levels as the tabs' rows (`Level::Volume`, `Level::Brightness`).
 
+pub mod slider;
+
 use crate::State;
 use crate::effect::Effect;
 use crate::id::Id;
 use crate::kit::list::ItemKey;
 use crate::kit::list::Rows;
 use crate::nav::lists::{ListId, RowPart};
-use crate::slider::{Control, Slider};
+use slider::{Control, Slider};
 
 /// A level row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

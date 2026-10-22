@@ -17,7 +17,7 @@
 use std::time::{Duration, Instant};
 
 use clamshell_core::levels::Level;
-use clamshell_core::slider::{Control, SLIDE_AFTER, SLIDE_MOVE};
+use clamshell_core::levels::slider::{Control, SLIDE_AFTER, SLIDE_MOVE};
 use clamshell_core::touch::{ContactPhase, Pointing};
 use clamshell_core::{Event, Hold, Id, LevelEvent, ListEvent, PadRoute, PointerEvent, Slide, State};
 

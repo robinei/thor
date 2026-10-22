@@ -24,9 +24,9 @@ use crate::effect::{Effect, Save};
 use crate::id::{KeymapId, Target};
 use crate::keyboard::{Key, Stroke};
 use crate::keymap::{Actuation, Binding, Chord, Input, Keymap, Keymaps, Kind, Layer, Output, PadOut, Param, as_on_the_pad};
+use crate::levels::slider::{Control, Slider};
 use crate::nav::lists::RowPart;
 use crate::settings::Setting;
-use crate::slider::{Control, Slider};
 
 mod layers;
 mod params;

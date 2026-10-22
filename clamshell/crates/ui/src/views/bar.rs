@@ -9,8 +9,8 @@
 //! the bar (the bar stays visible under it): a track whose current level sits under the finger, and the
 //! level as a number beside it.
 
+use clamshell_core::levels::slider::{Control, Slider};
 use clamshell_core::notice::NoticeKind;
-use clamshell_core::slider::{Control, Slider};
 use clamshell_core::{Id, State, Tab};
 
 use crate::draw::{Align, Rect};

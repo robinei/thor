@@ -48,7 +48,6 @@ mod running;
 mod session;
 pub mod settings;
 mod shelf;
-pub mod slider;
 pub mod sticks;
 mod sys;
 mod tab;
@@ -57,12 +56,12 @@ pub mod touch;
 pub mod tray;
 pub mod windows;
 
+use crate::levels::slider::Control;
 use keyboard::{Key, Keyboard};
 use kit::replace;
 pub use resume::Resume;
 use resume::{SAVE_AFTER, Saves};
 use settings::{MouseAtLaunch, Settings};
-use slider::Control;
 
 pub use crate::kit::list::Scroll;
 pub use crate::nav::lists::{ListEvent, ListId, Lists, RowPart};

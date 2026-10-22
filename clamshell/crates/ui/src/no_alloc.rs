@@ -8,8 +8,8 @@ use clamshell_core::account::Account;
 use clamshell_core::device::{DeviceId, SticksEvent};
 use clamshell_core::keyboard::{self, Key, Modifier};
 use clamshell_core::keymap::{Button, Input, Keymaps, Layer, Param, Side};
+use clamshell_core::levels::slider::Control;
 use clamshell_core::settings::Setting;
-use clamshell_core::slider::Control;
 use clamshell_core::sticks::Calibrator;
 use clamshell_core::windows::Window;
 use clamshell_core::{

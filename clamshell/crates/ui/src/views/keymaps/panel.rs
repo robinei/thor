@@ -3,7 +3,7 @@
 
 use clamshell_core::keymap::{Actuation, Binding, Change, Input, Keymap, Kind, Layer, Output, Param, change, params_of};
 use clamshell_core::keymap_screens::{EditView, way_of, ways};
-use clamshell_core::slider::{Control, Slider};
+use clamshell_core::levels::slider::{Control, Slider};
 use clamshell_core::{Id, KeymapId, Target};
 
 use crate::draw::{Align, Column, Keep, LINE, Rect};

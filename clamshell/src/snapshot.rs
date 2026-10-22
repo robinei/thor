@@ -11,8 +11,8 @@ use clamshell_core::device::{DeviceId, SticksEvent};
 use clamshell_core::keyboard::{Key, Modifier, Named};
 use clamshell_core::keymap::{Actuation, Button, Dir, Input, Layer, MouseButton, Output, PadOut, Param, Side};
 use clamshell_core::levels::Level;
+use clamshell_core::levels::slider::Control;
 use clamshell_core::settings::Setting;
-use clamshell_core::slider::Control;
 use clamshell_core::{
     Dock, EditorId, Event, Id, Init, KeymapId, LevelEvent, Library, ListEvent, ListId, PointerEvent, Reading, Scope, SettingsId, ShelfEvent, ShelfId, Slide,
     State, Status, Tab, Target, TimeId,
@@ -128,7 +128,7 @@ fn select(input: Input) -> Vec<Event> {
 /// The selected input's parameter slid by `by` of half the Thor's second screen, the finger lifted if
 /// `lift`.
 fn slide(param: Param, by: f32, lift: bool) -> Vec<Event> {
-    let control = clamshell_core::slider::Control::Param(param);
+    let control = clamshell_core::levels::slider::Control::Param(param);
     // (Along the screen-wide track, as touch gives it: a finger down in the panel, mid-screen.)
     let (x, width) = (620.0, 1240.0);
     let mut events = vec![Slide::Start { control, x, width }.into(), Slide::To { x: x + by * width * 0.5 }.into()];

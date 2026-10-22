@@ -4,8 +4,8 @@
 use crate::State;
 use crate::effect::{Effect, WindowCommand};
 use crate::levels::Level;
+use crate::levels::slider::Control;
 use crate::notice::NoticeKind;
-use crate::slider::Control;
 use crate::windows::{SHELF_APP_ID, Window};
 
 /// A hardware key (or the same asked for through the control pipe).

@@ -2,7 +2,7 @@
 //! saved, a launch starting, a file operation done. One shows at a time, for [`NOTICE_FOR`].
 
 use crate::State;
-use crate::slider::Control;
+use crate::levels::slider::Control;
 
 /// How long a notice shows, in seconds.
 const NOTICE_FOR: u64 = 2;

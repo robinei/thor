@@ -218,7 +218,7 @@ impl<'f, 'c> Frame<'f, 'c> {
         let Id::Control(control) = id else {
             return false;
         };
-        let up = |s: Option<clamshell_core::slider::Slider>| s.is_some_and(|s| s.control == *control);
+        let up = |s: Option<clamshell_core::levels::slider::Slider>| s.is_some_and(|s| s.control == *control);
         up(self.s.levels().slider().copied()) || up(self.s.keymap_edit().slider)
     }
 

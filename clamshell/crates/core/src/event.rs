@@ -10,13 +10,13 @@ use crate::hardware::DeviceKey;
 use crate::id::Id;
 use crate::idle::IdleEvent;
 use crate::instance::Instance;
+use crate::levels::slider::Control;
 use crate::levels::{Audio, Level};
 use crate::metrics::Metrics;
 use crate::nav::lists::ListEvent;
 use crate::nav::pad::PadInput;
 use crate::radios::bluetooth::Bluetooth;
 use crate::radios::wifi::Wifi;
-use crate::slider::Control;
 use crate::sys::Status;
 use crate::windows::Window;
 
