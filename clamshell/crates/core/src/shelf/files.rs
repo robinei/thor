@@ -6,7 +6,7 @@
 //! What is done on disk goes out as [`FileOp`]s, and the listings come back as they change. Deleting and
 //! emptying the Trash ask first: the action has to be pressed again.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use clamshell_library::BrowseKind;
@@ -149,11 +149,8 @@ pub struct Files {
     busy: Option<Busy>,
     /// Whether hidden files show.
     hidden: bool,
-    /// The folder listed and watched, as last asked for.
-    browsing: Option<Browse>,
-    /// A hash of the files in use, as last told to the browse thread (see [`BrowseCommand::InUse`]); 0
-    /// for none.
-    in_use: u64,
+    /// The folder the selection is in.
+    folder: Option<Arc<str>>,
 }
 
 impl Files {
@@ -425,50 +422,34 @@ impl Shelf {
         }
     }
 
-    /// Runs after every event. The open browsed folder is listed and watched when it becomes the open
-    /// one, and the watch is dropped when there is none. The files in use are told when they change, and
-    /// an armed action is dropped once the details show something else. `running` are the running
-    /// entries, whose files are in use.
-    pub(crate) fn follow_browse(&mut self, running: &[Running], out: &mut Out) {
-        out.effects.extend(self.follow_open_folder());
-        // The files in use are the open folder's, what is copied to be pasted, and what running launches
-        // opened. The archives they are in stay mounted.
-        let open = self.group().and_then(|g| g.browsed_dir()).map(std::path::Path::new);
-        let copied = self.files.clip.iter().flat_map(|c| c.entries.iter().map(|(p, _)| p.as_path()));
-        let running = running.iter().filter_map(|r| r.entry.as_ref()?.file.as_deref());
-        let in_use = open.into_iter().chain(copied).chain(running);
-        // Compared by a hash, so that nothing is collected while they stay the same. None is 0, as at
-        // start.
-        let mut hasher = std::hash::DefaultHasher::new();
-        let mut any = false;
-        for path in in_use.clone() {
-            std::hash::Hash::hash(path, &mut hasher);
-            any = true;
-        }
-        let hash = if any { std::hash::Hasher::finish(&hasher) } else { 0 };
-        if hash != self.files.in_use {
-            out.effects.push(Effect::Browse(BrowseCommand::InUse(in_use.map(PathBuf::from).collect())));
-            self.files.in_use = hash;
-        }
-    }
-
-    fn follow_open_folder(&mut self) -> Option<Effect> {
+    /// Runs after every event. An armed action is dropped once the details show something else, and the
+    /// selection is dropped when another folder opens, since it belonged to the last one.
+    pub(crate) fn follow_folder(&mut self) {
         if let Some(armed) = &self.files.armed
             && self.file_target().is_none_or(|(g, _)| g.id != armed.entry)
         {
             self.files.armed = None;
         }
-        let hidden = self.files.hidden;
-        let open = self.group().and_then(|g| Some(Browse { folder: g.id.clone(), dir: g.browsed_dir()?.to_path_buf(), hidden }));
-        if self.files.browsing == open {
-            return None;
-        }
-        // In another folder, the selection belonged to the last one.
-        if self.files.browsing.as_ref().map(|b| &b.folder) != open.as_ref().map(|b| &b.folder) {
+        let open = self.browsed().map(|(folder, _)| folder);
+        if self.files.folder.as_ref() != open {
+            self.files.folder = open.cloned();
             self.files.selected.clear();
         }
-        self.files.browsing.clone_from(&open);
-        Some(Effect::Browse(BrowseCommand::Open(open)))
+    }
+
+    /// The open browsed folder and its directory, which is listed and watched while it is open (see
+    /// [`crate::sync::Sent::browse`]).
+    pub(crate) fn browsed(&self) -> Option<(&Arc<str>, &Path)> {
+        self.group().and_then(|g| Some((&g.id, g.browsed_dir()?)))
+    }
+
+    /// The files in use: the open folder's, what is copied to be pasted, and what `running` launches
+    /// opened. The archives they are in stay mounted (see [`crate::sync::Sent::browse`]).
+    pub(crate) fn in_use<'a>(&'a self, running: &'a [Running]) -> impl Iterator<Item = &'a Path> + Clone {
+        let open = self.browsed().map(|(_, dir)| dir);
+        let copied = self.files.clip.iter().flat_map(|c| c.entries.iter().map(|(p, _)| p.as_path()));
+        let running = running.iter().filter_map(|r| r.entry.as_ref()?.file.as_deref());
+        open.into_iter().chain(copied).chain(running)
     }
 }
 

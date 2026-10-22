@@ -41,8 +41,8 @@ impl State {
         if self.bottom.follow_dim(&self.session, &self.clock) {
             out.mark(Dirty::BOTTOM);
         }
+        self.shelf.follow_folder();
         self.sync(&mut out);
-        self.shelf.follow_browse(self.session.running_entries(), &mut out);
         self.follow_idle(&mut out);
         self.follow_watch(&mut out);
         let changed = self.session.follow_program();
