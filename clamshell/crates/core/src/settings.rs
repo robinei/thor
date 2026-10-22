@@ -445,10 +445,10 @@ mod tests {
         assert_eq!(Setting::FpsCap.next(33), 0, "a value not offered: the first");
         for s in Setting::ALL {
             assert!(s.choices().contains(&s.default_value()), "{s:?}");
-            let mut buf = String::new();
             for &v in s.choices() {
+                let mut buf = String::new();
                 s.describe(v, &mut buf);
-                assert!(!buf.is_empty());
+                assert!(!buf.is_empty(), "{s:?} {v}");
             }
         }
     }
