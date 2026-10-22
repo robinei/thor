@@ -39,7 +39,7 @@ const MOUSE_DEVICE_KEYS: [KeyCode; 9] = [
 pub fn mouse_device_keys() -> Vec<KeyCode> {
     let mut keys = MOUSE_DEVICE_KEYS.to_vec();
     keys.extend(mouse_codes());
-    keys.extend(crate::keyboard::all_keys());
+    keys.extend(crate::input::keyboard::all_keys());
     keys.sort_by_key(|k| k.0);
     keys.dedup();
     keys

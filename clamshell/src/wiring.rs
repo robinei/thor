@@ -7,8 +7,8 @@ use std::sync::{Arc, Mutex};
 use clamshell_core::bottom::touch::TouchLayout;
 use clamshell_core::settings::Values;
 use clamshell_system::brightness::Backlights;
+use clamshell_system::input::keyboard::VirtualKeyboard;
 use clamshell_system::job::Runner;
-use clamshell_system::keyboard::VirtualKeyboard;
 use clamshell_system::library::meta;
 use clamshell_system::library::meta::cache::Cache;
 use clamshell_system::library::{self, Sources};
@@ -17,7 +17,8 @@ use clamshell_system::paths::Paths;
 use clamshell_system::store::{Store, Writer};
 use clamshell_system::tuning::Tuning;
 use clamshell_system::{
-    Closed, Handles, Sink, battery, bluetooth, brightness, clock, frames, launcher, metrics, mixer, pad, sound, status, sway, touchpad, tuning, units, wifi,
+    Closed, Handles, Sink, battery, bluetooth, brightness, clock, frames, input::pad, input::touchpad, launcher, metrics, mixer, sound, status, sway, tuning,
+    units, wifi,
 };
 use clamshell_ui::EventSender;
 

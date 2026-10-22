@@ -1,7 +1,7 @@
 use super::*;
+use crate::input::pad::motion::Sample;
+use crate::input::pad::route::{Axis, PadRouter};
 use crate::os::evdev::Range;
-use crate::pad::motion::Sample;
-use crate::pad::route::{Axis, PadRouter};
 use clamshell_core::PadRoute;
 use clamshell_core::bottom::keyboard::{Key, Named};
 

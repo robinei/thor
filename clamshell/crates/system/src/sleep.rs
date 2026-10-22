@@ -13,9 +13,9 @@
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
+use crate::input::pad;
 use crate::os::dbus::{Bus, Message};
 use crate::os::worker::{self, Worker};
-use crate::pad;
 
 use rustix::time::{ClockId, clock_gettime};
 
