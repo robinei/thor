@@ -1,7 +1,12 @@
 //! Bindings in words: what an input maps to, a label's summary, the Thor's printed button names, a
 //! parameter's value, and what turns a layer on.
 
-use super::*;
+use std::fmt::Write;
+
+use clamshell_core::keymap::{Actuation, Binding, Button, Change, Input, Keymap, Layer, Output, PadOut, Param, Side, change};
+
+use crate::toolkit::format::Fmt;
+use crate::toolkit::style::Tone;
 
 /// What a binding maps to, in words; the pad's buttons by the Thor's printed names, as for inputs (games
 /// get them by position: the printed B is the Xbox pad's A).

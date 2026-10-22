@@ -12,22 +12,15 @@
 //! On black like the rest: the pad's parts are thin dim outlines; blue is what a keymap maps to something
 //! else, grey what it only tunes.
 
-use std::fmt::Write;
+use clamshell_core::keymap::Input;
+use clamshell_core::keymap_screens::{PickerRow, Screen, holds, picked};
+use clamshell_core::{Id, KeymapId, ListId, RowPart, Scope};
 
-use clamshell_core::keymap::{
-    Actuation, Binding, Button, Change, Chord, Dir, Input, Keymap, Kind, Layer, MouseButton, Output, PadOut, Param, Side, change, params_of,
-};
-use clamshell_core::keymap_screens::{EditView, PickerRow, Screen, holds, picked, way_of, ways};
-use clamshell_core::slider::{Control, Slider};
-use clamshell_core::{Id, KeymapId, ListId, RowPart, Scope, Target};
-
-use super::editor;
-use crate::draw::{Align, Column, Keep, LINE, Rect, Rgb, Span};
-use crate::icons::Icon;
+use crate::draw::{Rect, Rgb, Span};
 use crate::toolkit::format::Fmt;
-use crate::toolkit::style::{self, Look, Text, Tone};
-use crate::toolkit::widgets::{EditCell, HeaderRight, HeldSlider, ListArea, ListRow};
-use crate::toolkit::{Frame, Track, widgets};
+use crate::toolkit::style::{Text, Tone};
+use crate::toolkit::widgets::{EditCell, HeaderRight, ListArea, ListRow};
+use crate::toolkit::{Frame, widgets};
 
 mod choose;
 mod edit;
@@ -35,11 +28,9 @@ mod pad;
 mod panel;
 mod words;
 
-use choose::*;
-use edit::*;
-use pad::{Pad, Part};
-use panel::*;
-use words::*;
+use choose::{capture, layer_menu, layer_picker, layers, mouse};
+use edit::edit;
+use words::Label;
 
 #[cfg(test)]
 pub(super) use edit::edit_layout;

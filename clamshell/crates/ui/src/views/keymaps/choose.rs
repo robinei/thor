@@ -1,7 +1,22 @@
 //! The screens a way to remap opens, and the layers' screens: the layers' lists (to show one, as a
 //! target), a layer's menu, the mouse's drawing, and a key chord typed on the keyboard.
 
-use super::*;
+use std::fmt::Write;
+
+use clamshell_core::keymap::{Chord, Dir, Input, Layer, MouseButton, Output};
+use clamshell_core::{Id, KeymapId, ListId, RowPart, Target};
+
+use crate::draw::{Align, Keep, LINE, Rect};
+use crate::icons::Icon;
+use crate::toolkit::format::Fmt;
+use crate::toolkit::style::{Look, Text, Tone};
+use crate::toolkit::widgets::{EditCell, HeaderRight, ListArea, ListRow};
+use crate::toolkit::{Frame, widgets};
+use crate::views::editor;
+
+use super::edit::binding;
+use super::words::{Label, OutputLabel, turned_on_by};
+use super::{BUTTON_H, PART_LINE, PART_W, ROW_H, SELECTED_W, choice_header, header, remap_title};
 
 /// The layers for `input` to turn on: the keymap's, but Base (the one it maps to now marked), each with
 /// what turns it on, and New layer… at the end (named, then mapped to). Chosen, it closes; Cancel gives

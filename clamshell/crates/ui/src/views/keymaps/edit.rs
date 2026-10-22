@@ -1,7 +1,24 @@
 //! The keymap edit screen: the Thor's controls drawn in two clusters, each changed one with a label
 //! (its lines in to it), the corners (Close, Undo, the layer button), and the layout they share.
 
-use super::*;
+use std::fmt::Write;
+
+use clamshell_core::keymap::{Actuation, Binding, Button, Change, Dir, Input, Keymap, Layer, Side, change};
+use clamshell_core::{Id, KeymapId};
+
+use crate::draw::{Align, Keep, LINE, Rect};
+use crate::icons::Icon;
+use crate::toolkit::format::Fmt;
+use crate::toolkit::style::{Look, Text, Tone};
+use crate::toolkit::{Frame, style};
+
+use super::pad::{Pad, Part};
+use super::panel::{panel, picking_panel};
+use super::words::{described, summary, thor};
+use super::{
+    CLUSTER_W, CONTROLS, FIXED, GAP, LABEL, LABEL_COLUMN_W, LABEL_GAP, LABEL_MIN, LEADER_ALPHA, LEADER_W, MUTED, PANEL_TEXT, PART_LINE, PART_W, Picking,
+    SELECTED_W,
+};
 
 /// An input's binding in keymap `k`'s `layer` itself, if it has one there.
 /// A label's first line: its actuation, text and tone.

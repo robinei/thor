@@ -120,7 +120,7 @@ Helpers that exist but are bypassed:
       clock (`unix_secs`), `Duration`→`Timespec` (`sys::timespec`), the /dev/input watch's construction
       (`devices_watch`; the pad and input threads keep a watch each), reader commands (`Shown`). Wi-Fi's and
       Bluetooth's `Request` stays: it wraps core's `Command` with the watch.
-- [ ] The keymap views' wildcard imports (`ui/views/keymaps/mod.rs:39-43`): explicit.
+- [x] The keymap views' wildcard imports (`ui/views/keymaps/mod.rs:39-43`): explicit.
 - [ ] UI: the confirm dialog written twice (`keymaps/mod.rs:196-222`); layout literals named or helped
       (`Column::para`), shared gaps in `style`.
 - [x] Dev tooling out of the device binary: `--snapshot` and the demo library behind a `dev` feature (checked

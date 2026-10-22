@@ -1,7 +1,20 @@
 //! The edit screen's panel: the selected input's name, actuation tabs, what it does, the ways to remap it
 //! and its parameters (rows, switches, held sliders); and the panel while a control is picked.
 
-use super::*;
+use clamshell_core::keymap::{Actuation, Binding, Change, Input, Keymap, Kind, Layer, Output, Param, change, params_of};
+use clamshell_core::keymap_screens::{EditView, way_of, ways};
+use clamshell_core::slider::{Control, Slider};
+use clamshell_core::{Id, KeymapId, Target};
+
+use crate::draw::{Align, Column, Keep, LINE, Rect};
+use crate::icons::Icon;
+use crate::toolkit::format::Fmt;
+use crate::toolkit::style::{Look, Text, Tone};
+use crate::toolkit::widgets::HeldSlider;
+use crate::toolkit::{Frame, Track, widgets};
+
+use super::words::{Label, as_on_pad, described, shown, summary};
+use super::{BUTTON_H, PANEL_ROW_H, PANEL_TEXT, Picking, remap_title};
 
 /// The panel while a control is picked: what for, what to do, and Cancel (for the gyro's hold, Always
 /// beside it).
