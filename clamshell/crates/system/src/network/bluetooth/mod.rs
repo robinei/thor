@@ -128,8 +128,14 @@ impl Session {
 
     /// Starts or stops looking for devices (already doing so is fine).
     fn discover(&mut self, on: bool) {
-        if let Ok(adapter) = self.adapter() {
-            let _ = self.bus.call::<()>(SERVICE, &adapter, ADAPTER, if on { "StartDiscovery" } else { "StopDiscovery" }, ());
+        let method = if on { "StartDiscovery" } else { "StopDiscovery" };
+        match self.adapter() {
+            Ok(adapter) => {
+                if let Err(e) = self.bus.call::<()>(SERVICE, &adapter, ADAPTER, method, ()) {
+                    log::debug!("bluetooth: {method}: {e}");
+                }
+            }
+            Err(e) => log::debug!("bluetooth: {method}: {e}"),
         }
     }
 }
@@ -206,7 +212,9 @@ fn pair(bus: &mut Bus, device: &str) -> dbus::Result<()> {
     let agent = Path::from(AGENT_PATH);
     bus.call::<()>(SERVICE, "/org/bluez", AGENT_MANAGER, "RegisterAgent", (agent.clone(), "NoInputNoOutput"))?;
     let paired = bus.call::<()>(SERVICE, device, DEVICE, "Pair", ());
-    let _ = bus.call::<()>(SERVICE, "/org/bluez", AGENT_MANAGER, "UnregisterAgent", (agent,));
+    if let Err(e) = bus.call::<()>(SERVICE, "/org/bluez", AGENT_MANAGER, "UnregisterAgent", (agent,)) {
+        log::warn!("bluetooth: unregistering the pairing agent: {e}");
+    }
     paired
 }
 

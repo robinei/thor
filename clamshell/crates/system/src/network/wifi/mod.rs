@@ -130,16 +130,14 @@ impl Session {
             };
             match message.interface().as_deref() {
                 // Active connections signal (state, reason); devices (new state, old state, reason).
-                Some(nm::ACTIVE) => {
-                    if let Ok((state, reason)) = message.read2::<u32, u32>() {
-                        self.active_changes.push(StateChange { object, state, reason });
-                    }
-                }
-                Some(nm::DEVICE) => {
-                    if let Ok((state, _old, reason)) = message.read3::<u32, u32, u32>() {
-                        self.device_changes.push(StateChange { object, state, reason });
-                    }
-                }
+                Some(nm::ACTIVE) => match message.read2::<u32, u32>() {
+                    Ok((state, reason)) => self.active_changes.push(StateChange { object, state, reason }),
+                    Err(e) => log::warn!("wifi: reading {object}'s state change: {e}"),
+                },
+                Some(nm::DEVICE) => match message.read3::<u32, u32, u32>() {
+                    Ok((state, _old, reason)) => self.device_changes.push(StateChange { object, state, reason }),
+                    Err(e) => log::warn!("wifi: reading {object}'s state change: {e}"),
+                },
                 _ => {}
             }
         }
@@ -180,8 +178,12 @@ impl Session {
         let mut aps = Vec::with_capacity(paths.len());
         for path in paths {
             // An access point can vanish between the list and its properties.
-            let Ok(props) = self.bus.get_all(SERVICE, &path, nm::ACCESS_POINT) else {
-                continue;
+            let props = match self.bus.get_all(SERVICE, &path, nm::ACCESS_POINT) {
+                Ok(props) => props,
+                Err(e) => {
+                    log::debug!("wifi: access point {path}: {e}");
+                    continue;
+                }
             };
             let p = Props(&props);
             let Some(ssid) = p.bytes("Ssid") else {
@@ -295,7 +297,7 @@ impl<S: Sink> WifiThread<S> {
             return Ok(());
         }
         // Gone without a word (it is removed once deactivated): failed, the reason unknown.
-        if ended.is_none() && s.get::<u32>(&attempt.active, nm::ACTIVE, "State").is_err() {
+        if ended.is_none() && s.get::<u32>(&attempt.active, nm::ACTIVE, "State").inspect_err(|e| log::debug!("wifi: {}: {e}", attempt.active)).is_err() {
             ended = Some(0);
         }
         let timed_out = attempt.started.elapsed() > JOIN_FOR;
@@ -304,8 +306,10 @@ impl<S: Sink> WifiThread<S> {
         }
         let problem = classify(ended.unwrap_or(0), attempt.device_failure, timed_out, attempt.ssid.clone());
         log::warn!("wifi: {problem:?}");
-        if let Some(path) = &attempt.added {
-            let _ = s.delete(path);
+        if let Some(path) = &attempt.added
+            && let Err(e) = s.delete(path)
+        {
+            log::warn!("wifi: removing the connection added for {}: {e}", attempt.ssid);
         }
         st.error = Some(problem);
         st.attempt = None;
@@ -402,7 +406,9 @@ impl<S: Sink> Service for WifiThread<S> {
             {
                 self.state.last_scan = Some(Instant::now());
                 // Refused while one runs, or right after one: harmless.
-                let _ = s.call::<()>(device, nm::WIRELESS, "RequestScan", (dbus::PropMap::new(),));
+                if let Err(e) = s.call::<()>(device, nm::WIRELESS, "RequestScan", (dbus::PropMap::new(),)) {
+                    log::debug!("wifi: scan: {e}");
+                }
             }
             let wifi = self.read(&mut s, device.as_ref())?;
             if let Some(wifi) = last.offer(wifi) {
