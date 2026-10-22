@@ -1,15 +1,21 @@
-//! Programs' tray icons (StatusNotifierItem, over D-Bus) and their menus, as the system reads them. An icon
-//! is a running entry's: the one whose scope its process is in (started by ClamShell); else, in the device's
-//! session (in a desktop's the program is the desktop's), the program runs as an entry found by its icon
-//! ([`Origin::Found`]): the library's desktop entry named as the icon's id (`desktop:steam` for Steam's
-//! `steam`), else one of its own (`tray:<id>`, its picture the icon). Its process (and those it started) is
-//! moved into a scope of ours, as a launch of the entry's: once systemd lists that, it runs as one
-//! ([`Origin::Ours`]), paused and ended by its slice (not one a systemd service runs: that stays the
-//! service's, its process signalled). Like any running entry it is on the dock with a workspace of its own:
-//! its windows (those of the icon's process and of the processes it started) go there, wherever they open. A
-//! tap shows them, or (none open) asks the program to show itself, its window then shown there; the tile's
-//! corner mark opens the program's menu, and so does Menu in its long-press menu. Quit closes its windows,
-//! then asks the icon's process to end; Force kill kills it.
+//! Programs' tray icons (StatusNotifierItem, over D-Bus) and their menus, as the system reads them.
+//!
+//! An icon belongs to the running entry whose scope its process is in, if ClamShell started it. Otherwise,
+//! in the device's own session, the program runs as an entry found by its icon ([`Origin::Found`]): the
+//! library's desktop entry named like the icon's id (`desktop:steam` for Steam's `steam`), else an entry of
+//! its own (`tray:<id>`, with the icon as its picture). In a desktop session the program is left to the
+//! desktop.
+//!
+//! The found program's process, and those it started, are moved into a scope of ours as a launch of the
+//! entry. Once systemd lists that scope, the entry runs as a launch ([`Origin::Ours`]) and is paused and
+//! ended through its slice. A process that a systemd service runs is not moved; it stays the service's
+//! and is signalled directly.
+//!
+//! Like any running entry it is on the dock with a workspace of its own, and its windows (those of the
+//! icon's process and the processes it started) go there wherever they open. A tap shows them, or, with
+//! none open, asks the program to show itself. The tile's corner mark opens the program's menu, as does
+//! Menu in its long-press menu. Quit closes its windows and then asks the icon's process to end; Force
+//! kill kills it.
 
 use std::path::PathBuf;
 use std::sync::Arc;

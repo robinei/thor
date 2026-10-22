@@ -1,9 +1,11 @@
-//! What every system thread is made of. A thread is spawned with its command channel made inside
-//! ([`Worker::spawn`]); it waits for the next command or for its period ([`next`]), or, if it waits on files
-//! (a device, inotify), for those and its [`Bell`] together, which its commands ring; it sends a reading only
-//! when it changed ([`Changed`]); a thread that talks to a service (a bus, a socket, a device) connects, runs
-//! while the service is up, and is supervised: tried again every `retry` while the service is down
-//! ([`supervise`]).
+//! What every system thread is made of:
+//!
+//! - A thread is spawned with its command channel ([`Worker::spawn`]).
+//! - It waits for its next command or for its period ([`next`]). A thread that waits on files (a device,
+//!   inotify) waits on those and its [`Bell`] together; its commands ring the bell.
+//! - It sends a reading only when it changed ([`Changed`]).
+//! - A thread that talks to a service (a bus, a socket, a device) connects, runs while the service is up,
+//!   and is supervised: while the service is down, it is tried again every `retry` ([`supervise`]).
 //!
 //! The rule for commands while a service is down: what a command sets (watching, a route) is kept and
 //! applies once the service is back; what it asks to be done is refused at once ("unavailable"), never
@@ -61,7 +63,8 @@ impl Bell {
         let _ = rustix::io::write(&*self.0, &1u64.to_ne_bytes());
     }
 
-    /// Unrung (however often it was): what rang it is in the channel, or the ringer's to say.
+    /// Resets the bell, however often it rang. The bell carries no message: whatever rang it is waiting
+    /// in the command channel, or is for the ringer to say.
     pub fn clear(&self) {
         let mut count = [0u8; 8];
         let _ = rustix::io::read(&*self.0, &mut count);

@@ -1,16 +1,20 @@
-//! The keymaps' screens, over the settings tab (see `core`'s `keymap_screens`): the picker (a scrolled list:
-//! for a game its own keymap, or Make own keymap; Default, then the named keymaps, each with who uses it and
-//! an Edit button; New), a keymap's menu, deleting one in use, the keymaps to load into a game's own and to
-//! save it as (the picker's rows without the own one, Edit and the mark; saving: a new one first), saving
-//! over a named one, the edit screen (one layer of the keymap, named at the top right, a button to the list
-//! of layers; Close at the top left; the pad's controls drawn in two clusters at the sides, as they sit
-//! beside the screen, each the layer changes with a label; between the label columns, the whole height, a
-//! panel for the selected input: the ways to remap it as icons, its parameters), the layers' lists and a
-//! layer's menu, the same while a control is picked on it, what holds the gyro on, a part of the mouse on its
-//! drawing, and a key chord typed on the keyboard.
+//! The keymaps' screens, drawn over the settings tab (their rules are `core`'s `keymap_screens`):
 //!
-//! On black like the rest: the pad's parts are thin dim outlines; blue is what a keymap maps to something
-//! else, grey what it only tunes.
+//! - The picker, a scrolled list: for a game, its own keymap or Make own keymap; then Default, the named
+//!   keymaps (each with who uses it and an Edit button), and New.
+//! - A keymap's menu, and the confirmation for deleting one in use.
+//! - The keymaps to load into a game's own and to save it as: the picker's rows without the game's own,
+//!   its Edit buttons and its mark; saving lists a new keymap first. Saving over a named one asks first.
+//! - The edit screen ([`edit`](fn@edit)): one layer of the keymap, named at the top right with a button to the
+//!   list of layers, and Close at the top left. The pad's controls are drawn in two clusters at the sides,
+//!   as they sit beside the screen, each control the layer changes with a label. Between the label
+//!   columns, the full height, is a panel for the selected input: the ways to remap it as icons, and its
+//!   parameters.
+//! - The layers' lists and a layer's menu; the edit screen while a control is picked on it; what holds
+//!   the gyro on; a part of the mouse on its drawing; a key chord typed on the keyboard.
+//!
+//! Colours follow the rest of the UI on black: the pad's parts are thin dim outlines, blue marks what a
+//! keymap maps to something else, and grey what it only tunes.
 
 use clamshell_core::keymap::Input;
 use clamshell_core::keymap_screens::{PickerRow, Screen, holds, picked};

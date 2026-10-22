@@ -1,7 +1,8 @@
-//! `--snapshot DIR`: both screens drawn at the Thor's size into PNG files, without Wayland: shelf, the second
-//! screen and every tab, each after the events that lead to it, in groups that each start fresh. At a fixed
-//! time (unless CLAMSHELL_SNAPSHOT_NOW is set), so they come out the same on every run; the test below
-//! keeps hashes of their pixels (tests/snapshots.txt) to catch changes in what is drawn.
+//! `--snapshot DIR`: both screens drawn at the Thor's size into PNG files, without Wayland. The shots are
+//! shelf, the second screen and every tab, each drawn after the events that lead to it, in groups that each
+//! start from a fresh state. They are taken at a fixed time (unless CLAMSHELL_SNAPSHOT_NOW is set), so they
+//! come out the same on every run. The test below keeps hashes of their pixels (tests/snapshots.txt) to
+//! catch changes in what is drawn.
 
 use std::fmt;
 use std::path::Path;
@@ -534,8 +535,8 @@ fn render_group(mut state: State, Group { start, shots }: Group, now: u64, dir: 
     for event in start {
         state.apply(event);
     }
-    // (What the setting up said, "Starting …" for its launches, gone: the clock past the notice, and
-    // back.)
+    // The notice the setup left ("Starting …" for its launches) is cleared: the clock moves past it, and
+    // back.
     state.apply(Event::tick(now + 5));
     state.apply(Event::tick(now));
     for Shot { name, screen, before } in shots {

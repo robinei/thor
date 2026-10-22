@@ -149,9 +149,9 @@ Helpers that exist but are bypassed:
 
 ## 5. How it reads
 
-- [ ] Plain sentences in docs and comments: module docs first (`keymap_screens`, `tray`, `found`,
-      `keymaps` view, `dock`, `snapshot`, `worker`), then the README; the parenthesised asides where they
-      don't help.
+- [x] Plain sentences in docs and comments: the module docs named (`keymap_screens`, `tray`, `found`, the
+      keymaps view, `dock`, `snapshot`, `worker`), the README's intro, and the lines the reviews quoted.
+      The rest of the code's comments follow as files are touched.
 - [x] One name for one concept: the API's entry lookups, targets and fields named `entry` (`State::entry`,
       `Shelf::entry`, `ShelfId::Entry`, `on_launch_event`, `Effect::Launch { entry }`, ...); the first start
       one name (`first_start`, `FirstStartDone`, `first-start.json`); `levels::AudioOutput`. Kept, with

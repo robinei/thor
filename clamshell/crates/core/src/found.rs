@@ -1,17 +1,20 @@
-//! Programs ClamShell didn't start, found by a window of theirs that is no entry's (or by a tray icon: see
-//! [`crate::tray`]): anything with a window is on the dock. Each runs as an entry ([`Origin::Found`]): the
-//! library's desktop entry named as the window's app id, else one of its own (`window:<app id>`, its picture
-//! looked up by the app id in the icon themes, else the UI's app glyph); its windows (those with its app id,
-//! or of its process) go to its workspace, shown there if one was in front.
+//! Programs ClamShell didn't start, found by a window of theirs that belongs to no entry (or by a tray
+//! icon: see [`crate::tray`]), so that anything with a window is on the dock.
 //!
-//! Its process (and those it started) is moved into a scope of ours, as a launch of the entry's
-//! ([`State::adopt`]): then it is paused, quit and killed by its slice. Not a process that also has
-//! another entry's windows (a browser showing a file opened from the Files tab): Quit closes its windows,
-//! and that is all. Also nested in a desktop's session: a window in ClamShell's sway is that session's
-//! (a desktop's own programs show theirs on the desktop, not there).
+//! Each such program runs as an entry ([`Origin::Found`]): the library's desktop entry named like the
+//! window's app id, else an entry of its own (`window:<app id>`, with a picture looked up by the app id in
+//! the icon themes, else the UI's app glyph). Its windows (those with its app id, or of its process) go to
+//! its workspace, and are shown there if one was in front.
 //!
-//! A window a systemd service opened (a portal's file chooser, the password prompt) is none: it belongs
-//! to the program that asked for it, and is gone in seconds.
+//! Its process, and those it started, are moved into a scope of ours as a launch of the entry
+//! ([`State::adopt`]); from then on it is paused, quit and killed through its slice. A process that also
+//! has another entry's windows (a browser showing a file opened from the Files tab) is not moved: Quit
+//! closes its windows, and that is all. Nested in a desktop session this works the same, since a window
+//! in ClamShell's sway belongs to that session (the desktop's own programs show their windows on the
+//! desktop, not there).
+//!
+//! A window that a systemd service opened (a portal's file chooser, the password prompt) is not found as
+//! a program: it belongs to the program that asked for it, and is gone in seconds.
 
 use std::sync::Arc;
 

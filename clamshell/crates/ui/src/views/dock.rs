@@ -1,10 +1,12 @@
-//! The dock: its entries (pinned, then running; see `core`'s `dock`) as a grid of tiles on black, each its
-//! picture (box art, or an app's icon) over its name, scrolled by rows when there are more than fit. A
-//! running entry in colour (the program in force marked by a dot when several run), a stopped one grey.
-//! A tap starts it or shows it; a long press opens its menu in the dock's place (see [`draw_menu`]). While
-//! one moves, it is named in the accent colour and the D-pad moves it. A tile with a tray icon (see
-//! `core`'s `tray`) has a mark in its top left corner, three bars, which opens its program's menu in the
-//! same place (Menu in its long-press menu too).
+//! The dock: its entries (pinned, then running; see `core`'s `dock`) as a grid of tiles on black. Each
+//! tile shows the entry's picture (box art, or an app's icon) over its name; the grid scrolls by rows when
+//! there are more than fit. A running entry is in colour, a stopped one grey, and when several run the
+//! program in force has a dot.
+//!
+//! A tap starts an entry or shows it; a long press opens its menu in the dock's place (see [`draw_menu`]).
+//! While an entry is being moved, its name is in the accent colour and the D-pad moves it. A tile with a
+//! tray icon (see `core`'s `tray`) has a mark of three bars in its top left corner, which opens the
+//! program's menu in the same place, as Menu in its long-press menu does.
 
 use clamshell_core::dock::DOCK_COLUMNS;
 use clamshell_core::tray::TrayEntry;
