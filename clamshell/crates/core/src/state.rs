@@ -567,7 +567,7 @@ impl State {
             self.shelf.moved(&mut self.pointer);
         }
         self.session.follow_pausable_runners(self.shelf.library());
-        self.follow_runner_keymaps(out);
+        self.keymapping.follow_runner_keymaps(self.shelf.library(), &mut self.prefs, out);
         out.effects.push(crate::session::running::land_rules(self.shelf.library()));
         if self.dock.drop_gone(self.shelf.library(), &self.session) {
             out.effects.push(self.dock.save_effect());
@@ -584,7 +584,7 @@ impl State {
             out.effects.push(self.dock.save_effect());
         }
         out.effects.extend(self.levels.brightness_effect());
-        self.follow_runner_keymaps(out);
+        self.keymapping.follow_runner_keymaps(self.shelf.library(), &mut self.prefs, out);
         out.effects.push(self.bottom.window_rules().effect());
     }
 
@@ -1206,28 +1206,6 @@ impl State {
     }
 
     // Settings and keymaps.
-
-    /// For runners that come with one of ClamShell's keymaps (see [`crate::Library::runner_keymaps`]) and
-    /// have no keymap chosen and none of their own: makes that keymap their own, chooses it, and saves.
-    fn follow_runner_keymaps(&mut self, out: &mut Out) {
-        let library = self.shelf.library();
-        let wanting: Vec<(std::sync::Arc<str>, crate::keymap::Keymap)> = library
-            .runner_keymaps
-            .iter()
-            .filter(|(key, _)| self.prefs.settings().overrides_of(key).get(Setting::Keymap).is_none() && self.keymapping.keymaps().own_of(key).is_none())
-            .filter_map(|(key, name)| Some((key.clone(), crate::keymap::preset(name)?)))
-            .collect();
-        if wanting.is_empty() {
-            return;
-        }
-        for (key, preset) in &wanting {
-            if let Some(id) = self.keymapping.make_own_from(preset, key) {
-                self.prefs.set(Some(key), Setting::Keymap, Some(id));
-            }
-        }
-        out.effects.push(self.keymapping.save_effect());
-        out.effects.push(self.prefs.save_effect());
-    }
 
     /// A tap or long press in the settings tab.
     fn on_settings(&mut self, id: SettingsId, long: bool, out: &mut Out) {
