@@ -1,5 +1,5 @@
 //! The device's own buttons and what they do: volume and brightness up and down, mute, a screenshot, and
-//! the Home combinations; each says what happened in a notice (see [`crate::bottom::notice`]).
+//! the Home combinations. Each one says what happened in a notice (see [`crate::bottom::notice`]).
 
 use crate::State;
 use crate::bottom::notice::NoticeKind;
@@ -8,7 +8,7 @@ use crate::levels::Level;
 use crate::levels::slider::Control;
 use crate::session::windows::{SHELF_APP_ID, Window};
 
-/// A hardware key (or the same asked for through the control pipe).
+/// A hardware key, or the same key requested through the control pipe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeviceKey {
     VolumeUp,
@@ -16,24 +16,25 @@ pub enum DeviceKey {
     Mute,
     BrightnessUp,
     BrightnessDown,
-    /// Both screens to a file (the pad's Home with RB, a keyboard's Print).
+    /// Save both screens to a file. The pad's Home with RB, or a keyboard's Print.
     Screenshot,
-    /// The bottom screen shows the next of ClamShell's view and the windows moved there (Home+Select).
+    /// Switch the bottom screen between ClamShell's view and the windows moved there (Home+Select).
     BottomView,
-    /// Home with B, let go at once: the window in front closes.
+    /// Home with B, released at once, closes the window in front.
     CloseWindow,
-    /// Home with B, held: the program in front quits.
+    /// Home with B, held, quits the program in front.
     Quit,
-    /// The bottom screen off, or on again (Home+Start).
+    /// Turn the bottom screen off, or on again (Home+Start).
     BottomPower,
-    /// The window in front on the top screen to the bottom screen (Home+Down).
+    /// Move the window in front on the top screen to the bottom screen (Home+Down).
     WindowDown,
-    /// The window the bottom screen shows back to the top screen (Home+Up).
+    /// Move the window the bottom screen shows back to the top screen (Home+Up).
     WindowUp,
 }
 
 impl State {
-    /// A hardware key: the level stepped (and shown), or a screenshot asked for.
+    /// A hardware key. A level key steps the level and shows it. The others take a screenshot or run
+    /// their Home combination.
     pub(crate) fn on_device_key(&mut self, key: DeviceKey) -> Vec<Effect> {
         let (level, direction) = match key {
             DeviceKey::VolumeUp => (Level::Volume, 1),
@@ -57,8 +58,8 @@ impl State {
         self.change_levels(|l| l.step(level, direction))
     }
 
-    /// The window Home with B acts on: the one in front on the top screen (not shelf's); with none
-    /// there, the one in view on the bottom screen while it shows the windows moved there.
+    /// The window Home with B acts on. It is the one in front on the top screen, other than shelf's. If
+    /// there is none, it is the one in view on the bottom screen while it shows the windows moved there.
     fn home_b_window(&self) -> Option<&Window> {
         let windows = &self.session.windows;
         windows
@@ -67,7 +68,7 @@ impl State {
             .or_else(|| self.bottom_shows_windows().then(|| windows.iter().filter(|w| w.down).max_by_key(|w| w.visible)).flatten())
     }
 
-    /// Home with B, let go at once: that window (see [`State::home_b_window`]) closes, politely.
+    /// Home with B, released at once, asks that window (see [`State::home_b_window`]) to close.
     pub(crate) fn close_front_window(&self) -> Vec<Effect> {
         match self.home_b_window() {
             Some(w) => vec![Effect::Window(WindowCommand::Close(vec![w.id]))],
@@ -75,8 +76,8 @@ impl State {
         }
     }
 
-    /// Home with B, held: that window's entry quits, as its menu's Quit would; any other window just
-    /// closes.
+    /// Home with B, held, quits that window's entry, as Quit in its menu would. Any other window is just
+    /// closed.
     pub(crate) fn quit_front(&mut self) -> Vec<Effect> {
         let Some(w) = self.home_b_window() else {
             return vec![];
@@ -88,7 +89,7 @@ impl State {
         }
     }
 
-    /// The screenshot is taken (its file), or failed.
+    /// The screenshot was taken, with its file, or failed.
     pub(crate) fn on_screenshot(&mut self, result: Result<String, String>) {
         self.notify(NoticeKind::Screenshot(result));
     }

@@ -1,15 +1,15 @@
-//! Idle: with no input for a while, the screens dim, then go off, then the device sleeps; any input
-//! brings them back. Times are global settings ([`Setting::ScreenOff`], [`Setting::Sleep`]).
+//! Idle. With no input for a while, the screens dim, then go off, then the device sleeps. Any input
+//! brings them back. The times are global settings ([`Setting::ScreenOff`], [`Setting::Sleep`]).
 //!
-//! Input is read from the input devices themselves (a system thread reads every one, without taking it away
-//! from anyone), plus what reaches ClamShell another way (the pad driving the screens). The compositor's word
-//! is an extra where it gives it (the standard Wayland idle protocol): an app that asks it to keep the screen
-//! on, a video player, holds idle off. If neither the devices nor the compositor can be heard, nothing goes
-//! idle.
+//! Input is read from the input devices themselves: a system thread reads every one, without taking it
+//! away from anyone. Input that reaches ClamShell another way, such as the pad driving the screens, also
+//! counts. Where the compositor supports the standard Wayland idle protocol, its reports are used as
+//! well, so an app that asks it to keep the screen on, such as a video player, holds idle off. If neither
+//! the devices nor the compositor can be heard, nothing goes idle.
 //!
-//! Sleep is only where the program may (the device's own session: never a desktop that runs ClamShell
-//! for testing). A program in front doesn't hold it off; one that should (a video player) asks the
-//! compositor to keep the screen on.
+//! The device only sleeps where ClamShell may put it to sleep, which is in the device's own session and
+//! never on a desktop that runs ClamShell for testing. A program in front doesn't hold sleep off. One
+//! that should, such as a video player, asks the compositor to keep the screen on.
 
 use crate::State;
 use crate::effect::Effect;
@@ -19,10 +19,10 @@ use crate::settings::{Setting, Values};
 pub const NOTIFY_AFTER: u64 = 10;
 /// The screens dim this long before they go off.
 const DIM_BEFORE: u64 = 30;
-/// A runner whose app is shown is asked whether it keeps the screen on this long before they dim.
+/// How long before the screens dim to ask a runner whose app is shown whether it keeps the screen on.
 const ASK_BEFORE: u64 = 10;
 /// Presses that end within this long after the screens came back are taken as the wake-up, not as
-/// presses (a tap on a dark screen shouldn't do anything but light it).
+/// presses. A tap on a dark screen should only light it.
 const WAKE_GRACE: u64 = 1;
 
 /// How far idle has gone.
@@ -38,29 +38,29 @@ pub enum Stage {
 /// What the input sources say.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IdleEvent {
-    /// The input devices are being read (or can't be: no permission).
+    /// Whether the input devices are being read. False when they can't be, for lack of permission.
     Watching(bool),
-    /// Input on a device (sent at most every few seconds while there is).
+    /// Input on a device. Sent at most every few seconds while input goes on.
     DeviceInput,
     /// The compositor has seen no input for [`NOTIFY_AFTER`] seconds.
     CompositorQuiet,
-    /// The compositor sees input again (or an app asks it to keep the screen on).
+    /// The compositor sees input again, or an app asks it to keep the screen on.
     CompositorInput,
-    /// The app shown keeps the screen on in a way the compositor doesn't hear (Android's), as its
-    /// runner answered when asked: as input.
+    /// The app shown keeps the screen on in a way the compositor doesn't hear, as Android's apps do. Its
+    /// runner answered this when asked, and it counts as input.
     KeptAwake,
-    /// Sleep was due, but the machine was busy (something downloading, building): not slept; asked
-    /// again after [`SLEEP_RETRY`].
+    /// Sleep was due, but the machine was busy, for example downloading or building. It didn't sleep, and
+    /// will try again after [`SLEEP_RETRY`].
     Busy,
 }
 
 /// How long sleep waits after the machine was found busy.
 const SLEEP_RETRY: u64 = 300;
 
-/// The compositor's word, where it gives one.
+/// What the compositor reports, where it reports anything.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum Compositor {
-    /// It doesn't report (no idle protocol), or hasn't yet.
+    /// It doesn't report, because it lacks the idle protocol, or hasn't reported yet.
     #[default]
     Silent,
     Busy,
@@ -77,9 +77,9 @@ pub struct Idle {
     stage: Stage,
     /// When the screens last came back from off.
     woke_at: Option<u64>,
-    /// The start of the idle time a runner was last asked about (once each).
+    /// The start of the idle time a runner was last asked about. A runner is asked once per idle time.
     asked_for: Option<u64>,
-    /// No sleep before this: the machine was busy when it was due.
+    /// No sleep before this time, because the machine was busy when sleep was due.
     sleep_not_before: u64,
 }
 
@@ -92,7 +92,7 @@ pub(crate) struct Policy {
 }
 
 impl Policy {
-    /// From the global settings (minutes; 0: never).
+    /// Reads the policy from the global settings, which are in minutes, with 0 meaning never.
     pub(crate) fn of(global: &Values, may_sleep: bool) -> Policy {
         let secs = |s: Setting| Some(u64::from(global.get(s)) * 60).filter(|&t| t > 0);
         Policy { screen_off: secs(Setting::ScreenOff), sleep: secs(Setting::Sleep), may_sleep }
@@ -104,7 +104,7 @@ impl Idle {
         self.stage
     }
 
-    /// What a source said, at `now`.
+    /// What a source reported, at `now`.
     pub(crate) fn heard(&mut self, event: IdleEvent, now: u64) {
         match event {
             IdleEvent::Watching(on) => {
@@ -118,12 +118,12 @@ impl Idle {
         }
     }
 
-    /// Input that reached ClamShell itself (a tap, the pad on its screens), at `now`.
+    /// Input that reached ClamShell itself at `now`, such as a tap or the pad on its screens.
     pub(crate) fn own_input(&mut self, now: u64) {
         self.last_input = now;
     }
 
-    /// Back from sleep (or the clock first known) at `now`: as if there had just been input.
+    /// Back from sleep, or the clock was first read, at `now`. Treated as if there had just been input.
     pub(crate) fn resumed(&mut self, now: u64) {
         self.last_input = now;
         if let Compositor::QuietSince(_) = self.compositor {
@@ -131,8 +131,8 @@ impl Idle {
         }
     }
 
-    /// Since when there has been no input; none while there is (the compositor busy) or if no source
-    /// can tell.
+    /// Since when there has been no input. None while there is input, meaning the compositor is busy, or
+    /// if no source can tell.
     fn since(&self) -> Option<u64> {
         match self.compositor {
             Compositor::Busy => None,
@@ -142,7 +142,7 @@ impl Idle {
         }
     }
 
-    /// How long there has been no input at `now`; none if no source can tell.
+    /// How long there has been no input at `now`, or none if no source can tell.
     fn idle_for(&self, now: u64) -> Option<u64> {
         if self.compositor == Compositor::Busy {
             return Some(0);
@@ -150,8 +150,8 @@ impl Idle {
         Some(now.saturating_sub(self.since()?))
     }
 
-    /// Whether to ask the shown app's runner if it keeps the screen on: [`ASK_BEFORE`] the screens dim,
-    /// once for this idle time.
+    /// Whether to ask the shown app's runner if it keeps the screen on. It is asked [`ASK_BEFORE`] the
+    /// screens dim, once per idle time.
     pub(crate) fn ask_awake(&mut self, now: u64, policy: Policy) -> bool {
         let (Some(since), Some(off)) = (self.since(), policy.screen_off) else {
             return false;
@@ -178,7 +178,7 @@ impl Idle {
         }
     }
 
-    /// Moves to `stage`; the stage it was at.
+    /// Moves to `stage`. Returns the stage it was at.
     pub(crate) fn set(&mut self, stage: Stage, now: u64) -> Stage {
         let was = std::mem::replace(&mut self.stage, stage);
         if was >= Stage::Off && stage < Stage::Off {
@@ -187,27 +187,29 @@ impl Idle {
         was
     }
 
-    /// A press ending at `now` is the wake-up, not a press: the screens are off, or just came back.
+    /// Whether a press ending at `now` is the wake-up rather than a press. It is when the screens are
+    /// off or just came back.
     pub(crate) fn swallows_press(&self, now: u64) -> bool {
         self.stage >= Stage::Off || self.woke_at.is_some_and(|t| now <= t + WAKE_GRACE)
     }
 }
 
 impl State {
-    /// Idle as things are now: the stage moves on (dim, screens off, sleep) or back (any input), with
-    /// what the screens need for it.
+    /// Updates idle for how things are now. The stage moves on to dimmed, screens off or sleep, or back
+    /// on any input, and the screens get what they need for it.
     pub(crate) fn follow_idle(&mut self) -> Vec<Effect> {
-        // Sleep only in the device's own session (a program in front doesn't hold it off; one playing a
-        // video asks the compositor to keep the screen on).
+        // Sleep only in the device's own session. A program in front doesn't hold it off; one playing a
+        // video asks the compositor to keep the screen on.
         let may_sleep = self.device_session;
         let policy = Policy::of(&self.settings.global, may_sleep);
         let now = self.mono_secs;
         let mut effects = vec![];
-        // (The top screen's refresh calibrating: measured on it, so kept on.)
+        // While the top screen's refresh rate is being calibrated, it is measured on the screen, so the
+        // screen is kept on.
         if self.device.refresh == crate::device::Refresh::Running {
             self.idle.own_input(now);
         }
-        // (An app shown that keeps the screen on without the compositor hearing it: Android's.)
+        // An app shown that keeps the screen on without the compositor hearing it, as Android's do.
         if let Some(awake) = self.awake_command()
             && self.idle.ask_awake(now, policy)
         {
@@ -218,7 +220,7 @@ impl State {
             return effects;
         }
         let was = self.idle.set(wanted, now);
-        // Brightness: down while dimmed or darker, back when awake.
+        // Brightness goes down while dimmed or darker, and comes back when awake.
         if (was >= Stage::Dimmed) != (wanted >= Stage::Dimmed) {
             effects.extend(if wanted >= Stage::Dimmed { self.levels.dimmed_effect() } else { self.levels.undimmed_effect() });
         }
@@ -231,7 +233,7 @@ impl State {
         effects
     }
 
-    /// The `awake` command of the runner of a window shown, if it has one.
+    /// The `awake` command of the runner of a shown window, if it has one.
     fn awake_command(&self) -> Option<std::sync::Arc<[String]>> {
         let session = &self.session;
         session.windows.iter().filter(|w| w.visible).find_map(|w| {
@@ -280,7 +282,7 @@ mod tests {
         idle.heard(IdleEvent::CompositorQuiet, 5000);
         assert_eq!(idle.wanted(5010, p), Stage::Awake);
         assert_eq!(idle.wanted(4990 + 300, p), Stage::Off);
-        // The devices still count: the controller (a joystick isn't the compositor's input).
+        // The devices still count, such as the controller, since a joystick isn't the compositor's input.
         idle.heard(IdleEvent::DeviceInput, 5200);
         assert_eq!(idle.wanted(5300, p), Stage::Awake);
     }
@@ -318,7 +320,7 @@ mod tests {
             vec![Effect::Screens(false), Effect::Watch(crate::Watch::Status, false), Effect::Watch(crate::Watch::Metrics, false)]
         );
         assert!(!s.apply(Event::tick(1900)).1.contains(&Effect::Sleep), "not the device's session");
-        // Input: the screens come back, at their brightness; the press that woke them does nothing.
+        // On input the screens come back at their brightness, and the press that woke them does nothing.
         let fx = s.apply(Event::Idle(IdleEvent::DeviceInput));
         assert!(fx.1.contains(&Effect::Screens(true)) && brightness(&fx.1) == Some(60), "{fx:?}");
         assert!(fx.1.contains(&Effect::Watch(crate::Watch::Metrics, true)), "watched again: {fx:?}");
@@ -353,16 +355,17 @@ mod tests {
         let ws = Instance::workspace_of(&clamshell_library::key_of("desktop:firefox"));
         s.apply(Event::Windows(vec![Window { visible: true, ..crate::testkit::win(6, "firefox", &ws, true) }]));
         let ask = Effect::AskAwake(vec!["awake".into()]);
-        // Asked 10 s before the screens dim (5 minutes off, dimmed 30 s before), once.
+        // Asked once, 10 s before the screens dim. They go off at 5 minutes and dim 30 s before that.
         assert!(!s.apply(Event::tick(1259)).1.contains(&ask));
         assert!(s.apply(Event::tick(1260)).1.contains(&ask));
         assert!(!s.apply(Event::tick(1261)).1.contains(&ask), "once");
-        // It keeps the screen on: as input, not dimmed; asked again as the next dimming nears.
+        // It keeps the screen on, which counts as input, so it doesn't dim. It is asked again as the next
+        // dimming nears.
         s.apply(Event::Idle(IdleEvent::KeptAwake));
         s.apply(Event::tick(1280));
         assert_eq!(s.idle().stage(), Stage::Awake);
         assert!(s.apply(Event::tick(1261 + 260)).1.contains(&ask));
-        // No answer: dimmed as usual. Not shown: not asked.
+        // With no answer, it dims as usual. An app that isn't shown isn't asked.
         s.apply(Event::tick(1261 + 270));
         assert_eq!(s.idle().stage(), Stage::Dimmed);
         let mut s = crate::testkit::state();
@@ -378,7 +381,8 @@ mod tests {
         s.apply(Event::tick(1000));
         s.apply(Event::Idle(IdleEvent::Watching(true)));
         assert!(s.apply(Event::tick(1900)).1.contains(&Effect::Sleep));
-        // Busy (a download): not slept; the screens stay off; asked again after the retry.
+        // Busy, such as with a download: it doesn't sleep, the screens stay off, and sleep is tried again
+        // after the retry time.
         let fx = s.apply(Event::Idle(IdleEvent::Busy)).1;
         assert!(!fx.contains(&Effect::Screens(true)), "{fx:?}");
         assert_eq!(s.idle().stage(), Stage::Off);
@@ -404,11 +408,11 @@ mod tests {
         let mut s = State::new(crate::Init { device_session: true, ..crate::testkit::init() });
         s.apply(Event::tick(1000));
         s.apply(Event::Idle(IdleEvent::Watching(true)));
-        // A day forward by hand (or by NTP): neither asleep nor off.
+        // The clock is set a day forward, by hand or by NTP, and it is neither asleep nor off.
         let fx = s.apply(Event::Tick { unix_secs: 1000 + 86_400, mono_secs: 1001 }).1;
         assert!(!fx.contains(&Effect::Sleep) && !fx.contains(&Effect::Screens(false)), "{fx:?}");
         assert_eq!(s.idle().stage(), Stage::Awake);
-        // Back again: idle still counts on.
+        // Set back again, idle still counts on.
         assert!(s.apply(Event::Tick { unix_secs: 500, mono_secs: 1900 }).1.contains(&Effect::Sleep));
     }
 

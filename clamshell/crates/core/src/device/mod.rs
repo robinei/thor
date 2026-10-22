@@ -1,9 +1,15 @@
-//! The Device view: on the main screen in shelf's place ([`TopView`]), opened by the Tools' Device entry
-//! (from shelf, or pinned to the dock), and by itself at ClamShell's first start. What a device needs set
-//! up once and now and then, a row each: Wi-Fi (its tab), the time zone (the time tab), the password and
-//! remote login (see [`crate::device::account`]); the controller calibrated, its sticks ([`crate::device::sticks`]) and
-//! its gyro; the top screen's refresh rate calibrated (thor-panel-calibration); Done at the first start.
-//! B, Home or Close go back to shelf.
+//! The Device view. It shows on the main screen in shelf's place ([`TopView`]). It is opened by the
+//! Device entry in Tools, from shelf or pinned to the dock, and opens by itself at ClamShell's first
+//! start. B, Home or Close go back to shelf.
+//!
+//! It has a row for each thing a device needs set up once, or now and then:
+//!
+//! - Wi-Fi, which opens its tab;
+//! - the time zone, which opens the time tab;
+//! - the password and remote login (see [`crate::device::account`]);
+//! - calibrating the controller's sticks ([`crate::device::sticks`]) and gyro;
+//! - calibrating the top screen's refresh rate (thor-panel-calibration);
+//! - Done, at the first start.
 
 pub mod account;
 pub mod buttons;
@@ -35,7 +41,7 @@ pub enum Refresh {
     #[default]
     Idle,
     Running,
-    /// What it said: the rates before and after, or why it failed.
+    /// The tool's output, with the rates before and after, or the reason it failed.
     Done(Result<String, String>),
 }
 
@@ -43,12 +49,12 @@ pub enum Refresh {
 #[derive(Debug, Clone, Default)]
 pub struct Device {
     pub(crate) open: bool,
-    /// A sticks' calibration going: how far.
+    /// How far a running stick calibration has got.
     pub(crate) sticks: Option<Progress>,
-    /// The last sticks' calibration failed (until another starts).
+    /// The last stick calibration failed. Cleared when another starts.
     pub(crate) sticks_failed: bool,
     pub(crate) refresh: Refresh,
-    /// The sticks' calibrations, by controller (saved; the pad thread has them too).
+    /// The stick calibrations by controller. They are saved, and the pad thread has them too.
     pub(crate) calibrations: Calibrations,
 }
 
@@ -75,11 +81,11 @@ impl Device {
     }
 }
 
-/// What the pad thread says of a sticks' calibration.
+/// What the pad thread reports about a stick calibration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SticksEvent {
     Progress(Progress),
-    /// Done: the controller's name and its sticks, or none (given up).
+    /// Done, with the controller's name and its sticks, or `None` if it was given up.
     Done(String, Option<Sticks>),
 }
 
@@ -92,15 +98,15 @@ impl State {
         &self.device
     }
 
-    /// The Device view opened on the main screen (shelf's window brought to the front), the pad's focus
-    /// on its first row (the account is read while it is open: [`State::follow_watch`]).
+    /// Opens the Device view on the main screen, bringing shelf's window to the front, with the pad's
+    /// focus on its first row. The account is read while it is open ([`State::follow_watch`]).
     pub(crate) fn open_device(&mut self) -> Vec<Effect> {
         self.device.open = true;
         self.pointer.focus = Some(Id::Device(DeviceId::Wifi));
         vec![Effect::Window(WindowCommand::ShowShelf)]
     }
 
-    /// Back to shelf, the focus on its selection.
+    /// Goes back to shelf, with the focus on its selection.
     pub(crate) fn close_device(&mut self) -> Vec<Effect> {
         self.device.open = false;
         self.pointer.focus = self.shelf.selected().cloned().map(|g| Id::Shelf(ShelfId::Entry(g)));
@@ -113,13 +119,13 @@ impl State {
         match id {
             DeviceId::Wifi => self.choose_tab(Tab::Wifi),
             DeviceId::Zone => self.choose_tab(Tab::Time),
-            // (Typed on the second screen's keyboard, in the editor.)
+            // Typed in the editor on the second screen's keyboard.
             DeviceId::Password if account.available => {
                 let step = if account.password { PasswordStep::Current } else { PasswordStep::New { current: None } };
                 self.bottom.open_editor(Editor { purpose: Purpose::AccountPassword(step), text: String::new() });
                 self.choose_tab(Tab::Keyboard)
             }
-            // (Remote login needs a password to log in with.)
+            // Remote login needs a password to log in with.
             DeviceId::Ssh if account.available && account.password => vec![Effect::Account(AccountCommand::Ssh(!account.ssh))],
             DeviceId::Password | DeviceId::Ssh => vec![],
             DeviceId::Sticks if self.device.sticks.is_none() => {
@@ -136,7 +142,8 @@ impl State {
                 vec![Effect::CalibrateRefresh]
             }
             DeviceId::Refresh => vec![],
-            // The first time: never again; shelf after it, and the device's default tab below.
+            // The first time, Done ends the first start for good. Shelf shows next, with the default tab
+            // below.
             DeviceId::Done if self.first_start => {
                 self.first_start = false;
                 let mut effects = vec![Effect::Save(Save::FirstStartDone)];
@@ -148,8 +155,8 @@ impl State {
         }
     }
 
-    /// The pad thread's word on a sticks' calibration: its progress shown; its result saved (and the pad
-    /// thread uses it already), or a failure said.
+    /// A report from the pad thread on a stick calibration. Progress is shown. A result is kept for
+    /// saving, and the pad thread already uses it. A failure is shown.
     pub(crate) fn on_sticks(&mut self, event: SticksEvent) {
         match event {
             SticksEvent::Progress(p) => self.device.sticks = Some(p),
@@ -163,17 +170,18 @@ impl State {
         }
     }
 
-    /// The calibrations to save after a sticks' calibration, if it took.
+    /// The calibrations to save after a stick calibration that worked.
     pub(crate) fn sticks_saved(&self) -> Effect {
         Effect::Save(Save::Sticks(self.device.calibrations.clone()))
     }
 
-    /// The refresh rate's calibration ended: what it said.
+    /// The refresh rate calibration ended, with its output.
     pub(crate) fn on_refresh(&mut self, result: Result<String, String>) {
         self.device.refresh = Refresh::Done(result);
     }
 
-    /// The password's editor saved: the new one asked for after the current one, or the password set.
+    /// The password editor was saved. After the current password it asks for the new one, and after the
+    /// new one it sets the password.
     pub(crate) fn password_typed(&mut self, step: PasswordStep, text: String) -> Vec<Effect> {
         match step {
             PasswordStep::Current => {

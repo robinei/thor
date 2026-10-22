@@ -1,19 +1,21 @@
-//! The sticks calibrated: each axis' centre (where it rests on this controller) and extremes (as far as it
-//! goes each way), which vary from unit to unit (PB-OS found the Thor's travel between about 600 and 2000
-//! counts from the centre). Raw values are mapped through them to the range the controller reports
-//! ([`Sticks::correct`]) before anything reads them, and an extreme passed widens ([`Sticks::widen`]).
+//! Stick calibration. For each axis it records the centre, where the axis rests on this controller, and
+//! the extremes, how far it goes each way. These vary from unit to unit: PB-OS found the Thor's travel
+//! between about 600 and 2000 counts from the centre. Raw values are mapped through them to the range the
+//! controller reports ([`Sticks::correct`]) before anything reads them. When an axis goes past an
+//! extreme, the extreme widens ([`Sticks::widen`]).
 //!
-//! Calibrating ([`Calibrator`]): the sticks let go (a still second: the centres), then turned around their
-//! edges until every axis has gone far each way, then let go again; or given up after a while.
+//! Calibrating ([`Calibrator`]) goes like this. The sticks are let go, and a still second gives the
+//! centres. Then they are turned around their edges until every axis has gone far each way, and then
+//! let go again. If that doesn't happen in time, the calibration is given up.
 
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-/// The axes: the left stick's x and y, the right stick's x and y.
+/// The number of axes: the left stick's x and y, and the right stick's x and y.
 pub const AXES: usize = 4;
 
-/// One axis' raw values: as far as it goes down, where it rests, as far as it goes up.
+/// One axis' raw values: how far it goes down, where it rests, and how far it goes up.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StickAxis {
     pub low: i32,
@@ -27,12 +29,12 @@ pub struct Sticks {
     pub axes: [StickAxis; AXES],
 }
 
-/// The calibrations, by controller (its name).
+/// The calibrations, by controller name.
 pub type Calibrations = BTreeMap<String, Sticks>;
 
 impl Sticks {
-    /// Axis `i`'s raw `value` in the controller's range (`min`..`max`, centred on their middle): the
-    /// centre to the middle, each extreme to its end, clamped.
+    /// Maps axis `i`'s raw `value` into the controller's range, `min`..`max`, centred on its middle. The
+    /// centre maps to the middle and each extreme to its end, and the result is clamped.
     pub fn correct(&self, i: usize, value: i32, min: i32, max: i32) -> i32 {
         let Some(a) = self.axes.get(i) else { return value };
         let mid = (min + max) / 2;
@@ -44,8 +46,8 @@ impl Sticks {
         scaled.clamp(min as i64, max as i64) as i32
     }
 
-    /// Axis `i` went to `value`: past an extreme, that extreme moves out to it (a stick that goes further
-    /// than when it was calibrated). Whether it moved.
+    /// Axis `i` went to `value`. If that is past an extreme, the extreme moves out to it, for a stick that
+    /// goes further than when it was calibrated. Returns whether it moved.
     pub fn widen(&mut self, i: usize, value: i32) -> bool {
         let Some(a) = self.axes.get_mut(i) else { return false };
         if value > a.high {
@@ -59,32 +61,32 @@ impl Sticks {
     }
 }
 
-/// Still: every axis within this share of half the controller's range since the last move (40 counts
-/// on the Thor's ±1024).
+/// The sticks count as still when every axis has stayed within this fraction of half the controller's
+/// range since the last move. That is 40 counts on the Thor's ±1024.
 const STILL: f32 = 0.04;
-/// Still this long: the centres.
+/// How long, in ms, the sticks must be still to take the centres.
 const CENTRE_FOR: u64 = 1_000;
-/// An axis has been turned far enough each way: this share of the way from the centre to the end of the
+/// How far each way an axis must be turned, as a fraction of the way from the centre to the end of the
 /// controller's range.
 const FAR: f32 = 0.5;
-/// Then let go: still this long, and it is done.
+/// After turning, the sticks are let go. Once they are still this long, in ms, it is done.
 const DONE_FOR: u64 = 500;
-/// Given up after this long.
+/// The calibration is given up after this long, in ms.
 const GIVE_UP: u64 = 20_000;
 
 /// Where a calibration is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
-    /// Waiting for the sticks to rest (to take the centres).
+    /// Waiting for the sticks to rest, to take the centres.
     LetGo,
-    /// The centres taken: turning the sticks around their edges.
+    /// The centres are taken, and the sticks are being turned around their edges.
     Turn,
-    /// Every axis turned far each way: let go to finish.
+    /// Every axis has been turned far each way. Let go to finish.
     Release,
 }
 
-/// What a calibration shows while it goes: the phase, the axes as they are, the ranges reached, and the
-/// controller's range (to draw them in).
+/// What a calibration shows while it runs: the phase, the axes as they are, the ranges reached, and the
+/// controller's range to draw them in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Progress {
     pub phase: Phase,
@@ -94,7 +96,7 @@ pub struct Progress {
     pub max: i32,
 }
 
-/// A calibration going: fed the axes' raw values with their time (ms).
+/// A running calibration. It is fed the axes' raw values with their time in ms.
 #[derive(Debug, Clone)]
 pub struct Calibrator {
     min: i32,
@@ -112,7 +114,7 @@ pub struct Calibrator {
 pub enum Step {
     Going(Progress),
     Done(Sticks),
-    /// Given up (not let go, or not turned far enough in time).
+    /// Given up, because the sticks weren't let go or weren't turned far enough in time.
     Failed,
 }
 
@@ -128,7 +130,8 @@ impl Calibrator {
     pub fn sample(&mut self, now: [i32; AXES], at: u64) -> Step {
         let started = *self.started.get_or_insert(at);
         self.now = now;
-        // Still since when: every axis within STILL of its range over that time.
+        // How long the sticks have been still, meaning every axis within STILL of its range over that
+        // time.
         let still_for = match &mut self.still {
             Some((since, low, high)) => {
                 let wide = now.iter().zip(low.iter_mut().zip(high.iter_mut())).any(|(&v, (l, h))| {
@@ -165,7 +168,7 @@ impl Calibrator {
                     self.still = Some((at, now, now));
                 }
             }
-            // (Still widening: the turning goes on past halfway, to the edges.)
+            // Still widening, since the turning goes on past halfway, out to the edges.
             Phase::Release if still_for >= DONE_FOR => return Step::Done(Sticks { axes: self.seen }),
             Phase::Release => self.widen(now),
             _ => {}
@@ -176,7 +179,7 @@ impl Calibrator {
         Step::Going(self.progress())
     }
 
-    /// The extremes reached, out to `now`.
+    /// Widens the extremes reached out to `now`.
     fn widen(&mut self, now: [i32; AXES]) {
         for (a, &v) in self.seen.iter_mut().zip(now.iter()) {
             a.low = a.low.min(v);
@@ -215,7 +218,7 @@ mod tests {
         assert_eq!(s.axes[1].low, -900);
     }
 
-    /// Feeds `c` the same values every 10 ms for `ms`, from `at`; the last step.
+    /// Feeds `c` the same values every 10 ms for `ms`, starting at `at`. Returns the last step.
     fn hold(c: &mut Calibrator, now: [i32; AXES], at: &mut u64, ms: u64) -> Step {
         let mut step = Step::Failed;
         for _ in 0..ms / 10 {
