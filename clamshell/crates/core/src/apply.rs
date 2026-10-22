@@ -28,7 +28,7 @@ impl State {
         }
         out.effects.extend(self.follow_shown());
         out.effects.extend(self.follow_browse());
-        out.effects.extend(self.follow_idle());
+        self.follow_idle(&mut out);
         out.effects.extend(self.follow_watch());
         let (changed, applied) = self.follow_program();
         out.effects.extend(applied);
@@ -219,7 +219,7 @@ impl State {
             }
             Event::Sticks(event) => {
                 out.mark(Dirty::TOP);
-                out.effects.extend(self.device.sticks_event(event));
+                self.device.sticks_event(event, out);
             }
             Event::RefreshCalibrated(result) => {
                 self.device.refresh_done(result);

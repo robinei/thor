@@ -9,6 +9,7 @@
 use crate::bottom::editor::{Editor, Editors, Purpose};
 use crate::effect::Effect;
 use crate::kit::secret::Secret;
+use crate::out::Out;
 
 /// The account as the helper read it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -43,13 +44,12 @@ pub enum PasswordStep {
 
 /// The password editor was saved with `text`. After the current password it asks for the new one, and
 /// after the new one it sets the password.
-pub(crate) fn password_typed(step: PasswordStep, text: String, editors: &mut Editors) -> Vec<Effect> {
+pub(crate) fn password_typed(step: PasswordStep, text: String, editors: &mut Editors, out: &mut Out) {
     match step {
         PasswordStep::Current => {
             let step = PasswordStep::New { current: Some(Secret(text)) };
             editors.open(Editor { purpose: Purpose::AccountPassword(step), text: String::new() });
-            vec![]
         }
-        PasswordStep::New { current } => vec![Effect::Account(AccountCommand::Password { current, new: Secret(text) })],
+        PasswordStep::New { current } => out.effects.push(Effect::Account(AccountCommand::Password { current, new: Secret(text) })),
     }
 }

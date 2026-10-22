@@ -14,6 +14,7 @@
 use std::sync::Arc;
 
 use crate::effect::Effect;
+use crate::out::Out;
 use crate::settings::{Setting, Values};
 use crate::{Levels, Session, State};
 
@@ -201,8 +202,7 @@ impl Idle {
     /// sleep, or back on any input, and the screens get what they need for it. `refreshing` is a refresh
     /// rate calibration running, and `awake` the shown app's runner's command that says whether it keeps
     /// the screen on (see [`Session::awake_command`]).
-    pub(crate) fn follow(&mut self, now: u64, policy: Policy, refreshing: bool, awake: Option<Arc<[String]>>, levels: &Levels) -> Vec<Effect> {
-        let mut effects = vec![];
+    pub(crate) fn follow(&mut self, now: u64, policy: Policy, refreshing: bool, awake: Option<Arc<[String]>>, levels: &Levels, out: &mut Out) {
         // While the top screen's refresh rate is being calibrated, it is measured on the screen, so the
         // screen is kept on.
         if refreshing {
@@ -212,24 +212,23 @@ impl Idle {
         if let Some(awake) = awake
             && self.ask_awake(now, policy)
         {
-            effects.push(Effect::AskAwake(awake.to_vec()));
+            out.effects.push(Effect::AskAwake(awake.to_vec()));
         }
         let wanted = self.wanted(now, policy);
         if wanted == self.stage {
-            return effects;
+            return;
         }
         let was = self.set(wanted, now);
         // Brightness goes down while dimmed or darker, and comes back when awake.
         if (was >= Stage::Dimmed) != (wanted >= Stage::Dimmed) {
-            effects.extend(if wanted >= Stage::Dimmed { levels.dimmed_effect() } else { levels.undimmed_effect() });
+            out.effects.extend(if wanted >= Stage::Dimmed { levels.dimmed_effect() } else { levels.undimmed_effect() });
         }
         if (was >= Stage::Off) != (wanted >= Stage::Off) {
-            effects.push(Effect::Screens(wanted < Stage::Off));
+            out.effects.push(Effect::Screens(wanted < Stage::Off));
         }
         if wanted == Stage::Asleep {
-            effects.push(Effect::Sleep);
+            out.effects.push(Effect::Sleep);
         }
-        effects
     }
 }
 
@@ -245,12 +244,12 @@ impl Session {
 
 impl State {
     /// Idle follows how things are now (see [`Idle::follow`]).
-    pub(crate) fn follow_idle(&mut self) -> Vec<Effect> {
+    pub(crate) fn follow_idle(&mut self, out: &mut Out) {
         // Sleep only in the device's own session. A program in front doesn't hold it off; one playing a
         // video asks the compositor to keep the screen on.
         let policy = Policy::of(&self.settings.global, self.device_session);
         let refreshing = *self.device.refresh() == crate::device::Refresh::Running;
-        self.idle.follow(self.clock.mono(), policy, refreshing, self.session.awake_command(), &self.levels)
+        self.idle.follow(self.clock.mono(), policy, refreshing, self.session.awake_command(), &self.levels, out);
     }
 }
 

@@ -172,9 +172,7 @@ impl crate::State {
             (Done::Save, Purpose::Password { ssid }) => self.radios.join(ssid, Some(editor.text), out),
             (Done::Save, Purpose::KeymapName(action)) => out.effects.extend(self.named_keymap(action, &editor.text)),
             (Done::Save, Purpose::FileName(purpose)) => out.effects.extend(self.file_named(purpose, &editor.text)),
-            (Done::Save, Purpose::AccountPassword(step)) => {
-                out.effects.extend(crate::device::account::password_typed(step, editor.text, self.bottom.editors_mut()))
-            }
+            (Done::Save, Purpose::AccountPassword(step)) => crate::device::account::password_typed(step, editor.text, self.bottom.editors_mut(), out),
         }
     }
 }

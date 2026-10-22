@@ -7,7 +7,7 @@ use crate::levels::Level;
 use crate::levels::slider::Control;
 use crate::out::Out;
 use crate::session::windows::{SHELF_APP_ID, Window};
-use crate::{Session, State};
+use crate::{EntryAct, Event, Session, State};
 
 /// A hardware key, or the same key requested through the control pipe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,8 +48,8 @@ impl State {
             }
             DeviceKey::Screenshot => return out.effects.push(Effect::Screenshot),
             DeviceKey::BottomView => return out.effects.extend(self.bottom.toggle_view(&self.session)),
-            DeviceKey::CloseWindow => return out.effects.extend(self.close_front_window()),
-            DeviceKey::Quit => return out.effects.extend(self.quit_front()),
+            DeviceKey::CloseWindow => return self.close_front_window(out),
+            DeviceKey::Quit => return self.quit_front(out),
             DeviceKey::BottomPower => return out.effects.extend(self.bottom.toggle_power(self.power(), self.clock.mono())),
             DeviceKey::WindowDown => return out.effects.extend(self.bottom.window_down(&self.session, self.clock.mono())),
             DeviceKey::WindowUp => return out.effects.extend(self.bottom.window_up(&self.session, self.clock.mono())),
@@ -60,23 +60,22 @@ impl State {
     }
 
     /// Home with B, released at once, asks that window (see [`Session::home_b_window`]) to close.
-    pub(crate) fn close_front_window(&self) -> Vec<Effect> {
-        match self.session.home_b_window(self.bottom.shows_windows(&self.session)) {
-            Some(w) => vec![Effect::Window(WindowCommand::Close(vec![w.id]))],
-            None => vec![],
+    pub(crate) fn close_front_window(&self, out: &mut Out) {
+        if let Some(w) = self.session.home_b_window(self.bottom.shows_windows(&self.session)) {
+            out.effects.push(Effect::Window(WindowCommand::Close(vec![w.id])));
         }
     }
 
     /// Home with B, held, quits that window's entry, as Quit in its menu would. Any other window is just
     /// closed.
-    pub(crate) fn quit_front(&mut self) -> Vec<Effect> {
+    pub(crate) fn quit_front(&mut self, out: &mut Out) {
         let Some(w) = self.session.home_b_window(self.bottom.shows_windows(&self.session)) else {
-            return vec![];
+            return;
         };
         let (id, entry) = (w.id, self.session.running_of(w).map(|r| r.id.clone()));
         match entry {
-            Some(entry) => self.quit(&entry),
-            None => vec![Effect::Window(WindowCommand::Close(vec![id]))],
+            Some(entry) => out.events.push(Event::Entry(entry, EntryAct::Quit)),
+            None => out.effects.push(Effect::Window(WindowCommand::Close(vec![id]))),
         }
     }
 

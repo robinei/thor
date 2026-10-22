@@ -177,20 +177,17 @@ impl Device {
     }
 
     /// A report from the pad thread on a stick calibration. Progress is shown. A result is kept, and the
-    /// pad thread already uses it. A failure is shown. Returns the calibrations to save after one that
-    /// worked.
-    pub(crate) fn sticks_event(&mut self, event: SticksEvent) -> Option<Effect> {
+    /// pad thread already uses it. A failure is shown. The calibrations are saved after one that worked.
+    pub(crate) fn sticks_event(&mut self, event: SticksEvent, out: &mut Out) {
         match event {
-            SticksEvent::Progress(p) => {
-                self.sticks = Some(p);
-                None
-            }
+            SticksEvent::Progress(p) => self.sticks = Some(p),
             SticksEvent::Done(name, result) => {
                 self.sticks = None;
                 self.sticks_failed = result.is_none();
-                let sticks = result?;
-                self.calibrations.insert(name, sticks);
-                Some(Effect::Save(Save::Sticks(self.calibrations.clone())))
+                if let Some(sticks) = result {
+                    self.calibrations.insert(name, sticks);
+                    out.effects.push(Effect::Save(Save::Sticks(self.calibrations.clone())));
+                }
             }
         }
     }
