@@ -15,16 +15,16 @@ passes (session; keymap and settings; shelf, nav and bottom; the rest and State 
   (`self.radios.tap_network(i, long)`, `self.bottom.window_down(&self.session, now)`); disjoint field
   borrows inside State's impl make this work. Values are taken out of a borrow (an `Arc` clone, a `u16`)
   before a `&mut` call on another area.
-- **One mutation vocabulary.** When an area's rule needs State changed outside that area, it returns the
-  change in `Vec<Mutation>` instead of reaching over: `Mutation::Effect(Effect)` (an effect appended to
-  what `apply` returns), `Notify(NoticeKind)`, `Act(EntryAct)` (play, launch, show, show down, quit,
-  force kill, suspend, toggle autostart, enqueue), `OpenEditor(Editor)`, `Tab(Tab)`, `ShelfMoved`,
-  `Played(Play)`, `Unwake`, and the few the keymap screens need (`ChooseKeymap`, `KeymapDeleted`,
-  `DropModifiers`, `Capture`). State's `settle(Vec<Mutation>) -> Vec<Effect>` applies them in order, so
-  effects keep today's exact order, interleaving included. Like Flux's actions, but applied at once,
-  within the event, each by the one area it concerns. This replaces the per-area enums the research
-  proposed (`DeviceTap`, `BatteryTap`, `WifiTap`, `PanelFollow`, `KeymapFollow`, `DockOut`, shelf's
-  `Then`, session's `Out`).
+- **A change with one owner is a method call on that owner.** An area rule that needs another area
+  changed, where that area alone owns the change (a notice, waking the second screen, the keyboard's
+  modifiers), gets it as a `&mut` parameter, as narrow as practical (`&mut Notice`, not `&mut Bottom`).
+- **`Mutation` only for what State coordinates.** Requests that touch several areas are returned in
+  `Vec<Mutation>` and applied by `State::settle(Vec<Mutation>) -> Vec<Effect>` in order, effects
+  interleaved as today: entry acts (`Act(EntryAct)`: play, launch, show, show down, quit, force kill,
+  suspend, toggle autostart, enqueue), tab changes, keymap choose/delete/capture, recorded plays, and
+  `Effect(Effect)` where an effect must keep its place among them. This replaces the per-area enums the
+  research proposed (`DeviceTap`, `BatteryTap`, `WifiTap`, `PanelFollow`, `KeymapFollow`, `DockOut`,
+  shelf's `Then`, session's `Out`).
 - **`Clock`** `{ unix, mono }` replaces `unix_secs`/`mono_secs`, with `read()` and `unix_at(mono)`.
   Session rules take `clock` and `&Library`. Settings in force are not in it: they change during an
   event and are passed where needed.
@@ -56,8 +56,11 @@ passes (session; keymap and settings; shelf, nav and bottom; the rest and State 
   queries the UI uses (`entry`, `rows`, `scroll`, `list_len`, `bottom_dark`, `pad_back`); `item_key`,
   `find_item`, `resolve`; `editor_done`. Estimated 650-800 lines with docs, in `state.rs`; `lib.rs` keeps
   the crate doc, modules, re-exports and `Init`.
-- **The UI** reads through areas: `s.radios().wifi()`, `s.sys().time_zones()`, `s.keymapping().screen()`,
-  `s.panel().editing()`, `s.shelf().in_actions(s.pointer())`, `s.clock().unix()`, ...
+- **Outside code reads the areas directly**: `State` has one accessor per area returning `&Area`, and no
+  pass-through getters (`s.radios().wifi()`, `s.sys().time_zones()`, `s.keymapping().screen()`,
+  `s.panel().editing()`, `s.shelf().in_actions(s.pointer())`, `s.clock().unix()`). It changes state
+  only through events (`apply`), so the steps that follow every event always run: no `_mut` accessors;
+  tests set up state with events or `#[cfg(test)]` helpers.
 
 ## Order
 
