@@ -1,5 +1,5 @@
-//! The Wayland wire format as the proxy needs it: messages split and made, and passed on with the file
-//! descriptors that come with them.
+//! The Wayland wire format as the proxy needs it: splitting and making messages, and passing them on with
+//! the file descriptors that come with them.
 
 use std::io::{self, IoSlice, IoSliceMut};
 use std::mem::MaybeUninit;
@@ -11,10 +11,10 @@ use rustix::net::{RecvAncillaryBuffer, RecvAncillaryMessage, RecvFlags, SendAnci
 
 use super::objects::Pass;
 
-/// File descriptors a message may carry at most (libwayland's).
+/// The most file descriptors a message may carry, as in libwayland.
 pub(super) const MAX_FDS: usize = 28;
 
-/// A message: its object, its opcode and its arguments, with its header.
+/// Makes a message, with its header, from its object, opcode and arguments.
 pub(super) fn message(object: u32, opcode: u16, args: &[u8]) -> Vec<u8> {
     let mut m = object.to_ne_bytes().to_vec();
     m.extend((((args.len() + 8) as u32) << 16 | u32::from(opcode)).to_ne_bytes());
@@ -26,8 +26,8 @@ pub(super) fn ints(values: &[i32]) -> Vec<u8> {
     values.iter().flat_map(|v| v.to_ne_bytes()).collect()
 }
 
-/// The whole messages at the start of `buf`: each `(object, opcode, args)`, and how many bytes they take
-/// (a message cut off at the end is left for the next read).
+/// The whole messages at the start of `buf`, each as `(object, opcode, args)`, and how many bytes they
+/// take. A message cut off at the end is left for the next read.
 pub(super) fn messages(buf: &[u8]) -> (Vec<(u32, u16, std::ops::Range<usize>)>, usize) {
     let mut out = Vec::new();
     let mut at = 0;
@@ -44,8 +44,8 @@ pub(super) fn messages(buf: &[u8]) -> (Vec<(u32, u16, std::ops::Range<usize>)>, 
 }
 
 /// Passes messages from `from` to `to` as `pass` says, with the file descriptors that come with them,
-/// until either end closes (then both are shut); `after` is called after each read, `closed` with which
-/// end closed (`from`: true) before both are shut.
+/// until either end closes. Then both ends are shut. `after` is called after each read. `closed` is
+/// called before both ends are shut, with true if `from` closed.
 pub(super) fn relay(
     from: &UnixStream,
     to: &UnixStream,
@@ -88,7 +88,8 @@ pub(super) fn relay(
         }
         buf.drain(..used);
         after(now);
-        // (The descriptors go with the bytes they came with: the receiver takes them in order, by message.)
+        // The descriptors go with the bytes they came with, since the receiver takes them in order, by
+        // message.
         if (!out.is_empty() || !received.is_empty())
             && let Err(e) = send(to, &out, &received)
         {
@@ -106,7 +107,7 @@ pub(super) fn relay(
     }
 }
 
-/// Sends `bytes` with `fds` (with the first part sent), all of it.
+/// Sends all of `bytes`, with `fds` attached to the first part sent.
 pub(super) fn send(to: &UnixStream, bytes: &[u8], fds: &[OwnedFd]) -> io::Result<()> {
     let borrowed: Vec<BorrowedFd> = fds.iter().map(AsFd::as_fd).collect();
     let mut sent = 0;

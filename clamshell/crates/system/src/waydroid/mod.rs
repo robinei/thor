@@ -1,27 +1,28 @@
-//! A Wayland proxy for Waydroid (`clamshell --wayland-filter`): it listens on a socket of its own beside
-//! the compositor's (`<display>-android`), and passes each client's connection through to the
-//! compositor, messages and file descriptors alike, but for what it changes for Android's windows:
+//! A Wayland proxy for Waydroid (`clamshell --wayland-filter`). It listens on a socket of its own,
+//! `<display>-android`, beside the compositor's. It passes each client's connection through to the
+//! compositor, messages and file descriptors alike, except for what it changes for Android's windows:
 //!
-//! - A toplevel configure of the size the window already has is dropped. Waydroid answers every one
-//!   with a display hotplug, which clears its windows; a window is drawn again only with its app's next
-//!   frame, and an app at rest draws none. Sway configures a window as it is hidden, shown, focused or
-//!   unfocused (`suspended`, `activated`), its size unchanged: an Android app's window was lost whenever
-//!   it went out of sight or lost focus. A resize still reaches Waydroid.
-//! - Android's caption (its back, minimise, maximise and close buttons, drawn into the window along its
-//!   top) is put out of sight: Android is told a window that much taller, and the compositor a window
-//!   that starts below it (its window geometry), so the app's own area fills the window, unscaled. Its
-//!   height, in pixels at Android's density, is in `android-caption` in ClamShell's runtime dir (the
-//!   Android script writes it; none: shown).
-//! - The app's frame rate is measured (its window's commits) and written as MangoHud logs its own (a
-//!   CSV row every half second, fps and frame time, in ClamShell's MangoHud folder, as
-//!   `android-<app>.csv`): ClamShell reads it as a game's.
+//! - A toplevel configure with the size the window already has is dropped. Waydroid answers every
+//!   configure with a display hotplug, which clears its windows. A window is drawn again only with its
+//!   app's next frame, and an app at rest draws none. Sway configures a window, with its size unchanged,
+//!   whenever it is hidden, shown, focused or unfocused (`suspended`, `activated`). So an Android app's
+//!   window was lost whenever it went out of sight or lost focus. A resize still reaches Waydroid.
+//! - Android's caption, with its back, minimise, maximise and close buttons drawn into the top of the
+//!   window, is put out of sight. Android is told the window is that much taller, and the compositor is
+//!   told, through the window geometry, that the window starts below the caption. So the app's own area
+//!   fills the window, unscaled. The caption's height, in pixels at Android's density, is in
+//!   `android-caption` in ClamShell's runtime dir. The Android script writes it. Without the file the
+//!   caption is shown.
+//! - The app's frame rate is measured from its window's commits and written the way MangoHud logs its
+//!   own: a CSV row every half second with fps and frame time, in ClamShell's MangoHud folder, as
+//!   `android-<app>.csv`. ClamShell reads it as it reads a game's.
 //!
-//! No frame rate cap: Waydroid paces Android by a vsync of its own, its period fixed as its session starts
-//! (from the outputs' refresh), not by the compositor's frame callbacks.
+//! There is no frame rate cap. Waydroid paces Android by a vsync of its own, whose period is fixed from
+//! the outputs' refresh when its session starts, and not by the compositor's frame callbacks.
 //!
-//! The proxy reads only what it must: the registry (`get_registry`), `xdg_wm_base` (bound), its
-//! `xdg_surface`s and their `wl_surface`s, their toplevels (app id, size, activated); ids are forgotten as
-//! the compositor deletes them (`wl_display.delete_id`).
+//! The proxy reads only what it must: the registry (`get_registry`), the bound `xdg_wm_base`, its
+//! `xdg_surface`s and their `wl_surface`s, and their toplevels (app id, size, activated). Ids are
+//! forgotten as the compositor deletes them (`wl_display.delete_id`).
 
 mod objects;
 mod wire;
@@ -38,9 +39,9 @@ use crate::os::worker;
 use crate::readings::mangohud;
 
 /// Listens on `<display>-android` beside the compositor's socket (`$XDG_RUNTIME_DIR`, `$WAYLAND_DISPLAY`)
-/// and passes each connection through; `settings`: ClamShell's runtime dir (its `android-*` files),
-/// `frames`: its MangoHud folder. Returns once the compositor closes a connection (see [`connect`]), or
-/// if it can't listen.
+/// and passes each connection through. `settings` is ClamShell's runtime dir with its `android-*` files,
+/// and `frames` is its MangoHud folder. Returns once the compositor closes a connection (see
+/// [`connect`]), or if it can't listen.
 pub fn run(settings: PathBuf, frames: PathBuf) -> io::Result<()> {
     let runtime = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).ok_or_else(|| io::Error::other("no XDG_RUNTIME_DIR"))?;
     let display = std::env::var("WAYLAND_DISPLAY").map_err(|_| io::Error::other("no WAYLAND_DISPLAY"))?;
@@ -69,10 +70,10 @@ pub fn run(settings: PathBuf, frames: PathBuf) -> io::Result<()> {
     Ok(())
 }
 
-/// A client connected: its connection to the compositor, and a thread each way. If the compositor ends
-/// it (gone, or the client dropped), the filter ends (`ended` is told): Waydroid can't go on without its
-/// display (Android's system crashes when it next draws), and its session is bound to the filter's (see
-/// the Android script).
+/// Handles a client that connected by opening its connection to the compositor and starting a thread
+/// each way. If the compositor ends the connection, because it is gone or it dropped the client, the
+/// filter ends and `ended` is told. Waydroid can't go on without its display, since Android's system
+/// crashes when it next draws, and its session is bound to the filter's (see the Android script).
 fn connect(client: UnixStream, upstream: &Path, settings: &Path, frames: &Path, ended: &mpsc::Sender<()>) {
     let server = match UnixStream::connect(upstream) {
         Ok(s) => s,
@@ -82,14 +83,14 @@ fn connect(client: UnixStream, upstream: &Path, settings: &Path, frames: &Path, 
         }
     };
     let objects = Arc::new(Mutex::new(Objects::new(Some(settings.to_path_buf()))));
-    // (A clone of the client's end kept here: to shut the connection if the second relay can't start.)
+    // Keep a clone of the client's end here, to shut the connection if the second relay can't start.
     let (client2, server2, kept) = match (client.try_clone(), server.try_clone(), client.try_clone()) {
         (Ok(c), Ok(s), Ok(k)) => (c, s, k),
         (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => return log::warn!("wayland filter: {e}"),
     };
     let (requests, rates) = (objects.clone(), objects.clone());
     let mut log = mangohud::FrameLog::new(frames);
-    // Which end closed first (true: the compositor's).
+    // Which end closed first. True means the compositor's.
     let first: Arc<OnceLock<bool>> = Arc::default();
     let first2 = first.clone();
     let (ended, ended2) = (ended.clone(), ended.clone());
@@ -111,7 +112,7 @@ fn connect(client: UnixStream, upstream: &Path, settings: &Path, frames: &Path, 
             |client_closed| end(&first, !client_closed, &ended),
         );
     });
-    // (The first relay not started: every handle is dropped on return, closing the connection.)
+    // If the first relay didn't start, every handle is dropped on return, which closes the connection.
     if let Err(e) = requests_relay {
         return log::warn!("wayland filter: {e}");
     }
@@ -171,7 +172,7 @@ mod tests {
         args
     }
 
-    /// Objects with a toplevel 11 (xdg_surface 10, wl_surface 9) of app `org.x`.
+    /// Objects with toplevel 11 (xdg_surface 10, wl_surface 9) of app `org.x`.
     fn objects(caption: i32) -> Objects {
         let mut o = Objects::default();
         o.settings.caption = caption;
@@ -193,7 +194,7 @@ mod tests {
         assert_eq!(o.event(11, CONFIGURE, &configure(1920, 1080, &[]), now), Pass::Drop, "unfocused: the same size");
         assert_eq!(o.event(11, CONFIGURE, &configure(1240, 1080, &[]), now), Pass::Keep, "resized");
         assert_eq!(o.event(10, CONFIGURE, &words(&[77]), now), Pass::Keep, "xdg_surface's configure (acked): always");
-        // Deleted, its id reused for something else: forgotten.
+        // Once deleted, the id may be reused for something else, so the toplevel is forgotten.
         assert_eq!(o.event(DISPLAY, DELETE_ID, &words(&[11]), now), Pass::Keep);
         assert_eq!(o.event(11, CONFIGURE, &configure(1240, 1080, &[]), now), Pass::Keep);
         assert!(o.toplevels.is_empty());
@@ -203,7 +204,8 @@ mod tests {
     fn the_caption_is_out_of_sight_the_app_unscaled() {
         let mut o = objects(57);
         let now = Instant::now();
-        // Android told a window the caption taller; the compositor, a window that starts below it.
+        // Android is told the window is the caption's height taller, and the compositor that the window
+        // starts below it.
         let fx = o.event(11, CONFIGURE, &configure(1920, 1080, &[ACTIVATED]), now);
         assert_eq!(fx, Pass::Replace(message(11, CONFIGURE, &configure(1920, 1137, &[ACTIVATED]))));
         assert_eq!(o.event(11, CONFIGURE, &configure(1920, 1080, &[]), now), Pass::Drop, "the same size still, as the compositor gave it");
@@ -223,7 +225,7 @@ mod tests {
         let (app, fps) = o.frame_rate(t0 + Duration::from_millis(600)).unwrap();
         assert_eq!(app, "org.x");
         assert!((fps - 50.0).abs() < 1.0, "{fps}");
-        // Not active: none.
+        // A window that isn't active has no frame rate.
         o.event(11, CONFIGURE, &configure(1920, 1080, &[]), t0);
         o.request(9, COMMIT, &[], t0 + Duration::from_millis(700));
         assert_eq!(o.frame_rate(t0 + Duration::from_millis(1300)), None);
@@ -264,7 +266,8 @@ mod tests {
         assert_eq!(&got[..r.bytes], &requests[..r.bytes]);
         let fds: usize = ancillary.drain().map(|m| if let RecvAncillaryMessage::ScmRights(f) = m { f.count() } else { 0 }).sum();
         assert_eq!(fds, 1, "the fd passed on");
-        // The compositor configures it twice the same, then a resize: two reach the client.
+        // The compositor configures it twice with the same size, then resizes it. Two configures reach the
+        // client.
         let events: Vec<u8> = [1920, 1920, 1240].iter().flat_map(|w| message(11, CONFIGURE, &configure(*w, 1080, &[]))).collect();
         (&server_far).write_all(&events).unwrap();
         let one = message(11, CONFIGURE, &configure(1, 1080, &[])).len();

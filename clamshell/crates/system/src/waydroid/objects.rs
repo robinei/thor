@@ -1,6 +1,6 @@
-//! What the proxy reads of the protocol and changes: the registry, `xdg_wm_base`, its surfaces and their
-//! toplevels (app id, size, activated); toplevel configures of an unchanged size dropped, Android's
-//! caption put out of sight, the active window's commits counted as its frame rate.
+//! What the proxy reads of the protocol and what it changes. It reads the registry, `xdg_wm_base`, its
+//! surfaces and their toplevels (app id, size, activated). It drops toplevel configures of an unchanged
+//! size, puts Android's caption out of sight, and counts the active window's commits as its frame rate.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use super::wire::{ints, message};
 
-/// The display object's id, and the opcodes read.
+/// The display object's id. The opcodes read follow.
 pub(super) const DISPLAY: u32 = 1;
 
 /// wl_display: `get_registry` (request), `delete_id` (event).
@@ -27,7 +27,7 @@ pub(super) const GET_TOPLEVEL: u16 = 1;
 
 pub(super) const SET_WINDOW_GEOMETRY: u16 = 3;
 
-/// xdg_toplevel: `set_app_id` (request), `configure` (event; its `activated` state).
+/// xdg_toplevel: `set_app_id` (request), `configure` (event) and its `activated` state.
 pub(super) const SET_APP_ID: u16 = 3;
 
 pub(super) const CONFIGURE: u16 = 0;
@@ -46,16 +46,16 @@ pub(super) const SETTINGS_EVERY: Duration = Duration::from_secs(1);
 pub(super) enum Pass {
     Keep,
     Drop,
-    /// Passed on changed (whole: header and arguments).
+    /// Pass on this changed message instead, whole with header and arguments.
     Replace(Vec<u8>),
 }
 
-/// The settings ClamShell gives the proxy (see the module's doc), read again at most every second.
+/// The settings ClamShell gives the proxy (see the module docs), read again at most every second.
 #[derive(Debug, Default)]
 pub struct Settings {
     dir: Option<PathBuf>,
     read: Option<Instant>,
-    /// The caption's height (pixels; 0: shown).
+    /// The caption's height in pixels. 0 means the caption is shown.
     pub(super) caption: i32,
 }
 
@@ -89,7 +89,8 @@ pub(super) struct Toplevel {
     xdg_surface: u32,
     surface: u32,
     app_id: String,
-    /// The size of the last configure passed on (none yet: the first goes), as the compositor gave it.
+    /// The size of the last configure passed on, as the compositor gave it. With none yet, the first
+    /// configure goes through.
     size: Option<(i32, i32)>,
     active: bool,
     /// Commits since `since`.
@@ -121,12 +122,13 @@ impl Objects {
         self.toplevels.iter().find(|(_, t)| t.surface == surface).map(|(id, _)| *id)
     }
 
-    /// A request from the client: the objects it makes that the proxy follows; a window geometry moved
-    /// below the caption.
+    /// Handles a request from the client. It notes the objects the client makes that the proxy follows,
+    /// and moves a window geometry below the caption.
     pub(super) fn request(&mut self, object: u32, opcode: u16, args: &[u8], now: Instant) -> Pass {
         let word = |i: usize| args.get(i * 4..i * 4 + 4).and_then(|b| b.try_into().ok()).map(u32::from_ne_bytes);
         if self.registries.contains(&object) && opcode == BIND {
-            // name, interface (a string: its length, then its bytes padded to 4), version, id.
+            // The arguments are name, interface, version and id. The interface is a string: its length,
+            // then its bytes padded to 4.
             let len = word(1).unwrap_or(0) as usize;
             let after = 8 + len.div_ceil(4) * 4;
             let id = args.get(after + 4..after + 8).and_then(|b| b.try_into().ok()).map(u32::from_ne_bytes);
@@ -178,8 +180,8 @@ impl Objects {
         Pass::Keep
     }
 
-    /// An event from the compositor: a configure of the size the window had dropped, another made taller
-    /// by the caption; ids deleted forgotten.
+    /// Handles an event from the compositor. A configure of the size the window already had is dropped,
+    /// and any other is made taller by the caption. Deleted ids are forgotten.
     pub(super) fn event(&mut self, object: u32, opcode: u16, args: &[u8], now: Instant) -> Pass {
         let int = |i: usize| args.get(i * 4..i * 4 + 4).and_then(|b| b.try_into().ok()).map(i32::from_ne_bytes);
         if object == DISPLAY && opcode == DELETE_ID {
@@ -201,7 +203,7 @@ impl Objects {
         let (Some(w), Some(h)) = (int(0), int(1)) else {
             return Pass::Keep;
         };
-        // The states: an array (its length in bytes, then u32s).
+        // The states are an array: its length in bytes, then u32s.
         let states_len = int(2).unwrap_or(0) as usize;
         let states = args.get(12..12 + states_len).unwrap_or_default();
         t.active = states.chunks_exact(4).any(|s| s.try_into().ok().map(u32::from_ne_bytes) == Some(ACTIVATED));
@@ -219,8 +221,8 @@ impl Objects {
         Pass::Keep
     }
 
-    /// The active toplevel's frame rate, once half a second has passed since it was last told: its app id
-    /// and its commits a second.
+    /// The active toplevel's app id and frame rate in commits per second. It is given once half a second
+    /// has passed since it was last given.
     pub(super) fn frame_rate(&mut self, now: Instant) -> Option<(String, f32)> {
         let t = self.toplevels.values_mut().find(|t| t.active && !t.app_id.is_empty())?;
         let since = t.since?;
