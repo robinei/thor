@@ -97,85 +97,46 @@ impl Editor {
     }
 }
 
-/// `KEY=value` words (see [`words`]) as variables.
+/// `KEY=value` words (see [`Words`]) as variables.
 pub fn parse_env(text: &str) -> Vec<(String, String)> {
-    words(text).into_iter().filter_map(|word| word.split_once('=').map(|(k, v)| (k.to_owned(), v.to_owned()))).filter(|(k, _)| !k.is_empty()).collect()
+    vars(text).map(|(k, v)| (k.to_owned(), v.to_owned())).collect()
 }
 
-/// The words of `text`: whitespace separates; a word starting with `'` or `"` runs to the next same quote
-/// (quotes removed); quotes inside an unquoted word are literal; words are trimmed.
-fn words(text: &str) -> Vec<String> {
-    let chars: Vec<char> = text.chars().collect();
-    let mut words = Vec::new();
-    let mut i = 0;
-    while let Some(&c) = chars.get(i) {
-        if c.is_whitespace() {
-            i += 1;
-            continue;
-        }
-        let start = i;
-        if c == '\'' || c == '"' {
-            i += 1;
-            while chars.get(i).is_some_and(|&d| d != c) {
-                i += 1;
-            }
-            // Past the closing quote, if there is one.
-            let end = (i + 1).min(chars.len());
-            let word: String = chars.get(start..end).unwrap_or(&[]).iter().collect();
-            let closed = word.len() > 1 && word.ends_with(c);
-            let inner = if closed { word.get(1..word.len() - 1).unwrap_or("") } else { word.get(1..).unwrap_or("") };
-            words.push(inner.trim().to_owned());
-            i = end;
-        } else {
-            while chars.get(i).is_some_and(|d| !d.is_whitespace()) {
-                i += 1;
-            }
-            let word: String = chars.get(start..i).unwrap_or(&[]).iter().collect();
-            words.push(word.trim().to_owned());
-        }
-    }
-    words
-}
-
-/// How many variables `parse_env` finds in `text`, without allocating (for drawing).
+/// How many variables [`parse_env`] finds in `text`, without allocating (for drawing).
 pub fn count_env(text: &str) -> usize {
-    let mut count = 0;
-    let mut chars = text.chars().peekable();
-    while let Some(&c) = chars.peek() {
-        if c.is_whitespace() {
-            chars.next();
-            continue;
-        }
-        // One word: to the closing quote if it starts with one (the quotes don't count), else to whitespace.
-        let quote = (c == '\'' || c == '"').then_some(c);
-        if quote.is_some() {
-            chars.next();
-        }
-        let (mut len, mut eq) = (0, None);
-        while let Some(&d) = chars.peek() {
-            if quote.map_or(d.is_whitespace(), |q| d == q) {
-                break;
+    vars(text).count()
+}
+
+/// The `KEY=value` words of `text` with a key, split at their first `=`.
+fn vars(text: &str) -> impl Iterator<Item = (&str, &str)> {
+    Words { rest: text }.filter_map(|word| word.split_once('=')).filter(|(k, _)| !k.is_empty())
+}
+
+/// The words of a text: whitespace separates; a word starting with `'` or `"` runs to the next same quote
+/// (quotes removed); quotes inside an unquoted word are literal; words are trimmed.
+struct Words<'a> {
+    rest: &'a str,
+}
+
+impl<'a> Iterator for Words<'a> {
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<&'a str> {
+        let text = self.rest.trim_start();
+        let first = text.chars().next()?;
+        let (word, rest) = if first == '\'' || first == '"' {
+            let inner = text.get(first.len_utf8()..).unwrap_or_default();
+            match inner.find(first) {
+                Some(end) => (inner.get(..end).unwrap_or_default(), inner.get(end + first.len_utf8()..).unwrap_or_default()),
+                None => (inner, ""),
             }
-            // (A quoted word's leading spaces: trimmed, as parse_env trims its words.)
-            if len == 0 && d.is_whitespace() {
-                chars.next();
-                continue;
-            }
-            if d == '=' && eq.is_none() {
-                eq = Some(len);
-            }
-            len += 1;
-            chars.next();
-        }
-        if quote.is_some() {
-            chars.next();
-        }
-        // Like parse_env: a key before the '='.
-        if eq.is_some_and(|i| i > 0) {
-            count += 1;
-        }
+        } else {
+            let end = text.find(char::is_whitespace).unwrap_or(text.len());
+            (text.get(..end).unwrap_or_default(), text.get(end..).unwrap_or_default())
+        };
+        self.rest = rest;
+        Some(word.trim())
     }
-    count
 }
 
 impl crate::State {

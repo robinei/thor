@@ -180,7 +180,7 @@ pub struct Levels {
     muted: Held<bool>,
     audio: Audio,
     /// The backlights' names (read while the brightness tab is open).
-    backlights: Vec<String>,
+    backlights: Backlights,
     brightness: Brightness,
     /// The first backlight's level as last read: the brightness until ClamShell sets one.
     read_brightness: Option<u8>,
@@ -209,11 +209,11 @@ impl Levels {
     }
 
     pub fn backlights(&self) -> &[String] {
-        &self.backlights
+        &self.backlights.0
     }
 
     /// The backlights as a list's rows.
-    pub(crate) fn backlight_rows(&self) -> &Vec<String> {
+    pub(crate) fn backlight_rows(&self) -> &Backlights {
         &self.backlights
     }
 
@@ -231,7 +231,7 @@ impl Levels {
             Level::Volume => self.volume(),
             Level::Brightness => self.brightness.level.or(self.read_brightness),
             Level::Stream(i) => self.audio.streams.get(usize::from(i)).map(|s| s.volume),
-            Level::Backlight(i) => self.backlights.get(usize::from(i)).map(|name| self.brightness.share(name)),
+            Level::Backlight(i) => self.backlights.0.get(usize::from(i)).map(|name| self.brightness.share(name)),
         }
     }
 
@@ -245,20 +245,27 @@ impl Levels {
 
     /// The screens' brightness as it should be, once the level is known (to apply at start too).
     pub fn brightness_effect(&self) -> Option<Effect> {
-        let level = self.brightness.level?;
-        Some(Effect::Brightness { level, shares: self.brightness.shares.clone() })
+        self.brightness.level.map(|level| self.brightness_at(level))
     }
 
     /// The screens dimmed (idle): a third of their brightness, not saved.
     pub fn dimmed_effect(&self) -> Option<Effect> {
-        let level = self.brightness.level.or(self.read_brightness)?;
-        Some(Effect::Brightness { level: (level / 3).max(1), shares: self.brightness.shares.clone() })
+        self.known_brightness().map(|level| self.brightness_at((level / 3).max(1)))
     }
 
     /// The screens back from dimmed: their brightness, ClamShell's or as it was read.
     pub fn undimmed_effect(&self) -> Option<Effect> {
-        let level = self.brightness.level.or(self.read_brightness)?;
-        Some(Effect::Brightness { level, shares: self.brightness.shares.clone() })
+        self.known_brightness().map(|level| self.brightness_at(level))
+    }
+
+    /// The brightness ClamShell set, else as it was read.
+    fn known_brightness(&self) -> Option<u8> {
+        self.brightness.level.or(self.read_brightness)
+    }
+
+    /// The screens at brightness `level`, each by its share.
+    fn brightness_at(&self, level: u8) -> Effect {
+        Effect::Brightness { level, shares: self.brightness.shares.clone() }
     }
 
     /// A status reading of the volume, mute and brightness.
@@ -282,7 +289,7 @@ impl Levels {
     }
 
     pub(crate) fn read_backlights(&mut self, backlights: Vec<String>) -> bool {
-        crate::replace(&mut self.backlights, backlights)
+        crate::replace(&mut self.backlights.0, backlights)
     }
 
     /// The finger is on `level`: what it sets is held over readings until it lifts.
@@ -332,7 +339,7 @@ impl Levels {
                 self.brightness.level = Some(value);
                 self.brightness_effect().into_iter().collect()
             }
-            Level::Backlight(i) => match self.backlights.get(usize::from(i)).cloned() {
+            Level::Backlight(i) => match self.backlights.0.get(usize::from(i)).cloned() {
                 Some(name) => {
                     self.brightness.set_share(&name, value);
                     // The level as read, until ClamShell sets one (all shares were 100 then).
@@ -402,18 +409,22 @@ impl Rows for Audio {
     }
 }
 
+/// The backlights' names.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Backlights(Vec<String>);
+
 /// The backlights as a list's rows (by name).
-impl Rows for Vec<String> {
+impl Rows for Backlights {
     fn len(&self) -> usize {
-        self.as_slice().len()
+        self.0.len()
     }
 
     fn key(&self, i: usize) -> Option<ItemKey> {
-        self.get(i).map(|b| ItemKey::Name(b.clone()))
+        self.0.get(i).map(|b| ItemKey::Name(b.clone()))
     }
 
     fn find(&self, key: &ItemKey) -> Option<usize> {
-        self.iter().position(|b| *key == ItemKey::Name(b.clone()))
+        self.0.iter().position(|b| matches!(key, ItemKey::Name(n) if n == b))
     }
 }
 

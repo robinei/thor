@@ -31,6 +31,11 @@ impl State {
         Effect::Save(Save::Keymaps(self.keymaps.clone()))
     }
 
+    /// The keymaps saved if `changed` (see [`State::save_keymaps`]).
+    pub(super) fn saved_if(&mut self, changed: bool) -> Vec<Effect> {
+        if changed { vec![self.save_keymaps()] } else { vec![] }
+    }
+
     /// Whether the edit screen's Undo has a change to go back over.
     pub fn can_undo(&self) -> bool {
         !self.bottom.keymap_undo.steps.is_empty()

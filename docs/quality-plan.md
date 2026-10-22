@@ -94,7 +94,7 @@ Helpers that exist but are bypassed:
       `param.rs`); `Target` vs `Output`, `Stroke` vs `Chord` merged where they mirror.
 - [ ] `State`: notices out of `hardware.rs` into `notice.rs`; Home combos into `hardware.rs`; the keymap
       screens' state out of `Bottom` into its own struct; `PowerProfile` beside the settings.
-- [ ] Duplicated logic in core: `editor.rs` `words()` / `count_env()`; `levels.rs:247-263` and
+- [x] Duplicated logic in core: `editor.rs` `words()` / `count_env()`; `levels.rs:247-263` and
       `backlights()`/`backlight_rows()`; the six `if changed { save_keymaps }`; identical match arms
       (`keymap_screens/mod.rs:419/428,610/614`); `panel.rs:47-52,77-83`.
 - [ ] Wi-Fi and Bluetooth: one vocabulary and one error model; `Effect::Browse`/`FilesInUse` as other

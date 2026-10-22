@@ -57,7 +57,7 @@ pub enum Screen {
     Layers { id: u16, input: Input },
     /// The keymap's layers, to show one on the edit screen (or add one; a long press: its menu).
     LayerPicker(u16),
-    /// A layer's menu: rename, clear, delete (Base: clear).
+    /// A layer's menu: Once, rename, clear, delete (Base: clear).
     LayerMenu { id: u16, layer: Layer },
     /// A key chord typed on the keyboard for `input`; for a stick's four keys, which one and those so far.
     Capture { id: u16, input: Input, keys: Option<(usize, [Chord; 4])> },
@@ -417,20 +417,12 @@ impl State {
                 vec![]
             }
             (KeymapId::Undo, Screen::Edit(k)) => self.undo(k),
-            (KeymapId::EditLayer(layer), Screen::LayerPicker(k)) => {
-                self.bottom.keymap_edit.clearing = false;
-                self.bottom.keymaps = Some(Screen::LayerMenu { id: k, layer });
-                vec![]
-            }
+            (KeymapId::EditLayer(layer), Screen::LayerPicker(k)) => self.open_layer_menu(k, layer),
             (KeymapId::LayerPicker, Screen::Edit(k)) => {
                 self.bottom.keymaps = Some(Screen::LayerPicker(k));
                 vec![]
             }
-            (KeymapId::Layer(layer), Screen::LayerPicker(k)) if long => {
-                self.bottom.keymap_edit.clearing = false;
-                self.bottom.keymaps = Some(Screen::LayerMenu { id: k, layer });
-                vec![]
-            }
+            (KeymapId::Layer(layer), Screen::LayerPicker(k)) if long => self.open_layer_menu(k, layer),
             (KeymapId::Layer(layer), Screen::LayerPicker(k)) => {
                 self.bottom.keymap_edit.layer = layer;
                 self.bottom.keymaps = Some(Screen::Edit(k));
@@ -455,7 +447,7 @@ impl State {
                     let once = !km.layer_once(layer);
                     km.set_layer_once(layer, once)
                 });
-                if changed { vec![self.save_keymaps()] } else { vec![] }
+                self.saved_if(changed)
             }
             (KeymapId::DeleteLayer, Screen::LayerMenu { id: k, layer }) if layer != Layer::BASE => {
                 self.bottom.keymaps = Some(Screen::LayerPicker(k));
@@ -463,7 +455,7 @@ impl State {
                     self.bottom.keymap_edit.layer = Layer::BASE;
                 }
                 let changed = self.keymaps.get_mut(k).is_some_and(|km| km.remove_layer(layer));
-                if changed { vec![self.save_keymaps()] } else { vec![] }
+                self.saved_if(changed)
             }
             (KeymapId::ToLayer(layer), Screen::Layers { id: k, input }) => self.choose(k, input, Output::Layer(layer)),
             (KeymapId::NewLayer, Screen::Layers { id: k, input }) => {
@@ -479,7 +471,7 @@ impl State {
                 self.bottom.keymap_edit.clearing = false;
                 self.bottom.keymaps = Some(Screen::LayerPicker(k));
                 let changed = self.keymaps.get_mut(k).is_some_and(|k| k.clear(layer));
-                if changed { vec![self.save_keymaps()] } else { vec![] }
+                self.saved_if(changed)
             }
             (KeymapId::Target(target), Screen::Edit(k)) => match self.bottom.keymap_edit.selected {
                 Some(input) => self.map_to(k, input, target),
@@ -491,7 +483,7 @@ impl State {
                     let on = param.get(&b) > 0;
                     param.set(&mut b, u8::from(!on));
                     let changed = self.set_tuned(k, input, b);
-                    if changed { vec![self.save_keymaps()] } else { vec![] }
+                    self.saved_if(changed)
                 }
                 None => vec![],
             },
@@ -586,7 +578,8 @@ impl State {
             return vec![];
         };
         b.hold = hold;
-        if self.set_tuned(id, gyro, b) { vec![self.save_keymaps()] } else { vec![] }
+        let changed = self.set_tuned(id, gyro, b);
+        self.saved_if(changed)
     }
 
     /// Opens the editor for a keymap's name.
@@ -656,13 +649,20 @@ impl State {
         effects
     }
 
+    /// The menu of keymap `id`'s `layer` (see [`Screen::LayerMenu`]).
+    fn open_layer_menu(&mut self, id: u16, layer: Layer) -> Vec<Effect> {
+        self.bottom.keymap_edit.clearing = false;
+        self.bottom.keymaps = Some(Screen::LayerMenu { id, layer });
+        vec![]
+    }
+
     /// Binds `input` of keymap `id` to `binding` in the layer and actuation shown, and saves the keymaps
     /// if that changed them. `None` removes the binding: the input then acts as on the pad, or as the
     /// layers below, and a hold or double does nothing.
     fn bind(&mut self, id: u16, input: Input, binding: Option<Binding>) -> Vec<Effect> {
         let EditView { layer, act, .. } = self.bottom.keymap_edit;
         let changed = self.keymaps.get_mut(id).is_some_and(|k| k.set_of(layer, input, act, binding));
-        if changed { vec![self.save_keymaps()] } else { vec![] }
+        self.saved_if(changed)
     }
 
     /// `input`'s binding in the layer and actuation shown.

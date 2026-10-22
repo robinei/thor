@@ -45,10 +45,7 @@ impl State {
 
     /// The settings entry (or level) `id` runs with: the global ones, its runner's, its own.
     pub fn settings_of(&self, id: &str) -> Values {
-        match self.runner_of(id) {
-            Some(runner) => self.settings.of_in(id, &[runner]),
-            None => self.settings.of_in(id, &[]),
-        }
+        self.settings.of_in(id, self.runner_of(id).as_slice())
     }
 
     /// What entry (or level) `id` does while hidden ([`Setting::Background`]): Pauses games (the
@@ -76,10 +73,7 @@ impl State {
 
     /// The environment entry `id` gets: the global variables, its runner's, its own.
     pub fn env_of(&self, id: &str) -> Vec<(String, String)> {
-        match self.runner_of(id) {
-            Some(runner) => self.settings.env_in(id, &[runner]),
-            None => self.settings.env_in(id, &[]),
-        }
+        self.settings.env_in(id, self.runner_of(id).as_slice())
     }
 
     /// The levels below All the settings panel offers for the item in context, with their titles: its
