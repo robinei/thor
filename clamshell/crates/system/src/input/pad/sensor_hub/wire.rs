@@ -1,7 +1,7 @@
 //! The sensor hub's wire formats: the little of protobuf the sensor API needs, and QMI's framing of its
 //! messages.
 
-/// QMI: the sensor client's request, report and large report; message types.
+/// QMI ids for the sensor client's request, report and large report, then the message types.
 pub(super) const QMI_REQUEST: u16 = 0x20;
 pub(super) const QMI_REPORT: u16 = 0x21;
 pub(super) const QMI_JUMBO_REPORT: u16 = 0x22;
@@ -42,7 +42,7 @@ pub(super) fn pb_bytes(out: &mut Vec<u8>, field: u32, b: &[u8]) {
     out.extend_from_slice(b);
 }
 
-/// One field: its number, and its value (a number, or the bytes of a length-delimited one).
+/// One field's value: a number, or the bytes of a length-delimited field.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) enum Value<'a> {
     Num(u64),
@@ -87,7 +87,7 @@ pub(super) fn pb_fields(mut msg: &[u8]) -> impl Iterator<Item = (u32, u8, Value<
     })
 }
 
-/// A QMI request carrying a sensor API message: TLV 1 holds its length and the message.
+/// A QMI request carrying a sensor API message. TLV 1 holds the message's length and the message.
 pub(super) fn qmi_request(txn: u16, pb: &[u8]) -> Vec<u8> {
     let len = |n: usize| u16::try_from(n).unwrap_or(u16::MAX).to_le_bytes();
     let mut tlv = vec![0x01];
@@ -105,9 +105,9 @@ pub(super) fn qmi_request(txn: u16, pb: &[u8]) -> Vec<u8> {
 /// What a QMI message from the hub says.
 #[derive(Debug, PartialEq)]
 pub(super) enum Qmi<'a> {
-    /// A request refused: its error.
+    /// A request was refused, with this error.
     Refused(u16),
-    /// A report's sensor API message.
+    /// The sensor API message in a report.
     Report(&'a [u8]),
 }
 

@@ -1,19 +1,20 @@
-//! The Thor's gyro ([`SensorHub`]): its IMU (SH5001) belongs to Qualcomm's sensor hub (SSC) on the ADSP,
-//! not to a bus Linux drives. With the ADSP's sensors process up (linux-thor's FastRPC patch and device
-//! tree, thor-sensors' hexagonrpcd serving its files), the hub offers a QMI service (400) over QRTR, which
-//! this reads directly, as PB-OS's pbos-motiond does (project-barry/pb-os): QMI framing and the few
-//! protobuf messages of Qualcomm's sensor API.
+//! The Thor's gyro ([`SensorHub`]). Its IMU (SH5001) belongs to Qualcomm's sensor hub (SSC) on the
+//! ADSP, not to a bus Linux drives. When the ADSP's sensors process is up, the hub offers a QMI service
+//! (400) over QRTR. That needs linux-thor's FastRPC patch and device tree, and thor-sensors' hexagonrpcd
+//! serving its files. This module reads the service directly, as PB-OS's pbos-motiond does
+//! (project-barry/pb-os), using QMI framing and the few protobuf messages of Qualcomm's sensor API.
 //!
-//! 1. The name service tells the socket where service 400 is, and when it goes and comes back (an ADSP
-//!    restart): [`qrtr::lookup`].
+//! 1. The name service tells the socket where service 400 is, and when it goes and comes back, as on an
+//!    ADSP restart ([`qrtr::lookup`]).
 //! 2. A SUID lookup asks for the default "gyro" sensor.
-//! 3. A std sensor config (the rate) starts its stream; each report carries x, y, z in rad/s in the
-//!    sensor's frame, with the hub's time (19.2 MHz ticks).
+//! 3. A std sensor config, which sets the rate, starts its stream. Each report carries x, y and z in
+//!    rad/s in the sensor's frame, with the hub's time in 19.2 MHz ticks.
 //!
-//! Turned into the frame ClamShell's [`Rate`] is in (the Steam Deck's: x right, y up the screen, z
-//! toward the player), in degrees per second. The stream runs while the pad thread has the controller,
-//! as an evdev motion sensor's does, but not over sleep: the source is dropped before it (its Drop
-//! stops the stream; `crate::power::sleep::spawn_hold`) and found again after.
+//! The samples are turned into the frame of ClamShell's [`Rate`], which is the Steam Deck's (x right, y
+//! up the screen, z toward the player), in degrees per second. The stream runs while the pad thread has
+//! the controller, as an evdev motion sensor's does, but not over sleep. The source is dropped before
+//! sleep, and its Drop stops the stream (see `crate::power::sleep::spawn_hold`). It is found again
+//! after.
 
 use std::io;
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
@@ -27,7 +28,7 @@ use wire::{Qmi, Value, pb_bytes, pb_fields, pb_fixed32, pb_fixed64, pb_varint_fi
 
 /// The sensor hub's client service.
 const SERVICE: u32 = 400;
-/// The sensor API's message ids (sns_suid.proto, sns_std_sensor.proto, sns_client.proto).
+/// The sensor API's message ids, from sns_suid.proto, sns_std_sensor.proto and sns_client.proto.
 const MSG_SUID_REQUEST: u32 = 512;
 const MSG_SUID_EVENT: u32 = 768;
 const MSG_STD_SENSOR_CONFIG: u32 = 513;
@@ -35,16 +36,17 @@ const MSG_STD_SENSOR_EVENT: u32 = 1025;
 const MSG_CLIENT_DISABLE: u32 = 10;
 /// The SUID lookup's own SUID.
 const SUID_LOOKUP: Suid = Suid { low: 0xabab_abab_abab_abab, high: 0xabab_abab_abab_abab };
-/// Ours, the application processor; reports while it is awake only.
+/// Our processor, the application processor, with reports only while it is awake.
 const PROCESSOR_APSS: u64 = 1;
 const DELIVERY_NO_WAKEUP: u64 = 1;
-/// Samples per second (PB-OS's).
+/// Samples per second, as PB-OS uses.
 const RATE_HZ: f32 = 200.0;
-/// The hub's clock.
+/// The hub's clock rate.
 const TICKS_PER_SECOND: u64 = 19_200_000;
 
-/// The Thor's sensor frame turned into the Deck's (a quarter turn: its panels are portrait; PB-OS's,
-/// "the frame MaSi's and Batocera's bridges validated on a Thor"): Deck x = -sensor y, y = sensor x.
+/// Turns the Thor's sensor frame into the Deck's: Deck x = -sensor y, y = sensor x. It is a quarter turn,
+/// because the Thor's panels are portrait. The turn is PB-OS's, "the frame MaSi's and Batocera's bridges
+/// validated on a Thor".
 const THOR_TURN: [[f32; 3]; 3] = [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]];
 
 /// A sensor's id.
@@ -57,18 +59,18 @@ struct Suid {
 /// The sensor hub's gyro, while there is one.
 pub struct SensorHub {
     socket: OwnedFd,
-    /// The hub's service: node and port, once the name service has said.
+    /// The hub's service node and port, once the name service has given them.
     service: Option<(u32, u32)>,
-    /// The gyro streaming.
+    /// The gyro that is streaming.
     gyro: Option<Suid>,
     txn: u16,
-    /// For a datagram.
+    /// The buffer for a datagram.
     buf: Vec<u8>,
 }
 
 impl SensorHub {
-    /// The Thor's sensor hub (by its device tree; elsewhere none): waits for the hub's service, which
-    /// may come later than this (thor-sensors' hexagonrpcd).
+    /// The Thor's sensor hub, found by the device tree, or none on other machines. It waits for the hub's
+    /// service, which may come up later than this, with thor-sensors' hexagonrpcd.
     pub fn find() -> Option<SensorHub> {
         let compatible = std::fs::read("/sys/firmware/devicetree/base/compatible")
             .inspect_err(|e| log::debug!("pad: reading /sys/firmware/devicetree/base/compatible: {e}"))
@@ -84,9 +86,9 @@ impl SensorHub {
         hub.map_err(|e| log::warn!("pad: the sensor hub: {e}")).ok().inspect(|_| log::info!("pad: gyro from the sensor hub, once it is up"))
     }
 
-    /// Sends a request to the hub; whether it was sent. A send that fails (the ADSP gone before the name
-    /// service said so) drops the hub until it is announced again, rather than the gyro for good, as
-    /// PB-OS's does.
+    /// Sends a request to the hub and returns whether it was sent. A send can fail when the ADSP is gone
+    /// before the name service says so. Then the hub is dropped until it is announced again, rather than
+    /// dropping the gyro for good as PB-OS does.
     fn request(&mut self, suid: Suid, msg_id: u32, payload: &[u8]) -> bool {
         let Some((node, port)) = self.service else { return false };
         self.txn = self.txn.wrapping_add(1);
@@ -99,7 +101,7 @@ impl SensorHub {
         true
     }
 
-    /// One datagram from the name service: the hub came (look the gyro up) or went.
+    /// Handles one datagram from the name service, saying the hub came, so the gyro is looked up, or went.
     fn control(&mut self, pkt: &[u8]) {
         match qrtr::control(pkt) {
             Some((qrtr::NEW_SERVER, SERVICE, node, port)) if node != 0 || port != 0 => {
@@ -121,11 +123,12 @@ impl SensorHub {
         }
     }
 
-    /// One QMI datagram from the hub: a refusal logged; the gyro's SUID (start it); its samples.
+    /// Handles one QMI datagram from the hub. A refusal is logged. The gyro's SUID starts the gyro, and
+    /// after that the reports carry its samples.
     fn message(&mut self, msg: &[u8], out: &mut Vec<Sample>) {
         match qmi_message(msg) {
             Some(Qmi::Refused(error)) => {
-                // (Its config refused: started again from the lookup's next report.)
+                // The config was refused, so start again from the lookup's next report.
                 log::warn!("pad: the sensor hub refused a request (error {error})");
                 self.gyro = None;
             }
@@ -169,7 +172,7 @@ impl MotionSource for SensorHub {
         let result = (|| {
             while let Some((n, _, port)) = qrtr::recv_from(&self.socket, &mut buf)? {
                 let msg = buf.get(..n).unwrap_or_default();
-                // (The datagrams as they come, for the tests' fixtures: see docs/thor-gameplan.md.)
+                // Log the datagrams as they come, for the tests' fixtures. See docs/thor-gameplan.md.
                 if log::log_enabled!(log::Level::Trace) {
                     log::trace!("port {port:#x}: {}", msg.iter().map(|b| format!("{b:02x}")).collect::<String>());
                 }
@@ -198,7 +201,7 @@ fn pb_suid(s: Suid) -> Vec<u8> {
     out
 }
 
-/// sns_client_request_msg: to `suid`, message `msg_id` with `payload`, for this processor while awake.
+/// An sns_client_request_msg to `suid`: message `msg_id` with `payload`, for this processor while awake.
 fn client_request(suid: Suid, msg_id: u32, payload: &[u8]) -> Vec<u8> {
     let mut susp = Vec::new();
     pb_varint_field(&mut susp, 1, PROCESSOR_APSS);
@@ -215,7 +218,7 @@ fn client_request(suid: Suid, msg_id: u32, payload: &[u8]) -> Vec<u8> {
     m
 }
 
-/// A report's events (sns_client_event_msg: its field 2): each one's message id, time and payload.
+/// A report's events, which are field 2 of sns_client_event_msg: each one's message id, time and payload.
 fn events(report: &[u8]) -> impl Iterator<Item = (u32, u64, &[u8])> {
     pb_fields(report).filter_map(|(field, _, v)| match (field, v) {
         (2, Value::Bytes(event)) => {
@@ -260,14 +263,14 @@ fn suid_of(report: &[u8], data_type: &[u8]) -> Option<Suid> {
     })
 }
 
-/// Calls `on` with each std sensor event's x, y, z and its time (the hub's ticks) in a report.
+/// Calls `on` with the x, y and z of each std sensor event in a report, and its time in the hub's ticks.
 fn samples(report: &[u8], mut on: impl FnMut([f32; 3], u64)) {
     for (_, at, payload) in events(report).filter(|(id, _, _)| *id == MSG_STD_SENSOR_EVENT) {
         let mut v = Vec::with_capacity(3);
         for (field, wire, value) in pb_fields(payload) {
             match (field, wire, value) {
                 (1, 5, Value::Num(n)) => v.push(f32::from_bits(n as u32)),
-                // (Packed.)
+                // Packed.
                 (1, 2, Value::Bytes(b)) => v.extend(b.chunks_exact(4).filter_map(|c| c.try_into().ok()).map(f32::from_le_bytes)),
                 _ => {}
             }
@@ -284,7 +287,7 @@ mod tests {
     use super::wire::*;
     use super::*;
 
-    /// A report (sns_client_event_msg) with these events (message id, time, payload).
+    /// A report (sns_client_event_msg) with these events, each as (message id, time, payload).
     fn report(events: &[(u32, u64, Vec<u8>)]) -> Vec<u8> {
         let mut r = Vec::new();
         pb_bytes(&mut r, 1, &pb_suid(Suid { low: 1, high: 2 }));

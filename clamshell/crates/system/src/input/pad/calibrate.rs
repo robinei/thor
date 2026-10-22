@@ -1,8 +1,12 @@
-//! The sticks' calibration in the pad thread (see `clamshell_core::device::sticks`): the controller's raw stick
-//! values corrected through its calibration as they come in ([`Sticks::correct`]; an extreme passed
-//! widens it, for this session), before the router or anything else reads them; and a calibration
-//! asked for, fed the raw values (the router doesn't get the sticks meanwhile, so turning them doesn't
-//! move the focus around), its progress sent about ten times a second, its result kept and sent.
+//! The sticks' calibration in the pad thread (see `clamshell_core::device::sticks`).
+//!
+//! The controller's raw stick values are corrected through its calibration as they come in
+//! ([`Sticks::correct`]), before the router or anything else reads them. A value past an extreme widens
+//! the calibration for this session.
+//!
+//! When a calibration is asked for, it is fed the raw values. The router doesn't get the sticks in the
+//! meantime, so turning them doesn't move the focus around. The progress is sent about ten times a
+//! second, and the result is kept and sent.
 
 use std::time::{Duration, Instant};
 
@@ -12,19 +16,20 @@ use evdev::AbsoluteAxisCode;
 use super::route::PadSnapshot;
 use crate::os::evdev::{Range, Raw};
 
-/// The sticks' axes, in the calibration's order: the left stick's x and y, the right stick's.
+/// The sticks' axes in the calibration's order: the left stick's x and y, then the right stick's.
 const STICK_AXES: [AbsoluteAxisCode; AXES] = [AbsoluteAxisCode::ABS_X, AbsoluteAxisCode::ABS_Y, AbsoluteAxisCode::ABS_RX, AbsoluteAxisCode::ABS_RY];
-/// A calibration's progress is sent this often.
+/// How often a calibration's progress is sent.
 const PROGRESS_EVERY: Duration = Duration::from_millis(100);
-/// While a calibration goes, the pad thread wakes this often to sample the sticks, so the still seconds
-/// count when the sticks send nothing.
+/// How often the pad thread wakes to sample the sticks during a calibration, so the seconds held still
+/// count even when the sticks send nothing.
 const SAMPLE_EVERY: Duration = Duration::from_millis(30);
 
 fn index(code: AbsoluteAxisCode) -> Option<usize> {
     STICK_AXES.iter().position(|&c| c == code)
 }
 
-/// A controller's sticks: their raw values now, their calibration (if any), one going.
+/// A controller's sticks: their current raw values, their calibration if any, and any calibration in
+/// progress.
 pub struct StickState {
     range: Range,
     raw: [i32; AXES],
@@ -32,7 +37,7 @@ pub struct StickState {
     calibrating: Option<Calibrating>,
 }
 
-/// A calibration going: the calibrator, when it started, and when its progress was last sent.
+/// A calibration in progress: the calibrator, when it started, and when its progress was last sent.
 struct Calibrating {
     calibrator: Calibrator,
     started: Instant,
@@ -46,8 +51,8 @@ pub enum Said {
 }
 
 impl StickState {
-    /// For a controller whose sticks' range is `range`, its axes now as `snapshot` has them, calibrated as
-    /// `sticks` (the snapshot's sticks corrected).
+    /// The state for a controller whose sticks' range is `range`, with its current axes in `snapshot` and
+    /// its calibration in `sticks`. The snapshot's stick values are corrected.
     pub fn new(range: Range, sticks: Option<Sticks>, snapshot: &mut PadSnapshot) -> StickState {
         let raw = STICK_AXES.map(|c| snapshot.value(c).unwrap_or((range.min + range.max) / 2));
         let state = StickState { range, raw, sticks, calibrating: None };
@@ -59,7 +64,7 @@ impl StickState {
         state
     }
 
-    /// Whether a calibration goes.
+    /// Whether a calibration is in progress.
     pub fn calibrating(&self) -> bool {
         self.calibrating.is_some()
     }
@@ -68,13 +73,14 @@ impl StickState {
         self.sticks.map_or(v, |s| s.correct(i, v, self.range.min, self.range.max))
     }
 
-    /// A calibration from now.
+    /// Starts a calibration now.
     pub fn calibrate(&mut self, now: Instant) {
         self.calibrating = Some(Calibrating { calibrator: Calibrator::new(self.range.min, self.range.max), started: now, reported: now });
     }
 
-    /// The controller's events: its sticks' kept as raw values, and corrected (an extreme passed
-    /// widening the calibration); while a calibration goes, taken out (the rest stay).
+    /// Takes the stick events from the controller's events. Their raw values are kept and the events are
+    /// corrected, with a value past an extreme widening the calibration. During a calibration the stick
+    /// events are taken out instead. Other events stay.
     pub fn take(&mut self, raws: &mut Vec<Raw>) {
         let calibrating = self.calibrating.is_some();
         raws.retain_mut(|r| {
@@ -94,8 +100,8 @@ impl StickState {
         });
     }
 
-    /// A calibration going, at `now`: what it says (progress now and then, or its end), and when to look
-    /// again.
+    /// Steps a calibration in progress at `now`. Returns what it says, which is progress now and then or
+    /// its end, and when to look again.
     pub fn step(&mut self, now: Instant) -> (Option<Said>, Option<Instant>) {
         let Some(Calibrating { calibrator, started, reported }) = self.calibrating.as_mut() else { return (None, None) };
         let ms = u64::try_from(now.saturating_duration_since(*started).as_millis()).unwrap_or(u64::MAX);
@@ -138,7 +144,7 @@ mod tests {
         let mut raws = vec![Raw::abs(AbsoluteAxisCode::ABS_X, 820), Raw::abs(AbsoluteAxisCode::ABS_Z, 300), Raw::abs(AbsoluteAxisCode::ABS_RY, 20)];
         s.take(&mut raws);
         assert_eq!(raws, vec![Raw::abs(AbsoluteAxisCode::ABS_X, 1024), Raw::abs(AbsoluteAxisCode::ABS_Z, 300), Raw::abs(AbsoluteAxisCode::ABS_RY, 0)]);
-        // Past the extreme: it widens (the next value there maps to the end).
+        // A value past the extreme widens it, so the next value there maps to the end.
         let mut raws = vec![Raw::abs(AbsoluteAxisCode::ABS_X, 900)];
         s.take(&mut raws);
         assert_eq!(s.sticks.unwrap().axes[0].high, 900);
@@ -160,7 +166,7 @@ mod tests {
         let mut raws = vec![Raw::abs(AbsoluteAxisCode::ABS_X, 10), Raw::abs(AbsoluteAxisCode::ABS_Z, 300)];
         s.take(&mut raws);
         assert_eq!(raws, vec![Raw::abs(AbsoluteAxisCode::ABS_Z, 300)], "the sticks the calibration's alone");
-        // Let go a second, each stick to each side, let go again.
+        // Let go for a second, push each stick to each side, then let go again.
         let mut at = t0;
         let mut feed = |s: &mut StickState, v: [i32; 4], ms: u64| -> Option<Said> {
             let mut last = None;

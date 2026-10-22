@@ -1,8 +1,8 @@
 //! Where the controller's events go: the route the state chose ([`PadRoute`]) and the mapping that
-//! carries it out: the game's (the keymap in force, [`Remap`]), or ClamShell's (navigation, typing, the
-//! pad mouse, listening). Pure: controller and gyro events in, events for the virtual devices and the
-//! state out, so switching routes is tested here (whatever a mapping holds down is let go when the pad
-//! leaves it).
+//! carries it out. That is either the game's mapping, which is the keymap in force ([`Remap`]), or one of
+//! ClamShell's: navigation, typing, the pad mouse or listening. There is no I/O here. Controller and gyro
+//! events go in, and events for the virtual devices and the state come out, so switching routes is
+//! tested here. Whatever a mapping holds down is let go when the pad leaves it.
 
 use clamshell_core::device::buttons::DeviceKey;
 use std::time::Instant;
@@ -20,8 +20,8 @@ use super::remap::{self, BACK_KEY, Remap, mouse_codes};
 use super::typing::Typing;
 use crate::os::evdev::{Press, Range, Raw};
 
-/// The virtual mouse's keys: the pad mouse's buttons and the keys the pad types with. What the device
-/// is built with, and what leaving the pad mouse or typing lets go of.
+/// The virtual mouse's own keys: the pad mouse's buttons and the keys the pad types with. The device is
+/// built with them, and leaving the pad mouse or typing lets go of them.
 const MOUSE_DEVICE_KEYS: [KeyCode; 9] = [
     KeyCode::BTN_LEFT,
     KeyCode::BTN_RIGHT,
@@ -34,8 +34,8 @@ const MOUSE_DEVICE_KEYS: [KeyCode; 9] = [
     KeyCode::KEY_BACKSPACE,
 ];
 
-/// Every key the virtual mouse has: its own (the pad mouse, typing), and what a keymap may press (the
-/// keyboard's keys, the mouse's side buttons).
+/// Every key the virtual mouse has: its own, for the pad mouse and typing, and those a keymap may press,
+/// which are the keyboard's keys and the mouse's side buttons.
 pub fn mouse_device_keys() -> Vec<KeyCode> {
     let mut keys = MOUSE_DEVICE_KEYS.to_vec();
     keys.extend(mouse_codes());
@@ -45,8 +45,8 @@ pub fn mouse_device_keys() -> Vec<KeyCode> {
     keys
 }
 
-/// Every key of the virtual mouse that the pad mouse and typing use up (the kernel passes on only the
-/// ones that were down).
+/// Lets go of every key of the virtual mouse that the pad mouse and typing use. The kernel passes on only
+/// the ones that were down.
 pub fn release_mouse_keys(out: &mut Out) {
     out.mouse.extend(MOUSE_DEVICE_KEYS.iter().map(|&k| Raw::key(k, Press::Up)));
     out.mouse.push(Raw::REPORT);
@@ -57,7 +57,7 @@ pub fn release_mouse_keys(out: &mut Out) {
 pub struct Out {
     /// For the game's virtual pad.
     pub pad: Vec<Raw>,
-    /// For the virtual mouse (pointer, buttons, wheel, and the keys the pad types or a keymap presses).
+    /// For the virtual mouse: pointer, buttons, wheel, and the keys the pad types or a keymap presses.
     pub mouse: Vec<Raw>,
     /// For the state.
     pub events: Vec<Event>,
@@ -70,24 +70,24 @@ pub trait Mapping {
     /// One controller event at `now`.
     fn event(&mut self, raw: Raw, now: Instant, out: &mut Out);
 
-    /// What time brings (pointer motion, a held direction's repeats); when to be ticked next, if it
-    /// needs to be.
+    /// Whatever time brings, such as pointer motion or a held direction's repeats. Returns when to be
+    /// ticked next, if it needs to be.
     fn tick(&mut self, now: Instant, out: &mut Out) -> Option<Instant>;
 
-    /// The pad leaves this mapping: lets go of whatever it holds down, and starts over.
+    /// Called when the pad leaves this mapping. Lets go of whatever it holds down, and starts over.
     fn release(&mut self, out: &mut Out);
 }
 
-/// The sticks' and the triggers' ranges (read from the left stick's x axis and the right trigger: each
-/// pair's axes share one).
+/// The sticks' and the triggers' ranges. They are read from the left stick's x axis and the right
+/// trigger, since each pair's axes share one range.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Ranges {
     pub stick: Range,
     pub trigger: Range,
 }
 
-/// The controller's state as last seen: to blank the virtual pad while the pad is away from the game,
-/// and to restore it when it comes back.
+/// The controller's state as last seen. It is used to blank the virtual pad while the pad is away from
+/// the game, and to restore it when it comes back.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PadSnapshot {
     keys: Vec<KeyCode>,
@@ -98,12 +98,12 @@ pub struct PadSnapshot {
 pub struct Axis {
     pub code: AbsoluteAxisCode,
     pub value: i32,
-    /// Its value at rest: the middle of a stick (0), the bottom of a trigger.
+    /// The axis' value at rest: the middle of a stick (0), or the bottom of a trigger.
     pub rest: i32,
 }
 
 impl PadSnapshot {
-    /// The axes as they are when the controller is taken over; keys are assumed up.
+    /// The axes as they are when the controller is taken over. Keys are assumed up.
     pub fn new(axes: Vec<Axis>) -> PadSnapshot {
         PadSnapshot { keys: Vec::new(), axes }
     }
@@ -121,7 +121,7 @@ impl PadSnapshot {
         }
     }
 
-    /// Events that make a pad look like this state (`real`) or like an untouched one.
+    /// Events that make a pad look like this state if `real`, or else like an untouched pad.
     pub fn events(&self, real: bool, out: &mut Vec<Raw>) {
         self.events_where(real, |_| true, out);
     }
@@ -153,8 +153,9 @@ fn away(route: PadRoute) -> bool {
     route != PadRoute::Game
 }
 
-/// Home held with one of these buttons: ClamShell's system shortcut (the game never sees the button).
-/// The D-pad as a hat (most controllers) is in [`PadRouter::event`]; as buttons, here.
+/// Home held with one of these buttons gives ClamShell's system shortcut, and the game never sees the
+/// button. A D-pad that is a hat, as on most controllers, is handled in [`PadRouter::event`]. A D-pad of
+/// buttons is handled here.
 const SYSTEM: [(KeyCode, DeviceKey); 5] = [
     (KeyCode::BTN_TR, DeviceKey::Screenshot),
     (KeyCode::BTN_SELECT, DeviceKey::BottomView),
@@ -163,40 +164,46 @@ const SYSTEM: [(KeyCode, DeviceKey); 5] = [
     (KeyCode::BTN_DPAD_DOWN, DeviceKey::WindowDown),
 ];
 
-/// Home with B: let go before this, the window in front closes; held this long, its program quits.
+/// Home with B: if B is let go before this, the window in front closes. If held this long, its program
+/// quits.
 const QUIT_HOLD: std::time::Duration = std::time::Duration::from_millis(800);
 
 /// The home button.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Home {
     Up,
-    /// Held; whether a combination used it (then letting go isn't Home).
+    /// Held, with whether a combination used it. If one did, letting go isn't Home.
     Held {
         combined: bool,
     },
-    /// Held, then the Back button with a game in front: the virtual pad's Guide is down until either is
-    /// let go.
+    /// Held, then the Back button pressed with a game in front. The virtual pad's Guide is down until
+    /// either is let go.
     Guide,
 }
 
-/// Routes the pad's events. The home button is ClamShell's: on its own it is [`Event::Home`] (on
-/// release, so it can start a combination); held with a button of [`SYSTEM`], that shortcut; held, then
-/// B, the window in front closed (let go at once) or its program quit (held); held, then
-/// the Thor's Back button with a game in front, the game's Guide button (Steam's overlay;
-/// buttons pressed meanwhile go to the game, for Steam's chords) while both are held. Held with any other
-/// button, that button is Home's too (the game sees neither it nor its release), and letting Home go
-/// isn't Home. Back on its own:
-/// an input of the keymap in the game ([`remap`]), back ([`PadInput::Back`]) on ClamShell's screens.
-/// With the pad mouse or typing, View is ClamShell's too (to move the pad to the second screen).
+/// Routes the pad's events. The home button is ClamShell's:
+///
+/// - On its own it is [`Event::Home`], sent on release so it can start a combination.
+/// - Held with a button of [`SYSTEM`], it gives that shortcut.
+/// - Held, then B: the window in front closes if B is let go at once, or its program quits if B is held.
+/// - Held, then the Thor's Back button with a game in front: the game's Guide button while both are held.
+///   That opens Steam's overlay, and buttons pressed in the meantime go to the game, for Steam's chords.
+/// - Held with any other button, that button is Home's too. The game sees neither it nor its release,
+///   and letting Home go isn't Home.
+///
+/// Back on its own is an input of the keymap in the game ([`remap`]), and back ([`PadInput::Back`]) on
+/// ClamShell's screens. With the pad mouse or typing, View is ClamShell's too, to move the pad to the
+/// second screen.
 pub struct PadRouter {
     route: PadRoute,
     home: Home,
-    /// Buttons a combination took: their release stays ClamShell's too.
+    /// Buttons a combination took. Their release stays ClamShell's too.
     taken: Vec<KeyCode>,
-    /// The D-pad's up or down taken by a Home shortcut: its events are ClamShell's until it is centred.
+    /// Whether the D-pad's up or down was taken by a Home shortcut. If so, its events are ClamShell's until
+    /// it is centred.
     hat_taken: bool,
-    /// Home with B pressed: when holding it quits the program in front (let go before: its window
-    /// closes).
+    /// With Home and B pressed, the time at which holding them quits the program in front. If let go
+    /// before, its window closes instead.
     closing: Option<Instant>,
     mouse: PadMouse,
     navigator: Navigator,
@@ -205,16 +212,15 @@ pub struct PadRouter {
     remap: Remap,
     /// Events passed through to the game's pad since the last report.
     passed: bool,
-    /// The gyro's last sample's time, and its offset at rest.
+    /// The time of the gyro's last sample, and the gyro's offset at rest.
     gyro_at: Option<std::time::Duration>,
     calibration: super::motion::Calibration,
     snapshot: PadSnapshot,
 }
 
 impl PadRouter {
-    /// A controller just taken over (its ranges, its axes now), the pad going to `route`: away from the
-    /// game, the virtual pad is blanked.
-    /// `keymap`: the keymap in force.
+    /// A router for a controller just taken over, with its ranges and current axes, and the pad going to
+    /// `route`. Away from the game, the virtual pad is blanked. `keymap` is the keymap in force.
     pub fn new(ranges: Ranges, snapshot: PadSnapshot, route: PadRoute, keymap: Keymap, out: &mut Out) -> PadRouter {
         let mut remap = Remap::new(ranges);
         remap.set_keymap(keymap, &snapshot, false, out);
@@ -237,7 +243,7 @@ impl PadRouter {
         if away(route) {
             router.snapshot.events(false, &mut out.pad);
         } else {
-            // (The virtual pad is taken to show the controller as it is, as games saw it before.)
+            // The virtual pad is taken to show the controller as it is, as games saw it before.
             router.remap.prime(&router.snapshot);
         }
         router
@@ -253,25 +259,25 @@ impl PadRouter {
         }
     }
 
-    /// The pad comes to the game: what the keymap makes of the controller now, and what it doesn't
-    /// know as it is.
+    /// The pad comes to the game. Sends what the keymap makes of the controller now, and passes on as
+    /// they are the inputs the keymap doesn't know.
     fn enter_game(&mut self, out: &mut Out) {
         self.snapshot.events_where(true, |r| !remap::known(r), &mut out.pad);
         self.remap.update(&self.snapshot, Instant::now(), out);
     }
 
-    /// A new keymap in force: applied at once while the game has the pad (what the old one held is
-    /// let go).
+    /// Puts a new keymap in force. It applies at once while the game has the pad, and what the old one
+    /// held is let go.
     pub fn set_keymap(&mut self, keymap: Keymap, out: &mut Out) {
         let live = self.route == PadRoute::Game;
         self.remap.set_keymap(keymap, &self.snapshot, live, out);
     }
 
-    /// A gyro sample: to the keymap while the game has the pad.
+    /// Handles a gyro sample, which goes to the keymap while the game has the pad.
     pub fn motion(&mut self, sample: Sample, out: &mut Out) {
         let dt = interval(self.gyro_at, sample.at);
         self.gyro_at = Some(sample.at);
-        // (Calibrated on every route: it learns at rest whatever the pad does.)
+        // Calibrate on every route, so it learns at rest whatever the pad does.
         let (rate, calibrated) = self.calibration.correct(sample.rate, dt);
         if let Some(ok) = calibrated {
             out.events.push(Event::GyroCalibrated(ok));
@@ -281,13 +287,14 @@ impl PadRouter {
         }
     }
 
-    /// Calibrates the gyro from its next samples (the device held still); [`Event::GyroCalibrated`]
+    /// Calibrates the gyro from its next samples, with the device held still. [`Event::GyroCalibrated`]
     /// says how it went.
     pub fn calibrate(&mut self) {
         self.calibration.ask();
     }
 
-    /// The controller is gone: whatever the route holds down outside the game's pad is let go.
+    /// Called when the controller is gone. Whatever the route holds down outside the game's pad is let
+    /// go.
     pub fn lose(&mut self, out: &mut Out) {
         match self.mapping(self.route) {
             Some(mapping) => mapping.release(out),
@@ -295,8 +302,8 @@ impl PadRouter {
         }
     }
 
-    /// The pad goes to `to`: the mapping it leaves lets go of what it holds, and the virtual pad is
-    /// blanked when leaving the game (or shows the controller again when coming back).
+    /// Moves the pad to route `to`. The mapping it leaves lets go of what it holds. The virtual pad is
+    /// blanked when the pad leaves the game, and shows the controller again when it comes back.
     pub fn set_route(&mut self, to: PadRoute, out: &mut Out) {
         let from = self.route;
         if from == to {
@@ -312,7 +319,8 @@ impl PadRouter {
         }
         self.route = to;
         if away(to) && !away(from) {
-            // (The keymap let go of its own outputs above; the rest as it is on the controller.)
+            // The keymap let go of its own outputs above. Blank the rest, which is as it is on the
+            // controller.
             self.snapshot.events_where(false, |r| !remap::known(r), &mut out.pad);
         } else if away(from) && !away(to) {
             self.enter_game(out);
@@ -320,9 +328,10 @@ impl PadRouter {
         log::info!("pad: {to:?}");
     }
 
-    /// Events that bring what the router holds to the controller as it is (`down`: its keys held,
-    /// `axes`: its axes' values), after the kernel dropped some of its events: what was let go meanwhile
-    /// is let go, what was pressed is pressed (Home's press before the others', its release after).
+    /// Events that bring what the router holds in line with the controller as it is, after the kernel
+    /// dropped some of its events. `down` is the keys held and `axes` the axes' values. What was let go in
+    /// the meantime is let go and what was pressed is pressed. Home's press comes before the others and
+    /// its release after.
     pub fn resync(&self, down: &[KeyCode], axes: &[(AbsoluteAxisCode, i32)], out: &mut Vec<Raw>) {
         let start = out.len();
         let mut held: Vec<KeyCode> = self.snapshot.keys.iter().chain(&self.taken).copied().collect();
@@ -371,7 +380,7 @@ impl PadRouter {
                 }
                 return;
             }
-            // Home, then Back: Guide while both are held (a game in front); Back isn't the keymap's
+            // Home, then Back, with a game in front, is Guide while both are held. Back isn't the keymap's
             // then.
             Some((code, Press::Down)) if held && code == BACK_KEY => {
                 self.taken.push(code);
@@ -383,7 +392,7 @@ impl PadRouter {
                 }
                 return;
             }
-            // Home with the D-pad up or down (a hat): a window between the screens.
+            // Home with the D-pad up or down, as a hat, moves a window between the screens.
             None if raw.as_abs().is_some_and(|(axis, _)| axis == AbsoluteAxisCode::ABS_HAT0Y) && (held || self.hat_taken) => {
                 let value = raw.as_abs().map_or(0, |(_, v)| v);
                 if self.hat_taken {
@@ -395,7 +404,7 @@ impl PadRouter {
                 }
                 return;
             }
-            // Home with B: Close window when let go soon, Quit once held (see the tick).
+            // Home with B closes the window if let go soon, and quits once held (see the tick).
             Some((KeyCode::BTN_EAST, Press::Down)) if held => {
                 self.home = Home::Held { combined: true };
                 self.taken.push(KeyCode::BTN_EAST);
@@ -408,13 +417,13 @@ impl PadRouter {
                 out.events.push(Event::Device(shortcut));
                 return;
             }
-            // Any other button with Home held: Home's too, the game sees neither it nor its release.
+            // Any other button with Home held is Home's too. The game sees neither it nor its release.
             Some((code, Press::Down)) if held => {
                 self.home = Home::Held { combined: true };
                 self.taken.push(code);
                 return;
             }
-            // (The D-pad's left and right too.)
+            // The same for the D-pad's left and right.
             None if held && raw.as_abs().is_some_and(|(axis, v)| axis == AbsoluteAxisCode::ABS_HAT0X && v != 0) => {
                 self.home = Home::Held { combined: true };
                 return;
@@ -422,8 +431,9 @@ impl PadRouter {
             _ => {}
         }
         self.snapshot.update(raw);
-        // The Back button away from the game: back on ClamShell's screens, nothing with the pad mouse or
-        // typing; while a keymap's edit screen listens, an input like the others (to remap it).
+        // Away from the game, the Back button means back on ClamShell's screens and nothing with the pad
+        // mouse or typing. While a keymap's edit screen listens, it is an input like the others, so it can
+        // be remapped.
         if let Some((code, press)) = key
             && code == BACK_KEY
             && matches!(self.route, PadRoute::Ui | PadRoute::Mouse | PadRoute::Keys)
@@ -457,8 +467,8 @@ impl PadRouter {
         }
     }
 
-    /// Ticks the mapping in force, and Home with B held long enough (its program quits); when to tick
-    /// next, if needed.
+    /// Ticks the mapping in force, and quits the program in front once Home with B is held long enough.
+    /// Returns when to tick next, if needed.
     pub fn tick(&mut self, now: Instant, out: &mut Out) -> Option<Instant> {
         if self.closing.is_some_and(|at| now >= at) {
             self.closing = None;
@@ -533,7 +543,7 @@ mod tests {
         assert_eq!(held(&out.mouse), vec![KeyCode::KEY_UP, KeyCode::BTN_LEFT]);
         r.set_route(PadRoute::Ui, &mut out);
         assert_eq!(held(&out.mouse), vec![], "no stuck keys");
-        // Back on the pad mouse: the trigger is still held, but counts only once pressed again.
+        // Back on the pad mouse, the trigger is still held, but it counts only once pressed again.
         r.set_route(PadRoute::Mouse, &mut out);
         r.event(Raw::abs(AbsoluteAxisCode::ABS_RZ, 1000), now, &mut out);
         assert_eq!(held(&out.mouse), vec![KeyCode::BTN_LEFT]);
@@ -588,7 +598,7 @@ mod tests {
 
     #[test]
     fn home_with_select_start_and_the_dpad_are_the_bottom_screens_and_the_game_sees_none() {
-        // (A controller with a D-pad hat.)
+        // A controller with a D-pad hat.
         let ranges = Ranges { stick: Range::STICK, trigger: Range { min: 0, max: 1023 } };
         let axes = vec![Axis { code: AbsoluteAxisCode::ABS_HAT0Y, value: 0, rest: 0 }];
         let mut out = Out::default();
@@ -600,7 +610,7 @@ mod tests {
             r.event(key(code, Press::Down), now, &mut out);
             r.event(key(code, Press::Up), now, &mut out);
         }
-        // The D-pad as a hat: down, centred, up, centred; then Home let go.
+        // The D-pad as a hat goes down, centred, up and centred, and then Home is let go.
         for v in [1, 0, -1, 0] {
             r.event(hat(v), now, &mut out);
             r.event(Raw::REPORT, now, &mut out);
@@ -612,10 +622,10 @@ mod tests {
             vec![device(DeviceKey::BottomView), device(DeviceKey::BottomPower), device(DeviceKey::WindowDown), device(DeviceKey::WindowUp)],
             "not Home as well"
         );
-        // (The game's pad has the D-pad as a hat.)
+        // The game's pad has the D-pad as a hat.
         let dpad = |pad: &[Raw]| pad.iter().any(|e| *e == Raw::abs(AbsoluteAxisCode::ABS_HAT0Y, 1) || *e == Raw::abs(AbsoluteAxisCode::ABS_HAT0Y, -1));
         assert!(!dpad(&out.pad), "the game saw no D-pad: {:?}", out.pad);
-        // Home let go while the D-pad is still down: the rest of that press is ClamShell's too.
+        // If Home is let go while the D-pad is still down, the rest of that press is ClamShell's too.
         out.events.clear();
         out.pad.clear();
         r.event(key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
@@ -636,14 +646,14 @@ mod tests {
         let (mut r, mut out) = router(PadRoute::Game);
         let now = Instant::now();
         let b = |out: &Out| out.pad.iter().any(|e| e.as_key().is_some_and(|(k, _)| k == KeyCode::BTN_EAST));
-        // Let go soon: Close window.
+        // Letting go soon closes the window.
         r.event(key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
         r.event(key(KeyCode::BTN_EAST, Press::Down), now, &mut out);
         assert_eq!(r.tick(now, &mut out), Some(now + QUIT_HOLD), "ticked at the hold's end");
         r.event(key(KeyCode::BTN_EAST, Press::Up), now + QUIT_HOLD / 2, &mut out);
         r.event(key(KeyCode::BTN_MODE, Press::Up), now + QUIT_HOLD / 2, &mut out);
         assert_eq!(out.events, vec![Event::Device(DeviceKey::CloseWindow)], "not Home as well");
-        // Held: Quit once the hold is reached; letting go then is nothing more.
+        // Holding quits once the hold is reached, and letting go after that does nothing more.
         out.events.clear();
         r.event(key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
         r.event(key(KeyCode::BTN_EAST, Press::Down), now, &mut out);
@@ -680,16 +690,16 @@ mod tests {
         assert!(out.pad.is_empty());
         r.event(key(BACK, Press::Down), t0, &mut out);
         assert_eq!(out.pad, vec![key(KeyCode::BTN_MODE, Press::Down), Raw::REPORT]);
-        // RB meanwhile is the game's (a Steam chord), not a screenshot.
+        // RB pressed in the meantime is the game's, as a Steam chord, not a screenshot.
         r.event(key(KeyCode::BTN_TR, Press::Down), t0, &mut out);
         assert_eq!(held(&out.pad), vec![KeyCode::BTN_TR, KeyCode::BTN_MODE]);
-        // Back let go first: Guide up; Home's release isn't Home; Back's release isn't the game's.
+        // Back let go first puts Guide up. Home's release isn't Home, and Back's release isn't the game's.
         r.event(key(BACK, Press::Up), t0, &mut out);
         assert_eq!(held(&out.pad), vec![KeyCode::BTN_TR]);
         r.event(key(KeyCode::BTN_MODE, Press::Up), t0, &mut out);
         assert!(out.events.is_empty(), "not Home: {:?}", out.events);
         assert!(!out.pad.iter().any(|e| e.as_key().is_some_and(|(k, _)| k == BACK)), "Back never reaches the game");
-        // Home let go first: Guide up, and Back's release after stays ours.
+        // Home let go first puts Guide up, and Back's release after that stays ours.
         out = Out::default();
         r.event(key(KeyCode::BTN_MODE, Press::Down), t0, &mut out);
         r.event(key(BACK, Press::Down), t0, &mut out);
@@ -715,7 +725,7 @@ mod tests {
             "A, pressed with Home held, never reaches the game: {:?}",
             out.pad
         );
-        // Pressed again after: the game's.
+        // Pressed again afterwards, it is the game's.
         r.event(key(KeyCode::BTN_SOUTH, Press::Down), t0, &mut out);
         assert_eq!(held(&out.pad), vec![KeyCode::BTN_SOUTH]);
         // Away from the game, Home then Back is neither Guide nor Home.
@@ -726,7 +736,7 @@ mod tests {
         r.event(key(BACK, Press::Up), t0, &mut out);
         r.event(key(KeyCode::BTN_MODE, Press::Up), t0, &mut out);
         assert!(out.events.is_empty() && out.pad.is_empty(), "{out:?}");
-        // Home alone, held long: Home on release.
+        // Home alone, held long, is Home on release.
         r.event(key(KeyCode::BTN_MODE, Press::Down), t0, &mut out);
         r.event(key(KeyCode::BTN_MODE, Press::Up), t0 + std::time::Duration::from_secs(2), &mut out);
         assert_eq!(out.events, vec![Event::Home]);
@@ -740,7 +750,7 @@ mod tests {
         r.event(key(BACK, Press::Up), Instant::now(), &mut out);
         assert_eq!(out.events, vec![Event::Pad(PadInput::Back)]);
         assert!(out.pad.is_empty());
-        // A keymap's edit screen listening: Back is an input to remap.
+        // While a keymap's edit screen listens, Back is an input to remap.
         let (mut r, mut out) = router(PadRoute::Listen);
         out.pad.clear();
         r.event(key(BACK, Press::Down), Instant::now(), &mut out);

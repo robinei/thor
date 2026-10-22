@@ -1,5 +1,5 @@
-//! Typing into the app in front with the pad (while the on-screen keyboard is open): the D-pad as
-//! arrows, A as Enter, B as Backspace, on the virtual mouse's keys.
+//! Typing into the app in front with the pad while the on-screen keyboard is open. The D-pad gives
+//! arrows, A gives Enter and B gives Backspace, on the virtual mouse's keys.
 
 use std::time::Instant;
 

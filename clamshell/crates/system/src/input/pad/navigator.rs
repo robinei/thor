@@ -1,5 +1,5 @@
-//! The pad driving ClamShell's screens ([`Event::Pad`]): buttons as they come, the D-pad and left stick
-//! as directions that repeat while held.
+//! The pad driving ClamShell's screens ([`Event::Pad`]). Buttons go through as they come, and the D-pad
+//! and left stick are directions that repeat while held.
 
 use std::time::{Duration, Instant};
 
@@ -9,12 +9,12 @@ use evdev::{AbsoluteAxisCode, KeyCode};
 use super::route::{Mapping, Out};
 use crate::os::evdev::{Press, Range, Raw};
 
-/// A direction held this long starts repeating, this often.
+/// A direction held for `REPEAT_AFTER` starts repeating every `REPEAT_EVERY`.
 const REPEAT_AFTER: Duration = Duration::from_millis(350);
 const REPEAT_EVERY: Duration = Duration::from_millis(90);
-/// The left stick counts as a direction past this (of full).
+/// The left stick counts as a direction past this fraction of full.
 const STICK_DIRECTION: f32 = 0.6;
-/// A trigger counts as pulled past this (of full).
+/// A trigger counts as pulled past this fraction of full.
 const TRIGGER_PULLED: f32 = 0.5;
 
 #[derive(Debug)]
@@ -34,7 +34,8 @@ impl Navigator {
         Navigator { stick_range, trigger_range, pulled: (false, false), hat: (0, 0), stick: (0.0, 0.0), held: None, next: None }
     }
 
-    /// A trigger's value: `Trigger` as it is pulled past [`TRIGGER_PULLED`] (not again until let go).
+    /// Handles a trigger's value. `Trigger` is sent as it is pulled past [`TRIGGER_PULLED`], and not again
+    /// until it is let go.
     fn trigger(&mut self, right: bool, v: i32, out: &mut Out) {
         let pulled = self.trigger_range.unit(v) >= TRIGGER_PULLED;
         let was = if right { &mut self.pulled.1 } else { &mut self.pulled.0 };
@@ -44,7 +45,7 @@ impl Navigator {
         *was = pulled;
     }
 
-    /// The direction held now: the D-pad's, else the stick's (its larger axis).
+    /// The direction held now: the D-pad's, or else the stick's along its larger axis.
     fn direction(&self) -> Option<PadInput> {
         let from = |(x, y): (f32, f32), threshold: f32| match (x.abs() >= y.abs(), x, y) {
             (true, x, _) if x <= -threshold => Some(PadInput::Left),
@@ -56,8 +57,8 @@ impl Navigator {
         from((self.hat.0 as f32, self.hat.1 as f32), 0.5).or_else(|| from(self.stick, STICK_DIRECTION))
     }
 
-    /// A button's meaning: A down and up (it is held like a press); the others when pressed (not on
-    /// release or autorepeat).
+    /// A button's meaning. A is sent going down and up, since it is held like a press. The others are sent
+    /// when pressed, not on release or autorepeat.
     fn button(key: KeyCode, press: Press) -> Option<PadInput> {
         match (key, press) {
             (KeyCode::BTN_SOUTH, Press::Down | Press::Up) => Some(PadInput::A(press == Press::Down)),
@@ -98,7 +99,7 @@ impl Mapping for Navigator {
         }
     }
 
-    /// Repeats a held direction when due; ticks wanted while one is held.
+    /// Repeats a held direction when due. Ticks are wanted while one is held.
     fn tick(&mut self, now: Instant, out: &mut Out) -> Option<Instant> {
         let (Some(direction), Some(next)) = (self.held, self.next) else {
             return None;
@@ -110,7 +111,7 @@ impl Mapping for Navigator {
         self.next
     }
 
-    /// Nothing is held down outside ClamShell: only the directions are forgotten.
+    /// Nothing is held down outside ClamShell, so only the directions are forgotten.
     fn release(&mut self, _: &mut Out) {
         *self = Navigator::new(self.stick_range, self.trigger_range);
     }
@@ -137,7 +138,7 @@ mod tests {
         out.events.clear();
         nav.event(Raw::abs(AbsoluteAxisCode::ABS_HAT0Y, 0), t0, &mut out);
         assert_eq!(nav.tick(t0 + Duration::from_secs(5), &mut out), None);
-        // The stick past its threshold, sideways.
+        // The stick pushed sideways past its threshold.
         nav.event(Raw::abs(AbsoluteAxisCode::ABS_X, 30000), t0, &mut out);
         nav.event(Raw::abs(AbsoluteAxisCode::ABS_X, 0), t0, &mut out);
         for (code, press) in [
@@ -152,7 +153,7 @@ mod tests {
             nav.event(Raw::key(code, press), t0, &mut out);
         }
         assert_eq!(out.events, pad(&[PadInput::Right, PadInput::A(true), PadInput::A(false), PadInput::B, PadInput::Switch, PadInput::Shoulder(1)]));
-        // A trigger pulled past half: once, until let go.
+        // A trigger pulled past half counts once, until it is let go.
         out.events.clear();
         for v in [100, 200, 250, 30, 220] {
             nav.event(Raw::abs(AbsoluteAxisCode::ABS_RZ, v), t0, &mut out);

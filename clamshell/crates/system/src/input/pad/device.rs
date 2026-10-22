@@ -1,5 +1,5 @@
-//! The real controller and our virtual devices: a pad identified as an Xbox 360 controller (for games)
-//! and a mouse with a keyboard's keys (the pad mouse, typing, what a keymap presses).
+//! The real controller and our virtual devices: a pad identified as an Xbox 360 controller for games,
+//! and a mouse with a keyboard's keys for the pad mouse, typing and what a keymap presses.
 
 use std::io;
 
@@ -13,11 +13,12 @@ use crate::os::evdev::device::{self, DeviceSpec};
 use crate::os::evdev::{Press, Range, Raw, keyset};
 
 const VIRTUAL_PAD: &str = "clamshell pad (Xbox 360)";
-/// The virtual pad's USB ids: a wired Xbox 360 controller's.
+/// The virtual pad's USB ids, which are a wired Xbox 360 controller's.
 pub const VIRTUAL_IDS: (u16, u16) = (0x045e, 0x028e);
 const VIRTUAL_MOUSE: &str = "clamshell pad mouse";
 
-/// The configured controller, or the first device with gamepad buttons and two sticks (not our own).
+/// The configured controller, or else the first device other than our own with gamepad buttons and two
+/// sticks.
 pub fn find(spec: &DeviceSpec) -> io::Result<RawDevice> {
     let gamepad = |d: &RawDevice| {
         d.supported_keys().is_some_and(|k| k.contains(KeyCode::BTN_SOUTH)) && d.supported_absolute_axes().is_some_and(|a| a.contains(AbsoluteAxisCode::ABS_RX))
@@ -25,8 +26,8 @@ pub fn find(spec: &DeviceSpec) -> io::Result<RawDevice> {
     device::open(spec, "controller", gamepad, &[VIRTUAL_PAD])
 }
 
-/// The device the Thor's AYN button is on (its GPIO keys), read alongside the controller for that one
-/// key. Not grabbed: other keys on it go where they would.
+/// The device the Thor's AYN button is on, its GPIO keys. It is read alongside the controller for that one
+/// key. It isn't grabbed, so other keys on it go where they would.
 pub struct AynKey {
     device: RawDevice,
 }
@@ -50,7 +51,7 @@ impl AynKey {
         &self.device
     }
 
-    /// Appends the AYN button's presses waiting, each with its report.
+    /// Appends the AYN button's waiting presses, each with its report.
     pub fn fetch(&mut self, out: &mut Vec<Raw>) -> io::Result<()> {
         match self.device.fetch_events() {
             Ok(events) => {
@@ -65,15 +66,15 @@ impl AynKey {
     }
 }
 
-/// A controller's buttons and axes (each with its range and current value).
+/// A controller's buttons and axes, each axis with its range and current value.
 #[derive(Debug, Clone)]
 pub struct Capabilities {
     pub keys: Vec<KeyCode>,
     pub axes: Vec<(AbsoluteAxisCode, AbsInfo)>,
 }
 
-/// The same buttons and axes with the same ranges: the axes' current values don't count (a controller
-/// back with a stick a little off is the same controller).
+/// Equal means the same buttons and axes with the same ranges. The axes' current values don't count, so
+/// a controller that comes back with a stick a little off is the same controller.
 impl PartialEq for Capabilities {
     fn eq(&self, other: &Self) -> bool {
         let shape = |(code, a): &(AbsoluteAxisCode, AbsInfo)| (*code, a.minimum(), a.maximum(), a.fuzz(), a.flat(), a.resolution());
@@ -115,13 +116,15 @@ fn rest(axis: &AbsInfo) -> i32 {
     if axis.minimum() < 0 { 0 } else { axis.minimum() }
 }
 
-/// The virtual devices, kept across the controller's comings and goings (an unplug, an error), so games
-/// never see their pad go: made for the first controller, made again only for one with other buttons.
+/// The virtual devices, kept while the controller comes and goes through an unplug or an error, so games
+/// never see their pad go. They are made for the first controller, and made again only for one with
+/// other buttons or axes.
 pub struct VirtualDevices {
     pub made_for: Capabilities,
     pub pad: VirtualDevice,
     pub mouse: VirtualDevice,
-    /// The pad untouched: every button up, every axis at rest (shown while no controller is there).
+    /// The untouched pad, with every button up and every axis at rest. It is shown while no controller is
+    /// there.
     neutral: Vec<Raw>,
 }
 
@@ -133,16 +136,17 @@ impl VirtualDevices {
         Ok(VirtualDevices { pad: virtual_pad(&caps)?, mouse: virtual_mouse()?, made_for: caps, neutral })
     }
 
-    /// The controller is gone: the virtual pad stays, at rest.
+    /// Puts the virtual pad at rest when the controller is gone. The pad itself stays.
     pub fn rest(&mut self) -> io::Result<()> {
         emit(&mut self.pad, &self.neutral)
     }
 }
 
-/// Whether the controller (by its name and physical path) is driven by xpad or rsinput (the Thor's own
-/// pad), which name their face buttons' codes by an Xbox pad's letters (the left one sends BTN_X: the code
-/// Linux calls BTN_NORTH; PB-OS found rsinput's top one sending BTN_WEST, BTN_Y) rather than by their
-/// place, as Linux has it (BTN_WEST the left one, BTN_NORTH the top one) and ClamShell does.
+/// Whether the controller, found by its name and physical path, is driven by xpad or by rsinput, the
+/// Thor's own pad. These drivers give the face buttons' codes by an Xbox pad's letters rather than by
+/// place. The left button sends BTN_X, which is the code Linux calls BTN_NORTH, and PB-OS found rsinput's
+/// top button sending BTN_WEST, which is BTN_Y. Linux and ClamShell go by place: BTN_WEST is the left
+/// button and BTN_NORTH the top one.
 pub fn letter_codes(name: &str, phys: &str) -> bool {
     let inputs = match std::fs::read_dir("/sys/class/input") {
         Ok(inputs) => inputs,
@@ -162,9 +166,9 @@ pub fn letter_codes(name: &str, phys: &str) -> bool {
     })
 }
 
-/// X and Y between the two conventions (the same swap either way): in, a [`letter_codes`] controller's
-/// events to ClamShell's; out, ClamShell's to the virtual pad's, which games read as an Xbox 360 pad's
-/// (xpad's: by letter).
+/// Swaps X and Y between the two conventions. The swap is the same either way. Coming in, it turns a
+/// [`letter_codes`] controller's events into ClamShell's. Going out, it turns ClamShell's into the
+/// virtual pad's, which games read as an Xbox 360 pad's, by letter as xpad does.
 pub fn swap_xy(events: &mut [Raw]) {
     for e in events.iter_mut().filter(|e| e.kind == evdev::EventType::KEY) {
         e.code = swap_key(KeyCode(e.code)).0;
@@ -189,16 +193,17 @@ pub fn emit(device: &mut VirtualDevice, events: &[Raw]) -> io::Result<()> {
 /// The D-pad's buttons, on controllers that have it as buttons.
 const DPAD_KEYS: [KeyCode; 4] = [KeyCode::BTN_DPAD_UP, KeyCode::BTN_DPAD_DOWN, KeyCode::BTN_DPAD_LEFT, KeyCode::BTN_DPAD_RIGHT];
 
-/// The real pad's keys the virtual one has: all but Back (an input of keymaps, nothing as on the pad)
-/// and the D-pad's buttons (its D-pad is a hat, as an Xbox 360 pad's: SDL takes a pad with both for one
-/// whose D-pad is its buttons, and finds none); and Guide (the AYN button as on the pad; home's with
-/// Back) though the controller has none.
+/// The real pad's keys that the virtual one has. That is all of them except Back, which is a keymap input
+/// that does nothing as on the pad, and the D-pad's buttons. The virtual D-pad is a hat, as on an Xbox 360
+/// pad, because SDL takes a pad with both for one whose D-pad is its buttons, and finds none. Guide is
+/// added even if the controller has none, for the AYN button as on the pad and for Home with Back.
 fn pad_keys(caps: &Capabilities) -> impl Iterator<Item = KeyCode> + '_ {
     let guide = (!caps.keys.contains(&KeyCode::BTN_MODE)).then_some(KeyCode::BTN_MODE);
     caps.keys.iter().copied().filter(|&k| k != BACK_KEY && !DPAD_KEYS.contains(&k)).chain(guide)
 }
 
-/// The real pad's axes the virtual one has: all, and the D-pad's hat though the controller has none.
+/// The real pad's axes that the virtual one has: all of them, plus the D-pad's hat even if the controller
+/// has none.
 fn pad_axes(caps: &Capabilities) -> Vec<(AbsoluteAxisCode, AbsInfo)> {
     let mut axes = caps.axes.clone();
     for hat in [AbsoluteAxisCode::ABS_HAT0X, AbsoluteAxisCode::ABS_HAT0Y] {
@@ -212,7 +217,8 @@ fn pad_axes(caps: &Capabilities) -> Vec<(AbsoluteAxisCode, AbsInfo)> {
 /// A pad with the real one's buttons and axes, identified as a wired Xbox 360 controller so SDL, Wine
 /// and Steam map it without configuration.
 fn virtual_pad(caps: &Capabilities) -> io::Result<VirtualDevice> {
-    // Rumble, as an Xbox 360 pad has it (games' effects come back on its file, read without blocking).
+    // Rumble, as an Xbox 360 pad has it. Games' effects come back on its file, which is read without
+    // blocking.
     let ff: AttributeSet<FFEffectCode> = [FFEffectCode::FF_RUMBLE].into_iter().collect();
     let mut builder = VirtualDevice::builder()?
         .name(VIRTUAL_PAD)

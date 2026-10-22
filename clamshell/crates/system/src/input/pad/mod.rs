@@ -1,17 +1,28 @@
-//! The controller path: the real Xbox-style controller is grabbed for good, and games get a virtual Xbox 360
-//! pad that is always there. Where its events go is the state's choice ([`PadRoute`], see [`route`]): the
-//! game, through the keymap in force ([`remap`]: the virtual pad, keys and mouse buttons on the virtual
-//! mouse's keyboard, the pointer; a stick's or trigger's tuning, such as its deadzone, is the keymap's); the
-//! pad mouse ([`mouse`]); ClamShell's screens ([`navigator`]); typing into an app ([`typing`]); or a keymap's
-//! edit screen listening ([`listen`]). The gyro comes from a motion sensor next to the controller
-//! ([`motion`]). Away from the game the virtual pad shows a neutral controller, so games never see it
-//! disappear. The home button (BTN_MODE) is ours: it goes to the program as [`Event::Home`]; held, then the
-//! Back button with a game in front, it is the game's Guide (see [`route`]). The Back button
-//! ([`remap::BACK_KEY`]) is a keymap's input in the game, back on ClamShell's screens; the AYN button
-//! ([`remap::AYN_KEY`], on the Thor's GPIO keys, read alongside the controller: [`device::AynKey`]) a
-//! keymap's input in the game too, Guide as on the pad. The virtual devices outlive the controller: unplugged
-//! (or failing), the pad stays, at rest, until one is back. Games' rumble on the virtual pad reaches the real
-//! controller's motors while the game has the pad ([`rumble`]), scaled by the Rumble setting.
+//! The controller path. The real Xbox-style controller is grabbed for good, and games get a virtual Xbox
+//! 360 pad that is always there.
+//!
+//! Where the controller's events go is the state's choice ([`PadRoute`], see [`route`]):
+//!
+//! - the game, through the keymap in force ([`remap`]). That means the virtual pad, keys and mouse
+//!   buttons on the virtual mouse's keyboard, and the pointer. A stick's or trigger's tuning, such as its
+//!   deadzone, is part of the keymap.
+//! - the pad mouse ([`mouse`]);
+//! - ClamShell's screens ([`navigator`]);
+//! - typing into an app ([`typing`]);
+//! - a keymap's edit screen, listening for an input ([`listen`]).
+//!
+//! The gyro comes from a motion sensor next to the controller ([`motion`]). Away from the game the
+//! virtual pad shows a neutral controller, so games never see it disappear.
+//!
+//! The home button (BTN_MODE) is ours and goes to the program as [`Event::Home`]. Holding it and then
+//! pressing Back with a game in front gives the game's Guide (see [`route`]). The Back button
+//! ([`remap::BACK_KEY`]) is a keymap input in the game and means back on ClamShell's screens. The AYN
+//! button ([`remap::AYN_KEY`]) is on the Thor's GPIO keys and is read alongside the controller
+//! ([`device::AynKey`]). It is also a keymap input in the game, and Guide by default, as on the pad.
+//!
+//! The virtual devices outlive the controller. If it is unplugged or fails, the pad stays, at rest,
+//! until a controller is back. Games' rumble on the virtual pad reaches the real controller's motors
+//! while the game has the pad ([`rumble`]), scaled by the Rumble setting.
 
 mod calibrate;
 mod device;
@@ -49,43 +60,45 @@ use rumble::{Buzz, Effects, Rumble};
 
 pub use route::{Mapping, PadSnapshot};
 
-/// How often a missing controller is looked for besides whenever /dev/input changes (a device plugged in,
-/// [`Command::Look`]); every second if /dev/input can't be watched.
+/// How often a missing controller is looked for, besides whenever /dev/input changes because a device was
+/// plugged in ([`Command::Look`]). If /dev/input can't be watched, it is every second.
 const RETRY: Duration = Duration::from_secs(30);
 const RETRY_UNWATCHED: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone)]
 pub enum Command {
     Route(PadRoute),
-    /// The keymap in force (Default: no bindings).
+    /// The keymap in force. Default has no bindings.
     Keymap(Box<Keymap>),
     /// Calibrate the gyro from its next samples.
     CalibrateGyro,
     /// The Rumble setting in force: 0 off, 1 low, 2 mid, 3 full.
     Rumble(RumbleStrength),
-    /// /dev/input changed: a missing controller is looked for again (the supervisor tries again after
-    /// any command).
+    /// /dev/input changed, so a missing controller is looked for again. The supervisor tries again after
+    /// any command.
     Look,
-    /// The system is about to sleep: the gyro's stream closed (its source dropped), then the
-    /// acknowledgement ([`crate::power::sleep::spawn_hold`]).
+    /// The system is about to sleep. The gyro's stream is closed by dropping its source, and then the
+    /// command is acknowledged ([`crate::power::sleep::spawn_hold`]).
     Sleep(Ack),
-    /// Awake again: the gyro found again.
+    /// The system is awake again, so the gyro is found again.
     Woke,
-    /// Calibrate the controller's sticks (see [`calibrate`]): its progress and end go to the state.
+    /// Calibrate the controller's sticks (see [`calibrate`]). The progress and the end go to the state.
     CalibrateSticks,
-    /// The sticks' calibrations, by controller (at start; one made here is kept here too).
+    /// The sticks' calibrations, by controller. They are sent at start, and a calibration made here is
+    /// kept here too.
     Sticks(clamshell_core::device::sticks::Calibrations),
 }
 
-/// A command's acknowledgement: sent once the command is carried out.
+/// A command's acknowledgement, sent once the command is carried out.
 #[derive(Debug, Clone)]
 pub struct Ack(pub std::sync::mpsc::Sender<()>);
 
 lost_on!(io::Error);
 
-/// The grabbed controller's USB ids (vendor, product), for what is launched: SDL programs are told to
-/// ignore it (`SDL_GAMECONTROLLER_IGNORE_DEVICES`, as Steam does), so they take the virtual pad, not the
-/// controller (grabbed: silent to them). mpv opens one controller only, the first it finds.
+/// The grabbed controller's USB ids (vendor, product), for what is launched. SDL programs are told to
+/// ignore it with `SDL_GAMECONTROLLER_IGNORE_DEVICES`, as Steam does, so they take the virtual pad rather
+/// than the controller, which is grabbed and so silent to them. mpv, for one, opens only the first
+/// controller it finds.
 #[derive(Debug, Clone, Default)]
 pub struct Taken(Arc<Mutex<Option<(u16, u16)>>>);
 
@@ -94,16 +107,17 @@ impl Taken {
         *crate::os::lock(&self.0) = Some(ids);
     }
 
-    /// A launch's variable for it, if a controller was grabbed (and it isn't the virtual pad's ids:
-    /// ignoring those would hide the virtual pad too).
+    /// The variable for a launch, if a controller was grabbed. It is left out if the controller has the
+    /// virtual pad's ids, since ignoring those would hide the virtual pad too.
     pub fn env(&self) -> Option<(String, String)> {
         let (vendor, product) = (*crate::os::lock(&self.0))?;
         ((vendor, product) != device::VIRTUAL_IDS).then(|| ("SDL_GAMECONTROLLER_IGNORE_DEVICES".to_owned(), format!("0x{vendor:04x}/0x{product:04x}")))
     }
 }
 
-/// Owns the controller whenever one is connected (`spec`: CLAMSHELL_GAMEPAD), with its ids in `taken`.
-/// Without one it looks again when /dev/input changes, and every [`RETRY`] besides.
+/// Owns the controller whenever one is connected, with its ids in `taken`. `spec` comes from
+/// CLAMSHELL_GAMEPAD. Without a controller it looks again when /dev/input changes, and also every
+/// [`RETRY`].
 pub fn spawn(spec: DeviceSpec, taken: Taken, sink: impl Sink) -> io::Result<Worker<Command>> {
     let watched = crate::input::watch::devices_watch();
     let retry = if watched.is_some() { RETRY } else { RETRY_UNWATCHED };
@@ -146,7 +160,7 @@ pub fn spawn(spec: DeviceSpec, taken: Taken, sink: impl Sink) -> io::Result<Work
 
 /// What the pad thread keeps across the controller's comings and goings.
 struct PadThread<S> {
-    /// Rung by its commands: waited on with the controller.
+    /// Rung by the thread's commands, and waited on together with the controller.
     bell: Bell,
     spec: DeviceSpec,
     taken: Taken,
@@ -157,7 +171,7 @@ struct PadThread<S> {
     /// Games' rumble effects on the virtual pad, and the Rumble setting.
     effects: Effects,
     rumble_setting: RumbleStrength,
-    /// The keymap's buzz playing, until when.
+    /// The keymap's buzz that is playing, and when it ends.
     buzz: Option<(Buzz, Instant)>,
     /// The sticks' calibrations, by controller.
     sticks: clamshell_core::device::sticks::Calibrations,
@@ -173,16 +187,18 @@ struct Controller {
     ayn: Option<AynKey>,
     /// Its motors, if it has force feedback.
     rumble: Option<Rumble>,
-    /// Its X and Y codes are by letter (xpad's, rsinput's), not by place: swapped as they come in.
+    /// Whether its X and Y codes are by letter, as with xpad and rsinput, rather than by place. If so
+    /// they are swapped as they come in.
     letters: bool,
     /// Its name and physical path, to find its gyro again after sleep.
     name: String,
     phys: String,
-    /// Its sticks: their calibration, one going.
+    /// Its sticks: their calibration, and any calibration in progress.
     sticks: calibrate::StickState,
 }
 
-/// The gyro of the controller named `name` at `phys`: its own motion sensor, else the Thor's sensor hub.
+/// The gyro of the controller named `name` at `phys`: its own motion sensor, or else the Thor's sensor
+/// hub.
 fn find_motion(name: &str, phys: &str) -> Option<Box<dyn MotionSource>> {
     EvdevMotion::find(name, phys)
         .map(|m| Box::new(m) as Box<dyn MotionSource>)
@@ -208,20 +224,20 @@ impl<S: Sink> PadThread<S> {
             Command::Rumble(setting) => self.rumble_setting = setting,
             Command::CalibrateGyro => match router {
                 Some((router, _)) => router.calibrate(),
-                // (No controller: no gyro to calibrate.)
+                // Without a controller there is no gyro to calibrate.
                 None => log::info!("pad: no controller to calibrate the gyro of"),
             },
-            // (Looking is the supervisor's, after the command; with a controller, nothing to do.)
+            // The supervisor does the looking, after the command. With a controller there is nothing to do.
             Command::Look => {}
-            // (No controller, no gyro: nothing to close or find; a controller with one takes these in
-            // route_events.)
+            // Without a controller there is no gyro to close or find. With a controller, these are handled
+            // in route_events.
             Command::Sleep(Ack(done)) => {
                 if done.send(()).is_err() {
                     log::debug!("pad: sleep no longer waits for the pad");
                 }
             }
             Command::Woke => {}
-            // (No controller: nothing to calibrate.)
+            // Without a controller there is nothing to calibrate.
             Command::CalibrateSticks => {
                 log::info!("pad: no controller to calibrate the sticks of");
                 if self.sink.send(Event::Sticks(SticksEvent::Done(String::new(), None))).is_err() {
@@ -232,7 +248,7 @@ impl<S: Sink> PadThread<S> {
         }
     }
 
-    /// Sends what the router made of the controller's events: to the virtual devices and the state.
+    /// Sends what the router made of the controller's events to the virtual devices and the state.
     fn emit(&mut self, out: &mut Out) -> Result<(), Ended<io::Error>> {
         for event in out.events.drain(..) {
             self.sink.send(event)?;
@@ -241,7 +257,7 @@ impl<S: Sink> PadThread<S> {
             return Err(Ended::Lost(io::Error::other("no virtual devices")));
         };
         if !out.pad.is_empty() {
-            // (Games read it as an Xbox 360 pad: X and Y by letter.)
+            // Games read it as an Xbox 360 pad, with X and Y by letter.
             device::swap_xy(&mut out.pad);
             device::emit(&mut devices.pad, &out.pad)?;
             out.pad.clear();
@@ -260,10 +276,10 @@ impl<S: Sink> Service for PadThread<S> {
     type Error = io::Error;
     const NAME: &'static str = "pad";
 
-    /// Finds the controller, (re)makes the virtual devices if it differs from the one they were made
-    /// for, and grabs it.
+    /// Finds the controller and grabs it. The virtual devices are made again if the controller differs
+    /// from the one they were made for.
     fn connect(&mut self) -> io::Result<Controller> {
-        // (Games wait for their rumble uploads to be answered, controller or not.)
+        // Games wait for their rumble uploads to be answered, whether there is a controller or not.
         self.serve_effects(Instant::now());
         let mut real = device::find(&self.spec)?;
         let id = real.input_id();
@@ -295,13 +311,14 @@ impl<S: Sink> Service for PadThread<S> {
         Ok(Controller { grabbed, ranges, snapshot, motion, ayn: AynKey::find(), rumble, letters, name, phys, sticks })
     }
 
-    /// Routes the controller's events until it is gone (or the program is).
+    /// Routes the controller's events until it, or the program, is gone.
     fn run_while_up(&mut self, c: Controller, commands: &Receiver<Command>) -> Result<(), Ended<io::Error>> {
         let mut c = c;
         let mut out = Out::default();
         let mut router = PadRouter::new(c.ranges, std::mem::take(&mut c.snapshot), self.route, self.keymap.clone(), &mut out);
         let result = self.route_events(&mut c, &mut router, &mut out, commands);
-        // (A calibration going when the controller went: given up, said so, so the state doesn't wait on it.)
+        // A calibration in progress when the controller went is given up, and the state is told so it
+        // doesn't wait for it.
         if c.sticks.calibrating() && self.sink.send(Event::Sticks(SticksEvent::Done(c.name.clone(), None))).is_err() {
             log::debug!("pad: the UI is gone");
         }
@@ -310,7 +327,8 @@ impl<S: Sink> Service for PadThread<S> {
         {
             log::debug!("pad: stopping the rumble of {}: {e}", c.name);
         }
-        // Gone (or failing): what the route held on the keyboard and mouse is let go.
+        // The controller is gone or failing, so whatever the route held on the keyboard and mouse is let
+        // go.
         router.lose(&mut out);
         if let Err(e) = self.emit(&mut out) {
             log::warn!("pad: letting go: {e:?}");
@@ -323,7 +341,7 @@ impl<S: Sink> Service for PadThread<S> {
         Ok(())
     }
 
-    /// The controller is gone: the virtual pad stays, at rest.
+    /// The controller is gone. The virtual pad stays, at rest.
     fn lost(&mut self, _: &io::Error) -> Result<(), Closed> {
         if let Some(devices) = self.devices.as_mut()
             && let Err(e) = devices.rest()
@@ -338,7 +356,8 @@ impl<S: Sink> Service for PadThread<S> {
         e.kind() == io::ErrorKind::NotFound
     }
 
-    /// Games' rumble uploads to the virtual pad are answered meanwhile: a game waits for each.
+    /// Waits for a command, answering games' rumble uploads to the virtual pad in the meantime, since a
+    /// game waits for each.
     fn wait_while_down(&mut self, commands: &Receiver<Command>, retry: Duration) -> Next<Command> {
         let until = Instant::now() + retry;
         loop {
@@ -367,15 +386,15 @@ impl<S: Sink> Service for PadThread<S> {
     }
 }
 
-/// The controller's events and gyro samples since the last read, into `raws` and `samples`: events the
-/// kernel dropped replaced by the controller as it is now, the letters swapped where the controller has
-/// them the other way, the sticks through their calibration, the AYN button's. A gyro or AYN button that
-/// fails is left out; the controller goes on.
+/// Reads the controller's events and gyro samples since the last read into `raws` and `samples`. If the
+/// kernel dropped events, they are replaced by the controller's current state. The letters are swapped
+/// where the controller has them the other way, the sticks go through their calibration, and the AYN
+/// button's events are added. A gyro or AYN button that fails is left out, and the controller goes on.
 fn read_controller(c: &mut Controller, router: &mut PadRouter, raws: &mut Vec<Raw>, samples: &mut Vec<Sample>) -> io::Result<()> {
     let from = raws.len();
     if c.grabbed.fetch(raws)? {
         raws.truncate(from);
-        // (The axes raw: sticks.take below corrects what resync gives, as any event.)
+        // The axes are raw. sticks.take below corrects what resync gives, as it does any event.
         let (mut down, axes) = c.grabbed.state()?;
         if c.letters {
             down.iter_mut().for_each(|k| *k = device::swap_key(*k));
@@ -385,7 +404,7 @@ fn read_controller(c: &mut Controller, router: &mut PadRouter, raws: &mut Vec<Ra
     } else if c.letters {
         device::swap_xy(raws.get_mut(from..).unwrap_or_default());
     }
-    // (The sticks through their calibration; while one goes, its alone.)
+    // The sticks go through their calibration. While a calibration is in progress, they go only to it.
     c.sticks.take(raws);
     if let Some(a) = c.ayn.as_mut()
         && let Err(e) = a.fetch(raws)
@@ -402,8 +421,8 @@ fn read_controller(c: &mut Controller, router: &mut PadRouter, raws: &mut Vec<Ra
     Ok(())
 }
 
-/// Waits (up to `timeout`, if given) for the controller's, the gyro's, the AYN button's or the virtual
-/// pad's (rumble) events, or a command (the bell).
+/// Waits, up to `timeout` if given, for events from the controller, the gyro, the AYN button or the
+/// virtual pad's rumble, or for a command through the bell.
 fn wait(
     pad: &Grabbed,
     motion: Option<&dyn MotionSource>,
@@ -433,7 +452,7 @@ fn wait(
 }
 
 impl<S: Sink> PadThread<S> {
-    /// Routes the controller's (and the gyro's) events until it is gone (or the program is).
+    /// Routes the controller's and the gyro's events until the controller, or the program, is gone.
     fn route_events(&mut self, c: &mut Controller, router: &mut PadRouter, out: &mut Out, commands: &Receiver<Command>) -> Result<(), Ended<io::Error>> {
         let mut raws = Vec::new();
         let mut samples: Vec<Sample> = Vec::new();
@@ -456,22 +475,24 @@ impl<S: Sink> PadThread<S> {
                 router.motion(sample, out);
             }
             let ticked = router.tick(now, out);
-            // A calibration going: fed, its progress and end told, looked at again soon.
+            // A calibration in progress is fed, its progress and end are sent, and it is looked at again
+            // soon.
             let (said, again) = c.sticks.step(now);
             self.calibration_said(said, &c.name)?;
-            // Games' rumble, on the controller while the game has the pad, with the keymap's buzzes.
+            // Games' rumble goes to the controller while the game has the pad, along with the keymap's
+            // buzzes.
             self.rumble(&mut c.rumble, out, now);
             wake = [ticked, again, self.effects.next_end(), self.buzz.map(|(_, until)| until)].into_iter().flatten().min();
             self.emit(out)?;
         }
     }
 
-    /// The commands waiting, carried out (the controller's own here, the rest by [`PadThread::apply`]);
-    /// false once the commands' sender is gone.
+    /// Carries out the waiting commands. Those about the controller are handled here and the rest by
+    /// [`PadThread::apply`]. Returns false once the commands' sender is gone.
     fn take_commands(&mut self, c: &mut Controller, router: &mut PadRouter, out: &mut Out, commands: &Receiver<Command>) -> bool {
         loop {
             match commands.try_recv() {
-                // (The gyro closed before sleep, its stream with it, and found again after.)
+                // The gyro, and its stream, is closed before sleep and found again after.
                 Ok(Command::Sleep(Ack(done))) => {
                     if c.motion.take().is_some() {
                         log::info!("pad: the gyro closed for sleep");
@@ -500,7 +521,7 @@ impl<S: Sink> PadThread<S> {
         }
     }
 
-    /// What a stick calibration said, sent on; a calibration made is kept for the controller.
+    /// Sends on what a stick calibration said. A finished calibration is kept for the controller.
     fn calibration_said(&mut self, said: Option<calibrate::Said>, name: &str) -> Result<(), Closed> {
         match said {
             Some(calibrate::Said::Progress(p)) => self.sink.send(Event::Sticks(SticksEvent::Progress(p))),
@@ -515,15 +536,15 @@ impl<S: Sink> PadThread<S> {
         }
     }
 
-    /// The controller's motors: games' rumble while the game has the pad, and the keymap's buzzes, at
-    /// the Rumble setting's strength. A controller whose rumble fails is left without.
+    /// Drives the controller's motors with games' rumble while the game has the pad, and with the
+    /// keymap's buzzes, at the Rumble setting's strength. A controller whose rumble fails is left without.
     fn rumble(&mut self, rumble: &mut Option<Rumble>, out: &mut Out, now: Instant) {
         self.serve_effects(now);
         if let Some(buzz) = out.buzz.take() {
             self.buzz = Some((buzz, now + Buzz::LENGTH));
         }
         self.buzz = self.buzz.filter(|(_, until)| now < *until);
-        // (Effects that ended are let go whatever the route, so the next end is never past.)
+        // Effects that ended are let go whatever the route, so the next end is never in the past.
         let games = self.effects.level(now);
         let (strong, weak) = rumble::mix(games, self.route == PadRoute::Game, self.buzz.map(|(b, _)| b.level()), self.rumble_setting);
         if let Some(r) = rumble.as_mut()

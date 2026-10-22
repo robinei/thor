@@ -1,9 +1,11 @@
 //! Rumble: what games ask of the virtual pad's force feedback, played on the real controller's motors.
-//! A game uploads rumble effects to the virtual pad (each a strong and a weak motor's strength and how
-//! long it lasts) and plays and stops them; the virtual pad answers the uploads ([`Effects::serve`]: a
-//! game waits for that, so it is done whether or not a controller is there) and keeps what is playing.
-//! The real controller, if it has force feedback, gets one effect of its own, set to the strongest of
-//! those playing ([`Effects::level`]), scaled by the Rumble setting ([`scale`]).
+//!
+//! A game uploads rumble effects to the virtual pad, each with a strength for the strong and the weak
+//! motor and a length, and then plays and stops them. The virtual pad answers the uploads
+//! ([`Effects::serve`]) and keeps track of what is playing. A game waits for the answer, so this is done
+//! whether or not a controller is there. The real controller, if it has force feedback, gets one effect
+//! of its own, set to the strongest of those playing ([`Effects::level`]) and scaled by the Rumble
+//! setting ([`scale`]).
 
 use std::io;
 use std::time::{Duration, Instant};
@@ -13,8 +15,8 @@ use evdev::raw_stream::RawDevice;
 use evdev::uinput::VirtualDevice;
 use evdev::{EventSummary, FFEffect, FFEffectCode, FFEffectData, FFEffectKind, FFReplay, FFTrigger, InputEvent, UInputCode};
 
-/// A short buzz of the controller's own (not a game's): a layer that stays on came on (or was armed),
-/// or the pad is back in the layers beneath (one went off, or was used).
+/// A short buzz of the controller's own, not a game's. `On` means a layer that stays on came on or was
+/// armed. `Off` means the pad is back in the layers beneath, because one went off or was used.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Buzz {
     On,
@@ -24,7 +26,7 @@ pub enum Buzz {
 impl Buzz {
     pub const LENGTH: Duration = Duration::from_millis(40);
 
-    /// The motors' strengths (0-65535): on the light motor coming on, the heavy one going off.
+    /// The motors' strengths (0-65535). Coming on uses the light motor, going off the heavy one.
     pub fn level(self) -> (u16, u16) {
         match self {
             Buzz::On => (0, 40_000),
@@ -36,8 +38,8 @@ impl Buzz {
 /// How many effects a game may upload to the virtual pad at once.
 pub const EFFECTS_MAX: u32 = 16;
 
-/// A rumble effect a game uploaded: its id, the motors' strengths (0-65535), and how long it plays (0:
-/// until stopped).
+/// A rumble effect a game uploaded: its id, the motors' strengths (0-65535), and how long it plays. A
+/// length of 0 plays until stopped.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Uploaded {
     id: i16,
@@ -46,8 +48,8 @@ struct Uploaded {
     length: Duration,
 }
 
-/// The effects games uploaded to the virtual pad, which are playing (until when, if they end by
-/// themselves), and the gain they set (0-65535).
+/// The effects games uploaded to the virtual pad, which of them are playing and until when if they end
+/// by themselves, and the gain the games set (0-65535).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Effects {
     uploaded: Vec<Uploaded>,
@@ -62,7 +64,7 @@ impl Default for Effects {
 }
 
 impl Effects {
-    /// Answers the virtual pad's force-feedback requests waiting (uploads, erases) and follows its play
+    /// Answers the virtual pad's waiting force-feedback requests, uploads and erases, and follows its play
     /// and stop events, at `now`. The virtual pad's file is non-blocking.
     pub fn serve(&mut self, pad: &mut VirtualDevice, now: Instant) -> io::Result<()> {
         let events: Vec<InputEvent> = match pad.fetch_events() {
@@ -93,7 +95,7 @@ impl Effects {
         Ok(())
     }
 
-    /// An effect uploaded (or changed): kept if it is a rumble (other kinds are accepted and do nothing).
+    /// Handles an uploaded or changed effect. A rumble is kept. Other kinds are accepted and do nothing.
     fn upload(&mut self, id: i16, data: FFEffectData) {
         self.uploaded.retain(|e| e.id != id);
         if let FFEffectKind::Rumble { strong_magnitude, weak_magnitude } = data.kind {
@@ -102,7 +104,7 @@ impl Effects {
         }
     }
 
-    /// Effect `code` played (or stopped) at `now`.
+    /// Notes that effect `code` was played or stopped at `now`.
     fn play(&mut self, code: u16, on: bool, now: Instant) {
         let Ok(id) = i16::try_from(code) else {
             return;
@@ -114,7 +116,7 @@ impl Effects {
         }
     }
 
-    /// The motors' strengths now (0-65535): the strongest of the effects playing, times the gain. Those
+    /// The motors' strengths now (0-65535): the strongest of the effects playing, times the gain. Effects
     /// that ended are dropped.
     pub fn level(&mut self, now: Instant) -> (u16, u16) {
         self.playing.retain(|(_, until)| until.is_none_or(|t| now < t));
@@ -134,8 +136,8 @@ impl Effects {
     }
 }
 
-/// The motors' strengths (strong, weak): games' `effects` while `in_game` (the game has the pad), and the
-/// keymap's `buzz`, the stronger of the two each, at the Rumble setting's strength.
+/// The motors' strengths (strong, weak). Each is the stronger of the games' `effects`, while `in_game`
+/// says the game has the pad, and the keymap's `buzz`, scaled by the Rumble setting.
 pub fn mix(effects: (u16, u16), in_game: bool, buzz: Option<(u16, u16)>, setting: RumbleStrength) -> (u16, u16) {
     let (mut strong, mut weak) = if in_game { effects } else { (0, 0) };
     if let Some((s, w)) = buzz {
@@ -155,8 +157,8 @@ pub fn scale(v: u16, setting: RumbleStrength) -> u16 {
     (u32::from(v) * thirds / 3) as u16
 }
 
-/// The real controller's rumble: one FF_RUMBLE effect uploaded when it is taken over, changed and played
-/// as the level changes.
+/// The real controller's rumble: one FF_RUMBLE effect, uploaded when the controller is taken over and
+/// changed and played as the level changes.
 pub struct Rumble {
     effect: FFEffect,
     level: (u16, u16),
@@ -167,14 +169,15 @@ fn effect(strong: u16, weak: u16) -> FFEffectData {
     FFEffectData {
         direction: 0,
         trigger: FFTrigger { button: 0, interval: 0 },
-        // Length 0: plays until stopped.
+        // A length of 0 plays until stopped.
         replay: FFReplay { length: 0, delay: 0 },
         kind: FFEffectKind::Rumble { strong_magnitude: strong, weak_magnitude: weak },
     }
 }
 
 impl Rumble {
-    /// The controller's rumble, if it supports FF_RUMBLE (the effect keeps a handle of its own on it).
+    /// The controller's rumble, if it supports FF_RUMBLE. The effect keeps a handle of its own on the
+    /// device.
     pub fn of(real: &mut RawDevice) -> io::Result<Option<Rumble>> {
         if !real.supported_ff().is_some_and(|ff| ff.contains(FFEffectCode::FF_RUMBLE)) {
             return Ok(None);
@@ -183,7 +186,8 @@ impl Rumble {
         Ok(Some(Rumble { effect, level: (0, 0) }))
     }
 
-    /// The motors at these strengths (0-65535 each); both 0 stops. Only a change reaches the device.
+    /// Sets the motors to these strengths (0-65535 each). Both at 0 stops them. Only a change reaches the
+    /// device.
     pub fn set(&mut self, strong: u16, weak: u16) -> io::Result<()> {
         if (strong, weak) == self.level {
             return Ok(());
@@ -219,7 +223,7 @@ mod tests {
         assert_eq!(e.level(t0 + Duration::from_millis(200)), (40_000, 0), "the short one ended");
         e.play(0, false, t0);
         assert_eq!(e.level(t0), (0, 0), "stopped");
-        // The gain scales them; another kind of effect does nothing.
+        // The gain scales them, and another kind of effect does nothing.
         e.gain = u16::MAX / 2;
         e.play(0, true, t0);
         assert_eq!(e.level(t0), (19_999, 0));

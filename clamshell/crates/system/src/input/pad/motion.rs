@@ -1,11 +1,12 @@
-//! The gyro: where the pad thread gets angular velocity from. A [`MotionSource`] is a file descriptor to
-//! wait on, and samples of degrees per second on three axes with their time. There are two sources:
+//! The gyro, where the pad thread gets angular velocity from. A [`MotionSource`] gives a file descriptor
+//! to wait on, and samples of degrees per second on three axes with their time. There are two sources:
 //!
-//! - An evdev motion sensor ([`EvdevMotion`]), as the kernel's controller drivers expose their IMU: a device
-//!   with INPUT_PROP_ACCELEROMETER, the gyro on ABS_RX/RY/RZ with its resolution (units per degree per
-//!   second) in the axis' info, and MSC_TIMESTAMP (microseconds) with each report. It is the motion device
-//!   whose name or physical path pairs with the controller's, else the only motion sensor there is. It isn't
-//!   grabbed: nothing else reads it as input, and the idle watch ignores accelerometers.
+//! - An evdev motion sensor ([`EvdevMotion`]), which is how the kernel's controller drivers expose their
+//!   IMU. It is a device with INPUT_PROP_ACCELEROMETER, with the gyro on ABS_RX/RY/RZ, the resolution in
+//!   units per degree per second in the axis' info, and MSC_TIMESTAMP in microseconds with each report.
+//!   The sensor used is the one whose name or physical path pairs with the controller's, or else the only
+//!   motion sensor there is. It isn't grabbed, since nothing else reads it as input and the idle watch
+//!   ignores accelerometers.
 //! - The Thor's sensor hub (`sensor_hub`), read directly over QRTR.
 
 use std::io;
@@ -39,17 +40,19 @@ impl Rate {
     }
 }
 
-/// Lying still: every axis slower than this (degrees per second, the offset included) ...
+/// The device is lying still when every axis is slower than this, in degrees per second including the
+/// offset ...
 const STILL: f32 = 5.0;
-/// ... and none moving over a range wider than this ...
+/// ... no axis moves over a range wider than this ...
 const STILL_SPREAD: f32 = 0.5;
-/// ... for this long: the average then is the offset.
+/// ... for this many seconds. The average over that time is then the offset.
 const STILL_FOR: f32 = 1.5;
-/// A calibration asked for takes this long, and fails if an axis moves over more than this.
+/// A requested calibration takes this many seconds, and fails if an axis moves over a wider range than
+/// `CALIBRATE_SPREAD`.
 const CALIBRATE_FOR: f32 = 1.0;
 const CALIBRATE_SPREAD: f32 = 2.0;
 
-/// Samples over a while: their sum, count, time, and each axis' lowest and highest.
+/// Samples over a stretch of time: their sum, count and time, and each axis' lowest and highest value.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Run {
     sum: Rate,
@@ -83,10 +86,10 @@ impl Run {
     }
 }
 
-/// The gyro's reading at rest (its offset, which real sensors have and which drifts with temperature),
-/// learnt whenever the device lies still for a moment ([`STILL`], [`STILL_SPREAD`], [`STILL_FOR`]) and
-/// taken off every sample; and on request ([`Calibration::ask`]) from the next [`CALIBRATE_FOR`], whatever
-/// the device does, as long as it is held still enough.
+/// The gyro's reading at rest. This offset is something real sensors have, and it drifts with
+/// temperature. It is taken off every sample. It is learnt whenever the device lies still for a moment
+/// ([`STILL`], [`STILL_SPREAD`], [`STILL_FOR`]). It is also learnt on request ([`Calibration::ask`]) over
+/// the next [`CALIBRATE_FOR`] seconds, as long as the device is held still enough.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Calibration {
     bias: Rate,
@@ -94,7 +97,7 @@ pub struct Calibration {
     asked: Asked,
 }
 
-/// A calibration asked for: none, waiting for its first sample, or gathering samples.
+/// A requested calibration: none, waiting for its first sample, or gathering samples.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 enum Asked {
     #[default]
@@ -104,13 +107,13 @@ enum Asked {
 }
 
 impl Calibration {
-    /// Calibrates from the next samples; [`Calibration::correct`] says how it went.
+    /// Calibrates from the next samples. [`Calibration::correct`] says how it went.
     pub fn ask(&mut self) {
         self.asked = Asked::First;
     }
 
-    /// A sample's rate, `dt` after the last: the rate with the offset taken off; and when a calibration
-    /// asked for ends, whether it took.
+    /// Corrects a sample's rate, `dt` seconds after the last sample, by taking off the offset. When a
+    /// requested calibration ends, also returns whether it succeeded.
     pub fn correct(&mut self, rate: Rate, dt: f32) -> (Rate, Option<bool>) {
         let mut done = None;
         let gathering = match self.asked {
@@ -152,7 +155,7 @@ impl Calibration {
     }
 }
 
-/// One reading: the rate and when it was taken (the sensor's clock).
+/// One reading: the rate, and when it was taken by the sensor's clock.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Sample {
     pub rate: Rate,
@@ -161,17 +164,17 @@ pub struct Sample {
 
 /// Where angular velocity comes from.
 pub trait MotionSource: Send {
-    /// To wait on for samples.
+    /// The file descriptor to wait on for samples.
     fn fd(&self) -> BorrowedFd<'_>;
 
-    /// Appends the samples waiting (none: nothing).
+    /// Appends the waiting samples, if any.
     fn fetch(&mut self, out: &mut Vec<Sample>) -> io::Result<()>;
 }
 
 /// A motion sensor's evdev device.
 pub struct EvdevMotion {
     device: RawDevice,
-    /// Units per degree per second, for RX, RY, RZ.
+    /// Units per degree per second, for RX, RY and RZ.
     resolution: [f32; 3],
     /// The axes' values as last reported.
     raw: [i32; 3],
@@ -186,8 +189,8 @@ fn is_motion(d: &RawDevice) -> bool {
     d.properties().contains(PropType::ACCELEROMETER) && d.supported_absolute_axes().is_some_and(|a| GYRO.iter().all(|&g| a.contains(g)))
 }
 
-/// Whether `motion` is `controller`'s: its name starts with the controller's (drivers call it
-/// `<controller> Motion Sensors`), or their physical paths differ only in the last part.
+/// Whether `motion` is `controller`'s. It is if its name starts with the controller's, since drivers call
+/// it `<controller> Motion Sensors`, or if their physical paths differ only in the last part.
 pub fn pairs(controller: (&str, &str), motion: (&str, &str)) -> bool {
     let (c_name, c_phys) = controller;
     let (m_name, m_phys) = motion;
@@ -196,7 +199,7 @@ pub fn pairs(controller: (&str, &str), motion: (&str, &str)) -> bool {
 }
 
 impl EvdevMotion {
-    /// The motion sensor of the controller named `name` with physical path `phys`, else the only one
+    /// The motion sensor of the controller named `name` with physical path `phys`, or else the only one
     /// there is.
     pub fn find(name: &str, phys: &str) -> Option<EvdevMotion> {
         let sensors: Vec<RawDevice> = evdev::raw_stream::enumerate().map(|(_, d)| d).filter(is_motion).collect();
@@ -256,8 +259,8 @@ impl MotionSource for EvdevMotion {
     }
 }
 
-/// The time between two samples, as seconds; a first sample, a clock that wrapped (MSC_TIMESTAMP is 32
-/// bits of microseconds) or a long gap counts as one sample period at most.
+/// The time between two samples in seconds. A first sample, or a clock that wrapped (MSC_TIMESTAMP is 32
+/// bits of microseconds), gives 0. A long gap is capped at 50 ms.
 pub fn interval(last: Option<Duration>, at: Duration) -> f32 {
     const MAX: f32 = 0.05;
     match last {
@@ -274,18 +277,18 @@ mod tests {
         let r = |yaw: f32| Rate { pitch: 0.2, yaw, roll: -0.3 };
         let mut c = Calibration::default();
         let dt = 0.004;
-        // Moving: nothing learnt.
+        // While moving, nothing is learnt.
         for i in 0..500 {
             c.correct(r(if i % 2 == 0 { 3.0 } else { -3.0 }), dt);
         }
         assert_eq!(c.correct(r(0.0), dt).0, r(0.0));
-        // Still for 1.5 s at an offset: learnt.
+        // Still for 1.5 s at an offset, so the offset is learnt.
         for _ in 0..400 {
             c.correct(r(0.8), dt);
         }
         let (now, _) = c.correct(r(0.8), dt);
         assert!(now.axes().iter().all(|v| v.abs() < 0.01), "{now:?}");
-        // Asked: the next second, held still: taken, and said.
+        // On request, the next second held still is taken, and success is reported.
         c.ask();
         let mut done = None;
         for _ in 0..300 {
@@ -293,7 +296,7 @@ mod tests {
         }
         assert_eq!(done, Some(true));
         assert!(c.correct(r(1.5), dt).0.yaw.abs() < 0.01);
-        // Asked while moving: not taken.
+        // On request while moving, nothing is taken.
         c.ask();
         let mut done = None;
         for i in 0..300 {

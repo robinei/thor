@@ -1,7 +1,7 @@
-//! The pad listened to (a keymap's edit screen): each input pressed or moved is sent to the state as
-//! itself ([`Event::Listened`]) instead of moving the focus: a button as it goes down, a D-pad direction,
-//! a stick pushed past half its travel (its direction), a trigger past half. Home stays ClamShell's
-//! (the router's): it leaves the screen. Back is an input like the others.
+//! Listening to the pad, for a keymap's edit screen. Each input pressed or moved is sent to the state as
+//! itself ([`Event::Listened`]) instead of moving the focus. That means a button as it goes down, a D-pad
+//! direction, a stick's direction once pushed past half its travel, and a trigger past half. Home stays
+//! with the router and leaves the screen. Back is an input like the others.
 
 use std::time::Instant;
 
@@ -16,7 +16,7 @@ use crate::os::evdev::{Press, Raw};
 #[derive(Debug)]
 pub struct Listener {
     ranges: Ranges,
-    /// The directions and triggers past half now (each counts once until let go).
+    /// The directions and triggers now past half. Each counts once until let go.
     pushed: Vec<Input>,
 }
 
@@ -25,7 +25,7 @@ impl Listener {
         Listener { ranges, pushed: Vec::new() }
     }
 
-    /// `input` is pushed (`on`) or not: sent when it starts being pushed.
+    /// Notes whether `input` is pushed (`on`), and sends it when it starts being pushed.
     fn push(&mut self, input: Input, on: bool, out: &mut Out) {
         let was = self.pushed.contains(&input);
         if on && !was {
@@ -79,7 +79,7 @@ impl Mapping for Listener {
         None
     }
 
-    /// Nothing is held down outside ClamShell: what was pushed is forgotten.
+    /// Nothing is held down outside ClamShell, so what was pushed is just forgotten.
     fn release(&mut self, _: &mut Out) {
         self.pushed.clear();
     }

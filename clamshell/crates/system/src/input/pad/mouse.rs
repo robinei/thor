@@ -1,5 +1,5 @@
-//! The pad mouse: the left stick moves the pointer, the right stick scrolls, A or the right trigger
-//! clicks left, B right, X middle, the D-pad sends arrow keys.
+//! The pad mouse. The left stick moves the pointer and the right stick scrolls. A or the right trigger
+//! is the left click, B the right click and Y the middle click. The D-pad sends arrow keys.
 
 use std::time::{Duration, Instant};
 
@@ -8,21 +8,22 @@ use evdev::{AbsoluteAxisCode, KeyCode, RelativeAxisCode};
 use super::route::{Mapping, Out, Ranges, release_mouse_keys};
 use crate::os::evdev::{Press, Raw, hat_keys};
 
-/// Stick deflection below this (of full) is ignored: sticks don't rest exactly at zero.
+/// Stick deflection below this fraction of full is ignored, since sticks don't rest exactly at zero.
 const DEADZONE: f32 = 0.15;
-/// Pointer speed at full deflection, pixels per second; the curve is quadratic below that, so small
+/// Pointer speed at full deflection, in pixels per second. The curve is quadratic below that, so small
 /// deflections give fine control.
 const MAX_SPEED: f32 = 1800.0;
-/// Scroll speed at full deflection, wheel notches per second.
+/// Scroll speed at full deflection, in wheel notches per second.
 const MAX_SCROLL: f32 = 18.0;
-/// High-resolution wheel units per notch (the kernel's convention).
+/// High-resolution wheel units per notch, by the kernel's convention.
 const HI_RES_NOTCH: f32 = 120.0;
-/// A trigger pressed past this (of full) is a held button.
+/// A trigger pressed past this fraction of full is a held button.
 const TRIGGER: f32 = 0.5;
-/// How often motion is sent while a stick is deflected (125 Hz, a common mouse rate).
+/// How often motion is sent while a stick is deflected: 125 Hz, a common mouse rate.
 pub const MOTION_EVERY: Duration = Duration::from_millis(8);
 
-/// A stick vector after the radial deadzone and the curve: 0 at the deadzone's edge, 1 at full.
+/// A stick vector after the radial deadzone and the curve. Its length is 0 at the deadzone's edge and 1
+/// at full deflection.
 fn shape((x, y): (f32, f32)) -> (f32, f32) {
     let len = x.hypot(y);
     if len <= DEADZONE {
@@ -50,12 +51,12 @@ impl PadMouse {
         PadMouse { ranges, left: (0.0, 0.0), right: (0.0, 0.0), trigger_down: false, carry: (0.0, 0.0), scroll_carry: (0.0, 0.0), last: None }
     }
 
-    /// Whether a stick is out of its deadzone (motion needs ticks).
+    /// Whether a stick is out of its deadzone, in which case motion needs ticks.
     pub fn moving(&self) -> bool {
         shape(self.left) != (0.0, 0.0) || shape(self.right) != (0.0, 0.0)
     }
 
-    /// Motion for `dt` of stick deflection: pointer from the left stick, scrolling from the right.
+    /// Motion for `dt` of stick deflection: the pointer from the left stick, scrolling from the right.
     pub fn motion(&mut self, dt: Duration, out: &mut Out) {
         let secs = dt.as_secs_f32();
         let (mx, my) = shape(self.left);
@@ -85,14 +86,14 @@ impl PadMouse {
     }
 
     fn button(&self, button: KeyCode, press: Press, out: &mut Out) {
-        // A repeat is a press held: a mouse button has no repeats.
+        // A repeat means the button is held, since a mouse button has no repeats.
         let press = if press.held() { Press::Down } else { Press::Up };
         out.mouse.extend([Raw::key(button, press), Raw::REPORT]);
     }
 }
 
 impl Mapping for PadMouse {
-    /// Sticks are read; buttons, the trigger and the D-pad map at once.
+    /// Sticks are only read here. Buttons, the trigger and the D-pad map at once.
     fn event(&mut self, raw: Raw, _: Instant, out: &mut Out) {
         if let Some((axis, value)) = raw.as_abs() {
             match axis {
@@ -119,8 +120,8 @@ impl Mapping for PadMouse {
         }
     }
 
-    /// Motion at most every [`MOTION_EVERY`], for the time since the last; ticks wanted while a stick
-    /// is deflected.
+    /// Sends motion at most every [`MOTION_EVERY`], for the time since the last. Ticks are wanted while a
+    /// stick is deflected.
     fn tick(&mut self, now: Instant, out: &mut Out) -> Option<Instant> {
         let last = *self.last.get_or_insert(now);
         if now.duration_since(last) >= MOTION_EVERY {
