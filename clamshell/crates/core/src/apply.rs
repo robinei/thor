@@ -5,6 +5,7 @@ use crate::bottom::editor::Done;
 use crate::kit::replace;
 use crate::levels::slider::Control;
 use crate::mutation::{EntryAct, Mutation};
+use crate::out::Out;
 use crate::resume::SAVE_AFTER;
 use crate::settings::MouseAtLaunch;
 use crate::{
@@ -18,45 +19,42 @@ impl State {
     /// pad is routed to where it is wanted, and idle moves on or back.
     pub fn apply(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
         let session_input = matches!(event, Event::Tick { .. } | Event::Windows(_) | Event::Units(_) | Event::Tray(_) | Event::Launch(_) | Event::Library(_));
-        let (mut dirty, mut effects) = self.apply_event(event);
-        if session_input {
-            let (changed, reconciled) = self.reconcile();
-            effects.extend(reconciled);
-            if changed {
-                dirty = dirty.or(Dirty::BOTTOM);
-            }
+        let mut out = Out::default();
+        self.apply_event(event, &mut out);
+        if session_input && self.reconcile(&mut out) {
+            out.mark(Dirty::BOTTOM);
         }
         if self.bottom.follow_dim(&self.session, &self.clock) {
-            dirty = dirty.or(Dirty::BOTTOM);
+            out.mark(Dirty::BOTTOM);
         }
-        effects.extend(self.follow_shown());
-        effects.extend(self.follow_browse());
-        effects.extend(self.follow_idle());
-        effects.extend(self.follow_watch());
+        out.effects.extend(self.follow_shown());
+        out.effects.extend(self.follow_browse());
+        out.effects.extend(self.follow_idle());
+        out.effects.extend(self.follow_watch());
         let (changed, applied) = self.follow_program();
-        effects.extend(applied);
+        out.effects.extend(applied);
         // This comes after the program in force is settled, since it reads that program's setting and
         // darkness. If it changed anything, the watch is followed again.
         let power = self.bottom.follow_power(self.power(), self.clock.mono());
         if !power.is_empty() {
-            effects.extend(power);
-            effects.extend(self.follow_watch());
+            out.effects.extend(power);
+            out.effects.extend(self.follow_watch());
         }
         if changed && self.follow_pad_mouse() {
-            dirty = Dirty::BOTH;
+            out.mark(Dirty::BOTH);
         }
-        effects.extend(self.follow_keymap(false));
+        out.effects.extend(self.follow_keymap(false));
         if let Some(route) = self.reconcile_pad() {
-            effects.push(Effect::PadRoute(route));
+            out.effects.push(Effect::PadRoute(route));
             // The focus ring shows where the pad is.
             if route != PadRoute::Ui && self.pointer.hide_focus() {
-                dirty = Dirty::BOTH;
+                out.mark(Dirty::BOTH);
             }
         }
         if self.bottom.take_unsaved() {
             self.saves.resume.touch(self.clock.mono());
         }
-        (dirty, effects)
+        (out.dirty, out.effects)
     }
 
     /// Runs after any change to what the session follows (the windows, systemd's scopes, the tray, the
@@ -75,29 +73,29 @@ impl State {
     /// 6. The dock: running entries are added to it and ended ones removed.
     ///
     /// A step does nothing when nothing changed for it. Returns whether the running entries changed.
-    fn reconcile(&mut self) -> (bool, Vec<Effect>) {
+    fn reconcile(&mut self, out: &mut Out) -> bool {
         let before: Vec<std::sync::Arc<str>> = self.session.running.iter().map(|r| r.id.clone()).collect();
         let known = std::mem::take(&mut self.session.followed_windows);
         let was = self.session.followed_front.take();
-        let mut effects = self.follow_units();
+        out.effects.extend(self.follow_units());
         if self.session.units_known {
-            effects.extend(self.start_autostart());
+            out.effects.extend(self.start_autostart());
         }
         let by_windows = self.follow_windows(&known);
-        effects.extend(self.bottom.follow_window_rules(&self.session));
-        effects.extend(self.follow_background());
-        effects.extend(self.session.show_pending());
-        effects.extend(self.session.show_reopened(self.clock.mono()));
-        effects.extend(self.follow_quitting());
-        effects.extend(self.follow_closed(was));
+        out.effects.extend(self.bottom.follow_window_rules(&self.session));
+        out.effects.extend(self.follow_background());
+        out.effects.extend(self.session.show_pending());
+        out.effects.extend(self.session.show_reopened(self.clock.mono()));
+        out.effects.extend(self.follow_quitting());
+        out.effects.extend(self.follow_closed(was));
         // After handling the front one closing, so that a window just taken by a browsed file is shown
         // over it.
-        effects.extend(by_windows);
+        out.effects.extend(by_windows);
         let docked = self.follow_dock();
         self.session.followed_windows = self.session.windows.iter().map(|w| w.id).collect();
         self.session.followed_front = self.session.windows.iter().find(|w| w.focused && !w.down).map(|w| w.workspace.clone());
         let after = self.session.running.iter().map(|r| &r.id);
-        (docked || !after.eq(before.iter()), effects)
+        docked || !after.eq(before.iter())
     }
 
     /// Called when the program in force changed. Turns the pad mouse on if the program wants it
@@ -114,126 +112,174 @@ impl State {
         self.pad.reconcile(self.session.front(), self.bottom.tab(), self.pointer.show_focus(), listening, moving)
     }
 
-    fn apply_event(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
+    fn apply_event(&mut self, event: Event, out: &mut Out) {
         match event {
-            Event::Tick { unix_secs, mono_secs } => self.tick(unix_secs, mono_secs),
-            Event::Reading(reading) => self.reading_came(reading),
-            Event::List(e) => (if self.on_list(e) { e.list().screens() } else { Dirty::NONE }, vec![]),
-            Event::Pointer(e) => self.pointer_event(e),
-            Event::Slide(slide) => self.on_slide(slide),
-            Event::Level(e) => self.on_level(e),
-            Event::Shelf(e) => self.on_shelf_event(e),
-            Event::Launch(e) => self.on_launch_event(e),
+            Event::Tick { unix_secs, mono_secs } => self.tick(unix_secs, mono_secs, out),
+            Event::Reading(reading) => self.reading_came(reading, out),
+            Event::List(e) => {
+                if self.on_list(e) {
+                    out.mark(e.list().screens());
+                }
+            }
+            Event::Pointer(e) => self.pointer_event(e, out),
+            Event::Slide(slide) => {
+                let (dirty, effects) = self.on_slide(slide);
+                out.mark(dirty);
+                out.effects.extend(effects);
+            }
+            Event::Level(e) => {
+                let (dirty, effects) = self.on_level(e);
+                out.mark(dirty);
+                out.effects.extend(effects);
+            }
+            Event::Shelf(e) => {
+                let (dirty, effects) = self.on_shelf_event(e);
+                out.mark(dirty);
+                out.effects.extend(effects);
+            }
+            Event::Launch(e) => {
+                let (dirty, effects) = self.on_launch_event(e);
+                out.mark(dirty);
+                out.effects.extend(effects);
+            }
             Event::Windows(windows) => {
                 self.session.set_windows(windows);
-                (Dirty::BOTH, vec![])
+                out.mark(Dirty::BOTH);
             }
-            Event::Meta { id, meta } => (if self.shelf.apply_meta(&id, &meta) { Dirty::BOTH } else { Dirty::NONE }, vec![]),
-            Event::Library(library) => (Dirty::BOTH, self.library_read(*library)),
-            Event::Files(e) => (Dirty::BOTH, self.on_files(e)),
+            Event::Meta { id, meta } => {
+                if self.shelf.apply_meta(&id, &meta) {
+                    out.mark(Dirty::BOTH);
+                }
+            }
+            Event::Library(library) => {
+                out.mark(Dirty::BOTH);
+                self.library_read(*library, out);
+            }
+            Event::Files(e) => {
+                out.mark(Dirty::BOTH);
+                out.effects.extend(self.on_files(e));
+            }
             Event::Fetching(on) => {
                 self.fetching = on;
                 self.shown = None;
-                (Dirty::NONE, vec![])
             }
-            Event::Tray(items) => match self.set_tray(items) {
-                Some(effects) => (Dirty::BOTH, effects),
-                None => (Dirty::NONE, vec![]),
-            },
+            Event::Tray(items) => {
+                if let Some(effects) = self.set_tray(items) {
+                    out.mark(Dirty::BOTH);
+                    out.effects.extend(effects);
+                }
+            }
             Event::Units(units) => {
                 self.session.set_units(units);
-                (Dirty::BOTTOM, vec![])
+                out.mark(Dirty::BOTTOM);
             }
-            Event::Start => (Dirty::BOTH, self.ui_started()),
+            Event::Start => {
+                out.mark(Dirty::BOTH);
+                self.ui_started(out);
+            }
             // On a screen that listens for input, Home leaves it. Home is never taken as an input.
             Event::Home if self.listening() => {
                 self.keymap_back();
-                (Dirty::BOTTOM, vec![])
+                out.mark(Dirty::BOTTOM);
             }
-            Event::Home => (Dirty::NONE, self.home()),
-            Event::Listened(input) => (Dirty::BOTTOM, self.listened(input)),
-            Event::PadSwitch => {
-                self.pad.switch();
-                (Dirty::NONE, vec![])
+            Event::Home => out.effects.extend(self.home()),
+            Event::Listened(input) => {
+                out.mark(Dirty::BOTTOM);
+                out.effects.extend(self.listened(input));
             }
+            Event::PadSwitch => self.pad.switch(),
             // Never applied here: the UI handles pad navigation itself.
-            Event::Pad(_) => (Dirty::NONE, vec![]),
+            Event::Pad(_) => {}
             Event::TextInput(active) => {
                 let (dirty, changed) = self.bottom.text_input(active);
                 if changed {
                     self.left_tab();
                 }
-                (dirty, vec![])
+                out.mark(dirty);
             }
-            Event::Pointing(pointing) => self.bottom.point(pointing),
+            Event::Pointing(pointing) => {
+                let (dirty, effects) = self.bottom.point(pointing);
+                out.mark(dirty);
+                out.effects.extend(effects);
+            }
             // Sleep may have reset what the settings set, such as frequency caps and cores, so apply them
             // again.
             Event::Resumed => {
                 self.idle.resumed(self.clock.mono());
-                (Dirty::NONE, vec![Effect::Apply { entry: self.session.program.clone(), settings: self.in_force() }])
+                out.effects.push(Effect::Apply { entry: self.session.program.clone(), settings: self.in_force() });
             }
-            Event::Idle(event) => {
-                self.idle.heard(event, self.clock.mono());
-                (Dirty::NONE, vec![])
+            Event::Idle(event) => self.idle.heard(event, self.clock.mono()),
+            Event::Device(key) => {
+                out.mark(Dirty::BOTTOM);
+                out.effects.extend(self.on_device_key(key));
             }
-            Event::Device(key) => (Dirty::BOTTOM, self.on_device_key(key)),
-            Event::BottomTouched => (self.bottom.used(&self.session, &self.clock), vec![]),
+            Event::BottomTouched => out.mark(self.bottom.used(&self.session, &self.clock)),
             Event::Frozen(keys) => {
                 self.found_frozen(keys);
-                (Dirty::BOTTOM, vec![])
+                out.mark(Dirty::BOTTOM);
             }
             Event::Paste => {
                 self.bottom.paste();
-                (Dirty::BOTTOM, vec![])
+                out.mark(Dirty::BOTTOM);
             }
             Event::Screenshot(result) => {
                 self.on_screenshot(result);
-                (Dirty::BOTTOM, vec![])
+                out.mark(Dirty::BOTTOM);
             }
-            Event::Sticks(event) => (Dirty::TOP, self.device.sticks_event(event).into_iter().collect()),
+            Event::Sticks(event) => {
+                out.mark(Dirty::TOP);
+                out.effects.extend(self.device.sticks_event(event));
+            }
             Event::RefreshCalibrated(result) => {
                 self.device.refresh_done(result);
                 // The tool turned the bottom screen off while it ran and then restored it. Set it to what
                 // ClamShell wants.
-                (Dirty::TOP, vec![Effect::Window(WindowCommand::BottomPower(!self.bottom.off()))])
+                out.mark(Dirty::TOP);
+                out.effects.push(Effect::Window(WindowCommand::BottomPower(!self.bottom.off())));
             }
             Event::GyroCalibrated(ok) => {
                 self.bottom.notify(crate::bottom::notice::NoticeKind::Gyro(Some(ok)), self.clock.mono());
-                (Dirty::BOTTOM, vec![])
+                out.mark(Dirty::BOTTOM);
             }
             Event::AccountChanged(result) => {
                 // What the helper did, or why it failed, shown for a moment.
                 self.bottom.notify(crate::bottom::notice::NoticeKind::Account(result), self.clock.mono());
-                (Dirty::BOTTOM, vec![])
+                out.mark(Dirty::BOTTOM);
             }
-            Event::Quit => (Dirty::NONE, vec![Effect::Save(Save::Resume(self.resume())), Effect::Quit]),
+            Event::Quit => {
+                out.effects.push(Effect::Save(Save::Resume(self.resume())));
+                out.effects.push(Effect::Quit);
+            }
         }
     }
 
     /// A reading from a system thread. After a status reading, the battery warning is checked.
-    fn reading_came(&mut self, reading: Reading) -> (Dirty, Vec<Effect>) {
+    fn reading_came(&mut self, reading: Reading, out: &mut Out) {
         let status = matches!(reading, Reading::Status(_));
         let dirty = self.on_reading(reading);
-        let effects = if status { self.sys.battery_warning().into_iter().collect() } else { vec![] };
-        (if self.follow_lists() { Dirty::BOTTOM } else { dirty }, effects)
+        if status {
+            out.effects.extend(self.sys.battery_warning());
+        }
+        out.mark(if self.follow_lists() { Dirty::BOTTOM } else { dirty });
     }
 
     /// A touch or a pad focus change. Focusing or pressing a target on the second screen counts as using
     /// that screen.
-    fn pointer_event(&mut self, e: PointerEvent) -> (Dirty, Vec<Effect>) {
+    fn pointer_event(&mut self, e: PointerEvent, out: &mut Out) {
         let used = match &e {
             PointerEvent::Focus(id) | PointerEvent::Activate(id) | PointerEvent::LongPress(id) | PointerEvent::Down(id) => id.screen() == Dirty::BOTTOM,
             _ => false,
         };
-        let lit = if used { self.bottom.used(&self.session, &self.clock) } else { Dirty::NONE };
-        let (dirty, effects) = self.on_pointer(e);
-        (dirty.or(lit), effects)
+        if used {
+            out.mark(self.bottom.used(&self.session, &self.clock));
+        }
+        self.on_pointer(e, out);
     }
 
     /// The library was read again. New problems are reported once and shelf is reloaded. Then what
     /// depends on its entries is updated: runners' pauses and keymaps, landing rules, and pins of entries
     /// that are gone.
-    fn library_read(&mut self, library: Library) -> Vec<Effect> {
+    fn library_read(&mut self, library: Library, out: &mut Out) {
         let problems = &library.problems;
         if !problems.is_empty() && *problems != self.shelf.library().problems {
             let first = problems.first().cloned().unwrap_or_default();
@@ -243,13 +289,12 @@ impl State {
             self.moved_collection();
         }
         self.follow_pausable_runners();
-        let mut effects = self.follow_runner_keymaps();
-        effects.push(self.land_rules());
+        out.effects.extend(self.follow_runner_keymaps());
+        out.effects.push(self.land_rules());
         if self.drop_gone_pins() {
-            effects.push(Effect::Save(Save::Dock(self.dock.pinned_ids())));
+            out.effects.push(Effect::Save(Save::Dock(self.dock.pinned_ids())));
         }
         self.shown = None;
-        effects
     }
 
     /// Applies what an area's rule asked of the rest of the state, in order, and returns its effects in
@@ -270,42 +315,36 @@ impl State {
     /// The UI is up. Sends what was waiting for it: the dock if pins were dropped at start, the
     /// brightness, the pad's route, the keymaps and the down rules. The open tab's watch starts from now
     /// (see [`State::follow_watch`]).
-    fn ui_started(&mut self) -> Vec<Effect> {
+    fn ui_started(&mut self, out: &mut Out) {
         self.watches.ui_started();
-        let mut effects: Vec<Effect> = Vec::new();
         if std::mem::take(&mut self.pins_dropped) {
-            effects.push(Effect::Save(Save::Dock(self.dock.pinned_ids())));
+            out.effects.push(Effect::Save(Save::Dock(self.dock.pinned_ids())));
         }
-        effects.extend(self.levels.brightness_effect());
-        effects.push(Effect::PadRoute(self.pad.route()));
-        effects.extend(self.follow_runner_keymaps());
-        effects.extend(self.follow_keymap(true));
-        effects.push(self.bottom.window_rules().effect());
-        effects
+        out.effects.extend(self.levels.brightness_effect());
+        out.effects.push(Effect::PadRoute(self.pad.route()));
+        out.effects.extend(self.follow_runner_keymaps());
+        out.effects.extend(self.follow_keymap(true));
+        out.effects.push(self.bottom.window_rules().effect());
     }
 
     /// The clock ticked. Once a minute, the bar's clock and both screens' burn-in orbit move on. Changes
     /// are saved once they have stopped for a moment.
-    fn tick(&mut self, unix_secs: u64, mono_secs: u64) -> (Dirty, Vec<Effect>) {
+    fn tick(&mut self, unix_secs: u64, mono_secs: u64, out: &mut Out) {
         // The first tick. Anything idle heard before it was timed at 0, so count from now.
         if !self.clock.read() {
             self.idle.resumed(mono_secs);
         }
         let minute_changed = self.clock.tick(unix_secs, mono_secs);
-        let mut effects = vec![];
         if self.saves.resume.due(mono_secs, SAVE_AFTER) {
-            effects.push(Effect::Save(Save::Resume(self.resume())));
+            out.effects.push(Effect::Save(Save::Resume(self.resume())));
         }
-        effects.extend(self.levels.save_due(mono_secs));
+        out.effects.extend(self.levels.save_due(mono_secs));
         let notice_gone = self.bottom.expire_notice(mono_secs);
-        let dirty = if minute_changed {
-            Dirty::BOTH
+        if minute_changed {
+            out.mark(Dirty::BOTH);
         } else if notice_gone {
-            Dirty::BOTTOM
-        } else {
-            Dirty::NONE
-        };
-        (dirty, effects)
+            out.mark(Dirty::BOTTOM);
+        }
     }
 
     /// A reading of the system. It is stored, and the second screen is redrawn if it shows what changed.
@@ -346,7 +385,7 @@ impl State {
         if changed && shown { Dirty::BOTTOM } else { Dirty::NONE }
     }
 
-    fn on_pointer(&mut self, event: PointerEvent) -> (Dirty, Vec<Effect>) {
+    fn on_pointer(&mut self, event: PointerEvent, out: &mut Out) {
         // Input that reached ClamShell itself, such as the pad driving the screens.
         self.idle.own_input(self.clock.mono());
         match event {
@@ -354,21 +393,24 @@ impl State {
                 self.show_focused(&id);
                 self.pointer.focus_on(id);
                 self.pointer.show();
-                (Dirty::BOTH, vec![])
+                out.mark(Dirty::BOTH);
             }
-            PointerEvent::HideFocus => (if self.pointer.hide_focus() { Dirty::BOTH } else { Dirty::NONE }, vec![]),
+            PointerEvent::HideFocus => {
+                if self.pointer.hide_focus() {
+                    out.mark(Dirty::BOTH);
+                }
+            }
             // A press that woke the screens does nothing else.
-            PointerEvent::Activate(_) | PointerEvent::LongPress(_) if self.idle.swallows_press(self.clock.mono()) => (Dirty::NONE, vec![]),
-            PointerEvent::Activate(id) => self.activate(&id, false),
-            PointerEvent::LongPress(id) => self.activate(&id, true),
+            PointerEvent::Activate(_) | PointerEvent::LongPress(_) if self.idle.swallows_press(self.clock.mono()) => {}
+            PointerEvent::Activate(id) => self.activate(&id, false, out),
+            PointerEvent::LongPress(id) => self.activate(&id, true, out),
             PointerEvent::Down(id) => {
-                let dirty = id.screen();
+                out.mark(id.screen());
                 if let Id::Key(pos) = id {
                     self.keyboard.down(pos);
                 }
                 let item = self.item_key(&id);
                 self.pointer.down(id, item);
-                (dirty, vec![])
             }
             PointerEvent::Up(id) => {
                 self.pointer.up(&id);
@@ -378,17 +420,18 @@ impl State {
                 if let Id::Key(pos) = id {
                     self.keyboard.up(pos);
                 }
-                (id.screen(), vec![])
+                out.mark(id.screen());
             }
         }
     }
 
     /// A tap or long press on `id`, resolved to what the press landed on. It gets the focus, and its
     /// subsystem acts on it.
-    fn activate(&mut self, id: &Id, long: bool) -> (Dirty, Vec<Effect>) {
+    fn activate(&mut self, id: &Id, long: bool, out: &mut Out) {
         // The list item the press came down on is gone.
         let Some(id) = self.resolve(id) else {
-            return (Dirty::BOTTOM, vec![]);
+            out.mark(Dirty::BOTTOM);
+            return;
         };
         self.pointer.focus_on(id.clone());
         match id {
@@ -399,27 +442,51 @@ impl State {
                 if let Some(first) = self.actions().as_slice().first() {
                     self.pointer.focus_on(Id::Shelf(first.id()));
                 }
-                (Dirty::BOTH, vec![])
+                out.mark(Dirty::BOTH);
             }
-            Id::Shelf(id) => (Dirty::BOTH, self.on_shelf(id)),
-            Id::Dock(id) => (Dirty::BOTTOM, self.on_dock(id, long)),
-            Id::Settings(id @ (SettingsId::Tile(_) | SettingsId::Reset)) => (Dirty::BOTH, self.on_settings(id, long)),
-            Id::Settings(id) => (Dirty::BOTTOM, self.on_settings(id, long)),
+            Id::Shelf(id) => {
+                out.mark(Dirty::BOTH);
+                out.effects.extend(self.on_shelf(id));
+            }
+            Id::Dock(id) => {
+                out.mark(Dirty::BOTTOM);
+                out.effects.extend(self.on_dock(id, long));
+            }
+            Id::Settings(id) => {
+                out.mark(if matches!(id, SettingsId::Tile(_) | SettingsId::Reset) { Dirty::BOTH } else { Dirty::BOTTOM });
+                out.effects.extend(self.on_settings(id, long));
+            }
             Id::Editor(id) => {
                 let done = match id {
                     EditorId::Save => Done::Save,
                     EditorId::Cancel => Done::Cancel,
                 };
-                (Dirty::BOTTOM, self.editor_done(done))
+                out.mark(Dirty::BOTTOM);
+                out.effects.extend(self.editor_done(done));
             }
-            Id::Wifi(WifiId::Power) => (Dirty::BOTTOM, vec![self.radios.power_wifi()]),
-            Id::Bluetooth(BtId::Power) => (Dirty::BOTTOM, vec![self.radios.power_bluetooth()]),
-            Id::Audio(id) => (Dirty::BOTTOM, self.levels.on_audio(id)),
-            Id::Row { list, i, part } => (list.screens(), self.on_row(list, usize::from(i), part, long)),
-            Id::Keymap(id) => (Dirty::BOTTOM, self.on_keymap(id, long)),
+            Id::Wifi(WifiId::Power) => {
+                out.mark(Dirty::BOTTOM);
+                out.effects.push(self.radios.power_wifi());
+            }
+            Id::Bluetooth(BtId::Power) => {
+                out.mark(Dirty::BOTTOM);
+                out.effects.push(self.radios.power_bluetooth());
+            }
+            Id::Audio(id) => {
+                out.mark(Dirty::BOTTOM);
+                out.effects.extend(self.levels.on_audio(id));
+            }
+            Id::Row { list, i, part } => {
+                out.mark(list.screens());
+                out.effects.extend(self.on_row(list, usize::from(i), part, long));
+            }
+            Id::Keymap(id) => {
+                out.mark(Dirty::BOTTOM);
+                out.effects.extend(self.on_keymap(id, long));
+            }
             Id::Tab(tab) => {
                 self.choose_tab(tab);
-                (Dirty::BOTH, vec![])
+                out.mark(Dirty::BOTH);
             }
             // A tap opens the tab. Slides are handled by the UI and don't end in a tap.
             Id::Control(control) if !long => {
@@ -427,48 +494,63 @@ impl State {
                     Control::Volume => Tab::Volume,
                     Control::Brightness => Tab::Brightness,
                     // A keymap parameter is held or slid, not tapped.
-                    Control::Param(_) => return (Dirty::NONE, vec![]),
+                    Control::Param(_) => return,
                 };
                 self.choose_tab(tab);
-                (Dirty::BOTH, vec![])
+                out.mark(Dirty::BOTH);
             }
-            Id::Control(_) | Id::Level(_) | Id::List(_) | Id::Blank => (Dirty::NONE, vec![]),
+            Id::Control(_) | Id::Level(_) | Id::List(_) | Id::Blank => {}
             Id::Key(pos) => {
                 let stroke = self.keyboard.press(pos, long);
                 // The key goes to the editor while it is open, to finding an entry while shelf is in
                 // front, and otherwise to the focused app.
-                let effects = match stroke {
-                    Some(stroke) if self.bottom.editor().is_some() => self.bottom.edit(stroke).map_or_else(Vec::new, |done| self.editor_done(done)),
-                    Some(stroke) if self.capturing() => self.captured(State::chord(stroke)),
-                    Some(stroke) if self.session.front() == crate::session::running::Front::Shelf => return (Dirty::BOTH, self.find(stroke)),
-                    Some(stroke) => vec![Effect::Key(stroke)],
-                    None => vec![],
-                };
-                (Dirty::BOTTOM, effects)
+                out.mark(Dirty::BOTTOM);
+                match stroke {
+                    Some(stroke) if self.bottom.editor().is_some() => {
+                        if let Some(done) = self.bottom.edit(stroke) {
+                            out.effects.extend(self.editor_done(done));
+                        }
+                    }
+                    Some(stroke) if self.capturing() => out.effects.extend(self.captured(State::chord(stroke))),
+                    Some(stroke) if self.session.front() == crate::session::running::Front::Shelf => {
+                        out.mark(Dirty::BOTH);
+                        out.effects.extend(self.find(stroke));
+                    }
+                    Some(stroke) => out.effects.push(Effect::Key(stroke)),
+                    None => {}
+                }
             }
-            Id::BottomWindows => match self.bottom.hidden_down(&self.session) {
-                Some(window) => (Dirty::BOTH, self.bottom.show_program_down(window)),
-                None => (Dirty::NONE, vec![]),
-            },
-            Id::Time(id) => self.sys.on_time(id, self.lists.get_mut(ListId::Time)),
+            Id::BottomWindows => {
+                if let Some(window) = self.bottom.hidden_down(&self.session) {
+                    out.mark(Dirty::BOTH);
+                    out.effects.extend(self.bottom.show_program_down(window));
+                }
+            }
+            Id::Time(id) => {
+                let (dirty, effects) = self.sys.on_time(id, self.lists.get_mut(ListId::Time));
+                out.mark(dirty);
+                out.effects.extend(effects);
+            }
             Id::Device(id) => {
                 let mutations = {
                     let (editors, notice) = self.bottom.editors_and_notice();
                     self.device.tap(id, self.clock.mono(), editors, notice, &mut self.pointer, self.shelf.selected())
                 };
-                (Dirty::BOTH, self.settle(mutations))
+                out.mark(Dirty::BOTH);
+                out.effects.extend(self.settle(mutations));
             }
             Id::Battery(id) => {
                 let mutations = self.sys.on_battery(id, &self.session);
-                (Dirty::BOTTOM, self.settle(mutations))
+                out.mark(Dirty::BOTTOM);
+                out.effects.extend(self.settle(mutations));
             }
             Id::PadMouse => {
                 self.pad.toggle_mouse();
-                (Dirty::BOTTOM, vec![])
+                out.mark(Dirty::BOTTOM);
             }
             Id::Wake => {
                 self.bottom.wake();
-                (Dirty::BOTTOM, vec![])
+                out.mark(Dirty::BOTTOM);
             }
         }
     }
