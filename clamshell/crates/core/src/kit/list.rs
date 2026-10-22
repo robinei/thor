@@ -5,12 +5,22 @@
 //!
 //! Which lists there are and what their rows do is in `nav::lists`.
 
-/// What identifies a list item: a network's SSID, a device's address, a game's workspace, a collection's
-/// name, a backlight's name, or a PipeWire object's id.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// What identifies a list item: its name, such as a network's SSID, a device's address, an entry's id, a
+/// collection's name or a backlight's name, or a PipeWire object's id. A name is kept as its hash, so that
+/// keeping one doesn't allocate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ItemKey {
-    Name(String),
+    Name(u64),
     Number(u32),
+}
+
+impl ItemKey {
+    /// The key of the item named `name`.
+    pub(crate) fn name(name: &str) -> ItemKey {
+        let mut hasher = std::hash::DefaultHasher::new();
+        std::hash::Hash::hash(name, &mut hasher);
+        ItemKey::Name(std::hash::Hasher::finish(&hasher))
+    }
 }
 
 /// A list's rows: either the feature's own [`Rows`], or just a count. A count is for rows that can't be

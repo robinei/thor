@@ -182,11 +182,11 @@ impl Rows for Bluetooth {
     }
 
     fn key(&self, i: usize) -> Option<ItemKey> {
-        self.devices.get(i).map(|d| ItemKey::Name(d.address.clone()))
+        self.devices.get(i).map(|d| ItemKey::name(&d.address))
     }
 
     fn find(&self, key: &ItemKey) -> Option<usize> {
-        self.devices.iter().position(|d| matches!(key, ItemKey::Name(k) if *k == d.address))
+        self.devices.iter().position(|d| ItemKey::name(&d.address) == *key)
     }
 }
 

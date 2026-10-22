@@ -151,11 +151,11 @@ impl Rows for Wifi {
     }
 
     fn key(&self, i: usize) -> Option<ItemKey> {
-        self.networks.get(i).map(|n| ItemKey::Name(n.ssid.clone()))
+        self.networks.get(i).map(|n| ItemKey::name(&n.ssid))
     }
 
     fn find(&self, key: &ItemKey) -> Option<usize> {
-        self.networks.iter().position(|n| matches!(key, ItemKey::Name(k) if *k == n.ssid))
+        self.networks.iter().position(|n| ItemKey::name(&n.ssid) == *key)
     }
 }
 

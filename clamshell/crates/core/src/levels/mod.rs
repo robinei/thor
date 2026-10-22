@@ -476,11 +476,11 @@ impl Rows for Backlights {
     }
 
     fn key(&self, i: usize) -> Option<ItemKey> {
-        self.0.get(i).map(|b| ItemKey::Name(b.clone()))
+        self.0.get(i).map(|b| ItemKey::name(b))
     }
 
     fn find(&self, key: &ItemKey) -> Option<usize> {
-        self.0.iter().position(|b| matches!(key, ItemKey::Name(n) if n == b))
+        self.0.iter().position(|b| ItemKey::name(b) == *key)
     }
 }
 
