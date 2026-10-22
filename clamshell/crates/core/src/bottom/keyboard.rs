@@ -219,15 +219,20 @@ pub struct Stroke {
 
 #[derive(Debug, Default)]
 pub struct Keyboard {
-    pub shift: Latch,
-    pub ctrl: Latch,
-    pub alt: Latch,
-    pub logo: Latch,
-    pub fn_layer: Latch,
-    pub caps: bool,
+    shift: Latch,
+    ctrl: Latch,
+    alt: Latch,
+    logo: Latch,
+    fn_layer: Latch,
+    caps: bool,
 }
 
 impl Keyboard {
+    /// Whether Caps Lock is on.
+    pub fn caps(&self) -> bool {
+        self.caps
+    }
+
     pub fn latch(&self, m: Modifier) -> Latch {
         match m {
             Modifier::Shift => self.shift,

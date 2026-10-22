@@ -79,9 +79,9 @@ fn entry_in<'a>(library: &'a Library, running: &'a [Running], id: &str) -> Optio
 /// windows.
 #[derive(Debug, Clone)]
 pub(crate) struct Quitting {
-    pub(crate) entry: Arc<str>,
-    pub(crate) ended: bool,
-    pub(crate) stop: Option<Effect>,
+    entry: Arc<str>,
+    ended: bool,
+    stop: Option<Effect>,
 }
 
 impl Session {

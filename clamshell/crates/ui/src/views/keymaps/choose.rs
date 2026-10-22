@@ -4,6 +4,7 @@
 
 use std::fmt::Write;
 
+use clamshell_core::bottom::keyboard::Modifier;
 use clamshell_core::keymap::{Chord, Dir, Input, Layer, MouseButton, Output};
 use clamshell_core::{Id, KeymapId, ListId, RowPart, Target};
 
@@ -177,7 +178,8 @@ pub(super) fn mouse(f: &mut Frame, id: u16, input: Input) {
 /// A key chord typed on the keyboard below, or a stick's four keys typed in turn.
 pub(super) fn capture(f: &mut Frame, input: Input, keys: Option<(usize, [Chord; 4])>) {
     let kb = f.s.keyboard();
-    let held = Chord { key: None, shift: kb.shift.on(), ctrl: kb.ctrl.on(), alt: kb.alt.on(), logo: kb.logo.on() };
+    let on = |m| kb.latch(m).on();
+    let held = Chord { key: None, shift: on(Modifier::Shift), ctrl: on(Modifier::Ctrl), alt: on(Modifier::Alt), logo: on(Modifier::Super) };
     let mut text = Fmt::<96>::new();
     let title = match keys {
         None => Fmt::<128>::of(format_args!("Remap {} to… modifiers, then a key (Done: the modifiers alone)", Label(input))),

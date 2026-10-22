@@ -98,7 +98,7 @@ fn face(kb: &Keyboard, slot: &Slot) -> KeyFace {
         _ => None,
     };
     let fn_label = slot.fn_key.map(Label::plain);
-    match (kb.fn_layer.on(), slot.fn_key, kb.shift.on(), shift_char) {
+    match (kb.latch(Modifier::Fn).on(), slot.fn_key, kb.latch(Modifier::Shift).on(), shift_char) {
         (true, Some(fn_key), _, _) => KeyFace { main: Label::plain(fn_key), above: None, below: Some(Label::plain(slot.base)) },
         (_, _, true, Some(ch)) => KeyFace { main: Label { key: Key::Char(ch), shifted: true }, above: Some(Label::plain(Key::Char(ch))), below: fn_label },
         _ => KeyFace {
@@ -110,7 +110,7 @@ fn face(kb: &Keyboard, slot: &Slot) -> KeyFace {
 }
 
 fn draw_key(c: &mut Canvas, kb: &Keyboard, slot: &Slot, r: Rect) {
-    let fn_on = kb.fn_layer.on();
+    let fn_on = kb.latch(Modifier::Fn).on();
     let face = face(kb, slot);
     let mut tone = match face.main.key {
         Key::Char(_) => Tone::Normal,
@@ -128,7 +128,7 @@ fn draw_key(c: &mut Canvas, kb: &Keyboard, slot: &Slot, r: Rect) {
     if slot.base == Key::Caps {
         // The light: a dim ring when off, and lit with a soft glow when on.
         let (lx, ly) = (r.x + r.w - r.h * LED_AT, r.y + r.h * LED_AT);
-        if kb.caps {
+        if kb.caps() {
             c.circle(lx, ly, r.h * GLOW, Tone::Accent.rgb().alpha(GLOW_ALPHA));
             c.circle(lx, ly, r.h * LED, Tone::Accent);
         } else {

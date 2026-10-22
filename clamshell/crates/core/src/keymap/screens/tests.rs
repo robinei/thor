@@ -142,7 +142,7 @@ fn a_new_keymap_is_named_edited_and_mapped() {
         s.keymapping().keymaps().get(2).unwrap().get(Input::Button(Button::LB)).map(|b| b.output),
         Some(Output::Key(Chord { shift: true, ..Chord::default() }))
     );
-    assert!(!s.keyboard().shift.on(), "used up");
+    assert!(!s.keyboard().latch(crate::bottom::keyboard::Modifier::Shift).on(), "used up");
     // Selecting A again opens the keyboard again for its key. Back gives up and changes nothing.
     keymap(&mut s, KeymapId::Input(Input::Button(Button::A)));
     keymap(&mut s, KeymapId::Input(Input::Button(Button::A)));

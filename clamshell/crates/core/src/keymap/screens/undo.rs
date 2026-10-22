@@ -7,8 +7,8 @@ use super::*;
 /// The edit screen's Undo: the keymap being edited as last saved, and as it was before each change.
 #[derive(Debug, Clone, Default)]
 pub struct Undo {
-    pub(crate) last: Option<Keymap>,
-    pub(crate) steps: VecDeque<Keymap>,
+    last: Option<Keymap>,
+    steps: VecDeque<Keymap>,
 }
 
 /// How many changes Undo goes back over.
