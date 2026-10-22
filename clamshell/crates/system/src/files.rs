@@ -651,14 +651,9 @@ fn restore(path: &Path) -> Result<PathBuf, String> {
     Ok(to)
 }
 
-/// Now as the Trash records it, local time (`date`'s; UTC without it): 2026-10-18T14:03:00.
+/// Now as the Trash records it, local time: 2026-10-18T14:03:00.
 fn deletion_date() -> String {
-    if let Some(out) = crate::os::command::output("date", &["+%Y-%m-%dT%H:%M:%S"]) {
-        return String::from_utf8_lossy(&out).trim().to_owned();
-    }
-    let secs = crate::clock::unix_secs();
-    let (y, mo, d, h, mi, s) = crate::device::civil(secs);
-    format!("{y:04}-{mo:02}-{d:02}T{h:02}:{mi:02}:{s:02}")
+    jiff::Zoned::now().strftime("%Y-%m-%dT%H:%M:%S").to_string()
 }
 
 #[cfg(test)]
