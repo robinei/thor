@@ -14,10 +14,11 @@ use crate::input::{Range, Raw};
 
 /// The sticks' axes, in the calibration's order: the left stick's x and y, the right stick's.
 const STICK_AXES: [AbsoluteAxisCode; AXES] = [AbsoluteAxisCode::ABS_X, AbsoluteAxisCode::ABS_Y, AbsoluteAxisCode::ABS_RX, AbsoluteAxisCode::ABS_RY];
-/// A calibration's progress sent this often; the pad thread woken this often meanwhile (for the still
-/// seconds, when the sticks send nothing).
+/// A calibration's progress is sent this often.
 const PROGRESS_EVERY: Duration = Duration::from_millis(100);
-pub const SAMPLE_EVERY: Duration = Duration::from_millis(30);
+/// While a calibration goes, the pad thread wakes this often to sample the sticks, so the still seconds
+/// count when the sticks send nothing.
+const SAMPLE_EVERY: Duration = Duration::from_millis(30);
 
 fn index(code: AbsoluteAxisCode) -> Option<usize> {
     STICK_AXES.iter().position(|&c| c == code)

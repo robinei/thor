@@ -48,8 +48,8 @@ use rumble::{Buzz, Effects, Rumble};
 
 pub use route::{Mapping, PadSnapshot};
 
-/// How often a missing controller is looked for: besides whenever /dev/input changes (a device plugged
-/// in, [`Command::Look`]), every second if that can't be watched.
+/// How often a missing controller is looked for besides whenever /dev/input changes (a device plugged in,
+/// [`Command::Look`]); every second if /dev/input can't be watched.
 const RETRY: Duration = Duration::from_secs(30);
 const RETRY_UNWATCHED: Duration = Duration::from_secs(1);
 
@@ -111,8 +111,8 @@ impl Taken {
     }
 }
 
-/// Owns the controller whenever one is connected (`spec`: CLAMSHELL_GAMEPAD), looking again every second
-/// when there is none; its ids in `taken`.
+/// Owns the controller whenever one is connected (`spec`: CLAMSHELL_GAMEPAD), with its ids in `taken`.
+/// Without one it looks again when /dev/input changes, and every [`RETRY`] besides.
 pub fn spawn(spec: DeviceSpec, taken: Taken, sink: impl Sink) -> io::Result<Worker<Command>> {
     let watched = devices_watch();
     let retry = if watched.is_some() { RETRY } else { RETRY_UNWATCHED };

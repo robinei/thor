@@ -255,7 +255,7 @@ struct Windows<S> {
     down: DownRules,
     land: LandRules,
     sink: S,
-    /// Each window's unit, by process (a process's unit never changes).
+    /// Each window process's ancestry (its pid, its parent's, and so on), by its pid and start time.
     lineages: HashMap<(u32, Option<u64>), Vec<u32>>,
     /// Moves asked for, so a window sway won't move isn't asked again (and again, by its events).
     tried: HashSet<(i64, String)>,

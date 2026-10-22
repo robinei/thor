@@ -78,7 +78,8 @@ pub trait Mapping {
     fn release(&mut self, out: &mut Out);
 }
 
-/// The sticks' and the right trigger's ranges.
+/// The sticks' and the triggers' ranges (read from the left stick's x axis and the right trigger: each
+/// pair's axes share one).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Ranges {
     pub stick: Range,
