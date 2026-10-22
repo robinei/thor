@@ -1,7 +1,7 @@
-//! Bluetooth as the Bluetooth tab shows it (BlueZ's view, read by the system side), and its rules: a tap
-//! connects a paired device or pairs a new one (pair, trust, connect), a long press forgets a paired one.
-//! What a device's row and the tab's header say is decided here ([`Bluetooth::device_state`],
-//! [`Bluetooth::status`]); the UI words it.
+//! Bluetooth as the Bluetooth tab shows it, which is BlueZ's view as read by the system side, and its
+//! rules. A tap connects a paired device, pairs a new one (pair, trust, connect), or disconnects a
+//! connected one. A long press forgets a paired device. What a device's row and the tab's header say is
+//! decided here ([`Bluetooth::device_state`], [`Bluetooth::status`]), and the UI puts it into words.
 
 use crate::State;
 use crate::effect::Effect;
@@ -10,7 +10,7 @@ use crate::kit::list::ItemKey;
 use crate::kit::list::Rows;
 use crate::radios::RadioStatus;
 
-/// What kind of device it is (from BlueZ's icon name), for its icon.
+/// What kind of device it is, from BlueZ's icon name, for choosing its icon.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Kind {
     Audio,
@@ -40,7 +40,7 @@ impl Kind {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Device {
-    /// BlueZ's address (`AA:BB:CC:DD:EE:FF`): what it is asked about.
+    /// BlueZ's address (`AA:BB:CC:DD:EE:FF`), used to refer to it.
     pub address: String,
     pub name: String,
     pub kind: Kind,
@@ -65,7 +65,7 @@ pub enum Action {
 pub enum Reason {
     /// BlueZ isn't there.
     Unavailable,
-    /// BlueZ's answer (its error's message or name).
+    /// BlueZ's answer: its error message or name.
     Bus(String),
 }
 
@@ -78,7 +78,7 @@ pub struct Problem {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Bluetooth {
-    /// There is an adapter (and BlueZ runs).
+    /// There is an adapter and BlueZ is running.
     pub present: bool,
     /// The radio is on.
     pub on: bool,
@@ -100,7 +100,7 @@ pub enum DeviceState {
 }
 
 impl Bluetooth {
-    /// How many devices are connected (for the bar).
+    /// How many devices are connected, for the bar.
     pub fn connected(&self) -> usize {
         self.devices.iter().filter(|d| d.connected).count()
     }
@@ -117,8 +117,9 @@ impl Bluetooth {
         }
     }
 
-    /// What Bluetooth is doing, for the tab's header: an error first, then no adapter, off, connecting
-    /// (the device's name, or its address), connected (to one, or how many), or nothing.
+    /// What Bluetooth is doing, for the tab's header. In order of precedence: an error, no adapter, off,
+    /// connecting (with the device's name or address), connected (to one device, or how many), or
+    /// nothing.
     pub fn status(&self) -> RadioStatus<'_, Problem> {
         if let Some(e) = &self.error {
             return RadioStatus::Error(e);
@@ -148,12 +149,12 @@ pub enum Command {
     /// Connect a paired device, or pair, trust and connect a new one.
     Connect(String),
     Disconnect(String),
-    /// Unpair (BlueZ removes the device).
+    /// Unpair. BlueZ removes the device.
     Forget(String),
 }
 
 impl Command {
-    /// What it does, for saying what failed.
+    /// What the command does, for saying what failed.
     pub fn action(&self) -> Action {
         match self {
             Command::Power(_) => Action::Power,
@@ -164,7 +165,7 @@ impl Command {
     }
 }
 
-/// Connected first, then paired, then by name (unnamed ones last).
+/// Sorts devices with connected ones first, then paired ones, then by name with unnamed ones last.
 pub fn sort(mut devices: Vec<Device>) -> Vec<Device> {
     devices.sort_by(|a, b| {
         b.connected
@@ -176,7 +177,7 @@ pub fn sort(mut devices: Vec<Device>) -> Vec<Device> {
     devices
 }
 
-/// The devices as a list's rows (found again by their address).
+/// The devices as a list's rows, found again by their address.
 impl Rows for Bluetooth {
     fn len(&self) -> usize {
         self.devices.len()
@@ -199,8 +200,8 @@ impl State {
         }
     }
 
-    /// A tap on the device at `index` (connect, or disconnect a connected one), or a long press (forget
-    /// a paired one).
+    /// A tap on the device at `index` connects it, or disconnects it if it is connected. A long press
+    /// forgets a paired device.
     pub(crate) fn tap_device(&mut self, index: usize, long: bool) -> Vec<Effect> {
         let bt = &mut self.radios.bluetooth;
         let Some(d) = bt.devices.get(index) else {

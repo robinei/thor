@@ -1,7 +1,7 @@
-//! Wi-Fi as the Wi-Fi tab shows it (NetworkManager's view, read by the system side), and its rules: a
-//! tap joins a network (asking for its password first if it has one and isn't saved), a long press
-//! forgets a saved one. What a network's row and the tab's header say is decided here
-//! ([`Wifi::net_state`], [`Wifi::status`]); the UI words it.
+//! Wi-Fi as the Wi-Fi tab shows it, which is NetworkManager's view as read by the system side, and its
+//! rules. A tap joins a network, first asking for its password if it has one and it isn't saved. A long
+//! press forgets a saved network. What a network's row and the tab's header say is decided here
+//! ([`Wifi::net_state`], [`Wifi::status`]), and the UI puts it into words.
 
 use crate::State;
 use crate::bottom::editor::{Editor, Purpose};
@@ -19,7 +19,7 @@ pub struct Network {
     pub strength: u8,
     /// Needs a password (WEP or WPA personal).
     pub secure: bool,
-    /// Needs a login (WPA enterprise): not supported here.
+    /// Needs a login (WPA enterprise), which isn't supported here.
     pub enterprise: bool,
     /// NetworkManager has a connection saved for it.
     pub saved: bool,
@@ -30,25 +30,25 @@ pub struct Network {
 /// Why joining failed, or Wi-Fi can't be used.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Problem {
-    /// The password was refused (or is missing).
+    /// The password was refused or is missing.
     WrongPassword { ssid: String },
     /// Joined, but the network gave no address.
     NoAddress { ssid: String },
     /// No answer before the time limit.
     NoAnswer { ssid: String },
-    /// NetworkManager ended the attempt for another reason (its NMActiveConnectionStateReason).
+    /// NetworkManager ended the attempt for another reason, given as its NMActiveConnectionStateReason.
     Refused { ssid: String, reason: u32 },
     /// The network needs a login (WPA enterprise), which isn't supported here.
     NeedsLogin { ssid: String },
     /// NetworkManager isn't there.
     Unavailable,
-    /// NetworkManager's D-Bus call failed (its message).
+    /// NetworkManager's D-Bus call failed, with its message.
     Bus(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Wifi {
-    /// There is a Wi-Fi device (and NetworkManager runs).
+    /// There is a Wi-Fi device and NetworkManager is running.
     pub present: bool,
     /// The radio is on.
     pub on: bool,
@@ -86,8 +86,8 @@ impl Wifi {
         }
     }
 
-    /// What Wi-Fi is doing, for the tab's header: an error first, then no device, off, joining (the
-    /// network), connected (to it), or nothing.
+    /// What Wi-Fi is doing, for the tab's header. In order of precedence: an error, no device, off,
+    /// joining a network, connected to one, or nothing.
     pub fn status(&self) -> RadioStatus<'_, Problem> {
         if let Some(e) = &self.error {
             RadioStatus::Error(e)
@@ -118,16 +118,17 @@ pub fn signal_bars(strength: u8) -> u8 {
 /// What the Wi-Fi side is asked to do.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
-    /// The radio on or off.
+    /// Turn the radio on or off.
     Enable(bool),
-    /// Join a network: its saved connection, or a new one (with this password, if it needs one).
+    /// Join a network, using its saved connection or a new one with this password if it needs one.
     Connect { ssid: String, password: Option<Secret> },
-    /// Drop a network's saved connections (which also disconnects it).
+    /// Drop a network's saved connections, which also disconnects it.
     Forget(String),
 }
 
-/// One entry per SSID (the strongest access point; saved and connected if any of them is), connected
-/// first, then saved ones, then by strength. Hidden networks (empty SSID) are left out.
+/// Sorts the networks to one entry per SSID. Each entry has the strength of the strongest access point,
+/// and counts as saved or connected if any of the SSID's access points is. The connected network comes first, then
+/// saved ones, then the rest by strength. Hidden networks, with an empty SSID, are left out.
 pub fn sort(networks: Vec<Network>) -> Vec<Network> {
     let mut out: Vec<Network> = Vec::with_capacity(networks.len());
     for n in networks.into_iter().filter(|n| !n.ssid.is_empty()) {
@@ -146,7 +147,7 @@ pub fn sort(networks: Vec<Network>) -> Vec<Network> {
     out
 }
 
-/// The networks as a list's rows (found again by their SSID).
+/// The networks as a list's rows, found again by their SSID.
 impl Rows for Wifi {
     fn len(&self) -> usize {
         self.networks.len()
