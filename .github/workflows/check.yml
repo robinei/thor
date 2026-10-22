@@ -1,0 +1,26 @@
+# The checks every commit passes locally (tools/check.sh: formatting, clippy, tests with the
+# snapshots, rustdoc), run on every push and pull request. The device-only tests stay ignored here, as
+# they do on a desktop.
+name: check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Libraries ClamShell links
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libdbus-1-dev libxkbcommon-dev pkg-config
+      # The version the workspace declares (rust-version), so a newer clippy's lints don't fail a build
+      # that passed locally.
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.95"
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: clamshell
+      - run: tools/check.sh
