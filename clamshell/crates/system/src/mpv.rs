@@ -46,7 +46,7 @@ pub fn position(dirs: &[PathBuf], file: &Path) -> Option<(u32, u64)> {
     let kept = names.iter().flat_map(|n| dirs.iter().map(move |d| d.join(n))).find(|f| f.is_file())?;
     let text = std::fs::read_to_string(&kept).ok()?;
     let start = text.lines().find_map(|l| l.trim().strip_prefix("start="))?;
-    let at = std::fs::metadata(&kept).and_then(|m| m.modified()).ok().map_or(0, clamshell_core::unix_secs_at);
+    let at = std::fs::metadata(&kept).and_then(|m| m.modified()).ok().map_or(0, crate::clock::unix_secs_at);
     start.trim().parse::<f64>().ok().filter(|s| *s >= 0.0).map(|s| (s as u32, at))
 }
 

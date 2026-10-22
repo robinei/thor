@@ -31,7 +31,7 @@ pub const FIXED_NOW: u64 = 1_760_000_000;
 pub fn command(sources: &clamshell_system::library::Sources, dir: &Path) -> Result<(), String> {
     let real = std::env::var("CLAMSHELL_SNAPSHOT_LIBRARY").is_ok_and(|v| v == "real");
     let library = if real { clamshell_system::library::load(sources).library } else { clamshell_library::demo::library() };
-    let now = if std::env::var_os("CLAMSHELL_SNAPSHOT_NOW").is_some() { clamshell_core::unix_secs() } else { FIXED_NOW };
+    let now = if std::env::var_os("CLAMSHELL_SNAPSHOT_NOW").is_some() { clamshell_system::clock::unix_secs() } else { FIXED_NOW };
     render(&|| state(library.clone()), now, dir).map_err(|e| e.to_string())
 }
 

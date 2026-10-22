@@ -9,6 +9,23 @@ use clamshell_core::Event;
 
 use crate::{Closed, Sink, sleep, worker};
 
+/// Seconds since the epoch on the wall clock at `t` (0 before the epoch).
+pub fn unix_secs_at(t: SystemTime) -> u64 {
+    t.duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
+}
+
+/// Seconds since the epoch on the wall clock now.
+pub fn unix_secs() -> u64 {
+    unix_secs_at(SystemTime::now())
+}
+
+/// Seconds on a monotonic clock, counted from the first call (the program's start); stopped while the
+/// system sleeps.
+pub fn mono_secs() -> u64 {
+    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    START.get_or_init(std::time::Instant::now).elapsed().as_secs()
+}
+
 pub fn spawn(sink: impl Sink) -> io::Result<()> {
     worker::detached("clock", move || {
         let _ = tick(&sink);
@@ -24,7 +41,7 @@ fn tick(sink: &impl Sink) -> Result<(), Closed> {
             log::info!("woke from sleep");
             sink.send(Event::Resumed)?;
         }
-        sink.send(Event::Tick { unix_secs: now.as_secs(), mono_secs: clamshell_core::mono_secs() })?;
+        sink.send(Event::Tick { unix_secs: now.as_secs(), mono_secs: mono_secs() })?;
         let into_second = Duration::from_nanos(u64::from(now.subsec_nanos()));
         thread::sleep(Duration::from_secs(1).saturating_sub(into_second));
     }

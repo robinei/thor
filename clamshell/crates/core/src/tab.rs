@@ -90,7 +90,7 @@ impl Tab {
 #[derive(Debug, Clone, Default)]
 pub struct Bottom {
     pub(crate) tab: Tab,
-    /// When the second screen was last touched, or the pad's focus was on it ([`crate::mono_secs`]; none
+    /// When the second screen was last touched, or the pad's focus was on it (monotonic seconds, as in [`crate::Event::Tick`]; none
     /// before the clock's first reading), and whether it is drawn dimmed (see
     /// [`crate::State::bottom_dimmed`]).
     pub(crate) used_at: Option<u64>,

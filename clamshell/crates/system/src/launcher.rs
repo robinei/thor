@@ -226,7 +226,7 @@ fn ask_steam(config: &Config, request: &Request, appid: u32) -> Result<(), Error
     // (`-silent`: if Steam isn't running, it starts without its window, only the game showing.)
     let argv: Vec<String> = ["steam", "-silent", "-applaunch", &appid.to_string()].map(String::from).to_vec();
     if !steam_client_running() {
-        let instance = Instance::Run { key: clamshell_library::key_of(STEAM_ENTRY), secs: clamshell_core::unix_secs(), n: 0 };
+        let instance = Instance::Run { key: clamshell_library::key_of(STEAM_ENTRY), secs: crate::clock::unix_secs(), n: 0 };
         let job = Job { unit: instance.name(), workspace: instance.workspace(), slice: instance.slice(), argv, env: vec![], workdir: None };
         log::info!("launcher: Steam isn't running: starting it in {}", job.unit);
         if let Started::Child(child) = config.jobs.without_sway().start(&job)? {

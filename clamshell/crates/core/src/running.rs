@@ -50,7 +50,7 @@ pub enum Origin {
     /// icon's, or its window's: windows of it, or of a process it started, are the entry's), none if
     /// it runs in another program's; `tray`: the icon's key, if it has one.
     Found { pid: Option<u32>, tray: Option<Arc<str>> },
-    /// By its windows, since `since` ([`crate::mono_secs`]): started by another program, or its launches ended
+    /// By its windows, since `since` (monotonic seconds, as in [`crate::Event::Tick`]): started by another program, or its launches ended
     /// while it ran on in a program not ours. It ends once it has had windows ([`Running::seen`]) and has
     /// none, or none came by `until`; its play from `since` recorded then. Its windows: those with its app
     /// id, else (a browsed file's) a new window of no launch of ours, taken until `until`.
@@ -69,7 +69,7 @@ pub struct Running {
     pub origin: Origin,
     /// The app id its windows have, if it runs in another program's processes (see [`app_id_of`]).
     pub app_id: Option<Arc<str>>,
-    /// When it first started ([`crate::mono_secs`]).
+    /// When it first started (monotonic seconds, as in [`crate::Event::Tick`]).
     pub start: u64,
     /// A window of it has been there (since it started, or since it went on by its windows): before, it
     /// is starting.
@@ -293,7 +293,7 @@ impl State {
         ended.into_iter().flat_map(|(game, start)| self.record_play(game, start)).collect()
     }
 
-    /// A play of `game` from `start` ([`crate::mono_secs`]) until now: counted, and recorded, dated by the
+    /// A play of `game` from `start` (monotonic seconds, as in [`crate::Event::Tick`]) until now: counted, and recorded, dated by the
     /// wall clock.
     /// (A video's: where mpv left it read, mpv having written it as it quit.)
     fn record_play(&mut self, game: Arc<str>, start: u64) -> Vec<Effect> {
