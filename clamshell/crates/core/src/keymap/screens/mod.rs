@@ -148,8 +148,12 @@ pub struct Keymapping {
     open: Option<Screen>,
     edit: EditView,
     undo: Undo,
-    /// The keymap in force as last sent to the pad.
-    sent: Option<Keymap>,
+    /// The keymap in force as last sent to the pad, by its id and version (see [`Keymaps::version`]).
+    /// Default, which has no stored keymap, is (0, 0).
+    sent: Option<(u16, u64)>,
+    /// The keymap sent, to check that the id and version stand for it.
+    #[cfg(debug_assertions)]
+    sent_keymap: Option<Keymap>,
 }
 
 /// What the keymaps' screens read from elsewhere: the game the settings panel edits, if any, the keymap
@@ -301,24 +305,43 @@ impl Keymapping {
 
     /// Keymap `in_force`, to send to the pad if it changed since it was last sent, or if `always`.
     pub(crate) fn follow(&mut self, in_force: u16, always: bool) -> Option<Effect> {
-        // Compared in place, since this runs after every event. Default, which has no stored keymap, is
-        // id 0.
-        let stored = self.keymaps.get(in_force);
-        let same = self.sent.as_ref().is_some_and(|sent| match stored {
-            Some(k) => sent == k,
-            None => sent.id == 0,
-        });
-        if same && !always {
+        let sent = Some(self.sent_as(in_force));
+        if sent == self.sent && !always {
+            // Compared in place, since this runs after every event.
+            #[cfg(debug_assertions)]
+            debug_assert!(
+                self.sent_keymap.as_ref().is_some_and(|k| match self.keymaps.get(in_force) {
+                    Some(stored) => k == stored,
+                    None => k.id == 0,
+                }),
+                "keymap {in_force} unchanged by its version"
+            );
             return None;
         }
+        self.sent = sent;
         let now = self.in_force(in_force);
-        self.sent = Some(now.clone());
+        #[cfg(debug_assertions)]
+        {
+            self.sent_keymap = Some(now.clone());
+        }
         Some(Effect::Keymap(now))
     }
 
     /// Keymap `in_force` is the one the pad has, as at start.
     pub(crate) fn mark_sent(&mut self, in_force: u16) {
-        self.sent = Some(self.in_force(in_force));
+        self.sent = Some(self.sent_as(in_force));
+        #[cfg(debug_assertions)]
+        {
+            self.sent_keymap = Some(self.in_force(in_force));
+        }
+    }
+
+    /// Keymap `in_force` as it is sent: its id and version, or (0, 0) for Default.
+    fn sent_as(&self, in_force: u16) -> (u16, u64) {
+        match self.keymaps.get(in_force) {
+            Some(k) => (k.id, self.keymaps.version(k.id)),
+            None => (0, 0),
+        }
     }
 
     /// Makes `owner`'s own keymap with `preset`'s bindings and returns its id (see [`Keymaps::make_own_from`]).
