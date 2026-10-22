@@ -5,7 +5,6 @@
 
 pub mod archives;
 pub mod audio;
-pub mod desktop;
 pub mod device;
 pub mod display;
 pub mod files;

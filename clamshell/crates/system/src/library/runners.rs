@@ -82,7 +82,7 @@ impl Runner {
     /// file's its own, nothing for a Steam runner.
     pub fn command(&self, path: &Path, home: Option<&Path>) -> Launch {
         match self.kind {
-            Some(Kind::Desktop) => crate::desktop::command(path).unwrap_or_default(),
+            Some(Kind::Desktop) => crate::library::desktop::command(path).unwrap_or_default(),
             Some(Kind::Steam) => Launch::None,
             None => clamshell_library::RunnerOf { command: self.template(home).into(), ..clamshell_library::RunnerOf::new(&self.id, &self.name, true) }
                 .command_for(&[path.to_path_buf()]),

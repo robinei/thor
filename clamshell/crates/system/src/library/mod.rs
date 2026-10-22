@@ -3,6 +3,7 @@
 //! clamshell-library's.
 
 pub mod content;
+pub mod desktop;
 pub mod meta;
 pub mod runners;
 pub mod steam;
@@ -30,7 +31,7 @@ pub struct Sources {
     /// The art cache, for what was fetched about entries and videos' lengths.
     pub art: Option<PathBuf>,
     /// The XDG data dirs, the installed apps' desktop files in their `applications` (see
-    /// [`crate::desktop`]).
+    /// [`crate::library::desktop`]).
     pub data_dirs: Vec<PathBuf>,
     /// Where mpv keeps videos' places.
     pub watch_later: Vec<PathBuf>,
@@ -456,7 +457,7 @@ impl Builder<'_> {
             }
         }
         if !desktop.is_empty() {
-            for d in crate::desktop::entries(&self.sources.data_dirs) {
+            for d in crate::library::desktop::entries(&self.sources.data_dirs) {
                 if let Some(rule) = first_match(&desktop, &d.id, &d.name, &d.categories) {
                     placed.push((rule, d.game));
                 }
