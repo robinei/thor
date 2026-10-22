@@ -81,7 +81,7 @@ const DOWN_OFF: &str = "clamshell-down-off";
 /// ClamShell) reuses the same one.
 fn down_switch(rule: &DownRule) -> String {
     let text = format!("{}\0{}", rule.app_id, rule.title.as_deref().unwrap_or("\0"));
-    let hash = text.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3));
+    let hash = clamshell_library::hash::fnv1a64(text.as_bytes());
     format!("$clamshell_down_{hash:016x}")
 }
 

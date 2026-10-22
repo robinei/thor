@@ -13,39 +13,39 @@ decision: CI (GitHub Actions) for now; the Upscale setting stays as it is.
 ## 1. Stale docs, dead code, bypassed helpers
 
 Comments that describe what is no longer so:
-- [ ] Keymaps: "two layers" and "the Back layer / main layer" (now Base and named layers):
+- [x] Keymaps: "two layers" and "the Back layer / main layer" (now Base and named layers):
       `keymap/mod.rs:13-14,478`, `id.rs:192`, `keymap_screens/params.rs:17,41`,
       `keymap_screens/mod.rs:662`, `keymap_screens/tests.rs:504-508`.
-- [ ] The keymap file's old text format in comments: `param.rs:32`, `keymap/mod.rs:169,494`,
+- [x] The keymap file's old text format in comments: `param.rs:32`, `keymap/mod.rs:169,494`,
       `keymap/inputs.rs:121,139`.
-- [ ] The removed Setup tab: `core/resume.rs:65-66`, `ui/views/settings.rs:7`.
-- [ ] `core/sys.rs:1-3` (touchpad mode field), `core/editor.rs:20` (`Editor::tab`), `core/windows.rs:1-7`
+- [x] The removed Setup tab: `core/resume.rs:65-66`, `ui/views/settings.rs:7`.
+- [x] `core/sys.rs:1-3` (touchpad mode field), `core/editor.rs:20` (`Editor::tab`), `core/windows.rs:1-7`
       (the old dock instance / games split).
-- [ ] System comments that contradict their code: `sway/mod.rs:262` (`lineages`), `pad/mod.rs:113` (the
+- [x] System comments that contradict their code: `sway/mod.rs:262` (`lineages`), `pad/mod.rs:113` (the
       retry), `pad/motion.rs:2-7`, `pad/calibrate.rs:17-20` (`SAMPLE_EVERY`), `pad/route.rs:80` (`Ranges`).
-- [ ] UI: `draw.rs:58` (a doc above the wrong function; `shifted` undocumented), `views/dock.rs:1-8,
+- [x] UI: `draw.rs:58` (a doc above the wrong function; `shifted` undocumented), `views/dock.rs:1-8,
       25-29,112-116` (the menu's items; `ART_TOP`, `ART_ROOM`), `src/main.rs:3` ("test pipe"),
       `config.rs` (`CLAMSHELL_START_MODE` sets a tab).
-- [ ] Doc comments on the wrong item: `core/lib.rs:307-309` (`game`), `core/scroll.rs` (`RowsOf`),
+- [x] Doc comments on the wrong item: `core/lib.rs:307-309` (`game`), `core/scroll.rs` (`RowsOf`),
       `core/settings.rs:285` (`background`).
-- [ ] Lines spliced in without rewrapping, mid-sentence breaks: `core/found.rs:4`, `tray.rs:8`, `pad.rs:3`,
+- [x] Lines spliced in without rewrapping, mid-sentence breaks: `core/found.rs:4`, `tray.rs:8`, `pad.rs:3`,
       `dock.rs:5`, `running.rs:20`, `instance.rs:3`, `lib.rs:999`, `keymap/mod.rs:6`, `actions.rs:3`,
       `keyboard.rs:102`; the ~24 long comment lines in ui and the 4 over 170 characters in system.
 
 Dead or vestigial code:
-- [ ] The keymap text format kept alive by its tests: `Chord::write`, `Chord::parse`, `Small`, `named_name`,
+- [x] The keymap text format kept alive by its tests: `Chord::write`, `Chord::parse`, `Small`, `named_name`,
       `parse_named` (`keymap/outputs.rs:27-178`); `Param`'s and `Actuation`'s unused `name`/`from_name`
       (a label-only form of `names!`); `parse` moved to a test helper.
-- [ ] `pad::Ack`'s always-true `PartialEq` and `Command`'s derives nothing uses (`pad/mod.rs:81-90`).
-- [ ] `Remap::get`'s ignored `&PadSnapshot` through its callers; `rest()` (`pad/remap/mod.rs:396,463`).
-- [ ] `SensorHub::turn` (always `THOR_TURN`); `request()`'s `io::Result` that can't be `Err`
+- [x] `pad::Ack`'s always-true `PartialEq` and `Command`'s derives nothing uses (`pad/mod.rs:81-90`).
+- [x] `Remap::get`'s ignored `&PadSnapshot` through its callers; `rest()` (`pad/remap/mod.rs:396,463`).
+- [x] `SensorHub::turn` (always `THOR_TURN`); `request()`'s `io::Result` that can't be `Err`
       (`pad/sensor_hub.rs:69,92`).
-- [ ] sway's `DownRules`/`LandRules` dispatched in two places (`sway/mod.rs:197-222,244`).
-- [ ] Test-only API answering differently from the real one: `Settings::of`, `Settings::env_of`
+- [x] sway's `DownRules`/`LandRules` dispatched in two places (`sway/mod.rs:197-222,244`).
+- [x] Test-only API answering differently from the real one: `Settings::of`, `Settings::env_of`
       (`core/settings.rs:366,420`).
-- [ ] `Rect::intersect` unused beside a free `intersect` (`ui/draw.rs:52`, `toolkit/scroll.rs:102`).
-- [ ] 22 `pub` items used only in their own file (system); private.
-- [ ] Small oddities: two consecutive `if init.setup` (`core/lib.rs:239-245`), `time_back()`'s unused
+- [x] `Rect::intersect` unused beside a free `intersect` (`ui/draw.rs:52`, `toolkit/scroll.rs:102`).
+- [x] 22 `pub` items used only in their own file (system); private.
+- [x] Small oddities: two consecutive `if init.setup` (`core/lib.rs:239-245`), `time_back()`'s unused
       bool, `Session::new_name`, `Levels::leave` = `release`, split `impl` blocks (`idle.rs`, library
       `lib.rs:365,371`), `impl ListEvent` before its enum, `is_back_key`, `decide_layer_holds`' double
       match, `crc32`'s table rebuilt per call.

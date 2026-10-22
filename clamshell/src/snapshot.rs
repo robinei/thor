@@ -555,11 +555,6 @@ mod tests {
     const HEADER: &str = "# FNV-1a hashes of the `clamshell --snapshot` files (src/snapshot.rs). After a change meant to change\n\
                           # what is drawn: CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots\n";
 
-    /// FNV-1a, 64 bits: enough to tell files apart, and no dependency.
-    fn hash(bytes: &[u8]) -> u64 {
-        bytes.iter().fold(0xcbf2_9ce4_8422_2325, |h, &b| (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3))
-    }
-
     /// The snapshots, drawn and hashed, against the reference hashes. After a change meant to change what
     /// is drawn (look at the files: `clamshell --snapshot DIR`), write the new hashes with
     /// `CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots`.
@@ -571,7 +566,10 @@ mod tests {
         render(&|| state(clamshell_library::demo_library()), FIXED_NOW, &dir).unwrap();
         let mut hashes = BTreeMap::new();
         for entry in std::fs::read_dir(&dir).unwrap().flatten() {
-            hashes.insert(entry.file_name().to_string_lossy().into_owned(), format!("{:016x}", hash(&std::fs::read(entry.path()).unwrap())));
+            hashes.insert(
+                entry.file_name().to_string_lossy().into_owned(),
+                format!("{:016x}", clamshell_library::hash::fnv1a64(&std::fs::read(entry.path()).unwrap())),
+            );
         }
         let _ = std::fs::remove_dir_all(&base);
         let text: String = std::iter::once(HEADER.to_owned()).chain(hashes.iter().map(|(name, hash)| format!("{name} {hash}\n"))).collect();

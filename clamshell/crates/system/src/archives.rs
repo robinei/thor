@@ -138,7 +138,7 @@ fn detach(dir: &Path) {
 /// FNV-1a of a path: its mount's dir name.
 fn hash(path: &Path) -> u64 {
     use std::os::unix::ffi::OsStrExt;
-    path.as_os_str().as_bytes().iter().fold(0xcbf2_9ce4_8422_2325, |h, b| (h ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3))
+    clamshell_library::hash::fnv1a64(path.as_os_str().as_bytes())
 }
 
 #[cfg(test)]

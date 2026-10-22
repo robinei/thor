@@ -3,6 +3,7 @@
 //! that need no disk. No I/O and no dependencies: scanning (library.json's content dirs, Steam, desktop
 //! files), play time and favourites are clamshell-system's (`library`).
 
+pub mod hash;
 pub mod pattern;
 pub mod plays;
 pub mod sort;
@@ -298,13 +299,13 @@ pub fn key_of(id: &str) -> String {
     if trimmed == 0 {
         slug = "entry".into();
     }
-    let h = id.bytes().fold(0x811c_9dc5u32, |h, b| (h ^ u32::from(b)).wrapping_mul(0x0100_0193));
+    let h = hash::fnv1a32(id.as_bytes());
     format!("{}_{:06x}", slug.trim_matches('_'), h & 0x00ff_ffff)
 }
 
 /// A muted colour from a hash of `id`, stable across runs.
 fn color_of(id: &str) -> u32 {
-    let h = id.bytes().fold(0x811c_9dc5u32, |h, b| (h ^ u32::from(b)).wrapping_mul(0x0100_0193));
+    let h = hash::fnv1a32(id.as_bytes());
     let channel = |shift: u32| 0x40 + ((h >> shift) & 0x7f);
     (channel(16) << 16) | (channel(8) << 8) | channel(0)
 }
