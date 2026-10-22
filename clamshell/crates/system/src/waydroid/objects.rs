@@ -68,7 +68,18 @@ impl Settings {
             return;
         }
         self.read = Some(now);
-        self.caption = std::fs::read_to_string(dir.join("android-caption")).unwrap_or_default().trim().parse().unwrap_or(0);
+        let path = dir.join("android-caption");
+        self.caption = match std::fs::read_to_string(&path) {
+            Ok(text) => text.trim().parse().inspect_err(|e| log::debug!("wayland filter: {}: {e}", path.display())).unwrap_or(0),
+            Err(e) => {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    log::trace!("wayland filter: {}: {e}", path.display());
+                } else {
+                    log::debug!("wayland filter: {}: {e}", path.display());
+                }
+                0
+            }
+        };
     }
 }
 

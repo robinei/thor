@@ -46,7 +46,11 @@ pub fn run(settings: PathBuf, frames: PathBuf) -> io::Result<()> {
     let display = std::env::var("WAYLAND_DISPLAY").map_err(|_| io::Error::other("no WAYLAND_DISPLAY"))?;
     let upstream = runtime.join(&display);
     let path = runtime.join(format!("{display}-android"));
-    let _ = std::fs::remove_file(&path);
+    if let Err(e) = std::fs::remove_file(&path)
+        && e.kind() != io::ErrorKind::NotFound
+    {
+        log::warn!("wayland filter: removing {}: {e}", path.display());
+    }
     let listener = UnixListener::bind(&path)?;
     log::info!("wayland filter: {} for {}", path.display(), upstream.display());
     let (ended, end) = mpsc::channel();
@@ -58,8 +62,10 @@ pub fn run(settings: PathBuf, frames: PathBuf) -> io::Result<()> {
             }
         }
     })?;
-    let _ = end.recv();
-    log::info!("wayland filter: the compositor closed a connection: ending");
+    match end.recv() {
+        Ok(()) => log::info!("wayland filter: the compositor closed a connection: ending"),
+        Err(e) => log::warn!("wayland filter: the listener ended: {e}"),
+    }
     Ok(())
 }
 
@@ -88,8 +94,8 @@ fn connect(client: UnixStream, upstream: &Path, settings: &Path, frames: &Path, 
     let first2 = first.clone();
     let (ended, ended2) = (ended.clone(), ended.clone());
     let end = |first: &OnceLock<bool>, compositor: bool, ended: &mpsc::Sender<()>| {
-        if *first.get_or_init(|| compositor) {
-            let _ = ended.send(());
+        if *first.get_or_init(|| compositor) && ended.send(()).is_err() {
+            log::debug!("wayland filter: already ending");
         }
     };
     let requests_relay = worker::detached("wayland filter", move || {
@@ -120,7 +126,9 @@ fn connect(client: UnixStream, upstream: &Path, settings: &Path, frames: &Path, 
     });
     if let Err(e) = events_relay {
         log::warn!("wayland filter: {e}");
-        let _ = kept.shutdown(std::net::Shutdown::Both);
+        if let Err(e) = kept.shutdown(std::net::Shutdown::Both) {
+            log::warn!("wayland filter: closing the client's connection: {e}");
+        }
     }
 }
 

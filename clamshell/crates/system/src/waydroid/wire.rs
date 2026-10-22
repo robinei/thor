@@ -62,7 +62,11 @@ pub(super) fn relay(
         let n = match rustix::net::recvmsg(from, &mut [IoSliceMut::new(&mut chunk)], &mut ancillary, RecvFlags::CMSG_CLOEXEC) {
             Ok(r) if r.bytes > 0 => r.bytes,
             Err(rustix::io::Errno::INTR) => continue,
-            Ok(_) | Err(_) => break true,
+            Ok(_) => break true,
+            Err(e) => {
+                log::debug!("wayland filter: receiving: {e}");
+                break true;
+            }
         };
         let mut received: Vec<OwnedFd> = Vec::new();
         for message in ancillary.drain() {
@@ -85,13 +89,21 @@ pub(super) fn relay(
         buf.drain(..used);
         after(now);
         // (The descriptors go with the bytes they came with: the receiver takes them in order, by message.)
-        if (!out.is_empty() || !received.is_empty()) && send(to, &out, &received).is_err() {
+        if (!out.is_empty() || !received.is_empty())
+            && let Err(e) = send(to, &out, &received)
+        {
+            log::debug!("wayland filter: sending: {e}");
             break false;
         }
     };
     closed(from_closed);
-    let _ = from.shutdown(std::net::Shutdown::Both);
-    let _ = to.shutdown(std::net::Shutdown::Both);
+    for end in [from, to] {
+        if let Err(e) = end.shutdown(std::net::Shutdown::Both)
+            && e.kind() != io::ErrorKind::NotConnected
+        {
+            log::debug!("wayland filter: closing: {e}");
+        }
+    }
 }
 
 /// Sends `bytes` with `fds` (with the first part sent), all of it.
