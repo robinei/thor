@@ -233,7 +233,7 @@ mod tests {
         assert_eq!(route(&mut s, PointerEvent::Activate(Id::Tab(Tab::Keyboard)).into()), PadRoute::Keys, "an app and the keyboard: typing");
         assert_eq!(route(&mut s, Event::Windows(vec![window("retroarch", Some("clamshell-run-zelda_1-1-0.scope"))])), PadRoute::Keys, "a game too");
         assert_eq!(route(&mut s, PointerEvent::Activate(Id::Tab(Tab::Dock)).into()), PadRoute::Game);
-        let (_, fx) = s.applied(Event::Windows(vec![window(crate::session::windows::SHELF_APP_ID, None)]));
+        let fx = s.applied(Event::Windows(vec![window(crate::session::windows::SHELF_APP_ID, None)]));
         assert_eq!(fx, vec![Effect::PadRoute(PadRoute::Ui)]);
     }
 
@@ -243,21 +243,21 @@ mod tests {
         s.applied(Event::Windows(vec![foot()]));
         tap(&mut s, Id::Tab(Tab::Keyboard));
         assert_eq!(s.pad().route(), PadRoute::Keys);
-        assert_eq!(s.applied(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Ui)], "to the keys on screen");
+        assert_eq!(s.applied(Event::PadSwitch), vec![Effect::PadRoute(PadRoute::Ui)], "to the keys on screen");
         assert!(!s.pad().on_top());
-        assert_eq!(s.applied(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Keys)], "and back to typing");
+        assert_eq!(s.applied(Event::PadSwitch), vec![Effect::PadRoute(PadRoute::Keys)], "and back to typing");
         // The pad mouse takes it, and View moves it to the second screen and back.
         assert_eq!(tap(&mut s, Id::PadMouse), vec![Effect::PadRoute(PadRoute::Mouse)]);
-        assert_eq!(s.applied(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Ui)]);
-        assert_eq!(s.applied(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Mouse)]);
+        assert_eq!(s.applied(Event::PadSwitch), vec![Effect::PadRoute(PadRoute::Ui)]);
+        assert_eq!(s.applied(Event::PadSwitch), vec![Effect::PadRoute(PadRoute::Mouse)]);
         // With the pad mouse off and another tab open, the app in front has it, as a game would, and View
         // is its button.
         tap(&mut s, Id::PadMouse);
         tap(&mut s, Id::Tab(Tab::Dock));
         assert_eq!(s.pad().route(), PadRoute::Game);
         // A switch from outside the pad moves it to the second screen and back, since View is the app's.
-        assert_eq!(s.applied(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Ui)]);
-        assert_eq!(s.applied(Event::PadSwitch).1, vec![Effect::PadRoute(PadRoute::Game)]);
+        assert_eq!(s.applied(Event::PadSwitch), vec![Effect::PadRoute(PadRoute::Ui)]);
+        assert_eq!(s.applied(Event::PadSwitch), vec![Effect::PadRoute(PadRoute::Game)]);
         // With shelf in front and the pad in use on the second screen, the pad stays there when the
         // keyboard comes up under it.
         s.applied(Event::Windows(vec![win(2, crate::session::windows::SHELF_APP_ID, &Instance::Shelf.name(), true)]));
@@ -271,8 +271,8 @@ mod tests {
         let mut s = state();
         s.applied(PointerEvent::Focus(game("zelda-lttp")).into());
         assert!(s.pointer().show_focus());
-        let (dirty, _) = crate::testkit::start(&mut s, "zelda-lttp");
-        assert_eq!((dirty, s.pointer().show_focus()), (Dirty::BOTH, false));
+        crate::testkit::start(&mut s, "zelda-lttp");
+        assert!(!s.pointer().show_focus());
     }
 
     #[test]
@@ -284,9 +284,9 @@ mod tests {
         let foot_entry = Instance::Run { key: clamshell_library::key_of("desktop:foot"), secs: 1, n: 0 };
         s.applied(Event::Units(vec![foot_entry]));
         long(&mut s, Id::Dock(crate::DockId::Entry(0)));
-        let (_, fx) = s.applied(PointerEvent::Activate(Id::Dock(crate::DockId::Move)).into());
+        let fx = s.applied(PointerEvent::Activate(Id::Dock(crate::DockId::Move)).into());
         assert_eq!(fx, vec![Effect::Watch(crate::effect::Watch::Battery, false), Effect::PadRoute(PadRoute::Ui)], "moving: the D-pad's");
-        let (_, fx) = s.applied(PointerEvent::Activate(Id::Dock(crate::DockId::Done)).into());
+        let fx = s.applied(PointerEvent::Activate(Id::Dock(crate::DockId::Done)).into());
         assert_eq!(fx, vec![Effect::PadRoute(PadRoute::Game)], "done: the game's again");
     }
 }

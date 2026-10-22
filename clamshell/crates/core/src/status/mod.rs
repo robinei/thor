@@ -140,20 +140,10 @@ mod tests {
     use crate::*;
 
     #[test]
-    fn status_redraws_the_bottom_only_when_it_changes() {
+    fn the_frame_rate_is_kept_apart_from_the_metrics() {
         let mut s = state();
-        let status = Status { battery: Some(50), ..Status::default() };
-        assert_eq!(read(&mut s, Reading::Status(status)), Dirty::BOTTOM);
-        assert_eq!(read(&mut s, Reading::Status(status)), Dirty::NONE);
-    }
-
-    #[test]
-    fn a_tabs_readings_redraw_only_while_it_is_open() {
-        let mut s = state();
-        tap(&mut s, Id::Tab(Tab::Touchpad));
-        assert_eq!(read(&mut s, Reading::Metrics(crate::status::metrics::Metrics::default())), Dirty::NONE, "sysinfo isn't open");
         tap(&mut s, Id::Tab(Tab::Sysinfo));
-        assert_eq!(read(&mut s, Reading::Frames { fps: Some(60.0), frame_ms: Some(16.7) }), Dirty::BOTTOM);
+        read(&mut s, Reading::Frames { fps: Some(60.0), frame_ms: Some(16.7) });
         assert_eq!(s.sys().metrics().fps, Some(60.0));
         read(&mut s, Reading::Metrics(crate::status::metrics::Metrics::default()));
         assert_eq!(s.sys().metrics().fps, Some(60.0), "the frame rate comes separately");

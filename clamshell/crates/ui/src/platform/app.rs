@@ -1,11 +1,11 @@
-//! The app's own work. It places the views on the outputs, applies events and marks the views they
-//! touched, draws frames when they are due, and carries out the input machines' actions and arms their
-//! timers.
+//! The app's own work. It places the views on the outputs, applies events, records the views after
+//! each and draws the ones that changed when their frames are due, and carries out the input machines'
+//! actions and arms their timers.
 
 use std::collections::HashMap;
 use std::time::Duration;
 
-use clamshell_core::{Dirty, Effect, Event, ShelfEvent, State};
+use clamshell_core::{Effect, Event, ShelfEvent, State};
 use smithay_client_toolkit::{
     output::OutputState,
     reexports::{
@@ -109,8 +109,8 @@ impl App {
         // Taken while the effects are carried out, which may handle further events.
         let mut effects = std::mem::take(&mut self.effects);
         effects.clear();
-        let dirty = self.state.apply(event, &mut effects);
-        self.mark(dirty);
+        self.state.apply(event, &mut effects);
+        self.changed();
         let released = self.input.pad_route(self.state.pad().route(), &self.state);
         self.run_actions(released);
         for effect in &effects {
@@ -145,18 +145,19 @@ impl App {
         }
     }
 
-    pub(super) fn mark(&mut self, dirty: Dirty) {
-        let dirty = Screens::from(dirty);
-        for (screen, view) in self.views.iter_mut() {
+    /// What the views show may have changed, so each is recorded again before its next frame and drawn
+    /// if it changed.
+    pub(super) fn changed(&mut self) {
+        for (_, view) in self.views.iter_mut() {
             if let Some(view) = view {
-                view.dirty |= dirty[screen];
+                view.stale = true;
             }
         }
     }
 
     /// Draws the views that are due. What the drawing changes, such as rows and lists, may make another
     /// view due. That view is drawn too rather than left until the next event, for a few passes at most.
-    pub(super) fn redraw_dirty(&mut self) {
+    pub(super) fn redraw(&mut self) {
         for _ in 0..3 {
             if !self.draw_due() || !self.views.iter_mut().any(|(_, v)| v.as_ref().is_some_and(View::due)) {
                 break;
@@ -173,6 +174,14 @@ impl App {
         let behind = self.state.bottom().shows_windows(self.state.session());
         if let Some(view) = self.views.iter_mut().find(|(s, _)| *s == Screen::Bottom).and_then(|(_, v)| v.as_mut()) {
             view.set_behind(behind);
+        }
+        // The main screen is hidden while a program's window is in front of shelf, and the second screen
+        // while it is off.
+        let hidden = Screens { top: self.state.session().program_window_in_front(), bottom: self.state.bottom().off() };
+        for (screen, view) in self.views.iter_mut() {
+            if let Some(view) = view.as_mut() {
+                view.shown = !hidden[screen];
+            }
         }
         for (screen, view) in self.views.iter_mut() {
             let Some(view) = view.as_mut().filter(|v| v.due()) else {
@@ -192,7 +201,8 @@ impl App {
                 }
                 Err(e) => {
                     log::warn!("drawing {screen:?}: {e}");
-                    view.dirty = false;
+                    view.stale = false;
+                    view.reconfigured = false;
                 }
             }
         }

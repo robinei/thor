@@ -33,7 +33,7 @@ impl CompositorHandler for App {
     fn scale_factor_changed(&mut self, _: &Connection, _: &QueueHandle<Self>, surface: &WlSurface, factor: i32) {
         if let Some(view) = self.view_mut(surface) {
             view.scale = factor.max(1);
-            view.dirty = true;
+            view.stale = true;
         }
     }
 
@@ -60,7 +60,7 @@ impl WindowHandler for App {
             let (w, h) = configure.new_size;
             view.size = (w.map_or(view.default_size.0, |w| w.get()), h.map_or(view.default_size.1, |h| h.get()));
             view.configured = true;
-            view.dirty = true;
+            view.reconfigured = true;
         }
     }
 }
@@ -76,7 +76,7 @@ impl LayerShellHandler for App {
             let (w, h) = configure.new_size;
             view.size = (if w == 0 { view.default_size.0 } else { w }, if h == 0 { view.default_size.1 } else { h });
             view.configured = true;
-            view.dirty = true;
+            view.reconfigured = true;
         }
     }
 }

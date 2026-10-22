@@ -42,7 +42,7 @@ mod tests {
         s.applied(LevelEvent::Set(Level::Stream(0), 60).into());
         // A new app sorts first.
         read(&mut s, Reading::Audio(Audio { outputs: vec![], streams: vec![stream(0, "new"), stream(1, "a"), stream(2, "b")] }));
-        let fx = s.applied(LevelEvent::Set(Level::Stream(0), 70).into()).1;
+        let fx = s.applied(LevelEvent::Set(Level::Stream(0), 70).into());
         assert_eq!(fx, vec![Effect::Sound(Sound::StreamVolume(1, 70))]);
     }
 }

@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use clamshell_core::bottom::touch::TouchLayout;
-use clamshell_core::{Dirty, Effect, Event, Id, State};
+use clamshell_core::{Effect, Event, Id, State};
 use smithay_client_toolkit::{
     compositor::CompositorState,
     output::OutputState,
@@ -84,7 +84,7 @@ pub fn run(state: State, config: Config, start: impl FnOnce(EventSender), on_eff
     let mut notifier = notify::Notifier::new();
     while !app.exit {
         event_loop.dispatch(None, &mut app)?;
-        app.redraw_dirty();
+        app.redraw();
         notifier.turned();
     }
     Ok(())
@@ -116,7 +116,7 @@ fn install_images(handle: &LoopHandle<'static, App>) -> Result<crate::gfx::image
         .insert_source(results, |event, _, app: &mut App| {
             if let channel::Event::Msg((key, pixmap)) = event {
                 app.images.arrived(key, pixmap);
-                app.mark(Dirty::BOTH);
+                app.changed();
             }
         })
         .map_err(|e| e.error)?;
@@ -133,7 +133,7 @@ fn install_fonts(handle: &LoopHandle<'static, App>) -> Result<DrawCache, Error> 
         .insert_source(results, |event, _, app: &mut App| {
             if let channel::Event::Msg(found) = event {
                 app.fonts.found(found);
-                app.mark(Dirty::BOTH);
+                app.changed();
             }
         })
         .map_err(|e| e.error)?;

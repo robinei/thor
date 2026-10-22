@@ -324,14 +324,14 @@ mod tests {
         let mut library = clamshell_library::demo::library();
         library.runner_keymaps = vec![(runner_key("text"), "viewer".into())];
         let mut s = State::new(Init { library, ..init() });
-        let fx = s.applied(Event::Start).1;
+        let fx = s.applied(Event::Start);
         assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Keymaps(_)))), "{fx:?}");
         let own = s.keymapping().keymaps().own_of("runner:text").map(|k| k.id);
         assert!(own.is_some());
         assert_eq!(s.prefs().settings().overrides_of("runner:text").get(Setting::Keymap), own);
         // With Default chosen for it instead, it is left that way, also when the library is read again.
         s.settings_mut().set(Some(&runner_key("text")), Setting::Keymap, Some(0));
-        let fx = s.applied(Event::Library(Box::new(s.shelf().library().clone()))).1;
+        let fx = s.applied(Event::Library(Box::new(s.shelf().library().clone())));
         assert!(!fx.iter().any(|e| matches!(e, Effect::Save(Save::Keymaps(_)))));
     }
 
@@ -394,7 +394,7 @@ mod tests {
         assert!(!taps(&mut s, Setting::FpsCap, 1).iter().any(|e| matches!(e, Effect::Apply { .. })), "its own cap stays: nothing to apply");
         let fx = taps(&mut s, Setting::Power, 1);
         assert!(fx.iter().any(|e| matches!(e, Effect::Apply { settings, .. } if settings.get(Setting::Power) == 2)));
-        let fx: Vec<Effect> = end(&mut s, "zelda-lttp").1.into_iter().filter(|e| !matches!(e, Effect::RecordPlay { .. })).collect();
+        let fx: Vec<Effect> = end(&mut s, "zelda-lttp").into_iter().filter(|e| !matches!(e, Effect::RecordPlay { .. })).collect();
         assert_eq!(fx, vec![Effect::Apply { entry: None, settings: s.prefs().settings().global }, Effect::PadRoute(PadRoute::Ui)], "and the pad back to shelf");
     }
 
@@ -403,12 +403,12 @@ mod tests {
         let mut s = state();
         taps(&mut s, Setting::PadMouse, 1);
         taps(&mut s, Setting::BottomScreen, 2);
-        let (_, fx) = crate::testkit::start(&mut s, "zelda-lttp");
+        let fx = crate::testkit::start(&mut s, "zelda-lttp");
         assert!(fx.contains(&Effect::PadRoute(PadRoute::Mouse)), "{fx:?}");
         assert!(s.bottom_dark());
         tap(&mut s, Id::Wake);
         assert!(!s.bottom_dark());
-        let fx = end(&mut s, "zelda-lttp").1;
+        let fx = end(&mut s, "zelda-lttp");
         assert!(fx.contains(&Effect::PadRoute(PadRoute::Ui)), "{fx:?}");
         assert!(!s.pad().mouse_on());
     }

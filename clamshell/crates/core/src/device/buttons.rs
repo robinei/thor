@@ -41,10 +41,10 @@ mod tests {
         let mut s = state();
         s.applied(Event::tick(100));
         s.applied(Reading::Status(Status { volume: Some(50), brightness: Some(40), ..Status::default() }).into());
-        assert_eq!(s.applied(Event::Device(DeviceKey::VolumeUp)).1, vec![Effect::Sound(Sound::Volume(55))]);
+        assert_eq!(s.applied(Event::Device(DeviceKey::VolumeUp)), vec![Effect::Sound(Sound::Volume(55))]);
         assert_eq!(s.bottom().notice().map(|n| &n.what), Some(&NoticeKind::Level(Control::Volume)));
-        assert!(matches!(s.applied(Event::Device(DeviceKey::BrightnessDown)).1.as_slice(), [Effect::Brightness { level: 35, .. }]));
-        assert_eq!(s.applied(Event::Device(DeviceKey::Mute)).1, vec![Effect::Sound(Sound::Mute(true))]);
+        assert!(matches!(s.applied(Event::Device(DeviceKey::BrightnessDown)).as_slice(), [Effect::Brightness { level: 35, .. }]));
+        assert_eq!(s.applied(Event::Device(DeviceKey::Mute)), vec![Effect::Sound(Sound::Mute(true))]);
         s.applied(Event::tick(101));
         assert!(s.bottom().notice().is_some());
         s.applied(Event::tick(102));
@@ -54,7 +54,7 @@ mod tests {
     #[test]
     fn a_screenshot_is_asked_for_and_its_result_shown() {
         let mut s = state();
-        assert_eq!(s.applied(Event::Device(DeviceKey::Screenshot)).1, vec![Effect::Screenshot]);
+        assert_eq!(s.applied(Event::Device(DeviceKey::Screenshot)), vec![Effect::Screenshot]);
         s.applied(Event::Screenshot(Ok("/home/thor/Pictures/Screenshots/a.png".into())));
         assert!(matches!(s.bottom().notice().map(|n| &n.what), Some(NoticeKind::Screenshot(Ok(_)))));
     }

@@ -625,8 +625,8 @@ mod tests {
     fn a_drag_scrolls_without_moving_the_selection_and_the_pad_brings_it_back() {
         let mut s = state();
         s.applied(ShelfEvent::Rows(3).into());
-        let (dirty, _) = s.applied(ListEvent::Scroll(ListId::Shelf, 2.5).into());
-        assert_eq!((dirty, s.shelf().cursor()), (Dirty::BOTH, Cursor { index: 0, top: 2.5 }));
+        s.applied(ListEvent::Scroll(ListId::Shelf, 2.5).into());
+        assert_eq!(s.shelf().cursor(), Cursor { index: 0, top: 2.5 });
         s.applied(ListEvent::Scroll(ListId::Shelf, 100.0).into());
         assert_eq!(s.shelf().cursor().top, 4.0, "the last game on the last row");
         let can_scroll = |rows| s.lists().scroll(ListId::Shelf).can_scroll(rows, s.lists().len(ListId::Shelf));
@@ -652,7 +652,7 @@ mod tests {
         let mut s = state();
         s.applied(ShelfEvent::ListStep(2).into());
         let name = s.shelf().collection().map(|c| c.name.clone());
-        let (_, fx) = s.applied(ShelfEvent::ToggleFavourite.into());
+        let fx = s.applied(ShelfEvent::ToggleFavourite.into());
         assert_eq!(fx, vec![Effect::Save(Save::Favourites(vec!["mk-ds".into()]))]);
         assert!(s.shelf().library().collections.iter().any(|c| c.name == "Favourites" && c.entries == vec![2]));
         assert_eq!(s.shelf().collection().map(|c| c.name.clone()), name, "the collection stays");
@@ -747,12 +747,12 @@ mod tests {
         crate::testkit::start(&mut s, first);
         s.applied(LaunchEvent::Position { entry: first.into(), position: Some(600) }.into());
         end(&mut s, first);
-        let fx = s.applied(ShelfEvent::Continue.into()).1;
+        let fx = s.applied(ShelfEvent::Continue.into());
         assert_eq!(launched(&fx).as_deref(), Some(first), "left early: it again");
         crate::testkit::start(&mut s, first);
         s.applied(LaunchEvent::Position { entry: first.into(), position: None }.into());
         end(&mut s, first);
-        let fx = s.applied(ShelfEvent::Continue.into()).1;
+        let fx = s.applied(ShelfEvent::Continue.into());
         assert_eq!(launched(&fx).as_deref(), Some("tv:Cosmos/Season 1/2. One Voice in the Cosmic Fugue.mkv"), "watched to its end: the next");
     }
 

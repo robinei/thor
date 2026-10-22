@@ -354,7 +354,7 @@ mod tests {
     fn shelf_pins_and_unpins_any_entry_a_series_too() {
         let mut s = state();
         tap(&mut s, Id::Shelf(ShelfId::Collection(2)));
-        let fx = s.applied(ShelfEvent::TogglePin.into()).1;
+        let fx = s.applied(ShelfEvent::TogglePin.into());
         assert!(matches!(fx.as_slice(), [Effect::Save(Save::Dock(ids))] if ids.iter().map(|i| &**i).eq(["tv:Cosmos"])), "{fx:?}");
         assert_eq!(entry(&s, 0), Some("tv:Cosmos"));
         assert!(s.dock().is_pinned("tv:Cosmos"));
@@ -375,13 +375,13 @@ mod tests {
         let dock = crate::session::dock::Dock::pinned(vec!["ff6".into(), "gone:x".into(), "sd:Zelda.sfc".into()]);
         let mut s = State::new(Init { library, dock, ..init() });
         assert!(s.dock().pinned_ids().map(|i| &**i).eq(["ff6", "sd:Zelda.sfc"]), "the gone one dropped; the away one kept");
-        let fx = s.applied(Event::Start).1;
+        let fx = s.applied(Event::Start);
         assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Dock(ids)) if ids.len() == 2)), "saved: {fx:?}");
         // A rescan without ff6 drops its pin too.
         let mut library = clamshell_library::demo::library();
         library.entries.retain(|g| &*g.id != "ff6");
         library.collections.iter_mut().for_each(|c| c.entries.clear());
-        let fx = s.applied(Event::Library(Box::new(library))).1;
+        let fx = s.applied(Event::Library(Box::new(library)));
         assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Dock(ids)) if ids.is_empty())), "{fx:?}");
     }
 
@@ -415,8 +415,8 @@ mod tests {
         long(&mut s, dock(0));
         assert_eq!(tap(&mut s, Id::Dock(DockId::ForceKill)), vec![Effect::EndRun { key, force: true }, closed()]);
         // Home with B closes the window in front; held, it quits the window's entry.
-        assert_eq!(s.applied(Event::Device(crate::device::buttons::DeviceKey::CloseWindow)).1, vec![Effect::Window(WindowCommand::Close(vec![5]))]);
-        assert_eq!(s.applied(Event::Device(crate::device::buttons::DeviceKey::Quit)).1, vec![Effect::Window(WindowCommand::Close(vec![5]))]);
+        assert_eq!(s.applied(Event::Device(crate::device::buttons::DeviceKey::CloseWindow)), vec![Effect::Window(WindowCommand::Close(vec![5]))]);
+        assert_eq!(s.applied(Event::Device(crate::device::buttons::DeviceKey::Quit)), vec![Effect::Window(WindowCommand::Close(vec![5]))]);
     }
 
     #[test]
@@ -427,9 +427,9 @@ mod tests {
         s.applied(Event::Device(DeviceKey::WindowDown));
         s.applied(Event::Windows(vec![shelf_window(true), Window { down: true, visible: true, focused: false, ..foot() }]));
         assert!(s.bottom().shows_windows(s.session()));
-        assert_eq!(s.applied(Event::Device(DeviceKey::CloseWindow)).1, vec![Effect::Window(WindowCommand::Close(vec![foot().id]))]);
+        assert_eq!(s.applied(Event::Device(DeviceKey::CloseWindow)), vec![Effect::Window(WindowCommand::Close(vec![foot().id]))]);
         // With ClamShell's view on the bottom screen instead, there is nothing to close.
         s.applied(Event::Device(DeviceKey::BottomView));
-        assert_eq!(s.applied(Event::Device(DeviceKey::CloseWindow)).1, vec![]);
+        assert_eq!(s.applied(Event::Device(DeviceKey::CloseWindow)), vec![]);
     }
 }

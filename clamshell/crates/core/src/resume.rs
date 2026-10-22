@@ -60,8 +60,8 @@ mod tests {
         s.applied(Event::tick(100));
         s.applied(ShelfEvent::ListStep(3).into());
         s.applied(ShelfEvent::CollectionStep(1).into());
-        assert!(s.applied(Event::tick(101)).1.is_empty(), "not while moving");
-        let (_, fx) = s.applied(Event::tick(103));
+        assert!(s.applied(Event::tick(101)).is_empty(), "not while moving");
+        let fx = s.applied(Event::tick(103));
         let Some(Effect::Save(Save::Resume(resume))) = fx.first() else {
             unreachable!("{fx:?}");
         };
@@ -108,7 +108,7 @@ mod tests {
         tap(&mut s, Id::Tab(Tab::Wifi));
         let mut again = State::new(Init { resume: Some(s.resume()), ..init() });
         assert_eq!(again.bottom().tab(), Tab::Wifi);
-        assert!(again.applied(Event::Start).1.contains(&Effect::Watch(Watch::Wifi, true)));
+        assert!(again.applied(Event::Start).contains(&Effect::Watch(Watch::Wifi, true)));
         tap(&mut s, Id::Tab(Tab::Touchpad));
         let again = State::new(Init { resume: Some(s.resume()), ..init() });
         assert_eq!(again.bottom().tab(), Tab::default());
@@ -119,6 +119,6 @@ mod tests {
         let mut s = state();
         s.applied(Event::tick(100));
         tap(&mut s, Id::Tab(Tab::Sysinfo));
-        assert!(s.applied(Event::tick(110)).1.is_empty());
+        assert!(s.applied(Event::tick(110)).is_empty());
     }
 }

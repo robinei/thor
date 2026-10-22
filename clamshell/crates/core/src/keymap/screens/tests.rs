@@ -29,8 +29,8 @@ fn slide(s: &mut State, param: Param, value: u8) -> Vec<Effect> {
         param.get(&s.keymapping().param_base(s.keymapping().screen().and_then(Screen::keymap).unwrap(), s.keymapping().edit().selected.unwrap()).unwrap())
     );
     let x = slider.x + (f32::from(value) - f32::from(slider.start)) / f32::from(slider.hi - slider.lo) * slider.length;
-    let mut fx = s.applied(Slide::To { x }.into()).1;
-    fx.extend(s.applied(Slide::End.into()).1);
+    let mut fx = s.applied(Slide::To { x }.into());
+    fx.extend(s.applied(Slide::End.into()));
     fx
 }
 
@@ -65,9 +65,9 @@ fn the_picker_chooses_a_keymap_for_the_scope_edited() {
     assert_eq!(s.prefs().settings().overrides_of("zelda-lttp").get(Setting::Keymap), Some(1));
     assert_eq!(s.prefs().settings().keymap_users(1), Users { all_games: false, games: 1 });
     // Once the game runs, the keymap is sent to the pad, and only once.
-    let fx = crate::testkit::start(&mut s, "zelda-lttp").1;
+    let fx = crate::testkit::start(&mut s, "zelda-lttp");
     assert_eq!(sent(&fx).map(|k| k.name.as_str()), Some("Nintendo layout"));
-    assert_eq!(sent(&s.applied(Event::tick(5)).1), None);
+    assert_eq!(sent(&s.applied(Event::tick(5))), None);
     // Choosing Default for the game sends the pad an empty keymap.
     picker(&mut s);
     let fx = tap(&mut s, row(1));
@@ -500,12 +500,12 @@ fn parameters_slide_and_switch_whatever_the_mapping() {
     assert_eq!((slider.start, slider.control), (0, Control::Param(Param::Deadzone)));
     // Deadzone's range is 0-50, so about a quarter of the track is 12.
     assert_eq!((slider.lo, slider.hi), (0, 50));
-    let (_, fx) = s.applied(Slide::To { x: 300.0 + 0.24 * slider.length }.into());
+    let fx = s.applied(Slide::To { x: 300.0 + 0.24 * slider.length }.into());
     assert!(fx.iter().all(|e| !matches!(e, Effect::Save(_))), "not saved while sliding: {fx:?}");
     let k = s.keymapping().keymaps().get(1).unwrap().get(ls).copied();
     assert_eq!(k.map(|b| (b.output, b.deadzone)), Some((Output::Stick(Side::Left), 12)));
     assert_eq!(s.keymapping().edit().slider.map(|s| s.value), Some(12));
-    let (_, fx) = s.applied(Slide::End.into());
+    let fx = s.applied(Slide::End.into());
     assert!(matches!(fx.as_slice(), [Effect::Save(Save::Keymaps(_))]), "{fx:?}");
     assert_eq!(s.keymapping().edit().slider, None);
     // The value is kept within its range, and a switch flips.

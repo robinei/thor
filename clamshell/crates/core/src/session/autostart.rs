@@ -50,10 +50,10 @@ mod tests {
         // Zelda and Firefox are to start. Firefox's scope is there already, as after a ClamShell restart.
         let mut s = State::new(init(&["zelda-lttp", "desktop:firefox", "gone"]));
         let firefox = Instance::Run { key: clamshell_library::key_of("desktop:firefox"), secs: 1, n: 0 };
-        let (_, fx) = s.applied(Event::Units(vec![firefox]));
+        let fx = s.applied(Event::Units(vec![firefox]));
         assert_eq!(launches(&fx), 1, "Zelda only: Firefox runs, `gone` isn't in the library: {fx:?}");
         assert!(s.session().pending_show().is_none(), "not shown");
-        assert_eq!(launches(&s.applied(Event::Units(vec![])).1), 0, "once");
+        assert_eq!(launches(&s.applied(Event::Units(vec![]))), 0, "once");
         // Choosing in the dock menu saves the list.
         let fx = s.handle(Event::Entry("zelda-lttp".into(), crate::EntryAct::ToggleAutostart));
         assert_eq!(fx, vec![Effect::Save(Save::Autostart(vec!["desktop:firefox".into(), "gone".into()]))]);

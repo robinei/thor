@@ -23,11 +23,12 @@ passes (session; keymap and settings; shelf, nav and bottom; the rest and State 
   capture; a recorded play) is an `Event` variant, so outside code can send the same commands. A rule
   queues such an event; State handles it with `apply_event` (the follow-up steps run once, at the end of
   the outer `apply`). There is no separate `Mutation` type.
-- **One output buffer per event.** `apply` makes an `Out { effects: Vec<Effect>, events: Vec<Event>,
-  dirty: Dirty }` from the caller's effects vector and State's event queue, and passes `&mut Out` down;
-  rules push effects in the order things happen and queue events. After a rule returns, State handles the
-  events it queued in order, so their effects follow those pushed before them. `apply` hands the effects
-  back in the caller's vector and returns `out.dirty`. Rules no longer return `Vec<Effect>`.
+- **One output buffer per event.** `apply` makes an `Out { effects: Vec<Effect>, events: Vec<Event> }`
+  from the caller's effects vector and State's event queue, and passes `&mut Out` down; rules push
+  effects in the order things happen and queue events. After a rule returns, State handles the events it
+  queued in order, so their effects follow those pushed before them. `apply` hands the effects back in
+  the caller's vector and returns nothing: the UI records every visible screen after each event and
+  draws the ones that changed. Rules no longer return `Vec<Effect>`.
 - **`Clock`** `{ unix, mono }` replaces `unix_secs`/`mono_secs`, with `read()` and `unix_at(mono)`.
   Session rules take `clock` and `&Library`. Settings in force are not in it: they change during an
   event and are passed where needed.
@@ -128,7 +129,7 @@ and the UI change with the code they call; doc links to moved methods are fixed 
       `apply_event` drains only what it queued, by index (`remove(mark)`), so a queued event's own requests
       still run right after it. Fix `landing_up`'s per-reconcile `String`. `tests/apply_alloc.rs` then
       asserts no allocation for warm ticks, readings, windows/units, pointer and pad events.
-- [ ] Drawing records, then plays: `Canvas` keeps its methods but records into a `Recording { cmds:
+- [x] Drawing records, then plays: `Canvas` keeps its methods but records into a `Recording { cmds:
       Vec<Cmd>, text: Vec<u8> }` (a small `Copy` enum of commands; text bytes in the byte buffer, referred
       to by range; images carry a generation so a load changes the command, and text the glyph cache's generation so a
       fallback font arriving does too), reused so recording doesn't

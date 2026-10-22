@@ -77,7 +77,7 @@ mod tests {
     fn home_goes_to_shelf_and_back_to_what_was_in_front() {
         let mut s = state();
         let zelda = Instance::workspace_of(&clamshell_library::key_of("zelda-lttp"));
-        let home = |s: &mut State| s.applied(Event::Home).1;
+        let home = |s: &mut State| s.applied(Event::Home);
         assert_eq!(home(&mut s), vec![], "nothing before shelf: it stays");
         crate::testkit::start(&mut s, "zelda-lttp");
         assert_eq!(home(&mut s), vec![], "the program in force, no window of it yet: shelf stays");
@@ -104,19 +104,19 @@ mod tests {
         s.applied(Event::Windows(vec![shelf_window(false), win(2, "foot", &terminal, true)]));
         s.applied(Event::Windows(vec![shelf_window(false), win(2, "foot", &terminal, false), win(3, "retroarch", &zelda, true)]));
         // When the game quits, the terminal, which was in front before it, comes back.
-        let (_, fx) = s.applied(Event::Windows(vec![shelf_window(false), win(2, "foot", &terminal, false)]));
+        let fx = s.applied(Event::Windows(vec![shelf_window(false), win(2, "foot", &terminal, false)]));
         assert_eq!(window_effects(fx), vec![Effect::Window(WindowCommand::Focus(terminal.clone()))]);
         s.applied(Event::Windows(vec![shelf_window(false), win(2, "foot", &terminal, true)]));
         // When the terminal quits, shelf comes back.
-        let (_, fx) = s.applied(Event::Windows(vec![shelf_window(false)]));
+        let fx = s.applied(Event::Windows(vec![shelf_window(false)]));
         assert_eq!(window_effects(fx), vec![Effect::Window(WindowCommand::ShowShelf)]);
         // Nothing happens when a program's own second window closes, or for a new workspace before its
         // window.
         s.applied(Event::Windows(vec![shelf_window(false), win(3, "retroarch", &zelda, true), win(4, "retroarch", &zelda, false)]));
-        assert_eq!(window_effects(s.applied(Event::Windows(vec![shelf_window(false), win(4, "retroarch", &zelda, true)])).1), vec![]);
+        assert_eq!(window_effects(s.applied(Event::Windows(vec![shelf_window(false), win(4, "retroarch", &zelda, true)]))), vec![]);
         s.applied(Event::Windows(vec![shelf_window(true), win(4, "retroarch", &zelda, false)]));
         assert_eq!(
-            window_effects(s.applied(Event::Windows(vec![shelf_window(false), win(4, "retroarch", &zelda, false)])).1),
+            window_effects(s.applied(Event::Windows(vec![shelf_window(false), win(4, "retroarch", &zelda, false)]))),
             vec![],
             "shelf's window is still there"
         );
@@ -130,14 +130,14 @@ mod tests {
         s.applied(Event::Windows(vec![shelf_window(false), win(2, "waydroid.org.fdroid.fdroid", &app, true)]));
         // Its window closes and shelf shows. Another window comes on its workspace, moved there and not in
         // front, and the workspace is shown again.
-        assert_eq!(window_effects(s.applied(Event::Windows(vec![shelf_window(false)])).1), vec![Effect::Window(WindowCommand::ShowShelf)]);
-        let (_, fx) = s.applied(Event::Windows(vec![shelf_window(true), win(3, "waydroid.org.fdroid.fdroid", &app, false)]));
+        assert_eq!(window_effects(s.applied(Event::Windows(vec![shelf_window(false)]))), vec![Effect::Window(WindowCommand::ShowShelf)]);
+        let fx = s.applied(Event::Windows(vec![shelf_window(true), win(3, "waydroid.org.fdroid.fdroid", &app, false)]));
         assert_eq!(window_effects(fx), vec![Effect::Window(WindowCommand::Focus(app.clone()))]);
         // Later than that, it isn't.
         s.applied(Event::Windows(vec![shelf_window(false), win(3, "waydroid.org.fdroid.fdroid", &app, true)]));
         s.applied(Event::Windows(vec![shelf_window(false)]));
         s.applied(Event::tick(103));
-        let (_, fx) = s.applied(Event::Windows(vec![shelf_window(true), win(4, "waydroid.org.fdroid.fdroid", &app, false)]));
+        let fx = s.applied(Event::Windows(vec![shelf_window(true), win(4, "waydroid.org.fdroid.fdroid", &app, false)]));
         assert_eq!(window_effects(fx), vec![], "too late: it stays behind");
     }
 
@@ -149,7 +149,7 @@ mod tests {
         // With its window moved to the bottom screen and shelf in front, there is nothing to go back to on
         // the main screen.
         s.applied(Event::Windows(vec![shelf_window(true), Window { down: true, ..win(2, "foot", terminal, false) }]));
-        assert_eq!(s.applied(Event::Home).1, vec![]);
+        assert_eq!(s.applied(Event::Home), vec![]);
     }
 
     #[test]
@@ -157,6 +157,6 @@ mod tests {
         let mut s = state();
         s.applied(Event::Windows(vec![shelf_window(false), foot()]));
         s.applied(Event::Windows(vec![shelf_window(true), Window { focused: false, ..foot() }]));
-        assert_eq!(s.applied(Event::Home).1, vec![Effect::Window(WindowCommand::Focus("1".into()))]);
+        assert_eq!(s.applied(Event::Home), vec![Effect::Window(WindowCommand::Focus("1".into()))]);
     }
 }

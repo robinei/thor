@@ -2,8 +2,6 @@
 
 use std::ops::{Index, IndexMut};
 
-use clamshell_core::Dirty;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Screen {
     /// The main screen: shelf.
@@ -53,11 +51,5 @@ impl<T> IndexMut<Screen> for Screens<T> {
             Screen::Top => &mut self.top,
             Screen::Bottom => &mut self.bottom,
         }
-    }
-}
-
-impl From<Dirty> for Screens<bool> {
-    fn from(d: Dirty) -> Self {
-        Screens { top: d.top, bottom: d.bottom }
     }
 }

@@ -58,7 +58,7 @@ fn a_launchs_start_and_end_come_to_the_same_in_any_order() {
             let started = shape(&s);
             let mut recorded = 0;
             for e in end.clone() {
-                recorded += s.applied(e).1.iter().filter(|e| matches!(e, Effect::RecordPlay { .. })).count();
+                recorded += s.applied(e).iter().filter(|e| matches!(e, Effect::RecordPlay { .. })).count();
             }
             s.applied(Event::tick(1001));
             shapes.push((started, shape(&s)));
@@ -136,19 +136,12 @@ fn starts_where_it_was_told() {
 #[test]
 fn while_metadata_is_fetched_shelfs_view_goes_first() {
     let mut s = state();
-    assert!(!s.applied(ShelfEvent::ListStep(1).into()).1.iter().any(|e| matches!(e, Effect::FetchFirst(_))), "not fetching");
-    let (_, fx) = s.applied(Event::Fetching(true));
+    assert!(!s.applied(ShelfEvent::ListStep(1).into()).iter().any(|e| matches!(e, Effect::FetchFirst(_))), "not fetching");
+    let fx = s.applied(Event::Fetching(true));
     assert_eq!(fx, vec![Effect::FetchFirst(vec!["metroid-zm".into(), "mk-ds".into()])], "the selected first, then the rows shown");
-    assert!(!s.applied(Event::tick(5)).1.iter().any(|e| matches!(e, Effect::FetchFirst(_))), "the same view: not again");
-    let (_, fx) = s.applied(ShelfEvent::ListStep(1).into());
+    assert!(!s.applied(Event::tick(5)).iter().any(|e| matches!(e, Effect::FetchFirst(_))), "the same view: not again");
+    let fx = s.applied(ShelfEvent::ListStep(1).into());
     assert!(fx.contains(&Effect::FetchFirst(vec!["mk-ds".into(), "ff6".into()])), "{fx:?}");
     s.applied(Event::Fetching(false));
-    assert!(!s.applied(ShelfEvent::ListStep(1).into()).1.iter().any(|e| matches!(e, Effect::FetchFirst(_))), "done");
-}
-
-#[test]
-fn tick_redraws_once_a_minute() {
-    let mut s = state();
-    assert_eq!(s.applied(Event::tick(60)).0, Dirty::BOTH);
-    assert_eq!(s.applied(Event::tick(119)).0, Dirty::NONE);
+    assert!(!s.applied(ShelfEvent::ListStep(1).into()).iter().any(|e| matches!(e, Effect::FetchFirst(_))), "done");
 }

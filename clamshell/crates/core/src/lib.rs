@@ -71,7 +71,7 @@ use settings::Settings;
 // What other crates use to talk to the state: the events and effects and what they carry, the ids, and
 // the groups the getters return.
 pub use clock::Clock;
-pub use effect::{Dirty, Effect, Save, Watch, WindowCommand};
+pub use effect::{Effect, Save, Watch, WindowCommand};
 pub use event::{EntryAct, Event, KeymapEvent, LaunchEvent, LevelEvent, PointerEvent, Reading, ShelfEvent, Slide};
 pub use id::{AudioId, BatteryId, BtId, DeviceId, DockId, EditorId, Hold, Id, KeymapId, SettingsId, ShelfId, Target, TimeId, WifiId};
 pub use resume::Resume;

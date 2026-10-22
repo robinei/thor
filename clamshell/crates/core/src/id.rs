@@ -9,7 +9,6 @@
 
 use std::sync::Arc;
 
-use crate::Dirty;
 use crate::bottom::Tab;
 use crate::bottom::keyboard::KeyPos;
 use crate::levels::Level;
@@ -243,13 +242,9 @@ pub enum AudioId {
 }
 
 impl Id {
-    /// Which screens a press on this target redraws. Shelf's targets are on the main screen, and the
-    /// second screen's settings tab follows shelf's selection. Everything else is on the second screen.
-    pub(crate) fn screen(&self) -> Dirty {
-        match self {
-            Id::Shelf(_) => Dirty::BOTH,
-            _ => Dirty::BOTTOM,
-        }
+    /// Whether this target is on the main screen. Shelf's are; everything else is on the second screen.
+    pub(crate) fn on_top(&self) -> bool {
+        matches!(self, Id::Shelf(_))
     }
 }
 

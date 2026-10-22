@@ -108,14 +108,13 @@ mod tests {
     }
 
     #[test]
-    fn down_and_up_light_a_target_on_its_screen() {
+    fn down_and_up_light_a_target() {
         let mut s = state();
         let launch = Id::Shelf(ShelfId::Launch);
-        assert_eq!(s.applied(PointerEvent::Down(launch.clone()).into()).0, Dirty::BOTH, "shelf's: drawn on top");
+        s.applied(PointerEvent::Down(launch.clone()).into());
         assert_eq!(s.pointer().pressed(), Some(&launch));
         s.applied(PointerEvent::Up(launch).into());
         assert_eq!(s.pointer().pressed(), None);
-        assert_eq!(s.applied(PointerEvent::Down(Id::PadMouse).into()).0, Dirty::BOTTOM);
     }
 
     #[test]
@@ -124,8 +123,7 @@ mod tests {
         assert!(!s.pointer().show_focus());
         s.applied(PointerEvent::Focus(Id::Shelf(ShelfId::Launch)).into());
         assert!(s.pointer().focused(&Id::Shelf(ShelfId::Launch)));
-        assert_eq!(s.applied(PointerEvent::HideFocus.into()).0, Dirty::BOTH);
+        s.applied(PointerEvent::HideFocus.into());
         assert!(!s.pointer().show_focus());
-        assert_eq!(s.applied(PointerEvent::HideFocus.into()).0, Dirty::NONE);
     }
 }

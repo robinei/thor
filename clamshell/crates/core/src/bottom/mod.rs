@@ -12,11 +12,10 @@ pub mod notice;
 pub mod screen;
 pub mod touch;
 
+use crate::Effect;
 use crate::effect::Watch;
-use crate::event::Reading;
 use crate::kit::names::names;
 use crate::out::Out;
-use crate::{Dirty, Effect};
 use editor::{Editor, Editors};
 use notice::Notice;
 
@@ -70,28 +69,6 @@ impl Tab {
             Tab::Time => Some(Watch::Time),
             Tab::Sysinfo => Some(Watch::Metrics),
             Tab::Settings | Tab::Dock | Tab::Keyboard | Tab::Touchpad => None,
-        }
-    }
-
-    /// Whether the second screen shows `reading` with this tab open. The bar always shows the status
-    /// and Bluetooth, and each tab shows its own readings.
-    pub fn shows(self, reading: &Reading) -> bool {
-        match reading {
-            Reading::Status(_) | Reading::Bluetooth(_) => true,
-            // For an editor's Paste, in any tab that has one.
-            Reading::Clipboard(_) => true,
-            // Shown in the dock.
-            Reading::Icon { .. } => true,
-            Reading::Metrics(_) => matches!(self, Tab::Sysinfo | Tab::Battery),
-            Reading::Frames { .. } => self == Tab::Sysinfo,
-            Reading::Wifi(_) => self == Tab::Wifi,
-            Reading::Battery(_) => self == Tab::Battery,
-            Reading::Audio(_) => self == Tab::Volume,
-            Reading::Backlights(_) => self == Tab::Brightness,
-            // The clock shows it too.
-            Reading::Time(_) => true,
-            // Shown in the Device view, on the main screen.
-            Reading::Account(_) => false,
         }
     }
 }
@@ -213,12 +190,10 @@ impl Bottom {
 
     /// A text field wants typing, or is done. The keyboard comes up, and when the field is done the
     /// screen goes back to the tab it came from, unless the user chose a tab in the meantime. A field
-    /// taking focus brings typing back from pointing. Returns the screens to redraw and whether the tab
-    /// changed.
-    pub(crate) fn text_input(&mut self, active: bool) -> (Dirty, bool) {
-        let pointing = self.pointing;
+    /// taking focus brings typing back from pointing. Returns whether the tab changed.
+    pub(crate) fn text_input(&mut self, active: bool) -> bool {
         self.pointing &= !active;
-        let changed = if active {
+        if active {
             // Not over an open editor, since what is typed there would be lost.
             if self.tab == Tab::Keyboard || self.editor().is_some() {
                 false
@@ -231,15 +206,7 @@ impl Bottom {
                 Some(tab) if self.tab == Tab::Keyboard => self.set_tab(tab),
                 _ => false,
             }
-        };
-        let dirty = if changed {
-            Dirty::BOTH
-        } else if self.pointing != pointing {
-            Dirty::BOTTOM
-        } else {
-            Dirty::NONE
-        };
-        (dirty, changed)
+        }
     }
 
     /// Opens `editor` on the keyboard tab, which goes back to the tab it came up from when the editing is
@@ -262,16 +229,12 @@ impl Bottom {
 
     /// Contacts on the area below the bar, passed on to the virtual touchpad, or none (see [`touch`]).
     pub(crate) fn point(&mut self, pointing: touch::Pointing, out: &mut Out) {
-        let before = self.pointing;
         match pointing {
             touch::Pointing::Contacts(contacts) => {
                 self.pointing = true;
                 out.effects.push(Effect::Touchpad(contacts));
             }
             touch::Pointing::Idle => self.pointing = false,
-        }
-        if self.pointing != before {
-            out.mark(Dirty::BOTTOM);
         }
     }
 }
@@ -299,12 +262,12 @@ mod tests {
         let mut s = state();
         tap(&mut s, Id::Tab(Tab::Touchpad));
         s.applied(Event::Windows(vec![foot()]));
-        let (dirty, fx) = s.applied(Event::TextInput(true));
+        let fx = s.applied(Event::TextInput(true));
         assert_eq!(s.bottom().tab(), Tab::Keyboard);
-        assert_eq!((dirty, fx), (Dirty::BOTH, vec![Effect::PadRoute(PadRoute::Keys)]));
+        assert_eq!(fx, vec![Effect::PadRoute(PadRoute::Keys)]);
         // The app in front has the pad again, as a game would.
         let back = vec![Effect::PadRoute(PadRoute::Game)];
-        assert_eq!(s.applied(Event::TextInput(false)).1, back);
+        assert_eq!(s.applied(Event::TextInput(false)), back);
         assert_eq!(s.bottom().tab(), Tab::Touchpad, "back where it came from");
     }
 

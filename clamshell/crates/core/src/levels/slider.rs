@@ -158,7 +158,7 @@ mod tests {
     }
 
     fn slide(s: &mut State, slide: Slide) -> Vec<Effect> {
-        s.applied(slide.into()).1
+        s.applied(slide.into())
     }
 
     #[test]
@@ -166,7 +166,7 @@ mod tests {
         let mut s = with_levels();
         s.applied(Slide::Start { control: Control::Brightness, x: 300.0, width: 620.0 }.into());
         s.applied(PointerEvent::Activate(Id::Tab(crate::Tab::Wifi)).into());
-        let fx = s.applied(Slide::To { x: 200.0 }.into()).1;
+        let fx = s.applied(Slide::To { x: 200.0 }.into());
         assert!(matches!(fx.as_slice(), [Effect::Brightness { .. }]), "still sliding: {fx:?}");
     }
 

@@ -1,5 +1,4 @@
-//! What goes out: what the state asks the outside world to do ([`Effect`]), and which screens need a
-//! new frame ([`Dirty`]).
+//! What goes out: what the state asks the outside world to do ([`Effect`]).
 
 use std::sync::Arc;
 
@@ -233,23 +232,4 @@ pub enum WindowCommand {
     /// The full set of app ids whose windows open on the landing workspace, to be moved to their entry's
     /// workspace from there (see [`crate::session::running::app_id_of`]).
     LandRules(Vec<std::sync::Arc<str>>),
-}
-
-/// Which screens need a new frame after an event.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Dirty {
-    pub top: bool,
-    pub bottom: bool,
-}
-
-impl Dirty {
-    pub const BOTH: Dirty = Dirty { top: true, bottom: true };
-    pub const TOP: Dirty = Dirty { top: true, bottom: false };
-    pub const BOTTOM: Dirty = Dirty { top: false, bottom: true };
-    pub const NONE: Dirty = Dirty { top: false, bottom: false };
-
-    /// The screens dirty in either.
-    pub fn or(self, other: Dirty) -> Dirty {
-        Dirty { top: self.top || other.top, bottom: self.bottom || other.bottom }
-    }
 }

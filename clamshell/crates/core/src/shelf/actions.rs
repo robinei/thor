@@ -170,7 +170,7 @@ mod tests {
         assert_eq!(s.shelf().shortcut(Shortcut::Start, s.pointer()), None, "a game: nothing to continue");
         tap(&mut s, Id::Shelf(ShelfId::Collection(2)));
         assert_eq!(s.shelf().actions().as_slice(), [Action::Open, Action::Continue, Action::Favourite, Action::Pin], "a series: Continue");
-        let (_, fx) = s.applied(ShelfEvent::Continue.into());
+        let fx = s.applied(ShelfEvent::Continue.into());
         assert!(fx.iter().any(|e| matches!(e, Effect::Launch { .. })), "{fx:?}");
         s.applied(Event::tick(1));
     }

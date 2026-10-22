@@ -93,6 +93,14 @@ impl Bounds {
         }
     }
 
+    pub fn width(&self) -> i32 {
+        (self.x1 - self.x0).max(0)
+    }
+
+    pub fn height(&self) -> i32 {
+        (self.y1 - self.y0).max(0)
+    }
+
     pub(super) fn tuple(&self) -> (i32, i32, i32, i32) {
         (self.x0, self.y0, self.x1, self.y1)
     }

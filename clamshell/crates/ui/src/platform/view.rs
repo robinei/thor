@@ -1,5 +1,5 @@
 //! A view is one screen's surface, either an xdg window or a layer surface, with its shm buffers. It
-//! draws a frame (see `render`) and hands it to the compositor.
+//! records a frame (see `render`), and if it changed, draws what changed and hands it to the compositor.
 
 use std::sync::Mutex;
 
@@ -26,9 +26,10 @@ use tiny_skia::PixmapMut;
 use super::App;
 use crate::Error;
 use crate::gfx::images::Images;
+use crate::gfx::record::Bounds;
 use crate::gfx::{DrawCache, Rect};
 use crate::input::focus::Drawn;
-use crate::render::{self, Placement, Retained};
+use crate::render::{self, History, Placement, Retained};
 use crate::screens::{Screen, Screens};
 use crate::toolkit::{FrameOut, Target};
 
@@ -54,7 +55,13 @@ pub(crate) struct View {
     pub(crate) default_size: (u32, u32),
     pub(crate) scale: i32,
     pub(crate) configured: bool,
-    pub(crate) dirty: bool,
+    /// What it shows may have changed since it was last recorded, so it is recorded again when a frame
+    /// is due.
+    pub(crate) stale: bool,
+    /// The compositor configured it, and waits for a frame in answer even if nothing changed.
+    pub(crate) reconfigured: bool,
+    /// Whether it can be seen. A hidden view is not recorded until it can be seen again.
+    pub(crate) shown: bool,
     /// A frame was committed and its callback hasn't come yet. Until it comes, wait; then draw the latest
     /// state once.
     pub(crate) frame_pending: bool,
@@ -62,9 +69,11 @@ pub(crate) struct View {
     pub(crate) retained: Retained,
     /// The second screen's area below the bar in the last frame, in logical pixels.
     pub(crate) body: Option<Rect>,
-    /// shm buffers, reused once the compositor releases them. Two are used in turn, and a third is added
-    /// if the compositor holds both.
-    buffers: Vec<Buffer>,
+    /// shm buffers, reused once the compositor releases them, each with the frame of `history` it holds
+    /// (0 for none). Two are used in turn, and a third is added if the compositor holds both.
+    buffers: Vec<(Buffer, u64)>,
+    /// What changed in the last frames, to bring a buffer up to date.
+    history: History,
     /// Whether a layer surface is behind the windows rather than over them (see [`View::set_behind`]).
     behind: bool,
 }
@@ -78,11 +87,14 @@ impl View {
             default_size,
             scale: 1,
             configured: false,
-            dirty: true,
+            stale: true,
+            reconfigured: false,
+            shown: true,
             frame_pending: false,
             retained: Retained::default(),
             body: None,
             buffers: Vec::new(),
+            history: History::default(),
             behind: false,
         }
     }
@@ -144,13 +156,13 @@ impl View {
             // callbacks, so a frame may never come to carry the change.
             layer.wl_surface().commit();
             self.behind = behind;
-            self.dirty = true;
         }
     }
 
-    /// Whether a frame is due: the view is configured, has changed, and its last frame has been shown.
+    /// Whether a frame is due: the view is configured and can be seen, may have changed, and its last
+    /// frame has been shown.
     pub(crate) fn due(&self) -> bool {
-        self.configured && self.dirty && !self.frame_pending
+        self.configured && self.shown && (self.stale || self.reconfigured) && !self.frame_pending
     }
 
     /// The buffer's size, its scale, and the current burn-in drift.
@@ -159,13 +171,14 @@ impl View {
         Placement { size_px: (self.size.0 * scale, self.size.1 * scale), scale, drift: render::orbit(unix_secs) }
     }
 
-    /// Draws a frame of `state` straight into a free shm buffer and commits it, asking for a frame
-    /// callback. If the compositor is still reading every buffer, nothing is drawn. The view then stays
-    /// dirty, and a buffer's release wakes the loop to draw again.
+    /// Records a frame of `state` and compares it with the last one drawn. If it changed, what changed
+    /// is drawn straight into a free shm buffer, which is committed with a frame callback asked for. If
+    /// the compositor is still reading every buffer, nothing is recorded. The view then stays due, and a
+    /// buffer's release wakes the loop to draw again. Returns what the frame reports, if it was recorded.
     ///
     /// The buffer is ABGR8888, which is tiny-skia's byte order (premultiplied RGBA in memory), so it is
-    /// drawn into directly. The whole buffer is drawn and damaged. The burn-in orbit moves everything
-    /// every minute anyway, and drawing whole frames keeps the views free of damage tracking.
+    /// drawn into directly. A buffer drawn a few frames ago also gets what changed since then. The
+    /// compositor is told the rectangle that changed since the last frame.
     pub(crate) fn draw(
         &mut self,
         pool: &mut SlotPool,
@@ -179,7 +192,15 @@ impl View {
         let Some(index) = free_buffer(&mut self.buffers, pool, w, h)? else {
             return Ok(None);
         };
-        let Some(buffer) = self.buffers.get(index) else {
+        let rendered = render::record(&mut self.retained, at, self.screen, state, fonts, images);
+        self.stale = false;
+        // A configure is answered with a whole frame.
+        let damage = match self.retained.damage() {
+            _ if self.reconfigured => Bounds::of_size(at.size_px),
+            Some(damage) => damage,
+            None => return Ok(Some(rendered)),
+        };
+        let Some((buffer, held)) = self.buffers.get_mut(index) else {
             return Err("buffer index".into());
         };
         let Some(bytes) = buffer.canvas(pool) else {
@@ -187,14 +208,14 @@ impl View {
         };
         let len = at.size_px.0 as usize * at.size_px.1 as usize * 4;
         let pixmap = bytes.get_mut(..len).and_then(|b| PixmapMut::from_bytes(b, at.size_px.0, at.size_px.1)).ok_or("buffer size")?;
-        let rendered = render::render(pixmap, &mut self.retained, at, self.screen, state, fonts, images)?;
+        *held = render::draw_damaged(pixmap, *held, damage, &mut self.retained, &mut self.history, fonts, images);
         let surface = self.shell.surface();
         surface.set_buffer_scale(self.scale.max(1));
-        surface.damage_buffer(0, 0, w, h);
+        surface.damage_buffer(damage.x0, damage.y0, damage.width(), damage.height());
         surface.frame(qh, FrameCallbackData(surface.clone()));
         buffer.attach_to(surface)?;
         surface.commit();
-        self.dirty = false;
+        self.reconfigured = false;
         self.frame_pending = true;
         Ok(Some(rendered))
     }
@@ -202,16 +223,16 @@ impl View {
 
 /// A `w` x `h` buffer the compositor isn't reading. It is a kept one, or a new one if fewer than three
 /// are kept. Returns `None` when all three are busy.
-fn free_buffer(buffers: &mut Vec<Buffer>, pool: &mut SlotPool, w: i32, h: i32) -> Result<Option<usize>, Error> {
-    buffers.retain(|b| b.height() == h && b.stride() == w * 4);
-    if let Some(i) = buffers.iter().position(|b| b.canvas(pool).is_some()) {
+fn free_buffer(buffers: &mut Vec<(Buffer, u64)>, pool: &mut SlotPool, w: i32, h: i32) -> Result<Option<usize>, Error> {
+    buffers.retain(|(b, _)| b.height() == h && b.stride() == w * 4);
+    if let Some(i) = buffers.iter().position(|(b, _)| b.canvas(pool).is_some()) {
         return Ok(Some(i));
     }
     if buffers.len() >= 3 {
         return Ok(None);
     }
     let (buffer, _) = pool.create_buffer(w, h, w * 4, wl_shm::Format::Abgr8888)?;
-    buffers.push(buffer);
+    buffers.push((buffer, 0));
     Ok(Some(buffers.len() - 1))
 }
 

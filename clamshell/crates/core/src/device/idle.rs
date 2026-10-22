@@ -294,22 +294,22 @@ mod tests {
         s.applied(Event::tick(1000));
         s.applied(Event::Idle(IdleEvent::Watching(true)));
         // Defaults: screens off after 5 minutes, sleep after 15.
-        assert_eq!(brightness(&s.applied(Event::tick(1270)).1), Some(20), "dimmed to a third");
+        assert_eq!(brightness(&s.applied(Event::tick(1270))), Some(20), "dimmed to a third");
         assert_eq!(
-            s.applied(Event::tick(1300)).1,
+            s.applied(Event::tick(1300)),
             vec![Effect::Screens(false), Effect::Watch(crate::Watch::Status, false), Effect::Watch(crate::Watch::Metrics, false)]
         );
-        assert!(!s.applied(Event::tick(1900)).1.contains(&Effect::Sleep), "not the device's session");
+        assert!(!s.applied(Event::tick(1900)).contains(&Effect::Sleep), "not the device's session");
         // On input the screens come back at their brightness, and the press that woke them does nothing.
         let fx = s.applied(Event::Idle(IdleEvent::DeviceInput));
-        assert!(fx.1.contains(&Effect::Screens(true)) && brightness(&fx.1) == Some(60), "{fx:?}");
-        assert!(fx.1.contains(&Effect::Watch(crate::Watch::Metrics, true)), "watched again: {fx:?}");
-        assert!(fx.1.contains(&Effect::Watch(crate::Watch::Status, true)), "the bar's status too: {fx:?}");
+        assert!(fx.contains(&Effect::Screens(true)) && brightness(&fx) == Some(60), "{fx:?}");
+        assert!(fx.contains(&Effect::Watch(crate::Watch::Metrics, true)), "watched again: {fx:?}");
+        assert!(fx.contains(&Effect::Watch(crate::Watch::Status, true)), "the bar's status too: {fx:?}");
         // In the device's session it sleeps.
         let mut s = State::new(crate::Init { device_session: true, ..crate::testkit::init() });
         s.applied(Event::tick(1000));
         s.applied(Event::Idle(IdleEvent::Watching(true)));
-        assert!(s.applied(Event::tick(1900)).1.contains(&Effect::Sleep));
+        assert!(s.applied(Event::tick(1900)).contains(&Effect::Sleep));
     }
 
     #[test]
@@ -336,22 +336,22 @@ mod tests {
         s.applied(Event::Windows(vec![Window { visible: true, ..crate::testkit::win(6, "firefox", &ws, true) }]));
         let ask = Effect::AskAwake(vec!["awake".into()]);
         // Asked once, 10 s before the screens dim. They go off at 5 minutes and dim 30 s before that.
-        assert!(!s.applied(Event::tick(1259)).1.contains(&ask));
-        assert!(s.applied(Event::tick(1260)).1.contains(&ask));
-        assert!(!s.applied(Event::tick(1261)).1.contains(&ask), "once");
+        assert!(!s.applied(Event::tick(1259)).contains(&ask));
+        assert!(s.applied(Event::tick(1260)).contains(&ask));
+        assert!(!s.applied(Event::tick(1261)).contains(&ask), "once");
         // It keeps the screen on, which counts as input, so it doesn't dim. It is asked again as the next
         // dimming nears.
         s.applied(Event::Idle(IdleEvent::KeptAwake));
         s.applied(Event::tick(1280));
         assert_eq!(s.idle().stage(), Stage::Awake);
-        assert!(s.applied(Event::tick(1261 + 260)).1.contains(&ask));
+        assert!(s.applied(Event::tick(1261 + 260)).contains(&ask));
         // With no answer, it dims as usual. An app that isn't shown isn't asked.
         s.applied(Event::tick(1261 + 270));
         assert_eq!(s.idle().stage(), Stage::Dimmed);
         let mut s = crate::testkit::state();
         s.applied(Event::tick(1000));
         s.applied(Event::Idle(IdleEvent::Watching(true)));
-        assert!(!s.applied(Event::tick(1260)).1.contains(&ask));
+        assert!(!s.applied(Event::tick(1260)).contains(&ask));
     }
 
     #[test]
@@ -360,14 +360,14 @@ mod tests {
         let mut s = State::new(crate::Init { device_session: true, ..crate::testkit::init() });
         s.applied(Event::tick(1000));
         s.applied(Event::Idle(IdleEvent::Watching(true)));
-        assert!(s.applied(Event::tick(1900)).1.contains(&Effect::Sleep));
+        assert!(s.applied(Event::tick(1900)).contains(&Effect::Sleep));
         // Busy, such as with a download: it doesn't sleep, the screens stay off, and sleep is tried again
         // after the retry time.
-        let fx = s.applied(Event::Idle(IdleEvent::Busy)).1;
+        let fx = s.applied(Event::Idle(IdleEvent::Busy));
         assert!(!fx.contains(&Effect::Screens(true)), "{fx:?}");
         assert_eq!(s.idle().stage(), Stage::Off);
-        assert!(!s.applied(Event::tick(1900 + SLEEP_RETRY - 1)).1.contains(&Effect::Sleep));
-        assert!(s.applied(Event::tick(1900 + SLEEP_RETRY)).1.contains(&Effect::Sleep));
+        assert!(!s.applied(Event::tick(1900 + SLEEP_RETRY - 1)).contains(&Effect::Sleep));
+        assert!(s.applied(Event::tick(1900 + SLEEP_RETRY)).contains(&Effect::Sleep));
     }
 
     #[test]
@@ -377,7 +377,7 @@ mod tests {
         // At start the compositor reports quiet before the clock thread's first tick.
         s.applied(Event::Idle(IdleEvent::Watching(true)));
         s.applied(Event::Idle(IdleEvent::CompositorQuiet));
-        let fx = s.applied(Event::tick(1_792_060_000)).1;
+        let fx = s.applied(Event::tick(1_792_060_000));
         assert!(!fx.contains(&Effect::Screens(false)), "not off at once: {fx:?}");
         assert_eq!(s.idle().stage(), Stage::Awake);
     }
@@ -389,11 +389,11 @@ mod tests {
         s.applied(Event::tick(1000));
         s.applied(Event::Idle(IdleEvent::Watching(true)));
         // The clock is set a day forward, by hand or by NTP, and it is neither asleep nor off.
-        let fx = s.applied(Event::Tick { unix_secs: 1000 + 86_400, mono_secs: 1001 }).1;
+        let fx = s.applied(Event::Tick { unix_secs: 1000 + 86_400, mono_secs: 1001 });
         assert!(!fx.contains(&Effect::Sleep) && !fx.contains(&Effect::Screens(false)), "{fx:?}");
         assert_eq!(s.idle().stage(), Stage::Awake);
         // Set back again, idle still counts on.
-        assert!(s.applied(Event::Tick { unix_secs: 500, mono_secs: 1900 }).1.contains(&Effect::Sleep));
+        assert!(s.applied(Event::Tick { unix_secs: 500, mono_secs: 1900 }).contains(&Effect::Sleep));
     }
 
     #[test]

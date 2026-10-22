@@ -534,7 +534,7 @@ mod tests {
     #[test]
     fn the_folder_open_is_listed_and_watched_while_open() {
         let mut s = files_state();
-        let fx = browses(s.applied(Event::Pointer(crate::PointerEvent::Activate(Id::Shelf(ShelfId::Launch)))).1);
+        let fx = browses(s.applied(Event::Pointer(crate::PointerEvent::Activate(Id::Shelf(ShelfId::Launch)))));
         assert_eq!(fx, vec![Effect::Browse(BrowseCommand::Open(Some(Browse { folder: "browse:Home".into(), dir: "/Home".into(), hidden: false })))]);
         assert!(s.shelf().list().is_empty(), "nothing in it until listed");
         listed(&mut s, "browse:Home", vec![entry("browse:Home/Films", true, BrowseKind::Plain), entry("browse:Home/a.txt", false, BrowseKind::Plain)]);
@@ -561,7 +561,7 @@ mod tests {
         tap(&mut s, Id::Shelf(ShelfId::Launch));
         listed(&mut s, "browse:Home/Films", vec![entry("browse:Home/Films/x.mkv", false, BrowseKind::Plain)]);
         let library = files_state().shelf().library().clone();
-        let (_, fx) = s.applied(Event::Library(Box::new(library)));
+        let fx = s.applied(Event::Library(Box::new(library)));
         assert_eq!(s.shelf().selected().map(|g| &**g), Some("browse:Home/Films/x.mkv"), "still in Films");
         assert!(!fx.iter().any(|e| matches!(e, Effect::Browse(BrowseCommand::Open(_)))), "the same folder: watched still");
     }
@@ -593,7 +593,7 @@ mod tests {
         tap(&mut s, Id::Shelf(ShelfId::Launch));
         assert_eq!(s.shelf().file_target().map(|(g, selected)| (&*g.id, selected)), Some(("browse:Home/Films", false)), "empty: the folder's actions");
         let paste = vec![Effect::Files(FileOp::Paste { path: "/Home/a.txt".into(), into: "/Home/Films".into(), cut: false })];
-        assert_eq!(s.applied(ShelfEvent::TogglePin.into()).1, paste);
+        assert_eq!(s.applied(ShelfEvent::TogglePin.into()), paste);
         assert_eq!(tap(&mut s, Id::Shelf(ShelfId::File(FileAction::Paste))), paste);
         assert!(s.shelf().files().clip().is_some(), "a copy pastes again");
     }

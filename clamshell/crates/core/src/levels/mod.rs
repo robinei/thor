@@ -22,7 +22,7 @@ use crate::kit::list::{ItemKey, Rows};
 use crate::nav::lists::{ListId, RowPart};
 use crate::out::Out;
 use crate::resume::SAVE_AFTER;
-use crate::{AudioId, Dirty, LevelEvent};
+use crate::{AudioId, LevelEvent};
 use slider::{Control, Slider};
 
 /// A level row.
@@ -395,19 +395,13 @@ impl Levels {
         }
     }
 
-    /// A level row set by the finger on it, or stepped by the pad, at `now`. A set row is redrawn if its
-    /// level changed, a stepped one always.
+    /// A level row set by the finger on it, or stepped by the pad, at `now`.
     pub(crate) fn on_event(&mut self, event: LevelEvent, now: u64, out: &mut Out) {
         match event {
             LevelEvent::Set(level, value) => {
-                let before = self.level(level);
                 self.change(now, |l| l.set(level, value, out));
-                if self.level(level) != before {
-                    out.mark(Dirty::BOTTOM);
-                }
             }
             LevelEvent::Step(level, direction) => {
-                out.mark(Dirty::BOTTOM);
                 self.change(now, |l| l.step(level, direction, out));
             }
         }
@@ -498,7 +492,7 @@ mod tests {
     }
 
     fn set(s: &mut State, level: Level, value: u8) -> Vec<Effect> {
-        s.applied(LevelEvent::Set(level, value).into()).1
+        s.applied(LevelEvent::Set(level, value).into())
     }
 
     #[test]
@@ -548,12 +542,12 @@ mod tests {
         assert_eq!(set(&mut s, Level::Backlight(1), 70), vec![Effect::Brightness { level: 60, shares: vec![share("bottom", 70)] }]);
         // The bar keeps the screens the same relative to each other.
         s.applied(Slide::Start { control: Control::Brightness, x: 300.0, width: 620.0 }.into());
-        let fx = s.applied(Slide::To { x: 360.0 }.into()).1;
+        let fx = s.applied(Slide::To { x: 360.0 }.into());
         assert!(matches!(fx.as_slice(), [Effect::Brightness { level, shares }] if *level > 60 && *shares == [share("bottom", 70)]), "{fx:?}");
         s.applied(Slide::End.into());
-        assert_eq!(s.applied(LevelEvent::Step(Level::Brightness, -1).into()).1.len(), 1);
+        assert_eq!(s.applied(LevelEvent::Step(Level::Brightness, -1).into()).len(), 1);
         // Saved a moment later, and restored after a restart.
-        let saved = s.applied(Event::tick(10)).1;
+        let saved = s.applied(Event::tick(10));
         let brightness = saved.iter().find_map(|e| match e {
             Effect::Save(Save::Brightness(b)) => Some(b),
             _ => None,
@@ -565,8 +559,8 @@ mod tests {
     fn the_pad_steps_levels() {
         let mut s = state();
         read(&mut s, Reading::Status(Status { volume: Some(98), ..Status::default() }));
-        assert_eq!(s.applied(LevelEvent::Step(Level::Volume, 1).into()).1, vec![Effect::Sound(Sound::Volume(100))], "up to 100");
-        assert_eq!(s.applied(LevelEvent::Step(Level::Volume, 1).into()).1, vec![], "and no further");
+        assert_eq!(s.applied(LevelEvent::Step(Level::Volume, 1).into()), vec![Effect::Sound(Sound::Volume(100))], "up to 100");
+        assert_eq!(s.applied(LevelEvent::Step(Level::Volume, 1).into()), vec![], "and no further");
     }
 
     #[test]

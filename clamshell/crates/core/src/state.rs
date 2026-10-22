@@ -22,9 +22,9 @@ use crate::session::running::OwnView;
 use crate::settings::{BottomWhenIdle, MouseAtLaunch, Setting, Values};
 use crate::sync::{Resend, Sent, Wanted};
 use crate::{
-    BtId, Clock, Dirty, Dock, EditorId, Effect, Entry, EntryAct, Event, Id, Init, KeymapEvent, KeymapId, Launch, LaunchEvent, Level, LevelEvent, Levels,
-    Library, ListEvent, ListId, Lists, Pad, PadRoute, Panel, Pointer, PointerEvent, Prefs, Radios, Reading, Resume, RowPart, Save, Scroll, Session, SettingsId,
-    Shelf, Slide, Sys, Tab, Watch, WifiId, WindowCommand,
+    BtId, Clock, Dock, EditorId, Effect, Entry, EntryAct, Event, Id, Init, KeymapEvent, KeymapId, Launch, LaunchEvent, Level, LevelEvent, Levels, Library,
+    ListEvent, ListId, Lists, Pad, PadRoute, Panel, Pointer, PointerEvent, Prefs, Radios, Reading, Resume, RowPart, Save, Scroll, Session, SettingsId, Shelf,
+    Slide, Sys, Tab, Watch, WifiId, WindowCommand,
 };
 
 /// Everything ClamShell knows, as its areas (see the [crate docs](crate)).
@@ -178,11 +178,11 @@ impl State {
 
     // Applying an event: handle, settle, sync.
 
-    /// Applies one event, appends what must happen outside to `effects`, and returns which screens
-    /// changed. After the event itself, the state is settled ([`State::settle`]), and then the outside is
-    /// told what changed for it ([`State::sync`]).
-    pub fn apply(&mut self, event: Event, effects: &mut Vec<Effect>) -> Dirty {
-        let mut out = Out { effects: std::mem::take(effects), events: std::mem::take(&mut self.queue), dirty: Dirty::NONE };
+    /// Applies one event and appends what must happen outside to `effects`. After the event itself, the
+    /// state is settled ([`State::settle`]), and then the outside is told what changed for it
+    /// ([`State::sync`]).
+    pub fn apply(&mut self, event: Event, effects: &mut Vec<Effect>) {
+        let mut out = Out { effects: std::mem::take(effects), events: std::mem::take(&mut self.queue) };
         self.apply_event(event, &mut out);
         self.settle(&mut out);
         self.sync(&mut out);
@@ -195,7 +195,6 @@ impl State {
         *effects = out.effects;
         out.events.clear();
         self.queue = out.events;
-        out.dirty
     }
 
     fn apply_event(&mut self, event: Event, out: &mut Out) {
@@ -205,9 +204,7 @@ impl State {
             Event::Tick { unix_secs, mono_secs } => self.tick(unix_secs, mono_secs, out),
             Event::Reading(reading) => self.on_reading(reading, out),
             Event::List(e) => {
-                if self.on_list(e) {
-                    out.mark(e.list().screens());
-                }
+                self.on_list(e);
             }
             Event::Pointer(e) => self.on_pointer(e, out),
             Event::Slide(slide) => self.on_slide(slide, out),
@@ -219,23 +216,18 @@ impl State {
             }
             Event::Level(e) => self.levels.on_event(e, self.clock.mono(), out),
             Event::Shelf(e) => self.shelf.on_event(e, &mut self.pointer, out),
-            Event::Launch(e) => self.on_launch_event(e, out),
+            Event::Launch(e) => self.on_launch_event(e),
             Event::Windows(windows) => {
                 self.session.set_windows(windows);
-                out.mark(Dirty::BOTH);
             }
             Event::Meta { id, meta } => {
-                if self.shelf.apply_meta(&id, &meta) {
-                    out.mark(Dirty::BOTH);
-                }
+                self.shelf.apply_meta(&id, &meta);
             }
             Event::Library(library) => {
-                out.mark(Dirty::BOTH);
                 self.library_read(*library, out);
                 self.sent.resend(Resend::Shown);
             }
             Event::Files(e) => {
-                out.mark(Dirty::BOTH);
                 self.shelf.on_files(e, &mut self.pointer, self.bottom.notice_mut(), self.clock.mono(), out);
             }
             Event::Fetching(on) => {
@@ -243,39 +235,31 @@ impl State {
                 self.sent.resend(Resend::Shown);
             }
             Event::Tray(items) => {
-                if self.session.set_tray(items, &self.clock, self.shelf.library(), out) {
-                    out.mark(Dirty::BOTH);
-                }
+                self.session.set_tray(items, &self.clock, self.shelf.library(), out);
             }
             Event::Units(units) => {
                 self.session.set_units(units);
-                out.mark(Dirty::BOTTOM);
             }
             Event::Start => {
-                out.mark(Dirty::BOTH);
                 self.ui_started(out);
             }
             // On a screen that listens for input, Home leaves it. Home is never taken as an input.
             Event::Home if self.listening() => {
                 self.keymapping.back(&mut self.keyboard);
-                out.mark(Dirty::BOTTOM);
             }
             // When the Device view is in shelf's place, Home goes back to shelf.
             Event::Home if self.session.shelf_in_front() && self.device.is_open() => self.device.close(&mut self.pointer, self.shelf.selected()),
             Event::Home => self.session.home(out),
             Event::Listened(input) => {
-                out.mark(Dirty::BOTTOM);
                 self.keymapping.listened(input, self.pad.route() == PadRoute::Listen, out);
             }
             Event::PadSwitch => self.pad.switch(),
             // Never applied here: the UI handles pad navigation itself.
             Event::Pad(_) => {}
             Event::TextInput(active) => {
-                let (dirty, changed) = self.bottom.text_input(active);
-                if changed {
+                if self.bottom.text_input(active) {
                     self.left_tab();
                 }
-                out.mark(dirty);
             }
             Event::Pointing(pointing) => self.bottom.point(pointing, out),
             Event::Resumed => {
@@ -284,74 +268,59 @@ impl State {
             }
             Event::Idle(event) => self.idle.heard(event, self.clock.mono()),
             Event::Device(key) => {
-                out.mark(Dirty::BOTTOM);
                 self.on_device_key(key, out);
             }
-            Event::BottomTouched => out.mark(self.bottom.used(&self.session, &self.clock)),
+            Event::BottomTouched => self.bottom.used(&self.session, &self.clock),
             Event::Frozen(keys) => {
                 self.session.found_frozen(keys);
-                out.mark(Dirty::BOTTOM);
             }
             Event::Paste => {
                 self.bottom.paste();
-                out.mark(Dirty::BOTTOM);
             }
             Event::Screenshot(result) => {
                 self.bottom.notify(crate::bottom::notice::NoticeKind::Screenshot(result), self.clock.mono());
-                out.mark(Dirty::BOTTOM);
             }
             Event::Sticks(event) => {
-                out.mark(Dirty::TOP);
                 self.device.sticks_event(event, out);
             }
             Event::RefreshCalibrated(result) => {
                 self.device.refresh_done(result);
-                out.mark(Dirty::TOP);
                 self.sent.resend(Resend::RefreshCalibrated);
             }
             Event::GyroCalibrated(ok) => {
                 self.bottom.notify(crate::bottom::notice::NoticeKind::Gyro(Some(ok)), self.clock.mono());
-                out.mark(Dirty::BOTTOM);
             }
             Event::AccountChanged(result) => {
                 // What the helper did, or why it failed, shown for a moment.
                 self.bottom.notify(crate::bottom::notice::NoticeKind::Account(result), self.clock.mono());
-                out.mark(Dirty::BOTTOM);
             }
             Event::ChooseTab(tab) => {
                 self.choose_tab(tab);
-                out.mark(Dirty::BOTH);
             }
-            Event::Entry(id, act) => {
-                out.mark(Dirty::BOTTOM);
-                match act {
-                    EntryAct::Play => self.play(id, out),
-                    EntryAct::Show => self.session.show(&id, &self.clock, self.shelf.library(), self.bottom.notice_mut(), out),
-                    EntryAct::OpenAnother => {
-                        if self.opens_another(&id) {
-                            self.launch(id, None, true, out);
-                        }
+            Event::Entry(id, act) => match act {
+                EntryAct::Play => self.play(id, out),
+                EntryAct::Show => self.session.show(&id, &self.clock, self.shelf.library(), self.bottom.notice_mut(), out),
+                EntryAct::OpenAnother => {
+                    if self.opens_another(&id) {
+                        self.launch(id, None, true, out);
                     }
-                    EntryAct::Suspend => self.session.suspend(&id, out),
-                    EntryAct::ToggleAutostart => self.session.toggle_autostart(id, out),
-                    EntryAct::TogglePin => self.dock.toggle_pin(id, &self.session, out),
-                    EntryAct::Quit => self.session.quit(&id, self.shelf.library(), out),
-                    EntryAct::ForceKill => self.session.force_kill(&id, self.shelf.library(), out),
                 }
-            }
+                EntryAct::Suspend => self.session.suspend(&id, out),
+                EntryAct::ToggleAutostart => self.session.toggle_autostart(id, out),
+                EntryAct::TogglePin => self.dock.toggle_pin(id, &self.session, out),
+                EntryAct::Quit => self.session.quit(&id, self.shelf.library(), out),
+                EntryAct::ForceKill => self.session.force_kill(&id, self.shelf.library(), out),
+            },
             Event::Enqueue => {
-                out.mark(Dirty::BOTTOM);
                 self.enqueue(out);
             }
             Event::Keymap(e) => {
-                out.mark(Dirty::BOTTOM);
                 self.keymap_event(e, out);
             }
             Event::EditOnKeyboard(editor) => {
                 if self.bottom.open_on_keyboard(editor) {
                     self.left_tab();
                 }
-                out.mark(Dirty::BOTH);
             }
             Event::Quit => {
                 out.effects.push(Effect::Save(Save::Resume(self.resume())));
@@ -436,17 +405,11 @@ impl State {
             if let Some(effects) = out.effects.get_mut(windows_from..) {
                 effects.rotate_left(by_windows);
             }
-            let docked = self.dock.follow(&self.session);
+            self.dock.follow(&self.session);
             self.session.followed();
-            // The dock and the running entries are shown on the second screen.
-            if docked || !self.session.running_entries().iter().map(|r| &r.id).eq(before.iter()) {
-                out.mark(Dirty::BOTTOM);
-            }
             self.settled.running = before;
         }
-        if self.bottom.follow_dim(&self.session, &self.clock) {
-            out.mark(Dirty::BOTTOM);
-        }
+        self.bottom.follow_dim(&self.session, &self.clock);
         self.shelf.follow_folder();
         // Sleep only in the device's own session. A program in front doesn't hold it off; one playing a
         // video asks the compositor to keep the screen on.
@@ -455,11 +418,11 @@ impl State {
         self.idle.follow(self.clock.mono(), policy, refreshing, self.session.awake_command(), out);
         let changed = self.session.follow_program();
         self.bottom.follow_power(self.power(), self.clock.mono());
-        if changed && self.follow_pad_mouse() {
-            out.mark(Dirty::BOTH);
+        if changed {
+            self.follow_pad_mouse();
         }
-        if self.reconcile_pad().is_some_and(|route| route != PadRoute::Ui) && self.pointer.hide_focus() {
-            out.mark(Dirty::BOTH);
+        if self.reconcile_pad().is_some_and(|route| route != PadRoute::Ui) {
+            self.pointer.hide_focus();
         }
     }
 
@@ -522,62 +485,61 @@ impl State {
         if !self.clock.read() {
             self.idle.resumed(mono_secs);
         }
-        let minute_changed = self.clock.tick(unix_secs, mono_secs);
+        self.clock.tick(unix_secs, mono_secs);
         // The session's steps follow the time.
         self.session.changed();
         if self.resume.due(mono_secs, SAVE_AFTER) {
             out.effects.push(Effect::Save(Save::Resume(self.resume())));
         }
         self.levels.save_due(mono_secs, out);
-        let notice_gone = self.bottom.expire_notice(mono_secs);
-        if minute_changed {
-            out.mark(Dirty::BOTH);
-        } else if notice_gone {
-            out.mark(Dirty::BOTTOM);
-        }
+        self.bottom.expire_notice(mono_secs);
     }
 
-    /// A reading of the system from a system thread. It is stored, and the second screen is redrawn if it
-    /// shows what changed. After a status reading, the battery warning is checked.
+    /// A reading of the system from a system thread. It is stored, and after a status reading the
+    /// battery warning is checked. The scrolled lists then follow what changed in them.
     fn on_reading(&mut self, reading: Reading, out: &mut Out) {
         let status = matches!(reading, Reading::Status(_));
-        let shown = self.bottom.tab().shows(&reading);
-        let dirty = 'dirty: {
-            let changed = match reading {
-                // The volume, mute and brightness go to the levels, where a finger on a slider wins over the
-                // reading.
-                Reading::Status(status) => {
-                    let levels = self.levels.read(status.volume, status.muted, status.brightness);
-                    self.sys.read_status(status) | levels
-                }
-                Reading::Clipboard(text) => self.bottom.read_clipboard(text),
-                Reading::Icon { entry, path } => self.session.set_icon(&entry, path),
-                // The graphs move on with every reading.
-                Reading::Metrics(metrics) => {
-                    self.sys.read_metrics(metrics);
-                    true
-                }
-                Reading::Frames { fps, frame_ms } => {
-                    self.sys.frames(fps, frame_ms);
-                    true
-                }
-                Reading::Wifi(wifi) => self.radios.read_wifi(wifi),
-                Reading::Bluetooth(bluetooth) => self.radios.read_bluetooth(bluetooth),
-                Reading::Battery(battery) => self.sys.read_battery(battery),
-                Reading::Audio(audio) => self.levels.read_audio(audio),
-                Reading::Backlights(backlights) => self.levels.read_backlights(backlights),
-                Reading::Time(time) => self.sys.read_time(time),
-                Reading::Account(account) => {
-                    // The account is shown in the Device view, on the main screen.
-                    break 'dirty if self.device.read_account(account) { Dirty::TOP } else { Dirty::NONE };
-                }
-            };
-            if changed && shown { Dirty::BOTTOM } else { Dirty::NONE }
-        };
+        match reading {
+            // The volume, mute and brightness go to the levels, where a finger on a slider wins over the
+            // reading.
+            Reading::Status(status) => {
+                self.levels.read(status.volume, status.muted, status.brightness);
+                self.sys.read_status(status);
+            }
+            Reading::Clipboard(text) => {
+                self.bottom.read_clipboard(text);
+            }
+            Reading::Icon { entry, path } => {
+                self.session.set_icon(&entry, path);
+            }
+            Reading::Metrics(metrics) => self.sys.read_metrics(metrics),
+            Reading::Frames { fps, frame_ms } => self.sys.frames(fps, frame_ms),
+            Reading::Wifi(wifi) => {
+                self.radios.read_wifi(wifi);
+            }
+            Reading::Bluetooth(bluetooth) => {
+                self.radios.read_bluetooth(bluetooth);
+            }
+            Reading::Battery(battery) => {
+                self.sys.read_battery(battery);
+            }
+            Reading::Audio(audio) => {
+                self.levels.read_audio(audio);
+            }
+            Reading::Backlights(backlights) => {
+                self.levels.read_backlights(backlights);
+            }
+            Reading::Time(time) => {
+                self.sys.read_time(time);
+            }
+            Reading::Account(account) => {
+                self.device.read_account(account);
+            }
+        }
         if status {
             self.sys.battery_warning(out);
         }
-        out.mark(if self.follow_lists() { Dirty::BOTTOM } else { dirty });
+        self.follow_lists();
     }
 
     /// The library was read again. New problems are reported once and shelf is reloaded. Then what
@@ -615,8 +577,7 @@ impl State {
         out.effects.push(self.bottom.window_rules().effect());
     }
 
-    fn on_launch_event(&mut self, event: LaunchEvent, out: &mut Out) {
-        out.mark(Dirty::BOTH);
+    fn on_launch_event(&mut self, event: LaunchEvent) {
         self.session.changed();
         match event {
             LaunchEvent::Position { entry: game, position } => self.shelf.set_position(&game, position, self.clock.unix()),
@@ -629,11 +590,11 @@ impl State {
     /// that screen.
     fn on_pointer(&mut self, event: PointerEvent, out: &mut Out) {
         let used = match &event {
-            PointerEvent::Focus(id) | PointerEvent::Activate(id) | PointerEvent::LongPress(id) | PointerEvent::Down(id) => id.screen() == Dirty::BOTTOM,
+            PointerEvent::Focus(id) | PointerEvent::Activate(id) | PointerEvent::LongPress(id) | PointerEvent::Down(id) => !id.on_top(),
             _ => false,
         };
         if used {
-            out.mark(self.bottom.used(&self.session, &self.clock));
+            self.bottom.used(&self.session, &self.clock);
         }
         // Input that reached ClamShell itself, such as the pad driving the screens.
         self.idle.own_input(self.clock.mono());
@@ -642,19 +603,15 @@ impl State {
                 self.show_focused(&id);
                 self.pointer.focus_on(id);
                 self.pointer.show();
-                out.mark(Dirty::BOTH);
             }
             PointerEvent::HideFocus => {
-                if self.pointer.hide_focus() {
-                    out.mark(Dirty::BOTH);
-                }
+                self.pointer.hide_focus();
             }
             // A press that woke the screens does nothing else.
             PointerEvent::Activate(_) | PointerEvent::LongPress(_) if self.idle.swallows_press(self.clock.mono()) => {}
             PointerEvent::Activate(id) => self.activate(&id, false, out),
             PointerEvent::LongPress(id) => self.activate(&id, true, out),
             PointerEvent::Down(id) => {
-                out.mark(id.screen());
                 if let Id::Key(pos) = id {
                     self.keyboard.down(pos);
                 }
@@ -669,7 +626,6 @@ impl State {
                 if let Id::Key(pos) = id {
                     self.keyboard.up(pos);
                 }
-                out.mark(id.screen());
             }
         }
     }
@@ -679,21 +635,17 @@ impl State {
     fn activate(&mut self, id: &Id, long: bool, out: &mut Out) {
         // The list item the press came down on is gone.
         let Some(id) = self.lists().resolve(id) else {
-            out.mark(Dirty::BOTTOM);
             return;
         };
         self.pointer.focus_on(id.clone());
         match id {
             Id::Shelf(id) => {
-                out.mark(Dirty::BOTH);
                 self.shelf.on_target(id, long, &mut self.pointer, out);
             }
             Id::Dock(id) => {
-                out.mark(Dirty::BOTTOM);
                 self.dock.on(id, long, &self.session, &mut self.bottom, out);
             }
             Id::Settings(id) => {
-                out.mark(if matches!(id, SettingsId::Tile(_) | SettingsId::Reset) { Dirty::BOTH } else { Dirty::BOTTOM });
                 self.on_settings(id, long, out);
             }
             Id::Editor(id) => {
@@ -701,32 +653,25 @@ impl State {
                     EditorId::Save => Done::Save,
                     EditorId::Cancel => Done::Cancel,
                 };
-                out.mark(Dirty::BOTTOM);
                 self.editor_done(done, out);
             }
             Id::Wifi(WifiId::Power) => {
-                out.mark(Dirty::BOTTOM);
                 self.radios.power_wifi(out);
             }
             Id::Bluetooth(BtId::Power) => {
-                out.mark(Dirty::BOTTOM);
                 self.radios.power_bluetooth(out);
             }
             Id::Audio(id) => {
-                out.mark(Dirty::BOTTOM);
                 self.levels.on_audio(id, out);
             }
             Id::Row { list, i, part } => {
-                out.mark(list.screens());
                 self.on_row(list, usize::from(i), part, long, out);
             }
             Id::Keymap(id) => {
-                out.mark(Dirty::BOTTOM);
                 self.on_keymap(id, long, out);
             }
             Id::Tab(tab) => {
                 self.choose_tab(tab);
-                out.mark(Dirty::BOTH);
             }
             // A tap opens the tab. Slides are handled by the UI and don't end in a tap.
             Id::Control(control) if !long => {
@@ -737,14 +682,12 @@ impl State {
                     Control::Param(_) => return,
                 };
                 self.choose_tab(tab);
-                out.mark(Dirty::BOTH);
             }
             Id::Control(_) | Id::Level(_) | Id::List(_) | Id::Blank => {}
             Id::Key(pos) => {
                 let stroke = self.keyboard.press(pos, long);
                 // The key goes to the editor while it is open, to finding an entry while shelf is in
                 // front, and otherwise to the focused app.
-                out.mark(Dirty::BOTTOM);
                 match stroke {
                     Some(stroke) if self.bottom.editor().is_some() => {
                         if let Some(done) = self.bottom.edit(stroke) {
@@ -755,7 +698,6 @@ impl State {
                         self.keymapping.captured(crate::keymap::screens::chord(stroke), out);
                     }
                     Some(stroke) if self.session.front() == crate::session::running::Front::Shelf => {
-                        out.mark(Dirty::BOTH);
                         self.shelf.find(stroke, &mut self.pointer, out);
                     }
                     Some(stroke) => out.effects.push(Effect::Key(stroke)),
@@ -764,26 +706,21 @@ impl State {
             }
             Id::BottomWindows => {
                 if let Some(window) = self.bottom.hidden_down(&self.session) {
-                    out.mark(Dirty::BOTH);
                     self.bottom.show_program_down(window, out);
                 }
             }
             Id::Time(id) => self.sys.on_time(id, self.scrolls.get_mut(ListId::Time), out),
             Id::Device(id) => {
-                out.mark(Dirty::BOTH);
                 self.device.tap(id, self.clock.mono(), &mut self.bottom, &mut self.pointer, self.shelf.selected(), out);
             }
             Id::Battery(id) => {
-                out.mark(Dirty::BOTTOM);
                 self.sys.on_battery(id, &self.session, out);
             }
             Id::PadMouse => {
                 self.pad.toggle_mouse();
-                out.mark(Dirty::BOTTOM);
             }
             Id::Wake => {
                 self.bottom.wake();
-                out.mark(Dirty::BOTTOM);
             }
         }
     }
@@ -928,18 +865,16 @@ impl State {
     }
 
     /// Runs after the lists' contents may have changed. Each scrolled list keeps its top item where it
-    /// is, while that item is still there, and stays within its ends. Returns whether any moved.
-    fn follow_lists(&mut self) -> bool {
-        let mut moved = false;
+    /// is, while that item is still there, and stays within its ends.
+    fn follow_lists(&mut self) {
         for list in ListId::ALL {
             let lists = self.lists();
             let len = lists.len(list);
             let found = lists.scroll(list).anchored().and_then(|key| lists.rows(list).find(key));
             if let Some(s) = self.scroll_mut(list) {
-                moved |= s.follow(found, len);
+                s.follow(found, len);
             }
         }
-        moved
     }
 
     // Tabs, the editor and the device's keys.
@@ -1022,27 +957,18 @@ impl State {
         match slide {
             Slide::Start { control: Control::Param(param), x, width } => {
                 self.keymapping.param_slide_start(param, x, width);
-                out.mark(Dirty::BOTTOM);
             }
             Slide::Start { control, x, width } => {
                 self.levels.slide_start(control, x, width);
-                out.mark(Dirty::BOTTOM);
             }
             Slide::To { x } if self.levels.slider().is_none() => {
-                if self.keymapping.param_slide_to(x) {
-                    out.mark(Dirty::BOTTOM);
-                }
+                self.keymapping.param_slide_to(x);
             }
             Slide::To { x } => {
-                let before = out.effects.len();
                 self.levels.change(self.clock.mono(), |l| l.slide_to(x, out));
-                if out.effects.len() > before {
-                    out.mark(Dirty::BOTTOM);
-                }
             }
             Slide::End => {
                 self.levels.slide_end();
-                out.mark(Dirty::BOTTOM);
                 self.keymapping.param_slide_end(out);
             }
         }

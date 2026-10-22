@@ -1,6 +1,7 @@
 //! The Wayland side. There are two views, the main (top) screen and the second (bottom) screen, both
-//! drawn on the CPU into shm buffers. A view is redrawn only when its state changed, at most once per
-//! frame callback; between events the program sleeps.
+//! drawn on the CPU into shm buffers. After every event each visible view is recorded and compared with
+//! its last frame; only one that changed is drawn, only where it changed, at most once per frame
+//! callback. Between events the program sleeps.
 //!
 //! The top view is an xdg toplevel, which sway rules make fullscreen in its own workspace. The bottom
 //! view is a layer-shell surface on the second screen's output when that output exists (`DSI-1` on the

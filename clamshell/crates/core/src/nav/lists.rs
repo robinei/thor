@@ -90,11 +90,6 @@ impl ListId {
     pub fn whole_rows(self) -> bool {
         self == ListId::Shelf
     }
-
-    /// Which screens show it.
-    pub fn screens(self) -> crate::Dirty {
-        if self == ListId::Shelf { crate::Dirty::BOTH } else { crate::Dirty::BOTTOM }
-    }
 }
 
 /// The scroll position of every list but shelf, which keeps one per collection.
@@ -260,8 +255,8 @@ mod tests {
         let mut s = state();
         networks(&mut s, &["a", "b", "c", "d", "e", "f"]);
         s.applied(ListEvent::Visible(ListId::Wifi, 2.0).into());
-        let (dirty, _) = s.applied(PointerEvent::Focus(ListId::Wifi.row(4)).into());
-        assert_eq!((dirty, s.lists().scroll(ListId::Wifi).offset()), (Dirty::BOTH, 3.0));
+        s.applied(PointerEvent::Focus(ListId::Wifi.row(4)).into());
+        assert_eq!(s.lists().scroll(ListId::Wifi).offset(), 3.0);
         s.applied(PointerEvent::Focus(ListId::Wifi.row(0)).into());
         assert_eq!(s.lists().scroll(ListId::Wifi).offset(), 0.0);
     }

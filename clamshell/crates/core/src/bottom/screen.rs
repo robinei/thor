@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use crate::bottom::Bottom;
 use crate::bottom::notice::NoticeKind;
-use crate::effect::{Dirty, Effect, Save, WindowCommand};
+use crate::effect::{Effect, Save, WindowCommand};
 use crate::out::Out;
 use crate::session::instance::Instance;
 use crate::session::windows::Window;
@@ -169,20 +169,18 @@ impl Bottom {
         self.used_at.map_or(0, |at| now.saturating_sub(at))
     }
 
-    /// The second screen is in use, so it is lit, and redrawn if it was dimmed.
-    pub(crate) fn used(&mut self, session: &Session, clock: &Clock) -> Dirty {
+    /// The second screen is in use, so it is lit.
+    pub(crate) fn used(&mut self, session: &Session, clock: &Clock) {
         self.used_at = Some(clock.mono());
-        if self.follow_dim(session, clock) { Dirty::BOTTOM } else { Dirty::NONE }
+        self.follow_dim(session, clock);
     }
 
-    /// Runs after any event. Returns whether the second screen's dimming changed, so it can be redrawn.
-    /// The time counts from the first clock reading.
-    pub(crate) fn follow_dim(&mut self, session: &Session, clock: &Clock) -> bool {
+    /// Runs after any event. The time counts from the first clock reading.
+    pub(crate) fn follow_dim(&mut self, session: &Session, clock: &Clock) {
         if self.used_at.is_none() && clock.read() {
             self.used_at = Some(clock.mono());
         }
-        let dimmed = !self.shows_windows(session) && self.idle_for(clock.mono()) >= DIM_AFTER;
-        std::mem::replace(&mut self.dimmed, dimmed) != dimmed
+        self.dimmed = !self.shows_windows(session) && self.idle_for(clock.mono()) >= DIM_AFTER;
     }
 
     /// Whether the bottom screen shows the windows moved there instead of ClamShell's view.
@@ -390,7 +388,7 @@ mod tests {
     }
 
     fn key(s: &mut State, k: DeviceKey) -> Vec<Effect> {
-        s.applied(Event::Device(k)).1
+        s.applied(Event::Device(k))
     }
 
     #[test]
@@ -443,23 +441,23 @@ mod tests {
         // down, once.
         let mut s = crate::testkit::started(crate::Init { window_rules: rules.clone(), ..crate::testkit::init() });
         s.add_run(running("melonds", "melonds_1"), emu());
-        let fx = s.applied(Event::Windows(vec![win(5, GAME, "Top", true, false), win(6, GAME, "Bottom", false, false)])).1;
+        let fx = s.applied(Event::Windows(vec![win(5, GAME, "Top", true, false), win(6, GAME, "Bottom", false, false)]));
         assert!(fx.contains(&Effect::Window(WindowCommand::Down(6))), "{fx:?}");
         assert!(!fx.contains(&Effect::Window(WindowCommand::Down(5))));
-        let fx = s.applied(Event::Windows(vec![win(5, GAME, "Top", true, false), win(6, GAME, "Bottom", false, false)])).1;
+        let fx = s.applied(Event::Windows(vec![win(5, GAME, "Top", true, false), win(6, GAME, "Bottom", false, false)]));
         assert!(!fx.contains(&Effect::Window(WindowCommand::Down(6))), "asked once");
         // Its window appears before its scope is listed, and is sent down when the scope appears.
         let mut s = crate::testkit::started(crate::Init { window_rules: rules.clone(), ..crate::testkit::init() });
-        let fx = s.applied(Event::Windows(vec![win(8, GAME, "Bottom", true, false)])).1;
+        let fx = s.applied(Event::Windows(vec![win(8, GAME, "Bottom", true, false)]));
         assert!(!fx.iter().any(|e| matches!(e, Effect::Window(WindowCommand::Down(_)))), "no entry yet: {fx:?}");
         s.add_run(running("melonds", "melonds_1"), emu());
-        let fx = s.applied(Event::Units(vec![emu()])).1;
+        let fx = s.applied(Event::Units(vec![emu()]));
         assert!(fx.contains(&Effect::Window(WindowCommand::Down(8))), "{fx:?}");
         let mut s = emulator();
         key(&mut s, DeviceKey::WindowDown);
         // Another game's window with that title doesn't match the rule.
         s.add_run(running("other", "other_2"), Instance::Run { key: "other_2".into(), secs: 5, n: 2 });
-        let fx = s.applied(Event::Windows(vec![win(7, "clamshell-run-other_2-5-2.scope", "Bottom", false, false)])).1;
+        let fx = s.applied(Event::Windows(vec![win(7, "clamshell-run-other_2-5-2.scope", "Bottom", false, false)]));
         assert!(!fx.iter().any(|e| matches!(e, Effect::Window(WindowCommand::Down(_)))), "{fx:?}");
     }
 
@@ -487,7 +485,7 @@ mod tests {
         assert_eq!(s.bottom().hidden_down(s.session()), None, "shown");
         key(&mut s, DeviceKey::BottomView);
         assert_eq!(s.bottom().hidden_down(s.session()), Some(2), "ClamShell's view over them");
-        let fx = s.applied(Event::Pointer(crate::PointerEvent::Activate(crate::Id::BottomWindows))).1;
+        let fx = s.applied(Event::Pointer(crate::PointerEvent::Activate(crate::Id::BottomWindows)));
         assert_eq!(fx, vec![Effect::Window(WindowCommand::ShowDown(2)), Effect::Watch(crate::Watch::Metrics, false)], "its view not seen: not watched");
         assert!(s.bottom().shows_windows(s.session()));
         // With another program in front, the bar doesn't offer these windows.
@@ -503,7 +501,7 @@ mod tests {
     /// A status reading that says the device is on battery or on the charger.
     fn on_battery(s: &mut State, discharging: bool) -> Vec<Effect> {
         let status = crate::Status { battery: Some(50), charging: !discharging, discharging, ..crate::Status::default() };
-        s.applied(Event::Reading(crate::Reading::Status(status))).1
+        s.applied(Event::Reading(crate::Reading::Status(status)))
     }
 
     fn power(fx: &[Effect]) -> Option<bool> {
@@ -518,10 +516,10 @@ mod tests {
         let mut s = state();
         on_battery(&mut s, true);
         s.applied(Event::tick(1000));
-        assert_eq!(power(&s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER - 1)).1), None, "dimmed, not yet off");
-        assert_eq!(power(&s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER)).1), Some(false), "off by itself");
+        assert_eq!(power(&s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER - 1))), None, "dimmed, not yet off");
+        assert_eq!(power(&s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER))), Some(false), "off by itself");
         assert!(s.bottom().off());
-        assert_eq!(power(&s.applied(Event::BottomTouched).1), Some(true), "a touch: on again");
+        assert_eq!(power(&s.applied(Event::BottomTouched)), Some(true), "a touch: on again");
         assert!(!s.bottom().off());
     }
 
@@ -532,9 +530,9 @@ mod tests {
         let year = 365 * 86_400;
         s.applied(Event::Tick { unix_secs: 2 * year, mono_secs: 1000 });
         let at = |mono: u64| Event::Tick { unix_secs: year + mono, mono_secs: mono };
-        assert_eq!(power(&s.applied(at(1000 + DIM_AFTER + OFF_AFTER - 1)).1), None);
+        assert_eq!(power(&s.applied(at(1000 + DIM_AFTER + OFF_AFTER - 1))), None);
         assert!(s.bottom().dimmed(), "dimmed on time");
-        assert_eq!(power(&s.applied(at(1000 + DIM_AFTER + OFF_AFTER)).1), Some(false), "off on time");
+        assert_eq!(power(&s.applied(at(1000 + DIM_AFTER + OFF_AFTER))), Some(false), "off on time");
     }
 
     #[test]
@@ -542,14 +540,14 @@ mod tests {
         let mut s = state();
         on_battery(&mut s, false);
         s.applied(Event::tick(1000));
-        assert_eq!(power(&s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER)).1), None, "on the charger: only dimmed");
+        assert_eq!(power(&s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER))), None, "on the charger: only dimmed");
         // Unplugged now, but set to Screen on, so it is only dimmed.
         s.settings_mut().global.set(Setting::BottomScreen, BottomWhenIdle::On.value());
         on_battery(&mut s, true);
-        assert_eq!(power(&s.applied(Event::tick(1001 + DIM_AFTER + OFF_AFTER)).1), None);
+        assert_eq!(power(&s.applied(Event::tick(1001 + DIM_AFTER + OFF_AFTER))), None);
         // Back to the default, it turns off. With the charger plugged in, it turns on.
         s.settings_mut().global.set(Setting::BottomScreen, BottomWhenIdle::OffWhenIdle.value());
-        assert_eq!(power(&s.applied(Event::tick(1002 + DIM_AFTER + OFF_AFTER)).1), Some(false));
+        assert_eq!(power(&s.applied(Event::tick(1002 + DIM_AFTER + OFF_AFTER))), Some(false));
         assert_eq!(power(&on_battery(&mut s, false)), Some(true), "the charger: on again");
     }
 
@@ -561,7 +559,7 @@ mod tests {
         crate::testkit::start(&mut s, "zelda-lttp");
         assert!(s.bottom_dark());
         assert!(s.bottom().off(), "dark on battery: off at once");
-        assert_eq!(power(&s.applied(Event::Pointer(crate::PointerEvent::Activate(crate::Id::Wake))).1), Some(true), "tapped: on");
+        assert_eq!(power(&s.applied(Event::Pointer(crate::PointerEvent::Activate(crate::Id::Wake)))), Some(true), "tapped: on");
     }
 
     #[test]
@@ -571,7 +569,7 @@ mod tests {
         key(&mut s, DeviceKey::WindowDown);
         s.applied(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]));
         s.applied(Event::tick(1000));
-        assert_eq!(power(&s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER)).1), None, "a window shown there");
+        assert_eq!(power(&s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER))), None, "a window shown there");
     }
 
     #[test]
@@ -601,11 +599,11 @@ mod tests {
         s.applied(Event::tick(1000));
         s.applied(Event::tick(1000 + DIM_AFTER - 1));
         assert!(!s.bottom().dimmed());
-        let (dirty, _) = s.applied(Event::tick(1000 + DIM_AFTER));
-        assert!(s.bottom().dimmed() && dirty.bottom, "untouched a while: dimmed, redrawn");
+        s.applied(Event::tick(1000 + DIM_AFTER));
+        assert!(s.bottom().dimmed(), "untouched a while: dimmed");
         // A touch on it lights it.
-        let (dirty, _) = s.applied(Event::BottomTouched);
-        assert!(!s.bottom().dimmed() && dirty.bottom);
+        s.applied(Event::BottomTouched);
+        assert!(!s.bottom().dimmed());
         // The pad's focus coming to one of its targets lights it too, but not shelf's targets on the main
         // screen.
         s.applied(Event::tick(1000 + 3 * DIM_AFTER));

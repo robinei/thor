@@ -12,7 +12,7 @@
 //! The system side, systemd's timedated, is read while the tab is open and after each change.
 
 use crate::TimeId;
-use crate::effect::{Dirty, Effect, Save};
+use crate::effect::{Effect, Save};
 use crate::kit::list::Scroll;
 use crate::out::Out;
 use crate::status::Sys;
@@ -180,12 +180,10 @@ impl Sys {
             TimeId::TwelveHour => {
                 self.twelve_hour = !self.twelve_hour;
                 out.effects.push(Effect::Save(Save::TwelveHour(self.twelve_hour)));
-                out.mark(Dirty::BOTH);
             }
             TimeId::Step(field, up) if self.clock_by_hand() => out.effects.push(Effect::StepClock(field, if up { 1 } else { -1 })),
             TimeId::Step(..) => {}
         }
-        out.mark(Dirty::BOTTOM);
     }
 
     /// Goes back one page: from a region's zones to the regions, with that region shown, and from the
@@ -231,11 +229,11 @@ mod tests {
     }
 
     fn tap(s: &mut State, i: u16) -> Vec<Effect> {
-        s.applied(Event::Pointer(crate::PointerEvent::Activate(ListId::Time.row(i)))).1
+        s.applied(Event::Pointer(crate::PointerEvent::Activate(ListId::Time.row(i))))
     }
 
     fn time(s: &mut State, id: TimeId) -> Vec<Effect> {
-        s.applied(Event::Pointer(crate::PointerEvent::Activate(Id::Time(id)))).1
+        s.applied(Event::Pointer(crate::PointerEvent::Activate(Id::Time(id))))
     }
 
     #[test]
@@ -279,7 +277,7 @@ mod tests {
     #[test]
     fn the_tab_reads_the_time_zone_while_open() {
         let mut s = crate::testkit::state();
-        let (_, effects) = s.applied(Event::Pointer(crate::PointerEvent::Activate(Id::Tab(Tab::Time))));
+        let effects = s.applied(Event::Pointer(crate::PointerEvent::Activate(Id::Tab(Tab::Time))));
         assert_eq!(effects, vec![Effect::Watch(crate::Watch::Metrics, false), Effect::Watch(crate::Watch::Time, true)]);
     }
 }

@@ -152,6 +152,12 @@ impl Session {
         }
     }
 
+    /// Whether a running entry's window is in front on the main screen, so that shelf is hidden behind
+    /// it.
+    pub fn program_window_in_front(&self) -> bool {
+        self.windows.iter().find(|w| w.focused && !w.down).is_some_and(|w| w.app_id != SHELF_APP_ID && self.running_of(w).is_some())
+    }
+
     /// The running entry a window belongs to, by the first of these that matches:
     ///
     /// - its app id (see [`crate::session::running::app_id_of`]), as for a Steam game that runs in Steam's

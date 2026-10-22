@@ -5,7 +5,7 @@ use crate::bottom::keyboard::{self, Key};
 use crate::out::Out;
 use crate::shelf::actions::Shortcut;
 use crate::shelf::{Shelf, ShelfView};
-use crate::{Dirty, Effect, EntryAct, Event, Id, Pointer, Save, ShelfEvent, ShelfId};
+use crate::{Effect, EntryAct, Event, Id, Pointer, Save, ShelfEvent, ShelfId};
 
 impl Shelf {
     /// A tap, or a long press if `long`, on one of shelf's targets.
@@ -86,38 +86,30 @@ impl Shelf {
                 }
                 pointer.focus_shelf(self.selected());
                 pointer.show();
-                out.mark(Dirty::BOTH);
             }
             ShelfEvent::CollectionStep(step) => {
                 if self.collection_step(step) {
                     self.moved(pointer);
                 }
                 pointer.show();
-                out.mark(Dirty::BOTH);
             }
             ShelfEvent::Rows(rows) => {
-                if self.set_rows(rows) {
-                    out.mark(Dirty::BOTH);
-                }
+                self.set_rows(rows);
             }
             // The details' actions on the pad's buttons (see [`crate::shelf::actions`]).
             ShelfEvent::Continue => {
-                out.mark(Dirty::BOTH);
                 self.act(Shortcut::Start, pointer, out);
             }
             ShelfEvent::ToggleFavourite => {
-                out.mark(Dirty::BOTH);
                 self.act(Shortcut::Y, pointer, out);
             }
             ShelfEvent::TogglePin => {
-                out.mark(Dirty::BOTH);
                 self.act(Shortcut::X, pointer, out);
             }
             ShelfEvent::ClearFilter => {
                 if self.set_filter(String::new()) {
                     self.moved(pointer);
                 }
-                out.mark(Dirty::BOTH);
             }
         }
     }

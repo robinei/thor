@@ -32,10 +32,8 @@ impl Clock {
         self.unix.saturating_sub(self.mono.saturating_sub(mono))
     }
 
-    /// Sets both clocks. Returns whether the wall clock's minute changed.
-    pub(crate) fn tick(&mut self, unix: u64, mono: u64) -> bool {
-        let minute_changed = unix / 60 != self.unix / 60;
+    /// Sets both clocks.
+    pub(crate) fn tick(&mut self, unix: u64, mono: u64) {
         *self = Clock { unix, mono };
-        minute_changed
     }
 }

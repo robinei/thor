@@ -60,8 +60,8 @@ mod tests {
     fn it_points_until_idle_or_a_text_field_takes_focus() {
         let mut s = crate::testkit::state();
         let contact = Contact { slot: 1, phase: ContactPhase::Down, x: 10, y: 20 };
-        let (dirty, fx) = s.applied(Pointing::Contacts(vec![contact]).into());
-        assert!(s.bottom().pointing() && dirty.bottom);
+        let fx = s.applied(Pointing::Contacts(vec![contact]).into());
+        assert!(s.bottom().pointing());
         assert_eq!(fx, vec![Effect::Touchpad(vec![contact])]);
         s.applied(Pointing::Idle.into());
         assert!(!s.bottom().pointing());
