@@ -136,9 +136,7 @@ pub struct Queue {
 impl Queue {
     /// These entries (those still waiting) first, in this order.
     pub fn first(&self, ids: &[Arc<str>]) {
-        let Ok(mut q) = self.waiting.lock().inspect_err(|e| log::warn!("meta: the queue: {e}")) else {
-            return;
-        };
+        let mut q = crate::os::lock(&self.waiting);
         for id in ids.iter().rev() {
             if let Some(at) = q.iter().position(|w| w.id == *id)
                 && let Some(w) = q.remove(at)
@@ -150,9 +148,7 @@ impl Queue {
 
     /// `wanted` added at the end (those not waiting already); how many wait now.
     fn add(&self, wanted: Vec<Wanted>) -> usize {
-        let Ok(mut q) = self.waiting.lock().inspect_err(|e| log::warn!("meta: the queue: {e}")) else {
-            return 0;
-        };
+        let mut q = crate::os::lock(&self.waiting);
         for w in wanted {
             if !q.iter().any(|x| x.id == w.id) {
                 q.push_back(w);

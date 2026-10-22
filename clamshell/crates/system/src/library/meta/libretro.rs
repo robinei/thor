@@ -46,9 +46,7 @@ impl Shared {
     /// libretro's database of `system`: its No-Intro list's names, and the developers and years, by
     /// checksum; fetched once (empty where it couldn't be).
     pub(super) fn database(&self, system: &str) -> Arc<Database> {
-        let Ok(mut databases) = self.databases.lock().inspect_err(|e| log::warn!("meta: libretro's databases: {e}")) else {
-            return Arc::default();
-        };
+        let mut databases = crate::os::lock(&self.databases);
         if let Some(d) = databases.get(system) {
             return d.clone();
         }
