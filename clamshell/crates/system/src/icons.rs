@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use clamshell_core::{Event, Reading};
 
-use crate::worker::Worker;
+use crate::os::worker::Worker;
 use crate::{Sink, desktop};
 
 /// The icons thread; its requests: an entry and the app id to look up.

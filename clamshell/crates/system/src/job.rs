@@ -15,8 +15,8 @@ use std::process::{Child, Command, Stdio};
 
 use serde::{Deserialize, Serialize};
 
+use crate::os::worker::{self, Worker};
 use crate::sway;
-use crate::worker::{self, Worker};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Job {

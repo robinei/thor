@@ -11,7 +11,7 @@ use clamshell_core::{Event, Reading};
 use serde_json::Value;
 
 use crate::brightness::Backlights;
-use crate::worker::{self, Changed, Next, Worker};
+use crate::os::worker::{self, Changed, Next, Worker};
 use crate::{Closed, Sink};
 
 /// What to read: each while its tab is open.
@@ -57,7 +57,7 @@ fn follow(backlights: &Backlights, commands: &Receiver<Command>, sink: &impl Sin
 }
 
 fn read_audio() -> Audio {
-    crate::command::output("pw-dump", &[]).and_then(|out| serde_json::from_slice(&out).ok()).map(|v| parse(&v)).unwrap_or_default()
+    crate::os::command::output("pw-dump", &[]).and_then(|out| serde_json::from_slice(&out).ok()).map(|v| parse(&v)).unwrap_or_default()
 }
 
 /// `wpctl get-volume` output, `Volume: 0.60` or `Volume: 0.60 [MUTED]`: the volume 0-100 and mute.

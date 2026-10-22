@@ -10,7 +10,7 @@ use clamshell_core::device::sticks::{AXES, Calibrator, Step, Sticks};
 use evdev::AbsoluteAxisCode;
 
 use super::route::PadSnapshot;
-use crate::input::{Range, Raw};
+use crate::os::evdev::{Range, Raw};
 
 /// The sticks' axes, in the calibration's order: the left stick's x and y, the right stick's.
 const STICK_AXES: [AbsoluteAxisCode; AXES] = [AbsoluteAxisCode::ABS_X, AbsoluteAxisCode::ABS_Y, AbsoluteAxisCode::ABS_RX, AbsoluteAxisCode::ABS_RY];

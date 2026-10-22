@@ -34,8 +34,8 @@ use evdev::{AbsoluteAxisCode, KeyCode, RelativeAxisCode};
 use super::motion::Rate;
 use super::route::{Out, PadSnapshot, Ranges};
 use super::rumble::Buzz;
-use crate::input::{Press, Raw};
 use crate::keyboard::{MODIFIERS, chord_keys};
+use crate::os::evdev::{Press, Raw};
 
 /// A stick or trigger counts as pushed (a direction, a button) past this.
 pub const HALF: f32 = 0.5;

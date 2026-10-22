@@ -14,8 +14,8 @@ use std::sync::{Arc, Mutex};
 
 use clamshell_core::bottom::touch::{Contact, TouchLayout};
 
-use crate::input::Rect;
-use crate::worker::{self, Next, Worker};
+use crate::os::evdev::Rect;
+use crate::os::worker::{self, Next, Worker};
 
 /// How often the thread looks for the second screen's size until it can make the touchpad.
 const LAYOUT_EVERY: std::time::Duration = std::time::Duration::from_millis(100);
@@ -63,7 +63,7 @@ impl Touchpad {
     /// The touchpad made the second screen's size; made again if that size changed while no finger is on
     /// it.
     fn make(&mut self) {
-        let screen = crate::lock(&self.layout).screen;
+        let screen = crate::os::lock(&self.layout).screen;
         let size = Some((screen.0 as i32, screen.1 as i32)).filter(|(w, h)| *w > 0 && *h > 0);
         let Some(size) = size.filter(|size| self.pad.as_ref().is_none_or(|(_, s)| s != size)) else {
             return;

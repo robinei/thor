@@ -6,8 +6,8 @@ use std::io;
 
 use clamshell_core::Sound;
 
-use crate::command;
-use crate::worker::{self, Worker};
+use crate::os::command;
+use crate::os::worker::{self, Worker};
 
 /// Which commands replace each other: the same setting of the same thing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

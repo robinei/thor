@@ -20,7 +20,7 @@ use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use std::time::Duration;
 
 use super::motion::{MotionSource, Rate, Sample};
-use super::qrtr;
+use crate::os::qrtr;
 
 /// The sensor hub's client service.
 const SERVICE: u32 = 400;

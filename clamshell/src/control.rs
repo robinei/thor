@@ -21,7 +21,7 @@ use clamshell_core::{
     WifiId,
 };
 use clamshell_core::{ClockField, Scope, TimeId};
-use clamshell_system::{Sink, worker};
+use clamshell_system::{Sink, os::worker};
 
 /// The layout width a slide's positions are on (the second screen at half size).
 const SLIDE_WIDTH: f32 = 620.0;

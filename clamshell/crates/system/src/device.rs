@@ -14,8 +14,8 @@ use clamshell_core::device::account::AccountCommand;
 use clamshell_core::device::idle::IdleEvent;
 use clamshell_core::{Event, Reading, TimeZones};
 
-use crate::worker::Worker;
-use crate::{Closed, Sink, command, dbus};
+use crate::os::worker::Worker;
+use crate::{Closed, Sink, os::command, os::dbus};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
@@ -154,7 +154,7 @@ fn carry_out(command: Command, screenshots: Option<&PathBuf>, shown: &mut u32, s
 /// `work` on a thread of its own, its events sent when it is done (a thread that can't start: logged).
 fn in_background(name: &str, sink: &(impl Sink + Clone), work: impl FnOnce() -> Vec<Event> + Send + 'static) {
     let sink = sink.clone();
-    let started = crate::worker::detached(name, move || {
+    let started = crate::os::worker::detached(name, move || {
         for event in work() {
             if sink.send(event).is_err() {
                 return;
@@ -215,11 +215,11 @@ fn busy() -> Option<String> {
     let user = user_cgroup();
     let cpu = || {
         user.as_ref()
-            .and_then(|d| crate::sys::text(d.join("cpu.stat")))
+            .and_then(|d| crate::os::sys::text(d.join("cpu.stat")))
             .and_then(|s| s.lines().find_map(|l| l.strip_prefix("usage_usec ")?.trim().parse::<u64>().ok()))
     };
     let net = || {
-        let text = crate::sys::text("/proc/net/dev").unwrap_or_default();
+        let text = crate::os::sys::text("/proc/net/dev").unwrap_or_default();
         // (Each interface but loopback: received bytes, the 1st number, and sent, the 9th.)
         text.lines()
             .skip(2)
@@ -245,7 +245,7 @@ fn busy() -> Option<String> {
 
 /// The user manager's cgroup (`user@<uid>.service`): the cgroup ClamShell runs in, up to it.
 fn user_cgroup() -> Option<PathBuf> {
-    let path = crate::cgroup::path_of(std::process::id())?;
+    let path = crate::os::cgroup::path_of(std::process::id())?;
     let end = path.find(".service/").map(|i| i + ".service".len())?;
     Some(PathBuf::from("/sys/fs/cgroup").join(path.get(..end)?.trim_start_matches('/')))
 }

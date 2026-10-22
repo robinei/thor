@@ -9,7 +9,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::sys;
+use crate::os::sys;
 
 /// The power keys' wakeup files under `input` (the input class): of each device named like a PMIC's
 /// power key.

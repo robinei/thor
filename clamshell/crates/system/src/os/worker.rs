@@ -25,7 +25,9 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::Duration;
 
-use crate::Closed;
+/// The UI is gone: a thread whose events can't be delivered ends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Closed;
 
 /// A thread's command channel. Sending to a thread that has ended is logged once (`<name> is gone`).
 pub struct Worker<C> {
@@ -207,14 +209,14 @@ impl<E> From<Closed> for Ended<E> {
 /// it: `lost_on!(Error: dbus::Error, io::Error);` for `Ended<Error>`, or `lost_on!(io::Error);`.
 macro_rules! lost_on {
     ($domain:ty $(: $($from:ty),*)?) => {
-        impl From<$domain> for $crate::worker::Ended<$domain> {
+        impl From<$domain> for $crate::os::worker::Ended<$domain> {
             fn from(e: $domain) -> Self {
-                $crate::worker::Ended::Lost(e)
+                $crate::os::worker::Ended::Lost(e)
             }
         }
-        $($(impl From<$from> for $crate::worker::Ended<$domain> {
+        $($(impl From<$from> for $crate::os::worker::Ended<$domain> {
             fn from(e: $from) -> Self {
-                $crate::worker::Ended::Lost(e.into())
+                $crate::os::worker::Ended::Lost(e.into())
             }
         })*)?
     };

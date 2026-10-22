@@ -35,7 +35,7 @@ use wayland_protocols::ext::data_control::v1::client::ext_data_control_manager_v
 use wayland_protocols::ext::data_control::v1::client::ext_data_control_offer_v1::{self, ExtDataControlOfferV1};
 use wayland_protocols::ext::data_control::v1::client::ext_data_control_source_v1::{self, ExtDataControlSourceV1};
 
-use crate::{Sink, worker};
+use crate::{Sink, os::worker};
 
 /// The text types offered, and taken in this order of preference.
 const TEXT: [&str; 5] = ["text/plain;charset=utf-8", "UTF8_STRING", "text/plain", "TEXT", "STRING"];
@@ -76,7 +76,7 @@ pub fn spawn(sink: impl Sink + Clone + 'static) -> io::Result<()> {
                     log::debug!("clipboard: {}: {e}", path.display());
                 }
             }
-            let sink = crate::lock(&sink);
+            let sink = crate::os::lock(&sink);
             let _ = sink.send(Event::Reading(Reading::Clipboard(text.map(Arc::from))));
         };
         let kept = Arc::new(KeptText { text: Mutex::new(before), on_read: Box::new(on_read) });
@@ -131,7 +131,7 @@ struct KeptText {
 
 impl KeptText {
     fn text(&self) -> std::sync::MutexGuard<'_, Option<String>> {
-        crate::lock(&self.text)
+        crate::os::lock(&self.text)
     }
 }
 

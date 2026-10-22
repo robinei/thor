@@ -18,9 +18,9 @@ use std::time::Duration;
 use clamshell_core::Event;
 use clamshell_core::session::tray::{TrayCommand, TrayEntry, TrayItem};
 
-use crate::dbus::{self, Bus, Message, PropMap, Props, RefArg, Value, Variant, value};
-use crate::worker::{self, Bell, Changed, Ended, Service, Worker, lost_on};
-use crate::{Closed, Sink, cgroup};
+use crate::os::dbus::{self, Bus, Message, PropMap, Props, RefArg, Value, Variant, value};
+use crate::os::worker::{self, Bell, Changed, Ended, Service, Worker, lost_on};
+use crate::{Closed, Sink, os::cgroup};
 
 const WATCHER: &str = "org.kde.StatusNotifierWatcher";
 const WATCHER_PATH: &str = "/StatusNotifierWatcher";
@@ -158,7 +158,7 @@ impl Session {
     /// signalled in turn).
     fn came(&mut self) -> dbus::Result<bool> {
         let signals = self.bus.signals()?;
-        let registered = self.ours.as_ref().map(|w| std::mem::take(&mut crate::lock(w).registered)).unwrap_or_default();
+        let registered = self.ours.as_ref().map(|w| std::mem::take(&mut crate::os::lock(w).registered)).unwrap_or_default();
         for key in &registered {
             if let Ok(signal) = Message::new_signal(WATCHER_PATH, WATCHER, "StatusNotifierItemRegistered") {
                 let _ = self.bus.send(signal.append1(key.as_str()));
@@ -204,7 +204,7 @@ fn answer_watcher(watched: &Mutex<Watched>, call: &Message) -> Option<Message> {
     if call.path().as_deref() != Some(WATCHER_PATH) {
         return None;
     }
-    let mut w = crate::lock(watched);
+    let mut w = crate::os::lock(watched);
     let property = |w: &Watched, name: &str| -> Option<Value> {
         match name {
             "RegisteredStatusNotifierItems" => Some(value(w.items.clone())),
@@ -248,7 +248,7 @@ fn registered(s: &mut Session) -> dbus::Result<Vec<String>> {
     let Some(ours) = &s.ours else {
         return Ok(s.bus.get::<Vec<String>>(WATCHER, WATCHER_PATH, WATCHER, "RegisteredStatusNotifierItems").unwrap_or_default());
     };
-    let items = crate::lock(ours).items.clone();
+    let items = crate::os::lock(ours).items.clone();
     let mut kept = Vec::with_capacity(items.len());
     for key in items {
         let owned: dbus::Result<(bool,)> = s.bus.call(BUS_NAME, BUS_PATH, BUS_NAME, "NameHasOwner", (split(&key).0,));
@@ -256,7 +256,7 @@ fn registered(s: &mut Session) -> dbus::Result<Vec<String>> {
             kept.push(key);
         }
     }
-    crate::lock(ours).items.retain(|k| kept.contains(k));
+    crate::os::lock(ours).items.retain(|k| kept.contains(k));
     Ok(kept)
 }
 
@@ -298,7 +298,7 @@ fn read_item(bus: &mut Bus, key: &str, dirs: &[PathBuf]) -> Result<(TrayItem, Op
     let pid = bus.call::<(u32,)>(BUS_NAME, BUS_PATH, BUS_NAME, "GetConnectionUnixProcessID", (name,)).ok().map(|(pid,)| pid);
     // (Remembered as it is now: what is done to it later by its id is checked to be it still.)
     if let Some(pid) = pid {
-        crate::sys::saw(pid);
+        crate::os::sys::saw(pid);
     }
     let menu = props.path("Menu").filter(|p| p != "/");
     let entries = menu.as_ref().map(|m| read_menu(bus, name, m)).unwrap_or_default();

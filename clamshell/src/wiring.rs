@@ -11,10 +11,10 @@ use clamshell_system::job::Runner;
 use clamshell_system::keyboard::VirtualKeyboard;
 use clamshell_system::library::{self, Sources};
 use clamshell_system::meta;
+use clamshell_system::os::worker::Worker;
 use clamshell_system::paths::Paths;
 use clamshell_system::store::{Cache, Store, Writer};
 use clamshell_system::tuning::Tuning;
-use clamshell_system::worker::Worker;
 use clamshell_system::{
     Closed, Handles, Sink, battery, bluetooth, brightness, clock, frames, launcher, metrics, mixer, pad, sound, status, sway, touchpad, tuning, units, wifi,
 };
@@ -58,7 +58,7 @@ fn rescanner(sources: Sources, paths: Paths, queue: meta::Queue, sink: UiSink) -
         let (sources, paths, queue, sink) = (sources.clone(), paths.clone(), queue.clone(), sink.clone());
         detached(
             "rescan",
-            clamshell_system::worker::detached("rescan", move || {
+            clamshell_system::os::worker::detached("rescan", move || {
                 if refetch && let Some(art) = paths.art.as_deref() {
                     log::info!("rescan: {} misses forgotten", Cache::open(art).forget_misses());
                 }

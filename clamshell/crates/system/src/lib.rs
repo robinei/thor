@@ -1,21 +1,17 @@
 //! Threads that watch the system and carry out what the state asks for: the clock (with waking from
 //! sleep), the bar's status, the readings the tabs show, the pad and touchpad paths (evdev, uinput),
 //! sway, systemd, NetworkManager, BlueZ, PipeWire, UPower, logind and sysfs; and the files ClamShell
-//! keeps. Nothing here waits for the UI. How a thread is built: [`worker`].
+//! keeps. Nothing here waits for the UI. How a thread is built: [`os::worker`].
 
 pub mod account;
 pub mod archives;
 pub mod battery;
 pub mod bluetooth;
 pub mod brightness;
-pub mod cgroup;
 pub mod clipboard;
 pub mod clock;
-pub mod command;
-pub mod dbus;
 pub mod desktop;
 pub mod device;
-pub mod drm;
 pub mod files;
 pub mod frames;
 pub mod handles;
@@ -30,6 +26,7 @@ pub mod meta;
 pub mod metrics;
 pub mod mixer;
 pub mod mpv;
+pub mod os;
 pub mod pad;
 pub mod paths;
 pub mod sleep;
@@ -37,30 +34,19 @@ pub mod sound;
 pub mod status;
 pub mod store;
 pub mod sway;
-pub mod sys;
 pub mod touchpad;
 pub mod tray;
 pub mod tuning;
 pub mod units;
 pub mod wayland_filter;
 pub mod wifi;
-pub mod worker;
 
 use std::sync::mpsc;
 
 use clamshell_core::Event;
 
 pub use handles::Handles;
-
-/// Locks `m`. Nothing here panics while holding a lock (the workspace's lints rule panics out), so a lock
-/// poisoned anyway still holds usable data: it is taken as it is.
-pub(crate) fn lock<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
-}
-
-/// The UI is gone: a thread whose events can't be delivered ends.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Closed;
+pub use os::worker::Closed;
 
 /// Where system threads deliver events: the UI's event loop.
 pub trait Sink: Send + 'static {

@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use clamshell_system::dbus::{self, Bus, Message, Path, PropMap, Value, value};
+use clamshell_system::os::dbus::{self, Bus, Message, Path, PropMap, Value, value};
 
 /// A menu node: id, properties, children (in variants).
 fn node(id: i32, label: &str, extra: Vec<(&str, Value)>, children: Vec<Value>) -> Value {

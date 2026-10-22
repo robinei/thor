@@ -13,8 +13,8 @@ use std::time::{Duration, Instant};
 
 use clamshell_core::{Event, Instance};
 
-use crate::dbus::{self, Bus, Message, Path, value};
-use crate::worker::{self, Changed, Ended, Service, lost_on};
+use crate::os::dbus::{self, Bus, Message, Path, value};
+use crate::os::worker::{self, Changed, Ended, Service, lost_on};
 use crate::{Closed, Sink};
 
 const PATTERNS: [&str; 1] = ["clamshell-run-*.scope"];
@@ -75,7 +75,7 @@ static BUS: std::sync::Mutex<dbus::Kept> = std::sync::Mutex::new(dbus::Kept::ses
 
 /// `call` on the user manager, over the shared connection.
 fn with_manager<T>(call: impl FnOnce(&mut Bus) -> Result<T, Error>) -> Result<T, Error> {
-    let mut kept = crate::lock(&BUS);
+    let mut kept = crate::os::lock(&BUS);
     let result = call(kept.get()?);
     if let Err(Error::Bus(e)) = &result {
         kept.failed(e);
@@ -442,7 +442,7 @@ fn working_without_drawing(group: Option<String>) -> bool {
 
 /// A cgroup's CPU time so far (microseconds).
 fn cpu_usec(dir: &std::path::Path) -> Option<u64> {
-    let stat = crate::sys::text(dir.join("cpu.stat"))?;
+    let stat = crate::os::sys::text(dir.join("cpu.stat"))?;
     stat.lines().find_map(|l| l.strip_prefix("usage_usec ")).and_then(|v| v.trim().parse().ok())
 }
 
@@ -451,8 +451,8 @@ fn gpu_ns(dir: &std::path::Path) -> u64 {
     let mut clients = std::collections::HashMap::new();
     let mut dirs = vec![dir.to_path_buf()];
     while let Some(d) = dirs.pop() {
-        for pid in crate::sys::text(d.join("cgroup.procs")).unwrap_or_default().lines() {
-            clients.extend(crate::drm::clients(&std::path::Path::new("/proc").join(pid)));
+        for pid in crate::os::sys::text(d.join("cgroup.procs")).unwrap_or_default().lines() {
+            clients.extend(crate::os::drm::clients(&std::path::Path::new("/proc").join(pid)));
         }
         if let Ok(entries) = std::fs::read_dir(&d) {
             dirs.extend(entries.flatten().filter(|e| e.file_type().is_ok_and(|t| t.is_dir())).map(|e| e.path()));

@@ -36,8 +36,8 @@ use std::time::Duration;
 use clamshell_core::Event;
 use clamshell_core::bottom::screen::DownRule;
 
-use crate::worker::{self, Ended, Service, Worker, lost_on};
-use crate::{Closed, Sink, cgroup};
+use crate::os::worker::{self, Ended, Service, Worker, lost_on};
+use crate::{Closed, Sink, os::cgroup};
 use ipc::{EventKind, Ipc};
 
 pub use ipc::Error;
@@ -82,7 +82,7 @@ impl DownRules {
     /// Rules in force from now on (`Some`), or as they were; defined where they aren't, every one
     /// switched; `fresh`: sway has none defined (connected anew).
     fn apply(&self, ipc: &mut Ipc, wanted: Option<Vec<DownRule>>, fresh: bool, bottom: &str) -> Result<(), Error> {
-        let mut guard = crate::lock(&self.0);
+        let mut guard = crate::os::lock(&self.0);
         let (wanted_now, defined) = &mut *guard;
         if let Some(rules) = wanted {
             *wanted_now = rules;
@@ -111,7 +111,7 @@ impl DownRules {
 
     /// The rules in force.
     fn wanted(&self) -> Vec<DownRule> {
-        crate::lock(&self.0).0.clone()
+        crate::os::lock(&self.0).0.clone()
     }
 }
 
@@ -126,7 +126,7 @@ impl LandRules {
     /// App ids wanted from now on (`Some`), or as they were; defined where they aren't; `fresh`: sway has
     /// none defined (connected anew).
     fn apply(&self, ipc: &mut Ipc, wanted: Option<Vec<Arc<str>>>, fresh: bool) -> Result<(), Error> {
-        let mut guard = crate::lock(&self.0);
+        let mut guard = crate::os::lock(&self.0);
         let (wanted_now, defined) = &mut *guard;
         if let Some(ids) = wanted {
             *wanted_now = ids;
@@ -153,7 +153,7 @@ impl LandRules {
 
     /// The app ids wanted.
     fn wanted(&self) -> Vec<Arc<str>> {
-        crate::lock(&self.0).0.clone()
+        crate::os::lock(&self.0).0.clone()
     }
 }
 
@@ -169,13 +169,13 @@ impl TopOutput {
     fn read(&self, ipc: &mut Ipc) -> Option<String> {
         let outputs = ipc.outputs().map_err(|e| log::debug!("sway: outputs: {e}")).ok()?;
         let top = outputs.into_iter().find(|o| o.active && o.name != self.bottom).map(|o| o.name);
-        *crate::lock(&self.known) = top.clone();
+        *crate::os::lock(&self.known) = top.clone();
         top
     }
 
     /// The output as last read, else read now through `ipc`.
     fn get(&self, ipc: &mut Ipc) -> Option<String> {
-        let known = crate::lock(&self.known).clone();
+        let known = crate::os::lock(&self.known).clone();
         known.or_else(|| self.read(ipc))
     }
 }
@@ -306,8 +306,8 @@ impl<S: Sink> Service for Windows<S> {
             // it started, so a later process with the same id isn't taken for it.)
             let lineages = &mut self.lineages;
             let list = windows::windows(&tree, &mut |pid| {
-                let start = crate::sys::saw(pid);
-                (cgroup::unit_of(pid), lineages.entry((pid, start)).or_insert_with(|| crate::sys::lineage(pid)).clone())
+                let start = crate::os::sys::saw(pid);
+                (cgroup::unit_of(pid), lineages.entry((pid, start)).or_insert_with(|| crate::os::sys::lineage(pid)).clone())
             });
             let top = self.top.get(&mut c.queries);
             let mut moved = false;

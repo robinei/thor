@@ -73,7 +73,7 @@ fn drain(pipe: Option<impl Read + Send + 'static>) -> mpsc::Receiver<Vec<u8>> {
     let (tx, rx) = mpsc::channel();
     // (A thread that can't start drops its sender: the output reads as empty.)
     if let Some(mut pipe) = pipe {
-        let _ = crate::worker::detached("output", move || {
+        let _ = crate::os::worker::detached("output", move || {
             let mut out = Vec::new();
             let _ = pipe.read_to_end(&mut out);
             let _ = tx.send(out);

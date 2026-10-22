@@ -32,7 +32,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::store::{self, Cache};
-use crate::{Sink, command, worker};
+use crate::{Sink, os::command, os::worker};
 
 /// Fetches at once.
 const THREADS: usize = 4;
@@ -152,7 +152,7 @@ impl Queue {
     }
 
     fn next(&self) -> Option<Wanted> {
-        crate::lock(&self.waiting).pop_front()
+        crate::os::lock(&self.waiting).pop_front()
     }
 }
 
@@ -307,7 +307,7 @@ impl Shared {
     /// The names (without `.png`) in a system's folder of a kind, fetched once.
     fn listing(&self, system: &str, kind: &str) -> Option<Arc<Vec<Name>>> {
         let id = format!("{system}/{kind}");
-        let mut listings = crate::lock(&self.listings);
+        let mut listings = crate::os::lock(&self.listings);
         if let Some(l) = listings.get(&id) {
             return l.clone();
         }

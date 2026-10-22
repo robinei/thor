@@ -11,7 +11,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
-use crate::sys;
+use crate::os::sys;
 
 /// One DRM client's id and its render-engine time (ns), from an fdinfo file; `None` for a file that
 /// isn't a DRM client's or has no render engine.

@@ -35,7 +35,7 @@ use std::time::{Duration, Instant};
 
 use rustix::net::{RecvAncillaryBuffer, RecvAncillaryMessage, RecvFlags, SendAncillaryBuffer, SendAncillaryMessage, SendFlags};
 
-use crate::worker;
+use crate::os::worker;
 
 /// The display object's id, and the opcodes read.
 const DISPLAY: u32 = 1;
@@ -333,9 +333,9 @@ fn connect(client: UnixStream, upstream: &Path, settings: &Path, frames: &Path, 
         relay(
             &client,
             &server,
-            |o, op, args, now| crate::lock(&requests).request(o, op, args, now),
+            |o, op, args, now| crate::os::lock(&requests).request(o, op, args, now),
             |now| {
-                if let Some((app, fps)) = crate::lock(&rates).frame_rate(now) {
+                if let Some((app, fps)) = crate::os::lock(&rates).frame_rate(now) {
                     log.row(&app, fps);
                 }
             },
@@ -350,7 +350,7 @@ fn connect(client: UnixStream, upstream: &Path, settings: &Path, frames: &Path, 
         relay(
             &server2,
             &client2,
-            |o, op, args, now| crate::lock(&objects).event(o, op, args, now),
+            |o, op, args, now| crate::os::lock(&objects).event(o, op, args, now),
             |_| {},
             |compositor_closed| end(&first2, compositor_closed, &ended2),
         );

@@ -94,7 +94,7 @@ impl Grabbed {
 
     /// Waits up to `timeout` for events to read (less if a signal interrupts the wait).
     pub fn wait(&self, timeout: Duration) -> io::Result<()> {
-        let timeout = crate::sys::timespec(timeout);
+        let timeout = crate::os::sys::timespec(timeout);
         let mut fds = [PollFd::new(&self.device, PollFlags::IN)];
         match rustix::event::poll(&mut fds, Some(&timeout)) {
             Ok(_) | Err(rustix::io::Errno::INTR) => Ok(()),

@@ -19,7 +19,6 @@ mod listen;
 pub mod motion;
 mod mouse;
 mod navigator;
-mod qrtr;
 mod remap;
 mod route;
 mod rumble;
@@ -39,9 +38,9 @@ use clamshell_core::keymap::Keymap;
 use clamshell_core::settings::RumbleStrength;
 use rustix::event::{PollFd, PollFlags};
 
-use crate::input::Raw;
-use crate::input::device::{DeviceSpec, Grabbed};
-use crate::worker::{self, Bell, Ended, Next, Service, Worker, lost_on};
+use crate::os::evdev::Raw;
+use crate::os::evdev::device::{DeviceSpec, Grabbed};
+use crate::os::worker::{self, Bell, Ended, Next, Service, Worker, lost_on};
 use crate::{Closed, Sink};
 use device::{AynKey, Capabilities, VirtualDevices};
 use motion::{EvdevMotion, MotionSource, Sample};
@@ -92,13 +91,13 @@ pub struct Taken(Arc<Mutex<Option<(u16, u16)>>>);
 
 impl Taken {
     fn set(&self, ids: (u16, u16)) {
-        *crate::lock(&self.0) = Some(ids);
+        *crate::os::lock(&self.0) = Some(ids);
     }
 
     /// A launch's variable for it, if a controller was grabbed (and it isn't the virtual pad's ids:
     /// ignoring those would hide the virtual pad too).
     pub fn env(&self) -> Option<(String, String)> {
-        let (vendor, product) = (*crate::lock(&self.0))?;
+        let (vendor, product) = (*crate::os::lock(&self.0))?;
         ((vendor, product) != device::VIRTUAL_IDS).then(|| ("SDL_GAMECONTROLLER_IGNORE_DEVICES".to_owned(), format!("0x{vendor:04x}/0x{product:04x}")))
     }
 }
@@ -350,7 +349,7 @@ impl<S: Sink> Service for PadThread<S> {
                 return worker::next(commands, Some(left));
             };
             let mut fds = [PollFd::from_borrowed_fd(devices.pad.as_fd(), PollFlags::IN), PollFd::from_borrowed_fd(self.bell.fd(), PollFlags::IN)];
-            match rustix::event::poll(&mut fds, Some(&crate::sys::timespec(left))) {
+            match rustix::event::poll(&mut fds, Some(&crate::os::sys::timespec(left))) {
                 Ok(_) | Err(rustix::io::Errno::INTR) => self.bell.clear(),
                 Err(e) => {
                     log::warn!("pad: {e}");
@@ -407,7 +406,7 @@ fn wait(
     bell: &Bell,
     timeout: Option<Duration>,
 ) -> io::Result<()> {
-    let timeout = timeout.map(crate::sys::timespec);
+    let timeout = timeout.map(crate::os::sys::timespec);
     let mut fds = vec![PollFd::new(pad.device(), PollFlags::IN), PollFd::from_borrowed_fd(bell.fd(), PollFlags::IN)];
     if let Some(m) = motion {
         fds.push(PollFd::from_borrowed_fd(m.fd(), PollFlags::IN));

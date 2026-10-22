@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use clamshell_core::Tab;
-use clamshell_system::input::device::DeviceSpec;
+use clamshell_system::os::evdev::device::DeviceSpec;
 use clamshell_system::paths::Base;
 
 pub struct Env {

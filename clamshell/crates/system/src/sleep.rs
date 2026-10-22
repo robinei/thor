@@ -13,9 +13,9 @@
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use crate::dbus::{Bus, Message};
+use crate::os::dbus::{Bus, Message};
+use crate::os::worker::{self, Worker};
 use crate::pad;
-use crate::worker::{self, Worker};
 
 use rustix::time::{ClockId, clock_gettime};
 
@@ -72,7 +72,7 @@ pub fn spawn_hold(pad: Worker<pad::Command>) -> std::io::Result<()> {
 }
 
 /// logind's delay lock: sleep waits until it is closed (dropped).
-fn lock(bus: &mut Bus) -> Result<::dbus::arg::OwnedFd, crate::dbus::Error> {
+fn lock(bus: &mut Bus) -> Result<::dbus::arg::OwnedFd, crate::os::dbus::Error> {
     let what = ("sleep", "ClamShell", "the gyro's stream closed first", "delay");
     bus.call::<(::dbus::arg::OwnedFd,)>(LOGIN1, LOGIN1_PATH, MANAGER, "Inhibit", what).map(|(fd,)| fd)
 }
@@ -82,7 +82,7 @@ fn before_sleep(m: &Message) -> Option<bool> {
     (m.member().as_deref() == Some("PrepareForSleep")).then(|| m.read1::<bool>().ok()).flatten()
 }
 
-fn hold(pad: &Worker<pad::Command>) -> Result<(), crate::dbus::Error> {
+fn hold(pad: &Worker<pad::Command>) -> Result<(), crate::os::dbus::Error> {
     let mut bus = Bus::system()?;
     bus.add_match(&format!("type='signal',sender='{LOGIN1}',path='{LOGIN1_PATH}',interface='{MANAGER}',member='PrepareForSleep'"))?;
     let mut held = Some(lock(&mut bus)?);

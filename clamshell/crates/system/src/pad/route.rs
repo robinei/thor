@@ -18,7 +18,7 @@ use super::mouse::PadMouse;
 use super::navigator::Navigator;
 use super::remap::{self, BACK_KEY, Remap, mouse_codes};
 use super::typing::Typing;
-use crate::input::{Press, Range, Raw};
+use crate::os::evdev::{Press, Range, Raw};
 
 /// The virtual mouse's keys: the pad mouse's buttons and the keys the pad types with. What the device
 /// is built with, and what leaving the pad mouse or typing lets go of.

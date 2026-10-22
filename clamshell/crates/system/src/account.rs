@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use clamshell_core::device::account::{Account, AccountCommand};
 
-use crate::command;
+use crate::os::command;
 
 /// The helper.
 const HELPER: &str = "/usr/lib/thor/thor-account";

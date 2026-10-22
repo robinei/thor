@@ -57,7 +57,7 @@ static SEEN: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<u32,
 /// Process `pid` seen (a window's, a tray icon's): its start time, remembered.
 pub fn saw(pid: u32) -> Option<u64> {
     let start = start_time(pid)?;
-    let mut seen = crate::lock(&SEEN);
+    let mut seen = crate::os::lock(&SEEN);
     // (Bounded: those of windows long gone forgotten now and then.)
     if seen.len() > 1024 {
         seen.clear();
@@ -68,7 +68,7 @@ pub fn saw(pid: u32) -> Option<u64> {
 
 /// Whether process `pid` is the one last seen with that id (one never seen: as far as is known, yes).
 pub fn same_process(pid: u32) -> bool {
-    let known = crate::lock(&SEEN).get(&pid).copied();
+    let known = crate::os::lock(&SEEN).get(&pid).copied();
     known.is_none_or(|start| start_time(pid) == Some(start))
 }
 
@@ -212,7 +212,7 @@ mod process_tests {
         assert_eq!(saw(me), start_time(me));
         assert!(same_process(me));
         // Another start under the same id: not the same.
-        crate::lock(&SEEN).insert(me, 1);
+        crate::os::lock(&SEEN).insert(me, 1);
         assert!(!same_process(me));
         assert!(same_process(u32::MAX - 1), "never seen: as far as is known");
     }

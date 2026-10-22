@@ -22,9 +22,9 @@ use clamshell_core::settings::fan;
 use clamshell_core::settings::{Cores, Hud, PowerProfile};
 use clamshell_core::settings::{Setting, Values};
 
+use crate::os::sys;
+use crate::os::worker::{self, Next, Quiet, Worker};
 use crate::pad;
-use crate::sys;
-use crate::worker::{self, Next, Quiet, Worker};
 
 /// A profile's share of each frequency range.
 fn fraction(power: PowerProfile) -> f64 {

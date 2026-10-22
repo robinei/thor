@@ -20,8 +20,8 @@ use rustix::fs::inotify;
 
 use crate::library::content;
 use crate::library::runners::{self, Runner};
-use crate::worker::{Bell, Worker};
-use crate::{Sink, command, sys};
+use crate::os::worker::{Bell, Worker};
+use crate::{Sink, os::command, os::sys};
 
 /// How long ejecting a card may take.
 const EJECT_LIMIT: Duration = Duration::from_secs(60);
@@ -652,7 +652,7 @@ fn restore(path: &Path) -> Result<PathBuf, String> {
 
 /// Now as the Trash records it, local time (`date`'s; UTC without it): 2026-10-18T14:03:00.
 fn deletion_date() -> String {
-    if let Some(out) = crate::command::output("date", &["+%Y-%m-%dT%H:%M:%S"]) {
+    if let Some(out) = crate::os::command::output("date", &["+%Y-%m-%dT%H:%M:%S"]) {
         return String::from_utf8_lossy(&out).trim().to_owned();
     }
     let secs = crate::clock::unix_secs();

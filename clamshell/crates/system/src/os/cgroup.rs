@@ -1,7 +1,7 @@
 //! Which systemd unit a process runs in, from its cgroup (`/proc/<pid>/cgroup`, the unified hierarchy):
 //! the kernel's record of which launch it comes from, whatever it did since (detached, double-forked).
 
-use crate::sys;
+use crate::os::sys;
 
 /// The unit a process runs in (`….scope`, `….service`), if it can be read.
 pub fn unit_of(pid: u32) -> Option<String> {

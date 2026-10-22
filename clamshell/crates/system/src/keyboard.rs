@@ -10,7 +10,7 @@ use clamshell_core::bottom::keyboard::{Key, Named, Stroke};
 use evdev::uinput::VirtualDevice;
 use evdev::{InputEvent, KeyCode};
 
-use crate::input::{Press, Raw, keyset};
+use crate::os::evdev::{Press, Raw, keyset};
 
 pub const NAME: &str = "clamshell keyboard";
 

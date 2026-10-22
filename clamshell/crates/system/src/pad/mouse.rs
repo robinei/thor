@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use evdev::{AbsoluteAxisCode, KeyCode, RelativeAxisCode};
 
 use super::route::{Mapping, Out, Ranges, release_mouse_keys};
-use crate::input::{Press, Raw, hat_keys};
+use crate::os::evdev::{Press, Raw, hat_keys};
 
 /// Stick deflection below this (of full) is ignored: sticks don't rest exactly at zero.
 const DEADZONE: f32 = 0.15;
@@ -141,7 +141,7 @@ impl Mapping for PadMouse {
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
-    use crate::input::Range;
+    use crate::os::evdev::Range;
 
     fn mouse() -> PadMouse {
         PadMouse::new(Ranges { stick: Range::STICK, trigger: Range { min: 0, max: 1023 } })

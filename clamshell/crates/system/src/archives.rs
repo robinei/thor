@@ -13,7 +13,7 @@ use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::command;
+use crate::os::command;
 
 /// The names browsed as archives (their endings, lowercase).
 const ENDINGS: [&str; 13] = [".zip", ".7z", ".rar", ".tar", ".tgz", ".txz", ".tbz2", ".tar.gz", ".tar.xz", ".tar.zst", ".tar.bz2", ".tar.lz4", ".tzst"];
@@ -111,7 +111,7 @@ impl Mounts {
 
 /// The mounts directly under `root`.
 fn mounted_under(root: &Path) -> Vec<PathBuf> {
-    crate::sys::mount_table().into_iter().map(|m| m.dir).filter(|d| d.parent() == Some(root)).collect()
+    crate::os::sys::mount_table().into_iter().map(|m| m.dir).filter(|d| d.parent() == Some(root)).collect()
 }
 
 /// The service of archive `archive`'s mount.

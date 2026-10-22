@@ -6,7 +6,7 @@
 //! Thor), the battery's power supply.
 //!
 //! GPU load: amdgpu's busy file where there is one; otherwise (Adreno on the Thor) the GPU time of every
-//! DRM client over the second (see [`crate::drm`]).
+//! DRM client over the second (see [`crate::os::drm`]).
 
 use std::io;
 use std::sync::mpsc::Receiver;
@@ -15,8 +15,8 @@ use std::time::{Duration, Instant};
 use clamshell_core::status::metrics::{MAX_CORES, Metrics};
 use clamshell_core::{Event, Reading};
 
-use crate::worker::{Next, Shown, Worker};
-use crate::{Closed, Sink, drm, sys, worker};
+use crate::os::worker::{Next, Shown, Worker};
+use crate::{Closed, Sink, os::drm, os::sys, os::worker};
 
 /// How often the metrics are read while they can be seen, and otherwise: the graphs keep their history,
 /// coarser, at less cost.

@@ -17,8 +17,8 @@ use std::time::{Duration, Instant};
 use clamshell_core::radios::wifi::{self, Command, Network, Problem, Wifi};
 use clamshell_core::{Event, Reading};
 
-use crate::dbus::{self, Bus, Path, Props, Value, value};
-use crate::worker::{self, Changed, Ended, Next, Service, Worker, lost_on};
+use crate::os::dbus::{self, Bus, Path, Props, Value, value};
+use crate::os::worker::{self, Changed, Ended, Next, Service, Worker, lost_on};
 use crate::{Closed, Sink};
 use nm::{AP_PRIVACY, KEY_MGMT_8021X, KEY_MGMT_PSK, KEY_MGMT_SAE, SERVICE};
 use nm::{ActiveReason, ActiveState, DeviceReason, DeviceState, DeviceType};

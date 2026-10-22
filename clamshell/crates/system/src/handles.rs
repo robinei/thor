@@ -4,10 +4,10 @@ use clamshell_core::{Effect, Instance, Watch, WindowCommand};
 
 use crate::job::Runner;
 use crate::keyboard::VirtualKeyboard;
+use crate::os::worker::{self, Shown, Worker};
 use crate::paths::Paths;
 use crate::store::{Write, Writer};
 use crate::tuning::Tuning;
-use crate::worker::{self, Shown, Worker};
 use crate::{bluetooth, brightness, launcher, mixer, pad, sway, touchpad, wifi};
 
 /// The threads (and the one device) that effects go to.

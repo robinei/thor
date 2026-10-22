@@ -11,7 +11,7 @@ use evdev::AbsoluteAxisCode;
 
 use super::remap::{HALF, button_of, stick_axes, trigger_axis};
 use super::route::{Mapping, Out, Ranges};
-use crate::input::{Press, Raw};
+use crate::os::evdev::{Press, Raw};
 
 #[derive(Debug)]
 pub struct Listener {
@@ -88,7 +88,7 @@ impl Mapping for Listener {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::input::Range;
+    use crate::os::evdev::Range;
     use clamshell_core::keymap::Button;
     use evdev::KeyCode;
 

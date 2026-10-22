@@ -7,9 +7,9 @@ use std::path::{Path, PathBuf};
 
 use clamshell_core::levels::Share;
 
-use crate::dbus::Kept;
-use crate::sys;
-use crate::worker::{self, Quiet, Worker};
+use crate::os::dbus::Kept;
+use crate::os::sys;
+use crate::os::worker::{self, Quiet, Worker};
 
 /// The backlights: the devices of a sysfs class directory (/sys/class/backlight, or another laid out the
 /// same way for tests and desktops without one).

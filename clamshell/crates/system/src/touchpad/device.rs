@@ -6,7 +6,7 @@ use evdev::uinput::VirtualDevice;
 use evdev::{AbsInfo, AbsoluteAxisCode, AttributeSet, KeyCode, PropType, UinputAbsSetup};
 
 use super::pointing::SLOTS;
-use crate::input::{Rect, keyset};
+use crate::os::evdev::{Rect, keyset};
 
 /// The virtual touchpad's keys: one dummy button, so libinput takes it as a touchpad with buttons and
 /// taps for clicks, and the touch and finger-count keys.

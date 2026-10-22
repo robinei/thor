@@ -6,7 +6,7 @@ use std::time::Instant;
 use evdev::KeyCode;
 
 use super::route::{Mapping, Out, release_mouse_keys};
-use crate::input::{Raw, hat_keys};
+use crate::os::evdev::{Raw, hat_keys};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Typing;
@@ -38,7 +38,7 @@ impl Mapping for Typing {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::input::Press;
+    use crate::os::evdev::Press;
     use evdev::AbsoluteAxisCode;
 
     #[test]

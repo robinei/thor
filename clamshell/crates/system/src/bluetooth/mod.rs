@@ -17,8 +17,8 @@ use std::time::Duration;
 use clamshell_core::radios::bluetooth::{self, Action, Bluetooth, Command, Device, Kind, Problem, Reason};
 use clamshell_core::{Event, Reading};
 
-use crate::dbus::{self, Bus, Path, Props};
-use crate::worker::{self, Changed, Ended, Next, Service, Worker, lost_on};
+use crate::os::dbus::{self, Bus, Path, Props};
+use crate::os::worker::{self, Changed, Ended, Next, Service, Worker, lost_on};
 use crate::{Closed, Sink};
 use bluez::{ADAPTER, AGENT_MANAGER, AGENT_PATH, DEVICE, ManagedObjects, SERVICE, device_path};
 
@@ -102,7 +102,7 @@ struct Shared(Arc<Mutex<BtState>>);
 
 impl Shared {
     fn lock(&self) -> MutexGuard<'_, BtState> {
-        crate::lock(&self.0)
+        crate::os::lock(&self.0)
     }
 }
 

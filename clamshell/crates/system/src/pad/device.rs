@@ -9,8 +9,8 @@ use evdev::{AbsInfo, AbsoluteAxisCode, AttributeSet, BusType, FFEffectCode, Inpu
 
 use super::remap::{AYN_KEY, BACK_KEY};
 use super::route::{Axis, PadSnapshot, Ranges, mouse_device_keys};
-use crate::input::device::{self, DeviceSpec};
-use crate::input::{Press, Range, Raw, keyset};
+use crate::os::evdev::device::{self, DeviceSpec};
+use crate::os::evdev::{Press, Range, Raw, keyset};
 
 const VIRTUAL_PAD: &str = "clamshell pad (Xbox 360)";
 /// The virtual pad's USB ids: a wired Xbox 360 controller's.
@@ -242,7 +242,7 @@ fn virtual_mouse() -> io::Result<VirtualDevice> {
 #[cfg(test)]
 mod letter_tests {
     use super::*;
-    use crate::input::Press;
+    use crate::os::evdev::Press;
 
     #[test]
     fn a_controller_back_with_a_stick_moved_is_the_same() {

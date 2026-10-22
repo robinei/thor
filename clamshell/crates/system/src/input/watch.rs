@@ -23,9 +23,9 @@ use std::os::fd::OwnedFd;
 use rustix::event::{PollFd, PollFlags};
 use rustix::fs::inotify;
 
-use super::{Press, Range, Raw};
+use crate::os::evdev::{Press, Range, Raw};
 use crate::{Closed, Sink};
-use crate::{lid, worker};
+use crate::{lid, os::worker};
 
 /// Input is reported at most this often.
 const ACTIVITY_EVERY: Duration = Duration::from_secs(3);
@@ -199,7 +199,7 @@ fn watch(take_keys: bool, sink: &impl Sink) -> Result<(), Closed> {
 fn wait(devices: &[Watched], notify: Option<&OwnedFd>) -> bool {
     let mut fds: Vec<PollFd> = devices.iter().map(|d| PollFd::new(&d.device, PollFlags::IN)).collect();
     let Some(notify) = notify else {
-        let timeout = crate::sys::timespec(RESCAN_EVERY);
+        let timeout = crate::os::sys::timespec(RESCAN_EVERY);
         if fds.is_empty() {
             std::thread::sleep(RESCAN_EVERY);
         } else {

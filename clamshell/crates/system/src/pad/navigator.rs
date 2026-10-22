@@ -7,7 +7,7 @@ use clamshell_core::{Event, PadInput};
 use evdev::{AbsoluteAxisCode, KeyCode};
 
 use super::route::{Mapping, Out};
-use crate::input::{Press, Range, Raw};
+use crate::os::evdev::{Press, Range, Raw};
 
 /// A direction held this long starts repeating, this often.
 const REPEAT_AFTER: Duration = Duration::from_millis(350);

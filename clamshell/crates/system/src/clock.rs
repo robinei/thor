@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use clamshell_core::Event;
 
-use crate::{Closed, Sink, sleep, worker};
+use crate::{Closed, Sink, os::worker, sleep};
 
 /// Seconds since the epoch on the wall clock at `t` (0 before the epoch).
 pub fn unix_secs_at(t: SystemTime) -> u64 {

@@ -1,5 +1,5 @@
 use super::*;
-use crate::input::Range;
+use crate::os::evdev::Range;
 use crate::pad::motion::Sample;
 use crate::pad::route::{Axis, PadRouter};
 use clamshell_core::PadRoute;

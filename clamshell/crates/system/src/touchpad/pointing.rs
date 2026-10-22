@@ -4,7 +4,7 @@
 use clamshell_core::bottom::touch::{Contact, ContactPhase};
 use evdev::{AbsoluteAxisCode, KeyCode};
 
-use crate::input::{Press, Raw};
+use crate::os::evdev::{Press, Raw};
 
 /// Slots (fingers) tracked.
 pub const SLOTS: usize = clamshell_core::bottom::touch::SLOTS as usize;
@@ -53,7 +53,7 @@ impl Fingers {
     /// One touch frame's contacts as one touchpad frame (on a touchpad of `size` pixels): each slot's
     /// events, then the touch and finger-count keys and the first finger's position as they changed.
     /// Nothing for a frame of fingers that weren't down moving or lifting.
-    pub fn frame(&mut self, contacts: &[Contact], size: (i32, i32)) -> Vec<crate::input::Raw> {
+    pub fn frame(&mut self, contacts: &[Contact], size: (i32, i32)) -> Vec<crate::os::evdev::Raw> {
         let (before, first) = (self.count(), self.first());
         let mut out = Vec::new();
         for &c in contacts {

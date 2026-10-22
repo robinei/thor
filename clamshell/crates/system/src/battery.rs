@@ -1,6 +1,6 @@
 //! The battery tab's readings, while it is open: the charge over the last day from UPower (system bus; it
 //! records the battery's level as it changes), and what is using the machine now: CPU time per process
-//! (`/proc/<pid>/stat`) and GPU time per DRM client (see [`crate::drm`]; only our user's processes are
+//! (`/proc/<pid>/stat`) and GPU time per DRM client (see [`crate::os::drm`]; only our user's processes are
 //! readable), and the memory each has resident, grouped by our scopes (an app instance, the game), else
 //! (Waydroid's container) by Android app, else by program name for our user's processes, else as the system.
 //! Sampled every two seconds, sent as [`Reading::Battery`]: those doing work, the busiest first, then those
@@ -14,9 +14,9 @@ use std::sync::mpsc::Receiver;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::dbus::{self, Bus, Kept, Path};
-use crate::worker::{self, Next, Shown, Worker};
-use crate::{Closed, Sink, cgroup, drm, sys};
+use crate::os::dbus::{self, Bus, Kept, Path};
+use crate::os::worker::{self, Next, Shown, Worker};
+use crate::{Closed, Sink, os::cgroup, os::drm, os::sys};
 use clamshell_core::status::battery::{Battery, Charge, Group, Spender};
 use clamshell_core::{Event, Instance, Reading};
 

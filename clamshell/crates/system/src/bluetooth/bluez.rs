@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use crate::dbus::{Message, Path, PropMap};
+use crate::os::dbus::{Message, Path, PropMap};
 
 pub const SERVICE: &str = "org.bluez";
 pub const ADAPTER: &str = "org.bluez.Adapter1";

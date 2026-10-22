@@ -31,8 +31,8 @@ use clamshell_core::{Event, Instance, Launch, LaunchEvent};
 use rustix::process::{Pid, Signal};
 
 use crate::job::{self, Job, Runner, Started};
-use crate::worker::{self, Worker};
-use crate::{Sink, cgroup, sys, units};
+use crate::os::worker::{self, Worker};
+use crate::{Sink, os::cgroup, os::sys, units};
 
 /// How long sway may take to start a game (its scope to appear).
 const GAME_START: Duration = Duration::from_secs(30);

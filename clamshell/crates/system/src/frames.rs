@@ -21,7 +21,7 @@ use clamshell_core::{Event, Reading};
 use rustix::event::{PollFd, PollFlags};
 use rustix::fs::inotify;
 
-use crate::worker::{self, Changed};
+use crate::os::worker::{self, Changed};
 use crate::{Closed, Sink};
 
 /// A log not written for this long belongs to a game that has ended (MangoHud logs every 500 ms,
@@ -105,7 +105,7 @@ fn follow(dir: &Path, sink: &impl Sink) -> Result<(), Closed> {
 
 /// Waits for the folder's inotify events (all read), up to `timeout` if given.
 fn wait(fd: &OwnedFd, timeout: Option<Duration>) {
-    let timeout = timeout.map(crate::sys::timespec);
+    let timeout = timeout.map(crate::os::sys::timespec);
     let mut fds = [PollFd::new(fd, PollFlags::IN)];
     let _ = rustix::event::poll(&mut fds, timeout.as_ref());
     let mut buf = [MaybeUninit::uninit(); 4096];
