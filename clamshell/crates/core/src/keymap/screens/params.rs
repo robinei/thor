@@ -3,12 +3,13 @@
 use super::*;
 
 impl State {
-    /// A finger held (or slid) on a parameter's row of the panel: its slider, from its value now.
+    /// A finger is held or slid on a parameter's row of the panel. This starts its slider from its current
+    /// value.
     pub(crate) fn param_slide_start(&mut self, param: Param, x: f32, width: f32) {
         let Some((_, _, b)) = self.param_binding(param) else {
             return;
         };
-        // (Its value now under the finger, as the bar's sliders have it.)
+        // The current value starts under the finger, as with the bar's sliders.
         let range = param.range();
         self.keymap_screens.edit.slider = Some(Slider::ranged(Control::Param(param), param.get(&b), *range.start(), *range.end(), x, width));
     }
@@ -27,8 +28,7 @@ impl State {
         }
     }
 
-    /// The selected input and what its parameters start from, if `param` applies to it (on the edit
-    /// screen).
+    /// The selected input on the edit screen and what its parameters start from, if `param` applies to it.
     pub(super) fn param_binding(&self, param: Param) -> Option<(u16, Input, Binding)> {
         let Some(Screen::Edit(id)) = self.keymap_screens.open else {
             return None;
@@ -47,8 +47,8 @@ impl State {
         self.keymaps.get_mut(id).is_some_and(|k| k.set_of(layer, input, act, (!plain).then_some(b)))
     }
 
-    /// The parameter's slider moved: the binding follows at once (the pad gets the keymap as it changes),
-    /// saved when the finger lifts. Whether it changed.
+    /// The parameter's slider moved. The binding follows at once, so the pad gets the keymap as it
+    /// changes, and it is saved when the finger lifts. Returns whether it changed.
     pub(crate) fn param_slide_to(&mut self, x: f32) -> bool {
         let Some(slider) = self.keymap_screens.edit.slider else {
             return false;
@@ -68,7 +68,7 @@ impl State {
         self.set_tuned(id, input, b)
     }
 
-    /// The finger lifted: the keymaps saved, if the slider changed anything.
+    /// The finger lifted. The keymaps are saved if the slider changed anything.
     pub(crate) fn param_slide_end(&mut self) -> Vec<Effect> {
         match self.keymap_screens.edit.slider.take() {
             Some(s) if s.moved => vec![self.save_keymaps()],

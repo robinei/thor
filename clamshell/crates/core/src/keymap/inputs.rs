@@ -1,5 +1,5 @@
-//! The controller's inputs: its buttons, the directions, the sides, an input and its kind, and the
-//! game's pad's own outputs (PadOut).
+//! The controller's inputs: its buttons, the directions and sides, an input and its kind, and the outputs
+//! of the pad that games see (PadOut).
 
 use super::*;
 use crate::kit::names::names;
@@ -17,9 +17,10 @@ pub enum Button {
     Menu,
     LS,
     RS,
-    /// The Thor's Back button, under the screen: not on the Xbox pad games see.
+    /// The Thor's Back button, under the screen. It isn't on the Xbox pad that games see.
     Back,
-    /// The Thor's AYN button, on the chin under the screen: the Guide button of the Xbox pad games see.
+    /// The Thor's AYN button, on the chin under the screen. It is the Guide button of the Xbox pad that
+    /// games see.
     Ayn,
     /// The back buttons (paddles), where a controller has them.
     L4,
@@ -48,12 +49,13 @@ names!(Button {
 });
 
 impl Button {
-    /// Whether it is a back button (a paddle; not on the Xbox pad games see).
+    /// Whether it is a back button (a paddle). These aren't on the Xbox pad that games see.
     pub fn is_back(self) -> bool {
         matches!(self, Button::L4 | Button::R4 | Button::L5 | Button::R5)
     }
 
-    /// Whether the Xbox pad games see has it (a pad output can be it): not the paddles, not Back.
+    /// Whether the Xbox pad that games see has it, so that a pad output can be it. The paddles and Back
+    /// are not on it.
     pub fn on_pad(self) -> bool {
         !self.is_back() && self != Button::Back
     }
@@ -94,14 +96,14 @@ impl Side {
     }
 }
 
-/// One of the pad's inputs that a keymap can map. (Home is ClamShell's: never mapped.)
+/// One of the pad's inputs that a keymap can map. Home is ClamShell's own and is never mapped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub enum Input {
     Button(Button),
     Dpad(Dir),
     /// A stick as a whole.
     Stick(Side),
-    /// A stick pushed one way (past half its travel).
+    /// A stick pushed one way, past half its travel.
     StickDir(Side, Dir),
     Trigger(Side),
     Gyro,
@@ -170,8 +172,8 @@ impl Input {
     }
 }
 
-/// A button on the pad games see (the Xbox 360 pad): a button (not a back button), a D-pad direction,
-/// or a trigger pressed fully.
+/// A button on the pad that games see, which is an Xbox 360 pad: a button other than a back button, a
+/// D-pad direction, or a trigger pressed fully.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum PadOut {
     Button(Button),
@@ -180,13 +182,13 @@ pub enum PadOut {
 }
 
 impl PadOut {
-    /// What the pad games see has, in the order offered.
+    /// The buttons that the pad games see has, in the order offered.
     pub fn all() -> impl Iterator<Item = PadOut> {
         let buttons = Button::ALL.into_iter().filter(|b| b.on_pad()).map(PadOut::Button);
         buttons.chain(Side::ALL.into_iter().map(PadOut::Trigger)).chain(Dir::ALL.into_iter().map(PadOut::Dpad))
     }
 
-    /// The input of the same name (to name it, and to take it from a press on the pad).
+    /// The input of the same name. It is used to name the output, and to take it from a press on the pad.
     pub fn input(self) -> Input {
         match self {
             PadOut::Button(b) => Input::Button(b),
@@ -195,7 +197,7 @@ impl PadOut {
         }
     }
 
-    /// The pad output a pressed input stands for, if there is one (a back button or a stick isn't one).
+    /// The pad output a pressed input stands for, if there is one. A back button or a stick has none.
     pub fn of(input: Input) -> Option<PadOut> {
         match input {
             Input::Button(b) if b.on_pad() => Some(PadOut::Button(b)),

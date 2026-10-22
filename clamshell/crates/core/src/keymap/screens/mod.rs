@@ -1,20 +1,22 @@
 //! The keymaps' screens, shown over the settings tab on the second screen.
 //!
-//! - The picker lists, for a game, its own keymap (or a row that makes one from the keymap in force), then
-//!   Default, the named keymaps with how many games use each, and New.
+//! - The picker lists, for a game, its own keymap or a row that makes one from the keymap in force. Then
+//!   come Default, the named keymaps with how many games use each, and New.
 //! - A keymap's menu has Edit, Rename, Duplicate and Delete; deleting a keymap in use asks first. A game's
-//!   own keymap stays while another is chosen, and its menu has Edit, Load from (copies Default or a named
-//!   keymap into it, then opens its edit screen, where Undo goes back), Save as (a copy, as a new named
-//!   keymap or over one, which asks first) and Delete.
+//!   own keymap stays while another is chosen. Its menu has Edit, Load from, Save as and Delete. Load from
+//!   copies Default or a named keymap into it and opens its edit screen, where Undo goes back. Save as
+//!   copies it to a new named keymap, or over an existing one after asking.
 //! - The edit screen shows the pad's inputs in one layer of the keymap ([`EditView`]). The layer button
-//!   opens the list of layers: tap one to show it, add one, or long-press for rename, clear and delete.
-//!   An input chosen by touch, or by pressing it on the pad (which listens meanwhile), is selected into a
-//!   panel with the ways to remap it that fit its kind ([`ways`]) and its parameters.
+//!   opens the list of layers: tap one to show it, add one, or long-press one to rename, clear or delete
+//!   it. An input is chosen by touch or by pressing it on the pad, which listens while the screen is open.
+//!   The chosen input is shown in a panel with its parameters and the ways to remap it that fit its kind
+//!   ([`ways`]).
 //!
-//! A way to remap opens what it needs, which closes as soon as something is chosen (Back gives up): a
-//! control picked on the pad's drawing (tapped, or pressed on the pad), a key chord or a stick's four keys
-//! typed on the keyboard, or a part of the mouse on its drawing. The pointer, Nothing and no binding (the
-//! input as on the pad, or as the layers below) apply at once. Names are typed in the editor.
+//! A way to remap opens what it needs, which closes as soon as something is chosen; Back gives up. It is
+//! one of: a control picked on the pad's drawing, by tapping it or pressing it on the pad; a key chord or
+//! a stick's four keys typed on the keyboard; or a part of the mouse on its drawing. The pointer, Nothing
+//! and no binding apply at once. No binding leaves the input as on the pad, or as the layers below. Names
+//! are typed in the editor.
 //!
 //! This module also sends the keymap in force to the pad whenever it changes.
 
@@ -37,45 +39,46 @@ pub use undo::Undo;
 /// Which of the keymaps' screens is open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
-    /// Default and the keymaps; New.
+    /// Default, the keymaps, and New.
     List,
     /// A keymap's long-press menu.
     Menu(u16),
-    /// Deleting a keymap games use: are you sure.
+    /// Asks whether to delete a keymap that games use.
     Delete(u16),
-    /// Default and the named keymaps, one to copy into this (a game's own).
+    /// Default and the named keymaps, to pick one to copy into this game's own keymap.
     Load(u16),
-    /// A new named keymap and the named keymaps, to save this (a game's own) as.
+    /// A new named keymap and the named keymaps, to pick what to save this game's own keymap as.
     SaveAs(u16),
-    /// Saving `own` over the named keymap `to`: are you sure.
+    /// Asks whether to save `own` over the named keymap `to`.
     Overwrite { own: u16, to: u16 },
-    /// A keymap's inputs: the pad listens.
+    /// A keymap's inputs. The pad listens.
     Edit(u16),
-    /// The edit screen while the control `input` maps to is picked on the drawing, tapped or pressed on
-    /// the pad (the pad listens).
+    /// The edit screen while the control that `input` maps to is picked on the drawing, by tapping it or
+    /// pressing it on the pad. The pad listens.
     Pick { id: u16, input: Input },
-    /// The edit screen while what holds the gyro on is picked on the drawing (tapped or pressed on the
-    /// pad, which listens), or Always (`input`: the gyro).
+    /// The edit screen while what holds the gyro on is picked on the drawing, by tapping it or pressing it
+    /// on the pad, or Always is chosen. The pad listens. `input` is the gyro.
     Holds { id: u16, input: Input },
     /// A part of the mouse for `input`, on its drawing.
     Mouse { id: u16, input: Input },
-    /// A layer for `input`, from the keymap's.
+    /// A layer for `input`, from the keymap's layers.
     Layers { id: u16, input: Input },
-    /// The keymap's layers, to show one on the edit screen (or add one; a long press: its menu).
+    /// The keymap's layers, to show one on the edit screen or add one. A long press opens a layer's menu.
     LayerPicker(u16),
-    /// A layer's menu: Once, rename, clear, delete (Base: clear).
+    /// A layer's menu: Once, rename, clear and delete. Base has only clear.
     LayerMenu { id: u16, layer: Layer },
-    /// A key chord typed on the keyboard for `input`; for a stick's four keys, which one and those so far.
+    /// A key chord typed on the keyboard for `input`. For a stick's four keys, `keys` holds which one is
+    /// next and the ones typed so far.
     Capture { id: u16, input: Input, keys: Option<(usize, [Chord; 4])> },
 }
 
 impl Screen {
-    /// Whether the pad listens: its presses choose inputs instead of moving the focus.
+    /// Whether the pad listens, so that its presses choose inputs instead of moving the focus.
     pub fn listens(self) -> bool {
         matches!(self, Screen::Edit(_) | Screen::Pick { .. } | Screen::Holds { .. })
     }
 
-    /// The keymap it is about, if one.
+    /// The keymap it is about, if any.
     pub fn keymap(self) -> Option<u16> {
         match self {
             Screen::List => None,
@@ -88,8 +91,8 @@ impl Screen {
 }
 
 /// The ways to remap an input of `kind`, as the panel offers them: picking a control on the drawing,
-/// typing keys, the mouse (its parts, or for motion the pointer), as before (`Default`), nothing. The
-/// gyro's "as before" is off.
+/// typing keys, the mouse (its parts, or the pointer for motion), a layer, as before (`Default`), and
+/// nothing. For the gyro, "as before" is off.
 pub fn ways(kind: Kind) -> &'static [Target] {
     match kind {
         Kind::Digital | Kind::Trigger => &[Target::Pick, Target::Key, Target::MouseParts, Target::Layers, Target::Default, Target::To(Output::Nothing)],
@@ -98,7 +101,8 @@ pub fn ways(kind: Kind) -> &'static [Target] {
     }
 }
 
-/// The way an input mapped to `output` was remapped (none: it isn't; `Default`).
+/// The way an input mapped to `output` was remapped. With no output it isn't remapped, which is
+/// `Default`.
 pub fn way_of(output: Option<Output>) -> Target {
     match output {
         None => Target::Default,
@@ -112,14 +116,15 @@ pub fn way_of(output: Option<Output>) -> Target {
     }
 }
 
-/// Whether `input` can hold the gyro on (a button or a trigger the Thor has).
+/// Whether `input` can hold the gyro on: a button or a trigger that the Thor has.
 pub fn holds(input: Input) -> bool {
     crate::keymap::gyro_holds().any(|h| h == input) && !matches!(input, Input::Button(b) if b.is_back())
 }
 
-/// What picking `tapped` on the pad's drawing (or pressing it) maps `source` to, if that fits it: a
-/// button or the D-pad's direction for a button; a trigger to a trigger; a stick (or a direction of it) to
-/// that stick and the D-pad to the D-pad for a stick or the gyro.
+/// What picking `tapped` on the pad's drawing, or pressing it, maps `source` to, if that fits `source`. A
+/// button or trigger maps to the pad output picked: a button, a D-pad direction or a trigger, and a
+/// trigger picked for a trigger maps to that trigger. A stick or the gyro maps to the stick picked, by the
+/// stick or one of its directions, and a stick can also map to the D-pad.
 pub fn picked(source: Input, tapped: Input) -> Option<Output> {
     let kind = source.kind();
     let out = match (kind, tapped) {
@@ -131,8 +136,8 @@ pub fn picked(source: Input, tapped: Input) -> Option<Output> {
     out.fits(kind).then_some(out)
 }
 
-/// The keymaps' screens' state: the screen open over the settings tab, the edit screen's view, and its
-/// Undo.
+/// The state of the keymaps' screens: the screen open over the settings tab, the edit screen's view, and
+/// its Undo.
 #[derive(Debug, Clone, Default)]
 pub struct Screens {
     pub(crate) open: Option<Screen>,
@@ -140,9 +145,10 @@ pub struct Screens {
     pub(crate) undo: Undo,
 }
 
-/// The edit screen's own state, kept while its input's screens are open: the layer shown and edited, the
-/// input selected (shown in the panel) and which of its actuations, whether "No changes" waits for its
-/// confirmation, and the slider of one of its parameters while a finger is on it.
+/// The edit screen's own state, kept while the screens for its input are open. It holds the layer shown
+/// and edited, the input selected into the panel and which of its actuations is shown, whether "No
+/// changes" waits for confirmation, and the slider of one of the input's parameters while a finger is on
+/// it.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct EditView {
     pub layer: Layer,
@@ -155,15 +161,16 @@ pub struct EditView {
 /// A row of the picker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PickerRow<'a> {
-    /// The game's own keymap; none: the row that makes it.
+    /// The game's own keymap, or none for the row that makes it.
     Own(Option<&'a Keymap>),
-    /// Saving a game's own: as a new named keymap.
+    /// When saving a game's own keymap: save it as a new named keymap.
     New,
     Default,
     Named(&'a Keymap),
 }
 
-/// Who uses a keymap: all games (it is their default), and how many games of their own.
+/// Who uses a keymap: whether all games do, as their default, and how many games have chosen it as their
+/// own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Users {
     pub all_games: bool,
@@ -191,19 +198,20 @@ impl State {
         self.keymap_screens.edit
     }
 
-    /// The keymaps' screen open, while the settings (its tab) are shown.
+    /// The keymaps' screen that is open, while the settings tab is shown.
     pub(crate) fn keymaps_shown(&self) -> Option<Screen> {
         self.keymap_screens.open.filter(|_| self.bottom.tab == crate::Tab::Settings)
     }
 
-    /// Whether the pad listens for inputs (the edit screen, or waiting for a pad button, in view).
+    /// Whether the pad listens for inputs: the edit screen, or a screen waiting for a pad button, is in
+    /// view.
     pub(crate) fn listening(&self) -> bool {
         self.bottom.editor().is_none() && self.keymaps_shown().is_some_and(Screen::listens)
     }
 
-    /// The picker's rows: for a game, its own keymap (or the row making one), then Default and the named
-    /// keymaps. Loading into a game's own: Default and the named keymaps; saving it: a new one and the named
-    /// keymaps.
+    /// The picker's rows. Usually they are, for a game, its own keymap or the row that makes one, then
+    /// Default and the named keymaps. When loading into a game's own keymap they are Default and the named
+    /// keymaps; when saving it, a new keymap and the named keymaps.
     fn keymap_rows(&self) -> impl Iterator<Item = PickerRow<'_>> {
         let (loading, saving) = match self.keymap_screens.open {
             Some(Screen::Load(_)) => (true, false),
@@ -229,17 +237,18 @@ impl State {
         self.keymaps.get(id).is_some_and(|k| k.owner.is_some())
     }
 
-    /// Whether the panel edits a game without a keymap of its own (which it can make).
+    /// Whether the panel edits a game that has no keymap of its own and so can make one.
     pub fn keymap_can_make_own(&self) -> bool {
         self.editing().is_some_and(|g| self.keymaps.own_of(&g.id).is_none())
     }
 
-    /// The keymap the settings panel's scope uses (0: Default).
+    /// The keymap used by the settings panel's scope; 0 is Default.
     pub fn keymap_chosen(&self) -> u16 {
         self.tile_value(Setting::Keymap)
     }
 
-    /// A keymap's name, "Default" for none (or one that is gone).
+    /// A keymap's name. It is "Own keymap" for a game's own, and "Default" for none or for one that is
+    /// gone.
     pub fn keymap_name(&self, id: u16) -> &str {
         match self.keymaps.get(id) {
             Some(k) if k.owner.is_some() => "Own keymap",
@@ -255,15 +264,17 @@ impl State {
         Users { all_games, games }
     }
 
-    /// The keymap in force (the running game's, else all games'); Default (id 0, empty) if none.
+    /// The keymap in force: the running game's, or else all games'. It is Default (id 0, empty) if there
+    /// is none.
     pub fn keymap_in_force(&self) -> Keymap {
         let id = self.in_force().get(Setting::Keymap);
         self.keymaps.get(id).cloned().unwrap_or_else(|| Keymap::new(0, "Default"))
     }
 
-    /// The keymap in force for the pad, if it changed since last sent (or `always`).
+    /// The keymap in force, to send to the pad if it changed since it was last sent, or if `always`.
     pub(crate) fn follow_keymap(&mut self, always: bool) -> Option<Effect> {
-        // (Compared in place: this runs after every event. Default, no keymap stored, is id 0.)
+        // Compared in place, since this runs after every event. Default, which has no stored keymap, is
+        // id 0.
         let stored = self.keymaps.get(self.in_force().get(Setting::Keymap));
         let same = self.keymap_sent.as_ref().is_some_and(|sent| match stored {
             Some(k) => sent == k,
@@ -277,14 +288,14 @@ impl State {
         Some(Effect::Keymap(now))
     }
 
-    /// The keymap tile: the picker opens.
+    /// The keymap tile opens the picker.
     pub(crate) fn open_keymaps(&mut self) {
         self.keymap_screens.open = Some(Screen::List);
     }
 
-    /// A row of the picker: a tap chooses it for the scope being edited (and closes the picker), a long
-    /// press opens a keymap's menu; its Edit button its edit screen. The game's row without its own keymap
-    /// makes it.
+    /// A row of the picker. A tap chooses it for the scope being edited and closes the picker, a long
+    /// press opens the keymap's menu, and its Edit button opens its edit screen. The game's row, when the
+    /// game has no keymap of its own, makes one.
     pub(crate) fn on_keymap_row(&mut self, i: usize, part: RowPart, long: bool) -> Vec<Effect> {
         match self.keymap_screens.open {
             Some(Screen::Load(own)) => {
@@ -327,8 +338,8 @@ impl State {
         }
     }
 
-    /// Keymap `from` copied into `own` (a game's own); its edit screen opens, where Undo goes back to it
-    /// as it was.
+    /// Copies keymap `from` into `own`, a game's own keymap, and opens its edit screen, where Undo puts it
+    /// back as it was.
     fn load_into(&mut self, own: u16, from: u16) -> Vec<Effect> {
         self.open_edit(own);
         let mut effects = vec![];
@@ -339,8 +350,8 @@ impl State {
         effects
     }
 
-    /// The game the panel edits (without one) gets its own keymap, a copy of keymap `from`, chosen there;
-    /// its edit screen opens.
+    /// Gives the game the panel edits, if it has none, its own keymap as a copy of keymap `from`. The new
+    /// keymap is chosen for the game and its edit screen opens.
     fn make_own(&mut self, from: u16) -> Vec<Effect> {
         if !self.keymap_can_make_own() {
             return vec![];
@@ -439,8 +450,8 @@ impl State {
         vec![]
     }
 
-    /// The edit screen: an input selected (a long press: its binding removed), its actuation, its target
-    /// and parameters, the layer shown, Undo, Make own, the gyro's calibration and hold.
+    /// The edit screen's buttons: selecting an input (a long press removes its binding), its actuation,
+    /// its target and parameters, the layer shown, Undo, Make own, and the gyro's calibration and hold.
     fn on_edit_screen(&mut self, id: KeymapId, k: u16, long: bool) -> Vec<Effect> {
         match id {
             KeymapId::MakeOwn => self.make_own(k),
@@ -494,7 +505,8 @@ impl State {
         }
     }
 
-    /// The layer picker: a layer shown on the edit screen (a long press: its menu), or a new one.
+    /// The layer picker: shows a layer on the edit screen, opens its menu on a long press, or adds a new
+    /// one.
     fn on_layer_picker(&mut self, id: KeymapId, k: u16, long: bool) -> Vec<Effect> {
         match id {
             KeymapId::EditLayer(layer) => self.open_layer_menu(k, layer),
@@ -512,7 +524,7 @@ impl State {
         }
     }
 
-    /// A layer's menu: rename, Once, clear (confirmed), delete.
+    /// A layer's menu: rename, Once, clear (after confirmation) and delete.
     fn on_layer_menu(&mut self, id: KeymapId, k: u16, layer: Layer) -> Vec<Effect> {
         match id {
             KeymapId::RenameLayer => {
@@ -549,10 +561,10 @@ impl State {
         }
     }
 
-    /// Back one screen: from a keymap's screens to the picker, from an input's to its keymap's, from
-    /// the picker to the settings.
+    /// Goes back one screen: from a keymap's screens to the picker, from an input's screens to its
+    /// keymap's, and from the picker to the settings.
     pub(crate) fn keymap_back(&mut self) {
-        // Clearing a layer waiting for its confirmation: not after all.
+        // A layer clear waiting for confirmation is cancelled instead.
         if matches!(self.keymap_screens.open, Some(Screen::LayerMenu { .. })) && self.keymap_screens.edit.clearing {
             self.keymap_screens.edit.clearing = false;
             return;
@@ -572,15 +584,16 @@ impl State {
         };
     }
 
-    /// Whether the selected input has a hold's or a double's binding in force in the layer shown (its press
-    /// then acts only once it is known not to be one).
+    /// Whether the selected input has a hold or double binding in force in the layer shown. Its press then
+    /// acts only once it is known not to be one of those.
     pub fn press_waits(&self, id: u16, input: Input) -> bool {
         let on = self.layers_shown();
         self.keymaps.get(id).is_some_and(|k| [Actuation::Hold, Actuation::Double].into_iter().any(|a| k.lookup_of(input, a, on.as_slice()).is_some()))
     }
 
-    /// An input chosen on the edit screen (touched, or pressed on the pad): selected into the panel; the
-    /// one selected already, the way it is mapped now opens again (a key: the keyboard), if it has one.
+    /// Selects an input chosen on the edit screen, by touch or by pressing it on the pad, into the panel.
+    /// If it is already selected, the way it is mapped now opens again, if it has one; for a key, that is
+    /// the keyboard.
     fn select(&mut self, id: u16, input: Input) -> Vec<Effect> {
         let view = &mut self.keymap_screens.edit;
         view.clearing = false;
@@ -595,8 +608,8 @@ impl State {
         }
     }
 
-    /// An input pressed on the pad while it listens: on the edit screen, it is selected as a touch
-    /// selects it; while a control is picked, it is the one (if it fits).
+    /// An input pressed on the pad while it listens. On the edit screen it is selected as a touch would
+    /// select it. While a control or the gyro's hold is being picked, it is the one picked, if it fits.
     pub(crate) fn listened(&mut self, input: Input) -> Vec<Effect> {
         if self.pad.route() != crate::PadRoute::Listen {
             return vec![];
@@ -612,7 +625,7 @@ impl State {
         }
     }
 
-    /// What holds the gyro on, chosen (none: always on): back to the edit screen.
+    /// Sets what holds the gyro on, with none meaning always on, and goes back to the edit screen.
     fn set_hold(&mut self, id: u16, gyro: Input, hold: Option<Input>) -> Vec<Effect> {
         self.keymap_screens.open = Some(Screen::Edit(id));
         let Some(mut b) = self.param_base(id, gyro) else {
@@ -628,7 +641,8 @@ impl State {
         self.bottom.open_editor(Editor { purpose: Purpose::KeymapName(action), text });
     }
 
-    /// The editor saved a keymap's name: a new keymap (then its edit screen), renamed, or a copy.
+    /// The editor saved a name: for a new keymap, which then opens on its edit screen, a renamed keymap, a
+    /// copy, or a new or renamed layer.
     pub(crate) fn named_keymap(&mut self, action: KeymapName, name: &str) -> Vec<Effect> {
         if name.trim().is_empty() {
             return vec![];
@@ -651,14 +665,15 @@ impl State {
                 let layer = self.keymaps.get_mut(id).and_then(|k| k.add_layer(name));
                 self.keymap_screens.open = Some(Screen::Edit(id));
                 match (layer, for_input) {
-                    // Made from the layers' list: the input maps to it (in the layer shown).
+                    // Made from the list of layers for an input: the input maps to the new layer, in the
+                    // layer shown.
                     (Some(l), Some((input, act))) => {
                         self.keymap_screens.edit.act = act;
                         let mut effects = self.choose(id, input, Output::Layer(l));
                         effects.push(self.save_keymaps());
                         return effects;
                     }
-                    // From the +: shown.
+                    // Made with the + button: the new layer is shown.
                     (Some(l), None) => self.keymap_screens.edit.layer = l,
                     (None, _) => {}
                 }
@@ -671,7 +686,7 @@ impl State {
         vec![self.save_keymaps()]
     }
 
-    /// Deletes keymap `id`: the games that used it (and all games, if theirs) are back on Default.
+    /// Deletes keymap `id`. The games that used it, and all games if it was theirs, go back to Default.
     fn delete_keymap(&mut self, id: u16) -> Vec<Effect> {
         let before = self.in_force();
         self.keymaps.remove(id);
@@ -681,7 +696,8 @@ impl State {
         let games: Vec<_> = self.settings.overrides.iter().filter(|(_, o)| o.get(Setting::Keymap) == Some(id)).map(|(g, _)| g.clone()).collect();
         let global = self.settings.global.get(Setting::Keymap);
         for game in games {
-            // Default: their own choice of it, unless all games' is Default anyway.
+            // The game gets Default as its own choice, unless all games use Default anyway, in which case
+            // its own choice is cleared.
             self.settings.set(Some(&game), Setting::Keymap, (global != 0).then_some(0));
         }
         self.keymap_screens.open = Some(Screen::List);
@@ -713,8 +729,8 @@ impl State {
         self.keymaps.get(id).and_then(|k| k.get_of(layer, input, act)).copied()
     }
 
-    /// A way to remap `input` (a panel's icon): what it needs opens, or it applies at once; or an output
-    /// chosen (the mouse's parts, the control pipe).
+    /// A way to remap `input`, from an icon in the panel: what it needs opens, or it applies at once. It
+    /// can also be an output chosen directly, from the mouse's parts or the control pipe.
     fn map_to(&mut self, id: u16, input: Input, target: Target) -> Vec<Effect> {
         let screen = match target {
             Target::Pick => Screen::Pick { id, input },
@@ -728,7 +744,8 @@ impl State {
             }
             _ => return self.chosen(id, input, target),
         };
-        // (Only the ways that fit it: a stick has no key chord of its own, the gyro no mouse buttons.)
+        // Only the ways that fit the input open: a stick has no key chord of its own, and the gyro has no
+        // mouse buttons.
         if ways(input.kind()).contains(&target) {
             self.keymap_screens.open = Some(screen);
         }
@@ -743,11 +760,11 @@ impl State {
         }
     }
 
-    /// `input` maps to `output` (its parameters and hold kept): back to the edit screen, whose panel
-    /// has its parameters.
+    /// Maps `input` to `output`, keeping its parameters and hold, and goes back to the edit screen, whose
+    /// panel shows the parameters.
     fn choose(&mut self, id: u16, input: Input, output: Output) -> Vec<Effect> {
         let full_pull = self.keymap_screens.edit.act == Actuation::FullPull;
-        // (A full pull to a trigger picked: that trigger pulled all the way, as a button.)
+        // For a full pull, a picked trigger means that trigger pulled all the way, as a button.
         let output = match output {
             Output::Trigger(s) if full_pull => Output::Pad(PadOut::Trigger(s)),
             o => o,
@@ -763,8 +780,8 @@ impl State {
         effects
     }
 
-    /// A key typed while a chord is wanted: the chord for the input, or the next of a stick's four keys
-    /// (the fourth completes them).
+    /// A key typed while a chord is wanted. It is the chord for the input, or the next of a stick's four
+    /// keys; the fourth completes them.
     pub(crate) fn captured(&mut self, chord: Chord) -> Vec<Effect> {
         let Some(Screen::Capture { id, input, keys }) = self.keymap_screens.open else {
             return vec![];
@@ -787,7 +804,7 @@ impl State {
         }
     }
 
-    /// Whether the keyboard's keys make a chord now (the capture screen is open).
+    /// Whether the keyboard's keys make a chord now, because the capture screen is open.
     pub(crate) fn capturing(&self) -> bool {
         matches!(self.keymaps_shown(), Some(Screen::Capture { .. })) && self.bottom.editor().is_none()
     }

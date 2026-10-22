@@ -15,7 +15,7 @@ pub struct Undo {
 pub(super) const UNDO_MAX: usize = 50;
 
 impl State {
-    /// The keymaps saved; a change to the keymap being edited is a step Undo goes back over.
+    /// Saves the keymaps. A change to the keymap being edited becomes a step that Undo can go back over.
     pub(crate) fn save_keymaps(&mut self) -> Effect {
         let undo = &mut self.keymap_screens.undo;
         if let Some(last) = undo.last.as_ref()
@@ -31,7 +31,7 @@ impl State {
         Effect::Save(Save::Keymaps(self.keymaps.clone()))
     }
 
-    /// The keymaps saved if `changed` (see [`State::save_keymaps`]).
+    /// Saves the keymaps if `changed` (see [`State::save_keymaps`]).
     pub(super) fn saved_if(&mut self, changed: bool) -> Vec<Effect> {
         if changed { vec![self.save_keymaps()] } else { vec![] }
     }
@@ -41,11 +41,11 @@ impl State {
         !self.keymap_screens.undo.steps.is_empty()
     }
 
-    /// Undo: the keymap being edited as it was before its last change (the layer shown Base if that one
-    /// is gone).
+    /// Undo: puts the keymap being edited back as it was before its last change. If the layer shown is
+    /// gone after that, Base is shown.
     pub(super) fn undo(&mut self, id: u16) -> Vec<Effect> {
         let undo = &mut self.keymap_screens.undo;
-        // (Only the keymap being edited has steps; one of another is left, not dropped.)
+        // Only the keymap being edited should have steps. A step for another keymap is left, not dropped.
         let Some(before) = undo.steps.pop_back_if(|k| k.id == id) else {
             return vec![];
         };
@@ -61,7 +61,7 @@ impl State {
         vec![self.save_keymaps()]
     }
 
-    /// The edit screen of keymap `id`, as first opened: Base, nothing selected.
+    /// Opens the edit screen of keymap `id` fresh: Base shown and nothing selected.
     pub(super) fn open_edit(&mut self, id: u16) {
         self.keymap_screens.open = Some(Screen::Edit(id));
         self.keymap_screens.edit = EditView::default();

@@ -4,7 +4,7 @@
 use super::*;
 use crate::kit::names::names;
 
-/// A binding's parameters beside its output: values set with a slider (0 to 100 on its track), and
+/// A binding's parameters besides its output: values set with a slider, 0 to 100 on its track, and
 /// switches ([`Param::switch`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Param {
@@ -15,12 +15,12 @@ pub enum Param {
     Curve,
     InvertX,
     InvertY,
-    /// A hold's: how long the press must last.
+    /// For a hold: how long the press must last.
     HoldTime,
-    /// Presses a second while on (0: off).
+    /// Presses a second while on; 0 is off.
     Turbo,
     Toggle,
-    /// The gyro's.
+    /// The gyro's acceleration. This and the parameters after it are the gyro's.
     Accel,
     AccelAt,
     Tighten,
@@ -50,12 +50,12 @@ names!(Param {
 });
 
 impl Param {
-    /// On or off (a tap switches it), rather than a value on a slider.
+    /// Whether it is on or off, switched by a tap, rather than a value on a slider.
     pub fn switch(self) -> bool {
         matches!(self, Param::InvertX | Param::InvertY | Param::Toggle | Param::Twist | Param::Ratchet)
     }
 
-    /// A value of it as shown: `40 %`, `Off` or `12/s` (turbo), `400 ms` (a hold's time).
+    /// A value as shown: `40 %`, `Off` or `12/s` for turbo, `400 ms` for a hold's time.
     pub fn show(self, v: u8, out: &mut impl Write) -> fmt::Result {
         match self {
             Param::Turbo if v == 0 => out.write_str("Off"),
@@ -68,9 +68,13 @@ impl Param {
         }
     }
 
-    /// Whether `input` mapped to `output` has it: a stick its deadzone, full point, curve and inversion
-    /// (and speed on the pointer); a trigger its deadzone and full point (and threshold on a button);
-    /// the gyro on motion its speed and inversion.
+    /// Whether `input` mapped to `output` has it:
+    ///
+    /// - a stick has its deadzone, full point, curve and inversion, and on the pointer its speed;
+    /// - a trigger has its deadzone and full point, and on something on or off its threshold;
+    /// - the gyro on motion has its speed, inversion, acceleration, tightening, twist and ratchet, and on
+    ///   a stick where its output starts;
+    /// - a button or trigger on something on or off has toggle, and turbo unless it is on a layer.
     pub fn applies(self, input: Input, output: Output) -> bool {
         let motion = matches!(output, Output::Pointer | Output::Stick(_));
         match (input.kind(), self) {
@@ -83,17 +87,18 @@ impl Param {
             }
             (Kind::Gyro, Param::StickMin) => matches!(output, Output::Stick(_)),
             (Kind::Digital | Kind::Trigger, Param::Toggle) => output.digital(),
-            // (A layer doesn't beat.)
+            // A layer can't repeat, so it has no turbo.
             (Kind::Digital | Kind::Trigger, Param::Turbo) => output.digital() && !matches!(output, Output::Layer(_)),
             _ => false,
         }
     }
 
-    /// [`Param::applies`] for `input`'s binding of `act`: a hold's also has its time.
+    /// [`Param::applies`] for `input`'s binding of `act`. A hold's binding also has its time.
     pub fn applies_to(self, input: Input, output: Output, act: Actuation) -> bool {
         match (self, act) {
             (Param::HoldTime, _) => act == Actuation::Hold,
-            // (A full pull has its threshold; the trigger's tuning is the pull's.)
+            // A full pull has its own threshold. The trigger's deadzone and full point belong to the
+            // pull's binding.
             (Param::Deadzone | Param::Full, Actuation::FullPull) => false,
             (p, _) => p.applies(input, output),
         }
@@ -117,8 +122,9 @@ impl Param {
         }
     }
 
-    /// Its value unless set, for `input` mapped to `output`: [`Binding::to`]'s for every pair but a stick
-    /// on the pointer, whose deadzone and curve are [`POINTER_DEADZONE`] and [`POINTER_CURVE`].
+    /// Its value when not set, for `input` mapped to `output`. It is [`Binding::to`]'s for every pair
+    /// except a stick on the pointer, whose deadzone and curve are [`POINTER_DEADZONE`] and
+    /// [`POINTER_CURVE`].
     pub fn default_for(self, input: Input, output: Output) -> u8 {
         let pointer = input.kind() == Kind::Stick && output == Output::Pointer;
         match self {
@@ -178,7 +184,7 @@ pub fn params(input: Input, output: Output) -> impl Iterator<Item = Param> {
     Param::ALL.into_iter().filter(move |p| p.applies(input, output))
 }
 
-/// The parameters of `input`'s binding of `act` mapped to `output` (a hold's has its time too).
+/// The parameters of `input`'s binding of `act` to `output`. A hold's binding also has its time.
 pub fn params_of(input: Input, output: Output, act: Actuation) -> impl Iterator<Item = Param> {
     Param::ALL.into_iter().filter(move |p| p.applies_to(input, output, act))
 }

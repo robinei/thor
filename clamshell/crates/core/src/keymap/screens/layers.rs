@@ -1,4 +1,5 @@
-//! The layers' lists' rows (to show a layer, as a target) and the layers the edit screen shows.
+//! The rows of the lists of layers, one to pick a layer to show and one to pick a layer as a target, and
+//! the layers the edit screen shows.
 
 use super::*;
 
@@ -15,8 +16,8 @@ impl LayersShown {
 }
 
 impl State {
-    /// The layers' list's rows (see [`crate::ListId::Layers`]): the keymap's layers (but Base, as a target),
-    /// then New layer; none on another screen.
+    /// The number of rows in the list of layers (see [`crate::ListId::Layers`]): the keymap's layers, then
+    /// New layer. As a target, Base is left out. On other screens there are none.
     pub(crate) fn layer_rows(&self) -> usize {
         let (id, all) = match self.keymap_screens.open {
             Some(Screen::LayerPicker(id)) => (id, true),
@@ -28,7 +29,7 @@ impl State {
         if all { n + 1 } else { n }
     }
 
-    /// The layer on the layers' list's row `i`, if it is one (the last row is New layer).
+    /// The layer on row `i` of the list of layers, if it is one. The last row is New layer.
     pub fn layer_row(&self, i: usize) -> Option<Layer> {
         let (id, skip) = match self.keymap_screens.open? {
             Screen::LayerPicker(id) => (id, 0),
@@ -38,8 +39,8 @@ impl State {
         self.keymaps.get(id)?.layers().nth(i + skip).map(|(l, _)| l)
     }
 
-    /// A row of the layers' list: a layer shown (its Edit or a long press: its menu), chosen as a target,
-    /// or New layer.
+    /// A row of the list of layers: a layer to show, or to choose as a target, or New layer. Its Edit
+    /// button or a long press opens the layer's menu.
     pub(crate) fn on_layer_row(&mut self, i: usize, part: RowPart, long: bool) -> Vec<Effect> {
         let target = matches!(self.keymap_screens.open, Some(Screen::Layers { .. }));
         let id = match (self.layer_row(i), part, target) {
@@ -52,8 +53,8 @@ impl State {
         self.on_keymap(id, long)
     }
 
-    /// The layers on for the layer shown: none for Base (Base is beneath everything), else that one. (No
-    /// allocation: the screens ask while drawing.)
+    /// The layers on for the layer shown: none for Base, which is beneath everything, or else that layer.
+    /// It doesn't allocate, because the screens ask for it while drawing.
     pub(super) fn layers_shown(&self) -> LayersShown {
         let layer = self.keymap_screens.edit.layer;
         LayersShown { layer, base: layer == Layer::BASE }

@@ -1,6 +1,6 @@
 use super::*;
 
-/// The keymaps saved (each as JSON, as they are kept) and read back.
+/// Saves the keymaps, each as JSON as they are kept, and reads them back.
 fn round_trip(maps: &Keymaps) -> Keymaps {
     let saved: Vec<String> = maps.list().iter().map(|k| serde_json::to_string(k).unwrap()).collect();
     Keymaps::from_list(saved.iter().map(|k| serde_json::from_str(k).unwrap()).collect())
@@ -75,10 +75,10 @@ fn layers_are_named_targets() {
     assert_eq!(k.lookup(a, &[]), None, "Base: as on the pad");
     let maps = Keymaps { list: vec![k.clone()] };
     assert_eq!(round_trip(&maps), maps);
-    // Removed: its bindings, and those to it, go.
+    // Removing a layer drops its bindings and the bindings to it.
     assert!(k.remove_layer(aim));
     assert_eq!((k.layers().count(), k.get(Input::Button(Button::LB))), (1, None));
-    // Back on the pad games see: nothing as on the pad; not a pad output.
+    // Back isn't on the pad that games see: on the pad it does nothing, and it isn't a pad output.
     assert_eq!(as_on_the_pad(back), Some(Output::Nothing));
     assert_eq!(PadOut::of(back), None);
 }
@@ -147,7 +147,7 @@ fn holds_doubles_turbo_and_toggle_are_kept() {
     let maps = Keymaps { list: vec![k] };
     assert_eq!(round_trip(&maps), maps);
     assert!(!maps.list.first().unwrap().is_empty(aim));
-    // Shown: turbo off or a rate, a hold's time.
+    // How values are shown: turbo off or a rate, and a hold's time.
     let show = |p: Param, v| {
         let mut s = String::new();
         p.show(v, &mut s).unwrap();
@@ -165,7 +165,7 @@ fn a_stick_on_the_pointer_has_defaults_of_its_own() {
     let b = Binding::of(rs, Output::Pointer);
     assert_eq!((b.deadzone, b.curve), (POINTER_DEADZONE, POINTER_CURVE));
     assert!(!b.tuned(rs));
-    // Back to the stick: those defaults go with it; a value set stays.
+    // Mapped back to the stick, the pointer's defaults go and a value that was set stays.
     let own = b.retarget(rs, Output::Stick(Side::Right));
     assert_eq!((own.deadzone, own.curve), (0, 0));
     let set = Binding { deadzone: 20, ..b }.retarget(rs, Output::Stick(Side::Right));

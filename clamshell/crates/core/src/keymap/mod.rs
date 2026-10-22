@@ -1,23 +1,29 @@
-//! Keymaps: remappings of the controller (a game's or all games' setting,
-//! [`crate::settings::Setting::Keymap`], is a keymap's id; 0 is Default, no remapping). A keymap is named,
-//! and shared by the games that choose it, or a game's own: unnamed, offered to that game alone (kept while
-//! another is chosen, until deleted), made from the keymap in force there. Bindings move between the two by
-//! copying: a named keymap (or Default) loaded into a game's own, a game's own saved as a new named keymap or
-//! over one. Each maps some of the pad's inputs ([`Input`]) to something else ([`Output`]); an input without
-//! a binding does what it does on the pad. What an input may map to depends on its kind ([`Kind`]): a button
-//! to a pad button, a key chord, a mouse button or a wheel step; a stick to a stick, the mouse pointer, four
-//! keys or the D-pad; a trigger to a trigger or, past a threshold, anything a button maps to; the gyro to the
-//! mouse pointer or a stick, always or while a chosen button is held.
+//! Keymaps: remappings of the controller. The keymap setting of a game or of all games
+//! ([`crate::settings::Setting::Keymap`]) is a keymap's id; 0 is Default, which remaps nothing.
 //!
-//! A keymap has layers ([`Layer`]): Base, and any number added. A binding turns a layer on
-//! ([`Output::Layer`]) while held, until pressed again, or for one input. An input with no binding in a
-//! layer that is on does what the layers below it say, Base last.
+//! A keymap is either named and shared by the games that choose it, or a game's own. A game's own keymap
+//! is unnamed and offered to that game alone. It is made from the keymap in force for the game, and it is
+//! kept while the game uses another one, until it is deleted. Bindings move between the two kinds by
+//! copying: a named keymap (or Default) can be loaded into a game's own, and a game's own can be saved as a
+//! new named keymap or over an existing one.
 //!
-//! A button (or a D-pad or stick direction) may also act differently held long or pressed twice
-//! ([`Actuation`]): each is a binding of its own. A binding to something on or off may also repeat while
-//! on (turbo) or stay on from one actuation to the next (toggle).
+//! A keymap maps some of the pad's inputs ([`Input`]) to something else ([`Output`]). An input without a
+//! binding does what it does on the pad. What an input may map to depends on its kind ([`Kind`]):
 //!
-//! Kept as JSON, through serde (a file each in `keymaps/`: see clamshell-system's `store`).
+//! - a button to a pad button, a key chord, a mouse button or a wheel step;
+//! - a stick to a stick, the mouse pointer, four keys or the D-pad;
+//! - a trigger to a trigger, or, past a threshold, anything a button maps to;
+//! - the gyro to the mouse pointer or a stick, either always or while a chosen button is held.
+//!
+//! A keymap has layers ([`Layer`]): Base, and any number of added ones. A binding can turn a layer on
+//! ([`Output::Layer`]) while it is held, until it is pressed again, or for one input. An input with no
+//! binding in a layer that is on does what the layers below it say, with Base last.
+//!
+//! A button, D-pad direction or stick direction may also act differently when held long or pressed twice
+//! ([`Actuation`]). Each of these is a binding of its own. A binding to something that is on or off may
+//! also repeat while on (turbo) or stay on from one actuation to the next (toggle).
+//!
+//! Keymaps are kept as JSON through serde, one file each in `keymaps/` (see clamshell-system's `store`).
 
 use std::fmt::{self, Write};
 
@@ -33,69 +39,74 @@ pub use inputs::*;
 pub use outputs::*;
 pub use param::*;
 
-/// Motion mapped to a stick or the pointer: its speed, 0 to 100 (50 is the stock speed).
+/// The speed of motion mapped to a stick or the pointer, 0 to 100. 50 is the stock speed.
 pub const DEFAULT_SPEED: u8 = 50;
-/// A trigger mapped to a button acts past this (percent of its travel, 1 to 100).
+/// A trigger mapped to a button acts past this, in percent of its travel (1 to 100).
 pub const DEFAULT_THRESHOLD: u8 = 50;
-/// A trigger's full pull acts past this (percent of its travel) unless set otherwise.
+/// A trigger's full pull acts past this, in percent of its travel, unless set otherwise.
 pub const FULL_PULL: u8 = 95;
-/// A press held this long is a hold (hundredths of a second, 20 to 100).
+/// A press held this long is a hold, in hundredths of a second (20 to 100).
 pub const DEFAULT_HOLD_TIME: u8 = 40;
-/// The gyro: turning faster than this (degrees per second) gets the whole of its acceleration.
+/// The gyro turning speed, in degrees per second, above which a turn gets all of the acceleration.
 pub const DEFAULT_ACCEL_AT: u8 = 60;
-/// The gyro: turning slower than this (tenths of a degree per second) is scaled down toward nothing
-/// (tightening, against a hand's tremor).
+/// The gyro turning speed, in tenths of a degree per second, below which motion is scaled down toward
+/// nothing. This tightening counters a hand's tremor.
 pub const DEFAULT_TIGHTEN: u8 = 10;
 
-/// A stick on the pointer: its deadzone and curve unless set otherwise (as the pointer moved before the
-/// parameters were there: nothing within 15 % of the middle, then the distance from there squared).
+/// The default deadzone and curve for a stick mapped to the pointer. They match how the pointer moved
+/// before these parameters existed: nothing within 15 % of the middle, then the distance from there
+/// squared.
 pub const POINTER_DEADZONE: u8 = 15;
 pub const POINTER_CURVE: u8 = 50;
 
-/// An input's binding: what it maps to, and how. A stick's or trigger's tuning (deadzone, where it is
-/// full, curve, inversion) applies to its values before they are mapped, whatever they map to; a binding
-/// to the input itself ([`as_on_the_pad`]) with tuning is the input as on the pad, tuned.
+/// An input's binding: what it maps to, and how. A stick's or trigger's tuning (deadzone, full point,
+/// curve, inversion) applies to its values before they are mapped, whatever they map to. A binding of an
+/// input to itself ([`as_on_the_pad`]) with tuning gives the input as it is on the pad, tuned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct Binding {
     pub output: Output,
-    /// Motion to the pointer or a stick: 0 to 100 (see [`DEFAULT_SPEED`]).
+    /// The speed of motion to the pointer or a stick, 0 to 100 (see [`DEFAULT_SPEED`]).
     pub speed: u8,
-    /// A trigger to a button: percent of its travel.
+    /// For a trigger mapped to a button: where it acts, in percent of its travel.
     pub threshold: u8,
-    /// A stick or trigger: percent of its travel that counts as rest, and where it counts as full
-    /// (the range between stretched to the whole).
+    /// For a stick or trigger: the percent of its travel that counts as rest, and the point where it
+    /// counts as full. The range between them is stretched to the whole.
     pub deadzone: u8,
     pub full: u8,
-    /// A stick: 0 is linear, more is finer near the middle (up to its distance cubed).
+    /// For a stick: 0 is linear, and higher values are finer near the middle, up to the distance cubed.
     pub curve: u8,
-    /// A stick or the gyro's motion: across and up/down turned round.
+    /// For a stick or the gyro's motion: reverses the horizontal and the vertical axis.
     pub invert_x: bool,
     pub invert_y: bool,
-    /// The gyro acts only while this is held (a button, or a trigger past half); always without one.
+    /// The gyro acts only while this is held: a button, or a trigger past half. Without one it always
+    /// acts.
     pub hold: Option<Input>,
-    /// Something on or off: pressed again and again while on, this many times a second (0: not).
+    /// For something on or off: how many times a second it is pressed again while on. 0 is no turbo.
     pub turbo: u8,
-    /// Something on or off: one actuation turns it on, the next off.
+    /// For something on or off: one actuation turns it on and the next turns it off.
     pub toggle: bool,
-    /// A hold's binding: how long a press must last (hundredths of a second).
+    /// For a hold's binding: how long a press must last, in hundredths of a second.
     pub hold_time: u8,
-    /// The gyro: how much faster turns go further (0: as slow ones; 100: three times at full).
+    /// The gyro's acceleration: how much further fast turns go. At 0 they go as far as slow ones; at 100
+    /// they go three times as far at full acceleration.
     pub accel: u8,
-    /// The gyro: the turning speed (degrees per second) that gets all of the acceleration.
+    /// The gyro turning speed, in degrees per second, that gets all of the acceleration.
     pub accel_at: u8,
-    /// The gyro: tightening, tenths of a degree per second (see [`DEFAULT_TIGHTEN`]).
+    /// The gyro's tightening, in tenths of a degree per second (see [`DEFAULT_TIGHTEN`]).
     pub tighten: u8,
-    /// The gyro to a stick: where its output starts (percent; past a game's own stick deadzone).
+    /// For the gyro mapped to a stick: where its output starts, in percent. This gets it past a game's own
+    /// stick deadzone.
     pub stick_min: u8,
     /// The gyro: tilting the device like a steering wheel (roll) turns as well as rotating it (yaw).
     pub twist: bool,
-    /// The gyro: off while its hold is held, instead of on (to lift and re-centre, a ratchet).
+    /// For the gyro: holding its hold turns it off instead of on, so the device can be lifted and
+    /// re-centred like a ratchet.
     pub ratchet: bool,
 }
 
 impl Binding {
-    /// A binding to `output` with the parameters' general defaults (no deadzone, linear): where those
-    /// are written. See [`Binding::of`] for an input's.
+    /// A binding to `output` with the general defaults for the parameters, such as no deadzone and a
+    /// linear curve. This is where those defaults are set. See [`Binding::of`] for an input's defaults.
     pub fn to(output: Output) -> Binding {
         Binding {
             output,
@@ -119,8 +130,8 @@ impl Binding {
         }
     }
 
-    /// `input`'s binding to `output` with the defaults for that pair ([`Param::default_for`]: a stick on
-    /// the pointer has a deadzone and a curve).
+    /// `input`'s binding to `output` with the defaults for that pair ([`Param::default_for`]). For
+    /// example, a stick on the pointer has a deadzone and a curve.
     pub fn of(input: Input, output: Output) -> Binding {
         let mut b = Binding::to(output);
         for p in Param::ALL {
@@ -129,19 +140,19 @@ impl Binding {
         b
     }
 
-    /// Whether any parameter of `input`'s differs from its default for this output.
+    /// Whether any of `input`'s parameters differs from its default for this output, or a hold is set.
     pub fn tuned(&self, input: Input) -> bool {
         params(input, self.output).any(|p| p.get(self) != p.default_for(input, self.output)) || self.hold.is_some()
     }
 
-    /// Whether it changes a stick's or trigger's values (a deadzone, a full point short of the end, a
-    /// curve, an inversion).
+    /// Whether it changes a stick's or trigger's values with a deadzone, a full point short of the end, a
+    /// curve or an inversion.
     pub fn shapes(&self) -> bool {
         self.deadzone > 0 || self.full < 100 || self.curve > 0 || self.invert_x || self.invert_y
     }
 
-    /// The same binding to another output: each parameter at its default for the old output goes to its
-    /// default for the new one; the ones set stay.
+    /// The same binding to another output. Each parameter at its default for the old output gets its
+    /// default for the new one; parameters that were set keep their values.
     pub fn retarget(&self, input: Input, output: Output) -> Binding {
         let mut b = Binding { output, ..*self };
         for p in Param::ALL {
@@ -153,11 +164,13 @@ impl Binding {
     }
 }
 
-/// How an input is used: pressed (as usual; a trigger pulled), held long, pressed twice quickly (a button,
-/// a D-pad or stick direction), or pulled all the way (a trigger). Each may have a binding of its own;
-/// with a hold's or a double's, a short press acts only once it is known not to be one of those (on
-/// letting go, or after the window for a second press). A trigger's full pull acts past its own
-/// threshold beside the pull's binding (analog, or a button past its threshold): two stages.
+/// How an input is used: pressed (for a trigger, pulled), held long, pressed twice quickly, or pulled all
+/// the way. Holds and doubles are for buttons and D-pad or stick directions; a full pull is for a trigger.
+///
+/// Each may have a binding of its own. When there is a hold or double binding, a short press acts only
+/// once it is known not to be one of those: on letting go, or after the window for a second press. A
+/// trigger's full pull acts past its own threshold alongside the pull's binding, whether that is analog
+/// or a button past its threshold, which gives the trigger two stages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Actuation {
     #[default]
@@ -175,7 +188,7 @@ names!(Actuation {
 });
 
 impl Actuation {
-    /// Its label for an input of `kind` (a trigger's press is its pull).
+    /// Its label for an input of `kind`. A trigger's press is labelled as its pull.
     pub fn label_for(self, kind: Kind) -> &'static str {
         match (self, kind) {
             (Actuation::Press, Kind::Trigger) => "Pull",
@@ -183,8 +196,8 @@ impl Actuation {
         }
     }
 
-    /// Whether an input of `kind` has it: every input is pressed; buttons and directions are held or
-    /// pressed twice; a trigger is pulled all the way.
+    /// Whether an input of `kind` has it. Every input is pressed; buttons and directions can also be held
+    /// or pressed twice, and a trigger can be pulled all the way.
     pub fn fits(self, kind: Kind) -> bool {
         match self {
             Actuation::Press => true,
@@ -199,7 +212,7 @@ impl Actuation {
     }
 }
 
-/// How the panel and the labels tell an input's binding: none, its own output only tuned, or mapped to
+/// How the panel and the labels show an input's binding: no change, its own output tuned, or mapped to
 /// something else.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Change {
@@ -223,10 +236,9 @@ pub fn gyro_holds() -> impl Iterator<Item = Input> {
     Button::ALL.into_iter().map(Input::Button).chain(Side::ALL.into_iter().map(Input::Trigger))
 }
 
-/// A keymap's layer, by its number in the keymap: Base (0), whose inputs without a binding do what
-/// they do on the pad, and the layers added to it, each on while a binding to it is
-/// ([`Output::Layer`]), its inputs without a binding doing what the layers on before it say (Base
-/// last).
+/// A keymap's layer, by its number in the keymap. In Base (0), inputs without a binding do what they do
+/// on the pad. Each added layer is on while a binding to it is ([`Output::Layer`]), and its inputs without
+/// a binding do what the layers that came on before it say, with Base last.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub struct Layer(pub u8);
 
@@ -234,7 +246,8 @@ impl Layer {
     pub const BASE: Layer = Layer(0);
 }
 
-/// One layer's bindings, an actuation's each in [`Input::all`]'s order, one per input at most.
+/// One layer's bindings, in a list per actuation. Each list is in [`Input::all`]'s order and has at most
+/// one binding per input.
 #[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 struct Bindings {
     press: Vec<(Input, Binding)>,
@@ -277,15 +290,15 @@ struct LayerOf {
     once: bool,
 }
 
-/// A set of bindings in layers ([`Layer`]: Base, and those added), each actuation's ([`Actuation`]): named,
-/// or a game's own.
+/// A set of bindings in layers ([`Layer`]), with bindings for each actuation ([`Actuation`]). It is either
+/// named or a game's own.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Keymap {
-    /// Its number, kept across renames (0 is Default, which no keymap has).
+    /// Its number, kept across renames. 0 is Default, which no keymap has.
     pub id: u16,
     /// Empty for a game's own.
     pub name: String,
-    /// The game whose own it is (by id); none: a named one, which any game may choose.
+    /// The id of the game whose own keymap this is. None for a named keymap, which any game may choose.
     pub owner: Option<std::sync::Arc<str>>,
     /// Base first, then the others in the order added.
     layers: Vec<LayerOf>,
@@ -310,7 +323,7 @@ impl Keymap {
         }
     }
 
-    /// Base's bindings (a press's).
+    /// Base's press bindings.
     pub fn bindings(&self) -> &[(Input, Binding)] {
         self.layer(Layer::BASE)
     }
@@ -320,25 +333,25 @@ impl Keymap {
         self.layers.iter().map(|l| (l.id, l.name.as_str()))
     }
 
-    /// A layer's name (none: not there).
+    /// A layer's name, or none if the layer isn't there.
     pub fn layer_name(&self, layer: Layer) -> Option<&str> {
         self.layers.iter().find(|l| l.id == layer).map(|l| l.name.as_str())
     }
 
-    /// A new layer named `name`; its number (none: no more room, 255 layers).
+    /// Adds a layer named `name` and returns its number, or none when there is no more room (255 layers).
     pub fn add_layer(&mut self, name: &str) -> Option<Layer> {
         let id = Layer(self.layers.iter().map(|l| l.id.0).max().unwrap_or(0).checked_add(1)?);
         self.layers.push(LayerOf { id, name: name.trim().to_owned(), bindings: Bindings::default(), once: false });
         Some(id)
     }
 
-    /// Whether a layer is Once: turned on by a tap (or a toggle), it stays on until the first input it
-    /// maps has acted, then goes off; held, it is on while held, as any layer. (Base never is.)
+    /// Whether a layer is Once. A Once layer turned on by a tap or a toggle stays on until the first input
+    /// it maps has acted, then goes off. While held, it is on like any other layer. Base is never Once.
     pub fn layer_once(&self, layer: Layer) -> bool {
         self.layers.iter().any(|l| l.id == layer && l.once)
     }
 
-    /// Makes a layer (not Base) Once or not; whether it is there.
+    /// Makes a layer other than Base Once or not. Returns whether the layer is there.
     pub fn set_layer_once(&mut self, layer: Layer, once: bool) -> bool {
         match self.layers.iter_mut().find(|l| l.id == layer && l.id != Layer::BASE) {
             Some(l) => {
@@ -349,7 +362,7 @@ impl Keymap {
         }
     }
 
-    /// Renames a layer (Base keeps its name); whether it is there.
+    /// Renames a layer; Base keeps its name. Returns whether the layer is there.
     pub fn rename_layer(&mut self, layer: Layer, name: &str) -> bool {
         match self.layers.iter_mut().find(|l| l.id == layer && l.id != Layer::BASE) {
             Some(l) => {
@@ -360,7 +373,7 @@ impl Keymap {
         }
     }
 
-    /// Removes a layer (not Base) and the bindings to it; whether it was there.
+    /// Removes a layer other than Base, and the bindings to it. Returns whether it was there.
     pub fn remove_layer(&mut self, layer: Layer) -> bool {
         let before = self.layers.len();
         self.layers.retain(|l| l.id != layer || l.id == Layer::BASE);
@@ -375,7 +388,7 @@ impl Keymap {
         true
     }
 
-    /// A layer's bindings (a press's).
+    /// A layer's press bindings.
     pub fn layer(&self, layer: Layer) -> &[(Input, Binding)] {
         self.layer_of(layer, Actuation::Press)
     }
@@ -403,7 +416,8 @@ impl Keymap {
         self.get_in(Layer::BASE, input)
     }
 
-    /// `input`'s binding in `layer` itself (none in another layer than Base: those on before it apply).
+    /// `input`'s binding in `layer` itself. Where a layer other than Base has none, the layers on before
+    /// it apply.
     pub fn get_in(&self, layer: Layer, input: Input) -> Option<&Binding> {
         self.get_of(layer, input, Actuation::Press)
     }
@@ -413,8 +427,8 @@ impl Keymap {
         self.layer_of(layer, act).iter().find(|(i, _)| *i == input).map(|(_, b)| b)
     }
 
-    /// The binding in force for `input` with the layers `on` (in the order they came on; Base
-    /// beneath them all): the newest's that has one.
+    /// The binding in force for `input` with the layers `on`, given in the order they came on, and Base
+    /// beneath them all. It is the binding of the newest layer that has one.
     pub fn lookup(&self, input: Input, on: &[Layer]) -> Option<&Binding> {
         self.lookup_of(input, Actuation::Press, on)
     }
@@ -424,29 +438,30 @@ impl Keymap {
         on.iter().rev().find_map(|l| self.get_of(*l, input, act)).or_else(|| self.get_of(Layer::BASE, input, act))
     }
 
-    /// Binds `input` in Base (none: back to what it does on the pad); see [`Keymap::set_in`].
+    /// Binds `input` in Base; none puts it back to what it does on the pad. See [`Keymap::set_in`].
     pub fn set(&mut self, input: Input, binding: Option<Binding>) -> bool {
         self.set_in(Layer::BASE, input, binding)
     }
 
-    /// Binds `input` in `layer` (none: as on the pad in Base, as the layers beneath in another). A
-    /// binding that doesn't fit the input's kind is refused; whether it changed.
+    /// Binds `input` in `layer`. None makes it act as on the pad in Base, or as the layers beneath in
+    /// another layer. A binding that doesn't fit the input's kind is refused. Returns whether anything
+    /// changed.
     pub fn set_in(&mut self, layer: Layer, input: Input, binding: Option<Binding>) -> bool {
         self.set_of(layer, input, Actuation::Press, binding)
     }
 
-    /// Binds `input`'s `act` in `layer` (none: no hold or double; for a press, as [`Keymap::set_in`]).
-    /// Refused where it doesn't fit (a binding to the input's kind, a hold or double to a stick); whether
-    /// it changed.
+    /// Binds `input`'s `act` in `layer`. None removes a hold or double; for a press it works as in
+    /// [`Keymap::set_in`]. A binding is refused where it doesn't fit: an output that doesn't fit the
+    /// input's kind, or a hold or double on a stick. Returns whether anything changed.
     pub fn set_of(&mut self, layer: Layer, input: Input, act: Actuation, binding: Option<Binding>) -> bool {
         if binding.is_some_and(|b| !b.output.fits(input.kind())) || (binding.is_some() && !act.fits(input.kind())) {
             return false;
         }
-        // (A full pull acts as a button: something on or off, or nothing.)
+        // A full pull acts as a button: it maps to something on or off, or to nothing.
         if act == Actuation::FullPull && binding.is_some_and(|b| !b.output.digital() && b.output != Output::Nothing) {
             return false;
         }
-        // (A layer to a layer not there is refused.)
+        // A binding to a layer that isn't there is refused.
         if let Some(Output::Layer(to)) = binding.map(|b| b.output)
             && self.layer_name(to).is_none()
         {
@@ -465,7 +480,7 @@ impl Keymap {
         *list != before
     }
 
-    /// Drops every binding of `layer`; whether it had any.
+    /// Drops every binding of `layer`. Returns whether it had any.
     pub fn clear(&mut self, layer: Layer) -> bool {
         let had = !self.is_empty(layer);
         if let Some(b) = self.bindings_in_mut(layer) {
@@ -480,7 +495,7 @@ impl Keymap {
 /// that remaps it. A stick's direction has none, since it is part of its stick.
 pub fn as_on_the_pad(input: Input) -> Option<Output> {
     match input {
-        // (Back isn't on the pad games see: it does nothing there.)
+        // Back isn't on the pad that games see, so it does nothing there.
         Input::Button(Button::Back) => Some(Output::Nothing),
         Input::Button(b) => Some(Output::Pad(PadOut::Button(b))),
         Input::Dpad(d) => Some(Output::Pad(PadOut::Dpad(d))),
@@ -491,7 +506,7 @@ pub fn as_on_the_pad(input: Input) -> Option<Output> {
     }
 }
 
-/// The ready-made keymap there is before any are saved: A and B, X and Y swapped.
+/// The ready-made keymap there is before any are saved: A and B swapped, and X and Y swapped.
 pub fn nintendo(id: u16) -> Keymap {
     let mut k = Keymap::new(id, "Nintendo layout");
     for (from, to) in [(Button::A, Button::B), (Button::B, Button::A), (Button::X, Button::Y), (Button::Y, Button::X)] {
@@ -512,7 +527,7 @@ impl Keymaps {
         Keymaps { list }
     }
 
-    /// What there is before any were saved: the Nintendo layout.
+    /// The keymaps there are before any were saved: the Nintendo layout.
     pub fn initial() -> Keymaps {
         Keymaps { list: vec![nintendo(1)] }
     }
@@ -545,7 +560,8 @@ impl Keymaps {
         self.list.iter().map(|k| k.id).max().unwrap_or(0).checked_add(1)
     }
 
-    /// `game`'s own keymap made, a copy of keymap `from` (Default, or one gone: empty); its id.
+    /// Makes `game`'s own keymap as a copy of keymap `from` and returns its id. If `from` is Default or no
+    /// longer exists, the new keymap is empty.
     pub fn make_own(&mut self, from: u16, game: &std::sync::Arc<str>) -> Option<u16> {
         let id = self.next_id()?;
         let mut own = Keymap::new(id, "");
@@ -557,7 +573,7 @@ impl Keymaps {
         Some(id)
     }
 
-    /// `owner`'s own keymap made with `preset`'s bindings (see [`preset`]); its id.
+    /// Makes `owner`'s own keymap with `preset`'s bindings (see [`preset`]) and returns its id.
     pub fn make_own_from(&mut self, preset: &Keymap, owner: &std::sync::Arc<str>) -> Option<u16> {
         let id = self.make_own(0, owner)?;
         if let Some(own) = self.get_mut(id) {
@@ -566,15 +582,15 @@ impl Keymaps {
         Some(id)
     }
 
-    /// Keymap `to`'s bindings and layers replaced by a copy of keymap `from`'s (Default, or one gone:
-    /// none); whether `to` is there.
+    /// Replaces keymap `to`'s bindings and layers with a copy of keymap `from`'s. If `from` is Default or
+    /// no longer exists, `to` is left with no bindings. Returns whether `to` is there.
     pub fn copy_into(&mut self, to: u16, from: u16) -> bool {
         let layers = self.get(from).map_or_else(|| Keymap::new(0, "").layers, |k| k.layers.clone());
         self.get_mut(to).map(|k| k.layers = layers).is_some()
     }
 
-    /// A name no keymap has: `name`, else with a number after it. As its file is named (see
-    /// clamshell-system's `store`): a `/` made `-`, cut at 64 characters.
+    /// A name no keymap has: `name`, or else `name` with a number after it. It is cleaned up the way the
+    /// file name is (see clamshell-system's `store`): a `/` becomes `-`, and it is cut at 64 characters.
     pub fn unique_name(&self, name: &str) -> String {
         let name: String = name.trim().replace('/', "-").chars().take(64).collect();
         let name = name.trim();
@@ -585,7 +601,7 @@ impl Keymaps {
         (2..).map(|i| format!("{name} {i}")).find(|n| !taken(n)).unwrap_or_default()
     }
 
-    /// A new, empty keymap named `name` (made unique); its id.
+    /// Adds a new, empty keymap named `name`, made unique, and returns its id.
     pub fn add(&mut self, name: &str) -> Option<u16> {
         let id = self.next_id()?;
         let name = self.unique_name(name);
@@ -593,7 +609,7 @@ impl Keymaps {
         Some(id)
     }
 
-    /// A copy of keymap `id` named `name` (made unique); the copy's id.
+    /// Copies keymap `id` under the name `name`, made unique, and returns the copy's id.
     pub fn duplicate(&mut self, id: u16, name: &str) -> Option<u16> {
         let layers = self.get(id).map(|k| k.layers.clone())?;
         let copy = self.add(name)?;
@@ -603,7 +619,7 @@ impl Keymaps {
         Some(copy)
     }
 
-    /// Renames keymap `id` (another's name is made unique); whether it was there.
+    /// Renames keymap `id`. A name another keymap has is made unique. Returns whether the keymap was there.
     pub fn rename(&mut self, id: u16, name: &str) -> bool {
         if self.get(id).is_some_and(|k| k.name == name.trim()) {
             return true;
@@ -619,9 +635,9 @@ impl Keymaps {
     }
 }
 
-/// ClamShell's own keymaps for its runners, by name: `viewer` (Text, PDF, Images: programs that read the
-/// keyboard, not the pad): the D-pad the arrow keys, A Space (on a page), B `q` (quit), the shoulders Page
-/// Up and Page Down.
+/// ClamShell's own keymaps for its runners, by name. `viewer` is for Text, PDF and Images, which run
+/// programs that read the keyboard rather than the pad. It maps the D-pad to the arrow keys, A to Space
+/// (forward a page), B to `q` (quit), and the shoulders to Page Up and Page Down.
 pub fn preset(name: &str) -> Option<Keymap> {
     let key = |k: Key| Binding::to(Output::Key(Chord::of(k)));
     match name {

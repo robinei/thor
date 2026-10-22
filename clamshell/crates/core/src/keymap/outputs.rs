@@ -1,9 +1,10 @@
-//! What an input may be mapped to (Output): a key chord, a mouse button, the pad's own, a layer, ...
+//! What an input may be mapped to (Output): a key chord, a mouse button, a pad button, a layer, and so on.
 
 use super::*;
 use crate::kit::names::names;
 
-/// A key with the modifiers held for it; or the modifiers alone (no key: Shift as a key of its own).
+/// A key with the modifiers held for it, or the modifiers alone. With no key, a modifier such as Shift
+/// acts as a key of its own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize)]
 pub struct Chord {
     pub key: Option<Key>,
@@ -90,23 +91,23 @@ names!(MouseButton {
 pub enum Output {
     /// Nothing at all.
     Nothing,
-    /// A button of the pad games see.
+    /// A button of the pad that games see.
     Pad(PadOut),
     Key(Chord),
     Mouse(MouseButton),
-    /// One step of the wheel each press (up, down, left, right).
+    /// One step of the wheel per press: up, down, left or right.
     Wheel(Dir),
-    /// A stick (a stick's or the gyro's motion).
+    /// A stick, for a stick's or the gyro's motion.
     Stick(Side),
-    /// The mouse pointer (a stick's or the gyro's motion).
+    /// The mouse pointer, for a stick's or the gyro's motion.
     Pointer,
-    /// Four keys, up, left, down, right (a stick: WASD).
+    /// Four keys for a stick, in the order up, left, down, right, such as WASD.
     Keys([Chord; 4]),
-    /// The D-pad (a stick).
+    /// The D-pad, for a stick.
     Dpad,
-    /// A trigger (a trigger).
+    /// A trigger, for a trigger.
     Trigger(Side),
-    /// A layer of the keymap on (while the binding is on: held, or toggled).
+    /// Turns a layer of the keymap on while the binding is on, whether held or toggled.
     Layer(Layer),
 }
 
@@ -146,12 +147,12 @@ impl Output {
             }
             Output::Dpad => out.write_str("D-pad"),
             Output::Trigger(s) => out.write_str(if *s == Side::Left { "LT" } else { "RT" }),
-            // (By its number here; the screens give it its keymap's name.)
+            // A layer is labelled by its number here. The screens use its name from the keymap.
             Output::Layer(l) => write!(out, "Layer {}", l.0),
         }
     }
 
-    /// Whether it is on or off (a trigger mapped to it goes by its threshold).
+    /// Whether it is on or off. A trigger mapped to it goes by its threshold.
     pub fn digital(&self) -> bool {
         matches!(self, Output::Pad(_) | Output::Key(_) | Output::Mouse(_) | Output::Wheel(_) | Output::Layer(_))
     }
