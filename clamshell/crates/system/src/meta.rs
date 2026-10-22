@@ -31,8 +31,9 @@ use clamshell_library::Details;
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::Sink;
+use crate::os::{command, text, worker};
 use crate::store::{self, Cache};
-use crate::{Sink, os::command, os::worker};
 
 /// Fetches at once.
 const THREADS: usize = 4;
@@ -258,7 +259,7 @@ impl Shared {
             let Some(name) = name.or_else(|| by_name().filter(|n| tried.as_ref() != Some(n))) else {
                 continue;
             };
-            let url = |kind: &str| format!("{LIBRETRO}/{}/{kind}/{}.png", encode(system), encode(&name));
+            let url = |kind: &str| format!("{LIBRETRO}/{}/{kind}/{}.png", text::percent_encode(system, b""), text::percent_encode(&name, b""));
             meta.cover = (!w.art).then(|| self.image(w, "cover", &url("Named_Boxarts"))).flatten();
             meta.details.shot = self.image(w, "shot", &url("Named_Snaps"));
             if meta.cover.is_some() || meta.details.shot.is_some() {
@@ -279,7 +280,7 @@ impl Shared {
             return d.clone();
         }
         let dat = |dir: &str| {
-            let url = format!("{DATABASE}/{dir}/{}.dat", encode(system));
+            let url = format!("{DATABASE}/{dir}/{}.dat", text::percent_encode(system, b""));
             self.list(&format!("{dir} - {system}.dat"), &url).unwrap_or_default()
         };
         let mut d = Database::default();
@@ -311,7 +312,7 @@ impl Shared {
         if let Some(l) = listings.get(&id) {
             return l.clone();
         }
-        let page = self.list(&format!("{kind} - {system}.html"), &format!("{LIBRETRO}/{}/{kind}/", encode(system)));
+        let page = self.list(&format!("{kind} - {system}.html"), &format!("{LIBRETRO}/{}/{kind}/", text::percent_encode(system, b"")));
         let names = page.map(|p| Arc::new(hrefs(&p).filter_map(|h| h.strip_suffix(".png").map(Name::new)).collect::<Vec<_>>()));
         if names.is_none() {
             log::warn!("meta: libretro has no {id}");
@@ -329,12 +330,12 @@ impl Shared {
         let bearer = key.starts_with("eyJ").then(|| format!("Authorization: Bearer {key}"));
         let headers: Vec<&str> = bearer.iter().map(String::as_str).collect();
         let search = |year: Option<u16>| {
-            let mut url = format!("https://api.themoviedb.org/3/search/{kind}?include_adult=false&query={}", encode(title));
+            let mut url = format!("https://api.themoviedb.org/3/search/{kind}?include_adult=false&query={}", text::percent_encode(title, b""));
             if let Some(y) = year {
                 url.push_str(&format!("&{}={y}", if kind == "tv" { "first_air_date_year" } else { "year" }));
             }
             if bearer.is_none() {
-                url.push_str(&format!("&api_key={}", encode(key)));
+                url.push_str(&format!("&api_key={}", text::percent_encode(key, b"")));
             }
             get_json(&url, &headers).and_then(|v| v.get("results")?.get(0).cloned())
         };
@@ -382,7 +383,8 @@ impl Shared {
         };
         let auth = format!("Authorization: Bearer {key}");
         let api = "https://www.steamgriddb.com/api/v2";
-        let game = get_json(&format!("{api}/search/autocomplete/{}", encode(&w.title)), &[&auth]).and_then(|v| v.get("data")?.get(0)?.get("id")?.as_u64());
+        let game = get_json(&format!("{api}/search/autocomplete/{}", text::percent_encode(&w.title, b"")), &[&auth])
+            .and_then(|v| v.get("data")?.get(0)?.get("id")?.as_u64());
         let grid = game.and_then(|g| get_json(&format!("{api}/grids/game/{g}?dimensions=600x900"), &[&auth]));
         let url = grid.and_then(|v| v.get("data")?.get(0)?.get("url")?.as_str().map(str::to_owned));
         Meta { cover: url.and_then(|u| self.image(w, "cover", &u)), ..Meta::default() }
@@ -592,43 +594,9 @@ fn extension(url: &str) -> &'static str {
     }
 }
 
-/// `text` for a URL's path or query: everything but letters, digits and `-._~` percent-encoded.
-fn encode(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for b in text.bytes() {
-        if b.is_ascii_alphanumeric() || b"-._~".contains(&b) {
-            out.push(char::from(b));
-        } else {
-            out.push_str(&format!("%{b:02X}"));
-        }
-    }
-    out
-}
-
-/// Percent-encoding undone.
-fn decode(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while let Some(&b) = bytes.get(i) {
-        let hex = bytes.get(i + 1..i + 3).and_then(|h| std::str::from_utf8(h).ok()).and_then(|h| u8::from_str_radix(h, 16).ok());
-        match (b, hex) {
-            (b'%', Some(v)) => {
-                out.push(v);
-                i += 3;
-            }
-            _ => {
-                out.push(b);
-                i += 1;
-            }
-        }
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
 /// The links of a directory listing's page, decoded.
 fn hrefs(page: &str) -> impl Iterator<Item = String> + '_ {
-    page.split("href=\"").skip(1).filter_map(|rest| rest.split('"').next()).map(decode)
+    page.split("href=\"").skip(1).filter_map(|rest| rest.split('"').next()).map(text::percent_decode)
 }
 
 /// A title as compared with libretro's names: bracketed parts, a ` # ...` tail, "the" and "and", case and
@@ -870,8 +838,6 @@ mod tests {
 
     #[test]
     fn urls_titles_and_years() {
-        assert_eq!(encode("Nintendo - SNES/A&B.png"), "Nintendo%20-%20SNES%2FA%26B.png");
-        assert_eq!(decode("A%20B%26C.png"), "A B&C.png");
         let page = r#"<a href="?C=N;O=D">Name</a><a href="Mario%20_%20Luigi%20(USA).png">x</a><a href="Zelda.png">y</a>"#;
         assert_eq!(hrefs(page).collect::<Vec<_>>(), vec!["?C=N;O=D", "Mario _ Luigi (USA).png", "Zelda.png"]);
         assert_eq!(title_and_year("Cosmos (1980)"), ("Cosmos", Some(1980)));

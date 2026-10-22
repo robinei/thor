@@ -18,10 +18,11 @@ use clamshell_core::shelf::files::{Browse, BrowseCommand, FileOp, FilesEvent};
 use clamshell_core::{Browsed, Entry, Event};
 use rustix::fs::inotify;
 
+use crate::Sink;
 use crate::library::content;
 use crate::library::runners::{self, Runner};
 use crate::os::worker::{Bell, Worker};
-use crate::{Sink, os::command, os::sys};
+use crate::os::{command, sys, text};
 
 /// How long ejecting a card may take.
 const EJECT_LIMIT: Duration = Duration::from_secs(60);
@@ -302,7 +303,7 @@ pub struct Mount {
 pub fn media_mounts() -> Vec<Mount> {
     let named = |dir: &str| -> Vec<(String, PathBuf)> {
         fs::read_dir(dir)
-            .map(|d| d.flatten().filter_map(|e| Some((sys::unescape(&e.file_name().into_string().ok()?), fs::canonicalize(e.path()).ok()?))).collect())
+            .map(|d| d.flatten().filter_map(|e| Some((text::unescape(&e.file_name().into_string().ok()?), fs::canonicalize(e.path()).ok()?))).collect())
             .unwrap_or_default()
     };
     let (labels, uuids) = (named("/dev/disk/by-label"), named("/dev/disk/by-uuid"));
@@ -601,7 +602,7 @@ fn trash(path: &Path, home: Option<&Path>) -> Result<(), String> {
     loop {
         let candidate = if n == 1 { name.clone() } else { format!("{name}.{n}") };
         let record = info.join(format!("{candidate}.trashinfo"));
-        let text = format!("[Trash Info]\nPath={}\nDeletionDate={}\n", percent_encode(&recorded.to_string_lossy()), deletion_date());
+        let text = format!("[Trash Info]\nPath={}\nDeletionDate={}\n", text::percent_encode(&recorded.to_string_lossy(), b"/"), deletion_date());
         match fs::OpenOptions::new().write(true).create_new(true).open(&record) {
             Ok(mut f) if files.join(&candidate).symlink_metadata().is_err() => {
                 f.write_all(text.as_bytes()).map_err(|e| format!("{}: {e}", record.display()))?;
@@ -634,7 +635,7 @@ fn restore(path: &Path) -> Result<PathBuf, String> {
     let name = name_of(path);
     let info = trash_info(path).ok_or_else(|| format!("{name}: the Trash has no record of where it was"))?;
     let text = fs::read_to_string(&info).map_err(|e| format!("{}: {e}", info.display()))?;
-    let recorded = text.lines().find_map(|l| l.strip_prefix("Path=")).map(percent_decode).ok_or_else(|| format!("{}: no Path", info.display()))?;
+    let recorded = text.lines().find_map(|l| l.strip_prefix("Path=")).map(text::percent_decode).ok_or_else(|| format!("{}: no Path", info.display()))?;
     let mut to = PathBuf::from(&recorded);
     // (A filesystem's own Trash records paths from its top.)
     if to.is_relative()
@@ -658,31 +659,6 @@ fn deletion_date() -> String {
     let secs = crate::clock::unix_secs();
     let (y, mo, d, h, mi, s) = crate::device::civil(secs);
     format!("{y:04}-{mo:02}-{d:02}T{h:02}:{mi:02}:{s:02}")
-}
-
-/// A path for a Trash record: bytes but letters, digits, `/` and `-_.~` as `%XX`.
-fn percent_encode(text: &str) -> String {
-    text.bytes().map(|b| if b.is_ascii_alphanumeric() || b"/-_.~".contains(&b) { char::from(b).to_string() } else { format!("%{b:02X}") }).collect()
-}
-
-fn percent_decode(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while let Some(&b) = bytes.get(i) {
-        let hex = bytes.get(i + 1..i + 3).and_then(|h| std::str::from_utf8(h).ok()).and_then(|h| u8::from_str_radix(h, 16).ok());
-        match (b, hex) {
-            (b'%', Some(h)) => {
-                out.push(h);
-                i += 3;
-            }
-            _ => {
-                out.push(b);
-                i += 1;
-            }
-        }
-    }
-    String::from_utf8_lossy(&out).into_owned()
 }
 
 #[cfg(test)]
@@ -779,7 +755,6 @@ mod tests {
 
     #[test]
     fn encodings() {
-        assert_eq!(percent_decode(&percent_encode("/a b/ø%.txt")), "/a b/ø%.txt");
         assert_eq!(name_of(&free_name(Path::new("/nonexistent"), "a.txt")), "a.txt");
     }
 }

@@ -1,6 +1,6 @@
 //! The operating system's plumbing, for any thread: threads that restart what failed ([`worker`]), running
 //! programs ([`command`]), D-Bus ([`dbus`]), sysfs and procfs ([`sys`]), cgroups ([`cgroup`]), DRM's
-//! per-client GPU time ([`drm`]), evdev ([`evdev`]) and QRTR sockets ([`qrtr`]). Nothing here knows
+//! per-client GPU time ([`drm`]), evdev ([`evdev`]) QRTR sockets ([`qrtr`]) and escaped text ([`text`]). Nothing here knows
 //! ClamShell's state or features.
 
 pub mod cgroup;
@@ -10,6 +10,7 @@ pub mod drm;
 pub mod evdev;
 pub(crate) mod qrtr;
 pub mod sys;
+pub mod text;
 pub mod worker;
 
 /// Locks `m`. Nothing here panics while holding a lock (the workspace's lints rule panics out), so a lock
