@@ -182,6 +182,13 @@ impl View {
 
     /// Copies the picture into a free buffer and commits it, asking for a frame callback. False when no
     /// buffer is free. `rgba`: the compositor takes ABGR8888 (tiny-skia's byte order).
+    ///
+    /// The picture is drawn into a pixmap of its own and copied, rather than drawn into the buffer: the
+    /// same drawing makes the snapshots (see `render`), and a compositor that takes only ARGB8888 gets each
+    /// pixel's red and blue swapped on the way. The copy is about 8 MB for the main screen at the Thor's
+    /// size, a millisecond or two, and a frame is drawn only when something changed. The whole buffer is
+    /// damaged: the burn-in orbit moves everything every minute anyway, and drawing whole frames keeps
+    /// the views free of damage tracking.
     fn present(&mut self, pool: &mut SlotPool, qh: &QueueHandle<App>, rgba: bool) -> Result<bool, Error> {
         let Some(pixmap) = self.picture.pixmap.as_ref() else {
             return Ok(false);

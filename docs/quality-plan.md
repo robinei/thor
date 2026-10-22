@@ -127,7 +127,7 @@ Helpers that exist but are bypassed:
 - [x] Dev tooling out of the device binary: `--snapshot` and the demo library behind a `dev` feature (checked
       by `tools/check.sh`). `--library`, `--tray`, `--fetch-metadata` and `--mangohud-env` stay: diagnostics
       worth having on the device (`docs/runners.md` points at `--tray`).
-- [ ] Rendering: a comment on whole-screen redraw and the shm copy (or drawing straight into shm).
+- [x] Rendering: why the picture is drawn whole and copied into shared memory, said on `View::present`.
 - [ ] The `Library` arena's `Entry`: browsed and video fields in sub-structs.
 
 ## 4. Tests
