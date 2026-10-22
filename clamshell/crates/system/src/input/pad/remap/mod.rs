@@ -1,30 +1,37 @@
-//! The keymap in force, applied to the controller on the way to the game (the Game route only). Rather
-//! than rewriting events one by one, the controller's state (the router's snapshot, and the gyro's rate)
-//! is mapped to what every output should be now: the game's pad (buttons, D-pad, sticks, triggers), the
-//! keys and mouse buttons held on the virtual keyboard and mouse, wheel steps and pointer motion. Only
-//! what changed since the last time is sent. So letting go is the same computation with nothing held:
-//! leaving the game, losing the controller or changing the keymap mid-press never leaves anything down.
-//! Chords press their modifiers before their key and let them go after it.
+//! The keymap in force, applied to the controller on the way to the game, on the Game route only.
 //!
-//! Without a binding an input does what it does on the pad; the controller's events this doesn't know (other
-//! buttons and axes) pass through as they are. A binding to a layer of the keymap turns it on while it is on
-//! (held, or toggled): the bindings come from the layers on, the newest first, then Base; the binding that
-//! turned a layer on stays as it was until it goes off, whatever the layer makes of its input
-//! ([`Activation`]). A Once layer turned on by a tap stays armed until the first input it maps has acted (a
-//! toggled one too, its toggle going off with it); its binding pressed again turns it off ([`Span`]). A hold
-//! to a layer is decided at once when an input that layer maps is pressed, so a quick chord acts in the
-//! layer. A layer that stays on (armed, toggled) buzzes the controller as it comes on and as it goes off
-//! ([`Buzz`]). The Thor's Back button ([`BACK_KEY`]) is an input like the others (nothing in the game as on
-//! the pad), and so is its AYN button ([`AYN_KEY`]; Guide in the game as on the pad). A stick's and a
-//! trigger's tuning (deadzone, full point, curve, inversion) applies to its values before they are mapped, to
-//! the input as on the pad as well.
+//! Rather than rewriting events one by one, the controller's state is mapped to what every output should
+//! be now. The state is the router's snapshot and the gyro's rate. The outputs are the game's pad
+//! (buttons, D-pad, sticks, triggers), the keys and mouse buttons held on the virtual keyboard and mouse,
+//! wheel steps and pointer motion. Only what changed since the last time is sent. Letting go is then the
+//! same computation with nothing held, so leaving the game, losing the controller or changing the keymap
+//! mid-press never leaves anything down. Chords press their modifiers before their key and let them go
+//! after it.
 //!
-//! A button (or a D-pad or stick direction) with a hold's or a double's binding goes through a little
-//! state machine ([`Phase`]): held past the hold's time it is a hold; let go sooner and pressed again
-//! within [`DOUBLE_WINDOW`] a double; otherwise a press, sent as a short tap ([`TAP`]) once that is known.
-//! Without either it is a press at once, held as long as the button. On top of the actuation, a binding
-//! that toggles turns on at one actuation and off at the next, and one with turbo goes on and off at its
-//! rate while on. Time moves these on as well as events: [`Remap::tick`] says when.
+//! An input without a binding does what it does on the pad. Controller events this doesn't know, such as
+//! other buttons and axes, pass through as they are.
+//!
+//! A binding to a layer of the keymap turns the layer on while the binding is on, held or toggled. The
+//! bindings come from the layers that are on, newest first, then Base. The binding that turned a layer on
+//! stays as it was until it goes off, whatever the layer makes of its input ([`Activation`]). A Once
+//! layer turned on by a tap stays armed until the first input it maps has acted. A toggled Once layer
+//! works the same way, and its toggle goes off with it. Pressing its binding again turns it off
+//! ([`Span`]). A hold to a layer is decided at once when an input that layer maps is pressed, so a quick
+//! chord acts in the layer. A layer that stays on, armed or toggled, buzzes the controller as it comes on
+//! and as it goes off ([`Buzz`]).
+//!
+//! The Thor's Back button ([`BACK_KEY`]) is an input like the others and does nothing in the game as on
+//! the pad. So is its AYN button ([`AYN_KEY`]), which is Guide in the game as on the pad. A stick's and a
+//! trigger's tuning (deadzone, full point, curve, inversion) applies to its values before they are
+//! mapped, including when the input is passed on as on the pad.
+//!
+//! A button, D-pad direction or stick direction with a hold's or a double's binding goes through a small
+//! state machine ([`Phase`]). Held past the hold's time, it is a hold. Let go sooner and pressed again
+//! within [`DOUBLE_WINDOW`], it is a double. Otherwise it is a press, sent as a short tap ([`TAP`]) once
+//! that is known. Without a hold or a double it is a press at once, held as long as the button. On top
+//! of the actuation, a binding that toggles turns on at one actuation and off at the next, and one with
+//! turbo goes on and off at its rate while on. Time moves these on as well as events, and
+//! [`Remap::tick`] says when.
 
 use std::time::{Duration, Instant};
 
@@ -37,44 +44,46 @@ use super::rumble::Buzz;
 use crate::input::keyboard::{MODIFIERS, chord_keys};
 use crate::os::evdev::{Press, Raw};
 
-/// A stick or trigger counts as pushed (a direction, a button) past this.
+/// A stick or trigger counts as pushed, as a direction or a button, past this.
 pub const HALF: f32 = 0.5;
-/// Pointer speed of a stick at full deflection, pixels per second, at speeds 0, 25, 50, 75 and 100
-/// (between, in proportion); below full, as the binding's deadzone and curve make it.
+/// Pointer speed of a stick at full deflection in pixels per second, at speeds 0, 25, 50, 75 and 100.
+/// Speeds in between are in proportion. Below full deflection, the binding's deadzone and curve apply.
 const STICK_POINTER: [f32; 5] = [500.0, 900.0, 1400.0, 2100.0, 3000.0];
-/// The gyro to the pointer: pixels per degree turned, at the same speeds.
+/// The gyro on the pointer: pixels per degree turned, at the same speeds.
 const GYRO_POINTER: [f32; 5] = [6.0, 10.0, 15.0, 22.0, 32.0];
-/// The gyro to a stick: degrees per second for full deflection, at the same speeds.
+/// The gyro on a stick: degrees per second for full deflection, at the same speeds.
 const GYRO_STICK: [f32; 5] = [240.0, 160.0, 100.0, 60.0, 35.0];
-/// Which way tilting the device like a steering wheel (roll) turns, against rotating it (yaw), when a
-/// binding turns by tilting: the Thor's sign is a device test (docs/thor-gameplan.md).
+/// Which way tilting the device like a steering wheel (roll) turns compared with rotating it (yaw), when
+/// a binding turns by tilting. The Thor's sign is still to be tested on the device
+/// (docs/thor-gameplan.md).
 const ROLL_TURNS: f32 = 1.0;
 /// How often a stick on the pointer moves it.
 pub const POINTER_EVERY: Duration = Duration::from_millis(8);
-/// High-resolution wheel units per notch (the kernel's convention).
+/// High-resolution wheel units per notch, by the kernel's convention.
 const NOTCH: i32 = 120;
 /// A second press within this of letting go makes a double.
 pub const DOUBLE_WINDOW: Duration = Duration::from_millis(300);
-/// A press decided only after letting go (the input has a hold or a double) is sent as a tap this long.
+/// A press that is decided only after letting go, because the input has a hold or a double, is sent as
+/// a tap this long.
 pub const TAP: Duration = Duration::from_millis(60);
 
 /// Where a digital input's press is.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Phase {
     Up,
-    /// Down since then: not yet known to be a press, a hold or a double.
+    /// Down since then, and not yet known to be a press, a hold or a double.
     Deciding(Instant),
-    /// Let go then after a short press: a second press soon makes a double.
+    /// Let go then after a short press. A second press soon makes a double.
     Waiting(Instant),
-    /// An actuation on: while held, or (a tap) until then.
+    /// An actuation that is on while held, or for a tap until `until`.
     On {
         act: Actuation,
         until: Option<Instant>,
     },
 }
 
-/// A binding's on and off: its actuation on now, its toggle's state, and since when it has been on (turbo's
-/// beat counts from there).
+/// A binding's on and off: whether its actuation is on now, its toggle's state, and since when it has
+/// been on. Turbo's beat counts from then.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 struct Beat {
     raw: bool,
@@ -83,7 +92,7 @@ struct Beat {
 }
 
 impl Beat {
-    /// Follows the actuation (`raw`, now): a toggle flips at each start of one.
+    /// Follows the actuation's current state, `raw`. A toggle flips each time the actuation starts.
     fn follow(&mut self, raw: bool, toggle: bool, now: Instant) {
         let rising = raw && !self.raw;
         self.raw = raw;
@@ -100,7 +109,7 @@ impl Beat {
         }
     }
 
-    /// Whether the output is on: the actuation's (or the toggle's) state, beating at `turbo` a second.
+    /// Whether the output is on: the actuation's or the toggle's state, beating at `turbo` per second.
     fn on(&self, b: &Binding, now: Instant) -> bool {
         let on = if b.toggle { self.latched } else { self.raw };
         match (on, b.turbo, self.since) {
@@ -110,7 +119,7 @@ impl Beat {
         }
     }
 
-    /// When its turbo next turns on or off (none: no turbo, or off).
+    /// When its turbo next turns on or off. None if there is no turbo or it is off.
     fn next_beat(&self, b: &Binding, now: Instant) -> Option<Instant> {
         let on = if b.toggle { self.latched } else { self.raw };
         let since = self.since.filter(|_| on && b.turbo > 0)?;
@@ -120,18 +129,19 @@ impl Beat {
     }
 }
 
-/// Half a turbo beat at `rate` a second, in nanoseconds (on for one half, off for the other).
+/// Half a turbo beat at `rate` per second, in nanoseconds. The output is on for one half and off for the
+/// other.
 fn half_beat(rate: u8) -> u128 {
     500_000_000 / u128::from(rate.max(1))
 }
 
-/// A digital input's actuations: its press's phase, and each actuation's beat.
+/// A digital input's actuations: the phase of its press, and each actuation's beat.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Actuator {
     input: Input,
     phase: Phase,
     beats: [Beat; 4],
-    /// When the phase moves on by itself (a hold's time, a double's window, a tap's end).
+    /// When the phase moves on by itself: at a hold's time, a double's window or a tap's end.
     due: Option<Instant>,
 }
 
@@ -140,10 +150,10 @@ impl Actuator {
         Actuator { input, phase: Phase::Up, beats: [Beat::default(); 4], due: None }
     }
 
-    /// The input on or off at `now`, with a hold's binding (its time) and a double's or not: the phase
-    /// moves on.
+    /// Moves the phase on, given whether the input is on at `now`, its hold's time if it has a hold's
+    /// binding, and whether it has a double's.
     fn step(&mut self, on: bool, hold: Option<Duration>, double: bool, now: Instant) {
-        // (A press during a tap starts a new one: twice round at most.)
+        // A press during a tap starts a new one, so this goes round twice at most.
         for _ in 0..2 {
             let next = match self.phase {
                 Phase::Up if on && hold.is_none() && !double => Phase::On { act: Actuation::Press, until: None },
@@ -153,7 +163,7 @@ impl Actuator {
                     Some(t) if now >= at + t => Phase::On { act: Actuation::Hold, until: None },
                     Some(_) => Phase::Deciding(at),
                     None if double && now < at + DOUBLE_WINDOW => Phase::Deciding(at),
-                    // (Held past the window with no hold: a press after all.)
+                    // Held past the window with no hold, it is a press after all.
                     None => Phase::On { act: Actuation::Press, until: None },
                 },
                 Phase::Deciding(_) if double => Phase::Waiting(now),
@@ -180,7 +190,7 @@ impl Actuator {
         };
     }
 
-    /// Whether `act` is on now (as the phase says).
+    /// Whether `act` is on now, as the phase says.
     fn actuated(&self, act: Actuation) -> bool {
         matches!(self.phase, Phase::On { act: a, .. } if a == act)
     }
@@ -190,17 +200,18 @@ impl Actuator {
     }
 }
 
-/// The Thor's Back button, under the screen (BTN_BACK on the gamepad: Armada's rsinput keymap, PB-OS's
-/// Thor map; to confirm on the device, docs/thor-gameplan.md): an input of keymaps, never on the game's
-/// pad itself.
+/// The Thor's Back button, under the screen. It is BTN_BACK on the gamepad, going by Armada's rsinput
+/// keymap and PB-OS's Thor map; this is still to be confirmed on the device (docs/thor-gameplan.md). It
+/// is an input of keymaps, and never on the game's pad itself.
 pub const BACK_KEY: KeyCode = KeyCode::BTN_BACK;
 
-/// The Thor's AYN button's code (on its own device: see [`super::device::AynKey`]).
+/// The Thor's AYN button's code, on a device of its own (see [`super::device::AynKey`]).
 pub const AYN_KEY: KeyCode = KeyCode::KEY_F24;
 
-/// A binding to a layer that is on: whose (an input's actuation), the binding as it was when it came on
-/// (kept while on, whatever the layers since make of that input), how it is on, and the first input the
-/// layer maps that acted while it was (a Once layer's end).
+/// A binding to a layer that is on. It holds the input and actuation it belongs to, and the binding as it
+/// was when it came on. That binding is kept while on, whatever the layers since make of the input. It
+/// also holds how the layer is on, and the first input the layer maps that acted while it was on, which
+/// ends a Once layer.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Activation {
     input: Input,
@@ -213,17 +224,19 @@ struct Activation {
 /// How a layer is on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Span {
-    /// Its binding is on (held, or toggled).
+    /// Its binding is on, held or toggled.
     Held,
-    /// A Once layer whose binding went off before it was used: on until the first input it maps acts.
+    /// A Once layer whose binding went off before it was used. It is on until the first input it maps
+    /// acts.
     Armed,
-    /// An armed layer whose binding was pressed again: off, the binding's own until it goes off.
+    /// An armed layer whose binding was pressed again. The layer is off, and the binding's press is its
+    /// own until it goes off.
     Cancelled,
 }
 
-/// What an input is doing now, read before its actuator follows: pressed (`on`), pulled past its full
-/// pull's threshold (`full`), its hold's time if it has a hold's binding, whether it has a double's, and
-/// which of its actuations' bindings toggle.
+/// What an input is doing now, read before its actuator follows. That is whether it is pressed (`on`),
+/// whether it is pulled past its full pull's threshold (`full`), its hold's time if it has a hold's
+/// binding, whether it has a double's binding, and which of its actuations' bindings toggle.
 struct InputState {
     input: Input,
     on: bool,
@@ -233,9 +246,9 @@ struct InputState {
     toggles: [bool; Actuation::ALL.len()],
 }
 
-/// What the bindings make of the inputs, gathered before the pad's axes are worked out: the outputs
-/// besides the pad's axes, and the pad's sticks (offsets from the middle), triggers (0-1) and D-pad (up,
-/// down, left, right).
+/// What the bindings make of the inputs, gathered before the pad's axes are worked out. That is the
+/// outputs other than the pad's axes, and the pad's sticks as offsets from the middle, its triggers as
+/// 0-1 and its D-pad as up, down, left and right.
 #[derive(Default)]
 struct Gathered {
     w: Wanted,
@@ -245,14 +258,14 @@ struct Gathered {
 }
 
 impl Gathered {
-    /// `input`'s binding to `output`, something on or off, while `on`.
+    /// Adds `input`'s binding to `output`, an output that is on or off, while `on`.
     fn digital(&mut self, input: Input, on: bool, output: &Output, snap: &PadSnapshot) {
         if !on {
             return;
         }
         match output {
             Output::Pad(PadOut::Button(b)) => match (b.is_back(), input) {
-                // A back button as itself: the code it came with.
+                // A back button bound to itself sends the code it came with.
                 (true, Input::Button(own)) if own == *b => self.w.pad_keys.extend(button_codes(*b).iter().filter(|&&c| snap.held(c))),
                 (true, _) => {}
                 (false, _) => self.w.pad_keys.extend(pad_code(*b)),
@@ -275,7 +288,7 @@ impl Gathered {
     }
 }
 
-/// The controller's codes for a button (the back buttons go by several names).
+/// The controller's codes for a button. The back buttons go by several names.
 fn button_codes(b: Button) -> &'static [KeyCode] {
     match b {
         Button::A => &[KeyCode::BTN_SOUTH],
@@ -290,7 +303,7 @@ fn button_codes(b: Button) -> &'static [KeyCode] {
         Button::RS => &[KeyCode::BTN_THUMBR],
         Button::Back => &[BACK_KEY],
         Button::Ayn => &[AYN_KEY],
-        // BTN_TRIGGER_HAPPY1-4 (xpad's paddles), BTN_GRIPL/R/L2/R2 (newer kernels' back buttons).
+        // BTN_TRIGGER_HAPPY1-4 are xpad's paddles, and BTN_GRIPL/R/L2/R2 newer kernels' back buttons.
         Button::L4 => &[KeyCode::BTN_TRIGGER_HAPPY1, KeyCode(0x224)],
         Button::R4 => &[KeyCode::BTN_TRIGGER_HAPPY2, KeyCode(0x225)],
         Button::L5 => &[KeyCode::BTN_TRIGGER_HAPPY3, KeyCode(0x226)],
@@ -298,7 +311,7 @@ fn button_codes(b: Button) -> &'static [KeyCode] {
     }
 }
 
-/// The code a button is on the pad games see: its own, but AYN is Guide there.
+/// The code a button has on the pad games see. That is its own code, except that AYN is Guide there.
 fn pad_code(b: Button) -> Option<KeyCode> {
     match b {
         Button::Ayn => Some(KeyCode::BTN_MODE),
@@ -311,7 +324,7 @@ pub fn button_of(code: KeyCode) -> Option<Button> {
     Button::ALL.into_iter().find(|b| button_codes(*b).contains(&code))
 }
 
-/// The D-pad as buttons (controllers without a hat).
+/// The D-pad as buttons, for controllers without a hat.
 fn dpad_code(d: Dir) -> KeyCode {
     match d {
         Dir::Up => KeyCode::BTN_DPAD_UP,
@@ -347,12 +360,12 @@ fn mouse_code(m: MouseButton) -> KeyCode {
     }
 }
 
-/// The mouse buttons a keymap may press (the virtual mouse has them).
+/// The mouse buttons a keymap may press. The virtual mouse has them.
 pub fn mouse_codes() -> [KeyCode; 5] {
     MouseButton::ALL.map(mouse_code)
 }
 
-/// Whether the remapping handles this event (else it passes through).
+/// Whether the remapping handles this event. If not, it passes through.
 pub fn known(raw: Raw) -> bool {
     if let Some((code, _)) = raw.as_key() {
         return button_of(code).is_some() || Dir::ALL.into_iter().any(|d| dpad_code(d) == code);
@@ -362,8 +375,8 @@ pub fn known(raw: Raw) -> bool {
     })
 }
 
-/// A speed (0 to 100) along a table of five speeds, at 0, 25, 50, 75 and 100 (between them, in
-/// proportion).
+/// The value for a speed from 0 to 100 in a table of five values, for speeds 0, 25, 50, 75 and 100.
+/// Speeds in between are in proportion.
 fn step(table: &[f32; 5], speed: u8) -> f32 {
     let at = f32::from(speed.min(100)) / 25.0;
     let i = (at.floor() as usize).min(3);
@@ -373,15 +386,16 @@ fn step(table: &[f32; 5], speed: u8) -> f32 {
     a + (b - a) * (at - i as f32)
 }
 
-/// A value from 0 to 1 with its deadzone and full point (percent): 0 up to the deadzone, 1 from the
-/// full point, stretched between.
+/// A value from 0 to 1 with its deadzone and full point applied, both in percent. It is 0 up to the
+/// deadzone, 1 from the full point, and stretched in between.
 fn range(v: f32, deadzone: u8, full: u8) -> f32 {
     let (dz, full) = (f32::from(deadzone) / 100.0, f32::from(full.max(deadzone.saturating_add(1))) / 100.0);
     ((v - dz) / (full - dz).max(0.01)).clamp(0.0, 1.0)
 }
 
-/// A stick's position (each axis -1 to 1, y down) tuned by its binding: inverted, its distance from the
-/// middle through the deadzone, the full point and the curve (the direction kept).
+/// A stick's position, each axis -1 to 1 with y down, tuned by its binding. The axes are inverted as set,
+/// and the distance from the middle goes through the deadzone, the full point and the curve. The
+/// direction is kept.
 fn tune_stick((x, y): (f32, f32), b: &Binding) -> (f32, f32) {
     let (x, y) = (if b.invert_x { -x } else { x }, if b.invert_y { -y } else { y });
     if b.deadzone == 0 && b.full >= 100 && b.curve == 0 {
@@ -398,14 +412,14 @@ fn tune_stick((x, y): (f32, f32), b: &Binding) -> (f32, f32) {
 /// What every output should be now. The default is the pad at rest: nothing pressed, nothing moved.
 #[derive(Debug, Clone, Default, PartialEq)]
 struct Wanted {
-    /// The game's pad: buttons down, and every axis' value.
+    /// The game's pad: the buttons down, and every axis' value.
     pad_keys: Vec<KeyCode>,
     pad_axes: Vec<(AbsoluteAxisCode, i32)>,
     /// Keys and mouse buttons down on the virtual keyboard and mouse.
     keys: Vec<KeyCode>,
-    /// The inputs whose wheel step is due (each press steps once).
+    /// The inputs whose wheel step is due. Each press steps once.
     wheels: Vec<(Input, Dir)>,
-    /// Sticks moving the pointer: deflection and speed step.
+    /// Sticks moving the pointer, with their deflection and speed.
     pointer: Vec<((f32, f32), u8)>,
 }
 
@@ -414,16 +428,16 @@ pub struct Remap {
     keymap: Keymap,
     ranges: Ranges,
     sent: Wanted,
-    /// The gyro's rate now (degrees per second), and the pointer's motion not yet sent (sub-pixel).
+    /// The gyro's current rate in degrees per second, and the sub-pixel pointer motion not yet sent.
     gyro: Rate,
     carry: (f32, f32),
     /// When a stick last moved the pointer.
     last_pointer: Option<Instant>,
-    /// The layers on, in the order they came on.
+    /// The layers that are on, in the order they came on.
     activations: Vec<Activation>,
-    /// The digital inputs' actuations (those that have been pressed).
+    /// The digital inputs' actuations, for those that have been pressed.
     actuators: Vec<Actuator>,
-    /// A buzz due (a layer that stays on came on or went off), for the next update to send.
+    /// A buzz due because a layer that stays on came on or went off. The next update sends it.
     buzz: Option<Buzz>,
 }
 
@@ -442,7 +456,7 @@ impl Remap {
         }
     }
 
-    /// A new keymap: what it makes of the controller now replaces what the old one held.
+    /// Puts a new keymap in force. What it makes of the controller now replaces what the old one held.
     pub fn set_keymap(&mut self, keymap: Keymap, snap: &PadSnapshot, live: bool, out: &mut Out) {
         self.keymap = keymap;
         if live {
@@ -450,8 +464,8 @@ impl Remap {
         }
     }
 
-    /// Lets go of everything sent (leaving the game, the controller gone): the keyboard's and mouse's
-    /// keys up, the pad's buttons up and axes at rest.
+    /// Lets go of everything sent, on leaving the game or when the controller is gone. The keyboard's and
+    /// mouse's keys go up, and the pad's buttons go up and its axes to rest.
     pub fn release(&mut self, out: &mut Out) {
         let rest = Wanted { pad_axes: self.sent.pad_axes.iter().map(|&(a, _)| (a, self.axis_rest(a))).collect(), ..Wanted::default() };
         self.send(rest, out);
@@ -468,7 +482,7 @@ impl Remap {
         if Side::ALL.into_iter().any(|s| trigger_axis(s) == axis) { self.ranges.trigger.min } else { 0 }
     }
 
-    /// Takes the outputs to be what the keymap makes of `snap` already (without sending anything).
+    /// Takes the outputs to be what the keymap makes of `snap` already, without sending anything.
     pub fn prime(&mut self, snap: &PadSnapshot) {
         let now = Instant::now();
         self.actuate(snap, now);
@@ -476,7 +490,7 @@ impl Remap {
         self.buzz = None;
     }
 
-    /// The controller's state changed (`snap` is it now, at `now`): the outputs follow.
+    /// The controller's state changed to `snap` at `now`, and the outputs follow.
     pub fn update(&mut self, snap: &PadSnapshot, now: Instant, out: &mut Out) {
         self.actuate(snap, now);
         let wanted = self.wanted(snap, now);
@@ -486,10 +500,10 @@ impl Remap {
         }
     }
 
-    /// The digital inputs' actuations follow the controller at `now`.
+    /// Makes the digital inputs' actuations follow the controller at `now`.
     fn actuate(&mut self, snap: &PadSnapshot, now: Instant) {
         self.decide_layer_holds(snap, now);
-        // What each input is doing now (read first; the actuators follow below).
+        // Read what each input is doing now first. The actuators follow below.
         let mut states = Vec::new();
         for input in Input::all() {
             let digital_trigger = self.binding(input).is_some_and(|b| b.output.digital());
@@ -497,7 +511,7 @@ impl Remap {
             if !self.watched(input) {
                 continue;
             }
-            // A trigger's full pull: on past its own threshold, beside the pull.
+            // A trigger's full pull is on past its own threshold, alongside the pull.
             let full = match (input, full_pull) {
                 (Input::Trigger(s), Some(b)) => self.trigger(s, snap) * 100.0 >= f32::from(b.threshold),
                 _ => false,
@@ -509,7 +523,7 @@ impl Remap {
             let toggles = Actuation::ALL.map(|a| binding(a).is_some_and(|b| b.toggle));
             states.push(InputState { input, on, full, hold, double, toggles });
         }
-        // The actuations that came on now (a Once layer's use).
+        // The actuations that came on now, which may use a Once layer.
         let mut risen = Vec::new();
         for InputState { input, on, full, hold, double, toggles } in states {
             let found = self.actuators.iter().position(|a| a.input == input);
@@ -534,13 +548,13 @@ impl Remap {
                 }
             }
         }
-        // (Those at rest and holding nothing on are dropped.)
+        // Actuators at rest that hold nothing on are dropped.
         self.actuators.retain(|a| a.phase != Phase::Up || a.beats.iter().any(|b| b.raw || b.latched));
         self.activate(now, &risen);
     }
 
-    /// Whether an input's actuations are followed: a digital input, or a trigger mapped to something on
-    /// or off (or with a full pull).
+    /// Whether an input's actuations are followed. They are for a digital input, and for a trigger mapped
+    /// to something on or off or with a full pull.
     fn watched(&self, input: Input) -> bool {
         match input.kind() {
             Kind::Digital => true,
@@ -549,8 +563,8 @@ impl Remap {
         }
     }
 
-    /// A hold to a layer still deciding is decided now if an input that layer maps is pressed: a quick
-    /// chord acts in the layer, as it would have once the hold's time was up.
+    /// A hold to a layer that is still deciding is decided now if an input that layer maps is pressed. So a
+    /// quick chord acts in the layer, as it would have once the hold's time was up.
     fn decide_layer_holds(&mut self, snap: &PadSnapshot, now: Instant) {
         let mut decided = Vec::new();
         for a in &self.actuators {
@@ -589,12 +603,13 @@ impl Remap {
         self.activate(now, &[]);
     }
 
-    /// Layers on and off. A binding to one turns it on while its actuation (or its toggle) is; a Once
-    /// layer turned on by a tap (its binding off before it was used) stays armed until the first input
-    /// it maps has acted and let go, as does a toggled one (and its toggle goes off with it); its binding
-    /// pressed again while armed turns it off. `risen`: the actuations that came on now.
+    /// Turns layers on and off. A binding to a layer turns it on while its actuation, or its toggle, is
+    /// on. A Once layer turned on by a tap, meaning its binding went off before it was used, stays armed
+    /// until the first input it maps has acted and been let go. A toggled Once layer does the same, and
+    /// its toggle goes off with it. Pressing its binding again while armed turns it off. `risen` holds the
+    /// actuations that came on now.
     fn activate(&mut self, now: Instant, risen: &[(Input, Actuation)]) {
-        // An input a Once layer maps acted: the newest such layer on is used.
+        // When an input that a Once layer maps acts, the newest such layer that is on is used.
         for &(input, act) in risen {
             if self.activations.iter().any(|x| x.input == input) {
                 continue;
@@ -610,7 +625,7 @@ impl Remap {
                 x.used_by = Some(input);
             }
         }
-        // The bindings to layers, on or off now.
+        // The bindings to layers, and whether each is on now.
         let mut seen = Vec::new();
         for a in &self.actuators {
             for act in Actuation::ALL {
@@ -620,7 +635,7 @@ impl Remap {
                 seen.push((a.input, act, b, a.beat(act).on(&b, now)));
             }
         }
-        // (Those whose input is at rest, its actuator gone: off.)
+        // A binding whose input is at rest, with its actuator gone, is off.
         for x in &self.activations {
             if !self.actuators.iter().any(|a| a.input == x.input) {
                 seen.push((x.input, x.act, x.binding, false));
@@ -655,7 +670,8 @@ impl Remap {
                 _ => {}
             }
         }
-        // A Once layer armed or toggled, used: off once the input that used it has let go (a toggle too).
+        // A Once layer that is armed or toggled and has been used goes off once the input that used it has
+        // let go. A toggle goes off too.
         let busy = |actuators: &[Actuator], i: Input| actuators.iter().any(|a| a.input == i && (a.phase != Phase::Up || a.beats.iter().any(|b| b.raw)));
         let mut ended = Vec::new();
         for x in &self.activations {
@@ -676,7 +692,7 @@ impl Remap {
             }
             self.buzz = Some(Buzz::Off);
         }
-        // (A layer's binding at rest: off, but an armed one.)
+        // A layer whose binding is at rest goes off, unless it is armed.
         let actuators = &self.actuators;
         self.activations.retain(|x| x.span == Span::Armed || actuators.iter().any(|a| a.input == x.input));
     }
@@ -687,7 +703,7 @@ impl Remap {
         }
     }
 
-    /// The layers on, in the order they came on.
+    /// The layers that are on, in the order they came on.
     fn layers_on(&self) -> Vec<Layer> {
         self.activations
             .iter()
@@ -696,8 +712,8 @@ impl Remap {
             .collect()
     }
 
-    /// `input`'s binding of `act` in force: the one turning a layer on if it is, else the newest layer's
-    /// on that has one, else Base's.
+    /// `input`'s binding for `act` in force. If the input is turning a layer on, that binding. Otherwise
+    /// the binding from the newest layer that is on and has one, or else Base's.
     fn find(&self, input: Input, act: Actuation) -> Option<&Binding> {
         if let Some(a) = self.activations.iter().find(|a| a.input == input && a.act == act) {
             return Some(&a.binding);
@@ -705,7 +721,7 @@ impl Remap {
         self.keymap.lookup_of(input, act, &self.layers_on())
     }
 
-    /// [`Remap::find`], a press's as on the pad without one.
+    /// Like [`Remap::find`], but a press without a binding acts as on the pad.
     fn binding_of(&self, input: Input, act: Actuation) -> Option<Binding> {
         match act {
             Actuation::Press => self.binding(input),
@@ -713,8 +729,8 @@ impl Remap {
         }
     }
 
-    /// Whether a digital input is down: a trigger past its press binding's threshold, the rest as
-    /// [`Remap::digital`].
+    /// Whether a digital input is down. A trigger is down past its press binding's threshold, and the
+    /// rest are as [`Remap::digital`] says.
     fn pressed(&self, input: Input, snap: &PadSnapshot) -> bool {
         match (input, self.binding(input)) {
             (Input::Trigger(s), Some(b)) => {
@@ -725,7 +741,8 @@ impl Remap {
         }
     }
 
-    /// The gyro's rate now, at `dt` since its last sample: the pointer moves by it, a stick follows it.
+    /// Takes the gyro's current rate, `dt` after its last sample. The pointer moves by it, or a stick
+    /// follows it.
     pub fn motion(&mut self, rate: Rate, dt: f32, snap: &PadSnapshot, out: &mut Out) {
         self.gyro = rate;
         if let Some(b) = self.gyro_binding(snap)
@@ -734,7 +751,7 @@ impl Remap {
             let px = step(&GYRO_POINTER, b.speed);
             let (x, y) = gyro_turn(&b, rate);
             let gain = gyro_gain(&b, (x, y));
-            // Turning left (yaw) moves the pointer left; tilting the top back (pitch) moves it up.
+            // Turning left (yaw) moves the pointer left, and tilting the top back (pitch) moves it up.
             self.carry.0 -= x * gain * dt * px;
             self.carry.1 -= y * gain * dt * px;
             self.flush_pointer(out);
@@ -742,8 +759,9 @@ impl Remap {
         self.update(snap, Instant::now(), out);
     }
 
-    /// Time passed: actuations move on (a hold's time, a double's window, a tap's end, turbo's beat), and
-    /// sticks on the pointer move it; when to tick next, if anything waits for time.
+    /// Handles time passing. Actuations move on at a hold's time, a double's window, a tap's end or
+    /// turbo's beat, and sticks on the pointer move it. Returns when to tick next, if anything waits for
+    /// time.
     pub fn tick(&mut self, now: Instant, snap: &PadSnapshot, out: &mut Out) -> Option<Instant> {
         if !self.actuators.is_empty() {
             self.update(snap, now, out);
@@ -767,7 +785,8 @@ impl Remap {
         next
     }
 
-    /// Sticks on the pointer move it; when to tick next for that, while one is deflected.
+    /// Moves the pointer for sticks bound to it. Returns when to tick next for that, while one is
+    /// deflected.
     fn tick_pointer(&mut self, now: Instant, out: &mut Out) -> Option<Instant> {
         if self.sent.pointer.is_empty() {
             self.last_pointer = None;
@@ -788,7 +807,7 @@ impl Remap {
         Some(self.last_pointer.unwrap_or(now) + POINTER_EVERY)
     }
 
-    /// Sends the whole pixels of the pointer's motion; keeps the rest.
+    /// Sends the whole pixels of the pointer's motion and keeps the rest.
     fn flush_pointer(&mut self, out: &mut Out) {
         let (dx, dy) = (self.carry.0.trunc(), self.carry.1.trunc());
         self.carry = (self.carry.0 - dx, self.carry.1 - dy);
@@ -808,15 +827,15 @@ impl Remap {
         self.find(input, Actuation::Press)
     }
 
-    /// The gyro's binding, if it acts now: always without a hold; with one, while it is held (or, a
-    /// ratchet, while it isn't).
+    /// The gyro's binding, if it acts now. Without a hold input it always acts. With one, it acts while
+    /// the hold input is held, or for a ratchet while it isn't.
     fn gyro_binding(&self, snap: &PadSnapshot) -> Option<Binding> {
         let b = *self.get(Input::Gyro)?;
         let on = b.hold.is_none_or(|h| self.digital(h, snap) != b.ratchet);
         on.then_some(b)
     }
 
-    /// `input`'s press binding in the layer in force, else its own output as on the pad.
+    /// `input`'s press binding in the layer in force, or else its own output as on the pad.
     fn binding(&self, input: Input) -> Option<Binding> {
         if let Some(b) = self.get(input) {
             return Some(*b);
@@ -832,13 +851,13 @@ impl Remap {
         Some(Binding::to(output))
     }
 
-    /// The stick's middle, and half its travel.
+    /// The stick's middle and half its travel.
     fn stick_middle(&self) -> (i32, f32) {
         let r = self.ranges.stick;
         ((r.min + r.max + 1) / 2, ((r.max - r.min) as f32 / 2.0).max(1.0))
     }
 
-    /// A stick's position (each axis -1 to 1, y down), tuned by its binding.
+    /// A stick's position, each axis -1 to 1 with y down, tuned by its binding.
     fn tuned_stick(&self, s: Side, snap: &PadSnapshot) -> (f32, f32) {
         let (ax, ay) = stick_axes(s);
         let at = |a| self.ranges.stick.centered(snap.value(a).unwrap_or(0));
@@ -849,8 +868,8 @@ impl Remap {
         }
     }
 
-    /// A stick as raw units from its middle (y down), tuned, its bound directions taken out (they act
-    /// as buttons instead).
+    /// A stick in raw units from its middle, with y down, tuned. Directions that have their own binding
+    /// are taken out, since they act as buttons instead.
     fn stick(&self, s: Side, snap: &PadSnapshot) -> (f32, f32) {
         let (mut x, mut y) = match self.get(Input::Stick(s)) {
             Some(b) if b.shapes() => {
@@ -858,7 +877,7 @@ impl Remap {
                 let (x, y) = self.tuned_stick(s, snap);
                 (x * half, y * half)
             }
-            // (Not shaped: in raw units as they are.)
+            // Not shaped, so in raw units as they are.
             _ => {
                 let (ax, ay) = stick_axes(s);
                 let mid = self.stick_middle().0;
@@ -876,7 +895,7 @@ impl Remap {
         (x, y)
     }
 
-    /// A trigger's pull, 0 to 1, tuned by its binding (deadzone, full point).
+    /// A trigger's pull from 0 to 1, tuned by its binding's deadzone and full point.
     fn trigger(&self, s: Side, snap: &PadSnapshot) -> f32 {
         let v = self.ranges.trigger.unit(snap.value(trigger_axis(s)).unwrap_or(self.ranges.trigger.min));
         match self.get(Input::Trigger(s)) {
@@ -885,7 +904,7 @@ impl Remap {
         }
     }
 
-    /// Whether a digital input is on (a trigger: past half).
+    /// Whether a digital input is on. A trigger is on past half.
     fn digital(&self, input: Input, snap: &PadSnapshot) -> bool {
         let pushed = |(x, y): (f32, f32), d| match d {
             Dir::Up => y <= -HALF,
@@ -905,7 +924,7 @@ impl Remap {
         }
     }
 
-    /// Whether `input`'s binding of `act` is on at `now` (as its actuation, toggle and turbo make it).
+    /// Whether `input`'s binding for `act` is on at `now`, as its actuation, toggle and turbo make it.
     fn on(&self, input: Input, act: Actuation, b: &Binding, now: Instant) -> bool {
         self.actuators.iter().find(|a| a.input == input).is_some_and(|a| a.beat(act).on(b, now))
     }
@@ -927,7 +946,7 @@ impl Remap {
             match input {
                 Input::Button(_) | Input::Dpad(_) | Input::StickDir(..) => {
                     g.digital(input, self.on(input, Actuation::Press, &b, now), &b.output, snap);
-                    // Its hold and double, if it has them.
+                    // Its hold and double bindings, if it has them.
                     for act in [Actuation::Hold, Actuation::Double] {
                         if let Some(other) = self.find(input, act) {
                             g.digital(input, self.on(input, act, other, now), &other.output, snap);
@@ -944,7 +963,7 @@ impl Remap {
                         }
                         ref o => g.digital(input, self.on(input, Actuation::Press, &b, now), o, snap),
                     }
-                    // Its full pull, a second stage beside the pull.
+                    // Its full pull, a second stage alongside the pull.
                     if let Some(full) = self.find(input, Actuation::FullPull) {
                         g.digital(input, self.on(input, Actuation::FullPull, full, now), &full.output, snap);
                     }
@@ -958,7 +977,7 @@ impl Remap {
                                 *t = (t.0 + x, t.1 + y);
                             }
                         }
-                        // (Tuned already: its deadzone and curve are the binding's.)
+                        // Already tuned, with the binding's deadzone and curve.
                         Output::Pointer if (x, y) != (0.0, 0.0) => g.w.pointer.push(((x / half, y / half), b.speed)),
                         Output::Dpad => {
                             for d in Dir::ALL {
@@ -966,7 +985,7 @@ impl Remap {
                             }
                         }
                         Output::Keys(keys) => {
-                            // Up, left, down, right.
+                            // The keys are in the order up, left, down, right.
                             for (d, chord) in [Dir::Up, Dir::Left, Dir::Down, Dir::Right].into_iter().zip(keys) {
                                 g.digital(input, self.digital(Input::StickDir(s, d), snap), &Output::Key(chord), snap);
                             }
@@ -980,7 +999,7 @@ impl Remap {
         g
     }
 
-    /// The gyro bound to a stick, while it acts: its turn added to that stick.
+    /// Adds the gyro's turn to the stick it is bound to, while it acts.
     fn gyro_to_stick(&self, snap: &PadSnapshot, sticks: &mut [(f32, f32); 2]) {
         if let Some(b) = self.gyro_binding(snap)
             && let Output::Stick(to) = b.output
@@ -1008,7 +1027,7 @@ impl Remap {
             let own = plain && self.get(Input::Gyro).is_none_or(|g| g.output != Output::Stick(s));
             let other = Side::ALL.into_iter().filter(|o| *o != s).any(|o| self.get(Input::Stick(o)).is_some_and(|b| b.output == Output::Stick(s)));
             let dirs = Dir::ALL.into_iter().any(|d| self.get(Input::StickDir(s, d)).is_some());
-            // (Only the axes the pad has: the game's pad has the controller's.)
+            // Only the axes the pad has. The game's pad has the controller's axes.
             for (axis, v) in [(ax, x), (ay, y)] {
                 if let Some(value) = snap.value(axis) {
                     w.pad_axes.push((axis, if own && !other && !dirs { value } else { raw(v) }));
@@ -1027,12 +1046,13 @@ impl Remap {
             w.pad_axes.push((axis, value));
         }
         let [up, down, left, right] = dpad;
-        // The D-pad: the game's pad's hat (it has one, as an Xbox 360 pad, whatever the controller has).
+        // The D-pad goes on the game's pad's hat. Like an Xbox 360 pad it has one, whatever the controller
+        // has.
         w.pad_axes.push((AbsoluteAxisCode::ABS_HAT0X, i32::from(right) - i32::from(left)));
         w.pad_axes.push((AbsoluteAxisCode::ABS_HAT0Y, i32::from(down) - i32::from(up)));
         w.pad_keys.sort_by_key(|k| k.0);
         w.pad_keys.dedup();
-        // (Keys keep their order: a chord's modifiers go down before its key.)
+        // Keys keep their order, so a chord's modifiers go down before its key.
         let mut keys = Vec::with_capacity(w.keys.len());
         for k in w.keys.drain(..) {
             if !keys.contains(&k) {
@@ -1065,7 +1085,7 @@ impl Remap {
         if out.pad.len() > start {
             out.pad.push(Raw::REPORT);
         }
-        // The keyboard and mouse: keys up first, then modifiers up; modifiers down, then keys down.
+        // The keyboard and mouse: keys up first, then modifiers up, then modifiers down, then keys down.
         let start = out.mouse.len();
         let modifier = |k: &KeyCode| MODIFIERS.contains(k);
         let ups = self.sent.keys.iter().filter(|k| !wanted.keys.contains(k));
@@ -1094,7 +1114,7 @@ impl Remap {
     }
 }
 
-/// A chord's keys, held: its modifiers, then its key.
+/// Adds a chord's keys as held: its modifiers, then its key.
 fn chord_down(keys: &mut Vec<KeyCode>, chord: &Chord) {
     let (mods, key) = chord_keys(chord);
     for k in mods.into_iter().chain(key) {
@@ -1104,14 +1124,15 @@ fn chord_down(keys: &mut Vec<KeyCode>, chord: &Chord) {
     }
 }
 
-/// The gyro's motion turned round across and up/down, as its binding says.
+/// The signs for the gyro's motion across and up/down, inverted as its binding says.
 fn gyro_signs(b: &Binding) -> (f32, f32) {
     (if b.invert_x { -1.0 } else { 1.0 }, if b.invert_y { -1.0 } else { 1.0 })
 }
 
-/// The gyro's turning (degrees per second; across: yaw, plus roll when the binding turns by tilting; up
-/// and down: pitch), inverted as the binding says, and tightened: slower than its tightening, scaled down
-/// in proportion (half the tightening turns at a quarter), so a hand's tremor fades without a hard edge.
+/// The gyro's turning in degrees per second, inverted as the binding says, and tightened. Across is yaw,
+/// plus roll when the binding turns by tilting, and up and down is pitch. Turning slower than the
+/// tightening is scaled down in proportion, so half the tightening turns at a quarter. That way a hand's
+/// tremor fades without a hard edge.
 fn gyro_turn(b: &Binding, r: Rate) -> (f32, f32) {
     let (sx, sy) = gyro_signs(b);
     let across = if b.twist { r.yaw + ROLL_TURNS * r.roll } else { r.yaw };
@@ -1122,14 +1143,15 @@ fn gyro_turn(b: &Binding, r: Rate) -> (f32, f32) {
     (x * k, y * k)
 }
 
-/// The gyro's acceleration: 1 for slow turns, up to 3 (at 100 %) for turns as fast as its "fastest at".
+/// The gyro's acceleration: 1 for slow turns, rising to 3 at 100 % for turns as fast as its "fastest
+/// at".
 fn gyro_gain(b: &Binding, (x, y): (f32, f32)) -> f32 {
     let at = f32::from(b.accel_at.max(1));
     1.0 + 2.0 * f32::from(b.accel) / 100.0 * (x.hypot(y) / at).min(1.0)
 }
 
-/// A stick's deflection (each axis -1 to 1) kept within the circle, and starting at `min` percent: a
-/// game's own stick deadzone doesn't swallow small motion.
+/// A stick's deflection, each axis -1 to 1, kept within the circle and starting at `min` percent. That
+/// way a game's own stick deadzone doesn't swallow small motion.
 fn stick_from(x: f32, y: f32, min: u8) -> (f32, f32) {
     let m = x.hypot(y);
     if m <= 0.0 {

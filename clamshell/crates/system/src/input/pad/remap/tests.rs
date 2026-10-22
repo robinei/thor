@@ -66,7 +66,7 @@ fn held(events: &[Raw]) -> Vec<KeyCode> {
     down
 }
 
-/// An axis' value after these events (every axis starts at 0 here).
+/// An axis' value after these events. Every axis starts at 0 here.
 fn last(events: &[Raw], code: AbsoluteAxisCode) -> Option<i32> {
     Some(events.iter().rev().find_map(|e| e.as_abs().filter(|(c, _)| *c == code).map(|(_, v)| v)).unwrap_or(0))
 }
@@ -166,17 +166,17 @@ fn a_stick_to_the_pointer_to_keys_and_to_the_other_stick() {
     axis(&mut r, AbsoluteAxisCode::ABS_RX, 0, &mut out);
     r.tick(t + POINTER_EVERY, &mut out);
     assert_eq!(r.tick(t + POINTER_EVERY * 2, &mut out), None, "at rest: no ticks");
-    // The left stick: W while up past half, A with left.
+    // The left stick gives W while pushed up past half, and A while pushed left.
     axis(&mut r, AbsoluteAxisCode::ABS_Y, -20000, &mut out);
     axis(&mut r, AbsoluteAxisCode::ABS_X, -20000, &mut out);
     assert_eq!(held(&out.mouse), vec![KeyCode::KEY_W, KeyCode::KEY_A]);
     axis(&mut r, AbsoluteAxisCode::ABS_Y, -5000, &mut out);
     assert_eq!(held(&out.mouse), vec![KeyCode::KEY_A]);
-    // The left stick to the right one instead.
+    // Now the left stick goes to the right stick instead.
     r.set_keymap(keymap(&[(Input::Stick(Side::Left), to(Output::Stick(Side::Right)))]), &mut out);
     assert!(held(&out.mouse).is_empty(), "the keys let go with the old keymap");
     assert_eq!((last(&out.pad, AbsoluteAxisCode::ABS_RX), last(&out.pad, AbsoluteAxisCode::ABS_X)), (Some(-20000), Some(0)));
-    // Its up direction bound: that half is a button now.
+    // With its left direction bound, that half of the stick is a button now.
     r.set_keymap(keymap(&[(Input::StickDir(Side::Left, Dir::Left), to(Output::Pad(PadOut::Button(Button::LB))))]), &mut out);
     assert_eq!((last(&out.pad, AbsoluteAxisCode::ABS_X), last(&out.pad, AbsoluteAxisCode::ABS_RX)), (Some(0), Some(0)));
     assert_eq!(held(&out.pad), vec![KeyCode::BTN_TL]);
@@ -223,10 +223,10 @@ fn the_gyro_to_the_pointer_while_a_button_is_held() {
     for i in 101..=350 {
         gyro(&mut r, i * 4, -20.0, &mut out);
     }
-    // A second at -20 °/s (turning right) at 15 px per degree: 300 px right.
+    // A second at -20 °/s, turning right, at 15 px per degree moves 300 px right.
     let moved = sum(&out.mouse, RelativeAxisCode::REL_X);
     assert!((moved - 300).abs() <= 2, "{moved}");
-    // A sensor's offset at rest (0.5 °/s): tightened to a crawl, then learnt and taken off.
+    // A sensor's offset at rest (0.5 °/s) is tightened to a crawl, then learnt and taken off.
     let before = sum(&out.mouse, RelativeAxisCode::REL_X);
     for i in 351..=850 {
         gyro(&mut r, i * 4, 0.5, &mut out);
@@ -251,21 +251,22 @@ fn turning(r: &mut PadRouter, from: u64, ms: u64, yaw: f32, roll: f32, out: &mut
 #[test]
 fn gyro_acceleration_tightening_and_tilting() {
     let pointer = |b: Binding| keymap(&[(Input::Gyro, Binding { ..b })]);
-    // No acceleration: a second at 20 °/s and at 100 °/s go 15 px per degree.
+    // Without acceleration, a second at 20 °/s and at 100 °/s both go 15 px per degree.
     let (mut r, mut out) = router(pointer(to(Output::Pointer)), PadRoute::Game);
     assert!((turning(&mut r, 0, 1000, -20.0, 0.0, &mut out) - 300).abs() <= 3);
     assert!((turning(&mut r, 251, 1000, -100.0, 0.0, &mut out) - 1500).abs() <= 15);
-    // Full acceleration, fastest at 60 °/s: slow turns as before, 100 °/s three times as far.
+    // With full acceleration, fastest at 60 °/s, slow turns go as before and 100 °/s goes three times as
+    // far.
     let (mut r, mut out) = router(pointer(Binding { accel: 100, accel_at: 60, ..to(Output::Pointer) }), PadRoute::Game);
     let slow = turning(&mut r, 0, 1000, -6.0, 0.0, &mut out);
     assert!((slow - 108).abs() <= 3, "6 °/s: a tenth of the way to 60, so x1.2: {slow}");
     let fast = turning(&mut r, 251, 1000, -100.0, 0.0, &mut out);
     assert!((fast - 4500).abs() <= 45, "{fast}");
-    // Tightening 2 °/s: 1 °/s goes at half (a quarter of the way), 4 °/s in full.
+    // With a tightening of 2 °/s, 1 °/s goes at half speed, so a quarter of the way, and 4 °/s in full.
     let (mut r, mut out) = router(pointer(Binding { tighten: 20, ..to(Output::Pointer) }), PadRoute::Game);
     let tight = turning(&mut r, 0, 1000, -1.0, 0.0, &mut out);
     assert!((tight - 7).abs() <= 1, "{tight}");
-    // Tilting turns too, with the binding's switch; not without.
+    // Tilting turns too when the binding's switch is on, and not without it.
     let (mut r, mut out) = router(pointer(to(Output::Pointer)), PadRoute::Game);
     assert_eq!(turning(&mut r, 0, 500, 0.0, -20.0, &mut out), 0);
     let (mut r, mut out) = router(pointer(Binding { twist: true, ..to(Output::Pointer) }), PadRoute::Game);
@@ -274,7 +275,7 @@ fn gyro_acceleration_tightening_and_tilting() {
 
 #[test]
 fn the_gyro_off_while_held_and_a_stick_from_its_minimum() {
-    // A ratchet: on, but off while LB is held.
+    // A ratchet is on, but off while LB is held.
     let k = keymap(&[(Input::Gyro, Binding { hold: Some(Input::Button(Button::LB)), ratchet: true, ..to(Output::Pointer) })]);
     let (mut r, mut out) = router(k, PadRoute::Game);
     assert!(turning(&mut r, 0, 500, -20.0, 0.0, &mut out) > 140);
@@ -282,7 +283,7 @@ fn the_gyro_off_while_held_and_a_stick_from_its_minimum() {
     assert_eq!(turning(&mut r, 126, 500, -20.0, 0.0, &mut out), 0, "held: off");
     press(&mut r, KeyCode::BTN_TL, false, &mut out);
     assert!(turning(&mut r, 252, 500, -20.0, 0.0, &mut out) > 140);
-    // A stick from 30 %: a slow turn starts there, full stays full.
+    // With the stick starting at 30 %, a slow turn starts there and full stays full.
     let k = keymap(&[(Input::Gyro, Binding { stick_min: 30, ..to(Output::Stick(Side::Right)) })]);
     let (mut r, mut out) = router(k, PadRoute::Game);
     gyro(&mut r, 0, -5.0, &mut out);
@@ -316,17 +317,17 @@ fn only_the_game_route_is_remapped_and_nothing_stays_down() {
     let (mut r, mut out) = router(k.clone(), PadRoute::Ui);
     press(&mut r, KeyCode::BTN_SOUTH, true, &mut out);
     assert!(held(&out.mouse).is_empty() && out.events.contains(&clamshell_core::Event::Pad(clamshell_core::PadInput::A(true))), "the screens' A");
-    // Into the game with A held: its chord goes down; B and X too.
+    // Going into the game with A held, its chord goes down, and so do B and X.
     r.set_route(PadRoute::Game, &mut out);
     press(&mut r, KeyCode::BTN_EAST, true, &mut out);
     press(&mut r, KeyCode::BTN_WEST, true, &mut out);
     assert_eq!(held(&out.mouse), vec![KeyCode::KEY_LEFTCTRL, KeyCode::KEY_X, KeyCode::BTN_LEFT]);
     assert_eq!(held(&out.pad), vec![KeyCode::BTN_WEST]);
-    // Away from the game: everything let go, keys, mouse buttons and the pad.
+    // Away from the game, everything is let go: keys, mouse buttons and the pad.
     r.set_route(PadRoute::Mouse, &mut out);
     assert!(held(&out.mouse).is_empty(), "{:?}", held(&out.mouse));
     assert!(held(&out.pad).is_empty());
-    // Back, then a new keymap mid-press: the old outputs go up, the new ones down.
+    // Back in the game, a new keymap mid-press puts the old outputs up and the new ones down.
     r.set_route(PadRoute::Game, &mut out);
     assert_eq!(held(&out.pad), vec![KeyCode::BTN_WEST]);
     r.set_keymap(keymap(&[(Input::Button(Button::A), to(Output::Key(Chord::of(Key::Char('z')))))]), &mut out);
@@ -335,7 +336,7 @@ fn only_the_game_route_is_remapped_and_nothing_stays_down() {
     r.set_keymap(Keymap::default(), &mut out);
     assert!(held(&out.mouse).is_empty());
     assert_eq!(held(&out.pad), vec![KeyCode::BTN_SOUTH, KeyCode::BTN_EAST, KeyCode::BTN_WEST]);
-    // The controller lost: nothing held on the keyboard.
+    // With the controller lost, nothing is held on the keyboard.
     r.set_keymap(k, &mut out);
     r.lose(&mut out);
     assert!(held(&out.mouse).is_empty());
@@ -392,14 +393,14 @@ fn the_back_layer_while_back_is_held_and_nothing_stuck_letting_go_mid_press() {
     press(&mut r, KeyCode::BTN_SOUTH, true, &mut out);
     press(&mut r, KeyCode::BTN_EAST, true, &mut out);
     assert_eq!(held(&out.mouse), vec![KeyCode::KEY_Y, KeyCode::KEY_LEFTCTRL, KeyCode::KEY_Z], "the held layer's, B falling through");
-    // Back let go while A is held: Ctrl+Y up, A is main's Ctrl+X now.
+    // Back let go while A is held puts Ctrl+Y up, and A is the base layer's Ctrl+X now.
     press(&mut r, KeyCode::BTN_BACK, false, &mut out);
     assert_eq!(held(&out.mouse), vec![KeyCode::KEY_LEFTCTRL, KeyCode::KEY_Z, KeyCode::KEY_X]);
     press(&mut r, KeyCode::BTN_SOUTH, false, &mut out);
     press(&mut r, KeyCode::BTN_EAST, false, &mut out);
     assert!(held(&out.mouse).is_empty(), "nothing stuck");
     assert!(!out.pad.iter().any(|e| e.as_key().is_some_and(|(k, _)| k == KeyCode::BTN_BACK)), "the game never sees Back");
-    // Back held when the pad leaves the game: everything let go.
+    // If Back is held when the pad leaves the game, everything is let go.
     press(&mut r, KeyCode::BTN_BACK, true, &mut out);
     press(&mut r, KeyCode::BTN_SOUTH, true, &mut out);
     r.set_route(PadRoute::Ui, &mut out);
@@ -408,25 +409,25 @@ fn the_back_layer_while_back_is_held_and_nothing_stuck_letting_go_mid_press() {
 
 #[test]
 fn a_hold_to_a_layer_is_decided_by_an_input_the_layer_maps() {
-    // LB: X tapped, held a layer where A is Y.
+    // LB tapped is X, and held it is a layer where A is Y.
     let mut k = keymap(&[(Input::Button(Button::LB), to(Output::Key(Chord::of(Key::Char('x')))))]);
     let aim = k.add_layer("aim").unwrap();
     k.set_of(Layer::BASE, Input::Button(Button::LB), Actuation::Hold, Some(to(Output::Layer(aim))));
     k.set_in(aim, Input::Button(Button::A), Some(to(Output::Key(Chord::of(Key::Char('y'))))));
     let (mut r, mut out) = router(k, PadRoute::Game);
     let t0 = Instant::now();
-    // B (not in the layer) meanwhile: as on the pad, LB still deciding.
+    // B, which isn't in the layer, acts as on the pad in the meantime, while LB is still deciding.
     press_at(&mut r, KeyCode::BTN_TL, true, t0, &mut out);
     press_at(&mut r, KeyCode::BTN_EAST, true, t0 + ms(20), &mut out);
     assert!(held(&out.pad).contains(&KeyCode::BTN_EAST) && held(&out.mouse).is_empty());
-    // A soon after: the hold, at once; A is Y.
+    // A soon after decides the hold at once, and A is Y.
     press_at(&mut r, KeyCode::BTN_SOUTH, true, t0 + ms(50), &mut out);
     assert_eq!(held(&out.mouse), vec![KeyCode::KEY_Y]);
     for (code, t) in [(KeyCode::BTN_SOUTH, 80), (KeyCode::BTN_EAST, 90), (KeyCode::BTN_TL, 100)] {
         press_at(&mut r, code, false, t0 + ms(t), &mut out);
     }
     assert!(!out.mouse.iter().any(|e| e.as_key().is_some_and(|(k, _)| k == KeyCode::KEY_X)), "never X");
-    // Alone and short: X.
+    // LB alone and short is X.
     let t1 = t0 + ms(1000);
     press_at(&mut r, KeyCode::BTN_TL, true, t1, &mut out);
     press_at(&mut r, KeyCode::BTN_TL, false, t1 + ms(100), &mut out);
@@ -436,7 +437,7 @@ fn a_hold_to_a_layer_is_decided_by_an_input_the_layer_maps() {
 
 #[test]
 fn a_once_layer_tapped_is_on_until_an_input_it_maps_has_acted() {
-    // LB: a Once layer where A is Enter and B Esc.
+    // LB turns on a Once layer where A is Enter and B is Esc.
     let mut k = keymap(&[]);
     let menu = k.add_layer("menu").unwrap();
     k.set_layer_once(menu, true);
@@ -450,7 +451,7 @@ fn a_once_layer_tapped_is_on_until_an_input_it_maps_has_acted() {
     };
     tap(&mut r, KeyCode::BTN_TL, &mut out);
     assert_eq!(out.buzz.take(), Some(Buzz::On), "armed");
-    // X (not in it): as on the pad; still armed.
+    // X, which isn't in the layer, acts as on the pad, and the layer stays armed.
     tap(&mut r, KeyCode::BTN_WEST, &mut out);
     assert_eq!(out.buzz.take(), None);
     press(&mut r, KeyCode::BTN_SOUTH, true, &mut out);
@@ -460,14 +461,15 @@ fn a_once_layer_tapped_is_on_until_an_input_it_maps_has_acted() {
     press(&mut r, KeyCode::BTN_SOUTH, true, &mut out);
     assert!(held(&out.pad).contains(&KeyCode::BTN_SOUTH) && held(&out.mouse).is_empty(), "Base again");
     press(&mut r, KeyCode::BTN_SOUTH, false, &mut out);
-    // Tapped twice: armed, then off.
+    // Tapped twice, the layer is armed and then off.
     tap(&mut r, KeyCode::BTN_TL, &mut out);
     tap(&mut r, KeyCode::BTN_TL, &mut out);
     assert_eq!(out.buzz.take(), Some(Buzz::Off));
     press(&mut r, KeyCode::BTN_SOUTH, true, &mut out);
     assert!(held(&out.mouse).is_empty(), "off");
     press(&mut r, KeyCode::BTN_SOUTH, false, &mut out);
-    // Held: as any layer, used as often as wanted; off on letting go, without a buzz.
+    // Held, it acts as any layer and can be used as often as wanted. It goes off on letting go, without a
+    // buzz.
     press(&mut r, KeyCode::BTN_TL, true, &mut out);
     tap(&mut r, KeyCode::BTN_SOUTH, &mut out);
     press(&mut r, KeyCode::BTN_EAST, true, &mut out);
@@ -497,7 +499,7 @@ fn a_toggled_once_layer_goes_off_with_its_toggle_once_used() {
         press(&mut r, KeyCode::BTN_SOUTH, false, &mut out);
         assert_eq!(out.buzz.take(), Some(Buzz::Off), "used: off, and its toggle (so the next press turns it on)");
     }
-    // A plain toggled layer: a buzz on and off.
+    // A plain toggled layer buzzes on and off.
     let mut k = keymap(&[]);
     let aim = k.add_layer("aim").unwrap();
     k.set(Input::Button(Button::LB), Some(Binding { toggle: true, ..to(Output::Layer(aim)) }));
@@ -509,9 +511,9 @@ fn a_toggled_once_layer_goes_off_with_its_toggle_once_used() {
     assert_eq!(out.buzz.take(), Some(Buzz::Off));
 }
 
-/// A keymap with every way of turning layers on, layered over each other, driven by random presses
-/// and pauses (a fixed seed, so a failure repeats): whatever happened, with everything let go and
-/// the timers run out nothing stays down, and only keys some binding sends ever were.
+/// A keymap with every way of turning layers on, layered over each other, driven by random presses and
+/// pauses. The seed is fixed, so a failure repeats. Whatever happened, once everything is let go and the
+/// timers have run out nothing stays down, and the only keys ever down are ones some binding sends.
 #[test]
 fn random_presses_over_every_kind_of_layer_leave_nothing_down() {
     use clamshell_core::keymap::Layer;
@@ -521,7 +523,8 @@ fn random_presses_over_every_kind_of_layer_leave_nothing_down() {
     let aim = k.add_layer("aim").unwrap();
     k.set_layer_once(menu, true);
     let b = |x| Input::Button(x);
-    // LB: menu (Once). RB: R pressed, aim held. X: aim toggled. Y: T pressed, menu twice.
+    // LB turns on menu (a Once layer). RB pressed is R, and held is aim. X toggles aim. Y pressed is T,
+    // and a double is menu.
     k.set(b(Button::LB), Some(to(Output::Layer(menu))));
     k.set(b(Button::RB), Some(key(Chord::of(Key::Char('r')))));
     k.set_of(Layer::BASE, b(Button::RB), Actuation::Hold, Some(to(Output::Layer(aim))));
@@ -529,7 +532,7 @@ fn random_presses_over_every_kind_of_layer_leave_nothing_down() {
     k.set(b(Button::Y), Some(key(Chord::of(Key::Char('t')))));
     k.set_of(Layer::BASE, b(Button::Y), Actuation::Double, Some(to(Output::Layer(menu))));
     k.set(b(Button::A), Some(key(Chord::of(Key::Char('x')))));
-    // menu: A Enter, B Esc. aim: A Ctrl+Y, LB Z, B held H.
+    // In menu, A is Enter and B is Esc. In aim, A is Ctrl+Y, LB is Z, and B held is H.
     k.set_in(menu, b(Button::A), Some(key(Chord::of(Key::Named(Named::Enter)))));
     k.set_in(menu, b(Button::B), Some(key(Chord::of(Key::Named(Named::Esc)))));
     k.set_in(aim, b(Button::A), Some(key(ctrl('y'))));
@@ -547,7 +550,7 @@ fn random_presses_over_every_kind_of_layer_leave_nothing_down() {
         KeyCode::KEY_H,
     ];
     let codes = [KeyCode::BTN_SOUTH, KeyCode::BTN_EAST, KeyCode::BTN_WEST, KeyCode::BTN_NORTH, KeyCode::BTN_TL, KeyCode::BTN_TR];
-    // (xorshift64: a few lines, and the same run every time.)
+    // xorshift64: a few lines, and the same run every time.
     let mut seed = 0x9e37_79b9_7f4a_7c15_u64;
     let mut next = |n: u64| {
         seed ^= seed << 13;
@@ -565,7 +568,7 @@ fn random_presses_over_every_kind_of_layer_leave_nothing_down() {
                 *d = !*d;
                 press_at(&mut r, code, *d, t, &mut out);
             }
-            // A pause: none, within a tap or a double's window, past a hold's time.
+            // A pause of nothing, within a tap or a double's window, or past a hold's time.
             t += ms([0, 30, 120, 250, 450][next(5) as usize]);
             r.tick(t, &mut out);
             let wrong: Vec<_> = held(&out.mouse).into_iter().filter(|c| !sent.contains(c)).collect();
@@ -590,11 +593,11 @@ fn a_toggled_layer_and_a_layer_key_the_layer_remaps() {
     let mut k = keymap(&[]);
     let aim = k.add_layer("aim").unwrap();
     let menu = k.add_layer("menu").unwrap();
-    // LB toggles aim; in aim, A is Ctrl+Y and LB itself is a key (it still turns aim off).
+    // LB toggles aim. In aim, A is Ctrl+Y and LB itself is a key, but LB still turns aim off.
     k.set(Input::Button(Button::LB), Some(Binding { toggle: true, ..to(Output::Layer(aim)) }));
     k.set_in(aim, Input::Button(Button::A), Some(to(Output::Key(ctrl('y')))));
     k.set_in(aim, Input::Button(Button::LB), Some(to(Output::Key(Chord::of(Key::Char('z'))))));
-    // RB held: menu, on top of aim; in it B is Q.
+    // RB held turns on menu on top of aim. In menu, B is Q.
     k.set(Input::Button(Button::RB), Some(to(Output::Layer(menu))));
     k.set_in(menu, Input::Button(Button::B), Some(to(Output::Key(Chord::of(Key::Char('q'))))));
     let (mut r, mut out) = router(k, PadRoute::Game);
@@ -604,13 +607,13 @@ fn a_toggled_layer_and_a_layer_key_the_layer_remaps() {
     press(&mut r, KeyCode::BTN_SOUTH, true, &mut out);
     assert_eq!(held(&out.mouse), vec![KeyCode::KEY_Y, KeyCode::KEY_LEFTCTRL], "aim, toggled on");
     press(&mut r, KeyCode::BTN_SOUTH, false, &mut out);
-    // RB held: menu over aim; B is Q there, A still aim's.
+    // With RB held, menu is over aim. B is Q there, and A is still aim's.
     press(&mut r, KeyCode::BTN_TR, true, &mut out);
     press(&mut r, KeyCode::BTN_EAST, true, &mut out);
     assert_eq!(held(&out.mouse), vec![KeyCode::KEY_Q]);
     press(&mut r, KeyCode::BTN_EAST, false, &mut out);
     press(&mut r, KeyCode::BTN_TR, false, &mut out);
-    // LB again: aim off (its own binding there, Z, isn't what LB does: it turned aim on).
+    // LB again turns aim off. LB's own binding in aim, Z, isn't what LB does, because LB turned aim on.
     press(&mut r, KeyCode::BTN_TL, true, &mut out);
     press(&mut r, KeyCode::BTN_TL, false, &mut out);
     assert!(!held(&out.mouse).contains(&KeyCode::KEY_Z));
@@ -654,7 +657,7 @@ fn a_stick_as_on_the_pad_tuned() {
     axis(&mut r, AbsoluteAxisCode::ABS_X, STICK_MAX / 2, &mut out);
     let half = last(&out.pad, AbsoluteAxisCode::ABS_X).unwrap();
     assert!((half + STICK_MAX / 2).abs() < 400, "(50-20)/(80-20): half way: {half}");
-    // The right stick untouched: its exact values.
+    // The right stick, untouched, keeps its exact values.
     axis(&mut r, AbsoluteAxisCode::ABS_RX, 1234, &mut out);
     assert_eq!(last(&out.pad, AbsoluteAxisCode::ABS_RX), Some(1234));
 }
@@ -666,7 +669,7 @@ fn a_stick_curve_and_tuning_before_mapping() {
     axis(&mut r, AbsoluteAxisCode::ABS_X, STICK_MAX / 2, &mut out);
     let v = last(&out.pad, AbsoluteAxisCode::ABS_X).unwrap();
     assert!((v - STICK_MAX / 8).abs() < 200, "cubed: an eighth: {v}");
-    // A stick on keys with a deadzone of 50: its directions count past it.
+    // For a stick on keys with a deadzone of 50, its directions count past the deadzone.
     let k = keymap(&[(
         Input::Stick(Side::Left),
         Binding {
@@ -698,7 +701,7 @@ fn a_trigger_tuned_as_on_the_pad_and_on_a_key() {
 
 #[test]
 fn a_stick_on_the_pointer_moves_as_before_by_default_and_without_a_deadzone_at_0() {
-    // How the pointer moved before the parameters: a radial deadzone of 15 %, then squared.
+    // How the pointer moved before these parameters existed: a radial deadzone of 15 %, then squared.
     let old = |v: f32| ((v - 0.15) / 0.85).max(0.0).powi(2) * step(&STICK_POINTER, DEFAULT_SPEED_FOR_TEST);
     let moved = |b: Binding, deflection: f32| {
         let (mut r, mut out) = router(keymap(&[(Input::Stick(Side::Right), b)]), PadRoute::Game);
@@ -734,7 +737,7 @@ fn ms(n: u64) -> Duration {
     Duration::from_millis(n)
 }
 
-/// A on X when pressed, plus `act`'s binding.
+/// A keymap with A as X when pressed, plus `act`'s binding.
 fn with(act: Actuation, b: Binding) -> Keymap {
     let mut k = keymap(&[(Input::Button(Button::A), to(Output::Key(Chord::of(Key::Char('x')))))]);
     assert!(k.set_of(clamshell_core::keymap::Layer::BASE, Input::Button(Button::A), act, Some(b)));
@@ -764,7 +767,7 @@ fn a_hold_acts_at_its_time_and_a_short_press_taps_on_letting_go() {
     assert_eq!(held(&out.mouse), vec![KeyCode::KEY_ESC], "a hold");
     press_at(&mut r, KeyCode::BTN_SOUTH, false, t0 + ms(700), &mut out);
     assert!(held(&out.mouse).is_empty() && !out.mouse.iter().any(|e| e.as_key().is_some_and(|(k, _)| k == KeyCode::KEY_X)), "never X");
-    // Short: X tapped on letting go, for a moment.
+    // A short press taps X for a moment on letting go.
     let t1 = t0 + ms(2000);
     press_at(&mut r, KeyCode::BTN_SOUTH, true, t1, &mut out);
     press_at(&mut r, KeyCode::BTN_SOUTH, false, t1 + ms(100), &mut out);
@@ -787,7 +790,7 @@ fn a_double_and_a_single_press_with_a_double() {
     assert_eq!(held(&out.mouse), vec![KeyCode::KEY_TAB], "a double, held while held");
     press_at(&mut r, KeyCode::BTN_SOUTH, false, t0 + ms(400), &mut out);
     assert!(held(&out.mouse).is_empty());
-    // Once: X after the window, as a tap.
+    // A single press gives X after the window, as a tap.
     let t1 = t0 + ms(2000);
     press_at(&mut r, KeyCode::BTN_SOUTH, true, t1, &mut out);
     press_at(&mut r, KeyCode::BTN_SOUTH, false, t1 + ms(50), &mut out);
@@ -795,7 +798,7 @@ fn a_double_and_a_single_press_with_a_double() {
     assert_eq!(held(&out.mouse), vec![KeyCode::KEY_X]);
     r.tick(t1 + ms(50) + DOUBLE_WINDOW + TAP, &mut out);
     assert!(held(&out.mouse).is_empty());
-    // Held past the window (no hold binding): a press, held.
+    // Held past the window, with no hold binding, it is a press, held.
     let t2 = t1 + ms(2000);
     press_at(&mut r, KeyCode::BTN_SOUTH, true, t2, &mut out);
     r.tick(t2 + DOUBLE_WINDOW, &mut out);
@@ -835,7 +838,7 @@ fn toggle_and_turbo() {
     assert!(held(&out.mouse).is_empty(), "off at the next press");
     press_at(&mut r, KeyCode::BTN_SOUTH, false, t0 + ms(550), &mut out);
     assert!(held(&out.mouse).is_empty(), "and stays off");
-    // Turbo at 10 a second: on 50 ms, off 50 ms, while held.
+    // Turbo at 10 a second is on for 50 ms and off for 50 ms, while held.
     let t1 = t0 + ms(1000);
     press_at(&mut r, KeyCode::BTN_EAST, true, t1, &mut out);
     assert_eq!(held(&out.mouse), vec![KeyCode::KEY_Z]);
@@ -855,7 +858,8 @@ fn a_parameter_slid_applies_at_once() {
     let (mut r, mut out) = router(Keymap::default(), PadRoute::Game);
     axis(&mut r, AbsoluteAxisCode::ABS_X, STICK_MAX / 2, &mut out);
     assert_eq!(last(&out.pad, AbsoluteAxisCode::ABS_X), Some(STICK_MAX / 2));
-    // The slider sends the keymap as it moves (see core's keymap_screens): the stick held still follows.
+    // The slider sends the keymap as it moves (see core's keymap_screens), and the stick held still
+    // follows.
     for dz in [10, 30, 50] {
         r.set_keymap(keymap(&[(Input::Stick(Side::Left), Binding { deadzone: dz, ..own })]), &mut out);
     }
