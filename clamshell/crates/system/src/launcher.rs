@@ -354,15 +354,9 @@ pub fn runner_command(argv: &[String]) {
     }
 }
 
-/// Every process's parent, from /proc/<pid>/stat (its fourth field, after the name in parentheses).
+/// Every process's parent.
 fn parents() -> Vec<(u32, u32)> {
-    crate::sys::processes()
-        .filter_map(|(pid, dir)| {
-            let stat = crate::sys::text(dir.join("stat"))?;
-            let ppid = stat.rsplit_once(')')?.1.split_whitespace().nth(1)?.parse().ok()?;
-            Some((pid, ppid))
-        })
-        .collect()
+    sys::processes().filter_map(|(pid, dir)| Some((pid, sys::parent_in(&sys::text(dir.join("stat"))?)?))).collect()
 }
 
 /// `pids` and all their descendants, by `parents` (pid, parent).

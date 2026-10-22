@@ -30,9 +30,24 @@ pub fn processes() -> impl Iterator<Item = (u32, PathBuf)> {
 /// When process `pid` started (clock ticks after boot: /proc/<pid>/stat's 22nd field); none if it is
 /// gone. With its id, it tells the process from a later one given the same id.
 fn start_time(pid: u32) -> Option<u64> {
-    let stat = text(format!("/proc/{pid}/stat"))?;
-    // (The fields after the name in parentheses, which may hold anything: the state is the 3rd.)
-    stat.rsplit_once(')')?.1.split_whitespace().nth(22 - 3)?.parse().ok()
+    stat_field(&text(format!("/proc/{pid}/stat"))?, 22)
+}
+
+/// Process `pid`'s parent (/proc/<pid>/stat's 4th field).
+pub fn parent(pid: u32) -> Option<u32> {
+    parent_in(&text(format!("/proc/{pid}/stat"))?)
+}
+
+/// The parent in a /proc/<pid>/stat file's text.
+pub fn parent_in(stat: &str) -> Option<u32> {
+    stat_field(stat, 4)
+}
+
+/// Field `n` (from 1, as proc(5) numbers them) of a /proc/<pid>/stat file, from the 3rd on. The 2nd, the
+/// name in parentheses, may hold anything, spaces and parentheses too, so fields are counted after its
+/// last `)`.
+fn stat_field<T: std::str::FromStr>(stat: &str, n: usize) -> Option<T> {
+    stat.rsplit_once(')')?.1.split_whitespace().nth(n.checked_sub(3)?)?.parse().ok()
 }
 
 /// The windows' and tray icons' processes as last seen (their start times): what ClamShell acts on by a
@@ -64,11 +79,7 @@ pub fn lineage(pid: u32) -> Vec<u32> {
     // (A bound: /proc read as it changes can't loop forever.)
     while at > 1 && out.len() < 64 {
         out.push(at);
-        let Some(stat) = text(format!("/proc/{at}/stat")) else {
-            break;
-        };
-        // (Its fourth field, after the name in parentheses, which may hold anything.)
-        let Some(parent) = stat.rsplit_once(')').and_then(|(_, rest)| rest.split_whitespace().nth(1)?.parse().ok()) else {
+        let Some(parent) = parent(at) else {
             break;
         };
         at = parent;
@@ -99,6 +110,15 @@ pub fn power_supplies() -> Vec<PathBuf> {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stat_fields_count_after_the_name() {
+        // A name with spaces and parentheses, as a process may give itself.
+        let stat = "4242 (a (b) c) S 17 4242 4242 0 -1 4194560 120 0 0 0 1 0 0 0 20 0 1 0 98765 0 0";
+        assert_eq!(parent_in(stat), Some(17));
+        assert_eq!(stat_field::<u64>(stat, 22), Some(98765), "the start time");
+        assert_eq!(stat_field::<u64>(stat, 2), None, "the name isn't a field to read");
+    }
 
     #[test]
     fn the_systems_battery_not_a_devices() {
