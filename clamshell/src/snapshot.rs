@@ -1,7 +1,7 @@
 //! `--snapshot DIR`: both screens drawn at the Thor's size into PNG files, without Wayland: shelf, the second
 //! screen and every tab, each after the events that lead to it, in groups that each start fresh. At a fixed
-//! time (unless CLAMSHELL_SNAPSHOT_NOW is set), so the files compare byte for byte across runs; the test
-//! below keeps their hashes (tests/snapshots.txt) to catch changes in what is drawn.
+//! time (unless CLAMSHELL_SNAPSHOT_NOW is set), so they come out the same on every run; the test below
+//! keeps hashes of their pixels (tests/snapshots.txt) to catch changes in what is drawn.
 
 use std::fmt;
 use std::path::Path;
@@ -562,11 +562,22 @@ mod tests {
 
     /// The reference hashes, one `name hash` line per file.
     const REFERENCE: &str = "tests/snapshots.txt";
-    const HEADER: &str = "# FNV-1a hashes of the `clamshell --snapshot` files (src/snapshot.rs). After a change meant to change\n\
+    const HEADER: &str = "# FNV-1a hashes of the snapshots' sizes and pixels (src/snapshot.rs). After a change meant to change\n\
                           # what is drawn: CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots\n";
 
-    /// The snapshots, drawn and hashed, against the reference hashes. After a change meant to change what
-    /// is drawn (look at the files: `clamshell --snapshot DIR`), write the new hashes with
+    /// A PNG's size and pixels hashed (not its bytes: they change with the encoder, the pixels don't).
+    fn pixels_hash(path: &std::path::Path) -> String {
+        let image = image::open(path).unwrap().to_rgba8();
+        let mut bytes = Vec::with_capacity(8 + image.as_raw().len());
+        bytes.extend(image.width().to_le_bytes());
+        bytes.extend(image.height().to_le_bytes());
+        bytes.extend(image.as_raw());
+        format!("{:016x}", clamshell_library::hash::fnv1a64(&bytes))
+    }
+
+    /// The snapshots, drawn and hashed, against the reference hashes; on a difference, the files drawn are
+    /// left for a look. After a change meant to change what is drawn (look at the files:
+    /// `cargo run --features dev -- --snapshot DIR`), write the new hashes with
     /// `CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots`.
     #[test]
     fn snapshots_match_their_reference() {
@@ -576,16 +587,13 @@ mod tests {
         render(&|| state(clamshell_library::demo::library()), FIXED_NOW, &dir).unwrap();
         let mut hashes = BTreeMap::new();
         for entry in std::fs::read_dir(&dir).unwrap().flatten() {
-            hashes.insert(
-                entry.file_name().to_string_lossy().into_owned(),
-                format!("{:016x}", clamshell_library::hash::fnv1a64(&std::fs::read(entry.path()).unwrap())),
-            );
+            hashes.insert(entry.file_name().to_string_lossy().into_owned(), pixels_hash(&entry.path()));
         }
-        let _ = std::fs::remove_dir_all(&base);
         let text: String = std::iter::once(HEADER.to_owned()).chain(hashes.iter().map(|(name, hash)| format!("{name} {hash}\n"))).collect();
         let reference = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(REFERENCE);
         if std::env::var_os("CLAMSHELL_UPDATE_SNAPSHOTS").is_some() {
             std::fs::write(&reference, text).unwrap();
+            let _ = std::fs::remove_dir_all(&base);
             return;
         }
         let expected: BTreeMap<String, String> = std::fs::read_to_string(&reference)
@@ -595,6 +603,13 @@ mod tests {
             .filter_map(|l| l.split_once(' ').map(|(n, h)| (n.to_owned(), h.to_owned())))
             .collect();
         let changed: std::collections::BTreeSet<&String> = hashes.keys().chain(expected.keys()).filter(|n| hashes.get(*n) != expected.get(*n)).collect();
-        assert!(changed.is_empty(), "snapshots changed: {changed:?}; if meant, update with `CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots`");
+        if changed.is_empty() {
+            let _ = std::fs::remove_dir_all(&base);
+        }
+        assert!(
+            changed.is_empty(),
+            "snapshots changed: {changed:?} (drawn into {}); if meant, update with `CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots`",
+            dir.display()
+        );
     }
 }

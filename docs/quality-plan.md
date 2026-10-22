@@ -133,7 +133,7 @@ Helpers that exist but are bypassed:
 
 ## 4. Tests
 
-- [ ] The screenshot test hashes pixels, not PNG bytes, and keeps its output on failure.
+- [x] The screenshot test hashes pixels, not PNG bytes, and keeps its output on failure.
 - [ ] Test helpers shared: core's testkit (the shelf/window closures, `start_end`), ui's
       `tap`/`key`/`device()` and `snapshot.rs`' copies, the Frame setup in `views/mod.rs`.
 - [ ] One test `TempDir` with `Drop` for the ~20 hand-made temp dirs (system).

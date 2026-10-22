@@ -196,6 +196,7 @@ dependencies = [
  "clamshell-system",
  "clamshell-ui",
  "env_logger",
+ "image",
  "log",
  "rustix",
 ]

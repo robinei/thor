@@ -59,6 +59,8 @@ rustix.workspace = true
 
 [dev-dependencies]
 clamshell-library = { workspace = true, features = ["demo"] }
+# (The snapshot test decodes its PNGs, to hash their pixels.)
+image.workspace = true
 
 [features]
 # `--snapshot` and the demo library it draws: for development, not the device's build.
