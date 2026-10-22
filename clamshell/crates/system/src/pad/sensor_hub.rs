@@ -171,6 +171,10 @@ impl MotionSource for SensorHub {
         let result = (|| {
             while let Some((n, _, port)) = qrtr::recv_from(&self.socket, &mut buf)? {
                 let msg = buf.get(..n).unwrap_or_default();
+                // (The datagrams as they come, for the tests' fixtures: see docs/thor-gameplan.md.)
+                if log::log_enabled!(log::Level::Trace) {
+                    log::trace!("port {port:#x}: {}", msg.iter().map(|b| format!("{b:02x}")).collect::<String>());
+                }
                 if port == qrtr::PORT_CTRL {
                     self.control(msg);
                 } else {

@@ -139,7 +139,8 @@ Helpers that exist but are bypassed:
       stay apart: they are in different crates' tests.)
 - [x] One test `TempDir` with `Drop` (core's `testdir`, the `test-support` feature) for the hand-made temp
       dirs in the system, fan and UI tests; the fan's and the lid's tests had left hundreds behind.
-- [ ] The sensor hub's parser against captured bytes, not its own encoder (on the device: a fixture).
+- [ ] The sensor hub's parser against captured bytes, not its own encoder: waits for the device (the
+      datagrams logged at trace level; the gyro's day-one item in `docs/thor-gameplan.md` says how).
 - [ ] The no-alloc test's gaps: Time and Touchpad tabs, the file name editors, the battery, dock and
       tray menus, an open group, a video; the menus without per-frame `Vec`/`format!`.
 - [ ] `#[ignore = "why"]` on the live tests; rustdoc's 9 warnings.

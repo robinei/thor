@@ -519,8 +519,10 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       the still detection (under 5 °/s, within 0.5 °/s, for 1.5 s) catches it and doesn't eat slow aim,
       and "Calibrate gyro". Then the feel: gyro to the pointer at each speed (pixels per degree),
       acceleration and tightening's defaults, which way turning and tilting move it (`ROLL_TURNS` in
-      `pad/remap.rs` for tilting), gyro to a stick with its minimum, holding a trigger to aim, and the
-      ratchet.
+      `pad/remap/mod.rs` for tilting), gyro to a stick with its minimum, holding a trigger to aim, and the
+      ratchet. Then fixtures for the parser's tests, which so far check it against its own encoder: with
+      `RUST_LOG=clamshell_system::pad::sensor_hub=trace` the hub's datagrams are logged in hex; the
+      gyro's SUID report and a few sensor events go into `pad/sensor_hub.rs`'s tests.
 - [ ] Rumble: a game's rumble on the controller's motors at each Rumble setting; the keymap's buzzes (a
       layer armed or toggled on, and off: `Buzz` in `pad/rumble.rs`, 40 ms at 40000 on the light motor,
       30000 on the heavy one) felt, and not confused with a game's.
