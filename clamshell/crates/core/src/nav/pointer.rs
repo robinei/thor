@@ -111,7 +111,7 @@ mod tests {
     fn down_and_up_light_a_target() {
         let mut s = state();
         let launch = Id::Shelf(ShelfId::Launch);
-        s.applied(PointerEvent::Down(launch.clone()).into());
+        s.applied(PointerEvent::Down(launch.clone(), None).into());
         assert_eq!(s.pointer().pressed(), Some(&launch));
         s.applied(PointerEvent::Up(launch).into());
         assert_eq!(s.pointer().pressed(), None);

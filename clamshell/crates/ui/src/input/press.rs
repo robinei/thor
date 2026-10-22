@@ -210,7 +210,7 @@ impl Input {
             return vec![];
         }
         self.presses.push((source, Press::new(id.clone(), None, Gesture::Tap, (0.0, 0.0), None, now)));
-        vec![Action::Emit(PointerEvent::Down(id).into()), Action::Arm(source, Timer::Hold, LONG_PRESS)]
+        vec![Action::Emit(PointerEvent::Down(id, None).into()), Action::Arm(source, Timer::Hold, LONG_PRESS)]
     }
 
     /// A finger or the mouse comes down on `target` at (`x`, `y`). Touch hides the pad's focus ring and
@@ -230,7 +230,7 @@ impl Input {
         };
         let id = target.id.clone();
         self.presses.push((source, Press::new(id.clone(), Some(target.rect), gesture, (x, y), target.list, now)));
-        actions.extend([Action::Emit(PointerEvent::HideFocus.into()), Action::Emit(PointerEvent::Down(id).into())]);
+        actions.extend([Action::Emit(PointerEvent::HideFocus.into()), Action::Emit(PointerEvent::Down(id, None).into())]);
         match gesture {
             // A keymap parameter's row has nothing to tap, so it slides at once from where the finger
             // came down. A touch without moving changes nothing.
@@ -497,7 +497,7 @@ mod tests {
         let state = State::new(Init::default());
         let mut input = Input::default();
         let down = input.touch(Source::Touch(1), &tab(), (5.0, 0.0), t0());
-        assert_eq!(events(&down), vec![PointerEvent::HideFocus.into(), PointerEvent::Down(Id::Tab(Tab::Wifi)).into()]);
+        assert_eq!(events(&down), vec![PointerEvent::HideFocus.into(), PointerEvent::Down(Id::Tab(Tab::Wifi), None).into()]);
         assert!(down.contains(&Action::Arm(Source::Touch(1), Timer::Hold, LONG_PRESS)));
         let up = input.up(Source::Touch(1), End::Release, &blank(), t0());
         assert_eq!(up[0], Action::Disarm(Source::Touch(1), Timer::Hold));

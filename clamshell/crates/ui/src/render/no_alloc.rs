@@ -243,7 +243,7 @@ fn warm_frames_do_not_allocate() {
             "sliding",
             vec![
                 Event::Reading(Reading::Status(Status { volume: Some(40), ..Default::default() })),
-                Event::Pointer(PointerEvent::Down(Id::Control(Control::Volume))),
+                Event::Pointer(PointerEvent::Down(Id::Control(Control::Volume), None)),
                 Event::Slide(Slide::Start { control: Control::Volume, x: 285.0, width: 620.0 }),
                 Event::Slide(Slide::To { x: 320.0 }),
             ],
@@ -297,7 +297,7 @@ fn warm_frames_do_not_allocate() {
                     outputs: vec![levels::AudioOutput { id: 1, name: "Speakers".into(), default: true }],
                     streams: vec![levels::Stream { id: 2, app: "Firefox".into(), title: String::new(), volume: 40, muted: false }],
                 })),
-                Event::Pointer(PointerEvent::Down(levels::Level::Stream(0).id())),
+                Event::Pointer(PointerEvent::Down(levels::Level::Stream(0).id(), None)),
             ],
         ),
         ("brightness", vec![Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Brightness))), Event::Reading(Reading::Backlights(vec!["panel".into()]))]),
@@ -402,7 +402,7 @@ fn warm_frames_do_not_allocate() {
             vec![
                 tap(Id::Tab(Tab::Keyboard)),
                 key(Key::Mod(Modifier::Shift)),
-                Event::Pointer(PointerEvent::Down(Id::Key(keyboard::find(Key::Char('h')).expect("h")))),
+                Event::Pointer(PointerEvent::Down(Id::Key(keyboard::find(Key::Char('h')).expect("h")), None)),
             ],
         ),
     ];

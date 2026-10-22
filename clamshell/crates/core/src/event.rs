@@ -8,6 +8,7 @@ use std::sync::Arc;
 use crate::device::buttons::DeviceKey;
 use crate::device::idle::IdleEvent;
 use crate::id::Id;
+use crate::kit::list::ItemKey;
 use crate::levels::slider::Control;
 use crate::levels::{Audio, Level};
 use crate::nav::lists::ListEvent;
@@ -191,8 +192,9 @@ pub enum Reading {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PointerEvent {
     /// A finger, button or the pad's A went down on or up from a target. The target shows as pressed in
-    /// between.
-    Down(Id),
+    /// between. `Down` carries the key of the list item the target showed when it was drawn, if the UI
+    /// has it; with `None` the item is the one at the target's position now (see [`crate::nav::items`]).
+    Down(Id, Option<ItemKey>),
     Up(Id),
     /// Tap, click, or the pad's A on a focused item.
     Activate(Id),

@@ -154,8 +154,9 @@ impl<'a> Lists<'a> {
         }
     }
 
-    /// The key of the item `id` points at, if `id` is a list item.
-    pub(crate) fn item_key(&self, id: &Id) -> Option<ItemKey> {
+    /// The key of the item `id` points at now, if `id` is a list item. The UI records it with the target
+    /// it draws for `id`.
+    pub fn item_key(&self, id: &Id) -> Option<ItemKey> {
         let at = |i: &u16| usize::from(*i);
         match id {
             Id::Row { list, i, .. } => self.rows(*list).key(at(i)),

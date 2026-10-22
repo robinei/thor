@@ -146,10 +146,10 @@ fn allocations_per_event() {
         run(&name("windows, unchanged"), s, &|_| Event::Windows(windows.clone()));
         run(&name("units, unchanged"), s, &|_| Event::Units(units.clone()));
         run(&name("pointer down and up on a tab"), s, &|i| {
-            Event::Pointer(if i % 2 == 0 { PointerEvent::Down(Id::Tab(Tab::Volume)) } else { PointerEvent::Up(Id::Tab(Tab::Volume)) })
+            Event::Pointer(if i % 2 == 0 { PointerEvent::Down(Id::Tab(Tab::Volume), None) } else { PointerEvent::Up(Id::Tab(Tab::Volume)) })
         });
         run(&name("pointer down and up on a row"), s, &|i| {
-            Event::Pointer(if i % 2 == 0 { PointerEvent::Down(ListId::Wifi.row(0)) } else { PointerEvent::Up(ListId::Wifi.row(0)) })
+            Event::Pointer(if i % 2 == 0 { PointerEvent::Down(ListId::Wifi.row(0), None) } else { PointerEvent::Up(ListId::Wifi.row(0)) })
         });
         run(&name("focus moved by the pad"), s, &|i| Event::Pointer(PointerEvent::Focus(Id::Tab(if i % 2 == 0 { Tab::Volume } else { Tab::Wifi }))));
         run(&name("focus moved by the pad down a list"), s, &|i| Event::Pointer(PointerEvent::Focus(ListId::Wifi.row(if i % 2 == 0 { 0 } else { 7 }))));

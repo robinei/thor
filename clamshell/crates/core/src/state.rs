@@ -572,7 +572,7 @@ impl State {
     /// that screen.
     fn on_pointer(&mut self, event: PointerEvent, out: &mut Out) {
         let used = match &event {
-            PointerEvent::Focus(id) | PointerEvent::Activate(id) | PointerEvent::LongPress(id) | PointerEvent::Down(id) => !id.on_top(),
+            PointerEvent::Focus(id) | PointerEvent::Activate(id) | PointerEvent::LongPress(id) | PointerEvent::Down(id, _) => !id.on_top(),
             _ => false,
         };
         if used {
@@ -593,11 +593,11 @@ impl State {
             PointerEvent::Activate(_) | PointerEvent::LongPress(_) if self.idle.swallows_press(self.clock.mono()) => {}
             PointerEvent::Activate(id) => self.activate(&id, false, out),
             PointerEvent::LongPress(id) => self.activate(&id, true, out),
-            PointerEvent::Down(id) => {
+            PointerEvent::Down(id, item) => {
                 if let Id::Key(pos) = id {
                     self.keyboard.down(pos);
                 }
-                let item = self.lists().item_key(&id);
+                let item = item.or_else(|| self.lists().item_key(&id));
                 self.pointer.down(id, item);
             }
             PointerEvent::Up(id) => {

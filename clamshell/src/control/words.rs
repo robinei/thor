@@ -248,7 +248,7 @@ pub const TARGETS: &[Form<Id>] = &[
 /// unless `hold` is set.
 pub(super) fn slide(control: Control, from: f32, to: f32, hold: bool) -> Vec<Event> {
     let id = Id::Control(control);
-    let mut events = vec![PointerEvent::Down(id.clone()).into(), Slide::Start { control, x: from, width: SLIDE_WIDTH }.into()];
+    let mut events = vec![PointerEvent::Down(id.clone(), None).into(), Slide::Start { control, x: from, width: SLIDE_WIDTH }.into()];
     events.extend((1..=SLIDE_STEPS).map(|i| Slide::To { x: from + (to - from) * f32::from(i) / f32::from(SLIDE_STEPS) }.into()));
     if !hold {
         events.extend([Slide::End.into(), PointerEvent::Up(id).into()]);

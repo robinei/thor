@@ -78,7 +78,7 @@ pub use resume::Resume;
 
 pub use bottom::editor::Editor;
 pub use bottom::{Bottom, Tab};
-pub use kit::list::Scroll;
+pub use kit::list::{ItemKey, Scroll};
 pub use levels::slider::Control;
 pub use levels::{Brightness, Level, Levels, Sound};
 pub use nav::lists::{ListEvent, ListId, Lists, RowPart};

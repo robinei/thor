@@ -244,7 +244,7 @@ mod tests {
     fn slides_and_lifts() {
         let events = parse("slide volume 280 330").unwrap();
         let id = Id::Control(Control::Volume);
-        assert_eq!(events[..2], [PointerEvent::Down(id.clone()).into(), Slide::Start { control: Control::Volume, x: 280.0, width: 620.0 }.into()]);
+        assert_eq!(events[..2], [PointerEvent::Down(id.clone(), None).into(), Slide::Start { control: Control::Volume, x: 280.0, width: 620.0 }.into()]);
         assert_eq!(events[2], Slide::To { x: 285.0 }.into());
         assert_eq!(events[11], Slide::To { x: 330.0 }.into());
         assert_eq!(events[12..], [Slide::End.into(), PointerEvent::Up(id.clone()).into()]);

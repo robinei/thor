@@ -7,9 +7,10 @@
 
 /// What identifies a list item: its name, such as a network's SSID, a device's address, an entry's id, a
 /// collection's name or a backlight's name, or a PipeWire object's id. A name is kept as its hash, so that
-/// keeping one doesn't allocate.
+/// keeping one doesn't allocate. The UI records the key with each target it draws for an item, and a press
+/// carries it (see [`crate::nav::items`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ItemKey {
+pub enum ItemKey {
     Name(u64),
     Number(u32),
 }
