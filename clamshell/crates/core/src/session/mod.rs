@@ -51,7 +51,7 @@ pub struct Session {
     next_instance: u64,
     /// Whether systemd has listed our scopes at least once, so that what runs is known.
     units_known: bool,
-    /// What the last [`crate::State::reconcile`] saw: the windows' ids and the workspace in front on the
+    /// What the last [`crate::State::settle`] saw: the windows' ids and the workspace in front on the
     /// main screen. They tell which windows are new and when the one in front closes.
     followed_windows: Vec<i64>,
     followed_front: Option<String>,
@@ -235,7 +235,7 @@ impl Session {
 
     /// Counts changes to what the session follows from outside: the windows, systemd's scopes, the tray,
     /// the launcher's messages, the library and the clock. The steps that follow them run when it
-    /// changed (see [`crate::State::reconcile`]).
+    /// changed (see [`crate::State::settle`]).
     pub(crate) fn version(&self) -> u64 {
         self.version
     }

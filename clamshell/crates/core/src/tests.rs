@@ -22,7 +22,7 @@ fn orders(events: &[Event]) -> Vec<Vec<Event>> {
 }
 
 /// The session's inputs, systemd's list and the compositor's windows, come from separate threads in any
-/// order. They end in the same state, because the reconcile after each reads what is there, not which
+/// order. They end in the same state, because the steps that settle each read what is there, not which
 /// came last.
 #[test]
 fn a_launchs_start_and_end_come_to_the_same_in_any_order() {

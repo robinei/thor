@@ -1,5 +1,6 @@
-//! Applying an event: which feature's rules handle it, and then everything that follows from it
-//! elsewhere. The follow-up steps run in an order where each one finds the steps it depends on settled.
+//! Applying an event in three phases: the feature's rules handle it, the state is settled, which brings
+//! everything that follows from it elsewhere up to date in an order where each step finds the ones it
+//! depends on settled, and the outside is told what changed for it (see [`crate::sync`]).
 
 use crate::bottom::editor::Done;
 use crate::levels::slider::Control;
@@ -11,7 +12,7 @@ use crate::{
     BtId, Dirty, EditorId, Effect, EntryAct, Event, Id, Level, Library, ListId, PadRoute, PointerEvent, Reading, Save, SettingsId, ShelfId, State, Tab, WifiId,
 };
 
-/// What the steps after an event last saw (see [`State::reconcile`]).
+/// What the steps after an event last saw (see [`State::settle`]).
 #[derive(Debug, Default)]
 pub(crate) struct Settled {
     /// The session's version (see [`crate::Session::version`]).
@@ -45,22 +46,83 @@ impl State {
         (out.dirty, out.effects)
     }
 
-    /// Brings the state up to date with what happened, in this order, since each step reads what the
-    /// earlier ones settled:
+    /// Brings the state up to date with what happened. The steps run in this order, since each reads
+    /// what the earlier ones settled. The first six follow the session's inputs (the windows, systemd's
+    /// scopes, the tray, the launcher's messages, the library and the clock), and run only when one
+    /// changed, which [`crate::Session::version`] counts:
     ///
-    /// 1. The session's steps, when what it follows changed ([`State::reconcile`]).
-    /// 2. The second screen's dimming.
-    /// 3. The browsed folder's selection and armed action.
-    /// 4. The idle stage.
-    /// 5. The program in force.
-    /// 6. The second screen turning off or on by itself, which reads the program in force's setting and
-    ///    darkness.
-    /// 7. The pad mouse, when the program in force changed.
-    /// 8. What claims the pad, and where it goes. The focus ring shows where the pad is, so it is hidden
-    ///    when the pad leaves ClamShell's screens.
+    /// 1. systemd's scopes: entries found running, found ones promoted to launches, and ours ended
+    ///    ([`crate::Session::follow_units`]). The first time, the entries to start with ClamShell are
+    ///    started.
+    /// 2. The windows: entries started by their app ids ([`crate::Session::start_by_app_id`]), with Steam's
+    ///    games launched before the windows are followed, since a starting launch's window is left where
+    ///    it is; then windows moved to their entries, programs found by them, and entries ended by them
+    ///    ([`crate::Session::follow_windows`], which compares with the windows the last pass saw). Then the
+    ///    rules that send windows down. The windows' effects come after those of steps 3 and 4.
+    /// 3. In the background: entries paused, thawed or ended by their setting. This reads 1 and 2.
+    /// 4. What is shown: a launch's first window, a workspace whose window came back, and going back to
+    ///    what was before when the one in front closed.
+    /// 5. Quitting entries are ended once their windows are gone. This reads 1 to 3.
+    /// 6. The dock: running entries are added to it and ended ones removed.
+    ///
+    /// The rest run after every event:
+    ///
+    /// 7. The second screen's dimming.
+    /// 8. The browsed folder's selection and armed action.
+    /// 9. The idle stage.
+    /// 10. The program in force.
+    /// 11. The second screen turning off or on by itself, which reads the program in force's setting and
+    ///     darkness.
+    /// 12. The pad mouse, when the program in force changed.
+    /// 13. What claims the pad, and where it goes. The focus ring shows where the pad is, so it is hidden
+    ///     when the pad leaves ClamShell's screens.
+    ///
+    /// A step does nothing when nothing changed for it.
     fn settle(&mut self, out: &mut Out) {
-        if self.session.version() != self.settled.session && self.reconcile(out) {
-            out.mark(Dirty::BOTTOM);
+        if self.session.version() != self.settled.session {
+            self.settled.session = self.session.version();
+            let mut before = std::mem::take(&mut self.settled.running);
+            before.clear();
+            before.extend(self.session.running_entries().iter().map(|r| r.id.clone()));
+            if self.session.follow_units(&self.clock, &mut self.shelf, self.bottom.notice_mut(), out) {
+                self.bottom.unwake();
+            }
+            let mut due = Vec::new();
+            self.session.autostart_due(self.shelf.library(), &mut due);
+            // They start in the background, so what was going to be shown still is.
+            for id in due {
+                self.launch(id, None, false, out);
+            }
+            // The windows' effects are moved after those of the steps that follow them, below.
+            let windows_from = out.effects.len();
+            let mut steam = Vec::new();
+            if self.session.start_by_app_id(&self.clock, self.shelf.library(), &mut steam) {
+                self.bottom.unwake();
+            }
+            // Before following the windows, which leaves a starting launch's windows where they are.
+            for id in steam {
+                self.launch(id, None, true, out);
+            }
+            self.session.follow_windows(&self.clock, &mut self.shelf, out);
+            let by_windows = out.effects.len() - windows_from;
+            self.bottom.follow_window_rules(&self.session, out);
+            self.session.follow_background(self.clock.mono(), self.shelf.library(), self.prefs.settings(), out);
+            self.session.show_pending(out);
+            self.session.show_reopened(self.clock.mono(), out);
+            self.session.follow_quitting(self.shelf.library(), out);
+            self.session.follow_closed(self.clock.mono(), out);
+            // After handling the front one closing, so that a window just taken by a browsed file is shown
+            // over it.
+            if let Some(effects) = out.effects.get_mut(windows_from..) {
+                effects.rotate_left(by_windows);
+            }
+            let docked = self.dock.follow(&self.session);
+            self.session.followed();
+            // The dock and the running entries are shown on the second screen.
+            if docked || !self.session.running_entries().iter().map(|r| &r.id).eq(before.iter()) {
+                out.mark(Dirty::BOTTOM);
+            }
+            self.settled.running = before;
         }
         if self.bottom.follow_dim(&self.session, &self.clock) {
             out.mark(Dirty::BOTTOM);
@@ -75,70 +137,6 @@ impl State {
         if self.reconcile_pad().is_some_and(|route| route != PadRoute::Ui) && self.pointer.hide_focus() {
             out.mark(Dirty::BOTH);
         }
-    }
-
-    /// Runs after any change to what the session follows (the windows, systemd's scopes, the tray, the
-    /// launcher's messages, the library), and every second, which [`crate::Session::version`] counts. It
-    /// applies everything that follows, in this
-    /// order, since each step reads what the earlier ones settled:
-    ///
-    /// 1. systemd's scopes: entries found running, found ones promoted to launches, and ours ended
-    ///    ([`crate::Session::follow_units`]). The first time, the entries to start with ClamShell are started.
-    /// 2. The windows: entries started by their app ids ([`crate::Session::start_by_app_id`]), with Steam's
-    ///    games launched before the windows are followed, since a starting launch's window is left where
-    ///    it is; then windows moved to their entries, programs found by them, and entries ended by them
-    ///    ([`crate::Session::follow_windows`], which compares with the windows the last pass saw). Then the rules
-    ///    that send windows down. The windows' effects come after those of steps 3 and 4.
-    /// 3. In the background: entries paused, thawed or ended by their setting. This reads 1 and 2.
-    /// 4. What is shown: a launch's first window, a workspace whose window came back, and going back to
-    ///    what was before when the one in front closed.
-    /// 5. Quitting entries are ended once their windows are gone. This reads 1 to 3.
-    /// 6. The dock: running entries are added to it and ended ones removed.
-    ///
-    /// A step does nothing when nothing changed for it. Returns whether the running entries changed.
-    fn reconcile(&mut self, out: &mut Out) -> bool {
-        self.settled.session = self.session.version();
-        let mut before = std::mem::take(&mut self.settled.running);
-        before.clear();
-        before.extend(self.session.running_entries().iter().map(|r| r.id.clone()));
-        if self.session.follow_units(&self.clock, &mut self.shelf, self.bottom.notice_mut(), out) {
-            self.bottom.unwake();
-        }
-        let mut due = Vec::new();
-        self.session.autostart_due(self.shelf.library(), &mut due);
-        // They start in the background, so what was going to be shown still is.
-        for id in due {
-            self.launch(id, None, false, out);
-        }
-        // The windows' effects are moved after those of the steps that follow them, below.
-        let windows_from = out.effects.len();
-        let mut steam = Vec::new();
-        if self.session.start_by_app_id(&self.clock, self.shelf.library(), &mut steam) {
-            self.bottom.unwake();
-        }
-        // Before following the windows, which leaves a starting launch's windows where they are.
-        for id in steam {
-            self.launch(id, None, true, out);
-        }
-        self.session.follow_windows(&self.clock, &mut self.shelf, out);
-        let by_windows = out.effects.len() - windows_from;
-        self.bottom.follow_window_rules(&self.session, out);
-        self.session.follow_background(self.clock.mono(), self.shelf.library(), self.prefs.settings(), out);
-        self.session.show_pending(out);
-        self.session.show_reopened(self.clock.mono(), out);
-        self.session.follow_quitting(self.shelf.library(), out);
-        self.session.follow_closed(self.clock.mono(), out);
-        // After handling the front one closing, so that a window just taken by a browsed file is shown
-        // over it.
-        if let Some(effects) = out.effects.get_mut(windows_from..) {
-            effects.rotate_left(by_windows);
-        }
-        let docked = self.dock.follow(&self.session);
-        self.session.followed();
-        let after = self.session.running_entries().iter().map(|r| &r.id);
-        let changed = docked || !after.eq(before.iter());
-        self.settled.running = before;
-        changed
     }
 
     /// Called when the program in force changed. Turns the pad mouse on if the program wants it

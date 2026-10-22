@@ -20,7 +20,8 @@
 //! - [`nav`]: focus and presses ([`Pointer`]), the lists, and the pad's routing ([`Pad`]);
 //! - [`kit`]: generic parts the areas build on, which know nothing about them.
 //!
-//! `apply.rs` passes each event to its area, and then runs everything that follows from it, in order.
+//! `apply.rs` passes each event to its area, and then runs everything that follows from it, in order;
+//! `sync.rs` then tells the outside what changed for it.
 //!
 //! The workspace lints rule out panics: no `unwrap`, `expect` or indexing. A lookup whose index is valid
 //! by construction, such as an enum's position in an array sized for it, or an index held by the
