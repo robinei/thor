@@ -48,10 +48,20 @@ that isn't present). Fallbacks on indexes valid by construction stay quiet, as c
 - [x] No helper: `.inspect_err(|e| log::warn!("reading {}: {e}", path.display())).ok()` says it in place.
       A failure that repeats on a timer (a reading every few seconds) logs at `debug`, so the log isn't
       flooded.
-- [ ] system: discarded `Result`s (`.ok()`, `let _ =`, `if let Ok` with no else, `unwrap_or*` on a
+- [x] system: discarded `Result`s (`.ok()`, `let _ =`, `if let Ok` with no else, `unwrap_or*` on a
       `Result`) logged.
-- [ ] ui, binary, fan, library: the same.
-- [ ] core: fallbacks on `Option`s that a bug could reach: `debug_assert!` or a log.
+- [x] ui, binary, fan, library: the same.
+- [x] core: fallbacks on `Option`s that a bug could reach: `debug_assert!` or a log.
+
+Found on the way: a folder copy skipped entries it couldn't list and reported success, losing them on a
+cut across filesystems (now it fails); a poisoned lock stopped metadata fetching for good (now recovered).
+Open, as they change behaviour:
+
+- [ ] The control pipe's reader thread ends for good if the pipe can't be reopened (`clamshell ctl` stops
+      working until a restart).
+- [ ] The fan daemon takes an unreadable `pwm1` as 0, which feeds the curve.
+- [ ] Emptying the Trash says "Emptied the Trash" when some entries couldn't be removed.
+- [ ] `content::scan` expands a source's dir a second time after its caller did.
 
 ## 4. Comments a person would write
 
