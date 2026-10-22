@@ -260,10 +260,13 @@ impl State {
                     EntryAct::Suspend => self.session.suspend(&id, out),
                     EntryAct::ToggleAutostart => self.session.toggle_autostart(id, out),
                     EntryAct::TogglePin => self.dock.toggle_pin(id, &self.session, out),
-                    EntryAct::Enqueue => out.effects.extend(self.enqueue(&id)),
                     EntryAct::Quit => self.session.quit(&id, self.shelf.library(), out),
                     EntryAct::ForceKill => self.session.force_kill(&id, self.shelf.library(), out),
                 }
+            }
+            Event::Enqueue => {
+                out.mark(Dirty::BOTTOM);
+                self.enqueue(out);
             }
             Event::Keymap(e) => {
                 out.mark(Dirty::BOTTOM);

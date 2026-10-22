@@ -29,7 +29,7 @@ impl Shelf {
             ShelfId::Favourite => self.toggle_favourite(out),
             ShelfId::Pin => self.ask(EntryAct::TogglePin, out),
             ShelfId::Continue => self.continue_selected(out),
-            ShelfId::Enqueue => self.ask(EntryAct::Enqueue, out),
+            ShelfId::Enqueue => self.ask_enqueue(out),
             ShelfId::File(action) => self.on_file(action, out),
             ShelfId::Up => {
                 if self.up() {
@@ -43,6 +43,13 @@ impl Shelf {
     pub(crate) fn ask(&self, act: EntryAct, out: &mut Out) {
         if let Some(id) = self.selected() {
             out.events.push(Event::Entry(id.clone(), act));
+        }
+    }
+
+    /// Asks for Enqueue on what the details show, if an entry is selected (see [`crate::session::enqueue`]).
+    pub(crate) fn ask_enqueue(&self, out: &mut Out) {
+        if self.selected().is_some() {
+            out.events.push(Event::Enqueue);
         }
     }
 

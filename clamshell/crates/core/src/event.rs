@@ -110,6 +110,9 @@ pub enum Event {
     Keymap(KeymapEvent),
     /// Something done to an entry, by its id.
     Entry(Arc<str>, EntryAct),
+    /// Adds what shelf's details show, or the entries picked in its open folder, to what their runner
+    /// plays (see [`crate::session::enqueue`]). It is about shelf's selection, so it names no entry.
+    Enqueue,
     /// Opens `editor` on the keyboard tab, as for a file's name. When the editor closes, the screen goes
     /// back to the tab the keyboard came up from.
     EditOnKeyboard(crate::Editor),
@@ -132,9 +135,6 @@ pub enum EntryAct {
     ToggleAutostart,
     /// Pins it to the dock, or unpins it.
     TogglePin,
-    /// Adds it, or the entries selected in its folder, to what its runner plays (see
-    /// [`crate::session::enqueue`]). Only for shelf's selected entry.
-    Enqueue,
     /// Quit, as from the dock.
     Quit,
     ForceKill,

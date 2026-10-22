@@ -124,6 +124,13 @@ and the UI change with the code they call; doc links to moved methods are fixed 
       `apply_event` drains only what it queued, by index (`remove(mark)`), so a queued event's own requests
       still run right after it. Fix `landing_up`'s per-reconcile `String`. `tests/apply_alloc.rs` then
       asserts no allocation for warm ticks, readings, windows/units, pointer and pad events.
+- [ ] Drawing records, then plays: `Canvas` keeps its methods but records into a `Recording { cmds:
+      Vec<Cmd>, text: Vec<u8> }` (a small `Copy` enum of commands; text bytes in the byte buffer, referred
+      to by range; images carry a generation so a load changes the command), reused so recording doesn't
+      allocate once warm. After every `apply`, each visible screen is recorded and compared with its last
+      recording (two slice compares); only a changed one is played into the shm buffer and committed.
+      `Dirty` and every `out.mark(..)` go. Later: damage regions from the differing commands. Start with a
+      prototype on one screen measuring record + compare against a full draw.
 - [ ] Each frame target records the key of the item it shows (a `u64` hash, so drawing stays
       allocation-free); a press keys its item from the target it landed on rather than from the state
       at `Down`. Today a list that changes between a frame and the press keys the item now at that

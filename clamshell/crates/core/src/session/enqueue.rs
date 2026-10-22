@@ -14,28 +14,30 @@ use std::sync::Arc;
 use clamshell_library::RunnerOf;
 
 use crate::bottom::notice::NoticeKind;
+use crate::out::Out;
 use crate::session::running::Running;
-use crate::{Effect, State};
+use crate::{Effect, Session, State};
 
-impl State {
+impl Session {
     /// The running entry of runner `key` that was most recently in front. Only entries in a scope of ours
     /// count, not those known by app id.
     pub fn enqueue_target(&self, key: &str) -> Option<&Running> {
-        let session = &self.session;
         let runner_of = |r: &Running| r.entry.as_ref().and_then(|g| g.runner.as_ref()).is_some_and(|o| &*o.key == key);
-        let candidates = session.running.iter().filter(|r| r.app_id.is_none() && runner_of(r));
+        let candidates = self.running.iter().filter(|r| r.app_id.is_none() && runner_of(r));
         // Entries never in front come after those that were, the last started first.
-        candidates.rev().min_by_key(|r| session.recent.iter().position(|w| *w == r.workspace()).unwrap_or(usize::MAX))
+        candidates.rev().min_by_key(|r| self.recent.iter().position(|w| *w == r.workspace()).unwrap_or(usize::MAX))
     }
+}
 
-    /// Enqueue was pressed on shelf's selected entry `id`. The entries are added to the running launch of
+impl State {
+    /// Enqueue was pressed on what shelf's details show. The entries are added to the running launch of
     /// their runner, or else launched.
-    pub(crate) fn enqueue(&mut self, id: &str) -> Vec<Effect> {
-        let Some((game, true)) = self.shelf.file_target().filter(|(g, _)| &*g.id == id) else {
-            return vec![];
+    pub(crate) fn enqueue(&mut self, out: &mut Out) {
+        let Some((game, true)) = self.shelf.file_target() else {
+            return;
         };
         let Some(runner) = game.runner.clone().filter(|r| r.enqueue.is_some()) else {
-            return vec![];
+            return;
         };
         let library = self.shelf.library();
         let index_of = |id: &str| library.entries.iter().position(|g| &*g.id == id);
@@ -48,27 +50,22 @@ impl State {
         };
         let files: Vec<PathBuf> = ids.iter().filter_map(|id| index_of(id)).flat_map(|i| library.queue_files(i, &runner.key)).collect();
         if files.is_empty() {
-            return vec![];
+            return;
         }
         let alone = entry == game.id && !game.is_group();
         self.shelf.clear_file_selection();
-        match self.enqueue_target(&runner.key) {
+        match self.session.enqueue_target(&runner.key) {
             Some(r) => {
                 let (key, title) = (r.key.clone(), r.entry.as_ref().map_or_else(String::new, |g| g.title.clone()));
                 let lines = files.iter().filter_map(|f| line(&runner, f)).collect();
                 self.bottom.notify(NoticeKind::Enqueued(files.len(), title), self.clock.mono());
-                vec![Effect::Enqueue { key, lines }]
+                out.effects.push(Effect::Enqueue { key, lines });
             }
             // A file alone is opened as A opens it, which includes resuming where it was left.
+            None if alone => self.play(entry, out),
             None => {
-                let mut out = crate::out::Out::default();
-                if alone {
-                    self.play(entry, &mut out);
-                } else {
-                    let entry = self.shelf.entry_of_file(&entry).unwrap_or(entry);
-                    self.launch(entry, Some(runner.command_for(&files)), true, &mut out);
-                }
-                out.effects
+                let entry = self.shelf.entry_of_file(&entry).unwrap_or(entry);
+                self.launch(entry, Some(runner.command_for(&files)), true, out);
             }
         }
     }
